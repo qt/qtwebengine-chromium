@@ -325,6 +325,8 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_SetPrintTextWithGDI(FPDF_BOOL use_gdi);
 //                 PostScript via ExtEscape() in PASSTHROUGH mode.
 //                 FPDF_PRINTMODE_POSTSCRIPT3_PASSTHROUGH to output level 3
 //                 PostScript via ExtEscape() in PASSTHROUGH mode.
+//                 FPDF_PRINTMODE_EMF_IMAGE_MASKS to output EMF, with more
+//                 efficient processing of documents containing image masks.
 // Return value:
 //          True if successful, false if unsuccessful (typically invalid input).
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_SetPrintMode(int mode);
@@ -375,6 +377,33 @@ FPDF_LoadDocument(FPDF_STRING file_path, FPDF_BYTESTRING password);
 //          fields defined in the fpdfformfill.h file.
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDF_LoadMemDocument(const void* data_buf, int size, FPDF_BYTESTRING password);
+
+// Function: FPDF_LoadMemDocument64
+//          Open and load a PDF document from memory.
+//          Experimental API.
+// Parameters:
+//          data_buf    -   Pointer to a buffer containing the PDF document.
+//          size        -   Number of bytes in the PDF document.
+//          password    -   A string used as the password for the PDF file.
+//                          If no password is needed, empty or NULL can be used.
+// Return value:
+//          A handle to the loaded document, or NULL on failure.
+// Comments:
+//          The memory buffer must remain valid when the document is open.
+//          The loaded document can be closed by FPDF_CloseDocument.
+//          If this function fails, you can use FPDF_GetLastError() to retrieve
+//          the reason why it failed.
+//
+//          See the comments for FPDF_LoadDocument() regarding the encoding for
+//          |password|.
+// Notes:
+//          If PDFium is built with the XFA module, the application should call
+//          FPDF_LoadXFA() function after the PDF document loaded to support XFA
+//          fields defined in the fpdfformfill.h file.
+FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
+FPDF_LoadMemDocument64(const void* data_buf,
+                       size_t size,
+                       FPDF_BYTESTRING password);
 
 // Structure for custom file access.
 typedef struct {
@@ -732,6 +761,19 @@ FPDF_EXPORT int FPDF_CALLCONV FPDF_GetPageSizeByIndex(FPDF_DOCUMENT document,
 // Set whether to render in a reverse Byte order, this flag is only used when
 // rendering to a bitmap.
 #define FPDF_REVERSE_BYTE_ORDER 0x10
+// Set whether fill paths need to be stroked. This flag is only used when
+// FPDF_COLORSCHEME is passed in, since with a single fill color for paths the
+// boundaries of adjacent fill paths are less visible.
+#define FPDF_CONVERT_FILL_TO_STROKE 0x20
+
+// Struct for color scheme.
+// Each should be a 32-bit value specifying the color, in 8888 ARGB format.
+typedef struct FPDF_COLORSCHEME_ {
+  FPDF_DWORD path_fill_color;
+  FPDF_DWORD path_stroke_color;
+  FPDF_DWORD text_fill_color;
+  FPDF_DWORD text_stroke_color;
+} FPDF_COLORSCHEME;
 
 #ifdef _WIN32
 // Function: FPDF_RenderPage

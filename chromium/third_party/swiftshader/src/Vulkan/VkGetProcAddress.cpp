@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "VkGetProcAddress.h"
+#include "VkGetProcAddress.hpp"
 #include "VkDevice.hpp"
 
 #include <string>
@@ -83,6 +83,18 @@ static const std::unordered_map<std::string, PFN_vkVoidFunction> instanceFunctio
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceQueueFamilyProperties2KHR),
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceMemoryProperties2KHR),
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceSparseImageFormatProperties2KHR),
+	// VK_EXT_debug_utils
+	MAKE_VULKAN_INSTANCE_ENTRY(vkCmdBeginDebugUtilsLabelEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkCmdEndDebugUtilsLabelEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkCmdInsertDebugUtilsLabelEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateDebugUtilsMessengerEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkDestroyDebugUtilsMessengerEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkQueueBeginDebugUtilsLabelEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkQueueEndDebugUtilsLabelEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkQueueInsertDebugUtilsLabelEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkSetDebugUtilsObjectNameEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkSetDebugUtilsObjectTagEXT),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkSubmitDebugUtilsMessageEXT),
 #ifndef __ANDROID__
 	// VK_KHR_surface
 	MAKE_VULKAN_INSTANCE_ENTRY(vkDestroySurfaceKHR),
@@ -101,6 +113,11 @@ static const std::unordered_map<std::string, PFN_vkVoidFunction> instanceFunctio
 	// VK_KHR_xlib_surface
 	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateXlibSurfaceKHR),
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceXlibPresentationSupportKHR),
+#endif
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+	// VK_KHR_wayland_surface
+	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateWaylandSurfaceKHR),
+	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceWaylandPresentationSupportKHR),
 #endif
 #ifdef VK_USE_PLATFORM_MACOS_MVK
 	// VK_MVK_macos_surface
@@ -261,6 +278,15 @@ static const std::unordered_map<std::string, PFN_vkVoidFunction> deviceFunctionP
 	MAKE_VULKAN_DEVICE_ENTRY(vkDestroyDescriptorUpdateTemplate),
 	MAKE_VULKAN_DEVICE_ENTRY(vkUpdateDescriptorSetWithTemplate),
 	MAKE_VULKAN_DEVICE_ENTRY(vkGetDescriptorSetLayoutSupport),
+	// Device level VK_EXT_debug_utils functions
+	MAKE_VULKAN_DEVICE_ENTRY(vkCmdBeginDebugUtilsLabelEXT),
+	MAKE_VULKAN_DEVICE_ENTRY(vkCmdEndDebugUtilsLabelEXT),
+	MAKE_VULKAN_DEVICE_ENTRY(vkCmdInsertDebugUtilsLabelEXT),
+	MAKE_VULKAN_DEVICE_ENTRY(vkQueueBeginDebugUtilsLabelEXT),
+	MAKE_VULKAN_DEVICE_ENTRY(vkQueueEndDebugUtilsLabelEXT),
+	MAKE_VULKAN_DEVICE_ENTRY(vkQueueInsertDebugUtilsLabelEXT),
+	MAKE_VULKAN_DEVICE_ENTRY(vkSetDebugUtilsObjectNameEXT),
+	MAKE_VULKAN_DEVICE_ENTRY(vkSetDebugUtilsObjectTagEXT),
 #ifdef __ANDROID__
 	MAKE_VULKAN_DEVICE_ENTRY(vkGetSwapchainGrallocUsageANDROID),
 	MAKE_VULKAN_DEVICE_ENTRY(vkGetSwapchainGrallocUsage2ANDROID),
@@ -397,6 +423,16 @@ static const std::vector<std::pair<const char *, std::unordered_map<std::string,
 	        MAKE_VULKAN_DEVICE_ENTRY(vkGetMemoryAndroidHardwareBufferANDROID),
 	    } },
 #endif
+
+#if VK_USE_PLATFORM_FUCHSIA
+	// VK_FUCHSIA_external_memory
+	{
+	    VK_FUCHSIA_EXTERNAL_MEMORY_EXTENSION_NAME,
+	    {
+	        MAKE_VULKAN_DEVICE_ENTRY(vkGetMemoryZirconHandleFUCHSIA),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkGetMemoryZirconHandlePropertiesFUCHSIA),
+	    } },
+#endif
 };
 
 #undef MAKE_VULKAN_DEVICE_ENTRY
@@ -507,4 +543,8 @@ extern "C" hwvulkan_module_t HAL_MODULE_INFO_SYM = {
 	}
 };
 
+#endif  // __ANDROID__
+
+#if VK_USE_PLATFORM_FUCHSIA
+PFN_vkConnectToService vk::icdFuchsiaServiceConnectCallback = nullptr;
 #endif

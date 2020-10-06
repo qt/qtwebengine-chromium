@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 
 import {DebuggerModel, FunctionDetails} from './DebuggerModel.js';  // eslint-disable-line no-unused-vars
@@ -294,9 +297,10 @@ export class RemoteObject {
   }
 
   /**
-   * @param {function(this:Object, ...)} functionDeclaration
+   * @param {function(this:Object, ...):T} functionDeclaration
    * @param {!Array<!Protocol.Runtime.CallArgument>=} args
    * @return {!Promise<!CallFunctionResult>}
+   * @template T
    */
   callFunction(functionDeclaration, args) {
     throw 'Not implemented';
@@ -631,9 +635,10 @@ export class RemoteObjectImpl extends RemoteObject {
 
   /**
    * @override
-   * @param {function(this:Object, ...)} functionDeclaration
+   * @param {function(this:Object, ...):T} functionDeclaration
    * @param {!Array<!Protocol.Runtime.CallArgument>=} args
    * @return {!Promise<!CallFunctionResult>}
+   * @template T
    */
   async callFunction(functionDeclaration, args) {
     const response = await this._runtimeAgent.invoke_callFunctionOn(
@@ -964,7 +969,7 @@ export class LocalJSONObject extends RemoteObject {
   /**
    * @param {string} prefix
    * @param {string} suffix
-   * @param {function(!RemoteObjectProperty)} formatProperty
+   * @param {function(!RemoteObjectProperty):string} formatProperty
    * @return {string}
    */
   _concatenate(prefix, suffix, formatProperty) {
@@ -1086,9 +1091,10 @@ export class LocalJSONObject extends RemoteObject {
 
   /**
    * @override
-   * @param {function(this:Object, ...)} functionDeclaration
+   * @param {function(this:Object, ...):T} functionDeclaration
    * @param {!Array<!Protocol.Runtime.CallArgument>=} args
    * @return {!Promise<!CallFunctionResult>}
+   * @template T
    */
   callFunction(functionDeclaration, args) {
     const target = /** @type {?Object} */ (this._value);

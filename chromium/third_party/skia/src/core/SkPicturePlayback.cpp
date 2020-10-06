@@ -184,7 +184,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
         case CONCAT44: {
             const SkScalar* colMaj = reader->skipT<SkScalar>(16);
             BREAK_ON_READ_ERROR(reader);
-            canvas->concat44(colMaj);
+            canvas->concat(SkM44::ColMajor(colMaj));
             break;
         }
         case DRAW_ANNOTATION: {
@@ -564,6 +564,12 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             if (paint && vertices) {
                 canvas->drawVertices(vertices, bmode, *paint);
             }
+        } break;
+        case MARK_CTM: {
+            SkString name;
+            reader->readString(&name);
+            BREAK_ON_READ_ERROR(reader);
+            canvas->markCTM(name.c_str());
         } break;
         case RESTORE:
             canvas->restore();

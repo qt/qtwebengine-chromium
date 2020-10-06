@@ -12,6 +12,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkUnPreMultiply.h"
 #include "src/core/SkArenaAlloc.h"
+#include "src/core/SkMatrixProvider.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 
@@ -836,15 +837,16 @@ void GrGLPerlinNoise::emitCode(EmitArgs& args) {
 
     GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
-    SkString vCoords = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint);
+    SkString vCoords = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint,
+                                                   pne.sampleMatrix());
 
-    fBaseFrequencyUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType,
+    fBaseFrequencyUni = uniformHandler->addUniform(&pne, kFragment_GrShaderFlag, kHalf2_GrSLType,
                                                    "baseFrequency");
     const char* baseFrequencyUni = uniformHandler->getUniformCStr(fBaseFrequencyUni);
 
     const char* stitchDataUni = nullptr;
     if (pne.stitchTiles()) {
-        fStitchDataUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType,
+        fStitchDataUni = uniformHandler->addUniform(&pne, kFragment_GrShaderFlag, kHalf2_GrSLType,
                                                     "stitchData");
         stitchDataUni = uniformHandler->getUniformCStr(fStitchDataUni);
     }
@@ -1247,13 +1249,14 @@ void GrGLImprovedPerlinNoise::emitCode(EmitArgs& args) {
     const GrImprovedPerlinNoiseEffect& pne = args.fFp.cast<GrImprovedPerlinNoiseEffect>();
     GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
-    SkString vCoords = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint);
+    SkString vCoords = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint,
+                                                   pne.sampleMatrix());
 
-    fBaseFrequencyUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf2_GrSLType,
+    fBaseFrequencyUni = uniformHandler->addUniform(&pne, kFragment_GrShaderFlag, kHalf2_GrSLType,
                                                    "baseFrequency");
     const char* baseFrequencyUni = uniformHandler->getUniformCStr(fBaseFrequencyUni);
 
-    fZUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf_GrSLType, "z");
+    fZUni = uniformHandler->addUniform(&pne, kFragment_GrShaderFlag, kHalf_GrSLType, "z");
     const char* zUni = uniformHandler->getUniformCStr(fZUni);
 
     // fade function
@@ -1401,7 +1404,7 @@ std::unique_ptr<GrFragmentProcessor> SkPerlinNoiseShaderImpl::asFragmentProcesso
     SkASSERT(args.fContext);
 
     const auto localMatrix = this->totalLocalMatrix(args.fPreLocalMatrix);
-    const auto paintMatrix = SkMatrix::Concat(*args.fViewMatrix, *localMatrix);
+    const auto paintMatrix = SkMatrix::Concat(args.fMatrixProvider.localToDevice(), *localMatrix);
 
     // Either we don't stitch tiles, either we have a valid tile size
     SkASSERT(!fStitchTiles || !fTileSize.isEmpty());
@@ -1413,7 +1416,7 @@ std::unique_ptr<GrFragmentProcessor> SkPerlinNoiseShaderImpl::asFragmentProcesso
                                                                   fBaseFrequencyY,
                                                                   paintMatrix);
 
-    SkMatrix m = *args.fViewMatrix;
+    SkMatrix m = args.fMatrixProvider.localToDevice();
     m.setTranslateX(-localMatrix->getTranslateX() + SK_Scalar1);
     m.setTranslateY(-localMatrix->getTranslateY() + SK_Scalar1);
 

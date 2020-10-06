@@ -24,7 +24,7 @@
 #include "src/trace_processor/importers/systrace/systrace_line_parser.h"
 #include "src/trace_processor/importers/systrace/systrace_line_tokenizer.h"
 #include "src/trace_processor/storage/trace_storage.h"
-#include "src/trace_processor/trace_processor_context.h"
+#include "src/trace_processor/types/trace_processor_context.h"
 
 namespace perfetto {
 namespace trace_processor {
@@ -44,6 +44,8 @@ class SystraceTraceParser : public ChunkedTraceReader {
     kHtmlBeforeSystrace,
     kTraceDataSection,
     kSystrace,
+    kProcessDumpLong,
+    kProcessDumpShort,
     kEndOfSystrace,
   };
 
@@ -55,6 +57,7 @@ class SystraceTraceParser : public ChunkedTraceReader {
 
   SystraceLineTokenizer line_tokenizer_;
   SystraceLineParser line_parser_;
+  TraceProcessorContext* ctx_;
 };
 
 }  // namespace trace_processor

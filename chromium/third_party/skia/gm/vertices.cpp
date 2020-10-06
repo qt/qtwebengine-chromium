@@ -393,3 +393,211 @@ DEF_SIMPLE_GM(vertices_data_lerp, canvas, 256, 256) {
 
     canvas->drawVertices(verts, paint);
 }
+
+static constexpr SkScalar kSin60 = 0.8660254f; // sqrt(3) / 2
+static constexpr SkPoint kHexVerts[] = {
+    { 0, 0 },
+    { 0, -1 },
+    { kSin60, -0.5f },
+    { kSin60, 0.5f },
+    { 0, 1 },
+    { -kSin60, 0.5f },
+    { -kSin60, -0.5f },
+    { 0, -1 },
+};
+
+static constexpr SkColor4f kColors[] = {
+    SkColors::kWhite,
+    SkColors::kRed,
+    SkColors::kYellow,
+    SkColors::kGreen,
+    SkColors::kCyan,
+    SkColors::kBlue,
+    SkColors::kMagenta,
+    SkColors::kRed,
+};
+
+using Attr = SkVertices::Attribute;
+
+DEF_SIMPLE_GM(vertices_custom_colors, canvas, 400, 200) {
+    ToolUtils::draw_checkerboard(canvas);
+
+    auto draw = [=](SkScalar cx, SkScalar cy, SkVertices::Builder& builder, const SkPaint& paint) {
+        memcpy(builder.positions(), kHexVerts, sizeof(kHexVerts));
+
+        canvas->save();
+        canvas->translate(cx, cy);
+        canvas->scale(45, 45);
+        canvas->drawVertices(builder.detach(), paint);
+        canvas->restore();
+    };
+
+    auto transColor = [](int i) {
+        return SkColor4f { kColors[i].fR, kColors[i].fG, kColors[i].fB, i % 2 ? 0.5f : 1.0f };
+    };
+
+    // Fixed function SkVertices, opaque
+    {
+        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 8, 0,
+                                    SkVertices::kHasColors_BuilderFlag);
+        for (int i = 0; i < 8; ++i) {
+            builder.colors()[i] = kColors[i].toSkColor();
+        }
+        draw(50, 50, builder, SkPaint());
+    }
+
+    // Fixed function SkVertices, w/transparency
+    {
+        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 8, 0,
+                                    SkVertices::kHasColors_BuilderFlag);
+        for (int i = 0; i < 8; ++i) {
+            builder.colors()[i] = transColor(i).toSkColor();
+        }
+        draw(50, 150, builder, SkPaint());
+    }
+
+    const char* gProg = R"(
+        varying half4 vtx_color;
+        void main(float2 p, inout half4 color) {
+            color = vtx_color;
+        }
+    )";
+    SkPaint skslPaint;
+    auto [effect, errorText] = SkRuntimeEffect::Make(SkString(gProg));
+    skslPaint.setShader(effect->makeShader(nullptr, nullptr, 0, nullptr, false));
+
+    Attr byteColorAttr(Attr::Type::kByte4_unorm, Attr::Usage::kColor);
+    Attr float4ColorAttr(Attr::Type::kFloat4, Attr::Usage::kColor);
+    Attr float3ColorAttr(Attr::Type::kFloat3, Attr::Usage::kColor);
+
+    // Custom vertices, byte colors, opaque
+    {
+        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 8, 0, &byteColorAttr, 1);
+        for (int i = 0; i < 8; ++i) {
+            ((uint32_t*)builder.customData())[i] = kColors[i].toBytes_RGBA();
+        }
+        draw(150, 50, builder, skslPaint);
+    }
+
+    // Custom vertices, byte colors, w/transparency
+    {
+        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 8, 0, &byteColorAttr, 1);
+        for (int i = 0; i < 8; ++i) {
+            ((uint32_t*)builder.customData())[i] = transColor(i).toBytes_RGBA();
+        }
+        draw(150, 150, builder, skslPaint);
+    }
+
+    // Custom vertices, float4 colors, opaque
+    {
+        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 8, 0, &float4ColorAttr, 1);
+        for (int i = 0; i < 8; ++i) {
+            ((SkColor4f*)builder.customData())[i] = kColors[i];
+        }
+        draw(250, 50, builder, skslPaint);
+    }
+
+    // Custom vertices, float4 colors, w/transparency
+    {
+        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 8, 0, &float4ColorAttr, 1);
+        SkColor4f* clr = (SkColor4f*)builder.customData();
+        for (int i = 0; i < 8; ++i) {
+            clr[i] = transColor(i);
+        }
+        draw(250, 150, builder, skslPaint);
+    }
+
+    // Custom vertices, float3 colors, opaque
+    {
+        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 8, 0, &float3ColorAttr, 1);
+        for (int i = 0; i < 8; ++i) {
+            ((SkV3*)builder.customData())[i] = { kColors[i].fR, kColors[i].fG, kColors[i].fB };
+        }
+        draw(350, 50, builder, skslPaint);
+    }
+}
+
+static sk_sp<SkVertices> make_cone(Attr::Usage u, const char* markerName) {
+    Attr attr(Attr::Type::kFloat3, u, markerName);
+
+    constexpr int kPerimeterVerts = 64;
+    // +1 for the center, +1 to repeat the first perimeter point (so we draw a complete circle)
+    constexpr int kNumVerts = kPerimeterVerts + 2;
+
+    SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, kNumVerts, /*index_count=*/ 0,
+                                &attr, /*attr_count=*/ 1);
+
+    SkPoint* pos = builder.positions();
+    SkPoint3* vec = static_cast<SkPoint3*>(builder.customData());
+
+    pos[0] = { 0, 0 };
+    vec[0] = { 0, 0, 1 };
+
+    for (int i = 0; i < kPerimeterVerts + 1; ++i) {
+        SkScalar t = (i / SkIntToScalar(kPerimeterVerts)) * 2 * SK_ScalarPI;
+        SkScalar s = SkScalarSin(t),
+                 c = SkScalarCos(t);
+        pos[i + 1] = { c, s };
+        vec[i + 1] = { c, s, 0 };
+    }
+
+    return builder.detach();
+}
+
+DEF_SIMPLE_GM(vertices_custom_matrices, canvas, 400, 300) {
+    ToolUtils::draw_checkerboard(canvas);
+
+    const char* kViewSpace = "local_to_view";
+    const char* kWorldSpace = "local_to_world";
+    const char* kLocalSpace = "local_to_local";
+
+    auto draw = [=](SkScalar cx, SkScalar cy, sk_sp<SkVertices> vertices, const char* prog,
+                    SkScalar squish = 1.0f) {
+        SkPaint paint;
+        auto [effect, errorText] = SkRuntimeEffect::Make(SkString(prog));
+        paint.setShader(effect->makeShader(nullptr, nullptr, 0, nullptr, false));
+
+        canvas->save();
+
+        // Device space: mesh is upright, translated to its "cell"
+        canvas->translate(cx, cy);
+
+        // View (camera) space: Mesh is upright, centered on origin, device scale
+        canvas->markCTM(kViewSpace);
+        canvas->rotate(90);
+
+        // World space: Mesh is sideways, centered on origin, device scale (possibly squished)
+        canvas->markCTM(kWorldSpace);
+        canvas->rotate(-90);
+        canvas->scale(45, 45 * squish);
+
+        // Local space: Mesh is upright, centered on origin, unit scale
+        canvas->markCTM(kLocalSpace);
+        canvas->drawVertices(vertices, paint);
+
+        canvas->restore();
+    };
+
+    const char* vectorProg = R"(
+        varying float3 vtx_vec;
+        void main(float2 p, inout half4 color) {
+            color.rgb = half3(vtx_vec) * 0.5 + 0.5;
+        })";
+
+    // raw, local vectors, normals, and positions should all look the same (no real transform)
+    draw(50,  50, make_cone(Attr::Usage::kRaw, nullptr), vectorProg);
+    draw(150, 50, make_cone(Attr::Usage::kVector, kLocalSpace), vectorProg);
+    draw(250, 50, make_cone(Attr::Usage::kNormalVector, kLocalSpace), vectorProg);
+    draw(350, 50, make_cone(Attr::Usage::kPosition, kLocalSpace), vectorProg);
+
+    // world-space vectors and normals are rotated 90 degrees, positions are centered but scaled up
+    draw(150, 150, make_cone(Attr::Usage::kVector, kWorldSpace), vectorProg);
+    draw(250, 150, make_cone(Attr::Usage::kNormalVector, kWorldSpace), vectorProg);
+    draw(350, 150, make_cone(Attr::Usage::kPosition, kWorldSpace), vectorProg);
+
+    // Squished vectors are "wrong", but normals are correct (because we use the inverse transpose)
+    // Positions remain scaled up (saturated), but otherwise correct
+    draw(150, 250, make_cone(Attr::Usage::kVector, kWorldSpace), vectorProg, 0.5f);
+    draw(250, 250, make_cone(Attr::Usage::kNormalVector, kWorldSpace), vectorProg, 0.5f);
+    draw(350, 250, make_cone(Attr::Usage::kPosition, kWorldSpace), vectorProg, 0.5f);
+}

@@ -23,9 +23,6 @@ class SK_API SkVertices : public SkNVRefCnt<SkVertices> {
     struct Desc;
     struct Sizes;
 public:
-    // DEPRECATED -- remove when we've updated canvas virtuals to not mention bones
-    struct Bone { float values[6]; };
-
     enum VertexMode {
         kTriangles_VertexMode,
         kTriangleStrip_VertexMode,
@@ -60,6 +57,14 @@ public:
 
     static constexpr int kMaxCustomAttributes = 8;
 
+    /**
+     *  EXPERIMENTAL - An SkVertices object can be constructed with a custom collection of vertex
+     *  attributes. Each attribute is described by a single Attribute struct. Type defines the CPU
+     *  type of the data. Usage determines what transformation (if any) is applied to that data in
+     *  the vertex shader. For positions or vectors, markerName identifies what matrix is used in
+     *  the vertex shader to transform the data. Those names should match a named transform on the
+     *  CTM stack, created by calling SkCanvas::markCTM().
+     */
     struct Attribute {
         enum class Type : uint8_t {
             kFloat,
@@ -69,16 +74,46 @@ public:
             kByte4_unorm,
         };
 
-        Attribute() : fType(Type::kFloat) {}
-        Attribute(Type t) : fType(t) {}
+        enum class Usage : uint8_t {
+            // Raw values passed directly to effect
+            kRaw,
 
-        bool operator==(const Attribute& that) const { return fType == that.fType; }
+            // sRGB unpremul colors, transformed to destination color space (3 or 4 channels)
+            // Colors are always assumed to be in RGBA order, and are automatically premultiplied.
+            kColor,
+
+            // Local vector, transformed via marker (2 or 3 channels)
+            kVector,
+
+            // Normal vector (or any other bivector), transformed via marker (2 or 3 channels)
+            kNormalVector,
+
+            // Local position, transformed via marker (2 or 3 channels)
+            kPosition,
+        };
+
+        /**
+         *  markerName is not copied by the Attribute, so it must outlive this struct.
+         *  It is copied when this Attribute is passed to the Builder constructor.
+         */
+        Attribute(Type t = Type::kFloat, Usage u = Usage::kRaw, const char* markerName = nullptr);
+
+        bool operator==(const Attribute& that) const {
+            return fType == that.fType && fUsage == that.fUsage && fMarkerID == that.fMarkerID;
+        }
         bool operator!=(const Attribute& that) const { return !(*this == that); }
 
+        // Number of channels that will be produced for the SkRuntimeEffect to consume.
+        // May not match the number of channels in fType. For example, kVector Attributes always
+        // produce three channels, even if the input is kFloat2.
         int channelCount() const;
         size_t bytesPerVertex() const;
+        bool isValid() const;
 
-        Type fType;
+        Type        fType;
+        Usage       fUsage;
+        uint32_t    fMarkerID;
+        const char* fMarkerName;  // Preserved for serialization and debugging
     };
 
     enum BuilderFlags {
@@ -123,6 +158,7 @@ public:
         std::unique_ptr<uint8_t[]> fIntermediateFanIndices;
 
         friend class SkVertices;
+        friend class SkVerticesPriv;
     };
 
     uint32_t uniqueID() const { return fUniqueID; }
@@ -130,18 +166,6 @@ public:
 
     // returns approximate byte size of the vertices object
     size_t approximateSize() const;
-
-    /**
-     *  Recreate a vertices from a buffer previously created by calling encode().
-     *  Returns null if the data is corrupt or the length is incorrect for the contents.
-     */
-    static sk_sp<SkVertices> Decode(const void* buffer, size_t length);
-
-    /**
-     *  Pack the vertices object into a byte buffer. This can be used to recreate the vertices
-     *  by calling Decode() with the buffer.
-     */
-    sk_sp<SkData> encode() const;
 
     // Provides access to functions that aren't part of the public API.
     SkVerticesPriv priv();
@@ -163,6 +187,7 @@ private:
     uint32_t fUniqueID;
 
     // these point inside our allocation, so none of these can be "freed"
+    Attribute*   fAttributes;       // [attributeCount] or null
     SkPoint*     fPositions;        // [vertexCount]
     uint16_t*    fIndices;          // [indexCount] or null
     void*        fCustomData;       // [customDataSize * vertexCount] or null
@@ -172,9 +197,7 @@ private:
     SkRect  fBounds;    // computed to be the union of the fPositions[]
     int     fVertexCount;
     int     fIndexCount;
-
-    Attribute fAttributes[kMaxCustomAttributes];
-    int       fAttributeCount;
+    int     fAttributeCount;
 
     VertexMode fMode;
     // below here is where the actual array data is stored.

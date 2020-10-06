@@ -18,6 +18,11 @@
 
 #include "perfetto/ext/base/string_utils.h"
 
+// On windows std::isspace if overloaded in <locale>. MSBUILD via bazel
+// attempts to use that version instead of the intended one defined in
+// <cctype>
+#include <cctype>
+
 namespace perfetto {
 namespace trace_processor {
 
@@ -36,7 +41,7 @@ std::string SubstrTrim(const std::string& input) {
 
 SystraceLineTokenizer::SystraceLineTokenizer()
     : line_matcher_(std::regex(R"(-(\d+)\s+\(?\s*(\d+|-+)?\)?\s?\[(\d+)\]\s*)"
-                               R"([a-zA-Z0-9.]{0,4}\s+(\d+\.\d+):\s+(\S+):)")) {
+                               R"([a-zA-Z0-9.]{0,5}\s+(\d+\.\d+):\s+(\S+):)")) {
 }
 
 // TODO(hjd): This should be more robust to being passed random input.

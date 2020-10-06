@@ -34,6 +34,7 @@ import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
 import {ComputedStyle, ComputedStyleModel, Events} from './ComputedStyleModel.js';  // eslint-disable-line no-unused-vars
+import {ImagePreviewPopover} from './ImagePreviewPopover.js';
 import {PlatformFontsWidget} from './PlatformFontsWidget.js';
 import {StylePropertiesSection, StylesSidebarPane, StylesSidebarPropertyRenderer} from './StylesSidebarPane.js';
 
@@ -77,6 +78,14 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
     this.contentElement.appendChild(this._propertiesOutline.element);
 
     this._linkifier = new Components.Linkifier.Linkifier(_maxLinkLength);
+
+    this._imagePreviewPopover = new ImagePreviewPopover(this.contentElement, event => {
+      const link = event.composedPath()[0];
+      if (link instanceof Element) {
+        return link;
+      }
+      return null;
+    }, () => this._computedStyleModel.node());
 
     /**
      * @param {?RegExp} regex
@@ -150,6 +159,24 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
   }
 
   /**
+   * @param {string} text
+   * @return {!Node}
+   */
+  _processComputedColor(text) {
+    const color = Common.Color.Color.parse(text);
+    if (!color) {
+      return createTextNode(text);
+    }
+    const swatch = InlineEditor.ColorSwatch.ColorSwatch.create();
+    // computed styles don't provide the original format
+    // therefore, switching to RGB
+    color.setFormat(Common.Color.Format.RGB);
+    swatch.setColor(color);
+    swatch.setFormat(Common.Color.Format.RGB);
+    return swatch;
+  }
+
+  /**
    * @param {?ComputedStyle} nodeStyle
    * @param {?SDK.CSSMatchedStyles.CSSMatchedStyles} matchedStyles
    */
@@ -164,6 +191,7 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
       expandedProperties.add(propertyName);
     }
     const hadFocus = this._propertiesOutline.element.hasFocus();
+    this._imagePreviewPopover.hide();
     this._propertiesOutline.removeChildren();
     this._linkifier.reset();
     const cssModel = this._computedStyleModel.cssModel();
@@ -198,12 +226,13 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
       propertyElement.classList.toggle('computed-style-property-inherited', inherited);
       const renderer =
           new StylesSidebarPropertyRenderer(null, nodeStyle.node, propertyName, /** @type {string} */ (propertyValue));
-      renderer.setColorHandler(this._processColor.bind(this));
+      renderer.setColorHandler(this._processComputedColor.bind(this));
       const propertyNameElement = renderer.renderName();
       propertyNameElement.classList.add('property-name');
       propertyElement.appendChild(propertyNameElement);
 
-      const colon = createElementWithClass('span', 'delimeter');
+      const colon = document.createElement('span');
+      colon.classList.add('delimeter');
       colon.textContent = ': ';
       propertyNameElement.appendChild(colon);
 
@@ -213,7 +242,8 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
       propertyValueText.classList.add('property-value-text');
       propertyValueElement.appendChild(propertyValueText);
 
-      const semicolon = createElementWithClass('span', 'delimeter');
+      const semicolon = document.createElement('span');
+      semicolon.classList.add('delimeter');
       semicolon.textContent = ';';
       propertyValueElement.appendChild(semicolon);
 

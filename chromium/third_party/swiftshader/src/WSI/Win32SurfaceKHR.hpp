@@ -22,8 +22,8 @@
 #if !defined(WIN32_LEAN_AND_MEAN)
 #	define WIN32_LEAN_AND_MEAN
 #endif  // !defined(WIN32_LEAN_AND_MEAN)
-#include "vulkan/vulkan_win32.h"
 #include <Windows.h>
+#include <vulkan/vulkan_win32.h>
 
 #include <map>
 
@@ -55,7 +55,7 @@ private:
 	VkExtent2D windowExtent = {};
 
 	HBITMAP bitmap = {};
-	int bitmapRowPitch = 0;
+	unsigned int bitmapRowPitch = 0;
 	void *framebuffer = nullptr;
 };
 

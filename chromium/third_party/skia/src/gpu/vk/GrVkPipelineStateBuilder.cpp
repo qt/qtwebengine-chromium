@@ -6,6 +6,7 @@
 */
 
 #include "include/gpu/GrContext.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAutoLocaleSetter.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrPersistentCacheUtils.h"
@@ -26,6 +27,9 @@ GrVkPipelineState* GrVkPipelineStateBuilder::CreatePipelineState(
         const GrProgramDesc& desc,
         const GrProgramInfo& programInfo,
         VkRenderPass compatibleRenderPass) {
+
+    gpu->stats()->incShaderCompilations();
+
     // ensure that we use "." as a decimal separator when creating SkSL code
     GrAutoLocaleSetter als("C");
 
@@ -150,6 +154,8 @@ void GrVkPipelineStateBuilder::storeShadersInCache(const SkSL::String shaders[],
 
 GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
                                                       VkRenderPass compatibleRenderPass) {
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
     VkDescriptorSetLayout dsLayout[2];
     VkPipelineLayout pipelineLayout;
     VkShaderModule shaderModules[kGrShaderTypeCount] = { VK_NULL_HANDLE,
@@ -196,7 +202,8 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
     VkPipelineShaderStageCreateInfo shaderStageInfo[3];
     SkSL::Program::Settings settings;
     settings.fCaps = this->caps()->shaderCaps();
-    settings.fVkCaps = &this->gpu()->vkCaps();
+    settings.fRTHeightBinding = this->gpu()->vkCaps().getFragmentUniformBinding();
+    settings.fRTHeightSet = this->gpu()->vkCaps().getFragmentUniformSet();
     settings.fFlipY = this->origin() != kTopLeft_GrSurfaceOrigin;
     settings.fSharpenTextures =
                         this->gpu()->getContext()->priv().options().fSharpenMipmappedTextures;

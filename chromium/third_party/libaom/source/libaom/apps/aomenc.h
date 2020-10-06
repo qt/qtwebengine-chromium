@@ -31,14 +31,12 @@ typedef enum {
   YV12,  // 4:2:0 with uv flipped, only 8-bit depth
 } ColorInputType;
 
-struct AvxInterface;
-
 /* Configuration elements common to all streams. */
 struct AvxEncoderConfig {
-  const struct AvxInterface *codec;
+  aom_codec_iface_t *codec;
   int passes;
   int pass;
-  int usage;
+  unsigned int usage;
   ColorInputType color_type;
   int quiet;
   int verbose;

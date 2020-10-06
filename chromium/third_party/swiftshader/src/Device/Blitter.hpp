@@ -18,10 +18,12 @@
 #include "Memset.hpp"
 #include "RoutineCache.hpp"
 #include "Reactor/Reactor.hpp"
-#include "Vulkan/VkFormat.h"
+#include "Vulkan/VkFormat.hpp"
+
+#include "marl/mutex.h"
+#include "marl/tsa.h"
 
 #include <cstring>
-#include <mutex>
 
 namespace vk {
 
@@ -95,6 +97,7 @@ class Blitter
 		int destSamples = 0;
 		bool filter3D = false;
 	};
+	friend std::hash<Blitter::State>;
 
 	struct BlitData
 	{
@@ -138,13 +141,12 @@ public:
 	Blitter();
 	virtual ~Blitter();
 
-	void clear(void *pixel, vk::Format format, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea = nullptr);
+	void clear(void *clearValue, vk::Format clearFormat, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea = nullptr);
 
 	void blit(const vk::Image *src, vk::Image *dst, VkImageBlit region, VkFilter filter);
-	void blitToBuffer(const vk::Image *src, VkImageSubresourceLayers subresource, VkOffset3D offset, VkExtent3D extent, uint8_t *dst, int bufferRowPitch, int bufferSlicePitch);
-	void blitFromBuffer(const vk::Image *dst, VkImageSubresourceLayers subresource, VkOffset3D offset, VkExtent3D extent, uint8_t *src, int bufferRowPitch, int bufferSlicePitch);
+	void copy(const vk::Image *src, uint8_t *dst, unsigned int dstPitch);
 
-	void updateBorders(vk::Image *image, const VkImageSubresourceLayers &subresourceLayers);
+	void updateBorders(vk::Image *image, const VkImageSubresource &subresource);
 
 private:
 	enum Edge
@@ -155,7 +157,7 @@ private:
 		LEFT
 	};
 
-	bool fastClear(void *pixel, vk::Format format, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea);
+	bool fastClear(void *clearValue, vk::Format clearFormat, vk::Image *dest, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D *renderArea);
 
 	Float4 readFloat4(Pointer<Byte> element, const State &state);
 	void write(Float4 &color, Pointer<Byte> element, const State &state);
@@ -182,15 +184,34 @@ private:
 	void computeCubeCorner(Pointer<Byte> &layer, Int &x0, Int &x1, Int &y0, Int &y1, Int &pitchB, const State &state);
 
 	void copyCubeEdge(vk::Image *image,
-	                  const VkImageSubresourceLayers &dstSubresourceLayers, Edge dstEdge,
-	                  const VkImageSubresourceLayers &srcSubresourceLayers, Edge srcEdge);
+	                  const VkImageSubresource &dstSubresource, Edge dstEdge,
+	                  const VkImageSubresource &srcSubresource, Edge srcEdge);
 
-	std::mutex blitMutex;
-	RoutineCacheT<State, BlitFunction::CFunctionType> blitCache;  // guarded by blitMutex
-	std::mutex cornerUpdateMutex;
-	RoutineCacheT<State, CornerUpdateFunction::CFunctionType> cornerUpdateCache;  // guarded by cornerUpdateMutex
+	marl::mutex blitMutex;
+	RoutineCache<State, BlitFunction::CFunctionType> blitCache GUARDED_BY(blitMutex);
+
+	marl::mutex cornerUpdateMutex;
+	RoutineCache<State, CornerUpdateFunction::CFunctionType> cornerUpdateCache GUARDED_BY(cornerUpdateMutex);
 };
 
 }  // namespace sw
+
+namespace std {
+
+template<>
+struct hash<sw::Blitter::State>
+{
+	uint64_t operator()(const sw::Blitter::State &state) const
+	{
+		uint64_t hash = state.sourceFormat;
+		hash = hash * 31 + state.destFormat;
+		hash = hash * 31 + state.srcSamples;
+		hash = hash * 31 + state.destSamples;
+		hash = hash * 31 + state.filter3D;
+		return hash;
+	}
+};
+
+}  // namespace std
 
 #endif  // sw_Blitter_hpp

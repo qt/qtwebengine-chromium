@@ -189,6 +189,7 @@ export function genConfig(uiCfg: RecordConfig): TraceConfig {
     procThreadAssociationFtrace = true;
     ftraceEvents.add('mm_event/mm_event_record');
     ftraceEvents.add('kmem/rss_stat');
+    ftraceEvents.add('ion/ion_stat');
     ftraceEvents.add('kmem/ion_heap_grow');
     ftraceEvents.add('kmem/ion_heap_shrink');
   }
@@ -256,7 +257,7 @@ export function genConfig(uiCfg: RecordConfig): TraceConfig {
 
   let javaHprof: JavaHprofConfig|undefined = undefined;
   if (uiCfg.javaHeapDump) {
-    const cfg = new HeapprofdConfig();
+    const cfg = new JavaHprofConfig();
     for (const value of uiCfg.jpProcesses.split('\n')) {
       if (value === '') {
         // Ignore empty lines

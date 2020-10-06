@@ -158,6 +158,16 @@ bool ParsedQuicVersion::HasVarIntTransportParams() const {
   return transport_version >= QUIC_VERSION_IETF_DRAFT_27;
 }
 
+bool ParsedQuicVersion::UsesTls() const {
+  DCHECK(IsKnown());
+  return handshake_protocol == PROTOCOL_TLS1_3;
+}
+
+bool ParsedQuicVersion::UsesQuicCrypto() const {
+  DCHECK(IsKnown());
+  return handshake_protocol == PROTOCOL_QUIC_CRYPTO;
+}
+
 bool VersionHasLengthPrefixedConnectionIds(
     QuicTransportVersion transport_version) {
   DCHECK(transport_version != QUIC_VERSION_UNSUPPORTED);
@@ -166,6 +176,24 @@ bool VersionHasLengthPrefixedConnectionIds(
 
 std::ostream& operator<<(std::ostream& os, const ParsedQuicVersion& version) {
   os << ParsedQuicVersionToString(version);
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const ParsedQuicVersionVector& versions) {
+  os << ParsedQuicVersionVectorToString(versions);
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const QuicVersionLabelVector& version_labels) {
+  os << QuicVersionLabelVectorToString(version_labels);
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const QuicTransportVersionVector& transport_versions) {
+  os << QuicTransportVersionVectorToString(transport_versions);
   return os;
 }
 
@@ -248,6 +276,17 @@ ParsedQuicVersionVector CurrentSupportedVersionsWithQuicCrypto() {
     }
   }
   QUIC_BUG_IF(versions.empty()) << "No version with QUIC crypto found.";
+  return versions;
+}
+
+ParsedQuicVersionVector AllSupportedVersionsWithTls() {
+  ParsedQuicVersionVector versions;
+  for (const ParsedQuicVersion& version : AllSupportedVersions()) {
+    if (version.handshake_protocol == PROTOCOL_TLS1_3) {
+      versions.push_back(version);
+    }
+  }
+  QUIC_BUG_IF(versions.empty()) << "No version with TLS handshake found.";
   return versions;
 }
 
@@ -369,7 +408,7 @@ ParsedQuicVersionVector FilterSupportedVersions(
           filtered_versions.push_back(version);
         }
       } else {
-        if (GetQuicReloadableFlag(quic_enable_version_t050)) {
+        if (GetQuicReloadableFlag(quic_enable_version_t050_v2)) {
           filtered_versions.push_back(version);
         }
       }
@@ -619,7 +658,7 @@ void QuicEnableVersion(ParsedQuicVersion parsed_version) {
     if (parsed_version.handshake_protocol == PROTOCOL_QUIC_CRYPTO) {
       SetQuicReloadableFlag(quic_disable_version_q050, false);
     } else {
-      SetQuicReloadableFlag(quic_enable_version_t050, true);
+      SetQuicReloadableFlag(quic_enable_version_t050_v2, true);
     }
   } else if (parsed_version.transport_version == QUIC_VERSION_49) {
     SetQuicReloadableFlag(quic_disable_version_q049, false);

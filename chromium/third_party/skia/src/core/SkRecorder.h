@@ -67,7 +67,8 @@ public:
     void willRestore() override {}
     void didRestore() override;
 
-    void didConcat44(const SkScalar[16]) override;
+    void onMarkCTM(const char*) override;
+    void didConcat44(const SkM44&) override;
     void didConcat(const SkMatrix&) override;
     void didSetMatrix(const SkMatrix&) override;
     void didScale(SkScalar, SkScalar) override;

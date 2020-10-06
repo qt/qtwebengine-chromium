@@ -14,7 +14,7 @@
 
 #include "VkSemaphore.hpp"
 
-#include "VkConfig.h"
+#include "VkConfig.hpp"
 #include "VkStringify.hpp"
 
 #include "marl/blockingcall.h"
@@ -130,7 +130,7 @@ struct SemaphoreCreateInfo
 
 void Semaphore::wait()
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 	External *ext = tempExternal ? tempExternal : external;
 	if(ext)
 	{
@@ -141,11 +141,11 @@ void Semaphore::wait()
 			// call, it is assumed that this is negligible
 			// compared with the actual semaphore wait()
 			// operation.
-			marl::blocking_call([ext, &lock]() {
-				lock.unlock();
+			lock.unlock_no_tsa();
+			marl::blocking_call([ext]() {
 				ext->wait();
-				lock.lock();
 			});
+			lock.lock_no_tsa();
 		}
 
 		// If the import was temporary, reset the semaphore to its previous state.
@@ -164,7 +164,7 @@ void Semaphore::wait()
 
 void Semaphore::signal()
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 	External *ext = tempExternal ? tempExternal : external;
 	if(ext)
 	{
@@ -187,6 +187,7 @@ Semaphore::Semaphore(const VkSemaphoreCreateInfo *pCreateInfo, void *mem, const 
 
 void Semaphore::destroy(const VkAllocationCallbacks *pAllocator)
 {
+	marl::lock lock(mutex);
 	while(tempExternal)
 	{
 		External *ext = tempExternal;
@@ -226,7 +227,7 @@ VkResult Semaphore::importPayload(bool temporaryImport,
                                   ALLOC_FUNC alloc_func,
                                   IMPORT_FUNC import_func)
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 
 	// Create new External instance if needed.
 	External *ext = external;
@@ -259,7 +260,7 @@ VkResult Semaphore::importPayload(bool temporaryImport,
 template<typename ALLOC_FUNC, typename EXPORT_FUNC>
 VkResult Semaphore::exportPayload(ALLOC_FUNC alloc_func, EXPORT_FUNC export_func)
 {
-	std::unique_lock<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 	// Sanity check, do not try to export a semaphore that has a temporary import.
 	if(tempExternal != nullptr)
 	{

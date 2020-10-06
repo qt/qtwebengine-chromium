@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import './SDKModel.js';
 import './CSSMetadata.js';
 import '../generated/SupportedCSSProperties.js';
@@ -40,6 +43,7 @@ import * as Issue from './Issue.js';
 import * as IssuesModel from './IssuesModel.js';
 import * as LayerTreeBase from './LayerTreeBase.js';
 import * as LogModel from './LogModel.js';
+import * as MixedContentIssue from './MixedContentIssue.js';
 import * as NetworkLog from './NetworkLog.js';
 import * as NetworkManager from './NetworkManager.js';
 import * as NetworkRequest from './NetworkRequest.js';
@@ -47,7 +51,6 @@ import * as OverlayModel from './OverlayModel.js';
 import * as PaintProfiler from './PaintProfiler.js';
 import * as PerformanceMetricsModel from './PerformanceMetricsModel.js';
 import * as ProfileTreeModel from './ProfileTreeModel.js';
-import * as RelatedIssue from './RelatedIssue.js';
 import * as RemoteObject from './RemoteObject.js';
 import * as Resource from './Resource.js';
 import * as ResourceTreeModel from './ResourceTreeModel.js';
@@ -94,6 +97,7 @@ export {
   IssuesModel,
   LayerTreeBase,
   LogModel,
+  MixedContentIssue,
   NetworkLog,
   NetworkManager,
   NetworkRequest,
@@ -101,7 +105,6 @@ export {
   PaintProfiler,
   PerformanceMetricsModel,
   ProfileTreeModel,
-  RelatedIssue,
   RemoteObject,
   Resource,
   ResourceTreeModel,

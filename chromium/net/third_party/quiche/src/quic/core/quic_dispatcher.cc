@@ -15,6 +15,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
+#include "net/third_party/quiche/src/quic/core/tls_chlo_extractor.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
@@ -60,14 +61,11 @@ class PacketCollector : public QuicPacketCreator::DelegateInterface,
   ~PacketCollector() override = default;
 
   // QuicPacketCreator::DelegateInterface methods:
-  void OnSerializedPacket(SerializedPacket* serialized_packet) override {
+  void OnSerializedPacket(SerializedPacket serialized_packet) override {
     // Make a copy of the serialized packet to send later.
     packets_.emplace_back(
-        new QuicEncryptedPacket(CopyBuffer(*serialized_packet),
-                                serialized_packet->encrypted_length, true));
-    serialized_packet->encrypted_buffer = nullptr;
-    DeleteFrames(&(serialized_packet->retransmittable_frames));
-    serialized_packet->retransmittable_frames.clear();
+        new QuicEncryptedPacket(CopyBuffer(serialized_packet),
+                                serialized_packet.encrypted_length, true));
   }
 
   char* GetPacketBuffer() override {
@@ -180,7 +178,7 @@ class StatelessConnectionTerminator {
   QuicTimeWaitListManager* time_wait_list_manager_;
 };
 
-// Class which extracts the ALPN from a CHLO packet.
+// Class which extracts the ALPN from a QUIC_CRYPTO CHLO packet.
 class ChloAlpnExtractor : public ChloExtractor::Delegate {
  public:
   void OnChlo(QuicTransportVersion /*version*/,
@@ -310,7 +308,7 @@ void QuicDispatcher::ProcessPacket(const QuicSocketAddress& self_address,
 
 QuicConnectionId QuicDispatcher::MaybeReplaceServerConnectionId(
     QuicConnectionId server_connection_id,
-    ParsedQuicVersion version) {
+    ParsedQuicVersion version) const {
   if (server_connection_id.length() == expected_server_connection_id_length_) {
     return server_connection_id;
   }
@@ -476,16 +474,42 @@ void QuicDispatcher::ProcessHeader(ReceivedPacketInfo* packet_info) {
   QuicConnectionId server_connection_id =
       packet_info->destination_connection_id;
   // Packet's connection ID is unknown.  Apply the validity checks.
-  // TODO(wub): Determine the fate completely in ValidityChecks, then call
-  // ProcessUnauthenticatedHeaderFate in one place.
   QuicPacketFate fate = ValidityChecks(*packet_info);
   ChloAlpnExtractor alpn_extractor;
   switch (fate) {
     case kFateProcess: {
       if (packet_info->version.handshake_protocol == PROTOCOL_TLS1_3) {
-        // TODO(nharper): Support buffering non-ClientHello packets when using
-        // TLS.
-        ProcessChlo(/*alpn=*/"", packet_info);
+        bool has_full_tls_chlo = false;
+        std::vector<std::string> alpns;
+        if (buffered_packets_.HasBufferedPackets(
+                packet_info->destination_connection_id)) {
+          // If we already have buffered packets for this connection ID,
+          // use the associated TlsChloExtractor to parse this packet.
+          has_full_tls_chlo =
+              buffered_packets_.IngestPacketForTlsChloExtraction(
+                  packet_info->destination_connection_id, packet_info->version,
+                  packet_info->packet, &alpns);
+        } else {
+          // If we do not have a BufferedPacketList for this connection ID,
+          // create a single-use one to check whether this packet contains a
+          // full single-packet CHLO.
+          TlsChloExtractor tls_chlo_extractor;
+          tls_chlo_extractor.IngestPacket(packet_info->version,
+                                          packet_info->packet);
+          if (tls_chlo_extractor.HasParsedFullChlo()) {
+            // This packet contains a full single-packet CHLO.
+            has_full_tls_chlo = true;
+            alpns = tls_chlo_extractor.alpns();
+          }
+        }
+        if (has_full_tls_chlo) {
+          ProcessChlo(alpns, packet_info);
+        } else {
+          // This packet does not contain a full CHLO. It could be a 0-RTT
+          // packet that arrived before the CHLO (due to loss or reordering),
+          // or it could be a fragment of a multi-packet CHLO.
+          BufferEarlyPacket(*packet_info);
+        }
         break;
       }
       if (GetQuicFlag(FLAGS_quic_allow_chlo_buffering) &&
@@ -497,7 +521,7 @@ void QuicDispatcher::ProcessHeader(ReceivedPacketInfo* packet_info) {
         BufferEarlyPacket(*packet_info);
         break;
       }
-      ProcessChlo(alpn_extractor.ConsumeAlpn(), packet_info);
+      ProcessChlo({alpn_extractor.ConsumeAlpn()}, packet_info);
     } break;
     case kFateTimeWait:
       // Add this connection_id to the time-wait state, to safely reject
@@ -524,36 +548,55 @@ void QuicDispatcher::ProcessHeader(ReceivedPacketInfo* packet_info) {
   }
 }
 
+std::string QuicDispatcher::SelectAlpn(const std::vector<std::string>& alpns) {
+  if (alpns.empty()) {
+    return "";
+  }
+  if (alpns.size() > 1u) {
+    const std::vector<std::string>& supported_alpns =
+        version_manager_->GetSupportedAlpns();
+    for (const std::string& alpn : alpns) {
+      if (std::find(supported_alpns.begin(), supported_alpns.end(), alpn) !=
+          supported_alpns.end()) {
+        return alpn;
+      }
+    }
+  }
+  return alpns[0];
+}
+
 QuicDispatcher::QuicPacketFate QuicDispatcher::ValidityChecks(
     const ReceivedPacketInfo& packet_info) {
   if (!packet_info.version_flag) {
-      // The Android network conformance test contains a UDP test that sends a
-      // 12-byte packet with the following format:
-      //  - 0x0c (public flags: 8-byte connection ID, 1-byte packet number)
-      //  - randomized 8-byte connection ID
-      //  - 0x01 (1-byte packet number)
-      //  - 0x00 (private flags)
-      //  - 0x07 (PING frame).
-      // That packet is invalid and we would normally drop it but in order to
-      // unblock this conformance testing we have the following workaround that
-      // will be removed once the fixed test is deployed.
-      // TODO(b/139691956) Remove this workaround once fixed test is deployed.
-      if (packet_info.packet.length() == 12 &&
-          packet_info.packet.data()[0] == 0x0c &&
-          packet_info.packet.data()[9] == 0x01 &&
-          packet_info.packet.data()[10] == 0x00 &&
-          packet_info.packet.data()[11] == 0x07) {
-        QUIC_DLOG(INFO) << "Received Android UDP network conformance test "
-                           "packet with connection ID "
-                        << packet_info.destination_connection_id;
-        // Respond with a public reset that the test will know how to parse
-        // then return kFateDrop to stop processing of this packet.
-        time_wait_list_manager()->SendPublicReset(
-            packet_info.self_address, packet_info.peer_address,
-            packet_info.destination_connection_id,
-            /*ietf_quic=*/false, GetPerPacketContext());
-        return kFateDrop;
-      }
+    // The Android network conformance test contains a UDP test that sends a
+    // 12-byte packet with the following format:
+    //  - 0x0c (public flags: 8-byte connection ID, 1-byte packet number)
+    //  - randomized 8-byte connection ID
+    //  - 0x01 (1-byte packet number)
+    //  - 0x00 (private flags)
+    //  - 0x07 (PING frame).
+    // That packet is invalid and we would normally drop it but in order to
+    // unblock this conformance testing we have the following workaround that
+    // will be removed once the fixed test is deployed.
+    // TODO(b/139691956) Remove this workaround once fixed test is deployed.
+    if (!GetQuicReloadableFlag(
+            quic_remove_android_conformance_test_workaround) &&
+        packet_info.packet.length() == 12 &&
+        packet_info.packet.data()[0] == 0x0c &&
+        packet_info.packet.data()[9] == 0x01 &&
+        packet_info.packet.data()[10] == 0x00 &&
+        packet_info.packet.data()[11] == 0x07) {
+      QUIC_DLOG(INFO) << "Received Android UDP network conformance test "
+                         "packet with connection ID "
+                      << packet_info.destination_connection_id;
+      // Respond with a public reset that the test will know how to parse
+      // then return kFateDrop to stop processing of this packet.
+      time_wait_list_manager()->SendPublicReset(
+          packet_info.self_address, packet_info.peer_address,
+          packet_info.destination_connection_id,
+          /*ietf_quic=*/false, GetPerPacketContext());
+      return kFateDrop;
+    }
 
     QUIC_DLOG(INFO)
         << "Packet without version arrived for unknown connection ID "
@@ -574,7 +617,12 @@ void QuicDispatcher::CleanUpSession(SessionMap::iterator it,
       QuicTimeWaitListManager::SEND_STATELESS_RESET;
   if (connection->termination_packets() != nullptr &&
       !connection->termination_packets()->empty()) {
-    action = QuicTimeWaitListManager::SEND_TERMINATION_PACKETS;
+    if (GetQuicRestartFlag(quic_replace_time_wait_list_encryption_level)) {
+      QUIC_RESTART_FLAG_COUNT(quic_replace_time_wait_list_encryption_level);
+      action = QuicTimeWaitListManager::SEND_CONNECTION_CLOSE_PACKETS;
+    } else {
+      action = QuicTimeWaitListManager::SEND_TERMINATION_PACKETS;
+    }
   } else {
     if (!connection->IsHandshakeComplete()) {
       if (!VersionHasIetfInvariantHeader(connection->transport_version())) {
@@ -831,9 +879,10 @@ void QuicDispatcher::ProcessBufferedChlos(size_t max_connections_to_create) {
     QuicConnectionId original_connection_id = server_connection_id;
     server_connection_id = MaybeReplaceServerConnectionId(server_connection_id,
                                                           packet_list.version);
+    std::string alpn = SelectAlpn(packet_list.alpns);
     std::unique_ptr<QuicSession> session =
         CreateQuicSession(server_connection_id, packets.front().peer_address,
-                          packet_list.alpn, packet_list.version);
+                          alpn, packet_list.version);
     if (original_connection_id != server_connection_id) {
       session->connection()->AddIncomingConnectionId(original_connection_id);
       session->connection()->InstallInitialCrypters(original_connection_id);
@@ -889,13 +938,13 @@ void QuicDispatcher::BufferEarlyPacket(const ReceivedPacketInfo& packet_info) {
       packet_info.destination_connection_id,
       packet_info.form != GOOGLE_QUIC_PACKET, packet_info.packet,
       packet_info.self_address, packet_info.peer_address, /*is_chlo=*/false,
-      /*alpn=*/"", packet_info.version);
+      /*alpns=*/{}, packet_info.version);
   if (rs != EnqueuePacketResult::SUCCESS) {
     OnBufferPacketFailure(rs, packet_info.destination_connection_id);
   }
 }
 
-void QuicDispatcher::ProcessChlo(const std::string& alpn,
+void QuicDispatcher::ProcessChlo(const std::vector<std::string>& alpns,
                                  ReceivedPacketInfo* packet_info) {
   if (!buffered_packets_.HasBufferedPackets(
           packet_info->destination_connection_id) &&
@@ -911,7 +960,7 @@ void QuicDispatcher::ProcessChlo(const std::string& alpn,
         packet_info->destination_connection_id,
         packet_info->form != GOOGLE_QUIC_PACKET, packet_info->packet,
         packet_info->self_address, packet_info->peer_address,
-        /*is_chlo=*/true, alpn, packet_info->version);
+        /*is_chlo=*/true, alpns, packet_info->version);
     if (rs != EnqueuePacketResult::SUCCESS) {
       OnBufferPacketFailure(rs, packet_info->destination_connection_id);
     }
@@ -923,6 +972,7 @@ void QuicDispatcher::ProcessChlo(const std::string& alpn,
   packet_info->destination_connection_id = MaybeReplaceServerConnectionId(
       original_connection_id, packet_info->version);
   // Creates a new session and process all buffered packets for this connection.
+  std::string alpn = SelectAlpn(alpns);
   std::unique_ptr<QuicSession> session =
       CreateQuicSession(packet_info->destination_connection_id,
                         packet_info->peer_address, alpn, packet_info->version);
@@ -973,6 +1023,11 @@ QuicDispatcher::GetSupportedTransportVersions() {
 
 const ParsedQuicVersionVector& QuicDispatcher::GetSupportedVersions() {
   return version_manager_->GetSupportedVersions();
+}
+
+const ParsedQuicVersionVector&
+QuicDispatcher::GetSupportedVersionsWithQuicCrypto() {
+  return version_manager_->GetSupportedVersionsWithQuicCrypto();
 }
 
 void QuicDispatcher::DeliverPacketsToSession(

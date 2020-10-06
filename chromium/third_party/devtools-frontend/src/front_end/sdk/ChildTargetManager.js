@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';  // eslint-disable-line no-unused-vars
@@ -47,7 +50,7 @@ export class ChildTargetManager extends SDKModel {
   }
 
   /**
-   * @param {function({target: !Target, waitingForDebugger: boolean}):!Promise=} attachCallback
+   * @param {function({target: !Target, waitingForDebugger: boolean}):!Promise<?>=} attachCallback
    */
   static install(attachCallback) {
     _attachCallback = attachCallback;
@@ -56,7 +59,7 @@ export class ChildTargetManager extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<?>}
    */
   suspendModel() {
     return this._targetAgent.invoke_setAutoAttach({autoAttach: true, waitForDebuggerOnStart: false, flatten: true});
@@ -64,7 +67,7 @@ export class ChildTargetManager extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<?>}
    */
   resumeModel() {
     return this._targetAgent.invoke_setAutoAttach({autoAttach: true, waitForDebuggerOnStart: true, flatten: true});
@@ -199,7 +202,7 @@ export class ChildTargetManager extends SDKModel {
   }
 
   /**
-   * @param {function((!Object|string))} onMessage
+   * @param {function((!Object|string)):void} onMessage
    * @return {!Promise<!ProtocolClient.InspectorBackend.Connection>}
    */
   async createParallelConnection(onMessage) {

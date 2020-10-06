@@ -9,13 +9,13 @@
 #define GrDrawVerticesOp_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/core/SkVertices.h"
 #include "include/private/GrTypesPriv.h"
 
 class GrColorSpaceXform;
 class GrDrawOp;
 class GrPaint;
 class GrRecordingContext;
+class SkMatrixProvider;
 class SkRuntimeEffect;
 
 namespace GrDrawVerticesOp {
@@ -30,11 +30,11 @@ namespace GrDrawVerticesOp {
     std::unique_ptr<GrDrawOp> Make(GrRecordingContext*,
                                    GrPaint&&,
                                    sk_sp<SkVertices>,
-                                   const SkMatrix& viewMatrix,
+                                   const SkMatrixProvider&,
                                    GrAAType,
                                    sk_sp<GrColorSpaceXform>,
-                                   GrPrimitiveType* overridePrimType = nullptr,
-                                   const SkRuntimeEffect* = nullptr);
+                                   GrPrimitiveType* overridePrimType,
+                                   const SkRuntimeEffect*);
 
 };
 

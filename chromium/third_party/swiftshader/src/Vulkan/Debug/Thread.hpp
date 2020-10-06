@@ -19,9 +19,11 @@
 #include "ID.hpp"
 #include "Location.hpp"
 
+#include "marl/mutex.h"
+#include "marl/tsa.h"
+
 #include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <vector>
 
@@ -134,13 +136,21 @@ public:
 	// stack() returns a copy of the thread's current stack frames.
 	std::vector<Frame> stack() const;
 
+	// depth() returns the number of stack frames.
+	size_t depth() const;
+
 	// state() returns the current thread's state.
 	State state() const;
 
 	// update() calls f to modify the top most frame of the stack.
-	// If the frame's location is changed, update() potentially blocks until the
-	// thread is resumed with one of the methods below.
-	void update(std::function<void(Frame &)> f);
+	// If the frame's location is changed and isStep is true, update()
+	// potentially blocks until the thread is resumed with one of the methods
+	// below.
+	// isStep is used to distinguish same-statement column position updates
+	// from full line updates. Note that we cannot simply examine line position
+	// changes as single-line loops such as `while(true) { foo(); }` would not
+	// be correctly steppable.
+	void update(bool isStep, std::function<void(Frame &)> f);
 
 	// resume() resumes execution of the thread by unblocking a call to
 	// update() and setting the thread's state to State::Running.
@@ -173,14 +183,15 @@ public:
 private:
 	EventListener *const broadcast;
 
-	void onLocationUpdate(std::unique_lock<std::mutex> &lock);
+	void onLocationUpdate(marl::lock &lock) REQUIRES(mutex);
 
-	mutable std::mutex mutex;
-	std::string name_;
-	std::vector<std::shared_ptr<Frame>> frames;
+	mutable marl::mutex mutex;
+	std::string name_ GUARDED_BY(mutex);
+	std::vector<std::shared_ptr<Frame>> frames GUARDED_BY(mutex);
+	State state_ GUARDED_BY(mutex) = State::Running;
+	std::shared_ptr<Frame> pauseAtFrame GUARDED_BY(mutex);
+
 	std::condition_variable stateCV;
-	State state_ = State::Running;
-	std::shared_ptr<Frame> pauseAtFrame;
 };
 
 }  // namespace dbg

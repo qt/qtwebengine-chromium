@@ -12,21 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.6.3)
+cmake_minimum_required(VERSION 3.13)
 
 set(CMAKE_CXX_STANDARD 14)
 
 project(SwiftShader C CXX ASM)
-
-# On Windows we use custom solution and project files, except for certain third-
-# party projects which use CMake-generated ones. They are manually (re)generated
-# and made path relative using build/cmake.sh, so they can be checked into the
-# repository. Therefore they should not be auto-regenerated and left using
-# absolute paths by CMake's ZERO_CHECK.
-if(WIN32)
-    # Disable automatically regenerating project files on CMakeLists.txt changes.
-    set(CMAKE_SUPPRESS_REGENERATION true)
-endif()
 
 ###########################################################
 # Detect system
@@ -39,6 +29,10 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "Android")
     set(CMAKE_CXX_FLAGS "-DANDROID_NDK_BUILD")
 elseif(WIN32)
 elseif(APPLE)
+elseif(FUCHSIA)
+    # NOTE: Building for Fuchsia requires a Fuchsia CMake-based SDK.
+    # See https://fuchsia-review.googlesource.com/c/fuchsia/+/379673
+    find_package(FuchsiaLibraries)
 else()
     message(FATAL_ERROR "Platform is not supported")
 endif()
@@ -92,6 +86,9 @@ endif()
 
 find_library(X11 X11)
 find_library(XCB xcb)
+if(SWIFTSHADER_BUILD_WSI_WAYLAND)
+    find_library(WAYLAND wayland-client)
+endif(SWIFTSHADER_BUILD_WSI_WAYLAND)
 
 ###########################################################
 # Options
@@ -99,8 +96,8 @@ find_library(XCB xcb)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "The type of build: Debug Release MinSizeRel RelWithDebInfo." FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release MinSizeRel RelWithDebInfo)
 endif()
-set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release MinSizeRel RelWithDebInfo)
 
 function (option_if_not_defined name description default)
     if(NOT DEFINED ${name})
@@ -118,8 +115,10 @@ option_if_not_defined(SWIFTSHADER_BUILD_EGL "Build the EGL library" TRUE)
 option_if_not_defined(SWIFTSHADER_BUILD_GLESv2 "Build the OpenGL ES 2 library" TRUE)
 option_if_not_defined(SWIFTSHADER_BUILD_GLES_CM "Build the OpenGL ES 1.1 library" TRUE)
 option_if_not_defined(SWIFTSHADER_BUILD_VULKAN "Build the Vulkan library" TRUE)
+option_if_not_defined(SWIFTSHADER_BUILD_WSI_WAYLAND "Build the Wayland WSI support" FALSE)
 option_if_not_defined(SWIFTSHADER_BUILD_PVR "Build the PowerVR examples" TRUE)
 option_if_not_defined(SWIFTSHADER_GET_PVR "Check out the PowerVR submodule" FALSE)
+option_if_not_defined(SWIFTSHADER_BUILD_ANGLE "Build angle" FALSE)
 
 option_if_not_defined(SWIFTSHADER_USE_GROUP_SOURCES "Group the source files in a folder tree for Visual Studio" TRUE)
 
@@ -153,9 +152,9 @@ set(DEFAULT_REACTOR_BACKEND "LLVM")
 set(REACTOR_BACKEND ${DEFAULT_REACTOR_BACKEND} CACHE STRING "JIT compiler back-end used by Reactor")
 set_property(CACHE REACTOR_BACKEND PROPERTY STRINGS LLVM Subzero)
 
-set(DEFAULT_SWIFTSHADER_LLVM_VERSION "7.0")
+set(DEFAULT_SWIFTSHADER_LLVM_VERSION "10.0")
 set(SWIFTSHADER_LLVM_VERSION ${DEFAULT_SWIFTSHADER_LLVM_VERSION} CACHE STRING "LLVM version to use")
-set_property(CACHE SWIFTSHADER_LLVM_VERSION PROPERTY STRINGS "7.0" "10.0")
+set_property(CACHE SWIFTSHADER_LLVM_VERSION PROPERTY STRINGS "10.0")
 
 # If defined, overrides the default optimization level of the current reactor backend.
 # Set to one of the rr::Optimization::Level enum values.
@@ -178,101 +177,59 @@ endif()
 set_property(GLOBAL PROPERTY USE_FOLDERS TRUE)
 
 ###########################################################
+# Directories
+###########################################################
+
+set(SWIFTSHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(SOURCE_DIR ${SWIFTSHADER_DIR}/src)
+set(THIRD_PARTY_DIR ${SWIFTSHADER_DIR}/third_party)
+set(TESTS_DIR ${SWIFTSHADER_DIR}/tests)
+
+###########################################################
 # Initialize submodules
 ###########################################################
 
-if (SWIFTSHADER_BUILD_TESTS)
-    if (NOT TARGET gtest)
-        if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest/.git)
+function(InitSubmodule target submodule_dir)
+    if (NOT TARGET ${target})
+        if(NOT EXISTS ${submodule_dir}/.git)
             message(WARNING "
-        third_party/googletest submodule missing.
+        Target ${target} from submodule ${submodule_dir} missing.
         Running 'git submodule update --init' to download it:
             ")
 
-            execute_process(COMMAND git submodule update --init ${CMAKE_CURRENT_SOURCE_DIR}/third_party/googletest)
-        endif()
-    endif()
-endif()
-
-if(SWIFTSHADER_BUILD_BENCHMARKS)
-    if (NOT TARGET benchmark::benchmark)
-        if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark/.git)
-            message(WARNING "
-        third_party/benchmark submodule missing.
-        Running 'git submodule update --init' to download it:
-            ")
-
-            execute_process(COMMAND git submodule update --init ${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark)
-        endif()
-    endif()
-endif(SWIFTSHADER_BUILD_BENCHMARKS)
-
-if (NOT TARGET libbacktrace)
-    if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libbacktrace/src/.git)
-        message(WARNING "
-      third_party/libbacktrace/src submodule missing.
-      Running 'git submodule update --init' to download it:
-        ")
-
-        execute_process(COMMAND git submodule update --init ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libbacktrace)
-    endif()
-endif()
-
-# Boost is downloaded if necessary
-
-# From https://www.boost.org/users/download/
-set(BOOST_VER 1.70.0)
-set(BOOST_HASH_TARGZ "882b48708d211a5f48e60b0124cf5863c1534cd544ecd0664bb534a4b5d506e9")
-set(BOOST_HASH_ZIP   "48f379b2e90dd1084429aae87d6bdbde9670139fa7569ee856c8c86dd366039d")
-
-string(REPLACE "." "_" BOOST_VER_FNAME ${BOOST_VER})
-set(BOOST_THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/boost_${BOOST_VER_FNAME})
-
-function(DownloadBoost)
-    if (LINUX)
-        set(BOOST_EXT "tar.gz")
-        set(BOOST_HASH ${BOOST_HASH_TARGZ})
-    else()
-        set(BOOST_EXT "zip")
-        set(BOOST_HASH ${BOOST_HASH_ZIP})
-    endif()
-
-    # Note: bintray.com has rate limiting, so use the sourceforge mirror
-    # set(BOOST_URL https://dl.bintray.com/boostorg/release/${BOOST_VER}/source/boost_${BOOST_VER_FNAME}.${BOOST_EXT})
-    set(BOOST_URL https://iweb.dl.sourceforge.net/project/boost/boost/${BOOST_VER}/boost_${BOOST_VER_FNAME}.${BOOST_EXT})
-
-    if (NOT TARGET Boost::boost)
-        if(NOT EXISTS ${BOOST_THIRD_PARTY_DIR})
-            message(WARNING "
-          third_party/boost is missing.
-          Downloading and extracting boost:
-            ")
-
-            set(BOOST_ARCHIVE ${CMAKE_BINARY_DIR}/temp/boost_archive)
-            message(STATUS "Downloading ${BOOST_URL} to ${BOOST_ARCHIVE}...")
-            file(DOWNLOAD ${BOOST_URL} ${BOOST_ARCHIVE} EXPECTED_HASH SHA256=${BOOST_HASH})
-            message(STATUS "Extracting ${BOOST_ARCHIVE} to ${BOOST_THIRD_PARTY_DIR}...")
-            execute_process(
-                WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/third_party
-                COMMAND cmake -E tar xf ${BOOST_ARCHIVE}
-            )
+            execute_process(COMMAND git -C ${SWIFTSHADER_DIR} submodule update --init ${submodule_dir})
         endif()
     endif()
 endfunction()
 
-if(SWIFTSHADER_GET_PVR)
-    if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/PowerVR_Examples/.git)
-        message(WARNING "
-        third_party/PowerVR_Examples submodule missing.
-        Running 'git submodule update --init' to download it:
-        ")
+if (SWIFTSHADER_BUILD_TESTS)
+    InitSubmodule(gtest ${THIRD_PARTY_DIR}/googletest)
+endif()
 
-        execute_process(COMMAND git submodule update --init ${CMAKE_CURRENT_SOURCE_DIR}/third_party/PowerVR_Examples)
-    endif()
+if(SWIFTSHADER_BUILD_BENCHMARKS)
+    InitSubmodule(benchmark::benchmark ${THIRD_PARTY_DIR}/benchmark)
+    InitSubmodule(glslang ${THIRD_PARTY_DIR}/glslang)
+endif()
+
+if(REACTOR_EMIT_DEBUG_INFO)
+    InitSubmodule(libbacktrace ${THIRD_PARTY_DIR}/libbacktrace/src)
+endif()
+
+if(SWIFTSHADER_GET_PVR)
+    InitSubmodule(PVRCore ${THIRD_PARTY_DIR}/PowerVR_Examples)
     set(SWIFTSHADER_GET_PVR FALSE CACHE BOOL "Check out the PowerVR submodule" FORCE)
 endif()
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/PowerVR_Examples/.git)
+if(EXISTS ${THIRD_PARTY_DIR}/PowerVR_Examples/.git)
     set(HAVE_PVR_SUBMODULE TRUE)
+endif()
+
+if(SWIFTSHADER_BUILD_CPPDAP)
+    InitSubmodule(json ${THIRD_PARTY_DIR}/json)
+    InitSubmodule(cppdap ${THIRD_PARTY_DIR}/cppdap)
+endif()
+
+if(SWIFTSHADER_BUILD_ANGLE)
+    InitSubmodule(angle ${THIRD_PARTY_DIR}/angle/angle)
 endif()
 
 ###########################################################
@@ -282,13 +239,13 @@ endif()
 # Recursively calls source_group on the files of the directory
 # so that Visual Studio has the files in a folder tree
 macro(group_all_sources directory)
-    file(GLOB files RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/${directory} ${CMAKE_CURRENT_SOURCE_DIR}/${directory}/*)
+    file(GLOB files RELATIVE ${SWIFTSHADER_DIR}/${directory} ${SWIFTSHADER_DIR}/${directory}/*)
     foreach(file ${files})
-        if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${directory}/${file})
+        if(IS_DIRECTORY ${SWIFTSHADER_DIR}/${directory}/${file})
             group_all_sources(${directory}/${file})
         else()
             string(REPLACE "/" "\\" groupname ${directory})
-            source_group(${groupname} FILES ${CMAKE_CURRENT_SOURCE_DIR}/${directory}/${file})
+            source_group(${groupname} FILES ${SWIFTSHADER_DIR}/${directory}/${file})
         endif()
     endforeach()
 endmacro()
@@ -308,11 +265,19 @@ macro(set_shared_library_export_map TARGET DIR)
         if(NOT SWIFTSHADER_MSAN AND NOT SWIFTSHADER_ASAN AND NOT SWIFTSHADER_TSAN AND NOT SWIFTSHADER_UBSAN)
             set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,-undefined,error")
         endif()
-    elseif(LINUX)
+    elseif(LINUX OR FUCHSIA)
+        # NOTE: The Fuchsia linker script is needed to export the vk_icdInitializeConnectToServiceCallback
+        # entry point (a private implementation detail betwen the Fuchsia Vulkan loader and the ICD).
+        if ((FUCHSIA) AND ("${TARGET}" STREQUAL "vk_swiftshader"))
+          set(LINKER_VERSION_SCRIPT "fuchsia_vk_swiftshader.lds")
+        else()
+          set(LINKER_VERSION_SCRIPT "${TARGET}.lds")
+        endif()
+
         # The version script only exports the API functions and
         # hides all the others.
-        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--version-script=${DIR}/${TARGET}.lds")
-        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_DEPENDS "${DIR}/${TARGET}.lds;")
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--version-script=${DIR}/${LINKER_VERSION_SCRIPT}")
+        set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_DEPENDS "${DIR}/${LINKER_VERSION_SCRIPT};")
 
         # -Bsymbolic binds symbol references to their global definitions within
         # a shared object, thereby preventing symbol preemption.
@@ -321,7 +286,7 @@ macro(set_shared_library_export_map TARGET DIR)
         if(ARCH STREQUAL "mipsel" OR ARCH STREQUAL "mips64el")
           # MIPS supports sysv hash-style only.
           set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--hash-style=sysv")
-        else()
+        elseif(LINUX)
           # Both hash-style are needed, because we want both gold and
           # GNU ld to be able to read our libraries.
           set_property(TARGET ${TARGET} APPEND_STRING PROPERTY LINK_FLAGS " -Wl,--hash-style=both")
@@ -345,27 +310,6 @@ if(SWIFTSHADER_USE_GROUP_SOURCES)
 endif()
 
 ###########################################################
-# Directories
-###########################################################
-
-set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(OPENGL_DIR ${SOURCE_DIR}/OpenGL)
-set(OPENGL_COMPILER_DIR ${OPENGL_DIR}/compiler)
-set(VULKAN_DIR ${SOURCE_DIR}/Vulkan)
-set(THIRD_PARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
-set(ASTC_DIR ${THIRD_PARTY_DIR}/astc-encoder)
-set(LIBBACKTRACE_DIR ${THIRD_PARTY_DIR}/libbacktrace/src)
-set(LIBBACKTRACE_CONFIG_DIR ${THIRD_PARTY_DIR}/libbacktrace/config)
-set(LIBBACKTRACE_INCLUDE_DIR ${THIRD_PARTY_DIR}/libbacktrace/src)
-set(CPPDAP_DIR ${THIRD_PARTY_DIR}/cppdap)
-set(CPPDAP_INCLUDE_DIR ${CPPDAP_DIR}/include)
-set(JSON_INCLUDE_DIR ${THIRD_PARTY_DIR}/json/include)
-set(SUBZERO_DIR ${THIRD_PARTY_DIR}/subzero)
-set(SUBZERO_LLVM_DIR ${THIRD_PARTY_DIR}/llvm-subzero)
-set(TESTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests)
-set(HELLO2_DIR ${THIRD_PARTY_DIR}/PowerVR_SDK/Examples/Beginner/01_HelloAPI/OGLES2)
-
-###########################################################
 # Compile flags
 ###########################################################
 
@@ -384,7 +328,7 @@ endmacro()
 
 macro(set_linker_flag FLAG)
     if(${ARGC} GREATER 1)
-        set(CMAKE_EXE_LINKER_FLAGS ${ARGV1} "${CMAKE_EXE_LINKER_FLAGS ${ARGV1}} ${FLAG}")
+        set(CMAKE_EXE_LINKER_FLAGS_${ARGV1} "${CMAKE_EXE_LINKER_FLAGS_${ARGV1}} ${FLAG}")
     else()
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${FLAG}")
     endif()
@@ -397,8 +341,8 @@ if(MSVC)
     add_definitions(-D_SBCS)  # Single Byte Character Set (ASCII)
     add_definitions(-D_ENABLE_EXTENDED_ALIGNED_STORAGE)  # Disable MSVC warnings about std::aligned_storage being broken before VS 2017 15.8
 
-    set_cpp_flag("/DEBUG:FASTLINK" DEBUG)
-    set_cpp_flag("/DEBUG:FASTLINK" RELWITHDEBINFO)
+    set_linker_flag("/DEBUG:FASTLINK" DEBUG)
+    set_linker_flag("/DEBUG:FASTLINK" RELWITHDEBINFO)
 
     # Disable specific warnings
     # TODO: Not all of these should be disabled, but for now, we want a warning-free msvc build. Remove these one by one
@@ -427,10 +371,6 @@ if(MSVC)
         "/we5038" # data member 'member1' will be initialized after data member 'member2' data member 'member' will be initialized after base class 'base_class'
     )
 else()
-    list(APPEND SWIFTSHADER_COMPILE_OPTIONS
-        "-fno-exceptions"
-    )
-
     # Explicitly enable these warnings.
     list(APPEND SWIFTSHADER_COMPILE_OPTIONS
         "-Wall"
@@ -441,6 +381,8 @@ else()
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         list(APPEND SWIFTSHADER_COMPILE_OPTIONS
+            "-Wextra"
+            "-Wunreachable-code-loop-increment"
             "-Wunused-lambda-capture"
             "-Wstring-conversion"
             "-Wextra-semi"
@@ -480,6 +422,8 @@ else()
             "-Wno-comment"                        # multi-line comment
             "-Wno-undefined-var-template"         # instantiation of variable 'X' required here, but no definition is available
             "-Wno-extra-semi"                     # extra ';' after member function definition
+            "-Wno-unused-parameter"               # unused parameter 'X'
+            "-Wno-deprecated-copy"                # implicit copy constructor for 'X' is deprecated because of user-declared copy assignment operator.
 
             # Silence errors caused by unknown warnings when building with older
             # versions of Clang. This demands checking that warnings added above
@@ -493,9 +437,6 @@ else()
     list(APPEND SWIFTSHADER_COMPILE_OPTIONS
         "-fno-operator-names"
     )
-
-    # LLVM headers requires these flags to be set
-    set_cpp_flag("-D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS")
 
     if(ARCH STREQUAL "x86")
         set_cpp_flag("-m32")
@@ -612,481 +553,93 @@ if(WIN32)
     set(CMAKE_FIND_LIBRARY_PREFIXES ${CMAKE_FIND_LIBRARY_PREFIXES} "" "lib")
 endif()
 
-# Transform SWIFTSHADER_LINK_FLAGS from semicolon delimited to whitespace
-# delimited (what is expected by LINK_FLAGS)
-string(REPLACE ";" " " SWIFTSHADER_LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}")
+set(USE_EXCEPTIONS
+    ${REACTOR_EMIT_DEBUG_INFO} # boost::stacktrace uses exceptions
+)
+if(NOT MSVC)
+    if (${USE_EXCEPTIONS})
+        list(APPEND SWIFTSHADER_COMPILE_OPTIONS "-fexceptions")
+    else()
+        list(APPEND SWIFTSHADER_COMPILE_OPTIONS "-fno-exceptions")
+    endif()
+endif()
+unset(USE_EXCEPTIONS)
+
+###########################################################
+# libbacktrace and boost
+###########################################################
+if(REACTOR_EMIT_DEBUG_INFO)
+    add_subdirectory(${THIRD_PARTY_DIR}/libbacktrace EXCLUDE_FROM_ALL)
+    add_subdirectory(${THIRD_PARTY_DIR}/boost EXCLUDE_FROM_ALL)
+endif()
 
 ###########################################################
 # LLVM
 ###########################################################
-add_subdirectory(third_party/llvm-${SWIFTSHADER_LLVM_VERSION})
+add_subdirectory(${THIRD_PARTY_DIR}/llvm-${SWIFTSHADER_LLVM_VERSION} EXCLUDE_FROM_ALL)
 
+###########################################################
+# Subzero
+###########################################################
+add_subdirectory(${THIRD_PARTY_DIR}/llvm-subzero EXCLUDE_FROM_ALL)
+add_subdirectory(${THIRD_PARTY_DIR}/subzero EXCLUDE_FROM_ALL)
 
 ###########################################################
 # marl
 ###########################################################
 if(BUILD_MARL)
     set(MARL_THIRD_PARTY_DIR ${THIRD_PARTY_DIR})
-    add_subdirectory(third_party/marl)
+    add_subdirectory(${THIRD_PARTY_DIR}/marl)
 endif()
 
+if(MARL_THREAD_SAFETY_ANALYSIS_SUPPORTED)
+    list(APPEND SWIFTSHADER_COMPILE_OPTIONS "-Wthread-safety")
+endif()
 
 ###########################################################
 # cppdap
 ###########################################################
 if(SWIFTSHADER_BUILD_CPPDAP)
     set(CPPDAP_THIRD_PARTY_DIR ${THIRD_PARTY_DIR})
-    add_subdirectory(${CPPDAP_DIR})
-endif()
-
-
-###########################################################
-# Subzero
-###########################################################
-
-set(SUBZERO_LIST
-    ${SUBZERO_DIR}/src/IceAssembler.cpp
-    ${SUBZERO_DIR}/src/IceCfg.cpp
-    ${SUBZERO_DIR}/src/IceCfgNode.cpp
-    ${SUBZERO_DIR}/src/IceClFlags.cpp
-    ${SUBZERO_DIR}/src/IceELFObjectWriter.cpp
-    ${SUBZERO_DIR}/src/IceELFSection.cpp
-    ${SUBZERO_DIR}/src/IceFixups.cpp
-    ${SUBZERO_DIR}/src/IceGlobalContext.cpp
-    ${SUBZERO_DIR}/src/IceGlobalInits.cpp
-    ${SUBZERO_DIR}/src/IceInst.cpp
-    ${SUBZERO_DIR}/src/IceInstrumentation.cpp
-    ${SUBZERO_DIR}/src/IceIntrinsics.cpp
-    ${SUBZERO_DIR}/src/IceLiveness.cpp
-    ${SUBZERO_DIR}/src/IceLoopAnalyzer.cpp
-    ${SUBZERO_DIR}/src/IceMangling.cpp
-    ${SUBZERO_DIR}/src/IceMemory.cpp
-    ${SUBZERO_DIR}/src/IceOperand.cpp
-    ${SUBZERO_DIR}/src/IceRangeSpec.cpp
-    ${SUBZERO_DIR}/src/IceRegAlloc.cpp
-    ${SUBZERO_DIR}/src/IceRevision.cpp
-    ${SUBZERO_DIR}/src/IceRNG.cpp
-    ${SUBZERO_DIR}/src/IceSwitchLowering.cpp
-    ${SUBZERO_DIR}/src/IceTargetLowering.cpp
-    ${SUBZERO_DIR}/src/IceThreading.cpp
-    ${SUBZERO_DIR}/src/IceTimerTree.cpp
-    ${SUBZERO_DIR}/src/IceTypes.cpp
-    ${SUBZERO_DIR}/src/IceVariableSplitting.cpp
-)
-
-# FIXME: Shouldn't depend on external source files directly.
-list(APPEND SUBZERO_LIST
-    ${SOURCE_DIR}/Common/Memory.cpp
-)
-
-if(ARCH STREQUAL "x86_64")
-    list(APPEND SUBZERO_LIST
-        ${SUBZERO_DIR}/src/IceTargetLoweringX86.cpp
-        ${SUBZERO_DIR}/src/IceInstX8664.cpp
-        ${SUBZERO_DIR}/src/IceTargetLoweringX8664.cpp
-    )
-    set(SUBZERO_TARGET X8664)
-elseif(ARCH STREQUAL "x86")
-    list(APPEND SUBZERO_LIST
-        ${SUBZERO_DIR}/src/IceTargetLoweringX86.cpp
-        ${SUBZERO_DIR}/src/IceInstX8632.cpp
-        ${SUBZERO_DIR}/src/IceTargetLoweringX8632.cpp
-    )
-    set(SUBZERO_TARGET X8632)
-elseif(ARCH STREQUAL "arm")
-    list(APPEND SUBZERO_LIST
-        ${SUBZERO_DIR}/src/IceAssemblerARM32.cpp
-        ${SUBZERO_DIR}/src/IceInstARM32.cpp
-        ${SUBZERO_DIR}/src/IceTargetLoweringARM32.cpp
-    )
-    set(SUBZERO_TARGET ARM32)
-elseif(ARCH STREQUAL "mipsel")
-    list(APPEND SUBZERO_LIST
-        ${SUBZERO_DIR}/src/IceAssemblerMIPS32.cpp
-        ${SUBZERO_DIR}/src/IceInstMIPS32.cpp
-        ${SUBZERO_DIR}/src/IceTargetLoweringMIPS32.cpp
-    )
-    set(SUBZERO_TARGET MIPS32)
-else()
-    message(FATAL_ERROR "Architecture '${ARCH}' not supported by Subzero")
-endif()
-
-file(GLOB_RECURSE SUBZERO_DEPENDENCIES_LIST
-    ${SUBZERO_LLVM_DIR}/*.cpp
-    ${SUBZERO_LLVM_DIR}/*.c
-    ${SUBZERO_LLVM_DIR}/*.h
-)
-
-set(SUBZERO_REACTOR_LIST
-    ${SOURCE_DIR}/Reactor/Debug.cpp
-    ${SOURCE_DIR}/Reactor/Debug.hpp
-    ${SOURCE_DIR}/Reactor/EmulatedReactor.cpp
-    ${SOURCE_DIR}/Reactor/ExecutableMemory.cpp
-    ${SOURCE_DIR}/Reactor/ExecutableMemory.hpp
-    ${SOURCE_DIR}/Reactor/Nucleus.hpp
-    ${SOURCE_DIR}/Reactor/Optimizer.cpp
-    ${SOURCE_DIR}/Reactor/Print.hpp
-    ${SOURCE_DIR}/Reactor/Reactor.cpp
-    ${SOURCE_DIR}/Reactor/Reactor.hpp
-    ${SOURCE_DIR}/Reactor/ReactorDebugInfo.cpp
-    ${SOURCE_DIR}/Reactor/ReactorDebugInfo.hpp
-    ${SOURCE_DIR}/Reactor/Routine.hpp
-    ${SOURCE_DIR}/Reactor/SubzeroReactor.cpp
-)
-
-set(SUBZERO_INCLUDE_DIR
-    ${SUBZERO_DIR}/
-    ${SUBZERO_LLVM_DIR}/include/
-    ${SUBZERO_DIR}/pnacl-llvm/include/
-)
-
-if(WIN32)
-    list(APPEND SUBZERO_INCLUDE_DIR ${SUBZERO_LLVM_DIR}/build/Windows/include/)
-elseif(LINUX)
-    list(APPEND SUBZERO_INCLUDE_DIR ${SUBZERO_LLVM_DIR}/build/Linux/include/)
-elseif(APPLE)
-    list(APPEND SUBZERO_INCLUDE_DIR ${SUBZERO_LLVM_DIR}/build/MacOS/include/)
-endif()
-
-if(WIN32)
-    list(APPEND SUBZERO_COMPILE_OPTIONS
-        "/wd4146" # unary minus operator applied to unsigned type, result still unsigned
-        "/wd4334" # ''operator' : result of 32-bit shift implicitly converted to 64 bits (was 64-bit shift intended?)
-        "/wd4996" # The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: new_name.
-    )
-    list(APPEND SUBZERO_DEPENDENCIES_COMPILE_OPTIONS
-        ${SUBZERO_COMPILE_OPTIONS}
-        "/wd4267"  # '=': conversion from 'size_t' to 'sopno', possible loss of data
-        "/wd4244"  # '=': conversion from '__int64' to 'llvm_regoff_t', possible loss of data
-        "/wd4141"  # 'inline': used more than once
-        "/wd4291"  # 'void *operator new(size_t,const `anonymous-namespace'::NamedBufferAlloc &)': no matching operator delete found; memory will not be freed if initialization throws an exception
-    )
-endif()
-
-add_library(SubzeroDependencies STATIC EXCLUDE_FROM_ALL
-    ${SUBZERO_DEPENDENCIES_LIST}
-)
-set_target_properties(SubzeroDependencies PROPERTIES
-    POSITION_INDEPENDENT_CODE 1
-    INCLUDE_DIRECTORIES "${SUBZERO_INCLUDE_DIR}"
-    COMPILE_OPTIONS "${SUBZERO_DEPENDENCIES_COMPILE_OPTIONS}"
-    FOLDER "Subzero"
-)
-
-add_library(ReactorSubzero STATIC EXCLUDE_FROM_ALL
-    ${SUBZERO_LIST}
-    ${SUBZERO_REACTOR_LIST}
-)
-set_target_properties(ReactorSubzero PROPERTIES
-    POSITION_INDEPENDENT_CODE 1
-    INCLUDE_DIRECTORIES "${SUBZERO_INCLUDE_DIR}"
-    COMPILE_OPTIONS "${SUBZERO_COMPILE_OPTIONS};${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-    COMPILE_DEFINITIONS "SZTARGET=${SUBZERO_TARGET}; ALLOW_DUMP=0; ALLOW_TIMERS=0; ALLOW_LLVM_CL=0; ALLOW_LLVM_IR=0; ALLOW_LLVM_IR_AS_INPUT=0; ALLOW_MINIMAL_BUILD=0; ALLOW_WASM=0; ICE_THREAD_LOCAL_HACK=0;"
-    FOLDER "Subzero"
-)
-target_link_libraries(ReactorSubzero SubzeroDependencies marl)
-
-if(WIN32)
-    target_compile_definitions(ReactorSubzero PRIVATE SUBZERO_USE_MICROSOFT_ABI)
+    add_subdirectory(${THIRD_PARTY_DIR}/cppdap)
 endif()
 
 ###########################################################
-# Include Directories
+# astc-encoder
 ###########################################################
+if(SWIFTSHADER_ENABLE_ASTC)
+    add_subdirectory(${THIRD_PARTY_DIR}/astc-encoder)
+endif()
 
-set(COMMON_INCLUDE_DIR
-    ${SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${LIBBACKTRACE_INCLUDE_DIR}
-)
-set(OPENGL_INCLUDE_DIR
-    ${OPENGL_DIR}
-    ${COMMON_INCLUDE_DIR}
-)
-
-set(VULKAN_INCLUDE_DIR
-    ${COMMON_INCLUDE_DIR}
-    ${CPPDAP_INCLUDE_DIR}
-)
+###########################################################
+# gtest and gmock
+###########################################################
+if(SWIFTSHADER_BUILD_TESTS)
+    # For Win32, force gtest to match our CRT (shared)
+    set(gtest_force_shared_crt TRUE CACHE BOOL "" FORCE)
+    add_subdirectory(${THIRD_PARTY_DIR}/googletest EXCLUDE_FROM_ALL)
+    # gtest finds python, which picks python 2 first, if present.
+    # We need to undo this so that SPIR-V can later find python3.
+    unset(PYTHON_EXECUTABLE CACHE)
+endif()
 
 ###########################################################
 # File Lists
 ###########################################################
-
-file(GLOB_RECURSE SWIFTSHADER_LIST
-    ${SOURCE_DIR}/Common/*.cpp
-    ${SOURCE_DIR}/Common/*.h
-    ${SOURCE_DIR}/Common/*.hpp
-    ${SOURCE_DIR}/Renderer/*.cpp
-    ${SOURCE_DIR}/Renderer/*.h
-    ${SOURCE_DIR}/Renderer/*.hpp
-    ${SOURCE_DIR}/Shader/*.cpp
-    ${SOURCE_DIR}/Shader/*.h
-    ${SOURCE_DIR}/Shader/*.hpp
-)
-list(APPEND SWIFTSHADER_LIST
-    ${SOURCE_DIR}/Main/Config.cpp
-    ${SOURCE_DIR}/Main/Config.hpp
-    ${SOURCE_DIR}/Main/FrameBuffer.cpp
-    ${SOURCE_DIR}/Main/FrameBuffer.hpp
-    ${SOURCE_DIR}/Main/SwiftConfig.cpp
-    ${SOURCE_DIR}/Main/SwiftConfig.hpp
-)
-list(REMOVE_ITEM SWIFTSHADER_LIST
-    ${SOURCE_DIR}/Common/DebugAndroid.cpp
-    ${SOURCE_DIR}/Common/DebugAndroid.hpp
-    ${SOURCE_DIR}/Common/GrallocAndroid.cpp
-    ${SOURCE_DIR}/Common/GrallocAndroid.hpp
-)
-
-if(REACTOR_EMIT_DEBUG_INFO)
-    set(LIBBACKTRACE_LIST
-        ${LIBBACKTRACE_DIR}/atomic.c
-        ${LIBBACKTRACE_DIR}/backtrace.c
-        ${LIBBACKTRACE_DIR}/backtrace.h
-        ${LIBBACKTRACE_DIR}/dwarf.c
-        ${LIBBACKTRACE_DIR}/fileline.c
-        ${LIBBACKTRACE_DIR}/filenames.h
-        ${LIBBACKTRACE_DIR}/internal.h
-        ${LIBBACKTRACE_DIR}/mmap.c
-        ${LIBBACKTRACE_DIR}/mmapio.c
-        ${LIBBACKTRACE_DIR}/posix.c
-        ${LIBBACKTRACE_DIR}/print.c
-        ${LIBBACKTRACE_DIR}/simple.c
-        ${LIBBACKTRACE_DIR}/sort.c
-        ${LIBBACKTRACE_DIR}/state.c
-        ${LIBBACKTRACE_INCLUDE_DIR}/backtrace-supported.h
-        ${LIBBACKTRACE_INCLUDE_DIR}/config.h
-    )
-
-    if(WIN32)
-        list(APPEND LIBBACKTRACE_LIST ${LIBBACKTRACE_DIR}/pecoff.c)
-    elseif(LINUX)
-        list(APPEND LIBBACKTRACE_LIST ${LIBBACKTRACE_DIR}/elf.c)
-    elseif(APPLE)
-        message(FATAL_ERROR "libbacktrace does not support mach-o yet")
-    endif()
-endif(REACTOR_EMIT_DEBUG_INFO)
-
-set(REACTOR_LLVM_LIST
-    ${SOURCE_DIR}/Reactor/CPUID.cpp
-    ${SOURCE_DIR}/Reactor/CPUID.hpp
-    ${SOURCE_DIR}/Reactor/Debug.cpp
-    ${SOURCE_DIR}/Reactor/Debug.hpp
-    ${SOURCE_DIR}/Reactor/EmulatedReactor.cpp
-    ${SOURCE_DIR}/Reactor/ExecutableMemory.cpp
-    ${SOURCE_DIR}/Reactor/ExecutableMemory.hpp
-    ${SOURCE_DIR}/Reactor/LLVMJIT.cpp
-    ${SOURCE_DIR}/Reactor/LLVMReactor.cpp
-    ${SOURCE_DIR}/Reactor/LLVMReactor.hpp
-    ${SOURCE_DIR}/Reactor/LLVMReactorDebugInfo.cpp
-    ${SOURCE_DIR}/Reactor/LLVMReactorDebugInfo.hpp
-    ${SOURCE_DIR}/Reactor/Nucleus.hpp
-    ${SOURCE_DIR}/Reactor/Print.hpp
-    ${SOURCE_DIR}/Reactor/Reactor.cpp
-    ${SOURCE_DIR}/Reactor/Reactor.hpp
-    ${SOURCE_DIR}/Reactor/ReactorDebugInfo.cpp
-    ${SOURCE_DIR}/Reactor/ReactorDebugInfo.hpp
-    ${SOURCE_DIR}/Reactor/Routine.hpp
-)
-
-file(GLOB_RECURSE EGL_LIST
-    ${OPENGL_DIR}/libEGL/*.cpp
-    ${OPENGL_DIR}/libEGL/*.h
-    ${OPENGL_DIR}/libEGL/*.hpp
-    ${OPENGL_DIR}/common/Object.cpp
-    ${OPENGL_DIR}/common/Object.hpp
-    ${OPENGL_DIR}/common/debug.cpp
-    ${OPENGL_DIR}/common/debug.h
-    ${SOURCE_DIR}/Common/SharedLibrary.cpp
-    ${SOURCE_DIR}/Common/SharedLibrary.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
-)
-
-file(GLOB_RECURSE GLES2_LIST
-    ${OPENGL_DIR}/libGLESv2/*.cpp
-    ${OPENGL_DIR}/libGLESv2/*.h
-    ${OPENGL_DIR}/libGLESv2/*.hpp
-    ${OPENGL_DIR}/common/*.cpp
-    ${OPENGL_DIR}/common/*.h
-    ${OPENGL_DIR}/common/*.hpp
-    ${SOURCE_DIR}/Common/SharedLibrary.cpp
-    ${SOURCE_DIR}/Common/SharedLibrary.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/KHR/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/GLES2/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/GLES3/*.h
-)
-
-file(GLOB_RECURSE GLES_CM_LIST
-    ${OPENGL_DIR}/libGLES_CM/*.cpp
-    ${OPENGL_DIR}/libGLES_CM/*.h
-    ${OPENGL_DIR}/libGLES_CM/*.hpp
-    ${OPENGL_DIR}/common/*.cpp
-    ${OPENGL_DIR}/common/*.h
-    ${OPENGL_DIR}/common/*.hpp
-    ${SOURCE_DIR}/Common/SharedLibrary.cpp
-    ${SOURCE_DIR}/Common/SharedLibrary.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/KHR/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/GLES/*.h
-)
-
-file(GLOB_RECURSE OPENGL_COMPILER_LIST
-    ${OPENGL_COMPILER_DIR}/*.cpp
-    ${OPENGL_COMPILER_DIR}/*.h
-    ${OPENGL_COMPILER_DIR}/*.hpp
-)
-file(GLOB_RECURSE OPENGL_COMPILER_OS_SPECIFIC_LIST
-    ${OPENGL_COMPILER_DIR}/ossource*.cpp
-    ${OPENGL_COMPILER_DIR}/ossource*.h
-    ${OPENGL_COMPILER_DIR}/ossource*.hpp
-)
-list(REMOVE_ITEM OPENGL_COMPILER_LIST ${OPENGL_COMPILER_OS_SPECIFIC_LIST})
-
-file(GLOB VULKAN_LIST
-    ${VULKAN_DIR}/*.cpp
-    ${VULKAN_DIR}/*.h
-    ${VULKAN_DIR}/*.hpp
-    ${SOURCE_DIR}/System/Build.cpp
-    ${SOURCE_DIR}/System/Build.hpp
-    ${SOURCE_DIR}/System/CPUID.cpp
-    ${SOURCE_DIR}/System/CPUID.hpp
-    ${SOURCE_DIR}/System/Configurator.cpp
-    ${SOURCE_DIR}/System/Configurator.hpp
-    ${SOURCE_DIR}/System/Debug.cpp
-    ${SOURCE_DIR}/System/Debug.hpp
-    ${SOURCE_DIR}/System/Half.cpp
-    ${SOURCE_DIR}/System/Half.hpp
-    ${SOURCE_DIR}/System/Math.cpp
-    ${SOURCE_DIR}/System/Math.hpp
-    ${SOURCE_DIR}/System/Memory.cpp
-    ${SOURCE_DIR}/System/Memory.hpp
-    ${SOURCE_DIR}/System/Socket.cpp
-    ${SOURCE_DIR}/System/Socket.hpp
-    ${SOURCE_DIR}/System/Synchronization.hpp
-    ${SOURCE_DIR}/System/Timer.cpp
-    ${SOURCE_DIR}/System/Timer.hpp
-    ${SOURCE_DIR}/Device/*.cpp
-    ${SOURCE_DIR}/Device/*.hpp
-    ${SOURCE_DIR}/Pipeline/*.cpp
-    ${SOURCE_DIR}/Pipeline/*.hpp
-    ${SOURCE_DIR}/WSI/VkSurfaceKHR.cpp
-    ${SOURCE_DIR}/WSI/VkSurfaceKHR.hpp
-    ${SOURCE_DIR}/WSI/VkSwapchainKHR.cpp
-    ${SOURCE_DIR}/WSI/VkSwapchainKHR.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan/*.h}
-)
-
-if(SWIFTSHADER_ENABLE_VULKAN_DEBUGGER)
-    file(GLOB_RECURSE VULKAN_DEBUG_LIST
-        ${VULKAN_DIR}/Debug/*.cpp
-        ${VULKAN_DIR}/Debug/*.h
-        ${VULKAN_DIR}/Debug/*.hpp
-    )
-    list(APPEND VULKAN_LIST ${VULKAN_DEBUG_LIST})
-    list(APPEND SWIFTSHADER_COMPILE_OPTIONS "-DENABLE_VK_DEBUGGER")
-endif()
-
-if(SWIFTSHADER_ENABLE_ASTC)
-    file(GLOB_RECURSE VULKAN_ASTC_LIST
-        ${ASTC_DIR}/Source/*.cpp
-        ${ASTC_DIR}/Source/*.h
-    )
-    list(APPEND VULKAN_LIST ${VULKAN_ASTC_LIST})
-    list(APPEND SWIFTSHADER_COMPILE_OPTIONS "-DSWIFTSHADER_ENABLE_ASTC")
-endif()
-
-if(LINUX OR ANDROID)
-    list(APPEND VULKAN_LIST
-        ${SOURCE_DIR}/System/Linux/MemFd.cpp
-	${SOURCE_DIR}/System/Linux/MemFd.hpp)
-endif()
 
 ###########################################################
 # Append OS specific files to lists
 ###########################################################
 
 if(WIN32)
-    list(APPEND SWIFTSHADER_LIST
-        ${SOURCE_DIR}/Main/FrameBufferDD.cpp
-        ${SOURCE_DIR}/Main/FrameBufferDD.hpp
-        ${SOURCE_DIR}/Main/FrameBufferGDI.cpp
-        ${SOURCE_DIR}/Main/FrameBufferGDI.hpp
-        ${SOURCE_DIR}/Main/FrameBufferWin.cpp
-        ${SOURCE_DIR}/Main/FrameBufferWin.hpp
-    )
-    list(APPEND OPENGL_COMPILER_LIST ${OPENGL_COMPILER_DIR}/ossource_win.cpp)
-    list(APPEND EGL_LIST ${OPENGL_DIR}/libEGL/libEGL.rc)
-    list(APPEND GLES2_LIST ${OPENGL_DIR}/libGLESv2/libGLESv2.rc)
-    list(APPEND GLES_CM_LIST ${OPENGL_DIR}/libGLES_CM/libGLES_CM.rc)
-    list(APPEND VULKAN_LIST
-        ${VULKAN_DIR}/Vulkan.rc
-        ${SOURCE_DIR}/WSI/Win32SurfaceKHR.cpp
-        ${SOURCE_DIR}/WSI/Win32SurfaceKHR.hpp
-    )
-elseif(LINUX)
-    list(APPEND SWIFTSHADER_LIST
-        ${SOURCE_DIR}/Main/FrameBufferX11.cpp
-        ${SOURCE_DIR}/Main/FrameBufferX11.hpp
-        ${SOURCE_DIR}/Common/SharedLibrary.hpp
-        ${SOURCE_DIR}/Main/libX11.cpp
-        ${SOURCE_DIR}/Main/libX11.hpp
-    )
-    list(APPEND EGL_LIST
-        ${SOURCE_DIR}/Common/SharedLibrary.hpp
-        ${SOURCE_DIR}/Main/libX11.cpp
-        ${SOURCE_DIR}/Main/libX11.hpp
-    )
-    list(APPEND OPENGL_COMPILER_LIST
-        ${OPENGL_COMPILER_DIR}/ossource_posix.cpp
-    )
-
-    if(X11)
-        list(APPEND VULKAN_LIST
-            ${SOURCE_DIR}/WSI/XlibSurfaceKHR.cpp
-            ${SOURCE_DIR}/WSI/XlibSurfaceKHR.hpp
-            ${SOURCE_DIR}/WSI/libX11.cpp
-            ${SOURCE_DIR}/WSI/libX11.hpp
-        )
-    endif()
-
-    if(XCB)
-        list(APPEND VULKAN_LIST
-            ${SOURCE_DIR}/WSI/XcbSurfaceKHR.cpp
-            ${SOURCE_DIR}/WSI/XcbSurfaceKHR.hpp
-        )
-    endif()
-
-elseif(APPLE)
-    list(APPEND SWIFTSHADER_LIST
-        ${SOURCE_DIR}/Main/FrameBufferOSX.mm
-        ${SOURCE_DIR}/Main/FrameBufferOSX.hpp
-    )
-    list(APPEND EGL_LIST
-        ${OPENGL_DIR}/libEGL/OSXUtils.mm
-        ${OPENGL_DIR}/libEGL/OSXUtils.hpp
-    )
-    list(APPEND OPENGL_COMPILER_LIST
-        ${OPENGL_COMPILER_DIR}/ossource_posix.cpp
-    )
-
-    list(APPEND VULKAN_LIST
-        ${SOURCE_DIR}/WSI/MetalSurface.mm
-        ${SOURCE_DIR}/WSI/MetalSurface.h
-    )
-elseif(ANDROID)
-    list(APPEND SWIFTSHADER_LIST
-        ${SOURCE_DIR}/Main/FrameBufferAndroid.cpp
-        ${SOURCE_DIR}/Main/FrameBufferAndroid.hpp
-    )
-    list(APPEND OPENGL_COMPILER_LIST
-        ${OPENGL_COMPILER_DIR}/ossource_posix.cpp
-    )
-endif()
-
-if(WIN32)
     set(OS_LIBS odbc32 odbccp32 WS2_32 dxguid)
 elseif(LINUX)
     set(OS_LIBS dl pthread)
+    if(SWIFTSHADER_BUILD_WSI_WAYLAND)
+        list(APPEND OS_LIBS "${WAYLAND}")
+    endif(SWIFTSHADER_BUILD_WSI_WAYLAND)
+elseif(FUCHSIA)
+    set(OS_LIBS zircon)
 elseif(APPLE)
     find_library(COCOA_FRAMEWORK Cocoa)
     find_library(QUARTZ_FRAMEWORK Quartz)
@@ -1100,26 +653,7 @@ endif()
 # SwiftShader Targets
 ###########################################################
 
-add_library(SwiftShader STATIC EXCLUDE_FROM_ALL ${SWIFTSHADER_LIST})
-set_target_properties(SwiftShader PROPERTIES
-    INCLUDE_DIRECTORIES "${COMMON_INCLUDE_DIR}"
-    POSITION_INDEPENDENT_CODE 1
-    FOLDER "Core"
-    COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-    COMPILE_DEFINITIONS "NO_SANITIZE_FUNCTION=;"
-    LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-)
-target_link_libraries(SwiftShader ${OS_LIBS} ${SWIFTSHADER_LIBS})
-
-add_library(ReactorLLVM STATIC EXCLUDE_FROM_ALL ${REACTOR_LLVM_LIST})
-set_target_properties(ReactorLLVM PROPERTIES
-    INCLUDE_DIRECTORIES "${COMMON_INCLUDE_DIR}"
-    POSITION_INDEPENDENT_CODE 1
-    FOLDER "Core"
-    COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-    LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-)
-target_link_libraries(ReactorLLVM llvm ${OS_LIBS})
+add_subdirectory(src/Reactor) # Add ReactorSubzero and ReactorLLVM targets
 
 if(${REACTOR_BACKEND} STREQUAL "LLVM")
     set(Reactor ReactorLLVM)
@@ -1129,372 +663,106 @@ else()
     message(FATAL_ERROR "REACTOR_BACKEND must be 'LLVM' or 'Subzero'")
 endif()
 
-if(REACTOR_EMIT_DEBUG_INFO)
-    if(WIN32)
-        # Boost stacktrace uses COM on Windows.
-        # On Windows, cache COM instances in TLS for performance.
-        target_compile_definitions(${Reactor} PRIVATE BOOST_STACKTRACE_USE_WINDBG_CACHED)
-    else()
-        # Boost stacktrace uses libbacktrace
-        target_compile_definitions(${Reactor} PRIVATE BOOST_STACKTRACE_USE_BACKTRACE)
+add_subdirectory(src/Common) # Add gl_common target
+add_subdirectory(src/Main) # Add gl_main target
+add_subdirectory(src/Shader) # Add gl_shader target
+add_subdirectory(src/Renderer) # Add gl_renderer target
 
-        # Boost stacktrace uses exceptions, so force enable it
-        set_cpp_flag("-fexceptions")
-
-        add_library(Libbacktrace STATIC EXCLUDE_FROM_ALL ${LIBBACKTRACE_LIST})
-        set_target_properties(Libbacktrace PROPERTIES
-            INCLUDE_DIRECTORIES "${LIBBACKTRACE_INCLUDE_DIR}"
-            POSITION_INDEPENDENT_CODE 1
-            FOLDER "Core"
-        )
-        target_link_libraries(Libbacktrace ${OS_LIBS} ${SWIFTSHADER_LIBS})
-        target_link_libraries(${Reactor} Libbacktrace)
-    endif()
-
-    # Download boost and use it
-    DownloadBoost()
-    set(BOOST_INCLUDEDIR ${BOOST_THIRD_PARTY_DIR})
-    find_package(Boost REQUIRED)
-    target_link_libraries(${Reactor} Boost::boost)
-endif(REACTOR_EMIT_DEBUG_INFO)
-
-add_library(GLCompiler STATIC EXCLUDE_FROM_ALL ${OPENGL_COMPILER_LIST})
-set_target_properties(GLCompiler PROPERTIES
-    INCLUDE_DIRECTORIES "${OPENGL_INCLUDE_DIR}"
-    POSITION_INDEPENDENT_CODE 1
-    FOLDER "OpenGL"
-    COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-    LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
+# Combine all gl_* targets into an interface target
+# along with other dependencies
+add_library(gl_swiftshader_core INTERFACE)
+target_link_libraries(gl_swiftshader_core INTERFACE
+    # Transitively depends on shader, main, core, Reactor,
+    # OS_LIBS and SWIFTSHADER_LIBS
+    gl_renderer
 )
-target_link_libraries(GLCompiler ${OS_LIBS} ${SWIFTSHADER_LIBS})
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(LIB_PREFIX "lib64")
-else()
-    set(LIB_PREFIX "lib")
-endif()
+add_subdirectory(src/OpenGL/common EXCLUDE_FROM_ALL) # Add libGLESCommon target
+add_subdirectory(src/OpenGL/compiler EXCLUDE_FROM_ALL) # Add GLCompiler target
 
 if(SWIFTSHADER_BUILD_EGL)
-    add_library(libEGL SHARED ${EGL_LIST})
-    set_target_properties(libEGL PROPERTIES
-        INCLUDE_DIRECTORIES "${OPENGL_INCLUDE_DIR}"
-        FOLDER "OpenGL"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        COMPILE_DEFINITIONS "EGL_EGLEXT_PROTOTYPES; EGLAPI=; NO_SANITIZE_FUNCTION=;$<$<CONFIG:Debug>:DEBUGGER_WAIT_DIALOG>"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-        PREFIX ""
-    )
-    if(LINUX)
-        if(X11)
-            set_property(TARGET libEGL APPEND PROPERTY COMPILE_DEFINITIONS "USE_X11=1")
-        endif()
-    endif()
-    if (ANDROID)
-        set_target_properties(libEGL PROPERTIES SUFFIX "_swiftshader.so")
-    endif ()
-    set_shared_library_export_map(libEGL ${SOURCE_DIR}/OpenGL/libEGL)
-    target_link_libraries(libEGL ${OS_LIBS} ${SWIFTSHADER_LIBS})
-    add_custom_command(
-        TARGET libEGL
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:libEGL>/translator
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libEGL> $<TARGET_FILE_DIR:libEGL>/translator/${LIB_PREFIX}EGL_translator${CMAKE_SHARED_LIBRARY_SUFFIX}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libEGL> ${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/
-    )
+    add_subdirectory(src/OpenGL/libEGL) # Add libEGL target
 endif()
 
 if(SWIFTSHADER_BUILD_GLESv2)
-    add_library(libGLESv2 SHARED ${GLES2_LIST})
-    set_target_properties(libGLESv2 PROPERTIES
-        INCLUDE_DIRECTORIES "${OPENGL_INCLUDE_DIR}"
-        FOLDER "OpenGL"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; GL_API=; GL_APICALL=; GLAPI=; NO_SANITIZE_FUNCTION=;"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-        PREFIX ""
-    )
-    if (ANDROID)
-        set_target_properties(libGLESv2 PROPERTIES SUFFIX "_swiftshader.so")
-    endif ()
-    set_shared_library_export_map(libGLESv2 ${SOURCE_DIR}/OpenGL/libGLESv2)
-    target_link_libraries(libGLESv2 SwiftShader ${Reactor} GLCompiler ${OS_LIBS} ${SWIFTSHADER_LIBS})
-    add_custom_command(
-        TARGET libGLESv2
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:libGLESv2>/translator
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libGLESv2> $<TARGET_FILE_DIR:libGLESv2>/translator/${LIB_PREFIX}GLES_V2_translator${CMAKE_SHARED_LIBRARY_SUFFIX}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libGLESv2> ${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/
-    )
+    add_subdirectory(src/OpenGL/libGLESv2) # Add libGLESv2 target
 endif()
 
 if(SWIFTSHADER_BUILD_GLES_CM)
-    add_library(libGLES_CM SHARED ${GLES_CM_LIST})
-    set_target_properties(libGLES_CM PROPERTIES
-        INCLUDE_DIRECTORIES "${OPENGL_INCLUDE_DIR}"
-        FOLDER "OpenGL"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        COMPILE_DEFINITIONS "GL_GLEXT_PROTOTYPES; EGLAPI=; GL_API=; GL_APICALL=; GLAPI=;"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-        PREFIX ""
-    )
-    if (ANDROID)
-        set_target_properties(libGLES_CM PROPERTIES SUFFIX "_swiftshader.so")
-    endif ()
-    set_shared_library_export_map(libGLES_CM ${SOURCE_DIR}/OpenGL/libGLES_CM)
-    target_link_libraries(libGLES_CM SwiftShader ${Reactor} GLCompiler ${OS_LIBS} ${SWIFTSHADER_LIBS})
-    add_custom_command(
-        TARGET libGLES_CM
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:libGLES_CM>/translator
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libGLES_CM> $<TARGET_FILE_DIR:libGLES_CM>/translator/${LIB_PREFIX}GLES_CM_translator${CMAKE_SHARED_LIBRARY_SUFFIX}
-    )
+    add_subdirectory(src/OpenGL/libGLES_CM) # Add libGLES_CM target
 endif(SWIFTSHADER_BUILD_GLES_CM)
 
 if(SWIFTSHADER_BUILD_VULKAN)
-    add_library(vk_swiftshader SHARED ${VULKAN_LIST})
-
     if (NOT TARGET SPIRV-Tools)
         # This variable is also used by SPIRV-Tools to locate SPIRV-Headers
         set(SPIRV-Headers_SOURCE_DIR "${THIRD_PARTY_DIR}/SPIRV-Headers")
-        list(APPEND VULKAN_INCLUDE_DIR "${SPIRV-Headers_SOURCE_DIR}/include")
-
-        add_subdirectory(third_party/SPIRV-Tools)
-
-        set_target_properties(core_tables PROPERTIES FOLDER "SPIRV-Tools build")
-        set_target_properties(enum_string_mapping PROPERTIES FOLDER "SPIRV-Tools build")
-        set_target_properties(extinst_tables PROPERTIES FOLDER "SPIRV-Tools build")
-        set_target_properties(spirv-tools-pkg-config PROPERTIES FOLDER "SPIRV-Tools build")
-        set_target_properties(spirv-tools-shared-pkg-config PROPERTIES FOLDER "SPIRV-Tools build")
+        set(SPIRV_SKIP_TESTS TRUE CACHE BOOL "" FORCE)
+        add_subdirectory(${THIRD_PARTY_DIR}/SPIRV-Tools) # Add SPIRV-Tools target
     endif()
 
-    # Copy the OpenCLDebugInfo100.h header that's generated by SPIRV-Tools
-    # out to a separate directory that can be added to the include path.
-    # Ideally, this header would just be pre-built and part of SPIRV-Headers.
-    # See: https://github.com/KhronosGroup/SPIRV-Headers/issues/137
-    set(SPIRV_TOOLS_EXT_INC_DIR ${CMAKE_CURRENT_BINARY_DIR}/spirv-tools-ext/include)
-    add_custom_target(spirv_tools_ext_includes
-        DEPENDS spirv-tools-header-OpenCLDebugInfo100
-        COMMAND ${CMAKE_COMMAND} -E copy
-            ${spirv-tools_BINARY_DIR}/OpenCLDebugInfo100.h
-            ${SPIRV_TOOLS_EXT_INC_DIR}/spirv-tools/ext/OpenCLDebugInfo100.h
-    )
-    set_target_properties(spirv_tools_ext_includes PROPERTIES FOLDER "SPIRV-Tools build")
-    list(APPEND VULKAN_INCLUDE_DIR "${SPIRV_TOOLS_EXT_INC_DIR}")
-    add_dependencies(vk_swiftshader spirv_tools_ext_includes)
+    # Add a vk_base interface library for shared vulkan build options.
+    # TODO: Create src/Base and make this a lib target, and move stuff from
+    # src/Vulkan into it that is needed by vk_pipeline, vk_device, and vk_wsi.
+    add_library(vk_base INTERFACE)
 
-    set_target_properties(vk_swiftshader PROPERTIES
-        INCLUDE_DIRECTORIES "${VULKAN_INCLUDE_DIR}"
-        FOLDER "Vulkan"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        COMPILE_DEFINITIONS "VK_EXPORT=;NO_SANITIZE_FUNCTION=;$<$<CONFIG:Debug>:DEBUGGER_WAIT_DIALOG>"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-    )
+    if(SWIFTSHADER_ENABLE_VULKAN_DEBUGGER)
+        target_compile_definitions(vk_base INTERFACE "ENABLE_VK_DEBUGGER")
+    endif()
 
     if(WIN32)
-        set(VULKAN_API_LIBRARY_NAME "vulkan-1.dll")
-        set_property(TARGET vk_swiftshader APPEND
-                     PROPERTY COMPILE_DEFINITIONS "VK_USE_PLATFORM_WIN32_KHR")
+        target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_WIN32_KHR")
     elseif(LINUX)
-        set(VULKAN_API_LIBRARY_NAME "libvulkan.so.1")
         if(X11)
-            set_property(TARGET vk_swiftshader APPEND
-                        PROPERTY COMPILE_DEFINITIONS "VK_USE_PLATFORM_XLIB_KHR")
+            target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_XLIB_KHR")
         endif()
         if(XCB)
-            set_property(TARGET vk_swiftshader APPEND
-                        PROPERTY COMPILE_DEFINITIONS "VK_USE_PLATFORM_XCB_KHR")
+            target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_XCB_KHR")
         endif()
+        if(SWIFTSHADER_BUILD_WSI_WAYLAND)
+            if(WAYLAND)
+                target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_WAYLAND_KHR")
+            endif()
+        endif(SWIFTSHADER_BUILD_WSI_WAYLAND)
     elseif(APPLE)
-        set(VULKAN_API_LIBRARY_NAME "libvulkan.dylib")
-        set_property(TARGET vk_swiftshader APPEND
-                     PROPERTY COMPILE_DEFINITIONS "VK_USE_PLATFORM_MACOS_MVK")
+        target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_MACOS_MVK")
+    elseif(FUCHSIA)
+        target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_FUCHSIA")
     else()
         message(FATAL_ERROR "Platform does not support Vulkan yet")
     endif()
 
-    set_shared_library_export_map(vk_swiftshader ${SOURCE_DIR}/Vulkan)
+    add_subdirectory(src/System) # Add vk_system target
+    add_subdirectory(src/Pipeline) # Add vk_pipeline target
+    add_subdirectory(src/WSI) # Add vk_wsi target
+    add_subdirectory(src/Device) # Add vk_device target
+    add_subdirectory(src/Vulkan) # Add vk_swiftshader target
 
-    set(VK_SWIFTSHADER_LIBS ${Reactor} marl ${OS_LIBS} SPIRV-Tools SPIRV-Tools-opt ${SWIFTSHADER_LIBS})
-    if(SWIFTSHADER_ENABLE_VULKAN_DEBUGGER)
-        list(APPEND VK_SWIFTSHADER_LIBS cppdap)
-    endif()
-    target_link_libraries(vk_swiftshader ${VK_SWIFTSHADER_LIBS})
-
-    add_custom_command(
-        TARGET vk_swiftshader
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:vk_swiftshader> ${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:vk_swiftshader> ${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/${VULKAN_API_LIBRARY_NAME}
-    )
-
-    # The vk_swiftshader_icd.json manifest file will point to ICD_LIBRARY_PATH.
-    # Set ICD_LIBRARY_PATH to be a relative path similar to "./libvk_swiftshader.so", so both files can be moved.
-    # A relative path is relative to the manifest file.
-    set(ICD_LIBRARY_PATH "${CMAKE_SHARED_LIBRARY_PREFIX}vk_swiftshader${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    if(WIN32)
-        # The path is output to a JSON file, which requires backslashes to be escaped.
-        set(ICD_LIBRARY_PATH ".\\\\${ICD_LIBRARY_PATH}")
-    else()
-        set(ICD_LIBRARY_PATH "./${ICD_LIBRARY_PATH}")
-    endif()
-    configure_file(
-        "${VULKAN_DIR}/vk_swiftshader_icd.json.tmpl"
-        "${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/vk_swiftshader_icd.json"
-    )
-
-    if(SWIFTSHADER_EMIT_COVERAGE)
-        add_executable(turbo-cov ${TESTS_DIR}/regres/cov/turbo-cov/main.cpp)
-        target_link_libraries(turbo-cov llvm-with-cov)
-
-        # Emit a coverage-toolchain.txt file next to the vk_swiftshader_icd.json
-        # file so that regres can locate the LLVM toolchain used to build the
-        # .so file. With this, the correct llvm-cov and llvm-profdata tools
-        # from the same toolchain can be located.
-        get_filename_component(COMPILER_TOOLCHAIN_DIR ${CMAKE_CXX_COMPILER} DIRECTORY)
-        file(GENERATE
-            OUTPUT "${CMAKE_BINARY_DIR}/${CMAKE_SYSTEM_NAME}/coverage-toolchain.txt"
-            CONTENT "{\"llvm\": \"${COMPILER_TOOLCHAIN_DIR}\", \"turbo-cov\": \"$<TARGET_FILE:turbo-cov>\"}"
-        )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND # turbo-cov is only useful for clang coverage info
+       SWIFTSHADER_EMIT_COVERAGE)
+        add_subdirectory(${TESTS_DIR}/regres/cov/turbo-cov)
     endif()
 
 endif()
+
+if(SWIFTSHADER_BUILD_ANGLE)
+    add_subdirectory(${THIRD_PARTY_DIR}/angle)
+
+    # Make angle depend on vk_swiftshader so we can test SWANGLE
+    if (TARGET vk_swiftshader)
+        add_dependencies(angle vk_swiftshader)
+    endif()
+endif()
+
 
 ###########################################################
 # Sample programs and tests
 ###########################################################
 
-if(SWIFTSHADER_BUILD_TESTS)
-    set(REACTOR_UNIT_TESTS_LIST
-        ${SOURCE_DIR}/Reactor/ReactorUnitTests.cpp
-        ${THIRD_PARTY_DIR}/googletest/googletest/src/gtest-all.cc
-    )
-
-    set(REACTOR_UNIT_TESTS_INCLUDE_DIR
-        ${THIRD_PARTY_DIR}/googletest/googletest/include
-        ${THIRD_PARTY_DIR}/googletest/googletest/
-    )
-
-    add_executable(ReactorUnitTests ${REACTOR_UNIT_TESTS_LIST})
-    set_target_properties(ReactorUnitTests PROPERTIES
-        INCLUDE_DIRECTORIES "${REACTOR_UNIT_TESTS_INCLUDE_DIR}"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-        FOLDER "Tests"
-    )
-
-    if(NOT WIN32 AND ${REACTOR_BACKEND} STREQUAL "Subzero")
-        target_link_libraries(ReactorUnitTests ${Reactor} pthread dl)
-    else()
-        target_link_libraries(ReactorUnitTests ${Reactor})
-    endif()
-
-    set(GLES_UNITTESTS_LIST
-        ${TESTS_DIR}/GLESUnitTests/main.cpp
-        ${TESTS_DIR}/GLESUnitTests/unittests.cpp
-        ${THIRD_PARTY_DIR}/googletest/googletest/src/gtest-all.cc
-    )
-
-    set(GLES_UNITTESTS_INCLUDE_DIR
-        ${THIRD_PARTY_DIR}/googletest/googletest/include/
-        ${THIRD_PARTY_DIR}/googletest/googlemock/include/
-        ${THIRD_PARTY_DIR}/googletest/googletest/
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/
-    )
-
-    add_executable(gles-unittests ${GLES_UNITTESTS_LIST})
-    set_target_properties(gles-unittests PROPERTIES
-        INCLUDE_DIRECTORIES "${GLES_UNITTESTS_INCLUDE_DIR}"
-        FOLDER "Tests"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        COMPILE_DEFINITIONS "STANDALONE"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-    )
-
-    target_link_libraries(gles-unittests libEGL libGLESv2 ${OS_LIBS} ${SWIFTSHADER_LIBS})
-    if(ANDROID)
-        target_link_libraries(gles-unittests -landroid)
-    endif()
-
-    # Math unit tests
-    set(MATH_UNITTESTS_LIST
-        ${TESTS_DIR}/MathUnitTests/main.cpp
-        ${TESTS_DIR}/MathUnitTests/unittests.cpp
-        ${THIRD_PARTY_DIR}/googletest/googletest/src/gtest-all.cc
-    )
-
-    set(MATH_UNITTESTS_INCLUDE_DIR
-        ${THIRD_PARTY_DIR}/googletest/googletest/include/
-        ${THIRD_PARTY_DIR}/googletest/googlemock/include/
-        ${THIRD_PARTY_DIR}/googletest/googletest/
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/
-    )
-
-    add_executable(math-unittests ${MATH_UNITTESTS_LIST})
-    set_target_properties(math-unittests PROPERTIES
-        INCLUDE_DIRECTORIES "${MATH_UNITTESTS_INCLUDE_DIR}"
-        FOLDER "Tests"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-    )
-
-    if(NOT WIN32)
-        target_link_libraries(math-unittests pthread ${SWIFTSHADER_LIBS})
-    endif()
-endif(SWIFTSHADER_BUILD_TESTS)
-
-if(SWIFTSHADER_BUILD_BENCHMARKS)
-    if (NOT TARGET benchmark::benchmark)
-        set(BENCHMARK_ENABLE_TESTING FALSE CACHE BOOL FALSE FORCE)
-        add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark)
-    endif()
-
-    set(REACTOR_BENCHMARK_LIST
-        ${SOURCE_DIR}/Reactor/ReactorBenchmarks.cpp
-    )
-
-    add_executable(ReactorBenchmarks ${REACTOR_BENCHMARK_LIST})
-    target_link_libraries(ReactorBenchmarks benchmark::benchmark marl ${Reactor})
-
-    set_target_properties(ReactorBenchmarks PROPERTIES
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-        FOLDER "Benchmarks"
-    )
-endif(SWIFTSHADER_BUILD_BENCHMARKS)
-
-if(SWIFTSHADER_BUILD_TESTS AND SWIFTSHADER_BUILD_VULKAN)
-    set(VK_UNITTESTS_LIST
-        ${TESTS_DIR}/VulkanUnitTests/Device.cpp
-        ${TESTS_DIR}/VulkanUnitTests/Driver.cpp
-        ${TESTS_DIR}/VulkanUnitTests/main.cpp
-        ${TESTS_DIR}/VulkanUnitTests/unittests.cpp
-        ${THIRD_PARTY_DIR}/googletest/googletest/src/gtest-all.cc
-    )
-
-    set(VK_UNITTESTS_INCLUDE_DIR
-        ${THIRD_PARTY_DIR}/googletest/googletest/include/
-        ${THIRD_PARTY_DIR}/googletest/googlemock/include/
-        ${THIRD_PARTY_DIR}/googletest/googletest/
-        ${THIRD_PARTY_DIR}/SPIRV-Tools/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/
-    )
-
-    add_executable(vk-unittests ${VK_UNITTESTS_LIST})
-    add_dependencies(vk-unittests vk_swiftshader)
-
-    set_target_properties(vk-unittests PROPERTIES
-        INCLUDE_DIRECTORIES "${VK_UNITTESTS_INCLUDE_DIR}"
-        FOLDER "Tests"
-        COMPILE_OPTIONS "${SWIFTSHADER_COMPILE_OPTIONS};${WARNINGS_AS_ERRORS}"
-        COMPILE_DEFINITIONS "STANDALONE"
-        LINK_FLAGS "${SWIFTSHADER_LINK_FLAGS}"
-    )
-
-    target_link_libraries(vk-unittests ${OS_LIBS} SPIRV-Tools ${SWIFTSHADER_LIBS})
-endif(SWIFTSHADER_BUILD_TESTS AND SWIFTSHADER_BUILD_VULKAN)
+# TODO(b/161976310): Add support for building PowerVR on MacOS
+if(APPLE AND HAVE_PVR_SUBMODULE AND SWIFTSHADER_BUILD_PVR)
+    message(WARNING "Building PowerVR examples for SwiftShader is not yet supported on Apple platforms.")
+    set(SWIFTSHADER_BUILD_PVR FALSE)
+endif()
 
 if(HAVE_PVR_SUBMODULE AND SWIFTSHADER_BUILD_PVR)
     if(UNIX AND NOT APPLE)
@@ -1506,27 +774,7 @@ if(HAVE_PVR_SUBMODULE AND SWIFTSHADER_BUILD_PVR)
     endif()
 
     set(PVR_BUILD_EXAMPLES TRUE CACHE BOOL "Build the PowerVR SDK Examples" FORCE)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third_party/PowerVR_Examples)
-
-    if(NOT APPLE)
-        # Copy the 'loader' library to the bin/ directory
-        # where the PowerVR executables are placed.
-        add_custom_command(
-            TARGET vk_swiftshader
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:vk_swiftshader> ${CMAKE_BINARY_DIR}/bin/${VULKAN_API_LIBRARY_NAME}
-        )
-        add_custom_command(
-            TARGET libGLESv2
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libGLESv2> ${CMAKE_BINARY_DIR}/bin/$<TARGET_FILE_NAME:libGLESv2>
-        )
-        add_custom_command(
-            TARGET libEGL
-            POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:libEGL> ${CMAKE_BINARY_DIR}/bin/$<TARGET_FILE_NAME:libEGL>
-        )
-    endif()
+    add_subdirectory(${THIRD_PARTY_DIR}/PowerVR_Examples)
 
     # Samples known to work well
     set(PVR_VULKAN_TARGET_GOOD
@@ -1633,4 +881,37 @@ if(HAVE_PVR_SUBMODULE AND SWIFTSHADER_BUILD_PVR)
     foreach(pvr_target ${PVR_TARGET_OTHER} ${PVR_VULKAN_TARGET_OTHER} ${PVR_GLES_TARGET_OTHER})
         set_target_properties(${pvr_target} PROPERTIES FOLDER Samples/PowerVR-Build)
     endforeach()
+
+    # Make angle target depend on PowerVR GL examples
+    if (TARGET angle)
+        foreach(pvr_target ${PVR_GLES_TARGET})
+            add_dependencies(angle ${pvr_target})
+        endforeach()
+    endif()
+endif()
+
+if(SWIFTSHADER_BUILD_TESTS)
+    add_subdirectory(${TESTS_DIR}/ReactorUnitTests) # Add ReactorUnitTests target
+    add_subdirectory(${TESTS_DIR}/GLESUnitTests) # Add gles-unittests target
+    add_subdirectory(${TESTS_DIR}/MathUnitTests) # Add math-unittests target
+    add_subdirectory(${TESTS_DIR}/SystemUnitTests) # Add system-unittests target
+endif()
+
+if(SWIFTSHADER_BUILD_BENCHMARKS)
+    if (NOT TARGET benchmark::benchmark)
+        set(BENCHMARK_ENABLE_TESTING FALSE CACHE BOOL FALSE FORCE)
+        add_subdirectory(${THIRD_PARTY_DIR}/benchmark)
+    endif()
+
+    if (NOT TARGET glslang)
+        add_subdirectory(${THIRD_PARTY_DIR}/glslang)
+    endif()
+
+    add_subdirectory(${TESTS_DIR}/ReactorBenchmarks) # Add ReactorBenchmarks target
+    add_subdirectory(${TESTS_DIR}/SystemBenchmarks) # Add system-benchmarks target
+    add_subdirectory(${TESTS_DIR}/VulkanBenchmarks) # Add VulkanBenchmarks target
+endif()
+
+if(SWIFTSHADER_BUILD_TESTS AND SWIFTSHADER_BUILD_VULKAN)
+    add_subdirectory(${TESTS_DIR}/VulkanUnitTests) # Add VulkanUnitTests target
 endif()

@@ -1,3 +1,7 @@
+// Copyright 2020 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 /*
  * Copyright (C) 2006, 2007, 2008 Apple Inc.  All rights reserved.
  * Copyright (C) 2007 Matt Lilek (pewtermoose@gmail.com).
@@ -172,6 +176,9 @@ export class MainImpl {
     Root.Runtime.experiments.register('timelineReplayEvent', 'Timeline: Replay input events', true);
     Root.Runtime.experiments.register('wasmDWARFDebugging', 'WebAssembly Debugging: Enable DWARF support');
 
+    // Dual-screen
+    Root.Runtime.experiments.register('dualScreenSupport', 'Emulation: Support dual screen mode');
+
     Root.Runtime.experiments.cleanUpStaleExperiments();
     const enabledExperiments = Root.Runtime.queryParam('enabledExperiments');
     if (enabledExperiments) {
@@ -182,6 +189,7 @@ export class MainImpl {
       'backgroundServicesNotifications',
       'backgroundServicesPushMessaging',
       'backgroundServicesPaymentHandler',
+      'issuesPane',
     ]);
 
     if (Host.InspectorFrontendHost.isUnderTest() &&
@@ -219,7 +227,7 @@ export class MainImpl {
     UI.Tooltip.Tooltip.installHandler(document);
     self.SDK.consoleModel = SDK.ConsoleModel.ConsoleModel.instance();
     self.Components.dockController = new Components.DockController.DockController(canDock);
-    self.SDK.multitargetNetworkManager = new SDK.NetworkManager.MultitargetNetworkManager();
+    self.SDK.multitargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
     self.SDK.domDebuggerManager = new SDK.DOMDebuggerModel.DOMDebuggerManager();
     SDK.SDKModel.TargetManager.instance().addEventListener(
         SDK.SDKModel.Events.SuspendStateChanged, this._onSuspendStateChanged.bind(this));
@@ -622,13 +630,16 @@ export class MainMenuItem {
    */
   _handleContextMenu(contextMenu) {
     if (self.Components.dockController.canDock()) {
-      const dockItemElement = createElementWithClass('div', 'flex-centered flex-auto');
+      const dockItemElement = document.createElement('div');
+      dockItemElement.classList.add('flex-centered');
+      dockItemElement.classList.add('flex-auto');
       dockItemElement.tabIndex = -1;
       const titleElement = dockItemElement.createChild('span', 'flex-auto');
       titleElement.textContent = Common.UIString.UIString('Dock side');
-      const toggleDockSideShorcuts = self.UI.shortcutRegistry.shortcutDescriptorsForAction('main.toggle-dock');
+      const toggleDockSideShorcuts = self.UI.shortcutRegistry.shortcutsForAction('main.toggle-dock');
       titleElement.title = Common.UIString.UIString(
-          'Placement of DevTools relative to the page. (%s to restore last position)', toggleDockSideShorcuts[0].name);
+          'Placement of DevTools relative to the page. (%s to restore last position)',
+          toggleDockSideShorcuts[0].title());
       dockItemElement.appendChild(titleElement);
       const dockItemToolbar = new UI.Toolbar.Toolbar('', dockItemElement);
       if (Host.Platform.isMac() && !self.UI.themeSupport.hasTheme()) {
@@ -721,6 +732,14 @@ export class MainMenuItem {
         moreTools.defaultSection().appendItem(extension.title(), () => {
           Host.userMetrics.actionTaken(Host.UserMetrics.Action.SettingsOpenedFromMenu);
           UI.ViewManager.ViewManager.instance().showView('preferences', /* userGesture */ true);
+        });
+        continue;
+      }
+
+      if (descriptor['id'] === 'issues-pane') {
+        moreTools.defaultSection().appendItem(extension.title(), () => {
+          Host.userMetrics.issuesPanelOpenedFrom(Host.UserMetrics.IssueOpener.HamburgerMenu);
+          UI.ViewManager.ViewManager.instance().showView('issues-pane', /* userGesture */ true);
         });
         continue;
       }

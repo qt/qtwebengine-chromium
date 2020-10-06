@@ -288,6 +288,36 @@ std::unique_ptr<VarDeclarations> IRGenerator::convertVarDeclarations(const ASTNo
     if (modifiers.fLayout.fKey && (modifiers.fFlags & Modifiers::kUniform_Flag)) {
         fErrors.error(decls.fOffset, "'key' is not permitted on 'uniform' variables");
     }
+    if (modifiers.fLayout.fMarker.fLength) {
+        if (fKind != Program::kPipelineStage_Kind) {
+            fErrors.error(decls.fOffset, "'marker' is only permitted in runtime effects");
+        }
+        if (!(modifiers.fFlags & Modifiers::kUniform_Flag)) {
+            fErrors.error(decls.fOffset, "'marker' is only permitted on 'uniform' variables");
+        }
+        if (*baseType != *fContext.fFloat4x4_Type) {
+            fErrors.error(decls.fOffset, "'marker' is only permitted on float4x4 variables");
+        }
+    }
+    if (modifiers.fLayout.fFlags & Layout::kSRGBUnpremul_Flag) {
+        if (fKind != Program::kPipelineStage_Kind) {
+            fErrors.error(decls.fOffset, "'srgb_unpremul' is only permitted in runtime effects");
+        }
+        if (!(modifiers.fFlags & Modifiers::kUniform_Flag)) {
+            fErrors.error(decls.fOffset,
+                          "'srgb_unpremul' is only permitted on 'uniform' variables");
+        }
+        auto validColorXformType = [](const Type& t) {
+            return t.kind() == Type::kVector_Kind && t.componentType().isFloat() &&
+                   (t.columns() == 3 || t.columns() == 4);
+        };
+        if (!validColorXformType(*baseType) && !(baseType->kind() == Type::kArray_Kind &&
+                                                 validColorXformType(baseType->componentType()))) {
+            fErrors.error(decls.fOffset,
+                          "'srgb_unpremul' is only permitted on half3, half4, float3, or float4 "
+                          "variables");
+        }
+    }
     if (modifiers.fFlags & Modifiers::kVarying_Flag) {
         if (fKind != Program::kPipelineStage_Kind) {
             fErrors.error(decls.fOffset, "'varying' is only permitted in runtime effects");
@@ -664,7 +694,7 @@ std::unique_ptr<Block> IRGenerator::applyInvocationIDWorkaround(std::unique_ptr<
     SkASSERT(loopIdx);
     std::unique_ptr<Expression> test(new BinaryExpression(-1,
                     std::unique_ptr<Expression>(new VariableReference(-1, *loopIdx)),
-                    Token::LT,
+                    Token::Kind::TK_LT,
                     std::unique_ptr<IntLiteral>(new IntLiteral(fContext, -1, fInvocations)),
                     *fContext.fBool_Type));
     std::unique_ptr<Expression> next(new PostfixExpression(
@@ -672,7 +702,7 @@ std::unique_ptr<Block> IRGenerator::applyInvocationIDWorkaround(std::unique_ptr<
                                       new VariableReference(-1,
                                                             *loopIdx,
                                                             VariableReference::kReadWrite_RefKind)),
-                Token::PLUSPLUS));
+                Token::Kind::TK_PLUSPLUS));
     ASTNode endPrimitiveID(&fFile->fNodes, -1, ASTNode::Kind::kIdentifier, "EndPrimitive");
     std::unique_ptr<Expression> endPrimitive = this->convertExpression(endPrimitiveID);
     SkASSERT(endPrimitive);
@@ -689,7 +719,7 @@ std::unique_ptr<Block> IRGenerator::applyInvocationIDWorkaround(std::unique_ptr<
                                                      std::vector<std::unique_ptr<Expression>>()))));
     std::unique_ptr<Expression> assignment(new BinaryExpression(-1,
                     std::unique_ptr<Expression>(new VariableReference(-1, *loopIdx)),
-                    Token::EQ,
+                    Token::Kind::TK_EQ,
                     std::unique_ptr<IntLiteral>(new IntLiteral(fContext, -1, 0)),
                     *fContext.fInt_Type));
     std::unique_ptr<Statement> initializer(new ExpressionStatement(std::move(assignment)));
@@ -725,12 +755,12 @@ std::unique_ptr<Statement> IRGenerator::getNormalizeSkPositionCode() {
                                    new BinaryExpression(-1, left, op, right, \
                                                         *fContext.fFloat2_Type))
     std::vector<std::unique_ptr<Expression>> children;
-    children.push_back(OP(OP(SWIZZLE(POS, 0, 1), Token::STAR, SWIZZLE(ADJUST, 0, 2)),
-                          Token::PLUS,
-                          OP(SWIZZLE(POS, 3, 3), Token::STAR, SWIZZLE(ADJUST, 1, 3))));
+    children.push_back(OP(OP(SWIZZLE(POS, 0, 1), Token::Kind::TK_STAR, SWIZZLE(ADJUST, 0, 2)),
+                          Token::Kind::TK_PLUS,
+                          OP(SWIZZLE(POS, 3, 3), Token::Kind::TK_STAR, SWIZZLE(ADJUST, 1, 3))));
     children.push_back(std::unique_ptr<Expression>(new FloatLiteral(fContext, -1, 0.0)));
     children.push_back(SWIZZLE(POS, 3));
-    std::unique_ptr<Expression> result = OP(POS, Token::EQ,
+    std::unique_ptr<Expression> result = OP(POS, Token::Kind::TK_EQ,
                                  std::unique_ptr<Expression>(new Constructor(-1,
                                                                              *fContext.fFloat4_Type,
                                                                              std::move(children))));
@@ -1324,13 +1354,13 @@ static bool determine_binary_type(const Context& context,
     bool isLogical;
     bool validMatrixOrVectorOp;
     switch (op) {
-        case Token::EQ:
+        case Token::Kind::TK_EQ:
             *outLeftType = &left;
             *outRightType = &left;
             *outResultType = &left;
             return right.canCoerceTo(left);
-        case Token::EQEQ: // fall through
-        case Token::NEQ:
+        case Token::Kind::TK_EQEQ: // fall through
+        case Token::Kind::TK_NEQ:
             if (right.canCoerceTo(left)) {
                 *outLeftType = &left;
                 *outRightType = &left;
@@ -1343,25 +1373,25 @@ static bool determine_binary_type(const Context& context,
                 return true;
             }
             return false;
-        case Token::LT:   // fall through
-        case Token::GT:   // fall through
-        case Token::LTEQ: // fall through
-        case Token::GTEQ:
+        case Token::Kind::TK_LT:   // fall through
+        case Token::Kind::TK_GT:   // fall through
+        case Token::Kind::TK_LTEQ: // fall through
+        case Token::Kind::TK_GTEQ:
             isLogical = true;
             validMatrixOrVectorOp = false;
             break;
-        case Token::LOGICALOR: // fall through
-        case Token::LOGICALAND: // fall through
-        case Token::LOGICALXOR: // fall through
-        case Token::LOGICALOREQ: // fall through
-        case Token::LOGICALANDEQ: // fall through
-        case Token::LOGICALXOREQ:
+        case Token::Kind::TK_LOGICALOR: // fall through
+        case Token::Kind::TK_LOGICALAND: // fall through
+        case Token::Kind::TK_LOGICALXOR: // fall through
+        case Token::Kind::TK_LOGICALOREQ: // fall through
+        case Token::Kind::TK_LOGICALANDEQ: // fall through
+        case Token::Kind::TK_LOGICALXOREQ:
             *outLeftType = context.fBool_Type.get();
             *outRightType = context.fBool_Type.get();
             *outResultType = context.fBool_Type.get();
             return left.canCoerceTo(*context.fBool_Type) &&
                    right.canCoerceTo(*context.fBool_Type);
-        case Token::STAREQ:
+        case Token::Kind::TK_STAREQ:
             if (left.kind() == Type::kScalar_Kind) {
                 *outLeftType = &left;
                 *outRightType = &left;
@@ -1369,10 +1399,10 @@ static bool determine_binary_type(const Context& context,
                 return right.canCoerceTo(left);
             }
             // fall through
-        case Token::STAR:
+        case Token::Kind::TK_STAR:
             if (is_matrix_multiply(left, right)) {
                 // determine final component type
-                if (determine_binary_type(context, Token::STAR, left.componentType(),
+                if (determine_binary_type(context, Token::Kind::TK_STAR, left.componentType(),
                                           right.componentType(), outLeftType, outRightType,
                                           outResultType, false)) {
                     *outLeftType = &(*outResultType)->toCompound(context, left.columns(),
@@ -1409,12 +1439,12 @@ static bool determine_binary_type(const Context& context,
             isLogical = false;
             validMatrixOrVectorOp = true;
             break;
-        case Token::PLUSEQ:
-        case Token::MINUSEQ:
-        case Token::SLASHEQ:
-        case Token::PERCENTEQ:
-        case Token::SHLEQ:
-        case Token::SHREQ:
+        case Token::Kind::TK_PLUSEQ:
+        case Token::Kind::TK_MINUSEQ:
+        case Token::Kind::TK_SLASHEQ:
+        case Token::Kind::TK_PERCENTEQ:
+        case Token::Kind::TK_SHLEQ:
+        case Token::Kind::TK_SHREQ:
             if (left.kind() == Type::kScalar_Kind) {
                 *outLeftType = &left;
                 *outRightType = &left;
@@ -1422,13 +1452,13 @@ static bool determine_binary_type(const Context& context,
                 return right.canCoerceTo(left);
             }
             // fall through
-        case Token::PLUS:    // fall through
-        case Token::MINUS:   // fall through
-        case Token::SLASH:   // fall through
+        case Token::Kind::TK_PLUS:    // fall through
+        case Token::Kind::TK_MINUS:   // fall through
+        case Token::Kind::TK_SLASH:   // fall through
             isLogical = false;
             validMatrixOrVectorOp = true;
             break;
-        case Token::COMMA:
+        case Token::Kind::TK_COMMA:
             *outLeftType = &left;
             *outRightType = &right;
             *outResultType = &right;
@@ -1490,18 +1520,19 @@ static std::unique_ptr<Expression> short_circuit_boolean(const Context& context,
                                                          const Expression& right) {
     SkASSERT(left.fKind == Expression::kBoolLiteral_Kind);
     bool leftVal = ((BoolLiteral&) left).fValue;
-    if (op == Token::LOGICALAND) {
+    if (op == Token::Kind::TK_LOGICALAND) {
         // (true && expr) -> (expr) and (false && expr) -> (false)
         return leftVal ? right.clone()
                        : std::unique_ptr<Expression>(new BoolLiteral(context, left.fOffset, false));
-    } else if (op == Token::LOGICALOR) {
+    } else if (op == Token::Kind::TK_LOGICALOR) {
         // (true || expr) -> (true) and (false || expr) -> (expr)
         return leftVal ? std::unique_ptr<Expression>(new BoolLiteral(context, left.fOffset, true))
                        : right.clone();
-    } else if (op == Token::LOGICALXOR) {
+    } else if (op == Token::Kind::TK_LOGICALXOR) {
         // (true ^^ expr) -> !(expr) and (false ^^ expr) -> (expr)
-        return leftVal ? std::unique_ptr<Expression>(new PrefixExpression(Token::LOGICALNOT,
-                                                                          right.clone()))
+        return leftVal ? std::unique_ptr<Expression>(new PrefixExpression(
+                                                                         Token::Kind::TK_LOGICALNOT,
+                                                                         right.clone()))
                        : right.clone();
     } else {
         return nullptr;
@@ -1535,52 +1566,63 @@ std::unique_ptr<Expression> IRGenerator::constantFold(const Expression& left,
         bool rightVal = ((BoolLiteral&) right).fValue;
         bool result;
         switch (op) {
-            case Token::LOGICALAND: result = leftVal && rightVal; break;
-            case Token::LOGICALOR:  result = leftVal || rightVal; break;
-            case Token::LOGICALXOR: result = leftVal ^  rightVal; break;
+            case Token::Kind::TK_LOGICALAND: result = leftVal && rightVal; break;
+            case Token::Kind::TK_LOGICALOR:  result = leftVal || rightVal; break;
+            case Token::Kind::TK_LOGICALXOR: result = leftVal ^  rightVal; break;
             default: return nullptr;
         }
         return std::unique_ptr<Expression>(new BoolLiteral(fContext, left.fOffset, result));
     }
     #define RESULT(t, op) std::unique_ptr<Expression>(new t ## Literal(fContext, left.fOffset, \
                                                                        leftVal op rightVal))
+    #define URESULT(t, op) std::unique_ptr<Expression>(new t ## Literal(fContext, left.fOffset, \
+                                                                        (uint32_t) leftVal op   \
+                                                                        (uint32_t) rightVal))
     if (left.fKind == Expression::kIntLiteral_Kind && right.fKind == Expression::kIntLiteral_Kind) {
         int64_t leftVal  = ((IntLiteral&) left).fValue;
         int64_t rightVal = ((IntLiteral&) right).fValue;
         switch (op) {
-            case Token::PLUS:       return RESULT(Int, +);
-            case Token::MINUS:      return RESULT(Int, -);
-            case Token::STAR:       return RESULT(Int, *);
-            case Token::SLASH:
-                if (rightVal) {
-                    return RESULT(Int, /);
+            case Token::Kind::TK_PLUS:       return URESULT(Int, +);
+            case Token::Kind::TK_MINUS:      return URESULT(Int, -);
+            case Token::Kind::TK_STAR:       return URESULT(Int, *);
+            case Token::Kind::TK_SLASH:
+                if (leftVal == std::numeric_limits<int64_t>::min() && rightVal == -1) {
+                    fErrors.error(right.fOffset, "arithmetic overflow");
+                    return nullptr;
                 }
-                fErrors.error(right.fOffset, "division by zero");
-                return nullptr;
-            case Token::PERCENT:
-                if (rightVal) {
-                    return RESULT(Int, %);
+                if (!rightVal) {
+                    fErrors.error(right.fOffset, "division by zero");
+                    return nullptr;
                 }
-                fErrors.error(right.fOffset, "division by zero");
-                return nullptr;
-            case Token::BITWISEAND: return RESULT(Int,  &);
-            case Token::BITWISEOR:  return RESULT(Int,  |);
-            case Token::BITWISEXOR: return RESULT(Int,  ^);
-            case Token::EQEQ:       return RESULT(Bool, ==);
-            case Token::NEQ:        return RESULT(Bool, !=);
-            case Token::GT:         return RESULT(Bool, >);
-            case Token::GTEQ:       return RESULT(Bool, >=);
-            case Token::LT:         return RESULT(Bool, <);
-            case Token::LTEQ:       return RESULT(Bool, <=);
-            case Token::SHL:
+                return RESULT(Int, /);
+            case Token::Kind::TK_PERCENT:
+                if (leftVal == std::numeric_limits<int64_t>::min() && rightVal == -1) {
+                    fErrors.error(right.fOffset, "arithmetic overflow");
+                    return nullptr;
+                }
+                if (!rightVal) {
+                    fErrors.error(right.fOffset, "division by zero");
+                    return nullptr;
+                }
+                return RESULT(Int, %);
+            case Token::Kind::TK_BITWISEAND: return RESULT(Int,  &);
+            case Token::Kind::TK_BITWISEOR:  return RESULT(Int,  |);
+            case Token::Kind::TK_BITWISEXOR: return RESULT(Int,  ^);
+            case Token::Kind::TK_EQEQ:       return RESULT(Bool, ==);
+            case Token::Kind::TK_NEQ:        return RESULT(Bool, !=);
+            case Token::Kind::TK_GT:         return RESULT(Bool, >);
+            case Token::Kind::TK_GTEQ:       return RESULT(Bool, >=);
+            case Token::Kind::TK_LT:         return RESULT(Bool, <);
+            case Token::Kind::TK_LTEQ:       return RESULT(Bool, <=);
+            case Token::Kind::TK_SHL:
                 if (rightVal >= 0 && rightVal <= 31) {
-                    return RESULT(Int,  <<);
+                    return URESULT(Int,  <<);
                 }
                 fErrors.error(right.fOffset, "shift value out of range");
                 return nullptr;
-            case Token::SHR:
+            case Token::Kind::TK_SHR:
                 if (rightVal >= 0 && rightVal <= 31) {
-                    return RESULT(Int,  >>);
+                    return URESULT(Int,  >>);
                 }
                 fErrors.error(right.fOffset, "shift value out of range");
                 return nullptr;
@@ -1594,22 +1636,22 @@ std::unique_ptr<Expression> IRGenerator::constantFold(const Expression& left,
         double leftVal  = ((FloatLiteral&) left).fValue;
         double rightVal = ((FloatLiteral&) right).fValue;
         switch (op) {
-            case Token::PLUS:       return RESULT(Float, +);
-            case Token::MINUS:      return RESULT(Float, -);
-            case Token::STAR:       return RESULT(Float, *);
-            case Token::SLASH:
+            case Token::Kind::TK_PLUS:  return RESULT(Float, +);
+            case Token::Kind::TK_MINUS: return RESULT(Float, -);
+            case Token::Kind::TK_STAR:  return RESULT(Float, *);
+            case Token::Kind::TK_SLASH:
                 if (rightVal) {
                     return RESULT(Float, /);
                 }
                 fErrors.error(right.fOffset, "division by zero");
                 return nullptr;
-            case Token::EQEQ:       return RESULT(Bool, ==);
-            case Token::NEQ:        return RESULT(Bool, !=);
-            case Token::GT:         return RESULT(Bool, >);
-            case Token::GTEQ:       return RESULT(Bool, >=);
-            case Token::LT:         return RESULT(Bool, <);
-            case Token::LTEQ:       return RESULT(Bool, <=);
-            default:                return nullptr;
+            case Token::Kind::TK_EQEQ: return RESULT(Bool, ==);
+            case Token::Kind::TK_NEQ:  return RESULT(Bool, !=);
+            case Token::Kind::TK_GT:   return RESULT(Bool, >);
+            case Token::Kind::TK_GTEQ: return RESULT(Bool, >=);
+            case Token::Kind::TK_LT:   return RESULT(Bool, <);
+            case Token::Kind::TK_LTEQ: return RESULT(Bool, <=);
+            default:                   return nullptr;
         }
     }
     if (left.fType.kind() == Type::kVector_Kind && left.fType.componentType().isFloat() &&
@@ -1624,16 +1666,16 @@ std::unique_ptr<Expression> IRGenerator::constantFold(const Expression& left,
             return std::unique_ptr<Expression>(new Constructor(-1, left.fType,   \
                                                                std::move(args)))
         switch (op) {
-            case Token::EQEQ:
+            case Token::Kind::TK_EQEQ:
                 return std::unique_ptr<Expression>(new BoolLiteral(fContext, -1,
                                                             left.compareConstant(fContext, right)));
-            case Token::NEQ:
+            case Token::Kind::TK_NEQ:
                 return std::unique_ptr<Expression>(new BoolLiteral(fContext, -1,
                                                            !left.compareConstant(fContext, right)));
-            case Token::PLUS:  RETURN_VEC_COMPONENTWISE_RESULT(+);
-            case Token::MINUS: RETURN_VEC_COMPONENTWISE_RESULT(-);
-            case Token::STAR:  RETURN_VEC_COMPONENTWISE_RESULT(*);
-            case Token::SLASH:
+            case Token::Kind::TK_PLUS:  RETURN_VEC_COMPONENTWISE_RESULT(+);
+            case Token::Kind::TK_MINUS: RETURN_VEC_COMPONENTWISE_RESULT(-);
+            case Token::Kind::TK_STAR:  RETURN_VEC_COMPONENTWISE_RESULT(*);
+            case Token::Kind::TK_SLASH:
                 for (int i = 0; i < left.fType.columns(); i++) {
                     SKSL_FLOAT rvalue = right.getFVecComponent(i);
                     if (rvalue == 0.0) {
@@ -1652,10 +1694,10 @@ std::unique_ptr<Expression> IRGenerator::constantFold(const Expression& left,
         right.fType.kind() == Type::kMatrix_Kind &&
         left.fKind == right.fKind) {
         switch (op) {
-            case Token::EQEQ:
+            case Token::Kind::TK_EQEQ:
                 return std::unique_ptr<Expression>(new BoolLiteral(fContext, -1,
                                                             left.compareConstant(fContext, right)));
-            case Token::NEQ:
+            case Token::Kind::TK_NEQ:
                 return std::unique_ptr<Expression>(new BoolLiteral(fContext, -1,
                                                            !left.compareConstant(fContext, right)));
             default:
@@ -1702,8 +1744,8 @@ std::unique_ptr<Expression> IRGenerator::convertBinaryExpression(const ASTNode& 
         return nullptr;
     }
     if (Compiler::IsAssignment(op)) {
-        this->setRefKind(*left, op != Token::EQ ? VariableReference::kReadWrite_RefKind :
-                                                  VariableReference::kWrite_RefKind);
+        this->setRefKind(*left, op != Token::Kind::TK_EQ ? VariableReference::kReadWrite_RefKind :
+                                                           VariableReference::kWrite_RefKind);
     }
     left = this->coerce(std::move(left), *leftType);
     right = this->coerce(std::move(right), *rightType);
@@ -1740,8 +1782,8 @@ std::unique_ptr<Expression> IRGenerator::convertTernaryExpression(const ASTNode&
     const Type* trueType;
     const Type* falseType;
     const Type* resultType;
-    if (!determine_binary_type(fContext, Token::EQEQ, ifTrue->fType, ifFalse->fType, &trueType,
-                               &falseType, &resultType, true) || trueType != falseType) {
+    if (!determine_binary_type(fContext, Token::Kind::TK_EQEQ, ifTrue->fType, ifFalse->fType,
+                               &trueType, &falseType, &resultType, true) || trueType != falseType) {
         fErrors.error(node.fOffset, "ternary operator result mismatch: '" +
                                     ifTrue->fType.displayName() + "', '" +
                                     ifFalse->fType.displayName() + "'");
@@ -1773,7 +1815,7 @@ std::unique_ptr<Expression> IRGenerator::call(int offset,
                                               const FunctionDeclaration& function,
                                               std::vector<std::unique_ptr<Expression>> arguments) {
     if (function.fBuiltin) {
-        auto found = fIntrinsics->find(function.declaration());
+        auto found = fIntrinsics->find(function.fName);
         if (found != fIntrinsics->end() && !found->second.second) {
             found->second.second = true;
             const FunctionDeclaration* old = fCurrentFunction;
@@ -2063,7 +2105,7 @@ std::unique_ptr<Expression> IRGenerator::convertPrefixExpression(const ASTNode& 
         return nullptr;
     }
     switch (expression.getToken().fKind) {
-        case Token::PLUS:
+        case Token::Kind::TK_PLUS:
             if (!base->fType.isNumber() && base->fType.kind() != Type::kVector_Kind &&
                 base->fType != *fContext.fFloatLiteral_Type) {
                 fErrors.error(expression.fOffset,
@@ -2071,7 +2113,7 @@ std::unique_ptr<Expression> IRGenerator::convertPrefixExpression(const ASTNode& 
                 return nullptr;
             }
             return base;
-        case Token::MINUS:
+        case Token::Kind::TK_MINUS:
             if (base->fKind == Expression::kIntLiteral_Kind) {
                 return std::unique_ptr<Expression>(new IntLiteral(fContext, base->fOffset,
                                                                   -((IntLiteral&) *base).fValue));
@@ -2086,8 +2128,9 @@ std::unique_ptr<Expression> IRGenerator::convertPrefixExpression(const ASTNode& 
                               "'-' cannot operate on '" + base->fType.displayName() + "'");
                 return nullptr;
             }
-            return std::unique_ptr<Expression>(new PrefixExpression(Token::MINUS, std::move(base)));
-        case Token::PLUSPLUS:
+            return std::unique_ptr<Expression>(new PrefixExpression(Token::Kind::TK_MINUS,
+                                                                    std::move(base)));
+        case Token::Kind::TK_PLUSPLUS:
             if (!base->fType.isNumber()) {
                 fErrors.error(expression.fOffset,
                               String("'") + Compiler::OperatorName(expression.getToken().fKind) +
@@ -2096,7 +2139,7 @@ std::unique_ptr<Expression> IRGenerator::convertPrefixExpression(const ASTNode& 
             }
             this->setRefKind(*base, VariableReference::kReadWrite_RefKind);
             break;
-        case Token::MINUSMINUS:
+        case Token::Kind::TK_MINUSMINUS:
             if (!base->fType.isNumber()) {
                 fErrors.error(expression.fOffset,
                               String("'") + Compiler::OperatorName(expression.getToken().fKind) +
@@ -2105,7 +2148,7 @@ std::unique_ptr<Expression> IRGenerator::convertPrefixExpression(const ASTNode& 
             }
             this->setRefKind(*base, VariableReference::kReadWrite_RefKind);
             break;
-        case Token::LOGICALNOT:
+        case Token::Kind::TK_LOGICALNOT:
             if (base->fType != *fContext.fBool_Type) {
                 fErrors.error(expression.fOffset,
                               String("'") + Compiler::OperatorName(expression.getToken().fKind) +
@@ -2117,7 +2160,7 @@ std::unique_ptr<Expression> IRGenerator::convertPrefixExpression(const ASTNode& 
                                                                    !((BoolLiteral&) *base).fValue));
             }
             break;
-        case Token::BITWISENOT:
+        case Token::Kind::TK_BITWISENOT:
             if (base->fType != *fContext.fInt_Type && base->fType != *fContext.fUInt_Type) {
                 fErrors.error(expression.fOffset,
                               String("'") + Compiler::OperatorName(expression.getToken().fKind) +
@@ -2188,7 +2231,7 @@ std::unique_ptr<Expression> IRGenerator::convertField(std::unique_ptr<Expression
         }
     }
     fErrors.error(base->fOffset, "type '" + base->fType.displayName() + "' does not have a "
-                                 "field named '" + field + "'");
+                                 "field named '" + field + "");
     return nullptr;
 }
 
@@ -2285,6 +2328,10 @@ std::unique_ptr<Expression> IRGenerator::convertTypeField(int offset, const Type
             fSymbolTable = ((Enum&) *e).fSymbols;
             result = convertIdentifier(ASTNode(&fFile->fNodes, offset, ASTNode::Kind::kIdentifier,
                                                field));
+            if (!result) {
+                fSymbolTable = old;
+                return nullptr;
+            }
             SkASSERT(result->fKind == Expression::kVariableReference_Kind);
             const Variable& v = ((VariableReference&) *result).fVariable;
             SkASSERT(v.fInitialValue);

@@ -29,7 +29,7 @@
 
 #include "aom/aom_decoder.h"
 #include "aom/aomdx.h"
-#include "av1/common/onyxc_int.h"
+#include "av1/common/av1_common_int.h"
 
 #if CONFIG_ACCOUNTING
 #include "av1/decoder/accounting.h"
@@ -755,11 +755,10 @@ int open_file(char *file) {
   reader = aom_video_reader_open(file);
   if (!reader) die("Failed to open %s for reading.", file);
   info = aom_video_reader_get_info(reader);
-  const AvxInterface *decoder = get_aom_decoder_by_fourcc(info->codec_fourcc);
+  aom_codec_iface_t *decoder = get_aom_decoder_by_fourcc(info->codec_fourcc);
   if (!decoder) die("Unknown input codec.");
-  fprintf(stderr, "Using %s\n",
-          aom_codec_iface_name(decoder->codec_interface()));
-  if (aom_codec_dec_init(&codec, decoder->codec_interface(), NULL, 0))
+  fprintf(stderr, "Using %s\n", aom_codec_iface_name(decoder));
+  if (aom_codec_dec_init(&codec, decoder, NULL, 0))
     die_codec(&codec, "Failed to initialize decoder.");
   ifd_init(&frame_data, info->frame_width, info->frame_height);
   ifd_init_cb();

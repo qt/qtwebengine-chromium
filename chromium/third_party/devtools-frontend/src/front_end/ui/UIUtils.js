@@ -29,6 +29,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
@@ -58,8 +60,8 @@ export {markAsFocusedByKeyboard} from './utils/focus-changed.js';
 /**
  * @param {!Element} element
  * @param {?function(!MouseEvent): boolean} elementDragStart
- * @param {function(!MouseEvent)} elementDrag
- * @param {?function(!MouseEvent)} elementDragEnd
+ * @param {function(!MouseEvent):void} elementDrag
+ * @param {?function(!MouseEvent):void} elementDragEnd
  * @param {?string} cursor
  * @param {?string=} hoverCursor
  * @param {number=} startDelay
@@ -100,8 +102,8 @@ export function installDragHandle(
 /**
  * @param {!Element} targetElement
  * @param {?function(!MouseEvent):boolean} elementDragStart
- * @param {function(!MouseEvent)} elementDrag
- * @param {?function(!MouseEvent)} elementDragEnd
+ * @param {function(!MouseEvent):void} elementDrag
+ * @param {?function(!MouseEvent):void} elementDragEnd
  * @param {?string} cursor
  * @param {!Event} event
  */
@@ -145,8 +147,8 @@ class DragHandler {
   /**
    * @param {!Element} targetElement
    * @param {?function(!MouseEvent):boolean} elementDragStart
-   * @param {function(!MouseEvent)} elementDrag
-   * @param {?function(!MouseEvent)} elementDragEnd
+   * @param {function(!MouseEvent):void} elementDrag
+   * @param {?function(!MouseEvent):void} elementDragEnd
    * @param {?string} cursor
    * @param {!Event} event
    */
@@ -506,8 +508,8 @@ export function createReplacementString(wordString, event, customNumberHandler) 
 /**
  * @param {!Event} event
  * @param {!Element} element
- * @param {function(string,string)=} finishHandler
- * @param {function(string)=} suggestionHandler
+ * @param {function(string,string):void=} finishHandler
+ * @param {(function(string):*)=} suggestionHandler
  * @param {function(string, number, string):string=} customNumberHandler
  * @return {boolean}
  */
@@ -661,30 +663,6 @@ Number.secondsToString = function(seconds, higherResolution) {
 };
 
 /**
- * @param {number} bytes
- * @return {string}
- */
-Number.bytesToString = function(bytes) {
-  if (bytes < 1000) {
-    return Common.UIString.UIString('%.0f\xA0B', bytes);
-  }
-
-  const kilobytes = bytes / 1000;
-  if (kilobytes < 100) {
-    return Common.UIString.UIString('%.1f\xA0kB', kilobytes);
-  }
-  if (kilobytes < 1000) {
-    return Common.UIString.UIString('%.0f\xA0kB', kilobytes);
-  }
-
-  const megabytes = kilobytes / 1000;
-  if (megabytes < 100) {
-    return Common.UIString.UIString('%.1f\xA0MB', megabytes);
-  }
-  return Common.UIString.UIString('%.0f\xA0MB', megabytes);
-};
-
-/**
  * @param {number} num
  * @return {string}
  */
@@ -699,18 +677,18 @@ Number.withThousandsSeparator = function(num) {
 
 /**
  * @param {string} format
- * @param {?ArrayLike} substitutions
+ * @param {?ArrayLike<*>} substitutions
  * @return {!Element}
  */
 export function formatLocalized(format, substitutions) {
   const formatters = {s: substitution => substitution};
   /**
    * @param {!Element} a
-   * @param {string|!Element} b
+   * @param {*} b
    * @return {!Element}
    */
   function append(a, b) {
-    a.appendChild(typeof b === 'string' ? createTextNode(b) : b);
+    a.appendChild(typeof b === 'string' ? createTextNode(b) : /** @type {!Element} */ (b));
     return a;
   }
   return Platform.StringUtilities
@@ -1033,7 +1011,7 @@ class InvokeOnceHandlers {
 
   /**
    * @param {!Object} object
-   * @param {function()} method
+   * @param {function():void} method
    */
   add(object, method) {
     if (!this._handlers) {
@@ -1089,7 +1067,7 @@ export function endBatchUpdate() {
 
 /**
  * @param {!Object} object
- * @param {function()} method
+ * @param {function():void} method
  */
 export function invokeOnceAfterBatchUpdate(object, method) {
   if (!_postUpdateHandlers) {
@@ -1103,8 +1081,8 @@ export function invokeOnceAfterBatchUpdate(object, method) {
  * @param {!Function} func
  * @param {!Array.<{from:number, to:number}>} params
  * @param {number} duration
- * @param {function()=} animationComplete
- * @return {function()}
+ * @param {function():*=} animationComplete
+ * @return {function():void}
  */
 export function animateFunction(window, func, params, duration, animationComplete) {
   const start = window.performance.now();
@@ -1129,8 +1107,8 @@ export function animateFunction(window, func, params, duration, animationComplet
 export class LongClickController extends Common.ObjectWrapper.ObjectWrapper {
   /**
    * @param {!Element} element
-   * @param {function(!Event)} callback
-   * @param {function(!Event)} isEditKeyFunc
+   * @param {function(!Event):void} callback
+   * @param {function(!Event):void} isEditKeyFunc
    */
   constructor(element, callback, isEditKeyFunc = event => isEnterOrSpaceKey(event)) {
     super();
@@ -1138,6 +1116,9 @@ export class LongClickController extends Common.ObjectWrapper.ObjectWrapper {
     this._callback = callback;
     this._editKey = isEditKeyFunc;
     this._enable();
+
+    /** @type {{mouseUp: function(!Event):void, mouseDown: function(!Event):void, reset: function():void }} */
+    this._longClickData;
   }
 
   reset() {
@@ -1228,12 +1209,12 @@ LongClickController.TIME_MS = 200;
 
 function _trackKeyboardFocus() {
   UI._keyboardFocus = true;
-  document.defaultView.requestAnimationFrame(() => void(UI._keyboardFocus = false));
+  document.defaultView.requestAnimationFrame(() => void (UI._keyboardFocus = false));
 }
 
 /**
  * @param {!Document} document
- * @param {!Common.Settings.Setting} themeSetting
+ * @param {!Common.Settings.Setting<string>} themeSetting
  */
 export function initializeUIUtils(document, themeSetting) {
   document.body.classList.toggle('inactive', !document.hasFocus());
@@ -1267,13 +1248,16 @@ export function beautifyFunctionName(name) {
 
 /**
  * @param {string} text
- * @param {function(!Event)=} clickHandler
+ * @param {function(!Event):*=} clickHandler
  * @param {string=} className
  * @param {boolean=} primary
  * @return {!Element}
  */
 export function createTextButton(text, clickHandler, className, primary) {
-  const element = createElementWithClass('button', className || '');
+  const element = document.createElement('button');
+  if (className) {
+    element.className = className;
+  }
   element.textContent = text;
   element.classList.add('text-button');
   if (primary) {
@@ -1292,7 +1276,10 @@ export function createTextButton(text, clickHandler, className, primary) {
  * @return {!Element}
  */
 export function createInput(className, type) {
-  const element = createElementWithClass('input', className || '');
+  const element = document.createElement('input');
+  if (className) {
+    element.className = className;
+  }
   element.spellcheck = false;
   element.classList.add('harmony-input');
   if (type) {
@@ -1308,7 +1295,10 @@ export function createInput(className, type) {
  * @return {!Element}
  */
 export function createLabel(title, className, associatedControl) {
-  const element = createElementWithClass('label', className || '');
+  const element = document.createElement('label');
+  if (className) {
+    element.className = className;
+  }
   element.textContent = title;
   if (associatedControl) {
     ARIAUtils.bindLabelToControl(element, associatedControl);
@@ -1484,7 +1474,8 @@ registerCustomElement('span', 'dt-slider', class extends HTMLSpanElement {
   constructor() {
     super();
     const root = createShadowRootWithCoreStyles(this, 'ui/slider.css');
-    this.sliderElement = createElementWithClass('input', 'dt-range-input');
+    this.sliderElement = document.createElement('input');
+    this.sliderElement.classList.add('dt-range-input');
     this.sliderElement.type = 'range';
     root.appendChild(this.sliderElement);
   }
@@ -1576,11 +1567,11 @@ registerCustomElement('div', 'dt-close-button', class extends HTMLDivElement {
 
 /**
  * @param {!Element} input
- * @param {function(string)} apply
+ * @param {function(string):void} apply
  * @param {function(string):{valid: boolean, errorMessage: (string|undefined)}} validate
  * @param {boolean} numeric
  * @param {number=} modifierMultiplier
- * @return {function(string)}
+ * @return {function(string):void}
  */
 export function bindInput(input, apply, validate, numeric, modifierMultiplier) {
   input.addEventListener('change', onChange, false);
@@ -1738,7 +1729,7 @@ export function measureTextWidth(context, text) {
  */
 export class ThemeSupport {
   /**
-   * @param {!Common.Settings.Setting} setting
+   * @param {!Common.Settings.Setting<string>} setting
    */
   constructor(setting) {
     const systemPreferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default';
@@ -1752,6 +1743,21 @@ export class ThemeSupport {
     this._cachedThemePatches = new Map();
     this._setting = setting;
     this._customSheets = new Set();
+    this._computedRoot = Common.Lazy.lazy(() => window.getComputedStyle(document.documentElement));
+  }
+
+  /**
+   * @param {string} variableName
+   * @returns {string}
+   */
+  getComputedValue(variableName) {
+    const computedRoot = this._computedRoot();
+
+    if (typeof computedRoot === 'symbol') {
+      throw new Error(`Computed value for property (${variableName}) could not be found on :root.`);
+    }
+
+    return computedRoot.getPropertyValue(variableName);
   }
 
   /**
@@ -1780,11 +1786,11 @@ export class ThemeSupport {
     this._injectingStyleSheet = false;
   }
 
-   /**
+  /**
    * @param {!Element|!ShadowRoot} element
    */
   injectCustomStyleSheets(element) {
-    for (const sheet of this._customSheets){
+    for (const sheet of this._customSheets) {
       const styleElement = createElement('style');
       styleElement.textContent = sheet;
       element.appendChild(styleElement);
@@ -2079,7 +2085,7 @@ export function loadImageFromData(data) {
 }
 
 /**
- * @param {function(!File)} callback
+ * @param {function(!File):*} callback
  * @return {!Node}
  */
 export function createFileSelectorElement(callback) {
@@ -2104,7 +2110,7 @@ export class MessageDialog {
   /**
    * @param {string} message
    * @param {!Document|!Element=} where
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   static async show(message, where) {
     const dialog = new Dialog();

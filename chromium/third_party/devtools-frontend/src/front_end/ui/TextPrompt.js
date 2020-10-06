@@ -27,7 +27,11 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
+import * as Platform from '../platform/platform.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
 import {SuggestBox, SuggestBoxDelegate, Suggestion, Suggestions} from './SuggestBox.js';  // eslint-disable-line no-unused-vars
@@ -52,13 +56,18 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
     this._previousText = '';
     this._currentSuggestion = null;
     this._completionRequestId = 0;
-    this._ghostTextElement = createElementWithClass('span', 'auto-complete-text');
+    this._ghostTextElement = document.createElement('span');
+    this._ghostTextElement.classList.add('auto-complete-text');
     this._ghostTextElement.setAttribute('contenteditable', 'false');
+    /**
+     * @type {!Array<number>}
+     */
+    this._leftParenthesesIndices = [];
     ARIAUtils.markAsHidden(this._ghostTextElement);
   }
 
   /**
-   * @param {(function(this:null, string, string, boolean=):!Promise<!Suggestions>)} completions
+   * @param {function(this:null, string, string, boolean=):!Promise<!Suggestions>} completions
    * @param {string=} stopCharacters
    */
   initialize(completions, stopCharacters) {
@@ -95,7 +104,7 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
    * (since the "blur" event does not bubble.)
    *
    * @param {!Element} element
-   * @param {function(!Event)} blurListener
+   * @param {function(!Event):*} blurListener
    * @return {!Element}
    */
   attachAndStartEditing(element, blurListener) {
@@ -254,11 +263,12 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
   }
 
   /**
-   * @param {function(!Event)=} blurListener
+   * @param {function(!Event):*=} blurListener
    */
   _startEditing(blurListener) {
     this._isEditing = true;
     this._contentElement.classList.add('text-prompt-editing');
+    this._focusRestorer = new ElementFocusRestorer(this._element);
     if (blurListener) {
       this._blurListener = blurListener;
       this._element.addEventListener('blur', this._blurListener, false);
@@ -267,7 +277,6 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
     if (this._element.tabIndex < 0) {
       this._element.tabIndex = 0;
     }
-    this._focusRestorer = new ElementFocusRestorer(this._element);
     if (!this.text()) {
       this.autoCompleteSoon();
     }
@@ -364,8 +373,32 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
    * @param {!Event} event
    */
   onInput(event) {
-    const text = this.text();
-    if (event.data && !this._acceptSuggestionOnStopCharacters(event.data)) {
+    let text = this.text();
+    const currentEntry = event.data;
+
+    if (event.inputType === 'insertFromPaste' && text.includes('\n')) {
+      /* Ensure that we remove any linebreaks from copied/pasted content
+       * to avoid breaking the rendering of the filter bar.
+       * See crbug.com/849563.
+       * We don't let users enter linebreaks when
+       * typing manually, so we should escape them if copying text in.
+       */
+      text = Platform.StringUtilities.stripLineBreaks(text);
+      this.setText(text);
+    }
+
+    // Skip the current ')' entry if the caret is right before a ')' and there's an unmatched '('.
+    const caretPosition = this._getCaretPosition();
+    if (currentEntry === ')' && caretPosition >= 0 && this._leftParenthesesIndices.length > 0) {
+      const nextCharAtCaret = text[caretPosition];
+      if (nextCharAtCaret === ')' && this._tryMatchingLeftParenthesis(caretPosition)) {
+        text = text.substring(0, caretPosition) + text.substring(caretPosition + 1);
+        this.setText(text);
+        return;
+      }
+    }
+
+    if (currentEntry && !this._acceptSuggestionOnStopCharacters(currentEntry)) {
       const hasCommonPrefix = text.startsWith(this._previousText) || this._previousText.startsWith(text);
       if (this._queryRange && hasCommonPrefix) {
         this._queryRange.endColumn += text.length - this._previousText.length;
@@ -602,6 +635,7 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
     const startColumn = selectionRange ? selectionRange.startColumn : suggestionLength;
     this._element.textContent = this.textWithCurrentSuggestion();
     this.setDOMSelection(this._queryRange.startColumn + startColumn, this._queryRange.startColumn + endColumn);
+    this._updateLeftParenthesesIndices();
 
     this.clearAutocomplete();
     this.dispatchEventToListeners(Events.TextChanged);
@@ -703,6 +737,25 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
   }
 
   /**
+   * @return {number} -1 if no caret can be found in text prompt
+   */
+  _getCaretPosition() {
+    if (!this._element.hasFocus()) {
+      return -1;
+    }
+
+    const selection = this._element.getComponentSelection();
+    const selectionRange = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+    if (!selectionRange || !selection.isCollapsed) {
+      return -1;
+    }
+    if (selectionRange.startOffset !== selectionRange.endOffset) {
+      return -1;
+    }
+    return selectionRange.startOffset;
+  }
+
+  /**
    * @param {!Event} event
    * @return {boolean}
    */
@@ -715,6 +768,39 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper {
    */
   proxyElementForTests() {
     return this._proxyElement || null;
+  }
+
+  /**
+   * Try matching the most recent open parenthesis with the given right
+   * parenthesis, and closes the matched left parenthesis if found.
+   * Return the result of the matching.
+   * @param {number} rightParenthesisIndex
+   * @return {boolean}
+   */
+  _tryMatchingLeftParenthesis(rightParenthesisIndex) {
+    const leftParenthesesIndices = this._leftParenthesesIndices;
+    if (leftParenthesesIndices.length === 0 || rightParenthesisIndex < 0) {
+      return false;
+    }
+
+    for (let i = leftParenthesesIndices.length - 1; i >= 0; --i) {
+      if (leftParenthesesIndices[i] < rightParenthesisIndex) {
+        leftParenthesesIndices.splice(i, 1);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  _updateLeftParenthesesIndices() {
+    const text = this.text();
+    const leftParenthesesIndices = this._leftParenthesesIndices = [];
+    for (let i = 0; i < text.length; ++i) {
+      if (text[i] === '(') {
+        leftParenthesesIndices.push(i);
+      }
+    }
   }
 }
 

@@ -60,9 +60,7 @@ Bbr2NetworkModel::Bbr2NetworkModel(const Bbr2Params* params,
     : params_(params),
       bandwidth_sampler_([](QuicRoundTripCount max_height_tracker_window_length,
                             const BandwidthSampler* old_sampler) {
-        if (GetQuicReloadableFlag(quic_bbr_copy_sampler_state_from_v1_to_v2) &&
-            old_sampler != nullptr) {
-          QUIC_RELOADABLE_FLAG_COUNT(quic_bbr_copy_sampler_state_from_v1_to_v2);
+        if (old_sampler != nullptr) {
           return BandwidthSampler(*old_sampler);
         }
         return BandwidthSampler(/*unacked_packet_map=*/nullptr,
@@ -111,10 +109,8 @@ void Bbr2NetworkModel::OnCongestionEventStart(
   // Avoid updating |max_bandwidth_filter_| if a) this is a loss-only event, or
   // b) all packets in |acked_packets| did not generate valid samples. (e.g. ack
   // of ack-only packets). In both cases, total_bytes_acked() will not change.
-  if (!fix_zero_bw_on_loss_only_event_ ||
-      (prior_bytes_acked != total_bytes_acked())) {
-    QUIC_BUG_IF((prior_bytes_acked != total_bytes_acked()) &&
-                sample.sample_max_bandwidth.IsZero())
+  if (prior_bytes_acked != total_bytes_acked()) {
+    QUIC_BUG_IF(sample.sample_max_bandwidth.IsZero())
         << total_bytes_acked() - prior_bytes_acked << " bytes from "
         << acked_packets.size()
         << " packets have been acked, but sample_max_bandwidth is zero.";
@@ -122,14 +118,6 @@ void Bbr2NetworkModel::OnCongestionEventStart(
         sample.sample_max_bandwidth > MaxBandwidth()) {
       congestion_event->sample_max_bandwidth = sample.sample_max_bandwidth;
       max_bandwidth_filter_.Update(congestion_event->sample_max_bandwidth);
-    }
-  } else {
-    if (acked_packets.empty()) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr_fix_zero_bw_on_loss_only_event, 3,
-                                   4);
-    } else {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr_fix_zero_bw_on_loss_only_event, 4,
-                                   4);
     }
   }
 
@@ -196,15 +184,17 @@ void Bbr2NetworkModel::AdaptLowerBounds(
     if (bandwidth_lo_.IsInfinite()) {
       bandwidth_lo_ = MaxBandwidth();
     }
-    if (inflight_lo_ == inflight_lo_default()) {
-      inflight_lo_ = congestion_event.prior_cwnd;
-    }
-
     bandwidth_lo_ =
         std::max(bandwidth_latest_, bandwidth_lo_ * (1.0 - Params().beta));
     QUIC_DVLOG(3) << "bandwidth_lo_ updated to " << bandwidth_lo_
                   << ", bandwidth_latest_ is " << bandwidth_latest_;
 
+    if (Params().ignore_inflight_lo) {
+      return;
+    }
+    if (inflight_lo_ == inflight_lo_default()) {
+      inflight_lo_ = congestion_event.prior_cwnd;
+    }
     inflight_lo_ = std::max<QuicByteCount>(
         inflight_latest_, inflight_lo_ * (1.0 - Params().beta));
   }
@@ -290,6 +280,15 @@ void Bbr2NetworkModel::RestartRound() {
   bytes_lost_in_round_ = 0;
   loss_events_in_round_ = 0;
   round_trip_counter_.RestartRound();
+}
+
+void Bbr2NetworkModel::cap_inflight_lo(QuicByteCount cap) {
+  if (Params().ignore_inflight_lo) {
+    return;
+  }
+  if (inflight_lo_ != inflight_lo_default() && inflight_lo_ > cap) {
+    inflight_lo_ = cap;
+  }
 }
 
 QuicByteCount Bbr2NetworkModel::inflight_hi_with_headroom() const {

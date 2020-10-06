@@ -5,11 +5,10 @@
 #include "cast/common/channel/virtual_connection_router.h"
 
 #include "cast/common/channel/cast_message_handler.h"
-#include "cast/common/channel/cast_socket.h"
 #include "cast/common/channel/message_util.h"
 #include "cast/common/channel/proto/cast_channel.pb.h"
 #include "cast/common/channel/virtual_connection_manager.h"
-#include "util/logging.h"
+#include "util/osp_logging.h"
 
 namespace openscreen {
 namespace cast {
@@ -54,8 +53,8 @@ void VirtualConnectionRouter::CloseSocket(int id) {
   }
 }
 
-Error VirtualConnectionRouter::SendMessage(VirtualConnection virtual_conn,
-                                           CastMessage message) {
+Error VirtualConnectionRouter::Send(VirtualConnection virtual_conn,
+                                    CastMessage message) {
   // TODO(btolsch): Check for broadcast message.
   if (!IsTransportNamespace(message.namespace_()) &&
       !vc_manager_->GetConnectionData(virtual_conn)) {
@@ -67,7 +66,7 @@ Error VirtualConnectionRouter::SendMessage(VirtualConnection virtual_conn,
   }
   message.set_source_id(std::move(virtual_conn.local_id));
   message.set_destination_id(std::move(virtual_conn.peer_id));
-  return it->second.socket->SendMessage(message);
+  return it->second.socket->Send(message);
 }
 
 void VirtualConnectionRouter::OnError(CastSocket* socket, Error error) {

@@ -21,10 +21,12 @@ public:
     void setMaxVerbCount(int maxVerbCount) { fMaxVerbCount = maxVerbCount; }
 #endif
 
+    const char* name() const final { return "Triangulating"; }
+
 private:
     CanDrawPath onCanDrawPath(const CanDrawPathArgs&) const override;
 
-    StencilSupport onGetStencilSupport(const GrShape&) const override {
+    StencilSupport onGetStencilSupport(const GrStyledShape&) const override {
         return GrPathRenderer::kNoSupport_StencilSupport;
     }
 

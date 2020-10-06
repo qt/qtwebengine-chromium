@@ -12,6 +12,7 @@
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
+#include "third_party/base/stl_util.h"
 
 namespace {
 
@@ -70,16 +71,14 @@ CPDFSDK_Annot* CPDFSDK_AnnotIterator::GetNextAnnot(CPDFSDK_Annot* pAnnot) {
     return nullptr;
   ++iter;
   if (iter == m_Annots.end())
-    iter = m_Annots.begin();
+    return nullptr;
   return *iter;
 }
 
 CPDFSDK_Annot* CPDFSDK_AnnotIterator::GetPrevAnnot(CPDFSDK_Annot* pAnnot) {
   auto iter = std::find(m_Annots.begin(), m_Annots.end(), pAnnot);
-  if (iter == m_Annots.end())
+  if (iter == m_Annots.begin() || iter == m_Annots.end())
     return nullptr;
-  if (iter == m_Annots.begin())
-    iter = m_Annots.end();
   return *(--iter);
 }
 

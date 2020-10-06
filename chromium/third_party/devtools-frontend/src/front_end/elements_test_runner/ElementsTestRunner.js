@@ -718,7 +718,7 @@ ElementsTestRunner.dumpElementsTree = function(rootNode, depth, resultsArray) {
   }
 
   function markersDataDump(treeItem) {
-    if (treeItem._elementCloseTag) {
+    if (treeItem._isClosingTag) {
       return '';
     }
 
@@ -788,7 +788,7 @@ ElementsTestRunner.dumpElementsTree = function(rootNode, depth, resultsArray) {
     const newPrefix = (treeItem.root ? '' : prefix + '    ');
 
     for (let i = 0; depth && children && i < children.length; ++i) {
-      if (!children[i]._elementCloseTag) {
+      if (!children[i]._isClosingTag) {
         print(children[i], newPrefix, depth - 1);
       } else {
         print(children[i], prefix, depth);
@@ -831,7 +831,7 @@ ElementsTestRunner.dumpDOMUpdateHighlights = function(rootNode, callback, depth)
         if (classList.contains('webkit-html-attribute-name')) {
           xpath += '/@' + element.textContent + ' (empty)';
         } else if (classList.contains('webkit-html-attribute-value')) {
-          name = element.parentElement.querySelector('.webkit-html-attribute-name').textContent;
+          const name = element.parentElement.querySelector('.webkit-html-attribute-name').textContent;
           xpath += '/@' + name + ' ' + element.textContent;
         } else if (classList.contains('webkit-html-text-node')) {
           xpath += '/text() "' + element.textContent + '"';
@@ -850,7 +850,7 @@ ElementsTestRunner.dumpDOMUpdateHighlights = function(rootNode, callback, depth)
     const newPrefix = (treeItem.root ? '' : prefix + '    ');
 
     for (let i = 0; depth && children && i < children.length; ++i) {
-      if (!children[i]._elementCloseTag) {
+      if (!children[i]._isClosingTag) {
         print(children[i], newPrefix, depth - 1);
       }
     }

@@ -27,7 +27,7 @@ namespace quic {
 typedef std::string ServerConfigID;
 
 // The following tags have been deprecated and should not be reused:
-// "1CON", "BBQ4", "NCON", "RCID", "SREJ", "TBKP", "TB10"
+// "1CON", "BBQ4", "NCON", "RCID", "SREJ", "TBKP", "TB10", "SCLS", "SMHL"
 
 // clang-format off
 const QuicTag kCHLO = TAG('C', 'H', 'L', 'O');   // Client hello
@@ -121,6 +121,10 @@ const QuicTag kB2NA = TAG('B', '2', 'N', 'A');   // For BBRv2, do not add ack
                                                  // height to queueing threshold
 const QuicTag kB2RP = TAG('B', '2', 'R', 'P');   // For BBRv2, run PROBE_RTT on
                                                  // the regular schedule
+const QuicTag kB2CL = TAG('B', '2', 'C', 'L');   // For BBRv2, allow PROBE_BW
+                                                 // cwnd to be below BDP + ack
+                                                 // height.
+const QuicTag kB2LO = TAG('B', '2', 'L', 'O');   // Ignore inflight_lo in BBR2
 const QuicTag kBSAO = TAG('B', 'S', 'A', 'O');   // Avoid Overestimation in
                                                  // Bandwidth Sampler with ack
                                                  // aggregation
@@ -184,10 +188,6 @@ const QuicTag kILD4 = TAG('I', 'L', 'D', '4');   // IETF style loss detection
                                                  // threshold
 const QuicTag kRUNT = TAG('R', 'U', 'N', 'T');   // No packet threshold loss
                                                  // detection for "runt" packet.
-// TODO(fayang): Remove this connection option when QUIC_VERSION_35, is removed
-// Since MAX_HEADER_LIST_SIZE settings frame is supported instead.
-const QuicTag kSMHL = TAG('S', 'M', 'H', 'L');   // Support MAX_HEADER_LIST_SIZE
-                                                 // settings frame.
 const QuicTag kNSTP = TAG('N', 'S', 'T', 'P');   // No stop waiting frames.
 const QuicTag kNRTT = TAG('N', 'R', 'T', 'T');   // Ignore initial RTT
 
@@ -226,6 +226,8 @@ const QuicTag kPLE2 = TAG('P', 'L', 'E', '2');   // Arm the 1st PTO with
                                                  // and at least 1.5*srtt from
                                                  // last sent packet.
 
+const QuicTag kELDT = TAG('E', 'L', 'D', 'T');   // Enable Loss Detection Tuning
+
 // Optional support of truncated Connection IDs.  If sent by a peer, the value
 // is the minimum number of bytes allowed for the connection ID sent to the
 // peer.
@@ -251,6 +253,17 @@ const QuicTag kBWS5 = TAG('B', 'W', 'S', '5');  // QUIC Initial CWND up and down
 const QuicTag kBWS6 = TAG('B', 'W', 'S', '6');  // QUIC Initial CWND - Enabled
                                                 // with 0.5 * default
                                                 // multiplier.
+const QuicTag kBWP0 = TAG('B', 'W', 'P', '0');  // QUIC Initial CWND - SPDY
+                                                // priority 0.
+const QuicTag kBWP1 = TAG('B', 'W', 'P', '1');  // QUIC Initial CWND - SPDY
+                                                // priorities 0 and 1.
+const QuicTag kBWP2 = TAG('B', 'W', 'P', '2');  // QUIC Initial CWND - SPDY
+                                                // priorities 0, 1 and 2.
+const QuicTag kBWP3 = TAG('B', 'W', 'P', '3');  // QUIC Initial CWND - SPDY
+                                                // priorities 0, 1, 2 and 3.
+const QuicTag kBWP4 = TAG('B', 'W', 'P', '4');  // QUIC Initial CWND - SPDY
+                                                // priorities >= 0, 1, 2 , 3 and
+                                                 // 4.
 const QuicTag kBWS7 = TAG('B', 'W', 'S', '7');  // QUIC Initial CWND - Enabled
                                                 // with 0.75 * default
                                                 // multiplier.
@@ -294,7 +307,6 @@ const QuicTag kAEAD = TAG('A', 'E', 'A', 'D');   // Authenticated
 const QuicTag kCOPT = TAG('C', 'O', 'P', 'T');   // Connection options
 const QuicTag kCLOP = TAG('C', 'L', 'O', 'P');   // Client connection options
 const QuicTag kICSL = TAG('I', 'C', 'S', 'L');   // Idle network timeout
-const QuicTag kSCLS = TAG('S', 'C', 'L', 'S');   // Silently close on timeout
 const QuicTag kMIBS = TAG('M', 'I', 'D', 'S');   // Max incoming bidi streams
 const QuicTag kMIUS = TAG('M', 'I', 'U', 'S');   // Max incoming unidi streams
 const QuicTag kADE  = TAG('A', 'D', 'E', 0);     // Ack Delay Exponent (IETF

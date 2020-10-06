@@ -11,7 +11,7 @@ const readDirAsync = promisify(fs.readdir);
 const statAsync = promisify(fs.stat);
 const writeFileAsync = promisify(fs.writeFile);
 
-const esprimaTypes = {
+const espreeTypes = {
   BI_EXPR: 'BinaryExpression',
   CALL_EXPR: 'CallExpression',
   COND_EXPR: 'ConditionalExpression',
@@ -45,7 +45,7 @@ const GRD_PATH = path.resolve(SRC_PATH, 'front_end', 'langpacks', 'devtools_ui_s
 const SHARED_STRINGS_PATH = path.resolve(SRC_PATH, 'front_end', 'langpacks', 'shared_strings.grdp');
 const NODE_MODULES_PATH = path.resolve(SRC_PATH, 'node_modules');
 const escodegen = require(path.resolve(NODE_MODULES_PATH, 'escodegen'));
-const esprima = require(path.resolve(NODE_MODULES_PATH, 'esprima'));
+const espree = require(path.resolve(NODE_MODULES_PATH, '@typescript-eslint', 'parser'));
 
 function getRelativeFilePathFromSrc(filePath) {
   return path.relative(SRC_PATH, filePath);
@@ -71,12 +71,12 @@ async function parseFileContent(filePath) {
 }
 
 function isNodeCallOnObject(node, objectName, propertyName) {
-  return node !== undefined && node.type === esprimaTypes.CALL_EXPR &&
+  return node !== undefined && node.type === espreeTypes.CALL_EXPR &&
       verifyCallExpressionCallee(node.callee, objectName, propertyName);
 }
 
 function isNodeCallOnNestedObject(node, outerObjectName, innerObjectName, property) {
-  return node !== undefined && node.type === esprimaTypes.CALL_EXPR &&
+  return node !== undefined && node.type === espreeTypes.CALL_EXPR &&
       verifyNestedCallExpressionCallee(node.callee, outerObjectName, innerObjectName, property);
 }
 
@@ -84,9 +84,18 @@ function isNodeCommonUIStringCall(node) {
   return isNodeCallOnObject(node, 'Common', 'UIString') || isNodeCallOnNestedObject(node, 'Common', 'UIString', 'UIString');
 }
 
+function isNodePlatformUIStringCall(node) {
+  return isNodeCallOnNestedObject(node, 'Platform', 'UIString', 'UIString');
+}
+
+function isNodeUIStringDirectCall(node) {
+  return node.type === espreeTypes.CALL_EXPR && node.callee.type === 'Identifier' && node.callee.name === 'UIString';
+}
+
 function isNodeCommonUIStringFormat(node) {
-  return node && node.type === esprimaTypes.NEW_EXPR &&
-      (verifyCallExpressionCallee(node.callee, 'Common', 'UIStringFormat') || verifyNestedCallExpressionCallee(node.callee, 'Common', 'UIString', 'UIStringFormat'));
+  return node && node.type === espreeTypes.NEW_EXPR &&
+      (verifyCallExpressionCallee(node.callee, 'Common', 'UIStringFormat') ||
+       verifyNestedCallExpressionCallee(node.callee, 'Common', 'UIString', 'UIStringFormat'));
 }
 
 function isNodeUIformatLocalized(node) {
@@ -95,15 +104,15 @@ function isNodeUIformatLocalized(node) {
 }
 
 function isNodelsTaggedTemplateExpression(node) {
-  return node !== undefined && node.type === esprimaTypes.TAGGED_TEMP_EXPR && verifyIdentifier(node.tag, 'ls') &&
-      node.quasi !== undefined && node.quasi.type !== undefined && node.quasi.type === esprimaTypes.TEMP_LITERAL;
+  return node !== undefined && node.type === espreeTypes.TAGGED_TEMP_EXPR && verifyIdentifier(node.tag, 'ls') &&
+      node.quasi !== undefined && node.quasi.type !== undefined && node.quasi.type === espreeTypes.TEMP_LITERAL;
 }
 
 /**
  * Verify callee of objectName.propertyName(), e.g. Common.UIString().
  */
 function verifyCallExpressionCallee(callee, objectName, propertyName) {
-  return callee !== undefined && callee.type === esprimaTypes.MEMBER_EXPR && callee.computed === false &&
+  return callee !== undefined && callee.type === espreeTypes.MEMBER_EXPR && callee.computed === false &&
       verifyIdentifier(callee.object, objectName) && verifyIdentifier(callee.property, propertyName);
 }
 
@@ -111,13 +120,13 @@ function verifyCallExpressionCallee(callee, objectName, propertyName) {
  * Verify nested callee of outerObjectName.innerObjectName.propertyName(), e.g. Common.UIString.UIString().
  */
 function verifyNestedCallExpressionCallee(callee, outerObjectName, innerObjectName, propertyName) {
-  return callee !== undefined && callee.type === esprimaTypes.MEMBER_EXPR && callee.computed === false &&
-      callee.object.type === esprimaTypes.MEMBER_EXPR && verifyIdentifier(callee.object.object, outerObjectName) &&
+  return callee !== undefined && callee.type === espreeTypes.MEMBER_EXPR && callee.computed === false &&
+      callee.object.type === espreeTypes.MEMBER_EXPR && verifyIdentifier(callee.object.object, outerObjectName) &&
       verifyIdentifier(callee.object.property, innerObjectName) && verifyIdentifier(callee.property, propertyName);
 }
 
 function verifyIdentifier(node, name) {
-  return node !== undefined && node.type === esprimaTypes.IDENTIFIER && node.name === name;
+  return node !== undefined && node.type === espreeTypes.IDENTIFIER && node.name === name;
 }
 
 function getLocalizationCase(node) {
@@ -133,11 +142,15 @@ function getLocalizationCase(node) {
   if (isNodeUIformatLocalized(node)) {
     return 'UI.formatLocalized';
   }
+  if (isNodePlatformUIStringCall(node) || isNodeUIStringDirectCall(node)) {
+    return 'Platform.UIString';
+  }
   return null;
 }
 
 function isLocalizationCall(node) {
-  return isNodeCommonUIStringCall(node) || isNodelsTaggedTemplateExpression(node) || isNodeUIformatLocalized(node);
+  return isNodeCommonUIStringCall(node) || isNodelsTaggedTemplateExpression(node) || isNodeUIformatLocalized(node) ||
+      isNodePlatformUIStringCall(node) || isNodeUIStringDirectCall(node);
 }
 
 /**
@@ -145,8 +158,8 @@ function isLocalizationCall(node) {
  */
 function verifyFunctionCallee(callee, functionName) {
   return callee !== undefined &&
-      ((callee.type === esprimaTypes.IDENTIFIER && callee.name === functionName) ||
-       (callee.type === esprimaTypes.MEMBER_EXPR && verifyIdentifier(callee.property, functionName)));
+      ((callee.type === espreeTypes.IDENTIFIER && callee.name === functionName) ||
+       (callee.type === espreeTypes.MEMBER_EXPR && verifyIdentifier(callee.property, functionName)));
 }
 
 function getLocationMessage(location) {
@@ -354,8 +367,8 @@ module.exports = {
   createGrdpMessage,
   createPartFileEntry,
   escodegen,
-  esprima,
-  esprimaTypes,
+  espree,
+  espreeTypes,
   getAbsoluteGrdpPath,
   getChildDirectoriesFromDirectory,
   getFilesFromDirectory,

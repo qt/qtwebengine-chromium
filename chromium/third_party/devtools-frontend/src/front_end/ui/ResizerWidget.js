@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import {elementDragStart} from './UIUtils.js';
 
@@ -102,8 +105,9 @@ export class ResizerWidget extends Common.ObjectWrapper.ObjectWrapper {
     if (!this._elements.has(element)) {
       return false;
     }
-    elementDragStart(
-        element, this._dragStart.bind(this), this._drag.bind(this), this._dragEnd.bind(this), this.cursor(), event);
+    elementDragStart(element, this._dragStart.bind(this), event => {
+      this._drag(event);
+    }, this._dragEnd.bind(this), this.cursor(), event);
   }
 
   /**

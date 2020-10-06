@@ -29,6 +29,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
@@ -537,7 +540,7 @@ export class DOMNode {
 
   /**
    * @param {string} name
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async removeAttribute(name) {
     const response = await this._agent.invoke_removeAttribute({nodeId: this.id, name});
@@ -549,7 +552,7 @@ export class DOMNode {
   }
 
   /**
-   * @param {function(?Array<!DOMNode>)} callback
+   * @param {function(?Array<!DOMNode>):void} callback
    */
   getChildNodes(callback) {
     if (this._children) {
@@ -916,7 +919,7 @@ export class DOMNode {
   }
 
   /**
-   * @param {function(!DOMNode, string)} visitor
+   * @param {function(!DOMNode, string):void} visitor
    */
   traverseMarkers(visitor) {
     /**
@@ -1114,7 +1117,7 @@ export class DeferredDOMNode {
   }
 
   /**
-   * @param {function(?DOMNode)} callback
+   * @param {function(?DOMNode):void} callback
    */
   resolve(callback) {
     this.resolvePromise().then(callback);
@@ -1362,8 +1365,8 @@ export class DOMModel extends SDKModel {
   }
 
   /**
-   * @param {function(?T)} callback
-   * @return {function(?ProtocolClient.InspectorBackend.ProtocolError, !T=)}
+   * @param {function(?T):void} callback
+   * @return {function(?ProtocolClient.InspectorBackend.ProtocolError, !T=):void}
    * @template T
    */
   _wrapClientCallback(callback) {
@@ -1413,7 +1416,7 @@ export class DOMModel extends SDKModel {
    * @param {!Array<!Protocol.DOM.NodeId>} nodeIds
    */
   _inlineStyleInvalidated(nodeIds) {
-    this._attributeLoadNodeIds.addAll(nodeIds);
+    Platform.SetUtilities.addAll(this._attributeLoadNodeIds, nodeIds);
     if (!this._loadNodeAttributesTimeout) {
       this._loadNodeAttributesTimeout = setTimeout(this._loadNodeAttributes.bind(this), 20);
     }
@@ -1746,7 +1749,7 @@ export class DOMModel extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   suspendModel() {
     return this._agent.disable().then(() => this._setDocument(null));
@@ -1754,7 +1757,7 @@ export class DOMModel extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   resumeModel() {
     return this._agent.enable();
@@ -1969,7 +1972,7 @@ export class DOMModelUndoStack {
   }
 
   /**
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   undo() {
     if (this._index === 0) {
@@ -1981,7 +1984,7 @@ export class DOMModelUndoStack {
   }
 
   /**
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   redo() {
     if (this._index >= this._stack.length) {

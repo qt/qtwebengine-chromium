@@ -33,6 +33,17 @@ class GrClearOp;
 class GrGpuBuffer;
 class GrRenderTargetProxy;
 
+/** Observer is notified when a GrOpsTask is closed. */
+class GrOpsTaskClosedObserver {
+public:
+    virtual ~GrOpsTaskClosedObserver() = 0;
+    /**
+     * Called when the GrOpsTask is closed. Must not add/remove observers to 'task'.
+     * The GrOpsTask will remove all its observers after it finishes calling wasClosed().
+     */
+    virtual void wasClosed(const GrOpsTask& task) = 0;
+};
+
 class GrOpsTask : public GrRenderTask {
 private:
     using DstProxyView = GrXferProcessor::DstProxyView;
@@ -44,6 +55,13 @@ public:
     ~GrOpsTask() override;
 
     GrOpsTask* asOpsTask() override { return this; }
+
+    void addClosedObserver(GrOpsTaskClosedObserver* observer) {
+        SkASSERT(observer);
+        fClosedObservers.push_back(observer);
+    }
+
+    void removeClosedObserver(GrOpsTaskClosedObserver* observer);
 
     bool isEmpty() const { return fOpChains.empty(); }
 
@@ -110,9 +128,12 @@ public:
 
     void discard();
 
-    SkDEBUGCODE(void dump(bool printDependencies) const override;)
-    SkDEBUGCODE(int numClips() const override { return fNumClips; })
-    SkDEBUGCODE(void visitProxies_debugOnly(const GrOp::VisitProxyFunc&) const override;)
+#ifdef SK_DEBUG
+    void dump(bool printDependencies) const override;
+    const char* name() const final { return "Ops"; }
+    int numClips() const override { return fNumClips; }
+    void visitProxies_debugOnly(const GrOp::VisitProxyFunc&) const override;
+#endif
 
 #if GR_TEST_UTILS
     int numOpChains() const { return fOpChains.count(); }
@@ -283,17 +304,19 @@ private:
     GrRecordingContext::Arenas fArenas;
     GrAuditTrail*              fAuditTrail;
 
+    SkSTArray<2, GrOpsTaskClosedObserver*, true> fClosedObservers;
+
     GrLoadOp fColorLoadOp = GrLoadOp::kLoad;
     SkPMColor4f fLoadClearColor = SK_PMColor4fTRANSPARENT;
     StencilContent fInitialStencilContent = StencilContent::kDontCare;
     bool fMustPreserveStencil = false;
 
-    uint32_t fLastClipStackGenID;
+    uint32_t fLastClipStackGenID = SK_InvalidUniqueID;
     SkIRect fLastDevClipBounds;
     int fLastClipNumAnalyticFPs;
 
     // We must track if we have a wait op so that we don't delete the op when we have a full clear.
-    bool fHasWaitOp = false;;
+    bool fHasWaitOp = false;
 
     // For ops/opsTask we have mean: 5 stdDev: 28
     SkSTArray<25, OpChain, true> fOpChains;

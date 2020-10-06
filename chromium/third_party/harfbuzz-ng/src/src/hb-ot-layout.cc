@@ -419,7 +419,7 @@ get_gsubgpos_table (hb_face_t *face,
   switch (table_tag) {
     case HB_OT_TAG_GSUB: return *face->table.GSUB->table;
     case HB_OT_TAG_GPOS: return *face->table.GPOS->table;
-    default:             return Null(OT::GSUBGPOS);
+    default:             return Null (OT::GSUBGPOS);
   }
 }
 
@@ -1203,6 +1203,7 @@ hb_ot_layout_collect_lookups (hb_face_t      *face,
   g.feature_variation_collect_lookups (&feature_indexes, lookup_indexes);
 }
 
+#ifdef HB_EXPERIMENTAL_API
 /**
  * hb_ot_layout_closure_lookups:
  * @face: #hb_face_t to work upon
@@ -1212,7 +1213,7 @@ hb_ot_layout_collect_lookups (hb_face_t      *face,
  *
  * Returns all inactive lookups reachable from lookup_indices
  *
- * Since: REPLACEME
+ * Since: EXPERIMENTAL
  **/
 void
 hb_ot_layout_closure_lookups (hb_face_t      *face,
@@ -1229,15 +1230,15 @@ hb_ot_layout_closure_lookups (hb_face_t      *face,
     {
       case HB_OT_TAG_GSUB:
       {
-        const OT::SubstLookup& l = face->table.GSUB->table->get_lookup (lookup_index);
-        l.closure_lookups (&c, lookup_index);
-        break;
+	const OT::SubstLookup& l = face->table.GSUB->table->get_lookup (lookup_index);
+	l.closure_lookups (&c, lookup_index);
+	break;
       }
       case HB_OT_TAG_GPOS:
       {
-        const OT::PosLookup& l = face->table.GPOS->table->get_lookup (lookup_index);
-        l.closure_lookups (&c, lookup_index);
-        break;
+	const OT::PosLookup& l = face->table.GPOS->table->get_lookup (lookup_index);
+	l.closure_lookups (&c, lookup_index);
+	break;
       }
     }
   }
@@ -1255,7 +1256,7 @@ hb_ot_layout_closure_lookups (hb_face_t      *face,
  *
  * Returns all active feature indexes
  *
- * Since: REPLACEME
+ * Since: EXPERIMENTAL
  **/
 void
 hb_ot_layout_closure_features (hb_face_t      *face,
@@ -1266,6 +1267,7 @@ hb_ot_layout_closure_features (hb_face_t      *face,
   const OT::GSUBGPOS &g = get_gsubgpos_table (face, table_tag);
   g.closure_features (lookup_indexes, feature_indexes);
 }
+#endif
 
 
 #ifndef HB_NO_LAYOUT_COLLECT_GLYPHS
@@ -1511,8 +1513,8 @@ hb_ot_layout_delete_glyphs_inplace (hb_buffer_t *buffer,
  **/
 void
 hb_ot_layout_lookup_substitute_closure (hb_face_t    *face,
-				        unsigned int  lookup_index,
-				        hb_set_t     *glyphs /* OUT */)
+					unsigned int  lookup_index,
+					hb_set_t     *glyphs /* OUT */)
 {
   hb_map_t done_lookups;
   OT::hb_closure_context_t c (face, glyphs, &done_lookups);
@@ -1547,7 +1549,7 @@ hb_ot_layout_lookups_substitute_closure (hb_face_t      *face,
   do
   {
     glyphs_length = glyphs->get_population ();
-    if (lookups != nullptr)
+    if (lookups)
     {
       for (hb_codepoint_t lookup_index = HB_SET_VALUE_INVALID; hb_set_next (lookups, &lookup_index);)
 	gsub.get_lookup (lookup_index).closure (&c, lookup_index);
@@ -1640,8 +1642,8 @@ hb_ot_layout_position_finish_offsets (hb_font_t *font, hb_buffer_t *buffer)
  * specifically in their respective size ranges; other ways to differentiate fonts within
  * a subfamily are not covered by the `size` feature.
  *
- * For more information on this distinction, see the `size` documentation at
- * https://docs.microsoft.com/en-us/typography/opentype/spec/features_pt#tag-39size39
+ * For more information on this distinction, see the [`size` feature documentation](
+ * https://docs.microsoft.com/en-us/typography/opentype/spec/features_pt#tag-size).
  *
  * Return value: true if data found, false otherwise
  *

@@ -47,6 +47,7 @@ class InsecureProofVerifier : public ProofVerifier {
 
   QuicAsyncStatus VerifyCertChain(
       const std::string& /*hostname*/,
+      const uint16_t /*port*/,
       const std::vector<std::string>& /*certs*/,
       const std::string& /*ocsp_response*/,
       const std::string& /*cert_sct*/,
@@ -69,13 +70,14 @@ class DummyProofSource : public ProofSource {
 
   // ProofSource override.
   void GetProof(const QuicSocketAddress& server_address,
+                const QuicSocketAddress& client_address,
                 const std::string& hostname,
                 const std::string& /*server_config*/,
                 QuicTransportVersion /*transport_version*/,
                 quiche::QuicheStringPiece /*chlo_hash*/,
                 std::unique_ptr<Callback> callback) override {
     QuicReferenceCountedPointer<ProofSource::Chain> chain =
-        GetCertChain(server_address, hostname);
+        GetCertChain(server_address, client_address, hostname);
     QuicCryptoProof proof;
     proof.signature = "Dummy signature";
     proof.leaf_cert_scts = "Dummy timestamp";
@@ -84,6 +86,7 @@ class DummyProofSource : public ProofSource {
 
   QuicReferenceCountedPointer<Chain> GetCertChain(
       const QuicSocketAddress& /*server_address*/,
+      const QuicSocketAddress& /*client_address*/,
       const std::string& /*hostname*/) override {
     std::vector<std::string> certs;
     certs.push_back("Dummy cert");
@@ -93,12 +96,15 @@ class DummyProofSource : public ProofSource {
 
   void ComputeTlsSignature(
       const QuicSocketAddress& /*server_address*/,
+      const QuicSocketAddress& /*client_address*/,
       const std::string& /*hostname*/,
       uint16_t /*signature_algorit*/,
       quiche::QuicheStringPiece /*in*/,
       std::unique_ptr<SignatureCallback> callback) override {
     callback->Run(true, "Dummy signature", /*details=*/nullptr);
   }
+
+  TicketCrypter* GetTicketCrypter() override { return nullptr; }
 };
 
 class Handshaker : public QuicCryptoClientHandshaker {
@@ -136,11 +142,13 @@ class QuicCryptoClientHandshakerTest
                                                  {version_})),
         session_(connection_, false),
         crypto_client_config_(std::make_unique<InsecureProofVerifier>()),
-        client_stream_(new QuicCryptoClientStream(server_id_,
-                                                  &session_,
-                                                  nullptr,
-                                                  &crypto_client_config_,
-                                                  &proof_handler_)),
+        client_stream_(
+            new QuicCryptoClientStream(server_id_,
+                                       &session_,
+                                       nullptr,
+                                       &crypto_client_config_,
+                                       &proof_handler_,
+                                       /*has_application_state = */ false)),
         handshaker_(server_id_,
                     client_stream_,
                     &session_,

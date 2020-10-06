@@ -15,6 +15,8 @@ flutter_defines = [
   "SK_DISABLE_READBUFFER",
   "SK_DISABLE_EFFECT_DESERIALIZATION",
 
+  # Staging
+
   # Fast low-precision software rendering isn't a priority for Flutter.
   "SK_DISABLE_LEGACY_SHADERCONTEXT",
   "SK_DISABLE_LOWP_RASTER_PIPELINE",

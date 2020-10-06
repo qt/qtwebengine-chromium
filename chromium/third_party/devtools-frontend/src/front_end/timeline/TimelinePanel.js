@@ -283,7 +283,7 @@ export class TimelinePanel extends UI.Panel.Panel {
         Common.Settings.Settings.instance().createSetting('timelineShowSettingsToolbar', false);
     this._showSettingsPaneButton = new UI.Toolbar.ToolbarSettingToggle(
         this._showSettingsPaneSetting, 'largeicon-settings-gear', Common.UIString.UIString('Capture settings'));
-    self.SDK.multitargetNetworkManager.addEventListener(
+    SDK.NetworkManager.MultitargetNetworkManager.instance().addEventListener(
         SDK.NetworkManager.MultitargetNetworkManager.Events.ConditionsChanged, this._updateShowSettingsToolbarButton,
         this);
     MobileThrottling.ThrottlingManager.throttlingManager().addEventListener(
@@ -506,7 +506,7 @@ export class TimelinePanel extends UI.Panel.Panel {
     if (MobileThrottling.ThrottlingManager.throttlingManager().cpuThrottlingRate() !== 1) {
       messages.push(Common.UIString.UIString('- CPU throttling is enabled'));
     }
-    if (self.SDK.multitargetNetworkManager.isThrottling()) {
+    if (SDK.NetworkManager.MultitargetNetworkManager.instance().isThrottling()) {
       messages.push(Common.UIString.UIString('- Network throttling is enabled'));
     }
     if (this._captureLayersAndPicturesSetting.get()) {
@@ -764,9 +764,9 @@ export class TimelinePanel extends UI.Panel.Panel {
         Common.UIString.UIString('Learn\xa0more'));
 
     const recordKey =
-        encloseWithTag('b', self.UI.shortcutRegistry.shortcutDescriptorsForAction('timeline.toggle-recording')[0].name);
+        encloseWithTag('b', self.UI.shortcutRegistry.shortcutsForAction('timeline.toggle-recording')[0].title());
     const reloadKey =
-        encloseWithTag('b', self.UI.shortcutRegistry.shortcutDescriptorsForAction('timeline.record-reload')[0].name);
+        encloseWithTag('b', self.UI.shortcutRegistry.shortcutsForAction('timeline.record-reload')[0].title());
     const navigateNode = encloseWithTag('b', Common.UIString.UIString('WASD'));
 
     this._landingPage = new UI.Widget.VBox();
@@ -866,7 +866,8 @@ export class TimelinePanel extends UI.Panel.Panel {
     if (this._statusPane) {
       return;
     }
-    this._statusPane = new StatusPane({showTimer: true, showProgress: true}, this._stopRecording.bind(this));
+    this._statusPane =
+        new StatusPane({showTimer: true, showProgress: true, buttonDisabled: true}, this._stopRecording.bind(this));
     this._statusPane.showPane(this._statusPaneContainer);
     this._statusPane.updateStatus(Common.UIString.UIString('Initializing profiler…'));
   }

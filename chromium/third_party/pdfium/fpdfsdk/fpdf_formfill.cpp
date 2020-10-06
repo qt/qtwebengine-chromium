@@ -376,7 +376,21 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnMouseMove(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-  return pPageView->OnMouseMove(CFX_PointF(page_x, page_y), modifier);
+  return pPageView->OnMouseMove(modifier, CFX_PointF(page_x, page_y));
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FORM_OnMouseWheel(FPDF_FORMHANDLE hHandle,
+                  FPDF_PAGE page,
+                  int modifier,
+                  const FS_POINTF* page_coord,
+                  int delta_x,
+                  int delta_y) {
+  CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
+  if (!pPageView || !page_coord)
+    return false;
+  return pPageView->OnMouseWheel(modifier, CFXPointFFromFSPointF(*page_coord),
+                                 CFX_Vector(delta_x, delta_y));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnFocus(FPDF_FORMHANDLE hHandle,
@@ -387,7 +401,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnFocus(FPDF_FORMHANDLE hHandle,
   CPDFSDK_PageView* pPageView = FormHandleToPageView(hHandle, page);
   if (!pPageView)
     return false;
-  return pPageView->OnFocus(CFX_PointF(page_x, page_y), modifier);
+  return pPageView->OnFocus(modifier, CFX_PointF(page_x, page_y));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
@@ -402,7 +416,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonDown(FPDF_FORMHANDLE hHandle,
   fprintf(stderr, "mousedown,left,%d,%d\n", static_cast<int>(round(page_x)),
           static_cast<int>(round(page_y)));
 #endif  // PDF_ENABLE_CLICK_LOGGING
-  return pPageView->OnLButtonDown(CFX_PointF(page_x, page_y), modifier);
+  return pPageView->OnLButtonDown(modifier, CFX_PointF(page_x, page_y));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
@@ -417,7 +431,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnLButtonUp(FPDF_FORMHANDLE hHandle,
   fprintf(stderr, "mouseup,left,%d,%d\n", static_cast<int>(round(page_x)),
           static_cast<int>(round(page_y)));
 #endif  // PDF_ENABLE_CLICK_LOGGING
-  return pPageView->OnLButtonUp(CFX_PointF(page_x, page_y), modifier);
+  return pPageView->OnLButtonUp(modifier, CFX_PointF(page_x, page_y));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -433,7 +447,7 @@ FORM_OnLButtonDoubleClick(FPDF_FORMHANDLE hHandle,
   fprintf(stderr, "mousedown,doubleleft,%d,%d\n",
           static_cast<int>(round(page_x)), static_cast<int>(round(page_y)));
 #endif  // PDF_ENABLE_CLICK_LOGGING
-  return pPageView->OnLButtonDblClk(CFX_PointF(page_x, page_y), modifier);
+  return pPageView->OnLButtonDblClk(modifier, CFX_PointF(page_x, page_y));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonDown(FPDF_FORMHANDLE hHandle,
@@ -448,7 +462,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonDown(FPDF_FORMHANDLE hHandle,
   fprintf(stderr, "mousedown,right,%d,%d\n", static_cast<int>(round(page_x)),
           static_cast<int>(round(page_y)));
 #endif  // PDF_ENABLE_CLICK_LOGGING
-  return pPageView->OnRButtonDown(CFX_PointF(page_x, page_y), modifier);
+  return pPageView->OnRButtonDown(modifier, CFX_PointF(page_x, page_y));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
@@ -463,7 +477,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonUp(FPDF_FORMHANDLE hHandle,
   fprintf(stderr, "mouseup,right,%d,%d\n", static_cast<int>(round(page_x)),
           static_cast<int>(round(page_y)));
 #endif  // PDF_ENABLE_CLICK_LOGGING
-  return pPageView->OnRButtonUp(CFX_PointF(page_x, page_y), modifier);
+  return pPageView->OnRButtonUp(modifier, CFX_PointF(page_x, page_y));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnKeyDown(FPDF_FORMHANDLE hHandle,
@@ -594,11 +608,15 @@ FORM_GetFocusedAnnot(FPDF_FORMHANDLE handle,
   if (!cpdfsdk_annot)
     return true;
 
+  // TODO(crbug.com/pdfium/1482): Handle XFA case.
+  if (cpdfsdk_annot->AsXFAWidget())
+    return true;
+
   CPDFSDK_PageView* page_view = cpdfsdk_annot->GetPageView();
   if (!page_view->IsValid())
     return true;
 
-  CPDF_Page* page = cpdfsdk_annot->GetPDFPage();
+  IPDF_Page* page = cpdfsdk_annot->GetPage();
   if (!page)
     return true;
 
@@ -612,9 +630,7 @@ FORM_GetFocusedAnnot(FPDF_FORMHANDLE handle,
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
-FORM_SetFocusedAnnot(FPDF_FORMHANDLE handle,
-                     FPDF_PAGE page,
-                     FPDF_ANNOTATION annot) {
+FORM_SetFocusedAnnot(FPDF_FORMHANDLE handle, FPDF_ANNOTATION annot) {
   CPDFSDK_FormFillEnvironment* form_fill_env =
       CPDFSDKFormFillEnvironmentFromFPDFFormHandle(handle);
   if (!form_fill_env)
@@ -624,11 +640,8 @@ FORM_SetFocusedAnnot(FPDF_FORMHANDLE handle,
   if (!annot_context)
     return false;
 
-  IPDF_Page* pdf_page = IPDFPageFromFPDFPage(page);
-  if (!pdf_page)
-    return false;
-
-  CPDFSDK_PageView* page_view = form_fill_env->GetPageView(pdf_page, true);
+  CPDFSDK_PageView* page_view =
+      form_fill_env->GetPageView(annot_context->GetPage(), true);
   if (!page_view->IsValid())
     return false;
 
@@ -636,6 +649,8 @@ FORM_SetFocusedAnnot(FPDF_FORMHANDLE handle,
 
   ObservedPtr<CPDFSDK_Annot> cpdfsdk_annot(
       page_view->GetAnnotByDict(annot_dict));
+  if (!cpdfsdk_annot)
+    return false;
   return form_fill_env->SetFocusAnnot(&cpdfsdk_annot);
 }
 

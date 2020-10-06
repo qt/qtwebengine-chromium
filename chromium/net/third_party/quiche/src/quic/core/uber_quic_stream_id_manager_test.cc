@@ -46,8 +46,10 @@ std::vector<TestParams> GetTestParams() {
 
 class MockDelegate : public QuicStreamIdManager::DelegateInterface {
  public:
-  MOCK_METHOD2(SendMaxStreams,
-               void(QuicStreamCount stream_count, bool unidirectional));
+  MOCK_METHOD(void,
+              SendMaxStreams,
+              (QuicStreamCount stream_count, bool unidirectional),
+              (override));
 };
 
 class UberQuicStreamIdManagerTest : public QuicTestWithParam<TestParams> {
@@ -64,25 +66,25 @@ class UberQuicStreamIdManagerTest : public QuicTestWithParam<TestParams> {
   QuicStreamId GetNthClientInitiatedBidirectionalId(int n) {
     return QuicUtils::GetFirstBidirectionalStreamId(transport_version(),
                                                     Perspective::IS_CLIENT) +
-           kV99StreamIdIncrement * n;
+           QuicUtils::StreamIdDelta(transport_version()) * n;
   }
 
   QuicStreamId GetNthClientInitiatedUnidirectionalId(int n) {
     return QuicUtils::GetFirstUnidirectionalStreamId(transport_version(),
                                                      Perspective::IS_CLIENT) +
-           kV99StreamIdIncrement * n;
+           QuicUtils::StreamIdDelta(transport_version()) * n;
   }
 
   QuicStreamId GetNthServerInitiatedBidirectionalId(int n) {
     return QuicUtils::GetFirstBidirectionalStreamId(transport_version(),
                                                     Perspective::IS_SERVER) +
-           kV99StreamIdIncrement * n;
+           QuicUtils::StreamIdDelta(transport_version()) * n;
   }
 
   QuicStreamId GetNthServerInitiatedUnidirectionalId(int n) {
     return QuicUtils::GetFirstUnidirectionalStreamId(transport_version(),
                                                      Perspective::IS_SERVER) +
-           kV99StreamIdIncrement * n;
+           QuicUtils::StreamIdDelta(transport_version()) * n;
   }
 
   QuicStreamId GetNthPeerInitiatedBidirectionalStreamId(int n) {
@@ -298,17 +300,6 @@ TEST_P(UberQuicStreamIdManagerTest, OnStreamsBlockedFrame) {
               SendMaxStreams(manager_.max_incoming_unidirectional_streams(),
                              frame.unidirectional));
   EXPECT_TRUE(manager_.OnStreamsBlockedFrame(frame, nullptr));
-}
-
-TEST_P(UberQuicStreamIdManagerTest, IsIncomingStream) {
-  EXPECT_TRUE(
-      manager_.IsIncomingStream(GetNthPeerInitiatedBidirectionalStreamId(0)));
-  EXPECT_TRUE(
-      manager_.IsIncomingStream(GetNthPeerInitiatedUnidirectionalStreamId(0)));
-  EXPECT_FALSE(
-      manager_.IsIncomingStream(GetNthSelfInitiatedBidirectionalStreamId(0)));
-  EXPECT_FALSE(
-      manager_.IsIncomingStream(GetNthSelfInitiatedUnidirectionalStreamId(0)));
 }
 
 TEST_P(UberQuicStreamIdManagerTest, SetMaxOpenOutgoingStreamsPlusFrame) {

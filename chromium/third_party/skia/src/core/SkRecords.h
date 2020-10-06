@@ -45,6 +45,7 @@ namespace SkRecords {
     M(Save)                                                         \
     M(SaveLayer)                                                    \
     M(SaveBehind)                                                   \
+    M(MarkCTM)                                                      \
     M(SetMatrix)                                                    \
     M(Translate)                                                    \
     M(Scale)                                                        \
@@ -157,13 +158,6 @@ struct TypedMatrix : public SkMatrix {
     TypedMatrix(const SkMatrix& matrix);
 };
 
-struct Matrix44 : public SkM44 {
-    Matrix44() {}
-    Matrix44(const SkScalar m[16]) {
-        this->setColMajor(m);
-    }
-};
-
 enum Tags {
     kDraw_Tag      = 1,   // May draw something (usually named DrawFoo).
     kHasImage_Tag  = 2,   // Contains an SkImage or SkBitmap.
@@ -198,12 +192,14 @@ RECORD(SaveLayer, kHasPaint_Tag,
 RECORD(SaveBehind, 0,
        Optional<SkRect> subset);
 
+RECORD(MarkCTM, 0,
+       SkString name);
 RECORD(SetMatrix, 0,
         TypedMatrix matrix);
 RECORD(Concat, 0,
         TypedMatrix matrix);
 RECORD(Concat44, 0,
-       Matrix44 matrix);
+       SkM44 matrix);
 
 RECORD(Translate, 0,
         SkScalar dx;

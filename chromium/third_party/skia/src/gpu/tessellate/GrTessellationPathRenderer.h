@@ -19,8 +19,10 @@
 // target that supports either MSAA or mixed samples if AA is desired.
 class GrTessellationPathRenderer : public GrPathRenderer, public GrOnFlushCallbackObject {
 public:
+    const char* name() const final { return "Tess"; }
+
     GrTessellationPathRenderer(const GrCaps&);
-    StencilSupport onGetStencilSupport(const GrShape& shape) const override {
+    StencilSupport onGetStencilSupport(const GrStyledShape& shape) const override {
         // TODO: Single-pass (e.g., convex) paths can have full support.
         return kStencilOnly_StencilSupport;
     }

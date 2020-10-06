@@ -95,8 +95,10 @@ class MockQuicCryptoServerStream : public QuicCryptoServerStream {
       delete;
   ~MockQuicCryptoServerStream() override {}
 
-  MOCK_METHOD1(SendServerConfigUpdate,
-               void(const CachedNetworkParameters* cached_network_parameters));
+  MOCK_METHOD(void,
+              SendServerConfigUpdate,
+              (const CachedNetworkParameters*),
+              (override));
 
   bool encryption_established() const override { return true; }
 };
@@ -104,15 +106,16 @@ class MockQuicCryptoServerStream : public QuicCryptoServerStream {
 class MockTlsServerHandshaker : public TlsServerHandshaker {
  public:
   explicit MockTlsServerHandshaker(QuicSession* session,
-                                   SSL_CTX* ssl_ctx,
-                                   ProofSource* proof_source)
-      : TlsServerHandshaker(session, ssl_ctx, proof_source) {}
+                                   const QuicCryptoServerConfig& crypto_config)
+      : TlsServerHandshaker(session, crypto_config) {}
   MockTlsServerHandshaker(const MockTlsServerHandshaker&) = delete;
   MockTlsServerHandshaker& operator=(const MockTlsServerHandshaker&) = delete;
   ~MockTlsServerHandshaker() override {}
 
-  MOCK_METHOD1(SendServerConfigUpdate,
-               void(const CachedNetworkParameters* cached_network_parameters));
+  MOCK_METHOD(void,
+              SendServerConfigUpdate,
+              (const CachedNetworkParameters*),
+              (override));
 
   bool encryption_established() const override { return true; }
 };
@@ -127,8 +130,7 @@ QuicCryptoServerStreamBase* CreateMockCryptoServerStream(
       return new MockQuicCryptoServerStream(
           crypto_config, compressed_certs_cache, session, helper);
     case PROTOCOL_TLS1_3:
-      return new MockTlsServerHandshaker(session, crypto_config->ssl_ctx(),
-                                         crypto_config->proof_source());
+      return new MockTlsServerHandshaker(session, *crypto_config);
     case PROTOCOL_UNSUPPORTED:
       break;
   }
@@ -158,11 +160,13 @@ class MockQuicConnectionWithSendStreamData : public MockQuicConnection {
         .WillByDefault(Invoke(consume_all_data));
   }
 
-  MOCK_METHOD4(SendStreamData,
-               QuicConsumedData(QuicStreamId id,
-                                size_t write_length,
-                                QuicStreamOffset offset,
-                                StreamSendingState state));
+  MOCK_METHOD(QuicConsumedData,
+              SendStreamData,
+              (QuicStreamId id,
+               size_t write_length,
+               QuicStreamOffset offset,
+               StreamSendingState state),
+              (override));
 };
 
 class MockQuicSimpleServerSession : public QuicSimpleServerSession {
@@ -191,12 +195,14 @@ class MockQuicSimpleServerSession : public QuicSimpleServerSession {
     return WritePushPromiseMock(original_stream_id, promised_stream_id,
                                 headers);
   }
-  MOCK_METHOD3(WritePushPromiseMock,
-               void(QuicStreamId original_stream_id,
-                    QuicStreamId promised_stream_id,
-                    const spdy::SpdyHeaderBlock& headers));
+  MOCK_METHOD(void,
+              WritePushPromiseMock,
+              (QuicStreamId original_stream_id,
+               QuicStreamId promised_stream_id,
+               const spdy::SpdyHeaderBlock& headers),
+              ());
 
-  MOCK_METHOD1(SendBlocked, void(QuicStreamId));
+  MOCK_METHOD(void, SendBlocked, (QuicStreamId), (override));
 };
 
 class QuicSimpleServerSessionTest
@@ -323,7 +329,7 @@ TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
   QuicStreamFrame data1(GetNthClientInitiatedBidirectionalId(0), false, 0,
                         quiche::QuicheStringPiece("HT"));
   session_->OnStreamFrame(data1);
-  EXPECT_EQ(1u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(1u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 
   // Receive a reset (and send a RST in response).
   QuicRstStreamFrame rst1(kInvalidControlFrameId,
@@ -343,13 +349,13 @@ TEST_P(QuicSimpleServerSessionTest, CloseStreamDueToReset) {
   // a one-way close.
   InjectStopSending(GetNthClientInitiatedBidirectionalId(0),
                     QUIC_ERROR_PROCESSING_STREAM);
-  EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(0u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 
   // Send the same two bytes of payload in a new packet.
   session_->OnStreamFrame(data1);
 
   // The stream should not be re-opened.
-  EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(0u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
   EXPECT_TRUE(connection_->connected());
 }
 
@@ -373,7 +379,7 @@ TEST_P(QuicSimpleServerSessionTest, NeverOpenStreamDueToReset) {
   InjectStopSending(GetNthClientInitiatedBidirectionalId(0),
                     QUIC_ERROR_PROCESSING_STREAM);
 
-  EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(0u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 
   // Send two bytes of payload.
   QuicStreamFrame data1(GetNthClientInitiatedBidirectionalId(0), false, 0,
@@ -381,7 +387,7 @@ TEST_P(QuicSimpleServerSessionTest, NeverOpenStreamDueToReset) {
   session_->OnStreamFrame(data1);
 
   // The stream should never be opened, now that the reset is received.
-  EXPECT_EQ(0u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(0u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
   EXPECT_TRUE(connection_->connected());
 }
 
@@ -393,7 +399,7 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
                          quiche::QuicheStringPiece("\2\0\0\0\0\0\0\0HT"));
   session_->OnStreamFrame(frame1);
   session_->OnStreamFrame(frame2);
-  EXPECT_EQ(2u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(2u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 
   // Send a reset (and expect the peer to send a RST in response).
   QuicRstStreamFrame rst(kInvalidControlFrameId,
@@ -424,7 +430,7 @@ TEST_P(QuicSimpleServerSessionTest, AcceptClosedStream) {
   session_->OnStreamFrame(frame3);
   session_->OnStreamFrame(frame4);
   // The stream should never be opened, now that the reset is received.
-  EXPECT_EQ(1u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(1u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
   EXPECT_TRUE(connection_->connected());
 }
 
@@ -435,12 +441,14 @@ TEST_P(QuicSimpleServerSessionTest, CreateIncomingStreamDisconnected) {
   }
 
   // Tests that incoming stream creation fails when connection is not connected.
-  size_t initial_num_open_stream = session_->GetNumOpenIncomingStreams();
+  size_t initial_num_open_stream =
+      QuicSessionPeer::GetNumOpenDynamicStreams(session_.get());
   QuicConnectionPeer::TearDownLocalConnectionState(connection_);
   EXPECT_QUIC_BUG(QuicSimpleServerSessionPeer::CreateIncomingStream(
                       session_.get(), GetNthClientInitiatedBidirectionalId(0)),
                   "ShouldCreateIncomingStream called when disconnected");
-  EXPECT_EQ(initial_num_open_stream, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(initial_num_open_stream,
+            QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 }
 
 TEST_P(QuicSimpleServerSessionTest, CreateIncomingStream) {
@@ -457,14 +465,16 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamDisconnected) {
   }
 
   // Tests that outgoing stream creation fails when connection is not connected.
-  size_t initial_num_open_stream = session_->GetNumOpenOutgoingStreams();
+  size_t initial_num_open_stream =
+      QuicSessionPeer::GetNumOpenDynamicStreams(session_.get());
   QuicConnectionPeer::TearDownLocalConnectionState(connection_);
   EXPECT_QUIC_BUG(
       QuicSimpleServerSessionPeer::CreateOutgoingUnidirectionalStream(
           session_.get()),
       "ShouldCreateOutgoingUnidirectionalStream called when disconnected");
 
-  EXPECT_EQ(initial_num_open_stream, session_->GetNumOpenOutgoingStreams());
+  EXPECT_EQ(initial_num_open_stream,
+            QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 }
 
 TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUnencrypted) {
@@ -475,12 +485,14 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUnencrypted) {
 
   // Tests that outgoing stream creation fails when encryption has not yet been
   // established.
-  size_t initial_num_open_stream = session_->GetNumOpenOutgoingStreams();
+  size_t initial_num_open_stream =
+      QuicSessionPeer::GetNumOpenDynamicStreams(session_.get());
   EXPECT_QUIC_BUG(
       QuicSimpleServerSessionPeer::CreateOutgoingUnidirectionalStream(
           session_.get()),
       "Encryption not established so no outgoing stream created.");
-  EXPECT_EQ(initial_num_open_stream, session_->GetNumOpenOutgoingStreams());
+  EXPECT_EQ(initial_num_open_stream,
+            QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 }
 
 TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUptoLimit) {
@@ -493,8 +505,9 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUptoLimit) {
   QuicStreamFrame data1(GetNthClientInitiatedBidirectionalId(0), false, 0,
                         quiche::QuicheStringPiece("HT"));
   session_->OnStreamFrame(data1);
-  EXPECT_EQ(1u, session_->GetNumOpenIncomingStreams());
-  EXPECT_EQ(0u, session_->GetNumOpenOutgoingStreams());
+  EXPECT_EQ(1u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
+  EXPECT_EQ(0u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()) -
+                    /*incoming=*/1);
 
   if (!VersionUsesHttp3(transport_version())) {
     session_->UnregisterStreamPriority(
@@ -525,20 +538,24 @@ TEST_P(QuicSimpleServerSessionTest, CreateOutgoingDynamicStreamUptoLimit) {
     } else {
       EXPECT_EQ(GetNthServerInitiatedUnidirectionalId(i), created_stream->id());
     }
-    EXPECT_EQ(i + 1, session_->GetNumOpenOutgoingStreams());
+    EXPECT_EQ(i + 1, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()) -
+                         /*incoming=*/1);
   }
 
   // Continuing creating push stream would fail.
   EXPECT_EQ(nullptr,
             QuicSimpleServerSessionPeer::CreateOutgoingUnidirectionalStream(
                 session_.get()));
-  EXPECT_EQ(kMaxStreamsForTest, session_->GetNumOpenOutgoingStreams());
+  EXPECT_EQ(kMaxStreamsForTest,
+            QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()) -
+                /*incoming=*/1);
 
   // Create peer initiated stream should have no problem.
   QuicStreamFrame data2(GetNthClientInitiatedBidirectionalId(1), false, 0,
                         quiche::QuicheStringPiece("HT"));
   session_->OnStreamFrame(data2);
-  EXPECT_EQ(2u, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(2u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()) -
+                    /*outcoming=*/kMaxStreamsForTest);
 }
 
 TEST_P(QuicSimpleServerSessionTest, OnStreamFrameWithEvenStreamId) {
@@ -553,7 +570,8 @@ TEST_P(QuicSimpleServerSessionTest, OnStreamFrameWithEvenStreamId) {
 // Tests that calling GetOrCreateStream() on an outgoing stream not promised yet
 // should result close connection.
 TEST_P(QuicSimpleServerSessionTest, GetEvenIncomingError) {
-  const size_t initial_num_open_stream = session_->GetNumOpenIncomingStreams();
+  const size_t initial_num_open_stream =
+      QuicSessionPeer::GetNumOpenDynamicStreams(session_.get());
   const QuicErrorCode expected_error = VersionUsesHttp3(transport_version())
                                            ? QUIC_HTTP_STREAM_WRONG_DIRECTION
                                            : QUIC_INVALID_STREAM_ID;
@@ -562,7 +580,8 @@ TEST_P(QuicSimpleServerSessionTest, GetEvenIncomingError) {
   EXPECT_EQ(nullptr,
             QuicSessionPeer::GetOrCreateStream(
                 session_.get(), GetNthServerInitiatedUnidirectionalId(3)));
-  EXPECT_EQ(initial_num_open_stream, session_->GetNumOpenIncomingStreams());
+  EXPECT_EQ(initial_num_open_stream,
+            QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 }
 
 // In order to test the case where server push stream creation goes beyond
@@ -761,7 +780,8 @@ TEST_P(QuicSimpleServerSessionServerPushTest, TestPromisePushResources) {
   }
   size_t num_resources = kMaxStreamsForTest + 5;
   PromisePushResources(num_resources);
-  EXPECT_EQ(kMaxStreamsForTest, session_->GetNumOpenOutgoingStreams());
+  EXPECT_EQ(kMaxStreamsForTest,
+            QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 }
 
 // Tests that after promised stream queued up, when an opened stream is marked
@@ -827,13 +847,16 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
   }
 
   if (VersionUsesHttp3(transport_version())) {
-    session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(3));
+    session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(3),
+                             /*unidirectional=*/true);
   } else {
-    session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(0));
+    session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(0),
+                             /*unidirectional=*/true);
   }
   // Number of open outgoing streams should still be the same, because a new
   // stream is opened. And the queue should be empty.
-  EXPECT_EQ(kMaxStreamsForTest, session_->GetNumOpenOutgoingStreams());
+  EXPECT_EQ(kMaxStreamsForTest,
+            QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 }
 
 // Tests that after all resources are promised, a RST frame from client can
@@ -926,8 +949,10 @@ TEST_P(QuicSimpleServerSessionServerPushTest,
     session_->OnMaxStreamsFrame(
         QuicMaxStreamsFrame(0, num_resources + 3, /*unidirectional=*/true));
   }
-  session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(3));
-  session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(4));
+  session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(3),
+                           /*unidirectional=*/true);
+  session_->StreamDraining(GetNthServerInitiatedUnidirectionalId(4),
+                           /*unidirectional=*/true);
 }
 
 // Tests that closing a open outgoing stream can trigger a promised resource in

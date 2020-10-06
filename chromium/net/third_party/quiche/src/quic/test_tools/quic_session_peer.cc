@@ -143,12 +143,6 @@ QuicSession::ZombieStreamMap& QuicSessionPeer::zombie_streams(
 }
 
 // static
-QuicUnorderedSet<QuicStreamId>* QuicSessionPeer::GetDrainingStreams(
-    QuicSession* session) {
-  return &session->draining_streams_;
-}
-
-// static
 void QuicSessionPeer::ActivateStream(QuicSession* session,
                                      std::unique_ptr<QuicStream> stream) {
   return session->ActivateStream(std::move(stream));
@@ -237,6 +231,22 @@ void QuicSessionPeer::set_is_configured(QuicSession* session, bool value) {
 void QuicSessionPeer::SetPerspective(QuicSession* session,
                                      Perspective perspective) {
   session->perspective_ = perspective;
+}
+
+// static
+size_t QuicSessionPeer::GetNumOpenDynamicStreams(QuicSession* session) {
+  size_t result = 0;
+  for (const auto& it : session->stream_map_) {
+    if (!it.second->is_static()) {
+      ++result;
+    }
+  }
+  // Exclude draining streams.
+  result -= session->GetNumDrainingStreams();
+  // Add locally closed streams.
+  result += session->locally_closed_streams_highest_offset_.size();
+
+  return result;
 }
 
 }  // namespace test

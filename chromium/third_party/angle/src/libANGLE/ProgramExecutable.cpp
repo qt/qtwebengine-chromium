@@ -9,6 +9,9 @@
 #include "libANGLE/ProgramExecutable.h"
 
 #include "libANGLE/Context.h"
+#include "libANGLE/Program.h"
+#include "libANGLE/ProgramPipeline.h"
+#include "libANGLE/Shader.h"
 
 namespace gl
 {
@@ -21,7 +24,8 @@ ProgramExecutable::ProgramExecutable()
       mAttributesMask(0),
       mActiveSamplersMask(0),
       mActiveSamplerRefCounts{},
-      mActiveImagesMask(0)
+      mActiveImagesMask(0),
+      mCanDrawWith(false)
 {
     mActiveSamplerTypes.fill(TextureType::InvalidEnum);
     mActiveSamplerFormats.fill(SamplerFormat::InvalidEnum);
@@ -43,6 +47,73 @@ void ProgramExecutable::reset()
     mActiveSamplerFormats.fill(SamplerFormat::InvalidEnum);
 
     mActiveImagesMask.reset();
+}
+
+void ProgramExecutable::load(gl::BinaryInputStream *stream)
+{
+    static_assert(MAX_VERTEX_ATTRIBS * 2 <= sizeof(uint32_t) * 8,
+                  "Too many vertex attribs for mask: All bits of mAttributesTypeMask types and "
+                  "mask fit into 32 bits each");
+    mAttributesTypeMask        = gl::ComponentTypeMask(stream->readInt<uint32_t>());
+    mAttributesMask            = stream->readInt<gl::AttributesMask>();
+    mActiveAttribLocationsMask = stream->readInt<gl::AttributesMask>();
+    mMaxActiveAttribLocation   = stream->readInt<unsigned int>();
+
+    mLinkedGraphicsShaderStages = ShaderBitSet(stream->readInt<uint8_t>());
+    mLinkedComputeShaderStages  = ShaderBitSet(stream->readInt<uint8_t>());
+}
+
+void ProgramExecutable::save(gl::BinaryOutputStream *stream) const
+{
+    static_assert(MAX_VERTEX_ATTRIBS * 2 <= sizeof(uint32_t) * 8,
+                  "All bits of mAttributesTypeMask types and mask fit into 32 bits each");
+    stream->writeInt(static_cast<int>(mAttributesTypeMask.to_ulong()));
+    stream->writeInt(static_cast<int>(mAttributesMask.to_ulong()));
+    stream->writeInt(mActiveAttribLocationsMask.to_ulong());
+    stream->writeInt(mMaxActiveAttribLocation);
+
+    stream->writeInt(mLinkedGraphicsShaderStages.bits());
+    stream->writeInt(mLinkedComputeShaderStages.bits());
+}
+
+const ProgramState *ProgramExecutable::getProgramState(ShaderType shaderType) const
+{
+    if (mProgramState &&
+        (hasLinkedShaderStage(shaderType) || mProgramState->getAttachedShader(shaderType)))
+    {
+        return mProgramState;
+    }
+    else if (mProgramPipelineState && (hasLinkedShaderStage(shaderType) ||
+                                       mProgramPipelineState->getShaderProgram(shaderType)))
+    {
+        return &mProgramPipelineState->getShaderProgram(shaderType)->getState();
+    }
+
+    return nullptr;
+}
+
+bool ProgramExecutable::isCompute() const
+{
+    ASSERT(mProgramState || mProgramPipelineState);
+
+    if (mProgramState)
+    {
+        return mProgramState->isCompute();
+    }
+
+    return mProgramPipelineState->isCompute();
+}
+
+void ProgramExecutable::setIsCompute(bool isComputeIn)
+{
+    // A Program can only either be graphics or compute, but never both, so it can answer
+    // isCompute() based on which shaders it has. However, a PPO can have both graphics and compute
+    // programs attached, so we don't know if the PPO is a 'graphics' or 'compute' PPO until the
+    // actual draw/dispatch call, which is why only PPOs need to record the type of call here.
+    if (mProgramPipelineState)
+    {
+        mProgramPipelineState->setIsCompute(isComputeIn);
+    }
 }
 
 int ProgramExecutable::getInfoLogLength() const
@@ -75,7 +146,7 @@ AttributesMask ProgramExecutable::getAttributesMask() const
     return mAttributesMask;
 }
 
-bool ProgramExecutable::hasDefaultUniforms(const gl::State &glState) const
+bool ProgramExecutable::hasDefaultUniforms() const
 {
     ASSERT(mProgramState || mProgramPipelineState);
     if (mProgramState)
@@ -83,12 +154,10 @@ bool ProgramExecutable::hasDefaultUniforms(const gl::State &glState) const
         return mProgramState->hasDefaultUniforms();
     }
 
-    // TODO(timvp): http://anglebug.com/3570: Support program pipelines
-
-    return false;
+    return mProgramPipelineState->hasDefaultUniforms();
 }
 
-bool ProgramExecutable::hasTextures(const gl::State &glState) const
+bool ProgramExecutable::hasTextures() const
 {
     ASSERT(mProgramState || mProgramPipelineState);
     if (mProgramState)
@@ -96,12 +165,10 @@ bool ProgramExecutable::hasTextures(const gl::State &glState) const
         return mProgramState->hasTextures();
     }
 
-    // TODO(timvp): http://anglebug.com/3570: Support program pipelines
-
-    return false;
+    return mProgramPipelineState->hasTextures();
 }
 
-bool ProgramExecutable::hasUniformBuffers(const gl::State &glState) const
+bool ProgramExecutable::hasUniformBuffers() const
 {
     ASSERT(mProgramState || mProgramPipelineState);
     if (mProgramState)
@@ -109,12 +176,10 @@ bool ProgramExecutable::hasUniformBuffers(const gl::State &glState) const
         return mProgramState->hasUniformBuffers();
     }
 
-    // TODO(timvp): http://anglebug.com/3570: Support program pipelines
-
-    return false;
+    return mProgramPipelineState->hasUniformBuffers();
 }
 
-bool ProgramExecutable::hasStorageBuffers(const gl::State &glState) const
+bool ProgramExecutable::hasStorageBuffers() const
 {
     ASSERT(mProgramState || mProgramPipelineState);
     if (mProgramState)
@@ -122,12 +187,10 @@ bool ProgramExecutable::hasStorageBuffers(const gl::State &glState) const
         return mProgramState->hasStorageBuffers();
     }
 
-    // TODO(timvp): http://anglebug.com/3570: Support program pipelines
-
-    return false;
+    return mProgramPipelineState->hasStorageBuffers();
 }
 
-bool ProgramExecutable::hasAtomicCounterBuffers(const gl::State &glState) const
+bool ProgramExecutable::hasAtomicCounterBuffers() const
 {
     ASSERT(mProgramState || mProgramPipelineState);
     if (mProgramState)
@@ -135,12 +198,10 @@ bool ProgramExecutable::hasAtomicCounterBuffers(const gl::State &glState) const
         return mProgramState->hasAtomicCounterBuffers();
     }
 
-    // TODO(timvp): http://anglebug.com/3570: Support program pipelines
-
-    return false;
+    return mProgramPipelineState->hasAtomicCounterBuffers();
 }
 
-bool ProgramExecutable::hasImages(const gl::State &glState) const
+bool ProgramExecutable::hasImages() const
 {
     ASSERT(mProgramState || mProgramPipelineState);
     if (mProgramState)
@@ -148,12 +209,10 @@ bool ProgramExecutable::hasImages(const gl::State &glState) const
         return mProgramState->hasImages();
     }
 
-    // TODO(timvp): http://anglebug.com/3570: Support program pipelines
-
-    return false;
+    return mProgramPipelineState->hasImages();
 }
 
-bool ProgramExecutable::hasTransformFeedbackOutput(const gl::State &glState) const
+bool ProgramExecutable::hasTransformFeedbackOutput() const
 {
     ASSERT(mProgramState || mProgramPipelineState);
     if (mProgramState)
@@ -161,9 +220,7 @@ bool ProgramExecutable::hasTransformFeedbackOutput(const gl::State &glState) con
         return mProgramState->hasTransformFeedbackOutput();
     }
 
-    // TODO(timvp): http://anglebug.com/3570: Support program pipelines
-
-    return false;
+    return mProgramPipelineState->hasTransformFeedbackOutput();
 }
 
 size_t ProgramExecutable::getTransformFeedbackBufferCount(const gl::State &glState) const
@@ -179,16 +236,18 @@ size_t ProgramExecutable::getTransformFeedbackBufferCount(const gl::State &glSta
     return 0;
 }
 
-void ProgramExecutable::updateActiveSamplers(const std::vector<SamplerBinding> &samplerBindings)
+void ProgramExecutable::updateActiveSamplers(const ProgramState &programState)
 {
+    const std::vector<SamplerBinding> &samplerBindings = programState.getSamplerBindings();
+
     for (uint32_t samplerIndex = 0; samplerIndex < samplerBindings.size(); ++samplerIndex)
     {
         const SamplerBinding &samplerBinding = samplerBindings[samplerIndex];
         if (samplerBinding.unreferenced)
             continue;
 
-        uint32_t uniformIndex = mProgramState->getUniformIndexFromSamplerIndex(samplerIndex);
-        const gl::LinkedUniform &samplerUniform = mProgramState->getUniforms()[uniformIndex];
+        uint32_t uniformIndex = programState.getUniformIndexFromSamplerIndex(samplerIndex);
+        const gl::LinkedUniform &samplerUniform = programState.getUniforms()[uniformIndex];
 
         for (GLint textureUnit : samplerBinding.boundTextureUnits)
         {
@@ -279,6 +338,131 @@ void ProgramExecutable::setSamplerUniformTextureTypeAndFormat(
 
     mActiveSamplerTypes[textureUnitIndex]   = foundType;
     mActiveSamplerFormats[textureUnitIndex] = foundFormat;
+}
+
+bool ProgramExecutable::linkValidateGlobalNames(InfoLog &infoLog) const
+{
+    std::unordered_map<std::string, const sh::ShaderVariable *> uniformMap;
+    using BlockAndFieldPair = std::pair<const sh::InterfaceBlock *, const sh::ShaderVariable *>;
+    std::unordered_map<std::string, std::vector<BlockAndFieldPair>> uniformBlockFieldMap;
+
+    for (ShaderType shaderType : kAllGraphicsShaderTypes)
+    {
+        const ProgramState *programState = getProgramState(shaderType);
+        if (!programState)
+        {
+            continue;
+        }
+        Shader *shader = programState->getAttachedShader(shaderType);
+        if (!shader)
+        {
+            continue;
+        }
+
+        // Build a map of Uniforms
+        const std::vector<sh::ShaderVariable> uniforms = shader->getUniforms();
+        for (const auto &uniform : uniforms)
+        {
+            uniformMap[uniform.name] = &uniform;
+        }
+
+        // Build a map of Uniform Blocks
+        // This will also detect any field name conflicts between Uniform Blocks without instance
+        // names
+        const std::vector<sh::InterfaceBlock> &uniformBlocks = shader->getUniformBlocks();
+        for (const auto &uniformBlock : uniformBlocks)
+        {
+            // Only uniform blocks without an instance name can create a conflict with their field
+            // names
+            if (!uniformBlock.instanceName.empty())
+            {
+                continue;
+            }
+
+            for (const auto &field : uniformBlock.fields)
+            {
+                if (!uniformBlockFieldMap.count(field.name))
+                {
+                    // First time we've seen this uniform block field name, so add the
+                    // (Uniform Block, Field) pair immediately since there can't be a conflict yet
+                    BlockAndFieldPair blockAndFieldPair(&uniformBlock, &field);
+                    std::vector<BlockAndFieldPair> newUniformBlockList;
+                    newUniformBlockList.push_back(blockAndFieldPair);
+                    uniformBlockFieldMap[field.name] = newUniformBlockList;
+                    continue;
+                }
+
+                // We've seen this name before.
+                // We need to check each of the uniform blocks that contain a field with this name
+                // to see if there's a conflict or not.
+                std::vector<BlockAndFieldPair> prevBlockFieldPairs =
+                    uniformBlockFieldMap[field.name];
+                for (const auto &prevBlockFieldPair : prevBlockFieldPairs)
+                {
+                    const sh::InterfaceBlock *prevUniformBlock      = prevBlockFieldPair.first;
+                    const sh::ShaderVariable *prevUniformBlockField = prevBlockFieldPair.second;
+
+                    if (uniformBlock.isSameInterfaceBlockAtLinkTime(*prevUniformBlock))
+                    {
+                        // The same uniform block should, by definition, contain the same field name
+                        continue;
+                    }
+
+                    // The uniform blocks don't match, so check if the necessary field properties
+                    // also match
+                    if ((field.name == prevUniformBlockField->name) &&
+                        (field.type == prevUniformBlockField->type) &&
+                        (field.precision == prevUniformBlockField->precision))
+                    {
+                        infoLog << "Name conflicts between uniform block field names: "
+                                << field.name;
+                        return false;
+                    }
+                }
+
+                // No conflict, so record this pair
+                BlockAndFieldPair blockAndFieldPair(&uniformBlock, &field);
+                uniformBlockFieldMap[field.name].push_back(blockAndFieldPair);
+            }
+        }
+    }
+
+    // Validate no uniform names conflict with attribute names
+    const ProgramState *programState = getProgramState(ShaderType::Vertex);
+    if (programState)
+    {
+        Shader *vertexShader = programState->getAttachedShader(ShaderType::Vertex);
+        if (vertexShader)
+        {
+            for (const auto &attrib : vertexShader->getActiveAttributes())
+            {
+                if (uniformMap.count(attrib.name))
+                {
+                    infoLog << "Name conflicts between a uniform and an attribute: " << attrib.name;
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Validate no Uniform Block fields conflict with other Uniforms
+    for (const auto &uniformBlockField : uniformBlockFieldMap)
+    {
+        const std::string &fieldName = uniformBlockField.first;
+        if (uniformMap.count(fieldName))
+        {
+            infoLog << "Name conflicts between a uniform and a uniform block field: " << fieldName;
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void ProgramExecutable::updateCanDrawWith()
+{
+    mCanDrawWith =
+        (hasLinkedShaderStage(ShaderType::Vertex) && hasLinkedShaderStage(ShaderType::Fragment));
 }
 
 }  // namespace gl

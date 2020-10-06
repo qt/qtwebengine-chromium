@@ -372,6 +372,14 @@ class CustomDataSource : public perfetto::DataSource<CustomDataSource> {
   // Data sources can also have per-instance state.
   int my_custom_state = 0;
 };
+
+PERFETTO_DECLARE_DATA_SOURCE_STATIC_MEMBERS(CustomDataSource);
+```
+
+The data source's static data should be defined in one source file like this:
+
+```C++
+PERFETTO_DEFINE_DATA_SOURCE_STATIC_MEMBERS(CustomDataSource);
 ```
 
 Custom data sources need to be registered with Perfetto:
@@ -491,10 +499,18 @@ void OnNewRequest(size_t request_id) {
 Tracks can also optionally be annotated with metadata:
 
 ```C++
+auto desc = track.Serialize();
+desc.set_name("MyTrack");
+perfetto::TrackEvent::SetTrackDescriptor(track, desc);
+```
+
+Threads and processes can also be named in a similar way, e.g.:
+
+```C++
+auto desc = perfetto::ProcessTrack::Current().Serialize();
+desc.mutable_process()->set_process_name("MyProcess");
 perfetto::TrackEvent::SetTrackDescriptor(
-    track, [](perfetto::protos::pbzero::TrackDescriptor* desc) {
-  desc->set_name("MyTrack");
-});
+    perfetto::ProcessTrack::Current(), desc);
 ```
 
 The metadata remains valid between tracing sessions. To free up data for a

@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as ARIAUtils from './ARIAUtils.js';
 import {Size} from './Geometry.js';
 import {AnchorBehavior, GlassPane} from './GlassPane.js';
@@ -206,7 +209,9 @@ export class SuggestBox {
    */
   createElementForItem(item) {
     const query = this._userEnteredText;
-    const element = createElementWithClass('div', 'suggest-box-content-item source-code');
+    const element = document.createElement('div');
+    element.classList.add('suggest-box-content-item');
+    element.classList.add('source-code');
     if (item.iconType) {
       const icon = Icon.create(item.iconType, 'suggestion-icon');
       element.appendChild(icon);

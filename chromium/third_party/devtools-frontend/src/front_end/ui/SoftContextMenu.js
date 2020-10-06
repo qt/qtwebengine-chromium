@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Host from '../host/host.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
@@ -41,7 +44,7 @@ import {ElementFocusRestorer} from './UIUtils.js';
 export class SoftContextMenu {
   /**
    * @param {!Array.<!InspectorFrontendHostAPI.ContextMenuDescriptor>} items
-   * @param {function(string)} itemSelectedCallback
+   * @param {function(string):void} itemSelectedCallback
    * @param {!SoftContextMenu=} parentMenu
    */
   constructor(items, itemSelectedCallback, parentMenu) {
@@ -134,7 +137,8 @@ export class SoftContextMenu {
       return this._createSubMenu(item);
     }
 
-    const menuItemElement = createElementWithClass('div', 'soft-context-menu-item');
+    const menuItemElement = document.createElement('div');
+    menuItemElement.classList.add('soft-context-menu-item');
     menuItemElement.tabIndex = -1;
     ARIAUtils.markAsMenuItem(menuItemElement);
     const checkMarkElement = Icon.create('smallicon-checkmark', 'checkmark');
@@ -183,7 +187,8 @@ export class SoftContextMenu {
   }
 
   _createSubMenu(item) {
-    const menuItemElement = createElementWithClass('div', 'soft-context-menu-item');
+    const menuItemElement = document.createElement('div');
+    menuItemElement.classList.add('soft-context-menu-item');
     menuItemElement._subItems = item.subItems;
     menuItemElement.tabIndex = -1;
     ARIAUtils.markAsMenuItemSubMenu(menuItemElement);
@@ -217,7 +222,8 @@ export class SoftContextMenu {
   }
 
   _createSeparator() {
-    const separatorElement = createElementWithClass('div', 'soft-context-menu-separator');
+    const separatorElement = document.createElement('div');
+    separatorElement.classList.add('soft-context-menu-separator');
     separatorElement._isSeparator = true;
     separatorElement.createChild('div', 'separator-line');
     return separatorElement;

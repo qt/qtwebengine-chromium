@@ -120,7 +120,7 @@ namespace dawn_native { namespace vulkan {
             DAWN_TRY_ASSIGN(subAllocation,
                             mAllocatorsPerType[memoryType]->AllocateMemory(requirements));
             if (subAllocation.GetInfo().mMethod != AllocationMethod::kInvalid) {
-                return subAllocation;
+                return std::move(subAllocation);
             }
         }
 
@@ -152,10 +152,13 @@ namespace dawn_native { namespace vulkan {
 
             // For direct allocation we can put the memory for deletion immediately and the fence
             // deleter will make sure the resources are freed before the memory.
-            case AllocationMethod::kDirect:
-                mDevice->GetFencedDeleter()->DeleteWhenUnused(
-                    ToBackend(allocation->GetResourceHeap())->GetMemory());
+            case AllocationMethod::kDirect: {
+                ResourceHeap* heap = ToBackend(allocation->GetResourceHeap());
+                allocation->Invalidate();
+                mDevice->GetFencedDeleter()->DeleteWhenUnused(heap->GetMemory());
+                delete heap;
                 break;
+            }
 
             // Suballocations aren't freed immediately, otherwise another resource allocation could
             // happen just after that aliases the old one and would require a barrier.

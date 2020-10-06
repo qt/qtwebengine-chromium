@@ -303,6 +303,10 @@ export namespace ProtocolMapping {
      */
     'Page.downloadWillBegin': [Protocol.Page.DownloadWillBeginEvent];
     /**
+     * Fired when download makes progress. Last call has |done| == true.
+     */
+    'Page.downloadProgress': [Protocol.Page.DownloadProgressEvent];
+    /**
      * Fired when interstitial page was hidden
      */
     'Page.interstitialHidden': [];
@@ -507,6 +511,14 @@ export namespace ProtocolMapping {
      * congestion. If batched, events must ALWAYS be in chronological order.
      */
     'Media.playerEventsAdded': [Protocol.Media.PlayerEventsAddedEvent];
+    /**
+     * Send a list of any messages that need to be delivered.
+     */
+    'Media.playerMessagesLogged': [Protocol.Media.PlayerMessagesLoggedEvent];
+    /**
+     * Send a list of any errors that need to be delivered.
+     */
+    'Media.playerErrorsRaised': [Protocol.Media.PlayerErrorsRaisedEvent];
     /**
      * Called whenever a player is created, or when a new agent joins and recieves
      * a list of active players. If an agent is restored, it will recieve the full
@@ -733,6 +745,10 @@ export namespace ProtocolMapping {
      * Reset all permission management for all origins.
      */
     'Browser.resetPermissions': {paramsType: [Protocol.Browser.ResetPermissionsRequest?]; returnType: void;};
+    /**
+     * Set the behavior when downloading a file.
+     */
+    'Browser.setDownloadBehavior': {paramsType: [Protocol.Browser.SetDownloadBehaviorRequest]; returnType: void;};
     /**
      * Close browser gracefully.
      */
@@ -1833,6 +1849,10 @@ export namespace ProtocolMapping {
     'Overlay.setShowViewportSizeOnResize':
         {paramsType: [Protocol.Overlay.SetShowViewportSizeOnResizeRequest]; returnType: void;};
     /**
+     * Add a dual screen device hinge
+     */
+    'Overlay.setShowHinge': {paramsType: [Protocol.Overlay.SetShowHingeRequest?]; returnType: void;};
+    /**
      * Deprecated, please use addScriptToEvaluateOnNewDocument instead.
      */
     'Page.addScriptToEvaluateOnLoad': {
@@ -2447,6 +2467,13 @@ export namespace ProtocolMapping {
     'Debugger.evaluateOnCallFrame': {
       paramsType: [Protocol.Debugger.EvaluateOnCallFrameRequest];
       returnType: Protocol.Debugger.EvaluateOnCallFrameResponse;
+    };
+    /**
+     * Execute a Wasm Evaluator module on a given call frame.
+     */
+    'Debugger.executeWasmEvaluator': {
+      paramsType: [Protocol.Debugger.ExecuteWasmEvaluatorRequest];
+      returnType: Protocol.Debugger.ExecuteWasmEvaluatorResponse;
     };
     /**
      * Returns possible locations for breakpoint. scriptId in start and end range locations should be

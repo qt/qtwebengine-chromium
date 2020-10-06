@@ -13,6 +13,13 @@ export class FilmStripModel {
    * @param {number=} zeroTime
    */
   constructor(tracingModel, zeroTime) {
+    /** @type {!Array<!Frame>} */
+    this._frames = [];
+    /** @type {number} */
+    this._zeroTime = 0;
+    /** @type {number} */
+    this._spanTime = 0;
+
     this.reset(tracingModel, zeroTime);
   }
 

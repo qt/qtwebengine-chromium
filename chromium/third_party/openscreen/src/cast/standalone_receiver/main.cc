@@ -6,6 +6,7 @@
 
 #include <array>
 #include <chrono>  // NOLINT
+#include <iostream>
 
 #include "cast/common/public/service_info.h"
 #include "cast/standalone_receiver/cast_agent.h"
@@ -51,22 +52,26 @@ ErrorOr<std::unique_ptr<DiscoveryState>> StartDiscovery(
     const InterfaceInfo& interface) {
   discovery::Config config;
 
-  config.interface = interface;
+  discovery::Config::NetworkInfo::AddressFamilies supported_address_families =
+      discovery::Config::NetworkInfo::kNoAddressFamily;
+  if (interface.GetIpAddressV4()) {
+    supported_address_families |= discovery::Config::NetworkInfo::kUseIpV4;
+  }
+  if (interface.GetIpAddressV6()) {
+    supported_address_families |= discovery::Config::NetworkInfo::kUseIpV6;
+  }
+  OSP_CHECK(supported_address_families !=
+            discovery::Config::NetworkInfo::kNoAddressFamily)
+      << "No address families supported by the selected interface";
+  config.network_info.push_back({interface, supported_address_families});
 
   auto state = std::make_unique<DiscoveryState>();
   state->reporting_client = std::make_unique<DiscoveryReportingClient>();
   state->service = discovery::CreateDnsSdService(
       task_runner, state->reporting_client.get(), config);
 
-  // TODO(jophba): update after ServiceInfo update patch lands.
   ServiceInfo info;
   info.port = kDefaultCastPort;
-  if (interface.GetIpAddressV4()) {
-    info.v4_address = interface.GetIpAddressV4();
-  }
-  if (interface.GetIpAddressV6()) {
-    info.v6_address = interface.GetIpAddressV6();
-  }
 
   OSP_CHECK(std::any_of(interface.hardware_address.begin(),
                         interface.hardware_address.end(),
@@ -79,7 +84,7 @@ ErrorOr<std::unique_ptr<DiscoveryState>> StartDiscovery(
 
   state->publisher =
       std::make_unique<discovery::DnsSdServicePublisher<ServiceInfo>>(
-          state->service.get(), kCastV2ServiceId, ServiceInfoToDnsSdRecord);
+          state->service.get(), kCastV2ServiceId, ServiceInfoToDnsSdInstance);
 
   auto error = state->publisher->Register(info);
   if (!error.ok()) {
@@ -88,8 +93,7 @@ ErrorOr<std::unique_ptr<DiscoveryState>> StartDiscovery(
   return state;
 }
 
-void RunStandaloneReceiver(TaskRunnerImpl* task_runner,
-                           InterfaceInfo interface) {
+void StartCastAgent(TaskRunnerImpl* task_runner, InterfaceInfo interface) {
   CastAgent agent(task_runner, interface);
   const auto error = agent.Start();
   if (!error.ok()) {
@@ -103,92 +107,93 @@ void RunStandaloneReceiver(TaskRunnerImpl* task_runner,
   task_runner->RunUntilSignaled();
 }
 
-}  // namespace
-}  // namespace cast
-}  // namespace openscreen
-
-namespace {
-
 void LogUsage(const char* argv0) {
-  constexpr char kExecutableTag[] = "argv[0]";
-  constexpr char kUsageMessage[] = R"(
-    usage: argv[0] <options> <interface>
+  std::cerr << R"(
+usage: )" << argv0
+            << R"( <options> <interface>
 
-    options:
-      <interface>: Specify the network interface to bind to. The interface is
-          looked up from the system interface registry. This argument is
-          mandatory, as it must be known for publishing discovery.
+options:
+    interface
+        Specifies the network interface to bind to. The interface is
+        looked up from the system interface registry. This argument is
+        mandatory, as it must be known for publishing discovery.
 
-      -t, --tracing: Enable performance tracing logging.
+    -t, --tracing: Enable performance tracing logging.
 
-      -h, --help: Show this help message.
+    -v, --verbose: Enable verbose logging.
+
+    -h, --help: Show this help message.
   )";
-  std::string message = kUsageMessage;
-  message.replace(message.find(kExecutableTag), strlen(kExecutableTag), argv0);
-  OSP_LOG_INFO << message;
 }
 
-}  // namespace
+InterfaceInfo GetInterfaceInfoFromName(const char* name) {
+  OSP_CHECK(name != nullptr) << "Missing mandatory argument: interface.";
+  InterfaceInfo interface_info;
+  std::vector<InterfaceInfo> network_interfaces = GetNetworkInterfaces();
+  for (auto& interface : network_interfaces) {
+    if (interface.name == name) {
+      interface_info = std::move(interface);
+      break;
+    }
+  }
+  OSP_CHECK(!interface_info.name.empty()) << "Invalid interface specified.";
+  return interface_info;
+}
 
-int main(int argc, char* argv[]) {
-  // TODO(jophba): refactor into separate method and make main a one-liner.
-  using openscreen::Clock;
-  using openscreen::ErrorOr;
-  using openscreen::InterfaceInfo;
-  using openscreen::IPAddress;
-  using openscreen::IPEndpoint;
-  using openscreen::PlatformClientPosix;
-  using openscreen::TaskRunnerImpl;
-
-  openscreen::SetLogLevel(openscreen::LogLevel::kInfo);
-
-  const struct option argument_options[] = {
+int RunStandaloneReceiver(int argc, char* argv[]) {
+  // A note about modifying command line arguments: consider uniformity
+  // between all Open Screen executables. If it is a platform feature
+  // being exposed, consider if it applies to the standalone receiver,
+  // standalone sender, osp demo, and test_main argument options.
+  const struct option kArgumentOptions[] = {
       {"tracing", no_argument, nullptr, 't'},
+      {"verbose", no_argument, nullptr, 'v'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
-  InterfaceInfo interface_info;
+  bool is_verbose = false;
   std::unique_ptr<openscreen::TextTraceLoggingPlatform> trace_logger;
   int ch = -1;
-  while ((ch = getopt_long(argc, argv, "th", argument_options, nullptr)) !=
+  while ((ch = getopt_long(argc, argv, "tvh", kArgumentOptions, nullptr)) !=
          -1) {
     switch (ch) {
       case 't':
         trace_logger = std::make_unique<openscreen::TextTraceLoggingPlatform>();
+        break;
+      case 'v':
+        is_verbose = true;
         break;
       case 'h':
         LogUsage(argv[0]);
         return 1;
     }
   }
-  char* interface_argument = argv[optind];
-  OSP_CHECK(interface_argument != nullptr)
-      << "Missing mandatory argument: interface.";
-  std::vector<InterfaceInfo> network_interfaces =
-      openscreen::GetNetworkInterfaces();
-  for (auto& interface : network_interfaces) {
-    if (interface.name == interface_argument) {
-      interface_info = std::move(interface);
-      break;
-    }
-  }
-  OSP_CHECK(!interface_info.name.empty()) << "Invalid interface specified.";
+  InterfaceInfo interface_info = GetInterfaceInfoFromName(argv[optind]);
+  SetLogLevel(is_verbose ? openscreen::LogLevel::kVerbose
+                         : openscreen::LogLevel::kInfo);
 
   auto* const task_runner = new TaskRunnerImpl(&Clock::now);
   PlatformClientPosix::Create(Clock::duration{50}, Clock::duration{50},
                               std::unique_ptr<TaskRunnerImpl>(task_runner));
 
-  auto discovery_state =
-      openscreen::cast::StartDiscovery(task_runner, interface_info);
+  auto discovery_state = StartDiscovery(task_runner, interface_info);
   OSP_CHECK(discovery_state.is_value()) << "Failed to start discovery.";
 
   // Runs until the process is interrupted.  Safe to pass |task_runner| as it
   // will not be destroyed by ShutDown() until this exits.
-  openscreen::cast::RunStandaloneReceiver(task_runner, interface_info);
+  StartCastAgent(task_runner, interface_info);
 
   // The task runner must be deleted after all serial delete pointers, such
   // as the one stored in the discovery state.
   discovery_state.value().reset();
   PlatformClientPosix::ShutDown();
   return 0;
+}
+
+}  // namespace
+}  // namespace cast
+}  // namespace openscreen
+
+int main(int argc, char* argv[]) {
+  return openscreen::cast::RunStandaloneReceiver(argc, argv);
 }

@@ -15,13 +15,15 @@
 #ifndef VK_OBJECT_HPP_
 #define VK_OBJECT_HPP_
 
-#include "VkConfig.h"
-#include "VkMemory.h"
+#include "VkConfig.hpp"
+#include "VkMemory.hpp"
 
 #include "System/Debug.hpp"
 
-#include <Vulkan/VulkanPlatform.h>
 #include <vulkan/vk_icd.h>
+#undef None
+#undef Bool
+
 #include <new>
 
 namespace vk {

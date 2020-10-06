@@ -140,22 +140,30 @@ namespace dawn_native { namespace vulkan {
                                     mDynamicOffsetCounts, mDynamicOffsets);
 
                 for (uint32_t index : IterateBitSet(mBindGroupLayoutsMask)) {
-                    for (uint32_t bindingIndex : IterateBitSet(mBuffersNeedingBarrier[index])) {
+                    for (uint32_t bindingIndex : IterateBitSet(mBindingsNeedingBarrier[index])) {
                         switch (mBindingTypes[index][bindingIndex]) {
                             case wgpu::BindingType::StorageBuffer:
-                                ToBackend(mBuffers[index][bindingIndex])
+                                static_cast<Buffer*>(mBindings[index][bindingIndex])
                                     ->TransitionUsageNow(recordingContext,
                                                          wgpu::BufferUsage::Storage);
                                 break;
 
-                            case wgpu::BindingType::StorageTexture:
                             case wgpu::BindingType::ReadonlyStorageTexture:
                             case wgpu::BindingType::WriteonlyStorageTexture:
+                                ToBackend(
+                                    static_cast<TextureViewBase*>(mBindings[index][bindingIndex])
+                                        ->GetTexture())
+                                    ->TransitionUsageNow(recordingContext,
+                                                         wgpu::TextureUsage::Storage);
+                                break;
+
+                            case wgpu::BindingType::StorageTexture:
                                 // Not implemented.
 
                             case wgpu::BindingType::UniformBuffer:
                             case wgpu::BindingType::ReadonlyStorageBuffer:
                             case wgpu::BindingType::Sampler:
+                            case wgpu::BindingType::ComparisonSampler:
                             case wgpu::BindingType::SampledTexture:
                                 // Don't require barriers.
 
@@ -328,9 +336,9 @@ namespace dawn_native { namespace vulkan {
 
         BufferCopy tempBufferCopy;
         tempBufferCopy.buffer = tempBuffer.Get();
-        tempBufferCopy.imageHeight = copySize.height;
+        tempBufferCopy.rowsPerImage = copySize.height;
         tempBufferCopy.offset = 0;
-        tempBufferCopy.rowPitch = copySize.width / format.blockWidth * format.blockByteSize;
+        tempBufferCopy.bytesPerRow = copySize.width / format.blockWidth * format.blockByteSize;
 
         VkCommandBuffer commands = recordingContext->commandBuffer;
         VkImage srcImage = ToBackend(srcCopy.texture)->GetHandle();
@@ -373,12 +381,12 @@ namespace dawn_native { namespace vulkan {
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared in RecordBeginRenderPass by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
-                if (!(usages.textureUsages[i] & wgpu::TextureUsage::OutputAttachment)) {
+                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
                     texture->EnsureSubresourceContentInitialized(recordingContext, 0,
                                                                  texture->GetNumMipLevels(), 0,
                                                                  texture->GetArrayLayers());
                 }
-                texture->TransitionUsageNow(recordingContext, usages.textureUsages[i]);
+                texture->TransitionUsageNow(recordingContext, usages.textureUsages[i].usage);
             }
         };
         const std::vector<PassResourceUsage>& passResourceUsages = GetResourceUsages().perPass;

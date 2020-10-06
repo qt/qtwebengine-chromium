@@ -76,7 +76,7 @@ class QUIC_EXPORT_PRIVATE PendingStream
 
   const QuicStreamSequencer* sequencer() const { return &sequencer_; }
 
-  void MarkConsumed(size_t num_bytes);
+  void MarkConsumed(QuicByteCount num_bytes);
 
   // Tells the sequencer to ignore all incoming data itself and not call
   // OnDataAvailable().
@@ -165,10 +165,12 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // stream to write any pending data.
   virtual void OnCanWrite();
 
-  // Called by the session just before the object is destroyed.
+  // Called just before the object is destroyed.
   // The object should not be accessed after OnClose is called.
   // Sends a RST_STREAM with code QUIC_RST_ACKNOWLEDGEMENT if neither a FIN nor
   // a RST_STREAM has been sent.
+  // TODO(fayang): move this to protected when deprecating
+  // quic_break_session_stream_close_loop.
   virtual void OnClose();
 
   // Called by the session when the endpoint receives a RST_STREAM from the
@@ -199,7 +201,7 @@ class QUIC_EXPORT_PRIVATE QuicStream
   bool IsWaitingForAcks() const;
 
   // Number of bytes available to read.
-  size_t ReadableBytes() const;
+  QuicByteCount ReadableBytes() const;
 
   QuicRstStreamErrorCode stream_error() const { return stream_error_; }
   QuicErrorCode connection_error() const { return connection_error_; }
@@ -224,8 +226,6 @@ class QUIC_EXPORT_PRIVATE QuicStream
   size_t busy_counter() const { return busy_counter_; }
   void set_busy_counter(size_t busy_counter) { busy_counter_ = busy_counter; }
 
-  void set_fin_sent(bool fin_sent) { fin_sent_ = fin_sent; }
-  void set_fin_received(bool fin_received) { fin_received_ = fin_received; }
   void set_rst_sent(bool rst_sent) { rst_sent_ = rst_sent; }
 
   void set_rst_received(bool rst_received) { rst_received_ = rst_received; }
@@ -244,9 +244,8 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // Returns true if the highest offset did increase.
   bool MaybeIncreaseHighestReceivedOffset(QuicStreamOffset new_offset);
 
-  // Updates the flow controller's send window offset and calls OnCanWrite if
-  // it was blocked before.
-  void UpdateSendWindowOffset(QuicStreamOffset new_offset);
+  // Set the flow controller's send window offset from session config.
+  bool ConfigSendWindowOffset(QuicStreamOffset new_offset);
 
   // Returns true if the stream has received either a RST_STREAM or a FIN -
   // either of which gives a definitive number of bytes which the peer has
@@ -357,19 +356,23 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // Does not send a FIN.  May cause the stream to be closed.
   virtual void CloseWriteSide();
 
+  // Close the read side of the stream.  May cause the stream to be closed.
+  // Subclasses and consumers should use StopReading to terminate reading early
+  // if expecting a FIN. Can be used directly by subclasses if not expecting a
+  // FIN.
+  // TODO(fayang): move this to protected when removing
+  // QuicSession::CloseStream.
+  void CloseReadSide();
+
   // Returns true if the stream is static.
   bool is_static() const { return is_static_; }
+
+  bool was_draining() const { return was_draining_; }
 
   static spdy::SpdyStreamPrecedence CalculateDefaultPriority(
       const QuicSession* session);
 
  protected:
-  // Close the read side of the socket.  May cause the stream to be closed.
-  // Subclasses and consumers should use StopReading to terminate reading early
-  // if expecting a FIN. Can be used directly by subclasses if not expecting a
-  // FIN.
-  void CloseReadSide();
-
   // Called when data of [offset, offset + data_length] is buffered in send
   // buffer.
   virtual void OnDataBuffered(
@@ -389,7 +392,7 @@ class QUIC_EXPORT_PRIVATE QuicStream
   virtual void OnCanWriteNewData() {}
 
   // Called when |bytes_consumed| bytes has been consumed.
-  virtual void OnStreamDataConsumed(size_t bytes_consumed);
+  virtual void OnStreamDataConsumed(QuicByteCount bytes_consumed);
 
   // Called by the stream sequencer as bytes are consumed from the buffer.
   // If the receive window has dropped below the threshold, then send a
@@ -402,6 +405,10 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // This is called when stream tries to retransmit data after deadline_. Make
   // this virtual so that subclasses can implement their own logics.
   virtual void OnDeadlinePassed();
+
+  // Called to set fin_sent_. This is only used by Google QUIC while body is
+  // empty.
+  void SetFinSent();
 
   StreamDelegateInterface* stream_delegate() { return stream_delegate_; }
 
@@ -531,6 +538,10 @@ class QUIC_EXPORT_PRIVATE QuicStream
 
   // If initialized, reset this stream at this deadline.
   QuicTime deadline_;
+
+  // True if this stream has entered draining state. Only used when
+  // quic_deprecate_draining_streams is true.
+  bool was_draining_;
 
   // Indicates whether this stream is bidirectional, read unidirectional or
   // write unidirectional.

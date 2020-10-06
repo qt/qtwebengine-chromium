@@ -15,10 +15,10 @@
 #ifndef DAWNNATIVE_INSTANCE_H_
 #define DAWNNATIVE_INSTANCE_H_
 
+#include "common/RefCounted.h"
 #include "dawn_native/Adapter.h"
 #include "dawn_native/BackendConnection.h"
 #include "dawn_native/Extensions.h"
-#include "dawn_native/RefCounted.h"
 #include "dawn_native/Toggles.h"
 #include "dawn_native/dawn_platform.h"
 
@@ -80,9 +80,6 @@ namespace dawn_native {
 
         // Lazily creates connections to all backends that have been compiled.
         void EnsureBackendConnections();
-
-        // Finds the BackendConnection for `type` or returns an error.
-        ResultOrError<BackendConnection*> FindBackend(wgpu::BackendType type);
 
         MaybeError DiscoverAdaptersInternal(const AdapterDiscoveryOptionsBase* options);
 

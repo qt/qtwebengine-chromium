@@ -258,11 +258,11 @@ struct UnsizedByteStr : UnsizedArrayOf <HBUINT8>
     TRACE_SERIALIZE (this);
 
     HBUINT8 *p = c->allocate_size<HBUINT8> (1);
-    if (unlikely (p == nullptr)) return_trace (false);
+    if (unlikely (!p)) return_trace (false);
     *p = intOp;
 
     T *ip = c->allocate_size<T> (T::static_size);
-    if (unlikely (ip == nullptr)) return_trace (false);
+    if (unlikely (!ip)) return_trace (false);
     return_trace (c->check_assign (*ip, value));
   }
 
@@ -405,7 +405,7 @@ struct cff_stack_t
     else
     {
       set_error ();
-      return Crap(ELEM);
+      return Crap (ELEM);
     }
   }
 
@@ -416,7 +416,7 @@ struct cff_stack_t
     else
     {
       set_error ();
-      return Crap(ELEM);
+      return Crap (ELEM);
     }
   }
   void pop (unsigned int n)
@@ -432,7 +432,7 @@ struct cff_stack_t
     if (unlikely (count < 0))
     {
       set_error ();
-      return Null(ELEM);
+      return Null (ELEM);
     }
     return elements[count - 1];
   }
@@ -539,7 +539,7 @@ struct op_serializer_t
     TRACE_SERIALIZE (this);
 
     HBUINT8 *d = c->allocate_size<HBUINT8> (opstr.str.length);
-    if (unlikely (d == nullptr)) return_trace (false);
+    if (unlikely (!d)) return_trace (false);
     memcpy (d, &opstr.str[0], opstr.str.length);
     return_trace (true);
   }

@@ -95,7 +95,7 @@ class CPDFSDK_FormFillEnvironment final : public Observable,
   void OnSetFieldInputFocus(FPDF_WIDESTRING focusText,
                             FPDF_DWORD nTextLen,
                             bool bFocus);
-  void DoURIAction(const char* bsURI);
+  void DoURIAction(const char* bsURI, uint32_t modifiers);
   void DoGoToAction(int nPageIndex,
                     int zoomMode,
                     float* fPosArray,
@@ -107,6 +107,9 @@ class CPDFSDK_FormFillEnvironment final : public Observable,
   }
 
   bool IsJSPlatformPresent() const { return m_pInfo && m_pInfo->m_pJsPlatform; }
+  IPDF_JSPLATFORM* GetJSPlatform() const {
+    return m_pInfo ? m_pInfo->m_pJsPlatform : nullptr;
+  }
 
 #ifdef PDF_ENABLE_V8
   CPDFSDK_PageView* GetCurrentView();

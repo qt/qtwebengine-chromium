@@ -26,6 +26,12 @@
     cursor: pointer;
 }
 
+.text-button:not(:disabled):not(.running):focus,
+.text-button:not(:disabled):not(.running):hover,
+.text-button:not(:disabled):not(.running):active {
+    color: var(--accent-fg-color-hover);
+}
+
 .text-button:not(:disabled):active {
     background-color: #f2f2f2;
 }
@@ -57,6 +63,7 @@
 .text-button.primary-button:not(:disabled):hover,
 .text-button.primary-button:not(:disabled):active, -theme-preserve {
     background-color: var(--accent-color-hover);
+    color: #fff;
 }
 
 .-theme-with-dark-background .text-button:not(.primary-button):not(:disabled):focus,

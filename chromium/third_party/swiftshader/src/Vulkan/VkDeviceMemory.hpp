@@ -15,7 +15,7 @@
 #ifndef VK_DEVICE_MEMORY_HPP_
 #define VK_DEVICE_MEMORY_HPP_
 
-#include "VkConfig.h"
+#include "VkConfig.hpp"
 #include "VkObject.hpp"
 
 namespace vk {
@@ -34,6 +34,10 @@ public:
 #if SWIFTSHADER_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER
 	VkResult exportAhb(struct AHardwareBuffer **pAhb) const;
 	static VkResult getAhbProperties(const struct AHardwareBuffer *buffer, VkAndroidHardwareBufferPropertiesANDROID *pProperties);
+#endif
+
+#if VK_USE_PLATFORM_FUCHSIA
+	VkResult exportHandle(zx_handle_t *pHandle) const;
 #endif
 
 	void destroy(const VkAllocationCallbacks *pAllocator);

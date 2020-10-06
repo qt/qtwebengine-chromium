@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import {cssMetadata, VariableRegex} from './CSSMetadata.js';
 import {CSSModel} from './CSSModel.js';        // eslint-disable-line no-unused-vars
 import {CSSProperty} from './CSSProperty.js';  // eslint-disable-line no-unused-vars
@@ -331,7 +334,7 @@ export class CSSMatchedStyles {
 
   /**
    * @param {!CSSStyleRule} rule
-   * @return {!Promise}
+   * @return {!Promise<?>}
    */
   recomputeMatchingSelectors(rule) {
     const node = this.nodeForStyle(rule.style);
@@ -369,7 +372,7 @@ export class CSSMatchedStyles {
   /**
    * @param {!CSSStyleRule} rule
    * @param {!DOMNode} node
-   * @return {!Promise}
+   * @return {!Promise<?>}
    */
   addNewRule(rule, node) {
     this._addedStyles.set(rule.style, node);

@@ -36,21 +36,22 @@ namespace dawn_native { namespace metal {
 
     class Device : public DeviceBase {
       public:
-        Device(AdapterBase* adapter, id<MTLDevice> mtlDevice, const DeviceDescriptor* descriptor);
-        ~Device();
+        static ResultOrError<Device*> Create(AdapterBase* adapter,
+                                             id<MTLDevice> mtlDevice,
+                                             const DeviceDescriptor* descriptor);
+        ~Device() override;
+
+        MaybeError Initialize();
 
         CommandBufferBase* CreateCommandBuffer(CommandEncoder* encoder,
                                                const CommandBufferDescriptor* descriptor) override;
 
-        Serial GetCompletedCommandSerial() const final override;
-        Serial GetLastSubmittedCommandSerial() const final override;
         MaybeError TickImpl() override;
 
         id<MTLDevice> GetMTLDevice();
         id<MTLCommandQueue> GetMTLQueue();
 
         CommandRecordingContext* GetPendingCommandContext();
-        Serial GetPendingCommandSerial() const override;
         void SubmitPendingCommandBuffer();
 
         MapRequestTracker* GetMapTracker() const;
@@ -68,6 +69,8 @@ namespace dawn_native { namespace metal {
                                            uint64_t size) override;
 
       private:
+        Device(AdapterBase* adapter, id<MTLDevice> mtlDevice, const DeviceDescriptor* descriptor);
+
         ResultOrError<BindGroupBase*> CreateBindGroupImpl(
             const BindGroupDescriptor* descriptor) override;
         ResultOrError<BindGroupLayoutBase*> CreateBindGroupLayoutImpl(
@@ -77,7 +80,6 @@ namespace dawn_native { namespace metal {
             const ComputePipelineDescriptor* descriptor) override;
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
-        ResultOrError<QueueBase*> CreateQueueImpl() override;
         ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
             const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
@@ -89,20 +91,21 @@ namespace dawn_native { namespace metal {
             Surface* surface,
             NewSwapChainBase* previousSwapChain,
             const SwapChainDescriptor* descriptor) override;
-        ResultOrError<TextureBase*> CreateTextureImpl(const TextureDescriptor* descriptor) override;
+        ResultOrError<Ref<TextureBase>> CreateTextureImpl(
+            const TextureDescriptor* descriptor) override;
         ResultOrError<TextureViewBase*> CreateTextureViewImpl(
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) override;
 
         void InitTogglesFromDriver();
-        void Destroy() override;
+        void ShutDownImpl() override;
         MaybeError WaitForIdleForDestruction() override;
+        Serial CheckAndUpdateCompletedSerials() override;
 
         id<MTLDevice> mMtlDevice = nil;
         id<MTLCommandQueue> mCommandQueue = nil;
         std::unique_ptr<MapRequestTracker> mMapTracker;
 
-        Serial mLastSubmittedSerial = 0;
         CommandRecordingContext mCommandContext;
 
         // The completed serial is updated in a Metal completion handler that can be fired on a

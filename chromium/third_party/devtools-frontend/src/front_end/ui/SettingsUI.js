@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
@@ -35,7 +38,7 @@ import {CheckboxLabel} from './UIUtils.js';
 
 /**
  * @param {string} name
- * @param {!Common.Settings.Setting} setting
+ * @param {!Common.Settings.Setting<*>} setting
  * @param {boolean=} omitParagraphElement
  * @param {string=} tooltip
  * @return {!Element}
@@ -62,7 +65,7 @@ export const createSettingCheckbox = function(name, setting, omitParagraphElemen
 /**
  * @param {string} name
  * @param {!Array<!{text: string, value: *, raw: (boolean|undefined)}>} options
- * @param {!Common.Settings.Setting} setting
+ * @param {!Common.Settings.Setting<*>} setting
  * @param {string=} subtitle
  * @return {!Element}
  */
@@ -106,7 +109,7 @@ const createSettingSelect = function(name, options, setting, subtitle) {
 
 /**
  * @param {!Element} input
- * @param {!Common.Settings.Setting} setting
+ * @param {!Common.Settings.Setting<*>} setting
  */
 export const bindCheckbox = function(input, setting) {
   function settingChanged() {
@@ -141,7 +144,7 @@ export const createCustomSetting = function(name, element) {
 };
 
 /**
- * @param {!Common.Settings.Setting} setting
+ * @param {!Common.Settings.Setting<*>} setting
  * @param {string=} subtitle
  * @return {?Element}
  */

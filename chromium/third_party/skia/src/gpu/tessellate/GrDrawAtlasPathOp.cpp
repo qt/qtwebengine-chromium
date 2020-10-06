@@ -69,7 +69,7 @@ class DrawAtlasPathShader::Impl : public GrGLSLGeometryProcessor {
 
         const char* atlasAdjust;
         fAtlasAdjustUniform = args.fUniformHandler->addUniform(
-                kVertex_GrShaderFlag, kFloat2_GrSLType, "atlas_adjust", &atlasAdjust);
+                nullptr, kVertex_GrShaderFlag, kFloat2_GrSLType, "atlas_adjust", &atlasAdjust);
 
         args.fVertBuilder->codeAppendf(R"(
                 float2 T = float2(sk_VertexID & 1, sk_VertexID >> 1);
@@ -141,7 +141,7 @@ GrOp::CombineResult GrDrawAtlasPathOp::onCombineIfPossible(
 }
 
 void GrDrawAtlasPathOp::onPrePrepare(GrRecordingContext*,
-                                     const GrSurfaceProxyView* outputView,
+                                     const GrSurfaceProxyView* writeView,
                                      GrAppliedClip*,
                                      const GrXferProcessor::DstProxyView&) {
 }
@@ -178,7 +178,7 @@ void GrDrawAtlasPathOp::onExecute(GrOpFlushState* state, const SkRect& chainBoun
     SkASSERT(shader.instanceStride() == Instance::Stride(fUsesLocalCoords));
 
     GrProgramInfo programInfo(state->proxy()->numSamples(), state->proxy()->numStencilSamples(),
-                              state->proxy()->backendFormat(), state->outputView()->origin(),
+                              state->proxy()->backendFormat(), state->writeView()->origin(),
                               &pipeline, &shader, GrPrimitiveType::kTriangleStrip);
 
     state->bindPipelineAndScissorClip(programInfo, this->bounds());

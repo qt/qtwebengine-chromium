@@ -8,8 +8,8 @@
 #include "src/gpu/GrOpsTask.h"
 
 #include "include/private/GrRecordingContext.h"
-#include "src/core/SkExchange.h"
 #include "src/core/SkRectPriv.h"
+#include "src/core/SkScopeExit.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAuditTrail.h"
 #include "src/gpu/GrCaps.h"
@@ -36,6 +36,10 @@ static const int kMaxOpChainDistance = 10;
 ////////////////////////////////////////////////////////////////////////////////
 
 using DstProxyView = GrXferProcessor::DstProxyView;
+
+////////////////////////////////////////////////////////////////////////////////
+
+GrOpsTaskClosedObserver::~GrOpsTaskClosedObserver() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -268,7 +272,7 @@ bool GrOpsTask::OpChain::tryConcat(
                 SkASSERT(first);
                 return false;
             case GrOp::CombineResult::kMayChain:
-                fList = DoConcat(std::move(fList), skstd::exchange(*list, List()), caps, arenas,
+                fList = DoConcat(std::move(fList), std::exchange(*list, List()), caps, arenas,
                                  auditTrail);
                 // The above exchange cleared out 'list'. The list needs to be empty now for the
                 // loop to terminate.
@@ -359,7 +363,6 @@ GrOpsTask::GrOpsTask(GrRecordingContext::Arenas arenas,
         : GrRenderTask(std::move(view))
         , fArenas(arenas)
         , fAuditTrail(auditTrail)
-        , fLastClipStackGenID(SK_InvalidUniqueID)
         SkDEBUGCODE(, fNumClips(0)) {
     fTargetView.proxy()->setLastRenderTask(this);
 }
@@ -375,7 +378,15 @@ GrOpsTask::~GrOpsTask() {
     this->deleteOps();
 }
 
-////////////////////////////////////////////////////////////////////////////////
+void GrOpsTask::removeClosedObserver(GrOpsTaskClosedObserver* observer) {
+    SkASSERT(observer);
+    for (int i = 0; i < fClosedObservers.count(); ++i) {
+        if (fClosedObservers[i] == observer) {
+            fClosedObservers.removeShuffle(i);
+            --i;
+        }
+    }
+}
 
 void GrOpsTask::endFlush() {
     fLastClipStackGenID = SK_InvalidUniqueID;
@@ -874,6 +885,12 @@ void GrOpsTask::forwardCombine(const GrCaps& caps) {
 GrRenderTask::ExpectedOutcome GrOpsTask::onMakeClosed(
         const GrCaps& caps, SkIRect* targetUpdateBounds) {
     this->forwardCombine(caps);
+    SkScopeExit triggerObservers([&] {
+        for (const auto& o : fClosedObservers) {
+            o->wasClosed(*this);
+        }
+        fClosedObservers.reset();
+    });
     if (!this->isNoOp()) {
         GrSurfaceProxy* proxy = fTargetView.proxy();
         SkRect clippedContentBounds = proxy->getBoundsRect();

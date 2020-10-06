@@ -279,8 +279,13 @@ void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
 
     if (@available(macOS 10.11, iOS 9.0, *)) {
         if (this->isMac() || 3 == fFamilyGroup) {
-            fInstanceAttribSupport = true;
+            fDrawInstancedSupport = true;
         }
+        // https://developer.apple.com/documentation/metal/mtlrendercommandencoder/specifying_drawing_and_dispatch_arguments_indirectly
+        // Metal does not appear to have a call that issues multiple indirect draws. Furthermore,
+        // the indirect draw structs are ordered differently than GL and Vulkan. For now we leave it
+        // unsupported and rely on polyfills in GrOpsRenderPass.
+        SkASSERT(!fNativeDrawIndirectSupport);
     }
 
     fMixedSamplesSupport = false;
@@ -571,7 +576,7 @@ void GrMtlCaps::initFormatTable() {
         }
     }
 
-#ifdef SK_BUILD_FOR_IOS
+#if defined(SK_BUILD_FOR_IOS) && !TARGET_OS_SIMULATOR
     // Format: B5G6R5Unorm
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatB5G6R5Unorm)];
@@ -857,7 +862,7 @@ void GrMtlCaps::initFormatTable() {
 
     this->setColorType(GrColorType::kAlpha_8,          { MTLPixelFormatR8Unorm,
                                                          MTLPixelFormatA8Unorm });
-#ifdef SK_BUILD_FOR_IOS
+#if defined(SK_BUILD_FOR_IOS) && !TARGET_OS_SIMULATOR
     this->setColorType(GrColorType::kBGR_565,          { MTLPixelFormatB5G6R5Unorm });
     this->setColorType(GrColorType::kABGR_4444,        { MTLPixelFormatABGR4Unorm });
 #endif
@@ -910,25 +915,6 @@ bool GrMtlCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
     return false;
 }
 
-GrColorType GrMtlCaps::getYUVAColorTypeFromBackendFormat(const GrBackendFormat& format,
-                                                         bool isAlphaChannel) const {
-    switch (GrBackendFormatAsMTLPixelFormat(format)) {
-        case MTLPixelFormatA8Unorm:           // fall through
-        case MTLPixelFormatR8Unorm:           return isAlphaChannel ? GrColorType::kAlpha_8
-                                                                    : GrColorType::kGray_8;
-        case MTLPixelFormatRG8Unorm:          return GrColorType::kRG_88;
-        case MTLPixelFormatRGBA8Unorm:        return GrColorType::kRGBA_8888;
-        case MTLPixelFormatBGRA8Unorm:        return GrColorType::kBGRA_8888;
-        case MTLPixelFormatRGB10A2Unorm:      return GrColorType::kRGBA_1010102;
-        case MTLPixelFormatR16Unorm:          return GrColorType::kAlpha_16;
-        case MTLPixelFormatR16Float:          return GrColorType::kAlpha_F16;
-        case MTLPixelFormatRG16Unorm:         return GrColorType::kRG_1616;
-        case MTLPixelFormatRGBA16Unorm:       return GrColorType::kRGBA_16161616;
-        case MTLPixelFormatRG16Float:         return GrColorType::kRG_F16;
-        default:                              return GrColorType::kUnknown;
-    }
-}
-
 GrBackendFormat GrMtlCaps::onGetDefaultBackendFormat(GrColorType ct) const {
     MTLPixelFormat format = this->getFormatFromColorType(ct);
     if (!format) {
@@ -972,7 +958,9 @@ GrSwizzle GrMtlCaps::getReadSwizzle(const GrBackendFormat& format, GrColorType c
             return ctInfo.fReadSwizzle;
         }
     }
-    return GrSwizzle::RGBA();
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType,
+                 static_cast<int>(mtlFormat));
+    return {};
 }
 
 GrSwizzle GrMtlCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType colorType) const {
@@ -985,7 +973,9 @@ GrSwizzle GrMtlCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType 
             return ctInfo.fWriteSwizzle;
         }
     }
-    return GrSwizzle::RGBA();
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType,
+                 static_cast<int>(mtlFormat));
+    return {};
 }
 
 uint64_t GrMtlCaps::computeFormatKey(const GrBackendFormat& format) const {
@@ -1096,7 +1086,7 @@ std::vector<GrCaps::TestFormatColorTypeCombination> GrMtlCaps::getTestingCombina
     std::vector<GrCaps::TestFormatColorTypeCombination> combos = {
         { GrColorType::kAlpha_8,          GrBackendFormat::MakeMtl(MTLPixelFormatA8Unorm)         },
         { GrColorType::kAlpha_8,          GrBackendFormat::MakeMtl(MTLPixelFormatR8Unorm)         },
-#ifdef SK_BUILD_FOR_IOS
+#if defined(SK_BUILD_FOR_IOS) && !TARGET_OS_SIMULATOR
         { GrColorType::kBGR_565,          GrBackendFormat::MakeMtl(MTLPixelFormatB5G6R5Unorm)     },
         { GrColorType::kABGR_4444,        GrBackendFormat::MakeMtl(MTLPixelFormatABGR4Unorm)      },
 #endif

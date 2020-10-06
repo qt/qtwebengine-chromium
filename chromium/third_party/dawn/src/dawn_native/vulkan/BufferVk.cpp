@@ -66,8 +66,8 @@ namespace dawn_native { namespace vulkan {
             if (usage & (wgpu::BufferUsage::Index | wgpu::BufferUsage::Vertex)) {
                 flags |= VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
             }
-            if (usage &
-                (wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage | kReadOnlyStorage)) {
+            if (usage & (wgpu::BufferUsage::Uniform | wgpu::BufferUsage::Storage |
+                         kReadOnlyStorageBuffer)) {
                 flags |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
                          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
@@ -117,9 +117,9 @@ namespace dawn_native { namespace vulkan {
 
     // static
     ResultOrError<Buffer*> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
-        std::unique_ptr<Buffer> buffer = std::make_unique<Buffer>(device, descriptor);
+        Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor));
         DAWN_TRY(buffer->Initialize());
-        return buffer.release();
+        return buffer.Detach();
     }
 
     MaybeError Buffer::Initialize() {
@@ -137,7 +137,9 @@ namespace dawn_native { namespace vulkan {
         createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         createInfo.pNext = nullptr;
         createInfo.flags = 0;
-        createInfo.size = GetSize();
+        // TODO(cwallez@chromium.org): Have a global "zero" buffer that can do everything instead
+        // of creating a new 4-byte buffer?
+        createInfo.size = std::max(GetSize(), uint64_t(4u));
         // Add CopyDst for non-mappable buffer initialization in CreateBufferMapped
         // and robust resource initialization.
         createInfo.usage = VulkanBufferUsage(GetUsage() | wgpu::BufferUsage::CopyDst);

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import {createShadowRootWithCoreStyles} from './utils/create-shadow-root-with-core-styles.js';
 
 /**
@@ -12,7 +15,7 @@ export class DropTarget {
    * @param {!Element} element
    * @param {!Array<{kind: string, type: !RegExp}>} transferTypes
    * @param {string} messageText
-   * @param {function(!DataTransfer)} handleDrop
+   * @param {function(!DataTransfer):*} handleDrop
    */
   constructor(element, transferTypes, messageText, handleDrop) {
     element.addEventListener('dragenter', this._onDragEnter.bind(this), true);

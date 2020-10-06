@@ -44,11 +44,11 @@ enum class MorphDirection { kX, kY };
 
 class SkMorphologyImageFilterImpl final : public SkImageFilter_Base {
 public:
-    SkMorphologyImageFilterImpl(MorphType type, int radiusX, int radiusY,
+    SkMorphologyImageFilterImpl(MorphType type, SkScalar radiusX, SkScalar radiusY,
                                 sk_sp<SkImageFilter> input, const CropRect* cropRect)
             : INHERITED(&input, 1, cropRect)
             , fType(type)
-            , fRadius(SkISize::Make(radiusX, radiusY)) {}
+            , fRadius(SkSize::Make(radiusX, radiusY)) {}
 
     SkRect computeFastBounds(const SkRect& src) const override;
     SkIRect onFilterNodeBounds(const SkIRect& src, const SkMatrix& ctm,
@@ -68,10 +68,8 @@ protected:
     sk_sp<SkSpecialImage> onFilterImage(const Context&, SkIPoint* offset) const override;
     void flatten(SkWriteBuffer&) const override;
 
-    SkISize radius() const { return fRadius; }
     SkSize mappedRadius(const SkMatrix& ctm) const {
-      SkVector radiusVector = SkVector::Make(SkIntToScalar(fRadius.width()),
-                                             SkIntToScalar(fRadius.height()));
+      SkVector radiusVector = SkVector::Make(fRadius.width(), fRadius.height());
       ctm.mapVectors(&radiusVector, 1);
       radiusVector.setAbs(radiusVector);
       return SkSize::Make(radiusVector.x(), radiusVector.y());
@@ -94,14 +92,14 @@ private:
     }
 
     MorphType fType;
-    SkISize   fRadius;
+    SkSize    fRadius;
 
     typedef SkImageFilter_Base INHERITED;
 };
 
 } // end namespace
 
-sk_sp<SkImageFilter> SkDilateImageFilter::Make(int radiusX, int radiusY,
+sk_sp<SkImageFilter> SkDilateImageFilter::Make(SkScalar radiusX, SkScalar radiusY,
                                                sk_sp<SkImageFilter> input,
                                                const SkImageFilter::CropRect* cropRect) {
     if (radiusX < 0 || radiusY < 0) {
@@ -111,7 +109,7 @@ sk_sp<SkImageFilter> SkDilateImageFilter::Make(int radiusX, int radiusY,
             MorphType::kDilate, radiusX, radiusY, std::move(input), cropRect));
 }
 
-sk_sp<SkImageFilter> SkErodeImageFilter::Make(int radiusX, int radiusY,
+sk_sp<SkImageFilter> SkErodeImageFilter::Make(SkScalar radiusX, SkScalar radiusY,
                                               sk_sp<SkImageFilter> input,
                                               const SkImageFilter::CropRect* cropRect) {
     if (radiusX < 0 || radiusY < 0) {
@@ -137,8 +135,15 @@ void SkDilateImageFilter::RegisterFlattenables() {
 sk_sp<SkFlattenable> SkMorphologyImageFilterImpl::CreateProcWithType(SkReadBuffer& buffer,
                                                                      const MorphType* type) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 1);
-    const int width = buffer.readInt();
-    const int height = buffer.readInt();
+    SkScalar width;
+    SkScalar height;
+    if (buffer.isVersionLT(SkPicturePriv::kMorphologyTakesScalar_Version)) {
+        width = buffer.readInt();
+        height = buffer.readInt();
+    } else {
+        width = buffer.readScalar();
+        height = buffer.readScalar();
+    }
 
     MorphType filterType;
     if (type) {
@@ -165,8 +170,8 @@ sk_sp<SkFlattenable> SkMorphologyImageFilterImpl::CreateProc(SkReadBuffer& buffe
 
 void SkMorphologyImageFilterImpl::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
-    buffer.writeInt(fRadius.fWidth);
-    buffer.writeInt(fRadius.fHeight);
+    buffer.writeScalar(fRadius.fWidth);
+    buffer.writeScalar(fRadius.fHeight);
     buffer.writeInt(static_cast<int>(fType));
 }
 
@@ -188,7 +193,7 @@ static void call_proc_Y(SkMorphologyImageFilterImpl::Proc procY,
 
 SkRect SkMorphologyImageFilterImpl::computeFastBounds(const SkRect& src) const {
     SkRect bounds = this->getInput(0) ? this->getInput(0)->computeFastBounds(src) : src;
-    bounds.outset(SkIntToScalar(fRadius.width()), SkIntToScalar(fRadius.height()));
+    bounds.outset(fRadius.width(), fRadius.height());
     return bounds;
 }
 
@@ -285,13 +290,15 @@ void GrGLMorphologyEffect::emitCode(EmitArgs& args) {
     const GrMorphologyEffect& me = args.fFp.cast<GrMorphologyEffect>();
 
     GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
-    fPixelSizeUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf_GrSLType, "PixelSize");
+    fPixelSizeUni = uniformHandler->addUniform(&me, kFragment_GrShaderFlag, kHalf_GrSLType,
+                                               "PixelSize");
     const char* pixelSizeInc = uniformHandler->getUniformCStr(fPixelSizeUni);
-    fRangeUni = uniformHandler->addUniform(kFragment_GrShaderFlag, kFloat2_GrSLType, "Range");
+    fRangeUni = uniformHandler->addUniform(&me, kFragment_GrShaderFlag, kFloat2_GrSLType, "Range");
     const char* range = uniformHandler->getUniformCStr(fRangeUni);
 
     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
-    SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint);
+    SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint,
+                                                    args.fFp.sampleMatrix());
     const char* func;
     switch (me.type()) {
         case MorphType::kErode:
@@ -740,8 +747,8 @@ sk_sp<SkSpecialImage> SkMorphologyImageFilterImpl::onFilterImage(const Context& 
     }
 
     SkSize radius = mappedRadius(ctx.ctm());
-    int width = SkScalarFloorToInt(radius.width());
-    int height = SkScalarFloorToInt(radius.height());
+    int width = SkScalarRoundToInt(radius.width());
+    int height = SkScalarRoundToInt(radius.height());
 
     // Width (or height) must fit in a signed 32-bit int to avoid UBSAN issues (crbug.com/1018190)
     constexpr int kMaxRadius = (std::numeric_limits<int>::max() - 1) / 2;

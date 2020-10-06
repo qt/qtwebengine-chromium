@@ -111,7 +111,7 @@ int Outline_MoveTo(const FT_Vector* to, void* user) {
   param->m_pPath->ClosePath();
   param->m_pPath->AppendPoint(
       CFX_PointF(to->x / param->m_CoordUnit, to->y / param->m_CoordUnit),
-      FXPT_TYPE::MoveTo, false);
+      FXPT_TYPE::MoveTo);
 
   param->m_CurX = to->x;
   param->m_CurY = to->y;
@@ -123,7 +123,7 @@ int Outline_LineTo(const FT_Vector* to, void* user) {
 
   param->m_pPath->AppendPoint(
       CFX_PointF(to->x / param->m_CoordUnit, to->y / param->m_CoordUnit),
-      FXPT_TYPE::LineTo, false);
+      FXPT_TYPE::LineTo);
 
   param->m_CurX = to->x;
   param->m_CurY = to->y;
@@ -138,16 +138,16 @@ int Outline_ConicTo(const FT_Vector* control, const FT_Vector* to, void* user) {
                      param->m_CoordUnit,
                  (param->m_CurY + (control->y - param->m_CurY) * 2 / 3) /
                      param->m_CoordUnit),
-      FXPT_TYPE::BezierTo, false);
+      FXPT_TYPE::BezierTo);
 
   param->m_pPath->AppendPoint(
       CFX_PointF((control->x + (to->x - control->x) / 3) / param->m_CoordUnit,
                  (control->y + (to->y - control->y) / 3) / param->m_CoordUnit),
-      FXPT_TYPE::BezierTo, false);
+      FXPT_TYPE::BezierTo);
 
   param->m_pPath->AppendPoint(
       CFX_PointF(to->x / param->m_CoordUnit, to->y / param->m_CoordUnit),
-      FXPT_TYPE::BezierTo, false);
+      FXPT_TYPE::BezierTo);
 
   param->m_CurX = to->x;
   param->m_CurY = to->y;
@@ -162,15 +162,15 @@ int Outline_CubicTo(const FT_Vector* control1,
 
   param->m_pPath->AppendPoint(CFX_PointF(control1->x / param->m_CoordUnit,
                                          control1->y / param->m_CoordUnit),
-                              FXPT_TYPE::BezierTo, false);
+                              FXPT_TYPE::BezierTo);
 
   param->m_pPath->AppendPoint(CFX_PointF(control2->x / param->m_CoordUnit,
                                          control2->y / param->m_CoordUnit),
-                              FXPT_TYPE::BezierTo, false);
+                              FXPT_TYPE::BezierTo);
 
   param->m_pPath->AppendPoint(
       CFX_PointF(to->x / param->m_CoordUnit, to->y / param->m_CoordUnit),
-      FXPT_TYPE::BezierTo, false);
+      FXPT_TYPE::BezierTo);
 
   param->m_CurX = to->x;
   param->m_CurY = to->y;
@@ -505,6 +505,13 @@ bool CFX_Font::IsBold() const {
 bool CFX_Font::IsFixedWidth() const {
   return m_Face && FXFT_Is_Face_fixedwidth(m_Face->GetRec()) != 0;
 }
+
+#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+bool CFX_Font::IsSubstFontBold() const {
+  CFX_SubstFont* subst_font = GetSubstFont();
+  return subst_font && subst_font->GetOriginalWeight() >= FXFONT_FW_BOLD;
+}
+#endif
 
 ByteString CFX_Font::GetPsName() const {
   if (!m_Face)

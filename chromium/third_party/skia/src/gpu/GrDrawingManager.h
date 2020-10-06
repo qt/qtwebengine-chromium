@@ -18,6 +18,9 @@
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/text/GrTextContext.h"
 
+// Enabling this will print out which path renderers are being chosen
+#define GR_PATH_RENDERER_SPEW 0
+
 class GrCoverageCountingPathRenderer;
 class GrOnFlushCallbackObject;
 class GrOpFlushState;
@@ -182,11 +185,13 @@ private:
     bool executeRenderTasks(int startIndex, int stopIndex, GrOpFlushState*,
                             int* numRenderTasksExecuted);
 
-    GrSemaphoresSubmitted flush(GrSurfaceProxy* proxies[],
-                                int numProxies,
-                                SkSurface::BackendSurfaceAccess access,
-                                const GrFlushInfo&,
-                                const GrPrepareForExternalIORequests&);
+    bool flush(GrSurfaceProxy* proxies[],
+               int numProxies,
+               SkSurface::BackendSurfaceAccess access,
+               const GrFlushInfo&,
+               const GrPrepareForExternalIORequests&);
+
+    bool submitToGpu(bool syncToCpu);
 
     SkDEBUGCODE(void validate() const);
 

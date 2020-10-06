@@ -57,32 +57,31 @@ namespace dawn_native { namespace metal {
     // static
     ResultOrError<ShaderModule*> ShaderModule::Create(Device* device,
                                                       const ShaderModuleDescriptor* descriptor) {
-        std::unique_ptr<ShaderModule> module(new ShaderModule(device, descriptor));
-        if (!module)
-            return DAWN_VALIDATION_ERROR("Unable to create ShaderModule");
-        DAWN_TRY(module->Initialize(descriptor));
-        return module.release();
+        Ref<ShaderModule> module = AcquireRef(new ShaderModule(device, descriptor));
+        DAWN_TRY(module->Initialize());
+        return module.Detach();
     }
 
     ShaderModule::ShaderModule(Device* device, const ShaderModuleDescriptor* descriptor)
         : ShaderModuleBase(device, descriptor) {
     }
 
-    MaybeError ShaderModule::Initialize(const ShaderModuleDescriptor* descriptor) {
-        mSpirv.assign(descriptor->code, descriptor->code + descriptor->codeSize);
+    MaybeError ShaderModule::Initialize() {
+        const std::vector<uint32_t>& spirv = GetSpirv();
+
         if (GetDevice()->IsToggleEnabled(Toggle::UseSpvc)) {
             shaderc_spvc::CompileOptions options = GetMSLCompileOptions();
 
-            DAWN_TRY(CheckSpvcSuccess(
-                mSpvcContext.InitializeForMsl(descriptor->code, descriptor->codeSize, options),
-                "Unable to initialize instance of spvc"));
+            DAWN_TRY(
+                CheckSpvcSuccess(mSpvcContext.InitializeForMsl(spirv.data(), spirv.size(), options),
+                                 "Unable to initialize instance of spvc"));
 
             spirv_cross::CompilerMSL* compiler;
             DAWN_TRY(CheckSpvcSuccess(mSpvcContext.GetCompiler(reinterpret_cast<void**>(&compiler)),
                                       "Unable to get cross compiler"));
             DAWN_TRY(ExtractSpirvInfo(*compiler));
         } else {
-            spirv_cross::CompilerMSL compiler(mSpirv);
+            spirv_cross::CompilerMSL compiler(spirv);
             DAWN_TRY(ExtractSpirvInfo(compiler));
         }
         return {};
@@ -94,13 +93,15 @@ namespace dawn_native { namespace metal {
                                          ShaderModule::MetalFunctionData* out) {
         ASSERT(!IsError());
         ASSERT(out);
-        std::unique_ptr<spirv_cross::CompilerMSL> compiler_impl;
+        const std::vector<uint32_t>& spirv = GetSpirv();
+
+        std::unique_ptr<spirv_cross::CompilerMSL> compilerImpl;
         spirv_cross::CompilerMSL* compiler;
         if (GetDevice()->IsToggleEnabled(Toggle::UseSpvc)) {
             // Initializing the compiler is needed every call, because this method uses reflection
             // to mutate the compiler's IR.
             DAWN_TRY(CheckSpvcSuccess(
-                mSpvcContext.InitializeForMsl(mSpirv.data(), mSpirv.size(), GetMSLCompileOptions()),
+                mSpvcContext.InitializeForMsl(spirv.data(), spirv.size(), GetMSLCompileOptions()),
                 "Unable to initialize instance of spvc"));
             DAWN_TRY(CheckSpvcSuccess(mSpvcContext.GetCompiler(reinterpret_cast<void**>(&compiler)),
                                       "Unable to get cross compiler"));
@@ -120,8 +121,8 @@ namespace dawn_native { namespace metal {
             // the shader storage buffer lengths.
             options_msl.buffer_size_buffer_index = kBufferLengthBufferSlot;
 
-            compiler_impl = std::make_unique<spirv_cross::CompilerMSL>(mSpirv);
-            compiler = compiler_impl.get();
+            compilerImpl = std::make_unique<spirv_cross::CompilerMSL>(spirv);
+            compiler = compilerImpl.get();
             compiler->set_msl_options(options_msl);
         }
 
@@ -192,10 +193,10 @@ namespace dawn_native { namespace metal {
                 std::string result_str;
                 DAWN_TRY(CheckSpvcSuccess(result.GetStringOutput(&result_str),
                                           "Unable to get MSL shader text"));
-                mslSource = [NSString stringWithFormat:@"%s", result_str.c_str()];
+                mslSource = [[NSString alloc] initWithUTF8String:result_str.c_str()];
             } else {
                 std::string msl = compiler->compile();
-                mslSource = [NSString stringWithFormat:@"%s", msl.c_str()];
+                mslSource = [[NSString alloc] initWithUTF8String:msl.c_str()];
             }
             auto mtlDevice = ToBackend(GetDevice())->GetMTLDevice();
             NSError* error = nil;
@@ -218,7 +219,7 @@ namespace dawn_native { namespace metal {
                 functionName = "main0";
             }
 
-            NSString* name = [NSString stringWithFormat:@"%s", functionName];
+            NSString* name = [[NSString alloc] initWithUTF8String:functionName];
             out->function = [library newFunctionWithName:name];
             [library release];
         }

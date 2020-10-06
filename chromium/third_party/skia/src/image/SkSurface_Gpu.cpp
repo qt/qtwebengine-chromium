@@ -37,6 +37,10 @@ SkSurface_Gpu::SkSurface_Gpu(sk_sp<SkGpuDevice> device)
 SkSurface_Gpu::~SkSurface_Gpu() {
 }
 
+GrContext* SkSurface_Gpu::onGetContext() {
+    return fDevice->context();
+}
+
 static GrRenderTarget* prepare_rt_for_external_access(SkSurface_Gpu* surface,
                                                       SkSurface::BackendHandleAccess access) {
     switch (access) {
@@ -101,20 +105,14 @@ sk_sp<SkImage> SkSurface_Gpu::onNewImageSnapshot(const SkIRect* subset) {
 
     SkBudgeted budgeted = rtc->asSurfaceProxy()->isBudgeted();
 
-    GrSurfaceProxyView srcView;
-    if (subset) {
-        srcView = GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), rtc->origin(),
-                                       rtc->colorInfo().colorType(), rtc->mipMapped(), *subset,
-                                       SkBackingFit::kExact, budgeted);
-    } else if (!rtc->asTextureProxy() || rtc->priv().refsWrappedObjects()) {
+    GrSurfaceProxyView srcView = rtc->readSurfaceView();
+    if (subset || !srcView.asTextureProxy() || rtc->priv().refsWrappedObjects()) {
         // If the original render target is a buffer originally created by the client, then we don't
         // want to ever retarget the SkSurface at another buffer we create. Force a copy now to
         // avoid copy-on-write.
-        srcView = GrSurfaceProxy::Copy(ctx, rtc->asSurfaceProxy(), rtc->origin(),
-                                       rtc->colorInfo().colorType(), rtc->mipMapped(),
-                                       SkBackingFit::kExact, budgeted);
-    } else {
-        srcView = rtc->readSurfaceView();
+        auto rect = subset ? *subset : SkIRect::MakeSize(rtc->dimensions());
+        srcView = GrSurfaceProxyView::Copy(ctx, std::move(srcView), rtc->mipMapped(), rect,
+                                           SkBackingFit::kExact, budgeted);
     }
 
     const SkImageInfo info = fDevice->imageInfo();

@@ -548,17 +548,17 @@ void GrVkOpsRenderPass::onBindBuffers(const GrBuffer* indexBuffer, const GrBuffe
     // Here our vertex and instance inputs need to match the same 0-based bindings they were
     // assigned in GrVkPipeline. That is, vertex first (if any) followed by instance.
     uint32_t binding = 0;
-    if (auto* vkVertexBuffer = static_cast<const GrVkVertexBuffer*>(vertexBuffer)) {
+    if (auto* vkVertexBuffer = static_cast<const GrVkMeshBuffer*>(vertexBuffer)) {
         SkASSERT(!vkVertexBuffer->isCpuBuffer());
         SkASSERT(!vkVertexBuffer->isMapped());
         currCmdBuf->bindInputBuffer(fGpu, binding++, vkVertexBuffer);
     }
-    if (auto* vkInstanceBuffer = static_cast<const GrVkVertexBuffer*>(instanceBuffer)) {
+    if (auto* vkInstanceBuffer = static_cast<const GrVkMeshBuffer*>(instanceBuffer)) {
         SkASSERT(!vkInstanceBuffer->isCpuBuffer());
         SkASSERT(!vkInstanceBuffer->isMapped());
         currCmdBuf->bindInputBuffer(fGpu, binding++, vkInstanceBuffer);
     }
-    if (auto* vkIndexBuffer = static_cast<const GrVkIndexBuffer*>(indexBuffer)) {
+    if (auto* vkIndexBuffer = static_cast<const GrVkMeshBuffer*>(indexBuffer)) {
         SkASSERT(!vkIndexBuffer->isCpuBuffer());
         SkASSERT(!vkIndexBuffer->isMapped());
         currCmdBuf->bindIndexBuffer(fGpu, vkIndexBuffer);
@@ -587,6 +587,36 @@ void GrVkOpsRenderPass::onDrawIndexedInstanced(int indexCount, int baseIndex, in
     SkASSERT(fCurrentPipelineState);
     this->currentCommandBuffer()->drawIndexed(fGpu, indexCount, instanceCount,
                                               baseIndex, baseVertex, baseInstance);
+    fGpu->stats()->incNumDraws();
+    fCurrentCBIsEmpty = false;
+}
+
+void GrVkOpsRenderPass::onDrawIndirect(const GrBuffer* drawIndirectBuffer, size_t offset,
+                                       int drawCount) {
+    SkASSERT(!drawIndirectBuffer->isCpuBuffer());
+    if (!fCurrentRenderPass) {
+        SkASSERT(fGpu->isDeviceLost());
+        return;
+    }
+    SkASSERT(fCurrentPipelineState);
+    this->currentCommandBuffer()->drawIndirect(
+            fGpu, static_cast<const GrVkMeshBuffer*>(drawIndirectBuffer), offset, drawCount,
+            sizeof(GrDrawIndirectCommand));
+    fGpu->stats()->incNumDraws();
+    fCurrentCBIsEmpty = false;
+}
+
+void GrVkOpsRenderPass::onDrawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t offset,
+                                              int drawCount) {
+    SkASSERT(!drawIndirectBuffer->isCpuBuffer());
+    if (!fCurrentRenderPass) {
+        SkASSERT(fGpu->isDeviceLost());
+        return;
+    }
+    SkASSERT(fCurrentPipelineState);
+    this->currentCommandBuffer()->drawIndexedIndirect(
+            fGpu, static_cast<const GrVkMeshBuffer*>(drawIndirectBuffer), offset, drawCount,
+            sizeof(GrDrawIndexedIndirectCommand));
     fGpu->stats()->incNumDraws();
     fCurrentCBIsEmpty = false;
 }

@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
@@ -133,7 +136,7 @@ export class DebuggerModel extends SDKModel {
   }
 
   /**
-   * @return {!Promise}
+   * @return {!Promise<?string>}
    */
   _enableDebugger() {
     if (this._debuggerEnabled) {
@@ -187,7 +190,7 @@ export class DebuggerModel extends SDKModel {
   }
 
   /**
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async _disableDebugger() {
     if (!this._debuggerEnabled) {
@@ -282,7 +285,7 @@ export class DebuggerModel extends SDKModel {
 
   /**
    * @param {!Protocol.Runtime.StackTraceId} parentStackTraceId
-   * @return {!Promise}
+   * @return {!Promise<!Object>}
    */
   _pauseOnAsyncCall(parentStackTraceId) {
     return this._agent.invoke_pauseOnAsyncCall({parentStackTraceId: parentStackTraceId});
@@ -378,7 +381,7 @@ export class DebuggerModel extends SDKModel {
 
   /**
    * @param {!Protocol.Debugger.BreakpointId} breakpointId
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async removeBreakpoint(breakpointId) {
     const response = await this._agent.invoke_removeBreakpoint({breakpointId});
@@ -484,7 +487,7 @@ export class DebuggerModel extends SDKModel {
   /**
    * @param {!Protocol.Runtime.ScriptId} scriptId
    * @param {string} newSource
-   * @param {function(?ProtocolClient.InspectorBackend.ProtocolError, !Protocol.Runtime.ExceptionDetails=)} callback
+   * @param {function(?ProtocolClient.InspectorBackend.ProtocolError, !Protocol.Runtime.ExceptionDetails=):void} callback
    */
   setScriptSource(scriptId, newSource, callback) {
     this._scripts.get(scriptId).editSource(
@@ -494,7 +497,7 @@ export class DebuggerModel extends SDKModel {
   /**
    * @param {!Protocol.Runtime.ScriptId} scriptId
    * @param {string} newSource
-   * @param {function(?ProtocolClient.InspectorBackend.ProtocolError, !Protocol.Runtime.ExceptionDetails=)} callback
+   * @param {function(?ProtocolClient.InspectorBackend.ProtocolError, !Protocol.Runtime.ExceptionDetails=):void} callback
    * @param {?ProtocolClient.InspectorBackend.ProtocolError} error
    * @param {!Protocol.Runtime.ExceptionDetails=} exceptionDetails
    * @param {!Array.<!Protocol.Debugger.CallFrame>=} callFrames
@@ -639,12 +642,13 @@ export class DebuggerModel extends SDKModel {
    * @param {?Protocol.Runtime.StackTrace} originStackTrace
    * @param {?number} codeOffset
    * @param {?string} scriptLanguage
+   * @param {?Protocol.Debugger.DebugSymbols} debugSymbols
    * @return {!Script}
    */
   _parsedScriptSource(
       scriptId, sourceURL, startLine, startColumn, endLine, endColumn, executionContextId, hash,
       executionContextAuxData, isLiveEdit, sourceMapURL, hasSourceURLComment, hasSyntaxError, length, originStackTrace,
-      codeOffset, scriptLanguage) {
+      codeOffset, scriptLanguage, debugSymbols) {
     if (this._scripts.has(scriptId)) {
       return this._scripts.get(scriptId);
     }
@@ -656,7 +660,7 @@ export class DebuggerModel extends SDKModel {
     const script = new Script(
         this, scriptId, sourceURL, startLine, startColumn, endLine, endColumn, executionContextId,
         this._internString(hash), isContentScript, isLiveEdit, sourceMapURL, hasSourceURLComment, length,
-        originStackTrace, codeOffset, scriptLanguage);
+        originStackTrace, codeOffset, scriptLanguage, debugSymbols);
     this._registerScript(script);
     this.dispatchEventToListeners(Events.ParsedScriptSource, script);
 
@@ -928,7 +932,7 @@ export class DebuggerModel extends SDKModel {
 
   /**
    * @param {!Protocol.Debugger.BreakpointId} breakpointId
-   * @param {function(!Common.EventTarget.EventTargetEvent)} listener
+   * @param {function(!Common.EventTarget.EventTargetEvent):void} listener
    * @param {!Object=} thisObject
    */
   addBreakpointListener(breakpointId, listener, thisObject) {
@@ -937,7 +941,7 @@ export class DebuggerModel extends SDKModel {
 
   /**
    * @param {!Protocol.Debugger.BreakpointId} breakpointId
-   * @param {function(!Common.EventTarget.EventTargetEvent)} listener
+   * @param {function(!Common.EventTarget.EventTargetEvent):void} listener
    * @param {!Object=} thisObject
    */
   removeBreakpointListener(breakpointId, listener, thisObject) {
@@ -976,7 +980,7 @@ export class DebuggerModel extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async suspendModel() {
     await this._disableDebugger();
@@ -984,7 +988,7 @@ export class DebuggerModel extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async resumeModel() {
     await this._enableDebugger();
@@ -1105,15 +1109,16 @@ class DebuggerDispatcher {
    * @param {!Protocol.Runtime.StackTrace=} stackTrace
    * @param {number=} codeOffset
    * @param {string=} scriptLanguage
+   * @param {!Protocol.Debugger.DebugSymbols=} debugSymbols
    */
   scriptParsed(
       scriptId, sourceURL, startLine, startColumn, endLine, endColumn, executionContextId, hash,
       executionContextAuxData, isLiveEdit, sourceMapURL, hasSourceURL, isModule, length, stackTrace, codeOffset,
-      scriptLanguage) {
+      scriptLanguage, debugSymbols) {
     this._debuggerModel._parsedScriptSource(
         scriptId, sourceURL, startLine, startColumn, endLine, endColumn, executionContextId, hash,
         executionContextAuxData, !!isLiveEdit, sourceMapURL, !!hasSourceURL, false, length || 0, stackTrace || null,
-        codeOffset || null, scriptLanguage || null);
+        codeOffset || null, scriptLanguage || null, debugSymbols || null);
   }
 
   /**
@@ -1141,7 +1146,7 @@ class DebuggerDispatcher {
     this._debuggerModel._parsedScriptSource(
         scriptId, sourceURL, startLine, startColumn, endLine, endColumn, executionContextId, hash,
         executionContextAuxData, false, sourceMapURL, !!hasSourceURL, true, length || 0, stackTrace || null,
-        codeOffset || null, scriptLanguage || null);
+        codeOffset || null, scriptLanguage || null, null);
   }
 
   /**
@@ -1195,7 +1200,7 @@ export class Location {
   }
 
   /**
-   * @param {function()=} pausedCallback
+   * @param {function():void=} pausedCallback
    */
   continueToLocation(pausedCallback) {
     if (pausedCallback) {
@@ -1205,7 +1210,7 @@ export class Location {
   }
 
   /**
-   * @param {function()|undefined} pausedCallback
+   * @param {function():void|undefined} pausedCallback
    * @param {!DebuggerPausedDetails} debuggerPausedDetails
    * @return {boolean}
    */

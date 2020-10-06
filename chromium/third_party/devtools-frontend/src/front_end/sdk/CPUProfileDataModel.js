@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 
 import {ProfileNode, ProfileTreeModel} from './ProfileTreeModel.js';
@@ -339,8 +342,8 @@ export class CPUProfileDataModel extends ProfileTreeModel {
   }
 
   /**
-   * @param {function(number, !CPUProfileNode, number)} openFrameCallback
-   * @param {function(number, !CPUProfileNode, number, number, number)} closeFrameCallback
+   * @param {function(number, !CPUProfileNode, number):void} openFrameCallback
+   * @param {function(number, !CPUProfileNode, number, number, number):void} closeFrameCallback
    * @param {number=} startTime
    * @param {number=} stopTime
    */

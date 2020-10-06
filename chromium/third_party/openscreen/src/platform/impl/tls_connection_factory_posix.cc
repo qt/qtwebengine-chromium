@@ -25,7 +25,7 @@
 #include "platform/impl/tls_connection_posix.h"
 #include "util/crypto/certificate_utils.h"
 #include "util/crypto/openssl_util.h"
-#include "util/logging.h"
+#include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
 namespace openscreen {
@@ -234,6 +234,7 @@ void TlsConnectionFactoryPosix::Initialize() {
 void TlsConnectionFactoryPosix::Connect(
     std::unique_ptr<TlsConnectionPosix> connection) {
   OSP_DCHECK(connection->socket_->state() == SocketState::kConnected);
+  ClearOpenSSLERRStack(CURRENT_LOCATION);
   const int connection_status = SSL_connect(connection->ssl_.get());
   if (connection_status != 1) {
     Error error = GetSSLError(connection->ssl_.get(), connection_status);
@@ -275,6 +276,7 @@ void TlsConnectionFactoryPosix::Connect(
 void TlsConnectionFactoryPosix::Accept(
     std::unique_ptr<TlsConnectionPosix> connection) {
   OSP_DCHECK(connection->socket_->state() == SocketState::kConnected);
+  ClearOpenSSLERRStack(CURRENT_LOCATION);
   const int connection_status = SSL_accept(connection->ssl_.get());
   if (connection_status != 1) {
     Error error = GetSSLError(connection->ssl_.get(), connection_status);

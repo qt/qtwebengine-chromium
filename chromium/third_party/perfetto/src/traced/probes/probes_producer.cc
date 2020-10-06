@@ -34,14 +34,17 @@
 #include "perfetto/tracing/core/data_source_descriptor.h"
 #include "perfetto/tracing/core/trace_config.h"
 #include "src/traced/probes/android_log/android_log_data_source.h"
+#include "src/traced/probes/common/cpu_freq_info.h"
 #include "src/traced/probes/filesystem/inode_file_data_source.h"
 #include "src/traced/probes/ftrace/ftrace_data_source.h"
+#include "src/traced/probes/initial_display_state/initial_display_state_data_source.h"
 #include "src/traced/probes/metatrace/metatrace_data_source.h"
 #include "src/traced/probes/packages_list/packages_list_data_source.h"
 #include "src/traced/probes/power/android_power_data_source.h"
 #include "src/traced/probes/probes_data_source.h"
 #include "src/traced/probes/ps/process_stats_data_source.h"
 #include "src/traced/probes/sys_stats/sys_stats_data_source.h"
+#include "src/traced/probes/system_info/system_info_data_source.h"
 
 #include "protos/perfetto/config/ftrace/ftrace_config.gen.h"
 #include "protos/perfetto/trace/filesystem/inode_file_map.pbzero.h"
@@ -62,14 +65,16 @@ constexpr size_t kTracingSharedMemSizeHintBytes = 1024 * 1024;
 constexpr size_t kTracingSharedMemPageSizeHintBytes = 32 * 1024;
 
 ProbesDataSource::Descriptor const* const kAllDataSources[]{
-    &FtraceDataSource::descriptor,        //
-    &ProcessStatsDataSource::descriptor,  //
-    &InodeFileDataSource::descriptor,     //
-    &SysStatsDataSource::descriptor,      //
-    &AndroidPowerDataSource::descriptor,  //
-    &AndroidLogDataSource::descriptor,    //
-    &PackagesListDataSource::descriptor,  //
-    &MetatraceDataSource::descriptor,     //
+    &FtraceDataSource::descriptor,               //
+    &ProcessStatsDataSource::descriptor,         //
+    &InodeFileDataSource::descriptor,            //
+    &SysStatsDataSource::descriptor,             //
+    &AndroidPowerDataSource::descriptor,         //
+    &AndroidLogDataSource::descriptor,           //
+    &PackagesListDataSource::descriptor,         //
+    &MetatraceDataSource::descriptor,            //
+    &SystemInfoDataSource::descriptor,           //
+    &InitialDisplayStateDataSource::descriptor,  //
 };
 }  // namespace
 
@@ -98,11 +103,8 @@ void ProbesProducer::OnConnect() {
   for (const FtraceDataSource::Descriptor* desc : kAllDataSources) {
     DataSourceDescriptor proto_desc;
     proto_desc.set_name(desc->name);
-
-    // TODO(primiano): remove in next CL.
-    if (desc == &MetatraceDataSource::descriptor)
-      proto_desc.set_will_notify_on_stop(true);
-
+    proto_desc.set_will_notify_on_start(true);
+    proto_desc.set_will_notify_on_stop(true);
     using Flags = ProbesDataSource::Descriptor::Flags;
     if (desc->flags & Flags::kHandlesIncrementalState)
       proto_desc.set_handles_incremental_state_clear(true);
@@ -164,6 +166,10 @@ void ProbesProducer::SetupDataSource(DataSourceInstanceID instance_id,
     data_source = CreatePackagesListDataSource(session_id, config);
   } else if (config.name() == MetatraceDataSource::descriptor.name) {
     data_source = CreateMetatraceDataSource(session_id, config);
+  } else if (config.name() == SystemInfoDataSource::descriptor.name) {
+    data_source = CreateSystemInfoDataSource(session_id, config);
+  } else if (config.name() == InitialDisplayStateDataSource::descriptor.name) {
+    data_source = CreateInitialDisplayStateDataSource(session_id, config);
   }
 
   if (!data_source) {
@@ -195,6 +201,7 @@ void ProbesProducer::StartDataSource(DataSourceInstanceID instance_id,
   }
   data_source->started = true;
   data_source->Start();
+  endpoint_->NotifyDataSourceStarted(instance_id);
 }
 
 std::unique_ptr<ProbesDataSource> ProbesProducer::CreateFtraceDataSource(
@@ -252,8 +259,8 @@ std::unique_ptr<ProbesDataSource> ProbesProducer::CreateProcessStatsDataSource(
     const DataSourceConfig& config) {
   auto buffer_id = static_cast<BufferID>(config.target_buffer());
   return std::unique_ptr<ProcessStatsDataSource>(new ProcessStatsDataSource(
-      task_runner_, session_id, endpoint_->CreateTraceWriter(buffer_id),
-      config));
+      task_runner_, session_id, endpoint_->CreateTraceWriter(buffer_id), config,
+      std::unique_ptr<CpuFreqInfo>(new CpuFreqInfo())));
 }
 
 std::unique_ptr<ProbesDataSource> ProbesProducer::CreateAndroidPowerDataSource(
@@ -299,6 +306,25 @@ std::unique_ptr<ProbesDataSource> ProbesProducer::CreateMetatraceDataSource(
       task_runner_, session_id, endpoint_->CreateTraceWriter(buffer_id)));
 }
 
+std::unique_ptr<ProbesDataSource> ProbesProducer::CreateSystemInfoDataSource(
+    TracingSessionID session_id,
+    const DataSourceConfig& config) {
+  auto buffer_id = static_cast<BufferID>(config.target_buffer());
+  return std::unique_ptr<ProbesDataSource>(new SystemInfoDataSource(
+      session_id, endpoint_->CreateTraceWriter(buffer_id),
+      std::unique_ptr<CpuFreqInfo>(new CpuFreqInfo())));
+}
+
+std::unique_ptr<ProbesDataSource>
+ProbesProducer::CreateInitialDisplayStateDataSource(
+    TracingSessionID session_id,
+    const DataSourceConfig& config) {
+  auto buffer_id = static_cast<BufferID>(config.target_buffer());
+  return std::unique_ptr<ProbesDataSource>(new InitialDisplayStateDataSource(
+      task_runner_, config, session_id,
+      endpoint_->CreateTraceWriter(buffer_id)));
+}
+
 void ProbesProducer::StopDataSource(DataSourceInstanceID id) {
   PERFETTO_LOG("Producer stop (id=%" PRIu64 ")", id);
   auto it = data_sources_.find(id);
@@ -311,10 +337,10 @@ void ProbesProducer::StopDataSource(DataSourceInstanceID id) {
 
   // MetatraceDataSource special case: re-flush and ack the stop (to record the
   // flushes of other data sources).
-  if (data_source->descriptor == &MetatraceDataSource::descriptor) {
+  if (data_source->descriptor == &MetatraceDataSource::descriptor)
     data_source->Flush(FlushRequestID{0}, [] {});
-    endpoint_->NotifyDataSourceStopped(id);
-  }
+
+  endpoint_->NotifyDataSourceStopped(id);
 
   TracingSessionID session_id = data_source->tracing_session_id;
   auto range = session_data_sources_.equal_range(session_id);

@@ -54,11 +54,13 @@ public:
 
 private:
     void onPrePrepare(GrRecordingContext*,
-                      const GrSurfaceProxyView* outputView,
+                      const GrSurfaceProxyView* writeView,
                       GrAppliedClip*,
                       const GrXferProcessor::DstProxyView&) override {}
     void onPrepare(GrOpFlushState*) override {}
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
+    void drawResolve(GrOpFlushState*, const GrPipeline&, const GrPrimitiveProcessor&,
+                     const SkIRect& drawBounds) const;
 
     friend class ::GrOpMemoryPool; // for ctor
 

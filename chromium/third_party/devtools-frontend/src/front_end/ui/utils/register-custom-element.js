@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 /**
  * @param {string} localName
  * @param {string} typeExtension
- * @param {function(new:HTMLElement, *)} definition
- * @return {function()}
+ * @param {function(new:HTMLElement, *):void} definition
+ * @return {function():void}
  * @suppressGlobalPropertiesCheck
  */
 export function registerCustomElement(localName, typeExtension, definition) {

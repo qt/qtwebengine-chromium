@@ -7,12 +7,12 @@
 #include <random>
 
 #include "absl/strings/str_cat.h"
-#include "cast/common/channel/cast_socket.h"
 #include "cast/common/channel/virtual_connection_manager.h"
 #include "cast/common/channel/virtual_connection_router.h"
+#include "cast/common/public/cast_socket.h"
 #include "cast/common/public/service_info.h"
 #include "util/json/json_serialization.h"
-#include "util/logging.h"
+#include "util/osp_logging.h"
 #include "util/stringprintf.h"
 
 namespace openscreen {
@@ -87,8 +87,8 @@ absl::optional<int> CastPlatformClient::RequestAppAvailability(
                                          VirtualConnection::AssociatedData{});
   }
 
-  virtual_conn_router_->SendMessage(std::move(virtual_conn),
-                                    std::move(message.value()));
+  virtual_conn_router_->Send(std::move(virtual_conn),
+                             std::move(message.value()));
 
   return request_id;
 }

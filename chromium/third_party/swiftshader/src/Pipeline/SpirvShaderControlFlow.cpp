@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "SpirvShader.hpp"
+#include "SpirvShaderDebug.hpp"
 
 #include "Reactor/Coroutine.hpp"  // rr::Yield
 
@@ -21,6 +22,9 @@
 #include <spirv/unified1/spirv.hpp>
 
 #include <queue>
+
+#include <fstream>
+#include <iostream>
 
 namespace sw {
 
@@ -298,8 +302,10 @@ void SpirvShader::EmitNonLoop(EmitState *state) const
 		for(auto in : block.ins)
 		{
 			auto inMask = GetActiveLaneMaskEdge(state, in, blockId);
+			SPIRV_SHADER_DBG("Block {0} -> {1} mask: {2}", in, blockId, inMask);
 			activeLaneMask |= inMask;
 		}
+		SPIRV_SHADER_DBG("Block {0} mask: {1}", blockId, activeLaneMask);
 		SetActiveLaneMask(activeLaneMask, state);
 	}
 
@@ -312,6 +318,8 @@ void SpirvShader::EmitNonLoop(EmitState *state) const
 			state->pending->push_back(out);
 		}
 	}
+
+	SPIRV_SHADER_DBG("Block {0} done", blockId);
 }
 
 void SpirvShader::EmitLoop(EmitState *state) const
@@ -326,6 +334,8 @@ void SpirvShader::EmitLoop(EmitState *state) const
 	{
 		return;  // Already emitted this loop.
 	}
+
+	SPIRV_SHADER_DBG("*** LOOP HEADER ***");
 
 	// Gather all the blocks that make up the loop.
 	std::unordered_set<Block::ID> loopBlocks;
@@ -375,6 +385,8 @@ void SpirvShader::EmitLoop(EmitState *state) const
 	// Start emitting code inside the loop.
 	Nucleus::createBr(headerBasicBlock);
 	Nucleus::setInsertBlock(headerBasicBlock);
+
+	SPIRV_SHADER_DBG("*** LOOP START (mask: {0}) ***", loopActiveLaneMask);
 
 	// Load the active lane mask.
 	SetActiveLaneMask(loopActiveLaneMask, state);
@@ -432,6 +444,8 @@ void SpirvShader::EmitLoop(EmitState *state) const
 		}
 	}
 
+	SPIRV_SHADER_DBG("*** LOOP END (mask: {0}) ***", loopActiveLaneMask);
+
 	// Use the [loop -> merge] active lane masks to update the phi values in
 	// the merge block. We need to do this to handle divergent control flow
 	// in the loop.
@@ -467,7 +481,7 @@ void SpirvShader::EmitLoop(EmitState *state) const
 	// Loop body now done.
 	// If any lanes are still active, jump back to the loop header,
 	// otherwise jump to the merge block.
-	Nucleus::createCondBr(AnyTrue(loopActiveLaneMask).value, headerBasicBlock, mergeBasicBlock);
+	Nucleus::createCondBr(AnyTrue(loopActiveLaneMask).value(), headerBasicBlock, mergeBasicBlock);
 
 	// Continue emitting from the merge block.
 	Nucleus::setInsertBlock(mergeBasicBlock);
@@ -495,8 +509,8 @@ SpirvShader::EmitResult SpirvShader::EmitBranchConditional(InsnIterator insn, Em
 	auto trueBlockId = Block::ID(block.branchInstruction.word(2));
 	auto falseBlockId = Block::ID(block.branchInstruction.word(3));
 
-	auto cond = GenericValue(this, state, condId);
-	ASSERT_MSG(getType(cond.type).sizeInComponents == 1, "Condition must be a Boolean type scalar");
+	auto cond = Operand(this, state, condId);
+	ASSERT_MSG(getType(getObject(condId)).componentCount == 1, "Condition must be a Boolean type scalar");
 
 	// TODO: Optimize for case where all lanes take same path.
 
@@ -514,8 +528,9 @@ SpirvShader::EmitResult SpirvShader::EmitSwitch(InsnIterator insn, EmitState *st
 
 	auto selId = Object::ID(block.branchInstruction.word(1));
 
-	auto sel = GenericValue(this, state, selId);
-	ASSERT_MSG(getType(sel.type).sizeInComponents == 1, "Selector must be a scalar");
+	auto sel = Operand(this, state, selId);
+	ASSERT_MSG(sel.componentCount == 1, "Selector must be a scalar");
+	SPIRV_SHADER_DBG("switch({0})", sel);
 
 	auto numCases = (block.branchInstruction.wordCount() - 3) / 2;
 
@@ -531,11 +546,13 @@ SpirvShader::EmitResult SpirvShader::EmitSwitch(InsnIterator insn, EmitState *st
 		auto label = block.branchInstruction.word(i * 2 + 3);
 		auto caseBlockId = Block::ID(block.branchInstruction.word(i * 2 + 4));
 		auto caseLabelMatch = CmpEQ(sel.Int(0), SIMD::Int(label));
+		SPIRV_SHADER_DBG("case {0}: {1}", label, caseLabelMatch & state->activeLaneMask());
 		state->addOutputActiveLaneMaskEdge(caseBlockId, caseLabelMatch);
 		defaultLaneMask &= ~caseLabelMatch;
 	}
 
 	auto defaultBlockId = Block::ID(block.branchInstruction.word(2));
+	SPIRV_SHADER_DBG("default: {0}", defaultLaneMask);
 	state->addOutputActiveLaneMaskEdge(defaultBlockId, defaultLaneMask);
 
 	return EmitResult::Terminator;
@@ -650,10 +667,11 @@ void SpirvShader::LoadPhi(InsnIterator insn, EmitState *state) const
 	ASSERT(storageIt != state->routine->phis.end());
 	auto &storage = storageIt->second;
 
-	auto &dst = state->createIntermediate(objectId, type.sizeInComponents);
-	for(uint32_t i = 0; i < type.sizeInComponents; i++)
+	auto &dst = state->createIntermediate(objectId, type.componentCount);
+	for(uint32_t i = 0; i < type.componentCount; i++)
 	{
 		dst.move(i, storage[i]);
+		SPIRV_SHADER_DBG("LoadPhi({0}.{1}): {2}", objectId, i, storage[i]);
 	}
 }
 
@@ -678,12 +696,19 @@ void SpirvShader::StorePhi(Block::ID currentBlock, InsnIterator insn, EmitState 
 		}
 
 		auto mask = GetActiveLaneMaskEdge(state, blockId, currentBlock);
-		auto in = GenericValue(this, state, varId);
+		auto in = Operand(this, state, varId);
 
-		for(uint32_t i = 0; i < type.sizeInComponents; i++)
+		for(uint32_t i = 0; i < type.componentCount; i++)
 		{
 			storage[i] = As<SIMD::Float>((As<SIMD::Int>(storage[i]) & ~mask) | (in.Int(i) & mask));
+			SPIRV_SHADER_DBG("StorePhi({0}.{1}): [{2} <- {3}] {4}: {5}, mask: {6}",
+			                 objectId, i, currentBlock, blockId, varId, in.UInt(i), mask);
 		}
+	}
+
+	for(uint32_t i = 0; i < type.componentCount; i++)
+	{
+		SPIRV_SHADER_DBG("StorePhi({0}.{1}): {2}", objectId, i, As<SIMD::UInt>(storage[i]));
 	}
 }
 
@@ -703,8 +728,87 @@ void SpirvShader::Yield(YieldResult res) const
 
 void SpirvShader::SetActiveLaneMask(RValue<SIMD::Int> mask, EmitState *state) const
 {
-	state->activeLaneMaskValue = mask.value;
+	state->activeLaneMaskValue = mask.value();
 	dbgUpdateActiveLaneMask(mask, state);
+}
+
+void SpirvShader::WriteCFGGraphVizDotFile(const char *path) const
+{
+	std::ofstream file(path);
+	file << "digraph D {" << std::endl;
+	for(auto &func : functions)
+	{
+		file << "  subgraph cluster_function_" << func.first.value() << " {"
+		     << std::endl;
+
+		file << "    label = \"function<" << func.first.value() << ">"
+		     << (func.first == entryPoint ? " (entry point)" : "")
+		     << "\"" << std::endl;
+
+		for(auto &block : func.second.blocks)
+		{
+			file << "    block_" << block.first.value() << " ["
+			     << "shape=circle "
+			     << "label=\"" << block.first.value() << "\""
+			     << "]" << std::endl;
+		}
+		file << std::endl;
+		for(auto &block : func.second.blocks)
+		{
+			file << "    block_" << block.first.value() << " -> {";
+			bool first = true;
+			for(auto outs : block.second.outs)
+			{
+				if(!first) { file << ", "; }
+				file << "block_" << outs.value();
+				first = false;
+			}
+			file << "}" << std::endl;
+		}
+		file << std::endl;
+		for(auto &block : func.second.blocks)
+		{
+			if(block.second.kind == Block::Loop)
+			{
+				if(block.second.mergeBlock != 0)
+				{
+					file << "    block_" << block.first.value() << " -> "
+					     << "block_" << block.second.mergeBlock.value()
+					     << "[label=\"M\" style=dashed color=blue]"
+					     << std::endl;
+				}
+				if(block.second.continueTarget != 0)
+				{
+					file << "    block_" << block.first.value() << " -> "
+					     << "block_" << block.second.continueTarget.value()
+					     << "[label=\"C\" style=dashed color=green]"
+					     << std::endl;
+				}
+			}
+		}
+
+		file << "  }" << std::endl;
+	}
+
+	for(auto &func : functions)
+	{
+		for(auto &block : func.second.blocks)
+		{
+			for(auto insn : block.second)
+			{
+				if(insn.opcode() == spv::OpFunctionCall)
+				{
+					auto target = getFunction(insn.word(3)).entry;
+					file << "    block_" << block.first.value() << " -> "
+					     << "block_" << target.value()
+					     << "[color=\"#00008050\"]"
+					     << std::endl;
+				}
+			}
+		}
+	}
+
+	file << "}" << std::endl;
 }
 
 }  // namespace sw

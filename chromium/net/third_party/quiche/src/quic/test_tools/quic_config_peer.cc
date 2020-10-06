@@ -5,6 +5,7 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_config_peer.h"
 
 #include "net/third_party/quiche/src/quic/core/quic_config.h"
+#include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
 
 namespace quic {
 namespace test {
@@ -98,12 +99,22 @@ void QuicConfigPeer::SetReceivedMaxPacketSize(QuicConfig* config,
 }
 
 // static
-void QuicConfigPeer::ReceiveIdleNetworkTimeout(QuicConfig* config,
-                                               HelloType hello_type,
-                                               uint32_t idle_timeout_seconds) {
-  std::string error_details;
-  config->idle_network_timeout_seconds_.ReceiveValue(
-      idle_timeout_seconds, hello_type, &error_details);
+void QuicConfigPeer::SetNegotiated(QuicConfig* config, bool negotiated) {
+  config->negotiated_ = negotiated;
+}
+
+// static
+void QuicConfigPeer::SetReceivedOriginalConnectionId(
+    QuicConfig* config,
+    const QuicConnectionId& original_connection_id) {
+  config->received_original_connection_id_ = original_connection_id;
+}
+
+// static
+void QuicConfigPeer::SetReceivedMaxDatagramFrameSize(
+    QuicConfig* config,
+    uint64_t max_datagram_frame_size) {
+  config->max_datagram_frame_size_.SetReceivedValue(max_datagram_frame_size);
 }
 
 }  // namespace test

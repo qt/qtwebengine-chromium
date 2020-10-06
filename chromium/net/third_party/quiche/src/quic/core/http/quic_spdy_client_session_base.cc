@@ -105,6 +105,8 @@ void QuicSpdyClientSessionBase::OnPromiseHeaderList(
 bool QuicSpdyClientSessionBase::HandlePromised(QuicStreamId /* associated_id */,
                                                QuicStreamId promised_id,
                                                const SpdyHeaderBlock& headers) {
+  // TODO(b/136295430): Do not treat |promised_id| as a stream ID when using
+  // IETF QUIC.
   // Due to pathalogical packet re-ordering, it is possible that
   // frames for the promised stream have already arrived, and the
   // promised stream could be active or closed.
@@ -202,7 +204,11 @@ void QuicSpdyClientSessionBase::ResetPromised(
     QuicStreamId id,
     QuicRstStreamErrorCode error_code) {
   DCHECK(QuicUtils::IsServerInitiatedStreamId(transport_version(), id));
-  SendRstStream(id, error_code, 0);
+  if (break_close_loop()) {
+    ResetStream(id, error_code, 0);
+  } else {
+    SendRstStream(id, error_code, 0);
+  }
   if (!IsOpenStream(id) && !IsClosedStream(id)) {
     MaybeIncreaseLargestPeerStreamId(id);
   }
@@ -216,8 +222,27 @@ void QuicSpdyClientSessionBase::CloseStreamInner(QuicStreamId stream_id,
   }
 }
 
+void QuicSpdyClientSessionBase::OnStreamClosed(QuicStreamId stream_id) {
+  DCHECK(break_close_loop());
+  QuicSpdySession::OnStreamClosed(stream_id);
+  if (!VersionUsesHttp3(transport_version())) {
+    headers_stream()->MaybeReleaseSequencerBuffer();
+  }
+}
+
 bool QuicSpdyClientSessionBase::ShouldReleaseHeadersStreamSequencerBuffer() {
   return !HasActiveRequestStreams() && promised_by_id_.empty();
+}
+
+void QuicSpdyClientSessionBase::OnSettingsFrame(const SettingsFrame& frame) {
+  QuicSpdySession::OnSettingsFrame(frame);
+  std::unique_ptr<char[]> buffer;
+  QuicByteCount frame_length =
+      HttpEncoder::SerializeSettingsFrame(frame, &buffer);
+  auto serialized_data = std::make_unique<ApplicationState>(
+      buffer.get(), buffer.get() + frame_length);
+  static_cast<QuicCryptoClientStreamBase*>(GetMutableCryptoStream())
+      ->OnApplicationState(std::move(serialized_data));
 }
 
 }  // namespace quic

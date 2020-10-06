@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 
@@ -89,7 +92,7 @@ export class ServiceWorkerCacheModel extends SDKModel {
   /**
    * @param {!Cache} cache
    * @param {string} request
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async deleteCacheEntry(cache, request) {
     const response = await this._cacheAgent.invoke_deleteEntry({cacheId: cache.cacheId, request});
@@ -106,7 +109,7 @@ export class ServiceWorkerCacheModel extends SDKModel {
    * @param {number} skipCount
    * @param {number} pageSize
    * @param {string} pathFilter
-   * @param {function(!Array.<!Protocol.CacheStorage.DataEntry>, number)} callback
+   * @param {function(!Array.<!Protocol.CacheStorage.DataEntry>, number):void} callback
    */
   loadCacheData(cache, skipCount, pageSize, pathFilter, callback) {
     this._requestEntries(cache, skipCount, pageSize, pathFilter, callback);
@@ -115,7 +118,7 @@ export class ServiceWorkerCacheModel extends SDKModel {
   /**
    * @param {!Cache} cache
    * @param {string} pathFilter
-   * @param {function(!Array.<!Protocol.CacheStorage.DataEntry>, number)} callback
+   * @param {function(!Array.<!Protocol.CacheStorage.DataEntry>, number):void} callback
    */
   loadAllCacheData(cache, pathFilter, callback) {
     this._requestAllEntries(cache, pathFilter, callback);
@@ -193,7 +196,7 @@ export class ServiceWorkerCacheModel extends SDKModel {
 
   /**
    * @param {string} securityOrigin
-   * @param {!Array} cachesJson
+   * @param {!Array<*>} cachesJson
    */
   _updateCacheNames(securityOrigin, cachesJson) {
     /**
@@ -263,7 +266,7 @@ export class ServiceWorkerCacheModel extends SDKModel {
    * @param {number} skipCount
    * @param {number} pageSize
    * @param {string} pathFilter
-   * @param {function(!Array<!Protocol.CacheStorage.DataEntry>, number)} callback
+   * @param {function(!Array<!Protocol.CacheStorage.DataEntry>, number):void} callback
    */
   async _requestEntries(cache, skipCount, pageSize, pathFilter, callback) {
     const response =
@@ -280,7 +283,7 @@ export class ServiceWorkerCacheModel extends SDKModel {
   /**
    * @param {!Cache} cache
    * @param {string} pathFilter
-   * @param {function(!Array<!Protocol.CacheStorage.DataEntry>, number)} callback
+   * @param {function(!Array<!Protocol.CacheStorage.DataEntry>, number):void} callback
    */
   async _requestAllEntries(cache, pathFilter, callback) {
     const response = await this._cacheAgent.invoke_requestEntries({cacheId: cache.cacheId, pathFilter});

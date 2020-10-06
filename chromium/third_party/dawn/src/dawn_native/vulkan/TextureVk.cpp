@@ -86,12 +86,22 @@ namespace dawn_native { namespace vulkan {
                         VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
                 }
             }
-            if (usage & wgpu::TextureUsage::Present) {
-                // There is no access flag for present because the VK_KHR_SWAPCHAIN extension says
-                // that vkQueuePresentKHR makes the memory of the image visible to the presentation
-                // engine. There's also a note explicitly saying dstAccessMask should be 0. On the
-                // other side srcAccessMask can also be 0 because synchronization is required to
-                // happen with a semaphore instead.
+            if (usage & kPresentTextureUsage) {
+                // The present usage is only used internally by the swapchain and is never used in
+                // combination with other usages.
+                ASSERT(usage == kPresentTextureUsage);
+                // The Vulkan spec has the following note:
+                //
+                //   When transitioning the image to VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR or
+                //   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, there is no need to delay subsequent
+                //   processing, or perform any visibility operations (as vkQueuePresentKHR performs
+                //   automatic visibility operations). To achieve this, the dstAccessMask member of
+                //   the VkImageMemoryBarrier should be set to 0, and the dstStageMask parameter
+                //   should be set to VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT.
+                //
+                // So on the transition to Present we don't need an access flag. The other
+                // direction doesn't matter because swapchain textures always start a new frame
+                // as uninitialized.
                 flags |= 0;
             }
 
@@ -120,9 +130,11 @@ namespace dawn_native { namespace vulkan {
                 // combination of GENERAL and TRANSFER_SRC_OPTIMAL. This would be a problem, so we
                 // make CopySrc use GENERAL.
                 case wgpu::TextureUsage::CopySrc:
-                // Writable storage textures must use general. If we could know the texture is read
-                // only we could use SHADER_READ_ONLY_OPTIMAL
+                // Read-only and write-only storage textures must use general layout because load
+                // and store operations on storage images can only be done on the images in
+                // VK_IMAGE_LAYOUT_GENERAL layout.
                 case wgpu::TextureUsage::Storage:
+                case kReadonlyStorageTexture:
                     return VK_IMAGE_LAYOUT_GENERAL;
                 case wgpu::TextureUsage::OutputAttachment:
                     if (format.HasDepthOrStencil()) {
@@ -130,7 +142,7 @@ namespace dawn_native { namespace vulkan {
                     } else {
                         return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                     }
-                case wgpu::TextureUsage::Present:
+                case kPresentTextureUsage:
                     return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
                 default:
                     UNREACHABLE();
@@ -149,10 +161,14 @@ namespace dawn_native { namespace vulkan {
             if (usage & (wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst)) {
                 flags |= VK_PIPELINE_STAGE_TRANSFER_BIT;
             }
-            if (usage & (wgpu::TextureUsage::Sampled | wgpu::TextureUsage::Storage)) {
+            if (usage & (wgpu::TextureUsage::Sampled | kReadonlyStorageTexture)) {
                 flags |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
                          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            }
+            if (usage & wgpu::TextureUsage::Storage) {
+                flags |=
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
             }
             if (usage & wgpu::TextureUsage::OutputAttachment) {
                 if (format.HasDepthOrStencil()) {
@@ -164,13 +180,22 @@ namespace dawn_native { namespace vulkan {
                     flags |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
                 }
             }
-            if (usage & wgpu::TextureUsage::Present) {
-                // There is no pipeline stage for present but a pipeline stage is required so we use
-                // "bottom of pipe" to block as little as possible and vkQueuePresentKHR will make
-                // the memory visible to the presentation engine. The spec explicitly mentions that
-                // "bottom of pipe" is ok. On the other direction, synchronization happens with a
-                // semaphore so bottom of pipe is ok too (but maybe it could be "top of pipe" to
-                // block less?)
+            if (usage & kPresentTextureUsage) {
+                // The present usage is only used internally by the swapchain and is never used in
+                // combination with other usages.
+                ASSERT(usage == kPresentTextureUsage);
+                // The Vulkan spec has the following note:
+                //
+                //   When transitioning the image to VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR or
+                //   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, there is no need to delay subsequent
+                //   processing, or perform any visibility operations (as vkQueuePresentKHR performs
+                //   automatic visibility operations). To achieve this, the dstAccessMask member of
+                //   the VkImageMemoryBarrier should be set to 0, and the dstStageMask parameter
+                //   should be set to VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT.
+                //
+                // So on the transition to Present we use the "bottom of pipe" stage. The other
+                // direction doesn't matter because swapchain textures always start a new frame
+                // as uninitialized.
                 flags |= VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
             }
 
@@ -406,11 +431,12 @@ namespace dawn_native { namespace vulkan {
     }
 
     // static
-    ResultOrError<Texture*> Texture::Create(Device* device, const TextureDescriptor* descriptor) {
-        std::unique_ptr<Texture> texture =
-            std::make_unique<Texture>(device, descriptor, TextureState::OwnedInternal);
+    ResultOrError<Ref<TextureBase>> Texture::Create(Device* device,
+                                                    const TextureDescriptor* descriptor) {
+        Ref<Texture> texture =
+            AcquireRef(new Texture(device, descriptor, TextureState::OwnedInternal));
         DAWN_TRY(texture->InitializeAsInternalTexture());
-        return texture.release();
+        return std::move(texture);
     }
 
     // static
@@ -419,10 +445,20 @@ namespace dawn_native { namespace vulkan {
         const ExternalImageDescriptor* descriptor,
         const TextureDescriptor* textureDescriptor,
         external_memory::Service* externalMemoryService) {
-        std::unique_ptr<Texture> texture =
-            std::make_unique<Texture>(device, textureDescriptor, TextureState::OwnedInternal);
+        Ref<Texture> texture =
+            AcquireRef(new Texture(device, textureDescriptor, TextureState::OwnedInternal));
         DAWN_TRY(texture->InitializeFromExternal(descriptor, externalMemoryService));
-        return texture.release();
+        return texture.Detach();
+    }
+
+    // static
+    Ref<Texture> Texture::CreateForSwapChain(Device* device,
+                                             const TextureDescriptor* descriptor,
+                                             VkImage nativeImage) {
+        Ref<Texture> texture =
+            AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal));
+        texture->InitializeForSwapChain(nativeImage);
+        return std::move(texture);
     }
 
     MaybeError Texture::InitializeAsInternalTexture() {
@@ -484,11 +520,6 @@ namespace dawn_native { namespace vulkan {
         return {};
     }
 
-    // With this constructor, the lifetime of the resource is externally managed.
-    Texture::Texture(Device* device, const TextureDescriptor* descriptor, VkImage nativeImage)
-        : TextureBase(device, descriptor, TextureState::OwnedExternal), mHandle(nativeImage) {
-    }
-
     // Internally managed, but imported from external handle
     MaybeError Texture::InitializeFromExternal(const ExternalImageDescriptor* descriptor,
                                                external_memory::Service* externalMemoryService) {
@@ -520,6 +551,10 @@ namespace dawn_native { namespace vulkan {
 
         DAWN_TRY_ASSIGN(mHandle, externalMemoryService->CreateImage(descriptor, baseCreateInfo));
         return {};
+    }
+
+    void Texture::InitializeForSwapChain(VkImage nativeImage) {
+        mHandle = nativeImage;
     }
 
     MaybeError Texture::BindExternalMemory(const ExternalImageDescriptor* descriptor,
@@ -720,10 +755,10 @@ namespace dawn_native { namespace vulkan {
         } else {
             // TODO(natlee@microsoft.com): test compressed textures are cleared
             // create temp buffer with clear color to copy to the texture image
-            uint32_t rowPitch =
+            uint32_t bytesPerRow =
                 Align((GetSize().width / GetFormat().blockWidth) * GetFormat().blockByteSize,
-                      kTextureRowPitchAlignment);
-            uint64_t bufferSize64 = rowPitch * (GetSize().height / GetFormat().blockHeight);
+                      kTextureBytesPerRowAlignment);
+            uint64_t bufferSize64 = bytesPerRow * (GetSize().height / GetFormat().blockHeight);
             if (bufferSize64 > std::numeric_limits<uint32_t>::max()) {
                 return DAWN_OUT_OF_MEMORY_ERROR("Unable to allocate buffer.");
             }
@@ -736,9 +771,9 @@ namespace dawn_native { namespace vulkan {
 
             // compute the buffer image copy to set the clear region of entire texture
             dawn_native::BufferCopy bufferCopy;
-            bufferCopy.imageHeight = 0;
+            bufferCopy.rowsPerImage = 0;
             bufferCopy.offset = uploadHandle.startOffset;
-            bufferCopy.rowPitch = rowPitch;
+            bufferCopy.bytesPerRow = bytesPerRow;
 
             for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
                 Extent3D copySize = GetMipLevelVirtualSize(level);
@@ -803,9 +838,9 @@ namespace dawn_native { namespace vulkan {
     // static
     ResultOrError<TextureView*> TextureView::Create(TextureBase* texture,
                                                     const TextureViewDescriptor* descriptor) {
-        std::unique_ptr<TextureView> view = std::make_unique<TextureView>(texture, descriptor);
+        Ref<TextureView> view = AcquireRef(new TextureView(texture, descriptor));
         DAWN_TRY(view->Initialize(descriptor));
-        return view.release();
+        return view.Detach();
     }
 
     MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {

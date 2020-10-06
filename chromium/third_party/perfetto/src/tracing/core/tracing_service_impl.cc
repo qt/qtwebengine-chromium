@@ -36,12 +36,20 @@
 #include <sys/system_properties.h>
 #endif
 
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
+    PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
+    PERFETTO_BUILDFLAG(PERFETTO_OS_MACOSX)
+#define PERFETTO_HAS_CHMOD
+#include <sys/stat.h>
+#endif
+
 #include <algorithm>
 
 #include "perfetto/base/build_config.h"
 #include "perfetto/base/task_runner.h"
 #include "perfetto/ext/base/file_utils.h"
 #include "perfetto/ext/base/metatrace.h"
+#include "perfetto/ext/base/string_utils.h"
 #include "perfetto/ext/base/utils.h"
 #include "perfetto/ext/base/watchdog.h"
 #include "perfetto/ext/tracing/core/consumer.h"
@@ -54,6 +62,7 @@
 #include "perfetto/protozero/scattered_heap_buffer.h"
 #include "perfetto/protozero/static_buffer.h"
 #include "perfetto/tracing/core/data_source_descriptor.h"
+#include "perfetto/tracing/core/tracing_service_capabilities.h"
 #include "perfetto/tracing/core/tracing_service_state.h"
 #include "src/tracing/core/packet_stream_validator.h"
 #include "src/tracing/core/shared_memory_arbiter_impl.h"
@@ -62,6 +71,7 @@
 #include "protos/perfetto/common/trace_stats.pbzero.h"
 #include "protos/perfetto/config/trace_config.pbzero.h"
 #include "protos/perfetto/trace/clock_snapshot.pbzero.h"
+#include "protos/perfetto/trace/perfetto/tracing_service_event.pbzero.h"
 #include "protos/perfetto/trace/system_info.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
 #include "protos/perfetto/trace/trigger.pbzero.h"
@@ -79,6 +89,7 @@ constexpr base::TimeMillis kSnapshotsInterval(10 * 1000);
 constexpr int kDefaultWriteIntoFilePeriodMs = 5000;
 constexpr int kMaxConcurrentTracingSessions = 15;
 constexpr int kMaxConcurrentTracingSessionsPerUid = 5;
+constexpr int kMaxConcurrentTracingSessionsForStatsdUid = 10;
 constexpr int64_t kMinSecondsBetweenTracesGuardrail = 5 * 60;
 
 constexpr uint32_t kMillisPerHour = 3600000;
@@ -201,6 +212,27 @@ bool NameMatchesFilter(const std::string& name,
                          name, std::regex(regex, std::regex::extended));
                    }) != name_regex_filter.end();
   return filter_matches || filter_regex_matches;
+}
+
+// Used when write_into_file == true and output_path is not empty.
+base::ScopedFile CreateTraceFile(const std::string& path) {
+#if PERFETTO_BUILDFLAG(PERFETTO_ANDROID_BUILD)
+  static const char kBase[] = "/data/misc/perfetto-traces/";
+  if (!base::StartsWith(path, kBase) || path.rfind('/') != strlen(kBase) - 1) {
+    PERFETTO_ELOG("Invalid output_path %s. On Android it must be within %s.",
+                  path.c_str(), kBase);
+    return base::ScopedFile();
+  }
+#endif
+  // O_CREAT | O_EXCL will fail if the file exists already.
+  auto fd = base::OpenFile(path, O_RDWR | O_CREAT | O_EXCL, 0600);
+  if (!fd)
+    PERFETTO_PLOG("Failed to create %s", path.c_str());
+#if defined(PERFETTO_HAS_CHMOD)
+  // Passing 0644 directly above won't work because of umask.
+  PERFETTO_CHECK(fchmod(*fd, 0644) == 0);
+#endif
+  return fd;
 }
 
 }  // namespace
@@ -560,9 +592,15 @@ bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
       [consumer](const decltype(tracing_sessions_)::value_type& s) {
         return s.second.consumer_uid == consumer->uid_;
       });
-  if (sessions_for_uid >= kMaxConcurrentTracingSessionsPerUid) {
-    PERFETTO_ELOG("Too many concurrent tracing sesions (%ld) for uid %d",
-                  sessions_for_uid, static_cast<int>(consumer->uid_));
+
+  int per_uid_limit = kMaxConcurrentTracingSessionsPerUid;
+  if (consumer->uid_ == 1066 /* AID_STATSD*/) {
+    per_uid_limit = kMaxConcurrentTracingSessionsForStatsdUid;
+  }
+  if (sessions_for_uid >= per_uid_limit) {
+    PERFETTO_ELOG(
+        "Too many concurrent tracing sesions (%ld) for uid %d limit is %d",
+        sessions_for_uid, static_cast<int>(consumer->uid_), per_uid_limit);
     return false;
   }
 
@@ -582,11 +620,19 @@ bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
            .first->second;
 
   if (cfg.write_into_file()) {
-    if (!fd) {
+    if (!fd ^ !cfg.output_path().empty()) {
       PERFETTO_ELOG(
-          "The TraceConfig had write_into_file==true but no fd was passed");
+          "When write_into_file==true either a FD needs to be passed or "
+          "output_path must be populated (but not both)");
       tracing_sessions_.erase(tsid);
       return false;
+    }
+    if (!cfg.output_path().empty()) {
+      fd = CreateTraceFile(cfg.output_path());
+      if (!fd) {
+        tracing_sessions_.erase(tsid);
+        return false;
+      }
     }
     tracing_session->write_into_file = std::move(fd);
     uint32_t write_period_ms = cfg.file_write_period_ms();
@@ -935,6 +981,10 @@ void TracingServiceImpl::StartDataSourceInstance(
         *producer, *instance);
   }
   producer->StartDataSource(instance->instance_id, instance->config);
+
+  // If all data sources are started, notify the consumer.
+  if (instance->state == DataSourceInstance::STARTED)
+    MaybeNotifyAllDataSourcesStarted(tracing_session);
 }
 
 // DisableTracing just stops the data sources but doesn't free up any buffer.
@@ -1045,7 +1095,35 @@ void TracingServiceImpl::NotifyDataSourceStarted(
       tracing_session.consumer_maybe_null->OnDataSourceInstanceStateChange(
           *producer, *instance);
     }
+
+    // If all data sources are started, notify the consumer.
+    MaybeNotifyAllDataSourcesStarted(&tracing_session);
   }  // for (tracing_session)
+}
+
+void TracingServiceImpl::MaybeNotifyAllDataSourcesStarted(
+    TracingSession* tracing_session) {
+  if (!tracing_session->consumer_maybe_null)
+    return;
+
+  if (!tracing_session->AllDataSourceInstancesStarted())
+    return;
+
+  // In some rare cases, we can get in this state more than once. Consider the
+  // following scenario: 3 data sources are registered -> trace starts ->
+  // all 3 data sources ack -> OnAllDataSourcesStarted() is called.
+  // Imagine now that a 4th data source registers while the trace is ongoing.
+  // This would hit the AllDataSourceInstancesStarted() condition again.
+  // In this case, however, we don't want to re-notify the consumer again.
+  // That would be unexpected (even if, perhaps, technically correct) and
+  // trigger bugs in the consumer.
+  if (tracing_session->did_notify_all_data_source_started)
+    return;
+
+  PERFETTO_DLOG("All data sources started");
+  tracing_session->did_notify_all_data_source_started = true;
+  tracing_session->time_all_data_source_started = base::GetBootTimeNs();
+  tracing_session->consumer_maybe_null->OnAllDataSourcesStarted();
 }
 
 void TracingServiceImpl::NotifyDataSourceStopped(
@@ -1628,6 +1706,8 @@ bool TracingServiceImpl::ReadBuffers(TracingSessionID tsid,
   }
   if (!tracing_session->config.builtin_data_sources().disable_system_info())
     MaybeEmitSystemInfo(tracing_session, &packets);
+  if (!tracing_session->config.builtin_data_sources().disable_service_events())
+    MaybeEmitServiceEvents(tracing_session, &packets);
 
   size_t packets_bytes = 0;  // SUM(slice.size() for each slice in |packets|).
   size_t total_slices = 0;   // SUM(#slices in |packets|).
@@ -1938,6 +2018,7 @@ void TracingServiceImpl::UnregisterDataSource(ProducerID producer_id,
   PERFETTO_DCHECK(producer);
   for (auto& kv : tracing_sessions_) {
     auto& ds_instances = kv.second.data_source_instances;
+    bool removed = false;
     for (auto it = ds_instances.begin(); it != ds_instances.end();) {
       if (it->first == producer_id && it->second.data_source_name == name) {
         DataSourceInstanceID ds_inst_id = it->second.instance_id;
@@ -1951,11 +2032,14 @@ void TracingServiceImpl::UnregisterDataSource(ProducerID producer_id,
             NotifyDataSourceStopped(producer_id, ds_inst_id);
         }
         it = ds_instances.erase(it);
+        removed = true;
       } else {
         ++it;
       }
     }  // for (data_source_instances)
-  }    // for (tracing_session)
+    if (removed)
+      MaybeNotifyAllDataSourcesStarted(&kv.second);
+  }  // for (tracing_session)
 
   for (auto it = data_sources_.begin(); it != data_sources_.end(); ++it) {
     if (it->second.producer_id == producer_id &&
@@ -2469,10 +2553,26 @@ void TracingServiceImpl::MaybeEmitSystemInfo(
   } else {
     PERFETTO_ELOG("Unable to read ro.build.fingerprint");
   }
+  info->set_hz(sysconf(_SC_CLK_TCK));
 #endif  // PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID)
   packet->set_trusted_uid(static_cast<int32_t>(uid_));
   packet->set_trusted_packet_sequence_id(kServicePacketSequenceID);
   SerializeAndAppendPacket(packets, packet.SerializeAsArray());
+}
+
+void TracingServiceImpl::MaybeEmitServiceEvents(
+    TracingSession* tracing_session,
+    std::vector<TracePacket>* packets) {
+  int64_t all_start_ns = tracing_session->time_all_data_source_started.count();
+  if (!tracing_session->did_emit_all_data_source_started && all_start_ns > 0) {
+    tracing_session->did_emit_all_data_source_started = true;
+    protozero::HeapBuffered<protos::pbzero::TracePacket> packet;
+    packet->set_timestamp(static_cast<uint64_t>(all_start_ns));
+    packet->set_trusted_uid(static_cast<int32_t>(uid_));
+    packet->set_trusted_packet_sequence_id(kServicePacketSequenceID);
+    packet->set_service_event()->set_all_data_sources_started(true);
+    SerializeAndAppendPacket(packets, packet.SerializeAsArray());
+  }
 }
 
 void TracingServiceImpl::MaybeEmitReceivedTriggers(
@@ -2655,6 +2755,13 @@ void TracingServiceImpl::ConsumerEndpointImpl::ObserveEvents(
       OnDataSourceInstanceStateChange(*producer, kv.second);
     }
   }
+
+  // If the ObserveEvents() call happens after data sources have acked already
+  // notify immediately.
+  if (observable_events_mask_ &
+      ObservableEvents::TYPE_ALL_DATA_SOURCES_STARTED) {
+    service_->MaybeNotifyAllDataSourcesStarted(session);
+  }
 }
 
 void TracingServiceImpl::ConsumerEndpointImpl::OnDataSourceInstanceStateChange(
@@ -2680,6 +2787,15 @@ void TracingServiceImpl::ConsumerEndpointImpl::OnDataSourceInstanceStateChange(
   } else {
     change->set_state(ObservableEvents::DATA_SOURCE_INSTANCE_STATE_STOPPED);
   }
+}
+
+void TracingServiceImpl::ConsumerEndpointImpl::OnAllDataSourcesStarted() {
+  if (!(observable_events_mask_ &
+        ObservableEvents::TYPE_ALL_DATA_SOURCES_STARTED)) {
+    return;
+  }
+  auto* observable_events = AddObservableEvents();
+  observable_events->set_all_data_sources_started(true);
 }
 
 base::WeakPtr<TracingServiceImpl::ConsumerEndpointImpl>
@@ -2736,6 +2852,20 @@ void TracingServiceImpl::ConsumerEndpointImpl::QueryServiceState(
   callback(/*success=*/true, svc_state);
 }
 
+void TracingServiceImpl::ConsumerEndpointImpl::QueryCapabilities(
+    QueryCapabilitiesCallback callback) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  TracingServiceCapabilities caps;
+  caps.set_has_query_capabilities(true);
+  caps.set_has_trace_config_output_path(true);
+  caps.add_observable_events(ObservableEvents::TYPE_DATA_SOURCES_INSTANCES);
+  caps.add_observable_events(ObservableEvents::TYPE_ALL_DATA_SOURCES_STARTED);
+  static_assert(ObservableEvents::Type_MAX ==
+                    ObservableEvents::TYPE_ALL_DATA_SOURCES_STARTED,
+                "");
+  callback(caps);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // TracingServiceImpl::ProducerEndpointImpl implementation
 ////////////////////////////////////////////////////////////////////////////////
@@ -2785,7 +2915,6 @@ void TracingServiceImpl::ProducerEndpointImpl::RegisterTraceWriter(
     uint32_t writer_id,
     uint32_t target_buffer) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
-  PERFETTO_DCHECK(!buffer_id_for_writer(static_cast<WriterID>(writer_id)));
   writers_[static_cast<WriterID>(writer_id)] =
       static_cast<BufferID>(target_buffer);
 }
@@ -2793,7 +2922,6 @@ void TracingServiceImpl::ProducerEndpointImpl::RegisterTraceWriter(
 void TracingServiceImpl::ProducerEndpointImpl::UnregisterTraceWriter(
     uint32_t writer_id) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
-  PERFETTO_DCHECK(buffer_id_for_writer(static_cast<WriterID>(writer_id)));
   writers_.erase(static_cast<WriterID>(writer_id));
 }
 
@@ -3021,6 +3149,11 @@ void TracingServiceImpl::ProducerEndpointImpl::ClearIncrementalState(
                                                   data_sources.size());
     }
   });
+}
+
+void TracingServiceImpl::ProducerEndpointImpl::Sync(
+    std::function<void()> callback) {
+  task_runner_->PostTask(callback);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

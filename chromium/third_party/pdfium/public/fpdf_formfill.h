@@ -579,8 +579,8 @@ typedef struct _FPDF_FORMFILLINFO {
    *       action, the implementation needs to load the page.
    */
   FPDF_PAGE (*FFI_GetPage)(struct _FPDF_FORMFILLINFO* pThis,
-                             FPDF_DOCUMENT document,
-                             int nPageIndex);
+                           FPDF_DOCUMENT document,
+                           int nPageIndex);
 
   /*
    * Method: FFI_GetCurrentPage
@@ -588,18 +588,19 @@ typedef struct _FPDF_FORMFILLINFO {
    * Interface Version:
    *       1
    * Implementation Required:
-   *       yes
+   *       Yes when V8 support is present, otherwise unused.
    * Parameters:
    *       pThis       -   Pointer to the interface structure itself.
    *       document    -   Handle to document. Returned by FPDF_LoadDocument().
    * Return value:
    *       Handle to the page. Returned by FPDF_LoadPage().
    * Comments:
-   *       The implementation is expected to keep track of the current page,
-   *       e.g. the current page can be the one that is most visible on screen.
+   *       PDFium doesn't keep keep track of the "current page" (e.g. the one
+   *       that is most visible on screen), so it must ask the embedder for
+   *       this information.
    */
   FPDF_PAGE (*FFI_GetCurrentPage)(struct _FPDF_FORMFILLINFO* pThis,
-                                    FPDF_DOCUMENT document);
+                                  FPDF_DOCUMENT document);
 
   /*
    * Method: FFI_GetRotation
@@ -680,6 +681,10 @@ typedef struct _FPDF_FORMFILLINFO {
    * Return value:
    *       None.
    * Comments:
+   *       If the embedder is version 2 or higher and have implementation for
+   *       FFI_DoURIActionWithKeyboardModifier, then
+   *       FFI_DoURIActionWithKeyboardModifier takes precedence over
+   *       FFI_DoURIAction.
    *       See the URI actions description of <<PDF Reference, version 1.7>>
    *       for more details.
    */
@@ -1075,9 +1080,9 @@ typedef struct _FPDF_FORMFILLINFO {
    *       TRUE indicates success, otherwise FALSE.
    */
   FPDF_BOOL (*FFI_PutRequestURL)(struct _FPDF_FORMFILLINFO* pThis,
-                                   FPDF_WIDESTRING wsURL,
-                                   FPDF_WIDESTRING wsData,
-                                   FPDF_WIDESTRING wsEncode);
+                                 FPDF_WIDESTRING wsURL,
+                                 FPDF_WIDESTRING wsData,
+                                 FPDF_WIDESTRING wsEncode);
 
   /*
    * Method: FFI_OnFocusChange
@@ -1102,6 +1107,32 @@ typedef struct _FPDF_FORMFILLINFO {
   void (*FFI_OnFocusChange)(struct _FPDF_FORMFILLINFO* param,
                             FPDF_ANNOTATION annot,
                             int page_index);
+
+  /**
+   * Method: FFI_DoURIActionWithKeyboardModifier
+   *       Ask the implementation to navigate to a uniform resource identifier
+   *       with the specified modifiers.
+   * Interface Version:
+   *       Ignored if |version| < 2.
+   * Implementation Required:
+   *       No
+   * Parameters:
+   *       param           -   Pointer to the interface structure itself.
+   *       uri             -   A byte string which indicates the uniform
+   *                           resource identifier, terminated by 0.
+   *       modifiers       -   Keyboard modifier that indicates which of
+   *                           the virtual keys are down, if any.
+   * Return value:
+   *       None.
+   * Comments:
+   *       If the embedder who is version 2 and does not implement this API,
+   *       then a call will be redirected to FFI_DoURIAction.
+   *       See the URI actions description of <<PDF Reference, version 1.7>>
+   *       for more details.
+   */
+  void(*FFI_DoURIActionWithKeyboardModifier)(struct _FPDF_FORMFILLINFO* param,
+      FPDF_BYTESTRING uri,
+      int modifiers);
 } FPDF_FORMFILLINFO;
 
 /*
@@ -1272,6 +1303,39 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnMouseMove(FPDF_FORMHANDLE hHandle,
                                                      double page_y);
 
 /*
+ * Experimental API
+ * Function: FORM_OnMouseWheel
+ *       Call this member function when the user scrolls the mouse wheel.
+ * Parameters:
+ *       hHandle     -   Handle to the form fill module, as returned by
+ *                       FPDFDOC_InitFormFillEnvironment().
+ *       page        -   Handle to the page, as returned by FPDF_LoadPage().
+ *       modifier    -   Indicates whether various virtual keys are down.
+ *       page_coord  -   Specifies the coordinates of the cursor in PDF user
+ *                       space.
+ *       delta_x     -   Specifies the amount of wheel movement on the x-axis,
+ *                       in units of platform-agnostic wheel deltas. Negative
+ *                       values mean left.
+ *       delta_y     -   Specifies the amount of wheel movement on the y-axis,
+ *                       in units of platform-agnostic wheel deltas. Negative
+ *                       values mean down.
+ * Return Value:
+ *       True indicates success; otherwise false.
+ * Comments:
+ *       For |delta_x| and |delta_y|, the caller must normalize
+ *       platform-specific wheel deltas. e.g. On Windows, a delta value of 240
+ *       for a WM_MOUSEWHEEL event normalizes to 2, since Windows defines
+ *       WHEEL_DELTA as 120.
+ */
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnMouseWheel(
+    FPDF_FORMHANDLE hHandle,
+    FPDF_PAGE page,
+    int modifier,
+    const FS_POINTF* page_coord,
+    int delta_x,
+    int delta_y);
+
+/*
  * Function: FORM_OnFocus
  *       This function focuses the form annotation at a given point. If the
  *       annotation at the point already has focus, nothing happens. If there
@@ -1299,7 +1363,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnFocus(FPDF_FORMHANDLE hHandle,
  *       Call this member function when the user presses the left
  *       mouse button.
  * Parameters:
- *       hHandle     -   Handle to the form fill module. as returned by
+ *       hHandle     -   Handle to the form fill module, as returned by
  *                       FPDFDOC_InitFormFillEnvironment().
  *       page        -   Handle to the page, as returned by FPDF_LoadPage().
  *       modifier    -   Indicates whether various virtual keys are down.
@@ -1335,7 +1399,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_OnRButtonDown(FPDF_FORMHANDLE hHandle,
  * Parameters:
  *       hHandle     -   Handle to the form fill module, as returned by
  *                       FPDFDOC_InitFormFillEnvironment().
- *       page        -   Handle to the page. as returned by FPDF_LoadPage().
+ *       page        -   Handle to the page, as returned by FPDF_LoadPage().
  *       modifier    -   Indicates whether various virtual keys are down.
  *       page_x      -   Specifies the x-coordinate of the cursor in device.
  *       page_y      -   Specifies the y-coordinate of the cursor in device.
@@ -1536,7 +1600,7 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FORM_CanRedo(FPDF_FORMHANDLE hHandle,
  * Function: FORM_Undo
  *       Make the current focussed widget perform an undo operation.
  * Parameters:
- *       hHandle     -   Handle to the form fill module. as returned by
+ *       hHandle     -   Handle to the form fill module, as returned by
  *                       FPDFDOC_InitFormFillEnvironment().
  *       page        -   Handle to the page, as returned by FPDF_LoadPage().
  * Return Value:
@@ -1606,7 +1670,6 @@ FORM_GetFocusedAnnot(FPDF_FORMHANDLE handle,
  * Parameters:
  *       handle      -   Handle to the form fill module, as returned by
  *                       FPDFDOC_InitFormFillEnvironment().
- *       page        -   Handle to a page.
  *       annot       -   Handle to an annotation.
  * Return Value:
  *       True indicates success; otherwise false.
@@ -1615,9 +1678,7 @@ FORM_GetFocusedAnnot(FPDF_FORMHANDLE handle,
  *       instead.
  */
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
-FORM_SetFocusedAnnot(FPDF_FORMHANDLE handle,
-                     FPDF_PAGE page,
-                     FPDF_ANNOTATION annot);
+FORM_SetFocusedAnnot(FPDF_FORMHANDLE handle, FPDF_ANNOTATION annot);
 
 // Form Field Types
 // The names of the defines are stable, but the specific values associated with

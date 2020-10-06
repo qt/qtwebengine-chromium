@@ -52,14 +52,7 @@ bool SetupProcessor::State::operator==(const State &state) const
 
 SetupProcessor::SetupProcessor()
 {
-	routineCache = nullptr;
 	setRoutineCacheSize(1024);
-}
-
-SetupProcessor::~SetupProcessor()
-{
-	delete routineCache;
-	routineCache = nullptr;
 }
 
 SetupProcessor::State SetupProcessor::update(const sw::Context *context) const
@@ -72,6 +65,7 @@ SetupProcessor::State SetupProcessor::update(const sw::Context *context) const
 	state.isDrawLine = context->isDrawLine(true);
 	state.isDrawTriangle = context->isDrawTriangle(true);
 	state.applySlopeDepthBias = context->isDrawTriangle(false) && (context->slopeDepthBias != 0.0f);
+	state.applyDepthBiasClamp = context->isDrawTriangle(false) && (context->depthBiasClamp != 0.0f);
 	state.interpolateZ = context->depthBufferActive() || vPosZW;
 	state.interpolateW = context->pixelShader != nullptr;
 	state.frontFace = context->frontFace;
@@ -100,7 +94,7 @@ SetupProcessor::State SetupProcessor::update(const sw::Context *context) const
 
 SetupProcessor::RoutineType SetupProcessor::routine(const State &state)
 {
-	auto routine = routineCache->query(state);
+	auto routine = routineCache->lookup(state);
 
 	if(!routine)
 	{
@@ -117,8 +111,7 @@ SetupProcessor::RoutineType SetupProcessor::routine(const State &state)
 
 void SetupProcessor::setRoutineCacheSize(int cacheSize)
 {
-	delete routineCache;
-	routineCache = new RoutineCacheType(clamp(cacheSize, 1, 65536));
+	routineCache = std::make_unique<RoutineCacheType>(clamp(cacheSize, 1, 65536));
 }
 
 }  // namespace sw

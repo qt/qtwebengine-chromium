@@ -15,7 +15,7 @@
 #ifndef VK_PHYSICAL_DEVICE_HPP_
 #define VK_PHYSICAL_DEVICE_HPP_
 
-#include "VkFormat.h"
+#include "VkFormat.hpp"
 #include "VkObject.hpp"
 
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
@@ -45,6 +45,7 @@ public:
 	void getFeatures(VkPhysicalDeviceLineRasterizationFeaturesEXT *features) const;
 	void getFeatures(VkPhysicalDeviceSeparateDepthStencilLayoutsFeaturesKHR *features) const;
 	void getFeatures(VkPhysicalDeviceProvokingVertexFeaturesEXT *features) const;
+	void getFeatures(VkPhysicalDeviceImageRobustnessFeaturesEXT *features) const;
 	bool hasFeatures(const VkPhysicalDeviceFeatures &requestedFeatures) const;
 
 	const VkPhysicalDeviceProperties &getProperties() const;

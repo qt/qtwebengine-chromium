@@ -40,7 +40,6 @@
 #include "src/gpu/GrStencilClip.h"
 #include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/GrUserStencilSettings.h"
-#include "src/gpu/effects/GrTextureDomain.h"
 #include "src/gpu/effects/generated/GrDeviceSpaceEffect.h"
 #include "tools/ToolUtils.h"
 
@@ -163,12 +162,6 @@ class MaskOnlyClipBase : public GrClip {
 private:
     bool quickContains(const SkRect&) const final { return false; }
     bool isRRect(const SkRect& rtBounds, SkRRect* rr, GrAA*) const final { return false; }
-    void getConservativeBounds(int width, int height, SkIRect* rect, bool* iior) const final {
-        rect->setWH(width, height);
-        if (iior) {
-            *iior = false;
-        }
-    }
 };
 
 /**
@@ -267,6 +260,12 @@ void WindowRectanglesMaskGM::visualizeAlphaMask(GrContext* ctx, GrRenderTargetCo
 void WindowRectanglesMaskGM::visualizeStencilMask(GrContext* ctx, GrRenderTargetContext* rtc,
                                                   const GrReducedClip& reducedClip,
                                                   GrPaint&& paint) {
+    if (ctx->abandoned()) {
+        // GrReducedClip assumes the context hasn't been abandoned, which is reasonable since it is
+        // only ever used if a draw op is made. Since this GM calls it directly, it has to be taken
+        // into account.
+        return;
+    }
     // Draw a checker pattern into the stencil buffer so we can visualize the regions left untouched
     // by the clip mask generation.
     this->stencilCheckerboard(rtc, false);

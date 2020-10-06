@@ -8,7 +8,7 @@
 #include <sstream>
 #include <thread>  // NOLINT
 
-#include "util/logging.h"
+#include "util/osp_logging.h"
 #include "util/trace_logging.h"
 
 namespace openscreen {
@@ -135,8 +135,6 @@ bool Decoder::Initialize() {
   // warnings about too many encode threads. FFMPEG's VP8 implementation
   // actually silently freezes if this is 10 or more. Thus, 8 is used for the
   // max here, just to be safe.
-  //
-  // TODO(jophba): determine a better number after running benchmarking.
   context_->thread_count =
       std::min(std::max<int>(std::thread::hardware_concurrency(), 1), 8);
   const int open_result = avcodec_open2(context_.get(), codec_, nullptr);

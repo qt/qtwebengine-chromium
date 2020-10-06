@@ -88,6 +88,10 @@ class Function {
   // Returns the entry basic block for this function.
   const std::unique_ptr<BasicBlock>& entry() const { return blocks_.front(); }
 
+  // Returns the last basic block in this function.
+  BasicBlock* tail() { return blocks_.back().get(); }
+  const BasicBlock* tail() const { return blocks_.back().get(); }
+
   iterator begin() { return iterator(&blocks_, blocks_.begin()); }
   iterator end() { return iterator(&blocks_, blocks_.end()); }
   const_iterator begin() const { return cbegin(); }
@@ -192,13 +196,13 @@ inline void Function::AddBasicBlocks(T src_begin, T src_end, iterator ip) {
 }
 
 inline void Function::MoveBasicBlockToAfter(uint32_t id, BasicBlock* ip) {
-  auto block_to_move = std::move(*FindBlock(id).Get());
+  std::unique_ptr<BasicBlock> block_to_move = std::move(*FindBlock(id).Get());
+  blocks_.erase(std::find(std::begin(blocks_), std::end(blocks_), nullptr));
 
   assert(block_to_move->GetParent() == ip->GetParent() &&
          "Both blocks have to be in the same function.");
 
   InsertBasicBlockAfter(std::move(block_to_move), ip);
-  blocks_.erase(std::find(std::begin(blocks_), std::end(blocks_), nullptr));
 }
 
 inline void Function::RemoveEmptyBlocks() {

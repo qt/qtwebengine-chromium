@@ -65,7 +65,7 @@ void GrOpsRenderPass::bindPipeline(const GrProgramInfo& programInfo, const SkRec
     // place (i.e., the target renderTargetProxy) they had best agree.
     SkASSERT(programInfo.origin() == fOrigin);
     if (programInfo.primProc().hasInstanceAttributes()) {
-         SkASSERT(this->gpu()->caps()->instanceAttribSupport());
+         SkASSERT(this->gpu()->caps()->drawInstancedSupport());
     }
     if (programInfo.pipeline().usesConservativeRaster()) {
         SkASSERT(this->gpu()->caps()->conservativeRasterSupport());
@@ -76,6 +76,15 @@ void GrOpsRenderPass::bindPipeline(const GrProgramInfo& programInfo, const SkRec
     }
     if (programInfo.pipeline().isWireframe()) {
          SkASSERT(this->gpu()->caps()->wireframeSupport());
+    }
+    if (this->gpu()->caps()->twoSidedStencilRefsAndMasksMustMatch() &&
+        programInfo.pipeline().isStencilEnabled()) {
+        const GrUserStencilSettings* stencil = programInfo.pipeline().getUserStencil();
+        if (stencil->isTwoSided(programInfo.pipeline().hasStencilClip())) {
+            SkASSERT(stencil->fCCWFace.fRef == stencil->fCWFace.fRef);
+            SkASSERT(stencil->fCCWFace.fTestMask == stencil->fCWFace.fTestMask);
+            SkASSERT(stencil->fCCWFace.fWriteMask == stencil->fCWFace.fWriteMask);
+        }
     }
     if (GrPrimitiveType::kPatches == programInfo.primitiveType()) {
         SkASSERT(this->gpu()->caps()->shaderCaps()->tessellationSupport());
@@ -243,6 +252,7 @@ void GrOpsRenderPass::drawIndexed(int indexCount, int baseIndex, uint16_t minInd
 
 void GrOpsRenderPass::drawInstanced(int instanceCount, int baseInstance, int vertexCount,
                                     int baseVertex) {
+    SkASSERT(this->gpu()->caps()->drawInstancedSupport());
     if (!this->prepareToDraw()) {
         return;
     }
@@ -254,6 +264,7 @@ void GrOpsRenderPass::drawInstanced(int instanceCount, int baseInstance, int ver
 
 void GrOpsRenderPass::drawIndexedInstanced(int indexCount, int baseIndex, int instanceCount,
                                            int baseInstance, int baseVertex) {
+    SkASSERT(this->gpu()->caps()->drawInstancedSupport());
     if (!this->prepareToDraw()) {
         return;
     }
@@ -261,6 +272,61 @@ void GrOpsRenderPass::drawIndexedInstanced(int indexCount, int baseIndex, int in
     SkASSERT(DynamicStateStatus::kUninitialized != fInstanceBufferStatus);
     SkASSERT(DynamicStateStatus::kUninitialized != fVertexBufferStatus);
     this->onDrawIndexedInstanced(indexCount, baseIndex, instanceCount, baseInstance, baseVertex);
+}
+
+void GrOpsRenderPass::drawIndirect(const GrBuffer* drawIndirectBuffer, size_t bufferOffset,
+                                   int drawCount) {
+    SkASSERT(this->gpu()->caps()->drawInstancedSupport());
+    SkASSERT(drawIndirectBuffer->isCpuBuffer() ||
+             !static_cast<const GrGpuBuffer*>(drawIndirectBuffer)->isMapped());
+    if (!this->prepareToDraw()) {
+        return;
+    }
+    SkASSERT(!fHasIndexBuffer);
+    SkASSERT(DynamicStateStatus::kUninitialized != fInstanceBufferStatus);
+    SkASSERT(DynamicStateStatus::kUninitialized != fVertexBufferStatus);
+    if (!this->gpu()->caps()->nativeDrawIndirectSupport()) {
+        // Polyfill indirect draws with looping instanced calls.
+        SkASSERT(drawIndirectBuffer->isCpuBuffer());
+        auto cpuIndirectBuffer = static_cast<const GrCpuBuffer*>(drawIndirectBuffer);
+        auto cmd = reinterpret_cast<const GrDrawIndirectCommand*>(
+                cpuIndirectBuffer->data() + bufferOffset);
+        auto end = cmd + drawCount;
+        for (; cmd != end; ++cmd) {
+            this->onDrawInstanced(cmd->fInstanceCount, cmd->fBaseInstance, cmd->fVertexCount,
+                                  cmd->fBaseVertex);
+        }
+        return;
+    }
+    this->onDrawIndirect(drawIndirectBuffer, bufferOffset, drawCount);
+}
+
+void GrOpsRenderPass::drawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t bufferOffset,
+                                          int drawCount) {
+    SkASSERT(this->gpu()->caps()->drawInstancedSupport());
+    SkASSERT(drawIndirectBuffer->isCpuBuffer() ||
+             !static_cast<const GrGpuBuffer*>(drawIndirectBuffer)->isMapped());
+    if (!this->prepareToDraw()) {
+        return;
+    }
+    SkASSERT(fHasIndexBuffer);
+    SkASSERT(DynamicStateStatus::kUninitialized != fInstanceBufferStatus);
+    SkASSERT(DynamicStateStatus::kUninitialized != fVertexBufferStatus);
+    if (!this->gpu()->caps()->nativeDrawIndirectSupport() ||
+        this->gpu()->caps()->nativeDrawIndexedIndirectIsBroken()) {
+        // Polyfill indexedIndirect draws with looping indexedInstanced calls.
+        SkASSERT(drawIndirectBuffer->isCpuBuffer());
+        auto cpuIndirectBuffer = static_cast<const GrCpuBuffer*>(drawIndirectBuffer);
+        auto cmd = reinterpret_cast<const GrDrawIndexedIndirectCommand*>(
+                cpuIndirectBuffer->data() + bufferOffset);
+        auto end = cmd + drawCount;
+        for (; cmd != end; ++cmd) {
+            this->onDrawIndexedInstanced(cmd->fIndexCount, cmd->fBaseIndex, cmd->fInstanceCount,
+                                         cmd->fBaseInstance, cmd->fBaseVertex);
+        }
+        return;
+    }
+    this->onDrawIndexedIndirect(drawIndirectBuffer, bufferOffset, drawCount);
 }
 
 void GrOpsRenderPass::drawIndexPattern(int patternIndexCount, int patternRepeatCount,

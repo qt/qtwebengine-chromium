@@ -280,13 +280,18 @@ SIT T max(const Vec<1,T>& x) { return x.val; }
 
 SIT Vec<1,T> min(const Vec<1,T>& x, const Vec<1,T>& y) { return std::min(x.val, y.val); }
 SIT Vec<1,T> max(const Vec<1,T>& x, const Vec<1,T>& y) { return std::max(x.val, y.val); }
+SIT Vec<1,T> pow(const Vec<1,T>& x, const Vec<1,T>& y) { return std::pow(x.val, y.val); }
 
+SIT Vec<1,T>  atan(const Vec<1,T>& x) { return std:: atan(x.val); }
 SIT Vec<1,T>  ceil(const Vec<1,T>& x) { return std:: ceil(x.val); }
 SIT Vec<1,T> floor(const Vec<1,T>& x) { return std::floor(x.val); }
 SIT Vec<1,T> trunc(const Vec<1,T>& x) { return std::trunc(x.val); }
 SIT Vec<1,T> round(const Vec<1,T>& x) { return std::round(x.val); }
 SIT Vec<1,T>  sqrt(const Vec<1,T>& x) { return std:: sqrt(x.val); }
 SIT Vec<1,T>   abs(const Vec<1,T>& x) { return std::  abs(x.val); }
+SIT Vec<1,T>   sin(const Vec<1,T>& x) { return std::  sin(x.val); }
+SIT Vec<1,T>   cos(const Vec<1,T>& x) { return std::  cos(x.val); }
+SIT Vec<1,T>   tan(const Vec<1,T>& x) { return std::  tan(x.val); }
 
 SIT Vec<1,int> lrint(const Vec<1,T>& x) { return (int)std::lrint(x.val); }
 
@@ -310,13 +315,18 @@ SINT T max(const Vec<N,T>& x) { return std::max(max(x.lo), max(x.hi)); }
 
 SINT Vec<N,T> min(const Vec<N,T>& x, const Vec<N,T>& y) { return join(min(x.lo, y.lo), min(x.hi, y.hi)); }
 SINT Vec<N,T> max(const Vec<N,T>& x, const Vec<N,T>& y) { return join(max(x.lo, y.lo), max(x.hi, y.hi)); }
+SINT Vec<N,T> pow(const Vec<N,T>& x, const Vec<N,T>& y) { return join(pow(x.lo, y.lo), pow(x.hi, y.hi)); }
 
+SINT Vec<N,T>  atan(const Vec<N,T>& x) { return join( atan(x.lo),  atan(x.hi)); }
 SINT Vec<N,T>  ceil(const Vec<N,T>& x) { return join( ceil(x.lo),  ceil(x.hi)); }
 SINT Vec<N,T> floor(const Vec<N,T>& x) { return join(floor(x.lo), floor(x.hi)); }
 SINT Vec<N,T> trunc(const Vec<N,T>& x) { return join(trunc(x.lo), trunc(x.hi)); }
 SINT Vec<N,T> round(const Vec<N,T>& x) { return join(round(x.lo), round(x.hi)); }
 SINT Vec<N,T>  sqrt(const Vec<N,T>& x) { return join( sqrt(x.lo),  sqrt(x.hi)); }
 SINT Vec<N,T>   abs(const Vec<N,T>& x) { return join(  abs(x.lo),   abs(x.hi)); }
+SINT Vec<N,T>   sin(const Vec<N,T>& x) { return join(  sin(x.lo),   sin(x.hi)); }
+SINT Vec<N,T>   cos(const Vec<N,T>& x) { return join(  cos(x.lo),   cos(x.hi)); }
+SINT Vec<N,T>   tan(const Vec<N,T>& x) { return join(  tan(x.lo),   tan(x.hi)); }
 
 SINT Vec<N,int> lrint(const Vec<N,T>& x) { return join(lrint(x.lo), lrint(x.hi)); }
 
@@ -343,6 +353,7 @@ SINTU Vec<N,M<T>> operator< (U x, const Vec<N,T>& y) { return Vec<N,T>(x) <  y; 
 SINTU Vec<N,M<T>> operator> (U x, const Vec<N,T>& y) { return Vec<N,T>(x) >  y; }
 SINTU Vec<N,T>           min(U x, const Vec<N,T>& y) { return min(Vec<N,T>(x), y); }
 SINTU Vec<N,T>           max(U x, const Vec<N,T>& y) { return max(Vec<N,T>(x), y); }
+SINTU Vec<N,T>           pow(U x, const Vec<N,T>& y) { return pow(Vec<N,T>(x), y); }
 
 // ... and same deal for vector/scalar operations.
 SINTU Vec<N,T>    operator+ (const Vec<N,T>& x, U y) { return x +  Vec<N,T>(y); }
@@ -360,6 +371,7 @@ SINTU Vec<N,M<T>> operator< (const Vec<N,T>& x, U y) { return x <  Vec<N,T>(y); 
 SINTU Vec<N,M<T>> operator> (const Vec<N,T>& x, U y) { return x >  Vec<N,T>(y); }
 SINTU Vec<N,T>           min(const Vec<N,T>& x, U y) { return min(x, Vec<N,T>(y)); }
 SINTU Vec<N,T>           max(const Vec<N,T>& x, U y) { return max(x, Vec<N,T>(y)); }
+SINTU Vec<N,T>           pow(const Vec<N,T>& x, U y) { return pow(x, Vec<N,T>(y)); }
 
 // All vector/scalar combinations for mad() with at least one vector.
 SINTU Vec<N,T> mad(U f, const Vec<N,T>& m, const Vec<N,T>& a) { return Vec<N,T>(f)*m + a; }
@@ -433,6 +445,12 @@ static inline Vec<N,float> fma(const Vec<N,float>& x,
     return join(fma(x.lo, y.lo, z.lo),
                 fma(x.hi, y.hi, z.hi));
 }
+
+template <int N>
+static inline Vec<N,float> fract(const Vec<N,float>& x) {
+    return x - floor(x);
+}
+
 
 // div255(x) = (x + 127) / 255 is a bit-exact rounding divide-by-255, packing down to 8-bit.
 template <int N>

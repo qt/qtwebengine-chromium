@@ -8,27 +8,24 @@
 #include "include/core/SkColorFilter.h"
 #include "include/gpu/GrContext.h"
 #include "include/private/SkTemplates.h"
+#include "src/codec/SkMasks.h"
+#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkMaskFilterBase.h"
+#include "src/core/SkMatrixProvider.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/gpu/GrBlurUtils.h"
 #include "src/gpu/GrClip.h"
 #include "src/gpu/GrStyle.h"
-#include "src/gpu/geometry/GrShape.h"
+#include "src/gpu/geometry/GrStyledShape.h"
 #include "src/gpu/ops/GrAtlasTextOp.h"
 #include "src/gpu/text/GrAtlasManager.h"
+#include "src/gpu/text/GrStrikeCache.h"
 #include "src/gpu/text/GrTextBlob.h"
 #include "src/gpu/text/GrTextTarget.h"
 
 #include <cstddef>
 #include <new>
 
-static SkMatrix make_inverse(const SkMatrix& matrix) {
-    SkMatrix inverseMatrix;
-    if (!matrix.invert(&inverseMatrix)) {
-        inverseMatrix = SkMatrix::I();
-    }
-    return inverseMatrix;
-}
 
 // -- GrTextBlob::Key ------------------------------------------------------------------------------
 GrTextBlob::Key::Key() { sk_bzero(this, sizeof(Key)); }
@@ -44,16 +41,14 @@ GrTextBlob::PathGlyph::PathGlyph(const SkPath& path, SkPoint origin)
 
 // -- GrTextBlob::SubRun ---------------------------------------------------------------------------
 GrTextBlob::SubRun::SubRun(SubRunType type, GrTextBlob* textBlob, const SkStrikeSpec& strikeSpec,
-                           GrMaskFormat format,
-                           const SkSpan<GrGlyph*>& glyphs, const SkSpan<char>& vertexData,
-                           sk_sp<GrTextStrike>&& grStrike)
+                           GrMaskFormat format, const SkSpan<PackedGlyphIDorGrGlyph>& glyphs,
+                           const SkSpan<char>& vertexData)
         : fType{type}
         , fBlob{textBlob}
         , fMaskFormat{format}
         , fGlyphs{glyphs}
         , fVertexData{vertexData}
         , fStrikeSpec{strikeSpec}
-        , fStrike{grStrike}
         , fCurrentColor{textBlob->fColor}
         , fCurrentOrigin{textBlob->fInitialOrigin}
         , fCurrentMatrix{textBlob->fInitialMatrix} {
@@ -65,15 +60,13 @@ GrTextBlob::SubRun::SubRun(GrTextBlob* textBlob, const SkStrikeSpec& strikeSpec)
         : fType{kTransformedPath}
         , fBlob{textBlob}
         , fMaskFormat{kA8_GrMaskFormat}
-        , fGlyphs{SkSpan<GrGlyph*>{}}
+        , fGlyphs{SkSpan<PackedGlyphIDorGrGlyph>{}}
         , fVertexData{SkSpan<char>{}}
         , fStrikeSpec{strikeSpec}
-        , fStrike{nullptr}
         , fCurrentColor{textBlob->fColor}
         , fPaths{} {
     textBlob->insertSubRun(this);
 }
-
 
 static SkRect dest_rect(const SkGlyph& g, SkPoint origin) {
     return SkRect::MakeXYWH(
@@ -104,9 +97,9 @@ static SkRect dest_rect(const SkGlyph& g, SkPoint origin, SkScalar textScale) {
 }
 
 void GrTextBlob::SubRun::appendGlyphs(const SkZip<SkGlyphVariant, SkPoint>& drawables) {
-    GrTextStrike* grStrike = fStrike.get();
     SkScalar strikeToSource = fStrikeSpec.strikeToSourceRatio();
-    GrGlyph** glyphCursor = fGlyphs.data();
+    SkASSERT(!this->isPrepared());
+    PackedGlyphIDorGrGlyph* packedIDCursor = fGlyphs.data();
     char* vertexCursor = fVertexData.data();
     size_t vertexStride = this->vertexStride();
     // We always write the third position component used by SDFs. If it is unused it gets
@@ -115,7 +108,6 @@ void GrTextBlob::SubRun::appendGlyphs(const SkZip<SkGlyphVariant, SkPoint>& draw
     size_t colorOffset = this->colorOffset();
     for (auto [variant, pos] : drawables) {
         SkGlyph* skGlyph = variant;
-        GrGlyph* grGlyph = grStrike->getGlyph(*skGlyph);
         // Only floor the device coordinates.
         SkRect dstRect;
         if (!this->needsTransform()) {
@@ -147,14 +139,22 @@ void GrTextBlob::SubRun::appendGlyphs(const SkZip<SkGlyphVariant, SkPoint>& draw
         *reinterpret_cast<GrColor*>(vertexCursor + colorOffset) = fCurrentColor;
         vertexCursor += vertexStride;
 
-        *glyphCursor++ = grGlyph;
+        packedIDCursor->fPackedGlyphID = skGlyph->getPackedID();
+        packedIDCursor++;
     }
+
+    // Use the negative initial origin to make the fVertexBounds {0, 0} based.
+    SkPoint pt = fBlob->fInitialOrigin;
+    if (!this->needsTransform()) {
+        // If the box is in device space, then transform the source space origin to device space.
+        pt = fBlob->fInitialMatrix.mapXY(pt.x(), pt.y());
+    }
+    fVertexBounds.offset(-pt);
 }
 
 void GrTextBlob::SubRun::resetBulkUseToken() { fBulkUseToken.reset(); }
 
 GrDrawOpAtlas::BulkUseTokenUpdater* GrTextBlob::SubRun::bulkUseToken() { return &fBulkUseToken; }
-void GrTextBlob::SubRun::setStrike(sk_sp<GrTextStrike> strike) { fStrike = std::move(strike); }
 GrTextStrike* GrTextBlob::SubRun::strike() const { return fStrike.get(); }
 GrMaskFormat GrTextBlob::SubRun::maskFormat() const { return fMaskFormat; }
 size_t GrTextBlob::SubRun::vertexStride() const {
@@ -186,7 +186,6 @@ size_t GrTextBlob::SubRun::quadOffset(size_t index) const {
     return index * kVerticesPerGlyph * this->vertexStride();
 }
 
-const SkRect& GrTextBlob::SubRun::vertexBounds() const { return fVertexBounds; }
 void GrTextBlob::SubRun::joinGlyphBounds(const SkRect& glyphBounds) {
     fVertexBounds.joinNonEmptyArg(glyphBounds);
 }
@@ -196,13 +195,29 @@ bool GrTextBlob::SubRun::drawAsDistanceFields() const { return fType == kTransfo
 bool GrTextBlob::SubRun::drawAsPaths() const { return fType == kTransformedPath; }
 
 bool GrTextBlob::SubRun::needsTransform() const {
-    return fType == kTransformedPath
-           || fType == kTransformedMask
-           || fType == kTransformedSDFT;
+    return fType == kTransformedPath ||
+           fType == kTransformedMask ||
+           fType == kTransformedSDFT;
+}
+
+bool GrTextBlob::SubRun::needsPadding() const {
+    return fType == kTransformedPath || fType == kTransformedMask;
 }
 
 bool GrTextBlob::SubRun::hasW() const {
     return fBlob->hasW(fType);
+}
+
+void GrTextBlob::SubRun::prepareGrGlyphs(GrStrikeCache* strikeCache) {
+    if (fStrike) {
+        return;
+    }
+
+    fStrike = fStrikeSpec.findOrCreateGrStrike(strikeCache);
+
+    for (auto& tmp : fGlyphs) {
+        tmp.fGrGlyph = fStrike->getGlyph(tmp.fPackedGlyphID);
+    }
 }
 
 void GrTextBlob::SubRun::translateVerticesIfNeeded(
@@ -257,49 +272,51 @@ void GrTextBlob::SubRun::updateVerticesColorIfNeeded(GrColor newColor) {
 }
 
 void GrTextBlob::SubRun::updateTexCoords(int begin, int end) {
+    SkASSERT(this->isPrepared());
+
     const size_t vertexStride = this->vertexStride();
     const size_t texCoordOffset = this->texCoordOffset();
     char* vertex = this->quadStart(begin);
     uint16_t* textureCoords = reinterpret_cast<uint16_t*>(vertex + texCoordOffset);
     for (int i = begin; i < end; i++) {
-        GrGlyph* glyph = this->fGlyphs[i];
+        GrGlyph* glyph = this->fGlyphs[i].fGrGlyph;
         SkASSERT(glyph != nullptr);
 
-        int width = glyph->width();
-        int height = glyph->height();
-        uint16_t u0, v0, u1, v1;
-        if (this->drawAsDistanceFields()) {
-            u0 = glyph->fAtlasLocation.fX + SK_DistanceFieldInset;
-            v0 = glyph->fAtlasLocation.fY + SK_DistanceFieldInset;
-            u1 = u0 + width - 2 * SK_DistanceFieldInset;
-            v1 = v0 + height - 2 * SK_DistanceFieldInset;
-        } else {
-            u0 = glyph->fAtlasLocation.fX;
-            v0 = glyph->fAtlasLocation.fY;
-            u1 = u0 + width;
-            v1 = v0 + height;
-        }
+        int pad = this->drawAsDistanceFields() ? SK_DistanceFieldInset
+                                               : (this->needsPadding() ? 1 : 0);
+        std::array<uint16_t, 4> uvs = glyph->fAtlasLocator.getUVs(pad);
 
-        // We pack the 2bit page index in the low bit of the u and v texture coords
-        uint32_t pageIndex = glyph->pageIndex();
-        std::tie(u0, v0) = GrDrawOpAtlas::PackIndexInTexCoords(u0, v0, pageIndex);
-        std::tie(u1, v1) = GrDrawOpAtlas::PackIndexInTexCoords(u1, v1, pageIndex);
-
-        textureCoords[0] = u0;
-        textureCoords[1] = v0;
+        textureCoords[0] = uvs[0];
+        textureCoords[1] = uvs[1];
         textureCoords = SkTAddOffset<uint16_t>(textureCoords, vertexStride);
-        textureCoords[0] = u0;
-        textureCoords[1] = v1;
+        textureCoords[0] = uvs[0];
+        textureCoords[1] = uvs[3];
         textureCoords = SkTAddOffset<uint16_t>(textureCoords, vertexStride);
-        textureCoords[0] = u1;
-        textureCoords[1] = v0;
+        textureCoords[0] = uvs[2];
+        textureCoords[1] = uvs[1];
         textureCoords = SkTAddOffset<uint16_t>(textureCoords, vertexStride);
-        textureCoords[0] = u1;
-        textureCoords[1] = v1;
+        textureCoords[0] = uvs[2];
+        textureCoords[1] = uvs[3];
         textureCoords = SkTAddOffset<uint16_t>(textureCoords, vertexStride);
     }
 }
 
+SkRect GrTextBlob::SubRun::deviceRect(const SkMatrix& drawMatrix, SkPoint drawOrigin) const {
+    SkRect outBounds = fVertexBounds;
+    if (this->needsTransform()) {
+        // if the glyph needs transformation offset the by the new origin, and map to device space.
+        outBounds.offset(drawOrigin);
+        outBounds = drawMatrix.mapRect(outBounds);
+    } else {
+        SkPoint offset = drawMatrix.mapXY(drawOrigin.x(), drawOrigin.y());
+        // The vertex bounds are already {0, 0} based, so just add the new origin offset.
+        outBounds.offset(offset);
+
+        // Due to floating point numerical inaccuracies, we have to round out here
+        outBounds.roundOut();
+    }
+    return outBounds;
+}
 
 void GrTextBlob::SubRun::setUseLCDText(bool useLCDText) { fFlags.useLCDText = useLCDText; }
 bool GrTextBlob::SubRun::hasUseLCDText() const { return fFlags.useLCDText; }
@@ -315,7 +332,6 @@ void* GrTextBlob::operator new(size_t, void* p) { return p; }
 GrTextBlob::~GrTextBlob() = default;
 
 sk_sp<GrTextBlob> GrTextBlob::Make(const SkGlyphRunList& glyphRunList,
-                                   GrStrikeCache* strikeCache,
                                    const SkMatrix& drawMatrix,
                                    GrColor color,
                                    bool forceWForDistanceFields) {
@@ -349,7 +365,7 @@ sk_sp<GrTextBlob> GrTextBlob::Make(const SkGlyphRunList& glyphRunList,
 
     SkColor initialLuminance = SkPaintPriv::ComputeLuminanceColor(glyphRunList.paint());
     sk_sp<GrTextBlob> blob{new (allocation) GrTextBlob{
-            arenaSize, strikeCache, drawMatrix, glyphRunList.origin(),
+            arenaSize, drawMatrix, glyphRunList.origin(),
             color, initialLuminance, forceWForDistanceFields}};
 
     return blob;
@@ -484,10 +500,13 @@ bool GrTextBlob::mustRegenerate(const SkPaint& paint, bool anyRunHasSubpixelPosi
     return false;
 }
 
-void GrTextBlob::flush(GrTextTarget* target, const SkSurfaceProps& props,
-                       const SkPaint& paint, const SkPMColor4f& filteredColor, const GrClip& clip,
-                       const SkMatrix& drawMatrix, SkPoint drawOrigin) {
-
+void GrTextBlob::addOp(GrTextTarget* target,
+                       const SkSurfaceProps& props,
+                       const SkPaint& paint,
+                       const SkPMColor4f& filteredColor,
+                       const GrClip& clip,
+                       const SkMatrixProvider& deviceMatrix,
+                       SkPoint drawOrigin) {
     for (SubRun* subRun = fFirstSubRun; subRun != nullptr; subRun = subRun->fNextSubRun) {
         if (subRun->drawAsPaths()) {
             SkPaint runPaint{paint};
@@ -497,38 +516,42 @@ void GrTextBlob::flush(GrTextTarget* target, const SkSurfaceProps& props,
             // different effects.
             GrStyle style(runPaint);
 
-            bool scalePath = runPaint.getShader()
-                             || style.applies()
-                             || runPaint.getMaskFilter();
+            bool needsExactCTM = runPaint.getShader()
+                                 || style.applies()
+                                 || runPaint.getMaskFilter();
 
+            // Calculate the matrix that maps the path glyphs from their size in the strike to
+            // the graphics source space.
+            SkMatrix strikeToSource = SkMatrix::MakeScale(
+                    subRun->fStrikeSpec.strikeToSourceRatio());
+            strikeToSource.postTranslate(drawOrigin.x(), drawOrigin.y());
+            if (!needsExactCTM) {
+                for (const auto& pathPos : subRun->fPaths) {
+                    const SkPath& path = pathPos.fPath;
+                    const SkPoint pos = pathPos.fOrigin;                    // Transform the glyph to source space.
+                    SkMatrix pathMatrix = strikeToSource;
+                    pathMatrix.postTranslate(pos.x(), pos.y());
+                    SkPreConcatMatrixProvider strikeToDevice(deviceMatrix, pathMatrix);
 
-            for (const auto& pathGlyph : subRun->fPaths) {
-                SkMatrix ctm{drawMatrix};
-                ctm.preTranslate(drawOrigin.x(), drawOrigin.y());
-                SkMatrix pathMatrix = SkMatrix::MakeScale(
-                        subRun->fStrikeSpec.strikeToSourceRatio());
-                pathMatrix.postTranslate(pathGlyph.fOrigin.x(), pathGlyph.fOrigin.y());
-
-                // TmpPath must be in the same scope as GrShape shape below.
-                SkTLazy<SkPath> tmpPath;
-                const SkPath* path = &pathGlyph.fPath;
-                if (!scalePath) {
-                    // Scale can be applied to CTM -- no effects.
-                    ctm.preConcat(pathMatrix);
-                } else {
-                    // Scale the outline into source space.
-
-                    // Transform the path form the normalized outline to source space. This
-                    // way the CTM will remain the same so it can be used by the effects.
-                    SkPath* sourceOutline = tmpPath.init();
-                    path->transform(pathMatrix, sourceOutline);
-                    sourceOutline->setIsVolatile(true);
-                    path = sourceOutline;
+                    GrStyledShape shape(path, paint);
+                    target->drawShape(clip, runPaint, strikeToDevice, shape);
                 }
+            } else {
+                // Transform the path to device because the deviceMatrix must be unchanged to
+                // draw effect, filter or shader paths.
+                for (const auto& pathPos : subRun->fPaths) {
+                    const SkPath& path = pathPos.fPath;
+                    const SkPoint pos = pathPos.fOrigin;
+                    // Transform the glyph to source space.
+                    SkMatrix pathMatrix = strikeToSource;
+                    pathMatrix.postTranslate(pos.x(), pos.y());
 
-                // TODO: we are losing the mutability of the path here
-                GrShape shape(*path, paint);
-                target->drawShape(clip, runPaint, ctm, shape);
+                    SkPath deviceOutline;
+                    path.transform(pathMatrix, &deviceOutline);
+                    deviceOutline.setIsVolatile(true);
+                    GrStyledShape shape(deviceOutline, paint);
+                    target->drawShape(clip, runPaint, deviceMatrix, shape);
+                }
             }
         } else {
             int glyphCount = subRun->fGlyphs.count();
@@ -537,90 +560,56 @@ void GrTextBlob::flush(GrTextTarget* target, const SkSurfaceProps& props,
             }
 
             bool skipClip = false;
-            bool submitOp = true;
             SkIRect clipRect = SkIRect::MakeEmpty();
             SkRect rtBounds = SkRect::MakeWH(target->width(), target->height());
             SkRRect clipRRect;
             GrAA aa;
             // We can clip geometrically if we're not using SDFs or transformed glyphs,
             // and we have an axis-aligned rectangular non-AA clip
-            if (!subRun->drawAsDistanceFields() && !subRun->needsTransform() &&
+            if (!subRun->drawAsDistanceFields() &&
+                !subRun->needsTransform() &&
                 clip.isRRect(rtBounds, &clipRRect, &aa) &&
                 clipRRect.isRect() && GrAA::kNo == aa) {
                 skipClip = true;
                 // We only need to do clipping work if the subrun isn't contained by the clip
-                SkRect subRunBounds;
-                this->computeSubRunBounds(
-                        &subRunBounds, *subRun, drawMatrix, drawOrigin, false);
+                SkRect subRunBounds = subRun->deviceRect(deviceMatrix.localToDevice(), drawOrigin);
                 if (!clipRRect.getBounds().contains(subRunBounds)) {
                     // If the subrun is completely outside, don't add an op for it
                     if (!clipRRect.getBounds().intersects(subRunBounds)) {
-                        submitOp = false;
-                    }
-                    else {
+                        continue;
+                    } else {
                         clipRRect.getBounds().round(&clipRect);
                     }
                 }
             }
 
-            if (submitOp) {
-                auto op = this->makeOp(*subRun, glyphCount, drawMatrix, drawOrigin,
-                                       clipRect, paint, filteredColor, props, target);
-                if (op) {
-                    if (skipClip) {
-                        target->addDrawOp(GrNoClip(), std::move(op));
-                    }
-                    else {
-                        target->addDrawOp(clip, std::move(op));
-                    }
+            auto op = this->makeOp(*subRun, deviceMatrix, drawOrigin, clipRect,
+                                   paint, filteredColor, props, target);
+            if (op) {
+                if (skipClip) {
+                    target->addDrawOp(GrNoClip(), std::move(op));
+                }
+                else {
+                    target->addDrawOp(clip, std::move(op));
                 }
             }
         }
     }
 }
 
-void GrTextBlob::computeSubRunBounds(SkRect* outBounds, const SubRun& subRun,
-                                     const SkMatrix& drawMatrix, SkPoint drawOrigin,
-                                     bool needsGlyphTransform) {
-    // We don't yet position distance field text on the cpu, so we have to map the vertex bounds
-    // into device space.
-    // We handle vertex bounds differently for distance field text and bitmap text because
-    // the vertex bounds of bitmap text are in device space.  If we are flushing multiple runs
-    // from one blob then we are going to pay the price here of mapping the rect for each run.
-    *outBounds = subRun.vertexBounds();
-    if (needsGlyphTransform) {
-        // Distance field text is positioned with the (X,Y) as part of the glyph position,
-        // and currently the view matrix is applied on the GPU
-        outBounds->offset(drawOrigin - fInitialOrigin);
-        drawMatrix.mapRect(outBounds);
-    } else {
-        // Bitmap text is fully positioned on the CPU, and offset by an (X,Y) translate in
-        // device space.
-        SkMatrix boundsMatrix = fInitialMatrixInverse;
-
-        boundsMatrix.postTranslate(-fInitialOrigin.x(), -fInitialOrigin.y());
-
-        boundsMatrix.postTranslate(drawOrigin.x(), drawOrigin.y());
-
-        boundsMatrix.postConcat(drawMatrix);
-        boundsMatrix.mapRect(outBounds);
-
-        // Due to floating point numerical inaccuracies, we have to round out here
-        outBounds->roundOut(outBounds);
-    }
-}
-
 const GrTextBlob::Key& GrTextBlob::key() const { return fKey; }
 size_t GrTextBlob::size() const { return fSize; }
 
-std::unique_ptr<GrDrawOp> GrTextBlob::test_makeOp(
-        int glyphCount, const SkMatrix& drawMatrix,
-        SkPoint drawOrigin, const SkPaint& paint, const SkPMColor4f& filteredColor,
-        const SkSurfaceProps& props, GrTextTarget* target) {
+std::unique_ptr<GrDrawOp> GrTextBlob::test_makeOp(const SkMatrixProvider& matrixProvider,
+                                                  SkPoint drawOrigin,
+                                                  const SkPaint& paint,
+                                                  const SkPMColor4f& filteredColor,
+                                                  const SkSurfaceProps& props,
+                                                  GrTextTarget* target) {
     SubRun* info = fFirstSubRun;
     SkIRect emptyRect = SkIRect::MakeEmpty();
-    return this->makeOp(*info, glyphCount, drawMatrix, drawOrigin, emptyRect,
-                        paint, filteredColor, props, target);
+    return this->makeOp(*info, matrixProvider, drawOrigin, emptyRect, paint,
+                        filteredColor, props, target);
 }
 
 bool GrTextBlob::hasW(GrTextBlob::SubRunType type) const {
@@ -639,7 +628,8 @@ GrTextBlob::SubRun* GrTextBlob::makeSubRun(SubRunType type,
                                            const SkZip<SkGlyphVariant, SkPoint>& drawables,
                                            const SkStrikeSpec& strikeSpec,
                                            GrMaskFormat format) {
-    SkSpan<GrGlyph*> glyphs{fAlloc.makeArrayDefault<GrGlyph*>(drawables.size()), drawables.size()};
+    SkSpan<SubRun::PackedGlyphIDorGrGlyph> glyphs{
+       fAlloc.makeArrayDefault<SubRun::PackedGlyphIDorGrGlyph>(drawables.size()), drawables.size()};
     bool hasW = this->hasW(type);
 
     SkASSERT(!fInitialMatrix.hasPerspective() || hasW);
@@ -647,10 +637,7 @@ GrTextBlob::SubRun* GrTextBlob::makeSubRun(SubRunType type,
     size_t vertexDataSize = drawables.size() * GetVertexStride(format, hasW) * kVerticesPerGlyph;
     SkSpan<char> vertexData{fAlloc.makeArrayDefault<char>(vertexDataSize), vertexDataSize};
 
-    sk_sp<GrTextStrike> grStrike = strikeSpec.findOrCreateGrStrike(fStrikeCache);
-
-    SubRun* subRun = fAlloc.make<SubRun>(
-            type, this, strikeSpec, format, glyphs, vertexData, std::move(grStrike));
+    SubRun* subRun = fAlloc.make<SubRun>(type, this, strikeSpec, format, glyphs, vertexData);
 
     subRun->appendGlyphs(drawables);
 
@@ -704,16 +691,13 @@ void GrTextBlob::addSDFT(const SkZip<SkGlyphVariant, SkPoint>& drawables,
 }
 
 GrTextBlob::GrTextBlob(size_t allocSize,
-                       GrStrikeCache* strikeCache,
                        const SkMatrix& drawMatrix,
                        SkPoint origin,
                        GrColor color,
                        SkColor initialLuminance,
                        bool forceWForDistanceFields)
         : fSize{allocSize}
-        , fStrikeCache{strikeCache}
         , fInitialMatrix{drawMatrix}
-        , fInitialMatrixInverse{make_inverse(drawMatrix)}
         , fInitialOrigin{origin}
         , fForceWForDistanceFields{forceWForDistanceFields}
         , fColor{color}
@@ -730,34 +714,37 @@ void GrTextBlob::insertSubRun(SubRun* subRun) {
     }
 }
 
-std::unique_ptr<GrAtlasTextOp> GrTextBlob::makeOp(
-        SubRun& info, int glyphCount, const SkMatrix& drawMatrix, SkPoint drawOrigin,
-        const SkIRect& clipRect, const SkPaint& paint, const SkPMColor4f& filteredColor,
-        const SkSurfaceProps& props, GrTextTarget* target) {
-    GrMaskFormat format = info.maskFormat();
-
+std::unique_ptr<GrAtlasTextOp> GrTextBlob::makeOp(SubRun& info,
+                                                  const SkMatrixProvider& matrixProvider,
+                                                  SkPoint drawOrigin,
+                                                  const SkIRect& clipRect,
+                                                  const SkPaint& paint,
+                                                  const SkPMColor4f& filteredColor,
+                                                  const SkSurfaceProps& props,
+                                                  GrTextTarget* target) {
     GrPaint grPaint;
-    target->makeGrPaint(info.maskFormat(), paint, drawMatrix, &grPaint);
-    std::unique_ptr<GrAtlasTextOp> op;
+    target->makeGrPaint(info.maskFormat(), paint, matrixProvider, &grPaint);
     if (info.drawAsDistanceFields()) {
         // TODO: Can we be even smarter based on the dest transfer function?
-        op = GrAtlasTextOp::MakeDistanceField(
-                target->getContext(), std::move(grPaint), glyphCount,
-                target->colorInfo().isLinearlyBlended(), SkPaintPriv::ComputeLuminanceColor(paint),
-                props, info.isAntiAliased(), info.hasUseLCDText());
+        return GrAtlasTextOp::MakeDistanceField(target->getContext(),
+                                                std::move(grPaint),
+                                                &info,
+                                                matrixProvider.localToDevice(),
+                                                drawOrigin,
+                                                clipRect,
+                                                filteredColor,
+                                                target->colorInfo().isLinearlyBlended(),
+                                                SkPaintPriv::ComputeLuminanceColor(paint),
+                                                props);
     } else {
-        op = GrAtlasTextOp::MakeBitmap(target->getContext(), std::move(grPaint), format, glyphCount,
-                                       info.needsTransform());
+        return GrAtlasTextOp::MakeBitmap(target->getContext(),
+                                         std::move(grPaint),
+                                         &info,
+                                         matrixProvider.localToDevice(),
+                                         drawOrigin,
+                                         clipRect,
+                                         filteredColor);
     }
-    GrAtlasTextOp::Geometry& geometry = op->geometry();
-    geometry.fDrawMatrix = drawMatrix;
-    geometry.fClipRect = clipRect;
-    geometry.fBlob = SkRef(this);
-    geometry.fSubRunPtr = &info;
-    geometry.fColor = info.maskFormat() == kARGB_GrMaskFormat ? SK_PMColor4fWHITE : filteredColor;
-    geometry.fDrawOrigin = drawOrigin;
-    op->init();
-    return op;
 }
 
 void GrTextBlob::processDeviceMasks(const SkZip<SkGlyphVariant, SkPoint>& drawables,
@@ -789,6 +776,151 @@ void GrTextBlob::processSourceMasks(const SkZip<SkGlyphVariant, SkPoint>& drawab
     this->addMultiMaskFormat(kTransformedMask, drawables, strikeSpec);
 }
 
+// -- Adding a mask to an atlas ----------------------------------------------------------------
+
+// expands each bit in a bitmask to 0 or ~0 of type INT_TYPE. Used to expand a BW glyph mask to
+// A8, RGB565, or RGBA8888.
+template <typename INT_TYPE>
+static void expand_bits(INT_TYPE* dst,
+                        const uint8_t* src,
+                        int width,
+                        int height,
+                        int dstRowBytes,
+                        int srcRowBytes) {
+    for (int i = 0; i < height; ++i) {
+        int rowWritesLeft = width;
+        const uint8_t* s = src;
+        INT_TYPE* d = dst;
+        while (rowWritesLeft > 0) {
+            unsigned mask = *s++;
+            for (int i = 7; i >= 0 && rowWritesLeft; --i, --rowWritesLeft) {
+                *d++ = (mask & (1 << i)) ? (INT_TYPE)(~0UL) : 0;
+            }
+        }
+        dst = reinterpret_cast<INT_TYPE*>(reinterpret_cast<intptr_t>(dst) + dstRowBytes);
+        src += srcRowBytes;
+    }
+}
+
+static void get_packed_glyph_image(
+        const SkGlyph& glyph, int dstRB, GrMaskFormat expectedMaskFormat, void* dst) {
+    const int width = glyph.width();
+    const int height = glyph.height();
+    const void* src = glyph.image();
+    SkASSERT(src != nullptr);
+
+    GrMaskFormat grMaskFormat = GrGlyph::FormatFromSkGlyph(glyph.maskFormat());
+    if (grMaskFormat == expectedMaskFormat) {
+        int srcRB = glyph.rowBytes();
+        // Notice this comparison is with the glyphs raw mask format, and not its GrMaskFormat.
+        if (glyph.maskFormat() != SkMask::kBW_Format) {
+            if (srcRB != dstRB) {
+                const int bbp = GrMaskFormatBytesPerPixel(expectedMaskFormat);
+                for (int y = 0; y < height; y++) {
+                    memcpy(dst, src, width * bbp);
+                    src = (const char*) src + srcRB;
+                    dst = (char*) dst + dstRB;
+                }
+            } else {
+                memcpy(dst, src, dstRB * height);
+            }
+        } else {
+            // Handle 8-bit format by expanding the mask to the expected format.
+            const uint8_t* bits = reinterpret_cast<const uint8_t*>(src);
+            switch (expectedMaskFormat) {
+                case kA8_GrMaskFormat: {
+                    uint8_t* bytes = reinterpret_cast<uint8_t*>(dst);
+                    expand_bits(bytes, bits, width, height, dstRB, srcRB);
+                    break;
+                }
+                case kA565_GrMaskFormat: {
+                    uint16_t* rgb565 = reinterpret_cast<uint16_t*>(dst);
+                    expand_bits(rgb565, bits, width, height, dstRB, srcRB);
+                    break;
+                }
+                default:
+                    SK_ABORT("Invalid GrMaskFormat");
+            }
+        }
+    } else if (grMaskFormat == kA565_GrMaskFormat && expectedMaskFormat == kARGB_GrMaskFormat) {
+        // Convert if the glyph uses a 565 mask format since it is using LCD text rendering
+        // but the expected format is 8888 (will happen on macOS with Metal since that
+        // combination does not support 565).
+        static constexpr SkMasks masks{
+                {0b1111'1000'0000'0000, 11, 5},  // Red
+                {0b0000'0111'1110'0000,  5, 6},  // Green
+                {0b0000'0000'0001'1111,  0, 5},  // Blue
+                {0, 0, 0}                        // Alpha
+        };
+        const int a565Bpp = GrMaskFormatBytesPerPixel(kA565_GrMaskFormat);
+        const int argbBpp = GrMaskFormatBytesPerPixel(kARGB_GrMaskFormat);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                uint16_t color565 = 0;
+                memcpy(&color565, src, a565Bpp);
+                uint32_t colorRGBA = GrColorPackRGBA(masks.getRed(color565),
+                                                     masks.getGreen(color565),
+                                                     masks.getBlue(color565),
+                                                     0xFF);
+                memcpy(dst, &colorRGBA, argbBpp);
+                src = (char*)src + a565Bpp;
+                dst = (char*)dst + argbBpp;
+            }
+        }
+    } else {
+        // crbug:510931
+        // Retrieving the image from the cache can actually change the mask format. This case is
+        // very uncommon so for now we just draw a clear box for these glyphs.
+        const int bpp = GrMaskFormatBytesPerPixel(expectedMaskFormat);
+        for (int y = 0; y < height; y++) {
+            sk_bzero(dst, width * bpp);
+            dst = (char*)dst + dstRB;
+        }
+    }
+}
+
+// returns true if glyph successfully added to texture atlas, false otherwise.  If the glyph's
+// mask format has changed, then add_glyph_to_atlas will draw a clear box.  This will almost never
+// happen.
+// TODO we can handle some of these cases if we really want to, but the long term solution is to
+// get the actual glyph image itself when we get the glyph metrics.
+static GrDrawOpAtlas::ErrorCode add_glyph_to_atlas(const SkGlyph& skGlyph,
+                                                   GrMaskFormat expectedMaskFormat,
+                                                   bool needsPadding,
+                                                   GrResourceProvider* resourceProvider,
+                                                   GrDeferredUploadTarget* target,
+                                                   GrAtlasManager* fullAtlasManager,
+                                                   GrGlyph* grGlyph) {
+    SkASSERT(grGlyph != nullptr);
+    SkASSERT(skGlyph.image() != nullptr);
+
+    expectedMaskFormat = fullAtlasManager->resolveMaskFormat(expectedMaskFormat);
+    int bytesPerPixel = GrMaskFormatBytesPerPixel(expectedMaskFormat);
+
+    SkDEBUGCODE(bool isSDFGlyph = skGlyph.maskFormat() == SkMask::kSDF_Format;)
+    SkASSERT(!needsPadding || !isSDFGlyph);
+
+    // Add 1 pixel padding around grGlyph if needed.
+    const int width = needsPadding ? skGlyph.width() + 2 : skGlyph.width();
+    const int height = needsPadding ? skGlyph.height() + 2 : skGlyph.height();
+    int rowBytes = width * bytesPerPixel;
+    size_t size = height * rowBytes;
+
+    // Temporary storage for normalizing grGlyph image.
+    SkAutoSMalloc<1024> storage(size);
+    void* dataPtr = storage.get();
+    if (needsPadding) {
+        sk_bzero(dataPtr, size);
+        // Advance in one row and one column.
+        dataPtr = (char*)(dataPtr) + rowBytes + bytesPerPixel;
+    }
+
+    get_packed_glyph_image(skGlyph, rowBytes, expectedMaskFormat, dataPtr);
+
+    return fullAtlasManager->addToAtlas(resourceProvider, target, expectedMaskFormat, width, height,
+                                        storage.get(), &grGlyph->fAtlasLocator);
+}
+
 // -- GrTextBlob::VertexRegenerator ----------------------------------------------------------------
 GrTextBlob::VertexRegenerator::VertexRegenerator(GrResourceProvider* resourceProvider,
                                                  GrTextBlob::SubRun* subRun,
@@ -802,20 +934,20 @@ GrTextBlob::VertexRegenerator::VertexRegenerator(GrResourceProvider* resourcePro
 std::tuple<bool, int> GrTextBlob::VertexRegenerator::updateTextureCoordinates(
         const int begin, const int end) {
 
+    SkASSERT(fSubRun->isPrepared());
     const SkStrikeSpec& strikeSpec = fSubRun->strikeSpec();
 
-    if (!fMetricsAndImages.isValid()
-            || fMetricsAndImages->descriptor() != strikeSpec.descriptor()) {
+    if (!fMetricsAndImages.isValid() ||
+            fMetricsAndImages->descriptor() != strikeSpec.descriptor()) {
         fMetricsAndImages.init(strikeSpec);
     }
 
     // Update the atlas information in the GrStrike.
     auto code = GrDrawOpAtlas::ErrorCode::kSucceeded;
-    GrTextStrike* grStrike = fSubRun->strike();
     auto tokenTracker = fUploadTarget->tokenTracker();
     int i = begin;
     for (; i < end; i++) {
-        GrGlyph* grGlyph = fSubRun->fGlyphs[i];
+        GrGlyph* grGlyph = fSubRun->fGlyphs[i].fGrGlyph;
         SkASSERT(grGlyph);
 
         if (!fFullAtlasManager->hasGlyph(fSubRun->maskFormat(), grGlyph)) {
@@ -823,16 +955,15 @@ std::tuple<bool, int> GrTextBlob::VertexRegenerator::updateTextureCoordinates(
             if (skGlyph.image() == nullptr) {
                 return {false, 0};
             }
-            code = grStrike->addGlyphToAtlas(skGlyph,
-                    fSubRun->maskFormat(),
-                    fSubRun->needsTransform(),
-                    fResourceProvider, fUploadTarget, fFullAtlasManager, grGlyph);
+            code = add_glyph_to_atlas(skGlyph, fSubRun->maskFormat(),
+                                      fSubRun->needsPadding(), fResourceProvider,
+                                      fUploadTarget, fFullAtlasManager, grGlyph);
             if (code != GrDrawOpAtlas::ErrorCode::kSucceeded) {
                 break;
             }
         }
         fFullAtlasManager->addGlyphToBulkAndSetUseToken(
-                fSubRun->bulkUseToken(),  fSubRun->maskFormat(), grGlyph,
+                fSubRun->bulkUseToken(), fSubRun->maskFormat(), grGlyph,
                 tokenTracker->nextDrawToken());
     }
     int glyphsPlacedInAtlas = i - begin;

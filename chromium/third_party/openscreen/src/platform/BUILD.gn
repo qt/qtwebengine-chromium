@@ -44,6 +44,7 @@ source_set("api") {
     "api/network_interface.h",
     "api/scoped_wake_lock.cc",
     "api/scoped_wake_lock.h",
+    "api/serial_delete_ptr.h",
     "api/task_runner.h",
     "api/time.h",
     "api/tls_connection.cc",
@@ -56,9 +57,7 @@ source_set("api") {
     "api/udp_socket.h",
   ]
 
-  public_deps = [
-    ":base",
-  ]
+  public_deps = [ ":base" ]
 }
 
 # The following target is only activated in standalone builds (see :platform).
@@ -82,6 +81,8 @@ if (!build_with_chromium) {
       "impl/tls_write_buffer.cc",
       "impl/tls_write_buffer.h",
     ]
+
+    public_configs = [ "//util:trace_logging_config" ]
 
     if (is_linux) {
       sources += [
@@ -148,13 +149,9 @@ if (!build_with_chromium) {
 # The main target, which either assumes an embedder will link-in the platform
 # API implementation elsewhere, or links-in the :standalone_impl in the build.
 source_set("platform") {
-  public_deps = [
-    ":api",
-  ]
+  public_deps = [ ":api" ]
   if (!build_with_chromium) {
-    deps = [
-      ":standalone_impl",
-    ]
+    deps = [ ":standalone_impl" ]
   }
 }
 
@@ -170,8 +167,23 @@ source_set("test") {
     "test/fake_udp_socket.h",
     "test/mock_tls_connection.h",
     "test/mock_udp_socket.h",
+    "test/paths.h",
+    "test/paths_internal.h",
     "test/trace_logging_helpers.h",
   ]
+
+  if (is_posix) {
+    sources += [ "test/paths_posix.cc" ]
+  }
+  if (is_linux) {
+    sources += [ "test/paths_internal_linux.cc" ]
+  } else if (is_mac) {
+    sources += [ "test/paths_internal_mac.cc" ]
+  } else if (build_with_chromium) {
+    # NOTE: This is used to resolve a linking issue when compiling in Chromium
+    # for other platforms, but nothing in here is called.
+    sources += [ "test/paths_internal_other.cc" ]
+  }
 
   deps = [
     ":platform",
@@ -185,12 +197,18 @@ source_set("unittests") {
   testonly = true
 
   sources = [
-    "api/socket_integration_unittest.cc",
+    "api/serial_delete_ptr_unittest.cc",
     "api/time_unittest.cc",
     "base/error_unittest.cc",
     "base/ip_address_unittest.cc",
     "base/location_unittest.cc",
   ]
+
+  # The socket integration tests assume that you can Bind with UDP sockets,
+  # which is simply not true when we are built inside of Chromium.
+  if (!build_with_chromium) {
+    sources += [ "api/socket_integration_unittest.cc" ]
+  }
 
   # The unit tests in impl/ assume the standalone implementation is being used.
   # Exclude them if an embedder is providing the implementation.

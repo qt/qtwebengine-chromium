@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
 
 namespace quic {
@@ -17,13 +18,24 @@ UberLossAlgorithm::UberLossAlgorithm() {
   }
 }
 
-void UberLossAlgorithm::DetectLosses(
+void UberLossAlgorithm::SetFromConfig(const QuicConfig& config,
+                                      Perspective perspective) {
+  if (config.HasClientRequestedIndependentOption(kELDT, perspective) &&
+      tuner_ != nullptr) {
+    tuning_enabled_ = true;
+    MaybeStartTuning();
+  }
+}
+
+LossDetectionInterface::DetectionStats UberLossAlgorithm::DetectLosses(
     const QuicUnackedPacketMap& unacked_packets,
     QuicTime time,
     const RttStats& rtt_stats,
     QuicPacketNumber /*largest_newly_acked*/,
     const AckedPacketVector& packets_acked,
     LostPacketVector* packets_lost) {
+  DetectionStats overall_stats;
+
   for (int8_t i = INITIAL_DATA; i < NUM_PACKET_NUMBER_SPACES; ++i) {
     const QuicPacketNumber largest_acked =
         unacked_packets.GetLargestAckedOfPacketNumberSpace(
@@ -35,10 +47,16 @@ void UberLossAlgorithm::DetectLosses(
       continue;
     }
 
-    general_loss_algorithms_[i].DetectLosses(unacked_packets, time, rtt_stats,
-                                             largest_acked, packets_acked,
-                                             packets_lost);
+    DetectionStats stats = general_loss_algorithms_[i].DetectLosses(
+        unacked_packets, time, rtt_stats, largest_acked, packets_acked,
+        packets_lost);
+
+    overall_stats.sent_packets_max_sequence_reordering =
+        std::max(overall_stats.sent_packets_max_sequence_reordering,
+                 stats.sent_packets_max_sequence_reordering);
   }
+
+  return overall_stats;
 }
 
 QuicTime UberLossAlgorithm::GetLossTimeout() const {
@@ -78,7 +96,7 @@ void UberLossAlgorithm::SetLossDetectionTuner(
 }
 
 void UberLossAlgorithm::MaybeStartTuning() {
-  if (tuner_ == nullptr || tuner_started_) {
+  if (tuner_started_ || !tuning_enabled_ || !min_rtt_available_) {
     return;
   }
 
@@ -88,6 +106,7 @@ void UberLossAlgorithm::MaybeStartTuning() {
 void UberLossAlgorithm::OnConfigNegotiated() {}
 
 void UberLossAlgorithm::OnMinRttAvailable() {
+  min_rtt_available_ = true;
   MaybeStartTuning();
 }
 
@@ -126,6 +145,10 @@ void UberLossAlgorithm::EnableAdaptiveTimeThreshold() {
   for (int8_t i = INITIAL_DATA; i < NUM_PACKET_NUMBER_SPACES; ++i) {
     general_loss_algorithms_[i].enable_adaptive_time_threshold();
   }
+}
+
+QuicPacketCount UberLossAlgorithm::GetPacketReorderingThreshold() const {
+  return general_loss_algorithms_[APPLICATION_DATA].reordering_threshold();
 }
 
 void UberLossAlgorithm::DisablePacketThresholdForRuntPackets() {

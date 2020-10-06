@@ -230,7 +230,7 @@ int HandshakeWithFakeServer(QuicConfig* server_quic_config,
                             PacketSavingConnection* client_conn,
                             QuicCryptoClientStream* client,
                             std::string alpn) {
-  PacketSavingConnection* server_conn = new PacketSavingConnection(
+  auto* server_conn = new testing::NiceMock<PacketSavingConnection>(
       helper, alarm_factory, Perspective::IS_SERVER,
       ParsedVersionOfIndex(client_conn->supported_versions(), 0));
 
@@ -249,6 +249,8 @@ int HandshakeWithFakeServer(QuicConfig* server_quic_config,
       .Times(testing::AnyNumber());
   EXPECT_CALL(*server_conn, OnCanWrite()).Times(testing::AnyNumber());
   EXPECT_CALL(*client_conn, OnCanWrite()).Times(testing::AnyNumber());
+  EXPECT_CALL(*server_conn, SendCryptoData(_, _, _))
+      .Times(testing::AnyNumber());
   EXPECT_CALL(server_session, SelectAlpn(_))
       .WillRepeatedly(
           [alpn](const std::vector<quiche::QuicheStringPiece>& alpns) {
@@ -260,7 +262,9 @@ int HandshakeWithFakeServer(QuicConfig* server_quic_config,
 
   CommunicateHandshakeMessages(client_conn, client, server_conn,
                                server_session.GetMutableCryptoStream());
-  CompareClientAndServerKeys(client, server_session.GetMutableCryptoStream());
+  if (client_conn->connected() && server_conn->connected()) {
+    CompareClientAndServerKeys(client, server_session.GetMutableCryptoStream());
+  }
 
   return client->num_sent_client_hellos();
 }
@@ -362,8 +366,9 @@ void CommunicateHandshakeMessages(PacketSavingConnection* client_conn,
                                   PacketSavingConnection* server_conn,
                                   QuicCryptoStream* server) {
   size_t client_i = 0, server_i = 0;
-  while (!client->one_rtt_keys_available() ||
-         !server->one_rtt_keys_available()) {
+  while (client_conn->connected() && server_conn->connected() &&
+         (!client->one_rtt_keys_available() ||
+          !server->one_rtt_keys_available())) {
     ASSERT_GT(client_conn->encrypted_packets_.size(), client_i);
     QUIC_LOG(INFO) << "Processing "
                    << client_conn->encrypted_packets_.size() - client_i
@@ -419,6 +424,7 @@ std::string GetValueForTag(const CryptoHandshakeMessage& message, QuicTag tag) {
 uint64_t LeafCertHashForTesting() {
   QuicReferenceCountedPointer<ProofSource::Chain> chain;
   QuicSocketAddress server_address(QuicIpAddress::Any4(), 42);
+  QuicSocketAddress client_address(QuicIpAddress::Any4(), 43);
   QuicCryptoProof proof;
   std::unique_ptr<ProofSource> proof_source(ProofSourceForTesting());
 
@@ -443,7 +449,8 @@ uint64_t LeafCertHashForTesting() {
   // Note: relies on the callback being invoked synchronously
   bool ok = false;
   proof_source->GetProof(
-      server_address, "", "", AllSupportedTransportVersions().front(), "",
+      server_address, client_address, "", "",
+      AllSupportedTransportVersions().front(), "",
       std::unique_ptr<ProofSource::Callback>(new Callback(&ok, &chain)));
   if (!ok || chain->certs.empty()) {
     DCHECK(false) << "Proof generation failed";
@@ -743,6 +750,7 @@ void MovePackets(PacketSavingConnection* source_conn,
     if (!framer.ProcessPacket(*source_conn->encrypted_packets_[index])) {
       // The framer will be unable to decrypt forward-secure packets sent after
       // the handshake is complete. Don't treat them as handshake packets.
+      QuicConnectionPeer::SwapCrypters(dest_conn, framer.framer());
       break;
     }
     QuicConnectionPeer::SwapCrypters(dest_conn, framer.framer());
@@ -755,6 +763,8 @@ void MovePackets(PacketSavingConnection* source_conn,
       // packets should ever be encrypted with the NullEncrypter, instead
       // they're encrypted with an obfuscation cipher based on QUIC version and
       // connection ID.
+      QUIC_LOG(INFO) << "Attempting to decrypt with NullDecrypter: "
+                        "expect a decryption failure on the next log line.";
       ASSERT_FALSE(null_encryption_framer.ProcessPacket(
           *source_conn->encrypted_packets_[index]))
           << "No TLS packets should be encrypted with the NullEncrypter";
@@ -846,7 +856,7 @@ void GenerateFullCHLO(
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, transport_version), signed_config,
       compressed_certs_cache, out);
   crypto_config->ValidateClientHello(
-      inchoate_chlo, client_addr.host(), server_addr, transport_version, clock,
+      inchoate_chlo, client_addr, server_addr, transport_version, clock,
       signed_config, generator.GetValidateClientHelloCallback());
 }
 

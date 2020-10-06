@@ -77,7 +77,8 @@ struct QUIC_EXPORT_PRIVATE Bbr2Params {
 
   // The gain for both CWND and PacingRate at startup.
   // TODO(wub): Maybe change to the newly derived value of 2.773 (4 * ln(2)).
-  float startup_gain = 2.885;
+  float startup_cwnd_gain = 2.885;
+  float startup_pacing_gain = 2.885;
 
   // Full bandwidth is declared if the total bandwidth growth is less than
   // |startup_full_bw_threshold| times in the last |startup_full_bw_rounds|
@@ -175,8 +176,14 @@ struct QUIC_EXPORT_PRIVATE Bbr2Params {
       GetQuicReloadableFlag(quic_bbr2_add_ack_height_to_queueing_threshold);
 
   // Can be disabled by connection option 'B2RP'.
-  bool avoid_unnecessary_probe_rtt =
-      GetQuicReloadableFlag(quic_bbr2_avoid_unnecessary_probe_rtt);
+  bool avoid_unnecessary_probe_rtt = true;
+
+  // Can be disabled by connection option 'B2CL'.
+  bool avoid_too_low_probe_bw_cwnd =
+      GetQuicReloadableFlag(quic_bbr2_avoid_too_low_probe_bw_cwnd);
+
+  // Can be enabled by connection option 'B2LO'.
+  bool ignore_inflight_lo = false;
 };
 
 class QUIC_EXPORT_PRIVATE RoundTripCounter {
@@ -420,11 +427,7 @@ class QUIC_EXPORT_PRIVATE Bbr2NetworkModel {
     return std::numeric_limits<QuicByteCount>::max();
   }
   void clear_inflight_lo() { inflight_lo_ = inflight_lo_default(); }
-  void cap_inflight_lo(QuicByteCount cap) {
-    if (inflight_lo_ != inflight_lo_default() && inflight_lo_ > cap) {
-      inflight_lo_ = cap;
-    }
-  }
+  void cap_inflight_lo(QuicByteCount cap);
 
   QuicByteCount inflight_hi_with_headroom() const;
   QuicByteCount inflight_hi() const { return inflight_hi_; }
@@ -472,9 +475,6 @@ class QUIC_EXPORT_PRIVATE Bbr2NetworkModel {
 
   float cwnd_gain_;
   float pacing_gain_;
-
-  const bool fix_zero_bw_on_loss_only_event_ =
-      GetQuicReloadableFlag(quic_bbr_fix_zero_bw_on_loss_only_event);
 };
 
 enum class Bbr2Mode : uint8_t {

@@ -74,6 +74,7 @@ class RecordingProofVerifier : public ProofVerifier {
 
   QuicAsyncStatus VerifyCertChain(
       const std::string& /*hostname*/,
+      const uint16_t /*port*/,
       const std::vector<std::string>& certs,
       const std::string& /*ocsp_response*/,
       const std::string& cert_sct,
@@ -357,10 +358,6 @@ void QuicTestClient::Initialize() {
   num_requests_ = 0;
   num_responses_ = 0;
   ClearPerConnectionState();
-  // TODO(b/142715651): Figure out how to use QPACK in tests.
-  // Do not use the QPACK dynamic table in tests to avoid flakiness due to the
-  // uncertain order of receiving the SETTINGS frame and sending headers.
-  client_->disable_qpack_dynamic_table();
   // As chrome will generally do this, we want it to be the default when it's
   // not overridden.
   if (!client_->config()->HasSetBytesForConnectionIdToSend()) {
@@ -393,8 +390,13 @@ ssize_t QuicTestClient::SendRequestAndRstTogether(const std::string& uri) {
   QuicStreamId stream_id = GetNthClientInitiatedBidirectionalStreamId(
       session->transport_version(), 0);
   QuicStream* stream = session->GetOrCreateStream(stream_id);
-  session->SendRstStream(stream_id, QUIC_STREAM_CANCELLED,
+  if (session->break_close_loop()) {
+    session->ResetStream(stream_id, QUIC_STREAM_CANCELLED,
                          stream->stream_bytes_written());
+  } else {
+    session->SendRstStream(stream_id, QUIC_STREAM_CANCELLED,
+                           stream->stream_bytes_written());
+  }
   return ret;
 }
 

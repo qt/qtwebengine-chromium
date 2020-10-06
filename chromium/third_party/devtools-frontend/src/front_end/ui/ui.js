@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Action from './Action.js';
 import * as ActionDelegate from './ActionDelegate.js';
 import * as ActionRegistry from './ActionRegistry.js';
@@ -62,7 +65,7 @@ import * as XLink from './XLink.js';
 import * as XWidget from './XWidget.js';
 import * as ZoomManager from './ZoomManager.js';
 
-/** @typedef {{box: !AnchorBox, show:(function(!GlassPane.GlassPane):!Promise<boolean>), hide:(function()|undefined)}} */
+/** @typedef {{box: !AnchorBox, show:(function(!GlassPane.GlassPane):!Promise<boolean>), hide:(function():void|undefined)}} */
 export let PopoverRequest;
 
 export {

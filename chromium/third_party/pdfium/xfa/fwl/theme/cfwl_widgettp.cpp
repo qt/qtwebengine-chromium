@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "core/fxcrt/fx_memory.h"
 #include "core/fxge/render_defines.h"
 #include "third_party/base/ptr_util.h"
 #include "xfa/fde/cfde_textout.h"
@@ -51,7 +52,7 @@ void CFWL_WidgetTP::DrawText(const CFWL_ThemeText& pParams) {
   m_pTextOut->SetMatrix(matrix);
   m_pTextOut->DrawLogicText(pGraphics->GetRenderDevice(),
                             WideStringView(pParams.m_wsText.c_str(), iLen),
-                            pParams.m_rtPart);
+                            pParams.m_PartRect);
 }
 
 const RetainPtr<CFGAS_GEFont>& CFWL_WidgetTP::GetFont() const {

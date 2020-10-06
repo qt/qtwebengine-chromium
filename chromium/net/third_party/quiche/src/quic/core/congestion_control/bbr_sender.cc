@@ -259,9 +259,6 @@ bool BbrSender::IsPipeSufficientlyFull() const {
 
 void BbrSender::SetFromConfig(const QuicConfig& config,
                               Perspective perspective) {
-  if (config.HasClientRequestedIndependentOption(kLRTT, perspective)) {
-    exit_startup_on_loss_ = true;
-  }
   if (config.HasClientRequestedIndependentOption(k1RTT, perspective)) {
     num_startup_rtts_ = 1;
   }
@@ -303,10 +300,6 @@ void BbrSender::SetFromConfig(const QuicConfig& config,
     set_high_cwnd_gain(kDerivedHighGain);
     set_drain_gain(1.f / kDerivedHighGain);
   }
-  if (!exit_startup_on_loss_ &&
-      config.HasClientRequestedIndependentOption(kBBQ2, perspective)) {
-    set_high_cwnd_gain(kDerivedHighCWNDGain);
-  }
   if (config.HasClientRequestedIndependentOption(kBBQ3, perspective)) {
     enable_ack_aggregation_during_startup_ = true;
   }
@@ -326,6 +319,18 @@ void BbrSender::SetFromConfig(const QuicConfig& config,
     QUIC_RELOADABLE_FLAG_COUNT_N(
         quic_avoid_overestimate_bandwidth_with_aggregation, 3, 4);
     sampler_.EnableOverestimateAvoidance();
+  }
+
+  ApplyConnectionOptions(config.ClientRequestedIndependentOptions(perspective));
+}
+
+void BbrSender::ApplyConnectionOptions(
+    const QuicTagVector& connection_options) {
+  if (ContainsQuicTag(connection_options, kLRTT)) {
+    exit_startup_on_loss_ = true;
+  }
+  if (ContainsQuicTag(connection_options, kBBQ2)) {
+    set_high_cwnd_gain(kDerivedHighCWNDGain);
   }
 }
 
@@ -428,10 +433,8 @@ void BbrSender::OnCongestionEvent(bool /*rtt_updated*/,
   // packets in |acked_packets| did not generate valid samples. (e.g. ack of
   // ack-only packets). In both cases, sampler_.total_bytes_acked() will not
   // change.
-  if (!fix_zero_bw_on_loss_only_event_ ||
-      (total_bytes_acked_before != sampler_.total_bytes_acked())) {
-    QUIC_BUG_IF((total_bytes_acked_before != sampler_.total_bytes_acked()) &&
-                sample.sample_max_bandwidth.IsZero())
+  if (total_bytes_acked_before != sampler_.total_bytes_acked()) {
+    QUIC_BUG_IF(sample.sample_max_bandwidth.IsZero())
         << sampler_.total_bytes_acked() - total_bytes_acked_before
         << " bytes from " << acked_packets.size()
         << " packets have been acked, but sample_max_bandwidth is zero.";
@@ -439,15 +442,8 @@ void BbrSender::OnCongestionEvent(bool /*rtt_updated*/,
         sample.sample_max_bandwidth > max_bandwidth_.GetBest()) {
       max_bandwidth_.Update(sample.sample_max_bandwidth, round_trip_count_);
     }
-  } else {
-    if (acked_packets.empty()) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr_fix_zero_bw_on_loss_only_event, 1,
-                                   4);
-    } else {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr_fix_zero_bw_on_loss_only_event, 2,
-                                   4);
-    }
   }
+
   if (!sample.sample_rtt.IsInfinite()) {
     min_rtt_expired = MaybeUpdateMinRtt(event_time, sample.sample_rtt);
   }
@@ -503,7 +499,16 @@ CongestionControlType BbrSender::GetCongestionControlType() const {
 }
 
 QuicTime::Delta BbrSender::GetMinRtt() const {
-  return !min_rtt_.IsZero() ? min_rtt_ : rtt_stats_->initial_rtt();
+  if (!min_rtt_.IsZero()) {
+    return min_rtt_;
+  }
+  if (GetQuicReloadableFlag(quic_bbr_use_available_min_rtt)) {
+    // min_rtt could be available if the handshake packet gets neutered then
+    // gets acknowledged. This could only happen for QUIC crypto where we do not
+    // drop keys.
+    return rtt_stats_->MinOrInitialRtt();
+  }
+  return rtt_stats_->initial_rtt();
 }
 
 QuicByteCount BbrSender::GetTargetCongestionWindow(float gain) const {
@@ -920,16 +925,9 @@ void BbrSender::CalculateRecoveryWindow(QuicByteCount bytes_acked,
     recovery_window_ += bytes_acked;
   }
 
-  // Sanity checks.  Ensure that we always allow to send at least an MSS or
-  // |bytes_acked| in response, whichever is larger.
+  // Always allow sending at least |bytes_acked| in response.
   recovery_window_ = std::max(
       recovery_window_, unacked_packets_->bytes_in_flight() + bytes_acked);
-  if (GetQuicReloadableFlag(quic_bbr_one_mss_conservation)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_bbr_one_mss_conservation);
-    recovery_window_ =
-        std::max(recovery_window_,
-                 unacked_packets_->bytes_in_flight() + kMaxSegmentSize);
-  }
   recovery_window_ = std::max(min_congestion_window_, recovery_window_);
 }
 

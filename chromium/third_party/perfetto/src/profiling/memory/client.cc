@@ -277,6 +277,43 @@ const char* Client::GetStackBase() {
   return GetThreadStackBase();
 }
 
+bool Client::IsPostFork() {
+  if (PERFETTO_UNLIKELY(getpid() != pid_at_creation_)) {
+    // Only print the message once, even if we do not shut down the client.
+    if (!detected_fork_) {
+      detected_fork_ = true;
+      const char* vfork_detected = "";
+
+      // We use the fact that vfork does not update Bionic's TID cache, so
+      // we will have a mismatch between the actual TID (from the syscall)
+      // and the cached one.
+      //
+      // What we really want to check is if we are sharing virtual memory space
+      // with the original process. This would be
+      // syscall(__NR_kcmp, syscall(__NR_getpid), pid_at_creation_,
+      //         KCMP_VM, 0, 0),
+      //  but that is not compiled into our kernels and disallowed by seccomp.
+      if (!client_config_.disable_vfork_detection &&
+          syscall(__NR_gettid) != base::GetThreadId()) {
+        postfork_return_value_ = true;
+        vfork_detected = " (vfork detected)";
+      } else {
+        postfork_return_value_ = client_config_.disable_fork_teardown;
+      }
+      const char* action =
+          postfork_return_value_ ? "Not shutting down" : "Shutting down";
+      const char* force =
+          postfork_return_value_ ? " (fork teardown disabled)" : "";
+      PERFETTO_LOG(
+          "Detected post-fork child situation. Not profiling the child. "
+          "%s client%s%s",
+          action, force, vfork_detected);
+    }
+    return true;
+  }
+  return false;
+}
+
 // The stack grows towards numerically smaller addresses, so the stack layout
 // of main calling malloc is as follows.
 //
@@ -292,10 +329,8 @@ const char* Client::GetStackBase() {
 bool Client::RecordMalloc(uint64_t sample_size,
                           uint64_t alloc_size,
                           uint64_t alloc_address) {
-  if (PERFETTO_UNLIKELY(getpid() != pid_at_creation_)) {
-    PERFETTO_LOG(
-        "Detected post-fork child situation. Not profiling the child.");
-    return false;
+  if (PERFETTO_UNLIKELY(IsPostFork())) {
+    return postfork_return_value_;
   }
 
   AllocMetadata metadata;
@@ -375,9 +410,8 @@ bool Client::RecordFree(const uint64_t alloc_address) {
 }
 
 bool Client::FlushFreesLocked() {
-  if (PERFETTO_UNLIKELY(getpid() != pid_at_creation_)) {
-    PERFETTO_LOG("Detected post-fork child situation, stopping profiling.");
-    return false;
+  if (PERFETTO_UNLIKELY(IsPostFork())) {
+    return postfork_return_value_;
   }
 
   WireMessage msg = {};

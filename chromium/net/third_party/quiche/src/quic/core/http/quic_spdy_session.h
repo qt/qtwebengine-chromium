@@ -246,6 +246,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // client.
   bool server_push_enabled() const;
 
+  // Called when the control stream receives HTTP/3 SETTINGS.
+  virtual void OnSettingsFrame(const SettingsFrame& frame);
+
   // Called when a setting is parsed from an incoming SETTINGS frame.
   void OnSetting(uint64_t id, uint64_t value);
 
@@ -308,14 +311,14 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // This method must only be called if protocol is IETF QUIC and perspective is
   // client.  |max_push_id| must be greater than or equal to current
   // |max_push_id_|.
-  void SetMaxPushId(QuicStreamId max_push_id);
+  void SetMaxPushId(PushId max_push_id);
 
   // Sets |max_push_id_|.
   // This method must only be called if protocol is IETF QUIC and perspective is
   // server.  It must only be called if a MAX_PUSH_ID frame is received.
   // Returns whether |max_push_id| is greater than or equal to current
   // |max_push_id_|.
-  bool OnMaxPushIdFrame(QuicStreamId max_push_id);
+  bool OnMaxPushIdFrame(PushId max_push_id);
 
   // Enables server push.
   // Must only be called when using IETF QUIC, for which server push is disabled
@@ -332,8 +335,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // For a client this means that SetMaxPushId() has been called with
   // |max_push_id| greater than or equal to |push_id|.
   // Must only be called when using IETF QUIC.
-  // TODO(b/136295430): Use sequential PUSH IDs instead of stream IDs.
-  bool CanCreatePushStreamWithId(QuicStreamId push_id);
+  bool CanCreatePushStreamWithId(PushId push_id);
 
   int32_t destruction_indicator() const { return destruction_indicator_; }
 
@@ -374,6 +376,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   }
 
   void OnStreamCreated(QuicSpdyStream* stream);
+
+  // Decode SETTINGS from |cached_state| and apply it to the session.
+  bool SetApplicationState(ApplicationState* cached_state) override;
 
  protected:
   // Override CreateIncomingStream(), CreateOutgoingBidirectionalStream() and
@@ -418,9 +423,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
       EncryptionLevel level,
       std::unique_ptr<QuicEncrypter> encrypter) override;
 
-  void SetDefaultEncryptionLevel(quic::EncryptionLevel level) override;
-  void OnOneRttKeysAvailable() override;
-
   // Optional, enables instrumentation related to go/quic-hpack.
   void SetHpackEncoderDebugVisitor(
       std::unique_ptr<QuicHpackDebugVisitor> visitor);
@@ -443,9 +445,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Initializes HTTP/3 unidirectional streams if not yet initialzed.
   virtual void MaybeInitializeHttp3UnidirectionalStreams();
-
-  void set_max_uncompressed_header_bytes(
-      size_t set_max_uncompressed_header_bytes);
 
   void SendMaxPushId();
 
@@ -540,7 +539,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // initial MAX_PUSH_ID frame.
   // For a client after 1-RTT keys are available, the push ID in the most
   // recently sent MAX_PUSH_ID frame.
-  quiche::QuicheOptional<QuicStreamId> max_push_id_;
+  quiche::QuicheOptional<PushId> max_push_id_;
 
   // An integer used for live check. The indicator is assigned a value in
   // constructor. As long as it is not the assigned value, that would indicate

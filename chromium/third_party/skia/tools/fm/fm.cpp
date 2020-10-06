@@ -4,6 +4,7 @@
 #include "experimental/svg/model/SkSVGDOM.h"
 #include "gm/gm.h"
 #include "include/codec/SkCodec.h"
+#include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPicture.h"
@@ -110,9 +111,12 @@ struct Result {
 static const Result ok = {Result::Ok,   {}},
                   skip = {Result::Skip, {}};
 
+static Result fail(const char* why) {
+    return { Result::Fail, SkString(why) };
+}
 template <typename... Args>
-static Result fail(const char* why, Args... args) {
-    return { Result::Fail, SkStringPrintf(why, args...) };
+static Result fail(const char* whyFmt, Args... args) {
+    return { Result::Fail, SkStringPrintf(whyFmt, args...) };
 }
 
 
@@ -214,7 +218,8 @@ static void init(Source* source, const skiatest::Test& test) {
             SkString msg;
 
             void reportFailed(const skiatest::Failure& failure) override {
-                msg = failure.toString();
+                msg += failure.toString();
+                msg += "\n";
             }
         } reporter;
 

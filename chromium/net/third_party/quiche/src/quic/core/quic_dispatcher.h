@@ -196,7 +196,8 @@ class QUIC_NO_EXPORT QuicDispatcher
 
   // Called when |packet_info| is a CHLO packet. Creates a new connection and
   // delivers any buffered packets for that connection id.
-  void ProcessChlo(const std::string& alpn, ReceivedPacketInfo* packet_info);
+  void ProcessChlo(const std::vector<std::string>& alpns,
+                   ReceivedPacketInfo* packet_info);
 
   // Return true if dispatcher wants to destroy session outside of
   // OnConnectionClosed() call stack.
@@ -209,6 +210,8 @@ class QUIC_NO_EXPORT QuicDispatcher
   const QuicTransportVersionVector& GetSupportedTransportVersions();
 
   const ParsedQuicVersionVector& GetSupportedVersions();
+
+  const ParsedQuicVersionVector& GetSupportedVersionsWithQuicCrypto();
 
   const QuicConfig& config() const { return *config_; }
 
@@ -298,11 +301,21 @@ class QUIC_NO_EXPORT QuicDispatcher
   // Called if a packet from an unseen connection is reset or rejected.
   virtual void OnNewConnectionRejected() {}
 
+  // Selects the preferred ALPN from a vector of ALPNs.
+  // This runs through the list of ALPNs provided by the client and picks the
+  // first one it supports. If no supported versions are found, the first
+  // element of the vector is returned.
+  std::string SelectAlpn(const std::vector<std::string>& alpns);
+
+  // If the connection ID length is different from what the dispatcher expects,
+  // replace the connection ID with a random one of the right length,
+  // and save it to make sure the mapping is persistent.
+  QuicConnectionId MaybeReplaceServerConnectionId(
+      QuicConnectionId server_connection_id,
+      ParsedQuicVersion version) const;
+
  private:
   friend class test::QuicDispatcherPeer;
-
-  typedef QuicUnorderedSet<QuicConnectionId, QuicConnectionIdHash>
-      QuicConnectionIdSet;
 
   // TODO(fayang): Consider to rename this function to
   // ProcessValidatedPacketWithUnknownConnectionId.
@@ -312,13 +325,6 @@ class QUIC_NO_EXPORT QuicDispatcher
   void DeliverPacketsToSession(
       const std::list<QuicBufferedPacketStore::BufferedPacket>& packets,
       QuicSession* session);
-
-  // If the connection ID length is different from what the dispatcher expects,
-  // replace the connection ID with a random one of the right length,
-  // and save it to make sure the mapping is persistent.
-  QuicConnectionId MaybeReplaceServerConnectionId(
-      QuicConnectionId server_connection_id,
-      ParsedQuicVersion version);
 
   // Returns true if |version| is a supported protocol version.
   bool IsSupportedVersion(const ParsedQuicVersion version);

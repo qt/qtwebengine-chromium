@@ -14,7 +14,6 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkStrokeRec.h"
-#include "include/core/SkVertices.h"
 #include "src/core/SkGlyphRunPainter.h"
 #include "src/core/SkMask.h"
 
@@ -23,11 +22,13 @@ class SkClipStack;
 class SkBaseDevice;
 class SkBlitter;
 class SkMatrix;
+class SkMatrixProvider;
 class SkPath;
 class SkRegion;
 class SkRasterClip;
 struct SkRect;
 class SkRRect;
+class SkVertices;
 
 class SkDraw : public SkGlyphRunListPainter::BitmapDevicePainter {
 public:
@@ -153,9 +154,9 @@ private:
     bool SK_WARN_UNUSED_RESULT computeConservativeLocalClipBounds(SkRect* bounds) const;
 
 public:
-    SkPixmap        fDst;
-    const SkMatrix* fMatrix{nullptr};        // required
-    const SkRasterClip* fRC{nullptr};        // required
+    SkPixmap                fDst;
+    const SkMatrixProvider* fMatrixProvider{nullptr};  // required
+    const SkRasterClip*     fRC{nullptr};              // required
 
     // optional, will be same dimensions as fDst if present
     const SkPixmap* fCoverage{nullptr};

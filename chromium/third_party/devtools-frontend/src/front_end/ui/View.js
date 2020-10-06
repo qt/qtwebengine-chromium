@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import {TabbedPane} from './TabbedPane.js';  // eslint-disable-line no-unused-vars
 import {ItemsProvider, Toolbar, ToolbarItem, ToolbarMenuButton} from './Toolbar.js';  // eslint-disable-line no-unused-vars
 import {ViewManager} from './ViewManager.js';
@@ -48,7 +51,7 @@ export class View {
   }
 
   /**
-   * @return {!Promise|undefined}
+   * @return {!Promise<void>|void}
    */
   disposeView() {}
 }
@@ -125,7 +128,7 @@ export class SimpleView extends VBox {
   }
 
   /**
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   revealView() {
     return ViewManager.instance().revealView(this);
@@ -247,7 +250,7 @@ export class ViewLocation {
    * @param {!View} view
    * @param {?View=} insertBefore
    * @param {boolean=} userGesture
-   * @return {!Promise}
+   * @return {!Promise<*>}
    */
   showView(view, insertBefore, userGesture) {
   }

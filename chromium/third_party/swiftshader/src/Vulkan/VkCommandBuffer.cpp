@@ -13,7 +13,10 @@
 // limitations under the License.
 
 #include "VkCommandBuffer.hpp"
+
 #include "VkBuffer.hpp"
+#include "VkConfig.hpp"
+#include "VkDevice.hpp"
 #include "VkEvent.hpp"
 #include "VkFence.hpp"
 #include "VkFramebuffer.hpp"
@@ -183,6 +186,7 @@ public:
 		vk::ComputePipeline *pipeline = static_cast<vk::ComputePipeline *>(pipelineState.pipeline);
 		pipeline->run(baseGroupX, baseGroupY, baseGroupZ,
 		              groupCountX, groupCountY, groupCountZ,
+		              pipelineState.descriptorSetObjects,
 		              pipelineState.descriptorSets,
 		              pipelineState.descriptorDynamicOffsets,
 		              executionState.pushConstants);
@@ -216,6 +220,7 @@ public:
 
 		auto pipeline = static_cast<vk::ComputePipeline *>(pipelineState.pipeline);
 		pipeline->run(0, 0, 0, cmd->x, cmd->y, cmd->z,
+		              pipelineState.descriptorSetObjects,
 		              pipelineState.descriptorSets,
 		              pipelineState.descriptorDynamicOffsets,
 		              executionState.pushConstants);
@@ -531,6 +536,7 @@ public:
 
 		executionState.bindVertexInputs(context, firstInstance);
 
+		context.descriptorSetObjects = pipelineState.descriptorSetObjects;
 		context.descriptorSets = pipelineState.descriptorSets;
 		context.descriptorDynamicOffsets = pipelineState.descriptorDynamicOffsets;
 
@@ -541,11 +547,9 @@ public:
 
 		if(pipeline->hasDynamicState(VK_DYNAMIC_STATE_DEPTH_BIAS))
 		{
-			// If the depth bias clamping feature is not enabled, depthBiasClamp must be 0.0
-			ASSERT(executionState.dynamicState.depthBiasClamp == 0.0f);
-
 			context.depthBias = executionState.dynamicState.depthBiasConstantFactor;
 			context.slopeDepthBias = executionState.dynamicState.depthBiasSlopeFactor;
+			context.depthBiasClamp = executionState.dynamicState.depthBiasClamp;
 		}
 
 		if(pipeline->hasDynamicState(VK_DYNAMIC_STATE_DEPTH_BOUNDS) && context.depthBoundsTestEnable)
@@ -743,10 +747,10 @@ private:
 	uint32_t stride;
 };
 
-class CmdImageToImageCopy : public vk::CommandBuffer::Command
+class CmdCopyImage : public vk::CommandBuffer::Command
 {
 public:
-	CmdImageToImageCopy(const vk::Image *srcImage, vk::Image *dstImage, const VkImageCopy &region)
+	CmdCopyImage(const vk::Image *srcImage, vk::Image *dstImage, const VkImageCopy &region)
 	    : srcImage(srcImage)
 	    , dstImage(dstImage)
 	    , region(region)
@@ -758,7 +762,7 @@ public:
 		srcImage->copyTo(dstImage, region);
 	}
 
-	std::string description() override { return "vkCmdImageToImageCopy()"; }
+	std::string description() override { return "vkCmdCopyImage()"; }
 
 private:
 	const vk::Image *srcImage;
@@ -766,10 +770,10 @@ private:
 	const VkImageCopy region;
 };
 
-class CmdBufferToBufferCopy : public vk::CommandBuffer::Command
+class CmdCopyBuffer : public vk::CommandBuffer::Command
 {
 public:
-	CmdBufferToBufferCopy(const vk::Buffer *srcBuffer, vk::Buffer *dstBuffer, const VkBufferCopy &region)
+	CmdCopyBuffer(const vk::Buffer *srcBuffer, vk::Buffer *dstBuffer, const VkBufferCopy &region)
 	    : srcBuffer(srcBuffer)
 	    , dstBuffer(dstBuffer)
 	    , region(region)
@@ -781,7 +785,7 @@ public:
 		srcBuffer->copyTo(dstBuffer, region);
 	}
 
-	std::string description() override { return "vkCmdBufferToBufferCopy()"; }
+	std::string description() override { return "vkCmdCopyBuffer()"; }
 
 private:
 	const vk::Buffer *srcBuffer;
@@ -789,10 +793,10 @@ private:
 	const VkBufferCopy region;
 };
 
-class CmdImageToBufferCopy : public vk::CommandBuffer::Command
+class CmdCopyImageToBuffer : public vk::CommandBuffer::Command
 {
 public:
-	CmdImageToBufferCopy(vk::Image *srcImage, vk::Buffer *dstBuffer, const VkBufferImageCopy &region)
+	CmdCopyImageToBuffer(vk::Image *srcImage, vk::Buffer *dstBuffer, const VkBufferImageCopy &region)
 	    : srcImage(srcImage)
 	    , dstBuffer(dstBuffer)
 	    , region(region)
@@ -804,7 +808,7 @@ public:
 		srcImage->copyTo(dstBuffer, region);
 	}
 
-	std::string description() override { return "vkCmdImageToBufferCopy()"; }
+	std::string description() override { return "vkCmdCopyImageToBuffer()"; }
 
 private:
 	vk::Image *srcImage;
@@ -812,10 +816,10 @@ private:
 	const VkBufferImageCopy region;
 };
 
-class CmdBufferToImageCopy : public vk::CommandBuffer::Command
+class CmdCopyBufferToImage : public vk::CommandBuffer::Command
 {
 public:
-	CmdBufferToImageCopy(vk::Buffer *srcBuffer, vk::Image *dstImage, const VkBufferImageCopy &region)
+	CmdCopyBufferToImage(vk::Buffer *srcBuffer, vk::Image *dstImage, const VkBufferImageCopy &region)
 	    : srcBuffer(srcBuffer)
 	    , dstImage(dstImage)
 	    , region(region)
@@ -827,7 +831,7 @@ public:
 		dstImage->copyFrom(srcBuffer, region);
 	}
 
-	std::string description() override { return "vkCmdBufferToImageCopy()"; }
+	std::string description() override { return "vkCmdCopyBufferToImage()"; }
 
 private:
 	vk::Buffer *srcBuffer;
@@ -967,7 +971,7 @@ public:
 
 	void play(vk::CommandBuffer::ExecutionState &executionState) override
 	{
-		srcImage->blit(dstImage, region, filter);
+		srcImage->blitTo(dstImage, region, filter);
 	}
 
 	std::string description() override { return "vkCmdBlitImage()"; }
@@ -991,7 +995,7 @@ public:
 
 	void play(vk::CommandBuffer::ExecutionState &executionState) override
 	{
-		srcImage->resolve(dstImage, region);
+		srcImage->resolveTo(dstImage, region);
 	}
 
 	std::string description() override { return "vkCmdBlitImage()"; }
@@ -1083,45 +1087,62 @@ private:
 	vk::Event *ev;
 };
 
-class CmdBindDescriptorSet : public vk::CommandBuffer::Command
+class CmdBindDescriptorSets : public vk::CommandBuffer::Command
 {
 public:
-	CmdBindDescriptorSet(VkPipelineBindPoint pipelineBindPoint, const vk::PipelineLayout *pipelineLayout, uint32_t set, vk::DescriptorSet *descriptorSet,
-	                     uint32_t dynamicOffsetCount, uint32_t const *dynamicOffsets)
+	CmdBindDescriptorSets(VkPipelineBindPoint pipelineBindPoint,
+	                      uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
+	                      uint32_t firstDynamicOffset, uint32_t dynamicOffsetCount, const uint32_t *pDynamicOffsets)
 	    : pipelineBindPoint(pipelineBindPoint)
-	    , pipelineLayout(pipelineLayout)
-	    , set(set)
-	    , descriptorSet(descriptorSet)
+	    , firstSet(firstSet)
+	    , descriptorSetCount(descriptorSetCount)
+	    , firstDynamicOffset(firstDynamicOffset)
 	    , dynamicOffsetCount(dynamicOffsetCount)
 	{
+		for(uint32_t i = 0; i < descriptorSetCount; i++)
+		{
+			// We need both a descriptor set object for updates and a descriptor set data pointer for routines
+			descriptorSetObjects[firstSet + i] = vk::Cast(pDescriptorSets[i]);
+			descriptorSets[firstSet + i] = vk::Cast(pDescriptorSets[i])->data;
+		}
+
 		for(uint32_t i = 0; i < dynamicOffsetCount; i++)
 		{
-			this->dynamicOffsets[i] = dynamicOffsets[i];
+			dynamicOffsets[firstDynamicOffset + i] = pDynamicOffsets[i];
 		}
 	}
 
 	void play(vk::CommandBuffer::ExecutionState &executionState) override
 	{
-		ASSERT_OR_RETURN((pipelineBindPoint < VK_PIPELINE_BIND_POINT_RANGE_SIZE) && (set < vk::MAX_BOUND_DESCRIPTOR_SETS));
-		auto &pipelineState = executionState.pipelineState[pipelineBindPoint];
-		auto dynamicOffsetBase = pipelineLayout->getDynamicOffsetBase(set);
-		ASSERT_OR_RETURN(dynamicOffsetBase + dynamicOffsetCount <= vk::MAX_DESCRIPTOR_SET_COMBINED_BUFFERS_DYNAMIC);
+		ASSERT(pipelineBindPoint < vk::VK_PIPELINE_BIND_POINT_RANGE_SIZE);
+		ASSERT(firstSet + descriptorSetCount <= vk::MAX_BOUND_DESCRIPTOR_SETS);
+		ASSERT(firstDynamicOffset + dynamicOffsetCount <= vk::MAX_DESCRIPTOR_SET_COMBINED_BUFFERS_DYNAMIC);
 
-		pipelineState.descriptorSets[set] = descriptorSet;
-		for(uint32_t i = 0; i < dynamicOffsetCount; i++)
+		auto &pipelineState = executionState.pipelineState[pipelineBindPoint];
+
+		for(uint32_t i = firstSet; i < firstSet + descriptorSetCount; i++)
 		{
-			pipelineState.descriptorDynamicOffsets[dynamicOffsetBase + i] = dynamicOffsets[i];
+			pipelineState.descriptorSetObjects[i] = descriptorSetObjects[i];
+			pipelineState.descriptorSets[i] = descriptorSets[i];
+		}
+
+		for(uint32_t i = firstDynamicOffset; i < firstDynamicOffset + dynamicOffsetCount; i++)
+		{
+			pipelineState.descriptorDynamicOffsets[i] = dynamicOffsets[i];
 		}
 	}
 
-	std::string description() override { return "vkCmdBindDescriptorSet()"; }
+	std::string description() override { return "vkCmdBindDescriptorSets()"; }
 
 private:
-	VkPipelineBindPoint pipelineBindPoint;
-	const vk::PipelineLayout *pipelineLayout;
-	uint32_t set;
-	vk::DescriptorSet *descriptorSet;
-	uint32_t dynamicOffsetCount;
+	const VkPipelineBindPoint pipelineBindPoint;
+	const uint32_t firstSet;
+	const uint32_t descriptorSetCount;
+	const uint32_t firstDynamicOffset;
+	const uint32_t dynamicOffsetCount;
+
+	vk::DescriptorSet::Array descriptorSetObjects;
+	vk::DescriptorSet::Bindings descriptorSets;
 	vk::DescriptorSet::DynamicOffsets dynamicOffsets;
 };
 
@@ -1558,28 +1579,17 @@ void CommandBuffer::setStencilReference(VkStencilFaceFlags faceMask, uint32_t re
 	addCommand<::CmdSetStencilReference>(faceMask, reference);
 }
 
-void CommandBuffer::bindDescriptorSets(VkPipelineBindPoint pipelineBindPoint, const PipelineLayout *layout,
+void CommandBuffer::bindDescriptorSets(VkPipelineBindPoint pipelineBindPoint, const PipelineLayout *pipelineLayout,
                                        uint32_t firstSet, uint32_t descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
                                        uint32_t dynamicOffsetCount, const uint32_t *pDynamicOffsets)
 {
 	ASSERT(state == RECORDING);
 
-	for(uint32_t i = 0; i < descriptorSetCount; i++)
-	{
-		auto descriptorSetIndex = firstSet + i;
-		auto setLayout = layout->getDescriptorSetLayout(descriptorSetIndex);
+	auto firstDynamicOffset = (dynamicOffsetCount != 0) ? pipelineLayout->getDynamicOffsetIndex(firstSet, 0) : 0;
 
-		auto numDynamicDescriptors = setLayout->getDynamicDescriptorCount();
-		ASSERT(numDynamicDescriptors == 0 || pDynamicOffsets != nullptr);
-		ASSERT(dynamicOffsetCount >= numDynamicDescriptors);
-
-		addCommand<::CmdBindDescriptorSet>(
-		    pipelineBindPoint, layout, descriptorSetIndex, vk::Cast(pDescriptorSets[i]),
-		    dynamicOffsetCount, pDynamicOffsets);
-
-		pDynamicOffsets += numDynamicDescriptors;
-		dynamicOffsetCount -= numDynamicDescriptors;
-	}
+	addCommand<::CmdBindDescriptorSets>(
+	    pipelineBindPoint, firstSet, descriptorSetCount, pDescriptorSets,
+	    firstDynamicOffset, dynamicOffsetCount, pDynamicOffsets);
 }
 
 void CommandBuffer::bindIndexBuffer(Buffer *buffer, VkDeviceSize offset, VkIndexType indexType)
@@ -1603,7 +1613,7 @@ void CommandBuffer::copyBuffer(const Buffer *srcBuffer, Buffer *dstBuffer, uint3
 
 	for(uint32_t i = 0; i < regionCount; i++)
 	{
-		addCommand<::CmdBufferToBufferCopy>(srcBuffer, dstBuffer, pRegions[i]);
+		addCommand<::CmdCopyBuffer>(srcBuffer, dstBuffer, pRegions[i]);
 	}
 }
 
@@ -1618,7 +1628,7 @@ void CommandBuffer::copyImage(const Image *srcImage, VkImageLayout srcImageLayou
 
 	for(uint32_t i = 0; i < regionCount; i++)
 	{
-		addCommand<::CmdImageToImageCopy>(srcImage, dstImage, pRegions[i]);
+		addCommand<::CmdCopyImage>(srcImage, dstImage, pRegions[i]);
 	}
 }
 
@@ -1644,7 +1654,7 @@ void CommandBuffer::copyBufferToImage(Buffer *srcBuffer, Image *dstImage, VkImag
 
 	for(uint32_t i = 0; i < regionCount; i++)
 	{
-		addCommand<::CmdBufferToImageCopy>(srcBuffer, dstImage, pRegions[i]);
+		addCommand<::CmdCopyBufferToImage>(srcBuffer, dstImage, pRegions[i]);
 	}
 }
 
@@ -1656,7 +1666,7 @@ void CommandBuffer::copyImageToBuffer(Image *srcImage, VkImageLayout srcImageLay
 
 	for(uint32_t i = 0; i < regionCount; i++)
 	{
-		addCommand<::CmdImageToBufferCopy>(srcImage, dstBuffer, pRegions[i]);
+		addCommand<::CmdCopyImageToBuffer>(srcImage, dstBuffer, pRegions[i]);
 	}
 }
 
@@ -1775,6 +1785,21 @@ void CommandBuffer::drawIndexedIndirect(Buffer *buffer, VkDeviceSize offset, uin
 	addCommand<::CmdDrawIndexedIndirect>(buffer, offset, drawCount, stride);
 }
 
+void CommandBuffer::beginDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	// Optional debug label region
+}
+
+void CommandBuffer::endDebugUtilsLabel()
+{
+	// Close debug label region opened with beginDebugUtilsLabel()
+}
+
+void CommandBuffer::insertDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	// Optional single debug label
+}
+
 void CommandBuffer::submit(CommandBuffer::ExecutionState &executionState)
 {
 	// Perform recorded work
@@ -1800,7 +1825,7 @@ void CommandBuffer::submit(CommandBuffer::ExecutionState &executionState)
 #ifdef ENABLE_VK_DEBUGGER
 		if(debuggerThread)
 		{
-			debuggerThread->update([&](vk::dbg::Frame &frame) {
+			debuggerThread->update(true, [&](vk::dbg::Frame &frame) {
 				frame.location = { debuggerFile, line++, 0 };
 			});
 		}

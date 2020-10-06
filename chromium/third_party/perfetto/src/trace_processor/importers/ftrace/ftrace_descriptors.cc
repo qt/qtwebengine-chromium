@@ -24,7 +24,7 @@ namespace perfetto {
 namespace trace_processor {
 namespace {
 
-std::array<MessageDescriptor, 334> descriptors{{
+std::array<MessageDescriptor, 336> descriptors{{
     {nullptr, 0, {}},
     {nullptr, 0, {}},
     {nullptr, 0, {}},
@@ -3565,6 +3565,24 @@ std::array<MessageDescriptor, 334> descriptors{{
             {"trace_type", ProtoSchemaType::kUint32},
             {"value", ProtoSchemaType::kInt32},
             {"trace_begin", ProtoSchemaType::kUint32},
+        },
+    },
+    {
+        "mark_victim",
+        1,
+        {
+            {},
+            {"pid", ProtoSchemaType::kInt32},
+        },
+    },
+    {
+        "ion_stat",
+        3,
+        {
+            {},
+            {"buffer_id", ProtoSchemaType::kUint32},
+            {"len", ProtoSchemaType::kInt64},
+            {"total_allocated", ProtoSchemaType::kUint64},
         },
     },
 }};

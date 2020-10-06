@@ -31,7 +31,7 @@ public:
      * the coordinates are 3-dimensional, it a perspective divide into is emitted into the
      * fragment shader (xy / z) to convert them to 2D.
      */
-    virtual SkString ensureCoords2D(const GrShaderVar&) = 0;
+    virtual SkString ensureCoords2D(const GrShaderVar&, const SkSL::SampleMatrix& matrix) = 0;
 
     // TODO: remove this method.
     void declAppendf(const char* fmt, ...);
@@ -94,21 +94,19 @@ public:
      */
     virtual void applyFnToMultisampleMask(const char* fn, const char* grad, ScopeFlags) = 0;
 
-    /**
-     * Fragment procs with child procs should call these functions before/after calling emitCode
-     * on a child proc.
-     */
-    virtual void onBeforeChildProcEmitCode() = 0;
-    virtual void onAfterChildProcEmitCode() = 0;
-
-    virtual SkString writeProcessorFunction(GrGLSLFragmentProcessor* fp,
-                                            GrGLSLFragmentProcessor::EmitArgs& args);
-
-    virtual const SkString& getMangleString() const = 0;
+    SkString writeProcessorFunction(GrGLSLFragmentProcessor*, GrGLSLFragmentProcessor::EmitArgs&);
 
     virtual void forceHighPrecision() = 0;
 
 private:
+    /**
+     * These are called before/after calling emitCode on a child proc to update mangling.
+     */
+    virtual void onBeforeChildProcEmitCode() = 0;
+    virtual void onAfterChildProcEmitCode() = 0;
+
+    virtual const SkString& getMangleString() const = 0;
+
     // WARNING: LIke GrRenderTargetProxy, changes to this can cause issues in ASAN. This is caused
     // by GrGLSLProgramBuilder's GrTAllocators requiring 16 byte alignment, but since
     // GrGLSLFragmentShaderBuilder has a virtual diamond hierarchy, ASAN requires all this pointers
@@ -153,15 +151,13 @@ public:
     GrGLSLFragmentShaderBuilder(GrGLSLProgramBuilder* program);
 
     // Shared GrGLSLFragmentBuilder interface.
-    virtual SkString ensureCoords2D(const GrShaderVar&) override;
+    virtual SkString ensureCoords2D(const GrShaderVar&,
+                                    const SkSL::SampleMatrix& matrix) override;
 
     // GrGLSLFPFragmentBuilder interface.
     const char* sampleOffsets() override;
     void maskOffMultisampleCoverage(const char* mask, ScopeFlags) override;
     void applyFnToMultisampleMask(const char* fn, const char* grad, ScopeFlags) override;
-    const SkString& getMangleString() const override { return fMangleString; }
-    void onBeforeChildProcEmitCode() override;
-    void onAfterChildProcEmitCode() override;
     void forceHighPrecision() override { fForceHighPrecision = true; }
 
     // GrGLSLXPFragmentBuilder interface.
@@ -172,6 +168,11 @@ public:
 
 private:
     using CustomFeatures = GrProcessor::CustomFeatures;
+
+    // GrGLSLFPFragmentBuilder private interface.
+    void onBeforeChildProcEmitCode() override;
+    void onAfterChildProcEmitCode() override;
+    const SkString& getMangleString() const override { return fMangleString; }
 
     // Private public interface, used by GrGLProgramBuilder to build a fragment shader
     void enableCustomOutput();

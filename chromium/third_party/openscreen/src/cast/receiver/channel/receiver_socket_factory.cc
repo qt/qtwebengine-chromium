@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "cast/receiver/channel/receiver_socket_factory.h"
+#include "cast/receiver/public/receiver_socket_factory.h"
 
-#include "util/logging.h"
+#include "util/osp_logging.h"
 
 namespace openscreen {
 namespace cast {

@@ -88,7 +88,8 @@ namespace dawn_native {
               "Enable residency management. This allows page-in and page-out of resource heaps in "
               "GPU memory. This component improves overcommitted performance by keeping the most "
               "recently used resources local to the GPU. Turning this component off can cause "
-              "allocation failures when application memory exceeds physical device memory."}},
+              "allocation failures when application memory exceeds physical device memory.",
+              "https://crbug.com/dawn/193"}},
             {Toggle::SkipValidation,
              {"skip_validation", "Skip expensive validation of Dawn commands.",
               "https://crbug.com/dawn/271"}},
@@ -111,35 +112,42 @@ namespace dawn_native {
             {Toggle::MetalDisableSamplerCompare,
              {"metal_disable_sampler_compare",
               "Disables the use of sampler compare on Metal. This is unsupported before A9 "
-              "processors."}},
+              "processors.",
+              "https://crbug.com/dawn/342"}},
             {Toggle::DisableBaseVertex,
              {"disable_base_vertex",
-              "Disables the use of non-zero base vertex which is unsupported on some platforms."}},
+              "Disables the use of non-zero base vertex which is unsupported on some platforms.",
+              "https://crbug.com/dawn/343"}},
             {Toggle::DisableBaseInstance,
              {"disable_base_instance",
               "Disables the use of non-zero base instance which is unsupported on some "
-              "platforms."}},
+              "platforms.",
+              "https://crbug.com/dawn/343"}},
             {Toggle::UseD3D12SmallShaderVisibleHeapForTesting,
              {"use_d3d12_small_shader_visible_heap",
               "Enable use of a small D3D12 shader visible heap, instead of using a large one by "
-              "default. This setting is used to test bindgroup encoding."}},
+              "default. This setting is used to test bindgroup encoding.",
+              "https://crbug.com/dawn/155"}},
+            {Toggle::UseDXC,
+             {"use_dxc", "Use DXC instead of FXC for compiling HLSL",
+              "https://crbug.com/dawn/402"}},
         }};
 
     }  // anonymous namespace
 
-    void TogglesSet::SetToggle(Toggle toggle, bool enabled) {
+    void TogglesSet::Set(Toggle toggle, bool enabled) {
         ASSERT(toggle != Toggle::InvalidEnum);
         const size_t toggleIndex = static_cast<size_t>(toggle);
         toggleBitset.set(toggleIndex, enabled);
     }
 
-    bool TogglesSet::IsEnabled(Toggle toggle) const {
+    bool TogglesSet::Has(Toggle toggle) const {
         ASSERT(toggle != Toggle::InvalidEnum);
         const size_t toggleIndex = static_cast<size_t>(toggle);
         return toggleBitset.test(toggleIndex);
     }
 
-    std::vector<const char*> TogglesSet::GetEnabledToggleNames() const {
+    std::vector<const char*> TogglesSet::GetContainedToggleNames() const {
         std::vector<const char*> togglesNameInUse(toggleBitset.count());
 
         uint32_t index = 0;

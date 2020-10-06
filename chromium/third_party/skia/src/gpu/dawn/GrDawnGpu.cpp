@@ -22,6 +22,7 @@
 #include "src/gpu/dawn/GrDawnOpsRenderPass.h"
 #include "src/gpu/dawn/GrDawnProgramBuilder.h"
 #include "src/gpu/dawn/GrDawnRenderTarget.h"
+#include "src/gpu/dawn/GrDawnStagingBuffer.h"
 #include "src/gpu/dawn/GrDawnStencilAttachment.h"
 #include "src/gpu/dawn/GrDawnTexture.h"
 #include "src/gpu/dawn/GrDawnUtil.h"
@@ -34,7 +35,36 @@
 #include <unistd.h>
 #endif // !defined(SK_BUILD_FOR_WIN)
 
-const int kMaxRenderPipelineEntries = 1024;
+static const int kMaxRenderPipelineEntries = 1024;
+
+namespace {
+
+class Fence {
+public:
+    Fence(const wgpu::Device& device, const wgpu::Fence& fence)
+      : fDevice(device), fFence(fence), fCalled(false) {
+        fFence.OnCompletion(0, callback, this);
+    }
+
+    static void callback(WGPUFenceCompletionStatus status, void* userData) {
+        Fence* fence = static_cast<Fence*>(userData);
+        fence->fCalled = true;
+    }
+
+    bool check() {
+        fDevice.Tick();
+        return fCalled;
+    }
+
+    wgpu::Fence fence() { return fFence; }
+
+private:
+    wgpu::Device            fDevice;
+    wgpu::Fence             fFence;
+    bool                    fCalled;
+};
+
+}
 
 static wgpu::FilterMode to_dawn_filter_mode(GrSamplerState::Filter filter) {
     switch (filter) {
@@ -80,20 +110,28 @@ GrDawnGpu::GrDawnGpu(GrContext* context, const GrContextOptions& options,
                      const wgpu::Device& device)
         : INHERITED(context)
         , fDevice(device)
-        , fQueue(device.CreateQueue())
+        , fQueue(device.GetDefaultQueue())
         , fCompiler(new SkSL::Compiler())
         , fUniformRingBuffer(this, wgpu::BufferUsage::Uniform)
         , fRenderPipelineCache(kMaxRenderPipelineEntries)
-        , fStagingManager(fDevice) {
+        , fFinishCallbacks(this) {
     fCaps.reset(new GrDawnCaps(options));
 }
 
 GrDawnGpu::~GrDawnGpu() {
+    while (!this->busyStagingBuffers().isEmpty()) {
+        fDevice.Tick();
+    }
 }
 
 
 void GrDawnGpu::disconnect(DisconnectType type) {
-    SkASSERT(!"unimplemented");
+    if (DisconnectType::kCleanup == type) {
+        while (!this->busyStagingBuffers().isEmpty()) {
+            fDevice.Tick();
+        }
+    }
+    INHERITED::disconnect(type);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -260,8 +298,7 @@ GrBackendTexture GrDawnGpu::onCreateBackendTexture(SkISize dimensions,
                                                    const GrBackendFormat& backendFormat,
                                                    GrRenderable renderable,
                                                    GrMipMapped mipMapped,
-                                                   GrProtected isProtected,
-                                                   const BackendTextureData* data) {
+                                                   GrProtected isProtected) {
     wgpu::TextureFormat format;
     if (!backendFormat.asDawnFormat(&format)) {
         return GrBackendTexture();
@@ -295,8 +332,21 @@ GrBackendTexture GrDawnGpu::onCreateBackendTexture(SkISize dimensions,
 
     wgpu::Texture tex = this->device().CreateTexture(&desc);
 
-    size_t bpp = GrDawnBytesPerPixel(format);
-    size_t baseLayerSize = bpp * dimensions.width() * dimensions.height();
+    GrDawnTextureInfo info;
+    info.fTexture = tex;
+    info.fFormat = desc.format;
+    info.fLevelCount = desc.mipLevelCount;
+    return GrBackendTexture(dimensions.width(), dimensions.height(), info);
+}
+
+bool GrDawnGpu::onUpdateBackendTexture(const GrBackendTexture& backendTexture,
+                                       sk_sp<GrRefCntedCallback> finishedCallback,
+                                       const BackendTextureData* data) {
+    GrDawnTextureInfo info;
+    SkAssertResult(backendTexture.getDawnTextureInfo(&info));
+
+    size_t bpp = GrDawnBytesPerPixel(info.fFormat);
+    size_t baseLayerSize = bpp * backendTexture.width() * backendTexture.height();
     const void* pixels;
     SkAutoMalloc defaultStorage(baseLayerSize);
     if (data && data->type() == BackendTextureData::Type::kPixmaps) {
@@ -306,55 +356,44 @@ GrBackendTexture GrDawnGpu::onCreateBackendTexture(SkISize dimensions,
         memset(defaultStorage.get(), 0, baseLayerSize);
     }
     wgpu::Device device = this->device();
-    wgpu::CommandEncoder copyEncoder = fDevice.CreateCommandEncoder();
-    int w = dimensions.width(), h = dimensions.height();
-    for (uint32_t i = 0; i < desc.mipLevelCount; i++) {
+    wgpu::CommandEncoder copyEncoder = this->getCopyEncoder();
+    int w = backendTexture.width(), h = backendTexture.height();
+    for (uint32_t i = 0; i < info.fLevelCount; i++) {
         size_t origRowBytes = bpp * w;
         size_t rowBytes = GrDawnRoundRowBytes(origRowBytes);
         size_t size = rowBytes * h;
-        GrDawnStagingBuffer* stagingBuffer = this->getStagingBuffer(size);
+        GrStagingBuffer::Slice stagingBuffer = this->allocateStagingBufferSlice(size);
         if (rowBytes == origRowBytes) {
-            memcpy(stagingBuffer->fData, pixels, size);
+            memcpy(stagingBuffer.fData, pixels, size);
         } else {
             const char* src = static_cast<const char*>(pixels);
-            char* dst = static_cast<char*>(stagingBuffer->fData);
+            char* dst = static_cast<char*>(stagingBuffer.fData);
             for (int row = 0; row < h; row++) {
                 memcpy(dst, src, origRowBytes);
                 dst += rowBytes;
                 src += origRowBytes;
             }
         }
-        wgpu::Buffer buffer = stagingBuffer->fBuffer;
-        buffer.Unmap();
-        stagingBuffer->fData = nullptr;
         wgpu::BufferCopyView srcBuffer;
-        srcBuffer.buffer = buffer;
-        srcBuffer.offset = 0;
-        srcBuffer.rowPitch = rowBytes;
-        srcBuffer.imageHeight = h;
+        srcBuffer.buffer = static_cast<GrDawnStagingBuffer*>(stagingBuffer.fBuffer)->buffer();
+        srcBuffer.offset = stagingBuffer.fOffset;
+        srcBuffer.bytesPerRow = rowBytes;
+        srcBuffer.rowsPerImage = h;
         wgpu::TextureCopyView dstTexture;
-        dstTexture.texture = tex;
+        dstTexture.texture = info.fTexture;
         dstTexture.mipLevel = i;
         dstTexture.origin = {0, 0, 0};
-        wgpu::Extent3D copySize = {(uint32_t) w, (uint32_t) h, 1};
+        wgpu::Extent3D copySize = {(uint32_t)w, (uint32_t)h, 1};
         copyEncoder.CopyBufferToTexture(&srcBuffer, &dstTexture, &copySize);
         w = std::max(1, w / 2);
         h = std::max(1, h / 2);
     }
-    wgpu::CommandBuffer cmdBuf = copyEncoder.Finish();
-    fQueue.Submit(1, &cmdBuf);
-    GrDawnTextureInfo info;
-    info.fTexture = tex;
-    info.fFormat = desc.format;
-    info.fLevelCount = desc.mipLevelCount;
-    return GrBackendTexture(dimensions.width(), dimensions.height(), info);
+    return true;
 }
 
-GrBackendTexture GrDawnGpu::onCreateCompressedBackendTexture(SkISize dimensions,
-                                                             const GrBackendFormat&,
-                                                             GrMipMapped,
-                                                             GrProtected,
-                                                             const BackendTextureData*) {
+GrBackendTexture GrDawnGpu::onCreateCompressedBackendTexture(
+        SkISize dimensions, const GrBackendFormat&, GrMipMapped, GrProtected,
+        sk_sp<GrRefCntedCallback> finishedCallback, const BackendTextureData*) {
     return {};
 }
 
@@ -381,7 +420,6 @@ bool GrDawnGpu::isTestingOnlyBackendTexture(const GrBackendTexture& tex) const {
 
 GrBackendRenderTarget GrDawnGpu::createTestingOnlyBackendRenderTarget(int width, int height,
                                                                       GrColorType colorType) {
-
     if (width > this->caps()->maxTextureSize() || height > this->caps()->maxTextureSize()) {
         return GrBackendRenderTarget();
     }
@@ -418,25 +456,37 @@ void GrDawnGpu::deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget
 }
 
 void GrDawnGpu::testingOnly_flushGpuAndSync() {
-    this->flush();
+    this->submitToGpu(true);
 }
 
 #endif
 
-void GrDawnGpu::flush() {
-    fUniformRingBuffer.flush();
+void GrDawnGpu::addFinishedProc(GrGpuFinishedProc finishedProc,
+                                GrGpuFinishedContext finishedContext) {
+    fFinishCallbacks.add(finishedProc, finishedContext);
+}
+
+static void callback(WGPUFenceCompletionStatus status, void* userData) {
+    *static_cast<bool*>(userData) = true;
+}
+
+bool GrDawnGpu::onSubmitToGpu(bool syncCpu) {
     this->flushCopyEncoder();
     if (!fCommandBuffers.empty()) {
         fQueue.Submit(fCommandBuffers.size(), &fCommandBuffers.front());
         fCommandBuffers.clear();
     }
-    fStagingManager.mapBusyList();
-    fDevice.Tick();
-}
-
-bool GrDawnGpu::onFinishFlush(GrSurfaceProxy*[], int n, SkSurface::BackendSurfaceAccess access,
-                              const GrFlushInfo& info, const GrPrepareForExternalIORequests&) {
-    this->flush();
+    this->mapStagingBuffers();
+    if (syncCpu) {
+        wgpu::FenceDescriptor desc;
+        wgpu::Fence fence = fQueue.CreateFence(&desc);
+        bool called = false;
+        fence.OnCompletion(0, callback, &called);
+        while (!called) {
+            fDevice.Tick();
+        }
+        fFinishCallbacks.callAll(true);
+    }
     return true;
 }
 
@@ -482,7 +532,7 @@ bool GrDawnGpu::onReadPixels(GrSurface* surface, int left, int top, int width, i
     wgpu::Texture tex = get_dawn_texture_from_surface(surface);
     SkASSERT(tex);
 
-    if (0 == rowBytes) {
+    if (!tex || 0 == rowBytes) {
         return false;
     }
     size_t origRowBytes = rowBytes;
@@ -503,12 +553,12 @@ bool GrDawnGpu::onReadPixels(GrSurface* surface, int left, int top, int width, i
     wgpu::BufferCopyView dstBuffer;
     dstBuffer.buffer = buf;
     dstBuffer.offset = 0;
-    dstBuffer.rowPitch = rowBytes;
-    dstBuffer.imageHeight = height;
+    dstBuffer.bytesPerRow = rowBytes;
+    dstBuffer.rowsPerImage = height;
 
     wgpu::Extent3D copySize = {(uint32_t) width, (uint32_t) height, 1};
     this->getCopyEncoder().CopyTextureToBuffer(&srcTexture, &dstBuffer, &copySize);
-    flush();
+    this->submitToGpu(true);
 
     const void *readPixelsPtr = nullptr;
     buf.MapReadAsync(callback, &readPixelsPtr);
@@ -542,17 +592,17 @@ void GrDawnGpu::submit(GrOpsRenderPass* renderPass) {
 }
 
 GrFence SK_WARN_UNUSED_RESULT GrDawnGpu::insertFence() {
-    SkASSERT(!"unimplemented");
-    return GrFence();
+    wgpu::FenceDescriptor desc;
+    wgpu::Fence fence = fQueue.CreateFence(&desc);
+    return reinterpret_cast<GrFence>(new Fence(fDevice, fence));
 }
 
-bool GrDawnGpu::waitFence(GrFence fence, uint64_t timeout) {
-    SkASSERT(!"unimplemented");
-    return false;
+bool GrDawnGpu::waitFence(GrFence fence) {
+    return reinterpret_cast<Fence*>(fence)->check();
 }
 
 void GrDawnGpu::deleteFence(GrFence fence) const {
-    SkASSERT(!"unimplemented");
+    delete reinterpret_cast<Fence*>(fence);
 }
 
 std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT GrDawnGpu::makeSemaphore(bool isOwned) {
@@ -577,7 +627,7 @@ void GrDawnGpu::waitSemaphore(GrSemaphore* semaphore) {
 }
 
 void GrDawnGpu::checkFinishProcs() {
-    SkASSERT(!"unimplemented");
+    fFinishCallbacks.check();
 }
 
 std::unique_ptr<GrSemaphore> GrDawnGpu::prepareTextureForCrossContextUsage(GrTexture* texture) {
@@ -622,9 +672,6 @@ wgpu::Sampler GrDawnGpu::getOrCreateSampler(GrSamplerState samplerState) {
     desc.addressModeW = wgpu::AddressMode::ClampToEdge;
     desc.magFilter = desc.minFilter = to_dawn_filter_mode(samplerState.filter());
     desc.mipmapFilter = wgpu::FilterMode::Linear;
-    desc.lodMinClamp = 0.0f;
-    desc.lodMaxClamp = 1000.0f;
-    desc.compare = wgpu::CompareFunction::Never;
     wgpu::Sampler sampler = device().CreateSampler(&desc);
     fSamplers.insert(std::pair<GrSamplerState, wgpu::Sampler>(samplerState, sampler));
     return sampler;
@@ -634,8 +681,13 @@ GrDawnRingBuffer::Slice GrDawnGpu::allocateUniformRingBufferSlice(int size) {
     return fUniformRingBuffer.allocate(size);
 }
 
-GrDawnStagingBuffer* GrDawnGpu::getStagingBuffer(size_t size) {
-    return fStagingManager.findOrCreateStagingBuffer(size);
+std::unique_ptr<GrStagingBuffer> GrDawnGpu::createStagingBuffer(size_t size) {
+    wgpu::BufferDescriptor desc;
+    desc.usage = wgpu::BufferUsage::MapWrite | wgpu::BufferUsage::CopySrc;
+    desc.size = size;
+    wgpu::CreateBufferMappedResult result = fDevice.CreateBufferMapped(&desc);
+    auto stagingBuffer = new GrDawnStagingBuffer(this, result.buffer, desc.size, result.data);
+    return std::unique_ptr<GrStagingBuffer>(stagingBuffer);
 }
 
 void GrDawnGpu::appendCommandBuffer(wgpu::CommandBuffer commandBuffer) {
@@ -655,5 +707,13 @@ void GrDawnGpu::flushCopyEncoder() {
     if (fCopyEncoder) {
         fCommandBuffers.push_back(fCopyEncoder.Finish());
         fCopyEncoder = nullptr;
+    }
+}
+
+void GrDawnGpu::mapStagingBuffers() {
+    // Map all active buffers, so we get a callback when they're done.
+    while (auto buffer = this->activeStagingBuffers().head()) {
+        this->moveStagingBufferFromActiveToBusy(buffer);
+        static_cast<GrDawnStagingBuffer*>(buffer)->mapAsync();
     }
 }

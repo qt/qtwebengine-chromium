@@ -17,7 +17,7 @@ namespace SK_OPTS_NS {
 
         // We'll operate in SIMT style, knocking off K-size chunks from n while possible.
         // We noticed quad-pumping is slower than single-pumping and both were slower than double.
-    #if defined(__AVX2__)
+    #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX2
         constexpr int K = 16;
     #else
         constexpr int K = 8;
@@ -28,15 +28,10 @@ namespace SK_OPTS_NS {
         using U16 = skvx::Vec<K, uint16_t>;
         using  U8 = skvx::Vec<K, uint8_t>;
 
-        using I16x2 = skvx::Vec<2*K,  int16_t>;
-        using U16x2 = skvx::Vec<2*K, uint16_t>;
-
         union Slot {
             F32   f32;
             I32   i32;
             U32   u32;
-            I16x2 i16x2;
-            U16x2 u16x2;
         };
 
         Slot                     few_regs[16];
@@ -202,16 +197,6 @@ namespace SK_OPTS_NS {
                     CASE(Op::min_f32): r(d).f32 = min(r(x).f32, r(y).f32); break;
                     CASE(Op::max_f32): r(d).f32 = max(r(x).f32, r(y).f32); break;
 
-                    // These _imm instructions are all x86/JIT only.
-                    CASE(Op::add_f32_imm):
-                    CASE(Op::sub_f32_imm):
-                    CASE(Op::mul_f32_imm):
-                    CASE(Op::min_f32_imm):
-                    CASE(Op::max_f32_imm):
-                    CASE(Op::bit_and_imm):
-                    CASE(Op::bit_or_imm ):
-                    CASE(Op::bit_xor_imm): SkUNREACHABLE; break;
-
                     CASE(Op::fma_f32): r(d).f32 = fma(r(x).f32, r(y).f32, r(z).f32); break;
                     CASE(Op::fms_f32): r(d).f32 = fma(r(x).f32, r(y).f32, -r(z).f32); break;
                     CASE(Op::fnma_f32): r(d).f32 = fma(-r(x).f32, r(y).f32, r(z).f32); break;
@@ -222,17 +207,9 @@ namespace SK_OPTS_NS {
                     CASE(Op::sub_i32): r(d).i32 = r(x).i32 - r(y).i32; break;
                     CASE(Op::mul_i32): r(d).i32 = r(x).i32 * r(y).i32; break;
 
-                    CASE(Op::add_i16x2): r(d).i16x2 = r(x).i16x2 + r(y).i16x2; break;
-                    CASE(Op::sub_i16x2): r(d).i16x2 = r(x).i16x2 - r(y).i16x2; break;
-                    CASE(Op::mul_i16x2): r(d).i16x2 = r(x).i16x2 * r(y).i16x2; break;
-
                     CASE(Op::shl_i32): r(d).i32 = r(x).i32 << immy; break;
                     CASE(Op::sra_i32): r(d).i32 = r(x).i32 >> immy; break;
                     CASE(Op::shr_i32): r(d).u32 = r(x).u32 >> immy; break;
-
-                    CASE(Op::shl_i16x2): r(d).i16x2 = r(x).i16x2 << immy; break;
-                    CASE(Op::sra_i16x2): r(d).i16x2 = r(x).i16x2 >> immy; break;
-                    CASE(Op::shr_i16x2): r(d).u16x2 = r(x).u16x2 >> immy; break;
 
                     CASE(Op:: eq_f32): r(d).i32 = r(x).f32 == r(y).f32; break;
                     CASE(Op::neq_f32): r(d).i32 = r(x).f32 != r(y).f32; break;
@@ -240,14 +217,7 @@ namespace SK_OPTS_NS {
                     CASE(Op::gte_f32): r(d).i32 = r(x).f32 >= r(y).f32; break;
 
                     CASE(Op:: eq_i32): r(d).i32 = r(x).i32 == r(y).i32; break;
-                    CASE(Op::neq_i32): r(d).i32 = r(x).i32 != r(y).i32; break;
                     CASE(Op:: gt_i32): r(d).i32 = r(x).i32 >  r(y).i32; break;
-                    CASE(Op::gte_i32): r(d).i32 = r(x).i32 >= r(y).i32; break;
-
-                    CASE(Op:: eq_i16x2): r(d).i16x2 = r(x).i16x2 == r(y).i16x2; break;
-                    CASE(Op::neq_i16x2): r(d).i16x2 = r(x).i16x2 != r(y).i16x2; break;
-                    CASE(Op:: gt_i16x2): r(d).i16x2 = r(x).i16x2 >  r(y).i16x2; break;
-                    CASE(Op::gte_i16x2): r(d).i16x2 = r(x).i16x2 >= r(y).i16x2; break;
 
                     CASE(Op::bit_and  ): r(d).i32 = r(x).i32 &  r(y).i32; break;
                     CASE(Op::bit_or   ): r(d).i32 = r(x).i32 |  r(y).i32; break;
@@ -258,20 +228,6 @@ namespace SK_OPTS_NS {
                                       break;
 
                     CASE(Op::pack):    r(d).u32 = r(x).u32 | (r(y).u32 << immz); break;
-
-                    CASE(Op::bytes): {
-                        const U32 table[] = {
-                            0,
-                            (r(x).u32      ) & 0xff,
-                            (r(x).u32 >>  8) & 0xff,
-                            (r(x).u32 >> 16) & 0xff,
-                            (r(x).u32 >> 24) & 0xff,
-                        };
-                        r(d).u32 = table[(immy >>  0) & 0xf] <<  0
-                                 | table[(immy >>  4) & 0xf] <<  8
-                                 | table[(immy >>  8) & 0xf] << 16
-                                 | table[(immy >> 12) & 0xf] << 24;
-                    } break;
 
                     CASE(Op::floor):  r(d).f32 =                   skvx::floor(r(x).f32) ; break;
                     CASE(Op::to_f32): r(d).f32 = skvx::cast<float>(            r(x).i32 ); break;

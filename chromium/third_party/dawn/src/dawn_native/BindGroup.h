@@ -41,8 +41,6 @@ namespace dawn_native {
 
     class BindGroupBase : public ObjectBase {
       public:
-        ~BindGroupBase() override;
-
         static BindGroupBase* MakeError(DeviceBase* device);
 
         BindGroupLayoutBase* GetLayout();
@@ -70,8 +68,12 @@ namespace dawn_native {
             static_assert(std::is_base_of<BindGroupBase, Derived>::value, "");
         }
 
+      protected:
+        ~BindGroupBase() override;
+
       private:
         BindGroupBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+        void DeleteThis() override;
 
         Ref<BindGroupLayoutBase> mLayout;
         BindGroupLayoutBase::BindingDataPointers mBindingData;

@@ -44,6 +44,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                            GLenum format,
                            GLenum type,
                            const gl::PixelUnpackState &unpack,
+                           gl::Buffer *unpackBuffer,
                            const uint8_t *pixels) override;
     angle::Result setSubImage(const gl::Context *context,
                               const gl::ImageIndex &index,
@@ -184,8 +185,6 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
         mImageViews.retain(resourceUseList);
     }
 
-    void retainSampler(vk::ResourceUseList *resourceUseList) { mSampler.retain(resourceUseList); }
-
     void releaseOwnershipOfImage(const gl::Context *context);
 
     const vk::ImageView &getReadImageViewAndRecordUse(ContextVk *contextVk) const;
@@ -226,7 +225,10 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                               GLenum type,
                               void *pixels) override;
 
-    ANGLE_INLINE bool isBoundAsImageTexture() const { return mState.isBoundAsImageTexture(); }
+    ANGLE_INLINE bool isBoundAsImageTexture(gl::ContextID contextID) const
+    {
+        return mState.isBoundAsImageTexture(contextID);
+    }
 
   private:
     // Transform an image index from the frontend into one that can be used on the backing
@@ -258,6 +260,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                                const gl::Extents &size,
                                GLenum type,
                                const gl::PixelUnpackState &unpack,
+                               gl::Buffer *unpackBuffer,
                                const uint8_t *pixels);
     angle::Result setSubImageImpl(const gl::Context *context,
                                   const gl::ImageIndex &index,
@@ -410,7 +413,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
 
     // |mSampler| contains the relevant Vulkan sampler states reprensenting the OpenGL Texture
     // sampling states for the Texture.
-    vk::SamplerHelper mSampler;
+    vk::BindingPointer<vk::Sampler> mSampler;
 
     // Render targets stored as vector of vectors
     // Level is first dimension, layer is second
@@ -425,7 +428,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     // The created vkImage usage flag.
     VkImageUsageFlags mImageUsageFlags;
 
-    angle::ObserverBinding mStagingBufferObserverBinding;
+    angle::ObserverBinding mImageObserverBinding;
 };
 
 }  // namespace rx

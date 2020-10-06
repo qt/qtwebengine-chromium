@@ -3284,6 +3284,8 @@ TEST(SSLTest, SetChainAndKey) {
   bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_with_buffers_method()));
   ASSERT_TRUE(server_ctx);
 
+  ASSERT_EQ(nullptr, SSL_CTX_get0_chain(server_ctx.get()));
+
   bssl::UniquePtr<EVP_PKEY> key = GetChainTestKey();
   ASSERT_TRUE(key);
   bssl::UniquePtr<CRYPTO_BUFFER> leaf = GetChainTestCertificateBuffer();
@@ -3296,6 +3298,9 @@ TEST(SSLTest, SetChainAndKey) {
   };
   ASSERT_TRUE(SSL_CTX_set_chain_and_key(server_ctx.get(), &chain[0],
                                         chain.size(), key.get(), nullptr));
+
+  ASSERT_EQ(chain.size(),
+            sk_CRYPTO_BUFFER_num(SSL_CTX_get0_chain(server_ctx.get())));
 
   SSL_CTX_set_custom_verify(
       client_ctx.get(), SSL_VERIFY_PEER,
@@ -5101,13 +5106,38 @@ class QUICMethodTest : public testing::Test {
       transport_->client()->AllowOutOfOrderWrites();
       transport_->server()->AllowOutOfOrderWrites();
     }
+    static const uint8_t client_transport_params[] = {0};
+    if (!SSL_set_quic_transport_params(client_.get(), client_transport_params,
+                                       sizeof(client_transport_params)) ||
+        !SSL_set_quic_transport_params(server_.get(),
+                                       server_transport_params_.data(),
+                                       server_transport_params_.size()) ||
+        !SSL_set_quic_early_data_context(
+            server_.get(), server_quic_early_data_context_.data(),
+            server_quic_early_data_context_.size())) {
+      return false;
+    }
     return true;
   }
+
+  enum class ExpectedError {
+    kNoError,
+    kClientError,
+    kServerError,
+  };
 
   // CompleteHandshakesForQUIC runs |SSL_do_handshake| on |client_| and
   // |server_| until each completes once. It returns true on success and false
   // on failure.
   bool CompleteHandshakesForQUIC() {
+    return RunQUICHandshakesAndExpectError(ExpectedError::kNoError);
+  }
+
+  // Runs |SSL_do_handshake| on |client_| and |server_| until each completes
+  // once. If |expect_client_error| is true, it will return true only if the
+  // client handshake failed. Otherwise, it returns true if both handshakes
+  // succeed and false otherwise.
+  bool RunQUICHandshakesAndExpectError(ExpectedError expected_error) {
     bool client_done = false, server_done = false;
     while (!client_done || !server_done) {
       if (!client_done) {
@@ -5120,6 +5150,9 @@ class QUICMethodTest : public testing::Test {
         if (client_ret == 1) {
           client_done = true;
         } else if (client_ret != -1 || client_err != SSL_ERROR_WANT_READ) {
+          if (expected_error == ExpectedError::kClientError) {
+            return true;
+          }
           ADD_FAILURE() << "Unexpected client output: " << client_ret << " "
                         << client_err;
           return false;
@@ -5136,13 +5169,16 @@ class QUICMethodTest : public testing::Test {
         if (server_ret == 1) {
           server_done = true;
         } else if (server_ret != -1 || server_err != SSL_ERROR_WANT_READ) {
+          if (expected_error == ExpectedError::kServerError) {
+            return true;
+          }
           ADD_FAILURE() << "Unexpected server output: " << server_ret << " "
                         << server_err;
           return false;
         }
       }
     }
-    return true;
+    return expected_error == ExpectedError::kNoError;
   }
 
   bssl::UniquePtr<SSL_SESSION> CreateClientSessionForQUIC() {
@@ -5224,6 +5260,9 @@ class QUICMethodTest : public testing::Test {
   bssl::UniquePtr<SSL> client_;
   bssl::UniquePtr<SSL> server_;
 
+  std::vector<uint8_t> server_transport_params_ = {1};
+  std::vector<uint8_t> server_quic_early_data_context_ = {2};
+
   bool allow_out_of_order_writes_ = false;
 };
 
@@ -5283,6 +5322,26 @@ TEST_F(QUICMethodTest, HelloRetryRequest) {
 
   ASSERT_TRUE(CreateClientAndServer());
   ASSERT_TRUE(CompleteHandshakesForQUIC());
+  ExpectHandshakeSuccess();
+}
+
+// Test that the client does not send a legacy_session_id in the ClientHello.
+TEST_F(QUICMethodTest, NoLegacySessionId) {
+  const SSL_QUIC_METHOD quic_method = DefaultQUICMethod();
+
+  ASSERT_TRUE(SSL_CTX_set_quic_method(client_ctx_.get(), &quic_method));
+  ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), &quic_method));
+  // Check that the session ID length is 0 in an early callback.
+  SSL_CTX_set_select_certificate_cb(
+      server_ctx_.get(),
+      [](const SSL_CLIENT_HELLO *client_hello) -> ssl_select_cert_result_t {
+        EXPECT_EQ(client_hello->session_id_len, 0u);
+        return ssl_select_cert_success;
+      });
+
+  ASSERT_TRUE(CreateClientAndServer());
+  ASSERT_TRUE(CompleteHandshakesForQUIC());
+
   ExpectHandshakeSuccess();
 }
 
@@ -5359,6 +5418,88 @@ TEST_F(QUICMethodTest, ZeroRTTAccept) {
   EXPECT_FALSE(SSL_in_early_data(server_.get()));
   EXPECT_TRUE(SSL_early_data_accepted(client_.get()));
   EXPECT_TRUE(SSL_early_data_accepted(server_.get()));
+}
+
+TEST_F(QUICMethodTest, ZeroRTTRejectMismatchedParameters) {
+  const SSL_QUIC_METHOD quic_method = DefaultQUICMethod();
+
+  SSL_CTX_set_session_cache_mode(client_ctx_.get(), SSL_SESS_CACHE_BOTH);
+  SSL_CTX_set_early_data_enabled(client_ctx_.get(), 1);
+  SSL_CTX_set_early_data_enabled(server_ctx_.get(), 1);
+  ASSERT_TRUE(SSL_CTX_set_quic_method(client_ctx_.get(), &quic_method));
+  ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), &quic_method));
+
+
+  bssl::UniquePtr<SSL_SESSION> session = CreateClientSessionForQUIC();
+  ASSERT_TRUE(session);
+
+  for (bool change_transport_params : {false, true}) {
+    SCOPED_TRACE(change_transport_params);
+    for (bool change_context : {false, true}) {
+      if (!change_transport_params && !change_context) {
+        continue;
+      }
+      SCOPED_TRACE(change_context);
+
+      ASSERT_TRUE(CreateClientAndServer());
+      static const uint8_t new_transport_params[] = {3};
+      static const uint8_t new_context[] = {4};
+      if (change_transport_params) {
+        ASSERT_TRUE(SSL_set_quic_transport_params(
+            server_.get(), new_transport_params, sizeof(new_transport_params)));
+      }
+      if (change_context) {
+        ASSERT_TRUE(SSL_set_quic_early_data_context(server_.get(), new_context,
+                                                    sizeof(new_context)));
+      }
+      SSL_set_session(client_.get(), session.get());
+
+      // The client handshake should return immediately into the early data
+      // state.
+      ASSERT_EQ(SSL_do_handshake(client_.get()), 1);
+      EXPECT_TRUE(SSL_in_early_data(client_.get()));
+      // The transport should have keys for sending 0-RTT data.
+      EXPECT_TRUE(
+          transport_->client()->HasWriteSecret(ssl_encryption_early_data));
+
+      // The server will consume the ClientHello, but it will not accept 0-RTT.
+      ASSERT_TRUE(ProvideHandshakeData(server_.get()));
+      ASSERT_EQ(SSL_do_handshake(server_.get()), -1);
+      EXPECT_EQ(SSL_ERROR_WANT_READ, SSL_get_error(server_.get(), -1));
+      EXPECT_FALSE(SSL_in_early_data(server_.get()));
+      EXPECT_FALSE(
+          transport_->server()->HasReadSecret(ssl_encryption_early_data));
+
+      // The client consumes the server response and signals 0-RTT rejection.
+      for (;;) {
+        ASSERT_TRUE(ProvideHandshakeData(client_.get()));
+        ASSERT_EQ(-1, SSL_do_handshake(client_.get()));
+        int err = SSL_get_error(client_.get(), -1);
+        if (err == SSL_ERROR_EARLY_DATA_REJECTED) {
+          break;
+        }
+        ASSERT_EQ(SSL_ERROR_WANT_READ, err);
+      }
+
+      // As in TLS over TCP, 0-RTT rejection is sticky.
+      ASSERT_EQ(-1, SSL_do_handshake(client_.get()));
+      ASSERT_EQ(SSL_ERROR_EARLY_DATA_REJECTED,
+                SSL_get_error(client_.get(), -1));
+
+      // Finish up the client and server handshakes.
+      SSL_reset_early_data_reject(client_.get());
+      ASSERT_TRUE(CompleteHandshakesForQUIC());
+
+      // Both sides can now exchange 1-RTT data.
+      ExpectHandshakeSuccess();
+      EXPECT_TRUE(SSL_session_reused(client_.get()));
+      EXPECT_TRUE(SSL_session_reused(server_.get()));
+      EXPECT_FALSE(SSL_in_early_data(client_.get()));
+      EXPECT_FALSE(SSL_in_early_data(server_.get()));
+      EXPECT_FALSE(SSL_early_data_accepted(client_.get()));
+      EXPECT_FALSE(SSL_early_data_accepted(server_.get()));
+    }
+  }
 }
 
 TEST_F(QUICMethodTest, ZeroRTTReject) {
@@ -5767,6 +5908,120 @@ TEST_F(QUICMethodTest, SetTransportParamsInCallback) {
   ExpectReceivedTransportParamsEqual(server_.get(), kClientParams);
 }
 
+TEST_F(QUICMethodTest, ForbidCrossProtocolResumptionClient) {
+  const SSL_QUIC_METHOD quic_method = DefaultQUICMethod();
+
+  g_last_session = nullptr;
+
+  SSL_CTX_set_session_cache_mode(client_ctx_.get(), SSL_SESS_CACHE_BOTH);
+  SSL_CTX_sess_set_new_cb(client_ctx_.get(), SaveLastSession);
+  ASSERT_TRUE(SSL_CTX_set_quic_method(client_ctx_.get(), &quic_method));
+  ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), &quic_method));
+
+  ASSERT_TRUE(CreateClientAndServer());
+  ASSERT_TRUE(CompleteHandshakesForQUIC());
+
+  ExpectHandshakeSuccess();
+  EXPECT_FALSE(SSL_session_reused(client_.get()));
+  EXPECT_FALSE(SSL_session_reused(server_.get()));
+
+  // The server sent NewSessionTicket messages in the handshake.
+  EXPECT_FALSE(g_last_session);
+  ASSERT_TRUE(ProvideHandshakeData(client_.get()));
+  EXPECT_EQ(SSL_process_quic_post_handshake(client_.get()), 1);
+  EXPECT_TRUE(g_last_session);
+
+  // Pretend that g_last_session came from a TLS-over-TCP connection.
+  g_last_session.get()->is_quic = false;
+
+  // Create a second connection and verify that resumption does not occur with
+  // a session from a non-QUIC connection. This tests that the client does not
+  // offer over QUIC a session believed to be received over TCP. The server
+  // believes this is a QUIC session, so if the client offered the session, the
+  // server would have resumed it.
+  ASSERT_TRUE(CreateClientAndServer());
+  bssl::UniquePtr<SSL_SESSION> session = std::move(g_last_session);
+  SSL_set_session(client_.get(), session.get());
+
+  ASSERT_TRUE(CompleteHandshakesForQUIC());
+  ExpectHandshakeSuccess();
+  EXPECT_FALSE(SSL_session_reused(client_.get()));
+  EXPECT_FALSE(SSL_session_reused(server_.get()));
+}
+
+TEST_F(QUICMethodTest, ForbidCrossProtocolResumptionServer) {
+  const SSL_QUIC_METHOD quic_method = DefaultQUICMethod();
+
+  g_last_session = nullptr;
+
+  SSL_CTX_set_session_cache_mode(client_ctx_.get(), SSL_SESS_CACHE_BOTH);
+  SSL_CTX_sess_set_new_cb(client_ctx_.get(), SaveLastSession);
+  ASSERT_TRUE(SSL_CTX_set_quic_method(client_ctx_.get(), &quic_method));
+  ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), &quic_method));
+
+  ASSERT_TRUE(CreateClientAndServer());
+  ASSERT_TRUE(CompleteHandshakesForQUIC());
+
+  ExpectHandshakeSuccess();
+  EXPECT_FALSE(SSL_session_reused(client_.get()));
+  EXPECT_FALSE(SSL_session_reused(server_.get()));
+
+  // The server sent NewSessionTicket messages in the handshake.
+  EXPECT_FALSE(g_last_session);
+  ASSERT_TRUE(ProvideHandshakeData(client_.get()));
+  EXPECT_EQ(SSL_process_quic_post_handshake(client_.get()), 1);
+  EXPECT_TRUE(g_last_session);
+
+  // Attempt a resumption with g_last_session using TLS_method.
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+
+  ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), nullptr));
+
+  bssl::UniquePtr<SSL> client(SSL_new(client_ctx.get())),
+      server(SSL_new(server_ctx_.get()));
+  ASSERT_TRUE(client);
+  ASSERT_TRUE(server);
+  SSL_set_connect_state(client.get());
+  SSL_set_accept_state(server.get());
+
+  // The TLS-over-TCP client will refuse to resume with a quic session, so
+  // mark is_quic = false to bypass the client check to test the server check.
+  g_last_session.get()->is_quic = false;
+  SSL_set_session(client.get(), g_last_session.get());
+
+  BIO *bio1, *bio2;
+  ASSERT_TRUE(BIO_new_bio_pair(&bio1, 0, &bio2, 0));
+
+  // SSL_set_bio takes ownership.
+  SSL_set_bio(client.get(), bio1, bio1);
+  SSL_set_bio(server.get(), bio2, bio2);
+  ASSERT_TRUE(CompleteHandshakes(client.get(), server.get()));
+
+  EXPECT_FALSE(SSL_session_reused(client.get()));
+  EXPECT_FALSE(SSL_session_reused(server.get()));
+}
+
+TEST_F(QUICMethodTest, ClientRejectsMissingTransportParams) {
+  const SSL_QUIC_METHOD quic_method = DefaultQUICMethod();
+  ASSERT_TRUE(SSL_CTX_set_quic_method(client_ctx_.get(), &quic_method));
+  ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), &quic_method));
+
+  ASSERT_TRUE(CreateClientAndServer());
+  ASSERT_TRUE(SSL_set_quic_transport_params(server_.get(), nullptr, 0));
+  ASSERT_TRUE(RunQUICHandshakesAndExpectError(ExpectedError::kServerError));
+}
+
+TEST_F(QUICMethodTest, ServerRejectsMissingTransportParams) {
+  const SSL_QUIC_METHOD quic_method = DefaultQUICMethod();
+  ASSERT_TRUE(SSL_CTX_set_quic_method(client_ctx_.get(), &quic_method));
+  ASSERT_TRUE(SSL_CTX_set_quic_method(server_ctx_.get(), &quic_method));
+
+  ASSERT_TRUE(CreateClientAndServer());
+  ASSERT_TRUE(SSL_set_quic_transport_params(client_.get(), nullptr, 0));
+  ASSERT_TRUE(RunQUICHandshakesAndExpectError(ExpectedError::kClientError));
+}
+
 extern "C" {
 int BORINGSSL_enum_c_type_test(void);
 }
@@ -5997,6 +6252,60 @@ TEST(SSLTest, WriteWhileExplicitRenegotiate) {
   uint32_t err = ERR_get_error();
   EXPECT_EQ(ERR_LIB_SSL, ERR_GET_LIB(err));
   EXPECT_EQ(SSL_R_NO_RENEGOTIATION, ERR_GET_REASON(err));
+}
+
+
+TEST(SSLTest, CopyWithoutEarlyData) {
+  bssl::UniquePtr<SSL_CTX> client_ctx(SSL_CTX_new(TLS_method()));
+  bssl::UniquePtr<SSL_CTX> server_ctx(SSL_CTX_new(TLS_method()));
+  ASSERT_TRUE(client_ctx);
+  ASSERT_TRUE(server_ctx);
+
+  bssl::UniquePtr<X509> cert = GetTestCertificate();
+  bssl::UniquePtr<EVP_PKEY> key = GetTestKey();
+  ASSERT_TRUE(cert);
+  ASSERT_TRUE(key);
+  ASSERT_TRUE(SSL_CTX_use_certificate(server_ctx.get(), cert.get()));
+  ASSERT_TRUE(SSL_CTX_use_PrivateKey(server_ctx.get(), key.get()));
+
+  SSL_CTX_set_session_cache_mode(client_ctx.get(), SSL_SESS_CACHE_BOTH);
+  SSL_CTX_set_session_cache_mode(server_ctx.get(), SSL_SESS_CACHE_BOTH);
+  SSL_CTX_set_early_data_enabled(client_ctx.get(), 1);
+  SSL_CTX_set_early_data_enabled(server_ctx.get(), 1);
+
+  bssl::UniquePtr<SSL_SESSION> session =
+      CreateClientSession(client_ctx.get(), server_ctx.get());
+  ASSERT_TRUE(session);
+
+  // The client should attempt early data with |session|.
+  auto config = ClientConfig();
+  config.early_data = true;
+  config.session = session.get();
+  bssl::UniquePtr<SSL> client, server;
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get(), config,
+                                     /*do_handshake=*/false));
+  ASSERT_EQ(1, SSL_do_handshake(client.get()));
+  EXPECT_TRUE(SSL_in_early_data(client.get()));
+
+  // |SSL_SESSION_copy_without_early_data| should disable early data but
+  // still resume the session.
+  bssl::UniquePtr<SSL_SESSION> session2(
+      SSL_SESSION_copy_without_early_data(session.get()));
+  ASSERT_TRUE(session2);
+  EXPECT_NE(session.get(), session2.get());
+  config.session = session2.get();
+  ASSERT_TRUE(ConnectClientAndServer(&client, &server, client_ctx.get(),
+                                     server_ctx.get(), config));
+  EXPECT_TRUE(SSL_session_reused(client.get()));
+  EXPECT_EQ(ssl_early_data_unsupported_for_session,
+            SSL_get_early_data_reason(client.get()));
+
+  // |SSL_SESSION_copy_without_early_data| should be a reference count increase
+  // when passed an early-data-incapable session.
+  bssl::UniquePtr<SSL_SESSION> session3(
+      SSL_SESSION_copy_without_early_data(session2.get()));
+  EXPECT_EQ(session2.get(), session3.get());
 }
 
 }  // namespace

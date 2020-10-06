@@ -161,7 +161,8 @@ GrSurfaceProxyView GrBackendTextureImageGenerator::onGenerateTexture(
     // be deleted before we actually execute the lambda.
     sk_sp<GrTextureProxy> proxy = proxyProvider->createLazyProxy(
             [refHelper = fRefHelper, releaseProcHelper, backendTexture = fBackendTexture](
-                    GrResourceProvider* resourceProvider) -> GrSurfaceProxy::LazyCallbackResult {
+                    GrResourceProvider* resourceProvider,
+                    const GrSurfaceProxy::LazySurfaceDesc&) -> GrSurfaceProxy::LazyCallbackResult {
                 if (refHelper->fSemaphore) {
                     resourceProvider->priv().gpu()->waitSemaphore(refHelper->fSemaphore.get());
                 }
@@ -219,7 +220,8 @@ GrSurfaceProxyView GrBackendTextureImageGenerator::onGenerateTexture(
                                       ? SkBudgeted::kNo
                                       : SkBudgeted::kYes;
 
-        return GrSurfaceProxy::Copy(context, proxy.get(), fSurfaceOrigin, grColorType, mipMapped,
-                                    subset, SkBackingFit::kExact, budgeted);
+        auto copy = GrSurfaceProxy::Copy(context, proxy.get(), fSurfaceOrigin, mipMapped, subset,
+                                         SkBackingFit::kExact, budgeted);
+        return {std::move(copy), fSurfaceOrigin, readSwizzle};
     }
 }

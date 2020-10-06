@@ -508,6 +508,20 @@ class TraceStorage {
     return &heap_profile_allocation_table_;
   }
 
+  const tables::PackageListTable& package_list_table() const {
+    return package_list_table_;
+  }
+  tables::PackageListTable* mutable_package_list_table() {
+    return &package_list_table_;
+  }
+
+  const tables::ProfilerSmapsTable& profiler_smaps_table() const {
+    return profiler_smaps_table_;
+  }
+  tables::ProfilerSmapsTable* mutable_profiler_smaps_table() {
+    return &profiler_smaps_table_;
+  }
+
   const tables::CpuProfileStackSampleTable& cpu_profile_stack_sample_table()
       const {
     return cpu_profile_stack_sample_table_;
@@ -526,6 +540,13 @@ class TraceStorage {
 
   tables::HeapGraphObjectTable* mutable_heap_graph_object_table() {
     return &heap_graph_object_table_;
+  }
+  const tables::HeapGraphClassTable& heap_graph_class_table() const {
+    return heap_graph_class_table_;
+  }
+
+  tables::HeapGraphClassTable* mutable_heap_graph_class_table() {
+    return &heap_graph_class_table_;
   }
 
   const tables::HeapGraphReferenceTable& heap_graph_reference_table() const {
@@ -549,6 +570,22 @@ class TraceStorage {
   tables::VulkanMemoryAllocationsTable*
   mutable_vulkan_memory_allocations_table() {
     return &vulkan_memory_allocations_table_;
+  }
+
+  const tables::GraphicsFrameSliceTable& graphics_frame_slice_table() const {
+    return graphics_frame_slice_table_;
+  }
+
+  tables::GraphicsFrameSliceTable* mutable_graphics_frame_slice_table() {
+    return &graphics_frame_slice_table_;
+  }
+
+  const tables::GraphicsFrameStatsTable& graphics_frame_stats_table() const {
+    return graphics_frame_stats_table_;
+  }
+
+  tables::GraphicsFrameStatsTable* mutable_graphics_frame_stats_table() {
+    return &graphics_frame_stats_table_;
   }
 
   const StringPool& string_pool() const { return string_pool_; }
@@ -609,18 +646,22 @@ class TraceStorage {
       case Variadic::Type::kUint:
         v.uint_value = static_cast<uint64_t>(*arg_table_.int_value()[row]);
         break;
-      case Variadic::Type::kString:
-        v.string_value = arg_table_.string_value()[row];
+      case Variadic::Type::kString: {
+        auto opt_value = arg_table_.string_value()[row];
+        v.string_value = opt_value ? *opt_value : kNullStringId;
         break;
+      }
       case Variadic::Type::kPointer:
         v.pointer_value = static_cast<uint64_t>(*arg_table_.int_value()[row]);
         break;
       case Variadic::Type::kReal:
         v.real_value = *arg_table_.real_value()[row];
         break;
-      case Variadic::Type::kJson:
-        v.json_value = arg_table_.string_value()[row];
+      case Variadic::Type::kJson: {
+        auto opt_value = arg_table_.string_value()[row];
+        v.json_value = opt_value ? *opt_value : kNullStringId;
         break;
+      }
     }
     return v;
   }
@@ -628,15 +669,6 @@ class TraceStorage {
   StringId GetIdForVariadicType(Variadic::Type type) const {
     return variadic_type_ids_[type];
   }
-
- private:
-  using StringHash = uint64_t;
-
-  TraceStorage(const TraceStorage&) = delete;
-  TraceStorage& operator=(const TraceStorage&) = delete;
-
-  TraceStorage(TraceStorage&&) = delete;
-  TraceStorage& operator=(TraceStorage&&) = delete;
 
   base::Optional<Variadic::Type> GetVariadicTypeForId(StringId id) const {
     auto it =
@@ -647,6 +679,15 @@ class TraceStorage {
     int64_t idx = std::distance(variadic_type_ids_.begin(), it);
     return static_cast<Variadic::Type>(idx);
   }
+
+ private:
+  using StringHash = uint64_t;
+
+  TraceStorage(const TraceStorage&) = delete;
+  TraceStorage& operator=(const TraceStorage&) = delete;
+
+  TraceStorage(TraceStorage&&) = delete;
+  TraceStorage& operator=(TraceStorage&&) = delete;
 
   // TODO(lalitm): remove this when we find a better home for this.
   using MappingKey = std::pair<StringId /* name */, StringId /* build id */>;
@@ -740,15 +781,23 @@ class TraceStorage {
       &string_pool_, nullptr};
   tables::CpuProfileStackSampleTable cpu_profile_stack_sample_table_{
       &string_pool_, nullptr};
+  tables::PackageListTable package_list_table_{&string_pool_, nullptr};
+  tables::ProfilerSmapsTable profiler_smaps_table_{&string_pool_, nullptr};
 
   // Symbol tables (mappings from frames to symbol names)
   tables::SymbolTable symbol_table_{&string_pool_, nullptr};
   tables::HeapGraphObjectTable heap_graph_object_table_{&string_pool_, nullptr};
+  tables::HeapGraphClassTable heap_graph_class_table_{&string_pool_, nullptr};
   tables::HeapGraphReferenceTable heap_graph_reference_table_{&string_pool_,
                                                               nullptr};
 
   tables::VulkanMemoryAllocationsTable vulkan_memory_allocations_table_{
       &string_pool_, nullptr};
+
+  tables::GraphicsFrameSliceTable graphics_frame_slice_table_{&string_pool_,
+                                                              &slice_table_};
+  tables::GraphicsFrameStatsTable graphics_frame_stats_table_{&string_pool_,
+                                                              nullptr};
 
   // The below array allow us to map between enums and their string
   // representations.

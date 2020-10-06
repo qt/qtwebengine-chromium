@@ -280,7 +280,8 @@ namespace dawn_native { namespace opengl {
                             break;
                         }
 
-                        case wgpu::BindingType::Sampler: {
+                        case wgpu::BindingType::Sampler:
+                        case wgpu::BindingType::ComparisonSampler: {
                             Sampler* sampler = ToBackend(group->GetBindingAsSampler(bindingIndex));
                             GLuint samplerIndex = indices[bindingIndex];
 
@@ -420,7 +421,7 @@ namespace dawn_native { namespace opengl {
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared in BeginRenderPass by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
-                if (!(usages.textureUsages[i] & wgpu::TextureUsage::OutputAttachment)) {
+                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
                     texture->EnsureSubresourceContentInitialized(0, texture->GetNumMipLevels(), 0,
                                                                  texture->GetArrayLayers());
                 }
@@ -489,9 +490,10 @@ namespace dawn_native { namespace opengl {
                     gl.BindTexture(target, texture->GetHandle());
 
                     const Format& formatInfo = texture->GetFormat();
-                    gl.PixelStorei(GL_UNPACK_ROW_LENGTH,
-                                   src.rowPitch / formatInfo.blockByteSize * formatInfo.blockWidth);
-                    gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, src.imageHeight);
+                    gl.PixelStorei(
+                        GL_UNPACK_ROW_LENGTH,
+                        src.bytesPerRow / formatInfo.blockByteSize * formatInfo.blockWidth);
+                    gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, src.rowsPerImage);
 
                     if (formatInfo.isCompressed) {
                         gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, formatInfo.blockByteSize);
@@ -591,8 +593,8 @@ namespace dawn_native { namespace opengl {
 
                     gl.BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->GetHandle());
                     gl.PixelStorei(GL_PACK_ROW_LENGTH,
-                                   dst.rowPitch / texture->GetFormat().blockByteSize);
-                    gl.PixelStorei(GL_PACK_IMAGE_HEIGHT, dst.imageHeight);
+                                   dst.bytesPerRow / texture->GetFormat().blockByteSize);
+                    gl.PixelStorei(GL_PACK_IMAGE_HEIGHT, dst.rowsPerImage);
                     ASSERT(copySize.depth == 1 && src.origin.z == 0);
                     void* offset = reinterpret_cast<void*>(static_cast<uintptr_t>(dst.offset));
                     gl.ReadPixels(src.origin.x, src.origin.y, copySize.width, copySize.height,

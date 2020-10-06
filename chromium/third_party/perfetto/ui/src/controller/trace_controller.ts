@@ -279,6 +279,9 @@ export class TraceController extends Controller<States> {
 
     globals.dispatchMultiple(actions);
 
+    // Make sure the helper views are available before we start adding tracks.
+    await this.initialiseHelperViews();
+
     {
       // When we reload from a permalink don't create extra tracks:
       const {pinnedTracks, tracks} = globals.state;
@@ -289,7 +292,6 @@ export class TraceController extends Controller<States> {
 
     await this.listThreads();
     await this.loadTimelineOverview(traceTime);
-    await this.initaliseHelperViews();
     return engineMode;
   }
 
@@ -382,33 +384,35 @@ export class TraceController extends Controller<States> {
       }
     }
 
-
     const upidToProcessTracks = new Map();
     const rawProcessTracks = await engine.query(`
-      select
-        process_track.id as track_id,
-        process_track.upid,
-        process_track.name,
-        max(slice.depth) as max_depth
-      from process_track
-      join slice on slice.track_id = process_track.id
-      group by process_track.id
+      SELECT
+        pt.upid,
+        pt.name,
+        pt.track_ids,
+        MAX(experimental_slice_layout.layout_depth) as max_depth
+      FROM (
+        SELECT upid, name, GROUP_CONCAT(process_track.id) AS track_ids
+        FROM process_track GROUP BY upid, name
+      ) AS pt CROSS JOIN experimental_slice_layout
+      WHERE pt.track_ids = experimental_slice_layout.filter_track_ids
+      GROUP BY pt.track_ids;
     `);
     for (let i = 0; i < rawProcessTracks.numRecords; i++) {
-      const trackId = rawProcessTracks.columns[0].longValues![i];
-      const upid = rawProcessTracks.columns[1].longValues![i];
-      const name = rawProcessTracks.columns[2].stringValues![i];
-      const maxDepth = rawProcessTracks.columns[3].longValues![i];
+      const upid = +rawProcessTracks.columns[0].longValues![i];
+      const name = rawProcessTracks.columns[1].stringValues![i];
+      const rawTrackIds = rawProcessTracks.columns[2].stringValues![i];
+      const trackIds = rawTrackIds.split(',').map(v => Number(v));
+      const maxDepth = +rawProcessTracks.columns[3].longValues![i];
       const track = {
         engineId: this.engineId,
         kind: 'AsyncSliceTrack',
         name,
         config: {
-          trackId,
           maxDepth,
+          trackIds,
         },
       };
-
       const tracks = upidToProcessTracks.get(upid);
       if (tracks) {
         tracks.push(track);
@@ -777,6 +781,42 @@ export class TraceController extends Controller<States> {
       });
     }
 
+    const annotationSliceRows = await engine.query(`
+      SELECT id, name FROM annotation_slice_track`);
+    for (let i = 0; i < annotationSliceRows.numRecords; i++) {
+      const id = annotationSliceRows.columns[0].longValues![i];
+      const name = annotationSliceRows.columns[1].stringValues![i];
+      tracksToAdd.push({
+        engineId: this.engineId,
+        kind: SLICE_TRACK_KIND,
+        name,
+        trackGroup: SCROLLING_TRACK_GROUP,
+        config: {
+          maxDepth: 0,
+          namespace: 'annotation',
+          trackId: id,
+        },
+      });
+    }
+
+    const annotationCounterRows = await engine.query(`
+      SELECT id, name FROM annotation_counter_track`);
+    for (let i = 0; i < annotationCounterRows.numRecords; i++) {
+      const id = annotationCounterRows.columns[0].longValues![i];
+      const name = annotationCounterRows.columns[1].stringValues![i];
+      tracksToAdd.push({
+        engineId: this.engineId,
+        kind: 'CounterTrack',
+        name,
+        trackGroup: SCROLLING_TRACK_GROUP,
+        config: {
+          name,
+          namespace: 'annotation',
+          trackId: id,
+        }
+      });
+    }
+
     addTrackGroupActions.push(Actions.addTracks({tracks: tracksToAdd}));
     globals.dispatchMultiple(addTrackGroupActions);
   }
@@ -874,7 +914,7 @@ export class TraceController extends Controller<States> {
     globals.publish('OverviewData', slicesData);
   }
 
-  async initaliseHelperViews() {
+  async initialiseHelperViews() {
     const engine = assertExists<Engine>(this.engine);
     this.updateStatus('Creating helper views');
     let event = 'sched_waking';
@@ -935,6 +975,104 @@ export class TraceController extends Controller<States> {
       (partition by utid order by ts)`);
 
     await engine.query(`create index utid_index on thread_state(utid)`);
+
+    // Create the helper tables for all the annotations related data.
+    await engine.query(`
+      CREATE TABLE annotation_counter_track(
+        id INTEGER PRIMARY KEY,
+        name STRING,
+        __metric_name STRING
+      );
+    `);
+    await engine.query(`
+      CREATE TABLE annotation_slice_track(
+        id INTEGER PRIMARY KEY,
+        name STRING,
+        __metric_name STRING
+      );
+    `);
+
+    await engine.query(`
+      CREATE TABLE annotation_counter(
+        id BIG INT,
+        track_id INT,
+        ts BIG INT,
+        value DOUBLE,
+        PRIMARY KEY (track_id, ts)
+      ) WITHOUT ROWID;
+    `);
+    await engine.query(`
+      CREATE TABLE annotation_slice(
+        id BIG INT,
+        track_id INT,
+        ts BIG INT,
+        dur BIG INT,
+        depth INT,
+        cat STRING,
+        name STRING,
+        PRIMARY KEY (track_id, ts)
+      ) WITHOUT ROWID;
+    `);
+
+    for (const metric of ['android_startup', 'android_ion']) {
+      // We don't care about the actual result of metric here as we are just
+      // interested in the annotation tracks.
+      const metricResult = await engine.computeMetric([metric]);
+      assertTrue(metricResult.error.length === 0);
+
+      const result = await engine.query(`
+        SELECT * FROM ${metric}_annotations LIMIT 1`);
+
+      const hasSliceName =
+          result.columnDescriptors.some(x => x.name === 'slice_name');
+      const hasDur = result.columnDescriptors.some(x => x.name === 'dur');
+
+      if (hasSliceName && hasDur) {
+        await engine.query(`
+          INSERT INTO annotation_slice_track(name, __metric_name)
+          SELECT DISTINCT track_name, '${metric}' as metric_name
+          FROM ${metric}_annotations
+          WHERE track_type = 'slice'
+        `);
+        await engine.query(`
+          INSERT INTO annotation_slice(id, track_id, ts, dur, depth, cat, name)
+          SELECT
+            row_number() over (order by ts) as id,
+            t.id AS track_id,
+            ts,
+            dur,
+            0 AS depth,
+            a.track_name as cat,
+            slice_name AS name
+          FROM ${metric}_annotations a
+          JOIN annotation_slice_track t
+          ON a.track_name = t.name AND t.__metric_name = '${metric}'
+          ORDER BY t.id, ts
+        `);
+      }
+
+      const hasValue = result.columnDescriptors.some(x => x.name === 'value');
+      if (hasValue) {
+        await engine.query(`
+          INSERT INTO annotation_counter_track(name, __metric_name)
+          SELECT DISTINCT track_name, '${metric}' as metric_name
+          FROM ${metric}_annotations
+          WHERE track_type = 'counter'
+        `);
+        await engine.query(`
+          INSERT INTO annotation_counter(id, track_id, ts, value)
+          SELECT
+            -1 as id,
+            t.id AS track_id,
+            ts,
+            value
+          FROM ${metric}_annotations a
+          JOIN annotation_counter_track t
+          ON a.track_name = t.name AND t.__metric_name = '${metric}'
+          ORDER BY t.id, ts
+        `);
+      }
+    }
   }
 
   private updateStatus(msg: string): void {

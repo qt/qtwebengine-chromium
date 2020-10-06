@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import {DOMModel, DOMNode} from './DOMModel.js';      // eslint-disable-line no-unused-vars
 import {SnapshotWithRect} from './PaintProfiler.js';  // eslint-disable-line no-unused-vars
 import {Target} from './SDKModel.js';                 // eslint-disable-line no-unused-vars
@@ -270,9 +273,9 @@ export class LayerTreeBase {
   }
 
   /**
-   * @param {function(!Layer)} callback
+   * @param {function(!Layer):*} callback
    * @param {?Layer=} root
-   * @return {boolean}
+   * @return {*}
    */
   forEachLayer(callback, root) {
     if (!root) {
@@ -294,7 +297,7 @@ export class LayerTreeBase {
 
   /**
    * @param {!Set<number>} requestedNodeIds
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async resolveBackendNodeIds(requestedNodeIds) {
     if (!requestedNodeIds.size || !this._domModel) {

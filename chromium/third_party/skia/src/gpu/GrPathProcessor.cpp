@@ -42,7 +42,8 @@ public:
 
         // Setup uniform color
         const char* stagedLocalVarName;
-        fColorUniform = args.fUniformHandler->addUniform(kFragment_GrShaderFlag,
+        fColorUniform = args.fUniformHandler->addUniform(nullptr,
+                                                         kFragment_GrShaderFlag,
                                                          kHalf4_GrSLType,
                                                          "Color",
                                                          &stagedLocalVarName);
@@ -63,7 +64,6 @@ public:
         for (int i = 0; *transformHandler; ++*transformHandler, ++i) {
             auto [coordTransform, fp] = transformHandler->get();
 
-            SkString matrix;
             GrShaderVar fragmentVar;
             GrShaderVar transformVar;
             if (fp.isSampledWithExplicitCoords()) {
@@ -81,7 +81,8 @@ public:
                         uni.fType = kFloat3x3_GrSLType;
                     }
                     uni.fHandle = uniformHandler
-                                          ->addUniform(kFragment_GrShaderFlag,
+                                          ->addUniform(nullptr,
+                                                       kFragment_GrShaderFlag,
                                                        uni.fType,
                                                        strUniName.c_str(),
                                                        &name)
@@ -101,7 +102,6 @@ public:
                                 .toIndex();
 #endif
                 fVaryingTransform.back().fType = varyingType;
-                matrix = matrix_to_sksl(coordTransform.matrix());
                 fragmentVar = {SkString(v.fsIn()), varyingType};
             }
             transformHandler->specifyCoordsForCurrCoordTransform(transformVar, fragmentVar);

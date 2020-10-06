@@ -7,8 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "discovery/dnssd/impl/network_interface_config.h"
 #include "platform/api/task_runner.h"
-#include "util/logging.h"
+#include "util/osp_logging.h"
 
 namespace openscreen {
 namespace discovery {
@@ -16,12 +17,29 @@ namespace {
 
 static constexpr char kLocalDomain[] = "local";
 
+std::vector<PendingQueryChange> GetDnsQueriesDelayed(
+    std::vector<DnsQueryInfo> query_infos,
+    QuerierImpl* callback,
+    PendingQueryChange::ChangeType change_type) {
+  std::vector<PendingQueryChange> pending_changes;
+  for (auto& info : query_infos) {
+    pending_changes.push_back({std::move(info.name), info.dns_type,
+                               info.dns_class, callback, change_type});
+  }
+  return pending_changes;
+}
+
 }  // namespace
 
-QuerierImpl::QuerierImpl(MdnsService* mdns_querier, TaskRunner* task_runner)
-    : mdns_querier_(mdns_querier), task_runner_(task_runner) {
+QuerierImpl::QuerierImpl(MdnsService* mdns_querier,
+                         TaskRunner* task_runner,
+                         const NetworkInterfaceConfig* network_config)
+    : mdns_querier_(mdns_querier),
+      task_runner_(task_runner),
+      network_config_(network_config) {
   OSP_DCHECK(mdns_querier_);
   OSP_DCHECK(task_runner_);
+  OSP_DCHECK(network_config_);
 }
 
 QuerierImpl::~QuerierImpl() = default;
@@ -35,15 +53,16 @@ void QuerierImpl::StartQuery(const std::string& service, Callback* callback) {
   ServiceKey key(service, kLocalDomain);
   if (!IsQueryRunning(key)) {
     callback_map_[key] = {callback};
-    StartDnsQuery(std::move(key));
+    auto queries = GetDataToStartDnsQuery(std::move(key));
+    StartDnsQueriesImmediately(queries);
   } else {
     callback_map_[key].push_back(callback);
 
     for (auto& kvp : received_records_) {
       if (kvp.first == key) {
-        ErrorOr<DnsSdInstanceRecord> record = kvp.second.CreateRecord();
-        if (record.is_value()) {
-          callback->OnInstanceCreated(record.value());
+        ErrorOr<DnsSdInstanceEndpoint> endpoint = kvp.second.CreateEndpoint();
+        if (endpoint.is_value()) {
+          callback->OnEndpointCreated(endpoint.value());
         }
       }
     }
@@ -73,7 +92,8 @@ void QuerierImpl::StopQuery(const std::string& service, Callback* callback) {
     callbacks->erase(it);
     if (callbacks->empty()) {
       callback_map_.erase(callback_it);
-      StopDnsQuery(std::move(key));
+      auto queries = GetDataToStopDnsQuery(std::move(key));
+      StopDnsQueriesImmediately(queries);
     }
   }
 }
@@ -93,39 +113,59 @@ void QuerierImpl::ReinitializeQueries(const std::string& service) {
     }
   }
   for (InstanceKey& ik : keys_to_remove) {
-    StopDnsQuery(std::move(ik), false);
+    auto queries = GetDataToStopDnsQuery(std::move(ik), false);
+    StopDnsQueriesImmediately(queries);
   }
 
   // Restart top-level queries.
   mdns_querier_->ReinitializeQueries(GetPtrQueryInfo(key).name);
 }
 
-void QuerierImpl::OnRecordChanged(const MdnsRecord& record,
-                                  RecordChangedEvent event) {
+std::vector<PendingQueryChange> QuerierImpl::OnRecordChanged(
+    const MdnsRecord& record,
+    RecordChangedEvent event) {
   OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
 
   OSP_DVLOG << "Record with name '" << record.name().ToString()
             << "' and type '" << record.dns_type()
             << "' has received change of type '" << event << "'";
 
-  IsPtrRecord(record) ? HandlePtrRecordChange(record, event)
-                      : HandleNonPtrRecordChange(record, event);
+  if (IsPtrRecord(record)) {
+    ErrorOr<std::vector<PendingQueryChange>> pending_changes =
+        HandlePtrRecordChange(record, event);
+    if (pending_changes.is_error()) {
+      OSP_LOG << "Failed to handle PTR record change of type " << event
+              << " with error " << pending_changes.error();
+      return {};
+    } else {
+      return pending_changes.value();
+    }
+  } else {
+    Error error = HandleNonPtrRecordChange(record, event);
+    if (!error.ok()) {
+      OSP_LOG << "Failed to handle " << record.dns_type()
+              << " record change of type " << event << " with error " << error;
+    }
+    return {};
+  }
 }
 
-Error QuerierImpl::HandlePtrRecordChange(const MdnsRecord& record,
-                                         RecordChangedEvent event) {
+ErrorOr<std::vector<PendingQueryChange>> QuerierImpl::HandlePtrRecordChange(
+    const MdnsRecord& record,
+    RecordChangedEvent event) {
   if (!HasValidDnsRecordAddress(record)) {
     // This means that the received record is malformed.
     return Error::Code::kParameterInvalid;
   }
 
+  std::vector<DnsQueryInfo> changes;
   switch (event) {
     case RecordChangedEvent::kCreated:
-      StartDnsQuery(InstanceKey(record));
-      return Error::None();
+      changes = GetDataToStartDnsQuery(InstanceKey(record));
+      return StartDnsQueriesDelayed(std::move(changes));
     case RecordChangedEvent::kExpired:
-      StopDnsQuery(InstanceKey(record));
-      return Error::None();
+      changes = GetDataToStopDnsQuery(InstanceKey(record));
+      return StopDnsQueriesDelayed(std::move(changes));
     case RecordChangedEvent::kUpdated:
       return Error::Code::kOperationInvalid;
   }
@@ -147,19 +187,22 @@ Error QuerierImpl::HandleNonPtrRecordChange(const MdnsRecord& record,
   }
   const std::vector<Callback*>& callbacks = callback_map_[key];
 
-  // Get the current InstanceRecord data associated with the received record.
+  // Get the current InstanceEndpoint data associated with the received record.
   const InstanceKey id(record);
-  ErrorOr<DnsSdInstanceRecord> old_instance_record = Error::Code::kItemNotFound;
+  ErrorOr<DnsSdInstanceEndpoint> old_instance_endpoint =
+      Error::Code::kItemNotFound;
   auto it = received_records_.find(id);
   if (it == received_records_.end()) {
-    it = received_records_.emplace(id, DnsData(id)).first;
+    it = received_records_
+             .emplace(id, DnsData(id, network_config_->network_interface()))
+             .first;
   } else {
-    old_instance_record = it->second.CreateRecord();
+    old_instance_endpoint = it->second.CreateEndpoint();
   }
   DnsData* data = &it->second;
 
   // Apply the changes specified by the received event to the stored
-  // InstanceRecord.
+  // InstanceEndpoint.
   Error apply_result = data->ApplyDataRecordChange(record, event);
   if (!apply_result.ok()) {
     OSP_LOG_ERROR << "Received erroneous record change. Error: "
@@ -168,58 +211,60 @@ Error QuerierImpl::HandleNonPtrRecordChange(const MdnsRecord& record,
   }
 
   // Send an update to the user, based on how the new and old records compare.
-  ErrorOr<DnsSdInstanceRecord> new_instance_record = data->CreateRecord();
-  NotifyCallbacks(callbacks, old_instance_record, new_instance_record);
+  ErrorOr<DnsSdInstanceEndpoint> new_instance_endpoint = data->CreateEndpoint();
+  NotifyCallbacks(callbacks, old_instance_endpoint, new_instance_endpoint);
 
   return Error::None();
 }
 
 void QuerierImpl::NotifyCallbacks(
     const std::vector<Callback*>& callbacks,
-    const ErrorOr<DnsSdInstanceRecord>& old_record,
-    const ErrorOr<DnsSdInstanceRecord>& new_record) {
-  if (old_record.is_value() && new_record.is_value()) {
+    const ErrorOr<DnsSdInstanceEndpoint>& old_endpoint,
+    const ErrorOr<DnsSdInstanceEndpoint>& new_endpoint) {
+  if (old_endpoint.is_value() && new_endpoint.is_value()) {
     for (Callback* callback : callbacks) {
-      callback->OnInstanceUpdated(new_record.value());
+      callback->OnEndpointUpdated(new_endpoint.value());
     }
-  } else if (old_record.is_value() && !new_record.is_value()) {
+  } else if (old_endpoint.is_value() && !new_endpoint.is_value()) {
     for (Callback* callback : callbacks) {
-      callback->OnInstanceDeleted(old_record.value());
+      callback->OnEndpointDeleted(old_endpoint.value());
     }
-  } else if (!old_record.is_value() && new_record.is_value()) {
+  } else if (!old_endpoint.is_value() && new_endpoint.is_value()) {
     for (Callback* callback : callbacks) {
-      callback->OnInstanceCreated(new_record.value());
+      callback->OnEndpointCreated(new_endpoint.value());
     }
   }
 }
 
-void QuerierImpl::StartDnsQuery(InstanceKey key) {
-  auto pair = received_records_.emplace(key, DnsData(key));
+std::vector<DnsQueryInfo> QuerierImpl::GetDataToStartDnsQuery(InstanceKey key) {
+  auto pair = received_records_.emplace(
+      key, DnsData(key, network_config_->network_interface()));
   if (!pair.second) {
     // This means that a query is already ongoing.
-    return;
+    return {};
   }
 
-  DnsQueryInfo query = GetInstanceQueryInfo(key);
-  mdns_querier_->StartQuery(query.name, query.dns_type, query.dns_class, this);
+  return {GetInstanceQueryInfo(key)};
 }
 
-void QuerierImpl::StopDnsQuery(InstanceKey key, bool should_inform_callbacks) {
+std::vector<DnsQueryInfo> QuerierImpl::GetDataToStopDnsQuery(
+    InstanceKey key,
+    bool should_inform_callbacks) {
   // If the instance is not being queried for, return.
   auto record_it = received_records_.find(key);
   if (record_it == received_records_.end()) {
-    return;
+    return {};
   }
 
   // If the instance has enough associated data that an instance was provided to
   // the higher layer, call the deleted callback for all associated callbacks.
-  ErrorOr<DnsSdInstanceRecord> instance_record =
-      record_it->second.CreateRecord();
-  if (should_inform_callbacks && instance_record.is_value()) {
+  ErrorOr<DnsSdInstanceEndpoint> instance_endpoint =
+      record_it->second.CreateEndpoint();
+  if (should_inform_callbacks && instance_endpoint.is_value()) {
     const auto it = callback_map_.find(key);
     if (it != callback_map_.end()) {
       for (Callback* callback : it->second) {
-        callback->OnInstanceDeleted(instance_record.value());
+        callback->OnEndpointDeleted(instance_endpoint.value());
       }
     }
   }
@@ -228,18 +273,15 @@ void QuerierImpl::StopDnsQuery(InstanceKey key, bool should_inform_callbacks) {
   received_records_.erase(record_it);
 
   // Call to the mDNS layer to stop the query.
-  DnsQueryInfo query = GetInstanceQueryInfo(key);
-  mdns_querier_->StopQuery(query.name, query.dns_type, query.dns_class, this);
+  return {GetInstanceQueryInfo(key)};
 }
 
-void QuerierImpl::StartDnsQuery(ServiceKey key) {
-  DnsQueryInfo query = GetPtrQueryInfo(key);
-  mdns_querier_->StartQuery(query.name, query.dns_type, query.dns_class, this);
+std::vector<DnsQueryInfo> QuerierImpl::GetDataToStartDnsQuery(ServiceKey key) {
+  return {GetPtrQueryInfo(key)};
 }
 
-void QuerierImpl::StopDnsQuery(ServiceKey key) {
-  DnsQueryInfo query = GetPtrQueryInfo(key);
-  mdns_querier_->StopQuery(query.name, query.dns_type, query.dns_class, this);
+std::vector<DnsQueryInfo> QuerierImpl::GetDataToStopDnsQuery(ServiceKey key) {
+  std::vector<DnsQueryInfo> query_infos = {GetPtrQueryInfo(key)};
 
   // Stop any ongoing instance-specific queries.
   std::vector<InstanceKey> keys_to_remove;
@@ -250,8 +292,40 @@ void QuerierImpl::StopDnsQuery(ServiceKey key) {
     }
   }
   for (auto it = keys_to_remove.begin(); it != keys_to_remove.end(); it++) {
-    StopDnsQuery(std::move(*it));
+    std::vector<DnsQueryInfo> instance_query_infos =
+        GetDataToStopDnsQuery(std::move(*it));
+    query_infos.insert(query_infos.begin(), instance_query_infos.begin(),
+                       instance_query_infos.end());
   }
+
+  return query_infos;
+}
+
+void QuerierImpl::StartDnsQueriesImmediately(
+    const std::vector<DnsQueryInfo>& query_infos) {
+  for (const auto& query : query_infos) {
+    mdns_querier_->StartQuery(query.name, query.dns_type, query.dns_class,
+                              this);
+  }
+}
+
+void QuerierImpl::StopDnsQueriesImmediately(
+    const std::vector<DnsQueryInfo>& query_infos) {
+  for (const auto& query : query_infos) {
+    mdns_querier_->StopQuery(query.name, query.dns_type, query.dns_class, this);
+  }
+}
+
+std::vector<PendingQueryChange> QuerierImpl::StartDnsQueriesDelayed(
+    std::vector<DnsQueryInfo> query_infos) {
+  return GetDnsQueriesDelayed(std::move(query_infos), this,
+                              PendingQueryChange::kStartQuery);
+}
+
+std::vector<PendingQueryChange> QuerierImpl::StopDnsQueriesDelayed(
+    std::vector<DnsQueryInfo> query_infos) {
+  return GetDnsQueriesDelayed(std::move(query_infos), this,
+                              PendingQueryChange::kStopQuery);
 }
 
 }  // namespace discovery

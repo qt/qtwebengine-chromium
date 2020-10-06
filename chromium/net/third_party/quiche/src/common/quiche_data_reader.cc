@@ -4,6 +4,8 @@
 
 #include "net/third_party/quiche/src/common/quiche_data_reader.h"
 
+#include <cstring>
+
 #include "net/third_party/quiche/src/common/platform/api/quiche_endian.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_logging.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
@@ -78,6 +80,17 @@ bool QuicheDataReader::ReadStringPiece16(quiche::QuicheStringPiece* result) {
   // Read resultant length.
   uint16_t result_len;
   if (!ReadUInt16(&result_len)) {
+    // OnFailure() already called.
+    return false;
+  }
+
+  return ReadStringPiece(result, result_len);
+}
+
+bool QuicheDataReader::ReadStringPiece8(quiche::QuicheStringPiece* result) {
+  // Read resultant length.
+  uint8_t result_len;
+  if (!ReadUInt8(&result_len)) {
     // OnFailure() already called.
     return false;
   }

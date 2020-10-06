@@ -45,24 +45,6 @@ class ClosedStreamsCleanUpDelegate : public QuicAlarm::Delegate {
   QuicSession* session_;
 };
 
-// TODO(renjietang): remove this function once
-// gfe2_reloadable_flag_quic_write_with_transmission is deprecated.
-void CountTransmissionTypeFlag(TransmissionType type) {
-  switch (type) {
-    case NOT_RETRANSMISSION:
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_write_with_transmission, 1, 4);
-      break;
-    case HANDSHAKE_RETRANSMISSION:
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_write_with_transmission, 2, 4);
-      break;
-    case LOSS_RETRANSMISSION:
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_write_with_transmission, 3, 4);
-      break;
-    default:
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_write_with_transmission, 4, 4);
-  }
-}
-
 }  // namespace
 
 #define ENDPOINT \
@@ -93,6 +75,7 @@ QuicSession::QuicSession(
                                 num_expected_unidirectional_static_streams),
       num_dynamic_incoming_streams_(0),
       num_draining_incoming_streams_(0),
+      num_draining_outgoing_streams_(0),
       num_outgoing_static_streams_(0),
       num_incoming_static_streams_(0),
       num_locally_closed_incoming_streams_highest_offset_(0),
@@ -117,17 +100,25 @@ QuicSession::QuicSession(
       supported_versions_(supported_versions),
       use_http2_priority_write_scheduler_(false),
       is_configured_(false),
-      num_expected_unidirectional_static_streams_(
-          num_expected_unidirectional_static_streams),
       enable_round_robin_scheduling_(false),
-      write_with_transmission_(
-          GetQuicReloadableFlag(quic_write_with_transmission)) {
+      deprecate_draining_streams_(
+          GetQuicReloadableFlag(quic_deprecate_draining_streams)),
+      break_close_loop_(
+          GetQuicReloadableFlag(quic_break_session_stream_close_loop)) {
   closed_streams_clean_up_alarm_ =
       QuicWrapUnique<QuicAlarm>(connection_->alarm_factory()->CreateAlarm(
           new ClosedStreamsCleanUpDelegate(this)));
   if (perspective() == Perspective::IS_SERVER &&
       connection_->version().handshake_protocol == PROTOCOL_TLS1_3) {
     config_.SetStatelessResetTokenToSend(GetStatelessResetToken());
+  }
+  if (VersionHasIetfQuicFrames(transport_version())) {
+    config_.SetMaxUnidirectionalStreamsToSend(
+        config_.GetMaxUnidirectionalStreamsToSend() +
+        num_expected_unidirectional_static_streams);
+  }
+  if (break_close_loop_) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_break_session_stream_close_loop);
   }
 }
 
@@ -301,6 +292,10 @@ void QuicSession::OnOneRttPacketAcknowledged() {
   GetMutableCryptoStream()->OnOneRttPacketAcknowledged();
 }
 
+void QuicSession::OnHandshakePacketSent() {
+  GetMutableCryptoStream()->OnHandshakePacketSent();
+}
+
 void QuicSession::PendingStreamOnRstStream(const QuicRstStreamFrame& frame) {
   DCHECK(VersionUsesHttp3(transport_version()));
   QuicStreamId stream_id = frame.stream_id;
@@ -398,9 +393,14 @@ void QuicSession::OnConnectionClosed(const QuicConnectionCloseFrame& frame,
     RecordConnectionCloseAtServer(frame.quic_error_code, source);
   }
 
-  if (on_closed_frame_.extracted_error_code == QUIC_NO_ERROR) {
+  if (on_closed_frame_.quic_error_code == QUIC_NO_ERROR) {
     // Save all of the connection close information
     on_closed_frame_ = frame;
+  }
+
+  if (GetQuicReloadableFlag(quic_notify_handshaker_on_connection_close)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_notify_handshaker_on_connection_close);
+    GetMutableCryptoStream()->OnConnectionClosed(frame.quic_error_code, source);
   }
 
   // Copy all non static streams in a new map for the ease of deleting.
@@ -431,8 +431,8 @@ void QuicSession::OnConnectionClosed(const QuicConnectionCloseFrame& frame,
 
   if (visitor_) {
     visitor_->OnConnectionClosed(connection_->connection_id(),
-                                 frame.extracted_error_code,
-                                 frame.error_details, source);
+                                 frame.quic_error_code, frame.error_details,
+                                 source);
   }
 }
 
@@ -558,9 +558,6 @@ void QuicSession::OnCanWrite() {
                      "write blocked.";
     return;
   }
-  if (!write_with_transmission_) {
-    SetTransmissionType(NOT_RETRANSMISSION);
-  }
   // We limit the number of writes to the number of pending streams. If more
   // streams become pending, WillingAndAbleToWrite will be true, which will
   // cause the connection to request resumption before yielding to other
@@ -685,7 +682,7 @@ bool QuicSession::HasPendingHandshake() const {
 }
 
 uint64_t QuicSession::GetNumOpenDynamicStreams() const {
-  return stream_map_.size() - draining_streams_.size() +
+  return stream_map_.size() - GetNumDrainingStreams() +
          locally_closed_streams_highest_offset_.size() -
          num_incoming_static_streams_ - num_outgoing_static_streams_;
 }
@@ -714,10 +711,7 @@ QuicConsumedData QuicSession::WritevData(
     return QuicConsumedData(0, false);
   }
 
-  if (write_with_transmission_) {
-    SetTransmissionType(type);
-    CountTransmissionTypeFlag(type);
-  }
+  SetTransmissionType(type);
   const auto current_level = connection()->encryption_level();
   if (level.has_value()) {
     connection()->SetDefaultEncryptionLevel(level.value());
@@ -743,10 +737,7 @@ size_t QuicSession::SendCryptoData(EncryptionLevel level,
                                    QuicStreamOffset offset,
                                    TransmissionType type) {
   DCHECK(QuicVersionUsesCryptoFrames(transport_version()));
-  if (write_with_transmission_) {
-    SetTransmissionType(type);
-    CountTransmissionTypeFlag(type);
-  }
+  SetTransmissionType(type);
   const auto current_level = connection()->encryption_level();
   connection_->SetDefaultEncryptionLevel(level);
   const auto bytes_consumed =
@@ -758,10 +749,7 @@ size_t QuicSession::SendCryptoData(EncryptionLevel level,
 
 bool QuicSession::WriteControlFrame(const QuicFrame& frame,
                                     TransmissionType type) {
-  if (write_with_transmission_) {
-    SetTransmissionType(type);
-    CountTransmissionTypeFlag(type);
-  }
+  SetTransmissionType(type);
   return connection_->SendControlFrame(frame);
 }
 
@@ -776,11 +764,35 @@ void QuicSession::SendRstStream(QuicStreamId id,
     connection_->OnStreamReset(id, error);
   }
 
+  if (break_close_loop_) {
+    return;
+  }
+
   if (error != QUIC_STREAM_NO_ERROR && QuicContainsKey(zombie_streams_, id)) {
     OnStreamDoneWaitingForAcks(id);
     return;
   }
   CloseStreamInner(id, true);
+}
+
+void QuicSession::ResetStream(QuicStreamId id,
+                              QuicRstStreamErrorCode error,
+                              QuicStreamOffset bytes_written) {
+  DCHECK(break_close_loop_);
+  QuicStream* stream = GetStream(id);
+  if (stream != nullptr && stream->is_static()) {
+    connection()->CloseConnection(
+        QUIC_INVALID_STREAM_ID, "Try to reset a static stream",
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return;
+  }
+
+  if (stream != nullptr) {
+    stream->Reset(error);
+    return;
+  }
+
+  SendRstStream(id, error, bytes_written);
 }
 
 void QuicSession::MaybeSendRstStreamFrame(QuicStreamId id,
@@ -875,6 +887,11 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id, bool rst_sent) {
         ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
     return;
   }
+  if (break_close_loop_) {
+    stream->CloseReadSide();
+    stream->CloseWriteSide();
+    return;
+  }
   StreamType type = stream->type();
 
   // Tell the stream that a RST has been sent.
@@ -904,16 +921,27 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id, bool rst_sent) {
     InsertLocallyClosedStreamsHighestOffset(
         stream_id, stream->flow_controller()->highest_received_byte_offset());
   }
+  bool stream_was_draining = false;
+  if (deprecate_draining_streams_) {
+    stream_was_draining = stream->was_draining();
+    QUIC_DVLOG_IF(1, stream_was_draining)
+        << ENDPOINT << "Stream " << stream_id << " was draining";
+  }
   stream_map_.erase(it);
   if (IsIncomingStream(stream_id)) {
     --num_dynamic_incoming_streams_;
   }
-
-  const bool stream_was_draining =
-      draining_streams_.find(stream_id) != draining_streams_.end();
+  if (!deprecate_draining_streams_) {
+    stream_was_draining =
+        draining_streams_.find(stream_id) != draining_streams_.end();
+  }
   if (stream_was_draining) {
     if (IsIncomingStream(stream_id)) {
+      QUIC_BUG_IF(num_draining_incoming_streams_ == 0);
       --num_draining_incoming_streams_;
+    } else if (deprecate_draining_streams_) {
+      QUIC_BUG_IF(num_draining_outgoing_streams_ == 0);
+      --num_draining_outgoing_streams_;
     }
     draining_streams_.erase(stream_id);
   } else if (VersionHasIetfQuicFrames(transport_version())) {
@@ -923,6 +951,10 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id, bool rst_sent) {
       // Do not bother informing stream ID manager if connection is closed.
       v99_streamid_manager_.OnStreamClosed(stream_id);
     }
+  } else if (stream_id_manager_.handles_accounting() && had_fin_or_rst &&
+             connection_->connected()) {
+    stream_id_manager_.OnStreamClosed(
+        /*is_incoming=*/IsIncomingStream(stream_id));
   }
 
   stream->OnClose();
@@ -935,12 +967,100 @@ void QuicSession::CloseStreamInner(QuicStreamId stream_id, bool rst_sent) {
   }
 }
 
+void QuicSession::OnStreamClosed(QuicStreamId stream_id) {
+  QUIC_DVLOG(1) << ENDPOINT << "Closing stream: " << stream_id;
+  DCHECK(break_close_loop_);
+  StreamMap::iterator it = stream_map_.find(stream_id);
+  if (it == stream_map_.end()) {
+    QUIC_DVLOG(1) << ENDPOINT << "Stream is already closed: " << stream_id;
+    return;
+  }
+  QuicStream* stream = it->second.get();
+  StreamType type = stream->type();
+
+  if (stream->IsWaitingForAcks()) {
+    zombie_streams_[stream->id()] = std::move(it->second);
+  } else {
+    // Clean up the stream since it is no longer waiting for acks.
+    streams_waiting_for_acks_.erase(stream->id());
+    closed_streams_.push_back(std::move(it->second));
+    // Do not retransmit data of a closed stream.
+    streams_with_pending_retransmission_.erase(stream_id);
+    if (!closed_streams_clean_up_alarm_->IsSet()) {
+      closed_streams_clean_up_alarm_->Set(
+          connection_->clock()->ApproximateNow());
+    }
+  }
+
+  if (!stream->HasReceivedFinalOffset()) {
+    // If we haven't received a FIN or RST for this stream, we need to keep
+    // track of the how many bytes the stream's flow controller believes it has
+    // received, for accurate connection level flow control accounting.
+    // If this is an outgoing stream, it is technically open from peer's
+    // perspective. Do not inform stream Id manager yet.
+    DCHECK(!stream->was_draining());
+    InsertLocallyClosedStreamsHighestOffset(
+        stream_id, stream->flow_controller()->highest_received_byte_offset());
+    stream_map_.erase(it);
+    if (IsIncomingStream(stream_id)) {
+      --num_dynamic_incoming_streams_;
+    }
+    return;
+  }
+
+  bool stream_was_draining = false;
+  if (deprecate_draining_streams_) {
+    stream_was_draining = stream->was_draining();
+    QUIC_DVLOG_IF(1, stream_was_draining)
+        << ENDPOINT << "Stream " << stream_id << " was draining";
+  }
+  stream_map_.erase(it);
+  if (IsIncomingStream(stream_id)) {
+    --num_dynamic_incoming_streams_;
+  }
+  if (!deprecate_draining_streams_) {
+    stream_was_draining =
+        draining_streams_.find(stream_id) != draining_streams_.end();
+  }
+  if (stream_was_draining) {
+    if (IsIncomingStream(stream_id)) {
+      QUIC_BUG_IF(num_draining_incoming_streams_ == 0);
+      --num_draining_incoming_streams_;
+    } else if (deprecate_draining_streams_) {
+      QUIC_BUG_IF(num_draining_outgoing_streams_ == 0);
+      --num_draining_outgoing_streams_;
+    }
+    draining_streams_.erase(stream_id);
+    // Stream Id manager has been informed with draining streams.
+    return;
+  }
+  if (!connection_->connected()) {
+    // Do not bother informing stream ID manager if connection has been
+    // disconnected.
+    return;
+  }
+  if (stream_id_manager_.handles_accounting() &&
+      !VersionHasIetfQuicFrames(transport_version())) {
+    stream_id_manager_.OnStreamClosed(
+        /*is_incoming=*/IsIncomingStream(stream_id));
+  }
+  if (IsIncomingStream(stream_id)) {
+    // Stream Id manager is only interested in peer initiated stream IDs.
+    if (VersionHasIetfQuicFrames(transport_version())) {
+      v99_streamid_manager_.OnStreamClosed(stream_id);
+    }
+    return;
+  }
+  if (!VersionHasIetfQuicFrames(transport_version())) {
+    OnCanCreateNewOutgoingStream(type != BIDIRECTIONAL);
+  }
+}
+
 void QuicSession::ClosePendingStream(QuicStreamId stream_id) {
   QUIC_DVLOG(1) << ENDPOINT << "Closing stream " << stream_id;
-
+  DCHECK(VersionHasIetfQuicFrames(transport_version()));
   pending_stream_map_.erase(stream_id);
-  if (VersionHasIetfQuicFrames(transport_version()) &&
-      connection_->connected()) {
+  if (connection_->connected()) {
     v99_streamid_manager_.OnStreamClosed(stream_id);
   }
 }
@@ -970,6 +1090,11 @@ void QuicSession::OnFinalByteOffsetReceived(
 
   flow_controller_.AddBytesConsumed(offset_diff);
   locally_closed_streams_highest_offset_.erase(it);
+  if (stream_id_manager_.handles_accounting() &&
+      !VersionHasIetfQuicFrames(transport_version())) {
+    stream_id_manager_.OnStreamClosed(
+        /*is_incoming=*/IsIncomingStream(stream_id));
+  }
   if (IsIncomingStream(stream_id)) {
     --num_locally_closed_incoming_streams_highest_offset_;
     if (VersionHasIetfQuicFrames(transport_version())) {
@@ -1006,6 +1131,18 @@ void QuicSession::OnConfigNegotiated() {
     QUIC_DVLOG(1) << ENDPOINT
                   << "Setting Bidirectional outgoing_max_streams_ to "
                   << max_streams;
+    if (perspective_ == Perspective::IS_CLIENT &&
+        max_streams <
+            v99_streamid_manager_.max_outgoing_bidirectional_streams()) {
+      connection_->CloseConnection(
+          QUIC_MAX_STREAMS_ERROR,
+          quiche::QuicheStrCat(
+              "new bidirectional limit ", max_streams,
+              " decreases the current limit: ",
+              v99_streamid_manager_.max_outgoing_bidirectional_streams()),
+          ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+      return;
+    }
     if (v99_streamid_manager_.MaybeAllowNewOutgoingBidirectionalStreams(
             max_streams)) {
       OnCanCreateNewOutgoingStream(/*unidirectional = */ false);
@@ -1015,14 +1152,16 @@ void QuicSession::OnConfigNegotiated() {
     if (config_.HasReceivedMaxUnidirectionalStreams()) {
       max_streams = config_.ReceivedMaxUnidirectionalStreams();
     }
-    if (max_streams < num_expected_unidirectional_static_streams_) {
-      // TODO(ianswett): Change this to an application error for HTTP/3.
-      QUIC_DLOG(ERROR) << "Received unidirectional stream limit of "
-                       << max_streams << " < "
-                       << num_expected_unidirectional_static_streams_;
+    if (max_streams <
+        v99_streamid_manager_.max_outgoing_unidirectional_streams()) {
       connection_->CloseConnection(
-          QUIC_MAX_STREAMS_ERROR, "New unidirectional stream limit is too low.",
+          QUIC_MAX_STREAMS_ERROR,
+          quiche::QuicheStrCat(
+              "new unidirectional limit ", max_streams,
+              " decreases the current limit: ",
+              v99_streamid_manager_.max_outgoing_unidirectional_streams()),
           ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+      return;
     }
     QUIC_DVLOG(1) << ENDPOINT
                   << "Setting Unidirectional outgoing_max_streams_ to "
@@ -1196,6 +1335,7 @@ void QuicSession::HandleRstOnValidNonexistentStream(
 }
 
 void QuicSession::OnNewStreamFlowControlWindow(QuicStreamOffset new_window) {
+  DCHECK_EQ(connection_->version().handshake_protocol, PROTOCOL_QUIC_CRYPTO);
   QUIC_DVLOG(1) << ENDPOINT << "OnNewStreamFlowControlWindow " << new_window;
   if (new_window < kMinimumFlowControlSendWindow &&
       !connection_->version().AllowsLowFlowControlLimits()) {
@@ -1212,19 +1352,22 @@ void QuicSession::OnNewStreamFlowControlWindow(QuicStreamOffset new_window) {
   for (auto const& kv : stream_map_) {
     QUIC_DVLOG(1) << ENDPOINT << "Informing stream " << kv.first
                   << " of new stream flow control window " << new_window;
-    kv.second->UpdateSendWindowOffset(new_window);
+    if (!kv.second->ConfigSendWindowOffset(new_window)) {
+      return;
+    }
   }
   if (!QuicVersionUsesCryptoFrames(transport_version())) {
     QUIC_DVLOG(1)
         << ENDPOINT
         << "Informing crypto stream of new stream flow control window "
         << new_window;
-    GetMutableCryptoStream()->UpdateSendWindowOffset(new_window);
+    GetMutableCryptoStream()->ConfigSendWindowOffset(new_window);
   }
 }
 
 void QuicSession::OnNewStreamUnidirectionalFlowControlWindow(
     QuicStreamOffset new_window) {
+  DCHECK_EQ(connection_->version().handshake_protocol, PROTOCOL_TLS1_3);
   QUIC_DVLOG(1) << ENDPOINT << "OnNewStreamUnidirectionalFlowControlWindow "
                 << new_window;
   // Inform all existing outgoing unidirectional streams about the new window.
@@ -1239,12 +1382,15 @@ void QuicSession::OnNewStreamUnidirectionalFlowControlWindow(
     }
     QUIC_DVLOG(1) << ENDPOINT << "Informing unidirectional stream " << id
                   << " of new stream flow control window " << new_window;
-    kv.second->UpdateSendWindowOffset(new_window);
+    if (!kv.second->ConfigSendWindowOffset(new_window)) {
+      return;
+    }
   }
 }
 
 void QuicSession::OnNewStreamOutgoingBidirectionalFlowControlWindow(
     QuicStreamOffset new_window) {
+  DCHECK_EQ(connection_->version().handshake_protocol, PROTOCOL_TLS1_3);
   QUIC_DVLOG(1) << ENDPOINT
                 << "OnNewStreamOutgoingBidirectionalFlowControlWindow "
                 << new_window;
@@ -1260,12 +1406,15 @@ void QuicSession::OnNewStreamOutgoingBidirectionalFlowControlWindow(
     }
     QUIC_DVLOG(1) << ENDPOINT << "Informing outgoing bidirectional stream "
                   << id << " of new stream flow control window " << new_window;
-    kv.second->UpdateSendWindowOffset(new_window);
+    if (!kv.second->ConfigSendWindowOffset(new_window)) {
+      return;
+    }
   }
 }
 
 void QuicSession::OnNewStreamIncomingBidirectionalFlowControlWindow(
     QuicStreamOffset new_window) {
+  DCHECK_EQ(connection_->version().handshake_protocol, PROTOCOL_TLS1_3);
   QUIC_DVLOG(1) << ENDPOINT
                 << "OnNewStreamIncomingBidirectionalFlowControlWindow "
                 << new_window;
@@ -1281,19 +1430,36 @@ void QuicSession::OnNewStreamIncomingBidirectionalFlowControlWindow(
     }
     QUIC_DVLOG(1) << ENDPOINT << "Informing incoming bidirectional stream "
                   << id << " of new stream flow control window " << new_window;
-    kv.second->UpdateSendWindowOffset(new_window);
+    if (!kv.second->ConfigSendWindowOffset(new_window)) {
+      return;
+    }
   }
 }
 
 void QuicSession::OnNewSessionFlowControlWindow(QuicStreamOffset new_window) {
   QUIC_DVLOG(1) << ENDPOINT << "OnNewSessionFlowControlWindow " << new_window;
-  if (new_window < kMinimumFlowControlSendWindow &&
-      !connection_->version().AllowsLowFlowControlLimits()) {
+  bool close_connection = false;
+  if (!connection_->version().AllowsLowFlowControlLimits()) {
+    if (new_window < kMinimumFlowControlSendWindow) {
+      close_connection = true;
+      QUIC_LOG_FIRST_N(ERROR, 1)
+          << "Peer sent us an invalid session flow control send window: "
+          << new_window << ", below default: " << kMinimumFlowControlSendWindow;
+    }
+  } else if (perspective_ == Perspective::IS_CLIENT &&
+             new_window < flow_controller_.send_window_offset()) {
+    // The client receives a lower limit than remembered, violating
+    // https://tools.ietf.org/html/draft-ietf-quic-transport-27#section-7.3.1
     QUIC_LOG_FIRST_N(ERROR, 1)
         << "Peer sent us an invalid session flow control send window: "
-        << new_window << ", below default: " << kMinimumFlowControlSendWindow;
+        << new_window
+        << ", below current: " << flow_controller_.send_window_offset();
+    close_connection = true;
+  }
+  if (close_connection) {
     connection_->CloseConnection(
-        QUIC_FLOW_CONTROL_INVALID_WINDOW, "New connection window too low",
+        QUIC_FLOW_CONTROL_INVALID_WINDOW,
+        quiche::QuicheStrCat("New connection window too low: ", new_window),
         ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
     return;
   }
@@ -1332,12 +1498,20 @@ void QuicSession::OnNewEncryptionKeyAvailable(
     std::unique_ptr<QuicEncrypter> encrypter) {
   connection()->SetEncrypter(level, std::move(encrypter));
 
-  if (GetQuicRestartFlag(quic_send_settings_on_write_key_available) &&
-      connection_->version().handshake_protocol == PROTOCOL_TLS1_3 &&
+  if (connection_->version().handshake_protocol == PROTOCOL_TLS1_3 &&
+      (perspective() == Perspective::IS_CLIENT ||
+       GetQuicReloadableFlag(quic_change_default_encryption_level))) {
+    QUIC_DVLOG(1) << ENDPOINT << "Set default encryption level to "
+                  << EncryptionLevelToString(level);
+    QUIC_RELOADABLE_FLAG_COUNT(quic_change_default_encryption_level);
+    connection()->SetDefaultEncryptionLevel(level);
+    return;
+  }
+
+  if (connection_->version().handshake_protocol == PROTOCOL_TLS1_3 &&
       level == ENCRYPTION_FORWARD_SECURE) {
     // Set connection's default encryption level once 1-RTT write key is
     // available.
-    QUIC_RESTART_FLAG_COUNT_N(quic_send_settings_on_write_key_available, 1, 2);
     QUIC_DVLOG(1) << ENDPOINT << "Set default encryption level to "
                   << EncryptionLevelToString(level);
     connection()->SetDefaultEncryptionLevel(level);
@@ -1379,12 +1553,6 @@ void QuicSession::SetDefaultEncryptionLevel(EncryptionLevel level) {
 
 void QuicSession::OnOneRttKeysAvailable() {
   DCHECK_EQ(PROTOCOL_TLS1_3, connection_->version().handshake_protocol);
-  if (!GetQuicRestartFlag(quic_send_settings_on_write_key_available)) {
-    QUIC_DVLOG(1) << ENDPOINT << "Set default encryption level to "
-                  << EncryptionLevelToString(ENCRYPTION_FORWARD_SECURE);
-    connection()->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
-  }
-
   QUIC_BUG_IF(!GetCryptoStream()->crypto_negotiated_params().cipher_suite)
       << ENDPOINT << "Handshake completes without cipher suite negotiation.";
   QUIC_BUG_IF(!config_.negotiated())
@@ -1477,7 +1645,7 @@ void QuicSession::ActivateStream(std::unique_ptr<QuicStream> stream) {
   QuicStreamId stream_id = stream->id();
   bool is_static = stream->is_static();
   QUIC_DVLOG(1) << ENDPOINT << "num_streams: " << stream_map_.size()
-                << ". activating " << stream_id;
+                << ". activating stream " << stream_id;
   DCHECK(!QuicContainsKey(stream_map_, stream_id));
   stream_map_[stream_id] = std::move(stream);
   if (IsIncomingStream(stream_id)) {
@@ -1486,13 +1654,11 @@ void QuicSession::ActivateStream(std::unique_ptr<QuicStream> stream) {
   } else if (is_static) {
     ++num_outgoing_static_streams_;
   }
-
-  if (VersionHasIetfQuicFrames(transport_version()) &&
-      !QuicUtils::IsBidirectionalStreamId(stream_id) && is_static) {
-    DCHECK_LE(num_incoming_static_streams_,
-              num_expected_unidirectional_static_streams_);
-    DCHECK_LE(num_outgoing_static_streams_,
-              num_expected_unidirectional_static_streams_);
+  if (stream_id_manager_.handles_accounting() && !is_static &&
+      !VersionHasIetfQuicFrames(transport_version())) {
+    // Do not inform stream ID manager of static streams.
+    stream_id_manager_.ActivateStream(
+        /*is_incoming=*/IsIncomingStream(stream_id));
   }
 }
 
@@ -1585,7 +1751,11 @@ QuicStream* QuicSession::GetOrCreateStream(const QuicStreamId stream_id) {
     if (!stream_id_manager_.CanOpenIncomingStream(
             GetNumOpenIncomingStreams())) {
       // Refuse to open the stream.
-      SendRstStream(stream_id, QUIC_REFUSED_STREAM, 0);
+      if (break_close_loop_) {
+        ResetStream(stream_id, QUIC_REFUSED_STREAM, 0);
+      } else {
+        SendRstStream(stream_id, QUIC_REFUSED_STREAM, 0);
+      }
       return nullptr;
     }
   }
@@ -1593,8 +1763,25 @@ QuicStream* QuicSession::GetOrCreateStream(const QuicStreamId stream_id) {
   return CreateIncomingStream(stream_id);
 }
 
-void QuicSession::StreamDraining(QuicStreamId stream_id) {
+void QuicSession::StreamDraining(QuicStreamId stream_id, bool unidirectional) {
   DCHECK(QuicContainsKey(stream_map_, stream_id));
+  if (deprecate_draining_streams_) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_deprecate_draining_streams);
+    QUIC_DVLOG(1) << ENDPOINT << "Stream " << stream_id << " is draining";
+    if (VersionHasIetfQuicFrames(transport_version())) {
+      v99_streamid_manager_.OnStreamClosed(stream_id);
+    } else if (stream_id_manager_.handles_accounting()) {
+      stream_id_manager_.OnStreamClosed(
+          /*is_incoming=*/IsIncomingStream(stream_id));
+    }
+    if (IsIncomingStream(stream_id)) {
+      ++num_draining_incoming_streams_;
+      return;
+    }
+    ++num_draining_outgoing_streams_;
+    OnCanCreateNewOutgoingStream(unidirectional);
+    return;
+  }
   if (!QuicContainsKey(draining_streams_, stream_id)) {
     draining_streams_.insert(stream_id);
     if (IsIncomingStream(stream_id)) {
@@ -1602,6 +1789,9 @@ void QuicSession::StreamDraining(QuicStreamId stream_id) {
     }
     if (VersionHasIetfQuicFrames(transport_version())) {
       v99_streamid_manager_.OnStreamClosed(stream_id);
+    } else if (stream_id_manager_.handles_accounting()) {
+      stream_id_manager_.OnStreamClosed(
+          /*is_incoming=*/IsIncomingStream(stream_id));
     }
   }
   if (!IsIncomingStream(stream_id)) {
@@ -1735,11 +1925,19 @@ bool QuicSession::IsStaticStream(QuicStreamId id) const {
 }
 
 size_t QuicSession::GetNumOpenIncomingStreams() const {
+  DCHECK(!VersionHasIetfQuicFrames(transport_version()));
+  if (stream_id_manager_.handles_accounting()) {
+    return stream_id_manager_.num_open_incoming_streams();
+  }
   return num_dynamic_incoming_streams_ - num_draining_incoming_streams_ +
          num_locally_closed_incoming_streams_highest_offset_;
 }
 
 size_t QuicSession::GetNumOpenOutgoingStreams() const {
+  DCHECK(!VersionHasIetfQuicFrames(transport_version()));
+  if (stream_id_manager_.handles_accounting()) {
+    return stream_id_manager_.num_open_outgoing_streams();
+  }
   DCHECK_GE(GetNumDynamicOutgoingStreams() +
                 GetNumLocallyClosedOutgoingStreamsHighestOffset(),
             GetNumDrainingOutgoingStreams());
@@ -1749,11 +1947,22 @@ size_t QuicSession::GetNumOpenOutgoingStreams() const {
 }
 
 size_t QuicSession::GetNumActiveStreams() const {
-  return stream_map_.size() - draining_streams_.size() -
+  if (!VersionHasIetfQuicFrames(transport_version()) &&
+      stream_id_manager_.handles_accounting()) {
+    // Exclude locally_closed_streams when determine whether to keep connection
+    // alive.
+    return stream_id_manager_.num_open_incoming_streams() +
+           stream_id_manager_.num_open_outgoing_streams() -
+           locally_closed_streams_highest_offset_.size();
+  }
+  return stream_map_.size() - GetNumDrainingStreams() -
          num_incoming_static_streams_ - num_outgoing_static_streams_;
 }
 
 size_t QuicSession::GetNumDrainingStreams() const {
+  if (deprecate_draining_streams_) {
+    return num_draining_incoming_streams_ + num_draining_outgoing_streams_;
+  }
   return draining_streams_.size();
 }
 
@@ -1796,6 +2005,9 @@ size_t QuicSession::GetNumDynamicOutgoingStreams() const {
 }
 
 size_t QuicSession::GetNumDrainingOutgoingStreams() const {
+  if (deprecate_draining_streams_) {
+    return num_draining_outgoing_streams_;
+  }
   DCHECK_GE(draining_streams_.size(), num_draining_incoming_streams_);
   return draining_streams_.size() - num_draining_incoming_streams_;
 }
@@ -1840,7 +2052,7 @@ size_t QuicSession::MaxAvailableUnidirectionalStreams() const {
 
 bool QuicSession::IsIncomingStream(QuicStreamId id) const {
   if (VersionHasIetfQuicFrames(transport_version())) {
-    return v99_streamid_manager_.IsIncomingStream(id);
+    return !QuicUtils::IsOutgoingStreamId(version(), id, perspective_);
   }
   return stream_id_manager_.IsIncomingStream(id);
 }
@@ -1974,9 +2186,6 @@ void QuicSession::OnFrameLost(const QuicFrame& frame) {
 void QuicSession::RetransmitFrames(const QuicFrames& frames,
                                    TransmissionType type) {
   QuicConnection::ScopedPacketFlusher retransmission_flusher(connection_);
-  if (!write_with_transmission_) {
-    SetTransmissionType(type);
-  }
   for (const QuicFrame& frame : frames) {
     if (frame.type == MESSAGE_FRAME) {
       // Do not retransmit MESSAGE frames.
@@ -2070,18 +2279,12 @@ bool QuicSession::RetransmitLostData() {
   bool uses_crypto_frames = QuicVersionUsesCryptoFrames(transport_version());
   QuicCryptoStream* crypto_stream = GetMutableCryptoStream();
   if (uses_crypto_frames && crypto_stream->HasPendingCryptoRetransmission()) {
-    if (!write_with_transmission_) {
-      SetTransmissionType(HANDSHAKE_RETRANSMISSION);
-    }
     crypto_stream->WritePendingCryptoRetransmission();
   }
   // Retransmit crypto data in stream 1 frames (version < 47).
   if (!uses_crypto_frames &&
       QuicContainsKey(streams_with_pending_retransmission_,
                       QuicUtils::GetCryptoStreamId(transport_version()))) {
-    if (!write_with_transmission_) {
-      SetTransmissionType(HANDSHAKE_RETRANSMISSION);
-    }
     // Retransmit crypto data first.
     QuicStream* crypto_stream =
         GetStream(QuicUtils::GetCryptoStreamId(transport_version()));
@@ -2096,9 +2299,6 @@ bool QuicSession::RetransmitLostData() {
     }
   }
   if (control_frame_manager_.HasPendingRetransmission()) {
-    if (!write_with_transmission_) {
-      SetTransmissionType(LOSS_RETRANSMISSION);
-    }
     control_frame_manager_.OnCanWrite();
     if (control_frame_manager_.HasPendingRetransmission()) {
       return false;
@@ -2112,9 +2312,6 @@ bool QuicSession::RetransmitLostData() {
     const QuicStreamId id = streams_with_pending_retransmission_.begin()->first;
     QuicStream* stream = GetStream(id);
     if (stream != nullptr) {
-      if (!write_with_transmission_) {
-        SetTransmissionType(LOSS_RETRANSMISSION);
-      }
       stream->OnCanWrite();
       DCHECK(CheckStreamWriteBlocked(stream));
       if (stream->HasPendingRetransmission()) {
@@ -2258,6 +2455,10 @@ void QuicSession::OnAlpnSelected(quiche::QuicheStringPiece alpn) {
   QUIC_DLOG(INFO) << (perspective() == Perspective::IS_SERVER ? "Server: "
                                                               : "Client: ")
                   << "ALPN selected: " << alpn;
+}
+
+void QuicSession::NeuterCryptoDataOfEncryptionLevel(EncryptionLevel level) {
+  GetMutableCryptoStream()->NeuterStreamDataOfEncryptionLevel(level);
 }
 
 #undef ENDPOINT  // undef for jumbo builds

@@ -49,7 +49,7 @@ namespace dawn_native { namespace vulkan {
 
     }  // namespace
 
-    const char kLayerNameLunargStandardValidation[] = "VK_LAYER_LUNARG_standard_validation";
+    const char kLayerNameKhronosValidation[] = "VK_LAYER_KHRONOS_validation";
     const char kLayerNameLunargVKTrace[] = "VK_LAYER_LUNARG_vktrace";
     const char kLayerNameRenderDocCapture[] = "VK_LAYER_RENDERDOC_Capture";
     const char kLayerNameFuchsiaImagePipeSwapchain[] = "VK_LAYER_FUCHSIA_imagepipe_swapchain";
@@ -102,8 +102,8 @@ namespace dawn_native { namespace vulkan {
                 "vkEnumerateInstanceLayerProperties"));
 
             for (const auto& layer : info.layers) {
-                if (IsLayerName(layer, kLayerNameLunargStandardValidation)) {
-                    info.standardValidation = true;
+                if (IsLayerName(layer, kLayerNameKhronosValidation)) {
+                    info.validation = true;
                 }
                 if (IsLayerName(layer, kLayerNameLunargVKTrace)) {
                     info.vktrace = true;
@@ -196,7 +196,7 @@ namespace dawn_native { namespace vulkan {
 
         // TODO(cwallez@chromium:org): Each layer can expose additional extensions, query them?
 
-        return info;
+        return std::move(info);
     }
 
     ResultOrError<std::vector<VkPhysicalDevice>> GetPhysicalDevices(const Backend& backend) {
@@ -215,7 +215,7 @@ namespace dawn_native { namespace vulkan {
             vkFunctions.EnumeratePhysicalDevices(instance, &count, physicalDevices.data()),
             "vkEnumeratePhysicalDevices"));
 
-        return physicalDevices;
+        return std::move(physicalDevices);
     }
 
     ResultOrError<VulkanDeviceInfo> GatherDeviceInfo(const Adapter& adapter) {
@@ -321,7 +321,7 @@ namespace dawn_native { namespace vulkan {
 
         // TODO(cwallez@chromium.org): gather info about formats
 
-        return info;
+        return std::move(info);
     }
 
     ResultOrError<VulkanSurfaceInfo> GatherSurfaceInfo(const Adapter& adapter,
@@ -382,7 +382,7 @@ namespace dawn_native { namespace vulkan {
                                     "vkGetPhysicalDeviceSurfacePresentModesKHR"));
         }
 
-        return info;
+        return std::move(info);
     }
 
 }}  // namespace dawn_native::vulkan

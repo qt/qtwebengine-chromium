@@ -44,14 +44,51 @@ void TlsServerHandshaker::SignatureCallback::Cancel() {
   handshaker_ = nullptr;
 }
 
-TlsServerHandshaker::TlsServerHandshaker(QuicSession* session,
-                                         SSL_CTX* ssl_ctx,
-                                         ProofSource* proof_source)
+TlsServerHandshaker::DecryptCallback::DecryptCallback(
+    TlsServerHandshaker* handshaker)
+    : handshaker_(handshaker) {}
+
+void TlsServerHandshaker::DecryptCallback::Run(std::vector<uint8_t> plaintext) {
+  if (handshaker_ == nullptr) {
+    // The callback was cancelled before we could run.
+    return;
+  }
+  handshaker_->decrypted_session_ticket_ = std::move(plaintext);
+  // DecryptCallback::Run could be called synchronously. When that happens, we
+  // are currently in the middle of a call to AdvanceHandshake.
+  // (AdvanceHandshake called SSL_do_handshake, which through some layers called
+  // SessionTicketOpen, which called TicketCrypter::Decrypt, which synchronously
+  // called this function.) In that case, the handshake will continue to be
+  // processed when this function returns.
+  //
+  // When this callback is called asynchronously (i.e. the ticket decryption is
+  // pending), TlsServerHandshaker is not actively processing handshake
+  // messages. We need to have it resume processing handshake messages by
+  // calling AdvanceHandshake.
+  if (handshaker_->state_ == STATE_TICKET_DECRYPTION_PENDING) {
+    handshaker_->AdvanceHandshake();
+  }
+  // The TicketDecrypter took ownership of this callback when Decrypt was
+  // called. Once the callback returns, it will be deleted. Remove the
+  // (non-owning) pointer to the callback from the handshaker so the handshaker
+  // doesn't have an invalid pointer hanging around.
+  handshaker_->ticket_decryption_callback_ = nullptr;
+}
+
+void TlsServerHandshaker::DecryptCallback::Cancel() {
+  DCHECK(handshaker_);
+  handshaker_ = nullptr;
+}
+
+TlsServerHandshaker::TlsServerHandshaker(
+    QuicSession* session,
+    const QuicCryptoServerConfig& crypto_config)
     : TlsHandshaker(this, session),
       QuicCryptoServerStreamBase(session),
-      proof_source_(proof_source),
+      proof_source_(crypto_config.proof_source()),
+      pre_shared_key_(crypto_config.pre_shared_key()),
       crypto_negotiated_params_(new QuicCryptoNegotiatedParameters),
-      tls_connection_(ssl_ctx, this) {
+      tls_connection_(crypto_config.ssl_ctx(), this) {
   DCHECK_EQ(PROTOCOL_TLS1_3,
             session->connection()->version().handshake_protocol);
 
@@ -67,6 +104,10 @@ void TlsServerHandshaker::CancelOutstandingCallbacks() {
   if (signature_callback_) {
     signature_callback_->Cancel();
     signature_callback_ = nullptr;
+  }
+  if (ticket_decryption_callback_) {
+    ticket_decryption_callback_->Cancel();
+    ticket_decryption_callback_ = nullptr;
   }
 }
 
@@ -119,6 +160,11 @@ void TlsServerHandshaker::OnHandshakeDoneReceived() {
 
 bool TlsServerHandshaker::ShouldSendExpectCTHeader() const {
   return false;
+}
+
+void TlsServerHandshaker::OnConnectionClosed(QuicErrorCode /*error*/,
+                                             ConnectionCloseSource /*source*/) {
+  state_ = STATE_CONNECTION_CLOSED;
 }
 
 bool TlsServerHandshaker::encryption_established() const {
@@ -195,6 +241,9 @@ void TlsServerHandshaker::AdvanceHandshake() {
     case STATE_SIGNATURE_PENDING:
       should_close = ssl_error != SSL_ERROR_WANT_PRIVATE_KEY_OPERATION;
       break;
+    case STATE_TICKET_DECRYPTION_PENDING:
+      should_close = ssl_error != SSL_ERROR_PENDING_TICKET;
+      break;
     default:
       should_close = true;
   }
@@ -246,12 +295,12 @@ bool TlsServerHandshaker::ProcessTransportParameters(
           client_params.version, session()->connection()->version(),
           session()->supported_versions(), error_details) != QUIC_NO_ERROR ||
       session()->config()->ProcessTransportParameters(
-          client_params, CLIENT, error_details) != QUIC_NO_ERROR) {
+          client_params, CLIENT, /* is_resumption = */ false, error_details) !=
+          QUIC_NO_ERROR) {
     return false;
   }
   ProcessAdditionalTransportParameters(client_params);
 
-  session()->OnConfigNegotiated();
   return true;
 }
 
@@ -283,8 +332,11 @@ void TlsServerHandshaker::SetWriteSecret(
     EncryptionLevel level,
     const SSL_CIPHER* cipher,
     const std::vector<uint8_t>& write_secret) {
-  if (GetQuicRestartFlag(quic_send_settings_on_write_key_available) &&
-      level == ENCRYPTION_FORWARD_SECURE) {
+  if (GetQuicReloadableFlag(quic_notify_handshaker_on_connection_close) &&
+      state_ == STATE_CONNECTION_CLOSED) {
+    return;
+  }
+  if (level == ENCRYPTION_FORWARD_SECURE) {
     encryption_established_ = true;
     // Fill crypto_negotiated_params_:
     const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
@@ -309,20 +361,9 @@ void TlsServerHandshaker::FinishHandshake() {
 
   QUIC_LOG(INFO) << "Server: handshake finished";
   state_ = STATE_HANDSHAKE_COMPLETE;
-
-  if (!GetQuicRestartFlag(quic_send_settings_on_write_key_available)) {
-    encryption_established_ = true;
-  }
   one_rtt_keys_available_ = true;
 
   const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
-  if (!GetQuicRestartFlag(quic_send_settings_on_write_key_available)) {
-    // Fill crypto_negotiated_params_:
-    if (cipher) {
-      crypto_negotiated_params_->cipher_suite = SSL_CIPHER_get_value(cipher);
-    }
-    crypto_negotiated_params_->key_exchange_group = SSL_get_curve_id(ssl());
-  }
 
   if (!app_data_read_secret_.empty()) {
     if (!SetReadSecret(ENCRYPTION_FORWARD_SECURE, cipher,
@@ -347,7 +388,8 @@ ssl_private_key_result_t TlsServerHandshaker::PrivateKeySign(
     quiche::QuicheStringPiece in) {
   signature_callback_ = new SignatureCallback(this);
   proof_source_->ComputeTlsSignature(
-      session()->connection()->self_address(), hostname_, sig_alg, in,
+      session()->connection()->self_address(),
+      session()->connection()->peer_address(), hostname_, sig_alg, in,
       std::unique_ptr<SignatureCallback>(signature_callback_));
   if (state_ == STATE_SIGNATURE_COMPLETE) {
     return PrivateKeyComplete(out, out_len, max_out);
@@ -373,21 +415,102 @@ ssl_private_key_result_t TlsServerHandshaker::PrivateKeyComplete(
   return ssl_private_key_success;
 }
 
+size_t TlsServerHandshaker::SessionTicketMaxOverhead() {
+  DCHECK(proof_source_->GetTicketCrypter());
+  return proof_source_->GetTicketCrypter()->MaxOverhead();
+}
+
+int TlsServerHandshaker::SessionTicketSeal(uint8_t* out,
+                                           size_t* out_len,
+                                           size_t max_out_len,
+                                           quiche::QuicheStringPiece in) {
+  DCHECK(proof_source_->GetTicketCrypter());
+  std::vector<uint8_t> ticket = proof_source_->GetTicketCrypter()->Encrypt(in);
+  if (max_out_len < ticket.size()) {
+    QUIC_BUG
+        << "TicketCrypter returned " << ticket.size()
+        << " bytes of ciphertext, which is larger than its max overhead of "
+        << max_out_len;
+    return 0;  // failure
+  }
+  *out_len = ticket.size();
+  memcpy(out, ticket.data(), ticket.size());
+  return 1;  // success
+}
+
+ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
+    uint8_t* out,
+    size_t* out_len,
+    size_t max_out_len,
+    quiche::QuicheStringPiece in) {
+  DCHECK(proof_source_->GetTicketCrypter());
+
+  if (!ticket_decryption_callback_) {
+    ticket_decryption_callback_ = new DecryptCallback(this);
+    proof_source_->GetTicketCrypter()->Decrypt(
+        in, std::unique_ptr<DecryptCallback>(ticket_decryption_callback_));
+    // Decrypt can run the callback synchronously. In that case, the callback
+    // will clear the ticket_decryption_callback_ pointer, and instead of
+    // returning ssl_ticket_aead_retry, we should continue processing to return
+    // the decrypted ticket.
+    //
+    // If the callback is not run asynchronously, return ssl_ticket_aead_retry
+    // and when the callback is complete this function will be run again to
+    // return the result.
+    if (ticket_decryption_callback_) {
+      state_ = STATE_TICKET_DECRYPTION_PENDING;
+      return ssl_ticket_aead_retry;
+    }
+  }
+  ticket_decryption_callback_ = nullptr;
+  state_ = STATE_LISTENING;
+  if (decrypted_session_ticket_.empty()) {
+    QUIC_DLOG(ERROR) << "Session ticket decryption failed; ignoring ticket";
+    // Ticket decryption failed. Ignore the ticket.
+    return ssl_ticket_aead_ignore_ticket;
+  }
+  if (max_out_len < decrypted_session_ticket_.size()) {
+    return ssl_ticket_aead_error;
+  }
+  memcpy(out, decrypted_session_ticket_.data(),
+         decrypted_session_ticket_.size());
+  *out_len = decrypted_session_ticket_.size();
+  QUIC_RELOADABLE_FLAG_COUNT(quic_enable_tls_resumption);
+
+  return ssl_ticket_aead_success;
+}
+
 int TlsServerHandshaker::SelectCertificate(int* out_alert) {
   const char* hostname = SSL_get_servername(ssl(), TLSEXT_NAMETYPE_host_name);
   if (hostname) {
     hostname_ = hostname;
     crypto_negotiated_params_->sni =
         QuicHostnameUtils::NormalizeHostname(hostname_);
+    if (GetQuicReloadableFlag(quic_tls_enforce_valid_sni)) {
+      QUIC_RELOADABLE_FLAG_COUNT(quic_tls_enforce_valid_sni);
+      if (!QuicHostnameUtils::IsValidSNI(hostname_)) {
+        // TODO(b/151676147): Include this error string in the CONNECTION_CLOSE
+        // frame.
+        QUIC_LOG(ERROR) << "Invalid SNI provided: \"" << hostname_ << "\"";
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+      }
+    }
   } else {
     QUIC_LOG(INFO) << "No hostname indicated in SNI";
   }
 
   QuicReferenceCountedPointer<ProofSource::Chain> chain =
       proof_source_->GetCertChain(session()->connection()->self_address(),
+                                  session()->connection()->peer_address(),
                                   hostname_);
-  if (chain->certs.empty()) {
+  if (!chain || chain->certs.empty()) {
     QUIC_LOG(ERROR) << "No certs provided for host '" << hostname_ << "'";
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+  }
+
+  if (!pre_shared_key_.empty()) {
+    // TODO(b/154162689) add PSK support to QUIC+TLS.
+    QUIC_BUG << "QUIC server pre-shared keys not yet supported with TLS";
     return SSL_TLSEXT_ERR_ALERT_FATAL;
   }
 
@@ -412,6 +535,8 @@ int TlsServerHandshaker::SelectCertificate(int* out_alert) {
     return SSL_TLSEXT_ERR_ALERT_FATAL;
   }
   OverrideQuicConfigDefaults(session()->config());
+  session()->OnConfigNegotiated();
+
   if (!SetTransportParameters()) {
     QUIC_LOG(ERROR) << "Failed to set transport parameters";
     return SSL_TLSEXT_ERR_ALERT_FATAL;

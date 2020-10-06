@@ -212,7 +212,7 @@ CPDF_Action CPDFSDK_BAAnnot::GetAAction(CPDF_AAction::AActionType eAAT) {
   if (AAction.ActionExist(eAAT))
     return AAction.GetAction(eAAT);
 
-  if (eAAT == CPDF_AAction::kButtonUp)
+  if (eAAT == CPDF_AAction::kButtonUp || eAAT == CPDF_AAction::kKeyStroke)
     return GetAction();
 
   return CPDF_Action(nullptr);
@@ -228,4 +228,14 @@ int CPDFSDK_BAAnnot::GetLayoutOrder() const {
     return 1;
 
   return CPDFSDK_Annot::GetLayoutOrder();
+}
+
+CPDF_Dest CPDFSDK_BAAnnot::GetDestination() const {
+  if (m_pAnnot->GetSubtype() != CPDF_Annot::Subtype::LINK)
+    return CPDF_Dest(nullptr);
+
+  // Link annotations can have "Dest" entry defined as an explicit array.
+  // https://www.adobe.com/content/dam/acom/en/devnet/pdf/pdfs/PDF32000_2008.pdf#page=373
+  return CPDF_Dest::Create(m_pPageView->GetPDFDocument(),
+                           GetAnnotDict()->GetDirectObjectFor("Dest"));
 }

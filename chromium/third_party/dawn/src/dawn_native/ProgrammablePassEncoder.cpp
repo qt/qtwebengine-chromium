@@ -47,24 +47,34 @@ namespace dawn_native {
                     }
 
                     case wgpu::BindingType::SampledTexture: {
-                        TextureBase* texture =
-                            group->GetBindingAsTextureView(bindingIndex)->GetTexture();
-                        usageTracker->TextureUsedAs(texture, wgpu::TextureUsage::Sampled);
+                        TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
+                        usageTracker->TextureViewUsedAs(view, wgpu::TextureUsage::Sampled);
                         break;
                     }
 
                     case wgpu::BindingType::ReadonlyStorageBuffer: {
                         BufferBase* buffer = group->GetBindingAsBufferBinding(bindingIndex).buffer;
-                        usageTracker->BufferUsedAs(buffer, kReadOnlyStorage);
+                        usageTracker->BufferUsedAs(buffer, kReadOnlyStorageBuffer);
                         break;
                     }
 
                     case wgpu::BindingType::Sampler:
+                    case wgpu::BindingType::ComparisonSampler:
                         break;
 
+                    case wgpu::BindingType::ReadonlyStorageTexture: {
+                        TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
+                        usageTracker->TextureViewUsedAs(view, kReadonlyStorageTexture);
+                        break;
+                    }
+
+                    case wgpu::BindingType::WriteonlyStorageTexture: {
+                        TextureViewBase* view = group->GetBindingAsTextureView(bindingIndex);
+                        usageTracker->TextureViewUsedAs(view, wgpu::TextureUsage::Storage);
+                        break;
+                    }
+
                     case wgpu::BindingType::StorageTexture:
-                    case wgpu::BindingType::ReadonlyStorageTexture:
-                    case wgpu::BindingType::WriteonlyStorageTexture:
                         UNREACHABLE();
                         break;
                 }
@@ -73,14 +83,16 @@ namespace dawn_native {
     }  // namespace
 
     ProgrammablePassEncoder::ProgrammablePassEncoder(DeviceBase* device,
-                                                     EncodingContext* encodingContext)
-        : ObjectBase(device), mEncodingContext(encodingContext) {
+                                                     EncodingContext* encodingContext,
+                                                     PassType passType)
+        : ObjectBase(device), mEncodingContext(encodingContext), mUsageTracker(passType) {
     }
 
     ProgrammablePassEncoder::ProgrammablePassEncoder(DeviceBase* device,
                                                      EncodingContext* encodingContext,
-                                                     ErrorTag errorTag)
-        : ObjectBase(device, errorTag), mEncodingContext(encodingContext) {
+                                                     ErrorTag errorTag,
+                                                     PassType passType)
+        : ObjectBase(device, errorTag), mEncodingContext(encodingContext), mUsageTracker(passType) {
     }
 
     void ProgrammablePassEncoder::InsertDebugMarker(const char* groupLabel) {

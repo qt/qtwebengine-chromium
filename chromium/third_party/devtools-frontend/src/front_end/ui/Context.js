@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import {ContextFlavorListener} from './ContextFlavorListener.js';
 
@@ -15,7 +18,7 @@ export class Context {
   }
 
   /**
-   * @param {function(new:T, ...)} flavorType
+   * @param {function(new:T, ...):void} flavorType
    * @param {?T} flavorValue
    * @template T
    */
@@ -34,7 +37,7 @@ export class Context {
   }
 
   /**
-   * @param {function(new:T, ...)} flavorType
+   * @param {function(new:T, ...):void} flavorType
    * @param {?T} flavorValue
    * @template T
    */
@@ -53,8 +56,8 @@ export class Context {
   }
 
   /**
-   * @param {function(new:Object, ...)} flavorType
-   * @param {function(!Common.EventTarget.EventTargetEvent)} listener
+   * @param {function(new:Object, ...):void} flavorType
+   * @param {function(!Common.EventTarget.EventTargetEvent):*} listener
    * @param {!Object=} thisObject
    */
   addFlavorChangeListener(flavorType, listener, thisObject) {
@@ -67,8 +70,8 @@ export class Context {
   }
 
   /**
-   * @param {function(new:Object, ...)} flavorType
-   * @param {function(!Common.EventTarget.EventTargetEvent)} listener
+   * @param {function(new:Object, ...):void} flavorType
+   * @param {function(!Common.EventTarget.EventTargetEvent):*} listener
    * @param {!Object=} thisObject
    */
   removeFlavorChangeListener(flavorType, listener, thisObject) {
@@ -83,7 +86,7 @@ export class Context {
   }
 
   /**
-   * @param {function(new:T, ...)} flavorType
+   * @param {function(new:T, ...):void} flavorType
    * @return {?T}
    * @template T
    */

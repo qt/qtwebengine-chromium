@@ -72,9 +72,9 @@ const QuicPacketCount kMinInitialCongestionWindow = 10;
 
 // Minimum size of initial flow control window, for both stream and session.
 // This is only enforced when version.AllowsLowFlowControlLimits() is false.
-const uint32_t kMinimumFlowControlSendWindow = 16 * 1024;  // 16 KB
+const QuicByteCount kMinimumFlowControlSendWindow = 16 * 1024;  // 16 KB
 // Default size of initial flow control window, for both stream and session.
-const uint32_t kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
+const QuicByteCount kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 
 // Maximum flow control receive window limits for connection and stream.
 const QuicByteCount kStreamReceiveWindowLimit = 16 * 1024 * 1024;   // 16 MB
@@ -131,8 +131,6 @@ static const int64_t kMinTailLossProbeTimeoutMs = 10;
 
 // The timeout before the handshake succeeds.
 const int64_t kInitialIdleTimeoutSecs = 5;
-// The default idle timeout.
-const int64_t kDefaultIdleTimeoutSecs = 30;
 // The maximum idle timeout that can be negotiated.
 const int64_t kMaximumIdleTimeoutSecs = 60 * 10;  // 10 minutes.
 // The default timeout for a connection until the crypto handshake succeeds.
@@ -249,6 +247,9 @@ const size_t kMaxNewTokenTokenLength = 0xffff;
 
 // Default initial rtt used before any samples are received.
 const int kInitialRttMs = 100;
+
+// Default threshold of packet reordering before a packet is declared lost.
+static const QuicPacketCount kDefaultPacketReorderingThreshold = 3;
 
 // Default fraction (1/4) of an RTT the algorithm waits before determining a
 // packet is lost due to early retransmission by time based loss detection.

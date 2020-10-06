@@ -21,25 +21,21 @@
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_writer.h"
 #include "perfetto/trace_processor/status.h"
-#include "src/trace_processor/args_tracker.h"
-#include "src/trace_processor/event_tracker.h"
+#include "src/trace_processor/importers/common/args_tracker.h"
+#include "src/trace_processor/importers/common/event_tracker.h"
+#include "src/trace_processor/importers/common/process_tracker.h"
+#include "src/trace_processor/importers/common/track_tracker.h"
 #include "src/trace_processor/importers/json/json_utils.h"
 #include "src/trace_processor/importers/proto/args_table_utils.h"
 #include "src/trace_processor/importers/proto/packet_sequence_state.h"
 #include "src/trace_processor/importers/proto/track_event.descriptor.h"
-#include "src/trace_processor/process_tracker.h"
-#include "src/trace_processor/status_macros.h"
-#include "src/trace_processor/track_tracker.h"
+#include "src/trace_processor/util/status_macros.h"
 
 #include "protos/perfetto/trace/interned_data/interned_data.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_compositor_scheduler_state.pbzero.h"
-#include "protos/perfetto/trace/track_event/chrome_histogram_sample.pbzero.h"
-#include "protos/perfetto/trace/track_event/chrome_keyed_service.pbzero.h"
-#include "protos/perfetto/trace/track_event/chrome_latency_info.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_legacy_ipc.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_process_descriptor.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_thread_descriptor.pbzero.h"
-#include "protos/perfetto/trace/track_event/chrome_user_event.pbzero.h"
 #include "protos/perfetto/trace/track_event/counter_descriptor.pbzero.h"
 #include "protos/perfetto/trace/track_event/debug_annotation.pbzero.h"
 #include "protos/perfetto/trace/track_event/log_message.pbzero.h"
@@ -147,9 +143,13 @@ class TrackEventParser::EventImporter {
       return util::OkStatus();
     }
 
+    // If we have legacy thread time / instruction count fields, also parse them
+    // into the counters tables.
+    ParseLegacyThreadTimeAndInstructionsAsCounters();
+
     // Parse extra counter values before parsing the actual event. This way, we
     // can update the slice's thread time / instruction count fields based on
-    // these counter values.
+    // these counter values and also parse them as slice attributes / arguments.
     ParseExtraCounterValues();
 
     // TODO(eseckler): Replace phase with type and remove handling of
@@ -282,8 +282,9 @@ class TrackEventParser::EventImporter {
       base::Optional<TrackId> opt_track_id =
           track_tracker->GetDescriptorTrack(track_uuid_);
       if (!opt_track_id) {
-        return util::ErrStatus("TrackEvent with unknown track_uuid %" PRIu64,
-                               track_uuid_);
+        track_tracker->ReserveDescriptorChildTrack(track_uuid_,
+                                                   /*parent_uuid=*/0, name_id_);
+        opt_track_id = track_tracker->GetDescriptorTrack(track_uuid_);
       }
       track_id_ = *opt_track_id;
 
@@ -305,6 +306,22 @@ class TrackEventParser::EventImporter {
             UniqueTid utid_candidate = procs->UpdateThread(tid, pid);
             if (storage_->thread_table().upid()[utid_candidate] == upid_)
               legacy_passthrough_utid_ = utid_candidate;
+          }
+        } else {
+          auto* tracks = context_->storage->mutable_track_table();
+          auto track_index = tracks->id().IndexOf(track_id_);
+          if (track_index) {
+            const StringPool::Id& id = tracks->name()[*track_index];
+            if (id.is_null())
+              tracks->mutable_name()->Set(*track_index, name_id_);
+          }
+
+          if (sequence_state_->state()->pid_and_tid_valid()) {
+            uint32_t pid =
+                static_cast<uint32_t>(sequence_state_->state()->pid());
+            uint32_t tid =
+                static_cast<uint32_t>(sequence_state_->state()->tid());
+            legacy_passthrough_utid_ = procs->UpdateThread(tid, pid);
           }
         }
       }
@@ -442,7 +459,7 @@ class TrackEventParser::EventImporter {
       case TrackEvent::TYPE_INSTANT:
         return utid_ ? 'i' : 'n';
       default:
-        PERFETTO_FATAL("unexpected event type %d", event_.type());
+        PERFETTO_ELOG("unexpected event type %d", event_.type());
         return 0;
     }
   }
@@ -457,6 +474,29 @@ class TrackEventParser::EventImporter {
                                          track_id_);
   }
 
+  void ParseLegacyThreadTimeAndInstructionsAsCounters() {
+    if (!utid_)
+      return;
+    // When these fields are set, we don't expect TrackDescriptor-based counters
+    // for thread time or instruction count for this thread in the trace, so we
+    // intern separate counter tracks based on name + utid. Note that we cannot
+    // import the counter values from the end of a complete event, because the
+    // EventTracker expects counters to be pushed in order of their timestamps.
+    // One more reason to switch to split begin/end events.
+    if (event_data_->thread_timestamp) {
+      TrackId track_id = context_->track_tracker->InternThreadCounterTrack(
+          parser_->counter_name_thread_time_id_, *utid_);
+      context_->event_tracker->PushCounter(ts_, event_data_->thread_timestamp,
+                                           track_id);
+    }
+    if (event_data_->thread_instruction_count) {
+      TrackId track_id = context_->track_tracker->InternThreadCounterTrack(
+          parser_->counter_name_thread_instruction_count_id_, *utid_);
+      context_->event_tracker->PushCounter(
+          ts_, event_data_->thread_instruction_count, track_id);
+    }
+  }
+
   void ParseExtraCounterValues() {
     if (!event_.has_extra_counter_values())
       return;
@@ -464,7 +504,7 @@ class TrackEventParser::EventImporter {
     protozero::RepeatedFieldIterator<uint64_t> track_uuid_it;
     if (event_.has_extra_counter_track_uuids()) {
       track_uuid_it = event_.extra_counter_track_uuids();
-    } else if (defaults_->has_extra_counter_track_uuids()) {
+    } else if (defaults_ && defaults_->has_extra_counter_track_uuids()) {
       track_uuid_it = defaults_->extra_counter_track_uuids();
     }
 
@@ -773,7 +813,7 @@ class TrackEventParser::EventImporter {
         return;
       // Log error but continue parsing the other args.
       storage_->IncrementStats(stats::track_event_parser_errors);
-      PERFETTO_DLOG("%s", status.c_message());
+      PERFETTO_DLOG("ParseTrackEventArgs error: %s", status.c_message());
     };
 
     for (auto it = event_.debug_annotations(); it; ++it) {
@@ -786,24 +826,10 @@ class TrackEventParser::EventImporter {
     if (event_.has_log_message()) {
       log_errors(ParseLogMessage(event_.log_message(), inserter));
     }
-    if (event_.has_cc_scheduler_state()) {
-      ParseCcScheduler(event_.cc_scheduler_state(), inserter);
-    }
-    if (event_.has_chrome_user_event()) {
-      ParseChromeUserEvent(event_.chrome_user_event(), inserter);
-    }
-    if (event_.has_chrome_legacy_ipc()) {
-      ParseChromeLegacyIpc(event_.chrome_legacy_ipc(), inserter);
-    }
-    if (event_.has_chrome_keyed_service()) {
-      ParseChromeKeyedService(event_.chrome_keyed_service(), inserter);
-    }
-    if (event_.has_chrome_histogram_sample()) {
-      ParseChromeHistogramSample(event_.chrome_histogram_sample(), inserter);
-    }
-    if (event_.has_chrome_latency_info()) {
-      ParseChromeLatencyInfo(event_.chrome_latency_info(), inserter);
-    }
+
+    log_errors(parser_->proto_to_args_.InternProtoFieldsIntoArgsTable(
+        blob_, ".perfetto.protos.TrackEvent", parser_->reflect_fields_,
+        inserter, sequence_state_));
 
     if (legacy_passthrough_utid_) {
       inserter->AddArg(parser_->legacy_event_passthrough_utid_id_,
@@ -824,7 +850,7 @@ class TrackEventParser::EventImporter {
     }
 
     if (legacy_event_.flow_direction()) {
-      StringId value;
+      StringId value = kNullStringId;
       switch (legacy_event_.flow_direction()) {
         case LegacyEvent::FLOW_IN:
           value = parser_->flow_direction_value_in_id_;
@@ -836,8 +862,8 @@ class TrackEventParser::EventImporter {
           value = parser_->flow_direction_value_inout_id_;
           break;
         default:
-          PERFETTO_FATAL("Unknown flow direction: %d",
-                         legacy_event_.flow_direction());
+          PERFETTO_ELOG("Unknown flow direction: %d",
+                        legacy_event_.flow_direction());
           break;
       }
       inserter->AddArg(parser_->legacy_event_flow_direction_key_id_,
@@ -1027,83 +1053,6 @@ class TrackEventParser::EventImporter {
     return util::OkStatus();
   }
 
-  void ParseCcScheduler(ConstBytes cc, BoundInserter* outer_inserter) {
-    parser_->proto_to_args_.InternProtoIntoArgsTable(
-        cc, ".perfetto.protos.ChromeCompositorSchedulerState", outer_inserter,
-        sequence_state_,
-        /* prefix= */ "cc_scheduler_state");
-  }
-
-  void ParseChromeUserEvent(protozero::ConstBytes chrome_user_event,
-                            BoundInserter* inserter) {
-    protos::pbzero::ChromeUserEvent::Decoder event(chrome_user_event);
-    if (event.has_action()) {
-      StringId action_id = storage_->InternString(event.action());
-      inserter->AddArg(parser_->chrome_user_event_action_args_key_id_,
-                       Variadic::String(action_id));
-    }
-    if (event.has_action_hash()) {
-      inserter->AddArg(parser_->chrome_user_event_action_hash_args_key_id_,
-                       Variadic::UnsignedInteger(event.action_hash()));
-    }
-  }
-
-  void ParseChromeLegacyIpc(protozero::ConstBytes chrome_legacy_ipc,
-                            BoundInserter* inserter) {
-    protos::pbzero::ChromeLegacyIpc::Decoder event(chrome_legacy_ipc);
-    if (event.has_message_class()) {
-      size_t message_class_index = static_cast<size_t>(event.message_class());
-      if (message_class_index >= parser_->chrome_legacy_ipc_class_ids_.size())
-        message_class_index = 0;
-      inserter->AddArg(
-          parser_->chrome_legacy_ipc_class_args_key_id_,
-          Variadic::String(
-              parser_->chrome_legacy_ipc_class_ids_[message_class_index]));
-    }
-    if (event.has_message_line()) {
-      inserter->AddArg(parser_->chrome_legacy_ipc_line_args_key_id_,
-                       Variadic::Integer(event.message_line()));
-    }
-  }
-
-  void ParseChromeKeyedService(protozero::ConstBytes chrome_keyed_service,
-                               BoundInserter* inserter) {
-    protos::pbzero::ChromeKeyedService::Decoder event(chrome_keyed_service);
-    if (event.has_name()) {
-      StringId action_id = storage_->InternString(event.name());
-      inserter->AddArg(parser_->chrome_keyed_service_name_args_key_id_,
-                       Variadic::String(action_id));
-    }
-  }
-
-  void ParseChromeLatencyInfo(protozero::ConstBytes chrome_latency_info,
-                              BoundInserter* inserter) {
-    parser_->proto_to_args_.InternProtoIntoArgsTable(
-        chrome_latency_info, ".perfetto.protos.ChromeLatencyInfo", inserter,
-        sequence_state_, "latency_info");
-  }
-
-  void ParseChromeHistogramSample(protozero::ConstBytes chrome_histogram_sample,
-                                  BoundInserter* inserter) {
-    protos::pbzero::ChromeHistogramSample::Decoder event(
-        chrome_histogram_sample);
-    if (event.has_name_hash()) {
-      uint64_t name_hash = static_cast<uint64_t>(event.name_hash());
-      inserter->AddArg(parser_->chrome_histogram_sample_name_hash_args_key_id_,
-                       Variadic::UnsignedInteger(name_hash));
-    }
-    if (event.has_name()) {
-      StringId name = storage_->InternString(event.name());
-      inserter->AddArg(parser_->chrome_keyed_service_name_args_key_id_,
-                       Variadic::String(name));
-    }
-    if (event.has_sample()) {
-      int64_t sample = static_cast<int64_t>(event.sample());
-      inserter->AddArg(parser_->chrome_histogram_sample_sample_args_key_id_,
-                       Variadic::Integer(sample));
-    }
-  }
-
   TraceProcessorContext* context_;
   TraceStorage* storage_;
   TrackEventParser* parser_;
@@ -1185,38 +1134,10 @@ TrackEventParser::TrackEventParser(TraceProcessorContext* context)
       flow_direction_value_in_id_(context->storage->InternString("in")),
       flow_direction_value_out_id_(context->storage->InternString("out")),
       flow_direction_value_inout_id_(context->storage->InternString("inout")),
-      chrome_user_event_action_args_key_id_(
-          context->storage->InternString("user_event.action")),
-      chrome_user_event_action_hash_args_key_id_(
-          context->storage->InternString("user_event.action_hash")),
       chrome_legacy_ipc_class_args_key_id_(
           context->storage->InternString("legacy_ipc.class")),
       chrome_legacy_ipc_line_args_key_id_(
           context->storage->InternString("legacy_ipc.line")),
-      chrome_keyed_service_name_args_key_id_(
-          context->storage->InternString("keyed_service.name")),
-      chrome_histogram_sample_name_hash_args_key_id_(
-          context->storage->InternString("histogram_sample.name_hash")),
-      chrome_histogram_sample_name_args_key_id_(
-          context->storage->InternString("histogram_sample.name")),
-      chrome_histogram_sample_sample_args_key_id_(
-          context->storage->InternString("histogram_sample.sample")),
-      chrome_latency_info_trace_id_key_id_(
-          context->storage->InternString("latency_info.trace_id")),
-      chrome_latency_info_step_key_id_(
-          context->storage->InternString("latency_info.step")),
-      chrome_latency_info_frame_tree_node_id_key_id_(
-          context->storage->InternString("latency_info.frame_tree_node_id")),
-      chrome_latency_info_step_ids_{
-          {context->storage->InternString("STEP_UNSPECIFIED"),
-           context->storage->InternString(
-               "STEP_HANDLE_INPUT_EVENT_MAIN_COMMIT"),
-           context->storage->InternString("STEP_MAIN_THREAD_SCROLL_UPDATE"),
-           context->storage->InternString("STEP_SEND_INPUT_EVENT_UI"),
-           context->storage->InternString("STEP_HANDLE_INPUT_EVENT_MAIN"),
-           context->storage->InternString("STEP_HANDLE_INPUT_EVENT_IMPL"),
-           context->storage->InternString("STEP_SWAP_BUFFERS"),
-           context->storage->InternString("STEP_DRAW_AND_SWAP")}},
       chrome_legacy_ipc_class_ids_{
           {context->storage->InternString("UNSPECIFIED"),
            context->storage->InternString("AUTOMATION"),
@@ -1311,6 +1232,10 @@ TrackEventParser::TrackEventParser(TraceProcessorContext* context)
             "begin_frame_observer_state.last_begin_frame_args", state, field,
             inserter);
       });
+
+  for (uint16_t index : kReflectFields) {
+    reflect_fields_.push_back(index);
+  }
 }
 
 void TrackEventParser::ParseTrackDescriptor(
@@ -1334,6 +1259,7 @@ void TrackEventParser::ParseTrackDescriptor(
     ParseCounterDescriptor(track_id, decoder.counter());
   }
 
+  // Override the name with the most recent name seen (after sorting by ts).
   if (decoder.has_name()) {
     auto* tracks = context_->storage->mutable_track_table();
     StringId name_id = context_->storage->InternString(decoder.name());
@@ -1462,7 +1388,7 @@ void TrackEventParser::ParseTrackEvent(int64_t ts,
       EventImporter(this, ts, event_data, std::move(blob)).Import();
   if (!status.ok()) {
     context_->storage->IncrementStats(stats::track_event_parser_errors);
-    PERFETTO_DLOG("%s", status.c_message());
+    PERFETTO_DLOG("ParseTrackEvent error: %s", status.c_message());
   }
 }
 

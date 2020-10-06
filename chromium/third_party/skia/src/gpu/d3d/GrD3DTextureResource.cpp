@@ -11,17 +11,27 @@
 
 void GrD3DTextureResource::setResourceState(const GrD3DGpu* gpu,
                                             D3D12_RESOURCE_STATES newResourceState) {
-    SkASSERT(fStateExplicitlySet);
-/* TODO
- * Something like:
-    D3D12_RESOURCE_STATES currentState = this->currentState();
-    gpu->addResourceTransitionBarrier(this->resource(), currentState, newResourceState);
-*/
-    this->updateResourceState(newResourceState, true);
+    D3D12_RESOURCE_STATES currentResourceState = this->currentState();
+    if (newResourceState == currentResourceState) {
+        return;
+    }
+
+    SkAutoTMalloc<D3D12_RESOURCE_TRANSITION_BARRIER> barriers(fInfo.fLevelCount);
+    for (uint32_t mipLevel = 0; mipLevel < fInfo.fLevelCount; ++mipLevel) {
+        barriers[mipLevel].pResource = this->d3dResource();
+        barriers[mipLevel].Subresource = mipLevel;
+        barriers[mipLevel].StateBefore = currentResourceState;
+        barriers[mipLevel].StateAfter = newResourceState;
+    }
+    gpu->addResourceBarriers(this->resource(), fInfo.fLevelCount, barriers.get());
+
+    this->updateResourceState(newResourceState);
 }
 
 bool GrD3DTextureResource::InitTextureResourceInfo(GrD3DGpu* gpu, const D3D12_RESOURCE_DESC& desc,
+                                                   D3D12_RESOURCE_STATES initialState,
                                                    GrProtected isProtected,
+                                                   D3D12_CLEAR_VALUE* clearValue,
                                                    GrD3DTextureResourceInfo* info) {
     if (0 == desc.Width || 0 == desc.Height) {
         return false;
@@ -36,36 +46,31 @@ bool GrD3DTextureResource::InitTextureResourceInfo(GrD3DGpu* gpu, const D3D12_RE
 
     ID3D12Resource* resource = nullptr;
 
-    // TODO: incorporate D3Dx12.h and use CD3DX12_HEAP_PROPERTIES instead?
-    D3D12_HEAP_PROPERTIES heapProperties = {
-        D3D12_HEAP_TYPE_DEFAULT,
-        D3D12_CPU_PAGE_PROPERTY_UNKNOWN,
-        D3D12_MEMORY_POOL_UNKNOWN,
-        1, // CreationNodeMask
-        1  // VisibleNodeMask
-    };
+    D3D12_HEAP_PROPERTIES heapProperties = {};
+    heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heapProperties.CreationNodeMask = 1;
+    heapProperties.VisibleNodeMask = 1;
     HRESULT hr = gpu->device()->CreateCommittedResource(
         &heapProperties,
         D3D12_HEAP_FLAG_NONE,
         &desc,
-        D3D12_RESOURCE_STATE_COMMON,
-        nullptr,  // TODO: might want to set pOptimizedClearValue for rendertarget and stencil
+        initialState,
+        clearValue,
         IID_PPV_ARGS(&resource));
     if (!SUCCEEDED(hr)) {
         return false;
     }
 
     info->fResource.reset(resource);
-    info->fResourceState = D3D12_RESOURCE_STATE_COMMON;
+    info->fResourceState = initialState;
     info->fFormat = desc.Format;
     info->fLevelCount = desc.MipLevels;
+    info->fSampleQualityLevel = desc.SampleDesc.Quality;
     info->fProtected = isProtected;
 
     return true;
-}
-
-void GrD3DTextureResource::ReleaseTextureResourceInfo(GrD3DTextureResourceInfo* info) {
-    info->fResource->Release();
 }
 
 GrD3DTextureResource::~GrD3DTextureResource() {

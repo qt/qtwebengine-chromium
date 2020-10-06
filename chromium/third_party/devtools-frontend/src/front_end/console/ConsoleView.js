@@ -28,6 +28,7 @@
  */
 
 import * as Bindings from '../bindings/bindings.js';
+import * as BrowserSDK from '../browser_sdk/browser_sdk.js';
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as Host from '../host/host.js';
@@ -65,7 +66,7 @@ export class ConsoleView extends UI.Widget.VBox {
     this._isSidebarOpen = false;
     this._filter = new ConsoleViewFilter(this._onFilterChanged.bind(this));
 
-    const consoleToolbarContainer = this.element.createChild('div', 'console-toolbar-container');
+    this._consoleToolbarContainer = this.element.createChild('div', 'console-toolbar-container');
     this._splitWidget = new UI.SplitWidget.SplitWidget(
         true /* isVertical */, false /* secondIsSidebar */, 'console.sidebar.width', 100);
     this._splitWidget.setMainWidget(this._searchableView);
@@ -115,8 +116,8 @@ export class ConsoleView extends UI.Widget.VBox {
     const groupSimilarToggle =
         new UI.Toolbar.ToolbarSettingCheckbox(this._groupSimilarSetting, Common.UIString.UIString('Group similar'));
 
-    const toolbar = new UI.Toolbar.Toolbar('console-main-toolbar', consoleToolbarContainer);
-    const rightToolbar = new UI.Toolbar.Toolbar('', consoleToolbarContainer);
+    const toolbar = new UI.Toolbar.Toolbar('console-main-toolbar', this._consoleToolbarContainer);
+    const rightToolbar = new UI.Toolbar.Toolbar('', this._consoleToolbarContainer);
     toolbar.appendToolbarItem(this._splitWidget.createShowHideSidebarButton(ls`console sidebar`));
     toolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(
         /** @type {!UI.Action.Action }*/ (self.UI.actionRegistry.action('console.clear'))));
@@ -275,6 +276,49 @@ export class ConsoleView extends UI.Widget.VBox {
     SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
         SDK.ConsoleModel.Events.CommandEvaluated, this._commandEvaluated, this);
     SDK.ConsoleModel.ConsoleModel.instance().messages().forEach(this._addConsoleMessage, this);
+
+    if (Root.Runtime.experiments.isEnabled('issuesPane')) {
+      const issuesManager = BrowserSDK.IssuesManager.IssuesManager.instance();
+      issuesManager.addEventListener(
+          BrowserSDK.IssuesManager.Events.IssuesCountUpdated, this._onIssuesCountChanged.bind(this));
+      if (issuesManager.numberOfIssues()) {
+        this._onIssuesCountChanged();
+      }
+    }
+    this._hasInteractedWithInfoBar = false;
+  }
+
+  _onIssuesCountChanged() {
+    if (BrowserSDK.IssuesManager.IssuesManager.instance().numberOfIssues() === 0) {
+      if (this._issueBarDiv) {
+        this._issueBarDiv.remove();
+        this._issueBarDiv = null;
+      }
+    } else if (!this._issueBarDiv && !this._hasInteractedWithInfoBar) {
+      this._issueBarDiv = document.createElement('div');
+      this._issueBarDiv.classList.add('flex-none');
+      const issueBarAction = /** @type {!UI.Infobar.InfobarAction} */ ({
+        text: ls`Go to Issues`,
+        highlight: false,
+        delegate: () => {
+          this._hasInteractedWithInfoBar = true;
+          Host.userMetrics.issuesPanelOpenedFrom(Host.UserMetrics.IssueOpener.ConsoleInfoBar);
+          UI.ViewManager.ViewManager.instance().showView('issues-pane');
+        },
+        dismiss: true,
+      });
+      const issueBar = new UI.Infobar.Infobar(
+          UI.Infobar.Type.Warning,
+          ls`Issues detected. The new Issues tab displays information about deprecations, breaking changes and other potential problems.`,
+          [issueBarAction]);
+      issueBar.setCloseCallback(() => {
+        this._hasInteractedWithInfoBar = true;
+      });
+      this.element.insertBefore(this._issueBarDiv, this._consoleToolbarContainer.nextSibling);
+      this._issueBarDiv.appendChild(issueBar.element);
+      issueBar.setParentView(this);
+      this.doResize();
+    }
   }
 
   /**
@@ -874,7 +918,7 @@ export class ConsoleView extends UI.Widget.VBox {
   }
 
   _addGroupableMessagesToEnd() {
-    /** @type {!Set<!SDK.ConsoleModel.ConsoleMessage>} */
+    /** @type {!Set<(!SDK.ConsoleModel.ConsoleMessage|!ConsoleViewMessage)>} */
     const alreadyAdded = new Set();
     /** @type {!Set<string>} */
     const processedGroupKeys = new Set();
@@ -906,7 +950,7 @@ export class ConsoleView extends UI.Widget.VBox {
 
       if (!viewMessagesInGroup.find(x => this._shouldMessageBeVisible(x))) {
         // Optimize for speed.
-        alreadyAdded.addAll(viewMessagesInGroup);
+        Platform.SetUtilities.addAll(alreadyAdded, viewMessagesInGroup);
         processedGroupKeys.add(key);
         continue;
       }
@@ -1473,13 +1517,15 @@ export class ConsoleCommand extends ConsoleViewMessage {
    */
   contentElement() {
     if (!this._contentElement) {
-      this._contentElement = createElementWithClass('div', 'console-user-command');
+      this._contentElement = document.createElement('div');
+      this._contentElement.classList.add('console-user-command');
       const icon = UI.Icon.Icon.create('smallicon-user-command', 'command-result-icon');
       this._contentElement.appendChild(icon);
 
       this._contentElement.message = this;
 
-      this._formattedCommand = createElementWithClass('span', 'source-code');
+      this._formattedCommand = document.createElement('span');
+      this._formattedCommand.classList.add('source-code');
       this._formattedCommand.textContent = Platform.StringUtilities.replaceControlCharacters(this.text);
       this._contentElement.appendChild(this._formattedCommand);
 

@@ -4,6 +4,8 @@
 
 #include "public/fpdf_attachment.h"
 
+#include <limits.h>
+
 #include <memory>
 #include <utility>
 
@@ -55,7 +57,8 @@ FPDFDoc_GetAttachmentCount(FPDF_DOCUMENT document) {
   if (!pDoc)
     return 0;
 
-  return CPDF_NameTree(pDoc, "EmbeddedFiles").GetCount();
+  auto name_tree = CPDF_NameTree::Create(pDoc, "EmbeddedFiles");
+  return name_tree ? name_tree->GetCount() : 0;
 }
 
 FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
@@ -64,28 +67,14 @@ FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
   if (!pDoc)
     return nullptr;
 
-  CPDF_Dictionary* pRoot = pDoc->GetRoot();
-  if (!pRoot)
-    return nullptr;
-
   WideString wsName = WideStringFromFPDFWideString(name);
   if (wsName.IsEmpty())
     return nullptr;
 
-  // Retrieve the document's Names dictionary; create it if missing.
-  CPDF_Dictionary* pNames = pRoot->GetDictFor("Names");
-  if (!pNames) {
-    pNames = pDoc->NewIndirect<CPDF_Dictionary>();
-    pRoot->SetNewFor<CPDF_Reference>("Names", pDoc, pNames->GetObjNum());
-  }
-
-  // Create the EmbeddedFiles dictionary if missing.
-  if (!pNames->GetDictFor("EmbeddedFiles")) {
-    CPDF_Dictionary* pFiles = pDoc->NewIndirect<CPDF_Dictionary>();
-    pFiles->SetNewFor<CPDF_Array>("Names");
-    pNames->SetNewFor<CPDF_Reference>("EmbeddedFiles", pDoc,
-                                      pFiles->GetObjNum());
-  }
+  auto name_tree =
+      CPDF_NameTree::CreateWithRootNameArray(pDoc, "EmbeddedFiles");
+  if (!name_tree)
+    return nullptr;
 
   // Set up the basic entries in the filespec dictionary.
   CPDF_Dictionary* pFile = pDoc->NewIndirect<CPDF_Dictionary>();
@@ -94,10 +83,8 @@ FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
   pFile->SetNewFor<CPDF_String>(pdfium::stream::kF, wsName);
 
   // Add the new attachment name and filespec into the document's EmbeddedFiles.
-  CPDF_NameTree name_tree(pDoc, "EmbeddedFiles");
-  if (!name_tree.AddValueAndName(pFile->MakeReference(pDoc), wsName)) {
+  if (!name_tree->AddValueAndName(pFile->MakeReference(pDoc), wsName))
     return nullptr;
-  }
 
   return FPDFAttachmentFromCPDFObject(pFile);
 }
@@ -108,13 +95,13 @@ FPDFDoc_GetAttachment(FPDF_DOCUMENT document, int index) {
   if (!pDoc || index < 0)
     return nullptr;
 
-  CPDF_NameTree name_tree(pDoc, "EmbeddedFiles");
-  if (static_cast<size_t>(index) >= name_tree.GetCount())
+  auto name_tree = CPDF_NameTree::Create(pDoc, "EmbeddedFiles");
+  if (!name_tree || static_cast<size_t>(index) >= name_tree->GetCount())
     return nullptr;
 
   WideString csName;
   return FPDFAttachmentFromCPDFObject(
-      name_tree.LookupValueAndName(index, &csName));
+      name_tree->LookupValueAndName(index, &csName));
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
@@ -123,11 +110,11 @@ FPDFDoc_DeleteAttachment(FPDF_DOCUMENT document, int index) {
   if (!pDoc || index < 0)
     return false;
 
-  CPDF_NameTree name_tree(pDoc, "EmbeddedFiles");
-  if (static_cast<size_t>(index) >= name_tree.GetCount())
+  auto name_tree = CPDF_NameTree::Create(pDoc, "EmbeddedFiles");
+  if (!name_tree || static_cast<size_t>(index) >= name_tree->GetCount())
     return false;
 
-  return name_tree.DeleteValueAndName(index);
+  return name_tree->DeleteValueAndName(index);
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV

@@ -11,7 +11,7 @@ stages:
         - amd64
 
 .debian-llvm-mingw-common:
-    image: registry.videolan.org:5000/vlc-debian-llvm-mingw:20190218133533
+    image: registry.videolan.org/vlc-debian-llvm-mingw:20190218133533
     stage: build
     tags:
         - docker
@@ -25,7 +25,7 @@ stages:
         - aarch64
 
 .debian-armv7-common:
-    image: registry.videolan.org:5000/dav1d-debian-unstable-armv7:20190202101732
+    image: registry.videolan.org/dav1d-debian-unstable-armv7:20190202101732
     stage: build
     tags:
         - docker
@@ -56,8 +56,8 @@ style-check:
     extends: .debian-amd64-common
     stage: style
     script:
-        - git grep -I -n -P "\t|\r| $" -- . ':(exclude)*/compat/*' && exit 1
-        - git grep -I -n -i "david" -- . ':(exclude)THANKS.md' ':(exclude).gitlab-ci.yml' && exit 1
+        - git grep -I -n -P "\t|\r| $" -- . ':(exclude)*/compat/*' && echo "Trailing whitespace" && exit 1
+        - git grep -I -n -i -e 'david' --and --not -e 'copyright' -- . ':(exclude)THANKS.md' ':(exclude).gitlab-ci.yml' && echo "Misspelled dav1d" && exit 1
         - git grep -I -l -z "" -- . ':(exclude)*/compat/*' | while IFS= read -r -d '' i; do
               if [ -n "$(tail -c 1 "$i")" ]; then
                   echo "No newline at end of $i";

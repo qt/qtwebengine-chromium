@@ -15,7 +15,7 @@
 #ifndef VK_COMMAND_BUFFER_HPP_
 #define VK_COMMAND_BUFFER_HPP_
 
-#include "VkConfig.h"
+#include "VkConfig.hpp"
 #include "VkDescriptorSet.hpp"
 #include "VkObject.hpp"
 #include "Device/Context.hpp"
@@ -53,11 +53,6 @@ public:
 	static constexpr VkSystemAllocationScope GetAllocationScope() { return VK_SYSTEM_ALLOCATION_SCOPE_OBJECT; }
 
 	CommandBuffer(Device *device, VkCommandBufferLevel pLevel);
-
-	static inline CommandBuffer *Cast(VkCommandBuffer object)
-	{
-		return reinterpret_cast<CommandBuffer *>(object);
-	}
 
 	void destroy(const VkAllocationCallbacks *pAllocator);
 
@@ -138,12 +133,17 @@ public:
 	void drawIndirect(Buffer *buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
 	void drawIndexedIndirect(Buffer *buffer, VkDeviceSize offset, uint32_t drawCount, uint32_t stride);
 
+	void beginDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo);
+	void endDebugUtilsLabel();
+	void insertDebugUtilsLabel(const VkDebugUtilsLabelEXT *pLabelInfo);
+
 	// TODO(sugoi): Move ExecutionState out of CommandBuffer (possibly into Device)
 	struct ExecutionState
 	{
 		struct PipelineState
 		{
 			Pipeline *pipeline = nullptr;
+			vk::DescriptorSet::Array descriptorSetObjects = {};
 			vk::DescriptorSet::Bindings descriptorSets = {};
 			vk::DescriptorSet::DynamicOffsets descriptorDynamicOffsets = {};
 		};
@@ -152,7 +152,7 @@ public:
 		sw::TaskEvents *events = nullptr;
 		RenderPass *renderPass = nullptr;
 		Framebuffer *renderPassFramebuffer = nullptr;
-		std::array<PipelineState, VK_PIPELINE_BIND_POINT_RANGE_SIZE> pipelineState;
+		std::array<PipelineState, vk::VK_PIPELINE_BIND_POINT_RANGE_SIZE> pipelineState;
 
 		struct DynamicState
 		{

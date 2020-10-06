@@ -249,13 +249,13 @@ CXFA_FFWidget* CXFA_FFWidget::GetNextFFWidget() const {
 const CFX_RectF& CXFA_FFWidget::GetWidgetRect() const {
   if (!GetLayoutItem()->TestStatusBits(XFA_WidgetStatus_RectCached))
     RecacheWidgetRect();
-  return m_rtWidget;
+  return m_WidgetRect;
 }
 
 const CFX_RectF& CXFA_FFWidget::RecacheWidgetRect() const {
   GetLayoutItem()->SetStatusBits(XFA_WidgetStatus_RectCached);
-  m_rtWidget = GetLayoutItem()->GetRect(false);
-  return m_rtWidget;
+  m_WidgetRect = GetLayoutItem()->GetRect(false);
+  return m_WidgetRect;
 }
 
 CFX_RectF CXFA_FFWidget::GetRectWithoutRotate() {
@@ -407,8 +407,8 @@ bool CXFA_FFWidget::OnMouseMove(uint32_t dwFlags, const CFX_PointF& point) {
 }
 
 bool CXFA_FFWidget::OnMouseWheel(uint32_t dwFlags,
-                                 int16_t zDelta,
-                                 const CFX_PointF& point) {
+                                 const CFX_PointF& point,
+                                 const CFX_Vector& delta) {
   return false;
 }
 

@@ -119,7 +119,7 @@ struct SkV4 {
  *      +Y goes down
  *      +Z goes into the screen (away from the viewer)
  */
-class SkM44 {
+class SK_API SkM44 {
 public:
     SkM44(const SkM44& src) = default;
     SkM44& operator=(const SkM44& src) = default;
@@ -158,10 +158,10 @@ public:
           SkScalar m2, SkScalar m6, SkScalar m10, SkScalar m14,
           SkScalar m3, SkScalar m7, SkScalar m11, SkScalar m15)
     {
-        this->set44(m0, m4, m8,  m12,
-                    m1, m5, m9,  m13,
-                    m2, m6, m10, m14,
-                    m3, m7, m11, m15);
+        fMat[0] = m0; fMat[4] = m4; fMat[8]  = m8;  fMat[12] = m12;
+        fMat[1] = m1; fMat[5] = m5; fMat[9]  = m9;  fMat[13] = m13;
+        fMat[2] = m2; fMat[6] = m6; fMat[10] = m10; fMat[14] = m14;
+        fMat[3] = m3; fMat[7] = m7; fMat[11] = m11; fMat[15] = m15;
     }
 
     static SkM44 Rows(const SkV4& r0, const SkV4& r1, const SkV4& r2, const SkV4& r3) {
@@ -179,6 +179,19 @@ public:
         m.setCol(2, c2);
         m.setCol(3, c3);
         return m;
+    }
+
+    static SkM44 RowMajor(const SkScalar r[16]) {
+        return SkM44(r[ 0], r[ 1], r[ 2], r[ 3],
+                     r[ 4], r[ 5], r[ 6], r[ 7],
+                     r[ 8], r[ 9], r[10], r[11],
+                     r[12], r[13], r[14], r[15]);
+    }
+    static SkM44 ColMajor(const SkScalar c[16]) {
+        return SkM44(c[0], c[4], c[ 8], c[12],
+                     c[1], c[5], c[ 9], c[13],
+                     c[2], c[6], c[10], c[14],
+                     c[3], c[7], c[11], c[15]);
     }
 
     static SkM44 Translate(SkScalar x, SkScalar y, SkScalar z = 0) {
@@ -210,25 +223,6 @@ public:
         memcpy(v, fMat, sizeof(fMat));
     }
     void getRowMajor(SkScalar v[]) const;
-
-    SkM44& setColMajor(const SkScalar v[]) {
-        memcpy(fMat, v, sizeof(fMat));
-        return *this;
-    }
-    SkM44& setRowMajor(const SkScalar v[]);
-
-    /* Parameters in same order as constructor.
-     */
-    SkM44& set44(SkScalar m0, SkScalar m4, SkScalar m8,  SkScalar m12,
-                 SkScalar m1, SkScalar m5, SkScalar m9,  SkScalar m13,
-                 SkScalar m2, SkScalar m6, SkScalar m10, SkScalar m14,
-                 SkScalar m3, SkScalar m7, SkScalar m11, SkScalar m15) {
-        fMat[0] = m0; fMat[4] = m4; fMat[8]  = m8;  fMat[12] = m12;
-        fMat[1] = m1; fMat[5] = m5; fMat[9]  = m9;  fMat[13] = m13;
-        fMat[2] = m2; fMat[6] = m6; fMat[10] = m10; fMat[14] = m14;
-        fMat[3] = m3; fMat[7] = m7; fMat[11] = m11; fMat[15] = m15;
-        return *this;
-    }
 
     SkScalar rc(int r, int c) const {
         SkASSERT(r >= 0 && r <= 3);
@@ -263,24 +257,27 @@ public:
     }
 
     SkM44& setIdentity() {
-        return this->set44(1, 0, 0, 0,
-                           0, 1, 0, 0,
-                           0, 0, 1, 0,
-                           0, 0, 0, 1);
+        *this = { 1, 0, 0, 0,
+                  0, 1, 0, 0,
+                  0, 0, 1, 0,
+                  0, 0, 0, 1 };
+        return *this;
     }
 
     SkM44& setTranslate(SkScalar x, SkScalar y, SkScalar z = 0) {
-        return this->set44(1, 0, 0, x,
-                           0, 1, 0, y,
-                           0, 0, 1, z,
-                           0, 0, 0, 1);
+        *this = { 1, 0, 0, x,
+                  0, 1, 0, y,
+                  0, 0, 1, z,
+                  0, 0, 0, 1 };
+        return *this;
     }
 
     SkM44& setScale(SkScalar x, SkScalar y, SkScalar z = 1) {
-        return this->set44(x, 0, 0, 0,
-                           0, y, 0, 0,
-                           0, 0, z, 0,
-                           0, 0, 0, 1);
+        *this = { x, 0, 0, 0,
+                  0, y, 0, 0,
+                  0, 0, z, 0,
+                  0, 0, 0, 1 };
+        return *this;
     }
 
     /**
@@ -311,26 +308,47 @@ public:
      */
     SkM44& setRotate(SkV3 axis, SkScalar radians);
 
-    SkM44& setConcat16(const SkM44& a, const SkScalar colMajor[16]);
-
-    SkM44& setConcat(const SkM44& a, const SkM44& b) {
-        return this->setConcat16(a, b.fMat);
-    }
+    SkM44& setConcat(const SkM44& a, const SkM44& b);
 
     friend SkM44 operator*(const SkM44& a, const SkM44& b) {
         return SkM44(a, b);
     }
 
-    SkM44& preConcat16(const SkScalar colMajor[16]) {
-        return this->setConcat16(*this, colMajor);
+    SkM44& preConcat(const SkM44& m) {
+        return this->setConcat(*this, m);
     }
+
+    SkM44& postConcat(const SkM44& m) {
+        return this->setConcat(m, *this);
+    }
+
+    /**
+     *  A matrix is categorized as 'perspective' if the bottom row is not [0, 0, 0, 1].
+     *  For most uses, a bottom row of [0, 0, 0, X] behaves like a non-perspective matrix, though
+     *  it will be categorized as perspective. Calling normalizePerspective() will change the
+     *  matrix such that, if its bottom row was [0, 0, 0, X], it will be changed to [0, 0, 0, 1]
+     *  by scaling the rest of the matrix by 1/X.
+     *
+     *  | A B C D |    | A/X B/X C/X D/X |
+     *  | E F G H | -> | E/X F/X G/X H/X |   for X != 0
+     *  | I J K L |    | I/X J/X K/X L/X |
+     *  | 0 0 0 X |    |  0   0   0   1  |
+     */
+    void normalizePerspective();
+
+    /** Returns true if all elements of the matrix are finite. Returns false if any
+        element is infinity, or NaN.
+
+        @return  true if matrix has only finite elements
+    */
+    bool isFinite() const { return SkScalarsAreFinite(fMat, 16); }
 
     /** If this is invertible, return that in inverse and return true. If it is
      *  not invertible, return false and leave the inverse parameter unchanged.
      */
     bool SK_WARN_UNUSED_RESULT invert(SkM44* inverse) const;
 
-    SkM44 transpose() const;
+    SkM44 SK_WARN_UNUSED_RESULT transpose() const;
 
     void dump() const;
 
@@ -361,19 +379,16 @@ public:
                                  fMat[3], fMat[7], fMat[15]);
     }
 
-    SkM44(const SkMatrix& src)
+    explicit SkM44(const SkMatrix& src)
     : SkM44(src[SkMatrix::kMScaleX], src[SkMatrix::kMSkewX],  0, src[SkMatrix::kMTransX],
             src[SkMatrix::kMSkewY],  src[SkMatrix::kMScaleY], 0, src[SkMatrix::kMTransY],
             0,                       0,                       1, 0,
             src[SkMatrix::kMPersp0], src[SkMatrix::kMPersp1], 0, src[SkMatrix::kMPersp2])
     {}
 
-    SkM44& operator=(const SkMatrix& src) {
-        *this = SkM44(src);
-        return *this;
-    }
+    SkM44& preTranslate(SkScalar x, SkScalar y, SkScalar z = 0);
+    SkM44& postTranslate(SkScalar x, SkScalar y, SkScalar z = 0);
 
-    SkM44& preTranslate(SkScalar x, SkScalar y);
     SkM44& preScale(SkScalar x, SkScalar y);
     SkM44& preConcat(const SkMatrix&);
 
@@ -386,8 +401,6 @@ private:
      *  3  7 11  15        0 0 0 1
      */
     SkScalar fMat[16];
-
-    double determinant() const;
 
     friend class SkMatrixPriv;
 };

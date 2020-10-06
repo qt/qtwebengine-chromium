@@ -42,9 +42,9 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_binding_for_modules.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_idb_database_info.h"
-#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/probe/async_task_id.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
@@ -104,13 +104,13 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
     promise_resolver_->Reject(MakeGarbageCollected<DOMException>(
         DOMExceptionCode::kUnknownError,
         "The databases() promise was rejected."));
-    promise_resolver_.Clear();
   }
 
   void SuccessNamesAndVersionsList(
       Vector<mojom::blink::IDBNameAndVersionPtr> names_and_versions) override {
     if (!promise_resolver_)
       return;
+    DCHECK(!async_task_.has_value());
 
     HeapVector<Member<IDBDatabaseInfo>> name_and_version_list;
     name_and_version_list.ReserveInitialCapacity(name_and_version_list.size());
@@ -124,11 +124,12 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
       name_and_version_list.push_back(idb_info);
     }
 
-    probe::AsyncTask async_task(
+    async_task_.emplace(
         ExecutionContext::From(promise_resolver_->GetScriptState()),
         &async_task_id_, "success");
     promise_resolver_->Resolve(name_and_version_list);
-    promise_resolver_.Clear();
+    // Note: Resolve may cause |this| to be deleted.  async_task_ will be
+    // completed in the destructor.
   }
 
   void SuccessStringList(const Vector<String>&) override { NOTREACHED(); }
@@ -190,6 +191,7 @@ class WebIDBGetDBNamesCallbacksImpl : public WebIDBCallbacks {
 
  private:
   probe::AsyncTaskId async_task_id_;
+  base::Optional<probe::AsyncTask> async_task_;
   Persistent<ScriptPromiseResolver> promise_resolver_;
 };
 
@@ -205,8 +207,8 @@ IDBFactory::IDBFactory(std::unique_ptr<WebIDBFactory> web_idb_factory)
 
 static bool IsContextValid(ExecutionContext* context) {
   DCHECK(context->IsDocument() || context->IsWorkerGlobalScope());
-  if (auto* document = Document::DynamicFrom(context))
-    return document->GetFrame() && document->GetPage();
+  if (auto* window = DynamicTo<LocalDOMWindow>(context))
+    return window->GetFrame();
   return true;
 }
 
@@ -477,8 +479,8 @@ bool IDBFactory::AllowIndexedDB(ScriptState* script_state) {
   DCHECK(execution_context->IsContextThread());
   SECURITY_DCHECK(execution_context->IsDocument() ||
                   execution_context->IsWorkerGlobalScope());
-  if (auto* document = Document::DynamicFrom(execution_context)) {
-    LocalFrame* frame = document->GetFrame();
+  if (auto* window = DynamicTo<LocalDOMWindow>(execution_context)) {
+    LocalFrame* frame = window->GetFrame();
     if (!frame)
       return false;
     if (auto* settings_client = frame->GetContentSettingsClient()) {

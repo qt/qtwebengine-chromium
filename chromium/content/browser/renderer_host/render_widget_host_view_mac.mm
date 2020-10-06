@@ -20,6 +20,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "components/remote_cocoa/browser/ns_view_ids.h"
 #include "components/remote_cocoa/common/application.mojom.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/switches.h"
@@ -268,7 +269,11 @@ void RenderWidgetHostViewMac::MigrateNSViewBridge(
       std::move(stub_client), std::move(stub_bridge_receiver));
 
   ns_view_ = remote_ns_view_.get();
-  remote_ns_view_->SetParentWebContentsNSView(parent_ns_view_id);
+
+  // Popup windows will specify an invalid |parent_ns_view_id|, because popups
+  // have their own NSWindows (of which they are the content NSView).
+  if (parent_ns_view_id != remote_cocoa::kInvalidNSViewId)
+    remote_ns_view_->SetParentWebContentsNSView(parent_ns_view_id);
 }
 
 void RenderWidgetHostViewMac::SetParentUiLayer(ui::Layer* parent_ui_layer) {
@@ -1143,19 +1148,20 @@ RenderWidgetHostViewMac::GetKeyboardLayoutMap() {
   return ui::GenerateDomKeyboardLayoutMap();
 }
 
-void RenderWidgetHostViewMac::GestureEventAck(const WebGestureEvent& event,
-                                              InputEventAckState ack_result) {
+void RenderWidgetHostViewMac::GestureEventAck(
+    const WebGestureEvent& event,
+    blink::mojom::InputEventResultState ack_result) {
   ForwardTouchpadZoomEventIfNecessary(event, ack_result);
 
   // Stop flinging if a GSU event with momentum phase is sent to the renderer
   // but not consumed.
   StopFlingingIfNecessary(event, ack_result);
 
-  bool consumed = ack_result == INPUT_EVENT_ACK_STATE_CONSUMED;
+  bool consumed = ack_result == blink::mojom::InputEventResultState::kConsumed;
   switch (event.GetType()) {
-    case WebInputEvent::kGestureScrollBegin:
-    case WebInputEvent::kGestureScrollUpdate:
-    case WebInputEvent::kGestureScrollEnd:
+    case WebInputEvent::Type::kGestureScrollBegin:
+    case WebInputEvent::Type::kGestureScrollUpdate:
+    case WebInputEvent::Type::kGestureScrollEnd:
       [GetInProcessNSView() processedGestureScrollEvent:event
                                                consumed:consumed];
       return;
@@ -1167,11 +1173,12 @@ void RenderWidgetHostViewMac::GestureEventAck(const WebGestureEvent& event,
 
 void RenderWidgetHostViewMac::ProcessAckedTouchEvent(
     const TouchEventWithLatencyInfo& touch,
-    InputEventAckState ack_result) {
-  const bool event_consumed = ack_result == INPUT_EVENT_ACK_STATE_CONSUMED;
+    blink::mojom::InputEventResultState ack_result) {
+  const bool event_consumed =
+      ack_result == blink::mojom::InputEventResultState::kConsumed;
   gesture_provider_.OnTouchEventAck(
       touch.event.unique_touch_event_id, event_consumed,
-      InputEventAckStateIsSetNonBlocking(ack_result));
+      InputEventResultStateIsSetNonBlocking(ack_result));
   if (touch.event.touch_start_or_first_touch_move && event_consumed &&
       host()->delegate() && host()->delegate()->GetInputEventRouter()) {
     host()
@@ -1498,10 +1505,10 @@ void RenderWidgetHostViewMac::ForwardKeyboardEvent(
 void RenderWidgetHostViewMac::ForwardKeyboardEventWithCommands(
     const NativeWebKeyboardEvent& key_event,
     const ui::LatencyInfo& latency_info,
-    const std::vector<EditCommand>& commands) {
+    std::vector<blink::mojom::EditCommandPtr> commands) {
   if (auto* widget_host = GetWidgetForKeyboardEvent()) {
     widget_host->ForwardKeyboardEventWithCommands(key_event, latency_info,
-                                                  &commands);
+                                                  std::move(commands));
   }
 }
 
@@ -1562,7 +1569,7 @@ void RenderWidgetHostViewMac::ForwardMouseEvent(
   if (host())
     host()->ForwardMouseEvent(web_event);
 
-  if (web_event.GetType() == WebInputEvent::kMouseLeave)
+  if (web_event.GetType() == WebInputEvent::Type::kMouseLeave)
     ns_view_->SetTooltipText(base::string16());
 }
 
@@ -1608,7 +1615,7 @@ void RenderWidgetHostViewMac::GestureUpdate(
     // finish scrolling.
     mouse_wheel_phase_handler_.DispatchPendingWheelEndEvent();
     WebGestureEvent begin_event(*gesture_begin_event_);
-    begin_event.SetType(WebInputEvent::kGesturePinchBegin);
+    begin_event.SetType(WebInputEvent::Type::kGesturePinchBegin);
     begin_event.SetSourceDevice(blink::WebGestureDevice::kTouchpad);
     begin_event.SetNeedsWheelEvent(true);
     SendTouchpadZoomEvent(&begin_event);
@@ -1789,15 +1796,15 @@ void RenderWidgetHostViewMac::ExecuteEditCommand(const std::string& command) {
 }
 
 void RenderWidgetHostViewMac::Undo() {
-  WebContents* web_contents = GetWebContents();
-  if (web_contents)
-    web_contents->Undo();
+  if (auto* delegate = GetFocusedRenderWidgetHostDelegate()) {
+    delegate->Undo();
+  }
 }
 
 void RenderWidgetHostViewMac::Redo() {
-  WebContents* web_contents = GetWebContents();
-  if (web_contents)
-    web_contents->Redo();
+  if (auto* delegate = GetFocusedRenderWidgetHostDelegate()) {
+    delegate->Redo();
+  }
 }
 
 void RenderWidgetHostViewMac::Cut() {
@@ -1825,9 +1832,9 @@ void RenderWidgetHostViewMac::Paste() {
 }
 
 void RenderWidgetHostViewMac::PasteAndMatchStyle() {
-  WebContents* web_contents = GetWebContents();
-  if (web_contents)
-    web_contents->PasteAndMatchStyle();
+  if (auto* delegate = GetFocusedRenderWidgetHostDelegate()) {
+    delegate->PasteAndMatchStyle();
+  }
 }
 
 void RenderWidgetHostViewMac::SelectAll() {
@@ -1886,7 +1893,7 @@ void RenderWidgetHostViewMac::ForwardKeyboardEventWithCommands(
     std::unique_ptr<InputEvent> input_event,
     const std::vector<uint8_t>& native_event_data,
     bool skip_in_browser,
-    const std::vector<EditCommand>& commands) {
+    std::vector<blink::mojom::EditCommandPtr> edit_commands) {
   if (!input_event || !input_event->web_event ||
       !blink::WebInputEvent::IsKeyboardEventType(
           input_event->web_event->GetType())) {
@@ -1904,7 +1911,7 @@ void RenderWidgetHostViewMac::ForwardKeyboardEventWithCommands(
   [native_event.os_event release];
   native_event.os_event = [ui::EventFromData(native_event_data) retain];
   ForwardKeyboardEventWithCommands(native_event, input_event->latency_info,
-                                   commands);
+                                   std::move(edit_commands));
 }
 
 void RenderWidgetHostViewMac::RouteOrProcessMouseEvent(
@@ -1936,7 +1943,8 @@ void RenderWidgetHostViewMac::RouteOrProcessTouchEvent(
 void RenderWidgetHostViewMac::RouteOrProcessWheelEvent(
     std::unique_ptr<InputEvent> input_event) {
   if (!input_event || !input_event->web_event ||
-      input_event->web_event->GetType() != blink::WebInputEvent::kMouseWheel) {
+      input_event->web_event->GetType() !=
+          blink::WebInputEvent::Type::kMouseWheel) {
     DLOG(ERROR) << "Absent or non-MouseWheel event.";
     return;
   }
@@ -1961,7 +1969,8 @@ void RenderWidgetHostViewMac::ForwardMouseEvent(
 void RenderWidgetHostViewMac::ForwardWheelEvent(
     std::unique_ptr<InputEvent> input_event) {
   if (!input_event || !input_event->web_event ||
-      input_event->web_event->GetType() != blink::WebInputEvent::kMouseWheel) {
+      input_event->web_event->GetType() !=
+          blink::WebInputEvent::Type::kMouseWheel) {
     DLOG(ERROR) << "Absent or non-MouseWheel event.";
     return;
   }
@@ -1982,7 +1991,7 @@ void RenderWidgetHostViewMac::GestureBegin(
   blink::WebGestureEvent gesture_event =
       *static_cast<const blink::WebGestureEvent*>(input_event->web_event.get());
   // Strip the gesture type, because it is not known.
-  gesture_event.SetType(blink::WebInputEvent::kUndefined);
+  gesture_event.SetType(blink::WebInputEvent::Type::kUndefined);
   GestureBegin(gesture_event, is_synthetically_injected);
 }
 

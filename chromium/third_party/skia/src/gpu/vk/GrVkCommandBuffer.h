@@ -16,14 +16,13 @@
 
 class GrVkBuffer;
 class GrVkFramebuffer;
-class GrVkIndexBuffer;
 class GrVkImage;
+class GrVkMeshBuffer;
 class GrVkPipeline;
 class GrVkPipelineState;
 class GrVkRenderPass;
 class GrVkRenderTarget;
 class GrVkTransferBuffer;
-class GrVkVertexBuffer;
 
 class GrVkCommandBuffer {
 public:
@@ -47,9 +46,9 @@ public:
                          BarrierType barrierType,
                          void* barrier);
 
-    void bindInputBuffer(GrVkGpu* gpu, uint32_t binding, const GrVkVertexBuffer* vbuffer);
+    void bindInputBuffer(GrVkGpu* gpu, uint32_t binding, const GrVkMeshBuffer* vbuffer);
 
-    void bindIndexBuffer(GrVkGpu* gpu, const GrVkIndexBuffer* ibuffer);
+    void bindIndexBuffer(GrVkGpu* gpu, const GrVkMeshBuffer* ibuffer);
 
     void bindPipeline(const GrVkGpu* gpu, const GrVkPipeline* pipeline);
 
@@ -94,6 +93,18 @@ public:
               uint32_t firstVertex,
               uint32_t firstInstance);
 
+    void drawIndirect(const GrVkGpu* gpu,
+                      const GrVkMeshBuffer* indirectBuffer,
+                      VkDeviceSize offset,
+                      uint32_t drawCount,
+                      uint32_t stride);
+
+    void drawIndexedIndirect(const GrVkGpu* gpu,
+                             const GrVkMeshBuffer* indirectBuffer,
+                             VkDeviceSize offset,
+                             uint32_t drawCount,
+                             uint32_t stride);
+
     // Add ref-counted resource that will be tracked and released when this command buffer finishes
     // execution
     void addResource(const GrManagedResource* resource) {
@@ -116,6 +127,10 @@ public:
     void freeGPUData(const GrGpu* gpu, VkCommandPool pool) const;
 
     bool hasWork() const { return fHasWork; }
+
+#ifdef SK_DEBUG
+    bool validateNoSharedImageResources(const GrVkCommandBuffer* other);
+#endif
 
 protected:
     GrVkCommandBuffer(VkCommandBuffer cmdBuffer, bool isWrapped = false)
@@ -287,6 +302,10 @@ public:
     bool finished(GrVkGpu* gpu);
 
     void addFinishedProc(sk_sp<GrRefCntedCallback> finishedProc);
+
+    void callFinishedProcs() {
+        fFinishedProcs.reset();
+    }
 
     void recycleSecondaryCommandBuffers(GrVkCommandPool* cmdPool);
 

@@ -9,6 +9,7 @@
 #include "src/core/SkBitmapController.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkMatrixProvider.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
@@ -177,20 +178,6 @@ sk_sp<SkShader> SkImageShader::Make(sk_sp<SkImage> image,
 #include "src/gpu/effects/GrBicubicEffect.h"
 #include "src/gpu/effects/GrTextureEffect.h"
 
-static GrSamplerState::WrapMode tile_mode_to_wrap_mode(const SkTileMode tileMode) {
-    switch (tileMode) {
-        case SkTileMode::kClamp:
-            return GrSamplerState::WrapMode::kClamp;
-        case SkTileMode::kRepeat:
-            return GrSamplerState::WrapMode::kRepeat;
-        case SkTileMode::kMirror:
-            return GrSamplerState::WrapMode::kMirrorRepeat;
-        case SkTileMode::kDecal:
-            return GrSamplerState::WrapMode::kClampToBorder;
-    }
-    SK_ABORT("Unknown tile mode.");
-}
-
 std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
         const GrFPArgs& args) const {
     const auto lm = this->totalLocalMatrix(args.fPreLocalMatrix);
@@ -199,8 +186,8 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
         return nullptr;
     }
 
-    GrSamplerState::WrapMode wmX = tile_mode_to_wrap_mode(fTileModeX),
-                             wmY = tile_mode_to_wrap_mode(fTileModeY);
+    GrSamplerState::WrapMode wmX = SkTileModeToWrapMode(fTileModeX),
+                             wmY = SkTileModeToWrapMode(fTileModeY);
 
     // Must set wrap and filter on the sampler before requesting a texture. In two places below
     // we check the matrix scale factors to determine how to interpret the filter quality setting.
@@ -208,7 +195,8 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
     // are provided by the caller.
     bool doBicubic;
     GrSamplerState::Filter textureFilterMode = GrSkFilterQualityToGrFilterMode(
-            fImage->width(), fImage->height(), args.fFilterQuality, *args.fViewMatrix, *lm,
+            fImage->width(), fImage->height(), args.fFilterQuality,
+            args.fMatrixProvider.localToDevice(), *lm,
             args.fContext->priv().options().fSharpenMipmappedTextures, &doBicubic);
     GrMipMapped mipMapped = GrMipMapped::kNo;
     if (textureFilterMode == GrSamplerState::Filter::kMipMap) {
@@ -358,7 +346,7 @@ bool SkImageShader::doStages(const SkStageRec& rec, SkImageStageUpdater* updater
     auto quality = rec.fPaint.getFilterQuality();
 
     SkMatrix matrix;
-    if (!this->computeTotalInverse(rec.fCTM, rec.fLocalM, &matrix)) {
+    if (!this->computeTotalInverse(rec.fMatrixProvider.localToDevice(), rec.fLocalM, &matrix)) {
         return false;
     }
 
@@ -631,7 +619,7 @@ bool SkImageShader::onAppendStages(const SkStageRec& rec) const {
 }
 
 SkStageUpdater* SkImageShader::onAppendUpdatableStages(const SkStageRec& rec) const {
-    bool usePersp = rec.fCTM.hasPerspective();
+    bool usePersp = rec.fMatrixProvider.localToDevice().hasPerspective();
     auto updater = rec.fAlloc->make<SkImageStageUpdater>(this, usePersp);
     return this->doStages(rec, updater) ? updater : nullptr;
 }

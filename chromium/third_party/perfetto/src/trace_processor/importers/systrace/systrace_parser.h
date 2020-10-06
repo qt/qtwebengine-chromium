@@ -19,7 +19,7 @@
 
 #include <ostream>
 
-#include "src/trace_processor/trace_processor_context.h"
+#include "src/trace_processor/types/trace_processor_context.h"
 
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_utils.h"
@@ -253,6 +253,7 @@ class SystraceParser : public Destructible {
 
   TraceProcessorContext* const context_;
   const StringId lmk_id_;
+  const StringId screen_state_id_;
 };
 
 }  // namespace trace_processor

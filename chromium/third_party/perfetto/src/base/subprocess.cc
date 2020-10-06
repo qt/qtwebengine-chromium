@@ -16,6 +16,8 @@
 
 #include "perfetto/ext/base/subprocess.h"
 
+#if PERFETTO_HAS_SUBPROCESS()
+
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -166,6 +168,9 @@ void __attribute__((noreturn)) ChildProcess(ChildProcessArgs* args) {
 }
 
 }  // namespace
+
+Subprocess::Args::Args(Args&&) noexcept = default;
+Subprocess::Args& Subprocess::Args::operator=(Args&&) = default;
 
 Subprocess::Subprocess(std::initializer_list<std::string> _args)
     : args(_args) {}
@@ -427,3 +432,5 @@ std::string Subprocess::Args::GetCmdString() const {
 
 }  // namespace base
 }  // namespace perfetto
+
+#endif  // PERFETTO_HAS_SUBPROCESS()

@@ -170,16 +170,14 @@ int CPDFSDK_FormFillEnvironment::JS_appAlert(const WideString& Msg,
                                              const WideString& Title,
                                              int Type,
                                              int Icon) {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->app_alert) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->app_alert)
     return -1;
-  }
 
   ByteString bsMsg = Msg.ToUTF16LE();
   ByteString bsTitle = Title.ToUTF16LE();
-  return m_pInfo->m_pJsPlatform->app_alert(
-      m_pInfo->m_pJsPlatform, AsFPDFWideString(&bsMsg),
-      AsFPDFWideString(&bsTitle), Type, Icon);
+  return js_platform->app_alert(js_platform, AsFPDFWideString(&bsMsg),
+                                AsFPDFWideString(&bsTitle), Type, Icon);
 }
 
 int CPDFSDK_FormFillEnvironment::JS_appResponse(const WideString& Question,
@@ -189,41 +187,40 @@ int CPDFSDK_FormFillEnvironment::JS_appResponse(const WideString& Question,
                                                 FPDF_BOOL bPassword,
                                                 void* response,
                                                 int length) {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->app_response) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->app_response)
     return -1;
-  }
+
   ByteString bsQuestion = Question.ToUTF16LE();
   ByteString bsTitle = Title.ToUTF16LE();
   ByteString bsDefault = Default.ToUTF16LE();
   ByteString bsLabel = Label.ToUTF16LE();
-  return m_pInfo->m_pJsPlatform->app_response(
-      m_pInfo->m_pJsPlatform, AsFPDFWideString(&bsQuestion),
-      AsFPDFWideString(&bsTitle), AsFPDFWideString(&bsDefault),
-      AsFPDFWideString(&bsLabel), bPassword, response, length);
+  return js_platform->app_response(
+      js_platform, AsFPDFWideString(&bsQuestion), AsFPDFWideString(&bsTitle),
+      AsFPDFWideString(&bsDefault), AsFPDFWideString(&bsLabel), bPassword,
+      response, length);
 }
 
 void CPDFSDK_FormFillEnvironment::JS_appBeep(int nType) {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->app_beep) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->app_beep)
     return;
-  }
-  m_pInfo->m_pJsPlatform->app_beep(m_pInfo->m_pJsPlatform, nType);
+
+  js_platform->app_beep(js_platform, nType);
 }
 
 WideString CPDFSDK_FormFillEnvironment::JS_fieldBrowse() {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->Field_browse) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->Field_browse)
     return WideString();
-  }
-  const int nRequiredLen =
-      m_pInfo->m_pJsPlatform->Field_browse(m_pInfo->m_pJsPlatform, nullptr, 0);
+
+  const int nRequiredLen = js_platform->Field_browse(js_platform, nullptr, 0);
   if (nRequiredLen <= 0)
     return WideString();
 
   std::vector<uint8_t, FxAllocAllocator<uint8_t>> pBuff(nRequiredLen);
-  const int nActualLen = m_pInfo->m_pJsPlatform->Field_browse(
-      m_pInfo->m_pJsPlatform, pBuff.data(), nRequiredLen);
+  const int nActualLen =
+      js_platform->Field_browse(js_platform, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
     return WideString();
 
@@ -240,19 +237,19 @@ void CPDFSDK_FormFillEnvironment::JS_docmailForm(void* mailData,
                                                  const WideString& CC,
                                                  const WideString& BCC,
                                                  const WideString& Msg) {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->Doc_mail) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->Doc_mail)
     return;
-  }
+
   ByteString bsTo = To.ToUTF16LE();
   ByteString bsSubject = Subject.ToUTF16LE();
   ByteString bsCC = CC.ToUTF16LE();
   ByteString bsBcc = BCC.ToUTF16LE();
   ByteString bsMsg = Msg.ToUTF16LE();
-  m_pInfo->m_pJsPlatform->Doc_mail(
-      m_pInfo->m_pJsPlatform, mailData, length, bUI, AsFPDFWideString(&bsTo),
-      AsFPDFWideString(&bsSubject), AsFPDFWideString(&bsCC),
-      AsFPDFWideString(&bsBcc), AsFPDFWideString(&bsMsg));
+  js_platform->Doc_mail(js_platform, mailData, length, bUI,
+                        AsFPDFWideString(&bsTo), AsFPDFWideString(&bsSubject),
+                        AsFPDFWideString(&bsCC), AsFPDFWideString(&bsBcc),
+                        AsFPDFWideString(&bsMsg));
 }
 
 void CPDFSDK_FormFillEnvironment::JS_docprint(FPDF_BOOL bUI,
@@ -263,21 +260,20 @@ void CPDFSDK_FormFillEnvironment::JS_docprint(FPDF_BOOL bUI,
                                               FPDF_BOOL bPrintAsImage,
                                               FPDF_BOOL bReverse,
                                               FPDF_BOOL bAnnotations) {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->Doc_print) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->Doc_print)
     return;
-  }
-  m_pInfo->m_pJsPlatform->Doc_print(m_pInfo->m_pJsPlatform, bUI, nStart, nEnd,
-                                    bSilent, bShrinkToFit, bPrintAsImage,
-                                    bReverse, bAnnotations);
+
+  js_platform->Doc_print(js_platform, bUI, nStart, nEnd, bSilent, bShrinkToFit,
+                         bPrintAsImage, bReverse, bAnnotations);
 }
 
 void CPDFSDK_FormFillEnvironment::JS_docgotoPage(int nPageNum) {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->Doc_gotoPage) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->Doc_gotoPage)
     return;
-  }
-  m_pInfo->m_pJsPlatform->Doc_gotoPage(m_pInfo->m_pJsPlatform, nPageNum);
+
+  js_platform->Doc_gotoPage(js_platform, nPageNum);
 }
 
 WideString CPDFSDK_FormFillEnvironment::JS_docGetFilePath() {
@@ -286,18 +282,18 @@ WideString CPDFSDK_FormFillEnvironment::JS_docGetFilePath() {
 #endif  // PDF_ENABLE_V8
 
 WideString CPDFSDK_FormFillEnvironment::GetFilePath() const {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->Doc_getFilePath) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->Doc_getFilePath)
     return WideString();
-  }
-  const int nRequiredLen = m_pInfo->m_pJsPlatform->Doc_getFilePath(
-      m_pInfo->m_pJsPlatform, nullptr, 0);
+
+  const int nRequiredLen =
+      js_platform->Doc_getFilePath(js_platform, nullptr, 0);
   if (nRequiredLen <= 0)
     return WideString();
 
   std::vector<uint8_t, FxAllocAllocator<uint8_t>> pBuff(nRequiredLen);
-  const int nActualLen = m_pInfo->m_pJsPlatform->Doc_getFilePath(
-      m_pInfo->m_pJsPlatform, pBuff.data(), nRequiredLen);
+  const int nActualLen =
+      js_platform->Doc_getFilePath(js_platform, pBuff.data(), nRequiredLen);
   if (nActualLen <= 0 || nActualLen > nRequiredLen)
     return WideString();
 
@@ -308,14 +304,13 @@ WideString CPDFSDK_FormFillEnvironment::GetFilePath() const {
 
 void CPDFSDK_FormFillEnvironment::SubmitForm(pdfium::span<uint8_t> form_data,
                                              const WideString& URL) {
-  if (!m_pInfo || !m_pInfo->m_pJsPlatform ||
-      !m_pInfo->m_pJsPlatform->Doc_submitForm) {
+  IPDF_JSPLATFORM* js_platform = GetJSPlatform();
+  if (!js_platform || !js_platform->Doc_submitForm)
     return;
-  }
+
   ByteString bsUrl = URL.ToUTF16LE();
-  m_pInfo->m_pJsPlatform->Doc_submitForm(m_pInfo->m_pJsPlatform,
-                                         form_data.data(), form_data.size(),
-                                         AsFPDFWideString(&bsUrl));
+  js_platform->Doc_submitForm(js_platform, form_data.data(), form_data.size(),
+                              AsFPDFWideString(&bsUrl));
 }
 
 IJS_Runtime* CPDFSDK_FormFillEnvironment::GetIJSRuntime() {
@@ -384,8 +379,17 @@ void CPDFSDK_FormFillEnvironment::OnSetFieldInputFocus(
     m_pInfo->FFI_SetTextFieldFocus(m_pInfo, focusText, nTextLen, bFocus);
 }
 
-void CPDFSDK_FormFillEnvironment::DoURIAction(const char* bsURI) {
-  if (m_pInfo && m_pInfo->FFI_DoURIAction)
+void CPDFSDK_FormFillEnvironment::DoURIAction(const char* bsURI,
+                                              uint32_t modifiers) {
+  if (!m_pInfo)
+    return;
+
+  if (m_pInfo->version >= 2 && m_pInfo->FFI_DoURIActionWithKeyboardModifier) {
+    m_pInfo->FFI_DoURIActionWithKeyboardModifier(m_pInfo, bsURI, modifiers);
+    return;
+  }
+
+  if (m_pInfo->FFI_DoURIAction)
     m_pInfo->FFI_DoURIAction(m_pInfo, bsURI);
 }
 
@@ -592,11 +596,14 @@ CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageViewAtIndex(int nIndex) {
 }
 
 void CPDFSDK_FormFillEnvironment::ProcJavascriptAction() {
-  CPDF_NameTree docJS(m_pCPDFDoc.Get(), "JavaScript");
-  int iCount = docJS.GetCount();
-  for (int i = 0; i < iCount; i++) {
+  auto name_tree = CPDF_NameTree::Create(m_pCPDFDoc.Get(), "JavaScript");
+  if (!name_tree)
+    return;
+
+  size_t count = name_tree->GetCount();
+  for (size_t i = 0; i < count; ++i) {
     WideString name;
-    CPDF_Action action(ToDictionary(docJS.LookupValueAndName(i, &name)));
+    CPDF_Action action(ToDictionary(name_tree->LookupValueAndName(i, &name)));
     GetActionHandler()->DoAction_JavaScript(action, name, this);
   }
 }
@@ -756,23 +763,21 @@ void CPDFSDK_FormFillEnvironment::SendOnFocusChange(
   if (!m_pInfo || m_pInfo->version < 2 || !m_pInfo->FFI_OnFocusChange)
     return;
 
-  if ((*pAnnot)->AsXFAWidget()) {
-    // TODO(crbug.com/pdfium/1482): Handle XFA case.
+  // TODO(crbug.com/pdfium/1482): Handle XFA case.
+  if ((*pAnnot)->AsXFAWidget())
     return;
-  }
 
   CPDFSDK_PageView* pPageView = (*pAnnot)->GetPageView();
   if (!pPageView->IsValid())
     return;
 
-  CPDF_Page* cpdf_page = (*pAnnot)->GetPDFPage();
-  if (!cpdf_page)
+  IPDF_Page* page = (*pAnnot)->GetPage();
+  if (!page)
     return;
 
   CPDF_Dictionary* annot_dict = (*pAnnot)->GetPDFAnnot()->GetAnnotDict();
 
-  auto focused_annot =
-      pdfium::MakeUnique<CPDF_AnnotContext>(annot_dict, cpdf_page);
+  auto focused_annot = pdfium::MakeUnique<CPDF_AnnotContext>(annot_dict, page);
   FPDF_ANNOTATION fpdf_annot =
       FPDFAnnotationFromCPDFAnnotContext(focused_annot.get());
 

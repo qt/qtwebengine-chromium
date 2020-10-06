@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import {registerCustomElement} from './utils/register-custom-element.js';
 
 export class Icon extends HTMLSpanElement {
@@ -144,6 +147,8 @@ export const Descriptors = {
   'smallicon-videoplayer-paused': {position: 'f6', spritesheet: 'smallicons', isMask: true},
   'smallicon-videoplayer-playing': {position: 'g6', spritesheet: 'smallicons', isMask: true},
   'smallicon-videoplayer-destroyed': {position: 'g5', spritesheet: 'smallicons', isMask: true},
+  'smallicon-issue-yellow-text': {position: 'g1', spritesheet: 'smallicons'},
+  'smallicon-issue-blue-text': {position: 'g2', spritesheet: 'smallicons'},
 
   'mediumicon-clear-storage': {position: 'a4', spritesheet: 'mediumicons', isMask: true},
   'mediumicon-cookie': {position: 'b4', spritesheet: 'mediumicons', isMask: true},
@@ -248,6 +253,8 @@ export const Descriptors = {
   'largeicon-waterfall': {position: 'h8', spritesheet: 'largeicons', isMask: true},
   'largeicon-breaking-change': {position: 'h3', spritesheet: 'largeicons'},
   'largeicon-link': {position: 'i1', spritesheet: 'largeicons'},
+  'largeicon-dual-screen': {position: 'i2', spritesheet: 'largeicons', isMask: true},
+  'largeicon-experimental-api': {position: 'i3', spritesheet: 'largeicons', isMask: true},
 
   'mediumicon-arrow-top': {position: 'a4', spritesheet: 'arrowicons'},
   'mediumicon-arrow-bottom': {position: 'a3', spritesheet: 'arrowicons'},

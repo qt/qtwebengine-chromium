@@ -36,7 +36,7 @@ public:
      * which is public or made accessible via 'friend'.
      */
     template <typename Op, typename... OpArgs>
-    static std::unique_ptr<GrDrawOp> FactoryHelper(GrRecordingContext*, GrPaint&&, OpArgs...);
+    static std::unique_ptr<GrDrawOp> FactoryHelper(GrRecordingContext*, GrPaint&&, OpArgs&&...);
 
     // Here we allow callers to specify a subset of the GrPipeline::InputFlags upon creation.
     enum class InputFlags : uint8_t {
@@ -126,7 +126,7 @@ public:
     static const GrPipeline* CreatePipeline(
                                 const GrCaps*,
                                 SkArenaAlloc*,
-                                GrSwizzle outputViewSwizzle,
+                                GrSwizzle writeViewSwizzle,
                                 GrAppliedClip&&,
                                 const GrXferProcessor::DstProxyView&,
                                 GrProcessorSet&&,
@@ -142,7 +142,7 @@ public:
 
     static GrProgramInfo* CreateProgramInfo(SkArenaAlloc*,
                                             const GrPipeline*,
-                                            const GrSurfaceProxyView* outputView,
+                                            const GrSurfaceProxyView* writeView,
                                             GrGeometryProcessor*,
                                             GrPrimitiveType);
 
@@ -151,7 +151,7 @@ public:
     //     it has no dynamic state besides the scissor clip
     static GrProgramInfo* CreateProgramInfo(const GrCaps*,
                                             SkArenaAlloc*,
-                                            const GrSurfaceProxyView* outputView,
+                                            const GrSurfaceProxyView* writeView,
                                             GrAppliedClip&&,
                                             const GrXferProcessor::DstProxyView&,
                                             GrGeometryProcessor*,
@@ -164,7 +164,7 @@ public:
 
     GrProgramInfo* createProgramInfo(const GrCaps*,
                                      SkArenaAlloc*,
-                                     const GrSurfaceProxyView* outputView,
+                                     const GrSurfaceProxyView* writeView,
                                      GrAppliedClip&&,
                                      const GrXferProcessor::DstProxyView&,
                                      GrGeometryProcessor*,
@@ -194,7 +194,7 @@ protected:
 template <typename Op, typename... OpArgs>
 std::unique_ptr<GrDrawOp> GrSimpleMeshDrawOpHelper::FactoryHelper(GrRecordingContext* context,
                                                                   GrPaint&& paint,
-                                                                  OpArgs... opArgs) {
+                                                                  OpArgs&&... opArgs) {
     GrOpMemoryPool* pool = context->priv().opMemoryPool();
 
     MakeArgs makeArgs;

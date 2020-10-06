@@ -41,7 +41,8 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     fReuseScratchTextures = true; //TODO: figure this out
     fGpuTracingSupport = false; //TODO: figure this out
     fOversizedStencilSupport = false; //TODO: figure this out
-    fInstanceAttribSupport = true;
+    fDrawInstancedSupport = true;
+    fNativeDrawIndirectSupport = true;
 
     fSemaphoreSupport = true;   // always available in Vulkan
     fFenceSyncSupport = true;   // always available in Vulkan
@@ -478,7 +479,7 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
 #endif
 
     if (kARM_VkVendor == properties.vendorID) {
-        fInstanceAttribSupport = false;
+        fDrawInstancedSupport = false;
         fAvoidWritePixelsFastPath = true; // bugs.skia.org/8064
     }
 
@@ -640,13 +641,12 @@ bool stencil_format_supported(const GrVkInterface* interface,
 void GrVkCaps::initStencilFormat(const GrVkInterface* interface, VkPhysicalDevice physDev) {
     // List of legal stencil formats (though perhaps not supported on
     // the particular gpu/driver) from most preferred to least. We are guaranteed to have either
-    // VK_FORMAT_D24_UNORM_S8_UINT or VK_FORMAT_D32_SFLOAT_S8_UINT. VK_FORMAT_D32_SFLOAT_S8_UINT
-    // can optionally have 24 unused bits at the end so we assume the total bits is 64.
+    // VK_FORMAT_D24_UNORM_S8_UINT or VK_FORMAT_D32_SFLOAT_S8_UINT.
     static const StencilFormat
-                  // internal Format             stencil bits      total bits        packed?
-        gS8    = { VK_FORMAT_S8_UINT,            8,                 8,               false },
-        gD24S8 = { VK_FORMAT_D24_UNORM_S8_UINT,  8,                32,               true },
-        gD32S8 = { VK_FORMAT_D32_SFLOAT_S8_UINT, 8,                64,               true };
+                  // internal Format             stencil bits
+        gS8    = { VK_FORMAT_S8_UINT,            8 },
+        gD24S8 = { VK_FORMAT_D24_UNORM_S8_UINT,  8 },
+        gD32S8 = { VK_FORMAT_D32_SFLOAT_S8_UINT, 8 };
 
     if (stencil_format_supported(interface, physDev, VK_FORMAT_S8_UINT)) {
         fPreferredStencilFormat = gS8;
@@ -1546,33 +1546,6 @@ bool GrVkCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
     return false;
 }
 
-GrColorType GrVkCaps::getYUVAColorTypeFromBackendFormat(const GrBackendFormat& format,
-                                                        bool isAlphaChannel) const {
-    VkFormat vkFormat;
-    if (!format.asVkFormat(&vkFormat)) {
-        return GrColorType::kUnknown;
-    }
-
-    switch (vkFormat) {
-        case VK_FORMAT_R8_UNORM:                 return isAlphaChannel ? GrColorType::kAlpha_8
-                                                                       : GrColorType::kGray_8;
-        case VK_FORMAT_R8G8B8A8_UNORM:           return GrColorType::kRGBA_8888;
-        case VK_FORMAT_R8G8B8_UNORM:             return GrColorType::kRGB_888x;
-        case VK_FORMAT_R8G8_UNORM:               return GrColorType::kRG_88;
-        case VK_FORMAT_B8G8R8A8_UNORM:           return GrColorType::kBGRA_8888;
-        case VK_FORMAT_A2B10G10R10_UNORM_PACK32: return GrColorType::kRGBA_1010102;
-        case VK_FORMAT_A2R10G10B10_UNORM_PACK32: return GrColorType::kBGRA_1010102;
-        case VK_FORMAT_R16_UNORM:                return GrColorType::kAlpha_16;
-        case VK_FORMAT_R16_SFLOAT:               return GrColorType::kAlpha_F16;
-        case VK_FORMAT_R16G16_UNORM:             return GrColorType::kRG_1616;
-        case VK_FORMAT_R16G16B16A16_UNORM:       return GrColorType::kRGBA_16161616;
-        case VK_FORMAT_R16G16_SFLOAT:            return GrColorType::kRG_F16;
-        default:                                 return GrColorType::kUnknown;
-    }
-
-    SkUNREACHABLE;
-}
-
 GrBackendFormat GrVkCaps::onGetDefaultBackendFormat(GrColorType ct) const {
     VkFormat format = this->getFormatFromColorType(ct);
     if (format == VK_FORMAT_UNDEFINED) {
@@ -1609,6 +1582,13 @@ GrBackendFormat GrVkCaps::getBackendFormatFromCompressionType(
 GrSwizzle GrVkCaps::getReadSwizzle(const GrBackendFormat& format, GrColorType colorType) const {
     VkFormat vkFormat;
     SkAssertResult(format.asVkFormat(&vkFormat));
+    const auto* ycbcrInfo = format.getVkYcbcrConversionInfo();
+    SkASSERT(ycbcrInfo);
+    if (ycbcrInfo->isValid() && ycbcrInfo->fExternalFormat != 0) {
+        // We allow these to work with any color type and never swizzle. See
+        // onAreColorTypeAndFormatCompatible.
+        return GrSwizzle{"rgba"};
+    }
     const auto& info = this->getFormatInfo(vkFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
         const auto& ctInfo = info.fColorTypeInfos[i];
@@ -1616,7 +1596,8 @@ GrSwizzle GrVkCaps::getReadSwizzle(const GrBackendFormat& format, GrColorType co
             return ctInfo.fReadSwizzle;
         }
     }
-    return GrSwizzle::RGBA();
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, vkFormat);
+    return {};
 }
 
 GrSwizzle GrVkCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType colorType) const {
@@ -1629,7 +1610,8 @@ GrSwizzle GrVkCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType c
             return ctInfo.fWriteSwizzle;
         }
     }
-    return GrSwizzle::RGBA();
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, vkFormat);
+    return {};
 }
 
 uint64_t GrVkCaps::computeFormatKey(const GrBackendFormat& format) const {
@@ -1739,7 +1721,7 @@ GrProgramDesc GrVkCaps::makeDesc(const GrRenderTarget* rt, const GrProgramInfo& 
     vkRT->getSimpleRenderPass()->genKey(&b);
 
     GrStencilSettings stencil = programInfo.nonGLStencilSettings();
-    stencil.genKey(&b);
+    stencil.genKey(&b, true);
 
     programInfo.pipeline().genKey(&b, *this);
     b.add32(programInfo.numRasterSamples());

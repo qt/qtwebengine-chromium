@@ -40,7 +40,7 @@
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
-#include "core/fpdfapi/render/cpdf_charposlist.h"
+#include "core/fpdfapi/render/charposlist.h"
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 #include "core/fpdfapi/render/cpdf_imagerenderer.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
@@ -63,7 +63,6 @@
 #include "core/fxge/text_glyph_pos.h"
 #include "third_party/base/compiler_specific.h"
 #include "third_party/base/logging.h"
-#include "third_party/base/numerics/safe_math.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
@@ -412,6 +411,14 @@ bool CPDF_RenderStatus::ProcessPath(CPDF_PathObject* pPathObj,
   if (FillType == 0 && !bStroke)
     return true;
 
+  // If the option to convert fill paths to stroke is enabled for forced color,
+  // set |FillType| to 0 and |bStroke| to true.
+  if (m_Options.ColorModeIs(CPDF_RenderOptions::Type::kForcedColor) &&
+      m_Options.GetOptions().bConvertFillToStroke && (FillType != 0)) {
+    bStroke = true;
+    FillType = 0;
+  }
+
   uint32_t fill_argb = FillType ? GetFillArgb(pPathObj) : 0;
   uint32_t stroke_argb = bStroke ? GetStrokeArgb(pPathObj) : 0;
   CFX_Matrix path_matrix = pPathObj->matrix() * mtObj2Device;
@@ -474,7 +481,9 @@ FX_ARGB CPDF_RenderStatus::GetFillArgbInternal(CPDF_PageObject* pObj,
           pObj->m_GeneralState.GetTransferFunc()->TranslateColor(colorref);
     }
   }
-  return m_Options.TranslateColor(AlphaAndColorRefToArgb(alpha, colorref));
+  return m_Options.TranslateObjectColor(AlphaAndColorRefToArgb(alpha, colorref),
+                                        pObj->GetType(),
+                                        CPDF_RenderOptions::RenderType::kFill);
 }
 
 FX_ARGB CPDF_RenderStatus::GetStrokeArgb(CPDF_PageObject* pObj) const {
@@ -501,7 +510,9 @@ FX_ARGB CPDF_RenderStatus::GetStrokeArgb(CPDF_PageObject* pObj) const {
           pObj->m_GeneralState.GetTransferFunc()->TranslateColor(colorref);
     }
   }
-  return m_Options.TranslateColor(AlphaAndColorRefToArgb(alpha, colorref));
+  return m_Options.TranslateObjectColor(
+      AlphaAndColorRefToArgb(alpha, colorref), pObj->GetType(),
+      CPDF_RenderOptions::RenderType::kStroke);
 }
 
 void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
@@ -1138,9 +1149,10 @@ void CPDF_RenderStatus::DrawTextPathWithPattern(const CPDF_TextObject* textobj,
     RenderSingleObject(&path, mtObj2Device);
     return;
   }
-  const CPDF_CharPosList CharPosList(
+
+  std::vector<TextCharPos> char_pos_list = GetCharPosList(
       textobj->GetCharCodes(), textobj->GetCharPositions(), pFont, font_size);
-  for (const TextCharPos& charpos : CharPosList.Get()) {
+  for (const TextCharPos& charpos : char_pos_list) {
     auto* font = charpos.m_FallbackFontPosition == -1
                      ? pFont->GetFont()
                      : pFont->GetFontFallback(charpos.m_FallbackFontPosition);
@@ -1360,10 +1372,8 @@ void CPDF_RenderStatus::DrawTilingPattern(CPDF_TilingPattern* pPattern,
         CFX_PointF original = mtPattern2Device.Transform(
             CFX_PointF(col * pPattern->x_step(), row * pPattern->y_step()));
 
-        pdfium::base::CheckedNumeric<int> safeStartX =
-            FXSYS_roundf(original.x + left_offset);
-        pdfium::base::CheckedNumeric<int> safeStartY =
-            FXSYS_roundf(original.y + top_offset);
+        FX_SAFE_INT32 safeStartX = FXSYS_roundf(original.x + left_offset);
+        FX_SAFE_INT32 safeStartY = FXSYS_roundf(original.y + top_offset);
 
         safeStartX -= clip_box.left;
         safeStartY -= clip_box.top;
@@ -1645,7 +1655,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
   int dest_pitch = pMask->GetPitch();
   uint8_t* src_buf = bitmap->GetBuffer();
   int src_pitch = bitmap->GetPitch();
-  std::vector<uint8_t> transfers(256);
+  std::vector<uint8_t, FxAllocAllocator<uint8_t>> transfers(256);
   if (pFunc) {
     std::vector<float> results(pFunc->CountOutputs());
     for (size_t i = 0; i < transfers.size(); ++i) {

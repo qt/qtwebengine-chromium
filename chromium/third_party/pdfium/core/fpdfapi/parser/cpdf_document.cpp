@@ -59,7 +59,9 @@ int FindPageIndex(const CPDF_Dictionary* pNode,
     if (objnum == pNode->GetObjNum())
       return *index;
 
-    (*skip_count)--;
+    if (*skip_count != 0)
+      (*skip_count)--;
+
     (*index)++;
     return -1;
   }
@@ -323,7 +325,9 @@ int CPDF_Document::GetPageIndex(uint32_t objnum) {
   if (!pdfium::IndexInBounds(m_PageList, found_index))
     return -1;
 
-  m_PageList[found_index] = objnum;
+  // Only update |m_PageList| when |objnum| points to a /Page object.
+  if (IsValidPageObject(GetOrParseIndirectObject(objnum)))
+    m_PageList[found_index] = objnum;
   return found_index;
 }
 
@@ -461,6 +465,10 @@ CPDF_Dictionary* CPDF_Document::GetInfo() {
       pdfium::MakeRetain<CPDF_Reference>(this, m_pParser->GetInfoObjNum());
   m_pInfoDict.Reset(ToDictionary(ref->GetDirect()));
   return m_pInfoDict.Get();
+}
+
+const CPDF_Array* CPDF_Document::GetFileIdentifier() const {
+  return m_pParser ? m_pParser->GetIDArray() : nullptr;
 }
 
 void CPDF_Document::DeletePage(int iPage) {

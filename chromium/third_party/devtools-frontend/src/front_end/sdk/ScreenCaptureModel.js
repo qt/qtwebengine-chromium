@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 
 import {OverlayModel} from './OverlayModel.js';
@@ -17,9 +20,9 @@ export class ScreenCaptureModel extends SDKModel {
   constructor(target) {
     super(target);
     this._agent = target.pageAgent();
-    /** @type {?function(string, !Protocol.Page.ScreencastFrameMetadata)} */
+    /** @type {?function(string, !Protocol.Page.ScreencastFrameMetadata):void} */
     this._onScreencastFrame = null;
-    /** @type {?function(boolean)} */
+    /** @type {?function(boolean):void} */
     this._onScreencastVisibilityChanged = null;
     target.registerPageDispatcher(this);
   }
@@ -30,8 +33,8 @@ export class ScreenCaptureModel extends SDKModel {
    * @param {number|undefined} width
    * @param {number|undefined} height
    * @param {number|undefined} everyNthFrame
-   * @param {function(string, !Protocol.Page.ScreencastFrameMetadata)} onFrame
-   * @param {function(boolean)} onVisibilityChanged
+   * @param {function(string, !Protocol.Page.ScreencastFrameMetadata):void} onFrame
+   * @param {function(boolean):void} onVisibilityChanged
    */
   startScreencast(format, quality, width, height, everyNthFrame, onFrame, onVisibilityChanged) {
     this._onScreencastFrame = onFrame;
@@ -257,6 +260,12 @@ export class ScreenCaptureModel extends SDKModel {
    * @param {string} url
    */
   downloadWillBegin(frameId, url) {
+  }
+
+  /**
+   * @override
+   */
+  downloadProgress() {
   }
 }
 

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <iterator>
 #include <memory>
 #include <ostream>
@@ -61,6 +62,16 @@ class QUIC_NO_EXPORT QuicCircularDeque {
     basic_iterator(
         const basic_iterator<value_type>& it)  // NOLINT(runtime/explicit)
         : deque_(it.deque_), index_(it.index_) {}
+
+    // A copy assignment if Pointee is T.
+    // A assignment from iterator to const_iterator if Pointee is const T.
+    basic_iterator& operator=(const basic_iterator<value_type>& it) {
+      if (this != &it) {
+        deque_ = it.deque_;
+        index_ = it.index_;
+      }
+      return *this;
+    }
 
     reference operator*() const { return *deque_->index_to_address(index_); }
     pointer operator->() const { return deque_->index_to_address(index_); }

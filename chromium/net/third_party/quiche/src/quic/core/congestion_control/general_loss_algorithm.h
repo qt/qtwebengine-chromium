@@ -11,6 +11,7 @@
 #include "net/third_party/quiche/src/quic/core/congestion_control/loss_detection_interface.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_time.h"
+#include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_unacked_packet_map.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 
@@ -21,21 +22,21 @@ namespace quic {
 // Also implements TCP's early retransmit(RFC5827).
 class QUIC_EXPORT_PRIVATE GeneralLossAlgorithm : public LossDetectionInterface {
  public:
-  // TCP retransmits after 3 nacks.
-  static const QuicPacketCount kNumberOfNacksBeforeRetransmission = 3;
-
   GeneralLossAlgorithm();
   GeneralLossAlgorithm(const GeneralLossAlgorithm&) = delete;
   GeneralLossAlgorithm& operator=(const GeneralLossAlgorithm&) = delete;
   ~GeneralLossAlgorithm() override {}
 
+  void SetFromConfig(const QuicConfig& /*config*/,
+                     Perspective /*perspective*/) override {}
+
   // Uses |largest_acked| and time to decide when packets are lost.
-  void DetectLosses(const QuicUnackedPacketMap& unacked_packets,
-                    QuicTime time,
-                    const RttStats& rtt_stats,
-                    QuicPacketNumber largest_newly_acked,
-                    const AckedPacketVector& packets_acked,
-                    LostPacketVector* packets_lost) override;
+  DetectionStats DetectLosses(const QuicUnackedPacketMap& unacked_packets,
+                              QuicTime time,
+                              const RttStats& rtt_stats,
+                              QuicPacketNumber largest_newly_acked,
+                              const AckedPacketVector& packets_acked,
+                              LostPacketVector* packets_lost) override;
 
   // Returns a non-zero value when the early retransmit timer is active.
   QuicTime GetLossTimeout() const override;
@@ -65,6 +66,8 @@ class QUIC_EXPORT_PRIVATE GeneralLossAlgorithm : public LossDetectionInterface {
   void SetPacketNumberSpace(PacketNumberSpace packet_number_space);
 
   void Reset();
+
+  QuicPacketCount reordering_threshold() const { return reordering_threshold_; }
 
   int reordering_shift() const { return reordering_shift_; }
 

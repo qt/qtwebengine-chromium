@@ -108,6 +108,12 @@ def _CheckJSON(input_api, output_api):
 
 
 def _CheckFormat(input_api, output_api):
+    node_modules_affected_files = _getAffectedFiles(input_api, [input_api.os_path.join(input_api.PresubmitLocalPath(), 'node_modules')], [], [])
+
+    # TODO(crbug.com/1068198): Remove once `git cl format --js` can handle large CLs.
+    if (len(node_modules_affected_files) > 0):
+        return [output_api.PresubmitNotifyResult('Skipping Format Checks because `node_modules` files are affected.')]
+
     results = [output_api.PresubmitNotifyResult('Running Format Checks:')]
 
     return _ExecuteSubProcess(input_api, output_api, ['git', 'cl', 'format', '--js'], [], results)
@@ -141,7 +147,7 @@ def _CheckDevtoolsLocalization(input_api, output_api, check_all_files=False):  #
 
 def _CheckDevtoolsStyle(input_api, output_api):
     results = [output_api.PresubmitNotifyResult('Running Devtools Style Check:')]
-    lint_path = input_api.os_path.join(input_api.PresubmitLocalPath(), 'scripts', 'test', 'run_lint_check.py')
+    lint_path = input_api.os_path.join(input_api.PresubmitLocalPath(), 'scripts', 'test', 'run_lint_check.js')
 
     front_end_directory = input_api.os_path.join(input_api.PresubmitLocalPath(), 'front_end')
     test_directory = input_api.os_path.join(input_api.PresubmitLocalPath(), 'test')
@@ -150,9 +156,11 @@ def _CheckDevtoolsStyle(input_api, output_api):
     default_linted_directories = [front_end_directory, test_directory, scripts_directory]
 
     eslint_related_files = [
+        input_api.os_path.join(input_api.PresubmitLocalPath(), 'node_modules', 'eslint'),
         input_api.os_path.join(input_api.PresubmitLocalPath(), '.eslintrc.js'),
         input_api.os_path.join(input_api.PresubmitLocalPath(), '.eslintignore'),
         input_api.os_path.join(scripts_directory, 'test', 'run_lint_check.py'),
+        input_api.os_path.join(scripts_directory, 'test', 'run_lint_check.js'),
         input_api.os_path.join(scripts_directory, '.eslintrc.js'),
         input_api.os_path.join(scripts_directory, 'eslint_rules'),
     ]
@@ -168,12 +176,13 @@ def _CheckDevtoolsStyle(input_api, output_api):
         affected_files = _getAffectedFiles(input_api, default_linted_directories, ['D'], ['.js', '.ts'])
 
         # If we have not changed any lintable files, then we should bail out.
-        # Otherwise, `run_lint_check.py` will lint *all* files.
+        # Otherwise, `run_lint_check.js` will lint *all* files.
         if len(affected_files) is 0:
             results.append(output_api.PresubmitNotifyResult('No affected files for ESLint check'))
             return results
 
-    return _ExecuteSubProcess(input_api, output_api, lint_path, affected_files, results)
+    results.extend(_checkWithNodeScript(input_api, output_api, lint_path, affected_files))
+    return results
 
 
 def _CheckOptimizeSVGHashes(input_api, output_api):
@@ -332,9 +341,8 @@ def _getAffectedFiles(input_api, parent_directories, excluded_actions, accepted_
         f.AbsoluteLocalPath() for f in input_api.AffectedFiles() if all(f.Action() != action for action in excluded_actions)
     ]
     affected_files = [
-        file_name for file_name in local_paths
-        if any(parent_directory in file_name for parent_directory in parent_directories) and any(
-            file_name.endswith(accepted_ending) for accepted_ending in accepted_endings)
+        file_name for file_name in local_paths if any(parent_directory in file_name for parent_directory in parent_directories) and
+        (len(accepted_endings) is 0 or any(file_name.endswith(accepted_ending) for accepted_ending in accepted_endings))
     ]
     return affected_files
 

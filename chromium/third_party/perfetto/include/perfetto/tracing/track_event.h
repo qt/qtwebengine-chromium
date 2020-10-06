@@ -25,6 +25,8 @@
 #include "perfetto/tracing/track_event_category_registry.h"
 #include "protos/perfetto/trace/track_event/track_event.pbzero.h"
 
+#include <type_traits>
+
 // This file contains a set of macros designed for instrumenting applications
 // with track event trace points. While the underlying TrackEvent API can also
 // be used directly, doing so efficiently requires some care (e.g., to avoid
@@ -149,6 +151,32 @@ constexpr bool IsDynamicCategory(const ::perfetto::DynamicCategory&) {
 }  // namespace internal
 }  // namespace PERFETTO_TRACK_EVENT_NAMESPACE
 
+namespace perfetto {
+
+// A wrapper for marking strings that can't be determined to be static at build
+// time, but are in fact static.
+class PERFETTO_EXPORT StaticString final {
+ public:
+  const char* value;
+
+  operator const char*() const { return value; }
+};
+
+namespace internal {
+
+template <typename T = void>
+constexpr bool IsStaticString(const char*) {
+  return true;
+}
+
+template <typename T = void>
+constexpr bool IsStaticString(...) {
+  return false;
+}
+
+}  // namespace internal
+}  // namespace perfetto
+
 // Normally all categories are defined statically at build-time (see
 // PERFETTO_DEFINE_CATEGORIES). However, some categories are only used for
 // testing, and we shouldn't publish them to the tracing service or include them
@@ -175,7 +203,9 @@ constexpr bool IsDynamicCategory(const ::perfetto::DynamicCategory&) {
   /* The track event data source for this set of categories */ \
   PERFETTO_INTERNAL_DECLARE_TRACK_EVENT_DATA_SOURCE();         \
   } /* namespace PERFETTO_TRACK_EVENT_NAMESPACE */             \
-  PERFETTO_INTERNAL_SWALLOW_SEMICOLON()
+  PERFETTO_DECLARE_DATA_SOURCE_STATIC_MEMBERS(                 \
+      PERFETTO_TRACK_EVENT_NAMESPACE::TrackEvent,              \
+      perfetto::internal::TrackEventDataSourceTraits)
 
 // Allocate storage for each category by using this macro once per track event
 // namespace.
@@ -183,29 +213,60 @@ constexpr bool IsDynamicCategory(const ::perfetto::DynamicCategory&) {
   namespace PERFETTO_TRACK_EVENT_NAMESPACE {       \
   PERFETTO_INTERNAL_CATEGORY_STORAGE()             \
   } /* namespace PERFETTO_TRACK_EVENT_NAMESPACE */ \
-  PERFETTO_INTERNAL_SWALLOW_SEMICOLON()
+  PERFETTO_DEFINE_DATA_SOURCE_STATIC_MEMBERS(      \
+      PERFETTO_TRACK_EVENT_NAMESPACE::TrackEvent,  \
+      perfetto::internal::TrackEventDataSourceTraits)
 
 // Ignore GCC warning about a missing argument for a variadic macro parameter.
 #pragma GCC system_header
+
+// Ensure that |string| is a static constant string.
+//
+// If you get a compiler failure here, you are most likely trying to use
+// TRACE_EVENT with a dynamic event name. There are two ways to fix this:
+//
+// 1) If the event name is actually dynamic (e.g., std::string), write it into
+//    the event manually:
+//
+//      TRACE_EVENT("category", nullptr, [&](perfetto::EventContext ctx) {
+//        ctx.event()->set_name(dynamic_name);
+//      });
+//
+// 2) If the name is static, but the pointer is computed at runtime, wrap it
+//    with perfetto::StaticString:
+//
+//      TRACE_EVENT("category", perfetto::StaticString{name});
+//
+//    DANGER: Using perfetto::StaticString with strings whose contents change
+//            dynamically can cause silent trace data corruption.
+//
+#define PERFETTO_GET_STATIC_STRING(string)                                 \
+  [&]() {                                                                  \
+    static_assert(                                                         \
+        std::is_same<decltype(string), ::perfetto::StaticString>::value || \
+            ::perfetto::internal::IsStaticString(string),                  \
+        "String must be static");                                          \
+    return static_cast<const char*>(string);                               \
+  }()
 
 // Begin a slice under |category| with the title |name|. Both strings must be
 // static constants. The track event is only recorded if |category| is enabled
 // for a tracing session.
 //
+// The slice is thread-scoped (i.e., written to the default track of the current
+// thread) unless overridden with a custom track object (see Track).
+//
 // |name| must be a string with static lifetime (i.e., the same
 // address must not be used for a different event name in the future). If you
 // want to use a dynamically allocated name, do this:
-//
-// The slice is thread-scoped (i.e., written to the default track of the current
-// thread) unless overridden with a custom track object (see Track).
 //
 //  TRACE_EVENT("category", nullptr, [&](perfetto::EventContext ctx) {
 //    ctx.event()->set_name(dynamic_name);
 //  });
 //
-#define TRACE_EVENT_BEGIN(category, name, ...) \
-  PERFETTO_INTERNAL_TRACK_EVENT(               \
-      category, name,                          \
+#define TRACE_EVENT_BEGIN(category, name, ...)    \
+  PERFETTO_INTERNAL_TRACK_EVENT(                  \
+      category, PERFETTO_GET_STATIC_STRING(name), \
       ::perfetto::protos::pbzero::TrackEvent::TYPE_SLICE_BEGIN, ##__VA_ARGS__)
 
 // End a slice under |category|.
@@ -219,10 +280,10 @@ constexpr bool IsDynamicCategory(const ::perfetto::DynamicCategory&) {
   PERFETTO_INTERNAL_SCOPED_TRACK_EVENT(category, name, ##__VA_ARGS__)
 
 // Emit a slice which has zero duration.
-#define TRACE_EVENT_INSTANT(category, name, ...)                            \
-  PERFETTO_INTERNAL_TRACK_EVENT(                                            \
-      category, name, ::perfetto::protos::pbzero::TrackEvent::TYPE_INSTANT, \
-      ##__VA_ARGS__)
+#define TRACE_EVENT_INSTANT(category, name, ...)  \
+  PERFETTO_INTERNAL_TRACK_EVENT(                  \
+      category, PERFETTO_GET_STATIC_STRING(name), \
+      ::perfetto::protos::pbzero::TrackEvent::TYPE_INSTANT, ##__VA_ARGS__)
 
 // Efficiently determine if the given static or dynamic trace category or
 // category group is enabled for tracing.

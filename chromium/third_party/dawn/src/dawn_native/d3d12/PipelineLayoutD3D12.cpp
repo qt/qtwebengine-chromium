@@ -50,6 +50,7 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_ROOT_PARAMETER_TYPE_SRV;
                 case wgpu::BindingType::SampledTexture:
                 case wgpu::BindingType::Sampler:
+                case wgpu::BindingType::ComparisonSampler:
                 case wgpu::BindingType::StorageTexture:
                 case wgpu::BindingType::ReadonlyStorageTexture:
                 case wgpu::BindingType::WriteonlyStorageTexture:
@@ -61,10 +62,9 @@ namespace dawn_native { namespace d3d12 {
     ResultOrError<PipelineLayout*> PipelineLayout::Create(
         Device* device,
         const PipelineLayoutDescriptor* descriptor) {
-        std::unique_ptr<PipelineLayout> layout =
-            std::make_unique<PipelineLayout>(device, descriptor);
+        Ref<PipelineLayout> layout = AcquireRef(new PipelineLayout(device, descriptor));
         DAWN_TRY(layout->Initialize());
-        return layout.release();
+        return layout.Detach();
     }
 
     MaybeError PipelineLayout::Initialize() {
@@ -186,8 +186,8 @@ namespace dawn_native { namespace d3d12 {
         return mSamplerRootParameterInfo[group];
     }
 
-    ComPtr<ID3D12RootSignature> PipelineLayout::GetRootSignature() const {
-        return mRootSignature;
+    ID3D12RootSignature* PipelineLayout::GetRootSignature() const {
+        return mRootSignature.Get();
     }
 
     uint32_t PipelineLayout::GetDynamicRootParameterIndex(uint32_t group,

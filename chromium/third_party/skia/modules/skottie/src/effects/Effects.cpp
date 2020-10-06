@@ -26,22 +26,24 @@ EffectBuilder::EffectBuilderT EffectBuilder::findBuilder(const skjson::ObjectVal
         const char*    fName;
         EffectBuilderT fBuilder;
     } gBuilderInfo[] = {
-        { "ADBE Drop Shadow"    , &EffectBuilder::attachDropShadowEffect     },
-        { "ADBE Easy Levels2"   , &EffectBuilder::attachEasyLevelsEffect     },
-        { "ADBE Fill"           , &EffectBuilder::attachFillEffect           },
-        { "ADBE Gaussian Blur 2", &EffectBuilder::attachGaussianBlurEffect   },
-        { "ADBE Geometry2"      , &EffectBuilder::attachTransformEffect      },
-        { "ADBE HUE SATURATION" , &EffectBuilder::attachHueSaturationEffect  },
-        { "ADBE Invert"         , &EffectBuilder::attachInvertEffect         },
-        { "ADBE Linear Wipe"    , &EffectBuilder::attachLinearWipeEffect     },
-        { "ADBE Pro Levels2"    , &EffectBuilder::attachProLevelsEffect      },
-        { "ADBE Radial Wipe"    , &EffectBuilder::attachRadialWipeEffect     },
-        { "ADBE Ramp"           , &EffectBuilder::attachGradientEffect       },
-        { "ADBE Shift Channels" , &EffectBuilder::attachShiftChannelsEffect  },
-        { "ADBE Tile"           , &EffectBuilder::attachMotionTileEffect     },
-        { "ADBE Tint"           , &EffectBuilder::attachTintEffect           },
-        { "ADBE Tritone"        , &EffectBuilder::attachTritoneEffect        },
-        { "ADBE Venetian Blinds", &EffectBuilder::attachVenetianBlindsEffect },
+        { "ADBE Brightness & Contrast 2", &EffectBuilder::attachBrightnessContrastEffect },
+        { "ADBE Corner Pin"             , &EffectBuilder::attachCornerPinEffect          },
+        { "ADBE Drop Shadow"            , &EffectBuilder::attachDropShadowEffect         },
+        { "ADBE Easy Levels2"           , &EffectBuilder::attachEasyLevelsEffect         },
+        { "ADBE Fill"                   , &EffectBuilder::attachFillEffect               },
+        { "ADBE Gaussian Blur 2"        , &EffectBuilder::attachGaussianBlurEffect       },
+        { "ADBE Geometry2"              , &EffectBuilder::attachTransformEffect          },
+        { "ADBE HUE SATURATION"         , &EffectBuilder::attachHueSaturationEffect      },
+        { "ADBE Invert"                 , &EffectBuilder::attachInvertEffect             },
+        { "ADBE Linear Wipe"            , &EffectBuilder::attachLinearWipeEffect         },
+        { "ADBE Pro Levels2"            , &EffectBuilder::attachProLevelsEffect          },
+        { "ADBE Radial Wipe"            , &EffectBuilder::attachRadialWipeEffect         },
+        { "ADBE Ramp"                   , &EffectBuilder::attachGradientEffect           },
+        { "ADBE Shift Channels"         , &EffectBuilder::attachShiftChannelsEffect      },
+        { "ADBE Tile"                   , &EffectBuilder::attachMotionTileEffect         },
+        { "ADBE Tint"                   , &EffectBuilder::attachTintEffect               },
+        { "ADBE Tritone"                , &EffectBuilder::attachTritoneEffect            },
+        { "ADBE Venetian Blinds"        , &EffectBuilder::attachVenetianBlindsEffect     },
     };
 
     const skjson::StringValue* mn = jeffect["mn"];
@@ -128,6 +130,9 @@ sk_sp<sksg::RenderNode> EffectBuilder::attachStyles(const skjson::ArrayValue& js
     static constexpr StyleBuilder gStyleBuilders[] = {
         nullptr,                                 // 'ty': 0 -> stroke
         &EffectBuilder::attachDropShadowStyle,   // 'ty': 1 -> drop shadow
+        &EffectBuilder::attachInnerShadowStyle,  // 'ty': 2 -> inner shadow
+        &EffectBuilder::attachOuterGlowStyle,    // 'ty': 3 -> outer glow
+        &EffectBuilder::attachInnerGlowStyle,    // 'ty': 4 -> inner glow
     };
 
     for (const skjson::ObjectValue* jstyle : jstyles) {

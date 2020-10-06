@@ -12,8 +12,10 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "third_party/base/ptr_util.h"
 
 namespace {
 
@@ -294,33 +296,103 @@ size_t CountNamesInternal(CPDF_Dictionary* pNode, int nLevel) {
   return nCount;
 }
 
+CPDF_Array* GetNamedDestFromObject(CPDF_Object* obj) {
+  if (!obj)
+    return nullptr;
+  CPDF_Array* array = obj->AsArray();
+  if (array)
+    return array;
+  CPDF_Dictionary* dict = obj->AsDictionary();
+  if (dict)
+    return dict->GetArrayFor("D");
+  return nullptr;
+}
+
+CPDF_Array* LookupOldStyleNamedDest(CPDF_Document* pDoc,
+                                    const ByteString& name) {
+  CPDF_Dictionary* pDests = pDoc->GetRoot()->GetDictFor("Dests");
+  if (!pDests)
+    return nullptr;
+  return GetNamedDestFromObject(pDests->GetDirectObjectFor(name));
+}
+
 }  // namespace
 
-CPDF_NameTree::CPDF_NameTree(CPDF_Dictionary* pRoot) : m_pRoot(pRoot) {}
-
-CPDF_NameTree::CPDF_NameTree(CPDF_Document* pDoc, const ByteString& category) {
-  CPDF_Dictionary* pRoot = pDoc->GetRoot();
-  if (!pRoot)
-    return;
-
-  CPDF_Dictionary* pNames = pRoot->GetDictFor("Names");
-  if (!pNames)
-    return;
-
-  m_pRoot.Reset(pNames->GetDictFor(category));
+CPDF_NameTree::CPDF_NameTree(CPDF_Dictionary* pRoot) : m_pRoot(pRoot) {
+  ASSERT(m_pRoot);
 }
 
 CPDF_NameTree::~CPDF_NameTree() = default;
 
+// static
+std::unique_ptr<CPDF_NameTree> CPDF_NameTree::Create(
+    CPDF_Document* pDoc,
+    const ByteString& category) {
+  CPDF_Dictionary* pRoot = pDoc->GetRoot();
+  if (!pRoot)
+    return nullptr;
+
+  CPDF_Dictionary* pNames = pRoot->GetDictFor("Names");
+  if (!pNames)
+    return nullptr;
+
+  CPDF_Dictionary* pCategory = pNames->GetDictFor(category);
+  if (!pCategory)
+    return nullptr;
+
+  return pdfium::WrapUnique(new CPDF_NameTree(pCategory));  // Private ctor.
+}
+
+// static
+std::unique_ptr<CPDF_NameTree> CPDF_NameTree::CreateWithRootNameArray(
+    CPDF_Document* pDoc,
+    const ByteString& category) {
+  CPDF_Dictionary* pRoot = pDoc->GetRoot();
+  if (!pRoot)
+    return nullptr;
+
+  // Retrieve the document's Names dictionary; create it if missing.
+  CPDF_Dictionary* pNames = pRoot->GetDictFor("Names");
+  if (!pNames) {
+    pNames = pDoc->NewIndirect<CPDF_Dictionary>();
+    pRoot->SetNewFor<CPDF_Reference>("Names", pDoc, pNames->GetObjNum());
+  }
+
+  // Create the |category| dictionary if missing.
+  CPDF_Dictionary* pCategory = pNames->GetDictFor(category);
+  if (!pCategory) {
+    pCategory = pDoc->NewIndirect<CPDF_Dictionary>();
+    pCategory->SetNewFor<CPDF_Array>("Names");
+    pNames->SetNewFor<CPDF_Reference>(category, pDoc, pCategory->GetObjNum());
+  }
+
+  return pdfium::WrapUnique(new CPDF_NameTree(pCategory));  // Private ctor.
+}
+
+// static
+std::unique_ptr<CPDF_NameTree> CPDF_NameTree::CreateForTesting(
+    CPDF_Dictionary* pRoot) {
+  return pdfium::WrapUnique(new CPDF_NameTree(pRoot));  // Private ctor.
+}
+
+// static
+CPDF_Array* CPDF_NameTree::LookupNamedDest(CPDF_Document* pDoc,
+                                           const ByteString& name) {
+  CPDF_Array* dest_array = nullptr;
+  std::unique_ptr<CPDF_NameTree> name_tree = Create(pDoc, "Dests");
+  if (name_tree)
+    dest_array = name_tree->LookupNewStyleNamedDest(name);
+  if (!dest_array)
+    dest_array = LookupOldStyleNamedDest(pDoc, name);
+  return dest_array;
+}
+
 size_t CPDF_NameTree::GetCount() const {
-  return m_pRoot ? CountNamesInternal(m_pRoot.Get(), 0) : 0;
+  return CountNamesInternal(m_pRoot.Get(), 0);
 }
 
 bool CPDF_NameTree::AddValueAndName(RetainPtr<CPDF_Object> pObj,
                                     const WideString& name) {
-  if (!m_pRoot)
-    return false;
-
   size_t nIndex = 0;
   CPDF_Array* pFind = nullptr;
   int nFindIndex = -1;
@@ -377,9 +449,6 @@ bool CPDF_NameTree::AddValueAndName(RetainPtr<CPDF_Object> pObj,
 }
 
 bool CPDF_NameTree::DeleteValueAndName(int nIndex) {
-  if (!m_pRoot)
-    return false;
-
   size_t nCurIndex = 0;
   WideString csName;
   CPDF_Array* pFind = nullptr;
@@ -402,37 +471,17 @@ bool CPDF_NameTree::DeleteValueAndName(int nIndex) {
 CPDF_Object* CPDF_NameTree::LookupValueAndName(int nIndex,
                                                WideString* csName) const {
   csName->clear();
-  if (!m_pRoot)
-    return nullptr;
-
   size_t nCurIndex = 0;
   return SearchNameNodeByIndex(m_pRoot.Get(), nIndex, 0, &nCurIndex, csName,
                                nullptr, nullptr);
 }
 
 CPDF_Object* CPDF_NameTree::LookupValue(const WideString& csName) const {
-  if (!m_pRoot)
-    return nullptr;
-
   size_t nIndex = 0;
   return SearchNameNodeByName(m_pRoot.Get(), csName, 0, &nIndex, nullptr,
                               nullptr);
 }
 
-CPDF_Array* CPDF_NameTree::LookupNamedDest(CPDF_Document* pDoc,
-                                           const WideString& sName) {
-  CPDF_Object* pValue = LookupValue(sName);
-  if (!pValue) {
-    CPDF_Dictionary* pDests = pDoc->GetRoot()->GetDictFor("Dests");
-    if (!pDests)
-      return nullptr;
-    pValue = pDests->GetDirectObjectFor(PDF_EncodeText(sName));
-  }
-  if (!pValue)
-    return nullptr;
-  if (CPDF_Array* pArray = pValue->AsArray())
-    return pArray;
-  if (CPDF_Dictionary* pDict = pValue->AsDictionary())
-    return pDict->GetArrayFor("D");
-  return nullptr;
+CPDF_Array* CPDF_NameTree::LookupNewStyleNamedDest(const ByteString& sName) {
+  return GetNamedDestFromObject(LookupValue(PDF_DecodeText(sName.raw_span())));
 }

@@ -19,10 +19,10 @@
 
 #include "perfetto/protozero/proto_decoder.h"
 #include "perfetto/trace_processor/status.h"
-#include "src/trace_processor/args_tracker.h"
-#include "src/trace_processor/descriptors.h"
+#include "src/trace_processor/importers/common/args_tracker.h"
 #include "src/trace_processor/importers/proto/packet_sequence_state.h"
 #include "src/trace_processor/storage/trace_storage.h"
+#include "src/trace_processor/util/descriptors.h"
 
 namespace perfetto {
 namespace trace_processor {
@@ -135,6 +135,14 @@ class ProtoToArgsTable {
       ArgsTracker::BoundInserter* inserter,
       PacketSequenceStateGeneration* sequence_state,
       const std::string& key_prefix);
+
+  // Parse several fields with ids given in |fields| using reflection.
+  util::Status InternProtoFieldsIntoArgsTable(
+      const protozero::ConstBytes& cb,
+      const std::string& type,
+      const std::vector<uint16_t>& fields,
+      ArgsTracker::BoundInserter* inserter,
+      PacketSequenceStateGeneration* sequence_state);
 
   // Installs an override for the field at the specified path. We will invoke
   // |parsing_override| when the field is encountered.

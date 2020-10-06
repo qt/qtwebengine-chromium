@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 
 import * as ARIAUtils from './ARIAUtils.js';
@@ -18,10 +21,11 @@ export class Infobar {
    * @param {!Type} type
    * @param {string} text
    * @param {!Array<!InfobarAction>=} actions
-   * @param {!Common.Settings.Setting=} disableSetting
+   * @param {!Common.Settings.Setting<*>=} disableSetting
    */
   constructor(type, text, actions, disableSetting) {
-    this.element = createElementWithClass('div', 'flex-none');
+    this.element = document.createElement('div');
+    this.element.classList.add('flex-none');
     this._shadowRoot = createShadowRootWithCoreStyles(this.element, 'ui/infobar.css');
     this._contentElement = this._shadowRoot.createChild('div', 'infobar infobar-' + type);
 
@@ -50,7 +54,7 @@ export class Infobar {
       }
     }
 
-    /** @type {?Common.Settings.Setting} */
+    /** @type {?Common.Settings.Setting<*>} */
     this._disableSetting = disableSetting || null;
     if (disableSetting) {
       const disableButton = createTextButton(ls`Don't show again`, this._onDisable.bind(this), 'infobar-button');
@@ -86,7 +90,7 @@ export class Infobar {
       }
     });
 
-    /** @type {?function()} */
+    /** @type {?function():*} */
     this._closeCallback = null;
   }
 
@@ -94,7 +98,7 @@ export class Infobar {
    * @param {!Type} type
    * @param {string} text
    * @param {!Array<!InfobarAction>=} actions
-   * @param {!Common.Settings.Setting=} disableSetting
+   * @param {!Common.Settings.Setting<*>=} disableSetting
    * @return {?Infobar}
    */
   static create(type, text, actions, disableSetting) {
@@ -121,7 +125,7 @@ export class Infobar {
   }
 
   /**
-   * @param {?function()} callback
+   * @param {?function():*} callback
    */
   setCloseCallback(callback) {
     this._closeCallback = callback;
@@ -136,7 +140,7 @@ export class Infobar {
 
   /**
    * @param {!InfobarAction} action
-   * @returns {!function()}
+   * @returns {!function():void}
    */
   _actionCallbackFactory(action) {
     if (!action.delegate) {
@@ -187,7 +191,7 @@ export class Infobar {
 /** @typedef {{
  *        text: !string,
  *        highlight: !boolean,
- *        delegate: ?function(),
+ *        delegate: ?function():void,
  *        dismiss: !boolean
  * }}
  */

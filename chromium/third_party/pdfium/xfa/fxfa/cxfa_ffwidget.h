@@ -107,8 +107,8 @@ class CXFA_FFWidget : public Observable, public CFWL_Widget::AdapterIface {
   virtual bool OnMouseMove(uint32_t dwFlags,
                            const CFX_PointF& point) WARN_UNUSED_RESULT;
   virtual bool OnMouseWheel(uint32_t dwFlags,
-                            int16_t zDelta,
-                            const CFX_PointF& point) WARN_UNUSED_RESULT;
+                            const CFX_PointF& point,
+                            const CFX_Vector& delta) WARN_UNUSED_RESULT;
   virtual bool OnRButtonDown(uint32_t dwFlags,
                              const CFX_PointF& point) WARN_UNUSED_RESULT;
   virtual bool OnRButtonUp(uint32_t dwFlags,
@@ -196,7 +196,7 @@ class CXFA_FFWidget : public Observable, public CFWL_Widget::AdapterIface {
   UnownedPtr<CXFA_FFDocView> m_pDocView;
   ObservedPtr<CXFA_FFPageView> m_pPageView;
   UnownedPtr<CXFA_Node> const m_pNode;
-  mutable CFX_RectF m_rtWidget;
+  mutable CFX_RectF m_WidgetRect;
 };
 
 inline CXFA_FFField* ToField(CXFA_FFWidget* widget) {

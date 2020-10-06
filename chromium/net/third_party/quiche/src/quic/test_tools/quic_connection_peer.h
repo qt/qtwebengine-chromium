@@ -64,8 +64,6 @@ class QuicConnectionPeer {
       QuicConnection* connection,
       const QuicSocketAddress& effective_peer_address);
 
-  static bool IsSilentCloseEnabled(QuicConnection* connection);
-
   static void SwapCrypters(QuicConnection* connection, QuicFramer* framer);
 
   static void SetCurrentPacket(QuicConnection* connection,
@@ -83,7 +81,6 @@ class QuicConnectionPeer {
   static QuicAlarm* GetSendAlarm(QuicConnection* connection);
   static QuicAlarm* GetTimeoutAlarm(QuicConnection* connection);
   static QuicAlarm* GetMtuDiscoveryAlarm(QuicConnection* connection);
-  static QuicAlarm* GetPathDegradingAlarm(QuicConnection* connection);
   static QuicAlarm* GetProcessUndecryptablePacketsAlarm(
       QuicConnection* connection);
 
@@ -146,6 +143,10 @@ class QuicConnectionPeer {
   static QuicTime GetBlackholeDetectionDeadline(QuicConnection* connection);
 
   static QuicAlarm* GetIdleNetworkDetectorAlarm(QuicConnection* connection);
+
+  static void SetServerConnectionId(
+      QuicConnection* connection,
+      const QuicConnectionId& server_connection_id);
 };
 
 }  // namespace test

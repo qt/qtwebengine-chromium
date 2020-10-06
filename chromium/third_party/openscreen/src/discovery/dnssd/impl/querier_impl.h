@@ -16,7 +16,7 @@
 #include "discovery/dnssd/impl/dns_data.h"
 #include "discovery/dnssd/impl/instance_key.h"
 #include "discovery/dnssd/impl/service_key.h"
-#include "discovery/dnssd/public/dns_sd_instance_record.h"
+#include "discovery/dnssd/public/dns_sd_instance_endpoint.h"
 #include "discovery/dnssd/public/dns_sd_querier.h"
 #include "discovery/mdns/mdns_record_changed_callback.h"
 #include "discovery/mdns/mdns_records.h"
@@ -25,11 +25,15 @@
 namespace openscreen {
 namespace discovery {
 
+class NetworkInterfaceConfig;
+
 class QuerierImpl : public DnsSdQuerier, public MdnsRecordChangedCallback {
  public:
-  // |querier| and |task_runner| must outlive the QuerierImpl instance
-  // constructed.
-  QuerierImpl(MdnsService* querier, TaskRunner* task_runner);
+  // |querier|, |task_runner|, and |network_config| must outlive the QuerierImpl
+  // instance constructed.
+  QuerierImpl(MdnsService* querier,
+              TaskRunner* task_runner,
+              const NetworkInterfaceConfig* network_config);
   ~QuerierImpl() override;
 
   bool IsQueryRunning(const std::string& service) const;
@@ -40,13 +44,15 @@ class QuerierImpl : public DnsSdQuerier, public MdnsRecordChangedCallback {
   void ReinitializeQueries(const std::string& service) override;
 
   // MdnsRecordChangedCallback overrides.
-  void OnRecordChanged(const MdnsRecord& record,
-                       RecordChangedEvent event) override;
+  std::vector<PendingQueryChange> OnRecordChanged(
+      const MdnsRecord& record,
+      RecordChangedEvent event) override;
 
  private:
   // Process an OnRecordChanged event for a PTR record.
-  Error HandlePtrRecordChange(const MdnsRecord& record,
-                              RecordChangedEvent event);
+  ErrorOr<std::vector<PendingQueryChange>> HandlePtrRecordChange(
+      const MdnsRecord& record,
+      RecordChangedEvent event);
 
   // Process an OnRecordChanged event for non-PTR records (SRV, TXT, A, and AAAA
   // records).
@@ -57,17 +63,26 @@ class QuerierImpl : public DnsSdQuerier, public MdnsRecordChangedCallback {
     return callback_map_.find(key) != callback_map_.end();
   }
 
-  // Initiates or terminates queries on the mdns_querier_ object.
-  void StartDnsQuery(InstanceKey key);
-  void StartDnsQuery(ServiceKey key);
-  void StopDnsQuery(InstanceKey key, bool should_inform_callbacks = true);
-  void StopDnsQuery(ServiceKey key);
+  std::vector<DnsQueryInfo> GetDataToStopDnsQuery(ServiceKey key);
+  std::vector<DnsQueryInfo> GetDataToStartDnsQuery(ServiceKey key);
+  std::vector<DnsQueryInfo> GetDataToStopDnsQuery(
+      InstanceKey key,
+      bool should_inform_callbacks = true);
+  std::vector<DnsQueryInfo> GetDataToStartDnsQuery(InstanceKey key);
 
-  // Calls the appropriate callback method based on the provided Instance Record
-  // values.
+  void StartDnsQueriesImmediately(const std::vector<DnsQueryInfo>& query_infos);
+  void StopDnsQueriesImmediately(const std::vector<DnsQueryInfo>& query_infos);
+
+  std::vector<PendingQueryChange> StartDnsQueriesDelayed(
+      std::vector<DnsQueryInfo> query_infos);
+  std::vector<PendingQueryChange> StopDnsQueriesDelayed(
+      std::vector<DnsQueryInfo> query_infos);
+
+  // Calls the appropriate callback method based on the provided Instance
+  // Endpoint values.
   void NotifyCallbacks(const std::vector<Callback*>& callbacks,
-                       const ErrorOr<DnsSdInstanceRecord>& old_record,
-                       const ErrorOr<DnsSdInstanceRecord>& new_record);
+                       const ErrorOr<DnsSdInstanceEndpoint>& old_endpoint,
+                       const ErrorOr<DnsSdInstanceEndpoint>& new_endpoint);
 
   // Map from a specific service instance to the data received so far about
   // that instance. The keys in this map are the instances for which an
@@ -79,11 +94,13 @@ class QuerierImpl : public DnsSdQuerier, public MdnsRecordChangedCallback {
       received_records_;
 
   // Map from the (service, domain) pairs currently being queried for to the
-  // callbacks to call when new InstanceRecords are available.
+  // callbacks to call when new InstanceEndpoints are available.
   std::map<ServiceKey, std::vector<Callback*>> callback_map_;
 
   MdnsService* const mdns_querier_;
   TaskRunner* const task_runner_;
+
+  const NetworkInterfaceConfig* const network_config_;
 
   friend class QuerierImplTesting;
 };

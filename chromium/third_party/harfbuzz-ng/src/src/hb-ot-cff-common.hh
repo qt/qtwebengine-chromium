@@ -107,7 +107,7 @@ struct CFFIndex
     TRACE_SERIALIZE (this);
     unsigned int size = src.get_size ();
     CFFIndex *dest = c->allocate_size<CFFIndex> (size);
-    if (unlikely (dest == nullptr)) return_trace (false);
+    if (unlikely (!dest)) return_trace (false);
     memcpy (dest, &src, size);
     return_trace (true);
   }
@@ -120,7 +120,7 @@ struct CFFIndex
     if (byteArray.length == 0)
     {
       COUNT *dest = c->allocate_min<COUNT> ();
-      if (unlikely (dest == nullptr)) return_trace (false);
+      if (unlikely (!dest)) return_trace (false);
       *dest = 0;
     }
     else
@@ -146,9 +146,8 @@ struct CFFIndex
       for (unsigned int i = 0; i < byteArray.length; i++)
       {
 	const byte_str_t &bs = byteArray[i];
-	unsigned char  *dest = c->allocate_size<unsigned char> (bs.length);
-	if (unlikely (dest == nullptr))
-	  return_trace (false);
+	unsigned char *dest = c->allocate_size<unsigned char> (bs.length);
+	if (unlikely (!dest)) return_trace (false);
 	memcpy (dest, &bs[0], bs.length);
       }
     }
@@ -178,7 +177,7 @@ struct CFFIndex
     if (it.len () == 0)
     {
       COUNT *dest = c->allocate_min<COUNT> ();
-      if (unlikely (dest == nullptr)) return_trace (false);
+      if (unlikely (!dest)) return_trace (false);
       *dest = 0;
     }
     else
@@ -260,7 +259,7 @@ struct CFFIndex
   unsigned int length_at (unsigned int index) const
   {
     if (unlikely ((offset_at (index + 1) < offset_at (index)) ||
-	          (offset_at (index + 1) > offset_at (count))))
+		  (offset_at (index + 1) > offset_at (count))))
       return 0;
     return offset_at (index + 1) - offset_at (index);
   }
@@ -308,7 +307,8 @@ struct CFFIndex
   public:
   COUNT		count;		/* Number of object data. Note there are (count+1) offsets */
   HBUINT8	offSize;	/* The byte size of each offset in the offsets array. */
-  HBUINT8	offsets[HB_VAR_ARRAY];	/* The array of (count + 1) offsets into objects array (1-base). */
+  HBUINT8	offsets[HB_VAR_ARRAY];
+				/* The array of (count + 1) offsets into objects array (1-base). */
   /* HBUINT8 data[HB_VAR_ARRAY];	Object data */
   public:
   DEFINE_SIZE_ARRAY (COUNT::static_size + HBUINT8::static_size, offsets);
@@ -321,7 +321,7 @@ struct CFFIndexOf : CFFIndex<COUNT>
   {
     if (likely (index < CFFIndex<COUNT>::count))
       return byte_str_t (CFFIndex<COUNT>::data_base () + CFFIndex<COUNT>::offset_at (index) - 1, CFFIndex<COUNT>::length_at (index));
-    return Null(byte_str_t);
+    return Null (byte_str_t);
   }
 
   template <typename DATA, typename PARAM1, typename PARAM2>
@@ -355,8 +355,7 @@ struct CFFIndexOf : CFFIndex<COUNT>
     for (unsigned int i = 0; i < dataArrayLen; i++)
     {
       TYPE *dest = c->start_embed<TYPE> ();
-      if (unlikely (dest == nullptr ||
-		    !dest->serialize (c, dataArray[i], param1, param2)))
+      if (unlikely (!dest || !dest->serialize (c, dataArray[i], param1, param2)))
 	return_trace (false);
     }
     return_trace (true);
@@ -390,7 +389,7 @@ struct Dict : UnsizedByteStr
     TRACE_SERIALIZE (this);
     /* serialize the opcode */
     HBUINT8 *p = c->allocate_size<HBUINT8> (OpCode_Size (op));
-    if (unlikely (p == nullptr)) return_trace (false);
+    if (unlikely (!p)) return_trace (false);
     if (Is_OpCode_ESC (op))
     {
       *p = OpCode_escape;
@@ -561,7 +560,7 @@ struct FDSelect
     TRACE_SERIALIZE (this);
     unsigned int size = src.get_size (num_glyphs);
     FDSelect *dest = c->allocate_size<FDSelect> (size);
-    if (unlikely (dest == nullptr)) return_trace (false);
+    if (unlikely (!dest)) return_trace (false);
     memcpy (dest, &src, size);
     return_trace (true);
   }

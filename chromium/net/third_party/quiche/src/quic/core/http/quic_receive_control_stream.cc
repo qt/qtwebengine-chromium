@@ -91,10 +91,7 @@ bool QuicReceiveControlStream::OnMaxPushIdFrame(const MaxPushIdFrame& frame) {
     return false;
   }
 
-  // TODO(b/124216424): Signal error if received push ID is smaller than a
-  // previously received value.
-  spdy_session()->OnMaxPushIdFrame(frame.push_id);
-  return true;
+  return spdy_session()->OnMaxPushIdFrame(frame.push_id);
 }
 
 bool QuicReceiveControlStream::OnGoAwayFrame(const GoAwayFrame& frame) {
@@ -134,12 +131,7 @@ bool QuicReceiveControlStream::OnSettingsFrameStart(
 bool QuicReceiveControlStream::OnSettingsFrame(const SettingsFrame& frame) {
   QUIC_DVLOG(1) << "Control Stream " << id()
                 << " received settings frame: " << frame;
-  if (spdy_session_->debug_visitor() != nullptr) {
-    spdy_session_->debug_visitor()->OnSettingsFrameReceived(frame);
-  }
-  for (const auto& setting : frame.values) {
-    spdy_session_->OnSetting(setting.first, setting.second);
-  }
+  spdy_session_->OnSettingsFrame(frame);
   return true;
 }
 

@@ -124,6 +124,12 @@ public:
     virtual void emitCode(EmitArgs&) = 0;
 
     /**
+     * Called after all effect emitCode() functions, to give the processor a chance to write out
+     * additional transformation code now that all uniforms have been emitted.
+     */
+    virtual void emitTransformCode(GrGLSLVertexBuilder* vb,
+                                   GrGLSLUniformHandler* uniformHandler) {}
+    /**
      * A GrGLSLPrimitiveProcessor instance can be reused with any GrGLSLPrimitiveProcessor that
      * produces the same stage key; this function reads data from a GrGLSLPrimitiveProcessor and
      * uploads any uniform variables required  by the shaders created in emitCode(). The

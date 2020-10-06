@@ -1634,16 +1634,18 @@ void GenerateCaps(ID3D11Device *device,
     extensions->copyTexture                         = true;
     extensions->copyCompressedTexture               = true;
     extensions->textureStorageMultisample2DArrayOES = true;
-    extensions->multiviewMultisample     = ((extensions->multiview || extensions->multiview2) &&
+    extensions->multiviewMultisample      = ((extensions->multiview || extensions->multiview2) &&
                                         extensions->textureStorageMultisample2DArrayOES);
-    extensions->copyTexture3d            = true;
-    extensions->textureBorderClampOES    = true;
-    extensions->textureMultisample       = true;
-    extensions->provokingVertex          = true;
-    extensions->blendFuncExtended        = true;
-    extensions->maxDualSourceDrawBuffers = 1;
-    extensions->texture3DOES             = true;
-    extensions->baseVertexBaseInstance   = true;
+    extensions->copyTexture3d             = true;
+    extensions->textureBorderClampOES     = true;
+    extensions->textureMultisample        = true;
+    extensions->provokingVertex           = true;
+    extensions->blendFuncExtended         = true;
+    extensions->maxDualSourceDrawBuffers  = 1;
+    extensions->texture3DOES              = true;
+    extensions->baseVertexBaseInstance    = true;
+    extensions->drawElementsBaseVertexOES = true;
+    extensions->drawElementsBaseVertexEXT = true;
     if (!strstr(description, "Adreno"))
     {
         extensions->multisampledRenderToTexture = true;
@@ -2463,9 +2465,9 @@ void InitializeFeatures(const Renderer11DeviceCaps &deviceCaps,
     ANGLE_FEATURE_CONDITION(features, selectViewInGeometryShader,
                             !deviceCaps.supportsVpRtIndexWriteFromVertexShader);
 
-    // Intel and AMD drivers have trouble clearing textures without causing corruption. NVidia,
-    // on the other hand, can handle.
-    ANGLE_FEATURE_CONDITION(features, allowClearForRobustResourceInit, isNvidia);
+    // NVidia drivers have no trouble clearing textures without showing corruption. AMD ones do.
+    // Intel drivers that have trouble have been blocklisted to the DX9 runtime by Chromium.
+    ANGLE_FEATURE_CONDITION(features, allowClearForRobustResourceInit, isNvidia || isIntel);
 
     // Don't translate uniform block to StructuredBuffer on Windows 7 and earlier. This is targeted
     // to work around a bug that fails to allocate ShaderResourceView for StructuredBuffer.

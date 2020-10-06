@@ -44,7 +44,6 @@
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkTLazy.h"
-#include "src/core/SkTypefacePriv.h"
 #include "src/core/SkUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/sfnt/SkSFNTHeader.h"
@@ -322,7 +321,7 @@ static HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
     //CreateFontPackage wants unsigned short.
     //Microsoft, Y U NO stdint.h?
     std::vector<unsigned short> keepList;
-    current.glyphsUsed.getSetValues([&keepList](unsigned v) {
+    current.glyphsUsed.forEachSetIndex([&keepList](size_t v) {
             keepList.push_back((unsigned short)v);
     });
 
@@ -1254,16 +1253,24 @@ void SkXPSDevice::internalDrawRect(const SkRect& r,
 }
 
 static HRESULT close_figure(const SkTDArray<XPS_SEGMENT_TYPE>& segmentTypes,
-                            const SkTDArray<BOOL>& segmentStrokes,
                             const SkTDArray<FLOAT>& segmentData,
+                            const SkTDArray<BOOL>& segmentStrokes,
                             BOOL stroke, BOOL fill,
                             IXpsOMGeometryFigure* figure,
                             IXpsOMGeometryFigureCollection* figures) {
-    // Add the segment data to the figure.
-    HRM(figure->SetSegments(segmentTypes.count(), segmentData.count(),
-                            segmentTypes.begin() , segmentData.begin(),
-                            segmentStrokes.begin()),
-        "Could not set path segments.");
+    // Either all are empty or none are empty.
+    SkASSERT(( segmentTypes.empty() &&  segmentData.empty() &&  segmentStrokes.empty()) ||
+             (!segmentTypes.empty() && !segmentData.empty() && !segmentStrokes.empty()));
+
+    // SkTDArray::begin() may return nullptr when the segment is empty,
+    // but IXpsOMGeometryFigure::SetSegments returns E_POINTER if any of the pointers are nullptr
+    // even if the counts are all 0.
+    if (!segmentTypes.empty() && !segmentData.empty() && !segmentStrokes.empty()) {
+        // Add the segment data to the figure.
+        HRM(figure->SetSegments(segmentTypes.count(), segmentData.count(),
+                                segmentTypes.begin(), segmentData.begin(), segmentStrokes.begin()),
+            "Could not set path segments.");
+    }
 
     // Set the closed and filled properties of the figure.
     HRM(figure->SetIsClosed(stroke), "Could not set path closed.");
@@ -1278,8 +1285,8 @@ HRESULT SkXPSDevice::addXpsPathGeometry(
         IXpsOMGeometryFigureCollection* xpsFigures,
         BOOL stroke, BOOL fill, const SkPath& path) {
     SkTDArray<XPS_SEGMENT_TYPE> segmentTypes;
-    SkTDArray<BOOL> segmentStrokes;
     SkTDArray<FLOAT> segmentData;
+    SkTDArray<BOOL> segmentStrokes;
 
     SkTScopedComPtr<IXpsOMGeometryFigure> xpsFigure;
     SkPath::Iter iter(path, true);
@@ -1289,13 +1296,13 @@ HRESULT SkXPSDevice::addXpsPathGeometry(
         switch (verb) {
             case SkPath::kMove_Verb: {
                 if (xpsFigure.get()) {
-                    HR(close_figure(segmentTypes, segmentStrokes, segmentData,
+                    HR(close_figure(segmentTypes, segmentData, segmentStrokes,
                                     stroke, fill,
                                     xpsFigure.get() , xpsFigures));
-                    xpsFigure.reset();
                     segmentTypes.rewind();
-                    segmentStrokes.rewind();
                     segmentData.rewind();
+                    segmentStrokes.rewind();
+                    xpsFigure.reset();
                 }
                 // Define the start point.
                 XPS_POINT startPoint = xps_point(points[0]);
@@ -1308,27 +1315,27 @@ HRESULT SkXPSDevice::addXpsPathGeometry(
             case SkPath::kLine_Verb:
                 if (iter.isCloseLine()) break; //ignore the line, auto-closed
                 segmentTypes.push_back(XPS_SEGMENT_TYPE_LINE);
-                segmentStrokes.push_back(stroke);
                 segmentData.push_back(SkScalarToFLOAT(points[1].fX));
                 segmentData.push_back(SkScalarToFLOAT(points[1].fY));
+                segmentStrokes.push_back(stroke);
                 break;
             case SkPath::kQuad_Verb:
                 segmentTypes.push_back(XPS_SEGMENT_TYPE_QUADRATIC_BEZIER);
-                segmentStrokes.push_back(stroke);
                 segmentData.push_back(SkScalarToFLOAT(points[1].fX));
                 segmentData.push_back(SkScalarToFLOAT(points[1].fY));
                 segmentData.push_back(SkScalarToFLOAT(points[2].fX));
                 segmentData.push_back(SkScalarToFLOAT(points[2].fY));
+                segmentStrokes.push_back(stroke);
                 break;
             case SkPath::kCubic_Verb:
                 segmentTypes.push_back(XPS_SEGMENT_TYPE_BEZIER);
-                segmentStrokes.push_back(stroke);
                 segmentData.push_back(SkScalarToFLOAT(points[1].fX));
                 segmentData.push_back(SkScalarToFLOAT(points[1].fY));
                 segmentData.push_back(SkScalarToFLOAT(points[2].fX));
                 segmentData.push_back(SkScalarToFLOAT(points[2].fY));
                 segmentData.push_back(SkScalarToFLOAT(points[3].fX));
                 segmentData.push_back(SkScalarToFLOAT(points[3].fY));
+                segmentStrokes.push_back(stroke);
                 break;
             case SkPath::kConic_Verb: {
                 const SkScalar tol = SK_Scalar1 / 4;
@@ -1337,11 +1344,11 @@ HRESULT SkXPSDevice::addXpsPathGeometry(
                     converter.computeQuads(points, iter.conicWeight(), tol);
                 for (int i = 0; i < converter.countQuads(); ++i) {
                     segmentTypes.push_back(XPS_SEGMENT_TYPE_QUADRATIC_BEZIER);
-                    segmentStrokes.push_back(stroke);
                     segmentData.push_back(SkScalarToFLOAT(quads[2 * i + 1].fX));
                     segmentData.push_back(SkScalarToFLOAT(quads[2 * i + 1].fY));
                     segmentData.push_back(SkScalarToFLOAT(quads[2 * i + 2].fX));
                     segmentData.push_back(SkScalarToFLOAT(quads[2 * i + 2].fY));
+                    segmentStrokes.push_back(stroke);
                 }
                 break;
             }
@@ -1355,7 +1362,7 @@ HRESULT SkXPSDevice::addXpsPathGeometry(
         }
     }
     if (xpsFigure.get()) {
-        HR(close_figure(segmentTypes, segmentStrokes, segmentData,
+        HR(close_figure(segmentTypes, segmentData, segmentStrokes,
                         stroke, fill,
                         xpsFigure.get(), xpsFigures));
     }
@@ -1715,7 +1722,7 @@ HRESULT SkXPSDevice::clipToPath(IXpsOMVisual* xpsVisual,
 
 HRESULT SkXPSDevice::CreateTypefaceUse(const SkFont& font,
                                        TypefaceUse** typefaceUse) {
-    SkAutoResolveDefaultTypeface typeface(font.getTypeface());
+    SkTypeface* typeface = font.getTypefaceOrDefault();
 
     //Check cache.
     const SkFontID typefaceID = typeface->uniqueID();
@@ -1909,15 +1916,24 @@ void SkXPSDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
         // (XPS Spec 5.1.3).
         FLOAT centemPerUnit = 100.0f / SkScalarToFLOAT(font.getSize());
         SkAutoSTMalloc<32, XPS_GLYPH_INDEX> xpsGlyphs(glyphCount);
+        size_t numGlyphs = typeface->glyphsUsed.size();
+        size_t actualGlyphCount = 0;
 
         for (size_t i = 0; i < glyphCount; ++i) {
+            if (numGlyphs <= glyphIDs[i]) {
+                continue;
+            }
             const SkPoint& position = run.positions()[i];
-            XPS_GLYPH_INDEX& xpsGlyph = xpsGlyphs[i];
+            XPS_GLYPH_INDEX& xpsGlyph = xpsGlyphs[actualGlyphCount++];
             xpsGlyph.index = glyphIDs[i];
             xpsGlyph.advanceWidth = 0.0f;
             xpsGlyph.horizontalOffset = (SkScalarToFloat(position.fX) * centemPerUnit);
             xpsGlyph.verticalOffset = (SkScalarToFloat(position.fY) * -centemPerUnit);
             typeface->glyphsUsed.set(xpsGlyph.index);
+        }
+
+        if (actualGlyphCount == 0) {
+            return;
         }
 
         XPS_POINT origin = {
@@ -1929,7 +1945,7 @@ void SkXPSDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
                       this->fCurrentXpsCanvas.get(),
                       typeface,
                       nullptr,
-                      xpsGlyphs.get(), glyphCount,
+                      xpsGlyphs.get(), actualGlyphCount,
                       &origin,
                       SkScalarToFLOAT(font.getSize()),
                       XPS_STYLE_SIMULATION_NONE,

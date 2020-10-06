@@ -9,6 +9,7 @@
 #ifndef LIBANGLE_PROGRAMEXECUTABLE_H_
 #define LIBANGLE_PROGRAMEXECUTABLE_H_
 
+#include "BinaryStream.h"
 #include "libANGLE/Caps.h"
 #include "libANGLE/InfoLog.h"
 #include "libANGLE/VaryingPacking.h"
@@ -63,21 +64,51 @@ class ProgramExecutable
 
     void reset();
 
+    void save(gl::BinaryOutputStream *stream) const;
+    void load(gl::BinaryInputStream *stream);
+
+    const ProgramState *getProgramState(ShaderType shaderType) const;
+
     int getInfoLogLength() const;
     InfoLog &getInfoLog() { return mInfoLog; }
     void getInfoLog(GLsizei bufSize, GLsizei *length, char *infoLog) const;
     std::string getInfoLogString() const;
     void resetInfoLog() { mInfoLog.reset(); }
 
-    const ShaderBitSet &getLinkedShaderStages() const { return mLinkedShaderStages; }
-    ShaderBitSet &getLinkedShaderStages() { return mLinkedShaderStages; }
+    void resetLinkedShaderStages()
+    {
+        mLinkedComputeShaderStages.reset();
+        mLinkedGraphicsShaderStages.reset();
+    }
+    const ShaderBitSet &getLinkedShaderStages() const
+    {
+        return isCompute() ? mLinkedComputeShaderStages : mLinkedGraphicsShaderStages;
+    }
+    void setLinkedShaderStages(ShaderType shaderType)
+    {
+        if (shaderType == ShaderType::Compute)
+        {
+            mLinkedComputeShaderStages.set(ShaderType::Compute);
+        }
+        else
+        {
+            mLinkedGraphicsShaderStages.set(shaderType);
+        }
+
+        updateCanDrawWith();
+    }
     bool hasLinkedShaderStage(ShaderType shaderType) const
     {
         ASSERT(shaderType != ShaderType::InvalidEnum);
-        return mLinkedShaderStages[shaderType];
+        return (shaderType == ShaderType::Compute) ? mLinkedComputeShaderStages[shaderType]
+                                                   : mLinkedGraphicsShaderStages[shaderType];
     }
-    size_t getLinkedShaderStageCount() const { return mLinkedShaderStages.count(); }
-    bool isCompute() const { return hasLinkedShaderStage(ShaderType::Compute); }
+    size_t getLinkedShaderStageCount() const
+    {
+        return isCompute() ? mLinkedComputeShaderStages.count()
+                           : mLinkedGraphicsShaderStages.count();
+    }
+    bool isCompute() const;
 
     const AttributesMask &getActiveAttribLocationsMask() const
     {
@@ -109,16 +140,18 @@ class ProgramExecutable
         return mActiveSamplerTypes;
     }
 
-    bool hasDefaultUniforms(const gl::State &glState) const;
-    bool hasTextures(const gl::State &glState) const;
-    bool hasUniformBuffers(const gl::State &glState) const;
-    bool hasStorageBuffers(const gl::State &glState) const;
-    bool hasAtomicCounterBuffers(const gl::State &glState) const;
-    bool hasImages(const gl::State &glState) const;
-    bool hasTransformFeedbackOutput(const gl::State &glState) const;
+    bool hasDefaultUniforms() const;
+    bool hasTextures() const;
+    bool hasUniformBuffers() const;
+    bool hasStorageBuffers() const;
+    bool hasAtomicCounterBuffers() const;
+    bool hasImages() const;
+    bool hasTransformFeedbackOutput() const;
 
     // Count the number of uniform and storage buffer declarations, counting arrays as one.
     size_t getTransformFeedbackBufferCount(const gl::State &glState) const;
+
+    bool linkValidateGlobalNames(InfoLog &infoLog) const;
 
     // TODO: http://anglebug.com/4520: Remove mProgramState/mProgramPipelineState
     void setProgramState(ProgramState *state)
@@ -132,6 +165,11 @@ class ProgramExecutable
         mProgramPipelineState = state;
     }
 
+    void setIsCompute(bool isComputeIn);
+
+    void updateCanDrawWith();
+    bool hasVertexAndFragmentShader() const { return mCanDrawWith; }
+
   private:
     // TODO(timvp): http://anglebug.com/3570: Investigate removing these friend
     // class declarations and accessing the necessary members with getters/setters.
@@ -139,7 +177,7 @@ class ProgramExecutable
     friend class ProgramPipeline;
     friend class ProgramState;
 
-    void updateActiveSamplers(const std::vector<SamplerBinding> &samplerBindings);
+    void updateActiveSamplers(const ProgramState &programState);
     void updateActiveImages(std::vector<ImageBinding> &imageBindings);
 
     // Scans the sampler bindings for type conflicts with sampler 'textureUnitIndex'.
@@ -152,7 +190,8 @@ class ProgramExecutable
 
     InfoLog mInfoLog;
 
-    ShaderBitSet mLinkedShaderStages;
+    ShaderBitSet mLinkedGraphicsShaderStages;
+    ShaderBitSet mLinkedComputeShaderStages;
 
     angle::BitSet<MAX_VERTEX_ATTRIBS> mActiveAttribLocationsMask;
     unsigned int mMaxActiveAttribLocation;
@@ -170,6 +209,8 @@ class ProgramExecutable
     // Cached mask of active images.
     ActiveTextureMask mActiveImagesMask;
     ActiveTextureArray<ShaderBitSet> mActiveImageShaderBits;
+
+    bool mCanDrawWith;
 };
 
 }  // namespace gl

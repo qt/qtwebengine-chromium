@@ -15,14 +15,18 @@
 #ifndef VK_DEVICE_HPP_
 #define VK_DEVICE_HPP_
 
-#include "VkObject.hpp"
+#include "VkImageView.hpp"
 #include "VkSampler.hpp"
-#include "Device/LRUCache.hpp"
 #include "Reactor/Routine.hpp"
+#include "System/LRUCache.hpp"
+
+#include "marl/mutex.h"
+#include "marl/tsa.h"
 
 #include <map>
 #include <memory>
-#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace marl {
 class Scheduler;
@@ -64,6 +68,11 @@ public:
 	const VkPhysicalDeviceFeatures &getEnabledFeatures() const { return enabledFeatures; }
 	sw::Blitter *getBlitter() const { return blitter.get(); }
 
+	void registerImageView(ImageView *imageView);
+	void unregisterImageView(ImageView *imageView);
+	void prepareForSampling(ImageView *imageView);
+	void contentsChanged(ImageView *imageView);
+
 	class SamplingRoutineCache
 	{
 	public:
@@ -86,32 +95,42 @@ public:
 			};
 		};
 
+		// getOrCreate() queries the cache for a Routine with the given key.
+		// If one is found, it is returned, otherwise createRoutine(key) is
+		// called, the returned Routine is added to the cache, and it is
+		// returned.
+		// Function must be a function of the signature:
+		//     std::shared_ptr<rr::Routine>(const Key &)
 		template<typename Function>
-		std::shared_ptr<rr::Routine> getOrCreate(const Key &key, Function createRoutine)
+		std::shared_ptr<rr::Routine> getOrCreate(const Key &key, Function &&createRoutine)
 		{
-			std::lock_guard<std::mutex> lock(mutex);
+			auto it = snapshot.find(key);
+			if(it != snapshot.end()) { return it->second; }
 
-			if(auto existingRoutine = cache.query(key))
+			marl::lock lock(mutex);
+			if(auto existingRoutine = cache.lookup(key))
 			{
 				return existingRoutine;
 			}
 
 			std::shared_ptr<rr::Routine> newRoutine = createRoutine(key);
 			cache.add(key, newRoutine);
+			snapshotNeedsUpdate = true;
 
 			return newRoutine;
 		}
 
-		rr::Routine *querySnapshot(const Key &key) const;
 		void updateSnapshot();
 
 	private:
-		sw::LRUSnapshotCache<Key, std::shared_ptr<rr::Routine>, Key::Hash> cache;  // guarded by mutex
-		std::mutex mutex;
+		bool snapshotNeedsUpdate = false;
+		std::unordered_map<Key, std::shared_ptr<rr::Routine>, Key::Hash> snapshot;
+
+		marl::mutex mutex;
+		sw::LRUCache<Key, std::shared_ptr<rr::Routine>, Key::Hash> cache GUARDED_BY(mutex);
 	};
 
 	SamplingRoutineCache *getSamplingRoutineCache() const;
-	rr::Routine *querySnapshotCache(const SamplingRoutineCache::Key &key) const;
 	void updateSamplingRoutineSnapshotCache();
 
 	class SamplerIndexer
@@ -129,8 +148,8 @@ public:
 			uint32_t count;  // Number of samplers sharing this state identifier.
 		};
 
-		std::map<SamplerState, Identifier> map;  // guarded by mutex
-		std::mutex mutex;
+		marl::mutex mutex;
+		std::map<SamplerState, Identifier> map GUARDED_BY(mutex);
 
 		uint32_t nextID = 0;
 	};
@@ -147,6 +166,9 @@ public:
 #endif  // ENABLE_VK_DEBUGGER
 	}
 
+	VkResult setDebugUtilsObjectName(const VkDebugUtilsObjectNameInfoEXT *pNameInfo);
+	VkResult setDebugUtilsObjectTag(const VkDebugUtilsObjectTagInfoEXT *pTagInfo);
+
 private:
 	PhysicalDevice *const physicalDevice = nullptr;
 	Queue *const queues = nullptr;
@@ -160,6 +182,9 @@ private:
 	std::shared_ptr<marl::Scheduler> scheduler;
 	std::unique_ptr<SamplingRoutineCache> samplingRoutineCache;
 	std::unique_ptr<SamplerIndexer> samplerIndexer;
+
+	marl::mutex imageViewSetMutex;
+	std::unordered_set<ImageView *> imageViewSet GUARDED_BY(imageViewSetMutex);
 
 #ifdef ENABLE_VK_DEBUGGER
 	struct

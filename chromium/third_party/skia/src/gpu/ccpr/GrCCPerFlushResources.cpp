@@ -18,7 +18,7 @@
 #include "src/gpu/ccpr/GrGSCoverageProcessor.h"
 #include "src/gpu/ccpr/GrSampleMaskProcessor.h"
 #include "src/gpu/ccpr/GrVSCoverageProcessor.h"
-#include "src/gpu/geometry/GrShape.h"
+#include "src/gpu/geometry/GrStyledShape.h"
 #include <algorithm>
 
 using CoverageType = GrCCAtlas::CoverageType;
@@ -59,7 +59,7 @@ protected:
 
 private:
     void onPrePrepare(GrRecordingContext*,
-                      const GrSurfaceProxyView* outputView,
+                      const GrSurfaceProxyView* writeView,
                       GrAppliedClip*,
                       const GrXferProcessor::DstProxyView&) final {}
     void onPrepare(GrOpFlushState*) final {}
@@ -279,11 +279,7 @@ void GrCCPerFlushResources::recordCopyPathInstance(
 
     // Write the instance at the back of the array.
     int currentInstanceIdx = fNextCopyInstanceIdx++;
-    constexpr uint64_t kWhite = (((uint64_t) SK_Half1) <<  0) |
-                                (((uint64_t) SK_Half1) << 16) |
-                                (((uint64_t) SK_Half1) << 32) |
-                                (((uint64_t) SK_Half1) << 48);
-    fPathInstanceBuffer[currentInstanceIdx].set(entry, newAtlasOffset, kWhite, fillRule);
+    fPathInstanceBuffer[currentInstanceIdx].set(entry, newAtlasOffset, SK_PMColor4fWHITE, fillRule);
 
     // Percolate the instance forward until it's contiguous with other instances that share the same
     // proxy.
@@ -367,8 +363,9 @@ static bool transform_path_pts(
 }
 
 GrCCAtlas* GrCCPerFlushResources::renderShapeInAtlas(
-        const SkIRect& clipIBounds, const SkMatrix& m, const GrShape& shape, float strokeDevWidth,
-        GrOctoBounds* octoBounds, SkIRect* devIBounds, SkIVector* devToAtlasOffset) {
+        const SkIRect& clipIBounds, const SkMatrix& m, const GrStyledShape& shape,
+        float strokeDevWidth, GrOctoBounds* octoBounds, SkIRect* devIBounds,
+        SkIVector* devToAtlasOffset) {
     SkASSERT(this->isMapped());
     SkASSERT(fNextPathInstanceIdx < fEndPathInstance);
 
@@ -562,7 +559,7 @@ bool GrCCPerFlushResources::finalize(GrOnFlushResourceProvider* onFlushRP) {
         for (sk_sp<GrTexture>& texture : fRecyclableAtlasTextures) {
             if (texture && atlas.currentHeight() == texture->height() &&
                     atlas.currentWidth() == texture->width()) {
-                backingTexture = skstd::exchange(texture, nullptr);
+                backingTexture = std::exchange(texture, nullptr);
                 break;
             }
         }

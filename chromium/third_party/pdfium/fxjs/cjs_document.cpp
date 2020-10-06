@@ -18,6 +18,7 @@
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
 #include "core/fpdfdoc/cpdf_nametree.h"
+#include "core/fxcrt/fx_memory_wrappers.h"
 #include "fpdfsdk/cpdfsdk_annotiteration.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
@@ -392,7 +393,8 @@ CJS_Result CJS_Document::mailForm(
   if (IsExpandedParamKnown(newParams[5]))
     cMsg = pRuntime->ToWideString(newParams[5]);
 
-  std::vector<char> mutable_buf(sTextBuf.begin(), sTextBuf.end());
+  std::vector<char, FxAllocAllocator<char>> mutable_buf(sTextBuf.begin(),
+                                                        sTextBuf.end());
   pRuntime->BeginBlock();
   m_pFormFillEnv->JS_docmailForm(mutable_buf.data(), mutable_buf.size(), bUI,
                                  cTo, cSubject, cCc, cBcc, cMsg);
@@ -1387,13 +1389,12 @@ CJS_Result CJS_Document::gotoNamedDest(
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
   CPDF_Document* pDocument = m_pFormFillEnv->GetPDFDocument();
-  CPDF_NameTree name_tree(pDocument, "Dests");
-  CPDF_Array* destArray =
-      name_tree.LookupNamedDest(pDocument, pRuntime->ToWideString(params[0]));
-  if (!destArray)
+  CPDF_Array* dest_array = CPDF_NameTree::LookupNamedDest(
+      pDocument, pRuntime->ToByteString(params[0]));
+  if (!dest_array)
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
-  CPDF_Dest dest(destArray);
+  CPDF_Dest dest(dest_array);
   const CPDF_Array* arrayObject = dest.GetArray();
   std::vector<float> scrollPositionArray;
   if (arrayObject) {

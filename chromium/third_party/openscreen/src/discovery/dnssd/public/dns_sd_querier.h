@@ -5,7 +5,7 @@
 #ifndef DISCOVERY_DNSSD_PUBLIC_DNS_SD_QUERIER_H_
 #define DISCOVERY_DNSSD_PUBLIC_DNS_SD_QUERIER_H_
 
-#include "discovery/dnssd/public/dns_sd_instance_record.h"
+#include "discovery/dnssd/public/dns_sd_instance_endpoint.h"
 
 namespace openscreen {
 namespace discovery {
@@ -18,15 +18,23 @@ class DnsSdQuerier {
    public:
     virtual ~Callback() = default;
 
-    // Callback fired when a new InstanceRecord is created.
-    virtual void OnInstanceCreated(const DnsSdInstanceRecord& new_record) = 0;
+    // Callback fired when a new InstanceEndpoint is created.
+    // NOTE: This callback may not modify the DnsSdQuerier instance from which
+    // it is called.
+    virtual void OnEndpointCreated(
+        const DnsSdInstanceEndpoint& new_endpoint) = 0;
 
-    // Callback fired when an existing InstanceRecord is updated.
-    virtual void OnInstanceUpdated(
-        const DnsSdInstanceRecord& modified_record) = 0;
+    // Callback fired when an existing InstanceEndpoint is updated.
+    // NOTE: This callback may not modify the DnsSdQuerier instance from which
+    // it is called.
+    virtual void OnEndpointUpdated(
+        const DnsSdInstanceEndpoint& modified_endpoint) = 0;
 
-    // Callback fired when an existing InstanceRecord is deleted.
-    virtual void OnInstanceDeleted(const DnsSdInstanceRecord& old_record) = 0;
+    // Callback fired when an existing InstanceEndpoint is deleted.
+    // NOTE: This callback may not modify the DnsSdQuerier instance from which
+    // it is called.
+    virtual void OnEndpointDeleted(
+        const DnsSdInstanceEndpoint& old_endpoint) = 0;
   };
 
   virtual ~DnsSdQuerier() = default;

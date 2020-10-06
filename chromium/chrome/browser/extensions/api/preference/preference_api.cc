@@ -781,7 +781,7 @@ ExtensionFunction::ResponseAction SetPreferenceFunction::Run() {
       transformer->ExtensionToBrowserPref(value, &error, &bad_message));
   if (!browser_pref_value) {
     EXTENSION_FUNCTION_VALIDATE(!bad_message);
-    return RespondNow(Error(error));
+    return RespondNow(Error(std::move(error)));
   }
   EXTENSION_FUNCTION_VALIDATE(browser_pref_value->type() == pref->GetType());
 
@@ -831,7 +831,7 @@ ExtensionFunction::ResponseAction SetPreferenceFunction::Run() {
         extension_id(), prefs::kCookieControlsMode, scope,
         base::Value(static_cast<int>(
             browser_pref_value->GetBool()
-                ? content_settings::CookieControlsMode::kOn
+                ? content_settings::CookieControlsMode::kBlockThirdParty
                 : content_settings::CookieControlsMode::kOff)));
   }
 

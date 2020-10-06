@@ -16,7 +16,6 @@
 
 #include "dawn_native/BackendConnection.h"
 #include "dawn_native/Commands.h"
-#include "dawn_native/DynamicUploader.h"
 #include "dawn_native/ErrorData.h"
 #include "dawn_native/Instance.h"
 #include "dawn_native/Surface.h"
@@ -43,7 +42,7 @@ namespace dawn_native { namespace null {
     }
 
     ResultOrError<DeviceBase*> Adapter::CreateDeviceImpl(const DeviceDescriptor* descriptor) {
-        return {new Device(this, descriptor)};
+        return Device::Create(this, descriptor);
     }
 
     class Backend : public BackendConnection {
@@ -78,19 +77,19 @@ namespace dawn_native { namespace null {
 
     // Device
 
-    Device::Device(Adapter* adapter, const DeviceDescriptor* descriptor)
-        : DeviceBase(adapter, descriptor) {
-        // Apply toggle overrides if necessary for test
-        if (descriptor != nullptr) {
-            ApplyToggleOverrides(descriptor);
-        }
+    // static
+    ResultOrError<Device*> Device::Create(Adapter* adapter, const DeviceDescriptor* descriptor) {
+        Ref<Device> device = AcquireRef(new Device(adapter, descriptor));
+        DAWN_TRY(device->Initialize());
+        return device.Detach();
     }
 
     Device::~Device() {
-        BaseDestructor();
-        // This assert is in the destructor rather than Device::Destroy() because it needs to make
-        // sure buffers have been destroyed before the device.
-        ASSERT(mMemoryUsage == 0);
+        ShutDownBase();
+    }
+
+    MaybeError Device::Initialize() {
+        return DeviceBase::Initialize(new Queue(this));
     }
 
     ResultOrError<BindGroupBase*> Device::CreateBindGroupImpl(
@@ -117,9 +116,6 @@ namespace dawn_native { namespace null {
         const PipelineLayoutDescriptor* descriptor) {
         return new PipelineLayout(this, descriptor);
     }
-    ResultOrError<QueueBase*> Device::CreateQueueImpl() {
-        return new Queue(this);
-    }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
         return new RenderPipeline(this, descriptor);
@@ -129,14 +125,14 @@ namespace dawn_native { namespace null {
     }
     ResultOrError<ShaderModuleBase*> Device::CreateShaderModuleImpl(
         const ShaderModuleDescriptor* descriptor) {
-        auto module = new ShaderModule(this, descriptor);
+        Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor));
 
         if (IsToggleEnabled(Toggle::UseSpvc)) {
             shaderc_spvc::CompileOptions options;
             options.SetValidate(IsValidationEnabled());
             shaderc_spvc::Context* context = module->GetContext();
-            shaderc_spvc_status status =
-                context->InitializeForGlsl(descriptor->code, descriptor->codeSize, options);
+            shaderc_spvc_status status = context->InitializeForGlsl(
+                module->GetSpirv().data(), module->GetSpirv().size(), options);
             if (status != shaderc_spvc_status_success) {
                 return DAWN_VALIDATION_ERROR("Unable to initialize instance of spvc");
             }
@@ -148,10 +144,10 @@ namespace dawn_native { namespace null {
             }
             DAWN_TRY(module->ExtractSpirvInfo(*compiler));
         } else {
-            spirv_cross::Compiler compiler(descriptor->code, descriptor->codeSize);
+            spirv_cross::Compiler compiler(module->GetSpirv());
             DAWN_TRY(module->ExtractSpirvInfo(compiler));
         }
-        return module;
+        return module.Detach();
     }
     ResultOrError<SwapChainBase*> Device::CreateSwapChainImpl(
         const SwapChainDescriptor* descriptor) {
@@ -163,8 +159,8 @@ namespace dawn_native { namespace null {
         const SwapChainDescriptor* descriptor) {
         return new SwapChain(this, surface, previousSwapChain, descriptor);
     }
-    ResultOrError<TextureBase*> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
-        return new Texture(this, descriptor, TextureBase::TextureState::OwnedInternal);
+    ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
+        return AcquireRef(new Texture(this, descriptor, TextureBase::TextureState::OwnedInternal));
     }
     ResultOrError<TextureViewBase*> Device::CreateTextureViewImpl(
         TextureBase* texture,
@@ -179,15 +175,18 @@ namespace dawn_native { namespace null {
         return std::move(stagingBuffer);
     }
 
-    void Device::Destroy() {
-        ASSERT(mLossStatus != LossStatus::AlreadyLost);
+    void Device::ShutDownImpl() {
+        ASSERT(GetState() == State::Disconnected);
 
-        mDynamicUploader = nullptr;
-
+        // Clear pending operations before checking mMemoryUsage because some operations keep a
+        // reference to Buffers.
         mPendingOperations.clear();
+        ASSERT(mMemoryUsage == 0);
     }
 
     MaybeError Device::WaitForIdleForDestruction() {
+        // Fake all commands being completed
+        AssumeCommandsComplete();
         return {};
     }
 
@@ -222,21 +221,13 @@ namespace dawn_native { namespace null {
         mMemoryUsage -= bytes;
     }
 
-    Serial Device::GetCompletedCommandSerial() const {
-        return mCompletedSerial;
-    }
-
-    Serial Device::GetLastSubmittedCommandSerial() const {
-        return mLastSubmittedSerial;
-    }
-
-    Serial Device::GetPendingCommandSerial() const {
-        return mLastSubmittedSerial + 1;
-    }
-
     MaybeError Device::TickImpl() {
         SubmitPendingOperations();
         return {};
+    }
+
+    Serial Device::CheckAndUpdateCompletedSerials() {
+        return GetLastSubmittedCommandSerial();
     }
 
     void Device::AddPendingOperation(std::unique_ptr<PendingOperation> operation) {
@@ -248,8 +239,8 @@ namespace dawn_native { namespace null {
         }
         mPendingOperations.clear();
 
-        mCompletedSerial = mLastSubmittedSerial;
-        mLastSubmittedSerial++;
+        CheckPassedSerials();
+        IncrementLastSubmittedCommandSerial();
     }
 
     // BindGroupDataHolder

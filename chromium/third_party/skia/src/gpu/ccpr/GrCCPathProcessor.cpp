@@ -137,7 +137,7 @@ void GrCCPathProcessor::drawPaths(GrOpFlushState* flushState, const GrPipeline& 
 
     GrRenderTargetProxy* rtProxy = flushState->proxy();
     GrProgramInfo programInfo(rtProxy->numSamples(), rtProxy->numStencilSamples(),
-                              rtProxy->backendFormat(), flushState->outputView()->origin(),
+                              rtProxy->backendFormat(), flushState->writeView()->origin(),
                               &pipeline, this, primitiveType);
 
     flushState->bindPipelineAndScissorClip(programInfo, bounds);
@@ -158,7 +158,7 @@ void GrCCPathProcessor::Impl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
 
     const char* atlasAdjust;
     fAtlasAdjustUniform = uniHandler->addUniform(
-            kVertex_GrShaderFlag, kFloat2_GrSLType, "atlas_adjust", &atlasAdjust);
+            nullptr, kVertex_GrShaderFlag, kFloat2_GrSLType, "atlas_adjust", &atlasAdjust);
 
     varyingHandler->emitAttributes(proc);
 

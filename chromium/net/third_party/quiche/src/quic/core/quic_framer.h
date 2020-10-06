@@ -312,13 +312,9 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
                                     QuicByteCount length);
   // Size in bytes of all ack frame fields without the missing packets or ack
   // blocks.
-  // TODO(fayang): Remove |largest_observed_length| when deprecating
-  // quic_use_ack_frame_to_get_min_size.
-  static size_t GetMinAckFrameSize(
-      QuicTransportVersion version,
-      const QuicAckFrame& ack_frame,
-      uint32_t local_ack_delay_exponent,
-      QuicPacketNumberLength largest_observed_length);
+  static size_t GetMinAckFrameSize(QuicTransportVersion version,
+                                   const QuicAckFrame& ack_frame,
+                                   uint32_t local_ack_delay_exponent);
   // Size in bytes of a stop waiting frame.
   static size_t GetStopWaitingFrameSize(
       QuicPacketNumberLength packet_number_length);
@@ -1097,9 +1093,10 @@ class QUIC_EXPORT_PRIVATE QuicFramer {
 // This text, inserted by the peer if it's using Google's QUIC implementation,
 // contains additional error information that narrows down the exact error. The
 // extracted error code and (possibly updated) error_details string are returned
-// in |*frame|. If an error code is not found in the error details then the
-// extracted_error_code is set to QuicErrorCode::QUIC_IETF_GQUIC_ERROR_MISSING.
-// If there is an error code in the string then it is removed from the string.
+// in |*frame|. If an error code is not found in the error details, then
+// frame->quic_error_code is set to
+// QuicErrorCode::QUIC_IETF_GQUIC_ERROR_MISSING.  If there is an error code in
+// the string then it is removed from the string.
 QUIC_EXPORT_PRIVATE void MaybeExtractQuicErrorCode(
     QuicConnectionCloseFrame* frame);
 

@@ -108,6 +108,37 @@ void Bbr2Sender::SetFromConfig(const QuicConfig& config,
   if (config.HasClientRequestedIndependentOption(kB2RP, perspective)) {
     params_.avoid_unnecessary_probe_rtt = false;
   }
+  if (GetQuicReloadableFlag(quic_bbr2_avoid_too_low_probe_bw_cwnd) &&
+      config.HasClientRequestedIndependentOption(kB2CL, perspective)) {
+    params_.avoid_too_low_probe_bw_cwnd = false;
+  }
+  if (GetQuicReloadableFlag(quic_bbr2_fewer_startup_round_trips) &&
+      config.HasClientRequestedIndependentOption(k1RTT, perspective)) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_fewer_startup_round_trips, 1, 2);
+    params_.startup_full_bw_rounds = 1;
+  }
+  if (GetQuicReloadableFlag(quic_bbr2_fewer_startup_round_trips) &&
+      config.HasClientRequestedIndependentOption(k2RTT, perspective)) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_fewer_startup_round_trips, 2, 2);
+    params_.startup_full_bw_rounds = 2;
+  }
+  if (GetQuicReloadableFlag(quic_bbr2_ignore_inflight_lo) &&
+      config.HasClientRequestedIndependentOption(kB2LO, perspective)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_ignore_inflight_lo);
+    params_.ignore_inflight_lo = true;
+  }
+
+  ApplyConnectionOptions(config.ClientRequestedIndependentOptions(perspective));
+}
+
+void Bbr2Sender::ApplyConnectionOptions(
+    const QuicTagVector& connection_options) {
+  if (GetQuicReloadableFlag(quic_bbr2_lower_startup_cwnd_gain) &&
+      ContainsQuicTag(connection_options, kBBQ2)) {
+    // 2 is the lower, derived gain for CWND.
+    params_.startup_cwnd_gain = 2;
+    params_.drain_cwnd_gain = 2;
+  }
 }
 
 Limits<QuicByteCount> Bbr2Sender::GetCwndLimitsByMode() const {
@@ -206,7 +237,6 @@ void Bbr2Sender::OnCongestionEvent(bool /*rtt_updated*/,
   last_sample_is_app_limited_ = congestion_event.last_sample_is_app_limited;
   if (congestion_event.bytes_in_flight == 0 &&
       params().avoid_unnecessary_probe_rtt) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_avoid_unnecessary_probe_rtt, 2, 2);
     OnEnterQuiescence(event_time);
   }
 
@@ -301,7 +331,6 @@ void Bbr2Sender::OnPacketSent(QuicTime sent_time,
                 << ", total_lost:" << model_.total_bytes_lost() << "  @ "
                 << sent_time;
   if (bytes_in_flight == 0 && params().avoid_unnecessary_probe_rtt) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_avoid_unnecessary_probe_rtt, 1, 2);
     OnExitQuiescence(sent_time);
   }
   model_.OnPacketSent(sent_time, bytes_in_flight, packet_number, bytes,

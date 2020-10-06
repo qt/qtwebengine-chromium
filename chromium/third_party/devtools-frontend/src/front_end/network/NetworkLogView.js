@@ -29,12 +29,14 @@
  */
 
 import * as Bindings from '../bindings/bindings.js';
+import * as BrowserSDK from '../browser_sdk/browser_sdk.js';
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as DataGrid from '../data_grid/data_grid.js';
 import * as HARImporter from '../har_importer/har_importer.js';
 import * as Host from '../host/host.js';
 import * as PerfUI from '../perf_ui/perf_ui.js';
+import * as Platform from '../platform/platform.js';
 import * as SDK from '../sdk/sdk.js';
 import * as TextUtils from '../text_utils/text_utils.js';
 import * as UI from '../ui/ui.js';
@@ -695,10 +697,10 @@ export class NetworkLogView extends UI.Widget.VBox {
     const hintText = this._recordingHint.createChild('div', 'recording-hint');
 
     let reloadShortcutNode = null;
-    const reloadShortcutDescriptor = self.UI.shortcutRegistry.shortcutDescriptorsForAction('inspector_main.reload')[0];
-    if (reloadShortcutDescriptor) {
+    const reloadShortcut = self.UI.shortcutRegistry.shortcutsForAction('inspector_main.reload')[0];
+    if (reloadShortcut) {
       reloadShortcutNode = this._recordingHint.createChild('b');
-      reloadShortcutNode.textContent = reloadShortcutDescriptor.name;
+      reloadShortcutNode.textContent = reloadShortcut.title();
     }
 
     if (this._recording) {
@@ -889,20 +891,24 @@ export class NetworkLogView extends UI.Widget.VBox {
       appendChunk(ls`${selectedNodeNumber} / ${nodeCount} requests`);
       this._summaryToolbar.appendSeparator();
       appendChunk(
-          ls`${Number.bytesToString(selectedTransferSize)} / ${Number.bytesToString(transferSize)} transferred`,
+          ls`${Platform.NumberUtilities.bytesToString(selectedTransferSize)} / ${
+              Platform.NumberUtilities.bytesToString(transferSize)} transferred`,
           ls`${selectedTransferSize} B / ${transferSize} B transferred over network`);
       this._summaryToolbar.appendSeparator();
       appendChunk(
-          ls`${Number.bytesToString(selectedResourceSize)} / ${Number.bytesToString(resourceSize)} resources`,
+          ls`${Platform.NumberUtilities.bytesToString(selectedResourceSize)} / ${
+              Platform.NumberUtilities.bytesToString(resourceSize)} resources`,
           ls`${selectedResourceSize} B / ${resourceSize} B resources loaded by the page`);
     } else {
       appendChunk(ls`${nodeCount} requests`);
       this._summaryToolbar.appendSeparator();
       appendChunk(
-          ls`${Number.bytesToString(transferSize)} transferred`, ls`${transferSize} B transferred over network`);
+          ls`${Platform.NumberUtilities.bytesToString(transferSize)} transferred`,
+          ls`${transferSize} B transferred over network`);
       this._summaryToolbar.appendSeparator();
       appendChunk(
-          ls`${Number.bytesToString(resourceSize)} resources`, ls`${resourceSize} B resources loaded by the page`);
+          ls`${Platform.NumberUtilities.bytesToString(resourceSize)} resources`,
+          ls`${resourceSize} B resources loaded by the page`);
     }
 
     if (baseTime !== -1 && maxTime !== -1) {
@@ -1432,7 +1438,7 @@ export class NetworkLogView extends UI.Widget.VBox {
 
     if (request) {
       const maxBlockedURLLength = 20;
-      const manager = self.SDK.multitargetNetworkManager;
+      const manager = SDK.NetworkManager.MultitargetNetworkManager.instance();
       let patterns = manager.blockedPatterns();
 
       /**
@@ -1564,13 +1570,13 @@ export class NetworkLogView extends UI.Widget.VBox {
 
   _clearBrowserCache() {
     if (confirm(Common.UIString.UIString('Are you sure you want to clear browser cache?'))) {
-      self.SDK.multitargetNetworkManager.clearBrowserCache();
+      SDK.NetworkManager.MultitargetNetworkManager.instance().clearBrowserCache();
     }
   }
 
   _clearBrowserCookies() {
     if (confirm(Common.UIString.UIString('Are you sure you want to clear browser cookies?'))) {
-      self.SDK.multitargetNetworkManager.clearBrowserCookies();
+      SDK.NetworkManager.MultitargetNetworkManager.instance().clearBrowserCookies();
     }
   }
 
@@ -1598,7 +1604,8 @@ export class NetworkLogView extends UI.Widget.VBox {
     if (this._dataURLFilterUI.checked() && (request.parsedURL.isDataURL() || request.parsedURL.isBlobURL())) {
       return false;
     }
-    if (this._onlyIssuesFilterUI.checked() && !SDK.RelatedIssue.hasIssues(request)) {
+    if (this._onlyIssuesFilterUI.checked() &&
+        !BrowserSDK.RelatedIssue.hasIssueOfCategory(request, SDK.Issue.IssueCategory.SameSiteCookie)) {
       return false;
     }
     if (this._onlyBlockedRequestsUI.checked() && !request.wasBlocked()) {
@@ -1747,6 +1754,13 @@ export class NetworkLogView extends UI.Widget.VBox {
     if (!node || !node.dataGrid) {
       return null;
     }
+    // Viewport datagrid nodes do not reveal if not in the root node
+    // list of flatChildren. For children of grouped frame nodes:
+    // reveal and expand parent to ensure child is revealable.
+    if (node.parent && node.parent instanceof NetworkGroupNode) {
+      node.parent.reveal();
+      node.parent.expand();
+    }
     node.reveal();
     return node;
   }
@@ -1857,8 +1871,8 @@ export class NetworkLogView extends UI.Widget.VBox {
       headers[headerArray[0]] = headerArray[1];
     }
 
-    const credentials =
-        request.requestCookies.length || requestHeaders.some(({name}) => credentialHeaders[name.toLowerCase()]) ?
+    const credentials = request.includedRequestCookies().length ||
+            requestHeaders.some(({name}) => credentialHeaders[name.toLowerCase()]) ?
         'include' :
         'omit';
 

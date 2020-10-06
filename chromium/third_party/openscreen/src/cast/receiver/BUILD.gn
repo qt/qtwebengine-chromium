@@ -9,7 +9,7 @@ source_set("channel") {
     "channel/message_util.cc",
     "channel/message_util.h",
     "channel/receiver_socket_factory.cc",
-    "channel/receiver_socket_factory.h",
+    "public/receiver_socket_factory.h",
   ]
 
   public_deps = [
@@ -53,6 +53,7 @@ source_set("unittests") {
   deps = [
     ":channel",
     ":test_helpers",
+    "../../platform:test",
     "../../testing/util",
     "../../third_party/googletest:gmock",
     "../../third_party/googletest:gtest",
@@ -61,6 +62,6 @@ source_set("unittests") {
   ]
 
   data = [
-    "../../test/data/cast/receiver/channel",
+    "../../test/data/cast/receiver/channel/",
   ]
 }

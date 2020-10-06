@@ -62,7 +62,8 @@ export class LocationsSettingsTab extends UI.Widget.VBox {
    */
   renderItem(item, editable) {
     const location = /** @type {!Item} */ (item);
-    const element = createElementWithClass('div', 'locations-list-item');
+    const element = document.createElement('div');
+    element.classList.add('locations-list-item');
     const title = element.createChild('div', 'locations-list-text locations-list-title');
     const titleText = title.createChild('div', 'locations-list-title-text');
     titleText.textContent = location.title;
@@ -72,7 +73,7 @@ export class LocationsSettingsTab extends UI.Widget.VBox {
     element.createChild('div', 'locations-list-separator');
     element.createChild('div', 'locations-list-text').textContent = location.long;
     element.createChild('div', 'locations-list-separator');
-    element.createChild('div', 'locations-list-text locations-list-text-timezone').textContent = location.timezoneId;
+    element.createChild('div', 'locations-list-text').textContent = location.timezoneId;
     element.createChild('div', 'locations-list-separator');
     element.createChild('div', 'locations-list-text').textContent = location.locale;
     return element;
@@ -155,22 +156,23 @@ export class LocationsSettingsTab extends UI.Widget.VBox {
     titles.createChild('div', 'locations-list-text').textContent = Common.UIString.UIString('Locale');
 
     const fields = content.createChild('div', 'locations-edit-row');
-    fields.createChild('div', 'locations-list-text locations-list-title')
+    fields.createChild('div', 'locations-list-text locations-list-title locations-input-container')
         .appendChild(editor.createInput('title', 'text', ls`Location name`, titleValidator));
     fields.createChild('div', 'locations-list-separator locations-list-separator-invisible');
 
-    let cell = fields.createChild('div', 'locations-list-text');
+    let cell = fields.createChild('div', 'locations-list-text locations-input-container');
     cell.appendChild(editor.createInput('lat', 'text', ls`Latitude`, latValidator));
     fields.createChild('div', 'locations-list-separator locations-list-separator-invisible');
 
-    cell = fields.createChild('div', 'locations-list-text');
+    cell = fields.createChild('div', 'locations-list-text locations-list-text-longitude locations-input-container');
     cell.appendChild(editor.createInput('long', 'text', ls`Longitude`, longValidator));
     fields.createChild('div', 'locations-list-separator locations-list-separator-invisible');
 
-    cell = fields.createChild('div', 'locations-list-text');
+    cell = fields.createChild('div', 'locations-list-text locations-input-container');
     cell.appendChild(editor.createInput('timezoneId', 'text', ls`Timezone ID`, timezoneIdValidator));
+    fields.createChild('div', 'locations-list-separator locations-list-separator-invisible');
 
-    cell = fields.createChild('div', 'locations-list-text');
+    cell = fields.createChild('div', 'locations-list-text locations-input-container');
     cell.appendChild(editor.createInput('locale', 'text', ls`Locale`, localeValidator));
 
     return editor;

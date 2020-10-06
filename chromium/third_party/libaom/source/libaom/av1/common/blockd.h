@@ -188,7 +188,7 @@ typedef struct RD_STATS {
   // rate/dist.
   int64_t rdcost;
   int64_t sse;
-  int skip;  // sse should equal to dist when skip == 1
+  int skip_txfm;  // sse should equal to dist when skip_txfm == 1
   int zero_rate;
 #if CONFIG_RD_DEBUG
   int txb_coeff_cost[MAX_MB_PLANE];
@@ -218,6 +218,7 @@ typedef struct MB_MODE_INFO {
   INTERINTER_COMPOUND_DATA interinter_comp;
   WarpedMotionParams wm_params;
   int_mv mv[2];
+  // q index for the current coding block.
   int current_qindex;
   // Only for INTER blocks
   int_interpfilters interp_filters;
@@ -242,7 +243,7 @@ typedef struct MB_MODE_INFO {
   PARTITION_TYPE partition;
   MV_REFERENCE_FRAME ref_frame[2];
   FILTER_INTRA_MODE_INFO filter_intra_mode_info;
-  int8_t skip;
+  int8_t skip_txfm;
   uint8_t inter_tx_size[INTER_TX_SIZE_BUF_LEN];
   TX_SIZE tx_size;
   int8_t delta_lf_from_base;
@@ -390,21 +391,21 @@ typedef struct {
 } CB_BUFFER;
 
 typedef struct macroblockd_plane {
-  tran_low_t *dqcoeff;
-  tran_low_t *dqcoeff_block;
-  eob_info *eob_data;
   PLANE_TYPE plane_type;
   int subsampling_x;
   int subsampling_y;
   struct buf_2d dst;
   struct buf_2d pre[2];
-  ENTROPY_CONTEXT *above_context;
-  ENTROPY_CONTEXT *left_context;
+  ENTROPY_CONTEXT *above_entropy_context;
+  ENTROPY_CONTEXT *left_entropy_context;
 
   // The dequantizers below are true dequantizers used only in the
   // dequantization process.  They have the same coefficient
   // shift/scale as TX.
   int16_t seg_dequant_QTX[MAX_SEGMENTS][2];
+  // Pointer to color index map of:
+  // - Current coding block, on encoder side.
+  // - Current superblock, on decoder side.
   uint8_t *color_index_map;
 
   // block size in pixels
@@ -478,80 +479,188 @@ struct scale_factors;
 // Most/all of the pointers are mere pointers to actual arrays are allocated
 // elsewhere. This is mostly for coding convenience.
 typedef struct macroblockd {
-  struct macroblockd_plane plane[MAX_MB_PLANE];
-
-  TileInfo tile;
-
+  // Row and column position of current macroblock in mi units.
+  int mi_row;
+  int mi_col;
+  // Same as cm->mi_params.mi_stride, copied here for convenience.
   int mi_stride;
 
+  // True if current block transmits chroma information.
+  // More detail:
+  // Smallest supported block size for both luma and chroma plane is 4x4. Hence,
+  // in case of subsampled chroma plane (YUV 4:2:0 or YUV 4:2:2), multiple luma
+  // blocks smaller than 8x8 maybe combined into one chroma block.
+  // For example, for YUV 4:2:0, let's say an 8x8 area is split into four 4x4
+  // luma blocks. Then, a single chroma block of size 4x4 will cover the area of
+  // these four luma blocks. This is implemented in bitstream as follows:
+  // - There are four MB_MODE_INFO structs for the four luma blocks.
+  // - First 3 MB_MODE_INFO have is_chroma_ref = false, and so do not transmit
+  // any information for chroma planes.
+  // - Last block will have is_chroma_ref = true and transmits chroma
+  // information for the 4x4 chroma block that covers whole 8x8 area covered by
+  // four luma blocks.
+  // Similar logic applies for chroma blocks that cover 2 or 3 luma blocks.
+  bool is_chroma_ref;
+
+  // Info specific to each plane.
+  struct macroblockd_plane plane[MAX_MB_PLANE];
+
+  // Tile related info.
+  TileInfo tile;
+
+  // Appropriate offset inside cm->mi_params.mi_grid_base based on current
+  // mi_row and mi_col.
   MB_MODE_INFO **mi;
+
+  // True if 4x4 block above the current block is available.
+  bool up_available;
+  // True if 4x4 block to the left of the current block is available.
+  bool left_available;
+  // True if the above chrome reference block is available.
+  bool chroma_up_available;
+  // True if the left chrome reference block is available.
+  bool chroma_left_available;
+
+  // MB_MODE_INFO for 4x4 block to the left of the current block, if
+  // left_available == true; otherwise NULL.
   MB_MODE_INFO *left_mbmi;
+  // MB_MODE_INFO for 4x4 block above the current block, if
+  // up_available == true; otherwise NULL.
   MB_MODE_INFO *above_mbmi;
+  // Above chroma reference block if is_chroma_ref == true for the current block
+  // and chroma_up_available == true; otherwise NULL.
+  // See also: the special case logic when current chroma block covers more than
+  // one luma blocks in set_mi_row_col().
   MB_MODE_INFO *chroma_left_mbmi;
+  // Left chroma reference block if is_chroma_ref == true for the current block
+  // and chroma_left_available == true; otherwise NULL.
+  // See also: the special case logic when current chroma block covers more than
+  // one luma blocks in set_mi_row_col().
   MB_MODE_INFO *chroma_above_mbmi;
 
+  // Appropriate offset based on current 'mi_row' and 'mi_col', inside
+  // 'tx_type_map' in one of 'CommonModeInfoParams', 'PICK_MODE_CONTEXT' or
+  // 'MACROBLOCK' structs.
   uint8_t *tx_type_map;
+  // Stride for 'tx_type_map'. Note that this may / may not be same as
+  // 'mi_stride', depending on which actual array 'tx_type_map' points to.
   int tx_type_map_stride;
 
-  int up_available;
-  int left_available;
-  int chroma_up_available;
-  int chroma_left_available;
-
-  /* Distance of MB away from frame edges in subpixels (1/8th pixel)  */
+  // Distance of this macroblock from frame edges in 1/8th pixel units.
   int mb_to_left_edge;
   int mb_to_right_edge;
   int mb_to_top_edge;
   int mb_to_bottom_edge;
 
-  int mi_row;
-  int mi_col;
-  int is_chroma_ref;
-
-  /* pointers to reference frame scale factors */
+  // Scale factors for reference frames of the current block.
+  // These are pointers into 'cm->ref_scale_factors'.
   const struct scale_factors *block_ref_scale_factors[2];
 
-  /* pointer to current frame */
+  // On encoder side: points to cpi->source, which is the buffer containing
+  // the current *source* frame (maybe filtered).
+  // On decoder side: points to cm->cur_frame->buf, which is the buffer into
+  // which current frame is being *decoded*.
   const YV12_BUFFER_CONFIG *cur_buf;
 
-  ENTROPY_CONTEXT *above_context[MAX_MB_PLANE];
-  ENTROPY_CONTEXT left_context[MAX_MB_PLANE][MAX_MIB_SIZE];
+  // Entropy contexts for the above blocks.
+  // above_entropy_context[i][j] corresponds to above entropy context for ith
+  // plane and jth mi column of this *frame*, wrt current 'mi_row'.
+  // These are pointers into 'cm->above_contexts.entropy'.
+  ENTROPY_CONTEXT *above_entropy_context[MAX_MB_PLANE];
+  // Entropy contexts for the left blocks.
+  // left_entropy_context[i][j] corresponds to left entropy context for ith
+  // plane and jth mi row of this *superblock*, wrt current 'mi_col'.
+  // Note: These contain actual data, NOT pointers.
+  ENTROPY_CONTEXT left_entropy_context[MAX_MB_PLANE][MAX_MIB_SIZE];
 
-  PARTITION_CONTEXT *above_seg_context;
-  PARTITION_CONTEXT left_seg_context[MAX_MIB_SIZE];
+  // Partition contexts for the above blocks.
+  // above_partition_context[i] corresponds to above partition context for ith
+  // mi column of this *frame*, wrt current 'mi_row'.
+  // This is a pointer into 'cm->above_contexts.partition'.
+  PARTITION_CONTEXT *above_partition_context;
+  // Partition contexts for the left blocks.
+  // left_partition_context[i] corresponds to left partition context for ith
+  // mi row of this *superblock*, wrt current 'mi_col'.
+  // Note: These contain actual data, NOT pointers.
+  PARTITION_CONTEXT left_partition_context[MAX_MIB_SIZE];
 
+  // Transform contexts for the above blocks.
+  // above_txfm_context[i] corresponds to above transform context for ith mi col
+  // from the current position (mi row and mi column) for this *frame*.
+  // This is a pointer into 'cm->above_contexts.txfm'.
   TXFM_CONTEXT *above_txfm_context;
+  // Transform contexts for the left blocks.
+  // left_txfm_context[i] corresponds to left transform context for ith mi row
+  // from the current position (mi_row and mi_col) for this *superblock*.
+  // This is a pointer into 'left_txfm_context_buffer'.
   TXFM_CONTEXT *left_txfm_context;
+  // left_txfm_context_buffer[i] is the left transform context for ith mi_row
+  // in this *superblock*.
+  // Behaves like an internal actual buffer which 'left_txt_context' points to,
+  // and never accessed directly except to fill in initial default values.
   TXFM_CONTEXT left_txfm_context_buffer[MAX_MIB_SIZE];
 
+  // Default values for the two restoration filters for each plane.
+  // These values are used as reference values when writing the bitstream. That
+  // is, we transmit the delta between the actual values in
+  // cm->rst_info[plane].unit_info[unit_idx] and these reference values.
   WienerInfo wiener_info[MAX_MB_PLANE];
   SgrprojInfo sgrproj_info[MAX_MB_PLANE];
 
-  // block dimension in the unit of mode_info.
-  uint8_t n4_w, n4_h;
+  // Block dimensions in MB_MODE_INFO units.
+  uint8_t width;
+  uint8_t height;
 
-  uint8_t ref_mv_count[MODE_CTX_REF_FRAMES];
+  // Contains the motion vector candidates found during motion vector prediction
+  // process. ref_mv_stack[i] contains the candidates for ith type of
+  // reference frame (single/compound). The actual number of candidates found in
+  // ref_mv_stack[i] is stored in either dcb->ref_mv_count[i] (decoder side)
+  // or mbmi_ext->ref_mv_count[i] (encoder side).
   CANDIDATE_MV ref_mv_stack[MODE_CTX_REF_FRAMES][MAX_REF_MV_STACK_SIZE];
+  // weight[i][j] is the weight for ref_mv_stack[i][j] and used to compute the
+  // DRL (dynamic reference list) mode contexts.
   uint16_t weight[MODE_CTX_REF_FRAMES][MAX_REF_MV_STACK_SIZE];
-  uint8_t is_sec_rect;
+
+  // True if this is the last vertical rectangular block in a VERTICAL or
+  // VERTICAL_4 partition.
+  bool is_last_vertical_rect;
+  // True if this is the 1st horizontal rectangular block in a HORIZONTAL or
+  // HORIZONTAL_4 partition.
+  bool is_first_horizontal_rect;
 
   // Counts of each reference frame in the above and left neighboring blocks.
   // NOTE: Take into account both single and comp references.
   uint8_t neighbors_ref_counts[REF_FRAMES];
 
+  // Current CDFs of all the symbols for the current tile.
   FRAME_CONTEXT *tile_ctx;
-  /* Bit depth: 8, 10, 12 */
+
+  // Bit depth: copied from cm->seq_params.bit_depth for convenience.
   int bd;
 
+  // Quantizer index for each segment (base qindex + delta for each segment).
   int qindex[MAX_SEGMENTS];
+  // lossless[s] is true if segment 's' is coded losslessly.
   int lossless[MAX_SEGMENTS];
-  int corrupted;
+  // Q index for the coding blocks in this superblock will be stored in
+  // mbmi->current_qindex. Now, when cm->delta_q_info.delta_q_present_flag is
+  // true, mbmi->current_qindex is computed by taking 'current_base_qindex' as
+  // the base, and adding any transmitted delta qindex on top of it.
+  // Precisely, this is the latest qindex used by the first coding block of a
+  // non-skip superblock in the current tile; OR
+  // same as cm->quant_params.base_qindex (if not explicitly set yet).
+  // Note: This is 'CurrentQIndex' in the AV1 spec.
+  int current_base_qindex;
+
+  // Same as cm->features.cur_frame_force_integer_mv.
   int cur_frame_force_integer_mv;
-  // same with that in AV1_COMMON
+
+  // Pointer to cm->error.
   struct aom_internal_error_info *error_info;
+
+  // Same as cm->global_motion.
   const WarpedMotionParams *global_motion;
-  int delta_qindex;
-  int current_qindex;
+
   // Since actual frame level loop filtering level value is not available
   // at the beginning of the tile (only available during actual filtering)
   // at encoder side.we record the delta_lf (against the frame level loop
@@ -573,19 +682,48 @@ typedef struct macroblockd {
   // SEG_LVL_ALT_LF_U   = 3;
   // SEG_LVL_ALT_LF_V   = 4;
   int8_t delta_lf[FRAME_LF_COUNT];
-  int cdef_preset[4];
+  // cdef_transmitted[i] is true if CDEF strength for ith CDEF unit in the
+  // current superblock has already been read from (decoder) / written to
+  // (encoder) the bitstream; and false otherwise.
+  // More detail:
+  // (1) CDEF strength is transmitted only once per CDEF unit, in the 1st
+  // non-skip coding block. So, we need this array to keep track of whether CDEF
+  // strengths for the given CDEF units have been transmitted yet or not.
+  // (2) Superblock size can be either 128x128 or 64x64, but CDEF unit size is
+  // fixed to be 64x64. So, there may be 4 CDEF units within a superblock (if
+  // superblock size is 128x128). Hence the array size is 4.
+  // (3) In the current implementation, CDEF strength for this CDEF unit is
+  // stored in the MB_MODE_INFO of the 1st block in this CDEF unit (inside
+  // cm->mi_params.mi_grid_base).
+  bool cdef_transmitted[4];
 
+  // Mask for this block used for compound prediction.
   DECLARE_ALIGNED(16, uint8_t, seg_mask[2 * MAX_SB_SQUARE]);
-  uint8_t *mc_buf[2];
+
+  // CFL (chroma from luma) related parameters.
   CFL_CTX cfl;
 
-  DIST_WTD_COMP_PARAMS jcp_param;
-
-  uint16_t cb_offset[MAX_MB_PLANE];
-  uint16_t txb_offset[MAX_MB_PLANE];
+  // Offset to plane[p].color_index_map.
+  // Currently:
+  // - On encoder side, this is always 0 as 'color_index_map' is allocated per
+  // *coding block* there.
+  // - On decoder side, this may be non-zero, as 'color_index_map' is a (static)
+  // memory pointing to the base of a *superblock* there, and we need an offset
+  // to it to get the color index map for current coding block.
   uint16_t color_index_map_offset[2];
 
+  // Temporary buffer used for convolution in case of compound reference only
+  // for (weighted or uniform) averaging operation.
+  // There are pointers to actual buffers allocated elsewhere: e.g. In dec,
+  // 'pbi->td.tmp_conv_dst' or 'pbi->thread_data[t].td->xd.tmp_conv_dst' and in
+  // enc, 'x->tmp_conv_dst' or 'cpi->tile_thr_data[t].td->mb.tmp_conv_dst'.
   CONV_BUF_TYPE *tmp_conv_dst;
+  // Temporary buffers used to build OBMC prediction by above (index 0) and left
+  // (index 1) predictors respectively.
+  // tmp_obmc_bufs[i][p * MAX_SB_SQUARE] is the buffer used for plane 'p'.
+  // There are pointers to actual buffers allocated elsewhere: e.g. In dec,
+  // 'pbi->td.tmp_obmc_bufs' or 'pbi->thread_data[t].td->xd.tmp_conv_dst' and in
+  // enc, 'x->tmp_pred_bufs' or 'cpi->tile_thr_data[t].td->mb.tmp_pred_bufs'.
   uint8_t *tmp_obmc_bufs[2];
 } MACROBLOCKD;
 
@@ -996,8 +1134,8 @@ static INLINE TX_SIZE av1_get_tx_size(int plane, const MACROBLOCKD *xd) {
                                pd->subsampling_y);
 }
 
-void av1_reset_skip_context(MACROBLOCKD *xd, BLOCK_SIZE bsize,
-                            const int num_planes);
+void av1_reset_entropy_context(MACROBLOCKD *xd, BLOCK_SIZE bsize,
+                               const int num_planes);
 
 void av1_reset_loop_filter_delta(MACROBLOCKD *xd, int num_planes);
 
@@ -1008,9 +1146,10 @@ typedef void (*foreach_transformed_block_visitor)(int plane, int block,
                                                   BLOCK_SIZE plane_bsize,
                                                   TX_SIZE tx_size, void *arg);
 
-void av1_set_contexts(const MACROBLOCKD *xd, struct macroblockd_plane *pd,
-                      int plane, BLOCK_SIZE plane_bsize, TX_SIZE tx_size,
-                      int has_eob, int aoff, int loff);
+void av1_set_entropy_contexts(const MACROBLOCKD *xd,
+                              struct macroblockd_plane *pd, int plane,
+                              BLOCK_SIZE plane_bsize, TX_SIZE tx_size,
+                              int has_eob, int aoff, int loff);
 
 #define MAX_INTERINTRA_SB_SQUARE 32 * 32
 static INLINE int is_interintra_mode(const MB_MODE_INFO *mbmi) {

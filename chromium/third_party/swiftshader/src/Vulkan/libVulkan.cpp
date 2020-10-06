@@ -16,17 +16,18 @@
 #include "VkBufferView.hpp"
 #include "VkCommandBuffer.hpp"
 #include "VkCommandPool.hpp"
-#include "VkConfig.h"
+#include "VkConfig.hpp"
+#include "VkDebugUtilsMessenger.hpp"
 #include "VkDescriptorPool.hpp"
 #include "VkDescriptorSetLayout.hpp"
 #include "VkDescriptorUpdateTemplate.hpp"
-#include "VkDestroy.h"
+#include "VkDestroy.hpp"
 #include "VkDevice.hpp"
 #include "VkDeviceMemory.hpp"
 #include "VkEvent.hpp"
 #include "VkFence.hpp"
 #include "VkFramebuffer.hpp"
-#include "VkGetProcAddress.h"
+#include "VkGetProcAddress.hpp"
 #include "VkImage.hpp"
 #include "VkImageView.hpp"
 #include "VkInstance.hpp"
@@ -45,7 +46,7 @@
 #include "System/Debug.hpp"
 
 #if defined(VK_USE_PLATFORM_METAL_EXT) || defined(VK_USE_PLATFORM_MACOS_MVK)
-#	include "WSI/MetalSurface.h"
+#	include "WSI/MetalSurface.hpp"
 #endif
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
@@ -56,6 +57,10 @@
 #	include "WSI/XlibSurfaceKHR.hpp"
 #endif
 
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+#	include "WSI/WaylandSurfaceKHR.hpp"
+#endif
+
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 #	include "WSI/Win32SurfaceKHR.hpp"
 #endif
@@ -64,6 +69,7 @@
 #	include "commit.h"
 #	include "System/GrallocAndroid.hpp"
 #	include <android/log.h>
+#	include <hardware/gralloc1.h>
 #	include <sync/sync.h>
 #endif
 
@@ -71,8 +77,10 @@
 
 #include "Reactor/Nucleus.hpp"
 
+#include "marl/mutex.h"
 #include "marl/scheduler.h"
 #include "marl/thread.h"
+#include "marl/tsa.h"
 
 #include "System/CPUID.hpp"
 
@@ -91,19 +99,6 @@ void logBuildVersionInformation()
 	__android_log_print(ANDROID_LOG_INFO, "SwiftShader", "SwiftShader Version: %s", SWIFTSHADER_VERSION_STRING);
 }
 #endif  // __ANDROID__ && ENABLE_BUILD_VERSION_OUTPUT
-
-bool HasExtensionProperty(const char *extensionName, const VkExtensionProperties *extensionProperties, uint32_t extensionPropertiesCount)
-{
-	for(uint32_t j = 0; j < extensionPropertiesCount; ++j)
-	{
-		if(strcmp(extensionName, extensionProperties[j].extensionName) == 0)
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
 
 // setReactorDefaultConfig() sets the default configuration for Vulkan's use of
 // Reactor.
@@ -133,21 +128,28 @@ void setCPUDefaults()
 
 std::shared_ptr<marl::Scheduler> getOrCreateScheduler()
 {
-	static std::mutex mutex;
-	static std::weak_ptr<marl::Scheduler> schedulerWeak;
-	std::unique_lock<std::mutex> lock(mutex);
-	auto scheduler = schedulerWeak.lock();
-	if(!scheduler)
+	struct Scheduler
 	{
-		scheduler = std::make_shared<marl::Scheduler>();
-		scheduler->setThreadInitializer([] {
+		marl::mutex mutex;
+		std::weak_ptr<marl::Scheduler> weakptr GUARDED_BY(mutex);
+	};
+
+	static Scheduler scheduler;
+
+	marl::lock lock(scheduler.mutex);
+	auto sptr = scheduler.weakptr.lock();
+	if(!sptr)
+	{
+		marl::Scheduler::Config cfg;
+		cfg.setWorkerThreadCount(std::min<size_t>(marl::Thread::numLogicalCPUs(), 16));
+		cfg.setWorkerThreadInitializer([](int) {
 			sw::CPUID::setFlushToZero(true);
 			sw::CPUID::setDenormalsAreZero(true);
 		});
-		scheduler->setWorkerThreadCount(std::min<size_t>(marl::Thread::numLogicalCPUs(), 16));
-		schedulerWeak = scheduler;
+		sptr = std::make_shared<marl::Scheduler>(cfg);
+		scheduler.weakptr = sptr;
 	}
-	return scheduler;
+	return sptr;
 }
 
 // initializeLibrary() is called by vkCreateInstance() to perform one-off global
@@ -267,12 +269,33 @@ VK_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vk_icdNegotiateLoaderICDInterfaceVersio
 	return VK_SUCCESS;
 }
 
+#if VK_USE_PLATFORM_FUCHSIA
+
+// This symbol must be exported by a Fuchsia Vulkan ICD. The Vulkan loader will
+// call it, passing the address of a global function pointer that can later be
+// used at runtime to connect to Fuchsia FIDL services, as required by certain
+// extensions. See https://fxbug.dev/13095 for more details.
+//
+// NOTE: This entry point has not been upstreamed to Khronos yet, which reserves
+//       all symbols starting with vk_icd. See https://fxbug.dev/13074 which
+//       tracks upstreaming progress.
+VK_EXPORT VKAPI_ATTR VkResult VKAPI_CALL vk_icdInitializeConnectToServiceCallback(
+    PFN_vkConnectToService callback)
+{
+	TRACE("(callback = %p)", callback);
+	vk::icdFuchsiaServiceConnectCallback = callback;
+	return VK_SUCCESS;
+}
+
+#endif  // VK_USE_PLATFORM_FUCHSIA
+
 static const VkExtensionProperties instanceExtensionProperties[] = {
 	{ VK_KHR_DEVICE_GROUP_CREATION_EXTENSION_NAME, VK_KHR_DEVICE_GROUP_CREATION_SPEC_VERSION },
 	{ VK_KHR_EXTERNAL_FENCE_CAPABILITIES_EXTENSION_NAME, VK_KHR_EXTERNAL_FENCE_CAPABILITIES_SPEC_VERSION },
 	{ VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME, VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_SPEC_VERSION },
 	{ VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_SPEC_VERSION },
 	{ VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_SPEC_VERSION },
+	{ VK_EXT_DEBUG_UTILS_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_SPEC_VERSION },
 #ifndef __ANDROID__
 	{ VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_SURFACE_SPEC_VERSION },
 #endif
@@ -281,6 +304,9 @@ static const VkExtensionProperties instanceExtensionProperties[] = {
 #endif
 #ifdef VK_USE_PLATFORM_XLIB_KHR
 	{ VK_KHR_XLIB_SURFACE_EXTENSION_NAME, VK_KHR_XLIB_SURFACE_SPEC_VERSION },
+#endif
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+	{ VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME, VK_KHR_WAYLAND_SURFACE_SPEC_VERSION },
 #endif
 #ifdef VK_USE_PLATFORM_MACOS_MVK
 	{ VK_MVK_MACOS_SURFACE_EXTENSION_NAME, VK_MVK_MACOS_SURFACE_SPEC_VERSION },
@@ -296,7 +322,6 @@ static const VkExtensionProperties instanceExtensionProperties[] = {
 static const VkExtensionProperties deviceExtensionProperties[] = {
 	{ VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME, VK_KHR_DRIVER_PROPERTIES_SPEC_VERSION },
 	// Vulkan 1.1 promoted extensions
-	{ VK_KHR_16BIT_STORAGE_EXTENSION_NAME, VK_KHR_16BIT_STORAGE_SPEC_VERSION },
 	{ VK_KHR_BIND_MEMORY_2_EXTENSION_NAME, VK_KHR_BIND_MEMORY_2_SPEC_VERSION },
 	{ VK_KHR_CREATE_RENDERPASS_2_EXTENSION_NAME, VK_KHR_CREATE_RENDERPASS_2_SPEC_VERSION },
 	{ VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, VK_KHR_DEDICATED_ALLOCATION_SPEC_VERSION },
@@ -323,6 +348,7 @@ static const VkExtensionProperties deviceExtensionProperties[] = {
 	{ VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME, VK_EXT_LINE_RASTERIZATION_SPEC_VERSION },
 	// The following extension is used by ANGLE to emulate blitting the stencil buffer
 	{ VK_EXT_SHADER_STENCIL_EXPORT_EXTENSION_NAME, VK_EXT_SHADER_STENCIL_EXPORT_SPEC_VERSION },
+	{ VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME, VK_EXT_IMAGE_ROBUSTNESS_SPEC_VERSION },
 #ifndef __ANDROID__
 	// We fully support the KHR_swapchain v70 additions, so just track the spec version.
 	{ VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_SWAPCHAIN_SPEC_VERSION },
@@ -348,9 +374,35 @@ static const VkExtensionProperties deviceExtensionProperties[] = {
 
 #if VK_USE_PLATFORM_FUCHSIA
 	{ VK_FUCHSIA_EXTERNAL_SEMAPHORE_EXTENSION_NAME, VK_FUCHSIA_EXTERNAL_SEMAPHORE_SPEC_VERSION },
+	{ VK_FUCHSIA_EXTERNAL_MEMORY_EXTENSION_NAME, VK_FUCHSIA_EXTERNAL_MEMORY_SPEC_VERSION },
 #endif
 	{ VK_EXT_PROVOKING_VERTEX_EXTENSION_NAME, VK_EXT_PROVOKING_VERTEX_SPEC_VERSION },
+	{ VK_GOOGLE_SAMPLER_FILTERING_PRECISION_EXTENSION_NAME, VK_GOOGLE_SAMPLER_FILTERING_PRECISION_SPEC_VERSION },
+	{ VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME, VK_EXT_DEPTH_RANGE_UNRESTRICTED_SPEC_VERSION }
 };
+
+static bool hasExtension(const char *extensionName, const VkExtensionProperties *extensionProperties, uint32_t extensionPropertiesCount)
+{
+	for(uint32_t i = 0; i < extensionPropertiesCount; i++)
+	{
+		if(strcmp(extensionName, extensionProperties[i].extensionName) == 0)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static bool hasInstanceExtension(const char *extensionName)
+{
+	return hasExtension(extensionName, instanceExtensionProperties, sizeof(instanceExtensionProperties) / sizeof(instanceExtensionProperties[0]));
+}
+
+static bool hasDeviceExtension(const char *extensionName)
+{
+	return hasExtension(extensionName, deviceExtensionProperties, sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0]));
+}
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkInstance *pInstance)
 {
@@ -370,20 +422,30 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 		UNIMPLEMENTED("b/148240133: pCreateInfo->enabledLayerCount != 0");  // FIXME(b/148240133)
 	}
 
-	uint32_t extensionPropertiesCount = sizeof(instanceExtensionProperties) / sizeof(instanceExtensionProperties[0]);
 	for(uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; ++i)
 	{
-		if(!HasExtensionProperty(pCreateInfo->ppEnabledExtensionNames[i], instanceExtensionProperties, extensionPropertiesCount))
+		if(!hasInstanceExtension(pCreateInfo->ppEnabledExtensionNames[i]))
 		{
 			return VK_ERROR_EXTENSION_NOT_PRESENT;
 		}
 	}
 
+	VkDebugUtilsMessengerEXT messenger = { VK_NULL_HANDLE };
 	if(pCreateInfo->pNext)
 	{
 		const VkBaseInStructure *createInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
 		switch(createInfo->sType)
 		{
+			case VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT:
+			{
+				const VkDebugUtilsMessengerCreateInfoEXT *debugUtilsMessengerCreateInfoEXT = reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT *>(createInfo);
+				VkResult result = vk::DebugUtilsMessenger::Create(pAllocator, debugUtilsMessengerCreateInfoEXT, &messenger);
+				if(result != VK_SUCCESS)
+				{
+					return result;
+				}
+			}
+			break;
 			case VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO:
 				// According to the Vulkan spec, section 2.7.2. Implicit Valid Usage:
 				// "The values VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO and
@@ -403,12 +465,14 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCre
 	VkResult result = vk::DispatchablePhysicalDevice::Create(pAllocator, pCreateInfo, &physicalDevice);
 	if(result != VK_SUCCESS)
 	{
+		vk::destroy(messenger, pAllocator);
 		return result;
 	}
 
-	result = vk::DispatchableInstance::Create(pAllocator, pCreateInfo, pInstance, physicalDevice);
+	result = vk::DispatchableInstance::Create(pAllocator, pCreateInfo, pInstance, physicalDevice, vk::Cast(messenger));
 	if(result != VK_SUCCESS)
 	{
+		vk::destroy(messenger, pAllocator);
 		vk::destroy(physicalDevice, pAllocator);
 		return result;
 	}
@@ -616,10 +680,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 		UNSUPPORTED("pCreateInfo->enabledLayerCount != 0");
 	}
 
-	uint32_t extensionPropertiesCount = sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0]);
 	for(uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; ++i)
 	{
-		if(!HasExtensionProperty(pCreateInfo->ppEnabledExtensionNames[i], deviceExtensionProperties, extensionPropertiesCount))
+		if(!hasDeviceExtension(pCreateInfo->ppEnabledExtensionNames[i]))
 		{
 			return VK_ERROR_EXTENSION_NOT_PRESENT;
 		}
@@ -750,6 +813,20 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, c
 				(void)provokingVertexFeatures->provokingVertexLast;
 			}
 			break;
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ROBUSTNESS_FEATURES_EXT:
+			{
+				const VkPhysicalDeviceImageRobustnessFeaturesEXT *imageRobustnessFeatures = reinterpret_cast<const VkPhysicalDeviceImageRobustnessFeaturesEXT *>(extensionCreateInfo);
+
+				// We currently always provide robust image accesses. When the feature is disabled, results are
+				// undefined (for images with Dim != Buffer), so providing robustness is also acceptable.
+				// TODO(b/159329067): Only provide robustness when requested.
+				(void)imageRobustnessFeatures->robustImageAccess;
+			}
+			break;
+			// For unsupported structures, check that we don't expose the corresponding extension string:
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT:
+				ASSERT(!hasDeviceExtension(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME));
+				break;
 			default:
 				// "the [driver] must skip over, without processing (other than reading the sType and pNext members) any structures in the chain with sType values not defined by [supported extenions]"
 				LOG_TRAP("pCreateInfo->pNext sType = %s", vk::Stringify(extensionCreateInfo->sType).c_str());
@@ -946,6 +1023,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory(VkDevice device, const VkMemoryA
 					case VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID:
 						break;
 #endif
+#if VK_USE_PLATFORM_FUCHSIA
+					case VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA:
+						break;
+#endif
 					default:
 						UNSUPPORTED("exportInfo->handleTypes %u", exportInfo->handleTypes);
 						return VK_ERROR_INVALID_EXTERNAL_HANDLE;
@@ -967,6 +1048,18 @@ VKAPI_ATTR VkResult VKAPI_CALL vkAllocateMemory(VkDevice device, const VkMemoryA
 				}
 				break;
 			}
+#if VK_USE_PLATFORM_FUCHSIA
+			case VK_STRUCTURE_TYPE_TEMP_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA:
+			{
+				auto *importInfo = reinterpret_cast<const VkImportMemoryZirconHandleInfoFUCHSIA *>(allocationInfo);
+				if(importInfo->handleType != VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA)
+				{
+					UNSUPPORTED("importInfo->handleType %u", importInfo->handleType);
+					return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+				}
+				break;
+			}
+#endif  // VK_USE_PLATFORM_FUCHSIA
 			default:
 				LOG_TRAP("pAllocateInfo->pNext sType = %s", vk::Stringify(allocationInfo->sType).c_str());
 				break;
@@ -1039,6 +1132,45 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetMemoryFdPropertiesKHR(VkDevice device, VkExt
 	return VK_SUCCESS;
 }
 #endif  // SWIFTSHADER_EXTERNAL_MEMORY_OPAQUE_FD
+#if VK_USE_PLATFORM_FUCHSIA
+VKAPI_ATTR VkResult VKAPI_CALL vkGetMemoryZirconHandleFUCHSIA(VkDevice device, const VkMemoryGetZirconHandleInfoFUCHSIA *pGetHandleInfo, zx_handle_t *pHandle)
+{
+	TRACE("(VkDevice device = %p, const VkMemoryGetZirconHandleInfoFUCHSIA* pGetHandleInfo = %p, zx_handle_t* pHandle = %p",
+	      device, pGetHandleInfo, pHandle);
+
+	if(pGetHandleInfo->handleType != VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA)
+	{
+		UNSUPPORTED("pGetHandleInfo->handleType %u", pGetHandleInfo->handleType);
+		return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+	}
+	return vk::Cast(pGetHandleInfo->memory)->exportHandle(pHandle);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkGetMemoryZirconHandlePropertiesFUCHSIA(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType, zx_handle_t handle, VkMemoryZirconHandlePropertiesFUCHSIA *pMemoryZirconHandleProperties)
+{
+	TRACE("(VkDevice device = %p, VkExternalMemoryHandleTypeFlagBits handleType = %x, zx_handle_t handle = %d, VkMemoryZirconHandlePropertiesFUCHSIA* pMemoryZirconHandleProperties = %p)",
+	      device, handleType, handle, pMemoryZirconHandleProperties);
+
+	if(handleType != VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA)
+	{
+		UNSUPPORTED("handleType %u", handleType);
+		return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+	}
+
+	if(handle == ZX_HANDLE_INVALID)
+	{
+		return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+	}
+
+	const VkPhysicalDeviceMemoryProperties &memoryProperties =
+	    vk::Cast(device)->getPhysicalDevice()->getMemoryProperties();
+
+	// All SwiftShader memory types support this!
+	pMemoryZirconHandleProperties->memoryTypeBits = (1U << memoryProperties.memoryTypeCount) - 1U;
+
+	return VK_SUCCESS;
+}
+#endif  // VK_USE_PLATFORM_FUCHSIA
 
 VKAPI_ATTR VkResult VKAPI_CALL vkGetMemoryHostPointerPropertiesEXT(VkDevice device, VkExternalMemoryHandleTypeFlagBits handleType, const void *pHostPointer, VkMemoryHostPointerPropertiesEXT *pMemoryHostPointerProperties)
 {
@@ -1640,7 +1772,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateImageView(VkDevice device, const VkImageV
 		extensionCreateInfo = extensionCreateInfo->pNext;
 	}
 
-	return vk::ImageView::Create(pAllocator, pCreateInfo, pView, ycbcrConversion);
+	VkResult result = vk::ImageView::Create(pAllocator, pCreateInfo, pView, ycbcrConversion);
+	if(result == VK_SUCCESS)
+	{
+		vk::Cast(device)->registerImageView(vk::Cast(*pView));
+	}
+
+	return result;
 }
 
 VKAPI_ATTR void VKAPI_CALL vkDestroyImageView(VkDevice device, VkImageView imageView, const VkAllocationCallbacks *pAllocator)
@@ -1648,6 +1786,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyImageView(VkDevice device, VkImageView image
 	TRACE("(VkDevice device = %p, VkImageView imageView = %p, const VkAllocationCallbacks* pAllocator = %p)",
 	      device, static_cast<void *>(imageView), pAllocator);
 
+	vk::Cast(device)->unregisterImageView(vk::Cast(imageView));
 	vk::destroy(imageView, pAllocator);
 }
 
@@ -1823,7 +1962,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyPipelineLayout(VkDevice device, VkPipelineLa
 	TRACE("(VkDevice device = %p, VkPipelineLayout pipelineLayout = %p, const VkAllocationCallbacks* pAllocator = %p)",
 	      device, static_cast<void *>(pipelineLayout), pAllocator);
 
-	vk::destroy(pipelineLayout, pAllocator);
+	vk::release(pipelineLayout, pAllocator);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkSampler *pSampler)
@@ -1838,15 +1977,23 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSampler(VkDevice device, const VkSamplerC
 
 	const VkBaseInStructure *extensionCreateInfo = reinterpret_cast<const VkBaseInStructure *>(pCreateInfo->pNext);
 	const vk::SamplerYcbcrConversion *ycbcrConversion = nullptr;
+	VkSamplerFilteringPrecisionModeGOOGLE filteringPrecision = VK_SAMPLER_FILTERING_PRECISION_MODE_LOW_GOOGLE;
 
 	while(extensionCreateInfo)
 	{
-		switch(extensionCreateInfo->sType)
+		switch(static_cast<long>(extensionCreateInfo->sType))
 		{
 			case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO:
 			{
 				const VkSamplerYcbcrConversionInfo *samplerYcbcrConversionInfo = reinterpret_cast<const VkSamplerYcbcrConversionInfo *>(extensionCreateInfo);
 				ycbcrConversion = vk::Cast(samplerYcbcrConversionInfo->conversion);
+			}
+			break;
+			case VK_STRUCTURE_TYPE_SAMPLER_FILTERING_PRECISION_GOOGLE:
+			{
+				const VkSamplerFilteringPrecisionGOOGLE *filteringInfo =
+				    reinterpret_cast<const VkSamplerFilteringPrecisionGOOGLE *>(extensionCreateInfo);
+				filteringPrecision = filteringInfo->samplerFilteringPrecisionMode;
 			}
 			break;
 			default:
@@ -1857,7 +2004,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSampler(VkDevice device, const VkSamplerC
 		extensionCreateInfo = extensionCreateInfo->pNext;
 	}
 
-	vk::SamplerState samplerState(pCreateInfo, ycbcrConversion);
+	vk::SamplerState samplerState(pCreateInfo, ycbcrConversion, filteringPrecision);
 	uint32_t samplerID = vk::Cast(device)->indexSampler(samplerState);
 
 	VkResult result = vk::Sampler::Create(pAllocator, pCreateInfo, pSampler, samplerState, samplerID);
@@ -2819,21 +2966,27 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physica
 				vk::Cast(physicalDevice)->getFeatures(features);
 			}
 			break;
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ROBUSTNESS_FEATURES_EXT:
+			{
+				auto features = reinterpret_cast<VkPhysicalDeviceImageRobustnessFeaturesEXT *>(extensionFeatures);
+				vk::Cast(physicalDevice)->getFeatures(features);
+			}
+			break;
+			// For unsupported structures, check that we don't expose the corresponding extension string:
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONDITIONAL_RENDERING_FEATURES_EXT:
-				ASSERT(!HasExtensionProperty(VK_EXT_CONDITIONAL_RENDERING_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_EXT_CONDITIONAL_RENDERING_EXTENSION_NAME));
 				break;
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES_EXT:
-				ASSERT(!HasExtensionProperty(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME));
 				break;
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR:
-				ASSERT(!HasExtensionProperty(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME));
 				break;
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR:
-				ASSERT(!HasExtensionProperty(VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_KHR_PERFORMANCE_QUERY_EXTENSION_NAME));
+				break;
+			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT:
+				ASSERT(!hasDeviceExtension(VK_EXT_ROBUSTNESS_2_EXTENSION_NAME));
 				break;
 			default:
 				LOG_TRAP("pFeatures->pNext sType = %s", vk::Stringify(extensionFeatures->sType).c_str());
@@ -2897,8 +3050,7 @@ VKAPI_ATTR void VKAPI_CALL vkGetPhysicalDeviceProperties2(VkPhysicalDevice physi
 			break;
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT:
 				// Explicitly ignored, since VK_EXT_sample_locations is not supported
-				ASSERT(!HasExtensionProperty(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME));
 				break;
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT:
 			{
@@ -2974,15 +3126,13 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(VkPhysi
 			case VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO_KHR:
 			{
 				// Explicitly ignored, since VK_KHR_image_format_list is not supported
-				ASSERT(!HasExtensionProperty(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_KHR_IMAGE_FORMAT_LIST_EXTENSION_NAME));
 			}
 			break;
 			case VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO_EXT:
 			{
 				// Explicitly ignored, since VK_EXT_separate_stencil_usage is not supported
-				ASSERT(!HasExtensionProperty(VK_EXT_SEPARATE_STENCIL_USAGE_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_EXT_SEPARATE_STENCIL_USAGE_EXTENSION_NAME));
 			}
 			break;
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO:
@@ -2994,8 +3144,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(VkPhysi
 			case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT:
 			{
 				// Explicitly ignored, since VK_EXT_image_drm_format_modifier is not supported
-				ASSERT(!HasExtensionProperty(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_EXT_IMAGE_DRM_FORMAT_MODIFIER_EXTENSION_NAME));
 			}
 			break;
 			default:
@@ -3027,8 +3176,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkGetPhysicalDeviceImageFormatProperties2(VkPhysi
 			case VK_STRUCTURE_TYPE_TEXTURE_LOD_GATHER_FORMAT_PROPERTIES_AMD:
 			{
 				// Explicitly ignored, since VK_AMD_texture_gather_bias_lod is not supported
-				ASSERT(!HasExtensionProperty(VK_AMD_TEXTURE_GATHER_BIAS_LOD_EXTENSION_NAME, deviceExtensionProperties,
-				                             sizeof(deviceExtensionProperties) / sizeof(deviceExtensionProperties[0])));
+				ASSERT(!hasDeviceExtension(VK_AMD_TEXTURE_GATHER_BIAS_LOD_EXTENSION_NAME));
 			}
 			break;
 			default:
@@ -3244,10 +3392,102 @@ VKAPI_ATTR void VKAPI_CALL vkGetDescriptorSetLayoutSupport(VkDevice device, cons
 
 VKAPI_ATTR void VKAPI_CALL vkCmdSetLineStippleEXT(VkCommandBuffer commandBuffer, uint32_t lineStippleFactor, uint16_t lineStipplePattern)
 {
-	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t lineStippleFactor = %u, uint16_t lineStipplePattern = %u",
+	TRACE("(VkCommandBuffer commandBuffer = %p, uint32_t lineStippleFactor = %u, uint16_t lineStipplePattern = %u)",
 	      commandBuffer, lineStippleFactor, lineStipplePattern);
 
 	UNSUPPORTED("VkPhysicalDeviceLineRasterizationFeaturesEXT::stippled*Lines");
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdBeginDebugUtilsLabelEXT(VkCommandBuffer commandBuffer, const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, const VkDebugUtilsLabelEXT* pLabelInfo = %p)",
+	      commandBuffer, pLabelInfo);
+
+	vk::Cast(commandBuffer)->beginDebugUtilsLabel(pLabelInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdEndDebugUtilsLabelEXT(VkCommandBuffer commandBuffer)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p)", commandBuffer);
+
+	vk::Cast(commandBuffer)->endDebugUtilsLabel();
+}
+
+VKAPI_ATTR void VKAPI_CALL vkCmdInsertDebugUtilsLabelEXT(VkCommandBuffer commandBuffer, const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	TRACE("(VkCommandBuffer commandBuffer = %p, const VkDebugUtilsLabelEXT* pLabelInfo = %p)",
+	      commandBuffer, pLabelInfo);
+
+	vk::Cast(commandBuffer)->insertDebugUtilsLabel(pLabelInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pMessenger)
+{
+	TRACE("(VkInstance instance = %p, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo = %p, const VkAllocationCallbacks* pAllocator = %p, VkDebugUtilsMessengerEXT* pMessenger = %p)",
+	      instance, pCreateInfo, pAllocator, pMessenger);
+
+	if(pCreateInfo->flags != 0)
+	{
+		// Vulkan 1.2: "flags is reserved for future use." "flags must be 0"
+		UNSUPPORTED("pCreateInfo->flags %d", int(pCreateInfo->flags));
+	}
+
+	return vk::DebugUtilsMessenger::Create(pAllocator, pCreateInfo, pMessenger);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT messenger, const VkAllocationCallbacks *pAllocator)
+{
+	TRACE("(VkInstance instance = %p, VkDebugUtilsMessengerEXT messenger = %p, const VkAllocationCallbacks* pAllocator = %p)",
+	      instance, static_cast<void *>(messenger), pAllocator);
+
+	vk::destroy(messenger, pAllocator);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkQueueBeginDebugUtilsLabelEXT(VkQueue queue, const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	TRACE("(VkQueue queue = %p, const VkDebugUtilsLabelEXT* pLabelInfo = %p)",
+	      queue, pLabelInfo);
+
+	vk::Cast(queue)->beginDebugUtilsLabel(pLabelInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkQueueEndDebugUtilsLabelEXT(VkQueue queue)
+{
+	TRACE("(VkQueue queue = %p)", queue);
+
+	vk::Cast(queue)->endDebugUtilsLabel();
+}
+
+VKAPI_ATTR void VKAPI_CALL vkQueueInsertDebugUtilsLabelEXT(VkQueue queue, const VkDebugUtilsLabelEXT *pLabelInfo)
+{
+	TRACE("(VkQueue queue = %p, const VkDebugUtilsLabelEXT* pLabelInfo = %p)",
+	      queue, pLabelInfo);
+
+	vk::Cast(queue)->insertDebugUtilsLabel(pLabelInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkSetDebugUtilsObjectNameEXT(VkDevice device, const VkDebugUtilsObjectNameInfoEXT *pNameInfo)
+{
+	TRACE("(VkDevice device = %p, const VkDebugUtilsObjectNameInfoEXT* pNameInfo = %p)",
+	      device, pNameInfo);
+
+	return vk::Cast(device)->setDebugUtilsObjectName(pNameInfo);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkSetDebugUtilsObjectTagEXT(VkDevice device, const VkDebugUtilsObjectTagInfoEXT *pTagInfo)
+{
+	TRACE("(VkDevice device = %p, const VkDebugUtilsObjectTagInfoEXT* pTagInfo = %p)",
+	      device, pTagInfo);
+
+	return vk::Cast(device)->setDebugUtilsObjectTag(pTagInfo);
+}
+
+VKAPI_ATTR void VKAPI_CALL vkSubmitDebugUtilsMessageEXT(VkInstance instance, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData)
+{
+	TRACE("(VkInstance instance = %p, VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity = %d, VkDebugUtilsMessageTypeFlagsEXT messageTypes = %d, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData = %p)",
+	      instance, messageSeverity, messageTypes, pCallbackData);
+
+	vk::Cast(instance)->submitDebugUtilsMessage(messageSeverity, messageTypes, pCallbackData);
 }
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
@@ -3281,6 +3521,24 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceXlibPresentationSupportKHR(VkP
 {
 	TRACE("(VkPhysicalDevice physicalDevice = %p, uint32_t queueFamilyIndex = %d, Display* dpy = %p, VisualID visualID = %lu)",
 	      physicalDevice, int(queueFamilyIndex), dpy, visualID);
+
+	return VK_TRUE;
+}
+#endif
+
+#ifdef VK_USE_PLATFORM_WAYLAND_KHR
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateWaylandSurfaceKHR(VkInstance instance, const VkWaylandSurfaceCreateInfoKHR *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkSurfaceKHR *pSurface)
+{
+	TRACE("(VkInstance instance = %p, VkWaylandSurfaceCreateInfoKHR* pCreateInfo = %p, VkAllocationCallbacks* pAllocator = %p, VkSurface* pSurface = %p)",
+	      instance, pCreateInfo, pAllocator, pSurface);
+
+	return vk::WaylandSurfaceKHR::Create(pAllocator, pCreateInfo, pSurface);
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL vkGetPhysicalDeviceWaylandPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, struct wl_display *display)
+{
+	TRACE("(VkPhysicalDevice physicalDevice = %p, uint32_t queueFamilyIndex = %d, struct wl_display* display = %p)",
+	      physicalDevice, int(queueFamilyIndex), display);
 
 	return VK_TRUE;
 }

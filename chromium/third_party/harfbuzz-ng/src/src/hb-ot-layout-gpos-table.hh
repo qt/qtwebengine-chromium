@@ -465,7 +465,7 @@ struct AnchorMatrix
 			    unsigned int cols, bool *found) const
   {
     *found = false;
-    if (unlikely (row >= rows || col >= cols)) return Null(Anchor);
+    if (unlikely (row >= rows || col >= cols)) return Null (Anchor);
     *found = !matrixZ[row * cols + col].is_null ();
     return this+matrixZ[row * cols + col];
   }
@@ -613,7 +613,7 @@ struct SinglePosFormat1
   void closure_lookups (hb_closure_lookups_context_t *c) const {}
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
-  { if (unlikely (!(this+coverage).add_coverage (c->input))) return; }
+  { if (unlikely (!(this+coverage).collect_coverage (c->input))) return; }
 
   const Coverage &get_coverage () const { return this+coverage; }
 
@@ -703,7 +703,7 @@ struct SinglePosFormat2
   void closure_lookups (hb_closure_lookups_context_t *c) const {}
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
-  { if (unlikely (!(this+coverage).add_coverage (c->input))) return; }
+  { if (unlikely (!(this+coverage).collect_coverage (c->input))) return; }
 
   const Coverage &get_coverage () const { return this+coverage; }
 
@@ -967,7 +967,7 @@ struct PairSet
   }
 
   bool subset (hb_subset_context_t *c,
-               const ValueFormat valueFormats[2]) const
+	       const ValueFormat valueFormats[2]) const
   {
     TRACE_SUBSET (this);
     auto snap = c->serializer->snapshot ();
@@ -1054,7 +1054,7 @@ struct PairPosFormat1
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
   {
-    if (unlikely (!(this+coverage).add_coverage (c->input))) return;
+    if (unlikely (!(this+coverage).collect_coverage (c->input))) return;
     unsigned int count = pairSet.len;
     for (unsigned int i = 0; i < count; i++)
       (this+pairSet[i]).collect_glyphs (c, valueFormat);
@@ -1166,8 +1166,8 @@ struct PairPosFormat2
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
   {
-    if (unlikely (!(this+coverage).add_coverage (c->input))) return;
-    if (unlikely (!(this+classDef2).add_coverage (c->input))) return;
+    if (unlikely (!(this+coverage).collect_coverage (c->input))) return;
+    if (unlikely (!(this+classDef2).collect_coverage (c->input))) return;
   }
 
   const Coverage &get_coverage () const { return this+coverage; }
@@ -1227,20 +1227,20 @@ struct PairPosFormat2
     + hb_range ((unsigned) class1Count)
     | hb_filter (klass1_map)
     | hb_apply ([&] (const unsigned class1_idx)
-                {
-                  + hb_range ((unsigned) class2Count)
-                  | hb_filter (klass2_map)
-                  | hb_apply ([&] (const unsigned class2_idx)
-                              {
-                                unsigned idx = (class1_idx * (unsigned) class2Count + class2_idx) * (len1 + len2);
-                                valueFormat1.serialize_copy (c->serializer, this, &values[idx]);
-                                valueFormat2.serialize_copy (c->serializer, this, &values[idx + len1]);
-                              })
-                  ;
-                })
+		{
+		  + hb_range ((unsigned) class2Count)
+		  | hb_filter (klass2_map)
+		  | hb_apply ([&] (const unsigned class2_idx)
+			      {
+				unsigned idx = (class1_idx * (unsigned) class2Count + class2_idx) * (len1 + len2);
+				valueFormat1.serialize_copy (c->serializer, this, &values[idx]);
+				valueFormat2.serialize_copy (c->serializer, this, &values[idx + len1]);
+			      })
+		  ;
+		})
     ;
 
-    const hb_set_t &glyphset = *c->plan->glyphset ();
+    const hb_set_t &glyphset = *c->plan->_glyphset_gsub;
     const hb_map_t &glyph_map = *c->plan->glyph_map;
 
     auto it =
@@ -1371,7 +1371,7 @@ struct CursivePosFormat1
   void closure_lookups (hb_closure_lookups_context_t *c) const {}
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
-  { if (unlikely (!(this+coverage).add_coverage (c->input))) return; }
+  { if (unlikely (!(this+coverage).collect_coverage (c->input))) return; }
 
   const Coverage &get_coverage () const { return this+coverage; }
 
@@ -1594,8 +1594,8 @@ struct MarkBasePosFormat1
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
   {
-    if (unlikely (!(this+markCoverage).add_coverage (c->input))) return;
-    if (unlikely (!(this+baseCoverage).add_coverage (c->input))) return;
+    if (unlikely (!(this+markCoverage).collect_coverage (c->input))) return;
+    if (unlikely (!(this+baseCoverage).collect_coverage (c->input))) return;
   }
 
   const Coverage &get_coverage () const { return this+markCoverage; }
@@ -1779,8 +1779,8 @@ struct MarkLigPosFormat1
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
   {
-    if (unlikely (!(this+markCoverage).add_coverage (c->input))) return;
-    if (unlikely (!(this+ligatureCoverage).add_coverage (c->input))) return;
+    if (unlikely (!(this+markCoverage).collect_coverage (c->input))) return;
+    if (unlikely (!(this+ligatureCoverage).collect_coverage (c->input))) return;
   }
 
   const Coverage &get_coverage () const { return this+markCoverage; }
@@ -1901,8 +1901,8 @@ struct MarkMarkPosFormat1
 
   void collect_glyphs (hb_collect_glyphs_context_t *c) const
   {
-    if (unlikely (!(this+mark1Coverage).add_coverage (c->input))) return;
-    if (unlikely (!(this+mark2Coverage).add_coverage (c->input))) return;
+    if (unlikely (!(this+mark1Coverage).collect_coverage (c->input))) return;
+    if (unlikely (!(this+mark2Coverage).collect_coverage (c->input))) return;
   }
 
   const Coverage &get_coverage () const { return this+mark1Coverage; }
@@ -2191,9 +2191,9 @@ struct PosLookup : Lookup
   }
 
   template <typename set_t>
-  void add_coverage (set_t *glyphs) const
+  void collect_coverage (set_t *glyphs) const
   {
-    hb_add_coverage_context_t<set_t> c (glyphs);
+    hb_collect_coverage_context_t<set_t> c (glyphs);
     dispatch (&c);
   }
 

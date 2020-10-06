@@ -14,7 +14,7 @@
 
 #include "VkDevice.hpp"
 
-#include "VkConfig.h"
+#include "VkConfig.hpp"
 #include "VkDescriptorSetLayout.hpp"
 #include "VkFence.hpp"
 #include "VkQueue.hpp"
@@ -38,16 +38,21 @@ std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> now
 
 namespace vk {
 
-rr::Routine *Device::SamplingRoutineCache::querySnapshot(const vk::Device::SamplingRoutineCache::Key &key) const
-{
-	return cache.querySnapshot(key).get();
-}
-
 void Device::SamplingRoutineCache::updateSnapshot()
 {
-	std::lock_guard<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 
-	cache.updateSnapshot();
+	if(snapshotNeedsUpdate)
+	{
+		snapshot.clear();
+
+		for(auto it : cache)
+		{
+			snapshot[it.key()] = it.data();
+		}
+
+		snapshotNeedsUpdate = false;
+	}
 }
 
 Device::SamplerIndexer::~SamplerIndexer()
@@ -57,7 +62,7 @@ Device::SamplerIndexer::~SamplerIndexer()
 
 uint32_t Device::SamplerIndexer::index(const SamplerState &samplerState)
 {
-	std::lock_guard<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 
 	auto it = map.find(samplerState);
 
@@ -76,7 +81,7 @@ uint32_t Device::SamplerIndexer::index(const SamplerState &samplerState)
 
 void Device::SamplerIndexer::remove(const SamplerState &samplerState)
 {
-	std::lock_guard<std::mutex> lock(mutex);
+	marl::lock lock(mutex);
 
 	auto it = map.find(samplerState);
 	ASSERT(it != map.end());
@@ -293,11 +298,6 @@ Device::SamplingRoutineCache *Device::getSamplingRoutineCache() const
 	return samplingRoutineCache.get();
 }
 
-rr::Routine *Device::querySnapshotCache(const SamplingRoutineCache::Key &key) const
-{
-	return samplingRoutineCache->querySnapshot(key);
-}
-
 void Device::updateSamplingRoutineSnapshotCache()
 {
 	samplingRoutineCache->updateSnapshot();
@@ -311,6 +311,68 @@ uint32_t Device::indexSampler(const SamplerState &samplerState)
 void Device::removeSampler(const SamplerState &samplerState)
 {
 	samplerIndexer->remove(samplerState);
+}
+
+VkResult Device::setDebugUtilsObjectName(const VkDebugUtilsObjectNameInfoEXT *pNameInfo)
+{
+	// Optionally maps user-friendly name to an object
+	return VK_SUCCESS;
+}
+
+VkResult Device::setDebugUtilsObjectTag(const VkDebugUtilsObjectTagInfoEXT *pTagInfo)
+{
+	// Optionally attach arbitrary data to an object
+	return VK_SUCCESS;
+}
+
+void Device::registerImageView(ImageView *imageView)
+{
+	if(imageView != nullptr)
+	{
+		marl::lock lock(imageViewSetMutex);
+		imageViewSet.insert(imageView);
+	}
+}
+
+void Device::unregisterImageView(ImageView *imageView)
+{
+	if(imageView != nullptr)
+	{
+		marl::lock lock(imageViewSetMutex);
+		auto it = imageViewSet.find(imageView);
+		if(it != imageViewSet.end())
+		{
+			imageViewSet.erase(it);
+		}
+	}
+}
+
+void Device::prepareForSampling(ImageView *imageView)
+{
+	if(imageView != nullptr)
+	{
+		marl::lock lock(imageViewSetMutex);
+
+		auto it = imageViewSet.find(imageView);
+		if(it != imageViewSet.end())
+		{
+			imageView->prepareForSampling();
+		}
+	}
+}
+
+void Device::contentsChanged(ImageView *imageView)
+{
+	if(imageView != nullptr)
+	{
+		marl::lock lock(imageViewSetMutex);
+
+		auto it = imageViewSet.find(imageView);
+		if(it != imageViewSet.end())
+		{
+			imageView->contentsChanged();
+		}
+	}
 }
 
 }  // namespace vk

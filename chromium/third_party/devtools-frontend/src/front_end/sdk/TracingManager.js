@@ -2,9 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck crbug.com/1081686
+
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 
 import {Capability, SDKModel, Target} from './SDKModel.js';  // eslint-disable-line no-unused-vars
+import {ObjectSnapshot} from './TracingModel.js';            // eslint-disable-line no-unused-vars
 
 /**
  * @unrestricted
@@ -69,6 +72,8 @@ export class TracingManager extends SDKModel {
     this._finishing = false;
   }
 
+  // TODO(petermarshall): Use the traceConfig argument instead of deprecated
+  // categories + options.
   /**
    * @param {!TracingManagerClient} client
    * @param {string} categoryFilter
@@ -182,7 +187,11 @@ SDKModel.register(TracingManager, Capability.Tracing, false);
         ts: number,
         ph: string,
         name: string,
-        args: !Object,
+        args: !{
+          sort_index: number,
+          name: string,
+          snapshot: ObjectSnapshot,
+        },
         dur: number,
         id: string,
         id2: (!{global: (string|undefined), local: (string|undefined)}|undefined),

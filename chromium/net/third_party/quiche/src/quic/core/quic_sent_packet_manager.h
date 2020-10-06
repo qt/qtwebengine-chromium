@@ -120,6 +120,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   virtual void SetFromConfig(const QuicConfig& config);
 
+  void ApplyConnectionOptions(const QuicTagVector& connection_options);
+
   // Pass the CachedNetworkParameters to the send algorithm.
   void ResumeConnectionState(
       const CachedNetworkParameters& cached_network_params,
@@ -339,7 +341,7 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
     unacked_packets_.SetSessionNotifier(session_notifier);
   }
 
-  QuicTime GetNextReleaseTime() const;
+  NextReleaseTimeResult GetNextReleaseTime() const;
 
   QuicPacketCount initial_congestion_window() const {
     return initial_congestion_window_;
@@ -364,6 +366,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   const QuicUnackedPacketMap& unacked_packets() const {
     return unacked_packets_;
+  }
+
+  const UberLossAlgorithm* uber_loss_algorithm() const {
+    return &uber_loss_algorithm_;
   }
 
   // Sets the send algorithm to the given congestion control type and points the
@@ -489,9 +495,6 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Sets the initial RTT of the connection.
   void SetInitialRtt(QuicTime::Delta rtt);
-
-  // Should only be called from constructor.
-  LossDetectionInterface* GetInitialLossAlgorithm();
 
   // Called when handshake is confirmed to remove the retransmittable frames
   // from all packets of HANDSHAKE_DATA packet number space to ensure they don't

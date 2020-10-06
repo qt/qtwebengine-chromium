@@ -607,20 +607,6 @@ angle::Result FramebufferGL::clearBufferfi(const gl::Context *context,
     return angle::Result::Continue;
 }
 
-GLenum FramebufferGL::getImplementationColorReadFormat(const gl::Context *context) const
-{
-    const auto *readAttachment = mState.getReadAttachment();
-    const Format &format       = readAttachment->getFormat();
-    return format.info->getReadPixelsFormat(context->getExtensions());
-}
-
-GLenum FramebufferGL::getImplementationColorReadType(const gl::Context *context) const
-{
-    const auto *readAttachment = mState.getReadAttachment();
-    const Format &format       = readAttachment->getFormat();
-    return format.info->getReadPixelsType(context->getClientVersion());
-}
-
 angle::Result FramebufferGL::readPixels(const gl::Context *context,
                                         const gl::Rectangle &area,
                                         GLenum format,
@@ -1199,6 +1185,7 @@ bool FramebufferGL::checkStatus(const gl::Context *context) const
 }
 
 angle::Result FramebufferGL::syncState(const gl::Context *context,
+                                       GLenum binding,
                                        const gl::Framebuffer::DirtyBits &dirtyBits)
 {
     // Don't need to sync state for the default FBO.

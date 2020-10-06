@@ -16,6 +16,7 @@
 #include "src/gpu/effects/GrSkSLFP.h"
 #include "src/gpu/gl/GrGLGpu.h"
 #include "src/gpu/mock/GrMockGpu.h"
+#include "src/gpu/text/GrAtlasManager.h"
 #include "src/gpu/text/GrStrikeCache.h"
 #ifdef SK_METAL
 #include "src/gpu/mtl/GrMtlTrampoline.h"
@@ -105,10 +106,9 @@ protected:
             allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kYes;
         }
 
-        GrStrikeCache* glyphCache = this->priv().getGrStrikeCache();
         GrProxyProvider* proxyProvider = this->priv().proxyProvider();
 
-        fAtlasManager = new GrAtlasManager(proxyProvider, glyphCache,
+        fAtlasManager = new GrAtlasManager(proxyProvider,
                                            this->options().fGlyphCacheTextureMaximumBytes,
                                            allowMultitexturing);
         this->priv().addOnFlushCallbackObject(fAtlasManager);

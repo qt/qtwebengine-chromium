@@ -12,6 +12,7 @@ declare_args() {
   skia_android_serial = ""
   skia_compile_processors = false
   skia_enable_api_available_macro = true
+  skia_enable_android_utils = is_skia_dev_build
   skia_enable_ccpr = true
   skia_enable_discrete_gpu = true
   skia_enable_flutter_defines = false
@@ -32,7 +33,8 @@ declare_args() {
   skia_include_multiframe_procs = false
   skia_lex = false
   skia_libgifcodec_path = "third_party/externals/libgifcodec"
-  skia_pdf_subset_harfbuzz = false  # TODO: set skia_pdf_subset_harfbuzz to skia_use_harfbuzz.
+  skia_pdf_subset_harfbuzz =
+      false  # TODO: set skia_pdf_subset_harfbuzz to skia_use_harfbuzz.
   skia_qt_path = getenv("QT_PATH")
   skia_skqp_global_error_tolerance = 0
   skia_tools_require_resources = false
@@ -103,6 +105,7 @@ declare_args() {
   skia_use_sfntly = skia_use_icu
   skia_enable_vulkan_debug_layers = skia_enable_gpu_debug_layers
   skia_enable_direct3d_debug_layer = skia_enable_gpu_debug_layers
+  skia_use_vma = skia_use_vulkan
 }
 
 # Our tools require static linking (they use non-exported symbols), and the GPU backend.

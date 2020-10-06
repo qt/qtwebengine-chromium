@@ -11,7 +11,7 @@
 #include "absl/base/thread_annotations.h"
 #include "platform/api/time.h"
 #include "platform/impl/socket_handle_waiter.h"
-#include "util/logging.h"
+#include "util/osp_logging.h"
 
 namespace openscreen {
 
@@ -70,7 +70,8 @@ class TlsDataRouterPosix : public SocketHandleWaiter::Subscriber {
   void OnConnectionDestroyed(TlsConnectionPosix* connection);
 
   // SocketHandleWaiter::Subscriber overrides.
-  void ProcessReadyHandle(SocketHandleWaiter::SocketHandleRef handle) override;
+  void ProcessReadyHandle(SocketHandleWaiter::SocketHandleRef handle,
+                          uint32_t flags) override;
 
   OSP_DISALLOW_COPY_AND_ASSIGN(TlsDataRouterPosix);
 

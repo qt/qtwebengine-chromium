@@ -42,7 +42,7 @@ class Device;
 class Pipeline
 {
 public:
-	Pipeline(PipelineLayout const *layout, const Device *device);
+	Pipeline(PipelineLayout *layout, Device *device);
 	virtual ~Pipeline() = default;
 
 	operator VkPipeline()
@@ -55,24 +55,21 @@ public:
 		return vk::VkTtoT<Pipeline, VkPipeline>(object);
 	}
 
-	void destroy(const VkAllocationCallbacks *pAllocator)
-	{
-		destroyPipeline(pAllocator);
-	}
+	void destroy(const VkAllocationCallbacks *pAllocator);
 
 	virtual void destroyPipeline(const VkAllocationCallbacks *pAllocator) = 0;
 #ifndef NDEBUG
 	virtual VkPipelineBindPoint bindPoint() const = 0;
 #endif
 
-	PipelineLayout const *getLayout() const
+	PipelineLayout *getLayout() const
 	{
 		return layout;
 	}
 
 protected:
-	PipelineLayout const *layout = nullptr;
-	Device const *const device;
+	PipelineLayout *layout = nullptr;
+	Device *const device;
 
 	const bool robustBufferAccess = true;
 };
@@ -82,7 +79,7 @@ class GraphicsPipeline : public Pipeline, public ObjectBase<GraphicsPipeline, Vk
 public:
 	GraphicsPipeline(const VkGraphicsPipelineCreateInfo *pCreateInfo,
 	                 void *mem,
-	                 const Device *device);
+	                 Device *device);
 	virtual ~GraphicsPipeline() = default;
 
 	void destroyPipeline(const VkAllocationCallbacks *pAllocator) override;
@@ -123,7 +120,7 @@ private:
 class ComputePipeline : public Pipeline, public ObjectBase<ComputePipeline, VkPipeline>
 {
 public:
-	ComputePipeline(const VkComputePipelineCreateInfo *pCreateInfo, void *mem, const Device *device);
+	ComputePipeline(const VkComputePipelineCreateInfo *pCreateInfo, void *mem, Device *device);
 	virtual ~ComputePipeline() = default;
 
 	void destroyPipeline(const VkAllocationCallbacks *pAllocator) override;
@@ -141,6 +138,7 @@ public:
 
 	void run(uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ,
 	         uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ,
+	         vk::DescriptorSet::Array const &descriptorSetObjects,
 	         vk::DescriptorSet::Bindings const &descriptorSets,
 	         vk::DescriptorSet::DynamicOffsets const &descriptorDynamicOffsets,
 	         sw::PushConstantStorage const &pushConstants);

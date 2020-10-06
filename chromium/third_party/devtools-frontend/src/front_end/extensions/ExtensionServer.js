@@ -268,7 +268,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper {
       }
     }
 
-    self.SDK.multitargetNetworkManager.setExtraHTTPHeaders(allHeaders);
+    SDK.NetworkManager.MultitargetNetworkManager.instance().setExtraHTTPHeaders(allHeaders);
   }
 
   /**
@@ -460,8 +460,8 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper {
   _onReload(message) {
     const options = /** @type {!ExtensionReloadOptions} */ (message.options || {});
 
-    self.SDK.multitargetNetworkManager.setUserAgentOverride(
-        typeof options.userAgent === 'string' ? options.userAgent : '');
+    SDK.NetworkManager.MultitargetNetworkManager.instance().setUserAgentOverride(
+        typeof options.userAgent === 'string' ? options.userAgent : '', null);
     let injectedScript;
     if (options.injectedScript) {
       injectedScript = '(function(){' + options.injectedScript + '})()';
@@ -746,7 +746,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper {
     const startPage = extensionInfo.startPage;
 
     const inspectedURL = SDK.SDKModel.TargetManager.instance().mainTarget().inspectedURL();
-    if (!this._canInspectURL(inspectedURL)) {
+    if (inspectedURL !== '' && !this._canInspectURL(inspectedURL)) {
       this._disableExtensions();
     }
     if (!this._extensionsEnabled) {

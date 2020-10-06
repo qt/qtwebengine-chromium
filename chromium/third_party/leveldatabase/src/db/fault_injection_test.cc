@@ -25,11 +25,6 @@
 #include "util/mutexlock.h"
 #include "util/testutil.h"
 
-#if defined(_WIN32) && defined(DeleteFile)
-// See rationale in env.h
-#undef DeleteFile
-#endif
-
 namespace leveldb {
 
 static const int kValueSize = 1000;
@@ -432,7 +427,7 @@ class FaultInjectionTest : public testing::Test {
           EXPECT_EQ(value_space, val);
         }
       } else if (s.ok()) {
-        fprintf(stderr, "Expected an error at %d, but was OK\n", i);
+        std::fprintf(stderr, "Expected an error at %d, but was OK\n", i);
         s = Status::IOError(dbname_, "Expected value error:");
       } else {
         s = Status::OK();  // An expected error
@@ -444,7 +439,7 @@ class FaultInjectionTest : public testing::Test {
   // Return the ith key
   Slice Key(int i, std::string* storage) const {
     char buf[100];
-    snprintf(buf, sizeof(buf), "%016d", i);
+    std::snprintf(buf, sizeof(buf), "%016d", i);
     storage->assign(buf, strlen(buf));
     return Slice(*storage);
   }

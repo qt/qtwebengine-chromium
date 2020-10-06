@@ -13,6 +13,7 @@ module.exports = {
     '@typescript-eslint',
     'mocha',
     'rulesdir',
+    'import',
   ],
 
   'parserOptions': {'ecmaVersion': 9, 'sourceType': 'module'},
@@ -57,6 +58,7 @@ module.exports = {
     'no-duplicate-case': 2,
     'no-else-return': [2, {'allowElseIf': false}],
     'no-empty-character-class': 2,
+    'no-global-assign': 2,
     'no-implied-eval': 2,
     'no-labels': 2,
     'no-multi-str': 2,
@@ -128,9 +130,14 @@ module.exports = {
     // errors on {describe, it}.only
     'mocha/no-exclusive-tests': 2,
 
+    // Closure does not properly typecheck default exports
+    'import/no-default-export': 2,
+
     // DevTools specific rules
     'rulesdir/es_modules_import': 2,
     'rulesdir/check_license_header': 2,
+    'rulesdir/check_test_definitions': 2,
+    'rulesdir/avoid_assert_equal': 2,
   },
   'overrides': [{
     'files': ['*.ts'],

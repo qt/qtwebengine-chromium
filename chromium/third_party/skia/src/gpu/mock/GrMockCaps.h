@@ -17,7 +17,7 @@ public:
     GrMockCaps(const GrContextOptions& contextOptions, const GrMockOptions& options)
             : INHERITED(contextOptions), fOptions(options) {
         fMipMapSupport = options.fMipMapSupport;
-        fInstanceAttribSupport = options.fInstanceAttribSupport;
+        fDrawInstancedSupport = options.fDrawInstancedSupport;
         fHalfFloatVertexAttributeSupport = options.fHalfFloatVertexAttributeSupport;
         fMapBufferFlags = options.fMapBufferFlags;
         fBufferMapThreshold = SK_MaxS32; // Overridable in GrContextOptions.
@@ -35,6 +35,7 @@ public:
         fShaderCaps->fShaderDerivativeSupport = options.fShaderDerivativeSupport;
         fShaderCaps->fDualSourceBlendingSupport = options.fDualSourceBlendingSupport;
         fShaderCaps->fSampleMaskSupport = true;
+        fShaderCaps->fTessellationSupport = options.fTessellationSupport;
 
         this->finishInitialization(contextOptions);
     }
@@ -150,25 +151,17 @@ public:
         return SurfaceReadPixelsSupport::kSupported;
     }
 
-    GrColorType getYUVAColorTypeFromBackendFormat(const GrBackendFormat& format,
-                                                  bool isAlphaChannel) const override {
-        SkImage::CompressionType compression = format.asMockCompressionType();
-        if (compression != SkImage::CompressionType::kNone) {
-            return GrColorType::kUnknown;
-        }
-
-        return format.asMockColorType();
-    }
-
     GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const override {
         return {};
     }
 
-    GrSwizzle getReadSwizzle(const GrBackendFormat&, GrColorType) const override {
-        return GrSwizzle();
+    GrSwizzle getReadSwizzle(const GrBackendFormat& format, GrColorType ct) const override {
+        SkASSERT(this->areColorTypeAndFormatCompatible(ct, format));
+        return GrSwizzle("rgba");
     }
     GrSwizzle getWriteSwizzle(const GrBackendFormat& format, GrColorType ct) const override {
-        return GrSwizzle();
+        SkASSERT(this->areColorTypeAndFormatCompatible(ct, format));
+        return GrSwizzle("rgba");
     }
 
     uint64_t computeFormatKey(const GrBackendFormat&) const override;

@@ -23,6 +23,7 @@
 #include "perfetto/protozero/message_handle.h"
 #include "perfetto/protozero/scattered_heap_buffer.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
+#include "protos/perfetto/trace/track_event/track_descriptor.gen.h"
 #include "protos/perfetto/trace/track_event/track_descriptor.pbzero.h"
 
 #include <stdint.h>
@@ -56,10 +57,16 @@ class TrackRegistry;
 //
 // Tracks can also be annotated with metadata:
 //
+//   auto desc = track.Serialize();
+//   desc.set_name("MyTrack");
+//   perfetto::TrackEvent::SetTrackDescriptor(track, desc);
+//
+// Threads and processes can also be named in a similar way, e.g.:
+//
+//   auto desc = perfetto::ProcessTrack::Current().Serialize();
+//   desc.mutable_process()->set_process_name("MyProcess");
 //   perfetto::TrackEvent::SetTrackDescriptor(
-//       track, [](perfetto::protos::pbzero::TrackDescriptor* desc) {
-//         desc->set_name("MyTrack");
-//       });
+//       perfetto::ProcessTrack::Current(), desc);
 //
 // The metadata remains valid between tracing sessions. To free up data for a
 // track, call EraseTrackDescriptor:
@@ -83,10 +90,20 @@ struct PERFETTO_EXPORT Track {
 
   explicit operator bool() const { return uuid; }
   void Serialize(protos::pbzero::TrackDescriptor*) const;
+  protos::gen::TrackDescriptor Serialize() const;
+
+  // Construct a global track with identifier |id|.
+  //
+  // Beware: the globally unique |id| should be chosen carefully to avoid
+  // accidental clashes with track identifiers emitted by other producers.
+  static Track Global(uint64_t id) { return Track(id, Track()); }
 
  protected:
-  static Track MakeThreadTrack(base::PlatformThreadId tid_) {
-    return Track(static_cast<uint64_t>(tid_), MakeProcessTrack());
+  static Track MakeThreadTrack(base::PlatformThreadId tid) {
+    // If tid were 0 here (which is an invalid tid), we would create a thread
+    // track with a uuid that conflicts with the corresponding ProcessTrack.
+    PERFETTO_DCHECK(tid != 0);
+    return Track(static_cast<uint64_t>(tid), MakeProcessTrack());
   }
 
   static Track MakeProcessTrack() { return Track(process_uuid, Track()); }
@@ -105,6 +122,7 @@ struct PERFETTO_EXPORT ProcessTrack : public Track {
   static ProcessTrack Current() { return ProcessTrack(); }
 
   void Serialize(protos::pbzero::TrackDescriptor*) const;
+  protos::gen::TrackDescriptor Serialize() const;
 
  private:
   ProcessTrack() : Track(MakeProcessTrack()), pid(base::GetProcessId()) {}
@@ -124,6 +142,7 @@ struct PERFETTO_EXPORT ThreadTrack : public Track {
   }
 
   void Serialize(protos::pbzero::TrackDescriptor*) const;
+  protos::gen::TrackDescriptor Serialize() const;
 
  private:
   explicit ThreadTrack(base::PlatformThreadId tid_)
@@ -167,6 +186,9 @@ class PERFETTO_EXPORT TrackRegistry {
       fill_function(desc);
     });
   }
+
+  // This variant lets the user supply a serialized track descriptor directly.
+  void UpdateTrack(Track, const std::string& serialized_desc);
 
   // If |track| exists in the registry, write out the serialized track
   // descriptor for it into |packet|. Otherwise just the ephemeral track object

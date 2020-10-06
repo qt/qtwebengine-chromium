@@ -204,10 +204,7 @@ export class NetworkPanel extends UI.Panel.Panel {
    */
   static async selectAndShowRequest(request, tab) {
     const panel = NetworkPanel._instance();
-    const itemView = await panel.selectRequest(request);
-    if (!itemView) {
-      panel._networkLogView.dispatchEventToListeners(Events.RequestActivated, {showPanel: true, tab: tab});
-    }
+    await panel.selectAndActivateRequest(request, tab);
   }
 
   /**
@@ -442,12 +439,12 @@ export class NetworkPanel extends UI.Panel.Panel {
   }
 
   _resetFilmStripView() {
-    const reloadShortcutDescriptor = self.UI.shortcutRegistry.shortcutDescriptorsForAction('inspector_main.reload')[0];
+    const reloadShortcut = self.UI.shortcutRegistry.shortcutsForAction('inspector_main.reload')[0];
 
     this._filmStripView.reset();
-    if (reloadShortcutDescriptor) {
+    if (reloadShortcut) {
       this._filmStripView.setStatusText(
-          Common.UIString.UIString('Hit %s to reload and capture filmstrip.', reloadShortcutDescriptor.name));
+          Common.UIString.UIString('Hit %s to reload and capture filmstrip.', reloadShortcut.title()));
     }
   }
 
@@ -488,11 +485,13 @@ export class NetworkPanel extends UI.Panel.Panel {
 
   /**
    * @param {!SDK.NetworkRequest.NetworkRequest} request
+   * @param {!NetworkItemViewTabs=} shownTab
    * @return {!Promise<?NetworkItemView>}
    */
-  async selectRequest(request) {
+  async selectAndActivateRequest(request, shownTab) {
     await UI.ViewManager.ViewManager.instance().showView('network');
     this._networkLogView.selectRequest(request);
+    this._showRequestPanel(shownTab);
     return this._networkItemView;
   }
 
@@ -526,7 +525,7 @@ export class NetworkPanel extends UI.Panel.Panel {
   _onRequestActivated(event) {
     const eventData = /** @type {!{showPanel: boolean, tab: !NetworkItemViewTabs}} */ (event.data);
     if (eventData.showPanel) {
-      this._showRequestPanel(eventData.tab);
+      this._showRequestPanel(eventData.tab, /* takeFocus */ true);
     } else {
       this._hideRequestPanel();
     }
@@ -534,11 +533,15 @@ export class NetworkPanel extends UI.Panel.Panel {
 
   /**
    * @param {!NetworkItemViewTabs=} shownTab
+   * @param {boolean=} takeFocus
    */
-  _showRequestPanel(shownTab) {
+  _showRequestPanel(shownTab, takeFocus) {
     this._clearNetworkItemView();
     if (this._currentRequest) {
-      this._createNetworkItemView(shownTab);
+      const networkItemView = this._createNetworkItemView(shownTab);
+      if (takeFocus) {
+        networkItemView.focus();
+      }
     }
     this._updateUI();
   }
@@ -565,6 +568,7 @@ export class NetworkPanel extends UI.Panel.Panel {
   }
   /**
    * @param {!NetworkItemViewTabs=} initialTab
+   * @returns {(!NetworkItemView|undefined)}
    */
   _createNetworkItemView(initialTab) {
     if (!this._currentRequest) {
@@ -575,6 +579,7 @@ export class NetworkPanel extends UI.Panel.Panel {
     this._networkItemView.leftToolbar().appendToolbarItem(new UI.Toolbar.ToolbarItem(this._closeButtonElement));
     this._networkItemView.show(this._detailsWidget.element);
     this._splitWidget.showBoth();
+    return this._networkItemView;
   }
 
   _updateUI() {
@@ -884,7 +889,7 @@ export class RequestLocationRevealer {
    */
   async reveal(match) {
     const location = /** @type {!UIRequestLocation} */ (match);
-    const view = await NetworkPanel._instance().selectRequest(location.request);
+    const view = await NetworkPanel._instance().selectAndActivateRequest(location.request);
     if (!view) {
       return;
     }

@@ -527,7 +527,7 @@ class HalfPlaneView3 : public SampleCameraView {
 
         if (fShowUnclipped) {
             canvas->save();
-            canvas->concat44(mx);
+            canvas->concat(mx);
             paint.setAlphaf(0.33f);
             canvas->drawPath(fPath, paint);
             paint.setAlphaf(1.f);
@@ -542,7 +542,7 @@ class HalfPlaneView3 : public SampleCameraView {
             planeColor = SK_ColorRED;
         }
         canvas->save();
-        canvas->concat44(mx);
+        canvas->concat(mx);
         canvas->drawPath(*path, paint);
         canvas->restore();
 
@@ -585,7 +585,7 @@ class HalfPlaneCoons : public SampleCameraView {
         SkPaint paint;
 
         canvas->save();
-        canvas->concat44(this->get44({0, 0, 300, 300}));
+        canvas->concat(this->get44({0, 0, 300, 300}));
 
         const SkPoint* tex = nullptr;
         const SkColor* col = nullptr;
@@ -619,20 +619,13 @@ class HalfPlaneCoons : public SampleCameraView {
         const float tol = 15;
         for (int i = 0; i < 12; ++i) {
             if (dist({x,y}, fPatch[i]) <= tol) {
-                Click* c = new Click;
-                c->fMeta.setS32("index", i);
-                return c;
+                return new Click([this, i](Click* c) {
+                    fPatch[i] = c->fCurr;
+                    return true;
+                });
             }
         }
         return nullptr;
-    }
-
-    bool onClick(Click* click) override {
-        int32_t index;
-        SkAssertResult(click->fMeta.findS32("index", &index));
-        SkASSERT(index >= 0 && index < 12);
-        fPatch[index] = click->fCurr;
-        return true;
     }
 
     bool onChar(SkUnichar uni) override {

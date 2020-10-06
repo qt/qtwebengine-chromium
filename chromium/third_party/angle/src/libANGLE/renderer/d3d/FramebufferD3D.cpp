@@ -43,10 +43,24 @@ ClearParameters GetClearParameters(const gl::State &state, GLbitfield mask)
     clearParams.clearStencil     = false;
     clearParams.stencilValue     = state.getStencilClearValue();
     clearParams.stencilWriteMask = state.getDepthStencilState().stencilWritemask;
-    clearParams.scissorEnabled   = state.isScissorTestEnabled();
-    clearParams.scissor          = state.getScissor();
 
-    const gl::Framebuffer *framebufferObject = state.getDrawFramebuffer();
+    const auto *framebufferObject      = state.getDrawFramebuffer();
+    const gl::Extents &framebufferSize = framebufferObject->getFirstNonNullAttachment()->getSize();
+    const gl::Offset &surfaceTextureOffset = framebufferObject->getSurfaceTextureOffset();
+    if (state.isScissorTestEnabled())
+    {
+        clearParams.scissorEnabled = true;
+        clearParams.scissor        = state.getScissor();
+        clearParams.scissor.x      = clearParams.scissor.x + surfaceTextureOffset.x;
+        clearParams.scissor.y      = clearParams.scissor.y + surfaceTextureOffset.y;
+    }
+    else if (surfaceTextureOffset != gl::kOffsetZero)
+    {
+        clearParams.scissorEnabled = true;
+        clearParams.scissor        = gl::Rectangle(surfaceTextureOffset.x, surfaceTextureOffset.y,
+                                            framebufferSize.width, framebufferSize.height);
+    }
+
     const bool clearColor =
         (mask & GL_COLOR_BUFFER_BIT) && framebufferObject->hasEnabledDrawBuffer();
     ASSERT(blendStateArray.size() == gl::IMPLEMENTATION_MAX_DRAW_BUFFERS);
@@ -184,54 +198,6 @@ angle::Result FramebufferD3D::clearBufferfi(const gl::Context *context,
     return clearImpl(context, clearParams);
 }
 
-GLenum FramebufferD3D::getImplementationColorReadFormat(const gl::Context *context) const
-{
-    const gl::FramebufferAttachment *readAttachment = mState.getReadAttachment();
-
-    if (readAttachment == nullptr)
-    {
-        return GL_NONE;
-    }
-
-    RenderTargetD3D *attachmentRenderTarget = nullptr;
-    angle::Result error                     = readAttachment->getRenderTarget(
-        context, readAttachment->getRenderToTextureSamples(), &attachmentRenderTarget);
-    if (error != angle::Result::Continue)
-    {
-        return GL_NONE;
-    }
-
-    GLenum implementationFormat = getRenderTargetImplementationFormat(attachmentRenderTarget);
-    const gl::InternalFormat &implementationFormatInfo =
-        gl::GetSizedInternalFormatInfo(implementationFormat);
-
-    return implementationFormatInfo.getReadPixelsFormat(context->getExtensions());
-}
-
-GLenum FramebufferD3D::getImplementationColorReadType(const gl::Context *context) const
-{
-    const gl::FramebufferAttachment *readAttachment = mState.getReadAttachment();
-
-    if (readAttachment == nullptr)
-    {
-        return GL_NONE;
-    }
-
-    RenderTargetD3D *attachmentRenderTarget = nullptr;
-    angle::Result error                     = readAttachment->getRenderTarget(
-        context, readAttachment->getRenderToTextureSamples(), &attachmentRenderTarget);
-    if (error != angle::Result::Continue)
-    {
-        return GL_NONE;
-    }
-
-    GLenum implementationFormat = getRenderTargetImplementationFormat(attachmentRenderTarget);
-    const gl::InternalFormat &implementationFormatInfo =
-        gl::GetSizedInternalFormatInfo(implementationFormat);
-
-    return implementationFormatInfo.getReadPixelsType(context->getClientVersion());
-}
-
 angle::Result FramebufferD3D::readPixels(const gl::Context *context,
                                          const gl::Rectangle &area,
                                          GLenum format,
@@ -316,6 +282,7 @@ bool FramebufferD3D::checkStatus(const gl::Context *context) const
 }
 
 angle::Result FramebufferD3D::syncState(const gl::Context *context,
+                                        GLenum binding,
                                         const gl::Framebuffer::DirtyBits &dirtyBits)
 {
     if (!mColorAttachmentsForRender.valid())

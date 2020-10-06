@@ -51,7 +51,11 @@ public:
     bool textureBarrierSupport() const { return fTextureBarrierSupport; }
     bool sampleLocationsSupport() const { return fSampleLocationsSupport; }
     bool multisampleDisableSupport() const { return fMultisampleDisableSupport; }
-    bool instanceAttribSupport() const { return fInstanceAttribSupport; }
+    bool drawInstancedSupport() const { return fDrawInstancedSupport; }
+    // Is there hardware support for indirect draws? (Ganesh always supports indirect draws as long
+    // as it can polyfill them with instanced calls, but this cap tells us if they are supported
+    // natively.)
+    bool nativeDrawIndirectSupport() const { return fNativeDrawIndirectSupport; }
     bool mixedSamplesSupport() const { return fMixedSamplesSupport; }
     bool conservativeRasterSupport() const { return fConservativeRasterSupport; }
     bool wireframeSupport() const { return fWireframeSupport; }
@@ -79,6 +83,11 @@ public:
         return this->preferFullscreenClears();
     }
 
+    // D3D does not allow the refs or masks to differ on a two-sided stencil draw.
+    bool twoSidedStencilRefsAndMasksMustMatch() const {
+        return fTwoSidedStencilRefsAndMasksMustMatch;
+    }
+
     bool preferVRAMUseOverFlushes() const { return fPreferVRAMUseOverFlushes; }
 
     bool preferTrianglesOverSampleMask() const { return fPreferTrianglesOverSampleMask; }
@@ -91,6 +100,9 @@ public:
     bool requiresManualFBBarrierAfterTessellatedStencilDraw() const {
         return fRequiresManualFBBarrierAfterTessellatedStencilDraw;
     }
+
+    // glDrawElementsIndirect fails GrMeshTest on every Win10 Intel bot.
+    bool nativeDrawIndexedIndirectIsBroken() const { return fNativeDrawIndexedIndirectIsBroken; }
 
     /**
      * Indicates the capabilities of the fixed function blend unit.
@@ -393,13 +405,6 @@ public:
         return this->onAreColorTypeAndFormatCompatible(grCT, format);
     }
 
-    /**
-     * Special method only for YUVA images. Returns a colortype that matches the backend format or
-     * kUnknown if a colortype could not be determined.
-     */
-    virtual GrColorType getYUVAColorTypeFromBackendFormat(const GrBackendFormat&,
-                                                          bool isAlphaChannel) const = 0;
-
     /** These are used when creating a new texture internally. */
     GrBackendFormat getDefaultBackendFormat(GrColorType, GrRenderable) const;
 
@@ -464,7 +469,8 @@ protected:
     bool fTextureBarrierSupport                      : 1;
     bool fSampleLocationsSupport                     : 1;
     bool fMultisampleDisableSupport                  : 1;
-    bool fInstanceAttribSupport                      : 1;
+    bool fDrawInstancedSupport                       : 1;
+    bool fNativeDrawIndirectSupport                  : 1;
     bool fMixedSamplesSupport                        : 1;
     bool fConservativeRasterSupport                  : 1;
     bool fWireframeSupport                           : 1;
@@ -472,6 +478,7 @@ protected:
     bool fUsePrimitiveRestart                        : 1;
     bool fPreferClientSideDynamicBuffers             : 1;
     bool fPreferFullscreenClears                     : 1;
+    bool fTwoSidedStencilRefsAndMasksMustMatch       : 1;
     bool fMustClearUploadedBufferData                : 1;
     bool fShouldInitializeTextures                   : 1;
     bool fSupportsAHardwareBufferImages              : 1;
@@ -494,6 +501,7 @@ protected:
     bool fAvoidStencilBuffers                        : 1;
     bool fAvoidWritePixelsFastPath                   : 1;
     bool fRequiresManualFBBarrierAfterTessellatedStencilDraw : 1;
+    bool fNativeDrawIndexedIndirectIsBroken          : 1;
 
     // ANGLE performance workaround
     bool fPreferVRAMUseOverFlushes                   : 1;

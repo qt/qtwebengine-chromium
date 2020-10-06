@@ -16,9 +16,14 @@
 #include "net/third_party/quiche/src/quic/core/quic_crypto_stream.h"
 #include "net/third_party/quiche/src/quic/core/quic_server_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_session.h"
+#include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 
 namespace quic {
+
+namespace test {
+class QuicCryptoClientStreamPeer;
+}  // namespace test
 
 class QUIC_EXPORT_PRIVATE QuicCryptoClientStreamBase : public QuicCryptoStream {
  public:
@@ -58,6 +63,9 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientStreamBase : public QuicCryptoStream {
   // client.  Does not count update messages that were received prior
   // to handshake confirmation.
   virtual int num_scup_messages_received() const = 0;
+
+  virtual void OnApplicationState(
+      std::unique_ptr<ApplicationState> application_state) = 0;
 };
 
 class QUIC_EXPORT_PRIVATE QuicCryptoClientStream
@@ -148,8 +156,19 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientStream
     // Called when a 1RTT packet has been acknowledged.
     virtual void OnOneRttPacketAcknowledged() = 0;
 
+    // Called when a packet of ENCRYPTION_HANDSHAKE gets sent.
+    virtual void OnHandshakePacketSent() = 0;
+
+    // Called when connection gets closed.
+    virtual void OnConnectionClosed(QuicErrorCode error,
+                                    ConnectionCloseSource source) = 0;
+
     // Called when handshake done has been received.
     virtual void OnHandshakeDoneReceived() = 0;
+
+    // Called when application state is received.
+    virtual void OnApplicationState(
+        std::unique_ptr<ApplicationState> application_state) = 0;
   };
 
   // ProofHandler is an interface that handles callbacks from the crypto
@@ -175,7 +194,8 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientStream
                          QuicSession* session,
                          std::unique_ptr<ProofVerifyContext> verify_context,
                          QuicCryptoClientConfig* crypto_config,
-                         ProofHandler* proof_handler);
+                         ProofHandler* proof_handler,
+                         bool has_application_state);
   QuicCryptoClientStream(const QuicCryptoClientStream&) = delete;
   QuicCryptoClientStream& operator=(const QuicCryptoClientStream&) = delete;
 
@@ -198,9 +218,15 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientStream
   CryptoMessageParser* crypto_message_parser() override;
   void OnPacketDecrypted(EncryptionLevel /*level*/) override {}
   void OnOneRttPacketAcknowledged() override;
+  void OnHandshakePacketSent() override;
+  void OnConnectionClosed(QuicErrorCode error,
+                          ConnectionCloseSource source) override;
   void OnHandshakeDoneReceived() override;
   HandshakeState GetHandshakeState() const override;
   size_t BufferSizeLimitForLevel(EncryptionLevel level) const override;
+
+  void OnApplicationState(
+      std::unique_ptr<ApplicationState> application_state) override;
 
   std::string chlo_hash() const;
 
@@ -210,6 +236,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientStream
   }
 
  private:
+  friend class test::QuicCryptoClientStreamPeer;
   std::unique_ptr<HandshakerInterface> handshaker_;
 };
 

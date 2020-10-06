@@ -890,11 +890,8 @@ TEST_F(Bbr2DefaultTopologyTest, ProbeRttAfterQuiescenceImmediatelyExits) {
   sender_->OnPacketSent(SimulatedNow(), /*bytes_in_flight=*/0,
                         sender_unacked_map()->largest_sent_packet() + 1,
                         kDefaultMaxPacketSize, HAS_RETRANSMITTABLE_DATA);
-  if (GetQuicReloadableFlag(quic_bbr2_avoid_unnecessary_probe_rtt)) {
-    EXPECT_EQ(sender_->ExportDebugState().mode, Bbr2Mode::PROBE_BW);
-  } else {
-    EXPECT_EQ(sender_->ExportDebugState().mode, Bbr2Mode::PROBE_RTT);
-  }
+
+  EXPECT_EQ(sender_->ExportDebugState().mode, Bbr2Mode::PROBE_BW);
 }
 
 TEST_F(Bbr2DefaultTopologyTest, ProbeBwAfterQuiescencePostponeMinRttTimestamp) {
@@ -921,7 +918,7 @@ TEST_F(Bbr2DefaultTopologyTest, ProbeBwAfterQuiescencePostponeMinRttTimestamp) {
   // Wait for entering a quiescence of 15 seconds.
   ASSERT_TRUE(simulator_.RunUntilOrTimeout(
       [this]() { return sender_unacked_map()->bytes_in_flight() == 0; },
-      params.RTT()));
+      params.RTT() + timeout));
 
   simulator_.RunFor(QuicTime::Delta::FromSeconds(15));
 
@@ -929,19 +926,13 @@ TEST_F(Bbr2DefaultTopologyTest, ProbeBwAfterQuiescencePostponeMinRttTimestamp) {
   SendBursts(params, 1, kDefaultTCPMSS, QuicTime::Delta::Zero());
   const QuicTime min_rtt_timestamp_after_idle =
       sender_->ExportDebugState().min_rtt_timestamp;
-  if (GetQuicReloadableFlag(quic_bbr2_avoid_unnecessary_probe_rtt)) {
-    EXPECT_LT(min_rtt_timestamp_before_idle + QuicTime::Delta::FromSeconds(14),
-              min_rtt_timestamp_after_idle);
-  } else {
-    EXPECT_EQ(min_rtt_timestamp_before_idle, min_rtt_timestamp_after_idle);
-  }
+
+  EXPECT_LT(min_rtt_timestamp_before_idle + QuicTime::Delta::FromSeconds(14),
+            min_rtt_timestamp_after_idle);
 }
 
 // Regression test for http://shortn/_Jt1QWtshAM.
 TEST_F(Bbr2DefaultTopologyTest, SwitchToBbr2MidConnection) {
-  if (!GetQuicReloadableFlag(quic_bbr_copy_sampler_state_from_v1_to_v2)) {
-    return;
-  }
   QuicTime now = QuicTime::Zero();
   BbrSender old_sender(sender_connection()->clock()->Now(),
                        sender_connection()->sent_packet_manager().GetRttStats(),
@@ -1039,7 +1030,7 @@ TEST_F(Bbr2DefaultTopologyTest, SwitchToBbr2MidConnection) {
 //       Receiver
 class MultiSenderTopologyParams {
  public:
-  static const size_t kNumLocalLinks = 8;
+  static constexpr size_t kNumLocalLinks = 8;
   std::array<LinkParams, kNumLocalLinks> local_links = {
       LinkParams(10000, 1987), LinkParams(10000, 1993), LinkParams(10000, 1997),
       LinkParams(10000, 1999), LinkParams(10000, 2003), LinkParams(10000, 2011),

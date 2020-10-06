@@ -196,10 +196,28 @@ CPDFSDK_Annot* CPDFXFA_Page::GetNextXFAAnnot(CPDFSDK_Annot* pSDKAnnot,
 
   CXFA_FFWidget* hNextFocus =
       bNext ? pWidgetIterator->MoveToNext() : pWidgetIterator->MoveToPrevious();
-  if (!hNextFocus && pSDKAnnot)
-    hNextFocus = pWidgetIterator->MoveToFirst();
+  if (!hNextFocus)
+    return nullptr;
 
   return pPageView->GetAnnotByXFAWidget(hNextFocus);
+}
+
+CPDFSDK_Annot* CPDFXFA_Page::GetFirstOrLastXFAAnnot(CPDFSDK_PageView* page_view,
+                                                    bool last) const {
+  CXFA_FFPageView* xfa_page_view = GetXFAPageView();
+  if (!xfa_page_view)
+    return nullptr;
+
+  ObservedPtr<CPDFSDK_PageView> watched_page_view(page_view);
+  std::unique_ptr<IXFA_WidgetIterator> it =
+      xfa_page_view->CreateTraverseWidgetIterator(XFA_WidgetStatus_Visible |
+                                                  XFA_WidgetStatus_Viewable |
+                                                  XFA_WidgetStatus_Focused);
+  if (!watched_page_view)
+    return nullptr;
+
+  CXFA_FFWidget* pWidget = last ? it->MoveToLast() : it->MoveToFirst();
+  return watched_page_view->GetAnnotByXFAWidget(pWidget);
 }
 
 int CPDFXFA_Page::HasFormFieldAtPoint(const CFX_PointF& point) const {

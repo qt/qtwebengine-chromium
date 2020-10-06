@@ -115,6 +115,7 @@ namespace stats {
   F(heap_graph_non_finalized_graph,           kSingle,  kError,    kTrace),    \
   F(heap_graph_malformed_packet,              kIndexed, kError,    kTrace),    \
   F(heap_graph_missing_packet,                kIndexed, kError,    kTrace),    \
+  F(heap_graph_location_parse_error,          kSingle,  kError,    kTrace),    \
   F(heapprofd_buffer_corrupted,               kIndexed, kError,    kTrace),    \
   F(heapprofd_hit_guardrail,                  kIndexed, kError,    kTrace),    \
   F(heapprofd_buffer_overran,                 kIndexed, kDataLoss, kTrace),    \
@@ -135,7 +136,9 @@ namespace stats {
   F(perf_cpu_lost_records,                    kIndexed, kDataLoss, kTrace),    \
   F(ninja_parse_errors,                       kSingle,  kError,    kTrace),    \
   F(perf_samples_skipped,                     kSingle,  kInfo,     kTrace),    \
-  F(perf_samples_skipped_dataloss,            kSingle,  kDataLoss, kTrace)
+  F(perf_samples_skipped_dataloss,            kSingle,  kDataLoss, kTrace),    \
+  F(thread_time_in_state_out_of_order,        kSingle,  kError,    kAnalysis), \
+  F(thread_time_in_state_unknown_cpu_freq,    kSingle,  kError,    kAnalysis)
 // clang-format on
 
 enum Type {

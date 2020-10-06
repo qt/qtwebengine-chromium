@@ -124,6 +124,14 @@ export class TimelineModelImpl {
    * @param {!SDK.TracingModel.Event} event
    * @return {boolean}
    */
+  isInteractiveTimeEvent(event) {
+    return event.name === RecordType.InteractiveTime;
+  }
+
+  /**
+   * @param {!SDK.TracingModel.Event} event
+   * @return {boolean}
+   */
   isLayoutShiftEvent(event) {
     return event.name === RecordType.LayoutShift;
   }
@@ -172,6 +180,13 @@ export class TimelineModelImpl {
    */
   cpuProfiles() {
     return this._cpuProfiles;
+  }
+
+  /**
+   * @return {number}
+   */
+  totalBlockingTime() {
+    return this._totalBlockingTime;
   }
 
   /**
@@ -635,6 +650,7 @@ export class TimelineModelImpl {
     } else if (isWorker) {
       track.type = TrackType.Worker;
       track.url = url;
+      track.name = track.url ? ls`Worker — ${track.url}` : ls`Dedicated Worker`;
     } else if (thread.name().startsWith('CompositorTileWorker')) {
       track.type = TrackType.Raster;
     }
@@ -644,6 +660,17 @@ export class TimelineModelImpl {
     this._eventStack = [];
     const eventStack = this._eventStack;
 
+    // Get the worker name from the target.
+    if (isWorker) {
+      const cpuProfileEvent = events.find(event => event.name === RecordType.Profile);
+      if (cpuProfileEvent) {
+        const target = this.targetByEvent(cpuProfileEvent);
+        if (target) {
+          track.name = ls`Worker: ${target.name()} — ${track.url}`;
+        }
+      }
+    }
+
     for (const range of ranges) {
       let i = events.lowerBound(range.from, (time, event) => time - event.startTime);
       for (; i < events.length; i++) {
@@ -651,6 +678,12 @@ export class TimelineModelImpl {
         if (event.startTime >= range.to) {
           break;
         }
+
+        // There may be several TTI events, only take the first one.
+        if (this.isInteractiveTimeEvent(event) && this._totalBlockingTime === -1) {
+          this._totalBlockingTime = event.args['args']['total_blocking_time_ms'];
+        }
+
         while (eventStack.length && eventStack.peekLast().endTime <= event.startTime) {
           eventStack.pop();
         }
@@ -1094,7 +1127,7 @@ export class TimelineModelImpl {
   _processBrowserEvent(event) {
     if (event.name === RecordType.LatencyInfoFlow) {
       const frameId = event.args['frameTreeNodeId'];
-      if (typeof frameId === 'number' && frameId === this._mainFrameNodeId) {
+      if (typeof frameId === 'number' && frameId === this._mainFrameNodeId && event.bind_id) {
         this._knownInputEvents.add(event.bind_id);
       }
       return;
@@ -1243,6 +1276,8 @@ export class TimelineModelImpl {
 
     this._minimumRecordTime = 0;
     this._maximumRecordTime = 0;
+
+    this._totalBlockingTime = -1;
   }
 
   /**
@@ -1404,6 +1439,7 @@ export const RecordType = {
   RasterTask: 'RasterTask',
   ScrollLayer: 'ScrollLayer',
   CompositeLayers: 'CompositeLayers',
+  InteractiveTime: 'InteractiveTime',
 
   ScheduleStyleInvalidationTracking: 'ScheduleStyleInvalidationTracking',
   StyleRecalcInvalidationTracking: 'StyleRecalcInvalidationTracking',

@@ -75,6 +75,7 @@ select.toolbar-item:disabled + .toolbar-dropdown-arrow {
     min-width: 28px;
     background: transparent;
     border-radius: 0;
+    cursor: pointer;
 }
 
 .toolbar-text {
@@ -381,6 +382,10 @@ input[is=history-input]:not(:placeholder-shown) {
     .toolbar-item,
     .toolbar-text {
         color: ButtonText;
+    }
+    .toolbar-button.toolbar-state-on .toolbar-text {
+      forced-color-adjust: none;
+      color: Highlight;
     }
     .toolbar-input {
         forced-color-adjust: none;

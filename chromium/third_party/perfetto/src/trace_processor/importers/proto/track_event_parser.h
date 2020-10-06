@@ -19,9 +19,9 @@
 
 #include "perfetto/base/build_config.h"
 #include "perfetto/protozero/field.h"
-#include "src/trace_processor/args_tracker.h"
+#include "src/trace_processor/importers/common/args_tracker.h"
+#include "src/trace_processor/importers/common/slice_tracker.h"
 #include "src/trace_processor/importers/proto/args_table_utils.h"
-#include "src/trace_processor/slice_tracker.h"
 #include "src/trace_processor/storage/trace_storage.h"
 #include "src/trace_processor/timestamped_trace_piece.h"
 
@@ -34,6 +34,12 @@ class Value;
 namespace perfetto {
 
 namespace trace_processor {
+
+// Field numbers to be added to args table automatically via reflection
+//
+// TODO(ddrone): replace with a predicate on field id to import new fields
+// automatically
+static constexpr uint16_t kReflectFields[] = {24, 25, 26, 27, 28, 29};
 
 class PacketSequenceStateGeneration;
 class TraceProcessorContext;
@@ -87,23 +93,15 @@ class TrackEventParser {
   const StringId flow_direction_value_in_id_;
   const StringId flow_direction_value_out_id_;
   const StringId flow_direction_value_inout_id_;
-  const StringId chrome_user_event_action_args_key_id_;
-  const StringId chrome_user_event_action_hash_args_key_id_;
   const StringId chrome_legacy_ipc_class_args_key_id_;
   const StringId chrome_legacy_ipc_line_args_key_id_;
-  const StringId chrome_keyed_service_name_args_key_id_;
-  const StringId chrome_histogram_sample_name_hash_args_key_id_;
-  const StringId chrome_histogram_sample_name_args_key_id_;
-  const StringId chrome_histogram_sample_sample_args_key_id_;
-  const StringId chrome_latency_info_trace_id_key_id_;
-  const StringId chrome_latency_info_step_key_id_;
-  const StringId chrome_latency_info_frame_tree_node_id_key_id_;
 
-  std::array<StringId, 8> chrome_latency_info_step_ids_;
   std::array<StringId, 38> chrome_legacy_ipc_class_ids_;
   std::array<StringId, 9> chrome_process_name_ids_;
   std::array<StringId, 14> chrome_thread_name_ids_;
   std::array<StringId, 4> counter_unit_ids_;
+
+  std::vector<uint16_t> reflect_fields_;
 };
 
 }  // namespace trace_processor

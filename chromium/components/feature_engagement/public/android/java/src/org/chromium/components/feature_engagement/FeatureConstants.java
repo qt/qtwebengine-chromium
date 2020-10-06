@@ -38,7 +38,11 @@ import java.lang.annotation.RetentionPolicy;
         FeatureConstants.TAB_GROUPS_YOUR_TABS_ARE_TOGETHER_FEATURE,
         FeatureConstants.FEED_CARD_MENU_FEATURE, FeatureConstants.IDENTITY_DISC_FEATURE,
         FeatureConstants.TAB_GROUPS_DRAG_AND_DROP_FEATURE,
-        FeatureConstants.QUIET_NOTIFICATION_PROMPTS_FEATURE})
+        FeatureConstants.QUIET_NOTIFICATION_PROMPTS_FEATURE,
+        FeatureConstants.HOMEPAGE_PROMO_CARD_FEATURE, FeatureConstants.FEED_HEADER_MENU_FEATURE,
+        FeatureConstants.CHROME_REENGAGEMENT_NOTIFICATION_1_FEATURE,
+        FeatureConstants.CHROME_REENGAGEMENT_NOTIFICATION_2_FEATURE,
+        FeatureConstants.CHROME_REENGAGEMENT_NOTIFICATION_3_FEATURE})
 @Retention(RetentionPolicy.SOURCE)
 public @interface FeatureConstants {
     String DOWNLOAD_PAGE_FEATURE = "IPH_DownloadPage";
@@ -135,4 +139,30 @@ public @interface FeatureConstants {
      * the permission prompt (for notifications).
      */
     String QUIET_NOTIFICATION_PROMPTS_FEATURE = "IPH_QuietNotificationPrompts";
+
+    /**
+     * An IPH feature showing up a promo card on new tab page to promote users setting Chrome's new
+     * tab page as their homepage.
+     */
+    String HOMEPAGE_PROMO_CARD_FEATURE = "IPH_HomepagePromoCard";
+
+    /**
+     * An IPH feature to show on the feed header menu button of the FeedNewTabPage.
+     */
+    String FEED_HEADER_MENU_FEATURE = "IPH_FeedHeaderMenu";
+
+    /**
+     * An IPH feature to show the first re-engagement notification.
+     */
+    String CHROME_REENGAGEMENT_NOTIFICATION_1_FEATURE = "IPH_ChromeReengagementNotification1";
+
+    /**
+     * An IPH feature to show the second re-engagement notification.
+     */
+    String CHROME_REENGAGEMENT_NOTIFICATION_2_FEATURE = "IPH_ChromeReengagementNotification2";
+
+    /**
+     * An IPH feature to show the third re-engagement notification.
+     */
+    String CHROME_REENGAGEMENT_NOTIFICATION_3_FEATURE = "IPH_ChromeReengagementNotification3";
 }

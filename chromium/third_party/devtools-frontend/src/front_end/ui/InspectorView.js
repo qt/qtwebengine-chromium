@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 
@@ -58,7 +61,6 @@ export class InspectorView extends VBox {
     // DevTools sidebar is a vertical split of panels tabbed pane and a drawer.
     this._drawerSplitWidget = new SplitWidget(false, true, 'Inspector.drawerSplitViewState', 200, 200);
     this._drawerSplitWidget.hideSidebar();
-    this._drawerSplitWidget.hideDefaultResizer();
     this._drawerSplitWidget.enableShowModeSaving();
     this._drawerSplitWidget.show(this.element);
 
@@ -71,7 +73,6 @@ export class InspectorView extends VBox {
     this._drawerTabbedPane.setMinimumSize(0, 27);
     const closeDrawerButton = new ToolbarButton(Common.UIString.UIString('Close drawer'), 'largeicon-delete');
     closeDrawerButton.addEventListener(ToolbarButton.Events.Click, this._closeDrawer, this);
-    this._drawerSplitWidget.installResizer(this._drawerTabbedPane.headerElement());
     this._drawerTabbedPane.addEventListener(TabbedPaneEvents.TabSelected, this._drawerTabSelected, this);
 
     this._drawerSplitWidget.setSidebarWidget(this._drawerTabbedPane);

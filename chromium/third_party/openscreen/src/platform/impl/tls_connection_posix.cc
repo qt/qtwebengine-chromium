@@ -24,7 +24,7 @@
 #include "platform/base/error.h"
 #include "platform/impl/stream_socket.h"
 #include "util/crypto/openssl_util.h"
-#include "util/logging.h"
+#include "util/osp_logging.h"
 
 namespace openscreen {
 
@@ -59,6 +59,7 @@ void TlsConnectionPosix::TryReceiveMessage() {
   OSP_DCHECK(ssl_);
   constexpr int kMaxApplicationDataBytes = 4096;
   std::vector<uint8_t> block(kMaxApplicationDataBytes);
+  ClearOpenSSLERRStack(CURRENT_LOCATION);
   const int bytes_read =
       SSL_read(ssl_.get(), block.data(), kMaxApplicationDataBytes);
 
@@ -124,6 +125,7 @@ void TlsConnectionPosix::SendAvailableBytes() {
     return;
   }
 
+  ClearOpenSSLERRStack(CURRENT_LOCATION);
   const int result =
       SSL_write(ssl_.get(), sendable_bytes.data(), sendable_bytes.size());
   if (result <= 0) {

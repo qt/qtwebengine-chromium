@@ -25,11 +25,11 @@
 #include <json/value.h>
 
 #include "perfetto/ext/base/temp_file.h"
-#include "src/trace_processor/args_tracker.h"
-#include "src/trace_processor/metadata_tracker.h"
-#include "src/trace_processor/process_tracker.h"
-#include "src/trace_processor/trace_processor_context.h"
-#include "src/trace_processor/track_tracker.h"
+#include "src/trace_processor/importers/common/args_tracker.h"
+#include "src/trace_processor/importers/common/process_tracker.h"
+#include "src/trace_processor/importers/common/track_tracker.h"
+#include "src/trace_processor/importers/proto/metadata_tracker.h"
+#include "src/trace_processor/types/trace_processor_context.h"
 
 #include "test/gtest_and_gmock.h"
 
@@ -740,7 +740,7 @@ TEST_F(ExportJsonTest, InstantEvent) {
       {kTimestamp2, 0, track2, cat_id, name_id, 0, 0, 0});
 
   // Async event track.
-  context_.track_tracker->ReserveDescriptorChildTrack(1234, 0);
+  context_.track_tracker->ReserveDescriptorChildTrack(1234, 0, kNullStringId);
   TrackId track3 = *context_.track_tracker->GetDescriptorTrack(1234);
   context_.args_tracker->Flush();  // Flush track args.
   context_.storage->mutable_slice_table()->Insert(
@@ -1340,6 +1340,7 @@ TEST_F(ExportJsonTest, CpuProfileEvent) {
   const uint32_t kProcessID = 100;
   const uint32_t kThreadID = 200;
   const int64_t kTimestamp = 10000000;
+  const int32_t kProcessPriority = 42;
 
   TraceStorage* storage = context_.storage.get();
 
@@ -1386,7 +1387,7 @@ TEST_F(ExportJsonTest, CpuProfileEvent) {
       callsites->Insert({1, frame_callsite_1.id, frame_2.id});
 
   storage->mutable_cpu_profile_stack_sample_table()->Insert(
-      {kTimestamp, frame_callsite_2.id, utid});
+      {kTimestamp, frame_callsite_2.id, utid, kProcessPriority});
 
   base::TempFile temp_file = base::TempFile::Create();
   FILE* output = fopen(temp_file.path().c_str(), "w+");
@@ -1408,6 +1409,7 @@ TEST_F(ExportJsonTest, CpuProfileEvent) {
   EXPECT_EQ(event["args"]["frames"].asString(),
             "foo_func - foo_module_name [foo_module_id]\nbar_func - "
             "bar_module_name [bar_module_id]\n");
+  EXPECT_EQ(event["args"]["process_priority"].asInt(), kProcessPriority);
 }
 
 TEST_F(ExportJsonTest, ArgumentFilter) {

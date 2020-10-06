@@ -106,6 +106,7 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
 
   void SetFromConfig(const QuicConfig& config,
                      Perspective perspective) override;
+  void ApplyConnectionOptions(const QuicTagVector& connection_options) override;
 
   void AdjustNetworkParameters(const NetworkParams& params) override;
   void SetInitialCongestionWindowInPackets(
@@ -389,9 +390,6 @@ class QUIC_EXPORT_PRIVATE BbrSender : public SendAlgorithmInterface {
   // If true, will not exit low gain mode until bytes_in_flight drops below BDP
   // or it's time for high gain mode.
   bool drain_to_target_;
-
-  const bool fix_zero_bw_on_loss_only_event_ =
-      GetQuicReloadableFlag(quic_bbr_fix_zero_bw_on_loss_only_event);
 
   // True if network parameters are adjusted, and this will be reset if
   // overshooting is detected and pacing rate gets slowed.

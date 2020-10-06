@@ -26,6 +26,7 @@
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/GrResourceProvider.h"
 #include "src/gpu/GrSemaphore.h"
+#include "src/gpu/GrStagingBuffer.h"
 #include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrStencilSettings.h"
 #include "src/gpu/GrSurfacePriv.h"
@@ -34,13 +35,24 @@
 #include "src/gpu/GrTracing.h"
 #include "src/utils/SkJSONWriter.h"
 
+static const size_t kMinStagingBufferSize = 32 * 1024;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 GrGpu::GrGpu(GrContext* context) : fResetBits(kAll_GrBackendState), fContext(context) {}
 
-GrGpu::~GrGpu() {}
+GrGpu::~GrGpu() {
+    SkASSERT(fBusyStagingBuffers.isEmpty());
+}
 
-void GrGpu::disconnect(DisconnectType) {}
+void GrGpu::disconnect(DisconnectType type) {
+    if (DisconnectType::kAbandon == type) {
+        fAvailableStagingBuffers.reset();
+        fActiveStagingBuffers.reset();
+        fBusyStagingBuffers.reset();
+    }
+    fStagingBuffers.clear();
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -441,6 +453,7 @@ bool GrGpu::writePixels(GrSurface* surface, int left, int top, int width, int he
                         GrColorType surfaceColorType, GrColorType srcColorType,
                         const GrMipLevel texels[], int mipLevelCount, bool prepForTexSampling) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+    ATRACE_ANDROID_FRAMEWORK_ALWAYS("texture_upload");
     SkASSERT(surface);
     SkASSERT(!surface->framebufferOnly());
 
@@ -611,70 +624,82 @@ int GrGpu::findOrAssignSamplePatternKey(GrRenderTarget* renderTarget) {
     return fSamplePatternDictionary.findOrAssignSamplePatternKey(sampleLocations);
 }
 
-GrSemaphoresSubmitted GrGpu::finishFlush(GrSurfaceProxy* proxies[],
-                                         int n,
-                                         SkSurface::BackendSurfaceAccess access,
-                                         const GrFlushInfo& info,
-                                         const GrPrepareForExternalIORequests& externalRequests) {
+#ifdef SK_DEBUG
+bool GrGpu::inStagingBuffers(GrStagingBuffer* b) const {
+    for (const auto& i : fStagingBuffers) {
+        if (b == i.get()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void GrGpu::validateStagingBuffers() const {
+    for (const auto& i : fStagingBuffers) {
+        GrStagingBuffer* buffer = i.get();
+        SkASSERT(fAvailableStagingBuffers.isInList(buffer) ||
+                 fActiveStagingBuffers.isInList(buffer) ||
+                 fBusyStagingBuffers.isInList(buffer));
+    }
+    for (auto b : fAvailableStagingBuffers) {
+        SkASSERT(this->inStagingBuffers(b));
+    }
+    for (auto b : fActiveStagingBuffers) {
+        SkASSERT(this->inStagingBuffers(b));
+    }
+    for (auto b : fBusyStagingBuffers) {
+        SkASSERT(this->inStagingBuffers(b));
+    }
+}
+#endif
+
+void GrGpu::executeFlushInfo(GrSurfaceProxy* proxies[],
+                             int numProxies,
+                             SkSurface::BackendSurfaceAccess access,
+                             const GrFlushInfo& info,
+                             const GrPrepareForExternalIORequests& externalRequests) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
-    this->stats()->incNumFinishFlushes();
+
     GrResourceProvider* resourceProvider = fContext->priv().resourceProvider();
 
-    struct SemaphoreInfo {
-        std::unique_ptr<GrSemaphore> fSemaphore;
-        bool fDidCreate = false;
-    };
-
-    bool failedSemaphoreCreation = false;
-    std::unique_ptr<SemaphoreInfo[]> semaphoreInfos(new SemaphoreInfo[info.fNumSemaphores]);
+    std::unique_ptr<std::unique_ptr<GrSemaphore>[]> semaphores(
+            new std::unique_ptr<GrSemaphore>[info.fNumSemaphores]);
     if (this->caps()->semaphoreSupport() && info.fNumSemaphores) {
-        for (int i = 0; i < info.fNumSemaphores && !failedSemaphoreCreation; ++i) {
-            if (info.fSignalSemaphores[i].isInitialized()) {
-                semaphoreInfos[i].fSemaphore = resourceProvider->wrapBackendSemaphore(
-                        info.fSignalSemaphores[i],
-                        GrResourceProvider::SemaphoreWrapType::kWillSignal,
-                        kBorrow_GrWrapOwnership);
-            } else {
-                semaphoreInfos[i].fSemaphore = resourceProvider->makeSemaphore(false);
-                semaphoreInfos[i].fDidCreate = true;
-            }
-            if (!semaphoreInfos[i].fSemaphore) {
-                semaphoreInfos[i].fDidCreate = false;
-                failedSemaphoreCreation = true;
-            }
-        }
-        if (!failedSemaphoreCreation) {
-            for (int i = 0; i < info.fNumSemaphores && !failedSemaphoreCreation; ++i) {
-                this->insertSemaphore(semaphoreInfos[i].fSemaphore.get());
-            }
-        }
-    }
-
-    // We always want to try flushing, so do that before checking if we failed semaphore creation.
-    if (!this->onFinishFlush(proxies, n, access, info, externalRequests) ||
-        failedSemaphoreCreation) {
-        // If we didn't do the flush or failed semaphore creations then none of the semaphores were
-        // submitted. Therefore the client can't wait on any of the semaphores. Additionally any
-        // semaphores we created here the client is not responsible for deleting so we must make
-        // sure they get deleted. We do this by changing the ownership from borrowed to owned.
         for (int i = 0; i < info.fNumSemaphores; ++i) {
-            if (semaphoreInfos[i].fDidCreate) {
-                SkASSERT(semaphoreInfos[i].fSemaphore);
-                semaphoreInfos[i].fSemaphore->setIsOwned();
+            if (info.fSignalSemaphores[i].isInitialized()) {
+                semaphores[i] = resourceProvider->wrapBackendSemaphore(
+                    info.fSignalSemaphores[i],
+                    GrResourceProvider::SemaphoreWrapType::kWillSignal,
+                    kBorrow_GrWrapOwnership);
+                this->insertSemaphore(semaphores[i].get());
+            } else {
+                semaphores[i] = resourceProvider->makeSemaphore(false);
+                if (semaphores[i]) {
+                    this->insertSemaphore(semaphores[i].get());
+                    info.fSignalSemaphores[i] = semaphores[i]->backendSemaphore();
+                }
             }
         }
-        return GrSemaphoresSubmitted::kNo;
     }
 
-    for (int i = 0; i < info.fNumSemaphores; ++i) {
-        if (!info.fSignalSemaphores[i].isInitialized()) {
-            SkASSERT(semaphoreInfos[i].fSemaphore);
-            info.fSignalSemaphores[i] = semaphoreInfos[i].fSemaphore->backendSemaphore();
-        }
+    if (info.fFinishedProc) {
+        this->addFinishedProc(info.fFinishedProc, info.fFinishedContext);
     }
+    this->prepareSurfacesForBackendAccessAndExternalIO(proxies, numProxies, access,
+                                                       externalRequests);
+}
 
-    return this->caps()->semaphoreSupport() ? GrSemaphoresSubmitted::kYes
-                                            : GrSemaphoresSubmitted::kNo;
+bool GrGpu::submitToGpu(bool syncCpu) {
+    this->stats()->incNumSubmitToGpus();
+
+#ifdef SK_DEBUG
+    this->validateStagingBuffers();
+#endif
+    this->unmapStagingBuffers();
+
+    bool submitted = this->onSubmitToGpu(syncCpu);
+
+    return submitted;
 }
 
 #ifdef SK_ENABLE_DUMP_GPU
@@ -820,8 +845,7 @@ GrBackendTexture GrGpu::createBackendTexture(SkISize dimensions,
                                              const GrBackendFormat& format,
                                              GrRenderable renderable,
                                              GrMipMapped mipMapped,
-                                             GrProtected isProtected,
-                                             const BackendTextureData* data) {
+                                             GrProtected isProtected) {
     const GrCaps* caps = this->caps();
 
     if (!format.isValid()) {
@@ -833,13 +857,6 @@ GrBackendTexture GrGpu::createBackendTexture(SkISize dimensions,
         return {};
     }
 
-    if (data && data->type() == BackendTextureData::Type::kPixmaps) {
-        auto ct = SkColorTypeToGrColorType(data->pixmap(0).colorType());
-        if (!caps->areColorTypeAndFormatCompatible(ct, format)) {
-            return {};
-        }
-    }
-
     if (dimensions.isEmpty() || dimensions.width()  > caps->maxTextureSize() ||
                                 dimensions.height() > caps->maxTextureSize()) {
         return {};
@@ -849,19 +866,56 @@ GrBackendTexture GrGpu::createBackendTexture(SkISize dimensions,
         return {};
     }
 
-    if (!MipMapsAreCorrect(dimensions, mipMapped, data)) {
-        return {};
+    return this->onCreateBackendTexture(dimensions, format, renderable, mipMapped, isProtected);
+}
+
+bool GrGpu::updateBackendTexture(const GrBackendTexture& backendTexture,
+                                 GrGpuFinishedProc finishedProc,
+                                 GrGpuFinishedContext finishedContext,
+                                 const BackendTextureData* data) {
+    SkASSERT(data);
+    const GrCaps* caps = this->caps();
+
+    sk_sp<GrRefCntedCallback> callback;
+    if (finishedProc) {
+        callback.reset(new GrRefCntedCallback(finishedProc, finishedContext));
     }
 
-    return this->onCreateBackendTexture(dimensions, format, renderable, mipMapped,
-                                        isProtected, data);
+    if (!backendTexture.isValid()) {
+        return false;
+    }
+
+    if (data->type() == BackendTextureData::Type::kPixmaps) {
+        auto ct = SkColorTypeToGrColorType(data->pixmap(0).colorType());
+        if (!caps->areColorTypeAndFormatCompatible(ct, backendTexture.getBackendFormat())) {
+            return false;
+        }
+    }
+
+    if (backendTexture.hasMipMaps() && !this->caps()->mipMapSupport()) {
+        return false;
+    }
+
+    GrMipMapped mipMapped = backendTexture.hasMipMaps() ? GrMipMapped::kYes : GrMipMapped::kNo;
+    if (!MipMapsAreCorrect(backendTexture.dimensions(), mipMapped, data)) {
+        return false;
+    }
+
+    return this->onUpdateBackendTexture(backendTexture, std::move(callback), data);
 }
 
 GrBackendTexture GrGpu::createCompressedBackendTexture(SkISize dimensions,
                                                        const GrBackendFormat& format,
                                                        GrMipMapped mipMapped,
                                                        GrProtected isProtected,
+                                                       GrGpuFinishedProc finishedProc,
+                                                       GrGpuFinishedContext finishedContext,
                                                        const BackendTextureData* data) {
+    sk_sp<GrRefCntedCallback> callback;
+    if (finishedProc) {
+        callback.reset(new GrRefCntedCallback(finishedProc, finishedContext));
+    }
+
     const GrCaps* caps = this->caps();
 
     if (!format.isValid()) {
@@ -889,5 +943,64 @@ GrBackendTexture GrGpu::createCompressedBackendTexture(SkISize dimensions,
     }
 
     return this->onCreateCompressedBackendTexture(dimensions, format, mipMapped,
-                                                  isProtected, data);
+                                                  isProtected, std::move(callback), data);
+}
+
+GrStagingBuffer* GrGpu::findStagingBuffer(size_t size) {
+#ifdef SK_DEBUG
+    this->validateStagingBuffers();
+#endif
+    for (auto b : fActiveStagingBuffers) {
+        if (b->remaining() >= size) {
+            return b;
+        }
+    }
+    for (auto b : fAvailableStagingBuffers) {
+        if (b->remaining() >= size) {
+            fAvailableStagingBuffers.remove(b);
+            fActiveStagingBuffers.addToTail(b);
+            return b;
+        }
+    }
+    size = SkNextPow2(size);
+    size = std::max(size, kMinStagingBufferSize);
+    std::unique_ptr<GrStagingBuffer> b = this->createStagingBuffer(size);
+    GrStagingBuffer* stagingBuffer = b.get();
+    fStagingBuffers.push_back(std::move(b));
+    fActiveStagingBuffers.addToTail(stagingBuffer);
+    return stagingBuffer;
+}
+
+GrStagingBuffer::Slice GrGpu::allocateStagingBufferSlice(size_t size) {
+#ifdef SK_DEBUG
+    this->validateStagingBuffers();
+#endif
+    GrStagingBuffer* stagingBuffer = this->findStagingBuffer(size);
+    return stagingBuffer->allocate(size);
+}
+
+void GrGpu::unmapStagingBuffers() {
+#ifdef SK_DEBUG
+    this->validateStagingBuffers();
+#endif
+    // Unmap all active buffers.
+    for (auto buffer : fActiveStagingBuffers) {
+        buffer->unmap();
+    }
+}
+
+void GrGpu::moveStagingBufferFromBusyToAvailable(GrStagingBuffer* buffer) {
+#ifdef SK_DEBUG
+    this->validateStagingBuffers();
+#endif
+    fBusyStagingBuffers.remove(buffer);
+    fAvailableStagingBuffers.addToTail(buffer);
+}
+
+void GrGpu::moveStagingBufferFromActiveToBusy(GrStagingBuffer* buffer) {
+#ifdef SK_DEBUG
+    this->validateStagingBuffers();
+#endif
+    fActiveStagingBuffers.remove(buffer);
+    fBusyStagingBuffers.addToTail(buffer);
 }

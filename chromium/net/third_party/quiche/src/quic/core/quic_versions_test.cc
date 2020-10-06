@@ -83,6 +83,65 @@ TEST_F(QuicVersionsTest, KnownAndValid) {
                                         static_cast<QuicTransportVersion>(99)));
 }
 
+TEST_F(QuicVersionsTest, Features) {
+  ParsedQuicVersion parsed_version_q043 =
+      ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_43);
+  ParsedQuicVersion parsed_version_draft_27 =
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_27);
+
+  EXPECT_TRUE(parsed_version_q043.IsKnown());
+  EXPECT_FALSE(parsed_version_q043.KnowsWhichDecrypterToUse());
+  EXPECT_FALSE(parsed_version_q043.UsesInitialObfuscators());
+  EXPECT_FALSE(parsed_version_q043.AllowsLowFlowControlLimits());
+  EXPECT_FALSE(parsed_version_q043.HasHeaderProtection());
+  EXPECT_FALSE(parsed_version_q043.SupportsRetry());
+  EXPECT_FALSE(parsed_version_q043.HasRetryIntegrityTag());
+  EXPECT_FALSE(
+      parsed_version_q043.SendsVariableLengthPacketNumberInLongHeader());
+  EXPECT_FALSE(parsed_version_q043.AllowsVariableLengthConnectionIds());
+  EXPECT_FALSE(parsed_version_q043.SupportsClientConnectionIds());
+  EXPECT_FALSE(parsed_version_q043.HasLengthPrefixedConnectionIds());
+  EXPECT_FALSE(parsed_version_q043.SupportsAntiAmplificationLimit());
+  EXPECT_FALSE(parsed_version_q043.CanSendCoalescedPackets());
+  EXPECT_TRUE(parsed_version_q043.SupportsGoogleAltSvcFormat());
+  EXPECT_FALSE(parsed_version_q043.HasIetfInvariantHeader());
+  EXPECT_FALSE(parsed_version_q043.SupportsMessageFrames());
+  EXPECT_FALSE(parsed_version_q043.UsesHttp3());
+  EXPECT_FALSE(parsed_version_q043.HasLongHeaderLengths());
+  EXPECT_FALSE(parsed_version_q043.UsesCryptoFrames());
+  EXPECT_FALSE(parsed_version_q043.HasIetfQuicFrames());
+  EXPECT_FALSE(parsed_version_q043.HasHandshakeDone());
+  EXPECT_FALSE(parsed_version_q043.HasVarIntTransportParams());
+  EXPECT_FALSE(parsed_version_q043.UsesTls());
+  EXPECT_TRUE(parsed_version_q043.UsesQuicCrypto());
+
+  EXPECT_TRUE(parsed_version_draft_27.IsKnown());
+  EXPECT_TRUE(parsed_version_draft_27.KnowsWhichDecrypterToUse());
+  EXPECT_TRUE(parsed_version_draft_27.UsesInitialObfuscators());
+  EXPECT_TRUE(parsed_version_draft_27.AllowsLowFlowControlLimits());
+  EXPECT_TRUE(parsed_version_draft_27.HasHeaderProtection());
+  EXPECT_TRUE(parsed_version_draft_27.SupportsRetry());
+  EXPECT_TRUE(parsed_version_draft_27.HasRetryIntegrityTag());
+  EXPECT_TRUE(
+      parsed_version_draft_27.SendsVariableLengthPacketNumberInLongHeader());
+  EXPECT_TRUE(parsed_version_draft_27.AllowsVariableLengthConnectionIds());
+  EXPECT_TRUE(parsed_version_draft_27.SupportsClientConnectionIds());
+  EXPECT_TRUE(parsed_version_draft_27.HasLengthPrefixedConnectionIds());
+  EXPECT_TRUE(parsed_version_draft_27.SupportsAntiAmplificationLimit());
+  EXPECT_TRUE(parsed_version_draft_27.CanSendCoalescedPackets());
+  EXPECT_FALSE(parsed_version_draft_27.SupportsGoogleAltSvcFormat());
+  EXPECT_TRUE(parsed_version_draft_27.HasIetfInvariantHeader());
+  EXPECT_TRUE(parsed_version_draft_27.SupportsMessageFrames());
+  EXPECT_TRUE(parsed_version_draft_27.UsesHttp3());
+  EXPECT_TRUE(parsed_version_draft_27.HasLongHeaderLengths());
+  EXPECT_TRUE(parsed_version_draft_27.UsesCryptoFrames());
+  EXPECT_TRUE(parsed_version_draft_27.HasIetfQuicFrames());
+  EXPECT_TRUE(parsed_version_draft_27.HasHandshakeDone());
+  EXPECT_TRUE(parsed_version_draft_27.HasVarIntTransportParams());
+  EXPECT_TRUE(parsed_version_draft_27.UsesTls());
+  EXPECT_FALSE(parsed_version_draft_27.UsesQuicCrypto());
+}
+
 TEST_F(QuicVersionsTest, QuicVersionLabelToQuicTransportVersion) {
   // If you add a new version to the QuicTransportVersion enum you will need to
   // add a new case to QuicVersionLabelToQuicTransportVersion, otherwise this
@@ -318,6 +377,10 @@ TEST_F(QuicVersionsTest, QuicVersionLabelToString) {
             QuicVersionLabelVectorToString(version_labels, ":", 2));
   EXPECT_EQ("Q035|Q037|...",
             QuicVersionLabelVectorToString(version_labels, "|", 1));
+
+  std::ostringstream os;
+  os << version_labels;
+  EXPECT_EQ("Q035,Q037,T038", os.str());
 }
 
 TEST_F(QuicVersionsTest, QuicVersionToString) {
@@ -346,6 +409,10 @@ TEST_F(QuicVersionsTest, QuicVersionToString) {
     EXPECT_NE("QUIC_VERSION_UNSUPPORTED",
               QuicVersionToString(transport_version));
   }
+
+  std::ostringstream os;
+  os << versions_vector;
+  EXPECT_EQ("QUIC_VERSION_UNSUPPORTED,QUIC_VERSION_43", os.str());
 }
 
 TEST_F(QuicVersionsTest, ParsedQuicVersionToString) {
@@ -368,6 +435,10 @@ TEST_F(QuicVersionsTest, ParsedQuicVersionToString) {
   for (const ParsedQuicVersion& version : AllSupportedVersions()) {
     EXPECT_NE("0", ParsedQuicVersionToString(version));
   }
+
+  std::ostringstream os;
+  os << versions_vector;
+  EXPECT_EQ("0,Q043", os.str());
 }
 
 TEST_F(QuicVersionsTest, FilterSupportedVersionsAllVersions) {
@@ -375,7 +446,7 @@ TEST_F(QuicVersionsTest, FilterSupportedVersionsAllVersions) {
                 "Supported versions out of sync");
   SetQuicReloadableFlag(quic_enable_version_draft_27, true);
   SetQuicReloadableFlag(quic_enable_version_draft_25_v3, true);
-  SetQuicReloadableFlag(quic_enable_version_t050, true);
+  SetQuicReloadableFlag(quic_enable_version_t050_v2, true);
   SetQuicReloadableFlag(quic_disable_version_q050, false);
   SetQuicReloadableFlag(quic_disable_version_q049, false);
   SetQuicReloadableFlag(quic_disable_version_q048, false);
@@ -383,6 +454,12 @@ TEST_F(QuicVersionsTest, FilterSupportedVersionsAllVersions) {
   SetQuicReloadableFlag(quic_disable_version_q043, false);
 
   ParsedQuicVersionVector expected_parsed_versions;
+  expected_parsed_versions.push_back(
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_27));
+  expected_parsed_versions.push_back(
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25));
+  expected_parsed_versions.push_back(
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_50));
   expected_parsed_versions.push_back(
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_50));
   expected_parsed_versions.push_back(
@@ -393,12 +470,6 @@ TEST_F(QuicVersionsTest, FilterSupportedVersionsAllVersions) {
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_46));
   expected_parsed_versions.push_back(
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_43));
-  expected_parsed_versions.push_back(
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_27));
-  expected_parsed_versions.push_back(
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25));
-  expected_parsed_versions.push_back(
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_50));
 
   ASSERT_EQ(expected_parsed_versions,
             FilterSupportedVersions(AllSupportedVersions()));
@@ -410,7 +481,7 @@ TEST_F(QuicVersionsTest, FilterSupportedVersionsNo99) {
                 "Supported versions out of sync");
   SetQuicReloadableFlag(quic_enable_version_draft_27, false);
   SetQuicReloadableFlag(quic_enable_version_draft_25_v3, true);
-  SetQuicReloadableFlag(quic_enable_version_t050, true);
+  SetQuicReloadableFlag(quic_enable_version_t050_v2, true);
   SetQuicReloadableFlag(quic_disable_version_q050, false);
   SetQuicReloadableFlag(quic_disable_version_q049, false);
   SetQuicReloadableFlag(quic_disable_version_q048, false);
@@ -418,6 +489,10 @@ TEST_F(QuicVersionsTest, FilterSupportedVersionsNo99) {
   SetQuicReloadableFlag(quic_disable_version_q043, false);
 
   ParsedQuicVersionVector expected_parsed_versions;
+  expected_parsed_versions.push_back(
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25));
+  expected_parsed_versions.push_back(
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_50));
   expected_parsed_versions.push_back(
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_50));
   expected_parsed_versions.push_back(
@@ -428,10 +503,6 @@ TEST_F(QuicVersionsTest, FilterSupportedVersionsNo99) {
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_46));
   expected_parsed_versions.push_back(
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_43));
-  expected_parsed_versions.push_back(
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25));
-  expected_parsed_versions.push_back(
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_50));
 
   ASSERT_EQ(expected_parsed_versions,
             FilterSupportedVersions(AllSupportedVersions()));
@@ -442,7 +513,7 @@ TEST_F(QuicVersionsTest, FilterSupportedVersionsNoFlags) {
                 "Supported versions out of sync");
   SetQuicReloadableFlag(quic_enable_version_draft_27, false);
   SetQuicReloadableFlag(quic_enable_version_draft_25_v3, false);
-  SetQuicReloadableFlag(quic_enable_version_t050, false);
+  SetQuicReloadableFlag(quic_enable_version_t050_v2, false);
   SetQuicReloadableFlag(quic_disable_version_q050, false);
   SetQuicReloadableFlag(quic_disable_version_q049, false);
   SetQuicReloadableFlag(quic_disable_version_q048, false);
@@ -574,9 +645,9 @@ TEST_F(QuicVersionsTest, QuicEnableVersion) {
 
   {
     QuicFlagSaver flag_saver;
-    SetQuicReloadableFlag(quic_enable_version_t050, false);
+    SetQuicReloadableFlag(quic_enable_version_t050_v2, false);
     QuicEnableVersion(parsed_version_t050);
-    EXPECT_TRUE(GetQuicReloadableFlag(quic_enable_version_t050));
+    EXPECT_TRUE(GetQuicReloadableFlag(quic_enable_version_t050_v2));
   }
 
   {

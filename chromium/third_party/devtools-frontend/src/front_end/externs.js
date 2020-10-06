@@ -45,17 +45,6 @@ Event.prototype.isMetaOrCtrlForTest;
 Event.prototype.code;
 
 /**
- * TODO(luoe): MouseEvent properties movementX and movementY from the
- * PointerLock API are not yet standard. Once they are included in
- * Closure Compiler, these custom externs can be removed.
- */
-/** @type {number} */
-MouseEvent.prototype.movementX;
-
-/** @type {number} */
-MouseEvent.prototype.movementY;
-
-/**
  * @type {number}
  */
 KeyboardEvent.DOM_KEY_LOCATION_NUMPAD;
@@ -840,14 +829,6 @@ const createElement = function(tagName, customElementType) {};
 const createTextNode = function(data) {};
 
 /**
- * @param {string} elementName
- * @param {string=} className
- * @param {string=} customElementType
- * @return {!Element}
- */
-const createElementWithClass = function(elementName, className, customElementType) {};
-
-/**
  * @param {string} childType
  * @param {string=} className
  * @return {!Element}
@@ -1507,3 +1488,51 @@ class ServicePort {
 }
 
 const fabric = {};
+
+class AnchorBox {
+  /**
+   * @param {number=} x
+   * @param {number=} y
+   * @param {number=} width
+   * @param {number=} height
+   */
+  constructor(x, y, width, height) {
+    /** @type {number} */
+    this.x;
+    /** @type {number} */
+    this.y;
+    /** @type {number} */
+    this.width;
+    /** @type {number} */
+    this.height;
+  }
+
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @return {boolean}
+   */
+  contains(x, y) {
+  }
+
+  /**
+   * @param {!AnchorBox} box
+   * @return {!AnchorBox}
+   */
+  relativeTo(box) {
+  }
+
+  /**
+   * @param {!Element} element
+   * @return {!AnchorBox}
+   */
+  relativeToElement(element) {
+  }
+
+  /**
+   * @param {?AnchorBox} anchorBox
+   * @return {boolean}
+   */
+  equals(anchorBox) {
+  }
+}

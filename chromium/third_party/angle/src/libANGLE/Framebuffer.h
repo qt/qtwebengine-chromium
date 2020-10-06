@@ -61,8 +61,8 @@ enum class AttachmentSampleType
 class FramebufferState final : angle::NonCopyable
 {
   public:
-    FramebufferState();
-    explicit FramebufferState(const Caps &caps, FramebufferID id);
+    explicit FramebufferState(ContextID owningContextID);
+    FramebufferState(const Caps &caps, FramebufferID id, ContextID owningContextID);
     ~FramebufferState();
 
     const std::string &getLabel();
@@ -129,6 +129,8 @@ class FramebufferState final : angle::NonCopyable
         return mDepthBufferFeedbackLoop || mStencilBufferFeedbackLoop;
     }
 
+    const gl::Offset &getSurfaceTextureOffset() const { return mSurfaceTextureOffset; }
+
   private:
     const FramebufferAttachment *getWebGLDepthStencilAttachment() const;
     const FramebufferAttachment *getWebGLDepthAttachment() const;
@@ -141,6 +143,7 @@ class FramebufferState final : angle::NonCopyable
     friend class Framebuffer;
 
     FramebufferID mId;
+    ContextID mOwningContextID;
     std::string mLabel;
 
     std::vector<FramebufferAttachment> mColorAttachments;
@@ -176,6 +179,8 @@ class FramebufferState final : angle::NonCopyable
 
     bool mDefaultFramebufferReadAttachmentInitialized;
     FramebufferAttachment mDefaultFramebufferReadAttachment;
+
+    gl::Offset mSurfaceTextureOffset;
 };
 
 class Framebuffer final : public angle::ObserverInterface,
@@ -184,7 +189,10 @@ class Framebuffer final : public angle::ObserverInterface,
 {
   public:
     // Constructor to build application-defined framebuffers
-    Framebuffer(const Caps &caps, rx::GLImplFactory *factory, FramebufferID id);
+    Framebuffer(const Caps &caps,
+                rx::GLImplFactory *factory,
+                FramebufferID id,
+                ContextID owningContextID);
     // Constructor to build default framebuffers for a surface and context pair
     Framebuffer(const Context *context, egl::Surface *surface, egl::Surface *readSurface);
     // Constructor to build a fake default framebuffer when surfaceless
@@ -310,6 +318,11 @@ class Framebuffer final : public angle::ObserverInterface,
 
     bool hasValidDepthStencil() const;
 
+    // Returns the offset into the texture backing the default framebuffer's surface if any. Returns
+    // zero offset otherwise.  The renderer will apply the offset to scissor and viewport rects used
+    // for draws, clears, and blits.
+    const gl::Offset &getSurfaceTextureOffset() const;
+
     angle::Result discard(const Context *context, size_t count, const GLenum *attachments);
     angle::Result invalidate(const Context *context, size_t count, const GLenum *attachments);
     angle::Result invalidateSub(const Context *context,
@@ -336,9 +349,8 @@ class Framebuffer final : public angle::ObserverInterface,
                                 GLfloat depth,
                                 GLint stencil);
 
-    // These two methods call syncState() internally.
-    angle::Result getImplementationColorReadFormat(const Context *context, GLenum *formatOut);
-    angle::Result getImplementationColorReadType(const Context *context, GLenum *typeOut);
+    GLenum getImplementationColorReadFormat(const Context *context);
+    GLenum getImplementationColorReadType(const Context *context);
 
     angle::Result readPixels(const Context *context,
                              const Rectangle &area,
@@ -386,7 +398,7 @@ class Framebuffer final : public angle::ObserverInterface,
 
     bool hasResourceThatNeedsInit() const { return mState.mResourceNeedsInit.any(); }
 
-    angle::Result syncState(const Context *context) const;
+    angle::Result syncState(const Context *context, GLenum framebufferBinding) const;
 
     // Observer implementation
     void onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message) override;

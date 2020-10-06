@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as ARIAUtils from './ARIAUtils.js';
@@ -298,11 +301,12 @@ export class TextFilterUI extends Common.ObjectWrapper.ObjectWrapper {
 export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper {
   /**
    * @param {!Array.<!Item>} items
-   * @param {!Common.Settings.Setting=} setting
+   * @param {!Common.Settings.Setting<*>=} setting
    */
   constructor(items, setting) {
     super();
-    this._filtersElement = createElementWithClass('div', 'filter-bitset-filter');
+    this._filtersElement = document.createElement('div');
+    this._filtersElement.classList.add('filter-bitset-filter');
     ARIAUtils.markAsListBox(this._filtersElement);
     ARIAUtils.markAsMultiSelectable(this._filtersElement);
     this._filtersElement.title = Common.UIString.UIString(
@@ -489,11 +493,12 @@ export class CheckboxFilterUI extends Common.ObjectWrapper.ObjectWrapper {
    * @param {string} className
    * @param {string} title
    * @param {boolean=} activeWhenChecked
-   * @param {!Common.Settings.Setting=} setting
+   * @param {!Common.Settings.Setting<*>=} setting
    */
   constructor(className, title, activeWhenChecked, setting) {
     super();
-    this._filterElement = createElementWithClass('div', 'filter-checkbox-filter');
+    this._filterElement = document.createElement('div');
+    this._filterElement.classList.add('filter-checkbox-filter');
     this._activeWhenChecked = !!activeWhenChecked;
     this._label = CheckboxLabel.create(title);
     this._filterElement.appendChild(this._label);

@@ -332,7 +332,7 @@ void RAND_set_urandom_fd(int fd) {
   *urandom_fd_requested_bss_get() = fd;
   CRYPTO_STATIC_MUTEX_unlock_write(rand_lock_bss_get());
 
-  CRYPTO_once(rand_once_bss_get(), init_once);
+  CRYPTO_init_sysrand();
   if (*urandom_fd_bss_get() == kHaveGetrandom) {
     close(fd);
   } else if (*urandom_fd_bss_get() != fd) {
@@ -362,7 +362,7 @@ static int fill_with_entropy(uint8_t *out, size_t len, int block, int seed) {
   }
 #endif
 
-  CRYPTO_once(rand_once_bss_get(), init_once);
+  CRYPTO_init_sysrand();
   if (block) {
     CRYPTO_once(wait_for_entropy_once_bss_get(), wait_for_entropy);
   }
@@ -417,6 +417,10 @@ void CRYPTO_sysrand(uint8_t *out, size_t requested) {
   }
 }
 
+void CRYPTO_init_sysrand(void) {
+  CRYPTO_once(rand_once_bss_get(), init_once);
+}
+
 #if defined(BORINGSSL_FIPS)
 void CRYPTO_sysrand_for_seed(uint8_t *out, size_t requested) {
   if (!fill_with_entropy(out, requested, /*block=*/1, /*seed=*/1)) {
@@ -431,16 +435,18 @@ void CRYPTO_sysrand_for_seed(uint8_t *out, size_t requested) {
 #endif
 }
 
-void CRYPTO_sysrand_if_available(uint8_t *out, size_t requested) {
-  // Return all zeros if |fill_with_entropy| fails.
-  OPENSSL_memset(out, 0, requested);
+#endif  // BORINGSSL_FIPS
 
-  if (!fill_with_entropy(out, requested, /*block=*/0, /*seed=*/0) &&
-      errno != EAGAIN) {
+int CRYPTO_sysrand_if_available(uint8_t *out, size_t requested) {
+  if (fill_with_entropy(out, requested, /*block=*/0, /*seed=*/0)) {
+    return 1;
+  } else if (errno == EAGAIN) {
+    OPENSSL_memset(out, 0, requested);
+    return 0;
+  } else {
     perror("opportunistic entropy fill failed");
     abort();
   }
 }
-#endif  // BORINGSSL_FIPS
 
 #endif  // OPENSSL_URANDOM

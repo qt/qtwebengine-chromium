@@ -35,6 +35,7 @@ namespace rr {
 //   * Static arrays in the form T[N] where T can be any of the above.
 class PrintValue
 {
+public:
 	// Ty is a template that can be specialized for printing type T.
 	// Each specialization must expose:
 	//  * A 'static std::string fmt(const T& v)' method that provides the
@@ -83,7 +84,6 @@ class PrintValue
 		return buf;
 	}
 
-public:
 	const std::string format;
 	const std::vector<Value *> values;
 
@@ -316,13 +316,13 @@ template<>
 struct PrintValue::Ty<Long>
 {
 	static std::string fmt(const RValue<Long> &v) { return "%lld"; }
-	static std::vector<Value *> val(const RValue<Long> &v) { return { v.value }; }
+	static std::vector<Value *> val(const RValue<Long> &v) { return { v.value() }; }
 };
 template<typename T>
 struct PrintValue::Ty<Pointer<T>>
 {
 	static std::string fmt(const RValue<Pointer<T>> &v) { return "%p"; }
-	static std::vector<Value *> val(const RValue<Pointer<T>> &v) { return { v.value }; }
+	static std::vector<Value *> val(const RValue<Pointer<T>> &v) { return { v.value() }; }
 };
 template<typename T>
 struct PrintValue::Ty<Reference<T>>
@@ -456,6 +456,9 @@ static_assert(3 == RR_COUNT_ARGUMENTS(a, b, c), "RR_COUNT_ARGUMENTS broken");
 
 }  // namespace rr
 
+#	define RR_PRINT_ONLY(x) x
+#else
+#	define RR_PRINT_ONLY(x)
 #endif  // ENABLE_RR_PRINT
 
 #endif  // rr_Print_hpp

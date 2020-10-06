@@ -263,6 +263,7 @@ add_library(
   cpu-intel.c
   cpu-ppc64le.c
   crypto.c
+  curve25519/curve25519.c
   curve25519/spake25519.c
   dh/dh.c
   dh/params.c
@@ -275,6 +276,7 @@ add_library(
   ecdsa_extra/ecdsa_asn1.c
   ec_extra/ec_asn1.c
   ec_extra/ec_derive.c
+  ec_extra/hash_to_curve.c
   err/err.c
   err_data.c
   engine/engine.c
@@ -335,7 +337,8 @@ add_library(
   thread_none.c
   thread_pthread.c
   thread_win.c
-  trust_token/privacy_pass.c
+  trust_token/pmbtoken.c
+  trust_token/trust_token.c
   x509/a_digest.c
   x509/a_sign.c
   x509/a_strex.c
@@ -418,7 +421,6 @@ add_library(
   x509v3/v3_skey.c
   x509v3/v3_sxnet.c
   x509v3/v3_utl.c
-  ../third_party/fiat/curve25519.c
 
   $<TARGET_OBJECTS:fipsmodule>
 
@@ -514,6 +516,7 @@ add_executable(
   fipsmodule/md5/md5_test.cc
   fipsmodule/modes/gcm_test.cc
   fipsmodule/rand/ctrdrbg_test.cc
+  fipsmodule/rand/fork_detect_test.cc
   fipsmodule/sha/sha_test.cc
   hkdf/hkdf_test.cc
   hmac_extra/hmac_test.cc

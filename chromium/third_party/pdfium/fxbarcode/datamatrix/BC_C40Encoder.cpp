@@ -23,6 +23,7 @@
 #include "fxbarcode/datamatrix/BC_C40Encoder.h"
 
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_memory.h"
 #include "fxbarcode/common/BC_CommonBitMatrix.h"
 #include "fxbarcode/datamatrix/BC_Encoder.h"
 #include "fxbarcode/datamatrix/BC_EncoderContext.h"
@@ -67,7 +68,7 @@ bool CBC_C40Encoder::Encode(CBC_EncoderContext* context) {
       return false;
 
     int32_t available =
-        context->m_symbolInfo->dataCapacity() - curCodewordCount;
+        context->m_symbolInfo->data_capacity() - curCodewordCount;
     if (!context->hasMoreCharacters()) {
       if ((buffer.GetLength() % 3) == 2) {
         if (available < 2 || available > 2) {
@@ -112,7 +113,7 @@ bool CBC_C40Encoder::HandleEOD(CBC_EncoderContext* context,
   if (!context->UpdateSymbolInfo(curCodewordCount))
     return false;
 
-  int32_t available = context->m_symbolInfo->dataCapacity() - curCodewordCount;
+  int32_t available = context->m_symbolInfo->data_capacity() - curCodewordCount;
   if (rest == 2) {
     *buffer += (wchar_t)'\0';
     while (buffer->GetLength() >= 3)

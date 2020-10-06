@@ -54,7 +54,7 @@ namespace dawn_native { namespace d3d12 {
             if (usage & wgpu::BufferUsage::Storage) {
                 resourceState |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             }
-            if (usage & kReadOnlyStorage) {
+            if (usage & kReadOnlyStorageBuffer) {
                 resourceState |= (D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
                                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
             }
@@ -84,7 +84,9 @@ namespace dawn_native { namespace d3d12 {
         D3D12_RESOURCE_DESC resourceDescriptor;
         resourceDescriptor.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         resourceDescriptor.Alignment = 0;
-        resourceDescriptor.Width = GetSize();
+        // TODO(cwallez@chromium.org): Have a global "zero" buffer that can do everything instead
+        // of creating a new 4-byte buffer?
+        resourceDescriptor.Width = std::max(GetSize(), uint64_t(4u));
         resourceDescriptor.Height = 1;
         resourceDescriptor.DepthOrArraySize = 1;
         resourceDescriptor.MipLevels = 1;
@@ -248,7 +250,7 @@ namespace dawn_native { namespace d3d12 {
         // The mapped buffer can be accessed at any time, so it must be locked to ensure it is never
         // evicted. This buffer should already have been made resident when it was created.
         Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-        DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockMappableHeap(heap));
+        DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockHeap(heap));
 
         mWrittenMappedRange = {0, static_cast<size_t>(GetSize())};
         DAWN_TRY(CheckHRESULT(GetD3D12Resource()->Map(0, &mWrittenMappedRange,
@@ -261,7 +263,7 @@ namespace dawn_native { namespace d3d12 {
         // The mapped buffer can be accessed at any time, so we must make the buffer resident and
         // lock it to ensure it is never evicted.
         Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-        DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockMappableHeap(heap));
+        DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockHeap(heap));
 
         mWrittenMappedRange = {};
         D3D12_RANGE readRange = {0, static_cast<size_t>(GetSize())};
@@ -280,7 +282,7 @@ namespace dawn_native { namespace d3d12 {
         // The mapped buffer can be accessed at any time, so we must make the buffer resident and
         // lock it to ensure it is never evicted.
         Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-        DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockMappableHeap(heap));
+        DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockHeap(heap));
 
         mWrittenMappedRange = {0, static_cast<size_t>(GetSize())};
         char* data = nullptr;
@@ -299,7 +301,7 @@ namespace dawn_native { namespace d3d12 {
         // When buffers are mapped, they are locked to keep them in resident memory. We must unlock
         // them when they are unmapped.
         Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-        ToBackend(GetDevice())->GetResidencyManager()->UnlockMappableHeap(heap);
+        ToBackend(GetDevice())->GetResidencyManager()->UnlockHeap(heap);
         mWrittenMappedRange = {};
     }
 
@@ -308,10 +310,19 @@ namespace dawn_native { namespace d3d12 {
         // reference on its heap.
         if (IsMapped()) {
             Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-            ToBackend(GetDevice())->GetResidencyManager()->UnlockMappableHeap(heap);
+            ToBackend(GetDevice())->GetResidencyManager()->UnlockHeap(heap);
         }
 
         ToBackend(GetDevice())->DeallocateMemory(mResourceAllocation);
+    }
+
+    bool Buffer::CheckIsResidentForTesting() const {
+        Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
+        return heap->IsInList() || heap->IsResidencyLocked();
+    }
+
+    bool Buffer::CheckAllocationMethodForTesting(AllocationMethod allocationMethod) const {
+        return mResourceAllocation.GetInfo().mMethod == allocationMethod;
     }
 
     MapRequestTracker::MapRequestTracker(Device* device) : mDevice(device) {

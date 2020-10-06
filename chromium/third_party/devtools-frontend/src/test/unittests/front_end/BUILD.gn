@@ -5,13 +5,22 @@
 group("front_end") {
   deps = [
     ":copy_karma_conf",
+    "../../../front_end/Images",
     "bindings",
+    "browser_sdk",
     "common",
+    "dom_extension",
+    "elements",
     "formatter_worker",
+    "inline_editor",
+    "inspector_overlay",
+    "issues",
+    "persistence",
     "platform",
     "protocol_client",
     "sdk",
     "text_utils",
+    "ui",
   ]
 }
 

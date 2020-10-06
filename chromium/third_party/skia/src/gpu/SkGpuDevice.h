@@ -27,6 +27,7 @@ struct GrCachedLayer;
 
 class SkSpecialImage;
 class SkSurface;
+class SkVertices;
 
 /**
  *  Subclass of SkBaseDevice, which directs all drawing to the GrGpu owned by the
@@ -166,9 +167,6 @@ private:
                              const SkPaint&);
 
     void drawStrokedLine(const SkPoint pts[2], const SkPaint&);
-
-    void wireframeVertices(SkVertices::VertexMode, int vertexCount, const SkPoint verts[],
-                           SkBlendMode, const uint16_t indices[], int indexCount, const SkPaint&);
 
     static std::unique_ptr<GrRenderTargetContext> MakeRenderTargetContext(GrContext*,
                                                                           SkBudgeted,

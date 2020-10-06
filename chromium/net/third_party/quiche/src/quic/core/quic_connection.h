@@ -49,6 +49,7 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_containers.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
@@ -181,6 +182,9 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
 
   // Called when a 1RTT packet has been acknowledged.
   virtual void OnOneRttPacketAcknowledged() = 0;
+
+  // Called when a packet of ENCRYPTION_HANDSHAKE gets sent.
+  virtual void OnHandshakePacketSent() = 0;
 };
 
 // Interface which gets callbacks from the QuicConnection at interesting
@@ -217,8 +221,15 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
   // match the ID of this connection.
   virtual void OnIncorrectConnectionId(QuicConnectionId /*connection_id*/) {}
 
-  // Called when an undecryptable packet has been received.
-  virtual void OnUndecryptablePacket() {}
+  // Called when an undecryptable packet has been received. If |dropped| is
+  // true, the packet has been dropped. Otherwise, the packet will be queued and
+  // connection will attempt to process it later.
+  virtual void OnUndecryptablePacket(EncryptionLevel /*decryption_level*/,
+                                     bool /*dropped*/) {}
+
+  // Called when attempting to process a previously undecryptable packet.
+  virtual void OnAttemptingToProcessUndecryptablePacket(
+      EncryptionLevel /*decryption_level*/) {}
 
   // Called when a duplicate packet has been received.
   virtual void OnDuplicatePacket(QuicPacketNumber /*packet_number*/) {}
@@ -372,6 +383,12 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Sets connection parameters from the supplied |config|.
   void SetFromConfig(const QuicConfig& config);
+
+  // Apply |connection_options| for this connection. Unlike SetFromConfig, this
+  // can happen at anytime in the life of a connection.
+  // Note there is no guarantee that all options can be applied. Components will
+  // only apply cherrypicked options that make sense at the time of the call.
+  void ApplyConnectionOptions(const QuicTagVector& connection_options);
 
   // Called by the session when sending connection state to the client.
   virtual void OnSendConnectionState(
@@ -571,7 +588,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
                             IsHandshake handshake) override;
   const QuicFrames MaybeBundleAckOpportunistically() override;
   char* GetPacketBuffer() override;
-  void OnSerializedPacket(SerializedPacket* packet) override;
+  void OnSerializedPacket(SerializedPacket packet) override;
   void OnUnrecoverableError(QuicErrorCode error,
                             const std::string& error_details) override;
 
@@ -954,7 +971,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Send a packet to the peer, and takes ownership of the packet if the packet
   // cannot be written immediately.
-  virtual void SendOrQueuePacket(SerializedPacket* packet);
+  virtual void SendOrQueuePacket(SerializedPacket packet);
 
   // Called after a packet is received from a new effective peer address and is
   // decrypted. Starts validation of effective peer's address change. Calls
@@ -1053,6 +1070,19 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     const QuicSocketAddress peer_address;
   };
 
+  // UndecrytablePacket comprises a undecryptable packet and the its encryption
+  // level.
+  struct QUIC_EXPORT_PRIVATE UndecryptablePacket {
+    UndecryptablePacket(const QuicEncryptedPacket& packet,
+                        EncryptionLevel encryption_level)
+        : packet(packet.Clone()), encryption_level(encryption_level) {}
+
+    std::unique_ptr<QuicEncryptedPacket> packet;
+    // Currently, |encryption_level| is only used for logging and does not
+    // affect processing of the packet.
+    EncryptionLevel encryption_level;
+  };
+
   // Notifies the visitor of the close and marks the connection as disconnected.
   // Does not send a connection close frame to the peer. It should only be
   // called by CloseConnection or OnConnectionCloseFrame, OnPublicResetPacket,
@@ -1102,7 +1132,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Queues |packet| in the hopes that it can be decrypted in the
   // future, when a new key is installed.
-  void QueueUndecryptablePacket(const QuicEncryptedPacket& packet);
+  void QueueUndecryptablePacket(const QuicEncryptedPacket& packet,
+                                EncryptionLevel decryption_level);
 
   // Sends any packets which are a response to the last packet, including both
   // acks and pending writes if an ack opened the congestion window.
@@ -1120,9 +1151,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Sets the retransmission alarm based on SentPacketManager.
   void SetRetransmissionAlarm();
-
-  // Sets the path degrading alarm.
-  void SetPathDegradingAlarm();
 
   // Sets the MTU discovery alarm if necessary.
   // |sent_packet_number| is the recently sent packet number.
@@ -1166,10 +1194,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // |acked_new_packet| is true if a previously-unacked packet was acked.
   void PostProcessAfterAckFrame(bool send_stop_waiting, bool acked_new_packet);
 
-  // Called when an ACK is received to set the path degrading alarm or
-  // retransmittable on wire alarm.
-  void MaybeSetPathDegradingAlarm(bool acked_new_packet);
-
   // Updates the release time into the future.
   void UpdateReleaseTimeIntoFuture();
 
@@ -1194,6 +1218,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Enables multiple packet number spaces support based on handshake protocol
   // and flags.
   void MaybeEnableMultiplePacketNumberSpacesSupport();
+
+  // Called to update ACK timeout when an retransmittable frame has been parsed.
+  void MaybeUpdateAckTimeout();
 
   // Returns packet fate when trying to write a packet via WritePacket().
   SerializedPacketFate DeterminePacketFate(bool is_mtu_discovery);
@@ -1227,6 +1254,13 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Whether connection is limited by amplification factor.
   bool LimitedByAmplificationFactor() const;
+
+  // Called before sending a packet to get packet send time and to set the
+  // release time delay in |per_packet_options_|. Return the time when the
+  // packet is scheduled to be released(a.k.a send time), which is NOW + delay.
+  // Returns Now() and does not update release time delay if
+  // |supports_release_time_| is false.
+  QuicTime CalculatePacketSentTime();
 
   // We've got a packet write error, should we ignore it?
   // NOTE: This is not a const function - if return true, the max packet size is
@@ -1331,8 +1365,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // established, but which could not be decrypted.  We buffer these on
   // the assumption that they could not be processed because they were
   // sent with the INITIAL encryption and the CHLO message was lost.
-  QuicCircularDeque<std::unique_ptr<QuicEncryptedPacket>>
-      undecryptable_packets_;
+  QuicCircularDeque<UndecryptablePacket> undecryptable_packets_;
 
   // Collection of coalesced packets which were received while processing
   // the current packet.
@@ -1357,9 +1390,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
       termination_packets_;
 
   // Determines whether or not a connection close packet is sent to the peer
-  // after idle timeout due to lack of network activity.
-  // This is particularly important on mobile, where waking up the radio is
-  // undesirable.
+  // after idle timeout due to lack of network activity. During the handshake,
+  // a connection close packet is sent, but not after.
   ConnectionCloseBehavior idle_timeout_connection_close_behavior_;
 
   // When true, close the QUIC connection after 5 RTOs.  Due to the min rto of
@@ -1409,10 +1441,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   QuicArenaScopedPtr<QuicAlarm> ping_alarm_;
   // An alarm that fires when an MTU probe should be sent.
   QuicArenaScopedPtr<QuicAlarm> mtu_discovery_alarm_;
-  // An alarm that fires when this connection is considered degrading.
-  // TODO(fayang): Remove this when deprecating quic_use_blackhole_detector
-  // flag.
-  QuicArenaScopedPtr<QuicAlarm> path_degrading_alarm_;
   // An alarm that fires to process undecryptable packets when new decyrption
   // keys are available.
   QuicArenaScopedPtr<QuicAlarm> process_undecryptable_packets_alarm_;
@@ -1435,13 +1463,20 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Timestamps used for timeouts.
   // The time of the first retransmittable packet that was sent after the most
   // recently received packet.
-  // TODO(fayang): Remove these two when deprecating
-  // quic_use_idle_network_detector.
+  // TODO(fayang): Remove time_of_first_packet_sent_after_receiving_ when
+  // deprecating quic_use_idle_network_detector.
   QuicTime time_of_first_packet_sent_after_receiving_;
   // The time that a packet is received for this connection. Initialized to
   // connection creation time.
-  // This is used for timeouts, and does not indicate the packet was processed.
+  // This does not indicate the packet was processed.
   QuicTime time_of_last_received_packet_;
+  // This gets set to time_of_last_received_packet_ when a packet gets
+  // decrypted. Please note, this is not necessarily the original receive time
+  // of this decrypt packet because connection can decryptable packet out of
+  // order.
+  // TODO(fayang): Remove time_of_last_decryptable_packet_ when
+  // deprecating quic_use_idle_network_detector.
+  QuicTime time_of_last_decryptable_packet_;
 
   // Sent packet manager which tracks the status of packets sent by this
   // connection and contains the send and receive algorithms to determine when
@@ -1566,6 +1601,11 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // vector to improve performance since it is expected to be very small.
   std::vector<QuicConnectionId> incoming_connection_ids_;
 
+  // When we receive a RETRY packet, we replace |server_connection_id_| with the
+  // value from the RETRY packet and save off the original value of
+  // |server_connection_id_| into |original_connection_id_| for validation.
+  quiche::QuicheOptional<QuicConnectionId> original_connection_id_;
+
   // Indicates whether received RETRY packets should be dropped.
   bool drop_incoming_retry_packets_;
 
@@ -1604,12 +1644,14 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   QuicIdleNetworkDetector idle_network_detector_;
 
-  const bool use_blackhole_detector_ =
-      GetQuicReloadableFlag(quic_use_blackhole_detector);
-
   const bool use_idle_network_detector_ =
-      use_blackhole_detector_ &&
       GetQuicReloadableFlag(quic_use_idle_network_detector);
+
+  const bool extend_idle_time_on_decryptable_packets_ =
+      GetQuicReloadableFlag(quic_extend_idle_time_on_decryptable_packets);
+
+  const bool advance_ack_timeout_update_ =
+      GetQuicReloadableFlag(quic_advance_ack_timeout_update);
 };
 
 }  // namespace quic

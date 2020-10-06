@@ -93,8 +93,9 @@ template <> void Draw::draw(const DrawBehind& r) {
     SkCanvasPriv::DrawBehind(fCanvas, r.paint);
 }
 
+DRAW(MarkCTM, markCTM(r.name.c_str()));
 DRAW(SetMatrix, setMatrix(SkMatrix::Concat(fInitialCTM, r.matrix)));
-DRAW(Concat44, concat44(r.matrix));
+DRAW(Concat44, concat(r.matrix));
 DRAW(Concat, concat(r.matrix));
 DRAW(Translate, translate(r.dx, r.dy));
 DRAW(Scale, scale(r.sx, r.sy));
@@ -268,6 +269,7 @@ private:
         fMeta  [fCurrentOp].isDraw = isSaveLayer;
     }
 
+    void trackBounds(const MarkCTM&)           { this->pushControl(); }
     void trackBounds(const SetMatrix&)         { this->pushControl(); }
     void trackBounds(const Concat&)            { this->pushControl(); }
     void trackBounds(const Concat44&)          { this->pushControl(); }

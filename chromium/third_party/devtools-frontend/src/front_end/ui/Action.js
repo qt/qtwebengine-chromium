@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import {ActionDelegate} from './ActionDelegate.js';  // eslint-disable-line no-unused-vars
 
@@ -36,19 +39,13 @@ export class Action extends Common.ObjectWrapper.ObjectWrapper {
   /**
    * @return {!Promise.<boolean>}
    */
-  execute() {
-    return this._extension.instance().then(handleAction.bind(this));
-
-    /**
-     * @param {!Object} actionDelegate
-     * @return {boolean}
-     * @this {Action}
-     */
-    function handleAction(actionDelegate) {
-      const actionId = this._extension.descriptor()['actionId'];
-      const delegate = /** @type {!ActionDelegate} */ (actionDelegate);
-      return delegate.handleAction(self.UI.context, actionId);
+  async execute() {
+    if (!this._extension.canInstantiate()) {
+      return false;
     }
+    const delegate = /** @type {!ActionDelegate} */ (await this._extension.instance());
+    const actionId = this.id();
+    return delegate.handleAction(self.UI.context, actionId);
   }
 
   /**

@@ -32,6 +32,21 @@ SystemProbesModule::SystemProbesModule(TraceProcessorContext* context)
   RegisterForField(TracePacket::kProcessStatsFieldNumber, context);
   RegisterForField(TracePacket::kSysStatsFieldNumber, context);
   RegisterForField(TracePacket::kSystemInfoFieldNumber, context);
+  RegisterForField(TracePacket::kCpuInfoFieldNumber, context);
+}
+
+ModuleResult SystemProbesModule::TokenizePacket(
+    const protos::pbzero::TracePacket::Decoder& decoder,
+    TraceBlobView*,
+    int64_t,
+    PacketSequenceState*,
+    uint32_t field_id) {
+  switch (field_id) {
+    case TracePacket::kSystemInfoFieldNumber:
+      parser_.ParseSystemInfo(decoder.system_info());
+      return ModuleResult::Handled();
+  }
+  return ModuleResult::Ignored();
 }
 
 void SystemProbesModule::ParsePacket(const TracePacket::Decoder& decoder,
@@ -47,8 +62,8 @@ void SystemProbesModule::ParsePacket(const TracePacket::Decoder& decoder,
     case TracePacket::kSysStatsFieldNumber:
       parser_.ParseSysStats(ttp.timestamp, decoder.sys_stats());
       return;
-    case TracePacket::kSystemInfoFieldNumber:
-      parser_.ParseSystemInfo(decoder.system_info());
+    case TracePacket::kCpuInfoFieldNumber:
+      parser_.ParseCpuInfo(decoder.cpu_info());
       return;
   }
 }

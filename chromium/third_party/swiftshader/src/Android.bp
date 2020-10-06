@@ -26,7 +26,6 @@ cc_defaults {
         "-D__STDC_LIMIT_MACROS",
         "-D__STDC_CONSTANT_MACROS",
         "-D__STDC_FORMAT_MACROS",
-        "-DHAVE_GRALLOC1",
         "-DNO_SANITIZE_FUNCTION=",
         // FIXME: Use <android/api-level.h> instead?
         "-DANDROID_PLATFORM_SDK_VERSION=10000",
@@ -44,17 +43,24 @@ cc_defaults {
 
     target: {
         android: {
+            cflags: [
+                "-DHAVE_GRALLOC1",
+                "-DHAVE_GRALLOC3",
+            ],
             relative_install_path: "egl",
             header_libs: [
                 "swiftshader_platform_headers",
                 "libnativebase_headers",
             ],
             shared_libs: [
+                "android.hardware.graphics.mapper@3.0",
                 "libnativewindow",
                 "libhardware",
+                "libhidlbase",
                 "libcutils",
                 "libsync",
                 "liblog",
+                "libutils",
             ],
             static_libs: [
                 "libarect",
@@ -197,7 +203,7 @@ cc_defaults {
     ],
 
     static_libs: [
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     shared_libs: [
@@ -228,7 +234,7 @@ cc_defaults {
     ],
 
     static_libs: [
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     shared_libs: [
@@ -346,7 +352,7 @@ cc_defaults {
     defaults: [ "libswiftshader_release" ],
     static_libs: [
         "libswiftshader_llvm",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 }
 
@@ -356,7 +362,7 @@ cc_defaults {
     defaults: [ "libswiftshader_debug" ],
     static_libs: [
         "libswiftshader_llvm_debug",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 }
 
@@ -539,6 +545,7 @@ cc_defaults {
         "-D__STDC_CONSTANT_MACROS",
         "-D__STDC_FORMAT_MACROS",
         "-DHAVE_GRALLOC1",
+        "-DHAVE_GRALLOC3",
         "-DNO_SANITIZE_FUNCTION=",
         // FIXME: Use <android/api-level.h> instead?
         "-DANDROID_PLATFORM_SDK_VERSION=10000",
@@ -576,11 +583,14 @@ cc_defaults {
                 "hwvulkan_headers",
             ],
             shared_libs: [
+                "android.hardware.graphics.mapper@3.0",
                 "libnativewindow",
                 "libhardware",
+                "libhidlbase",
                 "libcutils",
                 "libsync",
                 "liblog",
+                "libutils",
             ],
             static_libs: [
                 "libarect",
@@ -654,7 +664,7 @@ cc_library_shared {
 
     static_libs: [
         "libswiftshadervk_llvm_debug",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     defaults: [
@@ -668,7 +678,7 @@ cc_library_shared {
 
     static_libs: [
         "libswiftshadervk_llvm_debug",
-        "libLLVM7_swiftshader",
+        "libLLVM10_swiftshader",
     ],
 
     cflags: [

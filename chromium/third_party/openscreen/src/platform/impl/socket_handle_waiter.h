@@ -26,13 +26,18 @@ class SocketHandleWaiter {
  public:
   using SocketHandleRef = std::reference_wrapper<const SocketHandle>;
 
+  enum Flags {
+    kReadable = 1,
+    kWriteable = 2,
+  };
+
   class Subscriber {
    public:
     virtual ~Subscriber() = default;
 
     // Provides a socket handle to the subscriber which has data waiting to be
     // processed.
-    virtual void ProcessReadyHandle(SocketHandleRef handle) = 0;
+    virtual void ProcessReadyHandle(SocketHandleRef handle, uint32_t flags) = 0;
   };
 
   explicit SocketHandleWaiter(ClockNowFunctionPtr now_function);
@@ -64,22 +69,34 @@ class SocketHandleWaiter {
   Error ProcessHandles(Clock::duration timeout);
 
  protected:
+  struct ReadyHandle {
+    SocketHandleRef handle;
+    uint32_t flags;
+  };
+
   // Waits until data is available in one of the provided sockets or the
   // provided timeout has passed - whichever is first. If any sockets have data
   // available, they are returned.
-  virtual ErrorOr<std::vector<SocketHandleRef>> AwaitSocketsReadable(
+  virtual ErrorOr<std::vector<ReadyHandle>> AwaitSocketsReadable(
       const std::vector<SocketHandleRef>& socket_fds,
       const Clock::duration& timeout) = 0;
 
  private:
-  struct HandleWithSubscriber {
-    SocketHandleRef handle;
-    Subscriber* subscriber;
+  struct SocketSubscription {
+    Subscriber* subscriber = nullptr;
+    Clock::time_point last_updated = Clock::time_point::min();
+  };
+
+  struct HandleWithSubscription {
+    ReadyHandle ready_handle;
+    // Reference to the original subscription in the unordered map, so
+    // we can keep track of when we updated this socket handle.
+    SocketSubscription* subscription;
   };
 
   // Call the subscriber associated with each changed handle.  Handles are only
   // processed until |timeout| is exceeded.  Must be called with |mutex_| held.
-  void ProcessReadyHandles(const std::vector<HandleWithSubscriber>& handles,
+  void ProcessReadyHandles(std::vector<HandleWithSubscription>* handles,
                            Clock::duration timeout);
 
   // Guards against concurrent access to all other class data members.
@@ -94,7 +111,7 @@ class SocketHandleWaiter {
 
   // Set of all socket handles currently being watched, mapped to the subscriber
   // that is watching them.
-  std::unordered_map<SocketHandleRef, Subscriber*, SocketHandleHash>
+  std::unordered_map<SocketHandleRef, SocketSubscription, SocketHandleHash>
       handle_mappings_;
 
   const ClockNowFunctionPtr now_function_;

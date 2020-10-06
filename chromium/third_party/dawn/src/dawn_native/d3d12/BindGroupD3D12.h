@@ -18,32 +18,47 @@
 #include "common/PlacementAllocated.h"
 #include "common/Serial.h"
 #include "dawn_native/BindGroup.h"
-#include "dawn_native/d3d12/d3d12_platform.h"
+#include "dawn_native/d3d12/CPUDescriptorHeapAllocationD3D12.h"
+#include "dawn_native/d3d12/GPUDescriptorHeapAllocationD3D12.h"
 
 namespace dawn_native { namespace d3d12 {
 
     class Device;
     class ShaderVisibleDescriptorAllocator;
 
-    class BindGroup : public BindGroupBase, public PlacementAllocated {
+    class BindGroup final : public BindGroupBase, public PlacementAllocated {
       public:
-        static BindGroup* Create(Device* device, const BindGroupDescriptor* descriptor);
+        static ResultOrError<BindGroup*> Create(Device* device,
+                                                const BindGroupDescriptor* descriptor);
 
-        BindGroup(Device* device, const BindGroupDescriptor* descriptor);
-        ~BindGroup() override;
+        BindGroup(Device* device,
+                  const BindGroupDescriptor* descriptor,
+                  uint32_t viewSizeIncrement,
+                  const CPUDescriptorHeapAllocation& viewAllocation,
+                  uint32_t samplerSizeIncrement,
+                  const CPUDescriptorHeapAllocation& samplerAllocation);
 
         // Returns true if the BindGroup was successfully populated.
-        ResultOrError<bool> Populate(ShaderVisibleDescriptorAllocator* allocator);
+        bool PopulateViews(ShaderVisibleDescriptorAllocator* viewAllocator);
+        bool PopulateSamplers(ShaderVisibleDescriptorAllocator* samplerAllocator);
 
-        D3D12_GPU_DESCRIPTOR_HANDLE GetBaseCbvUavSrvDescriptor() const;
+        D3D12_GPU_DESCRIPTOR_HANDLE GetBaseViewDescriptor() const;
         D3D12_GPU_DESCRIPTOR_HANDLE GetBaseSamplerDescriptor() const;
 
       private:
-        Serial mLastUsageSerial = 0;
-        Serial mHeapSerial = 0;
+        bool Populate(ShaderVisibleDescriptorAllocator* allocator,
+                      uint32_t descriptorCount,
+                      D3D12_DESCRIPTOR_HEAP_TYPE heapType,
+                      const CPUDescriptorHeapAllocation& stagingAllocation,
+                      GPUDescriptorHeapAllocation* allocation);
 
-        D3D12_GPU_DESCRIPTOR_HANDLE mBaseCbvSrvUavDescriptor = {0};
-        D3D12_GPU_DESCRIPTOR_HANDLE mBaseSamplerDescriptor = {0};
+        ~BindGroup() override;
+
+        GPUDescriptorHeapAllocation mGPUSamplerAllocation;
+        GPUDescriptorHeapAllocation mGPUViewAllocation;
+
+        CPUDescriptorHeapAllocation mCPUSamplerAllocation;
+        CPUDescriptorHeapAllocation mCPUViewAllocation;
     };
 }}  // namespace dawn_native::d3d12
 

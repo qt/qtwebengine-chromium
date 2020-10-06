@@ -198,11 +198,11 @@ void QuartcSession::OnOneRttKeysAvailable() {
 }
 
 void QuartcSession::CancelStream(QuicStreamId stream_id) {
-  ResetStream(stream_id, QuicRstStreamErrorCode::QUIC_STREAM_CANCELLED);
+  ResetQuartcStream(stream_id, QuicRstStreamErrorCode::QUIC_STREAM_CANCELLED);
 }
 
-void QuartcSession::ResetStream(QuicStreamId stream_id,
-                                QuicRstStreamErrorCode error) {
+void QuartcSession::ResetQuartcStream(QuicStreamId stream_id,
+                                      QuicRstStreamErrorCode error) {
   if (!IsOpenStream(stream_id)) {
     return;
   }
@@ -418,7 +418,7 @@ void QuartcClientSession::StartCryptoHandshake() {
   crypto_stream_ = std::make_unique<QuicCryptoClientStream>(
       server_id, this,
       client_crypto_config_->proof_verifier()->CreateDefaultContext(),
-      client_crypto_config_.get(), this);
+      client_crypto_config_.get(), this, /*has_application_state = */ true);
   Initialize();
   crypto_stream_->CryptoConnect();
 }

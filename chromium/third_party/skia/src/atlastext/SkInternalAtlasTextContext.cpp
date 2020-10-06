@@ -10,6 +10,7 @@
 #include "include/gpu/GrContext.h"
 #include "src/atlastext/SkInternalAtlasTextContext.h"
 #include "src/gpu/GrContextPriv.h"
+#include "src/gpu/text/GrAtlasManager.h"
 #include "src/gpu/text/GrStrikeCache.h"
 
 SkAtlasTextRenderer* SkGetAtlasTextRendererFromInternalContext(
@@ -47,10 +48,6 @@ SkInternalAtlasTextContext::~SkInternalAtlasTextContext() {
 #endif
         fRenderer->deleteTexture(fDistanceFieldAtlas.fTextureHandle);
     }
-}
-
-GrStrikeCache* SkInternalAtlasTextContext::glyphCache() {
-    return fGrContext->priv().getGrStrikeCache();
 }
 
 GrTextBlobCache* SkInternalAtlasTextContext::textBlobCache() {

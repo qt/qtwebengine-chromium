@@ -32,7 +32,7 @@ class GrFixedClip;
 class GrOp;
 class GrRenderTarget;
 class GrRenderTargetContextPriv;
-class GrShape;
+class GrStyledShape;
 class GrStyle;
 class GrTextureProxy;
 struct GrUserStencilSettings;
@@ -41,6 +41,7 @@ class SkGlyphRunList;
 struct SkIPoint;
 struct SkIRect;
 class SkLatticeIter;
+class SkMatrixProvider;
 class SkMatrix;
 class SkPaint;
 class SkPath;
@@ -56,7 +57,7 @@ class SkVertices;
 /**
  * A helper object to orchestrate commands (draws, etc...) for GrSurfaces that are GrRenderTargets.
  */
-class GrRenderTargetContext : public GrSurfaceContext {
+class GrRenderTargetContext : public GrSurfaceContext, public GrOpsTaskClosedObserver {
 public:
     static std::unique_ptr<GrRenderTargetContext> Make(
             GrRecordingContext*, GrColorType, sk_sp<SkColorSpace>, sk_sp<GrSurfaceProxy>,
@@ -88,6 +89,10 @@ public:
             GrSurfaceOrigin = kBottomLeft_GrSurfaceOrigin,
             SkBudgeted = SkBudgeted::kYes,
             const SkSurfaceProps* = nullptr);
+
+    static std::tuple<GrColorType, GrBackendFormat> GetFallbackColorTypeAndFormat(GrImageContext*,
+                                                                                  GrColorType,
+                                                                                  int sampleCnt);
 
     // Same as previous factory but will try to use fallback GrColorTypes if the one passed in
     // fails. The fallback GrColorType will have at least the number of channels and precision per
@@ -130,12 +135,12 @@ public:
             const SkSurfaceProps*);
 
     GrRenderTargetContext(GrRecordingContext*, GrSurfaceProxyView readView,
-                          GrSurfaceProxyView outputView, GrColorType, sk_sp<SkColorSpace>,
+                          GrSurfaceProxyView writeView, GrColorType, sk_sp<SkColorSpace>,
                           const SkSurfaceProps*, bool managedOpsTask = true);
 
     ~GrRenderTargetContext() override;
 
-    virtual void drawGlyphRunList(const GrClip&, const SkMatrix& viewMatrix, const SkGlyphRunList&);
+    virtual void drawGlyphRunList(const GrClip&, const SkMatrixProvider&, const SkGlyphRunList&);
 
     /**
      * Provides a perfomance hint that the render target's contents are allowed
@@ -275,30 +280,30 @@ public:
                      const SkRect& srcRect, const SkRect& dstRect, GrAA aa, GrQuadAAFlags edgeAA,
                      SkCanvas::SrcRectConstraint constraint, const SkMatrix& viewMatrix,
                      sk_sp<GrColorSpaceXform> texXform) {
-        const SkRect* domain = constraint == SkCanvas::kStrict_SrcRectConstraint ?
+        const SkRect* subset = constraint == SkCanvas::kStrict_SrcRectConstraint ?
                 &srcRect : nullptr;
         DrawQuad quad{GrQuad::MakeFromRect(dstRect, viewMatrix), GrQuad(srcRect), edgeAA};
 
         this->drawTexturedQuad(clip, std::move(view), srcAlphaType, std::move(texXform),
-                               filter, color, mode, aa, &quad, domain);
+                               filter, color, mode, aa, &quad, subset);
     }
 
     /**
      * Variant of drawTexture that instead draws the texture applied to 'dstQuad' transformed by
-     * 'viewMatrix', using the 'srcQuad' texture coordinates clamped to the optional 'domain'. If
-     * 'domain' is null, it's equivalent to using the fast src rect constraint. If 'domain' is
-     * provided, the strict src rect constraint is applied using 'domain'.
+     * 'viewMatrix', using the 'srcQuad' texture coordinates clamped to the optional 'subset'. If
+     * 'subset' is null, it's equivalent to using the fast src rect constraint. If 'subset' is
+     * provided, the strict src rect constraint is applied using 'subset'.
      */
     void drawTextureQuad(const GrClip& clip, GrSurfaceProxyView view, GrColorType srcColorType,
                          SkAlphaType srcAlphaType, GrSamplerState::Filter filter, SkBlendMode mode,
                          const SkPMColor4f& color, const SkPoint srcQuad[4],
                          const SkPoint dstQuad[4], GrAA aa, GrQuadAAFlags edgeAA,
-                         const SkRect* domain, const SkMatrix& viewMatrix,
+                         const SkRect* subset, const SkMatrix& viewMatrix,
                          sk_sp<GrColorSpaceXform> texXform) {
         DrawQuad quad{GrQuad::MakeFromSkQuad(dstQuad, viewMatrix),
                       GrQuad::MakeFromSkQuad(srcQuad, SkMatrix::I()), edgeAA};
         this->drawTexturedQuad(clip, std::move(view), srcAlphaType, std::move(texXform),
-                               filter, color, mode, aa, &quad, domain);
+                               filter, color, mode, aa, &quad, subset);
     }
 
     /** Used with drawTextureSet */
@@ -402,7 +407,7 @@ public:
                    GrPaint&&,
                    GrAA,
                    const SkMatrix& viewMatrix,
-                   const GrShape&);
+                   const GrStyledShape&);
 
 
     /**
@@ -416,7 +421,7 @@ public:
      */
     void drawVertices(const GrClip&,
                       GrPaint&& paint,
-                      const SkMatrix& viewMatrix,
+                      const SkMatrixProvider& matrixProvider,
                       sk_sp<SkVertices> vertices,
                       GrPrimitiveType* overridePrimType = nullptr,
                       const SkRuntimeEffect* effect = nullptr);
@@ -561,7 +566,7 @@ public:
 
     // TODO: See if it makes sense for this to return a const& instead and require the callers to
     // make a copy (which refs the proxy) if needed.
-    GrSurfaceProxyView outputSurfaceView() { return fOutputView; }
+    GrSurfaceProxyView writeSurfaceView() { return fWriteView; }
 
     // This entry point should only be called if the backing GPU object is known to be
     // instantiated.
@@ -574,6 +579,8 @@ public:
     const GrRenderTargetContextPriv priv() const;
 
     GrTextTarget* textTarget() { return fTextTarget.get(); }
+
+    void wasClosed(const GrOpsTask& task) override;
 
 #if GR_TEST_UTILS
     bool testingOnly_IsInstantiated() const { return this->asSurfaceProxy()->isInstantiated(); }
@@ -662,10 +669,12 @@ private:
                           SkBlendMode blendMode,
                           GrAA aa,
                           DrawQuad* quad,
-                          const SkRect* domain = nullptr);
+                          const SkRect* subset = nullptr);
 
+    // If 'attemptShapeFallback' is true, and the original shape had been simplfied, this
+    // will re-route through drawShape() to see if we can avoid path rendering one more time.
     void drawShapeUsingPathRenderer(const GrClip&, GrPaint&&, GrAA, const SkMatrix&,
-                                    const GrShape&);
+                                    const GrStyledShape&, bool attemptShapeFallback = true);
 
     void addOp(std::unique_ptr<GrOp>);
 
@@ -694,7 +703,7 @@ private:
 
     std::unique_ptr<GrTextTarget> fTextTarget;
 
-    GrSurfaceProxyView fOutputView;
+    GrSurfaceProxyView fWriteView;
 
     // In MDB-mode the GrOpsTask can be closed by some other renderTargetContext that has picked
     // it up. For this reason, the GrOpsTask should only ever be accessed via 'getOpsTask'.

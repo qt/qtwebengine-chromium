@@ -14,7 +14,8 @@ vars = {
   'boringssl_git': 'https://boringssl.googlesource.com',
   'chromium_git': 'https://chromium.googlesource.com',
 
-  # TODO(jophba): move to googlesource external for github repos.
+  # NOTE: we should only reference GitHub directly for dependencies toggled
+  # with the "not build_with_chromium" condition.
   'github': 'https://github.com',
 
   # NOTE: Strangely enough, this will be overridden by any _parent_ DEPS, so
@@ -25,7 +26,10 @@ vars = {
 
   # Needed to download additional clang binaries for processing coverage data
   # (from binaries with GN arg `use_coverage=true`).
-  'checkout_clang_coverage_tools': False,
+  #
+  # TODO(issuetracker.google.com/155195126): Change this to False and update
+  # buildbot to call update.py instead.
+  'checkout_clang_coverage_tools': True,
 }
 
 deps = {
@@ -36,14 +40,14 @@ deps = {
   # https://chromium.googlesource.com/chromium/src/buildtools/+/refs/heads/master.
   'buildtools': {
     'url': Var('chromium_git')+ '/chromium/src/buildtools' +
-      '@' + '8d2132841536523249669813b928e29144d487f9',
+      '@' + '204a35a2a64f7179f8b76d7a0385653690839e21',
     'condition': 'not build_with_chromium',
   },
 
   'third_party/protobuf/src': {
     'url': Var('chromium_git') +
       '/external/github.com/protocolbuffers/protobuf.git' +
-      '@' + 'd09d649aea36f02c03f8396ba39a8d4db8a607e4', # version 3.10.1
+      '@' + 'd0bfd5221182da1a7cc280f3337b5e41a89539cf', # version 3.11.4
     'condition': 'not build_with_chromium',
   },
 
@@ -57,14 +61,14 @@ deps = {
   'third_party/jsoncpp/src': {
     'url': Var('chromium_git') +
       '/external/github.com/open-source-parsers/jsoncpp.git' +
-      '@' + '2eb20a938c454411c1d416caeeb2a6511daab5cb', # version 1.9.0
+      '@' + 'd2e6a971f4544c55b8e3b25cf96db266971b778f', # version 1.9.2
     'condition': 'not build_with_chromium',
   },
 
   'third_party/googletest/src': {
     'url': Var('chromium_git') +
       '/external/github.com/google/googletest.git' +
-      '@' + '8697709e0308af4cd5b09dc108480804e5447cf0',
+      '@' + '0eea2e9fc63461761dea5f2f517bd6af2ca024fa',
     'condition': 'not build_with_chromium',
   },
 
@@ -74,15 +78,19 @@ deps = {
     'condition': 'not build_with_chromium',
   },
 
+  # Note about updating BoringSSL: after changing this hash, run the update
+  # script in BoringSSL's util folder for generating build files from the
+  # <openscreen src-dir>/third_party/boringssl directory:
+  # python ./src/util/generate_build_files.py gn
   'third_party/boringssl/src': {
     'url' : Var('boringssl_git') + '/boringssl.git' +
-      '@' + '6410e18e9190b6b0c71955119fbf3cae1b9eedb7',
+      '@' + '78987bb7bb4764ca3a8b08b0a6f7bd14b53c3e4f',
     'condition': 'not build_with_chromium',
   },
 
   'third_party/chromium_quic/src': {
     'url': Var('chromium_git') + '/openscreen/quic.git' +
-      '@' + 'd2363edc9f2a8561c9d02e836262f2d03de2d6e1',
+      '@' + '1bd3640a8eeb9d7c36e4ecb48f6ebab5d9694002',
     'condition': 'not build_with_chromium',
   },
 
@@ -90,12 +98,16 @@ deps = {
     Var('chromium_git') + '/external/github.com/intel/tinycbor.git' +
     '@' + '755f9ef932f9830a63a712fd2ac971d838b131f1',
 
+  # Abseil recommends living at head.  Chromium takes an Abseil snapshot
+  # irregularly, every 1-2 months.  When rolling, roll manually to the current
+  # Chromium snapshot since it's pretty close to head.
   'third_party/abseil/src': {
     'url': Var('chromium_git') +
       '/external/github.com/abseil/abseil-cpp.git' +
-      '@' + '20de2db748ca0471cfb61cb53e813dd12938c12b',
+      '@' + 'cde2e2410e58c884b3bf5f67c6511e6266036249',
     'condition': 'not build_with_chromium',
   },
+
   'third_party/libfuzzer/src': {
     'url': Var('chromium_git') +
       '/chromium/llvm-project/compiler-rt/lib/fuzzer.git' +
@@ -151,7 +163,6 @@ recursedeps = [
 ]
 
 include_rules = [
-  '+build/config/features.h',
   '+util',
   '+platform/api',
   '+platform/base',

@@ -45,16 +45,17 @@ namespace dawn_native { namespace metal {
                             bufferIndex++;
                             break;
                         case wgpu::BindingType::Sampler:
+                        case wgpu::BindingType::ComparisonSampler:
                             mIndexInfo[stage][group][bindingIndex] = samplerIndex;
                             samplerIndex++;
                             break;
                         case wgpu::BindingType::SampledTexture:
+                        case wgpu::BindingType::ReadonlyStorageTexture:
+                        case wgpu::BindingType::WriteonlyStorageTexture:
                             mIndexInfo[stage][group][bindingIndex] = textureIndex;
                             textureIndex++;
                             break;
                         case wgpu::BindingType::StorageTexture:
-                        case wgpu::BindingType::ReadonlyStorageTexture:
-                        case wgpu::BindingType::WriteonlyStorageTexture:
                             UNREACHABLE();
                             break;
                     }

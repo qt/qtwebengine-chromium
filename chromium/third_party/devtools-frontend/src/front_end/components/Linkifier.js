@@ -181,7 +181,8 @@ export class Linkifier {
     let rawLocation;
     if (scriptId) {
       rawLocation = debuggerModel.createRawLocationByScriptId(scriptId, lineNumber, columnNumber);
-    } else {
+    }
+    if (!rawLocation) {
       rawLocation = debuggerModel.createRawLocationByURL(sourceURL, lineNumber, columnNumber);
     }
 
@@ -241,7 +242,9 @@ export class Linkifier {
    * @return {?Element}
    */
   maybeLinkifyConsoleCallFrame(target, callFrame, options) {
-    return this.maybeLinkifyScriptLocation(target, callFrame.scriptId, callFrame.url, callFrame.lineNumber, options);
+    return this.maybeLinkifyScriptLocation(
+        target, callFrame.scriptId, callFrame.url, callFrame.lineNumber,
+        {columnNumber: callFrame.columnNumber, ...options});
   }
 
   /**
@@ -393,7 +396,10 @@ export class Linkifier {
     const maxLength = options.maxLength || UI.UIUtils.MaxLengthForDisplayedURLs;
     const bypassURLTrimming = options.bypassURLTrimming;
     if (!url || url.trim().toLowerCase().startsWith('javascript:')) {
-      const element = createElementWithClass('span', className);
+      const element = document.createElement('span');
+      if (className) {
+        element.className = className;
+      }
       element.textContent = text || url || Common.UIString.UIString('(unknown)');
       return element;
     }
@@ -436,7 +442,10 @@ export class Linkifier {
   static _createLink(text, className, options) {
     options = options || {};
     const {maxLength, title, href, preventClick, tabStop, bypassURLTrimming} = options;
-    const link = createElementWithClass('span', className);
+    const link = document.createElement('span');
+    if (className) {
+      link.className = className;
+    }
     link.classList.add('devtools-link');
     if (title) {
       link.title = title;
@@ -749,7 +758,8 @@ export class LinkContextMenuProvider {
  */
 export class LinkHandlerSettingUI {
   constructor() {
-    this._element = createElementWithClass('select', 'chrome-select');
+    this._element = document.createElement('select');
+    this._element.classList.add('chrome-select');
     this._element.addEventListener('change', this._onChange.bind(this), false);
     this._update();
   }

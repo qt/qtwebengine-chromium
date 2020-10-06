@@ -54,12 +54,15 @@ source_set("probes_src") {
     "../../tracing/core",
     "../../tracing/ipc/producer",
     "android_log",
+    "common",
     "filesystem",
+    "initial_display_state",
     "metatrace",
     "packages_list",
     "power",
     "ps",
     "sys_stats",
+    "system_info",
   ]
   sources = [
     "probes_producer.cc",
@@ -88,9 +91,12 @@ perfetto_unittest_source_set("unittests") {
     "../../../gn:gtest_and_gmock",
     "../../tracing/test:test_support",
     "android_log:unittests",
+    "common:unittests",
     "filesystem:unittests",
+    "initial_display_state:unittests",
     "packages_list:unittests",
     "ps:unittests",
     "sys_stats:unittests",
+    "system_info:unittests",
   ]
 }

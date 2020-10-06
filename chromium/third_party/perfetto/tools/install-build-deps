@@ -26,7 +26,6 @@ import zipfile
 from collections import namedtuple
 from platform import system
 
-from compat import urlretrieve
 
 # The format for the deps below is the following:
 # (target_folder, source_url, sha1, target_platform)
@@ -146,8 +145,8 @@ BUILD_DEPS_HOST = [
     # Example traces for regression tests.
     (
         'buildtools/test_data.zip',
-        'https://storage.googleapis.com/perfetto/test-data-20200331-130927.zip',
-        '80632f754293e47e1cfa1ff6bcf15d11d589a126',
+        'https://storage.googleapis.com/perfetto/test-data-20200427-094919.zip',
+        'e003d49ef3d31a939ac75b0bbb6ca5eed4e759f9',
         'all',
     ),
 
@@ -230,6 +229,10 @@ UI_DEPS = [
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UI_DIR = os.path.join(ROOT_DIR, 'ui')
 NODE_MODULES_STATUS_FILE = os.path.join(UI_DIR, 'node_modules', '.last_install')
+
+
+def DownloadURL(url, out_file):
+  subprocess.check_call(['curl', '-#', '-o', out_file, url])
 
 
 def ReadFile(path):
@@ -315,7 +318,7 @@ def CheckHashes():
       logging.info('Downloading %s from %s', rel_path, url)
       with tempfile.NamedTemporaryFile(delete=False) as f:
         f.close()
-        urlretrieve(url, f.name)
+        DownloadURL(url, f.name)
         actual_sha1 = HashLocalFile(f.name)
         os.unlink(f.name)
         if (actual_sha1 != expected_sha1):
@@ -361,7 +364,7 @@ def Main():
     if HashLocalFile(local_path) != expected_sha1:
       download_path = local_path + '.tmp'
       logging.info('Downloading %s from %s', local_path, url)
-      urlretrieve(url, download_path)
+      DownloadURL(url, download_path)
       os.chmod(download_path, 0o755)
       actual_sha1 = HashLocalFile(download_path)
       if (actual_sha1 != expected_sha1):

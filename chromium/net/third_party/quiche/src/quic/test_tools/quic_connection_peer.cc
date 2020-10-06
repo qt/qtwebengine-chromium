@@ -91,12 +91,6 @@ void QuicConnectionPeer::SetEffectivePeerAddress(
 }
 
 // static
-bool QuicConnectionPeer::IsSilentCloseEnabled(QuicConnection* connection) {
-  return connection->idle_timeout_connection_close_behavior_ ==
-         ConnectionCloseBehavior::SILENT_CLOSE;
-}
-
-// static
 void QuicConnectionPeer::SwapCrypters(QuicConnection* connection,
                                       QuicFramer* framer) {
   QuicFramerPeer::SwapCrypters(framer, &connection->framer_);
@@ -157,12 +151,6 @@ QuicAlarm* QuicConnectionPeer::GetTimeoutAlarm(QuicConnection* connection) {
 QuicAlarm* QuicConnectionPeer::GetMtuDiscoveryAlarm(
     QuicConnection* connection) {
   return connection->mtu_discovery_alarm_.get();
-}
-
-// static
-QuicAlarm* QuicConnectionPeer::GetPathDegradingAlarm(
-    QuicConnection* connection) {
-  return connection->path_degrading_alarm_.get();
 }
 
 // static
@@ -379,6 +367,14 @@ QuicTime QuicConnectionPeer::GetBlackholeDetectionDeadline(
 QuicAlarm* QuicConnectionPeer::GetIdleNetworkDetectorAlarm(
     QuicConnection* connection) {
   return connection->idle_network_detector_.alarm_.get();
+}
+
+// static
+void QuicConnectionPeer::SetServerConnectionId(
+    QuicConnection* connection,
+    const QuicConnectionId& server_connection_id) {
+  connection->server_connection_id_ = server_connection_id;
+  connection->InstallInitialCrypters(server_connection_id);
 }
 
 }  // namespace test

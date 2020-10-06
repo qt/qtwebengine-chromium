@@ -9,10 +9,11 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/check.h"
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/i18n/case_conversion.h"
-#include "base/logging.h"
+#include "base/notreached.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -192,7 +193,9 @@ void AutofillExternalDelegate::SetCurrentDataListValues(
 }
 
 void AutofillExternalDelegate::OnPopupShown() {
-  // If a popup was shown, then we showed either autofill or autocomplete.
+  // Popups are expected to be Autofill or Autocomplete.
+  DCHECK_NE(GetPopupType(), PopupType::kPasswords);
+
   OnAutofillAvailabilityEvent(
       has_autofill_suggestions_ ? mojom::AutofillState::kAutofillAvailable
                                 : mojom::AutofillState::kAutocompleteAvailable);

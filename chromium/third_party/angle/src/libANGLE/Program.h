@@ -305,8 +305,6 @@ class ProgramState final : angle::NonCopyable
     }
 
     // Count the number of uniform and storage buffer declarations, counting arrays as one.
-    size_t getUniqueUniformBlockCount() const;
-    size_t getUniqueStorageBlockCount() const;
     size_t getTransformFeedbackBufferCount() const;
 
     GLuint getUniformIndexFromName(const std::string &name) const;
@@ -348,11 +346,16 @@ class ProgramState final : angle::NonCopyable
     {
         return !getLinkedTransformFeedbackVaryings().empty();
     }
+    bool hasEarlyFragmentTestsOptimization() const { return mEarlyFramentTestsOptimization; }
 
     bool isShaderMarkedForDetach(gl::ShaderType shaderType) const
     {
         return mAttachedShadersMarkedForDetach[shaderType];
     }
+
+    // A Program can only either be graphics or compute, but never both, so it
+    // can answer isCompute() based on which shaders it has.
+    bool isCompute() const { return mExecutable.hasLinkedShaderStage(ShaderType::Compute); }
 
   private:
     friend class MemoryProgramCache;
@@ -430,6 +433,7 @@ class ProgramState final : angle::NonCopyable
 
     bool mBinaryRetrieveableHint;
     bool mSeparable;
+    bool mEarlyFramentTestsOptimization;
 
     // ANGLE_multiview.
     int mNumViews;
@@ -510,9 +514,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     void bindFragmentOutputIndex(GLuint index, const char *name);
 
     angle::Result linkMergedVaryings(const Context *context,
-                                     VaryingPacking &varyingPacking,
-                                     const ProgramMergedVaryings &mergedVaryings,
-                                     ProgramLinkedResources *resources);
+                                     const ProgramMergedVaryings &mergedVaryings);
 
     // KHR_parallel_shader_compile
     // Try to link the program asynchrously. As a result, background threads may be launched to
@@ -759,6 +761,9 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     bool isValidated() const;
 
+    Optional<bool> getCachedValidateSamplersResult() { return mCachedValidateSamplersResult; }
+    void setCachedValidateSamplersResult(bool result) { mCachedValidateSamplersResult = result; }
+
     const std::vector<SamplerBinding> &getSamplerBindings() const;
     const std::vector<ImageBinding> &getImageBindings() const
     {
@@ -807,6 +812,8 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     const ProgramBindings &getAttributeBindings() const;
     const ProgramAliasedBindings &getUniformLocationBindings() const;
+    const ProgramAliasedBindings &getFragmentOutputLocations() const;
+    const ProgramAliasedBindings &getFragmentOutputIndexes() const;
 
     int getNumViews() const
     {
@@ -845,6 +852,12 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     ANGLE_INLINE bool hasAnyDirtyBit() const { return mDirtyBits.any(); }
 
+    gl::ProgramLinkedResources &getResources() const
+    {
+        ASSERT(mResources);
+        return *mResources;
+    }
+
     // Writes a program's binary to the output memory buffer.
     angle::Result serialize(const Context *context, angle::MemoryBuffer *binaryOut) const;
 
@@ -852,6 +865,8 @@ class Program final : angle::NonCopyable, public LabeledObject
 
     const ProgramExecutable &getExecutable() const { return mState.getProgramExecutable(); }
     ProgramExecutable &getExecutable() { return mState.getProgramExecutable(); }
+
+    const char *validateDrawStates(const State &state, const gl::Extensions &extensions) const;
 
     static void getFilteredVaryings(const std::vector<sh::ShaderVariable> &varyings,
                                     std::vector<const sh::ShaderVariable *> *filteredVaryingsOut);
@@ -869,9 +884,6 @@ class Program final : angle::NonCopyable, public LabeledObject
     static bool linkValidateBuiltInVaryings(Shader *vertexShader,
                                             Shader *fragmentShader,
                                             InfoLog &infoLog);
-    // Check for aliased path rendering input bindings (if any).
-    // If more than one binding refer statically to the same location the link must fail.
-    bool linkValidateFragmentInputBindings(InfoLog &infoLog) const;
 
   private:
     struct LinkingState;
@@ -916,7 +928,6 @@ class Program final : angle::NonCopyable, public LabeledObject
                                        const ProgramMergedVaryings &linkedVaryings,
                                        ShaderType stage,
                                        const Caps &caps) const;
-    bool linkValidateGlobalNames(InfoLog &infoLog) const;
 
     void gatherTransformFeedbackVaryings(const ProgramMergedVaryings &varyings, ShaderType stage);
 
@@ -1003,6 +1014,9 @@ class Program final : angle::NonCopyable, public LabeledObject
     Optional<bool> mCachedValidateSamplersResult;
 
     DirtyBits mDirtyBits;
+
+    // TODO: http://anglebug.com/4514: Remove
+    std::unique_ptr<gl::ProgramLinkedResources> mResources;
 };
 }  // namespace gl
 

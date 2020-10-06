@@ -201,8 +201,6 @@ inline constexpr float4 replicate(float f)
 	return vector(f, f, f, f);
 }
 
-#define OFFSET(s, m) (int)(size_t) & reinterpret_cast<const volatile char &>((((s *)0)->m))
-
 }  // namespace sw
 
 #endif  // sw_Types_hpp

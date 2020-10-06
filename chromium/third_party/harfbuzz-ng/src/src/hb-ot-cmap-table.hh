@@ -123,9 +123,9 @@ struct CmapSubtableFormat4
     {
       if (prev_cp == 0xFFFF || prev_cp + 1u != _.first)
       {
-        HBUINT16 start_code;
-        start_code = _.first;
-        c->copy<HBUINT16> (start_code);
+	HBUINT16 start_code;
+	start_code = _.first;
+	c->copy<HBUINT16> (start_code);
       }
 
       prev_cp = _.first;
@@ -238,7 +238,8 @@ struct CmapSubtableFormat4
 		 { return _.first <= 0xFFFF; })
     ;
 
-    if (format4_iter.len () == 0) return;
+    //comment off temporarily while we're working on supporting --gids option
+    //if (format4_iter.len () == 0) return;
 
     unsigned table_initpos = c->length ();
     if (unlikely (!c->extend_min (*this))) return;
@@ -302,7 +303,7 @@ struct CmapSubtableFormat4
 	  if (k < (&last)[distance]) return -1;
 	  return 0;
 	}
-        HBUINT16 last;
+	HBUINT16 last;
       };
 
       const HBUINT16 *found =hb_bsearch (codepoint,
@@ -312,7 +313,7 @@ struct CmapSubtableFormat4
 					 _hb_cmp_method<hb_codepoint_t, CustomRange, unsigned>,
 					 this->segCount + 1);
       if (!found)
-        return false;
+	return false;
       unsigned int i = found - endCount;
 
       hb_codepoint_t gid;
@@ -539,7 +540,7 @@ struct CmapSubtableLongSegmented
     {
       hb_codepoint_t start = this->groups[i].startCharCode;
       hb_codepoint_t end = hb_min ((hb_codepoint_t) this->groups[i].endCharCode,
-                                   (hb_codepoint_t) HB_UNICODE_MAX);
+				   (hb_codepoint_t) HB_UNICODE_MAX);
       hb_codepoint_t gid = this->groups[i].glyphID;
       if (!gid)
       {
@@ -879,10 +880,10 @@ struct VariationSelectorRecord
 
   hb_pair_t<unsigned, unsigned>
   copy (hb_serialize_context_t *c,
-        const hb_set_t *unicodes,
-        const hb_set_t *glyphs,
-        const hb_map_t *glyph_map,
-        const void *base) const
+	const hb_set_t *unicodes,
+	const hb_set_t *glyphs,
+	const hb_map_t *glyph_map,
+	const void *base) const
   {
     auto snap = c->snapshot ();
     auto *out = c->embed<VariationSelectorRecord> (*this);
@@ -896,7 +897,7 @@ struct VariationSelectorRecord
     {
       c->push ();
       if (c->copy (base+nonDefaultUVS, unicodes, glyphs, glyph_map))
-        non_default_uvs_objidx = c->pop_pack ();
+	non_default_uvs_objidx = c->pop_pack ();
       else c->pop_discard ();
     }
 
@@ -905,7 +906,7 @@ struct VariationSelectorRecord
     {
       c->push ();
       if (c->copy (base+defaultUVS, unicodes))
-        default_uvs_objidx = c->pop_pack ();
+	default_uvs_objidx = c->pop_pack ();
       else c->pop_discard ();
     }
 
@@ -975,7 +976,7 @@ struct CmapSubtableFormat14
     {
       hb_pair_t<unsigned, unsigned> result = src_tbl->record[i].copy (c, unicodes, glyphs, glyph_map, base);
       if (result.first || result.second)
-        obj_indices.push (result);
+	obj_indices.push (result);
     }
 
     if (c->length () - table_initpos == CmapSubtableFormat14::min_size)
@@ -987,8 +988,8 @@ struct CmapSubtableFormat14
     int tail_len = init_tail - c->tail;
     c->check_assign (this->length, c->length () - table_initpos + tail_len);
     c->check_assign (this->record.len,
-                     (c->length () - table_initpos - CmapSubtableFormat14::min_size) /
-                     VariationSelectorRecord::static_size);
+		     (c->length () - table_initpos - CmapSubtableFormat14::min_size) /
+		     VariationSelectorRecord::static_size);
 
     /* Correct the incorrect write order by reversing the order of the variation
        records array. */
@@ -1004,7 +1005,7 @@ struct CmapSubtableFormat14
   }
 
   void _add_links_to_variation_records (hb_serialize_context_t *c,
-                                        const hb_vector_t<hb_pair_t<unsigned, unsigned>>& obj_indices)
+					const hb_vector_t<hb_pair_t<unsigned, unsigned>>& obj_indices)
   {
     for (unsigned i = 0; i < obj_indices.length; i++)
     {
@@ -1484,7 +1485,7 @@ struct cmap
   }
 
   const EncodingRecord *find_encodingrec (unsigned int platform_id,
-				    unsigned int encoding_id) const
+					  unsigned int encoding_id) const
   {
     EncodingRecord key;
     key.platformID = platform_id;
@@ -1516,9 +1517,9 @@ struct cmap
   }
 
   protected:
-  HBUINT16		version;	/* Table version number (0). */
+  HBUINT16	version;	/* Table version number (0). */
   SortedArrayOf<EncodingRecord>
-			encodingRecord;	/* Encoding tables. */
+		encodingRecord;	/* Encoding tables. */
   public:
   DEFINE_SIZE_ARRAY (4, encodingRecord);
 };

@@ -9,17 +9,17 @@
 
 #include <memory>
 
-#include "cast/common/channel/cast_socket.h"
-#include "cast/receiver/channel/receiver_socket_factory.h"
+#include "cast/common/public/cast_socket.h"
+#include "cast/receiver/public/receiver_socket_factory.h"
 #include "cast/standalone_receiver/cast_socket_message_port.h"
 #include "cast/standalone_receiver/streaming_playback_controller.h"
 #include "cast/streaming/environment.h"
 #include "cast/streaming/receiver_session.h"
 #include "platform/api/scoped_wake_lock.h"
+#include "platform/api/serial_delete_ptr.h"
 #include "platform/base/error.h"
 #include "platform/base/interface_info.h"
 #include "platform/impl/task_runner.h"
-#include "util/serial_delete_ptr.h"
 
 namespace openscreen {
 namespace cast {

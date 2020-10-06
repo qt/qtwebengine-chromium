@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import {VBox} from './Widget.js';
 
 export class TargetCrashedScreen extends VBox {
   /**
-   * @param {function()} hideCallback
+   * @param {function():*} hideCallback
    */
   constructor(hideCallback) {
     super(true);

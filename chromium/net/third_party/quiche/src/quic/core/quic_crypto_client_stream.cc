@@ -11,6 +11,7 @@
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_utils.h"
 #include "net/third_party/quiche/src/quic/core/crypto/null_encrypter.h"
+#include "net/third_party/quiche/src/quic/core/crypto/quic_crypto_client_config.h"
 #include "net/third_party/quiche/src/quic/core/quic_crypto_client_handshaker.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_session.h"
@@ -31,7 +32,8 @@ QuicCryptoClientStream::QuicCryptoClientStream(
     QuicSession* session,
     std::unique_ptr<ProofVerifyContext> verify_context,
     QuicCryptoClientConfig* crypto_config,
-    ProofHandler* proof_handler)
+    ProofHandler* proof_handler,
+    bool has_application_state)
     : QuicCryptoClientStreamBase(session) {
   DCHECK_EQ(Perspective::IS_CLIENT, session->connection()->perspective());
   switch (session->connection()->version().handshake_protocol) {
@@ -43,7 +45,7 @@ QuicCryptoClientStream::QuicCryptoClientStream(
     case PROTOCOL_TLS1_3:
       handshaker_ = std::make_unique<TlsClientHandshaker>(
           server_id, this, session, std::move(verify_context), crypto_config,
-          proof_handler);
+          proof_handler, has_application_state);
       break;
     case PROTOCOL_UNSUPPORTED:
       QUIC_BUG << "Attempting to create QuicCryptoClientStream for unknown "
@@ -111,8 +113,22 @@ void QuicCryptoClientStream::OnOneRttPacketAcknowledged() {
   handshaker_->OnOneRttPacketAcknowledged();
 }
 
+void QuicCryptoClientStream::OnHandshakePacketSent() {
+  handshaker_->OnHandshakePacketSent();
+}
+
+void QuicCryptoClientStream::OnConnectionClosed(QuicErrorCode error,
+                                                ConnectionCloseSource source) {
+  handshaker_->OnConnectionClosed(error, source);
+}
+
 void QuicCryptoClientStream::OnHandshakeDoneReceived() {
   handshaker_->OnHandshakeDoneReceived();
+}
+
+void QuicCryptoClientStream::OnApplicationState(
+    std::unique_ptr<ApplicationState> application_state) {
+  handshaker_->OnApplicationState(std::move(application_state));
 }
 
 }  // namespace quic

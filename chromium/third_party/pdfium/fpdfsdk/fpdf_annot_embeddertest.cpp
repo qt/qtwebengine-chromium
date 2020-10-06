@@ -18,10 +18,82 @@
 #include "public/fpdf_formfill.h"
 #include "public/fpdfview.h"
 #include "testing/embedder_test.h"
+#include "testing/embedder_test_constants.h"
 #include "testing/fx_string_testhelpers.h"
 #include "testing/gmock/include/gmock/gmock-matchers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/utils/hash.h"
+#include "third_party/base/span.h"
+#include "third_party/base/stl_util.h"
+
+namespace {
+
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#if defined(OS_LINUX)
+const char kAnnotationStampWithApChecksum[] =
+    "db83eaadc92967e3ac9bebfc6178ca75";
+#else
+const char kAnnotationStampWithApChecksum[] =
+    "3c87b4a8e51245964357fb5f5fbc612b";
+#endif  // defined(OS_LINUX)
+#else
+#if defined(OS_WIN)
+const char kAnnotationStampWithApChecksum[] =
+    "6aa001a77ec05d0f1b0d1d22e28744d4";
+#elif defined(OS_MACOSX)
+const char kAnnotationStampWithApChecksum[] =
+    "80d7b6cc7b13a78d77a6151bc846e80b";
+#else
+const char kAnnotationStampWithApChecksum[] =
+    "b42cef463483e668eaf4055a65e4f1f5";
+#endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+
+void VerifyFocusableAnnotSubtypes(
+    FPDF_FORMHANDLE form_handle,
+    pdfium::span<const FPDF_ANNOTATION_SUBTYPE> expected_subtypes) {
+  ASSERT_EQ(static_cast<int>(expected_subtypes.size()),
+            FPDFAnnot_GetFocusableSubtypesCount(form_handle));
+
+  std::vector<FPDF_ANNOTATION_SUBTYPE> actual_subtypes(
+      expected_subtypes.size());
+  ASSERT_TRUE(FPDFAnnot_GetFocusableSubtypes(
+      form_handle, actual_subtypes.data(), actual_subtypes.size()));
+  for (size_t i = 0; i < expected_subtypes.size(); ++i)
+    ASSERT_EQ(expected_subtypes[i], actual_subtypes[i]);
+}
+
+void SetAndVerifyFocusableAnnotSubtypes(
+    FPDF_FORMHANDLE form_handle,
+    pdfium::span<const FPDF_ANNOTATION_SUBTYPE> subtypes) {
+  ASSERT_TRUE(FPDFAnnot_SetFocusableSubtypes(form_handle, subtypes.data(),
+                                             subtypes.size()));
+  VerifyFocusableAnnotSubtypes(form_handle, subtypes);
+}
+
+void VerifyAnnotationSubtypesAndFocusability(
+    FPDF_FORMHANDLE form_handle,
+    FPDF_PAGE page,
+    pdfium::span<const FPDF_ANNOTATION_SUBTYPE> expected_subtypes,
+    pdfium::span<const FPDF_ANNOTATION_SUBTYPE> expected_focusable_subtypes) {
+  ASSERT_EQ(static_cast<int>(expected_subtypes.size()),
+            FPDFPage_GetAnnotCount(page));
+  for (size_t i = 0; i < expected_subtypes.size(); ++i) {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, i));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(expected_subtypes[i], FPDFAnnot_GetSubtype(annot.get()));
+
+    bool expected_focusable = pdfium::ContainsValue(expected_focusable_subtypes,
+                                                    expected_subtypes[i]);
+    EXPECT_EQ(expected_focusable,
+              FORM_SetFocusedAnnot(form_handle, annot.get()));
+
+    // Kill the focus so the next test starts in an unfocused state.
+    FORM_ForceToKillFocus(form_handle);
+  }
+}
+
+}  // namespace
 
 class FPDFAnnotEmbedderTest : public EmbedderTest {};
 
@@ -711,29 +783,32 @@ TEST_F(FPDFAnnotEmbedderTest, RemoveAnnotation) {
   FPDF_CloseDocument(new_doc);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
+TEST_F(FPDFAnnotEmbedderTest, AddAndModifyPath) {
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_AddAndModifyPath DISABLED_AddAndModifyPath
+#if defined(OS_LINUX)
+  static const char kMd5ModifiedPath[] = "d76382fd57fafad0233f7549f871dafa";
+  static const char kMd5TwoPaths[] = "323151317b8cb62130546c7b8d70f622";
+  static const char kMd5NewAnnot[] = "9a3b02d876620d19787549ee1100b63c";
 #else
-#define MAYBE_AddAndModifyPath AddAndModifyPath
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyPath) {
-#if defined(OS_MACOSX)
-  static const char kMd5Original[] = "80d7b6cc7b13a78d77a6151bc846e80b";
-  static const char kMd5ModifiedPath[] = "8cfae6d547fc5d6702f5f1ac631beb5e";
-  static const char kMd5TwoPaths[] = "9677e4892bb02950d3e4dbe74470578f";
-  static const char kMd5NewAnnot[] = "e8ebddac4db8c0a4b556ddf79aa1a26d";
-#elif defined(OS_WIN)
-  static const char kMd5Original[] = "6aa001a77ec05d0f1b0d1d22e28744d4";
+  static const char kMd5ModifiedPath[] = "c9ba60887a312370d9a32198aa53aca4";
+  static const char kMd5TwoPaths[] = "0768d56373094fcdf4ddf3f3364c006f";
+  static const char kMd5NewAnnot[] = "6f7e1c189bcfac90ffccf2a527857006";
+#endif  // defined(OS_LINUX)
+#else
+#if defined(OS_WIN)
   static const char kMd5ModifiedPath[] = "a7a8d675a6ddbcbdfecee65a33ba19e1";
   static const char kMd5TwoPaths[] = "7c0bdd4552329704c47a7cce47edbbd6";
   static const char kMd5NewAnnot[] = "3c48d492b4f62941fed0fb62f729f31e";
+#elif defined(OS_MACOSX)
+  static const char kMd5ModifiedPath[] = "8cfae6d547fc5d6702f5f1ac631beb5e";
+  static const char kMd5TwoPaths[] = "9677e4892bb02950d3e4dbe74470578f";
+  static const char kMd5NewAnnot[] = "e8ebddac4db8c0a4b556ddf79aa1a26d";
 #else
-  static const char kMd5Original[] = "b42cef463483e668eaf4055a65e4f1f5";
   static const char kMd5ModifiedPath[] = "6ff77d6d1fec4ea571fabe0c7a19b517";
   static const char kMd5TwoPaths[] = "ca37ad549e74ac5b359a055708f3e7b6";
   static const char kMd5NewAnnot[] = "0d7a0e33fbf41ff7fa5d732ab2c5edff";
 #endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 
   // Open a file with two annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
@@ -744,7 +819,7 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyPath) {
   // Check that the page renders correctly.
   {
     ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
-    CompareBitmap(bitmap.get(), 595, 842, kMd5Original);
+    CompareBitmap(bitmap.get(), 595, 842, kAnnotationStampWithApChecksum);
   }
 
   {
@@ -897,7 +972,7 @@ TEST_F(FPDFAnnotEmbedderTest, ModifyAnnotationFlags) {
     // Check that the page renders correctly without rendering the annotation.
     {
       ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
-      CompareBitmap(bitmap.get(), 612, 792, "1940568c9ba33bac5d0b1ee9558c76b3");
+      CompareBitmap(bitmap.get(), 612, 792, pdfium::kBlankPage612By792Checksum);
     }
 
     // Unset the HIDDEN flag.
@@ -927,15 +1002,12 @@ TEST_F(FPDFAnnotEmbedderTest, ModifyAnnotationFlags) {
 #endif
 TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
 #if defined(OS_MACOSX)
-  static const char kMd5Original[] = "80d7b6cc7b13a78d77a6151bc846e80b";
   static const char kMd5NewImage[] = "dd18709d90c245a12ce0b8c4d092bea9";
   static const char kMd5ModifiedImage[] = "8d6f478ff8c7e67d49b253f1af587a99";
 #elif defined(OS_WIN)
-  static const char kMd5Original[] = "6aa001a77ec05d0f1b0d1d22e28744d4";
   static const char kMd5NewImage[] = "3d77d06a971bcb9fb54db082f1082c8b";
   static const char kMd5ModifiedImage[] = "dc4f4afc26c345418330d31c065020e1";
 #else
-  static const char kMd5Original[] = "b42cef463483e668eaf4055a65e4f1f5";
   static const char kMd5NewImage[] = "528e6243dc29d54f36b61e0d3287d935";
   static const char kMd5ModifiedImage[] = "6d9e59f3e57a1ff82fb258356b7eb731";
 #endif
@@ -949,7 +1021,7 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
   // Check that the page renders correctly.
   {
     ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
-    CompareBitmap(bitmap.get(), 595, 842, kMd5Original);
+    CompareBitmap(bitmap.get(), 595, 842, kAnnotationStampWithApChecksum);
   }
 
   constexpr int kBitmapSize = 200;
@@ -1018,15 +1090,12 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
 #endif
 TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyText) {
 #if defined(OS_MACOSX)
-  static const char kMd5Original[] = "80d7b6cc7b13a78d77a6151bc846e80b";
   static const char kMd5NewText[] = "e657266260b88c964938efe6c9b292da";
   static const char kMd5ModifiedText[] = "7accdf2bac64463101783221f53d3188";
 #elif defined(OS_WIN)
-  static const char kMd5Original[] = "6aa001a77ec05d0f1b0d1d22e28744d4";
   static const char kMd5NewText[] = "204cc01749a70b8afc246a4ca33c7eb6";
   static const char kMd5ModifiedText[] = "641261a45e8dfd68c89b80bfd237660d";
 #else
-  static const char kMd5Original[] = "b42cef463483e668eaf4055a65e4f1f5";
   static const char kMd5NewText[] = "00197ad6206f763febad5719e5935306";
   static const char kMd5ModifiedText[] = "85853bc0aaa5a4e3af04e58b9cbfff23";
 #endif
@@ -1040,7 +1109,7 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyText) {
   // Check that the page renders correctly.
   {
     ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
-    CompareBitmap(bitmap.get(), 595, 842, kMd5Original);
+    CompareBitmap(bitmap.get(), 595, 842, kAnnotationStampWithApChecksum);
   }
 
   {
@@ -1096,7 +1165,7 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyText) {
   EXPECT_TRUE(FPDFPage_RemoveAnnot(page, 2));
   {
     ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
-    CompareBitmap(bitmap.get(), 595, 842, kMd5Original);
+    CompareBitmap(bitmap.get(), 595, 842, kAnnotationStampWithApChecksum);
   }
 
   UnloadPage(page);
@@ -1996,6 +2065,147 @@ TEST_F(FPDFAnnotEmbedderTest, GetOptionLabelInvalidAnnotations) {
   UnloadPage(page);
 }
 
+TEST_F(FPDFAnnotEmbedderTest, IsOptionSelectedCombobox) {
+  // Open a file with combobox widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("combobox_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+
+    // Checks for Combobox with no Values (/V) or Selected Indices (/I) objects.
+    int count = FPDFAnnot_GetOptionCount(form_handle(), annot.get());
+    ASSERT_EQ(3, count);
+    for (int i = 0; i < count; i++) {
+      EXPECT_FALSE(FPDFAnnot_IsOptionSelected(form_handle(), annot.get(), i));
+    }
+
+    annot.reset(FPDFPage_GetAnnot(page, 1));
+    ASSERT_TRUE(annot);
+
+    // Checks for Combobox with Values (/V) object which is just a string.
+    count = FPDFAnnot_GetOptionCount(form_handle(), annot.get());
+    ASSERT_EQ(26, count);
+    for (int i = 0; i < count; i++) {
+      EXPECT_EQ(i == 1,
+                FPDFAnnot_IsOptionSelected(form_handle(), annot.get(), i));
+    }
+
+    // Checks for index outside bound i.e. (index >= CountOption()).
+    EXPECT_FALSE(FPDFAnnot_IsOptionSelected(form_handle(), annot.get(),
+                                            /*index=*/26));
+    // Checks for negetive index.
+    EXPECT_FALSE(FPDFAnnot_IsOptionSelected(form_handle(), annot.get(),
+                                            /*index=*/-1));
+
+    // Checks for bad form handle/annot.
+    EXPECT_FALSE(FPDFAnnot_IsOptionSelected(nullptr, nullptr, /*index=*/0));
+    EXPECT_FALSE(
+        FPDFAnnot_IsOptionSelected(form_handle(), nullptr, /*index=*/0));
+    EXPECT_FALSE(FPDFAnnot_IsOptionSelected(nullptr, annot.get(), /*index=*/0));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, IsOptionSelectedListbox) {
+  // Open a file with listbox widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("listbox_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+
+    // Checks for Listbox with no Values (/V) or Selected Indices (/I) objects.
+    int count = FPDFAnnot_GetOptionCount(form_handle(), annot.get());
+    ASSERT_EQ(3, count);
+    for (int i = 0; i < count; i++) {
+      EXPECT_FALSE(FPDFAnnot_IsOptionSelected(form_handle(), annot.get(), i));
+    }
+
+    annot.reset(FPDFPage_GetAnnot(page, 1));
+    ASSERT_TRUE(annot);
+
+    // Checks for Listbox with Values (/V) object which is just a string.
+    count = FPDFAnnot_GetOptionCount(form_handle(), annot.get());
+    ASSERT_EQ(26, count);
+    for (int i = 0; i < count; i++) {
+      EXPECT_EQ(i == 1,
+                FPDFAnnot_IsOptionSelected(form_handle(), annot.get(), i));
+    }
+
+    annot.reset(FPDFPage_GetAnnot(page, 3));
+    ASSERT_TRUE(annot);
+
+    // Checks for Listbox with only Selected indices (/I) object which is an
+    // array with multiple objects.
+    count = FPDFAnnot_GetOptionCount(form_handle(), annot.get());
+    ASSERT_EQ(5, count);
+    for (int i = 0; i < count; i++) {
+      bool expected = (i == 1 || i == 3);
+      EXPECT_EQ(expected,
+                FPDFAnnot_IsOptionSelected(form_handle(), annot.get(), i));
+    }
+
+    annot.reset(FPDFPage_GetAnnot(page, 4));
+    ASSERT_TRUE(annot);
+
+    // Checks for Listbox with Values (/V) object which is an array with
+    // multiple objects.
+    count = FPDFAnnot_GetOptionCount(form_handle(), annot.get());
+    ASSERT_EQ(5, count);
+    for (int i = 0; i < count; i++) {
+      bool expected = (i == 2 || i == 4);
+      EXPECT_EQ(expected,
+                FPDFAnnot_IsOptionSelected(form_handle(), annot.get(), i));
+    }
+
+    annot.reset(FPDFPage_GetAnnot(page, 5));
+    ASSERT_TRUE(annot);
+
+    // Checks for Listbox with both Values (/V) and Selected Indices (/I)
+    // objects conflict with different lengths.
+    count = FPDFAnnot_GetOptionCount(form_handle(), annot.get());
+    ASSERT_EQ(5, count);
+    for (int i = 0; i < count; i++) {
+      bool expected = (i == 0 || i == 2);
+      EXPECT_EQ(expected,
+                FPDFAnnot_IsOptionSelected(form_handle(), annot.get(), i));
+    }
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, IsOptionSelectedInvalidAnnotations) {
+  // Open a file with multiple form field annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("multiple_form_types.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+
+    // Checks for link annotation.
+    EXPECT_FALSE(FPDFAnnot_IsOptionSelected(form_handle(), annot.get(),
+                                            /*index=*/0));
+
+    annot.reset(FPDFPage_GetAnnot(page, 3));
+    ASSERT_TRUE(annot);
+
+    // Checks for text field annotation.
+    EXPECT_FALSE(FPDFAnnot_IsOptionSelected(form_handle(), annot.get(),
+                                            /*index=*/0));
+  }
+
+  UnloadPage(page);
+}
+
 TEST_F(FPDFAnnotEmbedderTest, GetFontSizeCombobox) {
   // Open a file with combobox annotations and load its first page.
   ASSERT_TRUE(OpenDocument("combobox_form.pdf"));
@@ -2383,86 +2593,182 @@ TEST_F(FPDFAnnotEmbedderTest, GetFormFieldNameComboBox) {
   UnloadPage(page);
 }
 
-TEST_F(FPDFAnnotEmbedderTest, SetFocusableAnnotSubtypes) {
-  ASSERT_TRUE(OpenDocument("text_form.pdf"));
+TEST_F(FPDFAnnotEmbedderTest, FocusableAnnotSubtypes) {
+  ASSERT_TRUE(OpenDocument("annots.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
-  // Annotations of type FPDF_ANNOT_WIDGET are by default focusable.
-  EXPECT_EQ(1, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
+  // Verify widgets are by default focusable.
+  const FPDF_ANNOTATION_SUBTYPE kDefaultSubtypes[] = {FPDF_ANNOT_WIDGET};
+  VerifyFocusableAnnotSubtypes(form_handle(), kDefaultSubtypes);
 
-  EXPECT_TRUE(FPDFAnnot_SetFocusableSubtypes(form_handle(), nullptr, 0));
-  EXPECT_EQ(0, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
+  // Expected annot subtypes for page 0 of annots.pdf.
+  const FPDF_ANNOTATION_SUBTYPE kExpectedAnnotSubtypes[] = {
+      FPDF_ANNOT_LINK,  FPDF_ANNOT_LINK,      FPDF_ANNOT_LINK,
+      FPDF_ANNOT_LINK,  FPDF_ANNOT_HIGHLIGHT, FPDF_ANNOT_HIGHLIGHT,
+      FPDF_ANNOT_POPUP, FPDF_ANNOT_HIGHLIGHT, FPDF_ANNOT_WIDGET,
+  };
 
-  constexpr FPDF_ANNOTATION_SUBTYPE kFocusableSubtypes[] = {FPDF_ANNOT_WIDGET};
-  constexpr size_t kSubtypeCount = FX_ArraySize(kFocusableSubtypes);
+  const FPDF_ANNOTATION_SUBTYPE kExpectedDefaultFocusableSubtypes[] = {
+      FPDF_ANNOT_WIDGET};
+  VerifyAnnotationSubtypesAndFocusability(form_handle(), page,
+                                          kExpectedAnnotSubtypes,
+                                          kExpectedDefaultFocusableSubtypes);
 
-  EXPECT_FALSE(FPDFAnnot_SetFocusableSubtypes(nullptr, kFocusableSubtypes,
-                                              kSubtypeCount));
-  EXPECT_FALSE(
-      FPDFAnnot_SetFocusableSubtypes(form_handle(), nullptr, kSubtypeCount));
+  // Make no annotation type focusable using the preferred method.
+  ASSERT_TRUE(FPDFAnnot_SetFocusableSubtypes(form_handle(), nullptr, 0));
+  ASSERT_EQ(0, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
 
-  EXPECT_TRUE(FPDFAnnot_SetFocusableSubtypes(form_handle(), kFocusableSubtypes,
-                                             kSubtypeCount));
-  EXPECT_EQ(static_cast<int>(kSubtypeCount),
-            FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
+  // Restore the focusable type count back to 1, then set it back to 0 using a
+  // different method.
+  SetAndVerifyFocusableAnnotSubtypes(form_handle(), kDefaultSubtypes);
+  ASSERT_TRUE(
+      FPDFAnnot_SetFocusableSubtypes(form_handle(), kDefaultSubtypes, 0));
+  ASSERT_EQ(0, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
 
-  EXPECT_TRUE(
-      FPDFAnnot_SetFocusableSubtypes(form_handle(), kFocusableSubtypes, 0));
-  EXPECT_EQ(0, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
+  VerifyAnnotationSubtypesAndFocusability(form_handle(), page,
+                                          kExpectedAnnotSubtypes, {});
 
-  UnloadPage(page);
-}
+  // Now make links focusable.
+  const FPDF_ANNOTATION_SUBTYPE kLinkSubtypes[] = {FPDF_ANNOT_LINK};
+  SetAndVerifyFocusableAnnotSubtypes(form_handle(), kLinkSubtypes);
 
-TEST_F(FPDFAnnotEmbedderTest, GetFocusableAnnotSubtypesCount) {
-  ASSERT_TRUE(OpenDocument("text_form.pdf"));
-  FPDF_PAGE page = LoadPage(0);
-  ASSERT_TRUE(page);
+  const FPDF_ANNOTATION_SUBTYPE kExpectedLinkocusableSubtypes[] = {
+      FPDF_ANNOT_LINK};
+  VerifyAnnotationSubtypesAndFocusability(form_handle(), page,
+                                          kExpectedAnnotSubtypes,
+                                          kExpectedLinkocusableSubtypes);
 
+  // Test invalid parameters.
+  EXPECT_FALSE(FPDFAnnot_SetFocusableSubtypes(nullptr, kDefaultSubtypes,
+                                              FX_ArraySize(kDefaultSubtypes)));
+  EXPECT_FALSE(FPDFAnnot_SetFocusableSubtypes(form_handle(), nullptr,
+                                              FX_ArraySize(kDefaultSubtypes)));
   EXPECT_EQ(-1, FPDFAnnot_GetFocusableSubtypesCount(nullptr));
 
-  // FPDF_ANNOT_WIDGET is default annot subtype which is focusable,
-  // hence 1 is default count.
-  EXPECT_EQ(1, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
-
-  constexpr FPDF_ANNOTATION_SUBTYPE kFocusableSubtypes[] = {FPDF_ANNOT_WIDGET,
-                                                            FPDF_ANNOT_LINK};
-  constexpr size_t kSubtypeCount = FX_ArraySize(kFocusableSubtypes);
-
-  FPDFAnnot_SetFocusableSubtypes(form_handle(), kFocusableSubtypes,
-                                 kSubtypeCount);
-
-  EXPECT_EQ(static_cast<int>(kSubtypeCount),
-            FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
+  std::vector<FPDF_ANNOTATION_SUBTYPE> subtypes(1);
+  EXPECT_FALSE(FPDFAnnot_GetFocusableSubtypes(nullptr, subtypes.data(),
+                                              subtypes.size()));
+  EXPECT_FALSE(
+      FPDFAnnot_GetFocusableSubtypes(form_handle(), nullptr, subtypes.size()));
+  EXPECT_FALSE(
+      FPDFAnnot_GetFocusableSubtypes(form_handle(), subtypes.data(), 0));
 
   UnloadPage(page);
 }
 
-TEST_F(FPDFAnnotEmbedderTest, GetFocusableAnnotSubtypes) {
-  ASSERT_TRUE(OpenDocument("text_form.pdf"));
+// TODO(crbug.com/pdfium/11): Fix this test and enable.
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#define MAYBE_FocusableAnnotRendering DISABLED_FocusableAnnotRendering
+#else
+#define MAYBE_FocusableAnnotRendering FocusableAnnotRendering
+#endif
+TEST_F(FPDFAnnotEmbedderTest, MAYBE_FocusableAnnotRendering) {
+  ASSERT_TRUE(OpenDocument("annots.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
-  constexpr FPDF_ANNOTATION_SUBTYPE kFocusableSubtypes[] = {FPDF_ANNOT_WIDGET};
-  constexpr size_t kSubtypeCount = FX_ArraySize(kFocusableSubtypes);
-
-  FPDFAnnot_SetFocusableSubtypes(form_handle(), kFocusableSubtypes,
-                                 kSubtypeCount);
-
-  int count = FPDFAnnot_GetFocusableSubtypesCount(form_handle());
-  ASSERT_EQ(1, count);
-  EXPECT_FALSE(FPDFAnnot_GetFocusableSubtypes(form_handle(), nullptr, count));
-
-  std::vector<FPDF_ANNOTATION_SUBTYPE> subtypes(count, FPDF_ANNOT_UNKNOWN);
-  EXPECT_FALSE(FPDFAnnot_GetFocusableSubtypes(form_handle(), subtypes.data(),
-                                              count - 1));
-
-  EXPECT_TRUE(
-      FPDFAnnot_GetFocusableSubtypes(form_handle(), subtypes.data(), count));
-
-  for (int i = 0; i < count; ++i) {
-    EXPECT_EQ(kFocusableSubtypes[i], subtypes[i]);
+  {
+#if defined(OS_WIN)
+    static const char kMd5sum[] = "3877bec7cb3e3144eaa6d10f38bf7a30";
+#elif defined(OS_MACOSX)
+    static const char kMd5sum[] = "04b16db5026b5490a50fb6ff0954c867";
+#else
+    static const char kMd5sum[] = "40a7354d1f653127bcdac10e15f81654";
+#endif
+    // Check the initial rendering.
+    ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
+    CompareBitmap(bitmap.get(), 612, 792, kMd5sum);
   }
+
+  // Make links and highlights focusable.
+  static constexpr FPDF_ANNOTATION_SUBTYPE kSubTypes[] = {FPDF_ANNOT_LINK,
+                                                          FPDF_ANNOT_HIGHLIGHT};
+  constexpr int kSubTypesCount = FX_ArraySize(kSubTypes);
+  ASSERT_TRUE(
+      FPDFAnnot_SetFocusableSubtypes(form_handle(), kSubTypes, kSubTypesCount));
+  ASSERT_EQ(kSubTypesCount, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
+  std::vector<FPDF_ANNOTATION_SUBTYPE> subtypes(kSubTypesCount);
+  ASSERT_TRUE(FPDFAnnot_GetFocusableSubtypes(form_handle(), subtypes.data(),
+                                             subtypes.size()));
+  ASSERT_EQ(FPDF_ANNOT_LINK, subtypes[0]);
+  ASSERT_EQ(FPDF_ANNOT_HIGHLIGHT, subtypes[1]);
+
+  {
+#if defined(OS_WIN)
+    static const char kMd5sum[] = "a30f1bd1cac022d08ceb100df4940b5f";
+#elif defined(OS_MACOSX)
+    static const char kMd5sum[] = "3f984a164f2f6d6e3d69f27fd430e346";
+#else
+    static const char kMd5sum[] = "e4c4de73addabf10672c308870e8a4ee";
+#endif
+    // Focus the first link and check the rendering.
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(FPDF_ANNOT_LINK, FPDFAnnot_GetSubtype(annot.get()));
+    EXPECT_TRUE(FORM_SetFocusedAnnot(form_handle(), annot.get()));
+    ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
+    CompareBitmap(bitmap.get(), 612, 792, kMd5sum);
+  }
+
+  {
+#if defined(OS_WIN)
+    static const char kMd5sum[] = "467f5a4db98fcadd5121807ff4e2eb10";
+#elif defined(OS_MACOSX)
+    static const char kMd5sum[] = "c6d6f9dc7090e8eaf3867ba714023b1e";
+#else
+    static const char kMd5sum[] = "65e831885e16b7ecc977cce2e4a27110";
+#endif
+    // Focus the first highlight and check the rendering.
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 4));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(FPDF_ANNOT_HIGHLIGHT, FPDFAnnot_GetSubtype(annot.get()));
+    EXPECT_TRUE(FORM_SetFocusedAnnot(form_handle(), annot.get()));
+    ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
+    CompareBitmap(bitmap.get(), 612, 792, kMd5sum);
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetLinkFromAnnotation) {
+  ASSERT_TRUE(OpenDocument("annots.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 3));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(FPDF_ANNOT_LINK, FPDFAnnot_GetSubtype(annot.get()));
+    FPDF_LINK link_annot = FPDFAnnot_GetLink(annot.get());
+    ASSERT_TRUE(link_annot);
+
+    FPDF_ACTION action = FPDFLink_GetAction(link_annot);
+    ASSERT_TRUE(action);
+    EXPECT_EQ(static_cast<unsigned long>(PDFACTION_URI),
+              FPDFAction_GetType(action));
+
+    constexpr char kExpectedResult[] =
+        "https://cs.chromium.org/chromium/src/third_party/pdfium/public/"
+        "fpdf_text.h";
+    constexpr unsigned long kExpectedLength = FX_ArraySize(kExpectedResult);
+    unsigned long bufsize =
+        FPDFAction_GetURIPath(document(), action, nullptr, 0);
+    ASSERT_EQ(kExpectedLength, bufsize);
+
+    char buffer[1024];
+    EXPECT_EQ(bufsize,
+              FPDFAction_GetURIPath(document(), action, buffer, bufsize));
+    EXPECT_STREQ(kExpectedResult, buffer);
+  }
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 4));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(FPDF_ANNOT_HIGHLIGHT, FPDFAnnot_GetSubtype(annot.get()));
+    EXPECT_FALSE(FPDFAnnot_GetLink(annot.get()));
+  }
+
+  EXPECT_FALSE(FPDFAnnot_GetLink(nullptr));
 
   UnloadPage(page);
 }

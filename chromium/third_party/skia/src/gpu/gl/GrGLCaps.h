@@ -310,13 +310,6 @@ public:
     /// Is there support for ES2 compatability?
     bool ES2CompatibilitySupport() const { return fES2CompatibilitySupport; }
 
-    /// Is there support for glDraw*Instanced?
-    bool drawInstancedSupport() const { return fDrawInstancedSupport; }
-
-    /// Is there support for glDraw*Indirect? Note that the baseInstance fields of indirect draw
-    /// commands cannot be used unless we have base instance support.
-    bool drawIndirectSupport() const { return fDrawIndirectSupport; }
-
     /// Is there support for glMultiDraw*Indirect? Note that the baseInstance fields of indirect
     /// draw commands cannot be used unless we have base instance support.
     bool multiDrawIndirectSupport() const { return fMultiDrawIndirectSupport; }
@@ -324,8 +317,9 @@ public:
     /// Is there support for glDrawRangeElements?
     bool drawRangeElementsSupport() const { return fDrawRangeElementsSupport; }
 
-    /// Are the baseInstance fields supported in indirect draw commands?
-    bool baseInstanceSupport() const { return fBaseInstanceSupport; }
+    /// Are the glDraw*Base(VertexBase)Instance methods, and baseInstance fields in indirect draw
+    //commands supported?
+    bool baseVertexBaseInstanceSupport() const { return fBaseVertexBaseInstanceSupport; }
 
     /// Use indices or vertices in CPU arrays rather than VBOs for dynamic content.
     bool useNonVBOVertexAndIndexDynamicData() const { return fUseNonVBOVertexAndIndexDynamicData; }
@@ -402,6 +396,11 @@ public:
     // PowerVRGX6250 drops every pixel if we modify the sample mask while color writes are disabled.
     bool neverDisableColorWrites() const { return fNeverDisableColorWrites; }
 
+    // Texture parameters must be used to enable MIP mapping even when a sampler object is used.
+    bool mustSetTexParameterMinFilterToEnableMipMapping() const {
+        return fMustSetTexParameterMinFilterToEnableMipMapping;
+    }
+
     // Returns the observed maximum number of instances the driver can handle in a single draw call
     // without crashing, or 'pendingInstanceCount' if this workaround is not necessary.
     // NOTE: the return value may be larger than pendingInstanceCount.
@@ -439,9 +438,6 @@ public:
 
     /** Skip checks for GL errors, shader compilation success, program link success. */
     bool skipErrorChecks() const { return fSkipErrorChecks; }
-
-    GrColorType getYUVAColorTypeFromBackendFormat(const GrBackendFormat&,
-                                                  bool isAlphaChannel) const override;
 
     GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const override;
 
@@ -524,11 +520,9 @@ private:
     bool fVertexArrayObjectSupport : 1;
     bool fDebugSupport : 1;
     bool fES2CompatibilitySupport : 1;
-    bool fDrawInstancedSupport : 1;
-    bool fDrawIndirectSupport : 1;
     bool fDrawRangeElementsSupport : 1;
     bool fMultiDrawIndirectSupport : 1;
-    bool fBaseInstanceSupport : 1;
+    bool fBaseVertexBaseInstanceSupport : 1;
     bool fUseNonVBOVertexAndIndexDynamicData : 1;
     bool fIsCoreProfile : 1;
     bool fBindFragDataLocationSupport : 1;
@@ -558,6 +552,7 @@ private:
     bool fDetachStencilFromMSAABuffersBeforeReadPixels : 1;
     bool fDontSetBaseOrMaxLevelForExternalTextures : 1;
     bool fNeverDisableColorWrites : 1;
+    bool fMustSetTexParameterMinFilterToEnableMipMapping : 1;
     int fMaxInstancesPerDrawWithoutCrashing = 0;
 
     uint32_t fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;

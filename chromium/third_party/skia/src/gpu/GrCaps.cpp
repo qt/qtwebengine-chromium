@@ -24,7 +24,8 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fTextureBarrierSupport = false;
     fSampleLocationsSupport = false;
     fMultisampleDisableSupport = false;
-    fInstanceAttribSupport = false;
+    fDrawInstancedSupport = false;
+    fNativeDrawIndirectSupport = false;
     fMixedSamplesSupport = false;
     fConservativeRasterSupport = false;
     fWireframeSupport = false;
@@ -32,6 +33,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fUsePrimitiveRestart = false;
     fPreferClientSideDynamicBuffers = false;
     fPreferFullscreenClears = false;
+    fTwoSidedStencilRefsAndMasksMustMatch = false;
     fMustClearUploadedBufferData = false;
     fShouldInitializeTextures = false;
     fSupportsAHardwareBufferImages = false;
@@ -75,6 +77,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fAvoidStencilBuffers = false;
     fAvoidWritePixelsFastPath = false;
     fRequiresManualFBBarrierAfterTessellatedStencilDraw = false;
+    fNativeDrawIndexedIndirectIsBroken = false;
 
     fPreferVRAMUseOverFlushes = true;
 
@@ -104,6 +107,9 @@ void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fDriverBlacklistCCPR);
         SkASSERT(!fDriverBlacklistMSAACCPR);
         SkASSERT(!fAvoidStencilBuffers);
+        SkASSERT(!fAvoidWritePixelsFastPath);
+        SkASSERT(!fRequiresManualFBBarrierAfterTessellatedStencilDraw);
+        SkASSERT(!fNativeDrawIndexedIndirectIsBroken);
         SkASSERT(!fAdvBlendEqBlacklist);
         SkASSERT(!fPerformColorClearsAsDraws);
         SkASSERT(!fPerformStencilClearsAsDraws);
@@ -192,7 +198,8 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Texture Barrier Support", fTextureBarrierSupport);
     writer->appendBool("Sample Locations Support", fSampleLocationsSupport);
     writer->appendBool("Multisample disable support", fMultisampleDisableSupport);
-    writer->appendBool("Instance Attrib Support", fInstanceAttribSupport);
+    writer->appendBool("Draw Instanced Support", fDrawInstancedSupport);
+    writer->appendBool("Native Draw Indirect Support", fNativeDrawIndirectSupport);
     writer->appendBool("Mixed Samples Support", fMixedSamplesSupport);
     writer->appendBool("Conservative Raster Support", fConservativeRasterSupport);
     writer->appendBool("Wireframe Support", fWireframeSupport);
@@ -200,6 +207,8 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Use primitive restart", fUsePrimitiveRestart);
     writer->appendBool("Prefer client-side dynamic buffers", fPreferClientSideDynamicBuffers);
     writer->appendBool("Prefer fullscreen clears (and stencil discard)", fPreferFullscreenClears);
+    writer->appendBool("Two-sided Stencil Refs And Masks Must Match",
+                       fTwoSidedStencilRefsAndMasksMustMatch);
     writer->appendBool("Must clear buffer memory", fMustClearUploadedBufferData);
     writer->appendBool("Should initialize textures", fShouldInitializeTextures);
     writer->appendBool("Supports importing AHardwareBuffers", fSupportsAHardwareBufferImages);
@@ -229,6 +238,11 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Prefer more triangles over sample mask [MSAA only]",
                        fPreferTrianglesOverSampleMask);
     writer->appendBool("Avoid stencil buffers [workaround]", fAvoidStencilBuffers);
+    writer->appendBool("Avoid writePixels fast path [workaround]", fAvoidWritePixelsFastPath);
+    writer->appendBool("Requires manual FB barrier after tessellated stencilDraw [workaround]",
+                       fRequiresManualFBBarrierAfterTessellatedStencilDraw);
+    writer->appendBool("Native draw indexed indirect is broken [workaround]",
+                       fNativeDrawIndexedIndirectIsBroken);
 
     if (this->advancedBlendEquationSupport()) {
         writer->appendHexU32("Advanced Blend Equation Blacklist", fAdvBlendEqBlacklist);

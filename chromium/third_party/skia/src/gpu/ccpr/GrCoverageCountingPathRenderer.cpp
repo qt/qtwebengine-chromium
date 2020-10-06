@@ -22,7 +22,7 @@ bool GrCoverageCountingPathRenderer::IsSupported(const GrCaps& caps, CoverageTyp
     GrBackendFormat defaultA8Format = caps.getDefaultBackendFormat(GrColorType::kAlpha_8,
                                                                    GrRenderable::kYes);
     if (caps.driverBlacklistCCPR() || !shaderCaps.integerSupport() ||
-        !caps.instanceAttribSupport() || !shaderCaps.floatIs32Bits() ||
+        !caps.drawInstancedSupport() || !shaderCaps.floatIs32Bits() ||
         !defaultA8Format.isValid() || // This checks both texturable and renderable
         !caps.halfFloatVertexAttributeSupport()) {
         return false;
@@ -80,7 +80,7 @@ GrCCPerOpsTaskPaths* GrCoverageCountingPathRenderer::lookupPendingPaths(uint32_t
 
 GrPathRenderer::CanDrawPath GrCoverageCountingPathRenderer::onCanDrawPath(
         const CanDrawPathArgs& args) const {
-    const GrShape& shape = *args.fShape;
+    const GrStyledShape& shape = *args.fShape;
     // We use "kCoverage", or analytic AA, no mater what the coverage type of our atlas: Even if the
     // atlas is multisampled, that resolves into analytic coverage before we draw the path to the
     // main canvas.
@@ -167,9 +167,8 @@ GrPathRenderer::CanDrawPath GrCoverageCountingPathRenderer::onCanDrawPath(
 bool GrCoverageCountingPathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkASSERT(!fFlushing);
 
-    SkIRect clipIBounds;
     GrRenderTargetContext* rtc = args.fRenderTargetContext;
-    args.fClip->getConservativeBounds(rtc->width(), rtc->height(), &clipIBounds, nullptr);
+    SkIRect clipIBounds = args.fClip->getConservativeBounds(rtc->width(), rtc->height());
 
     auto op = GrCCDrawPathsOp::Make(args.fContext, clipIBounds, *args.fViewMatrix, *args.fShape,
                                     std::move(args.fPaint));

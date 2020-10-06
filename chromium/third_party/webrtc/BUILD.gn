@@ -281,6 +281,10 @@ config("common_config") {
     defines += [ "WEBRTC_EXCLUDE_TRANSIENT_SUPPRESSOR" ]
   }
 
+  if (rtc_exclude_audio_processing_module) {
+    defines += [ "WEBRTC_EXCLUDE_AUDIO_PROCESSING_MODULE" ]
+  }
+
   cflags = []
 
   if (build_with_chromium) {
@@ -547,6 +551,7 @@ if (rtc_include_tests) {
       "rtc_base:weak_ptr_unittests",
       "rtc_base/experiments:experiments_unittests",
       "rtc_base/synchronization:sequence_checker_unittests",
+      "rtc_base/task_utils:pending_task_safety_flag_unittests",
       "rtc_base/task_utils:to_queued_task_unittests",
       "sdk:sdk_tests",
       "test:rtp_test_utils",
@@ -682,7 +687,11 @@ if (rtc_include_tests) {
   rtc_test("voip_unittests") {
     testonly = true
     deps = [
+      "api/voip:voip_engine_factory_unittests",
+      "audio/voip/test:audio_channel_unittests",
       "audio/voip/test:audio_egress_unittests",
+      "audio/voip/test:audio_ingress_unittests",
+      "audio/voip/test:voip_core_unittests",
       "test:test_main",
     ]
   }

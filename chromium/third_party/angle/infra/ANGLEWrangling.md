@@ -2,7 +2,7 @@
 
 As an ANGLE Sheriff. Your job is to:
 
- 1. Keep the [ANGLE Try Waterfall](https://ci.chromium.org/p/chromium/g/angle.try/builders) in good
+ 1. Keep the [ANGLE Try Waterfall](https://ci.chromium.org/p/chromium/g/tryserver.chromium.angle/builders) in good
     working order.
  1. Monitor the
     [Chromium GPU FYI Waterfall](https://ci.chromium.org/p/chromium/g/chromium.gpu.fyi/console)
@@ -23,7 +23,7 @@ extension for inspecting bot builds. It'll save you a lot of time.
 ## Task 1: Monitor ANGLE CI and Try Testers
 
 Your first job is to keep the
-[ANGLE Try Waterfall](https://ci.chromium.org/p/chromium/g/angle.try/builders) healthy.  Some
+[ANGLE Try Waterfall](https://ci.chromium.org/p/chromium/g/tryserver.chromium.angle/builders) healthy.  Some
 failures are expected on this waterfall. Developers might be testing expectedly buggy code. But
 persistent flakiness and failures should be reported and reverted.
 
@@ -92,8 +92,19 @@ We also use additional auto-rollers to roll third party libraries into ANGLE onc
  * [Vulkan-Headers into ANGLE](https://autoroll.skia.org/r/vulkan-headers-angle-autoroll)
  * [Vulkan-ValidationLayers into ANGLE](https://autoroll.skia.org/r/vulkan-validation-layers-angle-autoroll)
 
-Please ensure these rollers are also healthy and unblocked. You can trigger manual rolls using the dashboards
-to land high-priority changes.
+Please ensure these rollers are also healthy and unblocked. You can trigger manual rolls using the
+dashboards to land high-priority changes.
+
+**NOTE: When Vulkan-Headers roll is broken:**
+
+The Vulkan-Tools, Vulkan-Loader, and Vulkan-ValidationLayers repos all depend on the Vulkan-Headers
+repo. When Vulkan-Headers updates, all of those repos have a roll process managed by LunarG to
+update them for the new Vulkan-Headers. This usually takes 2-3 business days after the
+Vulkan-Headers update. If Vulkan-Headers roll fails, pause the roller with a note that it should be
+re-enabled when the dependent repos have been updated for the latest Vulkan-Headers changes. This
+will require a manual roll if the two repos have to be rolled in unison. To perform a manual roll,
+create a CL that updates the DEPS file with the new SHA1 value from the desired checkout of each
+dependent repo. Once the manual roll lands, re-enable the auto-rollers for the relevant repos.
 
 The autoroller configurations live in the [skia/buildbot repository](https://skia.googlesource.com/buildbot/)
 in the [autoroll/config](https://skia.googlesource.com/buildbot/+/master/autoroll/config) folder.

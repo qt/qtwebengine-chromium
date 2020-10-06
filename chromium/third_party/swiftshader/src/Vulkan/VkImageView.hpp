@@ -15,7 +15,7 @@
 #ifndef VK_IMAGE_VIEW_HPP_
 #define VK_IMAGE_VIEW_HPP_
 
-#include "VkFormat.h"
+#include "VkFormat.hpp"
 #include "VkImage.hpp"
 #include "VkObject.hpp"
 
@@ -53,7 +53,6 @@ union Identifier
 		uint32_t g : 3;
 		uint32_t b : 3;
 		uint32_t a : 3;
-		uint32_t large : 1;  // Has dimension larger than SHRT_MAX (see b/133429305).
 	};
 };
 
@@ -106,7 +105,11 @@ public:
 	bool hasDepthAspect() const { return (subresourceRange.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) != 0; }
 	bool hasStencilAspect() const { return (subresourceRange.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0; }
 
-	void prepareForSampling() const { image->prepareForSampling(subresourceRange); }
+	// This function is only called from the renderer, so use the USING_STORAGE flag,
+	// as it is required in order to write to an image from a shader
+	void contentsChanged() { image->contentsChanged(subresourceRange, Image::USING_STORAGE); }
+
+	void prepareForSampling() { image->prepareForSampling(subresourceRange); }
 
 	const VkComponentMapping &getComponentMapping() const { return components; }
 	const VkImageSubresourceRange &getSubresourceRange() const { return subresourceRange; }

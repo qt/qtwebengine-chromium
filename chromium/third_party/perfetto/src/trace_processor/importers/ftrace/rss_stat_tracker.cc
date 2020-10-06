@@ -16,9 +16,9 @@
 
 #include "src/trace_processor/importers/ftrace/rss_stat_tracker.h"
 
-#include "src/trace_processor/event_tracker.h"
-#include "src/trace_processor/process_tracker.h"
-#include "src/trace_processor/trace_processor_context.h"
+#include "src/trace_processor/importers/common/event_tracker.h"
+#include "src/trace_processor/importers/common/process_tracker.h"
+#include "src/trace_processor/types/trace_processor_context.h"
 
 #include "protos/perfetto/trace/ftrace/kmem.pbzero.h"
 
@@ -32,7 +32,9 @@ RssStatTracker::RssStatTracker(TraceProcessorContext* context)
   rss_members_.emplace_back(context->storage->InternString("mem.swap"));
   rss_members_.emplace_back(context->storage->InternString("mem.rss.shmem"));
   rss_members_.emplace_back(
-      context->storage->InternString("mem.rss.unknown"));  // Keep this last.
+      context->storage->InternString("mem.unreclaimable"));
+  rss_members_.emplace_back(
+      context->storage->InternString("mem.unknown"));  // Keep this last.
 }
 
 void RssStatTracker::ParseRssStat(int64_t ts, uint32_t pid, ConstBytes blob) {

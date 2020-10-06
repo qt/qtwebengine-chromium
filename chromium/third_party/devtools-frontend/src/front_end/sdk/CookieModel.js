@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 
 import {Attributes, Cookie} from './Cookie.js';  // eslint-disable-line no-unused-vars
@@ -52,7 +55,7 @@ export class CookieModel extends SDKModel {
 
   /**
    * @param {!Cookie} cookie
-   * @param {function()=} callback
+   * @param {function():void=} callback
    */
   deleteCookie(cookie, callback) {
     this._deleteAll([cookie], callback);
@@ -60,7 +63,7 @@ export class CookieModel extends SDKModel {
 
   /**
    * @param {string=} domain
-   * @param {function()=} callback
+   * @param {function():void=} callback
    */
   clear(domain, callback) {
     this.getCookiesForDomain(domain || null).then(cookies => this._deleteAll(cookies, callback));
@@ -105,6 +108,12 @@ export class CookieModel extends SDKModel {
     }
     const resourceTreeModel = this.target().model(ResourceTreeModel);
     if (resourceTreeModel) {
+      // In case the current frame was unreachable, add it's cookies
+      // because they might help to debug why the frame was unreachable.
+      if (resourceTreeModel.mainFrame.unreachableUrl()) {
+        resourceURLs.push(resourceTreeModel.mainFrame.unreachableUrl());
+      }
+
       resourceTreeModel.forAllResources(populateResourceURLs);
     }
     return this.getCookies(resourceURLs);
@@ -112,7 +121,7 @@ export class CookieModel extends SDKModel {
 
   /**
    * @param {!Array<!Cookie>} cookies
-   * @param {function()=} callback
+   * @param {function():void=} callback
    */
   _deleteAll(cookies, callback) {
     const networkAgent = this.target().networkAgent();

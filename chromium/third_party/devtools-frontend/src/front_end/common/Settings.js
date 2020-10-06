@@ -211,9 +211,9 @@ export class Settings {
 export class SettingsStorage {
   /**
    * @param {!Object<string,string>} object
-   * @param {function(string, string)=} setCallback
-   * @param {function(string)=} removeCallback
-   * @param {function(string=)=} removeAllCallback
+   * @param {function(string, string):void=} setCallback
+   * @param {function(string):void=} removeCallback
+   * @param {function(string=):void=} removeAllCallback
    * @param {string=} storagePrefix
    */
   constructor(object, setCallback, removeCallback, removeAllCallback, storagePrefix) {
@@ -1043,13 +1043,13 @@ export function detectColorFormat(color) {
   if (formatSetting === cf.Original) {
     format = cf.Original;
   } else if (formatSetting === cf.RGB) {
-    format = (color.hasAlpha() ? cf.RGBA : cf.RGB);
+    format = cf.RGB;
   } else if (formatSetting === cf.HSL) {
-    format = (color.hasAlpha() ? cf.HSLA : cf.HSL);
+    format = cf.HSL;
   } else if (formatSetting === cf.HEX) {
     format = color.detectHEXFormat();
   } else {
-    format = cf.RGBA;
+    format = cf.RGB;
   }
 
   return format;

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import {DebuggerModel} from './DebuggerModel.js';            // eslint-disable-line no-unused-vars
 import {RemoteObject} from './RemoteObject.js';              // eslint-disable-line no-unused-vars
 import {RuntimeModel} from './RuntimeModel.js';              // eslint-disable-line no-unused-vars
@@ -145,7 +148,7 @@ export class HeapProfilerModel extends SDKModel {
   }
 
   /**
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   collectGarbage() {
     return this._heapProfilerAgent.collectGarbage();
@@ -171,7 +174,7 @@ export class HeapProfilerModel extends SDKModel {
 
   /**
    * @param {string} snapshotObjectId
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   addInspectedHeapObject(snapshotObjectId) {
     return this._heapProfilerAgent.addInspectedHeapObject(snapshotObjectId);
@@ -180,7 +183,7 @@ export class HeapProfilerModel extends SDKModel {
   /**
    * @param {boolean} reportProgress
    * @param {boolean} treatGlobalObjectsAsRoots
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   takeHeapSnapshot(reportProgress, treatGlobalObjectsAsRoots) {
     return this._heapProfilerAgent.takeHeapSnapshot(reportProgress, treatGlobalObjectsAsRoots);
@@ -188,7 +191,7 @@ export class HeapProfilerModel extends SDKModel {
 
   /**
    * @param {boolean} recordAllocationStacks
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   startTrackingHeapObjects(recordAllocationStacks) {
     return this._heapProfilerAgent.startTrackingHeapObjects(recordAllocationStacks);
@@ -196,7 +199,7 @@ export class HeapProfilerModel extends SDKModel {
 
   /**
    * @param {boolean} reportProgress
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   stopTrackingHeapObjects(reportProgress) {
     return this._heapProfilerAgent.stopTrackingHeapObjects(reportProgress);
@@ -248,7 +251,6 @@ export const Events = {
 };
 
 /**
- * @implements {Protocol.Profiler.Profile}
  * @extends {Protocol.HeapProfiler.SamplingHeapProfile}
  */
 class NativeHeapProfile {

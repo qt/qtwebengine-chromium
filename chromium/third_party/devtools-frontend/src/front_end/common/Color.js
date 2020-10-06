@@ -350,11 +350,11 @@ export class Color {
    * @param {!Array<number>} out_rgba
    */
   static hsva2rgba(hsva, out_rgba) {
-    Color._hsva2hsla(hsva, Color.hsva2rgba._tmpHSLA);
-    Color.hsl2rgb(Color.hsva2rgba._tmpHSLA, out_rgba);
+    Color._hsva2hsla(hsva, _tmpHSLA);
+    Color.hsl2rgb(_tmpHSLA, out_rgba);
 
-    for (let i = 0; i < Color.hsva2rgba._tmpHSLA.length; i++) {
-      Color.hsva2rgba._tmpHSLA[i] = 0;
+    for (let i = 0; i < _tmpHSLA.length; i++) {
+      _tmpHSLA[i] = 0;
     }
   }
 
@@ -400,14 +400,14 @@ export class Color {
    * @return {number}
    */
   static calculateContrastRatio(fgRGBA, bgRGBA) {
-    Color.blendColors(fgRGBA, bgRGBA, Color.calculateContrastRatio._blendedFg);
+    Color.blendColors(fgRGBA, bgRGBA, _blendedFg);
 
-    const fgLuminance = Color.luminance(Color.calculateContrastRatio._blendedFg);
+    const fgLuminance = Color.luminance(_blendedFg);
     const bgLuminance = Color.luminance(bgRGBA);
     const contrastRatio = (Math.max(fgLuminance, bgLuminance) + 0.05) / (Math.min(fgLuminance, bgLuminance) + 0.05);
 
-    for (let i = 0; i < Color.calculateContrastRatio._blendedFg.length; i++) {
-      Color.calculateContrastRatio._blendedFg[i] = 0;
+    for (let i = 0; i < _blendedFg.length; i++) {
+      _blendedFg[i] = 0;
     }
 
     return contrastRatio;
@@ -580,31 +580,24 @@ export class Color {
       case Format.Original: {
         return this._originalText;
       }
-      case Format.RGB: {
-        if (this.hasAlpha()) {
-          return null;
-        }
-        return Platform.StringUtilities.sprintf(
-            'rgb(%d, %d, %d)', toRgbValue(this._rgba[0]), toRgbValue(this._rgba[1]), toRgbValue(this._rgba[2]));
-      }
+      case Format.RGB:
       case Format.RGBA: {
-        return Platform.StringUtilities.sprintf(
-            'rgba(%d, %d, %d, %f)', toRgbValue(this._rgba[0]), toRgbValue(this._rgba[1]), toRgbValue(this._rgba[2]),
-            this._rgba[3]);
-      }
-      case Format.HSL: {
+        const start = Platform.StringUtilities.sprintf(
+            'rgb(%d %d %d', toRgbValue(this._rgba[0]), toRgbValue(this._rgba[1]), toRgbValue(this._rgba[2]));
         if (this.hasAlpha()) {
-          return null;
+          return start + Platform.StringUtilities.sprintf(' / %d%)', Math.round(this._rgba[3] * 100));
         }
-        const hsl = this.hsla();
-        return Platform.StringUtilities.sprintf(
-            'hsl(%d, %d%, %d%)', Math.round(hsl[0] * 360), Math.round(hsl[1] * 100), Math.round(hsl[2] * 100));
+        return start + ')';
       }
+      case Format.HSL:
       case Format.HSLA: {
         const hsla = this.hsla();
-        return Platform.StringUtilities.sprintf(
-            'hsla(%d, %d%, %d%, %f)', Math.round(hsla[0] * 360), Math.round(hsla[1] * 100), Math.round(hsla[2] * 100),
-            hsla[3]);
+        const start = Platform.StringUtilities.sprintf(
+            'hsl(%ddeg %d% %d%', Math.round(hsla[0] * 360), Math.round(hsla[1] * 100), Math.round(hsla[2] * 100));
+        if (this.hasAlpha()) {
+          return start + Platform.StringUtilities.sprintf(' / %d%)', Math.round(hsla[3] * 100));
+        }
+        return start + ')';
       }
       case Format.HEXA: {
         return Platform.StringUtilities
@@ -734,6 +727,13 @@ export class Color {
     const rgba = [];
     Color.blendColors(fgColor._rgba, this._rgba, rgba);
     return new Color(rgba, Format.RGBA);
+  }
+
+  /**
+   * @param {!Format} format
+   */
+  setFormat(format) {
+    this._format = format;
   }
 }
 
@@ -972,7 +972,11 @@ export class Generator {
     const s = this._indexToValueInSpace(hash >> 8, this._satSpace);
     const l = this._indexToValueInSpace(hash >> 16, this._lightnessSpace);
     const a = this._indexToValueInSpace(hash >> 24, this._alphaSpace);
-    return `hsla(${h}, ${s}%, ${l}%, ${a})`;
+    const start = `hsl(${h}deg ${s}% ${l}%`;
+    if (a !== 1) {
+      return `${start} / ${Math.floor(a * 100)}%)`;
+    }
+    return `${start})`;
   }
 
   /**
@@ -990,7 +994,5 @@ export class Generator {
   }
 }
 
-/** @type {!Array<number>} */
-Color.hsva2rgba._tmpHSLA = [0, 0, 0, 0];
-
-Color.calculateContrastRatio._blendedFg = [0, 0, 0, 0];
+const _tmpHSLA = [0, 0, 0, 0];
+const _blendedFg = [0, 0, 0, 0];

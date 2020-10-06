@@ -36,17 +36,15 @@ struct FunctionDeclaration : public Symbol {
         for (auto p : fParameters) {
             result += separator;
             separator = ", ";
-            result += p->fType.displayName();
+            result += p->fName;
         }
         result += ")";
         return result;
     }
 
-#ifdef SK_DEBUG
     String description() const override {
         return this->declaration();
     }
-#endif
 
     bool matches(const FunctionDeclaration& f) const {
         if (fName != f.fName) {

@@ -51,10 +51,10 @@ swiftshader_source_set("WSI") {
 
   if (is_mac) {
     sources += [
-      "MetalSurface.h",
+      "MetalSurface.hpp",
       "MetalSurface.mm",
     ]
-    libs = [
+    frameworks = [
       "Cocoa.framework",
       "QuartzCore.framework",
     ]

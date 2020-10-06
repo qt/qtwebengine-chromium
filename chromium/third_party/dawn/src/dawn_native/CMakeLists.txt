@@ -102,8 +102,6 @@ target_sources(dawn_native PRIVATE
     "ProgrammablePassEncoder.h"
     "Queue.cpp"
     "Queue.h"
-    "RefCounted.cpp"
-    "RefCounted.h"
     "RenderBundle.cpp"
     "RenderBundle.h"
     "RenderBundleEncoder.cpp"
@@ -151,6 +149,10 @@ if (DAWN_USE_X11)
     target_link_libraries(dawn_native PRIVATE ${X11_LIBRARIES})
 endif()
 
+if (WIN32)
+    target_link_libraries(dawn_native PRIVATE user32.lib)
+endif()
+
 if (DAWN_ENABLE_D3D12)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn_native/D3D12Backend.h"
@@ -164,6 +166,8 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/BindGroupLayoutD3D12.h"
         "d3d12/BufferD3D12.cpp"
         "d3d12/BufferD3D12.h"
+        "d3d12/CPUDescriptorHeapAllocationD3D12.cpp"
+        "d3d12/CPUDescriptorHeapAllocationD3D12.h"
         "d3d12/CommandAllocatorManager.cpp"
         "d3d12/CommandAllocatorManager.h"
         "d3d12/CommandBufferD3D12.cpp"
@@ -176,13 +180,11 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/D3D12Error.h"
         "d3d12/D3D12Info.cpp"
         "d3d12/D3D12Info.h"
-        "d3d12/DescriptorHeapAllocationD3D12.cpp",
-        "d3d12/DescriptorHeapAllocationD3D12.h",
-        "d3d12/DescriptorHeapAllocator.cpp"
-        "d3d12/DescriptorHeapAllocator.h"
         "d3d12/DeviceD3D12.cpp"
         "d3d12/DeviceD3D12.h"
         "d3d12/Forward.h"
+        "d3d12/GPUDescriptorHeapAllocationD3D12.cpp"
+        "d3d12/GPUDescriptorHeapAllocationD3D12.h"
         "d3d12/HeapAllocatorD3D12.cpp"
         "d3d12/HeapAllocatorD3D12.h"
         "d3d12/HeapD3D12.cpp"
@@ -209,10 +211,12 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/SamplerD3D12.h"
         "d3d12/ShaderModuleD3D12.cpp"
         "d3d12/ShaderModuleD3D12.h"
-        "d3d12/ShaderVisibleDescriptorAllocatorD3D12.cpp",
-        "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h",
+        "d3d12/ShaderVisibleDescriptorAllocatorD3D12.cpp"
+        "d3d12/ShaderVisibleDescriptorAllocatorD3D12.h"
         "d3d12/StagingBufferD3D12.cpp"
         "d3d12/StagingBufferD3D12.h"
+        "d3d12/StagingDescriptorAllocatorD3D12.cpp"
+        "d3d12/StagingDescriptorAllocatorD3D12.h"
         "d3d12/SwapChainD3D12.cpp"
         "d3d12/SwapChainD3D12.h"
         "d3d12/TextureCopySplitter.cpp"
@@ -361,8 +365,9 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/CommandRecordingContext.h"
         "vulkan/ComputePipelineVk.cpp"
         "vulkan/ComputePipelineVk.h"
-        "vulkan/DescriptorSetService.cpp"
-        "vulkan/DescriptorSetService.h"
+        "vulkan/DescriptorSetAllocation.h"
+        "vulkan/DescriptorSetAllocator.cpp"
+        "vulkan/DescriptorSetAllocator.h"
         "vulkan/DeviceVk.cpp"
         "vulkan/DeviceVk.h"
         "vulkan/ExternalHandle.h"

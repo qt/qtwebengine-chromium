@@ -69,18 +69,18 @@ std::string ReadTestDataFile(const std::string& base) {
 
 std::string StrFormat(const char* format, ...) {
   char buf[4096];
-  va_list ap;
+  std::va_list ap;
   va_start(ap, format);
-  vsnprintf(buf, sizeof(buf), format, ap);
+  std::vsnprintf(buf, sizeof(buf), format, ap);
   va_end(ap);
   return buf;
 }
 
 bool benchmark_running = false;
-int64 benchmark_real_time_us = 0;
-int64 benchmark_cpu_time_us = 0;
+int64_t benchmark_real_time_us = 0;
+int64_t benchmark_cpu_time_us = 0;
 std::string* benchmark_label = nullptr;
-int64 benchmark_bytes_processed = 0;
+int64_t benchmark_bytes_processed = 0;
 
 void ResetBenchmarkTiming() {
   benchmark_real_time_us = 0;
@@ -104,8 +104,8 @@ void StartBenchmarkTiming() {
 #else
   gettimeofday(&benchmark_start_real, NULL);
   if (getrusage(RUSAGE_SELF, &benchmark_start_cpu) == -1) {
-    perror("getrusage(RUSAGE_SELF)");
-    exit(1);
+    std::perror("getrusage(RUSAGE_SELF)");
+    std::exit(1);
   }
 #endif
   benchmark_running = true;
@@ -151,8 +151,8 @@ void StopBenchmarkTiming() {
 
   struct rusage benchmark_stop_cpu;
   if (getrusage(RUSAGE_SELF, &benchmark_stop_cpu) == -1) {
-    perror("getrusage(RUSAGE_SELF)");
-    exit(1);
+    std::perror("getrusage(RUSAGE_SELF)");
+    std::exit(1);
   }
   benchmark_cpu_time_us += 1000000 * (benchmark_stop_cpu.ru_utime.tv_sec -
                                       benchmark_start_cpu.ru_utime.tv_sec);
@@ -170,13 +170,13 @@ void SetBenchmarkLabel(const std::string& str) {
   benchmark_label = new std::string(str);
 }
 
-void SetBenchmarkBytesProcessed(int64 bytes) {
+void SetBenchmarkBytesProcessed(int64_t bytes) {
   benchmark_bytes_processed = bytes;
 }
 
 struct BenchmarkRun {
-  int64 real_time_us;
-  int64 cpu_time_us;
+  int64_t real_time_us;
+  int64_t cpu_time_us;
 };
 
 struct BenchmarkCompareCPUTime {
@@ -224,12 +224,12 @@ void Benchmark::Run() {
                      benchmark_runs + kMedianPos,
                      benchmark_runs + kNumRuns,
                      BenchmarkCompareCPUTime());
-    int64 real_time_us = benchmark_runs[kMedianPos].real_time_us;
-    int64 cpu_time_us = benchmark_runs[kMedianPos].cpu_time_us;
+    int64_t real_time_us = benchmark_runs[kMedianPos].real_time_us;
+    int64_t cpu_time_us = benchmark_runs[kMedianPos].cpu_time_us;
     if (cpu_time_us <= 0) {
       human_readable_speed = "?";
     } else {
-      int64 bytes_per_second =
+      int64_t bytes_per_second =
           benchmark_bytes_processed * 1000000 / cpu_time_us;
       if (bytes_per_second < 1024) {
         human_readable_speed =
@@ -246,7 +246,7 @@ void Benchmark::Run() {
       }
     }
 
-    fprintf(stderr,
+    std::fprintf(stderr,
 #ifdef WIN32
             "%-18s %10I64d %10I64d %10d %s  %s\n",
 #else

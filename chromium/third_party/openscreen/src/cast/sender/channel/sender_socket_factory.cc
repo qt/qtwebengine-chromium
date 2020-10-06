@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "cast/sender/channel/sender_socket_factory.h"
+#include "cast/sender/public/sender_socket_factory.h"
 
-#include "cast/common/channel/cast_socket.h"
 #include "cast/common/channel/proto/cast_channel.pb.h"
+#include "cast/sender/channel/cast_auth_util.h"
 #include "cast/sender/channel/message_util.h"
 #include "platform/base/tls_connect_options.h"
 #include "util/crypto/certificate_utils.h"
-#include "util/logging.h"
+#include "util/osp_logging.h"
 
 using ::cast::channel::CastMessage;
 
@@ -88,11 +88,13 @@ void SenderSocketFactory::OnConnected(
       MakeSerialDelete<CastSocket>(task_runner_, std::move(connection), this);
   pending_auth_.emplace_back(
       new PendingAuth{endpoint, media_policy, std::move(socket), client,
-                      AuthContext::Create(), std::move(peer_cert.value())});
+                      std::make_unique<AuthContext>(AuthContext::Create()),
+                      std::move(peer_cert.value())});
   PendingAuth& pending = *pending_auth_.back();
 
-  CastMessage auth_challenge = CreateAuthChallengeMessage(pending.auth_context);
-  Error error = pending.socket->SendMessage(auth_challenge);
+  CastMessage auth_challenge =
+      CreateAuthChallengeMessage(*pending.auth_context);
+  Error error = pending.socket->Send(auth_challenge);
   if (!error.ok()) {
     pending_auth_.pop_back();
     client_->OnError(this, endpoint, error);
@@ -162,7 +164,7 @@ void SenderSocketFactory::OnMessage(CastSocket* socket, CastMessage message) {
   }
 
   ErrorOr<CastDeviceCertPolicy> policy_or_error = AuthenticateChallengeReply(
-      message, pending->peer_cert.get(), pending->auth_context);
+      message, pending->peer_cert.get(), *pending->auth_context);
   if (policy_or_error.is_error()) {
     OSP_DLOG_WARN << "Authentication failed for " << pending->endpoint
                   << " with error: " << policy_or_error.error();

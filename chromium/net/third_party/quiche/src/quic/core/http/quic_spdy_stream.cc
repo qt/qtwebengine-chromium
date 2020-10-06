@@ -192,7 +192,6 @@ QuicSpdyStream::QuicSpdyStream(QuicStreamId id,
       headers_decompressed_(false),
       header_list_size_limit_exceeded_(false),
       headers_payload_length_(0),
-      trailers_payload_length_(0),
       trailers_decompressed_(false),
       trailers_consumed_(false),
       http_decoder_visitor_(std::make_unique<HttpDecoderVisitor>(this)),
@@ -229,7 +228,6 @@ QuicSpdyStream::QuicSpdyStream(PendingStream* pending,
       headers_decompressed_(false),
       header_list_size_limit_exceeded_(false),
       headers_payload_length_(0),
-      trailers_payload_length_(0),
       trailers_decompressed_(false),
       trailers_consumed_(false),
       http_decoder_visitor_(std::make_unique<HttpDecoderVisitor>(this)),
@@ -285,7 +283,7 @@ size_t QuicSpdyStream::WriteHeaders(
     // set and write side needs to be closed without actually sending a FIN on
     // this stream.
     // TODO(rch): Add test to ensure fin_sent_ is set whenever a fin is sent.
-    set_fin_sent(true);
+    SetFinSent();
     CloseWriteSide();
   }
   return bytes_written;
@@ -352,7 +350,7 @@ size_t QuicSpdyStream::WriteTrailers(
   // If trailers are sent on the headers stream, then |fin_sent_| needs to be
   // set without actually sending a FIN on this stream.
   if (!VersionUsesHttp3(transport_version())) {
-    set_fin_sent(kFin);
+    SetFinSent();
 
     // Also, write side of this stream needs to be closed.  However, only do
     // this if there is no more buffered data, otherwise it will never be sent.
@@ -569,10 +567,7 @@ void QuicSpdyStream::OnHeadersDecoded(QuicHeaderList headers,
       debug_visitor->OnHeadersDecoded(id(), headers);
     }
 
-    const QuicByteCount frame_length = headers_decompressed_
-                                           ? trailers_payload_length_
-                                           : headers_payload_length_;
-    OnStreamHeaderList(/* fin = */ false, frame_length, headers);
+    OnStreamHeaderList(/* fin = */ false, headers_payload_length_, headers);
   } else {
     if (debug_visitor) {
       debug_visitor->OnPushPromiseDecoded(id(), promised_stream_id, headers);
@@ -620,16 +615,7 @@ void QuicSpdyStream::MaybeSendPriorityUpdateFrame() {
 }
 
 void QuicSpdyStream::OnHeadersTooLarge() {
-  if (VersionUsesHttp3(transport_version())) {
-    // TODO(b/124216424): Reset stream with H3_REQUEST_CANCELLED (if client)
-    // or with H3_REQUEST_REJECTED (if server).
-    std::string error_message =
-        quiche::QuicheStrCat("Too large headers received on stream ", id());
-    OnUnrecoverableError(QUIC_HEADERS_STREAM_DATA_DECOMPRESS_FAILURE,
-                         error_message);
-  } else {
-    Reset(QUIC_HEADERS_TOO_LARGE);
-  }
+  Reset(QUIC_HEADERS_TOO_LARGE);
 }
 
 void QuicSpdyStream::OnInitialHeadersComplete(
@@ -962,6 +948,8 @@ bool QuicSpdyStream::OnHeadersFrameStart(QuicByteCount header_length,
                                                            payload_length);
   }
 
+  headers_payload_length_ = payload_length;
+
   if (trailers_decompressed_) {
     stream_delegate()->OnStreamError(
         QUIC_HTTP_INVALID_FRAME_SEQUENCE_ON_SPDY_STREAM,
@@ -982,15 +970,6 @@ bool QuicSpdyStream::OnHeadersFrameStart(QuicByteCount header_length,
 bool QuicSpdyStream::OnHeadersFramePayload(quiche::QuicheStringPiece payload) {
   DCHECK(VersionUsesHttp3(transport_version()));
   DCHECK(qpack_decoded_headers_accumulator_);
-
-  // TODO(b/152518220): Save |payload_length| argument of OnHeadersFrameStart()
-  // instead of accumulating payload length in |headers_payload_length_| or
-  // |trailers_payload_length_|.
-  if (headers_decompressed_) {
-    trailers_payload_length_ += payload.length();
-  } else {
-    headers_payload_length_ += payload.length();
-  }
 
   qpack_decoded_headers_accumulator_->Decode(payload);
 
@@ -1040,7 +1019,7 @@ bool QuicSpdyStream::OnPushPromiseFramePushId(
         id(), push_id, header_block_length);
   }
 
-  // TODO(renjietang): Check max push id and handle errors.
+  // TODO(b/151749109): Check max push id and handle errors.
   spdy_session_->OnPushPromise(id(), push_id);
   sequencer()->MarkConsumed(body_manager_.OnNonBody(push_id_length));
 
@@ -1139,7 +1118,7 @@ size_t QuicSpdyStream::WriteHeadersImpl(
       encoded_headers.size() + encoder_stream_sent_byte_count,
       header_block.TotalBytesUsed());
 
-  return encoded_headers.size() + encoder_stream_sent_byte_count;
+  return encoded_headers.size();
 }
 
 #undef ENDPOINT  // undef for jumbo builds

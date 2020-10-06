@@ -20,6 +20,7 @@
 #include "src/core/SkOSFile.h"
 #include "src/core/SkScan.h"
 #include "src/core/SkTaskGroup.h"
+#include "src/core/SkTextBlobPriv.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrPersistentCacheUtils.h"
@@ -131,6 +132,8 @@ static DEFINE_bool(redraw, false, "Toggle continuous redraw.");
 
 static DEFINE_bool(offscreen, false, "Force rendering to an offscreen surface.");
 static DEFINE_bool(skvm, false, "Try to use skvm blitters for raster.");
+static DEFINE_bool(dylib, false, "JIT via dylib (much slower compile but easier to debug/profile)");
+static DEFINE_bool(stats, false, "Display stats overlay on startup.");
 
 #ifndef SK_GL
 static_assert(false, "viewer requires GL backend for raster.")
@@ -238,21 +241,20 @@ class NullSlide : public Slide {
     }
 };
 
-const char* kName = "name";
-const char* kValue = "value";
-const char* kOptions = "options";
-const char* kSlideStateName = "Slide";
-const char* kBackendStateName = "Backend";
-const char* kMSAAStateName = "MSAA";
-const char* kPathRendererStateName = "Path renderer";
-const char* kSoftkeyStateName = "Softkey";
-const char* kSoftkeyHint = "Please select a softkey";
-const char* kFpsStateName = "FPS";
-const char* kON = "ON";
-const char* kOFF = "OFF";
-const char* kRefreshStateName = "Refresh";
+static const char kName[] = "name";
+static const char kValue[] = "value";
+static const char kOptions[] = "options";
+static const char kSlideStateName[] = "Slide";
+static const char kBackendStateName[] = "Backend";
+static const char kMSAAStateName[] = "MSAA";
+static const char kPathRendererStateName[] = "Path renderer";
+static const char kSoftkeyStateName[] = "Softkey";
+static const char kSoftkeyHint[] = "Please select a softkey";
+static const char kON[] = "ON";
+static const char kRefreshStateName[] = "Refresh";
 
 extern bool gUseSkVMBlitter;
+extern bool gSkVMJITViaDylib;
 
 Viewer::Viewer(int argc, char** argv, void* platformData)
     : fCurrentSlide(-1)
@@ -303,6 +305,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 #endif
 
     gUseSkVMBlitter = FLAGS_skvm;
+    gSkVMJITViaDylib = FLAGS_dylib;
 
     ToolUtils::SetDefaultFontMgr();
 
@@ -324,7 +327,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     fRefresh = FLAGS_redraw;
 
     // Configure timers
-    fStatsLayer.setActive(false);
+    fStatsLayer.setActive(FLAGS_stats);
     fAnimateTimer = fStatsLayer.addTimer("Animate", SK_ColorMAGENTA, 0xffff66ff);
     fPaintTimer = fStatsLayer.addTimer("Paint", SK_ColorGREEN);
     fFlushTimer = fStatsLayer.addTimer("Flush", SK_ColorRED, 0xffff6666);
@@ -765,10 +768,21 @@ void Viewer::initSlides() {
                 addSlide(SkOSPath::Basename(flag.c_str()), flag, info.fFactory);
             } else {
                 // directory
-                SkOSFile::Iter it(flag.c_str(), info.fExtension);
                 SkString name;
+                SkTArray<SkString> sortedFilenames;
+                SkOSFile::Iter it(flag.c_str(), info.fExtension);
                 while (it.next(&name)) {
-                    addSlide(name, SkOSPath::Join(flag.c_str(), name.c_str()), info.fFactory);
+                    sortedFilenames.push_back(name);
+                }
+                if (sortedFilenames.count()) {
+                    SkTQSort(sortedFilenames.begin(), sortedFilenames.end() - 1,
+                             [](const SkString& a, const SkString& b) {
+                                 return strcmp(a.c_str(), b.c_str()) < 0;
+                             });
+                }
+                for (const SkString& filename : sortedFilenames) {
+                    addSlide(filename, SkOSPath::Join(flag.c_str(), filename.c_str()),
+                             info.fFactory);
                 }
             }
             if (!dirSlides.empty()) {
@@ -1682,12 +1696,27 @@ void Viewer::drawImGui() {
                 }
 
                 if (ctx) {
+                    // Determine the context's max sample count for MSAA radio buttons.
                     int sampleCount = fWindow->sampleCount();
-                    ImGui::Text("MSAA: "); ImGui::SameLine();
-                    ImGui::RadioButton("1", &sampleCount, 1); ImGui::SameLine();
-                    ImGui::RadioButton("4", &sampleCount, 4); ImGui::SameLine();
-                    ImGui::RadioButton("8", &sampleCount, 8); ImGui::SameLine();
-                    ImGui::RadioButton("16", &sampleCount, 16);
+                    int maxMSAA = (fBackendType != sk_app::Window::kRaster_BackendType) ?
+                            ctx->maxSurfaceSampleCountForColorType(kRGBA_8888_SkColorType) :
+                            1;
+
+                    // Only display the MSAA radio buttons when there are options above 1x MSAA.
+                    if (maxMSAA >= 4) {
+                        ImGui::Text("MSAA: ");
+
+                        for (int curMSAA = 1; curMSAA <= maxMSAA; curMSAA *= 2) {
+                            // 2x MSAA works, but doesn't offer much of a visual improvement, so we
+                            // don't show it in the list.
+                            if (curMSAA == 2) {
+                                continue;
+                            }
+                            ImGui::SameLine();
+                            ImGui::RadioButton(SkStringPrintf("%d", curMSAA).c_str(),
+                                               &sampleCount, curMSAA);
+                        }
+                    }
 
                     if (sampleCount != params.fMSAASampleCount) {
                         params.fMSAASampleCount = sampleCount;

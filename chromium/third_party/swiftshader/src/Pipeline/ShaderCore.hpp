@@ -59,6 +59,22 @@ public:
 	Float4 w;
 };
 
+class Vector4i
+{
+public:
+	Vector4i();
+	Vector4i(int x, int y, int z, int w);
+	Vector4i(const Vector4i &rhs);
+
+	Int4 &operator[](int i);
+	Vector4i &operator=(const Vector4i &rhs);
+
+	Int4 x;
+	Int4 y;
+	Int4 z;
+	Int4 w;
+};
+
 enum class OutOfBoundsBehavior
 {
 	Nullify,             // Loads become zero, stores are elided.
@@ -544,7 +560,19 @@ struct PrintValue::Ty<sw::Vector4s>
 		return PrintValue::vals(v.x, v.y, v.z, v.w);
 	}
 };
+template<>
+struct PrintValue::Ty<sw::SIMD::Pointer>
+{
+	static std::string fmt(const sw::SIMD::Pointer &v)
+	{
+		return "{" + PrintValue::fmt(v.base) + " +" + PrintValue::fmt(v.offsets()) + "}";
+	}
 
+	static std::vector<rr::Value *> val(const sw::SIMD::Pointer &v)
+	{
+		return PrintValue::vals(v.base, v.offsets());
+	}
+};
 }  // namespace rr
 #endif  // ENABLE_RR_PRINT
 

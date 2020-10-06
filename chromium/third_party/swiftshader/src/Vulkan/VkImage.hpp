@@ -15,12 +15,16 @@
 #ifndef VK_IMAGE_HPP_
 #define VK_IMAGE_HPP_
 
-#include "VkFormat.h"
+#include "VkFormat.hpp"
 #include "VkObject.hpp"
+
+#include "marl/mutex.h"
 
 #ifdef __ANDROID__
 #	include <vulkan/vk_android_native_buffer.h>  // For VkSwapchainImageUsageFlagsANDROID and buffer_handle_t
 #endif
+
+#include <unordered_set>
 
 namespace vk {
 
@@ -58,12 +62,18 @@ public:
 	void copyTo(Buffer *dstBuffer, const VkBufferImageCopy &region);
 	void copyFrom(Buffer *srcBuffer, const VkBufferImageCopy &region);
 
-	void blit(Image *dstImage, const VkImageBlit &region, VkFilter filter) const;
-	void blitToBuffer(VkImageSubresourceLayers subresource, VkOffset3D offset, VkExtent3D extent, uint8_t *dst, int bufferRowPitch, int bufferSlicePitch) const;
-	void resolve(Image *dstImage, const VkImageResolve &region) const;
+	void blitTo(Image *dstImage, const VkImageBlit &region, VkFilter filter) const;
+	void copyTo(uint8_t *dst, unsigned int dstPitch) const;
+	void resolveTo(Image *dstImage, const VkImageResolve &region) const;
 	void clear(const VkClearValue &clearValue, const vk::Format &viewFormat, const VkRect2D &renderArea, const VkImageSubresourceRange &subresourceRange);
 	void clear(const VkClearColorValue &color, const VkImageSubresourceRange &subresourceRange);
 	void clear(const VkClearDepthStencilValue &color, const VkImageSubresourceRange &subresourceRange);
+
+	// Get the last layer and mipmap level, handling VK_REMAINING_ARRAY_LAYERS and
+	// VK_REMAINING_MIP_LEVELS, respectively. Note VkImageSubresourceLayers does not
+	// allow these symbolic values, so only VkImageSubresourceRange is accepted.
+	uint32_t getLastLayerIndex(const VkImageSubresourceRange &subresourceRange) const;
+	uint32_t getLastMipLevel(const VkImageSubresourceRange &subresourceRange) const;
 
 	VkImageType getImageType() const { return imageType; }
 	const Format &getFormat() const { return format; }
@@ -71,13 +81,11 @@ public:
 	uint32_t getArrayLayers() const { return arrayLayers; }
 	uint32_t getMipLevels() const { return mipLevels; }
 	VkImageUsageFlags getUsage() const { return usage; }
-	uint32_t getLastLayerIndex(const VkImageSubresourceRange &subresourceRange) const;
-	uint32_t getLastMipLevel(const VkImageSubresourceRange &subresourceRange) const;
 	VkSampleCountFlagBits getSampleCountFlagBits() const { return samples; }
 	VkExtent3D getMipLevelExtent(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
 	int rowPitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
 	int slicePitchBytes(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
-	void *getTexelPointer(const VkOffset3D &offset, const VkImageSubresourceLayers &subresource) const;
+	void *getTexelPointer(const VkOffset3D &offset, const VkImageSubresource &subresource) const;
 	bool isCube() const;
 	bool is3DSlice() const;
 	uint8_t *end() const;
@@ -86,6 +94,12 @@ public:
 	bool canBindToMemory(DeviceMemory *pDeviceMemory) const;
 
 	void prepareForSampling(const VkImageSubresourceRange &subresourceRange);
+	enum ContentsChangedContext
+	{
+		DIRECT_MEMORY_ACCESS = 0,
+		USING_STORAGE = 1
+	};
+	void contentsChanged(const VkImageSubresourceRange &subresourceRange, ContentsChangedContext contentsChangedContext = DIRECT_MEMORY_ACCESS);
 	const Image *getSampledImage(const vk::Format &imageViewFormat) const;
 
 #ifdef __ANDROID__
@@ -104,7 +118,7 @@ private:
 	VkDeviceSize getLayerOffset(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
 	VkDeviceSize getMemoryOffset(VkImageAspectFlagBits aspect, uint32_t mipLevel) const;
 	VkDeviceSize getMemoryOffset(VkImageAspectFlagBits aspect, uint32_t mipLevel, uint32_t layer) const;
-	VkDeviceSize texelOffsetBytesInStorage(const VkOffset3D &offset, const VkImageSubresourceLayers &subresource) const;
+	VkDeviceSize texelOffsetBytesInStorage(const VkOffset3D &offset, const VkImageSubresource &subresource) const;
 	VkDeviceSize getMemoryOffset(VkImageAspectFlagBits aspect) const;
 	VkExtent3D imageExtentInBlocks(const VkExtent3D &extent, VkImageAspectFlagBits aspect) const;
 	VkOffset3D imageOffsetInBlocks(const VkOffset3D &offset, VkImageAspectFlagBits aspect) const;
@@ -112,9 +126,12 @@ private:
 	VkFormat getClearFormat() const;
 	void clear(void *pixelData, VkFormat pixelFormat, const vk::Format &viewFormat, const VkImageSubresourceRange &subresourceRange, const VkRect2D &renderArea);
 	int borderSize() const;
-	void decodeETC2(const VkImageSubresourceRange &subresourceRange) const;
-	void decodeBC(const VkImageSubresourceRange &subresourceRange) const;
-	void decodeASTC(const VkImageSubresourceRange &subresourceRange) const;
+	bool requiresPreprocessing() const;
+	void decompress(const VkImageSubresource &subresource);
+	bool updateCube(const VkImageSubresource &subresource);
+	void decodeETC2(const VkImageSubresource &subresource);
+	void decodeBC(const VkImageSubresource &subresource);
+	void decodeASTC(const VkImageSubresource &subresource);
 
 	const Device *const device = nullptr;
 	DeviceMemory *deviceMemory = nullptr;
@@ -134,6 +151,39 @@ private:
 #endif
 
 	VkExternalMemoryHandleTypeFlags supportedExternalMemoryHandleTypes = (VkExternalMemoryHandleTypeFlags)0;
+
+	// VkImageSubresource wrapper for use in unordered_set
+	class Subresource
+	{
+	public:
+		Subresource()
+		    : subresource{ (VkImageAspectFlags)0, 0, 0 }
+		{}
+		Subresource(const VkImageSubresource &subres)
+		    : subresource(subres)
+		{}
+		inline operator VkImageSubresource() const { return subresource; }
+
+		bool operator==(const Subresource &other) const
+		{
+			return (subresource.aspectMask == other.subresource.aspectMask) &&
+			       (subresource.mipLevel == other.subresource.mipLevel) &&
+			       (subresource.arrayLayer == other.subresource.arrayLayer);
+		};
+
+		size_t operator()(const Subresource &other) const
+		{
+			return static_cast<size_t>(other.subresource.aspectMask) ^
+			       static_cast<size_t>(other.subresource.mipLevel) ^
+			       static_cast<size_t>(other.subresource.arrayLayer);
+		};
+
+	private:
+		VkImageSubresource subresource;
+	};
+
+	marl::mutex mutex;
+	std::unordered_set<Subresource, Subresource> dirtySubresources GUARDED_BY(mutex);
 };
 
 static inline Image *Cast(VkImage object)

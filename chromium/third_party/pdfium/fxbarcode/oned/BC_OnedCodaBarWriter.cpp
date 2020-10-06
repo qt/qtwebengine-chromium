@@ -23,6 +23,7 @@
 #include "fxbarcode/oned/BC_OnedCodaBarWriter.h"
 
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_memory.h"
 #include "fxbarcode/BC_Writer.h"
 #include "fxbarcode/common/BC_CommonBitMatrix.h"
 #include "fxbarcode/oned/BC_OneDimWriter.h"
@@ -99,9 +100,10 @@ bool CBC_OnedCodaBarWriter::FindChar(wchar_t ch, bool isContent) {
 }
 
 bool CBC_OnedCodaBarWriter::CheckContentValidity(WideStringView contents) {
-  return std::all_of(
-      contents.begin(), contents.end(),
-      [this](const wchar_t& ch) { return this->FindChar(ch, false); });
+  return HasValidContentSize(contents) &&
+         std::all_of(
+             contents.begin(), contents.end(),
+             [this](const wchar_t& ch) { return this->FindChar(ch, false); });
 }
 
 WideString CBC_OnedCodaBarWriter::FilterContents(WideStringView contents) {

@@ -11,6 +11,7 @@
 #include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrProcessor.h"
 #include "src/gpu/ops/GrOp.h"
+#include "src/sksl/SkSLSampleMatrix.h"
 
 class GrGLSLFragmentProcessor;
 class GrPaint;
@@ -145,16 +146,18 @@ public:
         return SkToBool(fFlags & kSampledWithExplicitCoords);
     }
 
-    void setSampledWithExplicitCoords(bool value) {
-        if (value) {
-            fFlags |= kSampledWithExplicitCoords;
-        } else {
-            fFlags &= ~kSampledWithExplicitCoords;
-        }
+    void setSampledWithExplicitCoords() {
+        fFlags |= kSampledWithExplicitCoords;
         for (auto& child : fChildProcessors) {
-            child->setSampledWithExplicitCoords(value);
+            child->setSampledWithExplicitCoords();
         }
     }
+
+    SkSL::SampleMatrix sampleMatrix() const {
+        return fMatrix;
+    }
+
+    void setSampleMatrix(SkSL::SampleMatrix matrix);
 
     /**
      * A GrDrawOp may premultiply its antialiasing coverage into its GrGeometryProcessor's color
@@ -466,6 +469,8 @@ private:
 
     SkSTArray<1, std::unique_ptr<GrFragmentProcessor>, true> fChildProcessors;
 
+    SkSL::SampleMatrix fMatrix;
+
     typedef GrProcessor INHERITED;
 };
 
@@ -485,6 +490,8 @@ public:
 
     TextureSampler(GrSurfaceProxyView, GrSamplerState = {});
 
+    TextureSampler(TextureSampler&&) = default;
+    TextureSampler& operator=(TextureSampler&&) = default;
     TextureSampler& operator=(const TextureSampler&) = delete;
 
     bool operator==(const TextureSampler& that) const {

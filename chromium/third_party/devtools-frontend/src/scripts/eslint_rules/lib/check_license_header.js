@@ -66,32 +66,13 @@ const EXCLUDED_FILES = [
   'cm/matchbrackets.js',
   'cm/multiplex.js',
   'cm/overlay.js',
-  'cm_headless/headlesscodemirror.js',
-  'cm_modes/clike.js',
-  'cm_modes/clojure.js',
-  'cm_modes/coffeescript.js',
-  'cm_modes/jsx.js',
-  'cm_modes/livescript.js',
-  'cm_modes/markdown.js',
-  'cm_modes/php.js',
-  'cm_modes/python.js',
-  'cm_modes/shell.js',
-  'cm_web_modes/css.js',
-  'cm_web_modes/htmlembedded.js',
-  'cm_web_modes/htmlmixed.js',
-  'cm_web_modes/javascript.js',
-  'cm_web_modes/xml.js',
+  'cm/simple.js',
   // FIXME: Dagre bundles must be moved to third_party
   'dagre_layout/dagre.js',
   // FIXME: Diff bundles must be moved to third_party
   'diff/diff_match_patch.js',
   // FIXME: Acorn bundles must be moved to third_party
-  'formatter_worker/acorn/acorn.js',
   'formatter_worker/acorn/acorn_loose.js',
-  // Breaks esprima
-  'components/Linkifier.js',
-  'coverage/CoverageView.js',
-  'network/NetworkLogView.js',
 ];
 
 const OTHER_LICENSE_HEADERS = [
@@ -130,7 +111,6 @@ const OTHER_LICENSE_HEADERS = [
   // IBM Corp
   'sources/WatchExpressionsSidebarPane.js',
   // Multiple authors
-  'common/UIString.js',
   'components/JSPresentationUtils.js',
   'console/ConsoleView.js',
   'console/ConsoleViewMessage.js',
@@ -145,12 +125,14 @@ const OTHER_LICENSE_HEADERS = [
   'main/MainImpl.js',
   'network/HARWriter.js',
   'network/NetworkDataGridNode.js',
+  'network/NetworkLogView.js',
   'network/NetworkPanel.js',
   'network/NetworkTimeCalculator.js',
   'network/RequestHeadersView.js',
   'object_ui/ObjectPropertiesSection.js',
   'perf_ui/TimelineGrid.js',
   'platform/utilities.js',
+  'platform/UIString.js',
   'resources/ApplicationPanelSidebar.js',
   'resources/CookieItemsView.js',
   'resources/DOMStorageItemsView.js',

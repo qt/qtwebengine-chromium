@@ -78,11 +78,11 @@ static DEFINE_int(verbosity, 4, "level of verbosity (0=none to 5=debug)");
 static DEFINE_bool(suppressHeader, false, "don't print a header row before the results");
 static DEFINE_double(scale, 1, "Scale the size of the canvas and the zoom level by this factor.");
 
-static const char* header =
+static const char header[] =
 "   accum    median       max       min   stddev  samples  sample_ms  clock  metric  config    bench";
 
-static const char* resultFormat =
-"%8.4g  %8.4g  %8.4g  %8.4g  %6.3g%%  %7li  %9i  %-5s  %-6s  %-9s %s";
+static const char resultFormat[] =
+"%8.4g  %8.4g  %8.4g  %8.4g  %6.3g%%  %7zu  %9i  %-5s  %-6s  %-9s %s";
 
 static constexpr int kNumFlushesToPrimeCache = 3;
 
@@ -235,16 +235,16 @@ static void ddl_sample(GrContext* context, DDLTileHelper* tiles, GpuSync& gpuSyn
     }
 }
 
-static void run_ddl_benchmark(GrContext* context, sk_sp<SkSurface> surface,
+static void run_ddl_benchmark(GrContext* context, sk_sp<SkSurface> dstSurface,
                               SkPicture* inputPicture, std::vector<Sample>* samples) {
     using clock = std::chrono::high_resolution_clock;
     const Sample::duration sampleDuration = std::chrono::milliseconds(FLAGS_sampleMs);
     const clock::duration benchDuration = std::chrono::milliseconds(FLAGS_duration);
 
     SkSurfaceCharacterization dstCharacterization;
-    SkAssertResult(surface->characterize(&dstCharacterization));
+    SkAssertResult(dstSurface->characterize(&dstCharacterization));
 
-    SkIRect viewport = surface->imageInfo().bounds();
+    SkIRect viewport = dstSurface->imageInfo().bounds();
 
     DDLPromiseImageHelper promiseImageHelper;
     sk_sp<SkData> compressedPictureData = promiseImageHelper.deflateSKP(inputPicture);
@@ -256,7 +256,9 @@ static void run_ddl_benchmark(GrContext* context, sk_sp<SkSurface> surface,
 
     promiseImageHelper.uploadAllToGPU(nullptr, context);
 
-    DDLTileHelper tiles(surface, dstCharacterization, viewport, FLAGS_ddlTilingWidthHeight);
+    DDLTileHelper tiles(context, dstCharacterization, viewport, FLAGS_ddlTilingWidthHeight);
+
+    tiles.createBackendTextures(nullptr, context);
 
     tiles.createSKPPerTile(compressedPictureData.get(), promiseImageHelper);
 
@@ -283,7 +285,8 @@ static void run_ddl_benchmark(GrContext* context, sk_sp<SkSurface> surface,
 
     if (!FLAGS_png.isEmpty()) {
         // The user wants to see the final result
-        tiles.composeAllTiles();
+        dstSurface->draw(tiles.composeDDL());
+        dstSurface->flush();
     }
 
     tiles.resetAllTiles();
@@ -293,6 +296,11 @@ static void run_ddl_benchmark(GrContext* context, sk_sp<SkSurface> surface,
     GrFlushInfo flushInfo;
     flushInfo.fFlags = kSyncCpu_GrFlushFlag;
     context->flush(flushInfo);
+
+    promiseImageHelper.deleteAllFromGPU(nullptr, context);
+
+    tiles.deleteBackendTextures(nullptr, context);
+
 }
 
 static void run_benchmark(GrContext* context, SkSurface* surface, SkpProducer* skpp,

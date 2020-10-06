@@ -20,6 +20,7 @@
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkMask.h"
+#include "src/core/SkMatrixProvider.h"
 #include "src/core/SkPixmapPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkUtils.h"
@@ -174,10 +175,10 @@ bool SkPixmap::erase(SkColor color, const SkIRect& subset) const {
     return this->erase(SkColor4f::FromColor(color), &subset);
 }
 
-bool SkPixmap::erase(const SkColor4f& color, const SkIRect* subset) const {
+bool SkPixmap::erase(const SkColor4f& color, SkColorSpace* cs, const SkIRect* subset) const {
     SkPaint paint;
     paint.setBlendMode(SkBlendMode::kSrc);
-    paint.setColor4f(color, this->colorSpace());
+    paint.setColor4f(color, cs);
 
     SkIRect clip = this->bounds();
     if (subset && !clip.intersect(*subset)) {
@@ -186,9 +187,10 @@ bool SkPixmap::erase(const SkColor4f& color, const SkIRect* subset) const {
     SkRasterClip rc{clip};
 
     SkDraw draw;
-    draw.fDst    = *this;
-    draw.fMatrix = &SkMatrix::I();
-    draw.fRC     = &rc;
+    SkSimpleMatrixProvider matrixProvider(SkMatrix::I());
+    draw.fDst            = *this;
+    draw.fMatrixProvider = &matrixProvider;
+    draw.fRC             = &rc;
 
     draw.drawPaint(paint);
     return true;

@@ -1,3 +1,7 @@
+// Copyright 2020 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
  *
@@ -25,6 +29,9 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
 import * as Common from '../common/common.js';
 
@@ -356,7 +363,33 @@ export class TreeOutline extends Common.ObjectWrapper.ObjectWrapper {
      * @this {TreeOutline}
      */
     function deferredScrollIntoView() {
-      this._treeElementToScrollIntoView.listItemElement.scrollIntoViewIfNeeded(this._centerUponScrollIntoView);
+      // This function no longer uses scrollIntoViewIfNeeded because users were bothered
+      // by the fact that it always scrolls in both direction even if only one is necessary
+      // to bring the item into view.
+
+      const itemRect = this._treeElementToScrollIntoView.listItemElement.getBoundingClientRect();
+      const treeRect = this.contentElement.getBoundingClientRect();
+      const viewRect = this.element.getBoundingClientRect();
+
+      const currentScrollX = viewRect.left - treeRect.left;
+      const currentScrollY = viewRect.top - treeRect.top;
+
+      // Only scroll into view on each axis if the item is not visible at all
+      // but if we do scroll and _centerUponScrollIntoView is true
+      // then we center the top left corner of the item in view.
+      let deltaLeft = itemRect.left - treeRect.left;
+      if (deltaLeft > currentScrollX && deltaLeft < currentScrollX + viewRect.width) {
+        deltaLeft = currentScrollX;
+      } else if (this._centerUponScrollIntoView) {
+        deltaLeft = deltaLeft - viewRect.width / 2;
+      }
+      let deltaTop = itemRect.top - treeRect.top;
+      if (deltaTop > currentScrollY && deltaTop < currentScrollY + viewRect.height) {
+        deltaTop = currentScrollY;
+      } else if (this._centerUponScrollIntoView) {
+        deltaTop = deltaTop - viewRect.height / 2;
+      }
+      this.element.scrollTo(deltaLeft, deltaTop);
       delete this._treeElementToScrollIntoView;
       delete this._centerUponScrollIntoView;
     }
@@ -773,7 +806,7 @@ export class TreeElement {
   }
 
   /**
-   * @param {!Config} editingConfig
+   * @param {!Config<*>} editingConfig
    */
   startEditingTitle(editingConfig) {
     InplaceEditor.startEditing(/** @type {!Element} */ (this.titleElement), editingConfig);
@@ -788,7 +821,8 @@ export class TreeElement {
       return;
     }
     if (!this._leadingIconsElement) {
-      this._leadingIconsElement = createElementWithClass('div', 'leading-icons');
+      this._leadingIconsElement = document.createElement('div');
+      this._leadingIconsElement.classList.add('leading-icons');
       this._leadingIconsElement.classList.add('icons-container');
       this._listItemNode.insertBefore(this._leadingIconsElement, this.titleElement);
       this._ensureSelection();
@@ -807,7 +841,8 @@ export class TreeElement {
       return;
     }
     if (!this._trailingIconsElement) {
-      this._trailingIconsElement = createElementWithClass('div', 'trailing-icons');
+      this._trailingIconsElement = document.createElement('div');
+      this._trailingIconsElement.classList.add('trailing-icons');
       this._trailingIconsElement.classList.add('icons-container');
       this._listItemNode.appendChild(this._trailingIconsElement);
       this._ensureSelection();
@@ -913,7 +948,9 @@ export class TreeElement {
       return;
     }
     if (!this._selectionElement) {
-      this._selectionElement = createElementWithClass('div', 'selection fill');
+      this._selectionElement = document.createElement('div');
+      this._selectionElement.classList.add('selection');
+      this._selectionElement.classList.add('fill');
     }
     this._listItemNode.insertBefore(this._selectionElement, this.listItemElement.firstChild);
   }
@@ -1058,7 +1095,7 @@ export class TreeElement {
 
   /**
    * @param {number=} maxDepth
-   * @returns {!Promise}
+   * @returns {!Promise<void>}
    */
   async expandRecursively(maxDepth) {
     let item = this;
@@ -1294,7 +1331,7 @@ export class TreeElement {
   }
 
   /**
-   * @returns {!Promise}
+   * @returns {!Promise<void>}
    */
   async _populateIfNeeded() {
     if (this.treeOutline && this._expandable && !this._children) {
@@ -1304,7 +1341,7 @@ export class TreeElement {
   }
 
   /**
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async onpopulate() {
     // Overridden by subclasses.

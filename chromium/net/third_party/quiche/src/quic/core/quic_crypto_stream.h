@@ -91,6 +91,9 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // Called when a 1RTT packet has been acknowledged.
   virtual void OnOneRttPacketAcknowledged() = 0;
 
+  // Called when a packet of ENCRYPTION_HANDSHAKE gets sent.
+  virtual void OnHandshakePacketSent() = 0;
+
   // Called when a handshake done frame has been received.
   virtual void OnHandshakeDoneReceived() = 0;
 
@@ -104,8 +107,11 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // Called to cancel retransmission of unencrypted crypto stream data.
   void NeuterUnencryptedStreamData();
 
+  // Called to cancel retransmission of data of encryption |level|.
+  void NeuterStreamDataOfEncryptionLevel(EncryptionLevel level);
+
   // Override to record the encryption level of consumed data.
-  void OnStreamDataConsumed(size_t bytes_consumed) override;
+  void OnStreamDataConsumed(QuicByteCount bytes_consumed) override;
 
   // Returns whether there are any bytes pending retransmission in CRYPTO
   // frames.
@@ -197,9 +203,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // Keeps state for data sent/received in CRYPTO frames at each encryption
   // level.
   std::array<CryptoSubstream, NUM_ENCRYPTION_LEVELS> substreams_;
-
-  // Latched value of gfe2_reloadable_flag_quic_writevdata_at_level.
-  const bool writevdata_at_level_;
 };
 
 }  // namespace quic

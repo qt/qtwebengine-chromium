@@ -466,11 +466,9 @@ size_t QuicFramer::GetMessageFrameSize(QuicTransportVersion version,
 }
 
 // static
-size_t QuicFramer::GetMinAckFrameSize(
-    QuicTransportVersion version,
-    const QuicAckFrame& ack_frame,
-    uint32_t local_ack_delay_exponent,
-    QuicPacketNumberLength largest_observed_length) {
+size_t QuicFramer::GetMinAckFrameSize(QuicTransportVersion version,
+                                      const QuicAckFrame& ack_frame,
+                                      uint32_t local_ack_delay_exponent) {
   if (VersionHasIetfQuicFrames(version)) {
     // The minimal ack frame consists of the following fields: Largest
     // Acknowledged, ACK Delay, 0 ACK Block Count, First ACK Block and ECN
@@ -498,13 +496,9 @@ size_t QuicFramer::GetMinAckFrameSize(
     }
     return min_size;
   }
-  if (GetQuicReloadableFlag(quic_use_ack_frame_to_get_min_size)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_use_ack_frame_to_get_min_size);
-    largest_observed_length = GetMinPacketNumberLength(LargestAcked(ack_frame));
-  }
-  size_t min_size = kQuicFrameTypeSize + largest_observed_length +
-                    kQuicDeltaTimeLargestObservedSize;
-  return min_size + kQuicNumTimestampsSize;
+  return kQuicFrameTypeSize +
+         GetMinPacketNumberLength(LargestAcked(ack_frame)) +
+         kQuicDeltaTimeLargestObservedSize + kQuicNumTimestampsSize;
 }
 
 // static
@@ -541,16 +535,13 @@ size_t QuicFramer::GetConnectionCloseFrameSize(
   // Prepend the extra error information to the string and get the result's
   // length.
   const size_t truncated_error_string_size = TruncatedErrorStringSize(
-      GenerateErrorString(frame.error_details, frame.extracted_error_code));
+      GenerateErrorString(frame.error_details, frame.quic_error_code));
 
   const size_t frame_size =
       truncated_error_string_size +
       QuicDataWriter::GetVarInt62Len(truncated_error_string_size) +
       kQuicFrameTypeSize +
-      QuicDataWriter::GetVarInt62Len(
-          (frame.close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE)
-              ? frame.transport_error_code
-              : frame.application_error_code);
+      QuicDataWriter::GetVarInt62Len(frame.wire_error_code);
   if (frame.close_type == IETF_QUIC_APPLICATION_CONNECTION_CLOSE) {
     return frame_size;
   }
@@ -819,9 +810,9 @@ size_t QuicFramer::GetSerializedFrameLength(
   }
   bool can_truncate =
       frame.type == ACK_FRAME &&
-      free_bytes >= GetMinAckFrameSize(
-                        version_.transport_version, *frame.ack_frame,
-                        local_ack_delay_exponent_, PACKET_6BYTE_PACKET_NUMBER);
+      free_bytes >= GetMinAckFrameSize(version_.transport_version,
+                                       *frame.ack_frame,
+                                       local_ack_delay_exponent_);
   if (can_truncate) {
     // Truncate the frame so the packet will not exceed kMaxOutgoingPacketSize.
     // Note that we may not use every byte of the writer in this case.
@@ -1621,26 +1612,14 @@ void QuicFramer::MaybeProcessCoalescedPacket(
     return;
   }
 
-  if (GetQuicReloadableFlag(quic_minimum_validation_of_coalesced_packets)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_minimum_validation_of_coalesced_packets);
-    if (coalesced_header.destination_connection_id !=
-        header.destination_connection_id) {
-      // Drop coalesced packets with mismatched connection IDs.
-      QUIC_DLOG(INFO) << ENDPOINT << "Received mismatched coalesced header "
-                      << coalesced_header << " previous header was " << header;
-      QUIC_CODE_COUNT(
-          quic_received_coalesced_packets_with_mismatched_connection_id);
-      return;
-    }
-  } else {
-    if (coalesced_header.destination_connection_id !=
-            header.destination_connection_id ||
-        (coalesced_header.form != IETF_QUIC_SHORT_HEADER_PACKET &&
-         coalesced_header.version != header.version)) {
-      QUIC_PEER_BUG << ENDPOINT << "Received mismatched coalesced header "
+  if (coalesced_header.destination_connection_id !=
+      header.destination_connection_id) {
+    // Drop coalesced packets with mismatched connection IDs.
+    QUIC_DLOG(INFO) << ENDPOINT << "Received mismatched coalesced header "
                     << coalesced_header << " previous header was " << header;
-      return;
-    }
+    QUIC_CODE_COUNT(
+        quic_received_coalesced_packets_with_mismatched_connection_id);
+    return;
   }
 
   QuicEncryptedPacket coalesced_packet(coalesced_data, coalesced_data_length,
@@ -1758,6 +1737,7 @@ bool QuicFramer::ProcessIetfDataPacket(QuicDataReader* encrypted_reader,
         visitor_->OnUndecryptablePacket(
             QuicEncryptedPacket(encrypted_reader->FullPayload()),
             decryption_level, has_decryption_key);
+        RecordDroppedPacketReason(DroppedPacketReason::DECRYPTION_FAILURE);
         set_detailed_error(quiche::QuicheStrCat(
             "Unable to decrypt ", EncryptionLevelToString(decryption_level),
             " header protection", has_decryption_key ? "" : " (missing key)",
@@ -3469,12 +3449,12 @@ bool QuicFramer::ProcessIetfStreamFrame(QuicDataReader* reader,
 
   // If we have a data length, read it. If not, set to 0.
   if (frame_type & IETF_STREAM_FRAME_LEN_BIT) {
-    QuicIetfStreamDataLength length;
+    uint64_t length;
     if (!reader->ReadVarInt62(&length)) {
       set_detailed_error("Unable to read stream data length.");
       return false;
     }
-    if (length > 0xffff) {
+    if (length > std::numeric_limits<decltype(frame->data_length)>::max()) {
       set_detailed_error("Stream data length is too large.");
       return false;
     }
@@ -3498,7 +3478,7 @@ bool QuicFramer::ProcessIetfStreamFrame(QuicDataReader* reader,
     return false;
   }
   frame->data_buffer = data.data();
-  frame->data_length = static_cast<QuicIetfStreamDataLength>(data.length());
+  DCHECK_EQ(frame->data_length, data.length());
 
   return true;
 }
@@ -3975,12 +3955,10 @@ bool QuicFramer::ProcessConnectionCloseFrame(QuicDataReader* reader,
     error_code = QUIC_LAST_ERROR;
   }
 
+  // For Google QUIC connection closes, |wire_error_code| and |quic_error_code|
+  // must have the same value.
+  frame->wire_error_code = error_code;
   frame->quic_error_code = static_cast<QuicErrorCode>(error_code);
-
-  // For Google QUIC connection closes, copy the Google QUIC error code to
-  // the extracted error code field so that the Google QUIC error code is always
-  // available in extracted_error_code.
-  frame->extracted_error_code = frame->quic_error_code;
 
   quiche::QuicheStringPiece error_details;
   if (!reader->ReadStringPiece16(&error_details)) {
@@ -4680,14 +4658,11 @@ size_t QuicFramer::GetAckFrameSize(
     return GetIetfAckFrameSize(ack);
   }
   AckFrameInfo ack_info = GetAckFrameInfo(ack);
-  QuicPacketNumberLength largest_acked_length =
-      GetMinPacketNumberLength(LargestAcked(ack));
   QuicPacketNumberLength ack_block_length =
       GetMinPacketNumberLength(QuicPacketNumber(ack_info.max_block_length));
 
-  ack_size =
-      GetMinAckFrameSize(version_.transport_version, ack,
-                         local_ack_delay_exponent_, largest_acked_length);
+  ack_size = GetMinAckFrameSize(version_.transport_version, ack,
+                                local_ack_delay_exponent_);
   // First ack block length.
   ack_size += ack_block_length;
   if (ack_info.num_ack_blocks != 0) {
@@ -5153,7 +5128,7 @@ bool QuicFramer::AppendAckFrameAndTypeByte(const QuicAckFrame& frame,
   int32_t available_timestamp_and_ack_block_bytes =
       writer->capacity() - writer->length() - ack_block_length -
       GetMinAckFrameSize(version_.transport_version, frame,
-                         local_ack_delay_exponent_, largest_acked_length) -
+                         local_ack_delay_exponent_) -
       (new_ack_info.num_ack_blocks != 0 ? kNumberOfAckBlocksSize : 0);
   DCHECK_LE(0, available_timestamp_and_ack_block_bytes);
 
@@ -5441,7 +5416,7 @@ bool QuicFramer::AppendIetfAckFrameAndTypeByte(const QuicAckFrame& frame,
     const uint64_t ack_range = iter->Length() - 1;
 
     if (writer->remaining() < ecn_size ||
-        writer->remaining() - ecn_size <
+        static_cast<size_t>(writer->remaining() - ecn_size) <
             QuicDataWriter::GetVarInt62Len(gap) +
                 QuicDataWriter::GetVarInt62Len(ack_range)) {
       // ACK range does not fit, truncate it.
@@ -5517,7 +5492,7 @@ bool QuicFramer::AppendConnectionCloseFrame(
   if (VersionHasIetfQuicFrames(version_.transport_version)) {
     return AppendIetfConnectionCloseFrame(frame, writer);
   }
-  uint32_t error_code = static_cast<uint32_t>(frame.quic_error_code);
+  uint32_t error_code = static_cast<uint32_t>(frame.wire_error_code);
   if (!writer->WriteUInt32(error_code)) {
     return false;
   }
@@ -5642,10 +5617,7 @@ bool QuicFramer::AppendIetfConnectionCloseFrame(
     return false;
   }
 
-  if (!writer->WriteVarInt62(
-          (frame.close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE)
-              ? frame.transport_error_code
-              : frame.application_error_code)) {
+  if (!writer->WriteVarInt62(frame.wire_error_code)) {
     set_detailed_error("Can not write connection close frame error code");
     return false;
   }
@@ -5663,7 +5635,7 @@ bool QuicFramer::AppendIetfConnectionCloseFrame(
   // code. Encode the error information in the reason phrase and serialize the
   // result.
   std::string final_error_string =
-      GenerateErrorString(frame.error_details, frame.extracted_error_code);
+      GenerateErrorString(frame.error_details, frame.quic_error_code);
   if (!writer->WriteStringPieceVarInt62(
           TruncateErrorString(final_error_string))) {
     set_detailed_error("Can not write connection close phrase");
@@ -5684,12 +5656,7 @@ bool QuicFramer::ProcessIetfConnectionCloseFrame(
     return false;
   }
 
-  if (frame->close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE) {
-    frame->transport_error_code =
-        static_cast<QuicIetfTransportErrorCodes>(error_code);
-  } else if (frame->close_type == IETF_QUIC_APPLICATION_CONNECTION_CLOSE) {
-    frame->application_error_code = error_code;
-  }
+  frame->wire_error_code = error_code;
 
   if (type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE) {
     // The frame-type of the frame causing the error is present only
@@ -5790,18 +5757,13 @@ bool QuicFramer::ProcessIetfResetStreamFrame(QuicDataReader* reader,
     return false;
   }
 
-  uint64_t error_code;
-  if (!reader->ReadVarInt62(&error_code)) {
+  if (!reader->ReadVarInt62(&frame->ietf_error_code)) {
     set_detailed_error("Unable to read rst stream error code.");
     return false;
   }
-  if (error_code > 0xffff) {
-    frame->ietf_error_code = 0xffff;
-    QUIC_DLOG(ERROR) << "Reset stream error code (" << error_code
-                     << ") > 0xffff";
-  } else {
-    frame->ietf_error_code = static_cast<uint16_t>(error_code);
-  }
+
+  frame->error_code =
+      IetfResetStreamErrorCodeToRstStreamErrorCode(frame->ietf_error_code);
 
   if (!reader->ReadVarInt62(&frame->byte_offset)) {
     set_detailed_error("Unable to read rst stream sent byte offset.");
@@ -6626,10 +6588,10 @@ void MaybeExtractQuicErrorCode(QuicConnectionCloseFrame* frame) {
   if (ed.size() < 2 || !quiche::QuicheTextUtils::IsAllDigits(ed[0]) ||
       !quiche::QuicheTextUtils::StringToUint64(ed[0], &extracted_error_code)) {
     if (frame->close_type == IETF_QUIC_TRANSPORT_CONNECTION_CLOSE &&
-        frame->transport_error_code == NO_IETF_QUIC_ERROR) {
-      frame->extracted_error_code = QUIC_NO_ERROR;
+        frame->wire_error_code == NO_IETF_QUIC_ERROR) {
+      frame->quic_error_code = QUIC_NO_ERROR;
     } else {
-      frame->extracted_error_code = QUIC_IETF_GQUIC_ERROR_MISSING;
+      frame->quic_error_code = QUIC_IETF_GQUIC_ERROR_MISSING;
     }
     return;
   }
@@ -6641,8 +6603,7 @@ void MaybeExtractQuicErrorCode(QuicConnectionCloseFrame* frame) {
   quiche::QuicheStringPiece x = quiche::QuicheStringPiece(frame->error_details);
   x.remove_prefix(ed[0].length() + 1);
   frame->error_details = std::string(x);
-  frame->extracted_error_code =
-      static_cast<QuicErrorCode>(extracted_error_code);
+  frame->quic_error_code = static_cast<QuicErrorCode>(extracted_error_code);
 }
 
 #undef ENDPOINT  // undef for jumbo builds

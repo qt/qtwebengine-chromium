@@ -227,8 +227,8 @@ enum ComputeDerivativeMode {
 
 class TIdMaps {
 public:
-    TMap<TString, int>& operator[](int i) { return maps[i]; };
-    const TMap<TString, int>& operator[](int i) const { return maps[i]; };
+    TMap<TString, int>& operator[](int i) { return maps[i]; }
+    const TMap<TString, int>& operator[](int i) const { return maps[i]; }
 private:
     TMap<TString, int> maps[EsiCount];
 };
@@ -256,7 +256,7 @@ public:
         inputPrimitive(ElgNone), outputPrimitive(ElgNone),
         pixelCenterInteger(false), originUpperLeft(false),
         vertexSpacing(EvsNone), vertexOrder(EvoNone), interlockOrdering(EioNone), pointMode(false), earlyFragmentTests(false),
-        postDepthCoverage(false), depthLayout(EldNone), 
+        postDepthCoverage(false), depthLayout(EldNone),
         hlslFunctionality1(false),
         blendEquations(0), xfbMode(false), multiStream(false),
         layoutOverrideCoverage(false),
@@ -356,8 +356,15 @@ public:
     }
     const SpvVersion& getSpv() const { return spvVersion; }
     EShLanguage getStage() const { return language; }
-    void addRequestedExtension(const char* extension) { requestedExtensions.insert(extension); }
-    const std::set<std::string>& getRequestedExtensions() const { return requestedExtensions; }
+    void updateRequestedExtension(const char* extension, TExtensionBehavior behavior) { 
+        if(requestedExtensions.find(extension) != requestedExtensions.end()) {
+            requestedExtensions[extension] = behavior; 
+        } else {
+            requestedExtensions.insert(std::make_pair(extension, behavior)); 
+        }
+    }
+
+    const std::map<std::string, TExtensionBehavior>& getRequestedExtensions() const { return requestedExtensions; }
 
     void setTreeRoot(TIntermNode* r) { treeRoot = r; }
     TIntermNode* getTreeRoot() const { return treeRoot; }
@@ -595,7 +602,7 @@ public:
             processes.addProcess("flatten-uniform-arrays");
     }
     bool getFlattenUniformArrays() const { return flattenUniformArrays; }
-#endif 
+#endif
     void setNoStorageFormat(bool b)
     {
         useUnknownFormat = b;
@@ -902,7 +909,13 @@ protected:
 #ifdef GLSLANG_WEB
     bool extensionRequested(const char *extension) const { return false; }
 #else
-    bool extensionRequested(const char *extension) const {return requestedExtensions.find(extension) != requestedExtensions.end();}
+    bool extensionRequested(const char *extension) const {
+        auto it = requestedExtensions.find(extension);
+        if (it != requestedExtensions.end()) {
+            return (it->second == EBhDisable) ? false : true;
+        }
+        return false;
+    }
 #endif
 
     static const char* getResourceName(TResourceType);
@@ -917,7 +930,7 @@ protected:
     int version;                                // source version
     SpvVersion spvVersion;
     TIntermNode* treeRoot;
-    std::set<std::string> requestedExtensions;  // cumulation of all enabled or required extensions; not connected to what subset of the shader used them
+    std::map<std::string, TExtensionBehavior> requestedExtensions;  // cumulation of all enabled or required extensions; not connected to what subset of the shader used them
     TBuiltInResource resources;
     int numEntryPoints;
     int numErrors;

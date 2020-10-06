@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "core/fxcrt/fx_memory.h"
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cfxjse_value.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -611,7 +612,7 @@ TEST_F(CFXJSE_FormCalcContextEmbedderTest, TimeFmt) {
   }
 }
 
-TEST_F(CFXJSE_FormCalcContextEmbedderTest, DISABLED_Apr) {
+TEST_F(CFXJSE_FormCalcContextEmbedderTest, Apr) {
   ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
 
   struct {
@@ -625,7 +626,7 @@ TEST_F(CFXJSE_FormCalcContextEmbedderTest, DISABLED_Apr) {
 
     CFXJSE_Value* value = GetValue();
     EXPECT_TRUE(value->IsNumber());
-    EXPECT_FLOAT_EQ(tests[i].result, value->ToFloat())
+    EXPECT_NEAR(tests[i].result, value->ToFloat(), 0.000001)
         << "Program: " << tests[i].program;
   }
 }
@@ -691,7 +692,7 @@ TEST_F(CFXJSE_FormCalcContextEmbedderTest, IPmt) {
   }
 }
 
-TEST_F(CFXJSE_FormCalcContextEmbedderTest, DISABLED_NPV) {
+TEST_F(CFXJSE_FormCalcContextEmbedderTest, NPV) {
   ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
 
   struct {
@@ -773,7 +774,7 @@ TEST_F(CFXJSE_FormCalcContextEmbedderTest, PV) {
   }
 }
 
-TEST_F(CFXJSE_FormCalcContextEmbedderTest, DISABLED_Rate) {
+TEST_F(CFXJSE_FormCalcContextEmbedderTest, Rate) {
   ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
 
   struct {
@@ -787,7 +788,7 @@ TEST_F(CFXJSE_FormCalcContextEmbedderTest, DISABLED_Rate) {
 
     CFXJSE_Value* value = GetValue();
     EXPECT_TRUE(value->IsNumber());
-    EXPECT_FLOAT_EQ(tests[i].result, value->ToFloat())
+    EXPECT_NEAR(tests[i].result, value->ToFloat(), 0.000001)
         << "Program: " << tests[i].program;
   }
 }
@@ -906,7 +907,7 @@ TEST_F(CFXJSE_FormCalcContextEmbedderTest, Within) {
   }
 }
 
-TEST_F(CFXJSE_FormCalcContextEmbedderTest, DISABLED_Eval) {
+TEST_F(CFXJSE_FormCalcContextEmbedderTest, Eval) {
   ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
 
   struct {

@@ -72,7 +72,7 @@ public:
         GrSwizzle writeSwizzle() const { return fSurfaceView->swizzle(); }
 
         GrOp* op() { return fOp; }
-        const GrSurfaceProxyView* outputView() const { return fSurfaceView; }
+        const GrSurfaceProxyView* writeView() const { return fSurfaceView; }
         GrRenderTargetProxy* proxy() const { return fRenderTargetProxy; }
         GrAppliedClip* appliedClip() { return fAppliedClip; }
         const GrAppliedClip* appliedClip() const { return fAppliedClip; }
@@ -130,9 +130,17 @@ public:
     uint16_t* makeIndexSpaceAtLeast(int minIndexCount, int fallbackIndexCount,
                                     sk_sp<const GrBuffer>*, int* startIndex,
                                     int* actualIndexCount) final;
+    GrDrawIndirectCommand* makeDrawIndirectSpace(int drawCount, sk_sp<const GrBuffer>* buffer,
+                                                 size_t* offset) override {
+        return fDrawIndirectPool.makeSpace(drawCount, buffer, offset);
+    }
+    GrDrawIndexedIndirectCommand* makeDrawIndexedIndirectSpace(
+            int drawCount, sk_sp<const GrBuffer>* buffer, size_t* offset) override {
+        return fDrawIndirectPool.makeIndexedSpace(drawCount, buffer, offset);
+    }
     void putBackIndices(int indexCount) final;
     void putBackVertices(int vertices, size_t vertexStride) final;
-    const GrSurfaceProxyView* outputView() const final { return this->drawOpArgs().outputView(); }
+    const GrSurfaceProxyView* writeView() const final { return this->drawOpArgs().writeView(); }
     GrRenderTargetProxy* proxy() const final { return this->drawOpArgs().proxy(); }
     const GrAppliedClip* appliedClip() const final { return this->drawOpArgs().appliedClip(); }
     const GrAppliedHardClip& appliedHardClip() const {
@@ -147,7 +155,7 @@ public:
     const GrCaps& caps() const final;
     GrResourceProvider* resourceProvider() const final { return fResourceProvider; }
 
-    GrStrikeCache* glyphCache() const final;
+    GrStrikeCache* strikeCache() const final;
 
     // At this point we know we're flushing so full access to the GrAtlasManager is required (and
     // permissible).
@@ -211,6 +219,12 @@ public:
         fOpsRenderPass->drawIndexedInstanced(indexCount, baseIndex, instanceCount, baseInstance,
                                              baseVertex);
     }
+    void drawIndirect(const GrBuffer* drawIndirectBuffer, size_t offset, int drawCount) {
+        fOpsRenderPass->drawIndirect(drawIndirectBuffer, offset, drawCount);
+    }
+    void drawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t offset, int drawCount) {
+        fOpsRenderPass->drawIndexedIndirect(drawIndirectBuffer, offset, drawCount);
+    }
     void drawIndexPattern(int patternIndexCount, int patternRepeatCount,
                           int maxPatternRepetitionsInIndexBuffer, int patternVertexCount,
                           int baseVertex) {
@@ -251,6 +265,7 @@ private:
     // Store vertex and index data on behalf of ops that are flushed.
     GrVertexBufferAllocPool fVertexPool;
     GrIndexBufferAllocPool fIndexPool;
+    GrDrawIndirectBufferAllocPool fDrawIndirectPool;
 
     // Data stored on behalf of the ops being flushed.
     SkArenaAllocList<GrDeferredTextureUploadFn> fASAPUploads;

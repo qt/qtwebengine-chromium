@@ -2,12 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 
 import {DebuggerModel, Events as DebuggerModelEvents} from './DebuggerModel.js';
 import {DeferredDOMNode, DOMModel, DOMNode} from './DOMModel.js';  // eslint-disable-line no-unused-vars
 import {RemoteObject} from './RemoteObject.js';                    // eslint-disable-line no-unused-vars
 import {Capability, SDKModel, Target, TargetManager} from './SDKModel.js';  // eslint-disable-line no-unused-vars
+
+/**
+ * @typedef {{r: number, g: number, b: number, a: number}}
+ */
+export let HighlightColor;
+
+/**
+ * @typedef {{x: number, y: number, width: number, height: number, color: HighlightColor, outlineColor: HighlightColor}}
+ */
+export let HighlightRect;
+
+/** @typedef {!{width: number, height: number, x: number, y: number, contentColor:HighlightColor, outlineColor: HighlightColor}} */
+export let Hinge;
 
 /**
  * @implements {Protocol.OverlayDispatcher}
@@ -87,7 +103,40 @@ export class OverlayModel extends SDKModel {
   }
 
   /**
-   * @return {!Promise}
+   * @param {!HighlightRect} rect
+   */
+  static highlightRect(rect) {
+    for (const overlayModel of TargetManager.instance().models(OverlayModel)) {
+      overlayModel.highlightRect(rect);
+    }
+  }
+
+  static clearHighlight() {
+    for (const overlayModel of TargetManager.instance().models(OverlayModel)) {
+      overlayModel.clearHighlight();
+    }
+  }
+
+  /**
+   * @param {!HighlightRect} rect
+   * @return {!Promise<*>}
+   */
+  highlightRect({x, y, width, height, color, outlineColor}) {
+    const highlightColor = color || {r: 255, g: 0, b: 255, a: 0.3};
+    const highlightOutlineColor = outlineColor || {r: 255, g: 0, b: 255, a: 0.5};
+    return this._overlayAgent.invoke_highlightRect(
+        {x, y, width, height, color: highlightColor, outlineColor: highlightOutlineColor});
+  }
+
+  /**
+   * @return {!Promise<*>}
+   */
+  clearHighlight() {
+    return this._overlayAgent.invoke_hideHighlight({});
+  }
+
+  /**
+   * @return {!Promise<void>}
    */
   _wireAgentToSettings() {
     this._registeredListeners = [
@@ -136,7 +185,7 @@ export class OverlayModel extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   suspendModel() {
     Common.EventTarget.EventTarget.removeEventListeners(this._registeredListeners);
@@ -145,7 +194,7 @@ export class OverlayModel extends SDKModel {
 
   /**
    * @override
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   resumeModel() {
     this._overlayAgent.enable();
@@ -184,7 +233,7 @@ export class OverlayModel extends SDKModel {
   /**
    * @param {!Protocol.Overlay.InspectMode} mode
    * @param {boolean=} showStyles
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   async setInspectMode(mode, showStyles = true) {
     await this._domModel.requestDocument();
@@ -246,12 +295,27 @@ export class OverlayModel extends SDKModel {
   }
 
   /**
+   * @param {boolean} show
+   * @param {?Hinge} hinge
+   */
+  showHingeForDualScreen(show, hinge = null) {
+    if (show) {
+      const {x, y, width, height, contentColor, outlineColor} = hinge;
+      this._overlayAgent.setShowHinge(
+          {rect: {x: x, y: y, width: width, height: height}, contentColor: contentColor, outlineColor: outlineColor});
+    } else {
+      this._overlayAgent.setShowHinge();
+    }
+  }
+
+  /**
    * @param {string=} mode
    * @param {boolean=} showStyles
    * @return {!Protocol.Overlay.HighlightConfig}
    */
   _buildHighlightConfig(mode = 'all', showStyles = false) {
     const showRulers = Common.Settings.Settings.instance().moduleSetting('showMetricsRulers').get();
+    const colorFormat = Common.Settings.Settings.instance().moduleSetting('colorFormat').get();
     const highlightConfig =
         {showInfo: mode === 'all', showRulers: showRulers, showStyles, showExtensionLines: showRulers};
     if (mode === 'all' || mode === 'content') {
@@ -280,6 +344,13 @@ export class OverlayModel extends SDKModel {
       highlightConfig.cssGridColor = Common.Color.PageHighlight.CssGrid.toProtocolRGBA();
     }
 
+    // the backend does not support the 'original' format because
+    // it currently cannot retrieve the original format using computed styles
+    const supportedColorFormats = new Set(['rgb', 'hsl', 'hex']);
+    if (supportedColorFormats.has(colorFormat)) {
+      highlightConfig.colorFormat = colorFormat;
+    }
+
     return highlightConfig;
   }
 
@@ -295,7 +366,7 @@ export class OverlayModel extends SDKModel {
   }
 
   /**
-   * @param {function(!DOMNode)} handler
+   * @param {function(!DOMNode):void} handler
    */
   static setInspectNodeHandler(handler) {
     OverlayModel._inspectNodeHandler = handler;
@@ -358,7 +429,7 @@ export class Highlighter {
   /**
    * @param {!Protocol.Overlay.InspectMode} mode
    * @param {!Protocol.Overlay.HighlightConfig} config
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   setInspectMode(mode, config) {
   }
@@ -401,7 +472,7 @@ class DefaultHighlighter {
    * @override
    * @param {!Protocol.Overlay.InspectMode} mode
    * @param {!Protocol.Overlay.HighlightConfig} config
-   * @return {!Promise}
+   * @return {!Promise<void>}
    */
   setInspectMode(mode, config) {
     return this._model._overlayAgent.setInspectMode(mode, config);

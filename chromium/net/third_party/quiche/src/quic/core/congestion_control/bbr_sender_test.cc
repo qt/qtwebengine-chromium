@@ -341,7 +341,6 @@ TEST_F(BbrSenderTest, SimpleTransferSmallBuffer) {
 }
 
 TEST_F(BbrSenderTest, RemoveBytesLostInRecovery) {
-  SetQuicReloadableFlag(quic_bbr_one_mss_conservation, false);
   // Disable Ack Decimation on the receiver, because it can increase srtt.
   QuicConnectionPeer::SetAckMode(receiver_.connection(), AckMode::TCP_ACKING);
   CreateDefaultSetup();
@@ -1372,9 +1371,7 @@ TEST_F(BbrSenderTest, LossOnlyCongestionEvent) {
                              lost_packets);
 
   // Bandwidth estimate should not change for the loss only event.
-  if (GetQuicReloadableFlag(quic_bbr_fix_zero_bw_on_loss_only_event)) {
-    EXPECT_EQ(prior_bandwidth_estimate, sender_->BandwidthEstimate());
-  }
+  EXPECT_EQ(prior_bandwidth_estimate, sender_->BandwidthEstimate());
 }
 
 }  // namespace test

@@ -26,6 +26,10 @@
  * Red Hat Author(s): Behdad Esfahbod
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include "hb.h"
 #include "hb-ot.h"
 
@@ -37,8 +41,7 @@
 #define hb_blob_create_from_file(x)  hb_blob_get_empty ()
 #endif
 
-#if !defined(HB_NO_COLOR) && !defined(HB_NO_DRAW)
-#ifdef HB_EXPERIMENTAL_API
+#if !defined(HB_NO_COLOR) && !defined(HB_NO_DRAW) && defined(HB_EXPERIMENTAL_API)
 static void
 svg_dump (hb_face_t *face, unsigned face_index)
 {
@@ -279,7 +282,7 @@ static void
 dump_glyphs (hb_blob_t *blob, const char *font_name)
 {
   FILE *font_name_file = fopen ("out/.dumped_font_name", "r");
-  if (font_name_file != nullptr)
+  if (font_name_file)
   {
     fprintf (stderr, "Purge or rename ./out folder if you like to run a glyph dump,\n"
 		     "run it like `rm -rf out && mkdir out && src/main font-file.ttf`\n");
@@ -287,7 +290,7 @@ dump_glyphs (hb_blob_t *blob, const char *font_name)
   }
 
   font_name_file = fopen ("out/.dumped_font_name", "w");
-  if (font_name_file == nullptr)
+  if (!font_name_file)
   {
     fprintf (stderr, "./out is not accessible as a folder, create it please\n");
     return;
@@ -329,8 +332,8 @@ dump_glyphs (hb_blob_t *blob, const char *font_name)
   hb_draw_funcs_destroy (funcs);
 }
 #endif
-#endif
 
+#ifndef MAIN_CC_NO_PRIVATE_API
 /* Only this part of this mini app uses private API */
 #include "hb-static.cc"
 #include "hb-open-file.hh"
@@ -491,6 +494,7 @@ print_layout_info_using_private_api (hb_blob_t *blob)
   }
 }
 /* end of private API use */
+#endif
 
 int
 main (int argc, char **argv)
@@ -503,11 +507,11 @@ main (int argc, char **argv)
 
   hb_blob_t *blob = hb_blob_create_from_file (argv[1]);
   printf ("Opened font file %s: %d bytes long\n", argv[1], hb_blob_get_length (blob));
+#ifndef MAIN_CC_NO_PRIVATE_API
   print_layout_info_using_private_api (blob);
-#if !defined(HB_NO_COLOR) && !defined(HB_NO_DRAW)
-#ifdef HB_EXPERIMENTAL_API
-  dump_glyphs (blob, argv[1]);
 #endif
+#if !defined(HB_NO_COLOR) && !defined(HB_NO_DRAW) && defined(HB_EXPERIMENTAL_API)
+  dump_glyphs (blob, argv[1]);
 #endif
   hb_blob_destroy (blob);
 

@@ -9,10 +9,6 @@
 
 #include "src/sksl/SkSLStringStream.h"
 
-#if !defined(SKSL_STANDALONE) & SK_SUPPORT_GPU
-#include "include/gpu/GrContextOptions.h"
-#endif
-
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
 #endif
@@ -38,20 +34,20 @@ void write_stringstream(const StringStream& s, OutputStream& out) {
 
 bool is_assignment(Token::Kind op) {
     switch (op) {
-        case Token::EQ:           // fall through
-        case Token::PLUSEQ:       // fall through
-        case Token::MINUSEQ:      // fall through
-        case Token::STAREQ:       // fall through
-        case Token::SLASHEQ:      // fall through
-        case Token::PERCENTEQ:    // fall through
-        case Token::SHLEQ:        // fall through
-        case Token::SHREQ:        // fall through
-        case Token::BITWISEOREQ:  // fall through
-        case Token::BITWISEXOREQ: // fall through
-        case Token::BITWISEANDEQ: // fall through
-        case Token::LOGICALOREQ:  // fall through
-        case Token::LOGICALXOREQ: // fall through
-        case Token::LOGICALANDEQ:
+        case Token::Kind::TK_EQ:           // fall through
+        case Token::Kind::TK_PLUSEQ:       // fall through
+        case Token::Kind::TK_MINUSEQ:      // fall through
+        case Token::Kind::TK_STAREQ:       // fall through
+        case Token::Kind::TK_SLASHEQ:      // fall through
+        case Token::Kind::TK_PERCENTEQ:    // fall through
+        case Token::Kind::TK_SHLEQ:        // fall through
+        case Token::Kind::TK_SHREQ:        // fall through
+        case Token::Kind::TK_BITWISEOREQ:  // fall through
+        case Token::Kind::TK_BITWISEXOREQ: // fall through
+        case Token::Kind::TK_BITWISEANDEQ: // fall through
+        case Token::Kind::TK_LOGICALOREQ:  // fall through
+        case Token::Kind::TK_LOGICALXOREQ: // fall through
+        case Token::Kind::TK_LOGICALANDEQ:
             return true;
         default:
             return false;
@@ -60,194 +56,21 @@ bool is_assignment(Token::Kind op) {
 
 Token::Kind remove_assignment(Token::Kind op) {
     switch (op) {
-        case Token::PLUSEQ:       return Token::PLUS;
-        case Token::MINUSEQ:      return Token::MINUS;
-        case Token::STAREQ:       return Token::STAR;
-        case Token::SLASHEQ:      return Token::SLASH;
-        case Token::PERCENTEQ:    return Token::PERCENT;
-        case Token::SHLEQ:        return Token::SHL;
-        case Token::SHREQ:        return Token::SHR;
-        case Token::BITWISEOREQ:  return Token::BITWISEOR;
-        case Token::BITWISEXOREQ: return Token::BITWISEXOR;
-        case Token::BITWISEANDEQ: return Token::BITWISEAND;
-        case Token::LOGICALOREQ:  return Token::LOGICALOR;
-        case Token::LOGICALXOREQ: return Token::LOGICALXOR;
-        case Token::LOGICALANDEQ: return Token::LOGICALAND;
+        case Token::Kind::TK_PLUSEQ:       return Token::Kind::TK_PLUS;
+        case Token::Kind::TK_MINUSEQ:      return Token::Kind::TK_MINUS;
+        case Token::Kind::TK_STAREQ:       return Token::Kind::TK_STAR;
+        case Token::Kind::TK_SLASHEQ:      return Token::Kind::TK_SLASH;
+        case Token::Kind::TK_PERCENTEQ:    return Token::Kind::TK_PERCENT;
+        case Token::Kind::TK_SHLEQ:        return Token::Kind::TK_SHL;
+        case Token::Kind::TK_SHREQ:        return Token::Kind::TK_SHR;
+        case Token::Kind::TK_BITWISEOREQ:  return Token::Kind::TK_BITWISEOR;
+        case Token::Kind::TK_BITWISEXOREQ: return Token::Kind::TK_BITWISEXOR;
+        case Token::Kind::TK_BITWISEANDEQ: return Token::Kind::TK_BITWISEAND;
+        case Token::Kind::TK_LOGICALOREQ:  return Token::Kind::TK_LOGICALOR;
+        case Token::Kind::TK_LOGICALXOREQ: return Token::Kind::TK_LOGICALXOR;
+        case Token::Kind::TK_LOGICALANDEQ: return Token::Kind::TK_LOGICALAND;
         default: return op;
     }
 }
-
-#if !defined(SKSL_STANDALONE) & SK_SUPPORT_GPU
-sk_sp<GrShaderCaps> ShaderCapsFactory::Default() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fShaderDerivativeSupport = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::Version450Core() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 450 core";
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::Version110() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 110";
-    result->fGLSLGeneration = GrGLSLGeneration::k110_GrGLSLGeneration;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::UsesPrecisionModifiers() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fUsesPrecisionModifiers = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::CannotUseMinAndAbsTogether() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fCanUseMinAndAbsTogether = false;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::CannotUseFractForNegativeValues() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fCanUseFractForNegativeValues = false;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::MustForceNegatedAtanParamToFloat() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fMustForceNegatedAtanParamToFloat = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::ShaderDerivativeExtensionString() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fShaderDerivativeSupport = true;
-    result->fShaderDerivativeExtensionString = "GL_OES_standard_derivatives";
-    result->fUsesPrecisionModifiers = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::FragCoordsOld() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 110";
-    result->fGLSLGeneration = GrGLSLGeneration::k110_GrGLSLGeneration;
-    result->fFragCoordConventionsExtensionString = "GL_ARB_fragment_coord_conventions";
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::FragCoordsNew() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fFragCoordConventionsExtensionString = "GL_ARB_fragment_coord_conventions";
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::GeometryShaderSupport() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fGeometryShaderSupport = true;
-    result->fGSInvocationsSupport = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::NoGSInvocationsSupport() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fGeometryShaderSupport = true;
-    result->fGSInvocationsSupport = false;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::GeometryShaderExtensionString() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 310es";
-    result->fGeometryShaderSupport = true;
-    result->fGeometryShaderExtensionString = "GL_EXT_geometry_shader";
-    result->fGSInvocationsSupport = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::GSInvocationsExtensionString() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fGeometryShaderSupport = true;
-    result->fGSInvocationsSupport = true;
-    result->fGSInvocationsExtensionString = "GL_ARB_gpu_shader5";
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::VariousCaps() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fExternalTextureSupport = true;
-    result->fFBFetchSupport = false;
-    result->fCanUseAnyFunctionInShader = false;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::CannotUseFragCoord() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fCanUseFragCoord = false;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::IncompleteShortIntPrecision() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 310es";
-    result->fUsesPrecisionModifiers = true;
-    result->fIncompleteShortIntPrecision = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::AddAndTrueToLoopCondition() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fAddAndTrueToLoopCondition = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::UnfoldShortCircuitAsTernary() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fUnfoldShortCircuitAsTernary = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::EmulateAbsIntFunction() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fEmulateAbsIntFunction = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::RewriteDoWhileLoops() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fRewriteDoWhileLoops = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::RemovePowWithConstantExponent() {
-    sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
-    result->fVersionDeclString = "#version 400";
-    result->fRemovePowWithConstantExponent = true;
-    return result;
-}
-
-sk_sp<GrShaderCaps> ShaderCapsFactory::SampleMaskSupport() {
-    sk_sp<GrShaderCaps> result = Default();
-    result->fSampleMaskSupport = true;
-    return result;
-}
-#endif
 
 } // namespace

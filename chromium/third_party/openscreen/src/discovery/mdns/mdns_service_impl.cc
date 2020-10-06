@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "discovery/common/config.h"
 #include "discovery/common/reporting_client.h"
 #include "discovery/mdns/mdns_records.h"
 #include "discovery/mdns/public/mdns_constants.h"
@@ -20,7 +19,7 @@ std::unique_ptr<MdnsService> MdnsService::Create(
     ReportingClient* reporting_client,
     const Config& config,
     NetworkInterfaceIndex network_interface,
-    SupportedNetworkAddressFamily supported_address_types) {
+    Config::NetworkInfo::AddressFamilies supported_address_types) {
   return std::make_unique<MdnsServiceImpl>(
       task_runner, Clock::now, reporting_client, config, network_interface,
       supported_address_types);
@@ -32,10 +31,11 @@ MdnsServiceImpl::MdnsServiceImpl(
     ReportingClient* reporting_client,
     const Config& config,
     NetworkInterfaceIndex network_interface,
-    SupportedNetworkAddressFamily supported_address_types)
+    Config::NetworkInfo::AddressFamilies supported_address_types)
     : task_runner_(task_runner),
       now_function_(now_function),
-      reporting_client_(reporting_client) {
+      reporting_client_(reporting_client),
+      receiver_(config) {
   OSP_DCHECK(task_runner_);
   OSP_DCHECK(reporting_client_);
   OSP_DCHECK(supported_address_types);
@@ -43,7 +43,7 @@ MdnsServiceImpl::MdnsServiceImpl(
   // Create all UDP sockets needed for this object. They should not yet be bound
   // so that they do not send or receive data until the objects on which their
   // callback depends is initialized.
-  if (supported_address_types & kUseIpV4Multicast) {
+  if (supported_address_types & Config::NetworkInfo::kUseIpV4) {
     ErrorOr<std::unique_ptr<UdpSocket>> socket = UdpSocket::Create(
         task_runner, this, kDefaultMulticastGroupIPv4Endpoint);
     OSP_DCHECK(!socket.is_error());
@@ -58,7 +58,7 @@ MdnsServiceImpl::MdnsServiceImpl(
                                    network_interface);
   }
 
-  if (supported_address_types & kUseIpV6Multicast) {
+  if (supported_address_types & Config::NetworkInfo::kUseIpV6) {
     ErrorOr<std::unique_ptr<UdpSocket>> socket = UdpSocket::Create(
         task_runner, this, kDefaultMulticastGroupIPv6Endpoint);
     OSP_DCHECK(!socket.is_error());
@@ -91,7 +91,7 @@ MdnsServiceImpl::MdnsServiceImpl(
                                         task_runner_, now_function_, config);
     responder_ = std::make_unique<MdnsResponder>(
         publisher_.get(), probe_manager_.get(), sender_.get(), &receiver_,
-        task_runner_, &random_delay_);
+        task_runner_, now_function_, &random_delay_, config);
   }
 
   receiver_.Start();

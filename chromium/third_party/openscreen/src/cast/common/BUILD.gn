@@ -34,7 +34,6 @@ source_set("certificate") {
 source_set("channel") {
   sources = [
     "channel/cast_socket.cc",
-    "channel/cast_socket.h",
     "channel/connection_namespace_handler.cc",
     "channel/connection_namespace_handler.h",
     "channel/message_framer.cc",
@@ -48,6 +47,7 @@ source_set("channel") {
     "channel/virtual_connection_manager.h",
     "channel/virtual_connection_router.cc",
     "channel/virtual_connection_router.h",
+    "public/cast_socket.h",
   ]
 
   deps = [
@@ -80,9 +80,11 @@ if (!build_with_chromium) {
   source_set("discovery_e2e_test") {
     testonly = true
 
-    sources = [
-      "discovery/e2e_test/tests.cc",
-    ]
+    if (!is_mac) {
+      sources = [
+        "discovery/e2e_test/tests.cc",
+      ]
+    }
 
     deps = [
       ":public",
@@ -140,6 +142,7 @@ source_set("unittests") {
     ":public",
     ":test_helpers",
     "../../platform",
+    "../../platform:test",
     "../../testing/util",
     "../../third_party/boringssl",
     "../../third_party/googletest:gmock",
@@ -150,7 +153,7 @@ source_set("unittests") {
   ]
 
   data = [
-    "../../test/data/cast/common/certificate",
+    "../../test/data/cast/common/certificate/",
   ]
 }
 

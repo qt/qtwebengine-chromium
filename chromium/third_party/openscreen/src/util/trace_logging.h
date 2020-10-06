@@ -5,7 +5,6 @@
 #ifndef UTIL_TRACE_LOGGING_H_
 #define UTIL_TRACE_LOGGING_H_
 
-#include "build/config/features.h"
 #include "platform/base/trace_logging_types.h"
 
 // All compile-time macros for tracing.
@@ -83,6 +82,8 @@ inline void DoNothingForTracing(Args... args) {}
 #define TRACE_ROOT_ID openscreen::kEmptyTraceId
 #define TRACE_SCOPED(category, name, ...) \
   openscreen::internal::DoNothingForTracing(category, name, ##__VA_ARGS__)
+#define TRACE_DEFAULT_SCOPED(category, ...) \
+  TRACE_SCOPED(category, __PRETTY_FUNCTION__, ##__VA_ARGS__)
 #define TRACE_ASYNC_START(category, name, ...) \
   openscreen::internal::DoNothingForTracing(category, name, ##__VA_ARGS__)
 #define TRACE_ASYNC_END(category, id, result) \

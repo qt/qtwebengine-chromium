@@ -347,8 +347,7 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
 
         case TimelineModel.TimelineModel.TrackType.Worker: {
           this._appendSyncEvents(
-              track, track.events, track.url ? ls`Worker \u2014 ${track.url}` : ls`Dedicated Worker`,
-              this._headerLevel1, eventEntryType, true /* selectable */);
+              track, track.events, track.name, this._headerLevel1, eventEntryType, true /* selectable */);
           break;
         }
 
@@ -470,10 +469,15 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
     }
     for (let i = 0; i < events.length; ++i) {
       const e = events[i];
-      // Skip Layout Shifts when dealing with the main thread.
-      if (track && track.type === TimelineModel.TimelineModel.TrackType.MainThread && this._performanceModel &&
-          this._performanceModel.timelineModel().isLayoutShiftEvent(e)) {
-        continue;
+      // Skip Layout Shifts and TTI events when dealing with the main thread.
+      if (this._performanceModel) {
+        const isInteractiveTime = this._performanceModel.timelineModel().isInteractiveTimeEvent(e);
+        const isLayoutShift = this._performanceModel.timelineModel().isLayoutShiftEvent(e);
+        const skippableEvent = isInteractiveTime || isLayoutShift;
+
+        if (track && track.type === TimelineModel.TimelineModel.TrackType.MainThread && skippableEvent) {
+          continue;
+        }
       }
 
       if (this._performanceModel && this._performanceModel.timelineModel().isLayoutShiftEvent(e)) {
@@ -1120,17 +1124,23 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
       timelineData.flowEndLevels[flowIndex] = level;
     }
 
+    const eventId = event.id;
+
+    if (!eventId) {
+      return;
+    }
+
     switch (event.phase) {
       case SDK.TracingModel.Phase.FlowBegin:
-        this._flowEventIndexById.set(event.id, pushStartFlow(event));
+        this._flowEventIndexById.set(eventId, pushStartFlow(event));
         break;
       case SDK.TracingModel.Phase.FlowStep:
-        pushEndFlow(event, this._flowEventIndexById.get(event.id));
-        this._flowEventIndexById.set(event.id, pushStartFlow(event));
+        pushEndFlow(event, this._flowEventIndexById.get(eventId));
+        this._flowEventIndexById.set(eventId, pushStartFlow(event));
         break;
       case SDK.TracingModel.Phase.FlowEnd:
-        pushEndFlow(event, this._flowEventIndexById.get(event.id));
-        this._flowEventIndexById.delete(event.id);
+        pushEndFlow(event, this._flowEventIndexById.get(eventId));
+        this._flowEventIndexById.delete(eventId);
         break;
     }
   }

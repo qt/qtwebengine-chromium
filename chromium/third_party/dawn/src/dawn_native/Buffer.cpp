@@ -28,7 +28,7 @@ namespace dawn_native {
 
     namespace {
 
-        class ErrorBuffer : public BufferBase {
+        class ErrorBuffer final : public BufferBase {
           public:
             ErrorBuffer(DeviceBase* device) : BufferBase(device, ObjectBase::kError) {
             }
@@ -120,7 +120,7 @@ namespace dawn_native {
         // ValidatePassResourceUsage will make sure we don't use both at the same
         // time.
         if (mUsage & wgpu::BufferUsage::Storage) {
-            mUsage |= kReadOnlyStorage;
+            mUsage |= kReadOnlyStorageBuffer;
         }
     }
 

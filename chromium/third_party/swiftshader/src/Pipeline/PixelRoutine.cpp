@@ -44,6 +44,11 @@ PixelRoutine::PixelRoutine(
 			routine.inputs[i] = Float4(0.0f);
 		}
 	}
+
+	for(int i = 0; i < RENDERTARGETS; i++)
+	{
+		outputMasks[i] = 0xF;
+	}
 }
 
 PixelRoutine::~PixelRoutine()
@@ -1098,7 +1103,7 @@ void PixelRoutine::readPixel(int index, const Pointer<Byte> &cBuffer, const Int 
 		}
 		break;
 		default:
-			UNSUPPORTED("VkFormat %d", state.targetFormat[index]);
+			UNSUPPORTED("VkFormat %d", int(state.targetFormat[index]));
 	}
 
 	if(isSRGB(index))
@@ -1113,6 +1118,8 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4s 
 	{
 		return;
 	}
+
+	ASSERT(state.targetFormat[index].supportsColorAttachmentBlend());
 
 	Vector4s pixel;
 	readPixel(index, cBuffer, x, pixel);
@@ -1270,7 +1277,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			break;
 	}
 
-	int rgbaWriteMask = state.colorWriteActive(index);
+	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
 	int bgraWriteMask = (rgbaWriteMask & 0x0000000A) | (rgbaWriteMask & 0x00000001) << 2 | (rgbaWriteMask & 0x00000004) >> 2;
 
 	switch(state.targetFormat[index])
@@ -1874,6 +1881,9 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 		return;
 	}
 
+	vk::Format format = state.targetFormat[index];
+	ASSERT(format.supportsColorAttachmentBlend());
+
 	Pointer<Byte> buffer = cBuffer;
 	Int pitchB = *Pointer<Int>(data + OFFSET(DrawData, colorPitchB[index]));
 
@@ -1888,7 +1898,6 @@ void PixelRoutine::alphaBlend(int index, const Pointer<Byte> &cBuffer, Vector4f 
 	Short4 c23;
 
 	Float4 one;
-	vk::Format format(state.targetFormat[index]);
 	if(format.isFloatFormat())
 	{
 		one = Float4(1.0f);
@@ -2140,7 +2149,7 @@ void PixelRoutine::writeColor(int index, const Pointer<Byte> &cBuffer, const Int
 			UNSUPPORTED("VkFormat: %d", int(state.targetFormat[index]));
 	}
 
-	int rgbaWriteMask = state.colorWriteActive(index);
+	int rgbaWriteMask = state.colorWriteActive(index) & outputMasks[index];
 	int bgraWriteMask = (rgbaWriteMask & 0x0000000A) | (rgbaWriteMask & 0x00000001) << 2 | (rgbaWriteMask & 0x00000004) >> 2;
 
 	Int xMask;  // Combination of all masks

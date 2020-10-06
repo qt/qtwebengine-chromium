@@ -19,6 +19,7 @@
 #include "Pipeline/PixelProgram.hpp"
 #include "System/Debug.hpp"
 #include "Vulkan/VkImageView.hpp"
+#include "Vulkan/VkPipelineLayout.hpp"
 
 #include <cstring>
 
@@ -49,14 +50,7 @@ bool PixelProcessor::State::operator==(const State &state) const
 
 PixelProcessor::PixelProcessor()
 {
-	routineCache = nullptr;
 	setRoutineCacheSize(1024);
-}
-
-PixelProcessor::~PixelProcessor()
-{
-	delete routineCache;
-	routineCache = nullptr;
 }
 
 void PixelProcessor::setBlendConstant(const float4 &blendConstant)
@@ -85,8 +79,7 @@ void PixelProcessor::setBlendConstant(const float4 &blendConstant)
 
 void PixelProcessor::setRoutineCacheSize(int cacheSize)
 {
-	delete routineCache;
-	routineCache = new RoutineCacheType(clamp(cacheSize, 1, 65536));
+	routineCache = std::make_unique<RoutineCacheType>(clamp(cacheSize, 1, 65536));
 }
 
 const PixelProcessor::State PixelProcessor::update(const Context *context) const
@@ -99,10 +92,12 @@ const PixelProcessor::State PixelProcessor::update(const Context *context) const
 	if(context->pixelShader)
 	{
 		state.shaderID = context->pixelShader->getSerialID();
+		state.pipelineLayoutIdentifier = context->pipelineLayout->identifier;
 	}
 	else
 	{
 		state.shaderID = 0;
+		state.pipelineLayoutIdentifier = 0;
 	}
 
 	state.alphaToCoverage = context->alphaToCoverage;
@@ -120,10 +115,13 @@ const PixelProcessor::State PixelProcessor::update(const Context *context) const
 		state.depthTestActive = true;
 		state.depthCompareMode = context->depthCompareMode;
 		state.depthFormat = context->depthBuffer->getFormat();
+
+		// "For fixed-point depth buffers, fragment depth values are always limited to the range [0,1] by clamping after depth bias addition is performed.
+		//  Unless the VK_EXT_depth_range_unrestricted extension is enabled, fragment depth values are clamped even when the depth buffer uses a floating-point representation."
+		state.depthClamp = !state.depthFormat.isFloatFormat() || !context->depthRangeUnrestricted;
 	}
 
 	state.occlusionEnabled = context->occlusionEnabled;
-	state.depthClamp = (context->depthBias != 0.0f) || (context->slopeDepthBias != 0.0f);
 
 	for(int i = 0; i < RENDERTARGETS; i++)
 	{
@@ -154,7 +152,7 @@ PixelProcessor::RoutineType PixelProcessor::routine(const State &state,
                                                     SpirvShader const *pixelShader,
                                                     const vk::DescriptorSet::Bindings &descriptorSets)
 {
-	auto routine = routineCache->query(state);
+	auto routine = routineCache->lookup(state);
 
 	if(!routine)
 	{

@@ -85,14 +85,14 @@ static inline void Coverage_serialize (hb_serialize_context_t *c,
 
 template<typename Iterator>
 static inline void ClassDef_serialize (hb_serialize_context_t *c,
-                                       Iterator it);
+				       Iterator it);
 
 static void ClassDef_remap_and_serialize (hb_serialize_context_t *c,
-                                          const hb_set_t &glyphset,
-                                          const hb_map_t &gid_klass_map,
-                                          hb_sorted_vector_t<HBGlyphID> &glyphs,
-                                          const hb_set_t &klasses,
-                                          hb_map_t *klass_map /*INOUT*/);
+					  const hb_set_t &glyphset,
+					  const hb_map_t &gid_klass_map,
+					  hb_sorted_vector_t<HBGlyphID> &glyphs,
+					  const hb_set_t &klasses,
+					  hb_map_t *klass_map /*INOUT*/);
 
 struct hb_subset_layout_context_t :
   hb_dispatch_context_t<hb_subset_layout_context_t, hb_empty_t, HB_DEBUG_SUBSET>
@@ -139,8 +139,8 @@ struct hb_subset_layout_context_t :
 				debug_depth (0),
 				script_count (0),
 				langsys_count (0),
-                                feature_index_count (0),
-                                lookup_index_count (0)
+				feature_index_count (0),
+				lookup_index_count (0)
   {}
 
   private:
@@ -404,7 +404,7 @@ struct RangeRecord
   { return glyphs->intersects (first, last); }
 
   template <typename set_t>
-  bool add_coverage (set_t *glyphs) const
+  bool collect_coverage (set_t *glyphs) const
   { return glyphs->add_range (first, last); }
 
   HBGlyphID	first;		/* First GlyphID in the range */
@@ -424,8 +424,8 @@ struct IndexArray : ArrayOf<Index>
   template <typename Iterator,
 	    hb_requires (hb_is_iterator (Iterator))>
   void serialize (hb_serialize_context_t *c,
-                  hb_subset_layout_context_t *l,
-                  Iterator it)
+		  hb_subset_layout_context_t *l,
+		  Iterator it)
   {
     if (!it) return;
     if (unlikely (!c->extend_min ((*this)))) return;
@@ -491,7 +491,7 @@ struct LangSys
   bool operator == (const LangSys& o) const
   {
     if (featureIndex.len != o.featureIndex.len ||
-        reqFeatureIndex != o.reqFeatureIndex)
+	reqFeatureIndex != o.reqFeatureIndex)
       return false;
 
     for (const auto _ : + hb_zip (featureIndex, o.featureIndex))
@@ -581,24 +581,24 @@ struct Script
       bool ret = ls.subset (c, l);
       if (!ret && tag && *tag != HB_TAG ('D', 'F', 'L', 'T'))
       {
-        c->serializer->pop_discard ();
-        out->defaultLangSys = 0;
+	c->serializer->pop_discard ();
+	out->defaultLangSys = 0;
       }
       else
       {
-        c->serializer->add_link (out->defaultLangSys, c->serializer->pop_pack ());
-        defaultLang = true;
+	c->serializer->add_link (out->defaultLangSys, c->serializer->pop_pack ());
+	defaultLang = true;
       }
     }
 
     + langSys.iter ()
     | hb_filter ([=] (const Record<LangSys>& record) {return l->visitLangSys (); })
     | hb_filter ([&] (const Record<LangSys>& record)
-                 {
-                   const LangSys& d = this+defaultLangSys;
-                   const LangSys& l = this+record.offset;
-                   return !(l == d);
-                 })
+		 {
+		   const LangSys& d = this+defaultLangSys;
+		   const LangSys& l = this+record.offset;
+		   return !(l == d);
+		 })
     | hb_apply (subset_record_array (l, &(out->langSys), this))
     ;
 
@@ -1195,7 +1195,7 @@ struct CoverageFormat1
   { return glyphs->has (glyphArray[index]); }
 
   template <typename set_t>
-  bool add_coverage (set_t *glyphs) const
+  bool collect_coverage (set_t *glyphs) const
   { return glyphs->add_sorted_array (glyphArray.arrayZ, glyphArray.len); }
 
   public:
@@ -1314,11 +1314,11 @@ struct CoverageFormat2
   }
 
   template <typename set_t>
-  bool add_coverage (set_t *glyphs) const
+  bool collect_coverage (set_t *glyphs) const
   {
     unsigned int count = rangeRecord.len;
     for (unsigned int i = 0; i < count; i++)
-      if (unlikely (!rangeRecord[i].add_coverage (glyphs)))
+      if (unlikely (!rangeRecord[i].collect_coverage (glyphs)))
 	return false;
     return true;
   }
@@ -1485,12 +1485,12 @@ struct Coverage
   /* Might return false if array looks unsorted.
    * Used for faster rejection of corrupt data. */
   template <typename set_t>
-  bool add_coverage (set_t *glyphs) const
+  bool collect_coverage (set_t *glyphs) const
   {
     switch (u.format)
     {
-    case 1: return u.format1.add_coverage (glyphs);
-    case 2: return u.format2.add_coverage (glyphs);
+    case 1: return u.format1.collect_coverage (glyphs);
+    case 2: return u.format2.collect_coverage (glyphs);
     default:return false;
     }
   }
@@ -1498,7 +1498,7 @@ struct Coverage
   struct iter_t : hb_iter_with_fallback_t<iter_t, hb_codepoint_t>
   {
     static constexpr bool is_sorted_iterator = true;
-    iter_t (const Coverage &c_ = Null(Coverage))
+    iter_t (const Coverage &c_ = Null (Coverage))
     {
       memset (this, 0, sizeof (*this));
       format = c_.u.format;
@@ -1572,15 +1572,15 @@ struct Coverage
 template<typename Iterator>
 static inline void
 Coverage_serialize (hb_serialize_context_t *c,
-                    Iterator it)
+		    Iterator it)
 { c->start_embed<Coverage> ()->serialize (c, it); }
 
 static void ClassDef_remap_and_serialize (hb_serialize_context_t *c,
-                                          const hb_set_t &glyphset,
-                                          const hb_map_t &gid_klass_map,
-                                          hb_sorted_vector_t<HBGlyphID> &glyphs,
-                                          const hb_set_t &klasses,
-                                          hb_map_t *klass_map /*INOUT*/)
+					  const hb_set_t &glyphset,
+					  const hb_map_t &gid_klass_map,
+					  hb_sorted_vector_t<HBGlyphID> &glyphs,
+					  const hb_set_t &klasses,
+					  hb_map_t *klass_map /*INOUT*/)
 {
   if (!klass_map)
   {
@@ -1605,10 +1605,10 @@ static void ClassDef_remap_and_serialize (hb_serialize_context_t *c,
   auto it =
   + glyphs.iter ()
   | hb_map_retains_sorting ([&] (const HBGlyphID& gid) -> hb_pair_t<hb_codepoint_t, unsigned>
-                            {
-                              unsigned new_klass = klass_map->get (gid_klass_map[gid]);
-                              return hb_pair ((hb_codepoint_t)gid, new_klass);
-                            })
+			    {
+			      unsigned new_klass = klass_map->get (gid_klass_map[gid]);
+			      return hb_pair ((hb_codepoint_t)gid, new_klass);
+			    })
   ;
 
   c->propagate_error (glyphs, klasses);
@@ -1632,7 +1632,7 @@ struct ClassDefFormat1
   template<typename Iterator,
 	   hb_requires (hb_is_iterator (Iterator))>
   bool serialize (hb_serialize_context_t *c,
-                  Iterator it)
+		  Iterator it)
   {
     TRACE_SERIALIZE (this);
     if (unlikely (!c->extend_min (*this))) return_trace (false);
@@ -1644,17 +1644,27 @@ struct ClassDefFormat1
       return_trace (true);
     }
 
-    startGlyph = (*it).first;
-    classValue.serialize (c, + it
-                             | hb_map (hb_second));
+    hb_codepoint_t glyph_min = (*it).first;
+    hb_codepoint_t glyph_max = + it
+			       | hb_map (hb_first)
+			       | hb_reduce (hb_max, 0u);
+    unsigned glyph_count = glyph_max - glyph_min + 1;
+
+    startGlyph = glyph_min;
+    if (unlikely (!classValue.serialize (c, glyph_count))) return_trace (false);
+    for (const hb_pair_t<hb_codepoint_t, unsigned>& gid_klass_pair : + it)
+    {
+      unsigned idx = gid_klass_pair.first - glyph_min;
+      classValue[idx] = gid_klass_pair.second;
+    }
     return_trace (true);
   }
 
   bool subset (hb_subset_context_t *c,
-               hb_map_t *klass_map = nullptr /*OUT*/) const
+	       hb_map_t *klass_map = nullptr /*OUT*/) const
   {
     TRACE_SUBSET (this);
-    const hb_set_t &glyphset = klass_map ? *c->plan->glyphset () : *c->plan->_glyphset_gsub;
+    const hb_set_t &glyphset = *c->plan->_glyphset_gsub;
     const hb_map_t &glyph_map = *c->plan->glyph_map;
 
     hb_sorted_vector_t<HBGlyphID> glyphs;
@@ -1675,7 +1685,7 @@ struct ClassDefFormat1
     }
 
     ClassDef_remap_and_serialize (c->serializer, glyphset, gid_org_klass_map,
-                                  glyphs, orig_klasses, klass_map);
+				  glyphs, orig_klasses, klass_map);
     return_trace ((bool) glyphs);
   }
 
@@ -1686,7 +1696,7 @@ struct ClassDefFormat1
   }
 
   template <typename set_t>
-  bool add_coverage (set_t *glyphs) const
+  bool collect_coverage (set_t *glyphs) const
   {
     unsigned int start = 0;
     unsigned int count = classValue.len;
@@ -1709,7 +1719,7 @@ struct ClassDefFormat1
   }
 
   template <typename set_t>
-  bool add_class (set_t *glyphs, unsigned int klass) const
+  bool collect_class (set_t *glyphs, unsigned int klass) const
   {
     unsigned int count = classValue.len;
     for (unsigned int i = 0; i < count; i++)
@@ -1768,7 +1778,7 @@ struct ClassDefFormat2
   template<typename Iterator,
 	   hb_requires (hb_is_iterator (Iterator))>
   bool serialize (hb_serialize_context_t *c,
-                  Iterator it)
+		  Iterator it)
   {
     TRACE_SERIALIZE (this);
     if (unlikely (!c->extend_min (*this))) return_trace (false);
@@ -1797,17 +1807,17 @@ struct ClassDefFormat2
       unsigned cur_klass = gid_klass_pair.second;
 
       if (cur_gid != prev_gid + 1 ||
-          cur_klass != prev_klass)
+	  cur_klass != prev_klass)
       {
-        if (unlikely (!record)) break;
-        record->last = prev_gid;
-        num_ranges++;
+	if (unlikely (!record)) break;
+	record->last = prev_gid;
+	num_ranges++;
 
-        range_rec.first = cur_gid;
-        range_rec.last = cur_gid;
-        range_rec.value = cur_klass;
+	range_rec.first = cur_gid;
+	range_rec.last = cur_gid;
+	range_rec.value = cur_klass;
 
-        record = c->copy (range_rec);
+	record = c->copy (range_rec);
       }
 
       prev_klass = cur_klass;
@@ -1820,10 +1830,10 @@ struct ClassDefFormat2
   }
 
   bool subset (hb_subset_context_t *c,
-               hb_map_t *klass_map = nullptr /*OUT*/) const
+	       hb_map_t *klass_map = nullptr /*OUT*/) const
   {
     TRACE_SUBSET (this);
-    const hb_set_t &glyphset = klass_map ? *c->plan->glyphset () : *c->plan->_glyphset_gsub;
+    const hb_set_t &glyphset = *c->plan->_glyphset_gsub;
     const hb_map_t &glyph_map = *c->plan->glyph_map;
 
     hb_sorted_vector_t<HBGlyphID> glyphs;
@@ -1841,13 +1851,13 @@ struct ClassDefFormat2
       {
 	if (!glyphset.has (g)) continue;
 	glyphs.push (glyph_map[g]);
-        gid_org_klass_map.set (glyph_map[g], klass);
-        orig_klasses.add (klass);
+	gid_org_klass_map.set (glyph_map[g], klass);
+	orig_klasses.add (klass);
       }
     }
 
     ClassDef_remap_and_serialize (c->serializer, glyphset, gid_org_klass_map,
-                                  glyphs, orig_klasses, klass_map);
+				  glyphs, orig_klasses, klass_map);
     return_trace ((bool) glyphs);
   }
 
@@ -1858,24 +1868,24 @@ struct ClassDefFormat2
   }
 
   template <typename set_t>
-  bool add_coverage (set_t *glyphs) const
+  bool collect_coverage (set_t *glyphs) const
   {
     unsigned int count = rangeRecord.len;
     for (unsigned int i = 0; i < count; i++)
       if (rangeRecord[i].value)
-	if (unlikely (!rangeRecord[i].add_coverage (glyphs)))
+	if (unlikely (!rangeRecord[i].collect_coverage (glyphs)))
 	  return false;
     return true;
   }
 
   template <typename set_t>
-  bool add_class (set_t *glyphs, unsigned int klass) const
+  bool collect_class (set_t *glyphs, unsigned int klass) const
   {
     unsigned int count = rangeRecord.len;
     for (unsigned int i = 0; i < count; i++)
     {
       if (rangeRecord[i].value == klass)
-	if (unlikely (!rangeRecord[i].add_coverage (glyphs)))
+	if (unlikely (!rangeRecord[i].collect_coverage (glyphs)))
 	  return false;
     }
     return true;
@@ -1957,7 +1967,7 @@ struct ClassDef
       hb_codepoint_t glyph_min = (*it).first;
       hb_codepoint_t glyph_max = + it
 				 | hb_map (hb_first)
-                                 | hb_reduce (hb_max, 0u);
+				 | hb_reduce (hb_max, 0u);
 
       unsigned num_ranges = 1;
       hb_codepoint_t prev_gid = glyph_min;
@@ -1965,15 +1975,15 @@ struct ClassDef
 
       for (const auto gid_klass_pair : it)
       {
-        hb_codepoint_t cur_gid = gid_klass_pair.first;
-        unsigned cur_klass = gid_klass_pair.second;
-        if (cur_gid == glyph_min || !cur_klass) continue;
-        if (cur_gid != prev_gid + 1 ||
-            cur_klass != prev_klass)
-          num_ranges++;
+	hb_codepoint_t cur_gid = gid_klass_pair.first;
+	unsigned cur_klass = gid_klass_pair.second;
+	if (cur_gid == glyph_min || !cur_klass) continue;
+	if (cur_gid != prev_gid + 1 ||
+	    cur_klass != prev_klass)
+	  num_ranges++;
 
-        prev_gid = cur_gid;
-        prev_klass = cur_klass;
+	prev_gid = cur_gid;
+	prev_klass = cur_klass;
       }
 
       if (1 + (glyph_max - glyph_min + 1) <= num_ranges * 3)
@@ -1990,7 +2000,7 @@ struct ClassDef
   }
 
   bool subset (hb_subset_context_t *c,
-               hb_map_t *klass_map = nullptr /*OUT*/) const
+	       hb_map_t *klass_map = nullptr /*OUT*/) const
   {
     TRACE_SUBSET (this);
     switch (u.format) {
@@ -2014,11 +2024,11 @@ struct ClassDef
   /* Might return false if array looks unsorted.
    * Used for faster rejection of corrupt data. */
   template <typename set_t>
-  bool add_coverage (set_t *glyphs) const
+  bool collect_coverage (set_t *glyphs) const
   {
     switch (u.format) {
-    case 1: return u.format1.add_coverage (glyphs);
-    case 2: return u.format2.add_coverage (glyphs);
+    case 1: return u.format1.collect_coverage (glyphs);
+    case 2: return u.format2.collect_coverage (glyphs);
     default:return false;
     }
   }
@@ -2026,11 +2036,11 @@ struct ClassDef
   /* Might return false if array looks unsorted.
    * Used for faster rejection of corrupt data. */
   template <typename set_t>
-  bool add_class (set_t *glyphs, unsigned int klass) const
+  bool collect_class (set_t *glyphs, unsigned int klass) const
   {
     switch (u.format) {
-    case 1: return u.format1.add_class (glyphs, klass);
-    case 2: return u.format2.add_class (glyphs, klass);
+    case 1: return u.format1.collect_class (glyphs, klass);
+    case 2: return u.format2.collect_class (glyphs, klass);
     default:return false;
     }
   }
@@ -2064,7 +2074,7 @@ struct ClassDef
 
 template<typename Iterator>
 static inline void ClassDef_serialize (hb_serialize_context_t *c,
-                                       Iterator it)
+				       Iterator it)
 { c->start_embed<ClassDef> ()->serialize (c, it); }
 
 
@@ -2656,7 +2666,7 @@ struct FeatureTableSubstitution
     + substitutions.iter ()
     | hb_apply (subset_record_array (l, &(out->substitutions), this))
     ;
-    return_trace (bool (out->substitutions));
+    return_trace (true);
   }
 
   bool sanitize (hb_sanitize_context_t *c) const
@@ -2700,9 +2710,9 @@ struct FeatureVariationRecord
     if (unlikely (!out)) return_trace (false);
 
     out->conditions.serialize_subset (c->subset_context, conditions, base);
+    out->substitutions.serialize_subset (c->subset_context, substitutions, base, c);
 
-    bool ret = out->substitutions.serialize_subset (c->subset_context, substitutions, base, c);
-    return_trace (ret);
+    return_trace (true);
   }
 
   bool sanitize (hb_sanitize_context_t *c, const void *base) const

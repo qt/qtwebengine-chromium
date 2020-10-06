@@ -1,9 +1,9 @@
 /*
-* Copyright 2015 Google Inc.
-*
-* Use of this source code is governed by a BSD-style license that can be
-* found in the LICENSE file.
-*/
+ * Copyright 2015 Google Inc.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
 
 #include "src/gpu/vk/GrVkCommandBuffer.h"
 
@@ -13,7 +13,7 @@
 #include "src/gpu/vk/GrVkGpu.h"
 #include "src/gpu/vk/GrVkImage.h"
 #include "src/gpu/vk/GrVkImageView.h"
-#include "src/gpu/vk/GrVkIndexBuffer.h"
+#include "src/gpu/vk/GrVkMeshBuffer.h"
 #include "src/gpu/vk/GrVkPipeline.h"
 #include "src/gpu/vk/GrVkPipelineState.h"
 #include "src/gpu/vk/GrVkPipelineState.h"
@@ -21,7 +21,6 @@
 #include "src/gpu/vk/GrVkRenderTarget.h"
 #include "src/gpu/vk/GrVkTransferBuffer.h"
 #include "src/gpu/vk/GrVkUtil.h"
-#include "src/gpu/vk/GrVkVertexBuffer.h"
 
 void GrVkCommandBuffer::invalidateState() {
     for (auto& boundInputBuffer : fBoundInputBuffers) {
@@ -177,7 +176,7 @@ void GrVkCommandBuffer::submitPipelineBarriers(const GrVkGpu* gpu) {
 
 
 void GrVkCommandBuffer::bindInputBuffer(GrVkGpu* gpu, uint32_t binding,
-                                        const GrVkVertexBuffer* vbuffer) {
+                                        const GrVkMeshBuffer* vbuffer) {
     VkBuffer vkBuffer = vbuffer->buffer();
     SkASSERT(VK_NULL_HANDLE != vkBuffer);
     SkASSERT(binding < kMaxInputBuffers);
@@ -195,7 +194,7 @@ void GrVkCommandBuffer::bindInputBuffer(GrVkGpu* gpu, uint32_t binding,
     }
 }
 
-void GrVkCommandBuffer::bindIndexBuffer(GrVkGpu* gpu, const GrVkIndexBuffer* ibuffer) {
+void GrVkCommandBuffer::bindIndexBuffer(GrVkGpu* gpu, const GrVkMeshBuffer* ibuffer) {
     VkBuffer vkBuffer = ibuffer->buffer();
     SkASSERT(VK_NULL_HANDLE != vkBuffer);
     // TODO: once ibuffer->offset() no longer always returns 0, we will need to track the offset
@@ -300,6 +299,38 @@ void GrVkCommandBuffer::draw(const GrVkGpu* gpu,
                                            firstInstance));
 }
 
+void GrVkCommandBuffer::drawIndirect(const GrVkGpu* gpu,
+                                     const GrVkMeshBuffer* indirectBuffer,
+                                     VkDeviceSize offset,
+                                     uint32_t drawCount,
+                                     uint32_t stride) {
+    SkASSERT(fIsActive);
+    SkASSERT(fActiveRenderPass);
+    SkASSERT(!indirectBuffer->isCpuBuffer());
+    this->addingWork(gpu);
+    GR_VK_CALL(gpu->vkInterface(), CmdDrawIndirect(fCmdBuffer,
+                                                   indirectBuffer->buffer(),
+                                                   offset,
+                                                   drawCount,
+                                                   stride));
+}
+
+void GrVkCommandBuffer::drawIndexedIndirect(const GrVkGpu* gpu,
+                                            const GrVkMeshBuffer* indirectBuffer,
+                                            VkDeviceSize offset,
+                                            uint32_t drawCount,
+                                            uint32_t stride) {
+    SkASSERT(fIsActive);
+    SkASSERT(fActiveRenderPass);
+    SkASSERT(!indirectBuffer->isCpuBuffer());
+    this->addingWork(gpu);
+    GR_VK_CALL(gpu->vkInterface(), CmdDrawIndexedIndirect(fCmdBuffer,
+                                                          indirectBuffer->buffer(),
+                                                          offset,
+                                                          drawCount,
+                                                          stride));
+}
+
 void GrVkCommandBuffer::setViewport(const GrVkGpu* gpu,
                                     uint32_t firstViewport,
                                     uint32_t viewportCount,
@@ -343,6 +374,41 @@ void GrVkCommandBuffer::addingWork(const GrVkGpu* gpu) {
     this->submitPipelineBarriers(gpu);
     fHasWork = true;
 }
+
+#ifdef SK_DEBUG
+bool GrVkCommandBuffer::validateNoSharedImageResources(const GrVkCommandBuffer* other) {
+    auto resourceIsInCommandBuffer = [this](const GrManagedResource* resource) {
+        if (!resource->asVkImageResource()) {
+            return false;
+        }
+
+        for (int i = 0; i < fTrackedResources.count(); ++i) {
+            if (resource == fTrackedResources[i]->asVkImageResource()) {
+                return true;
+            }
+        }
+        for (int i = 0; i < fTrackedRecycledResources.count(); ++i) {
+            if (resource == fTrackedRecycledResources[i]->asVkImageResource()) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (int i = 0; i < other->fTrackedResources.count(); ++i) {
+        if (resourceIsInCommandBuffer(other->fTrackedResources[i])) {
+            return false;
+        }
+    }
+
+    for (int i = 0; i < other->fTrackedRecycledResources.count(); ++i) {
+        if (resourceIsInCommandBuffer(other->fTrackedRecycledResources[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // PrimaryCommandBuffer
@@ -611,7 +677,7 @@ void GrVkPrimaryCommandBuffer::onReleaseResources() {
     for (int i = 0; i < fSecondaryCommandBuffers.count(); ++i) {
         fSecondaryCommandBuffers[i]->releaseResources();
     }
-    fFinishedProcs.reset();
+    this->callFinishedProcs();
 }
 
 void GrVkPrimaryCommandBuffer::recycleSecondaryCommandBuffers(GrVkCommandPool* cmdPool) {

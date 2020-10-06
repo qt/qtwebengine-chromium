@@ -18,19 +18,20 @@
 
 #include "perfetto/base/logging.h"
 #include "perfetto/protozero/proto_decoder.h"
-#include "src/trace_processor/args_tracker.h"
+#include "src/trace_processor/importers/common/args_tracker.h"
+#include "src/trace_processor/importers/common/process_tracker.h"
 #include "src/trace_processor/importers/ftrace/binder_tracker.h"
+#include "src/trace_processor/importers/syscalls/syscall_tracker.h"
 #include "src/trace_processor/importers/systrace/systrace_parser.h"
-#include "src/trace_processor/process_tracker.h"
 #include "src/trace_processor/storage/stats.h"
 #include "src/trace_processor/storage/trace_storage.h"
-#include "src/trace_processor/syscall_tracker.h"
 
 #include "protos/perfetto/trace/ftrace/binder.pbzero.h"
 #include "protos/perfetto/trace/ftrace/ftrace.pbzero.h"
 #include "protos/perfetto/trace/ftrace/ftrace_event.pbzero.h"
 #include "protos/perfetto/trace/ftrace/ftrace_stats.pbzero.h"
 #include "protos/perfetto/trace/ftrace/generic.pbzero.h"
+#include "protos/perfetto/trace/ftrace/ion.pbzero.h"
 #include "protos/perfetto/trace/ftrace/kmem.pbzero.h"
 #include "protos/perfetto/trace/ftrace/lowmemorykiller.pbzero.h"
 #include "protos/perfetto/trace/ftrace/mm_event.pbzero.h"
@@ -60,13 +61,14 @@ const char kKthreaddName[] = "kthreadd";
 
 FtraceParser::FtraceParser(TraceProcessorContext* context)
     : context_(context),
-      binder_tracker_(context),
       rss_stat_tracker_(context),
       sched_wakeup_name_id_(context->storage->InternString("sched_wakeup")),
       sched_waking_name_id_(context->storage->InternString("sched_waking")),
       cpu_freq_name_id_(context->storage->InternString("cpufreq")),
       gpu_freq_name_id_(context->storage->InternString("gpufreq")),
       cpu_idle_name_id_(context->storage->InternString("cpuidle")),
+      ion_total_id_(context->storage->InternString("mem.ion")),
+      ion_change_id_(context->storage->InternString("mem.ion_change")),
       ion_total_unknown_id_(context->storage->InternString("mem.ion.unknown")),
       ion_change_unknown_id_(
           context->storage->InternString("mem.ion_change.unknown")),
@@ -75,7 +77,8 @@ FtraceParser::FtraceParser(TraceProcessorContext* context)
       oom_score_adj_id_(context->storage->InternString("oom_score_adj")),
       lmk_id_(context->storage->InternString("mem.lmk")),
       comm_name_id_(context->storage->InternString("comm")),
-      signal_name_id_(context_->storage->InternString("signal.sig")) {
+      signal_name_id_(context_->storage->InternString("signal.sig")),
+      oom_kill_id_(context_->storage->InternString("mem.oom_kill")) {
   // Build the lookup table for the strings inside ftrace events (e.g. the
   // name of ftrace event fields and the names of their args).
   for (size_t i = 0; i < GetDescriptorsSize(); i++) {
@@ -278,6 +281,10 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
         ParseIonHeapGrowOrShrink(ts, pid, data, false);
         break;
       }
+      case FtraceEvent::kIonStatFieldNumber: {
+        ParseIonStat(ts, pid, data);
+        break;
+      }
       case FtraceEvent::kSignalGenerateFieldNumber: {
         ParseSignalGenerate(ts, data);
         break;
@@ -292,6 +299,10 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
       }
       case FtraceEvent::kOomScoreAdjUpdateFieldNumber: {
         ParseOOMScoreAdjUpdate(ts, data);
+        break;
+      }
+      case FtraceEvent::kMarkVictimFieldNumber: {
+        ParseOOMKill(ts, data);
         break;
       }
       case FtraceEvent::kMmEventRecordFieldNumber: {
@@ -315,27 +326,27 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
         break;
       }
       case FtraceEvent::kBinderTransactionFieldNumber: {
-        binder_tracker_.Transaction(ts, pid);
+        ParseBinderTransaction(ts, pid, data);
         break;
       }
       case FtraceEvent::kBinderTransactionReceivedFieldNumber: {
-        binder_tracker_.TransactionReceived(ts, pid);
+        ParseBinderTransactionReceived(ts, pid, data);
         break;
       }
       case FtraceEvent::kBinderTransactionAllocBufFieldNumber: {
-        binder_tracker_.TransactionAllocBuf(ts, pid);
+        ParseBinderTransactionAllocBuf(ts, pid, data);
         break;
       }
       case FtraceEvent::kBinderLockFieldNumber: {
-        binder_tracker_.Lock(ts, pid);
+        ParseBinderLock(ts, pid, data);
         break;
       }
       case FtraceEvent::kBinderUnlockFieldNumber: {
-        binder_tracker_.Unlock(ts, pid);
+        ParseBinderUnlock(ts, pid, data);
         break;
       }
       case FtraceEvent::kBinderLockedFieldNumber: {
-        binder_tracker_.Locked(ts, pid);
+        ParseBinderLocked(ts, pid, data);
         break;
       }
       case FtraceEvent::kSdeTracingMarkWriteFieldNumber: {
@@ -547,6 +558,7 @@ void FtraceParser::ParseSdeTracingMarkWrite(int64_t ts,
       evt.trace_name(), tgid, evt.value());
 }
 
+/** Parses ion heap events present in Pixel kernels. */
 void FtraceParser::ParseIonHeapGrowOrShrink(int64_t ts,
                                             uint32_t pid,
                                             ConstBytes blob,
@@ -599,6 +611,24 @@ void FtraceParser::ParseIonHeapGrowOrShrink(int64_t ts,
               static_cast<int>(protos::pbzero::IonHeapShrinkFtraceEvent::
                                    kHeapNameFieldNumber),
       "ION field mismatch");
+}
+
+/** Parses ion heap events (introduced in 4.19 kernels). */
+void FtraceParser::ParseIonStat(int64_t ts,
+                                uint32_t pid,
+                                protozero::ConstBytes data) {
+  protos::pbzero::IonStatFtraceEvent::Decoder ion(data.data, data.size);
+  // Push the global counter.
+  TrackId track =
+      context_->track_tracker->InternGlobalCounterTrack(ion_total_id_);
+  context_->event_tracker->PushCounter(ts, ion.total_allocated(), track);
+
+  // Push the change counter.
+  // TODO(b/121331269): these should really be instant events.
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
+  track =
+      context_->track_tracker->InternThreadCounterTrack(ion_change_id_, utid);
+  context_->event_tracker->PushCounter(ts, ion.len(), track);
 }
 
 // This event has both the pid of the thread that sent the signal and the
@@ -661,6 +691,14 @@ void FtraceParser::ParseOOMScoreAdjUpdate(int64_t ts, ConstBytes blob) {
   UniqueTid utid = context_->process_tracker->GetOrCreateThread(tid);
   context_->event_tracker->PushProcessCounterForThread(ts, oom_adj,
                                                        oom_score_adj_id_, utid);
+}
+
+void FtraceParser::ParseOOMKill(int64_t ts, ConstBytes blob) {
+  protos::pbzero::MarkVictimFtraceEvent::Decoder evt(blob.data, blob.size);
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(
+      static_cast<uint32_t>(evt.pid()));
+  context_->event_tracker->PushInstant(ts, oom_kill_id_, utid,
+                                       RefType::kRefUtid, true);
 }
 
 void FtraceParser::ParseMmEventRecord(int64_t ts,
@@ -747,6 +785,67 @@ void FtraceParser::ParseTaskRename(ConstBytes blob) {
   StringId comm = context_->storage->InternString(evt.newcomm());
   context_->process_tracker->UpdateThreadName(tid, comm);
   context_->process_tracker->UpdateProcessNameFromThreadName(tid, comm);
+}
+
+void FtraceParser::ParseBinderTransaction(int64_t timestamp,
+                                          uint32_t pid,
+                                          ConstBytes blob) {
+  protos::pbzero::BinderTransactionFtraceEvent::Decoder evt(blob.data,
+                                                            blob.size);
+  int32_t dest_node = static_cast<int32_t>(evt.target_node());
+  int32_t dest_tgid = static_cast<int32_t>(evt.to_proc());
+  int32_t dest_tid = static_cast<int32_t>(evt.to_thread());
+  int32_t transaction_id = static_cast<int32_t>(evt.debug_id());
+  bool is_reply = static_cast<int32_t>(evt.reply()) == 1;
+  uint32_t flags = static_cast<uint32_t>(evt.flags());
+  auto code_str = base::IntToHexString(evt.code()) + " Java Layer Dependent";
+  StringId code = context_->storage->InternString(base::StringView(code_str));
+  BinderTracker::GetOrCreate(context_)->Transaction(
+      timestamp, pid, transaction_id, dest_node, dest_tgid, dest_tid, is_reply,
+      flags, code);
+}
+
+void FtraceParser::ParseBinderTransactionReceived(int64_t timestamp,
+                                                  uint32_t pid,
+                                                  ConstBytes blob) {
+  protos::pbzero::BinderTransactionReceivedFtraceEvent::Decoder evt(blob.data,
+                                                                    blob.size);
+  int32_t transaction_id = static_cast<int32_t>(evt.debug_id());
+  BinderTracker::GetOrCreate(context_)->TransactionReceived(timestamp, pid,
+                                                            transaction_id);
+}
+
+void FtraceParser::ParseBinderTransactionAllocBuf(int64_t timestamp,
+                                                  uint32_t pid,
+                                                  ConstBytes blob) {
+  protos::pbzero::BinderTransactionAllocBufFtraceEvent::Decoder evt(blob.data,
+                                                                    blob.size);
+  uint64_t data_size = static_cast<uint64_t>(evt.data_size());
+  uint64_t offsets_size = static_cast<uint64_t>(evt.offsets_size());
+
+  BinderTracker::GetOrCreate(context_)->TransactionAllocBuf(
+      timestamp, pid, data_size, offsets_size);
+}
+
+void FtraceParser::ParseBinderLocked(int64_t timestamp,
+                                     uint32_t pid,
+                                     ConstBytes blob) {
+  protos::pbzero::BinderLockedFtraceEvent::Decoder evt(blob.data, blob.size);
+  BinderTracker::GetOrCreate(context_)->Locked(timestamp, pid);
+}
+
+void FtraceParser::ParseBinderLock(int64_t timestamp,
+                                   uint32_t pid,
+                                   ConstBytes blob) {
+  protos::pbzero::BinderLockFtraceEvent::Decoder evt(blob.data, blob.size);
+  BinderTracker::GetOrCreate(context_)->Lock(timestamp, pid);
+}
+
+void FtraceParser::ParseBinderUnlock(int64_t timestamp,
+                                     uint32_t pid,
+                                     ConstBytes blob) {
+  protos::pbzero::BinderUnlockFtraceEvent::Decoder evt(blob.data, blob.size);
+  BinderTracker::GetOrCreate(context_)->Unlock(timestamp, pid);
 }
 
 }  // namespace trace_processor

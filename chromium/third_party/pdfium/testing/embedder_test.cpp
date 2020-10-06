@@ -86,10 +86,8 @@ void EmbedderTest::TearDown() {
   EXPECT_EQ(0U, page_map_.size());
   EXPECT_EQ(0U, saved_page_map_.size());
 
-  if (document_) {
-    FORM_DoDocumentAAction(form_handle_, FPDFDOC_AACTION_WC);
+  if (document_)
     CloseDocument();
-  }
 
   FPDFAvail_Destroy(avail_);
   FPDF_DestroyLibrary();
@@ -229,6 +227,7 @@ bool EmbedderTest::OpenDocumentHelper(const char* password,
 }
 
 void EmbedderTest::CloseDocument() {
+  FORM_DoDocumentAAction(form_handle_, FPDFDOC_AACTION_WC);
   FPDFDOC_ExitFormFillEnvironment(form_handle_);
   form_handle_ = nullptr;
 
@@ -252,7 +251,10 @@ FPDF_FORMHANDLE EmbedderTest::SetupFormFillEnvironment(
   formfillinfo->FFI_KillTimer = KillTimerTrampoline;
   formfillinfo->FFI_GetPage = GetPageTrampoline;
   formfillinfo->FFI_DoURIAction = DoURIActionTrampoline;
+  formfillinfo->FFI_DoGoToAction = DoGoToActionTrampoline;
   formfillinfo->FFI_OnFocusChange = OnFocusChangeTrampoline;
+  formfillinfo->FFI_DoURIActionWithKeyboardModifier =
+      DoURIActionWithKeyboardModifierTrampoline;
 
   if (javascript_option == JavaScriptOption::kEnableJavaScript)
     formfillinfo->m_pJsPlatform = platform;
@@ -606,11 +608,31 @@ void EmbedderTest::DoURIActionTrampoline(FPDF_FORMFILLINFO* info,
 }
 
 // static
+void EmbedderTest::DoGoToActionTrampoline(FPDF_FORMFILLINFO* info,
+                                          int page_index,
+                                          int zoom_mode,
+                                          float* pos_array,
+                                          int array_size) {
+  EmbedderTest* test = static_cast<EmbedderTest*>(info);
+  return test->delegate_->DoGoToAction(info, page_index, zoom_mode, pos_array,
+                                       array_size);
+}
+
+// static
 void EmbedderTest::OnFocusChangeTrampoline(FPDF_FORMFILLINFO* info,
                                            FPDF_ANNOTATION annot,
                                            int page_index) {
   EmbedderTest* test = static_cast<EmbedderTest*>(info);
   return test->delegate_->OnFocusChange(info, annot, page_index);
+}
+
+// static
+void EmbedderTest::DoURIActionWithKeyboardModifierTrampoline(
+    FPDF_FORMFILLINFO* info,
+    FPDF_BYTESTRING uri,
+    int modifiers) {
+  EmbedderTest* test = static_cast<EmbedderTest*>(info);
+  return test->delegate_->DoURIActionWithKeyboardModifier(info, uri, modifiers);
 }
 
 // static

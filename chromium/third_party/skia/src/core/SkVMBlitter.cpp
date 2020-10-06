@@ -17,6 +17,8 @@
 #include "src/core/SkVM.h"
 #include "src/shaders/SkColorFilterShader.h"
 
+#include <cinttypes>
+
 namespace {
 
     // Uniforms set by the Blitter itself,
@@ -80,19 +82,20 @@ namespace {
     SK_END_REQUIRE_DENSE;
 
     static SkString debug_name(const Key& key) {
-        return SkStringPrintf("Shader-%llx_Clip-%llx_CS-%llx_CT-%d_AT-%d_Blend-%d_Cov-%d",
-                              key.shader,
-                              key.clip,
-                              key.colorSpace,
-                              key.colorType,
-                              key.alphaType,
-                              key.blendMode,
-                              key.coverage);
+        return SkStringPrintf(
+            "Shader-%" PRIx64 "_Clip-%" PRIx64 "_CS-%" PRIx64 "_CT-%d_AT-%d_Blend-%d_Cov-%d",
+            key.shader,
+            key.clip,
+            key.colorSpace,
+            key.colorType,
+            key.alphaType,
+            key.blendMode,
+            key.coverage);
     }
 
     static SkLRUCache<Key, skvm::Program>* try_acquire_program_cache() {
     #if 1 && defined(SKVM_JIT)
-        thread_local static SkLRUCache<Key, skvm::Program> cache{8};
+        thread_local static SkLRUCache<Key, skvm::Program> cache{64};
         return &cache;
     #else
         // iOS in particular does not support thread_local until iOS 9.0.
@@ -638,7 +641,7 @@ namespace {
 
                     SkString path = SkStringPrintf("/tmp/%s.dot", debug_name(key).c_str());
                     SkFILEWStream tmp(path.c_str());
-                    builder.dot(&tmp, true);
+                    builder.dot(&tmp);
 
                     missed++;
                 }

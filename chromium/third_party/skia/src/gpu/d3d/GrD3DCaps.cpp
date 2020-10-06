@@ -11,9 +11,13 @@
 
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/gpu/GrProgramDesc.h"
+#include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrShaderCaps.h"
+#include "src/gpu/GrStencilSettings.h"
 #include "src/gpu/d3d/GrD3DCaps.h"
 #include "src/gpu/d3d/GrD3DGpu.h"
+#include "src/gpu/d3d/GrD3DRenderTarget.h"
+#include "src/gpu/d3d/GrD3DTexture.h"
 #include "src/gpu/d3d/GrD3DUtil.h"
 
 GrD3DCaps::GrD3DCaps(const GrContextOptions& contextOptions, IDXGIAdapter1* adapter,
@@ -27,7 +31,7 @@ GrD3DCaps::GrD3DCaps(const GrContextOptions& contextOptions, IDXGIAdapter1* adap
     fReuseScratchTextures = true; //TODO: figure this out
     fGpuTracingSupport = false; //TODO: figure this out
     fOversizedStencilSupport = false; //TODO: figure this out
-    fInstanceAttribSupport = true;
+    fDrawInstancedSupport = true;
 
     // TODO: implement these
     fSemaphoreSupport = false;
@@ -49,14 +53,52 @@ GrD3DCaps::GrD3DCaps(const GrContextOptions& contextOptions, IDXGIAdapter1* adap
     // TODO: implement
     fDynamicStateArrayGeometryProcessorTextureSupport = false;
 
+    // TODO: Can re-enable when fillRectToRect draw with shader works
+    fAvoidWritePixelsFastPath = true;
+
     fShaderCaps.reset(new GrShaderCaps(contextOptions));
 
     this->init(contextOptions, adapter, device);
 }
 
+bool GrD3DCaps::canCopyTexture(DXGI_FORMAT dstFormat, int dstSampleCnt,
+                               DXGI_FORMAT srcFormat, int srcSampleCnt) const {
+    if ((dstSampleCnt > 1 || srcSampleCnt > 1) && dstSampleCnt != srcSampleCnt) {
+        return false;
+    }
+
+    return srcFormat == dstFormat;
+}
+
+bool GrD3DCaps::canCopyAsResolve(DXGI_FORMAT dstFormat, int dstSampleCnt,
+                                 DXGI_FORMAT srcFormat, int srcSampleCnt) const {
+    // TODO
+    return false;
+}
+
 bool GrD3DCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
                                  const SkIRect& srcRect, const SkIPoint& dstPoint) const {
-    return false;
+    if (src->isProtected() == GrProtected::kYes && dst->isProtected() != GrProtected::kYes) {
+        return false;
+    }
+
+    int dstSampleCnt = 0;
+    int srcSampleCnt = 0;
+    if (const GrRenderTargetProxy* rtProxy = dst->asRenderTargetProxy()) {
+        dstSampleCnt = rtProxy->numSamples();
+    }
+    if (const GrRenderTargetProxy* rtProxy = src->asRenderTargetProxy()) {
+        srcSampleCnt = rtProxy->numSamples();
+    }
+    SkASSERT((dstSampleCnt > 0) == SkToBool(dst->asRenderTargetProxy()));
+    SkASSERT((srcSampleCnt > 0) == SkToBool(src->asRenderTargetProxy()));
+
+    DXGI_FORMAT dstFormat, srcFormat;
+    SkAssertResult(dst->backendFormat().asDxgiFormat(&dstFormat));
+    SkAssertResult(src->backendFormat().asDxgiFormat(&srcFormat));
+
+    return this->canCopyTexture(dstFormat, dstSampleCnt, srcFormat, srcSampleCnt) ||
+           this->canCopyAsResolve(dstFormat, dstSampleCnt, srcFormat, srcSampleCnt);
 }
 
 void GrD3DCaps::init(const GrContextOptions& contextOptions, IDXGIAdapter1* adapter,
@@ -109,7 +151,7 @@ void GrD3DCaps::init(const GrContextOptions& contextOptions, IDXGIAdapter1* adap
     this->initShaderCaps(adapterDesc.VendorId, optionsDesc);
 
     this->initFormatTable(adapterDesc, device);
-    // TODO: set up stencil
+    this->initStencilFormat(device);
 
     if (!contextOptions.fDisableDriverCorrectnessWorkarounds) {
         this->applyDriverCorrectnessWorkarounds(adapterDesc.VendorId);
@@ -120,10 +162,8 @@ void GrD3DCaps::init(const GrContextOptions& contextOptions, IDXGIAdapter1* adap
 
 void GrD3DCaps::initGrCaps(const D3D12_FEATURE_DATA_D3D12_OPTIONS& optionsDesc,
                            const D3D12_FEATURE_DATA_D3D12_OPTIONS2& options2Desc) {
-    // There doesn't seem to be a property for this, and setting it to MAXINT makes tests which test
-    // all the vertex attribs time out looping over that many. For now, we'll cap this at 64 max and
-    // can raise it if we ever find that need.
-    fMaxVertexAttributes = 64;
+    // We assume a minimum of Shader Model 5.1, which allows at most 32 vertex inputs.
+    fMaxVertexAttributes = 32;
 
     // TODO: we can set locations but not sure if we can query them
     fSampleLocationsSupport = false;
@@ -164,6 +204,8 @@ void GrD3DCaps::initGrCaps(const D3D12_FEATURE_DATA_D3D12_OPTIONS& optionsDesc,
     fMapBufferFlags = kCanMap_MapFlag | kSubset_MapFlag | kAsyncRead_MapFlag;
 
     fOversizedStencilSupport = true;
+
+    fTwoSidedStencilRefsAndMasksMustMatch = true;
 
     // Advanced blend modes don't appear to be supported.
 }
@@ -206,6 +248,33 @@ void GrD3DCaps::applyDriverCorrectnessWorkarounds(int vendorID) {
     // Nothing yet.
 }
 
+
+bool stencil_format_supported(ID3D12Device* device, DXGI_FORMAT format) {
+    D3D12_FEATURE_DATA_FORMAT_SUPPORT formatSupportDesc;
+    formatSupportDesc.Format = format;
+    SkDEBUGCODE(HRESULT hr = ) device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT,
+                                                           &formatSupportDesc,
+                                                           sizeof(formatSupportDesc));
+    SkASSERT(SUCCEEDED(hr));
+    return SkToBool(D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL & formatSupportDesc.Support1);
+}
+
+void GrD3DCaps::initStencilFormat(ID3D12Device* device) {
+    // List of legal stencil formats (though perhaps not supported on
+    // the particular gpu/driver) from most preferred to least.
+    static const StencilFormat
+                   // internal Format             stencil bits
+        gD24S8 = { DXGI_FORMAT_D24_UNORM_S8_UINT,    8 },
+        gD32S8 = { DXGI_FORMAT_D32_FLOAT_S8X24_UINT, 8 };
+
+    if (stencil_format_supported(device, DXGI_FORMAT_D24_UNORM_S8_UINT)) {
+        fPreferredStencilFormat = gD24S8;
+    } else {
+        SkASSERT(stencil_format_supported(device, DXGI_FORMAT_D32_FLOAT_S8X24_UINT));
+        fPreferredStencilFormat = gD32S8;
+    }
+}
+
 // These are all the valid DXGI_FORMATs that we support in Skia. They are roughly ordered from most
 // frequently used to least to improve look up times in arrays.
 static constexpr DXGI_FORMAT kDxgiFormats[] = {
@@ -218,7 +287,6 @@ static constexpr DXGI_FORMAT kDxgiFormats[] = {
     DXGI_FORMAT_R8G8_UNORM,
     DXGI_FORMAT_R10G10B10A2_UNORM,
     DXGI_FORMAT_B4G4R4A4_UNORM,
-    DXGI_FORMAT_R32G32B32A32_FLOAT,
     DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
     DXGI_FORMAT_BC1_UNORM,
     DXGI_FORMAT_R16_UNORM,
@@ -853,8 +921,13 @@ GrCaps::SurfaceReadPixelsSupport GrD3DCaps::surfaceSupportsReadPixels(
     if (surface->isProtected()) {
         return SurfaceReadPixelsSupport::kUnsupported;
     }
-    // TODO
-    return SurfaceReadPixelsSupport::kUnsupported;
+    if (auto tex = static_cast<const GrD3DTexture*>(surface->asTexture())) {
+        // We can't directly read from a compressed format
+        if (GrDxgiFormatIsCompressed(tex->dxgiFormat())) {
+            return SurfaceReadPixelsSupport::kCopyToTexture2D;
+        }
+    }
+    return SurfaceReadPixelsSupport::kSupported;
 }
 
 bool GrD3DCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
@@ -884,31 +957,6 @@ bool GrD3DCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
         }
     }
     return false;
-}
-
-GrColorType GrD3DCaps::getYUVAColorTypeFromBackendFormat(const GrBackendFormat& format,
-                                                         bool isAlphaChannel) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
-        return GrColorType::kUnknown;
-    }
-
-    switch (dxgiFormat) {
-        case DXGI_FORMAT_R8_UNORM:                 return isAlphaChannel ? GrColorType::kAlpha_8
-                                                                         : GrColorType::kGray_8;
-        case DXGI_FORMAT_R8G8B8A8_UNORM:           return GrColorType::kRGBA_8888;
-        case DXGI_FORMAT_R8G8_UNORM:               return GrColorType::kRG_88;
-        case DXGI_FORMAT_B8G8R8A8_UNORM:           return GrColorType::kBGRA_8888;
-        case DXGI_FORMAT_R10G10B10A2_UNORM:        return GrColorType::kRGBA_1010102;
-        case DXGI_FORMAT_R16_UNORM:                return GrColorType::kAlpha_16;
-        case DXGI_FORMAT_R16_FLOAT:                return GrColorType::kAlpha_F16;
-        case DXGI_FORMAT_R16G16_UNORM:             return GrColorType::kRG_1616;
-        case DXGI_FORMAT_R16G16B16A16_UNORM:       return GrColorType::kRGBA_16161616;
-        case DXGI_FORMAT_R16G16_FLOAT:             return GrColorType::kRG_F16;
-        default:                                   return GrColorType::kUnknown;
-    }
-
-    SkUNREACHABLE;
 }
 
 GrBackendFormat GrD3DCaps::onGetDefaultBackendFormat(GrColorType ct) const {
@@ -944,7 +992,8 @@ GrSwizzle GrD3DCaps::getReadSwizzle(const GrBackendFormat& format, GrColorType c
             return ctInfo.fReadSwizzle;
         }
     }
-    return GrSwizzle::RGBA();
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, dxgiFormat);
+    return {};
 }
 
 GrSwizzle GrD3DCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType colorType) const {
@@ -957,7 +1006,8 @@ GrSwizzle GrD3DCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType 
             return ctInfo.fWriteSwizzle;
         }
     }
-    return GrSwizzle::RGBA();
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, dxgiFormat);
+    return {};
 }
 
 uint64_t GrD3DCaps::computeFormatKey(const GrBackendFormat& format) const {
@@ -970,8 +1020,28 @@ uint64_t GrD3DCaps::computeFormatKey(const GrBackendFormat& format) const {
 GrCaps::SupportedRead GrD3DCaps::onSupportedReadPixelsColorType(
         GrColorType srcColorType, const GrBackendFormat& srcBackendFormat,
         GrColorType dstColorType) const {
-    // TODO
-    return {GrColorType::kUnknown, 0};
+    DXGI_FORMAT dxgiFormat;
+    if (!srcBackendFormat.asDxgiFormat(&dxgiFormat)) {
+        return { GrColorType::kUnknown, 0 };
+    }
+
+    SkImage::CompressionType compression = GrDxgiFormatToCompressionType(dxgiFormat);
+    if (compression != SkImage::CompressionType::kNone) {
+        return { SkCompressionTypeIsOpaque(compression) ? GrColorType::kRGB_888x
+                                                        : GrColorType::kRGBA_8888, 0 };
+    }
+
+    // Any subresource buffer data we copy to needs to be aligned to 256 bytes.
+    size_t offsetAlignment = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
+
+    const auto& info = this->getFormatInfo(dxgiFormat);
+    for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
+        const auto& ctInfo = info.fColorTypeInfos[i];
+        if (ctInfo.fColorType == srcColorType) {
+            return { srcColorType, offsetAlignment };
+        }
+    }
+    return { GrColorType::kUnknown, 0 };
 }
 
 void GrD3DCaps::addExtraSamplerKey(GrProcessorKeyBuilder* b,
@@ -993,7 +1063,20 @@ GrProgramDesc GrD3DCaps::makeDesc(const GrRenderTarget* rt,
 
     GrProcessorKeyBuilder b(&desc.key());
 
-    // TODO: add D3D-specific information
+    GrD3DRenderTarget* d3dRT = (GrD3DRenderTarget*) rt;
+    d3dRT->genKey(&b);
+
+    GrStencilSettings stencil = programInfo.nonGLStencilSettings();
+    stencil.genKey(&b, false);
+
+    programInfo.pipeline().genKey(&b, *this);
+    // The num samples is already added in the render target key so we don't need to add it here.
+    SkASSERT(programInfo.numRasterSamples() == rt->numSamples());
+
+    // D3D requires the full primitive type as part of its key
+    b.add32(programInfo.primitiveTypeKey());
+
+    SkASSERT(!this->mixedSamplesSupport());
 
     return desc;
 }

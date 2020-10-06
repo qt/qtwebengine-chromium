@@ -98,7 +98,7 @@ if (WIN32)
 	set(CMAKE_DEBUG_POSTFIX "d")
 endif()
 
-if (CMAKE_COMPILER_IS_GNUCXX OR (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"))
+if (CMAKE_COMPILER_IS_GNUCXX OR ((${CMAKE_CXX_COMPILER_ID} MATCHES "Clang") AND NOT MSVC))
 	set(spirv-compiler-options ${spirv-compiler-options} -Wall -Wextra -Wshadow)
 	if (SPIRV_CROSS_MISC_WARNINGS)
 		if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
@@ -323,7 +323,7 @@ if (SPIRV_CROSS_STATIC)
 endif()
 
 set(spirv-cross-abi-major 0)
-set(spirv-cross-abi-minor 28)
+set(spirv-cross-abi-minor 33)
 set(spirv-cross-abi-patch 0)
 
 if (SPIRV_CROSS_SHARED)

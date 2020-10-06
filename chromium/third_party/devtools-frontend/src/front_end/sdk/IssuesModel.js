@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
-import {CookieModel} from './CookieModel.js';
-import {AggregatedIssue, Issue} from './Issue.js';
+import {CrossOriginEmbedderPolicyIssue} from './CrossOriginEmbedderPolicyIssue.js';
+import {Issue} from './Issue.js';  // eslint-disable-line no-unused-vars
+import {MixedContentIssue} from './MixedContentIssue.js';
 import {Events as NetworkManagerEvents, NetworkManager} from './NetworkManager.js';
 import {NetworkRequest} from './NetworkRequest.js';  // eslint-disable-line no-unused-vars
-import * as RelatedIssue from './RelatedIssue.js';
-import {Events as ResourceTreeModelEvents, ResourceTreeFrame, ResourceTreeModel} from './ResourceTreeModel.js';  // eslint-disable-line no-unused-vars
+import {SameSiteCookieIssue} from './SameSiteCookieIssue.js';
 import {Capability, SDKModel, Target} from './SDKModel.js';  // eslint-disable-line no-unused-vars
 
 
@@ -41,9 +42,7 @@ export class NetworkIssueDetector {
     const request = /** @type {!NetworkRequest} */ (event.data);
     const blockedReason = getCoepBlockedReason(request);
     if (blockedReason) {
-      const resources = {requests: [{requestId: request.requestId()}]};
-      const code = `CrossOriginEmbedderPolicy::${this._toCamelCase(blockedReason)}`;
-      this._issuesModel.issueAdded({code, resources});
+      this._issuesModel.addIssue(new CrossOriginEmbedderPolicyIssue(blockedReason, request.requestId()));
     }
 
     /**
@@ -71,19 +70,14 @@ export class NetworkIssueDetector {
       this._networkManager.removeEventListener(NetworkManagerEvents.RequestFinished, this._handleRequestFinished, this);
     }
   }
-
-  /**
-   * @param {string} string
-   * @return {string}
-   */
-  _toCamelCase(string) {
-    const result = string.replace(/-\p{ASCII}/gu, match => match.substr(1).toUpperCase());
-    return result.replace(/^./, match => match.toUpperCase());
-  }
 }
 
 
 /**
+ * The `IssuesModel` is a thin dispatch that does not store issues, but only creates the representation
+ * class (usually derived from `Issue`) and passes the instances on via a dispatched event.
+ * We chose this approach here because the lifetime of the Model is tied to the target, but DevTools
+ * wants to preserve issues for targets (e.g. iframes) that are already gone as well.
  * @implements {Protocol.AuditsDispatcher}
  */
 export class IssuesModel extends SDKModel {
@@ -93,55 +87,10 @@ export class IssuesModel extends SDKModel {
   constructor(target) {
     super(target);
     this._enabled = false;
-    /** @type {!Array<!Issue>} */
-    this._issues = [];
-    /** @type {!Map<string, !AggregatedIssue>} */
-    this._aggregatedIssuesByCode = new Map();
-    this._cookiesModel = target.model(CookieModel);
     /** @type {*} */
     this._auditsAgent = null;
-    this._hasSeenMainFrameNavigated = false;
-
-    this._networkManager = target.model(NetworkManager);
-    const resourceTreeModel = /** @type {?ResourceTreeModel} */ (target.model(ResourceTreeModel));
-    if (resourceTreeModel) {
-      resourceTreeModel.addEventListener(
-        ResourceTreeModelEvents.MainFrameNavigated, this._onMainFrameNavigated, this);
-    }
     this._networkIssueDetector = null;
     this.ensureEnabled();
-  }
-
-  /**
-   * @param {!Common.EventTarget.EventTargetEvent} event
-   */
-  _onMainFrameNavigated(event) {
-    const mainFrame = /** @type {!ResourceTreeFrame} */ (event.data);
-    const keptIssues = [];
-    for (const issue of this._issues) {
-      if (issue.isAssociatedWithRequestId(mainFrame.loaderId)) {
-        keptIssues.push(issue);
-      } else {
-        this._disconnectIssue(issue);
-      }
-    }
-    this._issues = keptIssues;
-    this._aggregatedIssuesByCode.clear();
-    for (const issue of this._issues) {
-      this._aggregateIssue(issue);
-    }
-    this._hasSeenMainFrameNavigated = true;
-    this.dispatchEventToListeners(Events.FullUpdateRequired);
-  }
-
-  /**
-   * The `IssuesModel` requires at least one `MainFrameNavigated` event. Receiving
-   * one implies that we have all the information for accurate issues.
-   *
-   * @return {boolean}
-   */
-  reloadForAccurateInformationRequired() {
-    return !this._hasSeenMainFrameNavigated;
   }
 
   ensureEnabled() {
@@ -157,125 +106,101 @@ export class IssuesModel extends SDKModel {
   }
 
   /**
-   * @param {!Issue} issue
-   * @returns {!AggregatedIssue}
-   */
-  _aggregateIssue(issue) {
-    if (!this._aggregatedIssuesByCode.has(issue.code())) {
-      this._aggregatedIssuesByCode.set(issue.code(), new AggregatedIssue(issue.code()));
-    }
-    const aggregatedIssue = this._aggregatedIssuesByCode.get(issue.code());
-    aggregatedIssue.addInstance(issue);
-    return aggregatedIssue;
-  }
-
-  /**
    * @override
-   * TODO(chromium:1063765): Strengthen types.
-   * @param {*} inspectorIssue
+   * @param {!Protocol.Audits.InspectorIssue} inspectorIssue
    */
   issueAdded(inspectorIssue) {
     const issues = this._createIssuesFromProtocolIssue(inspectorIssue);
-    this._issues.push(...issues);
-
     for (const issue of issues) {
-      this._connectIssue(issue);
-      const aggregatedIssue = this._aggregateIssue(issue);
-      this.dispatchEventToListeners(Events.AggregatedIssueUpdated, aggregatedIssue);
+      this.addIssue(issue);
     }
+  }
+
+  /**
+   * @param {!Issue} issue
+   */
+  addIssue(issue) {
+    this.dispatchEventToListeners(Events.IssueAdded, {issuesModel: this, issue});
   }
 
   /**
    * Each issue reported by the backend can result in multiple {!Issue} instances.
-   * Handlers are simple functions hard-coded into a map. If no handler is found for
-   * a given Issue code, the default behavior creates one {!Issue} per incoming backend
-   * issue.
-   * TODO(chromium:1063765): Strengthen types.
-   * @param {*} inspectorIssue} inspectorIssue
+   * Handlers are simple functions hard-coded into a map.
+   * @param {!Protocol.Audits.InspectorIssue} inspectorIssue} inspectorIssue
    * @return {!Array<!Issue>}
    */
   _createIssuesFromProtocolIssue(inspectorIssue) {
     const handler = issueCodeHandlers.get(inspectorIssue.code);
     if (handler) {
-      // TODO(chromium:1063765): Pass the details object here, not the full inspector issue.
-      return handler(this, inspectorIssue);
+      return handler(this, inspectorIssue.details);
     }
 
-    return [new Issue(inspectorIssue.code, inspectorIssue.resources)];
-  }
-
-  /**
-   *
-   * @param {!Issue} issue
-   */
-  _connectIssue(issue) {
-    const resources = issue.resources();
-    if (!resources) {
-      return;
-    }
-    if (resources.requests) {
-      for (const resourceRequest of resources.requests) {
-        const request =
-            /** @type {?NetworkRequest} */ (
-                self.SDK.networkLog.requests().find(r => r.requestId() === resourceRequest.requestId));
-        if (request) {
-          // Connect the real network request with this issue and vice versa.
-          RelatedIssue.connect(request, issue.getCategory(), issue);
-          resourceRequest.request = request;
-        }
-      }
-    }
-  }
-
-  /**
-   *
-   * @param {!Issue} issue
-   */
-  _disconnectIssue(issue) {
-    const resources = issue.resources();
-    if (!resources) {
-      return;
-    }
-    if (resources.requests) {
-      for (const resourceRequest of resources.requests) {
-        const request =
-            /** @type {?NetworkRequest} */ (
-                self.SDK.networkLog.requests().find(r => r.requestId() === resourceRequest.requestId));
-        if (request) {
-          // Disconnect the real network request from this issue;
-          RelatedIssue.disconnect(request, issue.getCategory(), issue);
-        }
-      }
-    }
-  }
-
-  /**
-   * @returns {!Iterable<AggregatedIssue>}
-   */
-  aggregatedIssues() {
-    return this._aggregatedIssuesByCode.values();
-  }
-
-  /**
-   * @return {number}
-   */
-  numberOfAggregatedIssues() {
-    return this._aggregatedIssuesByCode.size;
+    console.warn(`No handler registered for issue code ${inspectorIssue.code}`);
+    return [];
   }
 }
 
 /**
- * TODO(chromium:1063765): Change the type (once the protocol/backend changes have landed) to:
- *   !Map<!Protocol.Audits.InspectorIssueCode, function(!IssuesModel, !Protocol.Audits.InspectorIssueDetails):!Array<!Issue>>
- *
- * @type {!Map<string, function(!IssuesModel, *):!Array<!Issue>>}
+ * @param {!IssuesModel} issuesModel
+ * @param {!Protocol.Audits.InspectorIssueDetails} inspectorDetails
+ * @return {!Array<!Issue>}
  */
-const issueCodeHandlers = new Map([]);
+function createIssuesForSameSiteCookieIssue(issuesModel, inspectorDetails) {
+  const sameSiteDetails = inspectorDetails.sameSiteCookieIssueDetails;
+  if (!sameSiteDetails) {
+    console.warn('SameSite issue without details received.');
+    return [];
+  }
+
+  /** @type {!Array<!Issue>} */
+  const issues = [];
+
+  // Exclusion reasons have priority. It means a cookie was blocked. Create an issue
+  // for every exclusion reason but ignore warning reasons if the cookie was blocked.
+  if (sameSiteDetails.cookieExclusionReasons && sameSiteDetails.cookieExclusionReasons.length > 0) {
+    for (const exclusionReason of sameSiteDetails.cookieExclusionReasons) {
+      const code = SameSiteCookieIssue.codeForSameSiteDetails(
+          exclusionReason, sameSiteDetails.operation, sameSiteDetails.cookieUrl);
+      issues.push(new SameSiteCookieIssue(code, sameSiteDetails));
+    }
+    return issues;
+  }
+
+  if (sameSiteDetails.cookieWarningReasons) {
+    for (const warningReason of sameSiteDetails.cookieWarningReasons) {
+      const code = SameSiteCookieIssue.codeForSameSiteDetails(
+          warningReason, sameSiteDetails.operation, sameSiteDetails.cookieUrl);
+      issues.push(new SameSiteCookieIssue(code, sameSiteDetails));
+    }
+  }
+  return issues;
+}
+
+/**
+ * @param {!IssuesModel} issuesModel
+ * @param {!Protocol.Audits.InspectorIssueDetails} inspectorDetails
+ * @return {!Array<!Issue>}
+ */
+function createIssuesForMixedContentIssue(issuesModel, inspectorDetails) {
+  const mixedContentDetails = inspectorDetails.mixedContentIssueDetails;
+  if (!mixedContentDetails) {
+    console.warn('Mixed content issue without details received.');
+    return [];
+  }
+  return [new MixedContentIssue(mixedContentDetails)];
+}
+
+/**
+ * @type {!Map<!Protocol.Audits.InspectorIssueCode, function(!IssuesModel, !Protocol.Audits.InspectorIssueDetails):!Array<!Issue>>}
+ */
+const issueCodeHandlers = new Map([
+  [Protocol.Audits.InspectorIssueCode.SameSiteCookieIssue, createIssuesForSameSiteCookieIssue],
+  [Protocol.Audits.InspectorIssueCode.MixedContentIssue, createIssuesForMixedContentIssue],
+]);
 
 /** @enum {symbol} */
 export const Events = {
-  AggregatedIssueUpdated: Symbol('AggregatedIssueUpdated'),
-  FullUpdateRequired: Symbol('FullUpdateRequired'),
+  IssueAdded: Symbol('IssueAdded'),
 };
 
 SDKModel.register(IssuesModel, Capability.Audits, true);

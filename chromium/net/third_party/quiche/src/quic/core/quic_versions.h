@@ -330,6 +330,12 @@ struct QUIC_EXPORT_PRIVATE ParsedQuicVersion {
   // Returns true if this version uses variable-length integers when
   // encoding transport parameter types and lengths.
   bool HasVarIntTransportParams() const;
+
+  // Returns whether this version uses PROTOCOL_TLS1_3.
+  bool UsesTls() const;
+
+  // Returns whether this version uses PROTOCOL_QUIC_CRYPTO.
+  bool UsesQuicCrypto() const;
 };
 
 QUIC_EXPORT_PRIVATE ParsedQuicVersion UnsupportedQuicVersion();
@@ -341,30 +347,42 @@ QUIC_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
 
 using ParsedQuicVersionVector = std::vector<ParsedQuicVersion>;
 
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(
+    std::ostream& os,
+    const ParsedQuicVersionVector& versions);
+
 // Representation of the on-the-wire QUIC version number. Will be written/read
 // to the wire in network-byte-order.
 using QuicVersionLabel = uint32_t;
 using QuicVersionLabelVector = std::vector<QuicVersionLabel>;
 
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(
+    std::ostream& os,
+    const QuicVersionLabelVector& version_labels);
+
 // This vector contains all crypto handshake protocols that are supported.
 constexpr std::array<HandshakeProtocol, 2> SupportedHandshakeProtocols() {
-  return {PROTOCOL_QUIC_CRYPTO, PROTOCOL_TLS1_3};
+  return {PROTOCOL_TLS1_3, PROTOCOL_QUIC_CRYPTO};
 }
 
 constexpr std::array<ParsedQuicVersion, 8> SupportedVersions() {
   return {
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_27),
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25),
+      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_50),
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_50),
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_49),
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_48),
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_46),
       ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_43),
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_27),
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25),
-      ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_50),
   };
 }
 
 using QuicTransportVersionVector = std::vector<QuicTransportVersion>;
+
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(
+    std::ostream& os,
+    const QuicTransportVersionVector& transport_versions);
 
 // Returns a vector of QUIC versions in kSupportedTransportVersions.
 QUIC_EXPORT_PRIVATE QuicTransportVersionVector AllSupportedTransportVersions();
@@ -394,6 +412,10 @@ AllSupportedVersionsWithQuicCrypto();
 // handshake_protocol == PROTOCOL_QUIC_CRYPTO, in the same order.
 QUIC_EXPORT_PRIVATE ParsedQuicVersionVector
 CurrentSupportedVersionsWithQuicCrypto();
+
+// Returns a subset of AllSupportedVersions() with
+// handshake_protocol == PROTOCOL_TLS1_3, in the same order.
+QUIC_EXPORT_PRIVATE ParsedQuicVersionVector AllSupportedVersionsWithTls();
 
 // Returns a subset of CurrentSupportedVersions() with handshake_protocol ==
 // PROTOCOL_TLS1_3.

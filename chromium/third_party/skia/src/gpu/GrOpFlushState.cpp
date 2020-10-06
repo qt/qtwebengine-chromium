@@ -9,6 +9,7 @@
 
 #include "src/core/SkConvertPixels.h"
 #include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDataUtils.h"
 #include "src/gpu/GrDrawOpAtlas.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrImageInfo.h"
@@ -22,7 +23,8 @@ GrOpFlushState::GrOpFlushState(GrGpu* gpu, GrResourceProvider* resourceProvider,
                                GrTokenTracker* tokenTracker,
                                sk_sp<GrBufferAllocPool::CpuBufferCache> cpuBufferCache)
         : fVertexPool(gpu, cpuBufferCache)
-        , fIndexPool(gpu, std::move(cpuBufferCache))
+        , fIndexPool(gpu, cpuBufferCache)
+        , fDrawIndirectPool(gpu, std::move(cpuBufferCache))
         , fGpu(gpu)
         , fResourceProvider(resourceProvider)
         , fTokenTracker(tokenTracker) {}
@@ -46,7 +48,7 @@ void GrOpFlushState::executeDrawsAndUploadsForMeshDrawOp(
         GrProgramInfo programInfo(this->proxy()->numSamples(),
                                   this->proxy()->numStencilSamples(),
                                   this->proxy()->backendFormat(),
-                                  this->outputView()->origin(),
+                                  this->writeView()->origin(),
                                   pipeline,
                                   fCurrDraw->fGeometryProcessor,
                                   fCurrDraw->fPrimitiveType);
@@ -66,6 +68,7 @@ void GrOpFlushState::executeDrawsAndUploadsForMeshDrawOp(
 void GrOpFlushState::preExecuteDraws() {
     fVertexPool.unmap();
     fIndexPool.unmap();
+    fDrawIndirectPool.unmap();
     for (auto& upload : fASAPUploads) {
         this->doUpload(upload);
     }
@@ -79,6 +82,7 @@ void GrOpFlushState::reset() {
     SkASSERT(fCurrUpload == fInlineUploads.end());
     fVertexPool.reset();
     fIndexPool.reset();
+    fDrawIndirectPool.reset();
     fArena.reset();
     fASAPUploads.reset();
     fInlineUploads.reset();
@@ -193,7 +197,7 @@ GrAppliedClip GrOpFlushState::detachAppliedClip() {
     return fOpArgs->appliedClip() ? std::move(*fOpArgs->appliedClip()) : GrAppliedClip();
 }
 
-GrStrikeCache* GrOpFlushState::glyphCache() const {
+GrStrikeCache* GrOpFlushState::strikeCache() const {
     return fGpu->getContext()->priv().getGrStrikeCache();
 }
 
