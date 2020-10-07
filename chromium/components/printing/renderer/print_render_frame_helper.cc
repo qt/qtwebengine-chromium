@@ -972,6 +972,7 @@ PrintRenderFrameHelper::PrintRenderFrameHelper(
       is_scripted_preview_delayed_(false),
       ipc_nesting_level_(0),
       render_frame_gone_(false),
+      delete_pending_(false),
       weak_ptr_factory_(this) {
   if (!delegate_->IsPrintPreviewEnabled())
     DisablePreview();
@@ -1073,8 +1074,10 @@ bool PrintRenderFrameHelper::OnMessageReceived(const IPC::Message& message) {
   IPC_END_MESSAGE_MAP()
 
   --ipc_nesting_level_;
-  if (ipc_nesting_level_ == 0 && render_frame_gone_)
+  if (ipc_nesting_level_ == 0 && render_frame_gone_ && !delete_pending_) {
+    delete_pending_ = true;
     base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, this);
+  }
   return handled;
 }
 
