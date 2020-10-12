@@ -233,6 +233,13 @@ static const char kRSAKey[] =
     "moZWgjHvB2W9Ckn7sDqsPB+U2tyX0joDdQEyuiMECDY8oQ==\n"
     "-----END RSA PRIVATE KEY-----\n";
 
+static const char kP256Key[] =
+    "-----BEGIN PRIVATE KEY-----\n"
+    "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgBw8IcnrUoEqc3VnJ\n"
+    "TYlodwi1b8ldMHcO6NHJzgqLtGqhRANCAATmK2niv2Wfl74vHg2UikzVl2u3qR4N\n"
+    "Rvvdqakendy6WgHn1peoChj5w8SjHlbifINI2xYaHPUdfvGULUvPciLB\n"
+    "-----END PRIVATE KEY-----\n";
+
 // kCRLTestRoot is a test root certificate. It has private key:
 //
 //     -----BEGIN RSA PRIVATE KEY-----
@@ -354,16 +361,16 @@ static const char kBadIssuerCRL[] =
 // extension.
 static const char kKnownCriticalCRL[] =
     "-----BEGIN X509 CRL-----\n"
-    "MIIBujCBowIBATANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJVUzETMBEGA1UE\n"
+    "MIIBuDCBoQIBATANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJVUzETMBEGA1UE\n"
     "CAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNTW91bnRhaW4gVmlldzESMBAGA1UECgwJ\n"
-    "Qm9yaW5nU1NMFw0xNjA5MjYxNTEwNTVaFw0xNjEwMjYxNTEwNTVaoCEwHzAKBgNV\n"
-    "HRQEAwIBATARBgNVHRwBAf8EBzAFoQMBAf8wDQYJKoZIhvcNAQELBQADggEBAA+3\n"
-    "i+5e5Ub8sccfgOBs6WVJFI9c8gvJjrJ8/dYfFIAuCyeocs7DFXn1n13CRZ+URR/Q\n"
-    "mVWgU28+xeusuSPYFpd9cyYTcVyNUGNTI3lwgcE/yVjPaOmzSZKdPakApRxtpKKQ\n"
-    "NN/56aQz3bnT/ZSHQNciRB8U6jiD9V30t0w+FDTpGaG+7bzzUH3UVF9xf9Ctp60A\n"
-    "3mfLe0scas7owSt4AEFuj2SPvcE7yvdOXbu+IEv21cEJUVExJAbhvIweHXh6yRW+\n"
-    "7VVeiNzdIjkZjyTmAzoXGha4+wbxXyBRbfH+XWcO/H+8nwyG8Gktdu2QB9S9nnIp\n"
-    "o/1TpfOMSGhMyMoyPrk=\n"
+    "Qm9yaW5nU1NMFw0xNjA5MjYxNTEwNTVaFw0xNjEwMjYxNTEwNTVaoB8wHTAKBgNV\n"
+    "HRQEAwIBATAPBgNVHRwBAf8EBTADgQH/MA0GCSqGSIb3DQEBCwUAA4IBAQAs37Jq\n"
+    "3Htcehm6C2PKXOHekwTqTLOPWsYHfF68kYhdzcopDZBeoKE7jLRkRRGFDaR/tfUs\n"
+    "kwLSDNSQ8EwPb9PT1X8kmFn9QmJgWD6f6BzaH5ZZ9iBUwOcvrydlb/jnjdIZHQxs\n"
+    "fKOAceW5XX3f7DANC3qwYLsQZR/APkfV8nXjPYVUz1kKj04uq/BbQviInjyUYixN\n"
+    "xDx+GDWVVXccehcwAu983kAqP+JDaVQPBVksLuBXz2adrEWwvbLCnZeL3zH1IY9h\n"
+    "6MFO6echpvGbU/H+dRX9UkhdJ7gdwKVD3RjfJl+DRVox9lz8Pbo5H699Tkv9/DQP\n"
+    "9dMWxqhQlv23osLp\n"
     "-----END X509 CRL-----\n";
 
 // kUnknownCriticalCRL is kBasicCRL but with an unknown critical extension.
@@ -385,16 +392,32 @@ static const char kUnknownCriticalCRL[] =
 // point extension followed by an unknown critical extension
 static const char kUnknownCriticalCRL2[] =
     "-----BEGIN X509 CRL-----\n"
-    "MIIBzzCBuAIBATANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJVUzETMBEGA1UE\n"
+    "MIIBzTCBtgIBATANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJVUzETMBEGA1UE\n"
     "CAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNTW91bnRhaW4gVmlldzESMBAGA1UECgwJ\n"
-    "Qm9yaW5nU1NMFw0xNjA5MjYxNTEwNTVaFw0xNjEwMjYxNTEwNTVaoDYwNDAKBgNV\n"
-    "HRQEAwIBATARBgNVHRwBAf8EBzAFoQMBAf8wEwYMKoZIhvcSBAGEtwkAAQH/BAAw\n"
-    "DQYJKoZIhvcNAQELBQADggEBACTcpQC8jXL12JN5YzOcQ64ubQIe0XxRAd30p7qB\n"
-    "BTXGpgqBjrjxRfLms7EBYodEXB2oXMsDq3km0vT1MfYdsDD05S+SQ9CDsq/pUfaC\n"
-    "E2WNI5p8WircRnroYvbN2vkjlRbMd1+yNITohXYXCJwjEOAWOx3XIM10bwPYBv4R\n"
-    "rDobuLHoMgL3yHgMHmAkP7YpkBucNqeBV8cCdeAZLuhXFWi6yfr3r/X18yWbC/r2\n"
-    "2xXdkrSqXLFo7ToyP8YKTgiXpya4x6m53biEYwa2ULlas0igL6DK7wjYZX95Uy7H\n"
-    "GKljn9weIYiMPV/BzGymwfv2EW0preLwtyJNJPaxbdin6Jc=\n"
+    "Qm9yaW5nU1NMFw0xNjA5MjYxNTEwNTVaFw0xNjEwMjYxNTEwNTVaoDQwMjAKBgNV\n"
+    "HRQEAwIBATAPBgNVHRwBAf8EBTADgQH/MBMGDCqGSIb3EgQBhLcJAAEB/wQAMA0G\n"
+    "CSqGSIb3DQEBCwUAA4IBAQBgSogsC5kf2wzr+0hmZtmLXYd0itAiYO0Gh9AyaEOO\n"
+    "myJFuqICHBSLXXUgwNkTUa2x2I/ivyReVFV756VOlWoaV2wJUs0zeCeVBgC9ZFsq\n"
+    "5a+8OGgXwgoYESFV5Y3QRF2a1Ytzfbw/o6xLXzTngvMsLOs12D4B5SkopyEZibF4\n"
+    "tXlRZyvEudTg3CCrjNP+p/GV07nZ3wcMmKJwQeilgzFUV7NaVCCo9jvPBGp0RxAN\n"
+    "KNif7jmjK4hD5mswo/Eq5kxQIc+mTfuUFdgHuAu1hfLYe0YK+Hr4RFf6Qy4hl7Ne\n"
+    "YjqkkSVIcr87u+8AznwdstnQzsyD27Jt7SjVORkYRywi\n"
+    "-----END X509 CRL-----\n";
+
+// kBadExtensionCRL is kBasicCRL but with an incorrectly-encoded issuing
+// distribution point extension.
+static const char kBadExtensionCRL[] =
+    "-----BEGIN X509 CRL-----\n"
+    "MIIBujCBowIBATANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJVUzETMBEGA1UE\n"
+    "CAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNTW91bnRhaW4gVmlldzESMBAGA1UECgwJ\n"
+    "Qm9yaW5nU1NMFw0xNjA5MjYxNTEwNTVaFw0xNjEwMjYxNTEwNTVaoCEwHzAKBgNV\n"
+    "HRQEAwIBATARBgNVHRwBAf8EBzAFoQMBAf8wDQYJKoZIhvcNAQELBQADggEBAA+3\n"
+    "i+5e5Ub8sccfgOBs6WVJFI9c8gvJjrJ8/dYfFIAuCyeocs7DFXn1n13CRZ+URR/Q\n"
+    "mVWgU28+xeusuSPYFpd9cyYTcVyNUGNTI3lwgcE/yVjPaOmzSZKdPakApRxtpKKQ\n"
+    "NN/56aQz3bnT/ZSHQNciRB8U6jiD9V30t0w+FDTpGaG+7bzzUH3UVF9xf9Ctp60A\n"
+    "3mfLe0scas7owSt4AEFuj2SPvcE7yvdOXbu+IEv21cEJUVExJAbhvIweHXh6yRW+\n"
+    "7VVeiNzdIjkZjyTmAzoXGha4+wbxXyBRbfH+XWcO/H+8nwyG8Gktdu2QB9S9nnIp\n"
+    "o/1TpfOMSGhMyMoyPrk=\n"
     "-----END X509 CRL-----\n";
 
 // kEd25519Cert is a self-signed Ed25519 certificate.
@@ -1314,29 +1337,32 @@ TEST(X509Test, TestCRL) {
   ASSERT_EQ(X509_V_ERR_UNHANDLED_CRITICAL_CRL_EXTENSION,
             Verify(leaf.get(), {root.get()}, {root.get()},
                    {unknown_critical_crl2.get()}, X509_V_FLAG_CRL_CHECK));
+
+  // Parsing kBadExtensionCRL should fail.
+  EXPECT_FALSE(CRLFromPEM(kBadExtensionCRL));
 }
 
 TEST(X509Test, ManyNamesAndConstraints) {
-  bssl::UniquePtr<X509> many_constraints(
-      CertFromPEM(GetTestData("crypto/x509/many_constraints.pem").c_str()));
+  bssl::UniquePtr<X509> many_constraints(CertFromPEM(
+      GetTestData("crypto/x509/test/many_constraints.pem").c_str()));
   ASSERT_TRUE(many_constraints);
   bssl::UniquePtr<X509> many_names1(
-      CertFromPEM(GetTestData("crypto/x509/many_names1.pem").c_str()));
+      CertFromPEM(GetTestData("crypto/x509/test/many_names1.pem").c_str()));
   ASSERT_TRUE(many_names1);
   bssl::UniquePtr<X509> many_names2(
-      CertFromPEM(GetTestData("crypto/x509/many_names2.pem").c_str()));
+      CertFromPEM(GetTestData("crypto/x509/test/many_names2.pem").c_str()));
   ASSERT_TRUE(many_names2);
   bssl::UniquePtr<X509> many_names3(
-      CertFromPEM(GetTestData("crypto/x509/many_names3.pem").c_str()));
+      CertFromPEM(GetTestData("crypto/x509/test/many_names3.pem").c_str()));
   ASSERT_TRUE(many_names3);
   bssl::UniquePtr<X509> some_names1(
-      CertFromPEM(GetTestData("crypto/x509/some_names1.pem").c_str()));
+      CertFromPEM(GetTestData("crypto/x509/test/some_names1.pem").c_str()));
   ASSERT_TRUE(some_names1);
   bssl::UniquePtr<X509> some_names2(
-      CertFromPEM(GetTestData("crypto/x509/some_names2.pem").c_str()));
+      CertFromPEM(GetTestData("crypto/x509/test/some_names2.pem").c_str()));
   ASSERT_TRUE(some_names2);
   bssl::UniquePtr<X509> some_names3(
-      CertFromPEM(GetTestData("crypto/x509/some_names3.pem").c_str()));
+      CertFromPEM(GetTestData("crypto/x509/test/some_names3.pem").c_str()));
   ASSERT_TRUE(some_names3);
 
   EXPECT_EQ(X509_V_ERR_UNSPECIFIED,
@@ -2225,4 +2251,310 @@ TEST(X509Test, ServerGatedCryptoEKUs) {
                      no_eku.get()}) {
     EXPECT_EQ(X509_V_OK, verify_cert(leaf));
   }
+}
+
+// Test that invalid extensions are rejected by, if not the parser, at least the
+// verifier.
+TEST(X509Test, InvalidExtensions) {
+  bssl::UniquePtr<X509> root = CertFromPEM(
+      GetTestData("crypto/x509/test/invalid_extension_root.pem").c_str());
+  ASSERT_TRUE(root);
+  bssl::UniquePtr<X509> intermediate = CertFromPEM(
+      GetTestData("crypto/x509/test/invalid_extension_intermediate.pem")
+          .c_str());
+  ASSERT_TRUE(intermediate);
+  bssl::UniquePtr<X509> leaf = CertFromPEM(
+      GetTestData("crypto/x509/test/invalid_extension_leaf.pem").c_str());
+  ASSERT_TRUE(leaf);
+
+  // Sanity-check that the baseline chain is accepted.
+  EXPECT_EQ(X509_V_OK,
+            Verify(leaf.get(), {root.get()}, {intermediate.get()}, {}));
+
+  static const char *kExtensions[] = {
+      "authority_key_identifier",
+      "basic_constraints",
+      "ext_key_usage",
+      "key_usage",
+      "name_constraints",
+      "subject_alt_name",
+      "subject_key_identifier",
+  };
+  for (const char *ext : kExtensions) {
+    SCOPED_TRACE(ext);
+    bssl::UniquePtr<X509> invalid_root = CertFromPEM(
+        GetTestData((std::string("crypto/x509/test/invalid_extension_root_") +
+                     ext + ".pem")
+                        .c_str())
+            .c_str());
+    ASSERT_TRUE(invalid_root);
+
+    bssl::UniquePtr<X509> invalid_intermediate = CertFromPEM(
+        GetTestData(
+            (std::string("crypto/x509/test/invalid_extension_intermediate_") +
+             ext + ".pem")
+                .c_str())
+            .c_str());
+    ASSERT_TRUE(invalid_intermediate);
+
+    bssl::UniquePtr<X509> invalid_leaf = CertFromPEM(
+        GetTestData((std::string("crypto/x509/test/invalid_extension_leaf_") +
+                     ext + ".pem")
+                        .c_str())
+            .c_str());
+    ASSERT_TRUE(invalid_leaf);
+
+    EXPECT_EQ(
+        X509_V_ERR_INVALID_EXTENSION,
+        Verify(invalid_leaf.get(), {root.get()}, {intermediate.get()}, {}));
+
+    // If the invalid extension is on an intermediate or root,
+    // |X509_verify_cert| notices by way of being unable to build a path to
+    // a valid issuer.
+    EXPECT_EQ(
+        X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY,
+        Verify(leaf.get(), {root.get()}, {invalid_intermediate.get()}, {}));
+    EXPECT_EQ(
+        X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY,
+        Verify(leaf.get(), {invalid_root.get()}, {intermediate.get()}, {}));
+  }
+}
+
+// kExplicitDefaultVersionPEM is an X.509v1 certificate with the version number
+// encoded explicitly, rather than omitted as required by DER.
+static const char kExplicitDefaultVersionPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBfTCCASSgAwIBAAIJANlMBNpJfb/rMAkGByqGSM49BAEwRTELMAkGA1UEBhMC\n"
+    "QVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\n"
+    "dHMgUHR5IEx0ZDAeFw0xNDA0MjMyMzIxNTdaFw0xNDA1MjMyMzIxNTdaMEUxCzAJ\n"
+    "BgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5l\n"
+    "dCBXaWRnaXRzIFB0eSBMdGQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATmK2ni\n"
+    "v2Wfl74vHg2UikzVl2u3qR4NRvvdqakendy6WgHn1peoChj5w8SjHlbifINI2xYa\n"
+    "HPUdfvGULUvPciLBMAkGByqGSM49BAEDSAAwRQIhAPKgNV5ROjbDgnmb7idQhY5w\n"
+    "BnSVV9IpdAD0vhWHXcQHAiB8HnkUaiGD8Hp0aHlfFJmaaLTxy54VXuYfMlJhXnXJ\n"
+    "FA==\n"
+    "-----END CERTIFICATE-----\n";
+
+// kNegativeVersionPEM is an X.509 certificate with a negative version number.
+static const char kNegativeVersionPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBfTCCASSgAwIB/wIJANlMBNpJfb/rMAkGByqGSM49BAEwRTELMAkGA1UEBhMC\n"
+    "QVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\n"
+    "dHMgUHR5IEx0ZDAeFw0xNDA0MjMyMzIxNTdaFw0xNDA1MjMyMzIxNTdaMEUxCzAJ\n"
+    "BgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5l\n"
+    "dCBXaWRnaXRzIFB0eSBMdGQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATmK2ni\n"
+    "v2Wfl74vHg2UikzVl2u3qR4NRvvdqakendy6WgHn1peoChj5w8SjHlbifINI2xYa\n"
+    "HPUdfvGULUvPciLBMAkGByqGSM49BAEDSAAwRQIhAPKgNV5ROjbDgnmb7idQhY5w\n"
+    "BnSVV9IpdAD0vhWHXcQHAiB8HnkUaiGD8Hp0aHlfFJmaaLTxy54VXuYfMlJhXnXJ\n"
+    "FA==\n"
+    "-----END CERTIFICATE-----\n";
+
+// kFutureVersionPEM is an X.509 certificate with a version number value of
+// three, which is not defined. (v3 has value two).
+static const char kFutureVersionPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBfTCCASSgAwIBAwIJANlMBNpJfb/rMAkGByqGSM49BAEwRTELMAkGA1UEBhMC\n"
+    "QVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\n"
+    "dHMgUHR5IEx0ZDAeFw0xNDA0MjMyMzIxNTdaFw0xNDA1MjMyMzIxNTdaMEUxCzAJ\n"
+    "BgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5l\n"
+    "dCBXaWRnaXRzIFB0eSBMdGQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATmK2ni\n"
+    "v2Wfl74vHg2UikzVl2u3qR4NRvvdqakendy6WgHn1peoChj5w8SjHlbifINI2xYa\n"
+    "HPUdfvGULUvPciLBMAkGByqGSM49BAEDSAAwRQIhAPKgNV5ROjbDgnmb7idQhY5w\n"
+    "BnSVV9IpdAD0vhWHXcQHAiB8HnkUaiGD8Hp0aHlfFJmaaLTxy54VXuYfMlJhXnXJ\n"
+    "FA==\n"
+    "-----END CERTIFICATE-----\n";
+
+// kOverflowVersionPEM is an X.509 certificate with a version field which
+// overflows |uint64_t|.
+static const char kOverflowVersionPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBoDCCAUegJgIkAP//////////////////////////////////////////////\n"
+    "AgkA2UwE2kl9v+swCQYHKoZIzj0EATBFMQswCQYDVQQGEwJBVTETMBEGA1UECAwK\n"
+    "U29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4X\n"
+    "DTE0MDQyMzIzMjE1N1oXDTE0MDUyMzIzMjE1N1owRTELMAkGA1UEBhMCQVUxEzAR\n"
+    "BgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5\n"
+    "IEx0ZDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABOYraeK/ZZ+Xvi8eDZSKTNWX\n"
+    "a7epHg1G+92pqR6d3LpaAefWl6gKGPnDxKMeVuJ8g0jbFhoc9R1+8ZQtS89yIsEw\n"
+    "CQYHKoZIzj0EAQNIADBFAiEA8qA1XlE6NsOCeZvuJ1CFjnAGdJVX0il0APS+FYdd\n"
+    "xAcCIHweeRRqIYPwenRoeV8UmZpotPHLnhVe5h8yUmFedckU\n"
+    "-----END CERTIFICATE-----\n";
+
+// kV1WithExtensionsPEM is an X.509v1 certificate with extensions.
+static const char kV1WithExtensionsPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIByjCCAXECCQDZTATaSX2/6zAJBgcqhkjOPQQBMEUxCzAJBgNVBAYTAkFVMRMw\n"
+    "EQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0\n"
+    "eSBMdGQwHhcNMTQwNDIzMjMyMTU3WhcNMTQwNTIzMjMyMTU3WjBFMQswCQYDVQQG\n"
+    "EwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lk\n"
+    "Z2l0cyBQdHkgTHRkMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5itp4r9ln5e+\n"
+    "Lx4NlIpM1Zdrt6keDUb73ampHp3culoB59aXqAoY+cPEox5W4nyDSNsWGhz1HX7x\n"
+    "lC1Lz3IiwaNQME4wHQYDVR0OBBYEFKuE0qyrlfCCThZ4B1VXX+QmjYLRMB8GA1Ud\n"
+    "IwQYMBaAFKuE0qyrlfCCThZ4B1VXX+QmjYLRMAwGA1UdEwQFMAMBAf8wCQYHKoZI\n"
+    "zj0EAQNIADBFAiEA8qA1XlE6NsOCeZvuJ1CFjnAGdJVX0il0APS+FYddxAcCIHwe\n"
+    "eRRqIYPwenRoeV8UmZpotPHLnhVe5h8yUmFedckU\n"
+    "-----END CERTIFICATE-----\n";
+
+// kV2WithExtensionsPEM is an X.509v2 certificate with extensions.
+static const char kV2WithExtensionsPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBzzCCAXagAwIBAQIJANlMBNpJfb/rMAkGByqGSM49BAEwRTELMAkGA1UEBhMC\n"
+    "QVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\n"
+    "dHMgUHR5IEx0ZDAeFw0xNDA0MjMyMzIxNTdaFw0xNDA1MjMyMzIxNTdaMEUxCzAJ\n"
+    "BgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5l\n"
+    "dCBXaWRnaXRzIFB0eSBMdGQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATmK2ni\n"
+    "v2Wfl74vHg2UikzVl2u3qR4NRvvdqakendy6WgHn1peoChj5w8SjHlbifINI2xYa\n"
+    "HPUdfvGULUvPciLBo1AwTjAdBgNVHQ4EFgQUq4TSrKuV8IJOFngHVVdf5CaNgtEw\n"
+    "HwYDVR0jBBgwFoAUq4TSrKuV8IJOFngHVVdf5CaNgtEwDAYDVR0TBAUwAwEB/zAJ\n"
+    "BgcqhkjOPQQBA0gAMEUCIQDyoDVeUTo2w4J5m+4nUIWOcAZ0lVfSKXQA9L4Vh13E\n"
+    "BwIgfB55FGohg/B6dGh5XxSZmmi08cueFV7mHzJSYV51yRQ=\n"
+    "-----END CERTIFICATE-----\n";
+
+// kV1WithIssuerUniqueIDPEM is an X.509v1 certificate with an issuerUniqueID.
+static const char kV1WithIssuerUniqueIDPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBgzCCASoCCQDZTATaSX2/6zAJBgcqhkjOPQQBMEUxCzAJBgNVBAYTAkFVMRMw\n"
+    "EQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0\n"
+    "eSBMdGQwHhcNMTQwNDIzMjMyMTU3WhcNMTQwNTIzMjMyMTU3WjBFMQswCQYDVQQG\n"
+    "EwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lk\n"
+    "Z2l0cyBQdHkgTHRkMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5itp4r9ln5e+\n"
+    "Lx4NlIpM1Zdrt6keDUb73ampHp3culoB59aXqAoY+cPEox5W4nyDSNsWGhz1HX7x\n"
+    "lC1Lz3IiwYEJAAEjRWeJq83vMAkGByqGSM49BAEDSAAwRQIhAPKgNV5ROjbDgnmb\n"
+    "7idQhY5wBnSVV9IpdAD0vhWHXcQHAiB8HnkUaiGD8Hp0aHlfFJmaaLTxy54VXuYf\n"
+    "MlJhXnXJFA==\n"
+    "-----END CERTIFICATE-----\n";
+
+// kV1WithSubjectUniqueIDPEM is an X.509v1 certificate with an issuerUniqueID.
+static const char kV1WithSubjectUniqueIDPEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBgzCCASoCCQDZTATaSX2/6zAJBgcqhkjOPQQBMEUxCzAJBgNVBAYTAkFVMRMw\n"
+    "EQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRzIFB0\n"
+    "eSBMdGQwHhcNMTQwNDIzMjMyMTU3WhcNMTQwNTIzMjMyMTU3WjBFMQswCQYDVQQG\n"
+    "EwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lk\n"
+    "Z2l0cyBQdHkgTHRkMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5itp4r9ln5e+\n"
+    "Lx4NlIpM1Zdrt6keDUb73ampHp3culoB59aXqAoY+cPEox5W4nyDSNsWGhz1HX7x\n"
+    "lC1Lz3IiwYIJAAEjRWeJq83vMAkGByqGSM49BAEDSAAwRQIhAPKgNV5ROjbDgnmb\n"
+    "7idQhY5wBnSVV9IpdAD0vhWHXcQHAiB8HnkUaiGD8Hp0aHlfFJmaaLTxy54VXuYf\n"
+    "MlJhXnXJFA==\n"
+    "-----END CERTIFICATE-----\n";
+
+// Test that the X.509 parser enforces versions are valid and match the fields
+// present.
+TEST(X509Test, InvalidVersion) {
+  EXPECT_FALSE(CertFromPEM(kExplicitDefaultVersionPEM));
+  EXPECT_FALSE(CertFromPEM(kNegativeVersionPEM));
+  EXPECT_FALSE(CertFromPEM(kFutureVersionPEM));
+  EXPECT_FALSE(CertFromPEM(kOverflowVersionPEM));
+  EXPECT_FALSE(CertFromPEM(kV1WithExtensionsPEM));
+  EXPECT_FALSE(CertFromPEM(kV2WithExtensionsPEM));
+  EXPECT_FALSE(CertFromPEM(kV1WithIssuerUniqueIDPEM));
+  EXPECT_FALSE(CertFromPEM(kV1WithSubjectUniqueIDPEM));
+}
+
+// The following strings are test certificates signed by kP256Key and kRSAKey,
+// with missing, NULL, or invalid algorithm parameters.
+static const char kP256NoParam[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBIDCBxqADAgECAgIE0jAKBggqhkjOPQQDAjAPMQ0wCwYDVQQDEwRUZXN0MCAX\n"
+    "DTAwMDEwMTAwMDAwMFoYDzIxMDAwMTAxMDAwMDAwWjAPMQ0wCwYDVQQDEwRUZXN0\n"
+    "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5itp4r9ln5e+Lx4NlIpM1Zdrt6ke\n"
+    "DUb73ampHp3culoB59aXqAoY+cPEox5W4nyDSNsWGhz1HX7xlC1Lz3IiwaMQMA4w\n"
+    "DAYDVR0TBAUwAwEB/zAKBggqhkjOPQQDAgNJADBGAiEAqdIiF+bN9Cl44oUeICpy\n"
+    "aXd7HqhpVUaglYKw9ChmNUACIQCpMdL0fNkFNDbRww9dSl/y7kBdk/tp16HiqeSy\n"
+    "gGzFYg==\n"
+    "-----END CERTIFICATE-----\n";
+static const char kP256NullParam[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBJDCByKADAgECAgIE0jAMBggqhkjOPQQDAgUAMA8xDTALBgNVBAMTBFRlc3Qw\n"
+    "IBcNMDAwMTAxMDAwMDAwWhgPMjEwMDAxMDEwMDAwMDBaMA8xDTALBgNVBAMTBFRl\n"
+    "c3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATmK2niv2Wfl74vHg2UikzVl2u3\n"
+    "qR4NRvvdqakendy6WgHn1peoChj5w8SjHlbifINI2xYaHPUdfvGULUvPciLBoxAw\n"
+    "DjAMBgNVHRMEBTADAQH/MAwGCCqGSM49BAMCBQADSQAwRgIhAKILHmyo+F3Cn/VX\n"
+    "UUeSXOQQKX5aLzsQitwwmNF3ZgH3AiEAsYHcrVj/ftmoQIORARkQ/+PrqntXev8r\n"
+    "t6uPxHrmpUY=\n"
+    "-----END CERTIFICATE-----\n";
+static const char kP256InvalidParam[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBMTCBz6ADAgECAgIE0jATBggqhkjOPQQDAgQHZ2FyYmFnZTAPMQ0wCwYDVQQD\n"
+    "EwRUZXN0MCAXDTAwMDEwMTAwMDAwMFoYDzIxMDAwMTAxMDAwMDAwWjAPMQ0wCwYD\n"
+    "VQQDEwRUZXN0MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5itp4r9ln5e+Lx4N\n"
+    "lIpM1Zdrt6keDUb73ampHp3culoB59aXqAoY+cPEox5W4nyDSNsWGhz1HX7xlC1L\n"
+    "z3IiwaMQMA4wDAYDVR0TBAUwAwEB/zATBggqhkjOPQQDAgQHZ2FyYmFnZQNIADBF\n"
+    "AiAglpDf/YhN89LeJ2WAs/F0SJIrsuhS4uoInIz6WXUiuQIhAIu5Pwhp5E3Pbo8y\n"
+    "fLULTZnynuQUULQkRcF7S7T2WpIL\n"
+    "-----END CERTIFICATE-----\n";
+static const char kRSANoParam[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBWzCBx6ADAgECAgIE0jALBgkqhkiG9w0BAQswDzENMAsGA1UEAxMEVGVzdDAg\n"
+    "Fw0wMDAxMDEwMDAwMDBaGA8yMTAwMDEwMTAwMDAwMFowDzENMAsGA1UEAxMEVGVz\n"
+    "dDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABOYraeK/ZZ+Xvi8eDZSKTNWXa7ep\n"
+    "Hg1G+92pqR6d3LpaAefWl6gKGPnDxKMeVuJ8g0jbFhoc9R1+8ZQtS89yIsGjEDAO\n"
+    "MAwGA1UdEwQFMAMBAf8wCwYJKoZIhvcNAQELA4GBAC1f8W3W0Ao7CPfIBQYDSbPh\n"
+    "brZpbxdBU5x27JOS7iSa+Lc9pEH5VCX9vIypHVHXLPEfZ38yIt11eiyrmZB6w62N\n"
+    "l9kIeZ6FVPmC30d3sXx70Jjs+ZX9yt7kD1gLyNAQQfeYfa4rORAZT1n2YitD74NY\n"
+    "TWUH2ieFP3l+ecj1SeQR\n"
+    "-----END CERTIFICATE-----\n";
+static const char kRSANullParam[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBXzCByaADAgECAgIE0jANBgkqhkiG9w0BAQsFADAPMQ0wCwYDVQQDEwRUZXN0\n"
+    "MCAXDTAwMDEwMTAwMDAwMFoYDzIxMDAwMTAxMDAwMDAwWjAPMQ0wCwYDVQQDEwRU\n"
+    "ZXN0MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE5itp4r9ln5e+Lx4NlIpM1Zdr\n"
+    "t6keDUb73ampHp3culoB59aXqAoY+cPEox5W4nyDSNsWGhz1HX7xlC1Lz3IiwaMQ\n"
+    "MA4wDAYDVR0TBAUwAwEB/zANBgkqhkiG9w0BAQsFAAOBgQAzVcfIv+Rq1KrMXqIL\n"
+    "fPq/cWZjgqFZA1RGaGElNaqp+rkJfamq5tDGzckWpebrK+jjRN7yIlcWDtPpy3Gy\n"
+    "seZfvtBDR0TwJm0S/pQl8prKB4wgALcwe3bmi56Rq85nzY5ZLNcP16LQxL+jAAua\n"
+    "SwmQUz4bRpckRBj+sIyp1We+pg==\n"
+    "-----END CERTIFICATE-----\n";
+static const char kRSAInvalidParam[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBbTCB0KADAgECAgIE0jAUBgkqhkiG9w0BAQsEB2dhcmJhZ2UwDzENMAsGA1UE\n"
+    "AxMEVGVzdDAgFw0wMDAxMDEwMDAwMDBaGA8yMTAwMDEwMTAwMDAwMFowDzENMAsG\n"
+    "A1UEAxMEVGVzdDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABOYraeK/ZZ+Xvi8e\n"
+    "DZSKTNWXa7epHg1G+92pqR6d3LpaAefWl6gKGPnDxKMeVuJ8g0jbFhoc9R1+8ZQt\n"
+    "S89yIsGjEDAOMAwGA1UdEwQFMAMBAf8wFAYJKoZIhvcNAQELBAdnYXJiYWdlA4GB\n"
+    "AHTJ6cWWjCNrZhqiWWVI3jdK+h5xpRG8jGMXxR4JnjtoYRRusJLOXhmapwCB6fA0\n"
+    "4vc+66O27v36yDmQX+tIc/hDrTpKNJptU8q3n2VagREvoHhkOTYkcCeS8vmnMtn8\n"
+    "5OMNZ/ajVwOssw61GcAlScRqEHkZFBoGp7e+QpgB2tf9\n"
+    "-----END CERTIFICATE-----\n";
+
+TEST(X509Test, AlgorithmParameters) {
+  // P-256 requires the parameter be omitted.
+  bssl::UniquePtr<EVP_PKEY> key = PrivateKeyFromPEM(kP256Key);
+  ASSERT_TRUE(key);
+
+  bssl::UniquePtr<X509> cert = CertFromPEM(kP256NoParam);
+  ASSERT_TRUE(cert);
+  EXPECT_TRUE(X509_verify(cert.get(), key.get()));
+
+  cert = CertFromPEM(kP256NullParam);
+  ASSERT_TRUE(cert);
+  EXPECT_FALSE(X509_verify(cert.get(), key.get()));
+  uint32_t err = ERR_get_error();
+  EXPECT_EQ(ERR_LIB_X509, ERR_GET_LIB(err));
+  EXPECT_EQ(X509_R_INVALID_PARAMETER, ERR_GET_REASON(err));
+
+  cert = CertFromPEM(kP256InvalidParam);
+  ASSERT_TRUE(cert);
+  EXPECT_FALSE(X509_verify(cert.get(), key.get()));
+  err = ERR_get_error();
+  EXPECT_EQ(ERR_LIB_X509, ERR_GET_LIB(err));
+  EXPECT_EQ(X509_R_INVALID_PARAMETER, ERR_GET_REASON(err));
+
+  // RSA parameters should be NULL, but we accept omitted ones.
+  key = PrivateKeyFromPEM(kRSAKey);
+  ASSERT_TRUE(key);
+
+  cert = CertFromPEM(kRSANoParam);
+  ASSERT_TRUE(cert);
+  EXPECT_TRUE(X509_verify(cert.get(), key.get()));
+
+  cert = CertFromPEM(kRSANullParam);
+  ASSERT_TRUE(cert);
+  EXPECT_TRUE(X509_verify(cert.get(), key.get()));
+
+  cert = CertFromPEM(kRSAInvalidParam);
+  ASSERT_TRUE(cert);
+  EXPECT_FALSE(X509_verify(cert.get(), key.get()));
+  err = ERR_get_error();
+  EXPECT_EQ(ERR_LIB_X509, ERR_GET_LIB(err));
+  EXPECT_EQ(X509_R_INVALID_PARAMETER, ERR_GET_REASON(err));
 }

@@ -35,13 +35,11 @@ int RowsOrColumns4x4ToSuperBlocks(int value4x4, bool use_128x128_superblock) {
 
 }  // namespace
 
-BlockParametersHolder::BlockParametersHolder(int rows4x4, int columns4x4,
-                                             bool use_128x128_superblock)
-    : rows4x4_(rows4x4),
-      columns4x4_(columns4x4),
-      use_128x128_superblock_(use_128x128_superblock) {}
-
-bool BlockParametersHolder::Init() {
+bool BlockParametersHolder::Reset(int rows4x4, int columns4x4,
+                                  bool use_128x128_superblock) {
+  rows4x4_ = rows4x4;
+  columns4x4_ = columns4x4;
+  use_128x128_superblock_ = use_128x128_superblock;
   if (!block_parameters_cache_.Reset(rows4x4_, columns4x4_)) {
     LIBGAV1_DLOG(ERROR, "block_parameters_cache_.Reset() failed.");
     return false;

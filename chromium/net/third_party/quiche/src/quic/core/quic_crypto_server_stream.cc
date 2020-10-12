@@ -8,6 +8,7 @@
 #include <string>
 
 #include "third_party/boringssl/src/include/openssl/sha.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
@@ -298,6 +299,11 @@ bool QuicCryptoServerStream::IsZeroRtt() const {
          num_handshake_messages_with_server_nonces_ == 0;
 }
 
+bool QuicCryptoServerStream::IsResumption() const {
+  // QUIC Crypto doesn't have a non-0-RTT resumption mode.
+  return IsZeroRtt();
+}
+
 int QuicCryptoServerStream::NumServerConfigUpdateMessagesSent() const {
   return num_server_config_update_messages_sent_;
 }
@@ -307,7 +313,7 @@ QuicCryptoServerStream::PreviousCachedNetworkParams() const {
   return previous_cached_network_params_.get();
 }
 
-bool QuicCryptoServerStream::ZeroRttAttempted() const {
+bool QuicCryptoServerStream::ResumptionAttempted() const {
   return zero_rtt_attempted_;
 }
 
@@ -370,6 +376,12 @@ HandshakeState QuicCryptoServerStream::GetHandshakeState() const {
   return one_rtt_packet_decrypted_ ? HANDSHAKE_COMPLETE : HANDSHAKE_START;
 }
 
+void QuicCryptoServerStream::SetServerApplicationStateForResumption(
+    std::unique_ptr<ApplicationState> /*state*/) {
+  // QUIC Crypto doesn't need to remember any application state as part of doing
+  // 0-RTT resumption, so this function is a no-op.
+}
+
 size_t QuicCryptoServerStream::BufferSizeLimitForLevel(
     EncryptionLevel level) const {
   return QuicCryptoHandshaker::BufferSizeLimitForLevel(level);
@@ -389,6 +401,17 @@ void QuicCryptoServerStream::ProcessClientHello(
                  nullptr);
     return;
   }
+
+  if (GetQuicReloadableFlag(quic_save_user_agent_in_quic_session)) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_save_user_agent_in_quic_session, 1, 3);
+    quiche::QuicheStringPiece user_agent_id;
+    message.GetStringPiece(quic::kUAID, &user_agent_id);
+    if (!session()->user_agent_id().has_value()) {
+      std::string uaid = user_agent_id.empty() ? "" : user_agent_id.data();
+      session()->SetUserAgentId(std::move(uaid));
+    }
+  }
+
   if (!result->info.server_nonce.empty()) {
     ++num_handshake_messages_with_server_nonces_;
   }

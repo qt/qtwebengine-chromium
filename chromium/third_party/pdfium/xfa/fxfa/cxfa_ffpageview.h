@@ -59,9 +59,7 @@ class CXFA_FFPageWidgetIterator final : public IXFA_WidgetIterator {
  private:
   CXFA_FFWidget* GetWidget(CXFA_LayoutItem* pLayoutItem);
 
-  CXFA_LayoutItemIterator m_sIterator;  // Must outlive |m_pPageView|.
-  UnownedPtr<CXFA_FFPageView> const m_pPageView;
-  UnownedPtr<CXFA_FFWidget> m_hCurWidget;
+  CXFA_LayoutItemIterator m_sIterator;
   const uint32_t m_dwFilter;
   const bool m_bIgnoreRelevant;
 };
@@ -100,7 +98,7 @@ class CXFA_FFTabOrderPageWidgetIterator final : public IXFA_WidgetIterator {
   CXFA_FFWidget* FindWidgetByName(const WideString& wsWidgetName,
                                   CXFA_FFWidget* pRefWidget);
   void CreateTabOrderWidgetArray();
-  void CreateSpaceOrderWidgetArray(std::vector<CXFA_FFWidget*>* WidgetArray);
+  std::vector<RetainPtr<CXFA_ContentLayoutItem>> CreateSpaceOrderLayoutItems();
   CXFA_FFWidget* GetWidget(CXFA_LayoutItem* pLayoutItem);
   void OrderContainer(CXFA_LayoutItemIterator* sIterator,
                       CXFA_LayoutItem* pViewItem,
@@ -110,7 +108,7 @@ class CXFA_FFTabOrderPageWidgetIterator final : public IXFA_WidgetIterator {
                       bool bMasterPage);
 
   std::vector<RetainPtr<CXFA_ContentLayoutItem>> m_TabOrderWidgetArray;
-  UnownedPtr<CXFA_FFPageView> const m_pPageView;
+  RetainPtr<CXFA_ViewLayoutItem> const m_pPageViewLayout;
   const uint32_t m_dwFilter;
   int32_t m_iCurWidget = -1;
   const bool m_bIgnoreRelevant;

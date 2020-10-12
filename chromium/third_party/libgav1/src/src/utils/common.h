@@ -400,19 +400,17 @@ constexpr int ApplySign(int value, int sign) { return (value ^ sign) - sign; }
 
 // 7.9.3. (without the clamp for numerator and denominator).
 inline void GetMvProjection(const MotionVector& mv, int numerator,
-                            int denominator, MotionVector* projection_mv) {
-  // Allow numerator and denominator to be 0 so that this function can be called
-  // unconditionally. When either numerator or denominator is 0, |projection_mv|
-  // will be 0, and this is what we want.
+                            int division_multiplier,
+                            MotionVector* projection_mv) {
+  // Allow numerator and to be 0 so that this function can be called
+  // unconditionally. When numerator is 0, |projection_mv| will be 0, and this
+  // is what we want.
   assert(std::abs(numerator) <= kMaxFrameDistance);
-  assert(denominator >= 0);
-  assert(denominator <= kMaxFrameDistance);
   for (int i = 0; i < 2; ++i) {
-    projection_mv->mv[i] = Clip3(
-        RightShiftWithRoundingSigned(
-            mv.mv[i] * numerator * kProjectionMvDivisionLookup[denominator],
-            14),
-        -kProjectionMvClamp, kProjectionMvClamp);
+    projection_mv->mv[i] =
+        Clip3(RightShiftWithRoundingSigned(
+                  mv.mv[i] * numerator * division_multiplier, 14),
+              -kProjectionMvClamp, kProjectionMvClamp);
   }
 }
 

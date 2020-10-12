@@ -37,6 +37,7 @@ namespace dawn_native {
     class ErrorScope;
     class ErrorScopeTracker;
     class FenceSignalTracker;
+    class MapRequestTracker;
     class StagingBufferBase;
 
     class DeviceBase {
@@ -71,6 +72,7 @@ namespace dawn_native {
 
         ErrorScopeTracker* GetErrorScopeTracker() const;
         FenceSignalTracker* GetFenceSignalTracker() const;
+        MapRequestTracker* GetMapRequestTracker() const;
 
         // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
         // isn't a valid wgpu::TextureFormat or isn't supported by this device.
@@ -88,6 +90,7 @@ namespace dawn_native {
 
         Serial GetCompletedCommandSerial() const;
         Serial GetLastSubmittedCommandSerial() const;
+        Serial GetFutureCallbackSerial() const;
         Serial GetPendingCommandSerial() const;
         virtual MaybeError TickImpl() = 0;
 
@@ -143,6 +146,7 @@ namespace dawn_native {
         CommandEncoder* CreateCommandEncoder(const CommandEncoderDescriptor* descriptor);
         ComputePipelineBase* CreateComputePipeline(const ComputePipelineDescriptor* descriptor);
         PipelineLayoutBase* CreatePipelineLayout(const PipelineLayoutDescriptor* descriptor);
+        QuerySetBase* CreateQuerySet(const QuerySetDescriptor* descriptor);
         QueueBase* CreateQueue();
         RenderBundleEncoder* CreateRenderBundleEncoder(
             const RenderBundleEncoderDescriptor* descriptor);
@@ -153,6 +157,9 @@ namespace dawn_native {
         TextureBase* CreateTexture(const TextureDescriptor* descriptor);
         TextureViewBase* CreateTextureView(TextureBase* texture,
                                            const TextureViewDescriptor* descriptor);
+
+        // For Dawn Wire
+        BufferBase* CreateErrorBuffer();
 
         QueueBase* GetDefaultQueue();
 
@@ -212,6 +219,7 @@ namespace dawn_native {
         size_t GetDeprecationWarningCountForTesting();
         void EmitDeprecationWarning(const char* warning);
         void LoseForTesting();
+        void AddFutureCallbackSerial(Serial serial);
 
       protected:
         void SetToggle(Toggle toggle, bool isEnabled);
@@ -222,13 +230,6 @@ namespace dawn_native {
 
         // Incrememt mLastSubmittedSerial when we submit the next serial
         void IncrementLastSubmittedCommandSerial();
-        // If there's no GPU work in flight we still need to artificially increment the serial
-        // so that CPU operations waiting on GPU completion can know they don't have to wait.
-        void ArtificiallyIncrementSerials();
-        // During shut down of device, some operations might have been started since the last submit
-        // and waiting on a serial that doesn't have a corresponding fence enqueued. Fake serials to
-        // make all commands look completed.
-        void AssumeCommandsComplete();
         // Check for passed fences and set the new completed serial
         void CheckPassedSerials();
 
@@ -242,6 +243,8 @@ namespace dawn_native {
             const ComputePipelineDescriptor* descriptor) = 0;
         virtual ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) = 0;
+        virtual ResultOrError<QuerySetBase*> CreateQuerySetImpl(
+            const QuerySetDescriptor* descriptor) = 0;
         virtual ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
             const RenderPipelineDescriptor* descriptor) = 0;
         virtual ResultOrError<SamplerBase*> CreateSamplerImpl(
@@ -270,6 +273,8 @@ namespace dawn_native {
                                                  const ComputePipelineDescriptor* descriptor);
         MaybeError CreatePipelineLayoutInternal(PipelineLayoutBase** result,
                                                 const PipelineLayoutDescriptor* descriptor);
+        MaybeError CreateQuerySetInternal(QuerySetBase** result,
+                                          const QuerySetDescriptor* descriptor);
         MaybeError CreateRenderBundleEncoderInternal(
             RenderBundleEncoder** result,
             const RenderBundleEncoderDescriptor* descriptor);
@@ -296,14 +301,21 @@ namespace dawn_native {
         // Each backend should implement to check their passed fences if there are any and return a
         // completed serial. Return 0 should indicate no fences to check.
         virtual Serial CheckAndUpdateCompletedSerials() = 0;
+        // During shut down of device, some operations might have been started since the last submit
+        // and waiting on a serial that doesn't have a corresponding fence enqueued. Fake serials to
+        // make all commands look completed.
+        void AssumeCommandsComplete();
         // mCompletedSerial tracks the last completed command serial that the fence has returned.
         // mLastSubmittedSerial tracks the last submitted command serial.
         // During device removal, the serials could be artificially incremented
         // to make it appear as if commands have been compeleted. They can also be artificially
         // incremented when no work is being done in the GPU so CPU operations don't have to wait on
         // stale serials.
+        // mFutureCallbackSerial tracks the largest serial we need to tick to for the callbacks to
+        // fire
         Serial mCompletedSerial = 0;
         Serial mLastSubmittedSerial = 0;
+        Serial mFutureCallbackSerial = 0;
 
         // ShutDownImpl is used to clean up and release resources used by device, does not wait for
         // GPU or check errors.
@@ -331,6 +343,7 @@ namespace dawn_native {
         std::unique_ptr<DynamicUploader> mDynamicUploader;
         std::unique_ptr<ErrorScopeTracker> mErrorScopeTracker;
         std::unique_ptr<FenceSignalTracker> mFenceSignalTracker;
+        std::unique_ptr<MapRequestTracker> mMapRequestTracker;
         Ref<QueueBase> mDefaultQueue;
 
         struct DeprecationWarnings;

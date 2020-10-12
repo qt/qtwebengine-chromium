@@ -52,7 +52,7 @@ static avifBool dav1dFeedData(avifCodec * codec)
 {
     if (!codec->internal->dav1dData.sz) {
         if (codec->internal->inputSampleIndex < codec->decodeInput->samples.count) {
-            avifSample * sample = &codec->decodeInput->samples.sample[codec->internal->inputSampleIndex];
+            avifDecodeSample * sample = &codec->decodeInput->samples.sample[codec->internal->inputSampleIndex];
             ++codec->internal->inputSampleIndex;
 
             if (dav1d_data_wrap(&codec->internal->dav1dData, sample->data.data, sample->data.size, avifDav1dFreeCallback, NULL) != 0) {
@@ -126,6 +126,8 @@ static avifBool dav1dCodecGetNextImage(avifCodec * codec, avifImage * image)
         avifPixelFormat yuvFormat = AVIF_PIXEL_FORMAT_NONE;
         switch (dav1dImage->p.layout) {
             case DAV1D_PIXEL_LAYOUT_I400:
+                yuvFormat = AVIF_PIXEL_FORMAT_YUV400;
+                break;
             case DAV1D_PIXEL_LAYOUT_I420:
                 yuvFormat = AVIF_PIXEL_FORMAT_YUV420;
                 break;
@@ -159,11 +161,12 @@ static avifBool dav1dCodecGetNextImage(avifCodec * codec, avifImage * image)
         avifGetPixelFormatInfo(yuvFormat, &formatInfo);
 
         avifImageFreePlanes(image, AVIF_PLANES_YUV);
-        for (int yuvPlane = 0; yuvPlane < 3; ++yuvPlane) {
+        int yuvPlaneCount = (yuvFormat == AVIF_PIXEL_FORMAT_YUV400) ? 1 : 3;
+        for (int yuvPlane = 0; yuvPlane < yuvPlaneCount; ++yuvPlane) {
             image->yuvPlanes[yuvPlane] = dav1dImage->data[yuvPlane];
             image->yuvRowBytes[yuvPlane] = (uint32_t)dav1dImage->stride[(yuvPlane == AVIF_CHAN_Y) ? 0 : 1];
         }
-        image->decoderOwnsYUVPlanes = AVIF_TRUE;
+        image->imageOwnsYUVPlanes = AVIF_FALSE;
     } else {
         // Alpha plane - ensure image is correct size, fill color
 
@@ -182,7 +185,7 @@ static avifBool dav1dCodecGetNextImage(avifCodec * codec, avifImage * image)
         image->alphaPlane = dav1dImage->data[0];
         image->alphaRowBytes = (uint32_t)dav1dImage->stride[0];
         image->alphaRange = codec->internal->colorRange;
-        image->decoderOwnsAlphaPlane = AVIF_TRUE;
+        image->imageOwnsAlphaPlane = AVIF_FALSE;
     }
     return AVIF_TRUE;
 }
@@ -204,6 +207,6 @@ avifCodec * avifCodecCreateDav1d(void)
     memset(codec->internal, 0, sizeof(struct avifCodecInternal));
     dav1d_default_settings(&codec->internal->dav1dSettings);
     // Set a maximum frame size limit to avoid OOM'ing fuzzers.
-    codec->internal->dav1dSettings.frame_size_limit = 16384 * 16384;
+    codec->internal->dav1dSettings.frame_size_limit = AVIF_MAX_IMAGE_SIZE;
     return codec;
 }

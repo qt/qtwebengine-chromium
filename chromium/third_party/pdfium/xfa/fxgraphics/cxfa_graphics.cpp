@@ -13,7 +13,7 @@
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_unicodeencoding.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "third_party/base/ptr_util.h"
+#include "third_party/base/stl_util.h"
 #include "xfa/fxgraphics/cxfa_gecolor.h"
 #include "xfa/fxgraphics/cxfa_gepath.h"
 #include "xfa/fxgraphics/cxfa_gepattern.h"
@@ -103,7 +103,7 @@ const FX_HATCHDATA kHatchPlaceHolder = {
     }};
 
 const FX_HATCHDATA& GetHatchBitmapData(size_t index) {
-  return index < FX_ArraySize(kHatchBitmapData) ? kHatchBitmapData[index]
+  return index < pdfium::size(kHatchBitmapData) ? kHatchBitmapData[index]
                                                 : kHatchPlaceHolder;
 }
 
@@ -118,7 +118,7 @@ CXFA_Graphics::~CXFA_Graphics() = default;
 
 void CXFA_Graphics::SaveGraphState() {
   m_renderDevice->SaveState();
-  m_infoStack.push_back(pdfium::MakeUnique<TInfo>(m_info));
+  m_infoStack.push_back(std::make_unique<TInfo>(m_info));
 }
 
 void CXFA_Graphics::RestoreGraphState() {
@@ -165,7 +165,7 @@ void CXFA_Graphics::SetStrokeColor(const CXFA_GEColor& color) {
 }
 
 void CXFA_Graphics::SetFillColor(const CXFA_GEColor& color) {
-    m_info.fillColor = color;
+  m_info.fillColor = color;
 }
 
 void CXFA_Graphics::StrokePath(CXFA_GEPath* path, const CFX_Matrix* matrix) {

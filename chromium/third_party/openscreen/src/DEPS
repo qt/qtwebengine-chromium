@@ -51,6 +51,12 @@ deps = {
     'condition': 'not build_with_chromium',
   },
 
+  'third_party/libprotobuf-mutator/src': {
+    'url': Var('chromium_git') +
+      '/external/github.com/google/libprotobuf-mutator.git' + '@' '439e81f8f4847ec6e2bf11b3aa634a5d8485633d',
+    'condition': 'not build_with_chromium',
+  },
+
   'third_party/zlib/src': {
     'url': Var('github') +
       '/madler/zlib.git' +
@@ -178,6 +184,7 @@ include_rules = [
   '+absl/algorithm/container.h',
   '+absl/base/thread_annotations.h',
   '+absl/hash/hash.h',
+  '+absl/hash/hash_testing.h',
   '+absl/strings/ascii.h',
   '+absl/strings/match.h',
   '+absl/strings/numbers.h',

@@ -695,6 +695,21 @@ message StartContainerRequest {
   // The cryptohome id for the user's encrypted storage. This is used for SSH
   // key storage.
   string cryptohome_id = 5;
+
+  // Represents the privilege level with which a container should be started. If
+  // the container is already running this should take effect on the next boot.
+  enum PrivilegeLevel {
+    // Don't change the privilege level of the container.
+    UNCHANGED = 0;
+
+    // Make the container unprivileged.
+    UNPRIVILEGED = 1;
+
+    // Make the container privileged.
+    PRIVILEGED = 2;
+  }
+
+  PrivilegeLevel privilege_level = 6;
 }
 
 enum ContainerStatus {

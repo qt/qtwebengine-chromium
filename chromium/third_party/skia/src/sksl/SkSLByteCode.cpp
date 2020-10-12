@@ -61,6 +61,7 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
             printf("callexternal %d, %d, %d", argumentCount, returnCount, externalValue);
             break;
         }
+        VECTOR_DISASSEMBLE(kCeil, "ceil")
         case ByteCodeInstruction::kClampIndex: printf("clampindex %d", READ8()); break;
         VECTOR_DISASSEMBLE(kCompareIEQ, "compareieq")
         VECTOR_DISASSEMBLE(kCompareINEQ, "compareineq")
@@ -86,6 +87,7 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
         VECTOR_DISASSEMBLE(kDivideS, "divideS")
         VECTOR_DISASSEMBLE(kDivideU, "divideu")
         VECTOR_MATRIX_DISASSEMBLE(kDup, "dup")
+        VECTOR_DISASSEMBLE(kFloor, "floor")
         VECTOR_DISASSEMBLE(kFract, "fract")
         case ByteCodeInstruction::kInverse2x2: printf("inverse2x2"); break;
         case ByteCodeInstruction::kInverse3x3: printf("inverse3x3"); break;
@@ -103,38 +105,12 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
         case ByteCodeInstruction::kLoadUniform2: printf("loaduniform2 %d", READ8()); break;
         case ByteCodeInstruction::kLoadUniform3: printf("loaduniform3 %d", READ8()); break;
         case ByteCodeInstruction::kLoadUniform4: printf("loaduniform4 %d", READ8()); break;
-        case ByteCodeInstruction::kLoadSwizzle: {
-            int target = READ8();
-            int count = READ8();
-            printf("loadswizzle %d %d", target, count);
-            for (int i = 0; i < count; ++i) {
-                printf(", %d", READ8());
-            }
-            break;
-        }
-        case ByteCodeInstruction::kLoadSwizzleGlobal: {
-            int target = READ8();
-            int count = READ8();
-            printf("loadswizzleglobal %d %d", target, count);
-            for (int i = 0; i < count; ++i) {
-                printf(", %d", READ8());
-            }
-            break;
-        }
-        case ByteCodeInstruction::kLoadSwizzleUniform: {
-            int target = READ8();
-            int count = READ8();
-            printf("loadswizzleuniform %d %d", target, count);
-            for (int i = 0; i < count; ++i) {
-                printf(", %d", READ8());
-            }
-            break;
-        }
         case ByteCodeInstruction::kLoadExtended: printf("loadextended %d", READ8()); break;
         case ByteCodeInstruction::kLoadExtendedGlobal: printf("loadextendedglobal %d", READ8());
             break;
         case ByteCodeInstruction::kLoadExtendedUniform: printf("loadextendeduniform %d", READ8());
             break;
+        case ByteCodeInstruction::kLoadFragCoord: printf("loadfragcoord"); break;
         case ByteCodeInstruction::kMatrixToMatrix: {
             int srcCols = READ8();
             int srcRows = READ8();
@@ -178,6 +154,8 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
         VECTOR_DISASSEMBLE(kRemainderU, "remainderu")
         case ByteCodeInstruction::kReserve: printf("reserve %d", READ8()); break;
         case ByteCodeInstruction::kReturn: printf("return %d", READ8()); break;
+        case ByteCodeInstruction::kSampleExplicit: printf("sample %d", READ8()); break;
+        case ByteCodeInstruction::kSampleMatrix: printf("sampleMtx %d", READ8()); break;
         case ByteCodeInstruction::kScalarToMatrix: {
             int cols = READ8();
             int rows = READ8();
@@ -197,40 +175,6 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
         case ByteCodeInstruction::kStoreGlobal2: printf("storeglobal2 %d", READ8()); break;
         case ByteCodeInstruction::kStoreGlobal3: printf("storeglobal3 %d", READ8()); break;
         case ByteCodeInstruction::kStoreGlobal4: printf("storeglobal4 %d", READ8()); break;
-        case ByteCodeInstruction::kStoreSwizzle: {
-            int target = READ8();
-            int count = READ8();
-            printf("storeswizzle %d %d", target, count);
-            for (int i = 0; i < count; ++i) {
-                printf(", %d", READ8());
-            }
-            break;
-        }
-        case ByteCodeInstruction::kStoreSwizzleGlobal: {
-            int target = READ8();
-            int count = READ8();
-            printf("storeswizzleglobal %d %d", target, count);
-            for (int i = 0; i < count; ++i) {
-                printf(", %d", READ8());
-            }
-            break;
-        }
-        case ByteCodeInstruction::kStoreSwizzleIndirect: {
-            int count = READ8();
-            printf("storeswizzleindirect %d", count);
-            for (int i = 0; i < count; ++i) {
-                printf(", %d", READ8());
-            }
-            break;
-        }
-        case ByteCodeInstruction::kStoreSwizzleIndirectGlobal: {
-            int count = READ8();
-            printf("storeswizzleindirectglobal %d", count);
-            for (int i = 0; i < count; ++i) {
-                printf(", %d", READ8());
-            }
-            break;
-        }
         case ByteCodeInstruction::kStoreExtended: printf("storeextended %d", READ8()); break;
         case ByteCodeInstruction::kStoreExtendedGlobal: printf("storeextendedglobal %d", READ8());
             break;
@@ -273,20 +217,23 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
 }
 
 #define VECTOR_BINARY_OP(base, field, op)                             \
-    case ByteCodeInstruction::base ## 4:                              \
+    case ByteCodeInstruction::base ## 4: {                            \
         sp[-4] = sp[-4].field op sp[0].field;                         \
         POP();                                                        \
-        /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base ## 3: {                            \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         sp[count] = sp[count].field op sp[0].field;                   \
         POP();                                                        \
-    }   /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base ## 2: {                            \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         sp[count] = sp[count].field op sp[0].field;                   \
         POP();                                                        \
-    }   /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base: {                                 \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         sp[count] = sp[count].field op sp[0].field;                   \
@@ -297,14 +244,15 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
 // A naive implementation of / or % using skvx operations will likely crash with a divide by zero
 // in inactive vector lanes, so we need to be sure to avoid masked-off lanes.
 #define VECTOR_BINARY_MASKED_OP(base, field, op)                      \
-    case ByteCodeInstruction::base ## 4:                              \
+    case ByteCodeInstruction::base ## 4: {                            \
         for (int i = 0; i < VecWidth; ++i) {                          \
             if (mask()[i]) {                                          \
                 sp[-4].field[i] op ## = sp[0].field[i];               \
             }                                                         \
         }                                                             \
         POP();                                                        \
-        /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base ## 3: {                            \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         for (int i = 0; i < VecWidth; ++i) {                          \
@@ -313,7 +261,8 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
             }                                                         \
         }                                                             \
         POP();                                                        \
-    }   /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base ## 2: {                            \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         for (int i = 0; i < VecWidth; ++i) {                          \
@@ -322,7 +271,8 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
             }                                                         \
         }                                                             \
         POP();                                                        \
-    }   /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base: {                                 \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         for (int i = 0; i < VecWidth; ++i) {                          \
@@ -347,20 +297,23 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
     }
 
 #define VECTOR_BINARY_FN(base, field, fn)                             \
-    case ByteCodeInstruction::base ## 4:                              \
+    case ByteCodeInstruction::base ## 4: {                            \
         sp[-4] = fn(sp[-4].field, sp[0].field);                       \
         POP();                                                        \
-        /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base ## 3: {                            \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         sp[count] = fn(sp[count].field, sp[0].field);                 \
         POP();                                                        \
-    }   /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base ## 2: {                            \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         sp[count] = fn(sp[count].field, sp[0].field);                 \
         POP();                                                        \
-    }   /* fall through */                                            \
+        [[fallthrough]];                                              \
+    }                                                                 \
     case ByteCodeInstruction::base: {                                 \
         int count = (int)inst - (int)(ByteCodeInstruction::base) - 1; \
         sp[count] = fn(sp[count].field, sp[0].field);                 \
@@ -368,11 +321,11 @@ static const uint8_t* DisassembleInstruction(const uint8_t* ip) {
         continue;                                                     \
     }
 
-#define VECTOR_UNARY_FN(base, fn, field)                             \
-    case ByteCodeInstruction::base ## 4:  sp[-3] = fn(sp[-3].field); \
-    case ByteCodeInstruction::base ## 3:  sp[-2] = fn(sp[-2].field); \
-    case ByteCodeInstruction::base ## 2:  sp[-1] = fn(sp[-1].field); \
-    case ByteCodeInstruction::base:       sp[ 0] = fn(sp[ 0].field); \
+#define VECTOR_UNARY_FN(base, fn, field)                                              \
+    case ByteCodeInstruction::base ## 4:  sp[-3] = fn(sp[-3].field); [[fallthrough]]; \
+    case ByteCodeInstruction::base ## 3:  sp[-2] = fn(sp[-2].field); [[fallthrough]]; \
+    case ByteCodeInstruction::base ## 2:  sp[-1] = fn(sp[-1].field); [[fallthrough]]; \
+    case ByteCodeInstruction::base:       sp[ 0] = fn(sp[ 0].field);                  \
                       continue;
 
 union VValue {
@@ -561,9 +514,9 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                 sp[-1] = sp[-1].fSigned & sp[0].fSigned;
                 POP();
                 continue;
-            case ByteCodeInstruction::kNotB4: sp[-3] = ~sp[-3].fSigned;
-            case ByteCodeInstruction::kNotB3: sp[-2] = ~sp[-2].fSigned;
-            case ByteCodeInstruction::kNotB2: sp[-1] = ~sp[-1].fSigned;
+            case ByteCodeInstruction::kNotB4: sp[-3] = ~sp[-3].fSigned; [[fallthrough]];
+            case ByteCodeInstruction::kNotB3: sp[-2] = ~sp[-2].fSigned; [[fallthrough]];
+            case ByteCodeInstruction::kNotB2: sp[-1] = ~sp[-1].fSigned; [[fallthrough]];
             case ByteCodeInstruction::kNotB:  sp[ 0] = ~sp[ 0].fSigned;
                 continue;
             case ByteCodeInstruction::kOrB:
@@ -603,6 +556,8 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                 continue;
             }
 
+            VECTOR_UNARY_FN(kCeil, skvx::ceil, fFloat)
+
             case ByteCodeInstruction::kClampIndex: {
                 int length = READ8();
                 if (skvx::any(mask() & ((sp[0].fSigned < 0) | (sp[0].fSigned >= length)))) {
@@ -628,23 +583,44 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
             VECTOR_BINARY_OP(kCompareULTEQ, fUnsigned, <=)
             VECTOR_BINARY_OP(kCompareFLTEQ, fFloat, <=)
 
-            case ByteCodeInstruction::kConvertFtoI4: sp[-3] = skvx::cast<int>(sp[-3].fFloat);
-            case ByteCodeInstruction::kConvertFtoI3: sp[-2] = skvx::cast<int>(sp[-2].fFloat);
-            case ByteCodeInstruction::kConvertFtoI2: sp[-1] = skvx::cast<int>(sp[-1].fFloat);
-            case ByteCodeInstruction::kConvertFtoI:  sp[ 0] = skvx::cast<int>(sp[ 0].fFloat);
-                                                     continue;
+            case ByteCodeInstruction::kConvertFtoI4:
+                sp[-3] = skvx::cast<int>(sp[-3].fFloat);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertFtoI3:
+                sp[-2] = skvx::cast<int>(sp[-2].fFloat);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertFtoI2:
+                sp[-1] = skvx::cast<int>(sp[-1].fFloat);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertFtoI:
+                sp[ 0] = skvx::cast<int>(sp[ 0].fFloat);
+                continue;
 
-            case ByteCodeInstruction::kConvertStoF4: sp[-3] = skvx::cast<float>(sp[-3].fSigned);
-            case ByteCodeInstruction::kConvertStoF3: sp[-2] = skvx::cast<float>(sp[-2].fSigned);
-            case ByteCodeInstruction::kConvertStoF2: sp[-1] = skvx::cast<float>(sp[-1].fSigned);
-            case ByteCodeInstruction::kConvertStoF:  sp[ 0] = skvx::cast<float>(sp[ 0].fSigned);
-                                                     continue;
+            case ByteCodeInstruction::kConvertStoF4:
+                sp[-3] = skvx::cast<float>(sp[-3].fSigned);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertStoF3:
+                sp[-2] = skvx::cast<float>(sp[-2].fSigned);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertStoF2:
+                sp[-1] = skvx::cast<float>(sp[-1].fSigned);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertStoF:
+                sp[ 0] = skvx::cast<float>(sp[ 0].fSigned);
+                continue;
 
-            case ByteCodeInstruction::kConvertUtoF4: sp[-3] = skvx::cast<float>(sp[-3].fUnsigned);
-            case ByteCodeInstruction::kConvertUtoF3: sp[-2] = skvx::cast<float>(sp[-2].fUnsigned);
-            case ByteCodeInstruction::kConvertUtoF2: sp[-1] = skvx::cast<float>(sp[-1].fUnsigned);
-            case ByteCodeInstruction::kConvertUtoF:  sp[ 0] = skvx::cast<float>(sp[ 0].fUnsigned);
-                                                     continue;
+            case ByteCodeInstruction::kConvertUtoF4:
+                sp[-3] = skvx::cast<float>(sp[-3].fUnsigned);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertUtoF3:
+                sp[-2] = skvx::cast<float>(sp[-2].fUnsigned);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertUtoF2:
+                sp[-1] = skvx::cast<float>(sp[-1].fUnsigned);
+                [[fallthrough]];
+            case ByteCodeInstruction::kConvertUtoF:
+                sp[ 0] = skvx::cast<float>(sp[ 0].fUnsigned);
+                continue;
 
             VECTOR_UNARY_FN(kCos, skvx::cos, fFloat)
 
@@ -652,11 +628,18 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
             VECTOR_BINARY_MASKED_OP(kDivideU, fUnsigned, /)
             VECTOR_MATRIX_BINARY_OP(kDivideF, fFloat, /)
 
-            case ByteCodeInstruction::kDup4: PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
-            case ByteCodeInstruction::kDup3: PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
-            case ByteCodeInstruction::kDup2: PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
-            case ByteCodeInstruction::kDup : PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
-                                             continue;
+            case ByteCodeInstruction::kDup4:
+                PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
+                [[fallthrough]];
+            case ByteCodeInstruction::kDup3:
+                PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
+                [[fallthrough]];
+            case ByteCodeInstruction::kDup2:
+                PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
+                [[fallthrough]];
+            case ByteCodeInstruction::kDup :
+                PUSH(sp[(int)inst - (int)ByteCodeInstruction::kDup]);
+                continue;
 
             case ByteCodeInstruction::kDupN: {
                 int count = READ8();
@@ -665,6 +648,7 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                 continue;
             }
 
+            VECTOR_UNARY_FN(kFloor, skvx::floor, fFloat)
             VECTOR_UNARY_FN(kFract, skvx::fract, fFloat)
 
             case ByteCodeInstruction::kInverse2x2:
@@ -692,29 +676,36 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                 continue;
             }
 
-            case ByteCodeInstruction::kLoad4: sp[4] = stack[*ip + 3];
-            case ByteCodeInstruction::kLoad3: sp[3] = stack[*ip + 2];
-            case ByteCodeInstruction::kLoad2: sp[2] = stack[*ip + 1];
+            case ByteCodeInstruction::kLoad4: sp[4] = stack[*ip + 3]; [[fallthrough]];
+            case ByteCodeInstruction::kLoad3: sp[3] = stack[*ip + 2]; [[fallthrough]];
+            case ByteCodeInstruction::kLoad2: sp[2] = stack[*ip + 1]; [[fallthrough]];
             case ByteCodeInstruction::kLoad:  sp[1] = stack[*ip + 0];
                         ++ip;
                         sp += (int)ByteCodeInstruction::kLoad - (int)inst + 1;
                         continue;
 
-            case ByteCodeInstruction::kLoadGlobal4: sp[4] = globals[*ip + 3];
-            case ByteCodeInstruction::kLoadGlobal3: sp[3] = globals[*ip + 2];
-            case ByteCodeInstruction::kLoadGlobal2: sp[2] = globals[*ip + 1];
+            case ByteCodeInstruction::kLoadGlobal4: sp[4] = globals[*ip + 3]; [[fallthrough]];
+            case ByteCodeInstruction::kLoadGlobal3: sp[3] = globals[*ip + 2]; [[fallthrough]];
+            case ByteCodeInstruction::kLoadGlobal2: sp[2] = globals[*ip + 1]; [[fallthrough]];
             case ByteCodeInstruction::kLoadGlobal:  sp[1] = globals[*ip + 0];
                                 ++ip;
                                 sp += (int)ByteCodeInstruction::kLoadGlobal - (int)inst + 1;
                                 continue;
 
-            case ByteCodeInstruction::kLoadUniform4: sp[4].fFloat = uniforms[*ip + 3];
-            case ByteCodeInstruction::kLoadUniform3: sp[3].fFloat = uniforms[*ip + 2];
-            case ByteCodeInstruction::kLoadUniform2: sp[2].fFloat = uniforms[*ip + 1];
-            case ByteCodeInstruction::kLoadUniform:  sp[1].fFloat = uniforms[*ip + 0];
-                                ++ip;
-                                sp += (int)ByteCodeInstruction::kLoadUniform - (int)inst + 1;
-                                continue;
+            case ByteCodeInstruction::kLoadUniform4:
+                sp[4].fFloat = uniforms[*ip + 3];
+                [[fallthrough]];
+            case ByteCodeInstruction::kLoadUniform3:
+                sp[3].fFloat = uniforms[*ip + 2];
+                [[fallthrough]];
+            case ByteCodeInstruction::kLoadUniform2:
+                sp[2].fFloat = uniforms[*ip + 1];
+                [[fallthrough]];
+            case ByteCodeInstruction::kLoadUniform:
+                sp[1].fFloat = uniforms[*ip + 0];
+                ++ip;
+                sp += (int)ByteCodeInstruction::kLoadUniform - (int)inst + 1;
+                continue;
 
             case ByteCodeInstruction::kLoadExtended: {
                 int count = READ8();
@@ -758,36 +749,6 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                     }
                 }
                 sp += count;
-                continue;
-            }
-
-            case ByteCodeInstruction::kLoadSwizzle: {
-                int src = READ8();
-                int count = READ8();
-                for (int i = 0; i < count; ++i) {
-                    PUSH(stack[src + *(ip + i)]);
-                }
-                ip += count;
-                continue;
-            }
-
-            case ByteCodeInstruction::kLoadSwizzleGlobal: {
-                int src = READ8();
-                int count = READ8();
-                for (int i = 0; i < count; ++i) {
-                    PUSH(globals[src + *(ip + i)]);
-                }
-                ip += count;
-                continue;
-            }
-
-            case ByteCodeInstruction::kLoadSwizzleUniform: {
-                int src = READ8();
-                int count = READ8();
-                for (int i = 0; i < count; ++i) {
-                    PUSH(F32(uniforms[src + *(ip + i)]));
-                }
-                ip += count;
                 continue;
             }
 
@@ -860,9 +821,9 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
             VECTOR_BINARY_OP(kMultiplyI, fSigned, *)
             VECTOR_MATRIX_BINARY_OP(kMultiplyF, fFloat, *)
 
-            case ByteCodeInstruction::kNegateF4: sp[-3] = -sp[-3].fFloat;
-            case ByteCodeInstruction::kNegateF3: sp[-2] = -sp[-2].fFloat;
-            case ByteCodeInstruction::kNegateF2: sp[-1] = -sp[-1].fFloat;
+            case ByteCodeInstruction::kNegateF4: sp[-3] = -sp[-3].fFloat; [[fallthrough]];
+            case ByteCodeInstruction::kNegateF3: sp[-2] = -sp[-2].fFloat; [[fallthrough]];
+            case ByteCodeInstruction::kNegateF2: sp[-1] = -sp[-1].fFloat; [[fallthrough]];
             case ByteCodeInstruction::kNegateF:  sp[ 0] = -sp[ 0].fFloat;
                                                  continue;
 
@@ -874,15 +835,15 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                 continue;
             }
 
-            case ByteCodeInstruction::kNegateI4: sp[-3] = -sp[-3].fSigned;
-            case ByteCodeInstruction::kNegateI3: sp[-2] = -sp[-2].fSigned;
-            case ByteCodeInstruction::kNegateI2: sp[-1] = -sp[-1].fSigned;
+            case ByteCodeInstruction::kNegateI4: sp[-3] = -sp[-3].fSigned; [[fallthrough]];
+            case ByteCodeInstruction::kNegateI3: sp[-2] = -sp[-2].fSigned; [[fallthrough]];
+            case ByteCodeInstruction::kNegateI2: sp[-1] = -sp[-1].fSigned; [[fallthrough]];
             case ByteCodeInstruction::kNegateI:  sp[ 0] = -sp[ 0].fSigned;
                                                  continue;
 
-            case ByteCodeInstruction::kPop4: POP();
-            case ByteCodeInstruction::kPop3: POP();
-            case ByteCodeInstruction::kPop2: POP();
+            case ByteCodeInstruction::kPop4: POP(); [[fallthrough]];
+            case ByteCodeInstruction::kPop3: POP(); [[fallthrough]];
+            case ByteCodeInstruction::kPop2: POP(); [[fallthrough]];
             case ByteCodeInstruction::kPop:  POP();
                                              continue;
 
@@ -993,10 +954,13 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
 
             case ByteCodeInstruction::kStore4:
                 stack[*ip+3] = skvx::if_then_else(mask(), POP().fFloat, stack[*ip+3].fFloat);
+                [[fallthrough]];
             case ByteCodeInstruction::kStore3:
                 stack[*ip+2] = skvx::if_then_else(mask(), POP().fFloat, stack[*ip+2].fFloat);
+                [[fallthrough]];
             case ByteCodeInstruction::kStore2:
                 stack[*ip+1] = skvx::if_then_else(mask(), POP().fFloat, stack[*ip+1].fFloat);
+                [[fallthrough]];
             case ByteCodeInstruction::kStore:
                 stack[*ip+0] = skvx::if_then_else(mask(), POP().fFloat, stack[*ip+0].fFloat);
                 ++ip;
@@ -1004,10 +968,13 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
 
             case ByteCodeInstruction::kStoreGlobal4:
                 globals[*ip+3] = skvx::if_then_else(mask(), POP().fFloat, globals[*ip+3].fFloat);
+                [[fallthrough]];
             case ByteCodeInstruction::kStoreGlobal3:
                 globals[*ip+2] = skvx::if_then_else(mask(), POP().fFloat, globals[*ip+2].fFloat);
+                [[fallthrough]];
             case ByteCodeInstruction::kStoreGlobal2:
                 globals[*ip+1] = skvx::if_then_else(mask(), POP().fFloat, globals[*ip+1].fFloat);
+                [[fallthrough]];
             case ByteCodeInstruction::kStoreGlobal:
                 globals[*ip+0] = skvx::if_then_else(mask(), POP().fFloat, globals[*ip+0].fFloat);
                 ++ip;
@@ -1041,60 +1008,6 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                     }
                 }
                 sp -= count;
-                continue;
-            }
-
-            case ByteCodeInstruction::kStoreSwizzle: {
-                int target = READ8();
-                int count = READ8();
-                for (int i = count - 1; i >= 0; --i) {
-                    stack[target + *(ip + i)] = skvx::if_then_else(
-                            mask(), POP().fFloat, stack[target + *(ip + i)].fFloat);
-                }
-                ip += count;
-                continue;
-            }
-
-            case ByteCodeInstruction::kStoreSwizzleGlobal: {
-                int target = READ8();
-                int count = READ8();
-                for (int i = count - 1; i >= 0; --i) {
-                    globals[target + *(ip + i)] = skvx::if_then_else(
-                            mask(), POP().fFloat, globals[target + *(ip + i)].fFloat);
-                }
-                ip += count;
-                continue;
-            }
-
-            case ByteCodeInstruction::kStoreSwizzleIndirect: {
-                int count = READ8();
-                I32 target = POP().fSigned;
-                I32 m = mask();
-                for (int i = count - 1; i >= 0; --i) {
-                    I32 v = POP().fSigned;
-                    for (int j = 0; j < VecWidth; ++j) {
-                        if (m[j]) {
-                            stack[target[j] + *(ip + i)].fSigned[j] = v[j];
-                        }
-                    }
-                }
-                ip += count;
-                continue;
-            }
-
-            case ByteCodeInstruction::kStoreSwizzleIndirectGlobal: {
-                int count = READ8();
-                I32 target = POP().fSigned;
-                I32 m = mask();
-                for (int i = count - 1; i >= 0; --i) {
-                    I32 v = POP().fSigned;
-                    for (int j = 0; j < VecWidth; ++j) {
-                        if (m[j]) {
-                            globals[target[j] + *(ip + i)].fSigned[j] = v[j];
-                        }
-                    }
-                }
-                ip += count;
                 continue;
             }
 
@@ -1188,6 +1101,14 @@ static bool InnerRun(const ByteCode* byteCode, const ByteCodeFunction* f, VValue
                 *loopPtr &= ~m;
                 continue;
             }
+
+            case ByteCodeInstruction::kLoadFragCoord:
+            case ByteCodeInstruction::kSampleExplicit:
+            case ByteCodeInstruction::kSampleMatrix:
+            default:
+                // TODO: Support these?
+                SkASSERT(false);
+                return false;
         }
     }
 }

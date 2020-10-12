@@ -196,8 +196,9 @@ class DnsSdServiceWatcher : public DnsSdQuerier::Callback {
   // Set of all instance ids found so far, mapped to the T type that it
   // represents. unique_ptr<T> entities are used so that the const refs returned
   // from GetServices() and the ServicesUpdatedCallback can persist even once
-  // this map is resized. NOTE: Unordered map is used because this set is in
-  // many cases expected to be large.
+  // this map is resized.
+  // NOTE: Unordered map is used because this set is in  many cases expected to
+  // be large.
   std::unordered_map<EndpointKey, std::unique_ptr<T>, PairHash> records_;
 
   // Represents whether discovery is currently running or not.

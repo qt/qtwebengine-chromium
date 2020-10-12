@@ -13,7 +13,7 @@
 
 SkSweepGradient::SkSweepGradient(const SkPoint& center, SkScalar t0, SkScalar t1,
                                  const Descriptor& desc)
-    : SkGradientShaderBase(desc, SkMatrix::MakeTrans(-center.x(), -center.y()))
+    : SkGradientShaderBase(desc, SkMatrix::Translate(-center.x(), -center.y()))
     , fCenter(center)
     , fTBias(-t0)
     , fTScale(1 / (t1 - t0))
@@ -64,14 +64,13 @@ void SkSweepGradient::flatten(SkWriteBuffer& buffer) const {
 void SkSweepGradient::appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* p,
                                            SkRasterPipeline*) const {
     p->append(SkRasterPipeline::xy_to_unit_angle);
-    p->append_matrix(alloc, SkMatrix::Concat(SkMatrix::MakeScale(fTScale, 1),
-                                             SkMatrix::MakeTrans(fTBias , 0)));
+    p->append_matrix(alloc, SkMatrix::Scale(fTScale, 1) * SkMatrix::Translate(fTBias, 0));
 }
 
 skvm::F32 SkSweepGradient::transformT(skvm::Builder* p, skvm::Uniforms* uniforms,
-                                      skvm::F32 x, skvm::F32 y, skvm::I32* mask) const {
-    skvm::F32 xabs = abs(x),
-              yabs = abs(y),
+                                      skvm::Coord coord, skvm::I32* mask) const {
+    skvm::F32 xabs = abs(coord.x),
+              yabs = abs(coord.y),
              slope = min(xabs, yabs) / max(xabs, yabs);
     skvm::F32 s = slope * slope;
 
@@ -83,9 +82,9 @@ skvm::F32 SkSweepGradient::transformT(skvm::Builder* p, skvm::Uniforms* uniforms
                                     +2.476101927459239959716796875e-2f,
                                     -5.185396969318389892578125e-2f,
                                     +0.15912117063999176025390625f);
-    phi = select(xabs < yabs, (1/4.0f) - phi, phi);
-    phi = select(   x < 0.0f, (1/2.0f) - phi, phi);
-    phi = select(   y < 0.0f, (1/1.0f) - phi, phi);
+    phi = select(   xabs < yabs, (1/4.0f) - phi, phi);
+    phi = select(coord.x < 0.0f, (1/2.0f) - phi, phi);
+    phi = select(coord.y < 0.0f, (1/1.0f) - phi, phi);
 
     skvm::F32 t = select(is_NaN(phi), p->splat(0.0f)
                                     , phi);

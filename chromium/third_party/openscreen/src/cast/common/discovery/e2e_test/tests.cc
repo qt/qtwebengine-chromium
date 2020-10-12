@@ -20,28 +20,29 @@
 #include "platform/impl/network_interface.h"
 #include "platform/impl/platform_client_posix.h"
 #include "platform/impl/task_runner.h"
+#include "util/chrono_helpers.h"
 
 namespace openscreen {
 namespace cast {
 namespace {
 
+// Maximum amount of time needed for a query to be received.
+constexpr seconds kMaxQueryDuration{3};
+
 // Total wait time = 4 seconds.
-constexpr std::chrono::milliseconds kWaitLoopSleepTime =
-    std::chrono::milliseconds(500);
+constexpr milliseconds kWaitLoopSleepTime(500);
 constexpr int kMaxWaitLoopIterations = 8;
 
 // Total wait time = 2.5 seconds.
 // NOTE: This must be less than the above wait time.
-constexpr std::chrono::milliseconds kCheckLoopSleepTime =
-    std::chrono::milliseconds(100);
+constexpr milliseconds kCheckLoopSleepTime(100);
 constexpr int kMaxCheckLoopIterations = 25;
 
-}  // namespace
 
 // Publishes new service instances.
 class Publisher : public discovery::DnsSdServicePublisher<ServiceInfo> {
  public:
-  Publisher(discovery::DnsSdService* service)
+  explicit Publisher(discovery::DnsSdService* service)  // NOLINT
       : DnsSdServicePublisher<ServiceInfo>(service,
                                            kCastV2ServiceId,
                                            ServiceInfoToDnsSdInstance) {
@@ -66,9 +67,9 @@ class Publisher : public discovery::DnsSdServicePublisher<ServiceInfo> {
 };
 
 // Receives incoming services and outputs their results to stdout.
-class Receiver : public discovery::DnsSdServiceWatcher<ServiceInfo> {
+class ServiceReceiver : public discovery::DnsSdServiceWatcher<ServiceInfo> {
  public:
-  Receiver(discovery::DnsSdService* service)
+  explicit ServiceReceiver(discovery::DnsSdService* service)  // NOLINT
       : discovery::DnsSdServiceWatcher<ServiceInfo>(
             service,
             kCastV2ServiceId,
@@ -77,7 +78,7 @@ class Receiver : public discovery::DnsSdServiceWatcher<ServiceInfo> {
                 std::vector<std::reference_wrapper<const ServiceInfo>> infos) {
               ProcessResults(std::move(infos));
             }) {
-    OSP_LOG << "Initializing Receiver...";
+    OSP_LOG << "Initializing ServiceReceiver...";
   }
 
   bool IsServiceFound(const ServiceInfo& check_service) {
@@ -133,9 +134,9 @@ class DiscoveryE2ETest : public testing::Test {
  public:
   DiscoveryE2ETest() {
     // Sleep to let any packets clear off the network before further tests.
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    std::this_thread::sleep_for(milliseconds(500));
 
-    PlatformClientPosix::Create(Clock::duration{50}, Clock::duration{50});
+    PlatformClientPosix::Create(milliseconds(50), milliseconds(50));
     task_runner_ = PlatformClientPosix::GetInstance()->GetTaskRunner();
   }
 
@@ -161,7 +162,7 @@ class DiscoveryE2ETest : public testing::Test {
     task_runner_->PostTask([this, &config, &done]() {
       dnssd_service_ = discovery::CreateDnsSdService(
           task_runner_, &reporting_client_, config);
-      receiver_ = std::make_unique<Receiver>(dnssd_service_.get());
+      receiver_ = std::make_unique<ServiceReceiver>(dnssd_service_.get());
       publisher_ = std::make_unique<Publisher>(dnssd_service_.get());
       done = true;
     });
@@ -253,6 +254,9 @@ class DiscoveryE2ETest : public testing::Test {
         });
   }
 
+  // TODO(issuetracker.google.com/159256503): Change this to use a polling
+  // method to wait until the service disappears rather than immediately failing
+  // if it exists, so waits throughout this file can be removed.
   void CheckNotPublishedService(ServiceInfo service_info,
                                 std::atomic_bool* has_been_seen) {
     OSP_DCHECK(dnssd_service_.get());
@@ -264,7 +268,7 @@ class DiscoveryE2ETest : public testing::Test {
   TaskRunner* task_runner_;
   FailOnErrorReporting reporting_client_;
   SerialDeletePtr<discovery::DnsSdService> dnssd_service_;
-  std::unique_ptr<Receiver> receiver_;
+  std::unique_ptr<ServiceReceiver> receiver_;
   std::unique_ptr<Publisher> publisher_;
 
  private:
@@ -423,7 +427,7 @@ TEST_F(DiscoveryE2ETest, ValidateAnnouncementFlow) {
     ASSERT_FALSE(result.is_error());
     ASSERT_EQ(result.value(), 3);
   });
-  std::this_thread::sleep_for(std::chrono::seconds(3));
+  std::this_thread::sleep_for(seconds(3));
   found1 = false;
   found2 = false;
   found3 = false;
@@ -499,8 +503,9 @@ TEST_F(DiscoveryE2ETest, ValidateRecordsOnlyReceivedWhenQueryRunning) {
   CheckNotPublishedService(instance, &found);
   WaitUntilSeen(false, &found);
 
-  // Restart discovery and ensure that only the updated record is returned.
   StartDiscovery();
+  std::this_thread::sleep_for(kMaxQueryDuration);
+
   OSP_LOG << "Service discovery in progress...";
   found = false;
   CheckNotPublishedService(updated_instance, &found);
@@ -525,7 +530,6 @@ TEST_F(DiscoveryE2ETest, ValidateRefreshFlow) {
   auto discovery_config = GetConfigSettings();
   discovery_config.new_record_announcement_count = 0;
   discovery_config.new_query_announcement_count = 2;
-  constexpr std::chrono::seconds kMaxQueryDuration{3};
   SetUpService(discovery_config);
 
   auto instance = GetInfo(1);
@@ -578,5 +582,6 @@ TEST_F(DiscoveryE2ETest, ValidateRefreshFlow) {
   WaitUntilSeen(true, &found);
 }
 
+}  // namespace
 }  // namespace cast
 }  // namespace openscreen

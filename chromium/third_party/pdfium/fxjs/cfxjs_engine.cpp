@@ -8,13 +8,11 @@
 
 #include <memory>
 #include <utility>
-#include <vector>
 
 #include "core/fxcrt/unowned_ptr.h"
 #include "fxjs/cjs_object.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/xfa/cfxjse_runtimedata.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "v8/include/v8-util.h"
 
@@ -309,7 +307,7 @@ size_t FXJS_GlobalIsolateRefCount() {
   return g_isolate_ref_count;
 }
 
-FXJS_PerIsolateData::~FXJS_PerIsolateData() {}
+FXJS_PerIsolateData::~FXJS_PerIsolateData() = default;
 
 // static
 void FXJS_PerIsolateData::SetUp(v8::Isolate* pIsolate) {
@@ -380,8 +378,8 @@ int CFXJS_Engine::DefineObj(const char* sObjName,
   FXJS_PerIsolateData::SetUp(GetIsolate());
   FXJS_PerIsolateData* pIsolateData = FXJS_PerIsolateData::Get(GetIsolate());
   return pIsolateData->AssignIDForObjDefinition(
-      pdfium::MakeUnique<CFXJS_ObjDefinition>(GetIsolate(), sObjName, eObjType,
-                                              pConstructor, pDestructor));
+      std::make_unique<CFXJS_ObjDefinition>(GetIsolate(), sObjName, eObjType,
+                                            pConstructor, pDestructor));
 }
 
 void CFXJS_Engine::DefineObjMethod(int nObjDefnID,

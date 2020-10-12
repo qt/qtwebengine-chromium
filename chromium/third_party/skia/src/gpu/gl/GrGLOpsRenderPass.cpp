@@ -8,7 +8,6 @@
 #include "src/gpu/gl/GrGLOpsRenderPass.h"
 
 #include "src/gpu/GrContextPriv.h"
-#include "src/gpu/GrFixedClip.h"
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrRenderTargetPriv.h"
 
@@ -259,12 +258,10 @@ void GrGLOpsRenderPass::onDrawIndexedIndirect(const GrBuffer* drawIndirectBuffer
     }
 }
 
-void GrGLOpsRenderPass::onClear(const GrFixedClip& clip, const SkPMColor4f& color) {
-    fGpu->clear(clip, color, fRenderTarget, fOrigin);
+void GrGLOpsRenderPass::onClear(const GrScissorState& scissor, const SkPMColor4f& color) {
+    fGpu->clear(scissor, color, fRenderTarget, fOrigin);
 }
 
-void GrGLOpsRenderPass::onClearStencilClip(const GrFixedClip& clip,
-                                           bool insideStencilMask) {
-    fGpu->clearStencilClip(clip, insideStencilMask, fRenderTarget, fOrigin);
+void GrGLOpsRenderPass::onClearStencilClip(const GrScissorState& scissor, bool insideStencilMask) {
+    fGpu->clearStencilClip(scissor, insideStencilMask, fRenderTarget, fOrigin);
 }
-

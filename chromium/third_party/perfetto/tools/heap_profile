@@ -32,8 +32,8 @@ import uuid
 
 
 TRACE_TO_TEXT_SHAS = {
-    'linux': 'aba0e660818bfc249992ebbceb13a2e4c9a62c3a',
-    'mac': 'c7d1b9d904f008bfb95125b204837eff946c3ed7',
+    'linux': '118474a53b9166f73c8e81c5e52e82980f30202c',
+    'mac': 'f3636498057f58d48a147d5f7c1da4d27333b646',
 }
 TRACE_TO_TEXT_PATH = tempfile.gettempdir()
 TRACE_TO_TEXT_BASE_URL = ('https://storage.googleapis.com/perfetto/')
@@ -65,7 +65,7 @@ def load_trace_to_text(platform):
       return local_file
 
   url = TRACE_TO_TEXT_BASE_URL + file_name
-  subprocess.check_call(['curl', '-#', '-o', local_file, url])
+  subprocess.check_call(['curl', '-L', '-#', '-o', local_file, url])
   if not check_hash(local_file, sha_value):
     os.remove(local_file)
     raise ValueError("Invalid signature.")
@@ -126,7 +126,7 @@ def print_no_profile_error():
   print("No profiles generated", file=sys.stderr)
   print(
     "If this is unexpected, check "
-    "https://docs.perfetto.dev/#/heapprofd?id=troubleshooting.",
+    "https://perfetto.dev/docs/data-sources/native-heap-profiler#troubleshooting.",
     file=sys.stderr)
 
 SDK = {
@@ -160,6 +160,8 @@ def main(argv):
       "Default 7 days.",
       type=int,
       default=604800000)
+  # This flag is a no-op now. We never start heapprofd explicitly using system
+  # properties.
   parser.add_argument(
       "--no-start", help="Do not start heapprofd.", action='store_true')
   parser.add_argument(
@@ -362,16 +364,6 @@ def main(argv):
         subprocess.check_call,
         ['adb', 'shell', 'su root setenforce %s' % enforcing])
     subprocess.check_call(['adb', 'shell', 'su root setenforce 0'])
-
-  if not args.no_start:
-    heapprofd_prop = subprocess.check_output(
-        ['adb', 'shell', 'getprop persist.heapprofd.enable'])
-    if heapprofd_prop.strip() != '1':
-      subprocess.check_call(
-          ['adb', 'shell', 'setprop persist.heapprofd.enable 1'])
-      atexit.register(subprocess.check_call,
-                      ['adb', 'shell', 'setprop persist.heapprofd.enable 0'])
-
 
   if args.simpleperf:
     subprocess.check_call([

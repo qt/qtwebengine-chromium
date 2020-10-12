@@ -36,13 +36,11 @@ namespace dawn_wire { namespace client {
             cmd.handleCreateInfoLength = handleCreateInfoLength;
             cmd.handleCreateInfo = nullptr;
 
-            size_t commandSize = cmd.GetRequiredSize();
-            size_t requiredSize = commandSize + handleCreateInfoLength;
-            char* allocatedBuffer =
-                static_cast<char*>(buffer->device->GetClient()->GetCmdSpace(requiredSize));
-            cmd.Serialize(allocatedBuffer);
+            char* writeHandleSpace =
+                buffer->device->GetClient()->SerializeCommand(cmd, handleCreateInfoLength);
+
             // Serialize the handle into the space after the command.
-            handle->SerializeCreate(allocatedBuffer + commandSize);
+            handle->SerializeCreate(writeHandleSpace);
         }
     }  // namespace
 
@@ -54,12 +52,25 @@ namespace dawn_wire { namespace client {
         uint32_t serial = buffer->requestSerial++;
         ASSERT(buffer->requests.find(serial) == buffer->requests.end());
 
+        if (buffer->size > std::numeric_limits<size_t>::max()) {
+            // On buffer creation, we check that mappable buffers do not exceed this size.
+            // So this buffer must not have mappable usage. Inject a validation error.
+            ClientDeviceInjectError(reinterpret_cast<WGPUDevice>(buffer->device),
+                                    WGPUErrorType_Validation,
+                                    "Buffer needs the correct map usage bit");
+            callback(WGPUBufferMapAsyncStatus_Error, nullptr, 0, userdata);
+            return;
+        }
+
         // Create a ReadHandle for the map request. This is the client's intent to read GPU
         // memory.
         MemoryTransferService::ReadHandle* readHandle =
-            buffer->device->GetClient()->GetMemoryTransferService()->CreateReadHandle(buffer->size);
+            buffer->device->GetClient()->GetMemoryTransferService()->CreateReadHandle(
+                static_cast<size_t>(buffer->size));
         if (readHandle == nullptr) {
-            callback(WGPUBufferMapAsyncStatus_DeviceLost, nullptr, 0, userdata);
+            ClientDeviceInjectError(reinterpret_cast<WGPUDevice>(buffer->device),
+                                    WGPUErrorType_OutOfMemory, "Failed to create buffer mapping");
+            callback(WGPUBufferMapAsyncStatus_Error, nullptr, 0, userdata);
             return;
         }
 
@@ -84,13 +95,25 @@ namespace dawn_wire { namespace client {
         uint32_t serial = buffer->requestSerial++;
         ASSERT(buffer->requests.find(serial) == buffer->requests.end());
 
+        if (buffer->size > std::numeric_limits<size_t>::max()) {
+            // On buffer creation, we check that mappable buffers do not exceed this size.
+            // So this buffer must not have mappable usage. Inject a validation error.
+            ClientDeviceInjectError(reinterpret_cast<WGPUDevice>(buffer->device),
+                                    WGPUErrorType_Validation,
+                                    "Buffer needs the correct map usage bit");
+            callback(WGPUBufferMapAsyncStatus_Error, nullptr, 0, userdata);
+            return;
+        }
+
         // Create a WriteHandle for the map request. This is the client's intent to write GPU
         // memory.
         MemoryTransferService::WriteHandle* writeHandle =
             buffer->device->GetClient()->GetMemoryTransferService()->CreateWriteHandle(
-                buffer->size);
+                static_cast<size_t>(buffer->size));
         if (writeHandle == nullptr) {
-            callback(WGPUBufferMapAsyncStatus_DeviceLost, nullptr, 0, userdata);
+            ClientDeviceInjectError(reinterpret_cast<WGPUDevice>(buffer->device),
+                                    WGPUErrorType_OutOfMemory, "Failed to create buffer mapping");
+            callback(WGPUBufferMapAsyncStatus_Error, nullptr, 0, userdata);
             return;
         }
 
@@ -112,6 +135,13 @@ namespace dawn_wire { namespace client {
         Device* device = reinterpret_cast<Device*>(cDevice);
         Client* wireClient = device->GetClient();
 
+        if ((descriptor->usage & (WGPUBufferUsage_MapRead | WGPUBufferUsage_MapWrite)) != 0 &&
+            descriptor->size > std::numeric_limits<size_t>::max()) {
+            ClientDeviceInjectError(cDevice, WGPUErrorType_OutOfMemory,
+                                    "Buffer is too large for map usage");
+            return ClientDeviceCreateErrorBuffer(cDevice);
+        }
+
         auto* bufferObjectAndSerial = wireClient->BufferAllocator().New(device);
         Buffer* buffer = bufferObjectAndSerial->object.get();
         // Store the size of the buffer so that mapping operations can allocate a
@@ -123,9 +153,7 @@ namespace dawn_wire { namespace client {
         cmd.descriptor = descriptor;
         cmd.result = ObjectHandle{buffer->id, bufferObjectAndSerial->generation};
 
-        size_t requiredSize = cmd.GetRequiredSize();
-        char* allocatedBuffer = static_cast<char*>(wireClient->GetCmdSpace(requiredSize));
-        cmd.Serialize(allocatedBuffer, *wireClient);
+        wireClient->SerializeCommand(cmd);
 
         return reinterpret_cast<WGPUBuffer>(buffer);
     }
@@ -136,14 +164,17 @@ namespace dawn_wire { namespace client {
         Device* device = reinterpret_cast<Device*>(cDevice);
         Client* wireClient = device->GetClient();
 
-        auto* bufferObjectAndSerial = wireClient->BufferAllocator().New(device);
-        Buffer* buffer = bufferObjectAndSerial->object.get();
-        buffer->size = descriptor->size;
-
         WGPUCreateBufferMappedResult result;
-        result.buffer = reinterpret_cast<WGPUBuffer>(buffer);
         result.data = nullptr;
         result.dataLength = 0;
+
+        // This buffer is too large to be mapped and to make a WriteHandle for.
+        if (descriptor->size > std::numeric_limits<size_t>::max()) {
+            ClientDeviceInjectError(cDevice, WGPUErrorType_OutOfMemory,
+                                    "Buffer is too large for mapping");
+            result.buffer = ClientDeviceCreateErrorBuffer(cDevice);
+            return result;
+        }
 
         // Create a WriteHandle for the map request. This is the client's intent to write GPU
         // memory.
@@ -152,7 +183,9 @@ namespace dawn_wire { namespace client {
                 wireClient->GetMemoryTransferService()->CreateWriteHandle(descriptor->size));
 
         if (writeHandle == nullptr) {
-            // TODO(enga): Support context lost generated by the client.
+            ClientDeviceInjectError(cDevice, WGPUErrorType_OutOfMemory,
+                                    "Buffer mapping allocation failed");
+            result.buffer = ClientDeviceCreateErrorBuffer(cDevice);
             return result;
         }
 
@@ -161,14 +194,20 @@ namespace dawn_wire { namespace client {
         // Open the WriteHandle. This returns a pointer and size of mapped memory.
         // |result.data| may be null on error.
         std::tie(result.data, result.dataLength) = writeHandle->Open();
-
         if (result.data == nullptr) {
-            // TODO(enga): Support context lost generated by the client.
+            ClientDeviceInjectError(cDevice, WGPUErrorType_OutOfMemory,
+                                    "Buffer mapping allocation failed");
+            result.buffer = ClientDeviceCreateErrorBuffer(cDevice);
             return result;
         }
 
+        auto* bufferObjectAndSerial = wireClient->BufferAllocator().New(device);
+        Buffer* buffer = bufferObjectAndSerial->object.get();
+        buffer->size = descriptor->size;
         // Successfully created staging memory. The buffer now owns the WriteHandle.
         buffer->writeHandle = std::move(writeHandle);
+
+        result.buffer = reinterpret_cast<WGPUBuffer>(buffer);
 
         // Get the serialization size of the WriteHandle.
         size_t handleCreateInfoLength = buffer->writeHandle->SerializeCreateSize();
@@ -180,12 +219,11 @@ namespace dawn_wire { namespace client {
         cmd.handleCreateInfoLength = handleCreateInfoLength;
         cmd.handleCreateInfo = nullptr;
 
-        size_t commandSize = cmd.GetRequiredSize();
-        size_t requiredSize = commandSize + handleCreateInfoLength;
-        char* allocatedBuffer = static_cast<char*>(wireClient->GetCmdSpace(requiredSize));
-        cmd.Serialize(allocatedBuffer, *wireClient);
+        char* writeHandleSpace =
+            buffer->device->GetClient()->SerializeCommand(cmd, handleCreateInfoLength);
+
         // Serialize the WriteHandle into the space after the command.
-        buffer->writeHandle->SerializeCreate(allocatedBuffer + commandSize);
+        buffer->writeHandle->SerializeCreate(writeHandleSpace);
 
         return result;
     }
@@ -243,10 +281,7 @@ namespace dawn_wire { namespace client {
         cmd.count = count;
         cmd.data = static_cast<const uint8_t*>(data);
 
-        Client* wireClient = buffer->device->GetClient();
-        size_t requiredSize = cmd.GetRequiredSize();
-        char* allocatedBuffer = static_cast<char*>(wireClient->GetCmdSpace(requiredSize));
-        cmd.Serialize(allocatedBuffer);
+        buffer->device->GetClient()->SerializeCommand(cmd);
     }
 
     void ClientHandwrittenBufferUnmap(WGPUBuffer cBuffer) {
@@ -273,14 +308,12 @@ namespace dawn_wire { namespace client {
             cmd.writeFlushInfoLength = writeFlushInfoLength;
             cmd.writeFlushInfo = nullptr;
 
-            size_t commandSize = cmd.GetRequiredSize();
-            size_t requiredSize = commandSize + writeFlushInfoLength;
-            char* allocatedBuffer =
-                static_cast<char*>(buffer->device->GetClient()->GetCmdSpace(requiredSize));
-            cmd.Serialize(allocatedBuffer);
+            char* writeHandleSpace =
+                buffer->device->GetClient()->SerializeCommand(cmd, writeFlushInfoLength);
+
             // Serialize flush metadata into the space after the command.
             // This closes the handle for writing.
-            buffer->writeHandle->SerializeFlush(allocatedBuffer + commandSize);
+            buffer->writeHandle->SerializeFlush(writeHandleSpace);
             buffer->writeHandle = nullptr;
 
         } else if (buffer->readHandle) {
@@ -290,10 +323,7 @@ namespace dawn_wire { namespace client {
 
         BufferUnmapCmd cmd;
         cmd.self = cBuffer;
-        size_t requiredSize = cmd.GetRequiredSize();
-        char* allocatedBuffer =
-            static_cast<char*>(buffer->device->GetClient()->GetCmdSpace(requiredSize));
-        cmd.Serialize(allocatedBuffer, *buffer->device->GetClient());
+        buffer->device->GetClient()->SerializeCommand(cmd);
     }
 
     void ClientHandwrittenBufferDestroy(WGPUBuffer cBuffer) {
@@ -306,10 +336,7 @@ namespace dawn_wire { namespace client {
 
         BufferDestroyCmd cmd;
         cmd.self = cBuffer;
-        size_t requiredSize = cmd.GetRequiredSize();
-        char* allocatedBuffer =
-            static_cast<char*>(buffer->device->GetClient()->GetCmdSpace(requiredSize));
-        cmd.Serialize(allocatedBuffer, *buffer->device->GetClient());
+        buffer->device->GetClient()->SerializeCommand(cmd);
     }
 
     WGPUFence ClientHandwrittenQueueCreateFence(WGPUQueue cSelf,
@@ -323,9 +350,7 @@ namespace dawn_wire { namespace client {
         cmd.result = ObjectHandle{allocation->object->id, allocation->generation};
         cmd.descriptor = descriptor;
 
-        size_t requiredSize = cmd.GetRequiredSize();
-        char* allocatedBuffer = static_cast<char*>(device->GetClient()->GetCmdSpace(requiredSize));
-        cmd.Serialize(allocatedBuffer, *device->GetClient());
+        device->GetClient()->SerializeCommand(cmd);
 
         WGPUFence cFence = reinterpret_cast<WGPUFence>(allocation->object.get());
 
@@ -360,10 +385,25 @@ namespace dawn_wire { namespace client {
         cmd.fence = cFence;
         cmd.signalValue = signalValue;
 
-        size_t requiredSize = cmd.GetRequiredSize();
-        char* allocatedBuffer =
-            static_cast<char*>(fence->device->GetClient()->GetCmdSpace(requiredSize));
-        cmd.Serialize(allocatedBuffer, *fence->device->GetClient());
+        queue->device->GetClient()->SerializeCommand(cmd);
+    }
+
+    void ClientHandwrittenQueueWriteBuffer(WGPUQueue cQueue,
+                                           WGPUBuffer cBuffer,
+                                           uint64_t bufferOffset,
+                                           const void* data,
+                                           size_t size) {
+        Queue* queue = reinterpret_cast<Queue*>(cQueue);
+        Buffer* buffer = reinterpret_cast<Buffer*>(cBuffer);
+
+        QueueWriteBufferInternalCmd cmd;
+        cmd.queueId = queue->id;
+        cmd.bufferId = buffer->id;
+        cmd.bufferOffset = bufferOffset;
+        cmd.data = static_cast<const uint8_t*>(data);
+        cmd.size = size;
+
+        queue->device->GetClient()->SerializeCommand(cmd);
     }
 
     void ClientDeviceReference(WGPUDevice) {

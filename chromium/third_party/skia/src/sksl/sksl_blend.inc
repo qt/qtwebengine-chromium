@@ -69,8 +69,9 @@ half4 blend_lighten(half4 src, half4 dst) {
 half _guarded_divide(half n, half d) {
     @if (sk_Caps.mustGuardDivisionEvenAfterExplicitZeroCheck) {
         return n/(d + 0.00000001);
+    } else {
+        return n/d;
     }
-    return n/d;
 }
 
 half _color_dodge_component(half sc, half sa, half dc, half da) {
@@ -298,4 +299,8 @@ half4 blend(SkBlendMode mode, half4 src, half4 dst) {
     }
     return half4(0);  // Avoids "'blend' can exit without returning a value."
 }
+
+// The max() guards against division by zero when the incoming color is transparent black
+half4 unpremul(half4 color) { return half4(color.rgb / max(color.a, 0.0001), color.a); }
+float4 unpremul_float(float4 color) { return float4(color.rgb / max(color.a, 0.0001), color.a); }
 )SKSL"

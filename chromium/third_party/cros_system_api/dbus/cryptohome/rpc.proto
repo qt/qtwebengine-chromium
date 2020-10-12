@@ -549,3 +549,9 @@ message CheckHealthReply {
   // Flag indicating powerwash request
   optional bool requires_powerwash = 1;
 }
+
+// Starts fingerprint auth session by calling Biometrics Daemon.
+message StartFingerprintAuthSessionRequest {}
+
+// Ends fingerprint auth session by calling Biometrics Daemon.
+message EndFingerprintAuthSessionRequest {}

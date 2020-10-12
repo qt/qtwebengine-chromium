@@ -15,9 +15,8 @@
 #include "core/fpdfapi/parser/cpdf_reference.h"
 #include "core/fxcrt/fx_string.h"
 #include "third_party/base/logging.h"
-#include "third_party/base/ptr_util.h"
 
-CPDF_Object::~CPDF_Object() {}
+CPDF_Object::~CPDF_Object() = default;
 
 CPDF_Object* CPDF_Object::GetDirect() {
   return this;

@@ -612,6 +612,9 @@ static void SetGroupOfPicture(int first_is_key_frame, int use_alt_ref,
   group_of_picture->show_frame_count = coding_frame_count - use_alt_ref;
   group_of_picture->start_show_index = first_show_idx;
   group_of_picture->start_coding_index = start_coding_index;
+  group_of_picture->first_is_key_frame = first_is_key_frame;
+  group_of_picture->use_alt_ref = use_alt_ref;
+  group_of_picture->last_gop_use_alt_ref = last_gop_use_alt_ref;
 
   // We need to make a copy of start reference frame info because we
   // use it to simulate the ref frame update.
@@ -776,6 +779,9 @@ void SimpleEncode::ComputeFirstPassStats() {
   free_encoder(cpi);
   rewind(in_file_);
   vpx_img_free(&img);
+
+  // Generate key_frame_map based on impl_ptr_->first_pass_stats.
+  key_frame_map_ = ComputeKeyFrameMap();
 }
 
 std::vector<std::vector<double>> SimpleEncode::ObserveFirstPassStats() {
@@ -800,9 +806,39 @@ std::vector<std::vector<double>> SimpleEncode::ObserveFirstPassStats() {
   return output_stats;
 }
 
-void SimpleEncode::SetExternalGroupOfPicture(
-    std::vector<int> external_arf_indexes) {
-  external_arf_indexes_ = external_arf_indexes;
+void SimpleEncode::SetExternalGroupOfPicturesMap(int *gop_map,
+                                                 int gop_map_size) {
+  for (int i = 0; i < gop_map_size; ++i) {
+    gop_map_.push_back(gop_map[i]);
+  }
+  // The following will check and modify gop_map_ to make sure the
+  // gop_map_ satisfies the constraints.
+  // 1) Each key frame position should be at the start of a gop.
+  // 2) The last gop should not use an alt ref.
+  assert(gop_map_.size() == key_frame_map_.size());
+  int last_gop_start = 0;
+  for (int i = 0; static_cast<size_t>(i) < gop_map_.size(); ++i) {
+    if (key_frame_map_[i] == 1 && gop_map_[i] == 0) {
+      fprintf(stderr, "Add an extra gop start at show_idx %d\n", i);
+      // Insert a gop start at key frame location.
+      gop_map_[i] |= kGopMapFlagStart;
+      gop_map_[i] |= kGopMapFlagUseAltRef;
+    }
+    if (gop_map_[i] & kGopMapFlagStart) {
+      last_gop_start = i;
+    }
+  }
+  if (gop_map_[last_gop_start] & kGopMapFlagUseAltRef) {
+    fprintf(stderr,
+            "Last group of pictures starting at show_idx %d shouldn't use alt "
+            "ref\n",
+            last_gop_start);
+    gop_map_[last_gop_start] &= ~kGopMapFlagUseAltRef;
+  }
+}
+
+std::vector<int> SimpleEncode::ObserveExternalGroupOfPicturesMap() {
+  return gop_map_;
 }
 
 template <typename T>
@@ -811,6 +847,32 @@ T *GetVectorData(const std::vector<T> &v) {
     return nullptr;
   }
   return const_cast<T *>(v.data());
+}
+
+static GOP_COMMAND GetGopCommand(const std::vector<int> &gop_map,
+                                 int start_show_index) {
+  GOP_COMMAND gop_command;
+  if (gop_map.size() > 0) {
+    assert(static_cast<size_t>(start_show_index) < gop_map.size());
+    assert((gop_map[start_show_index] & kGopMapFlagStart) != 0);
+    int end_show_index = start_show_index + 1;
+    // gop_map[end_show_index] & kGopMapFlagStart == 0 means this is
+    // the start of a gop.
+    while (static_cast<size_t>(end_show_index) < gop_map.size() &&
+           (gop_map[end_show_index] & kGopMapFlagStart) == 0) {
+      ++end_show_index;
+    }
+    const int show_frame_count = end_show_index - start_show_index;
+    int use_alt_ref = (gop_map[start_show_index] & kGopMapFlagUseAltRef) != 0;
+    if (static_cast<size_t>(end_show_index) == gop_map.size()) {
+      // This is the last gop group, there must be no altref.
+      use_alt_ref = 0;
+    }
+    gop_command_on(&gop_command, show_frame_count, use_alt_ref);
+  } else {
+    gop_command_off(&gop_command);
+  }
+  return gop_command;
 }
 
 void SimpleEncode::StartEncode() {
@@ -834,11 +896,10 @@ void SimpleEncode::StartEncode() {
   frame_coding_index_ = 0;
   show_frame_count_ = 0;
 
-  encode_command_set_external_arf_indexes(&impl_ptr_->cpi->encode_command,
-                                          GetVectorData(external_arf_indexes_));
-
   UpdateKeyFrameGroup(show_frame_count_);
 
+  const GOP_COMMAND gop_command = GetGopCommand(gop_map_, show_frame_count_);
+  encode_command_set_gop_command(&impl_ptr_->cpi->encode_command, gop_command);
   UpdateGroupOfPicture(impl_ptr_->cpi, frame_coding_index_, ref_frame_info_,
                        &group_of_picture_);
   rewind(in_file_);
@@ -914,6 +975,9 @@ void SimpleEncode::PostUpdateState(
 
   IncreaseGroupOfPictureIndex(&group_of_picture_);
   if (IsGroupOfPictureFinished(group_of_picture_)) {
+    const GOP_COMMAND gop_command = GetGopCommand(gop_map_, show_frame_count_);
+    encode_command_set_gop_command(&impl_ptr_->cpi->encode_command,
+                                   gop_command);
     // This function needs to be called after ref_frame_info_ is updated
     // properly in PostUpdateRefFrameInfo() and UpdateKeyFrameGroup().
     UpdateGroupOfPicture(impl_ptr_->cpi, frame_coding_index_, ref_frame_info_,
@@ -1002,8 +1066,24 @@ void SimpleEncode::EncodeFrameWithQuantizeIndex(
   encode_command_reset_external_quantize_index(&impl_ptr_->cpi->encode_command);
 }
 
+static int GetCodingFrameNumFromGopMap(const std::vector<int> &gop_map) {
+  int start_show_index = 0;
+  int coding_frame_count = 0;
+  while (static_cast<size_t>(start_show_index) < gop_map.size()) {
+    const GOP_COMMAND gop_command = GetGopCommand(gop_map, start_show_index);
+    start_show_index += gop_command.show_frame_count;
+    coding_frame_count += gop_command_coding_frame_count(&gop_command);
+  }
+  assert(start_show_index == gop_map.size());
+  return coding_frame_count;
+}
+
 int SimpleEncode::GetCodingFrameNum() const {
-  assert(impl_ptr_->first_pass_stats.size() - 1 > 0);
+  assert(impl_ptr_->first_pass_stats.size() > 0);
+  if (gop_map_.size() > 0) {
+    return GetCodingFrameNumFromGopMap(gop_map_);
+  }
+
   // These are the default settings for now.
   const int multi_layer_arf = 0;
   const int allow_alt_ref = 1;
@@ -1017,9 +1097,31 @@ int SimpleEncode::GetCodingFrameNum() const {
   fps_init_first_pass_info(&first_pass_info,
                            GetVectorData(impl_ptr_->first_pass_stats),
                            num_frames_);
-  return vp9_get_coding_frame_num(external_arf_indexes_.data(), &oxcf,
-                                  &frame_info, &first_pass_info,
+  return vp9_get_coding_frame_num(&oxcf, &frame_info, &first_pass_info,
                                   multi_layer_arf, allow_alt_ref);
+}
+
+std::vector<int> SimpleEncode::ComputeKeyFrameMap() const {
+  // The last entry of first_pass_stats is the overall stats.
+  assert(impl_ptr_->first_pass_stats.size() == num_frames_ + 1);
+  vpx_rational_t frame_rate =
+      make_vpx_rational(frame_rate_num_, frame_rate_den_);
+  const VP9EncoderConfig oxcf =
+      vp9_get_encoder_config(frame_width_, frame_height_, frame_rate,
+                             target_bitrate_, VPX_RC_LAST_PASS);
+  FRAME_INFO frame_info = vp9_get_frame_info(&oxcf);
+  FIRST_PASS_INFO first_pass_info;
+  fps_init_first_pass_info(&first_pass_info,
+                           GetVectorData(impl_ptr_->first_pass_stats),
+                           num_frames_);
+  std::vector<int> key_frame_map(num_frames_, 0);
+  vp9_get_key_frame_map(&oxcf, &frame_info, &first_pass_info,
+                        GetVectorData(key_frame_map));
+  return key_frame_map;
+}
+
+std::vector<int> SimpleEncode::ObserveKeyFrameMap() const {
+  return key_frame_map_;
 }
 
 uint64_t SimpleEncode::GetFramePixelCount() const {

@@ -33,7 +33,6 @@ for a C compiler $CC, such as clang or gcc.
 */
 
 #include <stdio.h>
-#include <stdlib.h>
 
 // Wuffs ships as a "single file C library" or "header file library" as per
 // https://github.com/nothings/stb/blob/master/docs/stb_howto.txt
@@ -45,10 +44,10 @@ for a C compiler $CC, such as clang or gcc.
 #endif
 #include "wuffs/release/c/wuffs-unsupported-snapshot.c"
 
-#ifndef DST_BUFFER_SIZE
-#define DST_BUFFER_SIZE 1024
+#ifndef DST_BUFFER_ARRAY_SIZE
+#define DST_BUFFER_ARRAY_SIZE 1024
 #endif
-uint8_t dst_buffer[DST_BUFFER_SIZE];
+uint8_t g_dst_buffer_array[DST_BUFFER_ARRAY_SIZE];
 
 // src_ptr and src_len hold a gzip-encoded "Hello Wuffs."
 //
@@ -59,68 +58,56 @@ uint8_t dst_buffer[DST_BUFFER_SIZE];
 //
 // Passing --no-name to the gzip command line also means to skip the timestamp,
 // which means that its output is deterministic.
-uint8_t src_ptr[] = {
+uint8_t g_src_array[] = {
     0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,  // 00..07
     0x00, 0x03, 0xf3, 0x48, 0xcd, 0xc9, 0xc9, 0x57,  // 08..0F
     0x08, 0x2f, 0x4d, 0x4b, 0x2b, 0xd6, 0xe3, 0x02,  // 10..17
     0x00, 0x3c, 0x84, 0x75, 0xbb, 0x0d, 0x00, 0x00,  // 18..1F
     0x00,                                            // 20..20
 };
-size_t src_len = 0x21;
+size_t g_src_len = 0x21;
 
-#define WORK_BUFFER_SIZE WUFFS_GZIP__DECODER_WORKBUF_LEN_MAX_INCL_WORST_CASE
-#if WORK_BUFFER_SIZE > 0
-uint8_t work_buffer[WORK_BUFFER_SIZE];
+#define WORK_BUFFER_ARRAY_SIZE \
+  WUFFS_GZIP__DECODER_WORKBUF_LEN_MAX_INCL_WORST_CASE
+#if WORK_BUFFER_ARRAY_SIZE > 0
+uint8_t g_work_buffer_array[WORK_BUFFER_ARRAY_SIZE];
 #else
 // Not all C/C++ compilers support 0-length arrays.
-uint8_t work_buffer[1];
+uint8_t g_work_buffer_array[1];
 #endif
 
-static const char* decode() {
-  wuffs_base__io_buffer dst;
-  dst.data.ptr = dst_buffer;
-  dst.data.len = DST_BUFFER_SIZE;
-  dst.meta.wi = 0;
-  dst.meta.ri = 0;
-  dst.meta.pos = 0;
-  dst.meta.closed = false;
-
-  wuffs_base__io_buffer src;
-  src.data.ptr = src_ptr;
-  src.data.len = src_len;
-  src.meta.wi = src_len;
-  src.meta.ri = 0;
-  src.meta.pos = 0;
-  src.meta.closed = true;
-
-  wuffs_gzip__decoder* dec =
-      (wuffs_gzip__decoder*)(calloc(sizeof__wuffs_gzip__decoder(), 1));
+static const char*  //
+decode() {
+  wuffs_gzip__decoder* dec = wuffs_gzip__decoder__alloc();
   if (!dec) {
     return "out of memory";
   }
-  const char* status = wuffs_gzip__decoder__initialize(
-      dec, sizeof__wuffs_gzip__decoder(), WUFFS_VERSION,
-      WUFFS_INITIALIZE__ALREADY_ZEROED);
-  if (status) {
-    free(dec);
-    return status;
-  }
-  status = wuffs_gzip__decoder__decode_io_writer(
+
+  wuffs_base__io_buffer dst =
+      wuffs_base__ptr_u8__writer(&g_dst_buffer_array[0], DST_BUFFER_ARRAY_SIZE);
+
+  static const bool closed = true;
+  wuffs_base__io_buffer src =
+      wuffs_base__ptr_u8__reader(&g_src_array[0], g_src_len, closed);
+
+  wuffs_base__status status = wuffs_gzip__decoder__transform_io(
       dec, &dst, &src,
-      wuffs_base__make_slice_u8(work_buffer, WORK_BUFFER_SIZE));
-  if (status) {
-    free(dec);
-    return status;
+      wuffs_base__make_slice_u8(&g_work_buffer_array[0],
+                                WORK_BUFFER_ARRAY_SIZE));
+  free(dec);
+
+  if (!wuffs_base__status__is_ok(&status)) {
+    return wuffs_base__status__message(&status);
   }
   fwrite(dst.data.ptr, sizeof(uint8_t), dst.meta.wi, stdout);
-  free(dec);
   return NULL;
 }
 
-int main(int argc, char** argv) {
-  const char* status = decode();
-  if (status) {
-    fprintf(stderr, "%s\n", status);
+int  //
+main(int argc, char** argv) {
+  const char* status_msg = decode();
+  if (status_msg) {
+    fprintf(stderr, "%s\n", status_msg);
     return 1;
   }
   return 0;

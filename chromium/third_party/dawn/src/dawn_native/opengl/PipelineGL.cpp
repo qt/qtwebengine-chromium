@@ -106,7 +106,7 @@ namespace dawn_native { namespace opengl {
         // etc.
         const auto& indices = layout->GetBindingIndexInfo();
 
-        for (uint32_t group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
+        for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
             const BindGroupLayoutBase* bgl = layout->GetBindGroupLayout(group);
 
             for (const auto& it : bgl->GetBindingMap()) {
@@ -142,9 +142,16 @@ namespace dawn_native { namespace opengl {
                         // emulation
                         break;
 
-                    case wgpu::BindingType::StorageTexture:
                     case wgpu::BindingType::ReadonlyStorageTexture:
-                    case wgpu::BindingType::WriteonlyStorageTexture:
+                    case wgpu::BindingType::WriteonlyStorageTexture: {
+                        GLint location = gl.GetUniformLocation(mProgram, name.c_str());
+                        if (location != -1) {
+                            gl.Uniform1i(location, indices[group][bindingIndex]);
+                        }
+                        break;
+                    }
+
+                    case wgpu::BindingType::StorageTexture:
                         UNREACHABLE();
                         break;
 
@@ -176,20 +183,29 @@ namespace dawn_native { namespace opengl {
 
                 gl.Uniform1i(location, textureUnit);
 
-                GLuint textureIndex =
-                    indices[combined.textureLocation.group][combined.textureLocation.binding];
-                mUnitsForTextures[textureIndex].push_back(textureUnit);
+                bool shouldUseFiltering;
+                {
+                    const BindGroupLayoutBase* bgl =
+                        layout->GetBindGroupLayout(combined.textureLocation.group);
+                    BindingIndex bindingIndex =
+                        bgl->GetBindingIndex(combined.textureLocation.binding);
 
-                const BindGroupLayoutBase* bgl =
-                    layout->GetBindGroupLayout(combined.textureLocation.group);
-                Format::Type componentType =
-                    bgl->GetBindingInfo(bgl->GetBindingIndex(combined.textureLocation.binding))
-                        .textureComponentType;
-                bool shouldUseFiltering = componentType == Format::Type::Float;
+                    GLuint textureIndex = indices[combined.textureLocation.group][bindingIndex];
+                    mUnitsForTextures[textureIndex].push_back(textureUnit);
 
-                GLuint samplerIndex =
-                    indices[combined.samplerLocation.group][combined.samplerLocation.binding];
-                mUnitsForSamplers[samplerIndex].push_back({textureUnit, shouldUseFiltering});
+                    Format::Type componentType =
+                        bgl->GetBindingInfo(bindingIndex).textureComponentType;
+                    shouldUseFiltering = componentType == Format::Type::Float;
+                }
+                {
+                    const BindGroupLayoutBase* bgl =
+                        layout->GetBindGroupLayout(combined.samplerLocation.group);
+                    BindingIndex bindingIndex =
+                        bgl->GetBindingIndex(combined.samplerLocation.binding);
+
+                    GLuint samplerIndex = indices[combined.samplerLocation.group][bindingIndex];
+                    mUnitsForSamplers[samplerIndex].push_back({textureUnit, shouldUseFiltering});
+                }
 
                 textureUnit++;
             }
@@ -203,7 +219,7 @@ namespace dawn_native { namespace opengl {
     }
 
     const std::vector<GLuint>& PipelineGL::GetTextureUnitsForTextureView(GLuint index) const {
-        ASSERT(index < mUnitsForSamplers.size());
+        ASSERT(index < mUnitsForTextures.size());
         return mUnitsForTextures[index];
     }
 

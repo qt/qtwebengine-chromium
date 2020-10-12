@@ -1,23 +1,42 @@
 # Open Screen Library Style Guide
 
-The Open Screen Library follows the
-[Chromium C++ coding style](https://chromium.googlesource.com/chromium/src/+/master/styleguide/c++/c++.md).
-We also follow the
-[Chromium C++ Do's and Don'ts](https://sites.google.com/a/chromium.org/dev/developers/coding-style/cpp-dos-and-donts).
+The Open Screen Library follows the [Chromium C++ coding style](https://chromium.googlesource.com/chromium/src/+/master/styleguide/c++/c++.md)
+which, in turn, defers to the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html).
+We also follow the [Chromium C++ Do's and Don'ts](https://sites.google.com/a/chromium.org/dev/developers/coding-style/cpp-dos-and-donts).
 
 C++14 language and library features are allowed in the Open Screen Library
-according to the
-[C++14 use in Chromium](https://chromium-cpp.appspot.com#core-whitelist) guidelines.
+according to the [C++14 use in Chromium](
+https://chromium-cpp.appspot.com#core-whitelist) guidelines.
 
 ## Modifications to the Chromium C++ Guidelines
 
 - `<functional>` and `std::function` objects are allowed.
 - `<chrono>` is allowed and encouraged for representation of time.
-- Abseil types are allowed based on the whitelist in [DEPS](https://chromium.googlesource.com/openscreen/+/refs/heads/master/DEPS).
+- Abseil types are allowed based on the whitelist in [DEPS](
+  https://chromium.googlesource.com/openscreen/+/refs/heads/master/DEPS).
 - However, Abseil types **must not be used in public APIs**.
 - `<thread>` and `<mutex>` are allowed, but discouraged from general use as the
   library only needs to handle threading in very specific places;
   see [threading.md](threading.md).
+
+## Interacting with `std::chrono`
+
+One of the trickier parts of the Open Screen Library is using time and clock
+functionality provided by `platform/api/time.h`.
+
+- When working extensively with `std::chrono` types in implementation code,
+  `util/chrono_helpers.h` header can be included for access to type aliases for
+  common `std::chrono` types, so they can just be referred to as `hours`,
+  `milliseconds`, etc. This header also includes helpful conversion functions,
+  such as `to_milliseconds` instead of
+  `std::chrono::duration_cast<std::chrono::milliseconds>`.
+  `util/chrono_helpers.h` cannot be used in headers exposed to embedders, and
+  this is enforced by DEPS.
+- `Clock::duration` is defined currently as `std::chrono::microseconds`, and
+  thus is generally not suitable as a time type (developers generally think in
+  milliseconds). Prefer casting from explicit time types using
+  `Clock::to_duration`, e.g. `Clock::to_duration(seconds(2))`
+  instead of using `Clock::duration` types directly.
 
 ## Open Screen Library Features
 
@@ -35,7 +54,7 @@ according to the
 ## Copy and Move Operators
 
 Use the following guidelines when deciding on copy and move semantics for
-objects.
+objects:
 
 - Objects with data members greater than 32 bytes should be move-able.
 - Known large objects (I/O buffers, etc.) should be be move-only.
@@ -45,22 +64,22 @@ objects.
 
 We [prefer the use of `default` and `delete`](https://sites.google.com/a/chromium.org/dev/developers/coding-style/cpp-dos-and-donts#TOC-Prefer-to-use-default)
 to declare the copy and move semantics of objects.  See
-[Stoustrop's C++ FAQ](http://www.stroustrup.com/C++11FAQ.html#default)
+[Stroustrup's C++ FAQ](http://www.stroustrup.com/C++11FAQ.html#default)
 for details on how to do that.
 
 ### User Defined Copy and Move Operators
 
-Classes should follow the [rule of
-three/five/zero](https://en.cppreference.com/w/cpp/language/rule_of_three),
-meaning that if it has a custom destructor, copy contructor, or copy
-assignment operator:
+Classes should follow the [rule of three/five/zero](https://en.cppreference.com/w/cpp/language/rule_of_three).
 
-- All three operators must be defined (and not defaulted).
-- It must also either:
-    - Have a custom move constructor *and* move assignment operator;
-    - Delete both of them if move semantics are not desired (in rare cases).
-- Polymorphic base classes with virtual destructors should declare all
-  contructors, destructors and assignment operators as defaulted.
+This means that if they implement a destructor or any of the copy or move
+operators, then all five (destructor, copy & move constructors, copy & move
+assignment operators) should be defined or marked as `delete`d as appropriate.
+Finally, polymorphic base classes with virtual destructors should `default` all constructors, destructors, and assignment operators.
+
+Note that operator definitions belong in the source (`.cc`) file, including
+`default`, with the exception of  `delete`, because it is not a definition,
+rather a declaration that there is no definition, and thus belongs in the header
+(`.h`) file.
 
 ## Noexcept
 
@@ -95,9 +114,9 @@ from external inputs. Instead, one should code proper error-checking and
 handling for such things.
 
 OSP_CHECKs are "turned on" for all build types. However, OSP_DCHECKs are only
-"turned on" in Debug builds, or in any build where the "dcheck_always_on=true"
+"turned on" in Debug builds, or in any build where the `dcheck_always_on=true`
 GN argument is being used. In fact, at any time during development (including
-Release builds), it is highly recommended to use "dcheck_always_on=true" to
+Release builds), it is highly recommended to use `dcheck_always_on=true` to
 catch bugs.
 
 When OSP_DCHECKs are "turned off" they effectively become code comments: All
@@ -107,3 +126,6 @@ strip-out unused functions and constants referenced in OSP_DCHECK expressions
 run-time/space overhead when the program runs. For this reason, a developer need
 not explicitly sprinkle "#if OSP_DCHECK_IS_ON()" guards all around any
 functions, variables, etc. that will be unused in "DCHECK off" builds.
+
+Use OSP_DCHECK and OSP_CHECK in accordance with the
+[Chromium guidance for DCHECK/CHECK](https://chromium.googlesource.com/chromium/src/+/master/styleguide/c++/c++.md#check_dcheck_and-notreached).

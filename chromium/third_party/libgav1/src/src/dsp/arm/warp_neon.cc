@@ -133,7 +133,7 @@ void Warp_NEON(const void* const source, const ptrdiff_t source_stride,
   assert(block_width >= 8);
   assert(block_height >= 8);
 
-  // Warp process applies for each 8x8 block (or smaller).
+  // Warp process applies for each 8x8 block.
   int start_y = block_start_y;
   do {
     int start_x = block_start_x;

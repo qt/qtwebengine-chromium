@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fgas/crt/cfgas_decimal.h"
@@ -255,7 +254,7 @@ bool ParseLocaleDate(const WideString& wsDate,
       ccf++;
       continue;
     }
-    if (!pdfium::ContainsValue(kDateSymbols, spDatePattern[ccf])) {
+    if (!pdfium::Contains(kDateSymbols, spDatePattern[ccf])) {
       if (spDatePattern[ccf] != spDate[*cc])
         return false;
       (*cc)++;
@@ -377,7 +376,7 @@ bool ParseLocaleTime(const WideString& wsTime,
       ccf++;
       continue;
     }
-    if (!pdfium::ContainsValue(kTimeSymbols, spTimePattern[ccf])) {
+    if (!pdfium::Contains(kTimeSymbols, spTimePattern[ccf])) {
       if (spTimePattern[ccf] != spTime[*cc])
         return false;
       (*cc)++;
@@ -455,7 +454,7 @@ bool ParseLocaleTime(const WideString& wsTime,
         ResolveZone(tzDiff, pLocale, &hour, &minute);
       } else {
         // Search the timezone list. There are only 8 of them, so linear scan.
-        for (size_t i = 0; i < FX_ArraySize(g_FXLocaleTimeZoneData); ++i) {
+        for (size_t i = 0; i < pdfium::size(g_FXLocaleTimeZoneData); ++i) {
           const FX_LOCALETIMEZONEINFO& info = g_FXLocaleTimeZoneData[i];
           if (tz != info.name)
             continue;
@@ -579,7 +578,7 @@ WideString DateFormat(const WideString& wsDatePattern,
       ccf++;
       continue;
     }
-    if (!pdfium::ContainsValue(kDateSymbols, spDatePattern[ccf])) {
+    if (!pdfium::Contains(kDateSymbols, spDatePattern[ccf])) {
       wsResult += spDatePattern[ccf++];
       continue;
     }
@@ -647,7 +646,7 @@ WideString TimeFormat(const WideString& wsTimePattern,
       ccf++;
       continue;
     }
-    if (!pdfium::ContainsValue(kTimeSymbols, spTimePattern[ccf])) {
+    if (!pdfium::Contains(kTimeSymbols, spTimePattern[ccf])) {
       wsResult += spTimePattern[ccf++];
       continue;
     }
@@ -857,7 +856,7 @@ FX_LOCALECATEGORY CFGAS_StringFormatter::GetCategory() const {
     if (m_spPattern[ccf] == '\'') {
       GetLiteralText(m_spPattern, &ccf);
     } else if (!bBraceOpen &&
-               !pdfium::ContainsValue(kConstChars, m_spPattern[ccf])) {
+               !pdfium::Contains(kConstChars, m_spPattern[ccf])) {
       WideString wsCategory(m_spPattern[ccf]);
       ccf++;
       while (true) {
@@ -912,7 +911,7 @@ WideString CFGAS_StringFormatter::GetTextFormat(
       wsPurgePattern +=
           WideStringView(m_spPattern.data() + iCurChar, ccf - iCurChar + 1);
     } else if (!bBrackOpen &&
-               !pdfium::ContainsValue(kConstChars, m_spPattern[ccf])) {
+               !pdfium::Contains(kConstChars, m_spPattern[ccf])) {
       WideString wsSearchCategory(m_spPattern[ccf]);
       ccf++;
       while (ccf < m_spPattern.size() && m_spPattern[ccf] != '{' &&
@@ -962,7 +961,7 @@ LocaleIface* CFGAS_StringFormatter::GetNumericFormat(
       *wsPurgePattern +=
           WideStringView(m_spPattern.data() + iCurChar, ccf - iCurChar + 1);
     } else if (!bBrackOpen &&
-               !pdfium::ContainsValue(kConstChars, m_spPattern[ccf])) {
+               !pdfium::Contains(kConstChars, m_spPattern[ccf])) {
       WideString wsCategory(m_spPattern[ccf]);
       ccf++;
       while (ccf < m_spPattern.size() && m_spPattern[ccf] != '{' &&
@@ -1557,7 +1556,7 @@ FX_DATETIMETYPE CFGAS_StringFormatter::GetDateTimeFormat(
       wsTempPattern +=
           WideStringView(m_spPattern.data() + iCurChar, ccf - iCurChar + 1);
     } else if (!bBraceOpen && iFindCategory != 3 &&
-               !pdfium::ContainsValue(kConstChars, m_spPattern[ccf])) {
+               !pdfium::Contains(kConstChars, m_spPattern[ccf])) {
       WideString wsCategory(m_spPattern[ccf]);
       ccf++;
       while (ccf < m_spPattern.size() && m_spPattern[ccf] != '{' &&

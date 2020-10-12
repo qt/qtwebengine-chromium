@@ -129,11 +129,10 @@ export class InspectorBackend {
    * @param {string} method
    * @param {!Array.<!{name: string, type: string, optional: boolean}>} signature
    * @param {!Array.<string>} replyArgs
-   * @param {boolean} hasErrorData
    */
-  registerCommand(method, signature, replyArgs, hasErrorData) {
+  registerCommand(method, signature, replyArgs) {
     const domainAndMethod = method.split('.');
-    this._agentPrototype(domainAndMethod[0]).registerCommand(domainAndMethod[1], signature, replyArgs, hasErrorData);
+    this._agentPrototype(domainAndMethod[0]).registerCommand(domainAndMethod[1], signature, replyArgs);
     this._initialized = true;
   }
 
@@ -647,17 +646,20 @@ export class TargetBase {
     return this._router;
   }
 
+
+  // Agent accessors, keep alphabetically sorted.
+
   /**
-   * @return {!ProtocolProxyApi.NetworkApi}
+   * @return {!ProtocolProxyApi.AuditsApi}
    */
-  networkAgent() {
+  auditsAgent() {
     throw new Error('Implemented in InspectorBackend.js');
   }
 
   /**
-   * @return {!ProtocolProxyApi.LayerTreeApi}
+   * @return {!ProtocolProxyApi.CacheStorageApi}
    */
-  layerTreeAgent() {
+  cacheStorageAgent() {
     throw new Error('Implemented in InspectorBackend.js');
   }
 
@@ -669,9 +671,152 @@ export class TargetBase {
   }
 
   /**
+   * @return {!ProtocolProxyApi.DOMDebuggerApi}
+   */
+  domdebuggerAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.HeapProfilerApi}
+   */
+  heapProfilerAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.LayerTreeApi}
+   */
+  layerTreeAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.MemoryApi}
+   */
+  memoryAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.NetworkApi}
+   */
+  networkAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.PageApi}
+   */
+  pageAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
    * @return {!ProtocolProxyApi.PerformanceApi}
    */
   performanceAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.RuntimeApi}
+   */
+  runtimeAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.ServiceWorkerApi}
+   */
+  serviceWorkerAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.StorageApi}
+   */
+  storageAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.TargetApi}
+   */
+  targetAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @return {!ProtocolProxyApi.WebAuthnApi}
+   */
+  webAuthnAgent() {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+
+  // Dispatcher registration, keep alphabetically sorted.
+
+  /**
+   * @param {!ProtocolProxyApi.AuditsDispatcher} dispatcher
+   */
+  registerAuditsDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.DebuggerDispatcher} dispatcher
+   */
+  registerDebuggerDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.DOMDispatcher} dispatcher
+   */
+  registerDOMDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.HeapProfilerDispatcher} dispatcher
+   */
+  registerHeapProfilerDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.NetworkDispatcher} dispatcher
+   */
+  registerNetworkDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.PageDispatcher} dispatcher
+   */
+  registerPageDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.StorageDispatcher} dispatcher
+   */
+  registerStorageDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.ServiceWorkerDispatcher} dispatcher
+   */
+  registerServiceWorkerDispatcher(dispatcher) {
+    throw new Error('Implemented in InspectorBackend.js');
+  }
+
+  /**
+   * @param {!ProtocolProxyApi.TargetDispatcher} dispatcher
+   */
+  registerTargetDispatcher(dispatcher) {
     throw new Error('Implemented in InspectorBackend.js');
   }
 }
@@ -686,8 +831,6 @@ class _AgentPrototype {
   constructor(domain) {
     /** @type {!Object<string, !Array<string>>} */
     this._replyArgs = {};
-    /** @type {!Object<string, boolean>} */
-    this._hasErrorData = {};
     this._domain = domain;
     /** @type {!TargetBase} */
     this._target;
@@ -697,9 +840,8 @@ class _AgentPrototype {
    * @param {string} methodName
    * @param {!Array.<!{name: string, type: string, optional: boolean}>} signature
    * @param {!Array.<string>} replyArgs
-   * @param {boolean} hasErrorData
    */
-  registerCommand(methodName, signature, replyArgs, hasErrorData) {
+  registerCommand(methodName, signature, replyArgs) {
     const domainAndMethod = this._domain + '.' + methodName;
 
     /**
@@ -728,9 +870,6 @@ class _AgentPrototype {
     this['invoke_' + methodName] = invoke;
 
     this._replyArgs[domainAndMethod] = replyArgs;
-    if (hasErrorData) {
-      this._hasErrorData[domainAndMethod] = true;
-    }
   }
 
   /**
@@ -924,8 +1063,13 @@ class _DispatcherPrototype {
 
     for (let index = 0; index < this._dispatchers.length; ++index) {
       const dispatcher = this._dispatchers[index];
+
       if (functionName in dispatcher) {
-        dispatcher[functionName].apply(dispatcher, params);
+        if (dispatcher.usesObjectNotation && dispatcher.usesObjectNotation()) {
+          dispatcher[functionName].call(dispatcher, {...messageObject.params});
+        } else {
+          dispatcher[functionName].apply(dispatcher, params);
+        }
       }
     }
   }

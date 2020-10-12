@@ -24,7 +24,6 @@
 #include "core/fxge/render_defines.h"
 #include "core/fxge/scoped_font_transform.h"
 #include "third_party/base/numerics/safe_math.h"
-#include "third_party/base/ptr_util.h"
 
 #if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
 #include "third_party/skia/include/core/SkStream.h"
@@ -194,9 +193,9 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_GlyphCache::RenderGlyph(
   if (bmwidth > kMaxGlyphDimension || bmheight > kMaxGlyphDimension)
     return nullptr;
   int dib_width = bmwidth;
-  auto pGlyphBitmap = pdfium::MakeUnique<CFX_GlyphBitmap>(
-      FXFT_Get_Glyph_BitmapLeft(GetFaceRec()),
-      FXFT_Get_Glyph_BitmapTop(GetFaceRec()));
+  auto pGlyphBitmap =
+      std::make_unique<CFX_GlyphBitmap>(FXFT_Get_Glyph_BitmapLeft(GetFaceRec()),
+                                        FXFT_Get_Glyph_BitmapTop(GetFaceRec()));
   pGlyphBitmap->GetBitmap()->Create(
       dib_width, bmheight,
       anti_alias == FT_RENDER_MODE_MONO ? FXDIB_1bppMask : FXDIB_8bppMask);
@@ -247,19 +246,20 @@ const CFX_PathData* CFX_GlyphCache::LoadGlyphPath(const CFX_Font* pFont,
   return pGlyphPath;
 }
 
-const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(const CFX_Font* pFont,
-                                                       uint32_t glyph_index,
-                                                       bool bFontStyle,
-                                                       const CFX_Matrix& matrix,
-                                                       uint32_t dest_width,
-                                                       int anti_alias,
-                                                       int* pTextFlags) {
+const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(
+    const CFX_Font* pFont,
+    uint32_t glyph_index,
+    bool bFontStyle,
+    const CFX_Matrix& matrix,
+    uint32_t dest_width,
+    int anti_alias,
+    CFX_TextRenderOptions* text_options) {
   if (glyph_index == kInvalidGlyphIndex)
     return nullptr;
 
   UniqueKeyGen keygen;
 #if defined(OS_MACOSX)
-  const bool bNative = !(*pTextFlags & FXTEXT_NO_NATIVETEXT);
+  const bool bNative = text_options->native_text;
 #else
   const bool bNative = false;
 #endif
@@ -268,7 +268,7 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(const CFX_Font* pFont,
 
 #if defined(OS_MACOSX) && !defined _SKIA_SUPPORT_ && \
     !defined _SKIA_SUPPORT_PATHS_
-  const bool bDoLookUp = !!(*pTextFlags & FXTEXT_NO_NATIVETEXT);
+  const bool bDoLookUp = !text_options->native_text;
 #else
   const bool bDoLookUp = true;
 #endif
@@ -309,7 +309,7 @@ const CFX_GlyphBitmap* CFX_GlyphCache::LoadGlyphBitmap(const CFX_Font* pFont,
   }
   GenKey(&keygen, pFont, matrix, dest_width, anti_alias, /*bNative=*/false);
   ByteString FaceGlyphsKey2(keygen.key_, keygen.key_len_);
-  *pTextFlags |= FXTEXT_NO_NATIVETEXT;
+  text_options->native_text = false;
   return LookUpGlyphBitmap(pFont, matrix, FaceGlyphsKey2, glyph_index,
                            bFontStyle, dest_width, anti_alias);
 #endif
@@ -320,14 +320,14 @@ CFX_TypeFace* CFX_GlyphCache::GetDeviceCache(const CFX_Font* pFont) {
   if (!m_pTypeface) {
     pdfium::span<const uint8_t> span = pFont->GetFontSpan();
     m_pTypeface = SkTypeface::MakeFromStream(
-        pdfium::MakeUnique<SkMemoryStream>(span.data(), span.size()));
+        std::make_unique<SkMemoryStream>(span.data(), span.size()));
   }
 #if defined(OS_WIN)
   if (!m_pTypeface) {
     sk_sp<SkFontMgr> customMgr(SkFontMgr_New_Custom_Empty());
     pdfium::span<const uint8_t> span = pFont->GetFontSpan();
     m_pTypeface = customMgr->makeFromStream(
-        pdfium::MakeUnique<SkMemoryStream>(span.data(), span.size()));
+        std::make_unique<SkMemoryStream>(span.data(), span.size()));
   }
 #endif  // defined(OS_WIN)
   return m_pTypeface.get();

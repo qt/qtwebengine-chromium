@@ -146,14 +146,16 @@ class QUIC_EXPORT_PRIVATE QuicUtils {
 
   // Returns true if |id| is considered as bidirectional stream ID. Only used in
   // v99.
-  static bool IsBidirectionalStreamId(QuicStreamId id);
+  static bool IsBidirectionalStreamId(QuicStreamId id,
+                                      ParsedQuicVersion version);
 
   // Returns stream type.  Either |perspective| or |peer_initiated| would be
   // enough together with |id|.  This method enforces that the three parameters
   // are consistent.  Only used in v99.
   static StreamType GetStreamType(QuicStreamId id,
                                   Perspective perspective,
-                                  bool peer_initiated);
+                                  bool peer_initiated,
+                                  ParsedQuicVersion version);
 
   // Returns the delta between consecutive stream IDs of the same type.
   static QuicStreamId StreamIdDelta(QuicTransportVersion version);
@@ -168,11 +170,19 @@ class QUIC_EXPORT_PRIVATE QuicUtils {
       QuicTransportVersion version,
       Perspective perspective);
 
-  // Generates a 64bit connection ID derived from the input connection ID.
+  // Generates a connection ID of length |expected_connection_id_length|
+  // derived from |connection_id|.
   // This is guaranteed to be deterministic (calling this method with two
   // connection IDs that are equal is guaranteed to produce the same result).
   static QuicConnectionId CreateReplacementConnectionId(
-      QuicConnectionId connection_id);
+      const QuicConnectionId& connection_id,
+      uint8_t expected_connection_id_length);
+
+  // Generates a 64bit connection ID derived from |connection_id|.
+  // This is guaranteed to be deterministic (calling this method with two
+  // connection IDs that are equal is guaranteed to produce the same result).
+  static QuicConnectionId CreateReplacementConnectionId(
+      const QuicConnectionId& connection_id);
 
   // Generates a random 64bit connection ID.
   static QuicConnectionId CreateRandomConnectionId();

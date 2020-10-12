@@ -878,7 +878,7 @@ static AOM_INLINE void search_sgrproj(const RestorationTileLimits *limits,
   const int highbd = cm->seq_params.use_highbitdepth;
   const int bit_depth = cm->seq_params.bit_depth;
 
-  const int64_t bits_none = x->sgrproj_restore_cost[0];
+  const int64_t bits_none = x->mode_costs.sgrproj_restore_cost[0];
   // Prune evaluation of RESTORE_SGRPROJ if 'skip_sgr_eval' is set
   if (rusi->skip_sgr_eval) {
     rsc->bits += bits_none;
@@ -911,7 +911,7 @@ static AOM_INLINE void search_sgrproj(const RestorationTileLimits *limits,
 
   rusi->sse[RESTORE_SGRPROJ] = try_restoration_unit(rsc, limits, tile, &rui);
 
-  const int64_t bits_sgr = x->sgrproj_restore_cost[1] +
+  const int64_t bits_sgr = x->mode_costs.sgrproj_restore_cost[1] +
                            (count_sgrproj_bits(&rusi->sgrproj, &rsc->sgrproj)
                             << AV1_PROB_COST_SHIFT);
 
@@ -1458,7 +1458,7 @@ static AOM_INLINE void search_wiener(const RestorationTileLimits *limits,
   RestUnitSearchInfo *rusi = &rsc->rusi[rest_unit_idx];
 
   const MACROBLOCK *const x = rsc->x;
-  const int64_t bits_none = x->wiener_restore_cost[0];
+  const int64_t bits_none = x->mode_costs.wiener_restore_cost[0];
 
   // Skip Wiener search for low variance contents
   if (rsc->sf->lpf_sf.prune_wiener_based_on_src_var) {
@@ -1560,7 +1560,7 @@ static AOM_INLINE void search_wiener(const RestorationTileLimits *limits,
   }
 
   const int64_t bits_wiener =
-      x->wiener_restore_cost[1] +
+      x->mode_costs.wiener_restore_cost[1] +
       (count_wiener_bits(wiener_win, &rusi->wiener, &rsc->wiener)
        << AV1_PROB_COST_SHIFT);
 
@@ -1649,7 +1649,7 @@ static AOM_INLINE void search_switchable(const RestorationTileLimits *limits,
       default: assert(0); break;
     }
     const int64_t coeff_bits = coeff_pcost << AV1_PROB_COST_SHIFT;
-    const int64_t bits = x->switchable_restore_cost[r] + coeff_bits;
+    const int64_t bits = x->mode_costs.switchable_restore_cost[r] + coeff_bits;
     double cost = RDCOST_DBL(x->rdmult, bits >> 4, sse);
     if (r == RESTORE_SGRPROJ && rusi->sgrproj.ep < 10)
       cost *=
@@ -1700,8 +1700,11 @@ static int rest_tiles_in_plane(const AV1_COMMON *cm, int plane) {
 
 void av1_pick_filter_restoration(const YV12_BUFFER_CONFIG *src, AV1_COMP *cpi) {
   AV1_COMMON *const cm = &cpi->common;
+  MACROBLOCK *const x = &cpi->td.mb;
   const int num_planes = av1_num_planes(cm);
   assert(!cm->features.all_lossless);
+
+  av1_fill_lr_rates(&x->mode_costs, x->e_mbd.tile_ctx);
 
   int ntiles[2];
   for (int is_uv = 0; is_uv < 2; ++is_uv)
@@ -1717,14 +1720,14 @@ void av1_pick_filter_restoration(const YV12_BUFFER_CONFIG *src, AV1_COMP *cpi) {
   // problem, as these elements are ignored later, but in order to quiet
   // Valgrind's warnings we initialise the array below.
   memset(rusi, 0, sizeof(*rusi) * ntiles[0]);
-  cpi->td.mb.rdmult = cpi->rd.RDMULT;
+  x->rdmult = cpi->rd.RDMULT;
 
   RestSearchCtxt rsc;
   const int plane_start = AOM_PLANE_Y;
   const int plane_end = num_planes > 1 ? AOM_PLANE_V : AOM_PLANE_Y;
   for (int plane = plane_start; plane <= plane_end; ++plane) {
-    init_rsc(src, &cpi->common, &cpi->td.mb, &cpi->sf, plane, rusi,
-             &cpi->trial_frame_rst, &rsc);
+    init_rsc(src, &cpi->common, x, &cpi->sf, plane, rusi, &cpi->trial_frame_rst,
+             &rsc);
 
     const int plane_ntiles = ntiles[plane > 0];
     const RestorationType num_rtypes =

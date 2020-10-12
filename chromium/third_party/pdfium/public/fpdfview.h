@@ -232,7 +232,7 @@ typedef struct FPDF_LIBRARY_CONFIG_ {
 
   // Version 2.
 
-  // pointer to the v8::Isolate to use, or NULL to force PDFium to create one.
+  // Pointer to the v8::Isolate to use, or NULL to force PDFium to create one.
   void* m_pIsolate;
 
   // The embedder data slot to use in the v8::Isolate to store PDFium's
@@ -240,6 +240,12 @@ typedef struct FPDF_LIBRARY_CONFIG_ {
   // [0, |v8::Internals::kNumIsolateDataLots|). Note that 0 is fine for most
   // embedders.
   unsigned int m_v8EmbedderSlot;
+
+  // Version 3 - Experimantal,
+
+  // Pointer to the V8::Platform to use.
+  void* m_pPlatform;
+
 } FPDF_LIBRARY_CONFIG;
 
 // Function: FPDF_InitLibraryWithConfig
@@ -736,7 +742,8 @@ FPDF_EXPORT int FPDF_CALLCONV FPDF_GetPageSizeByIndex(FPDF_DOCUMENT document,
 //
 // Set if annotations are to be rendered.
 #define FPDF_ANNOT 0x01
-// Set if using text rendering optimized for LCD display.
+// Set if using text rendering optimized for LCD display. This flag will only
+// take effect if anti-aliasing is enabled for text.
 #define FPDF_LCD_TEXT 0x02
 // Don't use the native text output available on some platforms
 #define FPDF_NO_NATIVETEXT 0x04
@@ -752,7 +759,8 @@ FPDF_EXPORT int FPDF_CALLCONV FPDF_GetPageSizeByIndex(FPDF_DOCUMENT document,
 #define FPDF_RENDER_FORCEHALFTONE 0x400
 // Render for printing.
 #define FPDF_PRINTING 0x800
-// Set to disable anti-aliasing on text.
+// Set to disable anti-aliasing on text. This flag will also disable LCD
+// optimization for text rendering.
 #define FPDF_RENDER_NO_SMOOTHTEXT 0x1000
 // Set to disable anti-aliasing on images.
 #define FPDF_RENDER_NO_SMOOTHIMAGE 0x2000
@@ -1293,6 +1301,21 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDF_GetNamedDest(FPDF_DOCUMENT document,
 //          NUL-terminated string of the form "--flag1 --flag2".
 //          The caller must not attempt to modify or free the result.
 FPDF_EXPORT const char* FPDF_CALLCONV FPDF_GetRecommendedV8Flags();
+
+// Experimental API.
+// Function: FPDF_GetArrayBufferAllocatorSharedInstance()
+//          Helper function for initializing V8 isolates that will
+//          use PDFium's internal memory management.
+// Parameters:
+//          None.
+// Return Value:
+//          Pointer to a suitable v8::ArrayBuffer::Allocator, returned
+//          as void for C compatibility.
+// Notes:
+//          Use is optional, but allows external creation of isolates
+//          matching the ones PDFium will make when none is provided
+//          via |FPDF_LIBRARY_CONFIG::m_pIsolate|.
+FPDF_EXPORT void* FPDF_CALLCONV FPDF_GetArrayBufferAllocatorSharedInstance();
 #endif  // PDF_ENABLE_V8
 
 #ifdef PDF_ENABLE_XFA

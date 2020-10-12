@@ -87,7 +87,7 @@ class GarbageCollectedHolder final : public GarbageCollectedScriptWrappable {
     return this;
   }
 
-  void Trace(Visitor* visitor) override {
+  void Trace(Visitor* visitor) const override {
     visitor->Trace(property_);
     GarbageCollectedScriptWrappable::Trace(visitor);
   }
@@ -111,7 +111,7 @@ class ScriptPromisePropertyResetter : public ScriptFunction {
   ScriptPromisePropertyResetter(ScriptState* script_state, Property* property)
       : ScriptFunction(script_state), property_(property) {}
 
-  void Trace(Visitor* visitor) override {
+  void Trace(Visitor* visitor) const override {
     visitor->Trace(property_);
     ScriptFunction::Trace(visitor);
   }

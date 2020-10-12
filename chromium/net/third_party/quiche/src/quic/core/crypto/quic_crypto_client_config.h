@@ -76,6 +76,10 @@ class QUIC_EXPORT_PRIVATE SessionCache {
   virtual std::unique_ptr<QuicResumptionState> Lookup(
       const QuicServerId& server_id,
       const SSL_CTX* ctx) = 0;
+
+  // Called when 0-RTT is rejected. Disables early data for all the TLS tickets
+  // associated with |server_id|.
+  virtual void ClearEarlyData(const QuicServerId& server_id) = 0;
 };
 
 // QuicCryptoClientConfig contains crypto-related configuration settings for a
@@ -171,20 +175,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
 
     void set_cert_sct(quiche::QuicheStringPiece cert_sct);
 
-    // Adds the connection ID to the queue of server-designated connection-ids.
-    void add_server_designated_connection_id(QuicConnectionId connection_id);
-
-    // If true, the crypto config contains at least one connection ID specified
-    // by the server, and the client should use one of these IDs when initiating
-    // the next connection.
-    bool has_server_designated_connection_id() const;
-
-    // This function should only be called when
-    // has_server_designated_connection_id is true.  Returns the next
-    // connection_id specified by the server and removes it from the
-    // queue of ids.
-    QuicConnectionId GetNextServerDesignatedConnectionId();
-
     // Adds the servernonce to the queue of server nonces.
     void add_server_nonce(const std::string& server_nonce);
 
@@ -238,10 +228,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
     // scfg contains the cached, parsed value of |server_config|.
     mutable std::unique_ptr<CryptoHandshakeMessage> scfg_;
 
-    // TODO(jokulik): Consider using a hash-set as extra book-keeping to ensure
-    // that no connection-id is added twice.  Also, consider keeping the server
-    // nonces and connection_ids together in one queue.
-    QuicQueue<QuicConnectionId> server_designated_connection_ids_;
     QuicQueue<std::string> server_nonces_;
   };
 
@@ -368,6 +354,8 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   void set_proof_source(std::unique_ptr<ProofSource> proof_source);
   SSL_CTX* ssl_ctx() const;
 
+  bool early_data_enabled_for_tls() const { return enable_zero_rtt_for_tls_; }
+
   // Initialize the CachedState from |canonical_crypto_config| for the
   // |canonical_server_id| as the initial CachedState for |server_id|. We will
   // copy config data only if |canonical_crypto_config| has valid proof.
@@ -408,6 +396,10 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
 
   bool pad_full_hello() const { return pad_full_hello_; }
   void set_pad_full_hello(bool new_value) { pad_full_hello_ = new_value; }
+
+  void set_disable_chlo_padding(bool disabled) {
+    disable_chlo_padding_ = disabled;
+  }
 
  private:
   // Sets the members to reasonable, default values.
@@ -450,6 +442,9 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   std::unique_ptr<ProofVerifier> proof_verifier_;
   std::unique_ptr<SessionCache> session_cache_;
   std::unique_ptr<ProofSource> proof_source_;
+
+  // Latched value of reloadable flag quic_enable_zero_rtt_for_tls
+  bool enable_zero_rtt_for_tls_;
   bssl::UniquePtr<SSL_CTX> ssl_ctx_;
 
   // The |user_agent_id_| passed in QUIC's CHLO message.
@@ -475,6 +470,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   // other means of verifying the client.
   bool pad_inchoate_hello_ = true;
   bool pad_full_hello_ = true;
+  bool disable_chlo_padding_;
 };
 
 }  // namespace quic

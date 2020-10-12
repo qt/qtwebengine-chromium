@@ -7,9 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+ - Added `CanvasKit.MakeImageFromCanvasImageSource` which takes either an HTMLImageElement,
+   SVGImageElement, HTMLVideoElement, HTMLCanvasElement, ImageBitmap, or OffscreenCanvas and returns
+   an SkImage. This function is an alternative to `CanvasKit.MakeImageFromEncoded` for creating
+   SkImages when loading and decoding images. In the future, codesize of CanvasKit may be able to be
+   reduced by removing image codecs in wasm, if browser APIs for decoding images are used along with
+   `CanvasKit.MakeImageFromCanvasImageSource` instead of `CanvasKit.MakeImageFromEncoded`.
+ - Three usage examples of `CanvasKit.MakeImageFromCanvasImageSource` in core.spec.ts.
+ - Added support for asynchronous callbacks in perfs and tests.
+ - `CanvasKit.SkPath.MakeFromVerbsPointsWeights` and `CanvasKit.SkPath.addVerbsPointsWeights` for
+  supplying many path operations (e.g. moveTo, cubicTo) at once.
+ - The object returned by `CanvasKit.malloc` now has a `subarray` method which works exactly like
+  the normal TypedArray version. The TypedArray which it returns is also backed by WASM memory
+  and when passed into CanvasKit will be used w/o copying the data (just like
+  `Malloc.toTypedArray`).
+
+### Changed
+ - In all places where color arrays are accepted (gradient makers, drawAtlas, and MakeSkVertices),
+   You can now provide either flat Float32Arrays of float colors, Uint32Arrays of int colors, or 
+   2d Arrays of Float32Array(4) colors. The one thing you should not pass is an Array of numbers,
+   since canvaskit wouldn't be able to tell whether they're ints or floats without checking them all.
+   The fastest choice for gradients is the flat Float32Array, the fastest choice for drawAtlas and
+   MakeSkVertices is the flat Uint32Array.
+ - Color arrays may also be objects created with CanvasKit.Malloc
+
+### Fixed
+ - `TextStyle.color` can correctly be a Malloc'd Float32Array.
+ 
+### Deprecated
+ - `CanvasKit.MakePathFromCmds` has been renamed to `CanvasKit.SkPath.MakeFromCmds`. The alias
+   will be removed in an upcoming release.
+
+## [0.16.2] - 2020-06-05
+
+### Fixed
+ - A bug where loading fonts (and other memory intensive calls) would cause CanvasKit
+   to infrequently crash with
+   `TypeError: Cannot perform %TypedArray%.prototype.set on a neutered ArrayBuffer`.
+ - Incorrectly freeing Malloced colors passed into computeTonalColors.
+
+## [0.16.1] - 2020-06-04
+
+### Fixed
+ - Colors are unsigned to be compatible with Flutter Web and previous behavior, not
+   signed ints.
+
+## [0.16.0] - 2020-06-03
+
+### Added
+ - Support for wide-gamut color spaces DisplayP3 and AdobeRGB. However, correct representation on a
+   WCG monitor requires that the browser is rendering everything to the DisplayP3 or AdobeRGB
+   profile, since there is not yet any way to indicate to the browser that a canvas element has a
+   non-sRGB color space. See color support example in extra.html. Only supported for WebGL2 backed
+   surfaces.
+ - Added `SkSurface.reportBackendType` which returns either 'CPU' or 'GPU'.
+ - Added `SkSurface.imageInfo` which returns an ImageInfo object describing the size and color
+   properties of the surface. colorSpace is added to ImageInfo everywhere it is used.
+ - `CanvasKit.Free` to explicitly clean up memory after `CanvasKit.Malloc`. All memory allocated
+   with `CanvasKit.Malloc` must be released with `CanvasKit.Free` or it will be leaked. This can
+   improve performance by reducing the copying of data between the JS and WASM side.
+ - `CanvasKit.ColorAsInt`, `SkPaint.setColorComponents`, `SkPaint.setColorInt`,
+   `SkCanvas.drawColorComponents`, `SkCanvas.drawColorInt` for when clients want
+   to avoid the overhead of allocating an array for color components and only need 8888 color.
+
+### Changed
+ - We now compile/ship with Emscripten v1.39.16.
+ - `CanvasKit.MakeCanvasSurface` accepts a new enum specifying one of the three color space and
+   pixel format combinations supported by CanvasKit.
+ - all `_Make*Shader` functions now accept a color space argument at the end. leaving it off or
+   passing null makes it behave as it did before, defaulting to sRGB
+ - `SkPaint.setColor` accepts a new color space argument, defaulting to sRGB.
+ - Fewer allocations required to send Color and Matrices between JS and WASM layer.
+ - All APIs that take a 1 dimensional array should also accept the object returned by Malloc. It is
+   recommended to pass the Malloc object, as the TypedArray could be invalidated any time
+   CanvasKit needs to allocate memory and needs to resize to accommodate.
+
+### Breaking
+ - `CanvasKitInit(...)` now directly returns a Promise. As such, `CanvasKitInit(...).ready()`
+   has been removed.
+ - `CanvasKit.MakeCanvasSurface` no longer accepts width/height arguments to override those on
+   the canvas element. Use the canvas element's width/height attributes to dictate the size of
+   the drawing area, and use CSS width/height to set the size it will appear on the page
+   (it is rescaled after drawing when css sizing applies).
+ - Memory returned by `CanvasKit.Malloc` will no longer be automatically cleaned up. Clients
+   must use `CanvasKit.Free` to release the memory.
+ - `CanvasKit.Malloc` no longer directly returns a TypedArray, but an object that can produce
+   them with toTypedArray(). This is to avoid "detached ArrayBuffer" errors:
+   <https://github.com/emscripten-core/emscripten/issues/6747>
+
+### Fixed
+ - WebGL context is no longer created with "antialias" flag. Using "antialias" caused poor AA
+   quality in Ganesh when trying to do coverage-based AA with MSAA unknowingly enabled. It also
+   reduced performance.
+
+## [0.15.0] - 2020-05-14
+
+### Added
  - Support for DOMMatrix on all APIs that take SkMatrix (i.e. arrays or Float32Arrays of length 6/9/16).
- - `CanvasKit.MakeWebGLCanvasSurface` takes an option for WebGL version to make it easier to specify
-   v1 or v2.
  - setEdging and setEmbeddedBitmaps to SkFont. You can disable the ability to draw aliased fonts (and save some code
    size) with the compile.sh argument `no_alias_font`.
 
@@ -20,7 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
  - CanvasKit colors are now represented with a TypedArray of four floats.
- - Safari now defaults to using WebGL1 instead of WebGL2 (skbug.com/10171)
+ - Calls to `getError` should be disabled. This may cause a performance improvement in some scenarios.
 
 ### Removed
  - SkPaint.setColorf is obsolete and removed. setColor accepts a CanvasKit color which is
@@ -30,6 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
  - `SkCanvas.concat44` has been folded into concat (which now takes 3x2, 3x3, or 4x4 matrices). It will
    be removed soon.
+
+### Fixed
+ - Memory leak in paragraph binding code (https://github.com/flutter/flutter/issues/56938)
+ - Safari now properly uses WebGL1 instead of WebGL2 when WebGL2 is not available (skbug.com/10171).
 
 ## [0.14.0] - 2020-03-18
 

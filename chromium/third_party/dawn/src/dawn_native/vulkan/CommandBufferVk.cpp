@@ -16,6 +16,7 @@
 
 #include "dawn_native/BindGroupAndStorageBarrierTracker.h"
 #include "dawn_native/CommandEncoder.h"
+#include "dawn_native/CommandValidation.h"
 #include "dawn_native/Commands.h"
 #include "dawn_native/RenderBundle.h"
 #include "dawn_native/vulkan/BindGroupVk.h"
@@ -64,10 +65,13 @@ namespace dawn_native { namespace vulkan {
 
             VkImageCopy region;
 
+            // TODO(jiawei.shao@intel.com): support 1D and 3D textures
+            ASSERT(srcTexture->GetDimension() == wgpu::TextureDimension::e2D &&
+                   dstTexture->GetDimension() == wgpu::TextureDimension::e2D);
             region.srcSubresource.aspectMask = srcTexture->GetVkAspectMask();
             region.srcSubresource.mipLevel = srcCopy.mipLevel;
             region.srcSubresource.baseArrayLayer = srcCopy.arrayLayer;
-            region.srcSubresource.layerCount = 1;
+            region.srcSubresource.layerCount = copySize.depth;
 
             region.srcOffset.x = srcCopy.origin.x;
             region.srcOffset.y = srcCopy.origin.y;
@@ -76,7 +80,7 @@ namespace dawn_native { namespace vulkan {
             region.dstSubresource.aspectMask = dstTexture->GetVkAspectMask();
             region.dstSubresource.mipLevel = dstCopy.mipLevel;
             region.dstSubresource.baseArrayLayer = dstCopy.arrayLayer;
-            region.dstSubresource.layerCount = 1;
+            region.dstSubresource.layerCount = copySize.depth;
 
             region.dstOffset.x = dstCopy.origin.x;
             region.dstOffset.y = dstCopy.origin.y;
@@ -86,28 +90,30 @@ namespace dawn_native { namespace vulkan {
             Extent3D imageExtent = ComputeTextureCopyExtent(dstCopy, copySize);
             region.extent.width = imageExtent.width;
             region.extent.height = imageExtent.height;
-            region.extent.depth = imageExtent.depth;
+            region.extent.depth = 1;
 
             return region;
         }
 
-        void ApplyDescriptorSets(Device* device,
-                                 VkCommandBuffer commands,
-                                 VkPipelineBindPoint bindPoint,
-                                 VkPipelineLayout pipelineLayout,
-                                 const std::bitset<kMaxBindGroups>& bindGroupsToApply,
-                                 const std::array<BindGroupBase*, kMaxBindGroups>& bindGroups,
-                                 const std::array<uint32_t, kMaxBindGroups>& dynamicOffsetCounts,
-                                 const std::array<std::array<uint32_t, kMaxBindingsPerGroup>,
-                                                  kMaxBindGroups>& dynamicOffsets) {
-            for (uint32_t dirtyIndex : IterateBitSet(bindGroupsToApply)) {
+        void ApplyDescriptorSets(
+            Device* device,
+            VkCommandBuffer commands,
+            VkPipelineBindPoint bindPoint,
+            VkPipelineLayout pipelineLayout,
+            const BindGroupLayoutMask& bindGroupsToApply,
+            const ityp::array<BindGroupIndex, BindGroupBase*, kMaxBindGroups>& bindGroups,
+            const ityp::array<BindGroupIndex, uint32_t, kMaxBindGroups>& dynamicOffsetCounts,
+            const ityp::array<BindGroupIndex,
+                              std::array<uint32_t, kMaxBindingsPerGroup>,
+                              kMaxBindGroups>& dynamicOffsets) {
+            for (BindGroupIndex dirtyIndex : IterateBitSet(bindGroupsToApply)) {
                 VkDescriptorSet set = ToBackend(bindGroups[dirtyIndex])->GetHandle();
                 const uint32_t* dynamicOffset = dynamicOffsetCounts[dirtyIndex] > 0
                                                     ? dynamicOffsets[dirtyIndex].data()
                                                     : nullptr;
-                device->fn.CmdBindDescriptorSets(commands, bindPoint, pipelineLayout, dirtyIndex, 1,
-                                                 &*set, dynamicOffsetCounts[dirtyIndex],
-                                                 dynamicOffset);
+                device->fn.CmdBindDescriptorSets(commands, bindPoint, pipelineLayout,
+                                                 static_cast<uint32_t>(dirtyIndex), 1, &*set,
+                                                 dynamicOffsetCounts[dirtyIndex], dynamicOffset);
             }
         }
 
@@ -139,8 +145,9 @@ namespace dawn_native { namespace vulkan {
                                     mDirtyBindGroupsObjectChangedOrIsDynamic, mBindGroups,
                                     mDynamicOffsetCounts, mDynamicOffsets);
 
-                for (uint32_t index : IterateBitSet(mBindGroupLayoutsMask)) {
-                    for (uint32_t bindingIndex : IterateBitSet(mBindingsNeedingBarrier[index])) {
+                for (BindGroupIndex index : IterateBitSet(mBindGroupLayoutsMask)) {
+                    for (BindingIndex bindingIndex :
+                         IterateBitSet(mBindingsNeedingBarrier[index])) {
                         switch (mBindingTypes[index][bindingIndex]) {
                             case wgpu::BindingType::StorageBuffer:
                                 static_cast<Buffer*>(mBindings[index][bindingIndex])
@@ -149,14 +156,15 @@ namespace dawn_native { namespace vulkan {
                                 break;
 
                             case wgpu::BindingType::ReadonlyStorageTexture:
-                            case wgpu::BindingType::WriteonlyStorageTexture:
-                                ToBackend(
-                                    static_cast<TextureViewBase*>(mBindings[index][bindingIndex])
-                                        ->GetTexture())
+                            case wgpu::BindingType::WriteonlyStorageTexture: {
+                                TextureViewBase* view =
+                                    static_cast<TextureViewBase*>(mBindings[index][bindingIndex]);
+                                ToBackend(view->GetTexture())
                                     ->TransitionUsageNow(recordingContext,
-                                                         wgpu::TextureUsage::Storage);
+                                                         wgpu::TextureUsage::Storage,
+                                                         view->GetSubresourceRange());
                                 break;
-
+                            }
                             case wgpu::BindingType::StorageTexture:
                                 // Not implemented.
 
@@ -370,25 +378,40 @@ namespace dawn_native { namespace vulkan {
         VkCommandBuffer commands = recordingContext->commandBuffer;
 
         // Records the necessary barriers for the resource usage pre-computed by the frontend
-        auto TransitionForPass = [](CommandRecordingContext* recordingContext,
+        auto TransitionForPass = [](Device* device, CommandRecordingContext* recordingContext,
                                     const PassResourceUsage& usages) {
+            std::vector<VkBufferMemoryBarrier> bufferBarriers;
+            std::vector<VkImageMemoryBarrier> imageBarriers;
+            VkPipelineStageFlags srcStages = 0;
+            VkPipelineStageFlags dstStages = 0;
+
             for (size_t i = 0; i < usages.buffers.size(); ++i) {
                 Buffer* buffer = ToBackend(usages.buffers[i]);
-                buffer->TransitionUsageNow(recordingContext, usages.bufferUsages[i]);
+                buffer->TransitionUsageNow(recordingContext, usages.bufferUsages[i],
+                                           &bufferBarriers, &srcStages, &dstStages);
             }
+
             for (size_t i = 0; i < usages.textures.size(); ++i) {
                 Texture* texture = ToBackend(usages.textures[i]);
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared in RecordBeginRenderPass by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
                 if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
-                    texture->EnsureSubresourceContentInitialized(recordingContext, 0,
-                                                                 texture->GetNumMipLevels(), 0,
-                                                                 texture->GetArrayLayers());
+                    texture->EnsureSubresourceContentInitialized(recordingContext,
+                                                                 texture->GetAllSubresources());
                 }
-                texture->TransitionUsageNow(recordingContext, usages.textureUsages[i].usage);
+                texture->TransitionUsageForPass(recordingContext, usages.textureUsages[i],
+                                                &imageBarriers, &srcStages, &dstStages);
+            }
+
+            if (bufferBarriers.size() || imageBarriers.size()) {
+                device->fn.CmdPipelineBarrier(recordingContext->commandBuffer, srcStages, dstStages,
+                                              0, 0, nullptr, bufferBarriers.size(),
+                                              bufferBarriers.data(), imageBarriers.size(),
+                                              imageBarriers.data());
             }
         };
+
         const std::vector<PassResourceUsage>& passResourceUsages = GetResourceUsages().perPass;
         size_t nextPassNumber = 0;
 
@@ -397,6 +420,7 @@ namespace dawn_native { namespace vulkan {
             switch (type) {
                 case Command::CopyBufferToBuffer: {
                     CopyBufferToBufferCmd* copy = mCommands.NextCommand<CopyBufferToBufferCmd>();
+
                     Buffer* srcBuffer = ToBackend(copy->source.Get());
                     Buffer* dstBuffer = ToBackend(copy->destination.Get());
 
@@ -423,21 +447,21 @@ namespace dawn_native { namespace vulkan {
                         ComputeBufferImageCopyRegion(src, dst, copy->copySize);
                     VkImageSubresourceLayers subresource = region.imageSubresource;
 
+                    ASSERT(dst.texture->GetDimension() == wgpu::TextureDimension::e2D);
+                    SubresourceRange range = {subresource.mipLevel, 1, subresource.baseArrayLayer,
+                                              subresource.layerCount};
                     if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
                                                       subresource.mipLevel)) {
                         // Since texture has been overwritten, it has been "initialized"
-                        dst.texture->SetIsSubresourceContentInitialized(
-                            true, subresource.mipLevel, 1, subresource.baseArrayLayer, 1);
+                        dst.texture->SetIsSubresourceContentInitialized(true, range);
                     } else {
                         ToBackend(dst.texture)
-                            ->EnsureSubresourceContentInitialized(recordingContext,
-                                                                  subresource.mipLevel, 1,
-                                                                  subresource.baseArrayLayer, 1);
+                            ->EnsureSubresourceContentInitialized(recordingContext, range);
                     }
                     ToBackend(src.buffer)
                         ->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopySrc);
                     ToBackend(dst.texture)
-                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, range);
                     VkBuffer srcBuffer = ToBackend(src.buffer)->GetHandle();
                     VkImage dstImage = ToBackend(dst.texture)->GetHandle();
 
@@ -458,13 +482,15 @@ namespace dawn_native { namespace vulkan {
                         ComputeBufferImageCopyRegion(dst, src, copy->copySize);
                     VkImageSubresourceLayers subresource = region.imageSubresource;
 
+                    ASSERT(src.texture->GetDimension() == wgpu::TextureDimension::e2D);
+                    const SubresourceRange range = {subresource.mipLevel, 1,
+                                                    subresource.baseArrayLayer,
+                                                    subresource.layerCount};
                     ToBackend(src.texture)
-                        ->EnsureSubresourceContentInitialized(recordingContext,
-                                                              subresource.mipLevel, 1,
-                                                              subresource.baseArrayLayer, 1);
+                        ->EnsureSubresourceContentInitialized(recordingContext, range);
 
                     ToBackend(src.texture)
-                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc, range);
                     ToBackend(dst.buffer)
                         ->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
 
@@ -481,25 +507,37 @@ namespace dawn_native { namespace vulkan {
                         mCommands.NextCommand<CopyTextureToTextureCmd>();
                     TextureCopy& src = copy->source;
                     TextureCopy& dst = copy->destination;
+                    SubresourceRange srcRange = {src.mipLevel, 1, src.arrayLayer,
+                                                 copy->copySize.depth};
+                    SubresourceRange dstRange = {dst.mipLevel, 1, dst.arrayLayer,
+                                                 copy->copySize.depth};
 
                     ToBackend(src.texture)
-                        ->EnsureSubresourceContentInitialized(recordingContext, src.mipLevel, 1,
-                                                              src.arrayLayer, 1);
+                        ->EnsureSubresourceContentInitialized(recordingContext, srcRange);
                     if (IsCompleteSubresourceCopiedTo(dst.texture.Get(), copy->copySize,
                                                       dst.mipLevel)) {
                         // Since destination texture has been overwritten, it has been "initialized"
-                        dst.texture->SetIsSubresourceContentInitialized(true, dst.mipLevel, 1,
-                                                                        dst.arrayLayer, 1);
+                        dst.texture->SetIsSubresourceContentInitialized(true, dstRange);
                     } else {
                         ToBackend(dst.texture)
-                            ->EnsureSubresourceContentInitialized(recordingContext, dst.mipLevel, 1,
-                                                                  dst.arrayLayer, 1);
+                            ->EnsureSubresourceContentInitialized(recordingContext, dstRange);
+                    }
+
+                    if (src.texture.Get() == dst.texture.Get() && src.mipLevel == dst.mipLevel) {
+                        // When there are overlapped subresources, the layout of the overlapped
+                        // subresources should all be GENERAL instead of what we set now. Currently
+                        // it is not allowed to copy with overlapped subresources, but we still
+                        // add the ASSERT here as a reminder for this possible misuse.
+                        ASSERT(!IsRangeOverlapped(src.arrayLayer, dst.arrayLayer,
+                                                  copy->copySize.depth));
                     }
 
                     ToBackend(src.texture)
-                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopySrc,
+                                             srcRange);
                     ToBackend(dst.texture)
-                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst);
+                        ->TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst,
+                                             dstRange);
 
                     // In some situations we cannot do texture-to-texture copies with vkCmdCopyImage
                     // because as Vulkan SPEC always validates image copies with the virtual size of
@@ -539,7 +577,7 @@ namespace dawn_native { namespace vulkan {
                 case Command::BeginRenderPass: {
                     BeginRenderPassCmd* cmd = mCommands.NextCommand<BeginRenderPassCmd>();
 
-                    TransitionForPass(recordingContext, passResourceUsages[nextPassNumber]);
+                    TransitionForPass(device, recordingContext, passResourceUsages[nextPassNumber]);
 
                     LazyClearRenderPassAttachments(cmd);
                     DAWN_TRY(RecordRenderPass(recordingContext, cmd));
@@ -551,7 +589,7 @@ namespace dawn_native { namespace vulkan {
                 case Command::BeginComputePass: {
                     mCommands.NextCommand<BeginComputePassCmd>();
 
-                    TransitionForPass(recordingContext, passResourceUsages[nextPassNumber]);
+                    TransitionForPass(device, recordingContext, passResourceUsages[nextPassNumber]);
                     RecordComputePass(recordingContext);
 
                     nextPassNumber++;
@@ -626,7 +664,7 @@ namespace dawn_native { namespace vulkan {
                 }
 
                 case Command::InsertDebugMarker: {
-                    if (device->GetDeviceInfo().debugMarker) {
+                    if (device->GetDeviceInfo().HasExt(DeviceExt::DebugMarker)) {
                         InsertDebugMarkerCmd* cmd = mCommands.NextCommand<InsertDebugMarkerCmd>();
                         const char* label = mCommands.NextData<char>(cmd->length + 1);
                         VkDebugMarkerMarkerInfoEXT markerInfo;
@@ -646,7 +684,7 @@ namespace dawn_native { namespace vulkan {
                 }
 
                 case Command::PopDebugGroup: {
-                    if (device->GetDeviceInfo().debugMarker) {
+                    if (device->GetDeviceInfo().HasExt(DeviceExt::DebugMarker)) {
                         mCommands.NextCommand<PopDebugGroupCmd>();
                         device->fn.CmdDebugMarkerEndEXT(commands);
                     } else {
@@ -656,7 +694,7 @@ namespace dawn_native { namespace vulkan {
                 }
 
                 case Command::PushDebugGroup: {
-                    if (device->GetDeviceInfo().debugMarker) {
+                    if (device->GetDeviceInfo().HasExt(DeviceExt::DebugMarker)) {
                         PushDebugGroupCmd* cmd = mCommands.NextCommand<PushDebugGroupCmd>();
                         const char* label = mCommands.NextData<char>(cmd->length + 1);
                         VkDebugMarkerMarkerInfoEXT markerInfo;
@@ -773,7 +811,7 @@ namespace dawn_native { namespace vulkan {
                 }
 
                 case Command::InsertDebugMarker: {
-                    if (device->GetDeviceInfo().debugMarker) {
+                    if (device->GetDeviceInfo().HasExt(DeviceExt::DebugMarker)) {
                         InsertDebugMarkerCmd* cmd = iter->NextCommand<InsertDebugMarkerCmd>();
                         const char* label = iter->NextData<char>(cmd->length + 1);
                         VkDebugMarkerMarkerInfoEXT markerInfo;
@@ -793,7 +831,7 @@ namespace dawn_native { namespace vulkan {
                 }
 
                 case Command::PopDebugGroup: {
-                    if (device->GetDeviceInfo().debugMarker) {
+                    if (device->GetDeviceInfo().HasExt(DeviceExt::DebugMarker)) {
                         iter->NextCommand<PopDebugGroupCmd>();
                         device->fn.CmdDebugMarkerEndEXT(commands);
                     } else {
@@ -803,7 +841,7 @@ namespace dawn_native { namespace vulkan {
                 }
 
                 case Command::PushDebugGroup: {
-                    if (device->GetDeviceInfo().debugMarker) {
+                    if (device->GetDeviceInfo().HasExt(DeviceExt::DebugMarker)) {
                         PushDebugGroupCmd* cmd = iter->NextCommand<PushDebugGroupCmd>();
                         const char* label = iter->NextData<char>(cmd->length + 1);
                         VkDebugMarkerMarkerInfoEXT markerInfo;

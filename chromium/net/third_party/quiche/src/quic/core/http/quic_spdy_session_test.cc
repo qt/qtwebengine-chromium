@@ -91,6 +91,17 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
         kInitialStreamFlowControlWindowForTest);
     session()->config()->SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
+    if (session()->version().AuthenticatesHandshakeConnectionIds()) {
+      if (session()->perspective() == Perspective::IS_CLIENT) {
+        session()->config()->SetOriginalConnectionIdToSend(
+            session()->connection()->connection_id());
+        session()->config()->SetInitialSourceConnectionIdToSend(
+            session()->connection()->connection_id());
+      } else {
+        session()->config()->SetInitialSourceConnectionIdToSend(
+            session()->connection()->client_connection_id());
+      }
+    }
     if (session()->connection()->version().handshake_protocol ==
         PROTOCOL_TLS1_3) {
       TransportParameters transport_parameters;
@@ -129,6 +140,8 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
   HandshakeState GetHandshakeState() const override {
     return one_rtt_keys_available() ? HANDSHAKE_COMPLETE : HANDSHAKE_START;
   }
+  void SetServerApplicationStateForResumption(
+      std::unique_ptr<ApplicationState> /*application_state*/) override {}
   const QuicCryptoNegotiatedParameters& crypto_negotiated_params()
       const override {
     return *params_;
@@ -197,6 +210,9 @@ class TestSession : public QuicSpdySession {
     this->connection()->SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
         std::make_unique<NullEncrypter>(connection->perspective()));
+    if (this->connection()->version().SupportsAntiAmplificationLimit()) {
+      QuicConnectionPeer::SetAddressValidated(this->connection());
+    }
   }
 
   ~TestSession() override { DeleteConnection(); }
@@ -226,7 +242,7 @@ class TestSession : public QuicSpdySession {
   TestStream* CreateIncomingStream(QuicStreamId id) override {
     // Enforce the limit on the number of open streams.
     if (!VersionHasIetfQuicFrames(connection()->transport_version()) &&
-        GetNumOpenIncomingStreams() + 1 >
+        stream_id_manager().num_open_incoming_streams() + 1 >
             max_open_incoming_bidirectional_streams()) {
       connection()->CloseConnection(
           QUIC_TOO_MANY_OPEN_STREAMS, "Too many streams!",
@@ -235,9 +251,8 @@ class TestSession : public QuicSpdySession {
     } else {
       TestStream* stream = new TestStream(
           id, this,
-          DetermineStreamType(id, connection()->transport_version(),
-                              perspective(), /*is_incoming=*/true,
-                              BIDIRECTIONAL));
+          DetermineStreamType(id, connection()->version(), perspective(),
+                              /*is_incoming=*/true, BIDIRECTIONAL));
       ActivateStream(QuicWrapUnique(stream));
       return stream;
     }
@@ -245,11 +260,10 @@ class TestSession : public QuicSpdySession {
 
   TestStream* CreateIncomingStream(PendingStream* pending) override {
     QuicStreamId id = pending->id();
-    TestStream* stream =
-        new TestStream(pending, this,
-                       DetermineStreamType(
-                           id, connection()->transport_version(), perspective(),
-                           /*is_incoming=*/true, BIDIRECTIONAL));
+    TestStream* stream = new TestStream(
+        pending, this,
+        DetermineStreamType(id, connection()->version(), perspective(),
+                            /*is_incoming=*/true, BIDIRECTIONAL));
     ActivateStream(QuicWrapUnique(stream));
     return stream;
   }
@@ -299,7 +313,7 @@ class TestSession : public QuicSpdySession {
     MakeIOVector("not empty", &iov);
     QuicStreamPeer::SendBuffer(stream).SaveStreamData(&iov, 1, 0, 9);
     QuicConsumedData consumed =
-        WritevData(stream->id(), 9, 0, FIN, NOT_RETRANSMISSION, QuicheNullOpt);
+        WritevData(stream->id(), 9, 0, FIN, NOT_RETRANSMISSION, QUICHE_NULLOPT);
     QuicStreamPeer::SendBuffer(stream).OnStreamDataConsumed(
         consumed.bytes_consumed);
     return consumed;
@@ -308,7 +322,7 @@ class TestSession : public QuicSpdySession {
   QuicConsumedData SendLargeFakeData(QuicStream* stream, int bytes) {
     DCHECK(writev_consumes_all_data_);
     return WritevData(stream->id(), bytes, 0, FIN, NOT_RETRANSMISSION,
-                      QuicheNullOpt);
+                      QUICHE_NULLOPT);
   }
 
   using QuicSession::closed_streams;
@@ -1599,6 +1613,7 @@ TEST_P(QuicSpdySessionTestServer, TooLowUnidirectionalStreamLimitHttp3) {
     return;
   }
   QuicConfigPeer::SetReceivedMaxUnidirectionalStreams(session_.config(), 2u);
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
 
   EXPECT_CALL(
       *connection_,
@@ -1613,6 +1628,7 @@ TEST_P(QuicSpdySessionTestServer, CustomFlowControlWindow) {
   copt.push_back(kIFW7);
   QuicConfigPeer::SetReceivedConnectionOptions(session_.config(), copt);
 
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
   session_.OnConfigNegotiated();
   EXPECT_EQ(192 * 1024u, QuicFlowControllerPeer::ReceiveWindowSize(
                              session_.flow_controller()));
@@ -2982,6 +2998,26 @@ TEST_P(QuicSpdySessionTestServer, PeerClosesCriticalReceiveStream) {
     QuicRstStreamFrame rst(kInvalidControlFrameId, stream_id,
                            QUIC_STREAM_CANCELLED, data_length);
     session_.OnRstStream(rst);
+  }
+}
+
+TEST_P(QuicSpdySessionTestServer,
+       H3ControlStreamsLimitedByConnectionFlowControl) {
+  if (!VersionUsesHttp3(transport_version())) {
+    return;
+  }
+  // Ensure connection level flow control blockage.
+  QuicFlowControllerPeer::SetSendWindowOffset(session_.flow_controller(), 0);
+  EXPECT_TRUE(session_.IsConnectionFlowControlBlocked());
+
+  QuicSendControlStream* send_control_stream =
+      QuicSpdySessionPeer::GetSendControlStream(&session_);
+  // Mark send_control stream write blocked.
+  session_.MarkConnectionLevelWriteBlocked(send_control_stream->id());
+  if (GetQuicReloadableFlag(quic_fix_willing_and_able_to_write)) {
+    EXPECT_FALSE(session_.WillingAndAbleToWrite());
+  } else {
+    EXPECT_TRUE(session_.WillingAndAbleToWrite());
   }
 }
 

@@ -9,7 +9,6 @@
 #include <algorithm>
 #include <sstream>
 #include <utility>
-#include <vector>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_boolean.h"
@@ -28,11 +27,16 @@
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/numerics/safe_math.h"
-#include "third_party/base/ptr_util.h"
 
 namespace {
 
-enum class ReadStatus { Normal, Backslash, Octal, FinishOctal, CarriageReturn };
+enum class ReadStatus {
+  kNormal,
+  kBackslash,
+  kOctal,
+  kFinishOctal,
+  kCarriageReturn
+};
 
 class ReadableSubStream final : public IFX_SeekableReadStream {
  public:
@@ -76,7 +80,7 @@ int CPDF_SyntaxParser::s_CurrentRecursionDepth = 0;
 std::unique_ptr<CPDF_SyntaxParser> CPDF_SyntaxParser::CreateForTesting(
     const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
     FX_FILESIZE HeaderOffset) {
-  return pdfium::MakeUnique<CPDF_SyntaxParser>(
+  return std::make_unique<CPDF_SyntaxParser>(
       pdfium::MakeRetain<CPDF_ReadValidator>(pFileAccess, nullptr),
       HeaderOffset);
 }
@@ -238,11 +242,11 @@ ByteString CPDF_SyntaxParser::ReadString() {
 
   std::ostringstream buf;
   int32_t parlevel = 0;
-  ReadStatus status = ReadStatus::Normal;
+  ReadStatus status = ReadStatus::kNormal;
   int32_t iEscCode = 0;
   while (1) {
     switch (status) {
-      case ReadStatus::Normal:
+      case ReadStatus::kNormal:
         if (ch == ')') {
           if (parlevel == 0)
             return ByteString(buf);
@@ -251,19 +255,19 @@ ByteString CPDF_SyntaxParser::ReadString() {
           parlevel++;
         }
         if (ch == '\\')
-          status = ReadStatus::Backslash;
+          status = ReadStatus::kBackslash;
         else
           buf << static_cast<char>(ch);
         break;
-      case ReadStatus::Backslash:
+      case ReadStatus::kBackslash:
         if (FXSYS_IsOctalDigit(ch)) {
           iEscCode = FXSYS_DecimalCharToInt(static_cast<wchar_t>(ch));
-          status = ReadStatus::Octal;
+          status = ReadStatus::kOctal;
           break;
         }
 
         if (ch == '\r') {
-          status = ReadStatus::CarriageReturn;
+          status = ReadStatus::kCarriageReturn;
           break;
         }
         if (ch == 'n') {
@@ -279,21 +283,21 @@ ByteString CPDF_SyntaxParser::ReadString() {
         } else if (ch != '\n') {
           buf << static_cast<char>(ch);
         }
-        status = ReadStatus::Normal;
+        status = ReadStatus::kNormal;
         break;
-      case ReadStatus::Octal:
+      case ReadStatus::kOctal:
         if (FXSYS_IsOctalDigit(ch)) {
           iEscCode =
               iEscCode * 8 + FXSYS_DecimalCharToInt(static_cast<wchar_t>(ch));
-          status = ReadStatus::FinishOctal;
+          status = ReadStatus::kFinishOctal;
         } else {
           buf << static_cast<char>(iEscCode);
-          status = ReadStatus::Normal;
+          status = ReadStatus::kNormal;
           continue;
         }
         break;
-      case ReadStatus::FinishOctal:
-        status = ReadStatus::Normal;
+      case ReadStatus::kFinishOctal:
+        status = ReadStatus::kNormal;
         if (FXSYS_IsOctalDigit(ch)) {
           iEscCode =
               iEscCode * 8 + FXSYS_DecimalCharToInt(static_cast<wchar_t>(ch));
@@ -303,8 +307,8 @@ ByteString CPDF_SyntaxParser::ReadString() {
           continue;
         }
         break;
-      case ReadStatus::CarriageReturn:
-        status = ReadStatus::Normal;
+      case ReadStatus::kCarriageReturn:
+        status = ReadStatus::kNormal;
         if (ch != '\n')
           continue;
         break;

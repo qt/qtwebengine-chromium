@@ -32,6 +32,11 @@
     #endif
 #endif
 
+static bool runtime_cpu_detection = true;
+void skcms_DisableRuntimeCPUDetection() {
+    runtime_cpu_detection = false;
+}
+
 // sizeof(x) will return size_t, which is 32-bit on some machines and 64-bit on others.
 // We have better testing on 64-bit machines, so force 32-bit machines to behave like 64-bit.
 //
@@ -84,11 +89,12 @@ static float exp2f_(float x) {
 
     // Before we cast fbits to int32_t, check for out of range values to pacify UBSAN.
     // INT_MAX is not exactly representable as a float, so exclude it as effectively infinite.
-    // INT_MIN is a power of 2 and exactly representable as a float, so it's fine.
+    // Negative values are effectively underflow - we'll end up returning a (different) negative
+    // value, which makes no sense. So clamp to zero.
     if (fbits >= (float)INT_MAX) {
         return INFINITY_;
-    } else if (fbits < (float)INT_MIN) {
-        return -INFINITY_;
+    } else if (fbits < 0) {
+        return 0;
     }
 
     int32_t bits = (int32_t)fbits;
@@ -2142,6 +2148,9 @@ namespace baseline {
         enum class CpuType { None, HSW, SKX };
         static CpuType cpu_type() {
             static const CpuType type = []{
+                if (!runtime_cpu_detection) {
+                    return CpuType::None;
+                }
                 // See http://www.sandpile.org/x86/cpuid.htm
 
                 // First, a basic cpuid(1) lets us check prerequisites for HSW, SKX.

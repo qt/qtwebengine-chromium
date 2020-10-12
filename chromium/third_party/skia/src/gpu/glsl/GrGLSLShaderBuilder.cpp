@@ -20,7 +20,8 @@ GrGLSLShaderBuilder::GrGLSLShaderBuilder(GrGLSLProgramBuilder* program)
     , fOutputs(GrGLSLProgramBuilder::kVarsPerBlock)
     , fFeaturesAddedMask(0)
     , fCodeIndex(kCode)
-    , fFinalized(false) {
+    , fFinalized(false)
+    , fTmpVariableCounter(0) {
     // We push back some dummy pointers which will later become our header
     for (int i = 0; i <= kCode; i++) {
         fShaderStrings.push_back();
@@ -198,9 +199,7 @@ void GrGLSLShaderBuilder::appendColorGamutXform(SkString* out,
                 GrShaderVar("color", useFloat ? kFloat4_GrSLType : kHalf4_GrSLType)};
         SkString body;
         if (colorXformHelper->applyUnpremul()) {
-            body.appendf("%s nonZeroAlpha = max(color.a, 0.0001);", useFloat ? "float" : "half");
-            body.appendf("color = %s(color.rgb / nonZeroAlpha, nonZeroAlpha);",
-                         useFloat ? "float4" : "half4");
+            body.appendf("color = unpremul%s(color);", useFloat ? "_float" : "");
         }
         if (colorXformHelper->applySrcTF()) {
             body.appendf("color.r = %s(half(color.r));", srcTFFuncName.c_str());

@@ -22,19 +22,7 @@ namespace rx
 class FunctionsGLX;
 class WorkerContext;
 
-// State-tracking data for the swap control to allow DisplayGLX to remember per
-// drawable information for swap control.
-struct SwapControlData
-{
-    SwapControlData();
-
-    // Set by the drawable
-    int targetSwapInterval;
-
-    // DisplayGLX-side state-tracking
-    int maxSwapInterval;
-    int currentSwapInterval;
-};
+struct SwapControlData;
 
 class DisplayGLX : public DisplayGL
 {
@@ -61,6 +49,10 @@ class DisplayGLX : public DisplayGL
     SurfaceImpl *createPixmapSurface(const egl::SurfaceState &state,
                                      NativePixmapType nativePixmap,
                                      const egl::AttributeMap &attribs) override;
+
+    egl::Error validatePixmap(egl::Config *config,
+                              EGLNativePixmapType pixmap,
+                              const egl::AttributeMap &attributes) const override;
 
     ContextImpl *createContext(const gl::State &state,
                                gl::ErrorSet *errorSet,

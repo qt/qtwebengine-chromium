@@ -30,6 +30,35 @@ namespace protocol {
 
 namespace {
 
+constexpr net::NetworkTrafficAnnotationTag
+    kSettingsProxyConfigTrafficAnnotation =
+        net::DefineNetworkTrafficAnnotation("devtools_proxy_config", R"(
+      semantics {
+        sender: "Proxy Configuration over Developer Tools"
+        description:
+          "Used to fetch HTTP/HTTPS/SOCKS5/PAC proxy configuration when "
+          "proxy is configured by DevTools. It is equivalent to the one "
+          "configured via the --proxy-server command line flag. "
+          "When proxy implies automatic configuration, it can send network "
+          "requests in the scope of this annotation."
+        trigger:
+          "Whenever a network request is made when the system proxy settings "
+          "are used, and they indicate to use a proxy server."
+        data:
+          "Proxy configuration."
+        destination: OTHER
+        destination_other: "The proxy server specified in the configuration."
+      }
+      policy {
+        cookies_allowed: NO
+        setting:
+          "This request cannot be disabled in settings. However it will never "
+          "be made if user does not run with '--remote-debugging-*' switches "
+          "and does not explicitly send this data over Chrome remote debugging."
+        policy_exception_justification:
+          "Not implemented, only used in DevTools and is behind a switch."
+      })");
+
 static const char kNotAllowedError[] = "Not allowed";
 static const char kMethod[] = "method";
 static const char kResumeMethod[] = "Runtime.runIfWaitingForDebugger";
@@ -436,7 +465,7 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
       // was introduced. Try a DCHECK instead and possibly remove the check.
       if (!handler_->root_session_->HasChildSession(id_))
         return;
-      handler_->root_session_->GetClient()->DispatchProtocolMessage(
+      GetRootClient()->DispatchProtocolMessage(
           handler_->root_session_->GetAgentHost(), message);
       return;
     }
@@ -452,6 +481,26 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
   void AgentHostClosed(DevToolsAgentHost* agent_host) override {
     DCHECK(agent_host == agent_host_.get());
     Detach(true);
+  }
+
+  bool MayAttachToURL(const GURL& url, bool is_webui) override {
+    return GetRootClient()->MayAttachToURL(url, is_webui);
+  }
+
+  bool MayAttachToBrowser() override {
+    return GetRootClient()->MayAttachToBrowser();
+  }
+
+  bool MayReadLocalFiles() override {
+    return GetRootClient()->MayReadLocalFiles();
+  }
+
+  bool MayWriteLocalFiles() override {
+    return GetRootClient()->MayWriteLocalFiles();
+  }
+
+  content::DevToolsAgentHostClient* GetRootClient() {
+    return handler_->root_session_->GetClient();
   }
 
   TargetHandler* handler_;
@@ -520,8 +569,7 @@ TargetHandler::TargetHandler(AccessMode access_mode,
       owner_target_id_(owner_target_id),
       root_session_(root_session) {}
 
-TargetHandler::~TargetHandler() {
-}
+TargetHandler::~TargetHandler() = default;
 
 // static
 std::vector<TargetHandler*> TargetHandler::ForAgentHost(
@@ -560,6 +608,7 @@ Response TargetHandler::Disable() {
     }
     dispose_on_detach_context_ids_.clear();
   }
+  contexts_with_overridden_proxy_.clear();
   return Response::Success();
 }
 
@@ -948,23 +997,50 @@ void TargetHandler::DevToolsAgentHostCrashed(DevToolsAgentHost* host,
 
 // ----------------- More protocol methods -------------------
 
-protocol::Response TargetHandler::CreateBrowserContext(
-    Maybe<bool> dispose_on_detach,
-    std::string* out_context_id) {
-  if (access_mode_ != AccessMode::kBrowser)
-    return Response::ServerError(kNotAllowedError);
+void TargetHandler::CreateBrowserContext(
+    Maybe<bool> in_disposeOnDetach,
+    Maybe<String> in_proxyServer,
+    Maybe<String> in_proxyBypassList,
+    std::unique_ptr<CreateBrowserContextCallback> callback) {
+  if (access_mode_ != AccessMode::kBrowser) {
+    callback->sendFailure(Response::ServerError(kNotAllowedError));
+    return;
+  }
   DevToolsManagerDelegate* delegate =
       DevToolsManager::GetInstance()->delegate();
-  if (!delegate)
-    return Response::ServerError(
-        "Browser context management is not supported.");
+  if (!delegate) {
+    callback->sendFailure(
+        Response::ServerError("Browser context management is not supported."));
+    return;
+  }
+
+  if (in_proxyServer.isJust()) {
+    pending_proxy_config_ = net::ProxyConfig();
+    pending_proxy_config_->proxy_rules().ParseFromString(
+        in_proxyServer.fromJust());
+    if (in_proxyBypassList.isJust()) {
+      pending_proxy_config_->proxy_rules().bypass_rules.ParseFromString(
+          in_proxyBypassList.fromJust());
+    }
+  }
+
   BrowserContext* context = delegate->CreateBrowserContext();
-  if (!context)
-    return Response::ServerError("Failed to create browser context.");
-  *out_context_id = context->UniqueId();
-  if (dispose_on_detach.fromMaybe(false))
-    dispose_on_detach_context_ids_.insert(*out_context_id);
-  return Response::Success();
+  if (!context) {
+    callback->sendFailure(
+        Response::ServerError("Failed to create browser context."));
+    pending_proxy_config_.reset();
+    return;
+  }
+
+  if (pending_proxy_config_) {
+    contexts_with_overridden_proxy_[context->UniqueId()] =
+        std::move(*pending_proxy_config_);
+    pending_proxy_config_.reset();
+  }
+
+  if (in_disposeOnDetach.fromMaybe(false))
+    dispose_on_detach_context_ids_.insert(context->UniqueId());
+  callback->sendSuccess(context->UniqueId());
 }
 
 protocol::Response TargetHandler::GetBrowserContexts(
@@ -1022,6 +1098,26 @@ void TargetHandler::DisposeBrowserContext(
               callback->sendFailure(Response::ServerError(error));
           },
           std::move(callback)));
+}
+
+void TargetHandler::ApplyNetworkContextParamsOverrides(
+    BrowserContext* browser_context,
+    network::mojom::NetworkContextParams* context_params) {
+  // Under certain conditions, storage partition is created synchronously for
+  // the browser context. Account for this use case.
+  if (pending_proxy_config_) {
+    context_params->initial_proxy_config =
+        net::ProxyConfigWithAnnotation(std::move(*pending_proxy_config_),
+                                       kSettingsProxyConfigTrafficAnnotation);
+    pending_proxy_config_.reset();
+    return;
+  }
+  auto it = contexts_with_overridden_proxy_.find(browser_context->UniqueId());
+  if (it != contexts_with_overridden_proxy_.end()) {
+    context_params->initial_proxy_config = net::ProxyConfigWithAnnotation(
+        std::move(it->second), kSettingsProxyConfigTrafficAnnotation);
+    contexts_with_overridden_proxy_.erase(browser_context->UniqueId());
+  }
 }
 
 }  // namespace protocol

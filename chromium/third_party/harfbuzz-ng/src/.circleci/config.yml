@@ -41,15 +41,15 @@ jobs:
       - run: export PKG_CONFIG_PATH="/usr/local/opt/icu4c/lib/pkgconfig:/usr/local/opt/libffi/lib/pkgconfig" && ./autogen.sh --with-freetype --with-glib --with-gobject --with-cairo --with-icu --with-coretext --with-graphite2
       - run: make -j4
       - run: make check || .ci/fail.sh
-      - run: make clean && meson build -Damalgam=true && ninja -Cbuild test
+      - run: make clean && meson build -Dcoretext=enabled -Damalgam=true && ninja -Cbuild test
 
   distcheck:
     docker:
       - image: ubuntu:19.10
     steps:
       - checkout
-      - run: apt update && apt install -y git ninja-build binutils libtool autoconf automake make gcc g++ pkg-config ragel gtk-doc-tools libfontconfig1-dev libfreetype6-dev libglib2.0-dev libcairo2-dev libicu-dev libgraphite2-dev python python-pip meson cmake
-      - run: pip install fonttools
+      - run: apt update && apt install -y git ninja-build binutils libtool autoconf automake make gcc g++ pkg-config ragel gtk-doc-tools libfontconfig1-dev libfreetype6-dev libglib2.0-dev libcairo2-dev libicu-dev libgraphite2-dev python3 python3-pip cmake
+      - run: pip3 install fonttools meson --upgrade
       - run: ./autogen.sh
       - run: make -j32
       - run: make distcheck || .ci/fail.sh
@@ -227,15 +227,15 @@ jobs:
       - image: ubuntu:19.10
     steps:
       - checkout
-      - run: apt update && apt install -y ninja-build binutils meson gcc g++ pkg-config ragel gtk-doc-tools libfreetype6-dev libglib2.0-dev libcairo2-dev libicu-dev libgraphite2-dev python python-pip
-      - run: pip install fonttools
+      - run: apt update && apt install -y ninja-build binutils meson gcc g++ pkg-config ragel gtk-doc-tools libfreetype6-dev libglib2.0-dev libcairo2-dev libicu-dev libgraphite2-dev python3 python3-pip
+      - run: pip3 install fonttools meson --upgrade
       - run: meson build && ninja -Cbuild test && rm -rf build
       # test amalgam build
       - run: meson build -Damalgam=true && ninja -Cbuild && rm -rf build
       # test meson's own unity feature also
       - run: meson build --unity on && ninja -Cbuild && rm -rf build
       # test experimental APIs
-      - run: meson build -Dexperimental-api=true && ninja -Cbuild test && rm -rf build
+      - run: meson build -Dexperimental_api=true && ninja -Cbuild test && rm -rf build
 
   crosscompile-notest-djgpp:
     docker:

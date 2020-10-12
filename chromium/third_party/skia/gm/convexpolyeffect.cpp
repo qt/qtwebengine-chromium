@@ -121,13 +121,13 @@ protected:
             SkScalar x = 0;
 
             for (int et = 0; et < kGrClipEdgeTypeCnt; ++et) {
-                const SkMatrix m = SkMatrix::MakeTrans(x, y);
+                const SkMatrix m = SkMatrix::Translate(x, y);
                 SkPath p;
                 path->transform(m, &p);
 
                 GrClipEdgeType edgeType = (GrClipEdgeType) et;
-                std::unique_ptr<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, p));
-                if (!fp) {
+                auto [success, fp] = GrConvexPolyEffect::Make(/*inputFP=*/nullptr, edgeType, p);
+                if (!success) {
                     continue;
                 }
 
@@ -165,8 +165,8 @@ protected:
             for (int et = 0; et < kGrClipEdgeTypeCnt; ++et) {
                 SkRect rect = iter.get()->makeOffset(x, y);
                 GrClipEdgeType edgeType = (GrClipEdgeType) et;
-                std::unique_ptr<GrFragmentProcessor> fp(GrConvexPolyEffect::Make(edgeType, rect));
-                if (!fp) {
+                auto [success, fp] = GrConvexPolyEffect::Make(/*inputFP=*/nullptr, edgeType, rect);
+                if (!success) {
                     continue;
                 }
 

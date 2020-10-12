@@ -121,6 +121,28 @@ void ContextMtl::onDestroy(const gl::Context *context)
 {
     mTriFanIndexBuffer.destroy(this);
     mLineLoopIndexBuffer.destroy(this);
+
+    mIncompleteTextures.onDestroy(context);
+    mIncompleteTexturesInitialized = false;
+}
+
+angle::Result ContextMtl::ensureIncompleteTexturesCreated(const gl::Context *context)
+{
+    if (ANGLE_LIKELY(mIncompleteTexturesInitialized))
+    {
+        return angle::Result::Continue;
+    }
+    constexpr gl::TextureType supportedTextureTypes[] = {gl::TextureType::_2D,
+                                                         gl::TextureType::CubeMap};
+    for (gl::TextureType texType : supportedTextureTypes)
+    {
+        gl::Texture *texture;
+        ANGLE_UNUSED_VARIABLE(texture);
+        ANGLE_TRY(mIncompleteTextures.getIncompleteTexture(context, texType, nullptr, &texture));
+    }
+    mIncompleteTexturesInitialized = true;
+
+    return angle::Result::Continue;
 }
 
 // Flush and finish.
@@ -153,7 +175,7 @@ angle::Result ContextMtl::drawTriFanArraysWithBaseVertex(const gl::Context *cont
         ANGLE_TRY(
             mtl::Buffer::MakeBuffer(this, indexBufferSize, nullptr, &mTriFanArraysIndexBuffer));
         ANGLE_TRY(getDisplay()->getUtils().generateTriFanBufferFromArrays(
-            context, {0, static_cast<uint32_t>(count), mTriFanArraysIndexBuffer, 0}));
+            this, {0, static_cast<uint32_t>(count), mTriFanArraysIndexBuffer, 0}));
     }
 
     ANGLE_TRY(setupDraw(context, gl::PrimitiveMode::TriangleFan, first, count, instances,
@@ -181,8 +203,8 @@ angle::Result ContextMtl::drawTriFanArraysLegacy(const gl::Context *context,
     ANGLE_TRY(AllocateTriangleFanBufferFromPool(this, count, &mTriFanIndexBuffer, &genIdxBuffer,
                                                 &genIdxBufferOffset, &genIndicesCount));
     ANGLE_TRY(getDisplay()->getUtils().generateTriFanBufferFromArrays(
-        context, {static_cast<uint32_t>(first), static_cast<uint32_t>(count), genIdxBuffer,
-                  genIdxBufferOffset}));
+        this, {static_cast<uint32_t>(first), static_cast<uint32_t>(count), genIdxBuffer,
+               genIdxBufferOffset}));
 
     ANGLE_TRY(setupDraw(context, gl::PrimitiveMode::TriangleFan, first, count, instances,
                         gl::DrawElementsType::InvalidEnum, reinterpret_cast<const void *>(0)));
@@ -292,7 +314,7 @@ angle::Result ContextMtl::drawTriFanElements(const gl::Context *context,
                                                     &genIdxBufferOffset, &genIndicesCount));
 
         ANGLE_TRY(getDisplay()->getUtils().generateTriFanBufferFromElementsArray(
-            context, {type, count, indices, genIdxBuffer, genIdxBufferOffset}));
+            this, {type, count, indices, genIdxBuffer, genIdxBufferOffset}));
 
         ANGLE_TRY(mTriFanIndexBuffer.commit(this));
 
@@ -518,6 +540,9 @@ angle::Result ContextMtl::syncState(const gl::Context *context,
                                     const gl::State::DirtyBits &bitMask)
 {
     const gl::State &glState = context->getState();
+
+    // Initialize incomplete texture set.
+    ANGLE_TRY(ensureIncompleteTexturesCreated(context));
 
     for (size_t dirtyBit : dirtyBits)
     {
@@ -1023,6 +1048,13 @@ const mtl::VertexFormat &ContextMtl::getVertexFormat(angle::FormatID angleFormat
     return getDisplay()->getVertexFormat(angleFormatId, tightlyPacked);
 }
 
+angle::Result ContextMtl::getIncompleteTexture(const gl::Context *context,
+                                               gl::TextureType type,
+                                               gl::Texture **textureOut)
+{
+    return mIncompleteTextures.getIncompleteTexture(context, type, nullptr, textureOut);
+}
+
 void ContextMtl::endEncoding(mtl::RenderCommandEncoder *encoder)
 {
     encoder->endEncoding();
@@ -1055,7 +1087,7 @@ void ContextMtl::endEncoding(bool forceSaveRenderPassContent)
 
 void ContextMtl::flushCommandBufer()
 {
-    if (!mCmdBuffer.valid())
+    if (!mCmdBuffer.ready())
     {
         return;
     }
@@ -1066,7 +1098,7 @@ void ContextMtl::flushCommandBufer()
 
 void ContextMtl::present(const gl::Context *context, id<CAMetalDrawable> presentationDrawable)
 {
-    ensureCommandBufferValid();
+    ensureCommandBufferReady();
 
     // Always discard default FBO's depth stencil buffers at the end of the frame:
     if (mDrawFramebufferIsDefault && hasStartedRenderPass(mDrawFramebuffer))
@@ -1089,10 +1121,7 @@ angle::Result ContextMtl::finishCommandBuffer()
 {
     flushCommandBufer();
 
-    if (mCmdBuffer.valid())
-    {
-        mCmdBuffer.finish();
-    }
+    mCmdBuffer.finish();
 
     return angle::Result::Continue;
 }
@@ -1138,7 +1167,7 @@ mtl::RenderCommandEncoder *ContextMtl::getRenderCommandEncoder(const mtl::Render
 
     endEncoding(false);
 
-    ensureCommandBufferValid();
+    ensureCommandBufferReady();
 
     // Need to re-apply everything on next draw call.
     mDirtyBits.set();
@@ -1187,7 +1216,7 @@ mtl::BlitCommandEncoder *ContextMtl::getBlitCommandEncoder()
 
     endEncoding(true);
 
-    ensureCommandBufferValid();
+    ensureCommandBufferReady();
 
     return &mBlitEncoder.restart();
 }
@@ -1201,19 +1230,19 @@ mtl::ComputeCommandEncoder *ContextMtl::getComputeCommandEncoder()
 
     endEncoding(true);
 
-    ensureCommandBufferValid();
+    ensureCommandBufferReady();
 
     return &mComputeEncoder.restart();
 }
 
-void ContextMtl::ensureCommandBufferValid()
+void ContextMtl::ensureCommandBufferReady()
 {
-    if (!mCmdBuffer.valid())
+    if (!mCmdBuffer.ready())
     {
         mCmdBuffer.restart();
     }
 
-    ASSERT(mCmdBuffer.valid());
+    ASSERT(mCmdBuffer.ready());
 }
 
 void ContextMtl::updateViewport(FramebufferMtl *framebufferMtl,
@@ -1520,7 +1549,7 @@ angle::Result ContextMtl::genLineLoopLastSegment(const gl::Context *context,
     if (indexTypeOrNone == gl::DrawElementsType::InvalidEnum)
     {
         ANGLE_TRY(getDisplay()->getUtils().generateLineLoopLastSegment(
-            context, firstVertex, firstVertex + vertexOrIndexCount - 1, newBuffer, 0));
+            this, firstVertex, firstVertex + vertexOrIndexCount - 1, newBuffer, 0));
     }
     else
     {
@@ -1528,7 +1557,7 @@ angle::Result ContextMtl::genLineLoopLastSegment(const gl::Context *context,
         // taken into account
         ASSERT(firstVertex == 0);
         ANGLE_TRY(getDisplay()->getUtils().generateLineLoopLastSegmentFromElementsArray(
-            context, {indexTypeOrNone, vertexOrIndexCount, indices, newBuffer, 0}));
+            this, {indexTypeOrNone, vertexOrIndexCount, indices, newBuffer, 0}));
     }
 
     ANGLE_TRY(mLineLoopIndexBuffer.commit(this));
@@ -1594,10 +1623,14 @@ angle::Result ContextMtl::handleDirtyDriverUniforms(const gl::Context *context)
     mDriverUniforms.viewport[2] = glViewport.width;
     mDriverUniforms.viewport[3] = glViewport.height;
 
-    mDriverUniforms.halfRenderAreaHeight =
+    mDriverUniforms.halfRenderArea[0] =
+        static_cast<float>(mDrawFramebuffer->getState().getDimensions().width) * 0.5f;
+    mDriverUniforms.halfRenderArea[1] =
         static_cast<float>(mDrawFramebuffer->getState().getDimensions().height) * 0.5f;
-    mDriverUniforms.viewportYScale    = mDrawFramebuffer->flipY() ? -1.0f : 1.0f;
-    mDriverUniforms.negViewportYScale = -mDriverUniforms.viewportYScale;
+    mDriverUniforms.flipXY[0]    = 1.0f;
+    mDriverUniforms.flipXY[1]    = mDrawFramebuffer->flipY() ? -1.0f : 1.0f;
+    mDriverUniforms.negFlipXY[0] = mDriverUniforms.flipXY[0];
+    mDriverUniforms.negFlipXY[1] = -mDriverUniforms.flipXY[1];
 
     mDriverUniforms.enabledClipDistances = mState.getEnabledClipDistances().bits();
 
@@ -1615,6 +1648,16 @@ angle::Result ContextMtl::handleDirtyDriverUniforms(const gl::Context *context)
     mDriverUniforms.preRotation[5] = 1.0f;
     mDriverUniforms.preRotation[6] = 0.0f;
     mDriverUniforms.preRotation[7] = 0.0f;
+
+    // Fill in a mat2 identity matrix, plus padding
+    mDriverUniforms.fragRotation[0] = 1.0f;
+    mDriverUniforms.fragRotation[1] = 0.0f;
+    mDriverUniforms.fragRotation[2] = 0.0f;
+    mDriverUniforms.fragRotation[3] = 0.0f;
+    mDriverUniforms.fragRotation[4] = 0.0f;
+    mDriverUniforms.fragRotation[5] = 1.0f;
+    mDriverUniforms.fragRotation[6] = 0.0f;
+    mDriverUniforms.fragRotation[7] = 0.0f;
 
     ASSERT(mRenderEncoder.valid());
     mRenderEncoder.setFragmentData(mDriverUniforms, mtl::kDriverUniformsBindingIndex);

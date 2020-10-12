@@ -6,8 +6,6 @@
 
 #include <limits.h>
 
-#include <list>
-#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -26,15 +24,17 @@
 #include "testing/utils/hash.h"
 #include "testing/utils/path_service.h"
 #include "third_party/base/logging.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_V8
+#include "testing/v8_initializer.h"
 #include "v8/include/v8-platform.h"
 #include "v8/include/v8.h"
 #endif  // PDF_ENABLE_V8
 
 namespace {
+
+EmbedderTestEnvironment* g_environment = nullptr;
 
 int GetBitmapBytesPerPixel(FPDF_BITMAP bitmap) {
   return EmbedderTest::BytesPerPixelForFormat(FPDFBitmap_GetFormat(bitmap));
@@ -54,8 +54,57 @@ int CALLBACK GetRecordProc(HDC hdc,
 
 }  // namespace
 
+EmbedderTestEnvironment::EmbedderTestEnvironment(const char* exe_name)
+#ifdef PDF_ENABLE_V8
+    : exe_path_(exe_name)
+#endif
+{
+  ASSERT(!g_environment);
+  g_environment = this;
+}
+
+EmbedderTestEnvironment::~EmbedderTestEnvironment() {
+  ASSERT(g_environment);
+  g_environment = nullptr;
+
+#ifdef PDF_ENABLE_V8
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+  if (v8_snapshot_)
+    free(const_cast<char*>(v8_snapshot_->data));
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // PDF_ENABLE_V8
+}
+
+// static
+EmbedderTestEnvironment* EmbedderTestEnvironment::GetInstance() {
+  return g_environment;
+}
+
+void EmbedderTestEnvironment::SetUp() {
+#ifdef PDF_ENABLE_V8
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+  if (v8_snapshot_) {
+    platform_ =
+        InitializeV8ForPDFiumWithStartupData(exe_path_, std::string(), nullptr);
+  } else {
+    v8_snapshot_ = std::make_unique<v8::StartupData>();
+    platform_ = InitializeV8ForPDFiumWithStartupData(exe_path_, std::string(),
+                                                     v8_snapshot_.get());
+  }
+#else
+  platform_ = InitializeV8ForPDFium(exe_path_);
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // FPDF_ENABLE_V8
+}
+
+void EmbedderTestEnvironment::TearDown() {
+#ifdef PDF_ENABLE_V8
+  v8::V8::ShutdownPlatform();
+#endif  // PDF_ENABLE_V8
+}
+
 EmbedderTest::EmbedderTest()
-    : default_delegate_(pdfium::MakeUnique<EmbedderTest::Delegate>()),
+    : default_delegate_(std::make_unique<EmbedderTest::Delegate>()),
       delegate_(default_delegate_.get()) {
   FPDF_FILEWRITE::version = 1;
   FPDF_FILEWRITE::WriteBlock = WriteBlockCallback;
@@ -65,10 +114,16 @@ EmbedderTest::~EmbedderTest() = default;
 
 void EmbedderTest::SetUp() {
   FPDF_LIBRARY_CONFIG config;
-  config.version = 2;
+  config.version = 3;
   config.m_pUserFontPaths = nullptr;
   config.m_v8EmbedderSlot = 0;
   config.m_pIsolate = external_isolate_;
+#ifdef PDF_ENABLE_V8
+  config.m_pPlatform = EmbedderTestEnvironment::GetInstance()->platform();
+#else   // PDF_ENABLE_V8
+  config.m_pPlatform = nullptr;
+#endif  // PDF_ENABLE_V8
+
   FPDF_InitLibraryWithConfig(&config);
 
   UNSUPPORT_INFO* info = static_cast<UNSUPPORT_INFO*>(this);
@@ -148,7 +203,7 @@ bool EmbedderTest::OpenDocumentWithOptions(const std::string& filename,
     return false;
 
   EXPECT_TRUE(!loader_);
-  loader_ = pdfium::MakeUnique<TestLoader>(
+  loader_ = std::make_unique<TestLoader>(
       pdfium::make_span(file_contents_.get(), file_length_));
 
   memset(&file_access_, 0, sizeof(file_access_));
@@ -156,7 +211,7 @@ bool EmbedderTest::OpenDocumentWithOptions(const std::string& filename,
   file_access_.m_GetBlock = TestLoader::GetBlock;
   file_access_.m_Param = loader_.get();
 
-  fake_file_access_ = pdfium::MakeUnique<FakeFileAccess>(&file_access_);
+  fake_file_access_ = std::make_unique<FakeFileAccess>(&file_access_);
   return OpenDocumentHelper(password, linearize_option, javascript_option,
                             fake_file_access_.get(), &document_, &avail_,
                             &form_handle_);
@@ -297,7 +352,7 @@ FPDF_PAGE EmbedderTest::LoadPageNoEvents(int page_number) {
 FPDF_PAGE EmbedderTest::LoadPageCommon(int page_number, bool do_events) {
   ASSERT(form_handle_);
   ASSERT(page_number >= 0);
-  ASSERT(!pdfium::ContainsKey(page_map_, page_number));
+  ASSERT(!pdfium::Contains(page_map_, page_number));
 
   FPDF_PAGE page = FPDF_LoadPage(document_, page_number);
   if (!page)
@@ -477,7 +532,7 @@ FPDF_DOCUMENT EmbedderTest::OpenSavedDocumentWithPassword(
   saved_file_access_.m_Param = &saved_document_file_data_;
 
   saved_fake_file_access_ =
-      pdfium::MakeUnique<FakeFileAccess>(&saved_file_access_);
+      std::make_unique<FakeFileAccess>(&saved_file_access_);
 
   EXPECT_TRUE(OpenDocumentHelper(
       password, LinearizeOption::kDefaultLinearize,
@@ -501,7 +556,7 @@ void EmbedderTest::CloseSavedDocument() {
 FPDF_PAGE EmbedderTest::LoadSavedPage(int page_number) {
   ASSERT(saved_form_handle_);
   ASSERT(page_number >= 0);
-  ASSERT(!pdfium::ContainsKey(saved_page_map_, page_number));
+  ASSERT(!pdfium::Contains(saved_page_map_, page_number));
 
   FPDF_PAGE page = FPDF_LoadPage(saved_document_, page_number);
   if (!page)

@@ -1,43 +1,66 @@
-import { allowedTestNameCharacters } from './allowed_characters.js';
 import { Fixture } from './fixture.js';
-import { TestCaseID } from './id.js';
-import { LiveTestCaseResult, TestCaseRecorder, TestSpecRecorder } from './logger.js';
-import { ParamSpec, ParamSpecIterable, extractPublicParams, paramsEquals } from './params_utils.js';
-import { checkPublicParamType } from './url_query.js';
+import { TestCaseRecorder } from './logging/test_case_recorder.js';
+import {
+  CaseParams,
+  CaseParamsIterable,
+  extractPublicParams,
+  publicParamsEquals,
+} from './params_utils.js';
+import { kPathSeparator } from './query/separators.js';
+import { stringifyPublicParams } from './query/stringify_params.js';
+import { validQueryPart } from './query/validQueryPart.js';
 import { assert } from './util/util.js';
+
+export type RunFn = (rec: TestCaseRecorder) => Promise<void>;
+
+export interface TestCaseID {
+  readonly test: readonly string[];
+  readonly params: CaseParams;
+}
 
 export interface RunCase {
   readonly id: TestCaseID;
-  run(debug?: boolean): Promise<LiveTestCaseResult>;
-  injectResult(result: LiveTestCaseResult): void;
+  run: RunFn;
 }
 
+// Interface for defining tests
+export interface TestGroupBuilder<F extends Fixture> {
+  test(name: string): TestBuilderWithName<F, never>;
+}
+export function makeTestGroup<F extends Fixture>(fixture: FixtureClass<F>): TestGroupBuilder<F> {
+  return new TestGroup(fixture);
+}
+
+// Interface for running tests
 export interface RunCaseIterable {
-  iterate(rec: TestSpecRecorder): Iterable<RunCase>;
+  iterate(): Iterable<RunCase>;
+  checkCaseNamesAndDuplicates(): void;
+}
+export function makeTestGroupForUnitTesting<F extends Fixture>(
+  fixture: FixtureClass<F>
+): TestGroup<F> {
+  return new TestGroup(fixture);
 }
 
-type FixtureClass<F extends Fixture> = new (log: TestCaseRecorder, params: ParamSpec) => F;
-type TestFn<F extends Fixture> = (t: F) => Promise<void> | void;
+type FixtureClass<F extends Fixture> = new (log: TestCaseRecorder, params: CaseParams) => F;
+type TestFn<F extends Fixture, P extends {}> = (t: F & { params: P }) => Promise<void> | void;
 
-const validNames = new RegExp('^[' + allowedTestNameCharacters + ']+$');
-
-export class TestGroup<F extends Fixture> implements RunCaseIterable {
+class TestGroup<F extends Fixture> implements RunCaseIterable, TestGroupBuilder<F> {
   private fixture: FixtureClass<F>;
   private seen: Set<string> = new Set();
-  private tests: Array<Test<F>> = [];
+  private tests: Array<TestBuilder<F, never>> = [];
 
   constructor(fixture: FixtureClass<F>) {
     this.fixture = fixture;
   }
 
-  *iterate(log: TestSpecRecorder): Iterable<RunCase> {
+  *iterate(): Iterable<RunCase> {
     for (const test of this.tests) {
-      yield* test.iterate(log);
+      yield* test.iterate();
     }
   }
 
   private checkName(name: string): void {
-    assert(validNames.test(name), `Invalid test name ${name}; must match [${validNames}]+`);
     assert(
       // Shouldn't happen due to the rule above. Just makes sure that treated
       // unencoded strings as encoded strings is OK.
@@ -50,90 +73,110 @@ export class TestGroup<F extends Fixture> implements RunCaseIterable {
   }
 
   // TODO: This could take a fixture, too, to override the one for the group.
-  test(name: string, fn: TestFn<F>): Test<F> {
-    // Replace spaces with underscores for readability.
-    assert(name.indexOf('_') === -1, 'Invalid test name ${name}: contains underscore (use space)');
-    name = name.replace(/ /g, '_');
-
+  test(name: string): TestBuilderWithName<F, never> {
     this.checkName(name);
 
-    const test = new Test<F>(name, this.fixture, fn);
+    const parts = name.split(kPathSeparator);
+    for (const p of parts) {
+      assert(validQueryPart.test(p), `Invalid test name part ${p}; must match ${validQueryPart}`);
+    }
+
+    const test = new TestBuilder<F, never>(parts, this.fixture);
     this.tests.push(test);
     return test;
   }
+
+  checkCaseNamesAndDuplicates(): void {
+    for (const test of this.tests) {
+      test.checkCaseNamesAndDuplicates();
+    }
+  }
 }
 
-// This test is created when it's inserted, but may be parameterized afterward (.params()).
-class Test<F extends Fixture> {
-  readonly name: string;
-  readonly fixture: FixtureClass<F>;
-  readonly fn: TestFn<F>;
-  private cases: ParamSpecIterable | null = null;
+interface TestBuilderWithName<F extends Fixture, P extends {}> extends TestBuilderWithParams<F, P> {
+  params<NewP extends {}>(specs: Iterable<NewP>): TestBuilderWithParams<F, NewP>;
+}
 
-  constructor(name: string, fixture: FixtureClass<F>, fn: TestFn<F>) {
-    this.name = name;
+interface TestBuilderWithParams<F extends Fixture, P extends {}> {
+  fn(fn: TestFn<F, P>): void;
+}
+
+class TestBuilder<F extends Fixture, P extends {}> {
+  private readonly testPath: string[];
+  private readonly fixture: FixtureClass<F>;
+  private testFn: TestFn<F, P> | undefined;
+  private cases?: CaseParamsIterable = undefined;
+
+  constructor(testPath: string[], fixture: FixtureClass<F>) {
+    this.testPath = testPath;
     this.fixture = fixture;
-    this.fn = fn;
   }
 
-  params(specs: ParamSpecIterable): void {
-    assert(this.cases === null, 'test case is already parameterized');
-    const cases = Array.from(specs);
-    const seen: ParamSpec[] = [];
-    // This is n^2.
-    for (const spec of cases) {
-      const publicParams = extractPublicParams(spec);
+  fn(fn: TestFn<F, P>): void {
+    this.testFn = fn;
+  }
 
-      // Check type of public params: can only be (currently):
-      // number, string, boolean, undefined, number[]
-      for (const v of Object.values(publicParams)) {
-        checkPublicParamType(v);
-      }
-
-      assert(!seen.some(x => paramsEquals(x, publicParams)), 'Duplicate test case params');
-      seen.push(publicParams);
+  checkCaseNamesAndDuplicates(): void {
+    if (this.cases === undefined) {
+      return;
     }
-    this.cases = cases;
+
+    // This is n^2.
+    const seen: CaseParams[] = [];
+    for (const testcase of this.cases) {
+      // stringifyPublicParams also checks for invalid params values
+      const testcaseString = stringifyPublicParams(testcase);
+      assert(
+        !seen.some(x => publicParamsEquals(x, testcase)),
+        `Duplicate public test case params: ${testcaseString}`
+      );
+      seen.push(testcase);
+    }
   }
 
-  *iterate(rec: TestSpecRecorder): IterableIterator<RunCase> {
-    for (const params of this.cases || [null]) {
-      yield new RunCaseSpecific(rec, this.name, params, this.fixture, this.fn);
+  params<NewP extends {}>(casesIterable: Iterable<NewP>): TestBuilderWithParams<F, NewP> {
+    assert(this.cases === undefined, 'test case is already parameterized');
+    this.cases = Array.from(casesIterable);
+
+    return (this as unknown) as TestBuilderWithParams<F, NewP>;
+  }
+
+  *iterate(): IterableIterator<RunCase> {
+    assert(this.testFn !== undefined, 'No test function (.fn()) for test');
+    for (const params of this.cases || [{}]) {
+      yield new RunCaseSpecific(this.testPath, params, this.fixture, this.testFn);
     }
   }
 }
 
 class RunCaseSpecific<F extends Fixture> implements RunCase {
   readonly id: TestCaseID;
-  private readonly params: ParamSpec | null;
-  private readonly recorder: TestSpecRecorder;
+
+  private readonly params: CaseParams | null;
   private readonly fixture: FixtureClass<F>;
-  private readonly fn: TestFn<F>;
+  private readonly fn: TestFn<F, never>;
 
   constructor(
-    recorder: TestSpecRecorder,
-    test: string,
-    params: ParamSpec | null,
+    testPath: string[],
+    params: CaseParams,
     fixture: FixtureClass<F>,
-    fn: TestFn<F>
+    fn: TestFn<F, never>
   ) {
-    this.id = { test, params: params ? extractPublicParams(params) : null };
+    this.id = { test: testPath, params: extractPublicParams(params) };
     this.params = params;
-    this.recorder = recorder;
     this.fixture = fixture;
     this.fn = fn;
   }
 
-  async run(debug: boolean): Promise<LiveTestCaseResult> {
-    const [rec, res] = this.recorder.record(this.id.test, this.id.params);
-    rec.start(debug);
-
+  async run(rec: TestCaseRecorder): Promise<void> {
+    rec.start();
     try {
       const inst = new this.fixture(rec, this.params || {});
 
       try {
         await inst.init();
-        await this.fn(inst);
+        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        await this.fn(inst as any);
       } finally {
         // Runs as long as constructor succeeded, even if initialization or the test failed.
         await inst.finalize();
@@ -141,16 +184,10 @@ class RunCaseSpecific<F extends Fixture> implements RunCase {
     } catch (ex) {
       // There was an exception from constructor, init, test, or finalize.
       // An error from init or test may have been a SkipTestCase.
-      // An error from finalize may have been an eventualAsyncExpectation failure.
+      // An error from finalize may have been an eventualAsyncExpectation failure
+      // or unexpected validation/OOM error from the GPUDevice.
       rec.threw(ex);
     }
-
     rec.finish();
-    return res;
-  }
-
-  injectResult(result: LiveTestCaseResult): void {
-    const [, res] = this.recorder.record(this.id.test, this.id.params);
-    Object.assign(res, result);
   }
 }

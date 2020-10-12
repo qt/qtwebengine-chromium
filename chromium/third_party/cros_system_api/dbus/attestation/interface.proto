@@ -10,6 +10,7 @@ import "attestation_ca.proto";
 import "keystore.proto";
 
 package attestation;
+option go_package = "attestation_proto";
 
 enum AttestationStatus {
   STATUS_SUCCESS = 0;

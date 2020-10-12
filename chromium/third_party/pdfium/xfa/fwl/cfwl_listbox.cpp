@@ -10,7 +10,6 @@
 #include <memory>
 #include <utility>
 
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_app.h"
@@ -34,7 +33,7 @@ CFWL_ListBox::CFWL_ListBox(const CFWL_App* app,
                            CFWL_Widget* pOuter)
     : CFWL_Widget(app, std::move(properties), pOuter) {}
 
-CFWL_ListBox::~CFWL_ListBox() {}
+CFWL_ListBox::~CFWL_ListBox() = default;
 
 FWL_Type CFWL_ListBox::GetClassID() const {
   return FWL_Type::ListBox;
@@ -616,26 +615,26 @@ void CFWL_ListBox::InitVerticalScrollBar() {
   if (m_pVertScrollBar)
     return;
 
-  auto prop = pdfium::MakeUnique<CFWL_WidgetProperties>();
+  auto prop = std::make_unique<CFWL_WidgetProperties>();
   prop->m_dwStyleExes = FWL_STYLEEXT_SCB_Vert;
   prop->m_dwStates = FWL_WGTSTATE_Invisible;
   prop->m_pParent = this;
   prop->m_pThemeProvider = m_pScrollBarTP;
-  m_pVertScrollBar = pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
-                                                        std::move(prop), this);
+  m_pVertScrollBar = std::make_unique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
+                                                      std::move(prop), this);
 }
 
 void CFWL_ListBox::InitHorizontalScrollBar() {
   if (m_pHorzScrollBar)
     return;
 
-  auto prop = pdfium::MakeUnique<CFWL_WidgetProperties>();
+  auto prop = std::make_unique<CFWL_WidgetProperties>();
   prop->m_dwStyleExes = FWL_STYLEEXT_SCB_Horz;
   prop->m_dwStates = FWL_WGTSTATE_Invisible;
   prop->m_pParent = this;
   prop->m_pThemeProvider = m_pScrollBarTP;
-  m_pHorzScrollBar = pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
-                                                        std::move(prop), this);
+  m_pHorzScrollBar = std::make_unique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
+                                                      std::move(prop), this);
 }
 
 bool CFWL_ListBox::IsShowScrollBar(bool bVert) {
@@ -656,13 +655,13 @@ void CFWL_ListBox::OnProcessMessage(CFWL_Message* pMessage) {
     return;
 
   switch (pMessage->GetType()) {
-    case CFWL_Message::Type::SetFocus:
+    case CFWL_Message::Type::kSetFocus:
       OnFocusChanged(pMessage, true);
       break;
-    case CFWL_Message::Type::KillFocus:
+    case CFWL_Message::Type::kKillFocus:
       OnFocusChanged(pMessage, false);
       break;
-    case CFWL_Message::Type::Mouse: {
+    case CFWL_Message::Type::kMouse: {
       CFWL_MessageMouse* pMsg = static_cast<CFWL_MessageMouse*>(pMessage);
       switch (pMsg->m_dwCmd) {
         case FWL_MouseCommand::LeftButtonDown:
@@ -676,12 +675,12 @@ void CFWL_ListBox::OnProcessMessage(CFWL_Message* pMessage) {
       }
       break;
     }
-    case CFWL_Message::Type::MouseWheel:
+    case CFWL_Message::Type::kMouseWheel:
       OnMouseWheel(static_cast<CFWL_MessageMouseWheel*>(pMessage));
       break;
-    case CFWL_Message::Type::Key: {
+    case CFWL_Message::Type::kKey: {
       CFWL_MessageKey* pMsg = static_cast<CFWL_MessageKey*>(pMessage);
-      if (pMsg->m_dwCmd == FWL_KeyCommand::KeyDown)
+      if (pMsg->m_dwCmd == CFWL_MessageKey::Type::kKeyDown)
         OnKeyDown(pMsg);
       break;
     }
@@ -903,7 +902,7 @@ int32_t CFWL_ListBox::GetItemIndex(CFWL_Widget* pWidget, CFWL_ListItem* pItem) {
 }
 
 CFWL_ListItem* CFWL_ListBox::AddString(const WideString& wsAdd) {
-  m_ItemArray.emplace_back(pdfium::MakeUnique<CFWL_ListItem>(wsAdd));
+  m_ItemArray.emplace_back(std::make_unique<CFWL_ListItem>(wsAdd));
   return m_ItemArray.back().get();
 }
 

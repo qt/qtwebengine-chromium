@@ -121,6 +121,17 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
 
   /**
    * @override
+   */
+  navStartTimes() {
+    if (!this._model) {
+      return new Map();
+    }
+
+    return this._model.navStartTimes();
+  }
+
+  /**
+   * @override
    * @param {number} entryIndex
    * @return {?string}
    */
@@ -760,6 +771,14 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
         // TODO: Update this to be dynamic when the trace data supports it.
         const occurrences = 1;
         time = ls`Occurrences: ${occurrences}`;
+      }
+
+      if (this._model && this._model.isParseHTMLEvent(event)) {
+        const startLine = event.args['beginData']['startLine'];
+        const endLine = event.args['endData'] && event.args['endData']['endLine'];
+        const url = Bindings.ResourceUtils.displayNameForURL(event.args['beginData']['url']);
+        const range = (endLine !== -1 || endLine === startLine) ? `${startLine}...${endLine}` : startLine;
+        title += ` - ${url} [${range}]`;
       }
 
     } else if (type === EntryType.Frame) {

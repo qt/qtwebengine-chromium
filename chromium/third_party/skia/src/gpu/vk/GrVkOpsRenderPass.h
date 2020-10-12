@@ -32,7 +32,8 @@ public:
 
     void onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>) override;
 
-    bool set(GrRenderTarget*, GrSurfaceOrigin, const SkIRect& bounds,
+    bool set(GrRenderTarget*, GrStencilAttachment*,
+             GrSurfaceOrigin, const SkIRect& bounds,
              const GrOpsRenderPass::LoadAndStoreInfo&,
              const GrOpsRenderPass::StencilLoadAndStoreInfo&,
              const SkTArray<GrSurfaceProxy*, true>& sampledProxies);
@@ -47,7 +48,8 @@ public:
 private:
     bool init(const GrOpsRenderPass::LoadAndStoreInfo&,
               const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-              const SkPMColor4f& clearColor);
+              const SkPMColor4f& clearColor,
+              bool withStencil);
 
     // Called instead of init when we are drawing to a render target that already wraps a secondary
     // command buffer.
@@ -82,9 +84,9 @@ private:
     void onDrawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t offset,
                                int drawCount) override;
 
-    void onClear(const GrFixedClip&, const SkPMColor4f& color) override;
+    void onClear(const GrScissorState& scissor, const SkPMColor4f& color) override;
 
-    void onClearStencilClip(const GrFixedClip&, bool insideStencilMask) override;
+    void onClearStencilClip(const GrScissorState& scissor, bool insideStencilMask) override;
 
     void addAdditionalRenderPass(bool mustUseSecondaryCommandBuffer);
 

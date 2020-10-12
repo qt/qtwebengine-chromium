@@ -10,7 +10,6 @@
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "third_party/base/ptr_util.h"
 
 namespace {
 
@@ -20,7 +19,7 @@ constexpr size_t kImageSizeLimitBytes = 30 * 1024 * 1024;
 
 CPDF_ScaledRenderBuffer::CPDF_ScaledRenderBuffer() {}
 
-CPDF_ScaledRenderBuffer::~CPDF_ScaledRenderBuffer() {}
+CPDF_ScaledRenderBuffer::~CPDF_ScaledRenderBuffer() = default;
 
 bool CPDF_ScaledRenderBuffer::Initialize(CPDF_RenderContext* pContext,
                                          CFX_RenderDevice* pDevice,
@@ -37,7 +36,7 @@ bool CPDF_ScaledRenderBuffer::Initialize(CPDF_RenderContext* pContext,
   m_pObject = pObj;
   m_Matrix = CPDF_DeviceBuffer::CalculateMatrix(pDevice, rect, max_dpi,
                                                 /*scale=*/true);
-  m_pBitmapDevice = pdfium::MakeUnique<CFX_DefaultRenderDevice>();
+  m_pBitmapDevice = std::make_unique<CFX_DefaultRenderDevice>();
   bool bIsAlpha =
       !!(m_pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_ALPHA_OUTPUT);
   FXDIB_Format dibFormat = bIsAlpha ? FXDIB_Argb : FXDIB_Rgb;

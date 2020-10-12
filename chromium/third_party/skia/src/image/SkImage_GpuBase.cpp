@@ -13,7 +13,6 @@
 #include "include/private/GrRecordingContext.h"
 #include "src/core/SkBitmapCache.h"
 #include "src/core/SkTLList.h"
-#include "src/gpu/GrClip.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrImageInfo.h"
 #include "src/gpu/GrProxyProvider.h"
@@ -262,10 +261,13 @@ bool SkImage_GpuBase::onIsValid(GrContext* context) const {
     return true;
 }
 
-bool SkImage_GpuBase::MakeTempTextureProxies(GrContext* ctx, const GrBackendTexture yuvaTextures[],
-                                             int numTextures, const SkYUVAIndex yuvaIndices[4],
+bool SkImage_GpuBase::MakeTempTextureProxies(GrContext* ctx,
+                                             const GrBackendTexture yuvaTextures[],
+                                             int numTextures,
+                                             const SkYUVAIndex yuvaIndices[4],
                                              GrSurfaceOrigin imageOrigin,
-                                             GrSurfaceProxyView tempViews[4]) {
+                                             GrSurfaceProxyView tempViews[4],
+                                             sk_sp<GrRefCntedCallback> releaseHelper) {
     GrProxyProvider* proxyProvider = ctx->priv().proxyProvider();
     for (int textureIndex = 0; textureIndex < numTextures; ++textureIndex) {
         const GrBackendFormat& backendFormat = yuvaTextures[textureIndex].getBackendFormat();
@@ -277,7 +279,8 @@ bool SkImage_GpuBase::MakeTempTextureProxies(GrContext* ctx, const GrBackendText
 
         auto proxy = proxyProvider->wrapBackendTexture(yuvaTextures[textureIndex],
                                                        kBorrow_GrWrapOwnership,
-                                                       GrWrapCacheable::kNo, kRead_GrIOType);
+                                                       GrWrapCacheable::kNo, kRead_GrIOType,
+                                                       releaseHelper);
         if (!proxy) {
             return false;
         }
@@ -323,7 +326,7 @@ bool SkImage_GpuBase::RenderYUVAToRGBA(GrContext* ctx, GrRenderTargetContext* re
     }
     paint.addColorFragmentProcessor(std::move(fp));
 
-    renderTargetContext->drawRect(GrNoClip(), std::move(paint), GrAA::kNo, SkMatrix::I(), rect);
+    renderTargetContext->drawRect(nullptr, std::move(paint), GrAA::kNo, SkMatrix::I(), rect);
     return true;
 }
 

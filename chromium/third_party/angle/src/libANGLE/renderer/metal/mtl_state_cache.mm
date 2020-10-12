@@ -18,7 +18,8 @@
 #include "libANGLE/renderer/metal/mtl_resources.h"
 #include "libANGLE/renderer/metal/mtl_utils.h"
 
-#define ANGLE_OBJC_CP_PROPERTY(DST, SRC, PROPERTY) (DST).PROPERTY = ToObjC((SRC).PROPERTY)
+#define ANGLE_OBJC_CP_PROPERTY(DST, SRC, PROPERTY) \
+    (DST).PROPERTY = static_cast<__typeof__((DST).PROPERTY)>(ToObjC((SRC).PROPERTY))
 
 #define ANGLE_PROP_EQ(LHS, RHS, PROP) ((LHS).PROP == (RHS).PROP)
 
@@ -170,7 +171,8 @@ id<MTLTexture> ToObjC(const TextureRef &texture)
     return textureRef ? textureRef->get() : nil;
 }
 
-void ToObjC(MTLRenderPassAttachmentDescriptor *dst, const RenderPassAttachmentDesc &src)
+void BaseRenderPassAttachmentDescToObjC(const RenderPassAttachmentDesc &src,
+                                        MTLRenderPassAttachmentDescriptor *dst)
 {
     ANGLE_OBJC_CP_PROPERTY(dst, src, texture);
     ANGLE_OBJC_CP_PROPERTY(dst, src, level);
@@ -181,40 +183,28 @@ void ToObjC(MTLRenderPassAttachmentDescriptor *dst, const RenderPassAttachmentDe
     ANGLE_OBJC_CP_PROPERTY(dst, src, storeActionOptions);
 }
 
-MTLRenderPassColorAttachmentDescriptor *ToObjC(const RenderPassColorAttachmentDesc &desc)
+void ToObjC(const RenderPassColorAttachmentDesc &desc,
+            MTLRenderPassColorAttachmentDescriptor *objCDesc)
 {
-    MTLRenderPassColorAttachmentDescriptor *objCDesc =
-        [[MTLRenderPassColorAttachmentDescriptor alloc] init];
-
-    ToObjC(objCDesc, desc);
+    BaseRenderPassAttachmentDescToObjC(desc, objCDesc);
 
     ANGLE_OBJC_CP_PROPERTY(objCDesc, desc, clearColor);
-
-    return [objCDesc ANGLE_MTL_AUTORELEASE];
 }
 
-MTLRenderPassDepthAttachmentDescriptor *ToObjC(const RenderPassDepthAttachmentDesc &desc)
+void ToObjC(const RenderPassDepthAttachmentDesc &desc,
+            MTLRenderPassDepthAttachmentDescriptor *objCDesc)
 {
-    MTLRenderPassDepthAttachmentDescriptor *objCDesc =
-        [[MTLRenderPassDepthAttachmentDescriptor alloc] init];
-
-    ToObjC(objCDesc, desc);
+    BaseRenderPassAttachmentDescToObjC(desc, objCDesc);
 
     ANGLE_OBJC_CP_PROPERTY(objCDesc, desc, clearDepth);
-
-    return [objCDesc ANGLE_MTL_AUTORELEASE];
 }
 
-MTLRenderPassStencilAttachmentDescriptor *ToObjC(const RenderPassStencilAttachmentDesc &desc)
+void ToObjC(const RenderPassStencilAttachmentDesc &desc,
+            MTLRenderPassStencilAttachmentDescriptor *objCDesc)
 {
-    MTLRenderPassStencilAttachmentDescriptor *objCDesc =
-        [[MTLRenderPassStencilAttachmentDescriptor alloc] init];
-
-    ToObjC(objCDesc, desc);
+    BaseRenderPassAttachmentDescToObjC(desc, objCDesc);
 
     ANGLE_OBJC_CP_PROPERTY(objCDesc, desc, clearStencil);
-
-    return [objCDesc ANGLE_MTL_AUTORELEASE];
 }
 
 }  // namespace
@@ -755,22 +745,27 @@ bool RenderPassDesc::operator==(const RenderPassDesc &other) const
 }
 
 // Convert to Metal object
-AutoObjCObj<MTLRenderPassDescriptor> ToMetalObj(const RenderPassDesc &desc)
+void RenderPassDesc::convertToMetalDesc(MTLRenderPassDescriptor *objCDesc) const
 {
     ANGLE_MTL_OBJC_SCOPE
     {
-        MTLRenderPassDescriptor *objCDesc = [MTLRenderPassDescriptor renderPassDescriptor];
-
-        for (uint32_t i = 0; i < desc.numColorAttachments; ++i)
+        for (uint32_t i = 0; i < numColorAttachments; ++i)
         {
-            [objCDesc.colorAttachments setObject:ToObjC(desc.colorAttachments[i])
-                              atIndexedSubscript:i];
+            ToObjC(colorAttachments[i], objCDesc.colorAttachments[i]);
+        }
+        for (uint32_t i = numColorAttachments; i < kMaxRenderTargets; ++i)
+        {
+            // Inactive render target
+            objCDesc.colorAttachments[i].texture     = nil;
+            objCDesc.colorAttachments[i].level       = 0;
+            objCDesc.colorAttachments[i].slice       = 0;
+            objCDesc.colorAttachments[i].depthPlane  = 0;
+            objCDesc.colorAttachments[i].loadAction  = MTLLoadActionDontCare;
+            objCDesc.colorAttachments[i].storeAction = MTLStoreActionDontCare;
         }
 
-        ANGLE_OBJC_CP_PROPERTY(objCDesc, desc, depthAttachment);
-        ANGLE_OBJC_CP_PROPERTY(objCDesc, desc, stencilAttachment);
-
-        return objCDesc;
+        ToObjC(depthAttachment, objCDesc.depthAttachment);
+        ToObjC(stencilAttachment, objCDesc.stencilAttachment);
     }
 }
 

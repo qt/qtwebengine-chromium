@@ -40,9 +40,10 @@ class QUIC_EXPORT_PRIVATE TlsServerHandshaker
   void SendServerConfigUpdate(
       const CachedNetworkParameters* cached_network_params) override;
   bool IsZeroRtt() const override;
+  bool IsResumption() const override;
+  bool ResumptionAttempted() const override;
   int NumServerConfigUpdateMessagesSent() const override;
   const CachedNetworkParameters* PreviousCachedNetworkParams() const override;
-  bool ZeroRttAttempted() const override;
   void SetPreviousCachedNetworkParams(
       CachedNetworkParameters cached_network_params) override;
   void OnPacketDecrypted(EncryptionLevel level) override;
@@ -60,6 +61,8 @@ class QUIC_EXPORT_PRIVATE TlsServerHandshaker
       const override;
   CryptoMessageParser* crypto_message_parser() override;
   HandshakeState GetHandshakeState() const override;
+  void SetServerApplicationStateForResumption(
+      std::unique_ptr<ApplicationState> state) override;
   size_t BufferSizeLimitForLevel(EncryptionLevel level) const override;
   void SetWriteSecret(EncryptionLevel level,
                       const SSL_CIPHER* cipher,
@@ -80,13 +83,6 @@ class QUIC_EXPORT_PRIVATE TlsServerHandshaker
 
   virtual void ProcessAdditionalTransportParameters(
       const TransportParameters& /*params*/) {}
-
-  // Override of TlsHandshaker::SetReadSecret so that setting the read secret
-  // for ENCRYPTION_FORWARD_SECURE can be delayed until the handshake is
-  // complete.
-  bool SetReadSecret(EncryptionLevel level,
-                     const SSL_CIPHER* cipher,
-                     const std::vector<uint8_t>& read_secret) override;
 
   // Called when a new message is received on the crypto stream and is available
   // for the TLS stack to read.
@@ -181,18 +177,20 @@ class QUIC_EXPORT_PRIVATE TlsServerHandshaker
   // |decrypted_session_ticket_| contains the decrypted session ticket after the
   // callback has run but before it is passed to BoringSSL.
   std::vector<uint8_t> decrypted_session_ticket_;
+  // |ticket_received_| tracks whether we received a resumption ticket from the
+  // client. It does not matter whether we were able to decrypt said ticket or
+  // if we actually resumed a session with it - the presence of this ticket
+  // indicates that the client attempted a resumption.
+  bool ticket_received_ = false;
 
   std::string hostname_;
   std::string cert_verify_sig_;
   std::unique_ptr<ProofSource::Details> proof_source_details_;
 
+  std::unique_ptr<ApplicationState> application_state_;
+
   // Pre-shared key used during the handshake.
   std::string pre_shared_key_;
-
-  // Used to hold the ENCRYPTION_FORWARD_SECURE read secret until the handshake
-  // is complete. This is temporary until
-  // https://bugs.chromium.org/p/boringssl/issues/detail?id=303 is resolved.
-  std::vector<uint8_t> app_data_read_secret_;
 
   bool encryption_established_ = false;
   bool one_rtt_keys_available_ = false;

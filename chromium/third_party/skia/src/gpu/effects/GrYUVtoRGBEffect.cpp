@@ -74,7 +74,7 @@ std::unique_ptr<GrFragmentProcessor> GrYUVtoRGBEffect::Make(GrSurfaceProxyView v
                 dimensions.height() == yDimensions.height() / 2 + 1) {
                 sy = 0.5f;
             }
-            *planeMatrix.writable() = SkMatrix::MakeScale(sx, sy);
+            *planeMatrix.writable() = SkMatrix::Scale(sx, sy);
             planeMatrix.writable()->preConcat(localMatrix);
             planeFilter = subsampledPlaneFilterMode;
             if (subset) {
@@ -112,7 +112,7 @@ GrYUVtoRGBEffect::GrYUVtoRGBEffect(std::unique_ptr<GrFragmentProcessor> planeFPs
                               ModulateForClampedSamplerOptFlags(alpha_type(yuvaIndices)))
         , fYUVColorSpace(yuvColorSpace) {
     for (int i = 0; i < numPlanes; ++i) {
-        this->registerChildProcessor(std::move(planeFPs[i]));
+        this->registerChild(std::move(planeFPs[i]));
     }
     std::copy_n(yuvaIndices, 4, fYUVAIndices);
 }
@@ -251,10 +251,7 @@ bool GrYUVtoRGBEffect::onIsEqual(const GrFragmentProcessor& other) const {
 GrYUVtoRGBEffect::GrYUVtoRGBEffect(const GrYUVtoRGBEffect& src)
         : GrFragmentProcessor(kGrYUVtoRGBEffect_ClassID, src.optimizationFlags())
         , fYUVColorSpace(src.fYUVColorSpace) {
-    int numPlanes = src.numChildProcessors();
-    for (int i = 0; i < numPlanes; ++i) {
-        this->registerChildProcessor(this->childProcessor(i).clone());
-    }
+    this->cloneAndRegisterAllChildProcessors(src);
     std::copy_n(src.fYUVAIndices, this->numChildProcessors(), fYUVAIndices);
 }
 

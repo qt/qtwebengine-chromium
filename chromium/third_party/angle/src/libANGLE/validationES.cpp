@@ -167,19 +167,12 @@ bool ValidReadPixelsUnsignedNormalizedDepthType(const Context *context,
 {
     bool supportsReadDepthNV = (context->getExtensions().readDepthNV && (info->depthBits > 0) &&
                                 (info->componentCount == 1));
-    bool isGLES31            = (context->getClientVersion() >= ES_3_1);
     switch (type)
     {
         case GL_UNSIGNED_SHORT:
-            return supportsReadDepthNV ||
-                   (isGLES31 && (info->sizedInternalFormat == GL_DEPTH_COMPONENT16));
         case GL_UNSIGNED_INT:
-            return supportsReadDepthNV ||
-                   (isGLES31 && ((info->sizedInternalFormat == GL_DEPTH_COMPONENT16) ||
-                                 (info->internalFormat == GL_DEPTH_COMPONENT24)));
         case GL_UNSIGNED_INT_24_8:
-            return supportsReadDepthNV ||
-                   (isGLES31 && (info->sizedInternalFormat == GL_DEPTH24_STENCIL8));
+            return supportsReadDepthNV;
         default:
             return false;
     }
@@ -394,6 +387,29 @@ bool ValidateTextureSRGBDecodeValue(const Context *context, const ParamType *par
     return true;
 }
 
+template <typename ParamType>
+bool ValidateTextureSRGBOverrideValue(const Context *context, const ParamType *params)
+{
+    if (!context->getExtensions().textureSRGBOverride)
+    {
+        context->validationError(GL_INVALID_ENUM, kExtensionNotEnabled);
+        return false;
+    }
+
+    switch (ConvertToGLenum(params[0]))
+    {
+        case GL_SRGB:
+        case GL_NONE:
+            break;
+
+        default:
+            context->validationError(GL_INVALID_ENUM, kUnknownParameter);
+            return false;
+    }
+
+    return true;
+}
+
 bool ValidateTextureMaxAnisotropyExtensionEnabled(const Context *context)
 {
     if (!context->getExtensions().textureFilterAnisotropic)
@@ -553,6 +569,10 @@ bool ValidTextureTarget(const Context *context, TextureType type)
         case TextureType::_2DMultisampleArray:
             return context->getExtensions().textureStorageMultisample2DArrayOES;
 
+        case TextureType::CubeMapArray:
+            return (context->getClientVersion() >= Version(3, 2) ||
+                    context->getExtensions().textureCubeMapArrayAny());
+
         case TextureType::VideoImage:
             return context->getExtensions().webglVideoTexture;
 
@@ -584,6 +604,10 @@ bool ValidTexture3DTarget(const Context *context, TextureType target)
         case TextureType::_3D:
         case TextureType::_2DArray:
             return (context->getClientMajorVersion() >= 3);
+
+        case TextureType::CubeMapArray:
+            return (context->getClientVersion() >= Version(3, 2) ||
+                    context->getExtensions().textureCubeMapArrayAny());
 
         default:
             return false;
@@ -734,6 +758,16 @@ bool ValidateDrawInstancedANGLE(const Context *context)
     const State &state                  = context->getState();
     const ProgramExecutable *executable = state.getProgramExecutable();
 
+    if (!executable)
+    {
+        // No executable means there is no Program/PPO bound, which is undefined behavior, but isn't
+        // an error.
+        context->getState().getDebug().insertMessage(
+            GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR, 0, GL_DEBUG_SEVERITY_HIGH,
+            std::string("Attempting to draw without a program"), gl::LOG_WARN);
+        return true;
+    }
+
     const auto &attribs  = state.getVertexArray()->getVertexAttributes();
     const auto &bindings = state.getVertexArray()->getVertexBindings();
     for (size_t attributeIndex = 0; attributeIndex < MAX_VERTEX_ATTRIBS; attributeIndex++)
@@ -756,6 +790,7 @@ bool ValidTexture3DDestinationTarget(const Context *context, TextureTarget targe
     {
         case TextureTarget::_3D:
         case TextureTarget::_2DArray:
+        case TextureTarget::CubeMapArray:
             return true;
         default:
             return false;
@@ -772,6 +807,9 @@ bool ValidTexLevelDestinationTarget(const Context *context, TextureType type)
         case TextureType::CubeMap:
         case TextureType::_3D:
             return true;
+        case TextureType::CubeMapArray:
+            return (context->getClientVersion() >= Version(3, 2) ||
+                    context->getExtensions().textureCubeMapArrayAny());
         case TextureType::Rectangle:
             return context->getExtensions().textureRectangle;
         case TextureType::_2DMultisampleArray:
@@ -818,6 +856,7 @@ bool ValidMipLevel(const Context *context, TextureType type, GLint level)
             break;
 
         case TextureType::CubeMap:
+        case TextureType::CubeMapArray:
             maxDimension = caps.maxCubeMapTextureSize;
             break;
 
@@ -2603,6 +2642,7 @@ bool ValidateCopyTexImageParametersBase(const Context *context,
             break;
 
         case TextureType::CubeMap:
+        case TextureType::CubeMapArray:
             maxDimension = caps.maxCubeMapTextureSize;
             break;
 
@@ -2658,7 +2698,8 @@ bool ValidateCopyTexImageParametersBase(const Context *context,
     }
     else
     {
-        if (texType == TextureType::CubeMap && width != height)
+        if ((texType == TextureType::CubeMap || texType == TextureType::CubeMapArray) &&
+            width != height)
         {
             context->validationError(GL_INVALID_VALUE, kCubemapIncomplete);
             return false;
@@ -6147,6 +6188,13 @@ bool ValidateTexParameterBase(const Context *context,
 
         case GL_TEXTURE_SRGB_DECODE_EXT:
             if (!ValidateTextureSRGBDecodeValue(context, params))
+            {
+                return false;
+            }
+            break;
+
+        case GL_TEXTURE_FORMAT_SRGB_OVERRIDE_EXT:
+            if (!ValidateTextureSRGBOverrideValue(context, params))
             {
                 return false;
             }

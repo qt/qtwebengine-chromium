@@ -140,15 +140,11 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // TODO(fayang): Rename this function to OnHandshakeComplete.
   void SetHandshakeConfirmed();
 
-  // Requests retransmission of all unacked packets of |retransmission_type|.
-  // The behavior of this method depends on the value of |retransmission_type|:
-  // ALL_UNACKED_RETRANSMISSION - All unacked packets will be retransmitted.
-  // This can happen, for example, after a version negotiation packet has been
-  // received and all packets needs to be retransmitted with the new version.
-  // ALL_INITIAL_RETRANSMISSION - Only initially encrypted packets will be
-  // retransmitted. This can happen, for example, when a CHLO has been rejected
-  // and the previously encrypted data needs to be encrypted with a new key.
-  void RetransmitUnackedPackets(TransmissionType retransmission_type);
+  // Requests retransmission of all unacked 0-RTT packets.
+  // Only initially encrypted packets will be retransmitted. This can happen,
+  // for example, when a CHLO has been rejected and the previously encrypted
+  // data needs to be encrypted with a new key.
+  void RetransmitZeroRttPackets();
 
   // Notify the sent packet manager of an external network measurement or
   // prediction for either |bandwidth| or |rtt|; either can be empty.
@@ -216,7 +212,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   const QuicTime::Delta GetPathDegradingDelay() const;
 
   // Returns the current delay for detecting network blackhole.
-  const QuicTime::Delta GetNetworkBlackholeDelay() const;
+  const QuicTime::Delta GetNetworkBlackholeDelay(
+      int8_t num_rtos_for_blackhole_detection) const;
 
   const RttStats* GetRttStats() const { return &rtt_stats_; }
 
@@ -397,6 +394,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   void StartExponentialBackoffAfterNthPto(
       size_t exponential_backoff_start_point);
 
+  // Called to retransmit in flight packet of |space| if any.
+  void RetransmitDataOfSpaceIfAny(PacketNumberSpace space);
+
   bool supports_multiple_packet_number_spaces() const {
     return unacked_packets_.supports_multiple_packet_number_spaces();
   }
@@ -410,6 +410,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   }
 
   bool one_rtt_packet_acked() const { return one_rtt_packet_acked_; }
+
+  void OnUserAgentIdKnown() { loss_algorithm_->OnUserAgentIdKnown(); }
 
  private:
   friend class test::QuicConnectionPeer;
@@ -657,8 +659,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // calculating PTO timeout.
   bool use_standard_deviation_for_pto_;
 
-  const bool avoid_overestimate_bandwidth_with_aggregation_ =
-      GetQuicReloadableFlag(quic_avoid_overestimate_bandwidth_with_aggregation);
+  // The multiplier for caculating PTO timeout before any RTT sample is
+  // available.
+  float pto_multiplier_without_rtt_samples_;
 };
 
 }  // namespace quic

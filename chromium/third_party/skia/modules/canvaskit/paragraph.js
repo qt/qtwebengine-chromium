@@ -15,7 +15,7 @@
       var ret = [];
       for (var i = 0; i < floatArray.length; i+=5) {
         var r = CanvasKit.LTRBRect(floatArray[i], floatArray[i+1], floatArray[i+2], floatArray[i+3]);
-        if (floatArray[i+4] === 1) {
+        if (floatArray[i+4] === 0) {
           r['direction'] = CanvasKit.TextDirection.RTL;
         } else {
           r['direction'] = CanvasKit.TextDirection.LTR;
@@ -34,11 +34,8 @@
       s['disableHinting'] = s['disableHinting'] || false;
       if (s['ellipsis']) {
         var str = s['ellipsis'];
-        var strLen = lengthBytesUTF8(str) + 1;
-        var strPtr = CanvasKit._malloc(strLen);
-        stringToUTF8(str, strPtr, strLen);
-        s['_ellipsisPtr'] = strPtr;
-        s['_ellipsisLen'] = strLen;
+        s['_ellipsisPtr'] = cacheOrCopyString(str);
+        s['_ellipsisLen'] = lengthBytesUTF8(str) + 1; // add 1 for the null terminator.
       } else {
         s['_ellipsisPtr'] = nullptr;
         s['_ellipsisLen'] = 0;
@@ -50,7 +47,7 @@
       s['textDirection'] = s['textDirection'] || CanvasKit.TextDirection.LTR;
       s['textStyle'] = CanvasKit.TextStyle(s['textStyle']);
       return s;
-    }
+    };
 
     function fontStyle(s) {
       s = s || {};
@@ -65,27 +62,16 @@
 
     CanvasKit.TextStyle = function(s) {
        // Use [''] to tell closure not to minify the names
-      if (!isCanvasKitColor(s['color'])) {
+      if (!s['color']) {
         s['color'] = CanvasKit.BLACK;
       }
 
-      s['foregroundColor'] = s['foregroundColor'] || CanvasKit.TRANSPARENT;
-      s['backgroundColor'] = s['backgroundColor'] || CanvasKit.TRANSPARENT;
       s['decoration'] = s['decoration'] || 0;
       s['decorationThickness'] = s['decorationThickness'] || 0;
       s['fontSize'] = s['fontSize'] || 0;
-      if (Array.isArray(s['fontFamilies']) && s['fontFamilies'].length) {
-        var sPtr = naiveCopyStrArray(s['fontFamilies']);
-        s['_fontFamilies'] = sPtr;
-        s['_numFontFamilies'] = s['fontFamilies'].length;
-      } else {
-        s['_fontFamilies'] = nullptr;
-        s['_numFontFamilies'] = 0;
-        SkDebug("no font families provided, text may draw wrong or not at all")
-      }
       s['fontStyle'] = fontStyle(s['fontStyle']);
       return s;
-    }
+    };
 
     // returns a pointer to a place on the heap that has an array
     // of char* (effectively a char**). For now, this does the naive thing
@@ -100,50 +86,79 @@
       }
       var sPtrs = [];
       for (var i = 0; i < strings.length; i++) {
-        var str = strings[i];
-        // Add 1 for null terminator, which we need when copying/converting
-        var strLen = lengthBytesUTF8(str) + 1;
-        var strPtr = CanvasKit._malloc(strLen);
-        stringToUTF8(str, strPtr, strLen);
+        var strPtr = cacheOrCopyString(strings[i]);
         sPtrs.push(strPtr);
       }
-      return copy1dArray(sPtrs, CanvasKit.HEAPU32);
+      return copy1dArray(sPtrs, "HEAPU32");
     }
 
-    function copyColors(textStyle) {
-      // these two color fields were arrays, but will set to WASM pointers before we pass this
+    // maps string -> malloc'd pointer
+    var stringCache = {};
+
+    // cacheOrCopyString copies a string from JS into WASM on the heap and returns the pointer
+    // to the memory of the string. It is expected that a caller to this helper will *not* free
+    // that memory, so it is cached. Thus, if a future call to this function with the same string
+    // will return the cached pointer, preventing the memory usage from growing unbounded (in
+    // a normal use case).
+    function cacheOrCopyString(str) {
+      if (stringCache[str]) {
+        return stringCache[str];
+      }
+      // Add 1 for null terminator, which we need when copying/converting
+      var strLen = lengthBytesUTF8(str) + 1;
+      var strPtr = CanvasKit._malloc(strLen);
+      stringToUTF8(str, strPtr, strLen);
+      stringCache[str] = strPtr;
+      return strPtr;
+    }
+
+    // These scratch arrays are allocated once to copy the color data into, which saves us
+    // having to free them after every invocation.
+    var scratchForegroundColorPtr = CanvasKit._malloc(4 * 4); // room for 4 32bit floats
+    var scratchBackgroundColorPtr = CanvasKit._malloc(4 * 4); // room for 4 32bit floats
+
+    function copyArrays(textStyle) {
+      // These color fields were arrays, but will set to WASM pointers before we pass this
       // object over the WASM interface.
-      textStyle['colorPtr'] = copy1dArray(textStyle['color'], CanvasKit.HEAPF32);
-      textStyle['foregroundColorPtr'] = nullptr; // nullptr is 0, from helper.js
-      textStyle['backgroundColorPtr'] = nullptr;
+      textStyle['_colorPtr'] = copyColorToWasm(textStyle['color']);
+      textStyle['_foregroundColorPtr'] = nullptr; // nullptr is 0, from helper.js
+      textStyle['_backgroundColorPtr'] = nullptr;
 
-      if (isCanvasKitColor(textStyle['foregroundColor']) && textStyle['foregroundColor'][3] > 0) {
-        textStyle['foregroundColorPtr'] = copy1dArray(textStyle['foregroundColor'], CanvasKit.HEAPF32);
+      if (textStyle['foregroundColor']) {
+        textStyle['_foregroundColorPtr'] = copyColorToWasm(textStyle['foregroundColor'], scratchForegroundColorPtr);
       }
-      if (isCanvasKitColor(textStyle['backgroundColor']) && textStyle['backgroundColor'][3] > 0) {
-        textStyle['backgroundColorPtr'] = copy1dArray(textStyle['backgroundColor'], CanvasKit.HEAPF32);
+      if (textStyle['backgroundColor']) {
+        textStyle['_backgroundColorPtr'] = copyColorToWasm(textStyle['backgroundColor'], scratchBackgroundColorPtr);
       }
-      return textStyle;
+
+      if (Array.isArray(textStyle['fontFamilies']) && textStyle['fontFamilies'].length) {
+        textStyle['_fontFamiliesPtr'] = naiveCopyStrArray(textStyle['fontFamilies']);
+        textStyle['_fontFamiliesLen'] = textStyle['fontFamilies'].length;
+      } else {
+        textStyle['_fontFamiliesPtr'] = nullptr;
+        textStyle['_fontFamiliesLen'] = 0;
+        SkDebug('no font families provided, text may draw wrong or not at all');
+      }
     }
 
-    function freeColors(textStyle) {
-      CanvasKit._free(textStyle['colorPtr']);
-      CanvasKit._free(textStyle['foregroundColorPtr']);
-      CanvasKit._free(textStyle['backgroundColorPtr']);
+    function freeArrays(textStyle) {
+      // The font family strings will get copied to a vector on the C++ side, which is owned by
+      // the text style.
+      CanvasKit._free(textStyle['_fontFamiliesPtr']);
     }
 
     CanvasKit.ParagraphBuilder.Make = function(paragraphStyle, fontManager) {
-      paragraphStyle['textStyle'] = copyColors(paragraphStyle['textStyle']);
+      copyArrays(paragraphStyle['textStyle']);
 
       var result =  CanvasKit.ParagraphBuilder._Make(paragraphStyle, fontManager);
-      freeColors(paragraphStyle['textStyle']);
+      freeArrays(paragraphStyle['textStyle']);
       return result;
-    }
+    };
 
     CanvasKit.ParagraphBuilder.prototype.pushStyle = function(textStyle) {
-      var tmpStyle = copyColors(textStyle);
-      this._pushStyle(tmpStyle);
-      freeColors(tmpStyle);
+      copyArrays(textStyle);
+      this._pushStyle(textStyle);
+      freeArrays(textStyle);
     }
 });
 }(Module)); // When this file is loaded in, the high level object is "Module";

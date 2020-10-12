@@ -180,6 +180,9 @@ class DataCounters final : angle::NonCopyable
 using BufferSet   = std::set<gl::BufferID>;
 using BufferCalls = std::map<gl::BufferID, std::vector<CallCapture>>;
 
+// true means mapped, false means unmapped
+using BufferMapStatusMap = std::map<gl::BufferID, bool>;
+
 // Helper to track resource changes during the capture
 class ResourceTracker final : angle::NonCopyable
 {
@@ -189,6 +192,8 @@ class ResourceTracker final : angle::NonCopyable
 
     BufferCalls &getBufferRegenCalls() { return mBufferRegenCalls; }
     BufferCalls &getBufferRestoreCalls() { return mBufferRestoreCalls; }
+    BufferCalls &getBufferMapCalls() { return mBufferMapCalls; }
+    BufferCalls &getBufferUnmapCalls() { return mBufferUnmapCalls; }
 
     BufferSet &getStartingBuffers() { return mStartingBuffers; }
     BufferSet &getNewBuffers() { return mNewBuffers; }
@@ -198,12 +203,35 @@ class ResourceTracker final : angle::NonCopyable
     void setGennedBuffer(gl::BufferID id);
     void setDeletedBuffer(gl::BufferID id);
     void setBufferModified(gl::BufferID id);
+    void setBufferMapped(gl::BufferID id);
+    void setBufferUnmapped(gl::BufferID id);
+
+    const bool &getStartingBuffersMappedCurrent(gl::BufferID id)
+    {
+        return mStartingBuffersMappedCurrent[id];
+    }
+    const bool &getStartingBuffersMappedInitial(gl::BufferID id)
+    {
+        return mStartingBuffersMappedInitial[id];
+    }
+    void setStartingBufferMapped(gl::BufferID id, bool mapped)
+    {
+        // Track the current state (which will change throughout the trace)
+        mStartingBuffersMappedCurrent[id] = mapped;
+
+        // And the initial state, to compare during frame loop reset
+        mStartingBuffersMappedInitial[id] = mapped;
+    }
 
   private:
     // Buffer regen calls will delete and gen a buffer
     BufferCalls mBufferRegenCalls;
     // Buffer restore calls will restore the contents of a buffer
     BufferCalls mBufferRestoreCalls;
+    // Buffer map calls will map a buffer with correct offset, length, and access flags
+    BufferCalls mBufferMapCalls;
+    // Buffer unmap calls will bind and unmap a given buffer
+    BufferCalls mBufferUnmapCalls;
 
     // Starting buffers include all the buffers created during setup for MEC
     BufferSet mStartingBuffers;
@@ -213,6 +241,11 @@ class ResourceTracker final : angle::NonCopyable
     BufferSet mBuffersToRegen;
     // Buffers to restore include any starting buffers with contents modified during the run
     BufferSet mBuffersToRestore;
+
+    // Whether a given buffer was mapped at the start of the trace
+    BufferMapStatusMap mStartingBuffersMappedInitial;
+    // The status of buffer mapping throughout the trace, modified with each Map/Unmap call
+    BufferMapStatusMap mStartingBuffersMappedCurrent;
 };
 
 // Used by the CPP replay to filter out unnecessary code.
@@ -240,10 +273,19 @@ class FrameCapture final : angle::NonCopyable
 
     void captureCall(const gl::Context *context, CallCapture &&call);
     void onEndFrame(const gl::Context *context);
+    void onMakeCurrent(const egl::Surface *drawSurface);
     bool enabled() const { return mEnabled; }
 
     bool isCapturing() const;
     void replay(gl::Context *context);
+
+    void trackBufferMapping(CallCapture *call,
+                            gl::BufferID id,
+                            GLintptr offset,
+                            GLsizeiptr length,
+                            GLbitfield accessFlags);
+
+    ResourceTracker &getResouceTracker() { return mResourceTracker; }
 
   private:
     void captureClientArraySnapshot(const gl::Context *context,
@@ -276,6 +318,8 @@ class FrameCapture final : angle::NonCopyable
     uint32_t mFrameIndex;
     uint32_t mFrameStart;
     uint32_t mFrameEnd;
+    EGLint mDrawSurfaceWidth  = 0;
+    EGLint mDrawSurfaceHeight = 0;
     gl::AttribArray<size_t> mClientArraySizes;
     size_t mReadBufferSize;
     HasResourceTypeMap mHasResourceType;
@@ -333,7 +377,7 @@ void CaptureMemory(const void *source, size_t size, ParamCapture *paramCapture);
 void CaptureString(const GLchar *str, ParamCapture *paramCapture);
 void CaptureStringLimit(const GLchar *str, uint32_t limit, ParamCapture *paramCapture);
 
-gl::Program *GetLinkedProgramForCapture(const gl::State &glState, gl::ShaderProgramID handle);
+gl::Program *GetProgramForCapture(const gl::State &glState, gl::ShaderProgramID handle);
 
 // For GetIntegerv, GetFloatv, etc.
 void CaptureGetParameter(const gl::State &glState,
@@ -454,5 +498,20 @@ void WriteParamValueReplay(std::ostream &os, const CallCapture &call, T value)
     os << value;
 }
 }  // namespace angle
+
+template <typename T>
+void CaptureTextureAndSamplerParameter_params(GLenum pname,
+                                              const T *param,
+                                              angle::ParamCapture *paramCapture)
+{
+    if (pname == GL_TEXTURE_BORDER_COLOR)
+    {
+        CaptureMemory(param, sizeof(T) * 4, paramCapture);
+    }
+    else
+    {
+        CaptureMemory(param, sizeof(T), paramCapture);
+    }
+}
 
 #endif  // LIBANGLE_FRAME_CAPTURE_H_

@@ -102,7 +102,6 @@ namespace dawn_native {
         desc.usage = swapChain->GetUsage();
         desc.dimension = wgpu::TextureDimension::e2D;
         desc.size = {swapChain->GetWidth(), swapChain->GetHeight(), 1};
-        desc.arrayLayerCount = 1;
         desc.format = swapChain->GetFormat();
         desc.mipLevelCount = 1;
         desc.sampleCount = 1;
@@ -181,7 +180,6 @@ namespace dawn_native {
         descriptor.size.width = mWidth;
         descriptor.size.height = mHeight;
         descriptor.size.depth = 1;
-        descriptor.arrayLayerCount = 1;
         descriptor.sampleCount = 1;
         descriptor.format = mFormat;
         descriptor.mipLevelCount = 1;
@@ -201,7 +199,7 @@ namespace dawn_native {
         }
         ASSERT(!IsError());
 
-        if (GetDevice()->ConsumedError(OnBeforePresent(mCurrentTexture.Get()))) {
+        if (GetDevice()->ConsumedError(OnBeforePresent(mCurrentTextureView.Get()))) {
             return;
         }
 

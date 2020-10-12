@@ -78,6 +78,17 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
         kInitialStreamFlowControlWindowForTest);
     session()->config()->SetInitialSessionFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
+    if (session()->version().AuthenticatesHandshakeConnectionIds()) {
+      if (session()->perspective() == Perspective::IS_CLIENT) {
+        session()->config()->SetOriginalConnectionIdToSend(
+            session()->connection()->connection_id());
+        session()->config()->SetInitialSourceConnectionIdToSend(
+            session()->connection()->connection_id());
+      } else {
+        session()->config()->SetInitialSourceConnectionIdToSend(
+            session()->connection()->client_connection_id());
+      }
+    }
     if (session()->connection()->version().handshake_protocol ==
         PROTOCOL_TLS1_3) {
       TransportParameters transport_parameters;
@@ -116,6 +127,8 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
   HandshakeState GetHandshakeState() const override {
     return one_rtt_keys_available() ? HANDSHAKE_COMPLETE : HANDSHAKE_START;
   }
+  void SetServerApplicationStateForResumption(
+      std::unique_ptr<ApplicationState> /*application_state*/) override {}
   const QuicCryptoNegotiatedParameters& crypto_negotiated_params()
       const override {
     return *params_;
@@ -324,6 +337,9 @@ class QuicSpdyStreamTest : public QuicTestWithParam<ParsedQuicVersion> {
         &helper_, &alarm_factory_, perspective, SupportedVersions(GetParam()));
     session_ = std::make_unique<StrictMock<TestSession>>(connection_);
     session_->Initialize();
+    if (connection_->version().SupportsAntiAmplificationLimit()) {
+      QuicConnectionPeer::SetAddressValidated(connection_);
+    }
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
     ON_CALL(*session_, WritevData(_, _, _, _, _, _))
         .WillByDefault(

@@ -21,8 +21,8 @@ namespace openscreen {
 
 class StreamSocketPosix : public StreamSocket {
  public:
-  StreamSocketPosix(IPAddress::Version version);
-  StreamSocketPosix(const IPEndpoint& local_endpoint);
+  explicit StreamSocketPosix(IPAddress::Version version);
+  explicit StreamSocketPosix(const IPEndpoint& local_endpoint);
   StreamSocketPosix(SocketAddressPosix local_address,
                     IPEndpoint remote_address,
                     int file_descriptor);

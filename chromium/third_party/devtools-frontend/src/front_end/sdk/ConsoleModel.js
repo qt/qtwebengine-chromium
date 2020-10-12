@@ -491,7 +491,7 @@ export class ConsoleMessage {
    * @param {?string=} url
    * @param {number=} line
    * @param {number=} column
-   * @param {!Array.<!Protocol.Runtime.RemoteObject>=} parameters
+   * @param {!Array.<!Protocol.Runtime.RemoteObject|string>=} parameters
    * @param {!Protocol.Runtime.StackTrace=} stackTrace
    * @param {number=} timestamp
    * @param {!Protocol.Runtime.ExecutionContextId=} executionContextId
@@ -668,8 +668,7 @@ export class ConsoleMessage {
 
     return (this.runtimeModel() === msg.runtimeModel()) && (this.source === msg.source) && (this.type === msg.type) &&
         (this.level === msg.level) && (this.line === msg.line) && (this.url === msg.url) &&
-        (this.messageText === msg.messageText) && (this.request === msg.request) &&
-        (this.executionContextId === msg.executionContextId);
+        (this.messageText === msg.messageText) && (this.executionContextId === msg.executionContextId);
   }
 
   /**

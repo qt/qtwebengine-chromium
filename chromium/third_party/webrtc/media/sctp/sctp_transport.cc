@@ -269,6 +269,11 @@ class SctpTransport::UsrSctpWrapper {
     // TODO(ldixon): Consider turning this on/off.
     usrsctp_sysctl_set_sctp_ecn_enable(0);
 
+    // WebRTC doesn't use these features, so disable them to reduce the
+    // potential attack surface.
+    usrsctp_sysctl_set_sctp_asconf_enable(0);
+    usrsctp_sysctl_set_sctp_auth_enable(0);
+
     // This is harmless, but we should find out when the library default
     // changes.
     int send_size = usrsctp_sysctl_get_sctp_sendspace();
@@ -1263,6 +1268,9 @@ void SctpTransport::OnNotificationAssocChange(const sctp_assoc_change& change) {
       max_outbound_streams_ = change.sac_outbound_streams;
       max_inbound_streams_ = change.sac_inbound_streams;
       SignalAssociationChangeCommunicationUp();
+      // In case someone tried to close a stream before communication
+      // came up, send any queued resets.
+      SendQueuedStreamResets();
       break;
     case SCTP_COMM_LOST:
       RTC_LOG(LS_INFO) << "Association change SCTP_COMM_LOST";

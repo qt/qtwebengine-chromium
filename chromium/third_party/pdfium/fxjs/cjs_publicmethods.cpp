@@ -35,6 +35,7 @@
 #include "fxjs/js_define.h"
 #include "fxjs/js_resources.h"
 #include "third_party/base/optional.h"
+#include "third_party/base/stl_util.h"
 
 // static
 const JSMethodSpec CJS_PublicMethods::GlobalFunctionSpecs[] = {
@@ -799,8 +800,7 @@ CJS_Result CJS_PublicMethods::AFPercent_Format(
 
   // When the |iDec| value is too big, Acrobat will just return "%".
   static constexpr int kDecLimit = 512;
-  // TODO(thestig): Calculate this once C++14 can be used to declare variables
-  // in constexpr functions.
+  // This count must be in sync with |kDecLimit|.
   static constexpr size_t kDigitsInDecLimit = 3;
   WideString& Value = pEvent->Value();
   if (iDec > kDecLimit) {
@@ -924,7 +924,7 @@ double CJS_PublicMethods::ParseDateAsGMT(const WideString& strValue) {
 
   int nMonth = 1;
   sTemp = wsArray[1];
-  for (size_t i = 0; i < FX_ArraySize(fxjs::kMonths); ++i) {
+  for (size_t i = 0; i < pdfium::size(fxjs::kMonths); ++i) {
     if (sTemp.Compare(fxjs::kMonths[i]) == 0) {
       nMonth = i + 1;
       break;
@@ -984,7 +984,7 @@ CJS_Result CJS_PublicMethods::AFDate_Format(
     return CJS_Result::Failure(JSMessage::kParamError);
 
   int iIndex = WithinBoundsOrZero(pRuntime->ToInt32(params[0]),
-                                  FX_ArraySize(kDateFormats));
+                                  pdfium::size(kDateFormats));
   std::vector<v8::Local<v8::Value>> newParams;
   newParams.push_back(pRuntime->NewString(kDateFormats[iIndex]));
   return AFDate_FormatEx(pRuntime, newParams);
@@ -998,7 +998,7 @@ CJS_Result CJS_PublicMethods::AFDate_Keystroke(
     return CJS_Result::Failure(JSMessage::kParamError);
 
   int iIndex = WithinBoundsOrZero(pRuntime->ToInt32(params[0]),
-                                  FX_ArraySize(kDateFormats));
+                                  pdfium::size(kDateFormats));
   std::vector<v8::Local<v8::Value>> newParams;
   newParams.push_back(pRuntime->NewString(kDateFormats[iIndex]));
   return AFDate_KeystrokeEx(pRuntime, newParams);
@@ -1012,7 +1012,7 @@ CJS_Result CJS_PublicMethods::AFTime_Format(
     return CJS_Result::Failure(JSMessage::kParamError);
 
   int iIndex = WithinBoundsOrZero(pRuntime->ToInt32(params[0]),
-                                  FX_ArraySize(kTimeFormats));
+                                  pdfium::size(kTimeFormats));
   std::vector<v8::Local<v8::Value>> newParams;
   newParams.push_back(pRuntime->NewString(kTimeFormats[iIndex]));
   return AFDate_FormatEx(pRuntime, newParams);
@@ -1025,7 +1025,7 @@ CJS_Result CJS_PublicMethods::AFTime_Keystroke(
     return CJS_Result::Failure(JSMessage::kParamError);
 
   int iIndex = WithinBoundsOrZero(pRuntime->ToInt32(params[0]),
-                                  FX_ArraySize(kTimeFormats));
+                                  pdfium::size(kTimeFormats));
   std::vector<v8::Local<v8::Value>> newParams;
   newParams.push_back(pRuntime->NewString(kTimeFormats[iIndex]));
   return AFDate_KeystrokeEx(pRuntime, newParams);

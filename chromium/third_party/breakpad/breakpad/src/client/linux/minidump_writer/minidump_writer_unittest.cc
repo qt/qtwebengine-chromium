@@ -299,10 +299,10 @@ TEST(MinidumpWriterTest, MinidumpStacksSkippedIfRequested) {
   Minidump minidump(templ);
   ASSERT_TRUE(minidump.Read());
 
-  MinidumpThreadList *threads = minidump.GetThreadList();
+  MinidumpThreadList* threads = minidump.GetThreadList();
   int threads_with_stacks = 0;
   for (unsigned int i = 0; i < threads->thread_count(); ++i) {
-    MinidumpThread *thread = threads->GetThreadAtIndex(i);
+    MinidumpThread* thread = threads->GetThreadAtIndex(i);
     if (thread->GetMemory()) {
       ++threads_with_stacks;
     }
@@ -353,13 +353,13 @@ TEST(MinidumpWriterTest, StacksAreSanitizedIfRequested) {
 #else
       0x0defaced;
 #endif
-  MinidumpThreadList *threads = minidump.GetThreadList();
+  MinidumpThreadList* threads = minidump.GetThreadList();
   for (unsigned int i = 0; i < threads->thread_count(); ++i) {
-    MinidumpThread *thread = threads->GetThreadAtIndex(i);
-    MinidumpMemoryRegion *mem = thread->GetMemory();
+    MinidumpThread* thread = threads->GetThreadAtIndex(i);
+    MinidumpMemoryRegion* mem = thread->GetMemory();
     ASSERT_TRUE(mem != nullptr);
     uint32_t sz = mem->GetSize();
-    const uint8_t *data = mem->GetMemory();
+    const uint8_t* data = mem->GetMemory();
     ASSERT_TRUE(memmem(data, sz, &defaced, sizeof(defaced)) != nullptr);
   }
   close(fds[1]);

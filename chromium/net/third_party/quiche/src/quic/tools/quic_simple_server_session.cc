@@ -158,7 +158,7 @@ void QuicSimpleServerSession::HandleRstOnValidNonexistentStream(
     // index for it in promised_streams_ can be calculated.
     QuicStreamId next_stream_id = next_outgoing_unidirectional_stream_id();
     if (VersionHasIetfQuicFrames(transport_version())) {
-      DCHECK(!QuicUtils::IsBidirectionalStreamId(frame.stream_id));
+      DCHECK(!QuicUtils::IsBidirectionalStreamId(frame.stream_id, version()));
     }
     DCHECK_GE(frame.stream_id, next_stream_id);
     size_t index = (frame.stream_id - next_stream_id) /
@@ -243,9 +243,9 @@ void QuicSimpleServerSession::OnCanCreateNewOutgoingStream(
 }
 
 void QuicSimpleServerSession::MaybeInitializeHttp3UnidirectionalStreams() {
-  size_t previous_static_stream_count = num_outgoing_static_streams();
+  size_t previous_static_stream_count = num_static_streams();
   QuicSpdySession::MaybeInitializeHttp3UnidirectionalStreams();
-  size_t current_static_stream_count = num_outgoing_static_streams();
+  size_t current_static_stream_count = num_static_streams();
   DCHECK_GE(current_static_stream_count, previous_static_stream_count);
   highest_promised_stream_id_ +=
       QuicUtils::StreamIdDelta(transport_version()) *

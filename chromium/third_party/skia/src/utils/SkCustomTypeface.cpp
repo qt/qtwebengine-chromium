@@ -11,21 +11,46 @@
 #include "include/utils/SkCustomTypeface.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 
-class SkUserTypeface : public SkTypeface {
+static SkFontMetrics scale_fontmetrics(const SkFontMetrics& src, float sx, float sy) {
+    SkFontMetrics dst = src;
+
+    #define SCALE_X(field)  dst.field *= sx
+    #define SCALE_Y(field)  dst.field *= sy
+
+    SCALE_X(fAvgCharWidth);
+    SCALE_X(fMaxCharWidth);
+    SCALE_X(fXMin);
+    SCALE_X(fXMax);
+
+    SCALE_Y(fTop);
+    SCALE_Y(fAscent);
+    SCALE_Y(fDescent);
+    SCALE_Y(fBottom);
+    SCALE_Y(fLeading);
+    SCALE_Y(fXHeight);
+    SCALE_Y(fCapHeight);
+    SCALE_Y(fUnderlineThickness);
+    SCALE_Y(fUnderlinePosition);
+    SCALE_Y(fStrikeoutThickness);
+    SCALE_Y(fStrikeoutPosition);
+
+    #undef SCALE_X
+    #undef SCALE_Y
+
+    return dst;
+}
+
+class SkUserTypeface final : public SkTypeface {
+private:
     friend class SkCustomTypefaceBuilder;
     friend class SkUserScalerContext;
 
-    SkUserTypeface(int count)
-        : SkTypeface(SkFontStyle())
-        , fGlyphCount(count)
-    {}
+    SkUserTypeface() : SkTypeface(SkFontStyle()) {}
 
-    const int fGlyphCount;
     std::vector<SkPath> fPaths;
     std::vector<float>  fAdvances;
-    SkRect              fBounds;
+    SkFontMetrics       fMetrics;
 
-protected:
     SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
                                            const SkDescriptor* desc) const override;
     void onFilterRec(SkScalerContextRec* rec) const override;
@@ -46,9 +71,12 @@ protected:
     sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
         return sk_ref_sp(this);
     }
-    int onCountGlyphs() const override { return fGlyphCount; }
+    int onCountGlyphs() const override { return this->glyphCount(); }
     int onGetUPEM() const override { return 2048; /* ?? */ }
-    bool onComputeBounds(SkRect* bounds) const override { *bounds = fBounds; return true; }
+    bool onComputeBounds(SkRect* bounds) const override {
+        bounds->setLTRB(fMetrics.fXMin, fMetrics.fTop, fMetrics.fXMax, fMetrics.fBottom);
+        return true;
+    }
 
     // noops
 
@@ -59,27 +87,39 @@ protected:
                                        int) const override { return 0; }
     int onGetTableTags(SkFontTableTag tags[]) const override { return 0; }
     size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const override { return 0; }
+
+    int glyphCount() const {
+        SkASSERT(fPaths.size() == fAdvances.size());
+        return SkToInt(fPaths.size());
+    }
 };
 
-SkCustomTypefaceBuilder::SkCustomTypefaceBuilder(int numGlyphs) : fGlyphCount(numGlyphs) {
-    fAdvances.resize(numGlyphs);
-    fPaths.resize(numGlyphs);
+SkCustomTypefaceBuilder::SkCustomTypefaceBuilder() {
+    sk_bzero(&fMetrics, sizeof(fMetrics));
+}
+
+void SkCustomTypefaceBuilder::setMetrics(const SkFontMetrics& fm, float scale) {
+    fMetrics = scale_fontmetrics(fm, scale, scale);
 }
 
 void SkCustomTypefaceBuilder::setGlyph(SkGlyphID index, float advance, const SkPath& path) {
-    if (index >= (unsigned)fGlyphCount) {
-        return;
+    SkASSERT(fPaths.size() == fAdvances.size());
+    if (index >= fPaths.size()) {
+           fPaths.resize(SkToSizeT(index) + 1);
+        fAdvances.resize(SkToSizeT(index) + 1);
     }
     fAdvances[index] = advance;
     fPaths[index]    = path;
 }
 
 sk_sp<SkTypeface> SkCustomTypefaceBuilder::detach() {
-    if (fGlyphCount <= 0) return nullptr;
+    SkASSERT(fPaths.size() == fAdvances.size());
+    if (fPaths.empty()) return nullptr;
 
-    SkUserTypeface* tf = new SkUserTypeface(fGlyphCount);
+    sk_sp<SkUserTypeface> tf(new SkUserTypeface());
     tf->fAdvances = std::move(fAdvances);
     tf->fPaths    = std::move(fPaths);
+    tf->fMetrics  = fMetrics;
 
     // initially inverted, so that any "union" will overwrite the first time
     SkRect bounds = {SK_ScalarMax, SK_ScalarMax, -SK_ScalarMax, -SK_ScalarMax};
@@ -89,9 +129,12 @@ sk_sp<SkTypeface> SkCustomTypefaceBuilder::detach() {
             bounds.join(path.getBounds());
         }
     }
-    tf->fBounds = bounds;
+    tf->fMetrics.fTop    = bounds.top();
+    tf->fMetrics.fBottom = bounds.bottom();
+    tf->fMetrics.fXMin   = bounds.left();
+    tf->fMetrics.fXMax   = bounds.right();
 
-    return sk_sp<SkTypeface>(tf);
+    return std::move(tf);
 }
 
 /////////////
@@ -103,8 +146,8 @@ void SkUserTypeface::onFilterRec(SkScalerContextRec* rec) const {
 }
 
 void SkUserTypeface::getGlyphToUnicodeMap(SkUnichar* glyphToUnicode) const {
-    for (int gid = 0; gid < fGlyphCount; ++gid) {
-        glyphToUnicode[gid] = 0;
+    for (int gid = 0; gid < this->glyphCount(); ++gid) {
+        glyphToUnicode[gid] = SkTo<SkUnichar>(gid);
     }
 }
 
@@ -118,7 +161,7 @@ void SkUserTypeface::onGetFontDescriptor(SkFontDescriptor* desc, bool* isLocal) 
 
 void SkUserTypeface::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID glyphs[]) const {
     for (int i = 0; i < count; ++i) {
-        glyphs[i] = 0;
+        glyphs[i] = uni[i] < this->glyphCount() ? SkTo<SkGlyphID>(uni[i]) : 0;
     }
 }
 
@@ -150,7 +193,7 @@ public:
 
 protected:
     unsigned generateGlyphCount() override {
-        return this->userTF()->fGlyphCount;
+        return this->userTF()->glyphCount();
     }
 
     bool generateAdvance(SkGlyph* glyph) override {
@@ -176,15 +219,8 @@ protected:
     }
 
     void generateFontMetrics(SkFontMetrics* metrics) override {
-        auto [_, sy] = fMatrix.mapXY(0, 1);
-
-        sk_bzero(metrics, sizeof(*metrics));
-        metrics->fTop    = this->userTF()->fBounds.fTop    * sy;
-        metrics->fBottom = this->userTF()->fBounds.fBottom * sy;
-
-        // todo: get these from the creator of the typeface?
-        metrics->fAscent = metrics->fTop;
-        metrics->fDescent = metrics->fBottom;
+        auto [sx, sy] = fMatrix.mapXY(1, 1);
+        *metrics = scale_fontmetrics(this->userTF()->fMetrics, sx, sy);
     }
 
 private:
@@ -268,7 +304,7 @@ static void compress_write(SkWStream* stream, const SkPath& path, int upem) {
 
 static constexpr int kMaxGlyphCount = 65536;
 static constexpr size_t kHeaderSize = 16;
-static const char gHeaderString[] = "SkUserTypeface00";
+static const char gHeaderString[] = "SkUserTypeface01";
 static_assert(sizeof(gHeaderString) == 1 + kHeaderSize, "need header to be 16 bytes");
 
 std::unique_ptr<SkStreamAsset> SkUserTypeface::onOpenStream(int* ttcIndex) const {
@@ -276,20 +312,19 @@ std::unique_ptr<SkStreamAsset> SkUserTypeface::onOpenStream(int* ttcIndex) const
 
     wstream.write(gHeaderString, kHeaderSize);
 
-    SkASSERT(fAdvances.size() == (unsigned)fGlyphCount);
-    SkASSERT(fPaths.size() == (unsigned)fGlyphCount);
+    wstream.write(&fMetrics, sizeof(fMetrics));
 
     // just hacking around -- this makes the serialized font 1/2 size
     const bool use_compression = false;
 
-    wstream.write32(fGlyphCount);
+    wstream.write32(this->glyphCount());
 
     if (use_compression) {
         for (float a : fAdvances) {
             write_scaled_float_to_16(&wstream, a, 2048);
         }
     } else {
-        wstream.write(fAdvances.data(), fGlyphCount * sizeof(float));
+        wstream.write(fAdvances.data(), this->glyphCount() * sizeof(float));
     }
 
     for (const auto& p : fPaths) {
@@ -334,12 +369,19 @@ sk_sp<SkTypeface> SkCustomTypefaceBuilder::Deserialize(SkStream* stream) {
         return nullptr;
     }
 
+    SkFontMetrics metrics;
+    if (stream->read(&metrics, sizeof(metrics)) != sizeof(metrics)) {
+        return nullptr;
+    }
+
     int glyphCount;
     if (!stream->readS32(&glyphCount) || glyphCount < 0 || glyphCount > kMaxGlyphCount) {
         return nullptr;
     }
 
-    SkCustomTypefaceBuilder builder(glyphCount);
+    SkCustomTypefaceBuilder builder;
+
+    builder.setMetrics(metrics);
 
     std::vector<float> advances(glyphCount);
     if (stream->read(advances.data(), glyphCount * sizeof(float)) != glyphCount * sizeof(float)) {

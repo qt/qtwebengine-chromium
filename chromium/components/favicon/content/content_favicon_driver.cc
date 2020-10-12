@@ -19,21 +19,6 @@
 #include "ui/gfx/image/image.h"
 
 namespace favicon {
-namespace {
-
-void ExtractManifestIcons(
-    ContentFaviconDriver::ManifestDownloadCallback callback,
-    const GURL& manifest_url,
-    const blink::Manifest& manifest) {
-  std::vector<FaviconURL> candidates;
-  for (const auto& icon : manifest.icons) {
-    candidates.emplace_back(icon.src, favicon_base::IconType::kWebManifestIcon,
-                            icon.sizes);
-  }
-  std::move(callback).Run(candidates);
-}
-
-}  // namespace
 
 // static
 void ContentFaviconDriver::CreateForWebContents(
@@ -73,11 +58,8 @@ gfx::Image ContentFaviconDriver::GetFavicon() const {
   // Like GetTitle(), we also want to use the favicon for the last committed
   // entry rather than a pending navigation entry.
   content::NavigationController& controller = web_contents()->GetController();
-  content::NavigationEntry* entry = controller.GetTransientEntry();
-  if (entry)
-    return entry->GetFavicon().image;
 
-  entry = controller.GetLastCommittedEntry();
+  content::NavigationEntry* entry = controller.GetLastCommittedEntry();
   if (entry)
     return entry->GetFavicon().image;
   return gfx::Image();
@@ -85,11 +67,8 @@ gfx::Image ContentFaviconDriver::GetFavicon() const {
 
 bool ContentFaviconDriver::FaviconIsValid() const {
   content::NavigationController& controller = web_contents()->GetController();
-  content::NavigationEntry* entry = controller.GetTransientEntry();
-  if (entry)
-    return entry->GetFavicon().valid;
 
-  entry = controller.GetLastCommittedEntry();
+  content::NavigationEntry* entry = controller.GetLastCommittedEntry();
   if (entry)
     return entry->GetFavicon().valid;
 
@@ -108,7 +87,25 @@ ContentFaviconDriver::ContentFaviconDriver(content::WebContents* web_contents,
       FaviconDriverImpl(favicon_service),
       document_on_load_completed_(false) {}
 
-ContentFaviconDriver::~ContentFaviconDriver() {
+ContentFaviconDriver::~ContentFaviconDriver() = default;
+
+void ContentFaviconDriver::OnDidDownloadManifest(
+    ManifestDownloadCallback callback,
+    const GURL& manifest_url,
+    const blink::Manifest& manifest) {
+  // ~WebContentsImpl triggers running any pending callbacks for manifests.
+  // As we're about to be destroyed ignore the request. To do otherwise may
+  // result in calling back to this and attempting to use the WebContents, which
+  // will crash.
+  if (!web_contents())
+    return;
+
+  std::vector<FaviconURL> candidates;
+  for (const auto& icon : manifest.icons) {
+    candidates.emplace_back(icon.src, favicon_base::IconType::kWebManifestIcon,
+                            icon.sizes);
+  }
+  std::move(callback).Run(candidates);
 }
 
 int ContentFaviconDriver::DownloadImage(const GURL& url,
@@ -125,7 +122,8 @@ int ContentFaviconDriver::DownloadImage(const GURL& url,
 void ContentFaviconDriver::DownloadManifest(const GURL& url,
                                             ManifestDownloadCallback callback) {
   web_contents()->GetManifest(
-      base::BindOnce(&ExtractManifestIcons, std::move(callback)));
+      base::BindOnce(&ContentFaviconDriver::OnDidDownloadManifest,
+                     base::Unretained(this), std::move(callback)));
 }
 
 bool ContentFaviconDriver::IsOffTheRecord() {
@@ -173,6 +171,7 @@ void ContentFaviconDriver::OnFaviconDeleted(
 }
 
 void ContentFaviconDriver::DidUpdateFaviconURL(
+    content::RenderFrameHost* rfh,
     const std::vector<blink::mojom::FaviconURLPtr>& candidates) {
   // Ignore the update if there is no last committed navigation entry. This can
   // occur when loading an initially blank page.
@@ -198,6 +197,7 @@ void ContentFaviconDriver::DidUpdateFaviconURL(
 }
 
 void ContentFaviconDriver::DidUpdateWebManifestURL(
+    content::RenderFrameHost* rfh,
     const base::Optional<GURL>& manifest_url) {
   // Ignore the update if there is no last committed navigation entry. This can
   // occur when loading an initially blank page.

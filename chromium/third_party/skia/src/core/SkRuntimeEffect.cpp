@@ -11,6 +11,7 @@
 #include "include/private/SkChecksum.h"
 #include "include/private/SkMutex.h"
 #include "src/core/SkCanvasPriv.h"
+#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkMatrixProvider.h"
@@ -28,8 +29,8 @@
 #include "include/private/GrRecordingContext.h"
 #include "src/gpu/GrColorInfo.h"
 #include "src/gpu/GrFPArgs.h"
+#include "src/gpu/effects/GrMatrixEffect.h"
 #include "src/gpu/effects/GrSkSLFP.h"
-#include "src/gpu/effects/generated/GrMatrixEffect.h"
 #endif
 
 #include <algorithm>
@@ -411,7 +412,13 @@ SkRuntimeEffect::ByteCodeResult SkRuntimeEffect::toByteCode(const void* inputs) 
 static std::vector<skvm::F32> program_fn(skvm::Builder* p,
                                          const SkSL::ByteCodeFunction& fn,
                                          const std::vector<skvm::F32>& uniform,
-                                         std::vector<skvm::F32> stack) {
+                                         const SkMatrixProvider& matrices,
+                                         std::vector<skvm::F32> stack,
+                                         /*these parameters are used to call program() on children*/
+                                         const std::vector<sk_sp<SkShader>>& children,
+                                         skvm::Coord device, skvm::Color paint,
+                                         SkFilterQuality quality, const SkColorInfo& dst,
+                                         skvm::Uniforms* uniforms, SkArenaAlloc* alloc) {
     auto push = [&](skvm::F32 x) { stack.push_back(x); };
     auto pop  = [&]{ skvm::F32 x = stack.back(); stack.pop_back(); return x; };
 
@@ -466,6 +473,30 @@ static std::vector<skvm::F32> program_fn(skvm::Builder* p,
                 #endif
                 return {};
 
+            // TODO: Inst::kSampleMatrix, should look much like kSampleExplicit.
+
+            case Inst::kSampleExplicit: {
+                // Child shader to run.
+                int ix = u8();
+
+                // Stack contains x,y to sample at.
+                skvm::F32 y = pop(),
+                          x = pop();
+
+                SkOverrideDeviceMatrixProvider mats{matrices, SkMatrix::I()};
+                skvm::Color c = as_SB(children[ix])->program(p, device, {x,y},paint,
+                                                             mats, nullptr,
+                                                             quality, dst,
+                                                             uniforms, alloc);
+                if (!c) {
+                    return {};
+                }
+                push(c.r);
+                push(c.g);
+                push(c.b);
+                push(c.a);
+            } break;
+
             case Inst::kLoad: {
                 int ix = u8();
                 push(stack[ix + 0]);
@@ -516,6 +547,14 @@ static std::vector<skvm::F32> program_fn(skvm::Builder* p,
                 push(uniform[ix + 1]);
                 push(uniform[ix + 2]);
                 push(uniform[ix + 3]);
+            } break;
+
+            case Inst::kLoadFragCoord: {
+                // TODO: Actually supply Z and 1/W from the rasterizer?
+                push(device.x);
+                push(device.y);
+                push(p->splat(0.0f));  // Z
+                push(p->splat(1.0f));  // 1/W
             } break;
 
             case Inst::kStore: {
@@ -571,6 +610,16 @@ static std::vector<skvm::F32> program_fn(skvm::Builder* p,
                 push(stack[stack.size() - 4]);
             } break;
 
+            case Inst::kSwizzle: {
+                skvm::F32 tmp[4];
+                for (int i = u8(); i --> 0;) {
+                    tmp[i] = pop();
+                }
+                for (int i = u8(); i --> 0;) {
+                    push(tmp[u8()]);
+                }
+            } break;
+
             case Inst::kAddF:
             case Inst::kAddF2:
             case Inst::kAddF3:
@@ -591,10 +640,64 @@ static std::vector<skvm::F32> program_fn(skvm::Builder* p,
             case Inst::kDivideF3:
             case Inst::kDivideF4: binary(Inst::kDivideF, std::divides<>{}); break;
 
+            case Inst::kMinF:
+            case Inst::kMinF2:
+            case Inst::kMinF3:
+            case Inst::kMinF4:
+                binary(Inst::kMinF, [](skvm::F32 x, skvm::F32 y) { return skvm::min(x,y); });
+                break;
+
+            case Inst::kMaxF:
+            case Inst::kMaxF2:
+            case Inst::kMaxF3:
+            case Inst::kMaxF4:
+                binary(Inst::kMaxF, [](skvm::F32 x, skvm::F32 y) { return skvm::max(x,y); });
+                break;
+
+            case Inst::kNegateF:
+            case Inst::kNegateF2:
+            case Inst::kNegateF3:
+            case Inst::kNegateF4: unary(Inst::kNegateF, std::negate<>{}); break;
+
+            case Inst::kPow:
+            case Inst::kPow2:
+            case Inst::kPow3:
+            case Inst::kPow4:
+                binary(Inst::kPow, [](skvm::F32 x, skvm::F32 y) { return skvm::approx_powf(x,y); });
+                break;
+
+            case Inst::kLerp:
+            case Inst::kLerp2:
+            case Inst::kLerp3:
+            case Inst::kLerp4: {
+                int N = (int)Inst::kLerp - (int)inst + 1;
+
+                skvm::F32 t[4],
+                          b[4],
+                          a[4];
+                for (int i = N; i --> 0; ) { t[i] = pop(); }
+                for (int i = N; i --> 0; ) { b[i] = pop(); }
+                for (int i = N; i --> 0; ) { a[i] = pop(); }
+
+                for (int i = 0; i < N; i++) {
+                    push(skvm::lerp(a[i], b[i], t[i]));
+                }
+            } break;
+
             case Inst::kATan:
             case Inst::kATan2:
             case Inst::kATan3:
             case Inst::kATan4: unary(Inst::kATan, skvm::approx_atan); break;
+
+            case Inst::kCeil:
+            case Inst::kCeil2:
+            case Inst::kCeil3:
+            case Inst::kCeil4: unary(Inst::kCeil, skvm::ceil); break;
+
+            case Inst::kFloor:
+            case Inst::kFloor2:
+            case Inst::kFloor3:
+            case Inst::kFloor4: unary(Inst::kFloor, skvm::floor); break;
 
             case Inst::kFract:
             case Inst::kFract2:
@@ -610,6 +713,27 @@ static std::vector<skvm::F32> program_fn(skvm::Builder* p,
             case Inst::kSin2:
             case Inst::kSin3:
             case Inst::kSin4: unary(Inst::kSin, skvm::approx_sin); break;
+
+            case Inst::kMatrixMultiply: {
+                // Computes M = A*B (all stored column major)
+                int aCols = u8(),
+                    aRows = u8(),
+                    bCols = u8(),
+                    bRows = aCols;
+                std::vector<skvm::F32> A(aCols*aRows),
+                                       B(bCols*bRows);
+                for (auto i = B.size(); i --> 0;) { B[i] = pop(); }
+                for (auto i = A.size(); i --> 0;) { A[i] = pop(); }
+
+                for (int c = 0; c < bCols; ++c)
+                for (int r = 0; r < aRows; ++r) {
+                    skvm::F32 sum = p->splat(0.0f);
+                    for (int j = 0; j < aCols; ++j) {
+                        sum += A[j*aRows + r] * B[c*bRows + j];
+                    }
+                    push(sum);
+                }
+            } break;
 
             // Baby steps... just leaving test conditions on the stack for now.
             case Inst::kMaskPush:   break;
@@ -647,27 +771,16 @@ static std::vector<skvm::F32> program_fn(skvm::Builder* p,
 }
 
 
-class SkRuntimeColorFilter : public SkColorFilter {
+class SkRuntimeColorFilter : public SkColorFilterBase {
 public:
-    SkRuntimeColorFilter(sk_sp<SkRuntimeEffect> effect, sk_sp<SkData> inputs,
-                         sk_sp<SkColorFilter> children[], size_t childCount)
+    SkRuntimeColorFilter(sk_sp<SkRuntimeEffect> effect, sk_sp<SkData> inputs)
             : fEffect(std::move(effect))
-            , fInputs(std::move(inputs))
-            , fChildren(children, children + childCount) {}
+            , fInputs(std::move(inputs)) {}
 
 #if SK_SUPPORT_GPU
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(
             GrRecordingContext* context, const GrColorInfo& colorInfo) const override {
-        auto fp = GrSkSLFP::Make(context, fEffect, "Runtime_Color_Filter", fInputs);
-        for (const auto& child : fChildren) {
-            auto childFP = child ? child->asFragmentProcessor(context, colorInfo) : nullptr;
-            if (!childFP) {
-                // TODO: This is the case that should eventually mean "the original input color"
-                return nullptr;
-            }
-            fp->addChild(std::move(childFP));
-        }
-        return std::move(fp);
+        return GrSkSLFP::Make(context, fEffect, "Runtime_Color_Filter", fInputs);
     }
 #endif
 
@@ -692,7 +805,7 @@ public:
         ctx->shaderConvention = false;
 
         ctx->byteCode = this->byteCode();
-        if (!ctx->byteCode) {
+        if (!ctx->byteCode || !ctx->byteCode->canRun()) {
             return false;
         }
 
@@ -722,7 +835,9 @@ public:
         }
 
         std::vector<skvm::F32> stack =
-            program_fn(p, *fn, uniform, {c.r, c.g, c.b, c.a});
+            program_fn(p, *fn, uniform, SkSimpleMatrixProvider{SkMatrix::I()}, {c.r, c.g, c.b, c.a},
+                       /* the remaining parameters are for shaders only and won't be used here */
+                       {},{},{},{},{},{},{});
 
         if (stack.size() == 4) {
             return {stack[0], stack[1], stack[2], stack[3]};
@@ -737,10 +852,6 @@ public:
         } else {
             buffer.writeByteArray(nullptr, 0);
         }
-        buffer.write32(fChildren.size());
-        for (const auto& child : fChildren) {
-            buffer.writeFlattenable(child.get());
-        }
     }
 
     SK_FLATTENABLE_HOOKS(SkRuntimeColorFilter)
@@ -748,7 +859,6 @@ public:
 private:
     sk_sp<SkRuntimeEffect> fEffect;
     sk_sp<SkData> fInputs;
-    std::vector<sk_sp<SkColorFilter>> fChildren;
 
     mutable SkMutex fByteCodeMutex;
     mutable std::unique_ptr<SkSL::ByteCode> fByteCode;
@@ -765,19 +875,7 @@ sk_sp<SkFlattenable> SkRuntimeColorFilter::CreateProc(SkReadBuffer& buffer) {
         return nullptr;
     }
 
-    size_t childCount = buffer.read32();
-    if (childCount != effect->children().count()) {
-        buffer.validate(false);
-        return nullptr;
-    }
-
-    std::vector<sk_sp<SkColorFilter>> children;
-    children.resize(childCount);
-    for (size_t i = 0; i < children.size(); ++i) {
-        children[i] = buffer.readColorFilter();
-    }
-
-    return effect->makeColorFilter(std::move(inputs), children.data(), children.size());
+    return effect->makeColorFilter(std::move(inputs));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -879,9 +977,7 @@ public:
             fp->addChild(std::move(childFP));
         }
         std::unique_ptr<GrFragmentProcessor> result = std::move(fp);
-        if (!matrix.isIdentity()) {
-            result = GrMatrixEffect::Make(matrix, std::move(result));
-        }
+        result = GrMatrixEffect::Make(matrix, std::move(result));
         if (GrColorTypeClampType(args.fDstColorInfo->colorType()) != GrClampType::kNone) {
             return GrFragmentProcessor::ClampPremulOutput(std::move(result));
         } else {
@@ -920,7 +1016,7 @@ public:
         ctx->shaderConvention = true;
 
         ctx->byteCode = this->byteCode();
-        if (!ctx->byteCode) {
+        if (!ctx->byteCode || !ctx->byteCode->canRun()) {
             return false;
         }
         ctx->fn = ctx->byteCode->getFunction("main");
@@ -930,10 +1026,11 @@ public:
         return true;
     }
 
-    skvm::Color onProgram(skvm::Builder* p, skvm::F32 x, skvm::F32 y, skvm::Color paint,
-                          const SkMatrix& ctm, const SkMatrix* localM,
-                          SkFilterQuality, const SkColorInfo& dst,
-                          skvm::Uniforms* uniforms, SkArenaAlloc*) const override {
+    skvm::Color onProgram(skvm::Builder* p,
+                          skvm::Coord device, skvm::Coord local, skvm::Color paint,
+                          const SkMatrixProvider& matrices, const SkMatrix* localM,
+                          SkFilterQuality quality, const SkColorInfo& dst,
+                          skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const override {
         const SkSL::ByteCode* bc = this->byteCode();
         if (!bc) {
             return {};
@@ -944,11 +1041,7 @@ public:
             return {};
         }
 
-        // TODO: Eventually, plumb SkMatrixProvider here (instead of just ctm). For now, we will
-        // simply fail if our effect requires any marked matrices (SkSimpleMatrixProvider always
-        // returns false in getLocalToMarker).
-        SkSimpleMatrixProvider matrixProvider(SkMatrix::I());
-        sk_sp<SkData> inputs = this->getUniforms(matrixProvider, dst.colorSpace());
+        sk_sp<SkData> inputs = this->getUniforms(matrices, dst.colorSpace());
         if (!inputs) {
             return {};
         }
@@ -961,13 +1054,16 @@ public:
         }
 
         SkMatrix inv;
-        if (!this->computeTotalInverse(ctm, localM, &inv)) {
+        if (!this->computeTotalInverse(matrices.localToDevice(), localM, &inv)) {
             return {};
         }
-        SkShaderBase::ApplyMatrix(p,inv, &x,&y,uniforms);
+        local = SkShaderBase::ApplyMatrix(p,inv,local,uniforms);
 
         std::vector<skvm::F32> stack =
-            program_fn(p, *fn, uniform, {x,y, paint.r, paint.g, paint.b, paint.a});
+            program_fn(p, *fn, uniform, matrices,
+                       {local.x,local.y, paint.r, paint.g, paint.b, paint.a},
+                       /*parameters for calling program() on children*/
+                       fChildren, device,paint, quality,dst, uniforms,alloc);
 
         if (stack.size() == 6) {
             return {stack[2], stack[3], stack[4], stack[5]};
@@ -1069,20 +1165,16 @@ sk_sp<SkShader> SkRuntimeEffect::makeShader(sk_sp<SkData> inputs,
         : nullptr;
 }
 
-sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<SkData> inputs,
-                                                      sk_sp<SkColorFilter> children[],
-                                                      size_t childCount) {
+sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<SkData> inputs) {
+    if (!fChildren.empty()) {
+        return nullptr;
+    }
     if (!inputs) {
         inputs = SkData::MakeEmpty();
     }
-    return inputs && inputs->size() == this->inputSize() && childCount == fChildren.size()
-        ? sk_sp<SkColorFilter>(new SkRuntimeColorFilter(sk_ref_sp(this), std::move(inputs),
-                                                        children, childCount))
+    return inputs->size() == this->inputSize()
+        ? sk_sp<SkColorFilter>(new SkRuntimeColorFilter(sk_ref_sp(this), std::move(inputs)))
         : nullptr;
-}
-
-sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<SkData> inputs) {
-    return this->makeColorFilter(std::move(inputs), nullptr, 0);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

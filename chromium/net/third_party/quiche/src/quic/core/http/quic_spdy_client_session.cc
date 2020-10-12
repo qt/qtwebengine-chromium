@@ -39,6 +39,13 @@ QuicSpdyClientSession::~QuicSpdyClientSession() = default;
 
 void QuicSpdyClientSession::Initialize() {
   crypto_stream_ = CreateQuicCryptoStream();
+  if (config()->HasClientRequestedIndependentOption(kQLVE,
+                                                    Perspective::IS_CLIENT)) {
+    connection()->EnableLegacyVersionEncapsulation(server_id_.host());
+    // Legacy Version Encapsulation needs CHLO padding to be disabled.
+    // TODO(dschinazi) remove this line once we deprecate quic_dont_pad_chlo.
+    crypto_config_->set_disable_chlo_padding(true);
+  }
   QuicSpdyClientSessionBase::Initialize();
 }
 
@@ -152,7 +159,7 @@ bool QuicSpdyClientSession::ShouldCreateIncomingStream(QuicStreamId id) {
   }
 
   if (VersionHasIetfQuicFrames(transport_version()) &&
-      QuicUtils::IsBidirectionalStreamId(id)) {
+      QuicUtils::IsBidirectionalStreamId(id, version())) {
     connection()->CloseConnection(
         QUIC_HTTP_SERVER_INITIATED_BIDIRECTIONAL_STREAM,
         "Server created bidirectional stream.",
@@ -186,7 +193,7 @@ QuicSpdyClientSession::CreateQuicCryptoStream() {
   return std::make_unique<QuicCryptoClientStream>(
       server_id_, this,
       crypto_config_->proof_verifier()->CreateDefaultContext(), crypto_config_,
-      this, /*has_application_state = */ true);
+      this, /*has_application_state = */ version().UsesHttp3());
 }
 
 bool QuicSpdyClientSession::IsAuthorized(const std::string& /*authority*/) {

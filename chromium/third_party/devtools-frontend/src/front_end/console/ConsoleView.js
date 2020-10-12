@@ -291,12 +291,26 @@ export class ConsoleView extends UI.Widget.VBox {
   _onIssuesCountChanged() {
     if (BrowserSDK.IssuesManager.IssuesManager.instance().numberOfIssues() === 0) {
       if (this._issueBarDiv) {
-        this._issueBarDiv.remove();
+        this._issueBarDiv.element().remove();
         this._issueBarDiv = null;
+        this._scheduleViewportRefresh();
       }
     } else if (!this._issueBarDiv && !this._hasInteractedWithInfoBar) {
-      this._issueBarDiv = document.createElement('div');
-      this._issueBarDiv.classList.add('flex-none');
+      const elem = document.createElement('div');
+      elem.classList.add('flex-none');
+      // This is a fake a {ConsoleViewportElement} so the issue banner can be inserted into the {ConsoleViewport}.
+      this._issueBarDiv = {
+        willHide() {
+          this._cachedIssueBarHeight = elem.offsetHeight;
+        },
+        wasShown() {},
+        element: () => elem,
+        focusLastChildOrSelf: () => elem.focus(),
+        fastHeight() {
+          return this._cachedIssueBarHeight || 37;
+        },
+        _cachedIssueBarHeight: 0
+      };
       const issueBarAction = /** @type {!UI.Infobar.InfobarAction} */ ({
         text: ls`Go to Issues`,
         highlight: false,
@@ -308,16 +322,15 @@ export class ConsoleView extends UI.Widget.VBox {
         dismiss: true,
       });
       const issueBar = new UI.Infobar.Infobar(
-          UI.Infobar.Type.Warning,
+          UI.Infobar.Type.Issue,
           ls`Issues detected. The new Issues tab displays information about deprecations, breaking changes and other potential problems.`,
           [issueBarAction]);
       issueBar.setCloseCallback(() => {
         this._hasInteractedWithInfoBar = true;
       });
-      this.element.insertBefore(this._issueBarDiv, this._consoleToolbarContainer.nextSibling);
-      this._issueBarDiv.appendChild(issueBar.element);
+      elem.appendChild(issueBar.element);
       issueBar.setParentView(this);
-      this.doResize();
+      this._scheduleViewportRefresh();
     }
   }
 
@@ -374,6 +387,9 @@ export class ConsoleView extends UI.Widget.VBox {
    * @return {number}
    */
   itemCount() {
+    if (this._issueBarDiv) {
+      return this._visibleViewMessages.length + 1;
+    }
     return this._visibleViewMessages.length;
   }
 
@@ -383,6 +399,13 @@ export class ConsoleView extends UI.Widget.VBox {
    * @return {?ConsoleViewportElement}
    */
   itemElement(index) {
+    const issueBar = this._issueBarDiv;
+    if (issueBar) {
+      if (index === 0) {
+        return /** @type {!ConsoleViewportElement} */ (issueBar);
+      }
+      return this._visibleViewMessages[index - 1];
+    }
     return this._visibleViewMessages[index];
   }
 
@@ -392,6 +415,13 @@ export class ConsoleView extends UI.Widget.VBox {
    * @return {number}
    */
   fastHeight(index) {
+    const issueBar = this._issueBarDiv;
+    if (issueBar) {
+      if (index === 0) {
+        return issueBar.fastHeight() || 37;
+      }
+      return this._visibleViewMessages[index - 1].fastHeight();
+    }
     return this._visibleViewMessages[index].fastHeight();
   }
 
@@ -599,9 +629,10 @@ export class ConsoleView extends UI.Widget.VBox {
 
     // If we already have similar messages, go slow path.
     let shouldGoIntoGroup = false;
+    const shouldGroupSimilar = this._groupSimilarSetting.get();
     if (message.isGroupable()) {
       const groupKey = viewMessage.groupKey();
-      shouldGoIntoGroup = this._groupSimilarSetting.get() && this._groupableMessages.has(groupKey);
+      shouldGoIntoGroup = shouldGroupSimilar && this._groupableMessages.has(groupKey);
       let list = this._groupableMessages.get(groupKey);
       if (!list) {
         list = [];
@@ -612,7 +643,9 @@ export class ConsoleView extends UI.Widget.VBox {
 
     this._computeShouldMessageBeVisible(viewMessage);
     if (!shouldGoIntoGroup && !insertedInMiddle) {
-      this._appendMessageToEnd(viewMessage);
+      this._appendMessageToEnd(
+          viewMessage,
+          !shouldGroupSimilar /* crbug.com/1082963: prevent collapse of same messages when "Group similar" is false */);
       this._updateFilterStatus();
       this._searchableView.updateSearchMatchesCount(this._regexMatchRanges.length);
     } else {
@@ -909,7 +942,9 @@ export class ConsoleView extends UI.Widget.VBox {
     } else {
       for (let i = 0; i < this._consoleMessages.length; ++i) {
         this._consoleMessages[i].setInSimilarGroup(false);
-        this._appendMessageToEnd(this._consoleMessages[i]);
+        this._appendMessageToEnd(
+            this._consoleMessages[i],
+            true /* crbug.com/1082963: prevent collapse of same messages when "Group similar" is false */);
       }
     }
     this._updateFilterStatus();
@@ -1242,7 +1277,8 @@ export class ConsoleView extends UI.Widget.VBox {
     const message = this._visibleViewMessages[matchRange.messageIndex];
     const highlightNode = message.searchHighlightNode(matchRange.matchIndex);
     highlightNode.classList.add(UI.UIUtils.highlightedCurrentSearchResultClassName);
-    this._viewport.scrollItemIntoView(matchRange.messageIndex);
+    const notifyOffset = this._issueBarDiv ? 1 : 0;
+    this._viewport.scrollItemIntoView(matchRange.messageIndex + notifyOffset);
     highlightNode.scrollIntoViewIfNeeded();
   }
 

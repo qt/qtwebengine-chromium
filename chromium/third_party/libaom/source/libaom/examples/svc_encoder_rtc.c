@@ -62,6 +62,17 @@ struct RateControlMetrics {
   int layer_target_bitrate[AOM_MAX_LAYERS];
 };
 
+// Reference frames used in this example encoder.
+enum {
+  SVC_LAST_FRAME = 0,
+  SVC_LAST2_FRAME,
+  SVC_LAST3_FRAME,
+  SVC_GOLDEN_FRAME,
+  SVC_BWDREF_FRAME,
+  SVC_ALTREF2_FRAME,
+  SVC_ALTREF_FRAME
+};
+
 static int read_frame(struct AvxInputContext *input_ctx, aom_image_t *img) {
   FILE *f = input_ctx->file;
   y4m_input *y4m = &input_ctx->y4m;
@@ -245,11 +256,11 @@ static void printout_rate_control_summary(struct RateControlMetrics *rc,
 }
 
 // Layer pattern configuration.
-static int set_layer_pattern(int layering_mode, int superframe_cnt,
-                             aom_svc_layer_id_t *layer_id,
-                             aom_svc_ref_frame_config_t *ref_frame_config,
-                             int *use_svc_control, int spatial_layer_id,
-                             int is_key_frame, int ksvc_mode) {
+static void set_layer_pattern(int layering_mode, int superframe_cnt,
+                              aom_svc_layer_id_t *layer_id,
+                              aom_svc_ref_frame_config_t *ref_frame_config,
+                              int *use_svc_control, int spatial_layer_id,
+                              int is_key_frame, int ksvc_mode) {
   int i;
   int shift = (layering_mode == 7) ? 2 : 0;
   *use_svc_control = 1;
@@ -260,17 +271,13 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
   for (i = 0; i < INTER_REFS_PER_FRAME; i++) ref_frame_config->ref_idx[i] = i;
   for (i = 0; i < INTER_REFS_PER_FRAME; i++) ref_frame_config->reference[i] = 0;
   for (i = 0; i < REF_FRAMES; i++) ref_frame_config->refresh[i] = 0;
-  // Note for this layered patterns only use LAST and GF for prediction in
-  // non-rd mode (speed >= 7).
-  int layer_flags = AOM_EFLAG_NO_REF_LAST2 | AOM_EFLAG_NO_REF_LAST3 |
-                    AOM_EFLAG_NO_REF_ARF | AOM_EFLAG_NO_REF_BWD |
-                    AOM_EFLAG_NO_REF_ARF2;
+
   if (ksvc_mode) {
     // Same pattern as case 8.
     layering_mode = 8;
     if (!is_key_frame)
       // No inter-layer prediction on inter-frames.
-      layer_flags |= AOM_EFLAG_NO_REF_GF;
+      ref_frame_config->reference[SVC_LAST_FRAME] = 1;
   }
   switch (layering_mode) {
     case 0:
@@ -289,7 +296,7 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
       } else {
         layer_id->temporal_layer_id = 1;
         // No updates on layer 1, only reference LAST (TL0).
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       }
       break;
     case 2:
@@ -305,20 +312,20 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
       } else if ((superframe_cnt - 1) % 4 == 0) {
         layer_id->temporal_layer_id = 2;
         // First top layer: no updates, only reference LAST (TL0).
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if ((superframe_cnt - 2) % 4 == 0) {
         layer_id->temporal_layer_id = 1;
         // Middle layer (TL1): update LAST2, only reference LAST (TL0).
         ref_frame_config->refresh[1] = 1;
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if ((superframe_cnt - 3) % 4 == 0) {
         layer_id->temporal_layer_id = 2;
         // Second top layer: no updates, only reference LAST.
         // Set buffer idx for LAST to slot 1, since that was the slot
         // updated in previous frame. So LAST is TL1 frame.
-        ref_frame_config->ref_idx[0] = 1;
-        ref_frame_config->ref_idx[1] = 0;
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->ref_idx[SVC_LAST_FRAME] = 1;
+        ref_frame_config->ref_idx[SVC_LAST2_FRAME] = 0;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       }
       break;
     case 3:
@@ -332,20 +339,20 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
         layer_id->temporal_layer_id = 0;
         // Update LAST on layer 0, only reference LAST.
         ref_frame_config->refresh[0] = 1;
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if ((superframe_cnt - 1) % 4 == 0) {
         layer_id->temporal_layer_id = 2;
         // First top layer: no updates, only reference LAST (TL0).
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if ((superframe_cnt - 2) % 4 == 0) {
         layer_id->temporal_layer_id = 1;
         // Middle layer (TL1): update GF, only reference LAST (TL0).
         ref_frame_config->refresh[3] = 1;
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if ((superframe_cnt - 3) % 4 == 0) {
         layer_id->temporal_layer_id = 2;
         // Second top layer: no updates, only reference GF.
-        layer_flags |= AOM_EFLAG_NO_REF_LAST;
+        ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       }
       break;
     case 4:
@@ -357,12 +364,13 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
       if (superframe_cnt % 2 == 0) {
         layer_id->temporal_layer_id = 0;
         // Update LAST on layer 0, reference LAST and GF.
-        layer_flags |= AOM_EFLAG_NO_UPD_GF | AOM_EFLAG_NO_UPD_ARF;
+        ref_frame_config->refresh[0] = 1;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
+        ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       } else {
         layer_id->temporal_layer_id = 1;
         // No updates on layer 1, only reference LAST (TL0).
-        layer_flags |= AOM_EFLAG_NO_UPD_LAST | AOM_EFLAG_NO_UPD_GF |
-                       AOM_EFLAG_NO_UPD_ARF | AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       }
       break;
     case 5:
@@ -371,13 +379,15 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
       if (layer_id->spatial_layer_id == 0) {
         // Reference LAST, update LAST.
         ref_frame_config->refresh[0] = 1;
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if (layer_id->spatial_layer_id == 1) {
         // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 1
         // and GOLDEN to slot 0. Update slot 1 (LAST).
-        ref_frame_config->ref_idx[0] = 1;
-        ref_frame_config->ref_idx[3] = 0;
+        ref_frame_config->ref_idx[SVC_LAST_FRAME] = 1;
+        ref_frame_config->ref_idx[SVC_GOLDEN_FRAME] = 0;
         ref_frame_config->refresh[1] = 1;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
+        ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       }
       break;
     case 6:
@@ -392,23 +402,27 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
         for (i = 0; i < INTER_REFS_PER_FRAME; i++)
           ref_frame_config->ref_idx[i] = 0;
         ref_frame_config->refresh[0] = 1;
-        layer_flags |= AOM_EFLAG_NO_REF_GF;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       } else if (layer_id->spatial_layer_id == 1) {
         // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 1
         // and GOLDEN (and all other refs) to slot 0.
         // Update slot 1 (LAST).
         for (i = 0; i < INTER_REFS_PER_FRAME; i++)
           ref_frame_config->ref_idx[i] = 0;
-        ref_frame_config->ref_idx[0] = 1;
+        ref_frame_config->ref_idx[SVC_LAST_FRAME] = 1;
         ref_frame_config->refresh[1] = 1;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
+        ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       } else if (layer_id->spatial_layer_id == 2) {
         // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 2
         // and GOLDEN (and all other refs) to slot 1.
         // Update slot 2 (LAST).
         for (i = 0; i < INTER_REFS_PER_FRAME; i++)
           ref_frame_config->ref_idx[i] = 1;
-        ref_frame_config->ref_idx[0] = 2;
+        ref_frame_config->ref_idx[SVC_LAST_FRAME] = 2;
         ref_frame_config->refresh[2] = 1;
+        ref_frame_config->reference[SVC_LAST_FRAME] = 1;
+        ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;
       }
       break;
     case 7:
@@ -423,9 +437,8 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
       // No overlap in buffer updates between TL2 and TL1.
       // TL2 updates slot 3 and 4, TL1 updates 5, 6, 7.
       // Set the references via the svc_ref_frame_config control.
-      layer_flags = 0;
       // Always reference LAST.
-      ref_frame_config->reference[0] = 1;
+      ref_frame_config->reference[SVC_LAST_FRAME] = 1;
       if (superframe_cnt % 4 == 0) {
         // Base temporal layer.
         layer_id->temporal_layer_id = 0;
@@ -441,7 +454,7 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
           // Update slot 1 (LAST).
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 0;
-          ref_frame_config->ref_idx[0] = 1;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 1;
           ref_frame_config->refresh[1] = 1;
         } else if (layer_id->spatial_layer_id == 2) {
           // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 2,
@@ -449,7 +462,7 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
           // Update slot 2 (LAST).
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 1;
-          ref_frame_config->ref_idx[0] = 2;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 2;
           ref_frame_config->refresh[2] = 1;
         }
       } else if ((superframe_cnt - 1) % 4 == 0) {
@@ -461,7 +474,7 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
           // Set all other buffer_idx to slot 0.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 0;
-          ref_frame_config->ref_idx[3] = 3;
+          ref_frame_config->ref_idx[SVC_GOLDEN_FRAME] = 3;
           ref_frame_config->refresh[3] = 1;
         } else if (layer_id->spatial_layer_id == 1) {
           // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 1,
@@ -469,8 +482,8 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
           // Set LAST2 to slot 4 and Update slot 4.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 3;
-          ref_frame_config->ref_idx[0] = 1;
-          ref_frame_config->ref_idx[1] = 4;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 1;
+          ref_frame_config->ref_idx[SVC_LAST2_FRAME] = 4;
           ref_frame_config->refresh[4] = 1;
         } else if (layer_id->spatial_layer_id == 2) {
           // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 2,
@@ -478,7 +491,7 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
           // No update.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 4;
-          ref_frame_config->ref_idx[0] = 2;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 2;
         }
       } else if ((superframe_cnt - 2) % 4 == 0) {
         // Middle temporal enhancement layer.
@@ -489,25 +502,25 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
           // Set GOLDEN to slot 5 and update slot 5.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 0;
-          ref_frame_config->ref_idx[3] = 5 - shift;
+          ref_frame_config->ref_idx[SVC_GOLDEN_FRAME] = 5 - shift;
           ref_frame_config->refresh[5 - shift] = 1;
         } else if (layer_id->spatial_layer_id == 1) {
           // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 1,
           // GOLDEN (and all other refs) to slot 5.
-          // Set LAST2 to slot 6 and update slot 6.
+          // Set LAST3 to slot 6 and update slot 6.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 5 - shift;
-          ref_frame_config->ref_idx[0] = 1;
-          ref_frame_config->ref_idx[2] = 6 - shift;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 1;
+          ref_frame_config->ref_idx[SVC_LAST3_FRAME] = 6 - shift;
           ref_frame_config->refresh[6 - shift] = 1;
         } else if (layer_id->spatial_layer_id == 2) {
           // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 2,
           // GOLDEN (and all other refs) to slot 6.
-          // Set LAST2 to slot 6 and update slot 7.
+          // Set LAST3 to slot 7 and update slot 7.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 6 - shift;
-          ref_frame_config->ref_idx[0] = 2;
-          ref_frame_config->ref_idx[2] = 7 - shift;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 2;
+          ref_frame_config->ref_idx[SVC_LAST3_FRAME] = 7 - shift;
           ref_frame_config->refresh[7 - shift] = 1;
         }
       } else if ((superframe_cnt - 3) % 4 == 0) {
@@ -519,33 +532,32 @@ static int set_layer_pattern(int layering_mode, int superframe_cnt,
           // Set all other buffer_idx to 0.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 0;
-          ref_frame_config->ref_idx[0] = 5 - shift;
-          ref_frame_config->ref_idx[3] = 3;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 5 - shift;
+          ref_frame_config->ref_idx[SVC_GOLDEN_FRAME] = 3;
           ref_frame_config->refresh[3] = 1;
         } else if (layer_id->spatial_layer_id == 1) {
           // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 6,
           // GOLDEN to slot 3. Set LAST2 to slot 4 and update slot 4.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 0;
-          ref_frame_config->ref_idx[0] = 6 - shift;
-          ref_frame_config->ref_idx[3] = 3;
-          ref_frame_config->ref_idx[1] = 4;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 6 - shift;
+          ref_frame_config->ref_idx[SVC_GOLDEN_FRAME] = 3;
+          ref_frame_config->ref_idx[SVC_LAST2_FRAME] = 4;
           ref_frame_config->refresh[4] = 1;
         } else if (layer_id->spatial_layer_id == 2) {
           // Reference LAST and GOLDEN. Set buffer_idx for LAST to slot 7,
           // GOLDEN to slot 4. No update.
           for (i = 0; i < INTER_REFS_PER_FRAME; i++)
             ref_frame_config->ref_idx[i] = 0;
-          ref_frame_config->ref_idx[0] = 7 - shift;
-          ref_frame_config->ref_idx[3] = 4;
+          ref_frame_config->ref_idx[SVC_LAST_FRAME] = 7 - shift;
+          ref_frame_config->ref_idx[SVC_GOLDEN_FRAME] = 4;
         }
       }
       if (layer_id->spatial_layer_id > 0)
-        ref_frame_config->reference[3] = 1;  // Reference GOLDEN.
+        ref_frame_config->reference[SVC_GOLDEN_FRAME] = 1;  // Reference GOLDEN.
       break;
     default: assert(0); die("Error: Unsupported temporal layering mode!\n");
   }
-  return layer_flags;
 }
 
 int main(int argc, char **argv) {
@@ -577,6 +589,7 @@ int main(int argc, char **argv) {
   double sum_bitrate2 = 0.0;
   double framerate = 30.0;
   int use_svc_control = 1;
+  int set_err_resil_frame = 0;
   zero(rc.layer_target_bitrate);
   memset(&layer_id, 0, sizeof(aom_svc_layer_id_t));
   memset(&input_ctx, 0, sizeof(input_ctx));
@@ -736,7 +749,7 @@ int main(int argc, char **argv) {
   // Initialize codec.
   aom_codec_ctx_t codec;
   if (aom_codec_enc_init(&codec, encoder, &cfg, 0))
-    die_codec(&codec, "Failed to initialize encoder");
+    die("Failed to initialize encoder");
 
   aom_codec_control(&codec, AOME_SET_CPUUSED, speed);
   aom_codec_control(&codec, AV1E_SET_AQ_MODE, 3);
@@ -745,6 +758,9 @@ int main(int argc, char **argv) {
   aom_codec_control(&codec, AV1E_SET_ENABLE_ORDER_HINT, 0);
   aom_codec_control(&codec, AV1E_SET_ENABLE_TPL_MODEL, 0);
   aom_codec_control(&codec, AV1E_SET_DELTAQ_MODE, 0);
+  aom_codec_control(&codec, AV1E_SET_COEFF_COST_UPD_FREQ, 2);
+  aom_codec_control(&codec, AV1E_SET_MODE_COST_UPD_FREQ, 2);
+  aom_codec_control(&codec, AV1E_SET_MV_COST_UPD_FREQ, 3);
 
   svc_params.number_spatial_layers = ss_number_layers;
   svc_params.number_temporal_layers = ts_number_layers;
@@ -790,13 +806,21 @@ int main(int argc, char **argv) {
 
       // Set the reference/update flags, layer_id, and reference_map
       // buffer index.
-      flags = set_layer_pattern(layering_mode, frame_cnt, &layer_id,
-                                &ref_frame_config, &use_svc_control, slx,
-                                is_key_frame, (layering_mode == 9));
+      set_layer_pattern(layering_mode, frame_cnt, &layer_id, &ref_frame_config,
+                        &use_svc_control, slx, is_key_frame,
+                        (layering_mode == 9));
       aom_codec_control(&codec, AV1E_SET_SVC_LAYER_ID, &layer_id);
       if (use_svc_control)
         aom_codec_control(&codec, AV1E_SET_SVC_REF_FRAME_CONFIG,
                           &ref_frame_config);
+      if (set_err_resil_frame) {
+        // Set error_resilient per frame: off/0 for base layer and
+        // on/1 for enhancement layer frames.
+        int err_resil_mode =
+            (layer_id.spatial_layer_id > 0 || layer_id.temporal_layer_id > 0);
+        aom_codec_control(&codec, AV1E_SET_ERROR_RESILIENT_MODE,
+                          err_resil_mode);
+      }
 
       layer = slx * ts_number_layers + layer_id.temporal_layer_id;
       if (frame_avail && slx == 0) ++rc.layer_input_frames[layer];

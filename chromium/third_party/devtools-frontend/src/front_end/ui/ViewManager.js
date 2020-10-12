@@ -34,10 +34,17 @@ export class ViewManager {
     /** @type {!Map<string, string>} */
     this._locationNameByViewId = new Map();
 
+    // Read override setting for location
+    this._locationOverrideSetting = Common.Settings.Settings.instance().createSetting('viewsLocationOverride', {});
+    const preferredExtensionLocations = this._locationOverrideSetting.get();
+
     for (const extension of self.runtime.extensions('view')) {
       const descriptor = extension.descriptor();
-      this._views.set(descriptor['id'], new ProvidedView(extension));
-      this._locationNameByViewId.set(descriptor['id'], descriptor['location']);
+      const descriptorId = descriptor['id'];
+      this._views.set(descriptorId, new ProvidedView(extension));
+      // Use the preferred user location if available
+      const locationName = preferredExtensionLocations[descriptorId] || descriptor['location'];
+      this._locationNameByViewId.set(descriptorId, locationName);
     }
   }
 
@@ -66,6 +73,47 @@ export class ViewManager {
       toolbar.appendToolbarItem(item);
     }
     return toolbar.element;
+  }
+
+  /**
+   * @param {string} viewId
+   * @returns {string}
+   */
+  locationNameForViewId(viewId) {
+    return this._locationNameByViewId.get(viewId);
+  }
+
+  /**
+   * Moves a view to a new location
+   * @param {string} viewId
+   * @param {string} locationName
+   */
+  moveView(viewId, locationName) {
+    if (!viewId || !locationName) {
+      return;
+    }
+
+    const view = this.view(viewId);
+    if (!view) {
+      return;
+    }
+
+    // Update the inner map of locations
+    this._locationNameByViewId.set(viewId, locationName);
+
+    // Update the settings of location overwrites
+    const locations = this._locationOverrideSetting.get();
+    locations[viewId] = locationName;
+    this._locationOverrideSetting.set(locations);
+
+    // Find new location and show view there
+    this.resolveLocation(locationName).then(location => {
+      if (!location) {
+        throw new Error('Move view: Could not resolve location for view: ' + viewId);
+      }
+      location._reveal();
+      return location.showView(view, undefined, true /* userGesture*/);
+    });
   }
 
   /**
@@ -289,7 +337,11 @@ export class _ExpandableContainerWidget extends VBox {
    */
   wasShown() {
     if (this._widget) {
-      this._materializePromise.then(() => this._widget.show(this.element));
+      this._materializePromise.then(() => {
+        if (this._titleElement.classList.contains('expanded')) {
+          this._widget.show(this.element);
+        }
+      });
     }
   }
 
@@ -431,8 +483,13 @@ export class _TabbedLocation extends _Location {
 
     this._tabbedPane.addEventListener(TabbedPaneEvents.TabSelected, this._tabSelected, this);
     this._tabbedPane.addEventListener(TabbedPaneEvents.TabClosed, this._tabClosed, this);
+
     // Note: go via self.Common for globally-namespaced singletons.
-    this._closeableTabSetting = Common.Settings.Settings.instance().createSetting(location + '-closeableTabs', {});
+    this._closeableTabSetting = Common.Settings.Settings.instance().createSetting('closeableTabs', {});
+    // As we give tabs the capability to be closed we also need to add them to the setting so they are still open
+    // until the user decide to close them
+    this._setOrUpdateCloseableTabsSetting();
+
     // Note: go via self.Common for globally-namespaced singletons.
     this._tabOrderSetting = Common.Settings.Settings.instance().createSetting(location + '-tabOrder', {});
     this._tabbedPane.addEventListener(TabbedPaneEvents.TabOrderChanged, this._persistTabOrder, this);
@@ -448,6 +505,15 @@ export class _TabbedLocation extends _Location {
     if (location) {
       this.appendApplicableItems(location);
     }
+  }
+
+  _setOrUpdateCloseableTabsSetting() {
+    // Update the setting value, we respect the closed state decided by the user
+    // and append the new tabs with value of true so they are shown open
+    const defaultOptionsForTabs = {'security': true};
+    const tabs = this._closeableTabSetting.get();
+    const newClosable = Object.assign(defaultOptionsForTabs, tabs);
+    this._closeableTabSetting.set(newClosable);
   }
 
   /**
@@ -506,8 +572,22 @@ export class _TabbedLocation extends _Location {
         this._appendTab(view);
       }
     }
-    if (this._defaultTab && this._tabbedPane.hasTab(this._defaultTab)) {
-      this._tabbedPane.selectTab(this._defaultTab);
+
+    // If a default tab was provided we open or select it
+    if (this._defaultTab) {
+      if (this._tabbedPane.hasTab(this._defaultTab)) {
+        // If the tabbed pane already has the tab we just have to select it
+        this._tabbedPane.selectTab(this._defaultTab);
+      } else {
+        // If the tab is not present already it can be because:
+        // it doesn't correspond to this tabbed location
+        // or because it is closed
+        const view = Array.from(this._views.values()).find(view => view.viewId() === this._defaultTab);
+        if (view) {
+          // _defaultTab is indeed part of the views for this tabbed location
+          this.showView(view);
+        }
+      }
     } else if (this._lastSelectedTabSetting && this._tabbedPane.hasTab(this._lastSelectedTabSetting.get())) {
       this._tabbedPane.selectTab(this._lastSelectedTabSetting.get());
     }
@@ -642,7 +722,7 @@ export class _TabbedLocation extends _Location {
     const id = /** @type {string} */ (event.data['tabId']);
     const tabs = this._closeableTabSetting.get();
     if (tabs[id]) {
-      delete tabs[id];
+      tabs[id] = false;
       this._closeableTabSetting.set(tabs);
     }
     this._views.get(id).disposeView();

@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <grit-part>
+  <message name="IDS_DEVTOOLS_00863a2bf697faf22a8b330b28195a4c" desc="Title for a column in an Heavy Ads issue view">
+    Limit exceeded
+  </message>
+  <message name="IDS_DEVTOOLS_05bb50eae282e818b1a9a4b0ada16150" desc="Reason for a Heavy Ad being flagged in issue view">
+    Network limit
+  </message>
+  <message name="IDS_DEVTOOLS_26d528c2e706eb2c3f4d4f90fc72632a" desc="Reason for a Heavy Ad being flagged in issue view">
+    CPU peak limit
+  </message>
   <message name="IDS_DEVTOOLS_2dccd1ab3e03990aea77359831c85ca2" desc="Label for number of affected resources indication in issue view">
     cookie
   </message>
@@ -24,6 +33,12 @@
   <message name="IDS_DEVTOOLS_8e2dcfd7e7e24b1ca76c1193f645902b" desc="Singular label for number of affected element resource indication in issue view">
     element
   </message>
+  <message name="IDS_DEVTOOLS_93f07b720ebf7d1246512569761a5804" desc="The kind of resolution for a Heavy Ads issue">
+    Removed
+  </message>
+  <message name="IDS_DEVTOOLS_965667e5913ece6c999a54b2a167fc15" desc="Tooltip for button linking to the Elements panel">
+    Click to reveal the frame&apos;s DOM node in the Elements panel
+  </message>
   <message name="IDS_DEVTOOLS_96ab4e163f4ee03aaa4d1051aa51d204" desc="Label for number of affected resources indication in issue view">
     resource
   </message>
@@ -33,8 +48,17 @@
   <message name="IDS_DEVTOOLS_af54fb3a43842c87e975974597a1623a" desc="Label in the issues panel">
     No issues detected so far
   </message>
+  <message name="IDS_DEVTOOLS_af59bb7c08d6527bb26a798b7acf0ec5" desc="The kind of resolution for a Heavy Ads issue">
+    Warned
+  </message>
   <message name="IDS_DEVTOOLS_b02478e52979ba9af8bffc41f342f4b6" desc="Header for the section listing affected resources">
     Affected Resources
+  </message>
+  <message name="IDS_DEVTOOLS_ba514415c6a7f5b7aa2b54d0914a122d" desc="Title for a column in an Heavy Ads issue view">
+    Resolution Status
+  </message>
+  <message name="IDS_DEVTOOLS_c8f2c7aa04b8080f5d0bb020dc886d82" desc="Title for a column in an Heavy Ads issue view">
+    Frame URL
   </message>
   <message name="IDS_DEVTOOLS_ee02b74d0caebce3dabaf3b3e79b6a65" desc="The UI destination when right clicking an item that can be revealed">
     Issues view
@@ -47,5 +71,8 @@
   </message>
   <message name="IDS_DEVTOOLS_7b255ecb0466cedcea013f62b87c83cc" desc="Explanatory message why a reload of the inspected page is required. Next to reload button.">
     Some issues might be missing or incomplete, reload the inspected page to get the full information.
+  </message>
+  <message name="IDS_DEVTOOLS_fae3520ad615b90014c2f2991ff32edf" desc="Reason for a Heavy Ad being flagged in issue view">
+    CPU total limit
   </message>
 </grit-part>

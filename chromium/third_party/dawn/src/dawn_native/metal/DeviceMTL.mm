@@ -51,7 +51,6 @@ namespace dawn_native { namespace metal {
                    const DeviceDescriptor* descriptor)
         : DeviceBase(adapter, descriptor),
           mMtlDevice([mtlDevice retain]),
-          mMapTracker(new MapRequestTracker(this)),
           mCompletedSerial(0) {
         [mMtlDevice retain];
     }
@@ -124,6 +123,9 @@ namespace dawn_native { namespace metal {
         const PipelineLayoutDescriptor* descriptor) {
         return new PipelineLayout(this, descriptor);
     }
+    ResultOrError<QuerySetBase*> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
+        return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation");
+    }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
         return RenderPipeline::Create(this, descriptor);
@@ -156,9 +158,9 @@ namespace dawn_native { namespace metal {
 
     Serial Device::CheckAndUpdateCompletedSerials() {
         if (GetCompletedCommandSerial() > mCompletedSerial) {
-            // sometimes we artificially increase the serials, in which case the completed serial in
+            // sometimes we increase the serials, in which case the completed serial in
             // the device base will surpass the completed serial we have in the metal backend, so we
-            // must update ours when we see that the completed serial from the frontend has
+            // must update ours when we see that the completed serial from device base has
             // increased.
             mCompletedSerial = GetCompletedCommandSerial();
         }
@@ -167,17 +169,8 @@ namespace dawn_native { namespace metal {
     }
 
     MaybeError Device::TickImpl() {
-        CheckPassedSerials();
-        Serial completedSerial = GetCompletedCommandSerial();
-
-        mMapTracker->Tick(completedSerial);
-
         if (mCommandContext.GetCommands() != nil) {
             SubmitPendingCommandBuffer();
-        } else if (completedSerial == GetLastSubmittedCommandSerial()) {
-            // If there's no GPU work in flight we still need to artificially increment the serial
-            // so that CPU operations waiting on GPU completion can know they don't have to wait.
-            ArtificiallyIncrementSerials();
         }
 
         return {};
@@ -245,10 +238,6 @@ namespace dawn_native { namespace metal {
         [pendingCommands release];
     }
 
-    MapRequestTracker* Device::GetMapTracker() const {
-        return mMapTracker.get();
-    }
-
     ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
         std::unique_ptr<StagingBufferBase> stagingBuffer =
             std::make_unique<StagingBuffer>(size, this);
@@ -261,10 +250,9 @@ namespace dawn_native { namespace metal {
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
-        // Metal validation layers forbid  0-sized copies, skip it since it is a noop.
-        if (size == 0) {
-            return {};
-        }
+        // Metal validation layers forbid  0-sized copies, assert it is skipped prior to calling
+        // this function.
+        ASSERT(size != 0);
 
         id<MTLBuffer> uploadBuffer = ToBackend(source)->GetBufferHandle();
         id<MTLBuffer> buffer = ToBackend(destination)->GetMTLBuffer();
@@ -281,6 +269,15 @@ namespace dawn_native { namespace metal {
                                                         uint32_t plane) {
         const TextureDescriptor* textureDescriptor =
             reinterpret_cast<const TextureDescriptor*>(descriptor->cTextureDescriptor);
+
+        // TODO(dawn:22): Remove once migration from GPUTextureDescriptor.arrayLayerCount to
+        // GPUTextureDescriptor.size.depth is done.
+        TextureDescriptor fixedDescriptor;
+        if (ConsumedError(FixTextureDescriptor(this, textureDescriptor), &fixedDescriptor)) {
+            return nullptr;
+        }
+        textureDescriptor = &fixedDescriptor;
+
         if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
             return nullptr;
         }
@@ -307,14 +304,6 @@ namespace dawn_native { namespace metal {
             CheckPassedSerials();
         }
 
-        // Artificially increase the serials so work that was pending knows it can complete.
-        ArtificiallyIncrementSerials();
-
-        DAWN_TRY(TickImpl());
-
-        // Force all operations to look as if they were completed
-        AssumeCommandsComplete();
-
         return {};
     }
 
@@ -322,8 +311,6 @@ namespace dawn_native { namespace metal {
         ASSERT(GetState() == State::Disconnected);
 
         [mCommandContext.AcquireCommands() release];
-
-        mMapTracker = nullptr;
 
         [mCommandQueue release];
         mCommandQueue = nil;

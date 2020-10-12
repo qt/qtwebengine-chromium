@@ -107,9 +107,7 @@ source_set("openscreen_unittests_all") {
 if (!build_with_chromium) {
   executable("openscreen_unittests") {
     testonly = true
-    deps = [
-      ":openscreen_unittests_all",
-    ]
+    deps = [ ":openscreen_unittests_all" ]
   }
 }
 
@@ -118,6 +116,7 @@ if (!build_with_chromium && is_posix) {
     testonly = true
     public_deps = [
       "cast/common:discovery_e2e_test",
+      "cast/standalone_receiver:e2e_tests",
       "cast/test:e2e_tests",
       "cast/test:make_crl_tests($host_toolchain)",
       "test:test_main",
@@ -126,8 +125,6 @@ if (!build_with_chromium && is_posix) {
 
   executable("e2e_tests") {
     testonly = true
-    deps = [
-      ":e2e_tests_all",
-    ]
+    deps = [ ":e2e_tests_all" ]
   }
 }

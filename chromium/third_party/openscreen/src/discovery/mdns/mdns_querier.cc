@@ -4,6 +4,8 @@
 
 #include "discovery/mdns/mdns_querier.h"
 
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "discovery/common/config.h"
@@ -240,7 +242,7 @@ void MdnsQuerier::StartQuery(const DomainName& name,
                              MdnsRecordChangedCallback* callback) {
   OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
   OSP_DCHECK(callback);
-  OSP_DCHECK(dns_type != DnsType::kNSEC);
+  OSP_DCHECK(CanBeQueried(dns_type));
 
   // Add a new callback if haven't seen it before
   auto callbacks_it = callbacks_.equal_range(name);
@@ -298,7 +300,10 @@ void MdnsQuerier::StopQuery(const DomainName& name,
                             MdnsRecordChangedCallback* callback) {
   OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
   OSP_DCHECK(callback);
-  OSP_DCHECK(dns_type != DnsType::kNSEC);
+
+  if (!CanBeQueried(dns_type)) {
+    return;
+  }
 
   // Find and remove the callback.
   int callbacks_for_key = 0;
@@ -370,9 +375,7 @@ void MdnsQuerier::OnMessageReceived(const MdnsMessage& message) {
   for (const MdnsRecord& record : message.answers()) {
     if (ShouldAnswerRecordBeProcessed(record)) {
       ProcessRecord(record);
-      OSP_DVLOG << "\tProcessing answer record for domain '"
-                << record.name().ToString() << "' of type '"
-                << record.dns_type() << "'...";
+      OSP_DVLOG << "\tProcessing answer record (" << record.ToString() << ")";
       found_relevant_records = true;
       processed_count++;
     }
@@ -383,9 +386,8 @@ void MdnsQuerier::OnMessageReceived(const MdnsMessage& message) {
   // individual records relevant to this querier to update the cache.
   for (const MdnsRecord& record : message.additional_records()) {
     if (found_relevant_records || ShouldAnswerRecordBeProcessed(record)) {
-      OSP_DVLOG << "\tProcessing additional record for domain '"
-                << record.name().ToString() << "' of type '"
-                << record.dns_type() << "'...";
+      OSP_DVLOG << "\tProcessing additional record (" << record.ToString()
+                << ")";
       ProcessRecord(record);
       processed_count++;
     }
@@ -451,6 +453,11 @@ void MdnsQuerier::OnRecordExpired(const MdnsRecordTracker* tracker,
 
 void MdnsQuerier::ProcessRecord(const MdnsRecord& record) {
   OSP_DCHECK(task_runner_->IsRunningOnTaskRunner());
+
+  // Skip all records that can't be processed.
+  if (!CanBeProcessed(record.dns_type())) {
+    return;
+  }
 
   // Get the types which the received record is associated with. In most cases
   // this will only be the type of the provided record, but in the case of
@@ -528,16 +535,12 @@ void MdnsQuerier::ProcessUniqueRecord(const MdnsRecord& record,
     if (will_exist) {
       ProcessCallbacks(record, RecordChangedEvent::kCreated);
     }
-  }
-
-  // There is exactly one tracker associated with this key. This is the expected
-  // case when a record matching this one has already been seen.
-  else if (num_records_for_key == size_t{1}) {
+  } else if (num_records_for_key == size_t{1}) {
+    // There is exactly one tracker associated with this key. This is the
+    // expected case when a record matching this one has already been seen.
     ProcessSinglyTrackedUniqueRecord(record, trackers[0]);
-  }
-
-  // Multiple records with the same key.
-  else {
+  } else {
+    // Multiple records with the same key.
     ProcessMultiTrackedUniqueRecord(record, dns_type);
   }
 }

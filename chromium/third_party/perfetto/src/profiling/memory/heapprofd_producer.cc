@@ -95,6 +95,40 @@ size_t Log2LessThan(uint64_t value) {
 
 }  // namespace
 
+void HeapprofdConfigToClientConfiguration(
+    const HeapprofdConfig& heapprofd_config,
+    ClientConfiguration* cli_config) {
+  cli_config->interval = heapprofd_config.sampling_interval_bytes();
+  cli_config->block_client = heapprofd_config.block_client();
+  cli_config->disable_fork_teardown = heapprofd_config.disable_fork_teardown();
+  cli_config->disable_vfork_detection =
+      heapprofd_config.disable_vfork_detection();
+  cli_config->block_client_timeout_us =
+      heapprofd_config.block_client_timeout_us();
+  size_t n = 0;
+  std::vector<std::string> heaps = heapprofd_config.heaps();
+  if (heaps.empty()) {
+    heaps.push_back("malloc");
+  }
+  if (heaps.size() > base::ArraySize(cli_config->heaps)) {
+    heaps.resize(base::ArraySize(cli_config->heaps));
+    PERFETTO_ELOG("Too many heaps requested. Truncating.");
+  }
+  for (const std::string& heap : heaps) {
+    // -1 for the \0 byte.
+    if (heap.size() > HEAPPROFD_HEAP_NAME_SZ - 1) {
+      PERFETTO_ELOG("Invalid heap name %s (larger than %d)", heap.c_str(),
+                    HEAPPROFD_HEAP_NAME_SZ - 1);
+      continue;
+    }
+    strncpy(&cli_config->heaps[n][0], heap.c_str(),
+            sizeof(cli_config->heaps[0]));
+    cli_config->heaps[n][sizeof(cli_config->heaps[0]) - 1] = '\0';
+    n++;
+  }
+  cli_config->num_heaps = n;
+}
+
 const uint64_t LogHistogram::kMaxBucket = 0;
 
 std::vector<std::pair<uint64_t, uint64_t>> LogHistogram::GetData() {
@@ -379,13 +413,7 @@ void HeapprofdProducer::SetupDataSource(DataSourceInstanceID id,
   DataSource data_source(endpoint_->CreateTraceWriter(buffer_id));
   data_source.id = id;
   auto& cli_config = data_source.client_configuration;
-  cli_config.interval = heapprofd_config.sampling_interval_bytes();
-  cli_config.block_client = heapprofd_config.block_client();
-  cli_config.disable_fork_teardown = heapprofd_config.disable_fork_teardown();
-  cli_config.disable_vfork_detection =
-      heapprofd_config.disable_vfork_detection();
-  cli_config.block_client_timeout_us =
-      heapprofd_config.block_client_timeout_us();
+  HeapprofdConfigToClientConfiguration(heapprofd_config, &cli_config);
   data_source.config = heapprofd_config;
   data_source.normalized_cmdlines = std::move(normalized_cmdlines.value());
   data_source.stop_timeout_ms = ds_config.stop_timeout_ms();
@@ -602,69 +630,83 @@ void HeapprofdProducer::DoContinuousDump(DataSourceInstanceID id,
 void HeapprofdProducer::DumpProcessState(DataSource* data_source,
                                          pid_t pid,
                                          ProcessState* process_state) {
-  HeapTracker& heap_tracker = process_state->heap_tracker;
+  for (auto& heap_id_and_heap_tracker : process_state->heap_trackers) {
+    uint32_t heap_id = heap_id_and_heap_tracker.first;
+    HeapTracker& heap_tracker = heap_id_and_heap_tracker.second;
 
-  bool from_startup =
-      data_source->signaled_pids.find(pid) == data_source->signaled_pids.cend();
-  uint64_t dump_timestamp;
-  if (data_source->config.dump_at_max())
-    dump_timestamp = heap_tracker.max_timestamp();
-  else
-    dump_timestamp = heap_tracker.committed_timestamp();
-  auto new_heapsamples = [pid, from_startup, dump_timestamp, process_state,
-                          data_source](
-                             ProfilePacket::ProcessHeapSamples* proto) {
-    proto->set_pid(static_cast<uint64_t>(pid));
-    proto->set_timestamp(dump_timestamp);
-    proto->set_from_startup(from_startup);
-    proto->set_disconnected(process_state->disconnected);
-    proto->set_buffer_overran(process_state->buffer_overran);
-    proto->set_buffer_corrupted(process_state->buffer_corrupted);
-    proto->set_hit_guardrail(data_source->hit_guardrail);
-    auto* stats = proto->set_stats();
-    stats->set_unwinding_errors(process_state->unwinding_errors);
-    stats->set_heap_samples(process_state->heap_samples);
-    stats->set_map_reparses(process_state->map_reparses);
-    stats->set_total_unwinding_time_us(process_state->total_unwinding_time_us);
-    auto* unwinding_hist = stats->set_unwinding_time_us();
-    for (const auto& p : process_state->unwinding_time_us.GetData()) {
-      auto* bucket = unwinding_hist->add_buckets();
-      if (p.first == LogHistogram::kMaxBucket)
-        bucket->set_max_bucket(true);
-      else
-        bucket->set_upper_limit(p.first);
-      bucket->set_count(p.second);
+    bool from_startup = data_source->signaled_pids.find(pid) ==
+                        data_source->signaled_pids.cend();
+    uint64_t dump_timestamp;
+    if (data_source->config.dump_at_max())
+      dump_timestamp = heap_tracker.max_timestamp();
+    else
+      dump_timestamp = heap_tracker.committed_timestamp();
+    const char* heap_name = nullptr;
+    const ClientConfiguration& cli_config = data_source->client_configuration;
+    if (heap_id < cli_config.num_heaps) {
+      heap_name = cli_config.heaps[heap_id];
+    } else {
+      PERFETTO_ELOG("Invalid heap id %" PRIu32, heap_id);
     }
-  };
+    auto new_heapsamples =
+        [pid, from_startup, dump_timestamp, process_state, data_source,
+         heap_name](ProfilePacket::ProcessHeapSamples* proto) {
+          proto->set_pid(static_cast<uint64_t>(pid));
+          proto->set_timestamp(dump_timestamp);
+          proto->set_from_startup(from_startup);
+          proto->set_disconnected(process_state->disconnected);
+          proto->set_buffer_overran(process_state->buffer_overran);
+          proto->set_buffer_corrupted(process_state->buffer_corrupted);
+          proto->set_hit_guardrail(data_source->hit_guardrail);
+          if (heap_name)
+            proto->set_heap_name(heap_name);
+          auto* stats = proto->set_stats();
+          stats->set_unwinding_errors(process_state->unwinding_errors);
+          stats->set_heap_samples(process_state->heap_samples);
+          stats->set_map_reparses(process_state->map_reparses);
+          stats->set_total_unwinding_time_us(
+              process_state->total_unwinding_time_us);
+          auto* unwinding_hist = stats->set_unwinding_time_us();
+          for (const auto& p : process_state->unwinding_time_us.GetData()) {
+            auto* bucket = unwinding_hist->add_buckets();
+            if (p.first == LogHistogram::kMaxBucket)
+              bucket->set_max_bucket(true);
+            else
+              bucket->set_upper_limit(p.first);
+            bucket->set_count(p.second);
+          }
+        };
 
-  DumpState dump_state(data_source->trace_writer.get(),
-                       std::move(new_heapsamples), &data_source->intern_state);
+    DumpState dump_state(data_source->trace_writer.get(),
+                         std::move(new_heapsamples),
+                         &data_source->intern_state);
 
-  if (process_state->page_idle_checker) {
-    PageIdleChecker& page_idle_checker = *process_state->page_idle_checker;
-    heap_tracker.GetAllocations([&dump_state, &page_idle_checker](
-                                    uint64_t addr, uint64_t,
-                                    uint64_t alloc_size,
-                                    uint64_t callstack_id) {
-      int64_t idle =
-          page_idle_checker.OnIdlePage(addr, static_cast<size_t>(alloc_size));
-      if (idle < 0) {
-        PERFETTO_PLOG("OnIdlePage.");
-        return;
-      }
-      if (idle > 0)
-        dump_state.AddIdleBytes(callstack_id, static_cast<uint64_t>(idle));
-    });
-  }
-
-  heap_tracker.GetCallstackAllocations(
-      [&dump_state,
-       &data_source](const HeapTracker::CallstackAllocations& alloc) {
-        dump_state.WriteAllocation(alloc, data_source->config.dump_at_max());
+    if (process_state->page_idle_checker) {
+      PageIdleChecker& page_idle_checker = *process_state->page_idle_checker;
+      heap_tracker.GetAllocations([&dump_state, &page_idle_checker](
+                                      uint64_t addr, uint64_t,
+                                      uint64_t alloc_size,
+                                      uint64_t callstack_id) {
+        int64_t idle =
+            page_idle_checker.OnIdlePage(addr, static_cast<size_t>(alloc_size));
+        if (idle < 0) {
+          PERFETTO_PLOG("OnIdlePage.");
+          return;
+        }
+        if (idle > 0)
+          dump_state.AddIdleBytes(callstack_id, static_cast<uint64_t>(idle));
       });
-  if (process_state->page_idle_checker)
-    process_state->page_idle_checker->MarkPagesIdle();
-  dump_state.DumpCallstacks(&callsites_);
+    }
+
+    heap_tracker.GetCallstackAllocations(
+        [&dump_state,
+         &data_source](const HeapTracker::CallstackAllocations& alloc) {
+          dump_state.WriteAllocation(alloc, data_source->config.dump_at_max());
+        });
+    if (process_state->page_idle_checker)
+      process_state->page_idle_checker->MarkPagesIdle();
+    dump_state.DumpCallstacks(&callsites_);
+  }
 }
 
 bool HeapprofdProducer::DumpProcessesInDataSource(DataSourceInstanceID id) {
@@ -961,7 +1003,8 @@ void HeapprofdProducer::HandleAllocRecord(AllocRecord alloc_rec) {
   }
 
   ProcessState& process_state = process_state_it->second;
-  HeapTracker& heap_tracker = process_state.heap_tracker;
+  HeapTracker& heap_tracker =
+      process_state.GetHeapTracker(alloc_rec.alloc_metadata.heap_id);
 
   if (alloc_rec.error)
     process_state.unwinding_errors++;
@@ -999,7 +1042,6 @@ void HeapprofdProducer::HandleFreeRecord(FreeRecord free_rec) {
   }
 
   ProcessState& process_state = process_state_it->second;
-  HeapTracker& heap_tracker = process_state.heap_tracker;
 
   const FreeBatchEntry* entries = free_batch.entries;
   uint64_t num_entries = free_batch.num_entries;
@@ -1009,6 +1051,7 @@ void HeapprofdProducer::HandleFreeRecord(FreeRecord free_rec) {
   }
   for (size_t i = 0; i < num_entries; ++i) {
     const FreeBatchEntry& entry = entries[i];
+    HeapTracker& heap_tracker = process_state.GetHeapTracker(entry.heap_id);
     heap_tracker.RecordFree(entry.addr, entry.sequence_number,
                             free_batch.clock_monotonic_coarse_timestamp);
   }
@@ -1134,7 +1177,11 @@ void HeapprofdProducer::CheckDataSourceMemory() {
   if (!any_guardrail)
     return;
 
-  base::Optional<uint32_t> anon_and_swap = GetRssAnonAndSwap(getpid());
+  base::Optional<uint32_t> anon_and_swap;
+  base::Optional<std::string> status = ReadStatus(getpid());
+  if (status)
+    anon_and_swap = GetRssAnonAndSwap(*status);
+
   if (!anon_and_swap) {
     PERFETTO_ELOG("Failed to read heapprofd memory.");
     return;

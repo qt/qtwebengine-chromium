@@ -30,7 +30,6 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 	var redir_mask         : base.u32[..= 0x7FFF]
 	var length             : base.u32[..= 258]
 	var dist_minus_1       : base.u32[..= 0x7FFF]
-	var n_copied           : base.u32
 	var hlen               : base.u32[..= 0x7FFF]
 	var hdist              : base.u32
 
@@ -76,10 +75,10 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 		if n_bits < 15 {
 			assert n_bits >= 0  // TODO: this shouldn't be necessary.
 			bits |= args.src.peek_u8_as_u32() << n_bits
-			args.src.skip_fast!(actual: 1, worst_case: 1)
+			args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 			n_bits += 8
 			bits |= args.src.peek_u8_as_u32() << n_bits
-			args.src.skip_fast!(actual: 1, worst_case: 1)
+			args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 			n_bits += 8
 			assert n_bits >= 15
 		} else {
@@ -99,7 +98,7 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 
 		if (table_entry >> 31) <> 0 {
 			// Literal.
-			args.dst.write_fast_u8!(a: ((table_entry >> 8) & 0xFF) as base.u8)
+			args.dst.write_u8_fast!(a: ((table_entry >> 8) & 0xFF) as base.u8)
 			continue.loop
 		} else if (table_entry >> 30) <> 0 {
 			// No-op; code continues past the if-else chain.
@@ -115,10 +114,10 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 			if n_bits < 15 {
 				assert n_bits >= 0  // TODO: this shouldn't be necessary.
 				bits |= args.src.peek_u8_as_u32() << n_bits
-				args.src.skip_fast!(actual: 1, worst_case: 1)
+				args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 				n_bits += 8
 				bits |= args.src.peek_u8_as_u32() << n_bits
-				args.src.skip_fast!(actual: 1, worst_case: 1)
+				args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 				n_bits += 8
 				assert n_bits >= 15
 			} else {
@@ -130,14 +129,14 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 
 			redir_top = (table_entry >> 8) & 0xFFFF
 			redir_mask = ((1 as base.u32) << ((table_entry >> 4) & 0x0F)) - 1
-			table_entry = this.huffs[0][(redir_top + (bits & redir_mask)) & huffs_table_mask]
+			table_entry = this.huffs[0][(redir_top + (bits & redir_mask)) & HUFFS_TABLE_MASK]
 			table_entry_n_bits = table_entry & 0x0F
 			bits >>= table_entry_n_bits
 			n_bits -= table_entry_n_bits
 
 			if (table_entry >> 31) <> 0 {
 				// Literal.
-				args.dst.write_fast_u8!(a: ((table_entry >> 8) & 0xFF) as base.u8)
+				args.dst.write_u8_fast!(a: ((table_entry >> 8) & 0xFF) as base.u8)
 				continue.loop
 			} else if (table_entry >> 30) <> 0 {
 				// No-op; code continues past the if-else chain.
@@ -173,10 +172,10 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 			if n_bits < 15 {
 				assert n_bits >= 0  // TODO: this shouldn't be necessary.
 				bits |= args.src.peek_u8_as_u32() << n_bits
-				args.src.skip_fast!(actual: 1, worst_case: 1)
+				args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 				n_bits += 8
 				bits |= args.src.peek_u8_as_u32() << n_bits
-				args.src.skip_fast!(actual: 1, worst_case: 1)
+				args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 				n_bits += 8
 				assert n_bits >= 15
 			} else {
@@ -200,10 +199,10 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 		if n_bits < 15 {
 			assert n_bits >= 0  // TODO: this shouldn't be necessary.
 			bits |= args.src.peek_u8_as_u32() << n_bits
-			args.src.skip_fast!(actual: 1, worst_case: 1)
+			args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 			n_bits += 8
 			bits |= args.src.peek_u8_as_u32() << n_bits
-			args.src.skip_fast!(actual: 1, worst_case: 1)
+			args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 			n_bits += 8
 			assert n_bits >= 15
 		} else {
@@ -225,10 +224,10 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 			if n_bits < 15 {
 				assert n_bits >= 0  // TODO: this shouldn't be necessary.
 				bits |= args.src.peek_u8_as_u32() << n_bits
-				args.src.skip_fast!(actual: 1, worst_case: 1)
+				args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 				n_bits += 8
 				bits |= args.src.peek_u8_as_u32() << n_bits
-				args.src.skip_fast!(actual: 1, worst_case: 1)
+				args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 				n_bits += 8
 				assert n_bits >= 15
 			} else {
@@ -240,7 +239,7 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 
 			redir_top = (table_entry >> 8) & 0xFFFF
 			redir_mask = ((1 as base.u32) << ((table_entry >> 4) & 0x0F)) - 1
-			table_entry = this.huffs[1][(redir_top + (bits & redir_mask)) & huffs_table_mask]
+			table_entry = this.huffs[1][(redir_top + (bits & redir_mask)) & HUFFS_TABLE_MASK]
 			table_entry_n_bits = table_entry & 0x0F
 			bits >>= table_entry_n_bits
 			n_bits -= table_entry_n_bits
@@ -269,10 +268,10 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 			assert n_bits < 15 via "a < b: a < c; c <= b"(c: table_entry_n_bits)
 			assert n_bits >= 0  // TODO: this shouldn't be necessary.
 			bits |= args.src.peek_u8_as_u32() << n_bits
-			args.src.skip_fast!(actual: 1, worst_case: 1)
+			args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 			n_bits += 8
 			bits |= args.src.peek_u8_as_u32() << n_bits
-			args.src.skip_fast!(actual: 1, worst_case: 1)
+			args.src.skip_u32_fast!(actual: 1, worst_case: 1)
 			n_bits += 8
 			assert table_entry_n_bits <= n_bits via "a <= b: a <= c; c <= b"(c: 16)
 			assert n_bits >= table_entry_n_bits via "a >= b: b <= a"()
@@ -284,7 +283,6 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 		bits >>= table_entry_n_bits
 		n_bits -= table_entry_n_bits
 
-		n_copied = 0
 		// The "while true { etc; break }" is a redundant version of "etc", but
 		// its presence minimizes the diff between decode_huffman_fast and
 		// decode_huffman_slow.
@@ -314,31 +312,13 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 				// start copying from.
 				hdist = this.history_index - hdist
 
-				// Copy from hdist to the end of this.history, and then
-				// possibly wrap around the this.history ringbuffer.
+				// Copy from hdist to the end of this.history.
 				//
 				// This copying is simpler than the decode_huffman_slow version
 				// because it cannot yield. We have already checked that
 				// args.dst.available() is large enough.
-				//
-				// The "while true { etc; break }" is a redundant version of
-				// "etc", but its presence minimizes the diff between
-				// decode_huffman_fast and decode_huffman_slow.
-				while true,
-					inv args.dst.available() >= 258,
-				{
-					// TODO: copy_from_slice32 should probably update the
-					// "args.dst.available() >= 258" fact. It should certainly
-					// invalidate any fact that was "<=" instead of ">=".
-					n_copied = args.dst.copy_n_from_slice!(
-						n: hlen, s: this.history[hdist & 0x7FFF ..])
-					if hlen <= n_copied {
-						break
-					}
-					hlen -= n_copied
-					args.dst.copy_n_from_slice!(n: hlen, s: this.history[..])
-					break
-				}
+				args.dst.limited_copy_u32_from_slice!(
+					up_to: hlen, s: this.history[hdist & 0x7FFF ..])
 
 				if length == 0 {
 					// No need to copy from args.dst.
@@ -359,10 +339,11 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 			assert (length as base.u64) <= args.dst.available() via "a <= b: a <= c; c <= b"(c: 258)
 
 			// Copy from args.dst.
-			args.dst.copy_n_from_history_fast!(n: length, distance: (dist_minus_1 + 1))
+			args.dst.limited_copy_u32_from_history_fast!(
+				up_to: length, distance: (dist_minus_1 + 1))
 			break
-		}
-	}
+		} endwhile
+	} endwhile.loop
 
 	// Ensure n_bits < 8 by rewindng args.src, if we loaded too many of its
 	// bytes into the bits variable.
@@ -383,7 +364,7 @@ pri func decoder.decode_huffman_fast!(dst: base.io_writer, src: base.io_reader) 
 		} else {
 			return "#internal error: inconsistent I/O"
 		}
-	}
+	} endwhile
 
 	this.bits = bits & (((1 as base.u32) << n_bits) - 1)
 	this.n_bits = n_bits

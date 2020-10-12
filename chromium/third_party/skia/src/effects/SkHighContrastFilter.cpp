@@ -9,6 +9,7 @@
 #include "include/effects/SkHighContrastFilter.h"
 #include "include/private/SkColorData.h"
 #include "src/core/SkArenaAlloc.h"
+#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkRasterPipeline.h"
@@ -25,7 +26,7 @@
 
 using InvertStyle = SkHighContrastConfig::InvertStyle;
 
-class SkHighContrast_Filter : public SkColorFilter {
+class SkHighContrast_Filter : public SkColorFilterBase {
 public:
     SkHighContrast_Filter(const SkHighContrastConfig& config) {
         fConfig = config;
@@ -305,9 +306,8 @@ void GLHighContrastFilterEffect::emitCode(EmitArgs& args) {
 
     fragBuilder->codeAppendf("half4 color = %s;", args.fInputColor);
 
-    // Unpremultiply. The max() is to guard against 0 / 0.
-    fragBuilder->codeAppendf("half nonZeroAlpha = max(color.a, 0.0001);");
-    fragBuilder->codeAppendf("color = half4(color.rgb / nonZeroAlpha, nonZeroAlpha);");
+    // Unpremultiply.
+    fragBuilder->codeAppendf("color = unpremul(color);");
 
     if (hcfe.linearize()) {
         fragBuilder->codeAppend("color.rgb = color.rgb * color.rgb;");

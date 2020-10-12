@@ -22,10 +22,10 @@ vars = {
   'chromium_revision': 'b0410bba028cf153be2d02e36b6e99b59fdcb000',
 
   # Current revision of VK-GL-CTS (a.k.a dEQP).
-  'vk_gl_cts_revision': '60972ed7fa8fb66b64e21186e7fb13dc082bdac8',
+  'vk_gl_cts_revision': '23498d296498a94d619a6f4ac6c58510ebeacd9a',
 
   # Current revision of glslang, the Khronos SPIRV compiler.
-  'glslang_revision': '4fa68edd68197a8c77779942b5d973f89c621752',
+  'glslang_revision': 'fbb9dc2cf1afbc1ca301c66bd3ec7e745dfed0e4',
 
   # Current revision of googletest.
   # Note: this dep cannot be auto-rolled b/c of nesting.
@@ -43,22 +43,22 @@ vars = {
   'spirv_cross_revision': 'f38cbeb814c73510b85697adbe5e894f9eac978f',
 
   # Current revision fo the SPIRV-Headers Vulkan support library.
-  'spirv_headers_revision': 'f8bf11a0253a32375c32cad92c841237b96696c0',
+  'spirv_headers_revision': 'ac638f1815425403e946d0ab78bac71d2bdbf3be',
 
   # Current revision of SPIRV-Tools for Vulkan.
-  'spirv_tools_revision': '63fa9114a931bd584034f41ff1e405aa98c538d2',
+  'spirv_tools_revision': '7a1af5878594cec2992a1bb00565b4c712490239',
 
   # Current revision of Khronos Vulkan-Headers.
-  'vulkan_headers_revision': '9250d5ae8f50202005233dc0512a1d460c8b4833',
+  'vulkan_headers_revision': '8188e3fbbc105591064093440f88081fb957d4f0',
 
   # Current revision of Khronos Vulkan-Loader.
-  'vulkan_loader_revision': 'aaba2f0ac575b515567124420ebdcb866b9376ac',
+  'vulkan_loader_revision': 'a173c025f8fea41d5d5e6bbd78c84647ce67fd21',
 
   # Current revision of Khronos Vulkan-Tools.
-  'vulkan_tools_revision': '7bcbfd304f8bf079cdd477208f69da7a7f870344',
+  'vulkan_tools_revision': '0f4d5f74f199b06bffc06cd2beed6ef07246fb0f',
 
   # Current revision of Khronos Vulkan-ValidationLayers.
-  'vulkan_validation_revision': '73680f59c04ae28f3f369ddf9e10d46a2f86c936',
+  'vulkan_validation_revision': 'd8b1aa1c383072f176bf3a1e347c77121e700b91',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling catapult
@@ -90,7 +90,7 @@ deps = {
   },
 
   'third_party/vulkan_memory_allocator': {
-    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@dac952eb0a27736571bf10ac42fbfcc59192f310',
+    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@431d6e57284aeb08118ff428dfbd51c94342faa1',
     'condition': 'not build_with_chromium',
   },
 
@@ -192,7 +192,7 @@ deps = {
   },
 
   'third_party/SwiftShader': {
-    'url': '{swiftshader_git}/SwiftShader@d748e1651af8254eec5d4f5c561713dc85d14ab6',
+    'url': '{swiftshader_git}/SwiftShader@eb0a25a189b75d950ae4f87c00f8d63f190d82a0',
     'condition': 'not build_with_chromium',
   },
 
@@ -245,12 +245,12 @@ deps = {
 
   'third_party/catapult': {
     'url': '{chromium_git}/catapult.git@{catapult_revision}',
-    'condition': 'not build_with_chromium',
+    'condition': 'checkout_android and not build_with_chromium',
   },
 
   'third_party/android_ndk': {
     'url': '{chromium_git}/android_ndk.git@27c0a8d090c666a50e40fceb4ee5b40b1a2d3f87',
-    'condition': 'not build_with_chromium',
+    'condition': 'checkout_android and not build_with_chromium',
   },
 }
 
@@ -422,11 +422,8 @@ hooks = [
     'name': 'restricted_traces',
     'pattern': '\\.sha1',
     'condition': 'checkout_angle_internal',
-    'action': [ 'download_from_google_storage',
-                '--directory',
-                '--recursive',
-                '--extract',
-                '--bucket', 'chrome-angle-capture-binaries',
+    'action': [ 'python',
+                'src/tests/perf_tests/restricted_traces/download_restricted_traces.py',
                 'src/tests/perf_tests/restricted_traces',
     ]
   }

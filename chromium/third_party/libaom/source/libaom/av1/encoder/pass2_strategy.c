@@ -26,6 +26,7 @@
 #include "av1/encoder/gop_structure.h"
 #include "av1/encoder/pass2_strategy.h"
 #include "av1/encoder/ratectrl.h"
+#include "av1/encoder/rc_utils.h"
 #include "av1/encoder/tpl_model.h"
 #include "av1/encoder/use_flat_gop_model_params.h"
 #include "av1/encoder/encode_strategy.h"
@@ -181,7 +182,7 @@ static void twopass_update_bpm_factor(TWO_PASS *twopass) {
 }
 
 static int qbpm_enumerator(int rate_err_tol) {
-  return 1350000 + ((300000 * AOMMIN(75, AOMMAX(rate_err_tol - 25, 0))) / 75);
+  return 1250000 + ((300000 * AOMMIN(75, AOMMAX(rate_err_tol - 25, 0))) / 75);
 }
 
 // Similar to find_qindex_by_rate() function in ratectrl.c, but includes
@@ -223,7 +224,7 @@ static int get_twopass_worst_quality(AV1_COMP *cpi, const double section_err,
   if (section_target_bandwidth <= 0) {
     return rc->worst_quality;  // Highest value allowed
   } else {
-    const int num_mbs = (cpi->oxcf.resize_mode != RESIZE_NONE)
+    const int num_mbs = (cpi->oxcf.resize_cfg.resize_mode != RESIZE_NONE)
                             ? cpi->initial_mbs
                             : cpi->common.mi_params.MBs;
     const int active_mbs = AOMMAX(1, num_mbs - (int)(num_mbs * inactive_zone));
@@ -384,11 +385,12 @@ static void accumulate_this_frame_stats(const FIRSTPASS_STATS *stats,
   gf_stats->gf_group_inactive_zone_rows += stats->inactive_zone_rows;
 }
 
-static void accumulate_next_frame_stats(
-    const FIRSTPASS_STATS *stats, const FRAME_INFO *frame_info,
-    TWO_PASS *const twopass, const int flash_detected,
-    const int frames_since_key, const int cur_idx, const int can_disable_arf,
-    const int min_gf_interval, GF_GROUP_STATS *gf_stats) {
+static void accumulate_next_frame_stats(const FIRSTPASS_STATS *stats,
+                                        const FRAME_INFO *frame_info,
+                                        const int flash_detected,
+                                        const int frames_since_key,
+                                        const int cur_idx,
+                                        GF_GROUP_STATS *gf_stats) {
   accumulate_frame_motion_stats(stats, gf_stats);
   // sum up the metric values of current gf group
   gf_stats->avg_sr_coded_error += stats->sr_coded_error;
@@ -415,15 +417,6 @@ static void accumulate_next_frame_stats(
       gf_stats->zero_motion_accumulator =
           AOMMIN(gf_stats->zero_motion_accumulator,
                  get_zero_motion_factor(frame_info, stats));
-    }
-
-    // Break clause to detect very still sections after motion. For example,
-    // a static image after a fade or other transition.
-    if (can_disable_arf &&
-        detect_transition_to_still(twopass, min_gf_interval, cur_idx, 5,
-                                   gf_stats->loop_decay_rate,
-                                   gf_stats->last_loop_decay_rate)) {
-      gf_stats->allow_alt_ref = 0;
     }
   }
 }
@@ -894,9 +887,18 @@ static void allocate_gf_group_bits(GF_GROUP *gf_group, RATE_CONTROL *const rc,
 }
 
 // Returns true if KF group and GF group both are almost completely static.
-static INLINE int is_almost_static(double gf_zero_motion, int kf_zero_motion) {
-  return (gf_zero_motion >= 0.995) &&
-         (kf_zero_motion >= STATIC_KF_GROUP_THRESH);
+static INLINE int is_almost_static(double gf_zero_motion, int kf_zero_motion,
+                                   int is_lap_enabled) {
+  if (is_lap_enabled) {
+    /*
+     * when LAP enabled kf_zero_motion is not reliable, so use strict
+     * constraint on gf_zero_motion.
+     */
+    return (gf_zero_motion >= 0.999);
+  } else {
+    return (gf_zero_motion >= 0.995) &&
+           (kf_zero_motion >= STATIC_KF_GROUP_THRESH);
+  }
 }
 
 #define ARF_ABS_ZOOM_THRESH 4.4
@@ -935,7 +937,7 @@ static INLINE int detect_gf_cut(AV1_COMP *cpi, int frame_index, int cur_start,
   // so we can continue for more frames.
   if (((frame_index - cur_start) >= active_max_gf_interval + 1) &&
       !is_almost_static(gf_stats->zero_motion_accumulator,
-                        twopass->kf_zeromotion_pct)) {
+                        twopass->kf_zeromotion_pct, cpi->lap_enabled)) {
     return 1;
   }
   return 0;
@@ -1104,11 +1106,12 @@ int determine_high_err_gf(double *errs, int *is_high, double *si, int len,
 // previous gf groups
 void set_last_prev_low_err(int *cur_start_ptr, int *cur_last_ptr, int *cut_pos,
                            int count_cuts, int before_pad, double ratio,
-                           int *is_high, double *si, int prev_lows) {
+                           int *is_high, double *si, int prev_lows,
+                           int min_shrink_len) {
   int n;
   int cur_start = *cur_start_ptr;
   int cur_last = *cur_last_ptr;
-  for (n = cur_last; n >= cur_start + MIN_SHRINK_LEN; n--) {
+  for (n = cur_last; n >= cur_start + min_shrink_len; n--) {
     // try to find a point that is very probable to be good
     if (is_high[n - cur_start + before_pad] == 0 &&
         si[n - cur_start + before_pad] > SI_HIGH) {
@@ -1118,7 +1121,7 @@ void set_last_prev_low_err(int *cur_start_ptr, int *cur_last_ptr, int *cut_pos,
   }
   // could not find a low-err point, then let's try find an "unsure"
   // point at least
-  for (n = cur_last; n >= cur_start + MIN_SHRINK_LEN; n--) {
+  for (n = cur_last; n >= cur_start + min_shrink_len; n--) {
     if ((is_high[n - cur_start + before_pad] == 0) ||
         (is_high[n - cur_start + before_pad] &&
          si[n - cur_start + before_pad] < SI_LOW)) {
@@ -1128,18 +1131,18 @@ void set_last_prev_low_err(int *cur_start_ptr, int *cur_last_ptr, int *cut_pos,
   }
   if (prev_lows) {
     // try with shrinking previous all_zero interval
-    for (n = cur_start + MIN_SHRINK_LEN - 1; n > cur_start; n--) {
+    for (n = cur_start + min_shrink_len - 1; n > cur_start; n--) {
       if (is_high[n - cur_start + before_pad] == 0 &&
           si[n - cur_start + before_pad] > SI_HIGH) {
-        int tentative_start = n - MIN_SHRINK_LEN;
+        int tentative_start = n - min_shrink_len;
         // check if the previous interval can shrink this much
         int available =
-            tentative_start - cut_pos[count_cuts - 2] > MIN_SHRINK_LEN &&
+            tentative_start - cut_pos[count_cuts - 2] > min_shrink_len &&
             cur_start - tentative_start < prev_lows;
         // shrinking too agressively may worsen performance
         // set stricter thres for shorter length
         double ratio_thres =
-            1.0 * (cur_start - tentative_start) / (double)(MIN_SHRINK_LEN) +
+            1.0 * (cur_start - tentative_start) / (double)(min_shrink_len) +
             1.0;
 
         if (available && (ratio > ratio_thres)) {
@@ -1153,18 +1156,18 @@ void set_last_prev_low_err(int *cur_start_ptr, int *cur_last_ptr, int *cut_pos,
   }
   if (prev_lows) {
     // try with shrinking previous all_zero interval with unsure points
-    for (n = cur_start + MIN_SHRINK_LEN - 1; n > cur_start; n--) {
+    for (n = cur_start + min_shrink_len - 1; n > cur_start; n--) {
       if ((is_high[n - cur_start + before_pad] == 0) ||
           (is_high[n - cur_start + before_pad] &&
            si[n - cur_start + before_pad] < SI_LOW)) {
-        int tentative_start = n - MIN_SHRINK_LEN;
+        int tentative_start = n - min_shrink_len;
         // check if the previous interval can shrink this much
         int available =
-            tentative_start - cut_pos[count_cuts - 2] > MIN_SHRINK_LEN &&
+            tentative_start - cut_pos[count_cuts - 2] > min_shrink_len &&
             cur_start - tentative_start < prev_lows;
         // shrinking too agressively may worsen performance
         double ratio_thres =
-            1.0 * (cur_start - tentative_start) / (double)(MIN_SHRINK_LEN) +
+            1.0 * (cur_start - tentative_start) / (double)(min_shrink_len) +
             1.0;
 
         if (available && (ratio > ratio_thres)) {
@@ -1208,6 +1211,7 @@ static void calculate_gf_length(AV1_COMP *cpi, int max_gop_length,
   const int active_min_gf_interval = rc->min_gf_interval;
   const int active_max_gf_interval =
       AOMMIN(rc->max_gf_interval, max_gop_length);
+  const int min_shrink_int = AOMMIN(MIN_SHRINK_LEN, active_min_gf_interval);
 
   i = 0;
   max_intervals = cpi->lap_enabled ? 1 : max_intervals;
@@ -1244,9 +1248,8 @@ static void calculate_gf_length(AV1_COMP *cpi, int max_gop_length,
       flash_detected = detect_flash(twopass, 0);
       // TODO(bohanli): remove redundant accumulations here, or unify
       // this and the ones in define_gf_group
-      accumulate_next_frame_stats(&next_frame, frame_info, twopass,
-                                  flash_detected, rc->frames_since_key, i, 0,
-                                  rc->min_gf_interval, &gf_stats);
+      accumulate_next_frame_stats(&next_frame, frame_info, flash_detected,
+                                  rc->frames_since_key, i, &gf_stats);
 
       cut_here = detect_gf_cut(cpi, i, cur_start, flash_detected,
                                active_max_gf_interval, active_min_gf_interval,
@@ -1254,6 +1257,13 @@ static void calculate_gf_length(AV1_COMP *cpi, int max_gop_length,
     }
     if (cut_here) {
       cur_last = i - 1;  // the current last frame in the gf group
+      if (cpi->oxcf.kf_cfg.fwd_kf_enabled && rc->next_is_fwd_key) {
+        const int frames_left = rc->frames_to_key - i;
+        const int min_int = AOMMIN(MIN_FWD_KF_INTERVAL, active_min_gf_interval);
+        if (frames_left < min_int) {
+          cur_last = rc->frames_to_key - min_int - 1;
+        }
+      }
       // only try shrinking if interval smaller than active_max_gf_interval
       if (cur_last - cur_start <= active_max_gf_interval) {
         // determine in the current decided gop the higher and lower errs
@@ -1289,12 +1299,13 @@ static void calculate_gf_length(AV1_COMP *cpi, int max_gop_length,
             (!reset && si[cur_last - cur_start + before_pad] < SI_LOW)) {
           // try not to cut in high err area
           set_last_prev_low_err(&cur_start, &cur_last, cut_pos, count_cuts,
-                                before_pad, ratio, is_high, si, prev_lows);
+                                before_pad, ratio, is_high, si, prev_lows,
+                                min_shrink_int);
         }  // if current frame high error
         // count how many trailing lower error frames we have in this decided
         // gf group
         prev_lows = 0;
-        for (n = cur_last - 1; n > cur_start + MIN_SHRINK_LEN; n--) {
+        for (n = cur_last - 1; n > cur_start + min_shrink_int; n--) {
           if (is_high[n - cur_start + before_pad] == 0 &&
               (si[n - cur_start + before_pad] > SI_HIGH || reset)) {
             prev_lows++;
@@ -1351,9 +1362,11 @@ static void define_gf_group_pass0(AV1_COMP *cpi,
                                   const EncodeFrameParams *const frame_params) {
   RATE_CONTROL *const rc = &cpi->rc;
   GF_GROUP *const gf_group = &cpi->gf_group;
+  const AV1EncoderConfig *const oxcf = &cpi->oxcf;
+  const GFConfig *const gf_cfg = &oxcf->gf_cfg;
   int target;
 
-  if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ) {
+  if (oxcf->aq_mode == CYCLIC_REFRESH_AQ) {
     av1_cyclic_refresh_set_golden_update(cpi);
   } else {
     rc->baseline_gf_interval = rc->gf_intervals[rc->cur_gf_index];
@@ -1371,12 +1384,13 @@ static void define_gf_group_pass0(AV1_COMP *cpi,
   rc->constrained_gf_group =
       (rc->baseline_gf_interval >= rc->frames_to_key) ? 1 : 0;
 
-  gf_group->max_layer_depth_allowed = cpi->oxcf.gf_max_pyr_height;
+  gf_group->max_layer_depth_allowed = oxcf->gf_cfg.gf_max_pyr_height;
 
   // Rare case when the look-ahead is less than the target GOP length, can't
   // generate ARF frame.
-  if (rc->baseline_gf_interval > cpi->oxcf.lag_in_frames ||
-      !is_altref_enabled(cpi) || rc->baseline_gf_interval < rc->min_gf_interval)
+  if (rc->baseline_gf_interval > gf_cfg->lag_in_frames ||
+      !is_altref_enabled(gf_cfg->lag_in_frames, gf_cfg->enable_auto_arf) ||
+      rc->baseline_gf_interval < rc->min_gf_interval)
     gf_group->max_layer_depth_allowed = 0;
 
   // Set up the structure of this Group-Of-Pictures (same as GF_GROUP)
@@ -1386,7 +1400,7 @@ static void define_gf_group_pass0(AV1_COMP *cpi,
   // TODO(sarahparker) Extend this to work with pyramid structure.
   for (int cur_index = 0; cur_index < gf_group->size; ++cur_index) {
     const FRAME_UPDATE_TYPE cur_update_type = gf_group->update_type[cur_index];
-    if (cpi->oxcf.rc_mode == AOM_CBR) {
+    if (oxcf->rc_mode == AOM_CBR) {
       if (cur_update_type == KEY_FRAME) {
         target = av1_calc_iframe_target_size_one_pass_cbr(cpi);
       } else {
@@ -1412,9 +1426,11 @@ static INLINE void set_baseline_gf_interval(AV1_COMP *cpi, int arf_position,
   // Set the interval until the next gf.
   // If forward keyframes are enabled, ensure the final gf group obeys the
   // MIN_FWD_KF_INTERVAL.
-  if (cpi->oxcf.fwd_kf_enabled && use_alt_ref &&
-      ((twopass->stats_in - arf_position + rc->frames_to_key) <
-       twopass->stats_buf_ctx->stats_in_end) &&
+  const int is_last_kf =
+      (twopass->stats_in - arf_position + rc->frames_to_key) >=
+      twopass->stats_buf_ctx->stats_in_end;
+
+  if (cpi->oxcf.kf_cfg.fwd_kf_enabled && use_alt_ref && !is_last_kf &&
       cpi->rc.next_is_fwd_key) {
     if (arf_position == rc->frames_to_key) {
       rc->baseline_gf_interval = arf_position;
@@ -1465,8 +1481,6 @@ static void init_gf_stats(GF_GROUP_STATS *gf_stats) {
   gf_stats->avg_wavelet_energy = 0.0;
   gf_stats->avg_raw_err_stdev = 0.0;
   gf_stats->non_zero_stdev_count = 0;
-
-  gf_stats->allow_alt_ref = 0;
 }
 
 // Analyse and define a gf/arf group.
@@ -1476,12 +1490,13 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
                             int max_gop_length, int is_final_pass) {
   AV1_COMMON *const cm = &cpi->common;
   RATE_CONTROL *const rc = &cpi->rc;
-  AV1EncoderConfig *const oxcf = &cpi->oxcf;
+  const AV1EncoderConfig *const oxcf = &cpi->oxcf;
   TWO_PASS *const twopass = &cpi->twopass;
   FIRSTPASS_STATS next_frame;
   const FIRSTPASS_STATS *const start_pos = twopass->stats_in;
   GF_GROUP *gf_group = &cpi->gf_group;
   FRAME_INFO *frame_info = &cpi->frame_info;
+  const GFConfig *const gf_cfg = &oxcf->gf_cfg;
   int i;
 
   int flash_detected;
@@ -1490,7 +1505,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
                             frame_params->frame_type == INTRA_ONLY_FRAME;
   const int arf_active_or_kf = is_intra_only || rc->source_alt_ref_active;
 
-  cpi->internal_altref_allowed = (oxcf->gf_max_pyr_height > 1);
+  cpi->internal_altref_allowed = (gf_cfg->gf_max_pyr_height > 1);
 
   // Reset the GF group data structures unless this is a key
   // frame in which case it will already have been done.
@@ -1515,8 +1530,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
   init_gf_stats(&gf_stats);
   GF_FRAME_STATS first_frame_stats, last_frame_stats;
 
-  gf_stats.allow_alt_ref = is_altref_enabled(cpi);
-  const int can_disable_arf = (oxcf->gf_min_pyr_height == MIN_PYRAMID_LVL);
+  const int can_disable_arf = (gf_cfg->gf_min_pyr_height == MIN_PYRAMID_LVL);
 
   // Load stats for the current frame.
   double mod_frame_err =
@@ -1563,9 +1577,8 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
     flash_detected = detect_flash(twopass, 0);
 
     // accumulate stats for next frame
-    accumulate_next_frame_stats(
-        &next_frame, frame_info, twopass, flash_detected, rc->frames_since_key,
-        i, can_disable_arf, rc->min_gf_interval, &gf_stats);
+    accumulate_next_frame_stats(&next_frame, frame_info, flash_detected,
+                                rc->frames_since_key, i, &gf_stats);
 
     *this_frame = next_frame;
   }
@@ -1582,7 +1595,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
   // Was the group length constrained by the requirement for a new KF?
   rc->constrained_gf_group = (i >= rc->frames_to_key) ? 1 : 0;
 
-  const int num_mbs = (cpi->oxcf.resize_mode != RESIZE_NONE)
+  const int num_mbs = (oxcf->resize_cfg.resize_mode != RESIZE_NONE)
                           ? cpi->initial_mbs
                           : cm->mi_params.MBs;
   assert(num_mbs > 0);
@@ -1595,7 +1608,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
   //   avg_raw_err_stdev:       average of the standard deviation of (0,0)
   //                            motion error per block of each frame.
   const int can_disable_internal_arfs =
-      (oxcf->gf_min_pyr_height <= MIN_PYRAMID_LVL + 1);
+      (gf_cfg->gf_min_pyr_height <= MIN_PYRAMID_LVL + 1);
   if (can_disable_internal_arfs &&
       gf_stats.zero_motion_accumulator > MIN_ZERO_MOTION &&
       gf_stats.avg_sr_coded_error / num_mbs < MAX_SR_CODED_ERROR &&
@@ -1605,15 +1618,14 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
 
   int use_alt_ref;
   if (can_disable_arf) {
-    use_alt_ref = !is_almost_static(gf_stats.zero_motion_accumulator,
-                                    twopass->kf_zeromotion_pct) &&
-                  gf_stats.allow_alt_ref && (i < cpi->oxcf.lag_in_frames) &&
-                  (i >= MIN_GF_INTERVAL) &&
-                  (cpi->oxcf.gf_max_pyr_height > MIN_PYRAMID_LVL);
+    use_alt_ref =
+        !is_almost_static(gf_stats.zero_motion_accumulator,
+                          twopass->kf_zeromotion_pct, cpi->lap_enabled) &&
+        rc->use_arf_in_this_kf_group && (i < gf_cfg->lag_in_frames) &&
+        (i >= MIN_GF_INTERVAL) && (gf_cfg->gf_max_pyr_height > MIN_PYRAMID_LVL);
 
     // TODO(urvang): Improve and use model for VBR, CQ etc as well.
-    if (use_alt_ref && cpi->oxcf.rc_mode == AOM_Q &&
-        cpi->oxcf.cq_level <= 200) {
+    if (use_alt_ref && oxcf->rc_mode == AOM_Q && oxcf->cq_level <= 200) {
       aom_clear_system_state();
       float features[21];
       get_features_from_gf_stats(
@@ -1625,9 +1637,9 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
       use_alt_ref = (score <= 0.0);
     }
   } else {
-    assert(cpi->oxcf.gf_max_pyr_height > MIN_PYRAMID_LVL);
+    assert(gf_cfg->gf_max_pyr_height > MIN_PYRAMID_LVL);
     use_alt_ref =
-        gf_stats.allow_alt_ref && (i < cpi->oxcf.lag_in_frames) && (i > 2);
+        rc->use_arf_in_this_kf_group && (i < gf_cfg->lag_in_frames) && (i > 2);
   }
 
 #define REDUCE_GF_LENGTH_THRESH 4
@@ -1637,9 +1649,9 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
   // The length reduction strategy is tweaked for certain cases, and doesn't
   // work well for certain other cases.
   const int allow_gf_length_reduction =
-      ((cpi->oxcf.rc_mode == AOM_Q && cpi->oxcf.cq_level <= 128) ||
+      ((oxcf->rc_mode == AOM_Q && oxcf->cq_level <= 128) ||
        !cpi->internal_altref_allowed) &&
-      !is_lossless_requested(&cpi->oxcf);
+      !is_lossless_requested(oxcf);
 
   if (allow_gf_length_reduction && use_alt_ref) {
     // adjust length of this gf group if one of the following condition met
@@ -1671,7 +1683,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
   // Should we use the alternate reference frame.
   if (use_alt_ref) {
     rc->source_alt_ref_pending = 1;
-    gf_group->max_layer_depth_allowed = cpi->oxcf.gf_max_pyr_height;
+    gf_group->max_layer_depth_allowed = gf_cfg->gf_max_pyr_height;
     set_baseline_gf_interval(cpi, i, active_max_gf_interval, use_alt_ref,
                              is_final_pass);
 
@@ -1711,7 +1723,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
 
 #define LAST_ALR_BOOST_FACTOR 0.2f
   rc->arf_boost_factor = 1.0;
-  if (rc->source_alt_ref_pending && !is_lossless_requested(&cpi->oxcf)) {
+  if (rc->source_alt_ref_pending && !is_lossless_requested(oxcf)) {
     // Reduce the boost of altref in the last gf group
     if (rc->frames_to_key - i == REDUCE_GF_LENGTH_BY ||
         rc->frames_to_key - i == 0) {
@@ -1734,7 +1746,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
   // where there could be significant overshoot than for easier
   // sections where we do not wish to risk creating an overshoot
   // of the allocated bit budget.
-  if ((cpi->oxcf.rc_mode != AOM_Q) && (rc->baseline_gf_interval > 1)) {
+  if ((oxcf->rc_mode != AOM_Q) && (rc->baseline_gf_interval > 1)) {
     const int vbr_group_bits_per_frame =
         (int)(gf_group_bits / rc->baseline_gf_interval);
     const double group_av_err =
@@ -1748,7 +1760,7 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
     int tmp_q;
     // rc factor is a weight factor that corrects for local rate control drift.
     double rc_factor = 1.0;
-    int64_t bits = cpi->oxcf.target_bandwidth;
+    int64_t bits = oxcf->target_bandwidth;
 
     if (bits > 0) {
       int rate_error;
@@ -1970,7 +1982,7 @@ static int test_candidate_kf(TWO_PASS *twopass,
 #define MIN_STATIC_KF_BOOST 5400  // Minimum boost for static KF interval
 
 static int detect_app_forced_key(AV1_COMP *cpi) {
-  if (cpi->oxcf.fwd_kf_enabled) cpi->rc.next_is_fwd_key = 1;
+  if (cpi->oxcf.kf_cfg.fwd_kf_enabled) cpi->rc.next_is_fwd_key = 1;
   int num_frames_to_app_forced_key = is_forced_keyframe_pending(
       cpi->lookahead, cpi->lookahead->max_sz, cpi->compressor_stage);
   if (num_frames_to_app_forced_key != -1) cpi->rc.next_is_fwd_key = 0;
@@ -2002,6 +2014,7 @@ static int define_kf_interval(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
   TWO_PASS *const twopass = &cpi->twopass;
   RATE_CONTROL *const rc = &cpi->rc;
   const AV1EncoderConfig *const oxcf = &cpi->oxcf;
+  const KeyFrameCfg *const kf_cfg = &oxcf->kf_cfg;
   double recent_loop_decay[FRAMES_TO_CHECK_DECAY];
   FIRSTPASS_STATS last_frame;
   double decay_accumulator = 1.0;
@@ -2044,12 +2057,13 @@ static int define_kf_interval(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
     input_stats(twopass, this_frame);
 
     // Provided that we are not at the end of the file...
-    if ((cpi->rc.enable_scenecut_detection > 0) && cpi->oxcf.auto_key &&
+    if ((cpi->rc.enable_scenecut_detection > 0) && kf_cfg->auto_key &&
         twopass->stats_in < twopass->stats_buf_ctx->stats_in_end) {
       double loop_decay_rate;
 
       // Check for a scene cut.
-      if (test_candidate_kf(twopass, &last_frame, this_frame, twopass->stats_in,
+      if (frames_since_key >= kf_cfg->key_freq_min &&
+          test_candidate_kf(twopass, &last_frame, this_frame, twopass->stats_in,
                             frames_since_key, oxcf->rc_mode,
                             cpi->rc.enable_scenecut_detection)) {
         scenecut_detected = 1;
@@ -2070,10 +2084,15 @@ static int define_kf_interval(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
 
       // Special check for transition or high motion followed by a
       // static scene.
-      if (detect_transition_to_still(twopass, rc->min_gf_interval, i,
-                                     cpi->oxcf.key_freq - i, loop_decay_rate,
+      if (frames_since_key >= kf_cfg->key_freq_min &&
+          detect_transition_to_still(twopass, rc->min_gf_interval, i,
+                                     kf_cfg->key_freq_max - i, loop_decay_rate,
                                      decay_accumulator)) {
         scenecut_detected = 1;
+        // In the case of transition followed by a static scene, the key frame
+        // could be a good predictor for the following frames, therefore we
+        // do not use an arf.
+        rc->use_arf_in_this_kf_group = 0;
         break;
       }
 
@@ -2082,8 +2101,8 @@ static int define_kf_interval(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
       ++frames_since_key;
 
       // If we don't have a real key frame within the next two
-      // key_freq intervals then break out of the loop.
-      if (frames_to_key >= 2 * cpi->oxcf.key_freq) break;
+      // key_freq_max intervals then break out of the loop.
+      if (frames_to_key >= 2 * kf_cfg->key_freq_max) break;
     } else {
       ++frames_to_key;
       ++frames_since_key;
@@ -2096,6 +2115,8 @@ static int define_kf_interval(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
 
   if (cpi->lap_enabled && !scenecut_detected)
     frames_to_key = num_frames_to_next_key;
+
+  if (kf_cfg->fwd_kf_enabled && scenecut_detected) rc->next_is_fwd_key = 0;
 
   return frames_to_key;
 }
@@ -2128,7 +2149,7 @@ static int64_t get_kf_group_bits(AV1_COMP *cpi, double kf_group_err,
   if (cpi->lap_enabled) {
     kf_group_bits = (int64_t)rc->frames_to_key * rc->avg_frame_bandwidth;
     if (cpi->oxcf.vbr_corpus_complexity_lap) {
-      const int num_mbs = (cpi->oxcf.resize_mode != RESIZE_NONE)
+      const int num_mbs = (cpi->oxcf.resize_cfg.resize_mode != RESIZE_NONE)
                               ? cpi->initial_mbs
                               : cpi->common.mi_params.MBs;
 
@@ -2252,11 +2273,15 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   AV1_COMMON *const cm = &cpi->common;
   CurrentFrame *const current_frame = &cm->current_frame;
   const AV1EncoderConfig *const oxcf = &cpi->oxcf;
+  const KeyFrameCfg *const kf_cfg = &oxcf->kf_cfg;
   const FIRSTPASS_STATS first_frame = *this_frame;
   FIRSTPASS_STATS next_frame;
   av1_zero(next_frame);
 
   rc->frames_since_key = 0;
+  // Use arfs if possible.
+  rc->use_arf_in_this_kf_group = is_altref_enabled(
+      oxcf->gf_cfg.lag_in_frames, oxcf->gf_cfg.enable_auto_arf);
 
   // Reset the GF group data structures.
   av1_zero(*gf_group);
@@ -2277,7 +2302,7 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     if (num_frames_to_app_forced_key != -1)
       rc->frames_to_key = num_frames_to_app_forced_key;
     else
-      rc->frames_to_key = AOMMAX(1, cpi->oxcf.key_freq);
+      rc->frames_to_key = AOMMAX(1, kf_cfg->key_freq_max);
     correct_frames_to_key(cpi);
     rc->kf_boost = DEFAULT_KF_BOOST;
     rc->source_alt_ref_active = 0;
@@ -2305,12 +2330,12 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   kf_mod_err = calculate_modified_err(frame_info, twopass, oxcf, this_frame);
 
   frames_to_key =
-      define_kf_interval(cpi, this_frame, &kf_group_err, oxcf->key_freq);
+      define_kf_interval(cpi, this_frame, &kf_group_err, kf_cfg->key_freq_max);
 
   if (frames_to_key != -1)
-    rc->frames_to_key = AOMMIN(oxcf->key_freq, frames_to_key);
+    rc->frames_to_key = AOMMIN(kf_cfg->key_freq_max, frames_to_key);
   else
-    rc->frames_to_key = oxcf->key_freq;
+    rc->frames_to_key = kf_cfg->key_freq_max;
 
   if (cpi->lap_enabled) correct_frames_to_key(cpi);
 
@@ -2318,7 +2343,7 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   // We already breakout of the loop above at 2x max.
   // This code centers the extra kf if the actual natural interval
   // is between 1x and 2x.
-  if (cpi->oxcf.auto_key && rc->frames_to_key > cpi->oxcf.key_freq) {
+  if (kf_cfg->auto_key && rc->frames_to_key > kf_cfg->key_freq_max) {
     FIRSTPASS_STATS tmp_frame = first_frame;
 
     rc->frames_to_key /= 2;
@@ -2337,11 +2362,13 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
     rc->next_key_frame_forced = 1;
   } else if ((twopass->stats_in == twopass->stats_buf_ctx->stats_in_end &&
               is_stat_consumption_stage_twopass(cpi)) ||
-             rc->frames_to_key >= cpi->oxcf.key_freq) {
+             rc->frames_to_key >= kf_cfg->key_freq_max) {
     rc->next_key_frame_forced = 1;
   } else {
     rc->next_key_frame_forced = 0;
   }
+
+  if (kf_cfg->fwd_kf_enabled) rc->next_is_fwd_key |= rc->next_key_frame_forced;
 
   // Special case for the last key frame of the file.
   if (twopass->stats_in >= twopass->stats_buf_ctx->stats_in_end) {
@@ -2352,14 +2379,14 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
 
   // Calculate the number of bits that should be assigned to the kf group.
   if ((twopass->bits_left > 0 && twopass->modified_error_left > 0.0) ||
-      (cpi->lap_enabled && cpi->oxcf.rc_mode != AOM_Q)) {
+      (cpi->lap_enabled && oxcf->rc_mode != AOM_Q)) {
     // Maximum number of bits for a single normal frame (not key frame).
-    const int max_bits = frame_max_bits(rc, &cpi->oxcf);
+    const int max_bits = frame_max_bits(rc, oxcf);
 
     // Maximum number of bits allocated to the key frame group.
     int64_t max_grp_bits;
 
-    if (cpi->oxcf.vbr_corpus_complexity_lap) {
+    if (oxcf->vbr_corpus_complexity_lap) {
       kf_group_avg_error = get_kf_group_avg_error(
           twopass, &first_frame, start_position, rc->frames_to_key);
     }
@@ -2395,9 +2422,9 @@ static void find_next_key_frame(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame) {
   rc->kf_boost = (int)boost_score;
 
   if (cpi->lap_enabled) {
-    if (cpi->oxcf.rc_mode == AOM_Q)
+    if (oxcf->rc_mode == AOM_Q) {
       rc->kf_boost = get_projected_kf_boost(cpi);
-    else if (cpi->oxcf.rc_mode == AOM_VBR) {
+    } else {
       // TODO(any): Explore using average frame stats for AOM_Q as well.
       boost_score = get_kf_boost_score(
           cpi, kf_raw_err, &zero_motion_accumulator, &sr_accumulator, 1);
@@ -2536,7 +2563,7 @@ static void process_first_pass_stats(AV1_COMP *cpi,
   if (err == EOF) return;
 
   {
-    const int num_mbs = (cpi->oxcf.resize_mode != RESIZE_NONE)
+    const int num_mbs = (cpi->oxcf.resize_cfg.resize_mode != RESIZE_NONE)
                             ? cpi->initial_mbs
                             : cm->mi_params.MBs;
     // The multiplication by 256 reverses a scaling factor of (>> 8)
@@ -2578,6 +2605,7 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
   RATE_CONTROL *const rc = &cpi->rc;
   TWO_PASS *const twopass = &cpi->twopass;
   GF_GROUP *const gf_group = &cpi->gf_group;
+  const AV1EncoderConfig *const oxcf = &cpi->oxcf;
 
   if (is_stat_consumption_stage(cpi) && !twopass->stats_in) return;
 
@@ -2599,7 +2627,7 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
 
       // Do the firstpass stats indicate that this frame is skippable for the
       // partition search?
-      if (cpi->sf.part_sf.allow_partition_search_skip && cpi->oxcf.pass == 2) {
+      if (cpi->sf.part_sf.allow_partition_search_skip && oxcf->pass == 2) {
         cpi->partition_search_skippable_frame = is_skippable_frame(cpi);
       }
 
@@ -2609,18 +2637,19 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
 
   aom_clear_system_state();
 
-  if (cpi->oxcf.rc_mode == AOM_Q) rc->active_worst_quality = cpi->oxcf.cq_level;
+  if (oxcf->rc_mode == AOM_Q) rc->active_worst_quality = oxcf->cq_level;
   FIRSTPASS_STATS this_frame;
   av1_zero(this_frame);
   // call above fn
   if (is_stat_consumption_stage(cpi)) {
     process_first_pass_stats(cpi, &this_frame);
   } else {
-    rc->active_worst_quality = cpi->oxcf.cq_level;
+    rc->active_worst_quality = oxcf->cq_level;
   }
 
   // Keyframe and section processing.
-  if (rc->frames_to_key == 0 || (frame_flags & FRAMEFLAGS_KEY)) {
+  if (rc->frames_to_key <= 0 || (frame_flags & FRAMEFLAGS_KEY)) {
+    assert(rc->frames_to_key >= -1);
     FIRSTPASS_STATS this_frame_copy;
     this_frame_copy = this_frame;
     frame_params->frame_type = KEY_FRAME;
@@ -2629,13 +2658,13 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
     this_frame = this_frame_copy;
   } else {
     frame_params->frame_type = INTER_FRAME;
-    const int altref_enabled = is_altref_enabled(cpi);
-    const int sframe_dist = cpi->oxcf.sframe_dist;
-    const int sframe_mode = cpi->oxcf.sframe_mode;
-    const int sframe_enabled = cpi->oxcf.sframe_enabled;
+    const int altref_enabled = is_altref_enabled(oxcf->gf_cfg.lag_in_frames,
+                                                 oxcf->gf_cfg.enable_auto_arf);
+    const int sframe_dist = oxcf->kf_cfg.sframe_dist;
+    const int sframe_mode = oxcf->kf_cfg.sframe_mode;
     const int update_type = gf_group->update_type[gf_group->index];
     CurrentFrame *const current_frame = &cpi->common.current_frame;
-    if (sframe_enabled) {
+    if (sframe_dist != 0) {
       if (altref_enabled) {
         if (sframe_mode == 1) {
           // sframe_mode == 1: insert sframe if it matches altref frame.
@@ -2681,7 +2710,7 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
 
     reset_fpf_position(twopass, start_position);
 
-    int max_gop_length = (cpi->oxcf.lag_in_frames >= 32 &&
+    int max_gop_length = (oxcf->gf_cfg.lag_in_frames >= 32 &&
                           is_stat_consumption_stage_twopass(cpi))
                              ? MAX_GF_INTERVAL
                              : MAX_GF_LENGTH_LAP;
@@ -2689,7 +2718,7 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
       calculate_gf_length(cpi, max_gop_length, MAX_NUM_GF_INTERVALS);
     }
 
-    if (max_gop_length > 16) {
+    if (max_gop_length > 16 && oxcf->enable_tpl_model) {
       if (rc->gf_intervals[rc->cur_gf_index] - 1 > 16) {
         // The calculate_gf_length function is previously used with
         // max_gop_length = 32 with look-ahead gf intervals.
@@ -2730,7 +2759,7 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
 
   // Do the firstpass stats indicate that this frame is skippable for the
   // partition search?
-  if (cpi->sf.part_sf.allow_partition_search_skip && cpi->oxcf.pass == 2) {
+  if (cpi->sf.part_sf.allow_partition_search_skip && oxcf->pass == 2) {
     cpi->partition_search_skippable_frame = is_skippable_frame(cpi);
   }
 
@@ -2891,7 +2920,7 @@ void av1_twopass_postencode_update(AV1_COMP *cpi) {
             (double)twopass->rolling_arf_group_actual_bits /
                 (double)twopass->rolling_arf_group_target_bits,
             twopass->bpm_factor,
-            av1_convert_qindex_to_q(quant_params->base_qindex,
+            av1_convert_qindex_to_q(cpi->common.quant_params.base_qindex,
                                     cm->seq_params.bit_depth),
             av1_convert_qindex_to_q(rc->active_worst_quality,
                                     cm->seq_params.bit_depth));

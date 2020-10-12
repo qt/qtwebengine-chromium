@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <utility>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -130,7 +131,8 @@ class WrapperMdnsResponderAdapterFactory final
     : public MdnsResponderAdapterFactory,
       public FakeMdnsResponderAdapter::LifetimeObserver {
  public:
-  WrapperMdnsResponderAdapterFactory(FakeMdnsResponderAdapterFactory* ptr)
+  explicit WrapperMdnsResponderAdapterFactory(
+      FakeMdnsResponderAdapterFactory* ptr)
       : other_(ptr) {}
 
   std::unique_ptr<MdnsResponderAdapter> Create() override {

@@ -130,4 +130,58 @@ TEST(ErrorOrTest, ErrorOrWithValue) {
   EXPECT_EQ(value.message, "Riverrun");
 }
 
+TEST(ErrorOrTest, ComparisonTests) {
+  ErrorOr<int> e1(7);
+  ErrorOr<int> e2(7);
+  ErrorOr<int> e3(2);
+  ErrorOr<int> e4(10);
+
+  ErrorOr<int> e5(Error::Code::kAgain);
+  ErrorOr<int> e6(Error::Code::kCborParsing);
+  ErrorOr<int> e7(Error::Code::kCborEncoding);
+  ErrorOr<int> e8(Error::Code::kCborEncoding);
+
+  ErrorOr<int> e9(Error::Code::kAgain, "foo");
+  ErrorOr<int> e10(Error::Code::kAgain, "bar");
+
+  EXPECT_EQ(e1, e2);
+  EXPECT_EQ(e7, e8);
+  EXPECT_LE(e1, e2);
+  EXPECT_GE(e7, e8);
+
+  EXPECT_NE(e1, e3);
+  EXPECT_NE(e1, e4);
+  EXPECT_NE(e1, e5);
+  EXPECT_NE(e1, e6);
+  EXPECT_NE(e1, e7);
+  EXPECT_NE(e5, e2);
+  EXPECT_NE(e5, e3);
+  EXPECT_NE(e5, e4);
+  EXPECT_NE(e5, e6);
+  EXPECT_NE(e5, e9);
+  EXPECT_NE(e5, e10);
+  EXPECT_NE(e9, e10);
+
+  EXPECT_LT(e3, e1);
+  EXPECT_GT(e4, e1);
+  EXPECT_LT(e5, e6);
+  EXPECT_LE(e5, e9);
+  EXPECT_LE(e5, e10);
+  EXPECT_LE(e9, e10);
+  EXPECT_GT(e7, e6);
+
+  EXPECT_GT(e1, e5);
+  EXPECT_GT(e2, e5);
+  EXPECT_GT(e3, e5);
+  EXPECT_GT(e4, e5);
+  EXPECT_GT(e1, e6);
+  EXPECT_GT(e2, e6);
+  EXPECT_GT(e3, e6);
+  EXPECT_GT(e4, e6);
+  EXPECT_GT(e1, e7);
+  EXPECT_GT(e2, e7);
+  EXPECT_GT(e3, e7);
+  EXPECT_GT(e4, e7);
+}
+
 }  // namespace openscreen

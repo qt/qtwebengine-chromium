@@ -442,8 +442,10 @@ void ProcessStatsDataSource::WriteAllProcessStats() {
 
     if (record_thread_time_in_state_ && ShouldWriteThreadStats(pid)) {
       if (auto task_dir = OpenProcTaskDir(pid)) {
-        while (int32_t tid = ReadNextNumericDir(*task_dir))
+        while (int32_t tid = ReadNextNumericDir(*task_dir)) {
           WriteThreadStats(pid, tid);
+          pids.insert(tid);
+        }
       }
     }
 
@@ -615,9 +617,15 @@ void ProcessStatsDataSource::WriteThreadStats(int32_t pid, int32_t tid) {
   // ...
   // Pairs of CPU frequency and the number of ticks at that frequency.
   std::string time_in_state = ReadProcPidFile(tid, "time_in_state");
+  // Bail if time_in_state does not have cpuN headings. Parsing this data
+  // without them is more complicated and requires additional information.
+  if (!base::StartsWith(time_in_state, "cpu"))
+    return;
   protos::pbzero::ProcessStats_Thread* thread = nullptr;
   base::StringSplitter entries(std::move(time_in_state), '\n');
   uint32_t last_cpu = 0;
+  // Whether all frequencies with non-zero ticks are added to cpu_freq_indices.
+  bool full = true;
   while (entries.Next()) {
     std::string line(entries.cur_token());
     if (base::StartsWith(line, "cpu")) {
@@ -653,7 +661,12 @@ void ProcessStatsDataSource::WriteThreadStats(int32_t pid, int32_t tid) {
       }
       thread->add_cpu_freq_indices(freq_index);
       thread->add_cpu_freq_ticks(ticks);
+    } else {
+      full = false;
     }
+  }
+  if (full && thread != nullptr) {
+    thread->set_cpu_freq_full(true);
   }
 }
 

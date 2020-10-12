@@ -54,22 +54,6 @@ namespace dawn_native { namespace metal {
             return result;
         }
 
-        MTLTextureType MetalTextureType(wgpu::TextureDimension dimension,
-                                        unsigned int arrayLayers,
-                                        unsigned int sampleCount) {
-            switch (dimension) {
-                case wgpu::TextureDimension::e2D:
-                    if (sampleCount > 1) {
-                        ASSERT(arrayLayers == 1);
-                        return MTLTextureType2DMultisample;
-                    } else {
-                        return (arrayLayers > 1) ? MTLTextureType2DArray : MTLTextureType2D;
-                    }
-                default:
-                    UNREACHABLE();
-            }
-        }
-
         MTLTextureType MetalTextureViewType(wgpu::TextureViewDimension dimension,
                                             unsigned int sampleCount) {
             switch (dimension) {
@@ -275,7 +259,7 @@ namespace dawn_native { namespace metal {
             return DAWN_VALIDATION_ERROR("IOSurface mip level count must be 1");
         }
 
-        if (descriptor->arrayLayerCount != 1) {
+        if (descriptor->size.depth != 1) {
             return DAWN_VALIDATION_ERROR("IOSurface array layer count must be 1");
         }
 
@@ -301,20 +285,38 @@ namespace dawn_native { namespace metal {
 
     MTLTextureDescriptor* CreateMetalTextureDescriptor(const TextureDescriptor* descriptor) {
         MTLTextureDescriptor* mtlDesc = [MTLTextureDescriptor new];
-        mtlDesc.textureType = MetalTextureType(descriptor->dimension, descriptor->arrayLayerCount,
-                                               descriptor->sampleCount);
-        mtlDesc.usage = MetalTextureUsage(descriptor->usage);
-        mtlDesc.pixelFormat = MetalPixelFormat(descriptor->format);
 
         mtlDesc.width = descriptor->size.width;
         mtlDesc.height = descriptor->size.height;
-        mtlDesc.depth = descriptor->size.depth;
-
+        mtlDesc.sampleCount = descriptor->sampleCount;
+        mtlDesc.usage = MetalTextureUsage(descriptor->usage);
+        mtlDesc.pixelFormat = MetalPixelFormat(descriptor->format);
         mtlDesc.mipmapLevelCount = descriptor->mipLevelCount;
-        mtlDesc.arrayLength = descriptor->arrayLayerCount;
         mtlDesc.storageMode = MTLStorageModePrivate;
 
-        mtlDesc.sampleCount = descriptor->sampleCount;
+        // Choose the correct MTLTextureType and paper over differences in how the array layer count
+        // is specified.
+        mtlDesc.depth = descriptor->size.depth;
+        mtlDesc.arrayLength = 1;
+        switch (descriptor->dimension) {
+            case wgpu::TextureDimension::e2D:
+                if (mtlDesc.depth > 1) {
+                    ASSERT(mtlDesc.sampleCount == 1);
+                    mtlDesc.textureType = MTLTextureType2DArray;
+                    mtlDesc.arrayLength = mtlDesc.depth;
+                    mtlDesc.depth = 1;
+                } else {
+                    if (mtlDesc.sampleCount > 1) {
+                        mtlDesc.textureType = MTLTextureType2DMultisample;
+                    } else {
+                        mtlDesc.textureType = MTLTextureType2D;
+                    }
+                }
+                break;
+
+            default:
+                UNREACHABLE();
+        }
 
         return mtlDesc;
     }
@@ -326,8 +328,8 @@ namespace dawn_native { namespace metal {
         [mtlDesc release];
 
         if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-            device->ConsumedError(ClearTexture(0, GetNumMipLevels(), 0, GetArrayLayers(),
-                                               TextureBase::ClearValue::NonZero));
+            device->ConsumedError(
+                ClearTexture(GetAllSubresources(), TextureBase::ClearValue::NonZero));
         }
     }
 
@@ -351,7 +353,7 @@ namespace dawn_native { namespace metal {
                                                                  plane:plane];
         [mtlDesc release];
 
-        SetIsSubresourceContentInitialized(descriptor->isCleared, 0, 1, 0, 1);
+        SetIsSubresourceContentInitialized(descriptor->isCleared, {0, 1, 0, 1});
     }
 
     Texture::~Texture() {
@@ -369,10 +371,7 @@ namespace dawn_native { namespace metal {
         return mMtlTexture;
     }
 
-    MaybeError Texture::ClearTexture(uint32_t baseMipLevel,
-                                     uint32_t levelCount,
-                                     uint32_t baseArrayLayer,
-                                     uint32_t layerCount,
+    MaybeError Texture::ClearTexture(const SubresourceRange& range,
                                      TextureBase::ClearValue clearValue) {
         Device* device = ToBackend(GetDevice());
 
@@ -389,11 +388,13 @@ namespace dawn_native { namespace metal {
 
             if (GetFormat().HasDepthOrStencil()) {
                 // Create a render pass to clear each subresource.
-                for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
-                    for (uint32_t arrayLayer = baseArrayLayer;
-                         arrayLayer < baseArrayLayer + layerCount; arrayLayer++) {
+                for (uint32_t level = range.baseMipLevel;
+                     level < range.baseMipLevel + range.levelCount; ++level) {
+                    for (uint32_t arrayLayer = range.baseArrayLayer;
+                         arrayLayer < range.baseArrayLayer + range.layerCount; arrayLayer++) {
                         if (clearValue == TextureBase::ClearValue::Zero &&
-                            IsSubresourceContentInitialized(level, 1, arrayLayer, 1)) {
+                            IsSubresourceContentInitialized(
+                                SubresourceRange::SingleSubresource(level, arrayLayer))) {
                             // Skip lazy clears if already initialized.
                             continue;
                         }
@@ -421,16 +422,19 @@ namespace dawn_native { namespace metal {
                 }
             } else {
                 ASSERT(GetFormat().IsColor());
-                MTLRenderPassDescriptor* descriptor = nil;
-                uint32_t attachment = 0;
+                for (uint32_t level = range.baseMipLevel;
+                     level < range.baseMipLevel + range.levelCount; ++level) {
+                    // Create multiple render passes with each subresource as a color attachment to
+                    // clear them all. Only do this for array layers to ensure all attachments have
+                    // the same size.
+                    MTLRenderPassDescriptor* descriptor = nil;
+                    uint32_t attachment = 0;
 
-                // Create multiple render passes with each subresource as a color attachment to
-                // clear them all.
-                for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
-                    for (uint32_t arrayLayer = baseArrayLayer;
-                         arrayLayer < baseArrayLayer + layerCount; arrayLayer++) {
+                    for (uint32_t arrayLayer = range.baseArrayLayer;
+                         arrayLayer < range.baseArrayLayer + range.layerCount; arrayLayer++) {
                         if (clearValue == TextureBase::ClearValue::Zero &&
-                            IsSubresourceContentInitialized(level, 1, arrayLayer, 1)) {
+                            IsSubresourceContentInitialized(
+                                SubresourceRange::SingleSubresource(level, arrayLayer))) {
                             // Skip lazy clears if already initialized.
                             continue;
                         }
@@ -456,16 +460,16 @@ namespace dawn_native { namespace metal {
                             descriptor = nil;
                         }
                     }
-                }
 
-                if (descriptor != nil) {
-                    commandContext->BeginRender(descriptor);
-                    commandContext->EndRender();
+                    if (descriptor != nil) {
+                        commandContext->BeginRender(descriptor);
+                        commandContext->EndRender();
+                    }
                 }
             }
         } else {
             // Compute the buffer size big enough to fill the largest mip.
-            Extent3D largestMipSize = GetMipLevelVirtualSize(baseMipLevel);
+            Extent3D largestMipSize = GetMipLevelVirtualSize(range.baseMipLevel);
 
             // Metal validation layers: sourceBytesPerRow must be at least 64.
             uint32_t largestMipBytesPerRow = std::max(
@@ -495,13 +499,15 @@ namespace dawn_native { namespace metal {
             id<MTLBuffer> uploadBuffer = ToBackend(uploadHandle.stagingBuffer)->GetBufferHandle();
 
             // Encode a buffer to texture copy to clear each subresource.
-            for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
+            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+                 ++level) {
                 Extent3D virtualSize = GetMipLevelVirtualSize(level);
 
-                for (uint32_t arrayLayer = baseArrayLayer; arrayLayer < baseArrayLayer + layerCount;
-                     ++arrayLayer) {
+                for (uint32_t arrayLayer = range.baseArrayLayer;
+                     arrayLayer < range.baseArrayLayer + range.layerCount; ++arrayLayer) {
                     if (clearValue == TextureBase::ClearValue::Zero &&
-                        IsSubresourceContentInitialized(level, 1, arrayLayer, 1)) {
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleSubresource(level, arrayLayer))) {
                         // Skip lazy clears if already initialized.
                         continue;
                     }
@@ -538,26 +544,20 @@ namespace dawn_native { namespace metal {
         }
 
         if (clearValue == TextureBase::ClearValue::Zero) {
-            SetIsSubresourceContentInitialized(true, baseMipLevel, levelCount, baseArrayLayer,
-                                               layerCount);
+            SetIsSubresourceContentInitialized(true, range);
             device->IncrementLazyClearCountForTesting();
         }
         return {};
     }
 
-    void Texture::EnsureSubresourceContentInitialized(uint32_t baseMipLevel,
-                                                      uint32_t levelCount,
-                                                      uint32_t baseArrayLayer,
-                                                      uint32_t layerCount) {
+    void Texture::EnsureSubresourceContentInitialized(const SubresourceRange& range) {
         if (!GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return;
         }
-        if (!IsSubresourceContentInitialized(baseMipLevel, levelCount, baseArrayLayer,
-                                             layerCount)) {
+        if (!IsSubresourceContentInitialized(range)) {
             // If subresource has not been initialized, clear it to black as it could
             // contain dirty bits from recycled memory
-            GetDevice()->ConsumedError(ClearTexture(baseMipLevel, levelCount, baseArrayLayer,
-                                                    layerCount, TextureBase::ClearValue::Zero));
+            GetDevice()->ConsumedError(ClearTexture(range, TextureBase::ClearValue::Zero));
         }
     }
 

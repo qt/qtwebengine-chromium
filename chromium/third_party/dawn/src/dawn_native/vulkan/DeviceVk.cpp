@@ -38,6 +38,7 @@
 #include "dawn_native/vulkan/StagingBufferVk.h"
 #include "dawn_native/vulkan/SwapChainVk.h"
 #include "dawn_native/vulkan/TextureVk.h"
+#include "dawn_native/vulkan/UtilsVulkan.h"
 #include "dawn_native/vulkan/VulkanError.h"
 
 namespace dawn_native { namespace vulkan {
@@ -82,7 +83,6 @@ namespace dawn_native { namespace vulkan {
             mDeleter = std::make_unique<FencedDeleter>(this);
         }
 
-        mMapRequestTracker = std::make_unique<MapRequestTracker>(this);
         mRenderPassCache = std::make_unique<RenderPassCache>(this);
         mResourceMemoryAllocator = std::make_unique<ResourceMemoryAllocator>(this);
 
@@ -125,6 +125,9 @@ namespace dawn_native { namespace vulkan {
         const PipelineLayoutDescriptor* descriptor) {
         return PipelineLayout::Create(this, descriptor);
     }
+    ResultOrError<QuerySetBase*> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
+        return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation");
+    }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
         return RenderPipeline::Create(this, descriptor);
@@ -156,7 +159,6 @@ namespace dawn_native { namespace vulkan {
     }
 
     MaybeError Device::TickImpl() {
-        CheckPassedSerials();
         RecycleCompletedCommands();
 
         Serial completedSerial = GetCompletedCommandSerial();
@@ -167,16 +169,11 @@ namespace dawn_native { namespace vulkan {
         }
         mBindGroupLayoutsPendingDeallocation.ClearUpTo(completedSerial);
 
-        mMapRequestTracker->Tick(completedSerial);
         mResourceMemoryAllocator->Tick(completedSerial);
         mDeleter->Tick(completedSerial);
 
         if (mRecordingContext.used) {
             DAWN_TRY(SubmitPendingCommands());
-        } else if (completedSerial == GetLastSubmittedCommandSerial()) {
-            // If there's no GPU work in flight we still need to artificially increment the serial
-            // so that CPU operations waiting on GPU completion can know they don't have to wait.
-            ArtificiallyIncrementSerials();
         }
 
         return {};
@@ -199,10 +196,6 @@ namespace dawn_native { namespace vulkan {
 
     VkQueue Device::GetQueue() const {
         return mQueue;
-    }
-
-    MapRequestTracker* Device::GetMapRequestTracker() const {
-        return mMapRequestTracker.get();
     }
 
     FencedDeleter* Device::GetFencedDeleter() const {
@@ -276,55 +269,28 @@ namespace dawn_native { namespace vulkan {
     ResultOrError<VulkanDeviceKnobs> Device::CreateDevice(VkPhysicalDevice physicalDevice) {
         VulkanDeviceKnobs usedKnobs = {};
 
-        float zero = 0.0f;
-        std::vector<const char*> layersToRequest;
-        std::vector<const char*> extensionsToRequest;
-        std::vector<VkDeviceQueueCreateInfo> queuesToRequest;
+        // Default to asking for all avilable known extensions.
+        usedKnobs.extensions = mDeviceInfo.extensions;
 
-        if (mDeviceInfo.debugMarker) {
-            extensionsToRequest.push_back(kExtensionNameExtDebugMarker);
-            usedKnobs.debugMarker = true;
+        // However only request the extensions that haven't been promoted in the device's apiVersion
+        std::vector<const char*> extensionNames;
+        for (uint32_t ext : IterateBitSet(usedKnobs.extensions.extensionBitSet)) {
+            const DeviceExtInfo& info = GetDeviceExtInfo(static_cast<DeviceExt>(ext));
+
+            if (info.versionPromoted > mDeviceInfo.properties.apiVersion) {
+                extensionNames.push_back(info.name);
+            }
         }
-        if (mDeviceInfo.externalMemory) {
-            extensionsToRequest.push_back(kExtensionNameKhrExternalMemory);
-            usedKnobs.externalMemory = true;
-        }
-        if (mDeviceInfo.externalMemoryFD) {
-            extensionsToRequest.push_back(kExtensionNameKhrExternalMemoryFD);
-            usedKnobs.externalMemoryFD = true;
-        }
-        if (mDeviceInfo.externalMemoryDmaBuf) {
-            extensionsToRequest.push_back(kExtensionNameExtExternalMemoryDmaBuf);
-            usedKnobs.externalMemoryDmaBuf = true;
-        }
-        if (mDeviceInfo.imageDrmFormatModifier) {
-            extensionsToRequest.push_back(kExtensionNameExtImageDrmFormatModifier);
-            usedKnobs.imageDrmFormatModifier = true;
-        }
-        if (mDeviceInfo.externalMemoryZirconHandle) {
-            extensionsToRequest.push_back(kExtensionNameFuchsiaExternalMemory);
-            usedKnobs.externalMemoryZirconHandle = true;
-        }
-        if (mDeviceInfo.externalSemaphore) {
-            extensionsToRequest.push_back(kExtensionNameKhrExternalSemaphore);
-            usedKnobs.externalSemaphore = true;
-        }
-        if (mDeviceInfo.externalSemaphoreFD) {
-            extensionsToRequest.push_back(kExtensionNameKhrExternalSemaphoreFD);
-            usedKnobs.externalSemaphoreFD = true;
-        }
-        if (mDeviceInfo.externalSemaphoreZirconHandle) {
-            extensionsToRequest.push_back(kExtensionNameFuchsiaExternalSemaphore);
-            usedKnobs.externalSemaphoreZirconHandle = true;
-        }
-        if (mDeviceInfo.swapchain) {
-            extensionsToRequest.push_back(kExtensionNameKhrSwapchain);
-            usedKnobs.swapchain = true;
-        }
-        if (mDeviceInfo.maintenance1) {
-            extensionsToRequest.push_back(kExtensionNameKhrMaintenance1);
-            usedKnobs.maintenance1 = true;
-        }
+
+        // Some device features can only be enabled using a VkPhysicalDeviceFeatures2 struct, which
+        // is supported by the VK_EXT_get_physical_properties2 instance extension, which was
+        // promoted as a core API in Vulkan 1.1.
+        //
+        // Prepare a VkPhysicalDeviceFeatures2 struct for this use case, it will only be populated
+        // if HasExt(DeviceExt::GetPhysicalDeviceProperties2) is true.
+        VkPhysicalDeviceFeatures2 features2 = {};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        PNextChainBuilder featuresChain(&features2);
 
         // Always require independentBlend because it is a core Dawn feature
         usedKnobs.features.independentBlend = VK_TRUE;
@@ -333,10 +299,36 @@ namespace dawn_native { namespace vulkan {
         // Always require fragmentStoresAndAtomics because it is required by end2end tests.
         usedKnobs.features.fragmentStoresAndAtomics = VK_TRUE;
 
+        if (mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) {
+            ASSERT(usedKnobs.HasExt(DeviceExt::SubgroupSizeControl));
+
+            // Always request all the features from VK_EXT_subgroup_size_control when available.
+            usedKnobs.subgroupSizeControlFeatures = mDeviceInfo.subgroupSizeControlFeatures;
+            featuresChain.Add(&usedKnobs.subgroupSizeControlFeatures);
+
+            mComputeSubgroupSize = FindComputeSubgroupSize();
+        }
+
         if (IsExtensionEnabled(Extension::TextureCompressionBC)) {
             ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.textureCompressionBC ==
                    VK_TRUE);
             usedKnobs.features.textureCompressionBC = VK_TRUE;
+        }
+
+        if (IsExtensionEnabled(Extension::ShaderFloat16)) {
+            const VulkanDeviceInfo& deviceInfo = ToBackend(GetAdapter())->GetDeviceInfo();
+            ASSERT(deviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
+                   deviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
+                   deviceInfo.HasExt(DeviceExt::_16BitStorage) &&
+                   deviceInfo._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess == VK_TRUE);
+
+            usedKnobs.shaderFloat16Int8Features.shaderFloat16 = VK_TRUE;
+            usedKnobs._16BitStorageFeatures.uniformAndStorageBuffer16BitAccess = VK_TRUE;
+
+            featuresChain.Add(&usedKnobs.shaderFloat16Int8Features,
+                              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR);
+            featuresChain.Add(&usedKnobs._16BitStorageFeatures,
+                              VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
         }
 
         // Find a universal queue family
@@ -359,6 +351,8 @@ namespace dawn_native { namespace vulkan {
         }
 
         // Choose to create a single universal queue
+        std::vector<VkDeviceQueueCreateInfo> queuesToRequest;
+        float zero = 0.0f;
         {
             VkDeviceQueueCreateInfo queueCreateInfo;
             queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -377,16 +371,52 @@ namespace dawn_native { namespace vulkan {
         createInfo.flags = 0;
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queuesToRequest.size());
         createInfo.pQueueCreateInfos = queuesToRequest.data();
-        createInfo.enabledLayerCount = static_cast<uint32_t>(layersToRequest.size());
-        createInfo.ppEnabledLayerNames = layersToRequest.data();
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensionsToRequest.size());
-        createInfo.ppEnabledExtensionNames = extensionsToRequest.data();
-        createInfo.pEnabledFeatures = &usedKnobs.features;
+        createInfo.enabledLayerCount = 0;
+        createInfo.ppEnabledLayerNames = nullptr;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensionNames.size());
+        createInfo.ppEnabledExtensionNames = extensionNames.data();
+
+        // When we have DeviceExt::GetPhysicalDeviceProperties2, use features2 so that features not
+        // covered by VkPhysicalDeviceFeatures can be enabled.
+        if (mDeviceInfo.HasExt(DeviceExt::GetPhysicalDeviceProperties2)) {
+            features2.features = usedKnobs.features;
+            createInfo.pNext = &features2;
+            createInfo.pEnabledFeatures = nullptr;
+        } else {
+            ASSERT(features2.pNext == nullptr);
+            createInfo.pEnabledFeatures = &usedKnobs.features;
+        }
 
         DAWN_TRY(CheckVkSuccess(fn.CreateDevice(physicalDevice, &createInfo, nullptr, &mVkDevice),
                                 "vkCreateDevice"));
 
         return usedKnobs;
+    }
+
+    uint32_t Device::FindComputeSubgroupSize() const {
+        if (!mDeviceInfo.HasExt(DeviceExt::SubgroupSizeControl)) {
+            return 0;
+        }
+
+        const VkPhysicalDeviceSubgroupSizeControlPropertiesEXT& ext =
+            mDeviceInfo.subgroupSizeControlProperties;
+
+        if (ext.minSubgroupSize == ext.maxSubgroupSize) {
+            return 0;
+        }
+
+        // At the moment, only Intel devices support varying subgroup sizes and 16, which is the
+        // next value after the minimum of 8, is the sweet spot according to [1]. Hence the
+        // following heuristics, which may need to be adjusted in the future for other
+        // architectures, or if a specific API is added to let client code select the size..
+        //
+        // [1] https://bugs.freedesktop.org/show_bug.cgi?id=108875
+        uint32_t subgroupSize = ext.minSubgroupSize * 2;
+        if (subgroupSize <= ext.maxSubgroupSize) {
+            return subgroupSize;
+        } else {
+            return ext.minSubgroupSize;
+        }
     }
 
     void Device::GatherQueueFromDevice() {
@@ -552,12 +582,9 @@ namespace dawn_native { namespace vulkan {
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
-        // It is a validation error to do a 0-sized copy in Vulkan skip it since it is a noop.
-        if (size == 0) {
-            return {};
-        }
-
-        CommandRecordingContext* recordingContext = GetPendingRecordingContext();
+        // It is a validation error to do a 0-sized copy in Vulkan, check it is skipped prior to
+        // calling this function.
+        ASSERT(size != 0);
 
         // Insert memory barrier to ensure host write operations are made visible before
         // copying from the staging buffer. However, this barrier can be removed (see note below).
@@ -568,6 +595,7 @@ namespace dawn_native { namespace vulkan {
 
         // Insert pipeline barrier to ensure correct ordering with previous memory operations on the
         // buffer.
+        CommandRecordingContext* recordingContext = GetPendingRecordingContext();
         ToBackend(destination)->TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
 
         VkBufferCopy copy;
@@ -591,6 +619,12 @@ namespace dawn_native { namespace vulkan {
                                            std::vector<VkSemaphore>* outWaitSemaphores) {
         const TextureDescriptor* textureDescriptor =
             reinterpret_cast<const TextureDescriptor*>(descriptor->cTextureDescriptor);
+
+        // TODO(dawn:22): Remove once migration from GPUTextureDescriptor.arrayLayerCount to
+        // GPUTextureDescriptor.size.depth is done.
+        TextureDescriptor fixedDescriptor;
+        DAWN_TRY_ASSIGN(fixedDescriptor, FixTextureDescriptor(this, textureDescriptor));
+        textureDescriptor = &fixedDescriptor;
 
         // Check services support this combination of handle type / image info
         if (!mExternalSemaphoreService->Supported()) {
@@ -711,7 +745,21 @@ namespace dawn_native { namespace vulkan {
         return mResourceMemoryAllocator.get();
     }
 
+    uint32_t Device::GetComputeSubgroupSize() const {
+        return mComputeSubgroupSize;
+    }
+
     MaybeError Device::WaitForIdleForDestruction() {
+        // Immediately tag the recording context as unused so we don't try to submit it in Tick.
+        // Move the mRecordingContext.used to mUnusedCommands so it can be cleaned up in
+        // ShutDownImpl
+        if (mRecordingContext.used) {
+            CommandPoolAndBuffer commands = {mRecordingContext.commandPool,
+                                             mRecordingContext.commandBuffer};
+            mUnusedCommands.push_back(commands);
+            mRecordingContext = CommandRecordingContext();
+        }
+
         VkResult waitIdleResult = VkResult::WrapUnsafe(fn.QueueWaitIdle(mQueue));
         // Ignore the result of QueueWaitIdle: it can return OOM which we can't really do anything
         // about, Device lost, which means workloads running on the GPU are no longer accessible
@@ -737,9 +785,6 @@ namespace dawn_native { namespace vulkan {
 
             mFencesInFlight.pop();
         }
-
-        // Force all operations to look as if they were completed
-        AssumeCommandsComplete();
         return {};
     }
 
@@ -779,14 +824,6 @@ namespace dawn_native { namespace vulkan {
         }
         mRecordingContext.signalSemaphores.clear();
 
-        // Some operations might have been started since the last submit and waiting
-        // on a serial that doesn't have a corresponding fence enqueued. Force all
-        // operations to look as if they were completed (because they were).
-        AssumeCommandsComplete();
-
-        // Assert that errors are device loss so that we can continue with destruction
-        AssertAndIgnoreDeviceLossError(TickImpl());
-
         ASSERT(mCommandsInFlight.Empty());
         for (const CommandPoolAndBuffer& commands : mUnusedCommands) {
             fn.DestroyCommandPool(mVkDevice, commands.pool, nullptr);
@@ -801,8 +838,6 @@ namespace dawn_native { namespace vulkan {
         // Releasing the uploader enqueues buffers to be released.
         // Call Tick() again to clear them before releasing the deleter.
         mDeleter->Tick(GetCompletedCommandSerial());
-
-        mMapRequestTracker = nullptr;
 
         // The VkRenderPasses in the cache can be destroyed immediately since all commands referring
         // to them are guaranteed to be finished executing.

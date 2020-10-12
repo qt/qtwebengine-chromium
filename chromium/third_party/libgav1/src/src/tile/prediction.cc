@@ -277,7 +277,6 @@ void Tile::IntraPrediction(const Block& block, Plane plane, int x, int y,
                           (mode == kPredictionModeDc && has_left);
 
   const Pixel* top_row_src = buffer[y - 1];
-  int top_row_offset = 0;
 
   // Determine if we need to retrieve the top row from
   // |intra_prediction_buffer_|.
@@ -295,13 +294,8 @@ void Tile::IntraPrediction(const Block& block, Plane plane, int x, int y,
     // then we will have to retrieve the top row from the
     // |intra_prediction_buffer_|.
     if (current_superblock_index != top_row_superblock_index) {
-      top_row_src =
-          reinterpret_cast<const Pixel*>(intra_prediction_buffer_[plane].get());
-      // The |intra_prediction_buffer_| only stores the top row for this Tile.
-      // The |x| value in this function is absolute to the frame. So in order to
-      // make it relative to this Tile, all acccesses into top_row_src must be
-      // offset by negative |top_row_offset|.
-      top_row_offset = MultiplyBy4(column4x4_start_) >> subsampling_x_[plane];
+      top_row_src = reinterpret_cast<const Pixel*>(
+          (*intra_prediction_buffer_)[plane].get());
     }
   }
 
@@ -309,8 +303,7 @@ void Tile::IntraPrediction(const Block& block, Plane plane, int x, int y,
     // Compute top_row.
     if (has_top || has_left) {
       const int left_index = has_left ? x - 1 : x;
-      top_row[-1] = has_top ? top_row_src[left_index - top_row_offset]
-                            : buffer[y][left_index];
+      top_row[-1] = has_top ? top_row_src[left_index] : buffer[y][left_index];
     } else {
       top_row[-1] = 1 << (bitdepth - 1);
     }
@@ -320,14 +313,12 @@ void Tile::IntraPrediction(const Block& block, Plane plane, int x, int y,
       Memset(top_row, (1 << (bitdepth - 1)) - 1, top_size);
     } else {
       const int top_limit = std::min(max_x - x + 1, top_right_size);
-      memcpy(top_row, &top_row_src[x - top_row_offset],
-             top_limit * sizeof(Pixel));
+      memcpy(top_row, &top_row_src[x], top_limit * sizeof(Pixel));
       // Even though it is safe to call Memset with a size of 0, accessing
       // top_row_src[top_limit - x + 1] is not allowed when this condition is
       // false.
       if (top_size - top_limit > 0) {
-        Memset(top_row + top_limit,
-               top_row_src[top_limit + x - 1 - top_row_offset],
+        Memset(top_row + top_limit, top_row_src[top_limit + x - 1],
                top_size - top_limit);
       }
     }
@@ -336,13 +327,13 @@ void Tile::IntraPrediction(const Block& block, Plane plane, int x, int y,
     // Compute left_column.
     if (has_top || has_left) {
       const int left_index = has_left ? x - 1 : x;
-      left_column[-1] = has_top ? top_row_src[left_index - top_row_offset]
-                                : buffer[y][left_index];
+      left_column[-1] =
+          has_top ? top_row_src[left_index] : buffer[y][left_index];
     } else {
       left_column[-1] = 1 << (bitdepth - 1);
     }
     if (!has_left && has_top) {
-      Memset(left_column, top_row_src[x - top_row_offset], left_size);
+      Memset(left_column, top_row_src[x], left_size);
     } else if (!has_left && !has_top) {
       Memset(left_column, (1 << (bitdepth - 1)) + 1, left_size);
     } else {
@@ -942,14 +933,13 @@ void Tile::DistanceWeightedPrediction(void* prediction_0, void* prediction_1,
   for (int reference = 0; reference < 2; ++reference) {
     const BlockParameters& bp =
         *block_parameters_holder_.Find(candidate_row, candidate_column);
-    const unsigned int reference_hint =
-        current_frame_.order_hint(bp.reference_frame[reference]);
     // Note: distance[0] and distance[1] correspond to relative distance
     // between current frame and reference frame [1] and [0], respectively.
-    distance[1 - reference] = Clip3(
-        std::abs(GetRelativeDistance(reference_hint, frame_header_.order_hint,
-                                     sequence_header_.order_hint_shift_bits)),
-        0, kMaxFrameDistance);
+    distance[1 - reference] = std::min(
+        std::abs(static_cast<int>(
+            current_frame_.reference_info()
+                ->relative_distance_from[bp.reference_frame[reference]])),
+        static_cast<int>(kMaxFrameDistance));
   }
   GetDistanceWeights(distance, weight);
 
@@ -1136,7 +1126,11 @@ bool Tile::BlockInterPrediction(
       // reference_y_max by 2 since we only track the progress of Y planes.
       reference_y_max = LeftShift(reference_y_max, subsampling_y);
     }
-    if (!reference_frames_[reference_frame_index]->WaitUntil(reference_y_max)) {
+    if (reference_frame_progress_cache_[reference_frame_index] <
+            reference_y_max &&
+        !reference_frames_[reference_frame_index]->WaitUntil(
+            reference_y_max,
+            &reference_frame_progress_cache_[reference_frame_index])) {
       return false;
     }
   }
@@ -1275,7 +1269,11 @@ bool Tile::BlockWarpProcess(const Block& block, const Plane plane,
     // For U and V planes with subsampling, we need to multiply reference_y_max
     // by 2 since we only track the progress of Y planes.
     reference_y_max = LeftShift(reference_y_max, subsampling_y_[plane]);
-    if (!reference_frames_[reference_frame_index]->WaitUntil(reference_y_max)) {
+    if (reference_frame_progress_cache_[reference_frame_index] <
+            reference_y_max &&
+        !reference_frames_[reference_frame_index]->WaitUntil(
+            reference_y_max,
+            &reference_frame_progress_cache_[reference_frame_index])) {
       return false;
     }
   }

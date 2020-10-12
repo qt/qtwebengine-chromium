@@ -20,6 +20,7 @@ namespace libgav1 {
 namespace {
 
 constexpr int kStep64x64 = 16;  // =64/4.
+constexpr int kCdefSkip = 8;
 
 constexpr uint8_t kCdefUvDirection[2][2][8] = {
     {{0, 1, 2, 3, 4, 5, 6, 7}, {1, 2, 2, 2, 3, 4, 6, 0}},
@@ -57,19 +58,31 @@ void CopyRowForCdef(const Pixel* src, int block_width, int unit_width,
   }
 }
 
+// For |height| rows, copy |width| pixels of size |pixel_size| from |src| to
+// |dst|.
+void CopyPixels(const uint8_t* src, int src_stride, uint8_t* dst,
+                int dst_stride, int width, int height, size_t pixel_size) {
+  int y = height;
+  do {
+    memcpy(dst, src, width * pixel_size);
+    src += src_stride;
+    dst += dst_stride;
+  } while (--y != 0);
+}
+
 }  // namespace
 
 uint8_t* PostFilter::GetCdefBufferAndStride(const int start_x,
                                             const int start_y, const int plane,
-                                            const int subsampling_x,
-                                            const int subsampling_y,
                                             const int window_buffer_plane_size,
                                             int* cdef_stride) const {
   if (thread_pool_ != nullptr) {
     // write output to threaded_window_buffer.
     *cdef_stride = window_buffer_width_ * pixel_size_;
-    const int column_window = start_x % (window_buffer_width_ >> subsampling_x);
-    const int row_window = start_y % (window_buffer_height_ >> subsampling_y);
+    const int column_window =
+        start_x % (window_buffer_width_ >> subsampling_x_[plane]);
+    const int row_window =
+        start_y % (window_buffer_height_ >> subsampling_y_[plane]);
     return threaded_window_buffer_ + plane * window_buffer_plane_size +
            row_window * (*cdef_stride) + column_window * pixel_size_;
   }
@@ -80,72 +93,82 @@ uint8_t* PostFilter::GetCdefBufferAndStride(const int start_x,
 
 template <typename Pixel>
 void PostFilter::PrepareCdefBlock(int block_width4x4, int block_height4x4,
-                                  int row_64x64, int column_64x64,
-                                  uint16_t* cdef_source,
-                                  ptrdiff_t cdef_stride) {
-  for (int plane = kPlaneY; plane < planes_; ++plane) {
-    uint16_t* cdef_src =
-        cdef_source + plane * kRestorationProcessingUnitSizeWithBorders *
-                          kRestorationProcessingUnitSizeWithBorders;
-    const int8_t subsampling_x = subsampling_x_[plane];
-    const int8_t subsampling_y = subsampling_y_[plane];
-    const int start_x = MultiplyBy4(column_64x64) >> subsampling_x;
-    const int start_y = MultiplyBy4(row_64x64) >> subsampling_y;
-    const int plane_width = RightShiftWithRounding(width_, subsampling_x);
-    const int plane_height = RightShiftWithRounding(height_, subsampling_y);
-    const int block_width = MultiplyBy4(block_width4x4) >> subsampling_x;
-    const int block_height = MultiplyBy4(block_height4x4) >> subsampling_y;
-    // unit_width, unit_height are the same as block_width, block_height unless
-    // it reaches the frame boundary, where block_width < 64 or
-    // block_height < 64. unit_width, unit_height guarantee we build blocks on
-    // a multiple of 8.
-    const int unit_width = Align(block_width, (subsampling_x > 0) ? 4 : 8);
-    const int unit_height = Align(block_height, (subsampling_y > 0) ? 4 : 8);
-    const bool is_frame_left = column_64x64 == 0;
-    const bool is_frame_right = start_x + block_width >= plane_width;
-    const bool is_frame_top = row_64x64 == 0;
-    const bool is_frame_bottom = start_y + block_height >= plane_height;
+                                  int row4x4, int column4x4,
+                                  uint16_t* cdef_source, ptrdiff_t cdef_stride,
+                                  const bool y_plane) {
+  assert(y_plane || planes_ == kMaxPlanes);
+  const int max_planes = y_plane ? 1 : kMaxPlanes;
+  const int8_t subsampling_x = y_plane ? 0 : subsampling_x_[kPlaneU];
+  const int8_t subsampling_y = y_plane ? 0 : subsampling_y_[kPlaneU];
+  const int start_x = MultiplyBy4(column4x4) >> subsampling_x;
+  const int start_y = MultiplyBy4(row4x4) >> subsampling_y;
+  const int plane_width = RightShiftWithRounding(width_, subsampling_x);
+  const int plane_height = RightShiftWithRounding(height_, subsampling_y);
+  const int block_width = MultiplyBy4(block_width4x4) >> subsampling_x;
+  const int block_height = MultiplyBy4(block_height4x4) >> subsampling_y;
+  // unit_width, unit_height are the same as block_width, block_height unless
+  // it reaches the frame boundary, where block_width < 64 or
+  // block_height < 64. unit_width, unit_height guarantee we build blocks on
+  // a multiple of 8.
+  const int unit_width = Align(block_width, 8 >> subsampling_x);
+  const int unit_height = Align(block_height, 8 >> subsampling_y);
+  const bool is_frame_left = column4x4 == 0;
+  const bool is_frame_right = start_x + block_width >= plane_width;
+  const bool is_frame_top = row4x4 == 0;
+  const bool is_frame_bottom = start_y + block_height >= plane_height;
+  const int y_offset = is_frame_top ? 0 : kCdefBorder;
+
+  for (int plane = y_plane ? kPlaneY : kPlaneU; plane < max_planes; ++plane) {
+    uint16_t* cdef_src = cdef_source + plane * kCdefUnitSizeWithBorders *
+                                           kCdefUnitSizeWithBorders;
     const int src_stride = frame_buffer_.stride(plane) / sizeof(Pixel);
     const Pixel* src_buffer =
         reinterpret_cast<const Pixel*>(source_buffer_[plane]) +
-        (start_y - (is_frame_top ? 0 : kCdefBorder)) * src_stride + start_x;
+        (start_y - y_offset) * src_stride + start_x;
 
     // All the copying code will use negative indices for populating the left
     // border. So the starting point is set to kCdefBorder.
     cdef_src += kCdefBorder;
 
     // Copy the top 2 rows.
-    for (int y = 0; y < kCdefBorder; ++y) {
-      if (is_frame_top) {
+    if (is_frame_top) {
+      for (int y = 0; y < kCdefBorder; ++y) {
         Memset(cdef_src - kCdefBorder, kCdefLargeValue,
                unit_width + 2 * kCdefBorder);
-      } else {
+        cdef_src += cdef_stride;
+      }
+    } else {
+      for (int y = 0; y < kCdefBorder; ++y) {
         CopyRowForCdef(src_buffer, block_width, unit_width, is_frame_left,
                        is_frame_right, cdef_src);
         src_buffer += src_stride;
+        cdef_src += cdef_stride;
       }
-      cdef_src += cdef_stride;
     }
 
     // Copy the body.
-    for (int y = 0; y < block_height; ++y) {
+    int y = block_height;
+    do {
       CopyRowForCdef(src_buffer, block_width, unit_width, is_frame_left,
                      is_frame_right, cdef_src);
       cdef_src += cdef_stride;
       src_buffer += src_stride;
-    }
+    } while (--y != 0);
 
     // Copy the bottom 2 rows.
-    for (int y = 0; y < kCdefBorder + unit_height - block_height; ++y) {
-      if (is_frame_bottom) {
+    if (is_frame_bottom) {
+      do {
         Memset(cdef_src - kCdefBorder, kCdefLargeValue,
                unit_width + 2 * kCdefBorder);
-      } else {
+        cdef_src += cdef_stride;
+      } while (++y < kCdefBorder + unit_height - block_height);
+    } else {
+      do {
         CopyRowForCdef(src_buffer, block_width, unit_width, is_frame_left,
                        is_frame_right, cdef_src);
         src_buffer += src_stride;
-      }
-      cdef_src += cdef_stride;
+        cdef_src += cdef_stride;
+      } while (++y < kCdefBorder + unit_height - block_height);
     }
   }
 }
@@ -156,130 +179,237 @@ void PostFilter::ApplyCdefForOneUnit(uint16_t* cdef_block, const int index,
                                      const int block_height4x4,
                                      const int row4x4_start,
                                      const int column4x4_start) {
-  const int coeff_shift = bitdepth_ - 8;
-  const int step = kNum4x4BlocksWide[kBlock8x8];
+  // Cdef operates in 8x8 blocks (4x4 for chroma with subsampling).
+  static constexpr int kStep = 8;
+  static constexpr int kStep4x4 = 2;
+
   const int window_buffer_plane_size =
       window_buffer_width_ * window_buffer_height_ * pixel_size_;
+  int cdef_buffer_row_base_stride[kMaxPlanes];
+  int cdef_buffer_stride[kMaxPlanes];
+  uint8_t* cdef_buffer_row_base[kMaxPlanes];
+  int src_buffer_row_base_stride[kMaxPlanes];
+  const uint8_t* src_buffer_row_base[kMaxPlanes];
+  int column_step[kMaxPlanes];
+  for (int plane = kPlaneY; plane < planes_; ++plane) {
+    const int start_y = MultiplyBy4(row4x4_start) >> subsampling_y_[plane];
+    const int start_x = MultiplyBy4(column4x4_start) >> subsampling_x_[plane];
+    cdef_buffer_row_base[plane] = GetCdefBufferAndStride(
+        start_x, start_y, plane, window_buffer_plane_size,
+        &cdef_buffer_stride[plane]);
+    cdef_buffer_row_base_stride[plane] =
+        cdef_buffer_stride[plane] * (kStep >> subsampling_y_[plane]);
+    src_buffer_row_base[plane] = source_buffer_[plane] +
+                                 start_y * frame_buffer_.stride(plane) +
+                                 start_x * pixel_size_;
+    src_buffer_row_base_stride[plane] =
+        frame_buffer_.stride(plane) * (kStep >> subsampling_y_[plane]);
+    column_step[plane] = (kStep >> subsampling_x_[plane]) * pixel_size_;
+  }
 
   if (index == -1) {
     for (int plane = kPlaneY; plane < planes_; ++plane) {
-      const int start_x = MultiplyBy4(column4x4_start) >> subsampling_x_[plane];
-      const int start_y = MultiplyBy4(row4x4_start) >> subsampling_y_[plane];
-      int cdef_stride;
-      uint8_t* const cdef_buffer = GetCdefBufferAndStride(
-          start_x, start_y, plane, subsampling_x_[plane], subsampling_y_[plane],
-          window_buffer_plane_size, &cdef_stride);
-      const int src_stride = frame_buffer_.stride(plane);
-      uint8_t* const src_buffer =
-          source_buffer_[plane] + start_y * src_stride + start_x * pixel_size_;
-      const int block_width =
-          MultiplyBy4(block_width4x4) >> subsampling_x_[plane];
-      const int block_height =
-          MultiplyBy4(block_height4x4) >> subsampling_y_[plane];
-      for (int y = 0; y < block_height; ++y) {
-        memcpy(cdef_buffer + y * cdef_stride, src_buffer + y * src_stride,
-               block_width * pixel_size_);
-      }
+      CopyPixels(src_buffer_row_base[plane], frame_buffer_.stride(plane),
+                 cdef_buffer_row_base[plane], cdef_buffer_stride[plane],
+                 MultiplyBy4(block_width4x4) >> subsampling_x_[plane],
+                 MultiplyBy4(block_height4x4) >> subsampling_y_[plane],
+                 pixel_size_);
     }
     return;
   }
 
   PrepareCdefBlock<Pixel>(block_width4x4, block_height4x4, row4x4_start,
-                          column4x4_start, cdef_block,
-                          kRestorationProcessingUnitSizeWithBorders);
+                          column4x4_start, cdef_block, kCdefUnitSizeWithBorders,
+                          true);
 
-  for (int row4x4 = row4x4_start; row4x4 < row4x4_start + block_height4x4;
-       row4x4 += step) {
-    for (int column4x4 = column4x4_start;
-         column4x4 < column4x4_start + block_width4x4; column4x4 += step) {
-      const bool skip =
-          block_parameters_.Find(row4x4, column4x4) != nullptr &&
-          block_parameters_.Find(row4x4 + 1, column4x4) != nullptr &&
-          block_parameters_.Find(row4x4, column4x4 + 1) != nullptr &&
-          block_parameters_.Find(row4x4 + 1, column4x4 + 1) != nullptr &&
-          block_parameters_.Find(row4x4, column4x4)->skip &&
-          block_parameters_.Find(row4x4 + 1, column4x4)->skip &&
-          block_parameters_.Find(row4x4, column4x4 + 1)->skip &&
-          block_parameters_.Find(row4x4 + 1, column4x4 + 1)->skip;
-      int damping = frame_header_.cdef.damping + coeff_shift;
-      int direction_y;
-      int direction;
-      int variance;
-      uint8_t primary_strength;
-      uint8_t secondary_strength;
+  // Stored direction used during the u/v pass.  If bit 3 is set, then block is
+  // a skip.
+  int direction_y[8 * 8];
+  int y_index = 0;
 
-      for (int plane = kPlaneY; plane < planes_; ++plane) {
-        const int8_t subsampling_x = subsampling_x_[plane];
-        const int8_t subsampling_y = subsampling_y_[plane];
-        const int start_x = MultiplyBy4(column4x4) >> subsampling_x;
-        const int start_y = MultiplyBy4(row4x4) >> subsampling_y;
-        const int block_width = 8 >> subsampling_x;
-        const int block_height = 8 >> subsampling_y;
-        int cdef_stride;
-        uint8_t* const cdef_buffer = GetCdefBufferAndStride(
-            start_x, start_y, plane, subsampling_x, subsampling_y,
-            window_buffer_plane_size, &cdef_stride);
+  const uint8_t y_primary_strength =
+      frame_header_.cdef.y_primary_strength[index];
+  const uint8_t y_secondary_strength =
+      frame_header_.cdef.y_secondary_strength[index];
+
+  const bool compute_direction_and_variance =
+      (y_primary_strength | frame_header_.cdef.uv_primary_strength[index]) != 0;
+  BlockParameters* const* bp_row0_base =
+      block_parameters_.Address(row4x4_start, column4x4_start);
+  BlockParameters* const* bp_row1_base =
+      bp_row0_base + block_parameters_.columns4x4();
+  const int bp_stride = MultiplyBy2(block_parameters_.columns4x4());
+  int row4x4 = row4x4_start;
+  do {
+    uint8_t* cdef_buffer_base = cdef_buffer_row_base[kPlaneY];
+    const uint8_t* src_buffer_base = src_buffer_row_base[kPlaneY];
+    BlockParameters* const* bp0 = bp_row0_base;
+    BlockParameters* const* bp1 = bp_row1_base;
+    int column4x4 = column4x4_start;
+    do {
+      const int block_width = kStep;
+      const int block_height = kStep;
+      const int cdef_stride = cdef_buffer_stride[kPlaneY];
+      uint8_t* const cdef_buffer = cdef_buffer_base;
+      const int src_stride = frame_buffer_.stride(kPlaneY);
+      const uint8_t* const src_buffer = src_buffer_base;
+
+      const bool skip = (*bp0)->skip && (*(bp0 + 1))->skip && (*bp1)->skip &&
+                        (*(bp1 + 1))->skip;
+
+      if (skip) {  // No cdef filtering.
+        direction_y[y_index] = kCdefSkip;
+        CopyPixels(src_buffer, src_stride, cdef_buffer, cdef_stride,
+                   block_width, block_height, pixel_size_);
+      } else {
+        // Zero out residual skip flag.
+        direction_y[y_index] = 0;
+
+        int variance = 0;
+        if (compute_direction_and_variance) {
+          dsp_.cdef_direction(src_buffer, src_stride, &direction_y[y_index],
+                              &variance);
+        }
+        const int direction =
+            (y_primary_strength == 0) ? 0 : direction_y[y_index];
+        const int variance_strength =
+            ((variance >> 6) != 0) ? std::min(FloorLog2(variance >> 6), 12) : 0;
+        const uint8_t primary_strength =
+            (variance != 0)
+                ? (y_primary_strength * (4 + variance_strength) + 8) >> 4
+                : 0;
+
+        if ((primary_strength | y_secondary_strength) == 0) {
+          CopyPixels(src_buffer, src_stride, cdef_buffer, cdef_stride,
+                     block_width, block_height, pixel_size_);
+        } else {
+          uint16_t* cdef_src = cdef_block + kPlaneY * kCdefUnitSizeWithBorders *
+                                                kCdefUnitSizeWithBorders;
+          cdef_src += kCdefBorder * kCdefUnitSizeWithBorders + kCdefBorder;
+          cdef_src +=
+              (MultiplyBy4(row4x4 - row4x4_start)) * kCdefUnitSizeWithBorders +
+              (MultiplyBy4(column4x4 - column4x4_start));
+          dsp_.cdef_filter(cdef_src, kCdefUnitSizeWithBorders, block_width,
+                           block_height, primary_strength, y_secondary_strength,
+                           frame_header_.cdef.damping, direction, cdef_buffer,
+                           cdef_stride);
+        }
+      }
+      cdef_buffer_base += column_step[kPlaneY];
+      src_buffer_base += column_step[kPlaneY];
+
+      bp0 += kStep4x4;
+      bp1 += kStep4x4;
+      column4x4 += kStep4x4;
+      y_index++;
+    } while (column4x4 < column4x4_start + block_width4x4);
+
+    cdef_buffer_row_base[kPlaneY] += cdef_buffer_row_base_stride[kPlaneY];
+    src_buffer_row_base[kPlaneY] += src_buffer_row_base_stride[kPlaneY];
+    bp_row0_base += bp_stride;
+    bp_row1_base += bp_stride;
+    row4x4 += kStep4x4;
+  } while (row4x4 < row4x4_start + block_height4x4);
+
+  if (planes_ == kMaxPlanesMonochrome) {
+    return;
+  }
+
+  const uint8_t uv_primary_strength =
+      frame_header_.cdef.uv_primary_strength[index];
+  const uint8_t uv_secondary_strength =
+      frame_header_.cdef.uv_secondary_strength[index];
+
+  if ((uv_primary_strength | uv_secondary_strength) == 0) {
+    for (int plane = kPlaneU; plane <= kPlaneV; ++plane) {
+      CopyPixels(src_buffer_row_base[plane], frame_buffer_.stride(plane),
+                 cdef_buffer_row_base[plane], cdef_buffer_stride[plane],
+                 MultiplyBy4(block_width4x4) >> subsampling_x_[plane],
+                 MultiplyBy4(block_height4x4) >> subsampling_y_[plane],
+                 pixel_size_);
+    }
+    return;
+  }
+
+  PrepareCdefBlock<Pixel>(block_width4x4, block_height4x4, row4x4_start,
+                          column4x4_start, cdef_block, kCdefUnitSizeWithBorders,
+                          false);
+
+  for (int plane = kPlaneU; plane <= kPlaneV; ++plane) {
+    const int8_t subsampling_x = subsampling_x_[plane];
+    const int8_t subsampling_y = subsampling_y_[plane];
+    const int block_width = kStep >> subsampling_x;
+    const int block_height = kStep >> subsampling_y;
+    int row4x4 = row4x4_start;
+
+    y_index = 0;
+    do {
+      uint8_t* cdef_buffer_base = cdef_buffer_row_base[plane];
+      const uint8_t* src_buffer_base = src_buffer_row_base[plane];
+      int column4x4 = column4x4_start;
+      do {
+        const int cdef_stride = cdef_buffer_stride[plane];
+        uint8_t* const cdef_buffer = cdef_buffer_base;
         const int src_stride = frame_buffer_.stride(plane);
-        uint8_t* const src_buffer = source_buffer_[plane] +
-                                    start_y * src_stride +
-                                    start_x * pixel_size_;
+        const uint8_t* const src_buffer = src_buffer_base;
+        const bool skip = direction_y[y_index] & kCdefSkip;
+        int dual_cdef = 0;
 
         if (skip) {  // No cdef filtering.
-          for (int y = 0; y < block_height; ++y) {
-            memcpy(cdef_buffer + y * cdef_stride, src_buffer + y * src_stride,
-                   block_width * pixel_size_);
-          }
-          continue;
-        }
-
-        if (plane == kPlaneY) {
-          dsp_.cdef_direction(src_buffer, src_stride, &direction_y, &variance);
-          primary_strength = frame_header_.cdef.y_primary_strength[index]
-                             << coeff_shift;
-          secondary_strength = frame_header_.cdef.y_secondary_strength[index]
-                               << coeff_shift;
-          direction = (primary_strength == 0) ? 0 : direction_y;
-          const int variance_strength =
-              ((variance >> 6) != 0) ? std::min(FloorLog2(variance >> 6), 12)
-                                     : 0;
-          primary_strength =
-              (variance != 0)
-                  ? (primary_strength * (4 + variance_strength) + 8) >> 4
-                  : 0;
+          CopyPixels(src_buffer, src_stride, cdef_buffer, cdef_stride,
+                     block_width, block_height, pixel_size_);
         } else {
-          primary_strength = frame_header_.cdef.uv_primary_strength[index]
-                             << coeff_shift;
-          secondary_strength = frame_header_.cdef.uv_secondary_strength[index]
-                               << coeff_shift;
-          direction =
-              (primary_strength == 0)
-                  ? 0
-                  : kCdefUvDirection[subsampling_x][subsampling_y][direction_y];
-          damping = frame_header_.cdef.damping + coeff_shift - 1;
-        }
-
-        if ((primary_strength | secondary_strength) == 0) {
-          for (int y = 0; y < block_height; ++y) {
-            memcpy(cdef_buffer + y * cdef_stride, src_buffer + y * src_stride,
-                   block_width * pixel_size_);
+          // Make sure block pair is not out of bounds.
+          if (column4x4 + (kStep4x4 * 2) <= column4x4_start + block_width4x4) {
+            // Enable dual processing if subsampling_x is 1.
+            dual_cdef = subsampling_x;
           }
-          continue;
+
+          int direction = (uv_primary_strength == 0)
+                              ? 0
+                              : kCdefUvDirection[subsampling_x][subsampling_y]
+                                                [direction_y[y_index]];
+
+          if (dual_cdef != 0) {
+            if (uv_primary_strength &&
+                direction_y[y_index] != direction_y[y_index + 1]) {
+              // Disable dual processing if the second block of the pair does
+              // not have the same direction.
+              dual_cdef = 0;
+            }
+
+            // Disable dual processing if the second block of the pair is a
+            // skip.
+            if (direction_y[y_index + 1] == kCdefSkip) {
+              dual_cdef = 0;
+            }
+          }
+
+          uint16_t* cdef_src = cdef_block + plane * kCdefUnitSizeWithBorders *
+                                                kCdefUnitSizeWithBorders;
+          cdef_src += kCdefBorder * kCdefUnitSizeWithBorders + kCdefBorder;
+          cdef_src +=
+              (MultiplyBy4(row4x4 - row4x4_start) >> subsampling_y) *
+                  kCdefUnitSizeWithBorders +
+              (MultiplyBy4(column4x4 - column4x4_start) >> subsampling_x);
+          dsp_.cdef_filter(cdef_src, kCdefUnitSizeWithBorders,
+                           block_width << dual_cdef, block_height,
+                           uv_primary_strength, uv_secondary_strength,
+                           frame_header_.cdef.damping - 1, direction,
+                           cdef_buffer, cdef_stride);
         }
-        uint16_t* cdef_src =
-            cdef_block + plane * kRestorationProcessingUnitSizeWithBorders *
-                             kRestorationProcessingUnitSizeWithBorders;
-        cdef_src += kCdefBorder * kRestorationProcessingUnitSizeWithBorders +
-                    kCdefBorder;
-        cdef_src += (MultiplyBy4(row4x4 - row4x4_start) >> subsampling_y) *
-                        kRestorationProcessingUnitSizeWithBorders +
-                    (MultiplyBy4(column4x4 - column4x4_start) >> subsampling_x);
-        dsp_.cdef_filter(cdef_src, kRestorationProcessingUnitSizeWithBorders,
-                         frame_header_.rows4x4, frame_header_.columns4x4,
-                         start_x, start_y, subsampling_x, subsampling_y,
-                         primary_strength, secondary_strength, damping,
-                         direction, cdef_buffer, cdef_stride);
-      }
-    }
+        // When dual_cdef is set, the above cdef_filter() will process 2 blocks,
+        // so adjust the pointers and indexes for 2 blocks.
+        cdef_buffer_base += column_step[plane] << dual_cdef;
+        src_buffer_base += column_step[plane] << dual_cdef;
+        column4x4 += kStep4x4 << dual_cdef;
+        y_index += 1 << dual_cdef;
+      } while (column4x4 < column4x4_start + block_width4x4);
+
+      cdef_buffer_row_base[plane] += cdef_buffer_row_base_stride[plane];
+      src_buffer_row_base[plane] += src_buffer_row_base_stride[plane];
+      row4x4 += kStep4x4;
+    } while (row4x4 < row4x4_start + block_height4x4);
   }
 }
 
@@ -336,8 +466,7 @@ void PostFilter::ApplyCdefForOneSuperBlockRow(int row4x4_start, int sb4x4,
 template <typename Pixel>
 void PostFilter::ApplyCdefForOneRowInWindow(const int row4x4,
                                             const int column4x4_start) {
-  uint16_t cdef_block[kRestorationProcessingUnitSizeWithBorders *
-                      kRestorationProcessingUnitSizeWithBorders * 3];
+  uint16_t cdef_block[kCdefUnitSizeWithBorders * kCdefUnitSizeWithBorders * 3];
 
   for (int column4x4_64x64 = 0;
        column4x4_64x64 < std::min(DivideBy4(window_buffer_width_),

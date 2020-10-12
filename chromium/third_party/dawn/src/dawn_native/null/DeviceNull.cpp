@@ -116,6 +116,9 @@ namespace dawn_native { namespace null {
         const PipelineLayoutDescriptor* descriptor) {
         return new PipelineLayout(this, descriptor);
     }
+    ResultOrError<QuerySetBase*> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
+        return new QuerySet(this, descriptor);
+    }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
         return new RenderPipeline(this, descriptor);
@@ -185,8 +188,7 @@ namespace dawn_native { namespace null {
     }
 
     MaybeError Device::WaitForIdleForDestruction() {
-        // Fake all commands being completed
-        AssumeCommandsComplete();
+        mPendingOperations.clear();
         return {};
     }
 
@@ -266,7 +268,7 @@ namespace dawn_native { namespace null {
 
     struct BufferMapOperation : PendingOperation {
         virtual void Execute() {
-            buffer->MapOperationCompleted(serial, ptr, isWrite);
+            buffer->OnMapCommandSerialFinished(serial, isWrite);
         }
 
         Ref<Buffer> buffer;
@@ -296,14 +298,6 @@ namespace dawn_native { namespace null {
         return {};
     }
 
-    void Buffer::MapOperationCompleted(uint32_t serial, void* ptr, bool isWrite) {
-        if (isWrite) {
-            CallMapWriteCallback(serial, WGPUBufferMapAsyncStatus_Success, ptr, GetSize());
-        } else {
-            CallMapReadCallback(serial, WGPUBufferMapAsyncStatus_Success, ptr, GetSize());
-        }
-    }
-
     void Buffer::CopyFromStaging(StagingBufferBase* staging,
                                  uint64_t sourceOffset,
                                  uint64_t destinationOffset,
@@ -312,11 +306,10 @@ namespace dawn_native { namespace null {
         memcpy(mBackingData.get() + destinationOffset, ptr + sourceOffset, size);
     }
 
-    MaybeError Buffer::SetSubDataImpl(uint32_t start, uint32_t count, const void* data) {
-        ASSERT(start + count <= GetSize());
+    void Buffer::DoWriteBuffer(uint64_t bufferOffset, const void* data, size_t size) {
+        ASSERT(bufferOffset + size <= GetSize());
         ASSERT(mBackingData);
-        memcpy(mBackingData.get() + start, data, count);
-        return {};
+        memcpy(mBackingData.get() + bufferOffset, data, size);
     }
 
     MaybeError Buffer::MapReadAsyncImpl(uint32_t serial) {
@@ -341,6 +334,10 @@ namespace dawn_native { namespace null {
         ToBackend(GetDevice())->AddPendingOperation(std::move(operation));
     }
 
+    void* Buffer::GetMappedPointerImpl() {
+        return mBackingData.get();
+    }
+
     void Buffer::UnmapImpl() {
     }
 
@@ -357,6 +354,19 @@ namespace dawn_native { namespace null {
         FreeCommands(&mCommands);
     }
 
+    // QuerySet
+
+    QuerySet::QuerySet(Device* device, const QuerySetDescriptor* descriptor)
+        : QuerySetBase(device, descriptor) {
+    }
+
+    QuerySet::~QuerySet() {
+        DestroyInternal();
+    }
+
+    void QuerySet::DestroyImpl() {
+    }
+
     // Queue
 
     Queue::Queue(Device* device) : QueueBase(device) {
@@ -367,6 +377,14 @@ namespace dawn_native { namespace null {
 
     MaybeError Queue::SubmitImpl(uint32_t, CommandBufferBase* const*) {
         ToBackend(GetDevice())->SubmitPendingOperations();
+        return {};
+    }
+
+    MaybeError Queue::WriteBufferImpl(BufferBase* buffer,
+                                      uint64_t bufferOffset,
+                                      const void* data,
+                                      size_t size) {
+        ToBackend(buffer)->DoWriteBuffer(bufferOffset, data, size);
         return {};
     }
 
@@ -425,7 +443,7 @@ namespace dawn_native { namespace null {
         return GetDevice()->CreateTexture(descriptor);
     }
 
-    MaybeError OldSwapChain::OnBeforePresent(TextureBase*) {
+    MaybeError OldSwapChain::OnBeforePresent(TextureViewBase*) {
         return {};
     }
 

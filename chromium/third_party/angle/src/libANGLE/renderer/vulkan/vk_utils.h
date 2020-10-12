@@ -292,6 +292,12 @@ class MemoryProperties final : angle::NonCopyable
                                             uint32_t *indexOut) const;
     void destroy();
 
+    VkDeviceSize getHeapSizeForMemoryType(uint32_t memoryType) const
+    {
+        uint32_t heapIndex = mMemoryProperties.memoryTypes[memoryType].heapIndex;
+        return mMemoryProperties.memoryHeaps[heapIndex].size;
+    }
+
   private:
     VkPhysicalDeviceMemoryProperties mMemoryProperties;
 };
@@ -317,13 +323,14 @@ class StagingBuffer final : angle::NonCopyable
     size_t mSize;
 };
 
-angle::Result InitMappableAllocation(VmaAllocator allocator,
-                                     Allocation *allcation,
+angle::Result InitMappableAllocation(Context *context,
+                                     const vk::Allocator &allocator,
+                                     Allocation *allocation,
                                      VkDeviceSize size,
                                      int value,
                                      VkMemoryPropertyFlags memoryPropertyFlags);
 
-angle::Result InitMappableDeviceMemory(vk::Context *context,
+angle::Result InitMappableDeviceMemory(Context *context,
                                        vk::DeviceMemory *deviceMemory,
                                        VkDeviceSize size,
                                        int value,
@@ -339,6 +346,7 @@ angle::Result AllocateBufferMemory(Context *context,
 
 angle::Result AllocateImageMemory(Context *context,
                                   VkMemoryPropertyFlags memoryPropertyFlags,
+                                  VkMemoryPropertyFlags *memoryPropertyFlagsOut,
                                   const void *extraAllocationInfo,
                                   Image *image,
                                   DeviceMemory *deviceMemoryOut,

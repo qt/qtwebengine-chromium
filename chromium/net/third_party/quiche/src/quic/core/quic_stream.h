@@ -165,14 +165,6 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // stream to write any pending data.
   virtual void OnCanWrite();
 
-  // Called just before the object is destroyed.
-  // The object should not be accessed after OnClose is called.
-  // Sends a RST_STREAM with code QUIC_RST_ACKNOWLEDGEMENT if neither a FIN nor
-  // a RST_STREAM has been sent.
-  // TODO(fayang): move this to protected when deprecating
-  // quic_break_session_stream_close_loop.
-  virtual void OnClose();
-
   // Called by the session when the endpoint receives a RST_STREAM from the
   // peer.
   virtual void OnStreamReset(const QuicRstStreamFrame& frame);
@@ -237,7 +229,9 @@ class QUIC_EXPORT_PRIVATE QuicStream
   int num_frames_received() const;
   int num_duplicate_frames_received() const;
 
-  QuicFlowController* flow_controller() { return &*flow_controller_; }
+  QuicFlowController* flow_controller();
+
+  const QuicFlowController* flow_controller() const;
 
   // Called when endpoint receives a frame which could increase the highest
   // offset.
@@ -380,6 +374,12 @@ class QUIC_EXPORT_PRIVATE QuicStream
       QuicByteCount /*data_length*/,
       const QuicReferenceCountedPointer<QuicAckListenerInterface>&
       /*ack_listener*/) {}
+
+  // Called just before the object is destroyed.
+  // The object should not be accessed after OnClose is called.
+  // Sends a RST_STREAM with code QUIC_RST_ACKNOWLEDGEMENT if neither a FIN nor
+  // a RST_STREAM has been sent.
+  virtual void OnClose();
 
   // True if buffered data in send buffer is below buffered_data_threshold_.
   bool CanWriteNewData() const;
@@ -539,8 +539,7 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // If initialized, reset this stream at this deadline.
   QuicTime deadline_;
 
-  // True if this stream has entered draining state. Only used when
-  // quic_deprecate_draining_streams is true.
+  // True if this stream has entered draining state.
   bool was_draining_;
 
   // Indicates whether this stream is bidirectional, read unidirectional or

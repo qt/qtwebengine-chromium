@@ -171,6 +171,12 @@ size_t QuicCryptoClientHandshaker::BufferSizeLimitForLevel(
   return QuicCryptoHandshaker::BufferSizeLimitForLevel(level);
 }
 
+void QuicCryptoClientHandshaker::OnConnectionClosed(
+    QuicErrorCode /*error*/,
+    ConnectionCloseSource /*source*/) {
+  next_state_ = STATE_CONNECTION_CLOSED;
+}
+
 void QuicCryptoClientHandshaker::HandleServerConfigUpdateMessage(
     const CryptoHandshakeMessage& server_config_update) {
   DCHECK(server_config_update.tag() == kSCUP);
@@ -236,6 +242,9 @@ void QuicCryptoClientHandshaker::DoHandshakeLoop(
         break;
       case STATE_NONE:
         QUIC_NOTREACHED();
+        return;
+      case STATE_CONNECTION_CLOSED:
+        rv = QUIC_FAILURE;
         return;  // We are done.
     }
   } while (rv != QUIC_PENDING && next_state_ != STATE_NONE);
@@ -281,7 +290,9 @@ void QuicCryptoClientHandshaker::DoSendCHLO(
   // inchoate or subsequent hello.
   session()->config()->ToHandshakeMessage(&out, session()->transport_version());
 
-  if (!cached->IsComplete(session()->connection()->clock()->WallNow())) {
+  if (!cached->IsComplete(session()->connection()->clock()->WallNow()) ||
+      session()->config()->HasClientRequestedIndependentOption(
+          kQNZR, session()->perspective())) {
     crypto_config_->FillInchoateClientHello(
         server_id_, session()->supported_versions().front(), cached,
         session()->connection()->random_generator(),

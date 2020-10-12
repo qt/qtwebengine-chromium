@@ -56,7 +56,6 @@ void initTextures() {
     descriptor.size.width = 1024;
     descriptor.size.height = 1024;
     descriptor.size.depth = 1;
-    descriptor.arrayLayerCount = 1;
     descriptor.sampleCount = 1;
     descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
     descriptor.mipLevelCount = 1;
@@ -74,8 +73,9 @@ void initTextures() {
 
     wgpu::Buffer stagingBuffer = utils::CreateBufferFromData(
         device, data.data(), static_cast<uint32_t>(data.size()), wgpu::BufferUsage::CopySrc);
-    wgpu::BufferCopyView bufferCopyView = utils::CreateBufferCopyView(stagingBuffer, 0, 0, 0);
-    wgpu::TextureCopyView textureCopyView = utils::CreateTextureCopyView(texture, 0, 0, {0, 0, 0});
+    wgpu::BufferCopyView bufferCopyView =
+        utils::CreateBufferCopyView(stagingBuffer, 0, 4 * 1024, 0);
+    wgpu::TextureCopyView textureCopyView = utils::CreateTextureCopyView(texture, 0, {0, 0, 0});
     wgpu::Extent3D copySize = {1024, 1024, 1};
 
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();

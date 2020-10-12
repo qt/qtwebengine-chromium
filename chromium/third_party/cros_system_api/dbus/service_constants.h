@@ -15,6 +15,7 @@
 #include "bluetooth/dbus-constants.h"
 #include "bootlockbox/dbus-constants.h"
 #include "cecservice/dbus-constants.h"
+#include "cfm/dbus-constants.h"
 #include "chunneld/dbus-constants.h"
 #include "cros-disks/dbus-constants.h"
 #include "cros_healthd/dbus-constants.h"
@@ -198,6 +199,9 @@ const char kChromeFeaturesServiceIsCryptohomeDistributedModelEnabledMethod[] =
     "IsCryptohomeDistributedModelEnabled";
 const char kChromeFeaturesServiceIsCryptohomeUserDataAuthEnabledMethod[] =
     "IsCryptohomeUserDataAuthEnabled";
+const char
+    kChromeFeaturesServiceIsCryptohomeUserDataAuthKillswitchEnabledMethod[] =
+        "IsCryptohomeUserDataAuthKillswitchEnabled";
 const char kChromeFeaturesServiceIsPluginVmEnabledMethod[] =
     "IsPluginVmEnabled";
 const char kChromeFeaturesServiceIsUsbguardEnabledMethod[] =
@@ -246,6 +250,16 @@ constexpr char kMlDecisionServicePath[] = "/org/chromium/MlDecisionService";
 constexpr char kMlDecisionServiceInterface[] = "org.chromium.MlDecisionService";
 constexpr char kMlDecisionServiceShouldDeferScreenDimMethod[] =
     "ShouldDeferScreenDim";
+
+const char kVmPermissionServiceName[] = "org.chromium.VmPermissionService";
+const char kVmPermissionServicePath[] = "/org/chromium/VmPermissionService";
+const char kVmPermissionServiceInterface[] =
+    "org.chromium.VmPermissionServiceInterface";
+
+const char kVmPermissionServiceRegisterVmMethod[] = "RegisterVm";
+const char kVmPermissionServiceUnregisterVmMethod[] = "UnregisterVm";
+const char kVmPermissionServiceGetPermissionsMethod[] = "GetPermissions";
+const char kVmPermissionServiceSetPermissionsMethod[] = "SetPermissions";
 
 }  // namespace chromeos
 
@@ -447,8 +461,14 @@ namespace arc_oemcrypto {
 const char kArcOemCryptoServiceInterface[] = "org.chromium.ArcOemCrypto";
 const char kArcOemCryptoServiceName[] = "org.chromium.ArcOemCrypto";
 const char kArcOemCryptoServicePath[] = "/org/chromium/ArcOemCrypto";
+const char kCdmFactoryDaemonServiceInterface[] =
+    "org.chromium.CdmFactoryDaemon";
+const char kCdmFactoryDaemonServiceName[] = "org.chromium.CdmFactoryDaemon";
+const char kCdmFactoryDaemonServicePath[] = "/org/chromium/CdmFactoryDaemon";
 // Methods
 const char kBootstrapMojoConnection[] = "BootstrapMojoConnection";
+const char kBootstrapCdmFactoryDaemonMojoConnection[] =
+    "BootstrapCdmFactoryDaemonMojoConnection";
 }  // namespace arc_oemcrypto
 
 namespace midis {
@@ -565,14 +585,6 @@ constexpr char kArcCameraServiceInterface[] = "org.chromium.ArcCamera";
 // Method names.
 constexpr char kStartServiceMethod[] = "StartService";
 }  // namespace arc_camera
-
-// DEPRECATED, DO NOT USE
-namespace machine_learning {
-constexpr char kMlDecisionServiceName[] = "org.chromium.MlDecisionService";
-constexpr char kMlDecisionServicePath[] = "/org/chromium/MlDecisionService";
-constexpr char kMlDecisionServiceInterface[] = "org.chromium.MlDecisionService";
-constexpr char kShouldDeferScreenDimMethod[] = "ShouldDeferScreenDim";
-}  // namespace machine_learning
 
 namespace modemfwd {
 const char kModemfwdInterface[] = "org.chromium.Modemfwd";

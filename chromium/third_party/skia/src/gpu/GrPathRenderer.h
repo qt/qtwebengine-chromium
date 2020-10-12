@@ -14,7 +14,6 @@
 
 class GrCaps;
 class GrClip;
-class GrFixedClip;
 class GrHardClip;
 class GrPaint;
 class GrRecordingContext;
@@ -127,7 +126,6 @@ public:
             SkASSERT(fContext);
             SkASSERT(fUserStencilSettings);
             SkASSERT(fRenderTargetContext);
-            SkASSERT(fClip);
             SkASSERT(fClipConservativeBounds);
             SkASSERT(fViewMatrix);
             SkASSERT(fShape);

@@ -19,7 +19,6 @@
 #include "include/private/GrRecordingContext.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorSpaceXform.h"
-#include "src/gpu/GrFixedClip.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrTextureProxy.h"
@@ -110,17 +109,15 @@ GrSurfaceProxyView SkAlphaThresholdFilterImpl::createMaskTexture(GrRecordingCont
     }
 
     SkRegion::Iterator iter(fRegion);
-    rtContext->clear(nullptr, SK_PMColor4fTRANSPARENT,
-                     GrRenderTargetContext::CanClearFullscreen::kYes);
+    rtContext->clear(SK_PMColor4fTRANSPARENT);
 
-    GrFixedClip clip(SkIRect::MakeWH(bounds.width(), bounds.height()));
     while (!iter.done()) {
         GrPaint paint;
         paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
         SkRect rect = SkRect::Make(iter.rect());
 
-        rtContext->drawRect(clip, std::move(paint), GrAA::kNo, inMatrix, rect);
+        rtContext->drawRect(nullptr, std::move(paint), GrAA::kNo, inMatrix, rect);
 
         iter.next();
     }
@@ -165,10 +162,12 @@ sk_sp<SkSpecialImage> SkAlphaThresholdFilterImpl::onFilterImage(const Context& c
         if (!maskView) {
             return nullptr;
         }
+        auto maskFP = GrTextureEffect::Make(std::move(maskView), kPremul_SkAlphaType,
+                                            SkMatrix::Translate(-bounds.x(), -bounds.y()));
 
         auto textureFP = GrTextureEffect::Make(
                 std::move(inputView), input->alphaType(),
-                SkMatrix::MakeTrans(input->subset().x(), input->subset().y()));
+                SkMatrix::Translate(input->subset().x(), input->subset().y()));
         textureFP = GrColorSpaceXformEffect::Make(std::move(textureFP), input->getColorSpace(),
                                                   input->alphaType(), ctx.colorSpace());
         if (!textureFP) {
@@ -176,17 +175,13 @@ sk_sp<SkSpecialImage> SkAlphaThresholdFilterImpl::onFilterImage(const Context& c
         }
 
         auto thresholdFP = GrAlphaThresholdFragmentProcessor::Make(
-                std::move(maskView), fInnerThreshold, fOuterThreshold, bounds);
+                std::move(textureFP), std::move(maskFP), fInnerThreshold, fOuterThreshold);
         if (!thresholdFP) {
             return nullptr;
         }
 
-        std::unique_ptr<GrFragmentProcessor> fpSeries[] = { std::move(textureFP),
-                                                            std::move(thresholdFP) };
-        auto fp = GrFragmentProcessor::RunInSeries(fpSeries, 2);
-
-        return DrawWithFP(context, std::move(fp), bounds, ctx.colorType(), ctx.colorSpace(),
-                          isProtected);
+        return DrawWithFP(context, std::move(thresholdFP), bounds, ctx.colorType(),
+                          ctx.colorSpace(), isProtected);
     }
 #endif
 

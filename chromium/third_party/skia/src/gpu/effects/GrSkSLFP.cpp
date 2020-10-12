@@ -198,8 +198,7 @@ const char* GrSkSLFP::name() const {
 }
 
 void GrSkSLFP::addChild(std::unique_ptr<GrFragmentProcessor> child) {
-    child->setSampledWithExplicitCoords();
-    this->registerChildProcessor(std::move(child));
+    this->registerExplicitlySampledChild(std::move(child));
 }
 
 GrGLSLFragmentProcessor* GrSkSLFP::onCreateGLSLInstance() const {
@@ -259,6 +258,7 @@ GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrSkSLFP);
 #include "include/effects/SkArithmeticImageFilter.h"
 #include "include/effects/SkOverdrawColorFilter.h"
 #include "include/gpu/GrContext.h"
+#include "src/core/SkColorFilterBase.h"
 #include "src/gpu/effects/generated/GrConstColorProcessor.h"
 
 extern const char* SKSL_ARITHMETIC_SRC;
@@ -284,7 +284,7 @@ std::unique_ptr<GrFragmentProcessor> GrSkSLFP::TestCreate(GrProcessorTestData* d
             auto result = GrSkSLFP::Make(d->context(), effect, "Arithmetic",
                                          SkData::MakeWithCopy(&inputs, sizeof(inputs)));
             result->addChild(GrConstColorProcessor::Make(
-                                     SK_PMColor4fWHITE, GrConstColorProcessor::InputMode::kIgnore));
+                /*inputFP=*/nullptr, SK_PMColor4fWHITE, GrConstColorProcessor::InputMode::kIgnore));
             return std::unique_ptr<GrFragmentProcessor>(result.release());
         }
         case 2: {
@@ -292,8 +292,8 @@ std::unique_ptr<GrFragmentProcessor> GrSkSLFP::TestCreate(GrProcessorTestData* d
             for (SkColor& c : colors) {
                 c = d->fRandom->nextU();
             }
-            return SkOverdrawColorFilter::MakeWithSkColors(colors)
-                ->asFragmentProcessor(d->context(), GrColorInfo{});
+            auto filter = SkOverdrawColorFilter::MakeWithSkColors(colors);
+            return as_CFB(filter)->asFragmentProcessor(d->context(), GrColorInfo{});
         }
     }
     SK_ABORT("unreachable");

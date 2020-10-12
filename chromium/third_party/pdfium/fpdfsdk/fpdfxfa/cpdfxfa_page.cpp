@@ -14,13 +14,20 @@
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_widget.h"
-#include "third_party/base/ptr_util.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 #include "xfa/fxfa/cxfa_rendercontext.h"
 #include "xfa/fxgraphics/cxfa_graphics.h"
+
+namespace {
+
+constexpr uint32_t kIteratorFilter = XFA_WidgetStatus_Visible |
+                                     XFA_WidgetStatus_Viewable |
+                                     XFA_WidgetStatus_Focused;
+
+}  // namespace
 
 CPDFXFA_Page::CPDFXFA_Page(CPDF_Document* pDocument, int page_index)
     : m_pDocument(pDocument), m_iPageIndex(page_index) {
@@ -78,7 +85,7 @@ void CPDFXFA_Page::LoadPDFPageFromDict(CPDF_Dictionary* pPageDict) {
   ASSERT(pPageDict);
   m_pPDFPage = pdfium::MakeRetain<CPDF_Page>(GetDocument(), pPageDict);
   m_pPDFPage->SetRenderCache(
-      pdfium::MakeUnique<CPDF_PageRenderCache>(m_pPDFPage.Get()));
+      std::make_unique<CPDF_PageRenderCache>(m_pPDFPage.Get()));
   m_pPDFPage->ParseContent();
 }
 
@@ -180,12 +187,14 @@ CPDFSDK_Annot* CPDFXFA_Page::GetNextXFAAnnot(CPDFSDK_Annot* pSDKAnnot,
   if (!pXFAWidget)
     return nullptr;
 
+  CXFA_FFPageView* xfa_page_view = GetXFAPageView();
+  if (!xfa_page_view)
+    return nullptr;
+
   ObservedPtr<CPDFSDK_Annot> pObservedAnnot(pSDKAnnot);
   CPDFSDK_PageView* pPageView = pSDKAnnot->GetPageView();
   std::unique_ptr<IXFA_WidgetIterator> pWidgetIterator =
-      GetXFAPageView()->CreateTraverseWidgetIterator(XFA_WidgetStatus_Visible |
-                                                     XFA_WidgetStatus_Viewable |
-                                                     XFA_WidgetStatus_Focused);
+      xfa_page_view->CreateTraverseWidgetIterator(kIteratorFilter);
 
   // Check |pSDKAnnot| again because JS may have destroyed it
   if (!pObservedAnnot)
@@ -210,9 +219,7 @@ CPDFSDK_Annot* CPDFXFA_Page::GetFirstOrLastXFAAnnot(CPDFSDK_PageView* page_view,
 
   ObservedPtr<CPDFSDK_PageView> watched_page_view(page_view);
   std::unique_ptr<IXFA_WidgetIterator> it =
-      xfa_page_view->CreateTraverseWidgetIterator(XFA_WidgetStatus_Visible |
-                                                  XFA_WidgetStatus_Viewable |
-                                                  XFA_WidgetStatus_Focused);
+      xfa_page_view->CreateTraverseWidgetIterator(kIteratorFilter);
   if (!watched_page_view)
     return nullptr;
 

@@ -76,7 +76,7 @@ const View kObjectsView{"objects", "count", "SUM(count)", nullptr};
 const View kViews[] = {kAllocObjectsView, kObjectsView, kAllocSpaceView,
                        kSpaceView};
 
-using Iterator = trace_processor::TraceProcessor::Iterator;
+using trace_processor::Iterator;
 
 constexpr const char* kQueryProfiles =
     "select distinct hpa.upid, hpa.ts, p.pid from heap_profile_allocation hpa, "
@@ -578,7 +578,8 @@ bool TraceToPprof(trace_processor::TraceProcessor* tp,
   if (any_fail) {
     PERFETTO_ELOG(
         "One or more of your profiles had an issue. Please consult "
-        "https://docs.perfetto.dev/#/heapprofd?id=troubleshooting.");
+        "https://perfetto.dev/docs/data-sources/"
+        "native-heap-profiler#troubleshooting");
   }
   if (!it.Status().ok()) {
     PERFETTO_DFATAL_OR_ELOG("Invalid iterator: %s",

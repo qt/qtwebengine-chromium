@@ -13,7 +13,6 @@
 #include "src/gpu/effects/generated/GrClampFragmentProcessor.h"
 #include "src/gpu/effects/generated/GrConstColorProcessor.h"
 #include "src/gpu/effects/generated/GrOverrideInputFragmentProcessor.h"
-#include "src/gpu/effects/generated/GrPremulInputFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLProgramDataManager.h"
@@ -74,25 +73,47 @@ void GrFragmentProcessor::addCoordTransform(GrCoordTransform* transform) {
     fFlags |= kHasCoordTransforms_Flag;
 }
 
-void GrFragmentProcessor::setSampleMatrix(SkSL::SampleMatrix matrix) {
-    if (matrix == fMatrix) {
+void GrFragmentProcessor::setSampleMatrix(SkSL::SampleMatrix newMatrix) {
+    if (newMatrix == fMatrix) {
         return;
     }
+    SkASSERT(newMatrix.fKind != SkSL::SampleMatrix::Kind::kNone);
     SkASSERT(fMatrix.fKind != SkSL::SampleMatrix::Kind::kVariable);
+    if (this->numCoordTransforms() == 0 &&
+        (newMatrix.fKind == SkSL::SampleMatrix::Kind::kConstantOrUniform ||
+         newMatrix.fKind == SkSL::SampleMatrix::Kind::kMixed)) {
+        // as things stand, matrices only work when there's a coord transform, so we need to add
+        // an identity transform to keep the downstream code happy
+        static GrCoordTransform identity;
+        this->addCoordTransform(&identity);
+    }
     if (fMatrix.fKind == SkSL::SampleMatrix::Kind::kConstantOrUniform) {
-        SkASSERT(matrix.fKind == SkSL::SampleMatrix::Kind::kVariable ||
-                 (matrix.fKind == SkSL::SampleMatrix::Kind::kMixed &&
-                  matrix.fExpression == fMatrix.fExpression));
-        fMatrix = SkSL::SampleMatrix(SkSL::SampleMatrix::Kind::kMixed, fMatrix.fOwner,
-                                     fMatrix.fExpression);
+        if (newMatrix.fKind == SkSL::SampleMatrix::Kind::kConstantOrUniform) {
+            // need to base this transform on the one that happened in our parent
+            // If we're already based on something, then we have to assume that parent is now
+            // based on yet another transform, so don't update our base pointer (or we'll skip
+            // the intermediate transform).
+            if (!fMatrix.fBase) {
+                fMatrix.fBase = newMatrix.fOwner;
+            }
+        } else {
+            SkASSERT(newMatrix.fKind == SkSL::SampleMatrix::Kind::kVariable);
+            fMatrix.fKind = SkSL::SampleMatrix::Kind::kMixed;
+            fMatrix.fBase = nullptr;
+        }
     } else {
         SkASSERT(fMatrix.fKind == SkSL::SampleMatrix::Kind::kNone);
-        fMatrix = matrix;
+        fMatrix = newMatrix;
     }
-    if (matrix.fKind == SkSL::SampleMatrix::Kind::kVariable) {
-        for (auto& child : fChildProcessors) {
-            child->setSampleMatrix(matrix);
-        }
+    for (auto& child : fChildProcessors) {
+        child->setSampleMatrix(newMatrix);
+    }
+}
+
+void GrFragmentProcessor::setSampledWithExplicitCoords() {
+    fFlags |= kSampledWithExplicitCoords;
+    for (auto& child : fChildProcessors) {
+        child->setSampledWithExplicitCoords();
     }
 }
 
@@ -114,7 +135,26 @@ bool GrFragmentProcessor::isInstantiated() const {
 }
 #endif
 
-int GrFragmentProcessor::registerChildProcessor(std::unique_ptr<GrFragmentProcessor> child) {
+int GrFragmentProcessor::registerChild(std::unique_ptr<GrFragmentProcessor> child,
+                                       SkSL::SampleMatrix sampleMatrix,
+                                       bool explicitlySampled) {
+    // Configure child's sampling state first
+    if (explicitlySampled) {
+        child->setSampledWithExplicitCoords();
+    }
+    if (sampleMatrix.fKind != SkSL::SampleMatrix::Kind::kNone) {
+        // FIXME(michaelludwig) - Temporary hack. Owner tracking will be moved off of SampleMatrix
+        // and into FP. Currently, coord transform compilation fails on sample_matrix GMs if the
+        // child isn't the owner. But the matrix effect (and expected behavior) require the owner
+        // to be 'this' FP.
+        if (this->classID() == kGrMatrixEffect_ClassID) {
+            sampleMatrix.fOwner = this;
+        } else {
+            sampleMatrix.fOwner = child.get();
+        }
+        child->setSampleMatrix(sampleMatrix);
+    }
+
     if (child->fFlags & kHasCoordTransforms_Flag) {
         fFlags |= kHasCoordTransforms_Flag;
     }
@@ -125,6 +165,18 @@ int GrFragmentProcessor::registerChildProcessor(std::unique_ptr<GrFragmentProces
     SkASSERT(fMatrix.fKind == SkSL::SampleMatrix::Kind::kNone ||
              fMatrix.fKind == SkSL::SampleMatrix::Kind::kConstantOrUniform);
     return index;
+}
+
+int GrFragmentProcessor::cloneAndRegisterChildProcessor(const GrFragmentProcessor& fp) {
+    std::unique_ptr<GrFragmentProcessor> clone = fp.clone();
+    return this->registerChild(std::move(clone), fp.sampleMatrix(),
+                               fp.isSampledWithExplicitCoords());
+}
+
+void GrFragmentProcessor::cloneAndRegisterAllChildProcessors(const GrFragmentProcessor& src) {
+    for (int i = 0; i < src.numChildProcessors(); ++i) {
+        this->cloneAndRegisterChildProcessor(src.childProcessor(i));
+    }
 }
 
 bool GrFragmentProcessor::hasSameTransforms(const GrFragmentProcessor& that) const {
@@ -156,56 +208,50 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::MulInputByChildAlpha(
     return GrXfermodeFragmentProcessor::MakeFromDstProcessor(std::move(fp), SkBlendMode::kSrcIn);
 }
 
-std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::PremulInput(
-        std::unique_ptr<GrFragmentProcessor> fp) {
-    if (!fp) {
-        return nullptr;
-    }
-    std::unique_ptr<GrFragmentProcessor> fpPipeline[] = { GrPremulInputFragmentProcessor::Make(),
-                                                          std::move(fp) };
-    return GrFragmentProcessor::RunInSeries(fpPipeline, 2);
-}
-
 std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::ClampPremulOutput(
         std::unique_ptr<GrFragmentProcessor> fp) {
     if (!fp) {
         return nullptr;
     }
-    std::unique_ptr<GrFragmentProcessor> fpPipeline[] = {
-        std::move(fp),
-        GrClampFragmentProcessor::Make(true)
-    };
-    return GrFragmentProcessor::RunInSeries(fpPipeline, 2);
+    return GrClampFragmentProcessor::Make(std::move(fp), /*clampToPremul=*/true);
 }
 
 std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::SwizzleOutput(
         std::unique_ptr<GrFragmentProcessor> fp, const GrSwizzle& swizzle) {
     class SwizzleFragmentProcessor : public GrFragmentProcessor {
     public:
-        static std::unique_ptr<GrFragmentProcessor> Make(const GrSwizzle& swizzle) {
-            return std::unique_ptr<GrFragmentProcessor>(new SwizzleFragmentProcessor(swizzle));
+        static std::unique_ptr<GrFragmentProcessor> Make(std::unique_ptr<GrFragmentProcessor> fp,
+                                                         const GrSwizzle& swizzle) {
+            return std::unique_ptr<GrFragmentProcessor>(
+                new SwizzleFragmentProcessor(std::move(fp), swizzle));
         }
 
         const char* name() const override { return "Swizzle"; }
         const GrSwizzle& swizzle() const { return fSwizzle; }
 
-        std::unique_ptr<GrFragmentProcessor> clone() const override { return Make(fSwizzle); }
+        std::unique_ptr<GrFragmentProcessor> clone() const override {
+            return Make(this->childProcessor(0).clone(), fSwizzle);
+        }
 
     private:
-        SwizzleFragmentProcessor(const GrSwizzle& swizzle)
-                : INHERITED(kSwizzleFragmentProcessor_ClassID, kAll_OptimizationFlags)
-                , fSwizzle(swizzle) {}
+        SwizzleFragmentProcessor(std::unique_ptr<GrFragmentProcessor> fp, const GrSwizzle& swizzle)
+                : INHERITED(kSwizzleFragmentProcessor_ClassID, ProcessorOptimizationFlags(fp.get()))
+                , fSwizzle(swizzle) {
+            this->registerChild(std::move(fp));
+        }
 
         GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
             class GLFP : public GrGLSLFragmentProcessor {
             public:
                 void emitCode(EmitArgs& args) override {
+                    SkString childColor = this->invokeChild(0, args.fInputColor, args);
+
                     const SwizzleFragmentProcessor& sfp = args.fFp.cast<SwizzleFragmentProcessor>();
                     const GrSwizzle& swizzle = sfp.swizzle();
                     GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
 
                     fragBuilder->codeAppendf("%s = %s.%s;",
-                            args.fOutputColor, args.fInputColor, swizzle.asString().c_str());
+                            args.fOutputColor, childColor.c_str(), swizzle.asString().c_str());
                 }
             };
             return new GLFP;
@@ -235,9 +281,7 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::SwizzleOutput(
     if (GrSwizzle::RGBA() == swizzle) {
         return fp;
     }
-    std::unique_ptr<GrFragmentProcessor> fpPipeline[] = { std::move(fp),
-                                                          SwizzleFragmentProcessor::Make(swizzle) };
-    return GrFragmentProcessor::RunInSeries(fpPipeline, 2);
+    return SwizzleFragmentProcessor::Make(std::move(fp), swizzle);
 }
 
 std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::MakeInputPremulAndMulByOutput(
@@ -259,7 +303,7 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::MakeInputPremulAndMulB
     private:
         PremulFragmentProcessor(std::unique_ptr<GrFragmentProcessor> processor)
                 : INHERITED(kPremulFragmentProcessor_ClassID, OptFlags(processor.get())) {
-            this->registerChildProcessor(std::move(processor));
+            this->registerChild(std::move(processor));
         }
 
         GrGLSLFragmentProcessor* onCreateGLSLInstance() const override {
@@ -359,7 +403,7 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::RunInSeries(
                 : INHERITED(kSeriesFragmentProcessor_ClassID, OptFlags(children, cnt)) {
             SkASSERT(cnt > 1);
             for (int i = 0; i < cnt; ++i) {
-                this->registerChildProcessor(std::move(children[i]));
+                this->registerChild(std::move(children[i]));
             }
         }
 
@@ -400,8 +444,8 @@ std::unique_ptr<GrFragmentProcessor> GrFragmentProcessor::RunInSeries(
     SkPMColor4f knownColor;
     int leadingFPsToEliminate = info.initialProcessorsToEliminate(&knownColor);
     if (leadingFPsToEliminate) {
-        std::unique_ptr<GrFragmentProcessor> colorFP(
-                GrConstColorProcessor::Make(knownColor, GrConstColorProcessor::InputMode::kIgnore));
+        std::unique_ptr<GrFragmentProcessor> colorFP = GrConstColorProcessor::Make(
+            /*inputFP=*/nullptr, knownColor, GrConstColorProcessor::InputMode::kIgnore);
         if (leadingFPsToEliminate == cnt) {
             return colorFP;
         }

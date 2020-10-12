@@ -23,6 +23,14 @@
 #include <spirv-tools/libspirv.hpp>
 #include <spirv_cross.hpp>
 
+#ifdef DAWN_ENABLE_WGSL
+// Tint include must be after spirv_cross.hpp, because spirv-cross has its own
+// version of spirv_headers.
+// clang-format off
+#include <tint/tint.h>
+// clang-format on
+#endif  // DAWN_ENABLE_WGSL
+
 #include <sstream>
 
 namespace dawn_native {
@@ -280,6 +288,13 @@ namespace dawn_native {
                     return wgpu::TextureFormat::Undefined;
             }
         }
+
+        std::string GetShaderDeclarationString(BindGroupIndex group, BindingNumber binding) {
+            std::ostringstream ostream;
+            ostream << "the shader module declaration at set " << static_cast<uint32_t>(group)
+                    << " binding " << static_cast<uint32_t>(binding);
+            return ostream.str();
+        }
     }  // anonymous namespace
 
     MaybeError ValidateSpirv(DeviceBase*, const uint32_t* code, uint32_t codeSize) {
@@ -316,6 +331,77 @@ namespace dawn_native {
         return {};
     }
 
+#ifdef DAWN_ENABLE_WGSL
+    MaybeError ValidateWGSL(const char* source) {
+        std::ostringstream errorStream;
+        errorStream << "Tint WGSL failure:" << std::endl;
+
+        tint::Context context;
+        tint::reader::wgsl::Parser parser(&context, source);
+
+        if (!parser.Parse()) {
+            errorStream << "Parser: " << parser.error() << std::endl;
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        tint::ast::Module module = parser.module();
+        if (!module.IsValid()) {
+            errorStream << "Invalid module generated..." << std::endl;
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        tint::TypeDeterminer type_determiner(&context, &module);
+        if (!type_determiner.Determine()) {
+            errorStream << "Type Determination: " << type_determiner.error();
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        tint::Validator validator;
+        if (!validator.Validate(module)) {
+            errorStream << "Validation: " << validator.error() << std::endl;
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        return {};
+    }
+
+    ResultOrError<std::vector<uint32_t>> ConvertWGSLToSPIRV(const char* source) {
+        std::ostringstream errorStream;
+        errorStream << "Tint WGSL->SPIR-V failure:" << std::endl;
+
+        tint::Context context;
+        tint::reader::wgsl::Parser parser(&context, source);
+
+        // TODO: This is a duplicate parse with ValidateWGSL, need to store
+        // state between calls to avoid this.
+        if (!parser.Parse()) {
+            errorStream << "Parser: " << parser.error() << std::endl;
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        tint::ast::Module module = parser.module();
+        if (!module.IsValid()) {
+            errorStream << "Invalid module generated..." << std::endl;
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        tint::TypeDeterminer type_determiner(&context, &module);
+        if (!type_determiner.Determine()) {
+            errorStream << "Type Determination: " << type_determiner.error();
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        tint::writer::spirv::Generator generator(std::move(module));
+        if (!generator.Generate()) {
+            errorStream << "Generator: " << generator.error() << std::endl;
+            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        }
+
+        std::vector<uint32_t> spirv = generator.result();
+        return std::move(spirv);
+    }
+#endif  // DAWN_ENABLE_WGSL
+
     MaybeError ValidateShaderModuleDescriptor(DeviceBase* device,
                                               const ShaderModuleDescriptor* descriptor) {
         const ChainedStruct* chainedDescriptor = descriptor->nextInChain;
@@ -330,17 +416,22 @@ namespace dawn_native {
 
         switch (chainedDescriptor->sType) {
             case wgpu::SType::ShaderModuleSPIRVDescriptor: {
-                const ShaderModuleSPIRVDescriptor* spirvDesc =
+                const auto* spirvDesc =
                     static_cast<const ShaderModuleSPIRVDescriptor*>(chainedDescriptor);
                 DAWN_TRY(ValidateSpirv(device, spirvDesc->code, spirvDesc->codeSize));
                 break;
             }
 
             case wgpu::SType::ShaderModuleWGSLDescriptor: {
-                return DAWN_VALIDATION_ERROR("WGSL not supported (yet)");
+#ifdef DAWN_ENABLE_WGSL
+                const auto* wgslDesc =
+                    static_cast<const ShaderModuleWGSLDescriptor*>(chainedDescriptor);
+                DAWN_TRY(ValidateWGSL(wgslDesc->source));
                 break;
+#else
+                return DAWN_VALIDATION_ERROR("WGSL not supported (yet)");
+#endif  // DAWN_ENABLE_WGSL
             }
-
             default:
                 return DAWN_VALIDATION_ERROR("Unsupported sType");
         }
@@ -351,13 +442,26 @@ namespace dawn_native {
     // ShaderModuleBase
 
     ShaderModuleBase::ShaderModuleBase(DeviceBase* device, const ShaderModuleDescriptor* descriptor)
-        : CachedObject(device) {
+        : CachedObject(device), mType(Type::Undefined) {
         ASSERT(descriptor->nextInChain != nullptr);
-        ASSERT(descriptor->nextInChain->sType == wgpu::SType::ShaderModuleSPIRVDescriptor);
-
-        const ShaderModuleSPIRVDescriptor* spirvDesc =
-            static_cast<const ShaderModuleSPIRVDescriptor*>(descriptor->nextInChain);
-        mSpirv.assign(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
+        switch (descriptor->nextInChain->sType) {
+            case wgpu::SType::ShaderModuleSPIRVDescriptor: {
+                mType = Type::Spirv;
+                const auto* spirvDesc =
+                    static_cast<const ShaderModuleSPIRVDescriptor*>(descriptor->nextInChain);
+                mSpirv.assign(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
+                break;
+            }
+            case wgpu::SType::ShaderModuleWGSLDescriptor: {
+                mType = Type::Wgsl;
+                const auto* wgslDesc =
+                    static_cast<const ShaderModuleWGSLDescriptor*>(descriptor->nextInChain);
+                mWgsl = std::string(wgslDesc->source);
+                break;
+            }
+            default:
+                UNREACHABLE();
+        }
 
         mFragmentOutputFormatBaseTypes.fill(Format::Other);
         if (GetDevice()->IsToggleEnabled(Toggle::UseSpvcParser)) {
@@ -366,7 +470,7 @@ namespace dawn_native {
     }
 
     ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag)
-        : CachedObject(device, tag) {
+        : CachedObject(device, tag), mType(Type::Undefined) {
     }
 
     ShaderModuleBase::~ShaderModuleBase() {
@@ -411,12 +515,14 @@ namespace dawn_native {
         auto ExtractResourcesBinding =
             [this](std::vector<shaderc_spvc_binding_info> bindings) -> MaybeError {
             for (const auto& binding : bindings) {
-                if (binding.set >= kMaxBindGroups) {
+                BindGroupIndex bindGroupIndex(binding.set);
+
+                if (bindGroupIndex >= kMaxBindGroupsTyped) {
                     return DAWN_VALIDATION_ERROR("Bind group index over limits in the SPIRV");
                 }
 
-                const auto& it = mBindingInfo[binding.set].emplace(BindingNumber(binding.binding),
-                                                                   ShaderBindingInfo{});
+                const auto& it = mBindingInfo[bindGroupIndex].emplace(
+                    BindingNumber(binding.binding), ShaderBindingInfo{});
                 if (!it.second) {
                     return DAWN_VALIDATION_ERROR("Shader has duplicate bindings");
                 }
@@ -454,6 +560,11 @@ namespace dawn_native {
                         info->viewDimension = ToWGPUTextureViewDimension(binding.texture_dimension);
                         break;
                     }
+                    case wgpu::BindingType::UniformBuffer:
+                    case wgpu::BindingType::StorageBuffer:
+                    case wgpu::BindingType::ReadonlyStorageBuffer:
+                        info->minBufferBindingSize = binding.minimum_buffer_size;
+                        break;
                     default:
                         break;
                 }
@@ -572,6 +683,10 @@ namespace dawn_native {
             return DAWN_VALIDATION_ERROR("Push constants aren't supported.");
         }
 
+        if (resources.sampled_images.size() > 0) {
+            return DAWN_VALIDATION_ERROR("Combined images and samplers aren't supported.");
+        }
+
         // Fill in bindingInfo with the SPIRV bindings
         auto ExtractResourcesBinding =
             [this](const spirv_cross::SmallVector<spirv_cross::Resource>& resources,
@@ -589,13 +704,15 @@ namespace dawn_native {
 
                 BindingNumber bindingNumber(
                     compiler.get_decoration(resource.id, spv::DecorationBinding));
-                uint32_t set = compiler.get_decoration(resource.id, spv::DecorationDescriptorSet);
+                BindGroupIndex bindGroupIndex(
+                    compiler.get_decoration(resource.id, spv::DecorationDescriptorSet));
 
-                if (set >= kMaxBindGroups) {
+                if (bindGroupIndex >= kMaxBindGroupsTyped) {
                     return DAWN_VALIDATION_ERROR("Bind group index over limits in the SPIRV");
                 }
 
-                const auto& it = mBindingInfo[set].emplace(bindingNumber, ShaderBindingInfo{});
+                const auto& it =
+                    mBindingInfo[bindGroupIndex].emplace(bindingNumber, ShaderBindingInfo{});
                 if (!it.second) {
                     return DAWN_VALIDATION_ERROR("Shader has duplicate bindings");
                 }
@@ -603,6 +720,15 @@ namespace dawn_native {
                 ShaderBindingInfo* info = &it.first->second;
                 info->id = resource.id;
                 info->base_type_id = resource.base_type_id;
+
+                if (bindingType == wgpu::BindingType::UniformBuffer ||
+                    bindingType == wgpu::BindingType::StorageBuffer ||
+                    bindingType == wgpu::BindingType::ReadonlyStorageBuffer) {
+                    // Determine buffer size, with a minimum of 1 element in the runtime array
+                    spirv_cross::SPIRType type = compiler.get_type(info->base_type_id);
+                    info->minBufferBindingSize =
+                        compiler.get_declared_struct_size_runtime_array(type, 1);
+                }
 
                 switch (bindingType) {
                     case wgpu::BindingType::SampledTexture: {
@@ -759,26 +885,70 @@ namespace dawn_native {
         return mExecutionModel;
     }
 
-    bool ShaderModuleBase::IsCompatibleWithPipelineLayout(const PipelineLayoutBase* layout) const {
-        ASSERT(!IsError());
-
-        for (uint32_t group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-            if (!IsCompatibleWithBindGroupLayout(group, layout->GetBindGroupLayout(group))) {
-                return false;
-            }
+    RequiredBufferSizes ShaderModuleBase::ComputeRequiredBufferSizesForLayout(
+        const PipelineLayoutBase* layout) const {
+        RequiredBufferSizes bufferSizes;
+        for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
+            bufferSizes[group] =
+                GetBindGroupMinBufferSizes(mBindingInfo[group], layout->GetBindGroupLayout(group));
         }
 
-        for (uint32_t group : IterateBitSet(~layout->GetBindGroupLayoutsMask())) {
-            if (mBindingInfo[group].size() > 0) {
-                return false;
-            }
-        }
-
-        return true;
+        return bufferSizes;
     }
 
-    bool ShaderModuleBase::IsCompatibleWithBindGroupLayout(
-        size_t group,
+    std::vector<uint64_t> ShaderModuleBase::GetBindGroupMinBufferSizes(
+        const BindingInfoMap& shaderMap,
+        const BindGroupLayoutBase* layout) const {
+        std::vector<uint64_t> requiredBufferSizes(layout->GetUnverifiedBufferCount());
+        uint32_t packedIdx = 0;
+
+        for (BindingIndex bindingIndex{0}; bindingIndex < layout->GetBufferCount();
+             ++bindingIndex) {
+            const BindingInfo& bindingInfo = layout->GetBindingInfo(bindingIndex);
+            if (bindingInfo.minBufferBindingSize != 0) {
+                // Skip bindings that have minimum buffer size set in the layout
+                continue;
+            }
+
+            ASSERT(packedIdx < requiredBufferSizes.size());
+            const auto& shaderInfo = shaderMap.find(bindingInfo.binding);
+            if (shaderInfo != shaderMap.end()) {
+                requiredBufferSizes[packedIdx] = shaderInfo->second.minBufferBindingSize;
+            } else {
+                // We have to include buffers if they are included in the bind group's
+                // packed vector. We don't actually need to check these at draw time, so
+                // if this is a problem in the future we can optimize it further.
+                requiredBufferSizes[packedIdx] = 0;
+            }
+            ++packedIdx;
+        }
+
+        return requiredBufferSizes;
+    }
+
+    MaybeError ShaderModuleBase::ValidateCompatibilityWithPipelineLayout(
+        const PipelineLayoutBase* layout) const {
+        ASSERT(!IsError());
+
+        for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
+            DAWN_TRY(
+                ValidateCompatibilityWithBindGroupLayout(group, layout->GetBindGroupLayout(group)));
+        }
+
+        for (BindGroupIndex group : IterateBitSet(~layout->GetBindGroupLayoutsMask())) {
+            if (mBindingInfo[group].size() > 0) {
+                std::ostringstream ostream;
+                ostream << "No bind group layout entry matches the declaration set "
+                        << static_cast<uint32_t>(group) << " in the shader module";
+                return DAWN_VALIDATION_ERROR(ostream.str());
+            }
+        }
+
+        return {};
+    }
+
+    MaybeError ShaderModuleBase::ValidateCompatibilityWithBindGroupLayout(
+        BindGroupIndex group,
         const BindGroupLayoutBase* layout) const {
         ASSERT(!IsError());
 
@@ -792,7 +962,8 @@ namespace dawn_native {
 
             const auto& bindingIt = bindingMap.find(bindingNumber);
             if (bindingIt == bindingMap.end()) {
-                return false;
+                return DAWN_VALIDATION_ERROR("Missing bind group layout entry for " +
+                                             GetShaderDeclarationString(group, bindingNumber));
             }
             BindingIndex bindingIndex(bindingIt->second);
 
@@ -817,22 +988,32 @@ namespace dawn_native {
                      moduleInfo.type == wgpu::BindingType::Sampler);
 
                 if (!validBindingConversion) {
-                    return false;
+                    return DAWN_VALIDATION_ERROR(
+                        "The binding type of the bind group layout entry conflicts " +
+                        GetShaderDeclarationString(group, bindingNumber));
                 }
             }
 
             if ((bindingInfo.visibility & StageBit(mExecutionModel)) == 0) {
-                return false;
+                return DAWN_VALIDATION_ERROR("The bind group layout entry for " +
+                                             GetShaderDeclarationString(group, bindingNumber) +
+                                             " is not visible for the shader stage");
             }
 
             switch (bindingInfo.type) {
                 case wgpu::BindingType::SampledTexture: {
                     if (bindingInfo.textureComponentType != moduleInfo.textureComponentType) {
-                        return false;
+                        return DAWN_VALIDATION_ERROR(
+                            "The textureComponentType of the bind group layout entry is different "
+                            "from " +
+                            GetShaderDeclarationString(group, bindingNumber));
                     }
 
                     if (bindingInfo.viewDimension != moduleInfo.viewDimension) {
-                        return false;
+                        return DAWN_VALIDATION_ERROR(
+                            "The viewDimension of the bind group layout entry is different "
+                            "from " +
+                            GetShaderDeclarationString(group, bindingNumber));
                     }
                     break;
                 }
@@ -842,17 +1023,32 @@ namespace dawn_native {
                     ASSERT(bindingInfo.storageTextureFormat != wgpu::TextureFormat::Undefined);
                     ASSERT(moduleInfo.storageTextureFormat != wgpu::TextureFormat::Undefined);
                     if (bindingInfo.storageTextureFormat != moduleInfo.storageTextureFormat) {
-                        return false;
+                        return DAWN_VALIDATION_ERROR(
+                            "The storageTextureFormat of the bind group layout entry is different "
+                            "from " +
+                            GetShaderDeclarationString(group, bindingNumber));
                     }
                     if (bindingInfo.viewDimension != moduleInfo.viewDimension) {
-                        return false;
+                        return DAWN_VALIDATION_ERROR(
+                            "The viewDimension of the bind group layout entry is different "
+                            "from " +
+                            GetShaderDeclarationString(group, bindingNumber));
                     }
                     break;
                 }
 
                 case wgpu::BindingType::UniformBuffer:
                 case wgpu::BindingType::ReadonlyStorageBuffer:
-                case wgpu::BindingType::StorageBuffer:
+                case wgpu::BindingType::StorageBuffer: {
+                    if (bindingInfo.minBufferBindingSize != 0 &&
+                        moduleInfo.minBufferBindingSize > bindingInfo.minBufferBindingSize) {
+                        return DAWN_VALIDATION_ERROR(
+                            "The minimum buffer size of the bind group layout entry is smaller "
+                            "than " +
+                            GetShaderDeclarationString(group, bindingNumber));
+                    }
+                    break;
+                }
                 case wgpu::BindingType::Sampler:
                 case wgpu::BindingType::ComparisonSampler:
                     break;
@@ -860,11 +1056,11 @@ namespace dawn_native {
                 case wgpu::BindingType::StorageTexture:
                 default:
                     UNREACHABLE();
-                    return false;
+                    return DAWN_VALIDATION_ERROR("Unsupported binding type");
             }
         }
 
-        return true;
+        return {};
     }
 
     size_t ShaderModuleBase::HashFunc::operator()(const ShaderModuleBase* module) const {
@@ -904,4 +1100,15 @@ namespace dawn_native {
         return options;
     }
 
+    MaybeError ShaderModuleBase::InitializeBase() {
+        if (mType == Type::Wgsl) {
+#ifdef DAWN_ENABLE_WGSL
+            DAWN_TRY_ASSIGN(mSpirv, ConvertWGSLToSPIRV(mWgsl.c_str()));
+#else
+            return DAWN_VALIDATION_ERROR("WGSL not supported (yet)");
+#endif  // DAWN_ENABLE_WGSL
+        }
+
+        return {};
+    }
 }  // namespace dawn_native

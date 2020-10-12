@@ -39,11 +39,17 @@ namespace dawn_native { namespace vulkan {
         // `commands`.
         // TODO(cwallez@chromium.org): coalesce barriers and do them early when possible.
         void TransitionUsageNow(CommandRecordingContext* recordingContext, wgpu::BufferUsage usage);
+        void TransitionUsageNow(CommandRecordingContext* recordingContext,
+                                wgpu::BufferUsage usage,
+                                std::vector<VkBufferMemoryBarrier>* bufferBarriers,
+                                VkPipelineStageFlags* srcStages,
+                                VkPipelineStageFlags* dstStages);
 
       private:
         ~Buffer() override;
         using BufferBase::BufferBase;
         MaybeError Initialize();
+        void ClearBuffer(CommandRecordingContext* recordingContext, ClearValue clearValue);
 
         // Dawn API
         MaybeError MapReadAsyncImpl(uint32_t serial) override;
@@ -53,31 +59,12 @@ namespace dawn_native { namespace vulkan {
 
         bool IsMapWritable() const override;
         MaybeError MapAtCreationImpl(uint8_t** mappedPointer) override;
+        void* GetMappedPointerImpl() override;
 
         VkBuffer mHandle = VK_NULL_HANDLE;
         ResourceMemoryAllocation mMemoryAllocation;
 
         wgpu::BufferUsage mLastUsage = wgpu::BufferUsage::None;
-    };
-
-    class MapRequestTracker {
-      public:
-        MapRequestTracker(Device* device);
-        ~MapRequestTracker();
-
-        void Track(Buffer* buffer, uint32_t mapSerial, void* data, bool isWrite);
-        void Tick(Serial finishedSerial);
-
-      private:
-        Device* mDevice;
-
-        struct Request {
-            Ref<Buffer> buffer;
-            uint32_t mapSerial;
-            void* data;
-            bool isWrite;
-        };
-        SerialQueue<Request> mInflightRequests;
     };
 
 }}  // namespace dawn_native::vulkan

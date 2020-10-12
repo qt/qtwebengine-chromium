@@ -227,7 +227,7 @@ static int choose_primary_ref_frame(
 
   const int intra_only = frame_params->frame_type == KEY_FRAME ||
                          frame_params->frame_type == INTRA_ONLY_FRAME;
-  if (intra_only || frame_params->error_resilient_mode || cpi->use_svc ||
+  if (intra_only || frame_params->error_resilient_mode ||
       cpi->ext_flags.use_primary_ref_none) {
     return PRIMARY_REF_NONE;
   }
@@ -237,6 +237,8 @@ static int choose_primary_ref_frame(
   // cpi->gf_group.layer_depth[cpi->gf_group.index], which also controls
   // frame bit allocation.
   if (cm->tiles.large_scale) return (LAST_FRAME - LAST_FRAME);
+
+  if (cpi->use_svc) return av1_svc_primary_ref_frame(cpi);
 
   // Find the most recent reference frame with the same reference type as the
   // current frame
@@ -483,8 +485,8 @@ static int allow_show_existing(const AV1_COMP *const cpi,
   const int is_error_resilient =
       cpi->oxcf.error_resilient_mode ||
       (lookahead_src->flags & AOM_EFLAG_ERROR_RESILIENT);
-  const int is_s_frame =
-      cpi->oxcf.s_frame_mode || (lookahead_src->flags & AOM_EFLAG_SET_S_FRAME);
+  const int is_s_frame = cpi->oxcf.kf_cfg.enable_sframe ||
+                         (lookahead_src->flags & AOM_EFLAG_SET_S_FRAME);
   const int is_key_frame =
       (cpi->rc.frames_to_key == 0) || (frame_flags & FRAMEFLAGS_KEY);
   return !(is_error_resilient || is_s_frame) || is_key_frame;
@@ -882,9 +884,9 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
   // Decide whether to apply temporal filtering to the source frame.
   int apply_filtering =
       frame_params->frame_type == KEY_FRAME &&
-      oxcf->enable_keyframe_filtering && !is_stat_generation_stage(cpi) &&
-      !frame_params->show_existing_frame &&
-      cpi->rc.frames_to_key > TF_NUM_FILTERING_FRAMES_FOR_KEY_FRAME &&
+      oxcf->kf_cfg.enable_keyframe_filtering &&
+      !is_stat_generation_stage(cpi) && !frame_params->show_existing_frame &&
+      cpi->rc.frames_to_key > cpi->oxcf.arnr_max_frames &&
       !is_lossless_requested(oxcf) && oxcf->arnr_max_frames > 0;
   if (apply_filtering) {
     const double y_noise_level = av1_estimate_noise_from_single_plane(
@@ -915,7 +917,7 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
     av1_setup_past_independence(cm);
 
     if (!frame_params->show_frame) {
-      int arf_src_index = get_arf_src_index(&cpi->gf_group, cpi->oxcf.pass);
+      int arf_src_index = get_arf_src_index(&cpi->gf_group, oxcf->pass);
       av1_temporal_filter(cpi, -1 * arf_src_index, NULL);
     } else {
       av1_temporal_filter(cpi, -1, NULL);
@@ -930,7 +932,7 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
   }
 
   if (frame_params->frame_type == KEY_FRAME && !is_stat_generation_stage(cpi) &&
-      oxcf->enable_tpl_model && oxcf->lag_in_frames > 0 &&
+      oxcf->enable_tpl_model && oxcf->gf_cfg.lag_in_frames > 0 &&
       frame_params->show_frame) {
     av1_tpl_setup_stats(cpi, 0, frame_params, frame_input);
   }
@@ -941,8 +943,9 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
   }
 
   // Set frame_input source to true source for psnr calculation.
-  if (apply_filtering) {
-    cpi->source = source_kf_buffer;
+  if (apply_filtering && is_psnr_calc_enabled(cpi)) {
+    cpi->source =
+        av1_scale_if_required(cm, source_kf_buffer, &cpi->scaled_source);
     cpi->unscaled_source = source_kf_buffer;
   }
 
@@ -1046,10 +1049,11 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
                         int64_t *const time_stamp, int64_t *const time_end,
                         const aom_rational64_t *const timestamp_ratio,
                         int flush) {
-  const AV1EncoderConfig *const oxcf = &cpi->oxcf;
+  AV1EncoderConfig *const oxcf = &cpi->oxcf;
   AV1_COMMON *const cm = &cpi->common;
   GF_GROUP *gf_group = &cpi->gf_group;
   ExternalFlags *const ext_flags = &cpi->ext_flags;
+  GFConfig *const gf_cfg = &oxcf->gf_cfg;
 
   EncodeFrameInput frame_input;
   EncodeFrameParams frame_params;
@@ -1060,15 +1064,15 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
 
   // TODO(sarahparker) finish bit allocation for one pass pyramid
   if (has_no_stats_stage(cpi)) {
-    cpi->oxcf.gf_max_pyr_height =
-        AOMMIN(cpi->oxcf.gf_max_pyr_height, USE_ALTREF_FOR_ONE_PASS);
-    cpi->oxcf.gf_min_pyr_height =
-        AOMMIN(cpi->oxcf.gf_min_pyr_height, cpi->oxcf.gf_max_pyr_height);
+    gf_cfg->gf_max_pyr_height =
+        AOMMIN(gf_cfg->gf_max_pyr_height, USE_ALTREF_FOR_ONE_PASS);
+    gf_cfg->gf_min_pyr_height =
+        AOMMIN(gf_cfg->gf_min_pyr_height, gf_cfg->gf_max_pyr_height);
   }
 
   if (!is_stat_generation_stage(cpi)) {
     // If this is a forward keyframe, mark as a show_existing_frame
-    if (cpi->oxcf.fwd_kf_enabled && (gf_group->index == gf_group->size) &&
+    if (oxcf->kf_cfg.fwd_kf_enabled && (gf_group->index == gf_group->size) &&
         gf_group->update_type[1] == ARF_UPDATE && cpi->rc.frames_to_key == 0) {
       frame_params.show_existing_frame = 1;
     } else {
@@ -1153,7 +1157,7 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
 #else
   const int use_one_pass_rt_params = has_no_stats_stage(cpi) &&
                                      oxcf->mode == REALTIME &&
-                                     oxcf->lag_in_frames == 0;
+                                     gf_cfg->lag_in_frames == 0;
   if (use_one_pass_rt_params) {
     av1_get_one_pass_rt_params(cpi, &frame_params, *frame_flags);
   } else if (!is_stat_generation_stage(cpi)) {
@@ -1180,10 +1184,10 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   frame_params.speed = oxcf->speed;
 
   // Work out some encoding parameters specific to the pass:
-  if (has_no_stats_stage(cpi) && cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ) {
+  if (has_no_stats_stage(cpi) && oxcf->aq_mode == CYCLIC_REFRESH_AQ) {
     av1_cyclic_refresh_update_parameters(cpi);
   } else if (is_stat_generation_stage(cpi)) {
-    cpi->td.mb.e_mbd.lossless[0] = is_lossless_requested(&cpi->oxcf);
+    cpi->td.mb.e_mbd.lossless[0] = is_lossless_requested(oxcf);
     const int kf_requested = (cm->current_frame.frame_number == 0 ||
                               (*frame_flags & FRAMEFLAGS_KEY));
     if (kf_requested && frame_update_type != OVERLAY_UPDATE &&
@@ -1263,10 +1267,10 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   cpi->td.mb.delta_qindex = 0;
 
   if (!frame_params.show_existing_frame) {
-    cm->quant_params.using_qmatrix = cpi->oxcf.using_qm;
+    cm->quant_params.using_qmatrix = oxcf->using_qm;
 #if !CONFIG_REALTIME_ONLY
-    if (oxcf->lag_in_frames > 0 && !is_stat_generation_stage(cpi)) {
-      if (cpi->gf_group.index == 1 && cpi->oxcf.enable_tpl_model) {
+    if (gf_cfg->lag_in_frames > 0 && !is_stat_generation_stage(cpi)) {
+      if (cpi->gf_group.index == 1 && oxcf->enable_tpl_model) {
         av1_configure_buffer_updates(cpi, &frame_params.refresh_frame,
                                      frame_update_type, 0);
         av1_set_frame_size(cpi, cm->width, cm->height);
@@ -1283,8 +1287,14 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
     return AOM_CODEC_ERROR;
   }
 #else
-  if (denoise_and_encode(cpi, dest, &frame_input, &frame_params,
-                         &frame_results) != AOM_CODEC_OK) {
+  if (has_no_stats_stage(cpi) && oxcf->mode == REALTIME &&
+      gf_cfg->lag_in_frames == 0) {
+    if (av1_encode(cpi, dest, &frame_input, &frame_params, &frame_results) !=
+        AOM_CODEC_OK) {
+      return AOM_CODEC_ERROR;
+    }
+  } else if (denoise_and_encode(cpi, dest, &frame_input, &frame_params,
+                                &frame_results) != AOM_CODEC_OK) {
     return AOM_CODEC_ERROR;
   }
 #endif  // CONFIG_REALTIME_ONLY
@@ -1313,7 +1323,7 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
             cm->txcoeff_cost_count, cm->txcoeff_cost_timer,
             cm->cum_txcoeff_cost_timer);
 #endif
-    av1_twopass_postencode_update(cpi);
+    if (!has_no_stats_stage(cpi)) av1_twopass_postencode_update(cpi);
   }
 #endif  // !CONFIG_REALTIME_ONLY
 

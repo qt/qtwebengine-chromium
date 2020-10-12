@@ -16,10 +16,9 @@
  */
 
 
-#include <ft2build.h>
-#include FT_INTERNAL_OBJECTS_H
-#include FT_INTERNAL_DEBUG_H
-#include FT_CACHE_H
+#include <freetype/internal/ftobjs.h>
+#include <freetype/internal/ftdebug.h>
+#include <freetype/ftcache.h>
 #include "ftcglyph.h"
 #include "ftcimage.h"
 #include "ftcsbits.h"

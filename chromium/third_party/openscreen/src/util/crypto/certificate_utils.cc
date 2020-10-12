@@ -146,19 +146,6 @@ ErrorOr<bssl::UniquePtr<X509>> CreateSelfSignedX509Certificate(
     absl::string_view name,
     std::chrono::seconds duration,
     const EVP_PKEY& key_pair,
-    std::chrono::seconds time_since_unix_epoch) {
-  bssl::UniquePtr<X509> certificate = CreateCertificateInternal(
-      name, duration, key_pair, time_since_unix_epoch, false, nullptr, nullptr);
-  if (!certificate) {
-    return Error::Code::kCertificateCreationError;
-  }
-  return certificate;
-}
-
-ErrorOr<bssl::UniquePtr<X509>> CreateSelfSignedX509CertificateForTest(
-    absl::string_view name,
-    std::chrono::seconds duration,
-    const EVP_PKEY& key_pair,
     std::chrono::seconds time_since_unix_epoch,
     bool make_ca,
     X509* issuer,

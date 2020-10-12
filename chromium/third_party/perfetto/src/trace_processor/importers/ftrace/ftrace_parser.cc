@@ -25,6 +25,7 @@
 #include "src/trace_processor/importers/systrace/systrace_parser.h"
 #include "src/trace_processor/storage/stats.h"
 #include "src/trace_processor/storage/trace_storage.h"
+#include "src/trace_processor/types/softirq_action.h"
 
 #include "protos/perfetto/trace/ftrace/binder.pbzero.h"
 #include "protos/perfetto/trace/ftrace/ftrace.pbzero.h"
@@ -32,6 +33,7 @@
 #include "protos/perfetto/trace/ftrace/ftrace_stats.pbzero.h"
 #include "protos/perfetto/trace/ftrace/generic.pbzero.h"
 #include "protos/perfetto/trace/ftrace/ion.pbzero.h"
+#include "protos/perfetto/trace/ftrace/irq.pbzero.h"
 #include "protos/perfetto/trace/ftrace/kmem.pbzero.h"
 #include "protos/perfetto/trace/ftrace/lowmemorykiller.pbzero.h"
 #include "protos/perfetto/trace/ftrace/mm_event.pbzero.h"
@@ -39,10 +41,12 @@
 #include "protos/perfetto/trace/ftrace/power.pbzero.h"
 #include "protos/perfetto/trace/ftrace/raw_syscalls.pbzero.h"
 #include "protos/perfetto/trace/ftrace/sched.pbzero.h"
+#include "protos/perfetto/trace/ftrace/scm.pbzero.h"
 #include "protos/perfetto/trace/ftrace/sde.pbzero.h"
 #include "protos/perfetto/trace/ftrace/signal.pbzero.h"
 #include "protos/perfetto/trace/ftrace/systrace.pbzero.h"
 #include "protos/perfetto/trace/ftrace/task.pbzero.h"
+#include "protos/perfetto/trace/ftrace/workqueue.pbzero.h"
 
 namespace perfetto {
 namespace trace_processor {
@@ -78,7 +82,11 @@ FtraceParser::FtraceParser(TraceProcessorContext* context)
       lmk_id_(context->storage->InternString("mem.lmk")),
       comm_name_id_(context->storage->InternString("comm")),
       signal_name_id_(context_->storage->InternString("signal.sig")),
-      oom_kill_id_(context_->storage->InternString("mem.oom_kill")) {
+      oom_kill_id_(context_->storage->InternString("mem.oom_kill")),
+      workqueue_id_(context_->storage->InternString("workqueue")),
+      irq_id_(context_->storage->InternString("irq")),
+      ret_arg_id_(context_->storage->InternString("ret")),
+      vec_arg_id_(context->storage->InternString("vec")) {
   // Build the lookup table for the strings inside ftrace events (e.g. the
   // name of ftrace event fields and the names of their args).
   for (size_t i = 0; i < GetDescriptorsSize(); i++) {
@@ -351,6 +359,50 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
       }
       case FtraceEvent::kSdeTracingMarkWriteFieldNumber: {
         ParseSdeTracingMarkWrite(ts, pid, data);
+        break;
+      }
+      case FtraceEvent::kClockSetRateFieldNumber: {
+        ParseClockSetRate(ts, data);
+        break;
+      }
+      case FtraceEvent::kClockEnableFieldNumber: {
+        ParseClockEnable(ts, data);
+        break;
+      }
+      case FtraceEvent::kClockDisableFieldNumber: {
+        ParseClockDisable(ts, data);
+        break;
+      }
+      case FtraceEvent::kScmCallStartFieldNumber: {
+        ParseScmCallStart(ts, pid, data);
+        break;
+      }
+      case FtraceEvent::kScmCallEndFieldNumber: {
+        ParseScmCallEnd(ts, pid, data);
+        break;
+      }
+      case FtraceEvent::kWorkqueueExecuteStartFieldNumber: {
+        ParseWorkqueueExecuteStart(ts, pid, data);
+        break;
+      }
+      case FtraceEvent::kWorkqueueExecuteEndFieldNumber: {
+        ParseWorkqueueExecuteEnd(ts, pid, data);
+        break;
+      }
+      case FtraceEvent::kIrqHandlerEntryFieldNumber: {
+        ParseIrqHandlerEntry(cpu, ts, data);
+        break;
+      }
+      case FtraceEvent::kIrqHandlerExitFieldNumber: {
+        ParseIrqHandlerExit(cpu, ts, data);
+        break;
+      }
+      case FtraceEvent::kSoftirqEntryFieldNumber: {
+        ParseSoftIrqEntry(cpu, ts, data);
+        break;
+      }
+      case FtraceEvent::kSoftirqExitFieldNumber: {
+        ParseSoftIrqExit(cpu, ts, data);
         break;
       }
       default:
@@ -846,6 +898,151 @@ void FtraceParser::ParseBinderUnlock(int64_t timestamp,
                                      ConstBytes blob) {
   protos::pbzero::BinderUnlockFtraceEvent::Decoder evt(blob.data, blob.size);
   BinderTracker::GetOrCreate(context_)->Unlock(timestamp, pid);
+}
+
+void FtraceParser::ParseClockSetRate(int64_t timestamp, ConstBytes blob) {
+  protos::pbzero::ClockSetRateFtraceEvent::Decoder evt(blob.data, blob.size);
+  static const char kSubtitle[] = "Frequency";
+  ClockRate(timestamp, evt.name(), kSubtitle, evt.state());
+}
+
+void FtraceParser::ParseClockEnable(int64_t timestamp, ConstBytes blob) {
+  protos::pbzero::ClockEnableFtraceEvent::Decoder evt(blob.data, blob.size);
+  static const char kSubtitle[] = "State";
+  ClockRate(timestamp, evt.name(), kSubtitle, evt.state());
+}
+
+void FtraceParser::ParseClockDisable(int64_t timestamp, ConstBytes blob) {
+  protos::pbzero::ClockDisableFtraceEvent::Decoder evt(blob.data, blob.size);
+  static const char kSubtitle[] = "State";
+  ClockRate(timestamp, evt.name(), kSubtitle, evt.state());
+}
+
+void FtraceParser::ClockRate(int64_t timestamp,
+                             base::StringView clock_name,
+                             base::StringView subtitle,
+                             uint64_t rate) {
+  char counter_name[255];
+  snprintf(counter_name, sizeof(counter_name), "%.*s %.*s",
+           int(clock_name.size()), clock_name.data(), int(subtitle.size()),
+           subtitle.data());
+  StringId name = context_->storage->InternString(counter_name);
+  TrackId track = context_->track_tracker->InternGlobalCounterTrack(name);
+  context_->event_tracker->PushCounter(timestamp, rate, track);
+}
+
+void FtraceParser::ParseScmCallStart(int64_t timestamp,
+                                     uint32_t pid,
+                                     ConstBytes blob) {
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
+  TrackId track_id = context_->track_tracker->InternThreadTrack(utid);
+  protos::pbzero::ScmCallStartFtraceEvent::Decoder evt(blob.data, blob.size);
+
+  char str[64];
+  sprintf(str, "scm id=%#" PRIx64, evt.x0());
+  StringId name_id = context_->storage->InternString(str);
+  context_->slice_tracker->Begin(timestamp, track_id, kNullStringId, name_id);
+}
+
+void FtraceParser::ParseScmCallEnd(int64_t timestamp,
+                                   uint32_t pid,
+                                   ConstBytes blob) {
+  protos::pbzero::ScmCallEndFtraceEvent::Decoder evt(blob.data, blob.size);
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
+  TrackId track_id = context_->track_tracker->InternThreadTrack(utid);
+  context_->slice_tracker->End(timestamp, track_id);
+}
+
+void FtraceParser::ParseWorkqueueExecuteStart(int64_t timestamp,
+                                              uint32_t pid,
+                                              ConstBytes blob) {
+  protos::pbzero::WorkqueueExecuteStartFtraceEvent::Decoder evt(blob.data,
+                                                                blob.size);
+  char slice_name[255];
+  snprintf(slice_name, sizeof(slice_name), "%#" PRIx64, evt.function());
+  StringId name_id =
+      context_->storage->InternString(base::StringView(slice_name));
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
+  TrackId track = context_->track_tracker->InternThreadTrack(utid);
+  context_->slice_tracker->Begin(timestamp, track, workqueue_id_, name_id);
+}
+
+void FtraceParser::ParseWorkqueueExecuteEnd(int64_t timestamp,
+                                            uint32_t pid,
+                                            ConstBytes blob) {
+  protos::pbzero::WorkqueueExecuteEndFtraceEvent::Decoder evt(blob.data,
+                                                              blob.size);
+  UniqueTid utid = context_->process_tracker->GetOrCreateThread(pid);
+  TrackId track = context_->track_tracker->InternThreadTrack(utid);
+  context_->slice_tracker->End(timestamp, track, workqueue_id_);
+}
+
+void FtraceParser::ParseIrqHandlerEntry(uint32_t cpu,
+                                        int64_t timestamp,
+                                        protozero::ConstBytes blob) {
+  protos::pbzero::IrqHandlerEntryFtraceEvent::Decoder evt(blob.data, blob.size);
+  char track_name[255];
+  snprintf(track_name, sizeof(track_name), "Irq Cpu %d", cpu);
+  StringId track_name_id = context_->storage->InternString(track_name);
+  char slice_name[255];
+  base::StringView irq_name = evt.name();
+  snprintf(slice_name, sizeof(slice_name), "IRQ (%.*s)", int(irq_name.size()),
+           irq_name.data());
+  StringId slice_name_id = context_->storage->InternString(slice_name);
+  TrackId track = context_->track_tracker->InternCpuTrack(track_name_id, cpu);
+  context_->slice_tracker->Begin(timestamp, track, irq_id_, slice_name_id);
+}
+
+void FtraceParser::ParseIrqHandlerExit(uint32_t cpu,
+                                       int64_t timestamp,
+                                       protozero::ConstBytes blob) {
+  protos::pbzero::IrqHandlerExitFtraceEvent::Decoder evt(blob.data, blob.size);
+  char track_name[255];
+  snprintf(track_name, sizeof(track_name), "Irq Cpu %d", cpu);
+  StringId track_name_id = context_->storage->InternString(track_name);
+  TrackId track = context_->track_tracker->InternCpuTrack(track_name_id, cpu);
+  char status[255];
+  snprintf(status, sizeof(status), "%s",
+           evt.ret() == 1 ? "handled" : "unhandled");
+  StringId status_id = context_->storage->InternString(status);
+  auto args_inserter = [this,
+                        &status_id](ArgsTracker::BoundInserter* inserter) {
+    inserter->AddArg(ret_arg_id_, Variadic::String(status_id));
+  };
+  context_->slice_tracker->End(timestamp, track, irq_id_, {}, args_inserter);
+}
+
+void FtraceParser::ParseSoftIrqEntry(uint32_t cpu,
+                                     int64_t timestamp,
+                                     protozero::ConstBytes blob) {
+  protos::pbzero::SoftirqEntryFtraceEvent::Decoder evt(blob.data, blob.size);
+  char track_name[255];
+  snprintf(track_name, sizeof(track_name), "SoftIrq Cpu %d", cpu);
+  StringId track_name_id = context_->storage->InternString(track_name);
+  auto num_actions = sizeof(kActionNames) / sizeof(*kActionNames);
+  if (evt.vec() >= num_actions) {
+    PERFETTO_DFATAL("No action name at index %d for softirq event.", evt.vec());
+    return;
+  }
+  base::StringView slice_name = kActionNames[evt.vec()];
+  StringId slice_name_id = context_->storage->InternString(slice_name);
+  TrackId track = context_->track_tracker->InternCpuTrack(track_name_id, cpu);
+  context_->slice_tracker->Begin(timestamp, track, irq_id_, slice_name_id);
+}
+
+void FtraceParser::ParseSoftIrqExit(uint32_t cpu,
+                                    int64_t timestamp,
+                                    protozero::ConstBytes blob) {
+  protos::pbzero::SoftirqExitFtraceEvent::Decoder evt(blob.data, blob.size);
+  char track_name[255];
+  snprintf(track_name, sizeof(track_name), "SoftIrq Cpu %d", cpu);
+  StringId track_name_id = context_->storage->InternString(track_name);
+  TrackId track = context_->track_tracker->InternCpuTrack(track_name_id, cpu);
+  auto vec = evt.vec();
+  auto args_inserter = [this, vec](ArgsTracker::BoundInserter* inserter) {
+    inserter->AddArg(vec_arg_id_, Variadic::Integer(vec));
+  };
+  context_->slice_tracker->End(timestamp, track, irq_id_, {}, args_inserter);
 }
 
 }  // namespace trace_processor

@@ -18,7 +18,6 @@ public:
     GrDawnCaps(const GrContextOptions& contextOptions);
 
     bool isFormatSRGB(const GrBackendFormat&) const override;
-    SkImage::CompressionType compressionType(const GrBackendFormat&) const override;
 
     bool isFormatRenderable(const GrBackendFormat& format,
                             int sampleCount = 1) const override;
@@ -36,9 +35,7 @@ public:
         return {surfaceColorType, GrColorTypeBytesPerPixel(surfaceColorType)};
     }
 
-    SurfaceReadPixelsSupport surfaceSupportsReadPixels(const GrSurface*) const override {
-        return SurfaceReadPixelsSupport::kSupported;
-    }
+    SurfaceReadPixelsSupport surfaceSupportsReadPixels(const GrSurface*) const override;
 
     size_t bytesPerPixel(const GrBackendFormat&) const override;
 
@@ -48,8 +45,6 @@ public:
     int maxRenderTargetSampleCount(const GrBackendFormat& format) const override;
 
     GrBackendFormat getBackendFormatFromCompressionType(SkImage::CompressionType) const override;
-
-    GrSwizzle getReadSwizzle(const GrBackendFormat&, GrColorType) const override;
 
     GrSwizzle getWriteSwizzle(const GrBackendFormat&, GrColorType) const override;
 
@@ -62,9 +57,7 @@ public:
 #endif
 
 private:
-    bool onSurfaceSupportsWritePixels(const GrSurface* surface) const override {
-        return true;
-    }
+    bool onSurfaceSupportsWritePixels(const GrSurface* surface) const override;
     bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
         const SkIRect& srcRect, const SkIPoint& dstPoint) const override {
         return true;
@@ -78,6 +71,8 @@ private:
                                                  GrColorType dstColorType) const override {
         return { srcColorType, GrColorTypeBytesPerPixel(srcColorType) };
     }
+
+    GrSwizzle onGetReadSwizzle(const GrBackendFormat&, GrColorType) const override;
 
     typedef GrCaps INHERITED;
 };

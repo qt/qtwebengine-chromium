@@ -280,6 +280,33 @@ hb_gobject_headers = [
   'hb-gobject-structs.h',
 ]
 
+custom_target('hb-version.h',
+  build_by_default: true,
+  input: 'hb-version.h.in',
+  output: 'hb-version.h',
+  command: [find_program('gen-hb-version.py'), meson.project_version(),
+            '@INPUT@', meson.current_source_dir() / 'hb-version.h'])
+
+ragel = find_program('ragel', required: false)
+if not ragel.found()
+  warning('You have to install ragel if you are going to develop HarfBuzz itself')
+else
+  custom_target('ragel header files',
+    build_by_default: true,
+    input: hb_base_ragel_sources,
+    output: '.ragel-artifacts',
+    command: [find_program('gen-ragel-artifacts.py')] + hb_base_ragel_sources)
+endif
+
+custom_target('harfbuzz.cc',
+  build_by_default: true,
+  output: 'harfbuzz.cc',
+  command: [find_program('gen-harfbuzzcc.py'),
+            meson.source_root() / '@OUTPUT@'] +
+            hb_base_sources + hb_glib_sources + hb_ft_sources +
+            hb_graphite2_sources + hb_uniscribe_sources + hb_gdi_sources +
+            hb_directwrite_sources + hb_coretext_sources)
+
 incsrc = include_directories('.')
 
 hb_sources = hb_base_sources + hb_base_ragel_generated_sources
@@ -334,11 +361,18 @@ if have_icu and have_icu_builtin
   deps += [icu_dep]
 endif
 
+if not get_option('with_libstdcxx')
+  chosen_linker = 'cpp'
+else
+  # Use a C linker, not C++; Don't link to libstdc++
+  chosen_linker = 'c'
+endif
+
 # harfbuzz
 gen_def = find_program('gen-def.py')
 
 harfbuzz_def_command_args = [gen_def, '@OUTPUT@', '@INPUT@']
-if get_option('experimental-api')
+if get_option('experimental_api')
   harfbuzz_def_command_args += '--experimental-api'
 endif
 
@@ -346,6 +380,7 @@ harfbuzz_def = custom_target('harfbuzz.def',
     command: harfbuzz_def_command_args,
     input: hb_headers,
     output: 'harfbuzz.def')
+defs_list = [harfbuzz_def]
 
 version = '0.' + '0'.join(meson.project_version().split('.')) + '.0'
 
@@ -355,10 +390,8 @@ if cpp.get_id() == 'msvc'
     extra_hb_cpp_args += '-DHB_DLL_EXPORT'
   endif
   hb_so_version = ''
-  hb_lib_prefix = ''
 else
   hb_so_version = '0'
-  hb_lib_prefix = 'lib'
 endif
 
 libharfbuzz = library('harfbuzz', hb_sources,
@@ -368,7 +401,8 @@ libharfbuzz = library('harfbuzz', hb_sources,
   soversion: hb_so_version,
   version: version,
   install: true,
-  name_prefix: hb_lib_prefix)
+  link_language: chosen_linker,
+)
 
 libharfbuzz_dep = declare_dependency(
   link_with: libharfbuzz,
@@ -380,15 +414,18 @@ harfbuzz_subset_def = custom_target('harfbuzz-subset.def',
     command: [gen_def, '@OUTPUT@', '@INPUT@'],
     input: hb_subset_headers,
     output: 'harfbuzz-subset.def')
+defs_list += [harfbuzz_subset_def]
 
 libharfbuzz_subset = library('harfbuzz-subset', hb_subset_sources,
   include_directories: incconfig,
+  dependencies: deps,
   link_with: [libharfbuzz],
   cpp_args: cpp_args + extra_hb_cpp_args,
   soversion: hb_so_version,
   version: version,
   install: true,
-  name_prefix: hb_lib_prefix)
+  link_language: chosen_linker,
+)
 
 libharfbuzz_subset_dep = declare_dependency(
   link_with: libharfbuzz_subset,
@@ -418,7 +455,7 @@ if get_option('tests').enabled()
       )
     endforeach
   endif
-  
+
   check_programs = {
     'dump-indic-data': ['dump-indic-data.cc', 'hb-ot-shape-complex-indic-table.cc'],
     'dump-khmer-data': ['dump-khmer-data.cc', 'hb-ot-shape-complex-indic-table.cc'],
@@ -433,7 +470,7 @@ if get_option('tests').enabled()
       install: false,
     )
   endforeach
-  
+
   compiled_tests = {
     'test-array': 'test-array.cc',
     'test-number': ['test-number.cc', 'hb-number.cc'],
@@ -457,7 +494,7 @@ if get_option('tests').enabled()
       install: false,
     ))
   endforeach
-  
+
   if host_machine.system() != 'windows' and not meson.is_cross_build()
     # Some of them should be ported to python
     dist_check_script = [
@@ -469,24 +506,22 @@ if get_option('tests').enabled()
     if not get_option('amalgam')
       dist_check_script += 'check-includes.sh'
     endif
-    if false # !WITH_LIBSTDCXX
+    if false and not get_option('with_libstdcxx')
+      # enable this once https://github.com/mesonbuild/meson/pull/6838 hits a release
+      # and make that version (i.e. 0.55) our minimum build requirement
       dist_check_script += 'check-libstdc++.sh' # See https://github.com/harfbuzz/harfbuzz/issues/2276
     endif
-  
+
     env = environment()
     env.set('srcdir', meson.current_source_dir())
     env.set('builddir', meson.current_build_dir())
     env.set('libs', meson.current_build_dir()) # TODO: Merge this with builddir after autotools removal
     env.set('HBSOURCES', ' '.join(hb_sources))
     env.set('HBHEADERS', ' '.join(hb_headers))
-  
+
     foreach name : dist_check_script
       test(name, find_program(name), env: env)
     endforeach
-  
-    #test('check-symbols.sh', find_program('check-symbols.sh'),
-    #  depends: [harfbuzz_def, harfbuzz_subset_def], # TODO: harfbuzz_icu_def and harfbuzz_gobject_def also
-    #  env: env)
   endif
 endif
 
@@ -503,6 +538,12 @@ pkgmod.generate(libharfbuzz_subset,
 )
 
 if have_icu and not have_icu_builtin
+  harfbuzz_icu_def = custom_target('harfbuzz-icu.def',
+    command: [gen_def, '@OUTPUT@', '@INPUT@'],
+    input: [hb_icu_headers],
+    output: 'harfbuzz-icu.def')
+  defs_list += [harfbuzz_icu_def]
+
   libharfbuzz_icu = library('harfbuzz-icu', [hb_icu_sources, hb_icu_headers],
     include_directories: incconfig,
     dependencies: icu_dep,
@@ -511,7 +552,9 @@ if have_icu and not have_icu_builtin
     soversion: hb_so_version,
     version: version,
     install: true,
-    name_prefix: hb_lib_prefix)
+    # ICU links to stdc++ anyway so the default linker is good
+    # link_language: chosen_linker,
+  )
 
   libharfbuzz_icu_dep = declare_dependency(
     link_with: libharfbuzz_icu,
@@ -539,7 +582,7 @@ cmake_config.set('have_gobject', have_gobject ? 'true' : 'false')
 configure_file(input: 'harfbuzz-config.cmake.in',
   output: 'harfbuzz-config.cmake',
   configuration: cmake_config,
-  install_dir: join_paths(get_option('libdir'), 'cmake', 'harfbuzz'))
+  install_dir: get_option('libdir') / 'cmake' / 'harfbuzz')
 
 if have_gobject
   gnome = import('gnome')
@@ -567,15 +610,15 @@ if have_gobject
   enum_c = custom_target('hb-gobject-enums.cc',
     input: enums[0],
     output: 'hb-gobject-enums.cc',
-    command: [python3, files('fix_get_types.py')[0], '@INPUT@', '@OUTPUT@']
+    command: [find_program('fix_get_types.py'), '@INPUT@', '@OUTPUT@']
   )
 
   enum_h = custom_target('hb-gobject-enums.h',
     input: enums[1],
     output: 'hb-gobject-enums.h',
-    command: [python3, files('fix_get_types.py')[0], '@INPUT@', '@OUTPUT@'],
+    command: [find_program('fix_get_types.py'), '@INPUT@', '@OUTPUT@'],
     install: true,
-    install_dir: join_paths(get_option('prefix'), get_option('includedir'), meson.project_name()),
+    install_dir: get_option('prefix') / get_option('includedir') / meson.project_name(),
   )
 
   hb_gobject_sources += [enum_c]
@@ -584,6 +627,7 @@ if have_gobject
     command: [gen_def, '@OUTPUT@', '@INPUT@'],
     input: [hb_gobject_headers, enum_h],
     output: 'harfbuzz-gobject.def')
+  defs_list += [harfbuzz_gobject_def]
 
   libharfbuzz_gobject = library('harfbuzz-gobject', [hb_gobject_sources, enum_c, enum_h],
     include_directories: incconfig,
@@ -593,12 +637,14 @@ if have_gobject
     soversion: hb_so_version,
     version: version,
     install: true,
-    name_prefix: hb_lib_prefix)
+    link_language: chosen_linker,
+  )
 
   gir = find_program('g-ir-scanner', required: get_option('introspection'))
   build_gir = gir.found() and not meson.is_cross_build()
 
   if build_gir
+    conf.set('HAVE_INTROSPECTION', 1)
     hb_gen_files_gir = gnome.generate_gir(libharfbuzz, libharfbuzz_gobject,
       sources: [hb_headers, hb_sources, hb_gobject_headers, hb_gobject_sources, enum_h],
       namespace: 'HarfBuzz',
@@ -636,7 +682,17 @@ if have_gobject
 
   install_headers(hb_gobject_headers, subdir: meson.project_name())
 else
+  if get_option('introspection').enabled()
+    error('introspection requires gobject to be enabled')
+  endif
+
   libharfbuzz_gobject_dep = dependency('', required: false)
+endif
+
+if get_option('tests').enabled() and host_machine.system() != 'windows' and not meson.is_cross_build()
+  test('check-symbols.sh', find_program('check-symbols.sh'),
+    depends: defs_list,
+    env: env)
 endif
 
 install_headers(hb_headers + hb_subset_headers, subdir: meson.project_name())

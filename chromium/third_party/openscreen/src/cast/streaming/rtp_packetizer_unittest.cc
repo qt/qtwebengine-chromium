@@ -4,12 +4,16 @@
 
 #include "cast/streaming/rtp_packetizer.h"
 
+#include <chrono>
+#include <memory>
+
 #include "absl/types/optional.h"
 #include "cast/streaming/frame_crypto.h"
 #include "cast/streaming/rtp_defines.h"
 #include "cast/streaming/rtp_packet_parser.h"
 #include "cast/streaming/ssrc.h"
 #include "gtest/gtest.h"
+#include "util/chrono_helpers.h"
 
 namespace openscreen {
 namespace cast {
@@ -34,7 +38,7 @@ class RtpPacketizerTest : public testing::Test {
 
   EncryptedFrame CreateFrame(FrameId frame_id,
                              bool is_key_frame,
-                             std::chrono::milliseconds new_playout_delay,
+                             milliseconds new_playout_delay,
                              int payload_size) const {
     EncodedFrame frame;
     frame.dependency = is_key_frame ? EncodedFrame::KEY_FRAME
@@ -102,7 +106,7 @@ class RtpPacketizerTest : public testing::Test {
     if (packet_id == FramePacketId{0}) {
       EXPECT_EQ(frame.new_playout_delay, result->new_playout_delay);
     } else {
-      EXPECT_EQ(std::chrono::milliseconds(0), result->new_playout_delay);
+      EXPECT_EQ(milliseconds(0), result->new_playout_delay);
     }
 
     // Check that the RTP payload is correct for this packet.
@@ -141,8 +145,8 @@ TEST_F(RtpPacketizerTest, GeneratesPacketsForSequenceOfFrames) {
     const bool is_key_frame = (i == 0);
     const int frame_payload_size = is_key_frame ? 48269 : 10000;
     const EncryptedFrame frame =
-        CreateFrame(FrameId::first() + i, is_key_frame,
-                    std::chrono::milliseconds(0), frame_payload_size);
+        CreateFrame(FrameId::first() + i, is_key_frame, milliseconds(0),
+                    frame_payload_size);
     SCOPED_TRACE(testing::Message() << "frame_id=" << frame.frame_id);
     const int num_packets = packetizer()->ComputeNumberOfPackets(frame);
     ASSERT_EQ(is_key_frame ? 34 : 7, num_packets);
@@ -160,9 +164,8 @@ TEST_F(RtpPacketizerTest, GeneratesPacketsForSequenceOfFrames) {
 // delay change. Only the first packet should mention the playout delay change.
 TEST_F(RtpPacketizerTest, GeneratesPacketsForFrameWithLatencyChange) {
   const int frame_payload_size = 38383;
-  const EncryptedFrame frame =
-      CreateFrame(FrameId::first() + 42, true, std::chrono::milliseconds(543),
-                  frame_payload_size);
+  const EncryptedFrame frame = CreateFrame(
+      FrameId::first() + 42, true, milliseconds(543), frame_payload_size);
   const int num_packets = packetizer()->ComputeNumberOfPackets(frame);
   ASSERT_EQ(27, num_packets);
 
@@ -179,9 +182,8 @@ TEST_F(RtpPacketizerTest, GeneratesPacketsForFrameWithLatencyChange) {
 // silence can be represented by an empty payload).
 TEST_F(RtpPacketizerTest, GeneratesOnePacketForFrameWithNoPayload) {
   const int frame_payload_size = 0;
-  const EncryptedFrame frame =
-      CreateFrame(FrameId::first() + 99, false, std::chrono::milliseconds(0),
-                  frame_payload_size);
+  const EncryptedFrame frame = CreateFrame(FrameId::first() + 99, false,
+                                           milliseconds(0), frame_payload_size);
   ASSERT_EQ(1, packetizer()->ComputeNumberOfPackets(frame));
   TestGeneratePacket(frame, FramePacketId{0});
 }
@@ -190,8 +192,8 @@ TEST_F(RtpPacketizerTest, GeneratesOnePacketForFrameWithNoPayload) {
 // a different sequence counter value in the packet each time.
 TEST_F(RtpPacketizerTest, GeneratesPacketForRetransmission) {
   const int frame_payload_size = 16384;
-  const EncryptedFrame frame = CreateFrame(
-      FrameId::first(), true, std::chrono::milliseconds(0), frame_payload_size);
+  const EncryptedFrame frame =
+      CreateFrame(FrameId::first(), true, milliseconds(0), frame_payload_size);
   const int num_packets = packetizer()->ComputeNumberOfPackets(frame);
   ASSERT_EQ(12, num_packets);
 

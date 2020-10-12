@@ -29,7 +29,6 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_substfont.h"
 #include "core/fxge/fx_font.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -134,7 +133,7 @@ RetainPtr<CPDF_Font> GetFont(CPDF_Dictionary* pFormDict,
     return nullptr;
 
   CPDF_Dictionary* pElement = pFonts->GetDictFor(csAlias);
-  if (!pElement || pElement->GetStringFor("Type") != "Font")
+  if (!pElement || pElement->GetNameFor("Type") != "Font")
     return nullptr;
 
   return CPDF_DocPageData::FromDocument(pDocument)->GetFont(pElement);
@@ -162,7 +161,7 @@ RetainPtr<CPDF_Font> GetNativeFont(CPDF_Dictionary* pFormDict,
       continue;
 
     CPDF_Dictionary* pElement = ToDictionary(it.second->GetDirect());
-    if (!pElement || pElement->GetStringFor("Type") != "Font")
+    if (!pElement || pElement->GetNameFor("Type") != "Font")
       continue;
 
     auto* pData = CPDF_DocPageData::FromDocument(pDocument);
@@ -204,7 +203,7 @@ bool FindFont(CPDF_Dictionary* pFormDict,
     CPDF_Dictionary* pElement = ToDictionary(it.second->GetDirect());
     if (!pElement)
       continue;
-    if (pElement->GetStringFor("Type") != "Font")
+    if (pElement->GetNameFor("Type") != "Font")
       continue;
     if (pFont->GetFontDict() == pElement) {
       *csNameTag = csKey;
@@ -240,7 +239,7 @@ bool FindFont(CPDF_Dictionary* pFormDict,
       continue;
 
     CPDF_Dictionary* pElement = ToDictionary(it.second->GetDirect());
-    if (!pElement || pElement->GetStringFor("Type") != "Font")
+    if (!pElement || pElement->GetNameFor("Type") != "Font")
       continue;
 
     pFont = CPDF_DocPageData::FromDocument(pDocument)->GetFont(pElement);
@@ -483,7 +482,7 @@ CFieldTree::Node* CFieldTree::AddChild(Node* pParent,
   if (level > nMaxRecursion)
     return nullptr;
 
-  auto pNew = pdfium::MakeUnique<Node>(short_name, pParent->GetLevel() + 1);
+  auto pNew = std::make_unique<Node>(short_name, pParent->GetLevel() + 1);
   Node* pChild = pNew.get();
   pParent->AddChildNode(std::move(pNew));
   return pChild;
@@ -575,7 +574,7 @@ uint8_t CPDF_InteractiveForm::GetNativeCharSet() {
 }
 
 CPDF_InteractiveForm::CPDF_InteractiveForm(CPDF_Document* pDocument)
-    : m_pDocument(pDocument), m_pFieldTree(pdfium::MakeUnique<CFieldTree>()) {
+    : m_pDocument(pDocument), m_pFieldTree(std::make_unique<CFieldTree>()) {
   CPDF_Dictionary* pRoot = m_pDocument->GetRoot();
   if (!pRoot)
     return;
@@ -808,7 +807,7 @@ void CPDF_InteractiveForm::ResetForm(const std::vector<CPDF_FormField*>& fields,
     if (!pField)
       continue;
 
-    if (bIncludeOrExclude == pdfium::ContainsValue(fields, pField))
+    if (bIncludeOrExclude == pdfium::Contains(fields, pField))
       pField->ResetField(notify);
   }
   if (notify == NotificationOption::kNotify && m_pFormNotify)
@@ -871,7 +870,7 @@ void CPDF_InteractiveForm::FixPageFields(CPDF_Page* pPage) {
 
   for (size_t i = 0; i < pAnnots->size(); i++) {
     CPDF_Dictionary* pAnnot = pAnnots->GetDictAt(i);
-    if (pAnnot && pAnnot->GetStringFor("Subtype") == "Widget")
+    if (pAnnot && pAnnot->GetNameFor("Subtype") == "Widget")
       LoadField(pAnnot, 0);
   }
 }
@@ -895,7 +894,7 @@ void CPDF_InteractiveForm::AddTerminalField(CPDF_Dictionary* pFieldDict) {
   if (!pField) {
     CPDF_Dictionary* pParent = pFieldDict;
     if (!pFieldDict->KeyExist(pdfium::form_fields::kT) &&
-        pFieldDict->GetStringFor("Subtype") == "Widget") {
+        pFieldDict->GetNameFor("Subtype") == "Widget") {
       pParent = pFieldDict->GetDictFor(pdfium::form_fields::kParent);
       if (!pParent)
         pParent = pFieldDict;
@@ -918,7 +917,7 @@ void CPDF_InteractiveForm::AddTerminalField(CPDF_Dictionary* pFieldDict) {
       }
     }
 
-    auto newField = pdfium::MakeUnique<CPDF_FormField>(this, pParent);
+    auto newField = std::make_unique<CPDF_FormField>(this, pParent);
     pField = newField.get();
     CPDF_Object* pTObj = pDict->GetObjectFor(pdfium::form_fields::kT);
     if (ToReference(pTObj)) {
@@ -938,13 +937,13 @@ void CPDF_InteractiveForm::AddTerminalField(CPDF_Dictionary* pFieldDict) {
       CPDF_Dictionary* pKid = pKids->GetDictAt(i);
       if (!pKid)
         continue;
-      if (pKid->GetStringFor("Subtype") != "Widget")
+      if (pKid->GetNameFor("Subtype") != "Widget")
         continue;
 
       AddControl(pField, pKid);
     }
   } else {
-    if (pFieldDict->GetStringFor("Subtype") == "Widget")
+    if (pFieldDict->GetNameFor("Subtype") == "Widget")
       AddControl(pField, pFieldDict);
   }
 }
@@ -956,7 +955,7 @@ CPDF_FormControl* CPDF_InteractiveForm::AddControl(
   if (it != m_ControlMap.end())
     return it->second.get();
 
-  auto pNew = pdfium::MakeUnique<CPDF_FormControl>(pField, pWidgetDict);
+  auto pNew = std::make_unique<CPDF_FormControl>(pField, pWidgetDict);
   CPDF_FormControl* pControl = pNew.get();
   m_ControlMap[pWidgetDict] = std::move(pNew);
   m_ControlLists[pField].emplace_back(pControl);
@@ -983,7 +982,7 @@ bool CPDF_InteractiveForm::CheckRequiredFields(
 
     bool bFind = true;
     if (fields)
-      bFind = pdfium::ContainsValue(*fields, pField);
+      bFind = pdfium::Contains(*fields, pField);
     if (bIncludeOrExclude == bFind) {
       const CPDF_Dictionary* pFieldDict = pField->GetDict();
       if (pField->IsRequired() &&
@@ -1041,7 +1040,7 @@ std::unique_ptr<CFDF_Document> CPDF_InteractiveForm::ExportToFDF(
     if (dwFlags & 0x04)
       continue;
 
-    if (bIncludeOrExclude != pdfium::ContainsValue(fields, pField))
+    if (bIncludeOrExclude != pdfium::Contains(fields, pField))
       continue;
 
     if ((dwFlags & 0x02) != 0 &&

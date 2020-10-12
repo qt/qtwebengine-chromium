@@ -864,8 +864,9 @@ int vp9_one_pass_cbr_svc_start_layer(VP9_COMP *const cpi) {
     }
   }
 
-  // Reset the drop flags for all spatial layers, on the base layer.
-  if (svc->spatial_layer_id == 0) {
+  // Reset the drop flags for all spatial layers, on the
+  // first_spatial_layer_to_encode.
+  if (svc->spatial_layer_id == svc->first_spatial_layer_to_encode) {
     vp9_zero(svc->drop_spatial_layer);
     // TODO(jianj/marpan): Investigate why setting svc->lst/gld/alt_fb_idx
     // causes an issue with frame dropping and temporal layers, when the frame
@@ -1259,7 +1260,7 @@ static void vp9_svc_update_ref_frame_bypass_mode(VP9_COMP *const cpi) {
   BufferPool *const pool = cm->buffer_pool;
   int i;
   for (i = 0; i < REF_FRAMES; i++) {
-    if (cm->frame_type == KEY_FRAME ||
+    if ((cm->frame_type == KEY_FRAME && !svc->simulcast_mode) ||
         svc->update_buffer_slot[svc->spatial_layer_id] & (1 << i)) {
       ref_cnt_fb(pool->frame_bufs, &cm->ref_frame_map[i], cm->new_fb_idx);
       svc->fb_idx_spatial_layer_id[i] = svc->spatial_layer_id;

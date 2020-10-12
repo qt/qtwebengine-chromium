@@ -101,8 +101,9 @@ namespace dawn_native {
 
                 // Multisampled 2D array texture is not supported because on Metal it requires the
                 // version of macOS be greater than 10.14.
-                if (descriptor->arrayLayerCount > 1) {
-                    return DAWN_VALIDATION_ERROR("Multisampled 2D array texture is not supported.");
+                if (descriptor->size.depth > 1) {
+                    return DAWN_VALIDATION_ERROR(
+                        "Multisampled textures with depth > 1 are not supported.");
                 }
 
                 if (format->isCompressed) {
@@ -163,7 +164,8 @@ namespace dawn_native {
                     "The size of the texture is incompatible with the texture format");
             }
 
-            if (descriptor->arrayLayerCount > kMaxTexture2DArrayLayers) {
+            if (descriptor->dimension == wgpu::TextureDimension::e2D &&
+                descriptor->size.depth > kMaxTexture2DArrayLayers) {
                 return DAWN_VALIDATION_ERROR("Texture 2D array layer count exceeded");
             }
             if (descriptor->mipLevelCount > kMaxTexture2DMipLevels) {
@@ -218,8 +220,7 @@ namespace dawn_native {
 
         // TODO(jiawei.shao@intel.com): check stuff based on the dimension
         if (descriptor->size.width == 0 || descriptor->size.height == 0 ||
-            descriptor->size.depth == 0 || descriptor->arrayLayerCount == 0 ||
-            descriptor->mipLevelCount == 0) {
+            descriptor->size.depth == 0 || descriptor->mipLevelCount == 0) {
             return DAWN_VALIDATION_ERROR("Cannot create an empty texture");
         }
 
@@ -326,6 +327,25 @@ namespace dawn_native {
         return desc;
     }
 
+    ResultOrError<TextureDescriptor> FixTextureDescriptor(DeviceBase* device,
+                                                          const TextureDescriptor* desc) {
+        TextureDescriptor fixedDesc = *desc;
+
+        if (desc->arrayLayerCount != 1) {
+            if (desc->size.depth != 1) {
+                return DAWN_VALIDATION_ERROR("arrayLayerCount and size.depth cannot both be != 1");
+            } else {
+                fixedDesc.size.depth = fixedDesc.arrayLayerCount;
+                fixedDesc.arrayLayerCount = 1;
+                device->EmitDeprecationWarning(
+                    "wgpu::TextureDescriptor::arrayLayerCount is deprecated in favor of "
+                    "::size::depth");
+            }
+        }
+
+        return {std::move(fixedDesc)};
+    }
+
     bool IsValidSampleCount(uint32_t sampleCount) {
         switch (sampleCount) {
             case 1:
@@ -337,6 +357,12 @@ namespace dawn_native {
         }
     }
 
+    // static
+    SubresourceRange SubresourceRange::SingleSubresource(uint32_t baseMipLevel,
+                                                         uint32_t baseArrayLayer) {
+        return {baseMipLevel, 1, baseArrayLayer, 1};
+    }
+
     // TextureBase
 
     TextureBase::TextureBase(DeviceBase* device,
@@ -346,13 +372,11 @@ namespace dawn_native {
           mDimension(descriptor->dimension),
           mFormat(device->GetValidInternalFormat(descriptor->format)),
           mSize(descriptor->size),
-          mArrayLayerCount(descriptor->arrayLayerCount),
           mMipLevelCount(descriptor->mipLevelCount),
           mSampleCount(descriptor->sampleCount),
           mUsage(descriptor->usage),
           mState(state) {
-        uint32_t subresourceCount =
-            GetSubresourceIndex(descriptor->mipLevelCount, descriptor->arrayLayerCount);
+        uint32_t subresourceCount = GetSubresourceCount();
         mIsSubresourceContentInitializedAtIndex = std::vector<bool>(subresourceCount, false);
 
         // Add readonly storage usage if the texture has a storage usage. The validation rules in
@@ -387,17 +411,42 @@ namespace dawn_native {
         ASSERT(!IsError());
         return mSize;
     }
+    uint32_t TextureBase::GetWidth() const {
+        ASSERT(!IsError());
+        return mSize.width;
+    }
+    uint32_t TextureBase::GetHeight() const {
+        ASSERT(!IsError());
+        ASSERT(mDimension == wgpu::TextureDimension::e2D ||
+               mDimension == wgpu::TextureDimension::e3D);
+        return mSize.height;
+    }
+    uint32_t TextureBase::GetDepth() const {
+        ASSERT(!IsError());
+        ASSERT(mDimension == wgpu::TextureDimension::e3D);
+        return mSize.depth;
+    }
     uint32_t TextureBase::GetArrayLayers() const {
         ASSERT(!IsError());
-        return mArrayLayerCount;
+        // TODO(cwallez@chromium.org): Update for 1D / 3D textures when they are supported.
+        ASSERT(mDimension == wgpu::TextureDimension::e2D);
+        return mSize.depth;
     }
     uint32_t TextureBase::GetNumMipLevels() const {
         ASSERT(!IsError());
         return mMipLevelCount;
     }
+    SubresourceRange TextureBase::GetAllSubresources() const {
+        ASSERT(!IsError());
+        return {0, mMipLevelCount, 0, GetArrayLayers()};
+    }
     uint32_t TextureBase::GetSampleCount() const {
         ASSERT(!IsError());
         return mSampleCount;
+    }
+    uint32_t TextureBase::GetSubresourceCount() const {
+        ASSERT(!IsError());
+        return mMipLevelCount * mSize.depth;
     }
     wgpu::TextureUsage TextureBase::GetUsage() const {
         ASSERT(!IsError());
@@ -418,14 +467,12 @@ namespace dawn_native {
         return GetNumMipLevels() * arraySlice + mipLevel;
     }
 
-    bool TextureBase::IsSubresourceContentInitialized(uint32_t baseMipLevel,
-                                                      uint32_t levelCount,
-                                                      uint32_t baseArrayLayer,
-                                                      uint32_t layerCount) const {
+    bool TextureBase::IsSubresourceContentInitialized(const SubresourceRange& range) const {
         ASSERT(!IsError());
-        for (uint32_t mipLevel = baseMipLevel; mipLevel < baseMipLevel + levelCount; ++mipLevel) {
-            for (uint32_t arrayLayer = baseArrayLayer; arrayLayer < baseArrayLayer + layerCount;
-                 ++arrayLayer) {
+        for (uint32_t arrayLayer = range.baseArrayLayer;
+             arrayLayer < range.baseArrayLayer + range.layerCount; ++arrayLayer) {
+            for (uint32_t mipLevel = range.baseMipLevel;
+                 mipLevel < range.baseMipLevel + range.levelCount; ++mipLevel) {
                 uint32_t subresourceIndex = GetSubresourceIndex(mipLevel, arrayLayer);
                 ASSERT(subresourceIndex < mIsSubresourceContentInitializedAtIndex.size());
                 if (!mIsSubresourceContentInitializedAtIndex[subresourceIndex]) {
@@ -437,14 +484,12 @@ namespace dawn_native {
     }
 
     void TextureBase::SetIsSubresourceContentInitialized(bool isInitialized,
-                                                         uint32_t baseMipLevel,
-                                                         uint32_t levelCount,
-                                                         uint32_t baseArrayLayer,
-                                                         uint32_t layerCount) {
+                                                         const SubresourceRange& range) {
         ASSERT(!IsError());
-        for (uint32_t mipLevel = baseMipLevel; mipLevel < baseMipLevel + levelCount; ++mipLevel) {
-            for (uint32_t arrayLayer = baseArrayLayer; arrayLayer < baseArrayLayer + layerCount;
-                 ++arrayLayer) {
+        for (uint32_t arrayLayer = range.baseArrayLayer;
+             arrayLayer < range.baseArrayLayer + range.layerCount; ++arrayLayer) {
+            for (uint32_t mipLevel = range.baseMipLevel;
+                 mipLevel < range.baseMipLevel + range.levelCount; ++mipLevel) {
                 uint32_t subresourceIndex = GetSubresourceIndex(mipLevel, arrayLayer);
                 ASSERT(subresourceIndex < mIsSubresourceContentInitializedAtIndex.size());
                 mIsSubresourceContentInitializedAtIndex[subresourceIndex] = isInitialized;
@@ -466,9 +511,16 @@ namespace dawn_native {
     }
 
     Extent3D TextureBase::GetMipLevelVirtualSize(uint32_t level) const {
-        Extent3D extent;
-        extent.width = std::max(mSize.width >> level, 1u);
+        Extent3D extent = {std::max(mSize.width >> level, 1u), 1u, 1u};
+        if (mDimension == wgpu::TextureDimension::e1D) {
+            return extent;
+        }
+
         extent.height = std::max(mSize.height >> level, 1u);
+        if (mDimension == wgpu::TextureDimension::e2D) {
+            return extent;
+        }
+
         extent.depth = std::max(mSize.depth >> level, 1u);
         return extent;
     }
@@ -521,10 +573,8 @@ namespace dawn_native {
           mTexture(texture),
           mFormat(GetDevice()->GetValidInternalFormat(descriptor->format)),
           mDimension(descriptor->dimension),
-          mBaseMipLevel(descriptor->baseMipLevel),
-          mMipLevelCount(descriptor->mipLevelCount),
-          mBaseArrayLayer(descriptor->baseArrayLayer),
-          mArrayLayerCount(descriptor->arrayLayerCount) {
+          mRange({descriptor->baseMipLevel, descriptor->mipLevelCount, descriptor->baseArrayLayer,
+                  descriptor->arrayLayerCount}) {
     }
 
     TextureViewBase::TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag)
@@ -558,21 +608,26 @@ namespace dawn_native {
 
     uint32_t TextureViewBase::GetBaseMipLevel() const {
         ASSERT(!IsError());
-        return mBaseMipLevel;
+        return mRange.baseMipLevel;
     }
 
     uint32_t TextureViewBase::GetLevelCount() const {
         ASSERT(!IsError());
-        return mMipLevelCount;
+        return mRange.levelCount;
     }
 
     uint32_t TextureViewBase::GetBaseArrayLayer() const {
         ASSERT(!IsError());
-        return mBaseArrayLayer;
+        return mRange.baseArrayLayer;
     }
 
     uint32_t TextureViewBase::GetLayerCount() const {
         ASSERT(!IsError());
-        return mArrayLayerCount;
+        return mRange.layerCount;
+    }
+
+    const SubresourceRange& TextureViewBase::GetSubresourceRange() const {
+        ASSERT(!IsError());
+        return mRange;
     }
 }  // namespace dawn_native

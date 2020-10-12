@@ -258,12 +258,16 @@ void PictureLayerImpl::AppendQuads(viz::RenderPass* render_pass,
     // |PictureLayerTiling::EnclosingContentsRectFromLayer()| will
     // create a tiling that, when scaled by |max_contents_scale| above, is
     // larger than the layer bounds by a fraction of a pixel.
-    gfx::Rect clip_rect = draw_properties().drawable_content_rect;
+    gfx::Rect bounds_in_target_space = MathUtil::MapEnclosingClippedRect(
+        draw_properties().target_space_transform, gfx::Rect(bounds()));
+    if (is_clipped())
+      bounds_in_target_space.Intersect(draw_properties().clip_rect);
+
     if (shared_quad_state->is_clipped)
-      clip_rect.Intersect(shared_quad_state->clip_rect);
+      bounds_in_target_space.Intersect(shared_quad_state->clip_rect);
 
     shared_quad_state->is_clipped = true;
-    shared_quad_state->clip_rect = clip_rect;
+    shared_quad_state->clip_rect = bounds_in_target_space;
 
 #if DCHECK_IS_ON()
     // Validate that the tile and bounds size are always within one pixel.
@@ -836,22 +840,24 @@ LCDTextDisallowedReason PictureLayerImpl::ComputeLCDTextDisallowedReason()
     return LCDTextDisallowedReason::kNone;
   if (!layer_tree_impl()->settings().can_use_lcd_text)
     return LCDTextDisallowedReason::kSetting;
-  if (!contents_opaque()) {
+  if (!contents_opaque_for_text()) {
     if (SkColorGetA(background_color()) != SK_AlphaOPAQUE)
       return LCDTextDisallowedReason::kBackgroundColorNotOpaque;
     return LCDTextDisallowedReason::kContentsNotOpaque;
   }
 
-  if (!GetTransformTree()
-           .Node(transform_tree_index())
-           ->node_and_ancestors_have_only_integer_translation)
-    return LCDTextDisallowedReason::kNonIntegralTranslation;
-  if (static_cast<int>(offset_to_transform_parent().x()) !=
-      offset_to_transform_parent().x())
-    return LCDTextDisallowedReason::kNonIntegralXOffset;
-  if (static_cast<int>(offset_to_transform_parent().y()) !=
-      offset_to_transform_parent().y())
-    return LCDTextDisallowedReason::kNonIntegralYOffset;
+  if (!use_transformed_rasterization_) {
+    if (!GetTransformTree()
+             .Node(transform_tree_index())
+             ->node_and_ancestors_have_only_integer_translation)
+      return LCDTextDisallowedReason::kNonIntegralTranslation;
+    if (static_cast<int>(offset_to_transform_parent().x()) !=
+        offset_to_transform_parent().x())
+      return LCDTextDisallowedReason::kNonIntegralXOffset;
+    if (static_cast<int>(offset_to_transform_parent().y()) !=
+        offset_to_transform_parent().y())
+      return LCDTextDisallowedReason::kNonIntegralYOffset;
+  }
 
   if (has_will_change_transform_hint())
     return LCDTextDisallowedReason::kWillChangeTransform;
@@ -1066,6 +1072,11 @@ void PictureLayerImpl::SetNearestNeighbor(bool nearest_neighbor) {
 }
 
 void PictureLayerImpl::SetUseTransformedRasterization(bool use) {
+  // With transformed rasterization, the pixels along the edge of the layer may
+  // become translucent, so clear contents_opaque.
+  if (use)
+    SetContentsOpaque(false);
+
   if (use_transformed_rasterization_ == use)
     return;
 
@@ -1560,6 +1571,8 @@ gfx::Vector2dF PictureLayerImpl::CalculateRasterTranslation(
     float raster_scale) {
   if (!use_transformed_rasterization_)
     return gfx::Vector2dF();
+
+  DCHECK(!contents_opaque());
 
   gfx::Transform draw_transform = DrawTransform();
   // TODO(enne): for performance reasons, we should only have a raster

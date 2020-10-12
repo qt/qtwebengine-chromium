@@ -32,8 +32,6 @@
 
 namespace dawn_native { namespace metal {
 
-    class MapRequestTracker;
-
     class Device : public DeviceBase {
       public:
         static ResultOrError<Device*> Create(AdapterBase* adapter,
@@ -53,8 +51,6 @@ namespace dawn_native { namespace metal {
 
         CommandRecordingContext* GetPendingCommandContext();
         void SubmitPendingCommandBuffer();
-
-        MapRequestTracker* GetMapTracker() const;
 
         TextureBase* CreateTextureWrappingIOSurface(const ExternalImageDescriptor* descriptor,
                                                     IOSurfaceRef ioSurface,
@@ -80,6 +76,8 @@ namespace dawn_native { namespace metal {
             const ComputePipelineDescriptor* descriptor) override;
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
+        ResultOrError<QuerySetBase*> CreateQuerySetImpl(
+            const QuerySetDescriptor* descriptor) override;
         ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
             const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
@@ -104,7 +102,6 @@ namespace dawn_native { namespace metal {
 
         id<MTLDevice> mMtlDevice = nil;
         id<MTLCommandQueue> mCommandQueue = nil;
-        std::unique_ptr<MapRequestTracker> mMapTracker;
 
         CommandRecordingContext mCommandContext;
 

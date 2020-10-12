@@ -35,9 +35,10 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStream
   void SendServerConfigUpdate(
       const CachedNetworkParameters* cached_network_params) override;
   bool IsZeroRtt() const override;
+  bool IsResumption() const override;
+  bool ResumptionAttempted() const override;
   int NumServerConfigUpdateMessagesSent() const override;
   const CachedNetworkParameters* PreviousCachedNetworkParams() const override;
-  bool ZeroRttAttempted() const override;
   void SetPreviousCachedNetworkParams(
       CachedNetworkParameters cached_network_params) override;
   void OnPacketDecrypted(EncryptionLevel level) override;
@@ -55,6 +56,8 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStream
       const override;
   CryptoMessageParser* crypto_message_parser() override;
   HandshakeState GetHandshakeState() const override;
+  void SetServerApplicationStateForResumption(
+      std::unique_ptr<ApplicationState> state) override;
   size_t BufferSizeLimitForLevel(EncryptionLevel level) const override;
 
   // From QuicCryptoHandshaker

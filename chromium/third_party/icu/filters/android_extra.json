@@ -5,10 +5,10 @@
   "collationUCAData": "implicithan",
   "usePoolBundle": false,
   "localeFilter": {
+// We cannot include root here so we cannot use filterType language
+    "filterType": "regex",
     "whitelist": [
-      "bn", "et", "gu", "kn", "ml", "mr", "ms", "ta", "te", "af",
-      "az", "eu", "gl", "hy", "is", "ka", "kk", "km", "ky", "lo",
-      "mk", "mn", "my", "ne", "pa", "si", "sq", "ur", "uz", "zu"
+      "^(af|az|bn|et|eu|gl|gu|hy|is|ka|kk|km|kn|ky|lo|mk|ml|mn|mr|ms|my|ne|pa|si|sq|ta|te|ur|uz|zu)(_.*)?$"
     ]
   },
   "featureFilters": {
@@ -34,12 +34,7 @@
     "region_index": { "filterType": "exclude" },
     "misc": { "filterType": "exclude" },
     "stringprep": { "filterType": "exclude" },
-    "translit": {
-      "whitelist": [
-// Need to explicitly add "root"
-	"root"
-      ]
-    },
+    "translit": { "filterType": "exclude" },
     "ulayout": { "filterType": "exclude" },
     "unames": { "filterType": "exclude" },
     "zone_index": { "filterType": "exclude" }
@@ -280,19 +275,6 @@
         "+/*/*/liter-per-kilometer",
         "+/*/*/mile-per-gallon",
         "+/*/compound"
-      ]
-    },
-// Based on
-// https://cs.chromium.org/chromium/src/third_party/icu/source/data/translit/root_subset.txt?rcl=797b7c
-    {
-      "categories": [
-        "translit"
-      ],
-      "rules": [
-        "-/*",
-// Need to leave an empty RuleBasedTransliteratorIDs
-	"+/RuleBasedTransliteratorIDs",
-        "-/RuleBasedTransliteratorIDs/*"
       ]
     },
 // # Remove exemplar cities in timezone data.

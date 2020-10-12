@@ -191,17 +191,12 @@ struct DeviceCM {
     SkRasterClip                   fClip;
     std::unique_ptr<const SkPaint> fPaint; // may be null (in the future)
     SkMatrix                       fStashedMatrix; // original CTM; used by imagefilter in saveLayer
-    sk_sp<SkImage>                 fClipImage;
-    SkMatrix                       fClipMatrix;
 
-    DeviceCM(sk_sp<SkBaseDevice> device, const SkPaint* paint, const SkMatrix& stashed,
-             const SkImage* clipImage, const SkMatrix* clipMatrix)
+    DeviceCM(sk_sp<SkBaseDevice> device, const SkPaint* paint, const SkMatrix& stashed)
         : fNext(nullptr)
         , fDevice(std::move(device))
         , fPaint(paint ? std::make_unique<SkPaint>(*paint) : nullptr)
         , fStashedMatrix(stashed)
-        , fClipImage(sk_ref_sp(const_cast<SkImage*>(clipImage)))
-        , fClipMatrix(clipMatrix ? *clipMatrix : SkMatrix::I())
     {}
 
     void reset(const SkIRect& bounds) {
@@ -506,11 +501,12 @@ void SkCanvas::init(sk_sp<SkBaseDevice> device) {
 
     SkASSERT(sizeof(DeviceCM) <= sizeof(fDeviceCMStorage));
     fMCRec->fLayer = (DeviceCM*)fDeviceCMStorage;
-    new (fDeviceCMStorage) DeviceCM(device, nullptr, fMCRec->fMatrix.asM33(), nullptr, nullptr);
+    new (fDeviceCMStorage) DeviceCM(device, nullptr, fMCRec->fMatrix.asM33());
 
     fMCRec->fTopLayer = fMCRec->fLayer;
 
     fSurfaceBase = nullptr;
+    fDeviceClipBounds = {0, 0, 0, 0};
 
     if (device) {
         // The root device and the canvas should always have the same pixel geometry
@@ -917,7 +913,7 @@ void SkCanvas::DrawDeviceWithFilter(SkBaseDevice* src, const SkImageFilter* filt
         if (special) {
             // The image is drawn at 1-1 scale with integer translation, so no filtering is needed.
             SkPaint p;
-            dst->drawSpecial(special.get(), 0, 0, p, nullptr, SkMatrix::I());
+            dst->drawSpecial(special.get(), 0, 0, p);
         }
         return;
     }
@@ -930,7 +926,7 @@ void SkCanvas::DrawDeviceWithFilter(SkBaseDevice* src, const SkImageFilter* filt
         toRoot = SkMatrix::I();
         layerMatrix = ctm;
     } else if (ctm.decomposeScale(&scale, &toRoot)) {
-        layerMatrix = SkMatrix::MakeScale(scale.fWidth, scale.fHeight);
+        layerMatrix = SkMatrix::Scale(scale.fWidth, scale.fHeight);
     } else {
         // Perspective, for now, do no scaling of the layer itself.
         // TODO (michaelludwig) - perhaps it'd be better to explore a heuristic scale pulled from
@@ -1176,7 +1172,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec, SaveLayerStrategy stra
         }
         newDevice->setMarkerStack(fMarkerStack.get());
     }
-    DeviceCM* layer = new DeviceCM(newDevice, paint, stashedMatrix, rec.fClipMask, rec.fClipMatrix);
+    DeviceCM* layer = new DeviceCM(newDevice, paint, stashedMatrix);
 
     // only have a "next" if this new layer doesn't affect the clip (rare)
     layer->fNext = BoundsAffectsClip(saveLayerFlags) ? nullptr : fMCRec->fTopLayer;
@@ -1280,8 +1276,7 @@ void SkCanvas::internalRestore() {
         paint.setBlendMode(SkBlendMode::kDstOver);
         const int x = backImage->fLoc.x();
         const int y = backImage->fLoc.y();
-        this->getTopDevice()->drawSpecial(backImage->fImage.get(), x, y, paint,
-                                          nullptr, SkMatrix::I());
+        this->getTopDevice()->drawSpecial(backImage->fImage.get(), x, y, paint);
     }
 
     /*  Time to draw the layer's offscreen. We can't call the public drawSprite,
@@ -1293,8 +1288,7 @@ void SkCanvas::internalRestore() {
             layer->fDevice->setImmutable();
             // At this point, 'layer' has been removed from the device stack, so the devices that
             // internalDrawDevice sees are the destinations that 'layer' is drawn into.
-            this->internalDrawDevice(layer->fDevice.get(), layer->fPaint.get(),
-                                     layer->fClipImage.get(), layer->fClipMatrix);
+            this->internalDrawDevice(layer->fDevice.get(), layer->fPaint.get());
             // restore what we smashed in internalSaveLayer
             this->internalSetMatrix(layer->fStashedMatrix);
             delete layer;
@@ -1404,8 +1398,7 @@ static void check_drawdevice_colorspaces(SkColorSpace* src, SkColorSpace* dst) {
     SkASSERT(src == dst);
 }
 
-void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, const SkPaint* paint,
-                                  SkImage* clipImage, const SkMatrix& clipMatrix) {
+void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, const SkPaint* paint) {
     SkPaint tmp;
     if (nullptr == paint) {
         paint = &tmp;
@@ -1423,13 +1416,12 @@ void SkCanvas::internalDrawDevice(SkBaseDevice* srcDev, const SkPaint* paint,
         // so it should always be possible to use the relative origin. Once drawDevice() and
         // drawSpecial() take an SkMatrix, this can switch to getRelativeTransform() instead.
         SkIPoint pos = srcDev->getOrigin() - dstDev->getOrigin();
-        if (filter || clipImage) {
+        if (filter) {
             sk_sp<SkSpecialImage> specialImage = srcDev->snapSpecial();
             if (specialImage) {
                 check_drawdevice_colorspaces(dstDev->imageInfo().colorSpace(),
                                              specialImage->getColorSpace());
-                dstDev->drawSpecial(specialImage.get(), pos.x(), pos.y(), *paint,
-                                    clipImage, clipMatrix);
+                dstDev->drawSpecial(specialImage.get(), pos.x(), pos.y(), *paint);
             }
         } else {
             dstDev->drawDevice(srcDev, pos.x(), pos.y(), *paint);
@@ -1659,6 +1651,7 @@ void SkCanvas::clipShader(sk_sp<SkShader> sh, SkClipOp op) {
                 this->clipRect({0,0,0,0});
             }
         } else {
+            this->checkForDeferredSave();
             this->onClipShader(std::move(sh), op);
         }
     }
@@ -1966,6 +1959,17 @@ void SkCanvas::drawVertices(const SkVertices* vertices, SkBlendMode mode, const 
             }
         }
     }
+
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+    // Preserve legacy behavior for Android: ignore the SkShader if there are no texCoords present
+    if (paint.getShader() &&
+        !(vertices->priv().hasTexCoords() || vertices->priv().hasCustomData())) {
+        SkPaint noShaderPaint(paint);
+        noShaderPaint.setShader(nullptr);
+        this->onDrawVerticesObject(vertices, mode, noShaderPaint);
+        return;
+    }
+#endif
 
     this->onDrawVerticesObject(vertices, mode, paint);
 }
@@ -2497,8 +2501,7 @@ void SkCanvas::onDrawImage(const SkImage* image, SkScalar x, SkScalar y, const S
             iter.fDevice->localToDevice().mapXY(x, y, &pt);
             iter.fDevice->drawSpecial(special.get(),
                                       SkScalarRoundToInt(pt.fX),
-                                      SkScalarRoundToInt(pt.fY), pnt,
-                                      nullptr, SkMatrix::I());
+                                      SkScalarRoundToInt(pt.fY), pnt);
         } else {
             iter.fDevice->drawImageRect(
                     image, nullptr, SkRect::MakeXYWH(x, y, image->width(), image->height()), pnt,
@@ -2682,7 +2685,7 @@ void SkCanvas::drawDrawable(SkDrawable* dr, SkScalar x, SkScalar y) {
 #endif
     RETURN_ON_NULL(dr);
     if (x || y) {
-        SkMatrix matrix = SkMatrix::MakeTrans(x, y);
+        SkMatrix matrix = SkMatrix::Translate(x, y);
         this->onDrawDrawable(dr, &matrix);
     } else {
         this->onDrawDrawable(dr, nullptr);
@@ -2816,7 +2819,7 @@ void SkCanvas::onDrawEdgeAAImageSet(const ImageSetEntry imageSet[], int count,
 // methods, rather than actually drawing themselves.
 //////////////////////////////////////////////////////////////////////////////
 
-void SkCanvas::drawColor(SkColor c, SkBlendMode mode) {
+void SkCanvas::drawColor(const SkColor4f& c, SkBlendMode mode) {
     SkPaint paint;
     paint.setColor(c);
     paint.setBlendMode(mode);

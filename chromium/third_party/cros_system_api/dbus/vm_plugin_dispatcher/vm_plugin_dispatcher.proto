@@ -40,6 +40,9 @@ enum VmErrorCode {
   VM_ERR_LIC_EXPIRED = 3;
   // Unable to access web portal for license activation procedures.
   VM_ERR_LIC_WEB_PORTAL_UNAVAILABLE = 4;
+  // The dispatcher is in process of shutting down. Any currently
+  // running VMs will be suspended.
+  VM_ERR_SRV_SHUTDOWN_IN_PROGRESS = 5;
 }
 
 // Request to register VM residing at given path.

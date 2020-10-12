@@ -67,7 +67,10 @@ QuicCryptoClientConfig::QuicCryptoClientConfig(
     std::unique_ptr<SessionCache> session_cache)
     : proof_verifier_(std::move(proof_verifier)),
       session_cache_(std::move(session_cache)),
-      ssl_ctx_(TlsClientConnection::CreateSslCtx()) {
+      enable_zero_rtt_for_tls_(
+          GetQuicReloadableFlag(quic_enable_zero_rtt_for_tls)),
+      ssl_ctx_(TlsClientConnection::CreateSslCtx(enable_zero_rtt_for_tls_)),
+      disable_chlo_padding_(GetQuicReloadableFlag(quic_dont_pad_chlo)) {
   DCHECK(proof_verifier_.get());
   SetDefaults();
 }
@@ -132,16 +135,6 @@ QuicCryptoClientConfig::CachedState::GetServerConfig() const {
   return scfg_.get();
 }
 
-void QuicCryptoClientConfig::CachedState::add_server_designated_connection_id(
-    QuicConnectionId connection_id) {
-  server_designated_connection_ids_.push(connection_id);
-}
-
-bool QuicCryptoClientConfig::CachedState::has_server_designated_connection_id()
-    const {
-  return !server_designated_connection_ids_.empty();
-}
-
 void QuicCryptoClientConfig::CachedState::add_server_nonce(
     const std::string& server_nonce) {
   server_nonces_.push(server_nonce);
@@ -204,9 +197,6 @@ void QuicCryptoClientConfig::CachedState::InvalidateServerConfig() {
   server_config_.clear();
   scfg_.reset();
   SetProofInvalid();
-  QuicQueue<QuicConnectionId> empty_queue;
-  using std::swap;
-  swap(server_designated_connection_ids_, empty_queue);
 }
 
 void QuicCryptoClientConfig::CachedState::SetProof(
@@ -249,9 +239,6 @@ void QuicCryptoClientConfig::CachedState::Clear() {
   proof_verify_details_.reset();
   scfg_.reset();
   ++generation_counter_;
-  QuicQueue<QuicConnectionId> empty_queue;
-  using std::swap;
-  swap(server_designated_connection_ids_, empty_queue);
 }
 
 void QuicCryptoClientConfig::CachedState::ClearProof() {
@@ -370,24 +357,11 @@ void QuicCryptoClientConfig::CachedState::InitializeFrom(
   chlo_hash_ = other.chlo_hash_;
   server_config_sig_ = other.server_config_sig_;
   server_config_valid_ = other.server_config_valid_;
-  server_designated_connection_ids_ = other.server_designated_connection_ids_;
   expiration_time_ = other.expiration_time_;
   if (other.proof_verify_details_ != nullptr) {
     proof_verify_details_.reset(other.proof_verify_details_->Clone());
   }
   ++generation_counter_;
-}
-
-QuicConnectionId
-QuicCryptoClientConfig::CachedState::GetNextServerDesignatedConnectionId() {
-  if (server_designated_connection_ids_.empty()) {
-    QUIC_BUG
-        << "Attempting to consume a connection id that was never designated.";
-    return EmptyQuicConnectionId();
-  }
-  const QuicConnectionId next_id = server_designated_connection_ids_.front();
-  server_designated_connection_ids_.pop();
-  return next_id;
 }
 
 std::string QuicCryptoClientConfig::CachedState::GetNextServerNonce() {
@@ -447,7 +421,7 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
     CryptoHandshakeMessage* out) const {
   out->set_tag(kCHLO);
   // TODO(rch): Remove this when we remove quic_use_chlo_packet_size flag.
-  if (pad_inchoate_hello_) {
+  if (pad_inchoate_hello_ && !disable_chlo_padding_) {
     out->set_minimum_size(kClientHelloMinimumSize);
   } else {
     out->set_minimum_size(1);
@@ -536,7 +510,7 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
   FillInchoateClientHello(server_id, preferred_version, cached, rand,
                           /* demand_x509_proof= */ true, out_params, out);
 
-  if (pad_full_hello_) {
+  if (pad_full_hello_ && !disable_chlo_padding_) {
     out->set_minimum_size(kClientHelloMinimumSize);
   } else {
     out->set_minimum_size(1);

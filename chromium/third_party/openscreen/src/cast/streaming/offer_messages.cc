@@ -6,6 +6,7 @@
 
 #include <inttypes.h>
 
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -13,10 +14,10 @@
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
 #include "cast/streaming/constants.h"
-#include "cast/streaming/message_util.h"
 #include "cast/streaming/receiver_session.h"
 #include "platform/base/error.h"
 #include "util/big_endian.h"
+#include "util/json/json_helpers.h"
 #include "util/json/json_serialization.h"
 #include "util/osp_logging.h"
 #include "util/stringprintf.h"
@@ -33,7 +34,7 @@ constexpr char kStreamType[] = "type";
 
 ErrorOr<RtpPayloadType> ParseRtpPayloadType(const Json::Value& parent,
                                             const std::string& field) {
-  auto t = ParseInt(parent, field);
+  auto t = json::ParseInt(parent, field);
   if (!t) {
     return t.error();
   }
@@ -49,14 +50,14 @@ ErrorOr<RtpPayloadType> ParseRtpPayloadType(const Json::Value& parent,
 
 ErrorOr<int> ParseRtpTimebase(const Json::Value& parent,
                               const std::string& field) {
-  auto error_or_raw = ParseString(parent, field);
+  auto error_or_raw = json::ParseString(parent, field);
   if (!error_or_raw) {
     return error_or_raw.error();
   }
 
   const auto fraction = SimpleFraction::FromString(error_or_raw.value());
   if (fraction.is_error() || !fraction.value().is_positive()) {
-    return CreateParseError("RTP timebase");
+    return json::CreateParseError("RTP timebase");
   }
   // The spec demands a leading 1, so this isn't really a fraction.
   OSP_DCHECK(fraction.value().numerator == 1);
@@ -71,7 +72,7 @@ constexpr int kAesStringLength = kAesBytesSize * kHexDigitsPerByte;
 ErrorOr<std::array<uint8_t, kAesBytesSize>> ParseAesHexBytes(
     const Json::Value& parent,
     const std::string& field) {
-  auto hex_string = ParseString(parent, field);
+  auto hex_string = json::ParseString(parent, field);
   if (!hex_string) {
     return hex_string.error();
   }
@@ -91,24 +92,24 @@ ErrorOr<std::array<uint8_t, kAesBytesSize>> ParseAesHexBytes(
     WriteBigEndian(quads[1], bytes.data() + 8);
     return bytes;
   }
-  return CreateParseError("AES hex string bytes");
+  return json::CreateParseError("AES hex string bytes");
 }
 
 ErrorOr<Stream> ParseStream(const Json::Value& value, Stream::Type type) {
-  auto index = ParseInt(value, "index");
+  auto index = json::ParseInt(value, "index");
   if (!index) {
     return index.error();
   }
   // If channel is omitted, the default value is used later.
-  auto channels = ParseInt(value, "channels");
+  auto channels = json::ParseInt(value, "channels");
   if (channels.is_value() && channels.value() <= 0) {
-    return CreateParameterError("channel");
+    return json::CreateParameterError("channel");
   }
-  auto codec_name = ParseString(value, "codecName");
+  auto codec_name = json::ParseString(value, "codecName");
   if (!codec_name) {
     return codec_name.error();
   }
-  auto rtp_profile = ParseString(value, "rtpProfile");
+  auto rtp_profile = json::ParseString(value, "rtpProfile");
   if (!rtp_profile) {
     return rtp_profile.error();
   }
@@ -116,7 +117,7 @@ ErrorOr<Stream> ParseStream(const Json::Value& value, Stream::Type type) {
   if (!rtp_payload_type) {
     return rtp_payload_type.error();
   }
-  auto ssrc = ParseUint(value, "ssrc");
+  auto ssrc = json::ParseUint(value, "ssrc");
   if (!ssrc) {
     return ssrc.error();
   }
@@ -133,19 +134,19 @@ ErrorOr<Stream> ParseStream(const Json::Value& value, Stream::Type type) {
     return rtp_timebase.error();
   }
 
-  auto target_delay = ParseInt(value, "targetDelay");
+  auto target_delay = json::ParseInt(value, "targetDelay");
   std::chrono::milliseconds target_delay_ms = kDefaultTargetPlayoutDelay;
   if (target_delay) {
     auto d = std::chrono::milliseconds(target_delay.value());
     if (d >= kMinTargetPlayoutDelay && d <= kMaxTargetPlayoutDelay) {
       target_delay_ms = d;
     } else {
-      return CreateParameterError("target delay");
+      return json::CreateParameterError("target delay");
     }
   }
 
-  auto receiver_rtcp_event_log = ParseBool(value, "receiverRtcpEventLog");
-  auto receiver_rtcp_dscp = ParseString(value, "receiverRtcpDscp");
+  auto receiver_rtcp_event_log = json::ParseBool(value, "receiverRtcpEventLog");
+  auto receiver_rtcp_dscp = json::ParseString(value, "receiverRtcpDscp");
   return Stream{index.value(),
                 type,
                 channels.value(type == Stream::Type::kAudioSource
@@ -167,28 +168,28 @@ ErrorOr<AudioStream> ParseAudioStream(const Json::Value& value) {
   if (!stream) {
     return stream.error();
   }
-  auto bit_rate = ParseInt(value, "bitRate");
+  auto bit_rate = json::ParseInt(value, "bitRate");
   if (!bit_rate) {
     return bit_rate.error();
   }
   // A bit rate of 0 is valid for some codec types, so we don't enforce here.
   if (bit_rate.value() < 0) {
-    return CreateParameterError("bit rate");
+    return json::CreateParameterError("bit rate");
   }
   return AudioStream{stream.value(), bit_rate.value()};
 }
 
 ErrorOr<Resolution> ParseResolution(const Json::Value& value) {
-  auto width = ParseInt(value, "width");
+  auto width = json::ParseInt(value, "width");
   if (!width) {
     return width.error();
   }
-  auto height = ParseInt(value, "height");
+  auto height = json::ParseInt(value, "height");
   if (!height) {
     return height.error();
   }
   if (width.value() <= 0 || height.value() <= 0) {
-    return CreateParameterError("resolution");
+    return json::CreateParameterError("resolution");
   }
   return Resolution{width.value(), height.value()};
 }
@@ -223,7 +224,7 @@ ErrorOr<VideoStream> ParseVideoStream(const Json::Value& value) {
     return resolutions.error();
   }
 
-  auto raw_max_frame_rate = ParseString(value, "maxFrameRate");
+  auto raw_max_frame_rate = json::ParseString(value, "maxFrameRate");
   SimpleFraction max_frame_rate{kDefaultMaxFrameRate, 1};
   if (raw_max_frame_rate.is_value()) {
     auto parsed = SimpleFraction::FromString(raw_max_frame_rate.value());
@@ -232,11 +233,11 @@ ErrorOr<VideoStream> ParseVideoStream(const Json::Value& value) {
     }
   }
 
-  auto profile = ParseString(value, "profile");
-  auto protection = ParseString(value, "protection");
-  auto max_bit_rate = ParseInt(value, "maxBitRate");
-  auto level = ParseString(value, "level");
-  auto error_recovery_mode = ParseString(value, "errorRecoveryMode");
+  auto profile = json::ParseString(value, "profile");
+  auto protection = json::ParseString(value, "protection");
+  auto max_bit_rate = json::ParseInt(value, "maxBitRate");
+  auto level = json::ParseString(value, "level");
+  auto error_recovery_mode = json::ParseString(value, "errorRecoveryMode");
   return VideoStream{stream.value(),
                      max_frame_rate,
                      max_bit_rate.value(4 << 20),
@@ -276,7 +277,7 @@ ErrorOr<Json::Value> Stream::ToJson() const {
       target_delay.count() <= 0 ||
       target_delay.count() > std::numeric_limits<int>::max() ||
       rtp_timebase < 1) {
-    return CreateParameterError("Stream");
+    return json::CreateParameterError("Stream");
   }
 
   Json::Value root;
@@ -315,7 +316,7 @@ std::string CastMode::ToString() const {
 ErrorOr<Json::Value> AudioStream::ToJson() const {
   // A bit rate of 0 is valid for some codec types, so we don't enforce here.
   if (bit_rate < 0) {
-    return CreateParameterError("AudioStream");
+    return json::CreateParameterError("AudioStream");
   }
 
   auto error_or_stream = stream.ToJson();
@@ -329,7 +330,7 @@ ErrorOr<Json::Value> AudioStream::ToJson() const {
 
 ErrorOr<Json::Value> Resolution::ToJson() const {
   if (width <= 0 || height <= 0) {
-    return CreateParameterError("Resolution");
+    return json::CreateParameterError("Resolution");
   }
 
   Json::Value root;
@@ -340,7 +341,7 @@ ErrorOr<Json::Value> Resolution::ToJson() const {
 
 ErrorOr<Json::Value> VideoStream::ToJson() const {
   if (max_bit_rate <= 0 || !max_frame_rate.is_positive()) {
-    return CreateParameterError("VideoStream");
+    return json::CreateParameterError("VideoStream");
   }
 
   auto error_or_stream = stream.ToJson();
@@ -372,18 +373,18 @@ ErrorOr<Json::Value> VideoStream::ToJson() const {
 ErrorOr<Offer> Offer::Parse(const Json::Value& root) {
   CastMode cast_mode = CastMode::Parse(root["castMode"].asString());
 
-  const ErrorOr<bool> get_status = ParseBool(root, "receiverGetStatus");
+  const ErrorOr<bool> get_status = json::ParseBool(root, "receiverGetStatus");
 
   Json::Value supported_streams = root[kSupportedStreams];
   if (!supported_streams.isArray()) {
-    return CreateParseError("supported streams in offer");
+    return json::CreateParseError("supported streams in offer");
   }
 
   std::vector<AudioStream> audio_streams;
   std::vector<VideoStream> video_streams;
   for (Json::ArrayIndex i = 0; i < supported_streams.size(); ++i) {
     const Json::Value& fields = supported_streams[i];
-    auto type = ParseString(fields, kStreamType);
+    auto type = json::ParseString(fields, kStreamType);
     if (!type) {
       return type.error();
     }

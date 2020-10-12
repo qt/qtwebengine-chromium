@@ -18,10 +18,14 @@
 #include "third_party/mDNSResponder/src/mDNSCore/mDNSEmbeddedAPI.h"
 #include "util/osp_logging.h"
 
+namespace {
+
 using std::chrono::duration_cast;
 using std::chrono::hours;
 using std::chrono::milliseconds;
 using std::chrono::seconds;
+
+}  // namespace
 
 extern "C" {
 
@@ -73,7 +77,13 @@ void mDNSPlatformLock(const mDNS* m) {
 void mDNSPlatformUnlock(const mDNS* m) {}
 
 void mDNSPlatformStrCopy(void* dst, const void* src) {
-  std::strcpy(static_cast<char*>(dst), static_cast<const char*>(src));
+  const char* source = static_cast<const char*>(src);
+  const size_t source_len = strlen(source);
+
+  // Unfortunately, the caller is responsible for making sure that dst
+  // if of sufficient length to store the src string. Otherwise we may
+  // cause an access violation.
+  std::strncpy(static_cast<char*>(dst), source, source_len);
 }
 
 mDNSu32 mDNSPlatformStrLen(const void* src) {

@@ -9,16 +9,18 @@ import("//build_overrides/build.gni")
 # standalone platform implementation; since this is itself a standalone
 # application.
 if (!build_with_chromium) {
-  executable("cast_receiver") {
+  source_set("standalone_receiver") {
     sources = [
       "cast_agent.cc",
       "cast_agent.h",
       "cast_socket_message_port.cc",
       "cast_socket_message_port.h",
-      "main.cc",
+      "static_credentials.cc",
+      "static_credentials.h",
       "streaming_playback_controller.cc",
       "streaming_playback_controller.h",
     ]
+
     deps = [
       "../../platform",
       "../../third_party/jsoncpp",
@@ -56,5 +58,26 @@ if (!build_with_chromium) {
         "dummy_player.h",
       ]
     }
+  }
+
+  source_set("e2e_tests") {
+    testonly = true
+    sources = [ "cast_agent_integration_tests.cc" ]
+
+    deps = [
+      ":standalone_receiver",
+      "../../third_party/boringssl",
+      "../../third_party/googletest:gtest",
+      "../receiver:channel",
+    ]
+  }
+
+  executable("cast_receiver") {
+    sources = [ "main.cc" ]
+
+    deps = [
+      ":standalone_receiver",
+      "../receiver:channel",
+    ]
   }
 }

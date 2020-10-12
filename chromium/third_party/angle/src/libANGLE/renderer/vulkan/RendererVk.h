@@ -10,23 +10,27 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_RENDERERVK_H_
 #define LIBANGLE_RENDERER_VULKAN_RENDERERVK_H_
 
+#include <condition_variable>
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <queue>
+#include <thread>
 
-#include "vk_ext_provoking_vertex.h"
+#include "common/vulkan/vk_ext_provoking_vertex.h"
 
 #include "common/PackedEnums.h"
 #include "common/PoolAlloc.h"
 #include "common/angleutils.h"
+#include "common/vulkan/vk_headers.h"
 #include "common/vulkan/vulkan_icd.h"
 #include "libANGLE/BlobCache.h"
 #include "libANGLE/Caps.h"
+#include "libANGLE/renderer/vulkan/CommandProcessor.h"
 #include "libANGLE/renderer/vulkan/QueryVk.h"
 #include "libANGLE/renderer/vulkan/ResourceVk.h"
 #include "libANGLE/renderer/vulkan/UtilsVk.h"
 #include "libANGLE/renderer/vulkan/vk_format_utils.h"
-#include "libANGLE/renderer/vulkan/vk_headers.h"
 #include "libANGLE/renderer/vulkan/vk_helpers.h"
 #include "libANGLE/renderer/vulkan/vk_internal_shaders_autogen.h"
 #include "libANGLE/renderer/vulkan/vk_mem_alloc_wrapper.h"
@@ -102,7 +106,7 @@ class RendererVk : angle::NonCopyable
     }
     VkDevice getDevice() const { return mDevice; }
 
-    const VmaAllocator &getAllocator() const { return mAllocator; }
+    const vk::Allocator &getAllocator() const { return mAllocator; }
 
     angle::Result selectPresentQueueForSurface(DisplayVk *displayVk,
                                                VkSurfaceKHR surface,
@@ -189,6 +193,7 @@ class RendererVk : angle::NonCopyable
     angle::Result queueSubmitOneOff(vk::Context *context,
                                     vk::PrimaryCommandBuffer &&primary,
                                     egl::ContextPriority priority,
+                                    const vk::Fence *fence,
                                     Serial *serialOut);
 
     angle::Result newSharedFence(vk::Context *context, vk::Shared<vk::Fence> *sharedFenceOut);
@@ -239,15 +244,19 @@ class RendererVk : angle::NonCopyable
 
     void onCompletedSerial(Serial serial);
 
-    bool shouldCleanupGarbage()
-    {
-        return (mSharedGarbage.size() > mGarbageCollectionFlushThreshold);
-    }
-
     bool enableDebugUtils() const { return mEnableDebugUtils; }
 
     SamplerCache &getSamplerCache() { return mSamplerCache; }
     vk::ActiveHandleCounter &getActiveHandleCounts() { return mActiveHandleCounts; }
+
+    // Queue commands to worker thread for processing
+    void queueCommands(const vk::CommandProcessorTask &commands)
+    {
+        mCommandProcessor.queueCommands(commands);
+    }
+    void waitForWorkerThreadIdle() { mCommandProcessor.waitForWorkComplete(); }
+
+    vk::BufferHelper &getNullBuffer() { return mTheNullBuffer; }
 
   private:
     angle::Result initializeDevice(DisplayVk *displayVk, uint32_t queueFamilyIndex);
@@ -362,12 +371,19 @@ class RendererVk : angle::NonCopyable
     };
     std::deque<PendingOneOffCommands> mPendingOneOffCommands;
 
+    // Worker Thread
+    CommandProcessor mCommandProcessor;
+    std::thread mCommandProcessorThread;
+
     // track whether we initialized (or released) glslang
     bool mGlslangInitialized;
 
-    VmaAllocator mAllocator;
+    vk::Allocator mAllocator;
     SamplerCache mSamplerCache;
     vk::ActiveHandleCounter mActiveHandleCounts;
+
+    // Vulkan does not allow binding a null vertex buffer. We use a dummy as a placeholder.
+    vk::BufferHelper mTheNullBuffer;
 };
 
 }  // namespace rx

@@ -419,6 +419,11 @@ bool NoOpFramerVisitor::OnHandshakeDoneFrame(
   return true;
 }
 
+bool NoOpFramerVisitor::OnAckFrequencyFrame(
+    const QuicAckFrequencyFrame& /*frame*/) {
+  return true;
+}
+
 bool NoOpFramerVisitor::IsValidStatelessResetToken(
     QuicUint128 /*token*/) const {
   return false;
@@ -566,6 +571,7 @@ void PacketSavingConnection::SendOrQueuePacket(SerializedPacket packet) {
   clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(10));
   // Transfer ownership of the packet to the SentPacketManager and the
   // ack notifier to the AckNotifierManager.
+  OnPacketSent(packet.encryption_level, packet.transmission_type);
   QuicConnectionPeer::GetSentPacketManager(this)->OnPacketSent(
       &packet, clock_.ApproximateNow(), NOT_RETRANSMISSION,
       HAS_RETRANSMITTABLE_DATA);
@@ -755,8 +761,8 @@ TestQuicSpdyClientSession::TestQuicSpdyClientSession(
                                 &push_promise_index_,
                                 config,
                                 supported_versions) {
-  // TODO(b/153726130): Consider adding OnApplicationState calls in tests and
-  // set |has_application_state| to true.
+  // TODO(b/153726130): Consider adding SetServerApplicationStateForResumption
+  // calls in tests and set |has_application_state| to true.
   crypto_stream_ = std::make_unique<QuicCryptoClientStream>(
       server_id, this, crypto_test_utils::ProofVerifyContextForTesting(),
       crypto_config, this, /*has_application_state = */ false);
@@ -799,7 +805,7 @@ MockPacketWriter::MockPacketWriter() {
       .WillByDefault(testing::Return(kMaxOutgoingPacketSize));
   ON_CALL(*this, IsBatchMode()).WillByDefault(testing::Return(false));
   ON_CALL(*this, GetNextWriteLocation(_, _))
-      .WillByDefault(testing::Return(nullptr));
+      .WillByDefault(testing::Return(QuicPacketBuffer()));
   ON_CALL(*this, Flush())
       .WillByDefault(testing::Return(WriteResult(WRITE_STATUS_OK, 0)));
   ON_CALL(*this, SupportsReleaseTime()).WillByDefault(testing::Return(false));
@@ -841,9 +847,9 @@ ParsedQuicVersion QuicVersionMin() {
 }
 
 void DisableQuicVersionsWithTls() {
-  SetQuicReloadableFlag(quic_enable_version_draft_27, false);
-  SetQuicReloadableFlag(quic_enable_version_draft_25_v3, false);
-  SetQuicReloadableFlag(quic_enable_version_t050_v2, false);
+  for (const ParsedQuicVersion& version : AllSupportedVersionsWithTls()) {
+    QuicDisableVersion(version);
+  }
 }
 
 QuicEncryptedPacket* ConstructEncryptedPacket(
@@ -1255,12 +1261,12 @@ QuicStreamId GetNthClientInitiatedUnidirectionalStreamId(
 }
 
 StreamType DetermineStreamType(QuicStreamId id,
-                               QuicTransportVersion version,
+                               ParsedQuicVersion version,
                                Perspective perspective,
                                bool is_incoming,
                                StreamType default_type) {
-  return VersionHasIetfQuicFrames(version)
-             ? QuicUtils::GetStreamType(id, perspective, is_incoming)
+  return version.HasIetfQuicFrames()
+             ? QuicUtils::GetStreamType(id, perspective, is_incoming, version)
              : default_type;
 }
 

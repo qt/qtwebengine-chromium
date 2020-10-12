@@ -125,6 +125,8 @@ const QuicTag kB2CL = TAG('B', '2', 'C', 'L');   // For BBRv2, allow PROBE_BW
                                                  // cwnd to be below BDP + ack
                                                  // height.
 const QuicTag kB2LO = TAG('B', '2', 'L', 'O');   // Ignore inflight_lo in BBR2
+const QuicTag kB2HI = TAG('B', '2', 'H', 'I');   // Limit inflight_hi reduction
+                                                 // based on CWND.
 const QuicTag kBSAO = TAG('B', 'S', 'A', 'O');   // Avoid Overestimation in
                                                  // Bandwidth Sampler with ack
                                                  // aggregation
@@ -160,7 +162,13 @@ const QuicTag kACKQ = TAG('A', 'C', 'K', 'Q');   // Send an immediate ack after
                                                  // 1 RTT of not receiving.
 const QuicTag kSSLR = TAG('S', 'S', 'L', 'R');   // Slow Start Large Reduction.
 const QuicTag kNPRR = TAG('N', 'P', 'R', 'R');   // Pace at unity instead of PRR
+const QuicTag k2RTO = TAG('2', 'R', 'T', 'O');   // Close connection on 2 RTOs
+const QuicTag k3RTO = TAG('3', 'R', 'T', 'O');   // Close connection on 3 RTOs
+const QuicTag k4RTO = TAG('4', 'R', 'T', 'O');   // Close connection on 4 RTOs
 const QuicTag k5RTO = TAG('5', 'R', 'T', 'O');   // Close connection on 5 RTOs
+const QuicTag k6RTO = TAG('6', 'R', 'T', 'O');   // Close connection on 6 RTOs
+const QuicTag kCBHD = TAG('C', 'B', 'H', 'D');   // Client only blackhole
+                                                 // detection.
 const QuicTag kCONH = TAG('C', 'O', 'N', 'H');   // Conservative Handshake
                                                  // Retransmissions.
 const QuicTag kLFAK = TAG('L', 'F', 'A', 'K');   // Don't invoke FACK on the
@@ -225,6 +233,8 @@ const QuicTag kPLE2 = TAG('P', 'L', 'E', '2');   // Arm the 1st PTO with
                                                  // earliest in flight sent time
                                                  // and at least 1.5*srtt from
                                                  // last sent packet.
+const QuicTag kAPTO = TAG('A', 'P', 'T', 'O');   // Use 1.5 * initial RTT before
+                                                 // any RTT sample is available.
 
 const QuicTag kELDT = TAG('E', 'L', 'D', 'T');   // Enable Loss Detection Tuning
 
@@ -329,6 +339,9 @@ const QuicTag kCFCW = TAG('C', 'F', 'C', 'W');   // Initial session/connection
                                                  // flow control receive window.
 const QuicTag kUAID = TAG('U', 'A', 'I', 'D');   // Client's User Agent ID.
 const QuicTag kXLCT = TAG('X', 'L', 'C', 'T');   // Expected leaf certificate.
+const QuicTag kQLVE = TAG('Q', 'L', 'V', 'E');   // Legacy Version
+                                                 // Encapsulation.
+const QuicTag kQNZR = TAG('Q', 'N', 'Z', 'R');   // Turn off QUIC crypto 0-RTT.
 
 const QuicTag kMAD  = TAG('M', 'A', 'D', 0);     // Max Ack Delay (IETF QUIC)
 

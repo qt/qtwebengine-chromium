@@ -8,6 +8,7 @@
 #include "src/sksl/SkSLHCodeGenerator.h"
 
 #include "src/sksl/SkSLParser.h"
+#include "src/sksl/SkSLSampleMatrix.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLEnum.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
@@ -272,7 +273,7 @@ void HCodeGenerator::writeConstructor() {
     this->writef(" {\n");
     this->writeSection(CONSTRUCTOR_CODE_SECTION);
     int samplerCount = 0;
-    for (const auto& param : fSectionAndParameterHelper.getParameters()) {
+    for (const Variable* param : fSectionAndParameterHelper.getParameters()) {
         if (param->fType.kind() == Type::kSampler_Kind) {
             ++samplerCount;
         } else if (param->fType.nonnullable() == *fContext.fFragmentProcessor_Type) {
@@ -281,36 +282,45 @@ void HCodeGenerator::writeConstructor() {
             } else {
                 this->writef("        SkASSERT(%s);", String(param->fName).c_str());
             }
-            this->writef("            %s_index = this->numChildProcessors();",
-                         FieldName(String(param->fName).c_str()).c_str());
-            if (fSectionAndParameterHelper.hasCoordOverrides(*param)) {
-                this->writef("            %s->setSampledWithExplicitCoords();",
-                             String(param->fName).c_str());
+
+            bool explicitCoords = fSectionAndParameterHelper.hasCoordOverrides(*param);
+            SampleMatrix matrix = SampleMatrix::Make(fProgram, *param);
+
+            String registerFunc;
+            String matrixArg;
+            String explicitArg;
+
+            if (explicitCoords && matrix.fKind == SampleMatrix::Kind::kNone) {
+                registerFunc = "registerExplicitlySampledChild";
+            } else {
+                registerFunc = "registerChild";
+                if (explicitCoords) {
+                    explicitArg = ", true";
+                }
+                switch(matrix.fKind) {
+                    case SampleMatrix::Kind::kVariable:
+                        matrixArg.appendf(", SkSL::SampleMatrix::MakeVariable()");
+                        break;
+                    case SampleMatrix::Kind::kConstantOrUniform:
+                        matrixArg.appendf(", SkSL::SampleMatrix::MakeConstUniform(\"%s\")",
+                                          matrix.fExpression.c_str());
+                        break;
+                    case SampleMatrix::Kind::kMixed:
+                        // Mixed is only produced when combining FPs, not from analysis of sksl
+                        SkASSERT(false);
+                        break;
+                    case SampleMatrix::Kind::kNone:
+                        break;
+                }
             }
-            SampleMatrix matrix = fSectionAndParameterHelper.getMatrix(*param);
-            switch (matrix.fKind) {
-                case SampleMatrix::Kind::kVariable:
-                    this->writef("            %s->setSampleMatrix(this, "
-                                                            "SkSL::SampleMatrix::Kind::kVariable);",
-                                 String(param->fName).c_str());
-                    break;
-                case SampleMatrix::Kind::kConstantOrUniform:
-                    this->writef("            %s->setSampleMatrix(SkSL::SampleMatrix("
-                                 "SkSL::SampleMatrix::Kind::kConstantOrUniform, this, \"%s\"));",
-                                 String(param->fName).c_str(),
-                                 matrix.fExpression.c_str());
-                    break;
-                case SampleMatrix::Kind::kMixed:
-                    this->writef("            %s->setSampleMatrix(SkSL::SampleMatrix("
-                                 "SkSL::SampleMatrix::Kind::kMixed, this, \"%s\"));",
-                                 String(param->fName).c_str(),
-                                 matrix.fExpression.c_str());
-                    break;
-                case SampleMatrix::Kind::kNone:
-                    break;
-            }
-            this->writef("            this->registerChildProcessor(std::move(%s));",
-                         String(param->fName).c_str());
+
+            this->writef("            %s_index = this->%s(std::move(%s)%s%s);",
+                         FieldName(String(param->fName).c_str()).c_str(),
+                         registerFunc.c_str(),
+                         String(param->fName).c_str(),
+                         matrixArg.c_str(),
+                         explicitArg.c_str());
+
             if (param->fType.kind() == Type::kNullable_Kind) {
                 this->writef("       }");
             }
@@ -367,15 +377,18 @@ bool HCodeGenerator::generateCode() {
     this->writef("%s\n", GetHeader(fProgram, fErrors).c_str());
     this->writef(kFragmentProcessorHeader, fFullName.c_str());
     this->writef("#ifndef %s_DEFINED\n"
-                 "#define %s_DEFINED\n",
+                 "#define %s_DEFINED\n"
+                 "\n",
                  fFullName.c_str(),
                  fFullName.c_str());
-    this->writef("#include \"include/core/SkTypes.h\"\n");
-    this->writef("#include \"include/core/SkM44.h\"\n");
+    this->writef("#include \"include/core/SkM44.h\"\n"
+                 "#include \"include/core/SkTypes.h\"\n"
+                 "\n");
     this->writeSection(HEADER_SECTION);
     this->writef("\n"
                  "#include \"src/gpu/GrCoordTransform.h\"\n"
-                 "#include \"src/gpu/GrFragmentProcessor.h\"\n");
+                 "#include \"src/gpu/GrFragmentProcessor.h\"\n"
+                 "\n");
     this->writef("class %s : public GrFragmentProcessor {\n"
                  "public:\n",
                  fFullName.c_str());

@@ -15,6 +15,9 @@
 #ifndef DAWNNATIVE_BINDINGINFO_H_
 #define DAWNNATIVE_BINDINGINFO_H_
 
+#include "common/Constants.h"
+#include "common/TypedInteger.h"
+#include "common/ityp_array.h"
 #include "dawn_native/Format.h"
 #include "dawn_native/dawn_platform.h"
 
@@ -22,16 +25,19 @@
 
 namespace dawn_native {
 
-    // TODO(enga): Can we have strongly typed integers so you can't convert between them
-    // by accident? And also range-assertions (ex. kMaxBindingsPerGroup) in Debug?
-
     // Binding numbers in the shader and BindGroup/BindGroupLayoutDescriptors
-    using BindingNumber = uint32_t;
+    using BindingNumber = TypedInteger<struct BindingNumberT, uint32_t>;
 
     // Binding numbers get mapped to a packed range of indices
-    using BindingIndex = uint32_t;
+    using BindingIndex = TypedInteger<struct BindingIndexT, uint32_t>;
+
+    using BindGroupIndex = TypedInteger<struct BindGroupIndexT, uint32_t>;
+
+    static constexpr BindingIndex kMaxBindingsPerGroupTyped = BindingIndex(kMaxBindingsPerGroup);
+    static constexpr BindGroupIndex kMaxBindGroupsTyped = BindGroupIndex(kMaxBindGroups);
 
     struct BindingInfo {
+        BindingNumber binding;
         wgpu::ShaderStage visibility;
         wgpu::BindingType type;
         Format::Type textureComponentType = Format::Type::Float;
@@ -39,7 +45,11 @@ namespace dawn_native {
         wgpu::TextureFormat storageTextureFormat = wgpu::TextureFormat::Undefined;
         bool hasDynamicOffset = false;
         bool multisampled = false;
+        uint64_t minBufferBindingSize = 0;
     };
+
+    // For buffer size validation
+    using RequiredBufferSizes = ityp::array<BindGroupIndex, std::vector<uint64_t>, kMaxBindGroups>;
 
 }  // namespace dawn_native
 

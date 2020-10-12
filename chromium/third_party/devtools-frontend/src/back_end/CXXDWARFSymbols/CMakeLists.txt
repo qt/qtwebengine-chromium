@@ -17,6 +17,8 @@ add_subdirectory(third_party/llvm/llvm)
 set_property(DIRECTORY third_party/llvm/llvm
   PROPERTY EXCLUDE_FROM_ALL TRUE)
 
+# Required to enable llvm option parsing
+include(third_party/llvm/llvm/cmake/modules/DetermineGCCCompatible.cmake)
 
 option(SYMBOL_SERVER_BUILD_FORMATTERS
   "Build the formatters library for evaluator modules" OFF)
@@ -42,6 +44,10 @@ function(include_what_you_use TARGET)
       CXX_CLANG_TIDY "${clang_tidy}")
   endif()
 endfunction()
+
+set(LLVM_RUNTIME_OUTPUT_INTDIR ${LLVM_BINARY_DIR}/${CMAKE_CFG_INTDIR}/bin)
+set(LLVM_LIBRARY_OUTPUT_INTDIR ${LLVM_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lib${LLVM_LIBDIR_SUFFIX})
+set(LLVM_TOOLS_BINARY_DIR ${LLVM_RUNTIME_OUTPUT_INTDIR})
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
 set(CMAKE_SKIP_BUILD_RPATH FALSE)

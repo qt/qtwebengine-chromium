@@ -7,10 +7,7 @@ import("//build_overrides/build.gni")
 if (build_with_chromium) {
   source_set("abseil") {
     public_deps = [
-      "//third_party/abseil-cpp/absl/hash",
-      "//third_party/abseil-cpp/absl/strings",
-      "//third_party/abseil-cpp/absl/types:optional",
-      "//third_party/abseil-cpp/absl/types:variant",
+      "//third_party/abseil-cpp:absl",
     ]
   }
 } else {
@@ -44,10 +41,12 @@ if (build_with_chromium) {
       "src/absl/base/port.h",
       "src/absl/container/internal/common.h",
       "src/absl/hash/hash.h",
+      "src/absl/hash/hash_testing.h",
       "src/absl/hash/internal/city.cc",
       "src/absl/hash/internal/city.h",
       "src/absl/hash/internal/hash.cc",
       "src/absl/hash/internal/hash.h",
+      "src/absl/hash/internal/spy_hash_state.h",
       "src/absl/memory/memory.h",
       "src/absl/meta/type_traits.h",
       "src/absl/numeric/int128.cc",
@@ -75,6 +74,7 @@ if (build_with_chromium) {
       "src/absl/strings/numbers.h",
       "src/absl/strings/str_cat.cc",
       "src/absl/strings/str_cat.h",
+      "src/absl/strings/str_format.h",
       "src/absl/strings/str_join.h",
       "src/absl/strings/str_replace.cc",
       "src/absl/strings/str_replace.h",

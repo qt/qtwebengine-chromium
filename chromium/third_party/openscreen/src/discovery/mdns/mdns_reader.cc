@@ -56,7 +56,7 @@ bool MdnsReader::Read(TxtRecordRdata::Entry* out) {
 }
 
 // RFC 1035: https://www.ietf.org/rfc/rfc1035.txt
-// See section 4.1.4. Message compression
+// See section 4.1.4. Message compression.
 bool MdnsReader::Read(DomainName* out) {
   OSP_DCHECK(out);
   const uint8_t* position = current();

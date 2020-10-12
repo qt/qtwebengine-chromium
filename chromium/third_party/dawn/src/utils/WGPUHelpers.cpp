@@ -17,11 +17,14 @@
 #include "common/Assert.h"
 #include "common/Constants.h"
 #include "common/Log.h"
+#include "common/Math.h"
+#include "utils/TextureFormatUtils.h"
 
 #include <shaderc/shaderc.hpp>
 
 #include <cstring>
 #include <iomanip>
+#include <mutex>
 #include <sstream>
 
 namespace utils {
@@ -160,9 +163,9 @@ namespace utils {
         wgpu::BufferDescriptor descriptor;
         descriptor.size = size;
         descriptor.usage = usage | wgpu::BufferUsage::CopyDst;
-
         wgpu::Buffer buffer = device.CreateBuffer(&descriptor);
-        buffer.SetSubData(0, size, data);
+
+        device.GetDefaultQueue().WriteBuffer(buffer, 0, data, size);
         return buffer;
     }
 
@@ -251,7 +254,6 @@ namespace utils {
         descriptor.size.width = width;
         descriptor.size.height = height;
         descriptor.size.depth = 1;
-        descriptor.arrayLayerCount = 1;
         descriptor.sampleCount = 1;
         descriptor.format = BasicRenderPass::kDefaultColorFormat;
         descriptor.mipLevelCount = 1;
@@ -276,12 +278,10 @@ namespace utils {
 
     wgpu::TextureCopyView CreateTextureCopyView(wgpu::Texture texture,
                                                 uint32_t mipLevel,
-                                                uint32_t arrayLayer,
                                                 wgpu::Origin3D origin) {
         wgpu::TextureCopyView textureCopyView;
         textureCopyView.texture = texture;
         textureCopyView.mipLevel = mipLevel;
-        textureCopyView.arrayLayer = arrayLayer;
         textureCopyView.origin = origin;
 
         return textureCopyView;
@@ -374,4 +374,47 @@ namespace utils {
         return device.CreateBindGroup(&descriptor);
     }
 
+    uint32_t GetMinimumBytesPerRow(wgpu::TextureFormat format, uint32_t width) {
+        const uint32_t bytesPerTexel = utils::GetTexelBlockSizeInBytes(format);
+        return Align(bytesPerTexel * width, kTextureBytesPerRowAlignment);
+    }
+
+    uint32_t GetBytesInBufferTextureCopy(wgpu::TextureFormat format,
+                                         uint32_t width,
+                                         uint32_t bytesPerRow,
+                                         uint32_t rowsPerImage,
+                                         uint32_t copyArrayLayerCount) {
+        ASSERT(rowsPerImage > 0);
+        const uint32_t bytesPerTexel = utils::GetTexelBlockSizeInBytes(format);
+        const uint32_t bytesAtLastImage = bytesPerRow * (rowsPerImage - 1) + bytesPerTexel * width;
+        return bytesPerRow * rowsPerImage * (copyArrayLayerCount - 1) + bytesAtLastImage;
+    }
+
+    // TODO(jiawei.shao@intel.com): support compressed texture formats
+    BufferTextureCopyLayout GetBufferTextureCopyLayoutForTexture2DAtLevel(
+        wgpu::TextureFormat format,
+        wgpu::Extent3D textureSizeAtLevel0,
+        uint32_t mipmapLevel,
+        uint32_t rowsPerImage) {
+        BufferTextureCopyLayout layout;
+
+        layout.mipSize = {textureSizeAtLevel0.width >> mipmapLevel,
+                          textureSizeAtLevel0.height >> mipmapLevel, textureSizeAtLevel0.depth};
+
+        layout.bytesPerRow = GetMinimumBytesPerRow(format, layout.mipSize.width);
+
+        uint32_t appliedRowsPerImage = rowsPerImage > 0 ? rowsPerImage : layout.mipSize.height;
+        layout.bytesPerImage = layout.bytesPerRow * appliedRowsPerImage;
+
+        layout.byteLength =
+            GetBytesInBufferTextureCopy(format, layout.mipSize.width, layout.bytesPerRow,
+                                        appliedRowsPerImage, textureSizeAtLevel0.depth);
+
+        const uint32_t bytesPerTexel = utils::GetTexelBlockSizeInBytes(format);
+        layout.texelBlocksPerRow = layout.bytesPerRow / bytesPerTexel;
+        layout.texelBlocksPerImage = layout.bytesPerImage / bytesPerTexel;
+        layout.texelBlockCount = layout.byteLength / bytesPerTexel;
+
+        return layout;
+    }
 }  // namespace utils

@@ -2,12 +2,12 @@ export const description = `
 Basic command buffer compute tests.
 `;
 
-import { TestGroup } from '../../../../../common/framework/test_group.js';
+import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../gpu_test.js';
 
-export const g = new TestGroup(GPUTest);
+export const g = makeTestGroup(GPUTest);
 
-g.test('memcpy', async t => {
+g.test('memcpy').fn(async t => {
   const data = new Uint32Array([0x01020304]);
 
   const [src, srcData] = t.device.createBufferMapped({

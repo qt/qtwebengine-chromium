@@ -58,7 +58,7 @@ struct Service {
 
 class DemoSocketClient : public UdpSocket::Client {
  public:
-  DemoSocketClient(MdnsResponderAdapterImpl* mdns) : mdns_(mdns) {}
+  explicit DemoSocketClient(MdnsResponderAdapterImpl* mdns) : mdns_(mdns) {}
 
   void OnError(UdpSocket* socket, Error error) override {
     // TODO(crbug.com/openscreen/66): Change to OSP_LOG_FATAL.
@@ -361,7 +361,8 @@ int main(int argc, char** argv) {
   openscreen::osp::ServiceMap services;
   openscreen::osp::g_services = &services;
 
-  PlatformClientPosix::Create(Clock::duration{50}, Clock::duration{50});
+  PlatformClientPosix::Create(std::chrono::milliseconds(50),
+                              std::chrono::milliseconds(50));
 
   openscreen::osp::BrowseDemo(
       PlatformClientPosix::GetInstance()->GetTaskRunner(), labels[0], labels[1],

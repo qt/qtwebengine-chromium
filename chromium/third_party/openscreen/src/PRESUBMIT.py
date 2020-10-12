@@ -67,9 +67,15 @@ def _CommonChecks(input_api, output_api):
   results.extend(input_api.canned_checks.CheckChangeTodoHasOwner(
     input_api, output_api))
 
-  # Linter
+  # Linter.
+  # - We disable c++11 header checks since Open Screen allows them.
+  # - We disable whitespace/braces because of various false positives.
+  # - There are some false positives with 'explicit' checks, but it's useful
+  #   enough to keep.
   results.extend(input_api.canned_checks.CheckChangeLintsClean(
-    input_api, output_api, lint_filters = None, verbose_level=4))
+    input_api, output_api,
+    lint_filters = ['-build/c++11', '-whitespace/braces'],
+    verbose_level=4))
 
   # clang-format
   results.extend(input_api.canned_checks.CheckPatchFormatted(

@@ -15,7 +15,6 @@
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrDeferredProxyUploader.h"
 #include "src/gpu/GrDrawingManager.h"
-#include "src/gpu/GrFixedClip.h"
 #include "src/gpu/GrGpuResourcePriv.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -24,7 +23,6 @@
 #include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrStyle.h"
 #include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/effects/GrConvexPolyEffect.h"
 #include "src/gpu/effects/GrRRectEffect.h"
 #include "src/gpu/effects/generated/GrDeviceSpaceEffect.h"
 #include "src/gpu/geometry/GrStyledShape.h"
@@ -49,26 +47,27 @@ bool GrClipStackClip::quickContains(const SkRRect& rrect) const {
     return fStack->quickContains(rrect);
 }
 
-bool GrClipStackClip::isRRect(const SkRect& origRTBounds, SkRRect* rr, GrAA* aa) const {
+bool GrClipStackClip::isRRect(SkRRect* rr, GrAA* aa) const {
     if (!fStack) {
         return false;
     }
-    const SkRect* rtBounds = &origRTBounds;
+
+    SkRect rtBounds = SkRect::MakeIWH(fDeviceSize.fWidth, fDeviceSize.fHeight);
     bool isAA;
-    if (fStack->isRRect(*rtBounds, rr, &isAA)) {
+    if (fStack->isRRect(rtBounds, rr, &isAA)) {
         *aa = GrAA(isAA);
         return true;
     }
     return false;
 }
 
-SkIRect GrClipStackClip::getConservativeBounds(int width, int height) const {
+SkIRect GrClipStackClip::getConservativeBounds() const {
     if (fStack) {
         SkRect devBounds;
-        fStack->getConservativeBounds(0, 0, width, height, &devBounds);
+        fStack->getConservativeBounds(0, 0, fDeviceSize.fWidth, fDeviceSize.fHeight, &devBounds);
         return devBounds.roundOut();
     } else {
-        return this->GrClip::getConservativeBounds(width, height);
+        return SkIRect::MakeSize(fDeviceSize);
     }
 }
 
@@ -79,7 +78,7 @@ static std::unique_ptr<GrFragmentProcessor> create_fp_for_mask(GrSurfaceProxyVie
                                                                const GrCaps& caps) {
     GrSamplerState samplerState(GrSamplerState::WrapMode::kClampToBorder,
                                 GrSamplerState::Filter::kNearest);
-    auto m = SkMatrix::MakeTrans(-devBound.fLeft, -devBound.fTop);
+    auto m = SkMatrix::Translate(-devBound.fLeft, -devBound.fTop);
     auto subset = SkRect::Make(devBound.size());
     // We scissor to devBounds. The mask's texel centers are aligned to device space
     // pixel centers. Hence this domain of texture coordinates.
@@ -200,7 +199,9 @@ bool GrClipStackClip::UseSWOnlyPath(GrRecordingContext* context,
 bool GrClipStackClip::apply(GrRecordingContext* context, GrRenderTargetContext* renderTargetContext,
                             bool useHWAA, bool hasUserStencilSettings, GrAppliedClip* out,
                             SkRect* bounds) const {
-    SkRect devBounds = SkRect::MakeIWH(renderTargetContext->width(), renderTargetContext->height());
+    SkASSERT(renderTargetContext->width() == fDeviceSize.fWidth &&
+             renderTargetContext->height() == fDeviceSize.fHeight);
+    SkRect devBounds = SkRect::MakeIWH(fDeviceSize.fWidth, fDeviceSize.fHeight);
     if (!devBounds.intersect(*bounds)) {
         return false;
     }
@@ -253,7 +254,8 @@ bool GrClipStackClip::apply(GrRecordingContext* context, GrRenderTargetContext* 
     // The opsTask ID must not be looked up until AFTER producing the clip mask (if any). That step
     // can cause a flush or otherwise change which opstask our draw is going into.
     uint32_t opsTaskID = renderTargetContext->getOpsTask()->uniqueID();
-    if (auto clipFPs = reducedClip.finishAndDetachAnalyticFPs(ccpr, opsTaskID)) {
+    if (auto clipFPs = reducedClip.finishAndDetachAnalyticFPs(context, *fMatrixProvider, ccpr,
+                                                              opsTaskID)) {
         out->addCoverageFP(std::move(clipFPs));
     }
 

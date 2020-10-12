@@ -63,6 +63,14 @@ macro(libgav1_set_build_definitions)
   list(APPEND libgav1_clang_cxx_flags "-Wmissing-prototypes"
               "-Wshorten-64-to-32")
 
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "6")
+      # Quiet warnings in copy-list-initialization where {} elision has always
+      # been allowed.
+      list(APPEND libgav1_clang_cxx_flags "-Wno-missing-braces")
+    endif()
+  endif()
+
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "7")
       # Quiet warnings due to potential snprintf() truncation in threadpool.cc.

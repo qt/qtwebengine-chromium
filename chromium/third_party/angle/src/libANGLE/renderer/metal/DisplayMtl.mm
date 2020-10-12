@@ -15,6 +15,8 @@
 #include "libANGLE/renderer/metal/ContextMtl.h"
 #include "libANGLE/renderer/metal/SurfaceMtl.h"
 #include "libANGLE/renderer/metal/mtl_common.h"
+#include "libANGLE/renderer/metal/shaders/compiled/mtl_default_shaders.inc"
+#include "libANGLE/renderer/metal/shaders/mtl_default_shaders_src_autogen.inc"
 #include "platform/Platform.h"
 
 #include "EGL/eglext.h"
@@ -25,7 +27,11 @@ namespace rx
 bool IsMetalDisplayAvailable()
 {
     // We only support macos 10.13+ and 11 for now. Since they are requirements for Metal 2.0.
+#if TARGET_OS_SIMULATOR
+    if (ANGLE_APPLE_AVAILABLE_XCI(10.13, 13.0, 13))
+#else
     if (ANGLE_APPLE_AVAILABLE_XCI(10.13, 13.0, 11))
+#endif
     {
         return true;
     }
@@ -81,6 +87,7 @@ angle::Result DisplayMtl::initializeImpl(egl::Display *display)
         }
 
         ANGLE_TRY(mFormatTable.initialize(this));
+        ANGLE_TRY(initializeShaderLibrary());
 
         return mUtils.initialize();
     }
@@ -88,12 +95,9 @@ angle::Result DisplayMtl::initializeImpl(egl::Display *display)
 
 void DisplayMtl::terminate()
 {
-    for (mtl::TextureRef &nullTex : mNullTextures)
-    {
-        nullTex.reset();
-    }
     mUtils.onDestroy();
     mCmdQueue.reset();
+    mDefaultShaders  = nil;
     mMetalDevice     = nil;
     mCapsInitialized = false;
 
@@ -208,6 +212,11 @@ StreamProducerImpl *DisplayMtl::createStreamProducerD3DTexture(
 {
     UNIMPLEMENTED();
     return nullptr;
+}
+
+ShareGroupImpl *DisplayMtl::createShareGroup()
+{
+    return new ShareGroupMtl();
 }
 
 gl::Version DisplayMtl::getMaxSupportedESVersion() const
@@ -367,45 +376,6 @@ const gl::Extensions &DisplayMtl::getNativeExtensions() const
     return mNativeExtensions;
 }
 
-const mtl::TextureRef &DisplayMtl::getNullTexture(const gl::Context *context, gl::TextureType type)
-{
-    // TODO(hqle): Use rx::IncompleteTextureSet.
-    ContextMtl *contextMtl = mtl::GetImpl(context);
-    if (!mNullTextures[type])
-    {
-        // initialize content with zeros
-        MTLRegion region           = MTLRegionMake2D(0, 0, 1, 1);
-        const uint8_t zeroPixel[4] = {0, 0, 0, 255};
-
-        const auto &rgbaFormat = getPixelFormat(angle::FormatID::R8G8B8A8_UNORM);
-
-        switch (type)
-        {
-            case gl::TextureType::_2D:
-                (void)(mtl::Texture::Make2DTexture(contextMtl, rgbaFormat, 1, 1, 1, false, false,
-                                                   &mNullTextures[type]));
-                mNullTextures[type]->replaceRegion(contextMtl, region, 0, 0, zeroPixel,
-                                                   sizeof(zeroPixel));
-                break;
-            case gl::TextureType::CubeMap:
-                (void)(mtl::Texture::MakeCubeTexture(contextMtl, rgbaFormat, 1, 1, false, false,
-                                                     &mNullTextures[type]));
-                for (int f = 0; f < 6; ++f)
-                {
-                    mNullTextures[type]->replaceRegion(contextMtl, region, 0, f, zeroPixel,
-                                                       sizeof(zeroPixel));
-                }
-                break;
-            default:
-                UNREACHABLE();
-                // NOTE(hqle): Support more texture types.
-        }
-        ASSERT(mNullTextures[type]);
-    }
-
-    return mNullTextures[type];
-}
-
 void DisplayMtl::ensureCapsInitialized() const
 {
     if (mCapsInitialized)
@@ -508,7 +478,7 @@ void DisplayMtl::ensureCapsInitialized() const
 
     // Note that we currently implement textures as combined image+samplers, so the limit is
     // the minimum of supported samplers and sampled images.
-    mNativeCaps.maxCombinedTextureImageUnits                         = mtl::kMaxShaderSamplers;
+    mNativeCaps.maxCombinedTextureImageUnits                         = mtl::kMaxGLSamplerBindings;
     mNativeCaps.maxShaderTextureImageUnits[gl::ShaderType::Fragment] = mtl::kMaxShaderSamplers;
     mNativeCaps.maxShaderTextureImageUnits[gl::ShaderType::Vertex]   = mtl::kMaxShaderSamplers;
 
@@ -667,6 +637,30 @@ void DisplayMtl::initializeFeatures()
 
     angle::PlatformMethods *platform = ANGLEPlatformCurrent();
     platform->overrideFeaturesMtl(platform, &mFeatures);
+}
+
+angle::Result DisplayMtl::initializeShaderLibrary()
+{
+    mtl::AutoObjCObj<NSError> err = nil;
+
+#if defined(ANGLE_MTL_DEBUG_INTERNAL_SHADERS)
+    mDefaultShaders = CreateShaderLibrary(getMetalDevice(), default_metallib_src,
+                                          sizeof(default_metallib_src), &err);
+#else
+    mDefaultShaders = CreateShaderLibraryFromBinary(getMetalDevice(), compiled_default_metallib,
+                                                    compiled_default_metallib_len, &err);
+#endif
+
+    if (err && !mDefaultShaders)
+    {
+        ANGLE_MTL_OBJC_SCOPE
+        {
+            ERR() << "Internal error: " << err.get().localizedDescription.UTF8String;
+        }
+        return angle::Result::Stop;
+    }
+
+    return angle::Result::Continue;
 }
 
 }  // namespace rx

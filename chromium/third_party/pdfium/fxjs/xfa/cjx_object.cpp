@@ -21,7 +21,6 @@
 #include "fxjs/xfa/cjx_field.h"
 #include "fxjs/xfa/cjx_instancemanager.h"
 #include "third_party/base/compiler_specific.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fgas/crt/cfgas_decimal.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
@@ -165,7 +164,7 @@ int32_t CJX_Object::Subform_and_SubformSet_InstanceIndex() {
 }
 
 bool CJX_Object::HasMethod(const WideString& func) const {
-  return pdfium::ContainsKey(method_specs_, func.ToUTF8());
+  return pdfium::Contains(method_specs_, func.ToUTF8());
 }
 
 CJS_Result CJX_Object::RunMethod(
@@ -820,7 +819,7 @@ void CJX_Object::SetUserData(
 
 XFA_MAPMODULEDATA* CJX_Object::CreateMapModuleData() {
   if (!map_module_data_)
-    map_module_data_ = pdfium::MakeUnique<XFA_MAPMODULEDATA>();
+    map_module_data_ = std::make_unique<XFA_MAPMODULEDATA>();
   return map_module_data_.get();
 }
 
@@ -921,8 +920,8 @@ bool CJX_Object::GetMapModuleBuffer(void* pKey,
 
 bool CJX_Object::HasMapModuleKey(void* pKey) {
   XFA_MAPMODULEDATA* pModule = GetMapModuleData();
-  return pModule && (pdfium::ContainsKey(pModule->m_ValueMap, pKey) ||
-                     pdfium::ContainsKey(pModule->m_BufferMap, pKey));
+  return pModule && (pdfium::Contains(pModule->m_ValueMap, pKey) ||
+                     pdfium::Contains(pModule->m_BufferMap, pKey));
 }
 
 void CJX_Object::ClearMapModuleBuffer() {

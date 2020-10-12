@@ -15,6 +15,7 @@
 
 #include "net/third_party/quiche/src/quic/core/congestion_control/loss_detection_interface.h"
 #include "net/third_party/quiche/src/quic/core/congestion_control/send_algorithm_interface.h"
+#include "net/third_party/quiche/src/quic/core/crypto/transport_parameters.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_client_push_promise_index.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_server_session_base.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_spdy_session.h"
@@ -395,6 +396,10 @@ class MockFramerVisitor : public QuicFramerVisitorInterface {
               OnHandshakeDoneFrame,
               (const QuicHandshakeDoneFrame& frame),
               (override));
+  MOCK_METHOD(bool,
+              OnAckFrequencyFrame,
+              (const QuicAckFrequencyFrame& frame),
+              (override));
   MOCK_METHOD(void, OnPacketComplete, (), (override));
   MOCK_METHOD(bool,
               IsValidStatelessResetToken,
@@ -459,6 +464,7 @@ class NoOpFramerVisitor : public QuicFramerVisitorInterface {
   bool OnBlockedFrame(const QuicBlockedFrame& frame) override;
   bool OnMessageFrame(const QuicMessageFrame& frame) override;
   bool OnHandshakeDoneFrame(const QuicHandshakeDoneFrame& frame) override;
+  bool OnAckFrequencyFrame(const QuicAckFrequencyFrame& frame) override;
   void OnPacketComplete() override {}
   bool IsValidStatelessResetToken(QuicUint128 token) const override;
   void OnAuthenticatedIetfStatelessResetPacket(
@@ -498,14 +504,18 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD(void, OnWriteBlocked, (), (override));
   MOCK_METHOD(void, OnCanWrite, (), (override));
   MOCK_METHOD(bool, SendProbingData, (), (override));
+  MOCK_METHOD(bool,
+              ValidateStatelessReset,
+              (const quic::QuicSocketAddress&, const quic::QuicSocketAddress&),
+              (override));
   MOCK_METHOD(void, OnCongestionWindowChange, (QuicTime now), (override));
   MOCK_METHOD(void,
               OnConnectionMigration,
               (AddressChangeType type),
               (override));
   MOCK_METHOD(void, OnPathDegrading, (), (override));
+  MOCK_METHOD(void, OnForwardProgressMadeAfterPathDegrading, (), (override));
   MOCK_METHOD(bool, WillingAndAbleToWrite, (), (const, override));
-  MOCK_METHOD(bool, HasPendingHandshake, (), (const, override));
   MOCK_METHOD(bool, ShouldKeepConnectionAlive, (), (const, override));
   MOCK_METHOD(void,
               OnSuccessfulVersionNegotiation,
@@ -521,7 +531,6 @@ class MockQuicConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD(void, SendPing, (), (override));
   MOCK_METHOD(bool, AllowSelfAddressChange, (), (const, override));
   MOCK_METHOD(HandshakeState, GetHandshakeState, (), (const, override));
-  MOCK_METHOD(void, OnForwardProgressConfirmed, (), (override));
   MOCK_METHOD(bool,
               OnMaxStreamsFrame,
               (const QuicMaxStreamsFrame& frame),
@@ -672,6 +681,8 @@ class MockQuicConnection : public QuicConnection {
     QuicConnection::OnError(framer);
   }
 
+  void ReallyOnCanWrite() { QuicConnection::OnCanWrite(); }
+
   void ReallyCloseConnection(
       QuicErrorCode error,
       const std::string& details,
@@ -738,6 +749,8 @@ class PacketSavingConnection : public MockQuicConnection {
 
   void SendOrQueuePacket(SerializedPacket packet) override;
 
+  MOCK_METHOD(void, OnPacketSent, (EncryptionLevel, TransmissionType));
+
   std::vector<std::unique_ptr<QuicEncryptedPacket>> encrypted_packets_;
   MockClock clock_;
 };
@@ -797,7 +810,6 @@ class MockQuicSession : public QuicSession {
   MOCK_METHOD(void, OnAlpnSelected, (quiche::QuicheStringPiece), (override));
 
   using QuicSession::ActivateStream;
-  using QuicSession::GetNumDrainingStreams;
 
   // Returns a QuicConsumedData that indicates all of |write_length| (and |fin|
   // if set) has been consumed.
@@ -834,6 +846,8 @@ class MockQuicCryptoStream : public QuicCryptoStream {
   void OnHandshakePacketSent() override {}
   void OnHandshakeDoneReceived() override {}
   HandshakeState GetHandshakeState() const override { return HANDSHAKE_START; }
+  void SetServerApplicationStateForResumption(
+      std::unique_ptr<ApplicationState> /*application_state*/) override {}
 
  private:
   QuicReferenceCountedPointer<QuicCryptoNegotiatedParameters> params_;
@@ -1182,7 +1196,7 @@ class MockPacketWriter : public QuicPacketWriter {
               (const, override));
   MOCK_METHOD(bool, SupportsReleaseTime, (), (const, override));
   MOCK_METHOD(bool, IsBatchMode, (), (const, override));
-  MOCK_METHOD(char*,
+  MOCK_METHOD(QuicPacketBuffer,
               GetNextWriteLocation,
               (const QuicIpAddress& self_address,
                const QuicSocketAddress& peer_address),
@@ -1285,6 +1299,7 @@ class MockLossAlgorithm : public LossDetectionInterface {
 
   MOCK_METHOD(void, OnConfigNegotiated, (), (override));
   MOCK_METHOD(void, OnMinRttAvailable, (), (override));
+  MOCK_METHOD(void, OnUserAgentIdKnown, (), (override));
   MOCK_METHOD(void, OnConnectionClosed, (), (override));
 };
 
@@ -1415,6 +1430,16 @@ class MockQuicConnectionDebugVisitor : public QuicConnectionDebugVisitor {
               OnVersionNegotiationPacket,
               (const QuicVersionNegotiationPacket&),
               (override));
+
+  MOCK_METHOD(void,
+              OnTransportParametersSent,
+              (const TransportParameters&),
+              (override));
+
+  MOCK_METHOD(void,
+              OnTransportParametersReceived,
+              (const TransportParameters&),
+              (override));
 };
 
 class MockReceivedPacketManager : public QuicReceivedPacketManager {
@@ -1443,7 +1468,7 @@ class MockPacketCreatorDelegate : public QuicPacketCreator::DelegateInterface {
       delete;
   ~MockPacketCreatorDelegate() override;
 
-  MOCK_METHOD(char*, GetPacketBuffer, (), (override));
+  MOCK_METHOD(QuicPacketBuffer, GetPacketBuffer, (), (override));
   MOCK_METHOD(void, OnSerializedPacket, (SerializedPacket), (override));
   MOCK_METHOD(void,
               OnUnrecoverableError,
@@ -1600,7 +1625,7 @@ QuicStreamId GetNthClientInitiatedUnidirectionalStreamId(
     int n);
 
 StreamType DetermineStreamType(QuicStreamId id,
-                               QuicTransportVersion version,
+                               ParsedQuicVersion version,
                                Perspective perspective,
                                bool is_incoming,
                                StreamType default_type);

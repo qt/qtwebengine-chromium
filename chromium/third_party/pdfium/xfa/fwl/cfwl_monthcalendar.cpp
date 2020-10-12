@@ -10,7 +10,6 @@
 #include <memory>
 #include <utility>
 
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_datetimepicker.h"
@@ -552,11 +551,11 @@ void CFWL_MonthCalendar::ResetDateItem() {
     uint32_t dwStates = 0;
     if (m_iYear == m_iCurYear && m_iMonth == m_iCurMonth && m_iDay == (i + 1))
       dwStates |= FWL_ITEMSTATE_MCD_Flag;
-    if (pdfium::ContainsValue(m_SelDayArray, i + 1))
+    if (pdfium::Contains(m_SelDayArray, i + 1))
       dwStates |= FWL_ITEMSTATE_MCD_Selected;
 
     CFX_RectF rtDate;
-    m_DateArray.push_back(pdfium::MakeUnique<DATEINFO>(
+    m_DateArray.push_back(std::make_unique<DATEINFO>(
         i + 1, iDayOfWeek, dwStates, rtDate, WideString::Format(L"%d", i + 1)));
     iDayOfWeek++;
   }
@@ -619,7 +618,7 @@ void CFWL_MonthCalendar::RemoveSelDay() {
 
 void CFWL_MonthCalendar::AddSelDay(int32_t iDay) {
   ASSERT(iDay > 0);
-  if (!pdfium::ContainsValue(m_SelDayArray, iDay))
+  if (!pdfium::Contains(m_SelDayArray, iDay))
     return;
 
   RemoveSelDay();
@@ -638,7 +637,7 @@ void CFWL_MonthCalendar::JumpToToday() {
     return;
   }
 
-  if (!pdfium::ContainsValue(m_SelDayArray, m_iDay))
+  if (!pdfium::Contains(m_SelDayArray, m_iDay))
     AddSelDay(m_iDay);
 }
 
@@ -682,13 +681,13 @@ void CFWL_MonthCalendar::OnProcessMessage(CFWL_Message* pMessage) {
     return;
 
   switch (pMessage->GetType()) {
-    case CFWL_Message::Type::SetFocus:
-    case CFWL_Message::Type::KillFocus:
+    case CFWL_Message::Type::kSetFocus:
+    case CFWL_Message::Type::kKillFocus:
       GetOuter()->GetDelegate()->OnProcessMessage(pMessage);
       break;
-    case CFWL_Message::Type::Key:
+    case CFWL_Message::Type::kKey:
       break;
-    case CFWL_Message::Type::Mouse: {
+    case CFWL_Message::Type::kMouse: {
       CFWL_MessageMouse* pMouse = static_cast<CFWL_MessageMouse*>(pMessage);
       switch (pMouse->m_dwCmd) {
         case FWL_MouseCommand::LeftButtonDown:
@@ -821,4 +820,4 @@ CFWL_MonthCalendar::DATEINFO::DATEINFO(int32_t day,
       rect(rc),
       wsDay(wsday) {}
 
-CFWL_MonthCalendar::DATEINFO::~DATEINFO() {}
+CFWL_MonthCalendar::DATEINFO::~DATEINFO() = default;

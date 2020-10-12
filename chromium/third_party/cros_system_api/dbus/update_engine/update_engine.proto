@@ -62,4 +62,8 @@ message StatusResult {
 
   // The end-of-life date of the device in the number of days since Unix Epoch.
   int64 eol_date = 8;
+
+  // If true, the system will powerwash once the update is applied and the
+  // system is rebooted. This value is reliable on |UPDATE_NEED_REBOOT|.
+  bool will_powerwash_after_reboot = 9;
 }

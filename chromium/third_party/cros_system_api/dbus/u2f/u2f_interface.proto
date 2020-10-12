@@ -32,6 +32,9 @@ message MakeCredentialRequest {
   bool resident_credential = 3;
   // Resident credentials not implemented yet; this field will be ignored.
   bytes user_entity = 4;
+  // MakeCredential should fail if any excluded credential belongs to this
+  // device.
+  repeated bytes excluded_credential_id = 5;
 }
 
 message MakeCredentialResponse {
@@ -42,6 +45,8 @@ message MakeCredentialResponse {
     VERIFICATION_TIMEOUT = 3;
     INVALID_REQUEST = 4;
     INTERNAL_ERROR = 5;
+    // An excluded credential belongs to this device.
+    EXCLUDED_CREDENTIAL_ID = 6;
   }
 
   MakeCredentialStatus status = 1;
@@ -88,6 +93,8 @@ message GetAssertionResponse {
     VERIFICATION_TIMEOUT = 3;
     INVALID_REQUEST = 4;
     INTERNAL_ERROR = 5;
+    // No allowed credential belongs to this device.
+    UNKNOWN_CREDENTIAL_ID = 6;
   }
 
   GetAssertionStatus status = 1;
@@ -104,6 +111,16 @@ message HasCredentialsRequest {
 }
 
 message HasCredentialsResponse {
+  enum HasCredentialsStatus {
+    UNKNOWN = 0;
+    SUCCESS = 1;
+    INVALID_REQUEST = 2;
+    INTERNAL_ERROR = 3;
+    // No specified credential belongs to this device.
+    UNKNOWN_CREDENTIAL_ID = 4;
+  }
+
+  HasCredentialsStatus status = 1;
   // Valid or resident credentials for the specified rp_id.
-  repeated bytes credential_id = 1;
+  repeated bytes credential_id = 2;
 }

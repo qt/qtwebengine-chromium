@@ -94,7 +94,7 @@ class SocketClient : public TestGenerator, public sigslot::has_slots<> {
 };
 
 // Receives messages and sends on a socket.
-class MessageClient : public MessageHandler, public TestGenerator {
+class MessageClient : public MessageHandlerAutoCleanup, public TestGenerator {
  public:
   MessageClient(Thread* pth, Socket* socket) : socket_(socket) {}
 
@@ -516,7 +516,7 @@ TEST_F(ThreadQueueTest, DisposeNotLocked) {
   EXPECT_FALSE(was_locked);
 }
 
-class DeletedMessageHandler : public MessageHandler {
+class DeletedMessageHandler : public MessageHandlerAutoCleanup {
  public:
   explicit DeletedMessageHandler(bool* deleted) : deleted_(deleted) {}
   ~DeletedMessageHandler() override { *deleted_ = true; }
@@ -606,12 +606,13 @@ TEST(ThreadManager, ProcessAllMessageQueuesWithClearedQueue) {
   ThreadManager::ProcessAllMessageQueuesForTesting();
 }
 
-class RefCountedHandler : public MessageHandler, public rtc::RefCountInterface {
+class RefCountedHandler : public MessageHandlerAutoCleanup,
+                          public rtc::RefCountInterface {
  public:
   void OnMessage(Message* msg) override {}
 };
 
-class EmptyHandler : public MessageHandler {
+class EmptyHandler : public MessageHandlerAutoCleanup {
  public:
   void OnMessage(Message* msg) override {}
 };
@@ -1146,6 +1147,18 @@ TEST(ThreadPostDelayedTaskTest, InvokesInDelayOrder) {
   // Only if the chain is invoked in delay order will the last event be set.
   clock.AdvanceTime(webrtc::TimeDelta::Millis(11));
   EXPECT_TRUE(fourth.Wait(0));
+}
+
+TEST(ThreadPostDelayedTaskTest, IsCurrentTaskQueue) {
+  auto current_tq = webrtc::TaskQueueBase::Current();
+  {
+    std::unique_ptr<rtc::Thread> thread(rtc::Thread::Create());
+    thread->WrapCurrent();
+    EXPECT_EQ(webrtc::TaskQueueBase::Current(),
+              static_cast<webrtc::TaskQueueBase*>(thread.get()));
+    thread->UnwrapCurrent();
+  }
+  EXPECT_EQ(webrtc::TaskQueueBase::Current(), current_tq);
 }
 
 class ThreadFactory : public webrtc::TaskQueueFactory {

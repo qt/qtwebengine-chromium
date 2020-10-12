@@ -32,9 +32,6 @@ static const size_t kMaxRetransmissionsOnTimeout = 2;
 // The path degrading delay is the sum of this number of consecutive RTO delays.
 const size_t kNumRetransmissionDelaysForPathDegradingDelay = 2;
 
-// The blachkhole delay is the sum of this number of consecutive RTO delays.
-const size_t kNumRetransmissionDelaysForBlackholeDelay = 5;
-
 // Ensure the handshake timer isnt't faster than 10ms.
 // This limits the tenth retransmitted packet to 10s after the initial CHLO.
 static const int64_t kMinHandshakeTimeoutMs = 10;
@@ -110,7 +107,8 @@ QuicSentPacketManager::QuicSentPacketManager(
       one_rtt_packet_acked_(false),
       one_rtt_packet_sent_(false),
       first_pto_srtt_multiplier_(0),
-      use_standard_deviation_for_pto_(false) {
+      use_standard_deviation_for_pto_(false),
+      pto_multiplier_without_rtt_samples_(3) {
   SetSendAlgorithm(congestion_control_type);
   if (pto_enabled_) {
     QUIC_RELOADABLE_FLAG_COUNT_N(quic_default_on_pto, 1, 2);
@@ -199,6 +197,9 @@ void QuicSentPacketManager::SetFromConfig(const QuicConfig& config) {
       first_pto_srtt_multiplier_ = 0.5;
     } else if (config.HasClientSentConnectionOption(kPLE2, perspective)) {
       first_pto_srtt_multiplier_ = 1.5;
+    }
+    if (config.HasClientSentConnectionOption(kAPTO, perspective)) {
+      pto_multiplier_without_rtt_samples_ = 1.5;
     }
     if (config.HasClientSentConnectionOption(kPSDA, perspective)) {
       use_standard_deviation_for_pto_ = true;
@@ -403,6 +404,17 @@ void QuicSentPacketManager::PostProcessNewlyAckedPackets(
         }
       }
     }
+    // Records the max consecutive RTO or PTO before forward progress has been
+    // made.
+    if (consecutive_rto_count_ >
+        stats_->max_consecutive_rto_with_forward_progress) {
+      stats_->max_consecutive_rto_with_forward_progress =
+          consecutive_rto_count_;
+    } else if (consecutive_pto_count_ >
+               stats_->max_consecutive_rto_with_forward_progress) {
+      stats_->max_consecutive_rto_with_forward_progress =
+          consecutive_pto_count_;
+    }
     // Reset all retransmit counters any time a new packet is acked.
     consecutive_rto_count_ = 0;
     consecutive_tlp_count_ = 0;
@@ -442,40 +454,27 @@ void QuicSentPacketManager::MaybeInvokeCongestionEvent(
   }
 }
 
-void QuicSentPacketManager::RetransmitUnackedPackets(
-    TransmissionType retransmission_type) {
-  DCHECK(retransmission_type == ALL_UNACKED_RETRANSMISSION ||
-         retransmission_type == ALL_INITIAL_RETRANSMISSION);
+void QuicSentPacketManager::RetransmitZeroRttPackets() {
   QuicPacketNumber packet_number = unacked_packets_.GetLeastUnacked();
   for (QuicUnackedPacketMap::iterator it = unacked_packets_.begin();
        it != unacked_packets_.end(); ++it, ++packet_number) {
-    if ((retransmission_type == ALL_UNACKED_RETRANSMISSION ||
-         it->encryption_level == ENCRYPTION_ZERO_RTT)) {
+    if (it->encryption_level == ENCRYPTION_ZERO_RTT) {
       if (it->in_flight) {
         // Remove 0-RTT packets and packets of the wrong version from flight,
         // because neither can be processed by the peer.
         unacked_packets_.RemoveFromInFlight(&*it);
       }
       if (unacked_packets_.HasRetransmittableFrames(*it)) {
-        MarkForRetransmission(packet_number, retransmission_type);
+        MarkForRetransmission(packet_number, ALL_ZERO_RTT_RETRANSMISSION);
       }
     }
-  }
-  if (retransmission_type == ALL_UNACKED_RETRANSMISSION &&
-      unacked_packets_.bytes_in_flight() > 0) {
-    QUIC_BUG << "RetransmitUnackedPackets should remove all packets from flight"
-             << ", bytes_in_flight:" << unacked_packets_.bytes_in_flight();
   }
 }
 
 void QuicSentPacketManager::NeuterUnencryptedPackets() {
   for (QuicPacketNumber packet_number :
        unacked_packets_.NeuterUnencryptedPackets()) {
-    if (avoid_overestimate_bandwidth_with_aggregation_) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(
-          quic_avoid_overestimate_bandwidth_with_aggregation, 1, 4);
-      send_algorithm_->OnPacketNeutered(packet_number);
-    }
+    send_algorithm_->OnPacketNeutered(packet_number);
   }
   if (handshake_mode_disabled_) {
     consecutive_pto_count_ = 0;
@@ -486,11 +485,7 @@ void QuicSentPacketManager::NeuterUnencryptedPackets() {
 void QuicSentPacketManager::NeuterHandshakePackets() {
   for (QuicPacketNumber packet_number :
        unacked_packets_.NeuterHandshakePackets()) {
-    if (avoid_overestimate_bandwidth_with_aggregation_) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(
-          quic_avoid_overestimate_bandwidth_with_aggregation, 2, 4);
-      send_algorithm_->OnPacketNeutered(packet_number);
-    }
+    send_algorithm_->OnPacketNeutered(packet_number);
   }
   if (handshake_mode_disabled_) {
     consecutive_pto_count_ = 0;
@@ -573,7 +568,7 @@ void QuicSentPacketManager::MarkForRetransmission(
   QUIC_BUG_IF(transmission_type != LOSS_RETRANSMISSION &&
               transmission_type != RTO_RETRANSMISSION &&
               !unacked_packets_.HasRetransmittableFrames(*transmission_info))
-      << "transmission_type: " << TransmissionTypeToString(transmission_type);
+      << "transmission_type: " << transmission_type;
   // Handshake packets should never be sent as probing retransmissions.
   DCHECK(!transmission_info->has_crypto_handshake ||
          transmission_type != PROBING_RETRANSMISSION);
@@ -646,8 +641,7 @@ void QuicSentPacketManager::MarkPacketHandled(QuicPacketNumber packet_number,
       // Record as a spurious retransmission if this packet is a
       // retransmission and no new data gets acked.
       QUIC_DVLOG(1) << "Detect spurious retransmitted packet " << packet_number
-                    << " transmission type: "
-                    << TransmissionTypeToString(info->transmission_type);
+                    << " transmission type: " << info->transmission_type;
       RecordOneSpuriousRetransmission(*info);
     }
   }
@@ -754,6 +748,9 @@ QuicSentPacketManager::OnRetransmissionTimeout() {
     case PTO_MODE:
       QUIC_DVLOG(1) << ENDPOINT << "PTO mode";
       ++stats_->pto_count;
+      if (handshake_mode_disabled_ && !ShouldArmPtoForApplicationData()) {
+        ++stats_->crypto_retransmit_count;
+      }
       ++consecutive_pto_count_;
       pending_timer_transmission_count_ = max_probe_packets_per_pto_;
       return PTO_MODE;
@@ -919,6 +916,26 @@ void QuicSentPacketManager::StartExponentialBackoffAfterNthPto(
   pto_exponential_backoff_start_point_ = exponential_backoff_start_point;
 }
 
+void QuicSentPacketManager::RetransmitDataOfSpaceIfAny(
+    PacketNumberSpace space) {
+  DCHECK(supports_multiple_packet_number_spaces());
+  if (!unacked_packets_.GetLastInFlightPacketSentTime(space).IsInitialized()) {
+    // No in flight data of space.
+    return;
+  }
+  QuicPacketNumber packet_number = unacked_packets_.GetLeastUnacked();
+  for (QuicUnackedPacketMap::const_iterator it = unacked_packets_.begin();
+       it != unacked_packets_.end(); ++it, ++packet_number) {
+    if (it->state == OUTSTANDING &&
+        unacked_packets_.HasRetransmittableFrames(*it) &&
+        unacked_packets_.GetPacketNumberSpace(it->encryption_level) == space) {
+      DCHECK(it->in_flight);
+      MarkForRetransmission(packet_number, PTO_RETRANSMISSION);
+      return;
+    }
+  }
+}
+
 QuicSentPacketManager::RetransmissionTimeoutMode
 QuicSentPacketManager::GetRetransmissionMode() const {
   DCHECK(unacked_packets_.HasInFlightPackets() ||
@@ -958,14 +975,16 @@ void QuicSentPacketManager::InvokeLossDetection(QuicTime time) {
         detection_stats.sent_packets_max_sequence_reordering;
   }
 
+  stats_->sent_packets_num_borderline_time_reorderings +=
+      detection_stats.sent_packets_num_borderline_time_reorderings;
+
+  stats_->total_loss_detection_response_time +=
+      detection_stats.total_loss_detection_response_time;
+
   for (const LostPacket& packet : packets_lost_) {
     QuicTransmissionInfo* info =
         unacked_packets_.GetMutableTransmissionInfo(packet.packet_number);
     ++stats_->packets_lost;
-    if (time > info->sent_time) {
-      stats_->total_loss_detection_time =
-          stats_->total_loss_detection_time + (time - info->sent_time);
-    }
     if (debug_delegate_ != nullptr) {
       debug_delegate_->OnPacketLoss(packet.packet_number,
                                     info->encryption_level, LOSS_RETRANSMISSION,
@@ -1039,6 +1058,16 @@ const QuicTime QuicSentPacketManager::GetRetransmissionTime() const {
   }
   if (pending_timer_transmission_count_ > 0) {
     // Do not set the timer if there is any credit left.
+    return QuicTime::Zero();
+  }
+  PacketNumberSpace packet_number_space;
+  if (GetQuicReloadableFlag(quic_fix_server_pto_timeout) &&
+      supports_multiple_packet_number_spaces() &&
+      unacked_packets_.perspective() == Perspective::IS_SERVER &&
+      !GetEarliestPacketSentTimeForPto(&packet_number_space).IsInitialized()) {
+    // Do not set the timer on the server side if the only in flight packets are
+    // half RTT data.
+    QUIC_RELOADABLE_FLAG_COUNT(quic_fix_server_pto_timeout);
     return QuicTime::Zero();
   }
   switch (GetRetransmissionMode()) {
@@ -1131,9 +1160,10 @@ const QuicTime::Delta QuicSentPacketManager::GetPathDegradingDelay() const {
       max_tail_loss_probes_ + kNumRetransmissionDelaysForPathDegradingDelay);
 }
 
-const QuicTime::Delta QuicSentPacketManager::GetNetworkBlackholeDelay() const {
+const QuicTime::Delta QuicSentPacketManager::GetNetworkBlackholeDelay(
+    int8_t num_rtos_for_blackhole_detection) const {
   return GetNConsecutiveRetransmissionTimeoutDelay(
-      max_tail_loss_probes_ + kNumRetransmissionDelaysForBlackholeDelay);
+      max_tail_loss_probes_ + num_rtos_for_blackhole_detection);
 }
 
 const QuicTime::Delta QuicSentPacketManager::GetCryptoRetransmissionDelay()
@@ -1202,8 +1232,9 @@ const QuicTime::Delta QuicSentPacketManager::GetProbeTimeoutDelay() const {
   if (rtt_stats_.smoothed_rtt().IsZero()) {
     // Respect kMinHandshakeTimeoutMs to avoid a potential amplification attack.
     QUIC_BUG_IF(rtt_stats_.initial_rtt().IsZero());
-    return std::max(3 * rtt_stats_.initial_rtt(),
-                    QuicTime::Delta::FromMilliseconds(kMinHandshakeTimeoutMs)) *
+    return std::max(
+               pto_multiplier_without_rtt_samples_ * rtt_stats_.initial_rtt(),
+               QuicTime::Delta::FromMilliseconds(kMinHandshakeTimeoutMs)) *
            (1 << consecutive_pto_count_);
   }
   const QuicTime::Delta rtt_var = use_standard_deviation_for_pto_
@@ -1354,8 +1385,7 @@ AckResult QuicSentPacketManager::OnAckFrameEnd(
                  << ", least_unacked: " << unacked_packets_.GetLeastUnacked()
                  << ", packets_acked_: " << packets_acked_;
       } else {
-        QUIC_PEER_BUG << "Received "
-                      << EncryptionLevelToString(ack_decrypted_level)
+        QUIC_PEER_BUG << "Received " << ack_decrypted_level
                       << " ack for unackable packet: "
                       << acked_packet.packet_number << " with state: "
                       << QuicUtils::SentPacketStateToString(info->state);
@@ -1368,8 +1398,7 @@ AckResult QuicSentPacketManager::OnAckFrameEnd(
       }
       continue;
     }
-    QUIC_DVLOG(1) << ENDPOINT << "Got an "
-                  << EncryptionLevelToString(ack_decrypted_level)
+    QUIC_DVLOG(1) << ENDPOINT << "Got an " << ack_decrypted_level
                   << " ack for packet " << acked_packet.packet_number
                   << " , state: "
                   << QuicUtils::SentPacketStateToString(info->state);

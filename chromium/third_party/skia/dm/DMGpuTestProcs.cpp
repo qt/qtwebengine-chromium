@@ -22,6 +22,9 @@ bool IsVulkanContextType(sk_gpu_test::GrContextFactory::ContextType type) {
 bool IsMetalContextType(sk_gpu_test::GrContextFactory::ContextType type) {
     return GrBackendApi::kMetal == GrContextFactory::ContextTypeBackend(type);
 }
+bool IsDirect3DContextType(sk_gpu_test::GrContextFactory::ContextType type) {
+    return GrBackendApi::kDirect3D == GrContextFactory::ContextTypeBackend(type);
+}
 bool IsRenderingGLContextType(sk_gpu_test::GrContextFactory::ContextType type) {
     return IsGLContextType(type) && GrContextFactory::IsRenderingContext(type);
 }
@@ -67,7 +70,7 @@ void RunWithGPUTestContexts(GrContextTestFn* test, GrContextTypeFilterFn* contex
             // In case the test changed the current context make sure we move it back before
             // calling flush.
             ctxInfo.testContext()->makeCurrent();
-            ctxInfo.grContext()->flush();
+            ctxInfo.grContext()->flushAndSubmit();
         }
     }
 }

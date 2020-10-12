@@ -266,7 +266,11 @@ bool SerialIoHandlerWin::PostOpen() {
 void SerialIoHandlerWin::ReadImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(pending_read_buffer());
-  DCHECK(file().IsValid());
+
+  if (!file().IsValid()) {
+    QueueReadCompleted(0, mojom::SerialReceiveError::DISCONNECTED);
+    return;
+  }
 
   if (!SetCommMask(file().GetPlatformFile(), EV_RXCHAR)) {
     VPLOG(1) << "Failed to set serial event flags";
@@ -285,7 +289,11 @@ void SerialIoHandlerWin::ReadImpl() {
 void SerialIoHandlerWin::WriteImpl() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(pending_write_buffer());
-  DCHECK(file().IsValid());
+
+  if (!file().IsValid()) {
+    QueueWriteCompleted(0, mojom::SerialSendError::DISCONNECTED);
+    return;
+  }
 
   BOOL ok = ::WriteFile(file().GetPlatformFile(), pending_write_buffer(),
                         pending_write_buffer_len(), NULL,
@@ -319,7 +327,7 @@ bool SerialIoHandlerWin::ConfigurePortImpl() {
   // Set up some sane default options that are not configurable.
   config.fBinary = TRUE;
   config.fParity = TRUE;
-  config.fAbortOnError = TRUE;
+  config.fAbortOnError = FALSE;
   config.fOutxDsrFlow = FALSE;
   config.fDtrControl = DTR_CONTROL_ENABLE;
   config.fDsrSensitivity = FALSE;
@@ -371,9 +379,13 @@ void SerialIoHandlerWin::OnIOCompleted(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (context == comm_context_.get()) {
     DWORD errors;
-    COMSTAT status;
-    if (!ClearCommError(file().GetPlatformFile(), &errors, &status) ||
-        errors != 0) {
+    if (!ClearCommError(file().GetPlatformFile(), &errors, nullptr)) {
+      VPLOG(1) << "Failed to clear communication error";
+      ReadCompleted(0, mojom::SerialReceiveError::SYSTEM_ERROR);
+      return;
+    }
+
+    if (errors != 0) {
       if (errors & CE_BREAK) {
         ReadCompleted(0, mojom::SerialReceiveError::BREAK);
       } else if (errors & CE_FRAME) {
@@ -385,7 +397,8 @@ void SerialIoHandlerWin::OnIOCompleted(
       } else if (errors & CE_RXPARITY) {
         ReadCompleted(0, mojom::SerialReceiveError::PARITY_ERROR);
       } else {
-        ReadCompleted(0, mojom::SerialReceiveError::SYSTEM_ERROR);
+        NOTIMPLEMENTED() << "Unexpected communication error: " << std::hex
+                         << errors;
       }
       return;
     }
@@ -393,6 +406,8 @@ void SerialIoHandlerWin::OnIOCompleted(
     if (read_canceled()) {
       ReadCompleted(bytes_transferred, read_cancel_reason());
     } else if (error != ERROR_SUCCESS && error != ERROR_OPERATION_ABORTED) {
+      VLOG(1) << "Waiting for communcations event failed: "
+              << logging::SystemErrorCodeToString(error);
       ReadCompleted(0, mojom::SerialReceiveError::SYSTEM_ERROR);
     } else if (pending_read_buffer()) {
       BOOL ok = ::ReadFile(file().GetPlatformFile(), pending_read_buffer(),
@@ -406,19 +421,20 @@ void SerialIoHandlerWin::OnIOCompleted(
   } else if (context == read_context_.get()) {
     if (read_canceled()) {
       ReadCompleted(bytes_transferred, read_cancel_reason());
-    } else if (error != ERROR_SUCCESS && error != ERROR_OPERATION_ABORTED) {
-      ReadCompleted(0, mojom::SerialReceiveError::SYSTEM_ERROR);
+    } else if (error == ERROR_SUCCESS || error == ERROR_OPERATION_ABORTED) {
+      ReadCompleted(bytes_transferred, mojom::SerialReceiveError::NONE);
     } else {
-      ReadCompleted(bytes_transferred,
-                    error == ERROR_SUCCESS
-                        ? mojom::SerialReceiveError::NONE
-                        : mojom::SerialReceiveError::SYSTEM_ERROR);
+      VLOG(1) << "Read failed: " << logging::SystemErrorCodeToString(error);
+      ReadCompleted(0, mojom::SerialReceiveError::SYSTEM_ERROR);
     }
   } else if (context == write_context_.get()) {
     DCHECK(pending_write_buffer());
     if (write_canceled()) {
       WriteCompleted(0, write_cancel_reason());
-    } else if (error != ERROR_SUCCESS && error != ERROR_OPERATION_ABORTED) {
+    } else if (error == ERROR_SUCCESS || error == ERROR_OPERATION_ABORTED) {
+      WriteCompleted(bytes_transferred, mojom::SerialSendError::NONE);
+    } else {
+      VLOG(1) << "Write failed: " << logging::SystemErrorCodeToString(error);
       WriteCompleted(0, mojom::SerialSendError::SYSTEM_ERROR);
       if (error == ERROR_GEN_FAILURE && IsReadPending()) {
         // For devices using drivers such as FTDI, CP2xxx, when device is
@@ -432,11 +448,6 @@ void SerialIoHandlerWin::OnIOCompleted(
         // disconnection.
         CancelRead(mojom::SerialReceiveError::SYSTEM_ERROR);
       }
-    } else {
-      WriteCompleted(bytes_transferred,
-                     error == ERROR_SUCCESS
-                         ? mojom::SerialSendError::NONE
-                         : mojom::SerialSendError::SYSTEM_ERROR);
     }
   } else {
     NOTREACHED() << "Invalid IOContext";

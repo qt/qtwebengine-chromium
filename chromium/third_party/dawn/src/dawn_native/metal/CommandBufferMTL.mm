@@ -102,13 +102,14 @@ namespace dawn_native { namespace metal {
             if (renderPass->attachmentState->HasDepthStencilAttachment()) {
                 auto& attachmentInfo = renderPass->depthStencilAttachment;
 
-                // TODO(jiawei.shao@intel.com): support rendering into a layer of a texture.
                 id<MTLTexture> texture =
                     ToBackend(attachmentInfo.view->GetTexture())->GetMTLTexture();
                 const Format& format = attachmentInfo.view->GetTexture()->GetFormat();
 
                 if (format.HasDepth()) {
                     descriptor.depthAttachment.texture = texture;
+                    descriptor.depthAttachment.level = attachmentInfo.view->GetBaseMipLevel();
+                    descriptor.depthAttachment.slice = attachmentInfo.view->GetBaseArrayLayer();
 
                     switch (attachmentInfo.depthStoreOp) {
                         case wgpu::StoreOp::Store:
@@ -142,6 +143,8 @@ namespace dawn_native { namespace metal {
 
                 if (format.HasStencil()) {
                     descriptor.stencilAttachment.texture = texture;
+                    descriptor.stencilAttachment.level = attachmentInfo.view->GetBaseMipLevel();
+                    descriptor.stencilAttachment.slice = attachmentInfo.view->GetBaseArrayLayer();
 
                     switch (attachmentInfo.stencilStoreOp) {
                         case wgpu::StoreOp::Store:
@@ -313,8 +316,8 @@ namespace dawn_native { namespace metal {
                 NSUInteger bufferOffset;
                 NSUInteger bytesPerRow;
                 NSUInteger bytesPerImage;
-                MTLOrigin textureOrigin;
-                MTLSize copyExtent;
+                Origin3D textureOrigin;
+                Extent3D copyExtent;
             };
 
             uint32_t count = 0;
@@ -325,11 +328,8 @@ namespace dawn_native { namespace metal {
             return MTLOriginMake(origin.x, origin.y, origin.z);
         }
 
-        MTLSize MakeMTLSize(Extent3D extent) {
-            return MTLSizeMake(extent.width, extent.height, extent.depth);
-        }
-
-        TextureBufferCopySplit ComputeTextureBufferCopySplit(Origin3D origin,
+        TextureBufferCopySplit ComputeTextureBufferCopySplit(wgpu::TextureDimension dimension,
+                                                             Origin3D origin,
                                                              Extent3D copyExtent,
                                                              Format textureFormat,
                                                              Extent3D virtualSizeAtLevel,
@@ -372,6 +372,8 @@ namespace dawn_native { namespace metal {
                     ? (virtualSizeAtLevel.height - origin.y)
                     : copyExtent.height;
 
+            ASSERT(dimension == wgpu::TextureDimension::e2D);
+
             // Check whether buffer size is big enough.
             bool needWorkaround = bufferSize - bufferOffset < bytesPerImage * copyExtent.depth;
             if (!needWorkaround) {
@@ -379,9 +381,9 @@ namespace dawn_native { namespace metal {
                 copy.copies[0].bufferOffset = bufferOffset;
                 copy.copies[0].bytesPerRow = bytesPerRow;
                 copy.copies[0].bytesPerImage = bytesPerImage;
-                copy.copies[0].textureOrigin = MakeMTLOrigin(origin);
-                copy.copies[0].copyExtent =
-                    MTLSizeMake(clampedCopyExtentWidth, clampedCopyExtentHeight, copyExtent.depth);
+                copy.copies[0].textureOrigin = origin;
+                copy.copies[0].copyExtent = {clampedCopyExtentWidth, clampedCopyExtentHeight,
+                                             copyExtent.depth};
                 return copy;
             }
 
@@ -392,9 +394,9 @@ namespace dawn_native { namespace metal {
                 copy.copies[copy.count].bufferOffset = currentOffset;
                 copy.copies[copy.count].bytesPerRow = bytesPerRow;
                 copy.copies[copy.count].bytesPerImage = bytesPerImage;
-                copy.copies[copy.count].textureOrigin = MakeMTLOrigin(origin);
-                copy.copies[copy.count].copyExtent = MTLSizeMake(
-                    clampedCopyExtentWidth, clampedCopyExtentHeight, copyExtent.depth - 1);
+                copy.copies[copy.count].textureOrigin = origin;
+                copy.copies[copy.count].copyExtent = {
+                    clampedCopyExtentWidth, clampedCopyExtentHeight, copyExtent.depth - 1};
 
                 ++copy.count;
 
@@ -408,12 +410,12 @@ namespace dawn_native { namespace metal {
                 copy.copies[copy.count].bufferOffset = currentOffset;
                 copy.copies[copy.count].bytesPerRow = bytesPerRow;
                 copy.copies[copy.count].bytesPerImage = bytesPerRow * (copyBlockRowCount - 1);
-                copy.copies[copy.count].textureOrigin =
-                    MTLOriginMake(origin.x, origin.y, origin.z + copyExtent.depth - 1);
+                copy.copies[copy.count].textureOrigin = {origin.x, origin.y,
+                                                         origin.z + copyExtent.depth - 1};
 
                 ASSERT(copyExtent.height - textureFormat.blockHeight < virtualSizeAtLevel.height);
-                copy.copies[copy.count].copyExtent = MTLSizeMake(
-                    clampedCopyExtentWidth, copyExtent.height - textureFormat.blockHeight, 1);
+                copy.copies[copy.count].copyExtent = {
+                    clampedCopyExtentWidth, copyExtent.height - textureFormat.blockHeight, 1};
 
                 ++copy.count;
 
@@ -432,11 +434,11 @@ namespace dawn_native { namespace metal {
             copy.copies[copy.count].bufferOffset = currentOffset;
             copy.copies[copy.count].bytesPerRow = lastRowDataSize;
             copy.copies[copy.count].bytesPerImage = lastRowDataSize;
-            copy.copies[copy.count].textureOrigin =
-                MTLOriginMake(origin.x, origin.y + copyExtent.height - textureFormat.blockHeight,
-                              origin.z + copyExtent.depth - 1);
-            copy.copies[copy.count].copyExtent =
-                MTLSizeMake(clampedCopyExtentWidth, lastRowCopyExtentHeight, 1);
+            copy.copies[copy.count].textureOrigin = {
+                origin.x, origin.y + copyExtent.height - textureFormat.blockHeight,
+                origin.z + copyExtent.depth - 1};
+            copy.copies[copy.count].copyExtent = {clampedCopyExtentWidth, lastRowCopyExtentHeight,
+                                                  1};
             ++copy.count;
 
             return copy;
@@ -445,19 +447,18 @@ namespace dawn_native { namespace metal {
         void EnsureSourceTextureInitialized(Texture* texture,
                                             const Extent3D& size,
                                             const TextureCopy& src) {
-            // TODO(crbug.com/dawn/145): Specify multiple layers based on |size|
-            texture->EnsureSubresourceContentInitialized(src.mipLevel, 1, src.arrayLayer, 1);
+            texture->EnsureSubresourceContentInitialized(
+                {src.mipLevel, 1, src.arrayLayer, size.depth});
         }
 
         void EnsureDestinationTextureInitialized(Texture* texture,
                                                  const Extent3D& size,
                                                  const TextureCopy& dst) {
-            // TODO(crbug.com/dawn/145): Specify multiple layers based on |size|
+            SubresourceRange range = {dst.mipLevel, 1, dst.arrayLayer, size.depth};
             if (IsCompleteSubresourceCopiedTo(texture, size, dst.mipLevel)) {
-                texture->SetIsSubresourceContentInitialized(true, dst.mipLevel, 1, dst.arrayLayer,
-                                                            1);
+                texture->SetIsSubresourceContentInitialized(true, range);
             } else {
-                texture->EnsureSubresourceContentInitialized(dst.mipLevel, 1, dst.arrayLayer, 1);
+                texture->EnsureSubresourceContentInitialized(range);
             }
         }
 
@@ -473,7 +474,8 @@ namespace dawn_native { namespace metal {
 
             template <typename Encoder>
             void Apply(Encoder encoder) {
-                for (uint32_t index : IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
+                for (BindGroupIndex index :
+                     IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
                     ApplyBindGroup(encoder, index, ToBackend(mBindGroups[index]),
                                    mDynamicOffsetCounts[index], mDynamicOffsets[index].data(),
                                    ToBackend(mPipelineLayout));
@@ -488,7 +490,7 @@ namespace dawn_native { namespace metal {
             // two encoder types.
             void ApplyBindGroupImpl(id<MTLRenderCommandEncoder> render,
                                     id<MTLComputeCommandEncoder> compute,
-                                    uint32_t index,
+                                    BindGroupIndex index,
                                     BindGroup* group,
                                     uint32_t dynamicOffsetCount,
                                     uint64_t* dynamicOffsets,
@@ -498,7 +500,7 @@ namespace dawn_native { namespace metal {
                 // TODO(kainino@chromium.org): Maintain buffers and offsets arrays in BindGroup
                 // so that we only have to do one setVertexBuffers and one setFragmentBuffers
                 // call here.
-                for (BindingIndex bindingIndex = 0;
+                for (BindingIndex bindingIndex{0};
                      bindingIndex < group->GetLayout()->GetBindingCount(); ++bindingIndex) {
                     const BindingInfo& bindingInfo =
                         group->GetLayout()->GetBindingInfo(bindingIndex);
@@ -692,8 +694,7 @@ namespace dawn_native { namespace metal {
                 // cleared in CreateMTLRenderPassDescriptor by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
                 if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
-                    texture->EnsureSubresourceContentInitialized(0, texture->GetNumMipLevels(), 0,
-                                                                 texture->GetArrayLayers());
+                    texture->EnsureSubresourceContentInitialized(texture->GetAllSubresources());
                 }
             }
         };
@@ -749,23 +750,42 @@ namespace dawn_native { namespace metal {
 
                     EnsureDestinationTextureInitialized(texture, copy->copySize, copy->destination);
 
-                    Extent3D virtualSizeAtLevel = texture->GetMipLevelVirtualSize(dst.mipLevel);
-                    TextureBufferCopySplit splittedCopies = ComputeTextureBufferCopySplit(
-                        dst.origin, copySize, texture->GetFormat(), virtualSizeAtLevel,
-                        buffer->GetSize(), src.offset, src.bytesPerRow, src.rowsPerImage);
+                    const Extent3D virtualSizeAtLevel =
+                        texture->GetMipLevelVirtualSize(dst.mipLevel);
 
-                    for (uint32_t i = 0; i < splittedCopies.count; ++i) {
-                        const TextureBufferCopySplit::CopyInfo& copyInfo = splittedCopies.copies[i];
-                        [commandContext->EnsureBlit() copyFromBuffer:buffer->GetMTLBuffer()
-                                                        sourceOffset:copyInfo.bufferOffset
-                                                   sourceBytesPerRow:copyInfo.bytesPerRow
-                                                 sourceBytesPerImage:copyInfo.bytesPerImage
-                                                          sourceSize:copyInfo.copyExtent
-                                                           toTexture:texture->GetMTLTexture()
-                                                    destinationSlice:dst.arrayLayer
-                                                    destinationLevel:dst.mipLevel
-                                                   destinationOrigin:copyInfo.textureOrigin];
+                    Origin3D copyOrigin = dst.origin;
+                    copyOrigin.z = dst.arrayLayer;
+                    TextureBufferCopySplit splitCopies = ComputeTextureBufferCopySplit(
+                        texture->GetDimension(), copyOrigin, copySize, texture->GetFormat(),
+                        virtualSizeAtLevel, buffer->GetSize(), src.offset, src.bytesPerRow,
+                        src.rowsPerImage);
+
+                    for (uint32_t i = 0; i < splitCopies.count; ++i) {
+                        const TextureBufferCopySplit::CopyInfo& copyInfo = splitCopies.copies[i];
+
+                        const uint32_t copyBaseLayer = copyInfo.textureOrigin.z;
+                        const uint32_t copyLayerCount = copyInfo.copyExtent.depth;
+                        const MTLOrigin textureOrigin =
+                            MTLOriginMake(copyInfo.textureOrigin.x, copyInfo.textureOrigin.y, 0);
+                        const MTLSize copyExtent =
+                            MTLSizeMake(copyInfo.copyExtent.width, copyInfo.copyExtent.height, 1);
+
+                        uint64_t bufferOffset = copyInfo.bufferOffset;
+                        for (uint32_t copyLayer = copyBaseLayer;
+                             copyLayer < copyBaseLayer + copyLayerCount; ++copyLayer) {
+                            [commandContext->EnsureBlit() copyFromBuffer:buffer->GetMTLBuffer()
+                                                            sourceOffset:bufferOffset
+                                                       sourceBytesPerRow:copyInfo.bytesPerRow
+                                                     sourceBytesPerImage:copyInfo.bytesPerImage
+                                                              sourceSize:copyExtent
+                                                               toTexture:texture->GetMTLTexture()
+                                                        destinationSlice:copyLayer
+                                                        destinationLevel:dst.mipLevel
+                                                       destinationOrigin:textureOrigin];
+                            bufferOffset += copyInfo.bytesPerImage;
+                        }
                     }
+
                     break;
                 }
 
@@ -780,22 +800,39 @@ namespace dawn_native { namespace metal {
                     EnsureSourceTextureInitialized(texture, copy->copySize, copy->source);
 
                     Extent3D virtualSizeAtLevel = texture->GetMipLevelVirtualSize(src.mipLevel);
-                    TextureBufferCopySplit splittedCopies = ComputeTextureBufferCopySplit(
-                        src.origin, copySize, texture->GetFormat(), virtualSizeAtLevel,
-                        buffer->GetSize(), dst.offset, dst.bytesPerRow, dst.rowsPerImage);
+                    Origin3D copyOrigin = src.origin;
+                    copyOrigin.z = src.arrayLayer;
+                    TextureBufferCopySplit splitCopies = ComputeTextureBufferCopySplit(
+                        texture->GetDimension(), copyOrigin, copySize, texture->GetFormat(),
+                        virtualSizeAtLevel, buffer->GetSize(), dst.offset, dst.bytesPerRow,
+                        dst.rowsPerImage);
 
-                    for (uint32_t i = 0; i < splittedCopies.count; ++i) {
-                        const TextureBufferCopySplit::CopyInfo& copyInfo = splittedCopies.copies[i];
-                        [commandContext->EnsureBlit() copyFromTexture:texture->GetMTLTexture()
-                                                          sourceSlice:src.arrayLayer
-                                                          sourceLevel:src.mipLevel
-                                                         sourceOrigin:copyInfo.textureOrigin
-                                                           sourceSize:copyInfo.copyExtent
-                                                             toBuffer:buffer->GetMTLBuffer()
-                                                    destinationOffset:copyInfo.bufferOffset
-                                               destinationBytesPerRow:copyInfo.bytesPerRow
-                                             destinationBytesPerImage:copyInfo.bytesPerImage];
+                    for (uint32_t i = 0; i < splitCopies.count; ++i) {
+                        const TextureBufferCopySplit::CopyInfo& copyInfo = splitCopies.copies[i];
+
+                        const uint32_t copyBaseLayer = copyInfo.textureOrigin.z;
+                        const uint32_t copyLayerCount = copyInfo.copyExtent.depth;
+                        const MTLOrigin textureOrigin =
+                            MTLOriginMake(copyInfo.textureOrigin.x, copyInfo.textureOrigin.y, 0);
+                        const MTLSize copyExtent =
+                            MTLSizeMake(copyInfo.copyExtent.width, copyInfo.copyExtent.height, 1);
+
+                        uint64_t bufferOffset = copyInfo.bufferOffset;
+                        for (uint32_t copyLayer = copyBaseLayer;
+                             copyLayer < copyBaseLayer + copyLayerCount; ++copyLayer) {
+                            [commandContext->EnsureBlit() copyFromTexture:texture->GetMTLTexture()
+                                                              sourceSlice:copyLayer
+                                                              sourceLevel:src.mipLevel
+                                                             sourceOrigin:textureOrigin
+                                                               sourceSize:copyExtent
+                                                                 toBuffer:buffer->GetMTLBuffer()
+                                                        destinationOffset:bufferOffset
+                                                   destinationBytesPerRow:copyInfo.bytesPerRow
+                                                 destinationBytesPerImage:copyInfo.bytesPerImage];
+                            bufferOffset += copyInfo.bytesPerImage;
+                        }
                     }
+
                     break;
                 }
 
@@ -809,16 +846,24 @@ namespace dawn_native { namespace metal {
                     EnsureDestinationTextureInitialized(dstTexture, copy->copySize,
                                                         copy->destination);
 
-                    [commandContext->EnsureBlit()
-                          copyFromTexture:srcTexture->GetMTLTexture()
-                              sourceSlice:copy->source.arrayLayer
-                              sourceLevel:copy->source.mipLevel
-                             sourceOrigin:MakeMTLOrigin(copy->source.origin)
-                               sourceSize:MakeMTLSize(copy->copySize)
-                                toTexture:dstTexture->GetMTLTexture()
-                         destinationSlice:copy->destination.arrayLayer
-                         destinationLevel:copy->destination.mipLevel
-                        destinationOrigin:MakeMTLOrigin(copy->destination.origin)];
+                    // TODO(jiawei.shao@intel.com): support copies with 1D and 3D textures.
+                    ASSERT(srcTexture->GetDimension() == wgpu::TextureDimension::e2D &&
+                           dstTexture->GetDimension() == wgpu::TextureDimension::e2D);
+                    const MTLSize mtlSizeOneLayer =
+                        MTLSizeMake(copy->copySize.width, copy->copySize.height, 1);
+                    for (uint32_t slice = 0; slice < copy->copySize.depth; ++slice) {
+                        [commandContext->EnsureBlit()
+                              copyFromTexture:srcTexture->GetMTLTexture()
+                                  sourceSlice:copy->source.arrayLayer + slice
+                                  sourceLevel:copy->source.mipLevel
+                                 sourceOrigin:MakeMTLOrigin(copy->source.origin)
+                                   sourceSize:mtlSizeOneLayer
+                                    toTexture:dstTexture->GetMTLTexture()
+                             destinationSlice:copy->destination.arrayLayer + slice
+                             destinationLevel:copy->destination.mipLevel
+                            destinationOrigin:MakeMTLOrigin(copy->destination.origin)];
+                    }
+
                     break;
                 }
 

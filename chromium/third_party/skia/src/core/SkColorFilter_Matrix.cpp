@@ -26,7 +26,7 @@ static uint16_t ComputeFlags(const float matrix[20]) {
         && SkScalarNearlyZero (srcA[2])
         && SkScalarNearlyEqual(srcA[3], 1)
         && SkScalarNearlyZero (srcA[4])
-            ? SkColorFilter::kAlphaUnchanged_Flag : 0;
+            ? SkColorFilterBase::kAlphaUnchanged_Flag : 0;
 }
 
 SkColorFilter_Matrix::SkColorFilter_Matrix(const float array[20], Domain domain)
@@ -35,8 +35,8 @@ SkColorFilter_Matrix::SkColorFilter_Matrix(const float array[20], Domain domain)
     memcpy(fMatrix, array, 20 * sizeof(float));
 }
 
-uint32_t SkColorFilter_Matrix::getFlags() const {
-    return this->INHERITED::getFlags() | fFlags;
+uint32_t SkColorFilter_Matrix::onGetFlags() const {
+    return this->INHERITED::onGetFlags() | fFlags;
 }
 
 void SkColorFilter_Matrix::flatten(SkWriteBuffer& buffer) const {
@@ -131,20 +131,19 @@ std::unique_ptr<GrFragmentProcessor> SkColorFilter_Matrix::asFragmentProcessor(
         GrRecordingContext*, const GrColorInfo&) const {
     switch (fDomain) {
         case Domain::kRGBA:
-            return GrColorMatrixFragmentProcessor::Make(fMatrix,
+            return GrColorMatrixFragmentProcessor::Make(/* inputFP = */        nullptr,
+                                                        fMatrix,
                                                         /* premulInput = */    true,
                                                         /* clampRGBOutput = */ true,
                                                         /* premulOutput = */   true);
         case Domain::kHSLA: {
-            std::unique_ptr<GrFragmentProcessor> series[] = {
-                GrRGBToHSLFilterEffect::Make(),
-                GrColorMatrixFragmentProcessor::Make(fMatrix,
-                                                     /* premulInput = */    false,
-                                                     /* clampRGBOutput = */ false,
-                                                     /* premulOutput = */   false),
-                GrHSLToRGBFilterEffect::Make(),
-            };
-            return GrFragmentProcessor::RunInSeries(series, SK_ARRAY_COUNT(series));
+            auto fp = GrRGBToHSLFilterEffect::Make(/* inputFP = */ nullptr);
+            fp = GrColorMatrixFragmentProcessor::Make(std::move(fp), fMatrix,
+                                                      /* premulInput = */    false,
+                                                      /* clampRGBOutput = */ false,
+                                                      /* premulOutput = */   false);
+            fp = GrHSLToRGBFilterEffect::Make(std::move(fp));
+            return fp;
         }
     }
 

@@ -263,6 +263,8 @@ static const arg_def_t monochrome =
     ARG_DEF(NULL, "monochrome", 0, "Monochrome video (no chroma planes)");
 static const arg_def_t full_still_picture_hdr = ARG_DEF(
     NULL, "full-still-picture-hdr", 0, "Use full header for still picture");
+static const arg_def_t use_16bit_internal =
+    ARG_DEF(NULL, "use-16bit-internal", 0, "Force use of 16-bit pipeline");
 
 static const arg_def_t *global_args[] = { &use_yv12,
                                           &use_i420,
@@ -286,6 +288,7 @@ static const arg_def_t *global_args[] = { &use_yv12,
                                           &large_scale_tile,
                                           &monochrome,
                                           &full_still_picture_hdr,
+                                          &use_16bit_internal,
                                           NULL };
 
 static const arg_def_t dropframe_thresh =
@@ -1527,6 +1530,11 @@ static int parse_stream_params(struct AvxEncoderConfig *global,
       config->cfg.monochrome = 1;
     } else if (arg_match(&arg, &full_still_picture_hdr, argi)) {
       config->cfg.full_still_picture_hdr = 1;
+    } else if (arg_match(&arg, &use_16bit_internal, argi)) {
+      config->use_16bit_internal = CONFIG_AV1_HIGHBITDEPTH;
+      if (!config->use_16bit_internal) {
+        warn("%s option ignored with CONFIG_AV1_HIGHBITDEPTH=0.\n", arg.name);
+      }
     } else if (arg_match(&arg, &dropframe_thresh, argi)) {
       config->cfg.rc_dropframe_thresh = arg_parse_uint(&arg);
     } else if (arg_match(&arg, &resize_mode, argi)) {
@@ -1630,8 +1638,8 @@ static int parse_stream_params(struct AvxEncoderConfig *global,
       if (!match) argj++;
     }
   }
-  config->use_16bit_internal =
-      config->cfg.g_bit_depth > AOM_BITS_8 || FORCE_HIGHBITDEPTH_DECODING;
+  config->use_16bit_internal |= config->cfg.g_bit_depth > AOM_BITS_8;
+
   return eos_mark_found;
 }
 
@@ -1778,45 +1786,48 @@ static void show_stream_config(struct stream_state *stream,
 #define SHOW_PARAMS(field)                    \
   fprintf(stderr, "    %-28s = %d\n", #field, \
           stream->config.cfg.encoder_cfg.field)
-  SHOW_PARAMS(super_block_size);
-  SHOW_PARAMS(max_partition_size);
-  SHOW_PARAMS(min_partition_size);
-  SHOW_PARAMS(disable_ab_partition_type);
-  SHOW_PARAMS(disable_rect_partition_type);
-  SHOW_PARAMS(disable_1to4_partition_type);
-  SHOW_PARAMS(disable_flip_idtx);
-  SHOW_PARAMS(disable_cdef);
-  SHOW_PARAMS(disable_lr);
-  SHOW_PARAMS(disable_obmc);
-  SHOW_PARAMS(disable_warp_motion);
-  SHOW_PARAMS(disable_global_motion);
-  SHOW_PARAMS(disable_dist_wtd_comp);
-  SHOW_PARAMS(disable_diff_wtd_comp);
-  SHOW_PARAMS(disable_inter_intra_comp);
-  SHOW_PARAMS(disable_masked_comp);
-  SHOW_PARAMS(disable_one_sided_comp);
-  SHOW_PARAMS(disable_palette);
-  SHOW_PARAMS(disable_intrabc);
-  SHOW_PARAMS(disable_cfl);
-  SHOW_PARAMS(disable_smooth_intra);
-  SHOW_PARAMS(disable_filter_intra);
-  SHOW_PARAMS(disable_dual_filter);
-  SHOW_PARAMS(disable_intra_angle_delta);
-  SHOW_PARAMS(disable_intra_edge_filter);
-  SHOW_PARAMS(disable_tx_64x64);
-  SHOW_PARAMS(disable_smooth_inter_intra);
-  SHOW_PARAMS(disable_inter_inter_wedge);
-  SHOW_PARAMS(disable_inter_intra_wedge);
-  SHOW_PARAMS(disable_paeth_intra);
-  SHOW_PARAMS(disable_trellis_quant);
-  SHOW_PARAMS(disable_ref_frame_mv);
-  SHOW_PARAMS(reduced_reference_set);
-  SHOW_PARAMS(reduced_tx_type_set);
+  if (global->encoder_config.init_by_cfg_file) {
+    SHOW_PARAMS(super_block_size);
+    SHOW_PARAMS(max_partition_size);
+    SHOW_PARAMS(min_partition_size);
+    SHOW_PARAMS(disable_ab_partition_type);
+    SHOW_PARAMS(disable_rect_partition_type);
+    SHOW_PARAMS(disable_1to4_partition_type);
+    SHOW_PARAMS(disable_flip_idtx);
+    SHOW_PARAMS(disable_cdef);
+    SHOW_PARAMS(disable_lr);
+    SHOW_PARAMS(disable_obmc);
+    SHOW_PARAMS(disable_warp_motion);
+    SHOW_PARAMS(disable_global_motion);
+    SHOW_PARAMS(disable_dist_wtd_comp);
+    SHOW_PARAMS(disable_diff_wtd_comp);
+    SHOW_PARAMS(disable_inter_intra_comp);
+    SHOW_PARAMS(disable_masked_comp);
+    SHOW_PARAMS(disable_one_sided_comp);
+    SHOW_PARAMS(disable_palette);
+    SHOW_PARAMS(disable_intrabc);
+    SHOW_PARAMS(disable_cfl);
+    SHOW_PARAMS(disable_smooth_intra);
+    SHOW_PARAMS(disable_filter_intra);
+    SHOW_PARAMS(disable_dual_filter);
+    SHOW_PARAMS(disable_intra_angle_delta);
+    SHOW_PARAMS(disable_intra_edge_filter);
+    SHOW_PARAMS(disable_tx_64x64);
+    SHOW_PARAMS(disable_smooth_inter_intra);
+    SHOW_PARAMS(disable_inter_inter_wedge);
+    SHOW_PARAMS(disable_inter_intra_wedge);
+    SHOW_PARAMS(disable_paeth_intra);
+    SHOW_PARAMS(disable_trellis_quant);
+    SHOW_PARAMS(disable_ref_frame_mv);
+    SHOW_PARAMS(reduced_reference_set);
+    SHOW_PARAMS(reduced_tx_type_set);
+  }
 }
 
 static void open_output_file(struct stream_state *stream,
                              struct AvxEncoderConfig *global,
-                             const struct AvxRational *pixel_aspect_ratio) {
+                             const struct AvxRational *pixel_aspect_ratio,
+                             const char *encoder_settings) {
   const char *fn = stream->config.out_fn;
   const struct aom_codec_enc_cfg *const cfg = &stream->config.cfg;
 
@@ -1835,12 +1846,13 @@ static void open_output_file(struct stream_state *stream,
     if (write_webm_file_header(&stream->webm_ctx, &stream->encoder, cfg,
                                stream->config.stereo_fmt,
                                get_fourcc_by_aom_encoder(global->codec),
-                               pixel_aspect_ratio) != 0) {
+                               pixel_aspect_ratio, encoder_settings) != 0) {
       fatal("WebM writer initialization failed.");
     }
   }
 #else
   (void)pixel_aspect_ratio;
+  (void)encoder_settings;
 #endif
 
   if (!stream->config.write_webm && stream->config.write_ivf) {
@@ -1907,14 +1919,10 @@ static void initialize_encoder(struct stream_state *stream,
                      flags);
   ctx_exit_on_error(&stream->encoder, "Failed to initialize encoder");
 
-  /* Note that we bypass the aom_codec_control wrapper macro because
-   * we're being clever to store the control IDs in an array. Real
-   * applications will want to make use of the enumerations directly
-   */
   for (i = 0; i < stream->config.arg_ctrl_cnt; i++) {
     int ctrl = stream->config.arg_ctrls[i][0];
     int value = stream->config.arg_ctrls[i][1];
-    if (aom_codec_control_(&stream->encoder, ctrl, value))
+    if (aom_codec_control(&stream->encoder, ctrl, value))
       fprintf(stderr, "Error: Tried to set control %d = %d\n", ctrl, value);
 
     ctx_exit_on_error(&stream->encoder, "Failed to control codec");
@@ -1922,36 +1930,38 @@ static void initialize_encoder(struct stream_state *stream,
 
 #if CONFIG_TUNE_VMAF
   if (stream->config.vmaf_model_path) {
-    aom_codec_control_(&stream->encoder, AV1E_SET_VMAF_MODEL_PATH,
-                       stream->config.vmaf_model_path);
+    AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder, AV1E_SET_VMAF_MODEL_PATH,
+                                  stream->config.vmaf_model_path);
   }
 #endif
 
   if (stream->config.film_grain_filename) {
-    aom_codec_control_(&stream->encoder, AV1E_SET_FILM_GRAIN_TABLE,
-                       stream->config.film_grain_filename);
+    AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder, AV1E_SET_FILM_GRAIN_TABLE,
+                                  stream->config.film_grain_filename);
   }
 
 #if CONFIG_AV1_DECODER
   if (global->test_decode != TEST_DECODE_OFF) {
     aom_codec_iface_t *decoder = get_aom_decoder_by_short_name(
         get_short_name_by_aom_encoder(global->codec));
-    aom_codec_dec_cfg_t cfg = { 0, 0, 0, !FORCE_HIGHBITDEPTH_DECODING };
+    aom_codec_dec_cfg_t cfg = { 0, 0, 0, !stream->config.use_16bit_internal };
     aom_codec_dec_init(&stream->decoder, decoder, &cfg, 0);
 
     if (strcmp(get_short_name_by_aom_encoder(global->codec), "av1") == 0) {
-      aom_codec_control(&stream->decoder, AV1_SET_TILE_MODE,
-                        stream->config.cfg.large_scale_tile);
+      AOM_CODEC_CONTROL_TYPECHECKED(&stream->decoder, AV1_SET_TILE_MODE,
+                                    stream->config.cfg.large_scale_tile);
       ctx_exit_on_error(&stream->decoder, "Failed to set decode_tile_mode");
 
-      aom_codec_control(&stream->decoder, AV1D_SET_IS_ANNEXB,
-                        stream->config.cfg.save_as_annexb);
+      AOM_CODEC_CONTROL_TYPECHECKED(&stream->decoder, AV1D_SET_IS_ANNEXB,
+                                    stream->config.cfg.save_as_annexb);
       ctx_exit_on_error(&stream->decoder, "Failed to set is_annexb");
 
-      aom_codec_control(&stream->decoder, AV1_SET_DECODE_TILE_ROW, -1);
+      AOM_CODEC_CONTROL_TYPECHECKED(&stream->decoder, AV1_SET_DECODE_TILE_ROW,
+                                    -1);
       ctx_exit_on_error(&stream->decoder, "Failed to set decode_tile_row");
 
-      aom_codec_control(&stream->decoder, AV1_SET_DECODE_TILE_COL, -1);
+      AOM_CODEC_CONTROL_TYPECHECKED(&stream->decoder, AV1_SET_DECODE_TILE_COL,
+                                    -1);
       ctx_exit_on_error(&stream->decoder, "Failed to set decode_tile_col");
     }
   }
@@ -2050,7 +2060,8 @@ static void update_quantizer_histogram(struct stream_state *stream) {
   if (stream->config.cfg.g_pass != AOM_RC_FIRST_PASS) {
     int q;
 
-    aom_codec_control(&stream->encoder, AOME_GET_LAST_QUANTIZER_64, &q);
+    AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder, AOME_GET_LAST_QUANTIZER_64,
+                                  &q);
     ctx_exit_on_error(&stream->encoder, "Failed to read quantizer");
     stream->counts[q]++;
   }
@@ -2177,8 +2188,10 @@ static void test_decode(struct stream_state *stream,
   if (stream->mismatch_seen) return;
 
   /* Get the internal reference frame */
-  aom_codec_control(&stream->encoder, AV1_GET_NEW_FRAME_IMAGE, &enc_img);
-  aom_codec_control(&stream->decoder, AV1_GET_NEW_FRAME_IMAGE, &dec_img);
+  AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder, AV1_GET_NEW_FRAME_IMAGE,
+                                &enc_img);
+  AOM_CODEC_CONTROL_TYPECHECKED(&stream->decoder, AV1_GET_NEW_FRAME_IMAGE,
+                                &dec_img);
 
   if ((enc_img.fmt & AOM_IMG_FMT_HIGHBITDEPTH) !=
       (dec_img.fmt & AOM_IMG_FMT_HIGHBITDEPTH)) {
@@ -2247,7 +2260,7 @@ int main(int argc, const char **argv_) {
   aom_image_t raw;
   aom_image_t raw_shift;
   int allocated_raw_shift = 0;
-  int use_16bit_internal = 0;
+  int do_16bit_internal = 0;
   int input_shift = 0;
   int frame_avail, got_data;
 
@@ -2416,16 +2429,20 @@ int main(int argc, const char **argv_) {
                        input.file_type == FILE_TYPE_Y4M) {
               // Note that here the input file values for chroma subsampling
               // are used instead of those from the command line.
-              aom_codec_control(&stream->encoder, AV1E_SET_CHROMA_SUBSAMPLING_X,
-                                input.y4m.dst_c_dec_h >> 1);
-              aom_codec_control(&stream->encoder, AV1E_SET_CHROMA_SUBSAMPLING_Y,
-                                input.y4m.dst_c_dec_v >> 1);
+              AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder,
+                                            AV1E_SET_CHROMA_SUBSAMPLING_X,
+                                            input.y4m.dst_c_dec_h >> 1);
+              AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder,
+                                            AV1E_SET_CHROMA_SUBSAMPLING_Y,
+                                            input.y4m.dst_c_dec_v >> 1);
             } else if (input.bit_depth == 12 &&
                        input.file_type == FILE_TYPE_RAW) {
-              aom_codec_control(&stream->encoder, AV1E_SET_CHROMA_SUBSAMPLING_X,
-                                stream->chroma_subsampling_x);
-              aom_codec_control(&stream->encoder, AV1E_SET_CHROMA_SUBSAMPLING_Y,
-                                stream->chroma_subsampling_y);
+              AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder,
+                                            AV1E_SET_CHROMA_SUBSAMPLING_X,
+                                            stream->chroma_subsampling_x);
+              AOM_CODEC_CONTROL_TYPECHECKED(&stream->encoder,
+                                            AV1E_SET_CHROMA_SUBSAMPLING_Y,
+                                            stream->chroma_subsampling_y);
             }
             break;
           default: break;
@@ -2443,6 +2460,11 @@ int main(int argc, const char **argv_) {
                   stream->config.cfg.g_input_bit_depth);
         }
       }
+#if !CONFIG_AV1_HIGHBITDEPTH
+      if (stream->config.cfg.g_bit_depth > 8) {
+        fatal("Unsupported bit-depth with CONFIG_AV1_HIGHBITDEPTH=0\n");
+      }
+#endif  // CONFIG_AV1_HIGHBITDEPTH
       if (stream->config.cfg.g_bit_depth > 10) {
         switch (stream->config.cfg.g_profile) {
           case 0:
@@ -2529,7 +2551,28 @@ int main(int argc, const char **argv_) {
     FOREACH_STREAM(stream, streams) { setup_pass(stream, &global, pass); }
     FOREACH_STREAM(stream, streams) { initialize_encoder(stream, &global); }
     FOREACH_STREAM(stream, streams) {
-      open_output_file(stream, &global, &input.pixel_aspect_ratio);
+      char *encoder_settings = NULL;
+#if CONFIG_WEBM_IO
+      // Test frameworks may compare outputs from different versions, but only
+      // wish to check for bitstream changes. The encoder-settings tag, however,
+      // can vary if the version is updated, even if no encoder algorithm
+      // changes were made. To work around this issue, do not output
+      // the encoder-settings tag when --debug is enabled (which is the flag
+      // that test frameworks should use, when they want deterministic output
+      // from the container format).
+      if (stream->config.write_webm && !stream->webm_ctx.debug) {
+        encoder_settings = extract_encoder_settings(
+            aom_codec_version_str(), argv_, argc, input.filename);
+        if (encoder_settings == NULL) {
+          fprintf(
+              stderr,
+              "Warning: unable to extract encoder settings. Continuing...\n");
+        }
+      }
+#endif
+      open_output_file(stream, &global, &input.pixel_aspect_ratio,
+                       encoder_settings);
+      free(encoder_settings);
     }
 
     if (strcmp(get_short_name_by_aom_encoder(global.codec), "av1") == 0) {
@@ -2538,7 +2581,7 @@ int main(int argc, const char **argv_) {
       // highbitdepth are the same.
       FOREACH_STREAM(stream, streams) {
         if (stream->config.use_16bit_internal) {
-          use_16bit_internal = 1;
+          do_16bit_internal = 1;
         }
         input_shift = (int)stream->config.cfg.g_bit_depth -
                       stream->config.cfg.g_input_bit_depth;
@@ -2581,8 +2624,8 @@ int main(int argc, const char **argv_) {
 
       if (frames_in > global.skip_frames) {
         aom_image_t *frame_to_encode;
-        if (input_shift || (use_16bit_internal && input.bit_depth == 8)) {
-          assert(use_16bit_internal);
+        if (input_shift || (do_16bit_internal && input.bit_depth == 8)) {
+          assert(do_16bit_internal);
           // Input bit depth and stream bit depth do not match, so up
           // shift frame to stream bit depth
           if (!allocated_raw_shift) {
@@ -2596,7 +2639,7 @@ int main(int argc, const char **argv_) {
           frame_to_encode = &raw;
         }
         aom_usec_timer_start(&timer);
-        if (use_16bit_internal) {
+        if (do_16bit_internal) {
           assert(frame_to_encode->fmt & AOM_IMG_FMT_HIGHBITDEPTH);
           FOREACH_STREAM(stream, streams) {
             if (stream->config.use_16bit_internal)

@@ -36,6 +36,7 @@ class GrCoordTransform;
  */
 
 class GrGLSLPrimitiveProcessor;
+class GrGLSLUniformHandler;
 
 /**
  * GrPrimitiveProcessor defines an interface which all subclasses must implement.  All
@@ -56,12 +57,14 @@ public:
         constexpr Attribute(const char* name,
                             GrVertexAttribType cpuType,
                             GrSLType gpuType)
-            : fName(name), fCPUType(cpuType), fGPUType(gpuType) {}
+                : fName(name), fCPUType(cpuType), fGPUType(gpuType) {
+            SkASSERT(name && gpuType != kVoid_GrSLType);
+        }
         constexpr Attribute(const Attribute&) = default;
 
         Attribute& operator=(const Attribute&) = default;
 
-        constexpr bool isInitialized() const { return SkToBool(fName); }
+        constexpr bool isInitialized() const { return fGPUType != kVoid_GrSLType; }
 
         constexpr const char* name() const { return fName; }
         constexpr GrVertexAttribType cpuType() const { return fCPUType; }
@@ -77,7 +80,7 @@ public:
     private:
         const char* fName = nullptr;
         GrVertexAttribType fCPUType = kFloat_GrVertexAttribType;
-        GrSLType fGPUType = kFloat_GrSLType;
+        GrSLType fGPUType = kVoid_GrSLType;
     };
 
     class Iter {
@@ -213,11 +216,15 @@ public:
 
     // We use these methods as a temporary back door to inject OpenGL tessellation code. Once
     // tessellation is supported by SkSL we can remove these.
-    virtual SkString getTessControlShaderGLSL(const char* versionAndExtensionDecls,
+    virtual SkString getTessControlShaderGLSL(const GrGLSLPrimitiveProcessor*,
+                                              const char* versionAndExtensionDecls,
+                                              const GrGLSLUniformHandler&,
                                               const GrShaderCaps&) const {
         SK_ABORT("Not implemented.");
     }
-    virtual SkString getTessEvaluationShaderGLSL(const char* versionAndExtensionDecls,
+    virtual SkString getTessEvaluationShaderGLSL(const GrGLSLPrimitiveProcessor*,
+                                                 const char* versionAndExtensionDecls,
+                                                 const GrGLSLUniformHandler&,
                                                  const GrShaderCaps&) const {
         SK_ABORT("Not implemented.");
     }

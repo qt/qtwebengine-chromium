@@ -431,6 +431,11 @@ void vp9_rc_init(const VP9EncoderConfig *oxcf, int pass, RATE_CONTROL *rc) {
     rc->max_gf_interval = vp9_rc_get_default_max_gf_interval(
         oxcf->init_framerate, rc->min_gf_interval);
   rc->baseline_gf_interval = (rc->min_gf_interval + rc->max_gf_interval) / 2;
+  if ((oxcf->pass == 0) && (oxcf->rc_mode == VPX_Q)) {
+    rc->static_scene_max_gf_interval = FIXED_GF_INTERVAL;
+  } else {
+    rc->static_scene_max_gf_interval = MAX_STATIC_GF_GROUP_LENGTH;
+  }
 
   rc->force_max_q = 0;
   rc->last_post_encode_dropped_scene_change = 0;
@@ -2371,7 +2376,8 @@ void vp9_rc_get_svc_params(VP9_COMP *cpi) {
   if (cm->show_frame) update_buffer_level_svc_preencode(cpi);
 
   if (cpi->oxcf.resize_mode == RESIZE_DYNAMIC && svc->single_layer_svc == 1 &&
-      svc->spatial_layer_id == svc->first_spatial_layer_to_encode) {
+      svc->spatial_layer_id == svc->first_spatial_layer_to_encode &&
+      svc->temporal_layer_id == 0) {
     LAYER_CONTEXT *lc = NULL;
     cpi->resize_pending = vp9_resize_one_pass_cbr(cpi);
     if (cpi->resize_pending) {
@@ -2987,7 +2993,7 @@ void vp9_scene_detection_onepass(VP9_COMP *cpi) {
     int scene_cut_force_key_frame = 0;
     int num_zero_temp_sad = 0;
     uint64_t avg_sad_current = 0;
-    uint32_t min_thresh = 10000;
+    uint32_t min_thresh = 20000;  // ~5 * 64 * 64
     float thresh = 8.0f;
     uint32_t thresh_key = 140000;
     if (cpi->oxcf.speed <= 5) thresh_key = 240000;

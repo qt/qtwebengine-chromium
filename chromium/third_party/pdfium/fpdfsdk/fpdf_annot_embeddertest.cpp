@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "public/fpdf_annot.h"
+
+#include <limits.h>
+
 #include <algorithm>
 #include <cwchar>
 #include <memory>
@@ -10,10 +14,13 @@
 
 #include "build/build_config.h"
 #include "constants/annotation_common.h"
-#include "core/fxcrt/fx_memory.h"
+#include "core/fpdfapi/page/cpdf_annotcontext.h"
+#include "core/fpdfapi/page/cpdf_pagemodule.h"
+#include "core/fpdfapi/parser/cpdf_array.h"
+#include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fxcrt/fx_system.h"
+#include "fpdfsdk/cpdfsdk_helpers.h"
 #include "public/cpp/fpdf_scopers.h"
-#include "public/fpdf_annot.h"
 #include "public/fpdf_edit.h"
 #include "public/fpdf_formfill.h"
 #include "public/fpdfview.h"
@@ -27,6 +34,13 @@
 #include "third_party/base/stl_util.h"
 
 namespace {
+
+const wchar_t kStreamData[] =
+    L"/GS gs 0.0 0.0 0.0 RG 4 w 211.8 747.6 m 211.8 744.8 "
+    L"212.6 743.0 214.2 740.8 "
+    L"c 215.4 739.0 216.8 737.1 218.9 736.1 c 220.8 735.1 221.4 733.0 "
+    L"223.7 732.4 c 232.6 729.9 242.0 730.8 251.2 730.8 c 257.5 730.8 "
+    L"263.0 732.9 269.0 734.4 c S";
 
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 #if defined(OS_LINUX)
@@ -83,8 +97,8 @@ void VerifyAnnotationSubtypesAndFocusability(
     ASSERT_TRUE(annot);
     EXPECT_EQ(expected_subtypes[i], FPDFAnnot_GetSubtype(annot.get()));
 
-    bool expected_focusable = pdfium::ContainsValue(expected_focusable_subtypes,
-                                                    expected_subtypes[i]);
+    bool expected_focusable =
+        pdfium::Contains(expected_focusable_subtypes, expected_subtypes[i]);
     EXPECT_EQ(expected_focusable,
               FORM_SetFocusedAnnot(form_handle, annot.get()));
 
@@ -96,6 +110,235 @@ void VerifyAnnotationSubtypesAndFocusability(
 }  // namespace
 
 class FPDFAnnotEmbedderTest : public EmbedderTest {};
+
+TEST_F(FPDFAnnotEmbedderTest, SetAP) {
+  ScopedFPDFDocument doc(FPDF_CreateNewDocument());
+  ASSERT_TRUE(doc);
+  ScopedFPDFPage page(FPDFPage_New(doc.get(), 0, 100, 100));
+  ASSERT_TRUE(page);
+  ScopedFPDFWideString ap_stream = GetFPDFWideString(kStreamData);
+  ASSERT_TRUE(ap_stream);
+
+  ScopedFPDFAnnotation annot(FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_INK));
+  ASSERT_TRUE(annot);
+
+  // Negative case: FPDFAnnot_SetAP() should fail if bounding rect is not yet
+  // set on the annotation.
+  EXPECT_FALSE(FPDFAnnot_SetAP(annot.get(), FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                               ap_stream.get()));
+
+  const FS_RECTF bounding_rect{206.0f, 753.0f, 339.0f, 709.0f};
+  EXPECT_TRUE(FPDFAnnot_SetRect(annot.get(), &bounding_rect));
+
+  ASSERT_TRUE(FPDFAnnot_SetColor(annot.get(), FPDFANNOT_COLORTYPE_Color,
+                                 /*R=*/255, /*G=*/0, /*B=*/0, /*A=*/255));
+
+  EXPECT_TRUE(FPDFAnnot_SetAP(annot.get(), FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                              ap_stream.get()));
+
+  // Verify that appearance stream is created as form XObject
+  CPDF_AnnotContext* context = CPDFAnnotContextFromFPDFAnnotation(annot.get());
+  ASSERT_TRUE(context);
+  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  ASSERT_TRUE(annot_dict);
+  CPDF_Dictionary* ap_dict = annot_dict->GetDictFor(pdfium::annotation::kAP);
+  ASSERT_TRUE(ap_dict);
+  CPDF_Dictionary* stream_dict = ap_dict->GetDictFor("N");
+  ASSERT_TRUE(stream_dict);
+  // Check for non-existence of resources dictionary in case of opaque color
+  CPDF_Dictionary* resources_dict = stream_dict->GetDictFor("Resources");
+  ASSERT_FALSE(resources_dict);
+  ByteString type = stream_dict->GetStringFor(pdfium::annotation::kType);
+  EXPECT_EQ("XObject", type);
+  ByteString sub_type = stream_dict->GetStringFor(pdfium::annotation::kSubtype);
+  EXPECT_EQ("Form", sub_type);
+
+  // Check that the appearance stream is same as we just set.
+  const uint32_t kStreamDataSize =
+      pdfium::size(kStreamData) * sizeof(FPDF_WCHAR);
+  unsigned long normal_length_bytes = FPDFAnnot_GetAP(
+      annot.get(), FPDF_ANNOT_APPEARANCEMODE_NORMAL, nullptr, 0);
+  ASSERT_EQ(kStreamDataSize, normal_length_bytes);
+  std::vector<FPDF_WCHAR> buf = GetFPDFWideStringBuffer(normal_length_bytes);
+  EXPECT_EQ(kStreamDataSize,
+            FPDFAnnot_GetAP(annot.get(), FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                            buf.data(), normal_length_bytes));
+  EXPECT_EQ(kStreamData, GetPlatformWString(buf.data()));
+}
+
+TEST_F(FPDFAnnotEmbedderTest, SetAPWithOpacity) {
+  ScopedFPDFDocument doc(FPDF_CreateNewDocument());
+  ASSERT_TRUE(doc);
+  ScopedFPDFPage page(FPDFPage_New(doc.get(), 0, 100, 100));
+  ASSERT_TRUE(page);
+  ScopedFPDFWideString ap_stream = GetFPDFWideString(kStreamData);
+  ASSERT_TRUE(ap_stream);
+
+  ScopedFPDFAnnotation annot(FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_INK));
+  ASSERT_TRUE(annot);
+
+  ASSERT_TRUE(FPDFAnnot_SetColor(annot.get(), FPDFANNOT_COLORTYPE_Color,
+                                 /*R=*/255, /*G=*/0, /*B=*/0, /*A=*/102));
+
+  const FS_RECTF bounding_rect{206.0f, 753.0f, 339.0f, 709.0f};
+  EXPECT_TRUE(FPDFAnnot_SetRect(annot.get(), &bounding_rect));
+
+  EXPECT_TRUE(FPDFAnnot_SetAP(annot.get(), FPDF_ANNOT_APPEARANCEMODE_NORMAL,
+                              ap_stream.get()));
+
+  CPDF_AnnotContext* context = CPDFAnnotContextFromFPDFAnnotation(annot.get());
+  ASSERT_TRUE(context);
+  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  ASSERT_TRUE(annot_dict);
+  CPDF_Dictionary* ap_dict = annot_dict->GetDictFor(pdfium::annotation::kAP);
+  ASSERT_TRUE(ap_dict);
+  CPDF_Dictionary* stream_dict = ap_dict->GetDictFor("N");
+  ASSERT_TRUE(stream_dict);
+  CPDF_Dictionary* resources_dict = stream_dict->GetDictFor("Resources");
+  ASSERT_TRUE(stream_dict);
+  CPDF_Dictionary* extGState_dict = resources_dict->GetDictFor("ExtGState");
+  ASSERT_TRUE(extGState_dict);
+  CPDF_Dictionary* gs_dict = extGState_dict->GetDictFor("GS");
+  ASSERT_TRUE(gs_dict);
+  ByteString type = gs_dict->GetStringFor(pdfium::annotation::kType);
+  EXPECT_EQ("ExtGState", type);
+  float opacity = gs_dict->GetNumberFor("CA");
+  // Opacity value of 102 is represented as 0.4f (=104/255) in /CA entry.
+  EXPECT_FLOAT_EQ(0.4f, opacity);
+  ByteString blend_mode = gs_dict->GetStringFor("BM");
+  EXPECT_EQ("Normal", blend_mode);
+  bool alpha_source_flag = gs_dict->GetBooleanFor("AIS", true);
+  EXPECT_FALSE(alpha_source_flag);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, InkListAPIValidations) {
+  ScopedFPDFDocument doc(FPDF_CreateNewDocument());
+  ASSERT_TRUE(doc);
+  ScopedFPDFPage page(FPDFPage_New(doc.get(), 0, 100, 100));
+  ASSERT_TRUE(page);
+
+  // Create a new ink annotation.
+  ScopedFPDFAnnotation ink_annot(
+      FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_INK));
+  ASSERT_TRUE(ink_annot);
+  CPDF_AnnotContext* context =
+      CPDFAnnotContextFromFPDFAnnotation(ink_annot.get());
+  ASSERT_TRUE(context);
+  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  ASSERT_TRUE(annot_dict);
+
+  static constexpr FS_POINTF kFirstInkStroke[] = {
+      {80.0f, 90.0f}, {81.0f, 91.0f}, {82.0f, 92.0f},
+      {83.0f, 93.0f}, {84.0f, 94.0f}, {85.0f, 95.0f}};
+  static constexpr size_t kFirstStrokePointCount =
+      pdfium::size(kFirstInkStroke);
+
+  static constexpr FS_POINTF kSecondInkStroke[] = {
+      {70.0f, 90.0f}, {71.0f, 91.0f}, {72.0f, 92.0f}};
+  static constexpr size_t kSecondStrokePointCount =
+      pdfium::size(kSecondInkStroke);
+
+  static constexpr FS_POINTF kThirdInkStroke[] = {{60.0f, 90.0f},
+                                                  {61.0f, 91.0f},
+                                                  {62.0f, 92.0f},
+                                                  {63.0f, 93.0f},
+                                                  {64.0f, 94.0f}};
+  static constexpr size_t kThirdStrokePointCount =
+      pdfium::size(kThirdInkStroke);
+
+  // Negative test: |annot| is passed as nullptr.
+  EXPECT_EQ(-1, FPDFAnnot_AddInkStroke(nullptr, kFirstInkStroke,
+                                       kFirstStrokePointCount));
+
+  // Negative test: |annot| is not ink annotation.
+  // Create a new highlight annotation.
+  ScopedFPDFAnnotation highlight_annot(
+      FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_HIGHLIGHT));
+  ASSERT_TRUE(highlight_annot);
+  EXPECT_EQ(-1, FPDFAnnot_AddInkStroke(highlight_annot.get(), kFirstInkStroke,
+                                       kFirstStrokePointCount));
+
+  // Negative test: passing |point_count| as  0.
+  EXPECT_EQ(-1, FPDFAnnot_AddInkStroke(ink_annot.get(), kFirstInkStroke, 0));
+
+  // Negative test: passing |points| array as nullptr.
+  EXPECT_EQ(-1, FPDFAnnot_AddInkStroke(ink_annot.get(), nullptr,
+                                       kFirstStrokePointCount));
+
+  // Negative test: passing |point_count| more than ULONG_MAX/2.
+  EXPECT_EQ(-1, FPDFAnnot_AddInkStroke(ink_annot.get(), kSecondInkStroke,
+                                       ULONG_MAX / 2 + 1));
+
+  // InkStroke should get added to ink annotation. Also inklist should get
+  // created.
+  EXPECT_EQ(0, FPDFAnnot_AddInkStroke(ink_annot.get(), kFirstInkStroke,
+                                      kFirstStrokePointCount));
+
+  CPDF_Array* inklist = annot_dict->GetArrayFor("InkList");
+  ASSERT_TRUE(inklist);
+  EXPECT_EQ(1u, inklist->size());
+  EXPECT_EQ(kFirstStrokePointCount * 2, inklist->GetArrayAt(0)->size());
+
+  // Adding another inkStroke to ink annotation with all valid paremeters.
+  // InkList already exists in ink_annot.
+  EXPECT_EQ(1, FPDFAnnot_AddInkStroke(ink_annot.get(), kSecondInkStroke,
+                                      kSecondStrokePointCount));
+  EXPECT_EQ(2u, inklist->size());
+  EXPECT_EQ(kSecondStrokePointCount * 2, inklist->GetArrayAt(1)->size());
+
+  // Adding one more InkStroke to the ink annotation. |point_count| passed is
+  // less than the data available in |buffer|.
+  EXPECT_EQ(2, FPDFAnnot_AddInkStroke(ink_annot.get(), kThirdInkStroke,
+                                      kThirdStrokePointCount - 1));
+  EXPECT_EQ(3u, inklist->size());
+  EXPECT_EQ((kThirdStrokePointCount - 1) * 2, inklist->GetArrayAt(2)->size());
+}
+
+TEST_F(FPDFAnnotEmbedderTest, RemoveInkList) {
+  ScopedFPDFDocument doc(FPDF_CreateNewDocument());
+  ASSERT_TRUE(doc);
+  ScopedFPDFPage page(FPDFPage_New(doc.get(), 0, 100, 100));
+  ASSERT_TRUE(page);
+
+  // Negative test: |annot| is passed as nullptr.
+  EXPECT_FALSE(FPDFAnnot_RemoveInkList(nullptr));
+
+  // Negative test: |annot| is not ink annotation.
+  // Create a new highlight annotation.
+  ScopedFPDFAnnotation highlight_annot(
+      FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_HIGHLIGHT));
+  ASSERT_TRUE(highlight_annot);
+  EXPECT_FALSE(FPDFAnnot_RemoveInkList(highlight_annot.get()));
+
+  // Create a new ink annotation.
+  ScopedFPDFAnnotation ink_annot(
+      FPDFPage_CreateAnnot(page.get(), FPDF_ANNOT_INK));
+  ASSERT_TRUE(ink_annot);
+  CPDF_AnnotContext* context =
+      CPDFAnnotContextFromFPDFAnnotation(ink_annot.get());
+  ASSERT_TRUE(context);
+  CPDF_Dictionary* annot_dict = context->GetAnnotDict();
+  ASSERT_TRUE(annot_dict);
+
+  static constexpr FS_POINTF kInkStroke[] = {{80.0f, 90.0f}, {81.0f, 91.0f},
+                                             {82.0f, 92.0f}, {83.0f, 93.0f},
+                                             {84.0f, 94.0f}, {85.0f, 95.0f}};
+  static constexpr size_t kPointCount = pdfium::size(kInkStroke);
+
+  // InkStroke should get added to ink annotation. Also inklist should get
+  // created.
+  EXPECT_EQ(0,
+            FPDFAnnot_AddInkStroke(ink_annot.get(), kInkStroke, kPointCount));
+
+  CPDF_Array* inklist = annot_dict->GetArrayFor("InkList");
+  ASSERT_TRUE(inklist);
+  ASSERT_EQ(1u, inklist->size());
+  EXPECT_EQ(kPointCount * 2, inklist->GetArrayAt(0)->size());
+
+  // Remove inklist.
+  EXPECT_TRUE(FPDFAnnot_RemoveInkList(ink_annot.get()));
+  EXPECT_FALSE(annot_dict->KeyExist("InkList"));
+}
 
 TEST_F(FPDFAnnotEmbedderTest, BadParams) {
   ASSERT_TRUE(OpenDocument("hello_world.pdf"));
@@ -994,13 +1237,22 @@ TEST_F(FPDFAnnotEmbedderTest, ModifyAnnotationFlags) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+// TODO(crbug.com/pdfium/1541): Fix this test and enable.
+#if defined(_SKIA_SUPPORT_)
 #define MAYBE_AddAndModifyImage DISABLED_AddAndModifyImage
 #else
 #define MAYBE_AddAndModifyImage AddAndModifyImage
 #endif
 TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
+#if defined(_SKIA_SUPPORT_PATHS_)
+#if defined(OS_LINUX)
+  static const char kMd5NewImage[] = "26a8eb30937226a677839379e0d7ae1a";
+  static const char kMd5ModifiedImage[] = "2985114b32ba1a96be78ee643fe31aa5";
+#else
+  static const char kMd5NewImage[] = "14012ab500b4671fa73dd760129a8a93";
+  static const char kMd5ModifiedImage[] = "5f97f98f58ed04dc393f31460485f1a2";
+#endif  // defined(OS_LINUX)
+#else
 #if defined(OS_MACOSX)
   static const char kMd5NewImage[] = "dd18709d90c245a12ce0b8c4d092bea9";
   static const char kMd5ModifiedImage[] = "8d6f478ff8c7e67d49b253f1af587a99";
@@ -1011,6 +1263,7 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
   static const char kMd5NewImage[] = "528e6243dc29d54f36b61e0d3287d935";
   static const char kMd5ModifiedImage[] = "6d9e59f3e57a1ff82fb258356b7eb731";
 #endif
+#endif  // defined(_SKIA_SUPPORT_PATHS_)
 
   // Open a file with two annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
@@ -1082,23 +1335,27 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
   VerifySavedDocument(595, 842, kMd5ModifiedImage);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
+TEST_F(FPDFAnnotEmbedderTest, AddAndModifyText) {
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_AddAndModifyText DISABLED_AddAndModifyText
+#if defined(OS_LINUX)
+  static const char kMd5NewText[] = "c9d853a5fb6bca31e9696ccc4462c74a";
+  static const char kMd5ModifiedText[] = "bc681fa9174223983c5e4357e919d36c";
 #else
-#define MAYBE_AddAndModifyText AddAndModifyText
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyText) {
-#if defined(OS_MACOSX)
-  static const char kMd5NewText[] = "e657266260b88c964938efe6c9b292da";
-  static const char kMd5ModifiedText[] = "7accdf2bac64463101783221f53d3188";
-#elif defined(OS_WIN)
+  static const char kMd5NewText[] = "4aaa34e9df2e41d621dbd81b1d535c48";
+  static const char kMd5ModifiedText[] = "d6ea20beb7834ef4b6d370581ce425fc";
+#endif  // defined(OS_LINUX)
+#else
+#if defined(OS_WIN)
   static const char kMd5NewText[] = "204cc01749a70b8afc246a4ca33c7eb6";
   static const char kMd5ModifiedText[] = "641261a45e8dfd68c89b80bfd237660d";
+#elif defined(OS_MACOSX)
+  static const char kMd5NewText[] = "e657266260b88c964938efe6c9b292da";
+  static const char kMd5ModifiedText[] = "7accdf2bac64463101783221f53d3188";
 #else
   static const char kMd5NewText[] = "00197ad6206f763febad5719e5935306";
   static const char kMd5ModifiedText[] = "85853bc0aaa5a4e3af04e58b9cbfff23";
 #endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 
   // Open a file with two annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
@@ -2469,7 +2726,7 @@ TEST_F(FPDFAnnotEmbedderTest, GetFormFieldType) {
                                          FPDF_FORMFIELD_CHECKBOX,
                                          FPDF_FORMFIELD_RADIOBUTTON};
 
-  for (size_t i = 0; i < FX_ArraySize(kExpectedAnnotTypes); ++i) {
+  for (size_t i = 0; i < pdfium::size(kExpectedAnnotTypes); ++i) {
     ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, i));
     ASSERT_TRUE(annot);
     EXPECT_EQ(kExpectedAnnotTypes[i],
@@ -2641,9 +2898,9 @@ TEST_F(FPDFAnnotEmbedderTest, FocusableAnnotSubtypes) {
 
   // Test invalid parameters.
   EXPECT_FALSE(FPDFAnnot_SetFocusableSubtypes(nullptr, kDefaultSubtypes,
-                                              FX_ArraySize(kDefaultSubtypes)));
+                                              pdfium::size(kDefaultSubtypes)));
   EXPECT_FALSE(FPDFAnnot_SetFocusableSubtypes(form_handle(), nullptr,
-                                              FX_ArraySize(kDefaultSubtypes)));
+                                              pdfium::size(kDefaultSubtypes)));
   EXPECT_EQ(-1, FPDFAnnot_GetFocusableSubtypesCount(nullptr));
 
   std::vector<FPDF_ANNOTATION_SUBTYPE> subtypes(1);
@@ -2684,7 +2941,7 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_FocusableAnnotRendering) {
   // Make links and highlights focusable.
   static constexpr FPDF_ANNOTATION_SUBTYPE kSubTypes[] = {FPDF_ANNOT_LINK,
                                                           FPDF_ANNOT_HIGHLIGHT};
-  constexpr int kSubTypesCount = FX_ArraySize(kSubTypes);
+  constexpr int kSubTypesCount = pdfium::size(kSubTypes);
   ASSERT_TRUE(
       FPDFAnnot_SetFocusableSubtypes(form_handle(), kSubTypes, kSubTypesCount));
   ASSERT_EQ(kSubTypesCount, FPDFAnnot_GetFocusableSubtypesCount(form_handle()));
@@ -2750,7 +3007,7 @@ TEST_F(FPDFAnnotEmbedderTest, GetLinkFromAnnotation) {
     constexpr char kExpectedResult[] =
         "https://cs.chromium.org/chromium/src/third_party/pdfium/public/"
         "fpdf_text.h";
-    constexpr unsigned long kExpectedLength = FX_ArraySize(kExpectedResult);
+    constexpr unsigned long kExpectedLength = pdfium::size(kExpectedResult);
     unsigned long bufsize =
         FPDFAction_GetURIPath(document(), action, nullptr, 0);
     ASSERT_EQ(kExpectedLength, bufsize);
@@ -2769,6 +3026,187 @@ TEST_F(FPDFAnnotEmbedderTest, GetLinkFromAnnotation) {
   }
 
   EXPECT_FALSE(FPDFAnnot_GetLink(nullptr));
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormControlCountRadioButton) {
+  // Open a file with radio button widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Checks for bad annot.
+    EXPECT_EQ(-1,
+              FPDFAnnot_GetFormControlCount(form_handle(), /*annot=*/nullptr));
+
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 3));
+    ASSERT_TRUE(annot);
+
+    // Checks for bad form handle.
+    EXPECT_EQ(-1,
+              FPDFAnnot_GetFormControlCount(/*hHandle=*/nullptr, annot.get()));
+
+    EXPECT_EQ(3, FPDFAnnot_GetFormControlCount(form_handle(), annot.get()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormControlCountCheckBox) {
+  // Open a file with checkbox widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(1, FPDFAnnot_GetFormControlCount(form_handle(), annot.get()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormControlCountInvalidAnnotation) {
+  // Open a file with ink annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("annotation_ink_multiple.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(-1, FPDFAnnot_GetFormControlCount(form_handle(), annot.get()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormControlIndexRadioButton) {
+  // Open a file with radio button widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Checks for bad annot.
+    EXPECT_EQ(-1,
+              FPDFAnnot_GetFormControlIndex(form_handle(), /*annot=*/nullptr));
+
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 3));
+    ASSERT_TRUE(annot);
+
+    // Checks for bad form handle.
+    EXPECT_EQ(-1,
+              FPDFAnnot_GetFormControlIndex(/*hHandle=*/nullptr, annot.get()));
+
+    EXPECT_EQ(1, FPDFAnnot_GetFormControlIndex(form_handle(), annot.get()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormControlIndexCheckBox) {
+  // Open a file with checkbox widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(0, FPDFAnnot_GetFormControlIndex(form_handle(), annot.get()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormControlIndexInvalidAnnotation) {
+  // Open a file with ink annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("annotation_ink_multiple.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(-1, FPDFAnnot_GetFormControlIndex(form_handle(), annot.get()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormFieldExportValueRadioButton) {
+  // Open a file with radio button widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Checks for bad annot.
+    EXPECT_EQ(0u, FPDFAnnot_GetFormFieldExportValue(
+                      form_handle(), /*annot=*/nullptr,
+                      /*buffer=*/nullptr, /*buflen=*/0));
+
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 6));
+    ASSERT_TRUE(annot);
+
+    // Checks for bad form handle.
+    EXPECT_EQ(0u, FPDFAnnot_GetFormFieldExportValue(
+                      /*hHandle=*/nullptr, annot.get(),
+                      /*buffer=*/nullptr, /*buflen=*/0));
+
+    unsigned long length_bytes =
+        FPDFAnnot_GetFormFieldExportValue(form_handle(), annot.get(),
+                                          /*buffer=*/nullptr, /*buflen=*/0);
+    ASSERT_EQ(14u, length_bytes);
+    std::vector<FPDF_WCHAR> buf = GetFPDFWideStringBuffer(length_bytes);
+    EXPECT_EQ(14u, FPDFAnnot_GetFormFieldExportValue(form_handle(), annot.get(),
+                                                     buf.data(), length_bytes));
+    EXPECT_EQ(L"value2", GetPlatformWString(buf.data()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormFieldExportValueCheckBox) {
+  // Open a file with checkbox widget annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+
+    unsigned long length_bytes =
+        FPDFAnnot_GetFormFieldExportValue(form_handle(), annot.get(),
+                                          /*buffer=*/nullptr, /*buflen=*/0);
+    ASSERT_EQ(8u, length_bytes);
+    std::vector<FPDF_WCHAR> buf = GetFPDFWideStringBuffer(length_bytes);
+    EXPECT_EQ(8u, FPDFAnnot_GetFormFieldExportValue(form_handle(), annot.get(),
+                                                    buf.data(), length_bytes));
+    EXPECT_EQ(L"Yes", GetPlatformWString(buf.data()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, GetFormFieldExportValueInvalidAnnotation) {
+  // Open a file with ink annotations and load its first page.
+  ASSERT_TRUE(OpenDocument("annotation_ink_multiple.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(0u, FPDFAnnot_GetFormFieldExportValue(form_handle(), annot.get(),
+                                                    /*buffer=*/nullptr,
+                                                    /*buflen=*/0));
+  }
 
   UnloadPage(page);
 }

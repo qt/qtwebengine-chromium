@@ -283,8 +283,10 @@ struct Delta {
 };
 
 struct Cdef {
-  uint8_t damping;
+  uint8_t damping;  // damping value from the spec + (bitdepth - 8).
   uint8_t bits;
+  // All the strength values are the values from the spec and left shifted by
+  // (bitdepth - 8).
   uint8_t y_primary_strength[kMaxCdefStrengths];
   uint8_t y_secondary_strength[kMaxCdefStrengths];
   uint8_t uv_primary_strength[kMaxCdefStrengths];

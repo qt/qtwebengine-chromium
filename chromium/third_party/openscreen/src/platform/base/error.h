@@ -161,6 +161,7 @@ class Error {
     // Discovery errors.
     kUpdateReceivedRecordFailure,
     kRecordPublicationError,
+    kProcessReceivedRecordFailure,
 
     // Generic errors.
     kUnknownError,
@@ -340,6 +341,60 @@ class ErrorOr {
   // initialized and active.
   const bool is_value_;
 };
+
+// Define comparison operators using SFINAE.
+template <typename ValueType>
+bool operator<(const ErrorOr<ValueType>& lhs, const ErrorOr<ValueType>& rhs) {
+  // Handle the cases where one side is an error.
+  if (lhs.is_error() != rhs.is_error()) {
+    return lhs.is_error();
+  }
+
+  // Handle the case where both sides are errors.
+  if (lhs.is_error()) {
+    return static_cast<int8_t>(lhs.error().code()) <
+           static_cast<int8_t>(rhs.error().code());
+  }
+
+  // Handle the case where both are values.
+  return lhs.value() < rhs.value();
+}
+
+template <typename ValueType>
+bool operator>(const ErrorOr<ValueType>& lhs, const ErrorOr<ValueType>& rhs) {
+  return rhs < lhs;
+}
+
+template <typename ValueType>
+bool operator<=(const ErrorOr<ValueType>& lhs, const ErrorOr<ValueType>& rhs) {
+  return !(lhs > rhs);
+}
+
+template <typename ValueType>
+bool operator>=(const ErrorOr<ValueType>& lhs, const ErrorOr<ValueType>& rhs) {
+  return !(rhs < lhs);
+}
+
+template <typename ValueType>
+bool operator==(const ErrorOr<ValueType>& lhs, const ErrorOr<ValueType>& rhs) {
+  // Handle the cases where one side is an error.
+  if (lhs.is_error() != rhs.is_error()) {
+    return false;
+  }
+
+  // Handle the case where both sides are errors.
+  if (lhs.is_error()) {
+    return lhs.error() == rhs.error();
+  }
+
+  // Handle the case where both are values.
+  return lhs.value() == rhs.value();
+}
+
+template <typename ValueType>
+bool operator!=(const ErrorOr<ValueType>& lhs, const ErrorOr<ValueType>& rhs) {
+  return !(lhs == rhs);
+}
 
 }  // namespace openscreen
 

@@ -89,6 +89,7 @@ namespace scheduler_configuration {
 
 // Keys which should be given to SetSchedulerConfiguration.
 constexpr char kConservativeScheduler[] = "conservative";
+constexpr char kCoreIsolationScheduler[] = "core-scheduling";
 constexpr char kPerformanceScheduler[] = "performance";
 
 }  // namespace scheduler_configuration

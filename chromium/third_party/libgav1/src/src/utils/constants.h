@@ -27,11 +27,14 @@ namespace libgav1 {
 // Returns the number of elements between begin (inclusive) and end (inclusive).
 constexpr int EnumRangeLength(int begin, int end) { return end - begin + 1; }
 
-#if defined(ENABLE_DEBLOCK_BIT_MASK)
-constexpr bool kDeblockFilterBitMask = true;
+enum {
+// Maximum number of threads that the library will ever create.
+#if defined(LIBGAV1_MAX_THREADS) && LIBGAV1_MAX_THREADS > 0
+  kMaxThreads = LIBGAV1_MAX_THREADS
 #else
-constexpr bool kDeblockFilterBitMask = false;
-#endif  // defined(ENABLE_DEBLOCK_BIT_MASK)
+  kMaxThreads = 128
+#endif
+};  // anonymous enum
 
 enum {
   kInvalidMvValue = -32768,
@@ -44,7 +47,6 @@ enum {
   kFrameLfCount = 4,
   kMaxLoopFilterValue = 63,
   kNum4x4In64x64 = 256,
-  kNumLoopFilterMasks = 4,
   kMaxAngleDelta = 3,
   kDirectionalIntraModes = 8,
   kMaxSuperBlockSizeLog2 = 7,
@@ -97,24 +99,19 @@ enum {
   kMaxSuperBlockSizeInPixels = 128,
   kMaxScaledSuperBlockSizeInPixels = 128 * 2,
   kMaxSuperBlockSizeSquareInPixels = 128 * 128,
-  kNum4x4InLoopFilterMaskUnit = 16,
+  kNum4x4InLoopFilterUnit = 16,
   kProjectionMvClamp = (1 << 14) - 1,  // == 16383
   kProjectionMvMaxHorizontalOffset = 8,
+  kCdefUnitSize = 64,
+  kCdefUnitSizeWithBorders = kCdefUnitSize + 2 * kRestorationBorder,
   kRestorationUnitOffset = 8,
-  // 2 pixel padding for 5x5 box sum on each side.
-  kRestorationPadding = 4,
   // Loop restoration's processing unit size is fixed as 64x64.
-  kRestorationProcessingUnitSize = 64,
-  kRestorationProcessingUnitSizeWithBorders =
-      kRestorationProcessingUnitSize + 2 * kRestorationBorder,
-  // The max size of a box filter process output buffer.
-  kMaxBoxFilterProcessOutputPixels = kRestorationProcessingUnitSize *
-                                     kRestorationProcessingUnitSize,  // == 4096
-  // The max size of a box filter process intermediate buffer.
-  kBoxFilterProcessIntermediatePixels =
-      (kRestorationProcessingUnitSizeWithBorders + kRestorationPadding) *
-      (kRestorationProcessingUnitSizeWithBorders +
-       kRestorationPadding),  // == 5476
+  kRestorationUnitHeight = 64,
+  kRestorationUnitWidth = 256,
+  kRestorationUnitHeightWithBorders =
+      kRestorationUnitHeight + 2 * kRestorationBorder,
+  kRestorationUnitWidthWithBorders =
+      kRestorationUnitWidth + 2 * kRestorationBorder,
   kSuperResFilterBits = 6,
   kSuperResFilterShifts = 1 << kSuperResFilterBits,
   kSuperResFilterTaps = 8,
@@ -148,8 +145,6 @@ enum {
   kMaxFrameDistance = 31,
   kReferenceFrameScalePrecision = 14,
   kNumWienerCoefficients = 3,
-  // Maximum number of threads that the library will ever use at any given time.
-  kMaxThreads = 32,
   kLoopFilterMaxModeDeltas = 2,
   kMaxCdefStrengths = 8,
   kCdefLargeValue = 0x4000,  // Used to indicate where CDEF is not available.
@@ -510,14 +505,6 @@ enum ObuType : int8_t {
   kObuRedundantFrameHeader = 7,
   kObuTileList = 8,
   kObuPadding = 15,
-};
-
-// Enum to track the processing state of a superblock.
-enum SuperBlockState : uint8_t {
-  kSuperBlockStateNone,       // Not yet parsed or decoded.
-  kSuperBlockStateParsed,     // Parsed but not yet decoded.
-  kSuperBlockStateScheduled,  // Scheduled for decoding.
-  kSuperBlockStateDecoded     // Parsed and decoded.
 };
 
 //------------------------------------------------------------------------------

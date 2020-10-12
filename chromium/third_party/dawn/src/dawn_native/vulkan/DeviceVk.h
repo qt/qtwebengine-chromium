@@ -37,7 +37,6 @@ namespace dawn_native { namespace vulkan {
     class BindGroupLayout;
     class BufferUploader;
     class FencedDeleter;
-    class MapRequestTracker;
     class RenderPassCache;
     class ResourceMemoryAllocator;
 
@@ -59,7 +58,6 @@ namespace dawn_native { namespace vulkan {
 
         BufferUploader* GetBufferUploader() const;
         FencedDeleter* GetFencedDeleter() const;
-        MapRequestTracker* GetMapRequestTracker() const;
         RenderPassCache* GetRenderPassCache() const;
 
         CommandRecordingContext* GetPendingRecordingContext();
@@ -98,6 +96,10 @@ namespace dawn_native { namespace vulkan {
 
         ResourceMemoryAllocator* GetResourceMemoryAllocatorForTesting() const;
 
+        // Return the fixed subgroup size to use for compute shaders on this device or 0 if none
+        // needs to be set.
+        uint32_t GetComputeSubgroupSize() const;
+
       private:
         Device(Adapter* adapter, const DeviceDescriptor* descriptor);
 
@@ -110,6 +112,8 @@ namespace dawn_native { namespace vulkan {
             const ComputePipelineDescriptor* descriptor) override;
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
+        ResultOrError<QuerySetBase*> CreateQuerySetImpl(
+            const QuerySetDescriptor* descriptor) override;
         ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
             const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
@@ -130,6 +134,7 @@ namespace dawn_native { namespace vulkan {
         ResultOrError<VulkanDeviceKnobs> CreateDevice(VkPhysicalDevice physicalDevice);
         void GatherQueueFromDevice();
 
+        uint32_t FindComputeSubgroupSize() const;
         void InitTogglesFromDriver();
         void ApplyDepth24PlusS8Toggle();
 
@@ -144,10 +149,10 @@ namespace dawn_native { namespace vulkan {
         VkDevice mVkDevice = VK_NULL_HANDLE;
         uint32_t mQueueFamily = 0;
         VkQueue mQueue = VK_NULL_HANDLE;
+        uint32_t mComputeSubgroupSize = 0;
 
         SerialQueue<Ref<BindGroupLayout>> mBindGroupLayoutsPendingDeallocation;
         std::unique_ptr<FencedDeleter> mDeleter;
-        std::unique_ptr<MapRequestTracker> mMapRequestTracker;
         std::unique_ptr<ResourceMemoryAllocator> mResourceMemoryAllocator;
         std::unique_ptr<RenderPassCache> mRenderPassCache;
 

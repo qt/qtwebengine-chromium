@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 #include <array>
-#include <chrono>  // NOLINT
+#include <chrono>
 #include <vector>
 
 #include "absl/types/span.h"

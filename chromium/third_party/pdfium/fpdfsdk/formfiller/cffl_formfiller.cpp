@@ -14,7 +14,6 @@
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
 #include "fpdfsdk/cpdfsdk_widget.h"
-#include "third_party/base/ptr_util.h"
 
 CFFL_FormFiller::CFFL_FormFiller(CPDFSDK_FormFillEnvironment* pFormFillEnv,
                                  CPDFSDK_Widget* pWidget)
@@ -214,6 +213,14 @@ void CFFL_FormFiller::ReplaceSelection(const WideString& text) {
   pWnd->ReplaceSelection(text);
 }
 
+bool CFFL_FormFiller::SelectAllText() {
+  if (!IsValid())
+    return false;
+
+  CPWL_Wnd* pWnd = GetPWLWindow(GetCurPageView(), false);
+  return pWnd && pWnd->SelectAllText();
+}
+
 bool CFFL_FormFiller::CanUndo() {
   if (!IsValid())
     return false;
@@ -314,11 +321,11 @@ CPWL_Wnd::CreateParams CFFL_FormFiller::GetCreateParam() {
 
   cp.nBorderStyle = m_pWidget->GetBorderStyle();
   switch (cp.nBorderStyle) {
-    case BorderStyle::DASH:
+    case BorderStyle::kDash:
       cp.sDash = CPWL_Dash(3, 3, 0);
       break;
-    case BorderStyle::BEVELED:
-    case BorderStyle::INSET:
+    case BorderStyle::kBeveled:
+    case BorderStyle::kInset:
       cp.dwBorderWidth *= 2;
       break;
     default:
@@ -343,7 +350,7 @@ CPWL_Wnd* CFFL_FormFiller::GetPWLWindow(CPDFSDK_PageView* pPageView,
       return nullptr;
 
     CPWL_Wnd::CreateParams cp = GetCreateParam();
-    auto pPrivateData = pdfium::MakeUnique<CFFL_PrivateData>();
+    auto pPrivateData = std::make_unique<CFFL_PrivateData>();
     pPrivateData->pWidget.Reset(m_pWidget.Get());
     pPrivateData->pPageView = pPageView;
     pPrivateData->nWidgetAppearanceAge = m_pWidget->GetAppearanceAge();

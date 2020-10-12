@@ -32,6 +32,11 @@ if(NOT EMSCRIPTEN)
   endif()
 endif()
 
+# Updating version info.
+# https://www.gnu.org/software/libtool/manual/libtool.html#Updating-version-info
+set(SO_VERSION 2)
+set(SO_FILE_VERSION 2.0.0)
+
 include("${AOM_ROOT}/build/cmake/aom_configure.cmake")
 include("${AOM_ROOT}/aom_dsp/aom_dsp.cmake")
 include("${AOM_ROOT}/aom_mem/aom_mem.cmake")
@@ -240,10 +245,14 @@ if(BUILD_SHARED_LIBS)
       string(SUBSTRING "${aom_version_triple}" 0 ${dash_pos} aom_version_triple)
     endif()
 
-    # Note: CMake docs claim it's only necessary to set one of these, but that's
-    # not true for at least some CMake releases (3.13.4, for example).
-    set_target_properties(aom PROPERTIES SOVERSION ${aom_version_triple})
-    set_target_properties(aom PROPERTIES VERSION ${aom_version_triple})
+    # cmake-format: off
+    # VERSION is embedded in the .so file name.
+    # libaom.so -> libaom.so.SOVERSION
+    # libaom.so.SOVERSION -> libaom.so.VERSION
+    # libaom.so.VERSION
+    # cmake-format: on
+    set_target_properties(aom PROPERTIES SOVERSION ${SO_VERSION})
+    set_target_properties(aom PROPERTIES VERSION ${SO_FILE_VERSION})
   endif()
 endif()
 
@@ -615,20 +624,44 @@ endif()
 if(BUILD_SHARED_LIBS)
   include("${AOM_ROOT}/build/cmake/exports.cmake")
   setup_exports_target()
-  set_target_properties(aom PROPERTIES SOVERSION 0)
 endif()
 
 # Handle user supplied compile and link flags last to ensure they're obeyed.
 set_user_flags()
 
 # Aomedia documentation rule.
+set(DOXYGEN_VERSION_VALUE 0)
 if(ENABLE_DOCS)
   include(FindDoxygen)
+  if(DOXYGEN_FOUND)
+    # Check if Doxygen version is >= minimum required version(i.e. 1.8.10).
+    set(MINIMUM_DOXYGEN_VERSION 1008010)
+
+    if(DOXYGEN_VERSION)
+      string(REGEX REPLACE "\\." ";" DOXYGEN_VERSION_LIST ${DOXYGEN_VERSION})
+      list(GET DOXYGEN_VERSION_LIST 0 DOXYGEN_MAJOR)
+      list(GET DOXYGEN_VERSION_LIST 1 DOXYGEN_MINOR)
+      list(GET DOXYGEN_VERSION_LIST 2 DOXYGEN_PATCH)
+    endif()
+
+    # Construct a version value for comparison.
+    math(EXPR DOXYGEN_MAJOR "${DOXYGEN_MAJOR}*1000000")
+    math(EXPR DOXYGEN_MINOR "${DOXYGEN_MINOR}*1000")
+    math(EXPR DOXYGEN_VERSION_VALUE
+         "${DOXYGEN_MAJOR} + ${DOXYGEN_MINOR} + ${DOXYGEN_PATCH}")
+
+    if(${DOXYGEN_VERSION_VALUE} LESS ${MINIMUM_DOXYGEN_VERSION})
+      set(DOXYGEN_FOUND NO)
+    endif()
+  endif()
+
   if(DOXYGEN_FOUND)
     include("${AOM_ROOT}/docs.cmake")
     setup_documentation_targets()
   else()
-    message("--- Cannot find doxygen, ENABLE_DOCS turned off.")
+    message(
+      "--- Cannot find doxygen(version 1.8.10 or newer), ENABLE_DOCS turned off."
+      )
     set(ENABLE_DOCS OFF)
   endif()
 endif()

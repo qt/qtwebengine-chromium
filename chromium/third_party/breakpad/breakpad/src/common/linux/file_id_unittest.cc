@@ -261,7 +261,7 @@ TYPED_TEST(FileIDTest, BuildIDPH) {
   elf.AddSection(".text", text, SHT_PROGBITS);
   Notes notes(kLittleEndian);
   notes.AddNote(0, "Linux",
-                reinterpret_cast<const uint8_t *>("\0x42\0x02\0\0"), 4);
+                reinterpret_cast<const uint8_t*>("\0x42\0x02\0\0"), 4);
   notes.AddNote(NT_GNU_BUILD_ID, "GNU", kExpectedIdentifierBytes,
                 sizeof(kExpectedIdentifierBytes));
   int note_idx = elf.AddSection(".note", notes, SHT_NOTE);
@@ -292,7 +292,7 @@ TYPED_TEST(FileIDTest, BuildIDMultiplePH) {
   elf.AddSection(".text", text, SHT_PROGBITS);
   Notes notes1(kLittleEndian);
   notes1.AddNote(0, "Linux",
-                reinterpret_cast<const uint8_t *>("\0x42\0x02\0\0"), 4);
+                reinterpret_cast<const uint8_t*>("\0x42\0x02\0\0"), 4);
   Notes notes2(kLittleEndian);
   notes2.AddNote(NT_GNU_BUILD_ID, "GNU", kExpectedIdentifierBytes,
                  sizeof(kExpectedIdentifierBytes));

@@ -24,6 +24,7 @@
 #include "dawn_native/opengl/CommandBufferGL.h"
 #include "dawn_native/opengl/ComputePipelineGL.h"
 #include "dawn_native/opengl/PipelineLayoutGL.h"
+#include "dawn_native/opengl/QuerySetGL.h"
 #include "dawn_native/opengl/QueueGL.h"
 #include "dawn_native/opengl/RenderPipelineGL.h"
 #include "dawn_native/opengl/SamplerGL.h"
@@ -94,6 +95,7 @@ namespace dawn_native { namespace opengl {
 
     ResultOrError<BindGroupBase*> Device::CreateBindGroupImpl(
         const BindGroupDescriptor* descriptor) {
+        DAWN_TRY(ValidateGLBindGroupDescriptor(descriptor));
         return BindGroup::Create(this, descriptor);
     }
     ResultOrError<BindGroupLayoutBase*> Device::CreateBindGroupLayoutImpl(
@@ -114,6 +116,9 @@ namespace dawn_native { namespace opengl {
     ResultOrError<PipelineLayoutBase*> Device::CreatePipelineLayoutImpl(
         const PipelineLayoutDescriptor* descriptor) {
         return new PipelineLayout(this, descriptor);
+    }
+    ResultOrError<QuerySetBase*> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
+        return new QuerySet(this, descriptor);
     }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
@@ -152,7 +157,6 @@ namespace dawn_native { namespace opengl {
     }
 
     MaybeError Device::TickImpl() {
-        CheckPassedSerials();
         return {};
     }
 
@@ -194,21 +198,13 @@ namespace dawn_native { namespace opengl {
 
     void Device::ShutDownImpl() {
         ASSERT(GetState() == State::Disconnected);
-
-        // Some operations might have been started since the last submit and waiting
-        // on a serial that doesn't have a corresponding fence enqueued. Force all
-        // operations to look as if they were completed (because they were).
-        AssumeCommandsComplete();
     }
 
     MaybeError Device::WaitForIdleForDestruction() {
         gl.Finish();
         CheckPassedSerials();
         ASSERT(mFencesInFlight.empty());
-        Tick();
 
-        // Force all operations to look as if they were completed
-        AssumeCommandsComplete();
         return {};
     }
 

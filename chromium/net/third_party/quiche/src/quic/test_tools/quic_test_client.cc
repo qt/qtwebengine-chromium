@@ -210,6 +210,22 @@ MockableQuicClient::MockableQuicClient(
     const ParsedQuicVersionVector& supported_versions,
     QuicEpollServer* epoll_server,
     std::unique_ptr<ProofVerifier> proof_verifier)
+    : MockableQuicClient(server_address,
+                         server_id,
+                         config,
+                         supported_versions,
+                         epoll_server,
+                         std::move(proof_verifier),
+                         nullptr) {}
+
+MockableQuicClient::MockableQuicClient(
+    QuicSocketAddress server_address,
+    const QuicServerId& server_id,
+    const QuicConfig& config,
+    const ParsedQuicVersionVector& supported_versions,
+    QuicEpollServer* epoll_server,
+    std::unique_ptr<ProofVerifier> proof_verifier,
+    std::unique_ptr<SessionCache> session_cache)
     : QuicClient(
           server_address,
           server_id,
@@ -218,8 +234,8 @@ MockableQuicClient::MockableQuicClient(
           epoll_server,
           std::make_unique<MockableQuicClientEpollNetworkHelper>(epoll_server,
                                                                  this),
-          QuicWrapUnique(
-              new RecordingProofVerifier(std::move(proof_verifier)))),
+          QuicWrapUnique(new RecordingProofVerifier(std::move(proof_verifier))),
+          std::move(session_cache)),
       override_server_connection_id_(EmptyQuicConnectionId()),
       server_connection_id_overridden_(false),
       override_client_connection_id_(EmptyQuicConnectionId()),
@@ -342,6 +358,24 @@ QuicTestClient::QuicTestClient(
   Initialize();
 }
 
+QuicTestClient::QuicTestClient(
+    QuicSocketAddress server_address,
+    const std::string& server_hostname,
+    const QuicConfig& config,
+    const ParsedQuicVersionVector& supported_versions,
+    std::unique_ptr<ProofVerifier> proof_verifier,
+    std::unique_ptr<SessionCache> session_cache)
+    : client_(new MockableQuicClient(
+          server_address,
+          QuicServerId(server_hostname, server_address.port(), false),
+          config,
+          supported_versions,
+          &epoll_server_,
+          std::move(proof_verifier),
+          std::move(session_cache))) {
+  Initialize();
+}
+
 QuicTestClient::QuicTestClient() = default;
 
 QuicTestClient::~QuicTestClient() {
@@ -390,13 +424,8 @@ ssize_t QuicTestClient::SendRequestAndRstTogether(const std::string& uri) {
   QuicStreamId stream_id = GetNthClientInitiatedBidirectionalStreamId(
       session->transport_version(), 0);
   QuicStream* stream = session->GetOrCreateStream(stream_id);
-  if (session->break_close_loop()) {
-    session->ResetStream(stream_id, QUIC_STREAM_CANCELLED,
-                         stream->stream_bytes_written());
-  } else {
-    session->SendRstStream(stream_id, QUIC_STREAM_CANCELLED,
-                           stream->stream_bytes_written());
-  }
+  session->ResetStream(stream_id, QUIC_STREAM_CANCELLED,
+                       stream->stream_bytes_written());
   return ret;
 }
 
@@ -962,7 +991,7 @@ void QuicTestClient::WaitForDelayedAcks() {
   const QuicClock* clock = client()->client_session()->connection()->clock();
 
   QuicTime wait_until = clock->ApproximateNow() + kWaitDuration;
-  while (clock->ApproximateNow() < wait_until) {
+  while (connected() && clock->ApproximateNow() < wait_until) {
     // This waits for up to 50 ms.
     client()->WaitForEvents();
   }

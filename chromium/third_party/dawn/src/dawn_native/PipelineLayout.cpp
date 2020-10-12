@@ -25,7 +25,9 @@ namespace dawn_native {
 
     namespace {
 
-        bool operator==(const BindGroupLayoutEntry& lhs, const BindGroupLayoutEntry& rhs) {
+        bool InferredBindGroupLayoutEntriesCompatible(const BindGroupLayoutEntry& lhs,
+                                                      const BindGroupLayoutEntry& rhs) {
+            // Minimum buffer binding size excluded because we take the maximum seen across stages
             return lhs.binding == rhs.binding && lhs.visibility == rhs.visibility &&
                    lhs.type == rhs.type && lhs.hasDynamicOffset == rhs.hasDynamicOffset &&
                    lhs.multisampled == rhs.multisampled && lhs.viewDimension == rhs.viewDimension &&
@@ -95,8 +97,9 @@ namespace dawn_native {
                                            const PipelineLayoutDescriptor* descriptor)
         : CachedObject(device) {
         ASSERT(descriptor->bindGroupLayoutCount <= kMaxBindGroups);
-        for (uint32_t group = 0; group < descriptor->bindGroupLayoutCount; ++group) {
-            mBindGroupLayouts[group] = descriptor->bindGroupLayouts[group];
+        for (BindGroupIndex group(0); group < BindGroupIndex(descriptor->bindGroupLayoutCount);
+             ++group) {
+            mBindGroupLayouts[group] = descriptor->bindGroupLayouts[static_cast<uint32_t>(group)];
             mMask.set(group);
         }
     }
@@ -125,36 +128,42 @@ namespace dawn_native {
         ASSERT(count > 0);
 
         // Data which BindGroupLayoutDescriptor will point to for creation
-        std::array<std::array<BindGroupLayoutEntry, kMaxBindingsPerGroup>, kMaxBindGroups>
+        ityp::array<BindGroupIndex,
+                    ityp::array<BindingIndex, BindGroupLayoutEntry, kMaxBindingsPerGroup>,
+                    kMaxBindGroups>
             entryData = {};
 
         // A map of bindings to the index in |entryData|
-        std::array<std::map<BindingNumber, BindingIndex>, kMaxBindGroups> usedBindingsMap = {};
+        ityp::array<BindGroupIndex, std::map<BindingNumber, BindingIndex>, kMaxBindGroups>
+            usedBindingsMap = {};
 
         // A counter of how many bindings we've populated in |entryData|
-        std::array<uint32_t, kMaxBindGroups> entryCounts = {};
+        ityp::array<BindGroupIndex, BindingIndex, kMaxBindGroups> entryCounts = {};
 
-        uint32_t bindGroupLayoutCount = 0;
+        BindGroupIndex bindGroupLayoutCount(0);
         for (uint32_t moduleIndex = 0; moduleIndex < count; ++moduleIndex) {
             const ShaderModuleBase* module = modules[moduleIndex];
             const ShaderModuleBase::ModuleBindingInfo& info = module->GetBindingInfo();
 
-            for (uint32_t group = 0; group < info.size(); ++group) {
+            for (BindGroupIndex group(0); group < info.size(); ++group) {
                 for (const auto& it : info[group]) {
                     BindingNumber bindingNumber = it.first;
                     const ShaderModuleBase::ShaderBindingInfo& bindingInfo = it.second;
 
-                    if (bindingInfo.multisampled) {
-                        return DAWN_VALIDATION_ERROR("Multisampled textures not supported (yet)");
-                    }
-
                     BindGroupLayoutEntry bindingSlot;
-                    bindingSlot.binding = bindingNumber;
+                    bindingSlot.binding = static_cast<uint32_t>(bindingNumber);
 
                     DAWN_TRY(ValidateBindingTypeWithShaderStageVisibility(
                         bindingInfo.type, StageBit(module->GetExecutionModel())));
                     DAWN_TRY(ValidateStorageTextureFormat(device, bindingInfo.type,
                                                           bindingInfo.storageTextureFormat));
+                    DAWN_TRY(ValidateStorageTextureViewDimension(bindingInfo.type,
+                                                                 bindingInfo.viewDimension));
+
+                    if (bindingInfo.multisampled) {
+                        DAWN_TRY(ValidateBindingCanBeMultisampled(bindingInfo.type,
+                                                                  bindingInfo.viewDimension));
+                    }
 
                     bindingSlot.visibility =
                         GetShaderStageVisibilityWithBindingType(bindingInfo.type);
@@ -166,38 +175,50 @@ namespace dawn_native {
                     bindingSlot.textureComponentType =
                         Format::FormatTypeToTextureComponentType(bindingInfo.textureComponentType);
                     bindingSlot.storageTextureFormat = bindingInfo.storageTextureFormat;
+                    bindingSlot.minBufferBindingSize = bindingInfo.minBufferBindingSize;
 
                     {
                         const auto& it = usedBindingsMap[group].find(bindingNumber);
                         if (it != usedBindingsMap[group].end()) {
-                            if (bindingSlot == entryData[group][it->second]) {
-                                // Already used and the data is the same. Continue.
-                                continue;
-                            } else {
+                            BindGroupLayoutEntry* existingEntry = &entryData[group][it->second];
+
+                            // Check if any properties are incompatible with existing entry
+                            // If compatible, we will merge some properties
+                            if (!InferredBindGroupLayoutEntriesCompatible(*existingEntry,
+                                                                          bindingSlot)) {
                                 return DAWN_VALIDATION_ERROR(
                                     "Duplicate binding in default pipeline layout initialization "
                                     "not compatible with previous declaration");
                             }
+
+                            // Use the max |minBufferBindingSize| we find
+                            existingEntry->minBufferBindingSize =
+                                std::max(existingEntry->minBufferBindingSize,
+                                         bindingSlot.minBufferBindingSize);
+
+                            // Already used slot, continue
+                            continue;
                         }
                     }
 
-                    uint32_t currentBindingCount = entryCounts[group];
+                    BindingIndex currentBindingCount = entryCounts[group];
                     entryData[group][currentBindingCount] = bindingSlot;
 
                     usedBindingsMap[group][bindingNumber] = currentBindingCount;
 
                     entryCounts[group]++;
 
-                    bindGroupLayoutCount = std::max(bindGroupLayoutCount, group + 1);
+                    bindGroupLayoutCount =
+                        std::max(bindGroupLayoutCount, group + BindGroupIndex(1));
                 }
             }
         }
 
-        std::array<BindGroupLayoutBase*, kMaxBindGroups> bindGroupLayouts = {};
-        for (uint32_t group = 0; group < bindGroupLayoutCount; ++group) {
+        ityp::array<BindGroupIndex, BindGroupLayoutBase*, kMaxBindGroups> bindGroupLayouts = {};
+        for (BindGroupIndex group(0); group < bindGroupLayoutCount; ++group) {
             BindGroupLayoutDescriptor desc = {};
             desc.entries = entryData[group].data();
-            desc.entryCount = entryCounts[group];
+            desc.entryCount = static_cast<uint32_t>(entryCounts[group]);
 
             // We should never produce a bad descriptor.
             ASSERT(!ValidateBindGroupLayoutDescriptor(device, &desc).IsError());
@@ -206,69 +227,71 @@ namespace dawn_native {
 
         PipelineLayoutDescriptor desc = {};
         desc.bindGroupLayouts = bindGroupLayouts.data();
-        desc.bindGroupLayoutCount = bindGroupLayoutCount;
+        desc.bindGroupLayoutCount = static_cast<uint32_t>(bindGroupLayoutCount);
         PipelineLayoutBase* pipelineLayout = device->CreatePipelineLayout(&desc);
         ASSERT(!pipelineLayout->IsError());
 
         // These bind group layouts are created internally and referenced by the pipeline layout.
         // Release the external refcount.
-        for (uint32_t group = 0; group < bindGroupLayoutCount; ++group) {
+        for (BindGroupIndex group(0); group < bindGroupLayoutCount; ++group) {
             if (bindGroupLayouts[group] != nullptr) {
                 bindGroupLayouts[group]->Release();
             }
         }
 
         for (uint32_t moduleIndex = 0; moduleIndex < count; ++moduleIndex) {
-            ASSERT(modules[moduleIndex]->IsCompatibleWithPipelineLayout(pipelineLayout));
+            ASSERT(modules[moduleIndex]
+                       ->ValidateCompatibilityWithPipelineLayout(pipelineLayout)
+                       .IsSuccess());
         }
 
         return pipelineLayout;
     }
 
-    const BindGroupLayoutBase* PipelineLayoutBase::GetBindGroupLayout(uint32_t group) const {
+    const BindGroupLayoutBase* PipelineLayoutBase::GetBindGroupLayout(BindGroupIndex group) const {
         ASSERT(!IsError());
-        ASSERT(group < kMaxBindGroups);
+        ASSERT(group < kMaxBindGroupsTyped);
         ASSERT(mMask[group]);
         const BindGroupLayoutBase* bgl = mBindGroupLayouts[group].Get();
         ASSERT(bgl != nullptr);
         return bgl;
     }
 
-    BindGroupLayoutBase* PipelineLayoutBase::GetBindGroupLayout(uint32_t group) {
+    BindGroupLayoutBase* PipelineLayoutBase::GetBindGroupLayout(BindGroupIndex group) {
         ASSERT(!IsError());
-        ASSERT(group < kMaxBindGroups);
+        ASSERT(group < kMaxBindGroupsTyped);
         ASSERT(mMask[group]);
         BindGroupLayoutBase* bgl = mBindGroupLayouts[group].Get();
         ASSERT(bgl != nullptr);
         return bgl;
     }
 
-    const std::bitset<kMaxBindGroups> PipelineLayoutBase::GetBindGroupLayoutsMask() const {
+    const BindGroupLayoutMask& PipelineLayoutBase::GetBindGroupLayoutsMask() const {
         ASSERT(!IsError());
         return mMask;
     }
 
-    std::bitset<kMaxBindGroups> PipelineLayoutBase::InheritedGroupsMask(
+    BindGroupLayoutMask PipelineLayoutBase::InheritedGroupsMask(
         const PipelineLayoutBase* other) const {
         ASSERT(!IsError());
-        return {(1 << GroupsInheritUpTo(other)) - 1u};
+        return {(1 << static_cast<uint32_t>(GroupsInheritUpTo(other))) - 1u};
     }
 
-    uint32_t PipelineLayoutBase::GroupsInheritUpTo(const PipelineLayoutBase* other) const {
+    BindGroupIndex PipelineLayoutBase::GroupsInheritUpTo(const PipelineLayoutBase* other) const {
         ASSERT(!IsError());
 
-        for (uint32_t i = 0; i < kMaxBindGroups; ++i) {
+        for (BindGroupIndex i(0); i < kMaxBindGroupsTyped; ++i) {
             if (!mMask[i] || mBindGroupLayouts[i].Get() != other->mBindGroupLayouts[i].Get()) {
                 return i;
             }
         }
-        return kMaxBindGroups;
+        return kMaxBindGroupsTyped;
     }
 
     size_t PipelineLayoutBase::HashFunc::operator()(const PipelineLayoutBase* pl) const {
         size_t hash = Hash(pl->mMask);
 
-        for (uint32_t group : IterateBitSet(pl->mMask)) {
+        for (BindGroupIndex group : IterateBitSet(pl->mMask)) {
             HashCombine(&hash, pl->GetBindGroupLayout(group));
         }
 
@@ -281,7 +304,7 @@ namespace dawn_native {
             return false;
         }
 
-        for (uint32_t group : IterateBitSet(a->mMask)) {
+        for (BindGroupIndex group : IterateBitSet(a->mMask)) {
             if (a->GetBindGroupLayout(group) != b->GetBindGroupLayout(group)) {
                 return false;
             }

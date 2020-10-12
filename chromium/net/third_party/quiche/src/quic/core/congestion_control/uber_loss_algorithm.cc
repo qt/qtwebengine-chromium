@@ -54,6 +54,10 @@ LossDetectionInterface::DetectionStats UberLossAlgorithm::DetectLosses(
     overall_stats.sent_packets_max_sequence_reordering =
         std::max(overall_stats.sent_packets_max_sequence_reordering,
                  stats.sent_packets_max_sequence_reordering);
+    overall_stats.sent_packets_num_borderline_time_reorderings +=
+        stats.sent_packets_num_borderline_time_reorderings;
+    overall_stats.total_loss_detection_response_time +=
+        stats.total_loss_detection_response_time;
   }
 
   return overall_stats;
@@ -96,17 +100,38 @@ void UberLossAlgorithm::SetLossDetectionTuner(
 }
 
 void UberLossAlgorithm::MaybeStartTuning() {
-  if (tuner_started_ || !tuning_enabled_ || !min_rtt_available_) {
+  if (tuner_started_ || !tuning_enabled_ || !min_rtt_available_ ||
+      !user_agent_known_) {
     return;
   }
 
   tuner_started_ = tuner_->Start(&tuned_parameters_);
+  if (!tuner_started_) {
+    return;
+  }
+
+  if (tuned_parameters_.reordering_shift.has_value() &&
+      tuned_parameters_.reordering_threshold.has_value()) {
+    QUIC_DLOG(INFO) << "Setting reordering shift to "
+                    << *tuned_parameters_.reordering_shift
+                    << ", and reordering threshold to "
+                    << *tuned_parameters_.reordering_threshold;
+    SetReorderingShift(*tuned_parameters_.reordering_shift);
+    SetReorderingThreshold(*tuned_parameters_.reordering_threshold);
+  } else {
+    QUIC_BUG << "Tuner started but some parameters are missing";
+  }
 }
 
 void UberLossAlgorithm::OnConfigNegotiated() {}
 
 void UberLossAlgorithm::OnMinRttAvailable() {
   min_rtt_available_ = true;
+  MaybeStartTuning();
+}
+
+void UberLossAlgorithm::OnUserAgentIdKnown() {
+  user_agent_known_ = true;
   MaybeStartTuning();
 }
 
@@ -149,6 +174,10 @@ void UberLossAlgorithm::EnableAdaptiveTimeThreshold() {
 
 QuicPacketCount UberLossAlgorithm::GetPacketReorderingThreshold() const {
   return general_loss_algorithms_[APPLICATION_DATA].reordering_threshold();
+}
+
+int UberLossAlgorithm::GetPacketReorderingShift() const {
+  return general_loss_algorithms_[APPLICATION_DATA].reordering_shift();
 }
 
 void UberLossAlgorithm::DisablePacketThresholdForRuntPackets() {

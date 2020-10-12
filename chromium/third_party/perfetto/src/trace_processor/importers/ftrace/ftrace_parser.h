@@ -19,7 +19,6 @@
 
 #include "perfetto/trace_processor/status.h"
 #include "src/trace_processor/importers/common/event_tracker.h"
-#include "src/trace_processor/importers/ftrace/binder_tracker.h"
 #include "src/trace_processor/importers/ftrace/ftrace_descriptors.h"
 #include "src/trace_processor/importers/ftrace/rss_stat_tracker.h"
 #include "src/trace_processor/importers/ftrace/sched_event_tracker.h"
@@ -95,7 +94,33 @@ class FtraceParser {
   void ParseBinderUnlock(int64_t timestamp,
                          uint32_t pid,
                          protozero::ConstBytes);
-
+  void ParseClockSetRate(int64_t timestamp, protozero::ConstBytes);
+  void ParseClockEnable(int64_t timestamp, protozero::ConstBytes);
+  void ParseClockDisable(int64_t timestamp, protozero::ConstBytes);
+  void ClockRate(int64_t timestamp,
+                 base::StringView clock_name,
+                 base::StringView subtitle,
+                 uint64_t rate);
+  void ParseScmCallStart(int64_t timestamp,
+                         uint32_t pid,
+                         protozero::ConstBytes);
+  void ParseScmCallEnd(int64_t timestamp, uint32_t pid, protozero::ConstBytes);
+  void ParseWorkqueueExecuteStart(int64_t timestamp,
+                                  uint32_t pid,
+                                  protozero::ConstBytes);
+  void ParseWorkqueueExecuteEnd(int64_t timestamp,
+                                uint32_t pid,
+                                protozero::ConstBytes);
+  void ParseIrqHandlerEntry(uint32_t cpu,
+                            int64_t timestamp,
+                            protozero::ConstBytes);
+  void ParseIrqHandlerExit(uint32_t cpu,
+                           int64_t timestamp,
+                           protozero::ConstBytes);
+  void ParseSoftIrqEntry(uint32_t cpu,
+                         int64_t timestamp,
+                         protozero::ConstBytes);
+  void ParseSoftIrqExit(uint32_t cpu, int64_t timestamp, protozero::ConstBytes);
   TraceProcessorContext* context_;
   RssStatTracker rss_stat_tracker_;
 
@@ -115,6 +140,10 @@ class FtraceParser {
   const StringId comm_name_id_;
   const StringId signal_name_id_;
   const StringId oom_kill_id_;
+  const StringId workqueue_id_;
+  const StringId irq_id_;
+  const StringId ret_arg_id_;
+  const StringId vec_arg_id_;
 
   struct FtraceMessageStrings {
     // The string id of name of the event field (e.g. sched_switch's id).

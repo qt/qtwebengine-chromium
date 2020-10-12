@@ -7,6 +7,7 @@
 
 #include "net/third_party/quiche/src/quic/core/congestion_control/general_loss_algorithm.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
 
 namespace quic {
@@ -72,6 +73,7 @@ class QUIC_EXPORT_PRIVATE UberLossAlgorithm : public LossDetectionInterface {
       std::unique_ptr<LossDetectionTunerInterface> tuner);
   void OnConfigNegotiated() override;
   void OnMinRttAvailable() override;
+  void OnUserAgentIdKnown() override;
   void OnConnectionClosed() override;
 
   // Sets reordering_shift for all packet number spaces.
@@ -93,11 +95,24 @@ class QUIC_EXPORT_PRIVATE UberLossAlgorithm : public LossDetectionInterface {
   // Always 3 when adaptive reordering is not enabled.
   QuicPacketCount GetPacketReorderingThreshold() const;
 
+  // Get the packet reordering shift from the APPLICATION_DATA PN space.
+  int GetPacketReorderingShift() const;
+
   // Disable packet threshold loss detection for *runt* packets.
   void DisablePacketThresholdForRuntPackets();
 
   // Called to reset loss detection of |space|.
   void ResetLossDetection(PacketNumberSpace space);
+
+  bool use_adaptive_reordering_threshold() const {
+    return general_loss_algorithms_[APPLICATION_DATA]
+        .use_adaptive_reordering_threshold();
+  }
+
+  bool use_adaptive_time_threshold() const {
+    return general_loss_algorithms_[APPLICATION_DATA]
+        .use_adaptive_time_threshold();
+  }
 
  private:
   friend class test::QuicSentPacketManagerPeer;
@@ -112,6 +127,10 @@ class QUIC_EXPORT_PRIVATE UberLossAlgorithm : public LossDetectionInterface {
   LossDetectionParameters tuned_parameters_;
   bool tuner_started_ = false;
   bool min_rtt_available_ = false;
+  // If flag is false, set |user_agent_known_| to true, so loss detection tuner
+  // will start once SetFromConfig is called and min rtt is available.
+  bool user_agent_known_ =
+      !GetQuicReloadableFlag(quic_save_user_agent_in_quic_session);
   bool tuning_enabled_ = false;  // Whether tuning is enabled by config.
 };
 

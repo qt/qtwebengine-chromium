@@ -45,15 +45,15 @@ struct RestorationUnitInfo : public MaxAlignedAllocable {
   WienerInfo wiener_info;
 };
 
-struct RestorationBuffer {
+union RestorationBuffer {
   // For self-guided filter.
-  int* box_filter_process_output[2];
-  ptrdiff_t box_filter_process_output_stride;
-  uint32_t* box_filter_process_intermediate[2];
-  ptrdiff_t box_filter_process_intermediate_stride;
+  alignas(kMaxAlignment) uint16_t sgf_buffer[12 * (kRestorationUnitHeight + 2)];
   // For wiener filter.
-  uint16_t* wiener_buffer;
-  ptrdiff_t wiener_buffer_stride;
+  // The array |intermediate| in Section 7.17.4, the intermediate results
+  // between the horizontal and vertical filters.
+  alignas(kMaxAlignment) uint16_t
+      wiener_buffer[(kRestorationUnitHeight + kSubPixelTaps - 1) *
+                    kRestorationUnitWidth];
 };
 
 }  // namespace libgav1

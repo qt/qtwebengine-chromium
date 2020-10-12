@@ -16,14 +16,12 @@ void GrD3DTextureResource::setResourceState(const GrD3DGpu* gpu,
         return;
     }
 
-    SkAutoTMalloc<D3D12_RESOURCE_TRANSITION_BARRIER> barriers(fInfo.fLevelCount);
-    for (uint32_t mipLevel = 0; mipLevel < fInfo.fLevelCount; ++mipLevel) {
-        barriers[mipLevel].pResource = this->d3dResource();
-        barriers[mipLevel].Subresource = mipLevel;
-        barriers[mipLevel].StateBefore = currentResourceState;
-        barriers[mipLevel].StateAfter = newResourceState;
-    }
-    gpu->addResourceBarriers(this->resource(), fInfo.fLevelCount, barriers.get());
+    D3D12_RESOURCE_TRANSITION_BARRIER barrier;
+    barrier.pResource = this->d3dResource();
+    barrier.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.StateBefore = currentResourceState;
+    barrier.StateAfter = newResourceState;
+    gpu->addResourceBarriers(this->resource(), 1, &barrier);
 
     this->updateResourceState(newResourceState);
 }
@@ -76,6 +74,10 @@ bool GrD3DTextureResource::InitTextureResourceInfo(GrD3DGpu* gpu, const D3D12_RE
 GrD3DTextureResource::~GrD3DTextureResource() {
     // Should have been reset() before
     SkASSERT(!fResource);
+}
+
+void GrD3DTextureResource::prepareForPresent(GrD3DGpu* gpu) {
+    this->setResourceState(gpu, D3D12_RESOURCE_STATE_PRESENT);
 }
 
 void GrD3DTextureResource::releaseResource(GrD3DGpu* gpu) {

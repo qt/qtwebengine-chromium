@@ -19,9 +19,8 @@
 #ifndef AFMODULE_H_
 #define AFMODULE_H_
 
-#include <ft2build.h>
-#include FT_INTERNAL_OBJECTS_H
-#include FT_MODULE_H
+#include <freetype/internal/ftobjs.h>
+#include <freetype/ftmodapi.h>
 
 
 FT_BEGIN_HEADER

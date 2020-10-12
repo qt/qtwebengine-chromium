@@ -1322,6 +1322,17 @@ public:
         this->transform(matrix, this, pc);
     }
 
+    SkPath makeTransform(const SkMatrix& m,
+                         SkApplyPerspectiveClip pc = SkApplyPerspectiveClip::kYes) const {
+        SkPath dst;
+        this->transform(m, &dst, pc);
+        return dst;
+    }
+
+    SkPath makeScale(SkScalar sx, SkScalar sy) {
+        return this->makeTransform(SkMatrix::Scale(sx, sy), SkApplyPerspectiveClip::kNo);
+    }
+
     /** Returns last point on SkPath in lastPt. Returns false if SkPoint array is empty,
         storing (0, 0) if lastPt is not nullptr.
 
@@ -1748,6 +1759,8 @@ public:
     bool isValid() const { return this->isValidImpl() && fPathRef->isValid(); }
 
 private:
+    SkPath(sk_sp<SkPathRef>, SkPathFillType, bool isVolatile);
+
     sk_sp<SkPathRef>               fPathRef;
     int                            fLastMoveToIndex;
     mutable std::atomic<uint8_t>   fConvexity;      // SkPathConvexityType
@@ -1832,6 +1845,7 @@ private:
     friend class SkAutoPathBoundsUpdate;
     friend class SkAutoDisableOvalCheck;
     friend class SkAutoDisableDirectionCheck;
+    friend class SkPathBuilder;
     friend class SkPathEdgeIter;
     friend class SkPathWriter;
     friend class SkOpBuilder;

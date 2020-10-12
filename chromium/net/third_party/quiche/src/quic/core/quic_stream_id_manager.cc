@@ -55,6 +55,14 @@ bool QuicStreamIdManager::OnStreamsBlockedFrame(
         " exceeds incoming max stream ", incoming_advertised_max_streams_);
     return false;
   }
+  if (GetQuicReloadableFlag(quic_stop_sending_duplicate_max_streams)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_stop_sending_duplicate_max_streams);
+    DCHECK_LE(incoming_advertised_max_streams_, incoming_actual_max_streams_);
+    if (incoming_advertised_max_streams_ == incoming_actual_max_streams_) {
+      // We have told peer about current max.
+      return true;
+    }
+  }
   if (frame.stream_count < incoming_actual_max_streams_) {
     // Peer thinks it's blocked on a stream count that is less than our current
     // max. Inform the peer of the correct stream count.
@@ -104,12 +112,17 @@ void QuicStreamIdManager::MaybeSendMaxStreamsFrame() {
 }
 
 void QuicStreamIdManager::SendMaxStreamsFrame() {
+  if (GetQuicReloadableFlag(quic_stop_sending_duplicate_max_streams)) {
+    QUIC_BUG_IF(incoming_advertised_max_streams_ >=
+                incoming_actual_max_streams_);
+  }
   incoming_advertised_max_streams_ = incoming_actual_max_streams_;
   delegate_->SendMaxStreams(incoming_advertised_max_streams_, unidirectional_);
 }
 
 void QuicStreamIdManager::OnStreamClosed(QuicStreamId stream_id) {
-  DCHECK_NE(QuicUtils::IsBidirectionalStreamId(stream_id), unidirectional_);
+  DCHECK_NE(QuicUtils::IsBidirectionalStreamId(stream_id, version_),
+            unidirectional_);
   if (QuicUtils::IsOutgoingStreamId(version_, stream_id, perspective_)) {
     // Nothing to do for outgoing streams.
     return;
@@ -147,7 +160,8 @@ bool QuicStreamIdManager::MaybeIncreaseLargestPeerStreamId(
     const QuicStreamId stream_id,
     std::string* error_details) {
   // |stream_id| must be an incoming stream of the right directionality.
-  DCHECK_NE(QuicUtils::IsBidirectionalStreamId(stream_id), unidirectional_);
+  DCHECK_NE(QuicUtils::IsBidirectionalStreamId(stream_id, version_),
+            unidirectional_);
   DCHECK_NE(QuicUtils::IsServerInitiatedStreamId(version_.transport_version,
                                                  stream_id),
             perspective_ == Perspective::IS_SERVER);
@@ -193,7 +207,7 @@ bool QuicStreamIdManager::MaybeIncreaseLargestPeerStreamId(
 }
 
 bool QuicStreamIdManager::IsAvailableStream(QuicStreamId id) const {
-  DCHECK_NE(QuicUtils::IsBidirectionalStreamId(id), unidirectional_);
+  DCHECK_NE(QuicUtils::IsBidirectionalStreamId(id, version_), unidirectional_);
   if (QuicUtils::IsOutgoingStreamId(version_, id, perspective_)) {
     // Stream IDs under next_ougoing_stream_id_ are either open or previously
     // open but now closed.

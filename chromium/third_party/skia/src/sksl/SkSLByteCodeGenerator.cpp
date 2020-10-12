@@ -46,21 +46,25 @@ ByteCodeGenerator::ByteCodeGenerator(const Context* context, const Program* prog
     // they're available to "generic" interpreter programs (eg particles).
     // You can probably copy the declarations from sksl_gpu.inc.
     , fIntrinsics {
-        { "atan",     ByteCodeInstruction::kATan },
-        { "clamp",    SpecialIntrinsic::kClamp },
-        { "cos",      ByteCodeInstruction::kCos },
-        { "dot",      SpecialIntrinsic::kDot },
-        { "fract",    ByteCodeInstruction::kFract },
-        { "inverse",  ByteCodeInstruction::kInverse2x2 },
-        { "length",   SpecialIntrinsic::kLength },
-        { "max",      SpecialIntrinsic::kMax },
-        { "min",      SpecialIntrinsic::kMin },
-        { "mix",      SpecialIntrinsic::kMix },
-        { "pow",      ByteCodeInstruction::kPow },
-        { "saturate", SpecialIntrinsic::kSaturate },
-        { "sin",      ByteCodeInstruction::kSin },
-        { "sqrt",     ByteCodeInstruction::kSqrt },
-        { "tan",      ByteCodeInstruction::kTan },
+        { "atan",      ByteCodeInstruction::kATan },
+        { "ceil",      ByteCodeInstruction::kCeil },
+        { "clamp",     SpecialIntrinsic::kClamp },
+        { "cos",       ByteCodeInstruction::kCos },
+        { "dot",       SpecialIntrinsic::kDot },
+        { "floor",     ByteCodeInstruction::kFloor },
+        { "fract",     ByteCodeInstruction::kFract },
+        { "inverse",   ByteCodeInstruction::kInverse2x2 },
+        { "length",    SpecialIntrinsic::kLength },
+        { "max",       SpecialIntrinsic::kMax },
+        { "min",       SpecialIntrinsic::kMin },
+        { "mix",       SpecialIntrinsic::kMix },
+        { "normalize", SpecialIntrinsic::kNormalize },
+        { "pow",       ByteCodeInstruction::kPow },
+        { "sample",    SpecialIntrinsic::kSample },
+        { "saturate",  SpecialIntrinsic::kSaturate },
+        { "sin",       ByteCodeInstruction::kSin },
+        { "sqrt",      ByteCodeInstruction::kSqrt },
+        { "tan",       ByteCodeInstruction::kTan },
 
         { "lessThan",         { ByteCodeInstruction::kCompareFLT,
                                 ByteCodeInstruction::kCompareSLT,
@@ -150,6 +154,9 @@ bool ByteCodeGenerator::generateCode() {
                 VarDeclarations& decl = (VarDeclarations&) e;
                 for (const auto& v : decl.fVars) {
                     const Variable* declVar = ((VarDeclaration&) *v).fVar;
+                    if (declVar->fType == *fContext.fFragmentProcessor_Type) {
+                        fOutput->fChildFPCount++;
+                    }
                     if (declVar->fModifiers.fLayout.fBuiltin >= 0 || is_in(*declVar)) {
                         continue;
                     }
@@ -200,10 +207,27 @@ std::unique_ptr<ByteCodeFunction> ByteCodeGenerator::writeFunction(const Functio
     return result;
 }
 
+// If the expression is a reference to a builtin global variable, return the builtin ID.
+// Otherwise, return -1.
+static int expression_as_builtin(const Expression& e) {
+    if (e.fKind == Expression::kVariableReference_Kind) {
+        const Variable& var(((VariableReference&)e).fVariable);
+        if (var.fStorage == Variable::kGlobal_Storage) {
+            return var.fModifiers.fLayout.fBuiltin;
+        }
+    }
+    return -1;
+}
+
 // A "simple" Swizzle is based on a variable (or a compound variable like a struct or array), and
 // that references consecutive values, such that it can be implemented using normal load/store ops
 // with an offset. Note that all single-component swizzles (of suitable base types) are simple.
 static bool swizzle_is_simple(const Swizzle& s) {
+    // Builtin variables use dedicated instructions that don't allow subset loads
+    if (expression_as_builtin(*s.fBase) >= 0) {
+        return false;
+    }
+
     switch (s.fBase->fKind) {
         case Expression::kFieldAccess_Kind:
         case Expression::kIndex_Kind:
@@ -253,7 +277,9 @@ int ByteCodeGenerator::StackUsage(ByteCodeInstruction inst, int count_) {
         VECTOR_UNARY_OP(kConvertUtoF)
 
         VECTOR_UNARY_OP(kATan)
+        VECTOR_UNARY_OP(kCeil)
         VECTOR_UNARY_OP(kCos)
+        VECTOR_UNARY_OP(kFloor)
         VECTOR_UNARY_OP(kFract)
         VECTOR_UNARY_OP(kSin)
         VECTOR_UNARY_OP(kSqrt)
@@ -357,12 +383,10 @@ int ByteCodeGenerator::StackUsage(ByteCodeInstruction inst, int count_) {
         case ByteCodeInstruction::kLoadGlobal4:
         case ByteCodeInstruction::kLoadUniform4:
         case ByteCodeInstruction::kReadExternal4:
+        case ByteCodeInstruction::kLoadFragCoord:
             return 4;
 
         case ByteCodeInstruction::kDupN:
-        case ByteCodeInstruction::kLoadSwizzle:
-        case ByteCodeInstruction::kLoadSwizzleGlobal:
-        case ByteCodeInstruction::kLoadSwizzleUniform:
             return count;
 
         // Pushes 'count' values, minus one for the 'address' that's consumed first
@@ -397,15 +421,11 @@ int ByteCodeGenerator::StackUsage(ByteCodeInstruction inst, int count_) {
             return -4;
 
         case ByteCodeInstruction::kPopN:
-        case ByteCodeInstruction::kStoreSwizzle:
-        case ByteCodeInstruction::kStoreSwizzleGlobal:
             return -count;
 
         // Consumes 'count' values, plus one for the 'address'
         case ByteCodeInstruction::kStoreExtended:
         case ByteCodeInstruction::kStoreExtendedGlobal:
-        case ByteCodeInstruction::kStoreSwizzleIndirect:
-        case ByteCodeInstruction::kStoreSwizzleIndirectGlobal:
             return -count - 1;
 
         // Strange ops where the caller computes the delta for us:
@@ -419,6 +439,11 @@ int ByteCodeGenerator::StackUsage(ByteCodeInstruction inst, int count_) {
             return count;
 
         // Miscellaneous
+
+        // (X, Y) -> (R, G, B, A)
+        case ByteCodeInstruction::kSampleExplicit: return 4 - 2;
+        // (float3x3) -> (R, G, B, A)
+        case ByteCodeInstruction::kSampleMatrix: return 4 - 9;
 
         // kMix does a 3 -> 1 reduction (A, B, M -> A -or- B) for each component
         case ByteCodeInstruction::kMix:  return -2;
@@ -485,6 +510,27 @@ ByteCodeGenerator::Location ByteCodeGenerator::getLocation(const Variable& var) 
             return Location::MakeInvalid();
         }
         case Variable::kGlobal_Storage: {
+            if (var.fType == *fContext.fFragmentProcessor_Type) {
+                int offset = 0;
+                for (const auto& e : fProgram) {
+                    if (e.fKind == ProgramElement::kVar_Kind) {
+                        VarDeclarations& decl = (VarDeclarations&) e;
+                        for (const auto& v : decl.fVars) {
+                            const Variable* declVar = ((VarDeclaration&) *v).fVar;
+                            if (declVar->fType != *fContext.fFragmentProcessor_Type) {
+                                continue;
+                            }
+                            if (declVar == &var) {
+                                SkASSERT(offset <= 255);
+                                return { offset, Storage::kChildFP };
+                            }
+                            offset++;
+                        }
+                    }
+                }
+                SkASSERT(false);
+                return Location::MakeInvalid();
+            }
             if (is_in(var)) {
                 // If you see this error, it means the program is using raw 'in' variables. You
                 // should either specialize the program (Compiler::specialize) to bake in the final
@@ -987,27 +1033,41 @@ void ByteCodeGenerator::writeExternalValue(const ExternalValueReference& e) {
 }
 
 void ByteCodeGenerator::writeVariableExpression(const Expression& expr) {
+    if (int builtin = expression_as_builtin(expr); builtin >= 0) {
+        switch (builtin) {
+            case SK_FRAGCOORD_BUILTIN:
+                this->write(ByteCodeInstruction::kLoadFragCoord);
+                fOutput->fUsesFragCoord = true;
+                break;
+            default:
+                fErrors.error(expr.fOffset, "Unsupported builtin");
+                break;
+        }
+        return;
+    }
+
     Location location = this->getLocation(expr);
     int count = SlotCount(expr.fType);
     if (count == 0) {
         return;
     }
-    if (location.isOnStack() || count > 4) {
-        if (!location.isOnStack()) {
-            this->write(ByteCodeInstruction::kPushImmediate);
-            this->write32(location.fSlot);
-        }
+    if (location.isOnStack()) {
         this->write(location.selectLoad(ByteCodeInstruction::kLoadExtended,
                                         ByteCodeInstruction::kLoadExtendedGlobal,
                                         ByteCodeInstruction::kLoadExtendedUniform),
                     count);
         this->write8(count);
     } else {
-        this->write(vector_instruction(location.selectLoad(ByteCodeInstruction::kLoad,
-                                                           ByteCodeInstruction::kLoadGlobal,
-                                                           ByteCodeInstruction::kLoadUniform),
-                                       count));
-        this->write8(location.fSlot);
+        while (count) {
+            int loadCount = std::min(count, 4);
+            this->write(vector_instruction(location.selectLoad(ByteCodeInstruction::kLoad,
+                                                               ByteCodeInstruction::kLoadGlobal,
+                                                               ByteCodeInstruction::kLoadUniform),
+                                           loadCount));
+            this->write8(location.fSlot);
+            count -= loadCount;
+            location.fSlot += loadCount;
+        }
     }
 }
 
@@ -1045,6 +1105,29 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
             this->write(ByteCodeInstruction::kDup);
         }
     };
+
+    if (intrin.is_special && intrin.special == SpecialIntrinsic::kSample) {
+        // Sample is very special, the first argument is an FP, which can't be pushed to the stack
+        if (c.fArguments.size() != 2 ||
+            c.fArguments[0]->fType != *fContext.fFragmentProcessor_Type ||
+            (c.fArguments[1]->fType != *fContext.fFloat2_Type &&
+             c.fArguments[1]->fType != *fContext.fFloat3x3_Type)) {
+            fErrors.error(c.fOffset, "Unsupported form of sample");
+            return;
+        }
+
+        // Write our coords or matrix
+        this->writeExpression(*c.fArguments[1]);
+
+        this->write(c.fArguments[1]->fType == *fContext.fFloat3x3_Type
+                            ? ByteCodeInstruction::kSampleMatrix
+                            : ByteCodeInstruction::kSampleExplicit);
+
+        Location childLoc = this->getLocation(*c.fArguments[0]);
+        SkASSERT(childLoc.fStorage == Storage::kChildFP);
+        this->write8(childLoc.fSlot);
+        return;
+    }
 
     if (intrin.is_special && (intrin.special == SpecialIntrinsic::kClamp ||
                               intrin.special == SpecialIntrinsic::kSaturate)) {
@@ -1160,6 +1243,19 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
                     dupSmallerType(selectorCount);
                     this->write(vector_instruction(ByteCodeInstruction::kLerp, count));
                 }
+            } break;
+
+            case SpecialIntrinsic::kNormalize: {
+                SkASSERT(c.fArguments.size() == 1);
+                this->write(vector_instruction(ByteCodeInstruction::kDup      , count));
+                this->write(vector_instruction(ByteCodeInstruction::kDup      , count));
+                this->write(vector_instruction(ByteCodeInstruction::kMultiplyF, count));
+                for (int i = count-1; i --> 0;) {
+                    this->write(ByteCodeInstruction::kAddF);
+                }
+                this->write(ByteCodeInstruction::kSqrt);
+                dupSmallerType(1);
+                this->write(vector_instruction(ByteCodeInstruction::kDivideF, count));
             } break;
 
             default:
@@ -1375,29 +1471,12 @@ void ByteCodeGenerator::writeSwizzle(const Swizzle& s) {
         return;
     }
 
-    switch (s.fBase->fKind) {
-        case Expression::kVariableReference_Kind: {
-            Location location = this->getLocation(*s.fBase);
-            this->write(location.selectLoad(ByteCodeInstruction::kLoadSwizzle,
-                                            ByteCodeInstruction::kLoadSwizzleGlobal,
-                                            ByteCodeInstruction::kLoadSwizzleUniform),
-                        s.fComponents.size());
-            this->write8(location.fSlot);
-            this->write8(s.fComponents.size());
-            for (int c : s.fComponents) {
-                this->write8(c);
-            }
-            break;
-        }
-        default:
-            this->writeExpression(*s.fBase);
-            this->write(ByteCodeInstruction::kSwizzle,
-                        s.fComponents.size() - s.fBase->fType.columns());
-            this->write8(s.fBase->fType.columns());
-            this->write8(s.fComponents.size());
-            for (int c : s.fComponents) {
-                this->write8(c);
-            }
+    this->writeExpression(*s.fBase);
+    this->write(ByteCodeInstruction::kSwizzle, s.fComponents.size() - s.fBase->fType.columns());
+    this->write8(s.fBase->fType.columns());
+    this->write8(s.fComponents.size());
+    for (int c : s.fComponents) {
+        this->write8(c);
     }
 }
 
@@ -1522,20 +1601,31 @@ public:
         if (!discard) {
             fGenerator.write(vector_instruction(ByteCodeInstruction::kDup, count));
         }
-        ByteCodeGenerator::Location location = fGenerator.getLocation(*fSwizzle.fBase);
-        if (location.isOnStack()) {
-            fGenerator.write(location.selectStore(ByteCodeInstruction::kStoreSwizzleIndirect,
-                                                  ByteCodeInstruction::kStoreSwizzleIndirectGlobal),
-                             count);
-        } else {
-            fGenerator.write(location.selectStore(ByteCodeInstruction::kStoreSwizzle,
-                                                  ByteCodeInstruction::kStoreSwizzleGlobal),
-                             count);
-            fGenerator.write8(location.fSlot);
-        }
-        fGenerator.write8(count);
-        for (int c : fSwizzle.fComponents) {
-            fGenerator.write8(c);
+        // We already have the correct number of values on the stack, thanks to type checking.
+        // The algorithm: Walk down the values on the stack, doing 'count' single-element stores.
+        // For each value, use the corresponding swizzle component to offset the store location.
+        //
+        // Static locations: We (wastefully) call getLocation every time, but get good byte code.
+        // Note that we could (but don't) store adjacent/sequential values with fewer instructions.
+        //
+        // Dynamic locations: ... are bad. We have to recompute the base address on each iteration,
+        // because the stack doesn't let us retain that address between stores. Dynamic locations
+        // are rare though, and swizzled writes to those are even rarer, so we just live with this.
+        for (int i = count; i-- > 0;) {
+            ByteCodeGenerator::Location location = fGenerator.getLocation(*fSwizzle.fBase);
+            if (!location.isOnStack()) {
+                fGenerator.write(location.selectStore(ByteCodeInstruction::kStore,
+                                                      ByteCodeInstruction::kStoreGlobal));
+                fGenerator.write8(location.fSlot + fSwizzle.fComponents[i]);
+            } else {
+                fGenerator.write(ByteCodeInstruction::kPushImmediate);
+                fGenerator.write32(fSwizzle.fComponents[i]);
+                fGenerator.write(ByteCodeInstruction::kAddI);
+                fGenerator.write(location.selectStore(ByteCodeInstruction::kStoreExtended,
+                                                      ByteCodeInstruction::kStoreExtendedGlobal),
+                                 1);
+                fGenerator.write8(1);
+            }
         }
     }
 

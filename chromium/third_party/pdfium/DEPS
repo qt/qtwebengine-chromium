@@ -19,19 +19,19 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling build
   # and whatever else without interference from each other.
-  'build_revision': '30fe96cfbe94ed9505d1e353948f77f943a943ac',
+  'build_revision': '3405bae2395f0776c408cb5768baedf78ae7eb18',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling buildtools
   # and whatever else without interference from each other.
-  'buildtools_revision': '204a35a2a64f7179f8b76d7a0385653690839e21',
+  'buildtools_revision': '574cbd5df82c6ae48805b2aa8d75e0ef76aa15aa',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling catapult
   # and whatever else without interference from each other.
-  'catapult_revision': '31b81b84c957c2216d70ba0f06f898a329b7dfc0',
+  'catapult_revision': '91fa1462a88f86afa788f22df8cfacd699e42a7a',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling clang
   # and whatever else without interference from each other.
-  'clang_revision': '54f2e0def1265895a776a92697a20b26b2c30140',
+  'clang_revision': '9f3f85f0efdee191555ff390d6620be24c0fd2c0',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling clang_dsymutil
   # and whatever else without interference from each other.
@@ -39,23 +39,23 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling code_coverage
   # and whatever else without interference from each other.
-  'code_coverage_revision': 'a8f20a1dacc200010cd99f4eabdb0da7d94be112',
+  'code_coverage_revision': 'a70177d4a2e59031b801bd9777adfb728dac8983',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling depot_tools
   # and whatever else without interference from each other.
-  'depot_tools_revision': '177e70c03eeeb4d275504bfb38204c088fcf85fd',
+  'depot_tools_revision': '393b040fb4f0e97aafb2a739dbcee5f928eb9702',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling freetype
   # and whatever else without interference from each other.
-  'freetype_revision': 'd79946311bf8c72d31a8dadc8ae33e298554c61b',
+  'freetype_revision': '62fea391fa9993f8c1d206a50080d690178ce518',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling gtest
   # and whatever else without interference from each other.
-  'gtest_revision': 'e3f0319d89f4cbf32993de595d984183b1a9fc57',
+  'gtest_revision': 'cb44c86c1aaf31b26797728e93acc950c01dbd5b',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling icu
   # and whatever else without interference from each other.
-  'icu_revision': 'f2223961702f00a8833874b0560d615a2cc42738',
+  'icu_revision': '630b884f84d1d5e92aeda3463dca99fe2befd30e',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling instrumented_lib
   # and whatever else without interference from each other.
@@ -83,7 +83,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling skia
   # and whatever else without interference from each other.
-  'skia_revision': '5443bb32a2ad2718680ff27af1f2601744d360cc',
+  'skia_revision': 'c48caaae49d0273590cb639dc3b9a681423c6b3d',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling tools_memory
   # and whatever else without interference from each other.
@@ -95,11 +95,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling v8
   # and whatever else without interference from each other.
-  'v8_revision': '6a91312c4fe4c3a4a75101318de7885d60b71e94',
+  'v8_revision': '9912e35d594bf00cd78697889beff6b238ebe66d',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling zlib
   # and whatever else without interference from each other.
-  'zlib_revision': '21c6af6f18e5ad9c3b9d103f8cfdbf926ca35f7c',
+  'zlib_revision': 'a68151fd9b9f5ad11b96a3765f706361ff22dbc8',
 }
 
 deps = {

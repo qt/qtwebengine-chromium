@@ -34,7 +34,7 @@
 import * as Common from '../common/common.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 
-import {DOMModel} from './DOMModel.js';
+import {DeferredDOMNode, DOMModel} from './DOMModel.js';  // eslint-disable-line no-unused-vars
 import {Events as NetworkManagerEvents, NetworkManager} from './NetworkManager.js';
 import {NetworkRequest} from './NetworkRequest.js';  // eslint-disable-line no-unused-vars
 import {Resource} from './Resource.js';
@@ -891,10 +891,41 @@ export class ResourceTreeFrame {
     }
     return Common.UIString.UIString('<iframe>');
   }
+
+  /**
+   * @returns {?Promise<?DeferredDOMNode>}
+   */
+  getOwnerDOMNode() {
+    const parentFrame = this.parentFrame || this.crossTargetParentFrame();
+    if (!parentFrame) {
+      return null;
+    }
+    return parentFrame.resourceTreeModel().domModel().getOwnerNodeForFrame(this._id);
+  }
+
+  /**
+   * @returns {!Promise<void>}
+   */
+  async highlight() {
+    const parentFrame = this.parentFrame || this.crossTargetParentFrame();
+    if (parentFrame) {
+      const domModel = parentFrame.resourceTreeModel().domModel();
+      const deferredNode = await domModel.getOwnerNodeForFrame(this._id);
+      if (deferredNode) {
+        domModel.overlayModel().highlightInOverlay({deferredNode}, 'all', true);
+      }
+    } else {
+      // For the top frame there is no owner node. Highlight the whole document instead.
+      const document = await this.resourceTreeModel().domModel().requestDocument();
+      if (document) {
+        this.resourceTreeModel().domModel().overlayModel().highlightInOverlay({node: document}, 'all', true);
+      }
+    }
+  }
 }
 
 /**
- * @implements {Protocol.PageDispatcher}
+ * @implements {ProtocolProxyApiWorkaround_PageDispatcher}
  * @unrestricted
  */
 export class PageDispatcher {
@@ -906,101 +937,108 @@ export class PageDispatcher {
   }
 
   /**
-   * @override
-   * @param {number} time
+   * @return {!Protocol.UsesObjectNotation}
    */
-  domContentEventFired(time) {
-    this._resourceTreeModel.dispatchEventToListeners(Events.DOMContentLoaded, time);
+  usesObjectNotation() {
+    return true;
   }
 
   /**
    * @override
-   * @param {number} time
+   * @param {!Protocol.Page.DomContentEventFiredEvent} event
    */
-  loadEventFired(time) {
+  domContentEventFired({timestamp}) {
+    this._resourceTreeModel.dispatchEventToListeners(Events.DOMContentLoaded, timestamp);
+  }
+
+  /**
+   * @override
+   * @param {!Protocol.Page.LoadEventFiredEvent} event
+   */
+  loadEventFired({timestamp}) {
     this._resourceTreeModel.dispatchEventToListeners(
-        Events.Load, {resourceTreeModel: this._resourceTreeModel, loadTime: time});
+        Events.Load, {resourceTreeModel: this._resourceTreeModel, loadTime: timestamp});
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
-   * @param {!Protocol.Network.LoaderId} loaderId
-   * @param {string} name
-   * @param {number} time
+   * @param {!Protocol.Page.LifecycleEventEvent} event
    */
-  lifecycleEvent(frameId, loaderId, name, time) {
+  lifecycleEvent({frameId, loaderId, name, timestamp}) {
     this._resourceTreeModel.dispatchEventToListeners(Events.LifecycleEvent, {frameId, name});
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
-   * @param {!Protocol.Page.FrameId} parentFrameId
-   * @param {!Protocol.Runtime.StackTrace=} stackTrace
+   * @param {!Protocol.Page.FrameAttachedEvent} event
    */
-  frameAttached(frameId, parentFrameId, stackTrace) {
-    this._resourceTreeModel._frameAttached(frameId, parentFrameId, stackTrace);
+  frameAttached({frameId, parentFrameId, stack}) {
+    this._resourceTreeModel._frameAttached(frameId, parentFrameId, stack);
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.Frame} frame
+   * @param {!Protocol.Page.FrameNavigatedEvent} event
    */
-  frameNavigated(frame) {
+  frameNavigated({frame}) {
+    const url = new URL(frame.url);
+    if (url.protocol === 'chrome-error:' && url.hostname === 'chromewebdata' && frame.parentId) {
+      // Skip navigation to heavy ads interstitials to
+      // allow developers to see resources of the origin they
+      // originally intended to see.
+      return;
+    }
     this._resourceTreeModel._frameNavigated(frame);
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
+   * @param {!Protocol.Page.FrameDetachedEvent} event
    */
-  frameDetached(frameId) {
+  frameDetached({frameId}) {
     this._resourceTreeModel._frameDetached(frameId);
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
+   * @param {!Protocol.Page.FrameStartedLoadingEvent} event
    */
-  frameStartedLoading(frameId) {
+  frameStartedLoading({frameId}) {
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
+   * @param {!Protocol.Page.FrameStoppedLoadingEvent} event
    */
-  frameStoppedLoading(frameId) {
+  frameStoppedLoading({frameId}) {
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
+   * @param {!Protocol.Page.FrameRequestedNavigationEvent} event
    */
-  frameRequestedNavigation(frameId) {
+  frameRequestedNavigation({frameId}) {
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
-   * @param {number} delay
+   * @param {!Protocol.Page.FrameScheduledNavigationEvent} event
    */
-  frameScheduledNavigation(frameId, delay) {
+  frameScheduledNavigation({frameId, delay}) {
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
+   * @param {!Protocol.Page.FrameClearedScheduledNavigationEvent} event
    */
-  frameClearedScheduledNavigation(frameId) {
+  frameClearedScheduledNavigation({frameId}) {
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
-   * @param {string} url
+   * @param {!Protocol.Page.NavigatedWithinDocumentEvent} event
    */
-  navigatedWithinDocument(frameId, url) {
+  navigatedWithinDocument({frameId, url}) {
   }
 
   /**
@@ -1012,13 +1050,9 @@ export class PageDispatcher {
 
   /**
    * @override
-   * @param {string} url
-   * @param {string} message
-   * @param {string} dialogType
-   * @param {boolean} hasBrowserHandler
-   * @param {string=} prompt
+   * @param {!Protocol.Page.JavascriptDialogOpeningEvent} event
    */
-  javascriptDialogOpening(url, message, dialogType, hasBrowserHandler, prompt) {
+  javascriptDialogOpening({url, message, type, hasBrowserHandler, defaultPrompt}) {
     if (!hasBrowserHandler) {
       this._resourceTreeModel._agent.handleJavaScriptDialog(false);
     }
@@ -1026,26 +1060,23 @@ export class PageDispatcher {
 
   /**
    * @override
-   * @param {boolean} result
-   * @param {string} userInput
+   * @param {!Protocol.Page.JavascriptDialogClosedEvent} event
    */
-  javascriptDialogClosed(result, userInput) {
+  javascriptDialogClosed({result, userInput}) {
   }
 
   /**
    * @override
-   * @param {string} data
-   * @param {!Protocol.Page.ScreencastFrameMetadata} metadata
-   * @param {number} sessionId
+   * @param {!Protocol.Page.ScreencastFrameEvent} event
    */
-  screencastFrame(data, metadata, sessionId) {
+  screencastFrame({data, metadata, sessionId}) {
   }
 
   /**
    * @override
-   * @param {boolean} visible
+   * @param {!Protocol.Page.ScreencastVisibilityChangedEvent} event
    */
-  screencastVisibilityChanged(visible) {
+  screencastVisibilityChanged({visible}) {
   }
 
   /**
@@ -1066,35 +1097,30 @@ export class PageDispatcher {
 
   /**
    * @override
-   * @param {string} url
-   * @param {string} windowName
-   * @param {!Array<string>} windowFeatures
-   * @param {boolean} userGesture
+   * @param {!Protocol.Page.WindowOpenEvent} event
    */
-  windowOpen(url, windowName, windowFeatures, userGesture) {
+  windowOpen({url, windowName, windowFeatures, userGesture}) {
   }
 
   /**
    * @override
-   * @param {string} url
-   * @param {string} data
+   * @param {!Protocol.Page.CompilationCacheProducedEvent} event
    */
-  compilationCacheProduced(url, data) {
+  compilationCacheProduced({url, data}) {
   }
 
   /**
    * @override
-   * @param {string} mode
+   * @param {!Protocol.Page.FileChooserOpenedEvent} event
    */
-  fileChooserOpened(mode) {
+  fileChooserOpened({mode}) {
   }
 
   /**
    * @override
-   * @param {!Protocol.Page.FrameId} frameId
-   * @param {string} url
+   * @param {!Protocol.Page.DownloadWillBeginEvent} event
    */
-  downloadWillBegin(frameId, url) {
+  downloadWillBegin({frameId, url}) {
   }
 
   /**

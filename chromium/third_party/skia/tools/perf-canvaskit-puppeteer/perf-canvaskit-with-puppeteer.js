@@ -33,9 +33,14 @@ const opts = [
     description: 'The Lottie JSON file to process.'
   },
   {
+    name: 'input_skp',
+    typeLabel: '{underline file}',
+    description: 'The SKP file to process.'
+  },
+  {
     name: 'assets',
     typeLabel: '{underline file}',
-    description: 'Any assets needed by the lottie file (e.g. images/fonts).'
+    description: 'A directory containing any assets needed by the lottie file (e.g. images/fonts).'
   },
   {
     name: 'output',
@@ -57,6 +62,13 @@ const opts = [
     name: 'port',
     description: 'The port number to use, defaults to 8081.',
     type: Number,
+  },
+  {
+    name: 'query_params',
+    description: 'The query params to be added to the testing page URL. Useful for passing' +
+      'options to the perf html page.',
+    type: String,
+    multiple: true
   },
   {
     name: 'help',
@@ -130,6 +142,12 @@ if (options.input_lottie) {
   const lottieJSON = fs.readFileSync(options.input_lottie, 'utf8');
   app.get('/static/lottie.json', (req, res) => res.send(lottieJSON));
 }
+if (options.input_skp) {
+  const skpBytes = fs.readFileSync(options.input_skp, 'binary');
+  app.get('/static/test.skp', (req, res) => {
+    res.send(new Buffer(skpBytes, 'binary'));
+  });
+}
 if (options.assets) {
   app.use('/static/assets/', express.static(options.assets));
   console.log('assets served from', options.assets);
@@ -141,7 +159,13 @@ let hash = "#cpu";
 if (options.use_gpu) {
   hash = "#gpu";
 }
-const targetURL = `http://localhost:${options.port}/${hash}`;
+let query_param_string = '?';
+if (options.query_params) {
+  for (const string of options.query_params) {
+    query_param_string += string + '&';
+  }
+}
+const targetURL = `http://localhost:${options.port}/${query_param_string}${hash}`;
 const viewPort = {width: 1000, height: 1000};
 
 // Drive chrome to load the web page from the server we have running.
@@ -154,6 +178,11 @@ async function driveBrowser() {
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--window-size=' + viewPort.width + ',' + viewPort.height,
+      // The following two params allow Chrome to run at an unlimited fps. Note, if there is
+      // already a chrome instance running, these arguments will have NO EFFECT, as the existing
+      // Chrome instance will be used instead of puppeteer spinning up a new one.
+      '--disable-frame-rate-limit',
+      '--disable-gpu-vsync',
   ];
   if (options.use_gpu) {
     browser_args.push('--ignore-gpu-blacklist');

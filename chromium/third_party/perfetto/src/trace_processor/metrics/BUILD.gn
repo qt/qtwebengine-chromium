@@ -19,13 +19,17 @@ sql_files = [
   "trace_metadata.sql",
   "android/android_batt.sql",
   "android/android_cpu.sql",
+  "android/android_surfaceflinger.sql",
   "android/android_cpu_agg.sql",
+  "android/android_cpu_raw_metrics_per_core.sql",
   "android/android_mem.sql",
   "android/android_mem_unagg.sql",
   "android/android_ion.sql",
+  "android/frame_missed.sql",
   "android/android_lmk_reason.sql",
   "android/android_lmk.sql",
   "android/android_powrails.sql",
+  "android/android_proxy_power.sql",
   "android/android_startup_launches.sql",
   "android/android_task_state.sql",
   "android/android_startup.sql",
@@ -50,6 +54,7 @@ sql_files = [
   "android/unmapped_java_symbols.sql",
   "android/unsymbolized_frames.sql",
   "chrome/chrome_processes.sql",
+  "webview/webview_power_usage.sql",
 ]
 
 config("gen_config") {
@@ -77,12 +82,11 @@ if (enable_perfetto_trace_processor_sqlite) {
       "metrics.h",
     ]
     deps = [
+      "..:metatrace",
       "../../../gn:default_deps",
       "../../../gn:sqlite",
       "../../../include/perfetto/trace_processor",
       "../../../protos/perfetto/common:zero",
-      "../../../protos/perfetto/metrics:zero",
-      "../../../protos/perfetto/metrics/android:zero",
       "../../../protos/perfetto/trace_processor:metrics_impl_zero",
       "../../base",
       "../../protozero:protozero",

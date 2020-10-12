@@ -95,7 +95,7 @@ static bool filter_has_effect(const GrQuad& srcQuad, const GrQuad& dstQuad) {
 // regular and rectangular textures, w/ or w/o origin correction.
 struct NormalizationParams {
     float fIW; // 1 / width of texture, or 1.0 for texture rectangles
-    float fIH; // 1 / height of texture, or 1.0 for tex rects, X -1 if bottom-left origin
+    float fInvH; // 1 / height of texture, or 1.0 for tex rects, X -1 if bottom-left origin
     float fYOffset; // 0 for top-left origin, height of [normalized] tex if bottom-left
 };
 static NormalizationParams proxy_normalization_params(const GrSurfaceProxy* proxy,
@@ -120,21 +120,13 @@ static NormalizationParams proxy_normalization_params(const GrSurfaceProxy* prox
     }
 }
 
-static SkRect inset_subset_for_bilerp(const NormalizationParams& params, const SkRect& subsetRect) {
-    // Normalized pixel size is also equal to iw and ih, so the insets for bilerp are just
-    // in those units and can be applied safely after normalization. However, if the subset is
-    // smaller than a texel, it should clamp to the center of that axis.
-    float dw = subsetRect.width() < params.fIW ? subsetRect.width() : params.fIW;
-    float dh = subsetRect.height() < params.fIH ? subsetRect.height() : params.fIH;
-    return subsetRect.makeInset(0.5f * dw, 0.5f * dh);
-}
-
 // Normalize the subset. If 'subsetRect' is null, it is assumed no subset constraint is desired,
 // so a sufficiently large rect is returned even if the quad ends up batched with an op that uses
-// subsets overall.
-static SkRect normalize_subset(GrSamplerState::Filter filter,
-                               const NormalizationParams& params,
-                               const SkRect* subsetRect) {
+// subsets overall. When there is a subset it will be inset based on the filter mode. Normalization
+// and y-flipping are applied as indicated by NormalizationParams.
+static SkRect normalize_and_inset_subset(GrSamplerState::Filter filter,
+                                         const NormalizationParams& params,
+                                         const SkRect* subsetRect) {
     static constexpr SkRect kLargeRect = {-100000, -100000, 1000000, 1000000};
     if (!subsetRect) {
         // Either the quad has no subset constraint and is batched with a subset constrained op
@@ -144,10 +136,20 @@ static SkRect normalize_subset(GrSamplerState::Filter filter,
     }
 
     auto ltrb = skvx::Vec<4, float>::Load(subsetRect);
+    auto flipHi = skvx::Vec<4, float>({1.f, 1.f, -1.f, -1.f});
+    if (filter == GrSamplerState::Filter::kNearest) {
+        // Make sure our insetting puts us at pixel centers.
+        ltrb = skvx::floor(ltrb*flipHi)*flipHi;
+    }
+    // Inset with pin to the rect center.
+    ltrb += skvx::Vec<4, float>({.5f, .5f, -.5f, -.5f});
+    auto mid = (skvx::shuffle<2, 3, 0, 1>(ltrb) + ltrb)*0.5f;
+    ltrb = skvx::min(ltrb*flipHi, mid*flipHi)*flipHi;
+
     // Normalize and offset
-    ltrb = mad(ltrb, {params.fIW, params.fIH, params.fIW, params.fIH},
+    ltrb = mad(ltrb, {params.fIW, params.fInvH, params.fIW, params.fInvH},
                {0.f, params.fYOffset, 0.f, params.fYOffset});
-    if (params.fIH < 0.f) {
+    if (params.fInvH < 0.f) {
         // Flip top and bottom to keep the rect sorted when loaded back to SkRect.
         ltrb = skvx::shuffle<0, 3, 2, 1>(ltrb);
     }
@@ -163,7 +165,7 @@ static void normalize_src_quad(const NormalizationParams& params,
     // The src quad should not have any perspective
     SkASSERT(!srcQuad->hasPerspective());
     skvx::Vec<4, float> xs = srcQuad->x4f() * params.fIW;
-    skvx::Vec<4, float> ys = mad(srcQuad->y4f(), params.fIH, params.fYOffset);
+    skvx::Vec<4, float> ys = mad(srcQuad->y4f(), params.fInvH, params.fYOffset);
     xs.store(srcQuad->xs());
     ys.store(srcQuad->ys());
 }
@@ -181,6 +183,32 @@ static int proxy_run_count(const GrRenderTargetContext::TextureSetEntry set[], i
         }
     }
     return actualProxyRunCount;
+}
+
+static bool safe_to_ignore_subset_rect(GrAAType aaType, GrSamplerState::Filter filter,
+                                       const DrawQuad& quad, const SkRect& subsetRect) {
+    // If both the device and local quad are both axis-aligned, and filtering is off, the local quad
+    // can push all the way up to the edges of the the subset rect and the sampler shouldn't
+    // overshoot. Unfortunately, antialiasing adds enough jitter that we can only rely on this in
+    // the non-antialiased case.
+    SkRect localBounds = quad.fLocal.bounds();
+    if (aaType == GrAAType::kNone &&
+        filter == GrSamplerState::Filter::kNearest &&
+        quad.fDevice.quadType() == GrQuad::Type::kAxisAligned &&
+        quad.fLocal.quadType() == GrQuad::Type::kAxisAligned &&
+        subsetRect.contains(localBounds)) {
+
+        return true;
+    }
+
+    // If the subset rect is inset by at least 0.5 pixels into the local quad's bounds, the
+    // sampler shouldn't overshoot, even when antialiasing and filtering is taken into account.
+    if (subsetRect.makeInset(0.5f, 0.5f).contains(localBounds)) {
+        return true;
+    }
+
+    // The subset rect cannot be ignored safely.
+    return false;
 }
 
 /**
@@ -415,9 +443,7 @@ private:
         void allocatePrePreparedVertices(SkArenaAlloc* arena) {
             fPrePreparedVertices = arena->makeArrayDefault<char>(this->totalSizeInBytes());
         }
-
     };
-
     // If subsetRect is not null it will be used to apply a strict src rect-style constraint.
     TextureOp(GrSurfaceProxyView proxyView,
               sk_sp<GrColorSpaceXform> textureColorSpaceXform,
@@ -444,19 +470,19 @@ private:
                  !subsetRect->contains(proxyView.proxy()->backingStoreBoundsRect()));
 
         // We may have had a strict constraint with nearest filter solely due to possible AA bloat.
-        // If we don't have (or determined we don't need) coverage AA then we can skip using a
-        // subset.
-        if (subsetRect && filter == GrSamplerState::Filter::kNearest &&
-            aaType != GrAAType::kCoverage) {
-            subsetRect = nullptr;
-            fMetadata.fSubset = static_cast<uint16_t>(Subset::kNo);
+        // Try to identify cases where the subsetting isn't actually necessary, and skip it.
+        if (subsetRect) {
+            if (safe_to_ignore_subset_rect(aaType, filter, *quad, *subsetRect)) {
+                subsetRect = nullptr;
+                fMetadata.fSubset = static_cast<uint16_t>(Subset::kNo);
+            }
         }
 
         // Normalize src coordinates and the subset (if set)
         NormalizationParams params = proxy_normalization_params(proxyView.proxy(),
                                                                 proxyView.origin());
         normalize_src_quad(params, &quad->fLocal);
-        SkRect subset = normalize_subset(filter, params, subsetRect);
+        SkRect subset = normalize_and_inset_subset(filter, params, subsetRect);
 
         // Set bounds before clipping so we don't have to worry about unioning the bounds of
         // the two potential quads (GrQuad::bounds() is perspective-safe).
@@ -542,11 +568,6 @@ private:
                 netFilter = GrSamplerState::Filter::kBilerp;
             }
 
-            // Normalize the src quads and apply origin
-            NormalizationParams proxyParams = proxy_normalization_params(
-                    curProxy, set[q].fProxyView.origin());
-            normalize_src_quad(proxyParams, &quad.fLocal);
-
             // Update overall bounds of the op as the union of all quads
             bounds.joinPossiblyEmptyRect(quad.fDevice.bounds());
 
@@ -554,6 +575,7 @@ private:
             GrAAType aaForQuad;
             GrQuadUtils::ResolveAAType(aaType, set[q].fAAFlags, quad.fDevice,
                                        &aaForQuad, &quad.fEdgeFlags);
+
             // Resolve sets aaForQuad to aaType or None, there is never a change between aa methods
             SkASSERT(aaForQuad == GrAAType::kNone || aaForQuad == aaType);
             if (netAAType == GrAAType::kNone && aaForQuad != GrAAType::kNone) {
@@ -563,27 +585,29 @@ private:
             // Calculate metadata for the entry
             const SkRect* subsetForQuad = nullptr;
             if (constraint == SkCanvas::kStrict_SrcRectConstraint) {
-                // Check (briefly) if the strict constraint is needed for this set entry
-                if (!set[q].fSrcRect.contains(curProxy->backingStoreBoundsRect()) &&
-                    (filter == GrSamplerState::Filter::kBilerp ||
-                     aaForQuad == GrAAType::kCoverage)) {
-                    // Can't rely on hardware clamping and the draw will access outer texels
-                    // for AA and/or bilerp. Unlike filter quality, this op still has per-quad
-                    // control over AA so that can check aaForQuad, not netAAType.
-                    netSubset = Subset::kYes;
-                    subsetForQuad = &set[q].fSrcRect;
+                // Check (briefly) if the subset rect is actually needed for this set entry.
+                SkRect* subsetRect = &set[q].fSrcRect;
+                if (!subsetRect->contains(curProxy->backingStoreBoundsRect())) {
+                    if (!safe_to_ignore_subset_rect(aaForQuad, filter, quad, *subsetRect)) {
+                        netSubset = Subset::kYes;
+                        subsetForQuad = subsetRect;
+                    }
                 }
             }
+
+            // Normalize the src quads and apply origin
+            NormalizationParams proxyParams = proxy_normalization_params(
+                    curProxy, set[q].fProxyView.origin());
+            normalize_src_quad(proxyParams, &quad.fLocal);
+
             // This subset may represent a no-op, otherwise it will have the origin and dimensions
             // of the texture applied to it. Insetting for bilinear filtering is deferred until
             // on[Pre]Prepare so that the overall filter can be lazily determined.
-            SkRect subset = normalize_subset(filter, proxyParams, subsetForQuad);
+            SkRect subset = normalize_and_inset_subset(filter, proxyParams, subsetForQuad);
 
             // Always append a quad (or 2 if perspective clipped), it just may refer back to a prior
             // ViewCountPair (this frequently happens when Chrome draws 9-patches).
-            float alpha = SkTPin(set[q].fAlpha, 0.f, 1.f);
-            fViewCountPairs[p].fQuadCnt += this->appendQuad(
-                    &quad, {alpha, alpha, alpha, alpha}, subset);
+            fViewCountPairs[p].fQuadCnt += this->appendQuad(&quad, set[q].fColor, subset);
         }
         // The # of proxy switches should match what was provided (+1 because we incremented p
         // when a new proxy was encountered).
@@ -689,21 +713,12 @@ private:
                 const int quadCnt = op.fViewCountPairs[p].fQuadCnt;
                 SkDEBUGCODE(int meshVertexCnt = quadCnt * desc->fVertexSpec.verticesPerQuad());
 
-                // Can just use top-left for origin here since we only need the dimensions to
-                // determine the texel size for insetting.
-                NormalizationParams params = proxy_normalization_params(
-                        op.fViewCountPairs[p].fProxy.get(), kTopLeft_GrSurfaceOrigin);
-
-                bool inset = texOp->fMetadata.filter() != GrSamplerState::Filter::kNearest;
-
                 for (int i = 0; i < quadCnt && iter.next(); ++i) {
                     SkASSERT(iter.isLocalValid());
                     const ColorSubsetAndAA& info = iter.metadata();
 
                     tessellator.append(iter.deviceQuad(), iter.localQuad(), info.fColor,
-                                       inset ? inset_subset_for_bilerp(params, info.fSubsetRect)
-                                             : info.fSubsetRect,
-                                       info.aaFlags());
+                                       info.fSubsetRect, info.aaFlags());
                 }
 
                 SkASSERT((totVerticesSeen + meshVertexCnt) * vertexSize
@@ -1041,21 +1056,20 @@ std::unique_ptr<GrDrawOp> GrTextureOp::Make(GrRecordingContext* context,
             const auto& caps = *context->priv().caps();
             SkRect localRect;
             if (quad->fLocal.asRect(&localRect)) {
-                fp = GrTextureEffect::MakeSubset(std::move(proxyView), alphaType, SkMatrix::I(), filter,
-                                                 *subset, localRect, caps);
+                fp = GrTextureEffect::MakeSubset(std::move(proxyView), alphaType, SkMatrix::I(),
+                                                 filter, *subset, localRect, caps);
             } else {
-                fp = GrTextureEffect::MakeSubset(std::move(proxyView), alphaType, SkMatrix::I(), filter,
-                                                 *subset, caps);
+                fp = GrTextureEffect::MakeSubset(std::move(proxyView), alphaType, SkMatrix::I(),
+                                                 filter, *subset, caps);
             }
         } else {
             fp = GrTextureEffect::Make(std::move(proxyView), alphaType, SkMatrix::I(), filter);
         }
         fp = GrColorSpaceXformEffect::Make(std::move(fp), std::move(textureXform));
-        paint.addColorFragmentProcessor(std::move(fp));
         if (saturate == GrTextureOp::Saturate::kYes) {
-            paint.addColorFragmentProcessor(GrClampFragmentProcessor::Make(false));
+            fp = GrClampFragmentProcessor::Make(std::move(fp), /*clampToPremul=*/false);
         }
-
+        paint.addColorFragmentProcessor(std::move(fp));
         return GrFillRectOp::Make(context, std::move(paint), aaType, quad);
     }
 }
@@ -1064,7 +1078,7 @@ std::unique_ptr<GrDrawOp> GrTextureOp::Make(GrRecordingContext* context,
 class GrTextureOp::BatchSizeLimiter {
 public:
     BatchSizeLimiter(GrRenderTargetContext* rtc,
-                     const GrClip& clip,
+                     const GrClip* clip,
                      GrRecordingContext* context,
                      int numEntries,
                      GrSamplerState::Filter filter,
@@ -1102,7 +1116,7 @@ public:
 
 private:
     GrRenderTargetContext*      fRTC;
-    const GrClip&               fClip;
+    const GrClip*               fClip;
     GrRecordingContext*         fContext;
     GrSamplerState::Filter      fFilter;
     GrTextureOp::Saturate       fSaturate;
@@ -1116,7 +1130,7 @@ private:
 
 // Greedily clump quad draws together until the index buffer limit is exceeded.
 void GrTextureOp::AddTextureSetOps(GrRenderTargetContext* rtc,
-                                   const GrClip& clip,
+                                   const GrClip* clip,
                                    GrRecordingContext* context,
                                    GrRenderTargetContext::TextureSetEntry set[],
                                    int cnt,
@@ -1141,7 +1155,6 @@ void GrTextureOp::AddTextureSetOps(GrRenderTargetContext* rtc,
         // automatically creates the appropriate GrFillRectOp to emulate GrTextureOp.
         SkMatrix ctm;
         for (int i = 0; i < cnt; ++i) {
-            float alpha = set[i].fAlpha;
             ctm = viewMatrix;
             if (set[i].fPreViewMatrix) {
                 ctm.preConcat(*set[i].fPreViewMatrix);
@@ -1164,7 +1177,7 @@ void GrTextureOp::AddTextureSetOps(GrRenderTargetContext* rtc,
                     ? &set[i].fSrcRect : nullptr;
 
             auto op = Make(context, set[i].fProxyView, set[i].fSrcAlphaType, textureColorSpaceXform,
-                           filter, {alpha, alpha, alpha, alpha}, saturate, blendMode, aaType,
+                           filter, set[i].fColor, saturate, blendMode, aaType,
                            &quad, subset);
             rtc->addDrawOp(clip, std::move(op));
         }

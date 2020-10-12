@@ -31,10 +31,10 @@ namespace dawn_native { namespace d3d12 {
 
     class CommandAllocatorManager;
     class DescriptorHeapAllocator;
-    class MapRequestTracker;
     class PlatformFunctions;
     class ResidencyManager;
     class ResourceAllocatorManager;
+    class SamplerHeapCache;
     class ShaderVisibleDescriptorAllocator;
     class StagingDescriptorAllocator;
 
@@ -65,12 +65,13 @@ namespace dawn_native { namespace d3d12 {
         ComPtr<ID3D12CommandSignature> GetDrawIndirectSignature() const;
         ComPtr<ID3D12CommandSignature> GetDrawIndexedIndirectSignature() const;
 
-        MapRequestTracker* GetMapRequestTracker() const;
         CommandAllocatorManager* GetCommandAllocatorManager() const;
         ResidencyManager* GetResidencyManager() const;
 
         const PlatformFunctions* GetFunctions() const;
         ComPtr<IDXGIFactory4> GetFactory() const;
+        ResultOrError<IDxcLibrary*> GetOrCreateDxcLibrary() const;
+        ResultOrError<IDxcCompiler*> GetOrCreateDxcCompiler() const;
 
         ResultOrError<CommandRecordingContext*> GetPendingCommandContext();
 
@@ -107,6 +108,8 @@ namespace dawn_native { namespace d3d12 {
         StagingDescriptorAllocator* GetSamplerStagingDescriptorAllocator(
             uint32_t descriptorCount) const;
 
+        SamplerHeapCache* GetSamplerHeapCache();
+
         StagingDescriptorAllocator* GetRenderTargetViewAllocator() const;
 
         StagingDescriptorAllocator* GetDepthStencilViewAllocator() const;
@@ -133,6 +136,8 @@ namespace dawn_native { namespace d3d12 {
             const ComputePipelineDescriptor* descriptor) override;
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
+        ResultOrError<QuerySetBase*> CreateQuerySetImpl(
+            const QuerySetDescriptor* descriptor) override;
         ResultOrError<RenderPipelineBase*> CreateRenderPipelineImpl(
             const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<SamplerBase*> CreateSamplerImpl(const SamplerDescriptor* descriptor) override;
@@ -152,6 +157,8 @@ namespace dawn_native { namespace d3d12 {
 
         void ShutDownImpl() override;
         MaybeError WaitForIdleForDestruction() override;
+
+        MaybeError CheckDebugLayerAndGenerateErrors();
 
         ComPtr<ID3D12Fence> mFence;
         HANDLE mFenceEvent = nullptr;
@@ -174,7 +181,6 @@ namespace dawn_native { namespace d3d12 {
         SerialQueue<ComPtr<IUnknown>> mUsedComObjectRefs;
 
         std::unique_ptr<CommandAllocatorManager> mCommandAllocatorManager;
-        std::unique_ptr<MapRequestTracker> mMapRequestTracker;
         std::unique_ptr<ResourceAllocatorManager> mResourceAllocatorManager;
         std::unique_ptr<ResidencyManager> mResidencyManager;
 
@@ -194,6 +200,10 @@ namespace dawn_native { namespace d3d12 {
         std::unique_ptr<ShaderVisibleDescriptorAllocator> mViewShaderVisibleDescriptorAllocator;
 
         std::unique_ptr<ShaderVisibleDescriptorAllocator> mSamplerShaderVisibleDescriptorAllocator;
+
+        // Sampler cache needs to be destroyed before the CPU sampler allocator to ensure the final
+        // release is called.
+        std::unique_ptr<SamplerHeapCache> mSamplerHeapCache;
     };
 
 }}  // namespace dawn_native::d3d12

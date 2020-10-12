@@ -32,7 +32,8 @@ class MockNetworkWaiter final : public SocketHandleWaiter {
 
 class MockSocket : public StreamSocketPosix {
  public:
-  MockSocket(int fd) : StreamSocketPosix(IPAddress::Version::kV4), handle(fd) {}
+  explicit MockSocket(int fd)
+      : StreamSocketPosix(IPAddress::Version::kV4), handle(fd) {}
 
   const SocketHandle& socket_handle() const override { return handle; }
 

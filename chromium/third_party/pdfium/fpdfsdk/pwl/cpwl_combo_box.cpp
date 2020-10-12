@@ -18,7 +18,6 @@
 #include "fpdfsdk/pwl/cpwl_list_impl.h"
 #include "fpdfsdk/pwl/cpwl_wnd.h"
 #include "public/fpdf_fwlevent.h"
-#include "third_party/base/ptr_util.h"
 
 namespace {
 
@@ -206,6 +205,10 @@ void CPWL_ComboBox::ReplaceSelection(const WideString& text) {
     m_pEdit->ReplaceSelection(text);
 }
 
+bool CPWL_ComboBox::SelectAllText() {
+  return m_pEdit && m_pEdit->SelectAllText();
+}
+
 bool CPWL_ComboBox::CanUndo() {
   return m_pEdit && m_pEdit->CanUndo();
 }
@@ -286,9 +289,9 @@ void CPWL_ComboBox::CreateEdit(const CreateParams& cp) {
 
   ecp.rcRectWnd = CFX_FloatRect();
   ecp.dwBorderWidth = 0;
-  ecp.nBorderStyle = BorderStyle::SOLID;
+  ecp.nBorderStyle = BorderStyle::kSolid;
 
-  auto pEdit = pdfium::MakeUnique<CPWL_Edit>(ecp, CloneAttachedData());
+  auto pEdit = std::make_unique<CPWL_Edit>(ecp, CloneAttachedData());
   m_pEdit = pEdit.get();
   m_pEdit->AttachFFLData(m_pFormFiller.Get());
   AddChild(std::move(pEdit));
@@ -305,10 +308,10 @@ void CPWL_ComboBox::CreateButton(const CreateParams& cp) {
                                    220.0f / 255.0f, 220.0f / 255.0f);
   bcp.sBorderColor = PWL_DEFAULT_BLACKCOLOR;
   bcp.dwBorderWidth = 2;
-  bcp.nBorderStyle = BorderStyle::BEVELED;
+  bcp.nBorderStyle = BorderStyle::kBeveled;
   bcp.eCursorType = FXCT_ARROW;
 
-  auto pButton = pdfium::MakeUnique<CPWL_CBButton>(bcp, CloneAttachedData());
+  auto pButton = std::make_unique<CPWL_CBButton>(bcp, CloneAttachedData());
   m_pButton = pButton.get();
   AddChild(std::move(pButton));
   m_pButton->Realize();
@@ -321,7 +324,7 @@ void CPWL_ComboBox::CreateListBox(const CreateParams& cp) {
   CreateParams lcp = cp;
   lcp.dwFlags =
       PWS_CHILD | PWS_BORDER | PWS_BACKGROUND | PLBS_HOVERSEL | PWS_VSCROLL;
-  lcp.nBorderStyle = BorderStyle::SOLID;
+  lcp.nBorderStyle = BorderStyle::kSolid;
   lcp.dwBorderWidth = 1;
   lcp.eCursorType = FXCT_ARROW;
   lcp.rcRectWnd = CFX_FloatRect();
@@ -335,7 +338,7 @@ void CPWL_ComboBox::CreateListBox(const CreateParams& cp) {
   if (cp.sBackgroundColor.nColorType == CFX_Color::kTransparent)
     lcp.sBackgroundColor = PWL_DEFAULT_WHITECOLOR;
 
-  auto pList = pdfium::MakeUnique<CPWL_CBListBox>(lcp, CloneAttachedData());
+  auto pList = std::make_unique<CPWL_CBListBox>(lcp, CloneAttachedData());
   m_pList = pList.get();
   m_pList->AttachFFLData(m_pFormFiller.Get());
   AddChild(std::move(pList));
@@ -420,7 +423,7 @@ bool CPWL_ComboBox::RePosChildWnd() {
 
 void CPWL_ComboBox::SelectAll() {
   if (m_pEdit && HasFlag(PCBS_ALLOWCUSTOMTEXT))
-    m_pEdit->SelectAll();
+    m_pEdit->SelectAllText();
 }
 
 CFX_FloatRect CPWL_ComboBox::GetFocusRect() const {
@@ -534,6 +537,28 @@ bool CPWL_ComboBox::OnChar(uint16_t nChar, uint32_t nFlag) {
   if (!m_pEdit)
     return false;
 
+  // In a combo box if the ENTER/SPACE key is pressed, show the combo box
+  // options.
+  switch (nChar) {
+    case FWL_VKEY_Return:
+      SetPopup(!IsPopup());
+      SetSelectText();
+      return true;
+    case FWL_VKEY_Space:
+      // Show the combo box options with space only if the combo box is not
+      // editable
+      if (!HasFlag(PCBS_ALLOWCUSTOMTEXT)) {
+        if (!IsPopup()) {
+          SetPopup(/*bPopUp=*/true);
+          SetSelectText();
+        }
+        return true;
+      }
+      break;
+    default:
+      break;
+  }
+
   m_nSelectItem = -1;
   if (HasFlag(PCBS_ALLOWCUSTOMTEXT))
     return m_pEdit->OnChar(nChar, nFlag);
@@ -562,7 +587,7 @@ void CPWL_ComboBox::NotifyLButtonUp(CPWL_Wnd* child, const CFX_PointF& pos) {
     return;
 
   SetSelectText();
-  SelectAll();
+  SelectAllText();
   m_pEdit->SetFocus();
   SetPopup(false);
   // Note, |this| may no longer be viable at this point. If more work needs to
@@ -574,9 +599,9 @@ bool CPWL_ComboBox::IsPopup() const {
 }
 
 void CPWL_ComboBox::SetSelectText() {
-  m_pEdit->SelectAll();
+  m_pEdit->SelectAllText();
   m_pEdit->ReplaceSelection(m_pList->GetText());
-  m_pEdit->SelectAll();
+  m_pEdit->SelectAllText();
   m_nSelectItem = m_pList->GetCurSel();
 }
 

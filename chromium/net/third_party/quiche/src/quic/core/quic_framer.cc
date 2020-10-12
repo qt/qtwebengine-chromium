@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -20,6 +21,7 @@
 #include "net/third_party/quiche/src/quic/core/crypto/quic_decrypter.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_encrypter.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_random.h"
+#include "net/third_party/quiche/src/quic/core/frames/quic_ack_frequency_frame.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_constants.h"
 #include "net/third_party/quiche/src/quic/core/quic_data_reader.h"
@@ -28,6 +30,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_socket_address_coder.h"
 #include "net/third_party/quiche/src/quic/core/quic_stream_frame_data_producer.h"
+#include "net/third_party/quiche/src/quic/core/quic_time.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
@@ -622,6 +625,17 @@ size_t QuicFramer::GetStopSendingFrameSize(const QuicStopSendingFrame& frame) {
 }
 
 // static
+size_t QuicFramer::GetAckFrequencyFrameSize(
+    const QuicAckFrequencyFrame& frame) {
+  return QuicDataWriter::GetVarInt62Len(IETF_ACK_FREQUENCY) +
+         QuicDataWriter::GetVarInt62Len(frame.sequence_number) +
+         QuicDataWriter::GetVarInt62Len(frame.packet_tolerance) +
+         QuicDataWriter::GetVarInt62Len(frame.max_ack_delay.ToMicroseconds()) +
+         // One byte for encoding boolean
+         1;
+}
+
+// static
 size_t QuicFramer::GetPathChallengeFrameSize(
     const QuicPathChallengeFrame& frame) {
   return kQuicFrameTypeSize + sizeof(frame.data_buffer);
@@ -675,7 +689,8 @@ size_t QuicFramer::GetRetransmittableControlFrameSize(
     case HANDSHAKE_DONE_FRAME:
       // HANDSHAKE_DONE has no payload.
       return kQuicFrameTypeSize;
-
+    case ACK_FREQUENCY_FRAME:
+      return GetAckFrequencyFrameSize(*frame.ack_frequency_frame);
     case STREAM_FRAME:
     case ACK_FRAME:
     case STOP_WAITING_FRAME:
@@ -1013,6 +1028,9 @@ size_t QuicFramer::BuildDataPacket(const QuicPacketHeader& header,
           return 0;
         }
         break;
+      case HANDSHAKE_DONE_FRAME:
+        // HANDSHAKE_DONE has no payload.
+        break;
       default:
         RaiseError(QUIC_INVALID_FRAME_DATA);
         QUIC_BUG << "QUIC_INVALID_FRAME_DATA";
@@ -1034,8 +1052,8 @@ size_t QuicFramer::AppendIetfFrames(const QuicFrames& frames,
   for (const QuicFrame& frame : frames) {
     // Determine if we should write stream frame length in header.
     const bool last_frame_in_packet = i == frames.size() - 1;
-    if (!AppendIetfTypeByte(frame, last_frame_in_packet, writer)) {
-      QUIC_BUG << "AppendIetfTypeByte failed: " << detailed_error();
+    if (!AppendIetfFrameType(frame, last_frame_in_packet, writer)) {
+      QUIC_BUG << "AppendIetfFrameType failed: " << detailed_error();
       return 0;
     }
 
@@ -1181,6 +1199,12 @@ size_t QuicFramer::AppendIetfFrames(const QuicFrames& frames,
         break;
       case HANDSHAKE_DONE_FRAME:
         // HANDSHAKE_DONE has no payload.
+        break;
+      case ACK_FREQUENCY_FRAME:
+        if (!AppendAckFrequencyFrame(*frame.ack_frequency_frame, writer)) {
+          QUIC_BUG << "AppendAckFrequencyFrame failed: " << detailed_error();
+          return 0;
+        }
         break;
       default:
         set_detailed_error("Tried to append unknown frame type.");
@@ -2002,6 +2026,10 @@ bool QuicFramer::IsIetfStatelessResetPacket(
 
 bool QuicFramer::HasEncrypterOfEncryptionLevel(EncryptionLevel level) const {
   return encrypter_[level] != nullptr;
+}
+
+bool QuicFramer::HasDecrypterOfEncryptionLevel(EncryptionLevel level) const {
+  return decrypter_[level] != nullptr;
 }
 
 bool QuicFramer::AppendPacketHeader(const QuicPacketHeader& header,
@@ -2986,6 +3014,19 @@ bool QuicFramer::ProcessFrameData(QuicDataReader* reader,
         }
         break;
       }
+      case HANDSHAKE_DONE_FRAME: {
+        // HANDSHAKE_DONE has no payload.
+        QuicHandshakeDoneFrame handshake_done_frame;
+        QUIC_DVLOG(2) << ENDPOINT << "Processing handshake done frame "
+                      << handshake_done_frame;
+        if (!visitor_->OnHandshakeDoneFrame(handshake_done_frame)) {
+          QUIC_DVLOG(1) << ENDPOINT
+                        << "Visitor asked to stop further processing.";
+          // Returning true since there was no parsing error.
+          return true;
+        }
+        break;
+      }
 
       default:
         set_detailed_error("Illegal frame type.");
@@ -3329,7 +3370,20 @@ bool QuicFramer::ProcessIetfFrameData(QuicDataReader* reader,
                         << handshake_done_frame;
           break;
         }
-
+        case IETF_ACK_FREQUENCY: {
+          QuicAckFrequencyFrame frame;
+          if (!ProcessAckFrequencyFrame(reader, &frame)) {
+            return RaiseError(QUIC_INVALID_FRAME_DATA);
+          }
+          QUIC_DVLOG(2) << ENDPOINT << "Processing IETF ack frequency frame "
+                        << frame;
+          if (!visitor_->OnAckFrequencyFrame(frame)) {
+            QUIC_DVLOG(1) << "Visitor asked to stop further processing.";
+            // Returning true since there was no parsing error.
+            return true;
+          }
+          break;
+        }
         default:
           set_detailed_error("Illegal frame type.");
           QUIC_DLOG(WARNING)
@@ -3506,6 +3560,47 @@ bool QuicFramer::ProcessCryptoFrame(QuicDataReader* reader,
     return false;
   }
   frame->data_buffer = data.data();
+  return true;
+}
+
+bool QuicFramer::ProcessAckFrequencyFrame(QuicDataReader* reader,
+                                          QuicAckFrequencyFrame* frame) {
+  if (!reader->ReadVarInt62(&frame->sequence_number)) {
+    set_detailed_error("Unable to read sequence number.");
+    return false;
+  }
+
+  if (!reader->ReadVarInt62(&frame->packet_tolerance)) {
+    set_detailed_error("Unable to read packet tolerance.");
+    return false;
+  }
+  if (frame->packet_tolerance == 0) {
+    set_detailed_error("Invalid packet tolerance.");
+    return false;
+  }
+  uint64_t max_ack_delay_us;
+  if (!reader->ReadVarInt62(&max_ack_delay_us)) {
+    set_detailed_error("Unable to read max_ack_delay_us.");
+    return false;
+  }
+  constexpr uint64_t kMaxAckDelayUsBound = 1u << 24;
+  if (max_ack_delay_us > kMaxAckDelayUsBound) {
+    set_detailed_error("Invalid max_ack_delay_us.");
+    return false;
+  }
+  frame->max_ack_delay = QuicTime::Delta::FromMicroseconds(max_ack_delay_us);
+
+  uint8_t ignore_order;
+  if (!reader->ReadUInt8(&ignore_order)) {
+    set_detailed_error("Unable to read ignore_order.");
+    return false;
+  }
+  if (ignore_order > 1) {
+    set_detailed_error("Invalid ignore_order.");
+    return false;
+  }
+  frame->ignore_order = ignore_order;
+
   return true;
 }
 
@@ -4097,8 +4192,7 @@ void QuicFramer::SetDecrypter(EncryptionLevel level,
   DCHECK_GE(level, decrypter_level_);
   DCHECK(!version_.KnowsWhichDecrypterToUse());
   QUIC_DVLOG(1) << ENDPOINT << "Setting decrypter from level "
-                << EncryptionLevelToString(decrypter_level_) << " to "
-                << EncryptionLevelToString(level);
+                << decrypter_level_ << " to " << level;
   decrypter_[decrypter_level_] = nullptr;
   decrypter_[level] = std::move(decrypter);
   decrypter_level_ = level;
@@ -4111,8 +4205,7 @@ void QuicFramer::SetAlternativeDecrypter(
   DCHECK_NE(level, decrypter_level_);
   DCHECK(!version_.KnowsWhichDecrypterToUse());
   QUIC_DVLOG(1) << ENDPOINT << "Setting alternative decrypter from level "
-                << EncryptionLevelToString(alternative_decrypter_level_)
-                << " to " << EncryptionLevelToString(level);
+                << alternative_decrypter_level_ << " to " << level;
   if (alternative_decrypter_level_ != NUM_ENCRYPTION_LEVELS) {
     decrypter_[alternative_decrypter_level_] = nullptr;
   }
@@ -4124,15 +4217,13 @@ void QuicFramer::SetAlternativeDecrypter(
 void QuicFramer::InstallDecrypter(EncryptionLevel level,
                                   std::unique_ptr<QuicDecrypter> decrypter) {
   DCHECK(version_.KnowsWhichDecrypterToUse());
-  QUIC_DVLOG(1) << ENDPOINT << "Installing decrypter at level "
-                << EncryptionLevelToString(level);
+  QUIC_DVLOG(1) << ENDPOINT << "Installing decrypter at level " << level;
   decrypter_[level] = std::move(decrypter);
 }
 
 void QuicFramer::RemoveDecrypter(EncryptionLevel level) {
   DCHECK(version_.KnowsWhichDecrypterToUse());
-  QUIC_DVLOG(1) << ENDPOINT << "Removing decrypter at level "
-                << EncryptionLevelToString(level);
+  QUIC_DVLOG(1) << ENDPOINT << "Removing decrypter at level " << level;
   decrypter_[level] = nullptr;
 }
 
@@ -4156,14 +4247,12 @@ void QuicFramer::SetEncrypter(EncryptionLevel level,
                               std::unique_ptr<QuicEncrypter> encrypter) {
   DCHECK_GE(level, 0);
   DCHECK_LT(level, NUM_ENCRYPTION_LEVELS);
-  QUIC_DVLOG(1) << ENDPOINT << "Setting encrypter at level "
-                << EncryptionLevelToString(level);
+  QUIC_DVLOG(1) << ENDPOINT << "Setting encrypter at level " << level;
   encrypter_[level] = std::move(encrypter);
 }
 
 void QuicFramer::RemoveEncrypter(EncryptionLevel level) {
-  QUIC_DVLOG(1) << ENDPOINT << "Removing encrypter of "
-                << EncryptionLevelToString(level);
+  QUIC_DVLOG(1) << ENDPOINT << "Removing encrypter of " << level;
   encrypter_[level] = nullptr;
 }
 
@@ -4185,7 +4274,7 @@ size_t QuicFramer::EncryptInPlace(EncryptionLevel level,
   if (encrypter_[level] == nullptr) {
     QUIC_BUG << ENDPOINT
              << "Attempted to encrypt in place without encrypter at level "
-             << EncryptionLevelToString(level);
+             << level;
     RaiseError(QUIC_ENCRYPTION_FAILURE);
     return 0;
   }
@@ -4248,7 +4337,7 @@ bool QuicFramer::ApplyHeaderProtection(EncryptionLevel level,
     QUIC_BUG
         << ENDPOINT
         << "Attempted to apply header protection without encrypter at level "
-        << EncryptionLevelToString(level) << " using " << version_;
+        << level << " using " << version_;
     return false;
   }
 
@@ -4318,7 +4407,7 @@ bool QuicFramer::RemoveHeaderProtection(QuicDataReader* reader,
     QUIC_DVLOG(1)
         << ENDPOINT
         << "No decrypter available for removing header protection at level "
-        << EncryptionLevelToString(expected_decryption_level);
+        << expected_decryption_level;
     return false;
   }
 
@@ -4439,7 +4528,7 @@ size_t QuicFramer::EncryptPayload(EncryptionLevel level,
   DCHECK(packet_number.IsInitialized());
   if (encrypter_[level] == nullptr) {
     QUIC_BUG << ENDPOINT << "Attempted to encrypt without encrypter at level "
-             << EncryptionLevelToString(level);
+             << level;
     RaiseError(QUIC_ENCRYPTION_FAILURE);
     return 0;
   }
@@ -4449,6 +4538,14 @@ size_t QuicFramer::EncryptPayload(EncryptionLevel level,
   // Copy in the header, because the encrypter only populates the encrypted
   // plaintext content.
   const size_t ad_len = associated_data.length();
+  if (packet.length() < ad_len) {
+    QUIC_BUG << ENDPOINT
+             << "packet is shorter than associated data length. version:"
+             << version() << ", packet length:" << packet.length()
+             << ", associated data length:" << ad_len;
+    RaiseError(QUIC_ENCRYPTION_FAILURE);
+    return 0;
+  }
   memmove(buffer, associated_data.data(), ad_len);
   // Encrypt the plaintext into the buffer.
   size_t output_length = 0;
@@ -4474,7 +4571,7 @@ size_t QuicFramer::GetCiphertextSize(EncryptionLevel level,
   if (encrypter_[level] == nullptr) {
     QUIC_BUG << ENDPOINT
              << "Attempted to get ciphertext size without encrypter at level "
-             << EncryptionLevelToString(level) << " using " << version_;
+             << level << " using " << version_;
     return plaintext_size;
   }
   return encrypter_[level]->GetCiphertextSize(plaintext_size);
@@ -4729,7 +4826,7 @@ bool QuicFramer::AppendTypeByte(const QuicFrame& frame,
                                 bool last_frame_in_packet,
                                 QuicDataWriter* writer) {
   if (VersionHasIetfQuicFrames(version_.transport_version)) {
-    return AppendIetfTypeByte(frame, last_frame_in_packet, writer);
+    return AppendIetfFrameType(frame, last_frame_in_packet, writer);
   }
   uint8_t type_byte = 0;
   switch (frame.type) {
@@ -4785,9 +4882,9 @@ bool QuicFramer::AppendTypeByte(const QuicFrame& frame,
   return writer->WriteUInt8(type_byte);
 }
 
-bool QuicFramer::AppendIetfTypeByte(const QuicFrame& frame,
-                                    bool last_frame_in_packet,
-                                    QuicDataWriter* writer) {
+bool QuicFramer::AppendIetfFrameType(const QuicFrame& frame,
+                                     bool last_frame_in_packet,
+                                     QuicDataWriter* writer) {
   uint8_t type_byte = 0;
   switch (frame.type) {
     case PADDING_FRAME:
@@ -4805,7 +4902,9 @@ bool QuicFramer::AppendIetfTypeByte(const QuicFrame& frame,
           type_byte = IETF_CONNECTION_CLOSE;
           break;
         default:
-          set_detailed_error("Invalid QuicConnectionCloseFrame type.");
+          set_detailed_error(quiche::QuicheStrCat(
+              "Invalid QuicConnectionCloseFrame type: ",
+              static_cast<int>(frame.connection_close_frame->close_type)));
           return RaiseError(QUIC_INTERNAL_ERROR);
       }
       break;
@@ -4890,12 +4989,15 @@ bool QuicFramer::AppendIetfTypeByte(const QuicFrame& frame,
     case HANDSHAKE_DONE_FRAME:
       type_byte = IETF_HANDSHAKE_DONE;
       break;
+    case ACK_FREQUENCY_FRAME:
+      type_byte = IETF_ACK_FREQUENCY;
+      break;
     default:
       QUIC_BUG << "Attempt to generate a frame type for an unsupported value: "
                << frame.type;
       return false;
   }
-  return writer->WriteUInt8(type_byte);
+  return writer->WriteVarInt62(type_byte);
 }
 
 // static
@@ -5104,6 +5206,29 @@ bool QuicFramer::AppendCryptoFrame(const QuicCryptoFrame& frame,
       return false;
     }
   }
+  return true;
+}
+
+bool QuicFramer::AppendAckFrequencyFrame(const QuicAckFrequencyFrame& frame,
+                                         QuicDataWriter* writer) {
+  if (!writer->WriteVarInt62(frame.sequence_number)) {
+    set_detailed_error("Writing sequence number failed.");
+    return false;
+  }
+  if (!writer->WriteVarInt62(frame.packet_tolerance)) {
+    set_detailed_error("Writing packet tolerance failed.");
+    return false;
+  }
+  if (!writer->WriteVarInt62(
+          static_cast<uint64_t>(frame.max_ack_delay.ToMicroseconds()))) {
+    set_detailed_error("Writing max_ack_delay_us failed.");
+    return false;
+  }
+  if (!writer->WriteUInt8(static_cast<uint8_t>(frame.ignore_order))) {
+    set_detailed_error("Writing ignore_order failed.");
+    return false;
+  }
+
   return true;
 }
 
@@ -5365,7 +5490,7 @@ bool QuicFramer::AppendIetfAckFrameAndTypeByte(const QuicAckFrame& frame,
                 QuicDataWriter::GetVarInt62Len(frame.ecn_ce_count));
   }
 
-  if (!writer->WriteUInt8(type)) {
+  if (!writer->WriteVarInt62(type)) {
     set_detailed_error("No room for frame-type");
     return false;
   }

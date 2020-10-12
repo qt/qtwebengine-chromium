@@ -14,9 +14,9 @@
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAuditTrail.h"
 #include "src/gpu/GrCaps.h"
+#include "src/gpu/GrClip.h"
 #include "src/gpu/GrDefaultGeoProcFactory.h"
 #include "src/gpu/GrDrawOpTest.h"
-#include "src/gpu/GrFixedClip.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
@@ -537,7 +537,7 @@ bool GrDefaultPathRenderer::internalDrawPath(GrRenderTargetContext* renderTarget
                                              GrPaint&& paint,
                                              GrAAType aaType,
                                              const GrUserStencilSettings& userStencilSettings,
-                                             const GrClip& clip,
+                                             const GrClip* clip,
                                              const SkMatrix& viewMatrix,
                                              const GrStyledShape& shape,
                                              bool stencilOnly) {
@@ -583,7 +583,7 @@ bool GrDefaultPathRenderer::internalDrawPath(GrRenderTargetContext* renderTarget
             switch (path.getFillType()) {
                 case SkPathFillType::kInverseEvenOdd:
                     reverse = true;
-                    // fallthrough
+                    [[fallthrough]];
                 case SkPathFillType::kEvenOdd:
                     passes[0] = &gEOStencilPass;
                     if (stencilOnly) {
@@ -602,7 +602,7 @@ bool GrDefaultPathRenderer::internalDrawPath(GrRenderTargetContext* renderTarget
 
                 case SkPathFillType::kInverseWinding:
                     reverse = true;
-                    // fallthrough
+                    [[fallthrough]];
                 case SkPathFillType::kWinding:
                     passes[0] = &gWindStencilPass;
                     passCount = 2;
@@ -705,7 +705,7 @@ bool GrDefaultPathRenderer::onDrawPath(const DrawPathArgs& args) {
 
     return this->internalDrawPath(
             args.fRenderTargetContext, std::move(args.fPaint), aaType, *args.fUserStencilSettings,
-            *args.fClip, *args.fViewMatrix, *args.fShape, false);
+            args.fClip, *args.fViewMatrix, *args.fShape, false);
 }
 
 void GrDefaultPathRenderer::onStencilPath(const StencilPathArgs& args) {
@@ -720,7 +720,7 @@ void GrDefaultPathRenderer::onStencilPath(const StencilPathArgs& args) {
 
     this->internalDrawPath(
             args.fRenderTargetContext, std::move(paint), aaType, GrUserStencilSettings::kUnused,
-            *args.fClip, *args.fViewMatrix, *args.fShape, true);
+            args.fClip, *args.fViewMatrix, *args.fShape, true);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

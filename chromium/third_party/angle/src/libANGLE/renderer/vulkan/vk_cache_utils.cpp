@@ -11,6 +11,7 @@
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
 
 #include "common/aligned_memory.h"
+#include "common/vulkan/vk_google_filtering_precision.h"
 #include "libANGLE/BlobCache.h"
 #include "libANGLE/VertexAttribute.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
@@ -1512,7 +1513,8 @@ bool DescriptorSetLayoutDesc::operator==(const DescriptorSetLayoutDesc &other) c
 void DescriptorSetLayoutDesc::update(uint32_t bindingIndex,
                                      VkDescriptorType type,
                                      uint32_t count,
-                                     VkShaderStageFlags stages)
+                                     VkShaderStageFlags stages,
+                                     const vk::Sampler *immutableSampler)
 {
     ASSERT(static_cast<size_t>(type) < std::numeric_limits<uint16_t>::max());
     ASSERT(count < std::numeric_limits<uint16_t>::max());
@@ -1522,9 +1524,18 @@ void DescriptorSetLayoutDesc::update(uint32_t bindingIndex,
     SetBitField(packedBinding.type, type);
     SetBitField(packedBinding.count, count);
     SetBitField(packedBinding.stages, stages);
+    packedBinding.immutableSampler = VK_NULL_HANDLE;
+    packedBinding.pad              = 0;
+
+    if (immutableSampler)
+    {
+        ASSERT(count == 1);
+        packedBinding.immutableSampler = immutableSampler->getHandle();
+    }
 }
 
-void DescriptorSetLayoutDesc::unpackBindings(DescriptorSetLayoutBindingVector *bindings) const
+void DescriptorSetLayoutDesc::unpackBindings(DescriptorSetLayoutBindingVector *bindings,
+                                             std::vector<VkSampler> *immutableSamplers) const
 {
     for (uint32_t bindingIndex = 0; bindingIndex < kMaxDescriptorSetLayoutBindings; ++bindingIndex)
     {
@@ -1536,10 +1547,28 @@ void DescriptorSetLayoutDesc::unpackBindings(DescriptorSetLayoutBindingVector *b
         binding.binding                      = bindingIndex;
         binding.descriptorCount              = packedBinding.count;
         binding.descriptorType               = static_cast<VkDescriptorType>(packedBinding.type);
-        binding.stageFlags         = static_cast<VkShaderStageFlags>(packedBinding.stages);
-        binding.pImmutableSamplers = nullptr;
+        binding.stageFlags = static_cast<VkShaderStageFlags>(packedBinding.stages);
+        if (packedBinding.immutableSampler != VK_NULL_HANDLE)
+        {
+            ASSERT(packedBinding.count == 1);
+            immutableSamplers->push_back(packedBinding.immutableSampler);
+            binding.pImmutableSamplers = reinterpret_cast<const VkSampler *>(angle::DirtyPointer);
+        }
 
         bindings->push_back(binding);
+    }
+    if (!immutableSamplers->empty())
+    {
+        // Patch up pImmutableSampler addresses now that the vector is stable
+        int immutableIndex = 0;
+        for (VkDescriptorSetLayoutBinding &binding : *bindings)
+        {
+            if (binding.pImmutableSamplers)
+            {
+                binding.pImmutableSamplers = &(*immutableSamplers)[immutableIndex];
+                immutableIndex++;
+            }
+        }
     }
 }
 
@@ -1666,7 +1695,7 @@ FramebufferDesc::~FramebufferDesc()                            = default;
 FramebufferDesc::FramebufferDesc(const FramebufferDesc &other) = default;
 FramebufferDesc &FramebufferDesc::operator=(const FramebufferDesc &other) = default;
 
-void FramebufferDesc::update(uint32_t index, AttachmentSerial serial)
+void FramebufferDesc::update(uint32_t index, Serial serial)
 {
     ASSERT(index < kMaxFramebufferAttachments);
     mSerials[index] = serial;
@@ -1674,13 +1703,12 @@ void FramebufferDesc::update(uint32_t index, AttachmentSerial serial)
 
 size_t FramebufferDesc::hash() const
 {
-    return angle::ComputeGenericHash(&mSerials,
-                                     sizeof(AttachmentSerial) * kMaxFramebufferAttachments);
+    return angle::ComputeGenericHash(&mSerials, sizeof(Serial) * kMaxFramebufferAttachments);
 }
 
 void FramebufferDesc::reset()
 {
-    memset(&mSerials, 0, sizeof(AttachmentSerial) * kMaxFramebufferAttachments);
+    memset(&mSerials, 0, sizeof(Serial) * kMaxFramebufferAttachments);
 }
 
 bool FramebufferDesc::operator==(const FramebufferDesc &other) const
@@ -1691,9 +1719,9 @@ bool FramebufferDesc::operator==(const FramebufferDesc &other) const
 uint32_t FramebufferDesc::attachmentCount() const
 {
     uint32_t count = 0;
-    for (const AttachmentSerial &serial : mSerials)
+    for (const Serial &serial : mSerials)
     {
-        if (serial.imageSerial != 0)
+        if (serial.valid())
         {
             count++;
         }
@@ -1774,7 +1802,7 @@ void SamplerDesc::update(const gl::SamplerState &samplerState, bool stencilMode)
     mReserved = 0;
 }
 
-VkSamplerCreateInfo SamplerDesc::unpack(ContextVk *contextVk) const
+angle::Result SamplerDesc::init(ContextVk *contextVk, vk::Sampler *sampler) const
 {
     const gl::Extensions &extensions = contextVk->getExtensions();
 
@@ -1799,7 +1827,23 @@ VkSamplerCreateInfo SamplerDesc::unpack(ContextVk *contextVk) const
     createInfo.borderColor             = VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
     createInfo.unnormalizedCoordinates = VK_FALSE;
 
-    return createInfo;
+    // Note: because we don't detect changes to this hint (no dirty bit), if a sampler is created
+    // with the hint enabled, and then the hint gets disabled, the next render will do so with the
+    // hint enabled.
+    VkSamplerFilteringPrecisionGOOGLE filteringInfo = {};
+    GLenum hint = contextVk->getState().getTextureFilteringHint();
+    if (hint == GL_NICEST)
+    {
+        ASSERT(extensions.textureFilteringCHROMIUM);
+        filteringInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_FILTERING_PRECISION_GOOGLE;
+        filteringInfo.samplerFilteringPrecisionMode =
+            VK_SAMPLER_FILTERING_PRECISION_MODE_HIGH_GOOGLE;
+        vk::AddToPNextChain(&createInfo, &filteringInfo);
+    }
+
+    ANGLE_VK_TRY(contextVk, sampler->init(contextVk->getDevice(), createInfo));
+
+    return angle::Result::Continue;
 }
 
 size_t SamplerDesc::hash() const
@@ -2017,14 +2061,15 @@ angle::Result DescriptorSetLayoutCache::getDescriptorSetLayout(
     }
 
     // We must unpack the descriptor set layout description.
-    vk::DescriptorSetLayoutBindingVector bindings;
-    desc.unpackBindings(&bindings);
+    vk::DescriptorSetLayoutBindingVector bindingVector;
+    std::vector<VkSampler> immutableSamplers;
+    desc.unpackBindings(&bindingVector, &immutableSamplers);
 
     VkDescriptorSetLayoutCreateInfo createInfo = {};
     createInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     createInfo.flags        = 0;
-    createInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    createInfo.pBindings    = bindings.data();
+    createInfo.bindingCount = static_cast<uint32_t>(bindingVector.size());
+    createInfo.pBindings    = bindingVector.data();
 
     vk::DescriptorSetLayout newLayout;
     ANGLE_VK_TRY(context, newLayout.init(context->getDevice(), createInfo));
@@ -2158,10 +2203,8 @@ angle::Result SamplerCache::getSampler(ContextVk *contextVk,
         return angle::Result::Continue;
     }
 
-    VkSamplerCreateInfo createInfo = desc.unpack(contextVk);
-
     vk::Sampler sampler;
-    ANGLE_VK_TRY(contextVk, sampler.init(contextVk->getDevice(), createInfo));
+    ANGLE_TRY(desc.init(contextVk, &sampler));
 
     auto insertedItem = mPayload.emplace(desc, vk::RefCountedSampler(std::move(sampler)));
     vk::RefCountedSampler &insertedSampler = insertedItem.first->second;

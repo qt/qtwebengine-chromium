@@ -64,11 +64,13 @@ void av1_init_layer_context(AV1_COMP *const cpi) {
         lc->actual_num_seg1_blocks = 0;
         lc->actual_num_seg2_blocks = 0;
         lc->counter_encode_maxq_scene_change = 0;
+        if (lc->map) aom_free(lc->map);
         CHECK_MEM_ERROR(cm, lc->map,
                         aom_malloc(mi_rows * mi_cols * sizeof(*lc->map)));
         memset(lc->map, 0, mi_rows * mi_cols);
         last_coded_q_map_size =
             mi_rows * mi_cols * sizeof(*lc->last_coded_q_map);
+        if (lc->last_coded_q_map) aom_free(lc->last_coded_q_map);
         CHECK_MEM_ERROR(cm, lc->last_coded_q_map,
                         aom_malloc(last_coded_q_map_size));
         assert(MAXQ <= 255);
@@ -194,6 +196,7 @@ void av1_restore_layer_context(AV1_COMP *const cpi) {
 void av1_save_layer_context(AV1_COMP *const cpi) {
   GF_GROUP *const gf_group = &cpi->gf_group;
   SVC *const svc = &cpi->svc;
+  const AV1_COMMON *const cm = &cpi->common;
   LAYER_CONTEXT *lc = get_layer_context(cpi);
   lc->rc = cpi->rc;
   lc->target_bandwidth = (int)cpi->oxcf.target_bandwidth;
@@ -231,8 +234,38 @@ void av1_save_layer_context(AV1_COMP *const cpi) {
       }
     }
   }
+  for (unsigned int i = 0; i < REF_FRAMES; i++) {
+    if (frame_is_intra_only(cm) ||
+        cm->current_frame.refresh_frame_flags & (1 << i)) {
+      svc->spatial_layer_fb[i] = svc->spatial_layer_id;
+      svc->temporal_layer_fb[i] = svc->temporal_layer_id;
+    }
+  }
   if (svc->spatial_layer_id == svc->number_spatial_layers - 1)
     svc->current_superframe++;
+}
+
+int av1_svc_primary_ref_frame(const AV1_COMP *const cpi) {
+  const SVC *const svc = &cpi->svc;
+  const AV1_COMMON *const cm = &cpi->common;
+  int wanted_fb = -1;
+  int primary_ref_frame = PRIMARY_REF_NONE;
+  for (unsigned int i = 0; i < REF_FRAMES; i++) {
+    if (svc->spatial_layer_fb[i] == svc->spatial_layer_id &&
+        svc->temporal_layer_fb[i] == svc->temporal_layer_id) {
+      wanted_fb = i;
+      break;
+    }
+  }
+  if (wanted_fb != -1) {
+    for (int ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ref_frame++) {
+      if (get_ref_frame_map_idx(cm, ref_frame) == wanted_fb) {
+        primary_ref_frame = ref_frame - LAST_FRAME;
+        break;
+      }
+    }
+  }
+  return primary_ref_frame;
 }
 
 void av1_free_svc_cyclic_refresh(AV1_COMP *const cpi) {
@@ -281,8 +314,8 @@ void av1_one_pass_cbr_svc_start_layer(AV1_COMP *const cpi) {
   int width = 0, height = 0;
   lc = &svc->layer_context[svc->spatial_layer_id * svc->number_temporal_layers +
                            svc->temporal_layer_id];
-  get_layer_resolution(cpi->oxcf.width, cpi->oxcf.height,
-                       lc->scaling_factor_num, lc->scaling_factor_den, &width,
-                       &height);
+  get_layer_resolution(cpi->oxcf.frm_dim_cfg.width,
+                       cpi->oxcf.frm_dim_cfg.height, lc->scaling_factor_num,
+                       lc->scaling_factor_den, &width, &height);
   av1_set_size_literal(cpi, width, height);
 }

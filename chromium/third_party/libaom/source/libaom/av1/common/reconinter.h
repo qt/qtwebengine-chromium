@@ -137,9 +137,6 @@ void av1_init_warp_params(InterPredParams *inter_pred_params,
                           const WarpTypesAllowed *warp_types, int ref,
                           const MACROBLOCKD *xd, const MB_MODE_INFO *mi);
 
-void av1_init_mask_comp(InterPredParams *inter_pred_params, BLOCK_SIZE bsize,
-                        const INTERINTER_COMPOUND_DATA *mask_comp);
-
 static INLINE int has_scale(int xs, int ys) {
   return xs != SCALE_SUBPEL_SHIFTS || ys != SCALE_SUBPEL_SHIFTS;
 }
@@ -238,11 +235,6 @@ void av1_make_inter_predictor(const uint8_t *src, int src_stride, uint8_t *dst,
                               int dst_stride,
                               InterPredParams *inter_pred_params,
                               const SubpelParams *subpel_params);
-
-void av1_make_masked_inter_predictor(const uint8_t *pre, int pre_stride,
-                                     uint8_t *dst, int dst_stride,
-                                     InterPredParams *inter_pred_params,
-                                     const SubpelParams *subpel_params);
 
 typedef void (*CalcSubpelParamsFunc)(const MV *const src_mv,
                                      InterPredParams *const inter_pred_params,

@@ -255,7 +255,7 @@ bool SkMaskFilterBase::filterPath(const SkPath& devPath, const SkMatrix& matrix,
 
             case kUnimplemented_FilterReturn:
                 SkASSERT(nullptr == patch.fMask.fImage);
-                // fall through
+                // fall out
                 break;
         }
     }
@@ -335,7 +335,7 @@ bool SkMaskFilterBase::canFilterMaskGPU(const GrStyledShape& shape,
 bool SkMaskFilterBase::directFilterMaskGPU(GrRecordingContext*,
                                            GrRenderTargetContext*,
                                            GrPaint&&,
-                                           const GrClip&,
+                                           const GrClip*,
                                            const SkMatrix& viewMatrix,
                                            const GrStyledShape&) const {
     return false;

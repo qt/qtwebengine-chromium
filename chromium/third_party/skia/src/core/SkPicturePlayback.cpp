@@ -601,8 +601,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             canvas->saveLayer(SkCanvas::SaveLayerRec(boundsPtr, paint, flags));
         } break;
         case SAVE_LAYER_SAVELAYERREC: {
-            SkCanvas::SaveLayerRec rec(nullptr, nullptr, nullptr, nullptr, nullptr, 0);
-            SkMatrix clipMatrix;
+            SkCanvas::SaveLayerRec rec(nullptr, nullptr, nullptr, 0);
             const uint32_t flatFlags = reader->readInt();
             SkRect bounds;
             if (flatFlags & SAVELAYERREC_HAS_BOUNDS) {
@@ -620,12 +619,12 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             if (flatFlags & SAVELAYERREC_HAS_FLAGS) {
                 rec.fSaveLayerFlags = reader->readInt();
             }
-            if (flatFlags & SAVELAYERREC_HAS_CLIPMASK) {
-                rec.fClipMask = fPictureData->getImage(reader);
+            if (flatFlags & SAVELAYERREC_HAS_CLIPMASK_OBSOLETE) {
+                (void)fPictureData->getImage(reader);
             }
-            if (flatFlags & SAVELAYERREC_HAS_CLIPMATRIX) {
-                reader->readMatrix(&clipMatrix);
-                rec.fClipMatrix = &clipMatrix;
+            if (flatFlags & SAVELAYERREC_HAS_CLIPMATRIX_OBSOLETE) {
+                SkMatrix clipMatrix_ignored;
+                reader->readMatrix(&clipMatrix_ignored);
             }
             BREAK_ON_READ_ERROR(reader);
 

@@ -41,9 +41,9 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
    public:
     virtual ~DelegateInterface() {}
     // Get a buffer of kMaxOutgoingPacketSize bytes to serialize the next
-    // packet. If return nullptr, QuicPacketCreator will serialize on a stack
-    // buffer.
-    virtual char* GetPacketBuffer() = 0;
+    // packet. If the return value's buffer is nullptr, QuicPacketCreator will
+    // serialize on a stack buffer.
+    virtual QuicPacketBuffer GetPacketBuffer() = 0;
     // Called when a packet is serialized. Delegate take the ownership of
     // |serialized_packet|.
     virtual void OnSerializedPacket(SerializedPacket serialized_packet) = 0;
@@ -142,12 +142,14 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Returns true if current open packet can accommodate more stream frames of
   // stream |id| at |offset| and data length |data_size|, false otherwise.
+  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
   bool HasRoomForStreamFrame(QuicStreamId id,
                              QuicStreamOffset offset,
                              size_t data_size);
 
   // Returns true if current open packet can accommodate a message frame of
   // |length|.
+  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
   bool HasRoomForMessageFrame(QuicByteCount length);
 
   // Serializes all added frames into a single packet and invokes the delegate_
@@ -179,6 +181,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // frames in the packet.  Since stream frames are slightly smaller when they
   // are the last frame in a packet, this method will return a different
   // value than max_packet_size - PacketSize(), in this case.
+  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
   size_t BytesFree();
 
   // Returns the number of bytes that the packet will expand by if a new frame
@@ -191,6 +194,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // if serialized with the current frames.  Adding a frame to the packet
   // may change the serialized length of existing frames, as per the comment
   // in BytesFree.
+  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
   size_t PacketSize();
 
   // Tries to add |frame| to the packet creator's list of frames to be
@@ -255,6 +259,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   void set_encryption_level(EncryptionLevel level) {
     packet_.encryption_level = level;
   }
+  EncryptionLevel encryption_level() { return packet_.encryption_level; }
 
   // packet number of the last created packet, or 0 if no packets have been
   // created.
@@ -429,6 +434,10 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
                                   char* buffer,
                                   size_t buffer_len);
 
+  void set_disable_padding_override(bool should_disable_padding) {
+    disable_padding_override_ = should_disable_padding;
+  }
+
  private:
   friend class test::QuicPacketCreatorPeer;
 
@@ -459,7 +468,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // retransmitted to packet_.retransmittable_frames. All frames must fit into
   // a single packet.
   // Fails if |encrypted_buffer_len| isn't long enough for the encrypted packet.
-  void SerializePacket(char* encrypted_buffer, size_t encrypted_buffer_len);
+  void SerializePacket(QuicOwnedPacketBuffer encrypted_buffer,
+                       size_t encrypted_buffer_len);
 
   // Called after a new SerialiedPacket is created to call the delegate's
   // OnSerializedPacket and reset state.
@@ -551,7 +561,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // Frames to be added to the next SerializedPacket
   QuicFrames queued_frames_;
 
-  // packet_size should never be read directly, use PacketSize() instead.
+  // Serialization size of header + frames. If there is no queued frames,
+  // packet_size_ is 0.
   // TODO(ianswett): Move packet_size_ into SerializedPacket once
   // QuicEncryptedPacket has been flattened into SerializedPacket.
   size_t packet_size_;
@@ -597,6 +608,17 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // accept. There is no limit for QUIC_CRYPTO connections, but QUIC+TLS
   // negotiates this during the handshake.
   QuicByteCount max_datagram_frame_size_;
+
+  const bool avoid_leak_writer_buffer_ =
+      GetQuicReloadableFlag(quic_avoid_leak_writer_buffer);
+
+  const bool fix_min_crypto_frame_size_ =
+      GetQuicReloadableFlag(quic_fix_min_crypto_frame_size);
+
+  // When true, this will override the padding generation code to disable it.
+  bool disable_padding_override_ = false;
+
+  bool update_packet_size_ = GetQuicReloadableFlag(quic_update_packet_size);
 };
 
 }  // namespace quic

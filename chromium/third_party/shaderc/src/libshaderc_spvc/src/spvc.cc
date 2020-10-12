@@ -639,6 +639,17 @@ shaderc_spvc_compile_options_set_hlsl_nonwritable_uav_texture_as_srv(
   return shaderc_spvc_status_success;
 }
 
+shaderc_spvc_status shaderc_spvc_set_hlsl_force_storage_buffer_as_uav(
+    const shaderc_spvc_context_t context, uint32_t desc_set, uint32_t binding) {
+  CHECK_CONTEXT(context);
+  CHECK_CROSS_COMPILER(context, context->cross_compiler);
+
+  auto* hlsl_compiler = reinterpret_cast<spirv_cross::CompilerHLSL*>(
+      context->cross_compiler.get());
+  hlsl_compiler->set_hlsl_force_storage_buffer_as_uav(desc_set, binding);
+  return shaderc_spvc_status_success;
+}
+
 shaderc_spvc_status shaderc_spvc_compile_options_set_fixup_clipspace(
     shaderc_spvc_compile_options_t options, bool b) {
   CHECK_OPTIONS(nullptr, options);
@@ -1032,6 +1043,15 @@ shaderc_spvc_status shaderc_spvc_get_binding_info(
 
     bindings->id = shader_resource.id;
     bindings->base_type_id = shader_resource.base_type_id;
+
+    if (binding_type == shaderc_spvc_binding_type_uniform_buffer ||
+        binding_type == shaderc_spvc_binding_type_storage_buffer) {
+      // Determine buffer size, with a minimum of 1 element in the runtime array
+      spirv_cross::SPIRType type =
+          compiler->get_type(shader_resource.base_type_id);
+      bindings->minimum_buffer_size =
+          compiler->get_declared_struct_size_runtime_array(type, 1);
+    }
 
     switch (binding_type) {
       case shaderc_spvc_binding_type_sampled_texture: {

@@ -108,17 +108,6 @@ void av1_init_warp_params(InterPredParams *inter_pred_params,
     inter_pred_params->mode = WARP_PRED;
 }
 
-void av1_init_mask_comp(InterPredParams *inter_pred_params, BLOCK_SIZE bsize,
-                        const INTERINTER_COMPOUND_DATA *mask_comp) {
-  inter_pred_params->sb_type = bsize;
-  inter_pred_params->mask_comp = *mask_comp;
-
-  if (inter_pred_params->conv_params.compound_index == 1) {
-    inter_pred_params->conv_params.do_average = 0;
-    inter_pred_params->comp_mode = MASK_COMP;
-  }
-}
-
 void av1_make_inter_predictor(const uint8_t *src, int src_stride, uint8_t *dst,
                               int dst_stride,
                               InterPredParams *inter_pred_params,
@@ -662,10 +651,10 @@ static AOM_INLINE void build_masked_compound_no_round(
 #endif
 }
 
-void av1_make_masked_inter_predictor(const uint8_t *pre, int pre_stride,
-                                     uint8_t *dst, int dst_stride,
-                                     InterPredParams *inter_pred_params,
-                                     const SubpelParams *subpel_params) {
+static void make_masked_inter_predictor(const uint8_t *pre, int pre_stride,
+                                        uint8_t *dst, int dst_stride,
+                                        InterPredParams *inter_pred_params,
+                                        const SubpelParams *subpel_params) {
   const INTERINTER_COMPOUND_DATA *comp_data = &inter_pred_params->mask_comp;
   BLOCK_SIZE sb_type = inter_pred_params->sb_type;
 
@@ -717,8 +706,8 @@ void av1_build_one_inter_predictor(
     av1_make_inter_predictor(src, src_stride, dst, dst_stride,
                              inter_pred_params, &subpel_params);
   } else {
-    av1_make_masked_inter_predictor(src, src_stride, dst, dst_stride,
-                                    inter_pred_params, &subpel_params);
+    make_masked_inter_predictor(src, src_stride, dst, dst_stride,
+                                inter_pred_params, &subpel_params);
   }
 }
 
@@ -772,9 +761,8 @@ static void dist_wtd_comp_weight_assign(const AV1_COMMON *cm,
 
 // True if the following hold:
 //  1. Not intrabc and not build_for_obmc
-//  2. A U or V plane
-//  3. If the block size differs from the base block size
-//  4. If sub-sampled, none of the previous blocks around the sub-sample
+//  2. At least one dimension is size 4 with subsampling
+//  3. If sub-sampled, none of the previous blocks around the sub-sample
 //     are intrabc or inter-blocks
 static bool is_sub8x8_inter(const MACROBLOCKD *xd, int plane, BLOCK_SIZE bsize,
                             int is_intrabc, int build_for_obmc) {
@@ -785,8 +773,9 @@ static bool is_sub8x8_inter(const MACROBLOCKD *xd, int plane, BLOCK_SIZE bsize,
   const struct macroblockd_plane *const pd = &xd->plane[plane];
   const int ss_x = pd->subsampling_x;
   const int ss_y = pd->subsampling_y;
-  if ((block_size_wide[bsize] >= 8 || !ss_x) &&
-      (block_size_high[bsize] >= 8 || !ss_y)) {
+  const int is_sub4_x = (block_size_wide[bsize] == 4) && ss_x;
+  const int is_sub4_y = (block_size_high[bsize] == 4) && ss_y;
+  if (!is_sub4_x && !is_sub4_y) {
     return false;
   }
 
@@ -794,8 +783,8 @@ static bool is_sub8x8_inter(const MACROBLOCKD *xd, int plane, BLOCK_SIZE bsize,
   // worth of pixels. Thus (mi_x, mi_y) may not be the correct coordinates for
   // the top-left corner of the prediction source - the correct top-left corner
   // is at (pre_x, pre_y).
-  const int row_start = (block_size_high[bsize] == 4) && ss_y ? -1 : 0;
-  const int col_start = (block_size_wide[bsize] == 4) && ss_x ? -1 : 0;
+  const int row_start = is_sub4_y ? -1 : 0;
+  const int col_start = is_sub4_x ? -1 : 0;
 
   for (int row = row_start; row <= 0; ++row) {
     for (int col = col_start; col <= 0; ++col) {
@@ -809,7 +798,7 @@ static bool is_sub8x8_inter(const MACROBLOCKD *xd, int plane, BLOCK_SIZE bsize,
 
 static void build_inter_predictors_sub8x8(
     const AV1_COMMON *cm, MACROBLOCKD *xd, int plane, const MB_MODE_INFO *mi,
-    int bw, int bh, int mi_x, int mi_y, uint8_t **mc_buf,
+    int mi_x, int mi_y, uint8_t **mc_buf,
     CalcSubpelParamsFunc calc_subpel_params_func) {
   const BLOCK_SIZE bsize = mi->sb_type;
   struct macroblockd_plane *const pd = &xd->plane[plane];
@@ -838,10 +827,6 @@ static void build_inter_predictors_sub8x8(
     int col = col_start;
     for (int x = 0; x < b8_w; x += b4_w) {
       MB_MODE_INFO *this_mbmi = xd->mi[row * xd->mi_stride + col];
-      int tmp_dst_stride = 8;
-      assert(bw < 8 || bh < 8);
-      (void)bw;
-      (void)bh;
       struct buf_2d *const dst_buf = &pd->dst;
       uint8_t *dst = dst_buf->buf + dst_buf->stride * y + x;
       int ref = 0;
@@ -865,9 +850,8 @@ static void build_inter_predictors_sub8x8(
                             pre_x + x, pd->subsampling_x, pd->subsampling_y,
                             xd->bd, is_cur_buf_hbd(xd), mi->use_intrabc, sf,
                             &pre_buf, this_mbmi->interp_filters);
-      inter_pred_params.conv_params = get_conv_params_no_round(
-          ref, plane, xd->tmp_conv_dst, tmp_dst_stride, is_compound, xd->bd);
-      inter_pred_params.conv_params.use_dist_wtd_comp_avg = 0;
+      inter_pred_params.conv_params =
+          get_conv_params_no_round(ref, plane, NULL, 0, is_compound, xd->bd);
 
       av1_build_one_inter_predictor(dst, dst_buf->stride, &mv,
                                     &inter_pred_params, xd, mi_x + x, mi_y + y,
@@ -932,7 +916,12 @@ static void build_inter_predictors_8x8_and_bigger(
       av1_init_warp_params(&inter_pred_params, &warp_types, ref, xd, mi);
 
     if (is_masked_compound_type(mi->interinter_comp.type)) {
-      av1_init_mask_comp(&inter_pred_params, mi->sb_type, &mi->interinter_comp);
+      inter_pred_params.sb_type = mi->sb_type;
+      inter_pred_params.mask_comp = mi->interinter_comp;
+      if (ref == 1) {
+        inter_pred_params.conv_params.do_average = 0;
+        inter_pred_params.comp_mode = MASK_COMP;
+      }
       // Assign physical buffer.
       inter_pred_params.mask_comp.seg_mask = xd->seg_mask;
     }
@@ -950,7 +939,8 @@ void av1_build_inter_predictors(const AV1_COMMON *cm, MACROBLOCKD *xd,
                                 CalcSubpelParamsFunc calc_subpel_params_func) {
   if (is_sub8x8_inter(xd, plane, mi->sb_type, is_intrabc_block(mi),
                       build_for_obmc)) {
-    build_inter_predictors_sub8x8(cm, xd, plane, mi, bw, bh, mi_x, mi_y, mc_buf,
+    assert(bw < 8 || bh < 8);
+    build_inter_predictors_sub8x8(cm, xd, plane, mi, mi_x, mi_y, mc_buf,
                                   calc_subpel_params_func);
   } else {
     build_inter_predictors_8x8_and_bigger(cm, xd, plane, mi, build_for_obmc, bw,

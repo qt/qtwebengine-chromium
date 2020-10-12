@@ -32,18 +32,6 @@
 namespace dawn_native { namespace vulkan {
 
     namespace {
-        // Converts an Dawn texture dimension to a Vulkan image type.
-        // Note that in Vulkan dimensionality is only 1D, 2D, 3D. Arrays and cube maps are expressed
-        // via the array size and a "cubemap compatible" flag.
-        VkImageType VulkanImageType(wgpu::TextureDimension dimension) {
-            switch (dimension) {
-                case wgpu::TextureDimension::e2D:
-                    return VK_IMAGE_TYPE_2D;
-                default:
-                    UNREACHABLE();
-            }
-        }
-
         // Converts an Dawn texture dimension to a Vulkan image view type.
         // Contrary to image types, image view types include arrayness and cubemapness
         VkImageViewType VulkanImageViewType(wgpu::TextureViewDimension dimension) {
@@ -221,8 +209,49 @@ namespace dawn_native { namespace vulkan {
             }
         }
 
-        VkExtent3D VulkanExtent3D(const Extent3D& extent) {
-            return {extent.width, extent.height, extent.depth};
+        VkImageMemoryBarrier BuildMemoryBarrier(const Format& format,
+                                                const VkImage& image,
+                                                wgpu::TextureUsage lastUsage,
+                                                wgpu::TextureUsage usage,
+                                                const SubresourceRange& range) {
+            VkImageMemoryBarrier barrier;
+            barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barrier.pNext = nullptr;
+            barrier.srcAccessMask = VulkanAccessFlags(lastUsage, format);
+            barrier.dstAccessMask = VulkanAccessFlags(usage, format);
+            barrier.oldLayout = VulkanImageLayout(lastUsage, format);
+            barrier.newLayout = VulkanImageLayout(usage, format);
+            barrier.image = image;
+            barrier.subresourceRange.aspectMask = VulkanAspectMask(format);
+            barrier.subresourceRange.baseMipLevel = range.baseMipLevel;
+            barrier.subresourceRange.levelCount = range.levelCount;
+            barrier.subresourceRange.baseArrayLayer = range.baseArrayLayer;
+            barrier.subresourceRange.layerCount = range.layerCount;
+
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            return barrier;
+        }
+
+        void FillVulkanCreateInfoSizesAndType(const Texture& texture, VkImageCreateInfo* info) {
+            const Extent3D& size = texture.GetSize();
+
+            info->mipLevels = texture.GetNumMipLevels();
+            info->samples = VulkanSampleCount(texture.GetSampleCount());
+
+            // Fill in the image type, and paper over differences in how the array layer count is
+            // specified between WebGPU and Vulkan.
+            switch (texture.GetDimension()) {
+                case wgpu::TextureDimension::e2D:
+                    info->imageType = VK_IMAGE_TYPE_2D;
+                    info->extent = {size.width, size.height, 1};
+                    info->arrayLayers = size.depth;
+                    break;
+
+                default:
+                    UNREACHABLE();
+                    break;
+            }
         }
 
     }  // namespace
@@ -403,7 +432,7 @@ namespace dawn_native { namespace vulkan {
             return DAWN_VALIDATION_ERROR("Mip level count must be 1");
         }
 
-        if (descriptor->arrayLayerCount != 1) {
+        if (descriptor->size.depth != 1) {
             return DAWN_VALIDATION_ERROR("Array layer count must be 1");
         }
 
@@ -468,15 +497,12 @@ namespace dawn_native { namespace vulkan {
         // combination of sample, usage etc. because validation should have been done in the Dawn
         // frontend already based on the minimum supported formats in the Vulkan spec
         VkImageCreateInfo createInfo = {};
+        FillVulkanCreateInfoSizesAndType(*this, &createInfo);
+
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         createInfo.pNext = nullptr;
         createInfo.flags = 0;
-        createInfo.imageType = VulkanImageType(GetDimension());
         createInfo.format = VulkanImageFormat(device, GetFormat().format);
-        createInfo.extent = VulkanExtent3D(GetSize());
-        createInfo.mipLevels = GetNumMipLevels();
-        createInfo.arrayLayers = GetArrayLayers();
-        createInfo.samples = VulkanSampleCount(GetSampleCount());
         createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         createInfo.usage = VulkanImageUsage(GetUsage(), GetFormat());
         createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -486,7 +512,7 @@ namespace dawn_native { namespace vulkan {
 
         ASSERT(IsSampleCountSupported(device, createInfo));
 
-        if (GetArrayLayers() >= 6 && GetSize().width == GetSize().height) {
+        if (GetArrayLayers() >= 6 && GetWidth() == GetHeight()) {
             createInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
         }
 
@@ -512,9 +538,8 @@ namespace dawn_native { namespace vulkan {
             "BindImageMemory"));
 
         if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-            DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(), 0,
-                                  GetNumMipLevels(), 0, GetArrayLayers(),
-                                  TextureBase::ClearValue::NonZero));
+            DAWN_TRY(ClearTexture(ToBackend(GetDevice())->GetPendingRecordingContext(),
+                                  GetAllSubresources(), TextureBase::ClearValue::NonZero));
         }
 
         return {};
@@ -530,15 +555,13 @@ namespace dawn_native { namespace vulkan {
         }
 
         mExternalState = ExternalState::PendingAcquire;
+
         VkImageCreateInfo baseCreateInfo = {};
+        FillVulkanCreateInfoSizesAndType(*this, &baseCreateInfo);
+
         baseCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         baseCreateInfo.pNext = nullptr;
-        baseCreateInfo.imageType = VulkanImageType(GetDimension());
         baseCreateInfo.format = format;
-        baseCreateInfo.extent = VulkanExtent3D(GetSize());
-        baseCreateInfo.mipLevels = GetNumMipLevels();
-        baseCreateInfo.arrayLayers = GetArrayLayers();
-        baseCreateInfo.samples = VulkanSampleCount(GetSampleCount());
         baseCreateInfo.usage = usage;
         baseCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         baseCreateInfo.queueFamilyIndexCount = 0;
@@ -568,7 +591,7 @@ namespace dawn_native { namespace vulkan {
 
         // Don't clear imported texture if already cleared
         if (descriptor->isCleared) {
-            SetIsSubresourceContentInitialized(true, 0, 1, 0, 1);
+            SetIsSubresourceContentInitialized(true, {0, 1, 0, 1});
         }
 
         // Success, acquire all the external objects.
@@ -594,7 +617,7 @@ namespace dawn_native { namespace vulkan {
 
         // Release the texture
         mExternalState = ExternalState::PendingRelease;
-        TransitionUsageNow(device->GetPendingRecordingContext(), wgpu::TextureUsage::None);
+        TransitionFullUsage(device->GetPendingRecordingContext(), wgpu::TextureUsage::None);
 
         // Queue submit to signal we are done with the texture
         device->GetPendingRecordingContext()->signalSemaphores.push_back(mSignalSemaphore);
@@ -644,111 +667,237 @@ namespace dawn_native { namespace vulkan {
         return VulkanAspectMask(GetFormat());
     }
 
-    void Texture::TransitionUsageNow(CommandRecordingContext* recordingContext,
-                                     wgpu::TextureUsage usage) {
-        // Avoid encoding barriers when it isn't needed.
-        bool lastReadOnly = (mLastUsage & kReadOnlyTextureUsages) == mLastUsage;
-        if (lastReadOnly && mLastUsage == usage && mLastExternalState == mExternalState) {
-            return;
-        }
+    void Texture::TweakTransitionForExternalUsage(CommandRecordingContext* recordingContext,
+                                                  std::vector<VkImageMemoryBarrier>* barriers,
+                                                  size_t transitionBarrierStart) {
+        ASSERT(GetNumMipLevels() == 1 && GetArrayLayers() == 1);
 
-        const Format& format = GetFormat();
-
-        VkPipelineStageFlags srcStages = VulkanPipelineStage(mLastUsage, format);
-        VkPipelineStageFlags dstStages = VulkanPipelineStage(usage, format);
-
-        VkImageMemoryBarrier barrier;
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.pNext = nullptr;
-        barrier.srcAccessMask = VulkanAccessFlags(mLastUsage, format);
-        barrier.dstAccessMask = VulkanAccessFlags(usage, format);
-        barrier.oldLayout = VulkanImageLayout(mLastUsage, format);
-        barrier.newLayout = VulkanImageLayout(usage, format);
-        barrier.image = mHandle;
-        // This transitions the whole resource but assumes it is a 2D texture
-        ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
-        barrier.subresourceRange.aspectMask = VulkanAspectMask(format);
-        barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = GetNumMipLevels();
-        barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = GetArrayLayers();
-
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        // transitionBarrierStart specify the index where barriers for current transition start in
+        // the vector. barriers->size() - transitionBarrierStart is the number of barriers that we
+        // have already added into the vector during current transition.
+        ASSERT(barriers->size() - transitionBarrierStart <= 1);
 
         if (mExternalState == ExternalState::PendingAcquire) {
+            if (barriers->size() == transitionBarrierStart) {
+                barriers->push_back(BuildMemoryBarrier(
+                    GetFormat(), mHandle, wgpu::TextureUsage::None, wgpu::TextureUsage::None,
+                    SubresourceRange::SingleSubresource(0, 0)));
+            }
+
             // Transfer texture from external queue to graphics queue
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL_KHR;
-            barrier.dstQueueFamilyIndex = ToBackend(GetDevice())->GetGraphicsQueueFamily();
+            (*barriers)[transitionBarrierStart].srcQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL_KHR;
+            (*barriers)[transitionBarrierStart].dstQueueFamilyIndex =
+                ToBackend(GetDevice())->GetGraphicsQueueFamily();
             // Don't override oldLayout to leave it as VK_IMAGE_LAYOUT_UNDEFINED
             // TODO(http://crbug.com/dawn/200)
             mExternalState = ExternalState::Acquired;
-
         } else if (mExternalState == ExternalState::PendingRelease) {
+            if (barriers->size() == transitionBarrierStart) {
+                barriers->push_back(BuildMemoryBarrier(
+                    GetFormat(), mHandle, wgpu::TextureUsage::None, wgpu::TextureUsage::None,
+                    SubresourceRange::SingleSubresource(0, 0)));
+            }
+
             // Transfer texture from graphics queue to external queue
-            barrier.srcQueueFamilyIndex = ToBackend(GetDevice())->GetGraphicsQueueFamily();
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL_KHR;
-            barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            (*barriers)[transitionBarrierStart].srcQueueFamilyIndex =
+                ToBackend(GetDevice())->GetGraphicsQueueFamily();
+            (*barriers)[transitionBarrierStart].dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL_KHR;
+            (*barriers)[transitionBarrierStart].newLayout = VK_IMAGE_LAYOUT_GENERAL;
             mExternalState = ExternalState::Released;
         }
 
-        // Move required semaphores into waitSemaphores
+        mLastExternalState = mExternalState;
+
         recordingContext->waitSemaphores.insert(recordingContext->waitSemaphores.end(),
                                                 mWaitRequirements.begin(), mWaitRequirements.end());
         mWaitRequirements.clear();
+    }
 
+    bool Texture::CanReuseWithoutBarrier(wgpu::TextureUsage lastUsage, wgpu::TextureUsage usage) {
+        // Reuse the texture directly and avoid encoding barriers when it isn't needed.
+        bool lastReadOnly = (lastUsage & kReadOnlyTextureUsages) == lastUsage;
+        if (lastReadOnly && lastUsage == usage && mLastExternalState == mExternalState) {
+            return true;
+        }
+        return false;
+    }
+
+    void Texture::TransitionFullUsage(CommandRecordingContext* recordingContext,
+                                      wgpu::TextureUsage usage) {
+        TransitionUsageNow(recordingContext, usage, GetAllSubresources());
+    }
+
+    void Texture::TransitionUsageForPass(CommandRecordingContext* recordingContext,
+                                         const PassTextureUsage& textureUsages,
+                                         std::vector<VkImageMemoryBarrier>* imageBarriers,
+                                         VkPipelineStageFlags* srcStages,
+                                         VkPipelineStageFlags* dstStages) {
+        size_t transitionBarrierStart = imageBarriers->size();
+        const Format& format = GetFormat();
+
+        wgpu::TextureUsage allUsages = wgpu::TextureUsage::None;
+        wgpu::TextureUsage allLastUsages = wgpu::TextureUsage::None;
+
+        uint32_t subresourceCount = GetSubresourceCount();
+        ASSERT(textureUsages.subresourceUsages.size() == subresourceCount);
+        // This transitions assume it is a 2D texture
+        ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
+
+        // If new usages of all subresources are the same and old usages of all subresources are
+        // the same too, we can use one barrier to do state transition for all subresources.
+        // Note that if the texture has only one mip level and one array slice, it will fall into
+        // this category.
+        if (textureUsages.sameUsagesAcrossSubresources && mSameLastUsagesAcrossSubresources) {
+            if (CanReuseWithoutBarrier(mSubresourceLastUsages[0], textureUsages.usage)) {
+                return;
+            }
+
+            imageBarriers->push_back(BuildMemoryBarrier(format, mHandle, mSubresourceLastUsages[0],
+                                                        textureUsages.usage, GetAllSubresources()));
+            allLastUsages = mSubresourceLastUsages[0];
+            allUsages = textureUsages.usage;
+            for (uint32_t i = 0; i < subresourceCount; ++i) {
+                mSubresourceLastUsages[i] = textureUsages.usage;
+            }
+        } else {
+            for (uint32_t arrayLayer = 0; arrayLayer < GetArrayLayers(); ++arrayLayer) {
+                for (uint32_t mipLevel = 0; mipLevel < GetNumMipLevels(); ++mipLevel) {
+                    uint32_t index = GetSubresourceIndex(mipLevel, arrayLayer);
+
+                    // Avoid encoding barriers when it isn't needed.
+                    if (textureUsages.subresourceUsages[index] == wgpu::TextureUsage::None) {
+                        continue;
+                    }
+
+                    if (CanReuseWithoutBarrier(mSubresourceLastUsages[index],
+                                               textureUsages.subresourceUsages[index])) {
+                        continue;
+                    }
+                    imageBarriers->push_back(BuildMemoryBarrier(
+                        format, mHandle, mSubresourceLastUsages[index],
+                        textureUsages.subresourceUsages[index],
+                        SubresourceRange::SingleSubresource(mipLevel, arrayLayer)));
+                    allLastUsages |= mSubresourceLastUsages[index];
+                    allUsages |= textureUsages.subresourceUsages[index];
+                    mSubresourceLastUsages[index] = textureUsages.subresourceUsages[index];
+                }
+            }
+        }
+
+        if (mExternalState != ExternalState::InternalOnly) {
+            TweakTransitionForExternalUsage(recordingContext, imageBarriers,
+                                            transitionBarrierStart);
+        }
+
+        *srcStages |= VulkanPipelineStage(allLastUsages, format);
+        *dstStages |= VulkanPipelineStage(allUsages, format);
+        mSameLastUsagesAcrossSubresources = textureUsages.sameUsagesAcrossSubresources;
+    }
+
+    void Texture::TransitionUsageNow(CommandRecordingContext* recordingContext,
+                                     wgpu::TextureUsage usage,
+                                     const SubresourceRange& range) {
+        std::vector<VkImageMemoryBarrier> barriers;
+        const Format& format = GetFormat();
+
+        wgpu::TextureUsage allLastUsages = wgpu::TextureUsage::None;
+        uint32_t subresourceCount = GetSubresourceCount();
+
+        // This transitions assume it is a 2D texture
+        ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
+
+        // If the usages transitions can cover all subresources, and old usages of all subresources
+        // are the same, then we can use one barrier to do state transition for all subresources.
+        // Note that if the texture has only one mip level and one array slice, it will fall into
+        // this category.
+        bool areAllSubresourcesCovered = range.levelCount * range.layerCount == subresourceCount;
+        if (mSameLastUsagesAcrossSubresources && areAllSubresourcesCovered) {
+            ASSERT(range.baseMipLevel == 0 && range.baseArrayLayer == 0);
+            if (CanReuseWithoutBarrier(mSubresourceLastUsages[0], usage)) {
+                return;
+            }
+            barriers.push_back(
+                BuildMemoryBarrier(format, mHandle, mSubresourceLastUsages[0], usage, range));
+            allLastUsages = mSubresourceLastUsages[0];
+            for (uint32_t i = 0; i < subresourceCount; ++i) {
+                mSubresourceLastUsages[i] = usage;
+            }
+        } else {
+            for (uint32_t layer = range.baseArrayLayer;
+                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                for (uint32_t level = range.baseMipLevel;
+                     level < range.baseMipLevel + range.levelCount; ++level) {
+                    uint32_t index = GetSubresourceIndex(level, layer);
+
+                    if (CanReuseWithoutBarrier(mSubresourceLastUsages[index], usage)) {
+                        continue;
+                    }
+
+                    barriers.push_back(
+                        BuildMemoryBarrier(format, mHandle, mSubresourceLastUsages[index], usage,
+                                           SubresourceRange::SingleSubresource(level, layer)));
+                    allLastUsages |= mSubresourceLastUsages[index];
+                    mSubresourceLastUsages[index] = usage;
+                }
+            }
+        }
+
+        if (mExternalState != ExternalState::InternalOnly) {
+            TweakTransitionForExternalUsage(recordingContext, &barriers, 0);
+        }
+
+        VkPipelineStageFlags srcStages = VulkanPipelineStage(allLastUsages, format);
+        VkPipelineStageFlags dstStages = VulkanPipelineStage(usage, format);
         ToBackend(GetDevice())
             ->fn.CmdPipelineBarrier(recordingContext->commandBuffer, srcStages, dstStages, 0, 0,
-                                    nullptr, 0, nullptr, 1, &barrier);
+                                    nullptr, 0, nullptr, barriers.size(), barriers.data());
 
-        mLastUsage = usage;
-        mLastExternalState = mExternalState;
+        mSameLastUsagesAcrossSubresources = areAllSubresourcesCovered;
     }
 
     MaybeError Texture::ClearTexture(CommandRecordingContext* recordingContext,
-                                     uint32_t baseMipLevel,
-                                     uint32_t levelCount,
-                                     uint32_t baseArrayLayer,
-                                     uint32_t layerCount,
+                                     const SubresourceRange& range,
                                      TextureBase::ClearValue clearValue) {
         Device* device = ToBackend(GetDevice());
 
         uint8_t clearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0 : 1;
         float fClearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0.f : 1.f;
 
-        TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst);
+        TransitionUsageNow(recordingContext, wgpu::TextureUsage::CopyDst, range);
         if (GetFormat().isRenderable) {
-            VkImageSubresourceRange range = {};
-            range.aspectMask = GetVkAspectMask();
-            range.levelCount = 1;
-            range.layerCount = 1;
+            VkImageSubresourceRange imageRange = {};
+            imageRange.aspectMask = GetVkAspectMask();
+            imageRange.levelCount = 1;
+            imageRange.layerCount = 1;
 
-            for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
-                range.baseMipLevel = level;
-                for (uint32_t layer = baseArrayLayer; layer < baseArrayLayer + layerCount;
-                     ++layer) {
+            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+                 ++level) {
+                imageRange.baseMipLevel = level;
+                for (uint32_t layer = range.baseArrayLayer;
+                     layer < range.baseArrayLayer + range.layerCount; ++layer) {
                     if (clearValue == TextureBase::ClearValue::Zero &&
-                        IsSubresourceContentInitialized(level, 1, layer, 1)) {
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleSubresource(level, layer))) {
                         // Skip lazy clears if already initialized.
                         continue;
                     }
 
-                    range.baseArrayLayer = layer;
+                    imageRange.baseArrayLayer = layer;
 
                     if (GetFormat().HasDepthOrStencil()) {
                         VkClearDepthStencilValue clearDepthStencilValue[1];
                         clearDepthStencilValue[0].depth = fClearColor;
                         clearDepthStencilValue[0].stencil = clearColor;
-                        device->fn.CmdClearDepthStencilImage(recordingContext->commandBuffer,
-                                                             GetHandle(),
-                                                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                             clearDepthStencilValue, 1, &range);
+                        device->fn.CmdClearDepthStencilImage(
+                            recordingContext->commandBuffer, GetHandle(),
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, clearDepthStencilValue, 1,
+                            &imageRange);
                     } else {
                         VkClearColorValue clearColorValue = {
                             {fClearColor, fClearColor, fClearColor, fClearColor}};
                         device->fn.CmdClearColorImage(recordingContext->commandBuffer, GetHandle(),
                                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                                      &clearColorValue, 1, &range);
+                                                      &clearColorValue, 1, &imageRange);
                     }
                 }
             }
@@ -756,9 +905,9 @@ namespace dawn_native { namespace vulkan {
             // TODO(natlee@microsoft.com): test compressed textures are cleared
             // create temp buffer with clear color to copy to the texture image
             uint32_t bytesPerRow =
-                Align((GetSize().width / GetFormat().blockWidth) * GetFormat().blockByteSize,
+                Align((GetWidth() / GetFormat().blockWidth) * GetFormat().blockByteSize,
                       kTextureBytesPerRowAlignment);
-            uint64_t bufferSize64 = bytesPerRow * (GetSize().height / GetFormat().blockHeight);
+            uint64_t bufferSize64 = bytesPerRow * (GetHeight() / GetFormat().blockHeight);
             if (bufferSize64 > std::numeric_limits<uint32_t>::max()) {
                 return DAWN_OUT_OF_MEMORY_ERROR("Unable to allocate buffer.");
             }
@@ -775,13 +924,15 @@ namespace dawn_native { namespace vulkan {
             bufferCopy.offset = uploadHandle.startOffset;
             bufferCopy.bytesPerRow = bytesPerRow;
 
-            for (uint32_t level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
+            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+                 ++level) {
                 Extent3D copySize = GetMipLevelVirtualSize(level);
 
-                for (uint32_t layer = baseArrayLayer; layer < baseArrayLayer + layerCount;
-                     ++layer) {
+                for (uint32_t layer = range.baseArrayLayer;
+                     layer < range.baseArrayLayer + range.layerCount; ++layer) {
                     if (clearValue == TextureBase::ClearValue::Zero &&
-                        IsSubresourceContentInitialized(level, 1, layer, 1)) {
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleSubresource(level, layer))) {
                         // Skip lazy clears if already initialized.
                         continue;
                     }
@@ -804,23 +955,18 @@ namespace dawn_native { namespace vulkan {
             }
         }
         if (clearValue == TextureBase::ClearValue::Zero) {
-            SetIsSubresourceContentInitialized(true, baseMipLevel, levelCount, baseArrayLayer,
-                                               layerCount);
+            SetIsSubresourceContentInitialized(true, range);
             device->IncrementLazyClearCountForTesting();
         }
         return {};
     }
 
     void Texture::EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
-                                                      uint32_t baseMipLevel,
-                                                      uint32_t levelCount,
-                                                      uint32_t baseArrayLayer,
-                                                      uint32_t layerCount) {
+                                                      const SubresourceRange& range) {
         if (!GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return;
         }
-        if (!IsSubresourceContentInitialized(baseMipLevel, levelCount, baseArrayLayer,
-                                             layerCount)) {
+        if (!IsSubresourceContentInitialized(range)) {
             // TODO(jiawei.shao@intel.com): initialize textures in BC formats with Buffer-to-Texture
             // copies.
             if (GetFormat().isCompressed) {
@@ -829,9 +975,8 @@ namespace dawn_native { namespace vulkan {
 
             // If subresource has not been initialized, clear it to black as it could contain dirty
             // bits from recycled memory
-            GetDevice()->ConsumedError(ClearTexture(recordingContext, baseMipLevel, levelCount,
-                                                    baseArrayLayer, layerCount,
-                                                    TextureBase::ClearValue::Zero));
+            GetDevice()->ConsumedError(
+                ClearTexture(recordingContext, range, TextureBase::ClearValue::Zero));
         }
     }
 
@@ -844,6 +989,14 @@ namespace dawn_native { namespace vulkan {
     }
 
     MaybeError TextureView::Initialize(const TextureViewDescriptor* descriptor) {
+        if ((GetTexture()->GetUsage() &
+             ~(wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst)) == 0) {
+            // If the texture view has no other usage than CopySrc and CopyDst, then it can't
+            // actually be used as a render pass attachment or sampled/storage texture. The Vulkan
+            // validation errors warn if you create such a vkImageView, so return early.
+            return {};
+        }
+
         Device* device = ToBackend(GetTexture()->GetDevice());
 
         VkImageViewCreateInfo createInfo;

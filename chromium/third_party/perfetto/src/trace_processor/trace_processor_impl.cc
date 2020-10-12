@@ -37,6 +37,7 @@
 #include "src/trace_processor/importers/json/json_trace_tokenizer.h"
 #include "src/trace_processor/importers/proto/metadata_tracker.h"
 #include "src/trace_processor/importers/systrace/systrace_trace_parser.h"
+#include "src/trace_processor/iterator_impl.h"
 #include "src/trace_processor/sqlite/span_join_operator_table.h"
 #include "src/trace_processor/sqlite/sql_stats_table.h"
 #include "src/trace_processor/sqlite/sqlite3_str_split.h"
@@ -45,7 +46,12 @@
 #include "src/trace_processor/sqlite/sqlite_utils.h"
 #include "src/trace_processor/sqlite/stats_table.h"
 #include "src/trace_processor/sqlite/window_operator_table.h"
+#include "src/trace_processor/tp_metatrace.h"
 #include "src/trace_processor/types/variadic.h"
+
+#include "protos/perfetto/trace/perfetto/perfetto_metatrace.pbzero.h"
+#include "protos/perfetto/trace/trace.pbzero.h"
+#include "protos/perfetto/trace/trace_packet.pbzero.h"
 
 #include "src/trace_processor/metrics/metrics.descriptor.h"
 #include "src/trace_processor/metrics/metrics.h"
@@ -121,6 +127,14 @@ void CreateBuiltinTables(sqlite3* db) {
   sqlite3_exec(db,
                "CREATE TABLE trace_bounds(start_ts BIG INT, end_ts BIG INT)", 0,
                0, &error);
+  if (error) {
+    PERFETTO_ELOG("Error initializing: %s", error);
+    sqlite3_free(error);
+  }
+  sqlite3_exec(db,
+               "CREATE TABLE power_profile"
+               "(device STRING, cpu INT, cluster INT, freq INT, power DOUBLE);",
+               0, 0, &error);
   if (error) {
     PERFETTO_ELOG("Error initializing: %s", error);
     sqlite3_free(error);
@@ -466,6 +480,19 @@ void CreateExtractArgFunction(TraceStorage* ts, sqlite3* db) {
   }
 }
 
+void CreateSourceGeqFunction(sqlite3* db) {
+  auto fn = [](sqlite3_context* ctx, int, sqlite3_value**) {
+    sqlite3_result_error(
+        ctx, "SOURCE_GEQ should not be called from the global scope", -1);
+  };
+  auto ret = sqlite3_create_function_v2(db, "SOURCE_GEQ", -1,
+                                        SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+                                        nullptr, fn, nullptr, nullptr, nullptr);
+  if (ret != SQLITE_OK) {
+    PERFETTO_FATAL("Error initializing SOURCE_GEQ: %s", sqlite3_errmsg(db));
+  }
+}
+
 void SetupMetrics(TraceProcessor* tp,
                   sqlite3* db,
                   std::vector<metrics::SqlMetricFile>* sql_metrics) {
@@ -537,6 +564,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   CreateDemangledNameFunction(db);
   CreateLastNonNullFunction(db);
   CreateExtractArgFunction(context_.storage.get(), db);
+  CreateSourceGeqFunction(db);
 
   SetupMetrics(this, *db_, &sql_metrics_);
 
@@ -553,8 +581,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   WindowOperatorTable::RegisterTable(*db_, storage);
 
   // New style tables but with some custom logic.
-  SqliteRawTable::RegisterTable(*db_, query_cache_.get(),
-                                context_.storage.get());
+  SqliteRawTable::RegisterTable(*db_, query_cache_.get(), &context_);
 
   // Tables dynamically generated at query time.
   RegisterDynamicTable(std::unique_ptr<ExperimentalFlamegraphGenerator>(
@@ -592,6 +619,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->irq_counter_track_table());
   RegisterDbTable(storage->softirq_counter_track_table());
   RegisterDbTable(storage->gpu_counter_track_table());
+  RegisterDbTable(storage->gpu_counter_group_table());
 
   RegisterDbTable(storage->heap_graph_object_table());
   RegisterDbTable(storage->heap_graph_reference_table());
@@ -611,15 +639,13 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->vulkan_memory_allocations_table());
 
   RegisterDbTable(storage->graphics_frame_slice_table());
-  RegisterDbTable(storage->graphics_frame_stats_table());
 
   RegisterDbTable(storage->metadata_table());
+  RegisterDbTable(storage->cpu_table());
+  RegisterDbTable(storage->cpu_freq_table());
 }
 
-TraceProcessorImpl::~TraceProcessorImpl() {
-  for (auto* it : iterators_)
-    it->Reset();
-}
+TraceProcessorImpl::~TraceProcessorImpl() = default;
 
 util::Status TraceProcessorImpl::Parse(std::unique_ptr<uint8_t[]> data,
                                        size_t size) {
@@ -691,12 +717,16 @@ size_t TraceProcessorImpl::RestoreInitialTables() {
   return deletion_list.size();
 }
 
-TraceProcessor::Iterator TraceProcessorImpl::ExecuteQuery(
-    const std::string& sql,
-    int64_t time_queued) {
+Iterator TraceProcessorImpl::ExecuteQuery(const std::string& sql,
+                                          int64_t time_queued) {
   sqlite3_stmt* raw_stmt;
-  int err = sqlite3_prepare_v2(*db_, sql.c_str(), static_cast<int>(sql.size()),
-                               &raw_stmt, nullptr);
+  int err;
+  {
+    PERFETTO_TP_TRACE("QUERY_PREPARE");
+    err = sqlite3_prepare_v2(*db_, sql.c_str(), static_cast<int>(sql.size()),
+                             &raw_stmt, nullptr);
+  }
+
   util::Status status;
   uint32_t col_count = 0;
   if (err != SQLITE_OK) {
@@ -712,8 +742,7 @@ TraceProcessor::Iterator TraceProcessorImpl::ExecuteQuery(
 
   std::unique_ptr<IteratorImpl> impl(new IteratorImpl(
       this, *db_, ScopedStmt(raw_stmt), col_count, status, sql_stats_row));
-  iterators_.emplace_back(impl.get());
-  return TraceProcessor::Iterator(std::move(impl));
+  return Iterator(std::move(impl));
 }
 
 void TraceProcessorImpl::InterruptQuery() {
@@ -803,41 +832,36 @@ util::Status TraceProcessorImpl::ComputeMetric(
                                  root_descriptor, metrics_proto);
 }
 
-TraceProcessor::IteratorImpl::IteratorImpl(TraceProcessorImpl* trace_processor,
-                                           sqlite3* db,
-                                           ScopedStmt stmt,
-                                           uint32_t column_count,
-                                           util::Status status,
-                                           uint32_t sql_stats_row)
-    : trace_processor_(trace_processor),
-      db_(db),
-      stmt_(std::move(stmt)),
-      column_count_(column_count),
-      status_(status),
-      sql_stats_row_(sql_stats_row) {}
-
-TraceProcessor::IteratorImpl::~IteratorImpl() {
-  if (trace_processor_) {
-    auto* its = &trace_processor_->iterators_;
-    auto it = std::find(its->begin(), its->end(), this);
-    PERFETTO_CHECK(it != its->end());
-    its->erase(it);
-
-    base::TimeNanos t_end = base::GetWallTimeNs();
-    auto* sql_stats = trace_processor_->context_.storage->mutable_sql_stats();
-    sql_stats->RecordQueryEnd(sql_stats_row_, t_end.count());
-  }
+void TraceProcessorImpl::EnableMetatrace() {
+  metatrace::Enable();
 }
 
-void TraceProcessor::IteratorImpl::Reset() {
-  *this = IteratorImpl(nullptr, nullptr, ScopedStmt(), 0,
-                       util::ErrStatus("Trace processor was deleted"), 0);
-}
+util::Status TraceProcessorImpl::DisableAndReadMetatrace(
+    std::vector<uint8_t>* trace_proto) {
+  protozero::HeapBuffered<protos::pbzero::Trace> trace;
+  metatrace::DisableAndReadBuffer([&trace](metatrace::Record* record) {
+    auto packet = trace->add_packet();
+    packet->set_timestamp(record->timestamp_ns);
+    auto* evt = packet->set_perfetto_metatrace();
+    evt->set_event_name(record->event_name);
+    evt->set_event_duration_ns(record->duration_ns);
+    evt->set_thread_id(1);  // Not really important, just required for the ui.
 
-void TraceProcessor::IteratorImpl::RecordFirstNextInSqlStats() {
-  base::TimeNanos t_first_next = base::GetWallTimeNs();
-  auto* sql_stats = trace_processor_->context_.storage->mutable_sql_stats();
-  sql_stats->RecordQueryFirstNext(sql_stats_row_, t_first_next.count());
+    if (record->args_buffer_size == 0)
+      return;
+
+    base::StringSplitter s(record->args_buffer, record->args_buffer_size, '\0');
+    for (; s.Next();) {
+      auto* arg_proto = evt->add_args();
+      arg_proto->set_key(s.cur_token());
+
+      bool has_next = s.Next();
+      PERFETTO_CHECK(has_next);
+      arg_proto->set_value(s.cur_token());
+    }
+  });
+  *trace_proto = trace.SerializeAsArray();
+  return util::OkStatus();
 }
 
 }  // namespace trace_processor

@@ -16,6 +16,7 @@
 
 #include "common/Assert.h"
 #include "common/Math.h"
+#include "common/ityp_bitset.h"
 #include "dawn_native/BindGroupLayout.h"
 #include "dawn_native/Buffer.h"
 #include "dawn_native/Device.h"
@@ -30,7 +31,8 @@ namespace dawn_native {
 
         MaybeError ValidateBufferBinding(const DeviceBase* device,
                                          const BindGroupEntry& entry,
-                                         wgpu::BufferUsage requiredUsage) {
+                                         wgpu::BufferUsage requiredUsage,
+                                         const BindingInfo& bindingInfo) {
             if (entry.buffer == nullptr || entry.sampler != nullptr ||
                 entry.textureView != nullptr) {
                 return DAWN_VALIDATION_ERROR("expected buffer binding");
@@ -67,6 +69,14 @@ namespace dawn_native {
 
             if (!(entry.buffer->GetUsage() & requiredUsage)) {
                 return DAWN_VALIDATION_ERROR("buffer binding usage mismatch");
+            }
+
+            if (bindingSize < bindingInfo.minBufferBindingSize) {
+                return DAWN_VALIDATION_ERROR(
+                    "Binding size smaller than minimum buffer size: binding " +
+                    std::to_string(entry.binding) + " given " + std::to_string(bindingSize) +
+                    " bytes, required " + std::to_string(bindingInfo.minBufferBindingSize) +
+                    " bytes");
             }
 
             return {};
@@ -153,13 +163,14 @@ namespace dawn_native {
         }
 
         DAWN_TRY(device->ValidateObject(descriptor->layout));
-        if (descriptor->entryCount != descriptor->layout->GetBindingCount()) {
+
+        if (BindingIndex(descriptor->entryCount) != descriptor->layout->GetBindingCount()) {
             return DAWN_VALIDATION_ERROR("numBindings mismatch");
         }
 
         const BindGroupLayoutBase::BindingMap& bindingMap = descriptor->layout->GetBindingMap();
 
-        std::bitset<kMaxBindingsPerGroup> bindingsSet;
+        ityp::bitset<BindingIndex, kMaxBindingsPerGroup> bindingsSet;
         for (uint32_t i = 0; i < descriptor->entryCount; ++i) {
             const BindGroupEntry& entry = descriptor->entries[i];
 
@@ -180,11 +191,13 @@ namespace dawn_native {
             // Perform binding-type specific validation.
             switch (bindingInfo.type) {
                 case wgpu::BindingType::UniformBuffer:
-                    DAWN_TRY(ValidateBufferBinding(device, entry, wgpu::BufferUsage::Uniform));
+                    DAWN_TRY(ValidateBufferBinding(device, entry, wgpu::BufferUsage::Uniform,
+                                                   bindingInfo));
                     break;
                 case wgpu::BindingType::StorageBuffer:
                 case wgpu::BindingType::ReadonlyStorageBuffer:
-                    DAWN_TRY(ValidateBufferBinding(device, entry, wgpu::BufferUsage::Storage));
+                    DAWN_TRY(ValidateBufferBinding(device, entry, wgpu::BufferUsage::Storage,
+                                                   bindingInfo));
                     break;
                 case wgpu::BindingType::SampledTexture:
                     DAWN_TRY(ValidateTextureBinding(device, entry, wgpu::TextureUsage::Sampled,
@@ -194,8 +207,6 @@ namespace dawn_native {
                 case wgpu::BindingType::ComparisonSampler:
                     DAWN_TRY(ValidateSamplerBinding(device, entry, bindingInfo.type));
                     break;
-                // TODO(jiawei.shao@intel.com): support creating bind group with read-only and
-                // write-only storage textures.
                 case wgpu::BindingType::ReadonlyStorageTexture:
                 case wgpu::BindingType::WriteonlyStorageTexture:
                     DAWN_TRY(ValidateTextureBinding(device, entry, wgpu::TextureUsage::Storage,
@@ -225,7 +236,7 @@ namespace dawn_native {
         : ObjectBase(device),
           mLayout(descriptor->layout),
           mBindingData(mLayout->ComputeBindingDataPointers(bindingDataStart)) {
-        for (BindingIndex i = 0; i < mLayout->GetBindingCount(); ++i) {
+        for (BindingIndex i{0}; i < mLayout->GetBindingCount(); ++i) {
             // TODO(enga): Shouldn't be needed when bindings are tightly packed.
             // This is to fill Ref<ObjectBase> holes with nullptrs.
             new (&mBindingData.bindings[i]) Ref<ObjectBase>();
@@ -264,12 +275,22 @@ namespace dawn_native {
                 continue;
             }
         }
+
+        uint32_t packedIdx = 0;
+        for (BindingIndex bindingIndex{0}; bindingIndex < descriptor->layout->GetBufferCount();
+             ++bindingIndex) {
+            if (descriptor->layout->GetBindingInfo(bindingIndex).minBufferBindingSize == 0) {
+                mBindingData.unverifiedBufferSizes[packedIdx] =
+                    mBindingData.bufferData[bindingIndex].size;
+                ++packedIdx;
+            }
+        }
     }
 
     BindGroupBase::~BindGroupBase() {
         if (mLayout) {
             ASSERT(!IsError());
-            for (BindingIndex i = 0; i < mLayout->GetBindingCount(); ++i) {
+            for (BindingIndex i{0}; i < mLayout->GetBindingCount(); ++i) {
                 mBindingData.bindings[i].~Ref<ObjectBase>();
             }
         }
@@ -297,6 +318,16 @@ namespace dawn_native {
         return mLayout.Get();
     }
 
+    const BindGroupLayoutBase* BindGroupBase::GetLayout() const {
+        ASSERT(!IsError());
+        return mLayout.Get();
+    }
+
+    const ityp::span<uint32_t, uint64_t>& BindGroupBase::GetUnverifiedBufferSizes() const {
+        ASSERT(!IsError());
+        return mBindingData.unverifiedBufferSizes;
+    }
+
     BufferBinding BindGroupBase::GetBindingAsBufferBinding(BindingIndex bindingIndex) {
         ASSERT(!IsError());
         ASSERT(bindingIndex < mLayout->GetBindingCount());
@@ -309,7 +340,7 @@ namespace dawn_native {
                 mBindingData.bufferData[bindingIndex].size};
     }
 
-    SamplerBase* BindGroupBase::GetBindingAsSampler(BindingIndex bindingIndex) {
+    SamplerBase* BindGroupBase::GetBindingAsSampler(BindingIndex bindingIndex) const {
         ASSERT(!IsError());
         ASSERT(bindingIndex < mLayout->GetBindingCount());
         ASSERT(mLayout->GetBindingInfo(bindingIndex).type == wgpu::BindingType::Sampler ||

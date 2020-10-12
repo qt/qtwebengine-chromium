@@ -13,7 +13,9 @@
 #include "net/third_party/quiche/src/quic/core/crypto/transport_parameters.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_hostname_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
+#include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
 
 namespace quic {
 
@@ -123,8 +125,15 @@ void TlsServerHandshaker::SendServerConfigUpdate(
 }
 
 bool TlsServerHandshaker::IsZeroRtt() const {
-  // TODO(nharper): Support 0-RTT with TLS 1.3 in QUIC.
-  return false;
+  return SSL_early_data_accepted(ssl());
+}
+
+bool TlsServerHandshaker::IsResumption() const {
+  return SSL_session_reused(ssl());
+}
+
+bool TlsServerHandshaker::ResumptionAttempted() const {
+  return ticket_received_;
 }
 
 int TlsServerHandshaker::NumServerConfigUpdateMessagesSent() const {
@@ -135,11 +144,6 @@ int TlsServerHandshaker::NumServerConfigUpdateMessagesSent() const {
 const CachedNetworkParameters*
 TlsServerHandshaker::PreviousCachedNetworkParams() const {
   return nullptr;
-}
-
-bool TlsServerHandshaker::ZeroRttAttempted() const {
-  // TODO(nharper): Support 0-RTT with TLS 1.3 in QUIC.
-  return false;
 }
 
 void TlsServerHandshaker::SetPreviousCachedNetworkParams(
@@ -194,25 +198,17 @@ HandshakeState TlsServerHandshaker::GetHandshakeState() const {
   return HANDSHAKE_START;
 }
 
+void TlsServerHandshaker::SetServerApplicationStateForResumption(
+    std::unique_ptr<ApplicationState> state) {
+  application_state_ = std::move(state);
+}
+
 size_t TlsServerHandshaker::BufferSizeLimitForLevel(
     EncryptionLevel level) const {
   return TlsHandshaker::BufferSizeLimitForLevel(level);
 }
 
 void TlsServerHandshaker::OverrideQuicConfigDefaults(QuicConfig* /*config*/) {}
-
-bool TlsServerHandshaker::SetReadSecret(
-    EncryptionLevel level,
-    const SSL_CIPHER* cipher,
-    const std::vector<uint8_t>& read_secret) {
-  if (level != ENCRYPTION_FORWARD_SECURE || one_rtt_keys_available_) {
-    return TlsHandshaker::SetReadSecret(level, cipher, read_secret);
-  }
-  // Delay setting read secret for ENCRYPTION_FORWARD_SECURE until handshake
-  // completes.
-  app_data_read_secret_ = read_secret;
-  return true;
-}
 
 void TlsServerHandshaker::AdvanceHandshake() {
   if (state_ == STATE_CONNECTION_CLOSED) {
@@ -248,8 +244,8 @@ void TlsServerHandshaker::AdvanceHandshake() {
       should_close = true;
   }
   if (should_close && state_ != STATE_CONNECTION_CLOSED) {
-    QUIC_LOG(WARNING) << "SSL_do_handshake failed; SSL_get_error returns "
-                      << ssl_error << ", state_ = " << state_;
+    QUIC_VLOG(1) << "SSL_do_handshake failed; SSL_get_error returns "
+                 << ssl_error << ", state_ = " << state_;
     ERR_print_errors_fp(stderr);
     CloseConnection(QUIC_HANDSHAKE_FAILED,
                     "Server observed TLS handshake failure");
@@ -284,6 +280,9 @@ bool TlsServerHandshaker::ProcessTransportParameters(
     return false;
   }
 
+  // Notify QuicConnectionDebugVisitor.
+  session()->connection()->OnTransportParametersReceived(client_params);
+
   // When interoperating with non-Google implementations that do not send
   // the version extension, set it to what we expect.
   if (client_params.version == 0) {
@@ -294,12 +293,26 @@ bool TlsServerHandshaker::ProcessTransportParameters(
   if (CryptoUtils::ValidateClientHelloVersion(
           client_params.version, session()->connection()->version(),
           session()->supported_versions(), error_details) != QUIC_NO_ERROR ||
-      session()->config()->ProcessTransportParameters(
-          client_params, CLIENT, /* is_resumption = */ false, error_details) !=
+      handshaker_delegate()->ProcessTransportParameters(
+          client_params, /* is_resumption = */ false, error_details) !=
           QUIC_NO_ERROR) {
     return false;
   }
   ProcessAdditionalTransportParameters(client_params);
+  if (GetQuicReloadableFlag(quic_save_user_agent_in_quic_session) &&
+      !session()->user_agent_id().has_value()) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_save_user_agent_in_quic_session, 2, 3);
+
+    if (client_params.user_agent_id.has_value()) {
+      session()->SetUserAgentId(client_params.user_agent_id.value());
+    } else if (client_params.google_quic_params) {
+      quiche::QuicheStringPiece user_agent_id;
+      client_params.google_quic_params->GetStringPiece(kUAID, &user_agent_id);
+      if (!user_agent_id.empty()) {
+        session()->SetUserAgentId(user_agent_id.data());
+      }
+    }
+  }
 
   return true;
 }
@@ -312,18 +325,30 @@ bool TlsServerHandshaker::SetTransportParameters() {
   server_params.version =
       CreateQuicVersionLabel(session()->connection()->version());
 
-  if (!session()->config()->FillTransportParameters(&server_params)) {
+  if (!handshaker_delegate()->FillTransportParameters(&server_params)) {
     return false;
   }
 
-  // TODO(nharper): Provide an actual value for the stateless reset token.
-  server_params.stateless_reset_token.resize(16);
+  // Notify QuicConnectionDebugVisitor.
+  session()->connection()->OnTransportParametersSent(server_params);
+
   std::vector<uint8_t> server_params_bytes;
   if (!SerializeTransportParameters(session()->connection()->version(),
                                     server_params, &server_params_bytes) ||
       SSL_set_quic_transport_params(ssl(), server_params_bytes.data(),
                                     server_params_bytes.size()) != 1) {
     return false;
+  }
+  if (application_state_) {
+    std::vector<uint8_t> early_data_context;
+    if (!SerializeTransportParametersForTicket(
+            server_params, *application_state_, &early_data_context)) {
+      QUIC_BUG << "Failed to serialize Transport Parameters for ticket.";
+      return false;
+    }
+    SSL_set_quic_early_data_context(ssl(), early_data_context.data(),
+                                    early_data_context.size());
+    application_state_.reset(nullptr);
   }
   return true;
 }
@@ -332,8 +357,7 @@ void TlsServerHandshaker::SetWriteSecret(
     EncryptionLevel level,
     const SSL_CIPHER* cipher,
     const std::vector<uint8_t>& write_secret) {
-  if (GetQuicReloadableFlag(quic_notify_handshaker_on_connection_close) &&
-      state_ == STATE_CONNECTION_CLOSED) {
+  if (state_ == STATE_CONNECTION_CLOSED) {
     return;
   }
   if (level == ENCRYPTION_FORWARD_SECURE) {
@@ -349,6 +373,16 @@ void TlsServerHandshaker::SetWriteSecret(
 }
 
 void TlsServerHandshaker::FinishHandshake() {
+  if (SSL_in_early_data(ssl())) {
+    // If the server accepts early data, SSL_do_handshake returns success twice:
+    // once after processing the ClientHello and sending the server's first
+    // flight, and then again after the handshake is complete. This results in
+    // FinishHandshake getting called twice. On the first call to
+    // FinishHandshake, we don't have any confirmation that the client is live,
+    // so all end of handshake processing is deferred until the handshake is
+    // actually complete.
+    return;
+  }
   if (!valid_alpn_received_) {
     QUIC_DLOG(ERROR)
         << "Server: handshake finished without receiving a known ALPN";
@@ -363,21 +397,10 @@ void TlsServerHandshaker::FinishHandshake() {
   state_ = STATE_HANDSHAKE_COMPLETE;
   one_rtt_keys_available_ = true;
 
-  const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
-
-  if (!app_data_read_secret_.empty()) {
-    if (!SetReadSecret(ENCRYPTION_FORWARD_SECURE, cipher,
-                       app_data_read_secret_)) {
-      QUIC_BUG << "Failed to set forward secure read key.";
-      CloseConnection(QUIC_HANDSHAKE_FAILED, "Failed to set app data read key");
-      return;
-    }
-    app_data_read_secret_.clear();
-  }
-
   handshaker_delegate()->OnOneRttKeysAvailable();
   handshaker_delegate()->DiscardOldEncryptionKey(ENCRYPTION_HANDSHAKE);
   handshaker_delegate()->DiscardOldDecryptionKey(ENCRYPTION_HANDSHAKE);
+  handshaker_delegate()->DiscardOldDecryptionKey(ENCRYPTION_ZERO_RTT);
 }
 
 ssl_private_key_result_t TlsServerHandshaker::PrivateKeySign(
@@ -446,6 +469,7 @@ ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
   DCHECK(proof_source_->GetTicketCrypter());
 
   if (!ticket_decryption_callback_) {
+    ticket_received_ = true;
     ticket_decryption_callback_ = new DecryptCallback(this);
     proof_source_->GetTicketCrypter()->Decrypt(
         in, std::unique_ptr<DecryptCallback>(ticket_decryption_callback_));

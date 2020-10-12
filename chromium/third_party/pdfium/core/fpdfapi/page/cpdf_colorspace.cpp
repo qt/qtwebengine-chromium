@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -30,7 +31,6 @@
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcodec/icc/iccmodule.h"
-#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "third_party/base/stl_util.h"
@@ -107,9 +107,7 @@ bool GetWhitePoint(const CPDF_Dictionary* pDict, float* pPoints) {
 
 class CPDF_CalGray final : public CPDF_ColorSpace {
  public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
+  CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_CalGray() override;
 
   // CPDF_ColorSpace:
@@ -136,9 +134,7 @@ class CPDF_CalGray final : public CPDF_ColorSpace {
 
 class CPDF_CalRGB final : public CPDF_ColorSpace {
  public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
+  CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_CalRGB() override;
 
   // CPDF_ColorSpace:
@@ -169,9 +165,7 @@ class CPDF_CalRGB final : public CPDF_ColorSpace {
 
 class CPDF_LabCS final : public CPDF_ColorSpace {
  public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
+  CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_LabCS() override;
 
   // CPDF_ColorSpace:
@@ -202,9 +196,7 @@ class CPDF_LabCS final : public CPDF_ColorSpace {
 
 class CPDF_ICCBasedCS final : public CPDF_ColorSpace {
  public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
+  CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_ICCBasedCS() override;
 
   // CPDF_ColorSpace:
@@ -242,9 +234,7 @@ class CPDF_ICCBasedCS final : public CPDF_ColorSpace {
 
 class CPDF_IndexedCS final : public CPDF_ColorSpace {
  public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
+  CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_IndexedCS() override;
 
   // CPDF_ColorSpace:
@@ -266,9 +256,7 @@ class CPDF_IndexedCS final : public CPDF_ColorSpace {
 
 class CPDF_SeparationCS final : public CPDF_ColorSpace {
  public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
+  CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_SeparationCS() override;
 
   // CPDF_ColorSpace:
@@ -293,9 +281,7 @@ class CPDF_SeparationCS final : public CPDF_ColorSpace {
 
 class CPDF_DeviceNCS final : public CPDF_ColorSpace {
  public:
-  template <typename T, typename... Args>
-  friend RetainPtr<T> pdfium::MakeRetain(Args&&... args);
-
+  CONSTRUCT_VIA_MAKE_RETAIN;
   ~CPDF_DeviceNCS() override;
 
   // CPDF_ColorSpace:
@@ -487,7 +473,7 @@ RetainPtr<CPDF_ColorSpace> CPDF_ColorSpace::Load(
   if (!pObj)
     return nullptr;
 
-  if (pdfium::ContainsKey(*pVisited, pObj))
+  if (pdfium::Contains(*pVisited, pObj))
     return nullptr;
 
   pdfium::ScopedSetInsertion<const CPDF_Object*> insertion(pVisited, pObj);
@@ -736,14 +722,14 @@ uint32_t CPDF_CalRGB::v_Load(CPDF_Document* pDoc,
   const CPDF_Array* pParam = pDict->GetArrayFor("Gamma");
   if (pParam) {
     m_bHasGamma = true;
-    for (size_t i = 0; i < FX_ArraySize(m_Gamma); ++i)
+    for (size_t i = 0; i < pdfium::size(m_Gamma); ++i)
       m_Gamma[i] = pParam->GetNumberAt(i);
   }
 
   pParam = pDict->GetArrayFor("Matrix");
   if (pParam) {
     m_bHasMatrix = true;
-    for (size_t i = 0; i < FX_ArraySize(m_Matrix); ++i)
+    for (size_t i = 0; i < pdfium::size(m_Matrix); ++i)
       m_Matrix[i] = pParam->GetNumberAt(i);
   }
   return 3;
@@ -842,9 +828,10 @@ uint32_t CPDF_LabCS::v_Load(CPDF_Document* pDoc,
   const CPDF_Array* pParam = pDict->GetArrayFor("Range");
   static constexpr float kDefaultRanges[kRangesCount] = {-100.0f, 100.0f,
                                                          -100.0f, 100.0f};
-  static_assert(FX_ArraySize(kDefaultRanges) == FX_ArraySize(m_Ranges),
-                "Range size mismatch");
-  for (size_t i = 0; i < FX_ArraySize(kDefaultRanges); ++i)
+  static_assert(
+      pdfium::size(kDefaultRanges) == std::extent<decltype(m_Ranges)>(),
+      "Range size mismatch");
+  for (size_t i = 0; i < pdfium::size(kDefaultRanges); ++i)
     m_Ranges[i] = pParam ? pParam->GetNumberAt(i) : kDefaultRanges[i];
   return 3;
 }

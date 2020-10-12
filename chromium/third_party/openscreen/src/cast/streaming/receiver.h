@@ -8,8 +8,9 @@
 #include <stdint.h>
 
 #include <array>
-#include <chrono>  // NOLINT
+#include <chrono>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "absl/types/optional.h"

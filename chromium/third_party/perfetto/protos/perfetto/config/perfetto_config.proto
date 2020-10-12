@@ -17,6 +17,18 @@ package perfetto.protos;
 // This message is sent by a GPU counter producer to specify the counters
 // available in the hardware.
 message GpuCounterDescriptor {
+  // Logical groups for a counter.  This is used in the UI to present the
+  // related counters together.
+  enum GpuCounterGroup {
+    UNCLASSIFIED = 0;
+    SYSTEM = 1;
+    VERTICES = 2;
+    FRAGMENTS = 3;
+    PRIMITIVES = 4;
+    MEMORY = 5;  // Includes counters relating to caching and bandwidth.
+    COMPUTE = 6;
+  }
+
   message GpuCounterSpec {
     optional uint32 counter_id = 1;
     optional string name = 2;
@@ -29,6 +41,7 @@ message GpuCounterDescriptor {
     repeated MeasureUnit numerator_units = 7;
     repeated MeasureUnit denominator_units = 8;
     optional bool select_by_default = 9;
+    repeated GpuCounterGroup groups = 10;
   }
   repeated GpuCounterSpec specs = 1;
 
@@ -202,6 +215,23 @@ message TracingServiceState {
 }
 
 // End of protos/perfetto/common/tracing_service_state.proto
+
+// Begin of protos/perfetto/common/builtin_clock.proto
+
+enum BuiltinClock {
+  BUILTIN_CLOCK_UNKNOWN = 0;
+  BUILTIN_CLOCK_REALTIME = 1;
+  BUILTIN_CLOCK_REALTIME_COARSE = 2;
+  BUILTIN_CLOCK_MONOTONIC = 3;
+  BUILTIN_CLOCK_MONOTONIC_COARSE = 4;
+  BUILTIN_CLOCK_MONOTONIC_RAW = 5;
+  BUILTIN_CLOCK_BOOTTIME = 6;
+  BUILTIN_CLOCK_MAX_ID = 63;
+
+  reserved 7, 8;
+}
+
+// End of protos/perfetto/common/builtin_clock.proto
 
 // Begin of protos/perfetto/common/android_log_constants.proto
 
@@ -441,7 +471,7 @@ message ProcessStatsConfig {
 // Begin of protos/perfetto/config/profiling/heapprofd_config.proto
 
 // Configuration for go/heapprofd.
-// Next id: 19
+// Next id: 21
 message HeapprofdConfig {
   message ContinuousDumpConfig {
     // ms to wait before first dump.
@@ -453,8 +483,9 @@ message HeapprofdConfig {
   // Set to 1 for perfect accuracy.
   // Otherwise, sample every sample_interval_bytes on average.
   //
-  // See https://docs.perfetto.dev/#/heapprofd?id=sampling-interval for more
-  // details.
+  // See
+  // https://perfetto.dev/docs/data-sources/native-heap-profiler#sampling-interval
+  // for more details.
   optional uint64 sampling_interval_bytes = 1;
 
   // E.g. surfaceflinger, com.android.phone
@@ -469,9 +500,14 @@ message HeapprofdConfig {
   // For watermark based triggering or local debugging.
   repeated uint64 pid = 4;
 
+  // Which heaps to sample, e.g. "malloc". If left empty, only samples
+  // "malloc".
+  repeated string heaps = 20;
+
   // Profile all processes eligible for profiling on the system.
-  // See https://docs.perfetto.dev/#/heapprofd?id=target-processes for which
-  // processes are eligible.
+  // See
+  // https://perfetto.dev/docs/data-sources/native-heap-profiler#heapprofd-targets
+  // for which processes are eligible.
   //
   // On unmodified userdebug builds, this will lead to system crashes. Zygote
   // will crash when trying to launch a new process as it will have an
@@ -1122,6 +1158,20 @@ message TraceConfig {
     // Disable emitting events for data-source state changes (e.g. the marker
     // for all data sources having ACKed the start of the trace).
     optional bool disable_service_events = 4;
+
+    // The authoritative clock domain for the trace. Defaults to BOOTTIME. See
+    // also ClockSnapshot's primary_trace_clock. The configured value is written
+    // into the trace as part of the ClockSnapshots emitted by the service.
+    // Trace processor will attempt to translate packet/event timestamps from
+    // various data sources (and their chosen clock domains) to this domain
+    // during import. Added in Android R.
+    optional BuiltinClock primary_trace_clock = 5;
+
+    // Time interval in between snapshotting of sync markers, clock snapshots,
+    // stats, and other periodic service-emitted events. Note that the service
+    // only keeps track of the first and the most recent snapshot until
+    // ReadBuffers() is called.
+    optional uint32 snapshot_interval_ms = 6;
   }
   optional BuiltinDataSource builtin_data_sources = 20;
 

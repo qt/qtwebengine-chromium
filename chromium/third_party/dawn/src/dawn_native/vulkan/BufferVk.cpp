@@ -148,7 +148,7 @@ namespace dawn_native { namespace vulkan {
         createInfo.pQueueFamilyIndices = 0;
 
         Device* device = ToBackend(GetDevice());
-        DAWN_TRY(CheckVkSuccess(
+        DAWN_TRY(CheckVkOOMThenSuccess(
             device->fn.CreateBuffer(device->GetVkDevice(), &createInfo, nullptr, &*mHandle),
             "vkCreateBuffer"));
 
@@ -164,6 +164,10 @@ namespace dawn_native { namespace vulkan {
                                         ToBackend(mMemoryAllocation.GetResourceHeap())->GetMemory(),
                                         mMemoryAllocation.GetOffset()),
             "vkBindBufferMemory"));
+
+        if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+            ClearBuffer(device->GetPendingRecordingContext(), ClearValue::NonZero);
+        }
 
         return {};
     }
@@ -186,6 +190,25 @@ namespace dawn_native { namespace vulkan {
 
     void Buffer::TransitionUsageNow(CommandRecordingContext* recordingContext,
                                     wgpu::BufferUsage usage) {
+        std::vector<VkBufferMemoryBarrier> barriers;
+        VkPipelineStageFlags srcStages = 0;
+        VkPipelineStageFlags dstStages = 0;
+
+        TransitionUsageNow(recordingContext, usage, &barriers, &srcStages, &dstStages);
+
+        if (barriers.size() > 0) {
+            ASSERT(barriers.size() == 1);
+            ToBackend(GetDevice())
+                ->fn.CmdPipelineBarrier(recordingContext->commandBuffer, srcStages, dstStages, 0, 0,
+                                        nullptr, barriers.size(), barriers.data(), 0, nullptr);
+        }
+    }
+
+    void Buffer::TransitionUsageNow(CommandRecordingContext* recordingContext,
+                                    wgpu::BufferUsage usage,
+                                    std::vector<VkBufferMemoryBarrier>* bufferBarriers,
+                                    VkPipelineStageFlags* srcStages,
+                                    VkPipelineStageFlags* dstStages) {
         bool lastIncludesTarget = (mLastUsage & usage) == usage;
         bool lastReadOnly = (mLastUsage & kReadOnlyBufferUsages) == mLastUsage;
 
@@ -200,8 +223,8 @@ namespace dawn_native { namespace vulkan {
             return;
         }
 
-        VkPipelineStageFlags srcStages = VulkanPipelineStage(mLastUsage);
-        VkPipelineStageFlags dstStages = VulkanPipelineStage(usage);
+        *srcStages |= VulkanPipelineStage(mLastUsage);
+        *dstStages |= VulkanPipelineStage(usage);
 
         VkBufferMemoryBarrier barrier;
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -214,9 +237,7 @@ namespace dawn_native { namespace vulkan {
         barrier.offset = 0;
         barrier.size = GetSize();
 
-        ToBackend(GetDevice())
-            ->fn.CmdPipelineBarrier(recordingContext->commandBuffer, srcStages, dstStages, 0, 0,
-                                    nullptr, 1, &barrier, 0, nullptr);
+        bufferBarriers->push_back(barrier);
 
         mLastUsage = usage;
     }
@@ -236,12 +257,6 @@ namespace dawn_native { namespace vulkan {
 
         CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
         TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapRead);
-
-        uint8_t* memory = mMemoryAllocation.GetMappedPointer();
-        ASSERT(memory != nullptr);
-
-        MapRequestTracker* tracker = device->GetMapRequestTracker();
-        tracker->Track(this, serial, memory, false);
         return {};
     }
 
@@ -250,17 +265,17 @@ namespace dawn_native { namespace vulkan {
 
         CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
         TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapWrite);
-
-        uint8_t* memory = mMemoryAllocation.GetMappedPointer();
-        ASSERT(memory != nullptr);
-
-        MapRequestTracker* tracker = device->GetMapRequestTracker();
-        tracker->Track(this, serial, memory, true);
         return {};
     }
 
     void Buffer::UnmapImpl() {
         // No need to do anything, we keep CPU-visible memory mapped at all time.
+    }
+
+    void* Buffer::GetMappedPointerImpl() {
+        uint8_t* memory = mMemoryAllocation.GetMappedPointer();
+        ASSERT(memory != nullptr);
+        return memory;
     }
 
     void Buffer::DestroyImpl() {
@@ -272,34 +287,20 @@ namespace dawn_native { namespace vulkan {
         }
     }
 
-    // MapRequestTracker
+    void Buffer::ClearBuffer(CommandRecordingContext* recordingContext, ClearValue clearValue) {
+        ASSERT(recordingContext != nullptr);
 
-    MapRequestTracker::MapRequestTracker(Device* device) : mDevice(device) {
+        // TODO(jiawei.shao@intel.com): support buffer lazy-initialization to 0.
+        ASSERT(clearValue == BufferBase::ClearValue::NonZero);
+
+        constexpr uint32_t kClearBufferValue = 0x01010101;
+
+        TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
+
+        Device* device = ToBackend(GetDevice());
+        // TODO(jiawei.shao@intel.com): find out why VK_WHOLE_SIZE doesn't work on old Windows Intel
+        // Vulkan drivers.
+        device->fn.CmdFillBuffer(recordingContext->commandBuffer, mHandle, 0, GetSize(),
+                                 kClearBufferValue);
     }
-
-    MapRequestTracker::~MapRequestTracker() {
-        ASSERT(mInflightRequests.Empty());
-    }
-
-    void MapRequestTracker::Track(Buffer* buffer, uint32_t mapSerial, void* data, bool isWrite) {
-        Request request;
-        request.buffer = buffer;
-        request.mapSerial = mapSerial;
-        request.data = data;
-        request.isWrite = isWrite;
-
-        mInflightRequests.Enqueue(std::move(request), mDevice->GetPendingCommandSerial());
-    }
-
-    void MapRequestTracker::Tick(Serial finishedSerial) {
-        for (auto& request : mInflightRequests.IterateUpTo(finishedSerial)) {
-            if (request.isWrite) {
-                request.buffer->OnMapWriteCommandSerialFinished(request.mapSerial, request.data);
-            } else {
-                request.buffer->OnMapReadCommandSerialFinished(request.mapSerial, request.data);
-            }
-        }
-        mInflightRequests.ClearUpTo(finishedSerial);
-    }
-
 }}  // namespace dawn_native::vulkan

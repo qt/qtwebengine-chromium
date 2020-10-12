@@ -102,9 +102,14 @@ class QuicClientBase {
   // Wait for events until the stream with the given ID is closed.
   void WaitForStreamToClose(QuicStreamId id);
 
-  // Wait for events until the handshake is confirmed.
-  // Returns true if the crypto handshake succeeds, false otherwise.
-  QUIC_MUST_USE_RESULT bool WaitForCryptoHandshakeConfirmed();
+  // Wait for 1-RTT keys become available.
+  // Returns true once 1-RTT keys are available, false otherwise.
+  QUIC_MUST_USE_RESULT bool WaitForOneRttKeysAvailable();
+
+  // Wait for handshake state proceeds to HANDSHAKE_CONFIRMED.
+  // In QUIC crypto, this does the same as WaitForOneRttKeysAvailable, while in
+  // TLS, this waits for HANDSHAKE_DONE frame is received.
+  QUIC_MUST_USE_RESULT bool WaitForHandshakeConfirmed();
 
   // Wait up to 50ms, and handle any events which occur.
   // Returns true if there are any outstanding requests.
@@ -270,10 +275,6 @@ class QuicClientBase {
   // cached server config contains a server-designated ID, that ID will be
   // returned.  Otherwise, the next random ID will be returned.
   QuicConnectionId GetNextConnectionId();
-
-  // Returns the next server-designated ConnectionId from the cached config for
-  // |server_id_|, if it exists.  Otherwise, returns 0.
-  QuicConnectionId GetNextServerDesignatedConnectionId();
 
   // Generates a new, random connection ID (as opposed to a server-designated
   // connection ID).

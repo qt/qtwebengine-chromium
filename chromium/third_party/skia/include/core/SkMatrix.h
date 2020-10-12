@@ -63,24 +63,9 @@ public:
         @param sy  vertical scale factor
         @return    SkMatrix with scale
     */
-    static SkMatrix SK_WARN_UNUSED_RESULT MakeScale(SkScalar sx, SkScalar sy) {
+    static SkMatrix SK_WARN_UNUSED_RESULT Scale(SkScalar sx, SkScalar sy) {
         SkMatrix m;
         m.setScale(sx, sy);
-        return m;
-    }
-
-    /** Sets SkMatrix to scale by (scale, scale). Returned matrix is:
-
-            | scale   0   0 |
-            |   0   scale 0 |
-            |   0     0   1 |
-
-        @param scale  horizontal and vertical scale factor
-        @return       SkMatrix with scale
-    */
-    static SkMatrix SK_WARN_UNUSED_RESULT MakeScale(SkScalar scale) {
-        SkMatrix m;
-        m.setScale(scale, scale);
         return m;
     }
 
@@ -94,23 +79,43 @@ public:
         @param dy  vertical translation
         @return    SkMatrix with translation
     */
-    static SkMatrix SK_WARN_UNUSED_RESULT MakeTrans(SkScalar dx, SkScalar dy) {
+    static SkMatrix SK_WARN_UNUSED_RESULT Translate(SkScalar dx, SkScalar dy) {
         SkMatrix m;
         m.setTranslate(dx, dy);
         return m;
     }
+    static SkMatrix SK_WARN_UNUSED_RESULT Translate(SkVector t) { return Translate(t.x(), t.y()); }
+    static SkMatrix SK_WARN_UNUSED_RESULT Translate(SkIVector t) { return Translate(t.x(), t.y()); }
 
-    /** Sets SkMatrix to translate by (t.x(), t.y()). Returned matrix is:
+    /** Sets SkMatrix to rotate by |deg| about a pivot point at (0, 0).
 
-            | 1 0 t.x() |
-            | 0 1 t.y() |
-            | 0 0 1     |
-
-        @param t  translation vector
-        @return   SkMatrix with translation
+        @param deg  rotation angle in degrees (positive rotates clockwise)
+        @return     SkMatrix with rotation
     */
+    static SkMatrix SK_WARN_UNUSED_RESULT RotateDeg(SkScalar deg) {
+        SkMatrix m;
+        m.setRotate(deg);
+        return m;
+    }
+    static SkMatrix SK_WARN_UNUSED_RESULT RotateRad(SkScalar rad) {
+        return RotateDeg(SkRadiansToDegrees(rad));
+    }
+
+#ifdef SK_SUPPORT_LEGACY_MATRIX_FACTORIES
+    // DEPRECATED
+    static SkMatrix SK_WARN_UNUSED_RESULT MakeTrans(SkScalar dx, SkScalar dy) {
+        return Translate(dx, dy);
+    }
+    static SkMatrix SK_WARN_UNUSED_RESULT MakeScale(SkScalar sx, SkScalar sy) {
+        return Scale(sx, sy);
+    }
+    static SkMatrix SK_WARN_UNUSED_RESULT MakeScale(SkScalar scale) {
+        return Scale(scale, scale);
+    }
     static SkMatrix SK_WARN_UNUSED_RESULT MakeTrans(SkVector t) { return MakeTrans(t.x(), t.y()); }
     static SkMatrix SK_WARN_UNUSED_RESULT MakeTrans(SkIVector t) { return MakeTrans(t.x(), t.y()); }
+    // end DEPRECATED
+#endif
 
     /** Sets SkMatrix to:
 
@@ -1677,6 +1682,10 @@ public:
         return result;
     }
 
+    friend SkMatrix operator*(const SkMatrix& a, const SkMatrix& b) {
+        return Concat(a, b);
+    }
+
     /** Sets internal cache to unknown state. Use to force update after repeated
         modifications to SkMatrix element reference returned by operator[](int index).
     */
@@ -1708,7 +1717,7 @@ public:
         fMat[kMPersp1] = 0;
         fMat[kMPersp2] = 1;
 
-        unsigned mask = 0;
+        int mask = 0;
         if (sx != 1 || sy != 1) {
             mask |= kScale_Mask;
         }
@@ -1752,12 +1761,12 @@ private:
                                      kPerspective_Mask |
                                      kRectStaysRect_Mask;
 
-    SkScalar         fMat[9];
-    mutable uint32_t fTypeMask;
+    SkScalar        fMat[9];
+    mutable int32_t fTypeMask;
 
     constexpr SkMatrix(SkScalar sx, SkScalar kx, SkScalar tx,
                        SkScalar ky, SkScalar sy, SkScalar ty,
-                       SkScalar p0, SkScalar p1, SkScalar p2, uint32_t typeMask)
+                       SkScalar p0, SkScalar p1, SkScalar p2, int typeMask)
         : fMat{sx, kx, tx,
                ky, sy, ty,
                p0, p1, p2}
@@ -1773,18 +1782,18 @@ private:
         SkASSERT(kUnknown_Mask == mask || (mask & kAllMasks) == mask ||
                  ((kUnknown_Mask | kOnlyPerspectiveValid_Mask) & mask)
                  == (kUnknown_Mask | kOnlyPerspectiveValid_Mask));
-        fTypeMask = SkToU8(mask);
+        fTypeMask = mask;
     }
 
     void orTypeMask(int mask) {
         SkASSERT((mask & kORableMasks) == mask);
-        fTypeMask = SkToU8(fTypeMask | mask);
+        fTypeMask |= mask;
     }
 
     void clearTypeMask(int mask) {
         // only allow a valid mask
         SkASSERT((mask & kAllMasks) == mask);
-        fTypeMask = fTypeMask & ~mask;
+        fTypeMask &= ~mask;
     }
 
     TypeMask getPerspectiveTypeMaskOnly() const {
@@ -1882,7 +1891,6 @@ private:
 
     friend class SkPerspIter;
     friend class SkMatrixPriv;
-    friend class SkReader32;
     friend class SerializationTest;
 };
 SK_END_REQUIRE_DENSE

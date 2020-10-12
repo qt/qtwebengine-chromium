@@ -16,8 +16,7 @@
  */
 
 
-#include <ft2build.h>
-#include FT_TRUETYPE_TAGS_H
+#include <freetype/tttags.h>
 
 
   /*

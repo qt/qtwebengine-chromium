@@ -240,9 +240,21 @@ export class AppManifestView extends UI.Widget.VBox {
       urlField.appendChild(link);
 
       const shortcutIcons = shortcut.icons || [];
+      let hasShorcutIconLargeEnough = false;
       for (const shortcutIcon of shortcutIcons) {
         const shortcutIconErrors = await this._appendIconResourceToSection(url, shortcutIcon, shortcutSection);
-        imageErrors.push(...shortcutIconErrors);
+        if (shortcutIconErrors.length > 0) {
+          imageErrors.push(...shortcutIconErrors);
+        }
+        if (!hasShorcutIconLargeEnough && shortcutIcon.sizes) {
+          const shortcutIconSize = shortcutIcon.sizes.match(/^(\d+)x(\d+)$/);
+          if (shortcutIconSize && shortcutIconSize[1] >= 96 && shortcutIconSize[2] >= 96) {
+            hasShorcutIconLargeEnough = true;
+          }
+        }
+      }
+      if (!hasShorcutIconLargeEnough) {
+        imageErrors.push(ls`Shortcut #${shortcutIndex} should include a 96x96 pixel icon`);
       }
       shortcutIndex++;
     }
@@ -400,6 +412,10 @@ export class AppManifestView extends UI.Widget.VBox {
    */
   async _appendIconResourceToSection(baseUrl, icon, section) {
     const iconErrors = [];
+    if (!icon.src) {
+      iconErrors.push(ls`Icon src is not set`);
+      return iconErrors;
+    }
     const iconUrl = Common.ParsedURL.ParsedURL.completeURL(baseUrl, icon['src']);
     const result = await this._loadImage(iconUrl);
     if (!result) {
@@ -416,7 +432,9 @@ export class AppManifestView extends UI.Widget.VBox {
       iconErrors.push(ls`Icon ${iconUrl} should specify its size as \`{width}x{height}\``);
     } else {
       const [width, height] = icon.sizes.split('x').map(x => parseInt(x, 10));
-      if (image.naturalWidth !== width && image.naturalHeight !== height) {
+      if (width !== height) {
+        iconErrors.push(ls`Icon ${iconUrl} dimensions should be square`);
+      } else if (image.naturalWidth !== width && image.naturalHeight !== height) {
         iconErrors.push(ls`Actual size (${image.naturalWidth}×${image.naturalHeight})px of icon ${
             iconUrl} does not match specified size (${width}×${height}px)`);
       } else if (image.naturalWidth !== width) {

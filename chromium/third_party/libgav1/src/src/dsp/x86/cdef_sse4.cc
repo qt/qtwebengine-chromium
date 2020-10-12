@@ -38,16 +38,7 @@ namespace dsp {
 namespace low_bitdepth {
 namespace {
 
-// CdefDirection:
-// Mirror values and pad to 16 elements.
-alignas(16) constexpr uint32_t kDivisionTable[] = {840, 420, 280, 210, 168, 140,
-                                                   120, 105, 120, 140, 168, 210,
-                                                   280, 420, 840, 0};
-
-// Used when calculating odd |cost[x]| values to mask off unwanted elements.
-// Holds elements 1 3 5 X 5 3 1 X
-alignas(16) constexpr uint32_t kDivisionTableOdd[] = {420, 210, 140, 0,
-                                                      140, 210, 420, 0};
+#include "src/dsp/cdef.inc"
 
 // Used to calculate |partial[0][i + j]| and |partial[4][7 + i - j]|. The input
 // is |src[j]| and it is being added to |partial[]| based on the above indices.
@@ -160,10 +151,10 @@ inline __m128i Square_S32(__m128i a) { return _mm_mullo_epi32(a, a); }
 
 // |cost[0]| and |cost[4]| square the input and sum with the corresponding
 // element from the other end of the vector:
-// |kDivisionTable[]| element:
+// |kCdefDivisionTable[]| element:
 // cost[0] += (Square(partial[0][i]) + Square(partial[0][14 - i])) *
-//             kDivisionTable[i + 1];
-// cost[0] += Square(partial[0][7]) * kDivisionTable[8];
+//             kCdefDivisionTable[i + 1];
+// cost[0] += Square(partial[0][7]) * kCdefDivisionTable[8];
 // Because everything is being summed into a single value the distributive
 // property allows us to mirror the division table and accumulate once.
 inline uint32_t Cost0Or4(const __m128i a, const __m128i b,
@@ -185,16 +176,16 @@ inline uint32_t CostOdd(const __m128i a, const __m128i b,
   const __m128i a_hi_square =
       Square_S32(_mm_cvtepi16_epi32(_mm_srli_si128(a, 8)));
   // Swap element 0 and element 2. This pairs partial[i][10 - j] with
-  // kDivisionTable[2*j+1].
+  // kCdefDivisionTable[2*j+1].
   const __m128i b_lo_square =
       _mm_shuffle_epi32(Square_S32(_mm_cvtepi16_epi32(b)), 0x06);
   // First terms are indices 3-7.
   __m128i c = _mm_srli_si128(a_lo_square, 12);
   c = _mm_add_epi32(c, a_hi_square);
-  c = _mm_mullo_epi32(c, _mm_set1_epi32(kDivisionTable[7]));
+  c = _mm_mullo_epi32(c, _mm_set1_epi32(kCdefDivisionTable[7]));
 
   // cost[i] += (Square(base_partial[i][j]) + Square(base_partial[i][10 - j])) *
-  //          kDivisionTable[2 * j + 1];
+  //          kCdefDivisionTable[2 * j + 1];
   const __m128i second_cost = _mm_add_epi32(a_lo_square, b_lo_square);
   c = _mm_add_epi32(c, _mm_mullo_epi32(second_cost, division_table));
   return SumVector_S32(c);
@@ -241,18 +232,18 @@ void CdefDirection_SSE4_1(const void* const source, ptrdiff_t stride,
   const __m128i signed_offset = _mm_set1_epi16(128 * 8);
   partial_lo[2] = _mm_sub_epi16(partial_lo[2], signed_offset);
 
-  cost[2] = kDivisionTable[7] * SquareSum_S16(partial_lo[2]);
-  cost[6] = kDivisionTable[7] * SquareSum_S16(partial_lo[6]);
+  cost[2] = kCdefDivisionTable[7] * SquareSum_S16(partial_lo[2]);
+  cost[6] = kCdefDivisionTable[7] * SquareSum_S16(partial_lo[6]);
 
-  const __m128i division_table[4] = {LoadUnaligned16(kDivisionTable),
-                                     LoadUnaligned16(kDivisionTable + 4),
-                                     LoadUnaligned16(kDivisionTable + 8),
-                                     LoadUnaligned16(kDivisionTable + 12)};
+  const __m128i division_table[4] = {LoadUnaligned16(kCdefDivisionTable),
+                                     LoadUnaligned16(kCdefDivisionTable + 4),
+                                     LoadUnaligned16(kCdefDivisionTable + 8),
+                                     LoadUnaligned16(kCdefDivisionTable + 12)};
 
   cost[0] = Cost0Or4(partial_lo[0], partial_hi[0], division_table);
   cost[4] = Cost0Or4(partial_lo[4], partial_hi[4], division_table);
 
-  const __m128i division_table_odd = LoadAligned16(kDivisionTableOdd);
+  const __m128i division_table_odd = LoadAligned16(kCdefDivisionTableOdd);
 
   cost[1] = CostOdd(partial_lo[1], partial_hi[1], division_table_odd);
   cost[3] = CostOdd(partial_lo[3], partial_hi[3], division_table_odd);
@@ -315,24 +306,6 @@ void LoadDirection4(const uint16_t* const src, const ptrdiff_t stride,
                       src + y_1 * stride + stride + x_1);
 }
 
-// Load 4 vectors based on the given |direction|. Use when |block_width| == 2 to
-// do 2 rows at a time.
-void LoadDirection2(const uint16_t* const src, const ptrdiff_t stride,
-                    __m128i* output, const int direction) {
-  const int y_0 = kCdefDirections[direction][0][0];
-  const int x_0 = kCdefDirections[direction][0][1];
-  const int y_1 = kCdefDirections[direction][1][0];
-  const int x_1 = kCdefDirections[direction][1][1];
-  output[0] =
-      Load4x2(src - y_0 * stride - x_0, src - y_0 * stride - x_0 + stride);
-  output[1] =
-      Load4x2(src + y_0 * stride + x_0, src - y_0 * stride - x_0 + stride);
-  output[2] =
-      Load4x2(src - y_1 * stride - x_1, src - y_0 * stride - x_0 + stride);
-  output[3] =
-      Load4x2(src + y_1 * stride + x_1, src - y_0 * stride - x_0 + stride);
-}
-
 inline __m128i Constrain(const __m128i& pixel, const __m128i& reference,
                          const __m128i& damping, const __m128i& threshold) {
   const __m128i diff = _mm_sub_epi16(pixel, reference);
@@ -340,6 +313,11 @@ inline __m128i Constrain(const __m128i& pixel, const __m128i& reference,
   // sign(diff) * Clip3(threshold - (std::abs(diff) >> damping),
   //                    0, std::abs(diff))
   const __m128i shifted_diff = _mm_srl_epi16(abs_diff, damping);
+  // For bitdepth == 8, the threshold range is [0, 15] and the damping range is
+  // [3, 6]. If pixel == kCdefLargeValue(0x4000), shifted_diff will always be
+  // larger than threshold. Subtract using saturation will return 0 when pixel
+  // == kCdefLargeValue.
+  static_assert(kCdefLargeValue == 0x4000, "Invalid kCdefLargeValue");
   const __m128i thresh_minus_shifted_diff =
       _mm_subs_epu16(threshold, shifted_diff);
   const __m128i clamp_abs_diff =
@@ -349,34 +327,35 @@ inline __m128i Constrain(const __m128i& pixel, const __m128i& reference,
 }
 
 inline __m128i ApplyConstrainAndTap(const __m128i& pixel, const __m128i& val,
-                                    const __m128i& mask, const __m128i& tap,
-                                    const __m128i& damping,
+                                    const __m128i& tap, const __m128i& damping,
                                     const __m128i& threshold) {
   const __m128i constrained = Constrain(val, pixel, damping, threshold);
-  return _mm_mullo_epi16(_mm_and_si128(constrained, mask), tap);
+  return _mm_mullo_epi16(constrained, tap);
 }
 
-template <int width>
+template <int width, bool enable_primary = true, bool enable_secondary = true>
 void DoCdef(const uint16_t* src, const ptrdiff_t src_stride, const int height,
             const int direction, const int primary_strength,
             const int secondary_strength, const int damping, uint8_t* dst,
             const ptrdiff_t dst_stride) {
-  static_assert(width == 8 || width == 4 || width == 2, "Invalid CDEF width.");
-
+  static_assert(width == 8 || width == 4, "Invalid CDEF width.");
+  static_assert(enable_primary || enable_secondary, "");
   __m128i primary_damping_shift, secondary_damping_shift;
+
   // FloorLog2() requires input to be > 0.
-  if (primary_strength == 0) {
-    primary_damping_shift = _mm_setzero_si128();
-  } else {
+  // 8-bit damping range: Y: [3, 6], UV: [2, 5].
+  if (enable_primary) {
+    // primary_strength: [0, 15] -> FloorLog2: [0, 3] so a clamp is necessary
+    // for UV filtering.
     primary_damping_shift =
         _mm_cvtsi32_si128(std::max(0, damping - FloorLog2(primary_strength)));
   }
-
-  if (secondary_strength == 0) {
-    secondary_damping_shift = _mm_setzero_si128();
-  } else {
+  if (enable_secondary) {
+    // secondary_strength: [0, 4] -> FloorLog2: [0, 2] so no clamp to 0 is
+    // necessary.
+    assert(damping - FloorLog2(secondary_strength) >= 0);
     secondary_damping_shift =
-        _mm_cvtsi32_si128(std::max(0, damping - FloorLog2(secondary_strength)));
+        _mm_cvtsi32_si128(damping - FloorLog2(secondary_strength));
   }
 
   const __m128i primary_tap_0 =
@@ -385,8 +364,6 @@ void DoCdef(const uint16_t* src, const ptrdiff_t src_stride, const int height,
       _mm_set1_epi16(kCdefPrimaryTaps[primary_strength & 1][1]);
   const __m128i secondary_tap_0 = _mm_set1_epi16(kCdefSecondaryTap0);
   const __m128i secondary_tap_1 = _mm_set1_epi16(kCdefSecondaryTap1);
-  const __m128i cdef_large_value =
-      _mm_set1_epi16(static_cast<int16_t>(kCdefLargeValue));
   const __m128i cdef_large_value_mask =
       _mm_set1_epi16(static_cast<int16_t>(~kCdefLargeValue));
   const __m128i primary_threshold = _mm_set1_epi16(primary_strength);
@@ -397,126 +374,113 @@ void DoCdef(const uint16_t* src, const ptrdiff_t src_stride, const int height,
     __m128i pixel;
     if (width == 8) {
       pixel = LoadUnaligned16(src);
-    } else if (width == 4) {
+    } else {
       pixel = LoadHi8(LoadLo8(src), src + src_stride);
-    } else {
-      pixel = Load4x2(src, src + src_stride);
-    }
-
-    // Primary |direction|.
-    __m128i primary_val[4];
-    if (width == 8) {
-      LoadDirection(src, src_stride, primary_val, direction);
-    } else if (width == 4) {
-      LoadDirection4(src, src_stride, primary_val, direction);
-    } else {
-      LoadDirection2(src, src_stride, primary_val, direction);
     }
 
     __m128i min = pixel;
-    min = _mm_min_epu16(min, primary_val[0]);
-    min = _mm_min_epu16(min, primary_val[1]);
-    min = _mm_min_epu16(min, primary_val[2]);
-    min = _mm_min_epu16(min, primary_val[3]);
-
     __m128i max = pixel;
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(primary_val[0], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(primary_val[1], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(primary_val[2], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(primary_val[3], cdef_large_value_mask));
-    __m128i mask = _mm_cmplt_epi16(primary_val[0], cdef_large_value);
-    __m128i sum =
-        ApplyConstrainAndTap(pixel, primary_val[0], mask, primary_tap_0,
-                             primary_damping_shift, primary_threshold);
-    mask = _mm_cmplt_epi16(primary_val[1], cdef_large_value);
-    sum = _mm_add_epi16(
-        sum, ApplyConstrainAndTap(pixel, primary_val[1], mask, primary_tap_0,
-                                  primary_damping_shift, primary_threshold));
-    mask = _mm_cmplt_epi16(primary_val[2], cdef_large_value);
-    sum = _mm_add_epi16(
-        sum, ApplyConstrainAndTap(pixel, primary_val[2], mask, primary_tap_1,
-                                  primary_damping_shift, primary_threshold));
-    mask = _mm_cmplt_epi16(primary_val[3], cdef_large_value);
-    sum = _mm_add_epi16(
-        sum, ApplyConstrainAndTap(pixel, primary_val[3], mask, primary_tap_1,
-                                  primary_damping_shift, primary_threshold));
+    __m128i sum;
 
-    // Secondary |direction| values (+/- 2). Clamp |direction|.
-    __m128i secondary_val[8];
-    if (width == 8) {
-      LoadDirection(src, src_stride, secondary_val, (direction + 2) & 0x7);
-      LoadDirection(src, src_stride, secondary_val + 4, (direction - 2) & 0x7);
-    } else if (width == 4) {
-      LoadDirection4(src, src_stride, secondary_val, (direction + 2) & 0x7);
-      LoadDirection4(src, src_stride, secondary_val + 4, (direction - 2) & 0x7);
+    if (enable_primary) {
+      // Primary |direction|.
+      __m128i primary_val[4];
+      if (width == 8) {
+        LoadDirection(src, src_stride, primary_val, direction);
+      } else {
+        LoadDirection4(src, src_stride, primary_val, direction);
+      }
+
+      min = _mm_min_epu16(min, primary_val[0]);
+      min = _mm_min_epu16(min, primary_val[1]);
+      min = _mm_min_epu16(min, primary_val[2]);
+      min = _mm_min_epu16(min, primary_val[3]);
+
+      // The source is 16 bits, however, we only really care about the lower
+      // 8 bits.  The upper 8 bits contain the "large" flag.  After the final
+      // primary max has been calculated, zero out the upper 8 bits.  Use this
+      // to find the "16 bit" max.
+      const __m128i max_p01 = _mm_max_epu8(primary_val[0], primary_val[1]);
+      const __m128i max_p23 = _mm_max_epu8(primary_val[2], primary_val[3]);
+      const __m128i max_p = _mm_max_epu8(max_p01, max_p23);
+      max = _mm_max_epu16(max, _mm_and_si128(max_p, cdef_large_value_mask));
+
+      sum = ApplyConstrainAndTap(pixel, primary_val[0], primary_tap_0,
+                                 primary_damping_shift, primary_threshold);
+      sum = _mm_add_epi16(
+          sum, ApplyConstrainAndTap(pixel, primary_val[1], primary_tap_0,
+                                    primary_damping_shift, primary_threshold));
+      sum = _mm_add_epi16(
+          sum, ApplyConstrainAndTap(pixel, primary_val[2], primary_tap_1,
+                                    primary_damping_shift, primary_threshold));
+      sum = _mm_add_epi16(
+          sum, ApplyConstrainAndTap(pixel, primary_val[3], primary_tap_1,
+                                    primary_damping_shift, primary_threshold));
     } else {
-      LoadDirection2(src, src_stride, secondary_val, (direction + 2) & 0x7);
-      LoadDirection2(src, src_stride, secondary_val + 4, (direction - 2) & 0x7);
+      sum = _mm_setzero_si128();
     }
 
-    min = _mm_min_epu16(min, secondary_val[0]);
-    min = _mm_min_epu16(min, secondary_val[1]);
-    min = _mm_min_epu16(min, secondary_val[2]);
-    min = _mm_min_epu16(min, secondary_val[3]);
-    min = _mm_min_epu16(min, secondary_val[4]);
-    min = _mm_min_epu16(min, secondary_val[5]);
-    min = _mm_min_epu16(min, secondary_val[6]);
-    min = _mm_min_epu16(min, secondary_val[7]);
+    if (enable_secondary) {
+      // Secondary |direction| values (+/- 2). Clamp |direction|.
+      __m128i secondary_val[8];
+      if (width == 8) {
+        LoadDirection(src, src_stride, secondary_val, direction + 2);
+        LoadDirection(src, src_stride, secondary_val + 4, direction - 2);
+      } else {
+        LoadDirection4(src, src_stride, secondary_val, direction + 2);
+        LoadDirection4(src, src_stride, secondary_val + 4, direction - 2);
+      }
 
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[0], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[1], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[2], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[3], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[4], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[5], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[6], cdef_large_value_mask));
-    max = _mm_max_epu16(max,
-                        _mm_and_si128(secondary_val[7], cdef_large_value_mask));
+      min = _mm_min_epu16(min, secondary_val[0]);
+      min = _mm_min_epu16(min, secondary_val[1]);
+      min = _mm_min_epu16(min, secondary_val[2]);
+      min = _mm_min_epu16(min, secondary_val[3]);
+      min = _mm_min_epu16(min, secondary_val[4]);
+      min = _mm_min_epu16(min, secondary_val[5]);
+      min = _mm_min_epu16(min, secondary_val[6]);
+      min = _mm_min_epu16(min, secondary_val[7]);
 
-    mask = _mm_cmplt_epi16(secondary_val[0], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[0], mask, secondary_tap_0,
-                                 secondary_damping_shift, secondary_threshold));
-    mask = _mm_cmplt_epi16(secondary_val[1], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[1], mask, secondary_tap_0,
-                                 secondary_damping_shift, secondary_threshold));
-    mask = _mm_cmplt_epi16(secondary_val[2], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[2], mask, secondary_tap_1,
-                                 secondary_damping_shift, secondary_threshold));
-    mask = _mm_cmplt_epi16(secondary_val[3], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[3], mask, secondary_tap_1,
-                                 secondary_damping_shift, secondary_threshold));
-    mask = _mm_cmplt_epi16(secondary_val[4], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[4], mask, secondary_tap_0,
-                                 secondary_damping_shift, secondary_threshold));
-    mask = _mm_cmplt_epi16(secondary_val[5], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[5], mask, secondary_tap_0,
-                                 secondary_damping_shift, secondary_threshold));
-    mask = _mm_cmplt_epi16(secondary_val[6], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[6], mask, secondary_tap_1,
-                                 secondary_damping_shift, secondary_threshold));
-    mask = _mm_cmplt_epi16(secondary_val[7], cdef_large_value);
-    sum = _mm_add_epi16(sum, ApplyConstrainAndTap(
-                                 pixel, secondary_val[7], mask, secondary_tap_1,
-                                 secondary_damping_shift, secondary_threshold));
+      const __m128i max_s01 = _mm_max_epu8(secondary_val[0], secondary_val[1]);
+      const __m128i max_s23 = _mm_max_epu8(secondary_val[2], secondary_val[3]);
+      const __m128i max_s45 = _mm_max_epu8(secondary_val[4], secondary_val[5]);
+      const __m128i max_s67 = _mm_max_epu8(secondary_val[6], secondary_val[7]);
+      const __m128i max_s = _mm_max_epu8(_mm_max_epu8(max_s01, max_s23),
+                                         _mm_max_epu8(max_s45, max_s67));
+      max = _mm_max_epu16(max, _mm_and_si128(max_s, cdef_large_value_mask));
 
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[0], secondary_tap_0,
+                               secondary_damping_shift, secondary_threshold));
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[1], secondary_tap_0,
+                               secondary_damping_shift, secondary_threshold));
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[2], secondary_tap_1,
+                               secondary_damping_shift, secondary_threshold));
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[3], secondary_tap_1,
+                               secondary_damping_shift, secondary_threshold));
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[4], secondary_tap_0,
+                               secondary_damping_shift, secondary_threshold));
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[5], secondary_tap_0,
+                               secondary_damping_shift, secondary_threshold));
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[6], secondary_tap_1,
+                               secondary_damping_shift, secondary_threshold));
+      sum = _mm_add_epi16(
+          sum,
+          ApplyConstrainAndTap(pixel, secondary_val[7], secondary_tap_1,
+                               secondary_damping_shift, secondary_threshold));
+    }
     // Clip3(pixel + ((8 + sum - (sum < 0)) >> 4), min, max))
     const __m128i sum_lt_0 = _mm_srai_epi16(sum, 15);
     // 8 + sum
@@ -536,18 +500,11 @@ void DoCdef(const uint16_t* src, const ptrdiff_t src_stride, const int height,
       StoreLo8(dst, result);
       dst += dst_stride;
       ++y;
-    } else if (width == 4) {
+    } else {
       src += 2 * src_stride;
       Store4(dst, result);
       dst += dst_stride;
       Store4(dst, _mm_srli_si128(result, 4));
-      dst += dst_stride;
-      y += 2;
-    } else {
-      src += 2 * src_stride;
-      Store2(dst, result);
-      dst += dst_stride;
-      Store2(dst, _mm_srli_si128(result, 2));
       dst += dst_stride;
       y += 2;
     }
@@ -558,29 +515,46 @@ void DoCdef(const uint16_t* src, const ptrdiff_t src_stride, const int height,
 // inside the frame. However it requires the source input to be padded with a
 // constant large value if at the boundary. The input must be uint16_t.
 void CdefFilter_SSE4_1(const void* const source, const ptrdiff_t source_stride,
-                       const int rows4x4, const int columns4x4,
-                       const int curr_x, const int curr_y,
-                       const int subsampling_x, const int subsampling_y,
+                       const int block_width, const int block_height,
                        const int primary_strength, const int secondary_strength,
                        const int damping, const int direction, void* const dest,
                        const ptrdiff_t dest_stride) {
-  const int plane_width = MultiplyBy4(columns4x4) >> subsampling_x;
-  const int plane_height = MultiplyBy4(rows4x4) >> subsampling_y;
-  const int block_width = std::min(8 >> subsampling_x, plane_width - curr_x);
-  const int block_height = std::min(8 >> subsampling_y, plane_height - curr_y);
   const auto* src = static_cast<const uint16_t*>(source);
   auto* dst = static_cast<uint8_t*>(dest);
 
-  if (block_width == 8) {
-    DoCdef<8>(src, source_stride, block_height, direction, primary_strength,
-              secondary_strength, damping, dst, dest_stride);
-  } else if (block_width == 4) {
-    DoCdef<4>(src, source_stride, block_height, direction, primary_strength,
-              secondary_strength, damping, dst, dest_stride);
+  if (secondary_strength > 0) {
+    if (primary_strength > 0) {
+      if (block_width == 8) {
+        DoCdef<8>(src, source_stride, block_height, direction, primary_strength,
+                  secondary_strength, damping, dst, dest_stride);
+      } else {
+        assert(block_width == 4);
+        DoCdef<4>(src, source_stride, block_height, direction, primary_strength,
+                  secondary_strength, damping, dst, dest_stride);
+      }
+    } else {
+      if (block_width == 8) {
+        DoCdef<8, /*enable_primary=*/false>(
+            src, source_stride, block_height, direction, primary_strength,
+            secondary_strength, damping, dst, dest_stride);
+      } else {
+        assert(block_width == 4);
+        DoCdef<4, /*enable_primary=*/false>(
+            src, source_stride, block_height, direction, primary_strength,
+            secondary_strength, damping, dst, dest_stride);
+      }
+    }
   } else {
-    assert(block_width == 2);
-    DoCdef<2>(src, source_stride, block_height, direction, primary_strength,
-              secondary_strength, damping, dst, dest_stride);
+    if (block_width == 8) {
+      DoCdef<8, /*enable_primary=*/true, /*enable_secondary=*/false>(
+          src, source_stride, block_height, direction, primary_strength,
+          secondary_strength, damping, dst, dest_stride);
+    } else {
+      assert(block_width == 4);
+      DoCdef<4, /*enable_primary=*/true, /*enable_secondary=*/false>(
+          src, source_stride, block_height, direction, primary_strength,
+          secondary_strength, damping, dst, dest_stride);
+    }
   }
 }
 

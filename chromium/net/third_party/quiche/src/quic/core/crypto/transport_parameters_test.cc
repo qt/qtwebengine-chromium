@@ -44,6 +44,7 @@ const uint64_t kFakeInitialRoundTripTime = 53;
 const uint8_t kFakePreferredStatelessResetTokenData[16] = {
     0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
     0x88, 0x89, 0x8A, 0x8B, 0x8C, 0x8D, 0x8E, 0x8F};
+const bool kFakeSupportHandshakeDone = true;
 
 const auto kCustomParameter1 =
     static_cast<TransportParameters::TransportParameterId>(0xffcd);
@@ -52,8 +53,16 @@ const auto kCustomParameter2 =
     static_cast<TransportParameters::TransportParameterId>(0xff34);
 const char* kCustomParameter2Value = "bar";
 
-QuicConnectionId CreateFakeOriginalConnectionId() {
+QuicConnectionId CreateFakeOriginalDestinationConnectionId() {
   return TestConnectionId(0x1337);
+}
+
+QuicConnectionId CreateFakeInitialSourceConnectionId() {
+  return TestConnectionId(0x2345);
+}
+
+QuicConnectionId CreateFakeRetrySourceConnectionId() {
+  return TestConnectionId(0x9876);
 }
 
 QuicConnectionId CreateFakePreferredConnectionId() {
@@ -151,8 +160,8 @@ TEST_P(TransportParametersTest, Comparator) {
   new_params.perspective = Perspective::IS_CLIENT;
   orig_params.version = kFakeVersionLabel;
   new_params.version = kFakeVersionLabel;
-  orig_params.disable_migration = true;
-  new_params.disable_migration = true;
+  orig_params.disable_active_migration = true;
+  new_params.disable_active_migration = true;
   EXPECT_EQ(orig_params, new_params);
   EXPECT_TRUE(orig_params == new_params);
   EXPECT_FALSE(orig_params != new_params);
@@ -172,12 +181,12 @@ TEST_P(TransportParametersTest, Comparator) {
   EXPECT_FALSE(orig_params != new_params);
 
   // Test comparison on IntegerParameters.
-  orig_params.max_packet_size.set_value(kFakeMaxPacketSize);
-  new_params.max_packet_size.set_value(kFakeMaxPacketSize + 1);
+  orig_params.max_udp_payload_size.set_value(kFakeMaxPacketSize);
+  new_params.max_udp_payload_size.set_value(kFakeMaxPacketSize + 1);
   EXPECT_NE(orig_params, new_params);
   EXPECT_FALSE(orig_params == new_params);
   EXPECT_TRUE(orig_params != new_params);
-  new_params.max_packet_size.set_value(kFakeMaxPacketSize);
+  new_params.max_udp_payload_size.set_value(kFakeMaxPacketSize);
   EXPECT_EQ(orig_params, new_params);
   EXPECT_TRUE(orig_params == new_params);
   EXPECT_FALSE(orig_params != new_params);
@@ -222,6 +231,23 @@ TEST_P(TransportParametersTest, Comparator) {
   EXPECT_EQ(orig_params, new_params);
   EXPECT_TRUE(orig_params == new_params);
   EXPECT_FALSE(orig_params != new_params);
+
+  // Test comparison on connection IDs.
+  orig_params.initial_source_connection_id =
+      CreateFakeInitialSourceConnectionId();
+  new_params.initial_source_connection_id = QUICHE_NULLOPT;
+  EXPECT_NE(orig_params, new_params);
+  EXPECT_FALSE(orig_params == new_params);
+  EXPECT_TRUE(orig_params != new_params);
+  new_params.initial_source_connection_id = TestConnectionId(0xbadbad);
+  EXPECT_NE(orig_params, new_params);
+  EXPECT_FALSE(orig_params == new_params);
+  EXPECT_TRUE(orig_params != new_params);
+  new_params.initial_source_connection_id =
+      CreateFakeInitialSourceConnectionId();
+  EXPECT_EQ(orig_params, new_params);
+  EXPECT_TRUE(orig_params == new_params);
+  EXPECT_FALSE(orig_params != new_params);
 }
 
 TEST_P(TransportParametersTest, CopyConstructor) {
@@ -230,10 +256,11 @@ TEST_P(TransportParametersTest, CopyConstructor) {
   orig_params.version = kFakeVersionLabel;
   orig_params.supported_versions.push_back(kFakeVersionLabel);
   orig_params.supported_versions.push_back(kFakeVersionLabel2);
-  orig_params.original_connection_id = CreateFakeOriginalConnectionId();
-  orig_params.idle_timeout_milliseconds.set_value(kFakeIdleTimeoutMilliseconds);
+  orig_params.original_destination_connection_id =
+      CreateFakeOriginalDestinationConnectionId();
+  orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
   orig_params.stateless_reset_token = CreateFakeStatelessResetToken();
-  orig_params.max_packet_size.set_value(kFakeMaxPacketSize);
+  orig_params.max_udp_payload_size.set_value(kFakeMaxPacketSize);
   orig_params.initial_max_data.set_value(kFakeInitialMaxData);
   orig_params.initial_max_stream_data_bidi_local.set_value(
       kFakeInitialMaxStreamDataBidiLocal);
@@ -245,13 +272,17 @@ TEST_P(TransportParametersTest, CopyConstructor) {
   orig_params.initial_max_streams_uni.set_value(kFakeInitialMaxStreamsUni);
   orig_params.ack_delay_exponent.set_value(kFakeAckDelayExponent);
   orig_params.max_ack_delay.set_value(kFakeMaxAckDelay);
-  orig_params.disable_migration = kFakeDisableMigration;
+  orig_params.disable_active_migration = kFakeDisableMigration;
   orig_params.preferred_address = CreateFakePreferredAddress();
   orig_params.active_connection_id_limit.set_value(
       kFakeActiveConnectionIdLimit);
+  orig_params.initial_source_connection_id =
+      CreateFakeInitialSourceConnectionId();
+  orig_params.retry_source_connection_id = CreateFakeRetrySourceConnectionId();
   orig_params.initial_round_trip_time_us.set_value(kFakeInitialRoundTripTime);
   orig_params.google_connection_options = CreateFakeGoogleConnectionOptions();
   orig_params.user_agent_id = CreateFakeUserAgentId();
+  orig_params.support_handshake_done = kFakeSupportHandshakeDone;
   orig_params.custom_parameters[kCustomParameter1] = kCustomParameter1Value;
   orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
 
@@ -263,8 +294,8 @@ TEST_P(TransportParametersTest, RoundTripClient) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
   orig_params.version = kFakeVersionLabel;
-  orig_params.idle_timeout_milliseconds.set_value(kFakeIdleTimeoutMilliseconds);
-  orig_params.max_packet_size.set_value(kFakeMaxPacketSize);
+  orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
+  orig_params.max_udp_payload_size.set_value(kFakeMaxPacketSize);
   orig_params.initial_max_data.set_value(kFakeInitialMaxData);
   orig_params.initial_max_stream_data_bidi_local.set_value(
       kFakeInitialMaxStreamDataBidiLocal);
@@ -276,12 +307,15 @@ TEST_P(TransportParametersTest, RoundTripClient) {
   orig_params.initial_max_streams_uni.set_value(kFakeInitialMaxStreamsUni);
   orig_params.ack_delay_exponent.set_value(kFakeAckDelayExponent);
   orig_params.max_ack_delay.set_value(kFakeMaxAckDelay);
-  orig_params.disable_migration = kFakeDisableMigration;
+  orig_params.disable_active_migration = kFakeDisableMigration;
   orig_params.active_connection_id_limit.set_value(
       kFakeActiveConnectionIdLimit);
+  orig_params.initial_source_connection_id =
+      CreateFakeInitialSourceConnectionId();
   orig_params.initial_round_trip_time_us.set_value(kFakeInitialRoundTripTime);
   orig_params.google_connection_options = CreateFakeGoogleConnectionOptions();
   orig_params.user_agent_id = CreateFakeUserAgentId();
+  orig_params.support_handshake_done = kFakeSupportHandshakeDone;
   orig_params.custom_parameters[kCustomParameter1] = kCustomParameter1Value;
   orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
 
@@ -305,10 +339,11 @@ TEST_P(TransportParametersTest, RoundTripServer) {
   orig_params.version = kFakeVersionLabel;
   orig_params.supported_versions.push_back(kFakeVersionLabel);
   orig_params.supported_versions.push_back(kFakeVersionLabel2);
-  orig_params.original_connection_id = CreateFakeOriginalConnectionId();
-  orig_params.idle_timeout_milliseconds.set_value(kFakeIdleTimeoutMilliseconds);
+  orig_params.original_destination_connection_id =
+      CreateFakeOriginalDestinationConnectionId();
+  orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
   orig_params.stateless_reset_token = CreateFakeStatelessResetToken();
-  orig_params.max_packet_size.set_value(kFakeMaxPacketSize);
+  orig_params.max_udp_payload_size.set_value(kFakeMaxPacketSize);
   orig_params.initial_max_data.set_value(kFakeInitialMaxData);
   orig_params.initial_max_stream_data_bidi_local.set_value(
       kFakeInitialMaxStreamDataBidiLocal);
@@ -320,10 +355,13 @@ TEST_P(TransportParametersTest, RoundTripServer) {
   orig_params.initial_max_streams_uni.set_value(kFakeInitialMaxStreamsUni);
   orig_params.ack_delay_exponent.set_value(kFakeAckDelayExponent);
   orig_params.max_ack_delay.set_value(kFakeMaxAckDelay);
-  orig_params.disable_migration = kFakeDisableMigration;
+  orig_params.disable_active_migration = kFakeDisableMigration;
   orig_params.preferred_address = CreateFakePreferredAddress();
   orig_params.active_connection_id_limit.set_value(
       kFakeActiveConnectionIdLimit);
+  orig_params.initial_source_connection_id =
+      CreateFakeInitialSourceConnectionId();
+  orig_params.retry_source_connection_id = CreateFakeRetrySourceConnectionId();
   orig_params.google_connection_options = CreateFakeGoogleConnectionOptions();
 
   std::vector<uint8_t> serialized;
@@ -354,10 +392,10 @@ TEST_P(TransportParametersTest, AreValid) {
     params.perspective = Perspective::IS_CLIENT;
     EXPECT_TRUE(params.AreValid(&error_details));
     EXPECT_TRUE(error_details.empty());
-    params.idle_timeout_milliseconds.set_value(kFakeIdleTimeoutMilliseconds);
+    params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
     EXPECT_TRUE(params.AreValid(&error_details));
     EXPECT_TRUE(error_details.empty());
-    params.idle_timeout_milliseconds.set_value(601000);
+    params.max_idle_timeout_ms.set_value(601000);
     EXPECT_TRUE(params.AreValid(&error_details));
     EXPECT_TRUE(error_details.empty());
   }
@@ -367,27 +405,27 @@ TEST_P(TransportParametersTest, AreValid) {
     params.perspective = Perspective::IS_CLIENT;
     EXPECT_TRUE(params.AreValid(&error_details));
     EXPECT_TRUE(error_details.empty());
-    params.max_packet_size.set_value(1200);
+    params.max_udp_payload_size.set_value(1200);
     EXPECT_TRUE(params.AreValid(&error_details));
     EXPECT_TRUE(error_details.empty());
-    params.max_packet_size.set_value(65535);
+    params.max_udp_payload_size.set_value(65535);
     EXPECT_TRUE(params.AreValid(&error_details));
     EXPECT_TRUE(error_details.empty());
-    params.max_packet_size.set_value(9999999);
+    params.max_udp_payload_size.set_value(9999999);
     EXPECT_TRUE(params.AreValid(&error_details));
     EXPECT_TRUE(error_details.empty());
-    params.max_packet_size.set_value(0);
+    params.max_udp_payload_size.set_value(0);
     error_details = "";
     EXPECT_FALSE(params.AreValid(&error_details));
-    EXPECT_EQ(
-        error_details,
-        "Invalid transport parameters [Client max_packet_size 0 (Invalid)]");
-    params.max_packet_size.set_value(1199);
+    EXPECT_EQ(error_details,
+              "Invalid transport parameters [Client max_udp_payload_size 0 "
+              "(Invalid)]");
+    params.max_udp_payload_size.set_value(1199);
     error_details = "";
     EXPECT_FALSE(params.AreValid(&error_details));
-    EXPECT_EQ(
-        error_details,
-        "Invalid transport parameters [Client max_packet_size 1199 (Invalid)]");
+    EXPECT_EQ(error_details,
+              "Invalid transport parameters [Client max_udp_payload_size 1199 "
+              "(Invalid)]");
   }
   {
     TransportParameters params;
@@ -436,9 +474,9 @@ TEST_P(TransportParametersTest, NoClientParamsWithStatelessResetToken) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
   orig_params.version = kFakeVersionLabel;
-  orig_params.idle_timeout_milliseconds.set_value(kFakeIdleTimeoutMilliseconds);
+  orig_params.max_idle_timeout_ms.set_value(kFakeIdleTimeoutMilliseconds);
   orig_params.stateless_reset_token = CreateFakeStatelessResetToken();
-  orig_params.max_packet_size.set_value(kFakeMaxPacketSize);
+  orig_params.max_udp_payload_size.set_value(kFakeMaxPacketSize);
 
   std::vector<uint8_t> out;
   bool ok;
@@ -452,12 +490,12 @@ TEST_P(TransportParametersTest, NoClientParamsWithStatelessResetToken) {
 TEST_P(TransportParametersTest, ParseClientParams) {
   // clang-format off
   const uint8_t kClientParamsOld[] = {
-      0x00, 0x6a,              // length of the parameters array that follows
-      // idle_timeout
+      0x00, 0x7A,              // length of the parameters array that follows
+      // max_idle_timeout
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
-      // max_packet_size
+      // max_udp_payload_size
       0x00, 0x03,  // parameter id
       0x00, 0x02,  // length
       0x63, 0x29,  // value
@@ -493,13 +531,17 @@ TEST_P(TransportParametersTest, ParseClientParams) {
       0x00, 0x0b,  // parameter id
       0x00, 0x01,  // length
       0x33,  // value
-      // disable_migration
+      // disable_active_migration
       0x00, 0x0c,  // parameter id
       0x00, 0x00,  // length
       // active_connection_id_limit
       0x00, 0x0e,  // parameter id
       0x00, 0x01,  // length
       0x34,  // value
+      // initial_source_connection_id
+      0x00, 0x0f,  // parameter id
+      0x00, 0x08,  // length
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0x45,
       // initial_round_trip_time_us
       0x31, 0x27,  // parameter id
       0x00, 0x01,  // length
@@ -514,17 +556,20 @@ TEST_P(TransportParametersTest, ParseClientParams) {
       0x31, 0x29,  // parameter id
       0x00, 0x08,  // length
       'F', 'a', 'k', 'e', 'U', 'A', 'I', 'D',  // value
+      // support_handshake_done
+      0x31, 0x2A,  // parameter id
+      0x00, 0x00,  // value
       // Google version extension
       0x47, 0x52,  // parameter id
       0x00, 0x04,  // length
       0x01, 0x23, 0x45, 0x67,  // initial version
   };
   const uint8_t kClientParams[] = {
-      // idle_timeout
+      // max_idle_timeout
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
-      // max_packet_size
+      // max_udp_payload_size
       0x03,  // parameter id
       0x02,  // length
       0x63, 0x29,  // value
@@ -560,13 +605,17 @@ TEST_P(TransportParametersTest, ParseClientParams) {
       0x0b,  // parameter id
       0x01,  // length
       0x33,  // value
-      // disable_migration
+      // disable_active_migration
       0x0c,  // parameter id
       0x00,  // length
       // active_connection_id_limit
       0x0e,  // parameter id
       0x01,  // length
       0x34,  // value
+      // initial_source_connection_id
+      0x0f,  // parameter id
+      0x08,  // length
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0x45,
       // initial_round_trip_time_us
       0x71, 0x27,  // parameter id
       0x01,  // length
@@ -581,6 +630,9 @@ TEST_P(TransportParametersTest, ParseClientParams) {
       0x71, 0x29,  // parameter id
       0x08,  // length
       'F', 'a', 'k', 'e', 'U', 'A', 'I', 'D',  // value
+      // support_handshake_done
+      0x71, 0x2A,  // parameter id
+      0x00,  // length
       // Google version extension
       0x80, 0x00, 0x47, 0x52,  // parameter id
       0x04,  // length
@@ -604,11 +656,11 @@ TEST_P(TransportParametersTest, ParseClientParams) {
   EXPECT_EQ(Perspective::IS_CLIENT, new_params.perspective);
   EXPECT_EQ(kFakeVersionLabel, new_params.version);
   EXPECT_TRUE(new_params.supported_versions.empty());
-  EXPECT_FALSE(new_params.original_connection_id.has_value());
+  EXPECT_FALSE(new_params.original_destination_connection_id.has_value());
   EXPECT_EQ(kFakeIdleTimeoutMilliseconds,
-            new_params.idle_timeout_milliseconds.value());
+            new_params.max_idle_timeout_ms.value());
   EXPECT_TRUE(new_params.stateless_reset_token.empty());
-  EXPECT_EQ(kFakeMaxPacketSize, new_params.max_packet_size.value());
+  EXPECT_EQ(kFakeMaxPacketSize, new_params.max_udp_payload_size.value());
   EXPECT_EQ(kFakeInitialMaxData, new_params.initial_max_data.value());
   EXPECT_EQ(kFakeInitialMaxStreamDataBidiLocal,
             new_params.initial_max_stream_data_bidi_local.value());
@@ -622,9 +674,13 @@ TEST_P(TransportParametersTest, ParseClientParams) {
             new_params.initial_max_streams_uni.value());
   EXPECT_EQ(kFakeAckDelayExponent, new_params.ack_delay_exponent.value());
   EXPECT_EQ(kFakeMaxAckDelay, new_params.max_ack_delay.value());
-  EXPECT_EQ(kFakeDisableMigration, new_params.disable_migration);
+  EXPECT_EQ(kFakeDisableMigration, new_params.disable_active_migration);
   EXPECT_EQ(kFakeActiveConnectionIdLimit,
             new_params.active_connection_id_limit.value());
+  ASSERT_TRUE(new_params.initial_source_connection_id.has_value());
+  EXPECT_EQ(CreateFakeInitialSourceConnectionId(),
+            new_params.initial_source_connection_id.value());
+  EXPECT_FALSE(new_params.retry_source_connection_id.has_value());
   EXPECT_EQ(kFakeInitialRoundTripTime,
             new_params.initial_round_trip_time_us.value());
   ASSERT_TRUE(new_params.google_connection_options.has_value());
@@ -632,6 +688,7 @@ TEST_P(TransportParametersTest, ParseClientParams) {
             new_params.google_connection_options.value());
   ASSERT_TRUE(new_params.user_agent_id.has_value());
   EXPECT_EQ(CreateFakeUserAgentId(), new_params.user_agent_id.value());
+  EXPECT_TRUE(new_params.support_handshake_done);
 }
 
 TEST_P(TransportParametersTest,
@@ -639,7 +696,7 @@ TEST_P(TransportParametersTest,
   // clang-format off
   const uint8_t kClientParamsWithFullTokenOld[] = {
       0x00, 0x26,  // length parameters array that follows
-      // idle_timeout
+      // max_idle_timeout
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
@@ -648,7 +705,7 @@ TEST_P(TransportParametersTest,
       0x00, 0x10,  // length
       0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
       0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
-      // max_packet_size
+      // max_udp_payload_size
       0x00, 0x03,  // parameter id
       0x00, 0x02,  // length
       0x63, 0x29,  // value
@@ -658,7 +715,7 @@ TEST_P(TransportParametersTest,
       0x40, 0x65,  // value
   };
   const uint8_t kClientParamsWithFullToken[] = {
-      // idle_timeout
+      // max_idle_timeout
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
@@ -667,7 +724,7 @@ TEST_P(TransportParametersTest,
       0x10,  // length
       0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
       0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
-      // max_packet_size
+      // max_udp_payload_size
       0x03,  // parameter id
       0x02,  // length
       0x63, 0x29,  // value
@@ -698,14 +755,14 @@ TEST_P(TransportParametersTest,
   // clang-format off
   const uint8_t kClientParamsWithEmptyTokenOld[] = {
       0x00, 0x16,  // length parameters array that follows
-      // idle_timeout
+      // max_idle_timeout
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
       // stateless_reset_token
       0x00, 0x02,  // parameter id
       0x00, 0x00,
-      // max_packet_size
+      // max_udp_payload_size
       0x00, 0x03,  // parameter id
       0x00, 0x02,  // length
       0x63, 0x29,  // value
@@ -715,14 +772,14 @@ TEST_P(TransportParametersTest,
       0x40, 0x65,  // value
   };
   const uint8_t kClientParamsWithEmptyToken[] = {
-      // idle_timeout
+      // max_idle_timeout
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
       // stateless_reset_token
       0x02,  // parameter id
       0x00,  // length
-      // max_packet_size
+      // max_udp_payload_size
       0x03,  // parameter id
       0x02,  // length
       0x63, 0x29,  // value
@@ -746,36 +803,36 @@ TEST_P(TransportParametersTest,
                                         client_params, client_params_length,
                                         &out_params, &error_details));
   EXPECT_EQ(error_details,
-            "Received stateless reset token of invalid length 0");
+            "Received stateless_reset_token of invalid length 0");
 }
 
 TEST_P(TransportParametersTest, ParseClientParametersRepeated) {
   // clang-format off
   const uint8_t kClientParamsRepeatedOld[] = {
       0x00, 0x12,  // length parameters array that follows
-      // idle_timeout
+      // max_idle_timeout
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
-      // max_packet_size
+      // max_udp_payload_size
       0x00, 0x03,  // parameter id
       0x00, 0x02,  // length
       0x63, 0x29,  // value
-      // idle_timeout (repeated)
+      // max_idle_timeout (repeated)
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
   };
   const uint8_t kClientParamsRepeated[] = {
-      // idle_timeout
+      // max_idle_timeout
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
-      // max_packet_size
+      // max_udp_payload_size
       0x03,  // parameter id
       0x02,  // length
       0x63, 0x29,  // value
-      // idle_timeout (repeated)
+      // max_idle_timeout (repeated)
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
@@ -793,18 +850,18 @@ TEST_P(TransportParametersTest, ParseClientParametersRepeated) {
   EXPECT_FALSE(ParseTransportParameters(version_, Perspective::IS_CLIENT,
                                         client_params, client_params_length,
                                         &out_params, &error_details));
-  EXPECT_EQ(error_details, "Received a second idle_timeout");
+  EXPECT_EQ(error_details, "Received a second max_idle_timeout");
 }
 
 TEST_P(TransportParametersTest, ParseServerParams) {
   // clang-format off
   const uint8_t kServerParamsOld[] = {
-      0x00, 0xb7,  // length of parameters array that follows
-      // original_connection_id
+      0x00, 0xd3,  // length of parameters array that follows
+      // original_destination_connection_id
       0x00, 0x00,  // parameter id
       0x00, 0x08,  // length
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x37,
-      // idle_timeout
+      // max_idle_timeout
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
@@ -813,7 +870,7 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       0x00, 0x10,  // length
       0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
       0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
-      // max_packet_size
+      // max_udp_payload_size
       0x00, 0x03,  // parameter id
       0x00, 0x02,  // length
       0x63, 0x29,  // value
@@ -849,7 +906,7 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       0x00, 0x0b,  // parameter id
       0x00, 0x01,  // length
       0x33,  // value
-      // disable_migration
+      // disable_active_migration
       0x00, 0x0c,  // parameter id
       0x00, 0x00,  // length
       // preferred_address
@@ -868,12 +925,23 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       0x00, 0x0e,  // parameter id
       0x00, 0x01,  // length
       0x34,  // value
+      // initial_source_connection_id
+      0x00, 0x0f,  // parameter id
+      0x00, 0x08,  // length
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0x45,
+      // retry_source_connection_id
+      0x00, 0x10,  // parameter id
+      0x00, 0x08,  // length
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x98, 0x76,
       // google_connection_options
       0x31, 0x28,  // parameter id
       0x00, 0x0c,  // length
       'A', 'L', 'P', 'N',  // value
       'E', 'F', 'G', 0x00,
       'H', 'I', 'J', 0xff,
+      // support_handshake_done
+      0x31, 0x2A,  // parameter id
+      0x00, 0x00,  // value
       // Google version extension
       0x47, 0x52,  // parameter id
       0x00, 0x0d,  // length
@@ -883,11 +951,11 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       0x89, 0xab, 0xcd, 0xef,
   };
   const uint8_t kServerParams[] = {
-      // original_connection_id
+      // original_destination_connection_id
       0x00,  // parameter id
       0x08,  // length
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x37,
-      // idle_timeout
+      // max_idle_timeout
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
@@ -896,7 +964,7 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       0x10,  // length
       0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
       0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F,
-      // max_packet_size
+      // max_udp_payload_size
       0x03,  // parameter id
       0x02,  // length
       0x63, 0x29,  // value
@@ -932,7 +1000,7 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       0x0b,  // parameter id
       0x01,  // length
       0x33,  // value
-      // disable_migration
+      // disable_active_migration
       0x0c,  // parameter id
       0x00,  // length
       // preferred_address
@@ -951,12 +1019,23 @@ TEST_P(TransportParametersTest, ParseServerParams) {
       0x0e,  // parameter id
       0x01,  // length
       0x34,  // value
+      // initial_source_connection_id
+      0x0f,  // parameter id
+      0x08,  // length
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23, 0x45,
+      // retry_source_connection_id
+      0x10,  // parameter id
+      0x08,  // length
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x98, 0x76,
       // google_connection_options
       0x71, 0x28,  // parameter id
       0x0c,  // length
       'A', 'L', 'P', 'N',  // value
       'E', 'F', 'G', 0x00,
       'H', 'I', 'J', 0xff,
+      // support_handshake_done
+      0x71, 0x2A,  // parameter id
+      0x00,  // length
       // Google version extension
       0x80, 0x00, 0x47, 0x52,  // parameter id
       0x0d,  // length
@@ -985,13 +1064,13 @@ TEST_P(TransportParametersTest, ParseServerParams) {
   EXPECT_EQ(2u, new_params.supported_versions.size());
   EXPECT_EQ(kFakeVersionLabel, new_params.supported_versions[0]);
   EXPECT_EQ(kFakeVersionLabel2, new_params.supported_versions[1]);
-  ASSERT_TRUE(new_params.original_connection_id.has_value());
-  EXPECT_EQ(CreateFakeOriginalConnectionId(),
-            new_params.original_connection_id.value());
+  ASSERT_TRUE(new_params.original_destination_connection_id.has_value());
+  EXPECT_EQ(CreateFakeOriginalDestinationConnectionId(),
+            new_params.original_destination_connection_id.value());
   EXPECT_EQ(kFakeIdleTimeoutMilliseconds,
-            new_params.idle_timeout_milliseconds.value());
+            new_params.max_idle_timeout_ms.value());
   EXPECT_EQ(CreateFakeStatelessResetToken(), new_params.stateless_reset_token);
-  EXPECT_EQ(kFakeMaxPacketSize, new_params.max_packet_size.value());
+  EXPECT_EQ(kFakeMaxPacketSize, new_params.max_udp_payload_size.value());
   EXPECT_EQ(kFakeInitialMaxData, new_params.initial_max_data.value());
   EXPECT_EQ(kFakeInitialMaxStreamDataBidiLocal,
             new_params.initial_max_stream_data_bidi_local.value());
@@ -1005,7 +1084,7 @@ TEST_P(TransportParametersTest, ParseServerParams) {
             new_params.initial_max_streams_uni.value());
   EXPECT_EQ(kFakeAckDelayExponent, new_params.ack_delay_exponent.value());
   EXPECT_EQ(kFakeMaxAckDelay, new_params.max_ack_delay.value());
-  EXPECT_EQ(kFakeDisableMigration, new_params.disable_migration);
+  EXPECT_EQ(kFakeDisableMigration, new_params.disable_active_migration);
   ASSERT_NE(nullptr, new_params.preferred_address.get());
   EXPECT_EQ(CreateFakeV4SocketAddress(),
             new_params.preferred_address->ipv4_socket_address);
@@ -1017,21 +1096,28 @@ TEST_P(TransportParametersTest, ParseServerParams) {
             new_params.preferred_address->stateless_reset_token);
   EXPECT_EQ(kFakeActiveConnectionIdLimit,
             new_params.active_connection_id_limit.value());
+  ASSERT_TRUE(new_params.initial_source_connection_id.has_value());
+  EXPECT_EQ(CreateFakeInitialSourceConnectionId(),
+            new_params.initial_source_connection_id.value());
+  ASSERT_TRUE(new_params.retry_source_connection_id.has_value());
+  EXPECT_EQ(CreateFakeRetrySourceConnectionId(),
+            new_params.retry_source_connection_id.value());
   ASSERT_TRUE(new_params.google_connection_options.has_value());
   EXPECT_EQ(CreateFakeGoogleConnectionOptions(),
             new_params.google_connection_options.value());
   EXPECT_FALSE(new_params.user_agent_id.has_value());
+  EXPECT_TRUE(new_params.support_handshake_done);
 }
 
 TEST_P(TransportParametersTest, ParseServerParametersRepeated) {
   // clang-format off
   const uint8_t kServerParamsRepeatedOld[] = {
       0x00, 0x2c,  // length of parameters array that follows
-      // original_connection_id
+      // original_destination_connection_id
       0x00, 0x00,  // parameter id
       0x00, 0x08,  // length
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x37,
-      // idle_timeout
+      // max_idle_timeout
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
@@ -1040,17 +1126,17 @@ TEST_P(TransportParametersTest, ParseServerParametersRepeated) {
       0x00, 0x10,  // length
       0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
       0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-      // idle_timeout (repeated)
+      // max_idle_timeout (repeated)
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
   };
   const uint8_t kServerParamsRepeated[] = {
-      // original_connection_id
+      // original_destination_connection_id
       0x00,  // parameter id
       0x08,  // length
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x37,
-      // idle_timeout
+      // max_idle_timeout
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
@@ -1059,7 +1145,7 @@ TEST_P(TransportParametersTest, ParseServerParametersRepeated) {
       0x10,  // length
       0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
       0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
-      // idle_timeout (repeated)
+      // max_idle_timeout (repeated)
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
@@ -1077,7 +1163,7 @@ TEST_P(TransportParametersTest, ParseServerParametersRepeated) {
   EXPECT_FALSE(ParseTransportParameters(version_, Perspective::IS_SERVER,
                                         server_params, server_params_length,
                                         &out_params, &error_details));
-  EXPECT_EQ(error_details, "Received a second idle_timeout");
+  EXPECT_EQ(error_details, "Received a second max_idle_timeout");
 }
 
 TEST_P(TransportParametersTest,
@@ -1085,10 +1171,10 @@ TEST_P(TransportParametersTest,
   // clang-format off
   const uint8_t kServerParamsEmptyOriginalConnectionIdOld[] = {
       0x00, 0x1e,  // length of parameters array that follows
-      // original_connection_id
+      // original_destination_connection_id
       0x00, 0x00,  // parameter id
       0x00, 0x00,  // length
-      // idle_timeout
+      // max_idle_timeout
       0x00, 0x01,  // parameter id
       0x00, 0x02,  // length
       0x6e, 0xec,  // value
@@ -1099,10 +1185,10 @@ TEST_P(TransportParametersTest,
       0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
   };
   const uint8_t kServerParamsEmptyOriginalConnectionId[] = {
-      // original_connection_id
+      // original_destination_connection_id
       0x00,  // parameter id
       0x00,  // length
-      // idle_timeout
+      // max_idle_timeout
       0x01,  // parameter id
       0x02,  // length
       0x6e, 0xec,  // value
@@ -1129,15 +1215,16 @@ TEST_P(TransportParametersTest,
                                        server_params, server_params_length,
                                        &out_params, &error_details))
       << error_details;
-  ASSERT_TRUE(out_params.original_connection_id.has_value());
-  EXPECT_EQ(out_params.original_connection_id.value(), EmptyQuicConnectionId());
+  ASSERT_TRUE(out_params.original_destination_connection_id.has_value());
+  EXPECT_EQ(out_params.original_destination_connection_id.value(),
+            EmptyQuicConnectionId());
 }
 
 TEST_P(TransportParametersTest, CryptoHandshakeMessageRoundtrip) {
   TransportParameters orig_params;
   orig_params.perspective = Perspective::IS_CLIENT;
   orig_params.version = kFakeVersionLabel;
-  orig_params.max_packet_size.set_value(kFakeMaxPacketSize);
+  orig_params.max_udp_payload_size.set_value(kFakeMaxPacketSize);
 
   orig_params.google_quic_params = std::make_unique<CryptoHandshakeMessage>();
   const std::string kTestString = "test string";
@@ -1166,7 +1253,132 @@ TEST_P(TransportParametersTest, CryptoHandshakeMessageRoundtrip) {
               IsQuicNoError());
   EXPECT_EQ(test_value, kTestValue);
   EXPECT_EQ(kFakeVersionLabel, new_params.version);
-  EXPECT_EQ(kFakeMaxPacketSize, new_params.max_packet_size.value());
+  EXPECT_EQ(kFakeMaxPacketSize, new_params.max_udp_payload_size.value());
+}
+
+TEST_P(TransportParametersTest, VeryLongCustomParameter) {
+  // Ensure we can handle a 70KB custom parameter on both send and receive.
+  size_t custom_value_length = 70000;
+  if (!version_.HasVarIntTransportParams()) {
+    // These versions encode lengths as uint16 so they cannot send as much.
+    custom_value_length = 65000;
+  }
+  std::string custom_value(custom_value_length, '?');
+  TransportParameters orig_params;
+  orig_params.perspective = Perspective::IS_CLIENT;
+  orig_params.version = kFakeVersionLabel;
+  orig_params.custom_parameters[kCustomParameter1] = custom_value;
+
+  std::vector<uint8_t> serialized;
+  ASSERT_TRUE(SerializeTransportParameters(version_, orig_params, &serialized));
+
+  TransportParameters new_params;
+  std::string error_details;
+  ASSERT_TRUE(ParseTransportParameters(version_, Perspective::IS_CLIENT,
+                                       serialized.data(), serialized.size(),
+                                       &new_params, &error_details))
+      << error_details;
+  EXPECT_TRUE(error_details.empty());
+  RemoveGreaseParameters(&new_params);
+  EXPECT_EQ(new_params, orig_params);
+}
+
+class TransportParametersTicketSerializationTest : public QuicTest {
+ protected:
+  void SetUp() override {
+    original_params_.perspective = Perspective::IS_SERVER;
+    original_params_.version = kFakeVersionLabel;
+    original_params_.supported_versions.push_back(kFakeVersionLabel);
+    original_params_.supported_versions.push_back(kFakeVersionLabel2);
+    original_params_.original_destination_connection_id =
+        CreateFakeOriginalDestinationConnectionId();
+    original_params_.max_idle_timeout_ms.set_value(
+        kFakeIdleTimeoutMilliseconds);
+    original_params_.stateless_reset_token = CreateFakeStatelessResetToken();
+    original_params_.max_udp_payload_size.set_value(kFakeMaxPacketSize);
+    original_params_.initial_max_data.set_value(kFakeInitialMaxData);
+    original_params_.initial_max_stream_data_bidi_local.set_value(
+        kFakeInitialMaxStreamDataBidiLocal);
+    original_params_.initial_max_stream_data_bidi_remote.set_value(
+        kFakeInitialMaxStreamDataBidiRemote);
+    original_params_.initial_max_stream_data_uni.set_value(
+        kFakeInitialMaxStreamDataUni);
+    original_params_.initial_max_streams_bidi.set_value(
+        kFakeInitialMaxStreamsBidi);
+    original_params_.initial_max_streams_uni.set_value(
+        kFakeInitialMaxStreamsUni);
+    original_params_.ack_delay_exponent.set_value(kFakeAckDelayExponent);
+    original_params_.max_ack_delay.set_value(kFakeMaxAckDelay);
+    original_params_.disable_active_migration = kFakeDisableMigration;
+    original_params_.preferred_address = CreateFakePreferredAddress();
+    original_params_.active_connection_id_limit.set_value(
+        kFakeActiveConnectionIdLimit);
+    original_params_.initial_source_connection_id =
+        CreateFakeInitialSourceConnectionId();
+    original_params_.retry_source_connection_id =
+        CreateFakeRetrySourceConnectionId();
+    original_params_.google_connection_options =
+        CreateFakeGoogleConnectionOptions();
+
+    ASSERT_TRUE(SerializeTransportParametersForTicket(
+        original_params_, application_state_, &original_serialized_params_));
+  }
+
+  TransportParameters original_params_;
+  std::vector<uint8_t> application_state_ = {0, 1};
+  std::vector<uint8_t> original_serialized_params_;
+};
+
+TEST_F(TransportParametersTicketSerializationTest,
+       StatelessResetTokenDoesntChangeOutput) {
+  // Test that changing the stateless reset token doesn't change the ticket
+  // serialization.
+  TransportParameters new_params = original_params_;
+  new_params.stateless_reset_token = CreateFakePreferredStatelessResetToken();
+  EXPECT_NE(new_params, original_params_);
+
+  std::vector<uint8_t> serialized;
+  ASSERT_TRUE(SerializeTransportParametersForTicket(
+      new_params, application_state_, &serialized));
+  EXPECT_EQ(original_serialized_params_, serialized);
+}
+
+TEST_F(TransportParametersTicketSerializationTest,
+       ConnectionIDDoesntChangeOutput) {
+  // Changing original destination CID doesn't change serialization.
+  TransportParameters new_params = original_params_;
+  new_params.original_destination_connection_id = TestConnectionId(0xCAFE);
+  EXPECT_NE(new_params, original_params_);
+
+  std::vector<uint8_t> serialized;
+  ASSERT_TRUE(SerializeTransportParametersForTicket(
+      new_params, application_state_, &serialized));
+  EXPECT_EQ(original_serialized_params_, serialized);
+}
+
+TEST_F(TransportParametersTicketSerializationTest, StreamLimitChangesOutput) {
+  // Changing a stream limit does change the serialization.
+  TransportParameters new_params = original_params_;
+  new_params.initial_max_stream_data_bidi_local.set_value(
+      kFakeInitialMaxStreamDataBidiLocal + 1);
+  EXPECT_NE(new_params, original_params_);
+
+  std::vector<uint8_t> serialized;
+  ASSERT_TRUE(SerializeTransportParametersForTicket(
+      new_params, application_state_, &serialized));
+  EXPECT_NE(original_serialized_params_, serialized);
+}
+
+TEST_F(TransportParametersTicketSerializationTest,
+       ApplicationStateChangesOutput) {
+  // Changing the application state changes the serialization.
+  std::vector<uint8_t> new_application_state = {0};
+  EXPECT_NE(new_application_state, application_state_);
+
+  std::vector<uint8_t> serialized;
+  ASSERT_TRUE(SerializeTransportParametersForTicket(
+      original_params_, new_application_state, &serialized));
+  EXPECT_NE(original_serialized_params_, serialized);
 }
 
 }  // namespace test

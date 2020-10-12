@@ -13,8 +13,8 @@
 
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/compiler_specific.h"
+#include "third_party/base/containers/adapters.h"
 #include "third_party/base/logging.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
@@ -627,7 +627,7 @@ CXFA_ContentLayoutProcessor::CXFA_ContentLayoutProcessor(
       ToContentLayoutItem(GetFormNode()->JSObject()->GetLayoutItem()));
 }
 
-CXFA_ContentLayoutProcessor::~CXFA_ContentLayoutProcessor() {}
+CXFA_ContentLayoutProcessor::~CXFA_ContentLayoutProcessor() = default;
 
 RetainPtr<CXFA_ContentLayoutItem>
 CXFA_ContentLayoutProcessor::CreateContentLayoutItem(CXFA_Node* pFormNode) {
@@ -985,7 +985,7 @@ void CXFA_ContentLayoutProcessor::DoLayoutPageArea(
       continue;
 
     auto pProcessor =
-        pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(pCurChildNode, nullptr);
+        std::make_unique<CXFA_ContentLayoutProcessor>(pCurChildNode, nullptr);
     pProcessor->DoLayout(false, FLT_MAX, FLT_MAX);
     if (!pProcessor->HasLayoutItem())
       continue;
@@ -1052,7 +1052,7 @@ void CXFA_ContentLayoutProcessor::DoLayoutPositionedContainer(
     if (m_pCurChildNode->GetElementType() == XFA_Element::Variables)
       continue;
 
-    auto pProcessor = pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(
+    auto pProcessor = std::make_unique<CXFA_ContentLayoutProcessor>(
         m_pCurChildNode, m_pViewLayoutProcessor.Get());
     if (pContext && pContext->m_prgSpecifiedColumnWidths) {
       int32_t iColSpan =
@@ -1187,7 +1187,7 @@ void CXFA_ContentLayoutProcessor::DoLayoutTableContainer(
     if (m_nCurChildNodeStage != Stage::kContainer)
       continue;
 
-    auto pProcessor = pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(
+    auto pProcessor = std::make_unique<CXFA_ContentLayoutProcessor>(
         m_pCurChildNode, m_pViewLayoutProcessor.Get());
     pProcessor->DoLayoutInternal(false, FLT_MAX, FLT_MAX, pLayoutContext);
     if (!pProcessor->HasLayoutItem())
@@ -1377,10 +1377,10 @@ float CXFA_ContentLayoutProcessor::InsertKeepLayoutItems() {
   }
 
   float fTotalHeight = 0;
-  for (auto iter = m_ArrayKeepItems.rbegin(); iter != m_ArrayKeepItems.rend();
-       iter++) {
-    AddLeaderAfterSplit(*iter);
-    fTotalHeight += (*iter)->m_sSize.height;
+  for (const RetainPtr<CXFA_ContentLayoutItem>& item :
+       pdfium::base::Reversed(m_ArrayKeepItems)) {
+    AddLeaderAfterSplit(item);
+    fTotalHeight += item->m_sSize.height;
   }
   m_ArrayKeepItems.clear();
 
@@ -1642,8 +1642,8 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
               AddPendingNode(pTrailerNode, true);
             } else {
               auto pTempProcessor =
-                  pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(pTrailerNode,
-                                                                  nullptr);
+                  std::make_unique<CXFA_ContentLayoutProcessor>(pTrailerNode,
+                                                                nullptr);
               InsertFlowedItem(
                   pTempProcessor.get(), bContainerWidthAutoSize,
                   bContainerHeightAutoSize, container_size.height,
@@ -1673,9 +1673,8 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
           CXFA_Node* pTrailerNode = break_data.value().pTrailer;
           bool bCreatePage = break_data.value().bCreatePage;
           if (JudgeLeaderOrTrailerForOccur(pTrailerNode)) {
-            auto pTempProcessor =
-                pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(pTrailerNode,
-                                                                nullptr);
+            auto pTempProcessor = std::make_unique<CXFA_ContentLayoutProcessor>(
+                pTrailerNode, nullptr);
             InsertFlowedItem(pTempProcessor.get(), bContainerWidthAutoSize,
                              bContainerHeightAutoSize, container_size.height,
                              eFlowStrategy, &uCurHAlignState,
@@ -1693,8 +1692,8 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
                   fContentCurRowHeight, fContentWidthLimit, false);
               rgCurLineLayoutItems->clear();
               auto pTempProcessor =
-                  pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(pLeaderNode,
-                                                                  nullptr);
+                  std::make_unique<CXFA_ContentLayoutProcessor>(pLeaderNode,
+                                                                nullptr);
               InsertFlowedItem(
                   pTempProcessor.get(), bContainerWidthAutoSize,
                   bContainerHeightAutoSize, container_size.height,
@@ -1724,7 +1723,7 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
             CXFA_Node* pLeaderNode =
                 m_pViewLayoutProcessor->ProcessBookendLeader(m_pCurChildNode);
             if (pLeaderNode) {
-              pProcessor = pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(
+              pProcessor = std::make_unique<CXFA_ContentLayoutProcessor>(
                   pLeaderNode, m_pViewLayoutProcessor.Get());
             }
           }
@@ -1752,7 +1751,7 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
             CXFA_Node* pTrailerNode =
                 m_pViewLayoutProcessor->ProcessBookendTrailer(m_pCurChildNode);
             if (pTrailerNode) {
-              pProcessor = pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(
+              pProcessor = std::make_unique<CXFA_ContentLayoutProcessor>(
                   pTrailerNode, m_pViewLayoutProcessor.Get());
             }
           }
@@ -1789,7 +1788,7 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
             pProcessor = std::move(m_pCurChildPreprocessor);
             bNewRow = true;
           } else {
-            pProcessor = pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(
+            pProcessor = std::make_unique<CXFA_ContentLayoutProcessor>(
                 m_pCurChildNode, m_pViewLayoutProcessor.Get());
           }
 
@@ -2273,7 +2272,7 @@ float CXFA_ContentLayoutProcessor::InsertPendingItems(
   }
 
   while (!m_PendingNodes.empty()) {
-    auto pPendingProcessor = pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(
+    auto pPendingProcessor = std::make_unique<CXFA_ContentLayoutProcessor>(
         m_PendingNodes.front(), nullptr);
     m_PendingNodes.pop_front();
     pPendingProcessor->DoLayout(false, FLT_MAX, FLT_MAX);
@@ -2398,7 +2397,7 @@ CXFA_ContentLayoutProcessor::InsertFlowedItem(
       if (pProcessor->JudgeLeaderOrTrailerForOccur(pOverflowTrailerNode)) {
         if (pOverflowTrailerNode) {
           auto pOverflowLeaderProcessor =
-              pdfium::MakeUnique<CXFA_ContentLayoutProcessor>(
+              std::make_unique<CXFA_ContentLayoutProcessor>(
                   pOverflowTrailerNode, nullptr);
           pOverflowLeaderProcessor->DoLayout(false, FLT_MAX, FLT_MAX);
           pTrailerLayoutItem =

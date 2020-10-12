@@ -28,7 +28,7 @@ namespace dawn_native { namespace opengl {
         GLenum TargetForTexture(const TextureDescriptor* descriptor) {
             switch (descriptor->dimension) {
                 case wgpu::TextureDimension::e2D:
-                    if (descriptor->arrayLayerCount > 1) {
+                    if (descriptor->size.depth > 1) {
                         ASSERT(descriptor->sampleCount == 1);
                         return GL_TEXTURE_2D_ARRAY;
                     } else {
@@ -46,11 +46,15 @@ namespace dawn_native { namespace opengl {
         }
 
         GLenum TargetForTextureViewDimension(wgpu::TextureViewDimension dimension,
+                                             uint32_t arrayLayerCount,
                                              uint32_t sampleCount) {
             switch (dimension) {
                 case wgpu::TextureViewDimension::e2D:
                     return (sampleCount > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
                 case wgpu::TextureViewDimension::e2DArray:
+                    if (arrayLayerCount == 1) {
+                        return (sampleCount > 1) ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D;
+                    }
                     ASSERT(sampleCount == 1);
                     return GL_TEXTURE_2D_ARRAY;
                 case wgpu::TextureViewDimension::Cube:
@@ -108,8 +112,8 @@ namespace dawn_native { namespace opengl {
         : Texture(device, descriptor, GenTexture(device->gl), TextureState::OwnedInternal) {
         const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
 
-        uint32_t width = GetSize().width;
-        uint32_t height = GetSize().height;
+        uint32_t width = GetWidth();
+        uint32_t height = GetHeight();
         uint32_t levels = GetNumMipLevels();
         uint32_t arrayLayers = GetArrayLayers();
         uint32_t sampleCount = GetSampleCount();
@@ -145,8 +149,8 @@ namespace dawn_native { namespace opengl {
         gl.TexParameteri(mTarget, GL_TEXTURE_MAX_LEVEL, levels - 1);
 
         if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-            GetDevice()->ConsumedError(ClearTexture(0, GetNumMipLevels(), 0, GetArrayLayers(),
-                                                    TextureBase::ClearValue::NonZero));
+            GetDevice()->ConsumedError(
+                ClearTexture(GetAllSubresources(), TextureBase::ClearValue::NonZero));
         }
     }
 
@@ -181,10 +185,7 @@ namespace dawn_native { namespace opengl {
         return ToBackend(GetDevice())->GetGLFormat(GetFormat());
     }
 
-    MaybeError Texture::ClearTexture(GLint baseMipLevel,
-                                     GLint levelCount,
-                                     GLint baseArrayLayer,
-                                     GLint layerCount,
+    MaybeError Texture::ClearTexture(const SubresourceRange& range,
                                      TextureBase::ClearValue clearValue) {
         // TODO(jiawei.shao@intel.com): initialize the textures with compressed formats.
         if (GetFormat().isCompressed) {
@@ -224,31 +225,35 @@ namespace dawn_native { namespace opengl {
                 gl.GenFramebuffers(1, &framebuffer);
                 gl.BindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
 
-                for (GLint level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
+                for (uint32_t level = range.baseMipLevel;
+                     level < range.baseMipLevel + range.levelCount; ++level) {
                     switch (GetDimension()) {
                         case wgpu::TextureDimension::e2D:
                             if (GetArrayLayers() == 1) {
                                 if (clearValue == TextureBase::ClearValue::Zero &&
-                                    IsSubresourceContentInitialized(level, 1, 0, 1)) {
+                                    IsSubresourceContentInitialized(
+                                        SubresourceRange::SingleSubresource(level, 0))) {
                                     // Skip lazy clears if already initialized.
                                     continue;
                                 }
                                 gl.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER,
                                                         GL_DEPTH_STENCIL_ATTACHMENT, GetGLTarget(),
-                                                        GetHandle(), level);
+                                                        GetHandle(), static_cast<GLint>(level));
                                 DoClear();
                             } else {
-                                for (GLint layer = baseArrayLayer;
-                                     layer < baseArrayLayer + layerCount; ++layer) {
+                                for (uint32_t layer = range.baseArrayLayer;
+                                     layer < range.baseArrayLayer + range.layerCount; ++layer) {
                                     if (clearValue == TextureBase::ClearValue::Zero &&
-                                        IsSubresourceContentInitialized(level, 1, layer, 1)) {
+                                        IsSubresourceContentInitialized(
+                                            SubresourceRange::SingleSubresource(level, layer))) {
                                         // Skip lazy clears if already initialized.
                                         continue;
                                     }
 
-                                    gl.FramebufferTextureLayer(GL_DRAW_FRAMEBUFFER,
-                                                               GL_DEPTH_STENCIL_ATTACHMENT,
-                                                               GetHandle(), level, layer);
+                                    gl.FramebufferTextureLayer(
+                                        GL_DRAW_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
+                                        GetHandle(), static_cast<GLint>(level),
+                                        static_cast<GLint>(layer));
                                     DoClear();
                                 }
                             }
@@ -268,16 +273,19 @@ namespace dawn_native { namespace opengl {
                 clearColorData.fill(clearColor);
 
                 const GLFormat& glFormat = GetGLFormat();
-                for (GLint level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
+                for (uint32_t level = range.baseMipLevel;
+                     level < range.baseMipLevel + range.levelCount; ++level) {
                     Extent3D mipSize = GetMipLevelPhysicalSize(level);
-                    for (GLint layer = baseArrayLayer; layer < baseArrayLayer + layerCount;
-                         ++layer) {
+                    for (uint32_t layer = range.baseArrayLayer;
+                         layer < range.baseArrayLayer + range.layerCount; ++layer) {
                         if (clearValue == TextureBase::ClearValue::Zero &&
-                            IsSubresourceContentInitialized(level, 1, layer, 1)) {
+                            IsSubresourceContentInitialized(
+                                SubresourceRange::SingleSubresource(level, layer))) {
                             // Skip lazy clears if already initialized.
                             continue;
                         }
-                        gl.ClearTexSubImage(mHandle, level, 0, 0, layer, mipSize.width,
+                        gl.ClearTexSubImage(mHandle, static_cast<GLint>(level), 0, 0,
+                                            static_cast<GLint>(layer), mipSize.width,
                                             mipSize.height, 1, glFormat.format, glFormat.type,
                                             clearColorData.data());
                     }
@@ -288,15 +296,15 @@ namespace dawn_native { namespace opengl {
             // create temp buffer with clear color to copy to the texture image
             ASSERT(kTextureBytesPerRowAlignment % GetFormat().blockByteSize == 0);
             uint32_t bytesPerRow =
-                Align((GetSize().width / GetFormat().blockWidth) * GetFormat().blockByteSize,
+                Align((GetWidth() / GetFormat().blockWidth) * GetFormat().blockByteSize,
                       kTextureBytesPerRowAlignment);
 
             // Make sure that we are not rounding
             ASSERT(bytesPerRow % GetFormat().blockByteSize == 0);
-            ASSERT(GetSize().height % GetFormat().blockHeight == 0);
+            ASSERT(GetHeight() % GetFormat().blockHeight == 0);
 
             dawn_native::BufferDescriptor descriptor;
-            descriptor.size = bytesPerRow * (GetSize().height / GetFormat().blockHeight);
+            descriptor.size = bytesPerRow * (GetHeight() / GetFormat().blockHeight);
             if (descriptor.size > std::numeric_limits<uint32_t>::max()) {
                 return DAWN_OUT_OF_MEMORY_ERROR("Unable to allocate buffer.");
             }
@@ -319,7 +327,8 @@ namespace dawn_native { namespace opengl {
             gl.PixelStorei(GL_UNPACK_ROW_LENGTH,
                            (bytesPerRow / GetFormat().blockByteSize) * GetFormat().blockWidth);
             gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
-            for (GLint level = baseMipLevel; level < baseMipLevel + levelCount; ++level) {
+            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+                 ++level) {
                 gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER, srcBuffer->GetHandle());
                 gl.ActiveTexture(GL_TEXTURE0);
                 gl.BindTexture(GetGLTarget(), GetHandle());
@@ -329,23 +338,26 @@ namespace dawn_native { namespace opengl {
                     case wgpu::TextureDimension::e2D:
                         if (GetArrayLayers() == 1) {
                             if (clearValue == TextureBase::ClearValue::Zero &&
-                                IsSubresourceContentInitialized(level, 1, 0, 1)) {
+                                IsSubresourceContentInitialized(
+                                    SubresourceRange::SingleSubresource(level, 0))) {
                                 // Skip lazy clears if already initialized.
                                 continue;
                             }
-                            gl.TexSubImage2D(GetGLTarget(), level, 0, 0, size.width, size.height,
-                                             GetGLFormat().format, GetGLFormat().type, 0);
+                            gl.TexSubImage2D(GetGLTarget(), static_cast<GLint>(level), 0, 0,
+                                             size.width, size.height, GetGLFormat().format,
+                                             GetGLFormat().type, 0);
                         } else {
-                            for (GLint layer = baseArrayLayer; layer < baseArrayLayer + layerCount;
-                                 ++layer) {
+                            for (uint32_t layer = range.baseArrayLayer;
+                                 layer < range.baseArrayLayer + range.layerCount; ++layer) {
                                 if (clearValue == TextureBase::ClearValue::Zero &&
-                                    IsSubresourceContentInitialized(level, 1, layer, 1)) {
+                                    IsSubresourceContentInitialized(
+                                        SubresourceRange::SingleSubresource(level, layer))) {
                                     // Skip lazy clears if already initialized.
                                     continue;
                                 }
-                                gl.TexSubImage3D(GetGLTarget(), level, 0, 0, layer, size.width,
-                                                 size.height, 1, GetGLFormat().format,
-                                                 GetGLFormat().type, 0);
+                                gl.TexSubImage3D(GetGLTarget(), static_cast<GLint>(level), 0, 0,
+                                                 static_cast<GLint>(layer), size.width, size.height,
+                                                 1, GetGLFormat().format, GetGLFormat().type, 0);
                             }
                         }
                         break;
@@ -360,24 +372,18 @@ namespace dawn_native { namespace opengl {
             gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         }
         if (clearValue == TextureBase::ClearValue::Zero) {
-            SetIsSubresourceContentInitialized(true, baseMipLevel, levelCount, baseArrayLayer,
-                                               layerCount);
+            SetIsSubresourceContentInitialized(true, range);
             device->IncrementLazyClearCountForTesting();
         }
         return {};
     }
 
-    void Texture::EnsureSubresourceContentInitialized(uint32_t baseMipLevel,
-                                                      uint32_t levelCount,
-                                                      uint32_t baseArrayLayer,
-                                                      uint32_t layerCount) {
+    void Texture::EnsureSubresourceContentInitialized(const SubresourceRange& range) {
         if (!GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return;
         }
-        if (!IsSubresourceContentInitialized(baseMipLevel, levelCount, baseArrayLayer,
-                                             layerCount)) {
-            GetDevice()->ConsumedError(ClearTexture(baseMipLevel, levelCount, baseArrayLayer,
-                                                    layerCount, TextureBase::ClearValue::Zero));
+        if (!IsSubresourceContentInitialized(range)) {
+            GetDevice()->ConsumedError(ClearTexture(range, TextureBase::ClearValue::Zero));
         }
     }
 
@@ -385,7 +391,8 @@ namespace dawn_native { namespace opengl {
 
     TextureView::TextureView(TextureBase* texture, const TextureViewDescriptor* descriptor)
         : TextureViewBase(texture, descriptor), mOwnsHandle(false) {
-        mTarget = TargetForTextureViewDimension(descriptor->dimension, texture->GetSampleCount());
+        mTarget = TargetForTextureViewDimension(descriptor->dimension, descriptor->arrayLayerCount,
+                                                texture->GetSampleCount());
 
         if (!UsageNeedsTextureView(texture->GetUsage())) {
             mHandle = 0;

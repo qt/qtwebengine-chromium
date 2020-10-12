@@ -17,6 +17,7 @@
 #include "dawn_native/Buffer.h"
 #include "dawn_native/CommandBuffer.h"
 #include "dawn_native/Device.h"
+#include "dawn_native/DynamicUploader.h"
 #include "dawn_native/ErrorScope.h"
 #include "dawn_native/ErrorScopeTracker.h"
 #include "dawn_native/Fence.h"
@@ -24,6 +25,8 @@
 #include "dawn_native/Texture.h"
 #include "dawn_platform/DawnPlatform.h"
 #include "dawn_platform/tracing/TraceEvent.h"
+
+#include <cstring>
 
 namespace dawn_native {
 
@@ -91,8 +94,44 @@ namespace dawn_native {
         return new Fence(this, descriptor);
     }
 
+    void QueueBase::WriteBuffer(BufferBase* buffer,
+                                uint64_t bufferOffset,
+                                const void* data,
+                                size_t size) {
+        GetDevice()->ConsumedError(WriteBufferInternal(buffer, bufferOffset, data, size));
+    }
+
+    MaybeError QueueBase::WriteBufferInternal(BufferBase* buffer,
+                                              uint64_t bufferOffset,
+                                              const void* data,
+                                              size_t size) {
+        DAWN_TRY(ValidateWriteBuffer(buffer, bufferOffset, size));
+        return WriteBufferImpl(buffer, bufferOffset, data, size);
+    }
+
+    MaybeError QueueBase::WriteBufferImpl(BufferBase* buffer,
+                                          uint64_t bufferOffset,
+                                          const void* data,
+                                          size_t size) {
+        if (size == 0) {
+            return {};
+        }
+
+        DeviceBase* device = GetDevice();
+
+        UploadHandle uploadHandle;
+        DAWN_TRY_ASSIGN(uploadHandle, device->GetDynamicUploader()->Allocate(
+                                          size, device->GetPendingCommandSerial()));
+        ASSERT(uploadHandle.mappedBuffer != nullptr);
+
+        memcpy(uploadHandle.mappedBuffer, data, size);
+
+        return device->CopyFromStagingToBuffer(uploadHandle.stagingBuffer, uploadHandle.startOffset,
+                                               buffer, bufferOffset, size);
+    }
+
     MaybeError QueueBase::ValidateSubmit(uint32_t commandCount,
-                                         CommandBufferBase* const* commands) {
+                                         CommandBufferBase* const* commands) const {
         TRACE_EVENT0(GetDevice()->GetPlatform(), Validation, "Queue::ValidateSubmit");
         DAWN_TRY(GetDevice()->ValidateObject(this));
 
@@ -103,7 +142,7 @@ namespace dawn_native {
 
             for (const PassResourceUsage& passUsages : usages.perPass) {
                 for (const BufferBase* buffer : passUsages.buffers) {
-                    DAWN_TRY(buffer->ValidateCanUseInSubmitNow());
+                    DAWN_TRY(buffer->ValidateCanUseOnQueueNow());
                 }
                 for (const TextureBase* texture : passUsages.textures) {
                     DAWN_TRY(texture->ValidateCanUseInSubmitNow());
@@ -111,7 +150,7 @@ namespace dawn_native {
             }
 
             for (const BufferBase* buffer : usages.topLevelBuffers) {
-                DAWN_TRY(buffer->ValidateCanUseInSubmitNow());
+                DAWN_TRY(buffer->ValidateCanUseOnQueueNow());
             }
             for (const TextureBase* texture : usages.topLevelTextures) {
                 DAWN_TRY(texture->ValidateCanUseInSubmitNow());
@@ -121,7 +160,7 @@ namespace dawn_native {
         return {};
     }
 
-    MaybeError QueueBase::ValidateSignal(const Fence* fence, uint64_t signalValue) {
+    MaybeError QueueBase::ValidateSignal(const Fence* fence, uint64_t signalValue) const {
         DAWN_TRY(GetDevice()->ValidateIsAlive());
         DAWN_TRY(GetDevice()->ValidateObject(this));
         DAWN_TRY(GetDevice()->ValidateObject(fence));
@@ -136,7 +175,7 @@ namespace dawn_native {
         return {};
     }
 
-    MaybeError QueueBase::ValidateCreateFence(const FenceDescriptor* descriptor) {
+    MaybeError QueueBase::ValidateCreateFence(const FenceDescriptor* descriptor) const {
         DAWN_TRY(GetDevice()->ValidateIsAlive());
         DAWN_TRY(GetDevice()->ValidateObject(this));
         if (descriptor != nullptr) {
@@ -144,6 +183,32 @@ namespace dawn_native {
         }
 
         return {};
+    }
+
+    MaybeError QueueBase::ValidateWriteBuffer(const BufferBase* buffer,
+                                              uint64_t bufferOffset,
+                                              size_t size) const {
+        DAWN_TRY(GetDevice()->ValidateIsAlive());
+        DAWN_TRY(GetDevice()->ValidateObject(this));
+        DAWN_TRY(GetDevice()->ValidateObject(buffer));
+
+        if (bufferOffset % 4 != 0) {
+            return DAWN_VALIDATION_ERROR("Queue::WriteBuffer bufferOffset must be a multiple of 4");
+        }
+        if (size % 4 != 0) {
+            return DAWN_VALIDATION_ERROR("Queue::WriteBuffer size must be a multiple of 4");
+        }
+
+        uint64_t bufferSize = buffer->GetSize();
+        if (bufferOffset > bufferSize || size > (bufferSize - bufferOffset)) {
+            return DAWN_VALIDATION_ERROR("Queue::WriteBuffer out of range");
+        }
+
+        if (!(buffer->GetUsage() & wgpu::BufferUsage::CopyDst)) {
+            return DAWN_VALIDATION_ERROR("Buffer needs the CopyDst usage bit");
+        }
+
+        return buffer->ValidateCanUseOnQueueNow();
     }
 
 }  // namespace dawn_native

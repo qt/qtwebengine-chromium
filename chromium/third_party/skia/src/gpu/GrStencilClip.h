@@ -16,12 +16,14 @@
  */
 class GrStencilClip final : public GrHardClip {
 public:
-    GrStencilClip(uint32_t stencilStackID = SK_InvalidGenID) : fStencilStackID(stencilStackID) {}
+    explicit GrStencilClip(const SkISize& rtDims, uint32_t stencilStackID = SK_InvalidGenID)
+            : fFixedClip(rtDims)
+            , fStencilStackID(stencilStackID) {}
 
-    explicit GrStencilClip(const SkIRect& scissorRect, uint32_t stencilStackID = SK_InvalidGenID)
-        : fFixedClip(scissorRect)
-        , fStencilStackID(stencilStackID) {
-    }
+    GrStencilClip(const SkISize& rtDims, const SkIRect& scissorRect,
+                  uint32_t stencilStackID = SK_InvalidGenID)
+            : fFixedClip(rtDims, scissorRect)
+            , fStencilStackID(stencilStackID) {}
 
     const GrFixedClip& fixedClip() const { return fFixedClip; }
     GrFixedClip& fixedClip() { return fFixedClip; }
@@ -33,14 +35,14 @@ public:
     bool quickContains(const SkRect& rect) const override {
         return !this->hasStencilClip() && fFixedClip.quickContains(rect);
     }
-    SkIRect getConservativeBounds(int width, int height) const override {
-        return fFixedClip.getConservativeBounds(width, height);
+    SkIRect getConservativeBounds() const override {
+        return fFixedClip.getConservativeBounds();
     }
-    bool isRRect(const SkRect& rtBounds, SkRRect* rr, GrAA* aa) const override {
-        return !this->hasStencilClip() && fFixedClip.isRRect(rtBounds, rr, aa);
+    bool isRRect(SkRRect* rr, GrAA* aa) const override {
+        return !this->hasStencilClip() && fFixedClip.isRRect(rr, aa);
     }
-    bool apply(int rtWidth, int rtHeight, GrAppliedHardClip* out, SkRect* bounds) const override {
-        if (!fFixedClip.apply(rtWidth, rtHeight, out, bounds)) {
+    bool apply(GrAppliedHardClip* out, SkRect* bounds) const override {
+        if (!fFixedClip.apply(out, bounds)) {
             return false;
         }
         if (this->hasStencilClip()) {

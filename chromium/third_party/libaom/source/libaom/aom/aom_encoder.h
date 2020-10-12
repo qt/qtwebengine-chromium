@@ -374,7 +374,8 @@ typedef struct cfg_options {
  * /algo/_eflag_*. The lower order 16 bits are reserved for common use.
  */
 typedef long aom_enc_frame_flags_t;
-#define AOM_EFLAG_FORCE_KF (1 << 0) /**< Force this frame to be a keyframe */
+/*!\brief Force this frame to be a keyframe */
+#define AOM_EFLAG_FORCE_KF (1 << 0)
 
 /*!\brief Encoder configuration structure
  *
@@ -665,23 +666,17 @@ typedef struct aom_codec_enc_cfg {
 
   /*!\brief Rate control adaptation undershoot control
    *
-   * This value, expressed as a percentage of the target bitrate,
-   * controls the maximum allowed adaptation speed of the codec.
-   * This factor controls the maximum amount of bits that can
-   * be subtracted from the target bitrate in order to compensate
-   * for prior overshoot.
+   * This value, controls the tolerance of the VBR algorithm to undershoot
+   * and is used as a trigger threshold for more agressive adaptation of Q.
    *
-   * Valid values in the range 0-1000.
+   * Valid values in the range 0-100.
    */
   unsigned int rc_undershoot_pct;
 
   /*!\brief Rate control adaptation overshoot control
    *
-   * This value, expressed as a percentage of the target bitrate,
-   * controls the maximum allowed adaptation speed of the codec.
-   * This factor controls the maximum amount of bits that can
-   * be added to the target bitrate in order to compensate for
-   * prior undershoot.
+   * This value, controls the tolerance of the VBR algorithm to overshoot
+   * and is used as a trigger threshold for more agressive adaptation of Q.
    *
    * Valid values in the range 0-1000.
    */
@@ -1033,15 +1028,18 @@ aom_fixed_buf_t *aom_codec_get_global_headers(aom_codec_ctx_t *ctx);
  * time stamp (PTS) \ref MUST be strictly increasing.
  *
  * When the last frame has been passed to the encoder, this function should
- * continue to be called, with the img parameter set to NULL. This will
- * signal the end-of-stream condition to the encoder and allow it to encode
- * any held buffers. Encoding is complete when aom_codec_encode() is called
- * and aom_codec_get_cx_data() returns no data.
+ * continue to be called in a loop, with the img parameter set to NULL. This
+ * will signal the end-of-stream condition to the encoder and allow it to
+ * encode any held buffers. Encoding is complete when aom_codec_encode() is
+ * called with img set to NULL and aom_codec_get_cx_data() returns no data.
  *
  * \param[in]    ctx       Pointer to this instance's context
  * \param[in]    img       Image data to encode, NULL to flush.
- * \param[in]    pts       Presentation time stamp, in timebase units.
- * \param[in]    duration  Duration to show frame, in timebase units.
+ * \param[in]    pts       Presentation time stamp, in timebase units. If img
+ *                         is NULL, pts is ignored.
+ * \param[in]    duration  Duration to show frame, in timebase units. If img
+ *                         is not NULL, duration must be nonzero. If img is
+ *                         NULL, duration is ignored.
  * \param[in]    flags     Flags to use for encoding this frame.
  *
  * \retval #AOM_CODEC_OK

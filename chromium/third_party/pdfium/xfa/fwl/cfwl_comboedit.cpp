@@ -17,8 +17,7 @@ CFWL_ComboEdit::CFWL_ComboEdit(
     const CFWL_App* app,
     std::unique_ptr<CFWL_WidgetProperties> properties,
     CFWL_Widget* pOuter)
-    : CFWL_Edit(app, std::move(properties), pOuter) {
-}
+    : CFWL_Edit(app, std::move(properties), pOuter) {}
 
 CFWL_ComboEdit::~CFWL_ComboEdit() = default;
 
@@ -48,17 +47,17 @@ void CFWL_ComboEdit::OnProcessMessage(CFWL_Message* pMessage) {
 
   bool backDefault = true;
   switch (pMessage->GetType()) {
-    case CFWL_Message::Type::SetFocus: {
+    case CFWL_Message::Type::kSetFocus: {
       m_pProperties->m_dwStates |= FWL_WGTSTATE_Focused;
       backDefault = false;
       break;
     }
-    case CFWL_Message::Type::KillFocus: {
+    case CFWL_Message::Type::kKillFocus: {
       m_pProperties->m_dwStates &= ~FWL_WGTSTATE_Focused;
       backDefault = false;
       break;
     }
-    case CFWL_Message::Type::Mouse: {
+    case CFWL_Message::Type::kMouse: {
       CFWL_MessageMouse* pMsg = static_cast<CFWL_MessageMouse*>(pMessage);
       if ((pMsg->m_dwCmd == FWL_MouseCommand::LeftButtonDown) &&
           ((m_pProperties->m_dwStates & FWL_WGTSTATE_Focused) == 0)) {

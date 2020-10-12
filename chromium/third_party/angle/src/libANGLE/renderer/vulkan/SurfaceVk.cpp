@@ -864,6 +864,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     // We need transfer src for reading back from the backbuffer.
     VkImageUsageFlags imageUsageFlags = kSurfaceVKColorImageUsageFlags;
 
+#if ANGLE_ENABLE_OVERLAY
     // We need storage image for compute writes (debug overlay output).
     VkFormatFeatureFlags featureBits =
         renderer->getImageFormatFeatureBits(nativeFormat, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
@@ -871,6 +872,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     {
         imageUsageFlags |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
+#endif
 
     VkSwapchainCreateInfoKHR swapchainInfo = {};
     swapchainInfo.sType                    = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -896,7 +898,9 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
 
     // TODO(syoussefi): Once EGL_SWAP_BEHAVIOR_PRESERVED_BIT is supported, the contents of the old
     // swapchain need to carry over to the new one.  http://anglebug.com/2942
-    ANGLE_VK_TRY(context, vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &mSwapchain));
+    VkSwapchainKHR newSwapChain = VK_NULL_HANDLE;
+    ANGLE_VK_TRY(context, vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &newSwapChain));
+    mSwapchain            = newSwapChain;
     mSwapchainPresentMode = mDesiredSwapchainPresentMode;
 
     // Intialize the swapchain image views.
@@ -1631,6 +1635,8 @@ void WindowSurfaceVk::updateOverlay(ContextVk *contextVk) const
         overlay->getCountWidget(gl::WidgetId::VulkanValidationMessageCount)
             ->add(validationMessageCount);
     }
+
+    contextVk->updateOverlayOnPresent();
 }
 
 ANGLE_INLINE bool WindowSurfaceVk::overlayHasEnabledWidget(ContextVk *contextVk) const

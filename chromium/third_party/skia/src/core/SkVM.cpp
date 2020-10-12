@@ -250,6 +250,7 @@ namespace skvm {
             case Op::select:  write(o, V{id}, "=", op, V{x}, V{y}, V{z}, fs(id)...); break;
             case Op::pack:    write(o, V{id}, "=", op, V{x}, V{y}, Shift{immz}, fs(id)...); break;
 
+            case Op::ceil:   write(o, V{id}, "=", op, V{x}, fs(id)...); break;
             case Op::floor:  write(o, V{id}, "=", op, V{x}, fs(id)...); break;
             case Op::to_f32: write(o, V{id}, "=", op, V{x}, fs(id)...); break;
             case Op::trunc:  write(o, V{id}, "=", op, V{x}, fs(id)...); break;
@@ -369,6 +370,7 @@ namespace skvm {
                 case Op::select:  write(o, R{d}, "=", op, R{x}, R{y}, R{z}); break;
                 case Op::pack:    write(o, R{d}, "=", op,   R{x}, R{y}, Shift{immz}); break;
 
+                case Op::ceil:   write(o, R{d}, "=", op, R{x}); break;
                 case Op::floor:  write(o, R{d}, "=", op, R{x}); break;
                 case Op::to_f32: write(o, R{d}, "=", op, R{x}); break;
                 case Op::trunc:  write(o, R{d}, "=", op, R{x}); break;
@@ -738,6 +740,9 @@ namespace skvm {
     }
 
     F32 Builder::approx_powf(F32 x, F32 y) {
+        // TODO: assert this instead?  Sometimes x is very slightly negative.  See skia:10210.
+        x = max(0.0f, x);
+
         auto is_x = bit_or(eq(x, 0.0f),
                            eq(x, 1.0f));
         return select(is_x, x, approx_pow2(mul(approx_log2(x), y)));
@@ -1010,6 +1015,10 @@ namespace skvm {
         return {this, this->push(Op::pack, x.id,y.id,NA, 0,bits)};
     }
 
+    F32 Builder::ceil(F32 x) {
+        if (float X; this->allImm(x.id,&X)) { return splat(ceilf(X)); }
+        return {this, this->push(Op::ceil, x.id)};
+    }
     F32 Builder::floor(F32 x) {
         if (float X; this->allImm(x.id,&X)) { return splat(floorf(X)); }
         return {this, this->push(Op::floor, x.id)};
@@ -1231,32 +1240,35 @@ namespace skvm {
         };
 
         switch (mode) {
-            default: SkASSERT(false); /*but also, for safety, fallthrough*/
+            default:
+                SkASSERT(false);
+                [[fallthrough]]; /*but also, for safety, fallthrough*/
 
             case SkBlendMode::kClear: return { splat(0.0f), splat(0.0f), splat(0.0f), splat(0.0f) };
 
             case SkBlendMode::kSrc: return src;
             case SkBlendMode::kDst: return dst;
 
-            case SkBlendMode::kDstOver: std::swap(src, dst); // fall-through
+            case SkBlendMode::kDstOver: std::swap(src, dst); [[fallthrough]];
             case SkBlendMode::kSrcOver:
                 return apply_rgba([&](auto s, auto d) {
                     return mad(d,1-src.a, s);
                 });
 
-            case SkBlendMode::kDstIn: std::swap(src, dst); // fall-through
+            case SkBlendMode::kDstIn: std::swap(src, dst); [[fallthrough]];
             case SkBlendMode::kSrcIn:
                 return apply_rgba([&](auto s, auto d) {
                     return s * dst.a;
                 });
 
-            case SkBlendMode::kDstOut: std::swap(src, dst); // fall-through
+            case SkBlendMode::kDstOut: std::swap(src, dst); [[fallthrough]];
+
             case SkBlendMode::kSrcOut:
                 return apply_rgba([&](auto s, auto d) {
                     return s * (1-dst.a);
                 });
 
-            case SkBlendMode::kDstATop: std::swap(src, dst); // fall-through
+            case SkBlendMode::kDstATop: std::swap(src, dst); [[fallthrough]];
             case SkBlendMode::kSrcATop:
                 return apply_rgba([&](auto s, auto d) {
                     return mma(s, dst.a,  d, 1-src.a);
@@ -2346,6 +2358,9 @@ namespace skvm {
                                                     F(vals[z])}));
                     break;
 
+                case Op::ceil:
+                    vals[i] = I(b->CreateUnaryIntrinsic(llvm::Intrinsic::ceil, F(vals[x])));
+                    break;
                 case Op::floor:
                     vals[i] = I(b->CreateUnaryIntrinsic(llvm::Intrinsic::floor, F(vals[x])));
                     break;
@@ -3216,6 +3231,11 @@ namespace skvm {
                 case Op::pack: a->vpslld(dst(y != x ? y : NA),  r(y), immz);
                                a->vpor  (dst(), dst(), any(x));
                                break;
+
+                case Op::ceil:
+                    if (in_reg(x)) { a->vroundps(dst(x),  r(x), Assembler::CEIL); }
+                    else           { a->vroundps(dst(), any(x), Assembler::CEIL); }
+                                     break;
 
                 case Op::floor:
                     if (in_reg(x)) { a->vroundps(dst(x),  r(x), Assembler::FLOOR); }

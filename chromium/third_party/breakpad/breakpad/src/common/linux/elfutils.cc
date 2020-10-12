@@ -40,11 +40,11 @@ namespace google_breakpad {
 namespace {
 
 template<typename ElfClass>
-void FindElfClassSection(const char *elf_base,
-                         const char *section_name,
+void FindElfClassSection(const char* elf_base,
+                         const char* section_name,
                          typename ElfClass::Word section_type,
-                         const void **section_start,
-                         size_t *section_size) {
+                         const void** section_start,
+                         size_t* section_size) {
   typedef typename ElfClass::Ehdr Ehdr;
   typedef typename ElfClass::Shdr Shdr;
 
@@ -62,7 +62,7 @@ void FindElfClassSection(const char *elf_base,
   const Shdr* section_names = sections + elf_header->e_shstrndx;
   const char* names =
     GetOffset<ElfClass, char>(elf_header, section_names->sh_offset);
-  const char *names_end = names + section_names->sh_size;
+  const char* names_end = names + section_names->sh_size;
 
   const Shdr* section =
     FindElfSectionByName<ElfClass>(section_name, section_type,
@@ -76,9 +76,9 @@ void FindElfClassSection(const char *elf_base,
 }
 
 template<typename ElfClass>
-void FindElfClassSegment(const char *elf_base,
+void FindElfClassSegment(const char* elf_base,
                          typename ElfClass::Word segment_type,
-                         wasteful_vector<ElfSegment> *segments) {
+                         wasteful_vector<ElfSegment>* segments) {
   typedef typename ElfClass::Ehdr Ehdr;
   typedef typename ElfClass::Phdr Phdr;
 
@@ -117,11 +117,11 @@ int ElfClass(const void* elf_base) {
   return elf_header->e_ident[EI_CLASS];
 }
 
-bool FindElfSection(const void *elf_mapped_base,
-                    const char *section_name,
+bool FindElfSection(const void* elf_mapped_base,
+                    const char* section_name,
                     uint32_t section_type,
-                    const void **section_start,
-                    size_t *section_size) {
+                    const void** section_start,
+                    size_t* section_size) {
   assert(elf_mapped_base);
   assert(section_start);
   assert(section_size);

@@ -19,6 +19,7 @@
 #include "dawn_native/Texture.h"
 
 #include "dawn_native/DawnNative.h"
+#include "dawn_native/PassResourceUsage.h"
 #include "dawn_native/d3d12/ResourceHeapAllocationD3D12.h"
 #include "dawn_native/d3d12/d3d12_platform.h"
 
@@ -55,20 +56,24 @@ namespace dawn_native { namespace d3d12 {
                                                        uint32_t baseArrayLayer,
                                                        uint32_t layerCount) const;
         void EnsureSubresourceContentInitialized(CommandRecordingContext* commandContext,
-                                                 uint32_t baseMipLevel,
-                                                 uint32_t levelCount,
-                                                 uint32_t baseArrayLayer,
-                                                 uint32_t layerCount);
+                                                 const SubresourceRange& range);
 
-        bool TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
-                                             D3D12_RESOURCE_BARRIER* barrier,
-                                             wgpu::TextureUsage newUsage);
+        void TrackUsageAndGetResourceBarrierForPass(CommandRecordingContext* commandContext,
+                                                    std::vector<D3D12_RESOURCE_BARRIER>* barrier,
+                                                    const PassTextureUsage& textureUsages);
         void TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
-                                        wgpu::TextureUsage usage);
+                                        wgpu::TextureUsage usage,
+                                        const SubresourceRange& range);
         void TrackUsageAndTransitionNow(CommandRecordingContext* commandContext,
-                                        D3D12_RESOURCE_STATES newState);
+                                        D3D12_RESOURCE_STATES newState,
+                                        const SubresourceRange& range);
+        void TrackAllUsageAndTransitionNow(CommandRecordingContext* commandContext,
+                                           wgpu::TextureUsage usage);
+        void TrackAllUsageAndTransitionNow(CommandRecordingContext* commandContext,
+                                           D3D12_RESOURCE_STATES newState);
 
       private:
+        Texture(Device* device, const TextureDescriptor* descriptor, TextureState state);
         ~Texture() override;
         using TextureBase::TextureBase;
 
@@ -81,26 +86,31 @@ namespace dawn_native { namespace d3d12 {
         // Dawn API
         void DestroyImpl() override;
         MaybeError ClearTexture(CommandRecordingContext* commandContext,
-                                uint32_t baseMipLevel,
-                                uint32_t levelCount,
-                                uint32_t baseArrayLayer,
-                                uint32_t layerCount,
+                                const SubresourceRange& range,
                                 TextureBase::ClearValue clearValue);
 
-        UINT16 GetDepthOrArraySize();
+        void TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
+                                                  std::vector<D3D12_RESOURCE_BARRIER>* barrier,
+                                                  D3D12_RESOURCE_STATES newState,
+                                                  const SubresourceRange& range);
 
-        bool TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
-                                             D3D12_RESOURCE_BARRIER* barrier,
-                                             D3D12_RESOURCE_STATES newState);
-        bool TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
-                                                  D3D12_RESOURCE_BARRIER* barrier,
-                                                  D3D12_RESOURCE_STATES newState);
+        void TransitionSingleOrAllSubresources(std::vector<D3D12_RESOURCE_BARRIER>* barriers,
+                                               uint32_t index,
+                                               D3D12_RESOURCE_STATES subresourceNewState,
+                                               const Serial pendingCommandSerial,
+                                               bool allSubresources);
+        void HandleTransitionSpecialCases(CommandRecordingContext* commandContext);
+
+        bool mSameLastUsagesAcrossSubresources = true;
+
+        struct StateAndDecay {
+            D3D12_RESOURCE_STATES lastState;
+            Serial lastDecaySerial;
+            bool isValidToDecay;
+        };
+        std::vector<StateAndDecay> mSubresourceStateAndDecay;
 
         ResourceHeapAllocation mResourceAllocation;
-        D3D12_RESOURCE_STATES mLastState = D3D12_RESOURCE_STATES::D3D12_RESOURCE_STATE_COMMON;
-
-        Serial mLastUsedSerial = UINT64_MAX;
-        bool mValidToDecay = false;
         bool mSwapChainTexture = false;
 
         Serial mAcquireMutexKey = 0;

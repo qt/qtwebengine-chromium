@@ -31,6 +31,13 @@
 #include "src/gpu/dawn/GrDawnGpu.h"
 #endif
 
+#if GR_TEST_UTILS
+#   include "include/utils/SkRandom.h"
+#   if defined(SK_ENABLE_SCOPED_LSAN_SUPPRESSIONS)
+#       include <sanitizer/lsan_interface.h>
+#   endif
+#endif
+
 #ifdef SK_DISABLE_REDUCE_OPLIST_SPLITTING
 static const bool kDefaultReduceOpsTaskSplitting = false;
 #else
@@ -40,7 +47,7 @@ static const bool kDefaultReduceOpsTaskSplitting = false;
 class GrLegacyDirectContext : public GrContext {
 public:
     GrLegacyDirectContext(GrBackendApi backend, const GrContextOptions& options)
-            : INHERITED(backend, options)
+            : INHERITED(GrContextThreadSafeProxyPriv::Make(backend, options))
             , fAtlasManager(nullptr) {
     }
 
@@ -48,7 +55,7 @@ public:
         // this if-test protects against the case where the context is being destroyed
         // before having been fully created
         if (this->priv().getGpu()) {
-            this->flush();
+            this->flushAndSubmit();
         }
 
         delete fAtlasManager;
@@ -65,23 +72,21 @@ public:
     }
 
     void freeGpuResources() override {
-        this->flush();
+        this->flushAndSubmit();
         fAtlasManager->freeAll();
 
         INHERITED::freeGpuResources();
     }
 
 protected:
-    bool init(sk_sp<const GrCaps> caps) override {
-        SkASSERT(caps);
-        SkASSERT(!fThreadSafeProxy);
+    bool init() override {
+        const GrGpu* gpu = this->priv().getGpu();
+        if (!gpu) {
+            return false;
+        }
 
-        fThreadSafeProxy = GrContextThreadSafeProxyPriv::Make(this->backend(),
-                                                              this->options(),
-                                                              this->contextID(),
-                                                              caps);
-
-        if (!INHERITED::init(std::move(caps))) {
+        fThreadSafeProxy->priv().init(gpu->refCaps());
+        if (!INHERITED::init()) {
             return false;
         }
 
@@ -93,8 +98,6 @@ protected:
         }
 
         this->setupDrawingManager(true, reduceOpsTaskSplitting);
-
-        SkASSERT(this->caps());
 
         GrDrawOpAtlas::AllowMultitexturing allowMultitexturing;
         if (GrContextOptions::Enable::kNo == this->options().fAllowMultipleGlyphCacheTextures ||
@@ -139,16 +142,52 @@ sk_sp<GrContext> GrContext::MakeGL() {
     return MakeGL(nullptr, defaultOptions);
 }
 
+#if GR_TEST_UTILS
+GrGLFunction<GrGLGetErrorFn> make_get_error_with_random_oom(GrGLFunction<GrGLGetErrorFn> original) {
+    // A SkRandom and a GrGLFunction<GrGLGetErrorFn> are too big to be captured by a
+    // GrGLFunction<GrGLGetError> (surprise, surprise). So we make a context object and
+    // capture that by pointer. However, GrGLFunction doesn't support calling a destructor
+    // on the thing it captures. So we leak the context.
+    struct GetErrorContext {
+        SkRandom fRandom;
+        GrGLFunction<GrGLGetErrorFn> fGetError;
+    };
+
+    auto errorContext = new GetErrorContext;
+
+#if defined(SK_ENABLE_SCOPED_LSAN_SUPPRESSIONS)
+    __lsan_ignore_object(errorContext);
+#endif
+
+    errorContext->fGetError = original;
+
+    return GrGLFunction<GrGLGetErrorFn>([errorContext]() {
+        GrGLenum error = errorContext->fGetError();
+        if (error == GR_GL_NO_ERROR && (errorContext->fRandom.nextU() % 300) == 0) {
+            error = GR_GL_OUT_OF_MEMORY;
+        }
+        return error;
+    });
+}
+#endif
+
 sk_sp<GrContext> GrContext::MakeGL(sk_sp<const GrGLInterface> glInterface,
                                    const GrContextOptions& options) {
     sk_sp<GrContext> context(new GrLegacyDirectContext(GrBackendApi::kOpenGL, options));
-
-    context->fGpu = GrGLGpu::Make(std::move(glInterface), options, context.get());
-    if (!context->fGpu) {
-        return nullptr;
+#if GR_TEST_UTILS
+    if (options.fRandomGLOOM) {
+        auto copy = sk_make_sp<GrGLInterface>(*glInterface);
+        copy->fFunctions.fGetError =
+                make_get_error_with_random_oom(glInterface->fFunctions.fGetError);
+#if GR_GL_CHECK_ERROR
+        // Suppress logging GL errors since we'll be synthetically generating them.
+        copy->suppressErrorLogging();
+#endif
+        glInterface = std::move(copy);
     }
-
-    if (!context->init(context->fGpu->refCaps())) {
+#endif
+    context->fGpu = GrGLGpu::Make(std::move(glInterface), options, context.get());
+    if (!context->init()) {
         return nullptr;
     }
     return context;
@@ -165,11 +204,7 @@ sk_sp<GrContext> GrContext::MakeMock(const GrMockOptions* mockOptions,
     sk_sp<GrContext> context(new GrLegacyDirectContext(GrBackendApi::kMock, options));
 
     context->fGpu = GrMockGpu::Make(mockOptions, options, context.get());
-    if (!context->fGpu) {
-        return nullptr;
-    }
-
-    if (!context->init(context->fGpu->refCaps())) {
+    if (!context->init()) {
         return nullptr;
     }
 
@@ -191,13 +226,10 @@ sk_sp<GrContext> GrContext::MakeVulkan(const GrVkBackendContext& backendContext,
     sk_sp<GrContext> context(new GrLegacyDirectContext(GrBackendApi::kVulkan, options));
 
     context->fGpu = GrVkGpu::Make(backendContext, options, context.get());
-    if (!context->fGpu) {
+    if (!context->init()) {
         return nullptr;
     }
 
-    if (!context->init(context->fGpu->refCaps())) {
-        return nullptr;
-    }
     return context;
 #else
     return nullptr;
@@ -214,13 +246,10 @@ sk_sp<GrContext> GrContext::MakeMetal(void* device, void* queue, const GrContext
     sk_sp<GrContext> context(new GrLegacyDirectContext(GrBackendApi::kMetal, options));
 
     context->fGpu = GrMtlTrampoline::MakeGpu(context.get(), options, device, queue);
-    if (!context->fGpu) {
+    if (!context->init()) {
         return nullptr;
     }
 
-    if (!context->init(context->fGpu->refCaps())) {
-        return nullptr;
-    }
     return context;
 }
 #endif
@@ -236,13 +265,10 @@ sk_sp<GrContext> GrContext::MakeDirect3D(const GrD3DBackendContext& backendConte
     sk_sp<GrContext> context(new GrLegacyDirectContext(GrBackendApi::kDirect3D, options));
 
     context->fGpu = GrD3DGpu::Make(backendContext, options, context.get());
-    if (!context->fGpu) {
+    if (!context->init()) {
         return nullptr;
     }
 
-    if (!context->init(context->fGpu->refCaps())) {
-        return nullptr;
-    }
     return context;
 }
 #endif
@@ -257,13 +283,10 @@ sk_sp<GrContext> GrContext::MakeDawn(const wgpu::Device& device, const GrContext
     sk_sp<GrContext> context(new GrLegacyDirectContext(GrBackendApi::kDawn, options));
 
     context->fGpu = GrDawnGpu::Make(device, options, context.get());
-    if (!context->fGpu) {
+    if (!context->init()) {
         return nullptr;
     }
 
-    if (!context->init(context->fGpu->refCaps())) {
-        return nullptr;
-    }
     return context;
 }
 #endif

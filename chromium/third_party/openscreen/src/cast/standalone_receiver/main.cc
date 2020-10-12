@@ -5,11 +5,13 @@
 #include <getopt.h>
 
 #include <array>
-#include <chrono>  // NOLINT
+#include <chrono>
 #include <iostream>
 
+#include "absl/strings/str_cat.h"
 #include "cast/common/public/service_info.h"
 #include "cast/standalone_receiver/cast_agent.h"
+#include "cast/standalone_receiver/static_credentials.h"
 #include "cast/streaming/ssrc.h"
 #include "discovery/common/config.h"
 #include "discovery/common/reporting_client.h"
@@ -24,6 +26,7 @@
 #include "platform/impl/platform_client_posix.h"
 #include "platform/impl/task_runner.h"
 #include "platform/impl/text_trace_logging_platform.h"
+#include "util/chrono_helpers.h"
 #include "util/stringprintf.h"
 #include "util/trace_logging.h"
 
@@ -93,8 +96,11 @@ ErrorOr<std::unique_ptr<DiscoveryState>> StartDiscovery(
   return state;
 }
 
-void StartCastAgent(TaskRunnerImpl* task_runner, InterfaceInfo interface) {
-  CastAgent agent(task_runner, interface);
+void StartCastAgent(TaskRunnerImpl* task_runner,
+                    InterfaceInfo interface,
+                    GeneratedCredentials* creds) {
+  CastAgent agent(task_runner, interface, creds->provider.get(),
+                  creds->tls_credentials);
   const auto error = agent.Start();
   if (!error.ok()) {
     OSP_LOG_ERROR << "Error occurred while starting agent: " << error;
@@ -173,15 +179,19 @@ int RunStandaloneReceiver(int argc, char* argv[]) {
                          : openscreen::LogLevel::kInfo);
 
   auto* const task_runner = new TaskRunnerImpl(&Clock::now);
-  PlatformClientPosix::Create(Clock::duration{50}, Clock::duration{50},
+  PlatformClientPosix::Create(milliseconds(50), milliseconds(50),
                               std::unique_ptr<TaskRunnerImpl>(task_runner));
 
   auto discovery_state = StartDiscovery(task_runner, interface_info);
   OSP_CHECK(discovery_state.is_value()) << "Failed to start discovery.";
 
+  auto creds = GenerateCredentials(
+      absl::StrCat("Standalone Receiver on ", argv[optind]));
+  OSP_CHECK(creds.is_value());
+
   // Runs until the process is interrupted.  Safe to pass |task_runner| as it
   // will not be destroyed by ShutDown() until this exits.
-  StartCastAgent(task_runner, interface_info);
+  StartCastAgent(task_runner, interface_info, &(creds.value()));
 
   // The task runner must be deleted after all serial delete pointers, such
   // as the one stored in the discovery state.

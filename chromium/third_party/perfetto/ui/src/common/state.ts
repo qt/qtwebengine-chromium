@@ -69,6 +69,8 @@ export interface TraceFileSource {
 
 export interface TraceArrayBufferSource {
   type: 'ARRAY_BUFFER';
+  title: string;
+  url?: string;
   buffer: ArrayBuffer;
 }
 
@@ -190,6 +192,13 @@ export interface HeapProfileFlamegraph {
   expandedCallsite?: CallsiteInfo;
 }
 
+export interface CpuProfileSampleSelection {
+  kind: 'CPU_PROFILE_SAMPLE';
+  id: number;
+  utid: number;
+  ts: number;
+}
+
 export interface ChromeSliceSelection {
   kind: 'CHROME_SLICE';
   id: number;
@@ -205,9 +214,9 @@ export interface ThreadStateSelection {
   cpu: number;
 }
 
-type Selection =
-    (NoteSelection|SliceSelection|CounterSelection|HeapProfileSelection|
-     ChromeSliceSelection|ThreadStateSelection)&{trackId?: string};
+type Selection = (NoteSelection|SliceSelection|CounterSelection|
+                  HeapProfileSelection|CpuProfileSampleSelection|
+                  ChromeSliceSelection|ThreadStateSelection)&{trackId?: string};
 
 export interface LogsPagination {
   offset: number;
@@ -292,6 +301,7 @@ export interface State {
   recordingStatus?: string;
 
   chromeCategories: string[]|undefined;
+  analyzePageQuery?: string;
 }
 
 export const defaultTraceTime = {
@@ -304,6 +314,10 @@ export declare type RecordMode =
 
 // 'Q','P','O' for Android, 'L' for Linux, 'C' for Chrome.
 export declare type TargetOs = 'Q' | 'P' | 'O' | 'C' | 'L';
+
+export function isAndroidP(target: RecordingTarget) {
+  return target.os === 'P';
+}
 
 export function isAndroidTarget(target: RecordingTarget) {
   return ['Q', 'P', 'O'].includes(target.os);

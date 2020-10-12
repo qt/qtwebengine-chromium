@@ -159,6 +159,7 @@ void SandboxFileStreamWriter::DidCreateSnapshotFile(
           file_system_context_->sandbox_delegate()->memory_file_util_delegate();
     }
     file_writer_ = FileStreamWriter::CreateForMemoryFile(
+        file_system_context_->default_file_task_runner(),
         memory_file_util_delegate, platform_path, initial_offset_);
 
   } else {
@@ -223,6 +224,10 @@ void SandboxFileStreamWriter::DidWrite(int write_response) {
   has_pending_operation_ = false;
 
   if (write_response <= 0) {
+    // TODO(crbug.com/1091792): Consider listening explicitly for out
+    // of space errors instead of surfacing all write errors to quota.
+    file_system_context_->quota_manager_proxy()->NotifyWriteFailed(
+        url_.origin());
     if (CancelIfRequested())
       return;
     std::move(write_callback_).Run(write_response);

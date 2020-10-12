@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "net/third_party/quiche/src/quic/platform/api/quic_expect_bug.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_config_peer.h"
@@ -621,7 +622,7 @@ TEST_F(QuicSentPacketManagerTest, RetransmitTwiceThenAckFirst) {
   // know packet 2 is a spurious until it gets acked.
   EXPECT_EQ(1u, stats_.packets_spuriously_retransmitted);
   EXPECT_EQ(1u, stats_.packets_lost);
-  EXPECT_LT(QuicTime::Delta::Zero(), stats_.total_loss_detection_time);
+  EXPECT_LT(0.0, stats_.total_loss_detection_response_time);
   EXPECT_LE(1u, stats_.sent_packets_max_sequence_reordering);
 }
 
@@ -942,6 +943,7 @@ TEST_F(QuicSentPacketManagerTest, TailLossProbeThenRTO) {
   manager_.OnRetransmissionTimeout();
   EXPECT_EQ(2u, stats_.tlp_count);
   EXPECT_EQ(1u, stats_.rto_count);
+  EXPECT_EQ(0u, stats_.max_consecutive_rto_with_forward_progress);
   // There are 2 RTO retransmissions.
   EXPECT_EQ(104 * kDefaultLength, manager_.GetBytesInFlight());
   QuicPacketNumber largest_acked = QuicPacketNumber(103);
@@ -965,6 +967,7 @@ TEST_F(QuicSentPacketManagerTest, TailLossProbeThenRTO) {
   // All packets before 103 should be lost.
   // Packet 104 is still in flight.
   EXPECT_EQ(1000u, manager_.GetBytesInFlight());
+  EXPECT_EQ(1u, stats_.max_consecutive_rto_with_forward_progress);
 }
 
 TEST_F(QuicSentPacketManagerTest, CryptoHandshakeTimeout) {
@@ -1019,54 +1022,6 @@ TEST_F(QuicSentPacketManagerTest, CryptoHandshakeTimeout) {
   EXPECT_FALSE(manager_.HasUnackedCryptoPackets());
 }
 
-TEST_F(QuicSentPacketManagerTest, CryptoHandshakeTimeoutVersionNegotiation) {
-  // Send 2 crypto packets and 3 data packets.
-  const size_t kNumSentCryptoPackets = 2;
-  for (size_t i = 1; i <= kNumSentCryptoPackets; ++i) {
-    SendCryptoPacket(i);
-  }
-  const size_t kNumSentDataPackets = 3;
-  for (size_t i = 1; i <= kNumSentDataPackets; ++i) {
-    SendDataPacket(kNumSentCryptoPackets + i);
-  }
-  EXPECT_TRUE(manager_.HasUnackedCryptoPackets());
-
-  EXPECT_CALL(notifier_, RetransmitFrames(_, _))
-      .Times(2)
-      .WillOnce(InvokeWithoutArgs([this]() { RetransmitCryptoPacket(6); }))
-      .WillOnce(InvokeWithoutArgs([this]() { RetransmitCryptoPacket(7); }));
-  manager_.OnRetransmissionTimeout();
-  EXPECT_TRUE(manager_.HasUnackedCryptoPackets());
-
-  // Now act like a version negotiation packet arrived, which would cause all
-  // unacked packets to be retransmitted.
-  // Mark packets [1, 7] lost. And the frames in 6 and 7 are same as packets 1
-  // and 2, respectively.
-  EXPECT_CALL(notifier_, OnFrameLost(_)).Times(7);
-  manager_.RetransmitUnackedPackets(ALL_UNACKED_RETRANSMISSION);
-
-  // Ensure the first two pending packets are the crypto retransmits.
-  RetransmitCryptoPacket(8);
-  RetransmitCryptoPacket(9);
-  RetransmitDataPacket(10, ALL_UNACKED_RETRANSMISSION);
-  RetransmitDataPacket(11, ALL_UNACKED_RETRANSMISSION);
-  RetransmitDataPacket(12, ALL_UNACKED_RETRANSMISSION);
-
-  EXPECT_EQ(QuicPacketNumber(1u), manager_.GetLeastUnacked());
-  // Least unacked isn't raised until an ack is received, so ack the
-  // crypto packets.
-  uint64_t acked[] = {8, 9};
-  ExpectAcksAndLosses(true, acked, QUICHE_ARRAYSIZE(acked), nullptr, 0);
-  manager_.OnAckFrameStart(QuicPacketNumber(9), QuicTime::Delta::Infinite(),
-                           clock_.Now());
-  manager_.OnAckRange(QuicPacketNumber(8), QuicPacketNumber(10));
-  EXPECT_EQ(PACKETS_NEWLY_ACKED,
-            manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(1),
-                                   ENCRYPTION_INITIAL));
-  EXPECT_CALL(notifier_, HasUnackedCryptoData()).WillRepeatedly(Return(false));
-  EXPECT_EQ(QuicPacketNumber(10u), manager_.GetLeastUnacked());
-}
-
 TEST_F(QuicSentPacketManagerTest, CryptoHandshakeSpuriousRetransmission) {
   // Send 1 crypto packet.
   SendCryptoPacket(1);
@@ -1116,28 +1071,6 @@ TEST_F(QuicSentPacketManagerTest, CryptoHandshakeTimeoutUnsentDataPacket) {
       .WillOnce(InvokeWithoutArgs([this]() { RetransmitCryptoPacket(5); }));
   manager_.OnRetransmissionTimeout();
   EXPECT_TRUE(manager_.HasUnackedCryptoPackets());
-}
-
-TEST_F(QuicSentPacketManagerTest,
-       CryptoHandshakeRetransmissionThenRetransmitAll) {
-  // Send 1 crypto packet.
-  SendCryptoPacket(1);
-
-  EXPECT_TRUE(manager_.HasUnackedCryptoPackets());
-
-  // Retransmit the crypto packet as 2.
-  EXPECT_CALL(notifier_, RetransmitFrames(_, _))
-      .WillOnce(InvokeWithoutArgs([this]() { RetransmitCryptoPacket(2); }));
-  manager_.OnRetransmissionTimeout();
-  // Now retransmit all the unacked packets, which occurs when there is a
-  // version negotiation.
-  EXPECT_CALL(notifier_, OnFrameLost(_)).Times(2);
-  manager_.RetransmitUnackedPackets(ALL_UNACKED_RETRANSMISSION);
-  // Both packets 1 and 2 are unackable.
-  EXPECT_FALSE(manager_.unacked_packets().IsUnacked(QuicPacketNumber(1)));
-  EXPECT_FALSE(manager_.unacked_packets().IsUnacked(QuicPacketNumber(2)));
-  EXPECT_TRUE(manager_.HasUnackedCryptoPackets());
-  EXPECT_FALSE(manager_.HasInFlightPackets());
 }
 
 TEST_F(QuicSentPacketManagerTest,
@@ -2732,6 +2665,7 @@ TEST_F(QuicSentPacketManagerTest, ComputingProbeTimeout) {
   manager_.OnRetransmissionTimeout();
   EXPECT_EQ(QuicTime::Delta::Zero(), manager_.TimeUntilSend(clock_.Now()));
   EXPECT_EQ(1u, stats_.pto_count);
+  EXPECT_EQ(0u, stats_.max_consecutive_rto_with_forward_progress);
 
   // Verify two probe packets get sent.
   EXPECT_CALL(notifier_, RetransmitFrames(_, _))
@@ -2765,6 +2699,7 @@ TEST_F(QuicSentPacketManagerTest, ComputingProbeTimeout) {
 
   // Verify PTO is correctly re-armed based on sent time of packet 4.
   EXPECT_EQ(sent_time + expected_pto_delay, manager_.GetRetransmissionTime());
+  EXPECT_EQ(1u, stats_.max_consecutive_rto_with_forward_progress);
 }
 
 TEST_F(QuicSentPacketManagerTest, SendOneProbePacket) {
@@ -2811,7 +2746,7 @@ TEST_F(QuicSentPacketManagerTest, SendOneProbePacket) {
 
 TEST_F(QuicSentPacketManagerTest, DisableHandshakeModeClient) {
   QuicSentPacketManagerPeer::SetPerspective(&manager_, Perspective::IS_CLIENT);
-  manager_.EnableIetfPtoAndLossDetection();
+  manager_.EnableMultiplePacketNumberSpacesSupport();
   // Send CHLO.
   SendCryptoPacket(1);
   EXPECT_NE(QuicTime::Zero(), manager_.GetRetransmissionTime());
@@ -3340,6 +3275,7 @@ TEST_F(QuicSentPacketManagerTest, ClientMultiplePacketNumberSpacePtoTimeout) {
   manager_.OnRetransmissionTimeout();
   EXPECT_EQ(QuicTime::Delta::Zero(), manager_.TimeUntilSend(clock_.Now()));
   EXPECT_EQ(1u, stats_.pto_count);
+  EXPECT_EQ(1u, stats_.crypto_retransmit_count);
 
   // Verify probe packet gets sent.
   EXPECT_CALL(notifier_, RetransmitFrames(_, _))
@@ -3823,11 +3759,7 @@ TEST_F(QuicSentPacketManagerTest, SetHandshakeConfirmed) {
             return true;
           }));
 
-  if (GetQuicReloadableFlag(
-          quic_avoid_overestimate_bandwidth_with_aggregation)) {
-    EXPECT_CALL(*send_algorithm_, OnPacketNeutered(QuicPacketNumber(2)))
-        .Times(1);
-  }
+  EXPECT_CALL(*send_algorithm_, OnPacketNeutered(QuicPacketNumber(2))).Times(1);
   manager_.SetHandshakeConfirmed();
 }
 
@@ -3841,11 +3773,8 @@ TEST_F(QuicSentPacketManagerTest, NeuterUnencryptedPackets) {
       .WillOnce(Return(false))
       .WillOnce(Return(true));
   EXPECT_CALL(notifier_, IsFrameOutstanding(_)).WillRepeatedly(Return(false));
-  if (GetQuicReloadableFlag(
-          quic_avoid_overestimate_bandwidth_with_aggregation)) {
-    EXPECT_CALL(*send_algorithm_, OnPacketNeutered(QuicPacketNumber(1)))
-        .Times(1);
-  }
+
+  EXPECT_CALL(*send_algorithm_, OnPacketNeutered(QuicPacketNumber(1))).Times(1);
   manager_.NeuterUnencryptedPackets();
 }
 
@@ -3911,7 +3840,7 @@ TEST_F(QuicSentPacketManagerTest, GetPathDegradingDelay) {
 // Regression test for b/154050235.
 TEST_F(QuicSentPacketManagerTest, ExponentialBackoffWithNoRttMeasurement) {
   QuicSentPacketManagerPeer::SetPerspective(&manager_, Perspective::IS_CLIENT);
-  manager_.EnableIetfPtoAndLossDetection();
+  manager_.EnableMultiplePacketNumberSpacesSupport();
   RttStats* rtt_stats = const_cast<RttStats*>(manager_.GetRttStats());
   EXPECT_EQ(QuicTime::Delta::FromMilliseconds(kInitialRttMs),
             rtt_stats->initial_rtt());
@@ -3939,7 +3868,7 @@ TEST_F(QuicSentPacketManagerTest, ExponentialBackoffWithNoRttMeasurement) {
 }
 
 TEST_F(QuicSentPacketManagerTest, PtoDelayWithTinyInitialRtt) {
-  manager_.EnableIetfPtoAndLossDetection();
+  manager_.EnableMultiplePacketNumberSpacesSupport();
   RttStats* rtt_stats = const_cast<RttStats*>(manager_.GetRttStats());
   // Assume client provided a tiny initial RTT.
   rtt_stats->set_initial_rtt(QuicTime::Delta::FromMicroseconds(1));
@@ -3996,6 +3925,199 @@ TEST_F(QuicSentPacketManagerTest, HandshakeAckCausesInitialKeyDropping) {
   // encryption level).
   EXPECT_CALL(notifier_, RetransmitFrames(_, _)).Times(0);
   manager_.MaybeSendProbePackets();
+}
+
+// Regression test for b/156487311
+TEST_F(QuicSentPacketManagerTest, ClearLastInflightPacketsSentTime) {
+  manager_.EnableMultiplePacketNumberSpacesSupport();
+  EXPECT_CALL(*send_algorithm_, PacingRate(_))
+      .WillRepeatedly(Return(QuicBandwidth::Zero()));
+  EXPECT_CALL(*send_algorithm_, GetCongestionWindow())
+      .WillRepeatedly(Return(10 * kDefaultTCPMSS));
+
+  // Send INITIAL 1.
+  SendDataPacket(1, ENCRYPTION_INITIAL);
+  const QuicTime packet1_sent_time = clock_.Now();
+  // Send HANDSHAKE 2.
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(10));
+  SendDataPacket(2, ENCRYPTION_HANDSHAKE);
+  SendDataPacket(3, ENCRYPTION_HANDSHAKE);
+  SendDataPacket(4, ENCRYPTION_HANDSHAKE);
+  const QuicTime packet2_sent_time = clock_.Now();
+
+  // Send half RTT 5.
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(10));
+  SendDataPacket(5, ENCRYPTION_FORWARD_SECURE);
+
+  // Received ACK for INITIAL 1.
+  ExpectAck(1);
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(90));
+  manager_.OnAckFrameStart(QuicPacketNumber(1), QuicTime::Delta::Infinite(),
+                           clock_.Now());
+  manager_.OnAckRange(QuicPacketNumber(1), QuicPacketNumber(2));
+  EXPECT_EQ(PACKETS_NEWLY_ACKED,
+            manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(1),
+                                   ENCRYPTION_INITIAL));
+  RttStats* rtt_stats = const_cast<RttStats*>(manager_.GetRttStats());
+  int pto_rttvar_multiplier =
+      GetQuicReloadableFlag(quic_default_on_pto) ? 2 : 4;
+  const QuicTime::Delta pto_delay =
+      rtt_stats->smoothed_rtt() +
+      pto_rttvar_multiplier * rtt_stats->mean_deviation() +
+      QuicTime::Delta::FromMilliseconds(kDefaultDelayedAckTimeMs);
+  if (GetQuicReloadableFlag(quic_fix_last_inflight_packets_sent_time)) {
+    // Verify PTO is armed based on handshake data.
+    EXPECT_EQ(packet2_sent_time + pto_delay, manager_.GetRetransmissionTime());
+  } else {
+    // Problematic: PTO is still armed based on initial data.
+    EXPECT_EQ(packet1_sent_time + pto_delay, manager_.GetRetransmissionTime());
+    clock_.AdvanceTime(pto_delay);
+    manager_.OnRetransmissionTimeout();
+    // Nothing to retransmit in INITIAL space.
+    EXPECT_CALL(notifier_, RetransmitFrames(_, _)).Times(0);
+    manager_.MaybeSendProbePackets();
+    // PING packet gets sent.
+    SendPingPacket(6, ENCRYPTION_INITIAL);
+    manager_.AdjustPendingTimerTransmissions();
+
+    // Verify PTO is armed based on packet 2.
+    EXPECT_EQ(packet2_sent_time + pto_delay * 2,
+              manager_.GetRetransmissionTime());
+    clock_.AdvanceTime(pto_delay * 2);
+    manager_.OnRetransmissionTimeout();
+    EXPECT_CALL(notifier_, RetransmitFrames(_, _)).Times(testing::AtLeast(1));
+    manager_.MaybeSendProbePackets();
+  }
+}
+
+// Regression test for b/157895910.
+TEST_F(QuicSentPacketManagerTest, EarliestSentTimeNotInitializedWhenPtoFires) {
+  SetQuicReloadableFlag(quic_fix_last_inflight_packets_sent_time, true);
+  manager_.EnableMultiplePacketNumberSpacesSupport();
+  EXPECT_CALL(*send_algorithm_, PacingRate(_))
+      .WillRepeatedly(Return(QuicBandwidth::Zero()));
+  EXPECT_CALL(*send_algorithm_, GetCongestionWindow())
+      .WillRepeatedly(Return(10 * kDefaultTCPMSS));
+
+  // Send INITIAL 1.
+  SendDataPacket(1, ENCRYPTION_INITIAL);
+
+  // Send HANDSHAKE packets.
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(10));
+  SendDataPacket(2, ENCRYPTION_HANDSHAKE);
+  SendDataPacket(3, ENCRYPTION_HANDSHAKE);
+  SendDataPacket(4, ENCRYPTION_HANDSHAKE);
+
+  // Send half RTT packet.
+  SendDataPacket(5, ENCRYPTION_FORWARD_SECURE);
+
+  // Received ACK for INITIAL packet 1.
+  ExpectAck(1);
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(90));
+  manager_.OnAckFrameStart(QuicPacketNumber(1), QuicTime::Delta::Infinite(),
+                           clock_.Now());
+  manager_.OnAckRange(QuicPacketNumber(1), QuicPacketNumber(2));
+  EXPECT_EQ(PACKETS_NEWLY_ACKED,
+            manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(1),
+                                   ENCRYPTION_INITIAL));
+
+  // Received ACK for HANDSHAKE packets.
+  uint64_t acked[] = {2, 3, 4};
+  ExpectAcksAndLosses(true, acked, QUICHE_ARRAYSIZE(acked), nullptr, 0);
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(90));
+  manager_.OnAckFrameStart(QuicPacketNumber(4), QuicTime::Delta::Infinite(),
+                           clock_.Now());
+  manager_.OnAckRange(QuicPacketNumber(2), QuicPacketNumber(5));
+  EXPECT_EQ(PACKETS_NEWLY_ACKED,
+            manager_.OnAckFrameEnd(clock_.Now(), QuicPacketNumber(4),
+                                   ENCRYPTION_HANDSHAKE));
+  if (GetQuicReloadableFlag(quic_fix_server_pto_timeout)) {
+    // Verify PTO will not be armed.
+    EXPECT_EQ(QuicTime::Zero(), manager_.GetRetransmissionTime());
+    return;
+  }
+  // PTO fires but there is nothing to send.
+  EXPECT_NE(QuicTime::Zero(), manager_.GetRetransmissionTime());
+  manager_.OnRetransmissionTimeout();
+  EXPECT_QUIC_BUG(manager_.MaybeSendProbePackets(),
+                  "earlist_sent_time not initialized when trying to send PTO "
+                  "retransmissions");
+}
+
+TEST_F(QuicSentPacketManagerTest, MaybeRetransmitInitialData) {
+  manager_.EnableMultiplePacketNumberSpacesSupport();
+  EXPECT_CALL(*send_algorithm_, PacingRate(_))
+      .WillRepeatedly(Return(QuicBandwidth::Zero()));
+  EXPECT_CALL(*send_algorithm_, GetCongestionWindow())
+      .WillRepeatedly(Return(10 * kDefaultTCPMSS));
+  RttStats* rtt_stats = const_cast<RttStats*>(manager_.GetRttStats());
+  rtt_stats->UpdateRtt(QuicTime::Delta::FromMilliseconds(100),
+                       QuicTime::Delta::Zero(), QuicTime::Zero());
+  QuicTime::Delta srtt = rtt_stats->smoothed_rtt();
+
+  // Send packet 1.
+  SendDataPacket(1, ENCRYPTION_INITIAL);
+  QuicTime packet1_sent_time = clock_.Now();
+
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(10));
+  // Send packets 2 and 3.
+  SendDataPacket(2, ENCRYPTION_HANDSHAKE);
+  QuicTime packet2_sent_time = clock_.Now();
+  SendDataPacket(3, ENCRYPTION_HANDSHAKE);
+  // Verify PTO is correctly set based on packet 1.
+  int pto_rttvar_multiplier =
+      GetQuicReloadableFlag(quic_default_on_pto) ? 2 : 4;
+  QuicTime::Delta expected_pto_delay =
+      srtt + pto_rttvar_multiplier * rtt_stats->mean_deviation() +
+      QuicTime::Delta::FromMilliseconds(kDefaultDelayedAckTimeMs);
+  EXPECT_EQ(packet1_sent_time + expected_pto_delay,
+            manager_.GetRetransmissionTime());
+
+  // Assume connection is going to send INITIAL ACK.
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(10));
+  EXPECT_CALL(notifier_, RetransmitFrames(_, _))
+      .WillOnce(WithArgs<1>(Invoke([this](TransmissionType type) {
+        RetransmitDataPacket(4, type, ENCRYPTION_INITIAL);
+      })));
+  manager_.RetransmitDataOfSpaceIfAny(INITIAL_DATA);
+  // Verify PTO is re-armed based on packet 2.
+  EXPECT_EQ(packet2_sent_time + expected_pto_delay,
+            manager_.GetRetransmissionTime());
+
+  // Connection is going to send another INITIAL ACK.
+  clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(10));
+  EXPECT_CALL(notifier_, RetransmitFrames(_, _))
+      .WillOnce(WithArgs<1>(Invoke([this](TransmissionType type) {
+        RetransmitDataPacket(5, type, ENCRYPTION_INITIAL);
+      })));
+  manager_.RetransmitDataOfSpaceIfAny(INITIAL_DATA);
+  // Verify PTO does not change.
+  EXPECT_EQ(packet2_sent_time + expected_pto_delay,
+            manager_.GetRetransmissionTime());
+}
+
+TEST_F(QuicSentPacketManagerTest,
+       AggressivePtoBeforeAnyRttSamplesAreAvailable) {
+  manager_.EnableMultiplePacketNumberSpacesSupport();
+  EXPECT_CALL(*send_algorithm_, PacingRate(_))
+      .WillRepeatedly(Return(QuicBandwidth::Zero()));
+  EXPECT_CALL(*send_algorithm_, GetCongestionWindow())
+      .WillRepeatedly(Return(10 * kDefaultTCPMSS));
+  RttStats* rtt_stats = const_cast<RttStats*>(manager_.GetRttStats());
+
+  QuicConfig config;
+  QuicTagVector options;
+  options.push_back(kAPTO);
+  QuicConfigPeer::SetReceivedConnectionOptions(&config, options);
+  EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _));
+  EXPECT_CALL(*network_change_visitor_, OnCongestionChange());
+  manager_.SetFromConfig(config);
+
+  // Send INITIAL 1.
+  SendDataPacket(1, ENCRYPTION_INITIAL);
+  // Verify retransmission timeout is expected.
+  EXPECT_EQ(clock_.Now() + 1.5 * rtt_stats->initial_rtt(),
+            manager_.GetRetransmissionTime());
 }
 
 }  // namespace

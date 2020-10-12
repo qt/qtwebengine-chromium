@@ -48,8 +48,7 @@
 #include "src/image/SkSurface_Gpu.h"
 #include "src/utils/SkUTF.h"
 
-#define ASSERT_SINGLE_OWNER \
-SkDEBUGCODE(GrSingleOwner::AutoEnforce debug_SingleOwner(fContext->priv().singleOwner());)
+#define ASSERT_SINGLE_OWNER GR_ASSERT_SINGLE_OWNER(fContext->priv().singleOwner())
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -125,7 +124,8 @@ SkGpuDevice::SkGpuDevice(GrContext* context,
         : INHERITED(make_info(renderTargetContext.get(), SkToBool(flags & kIsOpaque_Flag)),
                     renderTargetContext->surfaceProps())
         , fContext(SkRef(context))
-        , fRenderTargetContext(std::move(renderTargetContext)) {
+        , fRenderTargetContext(std::move(renderTargetContext))
+        , fClip(fRenderTargetContext->dimensions(), &this->cs(), &this->asMatrixProvider()) {
     if (flags & kNeedClear_Flag) {
         this->clearAll();
     }
@@ -209,8 +209,7 @@ void SkGpuDevice::clearAll() {
     GR_CREATE_TRACE_MARKER_CONTEXT("SkGpuDevice", "clearAll", fContext.get());
 
     SkIRect rect = SkIRect::MakeWH(this->width(), this->height());
-    fRenderTargetContext->clear(&rect, SK_PMColor4fTRANSPARENT,
-                                GrRenderTargetContext::CanClearFullscreen::kYes);
+    fRenderTargetContext->priv().clearAtLeast(rect, SK_PMColor4fTRANSPARENT);
 }
 
 void SkGpuDevice::replaceRenderTargetContext(std::unique_ptr<GrRenderTargetContext> rtc,
@@ -325,13 +324,12 @@ void SkGpuDevice::drawPoints(SkCanvas::PointMode mode,
 
     const SkMatrixProvider* matrixProvider = this;
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    SkTLazy<SkPostConcatMatrixProvider> postConcatMatrixProvider;
+    SkTLazy<SkPostTranslateMatrixProvider> postTranslateMatrixProvider;
     // This offsetting in device space matches the expectations of the Android framework for non-AA
     // points and lines.
     if (GrIsPrimTypeLines(primitiveType) || GrPrimitiveType::kPoints == primitiveType) {
         static const SkScalar kOffset = 0.063f; // Just greater than 1/16.
-        matrixProvider = postConcatMatrixProvider.init(*matrixProvider,
-                                                       SkMatrix::MakeTrans(kOffset, kOffset));
+        matrixProvider = postTranslateMatrixProvider.init(*matrixProvider, kOffset, kOffset);
     }
 #endif
 
@@ -630,8 +628,7 @@ void SkGpuDevice::drawPath(const SkPath& origSrcPath, const SkPaint& paint, bool
                                          paint, this->asMatrixProvider(), shape);
 }
 
-void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const SkPaint& paint,
-                              SkImage* clipImage, const SkMatrix& clipMatrix) {
+void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const SkPaint& paint) {
     SkASSERT(!paint.getMaskFilter());
 
     ASSERT_SINGLE_OWNER
@@ -687,55 +684,7 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const 
     const SkIRect& subset = result->subset();
     SkRect dstRect = SkRect::Make(SkIRect::MakeXYWH(left, top, subset.width(), subset.height()));
     SkRect srcRect = SkRect::Make(subset);
-    if (clipImage) {
-        // Add the image as a simple texture effect applied to coverage. Accessing content outside
-        // of the clip image should behave as if it were a decal (i.e. zero coverage). However, to
-        // limit pixels touched and hardware checks, we draw the clip image geometry to get the
-        // decal effect.
-        auto filter = paint.getFilterQuality() > kNone_SkFilterQuality
-                              ? GrSamplerState::Filter::kBilerp
-                              : GrSamplerState::Filter::kNearest;
-        GrSurfaceProxyView clipView = as_IB(clipImage)->refView(this->context(), GrMipMapped::kNo);
-        // Fold clip matrix into ctm
-        ctm.preConcat(clipMatrix);
-        SkMatrix inverseClipMatrix;
 
-        std::unique_ptr<GrFragmentProcessor> cfp;
-        if (clipView && ctm.invert(&inverseClipMatrix)) {
-            GrColorType srcColorType = SkColorTypeToGrColorType(clipImage->colorType());
-
-            cfp = GrTextureEffect::Make(std::move(clipView), clipImage->alphaType(),
-                                        inverseClipMatrix, filter);
-            if (srcColorType != GrColorType::kAlpha_8) {
-                cfp = GrFragmentProcessor::SwizzleOutput(std::move(cfp), GrSwizzle::AAAA());
-            }
-        }
-
-        if (cfp) {
-            // If the grPaint already has coverage, this adds an additional stage that multiples
-            // the image's alpha channel with the prior coverage.
-            grPaint.addCoverageFragmentProcessor(std::move(cfp));
-
-            // Undo the offset that was needed for shader coord transforms to get the transform for
-            // the actual drawn geometry.
-            ctm.postTranslate(SkIntToScalar(left), SkIntToScalar(top));
-            inverseClipMatrix.preTranslate(-SkIntToScalar(left), -SkIntToScalar(top));
-            SkRect clipGeometry = SkRect::MakeWH(clipImage->width(), clipImage->height());
-            if (!clipGeometry.contains(inverseClipMatrix.mapRect(dstRect))) {
-                // Draw the clip geometry since it is smaller, using dstRect as an extra scissor
-                SkClipStack clip(this->cs());
-                clip.clipDevRect(SkIRect::MakeXYWH(left, top, subset.width(), subset.height()),
-                                 SkClipOp::kIntersect);
-                SkMatrix local = SkMatrix::Concat(SkMatrix::MakeRectToRect(
-                        dstRect, srcRect, SkMatrix::kFill_ScaleToFit), ctm);
-                fRenderTargetContext->fillRectWithLocalMatrix(GrClipStackClip(&clip),
-                        std::move(grPaint), GrAA(paint.isAntiAlias()), ctm, clipGeometry, local);
-                return;
-            }
-            // Else fall through and draw the subset since that is contained in the clip geometry
-        }
-        // Else some issue configuring the coverage FP, so just draw without the clip mask image
-    }
     // Draw directly in screen space, possibly with an extra coverage processor
     fRenderTargetContext->fillRectToRect(this->clip(), std::move(grPaint),
             GrAA(paint.isAntiAlias()), SkMatrix::I(), dstRect, srcRect);
@@ -844,7 +793,7 @@ void SkGpuDevice::drawDevice(SkBaseDevice* device,
         return;
     }
 
-    this->drawSpecial(srcImg.get(), left, top, paint, nullptr, SkMatrix::I());
+    this->drawSpecial(srcImg.get(), left, top, paint);
 }
 
 void SkGpuDevice::drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
@@ -941,12 +890,11 @@ static bool init_vertices_paint(GrContext* context,
                                 const SkPaint& skPaint,
                                 const SkMatrixProvider& matrixProvider,
                                 SkBlendMode bmode,
-                                bool hasTexs,
                                 bool hasColors,
                                 GrPaint* grPaint) {
-    if (hasTexs && skPaint.getShader()) {
+    if (skPaint.getShader()) {
         if (hasColors) {
-            // When there are texs and colors the shader and colors are combined using bmode.
+            // When there are colors and a shader, the shader and colors are combined using bmode.
             return SkPaintToGrPaintWithXfermode(context, colorInfo, skPaint, matrixProvider, bmode,
                                                 grPaint);
         } else {
@@ -955,12 +903,11 @@ static bool init_vertices_paint(GrContext* context,
         }
     } else {
         if (hasColors) {
-            // We have colors, but either have no shader or no texture coords (which implies that
-            // we should ignore the shader).
+            // We have colors, but no shader.
             return SkPaintToGrPaintWithPrimitiveColor(context, colorInfo, skPaint, matrixProvider,
                                                       grPaint);
         } else {
-            // No colors and no shaders. Just draw with the paint color.
+            // No colors and no shader. Just draw with the paint color.
             return SkPaintToGrPaintNoShader(context, colorInfo, skPaint, matrixProvider, grPaint);
         }
     }
@@ -976,13 +923,9 @@ void SkGpuDevice::drawVertices(const SkVertices* vertices, SkBlendMode mode, con
     const SkRuntimeEffect* effect =
             paint.getShader() ? as_SB(paint.getShader())->asRuntimeEffect() : nullptr;
 
-    // Pretend that we have tex coords when using custom per-vertex data. The shader is going to
-    // use those (rather than local coords), but our paint conversion remains the same.
     GrPaint grPaint;
-    bool hasColors = info.hasColors();
-    bool hasTexs = info.hasTexCoords() || info.hasCustomData();
     if (!init_vertices_paint(fContext.get(), fRenderTargetContext->colorInfo(), paint,
-                             this->asMatrixProvider(), mode, hasTexs, hasColors, &grPaint)) {
+                             this->asMatrixProvider(), mode, info.hasColors(), &grPaint)) {
         return;
     }
     fRenderTargetContext->drawVertices(this->clip(), std::move(grPaint), this->asMatrixProvider(),
@@ -1067,14 +1010,16 @@ void SkGpuDevice::drawDrawable(SkDrawable* drawable, const SkMatrix* matrix, SkC
 ///////////////////////////////////////////////////////////////////////////////
 
 void SkGpuDevice::flush() {
-    this->flush(SkSurface::BackendSurfaceAccess::kNoAccess, GrFlushInfo());
+    this->flush(SkSurface::BackendSurfaceAccess::kNoAccess, GrFlushInfo(), nullptr);
+    this->context()->submit();
 }
 
 GrSemaphoresSubmitted SkGpuDevice::flush(SkSurface::BackendSurfaceAccess access,
-                                         const GrFlushInfo& info) {
+                                         const GrFlushInfo& info,
+                                         const GrBackendSurfaceMutableState* newState) {
     ASSERT_SINGLE_OWNER
 
-    return fRenderTargetContext->flush(access, info);
+    return fRenderTargetContext->flush(access, info, newState);
 }
 
 bool SkGpuDevice::wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) {
@@ -1143,7 +1088,6 @@ bool SkGpuDevice::android_utils_clipWithStencil() {
     }
     GrPaint grPaint;
     grPaint.setXPFactory(GrDisableColorXPFactory::Get());
-    GrNoClip noClip;
     static constexpr GrUserStencilSettings kDrawToStencil(
         GrUserStencilSettings::StaticInit<
             0x1,
@@ -1153,7 +1097,7 @@ bool SkGpuDevice::android_utils_clipWithStencil() {
             GrUserStencilOp::kReplace,
             0x1>()
     );
-    rtc->drawRegion(noClip, std::move(grPaint), GrAA::kNo, SkMatrix::I(), clipRegion,
+    rtc->drawRegion(nullptr, std::move(grPaint), GrAA::kNo, SkMatrix::I(), clipRegion,
                     GrStyle::SimpleFill(), &kDrawToStencil);
     return true;
 }

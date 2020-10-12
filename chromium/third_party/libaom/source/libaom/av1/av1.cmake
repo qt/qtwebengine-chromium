@@ -148,6 +148,8 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/encode_strategy.h"
             "${AOM_ROOT}/av1/encoder/encoder.c"
             "${AOM_ROOT}/av1/encoder/encoder.h"
+            "${AOM_ROOT}/av1/encoder/encoder_alloc.h"
+            "${AOM_ROOT}/av1/encoder/encoder_utils.h"
             "${AOM_ROOT}/av1/encoder/encodetxb.c"
             "${AOM_ROOT}/av1/encoder/encodetxb.h"
             "${AOM_ROOT}/av1/encoder/ethread.c"
@@ -158,6 +160,8 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/firstpass.h"
             "${AOM_ROOT}/av1/encoder/global_motion.c"
             "${AOM_ROOT}/av1/encoder/global_motion.h"
+            "${AOM_ROOT}/av1/encoder/global_motion_facade.c"
+            "${AOM_ROOT}/av1/encoder/global_motion_facade.h"
             "${AOM_ROOT}/av1/encoder/gop_structure.c"
             "${AOM_ROOT}/av1/encoder/gop_structure.h"
             "${AOM_ROOT}/av1/encoder/grain_test_vectors.h"
@@ -197,6 +201,7 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/ransac.h"
             "${AOM_ROOT}/av1/encoder/ratectrl.c"
             "${AOM_ROOT}/av1/encoder/ratectrl.h"
+            "${AOM_ROOT}/av1/encoder/rc_utils.h"
             "${AOM_ROOT}/av1/encoder/rd.c"
             "${AOM_ROOT}/av1/encoder/rd.h"
             "${AOM_ROOT}/av1/encoder/rdopt.c"
@@ -210,6 +215,8 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/segmentation.h"
             "${AOM_ROOT}/av1/encoder/speed_features.c"
             "${AOM_ROOT}/av1/encoder/speed_features.h"
+            "${AOM_ROOT}/av1/encoder/superres_scale.c"
+            "${AOM_ROOT}/av1/encoder/superres_scale.h"
             "${AOM_ROOT}/av1/encoder/svc_layercontext.c"
             "${AOM_ROOT}/av1/encoder/svc_layercontext.h"
             "${AOM_ROOT}/av1/encoder/temporal_filter.c"
@@ -222,6 +229,7 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/tx_search.h"
             "${AOM_ROOT}/av1/encoder/intra_mode_search.c"
             "${AOM_ROOT}/av1/encoder/intra_mode_search.h"
+            "${AOM_ROOT}/av1/encoder/intra_mode_search_utils.h"
             "${AOM_ROOT}/av1/encoder/wedge_utils.c"
             "${AOM_ROOT}/av1/encoder/var_based_part.c"
             "${AOM_ROOT}/av1/encoder/var_based_part.h"
@@ -369,7 +377,11 @@ endif()
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_NEON
             "${AOM_ROOT}/av1/encoder/arm/neon/quantize_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/av1_error_neon.c")
+            "${AOM_ROOT}/av1/encoder/arm/neon/picksrt_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/neon/av1_error_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/neon/encodetxb_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/neon/av1_fwd_txfm2d_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/neon/highbd_fwd_txfm_neon.c")
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_MSA
             "${AOM_ROOT}/av1/encoder/mips/msa/error_msa.c"
@@ -387,10 +399,12 @@ list(APPEND AOM_AV1_COMMON_INTRIN_NEON
             "${AOM_ROOT}/av1/common/arm/blend_a64_hmask_neon.c"
             "${AOM_ROOT}/av1/common/arm/blend_a64_vmask_neon.c"
             "${AOM_ROOT}/av1/common/arm/reconinter_neon.c"
+            "${AOM_ROOT}/av1/common/arm/reconintra_neon.c"
             "${AOM_ROOT}/av1/common/arm/wiener_convolve_neon.c"
             "${AOM_ROOT}/av1/common/arm/selfguided_neon.c"
             "${AOM_ROOT}/av1/common/arm/av1_inv_txfm_neon.c"
             "${AOM_ROOT}/av1/common/arm/av1_inv_txfm_neon.h"
+            "${AOM_ROOT}/av1/common/arm/highbd_inv_txfm_neon.c"
             "${AOM_ROOT}/av1/common/arm/warp_plane_neon.c"
             "${AOM_ROOT}/av1/common/cdef_block_neon.c")
 
@@ -548,10 +562,12 @@ function(setup_av1_targets)
                                     "AOM_AV1_COMMON_INTRIN_NEON")
     endif()
 
-    if(AOM_AV1_ENCODER_INTRIN_NEON)
-      add_intrinsics_object_library("${AOM_NEON_INTRIN_FLAG}" "neon"
-                                    "aom_av1_encoder"
-                                    "AOM_AV1_ENCODER_INTRIN_NEON")
+    if(CONFIG_AV1_ENCODER)
+      if(AOM_AV1_ENCODER_INTRIN_NEON)
+        add_intrinsics_object_library("${AOM_NEON_INTRIN_FLAG}" "neon"
+                                      "aom_av1_encoder"
+                                      "AOM_AV1_ENCODER_INTRIN_NEON")
+      endif()
     endif()
   endif()
 

@@ -20,9 +20,8 @@
 #ifndef FTLCDFIL_H_
 #define FTLCDFIL_H_
 
-#include <ft2build.h>
-#include FT_FREETYPE_H
-#include FT_PARAMETER_TAGS_H
+#include <freetype/freetype.h>
+#include <freetype/ftparams.h>
 
 #ifdef FREETYPE_H
 #error "freetype.h of FreeType 1 has been loaded!"

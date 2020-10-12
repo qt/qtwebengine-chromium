@@ -53,6 +53,12 @@ export interface AddTrackArgs {
   config: {};
 }
 
+export interface PostedTrace {
+  title: string;
+  url?: string;
+  buffer: ArrayBuffer;
+}
+
 function clearTraceState(state: StateDraft) {
   const nextId = state.nextId;
   const recordConfig = state.recordConfig;
@@ -91,13 +97,13 @@ export const StateActions = {
     state.route = `/viewer`;
   },
 
-  openTraceFromBuffer(state: StateDraft, args: {buffer: ArrayBuffer}): void {
+  openTraceFromBuffer(state: StateDraft, args: PostedTrace): void {
     clearTraceState(state);
     const id = `${state.nextId++}`;
     state.engines[id] = {
       id,
       ready: false,
-      source: {type: 'ARRAY_BUFFER', buffer: args.buffer},
+      source: {type: 'ARRAY_BUFFER', ...args},
     };
     state.route = `/viewer`;
   },
@@ -497,6 +503,16 @@ export const StateActions = {
     };
   },
 
+  selectCpuProfileSample(
+      state: StateDraft, args: {id: number, utid: number, ts: number}): void {
+    state.currentSelection = {
+      kind: 'CPU_PROFILE_SAMPLE',
+      id: args.id,
+      utid: args.utid,
+      ts: args.ts,
+    };
+  },
+
   expandHeapProfileFlamegraph(
       state: StateDraft, args: {expandedCallsite?: CallsiteInfo}): void {
     if (state.currentHeapProfileFlamegraph === null) return;
@@ -611,6 +627,10 @@ export const StateActions = {
     state.recordingStatus = args.status;
     state.lastRecordingError = undefined;
   },
+
+  setAnalyzePageQuery(state: StateDraft, args: {query: string}): void {
+    state.analyzePageQuery = args.query;
+  }
 };
 
 // When we are on the frontend side, we don't really want to execute the

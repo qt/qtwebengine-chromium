@@ -38,12 +38,13 @@ bool SkModeColorFilter::onAsAColorMode(SkColor* color, SkBlendMode* mode) const 
     return true;
 }
 
-uint32_t SkModeColorFilter::getFlags() const {
+uint32_t SkModeColorFilter::onGetFlags() const {
     uint32_t flags = 0;
     switch (fMode) {
         case SkBlendMode::kDst:      //!< [Da, Dc]
         case SkBlendMode::kSrcATop:  //!< [Da, Sc * Da + (1 - Sa) * Dc]
             flags |= kAlphaUnchanged_Flag;
+            break;
         default:
             break;
     }
@@ -93,7 +94,8 @@ std::unique_ptr<GrFragmentProcessor> SkModeColorFilter::asFragmentProcessor(
         return nullptr;
     }
 
-    auto constFP = GrConstColorProcessor::Make(SkColorToPMColor4f(fColor, dstColorInfo),
+    auto constFP = GrConstColorProcessor::Make(/*inputFP=*/nullptr,
+                                               SkColorToPMColor4f(fColor, dstColorInfo),
                                                GrConstColorProcessor::InputMode::kIgnore);
     auto fp = GrXfermodeFragmentProcessor::MakeFromSrcProcessor(std::move(constFP), fMode);
     if (!fp) {

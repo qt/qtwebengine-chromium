@@ -69,8 +69,10 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
     return;
   }
 
+  PartitionSearchInfo *part_info = &x->part_search_info;
+
   // Precompute the CNN part and cache the result in MACROBLOCK
-  if (bsize == BLOCK_64X64 && !x->cnn_output_valid) {
+  if (bsize == BLOCK_64X64 && !part_info->cnn_output_valid) {
     aom_clear_system_state();
     const CNN_CONFIG *cnn_config = &av1_intra_mode_cnn_partition_cnn_config;
 
@@ -83,7 +85,7 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
     float *output_buffer[CNN_TOT_OUT_CH];
 
     float **cur_output_buf = output_buffer;
-    float *curr_buf_ptr = x->cnn_buffer;
+    float *curr_buf_ptr = part_info->cnn_buffer;
     for (int output_idx = 0; output_idx < num_outputs; output_idx++) {
       const int num_chs = out_chs[output_idx];
       const int ch_size = output_dims[output_idx] * output_dims[output_idx];
@@ -106,9 +108,10 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
     const int bit_depth = xd->bd;
     const int dc_q =
         av1_dc_quant_QTX(x->qindex, 0, bit_depth) >> (bit_depth - 8);
-    x->log_q = logf(1.0f + (float)(dc_q * dc_q) / 256.0f);
-    x->log_q = (x->log_q - av1_intra_mode_cnn_partition_mean[0]) /
-               av1_intra_mode_cnn_partition_std[0];
+    part_info->log_q = logf(1.0f + (float)(dc_q * dc_q) / 256.0f);
+    part_info->log_q =
+        (part_info->log_q - av1_intra_mode_cnn_partition_mean[0]) /
+        av1_intra_mode_cnn_partition_std[0];
 
     const int width = 65, height = 65,
               stride = x->plane[AOM_PLANE_Y].src.stride;
@@ -128,10 +131,10 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
                                     &thread_data, &output);
     }
 
-    x->cnn_output_valid = 1;
+    part_info->cnn_output_valid = 1;
   }
 
-  if (!x->cnn_output_valid) {
+  if (!part_info->cnn_output_valid) {
     return;
   }
 
@@ -149,7 +152,7 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
   float dnn_features[100];
   float logits[4] = { 0.0f };
 
-  const float *branch_0 = x->cnn_buffer;
+  const float *branch_0 = part_info->cnn_buffer;
   const float *branch_1 = branch_0 + CNN_BRANCH_0_OUT_SIZE;
   const float *branch_2 = branch_1 + CNN_BRANCH_1_OUT_SIZE;
   const float *branch_3 = branch_2 + CNN_BRANCH_2_OUT_SIZE;
@@ -166,7 +169,7 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
         dnn_features[f_idx++] = branch_1[lin_idx + ch_idx * spa_stride];
       }
     }
-    dnn_features[f_idx++] = x->log_q;
+    dnn_features[f_idx++] = part_info->log_q;
   } else if (bsize == BLOCK_32X32) {
     int f_idx = 0;
     for (int idx = 0; idx < CNN_BRANCH_0_OUT_CH; idx++) {
@@ -178,7 +181,7 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
     for (int ch_idx = 0; ch_idx < CNN_BRANCH_1_OUT_CH; ch_idx++) {
       dnn_features[f_idx++] = branch_1[curr_lin_idx + ch_idx * spa_stride];
     }
-    dnn_features[f_idx++] = x->log_q;
+    dnn_features[f_idx++] = part_info->log_q;
   } else if (bsize == BLOCK_16X16) {
     int f_idx = 0;
     const int prev_quad_idx = (quad_tree_idx - 1) / 4;
@@ -193,7 +196,7 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
     for (int ch_idx = 0; ch_idx < CNN_BRANCH_2_OUT_CH; ch_idx++) {
       dnn_features[f_idx++] = branch_2[curr_lin_idx + ch_idx * spa_stride];
     }
-    dnn_features[f_idx++] = x->log_q;
+    dnn_features[f_idx++] = part_info->log_q;
   } else if (bsize == BLOCK_8X8) {
     int f_idx = 0;
     const int prev_quad_idx = (quad_tree_idx - 1) / 4;
@@ -208,7 +211,7 @@ void av1_intra_mode_cnn_partition(const AV1_COMMON *const cm, MACROBLOCK *x,
     for (int ch_idx = 0; ch_idx < CNN_BRANCH_3_OUT_CH; ch_idx++) {
       dnn_features[f_idx++] = branch_3[curr_lin_idx + ch_idx * spa_stride];
     }
-    dnn_features[f_idx++] = x->log_q;
+    dnn_features[f_idx++] = part_info->log_q;
   } else {
     assert(0 && "Invalid bsize in intra_cnn partition");
   }
@@ -499,8 +502,8 @@ static AOM_INLINE void simple_motion_search_prune_part_features(
 
 void av1_simple_motion_search_prune_rect(
     AV1_COMP *const cpi, MACROBLOCK *x, SIMPLE_MOTION_DATA_TREE *sms_tree,
-    int mi_row, int mi_col, BLOCK_SIZE bsize, int *partition_horz_allowed,
-    int *partition_vert_allowed, int *prune_horz, int *prune_vert) {
+    int mi_row, int mi_col, BLOCK_SIZE bsize, int partition_horz_allowed,
+    int partition_vert_allowed, int *prune_horz, int *prune_vert) {
   aom_clear_system_state();
   const AV1_COMMON *const cm = &cpi->common;
   const int bsize_idx = convert_bsize_to_idx(bsize);
@@ -548,7 +551,7 @@ void av1_simple_motion_search_prune_rect(
   // Determine if we should prune rectangular partitions.
   if (cpi->sf.part_sf.simple_motion_search_prune_rect &&
       !frame_is_intra_only(cm) &&
-      (*partition_horz_allowed || *partition_vert_allowed) &&
+      (partition_horz_allowed || partition_vert_allowed) &&
       bsize >= BLOCK_8X8 && !av1_superres_scaled(cm)) {
     *prune_horz = probs[PARTITION_HORZ] <= prune_thresh;
     *prune_vert = probs[PARTITION_VERT] <= prune_thresh;
@@ -713,7 +716,8 @@ void av1_get_max_min_partition_features(AV1_COMP *const cpi, MACROBLOCK *x,
   assert(f_idx == FEATURE_SIZE_MAX_MIN_PART_PRED);
 }
 
-BLOCK_SIZE av1_predict_max_partition(AV1_COMP *const cpi, MACROBLOCK *const x,
+BLOCK_SIZE av1_predict_max_partition(const AV1_COMP *const cpi,
+                                     const MACROBLOCK *const x,
                                      const float *features) {
   float scores[MAX_NUM_CLASSES_MAX_MIN_PART_PRED] = { 0.0f },
         probs[MAX_NUM_CLASSES_MAX_MIN_PART_PRED] = { 0.0f };
@@ -749,7 +753,7 @@ BLOCK_SIZE av1_predict_max_partition(AV1_COMP *const cpi, MACROBLOCK *const x,
   } else if (cpi->sf.part_sf.auto_max_partition_based_on_simple_motion ==
              ADAPT_PRED) {
     const BLOCK_SIZE sb_size = cpi->common.seq_params.sb_size;
-    MACROBLOCKD *const xd = &x->e_mbd;
+    const MACROBLOCKD *const xd = &x->e_mbd;
     // TODO(debargha): x->source_variance is unavailable at this point,
     // so compute. The redundant recomputation later can be removed.
     const unsigned int source_variance =
@@ -1088,13 +1092,14 @@ void av1_ml_prune_ab_partition(BLOCK_SIZE bsize, int part_ctx, int var_ctx,
 // Use a ML model to predict if horz4 and vert4 should be considered.
 void av1_ml_prune_4_partition(const AV1_COMP *const cpi, MACROBLOCK *const x,
                               BLOCK_SIZE bsize, int part_ctx, int64_t best_rd,
-                              int64_t horz_rd[2], int64_t vert_rd[2],
-                              int64_t split_rd[4],
+                              int64_t rect_part_rd[2][2], int64_t split_rd[4],
                               int *const partition_horz4_allowed,
                               int *const partition_vert4_allowed,
                               unsigned int pb_source_variance, int mi_row,
                               int mi_col) {
   if (best_rd >= 1000000000) return;
+  int64_t *horz_rd = rect_part_rd[0];
+  int64_t *vert_rd = rect_part_rd[1];
   const NN_CONFIG *nn_config = NULL;
   switch (bsize) {
     case BLOCK_16X16: nn_config = &av1_4_partition_nnconfig_16; break;
@@ -1284,4 +1289,274 @@ int av1_ml_predict_breakout(const AV1_COMP *const cpi, BLOCK_SIZE bsize,
   return (int)(score * 100) >= thresh;
 }
 #undef FEATURES
+
+void av1_prune_partitions_before_search(
+    AV1_COMP *const cpi, MACROBLOCK *const x, int mi_row, int mi_col,
+    BLOCK_SIZE bsize, SIMPLE_MOTION_DATA_TREE *const sms_tree,
+    int *partition_none_allowed, int *partition_horz_allowed,
+    int *partition_vert_allowed, int *do_rectangular_split,
+    int *do_square_split, int *prune_horz, int *prune_vert) {
+  const AV1_COMMON *const cm = &cpi->common;
+  const CommonModeInfoParams *const mi_params = &cm->mi_params;
+
+  // A CNN-based speed feature pruning out either split or all non-split
+  // partition in INTRA frame coding.
+  const int try_intra_cnn_split =
+      !cpi->is_screen_content_type && frame_is_intra_only(cm) &&
+      cpi->sf.part_sf.intra_cnn_split &&
+      cm->seq_params.sb_size >= BLOCK_64X64 && bsize <= BLOCK_64X64 &&
+      bsize >= BLOCK_8X8 &&
+      mi_row + mi_size_high[bsize] <= mi_params->mi_rows &&
+      mi_col + mi_size_wide[bsize] <= mi_params->mi_cols;
+
+  if (try_intra_cnn_split) {
+    av1_intra_mode_cnn_partition(
+        &cpi->common, x, bsize, x->part_search_info.quad_tree_idx,
+        partition_none_allowed, partition_horz_allowed, partition_vert_allowed,
+        do_rectangular_split, do_square_split);
+  }
+
+  // Use simple motion search to prune out split or non-split partitions. This
+  // must be done prior to PARTITION_SPLIT to propagate the initial mvs to a
+  // smaller blocksize.
+  const int try_split_only =
+      !cpi->is_screen_content_type &&
+      cpi->sf.part_sf.simple_motion_search_split && *do_square_split &&
+      bsize >= BLOCK_8X8 &&
+      mi_row + mi_size_high[bsize] <= mi_params->mi_rows &&
+      mi_col + mi_size_wide[bsize] <= mi_params->mi_cols &&
+      !frame_is_intra_only(cm) && !av1_superres_scaled(cm);
+
+  if (try_split_only) {
+    av1_simple_motion_search_based_split(
+        cpi, x, sms_tree, mi_row, mi_col, bsize, partition_none_allowed,
+        partition_horz_allowed, partition_vert_allowed, do_rectangular_split,
+        do_square_split);
+  }
+
+  // Use simple motion search to prune out rectangular partition in some
+  // direction. The results are stored in prune_horz and prune_vert in order to
+  // bypass future related pruning checks if a pruning decision has been made.
+  const int try_prune_rect =
+      !cpi->is_screen_content_type &&
+      cpi->sf.part_sf.simple_motion_search_prune_rect &&
+      !frame_is_intra_only(cm) && *do_rectangular_split &&
+      (*do_square_split || *partition_none_allowed ||
+       (*prune_horz && *prune_vert)) &&
+      (*partition_horz_allowed || *partition_vert_allowed) &&
+      bsize >= BLOCK_8X8;
+
+  if (try_prune_rect) {
+    av1_simple_motion_search_prune_rect(
+        cpi, x, sms_tree, mi_row, mi_col, bsize, *partition_horz_allowed,
+        *partition_vert_allowed, prune_horz, prune_vert);
+  }
+}
+
+#ifndef NDEBUG
+static AOM_INLINE int is_bsize_square(BLOCK_SIZE bsize) {
+  return block_size_wide[bsize] == block_size_high[bsize];
+}
+#endif  // NDEBUG
+
+void av1_prune_partitions_by_max_min_bsize(
+    SuperBlockEnc *sb_enc, BLOCK_SIZE bsize, int is_not_edge_block,
+    int *partition_none_allowed, int *partition_horz_allowed,
+    int *partition_vert_allowed, int *do_square_split) {
+  assert(is_bsize_square(sb_enc->max_partition_size));
+  assert(is_bsize_square(sb_enc->min_partition_size));
+  assert(sb_enc->min_partition_size <= sb_enc->max_partition_size);
+  assert(is_bsize_square(bsize));
+  const int max_partition_size_1d = block_size_wide[sb_enc->max_partition_size];
+  const int min_partition_size_1d = block_size_wide[sb_enc->min_partition_size];
+  const int bsize_1d = block_size_wide[bsize];
+  assert(min_partition_size_1d <= max_partition_size_1d);
+  const int is_le_min_sq_part = bsize_1d <= min_partition_size_1d;
+  const int is_gt_max_sq_part = bsize_1d > max_partition_size_1d;
+  if (is_gt_max_sq_part) {
+    // If current block size is larger than max, only allow split.
+    *partition_none_allowed = 0;
+    *partition_horz_allowed = 0;
+    *partition_vert_allowed = 0;
+    *do_square_split = 1;
+  } else if (is_le_min_sq_part) {
+    // If current block size is less or equal to min, only allow none if valid
+    // block large enough; only allow split otherwise.
+    *partition_horz_allowed = 0;
+    *partition_vert_allowed = 0;
+    // only disable square split when current block is not at the picture
+    // boundary. otherwise, inherit the square split flag from previous logic
+    if (is_not_edge_block) *do_square_split = 0;
+    *partition_none_allowed = !(*do_square_split);
+  }
+}
+
+// Decide whether to evaluate the AB partition specified by part_type based on
+// split and HORZ/VERT info
+int evaluate_ab_partition_based_on_split(
+    const PC_TREE *pc_tree, PARTITION_TYPE rect_part,
+    const RD_RECT_PART_WIN_INFO *rect_part_win_info, int qindex, int split_idx1,
+    int split_idx2) {
+  int num_win = 0;
+  // Threshold for number of winners
+  // Conservative pruning for high quantizers
+  const int num_win_thresh = AOMMIN(3 * (2 * (MAXQ - qindex) / MAXQ), 3);
+  int sub_part_win = (rect_part_win_info == NULL)
+                         ? (pc_tree->partitioning == rect_part)
+                         : (rect_part == PARTITION_HORZ)
+                               ? rect_part_win_info->rect_part_win[HORZ]
+                               : rect_part_win_info->rect_part_win[VERT];
+  num_win += (sub_part_win) ? 1 : 0;
+  if (pc_tree->split[split_idx1]) {
+    num_win +=
+        (pc_tree->split[split_idx1]->partitioning == PARTITION_NONE) ? 1 : 0;
+  } else {
+    num_win += 1;
+  }
+  if (pc_tree->split[split_idx2]) {
+    num_win +=
+        (pc_tree->split[split_idx2]->partitioning == PARTITION_NONE) ? 1 : 0;
+  } else {
+    num_win += 1;
+  }
+  if (num_win < num_win_thresh) {
+    return 0;
+  }
+  return 1;
+}
+
+void av1_prune_ab_partitions(
+    const AV1_COMP *cpi, const MACROBLOCK *x, const PC_TREE *pc_tree,
+    BLOCK_SIZE bsize, int pb_source_variance, int64_t best_rdcost,
+    int64_t rect_part_rd[2][2], int64_t split_rd[4],
+    const RD_RECT_PART_WIN_INFO *rect_part_win_info, int ext_partition_allowed,
+    int partition_horz_allowed, int partition_vert_allowed,
+    int *horza_partition_allowed, int *horzb_partition_allowed,
+    int *verta_partition_allowed, int *vertb_partition_allowed) {
+  int64_t *horz_rd = rect_part_rd[0];
+  int64_t *vert_rd = rect_part_rd[1];
+  const PartitionCfg *const part_cfg = &cpi->oxcf.part_cfg;
+  // The standard AB partitions are allowed initially if ext-partition-types are
+  // allowed.
+  int horzab_partition_allowed =
+      ext_partition_allowed & part_cfg->enable_ab_partitions;
+  int vertab_partition_allowed =
+      ext_partition_allowed & part_cfg->enable_ab_partitions;
+
+  // Pruning: pruning out AB partitions on one main direction based on the
+  // current best partition and source variance.
+  if (cpi->sf.part_sf.prune_ext_partition_types_search_level) {
+    if (cpi->sf.part_sf.prune_ext_partition_types_search_level == 1) {
+      // TODO(debargha,huisu@google.com): may need to tune the threshold for
+      // pb_source_variance.
+      horzab_partition_allowed &= (pc_tree->partitioning == PARTITION_HORZ ||
+                                   (pc_tree->partitioning == PARTITION_NONE &&
+                                    pb_source_variance < 32) ||
+                                   pc_tree->partitioning == PARTITION_SPLIT);
+      vertab_partition_allowed &= (pc_tree->partitioning == PARTITION_VERT ||
+                                   (pc_tree->partitioning == PARTITION_NONE &&
+                                    pb_source_variance < 32) ||
+                                   pc_tree->partitioning == PARTITION_SPLIT);
+    } else {
+      horzab_partition_allowed &= (pc_tree->partitioning == PARTITION_HORZ ||
+                                   pc_tree->partitioning == PARTITION_SPLIT);
+      vertab_partition_allowed &= (pc_tree->partitioning == PARTITION_VERT ||
+                                   pc_tree->partitioning == PARTITION_SPLIT);
+    }
+    horz_rd[0] = (horz_rd[0] < INT64_MAX ? horz_rd[0] : 0);
+    horz_rd[1] = (horz_rd[1] < INT64_MAX ? horz_rd[1] : 0);
+    vert_rd[0] = (vert_rd[0] < INT64_MAX ? vert_rd[0] : 0);
+    vert_rd[1] = (vert_rd[1] < INT64_MAX ? vert_rd[1] : 0);
+    split_rd[0] = (split_rd[0] < INT64_MAX ? split_rd[0] : 0);
+    split_rd[1] = (split_rd[1] < INT64_MAX ? split_rd[1] : 0);
+    split_rd[2] = (split_rd[2] < INT64_MAX ? split_rd[2] : 0);
+    split_rd[3] = (split_rd[3] < INT64_MAX ? split_rd[3] : 0);
+  }
+
+  // Pruning: pruning out horz_a or horz_b if the combined rdcost of its
+  // subblocks estimated from previous partitions is much higher than the best
+  // rd so far.
+  *horza_partition_allowed = horzab_partition_allowed;
+  *horzb_partition_allowed = horzab_partition_allowed;
+  if (cpi->sf.part_sf.prune_ext_partition_types_search_level) {
+    const int64_t horz_a_rd = horz_rd[1] + split_rd[0] + split_rd[1];
+    const int64_t horz_b_rd = horz_rd[0] + split_rd[2] + split_rd[3];
+    switch (cpi->sf.part_sf.prune_ext_partition_types_search_level) {
+      case 1:
+        *horza_partition_allowed &= (horz_a_rd / 16 * 14 < best_rdcost);
+        *horzb_partition_allowed &= (horz_b_rd / 16 * 14 < best_rdcost);
+        break;
+      case 2:
+      default:
+        *horza_partition_allowed &= (horz_a_rd / 16 * 15 < best_rdcost);
+        *horzb_partition_allowed &= (horz_b_rd / 16 * 15 < best_rdcost);
+        break;
+    }
+  }
+
+  // Pruning: pruning out vert_a or vert_b if the combined rdcost of its
+  // subblocks estimated from previous partitions is much higher than the best
+  // rd so far.
+  *verta_partition_allowed = vertab_partition_allowed;
+  *vertb_partition_allowed = vertab_partition_allowed;
+  if (cpi->sf.part_sf.prune_ext_partition_types_search_level) {
+    const int64_t vert_a_rd = vert_rd[1] + split_rd[0] + split_rd[2];
+    const int64_t vert_b_rd = vert_rd[0] + split_rd[1] + split_rd[3];
+    switch (cpi->sf.part_sf.prune_ext_partition_types_search_level) {
+      case 1:
+        *verta_partition_allowed &= (vert_a_rd / 16 * 14 < best_rdcost);
+        *vertb_partition_allowed &= (vert_b_rd / 16 * 14 < best_rdcost);
+        break;
+      case 2:
+      default:
+        *verta_partition_allowed &= (vert_a_rd / 16 * 15 < best_rdcost);
+        *vertb_partition_allowed &= (vert_b_rd / 16 * 15 < best_rdcost);
+        break;
+    }
+  }
+
+  // Pruning: pruning out some ab partitions using a DNN taking rd costs of
+  // sub-blocks from previous basic partition types.
+  if (cpi->sf.part_sf.ml_prune_ab_partition && ext_partition_allowed &&
+      partition_horz_allowed && partition_vert_allowed) {
+    // TODO(huisu@google.com): x->source_variance may not be the current
+    // block's variance. The correct one to use is pb_source_variance. Need to
+    // re-train the model to fix it.
+    av1_ml_prune_ab_partition(bsize, pc_tree->partitioning,
+                              get_unsigned_bits(x->source_variance),
+                              best_rdcost, horz_rd, vert_rd, split_rd,
+                              horza_partition_allowed, horzb_partition_allowed,
+                              verta_partition_allowed, vertb_partition_allowed);
+  }
+
+  // Disable ab partitions if they are disabled by the encoder parameter.
+  *horza_partition_allowed &= part_cfg->enable_ab_partitions;
+  *horzb_partition_allowed &= part_cfg->enable_ab_partitions;
+  *verta_partition_allowed &= part_cfg->enable_ab_partitions;
+  *vertb_partition_allowed &= part_cfg->enable_ab_partitions;
+
+  // Pruning: pruning AB partitions based on the number of horz/vert wins
+  // in the current block and sub-blocks in PARTITION_SPLIT.
+  if (cpi->sf.part_sf.prune_ab_partition_using_split_info &&
+      *horza_partition_allowed) {
+    *horza_partition_allowed &= evaluate_ab_partition_based_on_split(
+        pc_tree, PARTITION_HORZ, rect_part_win_info, x->qindex, 0, 1);
+  }
+  if (cpi->sf.part_sf.prune_ab_partition_using_split_info &&
+      *horzb_partition_allowed) {
+    *horzb_partition_allowed &= evaluate_ab_partition_based_on_split(
+        pc_tree, PARTITION_HORZ, rect_part_win_info, x->qindex, 2, 3);
+  }
+  if (cpi->sf.part_sf.prune_ab_partition_using_split_info &&
+      *verta_partition_allowed) {
+    *verta_partition_allowed &= evaluate_ab_partition_based_on_split(
+        pc_tree, PARTITION_VERT, rect_part_win_info, x->qindex, 0, 2);
+  }
+  if (cpi->sf.part_sf.prune_ab_partition_using_split_info &&
+      *vertb_partition_allowed) {
+    *vertb_partition_allowed &= evaluate_ab_partition_based_on_split(
+        pc_tree, PARTITION_VERT, rect_part_win_info, x->qindex, 1, 3);
+  }
+}
+
 #endif  // !CONFIG_REALTIME_ONLY

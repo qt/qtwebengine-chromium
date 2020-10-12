@@ -30,7 +30,9 @@
 #include "dawn_native/Fence.h"
 #include "dawn_native/FenceSignalTracker.h"
 #include "dawn_native/Instance.h"
+#include "dawn_native/MapRequestTracker.h"
 #include "dawn_native/PipelineLayout.h"
+#include "dawn_native/QuerySet.h"
 #include "dawn_native/Queue.h"
 #include "dawn_native/RenderBundleEncoder.h"
 #include "dawn_native/RenderPipeline.h"
@@ -102,6 +104,7 @@ namespace dawn_native {
         mCaches = std::make_unique<DeviceBase::Caches>();
         mErrorScopeTracker = std::make_unique<ErrorScopeTracker>(this);
         mFenceSignalTracker = std::make_unique<FenceSignalTracker>(this);
+        mMapRequestTracker = std::make_unique<MapRequestTracker>(this);
         mDynamicUploader = std::make_unique<DynamicUploader>(this);
         mDeprecationWarnings = std::make_unique<DeprecationWarnings>();
 
@@ -122,9 +125,9 @@ namespace dawn_native {
             case State::Alive:
                 // Alive is the only state which can have GPU work happening. Wait for all of it to
                 // complete before proceeding with destruction.
-                // Assert that errors are device loss so that we can continue with destruction
-                AssertAndIgnoreDeviceLossError(WaitForIdleForDestruction());
-                ASSERT(mCompletedSerial == mLastSubmittedSerial);
+                // Ignore errors so that we can continue with destruction
+                IgnoreErrors(WaitForIdleForDestruction());
+                AssumeCommandsComplete();
                 break;
 
             case State::BeingDisconnected:
@@ -137,6 +140,8 @@ namespace dawn_native {
             case State::Disconnected:
                 break;
         }
+        ASSERT(mCompletedSerial == mLastSubmittedSerial);
+        ASSERT(mFutureCallbackSerial <= mCompletedSerial);
 
         // Skip handling device facilities if they haven't even been created (or failed doing so)
         if (mState != State::BeingCreated) {
@@ -146,16 +151,25 @@ namespace dawn_native {
             // pending callbacks.
             mErrorScopeTracker->Tick(GetCompletedCommandSerial());
             mFenceSignalTracker->Tick(GetCompletedCommandSerial());
+            mMapRequestTracker->Tick(GetCompletedCommandSerial());
+            // call TickImpl once last time to clean up resources
+            // Ignore errors so that we can continue with destruction
+            IgnoreErrors(TickImpl());
         }
 
         // At this point GPU operations are always finished, so we are in the disconnected state.
         mState = State::Disconnected;
 
+        // mCurrentErrorScope can be null if we failed device initialization.
+        if (mCurrentErrorScope.Get() != nullptr) {
+            mCurrentErrorScope->UnlinkForShutdown();
+        }
         mErrorScopeTracker = nullptr;
-        mCurrentErrorScope->UnlinkForShutdown();
         mFenceSignalTracker = nullptr;
         mDynamicUploader = nullptr;
+        mMapRequestTracker = nullptr;
 
+        AssumeCommandsComplete();
         // Tell the backend that it can free all the objects now that the GPU timeline is empty.
         ShutDownImpl();
 
@@ -173,9 +187,12 @@ namespace dawn_native {
             // threads in a multithreaded scenario?
             mState = State::BeingDisconnected;
 
-            // Assert that errors are device losses so that we can continue with destruction.
-            AssertAndIgnoreDeviceLossError(WaitForIdleForDestruction());
-            ASSERT(mCompletedSerial == mLastSubmittedSerial);
+            // Ignore errors so that we can continue with destruction
+            // Assume all commands are complete after WaitForIdleForDestruction (because they were)
+            IgnoreErrors(WaitForIdleForDestruction());
+            IgnoreErrors(TickImpl());
+            AssumeCommandsComplete();
+            ASSERT(mFutureCallbackSerial <= mCompletedSerial);
             mState = State::Disconnected;
 
             // Now everything is as if the device was lost.
@@ -301,6 +318,10 @@ namespace dawn_native {
         return mFenceSignalTracker.get();
     }
 
+    MapRequestTracker* DeviceBase::GetMapRequestTracker() const {
+        return mMapRequestTracker.get();
+    }
+
     Serial DeviceBase::GetCompletedCommandSerial() const {
         return mCompletedSerial;
     }
@@ -309,22 +330,28 @@ namespace dawn_native {
         return mLastSubmittedSerial;
     }
 
+    Serial DeviceBase::GetFutureCallbackSerial() const {
+        return mFutureCallbackSerial;
+    }
+
     void DeviceBase::IncrementLastSubmittedCommandSerial() {
         mLastSubmittedSerial++;
     }
 
-    void DeviceBase::ArtificiallyIncrementSerials() {
-        mCompletedSerial++;
-        mLastSubmittedSerial++;
-    }
-
     void DeviceBase::AssumeCommandsComplete() {
-        mLastSubmittedSerial++;
-        mCompletedSerial = mLastSubmittedSerial;
+        Serial maxSerial = std::max(mLastSubmittedSerial + 1, mFutureCallbackSerial);
+        mLastSubmittedSerial = maxSerial;
+        mCompletedSerial = maxSerial;
     }
 
     Serial DeviceBase::GetPendingCommandSerial() const {
         return mLastSubmittedSerial + 1;
+    }
+
+    void DeviceBase::AddFutureCallbackSerial(Serial serial) {
+        if (serial > mFutureCallbackSerial) {
+            mFutureCallbackSerial = serial;
+        }
     }
 
     void DeviceBase::CheckPassedSerials() {
@@ -621,6 +648,15 @@ namespace dawn_native {
 
         return result;
     }
+    QuerySetBase* DeviceBase::CreateQuerySet(const QuerySetDescriptor* descriptor) {
+        QuerySetBase* result = nullptr;
+
+        if (ConsumedError(CreateQuerySetInternal(&result, descriptor))) {
+            return QuerySetBase::MakeError(this);
+        }
+
+        return result;
+    }
     QueueBase* DeviceBase::CreateQueue() {
         // TODO(dawn:22): Remove this once users use GetDefaultQueue
         EmitDeprecationWarning(
@@ -695,22 +731,44 @@ namespace dawn_native {
         return result;
     }
 
+    // For Dawn Wire
+
+    BufferBase* DeviceBase::CreateErrorBuffer() {
+        return BufferBase::MakeError(this);
+    }
+
     // Other Device API methods
 
     void DeviceBase::Tick() {
         if (ConsumedError(ValidateIsAlive())) {
             return;
         }
-        if (ConsumedError(TickImpl())) {
-            return;
-        }
+        // to avoid overly ticking, we only want to tick when:
+        // 1. the last submitted serial has moved beyond the completed serial
+        // 2. or the completed serial has not reached the future serial set by the trackers
+        if (mLastSubmittedSerial > mCompletedSerial || mCompletedSerial < mFutureCallbackSerial) {
+            CheckPassedSerials();
 
-        // TODO(cwallez@chromium.org): decouple TickImpl from updating the serial so that we can
-        // tick the dynamic uploader before the backend resource allocators. This would allow
-        // reclaiming resources one tick earlier.
-        mDynamicUploader->Deallocate(GetCompletedCommandSerial());
-        mErrorScopeTracker->Tick(GetCompletedCommandSerial());
-        mFenceSignalTracker->Tick(GetCompletedCommandSerial());
+            if (ConsumedError(TickImpl())) {
+                return;
+            }
+
+            // There is no GPU work in flight, we need to move the serials forward so that
+            // so that CPU operations waiting on GPU completion can know they don't have to wait.
+            // AssumeCommandsComplete will assign the max serial we must tick to in order to
+            // fire the awaiting callbacks.
+            if (mCompletedSerial == mLastSubmittedSerial) {
+                AssumeCommandsComplete();
+            }
+
+            // TODO(cwallez@chromium.org): decouple TickImpl from updating the serial so that we can
+            // tick the dynamic uploader before the backend resource allocators. This would allow
+            // reclaiming resources one tick earlier.
+            mDynamicUploader->Deallocate(mCompletedSerial);
+            mErrorScopeTracker->Tick(mCompletedSerial);
+            mFenceSignalTracker->Tick(mCompletedSerial);
+            mMapRequestTracker->Tick(mCompletedSerial);
+        }
     }
 
     void DeviceBase::Reference() {
@@ -842,6 +900,16 @@ namespace dawn_native {
         return {};
     }
 
+    MaybeError DeviceBase::CreateQuerySetInternal(QuerySetBase** result,
+                                                  const QuerySetDescriptor* descriptor) {
+        DAWN_TRY(ValidateIsAlive());
+        if (IsValidationEnabled()) {
+            DAWN_TRY(ValidateQuerySetDescriptor(this, descriptor));
+        }
+        DAWN_TRY_ASSIGN(*result, CreateQuerySetImpl(descriptor));
+        return {};
+    }
+
     MaybeError DeviceBase::CreateRenderBundleEncoderInternal(
         RenderBundleEncoder** result,
         const RenderBundleEncoderDescriptor* descriptor) {
@@ -939,6 +1007,13 @@ namespace dawn_native {
     ResultOrError<Ref<TextureBase>> DeviceBase::CreateTextureInternal(
         const TextureDescriptor* descriptor) {
         DAWN_TRY(ValidateIsAlive());
+
+        // TODO(dawn:22): Remove once migration from GPUTextureDescriptor.arrayLayerCount to
+        // GPUTextureDescriptor.size.depth is done.
+        TextureDescriptor fixedDescriptor;
+        DAWN_TRY_ASSIGN(fixedDescriptor, FixTextureDescriptor(this, descriptor));
+        descriptor = &fixedDescriptor;
+
         if (IsValidationEnabled()) {
             DAWN_TRY(ValidateTextureDescriptor(this, descriptor));
         }

@@ -21,9 +21,9 @@
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
+#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/fx_font.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/span.h"
 #include "third_party/base/stl_util.h"
 
@@ -209,11 +209,11 @@ bool IsMetricForCID(const uint32_t* pEntry, uint16_t CID) {
 
 CPDF_CIDFont::CPDF_CIDFont(CPDF_Document* pDocument, CPDF_Dictionary* pFontDict)
     : CPDF_Font(pDocument, pFontDict) {
-  for (size_t i = 0; i < FX_ArraySize(m_CharBBox); ++i)
+  for (size_t i = 0; i < pdfium::size(m_CharBBox); ++i)
     m_CharBBox[i] = FX_RECT(-1, -1, -1, -1);
 }
 
-CPDF_CIDFont::~CPDF_CIDFont() {}
+CPDF_CIDFont::~CPDF_CIDFont() = default;
 
 bool CPDF_CIDFont::IsCIDFont() const {
   return true;
@@ -576,7 +576,7 @@ int CPDF_CIDFont::GetGlyphIndex(uint32_t unicode, bool* pVertGlyph) {
   if (error || !m_Font.GetSubData())
     return index;
 
-  m_pTTGSUBTable = pdfium::MakeUnique<CFX_CTTGSUBTable>(m_Font.GetSubData());
+  m_pTTGSUBTable = std::make_unique<CFX_CTTGSUBTable>(m_Font.GetSubData());
   return GetVerticalGlyph(index, pVertGlyph);
 }
 
@@ -837,7 +837,7 @@ const uint8_t* CPDF_CIDFont::GetCIDTransform(uint16_t CID) const {
   if (m_Charset != CIDSET_JAPAN1 || m_pFontFile)
     return nullptr;
 
-  const auto* pEnd = g_Japan1_VertCIDs + FX_ArraySize(g_Japan1_VertCIDs);
+  const auto* pEnd = g_Japan1_VertCIDs + pdfium::size(g_Japan1_VertCIDs);
   const auto* pTransform = std::lower_bound(
       g_Japan1_VertCIDs, pEnd, CID,
       [](const CIDTransform& entry, uint16_t cid) { return entry.cid < cid; });

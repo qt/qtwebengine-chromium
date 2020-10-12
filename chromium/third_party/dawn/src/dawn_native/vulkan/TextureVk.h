@@ -18,6 +18,7 @@
 #include "dawn_native/Texture.h"
 
 #include "common/vulkan_platform.h"
+#include "dawn_native/PassResourceUsage.h"
 #include "dawn_native/ResourceMemoryAllocation.h"
 #include "dawn_native/vulkan/ExternalHandle.h"
 #include "dawn_native/vulkan/external_memory/MemoryService.h"
@@ -63,13 +64,20 @@ namespace dawn_native { namespace vulkan {
         // Transitions the texture to be used as `usage`, recording any necessary barrier in
         // `commands`.
         // TODO(cwallez@chromium.org): coalesce barriers and do them early when possible.
+        void TransitionFullUsage(CommandRecordingContext* recordingContext,
+                                 wgpu::TextureUsage usage);
+
         void TransitionUsageNow(CommandRecordingContext* recordingContext,
-                                wgpu::TextureUsage usage);
+                                wgpu::TextureUsage usage,
+                                const SubresourceRange& range);
+        void TransitionUsageForPass(CommandRecordingContext* recordingContext,
+                                    const PassTextureUsage& textureUsages,
+                                    std::vector<VkImageMemoryBarrier>* imageBarriers,
+                                    VkPipelineStageFlags* srcStages,
+                                    VkPipelineStageFlags* dstStages);
+
         void EnsureSubresourceContentInitialized(CommandRecordingContext* recordingContext,
-                                                 uint32_t baseMipLevel,
-                                                 uint32_t levelCount,
-                                                 uint32_t baseArrayLayer,
-                                                 uint32_t layerCount);
+                                                 const SubresourceRange& range);
 
         MaybeError SignalAndDestroy(VkSemaphore* outSignalSemaphore);
         // Binds externally allocated memory to the VkImage and on success, takes ownership of
@@ -90,11 +98,13 @@ namespace dawn_native { namespace vulkan {
 
         void DestroyImpl() override;
         MaybeError ClearTexture(CommandRecordingContext* recordingContext,
-                                uint32_t baseMipLevel,
-                                uint32_t levelCount,
-                                uint32_t baseArrayLayer,
-                                uint32_t layerCount,
+                                const SubresourceRange& range,
                                 TextureBase::ClearValue);
+
+        void TweakTransitionForExternalUsage(CommandRecordingContext* recordingContext,
+                                             std::vector<VkImageMemoryBarrier>* barriers,
+                                             size_t transitionBarrierStart);
+        bool CanReuseWithoutBarrier(wgpu::TextureUsage lastUsage, wgpu::TextureUsage usage);
 
         VkImage mHandle = VK_NULL_HANDLE;
         ResourceMemoryAllocation mMemoryAllocation;
@@ -113,9 +123,12 @@ namespace dawn_native { namespace vulkan {
         VkSemaphore mSignalSemaphore = VK_NULL_HANDLE;
         std::vector<VkSemaphore> mWaitRequirements;
 
+        bool mSameLastUsagesAcrossSubresources = true;
+
         // A usage of none will make sure the texture is transitioned before its first use as
         // required by the Vulkan spec.
-        wgpu::TextureUsage mLastUsage = wgpu::TextureUsage::None;
+        std::vector<wgpu::TextureUsage> mSubresourceLastUsages =
+            std::vector<wgpu::TextureUsage>(GetSubresourceCount(), wgpu::TextureUsage::None);
     };
 
     class TextureView final : public TextureViewBase {

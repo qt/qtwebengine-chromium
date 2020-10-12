@@ -4,6 +4,8 @@
 
 #include "discovery/mdns/mdns_receiver.h"
 
+#include <utility>
+
 #include "discovery/mdns/mdns_reader.h"
 #include "util/trace_logging.h"
 
@@ -66,6 +68,7 @@ void MdnsReceiver::OnRead(UdpSocket* socket,
   MdnsReader reader(config_, packet.data(), packet.size());
   MdnsMessage message;
   if (!reader.Read(&message)) {
+    OSP_DVLOG << "mDNS message failed to parse...";
     return;
   }
 
@@ -74,13 +77,14 @@ void MdnsReceiver::OnRead(UdpSocket* socket,
       client->OnMessageReceived(message);
     }
     if (response_clients_.empty()) {
-      OSP_DVLOG << "Response message dropped. No response client registered...";
+      OSP_DVLOG
+          << "mDNS response message dropped. No response client registered...";
     }
   } else {
     if (query_callback_) {
       query_callback_(message, packet.source());
     } else {
-      OSP_DVLOG << "Query message dropped. No query client registered...";
+      OSP_DVLOG << "mDNS query message dropped. No query client registered...";
     }
   }
 }

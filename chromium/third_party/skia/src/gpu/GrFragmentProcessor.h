@@ -8,6 +8,8 @@
 #ifndef GrFragmentProcessor_DEFINED
 #define GrFragmentProcessor_DEFINED
 
+#include <tuple>
+
 #include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrProcessor.h"
 #include "src/gpu/ops/GrOp.h"
@@ -146,18 +148,9 @@ public:
         return SkToBool(fFlags & kSampledWithExplicitCoords);
     }
 
-    void setSampledWithExplicitCoords() {
-        fFlags |= kSampledWithExplicitCoords;
-        for (auto& child : fChildProcessors) {
-            child->setSampledWithExplicitCoords();
-        }
-    }
-
     SkSL::SampleMatrix sampleMatrix() const {
         return fMatrix;
     }
-
-    void setSampleMatrix(SkSL::SampleMatrix matrix);
 
     /**
      * A GrDrawOp may premultiply its antialiasing coverage into its GrGeometryProcessor's color
@@ -316,6 +309,13 @@ public:
     // Sentinel type for range-for using FPItemIter.
     class FPItemEndIter {};
 
+    // FIXME This should be private, but SkGr needs to mark the dither effect as sampled explicitly
+    // even though it's not added to another FP. Once varying generation doesn't add a redundant
+    // varying for it, this can be fully private.
+    void temporary_SetExplicitlySampled() {
+        this->setSampledWithExplicitCoords();
+    }
+
 protected:
     enum OptimizationFlags : uint32_t {
         kNone_OptimizationFlags,
@@ -408,8 +408,37 @@ protected:
      * colors will be combined somehow to produce its output color.  Registering these child
      * processors will allow the ProgramBuilder to automatically handle their transformed coords and
      * texture accesses and mangle their uniform and output color names.
+     *
+     * Depending on the 2nd and 3rd parameters, this corresponds to the following SkSL sample calls:
+     *  - sample(child): Keep default arguments
+     *  - sample(child, matrix): Provide approprate SampleMatrix matching SkSL
+     *  - sample(child, float2): SampleMatrix() and 'true', or use 'registerExplicitlySampledChild'
+     *  - sample(child, matrix)+sample(child, float2): Appropriate SampleMatrix and 'true'
      */
-    int registerChildProcessor(std::unique_ptr<GrFragmentProcessor> child);
+    int registerChild(std::unique_ptr<GrFragmentProcessor> child,
+                      SkSL::SampleMatrix sampleMatrix = SkSL::SampleMatrix(),
+                      bool explicitlySampled = false);
+
+    /**
+     * A helper for use when the child is only invoked with sample(float2), and not sample()
+     * or sample(matrix).
+     */
+    int registerExplicitlySampledChild(std::unique_ptr<GrFragmentProcessor> child) {
+        return this->registerChild(std::move(child), SkSL::SampleMatrix(), true);
+    }
+
+    /**
+     * This method takes an existing fragment processor, clones it, registers it as a child of this
+     * fragment processor, and returns its child index. It also takes care of any boilerplate in the
+     * cloning process.
+     */
+    int cloneAndRegisterChildProcessor(const GrFragmentProcessor& fp);
+
+    /**
+     * This method takes an existing fragment processor, clones all of its children, and registers
+     * the clones as children of this fragment processor.
+     */
+    void cloneAndRegisterAllChildProcessors(const GrFragmentProcessor& src);
 
     void setTextureSamplerCnt(int cnt) {
         SkASSERT(cnt >= 0);
@@ -454,6 +483,10 @@ private:
     virtual const TextureSampler& onTextureSampler(int) const { return IthTextureSampler(0); }
 
     bool hasSameTransforms(const GrFragmentProcessor&) const;
+
+    void setSampledWithExplicitCoords();
+
+    void setSampleMatrix(SkSL::SampleMatrix matrix);
 
     enum PrivateFlags {
         kFirstPrivateFlag = kAll_OptimizationFlags + 1,
@@ -657,5 +690,19 @@ public:
 private:
     Src& fSrc;
 };
+
+/**
+ * Some fragment-processor creation methods have preconditions that might not be satisfied by the
+ * calling code. Those methods can return a `GrFPResult` from their factory methods. If creation
+ * succeeds, the new fragment processor is created and `success` is true. If a precondition is not
+ * met, `success` is set to false and the input FP is returned unchanged.
+ */
+using GrFPResult = std::tuple<bool /*success*/, std::unique_ptr<GrFragmentProcessor>>;
+static inline GrFPResult GrFPFailure(std::unique_ptr<GrFragmentProcessor> fp) {
+    return {false, std::move(fp)};
+}
+static inline GrFPResult GrFPSuccess(std::unique_ptr<GrFragmentProcessor> fp) {
+    return {true, std::move(fp)};
+}
 
 #endif

@@ -130,6 +130,7 @@ enum GrGLRenderer {
     kAMDRadeonHD7xxx_GrGLRenderer,    // AMD Radeon HD 7000 Series
     kAMDRadeonR9M3xx_GrGLRenderer,    // AMD Radeon R9 M300 Series
     kAMDRadeonR9M4xx_GrGLRenderer,    // AMD Radeon R9 M400 Series
+    kAMDRadeonPro5xxx_GrGLRenderer,   // AMD Radeon Pro 5000 Series
     kAMDRadeonProVegaxx_GrGLRenderer, // AMD Radeon Pro Vega
 
     kOther_GrGLRenderer
@@ -157,7 +158,8 @@ enum class GrGLANGLEBackend {
 enum class GrGLANGLEVendor {
     kUnknown,
     kIntel,
-    kNVIDIA
+    kNVIDIA,
+    kAMD
 };
 
 enum class GrGLANGLERenderer {
@@ -255,23 +257,25 @@ void GrGLCheckErr(const GrGLInterface* gl,
                   const char* location,
                   const char* call);
 
-void GrGLClearErr(const GrGLInterface* gl);
-
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
  * Macros for using GrGLInterface to make GL calls
  */
 
-// internal macro to conditionally call glGetError based on compile-time and
-// run-time flags.
+// Conditionally checks glGetError based on compile-time and run-time flags.
 #if GR_GL_CHECK_ERROR
     extern bool gCheckErrorGL;
-    #define GR_GL_CHECK_ERROR_IMPL(IFACE, X)                    \
-        if (gCheckErrorGL)                                      \
-            GrGLCheckErr(IFACE, GR_FILE_AND_LINE_STR, #X)
+#define GR_GL_CHECK_ERROR_IMPL(IFACE, X)                 \
+    do {                                                 \
+        if (gCheckErrorGL) {                             \
+            IFACE->checkError(GR_FILE_AND_LINE_STR, #X); \
+        }                                                \
+    } while (false)
 #else
-    #define GR_GL_CHECK_ERROR_IMPL(IFACE, X)
+#define GR_GL_CHECK_ERROR_IMPL(IFACE, X) \
+    do {                                 \
+    } while (false)
 #endif
 
 // internal macro to conditionally log the gl call using SkDebugf based on
@@ -313,9 +317,6 @@ void GrGLClearErr(const GrGLInterface* gl);
         (RET) = (IFACE)->fFunctions.f##X;                       \
         GR_GL_LOG_CALLS_IMPL(X);                                \
     } while (false)
-
-// call glGetError without doing a redundant error check or logging.
-#define GR_GL_GET_ERROR(IFACE) (IFACE)->fFunctions.fGetError()
 
 static constexpr GrGLFormat GrGLFormatFromGLEnum(GrGLenum glFormat) {
     switch (glFormat) {
@@ -414,10 +415,5 @@ GrGLenum GrToGLStencilFunc(GrStencilTest test);
  * Returns true if the format is compressed.
  */
 bool GrGLFormatIsCompressed(GrGLFormat);
-
-/**
- * This will return CompressionType::kNone if the format is uncompressed.
- */
-SkImage::CompressionType GrGLFormatToCompressionType(GrGLFormat);
 
 #endif

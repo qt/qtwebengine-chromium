@@ -102,7 +102,8 @@ static void LogDeviceInfo() {
 #endif  // !defined(NDEBUG)
 
 AudioDeviceIOS::AudioDeviceIOS()
-    : audio_device_buffer_(nullptr),
+    : MessageHandler(false),
+      audio_device_buffer_(nullptr),
       audio_unit_(nullptr),
       recording_(0),
       playing_(0),
@@ -125,6 +126,7 @@ AudioDeviceIOS::AudioDeviceIOS()
 AudioDeviceIOS::~AudioDeviceIOS() {
   RTC_DCHECK(thread_checker_.IsCurrent());
   LOGI() << "~dtor" << ios::GetCurrentThreadDescription();
+  thread_->Clear(this);
   Terminate();
   audio_session_observer_ = nil;
 }

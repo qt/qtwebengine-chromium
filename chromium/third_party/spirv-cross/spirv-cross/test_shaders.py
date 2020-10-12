@@ -266,6 +266,20 @@ def cross_compile_msl(shader, spirv, opt, iterations, paths):
         msl_args.append('0x000000ca')
     if '.no-user-varying.' in shader:
         msl_args.append('--msl-no-clip-distance-user-varying')
+    if '.shader-inputs.' in shader:
+        # Arbitrary for testing purposes.
+        msl_args.append('--msl-shader-input')
+        msl_args.append('0')
+        msl_args.append('u8')
+        msl_args.append('2')
+        msl_args.append('--msl-shader-input')
+        msl_args.append('1')
+        msl_args.append('u16')
+        msl_args.append('3')
+        msl_args.append('--msl-shader-input')
+        msl_args.append('6')
+        msl_args.append('other')
+        msl_args.append('4')
 
     subprocess.check_call(msl_args)
 
@@ -336,7 +350,9 @@ def validate_shader_hlsl(shader, force_no_external_validation, paths):
             raise RuntimeError('Failed compiling HLSL shader')
 
 def shader_to_sm(shader):
-    if '.sm60.' in shader:
+    if '.sm62.' in shader:
+        return '62'
+    elif '.sm60.' in shader:
         return '60'
     elif '.sm51.' in shader:
         return '51'
@@ -374,6 +390,8 @@ def cross_compile_hlsl(shader, spirv, opt, force_no_external_validation, iterati
         hlsl_args.append('--force-zero-initialized-variables')
     if '.nonwritable-uav-texture.' in shader:
         hlsl_args.append('--hlsl-nonwritable-uav-texture-as-srv')
+    if '.native-16bit.' in shader:
+        hlsl_args.append('--hlsl-enable-16bit-types')
 
     subprocess.check_call(hlsl_args)
 

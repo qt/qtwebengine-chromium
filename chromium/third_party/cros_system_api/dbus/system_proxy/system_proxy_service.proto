@@ -53,6 +53,8 @@ enum TrafficOrigin {
   SYSTEM = 1;
 
   USER = 2;
+
+  BOTH = 3;
 }
 
 message SetAuthenticationDetailsRequest {
@@ -68,6 +70,9 @@ message SetAuthenticationDetailsRequest {
   // The domain for which the credentials can be applied without asking again
   // for authentication.
   optional ProtectionSpace protection_space = 4;
+  // Used by System-proxy to request the ticket cache and configuration files
+  // with kerberosd.
+  optional string active_principal_name = 5;
 }
 
 message SetAuthenticationDetailsResponse {

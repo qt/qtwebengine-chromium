@@ -6,8 +6,6 @@
 
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 
-#include <vector>
-
 #include "fxjs/xfa/cjx_object.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
@@ -25,7 +23,7 @@
 CXFA_FFWidgetHandler::CXFA_FFWidgetHandler(CXFA_FFDocView* pDocView)
     : m_pDocView(pDocView) {}
 
-CXFA_FFWidgetHandler::~CXFA_FFWidgetHandler() {}
+CXFA_FFWidgetHandler::~CXFA_FFWidgetHandler() = default;
 
 bool CXFA_FFWidgetHandler::OnMouseEnter(CXFA_FFWidget* hWidget) {
   m_pDocView->LockUpdate();
@@ -162,6 +160,14 @@ void CXFA_FFWidgetHandler::PasteText(CXFA_FFWidget* widget,
     return;
 
   widget->Paste(text);
+}
+
+bool CXFA_FFWidgetHandler::SelectAllText(CXFA_FFWidget* widget) {
+  if (!widget->CanSelectAll())
+    return false;
+
+  widget->SelectAll();
+  return true;
 }
 
 bool CXFA_FFWidgetHandler::CanUndo(CXFA_FFWidget* widget) {

@@ -4,8 +4,10 @@
 
 #include "platform/impl/text_trace_logging_platform.h"
 
+#include <limits>
 #include <sstream>
 
+#include "util/chrono_helpers.h"
 #include "util/osp_logging.h"
 
 namespace openscreen {
@@ -32,9 +34,7 @@ void TextTraceLoggingPlatform::LogTrace(const char* name,
                                         Clock::time_point end_time,
                                         TraceIdHierarchy ids,
                                         Error::Code error) {
-  auto total_runtime = std::chrono::duration_cast<std::chrono::microseconds>(
-                           end_time - start_time)
-                           .count();
+  auto total_runtime = to_microseconds(end_time - start_time).count();
   constexpr auto microseconds_symbol = "\u03BCs";  // Greek Mu + 's'
   std::stringstream ss;
   ss << "TRACE [" << std::hex << ids.root << ":" << ids.parent << ":"

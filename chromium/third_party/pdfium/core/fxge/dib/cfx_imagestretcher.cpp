@@ -14,7 +14,6 @@
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/cstretchengine.h"
 #include "core/fxge/fx_dib.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -61,7 +60,7 @@ CFX_ImageStretcher::CFX_ImageStretcher(ScanlineComposerIface* pDest,
   ASSERT(m_ClipRect.Valid());
 }
 
-CFX_ImageStretcher::~CFX_ImageStretcher() {}
+CFX_ImageStretcher::~CFX_ImageStretcher() = default;
 
 bool CFX_ImageStretcher::Start() {
   if (m_DestWidth == 0 || m_DestHeight == 0)
@@ -130,7 +129,7 @@ RetainPtr<CFX_DIBBase> CFX_ImageStretcher::source() {
 }
 
 bool CFX_ImageStretcher::StartStretch() {
-  m_pStretchEngine = pdfium::MakeUnique<CStretchEngine>(
+  m_pStretchEngine = std::make_unique<CStretchEngine>(
       m_pDest.Get(), m_DestFormat, m_DestWidth, m_DestHeight, m_ClipRect,
       m_pSource, m_ResampleOptions);
   m_pStretchEngine->StartStretchHorz();

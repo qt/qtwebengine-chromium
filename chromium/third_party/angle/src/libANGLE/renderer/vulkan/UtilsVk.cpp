@@ -74,18 +74,12 @@ uint32_t GetBufferUtilsFlags(size_t dispatchSize, const vk::Format &format)
 
 uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
 {
-    bool srcIsSint  = params.srcFormat->isSint();
-    bool srcIsUint  = params.srcFormat->isUint();
-    bool srcIsSnorm = params.srcFormat->isSnorm();
-    bool srcIsUnorm = params.srcFormat->isUnorm();
-    bool srcIsFixed = params.srcFormat->isFixed;
-    bool srcIsFloat = params.srcFormat->isFloat();
-    bool srcIsA2BGR10 =
-        params.srcFormat->vertexAttribType == gl::VertexAttribType::UnsignedInt2101010 ||
-        params.srcFormat->vertexAttribType == gl::VertexAttribType::Int2101010;
-    bool srcIsRGB10A2 =
-        params.srcFormat->vertexAttribType == gl::VertexAttribType::UnsignedInt1010102 ||
-        params.srcFormat->vertexAttribType == gl::VertexAttribType::Int1010102;
+    bool srcIsSint      = params.srcFormat->isSint();
+    bool srcIsUint      = params.srcFormat->isUint();
+    bool srcIsSnorm     = params.srcFormat->isSnorm();
+    bool srcIsUnorm     = params.srcFormat->isUnorm();
+    bool srcIsFixed     = params.srcFormat->isFixed;
+    bool srcIsFloat     = params.srcFormat->isFloat();
     bool srcIsHalfFloat = params.srcFormat->isVertexTypeHalfFloat();
 
     bool destIsSint      = params.destFormat->isSint();
@@ -113,57 +107,7 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
 
     uint32_t flags = 0;
 
-    if (srcIsA2BGR10)
-    {
-        if (srcIsSint && destIsSint)
-        {
-            flags |= ConvertVertex_comp::kA2BGR10SintToSint;
-        }
-        else if (srcIsUint && destIsUint)
-        {
-            flags |= ConvertVertex_comp::kA2BGR10UintToUint;
-        }
-        else if (srcIsSint)
-        {
-            flags |= ConvertVertex_comp::kA2BGR10SintToFloat;
-        }
-        else if (srcIsUint)
-        {
-            flags |= ConvertVertex_comp::kA2BGR10UintToFloat;
-        }
-        else if (srcIsSnorm)
-        {
-            flags |= ConvertVertex_comp::kA2BGR10SnormToFloat;
-        }
-        else
-        {
-            UNREACHABLE();
-        }
-    }
-    else if (srcIsRGB10A2)
-    {
-        if (srcIsSint)
-        {
-            flags |= ConvertVertex_comp::kRGB10A2SintToFloat;
-        }
-        else if (srcIsUint)
-        {
-            flags |= ConvertVertex_comp::kRGB10A2UintToFloat;
-        }
-        else if (srcIsSnorm)
-        {
-            flags |= ConvertVertex_comp::kRGB10A2SnormToFloat;
-        }
-        else if (srcIsUnorm)
-        {
-            flags |= ConvertVertex_comp::kRGB10A2UnormToFloat;
-        }
-        else
-        {
-            UNREACHABLE();
-        }
-    }
-    else if (srcIsHalfFloat && destIsHalfFloat)
+    if (srcIsHalfFloat && destIsHalfFloat)
     {
         // Note that HalfFloat conversion uses the same shader as Uint.
         flags |= ConvertVertex_comp::kUintToUint;
@@ -440,7 +384,7 @@ angle::Result UtilsVk::ensureResourcesInitialized(ContextVk *contextVk,
     for (size_t i = 0; i < setSizesCount; ++i)
     {
         descriptorSetDesc.update(currentBinding, setSizes[i].type, setSizes[i].descriptorCount,
-                                 descStages);
+                                 descStages, nullptr);
         currentBinding += setSizes[i].descriptorCount;
     }
 
@@ -1116,6 +1060,16 @@ angle::Result UtilsVk::convertVertexBuffer(ContextVk *contextVk,
     shaderParams.srcOffset   = static_cast<uint32_t>(params.srcOffset);
     shaderParams.destOffset  = static_cast<uint32_t>(params.destOffset);
 
+    bool isSrcA2BGR10 =
+        params.srcFormat->vertexAttribType == gl::VertexAttribType::UnsignedInt2101010 ||
+        params.srcFormat->vertexAttribType == gl::VertexAttribType::Int2101010;
+    bool isSrcRGB10A2 =
+        params.srcFormat->vertexAttribType == gl::VertexAttribType::UnsignedInt1010102 ||
+        params.srcFormat->vertexAttribType == gl::VertexAttribType::Int1010102;
+
+    shaderParams.isSrcHDR     = isSrcA2BGR10 || isSrcRGB10A2;
+    shaderParams.isSrcA2BGR10 = isSrcA2BGR10;
+
     uint32_t flags = GetConvertVertexFlags(params);
 
     VkDescriptorSet descriptorSet;
@@ -1246,6 +1200,11 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     VkViewport viewport;
     gl::Rectangle completeRenderArea = framebuffer->getCompleteRenderArea();
     bool invertViewport              = contextVk->isViewportFlipEnabledForDrawFBO();
+    if (contextVk->isRotatedAspectRatioForDrawFBO())
+    {
+        // The surface is rotated 90/270 degrees.  This changes the aspect ratio of the surface.
+        std::swap(completeRenderArea.width, completeRenderArea.height);
+    }
     gl_vk::GetViewport(completeRenderArea, 0.0f, 1.0f, invertViewport, completeRenderArea.height,
                        &viewport);
     pipelineDesc.setViewport(viewport);
@@ -1340,6 +1299,8 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     bool isResolve = src->getSamples() > 1;
 
     BlitResolveShaderParams shaderParams;
+    // Note: adjustments made for pre-rotatation in FramebufferVk::blit() affect these
+    // Calculate*Offset() functions.
     if (isResolve)
     {
         CalculateResolveOffset(params, shaderParams.offset.resolve);
@@ -1357,8 +1318,48 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     shaderParams.invSamples      = 1.0f / shaderParams.samples;
     shaderParams.outputMask =
         static_cast<uint32_t>(framebuffer->getState().getEnabledDrawBuffers().to_ulong());
-    shaderParams.flipX = params.flipX;
-    shaderParams.flipY = params.flipY;
+    shaderParams.flipX    = params.flipX;
+    shaderParams.flipY    = params.flipY;
+    shaderParams.rotateXY = 0;
+
+    // Potentially make adjustments for pre-rotatation.  Depending on the angle some of the
+    // shaderParams need to be adjusted.
+    switch (params.rotation)
+    {
+        case SurfaceRotation::Identity:
+            break;
+        case SurfaceRotation::Rotated90Degrees:
+            shaderParams.rotateXY = 1;
+            break;
+        case SurfaceRotation::Rotated180Degrees:
+            if (isResolve)
+            {
+                shaderParams.offset.resolve[0] += params.rotatedOffsetFactor[0];
+                shaderParams.offset.resolve[1] += params.rotatedOffsetFactor[1];
+            }
+            else
+            {
+                shaderParams.offset.blit[0] += params.rotatedOffsetFactor[0];
+                shaderParams.offset.blit[1] += params.rotatedOffsetFactor[1];
+            }
+            break;
+        case SurfaceRotation::Rotated270Degrees:
+            if (isResolve)
+            {
+                shaderParams.offset.resolve[0] += params.rotatedOffsetFactor[0];
+                shaderParams.offset.resolve[1] += params.rotatedOffsetFactor[1];
+            }
+            else
+            {
+                shaderParams.offset.blit[0] += params.rotatedOffsetFactor[0];
+                shaderParams.offset.blit[1] += params.rotatedOffsetFactor[1];
+            }
+            shaderParams.rotateXY = 1;
+            break;
+        default:
+            UNREACHABLE();
+            break;
+    }
 
     bool blitColor   = srcColorView != nullptr;
     bool blitDepth   = srcDepthView != nullptr;
@@ -1420,6 +1421,11 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
 
     VkViewport viewport;
     gl::Rectangle completeRenderArea = framebuffer->getCompleteRenderArea();
+    if (contextVk->isRotatedAspectRatioForDrawFBO())
+    {
+        // The surface is rotated 90/270 degrees.  This changes the aspect ratio of the surface.
+        std::swap(completeRenderArea.width, completeRenderArea.height);
+    }
     gl_vk::GetViewport(completeRenderArea, 0.0f, 1.0f, false, completeRenderArea.height, &viewport);
     pipelineDesc.setViewport(viewport);
 
@@ -1686,6 +1692,20 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     shaderParams.destOffset[0]           = params.destOffset[0];
     shaderParams.destOffset[1]           = params.destOffset[1];
 
+    shaderParams.srcIsSRGB =
+        gl::GetSizedInternalFormatInfo(srcFormat.internalFormat).colorEncoding == GL_SRGB;
+    shaderParams.destIsSRGB =
+        gl::GetSizedInternalFormatInfo(dstFormat.internalFormat).colorEncoding == GL_SRGB;
+
+    // If both src and dest are sRGB, and there is no alpha multiplication/division necessary, then
+    // the shader can work with sRGB data and pretend they are linear.
+    if (shaderParams.srcIsSRGB && shaderParams.destIsSRGB && !shaderParams.premultiplyAlpha &&
+        !shaderParams.unmultiplyAlpha)
+    {
+        shaderParams.srcIsSRGB  = false;
+        shaderParams.destIsSRGB = false;
+    }
+
     ASSERT(!(params.srcFlipY && params.destFlipY));
     if (params.srcFlipY)
     {
@@ -1701,7 +1721,18 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     }
 
     uint32_t flags = GetImageCopyFlags(srcFormat, dstFormat);
-    flags |= src->getLayerCount() > 1 ? ImageCopy_frag::kSrcIsArray : 0;
+    if (src->getType() == VK_IMAGE_TYPE_3D)
+    {
+        flags |= ImageCopy_frag::kSrcIs3D;
+    }
+    else if (src->getLayerCount() > 1)
+    {
+        flags |= ImageCopy_frag::kSrcIs2DArray;
+    }
+    else
+    {
+        flags |= ImageCopy_frag::kSrcIs2D;
+    }
 
     VkDescriptorSet descriptorSet;
     vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;

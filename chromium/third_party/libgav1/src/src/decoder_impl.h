@@ -18,7 +18,6 @@
 #define LIBGAV1_SRC_DECODER_IMPL_H_
 
 #include <array>
-#include <atomic>
 #include <condition_variable>  // NOLINT (unapproved c++11 header)
 #include <cstddef>
 #include <cstdint>
@@ -32,7 +31,6 @@
 #include "src/gav1/decoder_buffer.h"
 #include "src/gav1/decoder_settings.h"
 #include "src/gav1/status_code.h"
-#include "src/loop_filter_mask.h"
 #include "src/obu_parser.h"
 #include "src/residual_buffer_pool.h"
 #include "src/symbol_decoder_context.h"
@@ -129,6 +127,19 @@ class DecoderImpl : public Allocable {
  private:
   explicit DecoderImpl(const DecoderSettings* settings);
   StatusCode Init();
+  // Called when the first frame is enqueued. It does the OBU parsing for one
+  // temporal unit to retrieve the tile configuration and sets up the frame
+  // threading if frame parallel mode is allowed. It also initializes the
+  // |temporal_units_| queue based on the number of frame threads.
+  //
+  // The following are the limitations of the current implementation:
+  //  * It assumes that all frames in the video have the same tile
+  //    configuration. The frame parallel threading model will not be updated
+  //    based on tile configuration changes mid-stream.
+  //  * The above assumption holds true even when there is a new coded video
+  //    sequence (i.e.) a new sequence header.
+  StatusCode InitializeFrameThreadPoolAndTemporalUnitQueue(const uint8_t* data,
+                                                           size_t size);
   // Used only in frame parallel mode. Signals failure and waits until the
   // worker threads are aborted if |status| is a failure status. If |status| is
   // equal to kStatusOk or kStatusTryAgain, this function does not do anything.
@@ -175,11 +186,7 @@ class DecoderImpl : public Allocable {
       const Vector<std::unique_ptr<Tile>>& tiles,
       FrameScratchBuffer* frame_scratch_buffer, PostFilter* post_filter);
   StatusCode DecodeTilesThreadedNonFrameParallel(
-      const ObuSequenceHeader& sequence_header,
-      const ObuFrameHeader& frame_header,
       const Vector<std::unique_ptr<Tile>>& tiles,
-      const Vector<ObuTileGroup>& tile_groups,
-      const BlockParametersHolder& block_parameters_holder,
       FrameScratchBuffer* frame_scratch_buffer, PostFilter* post_filter,
       BlockingCounterWithStatus* pending_tiles);
   StatusCode DecodeTilesFrameParallel(
@@ -190,6 +197,36 @@ class DecoderImpl : public Allocable {
       const SegmentationMap* prev_segment_ids,
       FrameScratchBuffer* frame_scratch_buffer, PostFilter* post_filter,
       RefCountedBuffer* current_frame);
+  StatusCode DecodeTilesThreadedFrameParallel(
+      const ObuSequenceHeader& sequence_header,
+      const ObuFrameHeader& frame_header,
+      const Vector<std::unique_ptr<Tile>>& tiles,
+      const SymbolDecoderContext& saved_symbol_decoder_context,
+      const SegmentationMap* prev_segment_ids,
+      FrameScratchBuffer* frame_scratch_buffer, PostFilter* post_filter,
+      RefCountedBuffer* current_frame);
+  // Helper function used by DecodeTilesThreadedFrameParallel. Decodes the
+  // superblock row starting at |row4x4| for tile at index |tile_index| in the
+  // list of tiles |tiles|. If the decoding is successful, then it does the
+  // following:
+  //   * Schedule the next superblock row in the current tile column for
+  //     decoding (the next superblock row may be in a different tile than the
+  //     current one).
+  //   * If an entire superblock row of the frame has been decoded, it notifies
+  //     the waiters (if there are any).
+  void DecodeSuperBlockRowInTile(const Vector<std::unique_ptr<Tile>>& tiles,
+                                 size_t tile_index, int row4x4,
+                                 int superblock_size4x4, int tile_columns,
+                                 int superblock_rows,
+                                 FrameScratchBuffer* frame_scratch_buffer,
+                                 PostFilter* post_filter,
+                                 BlockingCounter* pending_jobs);
+  // Helper function used by DecodeTilesThreadedFrameParallel. Applies the
+  // deblocking filter for tile boundaries for the superblock row at |row4x4|.
+  void ApplyDeblockingFilterForTileBoundaries(
+      PostFilter* post_filter, const std::unique_ptr<Tile>* tile_row_base,
+      const ObuFrameHeader& frame_header, int row4x4, int block_width4x4,
+      int tile_columns, bool decode_entire_tiles_in_worker_threads);
   // Sets the current frame's segmentation map for two cases. The third case
   // is handled in Tile::DecodeBlock().
   void SetCurrentFrameSegmentationMap(const ObuFrameHeader& frame_header,
@@ -205,6 +242,11 @@ class DecoderImpl : public Allocable {
 
   bool IsNewSequenceHeader(const ObuParser& obu);
   bool IsFrameParallel() const { return frame_thread_pool_ != nullptr; }
+
+  bool HasFailure() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return failure_status_ != kStatusOk;
+  }
 
   Queue<TemporalUnit> temporal_units_;
   DecoderState state_;
@@ -228,21 +270,16 @@ class DecoderImpl : public Allocable {
   //  2) DecodeTiles()
   // Both of these functions have to respond to the other one failing by
   // aborting whatever they are doing. This variable is used to accomplish that.
-  std::atomic<bool> abort_{false};
-  // Stores the failure status if |abort_| is true.
-  std::atomic<StatusCode> failure_status_{kStatusOk};
+  // If |failure_status_| is not kStatusOk, then the two functions will try to
+  // abort as early as they can.
+  StatusCode failure_status_ = kStatusOk LIBGAV1_GUARDED_BY(mutex_);
 
   ObuSequenceHeader sequence_header_ = {};
   // If true, sequence_header is valid.
   bool has_sequence_header_ = false;
 
-#if defined(ENABLE_FRAME_PARALLEL)
-  // TODO(b/142583029): A copy of the DecoderSettings is made to facilitate the
-  // development of frame parallel mode behind a compile time flag.
-  DecoderSettings settings_;
-#else
   const DecoderSettings& settings_;
-#endif
+  bool seen_first_frame_ = false;
 };
 
 }  // namespace libgav1

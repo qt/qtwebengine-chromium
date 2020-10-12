@@ -580,6 +580,73 @@ TEST_P(QuicDispatcherTestAllVersions, TlsMultiPacketClientHelloWithReordering) {
   TestTlsMultiPacketClientHello(/*add_reordering=*/true);
 }
 
+TEST_P(QuicDispatcherTestAllVersions, LegacyVersionEncapsulation) {
+  if (!version_.HasLongHeaderLengths()) {
+    // Decapsulating Legacy Version Encapsulation packets from these versions
+    // is not currently supported in QuicDispatcher.
+    return;
+  }
+  SetQuicReloadableFlag(quic_dont_pad_chlo, true);
+  SetQuicReloadableFlag(quic_dispatcher_legacy_version_encapsulation, true);
+  QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
+  QuicConnectionId server_connection_id = TestConnectionId();
+  QuicConfig client_config = DefaultQuicConfig();
+  client_config.SetClientConnectionOptions(QuicTagVector{kQLVE});
+  std::vector<std::unique_ptr<QuicReceivedPacket>> packets =
+      GetFirstFlightOfPackets(version_, client_config, server_connection_id);
+  ASSERT_EQ(packets.size(), 1u);
+
+  // Validate that Legacy Version Encapsulation is actually being used by
+  // checking the version of the packet before processing it.
+  PacketHeaderFormat format = IETF_QUIC_LONG_HEADER_PACKET;
+  QuicLongHeaderType long_packet_type;
+  bool version_present;
+  bool has_length_prefix;
+  QuicVersionLabel version_label;
+  ParsedQuicVersion parsed_version = ParsedQuicVersion::Unsupported();
+  QuicConnectionId destination_connection_id, source_connection_id;
+  bool retry_token_present;
+  quiche::QuicheStringPiece retry_token;
+  std::string detailed_error;
+  const QuicErrorCode error = QuicFramer::ParsePublicHeaderDispatcher(
+      QuicEncryptedPacket(packets[0]->data(), packets[0]->length()),
+      kQuicDefaultConnectionIdLength, &format, &long_packet_type,
+      &version_present, &has_length_prefix, &version_label, &parsed_version,
+      &destination_connection_id, &source_connection_id, &retry_token_present,
+      &retry_token, &detailed_error);
+  ASSERT_THAT(error, IsQuicNoError()) << detailed_error;
+  EXPECT_EQ(format, GOOGLE_QUIC_PACKET);
+  EXPECT_TRUE(version_present);
+  EXPECT_FALSE(has_length_prefix);
+  EXPECT_EQ(parsed_version, LegacyVersionForEncapsulation());
+  EXPECT_EQ(destination_connection_id, server_connection_id);
+  EXPECT_EQ(source_connection_id, EmptyQuicConnectionId());
+  EXPECT_FALSE(retry_token_present);
+  EXPECT_TRUE(detailed_error.empty());
+
+  // Processing the packet should create a new session.
+  EXPECT_CALL(*dispatcher_,
+              CreateQuicSession(server_connection_id, client_address,
+                                Eq(ExpectedAlpn()), _))
+      .WillOnce(Return(ByMove(CreateSession(
+          dispatcher_.get(), config_, server_connection_id, client_address,
+          &mock_helper_, &mock_alarm_factory_, &crypto_config_,
+          QuicDispatcherPeer::GetCache(dispatcher_.get()), &session1_))));
+  EXPECT_CALL(*reinterpret_cast<MockQuicConnection*>(session1_->connection()),
+              ProcessUdpPacket(_, _, _))
+      .Times(2);
+
+  ProcessReceivedPacket(packets[0]->Clone(), client_address, version_,
+                        server_connection_id);
+  EXPECT_EQ(dispatcher_->session_map().size(), 1u);
+
+  // Processing the same packet a second time should also be routed by the
+  // dispatcher to the right connection (we expect ProcessUdpPacket to be
+  // called twice, see the EXPECT_CALL above).
+  ProcessReceivedPacket(std::move(packets[0]), client_address, version_,
+                        server_connection_id);
+}
+
 TEST_P(QuicDispatcherTestAllVersions, ProcessPackets) {
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
 
@@ -1010,57 +1077,20 @@ TEST_P(QuicDispatcherTestAllVersions,
   ProcessFirstFlight(client_address, EmptyQuicConnectionId());
 }
 
-TEST_P(QuicDispatcherTestAllVersions, OKSeqNoPacketProcessed) {
-  if (version_.UsesTls()) {
-    // QUIC+TLS allows clients to start with any packet number.
-    return;
-  }
-  QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
-  QuicConnectionId connection_id = TestConnectionId(1);
-
-  EXPECT_CALL(*dispatcher_,
-              CreateQuicSession(TestConnectionId(1), client_address,
-                                Eq(ExpectedAlpn()), _))
-      .WillOnce(Return(ByMove(CreateSession(
-          dispatcher_.get(), config_, TestConnectionId(1), client_address,
-          &mock_helper_, &mock_alarm_factory_, &crypto_config_,
-          QuicDispatcherPeer::GetCache(dispatcher_.get()), &session1_))));
-  EXPECT_CALL(*reinterpret_cast<MockQuicConnection*>(session1_->connection()),
-              ProcessUdpPacket(_, _, _))
-      .WillOnce(WithArg<2>(Invoke([this](const QuicEncryptedPacket& packet) {
-        ValidatePacket(TestConnectionId(1), packet);
-      })));
-
-  // A packet whose packet number is the largest that is allowed to start a
-  // connection.
-  EXPECT_CALL(*dispatcher_,
-              ShouldCreateOrBufferPacketForConnection(
-                  ReceivedPacketInfoConnectionIdEquals(connection_id)));
-  ProcessPacket(client_address, connection_id, true, SerializeCHLO(),
-                CONNECTION_ID_PRESENT, PACKET_4BYTE_PACKET_NUMBER,
-                QuicDispatcher::kMaxReasonableInitialPacketNumber);
-}
-
 TEST_P(QuicDispatcherTestOneVersion, VersionsChangeInFlight) {
   VerifyVersionNotSupported(QuicVersionReservedForNegotiation());
   for (ParsedQuicVersion version : CurrentSupportedVersions()) {
     VerifyVersionSupported(version);
+    QuicDisableVersion(version);
+    VerifyVersionNotSupported(version);
+    QuicEnableVersion(version);
+    VerifyVersionSupported(version);
   }
-
-  // Turn off version Q050.
-  SetQuicReloadableFlag(quic_disable_version_q050, true);
-  VerifyVersionNotSupported(
-      ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_50));
-
-  // Turn on version Q050.
-  SetQuicReloadableFlag(quic_disable_version_q050, false);
-  VerifyVersionSupported(
-      ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_50));
 }
 
 TEST_P(QuicDispatcherTestOneVersion,
        RejectDeprecatedVersionsWithVersionNegotiation) {
-  static_assert(quic::SupportedVersions().size() == 8u,
+  static_assert(quic::SupportedVersions().size() == 9u,
                 "Please add deprecated versions to this test");
   QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
   CreateTimeWaitListManager();
@@ -1275,55 +1305,6 @@ TEST_P(QuicDispatcherTestOneVersion, VersionNegotiationProbeEndToEnd) {
       destination_connection_id_bytes, sizeof(destination_connection_id_bytes));
 }
 
-TEST_P(QuicDispatcherTestOneVersion, AndroidConformanceTestOld) {
-  if (GetQuicReloadableFlag(quic_remove_android_conformance_test_workaround)) {
-    // TODO(b/139691956) Remove this test once the flag is deprecated.
-    return;
-  }
-  SavingWriter* saving_writer = new SavingWriter();
-  // dispatcher_ takes ownership of saving_writer.
-  QuicDispatcherPeer::UseWriter(dispatcher_.get(), saving_writer);
-
-  QuicTimeWaitListManager* time_wait_list_manager = new QuicTimeWaitListManager(
-      saving_writer, dispatcher_.get(), mock_helper_.GetClock(),
-      &mock_alarm_factory_);
-  // dispatcher_ takes ownership of time_wait_list_manager.
-  QuicDispatcherPeer::SetTimeWaitListManager(dispatcher_.get(),
-                                             time_wait_list_manager);
-  // clang-format off
-  static const unsigned char packet[] = {
-    // Android UDP network conformance test packet as it was before this change:
-    // https://android-review.googlesource.com/c/platform/cts/+/1104285
-    0x0c,  // public flags: 8-byte connection ID, 1-byte packet number
-    0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78,  // 8-byte connection ID
-    0x01,  // 1-byte packet number
-    0x00,  // private flags
-    0x07,  // PING frame
-  };
-  // clang-format on
-
-  QuicEncryptedPacket encrypted(reinterpret_cast<const char*>(packet),
-                                sizeof(packet), false);
-  std::unique_ptr<QuicReceivedPacket> received_packet(
-      ConstructReceivedPacket(encrypted, mock_helper_.GetClock()->Now()));
-  EXPECT_CALL(*dispatcher_, CreateQuicSession(_, _, _, _)).Times(0);
-
-  QuicSocketAddress client_address(QuicIpAddress::Loopback4(), 1);
-  dispatcher_->ProcessPacket(server_address_, client_address, *received_packet);
-  ASSERT_EQ(1u, saving_writer->packets()->size());
-
-  // The Android UDP network conformance test directly checks that bytes 1-9
-  // of the response match the connection ID that was sent.
-  static const char connection_id_bytes[] = {0x71, 0x72, 0x73, 0x74,
-                                             0x75, 0x76, 0x77, 0x78};
-  ASSERT_GE((*(saving_writer->packets()))[0]->length(),
-            1u + sizeof(connection_id_bytes));
-  quiche::test::CompareCharArraysWithHexError(
-      "response connection ID", &(*(saving_writer->packets()))[0]->data()[1],
-      sizeof(connection_id_bytes), connection_id_bytes,
-      sizeof(connection_id_bytes));
-}
-
 TEST_P(QuicDispatcherTestOneVersion, AndroidConformanceTest) {
   // WARNING: do not remove or modify this test without making sure that we
   // still have adequate coverage for the Android conformance test.
@@ -1373,8 +1354,12 @@ TEST_P(QuicDispatcherTestOneVersion, AndroidConformanceTest) {
 }
 
 TEST_P(QuicDispatcherTestAllVersions, DoNotProcessSmallPacket) {
-  if (!version_.HasIetfInvariantHeader()) {
-    // We only drop small packets when using IETF_QUIC_LONG_HEADER_PACKET.
+  if (!version_.HasIetfInvariantHeader() &&
+      !GetQuicReloadableFlag(quic_dont_pad_chlo)) {
+    // When quic_dont_pad_chlo is false, we only drop small packets when using
+    // IETF_QUIC_LONG_HEADER_PACKET. When quic_dont_pad_chlo is true, we drop
+    // small packets for all versions.
+    // TODO(dschinazi) remove this early return when we deprecate the flag.
     return;
   }
   CreateTimeWaitListManager();
@@ -2340,7 +2325,8 @@ TEST_P(BufferedPacketStoreTest, ReceiveCHLOForBufferedConnection) {
 // Regression test for b/117874922.
 TEST_P(BufferedPacketStoreTest, ProcessBufferedChloWithDifferentVersion) {
   // Ensure the preferred version is not supported by the server.
-  SetQuicReloadableFlag(quic_enable_version_draft_27, false);
+  QuicDisableVersion(AllSupportedVersions().front());
+
   uint64_t last_connection_id = kMaxNumSessionsToCreate + 5;
   ParsedQuicVersionVector supported_versions = CurrentSupportedVersions();
   for (uint64_t conn_id = 1; conn_id <= last_connection_id; ++conn_id) {

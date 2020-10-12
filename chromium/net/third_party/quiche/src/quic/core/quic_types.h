@@ -163,19 +163,22 @@ struct QUIC_EXPORT_PRIVATE WriteResult {
 enum TransmissionType : int8_t {
   NOT_RETRANSMISSION,
   FIRST_TRANSMISSION_TYPE = NOT_RETRANSMISSION,
-  HANDSHAKE_RETRANSMISSION,  // Retransmits due to handshake timeouts.
-  // TODO(fayang): remove ALL_UNACKED_RETRANSMISSION.
-  ALL_UNACKED_RETRANSMISSION,  // Retransmits all unacked packets.
-  ALL_INITIAL_RETRANSMISSION,  // Retransmits all initially encrypted packets.
-  LOSS_RETRANSMISSION,         // Retransmits due to loss detection.
-  RTO_RETRANSMISSION,          // Retransmits due to retransmit time out.
-  TLP_RETRANSMISSION,          // Tail loss probes.
-  PTO_RETRANSMISSION,          // Retransmission due to probe timeout.
-  PROBING_RETRANSMISSION,      // Retransmission in order to probe bandwidth.
+  HANDSHAKE_RETRANSMISSION,     // Retransmits due to handshake timeouts.
+  ALL_ZERO_RTT_RETRANSMISSION,  // Retransmits all packets encrypted with 0-RTT
+                                // key.
+  LOSS_RETRANSMISSION,          // Retransmits due to loss detection.
+  RTO_RETRANSMISSION,           // Retransmits due to retransmit time out.
+  TLP_RETRANSMISSION,           // Tail loss probes.
+  PTO_RETRANSMISSION,           // Retransmission due to probe timeout.
+  PROBING_RETRANSMISSION,       // Retransmission in order to probe bandwidth.
   LAST_TRANSMISSION_TYPE = PROBING_RETRANSMISSION,
 };
 
 QUIC_EXPORT_PRIVATE std::string TransmissionTypeToString(
+    TransmissionType transmission_type);
+
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(
+    std::ostream& os,
     TransmissionType transmission_type);
 
 enum HasRetransmittableData : uint8_t {
@@ -224,6 +227,8 @@ enum QuicFrameType : uint8_t {
   STOP_WAITING_FRAME = 6,
   PING_FRAME = 7,
   CRYPTO_FRAME = 8,
+  // TODO(b/157935330): stop hard coding this when deprecate T050.
+  HANDSHAKE_DONE_FRAME = 9,
 
   // STREAM and ACK frames are special frames. They are encoded differently on
   // the wire and their values do not need to be stable.
@@ -245,7 +250,7 @@ enum QuicFrameType : uint8_t {
   MESSAGE_FRAME,
   NEW_TOKEN_FRAME,
   RETIRE_CONNECTION_ID_FRAME,
-  HANDSHAKE_DONE_FRAME,
+  ACK_FREQUENCY_FRAME,
 
   NUM_FRAME_TYPES
 };
@@ -305,6 +310,9 @@ enum QuicIetfFrameType : uint8_t {
   IETF_EXTENSION_MESSAGE = 0x21,
   IETF_EXTENSION_MESSAGE_NO_LENGTH_V99 = 0x30,
   IETF_EXTENSION_MESSAGE_V99 = 0x31,
+
+  // An QUIC extension frame for sender control of acknowledgement delays
+  IETF_ACK_FREQUENCY = 0xaf
 };
 QUIC_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
                                              const QuicIetfFrameType& c);
@@ -439,6 +447,9 @@ inline bool EncryptionLevelIsValid(EncryptionLevel level) {
 }
 
 QUIC_EXPORT_PRIVATE std::string EncryptionLevelToString(EncryptionLevel level);
+
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                             EncryptionLevel level);
 
 // Enumeration of whether a server endpoint will request a client certificate,
 // and whether that endpoint requires a valid client certificate to establish a
@@ -687,10 +698,15 @@ enum SerializedPacketFate : uint8_t {
   SEND_TO_WRITER,                    // Send packet to writer.
   FAILED_TO_WRITE_COALESCED_PACKET,  // Packet cannot be coalesced, error occurs
                                      // when sending existing coalesced packet.
+  LEGACY_VERSION_ENCAPSULATE,  // Perform Legacy Version Encapsulation on this
+                               // packet.
 };
 
 QUIC_EXPORT_PRIVATE std::string SerializedPacketFateToString(
     SerializedPacketFate fate);
+
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                             const SerializedPacketFate fate);
 
 // There are three different forms of CONNECTION_CLOSE.
 enum QuicConnectionCloseType {
@@ -732,6 +748,45 @@ struct QUIC_NO_EXPORT NextReleaseTimeResult {
   QuicTime release_time;
   // Whether it is allowed to send the packet before release_time.
   bool allow_burst;
+};
+
+// QuicPacketBuffer bundles a buffer and a function that releases it. Note
+// it does not assume ownership of buffer, i.e. it doesn't release the buffer on
+// destruction.
+struct QUIC_NO_EXPORT QuicPacketBuffer {
+  QuicPacketBuffer() = default;
+
+  QuicPacketBuffer(char* buffer,
+                   std::function<void(const char*)> release_buffer)
+      : buffer(buffer), release_buffer(std::move(release_buffer)) {}
+
+  char* buffer = nullptr;
+  std::function<void(const char*)> release_buffer;
+};
+
+// QuicOwnedPacketBuffer is a QuicPacketBuffer that assumes buffer ownership.
+struct QUIC_NO_EXPORT QuicOwnedPacketBuffer : public QuicPacketBuffer {
+  QuicOwnedPacketBuffer(const QuicOwnedPacketBuffer&) = delete;
+  QuicOwnedPacketBuffer& operator=(const QuicOwnedPacketBuffer&) = delete;
+
+  QuicOwnedPacketBuffer(char* buffer,
+                        std::function<void(const char*)> release_buffer)
+      : QuicPacketBuffer(buffer, std::move(release_buffer)) {}
+
+  QuicOwnedPacketBuffer(QuicOwnedPacketBuffer&& owned_buffer)
+      : QuicPacketBuffer(std::move(owned_buffer)) {
+    // |owned_buffer| does not own a buffer any more.
+    owned_buffer.buffer = nullptr;
+  }
+
+  explicit QuicOwnedPacketBuffer(QuicPacketBuffer&& packet_buffer)
+      : QuicPacketBuffer(std::move(packet_buffer)) {}
+
+  ~QuicOwnedPacketBuffer() {
+    if (release_buffer != nullptr && buffer != nullptr) {
+      release_buffer(buffer);
+    }
+  }
 };
 
 }  // namespace quic

@@ -21,7 +21,6 @@
 
 #if SK_SUPPORT_GPU
 #include "include/private/GrRecordingContext.h"
-#include "src/gpu/GrClip.h"
 #include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
@@ -58,7 +57,7 @@ public:
     bool directFilterMaskGPU(GrRecordingContext*,
                              GrRenderTargetContext* renderTargetContext,
                              GrPaint&&,
-                             const GrClip&,
+                             const GrClip*,
                              const SkMatrix& viewMatrix,
                              const GrStyledShape& shape) const override;
     GrSurfaceProxyView filterMaskGPU(GrRecordingContext*,
@@ -437,7 +436,7 @@ SkBlurMaskFilterImpl::filterRRectToNine(const SkRRect& rrect, const SkMatrix& ma
         case SkRRect::kRect_Type:
             // We should have caught this earlier.
             SkASSERT(false);
-            // Fall through.
+            [[fallthrough]];
         case SkRRect::kOval_Type:
             // The nine patch special case does not handle ovals, and we
             // already have code for rectangles.
@@ -722,7 +721,7 @@ void SkBlurMaskFilterImpl::flatten(SkWriteBuffer& buffer) const {
 bool SkBlurMaskFilterImpl::directFilterMaskGPU(GrRecordingContext* context,
                                                GrRenderTargetContext* renderTargetContext,
                                                GrPaint&& paint,
-                                               const GrClip& clip,
+                                               const GrClip* clip,
                                                const SkMatrix& viewMatrix,
                                                const GrStyledShape& shape) const {
     SkASSERT(renderTargetContext);
@@ -764,10 +763,12 @@ bool SkBlurMaskFilterImpl::directFilterMaskGPU(GrRecordingContext* context,
 
     if (devRRect.isRect() || SkRRectPriv::IsCircle(devRRect)) {
         if (devRRect.isRect()) {
-            fp = GrRectBlurEffect::Make(context, *context->priv().caps()->shaderCaps(),
-                                        devRRect.rect(), xformedSigma);
+            fp = GrRectBlurEffect::Make(
+                    /*inputFP=*/nullptr, context, *context->priv().caps()->shaderCaps(),
+                    devRRect.rect(), xformedSigma);
         } else {
-            fp = GrCircleBlurFragmentProcessor::Make(context, devRRect.rect(), xformedSigma);
+            fp = GrCircleBlurFragmentProcessor::Make(/*inputFP=*/nullptr, context, devRRect.rect(),
+                                                     xformedSigma);
         }
 
         if (!fp) {
@@ -791,7 +792,8 @@ bool SkBlurMaskFilterImpl::directFilterMaskGPU(GrRecordingContext* context,
         return true;
     }
 
-    fp = GrRRectBlurEffect::Make(context, fSigma, xformedSigma, srcRRect, devRRect);
+    fp = GrRRectBlurEffect::Make(/*inputFP=*/nullptr, context, fSigma, xformedSigma,
+                                 srcRRect, devRRect);
     if (!fp) {
         return false;
     }
@@ -854,15 +856,13 @@ bool SkBlurMaskFilterImpl::canFilterMaskGPU(const GrStyledShape& shape,
     }
 
     // We prefer to blur paths with small blur radii on the CPU.
-    if (ctm.rectStaysRect()) {
-        static const SkScalar kMIN_GPU_BLUR_SIZE  = SkIntToScalar(64);
-        static const SkScalar kMIN_GPU_BLUR_SIGMA = SkIntToScalar(32);
+    static const SkScalar kMIN_GPU_BLUR_SIZE  = SkIntToScalar(64);
+    static const SkScalar kMIN_GPU_BLUR_SIGMA = SkIntToScalar(32);
 
-        if (devSpaceShapeBounds.width() <= kMIN_GPU_BLUR_SIZE &&
-            devSpaceShapeBounds.height() <= kMIN_GPU_BLUR_SIZE &&
-            xformedSigma <= kMIN_GPU_BLUR_SIGMA) {
-            return false;
-        }
+    if (devSpaceShapeBounds.width() <= kMIN_GPU_BLUR_SIZE &&
+        devSpaceShapeBounds.height() <= kMIN_GPU_BLUR_SIZE &&
+        xformedSigma <= kMIN_GPU_BLUR_SIGMA) {
+        return false;
     }
 
     return true;
@@ -917,7 +917,7 @@ GrSurfaceProxyView SkBlurMaskFilterImpl::filterMaskGPU(GrRecordingContext* conte
             paint.setCoverageSetOpXPFactory(SkRegion::kReplace_Op);
         }
 
-        renderTargetContext->drawRect(GrNoClip(), std::move(paint), GrAA::kNo, SkMatrix::I(),
+        renderTargetContext->drawRect(nullptr, std::move(paint), GrAA::kNo, SkMatrix::I(),
                                       SkRect::Make(clipRect));
     }
 

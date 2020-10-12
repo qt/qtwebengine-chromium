@@ -173,8 +173,7 @@ std::string TransmissionTypeToString(TransmissionType transmission_type) {
   switch (transmission_type) {
     RETURN_STRING_LITERAL(NOT_RETRANSMISSION);
     RETURN_STRING_LITERAL(HANDSHAKE_RETRANSMISSION);
-    RETURN_STRING_LITERAL(ALL_UNACKED_RETRANSMISSION);
-    RETURN_STRING_LITERAL(ALL_INITIAL_RETRANSMISSION);
+    RETURN_STRING_LITERAL(ALL_ZERO_RTT_RETRANSMISSION);
     RETURN_STRING_LITERAL(LOSS_RETRANSMISSION);
     RETURN_STRING_LITERAL(RTO_RETRANSMISSION);
     RETURN_STRING_LITERAL(TLP_RETRANSMISSION);
@@ -189,6 +188,11 @@ std::string TransmissionTypeToString(TransmissionType transmission_type) {
                                   static_cast<int>(transmission_type), ")");
       break;
   }
+}
+
+std::ostream& operator<<(std::ostream& os, TransmissionType transmission_type) {
+  os << TransmissionTypeToString(transmission_type);
+  return os;
 }
 
 std::string PacketHeaderFormatToString(PacketHeaderFormat format) {
@@ -261,9 +265,15 @@ std::string SerializedPacketFateToString(SerializedPacketFate fate) {
     RETURN_STRING_LITERAL(BUFFER);
     RETURN_STRING_LITERAL(SEND_TO_WRITER);
     RETURN_STRING_LITERAL(FAILED_TO_WRITE_COALESCED_PACKET);
+    RETURN_STRING_LITERAL(LEGACY_VERSION_ENCAPSULATE);
     default:
       return quiche::QuicheStrCat("Unknown(", static_cast<int>(fate), ")");
   }
+}
+
+std::ostream& operator<<(std::ostream& os, SerializedPacketFate fate) {
+  os << SerializedPacketFateToString(fate);
+  return os;
 }
 
 std::string EncryptionLevelToString(EncryptionLevel level) {
@@ -276,6 +286,11 @@ std::string EncryptionLevelToString(EncryptionLevel level) {
       return quiche::QuicheStrCat("Unknown(", static_cast<int>(level), ")");
       break;
   }
+}
+
+std::ostream& operator<<(std::ostream& os, EncryptionLevel level) {
+  os << EncryptionLevelToString(level);
+  return os;
 }
 
 std::string QuicConnectionCloseTypeString(QuicConnectionCloseType type) {

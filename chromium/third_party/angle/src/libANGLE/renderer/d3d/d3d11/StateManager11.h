@@ -44,7 +44,7 @@ class ShaderConstants11 : angle::NonCopyable
                           const D3D11_VIEWPORT &dxViewport,
                           bool is9_3,
                           bool presentPathFast);
-    bool onFirstVertexChange(GLint firstVertex, GLint baseVertex);
+    bool onFirstVertexChange(GLint firstVertex);
     void onImageLayerChange(gl::ShaderType shaderType, unsigned int imageIndex, int layer);
     void onSamplerChange(gl::ShaderType shaderType,
                          unsigned int samplerIndex,
@@ -239,7 +239,8 @@ class StateManager11 final : angle::NonCopyable
                               gl::DrawElementsType indexTypeOrInvalid,
                               const void *indices,
                               GLsizei instanceCount,
-                              GLint baseVertex);
+                              GLint baseVertex,
+                              GLuint baseInstance);
 
     void setShaderResourceShared(gl::ShaderType shaderType,
                                  UINT resourceSlot,
@@ -313,7 +314,7 @@ class StateManager11 final : angle::NonCopyable
                                              ID3D11Resource *resource);
 
     angle::Result syncBlendState(const gl::Context *context,
-                                 const gl::BlendStateArray &blendStateArray,
+                                 const gl::BlendStateExt &blendStateExt,
                                  const gl::ColorF &blendColor,
                                  unsigned int sampleMask,
                                  bool sampleAlphaToCoverage,
@@ -466,7 +467,7 @@ class StateManager11 final : angle::NonCopyable
     bool mCurSampleAlphaToCoverage;
 
     // Blend State
-    gl::BlendStateArray mCurBlendStateArray;
+    gl::BlendStateExt mCurBlendStateExt;
     gl::ColorF mCurBlendColor;
     unsigned int mCurSampleMask;
 

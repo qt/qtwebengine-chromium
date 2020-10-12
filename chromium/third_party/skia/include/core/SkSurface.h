@@ -28,6 +28,7 @@ class SkPaint;
 class SkSurfaceCharacterization;
 class GrBackendRenderTarget;
 class GrBackendSemaphore;
+class GrBackendSurfaceMutableState;
 class GrBackendTexture;
 class GrContext;
 class GrRecordingContext;
@@ -183,6 +184,10 @@ public:
         not exceed context capabilities, and the context must be able to support
         back-end textures.
 
+        Upon success textureReleaseProc is called when it is safe to delete the texture in the
+        backend API (accounting only for use of the texture by this surface). If SkSurface creation
+        fails textureReleaseProc is called before this function returns.
+
         If SK_SUPPORT_GPU is defined as zero, has no effect and returns nullptr.
 
         @param context             GPU context
@@ -214,6 +219,10 @@ public:
         not exceed context capabilities, and the context must be able to support
         back-end render targets.
 
+        Upon success releaseProc is called when it is safe to delete the render target in the
+        backend API (accounting only for use of the render target by this surface). If SkSurface
+        creation fails releaseProc is called before this function returns.
+
         If SK_SUPPORT_GPU is defined as zero, has no effect and returns nullptr.
 
         @param context                  GPU context
@@ -221,8 +230,8 @@ public:
         @param colorSpace               range of colors
         @param surfaceProps             LCD striping orientation and setting for device independent
                                         fonts; may be nullptr
-        @param releaseProc              function called when texture can be released
-        @param releaseContext           state passed to textureReleaseProc
+        @param releaseProc              function called when backendRenderTarget can be released
+        @param releaseContext           state passed to releaseProc
         @return                         SkSurface if all parameters are valid; otherwise, nullptr
     */
     static sk_sp<SkSurface> MakeFromBackendRenderTarget(GrContext* context,
@@ -234,29 +243,8 @@ public:
                                                 RenderTargetReleaseProc releaseProc = nullptr,
                                                 ReleaseContext releaseContext = nullptr);
 
-    /** Wraps a GPU-backed texture into SkSurface. Caller must ensure backendTexture is
-        valid for the lifetime of returned SkSurface. If sampleCnt greater than zero,
-        creates an intermediate MSAA SkSurface which is used for drawing backendTexture.
-
-        SkSurface is returned if all parameters are valid. backendTexture is valid if
-        its pixel configuration agrees with colorSpace and context; for instance, if
-        backendTexture has an sRGB configuration, then context must support sRGB,
-        and colorSpace must be present. Further, backendTexture width and height must
-        not exceed context capabilities.
-
-        Returned SkSurface is available only for drawing into, and cannot generate an
-        SkImage.
-
-        If SK_SUPPORT_GPU is defined as zero, has no effect and returns nullptr.
-
-        @param context         GPU context
-        @param backendTexture  texture residing on GPU
-        @param sampleCnt       samples per pixel, or 0 to disable full scene anti-aliasing
-        @param colorSpace      range of colors; may be nullptr
-        @param surfaceProps    LCD striping orientation and setting for device independent
-                               fonts; may be nullptr
-        @return                SkSurface if all parameters are valid; otherwise, nullptr
-    */
+#if GR_TEST_UTILS
+    // TODO: Remove this.
     static sk_sp<SkSurface> MakeFromBackendTextureAsRenderTarget(GrContext* context,
                                                             const GrBackendTexture& backendTexture,
                                                             GrSurfaceOrigin origin,
@@ -264,6 +252,7 @@ public:
                                                             SkColorType colorType,
                                                             sk_sp<SkColorSpace> colorSpace,
                                                             const SkSurfaceProps* surfaceProps);
+#endif
 
 #if defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
     /** Private.
@@ -454,6 +443,10 @@ public:
         SkSurfaceCharacterization::isCompatible can be used to determine if a given backend texture
         is compatible with a specific surface characterization.
 
+        Upon success textureReleaseProc is called when it is safe to delete the texture in the
+        backend API (accounting only for use of the texture by this surface). If SkSurface creation
+        fails textureReleaseProc is called before this function returns.
+
         @param context             GPU context
         @param characterization    characterization of the desired surface
         @param backendTexture      texture residing on GPU
@@ -586,6 +579,10 @@ public:
         used. The GrBackendFormat and dimensions of replacement texture must match that of
         the original.
 
+        Upon success textureReleaseProc is called when it is safe to delete the texture in the
+        backend API (accounting only for use of the texture by this surface). If SkSurface creation
+        fails textureReleaseProc is called before this function returns.
+
         @param backendTexture      the new backing texture for the surface
         @param mode                Retain or discard current Content
         @param textureReleaseProc  function called when texture can be released
@@ -652,8 +649,7 @@ public:
 
     /** Draws SkSurface contents to canvas, with its top-left corner at (x, y).
 
-        If SkPaint paint is not nullptr, apply SkColorFilter, alpha, SkImageFilter,
-        SkBlendMode, and SkDrawLooper.
+        If SkPaint paint is not nullptr, apply SkColorFilter, alpha, SkImageFilter, and SkBlendMode.
 
         @param canvas  SkCanvas drawn into
         @param x       horizontal offset in SkCanvas
@@ -818,7 +814,8 @@ public:
         When the pixel data is ready the caller's ReadPixelsCallback is called with a
         AsyncReadResult containing pixel data in the requested color type, alpha type, and color
         space. The AsyncReadResult will have count() == 1. Upon failure the callback is called
-        with nullptr for AsyncReadResult.
+        with nullptr for AsyncReadResult. For a GPU surface this flushes work but a submit must
+        occur to guarantee a finite time before the callback is called.
 
         The data is valid for the lifetime of AsyncReadResult with the exception that if the
         SkSurface is GPU-backed the data is immediately invalidated if the GrContext is abandoned
@@ -846,7 +843,9 @@ public:
 
         When the pixel data is ready the caller's ReadPixelsCallback is called with a
         AsyncReadResult containing the planar data. The AsyncReadResult will have count() == 3.
-        Upon failure the callback is called with nullptr for AsyncReadResult.
+        Upon failure the callback is called with nullptr for AsyncReadResult. For a GPU surface this
+        flushes work but a submit must occur to guarantee a finite time before the callback is
+        called.
 
         The data is valid for the lifetime of AsyncReadResult with the exception that if the
         SkSurface is GPU-backed the data is immediately invalidated if the GrContext is abandoned
@@ -916,21 +915,26 @@ public:
         Skia will correctly order its own draws and pixel operations. This must to be used to ensure
         correct ordering when the surface backing store is accessed outside Skia (e.g. direct use of
         the 3D API or a windowing system). GrContext has additional flush and submit methods that
-        apply to all surfaces and images created from a GrContext.
+        apply to all surfaces and images created from a GrContext. This is equivalent to calling
+        SkSurface::flush with a default GrFlushInfo followed by GrContext::submit.
     */
     void flushAndSubmit();
-
-    /**
-     * Deprecated.
-     */
-    void flush() { this->flushAndSubmit(); }
 
     enum class BackendSurfaceAccess {
         kNoAccess,  //!< back-end object will not be used by client
         kPresent,   //!< back-end surface will be used for presenting to screen
     };
 
-    /** Issues pending SkSurface commands to the GPU-backed API and resolves any SkSurface MSAA.
+    /** Issues pending SkSurface commands to the GPU-backed API objects and resolves any SkSurface
+        MSAA. A call to GrContext::submit is always required to ensure work is actually sent to the
+        gpu. Some specific API details:
+            GL: Commands are actually sent to the driver, but glFlush is never called. Thus some
+                sync objects from the flush will not be valid until a submission occurs.
+
+            Vulkan/Metal/D3D/Dawn: Commands are recorded to the backend APIs corresponding command
+                buffer or encoder objects. However, these objects are not sent to the gpu until a
+                submission occurs.
+
         The work that is submitted to the GPU will be dependent on the BackendSurfaceAccess that is
         passed in.
 
@@ -946,13 +950,19 @@ public:
         The GrFlushInfo describes additional options to flush. Please see documentation at
         GrFlushInfo for more info.
 
-         If the return is GrSemaphoresSubmitted::kYes, only initialized GrBackendSemaphores will
-         have been submitted and can be waited on (it is possible Skia failed to create a subset of
-         the semaphores). If this call returns GrSemaphoresSubmitted::kNo, the GPU backend will not
-         have submitted any semaphores to be signaled on the GPU. Thus the client should not have
-         the GPU wait on any of the semaphores passed in with the GrFlushInfo. Regardless of whether
-         semaphores were submitted to the GPU or not, the client is still responsible for deleting
-         any initialized semaphores.
+        If the return is GrSemaphoresSubmitted::kYes, only initialized GrBackendSemaphores will be
+        submitted to the gpu during the next submit call (it is possible Skia failed to create a
+        subset of the semaphores). The client should not wait on these semaphores until after submit
+        has been called, but must keep them alive until then. If a submit flag was passed in with
+        the flush these valid semaphores can we waited on immediately. If this call returns
+        GrSemaphoresSubmitted::kNo, the GPU backend will not submit any semaphores to be signaled on
+        the GPU. Thus the client should not have the GPU wait on any of the semaphores passed in
+        with the GrFlushInfo. Regardless of whether semaphores were submitted to the GPU or not, the
+        client is still responsible for deleting any initialized semaphores.
+        Regardleess of semaphore submission the context will still be flushed. It should be
+        emphasized that a return value of GrSemaphoresSubmitted::kNo does not mean the flush did not
+        happen. It simply means there were no semaphores submitted to the GPU. A caller should only
+        take this as a failure if they passed in semaphores to be submitted.
 
         Pending surface commands are flushed regardless of the return result.
 
@@ -961,27 +971,48 @@ public:
     */
     GrSemaphoresSubmitted flush(BackendSurfaceAccess access, const GrFlushInfo& info);
 
-    /** Deprecated
-     */
-    GrSemaphoresSubmitted flush(BackendSurfaceAccess access, GrFlushFlags flags,
-                                int numSemaphores, GrBackendSemaphore signalSemaphores[],
-                                GrGpuFinishedProc finishedProc = nullptr,
-                                GrGpuFinishedContext finishedContext = nullptr);
+    /** Issues pending SkSurface commands to the GPU-backed API objects and resolves any SkSurface
+        MSAA. A call to GrContext::submit is always required to ensure work is actually sent to the
+        gpu. Some specific API details:
+            GL: Commands are actually sent to the driver, but glFlush is never called. Thus some
+                sync objects from the flush will not be valid until a submission occurs.
 
-    /** The below enum and flush call are deprecated
-     */
-    enum FlushFlags {
-        kNone_FlushFlags = 0,
-        // flush will wait till all submitted GPU work is finished before returning.
-        kSyncCpu_FlushFlag = 0x1,
-    };
-    GrSemaphoresSubmitted flush(BackendSurfaceAccess access, FlushFlags flags,
-                                int numSemaphores, GrBackendSemaphore signalSemaphores[]);
+            Vulkan/Metal/D3D/Dawn: Commands are recorded to the backend APIs corresponding command
+                buffer or encoder objects. However, these objects are not sent to the gpu until a
+                submission occurs.
 
-    /** Deprecated.
+        The GrFlushInfo describes additional options to flush. Please see documentation at
+        GrFlushInfo for more info.
+
+        If a GrBackendSurfaceMutableState is passed in, at the end of the flush we will transition
+        the surface to be in the state requested by the GrBackendSurfaceMutableState. If the surface
+        (or SkImage or GrBackendSurface wrapping the same backend object) is used again after this
+        flush the state may be changed and no longer match what is requested here. This is often
+        used if the surface will be used for presenting or external use and the client wants backend
+        object to be prepped for that use. A finishedProc or semaphore on the GrFlushInfo will also
+        include the work for any requested state change.
+
+        If the return is GrSemaphoresSubmitted::kYes, only initialized GrBackendSemaphores will be
+        submitted to the gpu during the next submit call (it is possible Skia failed to create a
+        subset of the semaphores). The client should not wait on these semaphores until after submit
+        has been called, but must keep them alive until then. If a submit flag was passed in with
+        the flush these valid semaphores can we waited on immediately. If this call returns
+        GrSemaphoresSubmitted::kNo, the GPU backend will not submit any semaphores to be signaled on
+        the GPU. Thus the client should not have the GPU wait on any of the semaphores passed in
+        with the GrFlushInfo. Regardless of whether semaphores were submitted to the GPU or not, the
+        client is still responsible for deleting any initialized semaphores.
+        Regardleess of semaphore submission the context will still be flushed. It should be
+        emphasized that a return value of GrSemaphoresSubmitted::kNo does not mean the flush did not
+        happen. It simply means there were no semaphores submitted to the GPU. A caller should only
+        take this as a failure if they passed in semaphores to be submitted.
+
+        Pending surface commands are flushed regardless of the return result.
+
+        @param info    flush options
+        @param access  optional state change request after flush
     */
-    GrSemaphoresSubmitted flushAndSignalSemaphores(int numSemaphores,
-                                                   GrBackendSemaphore signalSemaphores[]);
+    GrSemaphoresSubmitted flush(const GrFlushInfo& info,
+                                const GrBackendSurfaceMutableState* newState = nullptr);
 
     /** Inserts a list of GPU semaphores that the current GPU-backed API must wait on before
         executing any more commands on the GPU for this surface. Skia will take ownership of the

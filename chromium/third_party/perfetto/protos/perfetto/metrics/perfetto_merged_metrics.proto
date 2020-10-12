@@ -25,10 +25,12 @@ message AndroidBatteryMetric {
   }
 
   message BatteryAggregates {
-    // Field numbers for these 3 == the int values fromm Android
+    // Field numbers for these 3 == the int values from Android
     optional int64 total_screen_off_ns = 1;
     optional int64 total_screen_on_ns = 2;
     optional int64 total_screen_doze_ns = 3;
+    // Total time a wakelock was held
+    optional int64 total_wakelock_ns = 4;
   }
 
   // Battery counters info for each ts of the trace. This should only be
@@ -186,7 +188,7 @@ message HeapProfileCallsites {
   }
 
   // Callsites per process instance.
-  // Next id: 7
+  // Next id: 8
   message InstanceStats {
     optional uint32 pid = 1;
     // TODO(ilkos): Remove process_name in favour of the metadata.
@@ -198,6 +200,8 @@ message HeapProfileCallsites {
     optional int64 profile_delta_bytes = 4;
     // Bytes allocated via malloc irrespective of whether they were freed.
     optional int64 profile_total_bytes = 5;
+    // Peak anon RSS + swap for this process
+    optional int64 max_anon_rss_and_swap_bytes = 7;
   }
 
   repeated InstanceStats instance_stats = 1;
@@ -343,6 +347,12 @@ message JavaHeapHistogram {
 // Begin of protos/perfetto/metrics/android/java_heap_stats.proto
 
 message JavaHeapStats {
+  message HeapRoots {
+    optional string root_type = 1;
+    optional string type_name = 2;
+    optional int64 obj_count = 3;
+  }
+
   // Next id: 7
   message Sample {
     optional int64 ts = 1;
@@ -354,6 +364,9 @@ message JavaHeapStats {
     optional int64 reachable_obj_count = 5;
     // Sum of anonymous RSS + swap pages in bytes.
     optional int64 anon_rss_and_swap_size = 6;
+
+    // ART root objects
+    repeated HeapRoots roots = 7;
   }
 
   // Heap stats per process. One sample per dump (can be > 1 if continuous
@@ -391,7 +404,8 @@ message AndroidLmkMetric {
 
 // Begin of protos/perfetto/metrics/android/lmk_reason_metric.proto
 
-// Potential culplit of a low-memory kill on Android.
+// Global process state at LMK time, used to identify potential culprits.
+// TODO: rename to AndroidLmkProcessState
 message AndroidLmkReasonMetric {
   message Process {
     optional AndroidProcessMetadata process = 1;
@@ -401,18 +415,26 @@ message AndroidLmkReasonMetric {
 
     // RSS + swap.
     optional int64 size = 3;
+
+    optional int64 file_rss_bytes = 4;
+    optional int64 anon_rss_bytes = 5;
+    optional int64 shmem_rss_bytes = 6;
+    optional int64 swap_bytes = 7;
   }
   message Lmk {
     // OOM score adj of the LMK'ed process.
     optional int32 oom_score_adj = 1;
 
-    // Total size of the system ION heap in bytes during this LMK.
+    // Total size of the ION heap in bytes during this LMK.
+    optional int64 ion_heaps_bytes = 4;
+    // Deprecated. Prefer ion_heaps_bytes.
     optional int64 system_ion_heap_size = 2;
 
     // Processes present during this LMK.
     repeated Process processes = 3;
   }
 
+  // LMKs present in the trace, ordered on their timestamp.
   repeated Lmk lmks = 1;
 }
 
@@ -622,6 +644,21 @@ message AndroidStartupMetric {
 
 // End of protos/perfetto/metrics/android/startup_metric.proto
 
+// Begin of protos/perfetto/metrics/android/surfaceflinger.proto
+
+message AndroidSurfaceflingerMetric {
+  // Counts the number of missed frames in the trace.
+  optional uint32 missed_frames = 1;
+
+  // Counts the number of missed HWC frames in the trace.
+  optional uint32 missed_hwc_frames = 2;
+
+  // Counts the number of missed GPU frames in the trace.
+  optional uint32 missed_gpu_frames = 3;
+}
+
+// End of protos/perfetto/metrics/android/surfaceflinger.proto
+
 // Begin of protos/perfetto/metrics/android/task_names.proto
 
 message AndroidTaskNames {
@@ -652,10 +689,13 @@ message AndroidThreadTimeInStateMetric {
   message MetricsByCoreType {
     optional string core_type = 1;
     optional int64 runtime_ms = 2;
+    // CPU megacycles (i.e. cycles divided by 1e6).
+    optional int64 mcycles = 3;
   }
 
   message Thread {
     optional string name = 1;
+    optional bool main_thread = 3;
     repeated MetricsByCoreType metrics_by_core_type = 2;
   }
 
@@ -722,11 +762,12 @@ message TraceMetadata {
   optional int64 statsd_triggering_subscription_id = 5;
   optional int64 trace_size_bytes = 6;
   repeated string trace_trigger = 7;
+  optional string unique_session_name = 8;
 }
 
 // Root message for all Perfetto-based metrics.
 //
-// Next id: 25
+// Next id: 26
 message TraceMetrics {
   reserved 4, 10, 13, 14;
 
@@ -788,6 +829,9 @@ message TraceMetrics {
   optional AndroidTaskNames android_task_names = 23;
 
   optional AndroidThreadTimeInStateMetric android_thread_time_in_state = 24;
+
+  // Metric associated with surfaceflinger.
+  optional AndroidSurfaceflingerMetric android_surfaceflinger = 25;
 
   // Demo extensions.
   extensions 450 to 499;

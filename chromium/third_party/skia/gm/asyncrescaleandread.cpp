@@ -43,6 +43,9 @@ static sk_sp<SkImage> do_read_and_scale(SkSurface* surface, const SkIRect& srcRe
                                         SkFilterQuality quality) {
     auto* context = new AsyncContext();
     surface->asyncRescaleAndReadPixels(ii, srcRect, rescaleGamma, quality, async_callback, context);
+    if (auto ctx = surface->getContext()) {
+        ctx->submit();
+    }
     while (!context->fCalled) {
         // Only GPU should actually be asynchronous.
         SkASSERT(surface->getCanvas()->getGrContext());
@@ -69,6 +72,9 @@ static sk_sp<SkImage> do_read_and_scale_yuv(SkSurface* surface, SkYUVColorSpace 
     AsyncContext context;
     surface->asyncRescaleAndReadPixelsYUV420(yuvCS, SkColorSpace::MakeSRGB(), srcRect, size,
                                              rescaleGamma, quality, async_callback, &context);
+    if (auto ctx = surface->getContext()) {
+        ctx->submit();
+    }
     while (!context.fCalled) {
         // Only GPU should actually be asynchronous.
         SkASSERT(surface->getCanvas()->getGrContext());
@@ -99,6 +105,7 @@ static sk_sp<SkImage> do_read_and_scale_yuv(SkSurface* surface, SkYUVColorSpace 
         GrFlushInfo flushInfo;
         flushInfo.fFlags = kSyncCpu_GrFlushFlag;
         gr->flush(flushInfo);
+        gr->submit(true);
         gr->deleteBackendTexture(backendTextures[0]);
         gr->deleteBackendTexture(backendTextures[1]);
         gr->deleteBackendTexture(backendTextures[2]);

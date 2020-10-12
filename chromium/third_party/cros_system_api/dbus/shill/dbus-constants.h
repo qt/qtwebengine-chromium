@@ -110,7 +110,6 @@ const char kCheckPortalListProperty[] = "CheckPortalList";
 const char kIgnoredDNSSearchPathsProperty[] = "IgnoredDNSSearchPaths";
 const char kLinkMonitorTechnologiesProperty[] = "LinkMonitorTechnologies";
 const char kNoAutoConnectTechnologiesProperty[] = "NoAutoConnectTechnologies";
-const char kOfflineModeProperty[] = "OfflineMode";
 const char kProhibitedTechnologiesProperty[] = "ProhibitedTechnologies";
 
 // DHCP property names for both Manager and Service.
@@ -216,9 +215,6 @@ const char kWifiFrequency[] = "WiFi.Frequency";
 const char kWifiHexSsid[] = "WiFi.HexSSID";
 const char kWifiHiddenSsid[] = "WiFi.HiddenSSID";
 const char kWifiPhyMode[] = "WiFi.PhyMode";
-const char kWifiPreferredDeviceProperty[] = "WiFi.PreferredDevice";
-const char kWifiProtectedManagementFrameRequiredProperty[] =
-    "WiFi.ProtectedManagementFrameRequired";
 const char kWifiVendorInformationProperty[] = "WiFi.VendorInformation";
 
 // Base VPN Service property names.
@@ -537,12 +533,13 @@ const char kTypePPPoE[] = "pppoe";
 const char kModeManaged[] = "managed";
 
 // Flimflam security options.
-const char kSecurityWpa[] = "wpa";
-const char kSecurityWep[] = "wep";
-const char kSecurityRsn[] = "rsn";
-const char kSecurity8021x[] = "802_1x";
-const char kSecurityPsk[] = "psk";
 const char kSecurityNone[] = "none";
+const char kSecurityWep[] = "wep";
+const char kSecurityPsk[] = "psk";
+const char kSecurityWpa[] = "wpa";
+const char kSecurityRsn[] = "rsn";
+const char kSecurityWpa3[] = "wpa3";
+const char kSecurity8021x[] = "802_1x";
 
 // Compress option values as expected by OpenVPN.
 const char kOpenVPNCompressFramingOnly[] = "";

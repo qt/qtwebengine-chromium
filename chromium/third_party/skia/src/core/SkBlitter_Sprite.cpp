@@ -134,7 +134,7 @@ public:
                                             : kPremul_SkAlphaType;
             fAlloc->make<SkColorSpaceXformSteps>(srcCS, srcAT,
                                                  dstCS, kPremul_SkAlphaType)
-                ->apply(&p, fSource.colorType());
+                ->apply(&p);
         }
         if (fPaintColor.fA != 1.0f) {
             p.append(SkRasterPipeline::scale_1_float, &fPaintColor.fA);
@@ -142,6 +142,9 @@ public:
 
         bool is_opaque = fSource.isOpaque() && fPaintColor.fA == 1.0f;
         fBlitter = SkCreateRasterPipelineBlitter(fDst, paint, p, is_opaque, fAlloc, fClipShader);
+        if (!fBlitter) {
+            fBlitter = fAlloc->make<SkNullBlitter>();
+        }
     }
 
     void blitRect(int x, int y, int width, int height) override {

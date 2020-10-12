@@ -61,6 +61,11 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   static scoped_refptr<DevToolsAgentHost> GetOrCreateFor(
       FrameTreeNode* frame_tree_node);
 
+  // Whether the RFH passed may have associated DevTools agent host
+  // (i.e. the specified RFH is a local root). This does not indicate
+  // whether DevToolsAgentHost has actually been created.
+  static bool ShouldCreateDevToolsForHost(RenderFrameHost* rfh);
+
   // This method is called when new frame is created during cross process
   // navigation.
   static scoped_refptr<DevToolsAgentHost> CreateForCrossProcessNavigation(
@@ -124,8 +129,6 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
                               RenderFrameHost* new_host) override;
   void FrameDeleted(RenderFrameHost* rfh) override;
   void RenderFrameDeleted(RenderFrameHost* rfh) override;
-  void DidAttachInterstitialPage() override;
-  void DidDetachInterstitialPage() override;
   void OnVisibilityChanged(content::Visibility visibility) override;
   void OnPageScaleFactorChanged(float page_scale_factor) override;
 
@@ -169,6 +172,10 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
 
   DISALLOW_COPY_AND_ASSIGN(RenderFrameDevToolsAgentHost);
 };
+
+// Returns the ancestor FrameTreeNode* for which a RenderFrameDevToolsAgentHost
+// should be created (i.e. the next local root).
+FrameTreeNode* GetFrameTreeNodeAncestor(FrameTreeNode* frame_tree_node);
 
 }  // namespace content
 

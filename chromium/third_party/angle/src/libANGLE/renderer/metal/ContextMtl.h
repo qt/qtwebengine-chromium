@@ -240,6 +240,10 @@ class ContextMtl : public ContextImpl, public mtl::Context
     const mtl::VertexFormat &getVertexFormat(angle::FormatID angleFormatId,
                                              bool tightlyPacked) const;
 
+    angle::Result getIncompleteTexture(const gl::Context *context,
+                                       gl::TextureType type,
+                                       gl::Texture **textureOut);
+
     // Recommended to call these methods to end encoding instead of invoking the encoder's
     // endEncoding() directly.
     void endEncoding(mtl::RenderCommandEncoder *encoder);
@@ -281,7 +285,8 @@ class ContextMtl : public ContextImpl, public mtl::Context
     mtl::ComputeCommandEncoder *getComputeCommandEncoder();
 
   private:
-    void ensureCommandBufferValid();
+    void ensureCommandBufferReady();
+    angle::Result ensureIncompleteTexturesCreated(const gl::Context *context);
     angle::Result setupDraw(const gl::Context *context,
                             gl::PrimitiveMode mode,
                             GLint firstVertex,
@@ -377,9 +382,9 @@ class ContextMtl : public ContextImpl, public mtl::Context
     {
         float viewport[4];
 
-        float halfRenderAreaHeight;
-        float viewportYScale;
-        float negViewportYScale;
+        float halfRenderArea[2];
+        float flipXY[2];
+        float negFlipXY[2];
 
         // 32 bits for 32 clip distances
         uint32_t enabledClipDistances;
@@ -388,7 +393,7 @@ class ContextMtl : public ContextImpl, public mtl::Context
         uint32_t xfbActiveUnpaused;
         uint32_t xfbVerticesPerDraw;
         // NOTE: Explicit padding. Fill in with useful data when needed in the future.
-        int32_t padding[2];
+        int32_t padding[3];
 
         int32_t xfbBufferOffsets[4];
         uint32_t acbBufferOffsets[4];
@@ -399,6 +404,10 @@ class ContextMtl : public ContextImpl, public mtl::Context
         // Used to pre-rotate gl_Position for Vulkan swapchain images on Android (a mat2, which is
         // padded to the size of two vec4's).
         float preRotation[8];
+
+        // Used to pre-rotate gl_FragCoord for Vulkan swapchain images on Android (a mat2, which is
+        // padded to the size of two vec4's).
+        float fragRotation[8];
     };
 
     struct DefaultAttribute
@@ -451,6 +460,9 @@ class ContextMtl : public ContextImpl, public mtl::Context
     DriverUniforms mDriverUniforms;
 
     DefaultAttribute mDefaultAttributes[mtl::kMaxVertexAttribs];
+
+    IncompleteTextureSet mIncompleteTextures;
+    bool mIncompleteTexturesInitialized = false;
 };
 
 }  // namespace rx

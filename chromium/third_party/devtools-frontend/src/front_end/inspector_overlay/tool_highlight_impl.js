@@ -32,7 +32,10 @@
 // @ts-nocheck
 // TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
+import {contrastRatio, rgbaToHsla} from '../common/ColorUtils.js';
+
 import {createElement} from './common.js';
+import {drawGridNumbers} from './css_grid_label_helpers.js';
 
 const lightGridColor = 'rgba(0,0,0,0.2)';
 const darkGridColor = 'rgba(0,0,0,0.7)';
@@ -179,6 +182,7 @@ function _drawAxis(context, rulerAtRight, rulerAtBottom) {
 
 export function doReset() {
   document.getElementById('tooltip-container').removeChildren();
+  document.getElementById('grid-label-container').removeChildren();
   window._gridPainted = false;
 }
 
@@ -188,45 +192,6 @@ export function doReset() {
  */
 function parseHexa(hexa) {
   return hexa.match(/#(\w\w)(\w\w)(\w\w)(\w\w)/).slice(1).map(c => parseInt(c, 16) / 255);
-}
-
-/**
- * TODO(alexrudenko): import this and other color helpers from DevTools
- * @param {!Array<number>} rgba
- * @return {!Array<number>}
- */
-function rgbaToHsla(rgba) {
-  const [r, g, b] = rgba;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const diff = max - min;
-  const sum = max + min;
-
-  let h;
-  if (min === max) {
-    h = 0;
-  } else if (r === max) {
-    h = ((1 / 6 * (g - b) / diff) + 1) % 1;
-  } else if (g === max) {
-    h = (1 / 6 * (b - r) / diff) + 1 / 3;
-  } else {
-    h = (1 / 6 * (r - g) / diff) + 2 / 3;
-  }
-
-  const l = 0.5 * sum;
-
-  let s;
-  if (l === 0) {
-    s = 0;
-  } else if (l === 1) {
-    s = 0;
-  } else if (l <= 0.5) {
-    s = diff / sum;
-  } else {
-    s = diff / (2 - sum);
-  }
-
-  return [h, s, l, rgba[3]];
 }
 
 /**
@@ -257,58 +222,6 @@ function formatColor(hexa, colorFormat) {
   return hexa;
 }
 
-/**
-* Calculate the contrast ratio between a foreground and a background color.
-* Returns the ratio to 1, for example for two colors with a contrast ratio of 21:1,
-* this function will return 21.
-* See http://www.w3.org/TR/2008/REC-WCAG20-20081211/#contrast-ratiodef
-* @param {!Array<number>} fgRGBA
-* @param {!Array<number>} bgRGBA
-* @return {number}
-*/
-function contrastRatio(fgRGBA, bgRGBA) {
-  // If we have a semi-transparent background color over an unknown
-  // background, draw the line for the "worst case" scenario: where
-  // the unknown background is the same color as the text.
-  bgRGBA = blendColors(bgRGBA, fgRGBA);
-  const fgLuminance = luminance(blendColors(fgRGBA, bgRGBA));
-  const bgLuminance = luminance(bgRGBA);
-  const result = (Math.max(fgLuminance, bgLuminance) + 0.05) / (Math.min(fgLuminance, bgLuminance) + 0.05);
-  return result.toFixed(2);
-
-  /**
-    * Calculate the luminance of this color using the WCAG algorithm.
-    * See http://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
-    * @param {!Array<number>} rgba
-    * @return {number}
-    */
-  function luminance(rgba) {
-    const rSRGB = rgba[0];
-    const gSRGB = rgba[1];
-    const bSRGB = rgba[2];
-
-    const r = rSRGB <= 0.03928 ? rSRGB / 12.92 : Math.pow(((rSRGB + 0.055) / 1.055), 2.4);
-    const g = gSRGB <= 0.03928 ? gSRGB / 12.92 : Math.pow(((gSRGB + 0.055) / 1.055), 2.4);
-    const b = bSRGB <= 0.03928 ? bSRGB / 12.92 : Math.pow(((bSRGB + 0.055) / 1.055), 2.4);
-
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  }
-
-  /**
-    * Combine the two given color according to alpha blending.
-    * @param {!Array<number>} fgRGBA
-    * @param {!Array<number>} bgRGBA
-    * @return {!Array<number>}
-    */
-  function blendColors(fgRGBA, bgRGBA) {
-    const alpha = fgRGBA[3];
-    return [
-      ((1 - alpha) * bgRGBA[0]) + (alpha * fgRGBA[0]), ((1 - alpha) * bgRGBA[1]) + (alpha * fgRGBA[1]),
-      ((1 - alpha) * bgRGBA[2]) + (alpha * fgRGBA[2]), alpha + (bgRGBA[3] * (1 - alpha))
-    ];
-  }
-}
-
 function computeIsLargeFont(contrast) {
   const boldWeights = new Set(['bold', 'bolder', '600', '700', '800', '900']);
 
@@ -322,9 +235,34 @@ function computeIsLargeFont(contrast) {
   return fontSizePt >= 18;
 }
 
-function _createElementDescription(elementInfo, colorFormat) {
+/**
+ * Determine the layout type of the highlighted element based on the config.
+ * @param {Object} highlight The highlight config object passed to drawHighlight
+ * @return {String|null} The layout type of the object, or null if none was found
+ */
+function _getElementLayoutType(highlight) {
+  if (highlight.gridInfo && highlight.gridInfo.length) {
+    return 'grid';
+  }
+
+  return null;
+}
+
+/**
+ * Create the DOM node that displays the description of the highlighted element
+ * @param {Object} highlight The highlight config object passed to drawHighlight
+ * @return {DOMNode}
+ */
+function _createElementDescription(highlight) {
+  const {elementInfo, colorFormat} = highlight;
+
   const elementInfoElement = createElement('div', 'element-info');
   const elementInfoHeaderElement = elementInfoElement.createChild('div', 'element-info-header');
+
+  const layoutType = _getElementLayoutType(highlight);
+  if (layoutType) {
+    elementInfoHeaderElement.createChild('div', `element-layout-type ${layoutType}`);
+  }
   const descriptionElement = elementInfoHeaderElement.createChild('div', 'element-description monospace');
   const tagNameElement = descriptionElement.createChild('span', 'material-tag-name');
   tagNameElement.textContent = elementInfo.tagName;
@@ -453,10 +391,13 @@ function _createElementDescription(elementInfo, colorFormat) {
   return elementInfoElement;
 }
 
-function _drawElementTitle(elementInfo, bounds, colorFormat) {
+/**
+ * @param {Object} highlight The highlight config object passed to drawHighlight
+ */
+function _drawElementTitle(highlight, bounds) {
   const tooltipContainer = document.getElementById('tooltip-container');
   tooltipContainer.removeChildren();
-  _createMaterialTooltip(tooltipContainer, bounds, _createElementDescription(elementInfo, colorFormat), true);
+  _createMaterialTooltip(tooltipContainer, bounds, _createElementDescription(highlight), true);
 }
 
 function _createMaterialTooltip(parentElement, bounds, contentElement, withArrow) {
@@ -522,9 +463,10 @@ function _createMaterialTooltip(parentElement, bounds, contentElement, withArrow
     return;
   }
 
-  tooltipContent.style.setProperty('--arrow', onTop ? 'var(--arrow-up)' : 'var(--arrow-down)');
+  tooltipContent.style.setProperty('--arrow', onTop ? 'var(--arrow-down)' : 'var(--arrow-up)');
   tooltipContent.style.setProperty('--shadow-direction', onTop ? 'var(--shadow-up)' : 'var(--shadow-down)');
-  tooltipContent.style.setProperty('--arrow-top', (onTop ? titleHeight : -arrowHalfWidth) + 'px');
+  // When tooltip is on-top remove 1px from the arrow's top value to get rid of whitespace produced by the tooltip's border.
+  tooltipContent.style.setProperty('--arrow-top', (onTop ? titleHeight - 1 : -arrowHalfWidth) + 'px');
   tooltipContent.style.setProperty('--arrow-left', (arrowX - boxX) + 'px');
 }
 
@@ -619,7 +561,7 @@ function buildPath(commands, bounds) {
         break;
     }
   }
-  path.closePath();
+
   return path;
 }
 
@@ -655,6 +597,8 @@ function emptyBounds() {
 
 function _drawLayoutGridHighlight(highlight, context) {
   // Draw Grid border
+  const gridBounds = emptyBounds();
+  const gridPath = buildPath(highlight.gridBorder, gridBounds);
   if (highlight.gridHighlightConfig.gridBorderColor) {
     context.save();
     context.translate(0.5, 0.5);
@@ -663,7 +607,7 @@ function _drawLayoutGridHighlight(highlight, context) {
       context.setLineDash([3, 3]);
     }
     context.strokeStyle = highlight.gridHighlightConfig.gridBorderColor;
-    context.stroke(buildPath(highlight.gridBorder, emptyBounds()));
+    context.stroke(gridPath);
     context.restore();
   }
 
@@ -682,12 +626,10 @@ function _drawLayoutGridHighlight(highlight, context) {
     context.strokeStyle = highlight.gridHighlightConfig.cellBorderColor;
 
     context.save();
-    context.clip(columnPath);
     context.stroke(rowPath);
     context.restore();
 
     context.save();
-    context.clip(rowPath);
     context.stroke(columnPath);
     context.restore();
 
@@ -713,35 +655,40 @@ function _drawLayoutGridHighlight(highlight, context) {
     }
   }
 
-  // Row Gaps
-  if (highlight.gridHighlightConfig.rowGapColor) {
-    context.save();
-    context.translate(0.5, 0.5);
-    context.lineWidth = 0;
-    context.fillStyle = highlight.gridHighlightConfig.rowGapColor;
-    const bounds = emptyBounds();
-    const path = buildPath(highlight.rowGaps, bounds);
-    if (highlight.gridHighlightConfig.rowHatchColor) {
-      hatchFillPath(context, path, bounds, 10, highlight.gridHighlightConfig.rowHatchColor, /* flipDirection */ true);
-    }
-    context.fill(path);
-    context.restore();
+  // Draw gaps
+  _drawGridGap(
+      context, highlight.rowGaps, highlight.gridHighlightConfig.rowGapColor,
+      highlight.gridHighlightConfig.rowHatchColor, /* flipDirection */ true);
+  _drawGridGap(
+      context, highlight.columnGaps, highlight.gridHighlightConfig.columnGapColor,
+      highlight.gridHighlightConfig.columnHatchColor);
+
+  drawGridNumbers(highlight, gridBounds);
+}
+
+function _drawGridGap(context, gapCommands, gapColor, hatchColor, flipDirection) {
+  if (!gapColor && !hatchColor) {
+    return;
   }
 
-  // Column Gaps
-  if (highlight.gridHighlightConfig.columnGapColor) {
-    context.save();
-    context.translate(0.5, 0.5);
-    context.lineWidth = 0;
-    context.fillStyle = highlight.gridHighlightConfig.columnGapColor;
-    const bounds = emptyBounds();
-    const path = buildPath(highlight.columnGaps, bounds);
-    if (highlight.gridHighlightConfig.columnHatchColor) {
-      hatchFillPath(context, path, bounds, 10, highlight.gridHighlightConfig.columnHatchColor);
-    }
+  context.save();
+  context.translate(0.5, 0.5);
+  context.lineWidth = 0;
+
+  const bounds = emptyBounds();
+  const path = buildPath(gapCommands, bounds);
+
+  // Fill the gap background if needed.
+  if (gapColor) {
+    context.fillStyle = gapColor;
     context.fill(path);
-    context.restore();
   }
+
+  // And draw the hatch pattern if needed.
+  if (hatchColor) {
+    hatchFillPath(context, path, bounds, /* delta */ 10, hatchColor, flipDirection);
+  }
+  context.restore();
 }
 
 /**
@@ -757,7 +704,7 @@ function _drawLayoutGridHighlight(highlight, context) {
  * @param {CanvasRenderingContext2D} context
  * @param {Path2D} path
  * @param {Object} bounds
- * @param {delta} delta - vertical gap between hatching lines in pixels
+ * @param {number} delta - vertical gap between hatching lines in pixels
  * @param {string} color
  * @param {boolean=} flipDirection - lines are drawn from top right to bottom left
  *
@@ -789,28 +736,6 @@ function hatchFillPath(context, path, bounds, delta, color, flipDirection) {
   context.restore();
 }
 
-function clipLayoutGridCells(highlight, context) {
-  // It may seem simpler to, before drawing the desired path, call context.clip()
-  // with the rows and then with the columns. However, the 2nd context.clip() call
-  // would try to find the intersection of the rows and columns, which is way too
-  // expensive if the grid is huge, e.g. a 1000x1000 grid has 1M cells.
-  // Therefore, it's better to draw the path first, set the globalCompositeOperation
-  // so that the existing canvas content is kept where it overlaps with new content,
-  // and then draw the rows and columns.
-  if (highlight.gridInfo) {
-    for (const grid of highlight.gridInfo) {
-      if (!grid.isPrimaryGrid) {
-        continue;
-      }
-      context.save();
-      context.globalCompositeOperation = 'destination-in';
-      drawPath(context, grid.rows, 'red', null, emptyBounds());
-      drawPath(context, grid.columns, 'red', null, emptyBounds());
-      context.restore();
-    }
-  }
-}
-
 export function drawHighlight(highlight, context) {
   context = context || window.context;
   context.save();
@@ -824,10 +749,6 @@ export function drawHighlight(highlight, context) {
     if (paths.length) {
       context.globalCompositeOperation = 'destination-out';
       drawPath(context, paths[paths.length - 1].path, 'red', null, bounds);
-    }
-    // Clip content quad using the data grid cells info to create white stripes.
-    if (path.name === 'content') {
-      clipLayoutGridCells(highlight, context);
     }
     context.restore();
   }
@@ -850,7 +771,7 @@ export function drawHighlight(highlight, context) {
     }
 
     if (highlight.elementInfo) {
-      _drawElementTitle(highlight.elementInfo, bounds, highlight.colorFormat);
+      _drawElementTitle(highlight, bounds);
     }
   }
   if (highlight.gridInfo) {

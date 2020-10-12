@@ -1,29 +1,33 @@
-export const description = ``;
+export const description = '';
 
-import { TestGroup } from '../../../../common/framework/test_group.js';
+import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../gpu_test.js';
 
-function getBufferDesc(): GPUBufferDescriptor {
+function getBufferDesc(usage: GPUBufferUsageFlags): GPUBufferDescriptor {
   return {
     size: Number.MAX_SAFE_INTEGER,
-    usage: GPUBufferUsage.MAP_WRITE,
+    usage,
   };
 }
 
-export const g = new TestGroup(GPUTest);
+export const g = makeTestGroup(GPUTest);
 
-g.test('mapWriteAsync', async t => {
-  const buffer = t.device.createBuffer(getBufferDesc());
-  t.shouldReject('RangeError', buffer.mapWriteAsync());
+g.test('mapWriteAsync').fn(async t => {
+  const buffer = t.expectGPUError('out-of-memory', () => {
+    return t.device.createBuffer(getBufferDesc(GPUBufferUsage.MAP_WRITE));
+  });
+  t.shouldReject('OperationError', buffer.mapWriteAsync());
 });
 
-g.test('mapReadAsync', async t => {
-  const buffer = t.device.createBuffer(getBufferDesc());
-  t.shouldReject('RangeError', buffer.mapReadAsync());
+g.test('mapReadAsync').fn(async t => {
+  const buffer = t.expectGPUError('out-of-memory', () => {
+    return t.device.createBuffer(getBufferDesc(GPUBufferUsage.MAP_READ));
+  });
+  t.shouldReject('OperationError', buffer.mapReadAsync());
 });
 
-g.test('createBufferMapped', async t => {
+g.test('createBufferMapped').fn(async t => {
   t.shouldThrow('RangeError', () => {
-    t.device.createBufferMapped(getBufferDesc());
+    t.device.createBufferMapped(getBufferDesc(GPUBufferUsage.COPY_SRC));
   });
 });

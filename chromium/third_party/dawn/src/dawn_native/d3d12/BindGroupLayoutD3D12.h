@@ -25,6 +25,7 @@ namespace dawn_native { namespace d3d12 {
     class BindGroup;
     class CPUDescriptorHeapAllocation;
     class Device;
+    class SamplerHeapCacheEntry;
     class StagingDescriptorAllocator;
 
     class BindGroupLayout final : public BindGroupLayoutBase {
@@ -33,9 +34,7 @@ namespace dawn_native { namespace d3d12 {
 
         ResultOrError<BindGroup*> AllocateBindGroup(Device* device,
                                                     const BindGroupDescriptor* descriptor);
-        void DeallocateBindGroup(BindGroup* bindGroup,
-                                 CPUDescriptorHeapAllocation* viewAllocation,
-                                 CPUDescriptorHeapAllocation* samplerAllocation);
+        void DeallocateBindGroup(BindGroup* bindGroup, CPUDescriptorHeapAllocation* viewAllocation);
 
         enum DescriptorType {
             CBV,
@@ -45,7 +44,7 @@ namespace dawn_native { namespace d3d12 {
             Count,
         };
 
-        const std::array<uint32_t, kMaxBindingsPerGroup>& GetBindingOffsets() const;
+        const ityp::array<BindingIndex, uint32_t, kMaxBindingsPerGroup>& GetBindingOffsets() const;
         uint32_t GetCbvUavSrvDescriptorTableSize() const;
         uint32_t GetSamplerDescriptorTableSize() const;
         uint32_t GetCbvUavSrvDescriptorCount() const;
@@ -55,7 +54,7 @@ namespace dawn_native { namespace d3d12 {
 
       private:
         ~BindGroupLayout() override = default;
-        std::array<uint32_t, kMaxBindingsPerGroup> mBindingOffsets;
+        ityp::array<BindingIndex, uint32_t, kMaxBindingsPerGroup> mBindingOffsets;
         std::array<uint32_t, DescriptorType::Count> mDescriptorCounts;
         D3D12_DESCRIPTOR_RANGE mRanges[DescriptorType::Count];
 

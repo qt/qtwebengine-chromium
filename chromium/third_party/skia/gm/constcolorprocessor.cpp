@@ -101,7 +101,7 @@ protected:
                     // translate by x,y for the canvas draws and the test target draws.
                     canvas->save();
                     canvas->translate(x, y);
-                    const SkMatrix viewMatrix = SkMatrix::MakeTrans(x, y);
+                    const SkMatrix viewMatrix = SkMatrix::Translate(x, y);
                     SkSimpleMatrixProvider matrixProvider(viewMatrix);
 
                     // rect to draw
@@ -119,7 +119,7 @@ protected:
 
                     GrConstColorProcessor::InputMode mode = (GrConstColorProcessor::InputMode) m;
                     SkPMColor4f color = SkPMColor4f::FromBytes_RGBA(kColors[procColor]);
-                    auto fp = GrConstColorProcessor::Make(color, mode);
+                    auto fp = GrConstColorProcessor::Make(/*inputFP=*/nullptr, color, mode);
 
                     grPaint.addColorFragmentProcessor(std::move(fp));
                     renderTargetContext->priv().testingOnly_addDrawOp(

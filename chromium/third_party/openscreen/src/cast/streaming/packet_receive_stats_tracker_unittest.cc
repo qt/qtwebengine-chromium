@@ -4,10 +4,12 @@
 
 #include "cast/streaming/packet_receive_stats_tracker.h"
 
+#include <chrono>
 #include <limits>
 
 #include "cast/streaming/constants.h"
 #include "gtest/gtest.h"
+#include "util/chrono_helpers.h"
 
 namespace openscreen {
 namespace cast {
@@ -74,8 +76,7 @@ TEST(PacketReceiveStatsTrackerTest, PopulatesReportWithOnePacketTracked) {
   constexpr uint16_t kSequenceNumber = 1234;
   constexpr RtpTimeTicks kRtpTimestamp =
       RtpTimeTicks() + RtpTimeDelta::FromTicks(42);
-  constexpr auto kArrivalTime =
-      Clock::time_point() + std::chrono::seconds(3600);
+  constexpr auto kArrivalTime = Clock::time_point() + seconds(3600);
 
   PacketReceiveStatsTracker tracker(kSomeRtpTimebase);
   tracker.OnReceivedValidRtpPacket(kSequenceNumber, kRtpTimestamp,
@@ -96,8 +97,7 @@ TEST(PacketReceiveStatsTrackerTest, WhenReceivingAllPackets) {
       std::numeric_limits<uint16_t>::max() - 2;
   constexpr RtpTimeTicks kFirstRtpTimestamp =
       RtpTimeTicks() + RtpTimeDelta::FromTicks(42);
-  constexpr auto kFirstArrivalTime =
-      Clock::time_point() + std::chrono::seconds(3600);
+  constexpr auto kFirstArrivalTime = Clock::time_point() + seconds(3600);
 
   PacketReceiveStatsTracker tracker(kSomeRtpTimebase);
 
@@ -107,7 +107,7 @@ TEST(PacketReceiveStatsTrackerTest, WhenReceivingAllPackets) {
     tracker.OnReceivedValidRtpPacket(
         kFirstSequenceNumber + i,
         kFirstRtpTimestamp + RtpTimeDelta::FromTicks(kSomeRtpTimebase) * i,
-        kFirstArrivalTime + std::chrono::seconds(i));
+        kFirstArrivalTime + seconds(i));
   }
 
   RtcpReportBlock report = GetSentinel();
@@ -131,8 +131,7 @@ TEST(PacketReceiveStatsTrackerTest, WhenReceivingAboutHalfThePackets) {
   constexpr uint16_t kFirstSequenceNumber = 3;
   constexpr RtpTimeTicks kFirstRtpTimestamp =
       RtpTimeTicks() + RtpTimeDelta::FromTicks(99);
-  constexpr auto kFirstArrivalTime =
-      Clock::time_point() + std::chrono::seconds(8888);
+  constexpr auto kFirstArrivalTime = Clock::time_point() + seconds(8888);
 
   PacketReceiveStatsTracker tracker(kSomeRtpTimebase);
 
@@ -145,7 +144,7 @@ TEST(PacketReceiveStatsTrackerTest, WhenReceivingAboutHalfThePackets) {
     tracker.OnReceivedValidRtpPacket(
         kFirstSequenceNumber + (i * 2 + 1),
         kFirstRtpTimestamp + RtpTimeDelta::FromTicks(kSomeRtpTimebase) * i,
-        kFirstArrivalTime + std::chrono::seconds(i));
+        kFirstArrivalTime + seconds(i));
   }
 
   RtcpReportBlock report = GetSentinel();
@@ -163,14 +162,12 @@ TEST(PacketReceiveStatsTrackerTest, ComputesJitterCorrectly) {
   constexpr uint16_t kFirstSequenceNumber = 3;
   constexpr RtpTimeTicks kFirstRtpTimestamp =
       RtpTimeTicks() + RtpTimeDelta::FromTicks(99);
-  constexpr auto kFirstArrivalTime =
-      Clock::time_point() + std::chrono::seconds(8888);
+  constexpr auto kFirstArrivalTime = Clock::time_point() + seconds(8888);
 
   // Record 100 packet arrivals, one second apart, where each packet's RTP
   // timestamps are progressing 2 seconds forward. Thus, the jitter calculation
   // should gradually converge towards a difference of one second.
-  constexpr auto kTrueJitter =
-      std::chrono::duration_cast<Clock::duration>(std::chrono::seconds(1));
+  constexpr auto kTrueJitter = Clock::to_duration(seconds(1));
   PacketReceiveStatsTracker tracker(kSomeRtpTimebase);
   Clock::duration last_diff = Clock::duration::max();
   for (int i = 0; i < 100; ++i) {
@@ -178,7 +175,7 @@ TEST(PacketReceiveStatsTrackerTest, ComputesJitterCorrectly) {
         kFirstSequenceNumber + i,
         kFirstRtpTimestamp +
             RtpTimeDelta::FromTicks(kSomeRtpTimebase) * (i * 2),
-        kFirstArrivalTime + std::chrono::seconds(i));
+        kFirstArrivalTime + seconds(i));
 
     // Expect that the jitter is becoming closer to the actual value in each
     // iteration.
@@ -198,8 +195,7 @@ TEST(PacketReceiveStatsTrackerTest, ComputesJitterCorrectly) {
   tracker.PopulateNextReport(&report);
   const auto diff =
       kTrueJitter - report.jitter.ToDuration<Clock::duration>(kSomeRtpTimebase);
-  constexpr auto kMaxDiffAtEnd =
-      std::chrono::duration_cast<Clock::duration>(std::chrono::milliseconds(2));
+  constexpr auto kMaxDiffAtEnd = Clock::to_duration(milliseconds(2));
   EXPECT_NEAR(0, diff.count(), kMaxDiffAtEnd.count());
 }
 

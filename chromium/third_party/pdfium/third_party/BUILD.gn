@@ -47,20 +47,6 @@ if (pdf_enable_xfa) {
 }
 
 if (pdf_bundle_freetype) {
-  config("fx_freetype_warnings") {
-    visibility = [ ":*" ]
-    if (is_clang) {
-      # open_face_PS_from_sfnt_stream() and open_face_from_buffer() in
-      # ftbase.h are unused.
-      #
-      # ttgload.c casts from unsigned int to unsigned long to void*.
-      cflags = [
-        "-Wno-unused-function",
-        "-Wno-int-to-void-pointer-cast",
-      ]
-    }
-  }
-
   config("freetype_public_includes_config") {
     # The relative freetype/include path points to PDFium's custom config.
     # The absolute path points to whatever copy of FreeType is in
@@ -85,9 +71,6 @@ if (pdf_bundle_freetype) {
     configs += [
       "//build/config/compiler:no_chromium_code",
       ":pdfium_third_party_config",
-
-      # Must be after no_chromium_code for warning flags to be ordered correctly.
-      ":fx_freetype_warnings",
     ]
 
     public_configs = [ ":freetype_public_includes_config" ]
@@ -263,9 +246,6 @@ config("fx_lcms2_warnings") {
       # cmslut.cc is sloppy with aggregate initialization. Version 2.7 of this
       # library doesn't appear to have this problem.
       "-Wno-missing-braces",
-
-      # FindPrev() in cmsplugin.c is unused.
-      "-Wno-unused-function",
     ]
   }
 }
@@ -390,7 +370,7 @@ group("libopenjpeg2") {
 
 config("fx_libopenjpeg_warnings") {
   visibility = [ ":*" ]
-  if (is_win) {
+  if (is_win && !is_clang && target_cpu == "x86") {
     cflags = [
       # Signed/unsigned comparisons.
       "/wd4018",
@@ -422,6 +402,8 @@ source_set("fx_libopenjpeg") {
     "libopenjpeg20/mqc.c",
     "libopenjpeg20/openjpeg.c",
     "libopenjpeg20/opj_clock.c",
+    "libopenjpeg20/opj_malloc.cc",
+    "libopenjpeg20/opj_malloc.h",
     "libopenjpeg20/pi.c",
     "libopenjpeg20/sparse_array.c",
     "libopenjpeg20/sparse_array.h",
@@ -604,16 +586,25 @@ source_set("pdfium_base") {
     "base/base_export.h",
     "base/bits.h",
     "base/compiler_specific.h",
+    "base/containers/adapters.h",
     "base/debug/alias.cc",
     "base/debug/alias.h",
     "base/immediate_crash.h",
     "base/logging.h",
+    "base/memory/aligned_memory.cc",
+    "base/memory/aligned_memory.h",
     "base/no_destructor.h",
+    "base/numerics/checked_math.h",
+    "base/numerics/checked_math_impl.h",
+    "base/numerics/clamped_math.h",
+    "base/numerics/clamped_math_impl.h",
     "base/numerics/safe_conversions.h",
     "base/numerics/safe_conversions_arm_impl.h",
     "base/numerics/safe_conversions_impl.h",
     "base/numerics/safe_math.h",
-    "base/numerics/safe_math_impl.h",
+    "base/numerics/safe_math_arm_impl.h",
+    "base/numerics/safe_math_clang_gcc_impl.h",
+    "base/numerics/safe_math_shared_impl.h",
     "base/optional.h",
     "base/span.h",
     "base/stl_util.h",

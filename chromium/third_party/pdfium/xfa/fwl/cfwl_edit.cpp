@@ -14,7 +14,6 @@
 #include "build/build_config.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/text_char_pos.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
@@ -49,7 +48,7 @@ CFWL_Edit::CFWL_Edit(const CFWL_App* app,
                      std::unique_ptr<CFWL_WidgetProperties> properties,
                      CFWL_Widget* pOuter)
     : CFWL_Widget(app, std::move(properties), pOuter),
-      m_pEditEngine(pdfium::MakeUnique<CFDE_TextEditEngine>()) {
+      m_pEditEngine(std::make_unique<CFDE_TextEditEngine>()) {
   m_pEditEngine->SetDelegate(this);
 }
 
@@ -875,26 +874,26 @@ void CFWL_Edit::InitVerticalScrollBar() {
   if (m_pVertScrollBar)
     return;
 
-  auto prop = pdfium::MakeUnique<CFWL_WidgetProperties>();
+  auto prop = std::make_unique<CFWL_WidgetProperties>();
   prop->m_dwStyleExes = FWL_STYLEEXT_SCB_Vert;
   prop->m_dwStates = FWL_WGTSTATE_Disabled | FWL_WGTSTATE_Invisible;
   prop->m_pParent = this;
   prop->m_pThemeProvider = m_pProperties->m_pThemeProvider;
-  m_pVertScrollBar = pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
-                                                        std::move(prop), this);
+  m_pVertScrollBar = std::make_unique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
+                                                      std::move(prop), this);
 }
 
 void CFWL_Edit::InitHorizontalScrollBar() {
   if (m_pHorzScrollBar)
     return;
 
-  auto prop = pdfium::MakeUnique<CFWL_WidgetProperties>();
+  auto prop = std::make_unique<CFWL_WidgetProperties>();
   prop->m_dwStyleExes = FWL_STYLEEXT_SCB_Horz;
   prop->m_dwStates = FWL_WGTSTATE_Disabled | FWL_WGTSTATE_Invisible;
   prop->m_pParent = this;
   prop->m_pThemeProvider = m_pProperties->m_pThemeProvider;
-  m_pHorzScrollBar = pdfium::MakeUnique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
-                                                        std::move(prop), this);
+  m_pHorzScrollBar = std::make_unique<CFWL_ScrollBar>(m_pOwnerApp.Get(),
+                                                      std::move(prop), this);
 }
 
 void CFWL_Edit::ShowCaret(CFX_RectF* pRect) {
@@ -966,8 +965,8 @@ void CFWL_Edit::InitCaret() {
   if (m_pCaret)
     return;
 
-  m_pCaret = pdfium::MakeUnique<CFWL_Caret>(
-      m_pOwnerApp.Get(), pdfium::MakeUnique<CFWL_WidgetProperties>(), this);
+  m_pCaret = std::make_unique<CFWL_Caret>(
+      m_pOwnerApp.Get(), std::make_unique<CFWL_WidgetProperties>(), this);
   m_pCaret->SetParent(this);
   m_pCaret->SetStates(m_pProperties->m_dwStates);
   UpdateCursorRect();
@@ -1007,13 +1006,13 @@ void CFWL_Edit::OnProcessMessage(CFWL_Message* pMessage) {
     return;
 
   switch (pMessage->GetType()) {
-    case CFWL_Message::Type::SetFocus:
+    case CFWL_Message::Type::kSetFocus:
       OnFocusChanged(pMessage, true);
       break;
-    case CFWL_Message::Type::KillFocus:
+    case CFWL_Message::Type::kKillFocus:
       OnFocusChanged(pMessage, false);
       break;
-    case CFWL_Message::Type::Mouse: {
+    case CFWL_Message::Type::kMouse: {
       CFWL_MessageMouse* pMsg = static_cast<CFWL_MessageMouse*>(pMessage);
       switch (pMsg->m_dwCmd) {
         case FWL_MouseCommand::LeftButtonDown:
@@ -1036,11 +1035,11 @@ void CFWL_Edit::OnProcessMessage(CFWL_Message* pMessage) {
       }
       break;
     }
-    case CFWL_Message::Type::Key: {
+    case CFWL_Message::Type::kKey: {
       CFWL_MessageKey* pKey = static_cast<CFWL_MessageKey*>(pMessage);
-      if (pKey->m_dwCmd == FWL_KeyCommand::KeyDown)
+      if (pKey->m_dwCmd == CFWL_MessageKey::Type::kKeyDown)
         OnKeyDown(pKey);
-      else if (pKey->m_dwCmd == FWL_KeyCommand::Char)
+      else if (pKey->m_dwCmd == CFWL_MessageKey::Type::kChar)
         OnChar(pKey);
       break;
     }

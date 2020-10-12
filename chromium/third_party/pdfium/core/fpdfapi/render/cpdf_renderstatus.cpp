@@ -63,7 +63,6 @@
 #include "core/fxge/text_glyph_pos.h"
 #include "third_party/base/compiler_specific.h"
 #include "third_party/base/logging.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 #ifdef _SKIA_SUPPORT_
@@ -117,6 +116,26 @@ RetainPtr<CFX_DIBitmap> DrawPatternBitmap(
   return pBitmap;
 }
 
+int GetFillRenderOptionsHelper(const CPDF_RenderOptions::Options& options,
+                               const CPDF_PathObject* path_obj,
+                               int fill_type,
+                               bool is_stroke,
+                               bool is_type3_char) {
+  int fill_options = fill_type;
+  if (fill_type && options.bRectAA)
+    fill_options |= FXFILL_RECT_AA;
+  if (options.bNoPathSmooth)
+    fill_options |= FXFILL_NOPATHSMOOTH;
+  if (path_obj->m_GeneralState.GetStrokeAdjust())
+    fill_options |= FX_STROKE_ADJUST;
+  if (is_stroke)
+    fill_options |= FX_FILL_STROKE;
+  if (is_type3_char)
+    fill_options |= FX_FILL_TEXT_MODE;
+
+  return fill_options;
+}
+
 bool IsAvailableMatrix(const CFX_Matrix& matrix) {
   if (matrix.a == 0 || matrix.d == 0)
     return matrix.b != 0 && matrix.c != 0;
@@ -167,7 +186,7 @@ CPDF_RenderStatus::CPDF_RenderStatus(CPDF_RenderContext* pContext,
                                      CFX_RenderDevice* pDevice)
     : m_pContext(pContext), m_pDevice(pDevice) {}
 
-CPDF_RenderStatus::~CPDF_RenderStatus() {}
+CPDF_RenderStatus::~CPDF_RenderStatus() = default;
 
 void CPDF_RenderStatus::Initialize(const CPDF_RenderStatus* pParentStatus,
                                    const CPDF_GraphicStates* pInitialStates) {
@@ -277,7 +296,7 @@ bool CPDF_RenderStatus::ContinueSingleObject(CPDF_PageObject* pObj,
     return false;
   }
 
-  m_pImageRenderer = pdfium::MakeUnique<CPDF_ImageRenderer>();
+  m_pImageRenderer = std::make_unique<CPDF_ImageRenderer>();
   if (!m_pImageRenderer->Start(this, pObj->AsImage(), mtObj2Device, false,
                                BlendMode::kNormal)) {
     if (!m_pImageRenderer->GetResult())
@@ -346,10 +365,7 @@ void CPDF_RenderStatus::DrawObjWithBackground(CPDF_PageObject* pObj,
   if (rect.IsEmpty())
     return;
 
-  int res = 300;
-  if (pObj->IsImage() && m_pDevice->GetDeviceType() == DeviceType::kPrinter)
-    res = 0;
-
+  int res = (pObj->IsImage() && m_bPrint) ? 0 : 300;
   CPDF_ScaledRenderBuffer buffer;
   if (!buffer.Initialize(m_pContext.Get(), m_pDevice, rect, pObj, &m_Options,
                          res)) {
@@ -405,6 +421,7 @@ bool CPDF_RenderStatus::ProcessForm(const CPDF_FormObject* pFormObj,
 
 bool CPDF_RenderStatus::ProcessPath(CPDF_PathObject* pPathObj,
                                     const CFX_Matrix& mtObj2Device) {
+  // Path fill type, can be 0, FXFILL_ALTERNATE or FXFILL_WINDING.
   int FillType = pPathObj->filltype();
   bool bStroke = pPathObj->stroke();
   ProcessPathPattern(pPathObj, mtObj2Device, &FillType, &bStroke);
@@ -413,8 +430,9 @@ bool CPDF_RenderStatus::ProcessPath(CPDF_PathObject* pPathObj,
 
   // If the option to convert fill paths to stroke is enabled for forced color,
   // set |FillType| to 0 and |bStroke| to true.
+  CPDF_RenderOptions::Options& options = m_Options.GetOptions();
   if (m_Options.ColorModeIs(CPDF_RenderOptions::Type::kForcedColor) &&
-      m_Options.GetOptions().bConvertFillToStroke && (FillType != 0)) {
+      options.bConvertFillToStroke && (FillType != 0)) {
     bStroke = true;
     FillType = 0;
   }
@@ -425,28 +443,12 @@ bool CPDF_RenderStatus::ProcessPath(CPDF_PathObject* pPathObj,
   if (!IsAvailableMatrix(path_matrix))
     return true;
 
-  if (FillType && m_Options.GetOptions().bRectAA)
-    FillType |= FXFILL_RECT_AA;
-  if (m_Options.GetOptions().bFillFullcover)
-    FillType |= FXFILL_FULLCOVER;
-  if (m_Options.GetOptions().bNoPathSmooth)
-    FillType |= FXFILL_NOPATHSMOOTH;
-  if (bStroke)
-    FillType |= FX_FILL_STROKE;
-
-  const CPDF_PageObject* pPageObj =
-      static_cast<const CPDF_PageObject*>(pPathObj);
-  if (pPageObj->m_GeneralState.GetStrokeAdjust())
-    FillType |= FX_STROKE_ADJUST;
-  if (m_pType3Char)
-    FillType |= FX_FILL_TEXT_MODE;
-
-  CFX_GraphState graphState = pPathObj->m_GraphState;
-  if (m_Options.GetOptions().bThinLine)
-    graphState.SetLineWidth(0);
+  int fill_options = GetFillRenderOptionsHelper(options, pPathObj, FillType,
+                                                bStroke, m_pType3Char);
   return m_pDevice->DrawPathWithBlend(
-      pPathObj->path().GetObject(), &path_matrix, graphState.GetObject(),
-      fill_argb, stroke_argb, FillType, m_curBlend);
+      pPathObj->path().GetObject(), &path_matrix,
+      pPathObj->m_GraphState.GetObject(), fill_argb, stroke_argb, fill_options,
+      m_curBlend);
 }
 
 RetainPtr<CPDF_TransferFunc> CPDF_RenderStatus::GetTransferFunc(
@@ -547,7 +549,7 @@ void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
   if (ClipPath.GetTextCount() == 0)
     return;
 
-  if (m_pDevice->GetDeviceType() == DeviceType::kDisplay &&
+  if (!m_bPrint &&
       !(m_pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SOFT_CLIP)) {
     return;
   }
@@ -557,7 +559,7 @@ void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
     CPDF_TextObject* pText = ClipPath.GetText(i);
     if (pText) {
       if (!pTextClippingPath)
-        pTextClippingPath = pdfium::MakeUnique<CFX_PathData>();
+        pTextClippingPath = std::make_unique<CFX_PathData>();
       ProcessText(pText, mtObj2Device, pTextClippingPath.get());
       continue;
     }
@@ -590,11 +592,9 @@ bool CPDF_RenderStatus::SelectClipPath(const CPDF_PathObject* pPathObj,
                                        bool bStroke) {
   CFX_Matrix path_matrix = pPathObj->matrix() * mtObj2Device;
   if (bStroke) {
-    CFX_GraphState graphState = pPathObj->m_GraphState;
-    if (m_Options.GetOptions().bThinLine)
-      graphState.SetLineWidth(0);
     return m_pDevice->SetClip_PathStroke(pPathObj->path().GetObject(),
-                                         &path_matrix, graphState.GetObject());
+                                         &path_matrix,
+                                         pPathObj->m_GraphState.GetObject());
   }
   int fill_mode = pPathObj->filltype();
   if (m_Options.GetOptions().bNoPathSmooth) {
@@ -609,7 +609,7 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
 #if defined _SKIA_SUPPORT_
   DebugVerifyDeviceIsPreMultiplied();
 #endif
-  BlendMode blend_type = pPageObj->m_GeneralState.GetBlendType();
+  const BlendMode blend_type = pPageObj->m_GeneralState.GetBlendType();
   CPDF_Dictionary* pSMaskDict =
       ToDictionary(pPageObj->m_GeneralState.GetSoftMask());
   if (pSMaskDict) {
@@ -631,36 +631,8 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
   }
   bool bTextClip =
       (pPageObj->m_ClipPath.HasRef() &&
-       pPageObj->m_ClipPath.GetTextCount() > 0 &&
-       m_pDevice->GetDeviceType() == DeviceType::kDisplay &&
+       pPageObj->m_ClipPath.GetTextCount() > 0 && !m_bPrint &&
        !(m_pDevice->GetDeviceCaps(FXDC_RENDER_CAPS) & FXRC_SOFT_CLIP));
-  if (m_Options.GetOptions().bOverprint && pPageObj->IsImage() &&
-      pPageObj->m_GeneralState.GetFillOP() &&
-      pPageObj->m_GeneralState.GetStrokeOP()) {
-    CPDF_Document* pDocument = nullptr;
-    CPDF_Page* pPage = nullptr;
-    if (m_pContext->GetPageCache()) {
-      pPage = m_pContext->GetPageCache()->GetPage();
-      pDocument = pPage->GetDocument();
-    } else {
-      pDocument = pPageObj->AsImage()->GetImage()->GetDocument();
-    }
-    const CPDF_Dictionary* pPageResources =
-        pPage ? pPage->m_pPageResources.Get() : nullptr;
-    auto* pImageStream = pPageObj->AsImage()->GetImage()->GetStream();
-    const CPDF_Object* pCSObj =
-        pImageStream->GetDict()->GetDirectObjectFor("ColorSpace");
-    RetainPtr<CPDF_ColorSpace> pColorSpace =
-        CPDF_DocPageData::FromDocument(pDocument)->GetColorSpace(
-            pCSObj, pPageResources);
-    if (pColorSpace) {
-      int format = pColorSpace->GetFamily();
-      if (format == PDFCS_DEVICECMYK || format == PDFCS_SEPARATION ||
-          format == PDFCS_DEVICEN) {
-        blend_type = BlendMode::kDarken;
-      }
-    }
-  }
   if (!pSMaskDict && group_alpha == 1.0f && blend_type == BlendMode::kNormal &&
       !bTextClip && !bGroupTransparent) {
     return false;
@@ -820,7 +792,7 @@ std::unique_ptr<CPDF_GraphicStates> CPDF_RenderStatus::CloneObjStates(
   if (!pSrcStates)
     return nullptr;
 
-  auto pStates = pdfium::MakeUnique<CPDF_GraphicStates>();
+  auto pStates = std::make_unique<CPDF_GraphicStates>();
   pStates->CopyStates(*pSrcStates);
   const CPDF_Color* pObjColor = bStroke
                                     ? pSrcStates->m_ColorState.GetStrokeColor()
@@ -955,13 +927,12 @@ bool CPDF_RenderStatus::ProcessText(CPDF_TextObject* textobj,
 bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
                                          const CFX_Matrix& mtObj2Device) {
   CPDF_Type3Font* pType3Font = textobj->m_TextState.GetFont()->AsType3Font();
-  if (pdfium::ContainsValue(m_Type3FontCache, pType3Font))
+  if (pdfium::Contains(m_Type3FontCache, pType3Font))
     return true;
 
-  DeviceType device_type = m_pDevice->GetDeviceType();
   FX_ARGB fill_argb = GetFillArgbForType3(textobj);
   int fill_alpha = FXARGB_A(fill_argb);
-  if (device_type != DeviceType::kDisplay && fill_alpha < 255)
+  if (m_bPrint && fill_alpha < 255)
     return false;
 
   CFX_Matrix text_matrix = textobj->GetTextMatrix();
@@ -972,7 +943,7 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
   // Must come before |glyphs|, because |glyphs| points into |refTypeCache|.
   std::set<RetainPtr<CPDF_Type3Cache>> refTypeCache;
   std::vector<TextGlyphPos> glyphs;
-  if (device_type == DeviceType::kDisplay)
+  if (!m_bPrint)
     glyphs.resize(textobj->GetCharCodes().size());
 
   for (size_t iChar = 0; iChar < textobj->GetCharCodes().size(); ++iChar) {
@@ -1056,7 +1027,17 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
         m_pDevice->SetDIBits(bitmap_device.GetBitmap(), rect.left, rect.top);
       }
     } else if (pType3Char->GetBitmap()) {
-      if (device_type == DeviceType::kDisplay) {
+      if (m_bPrint) {
+        CFX_Matrix image_matrix = pType3Char->matrix() * matrix;
+        CPDF_ImageRenderer renderer;
+        if (renderer.Start(this, pType3Char->GetBitmap(), fill_argb, 255,
+                           image_matrix, FXDIB_ResampleOptions(), false,
+                           BlendMode::kNormal)) {
+          renderer.Continue(nullptr);
+        }
+        if (!renderer.GetResult())
+          return false;
+      } else {
         CPDF_Document* pDoc = pType3Font->GetDocument();
         RetainPtr<CPDF_Type3Cache> pCache =
             CPDF_DocRenderData::FromDocument(pDoc)->GetCachedType3(pType3Font);
@@ -1085,16 +1066,6 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
           glyphs[iChar].m_pGlyph = pBitmap;
           glyphs[iChar].m_Origin = origin;
         }
-      } else {
-        CFX_Matrix image_matrix = pType3Char->matrix() * matrix;
-        CPDF_ImageRenderer renderer;
-        if (renderer.Start(this, pType3Char->GetBitmap(), fill_argb, 255,
-                           image_matrix, FXDIB_ResampleOptions(), false,
-                           BlendMode::kNormal)) {
-          renderer.Continue(nullptr);
-        }
-        if (!renderer.GetResult())
-          return false;
       }
     }
   }

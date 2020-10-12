@@ -49,6 +49,14 @@ class MockableQuicClient : public QuicClient {
                      const ParsedQuicVersionVector& supported_versions,
                      QuicEpollServer* epoll_server,
                      std::unique_ptr<ProofVerifier> proof_verifier);
+
+  MockableQuicClient(QuicSocketAddress server_address,
+                     const QuicServerId& server_id,
+                     const QuicConfig& config,
+                     const ParsedQuicVersionVector& supported_versions,
+                     QuicEpollServer* epoll_server,
+                     std::unique_ptr<ProofVerifier> proof_verifier,
+                     std::unique_ptr<SessionCache> session_cache);
   MockableQuicClient(const MockableQuicClient&) = delete;
   MockableQuicClient& operator=(const MockableQuicClient&) = delete;
 
@@ -100,6 +108,12 @@ class QuicTestClient : public QuicSpdyStream::Visitor,
                  const QuicConfig& config,
                  const ParsedQuicVersionVector& supported_versions,
                  std::unique_ptr<ProofVerifier> proof_verifier);
+  QuicTestClient(QuicSocketAddress server_address,
+                 const std::string& server_hostname,
+                 const QuicConfig& config,
+                 const ParsedQuicVersionVector& supported_versions,
+                 std::unique_ptr<ProofVerifier> proof_verifier,
+                 std::unique_ptr<SessionCache> session_cache);
 
   ~QuicTestClient() override;
 
@@ -188,9 +202,10 @@ class QuicTestClient : public QuicSpdyStream::Visitor,
   void WaitForInitialResponse() { WaitForInitialResponseForMs(-1); }
 
   // Returns once at least one complete response or a connection close has been
-  // received from the server, or once the timeout expires. -1 means no timeout.
-  // If responses are received for multiple (say 2) streams, next
-  // WaitForResponseForMs will return immediately.
+  // received from the server, or once the timeout expires.
+  // Passing in a timeout value of -1 disables the timeout. If multiple
+  // responses are received while the client is waiting, subsequent calls to
+  // this function will return immediately.
   void WaitForResponseForMs(int timeout_ms) {
     WaitUntil(timeout_ms, [this]() { return !closed_stream_states_.empty(); });
     if (response_complete()) {

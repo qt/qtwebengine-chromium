@@ -379,82 +379,94 @@ void MetalCodeGenerator::writeSpecialIntrinsic(const FunctionCall & c, SpecialIn
     }
 }
 
-// If it hasn't already been written, writes a constructor for 'matrix' which takes a single value
-// of type 'arg'.
-String MetalCodeGenerator::getMatrixConstructHelper(const Type& matrix, const Type& arg) {
-    String key = matrix.name() + arg.name();
-    auto found = fHelpers.find(key);
-    if (found != fHelpers.end()) {
-        return found->second;
-    }
-    String name;
+// Generates a constructor for 'matrix' which reorganizes the input arguments into the proper shape.
+// Keeps track of previously generated constructors so that we won't generate more than one
+// constructor for any given permutation of input argument types. Returns the name of the
+// generated constructor method.
+String MetalCodeGenerator::getMatrixConstructHelper(const Constructor& c) {
+    const Type& matrix = c.fType;
     int columns = matrix.columns();
     int rows = matrix.rows();
-    if (arg.isNumber()) {
-        // creating a matrix from a single scalar value
-        name = "float" + to_string(columns) + "x" + to_string(rows) + "_from_float";
-        fExtraFunctions.printf("float%dx%d %s(float x) {\n",
-                               columns, rows, name.c_str());
-        fExtraFunctions.printf("    return float%dx%d(", columns, rows);
-        for (int i = 0; i < columns; ++i) {
-            if (i > 0) {
-                fExtraFunctions.writeText(", ");
-            }
-            fExtraFunctions.printf("float%d(", rows);
-            for (int j = 0; j < rows; ++j) {
-                if (j > 0) {
-                    fExtraFunctions.writeText(", ");
+    const std::vector<std::unique_ptr<Expression>>& args = c.fArguments;
+
+    // Create the helper-method name and use it as our lookup key.
+    String name;
+    name.appendf("float%dx%d_from", columns, rows);
+    for (const std::unique_ptr<Expression>& expr : args) {
+        name.appendf("_%s", expr->fType.displayName().c_str());
+    }
+
+    // If a helper-method has already been synthesized, we don't need to synthesize it again.
+    auto [iter, newlyCreated] = fHelpers.insert(name);
+    if (!newlyCreated) {
+        return name;
+    }
+
+    // Unlike GLSL, Metal requires that matrices are initialized with exactly R vectors of C
+    // components apiece. (In Metal 2.0, you can also supply R*C scalars, but you still cannot
+    // supply a mixture of scalars and vectors.)
+    fExtraFunctions.printf("float%dx%d %s(", columns, rows, name.c_str());
+
+    size_t argIndex = 0;
+    const char* argSeparator = "";
+    for (const std::unique_ptr<Expression>& expr : c.fArguments) {
+        fExtraFunctions.printf("%s%s x%zu", argSeparator,
+                               expr->fType.displayName().c_str(), argIndex++);
+        argSeparator = ", ";
+    }
+
+    fExtraFunctions.printf(") {\n    return float%dx%d(", columns, rows);
+
+    argIndex = 0;
+    int argPosition = 0;
+
+    const char* columnSeparator = "";
+    for (int c = 0; c < columns; ++c) {
+        fExtraFunctions.printf("%sfloat%d(", columnSeparator, rows);
+        columnSeparator = "), ";
+
+        const char* rowSeparator = "";
+        for (int r = 0; r < rows; ++r) {
+            fExtraFunctions.printf("%s", rowSeparator);
+            rowSeparator = ", ";
+
+            const Type& argType = args[argIndex]->fType;
+            switch (argType.kind()) {
+                case Type::kScalar_Kind: {
+                    fExtraFunctions.printf("x%zu", argIndex);
+                    break;
                 }
-                if (i == j) {
-                    fExtraFunctions.writeText("x");
-                } else {
-                    fExtraFunctions.writeText("0");
+                case Type::kVector_Kind: {
+                    fExtraFunctions.printf("x%zu[%d]", argIndex, argPosition);
+                    break;
+                }
+                case Type::kMatrix_Kind: {
+                    fExtraFunctions.printf("x%zu[%d][%d]", argIndex,
+                                           argPosition / argType.rows(),
+                                           argPosition % argType.rows());
+                    break;
+                }
+                default: {
+                    SkDEBUGFAIL("incorrect type of argument for matrix constructor");
+                    fExtraFunctions.printf("<error>");
+                    break;
                 }
             }
-            fExtraFunctions.writeText(")");
+
+            ++argPosition;
+            if (argPosition >= argType.columns() * argType.rows()) {
+                ++argIndex;
+                argPosition = 0;
+            }
         }
-        fExtraFunctions.writeText(");\n}\n");
-    } else if (arg.kind() == Type::kMatrix_Kind) {
-        // creating a matrix from another matrix
-        int argColumns = arg.columns();
-        int argRows = arg.rows();
-        name = "float" + to_string(columns) + "x" + to_string(rows) + "_from_float" +
-               to_string(argColumns) + "x" + to_string(argRows);
-        fExtraFunctions.printf("float%dx%d %s(float%dx%d m) {\n",
-                               columns, rows, name.c_str(), argColumns, argRows);
-        fExtraFunctions.printf("    return float%dx%d(", columns, rows);
-        for (int i = 0; i < columns; ++i) {
-            if (i > 0) {
-                fExtraFunctions.writeText(", ");
-            }
-            fExtraFunctions.printf("float%d(", rows);
-            for (int j = 0; j < rows; ++j) {
-                if (j > 0) {
-                    fExtraFunctions.writeText(", ");
-                }
-                if (i < argColumns && j < argRows) {
-                    fExtraFunctions.printf("m[%d][%d]", i, j);
-                } else {
-                    fExtraFunctions.writeText("0");
-                }
-            }
-            fExtraFunctions.writeText(")");
-        }
-        fExtraFunctions.writeText(");\n}\n");
-    } else if (matrix.rows() == 2 && matrix.columns() == 2 && arg == *fContext.fFloat4_Type) {
-        // float2x2(float4) doesn't work, need to split it into float2x2(float2, float2)
-        name = "float2x2_from_float4";
-        fExtraFunctions.printf(
-            "float2x2 %s(float4 v) {\n"
-            "    return float2x2(float2(v[0], v[1]), float2(v[2], v[3]));\n"
-            "}\n",
-            name.c_str()
-        );
-    } else {
-        SkASSERT(false);
+    }
+
+    if (argPosition != 0 || argIndex != args.size()) {
+        SkDEBUGFAIL("incorrect number of arguments for matrix constructor");
         name = "<error>";
     }
-    fHelpers[key] = name;
+
+    fExtraFunctions.printf("));\n}\n");
     return name;
 }
 
@@ -468,43 +480,116 @@ bool MetalCodeGenerator::canCoerce(const Type& t1, const Type& t2) {
     return t1.isFloat() && t2.isFloat();
 }
 
-void MetalCodeGenerator::writeConstructor(const Constructor& c, Precedence parentPrecedence) {
-    if (c.fArguments.size() == 1 && this->canCoerce(c.fType, c.fArguments[0]->fType)) {
-        this->writeExpression(*c.fArguments[0], parentPrecedence);
-        return;
+bool MetalCodeGenerator::matrixConstructHelperIsNeeded(const Constructor& c) {
+    // A matrix construct helper is only necessary if we are, in fact, constructing a matrix.
+    if (c.fType.kind() != Type::kMatrix_Kind) {
+        return false;
     }
-    if (c.fType.kind() == Type::kMatrix_Kind && c.fArguments.size() == 1) {
-        const Expression& arg = *c.fArguments[0];
-        String name = this->getMatrixConstructHelper(c.fType, arg.fType);
-        this->write(name);
-        this->write("(");
-        this->writeExpression(arg, kSequence_Precedence);
-        this->write(")");
-    } else {
-        this->writeType(c.fType);
+
+    // GLSL is fairly free-form about inputs to its matrix constructors, but Metal is not; it
+    // expects exactly R vectors of C components apiece. (Metal 2.0 also allows a list of R*C
+    // scalars.) Some cases are simple to translate and so we handle those inline--e.g. a list of
+    // scalars can be constructed trivially. In more complex cases, we generate a helper function
+    // that converts our inputs into a properly-shaped matrix.
+    // A matrix construct helper method is always used if any input argument is a matrix.
+    // Helper methods are also necessary when any argument would span multiple rows. For instance:
+    //
+    // float2 x = (1, 2);
+    // float3x2(x, 3, 4, 5, 6) = | 1 3 5 | = no helper needed; conversion can be done inline
+    //                           | 2 4 6 |
+    //
+    // float2 x = (2, 3);
+    // float3x2(1, x, 4, 5, 6) = | 1 3 5 | = x spans multiple rows; a helper method will be used
+    //                           | 2 4 6 |
+    //
+    // float4 x = (1, 2, 3, 4);
+    // float2x2(x) = | 1 3 | = x spans multiple rows; a helper method will be used
+    //               | 2 4 |
+    //
+
+    int position = 0;
+    for (const std::unique_ptr<Expression>& expr : c.fArguments) {
+        // If an input argument is a matrix, we need a helper function.
+        if (expr->fType.kind() == Type::kMatrix_Kind) {
+            return true;
+        }
+        position += expr->fType.columns();
+        if (position > c.fType.rows()) {
+            // An input argument would span multiple rows; a helper function is required.
+            return true;
+        }
+        if (position == c.fType.rows()) {
+            // We've advanced to the end of a row. Wrap to the start of the next row.
+            position = 0;
+        }
+    }
+
+    return false;
+}
+
+void MetalCodeGenerator::writeConstructor(const Constructor& c, Precedence parentPrecedence) {
+    // Handle special cases for single-argument constructors.
+    if (c.fArguments.size() == 1) {
+        // If the type is coercible, emit it directly.
+        const Expression& arg = *c.fArguments.front();
+        if (this->canCoerce(c.fType, arg.fType)) {
+            this->writeExpression(arg, parentPrecedence);
+            return;
+        }
+
+        // Metal supports creating matrices with a scalar on the diagonal via the single-argument
+        // matrix constructor.
+        if (c.fType.kind() == Type::kMatrix_Kind && arg.fType.isNumber()) {
+            const Type& matrix = c.fType;
+            this->write("float");
+            this->write(to_string(matrix.columns()));
+            this->write("x");
+            this->write(to_string(matrix.rows()));
+            this->write("(");
+            this->writeExpression(arg, parentPrecedence);
+            this->write(")");
+            return;
+        }
+    }
+
+    // Emit and invoke a matrix-constructor helper method if one is necessary.
+    if (this->matrixConstructHelperIsNeeded(c)) {
+        this->write(this->getMatrixConstructHelper(c));
         this->write("(");
         const char* separator = "";
-        int scalarCount = 0;
-        for (const auto& arg : c.fArguments) {
+        for (const std::unique_ptr<Expression>& expr : c.fArguments) {
             this->write(separator);
             separator = ", ";
-            if (Type::kMatrix_Kind == c.fType.kind() && arg->fType.columns() != c.fType.rows()) {
-                // merge scalars and smaller vectors together
-                if (!scalarCount) {
-                    this->writeType(c.fType.componentType());
-                    this->write(to_string(c.fType.rows()));
-                    this->write("(");
-                }
-                scalarCount += arg->fType.columns();
-            }
-            this->writeExpression(*arg, kSequence_Precedence);
-            if (scalarCount && scalarCount == c.fType.rows()) {
-                this->write(")");
-                scalarCount = 0;
-            }
+            this->writeExpression(*expr, kSequence_Precedence);
         }
         this->write(")");
+        return;
     }
+
+    // Explicitly invoke the constructor, passing in the necessary arguments.
+    this->writeType(c.fType);
+    this->write("(");
+    const char* separator = "";
+    int scalarCount = 0;
+    for (const std::unique_ptr<Expression>& arg : c.fArguments) {
+        this->write(separator);
+        separator = ", ";
+        if (Type::kMatrix_Kind == c.fType.kind() && arg->fType.columns() < c.fType.rows()) {
+            // Merge scalars and smaller vectors together.
+            if (!scalarCount) {
+                this->writeType(c.fType.componentType());
+                this->write(to_string(c.fType.rows()));
+                this->write("(");
+            }
+            scalarCount += arg->fType.columns();
+        }
+        this->writeExpression(*arg, kSequence_Precedence);
+        if (scalarCount && scalarCount == c.fType.rows()) {
+            this->write(")");
+            scalarCount = 0;
+        }
+    }
+    this->write(")");
 }
 
 void MetalCodeGenerator::writeFragCoord() {
@@ -791,7 +876,7 @@ void MetalCodeGenerator::writeFunction(const FunctionDefinition& f) {
                 this->write("vertex Outputs vertexMain");
                 break;
             default:
-                SkASSERT(false);
+                SkDEBUGFAIL("unsupported kind of program");
         }
         this->write("(Inputs _in [[stage_in]]");
         if (-1 != fUniformBuffer) {
@@ -906,35 +991,42 @@ void MetalCodeGenerator::writeFunction(const FunctionDefinition& f) {
 
     if ("main" == f.fDeclaration.fName) {
         if (fNeedsGlobalStructInit) {
-            this->writeLine("    Globals globalStruct{");
-            const char* separator = "";
-            for (const auto& intf: fInterfaceBlockNameMap) {
-                const auto& intfName = intf.second;
-                this->write(separator);
-                separator = ", ";
-                this->write("&");
-                this->writeName(intfName);
+            this->writeLine("    Globals globalStruct;");
+            for (const auto& [interfaceBlock, interfaceName] : fInterfaceBlockNameMap) {
+                this->write("    globalStruct.");
+                this->writeName(interfaceName);
+                this->write(" = &");
+                this->writeName(interfaceName);
+                this->writeLine(";");
             }
-            for (const auto& var: fInitNonConstGlobalVars) {
-                this->write(separator);
-                separator = ", ";
+            for (const VarDeclaration* var : fInitNonConstGlobalVars) {
+                this->write("    globalStruct.");
+                this->writeName(var->fVar->fName);
+                this->write(" = ");
                 this->writeVarInitializer(*var->fVar, *var->fValue);
+                this->writeLine(";");
             }
-            for (const auto& texture: fTextures) {
-                this->write(separator);
-                separator = ", ";
+            for (const Variable* texture : fTextures) {
+                this->write("    globalStruct.");
                 this->writeName(texture->fName);
-                this->write(separator);
+                this->write(" = ");
                 this->writeName(texture->fName);
-                this->write(SAMPLER_SUFFIX);
+                this->writeLine(";");
+
+                String samplerName = String(texture->fName) + SAMPLER_SUFFIX;
+                this->write("    globalStruct.");
+                this->writeName(samplerName);
+                this->write(" = ");
+                this->writeName(samplerName);
+                this->writeLine(";");
             }
-            this->writeLine("};");
             this->writeLine("    thread Globals* _globals = &globalStruct;");
             this->writeLine("    (void)_globals;");
         }
         this->writeLine("    Outputs _outputStruct;");
         this->writeLine("    thread Outputs* _out = &_outputStruct;");
     }
+
     fFunctionHeader = "";
     OutputStream* oldOut = fOut;
     StringStream buffer;
@@ -951,7 +1043,7 @@ void MetalCodeGenerator::writeFunction(const FunctionDefinition& f) {
                 this->writeLine("return *_out;"); // FIXME - detect if function already has return
                 break;
             default:
-                SkASSERT(false);
+                SkDEBUGFAIL("unsupported kind of program");
         }
     }
     fIndentation--;
@@ -1164,11 +1256,15 @@ void MetalCodeGenerator::writeStatements(const std::vector<std::unique_ptr<State
 }
 
 void MetalCodeGenerator::writeBlock(const Block& b) {
-    this->writeLine("{");
-    fIndentation++;
+    if (b.fIsScope) {
+        this->writeLine("{");
+        fIndentation++;
+    }
     this->writeStatements(b.fStatements);
-    fIndentation--;
-    this->write("}");
+    if (b.fIsScope) {
+        fIndentation--;
+        this->write("}");
+    }
 }
 
 void MetalCodeGenerator::writeIfStatement(const IfStatement& stmt) {
@@ -1388,11 +1484,15 @@ void MetalCodeGenerator::writeInterfaceBlocks() {
 
 void MetalCodeGenerator::writeGlobalStruct() {
     bool wroteStructDecl = false;
-    for (const auto& intf : fInterfaceBlockNameMap) {
+    auto WriteStructDecl = [&] {
         if (!wroteStructDecl) {
             this->write("struct Globals {\n");
             wroteStructDecl = true;
         }
+    };
+
+    for (const auto& intf : fInterfaceBlockNameMap) {
+        WriteStructDecl();
         fNeedsGlobalStructInit = true;
         const auto& intfType = intf.first;
         const auto& intfName = intf.second;
@@ -1411,10 +1511,7 @@ void MetalCodeGenerator::writeGlobalStruct() {
             const Variable& first = *((VarDeclaration&) *decls.fVars[0]).fVar;
             if ((!first.fModifiers.fFlags && -1 == first.fModifiers.fLayout.fBuiltin) ||
                 first.fType.kind() == Type::kSampler_Kind) {
-                if (!wroteStructDecl) {
-                    this->write("struct Globals {\n");
-                    wroteStructDecl = true;
-                }
+                WriteStructDecl();
                 fNeedsGlobalStructInit = true;
                 this->write("    ");
                 this->writeType(first.fType);
@@ -1478,52 +1575,55 @@ void MetalCodeGenerator::writeProgramElement(const ProgramElement& e) {
     }
 }
 
-MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Expression& e) {
-    switch (e.fKind) {
+MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Expression* e) {
+    if (!e) {
+        return kNo_Requirements;
+    }
+    switch (e->fKind) {
         case Expression::kFunctionCall_Kind: {
-            const FunctionCall& f = (const FunctionCall&) e;
+            const FunctionCall& f = (const FunctionCall&) *e;
             Requirements result = this->requirements(f.fFunction);
-            for (const auto& e : f.fArguments) {
-                result |= this->requirements(*e);
+            for (const auto& arg : f.fArguments) {
+                result |= this->requirements(arg.get());
             }
             return result;
         }
         case Expression::kConstructor_Kind: {
-            const Constructor& c = (const Constructor&) e;
+            const Constructor& c = (const Constructor&) *e;
             Requirements result = kNo_Requirements;
-            for (const auto& e : c.fArguments) {
-                result |= this->requirements(*e);
+            for (const auto& arg : c.fArguments) {
+                result |= this->requirements(arg.get());
             }
             return result;
         }
         case Expression::kFieldAccess_Kind: {
-            const FieldAccess& f = (const FieldAccess&) e;
+            const FieldAccess& f = (const FieldAccess&) *e;
             if (FieldAccess::kAnonymousInterfaceBlock_OwnerKind == f.fOwnerKind) {
                 return kGlobals_Requirement;
             }
-            return this->requirements(*((const FieldAccess&) e).fBase);
+            return this->requirements(f.fBase.get());
         }
         case Expression::kSwizzle_Kind:
-            return this->requirements(*((const Swizzle&) e).fBase);
+            return this->requirements(((const Swizzle&) *e).fBase.get());
         case Expression::kBinary_Kind: {
-            const BinaryExpression& b = (const BinaryExpression&) e;
-            return this->requirements(*b.fLeft) | this->requirements(*b.fRight);
+            const BinaryExpression& b = (const BinaryExpression&) *e;
+            return this->requirements(b.fLeft.get()) | this->requirements(b.fRight.get());
         }
         case Expression::kIndex_Kind: {
-            const IndexExpression& idx = (const IndexExpression&) e;
-            return this->requirements(*idx.fBase) | this->requirements(*idx.fIndex);
+            const IndexExpression& idx = (const IndexExpression&) *e;
+            return this->requirements(idx.fBase.get()) | this->requirements(idx.fIndex.get());
         }
         case Expression::kPrefix_Kind:
-            return this->requirements(*((const PrefixExpression&) e).fOperand);
+            return this->requirements(((const PrefixExpression&) *e).fOperand.get());
         case Expression::kPostfix_Kind:
-            return this->requirements(*((const PostfixExpression&) e).fOperand);
+            return this->requirements(((const PostfixExpression&) *e).fOperand.get());
         case Expression::kTernary_Kind: {
-            const TernaryExpression& t = (const TernaryExpression&) e;
-            return this->requirements(*t.fTest) | this->requirements(*t.fIfTrue) |
-                   this->requirements(*t.fIfFalse);
+            const TernaryExpression& t = (const TernaryExpression&) *e;
+            return this->requirements(t.fTest.get()) | this->requirements(t.fIfTrue.get()) |
+                   this->requirements(t.fIfFalse.get());
         }
         case Expression::kVariableReference_Kind: {
-            const VariableReference& v = (const VariableReference&) e;
+            const VariableReference& v = (const VariableReference&) *e;
             Requirements result = kNo_Requirements;
             if (v.fVariable.fModifiers.fLayout.fBuiltin == SK_FRAGCOORD_BUILTIN) {
                 result = kGlobals_Requirement | kFragCoord_Requirement;
@@ -1546,69 +1646,65 @@ MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Expressi
     }
 }
 
-MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Statement& s) {
-    switch (s.fKind) {
+MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Statement* s) {
+    if (!s) {
+        return kNo_Requirements;
+    }
+    switch (s->fKind) {
         case Statement::kBlock_Kind: {
             Requirements result = kNo_Requirements;
-            for (const auto& child : ((const Block&) s).fStatements) {
-                result |= this->requirements(*child);
+            for (const auto& child : ((const Block*) s)->fStatements) {
+                result |= this->requirements(child.get());
             }
             return result;
         }
         case Statement::kVarDeclaration_Kind: {
-            Requirements result = kNo_Requirements;
-            const VarDeclaration& var = (const VarDeclaration&) s;
-            if (var.fValue) {
-                result = this->requirements(*var.fValue);
-            }
-            return result;
+            const VarDeclaration& var = (const VarDeclaration&) *s;
+            return this->requirements(var.fValue.get());
         }
         case Statement::kVarDeclarations_Kind: {
             Requirements result = kNo_Requirements;
-            const VarDeclarations& decls = *((const VarDeclarationsStatement&) s).fDeclaration;
+            const VarDeclarations& decls = *((const VarDeclarationsStatement&) *s).fDeclaration;
             for (const auto& stmt : decls.fVars) {
-                result |= this->requirements(*stmt);
+                result |= this->requirements(stmt.get());
             }
             return result;
         }
         case Statement::kExpression_Kind:
-            return this->requirements(*((const ExpressionStatement&) s).fExpression);
+            return this->requirements(((const ExpressionStatement&) *s).fExpression.get());
         case Statement::kReturn_Kind: {
-            const ReturnStatement& r = (const ReturnStatement&) s;
-            if (r.fExpression) {
-                return this->requirements(*r.fExpression);
-            }
-            return kNo_Requirements;
+            const ReturnStatement& r = (const ReturnStatement&) *s;
+            return this->requirements(r.fExpression.get());
         }
         case Statement::kIf_Kind: {
-            const IfStatement& i = (const IfStatement&) s;
-            return this->requirements(*i.fTest) |
-                   this->requirements(*i.fIfTrue) |
-                   (i.fIfFalse ? this->requirements(*i.fIfFalse) : 0);
+            const IfStatement& i = (const IfStatement&) *s;
+            return this->requirements(i.fTest.get()) |
+                   this->requirements(i.fIfTrue.get()) |
+                   this->requirements(i.fIfFalse.get());
         }
         case Statement::kFor_Kind: {
-            const ForStatement& f = (const ForStatement&) s;
-            return this->requirements(*f.fInitializer) |
-                   this->requirements(*f.fTest) |
-                   this->requirements(*f.fNext) |
-                   this->requirements(*f.fStatement);
+            const ForStatement& f = (const ForStatement&) *s;
+            return this->requirements(f.fInitializer.get()) |
+                   this->requirements(f.fTest.get()) |
+                   this->requirements(f.fNext.get()) |
+                   this->requirements(f.fStatement.get());
         }
         case Statement::kWhile_Kind: {
-            const WhileStatement& w = (const WhileStatement&) s;
-            return this->requirements(*w.fTest) |
-                   this->requirements(*w.fStatement);
+            const WhileStatement& w = (const WhileStatement&) *s;
+            return this->requirements(w.fTest.get()) |
+                   this->requirements(w.fStatement.get());
         }
         case Statement::kDo_Kind: {
-            const DoStatement& d = (const DoStatement&) s;
-            return this->requirements(*d.fTest) |
-                   this->requirements(*d.fStatement);
+            const DoStatement& d = (const DoStatement&) *s;
+            return this->requirements(d.fTest.get()) |
+                   this->requirements(d.fStatement.get());
         }
         case Statement::kSwitch_Kind: {
-            const SwitchStatement& sw = (const SwitchStatement&) s;
-            Requirements result = this->requirements(*sw.fValue);
+            const SwitchStatement& sw = (const SwitchStatement&) *s;
+            Requirements result = this->requirements(sw.fValue.get());
             for (const auto& c : sw.fCases) {
                 for (const auto& st : c->fStatements) {
-                    result |= this->requirements(*st);
+                    result |= this->requirements(st.get());
                 }
             }
             return result;
@@ -1629,7 +1725,7 @@ MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Function
             if (ProgramElement::kFunction_Kind == e.fKind) {
                 const FunctionDefinition& def = (const FunctionDefinition&) e;
                 if (&def.fDeclaration == &f) {
-                    Requirements reqs = this->requirements(*def.fBody);
+                    Requirements reqs = this->requirements(def.fBody.get());
                     fRequirements[&f] = reqs;
                     return reqs;
                 }

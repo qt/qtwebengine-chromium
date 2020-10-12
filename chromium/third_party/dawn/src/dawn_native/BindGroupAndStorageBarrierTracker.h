@@ -15,6 +15,7 @@
 #ifndef DAWNNATIVE_BINDGROUPANDSTORAGEBARRIERTRACKER_H_
 #define DAWNNATIVE_BINDGROUPANDSTORAGEBARRIERTRACKER_H_
 
+#include "common/ityp_bitset.h"
 #include "dawn_native/BindGroup.h"
 #include "dawn_native/BindGroupTracker.h"
 #include "dawn_native/Buffer.h"
@@ -31,17 +32,19 @@ namespace dawn_native {
       public:
         BindGroupAndStorageBarrierTrackerBase() = default;
 
-        void OnSetBindGroup(uint32_t index,
+        void OnSetBindGroup(BindGroupIndex index,
                             BindGroupBase* bindGroup,
                             uint32_t dynamicOffsetCount,
                             uint32_t* dynamicOffsets) {
+            ASSERT(index < kMaxBindGroupsTyped);
+
             if (this->mBindGroups[index] != bindGroup) {
                 mBindings[index] = {};
                 mBindingsNeedingBarrier[index] = {};
 
                 const BindGroupLayoutBase* layout = bindGroup->GetLayout();
 
-                for (BindingIndex bindingIndex = 0; bindingIndex < layout->GetBindingCount();
+                for (BindingIndex bindingIndex{0}; bindingIndex < layout->GetBindingCount();
                      ++bindingIndex) {
                     const BindingInfo& bindingInfo = layout->GetBindingInfo(bindingIndex);
 
@@ -88,10 +91,17 @@ namespace dawn_native {
         }
 
       protected:
-        std::array<std::bitset<kMaxBindingsPerGroup>, kMaxBindGroups> mBindingsNeedingBarrier = {};
-        std::array<std::array<wgpu::BindingType, kMaxBindingsPerGroup>, kMaxBindGroups>
+        ityp::
+            array<BindGroupIndex, ityp::bitset<BindingIndex, kMaxBindingsPerGroup>, kMaxBindGroups>
+                mBindingsNeedingBarrier = {};
+        ityp::array<BindGroupIndex,
+                    ityp::array<BindingIndex, wgpu::BindingType, kMaxBindingsPerGroup>,
+                    kMaxBindGroups>
             mBindingTypes = {};
-        std::array<std::array<ObjectBase*, kMaxBindingsPerGroup>, kMaxBindGroups> mBindings = {};
+        ityp::array<BindGroupIndex,
+                    ityp::array<BindingIndex, ObjectBase*, kMaxBindingsPerGroup>,
+                    kMaxBindGroups>
+            mBindings = {};
     };
 
 }  // namespace dawn_native

@@ -4,7 +4,7 @@ stages:
     - test
 
 .debian-amd64-common:
-    image: registry.videolan.org/dav1d-debian-unstable:20200306210534
+    image: registry.videolan.org/dav1d-debian-unstable:20200602183013
     stage: build
     tags:
         - docker
@@ -52,6 +52,7 @@ stages:
         - docker
         - amd64
 
+
 style-check:
     extends: .debian-amd64-common
     stage: style
@@ -80,6 +81,7 @@ style-check:
               fi;
           done
 
+
 build-debian:
     extends: .debian-amd64-common
     tags:
@@ -91,6 +93,10 @@ build-debian:
                       --werror
         - ninja -C build
         - cd build && meson test -v
+    artifacts:
+        paths:
+            - build/
+        expire_in: 1 day
 
 build-debian-static:
     extends: .debian-amd64-common
@@ -110,6 +116,10 @@ build-debian32:
                       --cross-file package/crossfiles/i686-linux32.meson
         - ninja -C build
         - cd build && meson test -v
+    artifacts:
+        paths:
+            - build/
+        expire_in: 1 day
 
 build-debian-examples:
     extends: .debian-amd64-common
@@ -331,6 +341,7 @@ build-debian-ppc64le:
         - ninja -C build
         - cd build && meson test -v
 
+
 .test-common:
     stage: test
     cache:
@@ -344,6 +355,25 @@ build-debian-ppc64le:
         - git clone cache/dav1d-test-data.git tests/dav1d-test-data
     dependencies: []
 
+.test-asm-common:
+    extends:
+        - .debian-amd64-common
+        - .test-common
+    tags:
+        - docker
+        - amd64
+        - avx2
+    script:
+        - meson configure build -Dtestdata_tests=true
+        - cd build
+        - exit_code=0
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--cpumask 0"     || exit_code=$((exit_code + $?))
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--cpumask sse2"  || exit_code=$((exit_code + $?))
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--cpumask ssse3" || exit_code=$((exit_code + $?))
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--cpumask sse41" || exit_code=$((exit_code + $?))
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--cpumask avx2"  || exit_code=$((exit_code + $?))
+        - if [ $exit_code -ne 0 ]; then exit $exit_code; fi
+
 test-debian:
     extends:
         - .debian-amd64-common
@@ -353,8 +383,48 @@ test-debian:
         - meson build --buildtype release
                       -Dtestdata_tests=true
                       -Dlogging=false
+                      -Db_coverage=true
         - ninja -C build
         - cd build && time meson test -v
+        - ninja coverage-html
+        - mv meson-logs/coveragereport ../coverage
+        - ninja coverage-xml
+        - grep -Eo 'line-rate="[^"]+"' meson-logs/coverage.xml | head -n 1 |
+          grep -Eo '[0-9.]+' | awk '{ print "coverage:", $1 * 100 } '
+    coverage: '/^coverage: (\d+.\d+)$/'
+    artifacts:
+        expose_as: 'Coverage HTML report'
+        paths:
+            - coverage/
+        reports:
+            cobertura: build/meson-logs/coverage.xml
+
+test-debian-asm:
+    extends:
+        - .test-asm-common
+    needs: ["build-debian"]
+    dependencies: ["build-debian"]
+
+test-debian32-asm:
+    extends:
+        - .test-asm-common
+    needs: ["build-debian32"]
+    dependencies: ["build-debian32"]
+
+test-debian-mt:
+    extends:
+        - .debian-amd64-common
+        - .test-common
+    needs: ["build-debian"]
+    dependencies: ["build-debian"]
+    script:
+        - meson configure build -Dtestdata_tests=true
+        - cd build
+        - exit_code=0
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--tilethreads 1 --framethreads 2" || exit_code=$((exit_code + $?))
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--tilethreads 2 --framethreads 1" || exit_code=$((exit_code + $?))
+        - time meson test -q --suite testdata-8 --suite testdata-10 --suite testdata-12 --test-args "--tilethreads 2 --framethreads 2" || exit_code=$((exit_code + $?))
+        - if [ $exit_code -ne 0 ]; then exit $exit_code; fi
 
 test-debian-unaligned-stack:
     extends:
@@ -481,6 +551,7 @@ test-debian-armv7-clang-5:
                               -Dlogging=false
         - ninja -C build
         - cd build && time meson test -v
+
 
 .pages-common:
     extends: .debian-amd64-common

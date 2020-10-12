@@ -19,7 +19,6 @@
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/fx_font.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/font/fgas_fontutils.h"
@@ -323,7 +322,7 @@ const uint16_t g_CodePages[] = {FX_CODEPAGE_MSWin_WesternEuropean,
                                 FX_CODEPAGE_MSDOS_US};
 
 uint16_t FX_GetCodePageBit(uint16_t wCodePage) {
-  for (size_t i = 0; i < FX_ArraySize(g_CodePages); ++i) {
+  for (size_t i = 0; i < pdfium::size(g_CodePages); ++i) {
     if (g_CodePages[i] == wCodePage)
       return static_cast<uint16_t>(i);
   }
@@ -444,9 +443,8 @@ uint32_t GetFlags(FXFT_FaceRec* pFace) {
   return flags;
 }
 
-RetainPtr<IFX_SeekableReadStream> CreateFontStream(
-    CFX_FontMapper* pFontMapper,
-    uint32_t index) {
+RetainPtr<IFX_SeekableReadStream> CreateFontStream(CFX_FontMapper* pFontMapper,
+                                                   uint32_t index) {
   size_t dwFileSize = 0;
   std::unique_ptr<uint8_t, FxFreeDeleter> pBuffer =
       pFontMapper->RawBytesForIndex(index, &dwFileSize);
@@ -608,12 +606,12 @@ int32_t CalcPenalty(CFX_FontDescriptor* pInstalled,
 CFX_FontDescriptor::CFX_FontDescriptor()
     : m_nFaceIndex(0), m_dwFontStyles(0), m_dwUsb(), m_dwCsb() {}
 
-CFX_FontDescriptor::~CFX_FontDescriptor() {}
+CFX_FontDescriptor::~CFX_FontDescriptor() = default;
 
 CFGAS_FontMgr::CFGAS_FontMgr()
-    : m_pFontSource(pdfium::MakeUnique<CFX_FontSourceEnum_File>()) {}
+    : m_pFontSource(std::make_unique<CFX_FontSourceEnum_File>()) {}
 
-CFGAS_FontMgr::~CFGAS_FontMgr() {}
+CFGAS_FontMgr::~CFGAS_FontMgr() = default;
 
 bool CFGAS_FontMgr::EnumFontsFromFontMapper() {
   CFX_FontMapper* pFontMapper =
@@ -659,7 +657,7 @@ RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::GetFontByUnicodeImpl(
   std::vector<CFX_FontDescriptorInfo>* sortedFontInfos =
       m_Hash2CandidateList[dwHash].get();
   if (!sortedFontInfos) {
-    auto pNewFonts = pdfium::MakeUnique<std::vector<CFX_FontDescriptorInfo>>();
+    auto pNewFonts = std::make_unique<std::vector<CFX_FontDescriptorInfo>>();
     sortedFontInfos = pNewFonts.get();
     MatchFonts(sortedFontInfos, wCodePage, dwFontStyles,
                WideString(pszFontFamily), wUnicode);
@@ -690,7 +688,7 @@ RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::LoadFontInternal(
   if (!pFontStream)
     return nullptr;
 
-  auto pInternalFont = pdfium::MakeUnique<CFX_Font>();
+  auto pInternalFont = std::make_unique<CFX_Font>();
   if (!pInternalFont->LoadFile(pFontStream, iFaceIndex))
     return nullptr;
 
@@ -727,7 +725,7 @@ void CFGAS_FontMgr::RegisterFace(RetainPtr<CFX_Face> pFace,
   if ((pFace->GetRec()->face_flags & FT_FACE_FLAG_SCALABLE) == 0)
     return;
 
-  auto pFont = pdfium::MakeUnique<CFX_FontDescriptor>();
+  auto pFont = std::make_unique<CFX_FontDescriptor>();
   pFont->m_dwFontStyles |= GetFlags(pFace->GetRec());
 
   GetUSBCSB(pFace->GetRec(), pFont->m_dwUsb, pFont->m_dwCsb);
@@ -807,7 +805,7 @@ RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::GetFontByCodePage(
   std::vector<CFX_FontDescriptorInfo>* sortedFontInfos =
       m_Hash2CandidateList[dwHash].get();
   if (!sortedFontInfos) {
-    auto pNewFonts = pdfium::MakeUnique<std::vector<CFX_FontDescriptorInfo>>();
+    auto pNewFonts = std::make_unique<std::vector<CFX_FontDescriptorInfo>>();
     sortedFontInfos = pNewFonts.get();
     MatchFonts(sortedFontInfos, wCodePage, dwFontStyles,
                WideString(pszFontFamily), 0);
@@ -833,7 +831,7 @@ RetainPtr<CFGAS_GEFont> CFGAS_FontMgr::GetFontByUnicode(
     wchar_t wUnicode,
     uint32_t dwFontStyles,
     const wchar_t* pszFontFamily) {
-  if (pdfium::ContainsKey(m_FailedUnicodesSet, wUnicode))
+  if (pdfium::Contains(m_FailedUnicodesSet, wUnicode))
     return nullptr;
 
   const FGAS_FONTUSB* x = FGAS_GetUnicodeBitField(wUnicode);

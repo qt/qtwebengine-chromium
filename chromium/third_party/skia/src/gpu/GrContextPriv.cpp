@@ -28,8 +28,7 @@
 
 #define ASSERT_OWNED_PROXY(P) \
     SkASSERT(!(P) || !((P)->peekTexture()) || (P)->peekTexture()->getContext() == fContext)
-#define ASSERT_SINGLE_OWNER \
-    SkDEBUGCODE(GrSingleOwner::AutoEnforce debug_SingleOwner(fContext->singleOwner());)
+#define ASSERT_SINGLE_OWNER GR_ASSERT_SINGLE_OWNER(fContext->singleOwner())
 #define RETURN_VALUE_IF_ABANDONED(value) if (fContext->abandoned()) { return (value); }
 #define RETURN_IF_ABANDONED RETURN_VALUE_IF_ABANDONED(void)
 
@@ -53,7 +52,7 @@ GrSemaphoresSubmitted GrContextPriv::flushSurfaces(GrSurfaceProxy* proxies[], in
         ASSERT_OWNED_PROXY(proxies[i]);
     }
     return fContext->drawingManager()->flushSurfaces(
-            proxies, numProxies, SkSurface::BackendSurfaceAccess::kNoAccess, info);
+            proxies, numProxies, SkSurface::BackendSurfaceAccess::kNoAccess, info, nullptr);
 }
 
 void GrContextPriv::flushSurface(GrSurfaceProxy* proxy) {
@@ -182,7 +181,7 @@ void GrContextPriv::testingOnly_purgeAllUnlockedResources() {
 }
 
 void GrContextPriv::testingOnly_flushAndRemoveOnFlushCallbackObject(GrOnFlushCallbackObject* cb) {
-    fContext->flush();
+    fContext->flushAndSubmit();
     fContext->drawingManager()->testingOnly_removeOnFlushCallbackObject(cb);
 }
 #endif

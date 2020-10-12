@@ -4,15 +4,12 @@
 
 #include "xfa/fxfa/fm2js/cxfa_fmparser.h"
 
-#include <vector>
-
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/base/ptr_util.h"
 #include "xfa/fxfa/fm2js/cxfa_fmtojavascriptdepth.h"
 
 TEST(CXFA_FMParserTest, Empty) {
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(L"");
+  auto parser = std::make_unique<CXFA_FMParser>(L"");
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast);
   EXPECT_FALSE(parser->HasError());
@@ -25,7 +22,7 @@ TEST(CXFA_FMParserTest, Empty) {
 }
 
 TEST(CXFA_FMParserTest, CommentOnlyIsError) {
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(L"; Just comment");
+  auto parser = std::make_unique<CXFA_FMParser>(L"; Just comment");
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast);
   // TODO(dsinclair): This isn't allowed per the spec.
@@ -56,7 +53,7 @@ pfm_ret = 12;
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(L"; Just comment\n12");
+  auto parser = std::make_unique<CXFA_FMParser>(L"; Just comment\n12");
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast);
   EXPECT_FALSE(parser->HasError());
@@ -125,7 +122,7 @@ pfm_ret = this;
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast);
   EXPECT_FALSE(parser->HasError());
@@ -137,14 +134,14 @@ return pfm_rt.get_val(pfm_ret);
 }
 
 TEST(CXFA_FMParserTest, MaxParseDepth) {
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(L"foo(bar[baz(fizz[0])])");
+  auto parser = std::make_unique<CXFA_FMParser>(L"foo(bar[baz(fizz[0])])");
   parser->SetMaxParseDepthForTest(5);
   EXPECT_EQ(nullptr, parser->Parse());
   EXPECT_TRUE(parser->HasError());
 }
 
 TEST(CFXA_FMParserTest, chromium752201) {
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(
+  auto parser = std::make_unique<CXFA_FMParser>(
       LR"***(fTep a
 .#
 fo@ =[=l)***");
@@ -153,7 +150,7 @@ fo@ =[=l)***");
 }
 
 TEST(CXFA_FMParserTest, MultipleAssignmentIsNotAllowed) {
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(L"(a=(b=t))=u");
+  auto parser = std::make_unique<CXFA_FMParser>(L"(a=(b=t))=u");
 
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(!ast);
@@ -187,7 +184,7 @@ return pfm_ret;
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast);
   EXPECT_FALSE(parser->HasError());
@@ -225,7 +222,7 @@ return pfm_ret;
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast);
   EXPECT_FALSE(parser->HasError());
@@ -242,7 +239,7 @@ TEST(CXFA_FMParserTest, ParseFuncWithBadParamsList) {
   param1 * param2
 endfunc)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast == nullptr);
   EXPECT_TRUE(parser->HasError());
@@ -251,7 +248,7 @@ endfunc)***";
 TEST(CXFA_FMParserTest, ParseBadIfExpression) {
   const wchar_t input[] = L"if ( then";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast == nullptr);
   EXPECT_TRUE(parser->HasError());
@@ -262,7 +259,7 @@ TEST(CXFA_FMParserTest, ParseBadElseIfExpression) {
       LR"***(if ($ ne -1) then"
 elseif( then)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast == nullptr);
   EXPECT_TRUE(parser->HasError());
@@ -272,14 +269,14 @@ TEST(CXFA_FMParserTest, ParseDepthWithWideTree) {
   const wchar_t input[] = L"a <> b <> c <> d <> e <> f <> g <> h <> i <> j";
 
   {
-    auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+    auto parser = std::make_unique<CXFA_FMParser>(input);
     std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
     ASSERT_TRUE(ast);
     EXPECT_TRUE(!parser->HasError());
   }
 
   {
-    auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+    auto parser = std::make_unique<CXFA_FMParser>(input);
     parser->SetMaxParseDepthForTest(5);
     std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
     ASSERT_TRUE(ast == nullptr);
@@ -310,7 +307,7 @@ pfm_ret = pfm_rt.get_val((function() {
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   EXPECT_FALSE(parser->HasError());
 
@@ -351,7 +348,7 @@ pfm_ret = pfm_rt.get_val((function() {
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   EXPECT_FALSE(parser->HasError());
 
@@ -382,7 +379,7 @@ pfm_ret = s;
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   EXPECT_FALSE(parser->HasError());
 
@@ -415,7 +412,7 @@ pfm_ret = pfm_rt.get_val((function() {
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   EXPECT_FALSE(parser->HasError());
   CXFA_FMToJavaScriptDepth::Reset();
@@ -447,7 +444,7 @@ pfm_ret = pfm_rt.get_val((function() {
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   EXPECT_FALSE(parser->HasError());
   CXFA_FMToJavaScriptDepth::Reset();
@@ -479,7 +476,7 @@ pfm_ret = pfm_rt.get_val((function() {
 return pfm_rt.get_val(pfm_ret);
 }).call(this);)***";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   EXPECT_FALSE(parser->HasError());
   CXFA_FMToJavaScriptDepth::Reset();
@@ -491,7 +488,7 @@ return pfm_rt.get_val(pfm_ret);
 TEST(CXFA_FMParserTest, ParseFunctionCallMissingCommas) {
   const wchar_t input[] = L"P.x(!foo!bar!baz)";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast == nullptr);
   EXPECT_TRUE(parser->HasError());
@@ -500,7 +497,7 @@ TEST(CXFA_FMParserTest, ParseFunctionCallMissingCommas) {
 TEST(CXFA_FMParserTest, ParseFunctionCallTrailingComma) {
   const wchar_t input[] = L"P.x(foo,bar,baz,)";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast == nullptr);
   EXPECT_TRUE(parser->HasError());
@@ -509,7 +506,7 @@ TEST(CXFA_FMParserTest, ParseFunctionCallTrailingComma) {
 TEST(CXFA_FMParserTest, ParseFunctionCallExtraComma) {
   const wchar_t input[] = L"P.x(foo,bar,,baz)";
 
-  auto parser = pdfium::MakeUnique<CXFA_FMParser>(input);
+  auto parser = std::make_unique<CXFA_FMParser>(input);
   std::unique_ptr<CXFA_FMAST> ast = parser->Parse();
   ASSERT_TRUE(ast == nullptr);
   EXPECT_TRUE(parser->HasError());

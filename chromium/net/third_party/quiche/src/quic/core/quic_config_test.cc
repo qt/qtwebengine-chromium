@@ -180,12 +180,8 @@ TEST_P(QuicConfigTest, ProcessClientHello) {
             2 * kInitialStreamFlowControlWindowForTest);
   EXPECT_EQ(config_.ReceivedInitialSessionFlowControlWindowBytes(),
             2 * kInitialSessionFlowControlWindowForTest);
-  if (GetQuicReloadableFlag(quic_negotiate_ack_delay_time)) {
-    EXPECT_TRUE(config_.HasReceivedMaxAckDelayMs());
-    EXPECT_EQ(kTestMaxAckDelayMs, config_.ReceivedMaxAckDelayMs());
-  } else {
-    EXPECT_FALSE(config_.HasReceivedMaxAckDelayMs());
-  }
+  EXPECT_TRUE(config_.HasReceivedMaxAckDelayMs());
+  EXPECT_EQ(kTestMaxAckDelayMs, config_.ReceivedMaxAckDelayMs());
 
   // IETF QUIC stream limits should not be received in QUIC crypto messages.
   EXPECT_FALSE(
@@ -238,12 +234,8 @@ TEST_P(QuicConfigTest, ProcessServerHello) {
   EXPECT_FALSE(config_.HasReceivedIPv6AlternateServerAddress());
   EXPECT_TRUE(config_.HasReceivedStatelessResetToken());
   EXPECT_EQ(kTestResetToken, config_.ReceivedStatelessResetToken());
-  if (GetQuicReloadableFlag(quic_negotiate_ack_delay_time)) {
-    EXPECT_TRUE(config_.HasReceivedMaxAckDelayMs());
-    EXPECT_EQ(kTestMaxAckDelayMs, config_.ReceivedMaxAckDelayMs());
-  } else {
-    EXPECT_FALSE(config_.HasReceivedMaxAckDelayMs());
-  }
+  EXPECT_TRUE(config_.HasReceivedMaxAckDelayMs());
+  EXPECT_EQ(kTestMaxAckDelayMs, config_.ReceivedMaxAckDelayMs());
 
   // IETF QUIC stream limits should not be received in QUIC crypto messages.
   EXPECT_FALSE(
@@ -442,7 +434,7 @@ TEST_P(QuicConfigTest, IncomingLargeIdleTimeoutTransportParameter) {
   // Since the received value is above ours, we should then use ours.
   config_.SetIdleNetworkTimeout(quic::QuicTime::Delta::FromSeconds(60));
   TransportParameters params;
-  params.idle_timeout_milliseconds.set_value(120000);
+  params.max_idle_timeout_ms.set_value(120000);
 
   std::string error_details = "foobar";
   EXPECT_THAT(config_.ProcessTransportParameters(
@@ -468,6 +460,10 @@ TEST_P(QuicConfigTest, FillTransportParams) {
   config_.SetMaxDatagramFrameSizeToSend(kMaxDatagramFrameSizeForTest);
   config_.SetActiveConnectionIdLimitToSend(kFakeActiveConnectionIdLimit);
 
+  config_.SetOriginalConnectionIdToSend(TestConnectionId(0x1111));
+  config_.SetInitialSourceConnectionIdToSend(TestConnectionId(0x2222));
+  config_.SetRetrySourceConnectionIdToSend(TestConnectionId(0x3333));
+
   TransportParameters params;
   config_.FillTransportParameters(&params);
 
@@ -479,13 +475,23 @@ TEST_P(QuicConfigTest, FillTransportParams) {
             params.initial_max_stream_data_uni.value());
 
   EXPECT_EQ(static_cast<uint64_t>(kMaximumIdleTimeoutSecs * 1000),
-            params.idle_timeout_milliseconds.value());
+            params.max_idle_timeout_ms.value());
 
-  EXPECT_EQ(kMaxPacketSizeForTest, params.max_packet_size.value());
+  EXPECT_EQ(kMaxPacketSizeForTest, params.max_udp_payload_size.value());
   EXPECT_EQ(kMaxDatagramFrameSizeForTest,
             params.max_datagram_frame_size.value());
   EXPECT_EQ(kFakeActiveConnectionIdLimit,
             params.active_connection_id_limit.value());
+
+  ASSERT_TRUE(params.original_destination_connection_id.has_value());
+  EXPECT_EQ(TestConnectionId(0x1111),
+            params.original_destination_connection_id.value());
+  ASSERT_TRUE(params.initial_source_connection_id.has_value());
+  EXPECT_EQ(TestConnectionId(0x2222),
+            params.initial_source_connection_id.value());
+  ASSERT_TRUE(params.retry_source_connection_id.has_value());
+  EXPECT_EQ(TestConnectionId(0x3333),
+            params.retry_source_connection_id.value());
 }
 
 TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
@@ -493,7 +499,6 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
     // TransportParameters are only used for QUIC+TLS.
     return;
   }
-  SetQuicReloadableFlag(quic_negotiate_ack_delay_time, true);
   TransportParameters params;
 
   params.initial_max_stream_data_bidi_local.set_value(
@@ -502,13 +507,16 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
       3 * kMinimumFlowControlSendWindow);
   params.initial_max_stream_data_uni.set_value(4 *
                                                kMinimumFlowControlSendWindow);
-  params.max_packet_size.set_value(kMaxPacketSizeForTest);
+  params.max_udp_payload_size.set_value(kMaxPacketSizeForTest);
   params.max_datagram_frame_size.set_value(kMaxDatagramFrameSizeForTest);
   params.initial_max_streams_bidi.set_value(kDefaultMaxStreamsPerConnection);
   params.stateless_reset_token = CreateFakeStatelessResetToken();
   params.max_ack_delay.set_value(kFakeMaxAckDelay);
   params.ack_delay_exponent.set_value(kFakeAckDelayExponent);
   params.active_connection_id_limit.set_value(kFakeActiveConnectionIdLimit);
+  params.original_destination_connection_id = TestConnectionId(0x1111);
+  params.initial_source_connection_id = TestConnectionId(0x2222);
+  params.retry_source_connection_id = TestConnectionId(0x3333);
 
   std::string error_details;
   EXPECT_THAT(config_.ProcessTransportParameters(
@@ -544,11 +552,15 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
             config_.ReceivedMaxBidirectionalStreams());
 
   EXPECT_FALSE(config_.DisableConnectionMigration());
+  EXPECT_FALSE(config_.PeerSupportsHandshakeDone());
 
   // The following config shouldn't be processed because of resumption.
   EXPECT_FALSE(config_.HasReceivedStatelessResetToken());
   EXPECT_FALSE(config_.HasReceivedMaxAckDelayMs());
   EXPECT_FALSE(config_.HasReceivedAckDelayExponent());
+  EXPECT_FALSE(config_.HasReceivedOriginalConnectionId());
+  EXPECT_FALSE(config_.HasReceivedInitialSourceConnectionId());
+  EXPECT_FALSE(config_.HasReceivedRetrySourceConnectionId());
 
   // Let the config process another slightly tweaked transport paramters.
   // Note that the values for flow control and stream limit cannot be smaller
@@ -559,11 +571,12 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
       4 * kMinimumFlowControlSendWindow);
   params.initial_max_stream_data_uni.set_value(5 *
                                                kMinimumFlowControlSendWindow);
-  params.max_packet_size.set_value(2 * kMaxPacketSizeForTest);
+  params.max_udp_payload_size.set_value(2 * kMaxPacketSizeForTest);
   params.max_datagram_frame_size.set_value(2 * kMaxDatagramFrameSizeForTest);
   params.initial_max_streams_bidi.set_value(2 *
                                             kDefaultMaxStreamsPerConnection);
-  params.disable_migration = true;
+  params.disable_active_migration = true;
+  params.support_handshake_done = true;
 
   EXPECT_THAT(config_.ProcessTransportParameters(
                   params, SERVER, /* is_resumption = */ false, &error_details),
@@ -598,6 +611,7 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
             config_.ReceivedMaxBidirectionalStreams());
 
   EXPECT_TRUE(config_.DisableConnectionMigration());
+  EXPECT_TRUE(config_.PeerSupportsHandshakeDone());
 
   ASSERT_TRUE(config_.HasReceivedStatelessResetToken());
   ASSERT_TRUE(config_.HasReceivedMaxAckDelayMs());
@@ -609,6 +623,15 @@ TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
   ASSERT_TRUE(config_.HasReceivedActiveConnectionIdLimit());
   EXPECT_EQ(config_.ReceivedActiveConnectionIdLimit(),
             kFakeActiveConnectionIdLimit);
+
+  ASSERT_TRUE(config_.HasReceivedOriginalConnectionId());
+  EXPECT_EQ(config_.ReceivedOriginalConnectionId(), TestConnectionId(0x1111));
+  ASSERT_TRUE(config_.HasReceivedInitialSourceConnectionId());
+  EXPECT_EQ(config_.ReceivedInitialSourceConnectionId(),
+            TestConnectionId(0x2222));
+  ASSERT_TRUE(config_.HasReceivedRetrySourceConnectionId());
+  EXPECT_EQ(config_.ReceivedRetrySourceConnectionId(),
+            TestConnectionId(0x3333));
 }
 
 TEST_P(QuicConfigTest, DisableMigrationTransportParameter) {
@@ -617,7 +640,7 @@ TEST_P(QuicConfigTest, DisableMigrationTransportParameter) {
     return;
   }
   TransportParameters params;
-  params.disable_migration = true;
+  params.disable_active_migration = true;
   std::string error_details;
   EXPECT_THAT(config_.ProcessTransportParameters(
                   params, SERVER, /* is_resumption = */ false, &error_details),

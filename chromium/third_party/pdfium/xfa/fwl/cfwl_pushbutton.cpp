@@ -9,7 +9,6 @@
 #include <memory>
 #include <utility>
 
-#include "third_party/base/ptr_util.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fwl/cfwl_event.h"
 #include "xfa/fwl/cfwl_eventmouse.h"
@@ -22,9 +21,9 @@
 #include "xfa/fwl/ifwl_themeprovider.h"
 
 CFWL_PushButton::CFWL_PushButton(const CFWL_App* app)
-    : CFWL_Widget(app, pdfium::MakeUnique<CFWL_WidgetProperties>(), nullptr) {}
+    : CFWL_Widget(app, std::make_unique<CFWL_WidgetProperties>(), nullptr) {}
 
-CFWL_PushButton::~CFWL_PushButton() {}
+CFWL_PushButton::~CFWL_PushButton() = default;
 
 FWL_Type CFWL_PushButton::GetClassID() const {
   return FWL_Type::PushButton;
@@ -98,13 +97,13 @@ void CFWL_PushButton::OnProcessMessage(CFWL_Message* pMessage) {
     return;
 
   switch (pMessage->GetType()) {
-    case CFWL_Message::Type::SetFocus:
+    case CFWL_Message::Type::kSetFocus:
       OnFocusChanged(pMessage, true);
       break;
-    case CFWL_Message::Type::KillFocus:
+    case CFWL_Message::Type::kKillFocus:
       OnFocusChanged(pMessage, false);
       break;
-    case CFWL_Message::Type::Mouse: {
+    case CFWL_Message::Type::kMouse: {
       CFWL_MessageMouse* pMsg = static_cast<CFWL_MessageMouse*>(pMessage);
       switch (pMsg->m_dwCmd) {
         case FWL_MouseCommand::LeftButtonDown:
@@ -124,9 +123,9 @@ void CFWL_PushButton::OnProcessMessage(CFWL_Message* pMessage) {
       }
       break;
     }
-    case CFWL_Message::Type::Key: {
+    case CFWL_Message::Type::kKey: {
       CFWL_MessageKey* pKey = static_cast<CFWL_MessageKey*>(pMessage);
-      if (pKey->m_dwCmd == FWL_KeyCommand::KeyDown)
+      if (pKey->m_dwCmd == CFWL_MessageKey::Type::kKeyDown)
         OnKeyDown(pKey);
       break;
     }

@@ -13,7 +13,6 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_context.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_widget.h"
 #include "public/fpdf_fwlevent.h"
-#include "third_party/base/ptr_util.h"
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/fwl_widgetdef.h"
 #include "xfa/fwl/fwl_widgethit.h"
@@ -225,7 +224,7 @@ std::unique_ptr<CPDFSDK_Annot> CPDFXFA_WidgetHandler::NewAnnotForXFA(
     CXFA_FFWidget* pAnnot,
     CPDFSDK_PageView* pPageView) {
   CPDFSDK_InteractiveForm* pForm = m_pFormFillEnv->GetInteractiveForm();
-  return pdfium::MakeUnique<CPDFXFA_Widget>(pAnnot, pPageView, pForm);
+  return std::make_unique<CPDFXFA_Widget>(pAnnot, pPageView, pForm);
 }
 
 void CPDFXFA_WidgetHandler::OnDraw(CPDFSDK_PageView* pPageView,
@@ -295,6 +294,15 @@ void CPDFXFA_WidgetHandler::ReplaceSelection(CPDFSDK_Annot* pAnnot,
 
   CXFA_FFWidgetHandler* pWidgetHandler = GetXFAFFWidgetHandler(pXFAWidget);
   return pWidgetHandler->PasteText(pXFAWidget->GetXFAFFWidget(), text);
+}
+
+bool CPDFXFA_WidgetHandler::SelectAllText(CPDFSDK_Annot* pAnnot) {
+  CPDFXFA_Widget* pXFAWidget = ToXFAWidget(pAnnot);
+  if (!pXFAWidget)
+    return false;
+
+  CXFA_FFWidgetHandler* pWidgetHandler = GetXFAFFWidgetHandler(pXFAWidget);
+  return pWidgetHandler->SelectAllText(pXFAWidget->GetXFAFFWidget());
 }
 
 bool CPDFXFA_WidgetHandler::CanUndo(CPDFSDK_Annot* pAnnot) {

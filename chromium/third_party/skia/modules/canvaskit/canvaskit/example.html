@@ -36,9 +36,11 @@
 <canvas id=gradient1 width=300 height=300></canvas>
 <canvas id=patheffect width=300 height=300></canvas>
 <canvas id=paths width=200 height=200></canvas>
+<canvas id=pathperson width=300 height=300></canvas>
 <canvas id=ink width=300 height=300></canvas>
 <canvas id=surfaces width=300 height=300></canvas>
 <canvas id=atlas width=300 height=300></canvas>
+<canvas id=decode width=300 height=300></canvas>
 
 <h2> CanvasKit can allow for text shaping (e.g. breaking, kerning)</h2>
 <canvas id=shape1 width=600 height=600></canvas>
@@ -50,20 +52,24 @@
 <script type="text/javascript" charset="utf-8">
 
   var CanvasKit = null;
-
-  var robotoData = null;
-  var notoserifData = null;
-
-  var mandrillData = null;
   var cdn = 'https://storage.googleapis.com/skia-cdn/misc/';
-  CanvasKitInit({
-    locateFile: (file) => '/node_modules/canvaskit/bin/'+file,
-  }).ready().then((CK) => {
+
+  const ckLoaded = CanvasKitInit({locateFile: (file) => '/node_modules/canvaskit/bin/'+file});
+
+  const loadRoboto = fetch(cdn + 'Roboto-Regular.ttf').then((response) => response.arrayBuffer());
+  const loadNotoSerif = fetch(cdn + 'NotoSerif-Regular.ttf').then((response) => response.arrayBuffer());
+  const loadTestImage = fetch(cdn + 'test.png').then((response) => response.arrayBuffer());
+
+  // Examples which only require canvaskit
+  ckLoaded.then((CK) => {
     CanvasKit = CK;
-    DrawingExample(CanvasKit, robotoData);
     PathExample(CanvasKit);
     InkExample(CanvasKit);
-
+    PathPersonExample(CanvasKit);
+    VertexAPI1(CanvasKit);
+    GradiantAPI1(CanvasKit);
+    TextOnPathAPI1(CanvasKit);
+    SurfaceAPI1(CanvasKit);
     CanvasAPI1(CanvasKit);
     CanvasAPI2(CanvasKit);
     CanvasAPI3(CanvasKit);
@@ -72,40 +78,16 @@
     CanvasAPI6(CanvasKit);
     CanvasAPI7(CanvasKit);
     CanvasAPI8(CanvasKit);
-
-    VertexAPI1(CanvasKit);
-
-    GradiantAPI1(CanvasKit);
-
-    TextShapingAPI1(CanvasKit, notoserifData);
-    TextShapingAPI2(CanvasKit, notoserifData);
-    TextOnPathAPI1(CanvasKit);
-
-    SurfaceAPI1(CanvasKit);
-
-    AtlasAPI1(CanvasKit, mandrillData);
   });
 
-  fetch(cdn + 'Roboto-Regular.ttf').then((resp) => {
-    resp.arrayBuffer().then((buffer) => {
-      robotoData = buffer;
-      DrawingExample(CanvasKit, robotoData);
-    });
+  // Examples requiring external resources
+  Promise.all([ckLoaded, loadRoboto]).then((results) => {DrawingExample(...results)});
+  Promise.all([ckLoaded, loadNotoSerif]).then((results) => {
+    TextShapingAPI1(...results);
+    TextShapingAPI2(...results);
   });
-
-  fetch(cdn + 'NotoSerif-Regular.ttf').then((resp) => {
-    resp.arrayBuffer().then((buffer) => {
-      notoserifData = buffer;
-      TextShapingAPI1(CanvasKit, notoserifData);
-      TextShapingAPI2(CanvasKit, notoserifData);
-    });
-  });
-
-  // Mandrill test image
-  fetch(cdn + 'test.png').then((response) => response.arrayBuffer()).then((buffer) => {
-    mandrillData = buffer;
-    AtlasAPI1(CanvasKit, mandrillData);
-  });
+  Promise.all([ckLoaded, loadTestImage]).then((results) => {AtlasAPI1(...results)});
+  Promise.all([ckLoaded, loadTestImage]).then((results) => {DecodeAPI(...results)});
 
   function DrawingExample(CanvasKit, robotoData) {
     if (!robotoData || !CanvasKit) {
@@ -173,6 +155,38 @@
     // paint.delete();
     // textPaint.delete();
     // textFont.delete();
+  }
+
+  function PathPersonExample(CanvasKit) {
+    const surface = CanvasKit.MakeSWCanvasSurface('pathperson');
+    if (!surface) {
+      console.error('Could not make surface');
+      return;
+    }
+
+    function drawFrame(canvas) {
+      const paint = new CanvasKit.SkPaint();
+      paint.setStrokeWidth(1.0);
+      paint.setAntiAlias(true);
+      paint.setColor(CanvasKit.Color(0, 0, 0, 1.0));
+      paint.setStyle(CanvasKit.PaintStyle.Stroke);
+
+      const path = new CanvasKit.SkPath();
+      path.moveTo(10, 10);
+      path.lineTo(100, 10);
+      path.moveTo(10, 10);
+      path.lineTo(10, 200);
+      path.moveTo(10, 100);
+      path.lineTo(100,100);
+      path.moveTo(10, 200);
+      path.lineTo(100, 200);
+
+      canvas.drawPath(path, paint);
+      path.delete();
+      paint.delete();
+    }
+    // Intentionally just draw frame once
+    surface.drawOnce(drawFrame);
   }
 
   function PathExample(CanvasKit) {
@@ -1091,6 +1105,7 @@
       height: 50,
       alphaType: CanvasKit.AlphaType.Premul,
       colorType: CanvasKit.ColorType.RGBA_8888,
+      colorSpace: CanvasKit.SkColorSpace.SRGB,
     });
 
     if (!subSurface) {
@@ -1167,8 +1182,8 @@
     dsts.push(0, .8, 200, 100);
 
     const colors = new CanvasKit.SkColorBuilder();
-    colors.push(CanvasKit.Color(85, 170, 10, 0.5)); // light green
-    colors.push(CanvasKit.Color(51, 51, 191, 0.5)); // light blue
+    colors.push(CanvasKit.ColorAsInt(85, 170, 10, 128)); // light green
+    colors.push(CanvasKit.ColorAsInt(51, 51, 191, 128)); // light blue
 
     let i = 0;
 
@@ -1199,5 +1214,24 @@
     }
     surface.requestAnimationFrame(drawFrame);
 
+  }
+
+  async function DecodeAPI(CanvasKit, imgData) {
+    if (!CanvasKit || !imgData) {
+      return;
+    }
+    const surface = CanvasKit.MakeCanvasSurface('decode');
+    if (!surface) {
+      console.error('Could not make surface');
+      return;
+    }
+    const blob = new Blob([ imgData ]);
+    // ImageBitmap is not supported in Safari
+    const imageBitmap = await createImageBitmap(blob);
+    const img = await CanvasKit.MakeImageFromCanvasImageSource(imageBitmap);
+
+    surface.drawOnce((canvas) => {
+      canvas.drawImage(img, 0, 0, null);
+    });
   }
 </script>

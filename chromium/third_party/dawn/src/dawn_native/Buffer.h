@@ -35,10 +35,13 @@ namespace dawn_native {
         enum class BufferState {
             Unmapped,
             Mapped,
+            MappedAtCreation,
             Destroyed,
         };
 
       public:
+        enum class ClearValue { Zero, NonZero };
+
         BufferBase(DeviceBase* device, const BufferDescriptor* descriptor);
 
         static BufferBase* MakeError(DeviceBase* device);
@@ -50,8 +53,9 @@ namespace dawn_native {
         wgpu::BufferUsage GetUsage() const;
 
         MaybeError MapAtCreation(uint8_t** mappedPointer);
+        void OnMapCommandSerialFinished(uint32_t mapSerial, bool isWrite);
 
-        MaybeError ValidateCanUseInSubmitNow() const;
+        MaybeError ValidateCanUseOnQueueNow() const;
 
         // Dawn API
         void SetSubData(uint32_t start, uint32_t count, const void* data);
@@ -67,11 +71,11 @@ namespace dawn_native {
         void CallMapReadCallback(uint32_t serial,
                                  WGPUBufferMapAsyncStatus status,
                                  const void* pointer,
-                                 uint32_t dataLength);
+                                 uint64_t dataLength);
         void CallMapWriteCallback(uint32_t serial,
                                   WGPUBufferMapAsyncStatus status,
                                   void* pointer,
-                                  uint32_t dataLength);
+                                  uint64_t dataLength);
 
         void DestroyInternal();
 
@@ -79,16 +83,15 @@ namespace dawn_native {
 
       private:
         virtual MaybeError MapAtCreationImpl(uint8_t** mappedPointer) = 0;
-        virtual MaybeError SetSubDataImpl(uint32_t start, uint32_t count, const void* data);
         virtual MaybeError MapReadAsyncImpl(uint32_t serial) = 0;
         virtual MaybeError MapWriteAsyncImpl(uint32_t serial) = 0;
         virtual void UnmapImpl() = 0;
         virtual void DestroyImpl() = 0;
+        virtual void* GetMappedPointerImpl() = 0;
 
         virtual bool IsMapWritable() const = 0;
         MaybeError CopyFromStagingBuffer();
 
-        MaybeError ValidateSetSubData(uint32_t start, uint32_t count) const;
         MaybeError ValidateMap(wgpu::BufferUsage requiredUsage,
                                WGPUBufferMapAsyncStatus* status) const;
         MaybeError ValidateUnmap() const;

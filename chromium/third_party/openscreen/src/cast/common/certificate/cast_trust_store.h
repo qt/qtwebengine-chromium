@@ -21,7 +21,7 @@ class CastTrustStore {
       const std::vector<uint8_t>& trust_anchor_der);
 
   CastTrustStore();
-  CastTrustStore(const std::vector<uint8_t>& trust_anchor_der);
+  explicit CastTrustStore(const std::vector<uint8_t>& trust_anchor_der);
   CastTrustStore(const CastTrustStore&) = delete;
   ~CastTrustStore();
   CastTrustStore& operator=(const CastTrustStore&) = delete;

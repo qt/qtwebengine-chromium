@@ -26,15 +26,13 @@
 #include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcodec/basic/basicmodule.h"
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxcodec/jbig2/jbig2module.h"
+#include "core/fxcodec/jbig2/jbig2_decoder.h"
 #include "core/fxcodec/jpeg/jpegmodule.h"
 #include "core/fxcodec/jpx/cjpx_decoder.h"
-#include "core/fxcodec/jpx/jpxmodule.h"
 #include "core/fxcodec/scanlinedecoder.h"
 #include "core/fxcrt/cfx_fixedbufgrow.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -253,7 +251,7 @@ CPDF_DIB::LoadState CPDF_DIB::StartLoadDIBBase(
     const CPDF_Stream* pStream,
     bool bHasMask,
     const CPDF_Dictionary* pFormResources,
-    CPDF_Dictionary* pPageResources,
+    const CPDF_Dictionary* pPageResources,
     bool bStdCS,
     uint32_t GroupFamily,
     bool bLoadMask) {
@@ -324,10 +322,8 @@ CPDF_DIB::LoadState CPDF_DIB::ContinueLoadDIBBase(PauseIndicatorIface* pPause) {
     return LoadState::kFail;
 
   FXCODEC_STATUS iDecodeStatus;
-  Jbig2Module* pJbig2Module =
-      fxcodec::ModuleMgr::GetInstance()->GetJbig2Module();
   if (!m_pJbig2Context) {
-    m_pJbig2Context = pdfium::MakeUnique<Jbig2Context>();
+    m_pJbig2Context = std::make_unique<Jbig2Context>();
     if (m_pStreamAcc->GetImageParam()) {
       const CPDF_Stream* pGlobals =
           m_pStreamAcc->GetImageParam()->GetStreamFor("JBIG2Globals");
@@ -350,12 +346,12 @@ CPDF_DIB::LoadState CPDF_DIB::ContinueLoadDIBBase(PauseIndicatorIface* pPause) {
       if (m_pGlobalAcc->GetStream())
         nGlobalObjNum = m_pGlobalAcc->GetStream()->GetObjNum();
     }
-    iDecodeStatus = pJbig2Module->StartDecode(
+    iDecodeStatus = Jbig2Decoder::StartDecode(
         m_pJbig2Context.get(), m_pDocument->CodecContext(), m_Width, m_Height,
         pSrcSpan, nSrcObjNum, pGlobalSpan, nGlobalObjNum,
         m_pCachedBitmap->GetBuffer(), m_pCachedBitmap->GetPitch(), pPause);
   } else {
-    iDecodeStatus = pJbig2Module->ContinueDecode(m_pJbig2Context.get(), pPause);
+    iDecodeStatus = Jbig2Decoder::ContinueDecode(m_pJbig2Context.get(), pPause);
   }
 
   if (iDecodeStatus < 0) {
@@ -555,15 +551,13 @@ CPDF_DIB::LoadState CPDF_DIB::CreateDecoder() {
 
 bool CPDF_DIB::CreateDCTDecoder(pdfium::span<const uint8_t> src_span,
                                 const CPDF_Dictionary* pParams) {
-  JpegModule* pJpegModule = fxcodec::ModuleMgr::GetInstance()->GetJpegModule();
-  m_pDecoder = pJpegModule->CreateDecoder(
+  m_pDecoder = JpegModule::CreateDecoder(
       src_span, m_Width, m_Height, m_nComponents,
       !pParams || pParams->GetIntegerFor("ColorTransform", 1));
   if (m_pDecoder)
     return true;
 
-  Optional<JpegModule::JpegImageInfo> info_opt =
-      pJpegModule->LoadInfo(src_span);
+  Optional<JpegModule::JpegImageInfo> info_opt = JpegModule::LoadInfo(src_span);
   if (!info_opt.has_value())
     return false;
 
@@ -578,8 +572,8 @@ bool CPDF_DIB::CreateDCTDecoder(pdfium::span<const uint8_t> src_span,
 
   if (m_nComponents == static_cast<uint32_t>(info.num_components)) {
     m_bpc = info.bits_per_components;
-    m_pDecoder = pJpegModule->CreateDecoder(
-        src_span, m_Width, m_Height, m_nComponents, info.color_transform);
+    m_pDecoder = JpegModule::CreateDecoder(src_span, m_Width, m_Height,
+                                           m_nComponents, info.color_transform);
     return true;
   }
 
@@ -623,15 +617,15 @@ bool CPDF_DIB::CreateDCTDecoder(pdfium::span<const uint8_t> src_span,
     return false;
 
   m_bpc = info.bits_per_components;
-  m_pDecoder = pJpegModule->CreateDecoder(src_span, m_Width, m_Height,
-                                          m_nComponents, info.color_transform);
+  m_pDecoder = JpegModule::CreateDecoder(src_span, m_Width, m_Height,
+                                         m_nComponents, info.color_transform);
   return true;
 }
 
 RetainPtr<CFX_DIBitmap> CPDF_DIB::LoadJpxBitmap() {
-  std::unique_ptr<CJPX_Decoder> decoder = JpxModule::CreateDecoder(
-      m_pStreamAcc->GetSpan(),
-      ColorSpaceOptionFromColorSpace(m_pColorSpace.Get()));
+  std::unique_ptr<CJPX_Decoder> decoder =
+      CJPX_Decoder::Create(m_pStreamAcc->GetSpan(),
+                           ColorSpaceOptionFromColorSpace(m_pColorSpace.Get()));
   if (!decoder)
     return nullptr;
 

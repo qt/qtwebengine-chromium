@@ -37,8 +37,6 @@
 <translation id="1873233029667955273">Google Chrome तपाईंको पूर्वनिर्धारित ब्राउजर होइन</translation>
 <translation id="1874309113135274312">Google Chrome बिटा (mDNS-In)</translation>
 <translation id="1877026089748256423">Chrome को मिति समाप्त भएको छ</translation>
-<translation id="1900795423379050516">यो पृष्ठमा कुनै सेटिङ देखिएन भने आफ्नो <ph name="LINK_BEGIN" />
-    Chrome ब्राउजरका सेटिङ<ph name="LINK_END" />मा गई हेर्नुहोस्</translation>
 <translation id="1919130412786645364">Chrome मा साइन इन गर्ने अनुमति दिनुहोस्</translation>
 <translation id="2063848847527508675">यो अद्यावधिक लागू गर्न Chrome OS लाई पुनः सुरु गर्नुपर्छ।</translation>
 <translation id="2094919256425865063">जे भए पनि Chrome छाडेर बाहिरिने हो?</translation>
@@ -114,6 +112,7 @@
 <translation id="4251615635259297716">तपाइँको Chrome लगतलाई यस खातामा लिङ्क गर्ने?</translation>
 <translation id="4281844954008187215">सेवाका सर्तहरू</translation>
 <translation id="4293420128516039005">आफ्ना यन्त्रहरूभरि Chrome लाई सिंक तथा वैयक्तीकृत गर्न साइन इन गर्नुहोस्</translation>
+<translation id="4325083532956419387">Chrome OS को संस्करण</translation>
 <translation id="4328355335528187361">Google Chrome Dev (mDNS-In)</translation>
 <translation id="4331809312908958774">Chrome OS</translation>
 <translation id="4335235004908507846">Chrome ले तपाईंलाई डेटा चोरीका घटना, हानिकारक एक्स्टेन्सन र थप समस्याहरूबाट सुरक्षित रहन मद्दत गर्न सक्छ</translation>

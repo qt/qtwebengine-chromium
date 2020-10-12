@@ -16,6 +16,7 @@
 #define DAWNNATIVE_SHADERMODULE_H_
 
 #include "common/Constants.h"
+#include "common/ityp_array.h"
 #include "dawn_native/BindingInfo.h"
 #include "dawn_native/CachedObject.h"
 #include "dawn_native/Error.h"
@@ -27,7 +28,6 @@
 
 #include "spvc/spvc.hpp"
 
-#include <array>
 #include <bitset>
 #include <map>
 #include <vector>
@@ -43,6 +43,8 @@ namespace dawn_native {
 
     class ShaderModuleBase : public CachedObject {
       public:
+        enum class Type { Undefined, Spirv, Wgsl };
+
         ShaderModuleBase(DeviceBase* device, const ShaderModuleDescriptor* descriptor);
         ~ShaderModuleBase() override;
 
@@ -61,8 +63,8 @@ namespace dawn_native {
             using BindingInfo::visibility;
         };
 
-        using ModuleBindingInfo =
-            std::array<std::map<BindingNumber, ShaderBindingInfo>, kMaxBindGroups>;
+        using BindingInfoMap = std::map<BindingNumber, ShaderBindingInfo>;
+        using ModuleBindingInfo = ityp::array<BindGroupIndex, BindingInfoMap, kMaxBindGroups>;
 
         const ModuleBindingInfo& GetBindingInfo() const;
         const std::bitset<kMaxVertexAttributes>& GetUsedVertexAttributes() const;
@@ -73,7 +75,10 @@ namespace dawn_native {
         using FragmentOutputBaseTypes = std::array<Format::Type, kMaxColorAttachments>;
         const FragmentOutputBaseTypes& GetFragmentOutputBaseTypes() const;
 
-        bool IsCompatibleWithPipelineLayout(const PipelineLayoutBase* layout) const;
+        MaybeError ValidateCompatibilityWithPipelineLayout(const PipelineLayoutBase* layout) const;
+
+        RequiredBufferSizes ComputeRequiredBufferSizesForLayout(
+            const PipelineLayoutBase* layout) const;
 
         // Functors necessary for the unordered_set<ShaderModuleBase*>-based cache.
         struct HashFunc {
@@ -89,20 +94,28 @@ namespace dawn_native {
       protected:
         static MaybeError CheckSpvcSuccess(shaderc_spvc_status status, const char* error_msg);
         shaderc_spvc::CompileOptions GetCompileOptions() const;
+        MaybeError InitializeBase();
 
         shaderc_spvc::Context mSpvcContext;
 
       private:
         ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag);
 
-        bool IsCompatibleWithBindGroupLayout(size_t group, const BindGroupLayoutBase* layout) const;
+        MaybeError ValidateCompatibilityWithBindGroupLayout(
+            BindGroupIndex group,
+            const BindGroupLayoutBase* layout) const;
+
+        std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingInfoMap& shaderMap,
+                                                         const BindGroupLayoutBase* layout) const;
 
         // Different implementations reflection into the shader depending on
         // whether using spvc, or directly accessing spirv-cross.
         MaybeError ExtractSpirvInfoWithSpvc();
         MaybeError ExtractSpirvInfoWithSpirvCross(const spirv_cross::Compiler& compiler);
 
+        Type mType;
         std::vector<uint32_t> mSpirv;
+        std::string mWgsl;
 
         ModuleBindingInfo mBindingInfo;
         std::bitset<kMaxVertexAttributes> mUsedVertexAttributes;

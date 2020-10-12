@@ -304,6 +304,9 @@ void QueryTexParameterBase(const Context *context,
         case GL_TEXTURE_SRGB_DECODE_EXT:
             *params = CastFromGLintStateValue<ParamType>(pname, texture->getSRGBDecode());
             break;
+        case GL_TEXTURE_FORMAT_SRGB_OVERRIDE_EXT:
+            *params = CastFromGLintStateValue<ParamType>(pname, texture->getSRGBOverride());
+            break;
         case GL_DEPTH_STENCIL_TEXTURE_MODE:
             *params =
                 CastFromGLintStateValue<ParamType>(pname, texture->getDepthStencilTextureMode());
@@ -431,6 +434,9 @@ void SetTexParameterBase(Context *context, Texture *texture, GLenum pname, const
             break;
         case GL_TEXTURE_SRGB_DECODE_EXT:
             texture->setSRGBDecode(context, ConvertToGLenum(pname, params[0]));
+            break;
+        case GL_TEXTURE_FORMAT_SRGB_OVERRIDE_EXT:
+            texture->setSRGBOverride(context, ConvertToGLenum(pname, params[0]));
             break;
         case GL_TEXTURE_CROP_RECT_OES:
             texture->setCrop(gl::Rectangle(ConvertTexParam<isGLfixed, GLint>(pname, params[0]),
@@ -2973,6 +2979,7 @@ bool GetQueryParameterInfo(const State &glState,
         case GL_PACK_ALIGNMENT:
         case GL_UNPACK_ALIGNMENT:
         case GL_GENERATE_MIPMAP_HINT:
+        case GL_TEXTURE_FILTERING_HINT_CHROMIUM:
         case GL_RED_BITS:
         case GL_GREEN_BITS:
         case GL_BLUE_BITS:
@@ -3589,6 +3596,17 @@ bool GetQueryParameterInfo(const State &glState,
             case GL_MAX_DEPTH_TEXTURE_SAMPLES_ANGLE:
             case GL_TEXTURE_BINDING_2D_MULTISAMPLE_ANGLE:
             case GL_MAX_SAMPLE_MASK_WORDS:
+                *type      = GL_INT;
+                *numParams = 1;
+                return true;
+        }
+    }
+
+    if (extensions.textureCubeMapArrayAny())
+    {
+        switch (pname)
+        {
+            case GL_TEXTURE_BINDING_CUBE_MAP_ARRAY:
                 *type      = GL_INT;
                 *numParams = 1;
                 return true;

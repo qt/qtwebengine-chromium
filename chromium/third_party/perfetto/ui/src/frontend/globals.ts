@@ -27,7 +27,8 @@ type TrackDataStore = Map<string, {}>;
 type QueryResultsStore = Map<string, {}>;
 type AggregateDataStore = Map<string, AggregateData>;
 type Description = Map<string, string>;
-type Args = Map<string, string>;
+export type Arg = string|{kind: 'SLICE', trackId: string, sliceId: number};
+export type Args = Map<string, Arg>;
 export interface SliceDetails {
   ts?: number;
   dur?: number;
@@ -63,6 +64,13 @@ export interface HeapProfileDetails {
   expandedCallsite?: CallsiteInfo;
   viewingOption?: string;
   expandedId?: number;
+}
+
+export interface CpuProfileDetails {
+  id?: number;
+  ts?: number;
+  utid?: number;
+  stack?: CallsiteInfo[];
 }
 
 export interface QuantizedLoad {
@@ -101,6 +109,7 @@ class Globals {
   private _sliceDetails?: SliceDetails = undefined;
   private _counterDetails?: CounterDetails = undefined;
   private _heapProfileDetails?: HeapProfileDetails = undefined;
+  private _cpuProfileDetails?: CpuProfileDetails = undefined;
   private _numQueriesQueued = 0;
   private _bufferUsage?: number = undefined;
   private _recordingLog?: string = undefined;
@@ -141,6 +150,7 @@ class Globals {
     this._sliceDetails = {};
     this._counterDetails = {};
     this._heapProfileDetails = {};
+    this._cpuProfileDetails = {};
   }
 
   get state(): State {
@@ -210,6 +220,14 @@ class Globals {
 
   set heapProfileDetails(click: HeapProfileDetails) {
     this._heapProfileDetails = assertExists(click);
+  }
+
+  get cpuProfileDetails() {
+    return assertExists(this._cpuProfileDetails);
+  }
+
+  set cpuProfileDetails(click: CpuProfileDetails) {
+    this._cpuProfileDetails = assertExists(click);
   }
 
   set numQueuedQueries(value: number) {

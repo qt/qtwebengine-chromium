@@ -16,10 +16,12 @@
 #include "net/third_party/quiche/src/quic/core/http/quic_spdy_client_stream.h"
 #include "net/third_party/quiche/src/quic/core/http/spdy_server_push_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_constants.h"
+#include "net/third_party/quiche/src/quic/core/quic_error_codes.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/core/tls_client_handshaker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_expect_bug.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
@@ -38,12 +40,13 @@
 #include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 using spdy::SpdyHeaderBlock;
-using testing::_;
-using testing::AnyNumber;
-using testing::AtLeast;
-using testing::AtMost;
-using testing::Invoke;
-using testing::Truly;
+using ::testing::_;
+using ::testing::AnyNumber;
+using ::testing::AtLeast;
+using ::testing::AtMost;
+using ::testing::Invoke;
+using ::testing::StrictMock;
+using ::testing::Truly;
 
 namespace quic {
 namespace test {
@@ -93,8 +96,12 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
             QuicUtils::GetInvalidStreamId(GetParam().transport_version)) {
     auto client_cache = std::make_unique<test::SimpleSessionCache>();
     client_session_cache_ = client_cache.get();
-    crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
+    SetQuicReloadableFlag(quic_enable_tls_resumption, true);
+    SetQuicReloadableFlag(quic_enable_zero_rtt_for_tls, true);
+    SetQuicReloadableFlag(quic_fix_gquic_stream_type, true);
+    client_crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
         crypto_test_utils::ProofVerifierForTesting(), std::move(client_cache));
+    server_crypto_config_ = crypto_test_utils::CryptoServerConfigForTesting();
     Initialize();
     // Advance the time, because timers do not like uninitialized times.
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
@@ -107,14 +114,16 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
 
   void Initialize() {
     session_.reset();
-    connection_ = new PacketSavingConnection(&helper_, &alarm_factory_,
-                                             Perspective::IS_CLIENT,
-                                             SupportedVersions(GetParam()));
+    connection_ = new ::testing::NiceMock<PacketSavingConnection>(
+        &helper_, &alarm_factory_, Perspective::IS_CLIENT,
+        SupportedVersions(GetParam()));
     session_ = std::make_unique<TestQuicSpdyClientSession>(
         DefaultQuicConfig(), SupportedVersions(GetParam()), connection_,
-        QuicServerId(kServerHostname, kPort, false), crypto_config_.get(),
-        &push_promise_index_);
+        QuicServerId(kServerHostname, kPort, false),
+        client_crypto_config_.get(), &push_promise_index_);
     session_->Initialize();
+    crypto_stream_ = static_cast<QuicCryptoClientStream*>(
+        session_->GetMutableCryptoStream());
     push_promise_[":path"] = "/bar";
     push_promise_[":authority"] = "www.google.com";
     push_promise_[":method"] = "GET";
@@ -157,13 +166,11 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
   void CompleteCryptoHandshake(uint32_t server_max_incoming_streams) {
     if (VersionHasIetfQuicFrames(connection_->transport_version())) {
       EXPECT_CALL(*connection_, SendControlFrame(_))
-          .Times(testing::AnyNumber())
+          .Times(::testing::AnyNumber())
           .WillRepeatedly(Invoke(
               this, &QuicSpdyClientSessionTest::ClearMaxStreamsControlFrame));
     }
     session_->CryptoConnect();
-    QuicCryptoClientStream* stream = static_cast<QuicCryptoClientStream*>(
-        session_->GetMutableCryptoStream());
     QuicConfig config = DefaultQuicConfig();
     if (VersionHasIetfQuicFrames(connection_->transport_version())) {
       config.SetMaxUnidirectionalStreamsToSend(server_max_incoming_streams);
@@ -171,32 +178,45 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
     } else {
       config.SetMaxBidirectionalStreamsToSend(server_max_incoming_streams);
     }
-    SetQuicReloadableFlag(quic_enable_tls_resumption, true);
-    SetQuicReloadableFlag(quic_enable_zero_rtt_for_tls, true);
-    std::unique_ptr<QuicCryptoServerConfig> crypto_config =
-        crypto_test_utils::CryptoServerConfigForTesting();
     crypto_test_utils::HandshakeWithFakeServer(
-        &config, crypto_config.get(), &helper_, &alarm_factory_, connection_,
-        stream, AlpnForVersion(connection_->version()));
+        &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+        connection_, crypto_stream_, AlpnForVersion(connection_->version()));
   }
 
   void CreateConnection() {
-    connection_ = new PacketSavingConnection(&helper_, &alarm_factory_,
-                                             Perspective::IS_CLIENT,
-                                             SupportedVersions(GetParam()));
+    connection_ = new ::testing::NiceMock<PacketSavingConnection>(
+        &helper_, &alarm_factory_, Perspective::IS_CLIENT,
+        SupportedVersions(GetParam()));
     // Advance the time, because timers do not like uninitialized times.
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(1));
     session_ = std::make_unique<TestQuicSpdyClientSession>(
         DefaultQuicConfig(), SupportedVersions(GetParam()), connection_,
-        QuicServerId(kServerHostname, kPort, false), crypto_config_.get(),
-        &push_promise_index_);
+        QuicServerId(kServerHostname, kPort, false),
+        client_crypto_config_.get(), &push_promise_index_);
     session_->Initialize();
+    crypto_stream_ = static_cast<QuicCryptoClientStream*>(
+        session_->GetMutableCryptoStream());
   }
 
-  std::unique_ptr<QuicCryptoClientConfig> crypto_config_;
+  void CompleteFirstConnection() {
+    CompleteCryptoHandshake();
+    EXPECT_FALSE(session_->GetCryptoStream()->IsResumption());
+    if (session_->version().UsesHttp3()) {
+      SettingsFrame settings;
+      settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 2;
+      settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
+      settings.values[256] = 4;  // unknown setting
+      session_->OnSettingsFrame(settings);
+    }
+  }
+
+  // Owned by |session_|.
+  QuicCryptoClientStream* crypto_stream_;
+  std::unique_ptr<QuicCryptoServerConfig> server_crypto_config_;
+  std::unique_ptr<QuicCryptoClientConfig> client_crypto_config_;
   MockQuicConnectionHelper helper_;
   MockAlarmFactory alarm_factory_;
-  PacketSavingConnection* connection_;
+  ::testing::NiceMock<PacketSavingConnection>* connection_;
   std::unique_ptr<TestQuicSpdyClientSession> session_;
   QuicClientPushPromiseIndex push_promise_index_;
   SpdyHeaderBlock push_promise_;
@@ -219,8 +239,6 @@ TEST_P(QuicSpdyClientSessionTest, NoEncryptionAfterInitialEncryption) {
   if (GetParam().handshake_protocol == PROTOCOL_TLS1_3) {
     // This test relies on resumption and is QUIC crypto specific, so it is
     // disabled for TLS.
-    // TODO(nharper): Add support for resumption to the TLS handshake, and fix
-    // this test to not rely on QUIC crypto.
     return;
   }
   // Complete a handshake in order to prime the crypto config for 0-RTT.
@@ -229,7 +247,6 @@ TEST_P(QuicSpdyClientSessionTest, NoEncryptionAfterInitialEncryption) {
   // Now create a second session using the same crypto config.
   Initialize();
 
-  EXPECT_CALL(*connection_, OnCanWrite());
   // Starting the handshake should move immediately to encryption
   // established and will allow streams to be created.
   session_->CryptoConnect();
@@ -257,7 +274,7 @@ TEST_P(QuicSpdyClientSessionTest, NoEncryptionAfterInitialEncryption) {
   char data[] = "hello world";
   EXPECT_QUIC_BUG(
       session_->WritevData(stream->id(), QUICHE_ARRAYSIZE(data), 0, NO_FIN,
-                           NOT_RETRANSMISSION, QuicheNullOpt),
+                           NOT_RETRANSMISSION, QUICHE_NULLOPT),
       "Client: Try to send data of stream");
 }
 
@@ -343,11 +360,7 @@ TEST_P(QuicSpdyClientSessionTest, ResetAndTrailers) {
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke(&ClearControlFrame));
   EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(1);
-  if (session_->break_close_loop()) {
-    session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
-  } else {
-    session_->SendRstStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
-  }
+  session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
 
   // A new stream cannot be created as the reset stream still counts as an open
   // outgoing stream until closed by the server.
@@ -399,11 +412,7 @@ TEST_P(QuicSpdyClientSessionTest, ReceivedMalformedTrailersAfterSendingRst) {
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke(&ClearControlFrame));
   EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(1);
-  if (session_->break_close_loop()) {
-    session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
-  } else {
-    session_->SendRstStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
-  }
+  session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
 
   // The stream receives trailers with final byte offset, but the header value
   // is non-numeric and should be treated as malformed.
@@ -853,12 +862,7 @@ TEST_P(QuicSpdyClientSessionTest, ResetPromised) {
   EXPECT_CALL(*connection_, SendControlFrame(_));
   EXPECT_CALL(*connection_,
               OnStreamReset(promised_stream_id_, QUIC_STREAM_PEER_GOING_AWAY));
-  if (session_->break_close_loop()) {
-    session_->ResetStream(promised_stream_id_, QUIC_STREAM_PEER_GOING_AWAY, 0);
-  } else {
-    session_->SendRstStream(promised_stream_id_, QUIC_STREAM_PEER_GOING_AWAY,
-                            0);
-  }
+  session_->ResetStream(promised_stream_id_, QUIC_STREAM_PEER_GOING_AWAY, 0);
   QuicClientPromisedInfo* promised =
       session_->GetPromisedById(promised_stream_id_);
   EXPECT_NE(promised, nullptr);
@@ -983,44 +987,50 @@ TEST_P(QuicSpdyClientSessionTest, OnSettingsFrame) {
 }
 
 TEST_P(QuicSpdyClientSessionTest, IetfZeroRttSetup) {
-  // This feature is HTTP/3 only
-  if (!VersionUsesHttp3(session_->transport_version())) {
+  // This feature is TLS-only.
+  if (session_->version().UsesQuicCrypto()) {
     return;
   }
-  CompleteCryptoHandshake();
-  EXPECT_FALSE(session_->GetCryptoStream()->IsResumption());
-  SettingsFrame settings;
-  settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 2;
-  settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
-  settings.values[256] = 4;  // unknown setting
-  session_->OnSettingsFrame(settings);
+
+  CompleteFirstConnection();
 
   CreateConnection();
   // Session configs should be in initial state.
-  EXPECT_EQ(0u, session_->flow_controller()->send_window_offset());
-  EXPECT_EQ(std::numeric_limits<size_t>::max(),
-            session_->max_outbound_header_list_size());
+  if (session_->version().UsesHttp3()) {
+    EXPECT_EQ(0u, session_->flow_controller()->send_window_offset());
+    EXPECT_EQ(std::numeric_limits<size_t>::max(),
+              session_->max_outbound_header_list_size());
+  } else {
+    EXPECT_EQ(kMinimumFlowControlSendWindow,
+              session_->flow_controller()->send_window_offset());
+  }
   session_->CryptoConnect();
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  EXPECT_EQ(ENCRYPTION_ZERO_RTT, session_->connection()->encryption_level());
 
   // The client session should have a basic setup ready before the handshake
   // succeeds.
   EXPECT_EQ(kInitialSessionFlowControlWindowForTest,
             session_->flow_controller()->send_window_offset());
-  auto* id_manager = QuicSessionPeer::v99_streamid_manager(session_.get());
-  EXPECT_EQ(kDefaultMaxStreamsPerConnection,
-            id_manager->max_outgoing_bidirectional_streams());
-  EXPECT_EQ(
-      kDefaultMaxStreamsPerConnection + kHttp3StaticUnidirectionalStreamCount,
-      id_manager->max_outgoing_unidirectional_streams());
-  auto* control_stream =
-      QuicSpdySessionPeer::GetSendControlStream(session_.get());
-  EXPECT_EQ(kInitialStreamFlowControlWindowForTest,
-            control_stream->flow_controller()->send_window_offset());
-  EXPECT_EQ(5u, session_->max_outbound_header_list_size());
+  if (session_->version().UsesHttp3()) {
+    auto* id_manager = QuicSessionPeer::v99_streamid_manager(session_.get());
+    EXPECT_EQ(kDefaultMaxStreamsPerConnection,
+              id_manager->max_outgoing_bidirectional_streams());
+    EXPECT_EQ(
+        kDefaultMaxStreamsPerConnection + kHttp3StaticUnidirectionalStreamCount,
+        id_manager->max_outgoing_unidirectional_streams());
+    auto* control_stream =
+        QuicSpdySessionPeer::GetSendControlStream(session_.get());
+    EXPECT_EQ(kInitialStreamFlowControlWindowForTest,
+              control_stream->flow_controller()->send_window_offset());
+    EXPECT_EQ(5u, session_->max_outbound_header_list_size());
+  } else {
+    auto* id_manager = QuicSessionPeer::GetStreamIdManager(session_.get());
+    EXPECT_EQ(kDefaultMaxStreamsPerConnection,
+              id_manager->max_open_outgoing_streams());
+  }
 
   // Complete the handshake with a different config.
-  QuicCryptoClientStream* stream =
-      static_cast<QuicCryptoClientStream*>(session_->GetMutableCryptoStream());
   QuicConfig config = DefaultQuicConfig();
   config.SetInitialMaxStreamDataBytesUnidirectionalToSend(
       kInitialStreamFlowControlWindowForTest + 1);
@@ -1028,23 +1038,415 @@ TEST_P(QuicSpdyClientSessionTest, IetfZeroRttSetup) {
       kInitialSessionFlowControlWindowForTest + 1);
   config.SetMaxBidirectionalStreamsToSend(kDefaultMaxStreamsPerConnection + 1);
   config.SetMaxUnidirectionalStreamsToSend(kDefaultMaxStreamsPerConnection + 1);
-  SetQuicReloadableFlag(quic_enable_tls_resumption, true);
-  std::unique_ptr<QuicCryptoServerConfig> crypto_config =
-      crypto_test_utils::CryptoServerConfigForTesting();
   crypto_test_utils::HandshakeWithFakeServer(
-      &config, crypto_config.get(), &helper_, &alarm_factory_, connection_,
-      stream, AlpnForVersion(connection_->version()));
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
 
   EXPECT_TRUE(session_->GetCryptoStream()->IsResumption());
   EXPECT_EQ(kInitialSessionFlowControlWindowForTest + 1,
             session_->flow_controller()->send_window_offset());
-  EXPECT_EQ(kDefaultMaxStreamsPerConnection + 1,
-            id_manager->max_outgoing_bidirectional_streams());
-  EXPECT_EQ(kDefaultMaxStreamsPerConnection +
-                kHttp3StaticUnidirectionalStreamCount + 1,
-            id_manager->max_outgoing_unidirectional_streams());
-  EXPECT_EQ(kInitialStreamFlowControlWindowForTest + 1,
-            control_stream->flow_controller()->send_window_offset());
+  if (session_->version().UsesHttp3()) {
+    auto* id_manager = QuicSessionPeer::v99_streamid_manager(session_.get());
+    auto* control_stream =
+        QuicSpdySessionPeer::GetSendControlStream(session_.get());
+    EXPECT_EQ(kDefaultMaxStreamsPerConnection + 1,
+              id_manager->max_outgoing_bidirectional_streams());
+    EXPECT_EQ(kDefaultMaxStreamsPerConnection +
+                  kHttp3StaticUnidirectionalStreamCount + 1,
+              id_manager->max_outgoing_unidirectional_streams());
+    EXPECT_EQ(kInitialStreamFlowControlWindowForTest + 1,
+              control_stream->flow_controller()->send_window_offset());
+  } else {
+    auto* id_manager = QuicSessionPeer::GetStreamIdManager(session_.get());
+    EXPECT_EQ(kDefaultMaxStreamsPerConnection + 1,
+              id_manager->max_open_outgoing_streams());
+  }
+
+  EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
+  // Let the session receive a new SETTINGS frame to complete the second
+  // connection.
+  if (session_->version().UsesHttp3()) {
+    SettingsFrame settings;
+    settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 2;
+    settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
+    settings.values[256] = 4;  // unknown setting
+    session_->OnSettingsFrame(settings);
+  }
+}
+
+// Regression test for b/159168475
+TEST_P(QuicSpdyClientSessionTest, RetransmitDataOnZeroRttReject) {
+  SetQuicReloadableFlag(quic_do_not_retransmit_immediately_on_zero_rtt_reject,
+                        true);
+  // This feature is TLS-only.
+  if (session_->version().UsesQuicCrypto()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  // Create a second connection, but disable 0-RTT on the server.
+  CreateConnection();
+  ON_CALL(*connection_, OnCanWrite())
+      .WillByDefault(
+          testing::Invoke(connection_, &MockQuicConnection::ReallyOnCanWrite));
+  EXPECT_CALL(*connection_, OnCanWrite()).Times(0);
+
+  QuicConfig config = DefaultQuicConfig();
+  config.SetMaxUnidirectionalStreamsToSend(kDefaultMaxStreamsPerConnection);
+  config.SetMaxBidirectionalStreamsToSend(kDefaultMaxStreamsPerConnection);
+  SSL_CTX_set_early_data_enabled(server_crypto_config_->ssl_ctx(), false);
+
+  // Packets will be written: CHLO, HTTP/3 SETTINGS (H/3 only), and request
+  // data.
+  EXPECT_CALL(*connection_,
+              OnPacketSent(ENCRYPTION_INITIAL, NOT_RETRANSMISSION));
+  EXPECT_CALL(*connection_,
+              OnPacketSent(ENCRYPTION_ZERO_RTT, NOT_RETRANSMISSION))
+      .Times(session_->version().UsesHttp3() ? 2 : 1);
+  session_->CryptoConnect();
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  EXPECT_EQ(ENCRYPTION_ZERO_RTT, session_->connection()->encryption_level());
+  QuicSpdyClientStream* stream = session_->CreateOutgoingBidirectionalStream();
+  ASSERT_TRUE(stream);
+  stream->WriteOrBufferData("hello", true, nullptr);
+
+  // When handshake is done, the client sends 2 packet: HANDSHAKE FINISHED, and
+  // coalesced retransmission of HTTP/3 SETTINGS and request data.
+  EXPECT_CALL(*connection_,
+              OnPacketSent(ENCRYPTION_HANDSHAKE, NOT_RETRANSMISSION));
+  // TODO(b/158027651): change transmission type to ALL_ZERO_RTT_RETRANSMISSION.
+  EXPECT_CALL(*connection_,
+              OnPacketSent(ENCRYPTION_FORWARD_SECURE, LOSS_RETRANSMISSION));
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
+  EXPECT_TRUE(session_->GetCryptoStream()->IsResumption());
+}
+
+// When IETF QUIC 0-RTT is rejected, a server-sent fresh transport params is
+// available. If the new transport params reduces stream/flow control limit to
+// lower than what the client has already used, connection will be closed.
+TEST_P(QuicSpdyClientSessionTest, ZeroRttRejectReducesStreamLimitTooMuch) {
+  // This feature is TLS-only.
+  if (session_->version().UsesQuicCrypto()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  // Create a second connection, but disable 0-RTT on the server.
+  CreateConnection();
+  QuicConfig config = DefaultQuicConfig();
+  // Server doesn't allow any bidirectional streams.
+  config.SetMaxBidirectionalStreamsToSend(0);
+  SSL_CTX_set_early_data_enabled(server_crypto_config_->ssl_ctx(), false);
+  session_->CryptoConnect();
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  QuicSpdyClientStream* stream = session_->CreateOutgoingBidirectionalStream();
+  ASSERT_TRUE(stream);
+
+  if (session_->version().UsesHttp3()) {
+    EXPECT_CALL(
+        *connection_,
+        CloseConnection(
+            QUIC_ZERO_RTT_UNRETRANSMITTABLE,
+            "Server rejected 0-RTT, aborting because new bidirectional initial "
+            "stream limit 0 is less than current open streams: 1",
+            _))
+        .WillOnce(testing::Invoke(connection_,
+                                  &MockQuicConnection::ReallyCloseConnection));
+  } else {
+    EXPECT_CALL(
+        *connection_,
+        CloseConnection(QUIC_INTERNAL_ERROR,
+                        "Server rejected 0-RTT, aborting because new stream "
+                        "limit 0 is less than current open streams: 1",
+                        _))
+        .WillOnce(testing::Invoke(connection_,
+                                  &MockQuicConnection::ReallyCloseConnection));
+  }
+  EXPECT_CALL(*connection_, CloseConnection(QUIC_HANDSHAKE_FAILED, _, _));
+
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
+}
+
+TEST_P(QuicSpdyClientSessionTest,
+       ZeroRttRejectReducesStreamFlowControlTooMuch) {
+  // This feature is TLS-only.
+  if (session_->version().UsesQuicCrypto()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  // Create a second connection, but disable 0-RTT on the server.
+  CreateConnection();
+  QuicConfig config = DefaultQuicConfig();
+  // Server doesn't allow any outgoing streams.
+  config.SetInitialMaxStreamDataBytesIncomingBidirectionalToSend(2);
+  config.SetInitialMaxStreamDataBytesUnidirectionalToSend(1);
+  SSL_CTX_set_early_data_enabled(server_crypto_config_->ssl_ctx(), false);
+  session_->CryptoConnect();
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  QuicSpdyClientStream* stream = session_->CreateOutgoingBidirectionalStream();
+  ASSERT_TRUE(stream);
+  // Let the stream write more than 1 byte of data.
+  stream->WriteOrBufferData("hello", true, nullptr);
+
+  if (session_->version().UsesHttp3()) {
+    // Both control stream and the request stream will report errors.
+    EXPECT_CALL(*connection_,
+                CloseConnection(QUIC_ZERO_RTT_UNRETRANSMITTABLE, _, _))
+        .Times(2)
+        .WillOnce(testing::Invoke(connection_,
+                                  &MockQuicConnection::ReallyCloseConnection));
+  } else {
+    EXPECT_CALL(*connection_,
+                CloseConnection(
+                    QUIC_ZERO_RTT_UNRETRANSMITTABLE,
+                    "Server rejected 0-RTT, aborting because new stream max "
+                    "data 2 for stream 3 is less than currently used: 5",
+                    _))
+        .Times(1)
+        .WillOnce(testing::Invoke(connection_,
+                                  &MockQuicConnection::ReallyCloseConnection));
+  }
+  EXPECT_CALL(*connection_, CloseConnection(QUIC_HANDSHAKE_FAILED, _, _));
+
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
+}
+
+TEST_P(QuicSpdyClientSessionTest,
+       ZeroRttRejectReducesSessionFlowControlTooMuch) {
+  // This feature is TLS-only.
+  if (session_->version().UsesQuicCrypto()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  // Create a second connection, but disable 0-RTT on the server.
+  CreateConnection();
+  QuicConfig config = DefaultQuicConfig();
+  // Server doesn't allow minimum data in session.
+  config.SetInitialSessionFlowControlWindowToSend(
+      kMinimumFlowControlSendWindow);
+  SSL_CTX_set_early_data_enabled(server_crypto_config_->ssl_ctx(), false);
+  session_->CryptoConnect();
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  QuicSpdyClientStream* stream = session_->CreateOutgoingBidirectionalStream();
+  ASSERT_TRUE(stream);
+  std::string data_to_send(kMinimumFlowControlSendWindow + 1, 'x');
+  // Let the stream write some data.
+  stream->WriteOrBufferData(data_to_send, true, nullptr);
+
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_ZERO_RTT_UNRETRANSMITTABLE, _, _))
+      .WillOnce(testing::Invoke(connection_,
+                                &MockQuicConnection::ReallyCloseConnection));
+  EXPECT_CALL(*connection_, CloseConnection(QUIC_HANDSHAKE_FAILED, _, _));
+
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
+}
+
+TEST_P(QuicSpdyClientSessionTest, SetMaxPushIdBeforeEncryptionEstablished) {
+  // 0-RTT is TLS-only, MAX_PUSH_ID frame is HTTP/3-only.
+  if (!session_->version().UsesTls() || !session_->version().UsesHttp3()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  CreateConnection();
+  StrictMock<MockHttp3DebugVisitor> debug_visitor;
+  session_->set_debug_visitor(&debug_visitor);
+
+  // No MAX_PUSH_ID frame is sent before encryption is established.
+  session_->SetMaxPushId(5);
+
+  EXPECT_FALSE(session_->IsEncryptionEstablished());
+  EXPECT_FALSE(session_->OneRttKeysAvailable());
+  EXPECT_EQ(ENCRYPTION_INITIAL, session_->connection()->encryption_level());
+
+  // MAX_PUSH_ID frame is sent upon encryption establishment with the value set
+  // by the earlier SetMaxPushId() call.
+  EXPECT_CALL(debug_visitor, OnSettingsFrameSent(_));
+  EXPECT_CALL(debug_visitor, OnMaxPushIdFrameSent(_))
+      .WillOnce(Invoke(
+          [](const MaxPushIdFrame& frame) { EXPECT_EQ(5u, frame.push_id); }));
+  session_->CryptoConnect();
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
+
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  EXPECT_FALSE(session_->OneRttKeysAvailable());
+  EXPECT_EQ(ENCRYPTION_ZERO_RTT, session_->connection()->encryption_level());
+
+  // Another SetMaxPushId() call with the same value does not trigger sending
+  // another MAX_PUSH_ID frame.
+  session_->SetMaxPushId(5);
+
+  // Calling SetMaxPushId() with a different value results in sending another
+  // MAX_PUSH_ID frame.
+  EXPECT_CALL(debug_visitor, OnMaxPushIdFrameSent(_))
+      .WillOnce(Invoke(
+          [](const MaxPushIdFrame& frame) { EXPECT_EQ(10u, frame.push_id); }));
+  session_->SetMaxPushId(10);
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
+
+  QuicConfig config = DefaultQuicConfig();
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
+
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  EXPECT_TRUE(session_->OneRttKeysAvailable());
+  EXPECT_EQ(ENCRYPTION_FORWARD_SECURE,
+            session_->connection()->encryption_level());
+  EXPECT_TRUE(session_->GetCryptoStream()->IsResumption());
+}
+
+TEST_P(QuicSpdyClientSessionTest, SetMaxPushIdAfterEncryptionEstablished) {
+  // 0-RTT is TLS-only, MAX_PUSH_ID frame is HTTP/3-only.
+  if (!session_->version().UsesTls() || !session_->version().UsesHttp3()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  CreateConnection();
+  StrictMock<MockHttp3DebugVisitor> debug_visitor;
+  session_->set_debug_visitor(&debug_visitor);
+
+  EXPECT_FALSE(session_->IsEncryptionEstablished());
+  EXPECT_FALSE(session_->OneRttKeysAvailable());
+  EXPECT_EQ(ENCRYPTION_INITIAL, session_->connection()->encryption_level());
+
+  // No MAX_PUSH_ID frame is sent if SetMaxPushId() has not been called.
+  EXPECT_CALL(debug_visitor, OnSettingsFrameSent(_));
+  session_->CryptoConnect();
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
+
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  EXPECT_FALSE(session_->OneRttKeysAvailable());
+  EXPECT_EQ(ENCRYPTION_ZERO_RTT, session_->connection()->encryption_level());
+
+  // Calling SetMaxPushId() for the first time after encryption is established
+  // results in sending a MAX_PUSH_ID frame.
+  EXPECT_CALL(debug_visitor, OnMaxPushIdFrameSent(_))
+      .WillOnce(Invoke(
+          [](const MaxPushIdFrame& frame) { EXPECT_EQ(5u, frame.push_id); }));
+  session_->SetMaxPushId(5);
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
+
+  // Another SetMaxPushId() call with the same value does not trigger sending
+  // another MAX_PUSH_ID frame.
+  session_->SetMaxPushId(5);
+
+  // Calling SetMaxPushId() with a different value results in sending another
+  // MAX_PUSH_ID frame.
+  EXPECT_CALL(debug_visitor, OnMaxPushIdFrameSent(_))
+      .WillOnce(Invoke(
+          [](const MaxPushIdFrame& frame) { EXPECT_EQ(10u, frame.push_id); }));
+  session_->SetMaxPushId(10);
+  testing::Mock::VerifyAndClearExpectations(&debug_visitor);
+
+  QuicConfig config = DefaultQuicConfig();
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
+
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  EXPECT_TRUE(session_->OneRttKeysAvailable());
+  EXPECT_EQ(ENCRYPTION_FORWARD_SECURE,
+            session_->connection()->encryption_level());
+  EXPECT_TRUE(session_->GetCryptoStream()->IsResumption());
+}
+
+TEST_P(QuicSpdyClientSessionTest, BadSettingsInZeroRttResumption) {
+  if (!session_->version().UsesHttp3()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  CreateConnection();
+  CompleteCryptoHandshake();
+  EXPECT_TRUE(session_->GetCryptoStream()->EarlyDataAccepted());
+
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_HTTP_ZERO_RTT_RESUMPTION_SETTINGS_MISMATCH, _, _))
+      .WillOnce(testing::Invoke(connection_,
+                                &MockQuicConnection::ReallyCloseConnection));
+  // Let the session receive a different SETTINGS frame.
+  SettingsFrame settings;
+  settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 1;
+  settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
+  settings.values[256] = 4;  // unknown setting
+  session_->OnSettingsFrame(settings);
+}
+
+TEST_P(QuicSpdyClientSessionTest, BadSettingsInZeroRttRejection) {
+  if (!session_->version().UsesHttp3()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  CreateConnection();
+  SSL_CTX_set_early_data_enabled(server_crypto_config_->ssl_ctx(), false);
+  session_->CryptoConnect();
+  EXPECT_TRUE(session_->IsEncryptionEstablished());
+  QuicConfig config = DefaultQuicConfig();
+  crypto_test_utils::HandshakeWithFakeServer(
+      &config, server_crypto_config_.get(), &helper_, &alarm_factory_,
+      connection_, crypto_stream_, AlpnForVersion(connection_->version()));
+  EXPECT_FALSE(session_->GetCryptoStream()->EarlyDataAccepted());
+
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_HTTP_ZERO_RTT_REJECTION_SETTINGS_MISMATCH, _, _))
+      .WillOnce(testing::Invoke(connection_,
+                                &MockQuicConnection::ReallyCloseConnection));
+  // Let the session receive a different SETTINGS frame.
+  SettingsFrame settings;
+  settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 2;
+  // setting on SETTINGS_MAX_HEADER_LIST_SIZE is reduced.
+  settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 4;
+  settings.values[256] = 4;  // unknown setting
+  session_->OnSettingsFrame(settings);
+}
+
+TEST_P(QuicSpdyClientSessionTest, ServerAcceptsZeroRttButOmitSetting) {
+  if (!session_->version().UsesHttp3()) {
+    return;
+  }
+
+  CompleteFirstConnection();
+
+  CreateConnection();
+  CompleteCryptoHandshake();
+  EXPECT_TRUE(session_->GetMutableCryptoStream()->EarlyDataAccepted());
+
+  EXPECT_CALL(
+      *connection_,
+      CloseConnection(QUIC_HTTP_ZERO_RTT_RESUMPTION_SETTINGS_MISMATCH, _, _))
+      .WillOnce(testing::Invoke(connection_,
+                                &MockQuicConnection::ReallyCloseConnection));
+  // Let the session receive a different SETTINGS frame.
+  SettingsFrame settings;
+  settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 1;
+  // Intentionally omit SETTINGS_MAX_HEADER_LIST_SIZE which was previously sent
+  // with a non-zero value.
+  settings.values[256] = 4;  // unknown setting
+  session_->OnSettingsFrame(settings);
 }
 
 }  // namespace

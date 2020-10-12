@@ -95,11 +95,7 @@ void Bbr2Sender::SetFromConfig(const QuicConfig& config,
   if (config.HasClientRequestedIndependentOption(kBBR9, perspective)) {
     params_.flexible_app_limited = true;
   }
-  if (GetQuicReloadableFlag(
-          quic_avoid_overestimate_bandwidth_with_aggregation) &&
-      config.HasClientRequestedIndependentOption(kBSAO, perspective)) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(
-        quic_avoid_overestimate_bandwidth_with_aggregation, 4, 4);
+  if (config.HasClientRequestedIndependentOption(kBSAO, perspective)) {
     model_.EnableOverestimateAvoidance();
   }
   if (config.HasClientRequestedIndependentOption(kB2NA, perspective)) {
@@ -127,14 +123,18 @@ void Bbr2Sender::SetFromConfig(const QuicConfig& config,
     QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_ignore_inflight_lo);
     params_.ignore_inflight_lo = true;
   }
+  if (GetQuicReloadableFlag(quic_bbr2_limit_inflight_hi) &&
+      config.HasClientRequestedIndependentOption(kB2HI, perspective)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_limit_inflight_hi);
+    params_.limit_inflight_hi_by_cwnd = true;
+  }
 
   ApplyConnectionOptions(config.ClientRequestedIndependentOptions(perspective));
 }
 
 void Bbr2Sender::ApplyConnectionOptions(
     const QuicTagVector& connection_options) {
-  if (GetQuicReloadableFlag(quic_bbr2_lower_startup_cwnd_gain) &&
-      ContainsQuicTag(connection_options, kBBQ2)) {
+  if (ContainsQuicTag(connection_options, kBBQ2)) {
     // 2 is the lower, derived gain for CWND.
     params_.startup_cwnd_gain = 2;
     params_.drain_cwnd_gain = 2;

@@ -13,6 +13,11 @@ declare_args() {
   enable_widevine = is_chrome_branded || is_android || is_fuchsia
 }
 
+# Disable Widevine when running linux-chromeos.
+if (is_chromeos && !is_chromeos_device) {
+  enable_widevine = false
+}
+
 # Widevine CDM is available as a library CDM on the following platforms and
 # architectures. Notably on Android library CDM is not used and Widevine is
 # supported via Android MediaDrm API.
@@ -38,8 +43,17 @@ enable_widevine_cdm_component =
 # Widevine CDM is bundled as part of Google Chrome builds.
 bundle_widevine_cdm = enable_library_widevine_cdm && is_chrome_branded
 
-enable_widevine_cdm_host_verification =
-    enable_library_widevine_cdm && enable_cdm_host_verification
+declare_args() {
+  # Enable Widevine CDM host verification, which will sign additional binaries
+  # with Widevine certs and copy signature files as needed. Only enabled by
+  # default on official bots. For developers building with "is_official_build"
+  # locally without Widevine certs, this will cause a build failure, which can
+  # be suppressed by manually setting `enable_widevine_cdm_host_verification` to
+  # false.
+  enable_widevine_cdm_host_verification =
+      enable_library_widevine_cdm && enable_cdm_host_verification
+      && is_official_build
+}
 
 template("widevine_sign_file") {
   # For official builds, generate a signature file for |file| which will

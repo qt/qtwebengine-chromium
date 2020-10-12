@@ -382,6 +382,11 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   void SetDisableConnectionMigration();
   bool DisableConnectionMigration() const;
 
+  // Support handshake done.
+  void SetSupportHandshakeDone();
+  bool HandshakeDoneSupported() const;
+  bool PeerSupportsHandshakeDone() const;
+
   // IPv6 alternate server address.
   void SetIPv6AlternateServerAddressToSend(
       const QuicSocketAddress& alternate_server_address_ipv6);
@@ -394,9 +399,9 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   bool HasReceivedIPv4AlternateServerAddress() const;
   const QuicSocketAddress& ReceivedIPv4AlternateServerAddress() const;
 
-  // Original connection ID.
+  // Original destination connection ID.
   void SetOriginalConnectionIdToSend(
-      const QuicConnectionId& original_connection_id);
+      const QuicConnectionId& original_destination_connection_id);
   bool HasReceivedOriginalConnectionId() const;
   QuicConnectionId ReceivedOriginalConnectionId() const;
 
@@ -411,7 +416,7 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // The received delay is the value received from
   // the peer (QuicSentPacketManager::peer_max_ack_delay_).
   void SetMaxAckDelayToSendMs(uint32_t max_ack_delay_ms);
-  uint32_t GetMaxAckDelayToToSendMs() const;
+  uint32_t GetMaxAckDelayToSendMs() const;
   bool HasReceivedMaxAckDelayMs() const;
   uint32_t ReceivedMaxAckDelayMs() const;
 
@@ -420,8 +425,8 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   bool HasReceivedAckDelayExponent() const;
   uint32_t ReceivedAckDelayExponent() const;
 
-  // IETF QUIC max_packet_size transport parameter.
-  void SetMaxPacketSizeToSend(uint64_t max_packet_size);
+  // IETF QUIC max_udp_payload_size transport parameter.
+  void SetMaxPacketSizeToSend(uint64_t max_udp_payload_size);
   uint64_t GetMaxPacketSizeToSend() const;
   bool HasReceivedMaxPacketSize() const;
   uint64_t ReceivedMaxPacketSize() const;
@@ -437,6 +442,18 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   uint64_t GetActiveConnectionIdLimitToSend() const;
   bool HasReceivedActiveConnectionIdLimit() const;
   uint64_t ReceivedActiveConnectionIdLimit() const;
+
+  // Initial source connection ID.
+  void SetInitialSourceConnectionIdToSend(
+      const QuicConnectionId& initial_source_connection_id);
+  bool HasReceivedInitialSourceConnectionId() const;
+  QuicConnectionId ReceivedInitialSourceConnectionId() const;
+
+  // Retry source connection ID.
+  void SetRetrySourceConnectionIdToSend(
+      const QuicConnectionId& retry_source_connection_id);
+  bool HasReceivedRetrySourceConnectionId() const;
+  QuicConnectionId ReceivedRetrySourceConnectionId() const;
 
   bool negotiated() const;
 
@@ -501,12 +518,12 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   QuicFixedTagVector connection_options_;
   // Connection options which only affect the client side.
   QuicFixedTagVector client_connection_options_;
-  // Idle network timeout.
+  // Maximum idle network timeout.
   // Uses the max_idle_timeout transport parameter in IETF QUIC.
-  // Note that received_idle_timeout_ is only populated if we receive the
+  // Note that received_max_idle_timeout_ is only populated if we receive the
   // peer's value, which isn't guaranteed in IETF QUIC as sending is optional.
-  QuicTime::Delta idle_timeout_to_send_;
-  quiche::QuicheOptional<QuicTime::Delta> received_idle_timeout_;
+  QuicTime::Delta max_idle_timeout_to_send_;
+  quiche::QuicheOptional<QuicTime::Delta> received_max_idle_timeout_;
   // Maximum number of dynamic streams that a Google QUIC connection
   // can support or the maximum number of bidirectional streams that
   // an IETF QUIC connection can support.
@@ -554,6 +571,10 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // Uses the disable_active_migration transport parameter in IETF QUIC.
   QuicFixedUint32 connection_migration_disabled_;
 
+  // Whether handshake done is supported. Only used in T050.
+  // Uses the support_handshake_done transport parameter in IETF QUIC.
+  QuicFixedUint32 support_handshake_done_;
+
   // Alternate server addresses the client could connect to.
   // Uses the preferred_address transport parameter in IETF QUIC.
   // Note that when QUIC_CRYPTO is in use, only one of the addresses is sent.
@@ -583,8 +604,8 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   QuicFixedUint32 ack_delay_exponent_;
 
   // Maximum packet size in bytes.
-  // Uses the max_packet_size transport parameter in IETF QUIC.
-  QuicFixedUint62 max_packet_size_;
+  // Uses the max_udp_payload_size transport parameter in IETF QUIC.
+  QuicFixedUint62 max_udp_payload_size_;
 
   // Maximum DATAGRAM/MESSAGE frame size in bytes.
   // Uses the max_datagram_frame_size transport parameter in IETF QUIC.
@@ -594,10 +615,28 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // Uses the active_connection_id_limit transport parameter in IETF QUIC.
   QuicFixedUint62 active_connection_id_limit_;
 
-  // Sent by the server when it has previously sent a RETRY packet.
-  // Uses the original_connection_id transport parameter in IETF QUIC.
-  quiche::QuicheOptional<QuicConnectionId> original_connection_id_to_send_;
-  quiche::QuicheOptional<QuicConnectionId> received_original_connection_id_;
+  // The value of the Destination Connection ID field from the first
+  // Initial packet sent by the client.
+  // Uses the original_destination_connection_id transport parameter in
+  // IETF QUIC.
+  quiche::QuicheOptional<QuicConnectionId>
+      original_destination_connection_id_to_send_;
+  quiche::QuicheOptional<QuicConnectionId>
+      received_original_destination_connection_id_;
+
+  // The value that the endpoint included in the Source Connection ID field of
+  // the first Initial packet it sent.
+  // Uses the initial_source_connection_id transport parameter in IETF QUIC.
+  quiche::QuicheOptional<QuicConnectionId>
+      initial_source_connection_id_to_send_;
+  quiche::QuicheOptional<QuicConnectionId>
+      received_initial_source_connection_id_;
+
+  // The value that the server included in the Source Connection ID field of a
+  // Retry packet it sent.
+  // Uses the retry_source_connection_id transport parameter in IETF QUIC.
+  quiche::QuicheOptional<QuicConnectionId> retry_source_connection_id_to_send_;
+  quiche::QuicheOptional<QuicConnectionId> received_retry_source_connection_id_;
 
   // Custom transport parameters that can be sent and received in the TLS
   // handshake.

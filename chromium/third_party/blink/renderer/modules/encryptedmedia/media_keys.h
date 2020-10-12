@@ -71,9 +71,11 @@ class MediaKeys : public ScriptWrappable,
 
   ScriptPromise setServerCertificate(ScriptState*,
                                      const DOMArrayPiece& server_certificate,
-                                     ExceptionState& exception_state);
+                                     ExceptionState&);
 
-  ScriptPromise getStatusForPolicy(ScriptState*, const MediaKeysPolicy*);
+  ScriptPromise getStatusForPolicy(ScriptState*,
+                                   const MediaKeysPolicy*,
+                                   ExceptionState&);
 
   // Indicates that the provided HTMLMediaElement wants to use this object.
   // Returns true if no other HTMLMediaElement currently references this
@@ -93,7 +95,7 @@ class MediaKeys : public ScriptWrappable,
 
   WebContentDecryptionModule* ContentDecryptionModule();
 
-  void Trace(Visitor*) override;
+  void Trace(Visitor*) const override;
 
   // ExecutionContextLifecycleObserver implementation.
   // FIXME: This class could derive from ExecutionContextLifecycleObserver

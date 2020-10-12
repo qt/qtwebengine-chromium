@@ -10,6 +10,7 @@
 #include <set>
 #include <utility>
 
+#include "core/fpdfapi/page/cpdf_annotcontext.h"
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
@@ -23,7 +24,6 @@
 #include "core/fpdfdoc/cpdf_linklist.h"
 #include "core/fpdfdoc/cpdf_pagelabel.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -33,7 +33,7 @@ CPDF_Bookmark FindBookmark(const CPDF_BookmarkTree& tree,
                            const WideString& title,
                            std::set<const CPDF_Dictionary*>* visited) {
   // Return if already checked to avoid circular calling.
-  if (pdfium::ContainsKey(*visited, bookmark.GetDict()))
+  if (pdfium::Contains(*visited, bookmark.GetDict()))
     return CPDF_Bookmark();
   visited->insert(bookmark.GetDict());
 
@@ -45,7 +45,7 @@ CPDF_Bookmark FindBookmark(const CPDF_BookmarkTree& tree,
 
   // Go into children items.
   CPDF_Bookmark child = tree.GetFirstChild(&bookmark);
-  while (child.GetDict() && !pdfium::ContainsKey(*visited, child.GetDict())) {
+  while (child.GetDict() && !pdfium::Contains(*visited, child.GetDict())) {
     // Check this item and its children.
     CPDF_Bookmark found = FindBookmark(tree, child, title, visited);
     if (found.GetDict())
@@ -61,7 +61,7 @@ CPDF_LinkList* GetLinkList(CPDF_Page* page) {
   if (pList)
     return pList;
 
-  auto pNewList = pdfium::MakeUnique<CPDF_LinkList>();
+  auto pNewList = std::make_unique<CPDF_LinkList>();
   pList = pNewList.get();
   pDoc->SetLinksContext(std::move(pNewList));
   return pList;
@@ -258,7 +258,7 @@ FPDFDest_GetLocationInPage(FPDF_DEST dest,
   if (!dest)
     return false;
 
-  auto destination = pdfium::MakeUnique<CPDF_Dest>(CPDFArrayFromFPDFDest(dest));
+  auto destination = std::make_unique<CPDF_Dest>(CPDFArrayFromFPDFDest(dest));
 
   // FPDF_BOOL is an int, GetXYZ expects bools.
   bool bHasX;
@@ -356,6 +356,20 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFLink_Enumerate(FPDF_PAGE page,
     }
   }
   return false;
+}
+
+FPDF_EXPORT FPDF_ANNOTATION FPDF_CALLCONV
+FPDFLink_GetAnnot(FPDF_PAGE page, FPDF_LINK link_annot) {
+  CPDF_Page* pPage = CPDFPageFromFPDFPage(page);
+  CPDF_Dictionary* pAnnotDict = CPDFDictionaryFromFPDFLink(link_annot);
+  if (!pPage || !pAnnotDict)
+    return nullptr;
+
+  auto pAnnotContext = std::make_unique<CPDF_AnnotContext>(
+      pAnnotDict, IPDFPageFromFPDFPage(page));
+
+  // Caller takes the ownership of the object.
+  return FPDFAnnotationFromCPDFAnnotContext(pAnnotContext.release());
 }
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFLink_GetAnnotRect(FPDF_LINK link_annot,

@@ -651,7 +651,7 @@ void SocketTest::CloseInClosedCallbackInternal(const IPAddress& loopback) {
   EXPECT_TRUE(Socket::CS_CLOSED == client->GetState());
 }
 
-class Sleeper : public MessageHandler {
+class Sleeper : public MessageHandlerAutoCleanup {
  public:
   void OnMessage(Message* msg) override { Thread::Current()->SleepMs(500); }
 };

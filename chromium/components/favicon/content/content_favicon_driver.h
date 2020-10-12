@@ -53,6 +53,11 @@ class ContentFaviconDriver
  private:
   friend class content::WebContentsUserData<ContentFaviconDriver>;
 
+  // Callback when a manifest is downloaded.
+  void OnDidDownloadManifest(ManifestDownloadCallback callback,
+                             const GURL& manifest_url,
+                             const blink::Manifest& manifest);
+
   // FaviconHandler::Delegate implementation.
   int DownloadImage(const GURL& url,
                     int max_image_size,
@@ -71,8 +76,10 @@ class ContentFaviconDriver
 
   // content::WebContentsObserver implementation.
   void DidUpdateFaviconURL(
+      content::RenderFrameHost* rfh,
       const std::vector<blink::mojom::FaviconURLPtr>& candidates) override;
   void DidUpdateWebManifestURL(
+      content::RenderFrameHost* rfh,
       const base::Optional<GURL>& manifest_url) override;
   void DidStartNavigation(
       content::NavigationHandle* navigation_handle) override;

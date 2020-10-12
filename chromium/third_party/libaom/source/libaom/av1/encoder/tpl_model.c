@@ -25,6 +25,7 @@
 #include "av1/common/reconintra.h"
 
 #include "av1/encoder/encoder.h"
+#include "av1/encoder/ethread.h"
 #include "av1/encoder/encode_strategy.h"
 #include "av1/encoder/hybrid_fwd_txfm.h"
 #include "av1/encoder/rd.h"
@@ -87,7 +88,7 @@ static int rate_estimator(const tran_low_t *qcoeff, int eob, TX_SIZE tx_size) {
   const SCAN_ORDER *const scan_order = &av1_default_scan_orders[tx_size];
 
   assert((1 << num_pels_log2_lookup[txsize_to_bsize[tx_size]]) >= eob);
-
+  aom_clear_system_state();
   int rate_cost = 1;
 
   for (int idx = 0; idx < eob; ++idx) {
@@ -384,6 +385,13 @@ static AOM_INLINE void mode_estimation(AV1_COMP *cpi, MACROBLOCK *x, int mi_row,
         qsort(center_mvs, refmv_count, sizeof(center_mvs[0]), compare_sad);
       }
       refmv_count = AOMMIN(4 - cpi->sf.tpl_sf.prune_starting_mv, refmv_count);
+      // Further reduce number of refmv based on sad difference.
+      if (refmv_count > 1) {
+        int last_sad = center_mvs[refmv_count - 1].sad;
+        int second_to_last_sad = center_mvs[refmv_count - 2].sad;
+        if ((last_sad - second_to_last_sad) * 5 > second_to_last_sad)
+          refmv_count--;
+      }
     }
 
     for (idx = 0; idx < refmv_count; ++idx) {
@@ -775,9 +783,9 @@ static AOM_INLINE void init_mc_flow_dispenser(AV1_COMP *cpi, int frame_idx,
   // Get rd multiplier set up.
   rdmult = (int)av1_compute_rd_mult(cpi, base_qindex);
   if (rdmult < 1) rdmult = 1;
-  MvCostInfo *mv_cost_info = &x->mv_cost_info;
-  av1_set_error_per_bit(mv_cost_info, rdmult);
-  av1_set_sad_per_bit(cpi, mv_cost_info, base_qindex);
+  MvCosts *mv_costs = &x->mv_costs;
+  av1_set_error_per_bit(mv_costs, rdmult);
+  av1_set_sad_per_bit(cpi, mv_costs, base_qindex);
 
   tpl_frame->is_valid = 1;
 
@@ -790,9 +798,8 @@ static AOM_INLINE void init_mc_flow_dispenser(AV1_COMP *cpi, int frame_idx,
 
 // This function stores the motion estimation dependencies of all the blocks in
 // a row
-static AOM_INLINE void mc_flow_dispenser_row(AV1_COMP *cpi, MACROBLOCK *x,
-                                             int mi_row, const BLOCK_SIZE bsize,
-                                             const TX_SIZE tx_size) {
+void av1_mc_flow_dispenser_row(AV1_COMP *cpi, MACROBLOCK *x, int mi_row,
+                               BLOCK_SIZE bsize, TX_SIZE tx_size) {
   AV1_COMMON *const cm = &cpi->common;
   MultiThreadInfo *const mt_info = &cpi->mt_info;
   AV1TplRowMultiThreadInfo *const tpl_row_mt = &mt_info->tpl_row_mt;
@@ -842,7 +849,7 @@ static AOM_INLINE void mc_flow_dispenser(AV1_COMP *cpi) {
     xd->mb_to_top_edge = -GET_MV_SUBPEL(mi_row * MI_SIZE);
     xd->mb_to_bottom_edge =
         GET_MV_SUBPEL((mi_params->mi_rows - mi_height - mi_row) * MI_SIZE);
-    mc_flow_dispenser_row(cpi, x, mi_row, bsize, tx_size);
+    av1_mc_flow_dispenser_row(cpi, x, mi_row, bsize, tx_size);
   }
 }
 
@@ -1092,7 +1099,13 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
 
     if (gf_group->size == frame_idx) continue;
     init_mc_flow_dispenser(cpi, frame_idx, pframe_qindex);
-    mc_flow_dispenser(cpi);
+    if (mt_info->num_workers > 1) {
+      tpl_row_mt->sync_read_ptr = av1_tpl_row_mt_sync_read;
+      tpl_row_mt->sync_write_ptr = av1_tpl_row_mt_sync_write;
+      av1_mc_flow_dispenser_mt(cpi);
+    } else {
+      mc_flow_dispenser(cpi);
+    }
 
     aom_extend_frame_borders(tpl_data->tpl_frame[frame_idx].rec_picture,
                              av1_num_planes(cm));

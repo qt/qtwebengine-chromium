@@ -10,10 +10,9 @@
 #include <cmath>
 #include <memory>
 #include <utility>
-#include <vector>
 
 #include "core/fxcodec/fx_codec.h"
-#include "core/fxcodec/progressivedecoder.h"
+#include "core/fxcodec/progressive_decoder.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -155,9 +154,7 @@ RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
     FXCODEC_IMAGE_TYPE type,
     int32_t& iImageXDpi,
     int32_t& iImageYDpi) {
-  auto* pCodecMgr = fxcodec::ModuleMgr::GetInstance();
-  std::unique_ptr<ProgressiveDecoder> pProgressiveDecoder =
-      pCodecMgr->CreateProgressiveDecoder();
+  auto pProgressiveDecoder = std::make_unique<ProgressiveDecoder>();
 
   CFX_DIBAttribute dibAttr;
   pProgressiveDecoder->LoadImageInfo(pImageFileRead, type, &dibAttr, false);

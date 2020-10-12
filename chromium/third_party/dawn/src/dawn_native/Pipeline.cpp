@@ -33,8 +33,8 @@ namespace dawn_native {
         if (descriptor->module->GetExecutionModel() != stage) {
             return DAWN_VALIDATION_ERROR("Setting module with wrong stages");
         }
-        if (layout != nullptr && !descriptor->module->IsCompatibleWithPipelineLayout(layout)) {
-            return DAWN_VALIDATION_ERROR("Stage not compatible with layout");
+        if (layout != nullptr) {
+            DAWN_TRY(descriptor->module->ValidateCompatibilityWithPipelineLayout(layout));
         }
         return {};
     }
@@ -43,8 +43,12 @@ namespace dawn_native {
 
     PipelineBase::PipelineBase(DeviceBase* device,
                                PipelineLayoutBase* layout,
-                               wgpu::ShaderStage stages)
-        : CachedObject(device), mStageMask(stages), mLayout(layout) {
+                               wgpu::ShaderStage stages,
+                               RequiredBufferSizes minimumBufferSizes)
+        : CachedObject(device),
+          mStageMask(stages),
+          mLayout(layout),
+          mMinimumBufferSizes(std::move(minimumBufferSizes)) {
     }
 
     PipelineBase::PipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag)
@@ -66,6 +70,11 @@ namespace dawn_native {
         return mLayout.Get();
     }
 
+    const RequiredBufferSizes& PipelineBase::GetMinimumBufferSizes() const {
+        ASSERT(!IsError());
+        return mMinimumBufferSizes;
+    }
+
     MaybeError PipelineBase::ValidateGetBindGroupLayout(uint32_t groupIndex) {
         DAWN_TRY(GetDevice()->ValidateIsAlive());
         DAWN_TRY(GetDevice()->ValidateObject(this));
@@ -76,11 +85,12 @@ namespace dawn_native {
         return {};
     }
 
-    BindGroupLayoutBase* PipelineBase::GetBindGroupLayout(uint32_t groupIndex) {
-        if (GetDevice()->ConsumedError(ValidateGetBindGroupLayout(groupIndex))) {
+    BindGroupLayoutBase* PipelineBase::GetBindGroupLayout(uint32_t groupIndexIn) {
+        if (GetDevice()->ConsumedError(ValidateGetBindGroupLayout(groupIndexIn))) {
             return BindGroupLayoutBase::MakeError(GetDevice());
         }
 
+        BindGroupIndex groupIndex(groupIndexIn);
         if (!mLayout->GetBindGroupLayoutsMask()[groupIndex]) {
             // Get or create an empty bind group layout.
             // TODO(enga): Consider caching this object on the Device and reusing it.

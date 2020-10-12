@@ -40,19 +40,20 @@ namespace dawn_native {
         // TODO (yunchao.he@intel.com): optimize this
         PassTextureUsage& textureUsage = mTextureUsages[texture];
 
-        // Set usage for the whole texture
+        // Set parameters for the whole texture
         textureUsage.usage |= usage;
+        uint32_t subresourceCount = texture->GetSubresourceCount();
+        textureUsage.sameUsagesAcrossSubresources = levelCount * layerCount == subresourceCount;
 
         // Set usages for subresources
-        uint32_t subresourceCount =
-            texture->GetSubresourceIndex(texture->GetNumMipLevels(), texture->GetArrayLayers());
         if (!textureUsage.subresourceUsages.size()) {
             textureUsage.subresourceUsages =
                 std::vector<wgpu::TextureUsage>(subresourceCount, wgpu::TextureUsage::None);
         }
-        for (uint32_t mipLevel = baseMipLevel; mipLevel < baseMipLevel + levelCount; ++mipLevel) {
-            for (uint32_t arrayLayer = baseArrayLayer; arrayLayer < baseArrayLayer + layerCount;
-                 ++arrayLayer) {
+        for (uint32_t arrayLayer = baseArrayLayer; arrayLayer < baseArrayLayer + layerCount;
+             ++arrayLayer) {
+            for (uint32_t mipLevel = baseMipLevel; mipLevel < baseMipLevel + levelCount;
+                 ++mipLevel) {
                 uint32_t subresourceIndex = texture->GetSubresourceIndex(mipLevel, arrayLayer);
                 textureUsage.subresourceUsages[subresourceIndex] |= usage;
             }
@@ -63,9 +64,9 @@ namespace dawn_native {
                                                    const PassTextureUsage& textureUsage) {
         PassTextureUsage& passTextureUsage = mTextureUsages[texture];
         passTextureUsage.usage |= textureUsage.usage;
+        passTextureUsage.sameUsagesAcrossSubresources &= textureUsage.sameUsagesAcrossSubresources;
 
-        uint32_t subresourceCount =
-            texture->GetSubresourceIndex(texture->GetNumMipLevels(), texture->GetArrayLayers());
+        uint32_t subresourceCount = texture->GetSubresourceCount();
         ASSERT(textureUsage.subresourceUsages.size() == subresourceCount);
         if (!passTextureUsage.subresourceUsages.size()) {
             passTextureUsage.subresourceUsages = textureUsage.subresourceUsages;

@@ -338,6 +338,19 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
     InvokeInternal(posted_from, functor);
   }
 
+  // Allows invoke to specified |thread|. Thread never will be dereferenced and
+  // will be used only for reference-based comparison, so instance can be safely
+  // deleted. If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined do nothing.
+  void AllowInvokesToThread(Thread* thread);
+
+  // If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined do nothing.
+  void DisallowAllInvokes();
+  // Returns true if |target| was allowed by AllowInvokesToThread() or if no
+  // calls were made to AllowInvokesToThread and DisallowAllInvokes. Otherwise
+  // returns false.
+  // If NDEBUG is defined and DCHECK_ALWAYS_ON is undefined always returns true.
+  bool IsInvokeToThreadAllowed(rtc::Thread* target);
+
   // Posts a task to invoke the functor on |this| thread asynchronously, i.e.
   // without blocking the thread that invoked PostTask(). Ownership of |functor|
   // is passed and (usually, see below) destroyed on |this| thread after it is
@@ -524,6 +537,7 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
  private:
   class QueuedTaskHandler final : public MessageHandler {
    public:
+    QueuedTaskHandler() : MessageHandler(false) {}
     void OnMessage(Message* msg) override;
   };
 
@@ -551,6 +565,12 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   void InvokeInternal(const Location& posted_from,
                       rtc::FunctionView<void()> functor);
 
+  // Called by the ThreadManager when being set as the current thread.
+  void EnsureIsCurrentTaskQueue();
+
+  // Called by the ThreadManager when being unset as the current thread.
+  void ClearCurrentTaskQueue();
+
   // Returns a static-lifetime MessageHandler which runs message with
   // MessageLikeTask payload data.
   static MessageHandler* GetPostTaskMessageHandler();
@@ -560,6 +580,10 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
   MessageList messages_ RTC_GUARDED_BY(crit_);
   PriorityQueue delayed_messages_ RTC_GUARDED_BY(crit_);
   uint32_t delayed_next_num_ RTC_GUARDED_BY(crit_);
+#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
+  std::vector<Thread*> allowed_threads_ RTC_GUARDED_BY(this);
+  bool invoke_policy_enabled_ RTC_GUARDED_BY(this) = false;
+#endif
   CriticalSection crit_;
   bool fInitialized_;
   bool fDestroyed_;
@@ -595,6 +619,8 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 
   // Runs webrtc::QueuedTask posted to the Thread.
   QueuedTaskHandler queued_task_handler_;
+  std::unique_ptr<TaskQueueBase::CurrentTaskQueueSetter>
+      task_queue_registration_;
 
   friend class ThreadManager;
 
@@ -604,7 +630,9 @@ class RTC_LOCKABLE RTC_EXPORT Thread : public webrtc::TaskQueueBase {
 // AutoThread automatically installs itself at construction
 // uninstalls at destruction, if a Thread object is
 // _not already_ associated with the current OS thread.
-
+//
+// NOTE: *** This class should only be used by tests ***
+//
 class AutoThread : public Thread {
  public:
   AutoThread();

@@ -32,6 +32,7 @@
 
 namespace blink {
 class Document;
+class ExecutionContext;
 
 class CORE_EXPORT SVGExternalDocumentCache
     : public GarbageCollected<SVGExternalDocumentCache>,
@@ -42,7 +43,7 @@ class CORE_EXPORT SVGExternalDocumentCache
   static const char kSupplementName[];
   static SVGExternalDocumentCache* From(Document&);
   explicit SVGExternalDocumentCache(Document&);
-  void Trace(Visitor*) override;
+  void Trace(Visitor*) const override;
 
   class Client : public GarbageCollectedMixin {
    public:
@@ -54,10 +55,9 @@ class CORE_EXPORT SVGExternalDocumentCache
     USING_GARBAGE_COLLECTED_MIXIN(Entry);
 
    public:
-    explicit Entry(Document* context_document)
-        : context_document_(context_document) {}
+    explicit Entry(ExecutionContext* context) : context_(context) {}
     ~Entry() override = default;
-    void Trace(Visitor*) override;
+    void Trace(Visitor*) const override;
     Document* GetDocument();
     const KURL& Url() const { return GetResource()->Url(); }
 
@@ -70,7 +70,7 @@ class CORE_EXPORT SVGExternalDocumentCache
     String DebugName() const override { return "SVGExternalDocumentCache"; }
 
     Member<Document> document_;
-    Member<Document> context_document_;
+    Member<ExecutionContext> context_;
     HeapHashSet<WeakMember<Client>> clients_;
   };
 

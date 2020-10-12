@@ -77,10 +77,6 @@
 #include "components/viz/common/switches.h"
 #include "components/viz/host/gpu_client.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
-#include "content/browser/background_fetch/background_fetch_context.h"
-#include "content/browser/background_fetch/background_fetch_service_impl.h"
-#include "content/browser/background_sync/one_shot_background_sync_service_impl.h"
-#include "content/browser/background_sync/periodic_background_sync_service_impl.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/blob_storage/blob_registry_wrapper.h"
 #include "content/browser/broadcast_channel/broadcast_channel_provider.h"
@@ -100,6 +96,7 @@
 #include "content/browser/frame_host/render_frame_message_filter.h"
 #include "content/browser/gpu/browser_gpu_client_delegate.h"
 #include "content/browser/gpu/compositor_util.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/shader_cache_factory.h"
 #include "content/browser/histogram_controller.h"
@@ -133,7 +130,6 @@
 #include "content/browser/renderer_host/render_message_filter.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/text_input_client_message_filter.h"
 #include "content/browser/renderer_host/web_database_host_impl.h"
 #include "content/browser/resolve_proxy_helper.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
@@ -182,6 +178,7 @@
 #include "content/public/common/service_names.mojom.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
+#include "content/public/common/zygote/zygote_buildflags.h"
 #include "device/gamepad/gamepad_haptics_manager.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -219,10 +216,11 @@
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "services/service_manager/sandbox/switches.h"
-#include "services/service_manager/zygote/common/zygote_buildflags.h"
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/file_system/sandbox_file_system_backend.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/page/launching_process_state.h"
+#include "third_party/blink/public/common/switches.h"
 #include "third_party/blink/public/common/user_agent/user_agent_metadata.h"
 #include "third_party/blink/public/mojom/disk_allocator.mojom.h"
 #include "third_party/blink/public/public_buildflags.h"
@@ -239,8 +237,6 @@
 #include "content/public/browser/android/java_interfaces.h"
 #include "ipc/ipc_sync_channel.h"
 #include "media/audio/android/audio_manager_android.h"
-#else
-#include "content/browser/gpu/gpu_data_manager_impl.h"
 #endif
 
 #if defined(OS_LINUX)
@@ -254,6 +250,7 @@
 
 #if defined(OS_MACOSX)
 #include "content/browser/child_process_task_port_provider_mac.h"
+#include "content/browser/renderer_host/text_input_client_message_filter.h"
 #include "content/browser/sandbox_support_mac_impl.h"
 #include "content/common/sandbox_support_mac.mojom.h"
 #endif
@@ -291,7 +288,7 @@
 #endif
 
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
-#include "services/service_manager/zygote/common/zygote_handle.h"  // nogncheck
+#include "content/public/common/zygote/zygote_handle.h"  // nogncheck
 #endif
 
 #if BUILDFLAG(CLANG_PROFILING_INSIDE_SANDBOX)
@@ -436,14 +433,14 @@ class RendererSandboxedProcessLauncherDelegate
 #endif  // OS_WIN
 
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
-  service_manager::ZygoteHandle GetZygote() override {
+  ZygoteHandle GetZygote() override {
     const base::CommandLine& browser_command_line =
         *base::CommandLine::ForCurrentProcess();
     base::CommandLine::StringType renderer_prefix =
         browser_command_line.GetSwitchValueNative(switches::kRendererCmdPrefix);
     if (!renderer_prefix.empty())
       return nullptr;
-    return service_manager::GetGenericZygote();
+    return GetGenericZygote();
   }
 #endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
 
@@ -468,8 +465,8 @@ class SessionStorageHolder : public base::SupportsUserData::Data {
   ~SessionStorageHolder() override {
     // Its important to delete the map on the IO thread to avoid deleting
     // the underlying namespaces prior to processing ipcs referring to them.
-    base::DeleteSoon(FROM_HERE, {BrowserThread::IO},
-                     session_storage_namespaces_awaiting_close_.release());
+    GetIOThreadTaskRunner({})->DeleteSoon(
+        FROM_HERE, session_storage_namespaces_awaiting_close_.release());
   }
 
   void Hold(const SessionStorageNamespaceMap& sessions, int widget_route_id) {
@@ -546,6 +543,9 @@ class SpareRenderProcessHostManager : public RenderProcessHostObserver {
         nullptr /* site_instance */);
     spare_render_process_host_->AddObserver(this);
     spare_render_process_host_->Init();
+
+    // The spare render process isn't ready, so wait and do the "spare render
+    // process changed" callback in RenderProcessReady().
   }
 
   RenderProcessHost* MaybeTakeSpareRenderProcessHost(
@@ -568,7 +568,7 @@ class SpareRenderProcessHostManager : public RenderProcessHostObserver {
     // scenarios).
     bool embedder_allows_spare_usage =
         GetContentClient()->browser()->ShouldUseSpareRenderProcessHost(
-            browser_context, site_instance->GetSiteURL());
+            browser_context, site_instance->GetSiteInfo().site_url());
 
     // We shouldn't use the spare if:
     // 1. The SiteInstance has already got an associated process.  This is
@@ -668,11 +668,21 @@ class SpareRenderProcessHostManager : public RenderProcessHostObserver {
 
       // Drop reference to the RenderProcessHost object.
       spare_render_process_host_ = nullptr;
+      spare_render_process_host_changed_callback_list_.Notify(nullptr);
     }
   }
 
   RenderProcessHost* spare_render_process_host() {
     return spare_render_process_host_;
+  }
+
+  std::unique_ptr<base::CallbackList<void(RenderProcessHost*)>::Subscription>
+  RegisterSpareRenderProcessHostChangedCallback(
+      const base::RepeatingCallback<void(RenderProcessHost*)>& cb) {
+    // Do an initial notification, as the subscriber will need to know what the
+    // current spare host is.
+    cb.Run(spare_render_process_host_);
+    return spare_render_process_host_changed_callback_list_.Add(cb);
   }
 
  private:
@@ -683,6 +693,14 @@ class SpareRenderProcessHostManager : public RenderProcessHostObserver {
     if (spare_render_process_host_ && spare_render_process_host_ == host) {
       spare_render_process_host_->RemoveObserver(this);
       spare_render_process_host_ = nullptr;
+      spare_render_process_host_changed_callback_list_.Notify(nullptr);
+    }
+  }
+
+  void RenderProcessReady(RenderProcessHost* host) override {
+    if (host == spare_render_process_host_) {
+      spare_render_process_host_changed_callback_list_.Notify(
+          spare_render_process_host_);
     }
   }
 
@@ -695,6 +713,11 @@ class SpareRenderProcessHostManager : public RenderProcessHostObserver {
   void RenderProcessHostDestroyed(RenderProcessHost* host) override {
     ReleaseSpareRenderProcessHost(host);
   }
+
+  // The clients who want to know when the spare render process host has
+  // changed.
+  base::CallbackList<void(RenderProcessHost*)>
+      spare_render_process_host_changed_callback_list_;
 
   // This is a bare pointer, because RenderProcessHost manages the lifetime of
   // all its instances; see GetAllHosts().
@@ -725,8 +748,8 @@ class RenderProcessHostIsReadyObserver : public RenderProcessHostObserver {
 
  private:
   void PostTask() {
-    base::PostTask(FROM_HERE, {BrowserThread::UI},
-                   base::BindOnce(&RenderProcessHostIsReadyObserver::CallTask,
+    GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&RenderProcessHostIsReadyObserver::CallTask,
                                   weak_factory_.GetWeakPtr()));
   }
 
@@ -773,9 +796,9 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
   SiteProcessCountTracker() {}
   ~SiteProcessCountTracker() override { DCHECK(map_.empty()); }
 
-  void IncrementSiteProcessCount(const GURL& site_url,
+  void IncrementSiteProcessCount(const SiteInfo& site_info,
                                  int render_process_host_id) {
-    std::map<ProcessID, Count>& counts_per_process = map_[site_url];
+    std::map<ProcessID, Count>& counts_per_process = map_[site_info.site_url()];
     ++counts_per_process[render_process_host_id];
 
 #ifndef NDEBUG
@@ -787,9 +810,9 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
 #endif
   }
 
-  void DecrementSiteProcessCount(const GURL& site_url,
+  void DecrementSiteProcessCount(const SiteInfo& site_info,
                                  int render_process_host_id) {
-    auto result = map_.find(site_url);
+    auto result = map_.find(site_info.site_url());
     DCHECK(result != map_.end());
     std::map<ProcessID, Count>& counts_per_process = result->second;
 
@@ -800,14 +823,14 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
       counts_per_process.erase(render_process_host_id);
 
     if (counts_per_process.empty())
-      map_.erase(site_url);
+      map_.erase(site_info.site_url());
   }
 
   void FindRenderProcessesForSiteInstance(
       SiteInstanceImpl* site_instance,
       std::set<RenderProcessHost*>* foreground_processes,
       std::set<RenderProcessHost*>* background_processes) {
-    auto result = map_.find(site_instance->GetSiteURL());
+    auto result = map_.find(site_instance->GetSiteInfo().site_url());
     if (result == map_.end())
       return;
 
@@ -824,14 +847,14 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
       }
 
       // It's possible that |host| has become unsuitable for hosting
-      // |site_url|, for example if it was reused by a navigation to a
-      // different site, and |site_url| requires a dedicated process.  Do not
-      // allow such hosts to be reused.  See https://crbug.com/780661.
+      // |site_instance|, for example if it was reused by a navigation to a
+      // different site, and |site_instance| requires a dedicated process. Do
+      // not allow such hosts to be reused.  See https://crbug.com/780661.
       if (!host->MayReuseHost() ||
           !RenderProcessHostImpl::IsSuitableHost(
               host, site_instance->GetIsolationContext(),
-              site_instance->GetSiteURL(), site_instance->lock_url(),
-              site_instance->IsGuest())) {
+              site_instance->GetSiteInfo().site_url(),
+              site_instance->lock_url(), site_instance->IsGuest())) {
         continue;
       }
 
@@ -888,13 +911,13 @@ class SiteProcessCountTracker : public base::SupportsUserData::Data,
 
   using ProcessID = int;
   using Count = int;
+  // TODO(wjmaclean): Convert the key from GURL to a SiteInfo hashkey.
   using CountPerProcessPerSiteMap = std::map<GURL, std::map<ProcessID, Count>>;
   CountPerProcessPerSiteMap map_;
 };
 
 bool ShouldUseSiteProcessTracking(BrowserContext* browser_context,
-                                  StoragePartition* dest_partition,
-                                  const GURL& site_url) {
+                                  StoragePartition* dest_partition) {
   // TODO(alexmos): Sites should be tracked separately for each
   // StoragePartition.  For now, track them only in the default one.
   StoragePartition* default_partition =
@@ -907,23 +930,22 @@ bool ShouldUseSiteProcessTracking(BrowserContext* browser_context,
 
 bool ShouldTrackProcessForSite(BrowserContext* browser_context,
                                RenderProcessHost* render_process_host,
-                               const GURL& site_url) {
-  if (site_url.is_empty())
+                               const SiteInfo& site_info) {
+  if (site_info.site_url().is_empty())
     return false;
 
   return ShouldUseSiteProcessTracking(
-      browser_context, render_process_host->GetStoragePartition(), site_url);
+      browser_context, render_process_host->GetStoragePartition());
 }
 
 bool ShouldFindReusableProcessHostForSite(BrowserContext* browser_context,
-                                          const GURL& site_url) {
-  if (site_url.is_empty())
+                                          const SiteInfo& site_info) {
+  if (site_info.site_url().is_empty())
     return false;
 
   return ShouldUseSiteProcessTracking(
-      browser_context,
-      BrowserContext::GetStoragePartitionForSite(browser_context, site_url),
-      site_url);
+      browser_context, BrowserContext::GetStoragePartitionForSite(
+                           browser_context, site_info.site_url()));
 }
 
 const void* const kUnmatchedServiceWorkerProcessTrackerKey =
@@ -953,9 +975,9 @@ class UnmatchedServiceWorkerProcessTracker
   static void Register(RenderProcessHost* render_process_host,
                        SiteInstanceImpl* site_instance) {
     BrowserContext* browser_context = site_instance->GetBrowserContext();
-    DCHECK(!site_instance->GetSiteURL().is_empty());
+    DCHECK(!site_instance->GetSiteInfo().site_url().is_empty());
     if (!ShouldTrackProcessForSite(browser_context, render_process_host,
-                                   site_instance->GetSiteURL()))
+                                   site_instance->GetSiteInfo()))
       return;
 
     UnmatchedServiceWorkerProcessTracker* tracker =
@@ -975,7 +997,7 @@ class UnmatchedServiceWorkerProcessTracker
   static RenderProcessHost* MatchWithSite(SiteInstanceImpl* site_instance) {
     BrowserContext* browser_context = site_instance->GetBrowserContext();
     if (!ShouldFindReusableProcessHostForSite(browser_context,
-                                              site_instance->GetSiteURL()))
+                                              site_instance->GetSiteInfo()))
       return nullptr;
 
     UnmatchedServiceWorkerProcessTracker* tracker =
@@ -1009,6 +1031,7 @@ class UnmatchedServiceWorkerProcessTracker
 
  private:
   using ProcessID = int;
+  // TODO(wjmaclean): Convert the pair to use SiteInfo hashkey instead of GURL.
   using SiteProcessIDPair = std::pair<GURL, ProcessID>;
   using SiteProcessIDPairSet = std::set<SiteProcessIDPair>;
 
@@ -1016,8 +1039,8 @@ class UnmatchedServiceWorkerProcessTracker
                               SiteInstanceImpl* site_instance) {
     if (!HasProcess(host))
       host->AddObserver(this);
-    site_process_set_.insert(
-        SiteProcessIDPair(site_instance->GetSiteURL(), host->GetID()));
+    site_process_set_.insert(SiteProcessIDPair(
+        site_instance->GetSiteInfo().site_url(), host->GetID()));
   }
 
   RenderProcessHost* TakeFreshestProcessForSite(
@@ -1038,7 +1061,7 @@ class UnmatchedServiceWorkerProcessTracker
     // |site_url|, for example if it was used for a ServiceWorker for a
     // nonexistent extension URL.  See https://crbug.com/782349 and
     // https://crbug.com/780661.
-    GURL site_url(site_instance->GetSiteURL());
+    GURL site_url(site_instance->GetSiteInfo().site_url());
     if (!host->MayReuseHost() ||
         !RenderProcessHostImpl::IsSuitableHost(
             host, site_instance->GetIsolationContext(), site_url,
@@ -1063,7 +1086,7 @@ class UnmatchedServiceWorkerProcessTracker
           return site_process_pair;
       }
     } else {
-      const GURL site_url(site_instance->GetSiteURL());
+      const GURL site_url(site_instance->GetSiteInfo().site_url());
       for (const auto& site_process_pair : reversed_site_process_set) {
         if (site_process_pair.first == site_url)
           return site_process_pair;
@@ -1255,8 +1278,8 @@ GetBadMojoMessageCallbackForTesting() {
 void InvokeBadMojoMessageCallbackForTesting(int render_process_id,
                                             const std::string& error) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    base::PostTask(FROM_HERE, {BrowserThread::UI},
-                   base::BindOnce(&InvokeBadMojoMessageCallbackForTesting,
+    GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&InvokeBadMojoMessageCallbackForTesting,
                                   render_process_id, error));
     return;
   }
@@ -1349,8 +1372,8 @@ class RenderProcessHostImpl::IOThreadHostImpl
     if (!receiver)
       return;
 
-    base::PostTask(FROM_HERE, {BrowserThread::UI},
-                   base::BindOnce(&IOThreadHostImpl::BindHostReceiverOnUIThread,
+    GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&IOThreadHostImpl::BindHostReceiverOnUIThread,
                                   weak_host_, std::move(receiver)));
   }
 
@@ -1481,7 +1504,7 @@ int RenderProcessHost::GetCurrentRenderProcessCountForTesting() {
 RenderProcessHost* RenderProcessHostImpl::CreateRenderProcessHost(
     BrowserContext* browser_context,
     StoragePartitionImpl* storage_partition_impl,
-    SiteInstance* site_instance) {
+    SiteInstanceImpl* site_instance) {
   if (g_render_process_host_factory_) {
     return g_render_process_host_factory_->CreateRenderProcessHost(
         browser_context, site_instance);
@@ -1501,7 +1524,7 @@ RenderProcessHost* RenderProcessHostImpl::CreateRenderProcessHost(
   if (is_for_guests_only &&
       storage_partition_impl->site_for_guest_service_worker().is_empty()) {
     storage_partition_impl->set_site_for_guest_service_worker(
-        site_instance->GetSiteURL());
+        site_instance->GetSiteInfo().site_url());
   }
 
   return new RenderProcessHostImpl(browser_context, storage_partition_impl,
@@ -1575,8 +1598,8 @@ RenderProcessHostImpl::RenderProcessHostImpl(
   if (!GetBrowserContext()->IsOffTheRecord() &&
       !base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuShaderDiskCache)) {
-    base::PostTask(FROM_HERE, {BrowserThread::IO},
-                   base::BindOnce(&CacheShaderInfo, GetID(),
+    GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&CacheShaderInfo, GetID(),
                                   storage_partition_impl_->GetPath()));
   }
 
@@ -1597,9 +1620,9 @@ RenderProcessHostImpl::RenderProcessHostImpl(
   const int id = GetID();
   const uint64_t tracing_id =
       ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(id);
-  gpu_client_.reset(new viz::GpuClient(
-      std::make_unique<BrowserGpuClientDelegate>(), id, tracing_id,
-      base::CreateSingleThreadTaskRunner({BrowserThread::IO})));
+  gpu_client_.reset(
+      new viz::GpuClient(std::make_unique<BrowserGpuClientDelegate>(), id,
+                         tracing_id, GetIOThreadTaskRunner({})));
 }
 
 // static
@@ -1681,8 +1704,8 @@ RenderProcessHostImpl::~RenderProcessHostImpl() {
 
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuShaderDiskCache)) {
-    base::PostTask(FROM_HERE, {BrowserThread::IO},
-                   base::BindOnce(&RemoveShaderInfo, GetID()));
+    GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE, base::BindOnce(&RemoveShaderInfo, GetID()));
   }
 
   if (cleanup_network_service_plugin_exceptions_upon_destruction_)
@@ -1800,9 +1823,8 @@ bool RenderProcessHostImpl::Init() {
     // make blocking calls to the UI thread (i.e. this thread), they need to run
     // on separate threads.
     in_process_renderer_.reset(g_renderer_main_thread_factory(
-        InProcessChildThreadParams(
-            base::CreateSingleThreadTaskRunner({BrowserThread::IO}),
-            &mojo_invitation_),
+        InProcessChildThreadParams(GetIOThreadTaskRunner({}),
+                                   &mojo_invitation_),
         base::checked_cast<int32_t>(id_)));
 
     base::Thread::Options options;
@@ -1870,7 +1892,7 @@ bool RenderProcessHostImpl::HasOnlyLowPriorityFrames() {
 
 void RenderProcessHostImpl::InitializeChannelProxy() {
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
-      base::CreateSingleThreadTaskRunner({BrowserThread::IO});
+      GetIOThreadTaskRunner({});
 
   // Establish a ChildProcess interface connection to the new renderer. This is
   // connected as the primordial message pipe via a Mojo invitation to the
@@ -2015,8 +2037,8 @@ void RenderProcessHostImpl::BindFileSystemManager(
   // Note, the base::Unretained() is safe because the target object has an IO
   // thread deleter and the callback is also targeting the IO thread.
   // TODO(https://crbug.com/873661): Pass origin to FileSystemManager.
-  base::PostTask(
-      FROM_HERE, {BrowserThread::IO},
+  GetIOThreadTaskRunner({})->PostTask(
+      FROM_HERE,
       base::BindOnce(&FileSystemManagerImpl::BindReceiver,
                      base::Unretained(file_system_manager_impl_.get()),
                      std::move(receiver)));
@@ -2039,7 +2061,7 @@ void RenderProcessHostImpl::BindNativeFileSystemManager(
           // URL for workers instead of the origin as source url.
           // This URL will be used for SafeBrowsing checks and for
           // the Quarantine Service.
-          origin.GetURL(), GetID(), MSG_ROUTING_NONE),
+          origin.GetURL(), GetID()),
       std::move(receiver));
 }
 
@@ -2160,8 +2182,8 @@ void RenderProcessHostImpl::DelayProcessShutdownForUnload(
     return;
 
   IncrementKeepAliveRefCount();
-  base::PostDelayedTask(
-      FROM_HERE, {BrowserThread::UI},
+  GetUIThreadTaskRunner({})->PostDelayedTask(
+      FROM_HERE,
       base::BindOnce(
           &RenderProcessHostImpl::CancelProcessShutdownDelayForUnload,
           weak_factory_.GetWeakPtr()),
@@ -2172,8 +2194,8 @@ void RenderProcessHostImpl::DelayProcessShutdownForUnload(
 void RenderProcessHostImpl::AddCorbExceptionForPlugin(int process_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  base::PostTask(
-      FROM_HERE, {BrowserThread::UI},
+  GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE,
       base::BindOnce(&AddCorbExceptionForPluginOnUIThread, process_id));
 }
 
@@ -2183,8 +2205,8 @@ void RenderProcessHostImpl::AddAllowedRequestInitiatorForPlugin(
     const url::Origin& allowed_request_initiator) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  base::PostTask(FROM_HERE, {BrowserThread::UI},
-                 base::BindOnce(&AddAllowedRequestInitiatorForPluginOnUIThread,
+  GetUIThreadTaskRunner({})->PostTask(
+      FROM_HERE, base::BindOnce(&AddAllowedRequestInitiatorForPluginOnUIThread,
                                 process_id, allowed_request_initiator));
 }
 
@@ -2375,6 +2397,9 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
         &viz::GpuClient::Add, base::Unretained(gpu_client_.get())));
   }
 
+  registry->AddInterface(
+      base::BindRepeating(&GpuDataManagerImpl::BindReceiver));
+
   MediaStreamManager* media_stream_manager =
       BrowserMainLoop::GetInstance()->media_stream_manager();
 
@@ -2498,9 +2523,8 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
 
   mojo::PendingRemote<mojom::ChildProcessHostBootstrap> bootstrap_remote;
   io_thread_host_impl_.emplace(
-      base::CreateSingleThreadTaskRunner({BrowserThread::IO}), GetID(),
-      instance_weak_factory_->GetWeakPtr(), std::move(registry),
-      bootstrap_remote.InitWithNewPipeAndPassReceiver());
+      GetIOThreadTaskRunner({}), GetID(), instance_weak_factory_->GetWeakPtr(),
+      std::move(registry), bootstrap_remote.InitWithNewPipeAndPassReceiver());
   child_process_->Initialize(std::move(bootstrap_remote));
 }
 
@@ -3000,9 +3024,9 @@ RenderProcessHostImpl::get_render_process_host_factory_for_testing() {
 void RenderProcessHostImpl::AddFrameWithSite(
     BrowserContext* browser_context,
     RenderProcessHost* render_process_host,
-    const GURL& site_url) {
+    const SiteInfo& site_info) {
   if (!ShouldTrackProcessForSite(browser_context, render_process_host,
-                                 site_url))
+                                 site_info))
     return;
 
   SiteProcessCountTracker* tracker = static_cast<SiteProcessCountTracker*>(
@@ -3012,16 +3036,16 @@ void RenderProcessHostImpl::AddFrameWithSite(
     browser_context->SetUserData(kCommittedSiteProcessCountTrackerKey,
                                  base::WrapUnique(tracker));
   }
-  tracker->IncrementSiteProcessCount(site_url, render_process_host->GetID());
+  tracker->IncrementSiteProcessCount(site_info, render_process_host->GetID());
 }
 
 // static
 void RenderProcessHostImpl::RemoveFrameWithSite(
     BrowserContext* browser_context,
     RenderProcessHost* render_process_host,
-    const GURL& site_url) {
+    const SiteInfo& site_info) {
   if (!ShouldTrackProcessForSite(browser_context, render_process_host,
-                                 site_url))
+                                 site_info))
     return;
 
   SiteProcessCountTracker* tracker = static_cast<SiteProcessCountTracker*>(
@@ -3031,16 +3055,16 @@ void RenderProcessHostImpl::RemoveFrameWithSite(
     browser_context->SetUserData(kCommittedSiteProcessCountTrackerKey,
                                  base::WrapUnique(tracker));
   }
-  tracker->DecrementSiteProcessCount(site_url, render_process_host->GetID());
+  tracker->DecrementSiteProcessCount(site_info, render_process_host->GetID());
 }
 
 // static
 void RenderProcessHostImpl::AddExpectedNavigationToSite(
     BrowserContext* browser_context,
     RenderProcessHost* render_process_host,
-    const GURL& site_url) {
+    const SiteInfo& site_info) {
   if (!ShouldTrackProcessForSite(browser_context, render_process_host,
-                                 site_url))
+                                 site_info))
     return;
 
   SiteProcessCountTracker* tracker = static_cast<SiteProcessCountTracker*>(
@@ -3050,16 +3074,16 @@ void RenderProcessHostImpl::AddExpectedNavigationToSite(
     browser_context->SetUserData(kPendingSiteProcessCountTrackerKey,
                                  base::WrapUnique(tracker));
   }
-  tracker->IncrementSiteProcessCount(site_url, render_process_host->GetID());
+  tracker->IncrementSiteProcessCount(site_info, render_process_host->GetID());
 }
 
 // static
 void RenderProcessHostImpl::RemoveExpectedNavigationToSite(
     BrowserContext* browser_context,
     RenderProcessHost* render_process_host,
-    const GURL& site_url) {
+    const SiteInfo& site_info) {
   if (!ShouldTrackProcessForSite(browser_context, render_process_host,
-                                 site_url))
+                                 site_info))
     return;
 
   SiteProcessCountTracker* tracker = static_cast<SiteProcessCountTracker*>(
@@ -3069,7 +3093,7 @@ void RenderProcessHostImpl::RemoveExpectedNavigationToSite(
     browser_context->SetUserData(kPendingSiteProcessCountTrackerKey,
                                  base::WrapUnique(tracker));
   }
-  tracker->DecrementSiteProcessCount(site_url, render_process_host->GetID());
+  tracker->DecrementSiteProcessCount(site_info, render_process_host->GetID());
 }
 
 // static
@@ -3083,6 +3107,14 @@ void RenderProcessHostImpl::NotifySpareManagerAboutRecentlyUsedBrowserContext(
 RenderProcessHost* RenderProcessHost::GetSpareRenderProcessHostForTesting() {
   return SpareRenderProcessHostManager::GetInstance()
       .spare_render_process_host();
+}
+
+// static
+std::unique_ptr<base::CallbackList<void(RenderProcessHost*)>::Subscription>
+RenderProcessHost::RegisterSpareRenderProcessHostChangedCallback(
+    const base::RepeatingCallback<void(RenderProcessHost*)>& cb) {
+  return SpareRenderProcessHostManager::GetInstance()
+      .RegisterSpareRenderProcessHostChangedCallback(cb);
 }
 
 // static
@@ -3130,6 +3162,12 @@ void RenderProcessHostImpl::LockToOrigin(
   NotifyRendererIfLockedToSite();
 }
 
+bool RenderProcessHostImpl::IsLockedToOriginForTesting() {
+  GURL lock_url =
+      ChildProcessSecurityPolicyImpl::GetInstance()->GetOriginLock(GetID());
+  return !lock_url.is_empty();
+}
+
 void RenderProcessHostImpl::NotifyRendererIfLockedToSite() {
   GURL lock_url =
       ChildProcessSecurityPolicyImpl::GetInstance()->GetOriginLock(GetID());
@@ -3157,18 +3195,19 @@ static void AppendCompositorCommandLineFlags(base::CommandLine* command_line) {
 
   int msaa_sample_count = GpuRasterizationMSAASampleCount();
   if (msaa_sample_count >= 0) {
-    command_line->AppendSwitchASCII(switches::kGpuRasterizationMSAASampleCount,
-                                    base::NumberToString(msaa_sample_count));
+    command_line->AppendSwitchASCII(
+        blink::switches::kGpuRasterizationMSAASampleCount,
+        base::NumberToString(msaa_sample_count));
   }
 
   if (IsZeroCopyUploadEnabled())
-    command_line->AppendSwitch(switches::kEnableZeroCopy);
+    command_line->AppendSwitch(blink::switches::kEnableZeroCopy);
   if (!IsPartialRasterEnabled())
-    command_line->AppendSwitch(switches::kDisablePartialRaster);
+    command_line->AppendSwitch(blink::switches::kDisablePartialRaster);
 
   if (IsGpuMemoryBufferCompositorResourcesEnabled()) {
     command_line->AppendSwitch(
-        switches::kEnableGpuMemoryBufferCompositorResources);
+        blink::switches::kEnableGpuMemoryBufferCompositorResources);
   }
 
   if (IsMainFrameBeforeActivationEnabled())
@@ -3240,15 +3279,12 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     service_manager::switches::kEnableSandboxLogging,
 #endif
     switches::kAgcStartupMinVolume,
-    switches::kAllowPreCommitInput,
     switches::kAllowLoopbackInPeerConnection,
     switches::kAndroidFontsPath,
     switches::kAudioBufferSize,
     switches::kAutoplayPolicy,
     switches::kBlinkSettings,
-    switches::kDefaultTileWidth,
-    switches::kDefaultTileHeight,
-    switches::kMinHeightForGpuRasterTile,
+    switches::kMojoCoreLibraryPath,
     switches::kDisable2dCanvasImageChromium,
     switches::kDisableYUVImageDecoding,
     switches::kDisableAcceleratedVideoDecode,
@@ -3260,8 +3296,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableFileSystem,
     switches::kDisableFrameRateLimit,
     switches::kDisableGpuMemoryBufferVideoFrames,
-    switches::kDisableImageAnimationResync,
-    switches::kDisableLowResTiling,
     switches::kDisableHistogramCustomizer,
     switches::kDisableLCDText,
     switches::kDisableLogging,
@@ -3273,7 +3307,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisablePepper3DImageChromium,
     switches::kDisablePermissionsAPI,
     switches::kDisablePresentationAPI,
-    switches::kDisableRGBA4444Textures,
     switches::kDisableRTCSmoothnessAlgorithm,
     switches::kDisableScrollToTextFragment,
     switches::kDisableSharedWorkers,
@@ -3296,7 +3329,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableGpuClientTracing,
     switches::kEnableGpuMemoryBufferVideoFrames,
     switches::kEnableGPUServiceLogging,
-    switches::kEnableLowResTiling,
     switches::kEnableLCDText,
     switches::kEnableLogging,
     switches::kEnableNetworkInformationDownlinkMax,
@@ -3304,7 +3336,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePluginPlaceholderTesting,
     switches::kEnablePreciseMemoryInfo,
     switches::kEnablePreferCompositingToLCDText,
-    switches::kEnableRGBA4444Textures,
     switches::kEnableSkiaBenchmarking,
     switches::kEnableThreadedCompositing,
     switches::kEnableTouchDragDrop,
@@ -3330,8 +3361,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kLogFile,
     switches::kLoggingLevel,
     switches::kMaxActiveWebGLContexts,
-    switches::kMaxUntiledLayerWidth,
-    switches::kMaxUntiledLayerHeight,
     switches::kMSEAudioBufferSizeLimitMb,
     switches::kMSEVideoBufferSizeLimitMb,
     switches::kNetworkQuietTimeout,
@@ -3348,8 +3377,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kRemoteDebuggingPort,
     switches::kRendererStartupDialog,
     switches::kReportVp9AsAnUnsupportedMimeType,
-    switches::kShowLayoutShiftRegions,
-    switches::kShowPaintRects,
     switches::kStatsCollectionController,
     switches::kSkiaFontCacheLimitMb,
     switches::kSkiaResourceCacheLimitMb,
@@ -3359,7 +3386,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kTraceToConsole,
     switches::kUseFakeCodecForPeerConnection,
     switches::kUseFakeUIForMediaStream,
-    switches::kUseLegacyFormControls,
     switches::kUseMobileUserAgent,
     switches::kV,
     switches::kVideoCaptureUseGpuMemoryBuffer,
@@ -3368,6 +3394,20 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kVModule,
     switches::kWebglAntialiasingMode,
     switches::kWebglMSAASampleCount,
+    // Please keep these in alphabetical order.
+    blink::switches::kAllowPreCommitInput,
+    blink::switches::kDefaultTileWidth,
+    blink::switches::kDefaultTileHeight,
+    blink::switches::kDisableImageAnimationResync,
+    blink::switches::kDisableLowResTiling,
+    blink::switches::kDisableRGBA4444Textures,
+    blink::switches::kEnableLowResTiling,
+    blink::switches::kEnableRGBA4444Textures,
+    blink::switches::kMinHeightForGpuRasterTile,
+    blink::switches::kMaxUntiledLayerWidth,
+    blink::switches::kMaxUntiledLayerHeight,
+    blink::switches::kShowLayoutShiftRegions,
+    blink::switches::kShowPaintRects,
     // Please keep these in alphabetical order. Compositor switches here
     // should also be added to
     // chrome/browser/chromeos/login/chrome_restart_request.cc.
@@ -3405,6 +3445,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
 #if defined(OS_ANDROID)
     switches::kDisableMediaSessionAPI,
     switches::kEnableReachedCodeProfiler,
+    switches::kReachedCodeSamplingIntervalUs,
     switches::kRendererWaitForJavaDebugger,
 #endif
 #if defined(OS_WIN)
@@ -3766,8 +3807,8 @@ void RenderProcessHostImpl::Cleanup() {
                                     "browser_context", browser_context_);
 
   if (is_initialized_) {
-    base::PostTask(
-        FROM_HERE, {BrowserThread::IO},
+    GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE,
         base::BindOnce(&WebRtcLog::ClearLogMessageCallback, GetID()));
   }
 
@@ -3794,11 +3835,9 @@ void RenderProcessHostImpl::Cleanup() {
     info.status = base::TERMINATION_STATUS_NORMAL_TERMINATION;
     info.exit_code = 0;
     PopulateTerminationInfoRendererFields(&info);
-    within_cleanup_process_died_observer_ = true;
     for (auto& observer : observers_) {
       observer.RenderProcessExited(this, info);
     }
-    within_cleanup_process_died_observer_ = false;
   }
   for (auto& observer : observers_)
     observer.RenderProcessHostDestroyed(this);
@@ -3819,8 +3858,8 @@ void RenderProcessHostImpl::Cleanup() {
     // that destroys the ResourceContext. Therefore the ClearResourceContext
     // task must be posted now to ensure it gets ahead of the destruction of
     // the ResourceContext in the IOThread sequence.
-    base::PostTask(
-        FROM_HERE, {BrowserThread::IO},
+    GetIOThreadTaskRunner({})->PostTask(
+        FROM_HERE,
         base::BindOnce(&RenderFrameMessageFilter::ClearResourceContext,
                        render_frame_message_filter_));
   }
@@ -4199,7 +4238,7 @@ RenderProcessHost* RenderProcessHostImpl::GetExistingProcessHost(
     if (iter.GetCurrentValue()->MayReuseHost() &&
         RenderProcessHostImpl::IsSuitableHost(
             iter.GetCurrentValue(), site_instance->GetIsolationContext(),
-            site_instance->GetSiteURL(), site_instance->lock_url(),
+            site_instance->GetSiteInfo().site_url(), site_instance->lock_url(),
             site_instance->IsGuest())) {
       // The spare is always considered before process reuse.
       DCHECK_NE(iter.GetCurrentValue(),
@@ -4246,7 +4285,7 @@ RenderProcessHost* RenderProcessHostImpl::GetUnusedProcessHostForServiceWorker(
         iter.GetCurrentValue()->IsUnused() &&
         RenderProcessHostImpl::IsSuitableHost(
             iter.GetCurrentValue(), site_instance->GetIsolationContext(),
-            site_instance->GetSiteURL(), site_instance->lock_url(),
+            site_instance->GetSiteInfo().site_url(), site_instance->lock_url(),
             site_instance->IsGuest())) {
       return host;
     }
@@ -4256,8 +4295,9 @@ RenderProcessHost* RenderProcessHostImpl::GetUnusedProcessHostForServiceWorker(
 }
 
 // static
-bool RenderProcessHost::ShouldUseProcessPerSite(BrowserContext* browser_context,
-                                                const GURL& site_url) {
+bool RenderProcessHostImpl::ShouldUseProcessPerSite(
+    BrowserContext* browser_context,
+    const SiteInfo& site_info) {
   // Returns true if we should use the process-per-site model.  This will be
   // the case if the --process-per-site switch is specified, or in
   // process-per-site-instance for particular sites (e.g., NTP). Note that
@@ -4270,29 +4310,30 @@ bool RenderProcessHost::ShouldUseProcessPerSite(BrowserContext* browser_context,
   // Error pages should use process-per-site model, as it is useful to
   // consolidate them to minimize resource usage and there is no security
   // drawback to combining them all in the same process.
-  if (site_url.SchemeIs(kChromeErrorScheme))
+  if (site_info.site_url().SchemeIs(kChromeErrorScheme))
     return true;
 
   // Otherwise let the content client decide, defaulting to false.
-  return GetContentClient()->browser()->ShouldUseProcessPerSite(browser_context,
-                                                                site_url);
+  return GetContentClient()->browser()->ShouldUseProcessPerSite(
+      browser_context, site_info.site_url());
 }
 
 // static
 RenderProcessHost* RenderProcessHostImpl::GetSoleProcessHostForURL(
     const IsolationContext& isolation_context,
     const GURL& url) {
-  GURL site_url = SiteInstanceImpl::GetSiteForURL(isolation_context, url);
+  SiteInfo site_info =
+      SiteInstanceImpl::ComputeSiteInfo(isolation_context, url);
   GURL lock_url =
       SiteInstanceImpl::DetermineProcessLockURL(isolation_context, url);
-  return GetSoleProcessHostForSite(isolation_context, site_url, lock_url,
+  return GetSoleProcessHostForSite(isolation_context, site_info, lock_url,
                                    /* is_guest */ false);
 }
 
 // static
 RenderProcessHost* RenderProcessHostImpl::GetSoleProcessHostForSite(
     const IsolationContext& isolation_context,
-    const GURL& site_url,
+    const SiteInfo& site_info,
     const GURL& lock_url,
     const bool is_guest) {
   // Look up the map of site to process for the given browser_context.
@@ -4302,6 +4343,7 @@ RenderProcessHost* RenderProcessHostImpl::GetSoleProcessHostForSite(
   // See if we have an existing process with appropriate bindings for this
   // site. If not, the caller should create a new process and register it.
   // Note that IsSuitableHost expects a site URL rather than the full |url|.
+  const GURL& site_url = site_info.site_url();
   RenderProcessHost* host = map->FindProcess(site_url.possibly_invalid_spec());
   if (host && (!host->MayReuseHost() ||
                !IsSuitableHost(host, isolation_context, site_url, lock_url,
@@ -4331,7 +4373,8 @@ void RenderProcessHostImpl::RegisterSoleProcessHostForSite(
   // use process-per-site mode.  We cannot check whether the process has
   // appropriate bindings here, because the bindings have not yet been
   // granted.
-  std::string site = site_instance->GetSiteURL().possibly_invalid_spec();
+  std::string site =
+      site_instance->GetSiteInfo().site_url().possibly_invalid_spec();
   if (!site.empty())
     map->RegisterProcess(site, process);
 }
@@ -4339,7 +4382,7 @@ void RenderProcessHostImpl::RegisterSoleProcessHostForSite(
 // static
 RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
     SiteInstanceImpl* site_instance) {
-  const GURL site_url = site_instance->GetSiteURL();
+  const SiteInfo& site_info = site_instance->GetSiteInfo();
   SiteInstanceImpl::ProcessReusePolicy process_reuse_policy =
       site_instance->process_reuse_policy();
   RenderProcessHost* render_process_host = nullptr;
@@ -4351,7 +4394,7 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
   switch (process_reuse_policy) {
     case SiteInstanceImpl::ProcessReusePolicy::PROCESS_PER_SITE:
       render_process_host = GetSoleProcessHostForSite(
-          site_instance->GetIsolationContext(), site_url,
+          site_instance->GetIsolationContext(), site_info,
           site_instance->lock_url(), site_instance->IsGuest());
       break;
     case SiteInstanceImpl::ProcessReusePolicy::REUSE_PENDING_OR_COMMITTED_SITE:
@@ -4410,8 +4453,8 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
   }
 
   // If not (or if none found), see if we should reuse an existing process.
-  if (!render_process_host &&
-      ShouldTryToUseExistingProcessHost(browser_context, site_url)) {
+  if (!render_process_host && ShouldTryToUseExistingProcessHost(
+                                  browser_context, site_info.site_url())) {
     render_process_host = GetExistingProcessHost(site_instance);
   }
 
@@ -4421,13 +4464,14 @@ RenderProcessHost* RenderProcessHostImpl::GetProcessHostForSiteInstance(
   // site.
   if (render_process_host &&
       !RenderProcessHostImpl::IsSuitableHost(
-          render_process_host, site_instance->GetIsolationContext(), site_url,
-          site_instance->lock_url(), site_instance->IsGuest())) {
+          render_process_host, site_instance->GetIsolationContext(),
+          site_info.site_url(), site_instance->lock_url(),
+          site_instance->IsGuest())) {
     base::debug::SetCrashKeyString(bad_message::GetRequestedSiteURLKey(),
-                                   site_url.possibly_invalid_spec());
+                                   site_info.GetDebugString());
     ChildProcessSecurityPolicyImpl::GetInstance()->LogKilledProcessOriginLock(
         render_process_host->GetID());
-    CHECK(false) << "Unsuitable process reused for site " << site_url;
+    CHECK(false) << "Unsuitable process reused for site " << site_info;
   }
 
   // Otherwise, create a new RenderProcessHost.
@@ -4906,15 +4950,14 @@ void RenderProcessHostImpl::OnProcessLaunched() {
   }
 
   // Pass bits of global renderer state to the renderer.
+  GetRendererInterface()->SetIsCrossOriginIsolated(cross_origin_isolated_);
   GetRendererInterface()->SetUserAgent(
       GetContentClient()->browser()->GetUserAgent());
   GetRendererInterface()->SetUserAgentMetadata(
       GetContentClient()->browser()->GetUserAgentMetadata());
+  GetRendererInterface()->SetCorsExemptHeaderList(
+      storage_partition_impl_->cors_exempt_header_list());
   NotifyRendererIfLockedToSite();
-  if (SiteIsolationPolicy::UseDedicatedProcessesForAllSites() &&
-      base::FeatureList::IsEnabled(features::kV8LowMemoryModeForSubframes)) {
-    GetRendererInterface()->EnableV8LowMemoryMode();
-  }
 
   // Send the initial system color info to the renderer.
   ThemeHelper::GetInstance()->SendSystemColorInfo(GetRendererInterface());
@@ -4985,9 +5028,10 @@ RenderProcessHost*
 RenderProcessHostImpl::FindReusableProcessHostForSiteInstance(
     SiteInstanceImpl* site_instance) {
   BrowserContext* browser_context = site_instance->GetBrowserContext();
-  GURL site_url(site_instance->GetSiteURL());
-  if (!ShouldFindReusableProcessHostForSite(browser_context, site_url))
+  if (!ShouldFindReusableProcessHostForSite(browser_context,
+                                            site_instance->GetSiteInfo())) {
     return nullptr;
+  }
 
   std::set<RenderProcessHost*> eligible_foreground_hosts;
   std::set<RenderProcessHost*> eligible_background_hosts;
@@ -5135,35 +5179,37 @@ void RenderProcessHostImpl::ProvideStatusFileForRenderer() {
 #endif
 
 void RenderProcessHostImpl::ProvideSwapFileForRenderer() {
-  if (!base::FeatureList::IsEnabled(features::kParkableStringsToDisk))
+  if (!base::FeatureList::IsEnabled(blink::features::kParkableStringsToDisk))
     return;
+
+  // In Incognito, nothing should be written to disk. Don't provide a file..
+  if (GetBrowserContext()->IsOffTheRecord())
+    return;
+
   mojo::Remote<blink::mojom::DiskAllocator> allocator;
   BindReceiver(allocator.BindNewPipeAndPassReceiver());
-
-  // In Incognito, nothing should be written to disk. Providing an invalid file
-  // prevents the renderer from doing so.
-  if (GetBrowserContext()->IsOffTheRecord()) {
-    allocator->ProvideTemporaryFile(base::File());
-    return;
-  }
 
   // File creation done on a background thread. The renderer side will behave
   // correctly even if the file is provided later or never.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock()}, base::BindOnce([]() {
         base::FilePath path;
-        CHECK(base::CreateTemporaryFile(&path));
+        if (!base::CreateTemporaryFile(&path))
+          return base::File();
 
         int flags = base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_READ |
                     base::File::FLAG_WRITE | base::File::FLAG_DELETE_ON_CLOSE;
-        auto file = base::File(base::FilePath(path), flags);
-        CHECK(file.IsValid());
-        return file;
+        return base::File(base::FilePath(path), flags);
       }),
       base::BindOnce(
           [](mojo::Remote<blink::mojom::DiskAllocator> allocator,
              base::File file) {
-            allocator->ProvideTemporaryFile(std::move(file));
+            // File creation failed in the background. In this case, don't
+            // provide a file, the renderer will not wait for one (see the
+            // incognito case above, the renderer deals with no file being
+            // provided).
+            if (file.IsValid())
+              allocator->ProvideTemporaryFile(std::move(file));
           },
           std::move(allocator)));
 }

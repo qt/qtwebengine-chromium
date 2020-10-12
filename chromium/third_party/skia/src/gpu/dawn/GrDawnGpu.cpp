@@ -10,6 +10,7 @@
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
+#include "src/gpu/GrDataUtils.h"
 #include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrGpuResourceCacheAccess.h"
 #include "src/gpu/GrPipeline.h"
@@ -92,7 +93,6 @@ static wgpu::AddressMode to_dawn_address_mode(GrSamplerState::WrapMode wrapMode)
     }
     SkASSERT(!"unsupported address mode");
     return wgpu::AddressMode::ClampToEdge;
-
 }
 
 sk_sp<GrGpu> GrDawnGpu::Make(const wgpu::Device& device,
@@ -124,20 +124,22 @@ GrDawnGpu::~GrDawnGpu() {
     }
 }
 
-
 void GrDawnGpu::disconnect(DisconnectType type) {
     if (DisconnectType::kCleanup == type) {
         while (!this->busyStagingBuffers().isEmpty()) {
             fDevice.Tick();
         }
     }
+    fQueue = nullptr;
+    fDevice = nullptr;
     INHERITED::disconnect(type);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GrOpsRenderPass* GrDawnGpu::getOpsRenderPass(
-            GrRenderTarget* rt, GrSurfaceOrigin origin, const SkIRect& bounds,
+            GrRenderTarget* rt, GrStencilAttachment*,
+            GrSurfaceOrigin origin, const SkIRect& bounds,
             const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
             const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
             const SkTArray<GrSurfaceProxy*, true>& sampledProxies) {
@@ -193,7 +195,10 @@ sk_sp<GrTexture> GrDawnGpu::onCreateTexture(SkISize dimensions,
                                             GrProtected,
                                             int mipLevelCount,
                                             uint32_t levelClearMask) {
-    SkASSERT(!levelClearMask);
+    if (levelClearMask) {
+        return nullptr;
+    }
+
     wgpu::TextureFormat format;
     if (!backendFormat.asDawnFormat(&format)) {
         return nullptr;
@@ -353,7 +358,13 @@ bool GrDawnGpu::onUpdateBackendTexture(const GrBackendTexture& backendTexture,
         pixels = data->pixmap(0).addr();
     } else {
         pixels = defaultStorage.get();
-        memset(defaultStorage.get(), 0, baseLayerSize);
+        GrColorType colorType;
+        if (!GrDawnFormatToGrColorType(info.fFormat, &colorType)) {
+            return false;
+        }
+        SkISize size{backendTexture.width(), backendTexture.height()};
+        GrImageInfo imageInfo(colorType, kUnpremul_SkAlphaType, nullptr, size);
+        GrClearImage(imageInfo, defaultStorage.get(), bpp * backendTexture.width(), data->color());
     }
     wgpu::Device device = this->device();
     wgpu::CommandEncoder copyEncoder = this->getCopyEncoder();
@@ -530,7 +541,6 @@ bool GrDawnGpu::onReadPixels(GrSurface* surface, int left, int top, int width, i
                              GrColorType surfaceColorType, GrColorType dstColorType, void* buffer,
                              size_t rowBytes) {
     wgpu::Texture tex = get_dawn_texture_from_surface(surface);
-    SkASSERT(tex);
 
     if (!tex || 0 == rowBytes) {
         return false;
@@ -638,7 +648,6 @@ std::unique_ptr<GrSemaphore> GrDawnGpu::prepareTextureForCrossContextUsage(GrTex
 sk_sp<GrDawnProgram> GrDawnGpu::getOrCreateRenderPipeline(
         GrRenderTarget* rt,
         const GrProgramInfo& programInfo) {
-
     GrProgramDesc desc = this->caps()->makeDesc(rt, programInfo);
     if (!desc.isValid()) {
         return nullptr;

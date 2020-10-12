@@ -104,17 +104,13 @@ public:
     // The GrGLOpsRenderPass does not buffer up draws before submitting them to the gpu.
     // Thus this is the implementation of the clear call for the corresponding passthrough function
     // on GrGLOpsRenderPass.
-    void clear(const GrFixedClip&, const SkPMColor4f&, GrRenderTarget*, GrSurfaceOrigin);
+    void clear(const GrScissorState&, const SkPMColor4f&, GrRenderTarget*, GrSurfaceOrigin);
 
     // The GrGLOpsRenderPass does not buffer up draws before submitting them to the gpu.
     // Thus this is the implementation of the clearStencil call for the corresponding passthrough
     // function on GrGLOpsrenderPass.
-    void clearStencilClip(const GrFixedClip&, bool insideStencilMask,
+    void clearStencilClip(const GrScissorState&, bool insideStencilMask,
                           GrRenderTarget*, GrSurfaceOrigin);
-
-    // FIXME (michaelludwig): Can this go away and just use clearStencilClip() + marking the
-    // stencil buffer as not dirty?
-    void clearStencil(GrRenderTarget*, int clearValue);
 
     void beginCommandBuffer(GrRenderTarget*, const SkIRect& bounds, GrSurfaceOrigin,
                             const GrOpsRenderPass::LoadAndStoreInfo& colorLoadStore,
@@ -124,7 +120,8 @@ public:
                           const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilLoadStore);
 
     GrOpsRenderPass* getOpsRenderPass(
-            GrRenderTarget*, GrSurfaceOrigin, const SkIRect&,
+            GrRenderTarget*, GrStencilAttachment*,
+            GrSurfaceOrigin, const SkIRect&,
             const GrOpsRenderPass::LoadAndStoreInfo&,
             const GrOpsRenderPass::StencilLoadAndStoreInfo&,
             const SkTArray<GrSurfaceProxy*, true>& sampledProxies) override;
@@ -172,6 +169,11 @@ public:
 
     void checkFinishProcs() override;
 
+    // Calls glGetError() until no errors are reported. Also looks for OOMs.
+    void clearErrorsAndCheckForOOM();
+    // Calls glGetError() once and returns the result. Also looks for an OOM.
+    GrGLenum getErrorAndCheckForOOM();
+
     std::unique_ptr<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override;
 
     void deleteSync(GrGLsync) const;
@@ -180,6 +182,11 @@ public:
     void deleteFramebuffer(GrGLuint fboid);
 
     void insertManualFramebufferBarrier() override;
+
+    void flushProgram(sk_sp<GrGLProgram>);
+
+    // Version for programs that aren't GrGLProgram.
+    void flushProgram(GrGLuint);
 
 private:
     GrGLGpu(std::unique_ptr<GrGLContext>, GrContext*);
@@ -253,13 +260,15 @@ private:
     // returned. On failure, zero is returned.
     // The texture is populated with |texels|, if it is non-null.
     // The texture parameters are cached in |initialTexParams|.
-    GrGLuint createTexture2D(SkISize dimensions,
-                             GrGLFormat,
-                             GrRenderable,
-                             GrGLTextureParameters::SamplerOverriddenState*,
-                             int mipLevelCount);
+    GrGLuint createTexture(SkISize dimensions,
+                           GrGLFormat,
+                           GrGLenum target,
+                           GrRenderable,
+                           GrGLTextureParameters::SamplerOverriddenState*,
+                           int mipLevelCount);
 
     GrGLuint createCompressedTexture2D(SkISize dimensions,
+                                       SkImage::CompressionType compression,
                                        GrGLFormat,
                                        GrMipMapped,
                                        GrGLTextureParameters::SamplerOverriddenState*,
@@ -298,11 +307,6 @@ private:
 
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
-
-    void flushProgram(sk_sp<GrGLProgram>);
-
-    // Version for programs that aren't GrGLProgram.
-    void flushProgram(GrGLuint);
 
     void flushBlendAndColorWrite(const GrXferProcessor::BlendInfo& blendInfo, const GrSwizzle&);
 
@@ -411,14 +415,45 @@ private:
 
     void flushFramebufferSRGB(bool enable);
 
-    bool uploadTexData(GrGLFormat textureFormat, GrColorType textureColorType, int texWidth,
-                       int texHeight, GrGLenum target, int left, int top, int width, int height,
-                       GrColorType srcColorType, const GrMipLevel texels[], int mipLevelCount,
-                       GrMipMapsStatus* mipMapsStatus = nullptr);
+    // Uploads src data of a color type to the currently bound texture on the active texture unit.
+    // The caller specifies color type that the texture is being used with, which may be different
+    // than the src color type. This fails if the combination of texture format, texture color type,
+    // and src data color type are not valid. No conversion is performed on the data before passing
+    // it to GL. 'dstRect' must be the texture bounds if mipLevelCount is greater than 1.
+    bool uploadColorTypeTexData(GrGLFormat textureFormat,
+                                GrColorType textureColorType,
+                                SkISize texDims,
+                                GrGLenum target,
+                                SkIRect dstRect,
+                                GrColorType srcColorType,
+                                const GrMipLevel texels[],
+                                int mipLevelCount);
+
+    // Uploads a constant color to a texture using the "default" format and color type. Overwrites
+    // entire levels. Bit n in 'levelMask' indicates whether level n should be written. This
+    // function doesn't know if MIP levels have been allocated, thus levelMask should not have bits
+    // beyond the low bit set if the texture is not MIP mapped.
+    bool uploadColorToTex(GrGLFormat textureFormat,
+                          SkISize texDims,
+                          GrGLenum target,
+                          SkColor4f color,
+                          uint32_t levelMask);
+
+    // Pushes data to the currently bound texture to the currently active unit. 'dstRect' must be
+    // the texture bounds if mipLevelCount is greater than 1.
+    void uploadTexData(SkISize dimensions,
+                       GrGLenum target,
+                       SkIRect dstRect,
+                       GrGLenum externalFormat,
+                       GrGLenum externalType,
+                       size_t bpp,
+                       const GrMipLevel texels[],
+                       int mipLevelCount);
 
     // Helper for onCreateCompressedTexture. Compressed textures are read-only so we only use this
     // to populate a new texture. Returns false if we failed to create and upload the texture.
-    bool uploadCompressedTexData(GrGLFormat,
+    bool uploadCompressedTexData(SkImage::CompressionType compressionType,
+                                 GrGLFormat,
                                  SkISize dimensions,
                                  GrMipMapped,
                                  GrGLenum target,

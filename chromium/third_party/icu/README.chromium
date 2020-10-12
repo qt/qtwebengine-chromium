@@ -227,3 +227,23 @@ D. Local Modifications
 7. Enable tracing of file but not resource, only for Chromium
     to reduce performance impact/risk.
   - patches/restrace.patch
+
+8. #if 0 new code in Locale::createCanonical which added in
+   https://github.com/unicode-org/icu/pull/951 that use ures and caused
+   30ms startup performance regression.
+  - patches/turnOffNewCodeInLocaleCanonical.patch
+    https://unicode-org.atlassian.net/browse/ICU-21139
+
+9. Fix Locale addLikelySubtag
+  - patches/localeAddLikely.patch
+  - upstreawm PR:
+    https://github.com/unicode-org/icu/pull/1140
+  - upstream bug:
+    https://unicode-org.atlassian.net/browse/ICU-13786
+
+10. Add ability to use locale default for minimum grouping digits
+ - patches/grouping_digits.patch
+ - upstream PR:
+   https://github.com/unicode-org/icu/pull/1152
+ - upbstream bug:
+   https://unicode-org.atlassian.net/browse/ICU-21109

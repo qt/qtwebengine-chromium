@@ -51,8 +51,12 @@ class QuicEndpoint : public QuicEndpointBase,
   void OnCryptoFrame(const QuicCryptoFrame& frame) override;
   void OnCanWrite() override;
   bool SendProbingData() override;
+  bool ValidateStatelessReset(
+      const quic::QuicSocketAddress& /*self_address*/,
+      const quic::QuicSocketAddress& /*peer_address*/) override {
+    return true;
+  }
   bool WillingAndAbleToWrite() const override;
-  bool HasPendingHandshake() const override;
   bool ShouldKeepConnectionAlive() const override;
 
   void OnWindowUpdateFrame(const QuicWindowUpdateFrame& /*frame*/) override {}
@@ -72,11 +76,11 @@ class QuicEndpoint : public QuicEndpointBase,
   void OnCongestionWindowChange(QuicTime /*now*/) override {}
   void OnConnectionMigration(AddressChangeType /*type*/) override {}
   void OnPathDegrading() override {}
+  void OnForwardProgressMadeAfterPathDegrading() override {}
   void OnAckNeedsRetransmittableFrame() override {}
   void SendPing() override {}
   bool AllowSelfAddressChange() const override;
   HandshakeState GetHandshakeState() const override;
-  void OnForwardProgressConfirmed() override {}
   bool OnMaxStreamsFrame(const QuicMaxStreamsFrame& /*frame*/) override {
     return true;
   }

@@ -30,6 +30,11 @@
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/angletypes.h"
 
+namespace egl
+{
+class ShareGroup;
+}  // namespace egl
+
 namespace gl
 {
 class BufferManager;
@@ -85,6 +90,7 @@ class State : angle::NonCopyable
 {
   public:
     State(const State *shareContextState,
+          egl::ShareGroup *shareGroup,
           TextureManager *shareTextures,
           const OverlayType *overlay,
           const EGLenum clientType,
@@ -111,6 +117,7 @@ class State : angle::NonCopyable
     const TextureCapsMap &getTextureCaps() const { return mTextureCaps; }
     const Extensions &getExtensions() const { return mExtensions; }
     const Limitations &getLimitations() const { return mLimitations; }
+    egl::ShareGroup *getShareGroup() const { return mShareGroup; }
 
     bool isWebGL() const { return mExtensions.webglCompatibility; }
 
@@ -255,6 +262,8 @@ class State : angle::NonCopyable
 
     // Hint setters
     void setGenerateMipmapHint(GLenum hint);
+    void setTextureFilteringHint(GLenum hint);
+    GLenum getTextureFilteringHint() const;
     void setFragmentShaderDerivativeHint(GLenum hint);
 
     // GL_CHROMIUM_bind_generates_resource
@@ -811,6 +820,8 @@ class State : angle::NonCopyable
     angle::Result syncProgram(const Context *context);
     angle::Result syncProgramPipeline(const Context *context);
 
+    void updatePPOActiveTextures();
+
     using DirtyObjectHandler = angle::Result (State::*)(const Context *context);
     static constexpr DirtyObjectHandler kDirtyObjectHandlers[DIRTY_OBJECT_MAX] = {
         &State::syncTexturesInit,    &State::syncImagesInit,      &State::syncReadAttachments,
@@ -852,6 +863,8 @@ class State : angle::NonCopyable
     TextureCapsMap mTextureCaps;
     Extensions mExtensions;
     Limitations mLimitations;
+
+    egl::ShareGroup *mShareGroup;
 
     // Resource managers.
     BufferManager *mBufferManager;
@@ -895,6 +908,7 @@ class State : angle::NonCopyable
     GLfloat mLineWidth;
 
     GLenum mGenerateMipmapHint;
+    GLenum mTextureFilteringHint;
     GLenum mFragmentShaderDerivativeHint;
 
     const bool mBindGeneratesResource;

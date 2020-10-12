@@ -464,6 +464,11 @@ WideString CPDFSDK_Widget::GetDefaultValue() const {
   return pFormField->GetDefaultValue();
 }
 
+WideString CPDFSDK_Widget::GetExportValue() const {
+  CPDF_FormControl* pFormCtrl = GetFormControl();
+  return pFormCtrl->GetExportValue();
+}
+
 WideString CPDFSDK_Widget::GetOptionLabel(int nIndex) const {
   CPDF_FormField* pFormField = GetFormField();
   return pFormField->GetOptionLabel(nIndex);
@@ -693,8 +698,8 @@ CFX_FloatRect CPDFSDK_Widget::GetClientRect() const {
   CFX_FloatRect rcWindow = GetRotatedRect();
   float fBorderWidth = GetBorderWidth();
   switch (GetBorderStyle()) {
-    case BorderStyle::BEVELED:
-    case BorderStyle::INSET:
+    case BorderStyle::kBeveled:
+    case BorderStyle::kInset:
       fBorderWidth *= 2.0f;
       break;
     default:

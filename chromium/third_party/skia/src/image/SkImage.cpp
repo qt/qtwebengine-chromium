@@ -84,7 +84,14 @@ sk_sp<SkColorSpace> SkImage::refColorSpace() const { return fInfo.refColorSpace(
 
 sk_sp<SkShader> SkImage::makeShader(SkTileMode tmx, SkTileMode tmy,
                                     const SkMatrix* localMatrix) const {
-    return SkImageShader::Make(sk_ref_sp(const_cast<SkImage*>(this)), tmx, tmy, localMatrix);
+    return SkImageShader::Make(sk_ref_sp(const_cast<SkImage*>(this)), tmx, tmy, localMatrix,
+                               SkImageShader::kInheritFromPaint);
+}
+
+sk_sp<SkShader> SkImage::makeShader(SkTileMode tmx, SkTileMode tmy,
+                                    const SkMatrix* localMatrix, SkFilterQuality filtering) const {
+    return SkImageShader::Make(sk_ref_sp(const_cast<SkImage*>(this)), tmx, tmy, localMatrix,
+                               SkImageShader::FilterEnum(filtering));
 }
 
 sk_sp<SkData> SkImage::encodeToData(SkEncodedImageFormat type, int quality) const {
@@ -160,7 +167,10 @@ GrSemaphoresSubmitted SkImage::flush(GrContext* context, const GrFlushInfo& flus
     return as_IB(this)->onFlush(context, flushInfo);
 }
 
-void SkImage::flush(GrContext* context) { as_IB(this)->onFlush(context, {}); }
+void SkImage::flushAndSubmit(GrContext* context) {
+    this->flush(context, {});
+    context->submit();
+}
 
 #else
 
@@ -182,7 +192,7 @@ GrSemaphoresSubmitted SkImage::flush(GrContext*, const GrFlushInfo&) {
     return GrSemaphoresSubmitted::kNo;
 }
 
-void SkImage::flush(GrContext*) {}
+void SkImage::flushAndSubmit(GrContext*) {}
 
 #endif
 
@@ -281,7 +291,7 @@ sk_sp<SkImage> SkImage::makeWithFilter(GrContext* grContext,
     // subset's top left corner. But the clip bounds and any crop rects on the filters are in the
     // original coordinate system, so configure the CTM to correct crop rects and explicitly adjust
     // the clip bounds (since it is assumed to already be in image space).
-    SkImageFilter_Base::Context context(SkMatrix::MakeTrans(-subset.x(), -subset.y()),
+    SkImageFilter_Base::Context context(SkMatrix::Translate(-subset.x(), -subset.y()),
                                         clipBounds.makeOffset(-subset.topLeft()),
                                         cache.get(), fInfo.colorType(), fInfo.colorSpace(),
                                         srcSpecialImage.get());

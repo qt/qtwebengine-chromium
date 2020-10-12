@@ -16,7 +16,6 @@
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/fx_font.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 
 #define CHARSET_FLAG_ANSI (1 << 0)
@@ -241,11 +240,11 @@ void CFX_FolderFontInfo::ReportFace(const ByteString& path,
   if (style != "Regular")
     facename += " " + style;
 
-  if (pdfium::ContainsKey(m_FontList, facename))
+  if (pdfium::Contains(m_FontList, facename))
     return;
 
-  auto pInfo = pdfium::MakeUnique<FontFaceInfo>(path, facename, tables, offset,
-                                                filesize);
+  auto pInfo =
+      std::make_unique<FontFaceInfo>(path, facename, tables, offset, filesize);
   ByteString os2 =
       LoadTableFromTT(pFile, tables.raw_str(), nTables, 0x4f532f32, filesize);
   if (os2.GetLength() >= 86) {
@@ -286,7 +285,7 @@ void CFX_FolderFontInfo::ReportFace(const ByteString& path,
 }
 
 void* CFX_FolderFontInfo::GetSubstFont(const ByteString& face) {
-  for (size_t iBaseFont = 0; iBaseFont < FX_ArraySize(Base14Substs);
+  for (size_t iBaseFont = 0; iBaseFont < pdfium::size(Base14Substs);
        iBaseFont++) {
     if (face == Base14Substs[iBaseFont].m_pName)
       return GetFont(Base14Substs[iBaseFont].m_pSubstName);

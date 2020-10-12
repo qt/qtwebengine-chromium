@@ -240,6 +240,8 @@ std::ostream& operator<<(std::ostream& os, const Error::Code& code) {
       return os << "Failure: kUpdateReceivedRecordFailure";
     case Error::Code::kRecordPublicationError:
       return os << "Failure: kRecordPublicationError";
+    case Error::Code::kProcessReceivedRecordFailure:
+      return os << "Failure: ProcessReceivedRecordFailure";
   }
 
   // Unused 'return' to get around failure on GCC.

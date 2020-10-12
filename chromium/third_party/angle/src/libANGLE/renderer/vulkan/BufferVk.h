@@ -84,15 +84,17 @@ class BufferVk : public BufferImpl
 
     const vk::BufferHelper &getBuffer() const
     {
-        ASSERT(mBuffer && mBuffer->valid());
+        ASSERT(isBufferValid());
         return *mBuffer;
     }
 
     vk::BufferHelper &getBuffer()
     {
-        ASSERT(mBuffer && mBuffer->valid());
+        ASSERT(isBufferValid());
         return *mBuffer;
     }
+
+    bool isBufferValid() const { return mBuffer && mBuffer->valid(); }
 
     angle::Result mapImpl(ContextVk *contextVk, void **mapPtr);
     angle::Result mapRangeImpl(ContextVk *contextVk,
@@ -139,6 +141,10 @@ class BufferVk : public BufferImpl
                                const uint8_t *data,
                                size_t size,
                                size_t offset);
+    angle::Result acquireAndUpdate(ContextVk *contextVk,
+                                   const uint8_t *data,
+                                   size_t size,
+                                   size_t offset);
     angle::Result setDataImpl(ContextVk *contextVk,
                               const uint8_t *data,
                               size_t size,

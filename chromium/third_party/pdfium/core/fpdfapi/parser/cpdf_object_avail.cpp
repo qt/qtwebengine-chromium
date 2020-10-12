@@ -11,7 +11,6 @@
 #include "core/fpdfapi/parser/cpdf_object_walker.h"
 #include "core/fpdfapi/parser/cpdf_read_validator.h"
 #include "core/fpdfapi/parser/cpdf_reference.h"
-#include "third_party/base/ptr_util.h"
 
 CPDF_ObjectAvail::CPDF_ObjectAvail(
     const RetainPtr<CPDF_ReadValidator>& validator,
@@ -36,7 +35,7 @@ CPDF_ObjectAvail::CPDF_ObjectAvail(
   ASSERT(holder);
 }
 
-CPDF_ObjectAvail::~CPDF_ObjectAvail() {}
+CPDF_ObjectAvail::~CPDF_ObjectAvail() = default;
 
 CPDF_DataAvail::DocAvailStatus CPDF_ObjectAvail::CheckAvail() {
   if (!LoadRootObject())

@@ -40,11 +40,6 @@ enum {
 } UENUM1BYTE(GM_ERRORADV_TYPE);
 
 enum {
-  FULL_TXFM_RD,
-  LOW_TXFM_RD,
-} UENUM1BYTE(TXFM_RD_MODEL);
-
-enum {
   DIST_WTD_COMP_ENABLED,
   DIST_WTD_COMP_SKIP_MV_SEARCH,
   DIST_WTD_COMP_DISABLED,
@@ -136,12 +131,6 @@ enum {
 } UENUM1BYTE(SUBPEL_SEARCH_METHODS);
 
 enum {
-  USE_FULL_RD = 0,
-  USE_FAST_RD,
-  USE_LARGESTALL,
-} UENUM1BYTE(TX_SIZE_SEARCH_METHOD);
-
-enum {
   // Try the full image with different values.
   LPF_PICK_FROM_FULL_IMAGE,
   // Try the full image filter search with non-dual filter only.
@@ -158,6 +147,8 @@ enum {
   CDEF_FULL_SEARCH,
   CDEF_FAST_SEARCH_LVL1,  // Search among a subset of all possible filters.
   CDEF_FAST_SEARCH_LVL2,  // Search reduced subset of filters than Level 1.
+  CDEF_FAST_SEARCH_LVL3,  // Search reduced subset of secondary filters than
+                          // Level 2.
   CDEF_PICK_FROM_Q,       // Estimate filter strength based on quantizer.
   CDEF_PICK_METHODS
 } UENUM1BYTE(CDEF_PICK_METHOD);
@@ -203,7 +194,7 @@ enum {
 } UENUM1BYTE(OVERSHOOT_DETECTION_CBR);
 
 typedef struct {
-  TX_TYPE_PRUNE_MODE prune_mode;
+  TX_TYPE_PRUNE_MODE prune_2d_txfm_mode;
   int fast_intra_tx_type_search;
   int fast_inter_tx_type_search;
 
@@ -463,11 +454,6 @@ typedef struct MV_SPEED_FEATURES {
   // encoding and decoding; otherwise, it uses bilinear interpolation.
   SUBPEL_SEARCH_TYPE use_accurate_subpel_search;
 
-  // TODO(jingning): combine the related motion search speed features
-  // This allows us to use motion search at other sizes as a starting
-  // point for this motion search and limits the search range around it.
-  int adaptive_motion_search;
-
   // Threshold for allowing exhaustive motion search.
   int exhaustive_searches_thresh;
 
@@ -509,9 +495,6 @@ typedef struct INTER_MODE_SPEED_FEATURES {
 
   // Limit the inter mode tested in the RD loop
   int reduce_inter_modes;
-
-  // Adaptive prediction mode search
-  int adaptive_mode_search;
 
   // This variable is used to cap the maximum number of times we skip testing a
   // mode to be evaluated. A high value means we will be faster.
@@ -638,10 +621,6 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   // De-couple wedge and mode search during interintra RDO.
   int fast_interintra_wedge_search;
 
-  // Only enable wedge search if the edge strength is greater than
-  // this threshold. A value of 0 signals that this check is disabled.
-  unsigned int disable_wedge_search_edge_thresh;
-
   // Only enable wedge search if the variance is above this threshold.
   unsigned int disable_wedge_search_var_thresh;
 
@@ -689,13 +668,12 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   // 0: No reuse
   // 1: Reuse the compound type decision
   int reuse_compound_type_decision;
+
+  // Enable/disable masked compound.
+  int disable_masked_comp;
 } INTER_MODE_SPEED_FEATURES;
 
 typedef struct INTERP_FILTER_SPEED_FEATURES {
-  // A source variance threshold below which filter search is disabled
-  // Choose a very large value (UINT_MAX) to use 8-tap always
-  unsigned int disable_filter_search_var_thresh;
-
   // Do limited interpolation filter search for dual filters, since best choice
   // usually includes EIGHTTAP_REGULAR.
   int use_fast_interpolation_filter_search;
@@ -830,6 +808,11 @@ typedef struct RD_CALC_SPEED_FEATURES {
 
   // Flag used to control the extent of coeff R-D optimization
   int perform_coeff_opt;
+
+  // Enable coeff R-D optimization based on SATD values.
+  // 0    : Do not disable coeff R-D opt.
+  // 1, 2 : Disable coeff R-D opt with progressively increasing aggressiveness.
+  int perform_coeff_opt_based_on_satd;
 } RD_CALC_SPEED_FEATURES;
 
 typedef struct WINNER_MODE_SPEED_FEATURES {
@@ -902,6 +885,9 @@ typedef struct LOOP_FILTER_SPEED_FEATURES {
 typedef struct REAL_TIME_SPEED_FEATURES {
   // check intra prediction for non-RD mode.
   int check_intra_pred_nonrd;
+
+  // skip checking intra prediction if TX is skipped
+  int skip_intra_pred_if_tx_skip;
 
   // Perform coarse ME before calculating variance in variance-based partition
   int estimate_motion_for_var_based_partition;

@@ -1350,8 +1350,6 @@ void ConvolveVerticalScale4xH(const int16_t* src, const int subpixel_y,
                               const int height, void* dest,
                               const ptrdiff_t dest_stride) {
   constexpr ptrdiff_t src_stride = kIntermediateStride;
-  constexpr int kernel_offset = (8 - num_taps) / 2;
-  src += src_stride * kernel_offset;
   const int16_t* src_y = src;
   // |dest| is 16-bit in compound mode, Pixel otherwise.
   uint16_t* dest16_y = static_cast<uint16_t*>(dest);
@@ -1425,8 +1423,6 @@ inline void ConvolveVerticalScale(const int16_t* src, const int width,
                                   const int step_y, const int height,
                                   void* dest, const ptrdiff_t dest_stride) {
   constexpr ptrdiff_t src_stride = kIntermediateStride;
-  constexpr int kernel_offset = (8 - num_taps) / 2;
-  src += src_stride * kernel_offset;
   // A possible improvement is to use arithmetic to decide how many times to
   // apply filters to same source before checking whether to load new srcs.
   // However, this will only improve performance with very small step sizes.
@@ -1498,15 +1494,14 @@ void ConvolveScale2D_NEON(const void* const reference,
                           const int subpixel_y, const int step_x,
                           const int step_y, const int width, const int height,
                           void* prediction, const ptrdiff_t pred_stride) {
-  // TODO(petersonab): Reduce the height here by using the vertical filter
-  // size and offset horizontal filter. Reduce intermediate block stride to
-  // width to make smaller blocks faster.
+  const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
+  const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
+  assert(step_x <= 2048);
+  const int num_vert_taps = GetNumTapsInFilter(vert_filter_index);
   const int intermediate_height =
       (((height - 1) * step_y + (1 << kScaleSubPixelBits) - 1) >>
        kScaleSubPixelBits) +
-      kSubPixelTaps;
-  // TODO(b/133525024): Decide whether it's worth branching to a special case
-  // when step_x or step_y is 1024.
+      num_vert_taps;
   assert(step_x <= 2048);
   // The output of the horizontal filter, i.e. the intermediate_result, is
   // guaranteed to fit in int16_t.
@@ -1520,11 +1515,27 @@ void ConvolveScale2D_NEON(const void* const reference,
   // Similarly for height.
   int filter_index = GetFilterIndex(horizontal_filter_index, width);
   int16_t* intermediate = intermediate_result;
-  const auto* src = static_cast<const uint8_t*>(reference);
   const ptrdiff_t src_stride = reference_stride;
+  const auto* src = static_cast<const uint8_t*>(reference);
+  const int vert_kernel_offset = (8 - num_vert_taps) / 2;
+  src += vert_kernel_offset * src_stride;
+
+  // Derive the maximum value of |step_x| at which all source values fit in one
+  // 16-byte load. Final index is src_x + |num_taps| - 1 < 16
+  // step_x*7 is the final base subpel index for the shuffle mask for filter
+  // inputs in each iteration on large blocks. When step_x is large, we need a
+  // larger structure and use a larger table lookup in order to gather all
+  // filter inputs.
+  // |num_taps| - 1 is the shuffle index of the final filter input.
+  const int num_horiz_taps = GetNumTapsInFilter(horiz_filter_index);
+  const int kernel_start_ceiling = 16 - num_horiz_taps;
+  // This truncated quotient |grade_x_threshold| selects |step_x| such that:
+  // (step_x * 7) >> kScaleSubPixelBits < single load limit
+  const int grade_x_threshold =
+      (kernel_start_ceiling << kScaleSubPixelBits) / 7;
   switch (filter_index) {
     case 0:
-      if (step_x > 1024) {
+      if (step_x > grade_x_threshold) {
         ConvolveKernelHorizontalSigned6Tap<2>(
             src, src_stride, width, subpixel_x, step_x, intermediate_height,
             intermediate);
@@ -1535,7 +1546,7 @@ void ConvolveScale2D_NEON(const void* const reference,
       }
       break;
     case 1:
-      if (step_x > 1024) {
+      if (step_x > grade_x_threshold) {
         ConvolveKernelHorizontalMixed6Tap<2>(src, src_stride, width, subpixel_x,
                                              step_x, intermediate_height,
                                              intermediate);
@@ -1547,7 +1558,7 @@ void ConvolveScale2D_NEON(const void* const reference,
       }
       break;
     case 2:
-      if (step_x > 1024) {
+      if (step_x > grade_x_threshold) {
         ConvolveKernelHorizontalSigned8Tap<2>(
             src, src_stride, width, subpixel_x, step_x, intermediate_height,
             intermediate);
@@ -1558,7 +1569,7 @@ void ConvolveScale2D_NEON(const void* const reference,
       }
       break;
     case 3:
-      if (step_x > 1024) {
+      if (step_x > grade_x_threshold) {
         ConvolveKernelHorizontal2Tap<2>(src, src_stride, width, subpixel_x,
                                         step_x, intermediate_height,
                                         intermediate);

@@ -1,4 +1,4 @@
-# Copyright © 2018-2019, VideoLAN and dav1d authors
+# Copyright © 2018-2020, VideoLAN and dav1d authors
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -23,14 +23,14 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 project('dav1d', ['c'],
-    version: '0.6.0',
+    version: '0.7.1',
     default_options: ['c_std=c99',
                       'warning_level=2',
                       'buildtype=release',
                       'b_ndebug=if-release'],
     meson_version: '>= 0.47.0')
 
-dav1d_soname_version       = '4.0.0'
+dav1d_soname_version       = '4.0.2'
 dav1d_api_version_array    = dav1d_soname_version.split('.')
 dav1d_api_version_major    = dav1d_api_version_array[0]
 dav1d_api_version_minor    = dav1d_api_version_array[1]
@@ -196,10 +196,10 @@ else
     getopt_dependency = []
 endif
 
-if cc.has_function('posix_memalign', prefix : '#include <stdlib.h>', args : test_args)
-    cdata.set('HAVE_POSIX_MEMALIGN', 1)
-elif cc.has_function('_aligned_malloc', prefix : '#include <malloc.h>', args : test_args)
+if cc.has_function('_aligned_malloc', prefix : '#include <malloc.h>', args : test_args)
     cdata.set('HAVE_ALIGNED_MALLOC', 1)
+elif cc.has_function('posix_memalign', prefix : '#include <stdlib.h>', args : test_args)
+    cdata.set('HAVE_POSIX_MEMALIGN', 1)
 elif cc.has_function('memalign', prefix : '#include <malloc.h>', args : test_args)
     cdata.set('HAVE_MEMALIGN', 1)
 endif
@@ -415,7 +415,7 @@ if is_asm_enabled and host_machine.cpu_family().startswith('x86')
         depfile: '@BASENAME@.obj.ndep',
         arguments: [
             '-f', nasm_format,
-            '-I', '@0@/src/'.format(meson.current_source_dir()),
+            '-I', '@0@/src/'.format(dav1d_src_root),
             '-I', '@0@/'.format(meson.current_build_dir()),
             '-MQ', '@OUTPUT@', '-MF', '@DEPFILE@',
             '@EXTRA_ARGS@',

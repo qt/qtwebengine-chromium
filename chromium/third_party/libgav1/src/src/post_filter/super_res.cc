@@ -35,10 +35,10 @@ void PostFilter::ApplySuperRes(const std::array<uint8_t*, kMaxPlanes>& buffers,
                                const std::array<int, kMaxPlanes>& strides,
                                const std::array<int, kMaxPlanes>& rows,
                                size_t line_buffer_offset) {
-  uint8_t* const line_buffer_start =
-      in_place ? nullptr
-               : superres_line_buffer_ + line_buffer_offset +
-                     kSuperResHorizontalBorder * pixel_size_;
+  // Only used when |in_place| == false.
+  uint8_t* const line_buffer_start = superres_line_buffer_ +
+                                     line_buffer_offset +
+                                     kSuperResHorizontalBorder * pixel_size_;
   for (int plane = kPlaneY; plane < planes_; ++plane) {
     const int8_t subsampling_x = subsampling_x_[plane];
     const int plane_width =

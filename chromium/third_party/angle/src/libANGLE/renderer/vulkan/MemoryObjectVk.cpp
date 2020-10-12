@@ -8,10 +8,10 @@
 #include "libANGLE/renderer/vulkan/MemoryObjectVk.h"
 
 #include "common/debug.h"
+#include "common/vulkan/vk_headers.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
-#include "libANGLE/renderer/vulkan/vk_headers.h"
 #include "vulkan/vulkan_fuchsia_ext.h"
 
 #if !defined(ANGLE_PLATFORM_WINDOWS)
@@ -196,10 +196,10 @@ angle::Result MemoryObjectVk::createImage(ContextVk *contextVk,
     //
     // If the content is not already defined, the first operation may not be a
     // glWaitSemaphore, but in this case undefined layout is appropriate.
-    ANGLE_TRY(image->initExternal(contextVk, type, vkExtents, vkFormat, 1, imageUsageFlags,
-                                  vk::ImageLayout::Undefined, &externalMemoryImageCreateInfo, 0,
-                                  static_cast<uint32_t>(levels) - 1, static_cast<uint32_t>(levels),
-                                  layerCount));
+    ANGLE_TRY(image->initExternal(
+        contextVk, type, vkExtents, vkFormat, 1, imageUsageFlags, vk::kVkImageCreateFlagsNone,
+        vk::ImageLayout::Undefined, &externalMemoryImageCreateInfo, 0,
+        static_cast<uint32_t>(levels) - 1, static_cast<uint32_t>(levels), layerCount));
 
     VkMemoryRequirements externalMemoryRequirements;
     image->getImage().getMemoryRequirements(renderer->getDevice(), &externalMemoryRequirements);

@@ -1080,29 +1080,32 @@ void ObuParser::ComputeSegmentLosslessAndQIndex() {
 }
 
 bool ObuParser::ParseCdefParameters() {
+  const int coeff_shift = sequence_header_.color_config.bitdepth - 8;
   if (frame_header_.coded_lossless || frame_header_.allow_intrabc ||
       !sequence_header_.enable_cdef) {
-    frame_header_.cdef.damping = 3;
+    frame_header_.cdef.damping = 3 + coeff_shift;
     return true;
   }
   Cdef* const cdef = &frame_header_.cdef;
   int64_t scratch;
   OBU_READ_LITERAL_OR_FAIL(2);
-  cdef->damping = scratch + 3;
+  cdef->damping = scratch + 3 + coeff_shift;
   OBU_READ_LITERAL_OR_FAIL(2);
   cdef->bits = scratch;
   for (int i = 0; i < (1 << cdef->bits); ++i) {
     OBU_READ_LITERAL_OR_FAIL(4);
-    cdef->y_primary_strength[i] = scratch;
+    cdef->y_primary_strength[i] = scratch << coeff_shift;
     OBU_READ_LITERAL_OR_FAIL(2);
     cdef->y_secondary_strength[i] = scratch;
     if (cdef->y_secondary_strength[i] == 3) ++cdef->y_secondary_strength[i];
+    cdef->y_secondary_strength[i] <<= coeff_shift;
     if (sequence_header_.color_config.is_monochrome) continue;
     OBU_READ_LITERAL_OR_FAIL(4);
-    cdef->uv_primary_strength[i] = scratch;
+    cdef->uv_primary_strength[i] = scratch << coeff_shift;
     OBU_READ_LITERAL_OR_FAIL(2);
     cdef->uv_secondary_strength[i] = scratch;
     if (cdef->uv_secondary_strength[i] == 3) ++cdef->uv_secondary_strength[i];
+    cdef->uv_secondary_strength[i] <<= coeff_shift;
   }
   return true;
 }
@@ -1192,6 +1195,12 @@ bool ObuParser::IsSkipModeAllowed() {
     const unsigned int reference_hint =
         decoder_state_
             .reference_order_hint[frame_header_.reference_frame_index[i]];
+    // TODO(linfengz): |relative_distance| equals
+    // current_frame_->reference_info()->
+    //     relative_distance_from[i + kReferenceFrameLast];
+    // However, the unit test ObuParserTest.SkipModeParameters() would fail.
+    // Will figure out how to initialize |current_frame_.reference_info_| in the
+    // RefCountedBuffer later.
     const int relative_distance =
         GetRelativeDistance(reference_hint, frame_header_.order_hint,
                             sequence_header_.order_hint_shift_bits);
@@ -1842,7 +1851,6 @@ bool ObuParser::ParseFrameParameters() {
   if (frame_header_.frame_type == kFrameKey && frame_header_.show_frame) {
     decoder_state_.reference_valid.fill(false);
     decoder_state_.reference_order_hint.fill(0);
-    current_frame_->ClearOrderHints();
   }
   OBU_READ_BIT_OR_FAIL;
   frame_header_.enable_cdf_update = !static_cast<bool>(scratch);
@@ -2092,16 +2100,44 @@ bool ObuParser::ParseFrameParameters() {
     return false;
   }
   if (!IsIntraFrame(frame_header_.frame_type)) {
-    for (int i = 0; i < kNumInterReferenceFrameTypes; ++i) {
-      const auto reference_frame =
-          static_cast<ReferenceFrameType>(kReferenceFrameLast + i);
+    // Initialize the kReferenceFrameIntra type reference frame information to
+    // simplify the frame type validation in motion field projection.
+    // Set the kReferenceFrameIntra type |order_hint_| to
+    // |frame_header_.order_hint|. This guarantees that in SIMD implementations,
+    // the other reference frame information of the kReferenceFrameIntra type
+    // could be correctly initialized using the following loop with
+    // |frame_header_.order_hint| being the |hint|.
+    ReferenceInfo* const reference_info = current_frame_->reference_info();
+    reference_info->order_hint[kReferenceFrameIntra] = frame_header_.order_hint;
+    reference_info->relative_distance_from[kReferenceFrameIntra] = 0;
+    reference_info->relative_distance_to[kReferenceFrameIntra] = 0;
+    reference_info->skip_references[kReferenceFrameIntra] = true;
+    reference_info->projection_divisions[kReferenceFrameIntra] = 0;
+
+    for (int i = kReferenceFrameLast; i <= kNumInterReferenceFrameTypes; ++i) {
+      const auto reference_frame = static_cast<ReferenceFrameType>(i);
       const uint8_t hint =
-          decoder_state_
-              .reference_order_hint[frame_header_.reference_frame_index[i]];
-      current_frame_->set_order_hint(reference_frame, hint);
-      decoder_state_.reference_frame_sign_bias[reference_frame] =
+          decoder_state_.reference_order_hint
+              [frame_header_.reference_frame_index[i - kReferenceFrameLast]];
+      reference_info->order_hint[reference_frame] = hint;
+      const int relative_distance_from =
           GetRelativeDistance(hint, frame_header_.order_hint,
-                              sequence_header_.order_hint_shift_bits) > 0;
+                              sequence_header_.order_hint_shift_bits);
+      const int relative_distance_to =
+          GetRelativeDistance(frame_header_.order_hint, hint,
+                              sequence_header_.order_hint_shift_bits);
+      reference_info->relative_distance_from[reference_frame] =
+          relative_distance_from;
+      reference_info->relative_distance_to[reference_frame] =
+          relative_distance_to;
+      reference_info->skip_references[reference_frame] =
+          relative_distance_to > kMaxFrameDistance || relative_distance_to <= 0;
+      reference_info->projection_divisions[reference_frame] =
+          reference_info->skip_references[reference_frame]
+              ? 0
+              : kProjectionMvDivisionLookup[relative_distance_to];
+      decoder_state_.reference_frame_sign_bias[reference_frame] =
+          relative_distance_from > 0;
     }
   }
   if (frame_header_.enable_cdf_update &&
@@ -2128,6 +2164,11 @@ bool ObuParser::ParseFrameHeader() {
       ParseQuantizerIndexDeltaParameters() && ParseLoopFilterDeltaParameters();
   if (!status) return false;
   ComputeSegmentLosslessAndQIndex();
+  // Section 6.8.2: It is a requirement of bitstream conformance that
+  // delta_q_present is equal to 0 when CodedLossless is equal to 1.
+  if (frame_header_.coded_lossless && frame_header_.delta_q.present) {
+    return false;
+  }
   status = ParseLoopFilterParameters();
   if (!status) return false;
   current_frame_->SetLoopFilterDeltas(frame_header_.loop_filter);

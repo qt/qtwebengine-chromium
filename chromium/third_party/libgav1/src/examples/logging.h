@@ -18,6 +18,7 @@
 #define LIBGAV1_EXAMPLES_LOGGING_H_
 
 #include <cstddef>
+#include <cstdio>
 
 namespace libgav1 {
 namespace examples {

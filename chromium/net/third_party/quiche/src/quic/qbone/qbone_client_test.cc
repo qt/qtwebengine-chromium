@@ -139,13 +139,6 @@ class QuicQboneDispatcher : public QuicDispatcher {
     return session;
   }
 
-  QuicConnectionId GenerateNewServerConnectionId(
-      ParsedQuicVersion version,
-      QuicConnectionId connection_id) const override {
-    char connection_id_bytes[kQuicDefaultConnectionIdLength] = {};
-    return QuicConnectionId(connection_id_bytes, sizeof(connection_id_bytes));
-  }
-
  private:
   QbonePacketWriter* writer_;
 };
@@ -248,7 +241,7 @@ TEST_P(QboneClientTest, SendDataFromClient) {
       crypto_test_utils::ProofVerifierForTesting());
   ASSERT_TRUE(client.Initialize());
   ASSERT_TRUE(client.Connect());
-  ASSERT_TRUE(client.WaitForCryptoHandshakeConfirmed());
+  ASSERT_TRUE(client.WaitForOneRttKeysAvailable());
   client.SendData(TestPacketIn("hello"));
   client.SendData(TestPacketIn("world"));
   client.WaitForWriteToFlush();

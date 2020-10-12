@@ -29,6 +29,8 @@ namespace libgav1 {
 namespace dsp {
 namespace {
 
+#include "src/dsp/cdef.inc"
+
 // Silence unused function warnings when CdefDirection_C is obviated.
 #if LIBGAV1_ENABLE_ALL_DSP_FUNCTIONS ||        \
     !defined(LIBGAV1_Dsp8bpp_CdefDirection) || \
@@ -119,21 +121,23 @@ int Constrain(int diff, int threshold, int damping) {
 // constant large value if at the boundary. And the input should be uint16_t.
 template <int bitdepth, typename Pixel>
 void CdefFilter_C(const void* const source, const ptrdiff_t source_stride,
-                  const int rows4x4, const int columns4x4, const int curr_x,
-                  const int curr_y, const int subsampling_x,
-                  const int subsampling_y, const int primary_strength,
-                  const int secondary_strength, const int damping,
-                  const int direction, void* const dest,
+                  const int block_width, const int block_height,
+                  const int primary_strength, const int secondary_strength,
+                  const int damping, const int direction, void* const dest,
                   const ptrdiff_t dest_stride) {
+  assert(block_width == 4 || block_width == 8);
+  assert(block_height == 4 || block_height == 8);
+  assert(direction >= 0 && direction <= 7);
+  constexpr int coeff_shift = bitdepth - 8;
+  // Section 5.9.19. CDEF params syntax.
+  assert(primary_strength >= 0 && primary_strength <= 15 << coeff_shift);
+  assert(secondary_strength >= 0 && secondary_strength <= 4 << coeff_shift &&
+         secondary_strength != 3 << coeff_shift);
+  // damping is decreased by 1 for chroma.
+  assert((damping >= 3 && damping <= 6 + coeff_shift) ||
+         (damping >= 2 && damping <= 5 + coeff_shift));
   static constexpr int kCdefSecondaryTaps[2] = {kCdefSecondaryTap0,
                                                 kCdefSecondaryTap1};
-  const int coeff_shift = bitdepth - 8;
-  const int plane_width = MultiplyBy4(columns4x4) >> subsampling_x;
-  const int plane_height = MultiplyBy4(rows4x4) >> subsampling_y;
-  const int block_width = std::min(8 >> subsampling_x, plane_width - curr_x);
-  assert(block_width == 4 || block_width == 8);
-  const int block_height = std::min(8 >> subsampling_y, plane_height - curr_y);
-  assert(block_height == 4 || block_height == 8);
   const auto* src = static_cast<const uint16_t*>(source);
   auto* dst = static_cast<Pixel*>(dest);
   const ptrdiff_t dst_stride = dest_stride / sizeof(Pixel);
@@ -146,7 +150,7 @@ void CdefFilter_C(const void* const source, const ptrdiff_t source_stride,
       uint16_t max_value = pixel_value;
       uint16_t min_value = pixel_value;
       for (int k = 0; k < 2; ++k) {
-        const int signs[] = {-1, 1};
+        static constexpr int signs[] = {-1, 1};
         for (const int& sign : signs) {
           int dy = sign * kCdefDirections[direction][k][0];
           int dx = sign * kCdefDirections[direction][k][1];
@@ -160,10 +164,10 @@ void CdefFilter_C(const void* const source, const ptrdiff_t source_stride,
             max_value = std::max(value, max_value);
             min_value = std::min(value, min_value);
           }
-          const int offsets[] = {-2, 2};
+          static constexpr int offsets[] = {-2, 2};
           for (const int& offset : offsets) {
-            dy = sign * kCdefDirections[(direction + offset) & 7][k][0];
-            dx = sign * kCdefDirections[(direction + offset) & 7][k][1];
+            dy = sign * kCdefDirections[direction + offset][k][0];
+            dx = sign * kCdefDirections[direction + offset][k][1];
             value = src[dy * source_stride + dx + x];
             // Note: the summation can ignore the condition check in SIMD
             // implementation.

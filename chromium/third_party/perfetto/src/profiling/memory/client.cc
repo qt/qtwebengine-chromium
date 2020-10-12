@@ -277,6 +277,13 @@ const char* Client::GetStackBase() {
   return GetThreadStackBase();
 }
 
+// Best-effort detection of whether we're continuing work in a forked child of
+// the profiled process, in which case we want to stop. Note that due to
+// malloc_hooks.cc's atfork handler, the proper fork calls should leak the child
+// before reaching this point. Therefore this logic exists primarily to handle
+// clone and vfork.
+// TODO(rsavitski): rename/delete |disable_fork_teardown| config option if this
+// logic sticks, as the option becomes more clone-specific, and quite narrow.
 bool Client::IsPostFork() {
   if (PERFETTO_UNLIKELY(getpid() != pid_at_creation_)) {
     // Only print the message once, even if we do not shut down the client.
@@ -326,7 +333,8 @@ bool Client::IsPostFork() {
 //               +------------+    |
 //               |  main      |    v
 // stackbase +-> +------------+ 0xffff
-bool Client::RecordMalloc(uint64_t sample_size,
+bool Client::RecordMalloc(uint32_t heap_id,
+                          uint64_t sample_size,
                           uint64_t alloc_size,
                           uint64_t alloc_address) {
   if (PERFETTO_UNLIKELY(IsPostFork())) {
@@ -352,6 +360,7 @@ bool Client::RecordMalloc(uint64_t sample_size,
   metadata.arch = unwindstack::Regs::CurrentArch();
   metadata.sequence_number =
       1 + sequence_number_.fetch_add(1, std::memory_order_acq_rel);
+  metadata.heap_id = heap_id;
 
   struct timespec ts;
   if (clock_gettime(CLOCK_MONOTONIC_COARSE, &ts) == 0) {
@@ -389,7 +398,11 @@ bool Client::SendWireMessageWithRetriesIfBlocking(const WireMessage& msg) {
   return false;
 }
 
-bool Client::RecordFree(const uint64_t alloc_address) {
+bool Client::RecordFree(uint32_t heap_id, const uint64_t alloc_address) {
+  if (PERFETTO_UNLIKELY(IsPostFork())) {
+    return postfork_return_value_;
+  }
+
   uint64_t sequence_number =
       1 + sequence_number_.fetch_add(1, std::memory_order_acq_rel);
 
@@ -406,14 +419,11 @@ bool Client::RecordFree(const uint64_t alloc_address) {
       free_batch_.entries[free_batch_.num_entries++];
   current_entry.sequence_number = sequence_number;
   current_entry.addr = alloc_address;
+  current_entry.heap_id = heap_id;
   return true;
 }
 
 bool Client::FlushFreesLocked() {
-  if (PERFETTO_UNLIKELY(IsPostFork())) {
-    return postfork_return_value_;
-  }
-
   WireMessage msg = {};
   msg.record_type = RecordType::Free;
   msg.free_header = &free_batch_;

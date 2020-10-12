@@ -26,9 +26,13 @@ class CFX_PathData;
 class PauseIndicatorIface;
 class TextCharPos;
 struct CFX_Color;
+struct CFX_TextRenderOptions;
 
-enum class BorderStyle { SOLID, DASH, BEVELED, INSET, UNDERLINE };
+enum class BorderStyle { kSolid, kDash, kBeveled, kInset, kUnderline };
 
+// Base class for all render devices. Derived classes must call
+// SetDeviceDriver() to fully initialize the class. Until then, class methods
+// are not safe to call, or may return invalid results.
 class CFX_RenderDevice {
  public:
   class StateRestorer {
@@ -40,7 +44,6 @@ class CFX_RenderDevice {
     UnownedPtr<CFX_RenderDevice> m_pDevice;
   };
 
-  CFX_RenderDevice();
   virtual ~CFX_RenderDevice();
 
   static CFX_Matrix GetFlipMatrix(float width,
@@ -48,7 +51,6 @@ class CFX_RenderDevice {
                                   float left,
                                   float top);
 
-  void SetDeviceDriver(std::unique_ptr<RenderDeviceDriverIface> pDriver);
   RenderDeviceDriverIface* GetDeviceDriver() const {
     return m_pDeviceDriver.get();
   }
@@ -161,7 +163,7 @@ class CFX_RenderDevice {
                       float font_size,
                       const CFX_Matrix& mtText2Device,
                       uint32_t fill_color,
-                      uint32_t text_flags);
+                      const CFX_TextRenderOptions& options);
   bool DrawTextPath(int nChars,
                     const TextCharPos* pCharPos,
                     CFX_Font* pFont,
@@ -222,6 +224,11 @@ class CFX_RenderDevice {
   void Flush(bool release);
 #endif
 
+ protected:
+  CFX_RenderDevice();
+
+  void SetDeviceDriver(std::unique_ptr<RenderDeviceDriverIface> pDriver);
+
  private:
   void InitDeviceInfo();
   void UpdateClipBox();
@@ -246,7 +253,7 @@ class CFX_RenderDevice {
   int m_Height = 0;
   int m_bpp = 0;
   int m_RenderCaps = 0;
-  DeviceType m_DeviceType = DeviceType::kUnknown;
+  DeviceType m_DeviceType = DeviceType::kDisplay;
   FX_RECT m_ClipBox;
   std::unique_ptr<RenderDeviceDriverIface> m_pDeviceDriver;
 };

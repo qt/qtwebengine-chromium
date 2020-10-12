@@ -1,0 +1,67 @@
+// Copyright 2020 The Chromium OS Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+syntax = "proto3";
+option optimize_for = LITE_RUNTIME;
+
+// This file defines messages used for interacting with the document scanner
+// utility, lorgnette.
+package lorgnette;
+
+// Describes possible types of sources that can be supported by a scanner.
+enum SourceType {
+  SOURCE_UNSPECIFIED = 0;
+  SOURCE_PLATEN = 1;
+  SOURCE_ADF_SIMPLEX = 2;
+  SOURCE_ADF_DUPLEX = 3;
+}
+
+// A source that can be scanned from for a scanner.
+message DocumentSource {
+  // The type of this source.
+  SourceType type = 1;
+
+  // The name for this source used by the scanner backend.
+  string name = 2;
+}
+
+// The color modes that may be supported for a particular scanner.
+enum ColorMode {
+  MODE_UNSPECIFIED = 0;
+  MODE_LINEART = 1;
+  MODE_GRAYSCALE = 2;
+  MODE_COLOR = 3;
+}
+
+// An object representing one scanner.
+message ScannerInfo {
+  // The name of the scanner, as reported by SANE.
+  string name = 1;
+
+  // The manufacturer of the scanner.
+  string manufacturer = 2;
+
+  // The particular model of scanner.
+  string model = 3;
+
+  // The type of the scanner, e.g. "video camera", "flatbed scanner".
+  string type = 4;
+}
+
+// Information returned from a ListScanners dbus request.
+message ListScannersResponse {
+  repeated ScannerInfo scanners = 1;
+}
+
+// Information returned from a GetScannerCapabilities dbus request.
+message ScannerCapabilities {
+  // Discrete scanning resolutions.
+  repeated uint32 resolutions = 1;
+
+  // Sources to scan a document from.
+  repeated DocumentSource sources = 2;
+
+  // Color modes to use for a document.
+  repeated ColorMode color_modes = 3;
+}

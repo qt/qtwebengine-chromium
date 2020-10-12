@@ -61,6 +61,8 @@ class MockQuicCryptoStream : public QuicCryptoStream,
   void OnHandshakePacketSent() override {}
   void OnHandshakeDoneReceived() override {}
   HandshakeState GetHandshakeState() const override { return HANDSHAKE_START; }
+  void SetServerApplicationStateForResumption(
+      std::unique_ptr<ApplicationState> /*application_state*/) override {}
 
  private:
   QuicReferenceCountedPointer<QuicCryptoNegotiatedParameters> params_;
@@ -419,7 +421,7 @@ TEST_F(QuicCryptoStreamTest, RetransmitStreamData) {
       .WillOnce(InvokeWithoutArgs([this]() {
         return session_.ConsumeData(
             QuicUtils::GetCryptoStreamId(connection_->transport_version()), 150,
-            1350, NO_FIN, HANDSHAKE_RETRANSMISSION, QuicheNullOpt);
+            1350, NO_FIN, HANDSHAKE_RETRANSMISSION, QUICHE_NULLOPT);
       }));
 
   EXPECT_FALSE(stream_->RetransmitStreamData(1350, 1350, false,

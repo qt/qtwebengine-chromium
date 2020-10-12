@@ -11,7 +11,6 @@
 
 #include "build/build_config.h"
 #include "core/fxcrt/fx_extension.h"
-#include "third_party/base/ptr_util.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_eventtarget.h"
@@ -40,11 +39,11 @@ void CFWL_NoteDriver::RegisterEventTarget(CFWL_Widget* pListener,
   if (key == 0) {
     do {
       key = rand();
-    } while (key == 0 || pdfium::ContainsKey(m_eventTargets, key));
+    } while (key == 0 || pdfium::Contains(m_eventTargets, key));
     pListener->SetEventKey(key);
   }
   if (!m_eventTargets[key])
-    m_eventTargets[key] = pdfium::MakeUnique<CFWL_EventTarget>(pListener);
+    m_eventTargets[key] = std::make_unique<CFWL_EventTarget>(pListener);
 
   m_eventTargets[key]->SetEventSource(pEventSource);
 }
@@ -108,34 +107,34 @@ void CFWL_NoteDriver::ProcessMessage(std::unique_ptr<CFWL_Message> pMessage) {
   if (!DispatchMessage(pMessage.get(), pMessageForm))
     return;
 
-  if (pMessage->GetType() == CFWL_Message::Type::Mouse)
+  if (pMessage->GetType() == CFWL_Message::Type::kMouse)
     MouseSecondary(pMessage.get());
 }
 
 bool CFWL_NoteDriver::DispatchMessage(CFWL_Message* pMessage,
                                       CFWL_Widget* pMessageForm) {
   switch (pMessage->GetType()) {
-    case CFWL_Message::Type::SetFocus: {
+    case CFWL_Message::Type::kSetFocus: {
       if (!DoSetFocus(pMessage, pMessageForm))
         return false;
       break;
     }
-    case CFWL_Message::Type::KillFocus: {
+    case CFWL_Message::Type::kKillFocus: {
       if (!DoKillFocus(pMessage, pMessageForm))
         return false;
       break;
     }
-    case CFWL_Message::Type::Key: {
+    case CFWL_Message::Type::kKey: {
       if (!DoKey(pMessage, pMessageForm))
         return false;
       break;
     }
-    case CFWL_Message::Type::Mouse: {
+    case CFWL_Message::Type::kMouse: {
       if (!DoMouse(pMessage, pMessageForm))
         return false;
       break;
     }
-    case CFWL_Message::Type::MouseWheel: {
+    case CFWL_Message::Type::kMouseWheel: {
       if (!DoWheel(pMessage, pMessageForm))
         return false;
       break;
@@ -166,7 +165,7 @@ bool CFWL_NoteDriver::DoKillFocus(CFWL_Message* pMessage,
 bool CFWL_NoteDriver::DoKey(CFWL_Message* pMessage, CFWL_Widget* pMessageForm) {
   CFWL_MessageKey* pMsg = static_cast<CFWL_MessageKey*>(pMessage);
 #if !defined(OS_MACOSX)
-  if (pMsg->m_dwCmd == FWL_KeyCommand::KeyDown &&
+  if (pMsg->m_dwCmd == CFWL_MessageKey::Type::kKeyDown &&
       pMsg->m_dwKeyCode == XFA_FWL_VKEY_Tab) {
     CFWL_WidgetMgr* pWidgetMgr = pMessageForm->GetOwnerApp()->GetWidgetMgr();
     CFWL_Widget* pForm = GetMessageForm(pMsg->GetDstTarget());
@@ -193,7 +192,7 @@ bool CFWL_NoteDriver::DoKey(CFWL_Message* pMessage, CFWL_Widget* pMessageForm) {
     return true;
   }
 
-  if (pMsg->m_dwCmd == FWL_KeyCommand::KeyDown &&
+  if (pMsg->m_dwCmd == CFWL_MessageKey::Type::kKeyDown &&
       pMsg->m_dwKeyCode == XFA_FWL_VKEY_Return) {
     CFWL_WidgetMgr* pWidgetMgr = pMessageForm->GetOwnerApp()->GetWidgetMgr();
     CFWL_Widget* pDefButton = pWidgetMgr->GetDefaultButton(pMessageForm);

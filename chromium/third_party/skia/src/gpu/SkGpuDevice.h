@@ -101,8 +101,7 @@ public:
 
     void drawDevice(SkBaseDevice*, int x, int y, const SkPaint&) override;
 
-    void drawSpecial(SkSpecialImage*, int left, int top, const SkPaint& paint,
-                     SkImage*, const SkMatrix&) override;
+    void drawSpecial(SkSpecialImage*, int left, int top, const SkPaint&) override;
 
     void drawEdgeAAQuad(const SkRect& rect, const SkPoint clip[4], SkCanvas::QuadAAFlags aaFlags,
                         const SkColor4f& color, SkBlendMode mode) override;
@@ -114,7 +113,8 @@ public:
     sk_sp<SkSpecialImage> snapSpecial(const SkIRect&, bool = false) override;
 
     void flush() override;
-    GrSemaphoresSubmitted flush(SkSurface::BackendSurfaceAccess access, const GrFlushInfo&);
+    GrSemaphoresSubmitted flush(SkSurface::BackendSurfaceAccess access, const GrFlushInfo&,
+                                const GrBackendSurfaceMutableState*);
     bool wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores);
 
     bool onAccessPixels(SkPixmap*) override;
@@ -129,6 +129,7 @@ private:
     // We want these unreffed in RenderTargetContext, GrContext order.
     sk_sp<GrContext> fContext;
     std::unique_ptr<GrRenderTargetContext> fRenderTargetContext;
+    GrClipStackClip  fClip;
 
     enum Flags {
         kNeedClear_Flag = 1 << 0,  //!< Surface requires an initial clear
@@ -148,7 +149,7 @@ private:
 
     bool forceConservativeRasterClip() const override { return true; }
 
-    GrClipStackClip clip() const { return GrClipStackClip(&this->cs()); }
+    const GrClip* clip() const { return &fClip; }
 
     sk_sp<SkSpecialImage> filterTexture(SkSpecialImage*,
                                         int left, int top,

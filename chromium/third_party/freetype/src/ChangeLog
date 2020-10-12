@@ -1,3 +1,160 @@
+2020-06-20  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[cff] Fix handling of `style_name == NULL' (#58630).
+
+	* src/cff/cffobjs.c (cff_face_init): If a call to `cff_strcpy' fails
+	by returning NULL in `cff_face_init', `remove_style' is still
+	called.  This means that the NULL pointer is dereferenced, causing a
+	crash.
+
+2020-06-19  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[cff] Fix another two memory leaks (#58629).
+
+	* src/cff/cffobjs.c (cff_size_init): If a call to `funcs->create'
+	fails to allocate one of the `internal->subfont' variables, make
+	sure to free `internal->topfont' and any successfully allocated
+	subfonts.
+
+2020-06-19  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[psaux] Fix memory leak (#58626).
+
+	* src/psaux/psstack.c (cf2_stack_init): If `cf2_stack_init' fails to
+	allocate the stack, return error early.
+
+2020-06-19  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[base] Fix memory leak (#58624).
+
+	* src/base/ftobjs.c (FT_New_Size): Avoid trying to free
+	`size->internal' unless `size' has been allocated.  This mistake
+	appeared in the fix for issue #58611.
+
+2020-06-19  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[base] Rework d1180b5f9598 until further notice.
+
+	* src/base/ftoutln.c (FT_Outline_Get_Orientation): Reject large
+	outlines.
+
+2020-06-19  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[cff, cid] Fix segfaults in case of error (#58621).
+
+	* src/cff/cffobjs.c (cff_slot_done), src/cid/cidobjs.c
+	(cid_slot_done): If `ft_glyphslot_init' fails to allocate
+	`internal', then the class' `done_slot' callback (called by
+	`ft_glyphslot_done') must not dereference the pointer to `internal'.
+
+2020-06-19  Werner Lemberg  <wl@gnu.org>
+
+	[base] Fix UBSAN error.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=23166
+
+	* src/base/ftoutln.c (FT_Outline_Get_Orientation): Avoid values
+	larger than 32 bits.
+
+2020-06-19  Werner Lemberg  <wl@gnu.org>
+
+	[woff2] Fix segfault.
+
+	Reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=23402
+
+	* src/sfnt/sfwoff2.c (get_x_mins): Check whether `loca' table
+	exists.
+
+2020-06-19  Stephen McDowell  <svenevs.dev@gmail.com>
+
+	[sfnt] Support Intel compilers.
+
+	* src/sfnt/pngshim.c (premultiply_data): Intel compilers do not
+	currently support `__builtin_shuffle'.
+
+2020-06-19  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[base] Fix memory leak (#58611).
+
+	* src/base/ftobjs.c (FT_New_Size): When the call to `clazz->init_size'
+	fails, make sure to free `size->internal'.
+
+2020-06-19  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[cff] Fix memory leak (#58610).
+
+	* src/cff/cffobjs.c (cff_size_init): When the call to
+	`funcs->create' fails, make sure to free `internal'.
+
+2020-06-19  Werner Lemberg  <wl@gnu.org>
+
+	* src/cff/cffload.c (cff_index_get_pointers): Rename `t' to `tbl'.
+
+2020-06-19  Sebastian Rasmussen  <sebras@gmail.com>
+
+	[cff] Free table upon error allocating other data (#58609).
+
+	* src/cff/cffload.c (cff_index_get_pointers): When new_bytes fails
+	to allocate, make sure to free the table.  Do the same for both
+	allocations if there is a later error.
+
+2020-06-13  Werner Lemberg  <wl@gnu.org>
+
+	Remove redundant inclusion of `ft2build.h'.
+
+	* */*: Remove `#include <ft2build.h>' where possible.
+
+	* include/freetype/freetype.h: Remove cpp error about missing
+	inclusion of `ft2build.h'.
+
+2020-06-08  David Turner  <david@freetype.org>
+
+	Make macros for header file names optional.
+
+	We no longer have to take care of the 8.3 file name limit; this
+	allows us (a) to introduce longer, meaningful file names, and (b) to
+	avoid macro names in `#include' lines altogether since some
+	compilers (most notably Visual C++) doesn't support this properly.
+
+	*/*: Replace
+
+	   #include FOO_H
+
+	with
+
+	   #include <freetype/foo.h>
+
+	or something similar.  Also update the documentation.
+
+2020-06-02  Werner Lemberg  <wl@gnu.org>
+
+	* src/sfnt/ttcmap.c (tt_face_build_cmaps): Trace number of cmaps.
+
+2020-05-18  David Turner  <david@freetype.org>
+
+	Remove obsolete HAVE_STDINT_H probing macro.
+
+	This macro was updated by the unix configure script and the
+	`CMakeLists.txt' one, but is never used in the source tree (nor is
+	<stdint.h> included anywhere).
+
+	* CMakeLists.txt, builds/unix/ftconfig.in: Don't handle
+	`HAVE_STDINT_H'.
+
+2020-05-18  David Turner  <david@freetype.org>
+
+	Remove Jamfile files from the tree.
+
+	These have not been used in a very, very long time, so better remove
+	them.  A corresponding patch will be submitted to the
+	`freetype2-demos' repository.
+
+	* src/Jamfile, src/*/Jamfile, Jamrules: Delete.
+
 2020-05-12  Alexei Podtelezhnikov  <apodtele@gmail.com>
 
 	[smooth] Turn on LCD filtering during FreeType initialization.

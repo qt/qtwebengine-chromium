@@ -85,15 +85,15 @@ private:
         star7_winding.setFillType(SkPathFillType::kWinding);
 
         SkPath star7_evenOdd = star7_winding;
-        star7_evenOdd.transform(SkMatrix::MakeTrans(0, fStarSize));
+        star7_evenOdd.transform(SkMatrix::Translate(0, fStarSize));
         star7_evenOdd.setFillType(SkPathFillType::kEvenOdd);
 
         SkPath star5_winding = ToolUtils::make_star(starRect, 5);
-        star5_winding.transform(SkMatrix::MakeTrans(fStarSize, 0));
+        star5_winding.transform(SkMatrix::Translate(fStarSize, 0));
         star5_winding.setFillType(SkPathFillType::kWinding);
 
         SkPath star5_evenOdd = star5_winding;
-        star5_evenOdd.transform(SkMatrix::MakeTrans(0, fStarSize));
+        star5_evenOdd.transform(SkMatrix::Translate(0, fStarSize));
         star5_evenOdd.setFillType(SkPathFillType::kEvenOdd);
 
         SkPaint paint;
@@ -106,7 +106,7 @@ private:
             canvas->drawPath(star7_evenOdd, paint);
             canvas->drawPath(star5_winding, paint);
             canvas->drawPath(star5_evenOdd, paint);
-            rtc->flush(SkSurface::BackendSurfaceAccess::kNoAccess, GrFlushInfo());
+            rtc->flush(SkSurface::BackendSurfaceAccess::kNoAccess, GrFlushInfo(), nullptr);
 
             // Ensure the path cache is behaving in such a way that we are actually testing what we
             // think we are.

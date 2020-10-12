@@ -3,12 +3,10 @@
 // found in the LICENSE file.
 
 #include <memory>
-#include <string>
 #include <vector>
 
 #include "build/build_config.h"
 #include "core/fxcrt/fx_coordinates.h"
-#include "core/fxcrt/fx_memory.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "public/cpp/fpdf_scopers.h"
@@ -21,6 +19,7 @@
 #include "testing/embedder_test_timer_handling_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/base/stl_util.h"
 
 using testing::_;
 using testing::InSequence;
@@ -135,6 +134,11 @@ class FPDFFormFillInteractiveEmbedderTest : public FPDFFormFillEmbedderTest {
     FORM_OnLButtonUp(form_handle(), page_, 0, end.x, end.y);
   }
 
+  void SelectAllTextAtPoint(const CFX_PointF& point) {
+    FocusOnPoint(point);
+    EXPECT_TRUE(FORM_SelectAllText(form_handle(), page_));
+  }
+
   void CheckSelection(WideStringView expected_string) {
     unsigned long actual_len =
         FORM_GetSelectedText(form_handle(), page_, nullptr, 0);
@@ -147,6 +151,10 @@ class FPDFFormFillInteractiveEmbedderTest : public FPDFFormFillEmbedderTest {
 
     int num_chars = (actual_len / sizeof(unsigned short)) - 1;
     EXPECT_EQ(expected_string, WideString::FromUTF16LE(buf.data(), num_chars));
+  }
+
+  void FocusOnPoint(const CFX_PointF& point) {
+    EXPECT_TRUE(FORM_OnFocus(form_handle(), page(), 0, point.x, point.y));
   }
 
   void CheckFocusedFieldText(WideStringView expected_string) {
@@ -215,11 +223,11 @@ class FPDFFormFillTextFormEmbedderTest
   }
 
   void SelectAllCharLimitFormTextWithMouse() {
-    SelectTextWithMouse(CharLimitFormEnd(), CharLimitFormBegin());
+    SelectAllTextAtPoint(CharLimitFormBegin());
   }
 
   void SelectAllRegularFormTextWithMouse() {
-    SelectTextWithMouse(RegularFormEnd(), RegularFormBegin());
+    SelectAllTextAtPoint(RegularFormBegin());
   }
 
   const CFX_PointF& CharLimitFormBegin() const {
@@ -299,16 +307,12 @@ class FPDFFormFillComboBoxFormEmbedderTest
   }
 
   void SelectAllEditableFormTextWithMouse() {
-    SelectTextWithMouse(EditableFormEnd(), EditableFormBegin());
+    SelectAllTextAtPoint(EditableFormBegin());
   }
 
   void FocusOnEditableForm() { FocusOnPoint(EditableFormDropDown()); }
 
   void FocusOnNonEditableForm() { FocusOnPoint(NonEditableFormDropDown()); }
-
-  void FocusOnPoint(const CFX_PointF& point) {
-    EXPECT_EQ(true, FORM_OnFocus(form_handle(), page(), 0, point.x, point.y));
-  }
 
   const CFX_PointF& EditableFormBegin() const {
     static const CFX_PointF point = EditableFormAtX(kFormBeginX);
@@ -841,7 +845,7 @@ TEST_F(FPDFFormFillEmbedderTest, FormFillContinuousTab) {
 
   static constexpr int kExpectedAnnotIndex[] = {1, 2, 3, 0};
   // Tabs should iterate focus over annotations.
-  for (size_t i = 0; i < FX_ArraySize(kExpectedAnnotIndex); ++i) {
+  for (size_t i = 0; i < pdfium::size(kExpectedAnnotIndex); ++i) {
     ASSERT_TRUE(FORM_OnKeyDown(form_handle(), page, FWL_VKEY_Tab, 0));
     int page_index = -2;
     FPDF_ANNOTATION annot = nullptr;
@@ -865,7 +869,7 @@ TEST_F(FPDFFormFillEmbedderTest, FormFillContinuousShiftTab) {
 
   static constexpr int kExpectedAnnotIndex[] = {0, 3, 2, 1};
   // Shift-tabs should iterate focus over annotations.
-  for (size_t i = 0; i < FX_ArraySize(kExpectedAnnotIndex); ++i) {
+  for (size_t i = 0; i < pdfium::size(kExpectedAnnotIndex); ++i) {
     ASSERT_TRUE(FORM_OnKeyDown(form_handle(), page, FWL_VKEY_Tab,
                                FWL_EVENTFLAG_ShiftKey));
     int page_index = -2;
@@ -1018,6 +1022,75 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_851821) {
   EXPECT_TRUE(page);
   DoOpenActions();
 
+  UnloadPage(page);
+}
+
+TEST_F(FPDFFormFillEmbedderTest, CheckReadOnlyInCheckbox) {
+  EmbedderTestTimerHandlingDelegate delegate;
+  SetDelegate(&delegate);
+
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Check for read-only checkbox.
+    ScopedFPDFAnnotation focused_annot(FPDFPage_GetAnnot(page, 1));
+    ASSERT_TRUE(FORM_SetFocusedAnnot(form_handle(), focused_annot.get()));
+
+    // Shift-tab to the previous control.
+    ASSERT_TRUE(FORM_OnKeyDown(form_handle(), page, FWL_VKEY_Tab,
+                               FWL_EVENTFLAG_ShiftKey));
+    FPDF_ANNOTATION annot = nullptr;
+    int page_index = -1;
+    ASSERT_TRUE(FORM_GetFocusedAnnot(form_handle(), &page_index, &annot));
+    EXPECT_EQ(0, FPDFPage_GetAnnotIndex(page, annot));
+
+    // The read-only checkbox is initially in checked state.
+    EXPECT_TRUE(FPDFAnnot_IsChecked(form_handle(), annot));
+
+    EXPECT_TRUE(FORM_OnChar(form_handle(), page, FWL_VKEY_Return, 0));
+    EXPECT_TRUE(FPDFAnnot_IsChecked(form_handle(), annot));
+
+    EXPECT_TRUE(FORM_OnChar(form_handle(), page, FWL_VKEY_Space, 0));
+    EXPECT_TRUE(FPDFAnnot_IsChecked(form_handle(), annot));
+
+    FPDFPage_CloseAnnot(annot);
+  }
+  UnloadPage(page);
+}
+
+TEST_F(FPDFFormFillEmbedderTest, CheckReadOnlyInRadiobutton) {
+  EmbedderTestTimerHandlingDelegate delegate;
+  SetDelegate(&delegate);
+
+  ASSERT_TRUE(OpenDocument("click_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    // Check for read-only radio button.
+    ScopedFPDFAnnotation focused_annot(FPDFPage_GetAnnot(page, 1));
+    ASSERT_TRUE(FORM_SetFocusedAnnot(form_handle(), focused_annot.get()));
+
+    // Tab to the next control.
+    ASSERT_TRUE(FORM_OnKeyDown(form_handle(), page, FWL_VKEY_Tab, 0));
+
+    FPDF_ANNOTATION annot = nullptr;
+    int page_index = -1;
+    ASSERT_TRUE(FORM_GetFocusedAnnot(form_handle(), &page_index, &annot));
+    EXPECT_EQ(2, FPDFPage_GetAnnotIndex(page, annot));
+    // The read-only radio button is initially in checked state.
+    EXPECT_FALSE(FPDFAnnot_IsChecked(form_handle(), annot));
+
+    EXPECT_TRUE(FORM_OnChar(form_handle(), page, FWL_VKEY_Return, 0));
+    EXPECT_FALSE(FPDFAnnot_IsChecked(form_handle(), annot));
+
+    EXPECT_TRUE(FORM_OnChar(form_handle(), page, FWL_VKEY_Space, 0));
+    EXPECT_FALSE(FPDFAnnot_IsChecked(form_handle(), annot));
+
+    FPDFPage_CloseAnnot(annot);
+  }
   UnloadPage(page);
 }
 
@@ -1460,6 +1533,44 @@ TEST_F(FPDFFormFillEmbedderTest, HasFormFieldAtPointForXFADoc) {
 #endif
   EXPECT_EQ(kExpectedFieldType,
             FPDFPage_HasFormFieldAtPoint(form_handle(), page, 50, 30));
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFFormFillEmbedderTest, SelectAllText) {
+  ASSERT_TRUE(OpenDocument("text_form.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  // Test bad arguments.
+  EXPECT_FALSE(FORM_SelectAllText(nullptr, nullptr));
+  EXPECT_FALSE(FORM_SelectAllText(form_handle(), nullptr));
+  EXPECT_FALSE(FORM_SelectAllText(nullptr, page));
+
+  // Focus on the text field and add some text.
+  EXPECT_TRUE(FORM_OnFocus(form_handle(), page, 0, 115, 115));
+  ScopedFPDFWideString text_to_insert = GetFPDFWideString(L"Hello");
+  FORM_ReplaceSelection(form_handle(), page, text_to_insert.get());
+
+  // Sanity check text field data.
+  uint16_t buffer[6];
+  ASSERT_EQ(12u, FORM_GetFocusedText(form_handle(), page, nullptr, 0));
+  ASSERT_EQ(12u,
+            FORM_GetFocusedText(form_handle(), page, buffer, sizeof(buffer)));
+  EXPECT_EQ("Hello", GetPlatformString(buffer));
+
+  // Check there is no selection.
+  ASSERT_EQ(2u, FORM_GetSelectedText(form_handle(), page, nullptr, 0));
+  ASSERT_EQ(2u,
+            FORM_GetSelectedText(form_handle(), page, buffer, sizeof(buffer)));
+  EXPECT_EQ("", GetPlatformString(buffer));
+
+  // Check FORM_SelectAllText() works.
+  EXPECT_TRUE(FORM_SelectAllText(form_handle(), page));
+  ASSERT_EQ(12u, FORM_GetSelectedText(form_handle(), page, nullptr, 0));
+  ASSERT_EQ(12u,
+            FORM_GetSelectedText(form_handle(), page, buffer, sizeof(buffer)));
+  EXPECT_EQ("Hello", GetPlatformString(buffer));
 
   UnloadPage(page);
 }
@@ -2240,6 +2351,81 @@ TEST_F(FPDFFormFillComboBoxFormEmbedderTest,
   CheckSelection(L"ABCDEHello");
 }
 
+TEST_F(FPDFFormFillComboBoxFormEmbedderTest,
+       CheckIfEnterAndSpaceKeyAreHandled) {
+  // Non-editable field is set to 'Banana' (index 1) upon opening.
+  ClickOnFormFieldAtPoint(NonEditableFormBegin());
+  CheckIsIndexSelected(0, false);
+  CheckIsIndexSelected(1, true);
+
+  // Verify that the Enter key is handled.
+  EXPECT_TRUE(FORM_OnChar(form_handle(), page(), FWL_VKEY_Return, 0));
+
+  // Change the selection in the combo-box using the arrow down key.
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page(), FWL_VKEY_Down, 0));
+  CheckIsIndexSelected(1, false);
+  CheckIsIndexSelected(2, true);
+
+  // Tab to the next control.
+  EXPECT_TRUE(FORM_OnChar(form_handle(), page(), FWL_VKEY_Tab, 0));
+
+  // Shift-tab to the previous control.
+  EXPECT_TRUE(
+      FORM_OnChar(form_handle(), page(), FWL_VKEY_Tab, FWL_EVENTFLAG_ShiftKey));
+
+  // Verify that the selection is unchanged.
+  CheckIsIndexSelected(2, true);
+
+  // Verify that the Space key is handled.
+  EXPECT_TRUE(FORM_OnChar(form_handle(), page(), FWL_VKEY_Space, 0));
+
+  // Change the selection in the combo-box using the arrow down key.
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page(), FWL_VKEY_Down, 0));
+  CheckIsIndexSelected(3, true);
+
+  // Tab to the next control.
+  EXPECT_TRUE(FORM_OnChar(form_handle(), page(), FWL_VKEY_Tab, 0));
+
+  // Shift-tab to the previous control.
+  EXPECT_TRUE(
+      FORM_OnChar(form_handle(), page(), FWL_VKEY_Tab, FWL_EVENTFLAG_ShiftKey));
+
+  // Verify that the selection is unchanged.
+  CheckIsIndexSelected(3, true);
+}
+
+TEST_F(FPDFFormFillComboBoxFormEmbedderTest,
+       CheckIfEnterAndSpaceKeyAreHandledOnEditableFormField) {
+  // Non-editable field is set to 'Banana' (index 1) upon opening.
+  ClickOnFormFieldAtPoint(EditableFormBegin());
+  CheckIsIndexSelected(0, false);
+  CheckIsIndexSelected(1, false);
+
+  // Verify that the Enter key is handled.
+  EXPECT_TRUE(FORM_OnChar(form_handle(), page(), FWL_VKEY_Return, 0));
+
+  // Change the selection in the combo-box using the arrow down key.
+  EXPECT_TRUE(FORM_OnKeyDown(form_handle(), page(), FWL_VKEY_Down, 0));
+  CheckIsIndexSelected(0, true);
+  CheckIsIndexSelected(1, false);
+
+  // Tab to the next control.
+  EXPECT_TRUE(FORM_OnChar(form_handle(), page(), FWL_VKEY_Tab, 0));
+
+  // Shift-tab to the previous control.
+  EXPECT_TRUE(
+      FORM_OnChar(form_handle(), page(), FWL_VKEY_Tab, FWL_EVENTFLAG_ShiftKey));
+
+  // Verify that the selection is unchanged.
+  CheckIsIndexSelected(0, true);
+
+  // Verify that the Space key is handled.
+  EXPECT_TRUE(FORM_OnChar(form_handle(), page(), FWL_VKEY_Space, 0));
+
+  CheckFocusedFieldText(L" ");
+  CheckIsIndexSelected(0, false);
+}
+
 TEST_F(FPDFFormFillTextFormEmbedderTest,
        InsertTextInEmptyCharLimitTextFieldOverflow) {
   // Click on the textfield.
@@ -2998,7 +3184,7 @@ class FPDFFormFillActionUriTest : public EmbedderTest {
     // Set Widget and Link as supported tabbable annots.
     constexpr FPDF_ANNOTATION_SUBTYPE kFocusableSubtypes[] = {FPDF_ANNOT_WIDGET,
                                                               FPDF_ANNOT_LINK};
-    constexpr size_t kSubtypeCount = FX_ArraySize(kFocusableSubtypes);
+    constexpr size_t kSubtypeCount = pdfium::size(kFocusableSubtypes);
     ASSERT_TRUE(FPDFAnnot_SetFocusableSubtypes(
         form_handle(), kFocusableSubtypes, kSubtypeCount));
   }

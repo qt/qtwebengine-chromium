@@ -10,9 +10,9 @@
 #ifndef LIBANGLE_RENDERER_VULKAN_RENDERTARGETVK_H_
 #define LIBANGLE_RENDERER_VULKAN_RENDERTARGETVK_H_
 
+#include "common/vulkan/vk_headers.h"
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/renderer/renderer_utils.h"
-#include "libANGLE/renderer/vulkan/vk_headers.h"
 #include "libANGLE/renderer/vulkan/vk_helpers.h"
 
 namespace rx
@@ -47,8 +47,8 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
               uint32_t levelIndex,
               uint32_t layerIndex);
     void reset();
-    // This returns the serial from underlying ImageHelper, first assigning one if required
-    vk::AttachmentSerial getAssignSerial(ContextVk *contextVk);
+    // This returns the serial from underlying ImageViewHelper, first assigning one if required
+    Serial getAssignImageViewSerial(ContextVk *contextVk);
 
     // Note: RenderTargets should be called in order, with the depth/stencil onRender last.
     angle::Result onColorDraw(ContextVk *contextVk);
@@ -57,11 +57,15 @@ class RenderTargetVk final : public FramebufferAttachmentRenderTarget
     vk::ImageHelper &getImage();
     const vk::ImageHelper &getImage() const;
 
-    // getImageForRead will also transition the resource to the given layout.
     vk::ImageHelper *getImageForWrite(ContextVk *contextVk) const;
 
     // For cube maps we use single-level single-layer 2D array views.
     angle::Result getImageView(ContextVk *contextVk, const vk::ImageView **imageViewOut) const;
+
+    // For 3D textures, the 2D view created for render target is invalid to read from.  The
+    // following will return a view to the whole image (for all types, including 3D and 2DArray).
+    angle::Result getAndRetainCopyImageView(ContextVk *contextVk,
+                                            const vk::ImageView **imageViewOut) const;
 
     const vk::Format &getImageFormat() const;
     gl::Extents getExtents() const;

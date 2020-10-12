@@ -25,6 +25,7 @@
 #include "src/dsp/constants.h"
 #include "src/dsp/film_grain_common.h"
 #include "src/utils/cpu.h"
+#include "src/utils/reference_info.h"
 #include "src/utils/types.h"
 
 namespace libgav1 {
@@ -328,20 +329,15 @@ using CdefDirectionFunc = void (*)(const void* src, ptrdiff_t stride,
 
 // Cdef filtering function signature. Section 7.15.3.
 // |source| is a pointer to the input block. |source_stride| is given in bytes.
-// |rows4x4| and |columns4x4| are frame sizes in units of 4x4 pixels.
-// |curr_x| and |curr_y| are current position in units of pixels.
-// |subsampling_x|, |subsampling_y| are the subsampling factors of current
-// plane.
+// |block_width|, |block_height| are the width/height of the input block.
 // |primary_strength|, |secondary_strength|, and |damping| are Cdef filtering
 // parameters.
 // |direction| is the filtering direction.
 // |dest| is the output buffer. |dest_stride| is given in bytes.
 using CdefFilteringFunc = void (*)(const void* source, ptrdiff_t source_stride,
-                                   int rows4x4, int columns4x4, int curr_x,
-                                   int curr_y, int subsampling_x,
-                                   int subsampling_y, int primary_strength,
-                                   int secondary_strength, int damping,
-                                   int direction, void* dest,
+                                   int block_width, int block_height,
+                                   int primary_strength, int secondary_strength,
+                                   int damping, int direction, void* dest,
                                    ptrdiff_t dest_stride);
 
 // Upscaling process function signature. Section 7.16.
@@ -360,7 +356,8 @@ using SuperResRowFunc = void (*)(const void* source, const int upscaled_width,
 // |source| is the input frame buffer, which is deblocked and cdef filtered.
 // |dest| is the output.
 // |restoration_info| contains loop restoration information, such as filter
-// type, strength. |source| and |dest| share the same stride given in bytes.
+// type, strength.
+// |source_stride| and |dest_stride| are given in pixels.
 // |buffer| contains buffers required for self guided filter and wiener filter.
 // They must be initialized before calling.
 using LoopRestorationFunc = void (*)(
@@ -745,15 +742,7 @@ struct FilmGrainFuncs {
 };
 
 // Motion field projection function signature. Section 7.9.
-// |source_reference_type| corresponds to MfRefFrames[i * 2 + 1][j * 2 + 1] in
-// the spec.
-// |mv| corresponds to MfMvs[i * 2 + 1][j * 2 + 1] in the spec.
-// |order_hint| points to an array of kNumReferenceFrameTypes elements which
-// specifies OrderHintBits least significant bits of the expected output order
-// for reference frames.
-// |current_frame_order_hint| specifies OrderHintBits least significant bits of
-// the expected output order for this frame.
-// |order_hint_shift_bits| equals (32 - OrderHintBits) % 32.
+// |reference_info| provides reference information for motion field projection.
 // |reference_to_current_with_sign| is the precalculated reference frame id
 // distance from current frame.
 // |dst_sign| is -1 for LAST_FRAME and LAST2_FRAME, or 0 (1 in spec) for others.
@@ -763,11 +752,9 @@ struct FilmGrainFuncs {
 // |motion_field| is the output which saves the projected motion field
 // information.
 using MotionFieldProjectionKernelFunc = void (*)(
-    const ReferenceFrameType* source_reference_type, const MotionVector* mv,
-    const uint8_t order_hint[kNumReferenceFrameTypes],
-    unsigned int current_frame_order_hint, unsigned int order_hint_shift_bits,
-    int reference_to_current_with_sign, int dst_sign, int y8_start, int y8_end,
-    int x8_start, int x8_end, TemporalMotionField* motion_field);
+    const ReferenceInfo& reference_info, int reference_to_current_with_sign,
+    int dst_sign, int y8_start, int y8_end, int x8_start, int x8_end,
+    TemporalMotionField* motion_field);
 
 // Compound temporal motion vector projection function signature.
 // Section 7.9.3 and 7.10.2.10.
@@ -797,35 +784,35 @@ using MvProjectionSingleFunc = void (*)(
     int reference_offset, int count, MotionVector* candidate_mvs);
 
 struct Dsp {
-  IntraPredictorFuncs intra_predictors;
+  AverageBlendFunc average_blend;
+  CdefDirectionFunc cdef_direction;
+  CdefFilteringFunc cdef_filter;
+  CflIntraPredictorFuncs cfl_intra_predictors;
+  CflSubsamplerFuncs cfl_subsamplers;
+  ConvolveFuncs convolve;
+  ConvolveScaleFuncs convolve_scale;
   DirectionalIntraPredictorZone1Func directional_intra_predictor_zone1;
   DirectionalIntraPredictorZone2Func directional_intra_predictor_zone2;
   DirectionalIntraPredictorZone3Func directional_intra_predictor_zone3;
+  DistanceWeightedBlendFunc distance_weighted_blend;
+  FilmGrainFuncs film_grain;
   FilterIntraPredictorFunc filter_intra_predictor;
-  CflIntraPredictorFuncs cfl_intra_predictors;
-  CflSubsamplerFuncs cfl_subsamplers;
+  InterIntraMaskBlendFuncs8bpp inter_intra_mask_blend_8bpp;
   IntraEdgeFilterFunc intra_edge_filter;
   IntraEdgeUpsamplerFunc intra_edge_upsampler;
+  IntraPredictorFuncs intra_predictors;
   InverseTransformAddFuncs inverse_transforms;
   LoopFilterFuncs loop_filters;
-  CdefDirectionFunc cdef_direction;
-  CdefFilteringFunc cdef_filter;
-  SuperResRowFunc super_res_row;
   LoopRestorationFuncs loop_restorations;
+  MaskBlendFuncs mask_blend;
   MotionFieldProjectionKernelFunc motion_field_projection_kernel;
   MvProjectionCompoundFunc mv_projection_compound[3];
   MvProjectionSingleFunc mv_projection_single[3];
-  ConvolveFuncs convolve;
-  ConvolveScaleFuncs convolve_scale;
-  WeightMaskFuncs weight_mask;
-  AverageBlendFunc average_blend;
-  DistanceWeightedBlendFunc distance_weighted_blend;
-  MaskBlendFuncs mask_blend;
-  InterIntraMaskBlendFuncs8bpp inter_intra_mask_blend_8bpp;
   ObmcBlendFuncs obmc_blend;
-  WarpFunc warp;
+  SuperResRowFunc super_res_row;
   WarpCompoundFunc warp_compound;
-  FilmGrainFuncs film_grain;
+  WarpFunc warp;
+  WeightMaskFuncs weight_mask;
 };
 
 // Initializes function pointers based on build config and runtime

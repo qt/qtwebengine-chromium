@@ -1,0 +1,340 @@
+/*!\page encoder_guide AV1 ENCODING TECHNIQUES
+
+  AV1 encoding algorithm consists following modules:
+    - \ref high_level_algo
+      - To encode a frame, first call \ref av1_receive_raw_frame() to obtain the
+        raw frame data. Then call \ref av1_get_compressed_data() to encode raw
+        frame data into compressed frame data.
+      - \ref two_pass_algo
+      - \ref look_ahead_buffer
+    - \ref partition_search
+    - \ref intra_mode_search
+    - \ref inter_mode_search
+    - \ref transform_search
+    - \ref in_loop_filter
+    - \ref rate_control
+
+  <b>[SAMPLE CONTEXT ONLY - copied from AV1 overview paper]:</b>
+
+  In this paper, we present the core coding tools in AV1 that contribute to
+  the majority of the 30% reduction in average bitrate compared with the most
+  performant libvpx VP9 encoder at the same quality.
+
+  \section partition Coding block partition
+  VP9 uses a four-way partition tree starting from the 64x64 level down to 4x4
+  level, with some additional restrictions for blocks below 8x8 where within an
+  8x8 block all the sub-blocks should have the same reference frame, as shown in
+  the top half of Fig. 1, so as to ensure the chroma component can be
+  processed in a minimum of 4x4 block unit. Note that partitions designated as
+  “R” refer to as recursive in that the same partition tree is repeated at a
+  lower scale until we reach the lowest 4x4 level.
+
+  \image html partition.png "Fig. 1. Partition tree in VP9 and AV1"
+
+  AV1 increases the largest coding block unit to 128x128 and expands the
+  partition tree to support 10 possible outcomes to further include 4:1/1:4
+  rectangular coding block sizes. Similar to VP9 only the square block is
+  allowed for further subdivision. In addition, AV1 adds more flexibility to
+  sub-8x8 coding blocks by allowing each unit has their own inter/intra mode and
+  reference frame choice. To support such flexibility, it allows the use of 2x2
+  inter prediction for chroma component, while retaining the minimum transform
+  size as 4x4.
+
+  \section intra_prediction Intra prediction
+  VP9 supports 10 intra prediction modes, including eight directional modes
+  corresponding to angles from 45 to 207 degrees, and two non-directional
+  predictors: DC and true motion (TM) mode. In AV1, the potential of an intra
+  coder is further explored in various ways: the granularity of directional
+  extrapolation is upgraded, non-directional predictors are enriched by taking
+  into account gradients and evolving correlations, coherence of luma and
+  chroma signals is exploited, and tools are developed particularly for
+  artificial content.
+
+  -# Enhanced directional intra prediction\n
+     To exploit more varieties of spatial redundancy in directional textures, in
+  AV1, directional intra modes are extended to an angle set with finer
+  granularity for blocks larger than 8x8. The original eight angles are made
+  nominal angles, based on which fine angle variations in a step size of 3
+  degrees are introduced, i.e. the prediction angle is presented by a nominal
+  intra angle plus an angle delta, which is -3x3 multiples of the step size. To
+  implement directional prediction modes in AV1 via a generic way, the 48
+  extension modes are realized by a unified directional predictor that links
+  each pixel to a reference sub-pixel location in the edge and interpolates
+  the reference pixel by a 2-tap bilinear filter. In total, there are 56
+  directional intra modes supported in AV1.
+
+     Another enhancement for directional intra prediction in AV1 is that, a low-
+  pass filter is applied to the reference pixel values before they are used
+  to predict the target block. The filter strength is pre-defined based on
+  the prediction angle and block size.
+
+  -# New non-directional smooth intra predictors\n
+     VP9 has two non-directional intra prediction modes: DC_PRED and TM_PRED.
+  AV1 expands on this by adding three new prediction modes: SMOOTH_PRED,
+  SMOOTH_V_PRED, and SMOOTH_H_PRED. Also a fourth new prediction mode
+  PAETH_PRED replaces the existing mode TM_PRED. The new modes work as
+  follows:
+
+     - <b>SMOOTH_PRED</b>: Useful for predicting blocks that have a smooth
+  gradient.
+
+     - <b>SMOOTH_V_PRED</b>: Similar to SMOOTH_PRED, but uses quadratic
+  interpolation only in the vertical direction.
+
+     - <b>SMOOTH_H_PRED</b>: Similar to SMOOTH_PRED, but uses quadratic
+  interpolation only in the horizontal direction.
+
+     - <b>PAETH_PRED</b>: Calculate \f$base=left + top -top\_left\f$. Then
+  predict this pixel as left, top, or top-left pixel depending on which of them
+  is closest to “base”.
+
+  \section inter_prediction Inter prediction
+  Motion compensation is an essential module in video coding. AV1 has a more
+  powerful inter coder, which largely extends the pool of reference frames and
+  motion vectors, breaks the limitation of block-based translational prediction,
+  also enhances compound prediction by using highly adaptable weighting
+  algorithms as well as sources.
+
+  -# Extended reference frames\n
+    AV1 extends the number of references for each frame from 3 to 7. Figure 4
+    demonstrates the multi-layer structure of a golden-frame group, in which an
+    adaptive number of frames share the same GOLDEN and ALTREF frames. BWDREF
+    is a look-ahead frame directly coded without applying temporal filtering,
+    thus more applicable as a backward reference in a relatively shorter
+    distance. ALTREF2 serves as an intermediate filtered future reference
+    between GOLDEN and ALTREF.
+
+    \image html gf_group.png "Fig. 4. Example of multi-layer structure of a golden-frame group"
+
+  -# Advanced compound prediction\n
+     A collection of new compound prediction tools is developed for AV1 to make
+  its inter coder more versatile. In this section, any compound prediction
+  operation can be generalized for a pixel \f$(i,j)\f$ as:
+  \f$p_f(i,j)=m(i,j)p_1(i,j)+(1-m(i,j))p_2(i,j)\f$, where \f$p_1\f$ and
+  \f$p_2\f$ are two predictors, and \f$p_f\f$ is the final joint prediction,
+  with the weighting coefficients \f$m(i,j)\f$ in \f$[0,1]\f$ that are
+  designed for different use cases and can be easily generated from predefined
+  tables.
+*/
+
+/*!\defgroup encoder_algo Encoder Algorithm
+ *
+ * The encoder algorithm describes how a sequence is encoded, including high
+ * level decision as well as algorithm used at every encoding stage.
+ */
+
+/*!\defgroup high_level_algo High-level Algorithm
+ * \ingroup encoder_algo
+ * This module describes sequence level/frame level algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+
+ /*!\defgroup two_pass_algo Two Pass Mode
+    \ingroup high_level_algo
+
+ In two pass mode, the input file is passed into the encoder for a quick
+ first pass, where statistics are gathered. These statistics and the input
+ file are then passed back into the encoder for a second pass. The statistics
+ help the encoder reach the desired bitrate without as much overshooting or
+ undershooting.
+
+ During the first pass, the codec will return "stats" packets that contain
+ information useful for the second pass. The caller should concatenate these
+ packets as they are received. In the second pass, the concatenated packets
+ are passed in, along with the frames to encode. During the second pass,
+ "frame" packets are returned that represent the compressed video.
+
+ A complete example can be found in `examples/twopass_encoder.c`. Pseudocode
+ is provided below to illustrate the core parts.
+
+ During the first pass, the uncompressed frames are passed in and stats
+ information is appended to a byte array.
+
+~~~~~~~~~~~~~~~{.c}
+// For simplicity, assume that there is enough memory in the stats buffer.
+// Actual code will want to use a resizable array. stats_len represents
+// the length of data already present in the buffer.
+void get_stats_data(aom_codec_ctx_t *encoder, char *stats,
+                    size_t *stats_len, bool *got_data) {
+  const aom_codec_cx_pkt_t *pkt;
+  aom_codec_iter_t iter = NULL;
+  while ((pkt = aom_codec_get_cx_data(encoder, &iter))) {
+    *got_data = true;
+    if (pkt->kind != AOM_CODEC_STATS_PKT) continue;
+    memcpy(stats + *stats_len, pkt->data.twopass_stats.buf,
+           pkt->data.twopass_stats.sz);
+    *stats_len += pkt->data.twopass_stats.sz;
+  }
+}
+
+void first_pass(char *stats, size_t *stats_len) {
+  struct aom_codec_enc_cfg first_pass_cfg;
+  ... // Initialize the config as needed.
+  first_pass_cfg.g_pass = AOM_RC_FIRST_PASS;
+  aom_codec_ctx_t first_pass_encoder;
+  ... // Initialize the encoder.
+
+  while (frame_available) {
+    // Read in the uncompressed frame, update frame_available
+    aom_image_t *frame_to_encode = ...;
+    aom_codec_encode(&first_pass_encoder, img, pts, duration, flags);
+    get_stats_data(&first_pass_encoder, stats, stats_len);
+  }
+  // After all frames have been processed, call aom_codec_encode with
+  // a NULL ptr repeatedly, until no more data is returned. The NULL
+  // ptr tells the encoder that no more frames are available.
+  bool got_data;
+  do {
+    got_data = false;
+    aom_codec_encode(&first_pass_encoder, NULL, pts, duration, flags);
+    get_stats_data(&first_pass_encoder, stats, stats_len, &got_data);
+  } while (got_data);
+
+  aom_codec_destroy(&first_pass_encoder);
+}
+~~~~~~~~~~~~~~~
+
+ During the second pass, the uncompressed frames and the stats are
+ passed into the encoder.
+
+~~~~~~~~~~~~~~~{.c}
+// Write out each encoded frame to the file.
+void get_cx_data(aom_codec_ctx_t *encoder, FILE *file,
+                 bool *got_data) {
+  const aom_codec_cx_pkt_t *pkt;
+  aom_codec_iter_t iter = NULL;
+  while ((pkt = aom_codec_get_cx_data(encoder, &iter))) {
+   *got_data = true;
+   if (pkt->kind != AOM_CODEC_CX_FRAME_PKT) continue;
+   fwrite(pkt->data.frame.buf, 1, pkt->data.frame.sz, file);
+  }
+}
+
+void second_pass(char *stats, size_t stats_len) {
+  struct aom_codec_enc_cfg second_pass_cfg;
+  ... // Initialize the config file as needed.
+  second_pass_cfg.g_pass = AOM_RC_LAST_PASS;
+  cfg.rc_twopass_stats_in.buf = stats;
+  cfg.rc_twopass_stats_in.sz = stats_len;
+  aom_codec_ctx_t second_pass_encoder;
+  ... // Initialize the encoder from the config.
+
+  FILE *output = fopen("output.obu", "wb");
+  while (frame_available) {
+    // Read in the uncompressed frame, update frame_available
+    aom_image_t *frame_to_encode = ...;
+    aom_codec_encode(&second_pass_encoder, img, pts, duration, flags);
+    get_cx_data(&second_pass_encoder, output);
+  }
+  // Pass in NULL to flush the encoder.
+  bool got_data;
+  do {
+    got_data = false;
+    aom_codec_encode(&second_pass_encoder, NULL, pts, duration, flags);
+    get_cx_data(&second_pass_encoder, output, &got_data);
+  } while (got_data);
+
+  aom_codec_destroy(&second_pass_encoder);
+}
+~~~~~~~~~~~~~~~
+ */
+
+ /*!\defgroup look_ahead_buffer The Look-Ahead Buffer
+    \ingroup high_level_algo
+
+ A program should call \ref aom_codec_encode() for each frame that needs
+ processing. These frames are internally copied and stored in a fixed-size
+ circular buffer, known as the look-ahead buffer. Other parts of the code
+ will use future frame information to inform current frame decisions;
+ examples include the first-pass algorithm, TPL model, and temporal filter.
+ Note that this buffer also keeps a reference to the last source frame.
+
+ The look-ahead buffer is defined in \ref av1/encoder/lookahead.h. It acts as an
+ opaque structure, with an interface to create and free memory associated with
+ it. It supports pushing and popping frames onto the structure in a FIFO
+ fashion. It also allows look-ahead when using the \ref av1_lookahead_peek()
+ function with a non-negative number, and look-behind when -1 is passed in (for
+ the last source frame). The \ref av1_lookahead_depth() function returns the
+ current number of frames stored in it. Note that \ref av1_lookahead_pop() is
+ a bit of a misnomer - it only pops if either the "flush" variable is set, or
+ the buffer is at maximum capacity.
+
+ The buffer is stored in the \ref AV1_COMP::lookahead field.
+ It is initialized in the first call to \ref aom_codec_encode(), in the
+ \ref av1_receive_raw_frame() sub-routine. The buffer size is defined by
+ the g_lag_in_frames parameter set in the
+ \ref aom_codec_enc_cfg_t::g_lag_in_frames struct.
+ This can be modified manually but should only be set once. On the command
+ line, the flag "--lag-in-frames" controls it. The default size is 19 for
+ non-realtime usage and 1 for realtime. Note that a maximum value of 25 is
+ enforced.
+
+ A frame will stay in the buffer as long as possible. As mentioned above,
+ the \ref av1_lookahead_pop() only removes a frame when either flush is set,
+ or the buffer is full. Note that each call to \ref aom_codec_encode() inserts
+ another frame into the buffer, and pop is called by the sub-function
+ \ref av1_encode_strategy(). The buffer is told to flush when
+ \ref aom_codec_encode() is passed a NULL image pointer. Note that the caller
+ must repeatedly call \ref aom_codec_encode() with a NULL image pointer, until
+ no more packets are available, in order to fully flush the buffer.
+
+ */
+
+/*! @} - end defgroup high_level_algo */
+
+/*!\defgroup partition_search Partition Search
+ * \ingroup encoder_algo
+ * This module describes partition search algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+/*! @} - end defgroup partition_search */
+
+/*!\defgroup intra_mode_search Intra Mode Search
+ * \ingroup encoder_algo
+ * This module describes intra mode search algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+/*! @} - end defgroup intra_mode_search */
+
+/*!\defgroup inter_mode_search Inter Mode Search
+ * \ingroup encoder_algo
+ * This module describes inter mode search algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+/*! @} - end defgroup inter_mode_search */
+
+/*!\defgroup palette_mode_search Palette Mode Search
+ * \ingroup intra_mode_search
+ * This module describes palette mode search algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+/*! @} - end defgroup palette_mode_search */
+
+/*!\defgroup transform_search Transform Search
+ * \ingroup encoder_algo
+ * This module describes transform search algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+/*! @} - end defgroup transform_search */
+
+/*!\defgroup in_loop_filter In-loop Filter
+ * \ingroup encoder_algo
+ * This module describes in-loop filter algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+/*! @} - end defgroup in_loop_filter */
+
+/*!\defgroup rate_control Rate Control
+ * \ingroup encoder_algo
+ * This module describes rate control algorithm in AV1.
+ * More details will be added.
+ * @{
+ */
+/*! @} - end defgroup rate_control */

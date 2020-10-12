@@ -6,66 +6,9 @@
 
 #include "core/fxcodec/fx_codec.h"
 
-#include <algorithm>
-#include <cmath>
-#include <memory>
-#include <utility>
-
-#include "core/fxcodec/jbig2/jbig2module.h"
-#include "core/fxcodec/jpeg/jpegmodule.h"
-#include "core/fxcrt/fx_extension.h"
-#include "core/fxcrt/fx_safe_types.h"
-#include "third_party/base/logging.h"
-#include "third_party/base/ptr_util.h"
+#include "core/fxcrt/fx_memory.h"
 
 namespace fxcodec {
-
-namespace {
-
-ModuleMgr* g_ModuleMgr = nullptr;
-
-}  // namespace
-
-// static
-void ModuleMgr::Create() {
-  ASSERT(!g_ModuleMgr);
-  g_ModuleMgr = new ModuleMgr();
-}
-
-// static
-void ModuleMgr::Destroy() {
-  ASSERT(g_ModuleMgr);
-  delete g_ModuleMgr;
-  g_ModuleMgr = nullptr;
-}
-
-// static
-ModuleMgr* ModuleMgr::GetInstance() {
-  ASSERT(g_ModuleMgr);
-  return g_ModuleMgr;
-}
-
-ModuleMgr::ModuleMgr()
-    : m_pJpegModule(pdfium::MakeUnique<JpegModule>()),
-      m_pJbig2Module(pdfium::MakeUnique<Jbig2Module>()) {
-#ifdef PDF_ENABLE_XFA_BMP
-  SetBmpModule(pdfium::MakeUnique<BmpModule>());
-#endif
-
-#ifdef PDF_ENABLE_XFA_GIF
-  SetGifModule(pdfium::MakeUnique<GifModule>());
-#endif
-
-#ifdef PDF_ENABLE_XFA_PNG
-  SetPngModule(pdfium::MakeUnique<PngModule>());
-#endif
-
-#ifdef PDF_ENABLE_XFA_TIFF
-  SetTiffModule(pdfium::MakeUnique<TiffModule>());
-#endif
-}
-
-ModuleMgr::~ModuleMgr() = default;
 
 #ifdef PDF_ENABLE_XFA
 CFX_DIBAttribute::CFX_DIBAttribute() = default;

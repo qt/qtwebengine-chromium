@@ -204,26 +204,20 @@ void QuicSpdyClientSessionBase::ResetPromised(
     QuicStreamId id,
     QuicRstStreamErrorCode error_code) {
   DCHECK(QuicUtils::IsServerInitiatedStreamId(transport_version(), id));
-  if (break_close_loop()) {
-    ResetStream(id, error_code, 0);
-  } else {
-    SendRstStream(id, error_code, 0);
-  }
+  ResetStream(id, error_code, 0);
   if (!IsOpenStream(id) && !IsClosedStream(id)) {
     MaybeIncreaseLargestPeerStreamId(id);
   }
 }
 
-void QuicSpdyClientSessionBase::CloseStreamInner(QuicStreamId stream_id,
-                                                 bool rst_sent) {
-  QuicSpdySession::CloseStreamInner(stream_id, rst_sent);
+void QuicSpdyClientSessionBase::CloseStream(QuicStreamId stream_id) {
+  QuicSpdySession::CloseStream(stream_id);
   if (!VersionUsesHttp3(transport_version())) {
     headers_stream()->MaybeReleaseSequencerBuffer();
   }
 }
 
 void QuicSpdyClientSessionBase::OnStreamClosed(QuicStreamId stream_id) {
-  DCHECK(break_close_loop());
   QuicSpdySession::OnStreamClosed(stream_id);
   if (!VersionUsesHttp3(transport_version())) {
     headers_stream()->MaybeReleaseSequencerBuffer();
@@ -234,15 +228,55 @@ bool QuicSpdyClientSessionBase::ShouldReleaseHeadersStreamSequencerBuffer() {
   return !HasActiveRequestStreams() && promised_by_id_.empty();
 }
 
-void QuicSpdyClientSessionBase::OnSettingsFrame(const SettingsFrame& frame) {
-  QuicSpdySession::OnSettingsFrame(frame);
+bool QuicSpdyClientSessionBase::ShouldKeepConnectionAlive() const {
+  return QuicSpdySession::ShouldKeepConnectionAlive() ||
+         num_outgoing_draining_streams() > 0;
+}
+
+bool QuicSpdyClientSessionBase::OnSettingsFrame(const SettingsFrame& frame) {
+  if (!was_zero_rtt_rejected()) {
+    if (max_outbound_header_list_size() != std::numeric_limits<size_t>::max() &&
+        frame.values.find(SETTINGS_MAX_HEADER_LIST_SIZE) ==
+            frame.values.end()) {
+      CloseConnectionWithDetails(
+          QUIC_HTTP_ZERO_RTT_RESUMPTION_SETTINGS_MISMATCH,
+          "Server accepted 0-RTT but omitted non-default "
+          "SETTINGS_MAX_HEADER_LIST_SIZE");
+      return false;
+    }
+
+    if (qpack_encoder()->maximum_blocked_streams() != 0 &&
+        frame.values.find(SETTINGS_QPACK_BLOCKED_STREAMS) ==
+            frame.values.end()) {
+      CloseConnectionWithDetails(
+          QUIC_HTTP_ZERO_RTT_RESUMPTION_SETTINGS_MISMATCH,
+          "Server accepted 0-RTT but omitted non-default "
+          "SETTINGS_QPACK_BLOCKED_STREAMS");
+      return false;
+    }
+
+    if (qpack_encoder()->MaximumDynamicTableCapacity() != 0 &&
+        frame.values.find(SETTINGS_QPACK_MAX_TABLE_CAPACITY) ==
+            frame.values.end()) {
+      CloseConnectionWithDetails(
+          QUIC_HTTP_ZERO_RTT_RESUMPTION_SETTINGS_MISMATCH,
+          "Server accepted 0-RTT but omitted non-default "
+          "SETTINGS_QPACK_MAX_TABLE_CAPACITY");
+      return false;
+    }
+  }
+
+  if (!QuicSpdySession::OnSettingsFrame(frame)) {
+    return false;
+  }
   std::unique_ptr<char[]> buffer;
   QuicByteCount frame_length =
       HttpEncoder::SerializeSettingsFrame(frame, &buffer);
   auto serialized_data = std::make_unique<ApplicationState>(
       buffer.get(), buffer.get() + frame_length);
-  static_cast<QuicCryptoClientStreamBase*>(GetMutableCryptoStream())
-      ->OnApplicationState(std::move(serialized_data));
+  GetMutableCryptoStream()->SetServerApplicationStateForResumption(
+      std::move(serialized_data));
+  return true;
 }
 
 }  // namespace quic

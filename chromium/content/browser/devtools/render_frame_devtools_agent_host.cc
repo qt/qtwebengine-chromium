@@ -14,7 +14,6 @@
 #include "base/lazy_instance.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/post_task.h"
 #include "build/build_config.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -59,7 +58,6 @@
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "mojo/public/cpp/bindings/associated_binding.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom.h"
 
@@ -88,15 +86,13 @@ RenderFrameDevToolsAgentHost* FindAgentHost(FrameTreeNode* frame_tree_node) {
   return it == g_agent_host_instances.Get().end() ? nullptr : it->second;
 }
 
-bool ShouldCreateDevToolsForHost(RenderFrameHost* rfh) {
-  return rfh->IsCrossProcessSubframe() || !rfh->GetParent();
-}
-
 bool ShouldCreateDevToolsForNode(FrameTreeNode* ftn) {
   return !ftn->parent() ||
          (ftn->current_frame_host() &&
           ftn->current_frame_host()->IsCrossProcessSubframe());
 }
+
+}  // namespace
 
 FrameTreeNode* GetFrameTreeNodeAncestor(FrameTreeNode* frame_tree_node) {
   while (frame_tree_node && !ShouldCreateDevToolsForNode(frame_tree_node))
@@ -104,8 +100,6 @@ FrameTreeNode* GetFrameTreeNodeAncestor(FrameTreeNode* frame_tree_node) {
   DCHECK(frame_tree_node);
   return frame_tree_node;
 }
-
-}  // namespace
 
 // static
 scoped_refptr<DevToolsAgentHost> DevToolsAgentHost::GetOrCreateFor(
@@ -142,6 +136,12 @@ scoped_refptr<DevToolsAgentHost> RenderFrameDevToolsAgentHost::GetOrCreateFor(
     result = new RenderFrameDevToolsAgentHost(
         frame_tree_node, frame_tree_node->current_frame_host());
   return result;
+}
+
+// static
+bool RenderFrameDevToolsAgentHost::ShouldCreateDevToolsForHost(
+    RenderFrameHost* rfh) {
+  return rfh->IsCrossProcessSubframe() || !rfh->GetParent();
 }
 
 // static
@@ -446,13 +446,6 @@ void RenderFrameDevToolsAgentHost::DidFinishNavigation(
   }
   for (auto* target : protocol::TargetHandler::ForAgentHost(this))
     target->DidFinishNavigation();
-
-  // RenderFrameDevToolsAgentHost is associated with frame_tree_node, while
-  // documents in the back-forward cache share a node, therefore we can't cache
-  // them. TODO(1001087): add support long-term.
-  content::BackForwardCache::DisableForRenderFrameHost(
-      navigation_handle->GetPreviousRenderFrameHostId(),
-      "RenderFrameDevToolsAgentHost");
 }
 
 void RenderFrameDevToolsAgentHost::UpdateFrameHost(
@@ -601,16 +594,6 @@ void RenderFrameDevToolsAgentHost::RenderProcessExited(
   }
 }
 
-void RenderFrameDevToolsAgentHost::DidAttachInterstitialPage() {
-  for (auto* page : protocol::PageHandler::ForAgentHost(this))
-    page->DidAttachInterstitialPage();
-}
-
-void RenderFrameDevToolsAgentHost::DidDetachInterstitialPage() {
-  for (auto* page : protocol::PageHandler::ForAgentHost(this))
-    page->DidDetachInterstitialPage();
-}
-
 void RenderFrameDevToolsAgentHost::OnVisibilityChanged(
     content::Visibility visibility) {
 #if defined(OS_ANDROID)
@@ -633,7 +616,9 @@ void RenderFrameDevToolsAgentHost::OnPageScaleFactorChanged(
 
 void RenderFrameDevToolsAgentHost::OnNavigationRequestWillBeSent(
     const NavigationRequest& navigation_request) {
-  const auto& url = navigation_request.common_params().url;
+  GURL url = navigation_request.common_params().url;
+  if (url.SchemeIs(url::kJavaScriptScheme) && frame_host_)
+    url = frame_host_->GetLastCommittedURL();
   std::vector<DevToolsSession*> restricted_sessions;
   bool is_webui = frame_host_ && frame_host_->web_ui();
   for (DevToolsSession* session : sessions()) {
@@ -785,8 +770,8 @@ void RenderFrameDevToolsAgentHost::SignalSynchronousSwapCompositorFrame(
       static_cast<RenderFrameHostImpl*>(frame_host)->frame_tree_node()));
   if (dtah) {
     // Unblock the compositor.
-    base::PostTask(
-        FROM_HERE, {BrowserThread::UI},
+    GetUIThreadTaskRunner({})->PostTask(
+        FROM_HERE,
         base::BindOnce(
             &RenderFrameDevToolsAgentHost::SynchronousSwapCompositorFrame,
             dtah.get(), frame_metadata));
@@ -843,9 +828,16 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
       !manager->delegate()->AllowInspectingRenderFrameHost(frame_host_)) {
     return false;
   }
-  // Note this may be called before navigation is committed.
-  return session->GetClient()->MayAttachToURL(
-      frame_host_->GetSiteInstance()->GetSiteURL(), frame_host_->web_ui());
+  auto* root = FrameTreeNode::From(frame_host_);
+  for (FrameTreeNode* node : root->frame_tree()->SubtreeNodes(root)) {
+    // Note this may be called before navigation is committed.
+    RenderFrameHostImpl* rfh = node->current_frame_host();
+    const GURL& url = rfh->GetSiteInstance()->GetSiteURL();
+    if (!session->GetClient()->MayAttachToURL(url, rfh->web_ui())) {
+      return false;
+    }
+  }
+  return true;
 }
 
 void RenderFrameDevToolsAgentHost::UpdateResourceLoaderFactories() {
