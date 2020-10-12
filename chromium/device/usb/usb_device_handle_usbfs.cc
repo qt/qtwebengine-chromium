@@ -330,7 +330,7 @@ void UsbDeviceHandleUsbfs::FileThreadHelper::OnFileCanWriteWithoutBlocking() {
   for (size_t i = 0; i < MAX_URBS_PER_EVENT; ++i) {
     usbdevfs_urb* urb = nullptr;
     int rc = HANDLE_EINTR(ioctl(fd_.get(), USBDEVFS_REAPURBNDELAY, &urb));
-    if (rc) {
+    if (rc || !urb) {
       if (errno == EAGAIN)
         break;
       USB_PLOG(DEBUG) << "Failed to reap urbs";
