@@ -176,6 +176,12 @@ namespace WTF {
 
 namespace internal {
 
+constexpr size_t constexpr_max(size_t a, size_t b)
+{
+  if (a > b) return a;
+  return b;
+}
+
 // ConcurrentBucket is a wrapper for HashTable buckets for concurrent marking.
 // It is used to provide a snapshot view of the bucket key and guarantee
 // that the same key is used for checking empty/deleted buckets and tracing.
@@ -199,7 +205,7 @@ class ConcurrentBucket {
  private:
   // Alignment is needed for atomic accesses to |buf_| and to assure |buf_|
   // can be accessed the same as objects of type T
-  alignas(std::max(alignof(T), sizeof(size_t))) char buf_[sizeof(T)];
+  alignas(constexpr_max(alignof(T), sizeof(size_t))) char buf_[sizeof(T)];
 };
 
 template <typename Key, typename Value>
@@ -223,7 +229,7 @@ class ConcurrentBucket<KeyValuePair<Key, Value>> {
  private:
   // Alignment is needed for atomic accesses to |buf_| and to assure |buf_|
   // can be accessed the same as objects of type Key
-  alignas(std::max(alignof(Key), sizeof(size_t))) char buf_[sizeof(Key)];
+  alignas(constexpr_max(alignof(Key), sizeof(size_t))) char buf_[sizeof(Key)];
   const Value* value_;
 };
 

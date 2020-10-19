@@ -195,8 +195,8 @@ bool IsX11ScreenSaverAvailable() {
 
 void DeleteProperty(x11::Window window, x11::Atom name) {
   x11::Connection::Get()->DeleteProperty({
-      .window = static_cast<x11::Window>(window),
-      .property = name,
+      /*.window =*/ static_cast<x11::Window>(window),
+      /*.property =*/ name,
   });
 }
 
@@ -239,20 +239,26 @@ void WithdrawWindow(x11::Window window) {
   connection->UnmapWindow({window});
 
   auto root = connection->default_root();
-  x11::UnmapNotifyEvent event{.event = root, .window = window};
+  x11::UnmapNotifyEvent event{false, 0, /*.event =*/ root, /*.window =*/ window, 0};
   auto mask =
       x11::EventMask::SubstructureNotify | x11::EventMask::SubstructureRedirect;
   SendEvent(event, root, mask);
 }
 
 void RaiseWindow(x11::Window window) {
-  x11::Connection::Get()->ConfigureWindow(
-      {.window = window, .stack_mode = x11::StackMode::Above});
+  x11::Connection::Get()->ConfigureWindow(x11::ConfigureWindowRequest
+      {/*.window =*/ window,
+       base::nullopt, base::nullopt, base::nullopt,
+       base::nullopt, base::nullopt, base::nullopt,
+       /*.stack_mode =*/ x11::StackMode::Above});
 }
 
 void LowerWindow(x11::Window window) {
   x11::Connection::Get()->ConfigureWindow(
-      {.window = window, .stack_mode = x11::StackMode::Below});
+      {/*.window =*/ window,
+       base::nullopt, base::nullopt, base::nullopt,
+       base::nullopt, base::nullopt, base::nullopt,
+       /*.stack_mode =*/ x11::StackMode::Below});
 }
 
 void DefineCursor(x11::Window window, x11::Cursor cursor) {
@@ -261,22 +267,40 @@ void DefineCursor(x11::Window window, x11::Cursor cursor) {
   // timing on BookmarkBarViewTest8.DNDBackToOriginatingMenu on
   // linux-chromeos-rel, causing it to flake.
   x11::Connection::Get()
-      ->ChangeWindowAttributes({.window = window, .cursor = cursor})
+      ->ChangeWindowAttributes({/*.window =*/ window,
+                                base::nullopt, base::nullopt, base::nullopt,
+                                base::nullopt, base::nullopt, base::nullopt,
+                                base::nullopt, base::nullopt, base::nullopt,
+                                base::nullopt, base::nullopt, base::nullopt,
+                                base::nullopt, base::nullopt,
+                                /*.cursor =*/ cursor})
       .Sync();
 }
 
 x11::Window CreateDummyWindow(const std::string& name) {
   auto* connection = x11::Connection::Get();
   auto window = connection->GenerateId<x11::Window>();
-  connection->CreateWindow({
-      .wid = window,
-      .parent = connection->default_root(),
-      .x = -100,
-      .y = -100,
-      .width = 10,
-      .height = 10,
-      .c_class = x11::WindowClass::InputOnly,
-      .override_redirect = x11::Bool32(true),
+  connection->CreateWindow(x11::CreateWindowRequest{
+      0,
+      /*.wid = */window,
+      /*.parent =*/ connection->default_root(),
+      /*.x =*/ -100,
+      /*.y =*/ -100,
+      /*.width =*/ 10,
+      /*.height =*/ 10,
+      0,
+      /*.c_class =*/ x11::WindowClass::InputOnly,
+      x11::VisualId{},
+      base::nullopt,
+      base::nullopt,
+      base::nullopt,
+      base::nullopt,
+      base::nullopt,
+      base::nullopt,
+      base::nullopt,
+      base::nullopt,
+      base::nullopt,
+      /*.override_redirect =*/ x11::Bool32(true),
   });
   if (!name.empty())
     SetStringProperty(window, x11::Atom::WM_NAME, x11::Atom::STRING, name);
@@ -318,16 +342,16 @@ void DrawPixmap(x11::Connection* connection,
   SkPixmap pixmap(image_info, vec.data(), row_bytes);
   skia_pixmap.readPixels(pixmap, src_x, src_y);
   x11::PutImageRequest put_image_request{
-      .format = x11::ImageFormat::ZPixmap,
-      .drawable = drawable,
-      .gc = gc,
-      .width = width,
-      .height = height,
-      .dst_x = dst_x,
-      .dst_y = dst_y,
-      .left_pad = 0,
-      .depth = visual_info->format->depth,
-      .data = base::RefCountedBytes::TakeVector(&vec),
+      /*.format =*/ x11::ImageFormat::ZPixmap,
+      /*.drawable =*/ drawable,
+      /*.gc =*/ gc,
+      /*.width =*/ width,
+      /*.height =*/ height,
+      /*.dst_x =*/ dst_x,
+      /*.dst_y =*/ dst_y,
+      /*.left_pad =*/ 0,
+      /*.depth =*/ visual_info->format->depth,
+      /*.data =*/ base::RefCountedBytes::TakeVector(&vec),
   };
   connection->PutImage(put_image_request);
 }
@@ -587,9 +611,12 @@ bool WindowContainsPoint(x11::Window window, gfx::Point screen_loc) {
 bool PropertyExists(x11::Window window, const std::string& property_name) {
   auto response = x11::Connection::Get()
                       ->GetProperty({
-                          .window = static_cast<x11::Window>(window),
-                          .property = gfx::GetAtom(property_name),
-                          .long_length = 1,
+                          0,
+                          /*.window =*/ static_cast<x11::Window>(window),
+                          /*.property =*/ gfx::GetAtom(property_name),
+                          x11::Atom{},
+                          0,
+                          /*.long_length =*/ 1,
                       })
                       .Sync();
   return response && response->format;
@@ -600,10 +627,13 @@ bool GetRawBytesOfProperty(x11::Window window,
                            scoped_refptr<base::RefCountedMemory>* out_data,
                            x11::Atom* out_type) {
   auto future = x11::Connection::Get()->GetProperty({
-      .window = static_cast<x11::Window>(window),
-      .property = property,
+      0,
+      /*.window =*/ static_cast<x11::Window>(window),
+      /*.property =*/ property,
+      x11::Atom{},
+      0,
       // Don't limit the amount of returned data.
-      .long_length = std::numeric_limits<uint32_t>::max(),
+      /*.long_length =*/ std::numeric_limits<uint32_t>::max(),
   });
   auto response = future.Sync();
   if (!response || !response->format)
@@ -1146,7 +1176,7 @@ x11::Future<void> SendClientMessage(x11::Window window,
                                     x11::Atom type,
                                     const std::array<uint32_t, 5> data,
                                     x11::EventMask event_mask) {
-  x11::ClientMessageEvent event{.format = 32, .window = window, .type = type};
+  x11::ClientMessageEvent event{false, /*.format =*/ 32, 0, /*.window =*/ window, /*.type =*/ type, {}};
   event.data.data32 = data;
   return SendEvent(event, target, event_mask);
 }

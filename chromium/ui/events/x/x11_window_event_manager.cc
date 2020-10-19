@@ -21,8 +21,22 @@ void SetEventMask(x11::Window window, x11::EventMask new_mask) {
   // ignore the error.
   connection
       ->ChangeWindowAttributes(
-          {.window = window,
-           .event_mask = static_cast<x11::EventMask>(new_mask)})
+          {/*.window =*/ window,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           base::nullopt,
+           /*.event_mask =*/ static_cast<x11::EventMask>(new_mask),
+           base::nullopt,
+           base::nullopt,
+           base::nullopt})
       .IgnoreError();
 }
 

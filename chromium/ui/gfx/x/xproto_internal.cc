@@ -65,8 +65,10 @@ base::Optional<unsigned int> SendRequestImpl(x11::Connection* connection,
                                              bool is_void,
                                              bool reply_has_fds) {
   xcb_protocol_request_t xpr{
-      .ext = nullptr,
-      .isvoid = is_void,
+      0,
+      /*.ext =*/ nullptr,
+      0,
+      /*.isvoid =*/ is_void,
   };
 
   struct RequestHeader {

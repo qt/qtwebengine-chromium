@@ -18,10 +18,10 @@ std::unique_ptr<std::vector<x11::Rectangle>> CreateRegionFromSkRegion(
 
   for (SkRegion::Iterator i(region); !i.done(); i.next()) {
     result->push_back({
-        .x = i.rect().x(),
-        .y = i.rect().y(),
-        .width = i.rect().width(),
-        .height = i.rect().height(),
+        /*.x =*/ i.rect().x(),
+        /*.y =*/ i.rect().y(),
+        /*.width =*/ i.rect().width(),
+        /*.height =*/ i.rect().height(),
     });
   }
 

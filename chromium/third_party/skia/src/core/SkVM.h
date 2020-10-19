@@ -1261,13 +1261,12 @@ namespace skvm {
     static inline Color to_rgba(HSLA  c) { return c->to_rgba(c); }
 
     // Evaluate polynomials: ax^n + bx^(n-1) + ... for n >= 1
-    template <typename... Rest>
-    static inline F32 poly(F32 x, F32a a, F32a b, Rest... rest) {
-        if constexpr (sizeof...(rest) == 0) {
-            return x*a+b;
-        } else {
-            return poly(x, x*a+b, rest...);
-        }
+    static inline F32 poly(F32 x, F32a a, F32a b) {
+        return x*a+b;
+    }
+    template <typename R, typename... Rest>
+    static inline F32 poly(F32 x, F32a a, F32a b, R r, Rest... rest) {
+        return poly(x, x*a+b, r, rest...);
     }
 }  // namespace skvm
 

@@ -17,11 +17,12 @@ namespace {
 
 x11::Future<x11::GetPropertyReply> GetWorkspace() {
   auto* connection = x11::Connection::Get();
-  return connection->GetProperty({
-      .window = connection->default_screen().root,
-      .property = static_cast<x11::Atom>(gfx::GetAtom("_NET_CURRENT_DESKTOP")),
-      .type = static_cast<x11::Atom>(gfx::GetAtom("CARDINAL")),
-      .long_length = 1,
+  return connection->GetProperty(x11::GetPropertyRequest{
+      0,
+      /*.window = */connection->default_screen().root,
+      /*.property =*/ static_cast<x11::Atom>(gfx::GetAtom("_NET_CURRENT_DESKTOP")),
+      /*.type =*/ static_cast<x11::Atom>(gfx::GetAtom("CARDINAL")),
+      /*.long_length =*/ 1,
   });
 }
 

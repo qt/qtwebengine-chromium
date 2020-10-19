@@ -118,8 +118,8 @@ class IdentifiableToken {
 
   // Enums. Punt to the underlying type.
   template <typename T,
-            typename U = typename std::underlying_type<T>::type,
-            typename std::enable_if_t<std::is_enum<T>::value>* = nullptr>
+            typename std::enable_if_t<std::is_enum<T>::value>* = nullptr,
+            typename U = typename std::underlying_type<T>::type>
   constexpr IdentifiableToken(T in)  // NOLINT(google-explicit-constructor)
       : IdentifiableToken(static_cast<U>(in)) {}
 

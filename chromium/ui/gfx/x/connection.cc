@@ -448,10 +448,16 @@ KeySym Connection::KeycodeToKeysym(uint32_t keycode, unsigned int modifiers) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   XKeyEvent key_event{
-      .type = KeyEvent::Press,
-      .display = display_,
-      .state = modifiers,
-      .keycode = keycode,
+      /*.type =*/ KeyEvent::Press,
+       0,
+       false,
+      /*.display =*/ display_,
+       0, 0, 0,
+       0, 0, 0,
+       0, 0,
+      /*.state =*/ modifiers,
+      /*.keycode =*/ keycode,
+       false
   };
   ::KeySym keysym;
   XLookupString(&key_event, nullptr, 0, &keysym, nullptr);

@@ -11,7 +11,7 @@
 #include "include/private/SkColorData.h"
 
 sk_sp<SkColorFilter> SkOverdrawColorFilter::MakeWithSkColors(const SkColor colors[kNumColors]) {
-    auto [effect, err] = SkRuntimeEffect::Make(SkString(R"(
+    auto t = SkRuntimeEffect::Make(SkString(R"(
         uniform half4 color0;
         uniform half4 color1;
         uniform half4 color2;
@@ -31,6 +31,7 @@ sk_sp<SkColorFilter> SkOverdrawColorFilter::MakeWithSkColors(const SkColor color
             return color;
         }
     )"));
+    auto effect = std::get<0>(t);
     if (effect) {
         auto data = SkData::MakeUninitialized(kNumColors * sizeof(SkPMColor4f));
         SkPMColor4f* premul = (SkPMColor4f*)data->writable_data();

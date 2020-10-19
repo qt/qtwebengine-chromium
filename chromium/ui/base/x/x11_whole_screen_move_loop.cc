@@ -250,14 +250,20 @@ void X11WholeScreenMoveLoop::CreateDragInputWindow(
     x11::Connection* connection) {
   grab_input_window_ = connection->GenerateId<x11::Window>();
   connection->CreateWindow({
-      .wid = grab_input_window_,
-      .parent = connection->default_root(),
-      .x = -100,
-      .y = -100,
-      .width = 10,
-      .height = 10,
-      .c_class = x11::WindowClass::InputOnly,
-      .override_redirect = x11::Bool32(true),
+      0,
+      /*.wid =*/ grab_input_window_,
+      /*.parent =*/ connection->default_root(),
+      /*.x = */-100,
+      /*.y =*/ -100,
+      /*.width =*/ 10,
+      /*.height =*/ 10,
+      0,
+      /*.c_class =*/ x11::WindowClass::InputOnly,
+      x11::VisualId{},
+      base::nullopt, base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt, base::nullopt,
+      /*.override_redirect =*/ x11::Bool32(true),
   });
   auto event_mask =
       x11::EventMask::ButtonPress | x11::EventMask::ButtonRelease |

@@ -265,7 +265,7 @@ struct VectorMover<true, T, Allocator> {
 
   static void SwapImpl(T* src, T* src_end, T* dst) {
     if (Allocator::kIsGarbageCollected) {
-      alignas(std::max(alignof(T), sizeof(size_t))) char buf[sizeof(T)];
+      alignas(constexpr_max(alignof(T), sizeof(size_t))) char buf[sizeof(T)];
       for (; src < src_end; ++src, ++dst) {
         memcpy(buf, dst, sizeof(T));
         AtomicWriteMemcpy<sizeof(T)>(dst, src);
@@ -284,6 +284,12 @@ struct VectorMover<true, T, Allocator> {
     Traits::NotifyNewElements(src, len);
     Traits::NotifyNewElements(dst, len);
   }
+private:
+  static constexpr size_t constexpr_max(size_t a, size_t b) {
+    if (a > b) return a;
+    return b;
+  }
+
 };
 
 template <bool canCopyWithMemcpy, typename T, typename Allocator>

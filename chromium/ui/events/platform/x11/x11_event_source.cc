@@ -63,10 +63,11 @@ void InitializeXkb(x11::Connection* connection) {
   // crbug.com/138092
   xkb
       .PerClientFlags({
-          .deviceSpec =
+          /*.deviceSpec =*/
               static_cast<x11::Xkb::DeviceSpec>(x11::Xkb::Id::UseCoreKbd),
-          .change = x11::Xkb::PerClientFlag::DetectableAutoRepeat,
-          .value = x11::Xkb::PerClientFlag::DetectableAutoRepeat,
+          /*.change =*/ x11::Xkb::PerClientFlag::DetectableAutoRepeat,
+          /*.value =*/ x11::Xkb::PerClientFlag::DetectableAutoRepeat,
+          {}, {}, {}
       })
       .OnResponse(base::BindOnce([](x11::Xkb::PerClientFlagsResponse response) {
         if (!response ||
@@ -78,10 +79,21 @@ void InitializeXkb(x11::Connection* connection) {
 
   constexpr auto kXkbAllMapPartMask = static_cast<x11::Xkb::MapPart>(0xff);
   xkb.SelectEvents({
-      .deviceSpec = static_cast<x11::Xkb::DeviceSpec>(x11::Xkb::Id::UseCoreKbd),
-      .affectWhich = x11::Xkb::EventType::NewKeyboardNotify,
-      .selectAll = x11::Xkb::EventType::NewKeyboardNotify,
-      .affectMap = kXkbAllMapPartMask,
+      /*.deviceSpec =*/ static_cast<x11::Xkb::DeviceSpec>(x11::Xkb::Id::UseCoreKbd),
+      /*.affectWhich =*/ x11::Xkb::EventType::NewKeyboardNotify,
+      {},
+      /*.selectAll = */x11::Xkb::EventType::NewKeyboardNotify,
+      /*.affectMap =*/ kXkbAllMapPartMask,
+      {},
+      base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt,
   });
 }
 
@@ -168,12 +180,22 @@ x11::Time X11EventSource::GetCurrentServerTime() {
   if (!dummy_initialized_) {
     // Create a new Window and Atom that will be used for the property change.
     dummy_window_ = connection_->GenerateId<x11::Window>();
-    connection_->CreateWindow({
-        .wid = dummy_window_,
-        .parent = connection_->default_root(),
-        .width = 1,
-        .height = 1,
-        .override_redirect = x11::Bool32(true),
+    connection_->CreateWindow(x11::CreateWindowRequest{
+        0,
+        /*.wid =*/ dummy_window_,
+        /*.parent =*/ connection_->default_root(),
+        0, 0,
+        /*.width =*/ 1,
+        /*.height =*/ 1,
+        0,
+        x11::WindowClass{},
+        x11::VisualId{},
+        base::nullopt, base::nullopt, base::nullopt,
+        base::nullopt, base::nullopt, base::nullopt,
+        base::nullopt, base::nullopt, base::nullopt,
+        /*.override_redirect =*/ x11::Bool32(true),
+        base::nullopt, base::nullopt, base::nullopt,
+        base::nullopt, base::nullopt,
     });
     dummy_atom_ = gfx::GetAtom("CHROMIUM_TIMESTAMP");
     dummy_window_events_ = std::make_unique<XScopedEventSelector>(
@@ -192,12 +214,13 @@ x11::Time X11EventSource::GetCurrentServerTime() {
   // Make a no-op property change on |dummy_window_|.
   std::vector<uint8_t> data{0};
   connection_->ChangeProperty({
-      .window = static_cast<x11::Window>(dummy_window_),
-      .property = dummy_atom_,
-      .type = x11::Atom::STRING,
-      .format = CHAR_BIT,
-      .data_len = 1,
-      .data = base::RefCountedBytes::TakeVector(&data),
+      x11::PropMode{},
+      static_cast<x11::Window>(dummy_window_),
+      dummy_atom_,
+      x11::Atom::STRING,
+      CHAR_BIT,
+      1,
+      base::RefCountedBytes::TakeVector(&data),
   });
 
   // Observe the resulting PropertyNotify event to obtain the timestamp.

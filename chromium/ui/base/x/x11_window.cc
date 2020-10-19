@@ -720,9 +720,12 @@ void XWindow::StackXWindowAbove(x11::Window window) {
   if (it_below_window != window_below_parents.rend() &&
       it_above_window != window_above_parents.rend()) {
     connection_->ConfigureWindow({
-        .window = *it_above_window,
-        .sibling = *it_below_window,
-        .stack_mode = x11::StackMode::Above,
+        /*.window =*/ *it_above_window,
+        base::nullopt, base::nullopt,
+        base::nullopt, base::nullopt,
+        base::nullopt,
+        /*.sibling =*/ *it_below_window,
+        /*.stack_mode =*/ x11::StackMode::Above,
     });
   }
 }
@@ -839,9 +842,11 @@ bool XWindow::IsXWindowVisibleOnAllWorkspaces() const {
 
 void XWindow::MoveCursorTo(const gfx::Point& location_in_pixels) {
   connection_->WarpPointer({
-      .dst_window = x_root_window_,
-      .dst_x = bounds_in_pixels_.x() + location_in_pixels.x(),
-      .dst_y = bounds_in_pixels_.y() + location_in_pixels.y(),
+      x11::Window{},
+      /*.dst_window =*/ x_root_window_,
+      0, 0, 0, 0,
+      /*.dst_x =*/ bounds_in_pixels_.x() + location_in_pixels.x(),
+      /*.dst_y =*/ bounds_in_pixels_.y() + location_in_pixels.y(),
   });
 }
 
@@ -1425,9 +1430,12 @@ void XWindow::SetOverrideRedirect(bool override_redirect) {
   bool remap = window_mapped_in_client_;
   if (remap)
     Hide();
-  connection_->ChangeWindowAttributes({
-      .window = xwindow_,
-      .override_redirect = x11::Bool32(override_redirect),
+  connection_->ChangeWindowAttributes(x11::ChangeWindowAttributesRequest{
+      /*.window =*/ xwindow_,
+      base::nullopt, base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt, base::nullopt,
+      base::nullopt, base::nullopt, base::nullopt,
+      /*.override_redirect =*/ x11::Bool32(override_redirect),
   });
   if (remap) {
     Map();
@@ -1489,11 +1497,12 @@ void XWindow::UpdateWindowRegion(
     std::unique_ptr<std::vector<x11::Rectangle>> region) {
   auto set_shape = [&](const std::vector<x11::Rectangle>& rectangles) {
     connection_->shape().Rectangles({
-        .operation = x11::Shape::So::Set,
-        .destination_kind = x11::Shape::Sk::Bounding,
-        .ordering = x11::ClipOrdering::YXBanded,
-        .destination_window = xwindow_,
-        .rectangles = rectangles,
+        /*.operation =*/ x11::Shape::So::Set,
+        /*.destination_kind =*/ x11::Shape::Sk::Bounding,
+        /*.ordering =*/ x11::ClipOrdering::YXBanded,
+        /*.destination_window =*/ xwindow_,
+        0, 0,
+        /*.rectangles =*/ rectangles,
     });
   };
 
@@ -1517,10 +1526,11 @@ void XWindow::UpdateWindowRegion(
     // rectangle), because several window managers (eg, KDE, XFCE, XMonad) will
     // not put borders on a window with a custom shape.
     connection_->shape().Mask({
-        .operation = x11::Shape::So::Set,
-        .destination_kind = x11::Shape::Sk::Bounding,
-        .destination_window = xwindow_,
-        .source_bitmap = x11::Pixmap::None,
+        /*.operation =*/ x11::Shape::So::Set,
+        /*.destination_kind =*/ x11::Shape::Sk::Bounding,
+        /*.destination_window =*/ xwindow_,
+        0, 0,
+        /*.source_bitmap =*/ x11::Pixmap::None,
     });
   } else {
     // Conversely, if the window does not have system borders, the mask must be

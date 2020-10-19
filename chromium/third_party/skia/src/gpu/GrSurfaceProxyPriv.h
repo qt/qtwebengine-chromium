@@ -42,6 +42,7 @@ public:
 
 private:
     explicit GrSurfaceProxyPriv(GrSurfaceProxy* proxy) : fProxy(proxy) {}
+    GrSurfaceProxyPriv(GrSurfaceProxyPriv&&) = default;
     GrSurfaceProxyPriv(const GrSurfaceProxyPriv&) = delete;
     GrSurfaceProxyPriv& operator=(const GrSurfaceProxyPriv&) = delete;
 

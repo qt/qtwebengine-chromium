@@ -78,11 +78,21 @@ bool X11SoftwareBitmapPresenter::CompositeBitmap(x11::Connection* connection,
     connection->CreatePixmap({depth, pixmap_id, widget, width, height});
     ScopedPixmap pixmap(connection, pixmap_id);
 
-    connection->ChangeGC(
-        {.gc = gc, .subwindow_mode = x11::SubwindowMode::IncludeInferiors});
+    connection->ChangeGC(x11::ChangeGCRequest
+        {/*.gc =*/ gc, base::nullopt,
+         base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+         base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+         /*.subwindow_mode =*/ x11::SubwindowMode::IncludeInferiors,
+         base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+        });
     connection->CopyArea({widget, pixmap_id, gc, x, y, 0, 0, width, height});
-    connection->ChangeGC(
-        {.gc = gc, .subwindow_mode = x11::SubwindowMode::ClipByChildren});
+    connection->ChangeGC(x11::ChangeGCRequest
+        {/*.gc =*/ gc, base::nullopt,
+         base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+         base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+         /*.subwindow_mode =*/ x11::SubwindowMode::ClipByChildren,
+         base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt, base::nullopt,
+        });
 
     auto req = connection->GetImage({x11::ImageFormat::ZPixmap, pixmap_id, 0, 0,
                                      width, height, kAllPlanes});
@@ -200,21 +210,21 @@ void X11SoftwareBitmapPresenter::EndPaint(const gfx::Rect& damage_rect) {
     // TODO(thomasanderson): Investigate direct rendering with DRI3 to avoid any
     // unnecessary X11 IPC or buffer copying.
     x11::Shm::PutImageRequest put_image_request{
-        .drawable = widget_,
-        .gc = gc_,
-        .total_width = shm_pool_->CurrentBitmap().width(),
-        .total_height = shm_pool_->CurrentBitmap().height(),
-        .src_x = rect.x(),
-        .src_y = rect.y(),
-        .src_width = rect.width(),
-        .src_height = rect.height(),
-        .dst_x = rect.x(),
-        .dst_y = rect.y(),
-        .depth = depth_,
-        .format = x11::ImageFormat::ZPixmap,
-        .send_event = enable_multibuffering_,
-        .shmseg = shm_pool_->CurrentSegment(),
-        .offset = 0,
+        /*.drawable =*/ widget_,
+        /*.gc =*/ gc_,
+        /*.total_width =*/ shm_pool_->CurrentBitmap().width(),
+        /*.total_height =*/ shm_pool_->CurrentBitmap().height(),
+        /*.src_x =*/ rect.x(),
+        /*.src_y =*/ rect.y(),
+        /*.src_width =*/ rect.width(),
+        /*.src_height =*/ rect.height(),
+        /*.dst_x =*/ rect.x(),
+        /*.dst_y =*/ rect.y(),
+        /*.depth =*/ depth_,
+        /*.format =*/ x11::ImageFormat::ZPixmap,
+        /*.send_event =*/ enable_multibuffering_,
+        /*.shmseg =*/ shm_pool_->CurrentSegment(),
+        /*.offset =*/ 0,
     };
     connection_->shm().PutImage(put_image_request);
     needs_swap_ = true;
