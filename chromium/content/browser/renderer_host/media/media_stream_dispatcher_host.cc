@@ -196,6 +196,13 @@ void MediaStreamDispatcherHost::OpenDevice(int32_t page_request_id,
                                            blink::mojom::MediaStreamType type,
                                            OpenDeviceCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // OpenDevice is only supported for microphone or webcam capture.
+  if (type != MediaStreamType::DEVICE_AUDIO_CAPTURE &&
+      type != MediaStreamType::DEVICE_VIDEO_CAPTURE) {
+    bad_message::ReceivedBadMessage(
+        render_process_id_, bad_message::MDDH_INVALID_DEVICE_TYPE_REQUEST);
+    return;
+  }
 
   base::PostTaskAndReplyWithResult(
       base::CreateSingleThreadTaskRunner({BrowserThread::UI}).get(), FROM_HERE,
