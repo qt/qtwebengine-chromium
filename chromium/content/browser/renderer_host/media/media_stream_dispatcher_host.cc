@@ -10,6 +10,7 @@
 #include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/task_runner_util.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
@@ -164,6 +165,13 @@ void MediaStreamDispatcherHost::OpenDevice(int32_t page_request_id,
                                            MediaStreamType type,
                                            OpenDeviceCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  // OpenDevice is only supported for microphone or webcam capture.
+  if (type != MediaStreamType::MEDIA_DEVICE_AUDIO_CAPTURE &&
+      type != MediaStreamType::MEDIA_DEVICE_VIDEO_CAPTURE) {
+    bad_message::ReceivedBadMessage(
+        render_process_id_, bad_message::MDDH_INVALID_DEVICE_TYPE_REQUEST);
+    return;
+  }
 
   base::PostTaskAndReplyWithResult(
       BrowserThread::GetTaskRunnerForThread(BrowserThread::UI).get(), FROM_HERE,

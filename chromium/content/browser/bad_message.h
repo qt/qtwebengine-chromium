@@ -230,7 +230,7 @@ enum BadMessageReason {
   PERMISSION_SERVICE_BAD_PERMISSION_DESCRIPTOR = 202,
   RFH_BLOB_URL_TOKEN_FOR_NON_BLOB_URL = 203,
   RFPH_BLOB_URL_TOKEN_FOR_NON_BLOB_URL = 204,
-
+  MSDH_INVALID_STREAM_TYPE = 234,
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
   // reason. After making changes, you MUST update histograms.xml by running:
