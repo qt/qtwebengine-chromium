@@ -1661,13 +1661,8 @@ Network.NetworkLogView = class extends UI.VBox {
     const data = [];
     const requestContentType = request.requestContentType();
     const formData = await request.requestFormData();
-    if (requestContentType && requestContentType.startsWith('application/x-www-form-urlencoded') && formData) {
+    if (formData) {
       data.push('--data-raw ' + escapeString(formData));
-      ignoredHeaders['content-length'] = true;
-      inferredMethod = 'POST';
-    } else if (formData) {
-      data.push('--data-binary');
-      data.push(escapeString(formData));
       ignoredHeaders['content-length'] = true;
       inferredMethod = 'POST';
     }
