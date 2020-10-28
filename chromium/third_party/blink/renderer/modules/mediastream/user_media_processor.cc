@@ -904,7 +904,7 @@ UserMediaProcessor::GetMediaStreamDeviceObserver() {
     // RenderFrameImpl, back to UserMediaClient.
     media_stream_device_observer =
         web_frame->Client()->MediaStreamDeviceObserver();
-    DCHECK(media_stream_device_observer);
+//     DCHECK(media_stream_device_observer);
   }
 
   return media_stream_device_observer;
