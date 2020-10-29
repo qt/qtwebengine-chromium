@@ -20,12 +20,12 @@ apiBridge.registerCustomHook(function(bindingsAPI) {
   }
 
   apiFunctions.setHandleRequest('chooseDesktopMedia',
-                                function(sources, request, callback) {
+                                function(/* sources, */ request, callback) {
     var id = idGenerator.GetNextId();
     pendingRequests[id] = callback;
     bindingUtil.sendRequest(
         'webrtcDesktopCapturePrivate.chooseDesktopMedia',
-        [id, sources, request, $Function.bind(onRequestResult, null, id)],
+        [id, /* sources, */ request, $Function.bind(onRequestResult, null, id)],
         undefined);
     return id;
   });
