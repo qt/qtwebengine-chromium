@@ -42,5 +42,13 @@ function_registration("api_registration") {
     "//third_party/metrics_proto",
     "//ui/accessibility:ax_enums_mojo",
   ]
+
+  if (use_qt) {
+    deps = [ ]
+    deps = [
+      "//third_party/blink/public/mojom:mojom_platform",
+    ]
+  }
+
   deps += [ "//extensions/common/api" ]
 }

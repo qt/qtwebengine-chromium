@@ -23,5 +23,13 @@
     "matches": [
       "chrome://print/*"
     ]
-  }]
+  }],
+  "enterprise.hardwarePlatform": {
+    "dependencies": ["permission:enterprise.hardwarePlatform"],
+    "contexts": ["blessed_extension"]
+  },
+  "webrtcDesktopCapturePrivate": {
+    "dependencies": ["permission:webrtcDesktopCapturePrivate"],
+    "contexts": ["blessed_extension"]
+  }
 }

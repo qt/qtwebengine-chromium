@@ -21,6 +21,9 @@
         <include name="IDR_SANDBOX_INTERNALS_HTML" file="../../chrome/browser/resources/sandbox_internals/sandbox_internals.html" flattenhtml="true" allowexternalscript="true" type="BINDATA" compress="gzip" />
         <include name="IDR_SANDBOX_INTERNALS_JS" file="../../chrome/browser/resources/sandbox_internals/sandbox_internals.js" type="BINDATA" compress="gzip" />
       </if>
+      <if expr="enable_hangout_services_extension">
+        <include name="IDR_HANGOUT_SERVICES_MANIFEST" file="../../chrome/browser/resources/hangout_services/manifest.json" type="BINDATA" />
+      </if>
     </includes>
   </release>
 </grit>
