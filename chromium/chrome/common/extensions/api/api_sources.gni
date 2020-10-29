@@ -143,6 +143,15 @@ if (is_chromeos_ash) {
   ]
 }
 
+if (use_qt) {
+  schema_sources_ = [ ]
+  schema_sources_ = [
+    "enterprise_hardware_platform.idl",
+  ]
+
+  uncompiled_sources_ = [ ]
+}
+
 chrome_extensions_api_schema_sources = get_path_info(schema_sources_, "abspath")
 
 chrome_extensions_manifest_only_schema_sources =

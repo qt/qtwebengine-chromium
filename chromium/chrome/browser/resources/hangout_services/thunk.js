@@ -63,8 +63,9 @@ chrome.runtime.onMessageExternal.addListener(function(
           requestInfo, origin, metaData, doSendResponse);
       return true;
     } else if (method == 'logging.start') {
-      chrome.webrtcLoggingPrivate.start(requestInfo, origin, doSendResponse);
-      return true;
+      //chrome.webrtcLoggingPrivate.start(requestInfo, origin, doSendResponse);
+      // Disable webrtc logging for QtWebEngine.
+      return false;
     } else if (method == 'logging.uploadOnRenderClose') {
       chrome.webrtcLoggingPrivate.setUploadOnRenderClose(
           requestInfo, origin, true);
@@ -221,6 +222,7 @@ function onChooseDesktopMediaPort(port) {
   port.onMessage.addListener(function(message) {
     const method = message['method'];
     if (method == 'chooseDesktopMedia') {
+      /*
       const sources = message['sources'];
       let cancelId = null;
       const tab = port.sender.tab;
@@ -248,6 +250,14 @@ function onChooseDesktopMediaPort(port) {
           chrome.webrtcDesktopCapturePrivate.cancelChooseDesktopMedia(cancelId);
         }
       });
+      */
+
+      // QtWebEngine
+      const requestInfo = {};
+      requestInfo['guestProcessId'] = port.sender.guestProcessId || 0;
+      requestInfo['guestRenderFrameId'] =
+          port.sender.guestRenderFrameRoutingId || 0;
+      chrome.webrtcDesktopCapturePrivate.chooseDesktopMedia(requestInfo, sendResponse);
     }
   });
 }
@@ -294,10 +304,12 @@ function onProcessCpu(port) {
     });
   }
 
+  /*
   chrome.processes.onUpdated.addListener(processListener);
   port.onDisconnect.addListener(function() {
     chrome.processes.onUpdated.removeListener(processListener);
   });
+  */
 }
 
 function appendLastErrorMessage(errors) {
