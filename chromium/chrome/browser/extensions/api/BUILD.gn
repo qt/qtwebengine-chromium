@@ -46,4 +46,14 @@ function_registration("api_registration") {
     "//third_party/metrics_proto",
     "//ui/accessibility:ax_enums_mojo",
   ]
+
+  if (use_qt) {
+    deps = []
+    deps = [
+      "//chrome/common/extensions/api",
+      "//extensions/common/api",
+      "//qtwebengine/common:mojo_bindings",
+      "//third_party/blink/public/mojom:mojom_platform",
+    ]
+  }
 }
