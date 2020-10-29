@@ -26,9 +26,15 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/media/audio_service_util.h"
+#endif
 #include "chrome/common/channel_info.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/common/media/webrtc_logging.mojom.h"
+#else
+#include "qtwebengine/common/media/webrtc_logging.mojom.h"
+#endif
 #include "components/version_info/version_info.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -476,8 +482,11 @@ void WebRtcTextLogHandler::OnGetNetworkInterfaceListFinish(
 
   // Chrome version
   LogToCircularBuffer(
-      base::StrCat({"Chrome version: ", version_info::GetVersionNumber(), " ",
-                    chrome::GetChannelName(chrome::WithExtendedStable(true))}));
+      base::StrCat({"Chrome version: ", version_info::GetVersionNumber(), " "
+#if !BUILDFLAG(IS_QTWEBENGINE)
+                    , chrome::GetChannelName(chrome::WithExtendedStable(true))
+#endif
+                   }));
 
   // OS
   LogToCircularBuffer(base::SysInfo::OperatingSystemName() + " " +
@@ -527,17 +536,23 @@ void WebRtcTextLogHandler::OnGetNetworkInterfaceListFinish(
   auto enabled_or_disabled_feature_string = [](auto& feature) {
     return base::FeatureList::IsEnabled(feature) ? "enabled" : "disabled";
   };
+#if !BUILDFLAG(IS_QTWEBENGINE)
   auto enabled_or_disabled_bool_string = [](bool value) {
     return value ? "enabled" : "disabled";
   };
+#endif
   LogToCircularBuffer(base::StrCat(
       {"AudioService: OutOfProcess=",
        enabled_or_disabled_feature_string(features::kAudioServiceOutOfProcess),
        ", LaunchOnStartup=",
        enabled_or_disabled_feature_string(
            features::kAudioServiceLaunchOnStartup),
+#if !BUILDFLAG(IS_QTWEBENGINE)
        ", Sandbox=",
        enabled_or_disabled_bool_string(IsAudioServiceSandboxEnabled())}));
+#else
+       ""}));
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
   if (media::IsChromeWideEchoCancellationEnabled()) {
