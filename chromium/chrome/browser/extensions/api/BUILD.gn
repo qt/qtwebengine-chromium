@@ -49,4 +49,14 @@ function_registration("api_registration") {
   if (is_chromeos) {
     deps += [ "//chrome/browser/chromeos/extensions:constants" ]
   }
+
+  if (is_qtwebengine) {
+    deps = []
+    deps = [
+      "//chrome/common/extensions/api",
+      "//extensions/common/api",
+      "//qtwebengine/common:mojo_bindings",
+      "//third_party/blink/public/mojom:mojom_platform",
+    ]
+  }
 }
