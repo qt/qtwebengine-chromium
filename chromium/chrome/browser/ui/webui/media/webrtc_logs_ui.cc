@@ -19,7 +19,9 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
+#endif
 #include "chrome/browser/media/webrtc/webrtc_event_log_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"

@@ -12,7 +12,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
@@ -87,7 +89,7 @@ class PeerConnectionTrackerProxyImpl
 // necessarily for any given user profile.
 // Certain platforms (mobile) are blocked from remote-bound logging.
 bool IsRemoteLoggingFeatureEnabled() {
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_QTWEBENGINE)
   bool enabled = false;
 #else
   bool enabled = true;
@@ -428,7 +430,7 @@ WebRtcEventLogManager::CreateRemoteLogFileWriterFactory() {
   if (remote_log_file_writer_factory_for_testing_) {
     return std::move(remote_log_file_writer_factory_for_testing_);
   } else {
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
     return std::make_unique<GzippedLogFileWriterFactory>(
         std::make_unique<GzipLogCompressorFactory>(
             std::make_unique<DefaultGzippedSizeEstimator::Factory>()));

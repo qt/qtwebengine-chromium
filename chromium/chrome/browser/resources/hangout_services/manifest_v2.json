@@ -19,7 +19,7 @@
   "incognito": "split",
   "permissions": [
     "enterprise.hardwarePlatform",
-    "processes",
+    //"processes",
     "system.cpu",
     "webrtcLoggingPrivate"
   ]
