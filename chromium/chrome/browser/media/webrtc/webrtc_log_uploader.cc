@@ -25,7 +25,9 @@
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
+#endif
 #include "components/version_info/version_info.h"
 #include "components/webrtc_logging/browser/log_cleanup.h"
 #include "components/webrtc_logging/browser/text_log_list.h"
@@ -48,7 +50,9 @@ const int kLogCountLimit = 20;
 const uint32_t kIntermediateCompressionBufferBytes = 256 * 1024;  // 256 KB
 const int kLogListLimitLines = 50;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const char kWebrtcLogUploadContentType[] = "multipart/form-data";
+#endif
 const char kWebrtcLogMultipartBoundary[] =
     "----**--yradnuoBgoLtrapitluMklaTelgooG--**----";
 
@@ -134,10 +138,14 @@ WebRtcLogUploader::UploadDoneData::~UploadDoneData() = default;
 
 // static
 WebRtcLogUploader* WebRtcLogUploader::GetInstance() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!g_browser_process) {
     return nullptr;
   }
   return g_browser_process->webrtc_log_uploader();
+#else
+  return nullptr;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 WebRtcLogUploader::WebRtcLogUploader()
@@ -489,6 +497,7 @@ std::string WebRtcLogUploader::CompressLog(WebRtcLogBuffer* buffer) {
 void WebRtcLogUploader::UploadCompressedLog(
     WebRtcLogUploader::UploadDoneData upload_done_data,
     std::unique_ptr<std::string> post_data) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK_CALLED_ON_VALID_SEQUENCE(main_sequence_checker_);
 
   DecreaseLogCount();
@@ -550,6 +559,9 @@ void WebRtcLogUploader::UploadCompressedLog(
       base::BindOnce(&WebRtcLogUploader::OnSimpleLoaderComplete,
                      base::Unretained(this), std::move(it),
                      std::move(upload_done_data)));
+#else
+  NOTREACHED();
+#endif //  !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void WebRtcLogUploader::DecreaseLogCount() {

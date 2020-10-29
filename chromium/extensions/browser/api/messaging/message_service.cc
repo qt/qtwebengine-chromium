@@ -588,9 +588,11 @@ void MessageService::OpenChannelToExtension(
         !!WebViewGuest::FromRenderFrameHost(source_render_frame_host);
     if (is_web_view &&
         Manifest::IsComponentLocation(target_extension->location())) {
+#else
+    if (Manifest::IsComponentLocation(target_extension->location())) {
+#endif
       include_guest_process_info = true;
     }
-#endif
   }
 
   std::unique_ptr<OpenChannelParams> params =
@@ -957,7 +959,9 @@ void MessageService::OpenChannelImpl(BrowserContext* browser_context,
     DCHECK(port_context.frame);
     guest_render_frame_routing_id = port_context.frame->routing_id;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
     DCHECK(WebViewGuest::FromRenderFrameHost(source.GetRenderFrameHost()));
+#endif
   }
 #endif
 

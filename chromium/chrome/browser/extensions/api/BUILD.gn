@@ -146,6 +146,7 @@ function_registration("api_registration") {
   ]
 
   if (is_qtwebengine) {
+     deps += [ "//qtwebengine/common:mojo_bindings" ]
      deps -= [
        "//chrome/browser/ai",
        "//chrome/common",
@@ -195,6 +196,16 @@ source_set("keyed_service_factories") {
     deps += [
       "//chrome/browser/chromeos/extensions/login_screen/login_state",
       "//chrome/browser/chromeos/extensions/wm",
+    ]
+  }
+
+  if (is_qtwebengine) {
+    deps = []
+    deps = [
+      "//chrome/common/extensions/api",
+      "//extensions/common/api",
+      "//qtwebengine/common:mojo_bindings",
+      "//third_party/blink/public/mojom:mojom_platform",
     ]
   }
 }
