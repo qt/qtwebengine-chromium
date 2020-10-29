@@ -11,7 +11,9 @@
 #include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/browser_process.h"
+#endif
 #include "components/version_info/version_info.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -110,11 +112,15 @@ std::string MimeContentType() {
 void BindURLLoaderFactoryReceiver(
     mojo::PendingReceiver<network::mojom::URLLoaderFactory>
         url_loader_factory_receiver) {
+#if !defined(TOOLKIT_QT)
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   scoped_refptr<network::SharedURLLoaderFactory> shared_url_loader_factory =
       g_browser_process->shared_url_loader_factory();
   DCHECK(shared_url_loader_factory);
   shared_url_loader_factory->Clone(std::move(url_loader_factory_receiver));
+#else
+  NOTREACHED();
+#endif // !defined(TOOLKIT_QT)
 }
 
 void OnURLLoadUploadProgress(uint64_t current, uint64_t total) {
