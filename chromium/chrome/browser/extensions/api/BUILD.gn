@@ -153,6 +153,16 @@ source_set("keyed_service_factories") {
       "//chrome/browser/chromeos/extensions/wm",
     ]
   }
+
+  if (is_qtwebengine) {
+    deps = []
+    deps = [
+      "//chrome/common/extensions/api",
+      "//extensions/common/api",
+      "//qtwebengine/common:mojo_bindings",
+      "//third_party/blink/public/mojom:mojom_platform",
+    ]
+  }
 }
 
 if (is_win) {

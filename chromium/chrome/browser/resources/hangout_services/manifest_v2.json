@@ -18,9 +18,9 @@
   },
   "incognito": "split",
   "permissions": [
-    "desktopCapture",
+    //"desktopCapture",
     "enterprise.hardwarePlatform",
-    "processes",
+    //"processes",
     "system.cpu",
     "webrtcDesktopCapturePrivate",
     "webrtcLoggingPrivate"
