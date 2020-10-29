@@ -175,11 +175,13 @@ function onProcessCpu(port) {
     });
   }
 
+  /*
   chrome.processes.onUpdated.addListener(processListener);
   port.onDisconnect.addListener(function() {
     chrome.processes.onUpdated.removeListener(processListener);
     port.onMessage.removeListener(messageListener);
   });
+  */
 }
 
 function appendLastErrorMessage(errors) {

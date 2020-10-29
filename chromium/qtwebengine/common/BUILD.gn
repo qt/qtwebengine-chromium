@@ -5,6 +5,7 @@ mojom("mojo_bindings") {
 
   sources = [
     "renderer_configuration.mojom",
+    "media/webrtc_logging.mojom",
   ]
 
   deps = []

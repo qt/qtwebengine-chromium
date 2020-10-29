@@ -14,6 +14,10 @@
       <if expr="enable_pdf">
         <include name="IDR_PDF_MANIFEST" file="../../chrome/browser/resources/pdf/manifest.json" type="BINDATA" />
       </if>
+      <if expr="enable_hangout_services_extension">
+        <include name="IDR_HANGOUT_SERVICES_MANIFEST_V2" file="../../chrome/browser/resources/hangout_services/manifest_v2.json" type="BINDATA" />
+        <include name="IDR_HANGOUT_SERVICES_MANIFEST_V3" file="../../chrome/browser/resources/hangout_services/manifest_v3.json" type="BINDATA" />
+      </if>
     </includes>
   </release>
 </grit>

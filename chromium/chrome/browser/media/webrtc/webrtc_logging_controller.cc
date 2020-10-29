@@ -326,9 +326,12 @@ void WebRtcLoggingController::StartEventLogging(
       web_api_settings_.has_value()) {
     diagnostic_uuid = web_api_settings_->uuid;
   }
-  WebRtcEventLogManager::GetInstance()->StartRemoteLogging(
-      render_process_id_, session_id, max_log_size_bytes, output_period_ms,
-      web_app_id, std::move(diagnostic_uuid), local_only, std::move(callback));
+  if (auto* manager = WebRtcEventLogManager::GetInstance()) {
+    manager->StartRemoteLogging(
+        render_process_id_, session_id, max_log_size_bytes, output_period_ms,
+        web_app_id, std::move(diagnostic_uuid), local_only,
+        std::move(callback));
+  }
 }
 
 base::RepeatingCallback<void(const std::string&)>
