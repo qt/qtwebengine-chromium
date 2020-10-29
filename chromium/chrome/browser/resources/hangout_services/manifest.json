@@ -20,12 +20,12 @@
   },
   "incognito": "split",
   "permissions": [
-    "desktopCapture",
+    //"desktopCapture",
     "enterprise.hardwarePlatform",
-    "processes",
+    //"processes",
     "system.cpu",
-    "webrtcAudioPrivate",
-    "webrtcDesktopCapturePrivate",
-    "webrtcLoggingPrivate"
+    //"webrtcAudioPrivate",
+    //"webrtcLoggingPrivate",
+    "webrtcDesktopCapturePrivate"
   ]
 }

@@ -40,11 +40,14 @@ group("extensions_features") {
 # Private Targets
 
 generated_json_strings("generated_api_json_strings") {
+  sources = chrome_extensions_api_schema_sources +
+            chrome_extensions_api_uncompiled_sources
+
   configs = [ "//build/config:precompiled_headers" ]
   bundle_name = "Chrome"
   schema_include_rules = chrome_extensions_api_schema_include_rules
 
-  sources = [
+  sources += [
     "app.json",
     "commands.json",
     "declarative_content.json",
