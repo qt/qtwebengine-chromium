@@ -27,6 +27,7 @@ group("examples") {
       ":AppRTCMobile",
       ":AppRTCMobile_test_apk",
       ":libwebrtc_unity",
+      "androidvoip",
     ]
 
     # TODO(sakal): We include some code from the tests. Remove this dependency
@@ -87,7 +88,7 @@ if (is_android) {
     testonly = true
     apk_name = "AppRTCMobile"
     android_manifest = "androidapp/AndroidManifest.xml"
-    min_sdk_version = 16
+    min_sdk_version = 21
     target_sdk_version = 29
 
     deps = [
@@ -196,7 +197,7 @@ if (is_android) {
   rtc_instrumentation_test_apk("AppRTCMobile_test_apk") {
     apk_name = "AppRTCMobileTest"
     android_manifest = "androidtests/AndroidManifest.xml"
-    min_sdk_version = 16
+    min_sdk_version = 21
     target_sdk_version = 21
 
     sources = [
@@ -207,6 +208,7 @@ if (is_android) {
 
     deps = [
       ":AppRTCMobile_javalib",
+      "../sdk/android:base_java",
       "../sdk/android:camera_java",
       "../sdk/android:libjingle_peerconnection_java",
       "../sdk/android:peerconnection_java",
@@ -306,7 +308,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
     } else {
       deps += [ "../sdk:mac_framework_objc+link" ]
     }
-    libs = [
+    frameworks = [
       "CoreMedia.framework",
       "QuartzCore.framework",
     ]
@@ -348,7 +350,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "../sdk:ios_framework_bundle",
       ]
 
-      libs = [ "AVFoundation.framework" ]
+      frameworks = [ "AVFoundation.framework" ]
     }
 
     ios_app_bundle("AppRTCMobile") {
@@ -411,7 +413,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
           "../sdk:ios_framework_bundle",
         ]
 
-        libs = [ "ReplayKit.framework" ]
+        frameworks = [ "ReplayKit.framework" ]
       }
 
       ios_appex_bundle("AppRTCMobileBroadcastUpload") {
@@ -435,7 +437,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
 
         info_plist = "objc/AppRTCMobile/ios/broadcast_extension/BroadcastSetupUIInfo.plist"
 
-        libs = [ "ReplayKit.framework" ]
+        frameworks = [ "ReplayKit.framework" ]
 
         deps = [ ":AppRTCMobile_ios_bundle_data" ]
       }
@@ -491,6 +493,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         "../modules/audio_processing:api",
         "../pc:libjingle_peerconnection",
         "../rtc_base",
+        "../rtc_base/synchronization:mutex",
         "../sdk:base_objc",
         "../sdk:default_codec_factory_objc",
         "../sdk:helpers_objc",
@@ -549,7 +552,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
 
       info_plist = "objc/AppRTCMobile/mac/Info.plist"
 
-      libs = [ "AppKit.framework" ]
+      frameworks = [ "AppKit.framework" ]
 
       ldflags = [
         "-rpath",
@@ -594,10 +597,10 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
     configs += [ ":socketrocket_warning_config" ]
     public_configs = [ ":socketrocket_include_config" ]
 
-    libs = [
+    libs = [ "icucore" ]
+    frameworks = [
       "CFNetwork.framework",
       "Security.framework",
-      "icucore",
     ]
   }
 
@@ -836,6 +839,7 @@ if (is_android) {
       "../sdk/android:camera_java",
       "../sdk/android:libjingle_peerconnection_java",
       "../sdk/android:peerconnection_java",
+      "../sdk/android:video_api_java",
       "../sdk/android:video_java",
       "//third_party/android_deps:com_android_support_support_annotations_java",
     ]

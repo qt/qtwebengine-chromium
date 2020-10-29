@@ -5,18 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "src/gpu/GrCoordTransform.h"
+#include "src/gpu/gl/GrGLProgram.h"
+
 #include "src/gpu/GrPathProcessor.h"
 #include "src/gpu/GrPipeline.h"
 #include "src/gpu/GrProcessor.h"
 #include "src/gpu/GrProgramInfo.h"
-#include "src/gpu/GrTAllocator.h"
-#include "src/gpu/GrTexturePriv.h"
+#include "src/gpu/GrTexture.h"
 #include "src/gpu/GrXferProcessor.h"
 #include "src/gpu/gl/GrGLBuffer.h"
 #include "src/gpu/gl/GrGLGpu.h"
 #include "src/gpu/gl/GrGLPathRendering.h"
-#include "src/gpu/gl/GrGLProgram.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
 #include "src/gpu/glsl/GrGLSLXferProcessor.h"
@@ -36,7 +35,6 @@ sk_sp<GrGLProgram> GrGLProgram::Make(
         std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
         std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
         std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fps,
-        int fragmentProcessorCnt,
         std::unique_ptr<Attribute[]> attributes,
         int vertexAttributeCnt,
         int instanceAttributeCnt,
@@ -51,7 +49,6 @@ sk_sp<GrGLProgram> GrGLProgram::Make(
                                                std::move(geometryProcessor),
                                                std::move(xferProcessor),
                                                std::move(fps),
-                                               fragmentProcessorCnt,
                                                std::move(attributes),
                                                vertexAttributeCnt,
                                                instanceAttributeCnt,
@@ -73,7 +70,6 @@ GrGLProgram::GrGLProgram(
         std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
         std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
         std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fps,
-        int fragmentProcessorCnt,
         std::unique_ptr<Attribute[]> attributes,
         int vertexAttributeCnt,
         int instanceAttributeCnt,
@@ -84,7 +80,6 @@ GrGLProgram::GrGLProgram(
         , fPrimitiveProcessor(std::move(geometryProcessor))
         , fXferProcessor(std::move(xferProcessor))
         , fFragmentProcessors(std::move(fps))
-        , fFragmentProcessorCnt(fragmentProcessorCnt)
         , fAttributes(std::move(attributes))
         , fVertexAttributeCnt(vertexAttributeCnt)
         , fInstanceAttributeCnt(instanceAttributeCnt)
@@ -117,15 +112,15 @@ void GrGLProgram::updateUniforms(const GrRenderTarget* renderTarget,
     // We must bind to texture units in the same order in which we set the uniforms in
     // GrGLProgramDataManager. That is, we bind textures for processors in this order:
     // primProc, fragProcs, XP.
-    GrFragmentProcessor::PipelineCoordTransformRange range(programInfo.pipeline());
-    fPrimitiveProcessor->setData(fProgramDataManager, programInfo.primProc(), range);
+    fPrimitiveProcessor->setData(fProgramDataManager, programInfo.primProc());
 
-    GrFragmentProcessor::CIter fpIter(programInfo.pipeline());
-    GrGLSLFragmentProcessor::Iter glslIter(fFragmentProcessors.get(), fFragmentProcessorCnt);
-    for (; fpIter && glslIter; ++fpIter, ++glslIter) {
-        glslIter->setData(fProgramDataManager, *fpIter);
+    for (int i = 0; i < programInfo.pipeline().numFragmentProcessors(); ++i) {
+        auto& pipelineFP = programInfo.pipeline().getFragmentProcessor(i);
+        auto& baseGLSLFP = *fFragmentProcessors[i];
+        for (auto [fp, glslFP] : GrGLSLFragmentProcessor::ParallelRange(pipelineFP, baseGLSLFP)) {
+            glslFP.setData(fProgramDataManager, fp);
+        }
     }
-    SkASSERT(!fpIter && !glslIter);
 
     const GrXferProcessor& xp = programInfo.pipeline().getXferProcessor();
     SkIPoint offset;
@@ -145,14 +140,12 @@ void GrGLProgram::bindTextures(const GrPrimitiveProcessor& primProc,
     }
     int nextTexSamplerIdx = primProc.numTextureSamplers();
 
-    GrFragmentProcessor::CIter fpIter(pipeline);
-    for (; fpIter; ++fpIter) {
-        for (int i = 0; i < fpIter->numTextureSamplers(); ++i) {
-            const GrFragmentProcessor::TextureSampler& sampler = fpIter->textureSampler(i);
-            fGpu->bindTexture(nextTexSamplerIdx++, sampler.samplerState(), sampler.view().swizzle(),
-                              static_cast<GrGLTexture*>(sampler.peekTexture()));
-        }
-    }
+    pipeline.visitTextureEffects([&](const GrTextureEffect& te) {
+        GrSamplerState samplerState = te.samplerState();
+        GrSwizzle swizzle = te.view().swizzle();
+        auto* texture = static_cast<GrGLTexture*>(te.texture());
+        fGpu->bindTexture(nextTexSamplerIdx++, samplerState, swizzle, texture);
+    });
 
     SkIPoint offset;
     GrTexture* dstTexture = pipeline.peekDstTexture(&offset);

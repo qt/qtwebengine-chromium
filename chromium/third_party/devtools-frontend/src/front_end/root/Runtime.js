@@ -288,7 +288,7 @@ export class Runtime {
 
   /**
    * @param {!Extension} extension
-   * @param {!Set.<!Function>=} currentContextTypes
+   * @param {!Set.<function(new:Object, ...?):void>} currentContextTypes
    * @return {boolean}
    */
   isExtensionApplicableToContextTypes(extension, currentContextTypes) {
@@ -300,7 +300,7 @@ export class Runtime {
 
     if (currentContextTypes) {
       /**
-       * @param {!Function} targetType
+       * @param {function(new:Object, ...?):void} targetType
        * @return {boolean}
        */
       callback = targetType => {
@@ -648,10 +648,10 @@ export class Module {
       return Promise.resolve();
     }
     const promises = [];
-    for (let i = 0; i < resources.length; ++i) {
-      const url = this._modularizeURL(resources[i]);
-      const isHtml = url.endsWith('.html');
-      promises.push(loadResourceIntoCache(url, !isHtml /* appendSourceURL */));
+    for (const resource of resources) {
+      const url = this._modularizeURL(resource);
+      const shouldAppendSourceURL = !(url.endsWith('.html') || url.endsWith('.md'));
+      promises.push(loadResourceIntoCache(url, shouldAppendSourceURL));
     }
     return Promise.all(promises).then(undefined);
   }
@@ -843,7 +843,7 @@ export class Extension {
   }
 
   /**
-  * @param {function(new:Object)} contextType
+  * @param {function(new:Object, ...?):void} contextType
   * @return {boolean}
   */
   hasContextType(contextType) {
@@ -887,6 +887,13 @@ export class ExperimentsSupport {
       }
     }
     return result;
+  }
+
+  /**
+  * @return {!Array.<!Experiment>}
+  */
+  enabledExperiments() {
+    return this._experiments.filter(experiment => experiment.isEnabled());
   }
 
   /**

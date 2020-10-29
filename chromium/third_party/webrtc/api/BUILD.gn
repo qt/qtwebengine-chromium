@@ -149,6 +149,7 @@ rtc_library("libjingle_peerconnection_api") {
     "rtp_transceiver_interface.h",
     "sctp_transport_interface.cc",
     "sctp_transport_interface.h",
+    "set_local_description_observer_interface.h",
     "set_remote_description_observer_interface.h",
     "stats_types.cc",
     "stats_types.h",
@@ -296,9 +297,10 @@ rtc_source_set("video_quality_analyzer_api") {
   ]
 }
 
-rtc_source_set("track_id_stream_label_map") {
+rtc_source_set("track_id_stream_info_map") {
   visibility = [ "*" ]
-  sources = [ "test/track_id_stream_label_map.h" ]
+  sources = [ "test/track_id_stream_info_map.h" ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
 }
 
 rtc_source_set("rtp_transceiver_direction") {
@@ -345,7 +347,7 @@ rtc_source_set("audio_quality_analyzer_api") {
 
   deps = [
     ":stats_observer_interface",
-    ":track_id_stream_label_map",
+    ":track_id_stream_info_map",
   ]
 }
 
@@ -377,9 +379,9 @@ rtc_source_set("peer_connection_quality_test_fixture_api") {
     ":rtp_parameters",
     ":simulated_network_api",
     ":stats_observer_interface",
+    ":track_id_stream_info_map",
     ":video_quality_analyzer_api",
     "../media:rtc_media_base",
-    "../rtc_base:deprecation",
     "../rtc_base:rtc_base",
     "rtc_event_log",
     "task_queue",
@@ -463,6 +465,7 @@ if (rtc_include_tests) {
     deps = [
       ":audio_quality_analyzer_api",
       ":peer_connection_quality_test_fixture_api",
+      ":time_controller",
       ":video_quality_analyzer_api",
       "../test/pc/e2e:peerconnection_quality_test",
     ]
@@ -577,10 +580,7 @@ rtc_source_set("bitrate_allocation") {
 rtc_source_set("simulated_network_api") {
   visibility = [ "*" ]
   sources = [ "test/simulated_network.h" ]
-  deps = [
-    "../rtc_base",
-    "../rtc_base:criticalsection",
-  ]
+  deps = [ "../rtc_base" ]
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
@@ -592,6 +592,7 @@ rtc_source_set("network_emulation_manager_api") {
     "test/network_emulation_manager.h",
   ]
   deps = [
+    ":array_view",
     ":simulated_network_api",
     ":time_controller",
     "../call:simulated_network",
@@ -754,7 +755,7 @@ if (rtc_include_tests) {
       "test/videocodec_test_stats.h",
     ]
     deps = [
-      "..:webrtc_common",
+      "../media:rtc_h264_profile_id",
       "../modules/video_coding:video_codec_interface",
       "../rtc_base:stringutils",
       "video:video_frame_type",

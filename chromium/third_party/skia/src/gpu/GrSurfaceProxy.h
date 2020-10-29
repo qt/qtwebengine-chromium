@@ -70,7 +70,7 @@ public:
         SkISize fDimensions;
         SkBackingFit fFit;
         GrRenderable fRenderable;
-        GrMipMapped fMipMapped;
+        GrMipmapped fMipmapped;
         int fSampleCnt;
         const GrBackendFormat& fFormat;
         GrProtected fProtected;
@@ -302,7 +302,7 @@ public:
     static sk_sp<GrSurfaceProxy> Copy(GrRecordingContext*,
                                       GrSurfaceProxy* src,
                                       GrSurfaceOrigin,
-                                      GrMipMapped,
+                                      GrMipmapped,
                                       SkIRect srcRect,
                                       SkBackingFit,
                                       SkBudgeted,
@@ -312,7 +312,7 @@ public:
     static sk_sp<GrSurfaceProxy> Copy(GrRecordingContext*,
                                       GrSurfaceProxy* src,
                                       GrSurfaceOrigin,
-                                      GrMipMapped,
+                                      GrMipmapped,
                                       SkBackingFit,
                                       SkBudgeted);
 
@@ -325,7 +325,7 @@ public:
 
     // Provides access to functions that aren't part of the public API.
     inline GrSurfaceProxyPriv priv();
-    inline const GrSurfaceProxyPriv priv() const;
+    inline const GrSurfaceProxyPriv priv() const;  // NOLINT(readability-const-return-type)
 
     GrProtected isProtected() const { return fIsProtected; }
 
@@ -368,7 +368,7 @@ protected:
     void assign(sk_sp<GrSurface> surface);
 
     sk_sp<GrSurface> createSurfaceImpl(GrResourceProvider*, int sampleCnt, GrRenderable,
-                                       GrMipMapped) const;
+                                       GrMipmapped) const;
 
     // Once the dimensions of a fully-lazy proxy are decided, and before it gets instantiated, the
     // client can use this optional method to specify the proxy's dimensions. (A proxy's dimensions
@@ -381,7 +381,7 @@ protected:
     }
 
     bool instantiateImpl(GrResourceProvider* resourceProvider, int sampleCnt, GrRenderable,
-                         GrMipMapped, const GrUniqueKey*);
+                         GrMipmapped, const GrUniqueKey*);
 
     // For deferred proxies this will be null until the proxy is instantiated.
     // For wrapped proxies it will point to the wrapped resource.

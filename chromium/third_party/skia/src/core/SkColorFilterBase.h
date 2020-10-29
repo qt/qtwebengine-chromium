@@ -24,12 +24,14 @@ namespace skvm {
     struct F32;
     struct Uniforms;
     struct Color;
-}
+}  // namespace skvm
 
 class SkColorFilterBase : public SkColorFilter {
 public:
+    SK_WARN_UNUSED_RESULT
     bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const;
 
+    SK_WARN_UNUSED_RESULT
     skvm::Color program(skvm::Builder*, skvm::Color,
                         SkColorSpace* dstCS, skvm::Uniforms*, SkArenaAlloc*) const;
 
@@ -42,13 +44,14 @@ public:
      *  A subclass may implement this factory function to work with the GPU backend. It returns
      *  a GrFragmentProcessor that implements the color filter in GPU shader code.
      *
-     *  The fragment processor receives a premultiplied input color and produces a premultiplied
-     *  output color.
+     *  The fragment processor receives a input FP that generates a premultiplied input color, and
+     *  produces a premultiplied output color.
      *
-     *  A null return indicates that the color filter isn't implemented for the GPU backend.
+     *  A GrFPFailure indicates that the color filter isn't implemented for the GPU backend.
      */
-    virtual std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(
-            GrRecordingContext*, const GrColorInfo& dstColorInfo) const;
+    virtual GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                           GrRecordingContext* context,
+                                           const GrColorInfo& dstColorInfo) const;
 #endif
 
     bool affectsTransparentBlack() const {

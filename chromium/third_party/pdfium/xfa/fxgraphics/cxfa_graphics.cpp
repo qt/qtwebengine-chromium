@@ -174,10 +174,10 @@ void CXFA_Graphics::StrokePath(CXFA_GEPath* path, const CFX_Matrix* matrix) {
 }
 
 void CXFA_Graphics::FillPath(CXFA_GEPath* path,
-                             FX_FillMode fillMode,
+                             CFX_FillRenderOptions::FillType fill_type,
                              const CFX_Matrix* matrix) {
   if (path)
-    RenderDeviceFillPath(path, fillMode, matrix);
+    RenderDeviceFillPath(path, fill_type, matrix);
 }
 
 void CXFA_Graphics::ConcatMatrix(const CFX_Matrix* matrix) {
@@ -214,35 +214,39 @@ void CXFA_Graphics::RenderDeviceStrokePath(const CXFA_GEPath* path,
     m.Concat(*matrix);
 
   m_renderDevice->DrawPath(path->GetPathData(), &m, &m_info.graphState, 0x0,
-                           m_info.strokeColor.GetArgb(), 0);
+                           m_info.strokeColor.GetArgb(),
+                           CFX_FillRenderOptions());
 }
 
-void CXFA_Graphics::RenderDeviceFillPath(const CXFA_GEPath* path,
-                                         FX_FillMode fillMode,
-                                         const CFX_Matrix* matrix) {
+void CXFA_Graphics::RenderDeviceFillPath(
+    const CXFA_GEPath* path,
+    CFX_FillRenderOptions::FillType fill_type,
+    const CFX_Matrix* matrix) {
   CFX_Matrix m = m_info.CTM;
   if (matrix)
     m.Concat(*matrix);
 
+  const CFX_FillRenderOptions fill_options(fill_type);
   switch (m_info.fillColor.GetType()) {
     case CXFA_GEColor::Solid:
       m_renderDevice->DrawPath(path->GetPathData(), &m, &m_info.graphState,
-                               m_info.fillColor.GetArgb(), 0x0, fillMode);
+                               m_info.fillColor.GetArgb(), 0x0, fill_options);
       return;
     case CXFA_GEColor::Pattern:
-      FillPathWithPattern(path, fillMode, m);
+      FillPathWithPattern(path, fill_options, m);
       return;
     case CXFA_GEColor::Shading:
-      FillPathWithShading(path, fillMode, m);
+      FillPathWithShading(path, fill_options, m);
       return;
     default:
       return;
   }
 }
 
-void CXFA_Graphics::FillPathWithPattern(const CXFA_GEPath* path,
-                                        FX_FillMode fillMode,
-                                        const CFX_Matrix& matrix) {
+void CXFA_Graphics::FillPathWithPattern(
+    const CXFA_GEPath* path,
+    const CFX_FillRenderOptions& fill_options,
+    const CFX_Matrix& matrix) {
   RetainPtr<CFX_DIBitmap> bitmap = m_renderDevice->GetBitmap();
   int32_t width = bitmap->GetWidth();
   int32_t height = bitmap->GetHeight();
@@ -269,13 +273,14 @@ void CXFA_Graphics::FillPathWithPattern(const CXFA_GEPath* path,
       device.SetBitMask(mask, i, j, m_info.fillColor.GetPattern()->m_foreArgb);
   }
   CFX_RenderDevice::StateRestorer restorer(m_renderDevice);
-  m_renderDevice->SetClip_PathFill(path->GetPathData(), &matrix, fillMode);
+  m_renderDevice->SetClip_PathFill(path->GetPathData(), &matrix, fill_options);
   SetDIBitsWithMatrix(bmp, CFX_Matrix());
 }
 
-void CXFA_Graphics::FillPathWithShading(const CXFA_GEPath* path,
-                                        FX_FillMode fillMode,
-                                        const CFX_Matrix& matrix) {
+void CXFA_Graphics::FillPathWithShading(
+    const CXFA_GEPath* path,
+    const CFX_FillRenderOptions& fill_options,
+    const CFX_Matrix& matrix) {
   RetainPtr<CFX_DIBitmap> bitmap = m_renderDevice->GetBitmap();
   int32_t width = bitmap->GetWidth();
   int32_t height = bitmap->GetHeight();
@@ -386,7 +391,8 @@ void CXFA_Graphics::FillPathWithShading(const CXFA_GEPath* path,
   }
   if (result) {
     CFX_RenderDevice::StateRestorer restorer(m_renderDevice);
-    m_renderDevice->SetClip_PathFill(path->GetPathData(), &matrix, fillMode);
+    m_renderDevice->SetClip_PathFill(path->GetPathData(), &matrix,
+                                     fill_options);
     SetDIBitsWithMatrix(bmp, matrix);
   }
 }
@@ -407,8 +413,7 @@ void CXFA_Graphics::SetDIBitsWithMatrix(const RetainPtr<CFX_DIBBase>& source,
   }
 }
 
-CXFA_Graphics::TInfo::TInfo()
-    : isActOnDash(false), strokeColor(nullptr), fillColor(nullptr) {}
+CXFA_Graphics::TInfo::TInfo() = default;
 
 CXFA_Graphics::TInfo::TInfo(const TInfo& info)
     : graphState(info.graphState),

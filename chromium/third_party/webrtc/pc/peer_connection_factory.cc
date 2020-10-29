@@ -10,6 +10,7 @@
 
 #include "pc/peer_connection_factory.h"
 
+#include <cstdio>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -73,6 +74,7 @@ PeerConnectionFactory::PeerConnectionFactory(
       worker_thread_(dependencies.worker_thread),
       signaling_thread_(dependencies.signaling_thread),
       task_queue_factory_(std::move(dependencies.task_queue_factory)),
+      network_monitor_factory_(std::move(dependencies.network_monitor_factory)),
       media_engine_(std::move(dependencies.media_engine)),
       call_factory_(std::move(dependencies.call_factory)),
       event_log_factory_(std::move(dependencies.event_log_factory)),
@@ -107,6 +109,10 @@ PeerConnectionFactory::PeerConnectionFactory(
       wraps_current_thread_ = true;
     }
   }
+  signaling_thread_->AllowInvokesToThread(worker_thread_);
+  signaling_thread_->AllowInvokesToThread(network_thread_);
+  worker_thread_->AllowInvokesToThread(network_thread_);
+  network_thread_->DisallowAllInvokes();
 }
 
 PeerConnectionFactory::~PeerConnectionFactory() {
@@ -126,7 +132,10 @@ bool PeerConnectionFactory::Initialize() {
   RTC_DCHECK(signaling_thread_->IsCurrent());
   rtc::InitRandom(rtc::Time32());
 
-  default_network_manager_.reset(new rtc::BasicNetworkManager());
+  // If network_monitor_factory_ is non-null, it will be used to create a
+  // network monitor while on the network thread.
+  default_network_manager_.reset(
+      new rtc::BasicNetworkManager(network_monitor_factory_.get()));
   if (!default_network_manager_) {
     return false;
   }
@@ -257,13 +266,9 @@ PeerConnectionFactory::CreatePeerConnection(
     else
       packet_socket_factory = default_socket_factory_.get();
 
-    network_thread_->Invoke<void>(RTC_FROM_HERE, [this, &configuration,
-                                                  &dependencies,
-                                                  &packet_socket_factory]() {
-      dependencies.allocator = std::make_unique<cricket::BasicPortAllocator>(
-          default_network_manager_.get(), packet_socket_factory,
-          configuration.turn_customizer);
-    });
+    dependencies.allocator = std::make_unique<cricket::BasicPortAllocator>(
+        default_network_manager_.get(), packet_socket_factory,
+        configuration.turn_customizer);
   }
 
   if (!dependencies.async_resolver_factory) {
@@ -276,10 +281,7 @@ PeerConnectionFactory::CreatePeerConnection(
         std::make_unique<DefaultIceTransportFactory>();
   }
 
-  network_thread_->Invoke<void>(
-      RTC_FROM_HERE,
-      rtc::Bind(&cricket::PortAllocator::SetNetworkIgnoreMask,
-                dependencies.allocator.get(), options_.network_ignore_mask));
+  dependencies.allocator->SetNetworkIgnoreMask(options_.network_ignore_mask);
 
   std::unique_ptr<RtcEventLog> event_log =
       worker_thread_->Invoke<std::unique_ptr<RtcEventLog>>(

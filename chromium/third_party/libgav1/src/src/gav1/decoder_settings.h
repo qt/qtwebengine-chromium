@@ -66,8 +66,15 @@ typedef struct Libgav1DecoderSettings {
   Libgav1ReleaseInputBufferCallback release_input_buffer;
   // Passed as the private_data argument to the callbacks.
   void* callback_private_data;
+  // A boolean. If set to 1, the decoder will output all the spatial and
+  // temporal layers.
+  int output_all_layers;
+  // Index of the operating point to decode.
+  int operating_point;
   // Mask indicating the post processing filters that need to be applied to the
-  // reconstructed frame. From LSB:
+  // reconstructed frame. Note this is an advanced setting and does not
+  // typically need to be changed.
+  // From LSB:
   //   Bit 0: Loop filter (deblocking filter).
   //   Bit 1: Cdef.
   //   Bit 2: SuperRes.
@@ -114,8 +121,15 @@ struct DecoderSettings {
   ReleaseInputBufferCallback release_input_buffer = nullptr;
   // Passed as the private_data argument to the callbacks.
   void* callback_private_data = nullptr;
+  // If set to true, the decoder will output all the spatial and temporal
+  // layers.
+  bool output_all_layers = false;
+  // Index of the operating point to decode.
+  int operating_point = 0;
   // Mask indicating the post processing filters that need to be applied to the
-  // reconstructed frame. From LSB:
+  // reconstructed frame. Note this is an advanced setting and does not
+  // typically need to be changed.
+  // From LSB:
   //   Bit 0: Loop filter (deblocking filter).
   //   Bit 1: Cdef.
   //   Bit 2: SuperRes.

@@ -15,6 +15,9 @@
 #ifndef DAWNNATIVE_TEXTURE_H_
 #define DAWNNATIVE_TEXTURE_H_
 
+#include "common/ityp_array.h"
+#include "common/ityp_bitset.h"
+#include "dawn_native/EnumClassBitmasks.h"
 #include "dawn_native/Error.h"
 #include "dawn_native/Forward.h"
 #include "dawn_native/ObjectBase.h"
@@ -24,6 +27,35 @@
 #include <vector>
 
 namespace dawn_native {
+
+    // Note: Subresource indices are computed by iterating the aspects in increasing order.
+    // D3D12 uses these directly, so the order much match D3D12's indices.
+    //  - Depth/Stencil textures have Depth as Plane 0, and Stencil as Plane 1.
+    enum class Aspect : uint8_t {
+        None = 0x0,
+        Color = 0x1,
+        Depth = 0x2,
+        Stencil = 0x4,
+    };
+
+    template <>
+    struct EnumBitmaskSize<Aspect> {
+        static constexpr unsigned value = 3;
+    };
+
+}  // namespace dawn_native
+
+namespace wgpu {
+
+    template <>
+    struct IsDawnBitmask<dawn_native::Aspect> {
+        static constexpr bool enable = true;
+    };
+
+}  // namespace wgpu
+
+namespace dawn_native {
+
     MaybeError ValidateTextureDescriptor(const DeviceBase* device,
                                          const TextureDescriptor* descriptor);
     MaybeError ValidateTextureViewDescriptor(const TextureBase* texture,
@@ -31,11 +63,6 @@ namespace dawn_native {
     TextureViewDescriptor GetTextureViewDescriptorWithDefaults(
         const TextureBase* texture,
         const TextureViewDescriptor* descriptor);
-
-    // TODO(dawn:22): Remove once migration from GPUTextureDescriptor.arrayLayerCount to
-    // GPUTextureDescriptor.size.depth is done.
-    ResultOrError<TextureDescriptor> FixTextureDescriptor(DeviceBase* device,
-                                                          const TextureDescriptor* desc);
 
     bool IsValidSampleCount(uint32_t sampleCount);
 
@@ -46,13 +73,19 @@ namespace dawn_native {
         wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::Storage |
         wgpu::TextureUsage::OutputAttachment;
 
+    Aspect ConvertSingleAspect(const Format& format, wgpu::TextureAspect aspect);
+    Aspect ConvertAspect(const Format& format, wgpu::TextureAspect aspect);
+
     struct SubresourceRange {
         uint32_t baseMipLevel;
         uint32_t levelCount;
         uint32_t baseArrayLayer;
         uint32_t layerCount;
+        Aspect aspects;
 
-        static SubresourceRange SingleSubresource(uint32_t baseMipLevel, uint32_t baseArrayLayer);
+        static SubresourceRange SingleMipAndLayer(uint32_t baseMipLevel,
+                                                  uint32_t baseArrayLayer,
+                                                  Aspect aspects);
     };
 
     class TextureBase : public ObjectBase {
@@ -76,7 +109,7 @@ namespace dawn_native {
         uint32_t GetSubresourceCount() const;
         wgpu::TextureUsage GetUsage() const;
         TextureState GetTextureState() const;
-        uint32_t GetSubresourceIndex(uint32_t mipLevel, uint32_t arraySlice) const;
+        uint32_t GetSubresourceIndex(uint32_t mipLevel, uint32_t arraySlice, Aspect aspect) const;
         bool IsSubresourceContentInitialized(const SubresourceRange& range) const;
         void SetIsSubresourceContentInitialized(bool isInitialized, const SubresourceRange& range);
 
@@ -91,6 +124,9 @@ namespace dawn_native {
         // required to be a multiple of the block size and used in texture sampling.
         Extent3D GetMipLevelPhysicalSize(uint32_t level) const;
         Extent3D GetMipLevelVirtualSize(uint32_t level) const;
+        Extent3D ClampToMipLevelVirtualSize(uint32_t level,
+                                            const Origin3D& origin,
+                                            const Extent3D& extent) const;
 
         // Dawn API
         TextureViewBase* CreateView(const TextureViewDescriptor* descriptor);
@@ -115,6 +151,7 @@ namespace dawn_native {
 
         // TODO(natlee@microsoft.com): Use a more optimized data structure to save space
         std::vector<bool> mIsSubresourceContentInitializedAtIndex;
+        std::array<uint8_t, EnumBitmaskSize<Aspect>::value> mPlaneIndices;
     };
 
     class TextureViewBase : public ObjectBase {
@@ -126,6 +163,7 @@ namespace dawn_native {
         const TextureBase* GetTexture() const;
         TextureBase* GetTexture();
 
+        wgpu::TextureAspect GetAspect() const;
         const Format& GetFormat() const;
         wgpu::TextureViewDimension GetDimension() const;
         uint32_t GetBaseMipLevel() const;
@@ -139,6 +177,7 @@ namespace dawn_native {
 
         Ref<TextureBase> mTexture;
 
+        wgpu::TextureAspect mAspect;
         // TODO(cwallez@chromium.org): This should be deduplicated in the Device
         const Format& mFormat;
         wgpu::TextureViewDimension mDimension;

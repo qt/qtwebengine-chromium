@@ -43,22 +43,6 @@ executable("heapprofd") {
 #
 # This builds only in the Android tree, when using the generated Android.bp.
 if (perfetto_build_with_android) {
-  shared_library("heapprofd_client_api") {
-    configs -= [ "//gn/standalone:android_liblog" ]
-    cflags = [ "-DPERFETTO_ANDROID_ASYNC_SAFE_LOG" ]
-    deps = [ ":client_ext" ]
-  }
-
-  source_set("client_ext") {
-    cflags = [ "-DPERFETTO_ANDROID_ASYNC_SAFE_LOG" ]
-    deps = [
-      ":client",
-      "../../../gn:default_deps",
-      "../../base",
-    ]
-    sources = [ "client_ext.cc" ]
-  }
-
   shared_library("heapprofd_client") {
     configs -= [ "//gn/standalone:android_liblog" ]
     cflags = [ "-DPERFETTO_ANDROID_ASYNC_SAFE_LOG" ]
@@ -71,6 +55,7 @@ if (perfetto_build_with_android) {
   # This will export publicly visible symbols for the malloc_hooks.
   source_set("malloc_hooks") {
     deps = [
+      ":bionic_libc_platform_headers_on_android",
       "../../../gn:default_deps",
       "../../base",
     ]
@@ -82,9 +67,84 @@ if (perfetto_build_with_android) {
   }
 }  # if (perfetto_build_with_android)
 
+executable("heapprofd_standalone_client_example") {
+  deps = [
+    ":heapprofd_standalone_client",
+    "../../../gn:default_deps",
+  ]
+  sources = [ "heapprofd_standalone_client_example.cc" ]
+}
+
+shared_library("heapprofd_standalone_client") {
+  deps = [
+    ":client_ext",
+    ":daemon",
+    "../../../gn:default_deps",
+    "../../../include/perfetto/ext/tracing/ipc",
+    "../../base",
+    "../common:proc_utils",
+  ]
+  ldflags = [
+    "-Wl,--version-script",
+    rebase_path("heapprofd_client_api.map.txt", root_build_dir),
+  ]
+  sources = [ "client_ext_standalone.cc" ]
+}
+
+shared_library("heapprofd_standalone_client_noop") {
+  deps = [ "../../../gn:default_deps" ]
+  ldflags = [
+    "-Wl,--version-script",
+    rebase_path("heapprofd_client_api.map.txt", root_build_dir),
+  ]
+  sources = [ "client_ext_noop.cc" ]
+}
+
+shared_library("heapprofd_client_api") {
+  configs -= [ "//gn/standalone:android_liblog" ]
+  if (perfetto_build_with_android) {
+    cflags = [ "-DPERFETTO_ANDROID_ASYNC_SAFE_LOG" ]
+  } else {
+    # We don't have async safe logging for non-Android, so disable all
+    # logging in the client.
+    # TODO(fmayer): Add async-safe logging for non-Android.
+    cflags = [ "-DPERFETTO_DISABLE_LOG" ]
+  }
+  deps = [ ":client_ext" ]
+  if (perfetto_build_with_android) {
+    sources = [ "client_ext_android.cc" ]
+  }
+}
+
+# On Android builds, this is converted to
+# header_libs: ["bionic_libc_platform_headers"].
+source_set("bionic_libc_platform_headers_on_android") {
+}
+
+source_set("client_ext") {
+  if (perfetto_build_with_android) {
+    cflags = [ "-DPERFETTO_ANDROID_ASYNC_SAFE_LOG" ]
+  } else {
+    # We don't have async safe logging for non-Android, so disable all
+    # logging in the client.
+    # TODO(fmayer): Add async-safe logging for non-Android.
+    cflags = [ "-DPERFETTO_DISABLE_LOG" ]
+  }
+  deps = [
+    ":client",
+    ":scoped_spinlock",
+    ":wire_protocol",
+    "../../../gn:default_deps",
+    "../../base",
+    "../common:proc_utils",
+  ]
+  sources = [ "client_ext.cc" ]
+}
+
 source_set("wire_protocol") {
   public_deps = [ "../../../gn:libunwindstack" ]
   deps = [
+    ":bionic_libc_platform_headers_on_android",
     ":ring_buffer",
     "../../../gn:default_deps",
     "../../base",
@@ -237,6 +297,8 @@ source_set("end_to_end_tests") {
   sources = [ "heapprofd_end_to_end_test.cc" ]
   if (perfetto_build_with_android) {
     deps += [ ":heapprofd_client_api" ]
+  } else {
+    deps += [ ":heapprofd_standalone_client" ]
   }
   if (start_daemons_for_testing) {
     defines = [ "PERFETTO_START_DAEMONS_FOR_TESTING" ]

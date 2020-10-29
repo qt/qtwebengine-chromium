@@ -179,8 +179,8 @@ either the profileable or the debuggable manifest flag set can be profiled.
 Profiling requests for non-profileable/debuggable processes will result in an
 empty profile.
 
-On userdebug builds, all processes except for a small blacklist of critical
-services can be profiled (to find the blacklist, look for
+On userdebug builds, all processes except for a small set of critical
+services can be profiled (to find the set of disallowed targets, look for
 `never_profile_heap` in [heapprofd.te](
 https://cs.android.com/android/platform/superproject/+/master:system/sepolicy/private/heapprofd.te?q=never_profile_heap).
 This restriction can be lifted by disabling SELinux by running
@@ -289,6 +289,11 @@ is looked for at:
 3. $PERFETTO_BINARY_PATH/base.apk!foo.so
 4. $PERFETTO_BINARY_PATH/foo.so
 5. $PERFETTO_BINARY_PATH/.build-id/ab/cd1234.debug
+
+Alternatively, you can set the `PERFETTO_SYMBOLIZER_MODE` environment variable
+to `index`, and the symbolizer will recursively search the given directory for
+an ELF file with the given build id. This way, you will not have to worry
+about correct filenames.
 
 ## Troubleshooting
 

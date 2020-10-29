@@ -53,7 +53,8 @@ class QUIC_EXPORT_PRIVATE QuicSession
       public QuicStreamFrameDataProducer,
       public QuicStreamIdManager::DelegateInterface,
       public HandshakerDelegateInterface,
-      public StreamDelegateInterface {
+      public StreamDelegateInterface,
+      public QuicControlFrameManager::DelegateInterface {
  public:
   // An interface from the session to the entity owning the session.
   // This lets the session notify its owner (the Dispatcher) when the connection
@@ -199,21 +200,26 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // Called when message with |message_id| is considered as lost.
   virtual void OnMessageLost(QuicMessageId message_id);
 
+  // QuicControlFrameManager::DelegateInterface
+  // Close the connection on error.
+  void OnControlFrameManagerError(QuicErrorCode error_code,
+                                  std::string error_details) override;
   // Called by control frame manager when it wants to write control frames to
   // the peer. Returns true if |frame| is consumed, false otherwise. The frame
   // will be sent in specified transmission |type|.
-  bool WriteControlFrame(const QuicFrame& frame, TransmissionType type);
+  bool WriteControlFrame(const QuicFrame& frame,
+                         TransmissionType type) override;
 
-  // Called by stream to send RST_STREAM (and STOP_SENDING).
+  // Called by stream to send RST_STREAM (and STOP_SENDING in IETF QUIC).
+  // if |send_rst_only|, STOP_SENDING will not be sent for IETF QUIC.
   virtual void SendRstStream(QuicStreamId id,
                              QuicRstStreamErrorCode error,
-                             QuicStreamOffset bytes_written);
+                             QuicStreamOffset bytes_written,
+                             bool send_rst_only);
 
   // Called to send RST_STREAM (and STOP_SENDING) and close stream. If stream
   // |id| does not exist, just send RST_STREAM (and STOP_SENDING).
-  virtual void ResetStream(QuicStreamId id,
-                           QuicRstStreamErrorCode error,
-                           QuicStreamOffset bytes_written);
+  virtual void ResetStream(QuicStreamId id, QuicRstStreamErrorCode error);
 
   // Called when the session wants to go away and not accept any new streams.
   virtual void SendGoAway(QuicErrorCode error_code, const std::string& reason);
@@ -229,7 +235,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   // Close stream |stream_id|. Whether sending RST_STREAM (and STOP_SENDING)
   // depends on the sending and receiving states.
-  // TODO(fayang): Deprecate CloseStream, instead always use ResetStream to
+  // TODO(b/136274541): Deprecate CloseStream, instead always use ResetStream to
   // close a stream from session.
   virtual void CloseStream(QuicStreamId stream_id);
 
@@ -255,7 +261,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
       EncryptionLevel level,
       std::unique_ptr<QuicEncrypter> encrypter) override;
   void SetDefaultEncryptionLevel(EncryptionLevel level) override;
-  void OnOneRttKeysAvailable() override;
+  void OnTlsHandshakeComplete() override;
   void DiscardOldDecryptionKey(EncryptionLevel level) override;
   void DiscardOldEncryptionKey(EncryptionLevel level) override;
   void NeuterUnencryptedData() override;
@@ -341,9 +347,11 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // Called when stream |id| is done waiting for acks either because all data
   // gets acked or is not interested in data being acked (which happens when
   // a stream is reset because of an error).
+  // TODO(b/136274541): rename to CloseZombieStreams.
   void OnStreamDoneWaitingForAcks(QuicStreamId id);
 
-  // Called when stream |id| is newly waiting for acks.
+  // TODO(b/136274541): Remove this once quic_remove_streams_waiting_for_acks is
+  // deprecated. Called when stream |id| is newly waiting for acks.
   void OnStreamWaitingForAcks(QuicStreamId id);
 
   // Returns true if there is pending handshake data in the crypto stream.
@@ -483,16 +491,26 @@ class QUIC_EXPORT_PRIVATE QuicSession
     connection()->OnUserAgentIdKnown();
   }
 
+  const QuicClock* GetClock() const {
+    return connection()->helper()->GetClock();
+  }
+
+  bool liveness_testing_in_progress() const {
+    return liveness_testing_in_progress_;
+  }
+
+  bool remove_zombie_streams() const { return remove_zombie_streams_; }
+
  protected:
-  using StreamMap = QuicSmallMap<QuicStreamId, std::unique_ptr<QuicStream>, 10>;
+  using StreamMap = QuicHashMap<QuicStreamId, std::unique_ptr<QuicStream>>;
 
   using PendingStreamMap =
-      QuicSmallMap<QuicStreamId, std::unique_ptr<PendingStream>, 10>;
+      QuicHashMap<QuicStreamId, std::unique_ptr<PendingStream>>;
 
   using ClosedStreams = std::vector<std::unique_ptr<QuicStream>>;
 
   using ZombieStreamMap =
-      QuicSmallMap<QuicStreamId, std::unique_ptr<QuicStream>, 10>;
+      QuicHashMap<QuicStreamId, std::unique_ptr<QuicStream>>;
 
   // Creates a new stream to handle a peer-initiated stream.
   // Caller does not own the returned stream.
@@ -548,11 +566,11 @@ class QUIC_EXPORT_PRIVATE QuicSession
   }
 
   StreamMap& stream_map() { return stream_map_; }
-  const StreamMap& stream_map() const { return stream_map_; }
 
-  const PendingStreamMap& pending_streams() const {
-    return pending_stream_map_;
-  }
+  // TODO(b/136274541): remove this getter and only expose GetNumActiveStreams()
+  size_t stream_map_size() const { return stream_map_.size(); }
+
+  size_t pending_streams_size() const { return pending_stream_map_.size(); }
 
   ClosedStreams* closed_streams() { return &closed_streams_; }
 
@@ -604,7 +622,11 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   size_t num_static_streams() const { return num_static_streams_; }
 
+  size_t num_zombie_streams() const { return num_zombie_streams_; }
+
   bool was_zero_rtt_rejected() const { return was_zero_rtt_rejected_; }
+
+  bool do_not_use_stream_map() const { return do_not_use_stream_map_; }
 
   size_t num_outgoing_draining_streams() const {
     return num_outgoing_draining_streams_;
@@ -616,6 +638,12 @@ class QUIC_EXPORT_PRIVATE QuicSession
   virtual bool ProcessPendingStream(PendingStream* /*pending*/) {
     return false;
   }
+
+  // Called by applications to perform |action| on active streams.
+  // Stream iteration will be stopped if action returns false.
+  void PerformActionOnActiveStreams(std::function<bool(QuicStream*)> action);
+  void PerformActionOnActiveStreams(
+      std::function<bool(QuicStream*)> action) const;
 
   // Return the largest peer created stream id depending on directionality
   // indicated by |unidirectional|.
@@ -633,6 +661,11 @@ class QUIC_EXPORT_PRIVATE QuicSession
       std::unique_ptr<LossDetectionTunerInterface> tuner) {
     connection()->SetLossDetectionTuner(std::move(tuner));
   }
+
+  // Find stream with |id|, returns nullptr if the stream does not exist or
+  // closed. static streams and zombie streams are not considered active
+  // streams.
+  QuicStream* GetActiveStream(QuicStreamId id) const;
 
  private:
   friend class test::QuicSessionPeer;
@@ -703,18 +736,12 @@ class QUIC_EXPORT_PRIVATE QuicSession
                                QuicRstStreamErrorCode error,
                                QuicStreamOffset bytes_written);
 
-  // Closes the connection and returns false if |new_window| is lower than
-  // |stream|'s current flow control window.
-  // Returns true otherwise.
-  bool ValidateStreamFlowControlLimit(QuicStreamOffset new_window,
-                                      const QuicStream* stream);
-
   // Sends a STOP_SENDING frame if the stream type allows.
   void MaybeSendStopSendingFrame(QuicStreamId id, QuicRstStreamErrorCode error);
 
   // Keep track of highest received byte offset of locally closed streams, while
   // waiting for a definitive final highest offset from the peer.
-  std::map<QuicStreamId, QuicStreamOffset>
+  QuicHashMap<QuicStreamId, QuicStreamOffset>
       locally_closed_streams_highest_offset_;
 
   QuicConnection* connection_;
@@ -745,7 +772,9 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // which are waiting for the first byte of payload to arrive.
   PendingStreamMap pending_stream_map_;
 
-  // Set of stream ids that are waiting for acks excluding crypto stream id.
+  // TODO(b/136274541): Remove this once quic_remove_streams_waiting_for_acks is
+  // deprecated. Set of stream ids that are waiting for acks excluding crypto
+  // stream id.
   QuicHashSet<QuicStreamId> streams_waiting_for_acks_;
 
   // TODO(fayang): Consider moving LegacyQuicStreamIdManager into
@@ -766,6 +795,10 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   // A counter for static streams which are in stream_map_.
   size_t num_static_streams_;
+
+  // A counter for streams which have done reading and writing, but are waiting
+  // for acks.
+  size_t num_zombie_streams_;
 
   // Received information for a connection close.
   QuicConnectionCloseFrame on_closed_frame_;
@@ -819,8 +852,18 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // Whether the session has received a 0-RTT rejection (QUIC+TLS only).
   bool was_zero_rtt_rejected_;
 
-  // Latched value of flag quic_fix_gquic_stream_type.
-  const bool fix_gquic_stream_type_;
+  // This indicates a liveness testing is in progress, and push back the
+  // creation of new outgoing bidirectional streams.
+  bool liveness_testing_in_progress_;
+
+  // Latched value of flag quic_remove_streams_waiting_for_acks.
+  const bool remove_streams_waiting_for_acks_;
+
+  // Latched value of flag quic_do_not_use_stream_map.
+  const bool do_not_use_stream_map_;
+
+  // Latched value of flag quic_remove_zombie_streams.
+  const bool remove_zombie_streams_;
 };
 
 }  // namespace quic

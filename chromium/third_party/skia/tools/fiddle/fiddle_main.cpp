@@ -11,7 +11,7 @@
 #include <string>
 
 #include "src/core/SkAutoPixmapStorage.h"
-#include "src/core/SkMipMap.h"
+#include "src/core/SkMipmap.h"
 #include "src/core/SkUtils.h"
 #include "tools/flags/CommandLineFlags.h"
 
@@ -46,7 +46,7 @@ double frame;    // A value in [0, 1] of where we are in the animation.
 // Global used by the local impl of SkDebugf.
 std::ostringstream gTextOutput;
 
-// Global to record the GL driver info via create_grcontext().
+// Global to record the GL driver info via create_direct_context().
 std::ostringstream gGLDriverInfo;
 
 void SkDebugf(const char * fmt, ...) {
@@ -155,8 +155,8 @@ static bool setup_backend_objects(GrContext* context,
             }
             pixmap = &rgbaPixmap;
         }
-        int mipLevelCount = GrMipMapped::kYes == options.fMipMapping
-                                    ? SkMipMap::ComputeLevelCount(bm.width(), bm.height())
+        int mipLevelCount = GrMipmapped::kYes == options.fMipMapping
+                                    ? SkMipmap::ComputeLevelCount(bm.width(), bm.height())
                                     : 1;
         std::unique_ptr<GrMipLevel[]> texels(new GrMipLevel[mipLevelCount]);
 
@@ -212,8 +212,8 @@ static bool setup_backend_objects(GrContext* context,
 
     {
         int mipLevelCount =
-                GrMipMapped::kYes == options.fOffScreenMipMapping
-                        ? SkMipMap::ComputeLevelCount(offscreenDims.width(), offscreenDims.height())
+                GrMipmapped::kYes == options.fOffScreenMipMapping
+                        ? SkMipmap::ComputeLevelCount(offscreenDims.width(), offscreenDims.height())
                         : 1;
         std::unique_ptr<GrMipLevel[]> texels(new GrMipLevel[mipLevelCount]);
 
@@ -294,16 +294,16 @@ int main(int argc, char** argv) {
 #ifdef SK_GL
     if (options.gpu) {
         std::unique_ptr<sk_gpu_test::GLTestContext> glContext;
-        sk_sp<GrContext> grContext = create_grcontext(gGLDriverInfo, &glContext);
-        if (!grContext) {
+        sk_sp<GrDirectContext> direct = create_direct_context(gGLDriverInfo, &glContext);
+        if (!direct) {
             fputs("Unable to get GrContext.\n", stderr);
         } else {
-            if (!setup_backend_objects(grContext.get(), source, options)) {
+            if (!setup_backend_objects(direct.get(), source, options)) {
                 fputs("Unable to create backend objects.\n", stderr);
                 exit(1);
             }
 
-            auto surface = SkSurface::MakeRenderTarget(grContext.get(), SkBudgeted::kNo, info);
+            auto surface = SkSurface::MakeRenderTarget(direct.get(), SkBudgeted::kNo, info);
             if (!surface) {
                 fputs("Unable to get render surface.\n", stderr);
                 exit(1);

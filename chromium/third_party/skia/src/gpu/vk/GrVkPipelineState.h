@@ -47,8 +47,7 @@ public:
             const UniformInfoArray& samplers,
             std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
             std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
-            std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors,
-            int fFragmentProcessorCnt);
+            std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragmentProcessors);
 
     ~GrVkPipelineState();
 
@@ -66,7 +65,7 @@ public:
 
     void addUniformResources(GrVkCommandBuffer&, GrVkSampler*[], GrVkTexture*[], int numTextures);
 
-    void freeGPUResources();
+    void freeGPUResources(GrVkGpu* gpu);
 
 private:
     /**
@@ -125,7 +124,6 @@ private:
     std::unique_ptr<GrGLSLPrimitiveProcessor> fGeometryProcessor;
     std::unique_ptr<GrGLSLXferProcessor> fXferProcessor;
     std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fFragmentProcessors;
-    int fFragmentProcessorCnt;
 
     GrVkPipelineStateDataManager fDataManager;
 

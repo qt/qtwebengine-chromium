@@ -9,6 +9,8 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "tools/Resources.h"
 
 // Exercise a blur filter connected to 5 inputs of the same merge filter.
@@ -70,8 +72,10 @@ protected:
         SkIRect subset = SkIRect::MakeSize(fImage->dimensions());
         SkIPoint offset = SkIPoint::Make(0, 0);
         SkIRect discardSubset;
+
+        auto dContext = GrAsDirectContext(canvas->recordingContext());
         // makeWithFilter will only use the GPU backend if the image is already a texture
-        sk_sp<SkImage> image = fImage->makeTextureImage(canvas->getGrContext());
+        sk_sp<SkImage> image = fImage->makeTextureImage(dContext);
         if (!image) {
             image = fImage;
         }
@@ -86,8 +90,8 @@ protected:
 
         // But measure makeWithFilter() per loop since that's the focus of this benchmark
         for (int j = 0; j < loops; j++) {
-            image = image->makeWithFilter(mergeFilter.get(), subset, subset, &discardSubset,
-                                          &offset);
+            image = image->makeWithFilter(dContext, mergeFilter.get(), subset, subset,
+                                          &discardSubset, &offset);
             SkASSERT(image && image->dimensions() == fImage->dimensions());
         }
     }

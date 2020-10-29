@@ -22,7 +22,6 @@
 #include "audio/voip/audio_ingress.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
 #include "modules/utility/include/process_thread.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/ref_count.h"
 
 namespace webrtc {
@@ -46,9 +45,11 @@ class AudioChannel : public rtc::RefCountInterface {
   ChannelId GetId() const { return id_; }
 
   // APIs to start/stop audio channel on each direction.
-  void StartSend();
+  // StartSend/StartPlay returns false if encoder/decoders
+  // have not been set, respectively.
+  bool StartSend();
   void StopSend();
-  void StartPlay();
+  bool StartPlay();
   void StopPlay();
 
   // APIs relayed to AudioEgress.

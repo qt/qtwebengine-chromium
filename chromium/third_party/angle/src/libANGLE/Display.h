@@ -32,6 +32,7 @@ namespace gl
 {
 class Context;
 class TextureManager;
+class SemaphoreManager;
 }  // namespace gl
 
 namespace rx
@@ -76,12 +77,15 @@ class ShareGroup final : angle::NonCopyable
 
     rx::ShareGroupImpl *getImplementation() const { return mImplementation; }
 
+    rx::Serial generateFramebufferSerial() { return mFramebufferSerialFactory.generate(); }
+
   protected:
     ~ShareGroup();
 
   private:
     size_t mRefCount;
     rx::ShareGroupImpl *mImplementation;
+    rx::SerialFactory mFramebufferSerialFactory;
 };
 
 // Constant coded here as a sanity limit.
@@ -150,7 +154,7 @@ class Display final : public LabeledObject,
                      const AttributeMap &attribs,
                      Sync **outSync);
 
-    Error makeCurrent(const Thread *thread,
+    Error makeCurrent(gl::Context *previousContext,
                       Surface *drawSurface,
                       Surface *readSurface,
                       gl::Context *context);
@@ -258,6 +262,7 @@ class Display final : public LabeledObject,
     void updateAttribsFromEnvironment(const AttributeMap &attribMap);
 
     Error restoreLostDevice();
+    Error releaseContext(gl::Context *context);
 
     void initDisplayExtensions();
     void initVendorString();
@@ -302,9 +307,11 @@ class Display final : public LabeledObject,
     angle::LoggingAnnotator mAnnotator;
 
     gl::TextureManager *mTextureManager;
+    gl::SemaphoreManager *mSemaphoreManager;
     BlobCache mBlobCache;
     gl::MemoryProgramCache mMemoryProgramCache;
     size_t mGlobalTextureShareGroupUsers;
+    size_t mGlobalSemaphoreShareGroupUsers;
 
     angle::FrontendFeatures mFrontendFeatures;
 

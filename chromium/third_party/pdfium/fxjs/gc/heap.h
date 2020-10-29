@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "v8/include/cppgc/allocation.h"
 #include "v8/include/cppgc/heap.h"
 #include "v8/include/libplatform/libplatform.h"
 
@@ -19,6 +20,7 @@ using FXGCScopedHeap = std::unique_ptr<cppgc::Heap, FXGCHeapDeleter>;
 void FXGC_Initialize(v8::Platform* platform);
 void FXGC_Release();
 FXGCScopedHeap FXGC_CreateHeap();
+void FXGC_ForceGarbageCollection(cppgc::Heap* heap);
 
 #define CONSTRUCT_VIA_MAKE_GARBAGE_COLLECTED \
   template <typename T>                      \

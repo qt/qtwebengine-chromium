@@ -236,7 +236,7 @@ static void aa_square_proc(const PtProcRec& rec, const SkPoint devPts[],
     }
 }
 
-// If this guy returns true, then chooseProc() must return a valid proc
+// If this returns true, then chooseProc() must return a valid proc
 bool PtProcRec::init(SkCanvas::PointMode mode, const SkPaint& paint,
                      const SkMatrix* matrix, const SkRasterClip* rc) {
     if ((unsigned)mode > (unsigned)SkCanvas::kPolygon_PointMode) {
@@ -836,7 +836,7 @@ void SkDraw::drawDevPath(const SkPath& devPath, const SkPaint& paint, bool drawC
         }
     }
 
-    void (*proc)(const SkPath&, const SkRasterClip&, SkBlitter*);
+    void (*proc)(const SkPathView&, const SkRasterClip&, SkBlitter*);
     if (doFill) {
         if (paint.isAntiAlias()) {
             proc = SkScan::AntiFillPath;
@@ -877,7 +877,7 @@ void SkDraw::drawDevPath(const SkPath& devPath, const SkPaint& paint, bool drawC
         }
     }
 
-    proc(devPath, *fRC, blitter);
+    proc(devPath.view(), *fRC, blitter);
 }
 
 void SkDraw::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,

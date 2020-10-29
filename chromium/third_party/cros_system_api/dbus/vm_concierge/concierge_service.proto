@@ -76,7 +76,13 @@ message VmInfo {
   // The handle to a 9p server managed by the seneschal system service.  Use
   // this handle when making requests to that service to manage the files shared
   // with this VM.
-  uint64 seneschal_server_handle = 4;
+  uint32 seneschal_server_handle = 4;
+
+  // Permission token assigned to the VM. Use this token when making requests
+  // to the VM permission service to determine what permissions have been
+  // granted to the VM. The token is also to be used to identify VM to the
+  // service providers (camera, CRAS, etc).
+  string permission_token = 5;
 }
 
 // Optional fields for network configuration.
@@ -203,6 +209,9 @@ message StartArcVmRequest {
 
   // Whether the guest kernel root file system is writable.
   bool rootfs_writable = 8;
+
+  // Ignore development configuration directives when ARCVM is started.
+  bool ignore_dev_conf = 9;
 }
 
 enum VmStatus {
@@ -924,3 +933,27 @@ message SetVmCpuRestrictionResponse {
   // Did the request succeed?
   bool success = 1;
 }
+
+// Request to adjust parameters of a given VM.
+message AdjustVmRequest {
+  // An identifier for this VM.
+  string name = 1;
+
+  // The cryptohome id of the owner of this VM.
+  string owner_id = 2;
+
+  // Adjustment to be performed.
+  string operation = 3;
+
+  // Additional parameters for the adjustment operation.
+  repeated string params = 4;
+}
+
+// Response to an AdjustVmRequest.
+message AdjustVmResponse {
+  // If true, the adjustment was done.
+  bool success = 1;
+
+  // If the attempt to adjust VM failed, the reason for the failure.
+  string failure_reason = 2;
+};

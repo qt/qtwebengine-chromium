@@ -2,21 +2,41 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
+import * as Root from '../root/root.js';  // eslint-disable-line no-unused-vars
 import {ContextFlavorListener} from './ContextFlavorListener.js';
 
+/** @type {!Context} */
+let contextInstance;
+
+/** @typedef {(function(new:Object, ...*):void|function(new:Object, ...?):void)} */
+let ConstructorFn;  // eslint-disable-line no-unused-vars
 
 export class Context {
+  /**
+   * @private
+   */
   constructor() {
+    /** @type {!Map<!ConstructorFn, !Object>} */
     this._flavors = new Map();
+    /** @type {!Map<!ConstructorFn, !Common.ObjectWrapper.ObjectWrapper>} */
     this._eventDispatchers = new Map();
   }
 
   /**
-   * @param {function(new:T, ...):void} flavorType
+   * @param {{forceNew: ?boolean}} opts
+   */
+  static instance(opts = {forceNew: null}) {
+    const {forceNew} = opts;
+    if (!contextInstance || forceNew) {
+      contextInstance = new Context();
+    }
+
+    return contextInstance;
+  }
+
+  /**
+   * @param {(function(new:T, ...*):void|function(new:T, ...?):void)} flavorType
    * @param {?T} flavorValue
    * @template T
    */
@@ -35,12 +55,15 @@ export class Context {
   }
 
   /**
-   * @param {function(new:T, ...):void} flavorType
+   * @param {(function(new:T, ...*):void|function(new:T, ...?):void)} flavorType
    * @param {?T} flavorValue
    * @template T
    */
   _dispatchFlavorChange(flavorType, flavorValue) {
-    for (const extension of self.runtime.extensions(ContextFlavorListener)) {
+    // @ts-ignore
+    // TODO(crbug.com/1058320): Use Runtime.instance() here once we no longer crash using it.
+    const runtime = /** @type {!Root.Runtime.Runtime} */ (self.runtime);
+    for (const extension of runtime.extensions(ContextFlavorListener)) {
       if (extension.hasContextType(flavorType)) {
         extension.instance().then(
             instance => /** @type {!ContextFlavorListener} */ (instance).flavorChanged(flavorValue));
@@ -54,8 +77,8 @@ export class Context {
   }
 
   /**
-   * @param {function(new:Object, ...):void} flavorType
-   * @param {function(!Common.EventTarget.EventTargetEvent):*} listener
+   * @param {!ConstructorFn} flavorType
+   * @param {function(!Common.EventTarget.EventTargetEvent):void} listener
    * @param {!Object=} thisObject
    */
   addFlavorChangeListener(flavorType, listener, thisObject) {
@@ -68,8 +91,8 @@ export class Context {
   }
 
   /**
-   * @param {function(new:Object, ...):void} flavorType
-   * @param {function(!Common.EventTarget.EventTargetEvent):*} listener
+   * @param {!ConstructorFn} flavorType
+   * @param {function(!Common.EventTarget.EventTargetEvent):void} listener
    * @param {!Object=} thisObject
    */
   removeFlavorChangeListener(flavorType, listener, thisObject) {
@@ -84,16 +107,16 @@ export class Context {
   }
 
   /**
-   * @param {function(new:T, ...):void} flavorType
+   * @param {(function(new:T, ...*):void|function(new:T, ...?):void)} flavorType
    * @return {?T}
    * @template T
    */
   flavor(flavorType) {
-    return this._flavors.get(flavorType) || null;
+    return /** @type {?T} */ (this._flavors.get(flavorType)) || null;
   }
 
   /**
-   * @return {!Set.<function(new:Object, ...)>}
+   * @return {!Set.<(function(new:Object, ...*):void|function(new:Object, ...?):void)>}
    */
   flavors() {
     return new Set(this._flavors.keys());
@@ -107,11 +130,13 @@ export class Context {
     const targetExtensionSet = new Set();
 
     const availableFlavors = this.flavors();
-    extensions.forEach(function(extension) {
+    for (const extension of extensions) {
+      // @ts-ignore
+      // TODO(crbug.com/1058320): Use Runtime.instance() here once Closure is gone or can handle the type.
       if (self.runtime.isExtensionApplicableToContextTypes(extension, availableFlavors)) {
         targetExtensionSet.add(extension);
       }
-    });
+    }
 
     return targetExtensionSet;
   }

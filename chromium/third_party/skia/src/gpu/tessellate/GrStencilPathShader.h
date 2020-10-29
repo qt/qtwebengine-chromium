@@ -43,13 +43,13 @@ public:
 
 // Uses GPU tessellation shaders to linearize, triangulate, and render standalone closed cubics.
 // TODO: Eventually we want to use rational cubic wedges in order to support perspective and conics.
-class GrTessellateCubicShader : public GrStencilPathShader {
+class GrCubicTessellateShader : public GrStencilPathShader {
 public:
-    GrTessellateCubicShader(const SkMatrix& viewMatrix) : GrStencilPathShader(
-            kTessellate_GrTessellateCubicShader_ClassID, viewMatrix, GrPrimitiveType::kPatches, 4) {
+    GrCubicTessellateShader(const SkMatrix& viewMatrix) : GrStencilPathShader(
+            kTessellate_GrCubicTessellateShader_ClassID, viewMatrix, GrPrimitiveType::kPatches, 4) {
         this->setVertexAttributes(&kSinglePointAttrib, 1);
     }
-    const char* name() const override { return "tessellate_GrTessellateCubicShader"; }
+    const char* name() const override { return "tessellate_GrCubicTessellateShader"; }
 
 private:
     SkString getTessControlShaderGLSL(const GrGLSLPrimitiveProcessor*,
@@ -66,13 +66,13 @@ private:
 // wedge is a 5-point patch consisting of 4 cubic control points, plus an anchor point fanning from
 // the center of the curve's resident contour.
 // TODO: Eventually we want to use rational cubic wedges in order to support perspective and conics.
-class GrTessellateWedgeShader : public GrStencilPathShader {
+class GrWedgeTessellateShader : public GrStencilPathShader {
 public:
-    GrTessellateWedgeShader(const SkMatrix& viewMatrix) : GrStencilPathShader(
-            kTessellate_GrTessellateWedgeShader_ClassID, viewMatrix, GrPrimitiveType::kPatches, 5) {
+    GrWedgeTessellateShader(const SkMatrix& viewMatrix) : GrStencilPathShader(
+            kTessellate_GrWedgeTessellateShader_ClassID, viewMatrix, GrPrimitiveType::kPatches, 5) {
         this->setVertexAttributes(&kSinglePointAttrib, 1);
     }
-    const char* name() const override { return "tessellate_GrTessellateWedgeShader"; }
+    const char* name() const override { return "tessellate_GrWedgeTessellateShader"; }
 
 private:
     SkString getTessControlShaderGLSL(const GrGLSLPrimitiveProcessor*,
@@ -91,10 +91,6 @@ private:
 // sort the instance buffer by resolveLevel for efficient batching of indirect draws.
 class GrMiddleOutCubicShader : public GrStencilPathShader {
 public:
-    // Each resolveLevel linearizes the curve into 2^resolveLevel line segments. The finest
-    // supported resolveLevel is therefore 2^12=4096 line segments.
-    constexpr static int kMaxResolveLevel = GrTessellationPathRenderer::kMaxResolveLevel;
-
     // How many vertices do we need to draw in order to triangulate a cubic with 2^resolveLevel
     // line segments?
     constexpr static int NumVerticesAtResolveLevel(int resolveLevel) {
@@ -111,7 +107,7 @@ public:
     static GrDrawIndexedIndirectCommand MakeDrawCubicsIndirectCmd(int resolveLevel,
                                                                   uint32_t instanceCount,
                                                                   uint32_t baseInstance) {
-        SkASSERT(resolveLevel > 0 && resolveLevel <= kMaxResolveLevel);
+        SkASSERT(resolveLevel > 0 && resolveLevel <= GrTessellationPathRenderer::kMaxResolveLevel);
         // Starting at baseIndex=3, the index buffer triangulates a cubic with 2^kMaxResolveLevel
         // line segments. Each index value corresponds to a parametric T value on the curve. Since
         // the triangles are arranged in "middle-out" order, we can conveniently control the

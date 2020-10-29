@@ -9,8 +9,7 @@
 #include <cmath>
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
-#include "include/gpu/GrContext.h"
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkBlurMask.h"
 #include "src/core/SkMathPriv.h"
 #include "src/gpu/GrBitmapTextureMaker.h"
@@ -76,7 +75,7 @@ static std::unique_ptr<GrFragmentProcessor> MakeIntegralFP(GrRecordingContext* c
                                                                    GrColorType::kAlpha_8);
         GrSurfaceProxyView view{std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle};
         return GrTextureEffect::Make(
-                std::move(view), kPremul_SkAlphaType, m, GrSamplerState::Filter::kBilerp);
+                std::move(view), kPremul_SkAlphaType, m, GrSamplerState::Filter::kLinear);
     }
 
     SkBitmap bitmap;
@@ -95,14 +94,14 @@ static std::unique_ptr<GrFragmentProcessor> MakeIntegralFP(GrRecordingContext* c
     bitmap.setImmutable();
 
     GrBitmapTextureMaker maker(context, bitmap, GrImageTexGenPolicy::kNew_Uncached_Budgeted);
-    auto view = maker.view(GrMipMapped::kNo);
+    auto view = maker.view(GrMipmapped::kNo);
     if (!view) {
         return {};
     }
     SkASSERT(view.origin() == kTopLeft_GrSurfaceOrigin);
     proxyProvider->assignUniqueKeyToProxy(key, view.asTextureProxy());
     return GrTextureEffect::Make(
-            std::move(view), kPremul_SkAlphaType, m, GrSamplerState::Filter::kBilerp);
+            std::move(view), kPremul_SkAlphaType, m, GrSamplerState::Filter::kLinear);
 }
 }
 
@@ -145,7 +144,7 @@ static std::unique_ptr<GrFragmentProcessor> MakeIntegralFP(GrRecordingContext* c
          bool isFast = insetRect.isSorted();
          return std::unique_ptr<GrFragmentProcessor>(new GrRectBlurEffect(
                     std::move(inputFP), insetRect, std::move(integral),
-                    isFast, GrSamplerState::Filter::kBilerp));
+                    isFast, GrSamplerState::Filter::kLinear));
      }
 }
 
@@ -196,7 +195,7 @@ void main() {
         yCoverage = 1 - sample(integral, half2(rect.T, 0.5)).a
                       - sample(integral, half2(rect.B, 0.5)).a;
     }
-    half4 inputColor = sample(inputFP, sk_InColor);
+    half4 inputColor = sample(inputFP);
     sk_OutColor = inputColor * xCoverage * yCoverage;
 }
 
@@ -209,6 +208,6 @@ void main() {
     float sigma = data->fRandom->nextRangeF(3,8);
     float width = data->fRandom->nextRangeF(200,300);
     float height = data->fRandom->nextRangeF(200,300);
-    return GrRectBlurEffect::Make(/*inputFP=*/nullptr, data->context(), *data->caps()->shaderCaps(),
+    return GrRectBlurEffect::Make(data->inputFP(), data->context(), *data->caps()->shaderCaps(),
                                   SkRect::MakeWH(width, height), sigma);
 }

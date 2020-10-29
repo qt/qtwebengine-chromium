@@ -68,6 +68,7 @@ using SamplerBindingVector = std::vector<BindingPointer<Sampler>>;
 using TextureBindingVector = std::vector<BindingPointer<Texture>>;
 using TextureBindingMap    = angle::PackedEnumMap<TextureType, TextureBindingVector>;
 using ActiveQueryMap       = angle::PackedEnumMap<QueryType, BindingPointer<Query>>;
+using BufferVector         = std::vector<OffsetBindingPointer<Buffer>>;
 
 class ActiveTexturesCache final : angle::NonCopyable
 {
@@ -92,6 +93,7 @@ class State : angle::NonCopyable
     State(const State *shareContextState,
           egl::ShareGroup *shareGroup,
           TextureManager *shareTextures,
+          SemaphoreManager *shareSemaphores,
           const OverlayType *overlay,
           const EGLenum clientType,
           const Version &clientVersion,
@@ -232,6 +234,10 @@ class State : angle::NonCopyable
         ASSERT(maskNumber < mMaxSampleMaskWords);
         return mSampleMaskValues[maskNumber];
     }
+    std::array<GLbitfield, MAX_SAMPLE_MASK_WORDS> getSampleMaskValues() const
+    {
+        return mSampleMaskValues;
+    }
     GLuint getMaxSampleMaskWords() const { return mMaxSampleMaskWords; }
 
     // Multisampling/alpha to one manipulation.
@@ -262,8 +268,10 @@ class State : angle::NonCopyable
 
     // Hint setters
     void setGenerateMipmapHint(GLenum hint);
+    GLenum getGenerateMipmapHint() const;
     void setTextureFilteringHint(GLenum hint);
     GLenum getTextureFilteringHint() const;
+    GLenum getFragmentShaderDerivativeHint() const { return mFragmentShaderDerivativeHint; }
     void setFragmentShaderDerivativeHint(GLenum hint);
 
     // GL_CHROMIUM_bind_generates_resource
@@ -666,7 +674,9 @@ class State : angle::NonCopyable
     using DirtyObjects = angle::BitSet<DIRTY_OBJECT_MAX>;
     void clearDirtyObjects() { mDirtyObjects.reset(); }
     void setAllDirtyObjects() { mDirtyObjects.set(); }
-    angle::Result syncDirtyObjects(const Context *context, const DirtyObjects &bitset);
+    angle::Result syncDirtyObjects(const Context *context,
+                                   const DirtyObjects &bitset,
+                                   Command command);
     angle::Result syncDirtyObject(const Context *context, GLenum target);
     void setObjectDirty(GLenum target);
     void setTextureDirty(size_t textureUnitIndex);
@@ -682,6 +692,11 @@ class State : angle::NonCopyable
     {
         mDirtyObjects.set(DIRTY_OBJECT_DRAW_FRAMEBUFFER);
         mDirtyObjects.set(DIRTY_OBJECT_DRAW_ATTACHMENTS);
+    }
+
+    ANGLE_INLINE void setProgramPipelineDirty()
+    {
+        mDirtyObjects.set(DIRTY_OBJECT_PROGRAM_PIPELINE);
     }
 
     // This actually clears the current value dirty bits.
@@ -743,6 +758,16 @@ class State : angle::NonCopyable
         mProvokingVertex = val;
     }
 
+    ANGLE_INLINE void setReadFramebufferBindingDirty()
+    {
+        mDirtyBits.set(State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
+    }
+
+    ANGLE_INLINE void setDrawFramebufferBindingDirty()
+    {
+        mDirtyBits.set(State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
+    }
+
     using ClipDistanceEnableBits = angle::BitSet32<IMPLEMENTATION_MAX_CLIP_DISTANCES>;
     const ClipDistanceEnableBits &getEnabledClipDistances() const { return mClipDistancesEnabled; }
     void setClipDistanceEnable(int idx, bool enable);
@@ -790,6 +815,39 @@ class State : angle::NonCopyable
 
     bool isEarlyFragmentTestsOptimizationAllowed() const { return isSampleCoverageEnabled(); }
 
+    const BufferVector &getOffsetBindingPointerUniformBuffers() const { return mUniformBuffers; }
+
+    const BufferVector &getOffsetBindingPointerAtomicCounterBuffers() const
+    {
+        return mAtomicCounterBuffers;
+    }
+
+    const BufferVector &getOffsetBindingPointerShaderStorageBuffers() const
+    {
+        return mShaderStorageBuffers;
+    }
+
+    ActiveTextureMask getTexturesIncompatibleWithSamplers() const
+    {
+        return mTexturesIncompatibleWithSamplers;
+    }
+
+    bool isProgramBinaryCacheEnabled() const { return mProgramBinaryCacheEnabled; }
+
+    bool isTextureRectangleEnabled() const { return mTextureRectangleEnabled; }
+
+    DrawBufferMask getBlendFuncConstantAlphaDrawBuffers() const
+    {
+        return mBlendFuncConstantAlphaDrawBuffers;
+    }
+
+    DrawBufferMask getBlendFuncConstantColorDrawBuffers() const
+    {
+        return mBlendFuncConstantColorDrawBuffers;
+    }
+
+    const std::vector<ImageUnit> getImageUnits() const { return mImageUnits; }
+
     const BlendStateExt &getBlendStateExt() const { return mBlendStateExt; }
 
   private:
@@ -807,22 +865,20 @@ class State : angle::NonCopyable
     bool hasConstantAlpha(GLenum sourceRGB, GLenum destRGB) const;
 
     // Functions to synchronize dirty states
-    angle::Result syncTexturesInit(const Context *context);
-    angle::Result syncImagesInit(const Context *context);
-    angle::Result syncReadAttachments(const Context *context);
-    angle::Result syncDrawAttachments(const Context *context);
-    angle::Result syncReadFramebuffer(const Context *context);
-    angle::Result syncDrawFramebuffer(const Context *context);
-    angle::Result syncVertexArray(const Context *context);
-    angle::Result syncTextures(const Context *context);
-    angle::Result syncImages(const Context *context);
-    angle::Result syncSamplers(const Context *context);
-    angle::Result syncProgram(const Context *context);
-    angle::Result syncProgramPipeline(const Context *context);
+    angle::Result syncTexturesInit(const Context *context, Command command);
+    angle::Result syncImagesInit(const Context *context, Command command);
+    angle::Result syncReadAttachments(const Context *context, Command command);
+    angle::Result syncDrawAttachments(const Context *context, Command command);
+    angle::Result syncReadFramebuffer(const Context *context, Command command);
+    angle::Result syncDrawFramebuffer(const Context *context, Command command);
+    angle::Result syncVertexArray(const Context *context, Command command);
+    angle::Result syncTextures(const Context *context, Command command);
+    angle::Result syncImages(const Context *context, Command command);
+    angle::Result syncSamplers(const Context *context, Command command);
+    angle::Result syncProgram(const Context *context, Command command);
+    angle::Result syncProgramPipeline(const Context *context, Command command);
 
-    void updatePPOActiveTextures();
-
-    using DirtyObjectHandler = angle::Result (State::*)(const Context *context);
+    using DirtyObjectHandler = angle::Result (State::*)(const Context *context, Command command);
     static constexpr DirtyObjectHandler kDirtyObjectHandlers[DIRTY_OBJECT_MAX] = {
         &State::syncTexturesInit,    &State::syncImagesInit,      &State::syncReadAttachments,
         &State::syncDrawAttachments, &State::syncReadFramebuffer, &State::syncDrawFramebuffer,
@@ -969,7 +1025,6 @@ class State : angle::NonCopyable
     // vertex array object.
     BoundBufferMap mBoundBuffers;
 
-    using BufferVector = std::vector<OffsetBindingPointer<Buffer>>;
     BufferVector mUniformBuffers;
     BufferVector mAtomicCounterBuffers;
     BufferVector mShaderStorageBuffers;
@@ -1026,13 +1081,14 @@ class State : angle::NonCopyable
 };
 
 ANGLE_INLINE angle::Result State::syncDirtyObjects(const Context *context,
-                                                   const DirtyObjects &bitset)
+                                                   const DirtyObjects &bitset,
+                                                   Command command)
 {
     const DirtyObjects &dirtyObjects = mDirtyObjects & bitset;
 
     for (size_t dirtyObject : dirtyObjects)
     {
-        ANGLE_TRY((this->*kDirtyObjectHandlers[dirtyObject])(context));
+        ANGLE_TRY((this->*kDirtyObjectHandlers[dirtyObject])(context, command));
     }
 
     mDirtyObjects &= ~dirtyObjects;

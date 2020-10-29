@@ -74,6 +74,7 @@ export class FrontendLocalState {
   localOnlyMode = false;
   sidebarVisible = true;
   showPanningHint = false;
+  showCookieConsent = false;
   visibleTracks = new Set<string>();
   prevVisibleTracks = new Set<string>();
   searchIndex = -1;
@@ -301,7 +302,13 @@ export class FrontendLocalState {
     const endSec = capBetween(ts.end, traceTime.startSec, traceTime.endSec);
     this.visibleWindowTime = new TimeSpan(startSec, endSec);
     this.timeScale.setTimeBounds(this.visibleWindowTime);
-    this.updateResolution(this.timeScale.startPx, this.timeScale.endPx);
+    this.updateResolution();
+  }
+
+  private updateResolution() {
+    this._visibleState.lastUpdate = Date.now() / 1000;
+    this._visibleState.resolution = globals.getCurResolution();
+    this.ratelimitedUpdateVisible();
   }
 
   // We lock an area selection by adding an area note. When we select the note
@@ -333,10 +340,15 @@ export class FrontendLocalState {
     this.ratelimitedUpdateVisible();
   }
 
-  updateResolution(pxStart: number, pxEnd: number) {
+  // Whenever start/end px of the timeScale is changed, update
+  // the resolution.
+  updateLocalLimits(pxStart: number, pxEnd: number) {
+    // Numbers received here can be negative or equal, but we should fix that
+    // before updating the timescale.
+    pxStart = Math.max(0, pxStart);
+    pxEnd = Math.max(0, pxEnd);
+    if (pxStart === pxEnd) pxEnd = pxStart + 1;
     this.timeScale.setLimitsPx(pxStart, pxEnd);
-    this._visibleState.lastUpdate = Date.now() / 1000;
-    this._visibleState.resolution = globals.getCurResolution();
-    this.ratelimitedUpdateVisible();
+    this.updateResolution();
   }
 }

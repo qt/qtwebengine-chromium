@@ -145,10 +145,9 @@ egl::Error DisplayCGL::initialize(egl::Display *display)
     mEGLDisplay = display;
 
     angle::SystemInfo info;
-    if (!angle::GetSystemInfo(&info))
-    {
-        return egl::EglNotInitialized() << "Unable to query ANGLE's SystemInfo.";
-    }
+    // It's legal for GetSystemInfo to return false and thereby
+    // contain incomplete information.
+    (void)angle::GetSystemInfo(&info);
 
     // This code implements the effect of the
     // disableGPUSwitchingSupport workaround in FeaturesGL.
@@ -183,6 +182,8 @@ egl::Error DisplayCGL::initialize(egl::Display *display)
     }
 
     CGLSetCurrentContext(mContext);
+
+    mCurrentContexts[std::this_thread::get_id()] = mContext;
 
     // There is no equivalent getProcAddress in CGL so we open the dylib directly
     void *handle = dlopen(kDefaultOpenGLDylibName, RTLD_NOW);
@@ -219,6 +220,7 @@ void DisplayCGL::terminate()
         CGLDestroyPixelFormat(mPixelFormat);
         mPixelFormat = nullptr;
     }
+    mCurrentContexts.clear();
     if (mContext != nullptr)
     {
         CGLSetCurrentContext(nullptr);
@@ -238,6 +240,18 @@ egl::Error DisplayCGL::makeCurrent(egl::Surface *drawSurface,
                                    gl::Context *context)
 {
     checkDiscreteGPUStatus();
+    // If the thread that's calling makeCurrent does not have the correct
+    // context current (either mContext or 0), we need to set it current.
+    CGLContextObj newContext = 0;
+    if (context)
+    {
+        newContext = mContext;
+    }
+    if (newContext != mCurrentContexts[std::this_thread::get_id()])
+    {
+        CGLSetCurrentContext(newContext);
+        mCurrentContexts[std::this_thread::get_id()] = newContext;
+    }
     return DisplayGL::makeCurrent(drawSurface, readSurface, context);
 }
 
@@ -420,8 +434,9 @@ void DisplayCGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->surfacelessContext    = true;
     outExtensions->deviceQuery           = true;
 
-    // Contexts are virtualized so textures can be shared globally
-    outExtensions->displayTextureShareGroup = true;
+    // Contexts are virtualized so textures and semaphores can be shared globally
+    outExtensions->displayTextureShareGroup   = true;
+    outExtensions->displaySemaphoreShareGroup = true;
 
     if (mSupportsGPUSwitching)
     {

@@ -30,6 +30,18 @@ namespace gl
 class Buffer;
 class Texture;
 
+enum class Command
+{
+    Blit,
+    CopyImage,
+    Dispatch,
+    Draw,
+    GenerateMipmap,
+    ReadPixels,
+    TexImage,
+    Other
+};
+
 struct Rectangle
 {
     Rectangle() : x(0), y(0), width(0), height(0) {}
@@ -103,7 +115,8 @@ struct Box
     Box(int x_in, int y_in, int z_in, int width_in, int height_in, int depth_in)
         : x(x_in), y(y_in), z(z_in), width(width_in), height(height_in), depth(depth_in)
     {}
-    Box(const Offset &offset, const Extents &size)
+    template <typename O, typename E>
+    Box(const O &offset, const E &size)
         : x(offset.x),
           y(offset.y),
           z(offset.z),
@@ -114,6 +127,9 @@ struct Box
     bool operator==(const Box &other) const;
     bool operator!=(const Box &other) const;
     Rectangle toRect() const;
+
+    // Whether the Box has offset 0 and the same extents as argument.
+    bool coversSameExtent(const Extents &size) const;
 
     int x;
     int y;
@@ -178,6 +194,9 @@ struct DepthStencilState final
     // This will zero-initialize the struct, including padding.
     DepthStencilState();
     DepthStencilState(const DepthStencilState &other);
+
+    bool isDepthMaskedOut() const;
+    bool isStencilMaskedOut() const;
 
     bool depthTest;
     GLenum depthFunc;
@@ -702,6 +721,26 @@ bool ValidateComponentTypeMasks(unsigned long outputTypes,
                                 unsigned long inputTypes,
                                 unsigned long outputMask,
                                 unsigned long inputMask);
+
+enum class RenderToTextureImageIndex
+{
+    // The default image of the texture, where data is expected to be.
+    Default = 0,
+
+    // Intermediate multisampled images for EXT_multisampled_render_to_texture.
+    // These values must match log2(SampleCount).
+    IntermediateImage2xMultisampled  = 1,
+    IntermediateImage4xMultisampled  = 2,
+    IntermediateImage8xMultisampled  = 3,
+    IntermediateImage16xMultisampled = 4,
+
+    // We currently only support up to 16xMSAA in backends that use this enum.
+    InvalidEnum = 5,
+    EnumCount   = 5,
+};
+
+template <typename T>
+using RenderToTextureImageMap = angle::PackedEnumMap<RenderToTextureImageIndex, T>;
 
 using ContextID = uintptr_t;
 

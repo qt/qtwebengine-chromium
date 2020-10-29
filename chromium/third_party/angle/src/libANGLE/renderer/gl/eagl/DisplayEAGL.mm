@@ -66,10 +66,9 @@ egl::Error DisplayEAGL::initialize(egl::Display *display)
     mEGLDisplay = display;
 
     angle::SystemInfo info;
-    if (!angle::GetSystemInfo(&info))
-    {
-        return egl::EglNotInitialized() << "Unable to query ANGLE's SystemInfo.";
-    }
+    // It's legal for GetSystemInfo to return false and thereby
+    // contain incomplete information.
+    (void)angle::GetSystemInfo(&info);
 
     mContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
     if (mContext == nullptr)
@@ -279,8 +278,9 @@ void DisplayEAGL::generateExtensions(egl::DisplayExtensions *outExtensions) cons
     outExtensions->surfacelessContext    = true;
     outExtensions->deviceQuery           = true;
 
-    // Contexts are virtualized so textures can be shared globally
-    outExtensions->displayTextureShareGroup = true;
+    // Contexts are virtualized so textures ans semaphores can be shared globally
+    outExtensions->displayTextureShareGroup   = true;
+    outExtensions->displaySemaphoreShareGroup = true;
 
     outExtensions->powerPreference = false;
 

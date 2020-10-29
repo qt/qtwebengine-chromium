@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as UI from '../ui/ui.js';
 
 /**
@@ -28,6 +31,7 @@ export class KeybindsSettingsTab extends UI.Widget.VBox {
     UI.ARIAUtils.markAsList(this._list.element);
     this.registerRequiredCSS('settings/keybindsSettingsTab.css');
     this.contentElement.appendChild(this._list.element);
+    UI.ARIAUtils.setAccessibleName(this._list.element, ls`Keyboard shortcuts list`);
     this.update();
   }
 
@@ -43,9 +47,11 @@ export class KeybindsSettingsTab extends UI.Widget.VBox {
     itemElement.tabIndex = item === this._list.selectedItem() ? 0 : -1;
 
     if (typeof item === 'string') {
+      UI.ARIAUtils.setLevel(itemElement, 1);
       itemElement.classList.add('keybinds-category-header');
       itemElement.textContent = item;
     } else {
+      UI.ARIAUtils.setLevel(itemElement, 2);
       itemElement.createChild('div', 'keybinds-action-name keybinds-list-text').textContent = item.title();
       const shortcuts = self.UI.shortcutRegistry.shortcutsForAction(item.id());
       shortcuts.forEach((shortcut, index) => {
@@ -60,10 +66,14 @@ export class KeybindsSettingsTab extends UI.Widget.VBox {
           shortcutElement.createChild('span', 'keybinds-key').textContent = key;
         });
       });
-      if (shortcuts.length === 0 && self.UI.shortcutRegistry.actionHasDefaultShortcut(item.id())) {
-        const icon = UI.Icon.Icon.create('largeicon-shortcut-changed', 'keybinds-modified');
-        UI.ARIAUtils.setAccessibleName(icon, ls`Shortcut provided by preset`);
-        itemElement.appendChild(icon);
+      if (shortcuts.length === 0) {
+        if (self.UI.shortcutRegistry.actionHasDefaultShortcut(item.id())) {
+          const icon = UI.Icon.Icon.create('largeicon-shortcut-changed', 'keybinds-modified');
+          UI.ARIAUtils.setAccessibleName(icon, ls`Shortcut provided by preset`);
+          itemElement.appendChild(icon);
+        }
+        const emptyElement = itemElement.createChild('div', 'keybinds-shortcut keybinds-list-text');
+        UI.ARIAUtils.setAccessibleName(emptyElement, ls`No shortcut for action`);
       }
     }
 
@@ -123,7 +133,7 @@ export class KeybindsSettingsTab extends UI.Widget.VBox {
    * @returns {!Array.<!KeybindsItem>}
    */
   _createListItems() {
-    const actions = self.UI.actionRegistry.actions().sort((actionA, actionB) => {
+    const actions = UI.ActionRegistry.ActionRegistry.instance().actions().sort((actionA, actionB) => {
       if (actionA.category() < actionB.category()) {
         return -1;
       }

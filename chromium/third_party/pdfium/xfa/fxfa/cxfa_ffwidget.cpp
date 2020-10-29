@@ -14,6 +14,7 @@
 #include "core/fxcodec/fx_codec.h"
 #include "core/fxcodec/progressive_decoder.h"
 #include "core/fxcrt/maybe_owned.h"
+#include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
@@ -134,7 +135,8 @@ void XFA_DrawImage(CXFA_Graphics* pGS,
   CFX_RenderDevice::StateRestorer restorer(pRenderDevice);
   CFX_PathData path;
   path.AppendRect(rtImage.left, rtImage.bottom(), rtImage.right(), rtImage.top);
-  pRenderDevice->SetClip_PathFill(&path, &matrix, FXFILL_WINDING);
+  pRenderDevice->SetClip_PathFill(&path, &matrix,
+                                  CFX_FillRenderOptions::WindingOptions());
 
   CFX_Matrix mtImage(1, 0, 0, -1, 0, 1);
   mtImage.Concat(
@@ -189,24 +191,18 @@ RetainPtr<CFX_DIBitmap> XFA_LoadImageFromBuffer(
   size_t nFrames;
   FXCODEC_STATUS status;
   std::tie(status, nFrames) = pProgressiveDecoder->GetFrames();
-  if (status != FXCODEC_STATUS_DECODE_READY || nFrames == 0) {
-    pBitmap = nullptr;
-    return pBitmap;
-  }
+  if (status != FXCODEC_STATUS_DECODE_READY || nFrames == 0)
+    return nullptr;
 
   status = pProgressiveDecoder->StartDecode(pBitmap, 0, 0, pBitmap->GetWidth(),
                                             pBitmap->GetHeight());
-  if (IsFXCodecErrorStatus(status)) {
-    pBitmap = nullptr;
-    return pBitmap;
-  }
+  if (IsFXCodecErrorStatus(status))
+    return nullptr;
 
   while (status == FXCODEC_STATUS_DECODE_TOBECONTINUE) {
     status = pProgressiveDecoder->ContinueDecode();
-    if (IsFXCodecErrorStatus(status)) {
-      pBitmap = nullptr;
-      return pBitmap;
-    }
+    if (IsFXCodecErrorStatus(status))
+      return nullptr;
   }
 
   return pBitmap;
@@ -234,6 +230,14 @@ CXFA_CalcData::~CXFA_CalcData() = default;
 CXFA_FFWidget::CXFA_FFWidget(CXFA_Node* node) : m_pNode(node) {}
 
 CXFA_FFWidget::~CXFA_FFWidget() = default;
+
+void CXFA_FFWidget::PreFinalize() {}
+
+void CXFA_FFWidget::Trace(cppgc::Visitor* visitor) const {
+  visitor->Trace(m_pLayoutItem);
+  visitor->Trace(m_pNode);
+  visitor->Trace(m_pDocView);
+}
 
 const CFWL_App* CXFA_FFWidget::GetFWLApp() {
   return GetPageView()->GetDocView()->GetDoc()->GetApp()->GetFWLApp();
@@ -316,9 +320,6 @@ bool CXFA_FFWidget::IsLoaded() {
 }
 
 bool CXFA_FFWidget::LoadWidget() {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retain_layout(m_pLayoutItem.Get());
-
   PerformLayout();
   return true;
 }
@@ -422,9 +423,6 @@ bool CXFA_FFWidget::OnRButtonDblClk(uint32_t dwFlags, const CFX_PointF& point) {
 }
 
 bool CXFA_FFWidget::OnSetFocus(CXFA_FFWidget* pOldWidget) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   CXFA_FFWidget* pParent = GetFFWidget(ToContentLayoutItem(GetParent()));
   if (pParent && !pParent->IsAncestorOf(pOldWidget)) {
     if (!pParent->OnSetFocus(pOldWidget))
@@ -440,9 +438,6 @@ bool CXFA_FFWidget::OnSetFocus(CXFA_FFWidget* pOldWidget) {
 }
 
 bool CXFA_FFWidget::OnKillFocus(CXFA_FFWidget* pNewWidget) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   ObservedPtr<CXFA_FFWidget> pNewWatched(pNewWidget);
   GetLayoutItem()->ClearStatusBits(XFA_WidgetStatus_Focused);
   EventKillFocus();
@@ -588,11 +583,7 @@ CFX_Matrix CXFA_FFWidget::GetRotateMatrix() {
 }
 
 void CXFA_FFWidget::DisplayCaret(bool bVisible, const CFX_RectF* pRtAnchor) {
-  IXFA_DocEnvironment* pDocEnvironment = GetDoc()->GetDocEnvironment();
-  if (!pDocEnvironment)
-    return;
-
-  pDocEnvironment->DisplayCaret(this, bVisible, pRtAnchor);
+  GetDoc()->DisplayCaret(this, bVisible, pRtAnchor);
 }
 
 void CXFA_FFWidget::GetBorderColorAndThickness(FX_ARGB* cr, float* fWidth) {
@@ -619,7 +610,7 @@ CXFA_LayoutItem* CXFA_FFWidget::GetParent() {
   if (!pParentNode)
     return nullptr;
 
-  CXFA_LayoutProcessor* layout = GetDocView()->GetXFALayout();
+  CXFA_LayoutProcessor* layout = GetDocView()->GetLayoutProcessor();
   return layout->GetLayoutItem(pParentNode);
 }
 

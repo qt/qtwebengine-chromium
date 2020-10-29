@@ -121,11 +121,7 @@ class DefaultTopologyParams {
 
 class Bbr2SimulatorTest : public QuicTest {
  protected:
-  Bbr2SimulatorTest() : simulator_(&random_) {
-    // Disable Ack Decimation by default, because it can significantly increase
-    // srtt. Individual test can enable it via QuicConnectionPeer::SetAckMode().
-    SetQuicReloadableFlag(quic_enable_ack_decimation, false);
-  }
+  Bbr2SimulatorTest() : simulator_(&random_) {}
 
   void SetUp() override {
     if (GetQuicFlag(FLAGS_quic_bbr2_test_regression_mode) == "regress") {
@@ -331,6 +327,10 @@ class Bbr2DefaultTopologyTest : public Bbr2SimulatorTest {
 
   QuicConnection* sender_connection() { return sender_endpoint_.connection(); }
 
+  Bbr2Sender::DebugState sender_debug_state() const {
+    return sender_->ExportDebugState();
+  }
+
   const QuicConnectionStats& sender_connection_stats() {
     return sender_connection()->GetStats();
   }
@@ -421,7 +421,7 @@ TEST_F(Bbr2DefaultTopologyTest, SimpleTransferSmallBuffer) {
   DoSimpleTransfer(12 * 1024 * 1024, QuicTime::Delta::FromSeconds(30));
   EXPECT_TRUE(Bbr2ModeIsOneOf({Bbr2Mode::PROBE_BW, Bbr2Mode::PROBE_RTT}));
   EXPECT_APPROX_EQ(params.BottleneckBandwidth(),
-                   sender_->ExportDebugState().bandwidth_hi, 0.01f);
+                   sender_->ExportDebugState().bandwidth_hi, 0.02f);
   EXPECT_GE(sender_connection_stats().packets_lost, 0u);
   EXPECT_FALSE(sender_->ExportDebugState().last_sample_is_app_limited);
 }
@@ -660,7 +660,7 @@ TEST_F(Bbr2DefaultTopologyTest, InFlightAwareGainCycling) {
     EXPECT_EQ(Bbr2Mode::PROBE_BW, sender_->ExportDebugState().mode);
     EXPECT_EQ(CyclePhase::PROBE_UP, sender_->ExportDebugState().probe_bw.phase);
     EXPECT_APPROX_EQ(params.BottleneckBandwidth(),
-                     sender_->ExportDebugState().bandwidth_hi, 0.01f);
+                     sender_->ExportDebugState().bandwidth_hi, 0.02f);
   }
 
   // Now that in-flight is almost zero and the pacing gain is still above 1,
@@ -990,14 +990,46 @@ TEST_F(Bbr2DefaultTopologyTest, SwitchToBbr2MidConnection) {
   EXPECT_FALSE(sender_->BandwidthEstimate().IsZero());
 }
 
+TEST_F(Bbr2DefaultTopologyTest, AdjustNetworkParameters) {
+  DefaultTopologyParams params;
+  CreateNetwork(params);
+
+  QUIC_LOG(INFO) << "Initial cwnd: " << sender_debug_state().congestion_window
+                 << "\nInitial pacing rate: " << sender_->PacingRate(0)
+                 << "\nInitial bandwidth estimate: "
+                 << sender_->BandwidthEstimate()
+                 << "\nInitial rtt: " << sender_debug_state().min_rtt;
+
+  sender_connection()->AdjustNetworkParameters(
+      SendAlgorithmInterface::NetworkParams(params.BottleneckBandwidth(),
+                                            params.RTT(),
+                                            /*allow_cwnd_to_decrease=*/false));
+
+  EXPECT_EQ(params.BDP(), sender_->ExportDebugState().congestion_window);
+
+  if (GetQuicReloadableFlag(quic_bbr2_improve_adjust_network_parameters)) {
+    EXPECT_EQ(params.BottleneckBandwidth(),
+              sender_->PacingRate(/*bytes_in_flight=*/0));
+    EXPECT_NE(params.BottleneckBandwidth(), sender_->BandwidthEstimate());
+  } else {
+    EXPECT_EQ(params.BottleneckBandwidth(), sender_->BandwidthEstimate());
+  }
+
+  EXPECT_APPROX_EQ(params.RTT(), sender_->ExportDebugState().min_rtt, 0.01f);
+
+  DriveOutOfStartup(params);
+}
+
 // All Bbr2MultiSenderTests uses the following network topology:
 //
 //   Sender 0  (A Bbr2Sender)
 //       |
 //       | <-- local_links[0]
 //       |
-//       |  Sender N (1 <= N < kNumLocalLinks) (May or may not be a
-//       Bbr2Sender) |      | |      | <-- local_links[N] |      |
+//       |  Sender N (1 <= N < kNumLocalLinks) (May or may not be a Bbr2Sender)
+//       |      |
+//       |      | <-- local_links[N]
+//       |      |
 //    Network switch
 //           *  <-- the bottleneck queue in the direction
 //           |          of the receiver

@@ -7,6 +7,7 @@
 
 #include "src/gpu/GrSoftwarePathRenderer.h"
 
+#include "include/gpu/GrDirectContext.h"
 #include "include/private/SkSemaphore.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTraceEvent.h"
@@ -166,7 +167,7 @@ void GrSoftwarePathRenderer::DrawToTargetWithShapeMask(
                                               SkIntToScalar(-textureOriginInDeviceSpace.fY));
     maskMatrix.preConcat(viewMatrix);
 
-    paint.addCoverageFragmentProcessor(GrTextureEffect::Make(
+    paint.setCoverageFragmentProcessor(GrTextureEffect::Make(
             std::move(view), kPremul_SkAlphaType, maskMatrix, GrSamplerState::Filter::kNearest));
     DrawNonAARect(renderTargetContext, std::move(paint), userStencilSettings, clip, SkMatrix::I(),
                   dstRect, invert);
@@ -184,7 +185,7 @@ static GrSurfaceProxyView make_deferred_mask_texture_view(GrRecordingContext* co
     GrSwizzle swizzle = caps->getReadSwizzle(format, GrColorType::kAlpha_8);
 
     auto proxy =
-            proxyProvider->createProxy(format, dimensions, GrRenderable::kNo, 1, GrMipMapped::kNo,
+            proxyProvider->createProxy(format, dimensions, GrRenderable::kNo, 1, GrMipmapped::kNo,
                                        fit, SkBudgeted::kYes, GrProtected::kNo);
     return {std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle};
 }
@@ -217,7 +218,7 @@ private:
     GrAA fAA;
 };
 
-}
+}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // return true on success; false on failure
@@ -327,7 +328,7 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
         GrAA aa = GrAA(GrAAType::kCoverage == args.fAAType);
 
         SkTaskGroup* taskGroup = nullptr;
-        if (auto direct = args.fContext->priv().asDirectContext()) {
+        if (auto direct = args.fContext->asDirectContext()) {
             taskGroup = direct->priv().getTaskGroup();
         }
 

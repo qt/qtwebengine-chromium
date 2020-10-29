@@ -2668,23 +2668,24 @@ TEST_P(PeerConnectionInterfaceTest, CloseAndTestStreamsAndStates) {
     EXPECT_EQ(1u, pc_->local_streams()->count());
     EXPECT_EQ(1u, pc_->remote_streams()->count());
   } else {
-    // Verify that the RtpTransceivers are still present but all stopped.
-    EXPECT_EQ(2u, pc_->GetTransceivers().size());
-    for (const auto& transceiver : pc_->GetTransceivers()) {
-      EXPECT_TRUE(transceiver->stopped());
-    }
+    // Verify that the RtpTransceivers are no longer returned.
+    EXPECT_EQ(0u, pc_->GetTransceivers().size());
   }
 
   auto audio_receiver = GetFirstReceiverOfType(cricket::MEDIA_TYPE_AUDIO);
-  ASSERT_TRUE(audio_receiver);
   auto video_receiver = GetFirstReceiverOfType(cricket::MEDIA_TYPE_VIDEO);
-  ASSERT_TRUE(video_receiver);
-
-  // Track state may be updated asynchronously.
-  EXPECT_EQ_WAIT(MediaStreamTrackInterface::kEnded,
-                 audio_receiver->track()->state(), kTimeout);
-  EXPECT_EQ_WAIT(MediaStreamTrackInterface::kEnded,
-                 video_receiver->track()->state(), kTimeout);
+  if (sdp_semantics_ == SdpSemantics::kPlanB) {
+    ASSERT_TRUE(audio_receiver);
+    ASSERT_TRUE(video_receiver);
+    // Track state may be updated asynchronously.
+    EXPECT_EQ_WAIT(MediaStreamTrackInterface::kEnded,
+                   audio_receiver->track()->state(), kTimeout);
+    EXPECT_EQ_WAIT(MediaStreamTrackInterface::kEnded,
+                   video_receiver->track()->state(), kTimeout);
+  } else {
+    ASSERT_FALSE(audio_receiver);
+    ASSERT_FALSE(video_receiver);
+  }
 }
 
 // Test that PeerConnection methods fails gracefully after
@@ -3615,44 +3616,44 @@ TEST_P(PeerConnectionInterfaceTest,
 
 TEST_P(PeerConnectionInterfaceTest, SetBitrateWithoutMinSucceeds) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
-  bitrate.current_bitrate_bps = 100000;
+  BitrateSettings bitrate;
+  bitrate.start_bitrate_bps = 100000;
   EXPECT_TRUE(pc_->SetBitrate(bitrate).ok());
 }
 
 TEST_P(PeerConnectionInterfaceTest, SetBitrateNegativeMinFails) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
+  BitrateSettings bitrate;
   bitrate.min_bitrate_bps = -1;
   EXPECT_FALSE(pc_->SetBitrate(bitrate).ok());
 }
 
 TEST_P(PeerConnectionInterfaceTest, SetBitrateCurrentLessThanMinFails) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
+  BitrateSettings bitrate;
   bitrate.min_bitrate_bps = 5;
-  bitrate.current_bitrate_bps = 3;
+  bitrate.start_bitrate_bps = 3;
   EXPECT_FALSE(pc_->SetBitrate(bitrate).ok());
 }
 
 TEST_P(PeerConnectionInterfaceTest, SetBitrateCurrentNegativeFails) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
-  bitrate.current_bitrate_bps = -1;
+  BitrateSettings bitrate;
+  bitrate.start_bitrate_bps = -1;
   EXPECT_FALSE(pc_->SetBitrate(bitrate).ok());
 }
 
 TEST_P(PeerConnectionInterfaceTest, SetBitrateMaxLessThanCurrentFails) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
-  bitrate.current_bitrate_bps = 10;
+  BitrateSettings bitrate;
+  bitrate.start_bitrate_bps = 10;
   bitrate.max_bitrate_bps = 8;
   EXPECT_FALSE(pc_->SetBitrate(bitrate).ok());
 }
 
 TEST_P(PeerConnectionInterfaceTest, SetBitrateMaxLessThanMinFails) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
+  BitrateSettings bitrate;
   bitrate.min_bitrate_bps = 10;
   bitrate.max_bitrate_bps = 8;
   EXPECT_FALSE(pc_->SetBitrate(bitrate).ok());
@@ -3660,7 +3661,7 @@ TEST_P(PeerConnectionInterfaceTest, SetBitrateMaxLessThanMinFails) {
 
 TEST_P(PeerConnectionInterfaceTest, SetBitrateMaxNegativeFails) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
+  BitrateSettings bitrate;
   bitrate.max_bitrate_bps = -1;
   EXPECT_FALSE(pc_->SetBitrate(bitrate).ok());
 }
@@ -3671,8 +3672,8 @@ TEST_P(PeerConnectionInterfaceTest, SetBitrateMaxNegativeFails) {
 // be clamped succeeds.
 TEST_P(PeerConnectionInterfaceTest, SetBitrateCurrentLessThanImplicitMin) {
   CreatePeerConnection();
-  PeerConnectionInterface::BitrateParameters bitrate;
-  bitrate.current_bitrate_bps = 1;
+  BitrateSettings bitrate;
+  bitrate.start_bitrate_bps = 1;
   EXPECT_TRUE(pc_->SetBitrate(bitrate).ok());
 }
 

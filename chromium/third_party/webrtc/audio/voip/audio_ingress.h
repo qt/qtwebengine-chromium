@@ -28,7 +28,7 @@
 #include "modules/rtp_rtcp/include/remote_ntp_time_estimator.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
-#include "rtc_base/critical_section.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/time_utils.h"
 
 namespace webrtc {
@@ -51,7 +51,7 @@ class AudioIngress : public AudioMixer::Source {
   ~AudioIngress() override;
 
   // Start or stop receiving operation of AudioIngress.
-  void StartPlay() { playing_ = true; }
+  bool StartPlay();
   void StopPlay() {
     playing_ = false;
     output_audio_level_.ResetLevelFullRange();
@@ -131,7 +131,7 @@ class AudioIngress : public AudioMixer::Source {
   // Synchronizaton is handled internally by voe::AudioLevel.
   voe::AudioLevel output_audio_level_;
 
-  rtc::CriticalSection lock_;
+  Mutex lock_;
 
   RemoteNtpTimeEstimator ntp_estimator_ RTC_GUARDED_BY(lock_);
 

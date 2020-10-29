@@ -29,7 +29,6 @@ namespace libgav1 {
 namespace dsp {
 namespace {
 
-constexpr int kSubPixelMask = (1 << kSubPixelBits) - 1;
 constexpr int kHorizontalOffset = 3;
 constexpr int kVerticalOffset = 3;
 

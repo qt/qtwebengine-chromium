@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as BrowserSDK from '../browser_sdk/browser_sdk.js';
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
@@ -169,7 +172,7 @@ export class WarningErrorCounter {
     }
 
     this._titles = '';
-    if (errors & warnings) {
+    if (errors && warnings) {
       this._titles = ls`${errorCountTitle}, ${warningCountTitle}`;
     } else if (errors) {
       this._titles = errorCountTitle;

@@ -86,9 +86,12 @@ class ExportJsonTest : public ::testing::Test {
   }
 
   Json::Value ToJsonValue(const std::string& json) {
-    Json::Reader reader;
+    Json::CharReaderBuilder b;
+    auto reader = std::unique_ptr<Json::CharReader>(b.newCharReader());
     Json::Value result;
-    EXPECT_TRUE(reader.parse(json, result)) << json;
+    EXPECT_TRUE(reader->parse(json.data(), json.data() + json.length(), &result,
+                              nullptr))
+        << json;
     return result;
   }
 
@@ -814,8 +817,7 @@ TEST_F(ExportJsonTest, DuplicatePidAndTid) {
       base::nullopt, base::nullopt, 1, kNullStringId);
   UniqueTid utid1a = context_.process_tracker->UpdateThread(1, 1);
   UniqueTid utid1b = context_.process_tracker->UpdateThread(2, 1);
-  UniqueTid utid1c =
-      context_.process_tracker->StartNewThread(base::nullopt, 2, kNullStringId);
+  UniqueTid utid1c = context_.process_tracker->StartNewThread(base::nullopt, 2);
   // Associate the new thread with its process.
   ASSERT_EQ(utid1c, context_.process_tracker->UpdateThread(2, 1));
 

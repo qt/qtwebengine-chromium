@@ -115,10 +115,8 @@ void CryptoUtils::SetKeyAndIV(const EVP_MD* prf,
 
 namespace {
 
-// Salt from https://tools.ietf.org/html/draft-ietf-quic-tls-25#section-5.2
-// and https://tools.ietf.org/html/draft-ietf-quic-tls-27#section-5.2
-// and https://tools.ietf.org/html/draft-ietf-quic-tls-28#section-5.2
-const uint8_t kDraft25InitialSalt[] = {0xc3, 0xee, 0xf7, 0x12, 0xc7, 0x2e, 0xbb,
+// Salt from https://tools.ietf.org/html/draft-ietf-quic-tls-27#section-5.2
+const uint8_t kDraft27InitialSalt[] = {0xc3, 0xee, 0xf7, 0x12, 0xc7, 0x2e, 0xbb,
                                        0x5a, 0x11, 0xa7, 0xd2, 0x43, 0x2b, 0xb4,
                                        0x63, 0x65, 0xbe, 0xf9, 0xf5, 0x02};
 
@@ -138,65 +136,45 @@ const uint8_t kQ050Salt[] = {0x50, 0x45, 0x74, 0xef, 0xd0, 0x66, 0xfe,
 const uint8_t kT050Salt[] = {0x7f, 0xf5, 0x79, 0xe5, 0xac, 0xd0, 0x72,
                              0x91, 0x55, 0x80, 0x30, 0x4c, 0x43, 0xa2,
                              0x36, 0x7c, 0x60, 0x48, 0x83, 0x10};
+// Salt to use for initial obfuscators in version T051.
+const uint8_t kT051Salt[] = {0x7a, 0x4e, 0xde, 0xf4, 0xe7, 0xcc, 0xee,
+                             0x5f, 0xa4, 0x50, 0x6c, 0x19, 0x12, 0x4f,
+                             0xc8, 0xcc, 0xda, 0x6e, 0x03, 0x3d};
 
 const uint8_t* InitialSaltForVersion(const ParsedQuicVersion& version,
                                      size_t* out_len) {
-  static_assert(SupportedVersions().size() == 9u,
+  static_assert(SupportedVersions().size() == 7u,
                 "Supported versions out of sync with initial encryption salts");
-  switch (version.handshake_protocol) {
-    case PROTOCOL_QUIC_CRYPTO:
-      switch (version.transport_version) {
-        case QUIC_VERSION_50:
-          *out_len = QUICHE_ARRAYSIZE(kQ050Salt);
-          return kQ050Salt;
-        case QUIC_VERSION_RESERVED_FOR_NEGOTIATION:
-          // It doesn't matter what salt we use for
-          // QUIC_VERSION_RESERVED_FOR_NEGOTIATION, but some tests try to use a
-          // QuicFramer with QUIC_VERSION_RESERVED_FOR_NEGOTIATION and will hit
-          // the following QUIC_BUG if there isn't a case for it. ):
-          *out_len = QUICHE_ARRAYSIZE(kDraft25InitialSalt);
-          return kDraft25InitialSalt;
-        default:
-          QUIC_BUG << "No initial obfuscation salt for version " << version;
-      }
-      break;
-    case PROTOCOL_TLS1_3:
-      switch (version.transport_version) {
-        case QUIC_VERSION_50:
-          *out_len = QUICHE_ARRAYSIZE(kT050Salt);
-          return kT050Salt;
-        case QUIC_VERSION_IETF_DRAFT_25:
-          *out_len = QUICHE_ARRAYSIZE(kDraft25InitialSalt);
-          return kDraft25InitialSalt;
-        case QUIC_VERSION_IETF_DRAFT_27:
-          // draft-27 uses the same salt as draft-25.
-          *out_len = QUICHE_ARRAYSIZE(kDraft25InitialSalt);
-          return kDraft25InitialSalt;
-        case QUIC_VERSION_IETF_DRAFT_29:
-          *out_len = QUICHE_ARRAYSIZE(kDraft29InitialSalt);
-          return kDraft29InitialSalt;
-        default:
-          QUIC_BUG << "No initial obfuscation salt for version " << version;
-      }
-      break;
-    case PROTOCOL_UNSUPPORTED:
-    default:
-      QUIC_BUG << "No initial obfuscation salt for version " << version;
+  if (version == ParsedQuicVersion::Draft29()) {
+    *out_len = QUICHE_ARRAYSIZE(kDraft29InitialSalt);
+    return kDraft29InitialSalt;
+  } else if (version == ParsedQuicVersion::Draft27() ||
+             version == ParsedQuicVersion::ReservedForNegotiation()) {
+    *out_len = QUICHE_ARRAYSIZE(kDraft27InitialSalt);
+    return kDraft27InitialSalt;
+  } else if (version == ParsedQuicVersion::T051()) {
+    *out_len = QUICHE_ARRAYSIZE(kT051Salt);
+    return kT051Salt;
+  } else if (version == ParsedQuicVersion::T050()) {
+    *out_len = QUICHE_ARRAYSIZE(kT050Salt);
+    return kT050Salt;
+  } else if (version == ParsedQuicVersion::Q050()) {
+    *out_len = QUICHE_ARRAYSIZE(kQ050Salt);
+    return kQ050Salt;
   }
-  *out_len = QUICHE_ARRAYSIZE(kDraft25InitialSalt);
-  return kDraft25InitialSalt;
+  QUIC_BUG << "No initial obfuscation salt for version " << version;
+  *out_len = QUICHE_ARRAYSIZE(kDraft27InitialSalt);
+  return kDraft27InitialSalt;
 }
 
 const char kPreSharedKeyLabel[] = "QUIC PSK";
 
 // Retry Integrity Protection Keys and Nonces.
-// https://tools.ietf.org/html/draft-ietf-quic-tls-25#section-5.8
 // https://tools.ietf.org/html/draft-ietf-quic-tls-27#section-5.8
-// https://tools.ietf.org/html/draft-ietf-quic-tls-28#section-5.8
-const uint8_t kDraft25RetryIntegrityKey[] = {0x4d, 0x32, 0xec, 0xdb, 0x2a, 0x21,
+const uint8_t kDraft27RetryIntegrityKey[] = {0x4d, 0x32, 0xec, 0xdb, 0x2a, 0x21,
                                              0x33, 0xc8, 0x41, 0xe4, 0x04, 0x3d,
                                              0xf2, 0x7d, 0x44, 0x30};
-const uint8_t kDraft25RetryIntegrityNonce[] = {
+const uint8_t kDraft27RetryIntegrityNonce[] = {
     0x4d, 0x16, 0x11, 0xd0, 0x55, 0x13, 0xa5, 0x52, 0xc5, 0x87, 0xd5, 0x75};
 
 // https://tools.ietf.org/html/draft-ietf-quic-tls-29#section-5.8
@@ -211,47 +189,56 @@ const uint8_t kDraft29RetryIntegrityNonce[] = {
 const uint8_t kT050RetryIntegrityKey[] = {0xc9, 0x2d, 0x32, 0x3d, 0x9c, 0xe3,
                                           0x0d, 0xa0, 0x88, 0xb9, 0xb7, 0xbb,
                                           0xdc, 0xcd, 0x50, 0xc8};
+const uint8_t kT051RetryIntegrityKey[] = {0x2e, 0xb9, 0x61, 0xa6, 0x79, 0x56,
+                                          0xf8, 0x79, 0x53, 0x14, 0xda, 0xfb,
+                                          0x2e, 0xbc, 0x83, 0xd7};
 // Nonces used by Google versions of QUIC. When introducing a new version,
 // generate a new nonce by running `openssl rand -hex 12`.
 const uint8_t kT050RetryIntegrityNonce[] = {0x26, 0xe4, 0xd6, 0x23, 0x83, 0xd5,
                                             0xc7, 0x60, 0xea, 0x02, 0xb4, 0x1f};
+const uint8_t kT051RetryIntegrityNonce[] = {0xb5, 0x0e, 0x4e, 0x53, 0x4c, 0xfc,
+                                            0x0b, 0xbb, 0x85, 0xf2, 0xf9, 0xca};
 
 bool RetryIntegrityKeysForVersion(const ParsedQuicVersion& version,
                                   quiche::QuicheStringPiece* key,
                                   quiche::QuicheStringPiece* nonce) {
+  static_assert(SupportedVersions().size() == 7u,
+                "Supported versions out of sync with retry integrity keys");
   if (!version.HasRetryIntegrityTag()) {
     QUIC_BUG << "Attempted to get retry integrity keys for invalid version "
              << version;
     return false;
-  }
-  if (version == ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_50)) {
-    *key = quiche::QuicheStringPiece(
-        reinterpret_cast<const char*>(kT050RetryIntegrityKey),
-        QUICHE_ARRAYSIZE(kT050RetryIntegrityKey));
-    *nonce = quiche::QuicheStringPiece(
-        reinterpret_cast<const char*>(kT050RetryIntegrityNonce),
-        QUICHE_ARRAYSIZE(kT050RetryIntegrityNonce));
-    return true;
-  }
-  if (version ==
-          ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25) ||
-      version ==
-          ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_27)) {
-    *key = quiche::QuicheStringPiece(
-        reinterpret_cast<const char*>(kDraft25RetryIntegrityKey),
-        QUICHE_ARRAYSIZE(kDraft25RetryIntegrityKey));
-    *nonce = quiche::QuicheStringPiece(
-        reinterpret_cast<const char*>(kDraft25RetryIntegrityNonce),
-        QUICHE_ARRAYSIZE(kDraft25RetryIntegrityNonce));
-    return true;
-  }
-  if (version == ParsedQuicVersion::Draft29()) {
+  } else if (version == ParsedQuicVersion::Draft29()) {
     *key = quiche::QuicheStringPiece(
         reinterpret_cast<const char*>(kDraft29RetryIntegrityKey),
         QUICHE_ARRAYSIZE(kDraft29RetryIntegrityKey));
     *nonce = quiche::QuicheStringPiece(
         reinterpret_cast<const char*>(kDraft29RetryIntegrityNonce),
         QUICHE_ARRAYSIZE(kDraft29RetryIntegrityNonce));
+    return true;
+  } else if (version == ParsedQuicVersion::Draft27()) {
+    *key = quiche::QuicheStringPiece(
+        reinterpret_cast<const char*>(kDraft27RetryIntegrityKey),
+        QUICHE_ARRAYSIZE(kDraft27RetryIntegrityKey));
+    *nonce = quiche::QuicheStringPiece(
+        reinterpret_cast<const char*>(kDraft27RetryIntegrityNonce),
+        QUICHE_ARRAYSIZE(kDraft27RetryIntegrityNonce));
+    return true;
+  } else if (version == ParsedQuicVersion::T051()) {
+    *key = quiche::QuicheStringPiece(
+        reinterpret_cast<const char*>(kT051RetryIntegrityKey),
+        QUICHE_ARRAYSIZE(kT051RetryIntegrityKey));
+    *nonce = quiche::QuicheStringPiece(
+        reinterpret_cast<const char*>(kT051RetryIntegrityNonce),
+        QUICHE_ARRAYSIZE(kT051RetryIntegrityNonce));
+    return true;
+  } else if (version == ParsedQuicVersion::T050()) {
+    *key = quiche::QuicheStringPiece(
+        reinterpret_cast<const char*>(kT050RetryIntegrityKey),
+        QUICHE_ARRAYSIZE(kT050RetryIntegrityKey));
+    *nonce = quiche::QuicheStringPiece(
+        reinterpret_cast<const char*>(kT050RetryIntegrityNonce),
+        QUICHE_ARRAYSIZE(kT050RetryIntegrityNonce));
     return true;
   }
   QUIC_BUG << "Attempted to get retry integrity keys for version " << version;

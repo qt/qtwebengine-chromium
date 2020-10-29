@@ -57,8 +57,8 @@ private:
     void onSetScissorRect(const SkIRect& scissor) override;
     bool onBindTextures(const GrPrimitiveProcessor&, const GrSurfaceProxy* const primProcTextures[],
                         const GrPipeline& pipeline) override;
-    void onBindBuffers(const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                       const GrBuffer* vertexBuffer, GrPrimitiveRestart) override;
+    void onBindBuffers(sk_sp<const GrBuffer> indexBuffer, sk_sp<const GrBuffer> instanceBuffer,
+                       sk_sp<const GrBuffer> vertexBuffer, GrPrimitiveRestart) override;
     void onDraw(int vertexCount, int baseVertex) override;
     void onDrawIndexed(int indexCount, int baseIndex, uint16_t minIndexValue,
                        uint16_t maxIndexValue, int baseVertex) override;
@@ -67,8 +67,10 @@ private:
     void onDrawIndexedInstanced(int indexCount, int baseIndex, int instanceCount, int baseInstance,
                                 int baseVertex) override;
     void onDrawIndirect(const GrBuffer* drawIndirectBuffer, size_t offset, int drawCount) override;
+    void multiDrawArraysANGLE(const GrBuffer* drawIndirectBuffer, size_t offset, int drawCount);
     void onDrawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t offset,
                                int drawCount) override;
+    void multiDrawElementsANGLE(const GrBuffer* drawIndirectBuffer, size_t offset, int drawCount);
     void onClear(const GrScissorState& scissor, const SkPMColor4f& color) override;
     void onClearStencilClip(const GrScissorState& scissor, bool insideStencilMask) override;
 
@@ -84,6 +86,10 @@ private:
     // If using an index buffer, this gets set during onBindBuffers. It is either the CPU address of
     // the indices, or nullptr if they reside physically in GPU memory.
     const uint16_t* fIndexPointer;
+
+    // This tracks whether or not we bound the respective buffers during the bindBuffers call.
+    SkDEBUGCODE(bool fDidBindVertexBuffer = false;)
+    SkDEBUGCODE(bool fDidBindInstanceBuffer = false;)
 
     typedef GrOpsRenderPass INHERITED;
 };

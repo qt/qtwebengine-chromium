@@ -49,7 +49,6 @@ namespace profiling {
 namespace {
 
 const char kSingleByte[1] = {'x'};
-constexpr std::chrono::seconds kLockTimeout{1};
 constexpr auto kResendBackoffUs = 100;
 
 inline bool IsMainThread() {
@@ -63,7 +62,7 @@ inline bool IsMainThread() {
 // This is why we find the stack base for the main-thread when constructing
 // the client and remember it.
 char* FindMainThreadStack() {
-  base::ScopedFstream maps(fopen("/proc/self/maps", "r"));
+  base::ScopedFstream maps(fopen("/proc/self/maps", "re"));
   if (!maps) {
     return nullptr;
   }
@@ -86,18 +85,16 @@ int UnsetDumpable(int) {
   return 0;
 }
 
-constexpr uint64_t kInfiniteTries = 0;
+}  // namespace
 
 uint64_t GetMaxTries(const ClientConfiguration& client_config) {
   if (!client_config.block_client)
     return 1u;
   if (client_config.block_client_timeout_us == 0)
     return kInfiniteTries;
-  return std::min<uint64_t>(
+  return std::max<uint64_t>(
       1ul, client_config.block_client_timeout_us / kResendBackoffUs);
 }
-
-}  // namespace
 
 const char* GetThreadStackBase() {
   pthread_attr_t attr;
@@ -356,10 +353,9 @@ bool Client::RecordMalloc(uint32_t heap_id,
   metadata.alloc_size = alloc_size;
   metadata.alloc_address = alloc_address;
   metadata.stack_pointer = reinterpret_cast<uint64_t>(stacktop);
-  metadata.stack_pointer_offset = sizeof(AllocMetadata);
   metadata.arch = unwindstack::Regs::CurrentArch();
   metadata.sequence_number =
-      1 + sequence_number_.fetch_add(1, std::memory_order_acq_rel);
+      1 + sequence_number_[heap_id].fetch_add(1, std::memory_order_acq_rel);
   metadata.heap_id = heap_id;
 
   struct timespec ts;
@@ -376,17 +372,18 @@ bool Client::RecordMalloc(uint32_t heap_id,
   msg.payload = const_cast<char*>(stacktop);
   msg.payload_size = static_cast<size_t>(stack_size);
 
-  if (!SendWireMessageWithRetriesIfBlocking(msg))
+  if (SendWireMessageWithRetriesIfBlocking(msg) == -1)
     return false;
 
   return SendControlSocketByte();
 }
 
-bool Client::SendWireMessageWithRetriesIfBlocking(const WireMessage& msg) {
+int64_t Client::SendWireMessageWithRetriesIfBlocking(const WireMessage& msg) {
   for (uint64_t i = 0;
        max_shmem_tries_ == kInfiniteTries || i < max_shmem_tries_; ++i) {
-    if (PERFETTO_LIKELY(SendWireMessage(&shmem_, msg)))
-      return true;
+    int64_t res = SendWireMessage(&shmem_, msg);
+    if (PERFETTO_LIKELY(res >= 0))
+      return res;
     // retry if in blocking mode and still connected
     if (client_config_.block_client && base::IsAgain(errno) && IsConnected()) {
       usleep(kResendBackoffUs);
@@ -394,8 +391,10 @@ bool Client::SendWireMessageWithRetriesIfBlocking(const WireMessage& msg) {
       break;
     }
   }
+  if (IsConnected())
+    shmem_.SetHitTimeout();
   PERFETTO_PLOG("Failed to write to shared ring buffer. Disconnecting.");
-  return false;
+  return -1;
 }
 
 bool Client::RecordFree(uint32_t heap_id, const uint64_t alloc_address) {
@@ -403,41 +402,40 @@ bool Client::RecordFree(uint32_t heap_id, const uint64_t alloc_address) {
     return postfork_return_value_;
   }
 
-  uint64_t sequence_number =
-      1 + sequence_number_.fetch_add(1, std::memory_order_acq_rel);
-
-  std::unique_lock<std::timed_mutex> l(free_batch_lock_, kLockTimeout);
-  if (!l.owns_lock())
-    return false;
-  if (free_batch_.num_entries == kFreeBatchSize) {
-    if (!FlushFreesLocked())
-      return false;
-    // Flushed the contents of the buffer, reset it for reuse.
-    free_batch_.num_entries = 0;
-  }
-  FreeBatchEntry& current_entry =
-      free_batch_.entries[free_batch_.num_entries++];
-  current_entry.sequence_number = sequence_number;
+  FreeEntry current_entry;
+  current_entry.sequence_number =
+      1 + sequence_number_[heap_id].fetch_add(1, std::memory_order_acq_rel);
   current_entry.addr = alloc_address;
   current_entry.heap_id = heap_id;
+  WireMessage msg = {};
+  msg.record_type = RecordType::Free;
+  msg.free_header = &current_entry;
+  // Do not send control socket byte, as frees are very cheap to handle, so we
+  // just delay to the next alloc. Sending the control socket byte is ~10x the
+  // rest of the client overhead.
+  int64_t bytes_free = SendWireMessageWithRetriesIfBlocking(msg);
+  if (bytes_free == -1)
+    return false;
+  // Seems like we are filling up the shmem with frees. Flush.
+  if (static_cast<uint64_t>(bytes_free) < shmem_.size() / 2)
+    return SendControlSocketByte();
   return true;
 }
 
-bool Client::FlushFreesLocked() {
-  WireMessage msg = {};
-  msg.record_type = RecordType::Free;
-  msg.free_header = &free_batch_;
-  struct timespec ts;
-  if (clock_gettime(CLOCK_MONOTONIC_COARSE, &ts) == 0) {
-    free_batch_.clock_monotonic_coarse_timestamp =
-        static_cast<uint64_t>(base::FromPosixTimespec(ts).count());
-  } else {
-    free_batch_.clock_monotonic_coarse_timestamp = 0;
+bool Client::RecordHeapName(uint32_t heap_id, const char* heap_name) {
+  if (PERFETTO_UNLIKELY(IsPostFork())) {
+    return postfork_return_value_;
   }
 
-  if (!SendWireMessageWithRetriesIfBlocking(msg))
-    return false;
-  return SendControlSocketByte();
+  HeapName hnr;
+  hnr.heap_id = heap_id;
+  strncpy(&hnr.heap_name[0], heap_name, sizeof(hnr.heap_name));
+  hnr.heap_name[sizeof(hnr.heap_name) - 1] = '\0';
+
+  WireMessage msg = {};
+  msg.record_type = RecordType::HeapName;
+  msg.heap_name_header = &hnr;
+  return SendWireMessageWithRetriesIfBlocking(msg);
 }
 
 bool Client::IsConnected() {

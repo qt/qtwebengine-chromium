@@ -9,10 +9,8 @@
 
 #include "include/gpu/mock/GrMockTypes.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrRenderTargetPriv.h"
 #include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrTexture.h"
-#include "src/gpu/GrTexturePriv.h"
 #include "src/gpu/mock/GrMockGpu.h"
 
 class GrMockTexture : public GrTexture {
@@ -21,20 +19,20 @@ public:
                   SkBudgeted budgeted,
                   SkISize dimensions,
                   GrProtected isProtected,
-                  GrMipMapsStatus mipMapsStatus,
+                  GrMipmapStatus mipmapStatus,
                   const GrMockTextureInfo& info)
-            : GrMockTexture(gpu, dimensions, isProtected, mipMapsStatus, info) {
+            : GrMockTexture(gpu, dimensions, isProtected, mipmapStatus, info) {
         this->registerWithCache(budgeted);
     }
 
     GrMockTexture(GrMockGpu* gpu,
                   SkISize dimensions,
                   GrProtected isProtected,
-                  GrMipMapsStatus mipMapsStatus,
+                  GrMipmapStatus mipmapStatus,
                   const GrMockTextureInfo& info,
                   GrWrapCacheable cacheable,
                   GrIOType ioType)
-            : GrMockTexture(gpu, dimensions, isProtected, mipMapsStatus, info) {
+            : GrMockTexture(gpu, dimensions, isProtected, mipmapStatus, info) {
         if (ioType == kRead_GrIOType) {
             this->setReadOnly();
         }
@@ -44,8 +42,7 @@ public:
     ~GrMockTexture() override {}
 
     GrBackendTexture getBackendTexture() const override {
-        return GrBackendTexture(this->width(), this->height(), this->texturePriv().mipMapped(),
-                                fInfo);
+        return GrBackendTexture(this->width(), this->height(), this->mipmapped(), fInfo);
     }
 
     GrBackendFormat backendFormat() const override {
@@ -57,9 +54,9 @@ public:
 protected:
     // constructor for subclasses
     GrMockTexture(GrMockGpu* gpu, const SkISize& dimensions, GrProtected isProtected,
-                  GrMipMapsStatus mipMapsStatus, const GrMockTextureInfo& info)
+                  GrMipmapStatus mipmapStatus, const GrMockTextureInfo& info)
             : GrSurface(gpu, dimensions, isProtected)
-            , INHERITED(gpu, dimensions, isProtected, GrTextureType::k2D, mipMapsStatus)
+            , INHERITED(gpu, dimensions, isProtected, GrTextureType::k2D, mipmapStatus)
             , fInfo(info) {}
 
     void onRelease() override {
@@ -114,12 +111,12 @@ public:
         }
         const GrCaps& caps = *this->getGpu()->caps();
         return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
-                                      numColorSamples, GrMipMapped::kNo);
+                                      numColorSamples, GrMipmapped::kNo);
     }
 
     GrBackendRenderTarget getBackendRenderTarget() const override {
         int numStencilBits = 0;
-        if (GrStencilAttachment* stencil = this->renderTargetPriv().getStencilAttachment()) {
+        if (GrStencilAttachment* stencil = this->getStencilAttachment()) {
             numStencilBits = stencil->bits();
         }
         return {this->width(), this->height(), this->numSamples(), numStencilBits, fInfo};
@@ -154,11 +151,11 @@ public:
                               SkISize dimensions,
                               int sampleCnt,
                               GrProtected isProtected,
-                              GrMipMapsStatus mipMapsStatus,
+                              GrMipmapStatus mipmapStatus,
                               const GrMockTextureInfo& texInfo,
                               const GrMockRenderTargetInfo& rtInfo)
             : GrSurface(gpu, dimensions, isProtected)
-            , GrMockTexture(gpu, dimensions, isProtected, mipMapsStatus, texInfo)
+            , GrMockTexture(gpu, dimensions, isProtected, mipmapStatus, texInfo)
             , GrMockRenderTarget(gpu, dimensions, sampleCnt, isProtected, rtInfo) {
         this->registerWithCache(budgeted);
     }
@@ -168,12 +165,12 @@ public:
                               SkISize dimensions,
                               int sampleCnt,
                               GrProtected isProtected,
-                              GrMipMapsStatus mipMapsStatus,
+                              GrMipmapStatus mipmapStatus,
                               const GrMockTextureInfo& texInfo,
                               const GrMockRenderTargetInfo& rtInfo,
                               GrWrapCacheable cacheable)
             : GrSurface(gpu, dimensions, isProtected)
-            , GrMockTexture(gpu, dimensions, isProtected, mipMapsStatus, texInfo)
+            , GrMockTexture(gpu, dimensions, isProtected, mipmapStatus, texInfo)
             , GrMockRenderTarget(gpu, dimensions, sampleCnt, isProtected, rtInfo) {
         this->registerWithCacheWrapped(cacheable);
     }
@@ -210,7 +207,7 @@ private:
         }
         const GrCaps& caps = *this->getGpu()->caps();
         return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
-                                      numColorSamples, this->texturePriv().mipMapped());
+                                      numColorSamples, this->mipmapped());
     }
 
     // This avoids an inherits via dominance warning on MSVC.

@@ -35,6 +35,7 @@ import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 
 import {Action, Events as ActionEvents} from './Action.js';  // eslint-disable-line no-unused-vars
+import {ActionRegistry} from './ActionRegistry.js';
 import * as ARIAUtils from './ARIAUtils.js';
 import {ContextMenu} from './ContextMenu.js';
 import {GlassPane, PointerEventsBehavior} from './GlassPane.js';
@@ -256,7 +257,7 @@ export class Toolbar {
    * @return {!ToolbarButton}
    */
   static createActionButtonForId(actionId, options = TOOLBAR_BUTTON_DEFAULT_OPTIONS) {
-    const action = self.UI.actionRegistry.action(actionId);
+    const action = ActionRegistry.instance().action(actionId);
     return Toolbar.createActionButton(/** @type {!Action} */ (action), options);
   }
 
@@ -1132,7 +1133,12 @@ export class ToolbarCheckbox extends ToolbarItem {
     this.element.classList.add('checkbox');
     this.inputElement = this.element.checkboxElement;
     if (tooltip) {
-      Tooltip.install(this.element, tooltip, undefined, {
+      // install on the checkbox
+      Tooltip.install(this.inputElement, tooltip, undefined, {
+        anchorTooltipAtElement: true,
+      });
+      // install on the checkbox label
+      Tooltip.install(this.element.textElement, tooltip, undefined, {
         anchorTooltipAtElement: true,
       });
     }

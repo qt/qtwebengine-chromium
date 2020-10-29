@@ -348,19 +348,7 @@ class Tile : public Allocable {
   void ReadIsInter(const Block& block);                        // 5.11.20.
   bool ReadIntraBlockModeInfo(const Block& block,
                               bool intra_y_mode);  // 5.11.22.
-  int GetUseCompoundReferenceContext(const Block& block);
   CompoundReferenceType ReadCompoundReferenceType(const Block& block);
-  // Calculates count0 by calling block.CountReferences() on the frame types
-  // from type0_start to type0_end, inclusive, and summing the results.
-  // Calculates count1 by calling block.CountReferences() on the frame types
-  // from type1_start to type1_end, inclusive, and summing the results.
-  // Compares count0 with count1 and returns 0, 1 or 2.
-  //
-  // See count_refs and ref_count_ctx in 8.3.2.
-  int GetReferenceContext(const Block& block, ReferenceFrameType type0_start,
-                          ReferenceFrameType type0_end,
-                          ReferenceFrameType type1_start,
-                          ReferenceFrameType type1_end) const;
   template <bool is_single, bool is_backward, int index>
   uint16_t* GetReferenceCdf(const Block& block, CompoundReferenceType type =
                                                     kNumCompoundReferenceTypes);
@@ -404,9 +392,6 @@ class Tile : public Allocable {
                                      int block_y);  // 5.11.40.
   void ReadTransformType(const Block& block, int x4, int y4,
                          TransformSize tx_size);  // 5.11.47.
-  int GetCoeffBaseContextEob(TransformSize tx_size, int index);
-  int GetCoeffBaseRangeContextEob(int adjusted_tx_width_log2, int pos,
-                                  TransformClass tx_class);
   template <typename ResidualType>
   void ReadCoeffBase2D(
       const uint16_t* scan, PlaneType plane_type, TransformSize tx_size,
@@ -902,6 +887,13 @@ struct Tile::Block {
   TileScratchBuffer* const scratch_buffer;
   ResidualPtr* const residual;
 };
+
+extern template bool
+Tile::ProcessSuperBlockRow<kProcessingModeDecodeOnly, false>(
+    int row4x4, TileScratchBuffer* scratch_buffer);
+extern template bool
+Tile::ProcessSuperBlockRow<kProcessingModeParseAndDecode, true>(
+    int row4x4, TileScratchBuffer* scratch_buffer);
 
 }  // namespace libgav1
 

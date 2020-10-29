@@ -133,15 +133,12 @@ config("default") {
     cflags += [
       "-fstrict-aliasing",
       "-fPIC",
+      "-fvisibility=hidden",
     ]
-    cflags_cc += [ "-std=c++17" ]
-
-    # The main idea is to slim the exported API, but these flags also improve link time on Mac.
-    # These would make stack traces worse on Linux, so we don't just set them willy-nilly.
-    if (is_component_build || is_ios || is_mac) {
-      cflags += [ "-fvisibility=hidden" ]
-      cflags_cc += [ "-fvisibility-inlines-hidden" ]
-    }
+    cflags_cc += [
+      "-std=c++17",
+      "-fvisibility-inlines-hidden",
+    ]
   }
 
   if (current_cpu == "arm") {
@@ -260,17 +257,17 @@ config("default") {
       sanitizers = "memory"
     }
 
-    _blacklist = rebase_path("../tools/xsan.blacklist")
+    _suppressions = rebase_path("../tools/xsan.supp")
 
     cflags += [
       "-fsanitize=$sanitizers",
       "-fno-sanitize-recover=$sanitizers",
-      "-fsanitize-blacklist=$_blacklist",
+      "-fsanitize-blacklist=$_suppressions",
     ]
 
     if (is_win) {
       cflags += [
-        "/FI$_blacklist",
+        "/FI$_suppressions",
 
         # On Release builds, we get strange warnings about string literals.
         "/GF-",
@@ -280,7 +277,7 @@ config("default") {
       libs += [ "$clang_win/lib/clang/$clang_win_version/lib/windows/clang_rt.asan-x86_64.lib" ]
     } else {
       cflags += [
-        "-include$_blacklist",
+        "-include$_suppressions",
         "-fno-omit-frame-pointer",
       ]
 
@@ -441,6 +438,7 @@ config("warnings") {
       "-Wno-old-style-cast",
       "-Wno-padded",
       "-Wno-newline-eof",
+      "-Wno-psabi",
     ]
     cflags_cc += [
       "-Wno-c++98-compat",

@@ -21,13 +21,13 @@ bool SkDeferredDisplayListRecorder::init() { return false; }
 
 SkCanvas* SkDeferredDisplayListRecorder::getCanvas() { return nullptr; }
 
-std::unique_ptr<SkDeferredDisplayList> SkDeferredDisplayListRecorder::detach() { return nullptr; }
+sk_sp<SkDeferredDisplayList> SkDeferredDisplayListRecorder::detach() { return nullptr; }
 
 sk_sp<SkImage> SkDeferredDisplayListRecorder::makePromiseTexture(
         const GrBackendFormat& backendFormat,
         int width,
         int height,
-        GrMipMapped mipMapped,
+        GrMipmapped mipMapped,
         GrSurfaceOrigin origin,
         SkColorType colorType,
         SkAlphaType alphaType,
@@ -61,8 +61,9 @@ sk_sp<SkImage> SkDeferredDisplayListRecorder::makeYUVAPromiseTexture(
 
 #include "include/core/SkPromiseImageTexture.h"
 #include "include/core/SkYUVASizeInfo.h"
-#include "src/gpu/GrContextPriv.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrProxyProvider.h"
+#include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/SkGr.h"
@@ -73,7 +74,7 @@ sk_sp<SkImage> SkDeferredDisplayListRecorder::makeYUVAPromiseTexture(
 SkDeferredDisplayListRecorder::SkDeferredDisplayListRecorder(const SkSurfaceCharacterization& c)
         : fCharacterization(c) {
     if (fCharacterization.isValid()) {
-        fContext = GrContextPriv::MakeDDL(fCharacterization.refContextInfo());
+        fContext = GrRecordingContextPriv::MakeDDL(fCharacterization.refContextInfo());
     }
 }
 
@@ -146,8 +147,8 @@ bool SkDeferredDisplayListRecorder::init() {
                fCharacterization.isTextureable()) {
         surfaceFlags |= GrInternalSurfaceFlags::kRequiresManualMSAAResolve;
     }
-    // FIXME: Why do we use GrMipMapped::kNo instead of SkSurfaceCharacterization::fIsMipMapped?
-    static constexpr GrProxyProvider::TextureInfo kTextureInfo{GrMipMapped::kNo,
+    // FIXME: Why do we use GrMipmapped::kNo instead of SkSurfaceCharacterization::fIsMipMapped?
+    static constexpr GrProxyProvider::TextureInfo kTextureInfo{GrMipmapped::kNo,
                                                                GrTextureType::k2D};
     const GrProxyProvider::TextureInfo* optionalTextureInfo = nullptr;
     if (fCharacterization.isTextureable()) {
@@ -171,7 +172,7 @@ bool SkDeferredDisplayListRecorder::init() {
             fCharacterization.sampleCount(),
             surfaceFlags,
             optionalTextureInfo,
-            GrMipMapsStatus::kNotAllocated,
+            GrMipmapStatus::kNotAllocated,
             SkBackingFit::kExact,
             SkBudgeted::kYes,
             fCharacterization.isProtected(),
@@ -207,8 +208,8 @@ SkCanvas* SkDeferredDisplayListRecorder::getCanvas() {
     return fSurface->getCanvas();
 }
 
-std::unique_ptr<SkDeferredDisplayList> SkDeferredDisplayListRecorder::detach() {
-    if (!fContext) {
+sk_sp<SkDeferredDisplayList> SkDeferredDisplayListRecorder::detach() {
+    if (!fContext || !fTargetProxy) {
         return nullptr;
     }
 
@@ -218,10 +219,9 @@ std::unique_ptr<SkDeferredDisplayList> SkDeferredDisplayListRecorder::detach() {
         canvas->restoreToCount(0);
     }
 
-    auto ddl = std::unique_ptr<SkDeferredDisplayList>(
-                           new SkDeferredDisplayList(fCharacterization,
-                                                     std::move(fTargetProxy),
-                                                     std::move(fLazyProxyData)));
+    auto ddl = sk_sp<SkDeferredDisplayList>(new SkDeferredDisplayList(fCharacterization,
+                                                                      std::move(fTargetProxy),
+                                                                      std::move(fLazyProxyData)));
 
     fContext->priv().moveRenderTasksToDDL(ddl.get());
 
@@ -235,7 +235,7 @@ sk_sp<SkImage> SkDeferredDisplayListRecorder::makePromiseTexture(
         const GrBackendFormat& backendFormat,
         int width,
         int height,
-        GrMipMapped mipMapped,
+        GrMipmapped mipMapped,
         GrSurfaceOrigin origin,
         SkColorType colorType,
         SkAlphaType alphaType,

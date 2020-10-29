@@ -19,16 +19,17 @@
 #include "core/fpdfapi/page/cpdf_shadingpattern.h"
 #include "core/fpdfapi/page/cpdf_tilingpattern.h"
 #include "core/fpdfapi/page/cpdf_transferfunc.h"
-#include "core/fpdfapi/parser/cpdf_array.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
 #include "core/fpdfapi/render/cpdf_rendercontext.h"
 #include "core/fpdfapi/render/cpdf_renderstatus.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
@@ -36,7 +37,7 @@
 #include "core/fxge/dib/cfx_imagetransformer.h"
 #include "third_party/base/stl_util.h"
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 #include "core/fxge/skia/fx_skia_device.h"
 #endif
 
@@ -328,7 +329,7 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
   if (!bitmap_device1.Create(rect.Width(), rect.Height(), FXDIB_Rgb32, nullptr))
     return true;
 
-#if defined _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   bitmap_device1.Clear(0xffffff);
 #else
   bitmap_device1.GetBitmap()->Clear(0xffffff);
@@ -348,14 +349,14 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
                              nullptr))
     return true;
 
-#if defined _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   bitmap_device2.Clear(0);
 #else
   bitmap_device2.GetBitmap()->Clear(0);
 #endif
   CalculateDrawImage(&bitmap_device1, &bitmap_device2, m_Loader.GetMask(),
                      new_matrix, rect);
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   m_pRenderStatus->GetRenderDevice()->SetBitsWithMask(
       bitmap_device1.GetBitmap(), bitmap_device2.GetBitmap(), rect.left,
       rect.top, m_BitmapAlpha, m_BlendType);
@@ -366,7 +367,7 @@ bool CPDF_ImageRenderer::DrawMaskedImage() {
     bitmap_device1.GetBitmap()->MultiplyAlpha(m_BitmapAlpha);
   m_pRenderStatus->GetRenderDevice()->SetDIBitsWithBlend(
       bitmap_device1.GetBitmap(), rect.left, rect.top, m_BlendType);
-#endif  //  _SKIA_SUPPORT_
+#endif  //  defined(_SKIA_SUPPORT_)
   return false;
 }
 
@@ -384,7 +385,7 @@ bool CPDF_ImageRenderer::StartDIBBase() {
       m_ResampleOptions.bInterpolateBilinear = true;
     }
   }
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   RetainPtr<CFX_DIBitmap> premultiplied = m_pDIBBase->Clone(nullptr);
   if (m_pDIBBase->HasAlpha())
     CFX_SkiaDeviceDriver::PreMultiply(premultiplied);
@@ -407,7 +408,7 @@ bool CPDF_ImageRenderer::StartDIBBase() {
     }
     return false;
   }
-#endif
+#endif  // defined(_SKIA_SUPPORT_)
 
   if ((fabs(m_ImageMatrix.b) >= 0.5f || m_ImageMatrix.a == 0) ||
       (fabs(m_ImageMatrix.c) >= 0.5f || m_ImageMatrix.d == 0)) {
@@ -485,8 +486,9 @@ bool CPDF_ImageRenderer::StartBitmapAlpha() {
     path.Transform(m_ImageMatrix);
     uint32_t fill_color =
         ArgbEncode(0xff, m_BitmapAlpha, m_BitmapAlpha, m_BitmapAlpha);
-    m_pRenderStatus->GetRenderDevice()->DrawPath(&path, nullptr, nullptr,
-                                                 fill_color, 0, FXFILL_WINDING);
+    m_pRenderStatus->GetRenderDevice()->DrawPath(
+        &path, nullptr, nullptr, fill_color, 0,
+        CFX_FillRenderOptions::WindingOptions());
     return false;
   }
   RetainPtr<CFX_DIBBase> pAlphaMask;
@@ -586,28 +588,15 @@ bool CPDF_ImageRenderer::ContinueTransform(PauseIndicatorIface* pPause) {
 }
 
 void CPDF_ImageRenderer::HandleFilters() {
-  CPDF_Object* pFilters =
-      m_pImageObject->GetImage()->GetStream()->GetDict()->GetDirectObjectFor(
-          "Filter");
-  if (!pFilters)
+  Optional<DecoderArray> decoder_array =
+      GetDecoderArray(m_pImageObject->GetImage()->GetStream()->GetDict());
+  if (!decoder_array.has_value())
     return;
 
-  if (pFilters->IsName()) {
-    ByteString bsDecodeType = pFilters->GetString();
-    if (bsDecodeType == "DCTDecode" || bsDecodeType == "JPXDecode")
+  for (const auto& decoder : decoder_array.value()) {
+    if (decoder.first == "DCTDecode" || decoder.first == "JPXDecode") {
       m_ResampleOptions.bLossy = true;
-    return;
-  }
-
-  CPDF_Array* pArray = pFilters->AsArray();
-  if (!pArray)
-    return;
-
-  for (size_t i = 0; i < pArray->size(); i++) {
-    ByteString bsDecodeType = pArray->GetStringAt(i);
-    if (bsDecodeType == "DCTDecode" || bsDecodeType == "JPXDecode") {
-      m_ResampleOptions.bLossy = true;
-      break;
+      return;
     }
   }
 }

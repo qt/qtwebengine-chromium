@@ -35,7 +35,7 @@ enum Operation {
 // |GetUpdateStatusAdvanced| DBus method or |StatusUpdateAdvanced| signal.
 //
 // NOTE: Keep this updated with:
-// update_engine/cient_library/include/update_engine/update_status.h
+// update_engine/client_library/include/update_engine/update_status.h
 message StatusResult {
   // When the update_engine last checked for updates (time_t: seconds from Unix
   // epoch).

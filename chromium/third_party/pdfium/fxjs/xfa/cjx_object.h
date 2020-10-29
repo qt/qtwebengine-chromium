@@ -14,9 +14,11 @@
 
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
+#include "fxjs/xfa/fxjse.h"
 #include "fxjs/xfa/jse_define.h"
 #include "third_party/base/optional.h"
 #include "third_party/base/span.h"
+#include "v8/include/cppgc/persistent.h"
 #include "xfa/fxfa/fxfa_basic.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
 
@@ -55,7 +57,7 @@ enum XFA_SOM_MESSAGETYPE {
   XFA_SOM_MandatoryMessage
 };
 
-class CJX_Object {
+class CJX_Object : public CFXJSE_HostObject {
  public:
   // Corresponds 1:1 with CJX_ subclasses.
   enum class TypeTag {
@@ -97,20 +99,24 @@ class CJX_Object {
   };
 
   explicit CJX_Object(CXFA_Object* obj);
-  virtual ~CJX_Object();
+  ~CJX_Object() override;
+
+  // CFXJSE_HostObject:
+  CJX_Object* AsCJXObject() override;
 
   virtual bool DynamicTypeIs(TypeTag eType) const;
 
   JSE_PROP(className);
 
   CXFA_Document* GetDocument() const;
+  CXFA_Node* GetXFANode() const;
   CXFA_Object* GetXFAObject() const { return object_.Get(); }
 
   void SetCalcRecursionCount(size_t count) { calc_recursion_count_ = count; }
   size_t GetCalcRecursionCount() const { return calc_recursion_count_; }
 
-  void SetLayoutItem(CXFA_LayoutItem* item) { layout_item_.Reset(item); }
-  CXFA_LayoutItem* GetLayoutItem() const { return layout_item_.Get(); }
+  void SetLayoutItem(CXFA_LayoutItem* item) { layout_item_ = item; }
+  CXFA_LayoutItem* GetLayoutItem() const { return layout_item_; }
 
   bool HasMethod(const WideString& func) const;
   CJS_Result RunMethod(const WideString& func,
@@ -256,7 +262,7 @@ class CJX_Object {
   void MoveBufferMapData(CXFA_Object* pDstModule);
 
   UnownedPtr<CXFA_Object> object_;
-  UnownedPtr<CXFA_LayoutItem> layout_item_;
+  CXFA_LayoutItem* layout_item_ = nullptr;
   std::unique_ptr<XFA_MAPMODULEDATA> map_module_data_;
   std::unique_ptr<CXFA_CalcData> calc_data_;
   std::map<ByteString, CJX_MethodCall> method_specs_;

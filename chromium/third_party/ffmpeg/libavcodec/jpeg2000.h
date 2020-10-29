@@ -144,6 +144,7 @@ typedef struct Jpeg2000CodingStyle {
     uint8_t prog_order;       // progression order
     uint8_t log2_prec_widths[JPEG2000_MAX_RESLEVELS];  // precincts size according resolution levels
     uint8_t log2_prec_heights[JPEG2000_MAX_RESLEVELS]; // TODO: initialize prec_size array with 0?
+    uint8_t init;
 } Jpeg2000CodingStyle;
 
 typedef struct Jpeg2000QuantStyle {
@@ -219,9 +220,9 @@ static inline int ff_jpeg2000_ceildivpow2(int a, int b)
     return -((-(int64_t)a) >> b);
 }
 
-static inline int ff_jpeg2000_ceildiv(int a, int b)
+static inline int ff_jpeg2000_ceildiv(int a, int64_t b)
 {
-    return (a + (int64_t)b - 1) / b;
+    return (a + b - 1) / b;
 }
 
 /* TIER-1 routines */

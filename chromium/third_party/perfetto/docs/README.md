@@ -30,7 +30,7 @@ filesystem.
 
 On Linux and Android, Perfetto bundles a number of data sources that are able to
 gather detailed performance data from different system interfaces. For the full
-sets and details see the _Data Sources_ section of the documentation. Same
+sets and details see the _Data Sources_ section of the documentation. Some
 examples:
 
 * [Kernel tracing](/docs/data-sources/cpu-scheduling.md): Perfetto integrates
@@ -58,7 +58,7 @@ examples:
 
 On Android, Perfetto is the next-generation system tracing system and replaces
 the chromium-based systrace.
-[ATrace-based intstrumentation](/docs/data-sources/atrace.md) remains fully
+[ATrace-based instrumentation](/docs/data-sources/atrace.md) remains fully
 supported.
 See [Android developer docs](https://developer.android.com/topic/performance/tracing)
 for more details.

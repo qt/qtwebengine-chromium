@@ -26,8 +26,8 @@ namespace perfetto {
 namespace profiling {
 
 using ::testing::Contains;
-using ::testing::Pair;
 using ::testing::Eq;
+using ::testing::Pair;
 using ::testing::Property;
 
 class MockProducerEndpoint : public TracingService::ProducerEndpoint {
@@ -68,7 +68,8 @@ TEST(LogHistogramTest, Overflow) {
 
 TEST(HeapprofdProducerTest, ExposesDataSource) {
   base::TestTaskRunner task_runner;
-  HeapprofdProducer producer(HeapprofdMode::kCentral, &task_runner);
+  HeapprofdProducer producer(HeapprofdMode::kCentral, &task_runner,
+                             /* exit_when_done= */ false);
 
   std::unique_ptr<MockProducerEndpoint> endpoint(new MockProducerEndpoint());
   EXPECT_CALL(*endpoint,
@@ -90,12 +91,47 @@ TEST(HeapprofdConfigToClientConfigurationTest, Smoke) {
   EXPECT_STREQ(cli_config.heaps[0], "foo");
 }
 
-TEST(HeapprofdConfigToClientConfigurationTest, OverflowHeapName) {
+TEST(HeapprofdConfigToClientConfigurationTest, DefaultHeap) {
   HeapprofdConfig cfg;
-  cfg.add_heaps("foooooooooooooooooooooooooooooooooooooooooooooo");
+  cfg.set_sampling_interval_bytes(4096);
+  ClientConfiguration cli_config;
+  HeapprofdConfigToClientConfiguration(cfg, &cli_config);
+  EXPECT_EQ(cli_config.num_heaps, 1u);
+  EXPECT_EQ(cli_config.interval, 4096u);
+  EXPECT_STREQ(cli_config.heaps[0], "com.android.malloc");
+}
+
+TEST(HeapprofdConfigToClientConfigurationTest, TwoHeaps) {
+  HeapprofdConfig cfg;
+  cfg.add_heaps("foo");
+  cfg.add_heaps("bar");
+  cfg.set_sampling_interval_bytes(4096);
+  ClientConfiguration cli_config;
+  HeapprofdConfigToClientConfiguration(cfg, &cli_config);
+  EXPECT_EQ(cli_config.num_heaps, 2u);
+  EXPECT_EQ(cli_config.interval, 4096u);
+  EXPECT_STREQ(cli_config.heaps[0], "foo");
+  EXPECT_STREQ(cli_config.heaps[1], "bar");
+}
+
+TEST(HeapprofdConfigToClientConfigurationTest, OverflowHeapName) {
+  std::string large_name(100, 'a');
+  HeapprofdConfig cfg;
+  cfg.add_heaps(large_name);
   ClientConfiguration cli_config;
   HeapprofdConfigToClientConfiguration(cfg, &cli_config);
   EXPECT_EQ(cli_config.num_heaps, 0u);
+}
+
+TEST(HeapprofdConfigToClientConfigurationTest, OverflowHeapNameAndValid) {
+  std::string large_name(100, 'a');
+  HeapprofdConfig cfg;
+  cfg.add_heaps(large_name);
+  cfg.add_heaps("foo");
+  ClientConfiguration cli_config;
+  HeapprofdConfigToClientConfiguration(cfg, &cli_config);
+  EXPECT_EQ(cli_config.num_heaps, 1u);
+  EXPECT_STREQ(cli_config.heaps[0], "foo");
 }
 
 }  // namespace profiling

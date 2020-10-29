@@ -47,10 +47,10 @@
 #include "src/image/SkSurface_Base.h"
 #include "src/utils/SkPatchUtils.h"
 
+#include <memory>
 #include <new>
 
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
 #include "src/gpu/SkGr.h"
 #endif
 
@@ -213,7 +213,7 @@ struct BackImage {
     sk_sp<SkSpecialImage> fImage;
     SkIPoint              fLoc;
 };
-}
+}  // namespace
 
 /*  This is the record we keep for each save/restore level in the stack.
     Since a level optionally copies the matrix and/or stack, we have pointers
@@ -752,7 +752,7 @@ void SkCanvas::restore() {
 }
 
 void SkCanvas::restoreToCount(int count) {
-    // sanity check
+    // safety check
     if (count < 1) {
         count = 1;
     }
@@ -1242,7 +1242,8 @@ void SkCanvas::internalSaveBehind(const SkRect* localBounds) {
     // we really need the save, so we can wack the fMCRec
     this->checkForDeferredSave();
 
-    fMCRec->fBackImage.reset(new BackImage{std::move(backImage), devBounds.topLeft()});
+    fMCRec->fBackImage =
+            std::make_unique<BackImage>(BackImage{std::move(backImage), devBounds.topLeft()});
 
     SkPaint paint;
     paint.setBlendMode(SkBlendMode::kClear);
@@ -1580,6 +1581,14 @@ void SkCanvas::androidFramework_setDeviceClipRestriction(const SkIRect& rect) {
     }
 }
 
+void SkCanvas::androidFramework_replaceClip(const SkIRect& rect) {
+    this->checkForDeferredSave();
+    FOR_EACH_TOP_DEVICE(device->replaceClip(rect));
+    AutoValidateClip avc(this);
+    fMCRec->fRasterClip.setRect(rect);
+    fDeviceClipBounds = qr_clip_bounds(fMCRec->fRasterClip.getBounds());
+}
+
 void SkCanvas::clipRRect(const SkRRect& rrect, SkClipOp op, bool doAA) {
     this->checkForDeferredSave();
     ClipEdgeStyle edgeStyle = doAA ? kSoft_ClipEdgeStyle : kHard_ClipEdgeStyle;
@@ -1855,6 +1864,11 @@ GrRenderTargetContext* SkCanvas::internal_private_accessTopLayerRenderTargetCont
 GrContext* SkCanvas::getGrContext() {
     SkBaseDevice* device = this->getTopDevice();
     return device ? device->context() : nullptr;
+}
+
+GrRecordingContext* SkCanvas::recordingContext() {
+    SkBaseDevice* device = this->getTopDevice();
+    return device ? device->recordingContext() : nullptr;
 }
 
 void SkCanvas::drawDRRect(const SkRRect& outer, const SkRRect& inner,
@@ -2877,14 +2891,6 @@ void SkCanvas::drawPicture(const SkPicture* picture, const SkMatrix* matrix, con
 void SkCanvas::onDrawPicture(const SkPicture* picture, const SkMatrix* matrix,
                              const SkPaint* paint) {}
 #else
-/**
- *  This constant is trying to balance the speed of ref'ing a subpicture into a parent picture,
- *  against the playback cost of recursing into the subpicture to get at its actual ops.
- *
- *  For now we pick a conservatively small value, though measurement (and other heuristics like
- *  the type of ops contained) may justify changing this value.
- */
-#define kMaxPictureOpsToUnrollInsteadOfRef  1
 
 void SkCanvas::drawPicture(const SkPicture* picture, const SkMatrix* matrix, const SkPaint* paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);

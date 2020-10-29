@@ -56,6 +56,28 @@ VkImageUsageFlags GetStagingBufferUsageFlags(vk::StagingUsage usage)
     }
 }
 
+bool FindCompatibleMemory(const VkPhysicalDeviceMemoryProperties &memoryProperties,
+                          const VkMemoryRequirements &memoryRequirements,
+                          VkMemoryPropertyFlags requestedMemoryPropertyFlags,
+                          VkMemoryPropertyFlags *memoryPropertyFlagsOut,
+                          uint32_t *typeIndexOut)
+{
+    for (size_t memoryIndex : angle::BitSet32<32>(memoryRequirements.memoryTypeBits))
+    {
+        ASSERT(memoryIndex < memoryProperties.memoryTypeCount);
+
+        if ((memoryProperties.memoryTypes[memoryIndex].propertyFlags &
+             requestedMemoryPropertyFlags) == requestedMemoryPropertyFlags)
+        {
+            *memoryPropertyFlagsOut = memoryProperties.memoryTypes[memoryIndex].propertyFlags;
+            *typeIndexOut           = static_cast<uint32_t>(memoryIndex);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 angle::Result FindAndAllocateCompatibleMemory(vk::Context *context,
                                               const vk::MemoryProperties &memoryProperties,
                                               VkMemoryPropertyFlags requestedMemoryPropertyFlags,
@@ -334,6 +356,19 @@ void MemoryProperties::destroy()
     mMemoryProperties = {};
 }
 
+bool MemoryProperties::hasLazilyAllocatedMemory() const
+{
+    for (uint32_t typeIndex = 0; typeIndex < mMemoryProperties.memoryTypeCount; ++typeIndex)
+    {
+        const VkMemoryType &memoryType = mMemoryProperties.memoryTypes[typeIndex];
+        if ((memoryType.propertyFlags & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) != 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 angle::Result MemoryProperties::findCompatibleMemoryIndex(
     Context *context,
     const VkMemoryRequirements &memoryRequirements,
@@ -347,39 +382,27 @@ angle::Result MemoryProperties::findCompatibleMemoryIndex(
     // Not finding a valid memory pool means an out-of-spec driver, or internal error.
     // TODO(jmadill): Determine if it is possible to cache indexes.
     // TODO(jmadill): More efficient memory allocation.
-    for (size_t memoryIndex : angle::BitSet32<32>(memoryRequirements.memoryTypeBits))
+    if (FindCompatibleMemory(mMemoryProperties, memoryRequirements, requestedMemoryPropertyFlags,
+                             memoryPropertyFlagsOut, typeIndexOut))
     {
-        ASSERT(memoryIndex < mMemoryProperties.memoryTypeCount);
-
-        if ((mMemoryProperties.memoryTypes[memoryIndex].propertyFlags &
-             requestedMemoryPropertyFlags) == requestedMemoryPropertyFlags)
-        {
-            *memoryPropertyFlagsOut = mMemoryProperties.memoryTypes[memoryIndex].propertyFlags;
-            *typeIndexOut           = static_cast<uint32_t>(memoryIndex);
-            return angle::Result::Continue;
-        }
+        return angle::Result::Continue;
     }
 
-    // We did not find a compatible memory type, the Vulkan spec says the following -
-    //     There must be at least one memory type with both the
-    //     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT and VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-    //     bits set in its propertyFlags
-    constexpr VkMemoryPropertyFlags fallbackMemoryPropertyFlags =
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-    // If the caller wanted a host visible memory, just return the memory index
-    // with the fallback memory flags.
+    // We did not find a compatible memory type.  If the caller wanted a host visible memory, just
+    // return the memory index with fallback, guaranteed, memory flags.
     if (requestedMemoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
     {
-        for (size_t memoryIndex : angle::BitSet32<32>(memoryRequirements.memoryTypeBits))
+        // The Vulkan spec says the following -
+        //     There must be at least one memory type with both the
+        //     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT and VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        //     bits set in its propertyFlags
+        constexpr VkMemoryPropertyFlags fallbackMemoryPropertyFlags =
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+        if (FindCompatibleMemory(mMemoryProperties, memoryRequirements, fallbackMemoryPropertyFlags,
+                                 memoryPropertyFlagsOut, typeIndexOut))
         {
-            if ((mMemoryProperties.memoryTypes[memoryIndex].propertyFlags &
-                 fallbackMemoryPropertyFlags) == fallbackMemoryPropertyFlags)
-            {
-                *memoryPropertyFlagsOut = mMemoryProperties.memoryTypes[memoryIndex].propertyFlags;
-                *typeIndexOut           = static_cast<uint32_t>(memoryIndex);
-                return angle::Result::Continue;
-            }
+            return angle::Result::Continue;
         }
     }
 
@@ -718,16 +741,41 @@ void ClearValuesArray::store(uint32_t index,
         // Ensure for packed DS we're writing to the depth index.
         ASSERT(index == kClearValueDepthIndex ||
                (index == kClearValueStencilIndex && aspectFlags == VK_IMAGE_ASPECT_STENCIL_BIT));
-        mValues[kClearValueStencilIndex] = clearValue;
-        mEnabled.set(kClearValueStencilIndex);
+
+        storeNoDepthStencil(kClearValueStencilIndex, clearValue);
     }
 
     if (aspectFlags != VK_IMAGE_ASPECT_STENCIL_BIT)
     {
-        mValues[index] = clearValue;
-        mEnabled.set(index);
+        storeNoDepthStencil(index, clearValue);
     }
 }
+
+void ClearValuesArray::storeNoDepthStencil(uint32_t index, const VkClearValue &clearValue)
+{
+    mValues[index] = clearValue;
+    mEnabled.set(index);
+}
+
+// ResourceSerialFactory implementation.
+ResourceSerialFactory::ResourceSerialFactory() : mCurrentUniqueSerial(1) {}
+
+ResourceSerialFactory::~ResourceSerialFactory() {}
+
+uint32_t ResourceSerialFactory::issueSerial()
+{
+    ASSERT(mCurrentUniqueSerial + 1 > mCurrentUniqueSerial);
+    return mCurrentUniqueSerial++;
+}
+
+#define ANGLE_DEFINE_GEN_VK_SERIAL(Type)                         \
+    Type##Serial ResourceSerialFactory::generate##Type##Serial() \
+    {                                                            \
+        return Type##Serial(issueSerial());                      \
+    }
+
+ANGLE_VK_SERIAL_OP(ANGLE_DEFINE_GEN_VK_SERIAL)
+
 }  // namespace vk
 
 #if !defined(ANGLE_SHARED_LIBVULKAN)
@@ -743,8 +791,9 @@ PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT   = nullptr;
 PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT = nullptr;
 
 // VK_KHR_get_physical_device_properties2
-PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR = nullptr;
-PFN_vkGetPhysicalDeviceFeatures2KHR vkGetPhysicalDeviceFeatures2KHR     = nullptr;
+PFN_vkGetPhysicalDeviceProperties2KHR vkGetPhysicalDeviceProperties2KHR             = nullptr;
+PFN_vkGetPhysicalDeviceFeatures2KHR vkGetPhysicalDeviceFeatures2KHR                 = nullptr;
+PFN_vkGetPhysicalDeviceMemoryProperties2KHR vkGetPhysicalDeviceMemoryProperties2KHR = nullptr;
 
 // VK_KHR_external_semaphore_fd
 PFN_vkImportSemaphoreFdKHR vkImportSemaphoreFdKHR = nullptr;
@@ -760,8 +809,13 @@ PFN_vkCmdBeginQueryIndexedEXT vkCmdBeginQueryIndexedEXT                       = 
 PFN_vkCmdEndQueryIndexedEXT vkCmdEndQueryIndexedEXT                           = nullptr;
 PFN_vkCmdDrawIndirectByteCountEXT vkCmdDrawIndirectByteCountEXT               = nullptr;
 
+// VK_KHR_get_memory_requirements2
 PFN_vkGetBufferMemoryRequirements2KHR vkGetBufferMemoryRequirements2KHR = nullptr;
 PFN_vkGetImageMemoryRequirements2KHR vkGetImageMemoryRequirements2KHR   = nullptr;
+
+// VK_KHR_bind_memory2
+PFN_vkBindBufferMemory2KHR vkBindBufferMemory2KHR = nullptr;
+PFN_vkBindImageMemory2KHR vkBindImageMemory2KHR   = nullptr;
 
 // VK_KHR_external_fence_capabilities
 PFN_vkGetPhysicalDeviceExternalFencePropertiesKHR vkGetPhysicalDeviceExternalFencePropertiesKHR =
@@ -774,6 +828,10 @@ PFN_vkImportFenceFdKHR vkImportFenceFdKHR = nullptr;
 // VK_KHR_external_semaphore_capabilities
 PFN_vkGetPhysicalDeviceExternalSemaphorePropertiesKHR
     vkGetPhysicalDeviceExternalSemaphorePropertiesKHR = nullptr;
+
+// VK_KHR_sampler_ycbcr_conversion
+PFN_vkCreateSamplerYcbcrConversionKHR vkCreateSamplerYcbcrConversionKHR   = nullptr;
+PFN_vkDestroySamplerYcbcrConversionKHR vkDestroySamplerYcbcrConversionKHR = nullptr;
 
 #    if defined(ANGLE_PLATFORM_FUCHSIA)
 // VK_FUCHSIA_imagepipe_surface
@@ -835,6 +893,13 @@ void InitTransformFeedbackEXTFunctions(VkDevice device)
     GET_DEVICE_FUNC(vkCmdDrawIndirectByteCountEXT);
 }
 
+// VK_KHR_sampler_ycbcr_conversion
+void InitSamplerYcbcrKHRFunctions(VkDevice device)
+{
+    GET_DEVICE_FUNC(vkCreateSamplerYcbcrConversionKHR);
+    GET_DEVICE_FUNC(vkDestroySamplerYcbcrConversionKHR);
+}
+
 #    if defined(ANGLE_PLATFORM_FUCHSIA)
 void InitImagePipeSurfaceFUCHSIAFunctions(VkInstance instance)
 {
@@ -890,6 +955,30 @@ void InitExternalSemaphoreCapabilitiesFunctions(VkInstance instance)
 #    undef GET_DEVICE_FUNC
 
 #endif  // !defined(ANGLE_SHARED_LIBVULKAN)
+
+GLenum CalculateGenerateMipmapFilter(ContextVk *contextVk, const vk::Format &format)
+{
+    const bool formatSupportsLinearFiltering = contextVk->getRenderer()->hasImageFormatFeatureBits(
+        format.vkImageFormat, VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+    const bool hintFastest = contextVk->getState().getGenerateMipmapHint() == GL_FASTEST;
+
+    return formatSupportsLinearFiltering && !hintFastest ? GL_LINEAR : GL_NEAREST;
+}
+
+// Return the log of samples.  Assumes |sampleCount| is a power of 2.  The result can be used to
+// index an array based on sample count.  See for example TextureVk::PerSampleCountArray.
+size_t PackSampleCount(GLint sampleCount)
+{
+    if (sampleCount == 0)
+    {
+        sampleCount = 1;
+    }
+
+    // We currently only support up to 16xMSAA.
+    ASSERT(sampleCount <= VK_SAMPLE_COUNT_16_BIT);
+    ASSERT(gl::isPow2(sampleCount));
+    return gl::ScanForward(static_cast<uint32_t>(sampleCount));
+}
 
 namespace gl_vk
 {
@@ -1019,6 +1108,8 @@ VkSampleCountFlagBits GetSamples(GLint sampleCount)
     switch (sampleCount)
     {
         case 0:
+            UNREACHABLE();
+            return VK_SAMPLE_COUNT_1_BIT;
         case 1:
             return VK_SAMPLE_COUNT_1_BIT;
         case 2:

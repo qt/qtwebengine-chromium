@@ -542,6 +542,8 @@ void GuestViewBase::WillAttach(WebContents* embedder_web_contents,
 
   WillAttachToEmbedder();
 
+  web_contents()->ResumeLoadingCreatedWebContents();
+
   owner_web_contents_->AttachInnerWebContents(
       base::WrapUnique<WebContents>(web_contents()), outer_contents_frame,
       is_full_page_plugin);
@@ -674,7 +676,7 @@ void GuestViewBase::ResizeDueToAutoResize(WebContents* web_contents,
 
 void GuestViewBase::RunFileChooser(
     content::RenderFrameHost* render_frame_host,
-    std::unique_ptr<content::FileSelectListener> listener,
+    scoped_refptr<content::FileSelectListener> listener,
     const blink::mojom::FileChooserParams& params) {
   if (!attached() || !embedder_web_contents()->GetDelegate()) {
     listener->FileSelectionCanceled();
@@ -725,6 +727,9 @@ void GuestViewBase::UpdateTargetURL(WebContents* source, const GURL& url) {
 }
 
 bool GuestViewBase::ShouldResumeRequestsForCreatedWindow() {
+  // Delay so that the embedder page has a chance to call APIs such as
+  // webRequest in time to be applied to the initial navigation in the new guest
+  // contents. We resume during WillAttach.
   return false;
 }
 

@@ -203,6 +203,10 @@ class QUIC_EXPORT_PRIVATE QuicStream
   }
   bool write_side_closed() const { return write_side_closed_; }
 
+  bool IsZombie() const {
+    return read_side_closed_ && write_side_closed_ && IsWaitingForAcks();
+  }
+
   bool rst_received() const { return rst_received_; }
   bool rst_sent() const { return rst_sent_; }
   bool fin_received() const { return fin_received_; }
@@ -218,20 +222,16 @@ class QUIC_EXPORT_PRIVATE QuicStream
   size_t busy_counter() const { return busy_counter_; }
   void set_busy_counter(size_t busy_counter) { busy_counter_ = busy_counter; }
 
-  void set_rst_sent(bool rst_sent) { rst_sent_ = rst_sent; }
-
-  void set_rst_received(bool rst_received) { rst_received_ = rst_received; }
-  void set_stream_error(QuicRstStreamErrorCode error) { stream_error_ = error; }
-
   // Adjust the flow control window according to new offset in |frame|.
   virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
 
   int num_frames_received() const;
   int num_duplicate_frames_received() const;
 
-  QuicFlowController* flow_controller();
-
-  const QuicFlowController* flow_controller() const;
+  // Flow controller related methods.
+  bool IsFlowControlBlocked() const;
+  QuicStreamOffset highest_received_byte_offset() const;
+  void UpdateReceiveWindowSize(QuicStreamOffset size);
 
   // Called when endpoint receives a frame which could increase the highest
   // offset.
@@ -239,7 +239,11 @@ class QUIC_EXPORT_PRIVATE QuicStream
   bool MaybeIncreaseHighestReceivedOffset(QuicStreamOffset new_offset);
 
   // Set the flow controller's send window offset from session config.
-  bool ConfigSendWindowOffset(QuicStreamOffset new_offset);
+  // |was_zero_rtt_rejected| is true if this config is from a rejected IETF QUIC
+  // 0-RTT attempt. Closes the connection and returns false if |new_offset| is
+  // not valid.
+  bool MaybeConfigSendWindowOffset(QuicStreamOffset new_offset,
+                                   bool was_zero_rtt_rejected);
 
   // Returns true if the stream has received either a RST_STREAM or a FIN -
   // either of which gives a definitive number of bytes which the peer has
@@ -409,6 +413,9 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // Called to set fin_sent_. This is only used by Google QUIC while body is
   // empty.
   void SetFinSent();
+
+  void set_rst_received(bool rst_received) { rst_received_ = rst_received; }
+  void set_stream_error(QuicRstStreamErrorCode error) { stream_error_ = error; }
 
   StreamDelegateInterface* stream_delegate() { return stream_delegate_; }
 

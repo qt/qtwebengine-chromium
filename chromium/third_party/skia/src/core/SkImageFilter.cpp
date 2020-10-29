@@ -22,8 +22,7 @@
 #include "src/core/SkValidationUtils.h"
 #include "src/core/SkWriteBuffer.h"
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrColorSpaceXform.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -527,7 +526,6 @@ skif::LayerSpace<SkIRect> SkImageFilter_Base::onGetOutputLayerBounds(
 
 template<skif::Usage kU>
 skif::FilterResult<kU> SkImageFilter_Base::filterInput(int index, const skif::Context& ctx) const {
-    // Sanity checks for the index-specific input usages
     SkASSERT(kU != skif::Usage::kInput0 || index == 0);
     SkASSERT(kU != skif::Usage::kInput1 || index == 1);
 
@@ -566,12 +564,12 @@ sk_sp<SkSpecialImage> SkImageFilter_Base::DrawWithFP(GrRecordingContext* context
                                                      const SkColorSpace* colorSpace,
                                                      GrProtected isProtected) {
     GrPaint paint;
-    paint.addColorFragmentProcessor(std::move(fp));
+    paint.setColorFragmentProcessor(std::move(fp));
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
     auto renderTargetContext = GrRenderTargetContext::Make(
             context, SkColorTypeToGrColorType(colorType), sk_ref_sp(colorSpace),
-            SkBackingFit::kApprox, bounds.size(), 1, GrMipMapped::kNo, isProtected,
+            SkBackingFit::kApprox, bounds.size(), 1, GrMipmapped::kNo, isProtected,
             kBottomLeft_GrSurfaceOrigin);
     if (!renderTargetContext) {
         return nullptr;

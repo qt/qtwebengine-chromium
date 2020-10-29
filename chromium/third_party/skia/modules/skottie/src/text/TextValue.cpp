@@ -133,10 +133,13 @@ bool Parse(const skjson::Value& jv, const internal::AnimationBuilder& abuilder, 
     v->fHasStroke = parse_color((*jtxt)["sc"], &v->fStrokeColor);
 
     if (v->fHasStroke) {
-        v->fStrokeWidth = ParseDefault((*jtxt)["s"], 0.0f);
+        v->fStrokeWidth = ParseDefault((*jtxt)["sw"], 1.0f);
+        v->fPaintOrder  = ParseDefault((*jtxt)["of"], true)
+                ? TextPaintOrder::kFillStroke
+                : TextPaintOrder::kStrokeFill;
     }
 
     return true;
 }
 
-} // namespace skottie
+}  // namespace skottie::internal

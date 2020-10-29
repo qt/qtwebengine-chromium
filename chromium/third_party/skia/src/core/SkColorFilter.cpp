@@ -55,9 +55,11 @@ bool SkColorFilterBase::onAsAColorMatrix(float matrix[20]) const {
 }
 
 #if SK_SUPPORT_GPU
-std::unique_ptr<GrFragmentProcessor> SkColorFilterBase::asFragmentProcessor(GrRecordingContext*,
-                                                                        const GrColorInfo&) const {
-    return nullptr;
+GrFPResult SkColorFilterBase::asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                                  GrRecordingContext* context,
+                                                  const GrColorInfo& dstColorInfo) const {
+    // This color filter doesn't implement `asFragmentProcessor`.
+    return GrFPFailure(std::move(inputFP));
 }
 #endif
 
@@ -70,7 +72,7 @@ skvm::Color SkColorFilterBase::program(skvm::Builder* p, skvm::Color c,
                                        skvm::Uniforms* uniforms, SkArenaAlloc* alloc) const {
     skvm::F32 original = c.a;
     if ((c = this->onProgram(p,c, dstCS, uniforms,alloc))) {
-        if (this->getFlags() & kAlphaUnchanged_Flag) {
+        if (this->isAlphaUnchanged()) {
             c.a = original;
         }
         return c;
@@ -135,15 +137,27 @@ public:
     }
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(
-            GrRecordingContext* context, const GrColorInfo& dstColorInfo) const override {
-        auto innerFP = fInner->asFragmentProcessor(context, dstColorInfo);
-        auto outerFP = fOuter->asFragmentProcessor(context, dstColorInfo);
-        if (!innerFP || !outerFP) {
-            return nullptr;
+    GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                   GrRecordingContext* context,
+                                   const GrColorInfo& dstColorInfo) const override {
+        GrFragmentProcessor* originalInputFP = inputFP.get();
+
+        auto [innerSuccess, innerFP] =
+                fInner->asFragmentProcessor(std::move(inputFP), context, dstColorInfo);
+        if (!innerSuccess) {
+            return GrFPFailure(std::move(innerFP));
         }
-        std::unique_ptr<GrFragmentProcessor> series[] = { std::move(innerFP), std::move(outerFP) };
-        return GrFragmentProcessor::RunInSeries(series, 2);
+
+        auto [outerSuccess, outerFP] =
+                fOuter->asFragmentProcessor(std::move(innerFP), context, dstColorInfo);
+        if (!outerSuccess) {
+            // In the rare event that the outer FP cannot be built, we have no good way of
+            // separating the inputFP from the innerFP, so we need to return a cloned inputFP.
+            // This could hypothetically be expensive, but failure here should be extremely rare.
+            return GrFPFailure(originalInputFP->clone());
+        }
+
+        return GrFPSuccess(std::move(outerFP));
     }
 #endif
 
@@ -203,19 +217,24 @@ public:
     }()) {}
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrRecordingContext*,
-                                                             const GrColorInfo&) const override {
+    GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                   GrRecordingContext* context,
+                                   const GrColorInfo& dstColorInfo) const override {
         // wish our caller would let us know if our input was opaque...
-        SkAlphaType at = kPremul_SkAlphaType;
+        constexpr SkAlphaType alphaType = kPremul_SkAlphaType;
         switch (fDir) {
             case Direction::kLinearToSRGB:
-                return GrColorSpaceXformEffect::Make(sk_srgb_linear_singleton(), at,
-                                                     sk_srgb_singleton(),        at);
+                return GrFPSuccess(GrColorSpaceXformEffect::Make(
+                                       std::move(inputFP),
+                                       sk_srgb_linear_singleton(), alphaType,
+                                       sk_srgb_singleton(),        alphaType));
             case Direction::kSRGBToLinear:
-                return GrColorSpaceXformEffect::Make(sk_srgb_singleton(),        at,
-                                                     sk_srgb_linear_singleton(), at);
+                return GrFPSuccess(GrColorSpaceXformEffect::Make(
+                                       std::move(inputFP),
+                                       sk_srgb_singleton(),        alphaType,
+                                       sk_srgb_linear_singleton(), alphaType));
         }
-        return nullptr;
+        SkUNREACHABLE;
     }
 #endif
 
@@ -307,14 +326,20 @@ public:
 
         p->append(SkRasterPipeline::store_src, state->orig_rgba);
         if (!fCF1) {
-            fCF0->appendStages(rec, shaderIsOpaque);
+            if (!fCF0->appendStages(rec, shaderIsOpaque)) {
+                return false;
+            }
             p->append(SkRasterPipeline::move_src_dst);
             p->append(SkRasterPipeline::load_src, state->orig_rgba);
         } else {
-            fCF0->appendStages(rec, shaderIsOpaque);
+            if (!fCF0->appendStages(rec, shaderIsOpaque)) {
+                return false;
+            }
             p->append(SkRasterPipeline::store_src, state->filtered_rgba);
             p->append(SkRasterPipeline::load_src, state->orig_rgba);
-            fCF1->appendStages(rec, shaderIsOpaque);
+            if (!fCF1->appendStages(rec, shaderIsOpaque)) {
+                return false;
+            }
             p->append(SkRasterPipeline::load_dst, state->filtered_rgba);
         }
         float* storage = rec.fAlloc->make<float>(fWeight);
@@ -333,12 +358,28 @@ public:
     }
 
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(
-            GrRecordingContext* context, const GrColorInfo& dstColorInfo) const override {
-        return GrMixerEffect::Make(
-                fCF0->asFragmentProcessor(context, dstColorInfo),
-                fCF1 ? fCF1->asFragmentProcessor(context, dstColorInfo) : nullptr,
-                fWeight);
+    GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                   GrRecordingContext* context,
+                                   const GrColorInfo& dstColorInfo) const override {
+        bool success;
+        std::unique_ptr<GrFragmentProcessor> fp0, fp1;
+
+        std::tie(success, fp0) = fCF0->asFragmentProcessor(/*inputFP=*/nullptr,
+                                                           context, dstColorInfo);
+        if (!success) {
+            return GrFPFailure(std::move(inputFP));
+        }
+
+        if (fCF1) {
+            std::tie(success, fp1) = fCF1->asFragmentProcessor(/*inputFP=*/nullptr,
+                                                               context, dstColorInfo);
+            if (!success) {
+                return GrFPFailure(std::move(inputFP));
+            }
+        }
+
+        return GrFPSuccess(GrMixerEffect::Make(std::move(inputFP), std::move(fp0),
+                                               std::move(fp1), fWeight));
     }
 #endif
 
@@ -354,7 +395,7 @@ protected:
 private:
     sk_sp<SkColorFilterBase> fCF0;
     sk_sp<SkColorFilterBase> fCF1;
-    const float             fWeight;
+    const float              fWeight;
 
     friend class SkColorFilter;
 

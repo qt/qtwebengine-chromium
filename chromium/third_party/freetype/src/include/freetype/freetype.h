@@ -958,6 +958,9 @@ FT_BEGIN_HEADER
    *     Note that the bounding box might be off by (at least) one pixel for
    *     hinted fonts.  See @FT_Size_Metrics for further discussion.
    *
+   *     Note that the bounding box does not vary in OpenType variable fonts
+   *     and should only be used in relation to the default instance.
+   *
    *   units_per_EM ::
    *     The number of font units per EM square for this face.  This is
    *     typically 2048 for TrueType fonts, and 1000 for Type~1 fonts.  Only
@@ -3172,6 +3175,12 @@ FT_BEGIN_HEADER
    *     A pointer to the translation vector.  Use `NULL` for the null vector.
    *
    * @note:
+   *   This function is provided as a convenience, but keep in mind that
+   *   @FT_Matrix coefficients are only 16.16 fixed point values, which can
+   *   limit the accuracy of the results.  Using floating-point computations
+   *   to perform the transform directly in client code instead will always
+   *   yield better numbers.
+   *
    *   The transformation is only applied to scalable image formats after the
    *   glyph has been loaded.  It means that hinting is unaltered by the
    *   transformation and is performed on the character size given in the
@@ -4065,7 +4074,7 @@ FT_BEGIN_HEADER
    *     https://docs.microsoft.com/en-us/typography/opentype/spec/colr
    *
    *   The glyph layer data for a given glyph index, if present, provides an
-   *   alternative, multi-colour glyph representation: Instead of rendering
+   *   alternative, multi-color glyph representation: Instead of rendering
    *   the outline or bitmap with the given glyph index, glyphs with the
    *   indices and colors returned by this function are rendered layer by
    *   layer.

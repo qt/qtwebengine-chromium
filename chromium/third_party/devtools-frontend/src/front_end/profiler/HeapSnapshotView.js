@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
@@ -1200,7 +1203,7 @@ export class HeapSnapshotProfileType extends ProfileType {
     if (this.profileBeingRecorded()) {
       return;
     }
-    const heapProfilerModel = self.UI.context.flavor(SDK.HeapProfilerModel.HeapProfilerModel);
+    const heapProfilerModel = UI.Context.Context.instance().flavor(SDK.HeapProfilerModel.HeapProfilerModel);
     if (!heapProfilerModel) {
       return;
     }
@@ -1407,7 +1410,7 @@ export class TrackingHeapSnapshotProfileType extends HeapSnapshotProfileType {
    * @return {?SDK.HeapProfilerModel.HeapProfilerModel}
    */
   _addNewProfile() {
-    const heapProfilerModel = self.UI.context.flavor(SDK.HeapProfilerModel.HeapProfilerModel);
+    const heapProfilerModel = UI.Context.Context.instance().flavor(SDK.HeapProfilerModel.HeapProfilerModel);
     if (!heapProfilerModel) {
       return null;
     }

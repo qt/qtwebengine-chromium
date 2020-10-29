@@ -28,10 +28,8 @@ namespace dawn_native { namespace vulkan {
 
     class Buffer final : public BufferBase {
       public:
-        static ResultOrError<Buffer*> Create(Device* device, const BufferDescriptor* descriptor);
-
-        void OnMapReadCommandSerialFinished(uint32_t mapSerial, const void* data);
-        void OnMapWriteCommandSerialFinished(uint32_t mapSerial, void* data);
+        static ResultOrError<Ref<Buffer>> Create(Device* device,
+                                                 const BufferDescriptor* descriptor);
 
         VkBuffer GetHandle() const;
 
@@ -45,20 +43,29 @@ namespace dawn_native { namespace vulkan {
                                 VkPipelineStageFlags* srcStages,
                                 VkPipelineStageFlags* dstStages);
 
+        void EnsureDataInitialized(CommandRecordingContext* recordingContext);
+        void EnsureDataInitializedAsDestination(CommandRecordingContext* recordingContext,
+                                                uint64_t offset,
+                                                uint64_t size);
+        void EnsureDataInitializedAsDestination(CommandRecordingContext* recordingContext,
+                                                const CopyTextureToBufferCmd* copy);
+
       private:
         ~Buffer() override;
         using BufferBase::BufferBase;
         MaybeError Initialize();
-        void ClearBuffer(CommandRecordingContext* recordingContext, ClearValue clearValue);
+        void InitializeToZero(CommandRecordingContext* recordingContext);
+        void ClearBuffer(CommandRecordingContext* recordingContext, uint32_t clearValue);
 
         // Dawn API
-        MaybeError MapReadAsyncImpl(uint32_t serial) override;
-        MaybeError MapWriteAsyncImpl(uint32_t serial) override;
+        MaybeError MapReadAsyncImpl() override;
+        MaybeError MapWriteAsyncImpl() override;
+        MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
         void UnmapImpl() override;
         void DestroyImpl() override;
 
-        bool IsMapWritable() const override;
-        MaybeError MapAtCreationImpl(uint8_t** mappedPointer) override;
+        bool IsMappableAtCreation() const override;
+        MaybeError MapAtCreationImpl() override;
         void* GetMappedPointerImpl() override;
 
         VkBuffer mHandle = VK_NULL_HANDLE;

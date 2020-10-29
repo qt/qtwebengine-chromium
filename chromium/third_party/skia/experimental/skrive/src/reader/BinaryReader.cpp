@@ -28,6 +28,10 @@ private:
         return next_pos <= block_end;
     }
 
+    uint16_t readId(const char label[]) override {
+        return this->readUInt16(label);
+    }
+
     bool readBool(const char[]) override {
         uint8_t v;
 
@@ -146,4 +150,4 @@ std::unique_ptr<StreamReader> MakeBinaryStreamReader(std::unique_ptr<SkStreamAss
     return std::make_unique<BinaryReader>(std::move(stream));
 }
 
-}
+}  // namespace skrive::internal

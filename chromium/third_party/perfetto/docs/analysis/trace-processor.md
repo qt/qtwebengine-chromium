@@ -244,6 +244,110 @@ WHERE slice.name = 'measure'
 GROUP BY thread_name
 ```
 
+## Operator tables
+SQL queries are usually sufficient to retrieve data from trace processor.
+Sometimes though, certain constructs can be difficult to express pure SQL.
+
+In these situations, trace processor has special "operator tables" which solve
+a particular problem in C++ but expose an SQL interface for queries to take
+advantage of.
+
+### Span join
+Span join is a custom operator table which computes the intersection of
+spans of time from two tables or views. A column (called the *partition*)
+can optionally be specified which divides the rows from each table into
+partitions before computing the intersection.
+
+![Span join block diagram](/docs/images/span-join.png)
+
+```sql
+-- Get all the scheduling slices
+CREATE VIEW sp_sched AS
+SELECT ts, dur, cpu, utid
+FROM sched
+
+-- Get all the cpu frequency slices
+CREATE VIEW sp_frequency AS
+SELECT
+  ts,
+  lead(ts) OVER (PARTITION BY cpu ORDER BY ts) - ts as dur,
+  cpu,
+  value as freq
+FROM counter
+
+-- Create the span joined table which combines cpu frequency with
+-- scheduling slices.
+CREATE VIRTUAL TABLE sched_with_frequency
+USING SPAN_JOIN(sp_sched PARTITIONED cpu, sp_frequency PARTITIONED cpu)
+
+-- This span joined table can be queried as normal and has the columns from both
+-- tables.
+SELECT ts, dur, cpu, utid, freq
+FROM sched_with_frequency
+```
+
+NOTE: A partition can be specified on neither, either or both tables. If
+specified on both, the same column name has to be specified on each table.
+
+WARNING: An important restriction on span joined tables is that spans from
+the same table in the same partition *cannot* overlap. For performance
+reasons, span join does attempt to dectect and error out in this situation;
+instead, incorrect rows will silently be produced.
+
+### Ancestor slice
+ancestor_slice is a custom operator table that takes a
+[slice table's id column](/docs/analysis/sql-tables.autogen#slice) and computes
+all slices on the same track that are direct parents above that id (i.e. given
+a slice id it will return as rows all slices that can be found by following
+the parent_id column to the top slice (depth = 0)).
+
+The returned format is the same as the
+[slice table](/docs/analysis/sql-tables.autogen#slice)
+
+For example, the following finds the top level slice given a bunch of slices of
+interest.
+
+```sql
+CREATE VIEW interesting_slices AS
+SELECT id, ts, dur, track_id
+FROM slice WHERE name LIKE "%interesting slice name%";
+
+SELECT
+  *
+FROM
+  interesting_slices LEFT JOIN
+  ancestor_slice(interesting_slices.id) AS ancestor ON ancestor.depth = 0
+```
+
+### Descendant slice
+descendant_slice is a custom operator table that takes a
+[slice table's id column](/docs/analysis/sql-tables.autogen#slice) and
+computes all slices on the same track that are nested under that id (i.e.
+all slices that are on the same track at the same time frame with a depth
+greater than the given slice's depth.
+
+The returned format is the same as the
+[slice table](/docs/analysis/sql-tables.autogen#slice)
+
+For example, the following finds the number of slices under each slice of
+interest.
+
+```sql
+CREATE VIEW interesting_slices AS
+SELECT id, ts, dur, track_id
+FROM slice WHERE name LIKE "%interesting slice name%";
+
+SELECT
+  *
+  (
+    SELECT
+      COUNT(*) AS total_descendants
+    FROM descendant_slice(interesting_slice.id)
+  )
+FROM interesting_slices
+```
+
+
 ## Metrics
 
 TIP: To see how to add to add a new metric to trace processor, see the checklist
@@ -316,6 +420,275 @@ NOTE: we do not plan on supporting case where alerts need to be added to
       existing events. Instead, new events should be created using annotations
       and alerts added on these instead; this is because the trace processor
       storage is monotonic-append-only.
+
+## Python API
+
+The trace processor Python API is built on the existing HTTP interface of `trace processor`
+and is available as part of the standalone build. The API allows you to load in traces and
+query tables and run metrics without requiring the `trace_processor` binary to be
+downloaded or installed.
+
+### Setup
+Note: The API is only compatible with Python3.
+
+```
+from trace_processor.api import TraceProcessor
+# Initialise TraceProcessor with a trace file
+tp = TraceProcessor(file_path='trace.pftrace')
+```
+
+NOTE: The TraceProcessor can be initialized in a combination of ways including:
+      <br> - An address at which there exists a running instance of `trace_processor` with a
+      loaded trace (e.g. `TraceProcessor(addr='localhost:9001')`)
+      <br> - An address at which there exists a running instance of `trace_processor` and
+      needs a trace to be loaded in
+      (e.g. `TraceProcessor(addr='localhost:9001', file_path='trace.pftrace')`)
+      <br> - A path to a `trace_processor` binary and the trace to be loaded in
+      (e.g. `TraceProcessor(bin_path='./trace_processor', file_path='trace.pftrace')`)
+
+
+### API
+
+The `trace_processor.api` module contains the `TraceProcessor` class which provides various
+functions that can be called on the loaded trace. For more information on how to use
+these functions, see this [`example`](/src/trace_processor/python/example.py).
+
+#### Query
+The query() function takes an SQL query as input and returns an iterator through the rows
+of the result.
+
+```python
+from trace_processor.api import TraceProcessor
+tp = TraceProcessor(file_path='trace.pftrace')
+
+qr_it = tp.query('SELECT ts, dur, name FROM slice')
+for row in qr_it:
+  print(row.ts, row.dur, row.name)
+```
+**Output**
+```
+261187017446933 358594 eglSwapBuffersWithDamageKHR
+261187017518340 357 onMessageReceived
+261187020825163 9948 queueBuffer
+261187021345235 642 bufferLoad
+261187121345235 153 query
+...
+```
+The QueryResultIterator can also be converted to a Pandas DataFrame, although this
+requires you to have both the `NumPy` and `Pandas` modules installed.
+```python
+from trace_processor.api import TraceProcessor
+tp = TraceProcessor(file_path='trace.pftrace')
+
+qr_it = tp.query('SELECT ts, dur, name FROM slice')
+qr_df = qr_it.as_pandas()
+print(qr_df.to_string())
+```
+**Output**
+```
+ts                   dur                  name
+-------------------- -------------------- ---------------------------
+     261187017446933               358594 eglSwapBuffersWithDamageKHR
+     261187017518340                  357 onMessageReceived
+     261187020825163                 9948 queueBuffer
+     261187021345235                  642 bufferLoad
+     261187121345235                  153 query
+     ...
+```
+Furthermore, you can use the query result in a Pandas DataFrame format to easily
+make visualisations from the trace data.
+```python
+from trace_processor.api import TraceProcessor
+tp = TraceProcessor(file_path='trace.pftrace')
+
+qr_it = tp.query('SELECT ts, value FROM counter WHERE track_id=50')
+qr_df = qr_it.as_pandas()
+qr_df = qr_df.replace(np.nan,0)
+qr_df = qr_df.set_index('ts')['value'].plot()
+```
+**Output**
+
+[](/docs/images/example_pd_graph.png)
+
+
+#### Metric
+The metric() function takes in a list of trace metrics and returns the results as a Protobuf.
+
+```
+from trace_processor.api import TraceProcessor
+tp = TraceProcessor(file_path='trace.pftrace')
+
+ad_cpu_metrics = tp.metric(['android_cpu'])
+print(ad_cpu_metrics)
+```
+**Output**
+```
+metrics {
+  android_cpu {
+    process_info {
+      name: "/system/bin/init"
+      threads {
+        name: "init"
+        core {
+          id: 1
+          metrics {
+            mcycles: 1
+            runtime_ns: 570365
+            min_freq_khz: 1900800
+            max_freq_khz: 1900800
+            avg_freq_khz: 1902017
+          }
+        }
+        core {
+          id: 3
+          metrics {
+            mcycles: 0
+            runtime_ns: 366406
+            min_freq_khz: 1900800
+            max_freq_khz: 1900800
+            avg_freq_khz: 1902908
+          }
+        }
+        ...
+      }
+      ...
+    }
+    process_info {
+      name: "/system/bin/logd"
+      threads {
+        name: "logd.writer"
+        core {
+          id: 0
+          metrics {
+            mcycles: 8
+            runtime_ns: 33842357
+            min_freq_khz: 595200
+            max_freq_khz: 1900800
+            avg_freq_khz: 1891825
+          }
+        }
+        core {
+          id: 1
+          metrics {
+            mcycles: 9
+            runtime_ns: 36019300
+            min_freq_khz: 1171200
+            max_freq_khz: 1900800
+            avg_freq_khz: 1887969
+          }
+        }
+        ...
+      }
+      ...
+    }
+    ...
+  }
+}
+```
+
+### HTTP
+The `trace_processor.http` module contains the `TraceProcessorHttp` class which
+provides methods to make HTTP requests to an address at which there already
+exists a running instance of `trace_processor` with a trace loaded in. All
+results are returned in Protobuf format
+(see [`trace_processor_proto`](/protos/perfetto/trace_processor/trace_processor.proto)).
+Some functions include:
+* `execute_query()` - Takes in an SQL query and returns a `QueryResult` Protobuf
+  message
+* `compute_metric()` - Takes in a list of trace metrics and returns a
+  `ComputeMetricResult` Protobuf message
+* `status()` - Returns a `StatusResult` Protobuf message
+
+
+## Testing
+
+Trace processor is mainly tested in two ways:
+1. Unit tests of low-level building blocks
+2. "Diff" tests which parse traces and check the output of queries
+
+### Unit tests
+Unit testing trace processor is the same as in other parts of Perfetto and
+other C++ projects. However, unlike the rest of Perfetto, unit testing is
+relatively light in trace processor.
+
+We have discovered over time that unit tests are generally too brittle
+when dealing with code which parses traces leading to painful, mechanical
+changes being needed when refactorings happen.
+
+Because of this, we choose to focus on diff tests for most areas (e.g.
+parsing events, testing schema of tables, testing metrics etc.) and only
+use unit testing for the low-level building blocks on which the rest of
+trace processor is built.
+
+### Diff tests
+Diff tests are essentially integration tests for trace processor and the
+main way trace processor is tested.
+
+Each diff test takes as input a) a trace file b) a query file *or* a metric
+name. It runs `trace_processor_shell` to parse the trace and then executes
+the query/metric. The result is then compared to a 'golden' file and any
+difference is highlighted.
+
+All diff tests are organized under [test/trace_processor](/test/trace_processor)
+and are run by the script
+[`tools/diff_test_trace_processor.py`](/tools/diff_test_trace_processor.py).
+New tests can be added with the helper script
+[`tools/add_tp_diff_test.py`](/tools/add_tp_diff_test.py).
+
+NOTE: `trace_processor_shell` and associated proto descriptors needs to be
+built before running `tools/diff_test_trace_processor.py`. The easiest way
+to do this is to run `tools/ninja -C <out directory>` both initially and on
+every change to trace processor code or builtin metrics.
+
+#### Choosing where to add diff tests
+When adding a new test with `tools/add_tp_diff_test.py`, the user is
+prompted for a folder to add the new test to. Often this can be confusing
+as a test can fall into more than one category. This section is a guide
+to decide which folder to choose.
+
+Broadly, there are two categories which all folders fall into:
+1. __"Area" folders__ which encompass a "vertical" area of interest
+   e.g. startup/ contains Android app startup related tests or chrome/
+   contains all Chrome related tests.
+2. __"Feature" folders__ which encompass a particular feature of
+   trace processor e.g. process_tracking/ tests the lifetime tracking of
+   processes, span_join/ tests the span join operator.
+
+"Area" folders should be preferred for adding tests unless the test is
+applicable to more than one "area"; in this case, one of "feature" folders
+can be used instead.
+
+Here are some common scenarios in which new tests may be added and
+answers on where to add the test:
+
+__Scenario__: A new event is being parsed, the focus of the test is to ensure
+the event is being parsed correctly and the event is focused on a single
+vertical "Area".
+
+_Answer_: Add the test in one of the "Area" folders.
+
+__Scenario__: A new event is being parsed and the focus of the test is to ensure
+the event is being parsed correctly and the event is applicable to more than one
+vertical "Area".
+
+_Answer_: Add the test to the parsing/ folder.
+
+__Scenario__: A new metric is being added and the focus of the test is to
+ensure the metric is being correctly computed.
+
+_Answer_: Add the test in one of the "Area" folders.
+
+__Scenario__: A new dynamic table is being added and the focus of the test is to
+ensure the dynamic table is being correctly computed...
+
+_Answer_: Add the test to the dynamic/ folder
+
+__Scenario__: The interals of trace processor are being modified and the test
+is to ensure the trace processor is correctly filtering/sorting important
+built-in tables.
+
+_Answer_: Add the test to the tables/ folder.
+
 
 ## Appendix: table inheritance
 

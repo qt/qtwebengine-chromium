@@ -34,6 +34,7 @@ class HelperFileOutputGeneratorOptions(GeneratorOptions):
                  conventions = None,
                  filename = None,
                  directory = '.',
+                 genpath = None,
                  apiname = None,
                  profile = None,
                  versions = '.*',
@@ -54,9 +55,20 @@ class HelperFileOutputGeneratorOptions(GeneratorOptions):
                  library_name = '',
                  expandEnumerants = True,
                  helper_file_type = ''):
-        GeneratorOptions.__init__(self, conventions, filename, directory, apiname, profile,
-                                  versions, emitversions, defaultExtensions,
-                                  addExtensions, removeExtensions, emitExtensions, sortProcedure)
+        GeneratorOptions.__init__(self,
+                 conventions = conventions,
+                 filename = filename,
+                 directory = directory,
+                 genpath = genpath,
+                 apiname = apiname,
+                 profile = profile,
+                 versions = versions,
+                 emitversions = emitversions,
+                 defaultExtensions = defaultExtensions,
+                 addExtensions = addExtensions,
+                 removeExtensions = removeExtensions,
+                 emitExtensions = emitExtensions,
+                 sortProcedure = sortProcedure)
         self.prefixText       = prefixText
         self.genFuncPointers  = genFuncPointers
         self.protectFile      = protectFile
@@ -161,7 +173,7 @@ class HelperFileOutputGenerator(OutputGenerator):
         OutputGenerator.beginFeature(self, interface, emit)
         self.featureExtraProtect = GetFeatureProtect(interface)
 
-        if self.featureName == 'VK_VERSION_1_0' or self.featureName == 'VK_VERSION_1_1':
+        if interface.tag != 'extension':
             return
         name = self.featureName
         nameElem = interface[0][1]

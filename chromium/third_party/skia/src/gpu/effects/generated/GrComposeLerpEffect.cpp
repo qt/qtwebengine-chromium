@@ -10,6 +10,7 @@
  **************************************************************************************************/
 #include "GrComposeLerpEffect.h"
 
+#include "src/core/SkUtils.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
@@ -27,24 +28,13 @@ public:
         (void)weight;
         weightVar = args.fUniformHandler->addUniform(&_outer, kFragment_GrShaderFlag,
                                                      kFloat_GrSLType, "weight");
-        SkString _sample290;
-        if (_outer.child1_index >= 0) {
-            _sample290 = this->invokeChild(_outer.child1_index, args);
-        } else {
-            _sample290 = "half4(1)";
-        }
-        SkString _sample358;
-        if (_outer.child2_index >= 0) {
-            _sample358 = this->invokeChild(_outer.child2_index, args);
-        } else {
-            _sample358 = "half4(1)";
-        }
+        SkString _sample273 = this->invokeChild(0, args);
+        SkString _sample289 = this->invokeChild(1, args);
         fragBuilder->codeAppendf(
-                R"SkSL(%s = mix(%s ? %s : %s, %s ? %s : %s, half(%s));
+                R"SkSL(%s = mix(%s, %s, half(%s));
 )SkSL",
-                args.fOutputColor, _outer.child1_index >= 0 ? "true" : "false", _sample290.c_str(),
-                args.fInputColor, _outer.child2_index >= 0 ? "true" : "false", _sample358.c_str(),
-                args.fInputColor, args.fUniformHandler->getUniformCStr(weightVar));
+                args.fOutputColor, _sample273.c_str(), _sample289.c_str(),
+                args.fUniformHandler->getUniformCStr(weightVar));
     }
 
 private:
@@ -68,13 +58,11 @@ bool GrComposeLerpEffect::onIsEqual(const GrFragmentProcessor& other) const {
 }
 GrComposeLerpEffect::GrComposeLerpEffect(const GrComposeLerpEffect& src)
         : INHERITED(kGrComposeLerpEffect_ClassID, src.optimizationFlags()), weight(src.weight) {
-    if (src.child1_index >= 0) {
-        child1_index = this->cloneAndRegisterChildProcessor(src.childProcessor(src.child1_index));
-    }
-    if (src.child2_index >= 0) {
-        child2_index = this->cloneAndRegisterChildProcessor(src.childProcessor(src.child2_index));
-    }
+    this->cloneAndRegisterAllChildProcessors(src);
 }
 std::unique_ptr<GrFragmentProcessor> GrComposeLerpEffect::clone() const {
-    return std::unique_ptr<GrFragmentProcessor>(new GrComposeLerpEffect(*this));
+    return std::make_unique<GrComposeLerpEffect>(*this);
 }
+#if GR_TEST_UTILS
+SkString GrComposeLerpEffect::onDumpInfo() const { return SkStringPrintf("(weight=%f)", weight); }
+#endif

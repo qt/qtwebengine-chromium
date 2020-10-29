@@ -50,10 +50,9 @@ class ReceiverSession final : public MessagePort::Client {
     // on if the device supports audio and video, and if we were able to
     // successfully negotiate a receiver configuration.
 
-    // NOTES ON LIFETIMES: The audio and video receiver pointers are expected
-    // to be valid until the OnConfiguredReceiversDestroyed event is fired, at
-    // which point they become invalid and need to replaced by the results of
-    // the ensuing OnNegotiated call.
+    // NOTES ON LIFETIMES: The audio and video Receiver pointers are owned by
+    // ReceiverSession, not the Client, and references to these pointers must be
+    // cleared before a call to Client::OnReceiversDestroying() returns.
 
     // If the receiver is audio- or video-only, either of the receivers
     // may be nullptr. However, in the majority of cases they will be populated.
@@ -67,16 +66,27 @@ class ReceiverSession final : public MessagePort::Client {
   // When a connection is established, the OnNegotiated callback is called.
   class Client {
    public:
-    // This method is called when a new set of receivers has been negotiated.
+    enum ReceiversDestroyingReason { kEndOfSession, kRenegotiated };
+
+    // Called when a new set of receivers has been negotiated. This may be
+    // called multiple times during a session, as renegotiations occur.
     virtual void OnNegotiated(const ReceiverSession* session,
                               ConfiguredReceivers receivers) = 0;
 
-    // This method is called immediately preceding the invalidation of
-    // this session's receivers.
-    virtual void OnConfiguredReceiversDestroyed(
-        const ReceiverSession* session) = 0;
+    // Called immediately preceding the destruction of this session's receivers.
+    // If |reason| is |kEndOfSession|, OnNegotiated() will never be called
+    // again; if it is |kRenegotiated|, OnNegotiated() will be called again
+    // soon with a new set of Receivers to use.
+    //
+    // Before returning, the implementation must ensure that all references to
+    // the Receivers, from the last call to OnNegotiated(), have been cleared.
+    virtual void OnReceiversDestroying(const ReceiverSession* session,
+                                       ReceiversDestroyingReason reason) = 0;
 
     virtual void OnError(const ReceiverSession* session, Error error) = 0;
+
+   protected:
+    virtual ~Client();
   };
 
   // The embedder has the option of providing a list of prioritized
@@ -155,7 +165,7 @@ class ReceiverSession final : public MessagePort::Client {
   void SendMessage(Message* message);
 
   // Handles resetting receivers and notifying the client.
-  void ResetReceivers();
+  void ResetReceivers(Client::ReceiversDestroyingReason reason);
 
   Client* const client_;
   Environment* const environment_;

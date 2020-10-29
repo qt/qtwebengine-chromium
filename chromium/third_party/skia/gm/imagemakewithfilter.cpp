@@ -28,7 +28,7 @@
 
 #include "include/effects/SkImageFilters.h"
 
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -178,7 +178,7 @@ namespace {
         // Uses saveLayer after clipRect() to filter on the restore (i.e. reference image)
         kSaveLayer
     };
-};
+}  // namespace
 
 // In this GM, we're going to feed the inner portion of a 100x100 mandrill (i.e., strip off a
 // 25-wide border) through the makeWithFilter method. We'll then draw the appropriate subset of the
@@ -223,7 +223,7 @@ protected:
         fAuxImage = surface->makeImageSnapshot();
     }
 
-    void onDraw(SkCanvas* canvas) override {
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
         FilterFactory filters[] = {
             color_filter_factory,
             blur_filter_factory,
@@ -270,21 +270,30 @@ protected:
         // These need to be GPU-backed when on the GPU to ensure that the image filters use the GPU
         // code paths (otherwise they may choose to do CPU filtering then upload)
         sk_sp<SkImage> mainImage, auxImage;
-        if (canvas->getGrContext()) {
-            if (canvas->getGrContext()->abandoned()) {
-                return;
+
+        auto rContext = canvas->recordingContext();
+        // In a DDL context, we can't use the GPU code paths and we will drop the work – skip.
+        auto dContext = GrAsDirectContext(rContext);
+        if (rContext) {
+            if (!dContext) {
+                *errorMsg = "Requires a direct context.";
+                return DrawResult::kSkip;
             }
-            mainImage = fMainImage->makeTextureImage(canvas->getGrContext());
-            auxImage = fAuxImage->makeTextureImage(canvas->getGrContext());
+            if (dContext->abandoned()) {
+                *errorMsg = "Direct context abandoned.";
+                return DrawResult::kSkip;
+            }
+            mainImage = fMainImage->makeTextureImage(dContext);
+            auxImage = fAuxImage->makeTextureImage(dContext);
         } else {
             mainImage = fMainImage;
             auxImage = fAuxImage;
         }
         if (!mainImage || !auxImage) {
-            return;
+            return DrawResult::kFail;
         }
-        SkASSERT(mainImage && (mainImage->isTextureBacked() || !canvas->getGrContext()));
-        SkASSERT(auxImage && (auxImage->isTextureBacked() || !canvas->getGrContext()));
+        SkASSERT(mainImage && (mainImage->isTextureBacked() || !rContext));
+        SkASSERT(auxImage && (auxImage->isTextureBacked() || !rContext));
 
         SkScalar MARGIN = SkIntToScalar(40);
         SkScalar DX = mainImage->width() + MARGIN;
@@ -328,6 +337,7 @@ protected:
             canvas->restore();
             canvas->translate(0, DY);
         }
+        return DrawResult::kOk;
     }
 
 private:
@@ -366,7 +376,9 @@ private:
             SkIRect outSubset;
             SkIPoint offset;
 
-            result = mainImage->makeWithFilter(filter.get(), subset, clip, &outSubset, &offset);
+            auto rContext = canvas->recordingContext();
+            result = mainImage->makeWithFilter(rContext, filter.get(), subset, clip,
+                                               &outSubset, &offset);
 
             SkASSERT(result);
             SkASSERT(mainImage->isTextureBacked() == result->isTextureBacked());

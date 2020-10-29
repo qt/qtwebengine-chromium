@@ -33,6 +33,7 @@
 #include <vector>
 
 class GrContext;
+class GrRecordingContext;
 class GrRenderTargetContext;
 class SkBaseDevice;
 class SkBitmap;
@@ -288,6 +289,11 @@ public:
         example: https://fiddle.skia.org/c/@Canvas_getGrContext
     */
     virtual GrContext* getGrContext();
+
+    /**
+     * Experimental. SkCanvases can actually only guarantee a GrRecordingContext.
+     */
+    virtual GrRecordingContext* recordingContext();
 
     /** Sometimes a canvas is owned by a surface. If it is, getSurface() will return a bare
      *  pointer to that surface, else this will return nullptr.
@@ -917,6 +923,8 @@ public:
 
         Pass an empty rect to disable maximum clip.
         This private API is for use by Android framework only.
+
+        DEPRECATED: Replace usage with SkAndroidFrameworkUtils::replaceClip()
 
         @param rect  maximum allowed clip in device coordinates
     */
@@ -2747,6 +2755,13 @@ private:
      */
     bool androidFramework_isClipAA() const;
 
+    /**
+     * Reset the clip to be just the intersection with the global-space 'rect'. This operates within
+     * the save/restore stack of the canvas, so restore() will bring back any saved clip. However,
+     * since 'rect' is already in global space, it is not modified by the canvas matrix.
+     */
+    void androidFramework_replaceClip(const SkIRect& rect);
+
     virtual SkPaintFilterCanvas* internal_private_asPaintFilterCanvas() const { return nullptr; }
 
     /**
@@ -2834,8 +2849,5 @@ private:
     SkAutoCanvasRestore& operator=(SkAutoCanvasRestore&&) = delete;
     SkAutoCanvasRestore& operator=(const SkAutoCanvasRestore&) = delete;
 };
-
-// Private
-#define SkAutoCanvasRestore(...) SK_REQUIRE_LOCAL_VAR(SkAutoCanvasRestore)
 
 #endif

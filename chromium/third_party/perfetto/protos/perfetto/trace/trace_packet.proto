@@ -18,7 +18,9 @@ syntax = "proto2";
 
 import "protos/perfetto/common/trace_stats.proto";
 import "protos/perfetto/config/trace_config.proto";
+import "protos/perfetto/trace/extension_descriptor.proto";
 import "protos/perfetto/trace/android/android_log.proto";
+import "protos/perfetto/trace/android/gpu_mem_event.proto";
 import "protos/perfetto/trace/android/graphics_frame_event.proto";
 import "protos/perfetto/trace/android/initial_display_state.proto";
 import "protos/perfetto/trace/android/packages_list.proto";
@@ -35,10 +37,12 @@ import "protos/perfetto/trace/gpu/gpu_render_stage_event.proto";
 import "protos/perfetto/trace/gpu/vulkan_memory_event.proto";
 import "protos/perfetto/trace/gpu/vulkan_api_event.proto";
 import "protos/perfetto/trace/interned_data/interned_data.proto";
+import "protos/perfetto/trace/memory_graph.proto";
 import "protos/perfetto/trace/perfetto/perfetto_metatrace.proto";
 import "protos/perfetto/trace/perfetto/tracing_service_event.proto";
 import "protos/perfetto/trace/power/battery_counters.proto";
 import "protos/perfetto/trace/power/power_rails.proto";
+import "protos/perfetto/trace/profiling/deobfuscation.proto";
 import "protos/perfetto/trace/profiling/heap_graph.proto";
 import "protos/perfetto/trace/profiling/profile_common.proto";
 import "protos/perfetto/trace/profiling/profile_packet.proto";
@@ -78,7 +82,7 @@ package perfetto.protos;
 // See the [Buffers and Dataflow](/docs/concepts/buffers.md) doc for details.
 //
 // Next reserved id: 13 (up to 15).
-// Next id: 71.
+// Next id: 74.
 message TracePacket {
   // The timestamp of the TracePacket.
   // By default this timestamps refers to the trace clock (CLOCK_BOOTTIME on
@@ -105,7 +109,7 @@ message TracePacket {
     TrackEvent track_event = 11;
 
     // IDs up to 15 are reserved. They take only one byte to encode their
-    // preamble so should be used for freqeuent events.
+    // preamble so should be used for frequent events.
 
     TraceConfig trace_config = 33;
     FtraceStats ftrace_stats = 34;
@@ -133,6 +137,8 @@ message TracePacket {
     SmapsPacket smaps_packet = 68;
     TracingServiceEvent service_event = 69;
     InitialDisplayState initial_display_state = 70;
+    GpuMemTotalEvent gpu_mem_total_event = 71;
+    MemoryTrackerSnapshot memory_tracker_snapshot = 73;
 
     // Only used in profile packets.
     ProfiledFrameSymbols profiled_frame_symbols = 55;
@@ -161,6 +167,13 @@ message TracePacket {
     // Each compressed_packets TracePacket (including the two field ids and
     // sizes) should be less than 512KB.
     bytes compressed_packets = 50;
+
+    // Data sources can extend the trace proto with custom extension protos (see
+    // docs/design-docs/extensions.md). When they do that, the descriptor of
+    // their extension proto descriptor is serialized in this packet. This
+    // allows trace_processor to deserialize extended messages using reflection
+    // even if the extension proto is not checked in the Perfetto repo.
+    ExtensionDescriptor extension_descriptor = 72;
 
     // This field is only used for testing.
     // In previous versions of this proto this field had the id 268435455

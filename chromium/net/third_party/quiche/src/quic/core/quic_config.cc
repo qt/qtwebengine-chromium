@@ -452,6 +452,7 @@ QuicConfig::QuicConfig()
       alternate_server_address_ipv4_(kASAD, PRESENCE_OPTIONAL),
       stateless_reset_token_(kSRST, PRESENCE_OPTIONAL),
       max_ack_delay_ms_(kMAD, PRESENCE_OPTIONAL),
+      min_ack_delay_ms_(0, PRESENCE_OPTIONAL),
       ack_delay_exponent_(kADE, PRESENCE_OPTIONAL),
       max_udp_payload_size_(0, PRESENCE_OPTIONAL),
       max_datagram_frame_size_(0, PRESENCE_OPTIONAL),
@@ -590,7 +591,7 @@ uint32_t QuicConfig::ReceivedMaxUnidirectionalStreams() const {
 }
 
 void QuicConfig::SetMaxAckDelayToSendMs(uint32_t max_ack_delay_ms) {
-  return max_ack_delay_ms_.SetSendValue(max_ack_delay_ms);
+  max_ack_delay_ms_.SetSendValue(max_ack_delay_ms);
 }
 
 uint32_t QuicConfig::GetMaxAckDelayToSendMs() const {
@@ -603,6 +604,22 @@ bool QuicConfig::HasReceivedMaxAckDelayMs() const {
 
 uint32_t QuicConfig::ReceivedMaxAckDelayMs() const {
   return max_ack_delay_ms_.GetReceivedValue();
+}
+
+void QuicConfig::SetMinAckDelayMs(uint32_t min_ack_delay_ms) {
+  min_ack_delay_ms_.SetSendValue(min_ack_delay_ms);
+}
+
+uint32_t QuicConfig::GetMinAckDelayToSendMs() const {
+  return min_ack_delay_ms_.GetSendValue();
+}
+
+bool QuicConfig::HasReceivedMinAckDelayMs() const {
+  return min_ack_delay_ms_.HasReceivedValue();
+}
+
+uint32_t QuicConfig::ReceivedMinAckDelayMs() const {
+  return min_ack_delay_ms_.GetReceivedValue();
 }
 
 void QuicConfig::SetAckDelayExponentToSend(uint32_t exponent) {
@@ -1006,15 +1023,10 @@ void QuicConfig::ToHandshakeMessage(
     max_unidirectional_streams_.ToHandshakeMessage(out);
     ack_delay_exponent_.ToHandshakeMessage(out);
   }
-  if (GetQuicReloadableFlag(quic_dont_send_max_ack_delay_if_default)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_dont_send_max_ack_delay_if_default);
-    if (max_ack_delay_ms_.GetSendValue() != kDefaultDelayedAckTimeMs) {
-      // Only send max ack delay if it is using a non-default value, because
-      // the default value is used by QuicSentPacketManager if it is not
-      // sent during the handshake, and we want to save bytes.
-      max_ack_delay_ms_.ToHandshakeMessage(out);
-    }
-  } else {
+  if (max_ack_delay_ms_.GetSendValue() != kDefaultDelayedAckTimeMs) {
+    // Only send max ack delay if it is using a non-default value, because
+    // the default value is used by QuicSentPacketManager if it is not
+    // sent during the handshake, and we want to save bytes.
     max_ack_delay_ms_.ToHandshakeMessage(out);
   }
   bytes_for_connection_id_.ToHandshakeMessage(out);
@@ -1166,6 +1178,10 @@ bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
   params->initial_max_streams_uni.set_value(
       GetMaxUnidirectionalStreamsToSend());
   params->max_ack_delay.set_value(GetMaxAckDelayToSendMs());
+  if (min_ack_delay_ms_.HasSendValue()) {
+    params->min_ack_delay_us.set_value(min_ack_delay_ms_.GetSendValue() *
+                                       kNumMicrosPerMilli);
+  }
   params->ack_delay_exponent.set_value(GetAckDelayExponentToSend());
   params->disable_active_migration =
       connection_migration_disabled_.HasSendValue() &&
@@ -1203,27 +1219,18 @@ bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
         retry_source_connection_id_to_send_.value();
   }
 
-  if (GetQuicRestartFlag(quic_google_transport_param_send_new)) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_google_transport_param_send_new, 1, 3);
-    if (initial_round_trip_time_us_.HasSendValue()) {
-      params->initial_round_trip_time_us.set_value(
-          initial_round_trip_time_us_.GetSendValue());
-    }
-    if (connection_options_.HasSendValues() &&
-        !connection_options_.GetSendValues().empty()) {
-      params->google_connection_options = connection_options_.GetSendValues();
-    }
+  if (initial_round_trip_time_us_.HasSendValue()) {
+    params->initial_round_trip_time_us.set_value(
+        initial_round_trip_time_us_.GetSendValue());
+  }
+  if (connection_options_.HasSendValues() &&
+      !connection_options_.GetSendValues().empty()) {
+    params->google_connection_options = connection_options_.GetSendValues();
   }
 
-  if (!GetQuicRestartFlag(quic_google_transport_param_omit_old)) {
-    if (!params->google_quic_params) {
-      params->google_quic_params = std::make_unique<CryptoHandshakeMessage>();
-    }
-    initial_round_trip_time_us_.ToHandshakeMessage(
-        params->google_quic_params.get());
-    connection_options_.ToHandshakeMessage(params->google_quic_params.get());
-  } else {
-    QUIC_RESTART_FLAG_COUNT_N(quic_google_transport_param_omit_old, 1, 3);
+  if (GetQuicReloadableFlag(quic_send_key_update_not_yet_supported)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_send_key_update_not_yet_supported);
+    params->key_update_not_yet_supported = true;
   }
 
   params->custom_parameters = custom_transport_parameters_to_send_;
@@ -1233,7 +1240,6 @@ bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
 
 QuicErrorCode QuicConfig::ProcessTransportParameters(
     const TransportParameters& params,
-    HelloType hello_type,
     bool is_resumption,
     std::string* error_details) {
   if (!is_resumption && params.original_destination_connection_id.has_value()) {
@@ -1313,6 +1319,17 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
             params.preferred_address->ipv4_socket_address);
       }
     }
+    if (GetQuicReloadableFlag(quic_record_received_min_ack_delay)) {
+      if (params.min_ack_delay_us.value() != 0) {
+        if (params.min_ack_delay_us.value() >
+            params.max_ack_delay.value() * kNumMicrosPerMilli) {
+          *error_details = "MinAckDelay is greater than MaxAckDelay.";
+          return IETF_QUIC_PROTOCOL_VIOLATION;
+        }
+        min_ack_delay_ms_.SetReceivedValue(params.min_ack_delay_us.value() /
+                                           kNumMicrosPerMilli);
+      }
+    }
   }
 
   if (params.disable_active_migration) {
@@ -1337,38 +1354,15 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
   }
 
   bool google_params_already_parsed = false;
-  if (GetQuicRestartFlag(quic_google_transport_param_send_new)) {
-    QUIC_RESTART_FLAG_COUNT_N(quic_google_transport_param_send_new, 2, 3);
-    if (params.initial_round_trip_time_us.value() > 0) {
-      google_params_already_parsed = true;
-      initial_round_trip_time_us_.SetReceivedValue(
-          params.initial_round_trip_time_us.value());
-    }
-    if (params.google_connection_options.has_value()) {
-      google_params_already_parsed = true;
-      connection_options_.SetReceivedValues(
-          params.google_connection_options.value());
-    }
+  if (params.initial_round_trip_time_us.value() > 0) {
+    google_params_already_parsed = true;
+    initial_round_trip_time_us_.SetReceivedValue(
+        params.initial_round_trip_time_us.value());
   }
-
-  if (!GetQuicRestartFlag(quic_google_transport_param_omit_old)) {
-    const CryptoHandshakeMessage* peer_params = params.google_quic_params.get();
-    if (peer_params != nullptr && !google_params_already_parsed) {
-      QuicErrorCode error = initial_round_trip_time_us_.ProcessPeerHello(
-          *peer_params, hello_type, error_details);
-      if (error != QUIC_NO_ERROR) {
-        DCHECK(!error_details->empty());
-        return error;
-      }
-      error = connection_options_.ProcessPeerHello(*peer_params, hello_type,
-                                                   error_details);
-      if (error != QUIC_NO_ERROR) {
-        DCHECK(!error_details->empty());
-        return error;
-      }
-    }
-  } else {
-    QUIC_RESTART_FLAG_COUNT_N(quic_google_transport_param_omit_old, 2, 3);
+  if (params.google_connection_options.has_value()) {
+    google_params_already_parsed = true;
+    connection_options_.SetReceivedValues(
+        params.google_connection_options.value());
   }
 
   received_custom_transport_parameters_ = params.custom_parameters;

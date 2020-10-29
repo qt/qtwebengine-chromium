@@ -6,7 +6,6 @@
 
 #include "xfa/fwl/cfwl_combolist.h"
 
-#include <memory>
 #include <utility>
 
 #include "xfa/fwl/cfwl_combobox.h"
@@ -17,11 +16,10 @@
 #include "xfa/fwl/cfwl_messagemouse.h"
 #include "xfa/fwl/fwl_widgetdef.h"
 
-CFWL_ComboList::CFWL_ComboList(
-    const CFWL_App* app,
-    std::unique_ptr<CFWL_WidgetProperties> properties,
-    CFWL_Widget* pOuter)
-    : CFWL_ListBox(app, std::move(properties), pOuter) {
+CFWL_ComboList::CFWL_ComboList(const CFWL_App* app,
+                               const Properties& properties,
+                               CFWL_Widget* pOuter)
+    : CFWL_ListBox(app, properties, pOuter) {
   ASSERT(pOuter);
 }
 
@@ -31,7 +29,7 @@ int32_t CFWL_ComboList::MatchItem(WideStringView wsMatch) {
 
   int32_t iCount = CountItems(this);
   for (int32_t i = 0; i < iCount; i++) {
-    CFWL_ListItem* hItem = GetItem(this, i);
+    CFWL_ListBox::Item* hItem = GetItem(this, i);
     WideString wsText = hItem ? hItem->GetText() : WideString();
     auto pos = wsText.Find(wsMatch);
     if (pos.has_value() && pos.value() == 0)
@@ -41,22 +39,22 @@ int32_t CFWL_ComboList::MatchItem(WideStringView wsMatch) {
 }
 
 void CFWL_ComboList::ChangeSelected(int32_t iSel) {
-  CFWL_ListItem* hItem = GetItem(this, iSel);
-  CFWL_ListItem* hOld = GetSelItem(0);
+  CFWL_ListBox::Item* hItem = GetItem(this, iSel);
+  CFWL_ListBox::Item* hOld = GetSelItem(0);
   int32_t iOld = GetItemIndex(this, hOld);
   if (iOld == iSel)
     return;
 
   CFX_RectF rtInvalidate;
   if (iOld > -1) {
-    if (CFWL_ListItem* hOldItem = GetItem(this, iOld))
+    if (CFWL_ListBox::Item* hOldItem = GetItem(this, iOld))
       rtInvalidate = hOldItem->GetRect();
     SetSelItem(hOld, false);
   }
   if (hItem) {
-    if (CFWL_ListItem* hOldItem = GetItem(this, iSel))
+    if (CFWL_ListBox::Item* hOldItem = GetItem(this, iSel))
       rtInvalidate.Union(hOldItem->GetRect());
-    CFWL_ListItem* hSel = GetItem(this, iSel);
+    CFWL_ListBox::Item* hSel = GetItem(this, iSel);
     SetSelItem(hSel, true);
   }
   if (!rtInvalidate.IsEmpty())
@@ -64,16 +62,10 @@ void CFWL_ComboList::ChangeSelected(int32_t iSel) {
 }
 
 CFX_PointF CFWL_ComboList::ClientToOuter(const CFX_PointF& point) {
-  CFX_PointF ret = point + CFX_PointF(m_pProperties->m_WidgetRect.left,
-                                      m_pProperties->m_WidgetRect.top);
-  CFWL_Widget* pOwner = GetOwner();
-  return pOwner ? pOwner->TransformTo(m_pOuter, ret) : ret;
+  return point + CFX_PointF(m_WidgetRect.left, m_WidgetRect.top);
 }
 
 void CFWL_ComboList::OnProcessMessage(CFWL_Message* pMessage) {
-  if (!pMessage)
-    return;
-
   CFWL_Message::Type type = pMessage->GetType();
   bool backDefault = true;
   if (type == CFWL_Message::Type::kSetFocus ||
@@ -121,8 +113,8 @@ void CFWL_ComboList::OnDropListFocusChanged(CFWL_Message* pMsg, bool bSet) {
     return;
 
   CFWL_MessageKillFocus* pKill = static_cast<CFWL_MessageKillFocus*>(pMsg);
-  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(m_pOuter);
-  if (pKill->IsFocusedOnWidget(m_pOuter) ||
+  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(GetOuter());
+  if (pKill->IsFocusedOnWidget(pOuter) ||
       pKill->IsFocusedOnWidget(pOuter->GetComboEdit())) {
     pOuter->ShowDropList(false);
   }
@@ -140,7 +132,7 @@ void CFWL_ComboList::OnDropListMouseMove(CFWL_MessageMouse* pMsg) {
         return;
     }
 
-    CFWL_ListItem* hItem = GetItemAtPoint(pMsg->m_pos);
+    CFWL_ListBox::Item* hItem = GetItemAtPoint(pMsg->m_pos);
     if (!hItem)
       return;
 
@@ -148,7 +140,7 @@ void CFWL_ComboList::OnDropListMouseMove(CFWL_MessageMouse* pMsg) {
   } else if (m_bNotifyOwner) {
     pMsg->m_pos = ClientToOuter(pMsg->m_pos);
 
-    CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(m_pOuter);
+    CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(GetOuter());
     pOuter->GetDelegate()->OnProcessMessage(pMsg);
   }
 }
@@ -157,12 +149,12 @@ void CFWL_ComboList::OnDropListLButtonDown(CFWL_MessageMouse* pMsg) {
   if (GetRTClient().Contains(pMsg->m_pos))
     return;
 
-  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(m_pOuter);
+  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(GetOuter());
   pOuter->ShowDropList(false);
 }
 
 void CFWL_ComboList::OnDropListLButtonUp(CFWL_MessageMouse* pMsg) {
-  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(m_pOuter);
+  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(GetOuter());
   if (m_bNotifyOwner) {
     pMsg->m_pos = ClientToOuter(pMsg->m_pos);
     pOuter->GetDelegate()->OnProcessMessage(pMsg);
@@ -177,13 +169,13 @@ void CFWL_ComboList::OnDropListLButtonUp(CFWL_MessageMouse* pMsg) {
   }
   pOuter->ShowDropList(false);
 
-  CFWL_ListItem* hItem = GetItemAtPoint(pMsg->m_pos);
+  CFWL_ListBox::Item* hItem = GetItemAtPoint(pMsg->m_pos);
   if (hItem)
     pOuter->ProcessSelChanged(true);
 }
 
 bool CFWL_ComboList::OnDropListKey(CFWL_MessageKey* pKey) {
-  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(m_pOuter);
+  CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(GetOuter());
   bool bPropagate = false;
   if (pKey->m_dwCmd == CFWL_MessageKey::Type::kKeyDown) {
     uint32_t dwKeyCode = pKey->m_dwKeyCode;
@@ -208,7 +200,7 @@ bool CFWL_ComboList::OnDropListKey(CFWL_MessageKey* pKey) {
     bPropagate = true;
   }
   if (bPropagate) {
-    pKey->SetDstTarget(m_pOuter);
+    pKey->SetDstTarget(GetOuter());
     pOuter->GetDelegate()->OnProcessMessage(pKey);
     return true;
   }
@@ -222,17 +214,15 @@ void CFWL_ComboList::OnDropListKeyDown(CFWL_MessageKey* pKey) {
     case XFA_FWL_VKEY_Down:
     case XFA_FWL_VKEY_Home:
     case XFA_FWL_VKEY_End: {
-      CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(m_pOuter);
-      CFWL_ListItem* hItem = GetItem(this, pOuter->GetCurrentSelection());
+      CFWL_ComboBox* pOuter = static_cast<CFWL_ComboBox*>(GetOuter());
+      CFWL_ListBox::Item* hItem = GetItem(this, pOuter->GetCurrentSelection());
       hItem = GetListItem(hItem, dwKeyCode);
       if (!hItem)
         break;
 
       SetSelection(hItem, hItem, true);
       ScrollToVisible(hItem);
-      CFX_RectF rtInvalidate(0, 0, m_pProperties->m_WidgetRect.width,
-                             m_pProperties->m_WidgetRect.height);
-      RepaintRect(rtInvalidate);
+      RepaintRect(CFX_RectF(0, 0, m_WidgetRect.width, m_WidgetRect.height));
       break;
     }
     default:

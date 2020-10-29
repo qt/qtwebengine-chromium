@@ -106,7 +106,9 @@ class TextureMtl : public TextureImpl
                                            GLenum internalFormat,
                                            const gl::Extents &size,
                                            gl::MemoryObject *memoryObject,
-                                           GLuint64 offset) override;
+                                           GLuint64 offset,
+                                           GLbitfield createFlags,
+                                           GLbitfield usageFlags) override;
 
     angle::Result setEGLImageTarget(const gl::Context *context,
                                     gl::TextureType type,
@@ -132,7 +134,7 @@ class TextureMtl : public TextureImpl
 
     angle::Result syncState(const gl::Context *context,
                             const gl::Texture::DirtyBits &dirtyBits,
-                            gl::TextureCommand source) override;
+                            gl::Command source) override;
 
     angle::Result setStorageMultisample(const gl::Context *context,
                                         gl::TextureType type,
@@ -213,11 +215,47 @@ class TextureMtl : public TextureImpl
                                   const gl::InternalFormat &internalFormat,
                                   gl::Framebuffer *source);
 
+    angle::Result copySubTextureImpl(const gl::Context *context,
+                                     const gl::ImageIndex &index,
+                                     const gl::Offset &destOffset,
+                                     const gl::InternalFormat &internalFormat,
+                                     size_t sourceLevel,
+                                     const gl::Box &sourceBox,
+                                     bool unpackFlipY,
+                                     bool unpackPremultiplyAlpha,
+                                     bool unpackUnmultiplyAlpha,
+                                     const gl::Texture *source);
+
+    angle::Result copySubTextureWithDraw(const gl::Context *context,
+                                         const gl::ImageIndex &index,
+                                         const gl::Offset &destOffset,
+                                         const gl::InternalFormat &internalFormat,
+                                         uint32_t sourceNativeLevel,
+                                         const gl::Box &sourceBox,
+                                         const angle::Format &sourceAngleFormat,
+                                         bool unpackFlipY,
+                                         bool unpackPremultiplyAlpha,
+                                         bool unpackUnmultiplyAlpha,
+                                         const mtl::TextureRef &sourceTexture);
+
+    angle::Result copySubTextureCPU(const gl::Context *context,
+                                    const gl::ImageIndex &index,
+                                    const gl::Offset &destOffset,
+                                    const gl::InternalFormat &internalFormat,
+                                    uint32_t sourceNativeLevel,
+                                    const gl::Box &sourceBox,
+                                    const angle::Format &sourceAngleFormat,
+                                    bool unpackFlipY,
+                                    bool unpackPremultiplyAlpha,
+                                    bool unpackUnmultiplyAlpha,
+                                    const mtl::TextureRef &sourceTexture);
+
     // Convert pixels to suported format before uploading to texture
     angle::Result convertAndSetSubImage(const gl::Context *context,
                                         const gl::ImageIndex &index,
                                         const MTLRegion &mtlArea,
                                         const gl::InternalFormat &internalFormat,
+                                        GLenum type,
                                         const angle::Format &pixelsFormat,
                                         size_t pixelsRowPitch,
                                         const uint8_t *pixels);

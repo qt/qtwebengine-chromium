@@ -29,6 +29,10 @@
           'renderViaOffscreenBackBuffer': get(attrs, 'renderViaOffscreenBackBuffer', 0),
         };
 
+        if (attrs && attrs['majorVersion']) {
+          contextAttributes['majorVersion'] = attrs['majorVersion']
+        }
+
         // This check is from the emscripten version
         if (contextAttributes['explicitSwapControl']) {
           throw 'explicitSwapControl is not supported';
@@ -51,18 +55,20 @@
       //          CanvasKit.SkColorSpace.SRGB
       //          CanvasKit.SkColorSpace.DISPLAY_P3
       //          CanvasKit.SkColorSpace.ADOBE_RGB
-      CanvasKit.MakeWebGLCanvasSurface = function(idOrElement, colorSpace) {
+      CanvasKit.MakeWebGLCanvasSurface = function(idOrElement, colorSpace, attrs) {
         colorSpace = colorSpace || null;
         var canvas = idOrElement;
-        if (canvas.tagName !== 'CANVAS') {
+        var isHTMLCanvas = typeof HTMLCanvasElement !== 'undefined' && canvas instanceof HTMLCanvasElement;
+        var isOffscreenCanvas = canvas instanceof OffscreenCanvas;
+        if (!isHTMLCanvas && !isOffscreenCanvas) {
           canvas = document.getElementById(idOrElement);
           if (!canvas) {
             throw 'Canvas with id ' + idOrElement + ' was not found';
           }
         }
 
-        // we are ok with all the other defaults.
-        var ctx = this.GetWebGLContext(canvas);
+        var ctx = this.GetWebGLContext(canvas, attrs);
+        var openGLversion = canvas.GLctxObject.version;
 
         if (!ctx || ctx < 0) {
           throw 'failed to create webgl context: err ' + ctx;
@@ -88,6 +94,7 @@
         }
         surface._context = ctx;
         surface.grContext = grcontext;
+        surface.openGLversion = openGLversion;
         return surface;
       };
       // Default to trying WebGL first.

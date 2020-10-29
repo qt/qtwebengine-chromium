@@ -215,7 +215,7 @@ void AddPlanBRtpSenderOptions(
 
 // Add options to |session_options| from |rtp_data_channels|.
 void AddRtpDataChannelOptions(
-    const std::map<std::string, rtc::scoped_refptr<DataChannel>>&
+    const std::map<std::string, rtc::scoped_refptr<RtpDataChannel>>&
         rtp_data_channels,
     cricket::MediaDescriptionOptions* data_media_description_options) {
   if (!data_media_description_options) {
@@ -223,9 +223,9 @@ void AddRtpDataChannelOptions(
   }
   // Check for data channels.
   for (const auto& kv : rtp_data_channels) {
-    const DataChannel* channel = kv.second;
-    if (channel->state() == DataChannel::kConnecting ||
-        channel->state() == DataChannel::kOpen) {
+    const RtpDataChannel* channel = kv.second;
+    if (channel->state() == RtpDataChannel::kConnecting ||
+        channel->state() == RtpDataChannel::kOpen) {
       // Legacy RTP data channels are signaled with the track/stream ID set to
       // the data channel's label.
       data_media_description_options->AddRtpDataChannel(channel->label(),
@@ -251,21 +251,23 @@ uint32_t ConvertIceTransportTypeToCandidateFilter(
   return cricket::CF_NONE;
 }
 
+// Map internal signaling state name to spec name:
+//  https://w3c.github.io/webrtc-pc/#rtcsignalingstate-enum
 std::string GetSignalingStateString(
     PeerConnectionInterface::SignalingState state) {
   switch (state) {
     case PeerConnectionInterface::kStable:
-      return "kStable";
+      return "stable";
     case PeerConnectionInterface::kHaveLocalOffer:
-      return "kHaveLocalOffer";
+      return "have-local-offer";
     case PeerConnectionInterface::kHaveLocalPrAnswer:
-      return "kHavePrAnswer";
+      return "have-local-pranswer";
     case PeerConnectionInterface::kHaveRemoteOffer:
-      return "kHaveRemoteOffer";
+      return "have-remote-offer";
     case PeerConnectionInterface::kHaveRemotePrAnswer:
-      return "kHaveRemotePrAnswer";
+      return "have-remote-pranswer";
     case PeerConnectionInterface::kClosed:
-      return "kClosed";
+      return "closed";
   }
   RTC_NOTREACHED();
   return "";
@@ -708,17 +710,12 @@ bool NeedIceRestart(bool surface_ice_candidates_on_ice_transport_type_changed,
 // Used by parameterless SetLocalDescription() to create an offer or answer.
 // Upon completion of creating the session description, SetLocalDescription() is
 // invoked with the result.
-// For consistency with DoSetLocalDescription(), if the PeerConnection is
-// destroyed midst operation, we DO NOT inform the
-// |set_local_description_observer| that the operation failed.
-// TODO(hbos): If/when we process SLD messages in ~PeerConnection, the
-// consistent thing would be to inform the observer here.
 class PeerConnection::ImplicitCreateSessionDescriptionObserver
     : public CreateSessionDescriptionObserver {
  public:
   ImplicitCreateSessionDescriptionObserver(
       rtc::WeakPtr<PeerConnection> pc,
-      rtc::scoped_refptr<SetSessionDescriptionObserver>
+      rtc::scoped_refptr<SetLocalDescriptionObserverInterface>
           set_local_description_observer)
       : pc_(std::move(pc)),
         set_local_description_observer_(
@@ -744,42 +741,27 @@ class PeerConnection::ImplicitCreateSessionDescriptionObserver
       operation_complete_callback_();
       return;
     }
-    // DoSetLocalDescription() is currently implemented as a synchronous
-    // operation but where the |set_local_description_observer_|'s callbacks are
-    // invoked asynchronously in a post to PeerConnection::OnMessage().
+    // DoSetLocalDescription() is a synchronous operation that invokes
+    // |set_local_description_observer_| with the result.
     pc_->DoSetLocalDescription(std::move(desc),
                                std::move(set_local_description_observer_));
-    // For backwards-compatability reasons, we declare the operation as
-    // completed here (rather than in PeerConnection::OnMessage()). This ensures
-    // that subsequent offer/answer operations can start immediately (without
-    // waiting for OnMessage()).
     operation_complete_callback_();
   }
 
   void OnFailure(RTCError error) override {
     RTC_DCHECK(!was_called_);
     was_called_ = true;
-
-    // Abort early if |pc_| is no longer valid.
-    if (!pc_) {
-      operation_complete_callback_();
-      return;
-    }
-    // DoSetLocalDescription() reports its failures in a post. We do the
-    // same thing here for consistency.
-    pc_->PostSetSessionDescriptionFailure(
-        set_local_description_observer_,
-        RTCError(error.type(),
-                 std::string("SetLocalDescription failed to create "
-                             "session description - ") +
-                     error.message()));
+    set_local_description_observer_->OnSetLocalDescriptionComplete(RTCError(
+        error.type(), std::string("SetLocalDescription failed to create "
+                                  "session description - ") +
+                          error.message()));
     operation_complete_callback_();
   }
 
  private:
   bool was_called_ = false;
   rtc::WeakPtr<PeerConnection> pc_;
-  rtc::scoped_refptr<SetSessionDescriptionObserver>
+  rtc::scoped_refptr<SetLocalDescriptionObserverInterface>
       set_local_description_observer_;
   std::function<void()> operation_complete_callback_;
 };
@@ -833,33 +815,45 @@ class PeerConnection::LocalIceCredentialsToReplace {
   std::set<std::pair<std::string, std::string>> ice_credentials_;
 };
 
-// Upon completion, posts a task to execute the callback of the
-// SetSessionDescriptionObserver asynchronously on the same thread. At this
-// point, the state of the peer connection might no longer reflect the effects
-// of the SetRemoteDescription operation, as the peer connection could have been
-// modified during the post.
-// TODO(hbos): Remove this class once we remove the version of
-// PeerConnectionInterface::SetRemoteDescription() that takes a
-// SetSessionDescriptionObserver as an argument.
-class PeerConnection::SetRemoteDescriptionObserverAdapter
-    : public rtc::RefCountedObject<SetRemoteDescriptionObserverInterface> {
+// Wrapper for SetSessionDescriptionObserver that invokes the success or failure
+// callback in a posted message handled by the peer connection. This introduces
+// a delay that prevents recursive API calls by the observer, but this also
+// means that the PeerConnection can be modified before the observer sees the
+// result of the operation. This is ill-advised for synchronizing states.
+//
+// Implements both the SetLocalDescriptionObserverInterface and the
+// SetRemoteDescriptionObserverInterface.
+class PeerConnection::SetSessionDescriptionObserverAdapter
+    : public SetLocalDescriptionObserverInterface,
+      public SetRemoteDescriptionObserverInterface {
  public:
-  SetRemoteDescriptionObserverAdapter(
-      rtc::scoped_refptr<PeerConnection> pc,
-      rtc::scoped_refptr<SetSessionDescriptionObserver> wrapper)
-      : pc_(std::move(pc)), wrapper_(std::move(wrapper)) {}
+  SetSessionDescriptionObserverAdapter(
+      rtc::WeakPtr<PeerConnection> pc,
+      rtc::scoped_refptr<SetSessionDescriptionObserver> inner_observer)
+      : pc_(std::move(pc)), inner_observer_(std::move(inner_observer)) {}
 
+  // SetLocalDescriptionObserverInterface implementation.
+  void OnSetLocalDescriptionComplete(RTCError error) override {
+    OnSetDescriptionComplete(std::move(error));
+  }
   // SetRemoteDescriptionObserverInterface implementation.
   void OnSetRemoteDescriptionComplete(RTCError error) override {
-    if (error.ok())
-      pc_->PostSetSessionDescriptionSuccess(wrapper_);
-    else
-      pc_->PostSetSessionDescriptionFailure(wrapper_, std::move(error));
+    OnSetDescriptionComplete(std::move(error));
   }
 
  private:
-  rtc::scoped_refptr<PeerConnection> pc_;
-  rtc::scoped_refptr<SetSessionDescriptionObserver> wrapper_;
+  void OnSetDescriptionComplete(RTCError error) {
+    if (!pc_)
+      return;
+    if (error.ok()) {
+      pc_->PostSetSessionDescriptionSuccess(inner_observer_);
+    } else {
+      pc_->PostSetSessionDescriptionFailure(inner_observer_, std::move(error));
+    }
+  }
+
+  rtc::WeakPtr<PeerConnection> pc_;
+  rtc::scoped_refptr<SetSessionDescriptionObserver> inner_observer_;
 };
 
 bool PeerConnectionInterface::RTCConfiguration::operator==(
@@ -1057,7 +1051,7 @@ PeerConnection::~PeerConnection() {
   // AudioRtpSender has a reference to the StatsCollector it will update when
   // stopping.
   for (const auto& transceiver : transceivers_) {
-    transceiver->Stop();
+    transceiver->StopInternal();
   }
 
   stats_.reset(nullptr);
@@ -1544,6 +1538,11 @@ PeerConnection::AddTrackUnifiedPlan(
     RTC_LOG(LS_INFO) << "Reusing an existing "
                      << cricket::MediaTypeToString(transceiver->media_type())
                      << " transceiver for AddTrack.";
+    if (transceiver->stopping()) {
+      LOG_AND_RETURN_ERROR(RTCErrorType::INVALID_PARAMETER,
+                           "The existing transceiver is stopping.");
+    }
+
     if (transceiver->direction() == RtpTransceiverDirection::kRecvOnly) {
       transceiver->internal()->set_direction(
           RtpTransceiverDirection::kSendRecv);
@@ -1942,6 +1941,9 @@ PeerConnection::GetSendersInternal() const {
   std::vector<rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>>
       all_senders;
   for (const auto& transceiver : transceivers_) {
+    if (IsUnifiedPlan() && transceiver->internal()->stopped())
+      continue;
+
     auto senders = transceiver->internal()->senders();
     all_senders.insert(all_senders.end(), senders.begin(), senders.end());
   }
@@ -1965,6 +1967,9 @@ PeerConnection::GetReceiversInternal() const {
       rtc::scoped_refptr<RtpReceiverProxyWithInternal<RtpReceiverInternal>>>
       all_receivers;
   for (const auto& transceiver : transceivers_) {
+    if (IsUnifiedPlan() && transceiver->internal()->stopped())
+      continue;
+
     auto receivers = transceiver->internal()->receivers();
     all_receivers.insert(all_receivers.end(), receivers.begin(),
                          receivers.end());
@@ -1979,7 +1984,13 @@ PeerConnection::GetTransceivers() const {
       << "GetTransceivers is only supported with Unified Plan SdpSemantics.";
   std::vector<rtc::scoped_refptr<RtpTransceiverInterface>> all_transceivers;
   for (const auto& transceiver : transceivers_) {
-    all_transceivers.push_back(transceiver);
+    // Temporary fix: Do not show stopped transceivers.
+    // The long term fix is to remove them from transceivers_, but this
+    // turns out to cause issues with audio channel lifetimes.
+    // TODO(https://crbug.com/webrtc/11840): Fix issue.
+    if (!transceiver->stopped()) {
+      all_transceivers.push_back(transceiver);
+    }
   }
   return all_transceivers;
 }
@@ -2131,8 +2142,8 @@ rtc::scoped_refptr<DataChannelInterface> PeerConnection::CreateDataChannel(
   if (config) {
     internal_config.reset(new InternalDataChannelInit(*config));
   }
-  rtc::scoped_refptr<DataChannel> channel(
-      data_channel_controller_.InternalCreateDataChannel(
+  rtc::scoped_refptr<DataChannelInterface> channel(
+      data_channel_controller_.InternalCreateDataChannelWithProxy(
           label, internal_config.get()));
   if (!channel.get()) {
     return nullptr;
@@ -2144,7 +2155,7 @@ rtc::scoped_refptr<DataChannelInterface> PeerConnection::CreateDataChannel(
     UpdateNegotiationNeeded();
   }
   NoteUsageEvent(UsageEvent::DATA_ADDED);
-  return DataChannel::CreateProxy(std::move(channel));
+  return channel;
 }
 
 void PeerConnection::RestartIce() {
@@ -2408,22 +2419,51 @@ void PeerConnection::SetLocalDescription(
           std::function<void()> operations_chain_callback) mutable {
         // Abort early if |this_weak_ptr| is no longer valid.
         if (!this_weak_ptr) {
-          // For consistency with DoSetLocalDescription(), we DO NOT inform the
-          // |observer_refptr| that the operation failed in this case.
-          // TODO(hbos): If/when we process SLD messages in ~PeerConnection,
-          // the consistent thing would be to inform the observer here.
+          // For consistency with SetSessionDescriptionObserverAdapter whose
+          // posted messages doesn't get processed when the PC is destroyed, we
+          // do not inform |observer_refptr| that the operation failed.
           operations_chain_callback();
           return;
         }
-        this_weak_ptr->DoSetLocalDescription(std::move(desc),
-                                             std::move(observer_refptr));
-        // DoSetLocalDescription() is currently implemented as a synchronous
-        // operation but where the |observer|'s callbacks are invoked
-        // asynchronously in a post to OnMessage().
+        // SetSessionDescriptionObserverAdapter takes care of making sure the
+        // |observer_refptr| is invoked in a posted message.
+        this_weak_ptr->DoSetLocalDescription(
+            std::move(desc),
+            rtc::scoped_refptr<SetLocalDescriptionObserverInterface>(
+                new rtc::RefCountedObject<SetSessionDescriptionObserverAdapter>(
+                    this_weak_ptr, observer_refptr)));
         // For backwards-compatability reasons, we declare the operation as
-        // completed here (rather than in OnMessage()). This ensures that
-        // subsequent offer/answer operations can start immediately (without
-        // waiting for OnMessage()).
+        // completed here (rather than in a post), so that the operation chain
+        // is not blocked by this operation when the observer is invoked. This
+        // allows the observer to trigger subsequent offer/answer operations
+        // synchronously if the operation chain is now empty.
+        operations_chain_callback();
+      });
+}
+
+void PeerConnection::SetLocalDescription(
+    std::unique_ptr<SessionDescriptionInterface> desc,
+    rtc::scoped_refptr<SetLocalDescriptionObserverInterface> observer) {
+  RTC_DCHECK_RUN_ON(signaling_thread());
+  // Chain this operation. If asynchronous operations are pending on the chain,
+  // this operation will be queued to be invoked, otherwise the contents of the
+  // lambda will execute immediately.
+  operations_chain_->ChainOperation(
+      [this_weak_ptr = weak_ptr_factory_.GetWeakPtr(), observer,
+       desc = std::move(desc)](
+          std::function<void()> operations_chain_callback) mutable {
+        // Abort early if |this_weak_ptr| is no longer valid.
+        if (!this_weak_ptr) {
+          observer->OnSetLocalDescriptionComplete(RTCError(
+              RTCErrorType::INTERNAL_ERROR,
+              "SetLocalDescription failed because the session was shut down"));
+          operations_chain_callback();
+          return;
+        }
+        this_weak_ptr->DoSetLocalDescription(std::move(desc), observer);
+        // DoSetLocalDescription() is implemented as a synchronous operation.
+        // The |observer| will already have been informed that it completed, and
+        // we can mark this operation as complete without any loose ends.
         operations_chain_callback();
       });
 }
@@ -2431,13 +2471,20 @@ void PeerConnection::SetLocalDescription(
 void PeerConnection::SetLocalDescription(
     SetSessionDescriptionObserver* observer) {
   RTC_DCHECK_RUN_ON(signaling_thread());
+  SetLocalDescription(
+      new rtc::RefCountedObject<SetSessionDescriptionObserverAdapter>(
+          weak_ptr_factory_.GetWeakPtr(), observer));
+}
+
+void PeerConnection::SetLocalDescription(
+    rtc::scoped_refptr<SetLocalDescriptionObserverInterface> observer) {
+  RTC_DCHECK_RUN_ON(signaling_thread());
   // The |create_sdp_observer| handles performing DoSetLocalDescription() with
   // the resulting description as well as completing the operation.
   rtc::scoped_refptr<ImplicitCreateSessionDescriptionObserver>
       create_sdp_observer(
           new rtc::RefCountedObject<ImplicitCreateSessionDescriptionObserver>(
-              weak_ptr_factory_.GetWeakPtr(),
-              rtc::scoped_refptr<SetSessionDescriptionObserver>(observer)));
+              weak_ptr_factory_.GetWeakPtr(), observer));
   // Chain this operation. If asynchronous operations are pending on the chain,
   // this operation will be queued to be invoked, otherwise the contents of the
   // lambda will execute immediately.
@@ -2485,7 +2532,7 @@ void PeerConnection::SetLocalDescription(
 
 void PeerConnection::DoSetLocalDescription(
     std::unique_ptr<SessionDescriptionInterface> desc,
-    rtc::scoped_refptr<SetSessionDescriptionObserver> observer) {
+    rtc::scoped_refptr<SetLocalDescriptionObserverInterface> observer) {
   RTC_DCHECK_RUN_ON(signaling_thread());
   TRACE_EVENT0("webrtc", "PeerConnection::DoSetLocalDescription");
 
@@ -2495,8 +2542,7 @@ void PeerConnection::DoSetLocalDescription(
   }
 
   if (!desc) {
-    PostSetSessionDescriptionFailure(
-        observer,
+    observer->OnSetLocalDescriptionComplete(
         RTCError(RTCErrorType::INTERNAL_ERROR, "SessionDescription is NULL."));
     return;
   }
@@ -2506,8 +2552,7 @@ void PeerConnection::DoSetLocalDescription(
   if (session_error() != SessionError::kNone) {
     std::string error_message = GetSessionErrorMsg();
     RTC_LOG(LS_ERROR) << "SetLocalDescription: " << error_message;
-    PostSetSessionDescriptionFailure(
-        observer,
+    observer->OnSetLocalDescriptionComplete(
         RTCError(RTCErrorType::INTERNAL_ERROR, std::move(error_message)));
     return;
   }
@@ -2515,16 +2560,11 @@ void PeerConnection::DoSetLocalDescription(
   // For SLD we support only explicit rollback.
   if (desc->GetType() == SdpType::kRollback) {
     if (IsUnifiedPlan()) {
-      RTCError error = Rollback(desc->GetType());
-      if (error.ok()) {
-        PostSetSessionDescriptionSuccess(observer);
-      } else {
-        PostSetSessionDescriptionFailure(observer, std::move(error));
-      }
+      observer->OnSetLocalDescriptionComplete(Rollback(desc->GetType()));
     } else {
-      PostSetSessionDescriptionFailure(
-          observer, RTCError(RTCErrorType::UNSUPPORTED_OPERATION,
-                             "Rollback not supported in Plan B"));
+      observer->OnSetLocalDescriptionComplete(
+          RTCError(RTCErrorType::UNSUPPORTED_OPERATION,
+                   "Rollback not supported in Plan B"));
     }
     return;
   }
@@ -2534,8 +2574,7 @@ void PeerConnection::DoSetLocalDescription(
     std::string error_message = GetSetDescriptionErrorMessage(
         cricket::CS_LOCAL, desc->GetType(), error);
     RTC_LOG(LS_ERROR) << error_message;
-    PostSetSessionDescriptionFailure(
-        observer,
+    observer->OnSetLocalDescriptionComplete(
         RTCError(RTCErrorType::INTERNAL_ERROR, std::move(error_message)));
     return;
   }
@@ -2555,21 +2594,42 @@ void PeerConnection::DoSetLocalDescription(
     std::string error_message =
         GetSetDescriptionErrorMessage(cricket::CS_LOCAL, type, error);
     RTC_LOG(LS_ERROR) << error_message;
-    PostSetSessionDescriptionFailure(
-        observer,
+    observer->OnSetLocalDescriptionComplete(
         RTCError(RTCErrorType::INTERNAL_ERROR, std::move(error_message)));
     return;
   }
   RTC_DCHECK(local_description());
 
-  PostSetSessionDescriptionSuccess(observer);
-
-  // MaybeStartGathering needs to be called after posting
-  // MSG_SET_SESSIONDESCRIPTION_SUCCESS, so that we don't signal any candidates
-  // before signaling that SetLocalDescription completed.
-  transport_controller_->MaybeStartGathering();
-
   if (local_description()->GetType() == SdpType::kAnswer) {
+    // 3.2.10.1: For each transceiver in the connection's set of transceivers
+    //           run the following steps:
+    if (IsUnifiedPlan()) {
+      for (auto it = transceivers_.begin(); it != transceivers_.end();) {
+        const auto& transceiver = *it;
+        // 3.2.10.1.1: If transceiver is stopped, associated with an m= section
+        //             and the associated m= section is rejected in
+        //             connection.[[CurrentLocalDescription]] or
+        //             connection.[[CurrentRemoteDescription]], remove the
+        //             transceiver from the connection's set of transceivers.
+        if (transceiver->stopped()) {
+          const ContentInfo* content =
+              FindMediaSectionForTransceiver(transceiver, local_description());
+
+          if (content && content->rejected) {
+            RTC_LOG(LS_INFO) << "Dissociating transceiver"
+                             << " since the media section is being recycled.";
+            (*it)->internal()->set_mid(absl::nullopt);
+            (*it)->internal()->set_mline_index(absl::nullopt);
+            it = transceivers_.erase(it);
+          } else {
+            ++it;
+          }
+        } else {
+          ++it;
+        }
+      }
+    }
+
     // TODO(deadbeef): We already had to hop to the network thread for
     // MaybeStartGathering...
     network_thread()->Invoke<void>(
@@ -2588,7 +2648,13 @@ void PeerConnection::DoSetLocalDescription(
     }
   }
 
+  observer->OnSetLocalDescriptionComplete(RTCError::OK());
   NoteUsageEvent(UsageEvent::SET_LOCAL_DESCRIPTION_SUCCEEDED);
+
+  // MaybeStartGathering needs to be called after informing the observer so that
+  // we don't signal any candidates before signaling that SetLocalDescription
+  // completed.
+  transport_controller_->MaybeStartGathering();
 }
 
 RTCError PeerConnection::ApplyLocalDescription(
@@ -2653,6 +2719,10 @@ RTCError PeerConnection::ApplyLocalDescription(
     std::vector<rtc::scoped_refptr<RtpTransceiverInterface>> remove_list;
     std::vector<rtc::scoped_refptr<MediaStreamInterface>> removed_streams;
     for (const auto& transceiver : transceivers_) {
+      if (transceiver->stopped()) {
+        continue;
+      }
+
       // 2.2.7.1.1.(6-9): Set sender and receiver's transport slots.
       // Note that code paths that don't set MID won't be able to use
       // information about DTLS transports.
@@ -2732,12 +2802,15 @@ RTCError PeerConnection::ApplyLocalDescription(
   // If setting the description decided our SSL role, allocate any necessary
   // SCTP sids.
   rtc::SSLRole role;
-  if (DataChannel::IsSctpLike(data_channel_type()) && GetSctpSslRole(&role)) {
+  if (IsSctpLike(data_channel_type()) && GetSctpSslRole(&role)) {
     data_channel_controller_.AllocateSctpSids(role);
   }
 
   if (IsUnifiedPlan()) {
     for (const auto& transceiver : transceivers_) {
+      if (transceiver->stopped()) {
+        continue;
+      }
       const ContentInfo* content =
           FindMediaSectionForTransceiver(transceiver, local_description());
       if (!content) {
@@ -2882,27 +2955,24 @@ void PeerConnection::SetRemoteDescription(
           std::function<void()> operations_chain_callback) mutable {
         // Abort early if |this_weak_ptr| is no longer valid.
         if (!this_weak_ptr) {
-          // For consistency with SetRemoteDescriptionObserverAdapter, we DO NOT
-          // inform the |observer_refptr| that the operation failed in this
-          // case.
-          // TODO(hbos): If/when we process SRD messages in ~PeerConnection,
-          // the consistent thing would be to inform the observer here.
+          // For consistency with SetSessionDescriptionObserverAdapter whose
+          // posted messages doesn't get processed when the PC is destroyed, we
+          // do not inform |observer_refptr| that the operation failed.
           operations_chain_callback();
           return;
         }
+        // SetSessionDescriptionObserverAdapter takes care of making sure the
+        // |observer_refptr| is invoked in a posted message.
         this_weak_ptr->DoSetRemoteDescription(
             std::move(desc),
             rtc::scoped_refptr<SetRemoteDescriptionObserverInterface>(
-                new SetRemoteDescriptionObserverAdapter(
-                    this_weak_ptr.get(), std::move(observer_refptr))));
-        // DoSetRemoteDescription() is currently implemented as a synchronous
-        // operation but where SetRemoteDescriptionObserverAdapter ensures that
-        // the |observer|'s callbacks are invoked asynchronously in a post to
-        // OnMessage().
+                new rtc::RefCountedObject<SetSessionDescriptionObserverAdapter>(
+                    this_weak_ptr, observer_refptr)));
         // For backwards-compatability reasons, we declare the operation as
-        // completed here (rather than in OnMessage()). This ensures that
-        // subsequent offer/answer operations can start immediately (without
-        // waiting for OnMessage()).
+        // completed here (rather than in a post), so that the operation chain
+        // is not blocked by this operation when the observer is invoked. This
+        // allows the observer to trigger subsequent offer/answer operations
+        // synchronously if the operation chain is now empty.
         operations_chain_callback();
       });
 }
@@ -2920,21 +2990,17 @@ void PeerConnection::SetRemoteDescription(
           std::function<void()> operations_chain_callback) mutable {
         // Abort early if |this_weak_ptr| is no longer valid.
         if (!this_weak_ptr) {
-          // For consistency with DoSetRemoteDescription(), we DO inform the
-          // |observer| that the operation failed in this case.
           observer->OnSetRemoteDescriptionComplete(RTCError(
-              RTCErrorType::INVALID_STATE,
-              "Failed to set remote offer sdp: failed because the session was "
-              "shut down"));
+              RTCErrorType::INTERNAL_ERROR,
+              "SetRemoteDescription failed because the session was shut down"));
           operations_chain_callback();
           return;
         }
         this_weak_ptr->DoSetRemoteDescription(std::move(desc),
                                               std::move(observer));
-        // DoSetRemoteDescription() is currently implemented as a synchronous
-        // operation. The |observer| will already have been informed that it
-        // completed, and we can mark this operation as complete without any
-        // loose ends.
+        // DoSetRemoteDescription() is implemented as a synchronous operation.
+        // The |observer| will already have been informed that it completed, and
+        // we can mark this operation as complete without any loose ends.
         operations_chain_callback();
       });
 }
@@ -3171,7 +3237,7 @@ RTCError PeerConnection::ApplyRemoteDescription(
   // If setting the description decided our SSL role, allocate any necessary
   // SCTP sids.
   rtc::SSLRole role;
-  if (DataChannel::IsSctpLike(data_channel_type()) && GetSctpSslRole(&role)) {
+  if (IsSctpLike(data_channel_type()) && GetSctpSslRole(&role)) {
     data_channel_controller_.AllocateSctpSids(role);
   }
 
@@ -3253,7 +3319,7 @@ RTCError PeerConnection::ApplyRemoteDescription(
       if (content->rejected && !transceiver->stopped()) {
         RTC_LOG(LS_INFO) << "Stopping transceiver for MID=" << content->name
                          << " since the media section was rejected.";
-        transceiver->Stop();
+        transceiver->StopInternal();
       }
       if (!content->rejected &&
           RtpTransceiverDirectionHasRecv(local_direction)) {
@@ -3483,6 +3549,13 @@ RTCError PeerConnection::UpdateTransceiversAndDataChannels(
           i < old_remote_description->description()->contents().size()) {
         old_remote_content =
             &old_remote_description->description()->contents()[i];
+      }
+      // In the case where an m-section has completed its rejection,
+      // and is not being reused, we do not expect a transceiver.
+      if (old_local_content && old_local_content->rejected &&
+          old_remote_content && old_remote_content->rejected &&
+          new_content.rejected) {
+        continue;
       }
       auto transceiver_or_error =
           AssociateTransceiver(source, new_session.GetType(), i, new_content,
@@ -4329,7 +4402,9 @@ void PeerConnection::Close() {
   NoteUsageEvent(UsageEvent::CLOSE_CALLED);
 
   for (const auto& transceiver : transceivers_) {
-    transceiver->Stop();
+    transceiver->internal()->SetPeerConnectionClosed();
+    if (!transceiver->stopped())
+      transceiver->StopInternal();
   }
 
   // Ensure that all asynchronous stats requests are completed before destroying
@@ -4811,8 +4886,8 @@ void PeerConnection::GetOptionsForPlanBOffer(
     const PeerConnectionInterface::RTCOfferAnswerOptions& offer_answer_options,
     cricket::MediaSessionOptions* session_options) {
   // Figure out transceiver directional preferences.
-  bool send_audio = HasRtpSender(cricket::MEDIA_TYPE_AUDIO);
-  bool send_video = HasRtpSender(cricket::MEDIA_TYPE_VIDEO);
+  bool send_audio = !GetAudioTransceiver()->internal()->senders().empty();
+  bool send_video = !GetVideoTransceiver()->internal()->senders().empty();
 
   // By default, generate sendrecv/recvonly m= sections.
   bool recv_audio = true;
@@ -4895,10 +4970,15 @@ static cricket::MediaDescriptionOptions
 GetMediaDescriptionOptionsForTransceiver(
     rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
         transceiver,
-    const std::string& mid) {
+    const std::string& mid,
+    bool is_create_offer) {
+  // NOTE: a stopping transceiver should be treated as a stopped one in
+  // createOffer as specified in
+  // https://w3c.github.io/webrtc-pc/#dom-rtcpeerconnection-createoffer.
+  bool stopped =
+      is_create_offer ? transceiver->stopping() : transceiver->stopped();
   cricket::MediaDescriptionOptions media_description_options(
-      transceiver->media_type(), mid, transceiver->direction(),
-      transceiver->stopped());
+      transceiver->media_type(), mid, transceiver->direction(), stopped);
   media_description_options.codec_preferences =
       transceiver->codec_preferences();
   media_description_options.header_extensions =
@@ -4908,9 +4988,8 @@ GetMediaDescriptionOptionsForTransceiver(
   //    sendrecv.
   // 2. If the MSID is included, then it must be included in any subsequent
   //    offer/answer exactly the same until the RtpTransceiver is stopped.
-  if (transceiver->stopped() ||
-      (!RtpTransceiverDirectionHasSend(transceiver->direction()) &&
-       !transceiver->internal()->has_ever_been_used_to_send())) {
+  if (stopped || (!RtpTransceiverDirectionHasSend(transceiver->direction()) &&
+                  !transceiver->internal()->has_ever_been_used_to_send())) {
     return media_description_options;
   }
 
@@ -5004,25 +5083,39 @@ void PeerConnection::GetOptionsForUnifiedPlanOffer(
                        : remote_content->media_description()->type());
     if (media_type == cricket::MEDIA_TYPE_AUDIO ||
         media_type == cricket::MEDIA_TYPE_VIDEO) {
-      auto transceiver = GetAssociatedTransceiver(mid);
-      RTC_CHECK(transceiver);
       // A media section is considered eligible for recycling if it is marked as
       // rejected in either the current local or current remote description.
-      if (had_been_rejected && transceiver->stopped()) {
+      auto transceiver = GetAssociatedTransceiver(mid);
+      if (!transceiver) {
+        // No associated transceiver. The media section has been stopped.
+        recycleable_mline_indices.push(i);
         session_options->media_description_options.push_back(
-            cricket::MediaDescriptionOptions(transceiver->media_type(), mid,
+            cricket::MediaDescriptionOptions(media_type, mid,
                                              RtpTransceiverDirection::kInactive,
                                              /*stopped=*/true));
-        recycleable_mline_indices.push(i);
       } else {
-        session_options->media_description_options.push_back(
-            GetMediaDescriptionOptionsForTransceiver(transceiver, mid));
-        // CreateOffer shouldn't really cause any state changes in
-        // PeerConnection, but we need a way to match new transceivers to new
-        // media sections in SetLocalDescription and JSEP specifies this is done
-        // by recording the index of the media section generated for the
-        // transceiver in the offer.
-        transceiver->internal()->set_mline_index(i);
+        // NOTE: a stopping transceiver should be treated as a stopped one in
+        // createOffer as specified in
+        // https://w3c.github.io/webrtc-pc/#dom-rtcpeerconnection-createoffer.
+        if (had_been_rejected && transceiver->stopping()) {
+          session_options->media_description_options.push_back(
+              cricket::MediaDescriptionOptions(
+                  transceiver->media_type(), mid,
+                  RtpTransceiverDirection::kInactive,
+                  /*stopped=*/true));
+          recycleable_mline_indices.push(i);
+        } else {
+          session_options->media_description_options.push_back(
+              GetMediaDescriptionOptionsForTransceiver(
+                  transceiver, mid,
+                  /*is_create_offer=*/true));
+          // CreateOffer shouldn't really cause any state changes in
+          // PeerConnection, but we need a way to match new transceivers to new
+          // media sections in SetLocalDescription and JSEP specifies this is
+          // done by recording the index of the media section generated for the
+          // transceiver in the offer.
+          transceiver->internal()->set_mline_index(i);
+        }
       }
     } else {
       RTC_CHECK_EQ(cricket::MEDIA_TYPE_DATA, media_type);
@@ -5047,7 +5140,7 @@ void PeerConnection::GetOptionsForUnifiedPlanOffer(
   // otherwise append to the end of the offer. New media sections should be
   // added in the order they were added to the PeerConnection.
   for (const auto& transceiver : transceivers_) {
-    if (transceiver->mid() || transceiver->stopped()) {
+    if (transceiver->mid() || transceiver->stopping()) {
       continue;
     }
     size_t mline_index;
@@ -5055,13 +5148,13 @@ void PeerConnection::GetOptionsForUnifiedPlanOffer(
       mline_index = recycleable_mline_indices.front();
       recycleable_mline_indices.pop();
       session_options->media_description_options[mline_index] =
-          GetMediaDescriptionOptionsForTransceiver(transceiver,
-                                                   mid_generator_());
+          GetMediaDescriptionOptionsForTransceiver(
+              transceiver, mid_generator_(), /*is_create_offer=*/true);
     } else {
       mline_index = session_options->media_description_options.size();
       session_options->media_description_options.push_back(
-          GetMediaDescriptionOptionsForTransceiver(transceiver,
-                                                   mid_generator_()));
+          GetMediaDescriptionOptionsForTransceiver(
+              transceiver, mid_generator_(), /*is_create_offer=*/true));
     }
     // See comment above for why CreateOffer changes the transceiver's state.
     transceiver->internal()->set_mline_index(mline_index);
@@ -5113,8 +5206,8 @@ void PeerConnection::GetOptionsForPlanBAnswer(
     const PeerConnectionInterface::RTCOfferAnswerOptions& offer_answer_options,
     cricket::MediaSessionOptions* session_options) {
   // Figure out transceiver directional preferences.
-  bool send_audio = HasRtpSender(cricket::MEDIA_TYPE_AUDIO);
-  bool send_video = HasRtpSender(cricket::MEDIA_TYPE_VIDEO);
+  bool send_audio = !GetAudioTransceiver()->internal()->senders().empty();
+  bool send_video = !GetVideoTransceiver()->internal()->senders().empty();
 
   // By default, generate sendrecv/recvonly m= sections. The direction is also
   // restricted by the direction in the offer.
@@ -5170,9 +5263,19 @@ void PeerConnection::GetOptionsForUnifiedPlanAnswer(
     if (media_type == cricket::MEDIA_TYPE_AUDIO ||
         media_type == cricket::MEDIA_TYPE_VIDEO) {
       auto transceiver = GetAssociatedTransceiver(content.name);
-      RTC_CHECK(transceiver);
-      session_options->media_description_options.push_back(
-          GetMediaDescriptionOptionsForTransceiver(transceiver, content.name));
+      if (transceiver) {
+        session_options->media_description_options.push_back(
+            GetMediaDescriptionOptionsForTransceiver(
+                transceiver, content.name,
+                /*is_create_offer=*/false));
+      } else {
+        // This should only happen with rejected transceivers.
+        RTC_DCHECK(content.rejected);
+        session_options->media_description_options.push_back(
+            cricket::MediaDescriptionOptions(media_type, content.name,
+                                             RtpTransceiverDirection::kInactive,
+                                             /*stopped=*/true));
+      }
     } else {
       RTC_CHECK_EQ(cricket::MEDIA_TYPE_DATA, media_type);
       // Reject all data sections if data channels are disabled.
@@ -5281,8 +5384,6 @@ absl::optional<std::string> PeerConnection::GetDataMid() const {
       }
       return data_channel_controller_.rtp_data_channel()->content_name();
     case cricket::DCT_SCTP:
-    case cricket::DCT_DATA_CHANNEL_TRANSPORT:
-    case cricket::DCT_DATA_CHANNEL_TRANSPORT_SCTP:
       return sctp_mid_s_;
     default:
       return absl::nullopt;
@@ -5542,10 +5643,11 @@ void PeerConnection::OnLocalSenderRemoved(const RtpSenderInfo& sender_info,
   sender->internal()->SetSsrc(0);
 }
 
-void PeerConnection::OnSctpDataChannelClosed(DataChannel* channel) {
+void PeerConnection::OnSctpDataChannelClosed(DataChannelInterface* channel) {
   // Since data_channel_controller doesn't do signals, this
   // signal is relayed here.
-  data_channel_controller_.OnSctpDataChannelClosed(channel);
+  data_channel_controller_.OnSctpDataChannelClosed(
+      static_cast<SctpDataChannel*>(channel));
 }
 
 rtc::scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
@@ -5574,21 +5676,6 @@ PeerConnection::GetVideoTransceiver() const {
   }
   RTC_NOTREACHED();
   return nullptr;
-}
-
-// TODO(bugs.webrtc.org/7600): Remove this when multiple transceivers with
-// individual transceiver directions are supported.
-bool PeerConnection::HasRtpSender(cricket::MediaType type) const {
-  switch (type) {
-    case cricket::MEDIA_TYPE_AUDIO:
-      return !GetAudioTransceiver()->internal()->senders().empty();
-    case cricket::MEDIA_TYPE_VIDEO:
-      return !GetVideoTransceiver()->internal()->senders().empty();
-    case cricket::MEDIA_TYPE_DATA:
-      return false;
-  }
-  RTC_NOTREACHED();
-  return false;
 }
 
 rtc::scoped_refptr<RtpSenderProxyWithInternal<RtpSenderInternal>>
@@ -5657,7 +5744,7 @@ const PeerConnection::RtpSenderInfo* PeerConnection::FindSenderInfo(
   return nullptr;
 }
 
-DataChannel* PeerConnection::FindDataChannelBySid(int sid) const {
+SctpDataChannel* PeerConnection::FindDataChannelBySid(int sid) const {
   return data_channel_controller_.FindDataChannelBySid(sid);
 }
 
@@ -5891,6 +5978,87 @@ RTCError PeerConnection::UpdateSessionState(
   return RTCError::OK();
 }
 
+void PeerConnection::UpdatePayloadTypeDemuxingState(
+    cricket::ContentSource source) {
+  // We may need to delete any created default streams and disable creation of
+  // new ones on the basis of payload type. This is needed to avoid SSRC
+  // collisions in Call's RtpDemuxer, in the case that a transceiver has
+  // created a default stream, and then some other channel gets the SSRC
+  // signaled in the corresponding Unified Plan "m=" section. For more context
+  // see https://bugs.chromium.org/p/webrtc/issues/detail?id=11477
+  const SessionDescriptionInterface* sdesc =
+      (source == cricket::CS_LOCAL ? local_description()
+                                   : remote_description());
+  size_t num_receiving_video_transceivers = 0;
+  size_t num_receiving_audio_transceivers = 0;
+  for (auto& content_info : sdesc->description()->contents()) {
+    if (content_info.rejected ||
+        (source == cricket::ContentSource::CS_LOCAL &&
+         !RtpTransceiverDirectionHasRecv(
+             content_info.media_description()->direction())) ||
+        (source == cricket::ContentSource::CS_REMOTE &&
+         !RtpTransceiverDirectionHasSend(
+             content_info.media_description()->direction()))) {
+      // Ignore transceivers that are not receiving.
+      continue;
+    }
+    switch (content_info.media_description()->type()) {
+      case cricket::MediaType::MEDIA_TYPE_AUDIO:
+        ++num_receiving_audio_transceivers;
+        break;
+      case cricket::MediaType::MEDIA_TYPE_VIDEO:
+        ++num_receiving_video_transceivers;
+        break;
+      default:
+        // Ignore data channels.
+        continue;
+    }
+  }
+  bool pt_demuxing_enabled_video = num_receiving_video_transceivers <= 1;
+  bool pt_demuxing_enabled_audio = num_receiving_audio_transceivers <= 1;
+
+  // Gather all updates ahead of time so that all channels can be updated in a
+  // single Invoke; necessary due to thread guards.
+  std::vector<std::pair<RtpTransceiverDirection, cricket::ChannelInterface*>>
+      channels_to_update;
+  for (const auto& transceiver : transceivers_) {
+    cricket::ChannelInterface* channel = transceiver->internal()->channel();
+    const ContentInfo* content =
+        FindMediaSectionForTransceiver(transceiver, sdesc);
+    if (!channel || !content) {
+      continue;
+    }
+    RtpTransceiverDirection local_direction =
+        content->media_description()->direction();
+    if (source == cricket::CS_REMOTE) {
+      local_direction = RtpTransceiverDirectionReversed(local_direction);
+    }
+    channels_to_update.emplace_back(local_direction,
+                                    transceiver->internal()->channel());
+  }
+
+  if (!channels_to_update.empty()) {
+    worker_thread()->Invoke<void>(
+        RTC_FROM_HERE, [&channels_to_update, pt_demuxing_enabled_audio,
+                        pt_demuxing_enabled_video]() {
+          for (const auto& it : channels_to_update) {
+            RtpTransceiverDirection local_direction = it.first;
+            cricket::ChannelInterface* channel = it.second;
+            cricket::MediaType media_type = channel->media_type();
+            if (media_type == cricket::MediaType::MEDIA_TYPE_AUDIO) {
+              channel->SetPayloadTypeDemuxingEnabled(
+                  pt_demuxing_enabled_audio &&
+                  RtpTransceiverDirectionHasRecv(local_direction));
+            } else if (media_type == cricket::MediaType::MEDIA_TYPE_VIDEO) {
+              channel->SetPayloadTypeDemuxingEnabled(
+                  pt_demuxing_enabled_video &&
+                  RtpTransceiverDirectionHasRecv(local_direction));
+            }
+          }
+        });
+  }
+}
+
 RTCError PeerConnection::PushdownMediaDescription(
     SdpType type,
     cricket::ContentSource source) {
@@ -5898,6 +6066,8 @@ RTCError PeerConnection::PushdownMediaDescription(
       (source == cricket::CS_LOCAL ? local_description()
                                    : remote_description());
   RTC_DCHECK(sdesc);
+
+  UpdatePayloadTypeDemuxingState(source);
 
   // Push down the new SDP media section for each audio/video transceiver.
   for (const auto& transceiver : transceivers_) {
@@ -6046,7 +6216,7 @@ cricket::IceConfig PeerConnection::ParseIceConfig(
   return ice_config;
 }
 
-std::vector<DataChannel::Stats> PeerConnection::GetDataChannelStats() const {
+std::vector<DataChannelStats> PeerConnection::GetDataChannelStats() const {
   RTC_DCHECK_RUN_ON(signaling_thread());
   return data_channel_controller_.GetDataChannelStats();
 }
@@ -6516,8 +6686,6 @@ cricket::VideoChannel* PeerConnection::CreateVideoChannel(
 bool PeerConnection::CreateDataChannel(const std::string& mid) {
   switch (data_channel_type()) {
     case cricket::DCT_SCTP:
-    case cricket::DCT_DATA_CHANNEL_TRANSPORT_SCTP:
-    case cricket::DCT_DATA_CHANNEL_TRANSPORT:
       if (network_thread()->Invoke<bool>(
               RTC_FROM_HERE,
               rtc::Bind(&PeerConnection::SetupDataChannelTransport_n, this,
@@ -6558,6 +6726,7 @@ Call::Stats PeerConnection::GetCallStats() {
         RTC_FROM_HERE, rtc::Bind(&PeerConnection::GetCallStats, this));
   }
   RTC_DCHECK_RUN_ON(worker_thread());
+  rtc::Thread::ScopedDisallowBlockingCalls no_blocking_calls;
   if (call_) {
     return call_->GetStats();
   } else {
@@ -7280,7 +7449,8 @@ bool PeerConnection::CheckIfNegotiationIsNeeded() {
   // 1. If any implementation-specific negotiation is required, as described at
   // the start of this section, return true.
 
-  // 2. If connection's [[RestartIce]] internal slot is true, return true.
+  // 2. If connection.[[LocalIceCredentialsToReplace]] is not empty, return
+  // true.
   if (local_ice_credentials_to_replace_->HasIceCredentials()) {
     return true;
   }
@@ -7306,11 +7476,12 @@ bool PeerConnection::CheckIfNegotiationIsNeeded() {
     const ContentInfo* current_remote_msection = FindTransceiverMSection(
         transceiver.get(), current_remote_description());
 
-    // 5.3 If transceiver is stopped and is associated with an m= section,
+    // 5.4 If transceiver is stopped and is associated with an m= section,
     // but the associated m= section is not yet rejected in
     // connection.[[CurrentLocalDescription]] or
     // connection.[[CurrentRemoteDescription]], return true.
     if (transceiver->stopped()) {
+      RTC_DCHECK(transceiver->stopping());
       if (current_local_msection && !current_local_msection->rejected &&
           ((current_remote_msection && !current_remote_msection->rejected) ||
            !current_remote_msection)) {
@@ -7319,17 +7490,22 @@ bool PeerConnection::CheckIfNegotiationIsNeeded() {
       continue;
     }
 
-    // 5.1 If transceiver isn't stopped and isn't yet associated with an m=
+    // 5.1 If transceiver.[[Stopping]] is true and transceiver.[[Stopped]] is
+    // false, return true.
+    if (transceiver->stopping() && !transceiver->stopped())
+      return true;
+
+    // 5.2 If transceiver isn't stopped and isn't yet associated with an m=
     // section in description, return true.
     if (!current_local_msection)
       return true;
 
     const MediaContentDescription* current_local_media_description =
         current_local_msection->media_description();
-    // 5.2 If transceiver isn't stopped and is associated with an m= section
+    // 5.3 If transceiver isn't stopped and is associated with an m= section
     // in description then perform the following checks:
 
-    // 5.2.1 If transceiver.[[Direction]] is "sendrecv" or "sendonly", and the
+    // 5.3.1 If transceiver.[[Direction]] is "sendrecv" or "sendonly", and the
     // associated m= section in description either doesn't contain a single
     // "a=msid" line, or the number of MSIDs from the "a=msid" lines in this
     // m= section, or the MSID values themselves, differ from what is in
@@ -7355,7 +7531,7 @@ bool PeerConnection::CheckIfNegotiationIsNeeded() {
         return true;
     }
 
-    // 5.2.2 If description is of type "offer", and the direction of the
+    // 5.3.2 If description is of type "offer", and the direction of the
     // associated m= section in neither connection.[[CurrentLocalDescription]]
     // nor connection.[[CurrentRemoteDescription]] matches
     // transceiver.[[Direction]], return true.
@@ -7377,7 +7553,7 @@ bool PeerConnection::CheckIfNegotiationIsNeeded() {
       }
     }
 
-    // 5.2.3 If description is of type "answer", and the direction of the
+    // 5.3.3 If description is of type "answer", and the direction of the
     // associated m= section in the description does not match
     // transceiver.[[Direction]] intersected with the offered direction (as
     // described in [JSEP] (section 5.3.1.)), return true.

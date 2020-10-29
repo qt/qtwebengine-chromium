@@ -78,6 +78,9 @@ class CompilationResult {
     uint32_t binary_length;
     status =
         shaderc_spvc_result_get_binary_length(result_.get(), &binary_length);
+    if (status != shaderc_spvc_status_success) {
+      return status;
+    }
     if (!binary_output || !binary_length) {
       *data = std::vector<uint32_t>();
     } else {
@@ -277,6 +280,12 @@ class CompileOptions {
         options_.get(), index);
   }
 
+  // Set the additional fixed sample mask for MSL
+  shaderc_spvc_status SetMSLAdditionalFixedSampleMask(uint32_t mask) {
+    return shaderc_spvc_compile_options_set_msl_additional_fixed_sample_mask(
+        options_.get(), mask);
+  }
+
   // Which HLSL shader model should be used.  Default is 30.
   shaderc_spvc_status SetHLSLShaderModel(uint32_t model) {
     return shaderc_spvc_compile_options_set_hlsl_shader_model(options_.get(),
@@ -292,6 +301,12 @@ class CompileOptions {
   // If true, ignore PointCoord.  Default is false.
   shaderc_spvc_status SetHLSLPointCoordCompat(bool b) {
     return shaderc_spvc_compile_options_set_hlsl_point_coord_compat(
+        options_.get(), b);
+  }
+
+  // If true, enable 16-bit types.  Default is false.
+  shaderc_spvc_status SetHLSLEnable16BitTypes(bool b) {
+    return shaderc_spvc_compile_options_set_hlsl_enable_16bit_types(
         options_.get(), b);
   }
 

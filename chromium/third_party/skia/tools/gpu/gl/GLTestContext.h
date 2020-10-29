@@ -21,7 +21,7 @@ class GLTestContext : public TestContext {
 public:
     ~GLTestContext() override;
 
-    virtual GrBackendApi backend() override { return GrBackendApi::kOpenGL; }
+    GrBackendApi backend() override { return GrBackendApi::kOpenGL; }
 
     /** Does this represent a successfully created GL context? */
     bool isValid() const;
@@ -66,7 +66,7 @@ public:
         }
     }
 
-    sk_sp<GrContext> makeGrContext(const GrContextOptions& options) override;
+    sk_sp<GrDirectContext> makeContext(const GrContextOptions& options) override;
 
 protected:
     GLTestContext();

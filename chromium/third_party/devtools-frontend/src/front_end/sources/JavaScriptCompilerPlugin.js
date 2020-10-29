@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Bindings from '../bindings/bindings.js';
 import * as SDK from '../sdk/sdk.js';
 import * as Snippets from '../snippets/snippets.js';
@@ -88,7 +91,7 @@ export class JavaScriptCompilerPlugin extends Plugin {
     if (!runtimeModel) {
       return;
     }
-    const currentExecutionContext = self.UI.context.flavor(SDK.RuntimeModel.ExecutionContext);
+    const currentExecutionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     if (!currentExecutionContext) {
       return;
     }

@@ -15,7 +15,7 @@ _util_sources = [
   "OSWindow.cpp",
   "OSWindow.h",
   "com_utils.h",
-  "frame_capture_utils.h",
+  "frame_capture_test_utils.h",
   "geometry_utils.cpp",
   "geometry_utils.h",
   "keyboard.h",
@@ -56,7 +56,12 @@ if (is_fuchsia) {
     "fuchsia/ScenicWindow.cpp",
     "fuchsia/ScenicWindow.h",
   ]
-} else if (use_ozone) {
+} else if (use_ozone && !angle_use_x11) {
+  # Use X11 impl by default otherwise switch to fake Ozone impl that does not
+  # seem to do anything real.
+  # TODO(msisov): probably, we need to have a proper support for different
+  # Ozone backends, and be able to switch between them for proper tests.
+  # For example, Wayland, X11, etc.
   _util_sources += [
     "ozone/OzonePixmap.cpp",
     "ozone/OzoneWindow.cpp",
@@ -158,7 +163,6 @@ foreach(is_shared_library,
   target(library_type, library_name) {
     testonly = true
     sources = _util_sources
-    deps = [ "$angle_root:angle_common" ]
     public_deps = [
       ":angle_test_utils",
       ":angle_util_loader_headers",
@@ -173,7 +177,7 @@ foreach(is_shared_library,
     }
 
     if (is_mac) {
-      libs += [
+      frameworks = [
         "AppKit.framework",
         "QuartzCore.framework",
       ]
@@ -270,7 +274,8 @@ config("angle_test_util_config") {
 
 angle_source_set("angle_test_utils") {
   public_configs = [ ":angle_test_util_config" ]
-  deps = [ "$angle_root:angle_common" ]
+  public_deps = [ "$angle_root:angle_common" ]
+  deps = []
   sources = [
     "Timer.cpp",
     "Timer.h",

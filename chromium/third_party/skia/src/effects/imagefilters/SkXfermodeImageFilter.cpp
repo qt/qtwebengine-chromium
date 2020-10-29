@@ -15,7 +15,7 @@
 #include "src/core/SkSpecialSurface.h"
 #include "src/core/SkWriteBuffer.h"
 #if SK_SUPPORT_GPU
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorSpaceXform.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -54,10 +54,6 @@ protected:
     void flatten(SkWriteBuffer&) const override;
 
     void drawForeground(SkCanvas* canvas, SkSpecialImage*, const SkIRect&) const;
-#if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> makeFGFrag(
-            std::unique_ptr<GrFragmentProcessor> bgFP) const;
-#endif
 
 private:
     friend void SkXfermodeImageFilter::RegisterFlattenables();
@@ -232,7 +228,7 @@ void SkXfermodeImageFilterImpl::drawForeground(SkCanvas* canvas, SkSpecialImage*
 
 #if SK_SUPPORT_GPU
 
-#include "src/gpu/effects/GrXfermodeFragmentProcessor.h"
+#include "src/gpu/effects/GrBlendFragmentProcessor.h"
 
 sk_sp<SkSpecialImage> SkXfermodeImageFilterImpl::filterImageGPU(
                                                    const Context& ctx,
@@ -256,7 +252,7 @@ sk_sp<SkSpecialImage> SkXfermodeImageFilterImpl::filterImageGPU(
     }
 
     GrPaint paint;
-    std::unique_ptr<GrFragmentProcessor> bgFP;
+    std::unique_ptr<GrFragmentProcessor> fp;
     const auto& caps = *ctx.getContext()->priv().caps();
     GrSamplerState sampler(GrSamplerState::WrapMode::kClampToBorder,
                            GrSamplerState::Filter::kNearest);
@@ -266,14 +262,13 @@ sk_sp<SkSpecialImage> SkXfermodeImageFilterImpl::filterImageGPU(
         SkMatrix bgMatrix = SkMatrix::Translate(
                 SkIntToScalar(bgSubset.left() - backgroundOffset.fX),
                 SkIntToScalar(bgSubset.top()  - backgroundOffset.fY));
-        bgFP = GrTextureEffect::MakeSubset(std::move(backgroundView), background->alphaType(),
-                                           bgMatrix, sampler, bgSubset, caps);
-        bgFP = GrColorSpaceXformEffect::Make(std::move(bgFP), background->getColorSpace(),
-                                             background->alphaType(),
-                                             ctx.colorSpace());
+        fp = GrTextureEffect::MakeSubset(std::move(backgroundView), background->alphaType(),
+                                         bgMatrix, sampler, bgSubset, caps);
+        fp = GrColorSpaceXformEffect::Make(std::move(fp), background->getColorSpace(),
+                                           background->alphaType(), ctx.colorSpace(),
+                                           kPremul_SkAlphaType);
     } else {
-        bgFP = GrConstColorProcessor::Make(/*inputFP=*/nullptr, SK_PMColor4fTRANSPARENT,
-                                           GrConstColorProcessor::InputMode::kIgnore);
+        fp = GrConstColorProcessor::Make(SK_PMColor4fTRANSPARENT);
     }
 
     if (foregroundView.asTextureProxy()) {
@@ -283,22 +278,13 @@ sk_sp<SkSpecialImage> SkXfermodeImageFilterImpl::filterImageGPU(
                 SkIntToScalar(fgSubset.top()  - foregroundOffset.fY));
         auto fgFP = GrTextureEffect::MakeSubset(std::move(foregroundView), foreground->alphaType(),
                                                 fgMatrix, sampler, fgSubset, caps);
-        fgFP = GrColorSpaceXformEffect::Make(std::move(fgFP),
-                                             foreground->getColorSpace(),
-                                             foreground->alphaType(),
-                                             ctx.colorSpace());
-        paint.addColorFragmentProcessor(std::move(fgFP));
-
-        std::unique_ptr<GrFragmentProcessor> xferFP = this->makeFGFrag(std::move(bgFP));
-
-        // A null 'xferFP' here means kSrc_Mode was used in which case we can just proceed
-        if (xferFP) {
-            paint.addColorFragmentProcessor(std::move(xferFP));
-        }
-    } else {
-        paint.addColorFragmentProcessor(std::move(bgFP));
+        fgFP = GrColorSpaceXformEffect::Make(std::move(fgFP), foreground->getColorSpace(),
+                                             foreground->alphaType(), ctx.colorSpace(),
+                                             kPremul_SkAlphaType);
+        fp = GrBlendFragmentProcessor::Make(std::move(fgFP), std::move(fp), fMode);
     }
 
+    paint.setColorFragmentProcessor(std::move(fp));
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
 
     auto renderTargetContext = GrRenderTargetContext::Make(
@@ -318,11 +304,6 @@ sk_sp<SkSpecialImage> SkXfermodeImageFilterImpl::filterImageGPU(
                                                renderTargetContext->readSurfaceView(),
                                                renderTargetContext->colorInfo().colorType(),
                                                renderTargetContext->colorInfo().refColorSpace());
-}
-
-std::unique_ptr<GrFragmentProcessor> SkXfermodeImageFilterImpl::makeFGFrag(
-        std::unique_ptr<GrFragmentProcessor> bgFP) const {
-    return GrXfermodeFragmentProcessor::MakeFromDstProcessor(std::move(bgFP), fMode);
 }
 
 #endif

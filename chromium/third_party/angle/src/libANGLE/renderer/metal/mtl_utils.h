@@ -28,10 +28,17 @@ namespace mtl
 
 NS_ASSUME_NONNULL_BEGIN
 
+// Initialize texture content to (0, 0, 0, 1)
 angle::Result InitializeTextureContents(const gl::Context *context,
                                         const TextureRef &texture,
                                         const Format &textureObjFormat,
                                         const gl::ImageIndex &index);
+// Same as above but using GPU clear operation instead of CPU.
+// - channelsToInit parameter controls which channels will get their content initialized.
+angle::Result InitializeTextureContentsGPU(const gl::Context *context,
+                                           const TextureRef &texture,
+                                           const gl::ImageIndex &index,
+                                           MTLColorWriteMask channelsToInit);
 
 MTLViewport GetViewport(const gl::Rectangle &rect, double znear = 0, double zfar = 1);
 MTLViewport GetViewportFlipY(const gl::Rectangle &rect,
@@ -91,6 +98,17 @@ MTLWinding GetFontfaceWinding(GLenum frontFaceMode, bool invert);
 PrimitiveTopologyClass GetPrimitiveTopologyClass(gl::PrimitiveMode mode);
 MTLPrimitiveType GetPrimitiveType(gl::PrimitiveMode mode);
 MTLIndexType GetIndexType(gl::DrawElementsType type);
+
+#if defined(__IPHONE_13_0) || defined(__MAC_10_15)
+MTLTextureSwizzle GetTextureSwizzle(GLenum swizzle);
+#endif
+
+// Get color write mask for a specified format. Some formats such as RGB565 doesn't have alpha
+// channel but is emulated by a RGBA8 format, we need to disable alpha write for this format.
+// - isFormatEmulated: if the format is emulated, this pointer will store a true value.
+MTLColorWriteMask GetEmulatedColorWriteMask(const mtl::Format &mtlFormat, bool *isFormatEmulated);
+MTLColorWriteMask GetEmulatedColorWriteMask(const mtl::Format &mtlFormat);
+bool IsFormatEmulated(const mtl::Format &mtlFormat);
 
 // Useful to set clear color for texture originally having no alpha in GL, but backend's format
 // has alpha channel.

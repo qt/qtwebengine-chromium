@@ -8,6 +8,7 @@
   padding: 0;
 }
 
+.tree-outline li.has-warning,
 .tree-outline li.not-parsed-ok {
   margin-left: 0;
 }
@@ -28,6 +29,7 @@
   background-color: hsl(133deg 100% 30% / 25%);
 }
 
+.tree-outline li.has-warning .exclamation-mark,
 .tree-outline li.not-parsed-ok .exclamation-mark {
   display: inline-block;
   position: relative;
@@ -52,6 +54,10 @@
 
 .tree-outline li::before {
   display: none;
+}
+
+.has-ignorable-error .webkit-css-property {
+  color: inherit;
 }
 
 .tree-outline li .webkit-css-property {
@@ -125,10 +131,6 @@ ol.expanded {
 .disabled,
 .not-parsed-ok:not(.has-ignorable-error) {
   text-decoration: line-through;
-}
-
-.has-ignorable-error .webkit-css-property {
-  color: inherit;
 }
 
 .implicit,

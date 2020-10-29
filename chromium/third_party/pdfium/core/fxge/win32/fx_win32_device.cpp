@@ -13,6 +13,7 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/maybe_owned.h"
+#include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_folderfontinfo.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/cfx_gemodule.h"
@@ -30,7 +31,7 @@
 #include "third_party/base/stl_util.h"
 #include "third_party/base/win/win_util.h"
 
-#ifndef _SKIA_SUPPORT_
+#if !defined(_SKIA_SUPPORT_)
 #include "core/fxge/agg/fx_agg_driver.h"
 #endif
 
@@ -81,6 +82,18 @@ bool GetSubFontName(ByteString* name) {
   }
   return false;
 }
+
+constexpr int FillTypeToGdiFillType(CFX_FillRenderOptions::FillType fill_type) {
+  return static_cast<int>(fill_type);
+}
+
+static_assert(FillTypeToGdiFillType(
+                  CFX_FillRenderOptions::FillType::kEvenOdd) == ALTERNATE,
+              "CFX_FillRenderOptions::FillType::kEvenOdd value mismatch");
+
+static_assert(
+    FillTypeToGdiFillType(CFX_FillRenderOptions::FillType::kWinding) == WINDING,
+    "CFX_FillRenderOptions::FillType::kWinding value mismatch");
 
 HPEN CreateExtPen(const CFX_GraphStateData* pGraphState,
                   const CFX_Matrix* pMatrix,
@@ -194,7 +207,7 @@ void SetPathToDC(HDC hDC,
   EndPath(hDC);
 }
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 // TODO(caryclark)  This antigrain function is duplicated here to permit
 // removing the last remaining dependency. Eventually, this will be elminiated
 // altogether and replace by Skia code.
@@ -297,7 +310,7 @@ unsigned clip_liang_barsky(float x1,
   }
   return np;
 }
-#endif  // _SKIA_SUPPORT_
+#endif  //  defined(_SKIA_SUPPORT_)
 
 class CFX_Win32FallbackFontInfo final : public CFX_FolderFontInfo {
  public:
@@ -921,7 +934,7 @@ void CGdiDeviceDriver::DrawLine(float x1, float y1, float x2, float y2) {
       float x[2];
       float y[2];
       int np;
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
       // TODO(caryclark) temporary replacement of antigrain in line function
       // to permit removing antigrain altogether
       rect_base rect = {0.0f, 0.0f, (float)(m_Width), (float)(m_Height)};
@@ -956,7 +969,7 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
                                 const CFX_GraphStateData* pGraphState,
                                 uint32_t fill_color,
                                 uint32_t stroke_color,
-                                int fill_mode,
+                                const CFX_FillRenderOptions& fill_options,
                                 BlendMode blend_type) {
   if (blend_type != BlendMode::kNormal)
     return false;
@@ -989,9 +1002,9 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
     return false;
 
   if (pPlatform->m_GdiplusExt.IsAvailable()) {
-    if (bDrawAlpha || ((m_DeviceType != DeviceType::kPrinter &&
-                        !(fill_mode & FXFILL_FULLCOVER)) ||
-                       (pGraphState && !pGraphState->m_DashArray.empty()))) {
+    if (bDrawAlpha ||
+        ((m_DeviceType != DeviceType::kPrinter && !fill_options.full_cover) ||
+         (pGraphState && !pGraphState->m_DashArray.empty()))) {
       if (!((!pMatrix || !pMatrix->WillScale()) && pGraphState &&
             pGraphState->m_LineWidth == 1.0f &&
             (pPathData->GetPoints().size() == 5 ||
@@ -999,14 +1012,14 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
             pPathData->IsRect())) {
         if (pPlatform->m_GdiplusExt.DrawPath(m_hDC, pPathData, pMatrix,
                                              pGraphState, fill_color,
-                                             stroke_color, fill_mode)) {
+                                             stroke_color, fill_options)) {
           return true;
         }
       }
     }
   }
-  int old_fill_mode = fill_mode;
-  fill_mode &= 3;
+  const bool fill =
+      fill_options.fill_type != CFX_FillRenderOptions::FillType::kNoFill;
   HPEN hPen = nullptr;
   HBRUSH hBrush = nullptr;
   if (pGraphState && stroke_alpha) {
@@ -1014,8 +1027,8 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
     hPen = CreateExtPen(pGraphState, pMatrix, stroke_color);
     hPen = (HPEN)SelectObject(m_hDC, hPen);
   }
-  if (fill_mode && fill_alpha) {
-    SetPolyFillMode(m_hDC, fill_mode);
+  if (fill && fill_alpha) {
+    SetPolyFillMode(m_hDC, FillTypeToGdiFillType(fill_options.fill_type));
     hBrush = CreateBrush(fill_color);
     hBrush = (HBRUSH)SelectObject(m_hDC, hBrush);
   }
@@ -1031,8 +1044,8 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
   } else {
     SetPathToDC(m_hDC, pPathData, pMatrix);
     if (pGraphState && stroke_alpha) {
-      if (fill_mode && fill_alpha) {
-        if (old_fill_mode & FX_FILL_TEXT_MODE) {
+      if (fill && fill_alpha) {
+        if (fill_options.text_mode) {
           StrokeAndFillPath(m_hDC);
         } else {
           FillPath(m_hDC);
@@ -1042,7 +1055,7 @@ bool CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
       } else {
         StrokePath(m_hDC);
       }
-    } else if (fill_mode && fill_alpha) {
+    } else if (fill && fill_alpha) {
       FillPath(m_hDC);
     }
   }
@@ -1083,9 +1096,10 @@ void CGdiDeviceDriver::SetBaseClip(const FX_RECT& rect) {
   m_BaseClipBox = rect;
 }
 
-bool CGdiDeviceDriver::SetClip_PathFill(const CFX_PathData* pPathData,
-                                        const CFX_Matrix* pMatrix,
-                                        int fill_mode) {
+bool CGdiDeviceDriver::SetClip_PathFill(
+    const CFX_PathData* pPathData,
+    const CFX_Matrix* pMatrix,
+    const CFX_FillRenderOptions& fill_options) {
   if (pPathData->GetPoints().size() == 5) {
     Optional<CFX_FloatRect> maybe_rectf = pPathData->GetRect(pMatrix);
     if (maybe_rectf.has_value()) {
@@ -1099,7 +1113,7 @@ bool CGdiDeviceDriver::SetClip_PathFill(const CFX_PathData* pPathData,
     }
   }
   SetPathToDC(m_hDC, pPathData, pMatrix);
-  SetPolyFillMode(m_hDC, fill_mode & 3);
+  SetPolyFillMode(m_hDC, FillTypeToGdiFillType(fill_options.fill_type));
   SelectClipPath(m_hDC, RGN_AND);
   return true;
 }

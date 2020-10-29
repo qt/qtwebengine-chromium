@@ -77,6 +77,15 @@ uint64_t TestConnectionIdToUInt64(QuicConnectionId connection_id) {
   return quiche::QuicheEndian::NetToHost64(connection_id64_net);
 }
 
+std::vector<uint8_t> CreateStatelessResetTokenForTest() {
+  static constexpr uint8_t kStatelessResetTokenDataForTest[16] = {
+      0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97,
+      0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D, 0x9E, 0x9F};
+  return std::vector<uint8_t>(kStatelessResetTokenDataForTest,
+                              kStatelessResetTokenDataForTest +
+                                  sizeof(kStatelessResetTokenDataForTest));
+}
+
 std::string TestHostname() {
   return "test.example.org";
 }
@@ -675,6 +684,8 @@ MockQuicSpdySession::MockQuicSpdySession(QuicConnection* connection,
   ON_CALL(*this, SendBlocked(_)).WillByDefault([this](QuicStreamId id) {
     return QuicSpdySession::SendBlocked(id);
   });
+
+  ON_CALL(*this, OnCongestionWindowChange(_)).WillByDefault(testing::Return());
 }
 
 MockQuicSpdySession::~MockQuicSpdySession() {
@@ -767,6 +778,9 @@ TestQuicSpdyClientSession::TestQuicSpdyClientSession(
       server_id, this, crypto_test_utils::ProofVerifyContextForTesting(),
       crypto_config, this, /*has_application_state = */ false);
   Initialize();
+  ON_CALL(*this, OnConfigNegotiated())
+      .WillByDefault(
+          Invoke(this, &TestQuicSpdyClientSession::RealOnConfigNegotiated));
 }
 
 TestQuicSpdyClientSession::~TestQuicSpdyClientSession() {}
@@ -782,6 +796,10 @@ QuicCryptoClientStream* TestQuicSpdyClientSession::GetMutableCryptoStream() {
 const QuicCryptoClientStream* TestQuicSpdyClientSession::GetCryptoStream()
     const {
   return crypto_stream_.get();
+}
+
+void TestQuicSpdyClientSession::RealOnConfigNegotiated() {
+  QuicSpdyClientSessionBase::OnConfigNegotiated();
 }
 
 TestPushPromiseDelegate::TestPushPromiseDelegate(bool match)

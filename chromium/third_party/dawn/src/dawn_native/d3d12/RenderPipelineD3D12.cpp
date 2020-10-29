@@ -327,7 +327,6 @@ namespace dawn_native { namespace d3d12 {
 
         wgpu::ShaderStage renderStages = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
         for (auto stage : IterateStages(renderStages)) {
-
             std::string hlslSource;
             DAWN_TRY_ASSIGN(hlslSource, modules[stage]->GetHLSLSource(ToBackend(GetLayout())));
 
@@ -384,13 +383,13 @@ namespace dawn_native { namespace d3d12 {
         }
         descriptorD3D12.NumRenderTargets = static_cast<uint32_t>(GetColorAttachmentsMask().count());
 
-        descriptorD3D12.BlendState.AlphaToCoverageEnable = FALSE;
+        descriptorD3D12.BlendState.AlphaToCoverageEnable = descriptor->alphaToCoverageEnabled;
         descriptorD3D12.BlendState.IndependentBlendEnable = TRUE;
 
         descriptorD3D12.DepthStencilState =
             ComputeDepthStencilDesc(GetDepthStencilStateDescriptor());
 
-        descriptorD3D12.SampleMask = UINT_MAX;
+        descriptorD3D12.SampleMask = GetSampleMask();
         descriptorD3D12.PrimitiveTopologyType = D3D12PrimitiveTopologyType(GetPrimitiveTopology());
         descriptorD3D12.SampleDesc.Count = GetSampleCount();
         descriptorD3D12.SampleDesc.Quality = 0;

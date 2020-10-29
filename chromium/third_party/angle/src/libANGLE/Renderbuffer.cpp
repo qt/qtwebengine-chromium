@@ -54,6 +54,11 @@ GLsizei RenderbufferState::getSamples() const
     return mSamples;
 }
 
+InitState RenderbufferState::getInitState() const
+{
+    return mInitState;
+}
+
 void RenderbufferState::update(GLsizei width,
                                GLsizei height,
                                const Format &format,
@@ -207,6 +212,11 @@ GLuint Renderbuffer::getStencilSize() const
     return mState.mFormat.info->stencilBits;
 }
 
+const RenderbufferState &Renderbuffer::getState() const
+{
+    return mState;
+}
+
 GLint Renderbuffer::getMemorySize() const
 {
     GLint implSize = mImplementation->getMemorySize();
@@ -224,12 +234,12 @@ GLint Renderbuffer::getMemorySize() const
     return size.ValueOrDefault(std::numeric_limits<GLint>::max());
 }
 
-void Renderbuffer::onAttach(const Context *context)
+void Renderbuffer::onAttach(const Context *context, rx::Serial framebufferSerial)
 {
     addRef();
 }
 
-void Renderbuffer::onDetach(const Context *context)
+void Renderbuffer::onDetach(const Context *context, rx::Serial framebufferSerial)
 {
     release(context);
 }

@@ -14,8 +14,7 @@ layout(ctype=SkRect) uniform float4 proxyRect;
 uniform half blurRadius;
 
 @header {
-    #include "include/gpu/GrContext.h"
-    #include "include/private/GrRecordingContext.h"
+    #include "include/gpu/GrRecordingContext.h"
     #include "src/core/SkBlurPriv.h"
     #include "src/core/SkGpuBlurUtils.h"
     #include "src/core/SkRRectPriv.h"
@@ -66,7 +65,7 @@ uniform half blurRadius;
 
         auto rtc = GrRenderTargetContext::MakeWithFallback(
                 context, GrColorType::kAlpha_8, nullptr, SkBackingFit::kExact, dimensions, 1,
-                GrMipMapped::kNo, GrProtected::kNo, kMaskOrigin);
+                GrMipmapped::kNo, GrProtected::kNo, kMaskOrigin);
         if (!rtc) {
             return nullptr;
         }
@@ -177,7 +176,7 @@ uniform half blurRadius;
     SkScalar sigma = d->fRandom->nextRangeF(1.f,10.f);
     SkRRect rrect;
     rrect.setRectXY(SkRect::MakeWH(w, h), r, r);
-    return GrRRectBlurEffect::Make(/*inputFP=*/nullptr, d->context(), sigma, sigma, rrect, rrect);
+    return GrRRectBlurEffect::Make(d->inputFP(), d->context(), sigma, sigma, rrect, rrect);
 }
 
 void main() {
@@ -215,7 +214,7 @@ void main() {
     half2 proxyDims = half2(2.0 * edgeSize);
     half2 texCoord = translatedFragPos / proxyDims;
 
-    half4 inputColor = sample(inputFP, sk_InColor);
+    half4 inputColor = sample(inputFP);
     sk_OutColor = inputColor * sample(ninePatchFP, texCoord);
 }
 

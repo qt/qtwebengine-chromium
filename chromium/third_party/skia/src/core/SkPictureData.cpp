@@ -20,10 +20,6 @@
 
 #include <new>
 
-#if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
-#endif
-
 template <typename T> int SafeCount(const T* obj) {
     return obj ? obj->count() : 0;
 }
@@ -224,7 +220,7 @@ void SkPictureData::serialize(SkWStream* stream, const SkSerialProcs& procs,
     buffer.setTypefaceRecorder(sk_ref_sp(typefaceSet));
     this->flattenToBuffer(buffer, textBlobsOnly);
 
-    // Dummy serialize our sub-pictures for the side effect of filling typefaceSet
+    // Pretend to serialize our sub-pictures for the side effect of filling typefaceSet
     // with typefaces from sub-pictures.
     struct DevNull: public SkWStream {
         DevNull() : fBytesWritten(0) {}
@@ -235,7 +231,7 @@ void SkPictureData::serialize(SkWStream* stream, const SkSerialProcs& procs,
     for (const auto& pic : fPictures) {
         pic->serialize(&devnull, nullptr, typefaceSet, /*textBlobsOnly=*/ true);
     }
-    if (textBlobsOnly) { return; } // return early from dummy serialize
+    if (textBlobsOnly) { return; } // return early from fake serialize
 
     // We need to write factories before we write the buffer.
     // We need to write typefaces before we write the buffer or any sub-picture.
@@ -321,7 +317,7 @@ bool SkPictureData::parseStreamTag(SkStream* stream,
                 } else {
                     tf = SkTypeface::MakeDeserialize(stream);
                 }
-                if (!tf.get()) {    // failed to deserialize
+                if (!tf) {    // failed to deserialize
                     // fTFPlayback asserts it never has a null, so we plop in
                     // the default here.
                     tf = SkTypeface::MakeDefault();
@@ -534,4 +530,22 @@ bool SkPictureData::parseBuffer(SkReadBuffer& buffer) {
         return false;
     }
     return true;
+}
+
+const SkPaint* SkPictureData::optionalPaint(SkReadBuffer* reader) const {
+    int index = reader->readInt();
+    if (index == 0) {
+        return nullptr; // recorder wrote a zero for no paint (likely drawimage)
+    }
+    return reader->validate(index > 0 && index <= fPaints.count()) ?
+        &fPaints[index - 1] : nullptr;
+}
+
+const SkPaint& SkPictureData::requiredPaint(SkReadBuffer* reader) const {
+    const SkPaint* paint = this->optionalPaint(reader);
+    if (reader->validate(paint != nullptr)) {
+        return *paint;
+    }
+    static const SkPaint& stub = *(new SkPaint);
+    return stub;
 }

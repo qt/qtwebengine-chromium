@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
-# flake8: noqa
+# flake8: noqa: F821
 
-import io
-import sys
-
-if len (sys.argv) != 5:
-	print ("""usage: ./gen-use-table.py IndicSyllabicCategory.txt IndicPositionalCategory.txt UnicodeData.txt Blocks.txt
+"""usage: ./gen-use-table.py IndicSyllabicCategory.txt IndicPositionalCategory.txt UnicodeData.txt Blocks.txt
 
 Input file:
 * https://unicode.org/Public/UCD/latest/ucd/IndicSyllabicCategory.txt
 * https://unicode.org/Public/UCD/latest/ucd/IndicPositionalCategory.txt
 * https://unicode.org/Public/UCD/latest/ucd/UnicodeData.txt
-* https://unicode.org/Public/UCD/latest/ucd/Blocks.txt""", file=sys.stderr)
-	sys.exit (1)
+* https://unicode.org/Public/UCD/latest/ucd/Blocks.txt
+"""
+
+import sys
+
+if len (sys.argv) != 5:
+	sys.exit (__doc__)
 
 BLACKLISTED_BLOCKS = ["Thai", "Lao"]
 
-files = [io.open (x, encoding='utf-8') for x in sys.argv[1:]]
+files = [open (x, encoding='utf-8') for x in sys.argv[1:]]
 
 headers = [[f.readline () for i in range (2)] for j,f in enumerate(files) if j != 2]
 headers.append (["UnicodeData.txt does not have a header."])
 
-data = [{} for f in files]
-values = [{} for f in files]
+data = [{} for _ in files]
+values = [{} for _ in files]
 for i, f in enumerate (files):
 	for line in f:
 
@@ -88,7 +89,6 @@ for i,d in enumerate (data):
 combined = {k:v for k,v in combined.items() if v[3] not in BLACKLISTED_BLOCKS}
 data = combined
 del combined
-num = len (data)
 
 
 property_names = [
@@ -488,7 +488,6 @@ for u in uu:
 	if start != last + 1:
 		if start - last <= 1+16*3:
 			print_block (None, last+1, start-1, data)
-			last = start-1
 		else:
 			if last >= 0:
 				ends.append (last + 1)

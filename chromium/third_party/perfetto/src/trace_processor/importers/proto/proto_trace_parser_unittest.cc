@@ -23,11 +23,13 @@
 #include "src/trace_processor/importers/common/args_tracker.h"
 #include "src/trace_processor/importers/common/clock_tracker.h"
 #include "src/trace_processor/importers/common/event_tracker.h"
+#include "src/trace_processor/importers/common/flow_tracker.h"
 #include "src/trace_processor/importers/common/process_tracker.h"
 #include "src/trace_processor/importers/common/slice_tracker.h"
 #include "src/trace_processor/importers/common/track_tracker.h"
 #include "src/trace_processor/importers/default_modules.h"
 #include "src/trace_processor/importers/ftrace/sched_event_tracker.h"
+#include "src/trace_processor/importers/proto/args_table_utils.h"
 #include "src/trace_processor/importers/proto/metadata_tracker.h"
 #include "src/trace_processor/importers/proto/proto_trace_parser.h"
 #include "src/trace_processor/importers/proto/stack_profile_tracker.h"
@@ -139,15 +141,20 @@ class MockProcessTracker : public ProcessTracker {
   MockProcessTracker(TraceProcessorContext* context)
       : ProcessTracker(context) {}
 
-  MOCK_METHOD3(SetProcessMetadata,
+  MOCK_METHOD4(SetProcessMetadata,
                UniquePid(uint32_t pid,
                          base::Optional<uint32_t> ppid,
-                         base::StringView process_name));
+                         base::StringView process_name,
+                         base::StringView cmdline));
 
-  MOCK_METHOD2(UpdateThreadName,
-               UniqueTid(uint32_t tid, StringId thread_name_id));
-  MOCK_METHOD2(SetThreadNameIfUnset,
-               void(UniqueTid utid, StringId thread_name_id));
+  MOCK_METHOD3(UpdateThreadName,
+               UniqueTid(uint32_t tid,
+                         StringId thread_name_id,
+                         ThreadNamePriority priority));
+  MOCK_METHOD3(UpdateThreadNameByUtid,
+               void(UniqueTid utid,
+                    StringId thread_name_id,
+                    ThreadNamePriority priority));
   MOCK_METHOD2(UpdateThread, UniqueTid(uint32_t tid, uint32_t tgid));
 
   MOCK_METHOD1(GetOrCreateProcess, UniquePid(uint32_t pid));
@@ -205,8 +212,11 @@ class ProtoTraceParserTest : public ::testing::Test {
     context_.storage.reset(storage_);
     context_.track_tracker.reset(new TrackTracker(&context_));
     context_.global_args_tracker.reset(new GlobalArgsTracker(&context_));
+    context_.global_stack_profile_tracker.reset(
+        new GlobalStackProfileTracker());
     context_.args_tracker.reset(new ArgsTracker(&context_));
     context_.metadata_tracker.reset(new MetadataTracker(&context_));
+    context_.flow_tracker.reset(new FlowTracker(&context_));
     event_ = new MockEventTracker(&context_);
     context_.event_tracker.reset(event_);
     sched_ = new MockSchedEventTracker(&context_);
@@ -218,23 +228,19 @@ class ProtoTraceParserTest : public ::testing::Test {
     clock_ = new ClockTracker(&context_);
     context_.clock_tracker.reset(clock_);
     context_.sorter.reset(new TraceSorter(CreateParser(), 0 /*window size*/));
+    context_.proto_to_args_table_.reset(new ProtoToArgsTable(&context_));
 
     RegisterDefaultModules(&context_);
     RegisterAdditionalModules(&context_);
   }
 
-  void ResetTraceBuffers() {
-    heap_buf_.reset(new protozero::ScatteredHeapBuffer());
-    stream_writer_.reset(new protozero::ScatteredStreamWriter(heap_buf_.get()));
-    heap_buf_->set_writer(stream_writer_.get());
-    trace_.Reset(stream_writer_.get());
-  }
+  void ResetTraceBuffers() { trace_.Reset(); }
 
   void SetUp() override { ResetTraceBuffers(); }
 
   util::Status Tokenize() {
-    trace_.Finalize();
-    std::vector<uint8_t> trace_bytes = heap_buf_->StitchSlices();
+    trace_->Finalize();
+    std::vector<uint8_t> trace_bytes = trace_.SerializeAsArray();
     std::unique_ptr<uint8_t[]> raw_trace(new uint8_t[trace_bytes.size()]);
     memcpy(raw_trace.get(), trace_bytes.data(), trace_bytes.size());
     context_.chunk_reader.reset(new ProtoTraceTokenizer(&context_));
@@ -266,9 +272,7 @@ class ProtoTraceParserTest : public ::testing::Test {
     return std::unique_ptr<TraceParser>(new ProtoTraceParser(&context_));
   }
 
-  std::unique_ptr<protozero::ScatteredHeapBuffer> heap_buf_;
-  std::unique_ptr<protozero::ScatteredStreamWriter> stream_writer_;
-  protos::pbzero::Trace trace_;
+  protozero::HeapBuffered<protos::pbzero::Trace> trace_;
   TraceProcessorContext context_;
   MockEventTracker* event_;
   MockSchedEventTracker* sched_;
@@ -281,7 +285,7 @@ class ProtoTraceParserTest : public ::testing::Test {
 // TODO(eseckler): Refactor these into a new file for ftrace tests.
 
 TEST_F(ProtoTraceParserTest, LoadSingleEvent) {
-  auto* bundle = trace_.add_packet()->set_ftrace_events();
+  auto* bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(10);
 
   auto* event = bundle->add_event();
@@ -306,7 +310,7 @@ TEST_F(ProtoTraceParserTest, LoadSingleEvent) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadEventsIntoRaw) {
-  auto* bundle = trace_.add_packet()->set_ftrace_events();
+  auto* bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(10);
 
   // This event is unknown and will only appear in
@@ -358,7 +362,7 @@ TEST_F(ProtoTraceParserTest, LoadEventsIntoRaw) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadGenericFtrace) {
-  auto* packet = trace_.add_packet();
+  auto* packet = trace_->add_packet();
   packet->set_timestamp(100);
 
   auto* bundle = packet->set_ftrace_events();
@@ -411,7 +415,7 @@ TEST_F(ProtoTraceParserTest, LoadGenericFtrace) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadMultipleEvents) {
-  auto* bundle = trace_.add_packet()->set_ftrace_events();
+  auto* bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(10);
 
   auto* event = bundle->add_event();
@@ -454,7 +458,7 @@ TEST_F(ProtoTraceParserTest, LoadMultipleEvents) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadMultiplePackets) {
-  auto* bundle = trace_.add_packet()->set_ftrace_events();
+  auto* bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(10);
 
   auto* event = bundle->add_event();
@@ -472,7 +476,7 @@ TEST_F(ProtoTraceParserTest, LoadMultiplePackets) {
   sched_switch->set_next_pid(100);
   sched_switch->set_next_prio(1024);
 
-  bundle = trace_.add_packet()->set_ftrace_events();
+  bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(10);
 
   event = bundle->add_event();
@@ -499,7 +503,7 @@ TEST_F(ProtoTraceParserTest, LoadMultiplePackets) {
 }
 
 TEST_F(ProtoTraceParserTest, RepeatedLoadSinglePacket) {
-  auto* bundle = trace_.add_packet()->set_ftrace_events();
+  auto* bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(10);
   auto* event = bundle->add_event();
   event->set_timestamp(1000);
@@ -519,7 +523,7 @@ TEST_F(ProtoTraceParserTest, RepeatedLoadSinglePacket) {
                               32, 100, base::StringView(kProcName1), 1024));
   Tokenize();
 
-  bundle = trace_.add_packet()->set_ftrace_events();
+  bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(10);
   event = bundle->add_event();
   event->set_timestamp(1001);
@@ -540,7 +544,7 @@ TEST_F(ProtoTraceParserTest, RepeatedLoadSinglePacket) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadCpuFreq) {
-  auto* bundle = trace_.add_packet()->set_ftrace_events();
+  auto* bundle = trace_->add_packet()->set_ftrace_events();
   bundle->set_cpu(12);
   auto* event = bundle->add_event();
   event->set_timestamp(1000);
@@ -556,7 +560,7 @@ TEST_F(ProtoTraceParserTest, LoadCpuFreq) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadMemInfo) {
-  auto* packet = trace_.add_packet();
+  auto* packet = trace_->add_packet();
   uint64_t ts = 1000;
   packet->set_timestamp(ts);
   auto* bundle = packet->set_sys_stats();
@@ -573,7 +577,7 @@ TEST_F(ProtoTraceParserTest, LoadMemInfo) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadVmStats) {
-  auto* packet = trace_.add_packet();
+  auto* packet = trace_->add_packet();
   uint64_t ts = 1000;
   packet->set_timestamp(ts);
   auto* bundle = packet->set_sys_stats();
@@ -590,7 +594,7 @@ TEST_F(ProtoTraceParserTest, LoadVmStats) {
 }
 
 TEST_F(ProtoTraceParserTest, LoadProcessPacket) {
-  auto* tree = trace_.add_packet()->set_process_tree();
+  auto* tree = trace_->add_packet()->set_process_tree();
   auto* process = tree->add_processes();
   static const char kProcName1[] = "proc1";
 
@@ -599,12 +603,13 @@ TEST_F(ProtoTraceParserTest, LoadProcessPacket) {
   process->set_ppid(3);
 
   EXPECT_CALL(*process_,
-              SetProcessMetadata(1, Eq(3u), base::StringView(kProcName1)));
+              SetProcessMetadata(1, Eq(3u), base::StringView(kProcName1),
+                                 base::StringView(kProcName1)));
   Tokenize();
 }
 
 TEST_F(ProtoTraceParserTest, LoadProcessPacket_FirstCmdline) {
-  auto* tree = trace_.add_packet()->set_process_tree();
+  auto* tree = trace_->add_packet()->set_process_tree();
   auto* process = tree->add_processes();
   static const char kProcName1[] = "proc1";
   static const char kProcName2[] = "proc2";
@@ -615,12 +620,13 @@ TEST_F(ProtoTraceParserTest, LoadProcessPacket_FirstCmdline) {
   process->set_ppid(3);
 
   EXPECT_CALL(*process_,
-              SetProcessMetadata(1, Eq(3u), base::StringView(kProcName1)));
+              SetProcessMetadata(1, Eq(3u), base::StringView(kProcName1),
+                                 base::StringView("proc1 proc2")));
   Tokenize();
 }
 
 TEST_F(ProtoTraceParserTest, LoadThreadPacket) {
-  auto* tree = trace_.add_packet()->set_process_tree();
+  auto* tree = trace_->add_packet()->set_process_tree();
   auto* thread = tree->add_threads();
   thread->set_tid(1);
   thread->set_tgid(2);
@@ -633,7 +639,7 @@ TEST_F(ProtoTraceParserTest, ProcessNameFromProcessDescriptor) {
   context_.sorter.reset(new TraceSorter(
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* process_desc = packet->set_process_descriptor();
@@ -641,7 +647,7 @@ TEST_F(ProtoTraceParserTest, ProcessNameFromProcessDescriptor) {
     process_desc->set_process_name("OldProcessName");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* process_desc = packet->set_process_descriptor();
@@ -649,7 +655,7 @@ TEST_F(ProtoTraceParserTest, ProcessNameFromProcessDescriptor) {
     process_desc->set_process_name("NewProcessName");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     packet->set_incremental_state_cleared(true);
     auto* process_desc = packet->set_process_descriptor();
@@ -678,7 +684,7 @@ TEST_F(ProtoTraceParserTest, ThreadNameFromThreadDescriptor) {
   context_.sorter.reset(new TraceSorter(
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -689,7 +695,7 @@ TEST_F(ProtoTraceParserTest, ThreadNameFromThreadDescriptor) {
     thread_desc->set_thread_name("OldThreadName");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -700,7 +706,7 @@ TEST_F(ProtoTraceParserTest, ThreadNameFromThreadDescriptor) {
     thread_desc->set_thread_name("NewThreadName");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -715,14 +721,16 @@ TEST_F(ProtoTraceParserTest, ThreadNameFromThreadDescriptor) {
       .WillRepeatedly(testing::Return(1u));
   EXPECT_CALL(*process_, UpdateThread(11, 15)).WillOnce(testing::Return(2u));
 
-  EXPECT_CALL(*process_, SetThreadNameIfUnset(
-                             1u, storage_->InternString("OldThreadName")));
+  EXPECT_CALL(*process_, UpdateThreadNameByUtid(
+                             1u, storage_->InternString("OldThreadName"),
+                             ThreadNamePriority::kTrackDescriptor));
   // Packet with same thread, but different name should update the name.
-  EXPECT_CALL(*process_, SetThreadNameIfUnset(
-                             1u, storage_->InternString("NewThreadName")));
-  EXPECT_CALL(
-      *process_,
-      SetThreadNameIfUnset(2u, storage_->InternString("DifferentThreadName")));
+  EXPECT_CALL(*process_, UpdateThreadNameByUtid(
+                             1u, storage_->InternString("NewThreadName"),
+                             ThreadNamePriority::kTrackDescriptor));
+  EXPECT_CALL(*process_, UpdateThreadNameByUtid(
+                             2u, storage_->InternString("DifferentThreadName"),
+                             ThreadNamePriority::kTrackDescriptor));
 
   Tokenize();
   context_.sorter->ExtractEventsForced();
@@ -733,7 +741,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedData) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -743,7 +751,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedData) {
     thread_desc->set_reference_thread_time_us(2000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -754,7 +762,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedData) {
     legacy_event->set_phase('B');
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1020.
@@ -765,7 +773,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedData) {
     legacy_event->set_phase('E');
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1005);
@@ -827,7 +835,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedDataWithTypes) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -837,7 +845,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedDataWithTypes) {
     thread_desc->set_reference_thread_time_us(2000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -848,7 +856,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedDataWithTypes) {
     legacy_event->set_name_iid(1);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1020.
@@ -859,7 +867,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedDataWithTypes) {
     legacy_event->set_name_iid(1);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1015);
@@ -918,7 +926,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -929,7 +937,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
     thread_desc->set_reference_thread_instruction_count(3000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);              // absolute: 1010.
@@ -949,7 +957,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
     ev1->set_name("ev1");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1040);
@@ -961,7 +969,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
     legacy_event->set_phase('I');
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1050);
@@ -973,7 +981,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
         protos::pbzero::TrackEvent::LegacyEvent::SCOPE_PROCESS);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);              // absolute: 1020.
@@ -985,7 +993,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
     legacy_event->set_phase('E');
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1005);
@@ -1100,7 +1108,7 @@ TEST_F(ProtoTraceParserTest, TrackEventAsyncEvents) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -1111,7 +1119,7 @@ TEST_F(ProtoTraceParserTest, TrackEventAsyncEvents) {
     thread_desc->set_reference_thread_instruction_count(3000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);              // absolute: 1010.
@@ -1133,7 +1141,7 @@ TEST_F(ProtoTraceParserTest, TrackEventAsyncEvents) {
     ev1->set_name("ev1");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);              // absolute: 1020.
@@ -1147,7 +1155,7 @@ TEST_F(ProtoTraceParserTest, TrackEventAsyncEvents) {
     legacy_event->set_use_async_tts(true);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1015);
@@ -1164,7 +1172,7 @@ TEST_F(ProtoTraceParserTest, TrackEventAsyncEvents) {
   }
   {
     // Different category but same global_id -> separate track.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1018);
@@ -1180,7 +1188,7 @@ TEST_F(ProtoTraceParserTest, TrackEventAsyncEvents) {
     cat2->set_name("cat2");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_absolute_us(1030);
@@ -1257,7 +1265,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTrackDescriptors) {
 
   // Sequence 1.
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     packet->set_timestamp(1000000);
@@ -1269,7 +1277,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTrackDescriptors) {
     thread_desc->set_tid(16);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_timestamp(1000000);
     auto* track_desc = packet->set_track_descriptor();
@@ -1278,7 +1286,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTrackDescriptors) {
   }
   {
     // Async event started on "Async track 1".
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_timestamp(1010000);
     auto* event = packet->set_track_event();
@@ -1301,7 +1309,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTrackDescriptors) {
   }
   {
     // Instant event on "Thread track 1".
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_timestamp(1015000);
     auto* event = packet->set_track_event();
@@ -1322,7 +1330,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTrackDescriptors) {
 
   // Sequence 2.
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     packet->set_incremental_state_cleared(true);
     packet->set_timestamp(1000000);
@@ -1335,7 +1343,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTrackDescriptors) {
   }
   {
     // Async event completed on "Async track 1".
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     packet->set_timestamp(1020000);
     auto* event = packet->set_track_event();
@@ -1348,7 +1356,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTrackDescriptors) {
   }
   {
     // Instant event on "Thread track 2".
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     packet->set_timestamp(1016000);
     auto* event = packet->set_track_event();
@@ -1450,7 +1458,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithResortedCounterDescriptor) {
   // in the order they appear here, but then resorted before parsing to appear
   // after the events below.
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     packet->set_timestamp(3000);
@@ -1468,7 +1476,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithResortedCounterDescriptor) {
     track_event_defaults->add_extra_counter_track_uuids(10);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_timestamp(3000);
     auto* track_desc = packet->set_track_descriptor();
@@ -1485,7 +1493,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithResortedCounterDescriptor) {
     // counter values should still be imported as counter values and as args for
     // JSON export. Should appear on default track "t1" with
     // extra_counter_values for "c1".
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_sequence_flags(
         protos::pbzero::TracePacket::SEQ_NEEDS_INCREMENTAL_STATE);
@@ -1498,7 +1506,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithResortedCounterDescriptor) {
   }
   {
     // End for "ev1".
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_timestamp(1100);
     auto* event = packet->set_track_event();
@@ -1530,7 +1538,8 @@ TEST_F(ProtoTraceParserTest, TrackEventWithResortedCounterDescriptor) {
       .WillOnce(Return(0u));
 
   EXPECT_CALL(*process_,
-              SetThreadNameIfUnset(1u, storage_->InternString("t1")));
+              UpdateThreadNameByUtid(1u, storage_->InternString("t1"),
+                                     ThreadNamePriority::kTrackDescriptor));
 
   context_.sorter->ExtractEventsForced();
 
@@ -1551,7 +1560,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutIncrementalStateReset) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* thread_desc = packet->set_thread_descriptor();
     thread_desc->set_pid(15);
@@ -1562,7 +1571,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutIncrementalStateReset) {
   {
     // Event should be discarded because delta timestamps require valid
     // incremental state + thread descriptor.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -1575,7 +1584,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutIncrementalStateReset) {
   {
     // Event should be discarded because it specifies
     // SEQ_NEEDS_INCREMENTAL_STATE.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_timestamp(2000000);
     packet->set_trusted_packet_sequence_id(1);
     packet->set_sequence_flags(
@@ -1588,7 +1597,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutIncrementalStateReset) {
   {
     // Event should be accepted because it does not specify
     // SEQ_NEEDS_INCREMENTAL_STATE and uses absolute timestamps.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_timestamp(2100000);
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
@@ -1614,7 +1623,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutThreadDescriptor) {
   {
     // Event should be discarded because it specifies delta timestamps and no
     // thread descriptor was seen yet.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* event = packet->set_track_event();
@@ -1628,7 +1637,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutThreadDescriptor) {
   {
     // Events that specify SEQ_NEEDS_INCREMENTAL_STATE should be accepted even
     // if there's no valid thread descriptor.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_timestamp(2000000);
     packet->set_trusted_packet_sequence_id(1);
     packet->set_sequence_flags(
@@ -1654,7 +1663,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDataLoss) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -1663,7 +1672,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDataLoss) {
     thread_desc->set_reference_timestamp_us(1000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -1674,7 +1683,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDataLoss) {
   }
   {
     // Event should be dropped because data loss occurred before.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_previous_packet_dropped(true);  // Data loss occurred.
     auto* event = packet->set_track_event();
@@ -1686,7 +1695,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDataLoss) {
   }
   {
     // Event should be dropped because incremental state is invalid.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);
@@ -1697,7 +1706,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDataLoss) {
   }
   {
     // Event should be dropped because no new thread descriptor was seen yet.
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* event = packet->set_track_event();
@@ -1708,7 +1717,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDataLoss) {
     legacy_event->set_phase('E');
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* thread_desc = packet->set_thread_descriptor();
     thread_desc->set_pid(15);
@@ -1716,7 +1725,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDataLoss) {
     thread_desc->set_reference_timestamp_us(2000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 2010.
@@ -1748,7 +1757,7 @@ TEST_F(ProtoTraceParserTest, TrackEventMultipleSequences) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -1757,7 +1766,7 @@ TEST_F(ProtoTraceParserTest, TrackEventMultipleSequences) {
     thread_desc->set_reference_timestamp_us(1000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -1775,7 +1784,7 @@ TEST_F(ProtoTraceParserTest, TrackEventMultipleSequences) {
     ev1->set_name("ev1");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -1784,7 +1793,7 @@ TEST_F(ProtoTraceParserTest, TrackEventMultipleSequences) {
     thread_desc->set_reference_timestamp_us(995);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1005.
@@ -1802,7 +1811,7 @@ TEST_F(ProtoTraceParserTest, TrackEventMultipleSequences) {
     ev2->set_name("ev2");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1020.
@@ -1812,7 +1821,7 @@ TEST_F(ProtoTraceParserTest, TrackEventMultipleSequences) {
     legacy_event->set_phase('E');
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(2);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1015.
@@ -1859,7 +1868,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDebugAnnotations) {
   MockBoundInserter inserter;
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -1868,7 +1877,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDebugAnnotations) {
     thread_desc->set_reference_timestamp_us(1000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -1920,7 +1929,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithDebugAnnotations) {
     an2->set_name("an2");
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1020.
@@ -2060,7 +2069,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTaskExecution) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -2069,7 +2078,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithTaskExecution) {
     thread_desc->set_reference_timestamp_us(1000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -2126,7 +2135,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithLogMessage) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -2135,7 +2144,7 @@ TEST_F(ProtoTraceParserTest, TrackEventWithLogMessage) {
     thread_desc->set_reference_timestamp_us(1000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -2203,7 +2212,7 @@ TEST_F(ProtoTraceParserTest, TrackEventParseLegacyEventIntoRawTable) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -2213,7 +2222,7 @@ TEST_F(ProtoTraceParserTest, TrackEventParseLegacyEventIntoRawTable) {
     thread_desc->set_reference_thread_time_us(2000);
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);   // absolute: 1010.
@@ -2321,7 +2330,7 @@ TEST_F(ProtoTraceParserTest, TrackEventLegacyTimestampsWithClockSnapshot) {
                        {protos::pbzero::BUILTIN_CLOCK_MONOTONIC, 1000000}});
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
     auto* thread_desc = packet->set_thread_descriptor();
@@ -2330,7 +2339,7 @@ TEST_F(ProtoTraceParserTest, TrackEventLegacyTimestampsWithClockSnapshot) {
     thread_desc->set_reference_timestamp_us(1000);  // MONOTONIC.
   }
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* event = packet->set_track_event();
     event->set_timestamp_delta_us(10);  // absolute: 1010 (mon), 10 (boot).
@@ -2363,7 +2372,7 @@ TEST_F(ProtoTraceParserTest, ParseEventWithClockIdButWithoutClockSnapshot) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_timestamp(1000);
     packet->set_timestamp_clock_id(3);
     packet->set_trusted_packet_sequence_id(1);
@@ -2392,7 +2401,7 @@ TEST_F(ProtoTraceParserTest, ParseChromeMetadataEventIntoRawTable) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_timestamp(1000);
     packet->set_timestamp_clock_id(3);
     packet->set_trusted_packet_sequence_id(1);
@@ -2431,7 +2440,7 @@ TEST_F(ProtoTraceParserTest, ParseChromeLegacyFtraceIntoRawTable) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* bundle = packet->set_chrome_events();
     bundle->add_legacy_ftrace_output(kDataPart0);
@@ -2461,7 +2470,7 @@ TEST_F(ProtoTraceParserTest, ParseChromeLegacyJsonIntoRawTable) {
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* bundle = packet->set_chrome_events();
     auto* user_trace = bundle->add_legacy_json_trace();
@@ -2494,7 +2503,7 @@ TEST_F(ProtoTraceParserTest, LoadChromeBenchmarkMetadata) {
   context_.sorter.reset(new TraceSorter(
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
-  auto* metadata = trace_.add_packet()->set_chrome_benchmark_metadata();
+  auto* metadata = trace_->add_packet()->set_chrome_benchmark_metadata();
   metadata->set_benchmark_name(kName);
   metadata->add_story_tags(kTag1);
   metadata->add_story_tags(kTag2);
@@ -2522,7 +2531,7 @@ TEST_F(ProtoTraceParserTest, LoadChromeBenchmarkMetadata) {
 }
 
 TEST_F(ProtoTraceParserTest, AndroidPackagesList) {
-  auto* packet = trace_.add_packet();
+  auto* packet = trace_->add_packet();
   auto* pkg_list = packet->set_packages_list();
 
   pkg_list->set_read_error(false);
@@ -2574,7 +2583,7 @@ TEST_F(ProtoTraceParserTest, AndroidPackagesList) {
 }
 
 TEST_F(ProtoTraceParserTest, AndroidPackagesListDuplicate) {
-  auto* packet = trace_.add_packet();
+  auto* packet = trace_->add_packet();
   auto* pkg_list = packet->set_packages_list();
 
   pkg_list->set_read_error(false);
@@ -2620,7 +2629,7 @@ TEST_F(ProtoTraceParserTest, AndroidPackagesListDuplicate) {
 
 TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
 
@@ -2660,7 +2669,7 @@ TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
   }
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
 
     auto* samples = packet->set_streaming_profile_packet();
@@ -2673,7 +2682,7 @@ TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
   }
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     auto* samples = packet->set_streaming_profile_packet();
 
@@ -2716,7 +2725,7 @@ TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
 
 TEST_F(ProtoTraceParserTest, CPUProfileSamplesTimestampsAreClockMonotonic) {
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(0);
 
     // 1000 us monotonic == 10000 us boottime.
@@ -2730,7 +2739,7 @@ TEST_F(ProtoTraceParserTest, CPUProfileSamplesTimestampsAreClockMonotonic) {
   }
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
     packet->set_incremental_state_cleared(true);
 
@@ -2761,7 +2770,7 @@ TEST_F(ProtoTraceParserTest, CPUProfileSamplesTimestampsAreClockMonotonic) {
   }
 
   {
-    auto* packet = trace_.add_packet();
+    auto* packet = trace_->add_packet();
     packet->set_trusted_packet_sequence_id(1);
 
     auto* samples = packet->set_streaming_profile_packet();

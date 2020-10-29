@@ -10,6 +10,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "src/core/SkGeometry.h"
+#include "src/core/SkMatrixPriv.h"
 #include "src/core/SkTLazy.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAuditTrail.h"
@@ -368,19 +369,6 @@ public:
         }
     }
 
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        string.appendf("Color: 0x%08x Count: %d\n", fColor.toBytes_RGBA(), fPaths.count());
-        for (const auto& path : fPaths) {
-            string.appendf("Tolerance: %.2f\n", path.fTolerance);
-        }
-        string += fHelper.dumpInfo();
-        string += INHERITED::dumpInfo();
-        return string;
-    }
-#endif
-
     DefaultPathOp(const Helper::MakeArgs& helperArgs, const SkPMColor4f& color, const SkPath& path,
                   SkScalar tolerance, uint8_t coverage, const SkMatrix& viewMatrix, bool isHairline,
                   GrAAType aaType, const SkRect& devBounds,
@@ -507,6 +495,18 @@ private:
         fPaths.push_back_n(that->fPaths.count(), that->fPaths.begin());
         return CombineResult::kMerged;
     }
+
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        SkString string = SkStringPrintf("Color: 0x%08x Count: %d\n",
+                                         fColor.toBytes_RGBA(), fPaths.count());
+        for (const auto& path : fPaths) {
+            string.appendf("Tolerance: %.2f\n", path.fTolerance);
+        }
+        string += fHelper.dumpInfo();
+        return string;
+    }
+#endif
 
     const SkPMColor4f& color() const { return fColor; }
     uint8_t coverage() const { return fCoverage; }
@@ -733,7 +733,7 @@ GR_DRAW_OP_TEST_DEFINE(DefaultPathOp) {
     // For now just hairlines because the other types of draws require two ops.
     // TODO we should figure out a way to combine the stencil and cover steps into one op.
     GrStyle style(SkStrokeRec::kHairline_InitStyle);
-    SkPath path = GrTest::TestPath(random);
+    const SkPath& path = GrTest::TestPath(random);
 
     // Compute srcSpaceTol
     SkRect bounds = path.getBounds();

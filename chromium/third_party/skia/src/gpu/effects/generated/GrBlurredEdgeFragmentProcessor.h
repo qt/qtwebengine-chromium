@@ -14,7 +14,6 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkTypes.h"
 
-#include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrFragmentProcessor.h"
 
 class GrBlurredEdgeFragmentProcessor : public GrFragmentProcessor {
@@ -28,20 +27,20 @@ public:
     GrBlurredEdgeFragmentProcessor(const GrBlurredEdgeFragmentProcessor& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "BlurredEdgeFragmentProcessor"; }
-    int inputFP_index = -1;
     Mode mode;
 
 private:
     GrBlurredEdgeFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP, Mode mode)
             : INHERITED(kGrBlurredEdgeFragmentProcessor_ClassID, kNone_OptimizationFlags)
             , mode(mode) {
-        if (inputFP) {
-            inputFP_index = this->registerChild(std::move(inputFP));
-        }
+        this->registerChild(std::move(inputFP), SkSL::SampleUsage::PassThrough());
     }
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override;
+#endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     typedef GrFragmentProcessor INHERITED;
 };

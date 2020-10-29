@@ -113,11 +113,12 @@ enum QuicTransportVersion {
   QUIC_VERSION_46 = 46,  // Use IETF draft-17 header format with demultiplexing
                          // bit.
   // Version 47 added variable-length QUIC server connection IDs.
-  QUIC_VERSION_48 = 48,  // Use CRYPTO frames for the handshake.
-  QUIC_VERSION_49 = 49,  // Client connection IDs, long header lengths, IETF
-                         // header format from draft-ietf-quic-invariants-06.
+  // Version 48 added CRYPTO frames for the handshake.
+  // Version 49 added client connection IDs, long header lengths, and the IETF
+  // header format from draft-ietf-quic-invariants-06
   QUIC_VERSION_50 = 50,  // Header protection and initial obfuscators.
-  QUIC_VERSION_IETF_DRAFT_25 = 70,  // draft-ietf-quic-transport-25.
+  QUIC_VERSION_51 = 51,  // draft-29 features but with GoogleQUIC frames.
+  // Number 70 used to represent draft-ietf-quic-transport-25.
   QUIC_VERSION_IETF_DRAFT_27 = 71,  // draft-ietf-quic-transport-27.
   // Number 72 used to represent draft-ietf-quic-transport-28.
   QUIC_VERSION_IETF_DRAFT_29 = 73,  // draft-ietf-quic-transport-29.
@@ -135,13 +136,11 @@ enum QuicTransportVersion {
 
 // This array contains QUIC transport versions which we currently support.
 // DEPRECATED. Use SupportedVersions() instead.
-constexpr std::array<QuicTransportVersion, 8> SupportedTransportVersions() {
+constexpr std::array<QuicTransportVersion, 6> SupportedTransportVersions() {
   return {QUIC_VERSION_IETF_DRAFT_29,
           QUIC_VERSION_IETF_DRAFT_27,
-          QUIC_VERSION_IETF_DRAFT_25,
+          QUIC_VERSION_51,
           QUIC_VERSION_50,
-          QUIC_VERSION_49,
-          QUIC_VERSION_48,
           QUIC_VERSION_46,
           QUIC_VERSION_43};
 }
@@ -166,7 +165,8 @@ QUIC_EXPORT_PRIVATE std::string HandshakeProtocolToString(
 // instead of stream 1.
 QUIC_EXPORT_PRIVATE constexpr bool QuicVersionUsesCryptoFrames(
     QuicTransportVersion transport_version) {
-  return transport_version >= QUIC_VERSION_48;
+  // CRYPTO frames were added in version 48.
+  return transport_version > QUIC_VERSION_46;
 }
 
 // Returns whether this combination of handshake protocol and transport
@@ -198,15 +198,12 @@ QUIC_EXPORT_PRIVATE constexpr bool ParsedQuicVersionIsValid(
       return transport_version == QUIC_VERSION_UNSUPPORTED;
     case PROTOCOL_QUIC_CRYPTO:
       return transport_version != QUIC_VERSION_UNSUPPORTED &&
-             transport_version != QUIC_VERSION_IETF_DRAFT_25 &&
+             transport_version != QUIC_VERSION_51 &&
              transport_version != QUIC_VERSION_IETF_DRAFT_27 &&
              transport_version != QUIC_VERSION_IETF_DRAFT_29;
     case PROTOCOL_TLS1_3:
-      // The TLS handshake is only deployable if CRYPTO frames are also used.
-      // We explicitly removed support for T048 and T049 to reduce test load.
       return transport_version != QUIC_VERSION_UNSUPPORTED &&
-             QuicVersionUsesCryptoFrames(transport_version) &&
-             transport_version > QUIC_VERSION_49;
+             QuicVersionUsesCryptoFrames(transport_version);
   }
   return false;
 }
@@ -259,8 +256,8 @@ struct QUIC_EXPORT_PRIVATE ParsedQuicVersion {
     return ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_27);
   }
 
-  static constexpr ParsedQuicVersion Draft25() {
-    return ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_IETF_DRAFT_25);
+  static constexpr ParsedQuicVersion T051() {
+    return ParsedQuicVersion(PROTOCOL_TLS1_3, QUIC_VERSION_51);
   }
 
   static constexpr ParsedQuicVersion T050() {
@@ -269,14 +266,6 @@ struct QUIC_EXPORT_PRIVATE ParsedQuicVersion {
 
   static constexpr ParsedQuicVersion Q050() {
     return ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_50);
-  }
-
-  static constexpr ParsedQuicVersion Q049() {
-    return ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_49);
-  }
-
-  static constexpr ParsedQuicVersion Q048() {
-    return ParsedQuicVersion(PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_48);
   }
 
   static constexpr ParsedQuicVersion Q046() {
@@ -427,12 +416,11 @@ constexpr std::array<HandshakeProtocol, 2> SupportedHandshakeProtocols() {
   return {PROTOCOL_TLS1_3, PROTOCOL_QUIC_CRYPTO};
 }
 
-constexpr std::array<ParsedQuicVersion, 9> SupportedVersions() {
+constexpr std::array<ParsedQuicVersion, 7> SupportedVersions() {
   return {
       ParsedQuicVersion::Draft29(), ParsedQuicVersion::Draft27(),
-      ParsedQuicVersion::Draft25(), ParsedQuicVersion::T050(),
-      ParsedQuicVersion::Q050(),    ParsedQuicVersion::Q049(),
-      ParsedQuicVersion::Q048(),    ParsedQuicVersion::Q046(),
+      ParsedQuicVersion::T051(),    ParsedQuicVersion::T050(),
+      ParsedQuicVersion::Q050(),    ParsedQuicVersion::Q046(),
       ParsedQuicVersion::Q043(),
   };
 }
@@ -505,14 +493,14 @@ QUIC_EXPORT_PRIVATE ParsedQuicVersion
 ParseQuicVersionLabel(QuicVersionLabel version_label);
 
 // Parses a QUIC version string such as "Q043" or "T050". Also supports parsing
-// ALPN such as "h3-25" or "h3-Q050". For PROTOCOL_QUIC_CRYPTO versions, also
+// ALPN such as "h3-29" or "h3-Q050". For PROTOCOL_QUIC_CRYPTO versions, also
 // supports parsing numbers such as "46".
 QUIC_EXPORT_PRIVATE ParsedQuicVersion
 ParseQuicVersionString(quiche::QuicheStringPiece version_string);
 
 // Parses a comma-separated list of QUIC version strings. Supports parsing by
 // label, ALPN and numbers for PROTOCOL_QUIC_CRYPTO. Skips unknown versions.
-// For example: "h3-25,Q050,46".
+// For example: "h3-29,Q050,46".
 QUIC_EXPORT_PRIVATE ParsedQuicVersionVector
 ParseQuicVersionVectorString(quiche::QuicheStringPiece versions_string);
 
@@ -602,7 +590,8 @@ QUIC_EXPORT_PRIVATE constexpr bool VersionHasIetfInvariantHeader(
 // Returns true if |transport_version| supports MESSAGE frames.
 QUIC_EXPORT_PRIVATE constexpr bool VersionSupportsMessageFrames(
     QuicTransportVersion transport_version) {
-  return transport_version >= QUIC_VERSION_46;
+  // MESSAGE frames were added in version 45.
+  return transport_version > QUIC_VERSION_43;
 }
 
 // If true, HTTP/3 instead of gQUIC will be used at the HTTP layer.
@@ -616,21 +605,22 @@ QUIC_EXPORT_PRIVATE constexpr bool VersionSupportsMessageFrames(
 // * GOAWAY is moved to HTTP layer.
 QUIC_EXPORT_PRIVATE constexpr bool VersionUsesHttp3(
     QuicTransportVersion transport_version) {
-  return transport_version >= QUIC_VERSION_IETF_DRAFT_25;
+  return transport_version > QUIC_VERSION_51;
 }
 
 // Returns whether the transport_version supports the variable length integer
 // length field as defined by IETF QUIC draft-13 and later.
 QUIC_EXPORT_PRIVATE constexpr bool QuicVersionHasLongHeaderLengths(
     QuicTransportVersion transport_version) {
-  return transport_version >= QUIC_VERSION_49;
+  // Long header lengths were added in version 49.
+  return transport_version > QUIC_VERSION_46;
 }
 
 // Returns whether |transport_version| makes use of IETF QUIC
 // frames or not.
 QUIC_EXPORT_PRIVATE constexpr bool VersionHasIetfQuicFrames(
     QuicTransportVersion transport_version) {
-  return transport_version >= QUIC_VERSION_IETF_DRAFT_25;
+  return VersionUsesHttp3(transport_version);
 }
 
 // Returns whether this version supports long header 8-bit encoded

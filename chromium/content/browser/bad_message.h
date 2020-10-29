@@ -254,7 +254,12 @@ enum BadMessageReason {
   RFMF_INVALID_PLUGIN_EMBEDDER_ORIGIN = 226,
   RFH_INVALID_CALL_FROM_NOT_MAIN_FRAME = 227,
   INPUT_ROUTER_INVALID_EVENT_SOURCE = 228,
+  RFH_INACTIVE_CHECK_FROM_SPECULATIVE_RFH = 229,
+  RFH_SUBFRAME_CAPTURE_ON_MAIN_FRAME = 230,
+  RFH_CSP_ATTRIBUTE = 231,
+  RFH_RECEIVED_ASSOCIATED_MESSAGE_WHILE_BFCACHED = 232,
   RWH_CLOSE_PORTAL = 233,
+  MSDH_INVALID_STREAM_TYPE = 234,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the

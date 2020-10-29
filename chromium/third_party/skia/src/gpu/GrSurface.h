@@ -15,7 +15,6 @@
 #include "src/gpu/GrGpuResource.h"
 
 class GrRenderTarget;
-class GrSurfacePriv;
 class GrTexture;
 
 class GrSurface : public GrGpuResource {
@@ -68,12 +67,10 @@ public:
     virtual GrRenderTarget* asRenderTarget() { return nullptr; }
     virtual const GrRenderTarget* asRenderTarget() const { return nullptr; }
 
-    /** Access methods that are only to be used within Skia code. */
-    inline GrSurfacePriv surfacePriv();
-    inline const GrSurfacePriv surfacePriv() const;
+    GrInternalSurfaceFlags flags() const { return fSurfaceFlags; }
 
     static size_t ComputeSize(const GrCaps&, const GrBackendFormat&, SkISize dimensions,
-                              int colorSamplesPerPixel, GrMipMapped, bool binSize = false);
+                              int colorSamplesPerPixel, GrMipmapped, bool binSize = false);
 
     /**
      * The pixel values of this surface cannot be modified (e.g. doesn't support write pixels or
@@ -117,9 +114,6 @@ protected:
         SkASSERT(!this->asRenderTarget());
         fSurfaceFlags |= GrInternalSurfaceFlags::kReadOnly;
     }
-
-    // Provides access to methods that should be public within Skia code.
-    friend class GrSurfacePriv;
 
     GrSurface(GrGpu* gpu, const SkISize& dimensions, GrProtected isProtected)
             : INHERITED(gpu)

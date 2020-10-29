@@ -1,8 +1,8 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2015-2017 The Khronos Group Inc.
-# Copyright (c) 2015-2017 Valve Corporation
-# Copyright (c) 2015-2017 LunarG, Inc.
+# Copyright (c) 2015-2020 The Khronos Group Inc.
+# Copyright (c) 2015-2020 Valve Corporation
+# Copyright (c) 2015-2020 LunarG, Inc.
 # Copyright (c) 2015-2017 Google Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,6 +32,7 @@ WSI_EXT_NAMES = ['VK_KHR_surface',
                  'VK_KHR_xlib_surface',
                  'VK_KHR_xcb_surface',
                  'VK_KHR_wayland_surface',
+                 'VK_EXT_directfb_surface',
                  'VK_KHR_win32_surface',
                  'VK_KHR_android_surface',
                  'VK_MVK_macos_surface',
@@ -40,7 +41,8 @@ WSI_EXT_NAMES = ['VK_KHR_surface',
                  'VK_EXT_metal_surface',
                  'VK_KHR_swapchain',
                  'VK_KHR_display_swapchain',
-                 'VK_KHR_get_display_properties2']
+                 'VK_KHR_get_display_properties2',
+                 'VK_KHR_get_surface_capabilities2']
 
 ADD_INST_CMDS = ['vkCreateInstance',
                  'vkEnumerateInstanceExtensionProperties',
@@ -63,9 +65,18 @@ DEVICE_CMDS_NEED_TERM = ['vkGetDeviceProcAddr',
                          'vkDebugMarkerSetObjectNameEXT',
                          'vkSetDebugUtilsObjectNameEXT',
                          'vkSetDebugUtilsObjectTagEXT',
+                         'vkQueueBeginDebugUtilsLabelEXT',
+                         'vkQueueEndDebugUtilsLabelEXT',
+                         'vkQueueInsertDebugUtilsLabelEXT',
+                         'vkCmdBeginDebugUtilsLabelEXT',
+                         'vkCmdEndDebugUtilsLabelEXT',
+                         'vkCmdInsertDebugUtilsLabelEXT',
                          'vkGetDeviceGroupSurfacePresentModes2EXT']
 
-ALIASED_CMDS = {
+# These are the aliased functions that use the same terminator for both extension and core versions
+# Generally, this is only applies to physical device level functions in instance extensions
+SHARED_ALIASES = {
+    # 1.1 aliases
     'vkEnumeratePhysicalDeviceGroupsKHR':                   'vkEnumeratePhysicalDeviceGroups',
     'vkGetPhysicalDeviceFeatures2KHR':                      'vkGetPhysicalDeviceFeatures2',
     'vkGetPhysicalDeviceProperties2KHR':                    'vkGetPhysicalDeviceProperties2',
@@ -90,6 +101,7 @@ class LoaderExtensionGeneratorOptions(GeneratorOptions):
                  conventions = None,
                  filename = None,
                  directory = '.',
+                 genpath = None,
                  apiname = None,
                  profile = None,
                  versions = '.*',
@@ -110,9 +122,20 @@ class LoaderExtensionGeneratorOptions(GeneratorOptions):
                  indentFuncPointer = False,
                  alignFuncParam = 0,
                  expandEnumerants = True):
-        GeneratorOptions.__init__(self, conventions, filename, directory, apiname, profile,
-                                  versions, emitversions, defaultExtensions,
-                                  addExtensions, removeExtensions, emitExtensions, sortProcedure)
+        GeneratorOptions.__init__(self,
+                conventions = conventions,
+                filename = filename,
+                directory = directory,
+                genpath = genpath,
+                apiname = apiname,
+                profile = profile,
+                versions = versions,
+                emitversions = emitversions,
+                defaultExtensions = defaultExtensions,
+                addExtensions = addExtensions,
+                removeExtensions = removeExtensions,
+                emitExtensions = emitExtensions,
+                sortProcedure = sortProcedure)
         self.prefixText      = prefixText
         self.prefixText      = None
         self.apicall         = apicall
@@ -927,7 +950,8 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                                'vkGetDisplayModeProperties2KHR',
                                'vkGetDisplayPlaneCapabilities2KHR',
                                'vkGetPhysicalDeviceSurfacePresentModes2EXT',
-                               'vkGetDeviceGroupSurfacePresentModes2EXT']
+                               'vkGetDeviceGroupSurfacePresentModes2EXT',
+                               'vkGetPhysicalDeviceToolPropertiesEXT']
 
         for ext_cmd in self.ext_commands:
             if (ext_cmd.ext_name in WSI_EXT_NAMES or
@@ -1176,29 +1200,7 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
 
                 elif ext_cmd.handle_type == 'VkInstance':
                     funcs += '#error("Not implemented. Likely needs to be manually generated!");\n'
-                elif 'DebugUtilsLabel' in ext_cmd.name:
-                    funcs += '    const VkLayerDispatchTable *disp = loader_get_dispatch('
-                    funcs += ext_cmd.params[0].name
-                    funcs += ');\n'
-                    if ext_cmd.ext_name in NULL_CHECK_EXT_NAMES:
-                        funcs += '    if (disp->' + base_name + ' != NULL) {\n'
-                        funcs += '    '
-                    funcs += '    '
-                    if has_return_type:
-                        funcs += 'return '
-                    funcs += 'disp->'
-                    funcs += base_name
-                    funcs += '('
-                    count = 0
-                    for param in ext_cmd.params:
-                        if count != 0:
-                            funcs += ', '
-                        funcs += param.name
-                        count += 1
-                    funcs += ');\n'
-                    if ext_cmd.ext_name in NULL_CHECK_EXT_NAMES:
-                        funcs += '    }\n'
-                elif 'DebugMarkerSetObject' in ext_cmd.name or 'SetDebugUtilsObject' in ext_cmd.name:
+                elif 'DebugMarkerSetObject' in ext_cmd.name or 'SetDebugUtilsObject' in ext_cmd.name or 'DebugUtilsLabel' in ext_cmd.name:
                     funcs += '    uint32_t icd_index = 0;\n'
                     funcs += '    struct loader_device *dev;\n'
                     funcs += '    struct loader_icd_term *icd_term = loader_get_icd_and_device(%s, &dev, &icd_index);\n' % (ext_cmd.params[0].name)
@@ -1361,7 +1363,7 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
                 gpa_func += '#ifdef %s\n' % cur_cmd.protect
 
             #base_name = cur_cmd.name[2:]
-            base_name = ALIASED_CMDS[cur_cmd.name] if cur_cmd.name in ALIASED_CMDS else cur_cmd.name[2:]
+            base_name = SHARED_ALIASES[cur_cmd.name] if cur_cmd.name in SHARED_ALIASES else cur_cmd.name[2:]
 
             if (cur_cmd.ext_type == 'instance'):
                 gpa_func += '    if (!strcmp("%s", name)) {\n' % (cur_cmd.name)
@@ -1523,7 +1525,7 @@ class LoaderExtensionOutputGenerator(OutputGenerator):
 
                     # Remove 'vk' from proto name
                     base_name = cur_cmd.name[2:]
-                    aliased_name = ALIASED_CMDS[cur_cmd.name][2:] if cur_cmd.name in ALIASED_CMDS else base_name
+                    aliased_name = SHARED_ALIASES[cur_cmd.name][2:] if cur_cmd.name in SHARED_ALIASES else base_name
 
                     if (base_name == 'CreateInstance' or base_name == 'CreateDevice' or
                         base_name == 'EnumerateInstanceExtensionProperties' or

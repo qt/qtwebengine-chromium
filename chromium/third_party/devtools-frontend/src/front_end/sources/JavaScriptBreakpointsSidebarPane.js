@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';
 import * as SDK from '../sdk/sdk.js';
@@ -48,7 +51,17 @@ export class JavaScriptBreakpointsSidebarPane extends UI.ThrottledWidget.Throttl
 
     locations.sort((item1, item2) => item1.uiLocation.compareTo(item2.uiLocation));
 
-    return locations;
+    const result = [];
+    let lastBreakpoint = null;
+    let lastLocation = null;
+    for (const location of locations) {
+      if (location.breakpoint !== lastBreakpoint || (lastLocation && location.uiLocation.compareTo(lastLocation))) {
+        result.push(location);
+        lastBreakpoint = location.breakpoint;
+        lastLocation = location.uiLocation;
+      }
+    }
+    return result;
   }
 
   _hideList() {
@@ -103,7 +116,7 @@ export class JavaScriptBreakpointsSidebarPane extends UI.ThrottledWidget.Throttl
    * @return {!Promise<?Workspace.UISourceCode.UILocation>}
    */
   async _getSelectedUILocation() {
-    const details = self.UI.context.flavor(SDK.DebuggerModel.DebuggerPausedDetails);
+    const details = UI.Context.Context.instance().flavor(SDK.DebuggerModel.DebuggerPausedDetails);
     if (details && details.callFrames.length) {
       return await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().rawLocationToUILocation(
           details.callFrames[0].location());

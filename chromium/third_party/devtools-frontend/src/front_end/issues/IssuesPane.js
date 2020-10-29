@@ -11,6 +11,7 @@ import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
 import {AggregatedIssue, Events as IssueAggregatorEvents, IssueAggregator} from './IssueAggregator.js';  // eslint-disable-line no-unused-vars
+import {createIssueDescriptionFromMarkdown} from './MarkdownIssueDescription.js';
 
 /**
  * @param {string} path
@@ -39,9 +40,13 @@ class AffectedResourcesView extends UI.TreeOutline.TreeElement {
     this._affectedResources = this.createAffectedResources();
     this._affectedResourcesCount = 0;
     /** @type {?Common.EventTarget.EventDescriptor} */
-    this._listener = null;
+    this._networkListener = null;
+    /** @type {!Array<!Common.EventTarget.EventDescriptor>} */
+    this._frameListeners = [];
     /** @type {!Set<string>} */
     this._unresolvedRequestIds = new Set();
+    /** @type {!Set<string>} */
+    this._unresolvedFrameIds = new Set();
   }
 
   /**
@@ -99,6 +104,11 @@ class AffectedResourcesView extends UI.TreeOutline.TreeElement {
     this._affectedResources.textContent = '';
   }
 
+  expandIfOneResource() {
+    if (this._affectedResourcesCount === 1) {
+      this.expand();
+    }
+  }
 
   /**
    * This function resolves a requestId to network requests. If the requestId does not resolve, a listener is installed
@@ -111,8 +121,8 @@ class AffectedResourcesView extends UI.TreeOutline.TreeElement {
     const requests = SDK.NetworkLog.NetworkLog.instance().requestsForId(requestId);
     if (!requests.length) {
       this._unresolvedRequestIds.add(requestId);
-      if (!this._listener) {
-        this._listener = SDK.NetworkLog.NetworkLog.instance().addEventListener(
+      if (!this._networkListener) {
+        this._networkListener = SDK.NetworkLog.NetworkLog.instance().addEventListener(
             SDK.NetworkLog.Events.RequestAdded, this._onRequestAdded, this);
       }
     }
@@ -120,20 +130,131 @@ class AffectedResourcesView extends UI.TreeOutline.TreeElement {
   }
 
   /**
-   *
    * @param {!Common.EventTarget.EventTargetEvent} event
    */
   _onRequestAdded(event) {
     const request = /** @type {!SDK.NetworkRequest.NetworkRequest} */ (event.data);
     const requestWasUnresolved = this._unresolvedRequestIds.delete(request.requestId());
-    if (this._unresolvedRequestIds.size === 0 && this._listener) {
+    if (this._unresolvedRequestIds.size === 0 && this._networkListener) {
       // Stop listening once all requests are resolved.
-      Common.EventTarget.EventTarget.removeEventListeners([this._listener]);
-      this._listener = null;
+      Common.EventTarget.EventTarget.removeEventListeners([this._networkListener]);
+      this._networkListener = null;
     }
     if (requestWasUnresolved) {
       this.update();
     }
+  }
+
+  /**
+   * This function resolves a frameId to a ResourceTreeFrame. If the frameId does not resolve, or hasn't navigated yet,
+   * a listener is installed that takes care of updating the view if the frame is added. This is useful if the issue is
+   * added before the frame gets reported.
+   * @param {!Protocol.Page.FrameId} frameId
+   * @return {?SDK.ResourceTreeModel.ResourceTreeFrame}
+   */
+  _resolveFrameId(frameId) {
+    const frame = SDK.FrameManager.FrameManager.instance().getFrame(frameId);
+    if (!frame || !frame.url) {
+      this._unresolvedFrameIds.add(frameId);
+      if (!this._frameListeners.length) {
+        const addListener = SDK.FrameManager.FrameManager.instance().addEventListener(
+            SDK.FrameManager.Events.FrameAddedToTarget, this._onFrameChanged, this);
+        const navigateListener = SDK.FrameManager.FrameManager.instance().addEventListener(
+            SDK.FrameManager.Events.FrameNavigated, this._onFrameChanged, this);
+        this._frameListeners = [addListener, navigateListener];
+      }
+    }
+    return frame;
+  }
+
+  /**
+   *
+   * @param {!Common.EventTarget.EventTargetEvent} event
+   */
+  _onFrameChanged(event) {
+    const frame = /** @type {!SDK.ResourceTreeModel.ResourceTreeFrame} */ (event.data.frame);
+    if (!frame.url) {
+      return;
+    }
+    const frameWasUnresolved = this._unresolvedFrameIds.delete(frame.id);
+    if (this._unresolvedFrameIds.size === 0 && this._frameListeners.length) {
+      // Stop listening once all requests are resolved.
+      Common.EventTarget.EventTarget.removeEventListeners(this._frameListeners);
+      this._frameListeners = [];
+    }
+    if (frameWasUnresolved) {
+      this.update();
+    }
+  }
+
+  /**
+   * @param {!Protocol.Page.FrameId} frameId
+   * @returns {!HTMLElement}
+   */
+  _createFrameCell(frameId) {
+    const frame = this._resolveFrameId(frameId);
+    const url = frame && (frame.unreachableUrl() || frame.url) || ls`unknown`;
+
+    const frameCell = /** @type {!HTMLElement} */ (document.createElement('td'));
+    frameCell.classList.add('affected-resource-cell');
+    if (frame) {
+      const icon = UI.Icon.Icon.create('mediumicon-elements-panel', 'icon');
+      icon.classList.add('link');
+      icon.onclick = async () => {
+        const frame = SDK.FrameManager.FrameManager.instance().getFrame(frameId);
+        if (frame) {
+          const ownerNode = await frame.getOwnerDOMNodeOrDocument();
+          if (ownerNode) {
+            Common.Revealer.reveal(ownerNode);
+          }
+        }
+      };
+      UI.Tooltip.Tooltip.install(icon, ls`Click to reveal the frame's DOM node in the Elements panel`);
+      frameCell.appendChild(icon);
+    }
+    frameCell.appendChild(document.createTextNode(url));
+    frameCell.onmouseenter = () => {
+      const frame = SDK.FrameManager.FrameManager.instance().getFrame(frameId);
+      if (frame) {
+        frame.highlight();
+      }
+    };
+    frameCell.onmouseleave = () => SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    return frameCell;
+  }
+
+  /**
+   * @param {!Protocol.Audits.AffectedRequest} request
+   * @returns {!HTMLElement}
+   */
+  _createRequestCell(request) {
+    let url = request.url;
+    let filename = url ? extractShortPath(url) : '';
+    const requestCell = /** @type {!HTMLElement} */ (document.createElement('td'));
+    requestCell.classList.add('affected-resource-cell');
+    const icon = UI.Icon.Icon.create('mediumicon-network-panel', 'icon');
+    requestCell.appendChild(icon);
+
+    const requests = this._resolveRequestId(request.requestId);
+    if (requests.length) {
+      const request = requests[0];
+      requestCell.onclick = () => {
+        Network.NetworkPanel.NetworkPanel.selectAndShowRequest(request, Network.NetworkItemView.Tabs.Headers);
+      };
+      requestCell.classList.add('link');
+      icon.classList.add('link');
+      url = request.url();
+      filename = extractShortPath(url);
+      icon.title = ls`Click to show request in the network panel`;
+    } else {
+      icon.title = ls`Request unavailable in the network panel, try reloading the inspected page`;
+      icon.classList.add('unavailable');
+    }
+    if (url) {
+      requestCell.title = url;
+    }
+    requestCell.appendChild(document.createTextNode(filename));
+    return requestCell;
   }
 
   /**
@@ -190,6 +311,226 @@ class AffectedElementsView extends AffectedResourcesView {
   update() {
     this.clear();
     this._appendAffectedElements(this._issue.elements());
+  }
+}
+
+class AffectedDirectivesView extends AffectedResourcesView {
+  /**
+   * @param {!IssueView} parent
+   * @param {!AggregatedIssue} issue
+   */
+  constructor(parent, issue) {
+    super(parent, {singular: ls`directive`, plural: ls`directives`});
+    /** @type {!AggregatedIssue} */
+    this._issue = issue;
+  }
+
+  /**
+   * @param {!Element} header
+   */
+  _appendDirectiveColumnTitle(header) {
+    const name = document.createElement('td');
+    name.classList.add('affected-resource-header');
+    name.textContent = ls`Directive`;
+    header.appendChild(name);
+  }
+
+  /**
+   * @param {!Element} header
+   */
+  _appendURLColumnTitle(header) {
+    const info = document.createElement('td');
+    info.classList.add('affected-resource-header');
+    info.classList.add('affected-resource-directive-info-header');
+    info.textContent = ls`Resource`;
+    header.appendChild(info);
+  }
+
+  /**
+   * @param {!Element} header
+   */
+  _appendElementColumnTitle(header) {
+    const affectedNode = document.createElement('td');
+    affectedNode.classList.add('affected-resource-header');
+    affectedNode.textContent = ls`Element`;
+    header.appendChild(affectedNode);
+  }
+
+  /**
+   * @param {!Element} header
+   */
+  _appendSourceCodeColumnTitle(header) {
+    const sourceCodeLink = document.createElement('td');
+    sourceCodeLink.classList.add('affected-resource-header');
+    sourceCodeLink.textContent = ls`Source code`;
+    header.appendChild(sourceCodeLink);
+  }
+
+  /**
+   * @param {!Element} header
+   */
+  _appendStatusColumnTitle(header) {
+    const status = document.createElement('td');
+    status.classList.add('affected-resource-header');
+    status.textContent = ls`Status`;
+    header.appendChild(status);
+  }
+
+  /**
+   * @param {!Element} element
+   */
+  _appendBlockedStatus(element) {
+    const status = document.createElement('td');
+    status.classList.add('affected-resource-blocked-status');
+    status.textContent = ls`blocked`;
+    element.appendChild(status);
+  }
+
+  /**
+   * @param {!Element} element
+   * @param {string} directive
+   */
+  _appendViolatedDirective(element, directive) {
+    const violatedDirective = document.createElement('td');
+    violatedDirective.textContent = directive;
+    element.appendChild(violatedDirective);
+  }
+
+  /**
+   * @param {!Element} element
+   * @param {string} url
+   */
+  _appendBlockedURL(element, url) {
+    const info = document.createElement('td');
+    info.classList.add('affected-resource-directive-info');
+    info.textContent = url;
+    element.appendChild(info);
+  }
+
+  /**
+   * @param {!Element} element
+   * @param {number | undefined} nodeId
+   * @param {!SDK.IssuesModel.IssuesModel} model
+   */
+  _appendBlockedElement(element, nodeId, model) {
+    const violatingNode = document.createElement('td');
+    violatingNode.classList.add('affected-resource-csp-info-node');
+
+    if (nodeId) {
+      const violatingNodeId = nodeId;
+      const icon = UI.Icon.Icon.create('largeicon-node-search', 'icon');
+      icon.classList.add('element-reveal-icon');
+
+      icon.onclick = () => {
+        const target = model.getTargetIfNotDisposed();
+        if (target) {
+          const deferredDOMNode = new SDK.DOMModel.DeferredDOMNode(target, violatingNodeId);
+          Common.Revealer.reveal(deferredDOMNode);
+        }
+      };
+
+      UI.Tooltip.Tooltip.install(icon, ls`Click to reveal the violating DOM node in the Elements panel`);
+      violatingNode.appendChild(icon);
+
+      violatingNode.onmouseenter = () => {
+        const target = model.getTargetIfNotDisposed();
+        if (target) {
+          const deferredDOMNode = new SDK.DOMModel.DeferredDOMNode(target, violatingNodeId);
+          if (deferredDOMNode) {
+            deferredDOMNode.highlight();
+          }
+        }
+      };
+      violatingNode.onmouseleave = () => SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    }
+    element.appendChild(violatingNode);
+  }
+
+  /**
+   * @param {!Element} element
+   * @param {?Protocol.Audits.SourceCodeLocation | undefined} sourceLocation
+   */
+  _appendSourceLocation(element, sourceLocation) {
+    const sourceCodeLocation = document.createElement('td');
+    if (sourceLocation) {
+      const maxLengthForDisplayedURLs = 40;  // Same as console messages.
+      const linkifier = new Components.Linkifier.Linkifier(maxLengthForDisplayedURLs);
+      const sourceAnchor = linkifier.linkifyScriptLocation(
+          /* target */ null,
+          /* scriptId */ null, sourceLocation.url, sourceLocation.lineNumber);
+      sourceCodeLocation.appendChild(sourceAnchor);
+    }
+    element.appendChild(sourceCodeLocation);
+  }
+
+  /**
+   * @param {!Iterable<!SDK.ContentSecurityPolicyIssue.ContentSecurityPolicyIssue>} cspIssues
+   */
+  _appendAffectedContentSecurityPolicyDetails(cspIssues) {
+    const header = document.createElement('tr');
+    if (this._issue.code() === SDK.ContentSecurityPolicyIssue.inlineViolationCode) {
+      this._appendDirectiveColumnTitle(header);
+      this._appendElementColumnTitle(header);
+      this._appendSourceCodeColumnTitle(header);
+      this._appendStatusColumnTitle(header);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.urlViolationCode) {
+      this._appendURLColumnTitle(header);
+      this._appendStatusColumnTitle(header);
+      this._appendDirectiveColumnTitle(header);
+      this._appendSourceCodeColumnTitle(header);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.evalViolationCode) {
+      this._appendSourceCodeColumnTitle(header);
+      this._appendDirectiveColumnTitle(header);
+      this._appendStatusColumnTitle(header);
+    } else {
+      this.updateAffectedResourceCount(0);
+      return;
+    }
+    this._affectedResources.appendChild(header);
+    let count = 0;
+    for (const cspIssue of cspIssues) {
+      count++;
+      this._appendAffectedContentSecurityPolicyDetail(cspIssue);
+    }
+    this.updateAffectedResourceCount(count);
+  }
+
+  /**
+   * @param {!SDK.ContentSecurityPolicyIssue.ContentSecurityPolicyIssue} cspIssue
+   */
+  _appendAffectedContentSecurityPolicyDetail(cspIssue) {
+    const element = document.createElement('tr');
+    element.classList.add('affected-resource-directive');
+
+    const cspIssueDetails = cspIssue.details();
+    if (this._issue.code() === SDK.ContentSecurityPolicyIssue.inlineViolationCode) {
+      this._appendViolatedDirective(element, cspIssueDetails.violatedDirective);
+      this._appendBlockedElement(element, cspIssueDetails.violatingNodeId, cspIssue.model());
+      this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
+      this._appendBlockedStatus(element);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.urlViolationCode) {
+      const url = cspIssueDetails.blockedURL ? cspIssueDetails.blockedURL : '';
+      this._appendBlockedURL(element, url);
+      this._appendBlockedStatus(element);
+      this._appendViolatedDirective(element, cspIssueDetails.violatedDirective);
+      this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.evalViolationCode) {
+      this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
+      this._appendViolatedDirective(element, cspIssueDetails.violatedDirective);
+      this._appendBlockedStatus(element);
+    } else {
+      return;
+    }
+
+    this._affectedResources.appendChild(element);
+  }
+
+  /**
+   * @override
+   */
+  update() {
+    this.clear();
+    this._appendAffectedContentSecurityPolicyDetails(this._issue.cspIssues());
   }
 }
 
@@ -325,6 +666,13 @@ class AffectedRequestsView extends AffectedResourcesView {
    */
   update() {
     this.clear();
+    // eslint-disable-next-line no-unused-vars
+    for (const _ of this._issue.blockedByResponseDetails()) {
+      // If the issue has blockedByResponseDetails, the corresponding AffectedBlockedByResponseView
+      // will take care of displaying the request.
+      this.updateAffectedResourceCount(0);
+      return;
+    }
     this._appendAffectedRequests(this._issue.requests());
   }
 }
@@ -548,10 +896,6 @@ class AffectedHeavyAdView extends AffectedResourcesView {
     const element = document.createElement('tr');
     element.classList.add('affected-resource-heavy-ad');
 
-    const frameId = heavyAd.frame.frameId;
-    const frame = BrowserSDK.FrameManager.FrameManager.instance().getFrame(frameId);
-    const url = frame && (frame.unreachableUrl() || frame.url) || '';
-
     const reason = document.createElement('td');
     reason.classList.add('affected-resource-heavy-ad-info');
     reason.textContent = this._limitToString(heavyAd.reason);
@@ -562,28 +906,8 @@ class AffectedHeavyAdView extends AffectedResourcesView {
     status.textContent = this._statusToString(heavyAd.resolution);
     element.appendChild(status);
 
-    const frameUrl = document.createElement('td');
-    frameUrl.classList.add('affected-resource-heavy-ad-info-frame');
-    const icon = UI.Icon.Icon.create('largeicon-node-search', 'icon');
-    icon.onclick = async () => {
-      const frame = BrowserSDK.FrameManager.FrameManager.instance().getFrame(frameId);
-      if (frame) {
-        const deferedNode = await frame.getOwnerDOMNode();
-        if (deferedNode) {
-          Common.Revealer.reveal(deferedNode);
-        }
-      }
-    };
-    UI.Tooltip.Tooltip.install(icon, ls`Click to reveal the frame's DOM node in the Elements panel`);
-    frameUrl.appendChild(icon);
-    frameUrl.appendChild(document.createTextNode(url));
-    frameUrl.onmouseenter = () => {
-      const frame = BrowserSDK.FrameManager.FrameManager.instance().getFrame(frameId);
-      if (frame) {
-        frame.highlight();
-      }
-    };
-    frameUrl.onmouseleave = () => SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+    const frameId = heavyAd.frame.frameId;
+    const frameUrl = this._createFrameCell(frameId);
     element.appendChild(frameUrl);
 
     this._affectedResources.appendChild(element);
@@ -597,6 +921,85 @@ class AffectedHeavyAdView extends AffectedResourcesView {
     this._appendAffectedHeavyAds(this._issue.heavyAds());
   }
 }
+
+class AffectedBlockedByResponseView extends AffectedResourcesView {
+  /**
+   * @param {!IssueView} parent
+   * @param {!SDK.Issue.Issue} issue
+   */
+  constructor(parent, issue) {
+    super(parent, {singular: ls`request`, plural: ls`requests`});
+    /** @type {!SDK.Issue.Issue} */
+    this._issue = issue;
+  }
+
+  /**
+   * @param {!Iterable<!Protocol.Audits.BlockedByResponseIssueDetails>} details
+   */
+  _appendDetails(details) {
+    const header = document.createElement('tr');
+
+    const request = document.createElement('td');
+    request.classList.add('affected-resource-header');
+    request.textContent = ls`Request`;
+    header.appendChild(request);
+
+    const name = document.createElement('td');
+    name.classList.add('affected-resource-header');
+    name.textContent = ls`Parent Frame`;
+    header.appendChild(name);
+
+    const frame = document.createElement('td');
+    frame.classList.add('affected-resource-header');
+    frame.textContent = ls`Blocked Resource`;
+    header.appendChild(frame);
+
+    this._affectedResources.appendChild(header);
+
+    let count = 0;
+    for (const detail of details) {
+      this._appendDetail(detail);
+      count++;
+    }
+    this.updateAffectedResourceCount(count);
+  }
+
+  /**
+   * @param {!Protocol.Audits.BlockedByResponseIssueDetails} details
+   */
+  _appendDetail(details) {
+    const element = document.createElement('tr');
+    element.classList.add('affected-resource-row');
+
+    const requestCell = this._createRequestCell(details.request);
+    element.appendChild(requestCell);
+
+    if (details.parentFrame) {
+      const frameUrl = this._createFrameCell(details.parentFrame.frameId);
+      element.appendChild(frameUrl);
+    } else {
+      element.appendChild(document.createElement('td'));
+    }
+
+    if (details.blockedFrame) {
+      const frameUrl = this._createFrameCell(details.blockedFrame.frameId);
+      element.appendChild(frameUrl);
+    } else {
+      element.appendChild(document.createElement('td'));
+    }
+
+    this._affectedResources.appendChild(element);
+  }
+
+  /**
+   * @override
+   */
+  update() {
+    this.clear();
+    this._appendDetails(this._issue.blockedByResponseDetails());
+  }
+}
+
 
 class IssueView extends UI.TreeOutline.TreeElement {
   /**
@@ -621,10 +1024,19 @@ class IssueView extends UI.TreeOutline.TreeElement {
     this._affectedResourceViews = [
       new AffectedCookiesView(this, this._issue), new AffectedElementsView(this, this._issue),
       new AffectedRequestsView(this, this._issue), new AffectedMixedContentView(this, this._issue),
-      new AffectedSourcesView(this, this._issue), new AffectedHeavyAdView(this, this._issue)
+      new AffectedSourcesView(this, this._issue), new AffectedHeavyAdView(this, this._issue),
+      new AffectedDirectivesView(this, this._issue), new AffectedBlockedByResponseView(this, this._issue)
     ];
 
     this._aggregatedIssuesCount = null;
+    this._hasBeenExpandedBefore = false;
+  }
+
+  /**
+   * @returns {string}
+   */
+  getIssueTitle() {
+    return this._description.title;
   }
 
   /**
@@ -667,6 +1079,18 @@ class IssueView extends UI.TreeOutline.TreeElement {
     header.appendChild(title);
 
     this.listItemElement.appendChild(header);
+  }
+
+  /**
+   * @override
+   */
+  onexpand() {
+    if (!this._hasBeenExpandedBefore) {
+      this._hasBeenExpandedBefore = true;
+      for (const view of this._affectedResourceViews) {
+        view.expandIfOneResource();
+      }
+    }
   }
 
   _updateAggregatedIssuesCount() {
@@ -763,7 +1187,6 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
 
     this._noIssuesMessageDiv = document.createElement('div');
     this._noIssuesMessageDiv.classList.add('issues-pane-no-issues');
-    this._noIssuesMessageDiv.textContent = ls`No issues detected so far`;
     this.contentElement.appendChild(this._noIssuesMessageDiv);
 
     /** @type {!BrowserSDK.IssuesManager.IssuesManager} */
@@ -775,13 +1198,8 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
     for (const issue of this._aggregator.aggregatedIssues()) {
       this._updateIssueView(issue);
     }
+    this._issuesManager.addEventListener(BrowserSDK.IssuesManager.Events.IssuesCountUpdated, this._updateCounts, this);
     this._updateCounts();
-
-    /** @type {?UI.Infobar.Infobar} */
-    this._reloadInfobar = null;
-    /** @type {?Element} */
-    this._infoBarDiv = null;
-    this._showReloadInfobarIfNeeded();
   }
 
   /**
@@ -799,6 +1217,14 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
     const toolbarContainer = this.contentElement.createChild('div', 'issues-toolbar-container');
     new UI.Toolbar.Toolbar('issues-toolbar-left', toolbarContainer);
     const rightToolbar = new UI.Toolbar.Toolbar('issues-toolbar-right', toolbarContainer);
+
+    // TODO(crbug.com/1011811): Remove cast once closure is gone. Closure requires an upcast to 'any' from 'boolean'.
+    const thirdPartySetting = /** @type {!Common.Settings.Setting<*>} */ (SDK.Issue.getShowThirdPartyIssuesSetting());
+    const showThirdPartyCheckbox = new UI.Toolbar.ToolbarSettingCheckbox(
+        thirdPartySetting, ls`Include cookie Issues caused by third-party sites`,
+        ls`Include third-party cookie issues`);
+    rightToolbar.appendToolbarItem(showThirdPartyCheckbox);
+
     rightToolbar.appendSeparator();
     const toolbarWarnings = document.createElement('div');
     toolbarWarnings.classList.add('toolbar-warnings');
@@ -831,22 +1257,32 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
    * @param {!AggregatedIssue} issue
    */
   _updateIssueView(issue) {
-    const description = issue.getDescription();
-    if (!description) {
-      console.warn('Could not find description for issue code:', issue.code());
-      return;
-    }
     if (!this._issueViews.has(issue.code())) {
-      const view = new IssueView(this, issue, description);
+      let description = issue.getDescription();
+      if (!description) {
+        console.warn('Could not find description for issue code:', issue.code());
+        return;
+      }
+      if ('file' in description) {
+        // TODO(crbug.com/1011811): Remove casts once closure is gone. TypeScript can infer the type variant.
+        description =
+            createIssueDescriptionFromMarkdown(/** @type {!SDK.Issue.MarkdownIssueDescription} */ (description));
+      }
+      const view = new IssueView(this, issue, /** @type {!SDK.Issue.IssueDescription} */ (description));
       this._issueViews.set(issue.code(), view);
-      this._issuesTree.appendChild(view);
+      this._issuesTree.appendChild(view, (a, b) => {
+        if (a instanceof IssueView && b instanceof IssueView) {
+          return a.getIssueTitle().localeCompare(b.getIssueTitle());
+        }
+        console.error('The issues tree should only contain IssueView objects as direct children');
+        return 0;
+      });
     }
     this._issueViews.get(issue.code()).update();
     this._updateCounts();
   }
 
   _fullUpdate() {
-    this._hideReloadInfoBar();
     for (const view of this._issueViews.values()) {
       this._issuesTree.removeChild(view);
     }
@@ -869,11 +1305,15 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
    * @param {number} issuesCount
    */
   _showIssuesTreeOrNoIssuesDetectedMessage(issuesCount) {
-    if (issuesCount > 0 || this._issuesManager.reloadForAccurateInformationRequired()) {
+    if (issuesCount > 0) {
       this._issuesTree.element.hidden = false;
       this._noIssuesMessageDiv.style.display = 'none';
     } else {
       this._issuesTree.element.hidden = true;
+      // We alreay know that issesCount is zero here.
+      const hasOnlyThirdPartyIssues = this._issuesManager.numberOfAllStoredIssues() > 0;
+      this._noIssuesMessageDiv.textContent =
+          hasOnlyThirdPartyIssues ? ls`Only third-party cookie issues detected so far` : ls`No issues detected so far`;
       this._noIssuesMessageDiv.style.display = 'flex';
     }
   }
@@ -886,49 +1326,6 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
     if (issueView) {
       issueView.expand();
       issueView.reveal();
-    }
-  }
-
-  _showReloadInfobarIfNeeded() {
-    if (!this._issuesManager.reloadForAccurateInformationRequired()) {
-      return;
-    }
-
-    function reload() {
-      const mainTarget = SDK.SDKModel.TargetManager.instance().mainTarget();
-      if (mainTarget) {
-        const resourceModel = mainTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
-        if (resourceModel) {
-          resourceModel.reloadPage();
-        }
-      }
-    }
-
-    const infobar = new UI.Infobar.Infobar(
-        UI.Infobar.Type.Warning,
-        ls`Some issues might be missing or incomplete, reload the inspected page to get the full information.`,
-        [{text: ls`Reload page`, highlight: false, delegate: reload, dismiss: true}]);
-
-    this._reloadInfobar = infobar;
-    this._attachReloadInfoBar(infobar);
-  }
-
-  /** @param {!UI.Infobar.Infobar} infobar */
-  _attachReloadInfoBar(infobar) {
-    if (!this._infoBarDiv) {
-      this._infoBarDiv = document.createElement('div');
-      this._infoBarDiv.classList.add('flex-none');
-      this.contentElement.insertBefore(this._infoBarDiv, this._issuesToolbarContainer.nextSibling);
-    }
-    this._infoBarDiv.appendChild(infobar.element);
-    infobar.setParentView(this);
-    this.doResize();
-  }
-
-  _hideReloadInfoBar() {
-    if (this._reloadInfobar) {
-      this._reloadInfobar.dispose();
-      this._reloadInfobar = null;
     }
   }
 }

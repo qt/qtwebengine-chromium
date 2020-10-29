@@ -162,19 +162,6 @@ TrackId TrackTracker::InternAndroidAsyncTrack(StringId name,
   return id;
 }
 
-TrackId TrackTracker::InternPerfStackTrack(UniquePid upid) {
-  auto it = perf_stack_tracks_.find(upid);
-  if (it != perf_stack_tracks_.end())
-    return it->second;
-
-  StringId name = context_->storage->InternString("Stack samples");
-  tables::ProcessTrackTable::Row row(name);
-  row.upid = upid;
-  auto id = context_->storage->mutable_process_track_table()->Insert(row).id;
-  perf_stack_tracks_[upid] = id;
-  return id;
-}
-
 TrackId TrackTracker::InternLegacyChromeProcessInstantTrack(UniquePid upid) {
   auto it = chrome_process_instant_tracks_.find(upid);
   if (it != chrome_process_instant_tracks_.end())
@@ -416,8 +403,8 @@ TrackId TrackTracker::ResolveDescriptorTrack(
                     *reservation.pid, *reservation.tid, old_uuid, uuid,
                     reservation.min_timestamp);
 
-      utid = context_->process_tracker->StartNewThread(
-          base::nullopt, *reservation.tid, kNullStringId);
+      utid = context_->process_tracker->StartNewThread(base::nullopt,
+                                                       *reservation.tid);
 
       // Associate the new thread with its process.
       PERFETTO_CHECK(context_->process_tracker->UpdateThread(
@@ -565,13 +552,17 @@ TrackId TrackTracker::GetOrCreateTriggerTrack() {
   return *trigger_track_id_;
 }
 
-TrackId TrackTracker::InternGlobalCounterTrack(StringId name) {
+TrackId TrackTracker::InternGlobalCounterTrack(StringId name,
+                                               StringId unit,
+                                               StringId description) {
   auto it = global_counter_tracks_by_name_.find(name);
   if (it != global_counter_tracks_by_name_.end()) {
     return it->second;
   }
 
   tables::CounterTrackTable::Row row(name);
+  row.unit = unit;
+  row.description = description;
   TrackId track =
       context_->storage->mutable_counter_track_table()->Insert(row).id;
   global_counter_tracks_by_name_[name] = track;
@@ -608,7 +599,10 @@ TrackId TrackTracker::InternThreadCounterTrack(StringId name, UniqueTid utid) {
   return track;
 }
 
-TrackId TrackTracker::InternProcessCounterTrack(StringId name, UniquePid upid) {
+TrackId TrackTracker::InternProcessCounterTrack(StringId name,
+                                                UniquePid upid,
+                                                StringId unit,
+                                                StringId description) {
   auto it = upid_counter_tracks_.find(std::make_pair(name, upid));
   if (it != upid_counter_tracks_.end()) {
     return it->second;
@@ -616,6 +610,8 @@ TrackId TrackTracker::InternProcessCounterTrack(StringId name, UniquePid upid) {
 
   tables::ProcessCounterTrackTable::Row row(name);
   row.upid = upid;
+  row.unit = unit;
+  row.description = description;
 
   TrackId track =
       context_->storage->mutable_process_counter_track_table()->Insert(row).id;

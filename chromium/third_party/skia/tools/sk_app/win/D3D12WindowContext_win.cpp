@@ -11,6 +11,7 @@
 #include "tools/gpu/d3d/D3DTestUtils.h"
 
 #include "include/core/SkSurface.h"
+#include "include/gpu/GrDirectContext.h"
 #include "include/gpu/d3d/GrD3DBackendContext.h"
 
 #include <d3d12.h>
@@ -81,7 +82,7 @@ void D3D12WindowContext::initializeContext() {
     fDevice = backendContext.fDevice;
     fQueue = backendContext.fQueue;
 
-    fContext = GrContext::MakeDirect3D(backendContext, fDisplayParams.fGrContextOptions);
+    fContext = GrDirectContext::MakeDirect3D(backendContext, fDisplayParams.fGrContextOptions);
     SkASSERT(fContext);
 
     // Make the swapchain
@@ -103,7 +104,7 @@ void D3D12WindowContext::initializeContext() {
     swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    swapChainDesc.SampleDesc.Count = 1; // TODO: support MSAA
+    swapChainDesc.SampleDesc.Count = 1;
 
     gr_cp<IDXGISwapChain1> swapChain;
     GR_D3D_CALL_ERRCHECK(factory->CreateSwapChainForHwnd(
@@ -116,10 +117,12 @@ void D3D12WindowContext::initializeContext() {
 
     fBufferIndex = fSwapChain->GetCurrentBackBufferIndex();
 
+    fSampleCount = fDisplayParams.fMSAASampleCount;
+
     this->setupSurfaces(width, height);
 
     for (int i = 0; i < kNumFrames; ++i) {
-        fFenceValues[i] = 1;
+        fFenceValues[i] = 10000;   // use a high value to make it easier to track these in PIX
     }
     GR_D3D_CALL_ERRCHECK(fDevice->CreateFence(fFenceValues[fBufferIndex], D3D12_FENCE_FLAG_NONE,
                                               IID_PPV_ARGS(&fFence)));
@@ -144,12 +147,18 @@ void D3D12WindowContext::setupSurfaces(int width, int height) {
         SkASSERT(fBuffers[i]->GetDesc().Width == (UINT64)width &&
                  fBuffers[i]->GetDesc().Height == (UINT64)height);
 
-        // TODO: support MSAA
         info.fResource = fBuffers[i];
-        GrBackendRenderTarget backendRT(width, height, 1, info);
-        fSurfaces[i] = SkSurface::MakeFromBackendRenderTarget(
-            fContext.get(), backendRT, kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
-            fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
+        if (fSampleCount > 1) {
+            GrBackendTexture backendTexture(width, height, info);
+            fSurfaces[i] = SkSurface::MakeFromBackendTexture(
+                fContext.get(), backendTexture, kTopLeft_GrSurfaceOrigin, fSampleCount,
+                kRGBA_8888_SkColorType, fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
+        } else {
+            GrBackendRenderTarget backendRT(width, height, 1, info);
+            fSurfaces[i] = SkSurface::MakeFromBackendRenderTarget(
+                fContext.get(), backendRT, kTopLeft_GrSurfaceOrigin, kRGBA_8888_SkColorType,
+                fDisplayParams.fColorSpace, &fDisplayParams.fSurfaceProps);
+        }
     }
 }
 

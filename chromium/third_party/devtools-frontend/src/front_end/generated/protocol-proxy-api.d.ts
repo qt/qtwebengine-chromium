@@ -457,6 +457,22 @@ declare namespace ProtocolProxyApi {
         Promise<Protocol.CSS.GetStyleSheetTextResponse>;
 
     /**
+     * Starts tracking the given computed styles for updates. The specified array of properties
+     * replaces the one previously specified. Pass empty array to disable tracking.
+     * Use takeComputedStyleUpdates to retrieve the list of nodes that had properties modified.
+     * The changes to computed style properties are only tracked for nodes pushed to the front-end
+     * by the DOM agent. If no changes to the tracked properties occur after the node has been pushed
+     * to the front-end, no updates will be issued for the node.
+     */
+    invoke_trackComputedStyleUpdates(params: Protocol.CSS.TrackComputedStyleUpdatesRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Polls the next batch of computed style updates.
+     */
+    invoke_takeComputedStyleUpdates(): Promise<Protocol.CSS.TakeComputedStyleUpdatesResponse>;
+
+    /**
      * Find a rule with the given active property for the given node and set the new value for this
      * property
      */
@@ -505,6 +521,12 @@ declare namespace ProtocolProxyApi {
      * instrumentation)
      */
     invoke_takeCoverageDelta(): Promise<Protocol.CSS.TakeCoverageDeltaResponse>;
+
+    /**
+     * Enables/disables rendering of local CSS fonts (enabled by default).
+     */
+    invoke_setLocalFontsEnabled(params: Protocol.CSS.SetLocalFontsEnabledRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
   }
   export interface CSSDispatcher extends Protocol.Dispatcher {
     /**
@@ -684,9 +706,17 @@ declare namespace ProtocolProxyApi {
 
     /**
      * Returns the root DOM node (and optionally the subtree) to the caller.
+     * Deprecated, as it is not designed to work well with the rest of the DOM agent.
+     * Use DOMSnapshot.captureSnapshot instead.
      */
     invoke_getFlattenedDocument(params: Protocol.DOM.GetFlattenedDocumentRequest):
         Promise<Protocol.DOM.GetFlattenedDocumentResponse>;
+
+    /**
+     * Finds nodes with a given computed style in a subtree.
+     */
+    invoke_getNodesForSubtreeByStyle(params: Protocol.DOM.GetNodesForSubtreeByStyleRequest):
+        Promise<Protocol.DOM.GetNodesForSubtreeByStyleResponse>;
 
     /**
      * Returns node id at given location. Depending on whether DOM domain is enabled, nodeId is
@@ -1172,6 +1202,17 @@ declare namespace ProtocolProxyApi {
      */
     invoke_setGeolocationOverride(params: Protocol.Emulation.SetGeolocationOverrideRequest):
         Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Overrides the Idle state.
+     */
+    invoke_setIdleOverride(params: Protocol.Emulation.SetIdleOverrideRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Clears Idle state overrides.
+     */
+    invoke_clearIdleOverride(): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Overrides value returned by the javascript navigator object.
@@ -1740,6 +1781,12 @@ declare namespace ProtocolProxyApi {
      */
     invoke_setUserAgentOverride(params: Protocol.Network.SetUserAgentOverrideRequest):
         Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Returns information about the COEP/COOP isolation status.
+     */
+    invoke_getSecurityIsolationStatus(params: Protocol.Network.GetSecurityIsolationStatusRequest):
+        Promise<Protocol.Network.GetSecurityIsolationStatusResponse>;
   }
   export interface NetworkDispatcher extends Protocol.Dispatcher {
     /**
@@ -1863,6 +1910,18 @@ declare namespace ProtocolProxyApi {
         Promise<Protocol.Overlay.GetHighlightObjectForTestResponse>;
 
     /**
+     * For Persistent Grid testing.
+     */
+    invoke_getGridHighlightObjectsForTest(params: Protocol.Overlay.GetGridHighlightObjectsForTestRequest):
+        Promise<Protocol.Overlay.GetGridHighlightObjectsForTestResponse>;
+
+    /**
+     * For Source Order Viewer testing.
+     */
+    invoke_getSourceOrderHighlightObjectForTest(params: Protocol.Overlay.GetSourceOrderHighlightObjectForTestRequest):
+        Promise<Protocol.Overlay.GetSourceOrderHighlightObjectForTestResponse>;
+
+    /**
      * Hides any highlight.
      */
     invoke_hideHighlight(): Promise<Protocol.ProtocolResponseWithError>;
@@ -1889,6 +1948,13 @@ declare namespace ProtocolProxyApi {
     invoke_highlightRect(params: Protocol.Overlay.HighlightRectRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
+     * Highlights the source order of the children of the DOM node with given id or with the given
+     * JavaScript object wrapper. Either nodeId or objectId must be specified.
+     */
+    invoke_highlightSourceOrder(params: Protocol.Overlay.HighlightSourceOrderRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
      * Enters the 'inspect' mode. In this mode, elements that user is hovering over are highlighted.
      * Backend then generates 'inspectNodeRequested' event upon element selection.
      */
@@ -1913,6 +1979,12 @@ declare namespace ProtocolProxyApi {
      * Requests that backend shows the FPS counter
      */
     invoke_setShowFPSCounter(params: Protocol.Overlay.SetShowFPSCounterRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Highlight multiple elements with the CSS Grid overlay.
+     */
+    invoke_setShowGridOverlays(params: Protocol.Overlay.SetShowGridOverlaysRequest):
         Promise<Protocol.ProtocolResponseWithError>;
 
     /**
@@ -3024,6 +3096,13 @@ declare namespace ProtocolProxyApi {
      */
     invoke_setUserVerified(params: Protocol.WebAuthn.SetUserVerifiedRequest):
         Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Sets whether tests of user presence will succeed immediately (if true) or fail to resolve (if false) for an authenticator.
+     * The default is true.
+     */
+    invoke_setAutomaticPresenceSimulation(params: Protocol.WebAuthn.SetAutomaticPresenceSimulationRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
   }
   export interface WebAuthnDispatcher extends Protocol.Dispatcher {}
 
@@ -3280,7 +3359,7 @@ declare namespace ProtocolProxyApi {
     /**
      * Steps over the statement.
      */
-    invoke_stepOver(): Promise<Protocol.ProtocolResponseWithError>;
+    invoke_stepOver(params: Protocol.Debugger.StepOverRequest): Promise<Protocol.ProtocolResponseWithError>;
   }
   export interface DebuggerDispatcher extends Protocol.Dispatcher {
     /**

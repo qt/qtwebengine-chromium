@@ -100,9 +100,9 @@ namespace dawn_native { namespace null {
         const BindGroupLayoutDescriptor* descriptor) {
         return new BindGroupLayout(this, descriptor);
     }
-    ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
+    ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         DAWN_TRY(IncrementMemoryUsage(descriptor->size));
-        return new Buffer(this, descriptor);
+        return AcquireRef(new Buffer(this, descriptor));
     }
     CommandBufferBase* Device::CreateCommandBuffer(CommandEncoder* encoder,
                                                    const CommandBufferDescriptor* descriptor) {
@@ -197,6 +197,10 @@ namespace dawn_native { namespace null {
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
+        if (IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            destination->SetIsDataInitialized();
+        }
+
         auto operation = std::make_unique<CopyFromStagingToBufferOperation>();
         operation->staging = source;
         operation->destination = ToBackend(destination);
@@ -209,8 +213,8 @@ namespace dawn_native { namespace null {
         return {};
     }
 
-    MaybeError Device::IncrementMemoryUsage(size_t bytes) {
-        static_assert(kMaxMemoryUsage <= std::numeric_limits<size_t>::max() / 2, "");
+    MaybeError Device::IncrementMemoryUsage(uint64_t bytes) {
+        static_assert(kMaxMemoryUsage <= std::numeric_limits<size_t>::max(), "");
         if (bytes > kMaxMemoryUsage || mMemoryUsage + bytes > kMaxMemoryUsage) {
             return DAWN_OUT_OF_MEMORY_ERROR("Out of memory.");
         }
@@ -218,7 +222,7 @@ namespace dawn_native { namespace null {
         return {};
     }
 
-    void Device::DecrementMemoryUsage(size_t bytes) {
+    void Device::DecrementMemoryUsage(uint64_t bytes) {
         ASSERT(mMemoryUsage >= bytes);
         mMemoryUsage -= bytes;
     }
@@ -266,17 +270,6 @@ namespace dawn_native { namespace null {
 
     // Buffer
 
-    struct BufferMapOperation : PendingOperation {
-        virtual void Execute() {
-            buffer->OnMapCommandSerialFinished(serial, isWrite);
-        }
-
-        Ref<Buffer> buffer;
-        void* ptr;
-        uint32_t serial;
-        bool isWrite;
-    };
-
     Buffer::Buffer(Device* device, const BufferDescriptor* descriptor)
         : BufferBase(device, descriptor) {
         mBackingData = std::unique_ptr<uint8_t[]>(new uint8_t[GetSize()]);
@@ -287,14 +280,13 @@ namespace dawn_native { namespace null {
         ToBackend(GetDevice())->DecrementMemoryUsage(GetSize());
     }
 
-    bool Buffer::IsMapWritable() const {
+    bool Buffer::IsMappableAtCreation() const {
         // Only return true for mappable buffers so we can test cases that need / don't need a
         // staging buffer.
         return (GetUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) != 0;
     }
 
-    MaybeError Buffer::MapAtCreationImpl(uint8_t** mappedPointer) {
-        *mappedPointer = mBackingData.get();
+    MaybeError Buffer::MapAtCreationImpl() {
         return {};
     }
 
@@ -312,26 +304,16 @@ namespace dawn_native { namespace null {
         memcpy(mBackingData.get() + bufferOffset, data, size);
     }
 
-    MaybeError Buffer::MapReadAsyncImpl(uint32_t serial) {
-        MapAsyncImplCommon(serial, false);
+    MaybeError Buffer::MapReadAsyncImpl() {
         return {};
     }
 
-    MaybeError Buffer::MapWriteAsyncImpl(uint32_t serial) {
-        MapAsyncImplCommon(serial, true);
+    MaybeError Buffer::MapWriteAsyncImpl() {
         return {};
     }
 
-    void Buffer::MapAsyncImplCommon(uint32_t serial, bool isWrite) {
-        ASSERT(mBackingData);
-
-        auto operation = std::make_unique<BufferMapOperation>();
-        operation->buffer = this;
-        operation->ptr = mBackingData.get();
-        operation->serial = serial;
-        operation->isWrite = isWrite;
-
-        ToBackend(GetDevice())->AddPendingOperation(std::move(operation));
+    MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
+        return {};
     }
 
     void* Buffer::GetMappedPointerImpl() {
@@ -347,11 +329,7 @@ namespace dawn_native { namespace null {
     // CommandBuffer
 
     CommandBuffer::CommandBuffer(CommandEncoder* encoder, const CommandBufferDescriptor* descriptor)
-        : CommandBufferBase(encoder, descriptor), mCommands(encoder->AcquireCommands()) {
-    }
-
-    CommandBuffer::~CommandBuffer() {
-        FreeCommands(&mCommands);
+        : CommandBufferBase(encoder, descriptor) {
     }
 
     // QuerySet

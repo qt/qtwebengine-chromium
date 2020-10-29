@@ -870,6 +870,19 @@ export namespace ProtocolMapping {
     'CSS.getStyleSheetText':
         {paramsType: [Protocol.CSS.GetStyleSheetTextRequest]; returnType: Protocol.CSS.GetStyleSheetTextResponse;};
     /**
+     * Starts tracking the given computed styles for updates. The specified array of properties
+     * replaces the one previously specified. Pass empty array to disable tracking.
+     * Use takeComputedStyleUpdates to retrieve the list of nodes that had properties modified.
+     * The changes to computed style properties are only tracked for nodes pushed to the front-end
+     * by the DOM agent. If no changes to the tracked properties occur after the node has been pushed
+     * to the front-end, no updates will be issued for the node.
+     */
+    'CSS.trackComputedStyleUpdates': {paramsType: [Protocol.CSS.TrackComputedStyleUpdatesRequest]; returnType: void;};
+    /**
+     * Polls the next batch of computed style updates.
+     */
+    'CSS.takeComputedStyleUpdates': {paramsType: []; returnType: Protocol.CSS.TakeComputedStyleUpdatesResponse;};
+    /**
      * Find a rule with the given active property for the given node and set the new value for this
      * property
      */
@@ -914,6 +927,10 @@ export namespace ProtocolMapping {
      * instrumentation)
      */
     'CSS.takeCoverageDelta': {paramsType: []; returnType: Protocol.CSS.TakeCoverageDeltaResponse;};
+    /**
+     * Enables/disables rendering of local CSS fonts (enabled by default).
+     */
+    'CSS.setLocalFontsEnabled': {paramsType: [Protocol.CSS.SetLocalFontsEnabledRequest]; returnType: void;};
     /**
      * Deletes a cache.
      */
@@ -1030,9 +1047,18 @@ export namespace ProtocolMapping {
     'DOM.getDocument': {paramsType: [Protocol.DOM.GetDocumentRequest?]; returnType: Protocol.DOM.GetDocumentResponse;};
     /**
      * Returns the root DOM node (and optionally the subtree) to the caller.
+     * Deprecated, as it is not designed to work well with the rest of the DOM agent.
+     * Use DOMSnapshot.captureSnapshot instead.
      */
     'DOM.getFlattenedDocument': {
       paramsType: [Protocol.DOM.GetFlattenedDocumentRequest?]; returnType: Protocol.DOM.GetFlattenedDocumentResponse;
+    };
+    /**
+     * Finds nodes with a given computed style in a subtree.
+     */
+    'DOM.getNodesForSubtreeByStyle': {
+      paramsType: [Protocol.DOM.GetNodesForSubtreeByStyleRequest];
+      returnType: Protocol.DOM.GetNodesForSubtreeByStyleResponse;
     };
     /**
      * Returns node id at given location. Depending on whether DOM domain is enabled, nodeId is
@@ -1355,6 +1381,14 @@ export namespace ProtocolMapping {
      */
     'Emulation.setGeolocationOverride':
         {paramsType: [Protocol.Emulation.SetGeolocationOverrideRequest?]; returnType: void;};
+    /**
+     * Overrides the Idle state.
+     */
+    'Emulation.setIdleOverride': {paramsType: [Protocol.Emulation.SetIdleOverrideRequest]; returnType: void;};
+    /**
+     * Clears Idle state overrides.
+     */
+    'Emulation.clearIdleOverride': {paramsType: []; returnType: void;};
     /**
      * Overrides value returned by the javascript navigator object.
      */
@@ -1771,6 +1805,13 @@ export namespace ProtocolMapping {
      */
     'Network.setUserAgentOverride': {paramsType: [Protocol.Network.SetUserAgentOverrideRequest]; returnType: void;};
     /**
+     * Returns information about the COEP/COOP isolation status.
+     */
+    'Network.getSecurityIsolationStatus': {
+      paramsType: [Protocol.Network.GetSecurityIsolationStatusRequest?];
+      returnType: Protocol.Network.GetSecurityIsolationStatusResponse;
+    };
+    /**
      * Disables domain notifications.
      */
     'Overlay.disable': {paramsType: []; returnType: void;};
@@ -1784,6 +1825,20 @@ export namespace ProtocolMapping {
     'Overlay.getHighlightObjectForTest': {
       paramsType: [Protocol.Overlay.GetHighlightObjectForTestRequest];
       returnType: Protocol.Overlay.GetHighlightObjectForTestResponse;
+    };
+    /**
+     * For Persistent Grid testing.
+     */
+    'Overlay.getGridHighlightObjectsForTest': {
+      paramsType: [Protocol.Overlay.GetGridHighlightObjectsForTestRequest];
+      returnType: Protocol.Overlay.GetGridHighlightObjectsForTestResponse;
+    };
+    /**
+     * For Source Order Viewer testing.
+     */
+    'Overlay.getSourceOrderHighlightObjectForTest': {
+      paramsType: [Protocol.Overlay.GetSourceOrderHighlightObjectForTestRequest];
+      returnType: Protocol.Overlay.GetSourceOrderHighlightObjectForTestResponse;
     };
     /**
      * Hides any highlight.
@@ -1807,6 +1862,11 @@ export namespace ProtocolMapping {
      */
     'Overlay.highlightRect': {paramsType: [Protocol.Overlay.HighlightRectRequest]; returnType: void;};
     /**
+     * Highlights the source order of the children of the DOM node with given id or with the given
+     * JavaScript object wrapper. Either nodeId or objectId must be specified.
+     */
+    'Overlay.highlightSourceOrder': {paramsType: [Protocol.Overlay.HighlightSourceOrderRequest]; returnType: void;};
+    /**
      * Enters the 'inspect' mode. In this mode, elements that user is hovering over are highlighted.
      * Backend then generates 'inspectNodeRequested' event upon element selection.
      */
@@ -1825,6 +1885,10 @@ export namespace ProtocolMapping {
      * Requests that backend shows the FPS counter
      */
     'Overlay.setShowFPSCounter': {paramsType: [Protocol.Overlay.SetShowFPSCounterRequest]; returnType: void;};
+    /**
+     * Highlight multiple elements with the CSS Grid overlay.
+     */
+    'Overlay.setShowGridOverlays': {paramsType: [Protocol.Overlay.SetShowGridOverlaysRequest]; returnType: void;};
     /**
      * Requests that backend shows paint rectangles
      */
@@ -2428,6 +2492,12 @@ export namespace ProtocolMapping {
      */
     'WebAuthn.setUserVerified': {paramsType: [Protocol.WebAuthn.SetUserVerifiedRequest]; returnType: void;};
     /**
+     * Sets whether tests of user presence will succeed immediately (if true) or fail to resolve (if false) for an authenticator.
+     * The default is true.
+     */
+    'WebAuthn.setAutomaticPresenceSimulation':
+        {paramsType: [Protocol.WebAuthn.SetAutomaticPresenceSimulationRequest]; returnType: void;};
+    /**
      * Enables the Media domain
      */
     'Media.enable': {paramsType: []; returnType: void;};
@@ -2612,7 +2682,7 @@ export namespace ProtocolMapping {
     /**
      * Steps over the statement.
      */
-    'Debugger.stepOver': {paramsType: []; returnType: void;};
+    'Debugger.stepOver': {paramsType: [Protocol.Debugger.StepOverRequest?]; returnType: void;};
     /**
      * Enables console to refer to the node with given id via $x (see Command Line API for more details
      * $x functions).

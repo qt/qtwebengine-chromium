@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as MobileThrottling from '../mobile_throttling/mobile_throttling.js';
@@ -225,7 +228,31 @@ export class DeviceModeToolbar {
       this._spanButton = new UI.Toolbar.ToolbarButton('', 'largeicon-dual-screen');
       this._spanButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this._spanClicked, this);
       toolbar.appendToolbarItem(this._spanButton);
+
+      this._createExperimentalButton(toolbar);
     }
+  }
+
+  /**
+   * @param {!UI.Toolbar.Toolbar} toolbar
+   */
+  _createExperimentalButton(toolbar) {
+    toolbar.appendToolbarItem(new UI.Toolbar.ToolbarSeparator(true));
+
+    const title = (this._model.webPlatformExperimentalFeaturesEnabled()) ?
+        Common.UIString.UIString('\"Experimental Web Platform Feature\" flag is enabled. Click to disable it.') :
+        Common.UIString.UIString('\"Experimental Web Platform Feature\" flag is disabled. Click to enable it.');
+    this._experimentalButton = new UI.Toolbar.ToolbarToggle(title, 'largeicon-experimental-api');
+    this._experimentalButton.setToggled(this._model.webPlatformExperimentalFeaturesEnabled());
+    this._experimentalButton.setEnabled(true);
+    this._experimentalButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this._experimentalClicked, this);
+
+    toolbar.appendToolbarItem(this._experimentalButton);
+  }
+
+  _experimentalClicked() {
+    Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
+        'chrome://flags/#enable-experimental-web-platform-features');
   }
 
   /**
@@ -592,9 +619,6 @@ export class DeviceModeToolbar {
       this._deviceScaleItem.setEnabled(this._model.type() === Type.Responsive);
       this._uaItem.setEnabled(this._model.type() === Type.Responsive);
 
-      if (this._experimentDualScreenSupport) {
-        this._spanButton.setEnabled(false);
-      }
       if (this._model.type() === Type.Responsive) {
         this._modeButton.setEnabled(true);
         this._modeButton.setTitle(ls`Rotate`);
@@ -643,14 +667,20 @@ export class DeviceModeToolbar {
         this._modeButton.setTitle(
             modeCount === 2 ? Common.UIString.UIString('Rotate') :
                               Common.UIString.UIString('Screen orientation options'));
-        if (this._experimentDualScreenSupport) {
-          if (device.isDualScreen) {
-            this._spanButton.setEnabled(true);
-          }
-          this._spanButton.setTitle(Common.UIString.UIString('Toggle dual-screen mode'));
-        }
       }
       this._cachedModelDevice = device;
+    }
+
+    if (this._experimentDualScreenSupport) {
+      const device = this._model.device();
+      if (device && device.isDualScreen) {
+        this._spanButton.setEnabled(true);
+        this._experimentalButton.setVisible(true);
+      } else {
+        this._spanButton.setEnabled(false);
+        this._experimentalButton.setVisible(false);
+      }
+      this._spanButton.setTitle(Common.UIString.UIString('Toggle dual-screen mode'));
     }
 
     if (this._model.type() === Type.Device) {

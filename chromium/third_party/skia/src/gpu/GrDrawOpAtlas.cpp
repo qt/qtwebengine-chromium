@@ -7,10 +7,9 @@
 
 #include "src/gpu/GrDrawOpAtlas.h"
 
-#include "include/gpu/GrContext.h"
+#include <memory>
+
 #include "src/core/SkOpts.h"
-#include "src/gpu/GrContextPriv.h"
-#include "src/gpu/GrGpu.h"
 #include "src/gpu/GrOnFlushResourceProvider.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProxyProvider.h"
@@ -23,20 +22,6 @@
 #ifdef DUMP_ATLAS_DATA
 static bool gDumpAtlasData = false;
 #endif
-
-std::array<uint16_t, 4> GrDrawOpAtlas::AtlasLocator::getUVs(int padding) const {
-
-    uint16_t left   = fRect.fLeft   + padding;
-    uint16_t top    = fRect.fTop    + padding;
-    uint16_t right  = fRect.fRight  - padding;
-    uint16_t bottom = fRect.fBottom - padding;
-
-    // We pack the 2bit page index in the low bit of the u and v texture coords
-    uint32_t pageIndex = this->pageIndex();
-    std::tie(left, bottom) = GrDrawOpAtlas::PackIndexInTexCoords(left, bottom, pageIndex);
-    std::tie(right, top) = GrDrawOpAtlas::PackIndexInTexCoords(right, top, pageIndex);
-    return { left, top, right, bottom };
-}
 
 #ifdef SK_DEBUG
 void GrDrawOpAtlas::AtlasLocator::validate(const GrDrawOpAtlas* drawOpAtlas) const {
@@ -89,20 +74,6 @@ std::unique_ptr<GrDrawOpAtlas> GrDrawOpAtlas::Make(GrProxyProvider* proxyProvide
         atlas->fEvictionCallbacks.emplace_back(evictor);
     }
     return atlas;
-}
-
-// The two bits that make up the texture index are packed into the lower bits of the u and v
-// coordinate respectively.
-std::pair<uint16_t, uint16_t> GrDrawOpAtlas::PackIndexInTexCoords(uint16_t u, uint16_t v,
-                                                                  int pageIndex) {
-    SkASSERT(pageIndex >= 0 && pageIndex < 4);
-    uint16_t uBit = (pageIndex >> 1u) & 0x1u;
-    uint16_t vBit = pageIndex & 0x1u;
-    u <<= 1u;
-    u |= uBit;
-    v <<= 1u;
-    v |= vBit;
-    return std::make_pair(u, v);
 }
 
 std::tuple<uint16_t, uint16_t, int> GrDrawOpAtlas::UnpackIndexFromTexCoords(uint16_t u,
@@ -237,10 +208,10 @@ void GrDrawOpAtlas::Plot::resetRects() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrDrawOpAtlas::GrDrawOpAtlas(
-        GrProxyProvider* proxyProvider, const GrBackendFormat& format,
-        GrColorType colorType, int width, int height, int plotWidth, int plotHeight,
-        GenerationCounter* generationCounter, AllowMultitexturing allowMultitexturing)
+GrDrawOpAtlas::GrDrawOpAtlas(GrProxyProvider* proxyProvider, const GrBackendFormat& format,
+                             GrColorType colorType, int width, int height,
+                             int plotWidth, int plotHeight, GenerationCounter* generationCounter,
+                             AllowMultitexturing allowMultitexturing)
         : fFormat(format)
         , fColorType(colorType)
         , fTextureWidth(width)
@@ -265,7 +236,7 @@ GrDrawOpAtlas::GrDrawOpAtlas(
 }
 
 inline void GrDrawOpAtlas::processEviction(PlotLocator plotLocator) {
-    for (auto evictor : fEvictionCallbacks) {
+    for (EvictionCallback* evictor : fEvictionCallbacks) {
         evictor->evict(plotLocator);
     }
 
@@ -602,7 +573,7 @@ bool GrDrawOpAtlas::createPages(
     for (uint32_t i = 0; i < this->maxPages(); ++i) {
         GrSwizzle swizzle = proxyProvider->caps()->getReadSwizzle(fFormat, fColorType);
         sk_sp<GrSurfaceProxy> proxy = proxyProvider->createProxy(
-                fFormat, dims, GrRenderable::kNo, 1, GrMipMapped::kNo, SkBackingFit::kExact,
+                fFormat, dims, GrRenderable::kNo, 1, GrMipmapped::kNo, SkBackingFit::kExact,
                 SkBudgeted::kYes, GrProtected::kNo, GrInternalSurfaceFlags::kNone,
                 GrSurfaceProxy::UseAllocator::kNo);
         if (!proxy) {
@@ -611,7 +582,7 @@ bool GrDrawOpAtlas::createPages(
         fViews[i] = GrSurfaceProxyView(std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle);
 
         // set up allocated plots
-        fPages[i].fPlotArray.reset(new sk_sp<Plot>[ numPlotsX * numPlotsY ]);
+        fPages[i].fPlotArray = std::make_unique<sk_sp<Plot>[]>(numPlotsX * numPlotsY);
 
         sk_sp<Plot>* currPlot = fPages[i].fPlotArray.get();
         for (int y = numPlotsY - 1, r = 0; y >= 0; --y, ++r) {

@@ -16,7 +16,6 @@
     "sdk",
     "ui"
   ],
-  "scripts": [],
   "modules": [
     "web_audio.js",
     "web_audio-legacy.js",
@@ -34,5 +33,6 @@
   "resources": [
     "webAudio.css",
     "audioContextSelector.css"
-  ]
+  ],
+  "skip_rollup": true
 }

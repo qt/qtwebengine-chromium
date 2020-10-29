@@ -2146,7 +2146,7 @@ constexpr uint16_t kDefaultDcSignCdf[kCoefficientQuantizerContexts][kNumPlaneTyp
     {15488, 0, 0}}}
 };
 /* clang-format on */
-constexpr uint16_t kDefaultRestorationTypeCdf[kCoeffBaseRangeSymbolCount + 1] =
+constexpr uint16_t kDefaultRestorationTypeCdf[kRestorationTypeSymbolCount + 1] =
     {23355, 10187, 0, 0};
 
 constexpr uint16_t kDefaultUseWienerCdf[kBooleanFieldCdfSize] = {21198, 0, 0};

@@ -198,7 +198,7 @@ void CaptureGetActiveAttrib_length(const State &glState,
                                    GLchar *name,
                                    ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    paramCapture->readBufferSizeBytes = sizeof(GLsizei);
 }
 
 void CaptureGetActiveAttrib_size(const State &glState,
@@ -212,7 +212,7 @@ void CaptureGetActiveAttrib_size(const State &glState,
                                  GLchar *name,
                                  ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    paramCapture->readBufferSizeBytes = sizeof(GLint);
 }
 
 void CaptureGetActiveAttrib_type(const State &glState,
@@ -226,7 +226,7 @@ void CaptureGetActiveAttrib_type(const State &glState,
                                  GLchar *name,
                                  ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    paramCapture->readBufferSizeBytes = sizeof(GLenum);
 }
 
 void CaptureGetActiveAttrib_name(const State &glState,
@@ -446,7 +446,7 @@ void CaptureGetShaderInfoLog_infoLog(const State &glState,
                                      ParamCapture *paramCapture)
 {
     gl::Shader *shaderObj = glState.getShaderProgramManagerForCapture().getShader(shader);
-    ASSERT(shaderObj && shaderObj->isCompiled());
+    ASSERT(shaderObj);
     paramCapture->readBufferSizeBytes = shaderObj->getInfoLogLength() + 1;
 }
 
@@ -548,7 +548,8 @@ void CaptureGetUniformfv_params(const State &glState,
                                 GLfloat *params,
                                 ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    // the value returned cannot have size larger than a mat4 of floats
+    paramCapture->readBufferSizeBytes = 64;
 }
 
 void CaptureGetUniformiv_params(const State &glState,
@@ -558,7 +559,8 @@ void CaptureGetUniformiv_params(const State &glState,
                                 GLint *params,
                                 ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    // the value returned cannot have size larger than a mat4 of ints
+    paramCapture->readBufferSizeBytes = 64;
 }
 
 void CaptureGetVertexAttribPointerv_pointer(const State &glState,

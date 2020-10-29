@@ -55,9 +55,6 @@ class TrackTracker {
                                   UniquePid upid,
                                   int64_t cookie);
 
-  // Interns a track for perf event stack samples, with process-wide grouping.
-  TrackId InternPerfStackTrack(UniquePid upid);
-
   // Interns a track for legacy Chrome process-scoped instant events into the
   // storage.
   TrackId InternLegacyChromeProcessInstantTrack(UniquePid upid);
@@ -146,7 +143,9 @@ class TrackTracker {
   TrackId GetOrCreateTriggerTrack();
 
   // Interns a global counter track into the storage.
-  TrackId InternGlobalCounterTrack(StringId name);
+  TrackId InternGlobalCounterTrack(StringId name,
+                                   StringId unit = kNullStringId,
+                                   StringId description = kNullStringId);
 
   // Interns a counter track associated with a cpu into the storage.
   TrackId InternCpuCounterTrack(StringId name, uint32_t cpu);
@@ -155,7 +154,10 @@ class TrackTracker {
   TrackId InternThreadCounterTrack(StringId name, UniqueTid utid);
 
   // Interns a counter track associated with a process into the storage.
-  TrackId InternProcessCounterTrack(StringId name, UniquePid upid);
+  TrackId InternProcessCounterTrack(StringId name,
+                                    UniquePid upid,
+                                    StringId unit = kNullStringId,
+                                    StringId description = kNullStringId);
 
   // Interns a counter track associated with an irq into the storage.
   TrackId InternIrqCounterTrack(StringId name, int32_t irq);

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {iter, NUM, slowlyCountRows} from '../../common/query_iterator';
 import {fromNs, toNs} from '../../common/time';
-
 import {
   TrackController,
   trackControllerRegistry
@@ -24,11 +24,6 @@ import {
   COUNTER_TRACK_KIND,
   Data,
 } from './common';
-
-
-// Allow to override via devtools for testing (note, needs to be done in the
-// controller-thread).
-(self as {} as {quantPx: number}).quantPx = 1;
 
 class CounterTrackController extends TrackController<Config, Data> {
   static readonly kind = COUNTER_TRACK_KIND;
@@ -42,11 +37,11 @@ class CounterTrackController extends TrackController<Config, Data> {
     const startNs = toNs(start);
     const endNs = toNs(end);
 
-    const pxSize = (self as {} as {quantPx: number}).quantPx;
+    const pxSize = this.pxSize();
 
     // ns per quantization bucket (i.e. ns per pixel). /2 * 2 is to force it to
     // be an even number, so we can snap in the middle.
-    const bucketNs = Math.round(resolution * 1e9 * pxSize / 2) * 2;
+    const bucketNs = Math.max(Math.round(resolution * 1e9 * pxSize / 2) * 2, 1);
 
     if (!this.setup) {
       if (this.config.namespace === undefined) {
@@ -73,10 +68,15 @@ class CounterTrackController extends TrackController<Config, Data> {
         `);
       }
 
-      const maxDurResult = await this.query(
-          `select max(dur) from ${this.tableName('counter_view')}`);
+      const maxDurResult = await this.query(`
+          select
+            max(
+              iif(dur != -1, dur, (select end_ts from trace_bounds) - ts)
+            )
+          from ${this.tableName('counter_view')}
+      `);
       if (maxDurResult.numRecords === 1) {
-        this.maxDurNs = +maxDurResult.columns![0].longValues![0];
+        this.maxDurNs = maxDurResult.columns[0].longValues![0];
       }
 
       const result = await this.query(`
@@ -91,16 +91,18 @@ class CounterTrackController extends TrackController<Config, Data> {
     const rawResult = await this.query(`
       select
         (ts + ${bucketNs / 2}) / ${bucketNs} * ${bucketNs} as tsq,
-        ts,
-        max(dur) as dur,
-        id,
-        value
+        min(value) as minValue,
+        max(value) as maxValue,
+        value_at_max_ts(ts, id) as lastId,
+        value_at_max_ts(ts, value) as lastValue
       from ${this.tableName('counter_view')}
       where ts >= ${startNs - this.maxDurNs} and ts <= ${endNs}
       group by tsq
+      order by tsq
     `);
 
-    const numRows = +rawResult.numRecords;
+    const numRows = slowlyCountRows(rawResult);
+
     const data: Data = {
       start,
       end,
@@ -109,30 +111,27 @@ class CounterTrackController extends TrackController<Config, Data> {
       minimumValue: this.minimumValue(),
       resolution,
       timestamps: new Float64Array(numRows),
-      ids: new Float64Array(numRows),
-      values: new Float64Array(numRows),
+      lastIds: new Float64Array(numRows),
+      minValues: new Float64Array(numRows),
+      maxValues: new Float64Array(numRows),
+      lastValues: new Float64Array(numRows),
     };
 
-    const cols = rawResult.columns;
-    for (let row = 0; row < numRows; row++) {
-      const startNsQ = +cols[0].longValues![row];
-      const startNs = +cols[1].longValues![row];
-      const durNs = +cols[2].longValues![row];
-      const endNs = startNs + durNs;
-
-      let endNsQ = Math.floor((endNs + bucketNs / 2 - 1) / bucketNs) * bucketNs;
-      endNsQ = Math.max(endNsQ, startNsQ + bucketNs);
-
-      if (startNsQ === endNsQ) {
-        throw new Error('Should never happen');
-      }
-
-      const id = +cols[3].longValues![row];
-      const value = +cols[4].doubleValues![row];
-
-      data.timestamps[row] = fromNs(startNsQ);
-      data.ids[row] = id;
-      data.values[row] = value;
+    const it = iter(
+        {
+          'tsq': NUM,
+          'lastId': NUM,
+          'minValue': NUM,
+          'maxValue': NUM,
+          'lastValue': NUM
+        },
+        rawResult);
+    for (let i = 0; it.valid(); ++i, it.next()) {
+      data.timestamps[i] = fromNs(it.row.tsq);
+      data.lastIds[i] = it.row.lastId;
+      data.minValues[i] = it.row.minValue;
+      data.maxValues[i] = it.row.maxValue;
+      data.lastValues[i] = it.row.lastValue;
     }
 
     return data;

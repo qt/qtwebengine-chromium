@@ -86,8 +86,7 @@ it runs in a SECCOMP_MODE_STRICT sandbox.
 
 ----
 
-This example program differs from most other example Wuffs programs in that it
-is written in C++, not C.
+To run:
 
 $CXX jsonptr.cc && ./a.out < ../../test/data/github-tags.json; rm -f a.out
 
@@ -152,11 +151,15 @@ static const char* g_usage =
     "Flags:\n"
     "    -c      -compact-output\n"
     "    -d=NUM  -max-output-depth=NUM\n"
-    "    -i=NUM  -indent=NUM\n"
     "    -q=STR  -query=STR\n"
-    "    -s      -strict-json-pointer-syntax\n"
+    "    -s=NUM  -spaces=NUM\n"
     "    -t      -tabs\n"
     "            -fail-if-unsandboxed\n"
+    "            -input-allow-comments\n"
+    "            -input-allow-extra-comma\n"
+    "            -input-allow-inf-nan-numbers\n"
+    "            -output-extra-comma\n"
+    "            -strict-json-pointer-syntax\n"
     "\n"
     "The input.json filename is optional. If absent, it reads from stdin.\n"
     "\n"
@@ -171,8 +174,24 @@ static const char* g_usage =
     "duplicate keys. Canonicalization does not imply Unicode normalization.\n"
     "\n"
     "Formatted means that arrays' and objects' elements are indented, each\n"
-    "on its own line. Configure this with the -c / -compact-output, -i=NUM /\n"
-    "-indent=NUM (for NUM ranging from 0 to 8) and -t / -tabs flags.\n"
+    "on its own line. Configure this with the -c / -compact-output, -s=NUM /\n"
+    "-spaces=NUM (for NUM ranging from 0 to 8) and -t / -tabs flags.\n"
+    "\n"
+    "The -input-allow-comments flag allows \"/*slash-star*/\" and\n"
+    "\"//slash-slash\" C-style comments within JSON input. Such comments are\n"
+    "stripped from the output.\n"
+    "\n"
+    "The -input-allow-extra-comma flag allows input like \"[1,2,]\", with a\n"
+    "comma after the final element of a JSON list or dictionary.\n"
+    "\n"
+    "The -input-allow-inf-nan-numbers flag allows non-finite floating point\n"
+    "numbers (infinities and not-a-numbers) within JSON input.\n"
+    "\n"
+    "The -output-extra-comma flag writes output like \"[1,2,]\", with a comma\n"
+    "after the final element of a JSON list or dictionary. Such commas are\n"
+    "non-compliant with the JSON specification but many parsers accept them\n"
+    "and they can produce simpler line-based diffs. This flag is ignored when\n"
+    "-compact-output is set.\n"
     "\n"
     "----\n"
     "\n"
@@ -201,12 +220,12 @@ static const char* g_usage =
     "object has multiple \"foo\" children but the first one doesn't have a\n"
     "\"bar\" child, even if later ones do.\n"
     "\n"
-    "The -s or -strict-json-pointer-syntax flag restricts the -query=STR\n"
-    "string to exactly RFC 6901, with only two escape sequences: \"~0\" and\n"
-    "\"~1\" for \"~\" and \"/\". Without this flag, this program also lets\n"
-    "\"~n\" and \"~r\" escape the New Line and Carriage Return ASCII control\n"
-    "characters, which can work better with line oriented Unix tools that\n"
-    "assume exactly one value (i.e. one JSON Pointer string) per line.\n"
+    "The -strict-json-pointer-syntax flag restricts the -query=STR string to\n"
+    "exactly RFC 6901, with only two escape sequences: \"~0\" and \"~1\" for\n"
+    "\"~\" and \"/\". Without this flag, this program also lets \"~n\" and\n"
+    "\"~r\" escape the New Line and Carriage Return ASCII control characters,\n"
+    "which can work better with line oriented Unix tools that assume exactly\n"
+    "one value (i.e. one JSON Pointer string) per line.\n"
     "\n"
     "----\n"
     "\n"
@@ -251,7 +270,8 @@ bool g_sandboxed = false;
 
 int g_input_file_descriptor = 0;  // A 0 default means stdin.
 
-#define MAX_INDENT 8
+// parse_flags enforces that g_flags.spaces <= 8 (the length of
+// INDENT_SPACES_STRING).
 #define INDENT_SPACES_STRING "        "
 #define INDENT_TAB_STRING "\t"
 
@@ -431,8 +451,9 @@ class Query {
     m_depth = d + 1;
     if (all_digits) {
       // wuffs_base__parse_number_u64 rejects leading zeroes, e.g. "00", "07".
-      m_array_index =
-          wuffs_base__parse_number_u64(wuffs_base__make_slice_u8(i, k - i));
+      m_array_index = wuffs_base__parse_number_u64(
+          wuffs_base__make_slice_u8(i, k - i),
+          WUFFS_BASE__PARSE_NUMBER_XXX__DEFAULT_OPTIONS);
     }
     return true;
   }
@@ -520,7 +541,7 @@ class Query {
         wuffs_base__make_slice_u8((uint8_t*)query_c_string, length);
     bool previous_was_tilde = false;
     while (s.len > 0) {
-      wuffs_base__utf_8__next__output o = wuffs_base__utf_8__next(s);
+      wuffs_base__utf_8__next__output o = wuffs_base__utf_8__next(s.ptr, s.len);
       if (!o.is_valid()) {
         return false;
       }
@@ -557,16 +578,20 @@ struct {
 
   bool compact_output;
   bool fail_if_unsandboxed;
-  size_t indent;
+  bool input_allow_comments;
+  bool input_allow_extra_comma;
+  bool input_allow_inf_nan_numbers;
   uint32_t max_output_depth;
+  bool output_extra_comma;
   char* query_c_string;
+  size_t spaces;
   bool strict_json_pointer_syntax;
   bool tabs;
 } g_flags = {0};
 
 const char*  //
 parse_flags(int argc, char** argv) {
-  g_flags.indent = 4;
+  g_flags.spaces = 4;
   g_flags.max_output_depth = 0xFFFFFFFF;
 
   int c = (argc > 0) ? 1 : 0;  // Skip argv[0], the program name.
@@ -601,8 +626,9 @@ parse_flags(int argc, char** argv) {
       while (*arg++ != '=') {
       }
       wuffs_base__result_u64 u = wuffs_base__parse_number_u64(
-          wuffs_base__make_slice_u8((uint8_t*)arg, strlen(arg)));
-      if (wuffs_base__status__is_ok(&u.status) && (u.value <= 0xFFFFFFFF)) {
+          wuffs_base__make_slice_u8((uint8_t*)arg, strlen(arg)),
+          WUFFS_BASE__PARSE_NUMBER_XXX__DEFAULT_OPTIONS);
+      if (u.status.is_ok() && (u.value <= 0xFFFFFFFF)) {
         g_flags.max_output_depth = (uint32_t)(u.value);
         continue;
       }
@@ -612,14 +638,21 @@ parse_flags(int argc, char** argv) {
       g_flags.fail_if_unsandboxed = true;
       continue;
     }
-    if (!strncmp(arg, "i=", 2) || !strncmp(arg, "indent=", 7)) {
-      while (*arg++ != '=') {
-      }
-      if (('0' <= arg[0]) && (arg[0] <= '8') && (arg[1] == '\x00')) {
-        g_flags.indent = arg[0] - '0';
-        continue;
-      }
-      return g_usage;
+    if (!strcmp(arg, "input-allow-comments")) {
+      g_flags.input_allow_comments = true;
+      continue;
+    }
+    if (!strcmp(arg, "input-allow-extra-comma")) {
+      g_flags.input_allow_extra_comma = true;
+      continue;
+    }
+    if (!strcmp(arg, "input-allow-inf-nan-numbers")) {
+      g_flags.input_allow_inf_nan_numbers = true;
+      continue;
+    }
+    if (!strcmp(arg, "output-extra-comma")) {
+      g_flags.output_extra_comma = true;
+      continue;
     }
     if (!strncmp(arg, "q=", 2) || !strncmp(arg, "query=", 6)) {
       while (*arg++ != '=') {
@@ -627,7 +660,16 @@ parse_flags(int argc, char** argv) {
       g_flags.query_c_string = arg;
       continue;
     }
-    if (!strcmp(arg, "s") || !strcmp(arg, "strict-json-pointer-syntax")) {
+    if (!strncmp(arg, "s=", 2) || !strncmp(arg, "spaces=", 7)) {
+      while (*arg++ != '=') {
+      }
+      if (('0' <= arg[0]) && (arg[0] <= '8') && (arg[1] == '\x00')) {
+        g_flags.spaces = arg[0] - '0';
+        continue;
+      }
+      return g_usage;
+    }
+    if (!strcmp(arg, "strict-json-pointer-syntax")) {
       g_flags.strict_json_pointer_syntax = true;
       continue;
     }
@@ -682,13 +724,24 @@ initialize_globals(int argc, char** argv) {
 
   g_query.reset(g_flags.query_c_string);
 
-  // If the query is non-empty, suprress writing to stdout until we've
+  // If the query is non-empty, suppress writing to stdout until we've
   // completed the query.
   g_suppress_write_dst = g_query.next_fragment() ? 1 : 0;
   g_wrote_to_dst = false;
 
   TRY(g_dec.initialize(sizeof__wuffs_json__decoder(), WUFFS_VERSION, 0)
           .message());
+
+  if (g_flags.input_allow_comments) {
+    g_dec.set_quirk_enabled(WUFFS_JSON__QUIRK_ALLOW_COMMENT_BLOCK, true);
+    g_dec.set_quirk_enabled(WUFFS_JSON__QUIRK_ALLOW_COMMENT_LINE, true);
+  }
+  if (g_flags.input_allow_extra_comma) {
+    g_dec.set_quirk_enabled(WUFFS_JSON__QUIRK_ALLOW_EXTRA_COMMA, true);
+  }
+  if (g_flags.input_allow_inf_nan_numbers) {
+    g_dec.set_quirk_enabled(WUFFS_JSON__QUIRK_ALLOW_INF_NAN_NUMBERS, true);
+  }
 
   // Consume an optional whitespace trailer. This isn't part of the JSON spec,
   // but it works better with line oriented Unix tools (such as "echo 123 |
@@ -715,8 +768,8 @@ read_src() {
     return "main: g_src buffer is full";
   }
   while (true) {
-    ssize_t n = read(g_input_file_descriptor, g_src.data.ptr + g_src.meta.wi,
-                     g_src.data.len - g_src.meta.wi);
+    ssize_t n = read(g_input_file_descriptor, g_src.writer_pointer(),
+                     g_src.writer_length());
     if (n >= 0) {
       g_src.meta.wi += n;
       g_src.meta.closed = n == 0;
@@ -731,12 +784,12 @@ read_src() {
 const char*  //
 flush_dst() {
   while (true) {
-    size_t n = g_dst.meta.wi - g_dst.meta.ri;
+    size_t n = g_dst.reader_length();
     if (n == 0) {
       break;
     }
     const int stdout_fd = 1;
-    ssize_t i = write(stdout_fd, g_dst.data.ptr + g_dst.meta.ri, n);
+    ssize_t i = write(stdout_fd, g_dst.reader_pointer(), n);
     if (i >= 0) {
       g_dst.meta.ri += i;
     } else if (errno != EINTR) {
@@ -754,13 +807,13 @@ write_dst(const void* s, size_t n) {
   }
   const uint8_t* p = static_cast<const uint8_t*>(s);
   while (n > 0) {
-    size_t i = g_dst.writer_available();
+    size_t i = g_dst.writer_length();
     if (i == 0) {
       const char* z = flush_dst();
       if (z) {
         return z;
       }
-      i = g_dst.writer_available();
+      i = g_dst.writer_length();
       if (i == 0) {
         return "main: g_dst buffer is full";
       }
@@ -803,46 +856,48 @@ handle_unicode_code_point(uint32_t ucp) {
         return write_dst("\\r", 2);
       case '\t':
         return write_dst("\\t", 2);
-      default: {
-        // Other bytes less than 0x0020 are valid UTF-8 but not valid in a
-        // JSON string. They need to remain escaped.
-        uint8_t esc6[6];
-        esc6[0] = '\\';
-        esc6[1] = 'u';
-        esc6[2] = '0';
-        esc6[3] = '0';
-        esc6[4] = hex_digit(ucp >> 4);
-        esc6[5] = hex_digit(ucp >> 0);
-        return write_dst(&esc6[0], 6);
-      }
     }
+
+    // Other bytes less than 0x0020 are valid UTF-8 but not valid in a
+    // JSON string. They need to remain escaped.
+    uint8_t esc6[6];
+    esc6[0] = '\\';
+    esc6[1] = 'u';
+    esc6[2] = '0';
+    esc6[3] = '0';
+    esc6[4] = hex_digit(ucp >> 4);
+    esc6[5] = hex_digit(ucp >> 0);
+    return write_dst(&esc6[0], 6);
 
   } else if (ucp == '\"') {
     return write_dst("\\\"", 2);
 
   } else if (ucp == '\\') {
     return write_dst("\\\\", 2);
-
-  } else {
-    uint8_t u[WUFFS_BASE__UTF_8__BYTE_LENGTH__MAX_INCL];
-    size_t n = wuffs_base__utf_8__encode(
-        wuffs_base__make_slice_u8(&u[0],
-                                  WUFFS_BASE__UTF_8__BYTE_LENGTH__MAX_INCL),
-        ucp);
-    if (n > 0) {
-      return write_dst(&u[0], n);
-    }
   }
 
-  return "main: internal error: unexpected Unicode code point";
+  uint8_t u[WUFFS_BASE__UTF_8__BYTE_LENGTH__MAX_INCL];
+  size_t n = wuffs_base__utf_8__encode(
+      wuffs_base__make_slice_u8(&u[0],
+                                WUFFS_BASE__UTF_8__BYTE_LENGTH__MAX_INCL),
+      ucp);
+  if (n == 0) {
+    return "main: internal error: unexpected Unicode code point";
+  }
+  return write_dst(&u[0], n);
 }
+
+// ----
 
 const char*  //
 handle_token(wuffs_base__token t, bool start_of_token_chain) {
   do {
     int64_t vbc = t.value_base_category();
     uint64_t vbd = t.value_base_detail();
-    uint64_t len = t.length();
+    uint64_t token_length = t.length();
+    wuffs_base__slice_u8 tok = wuffs_base__make_slice_u8(
+        g_src.data.ptr + g_curr_token_end_src_index - token_length,
+        token_length);
 
     // Handle ']' or '}'.
     if ((vbc == WUFFS_BASE__TOKEN__VBC__STRUCTURE) &&
@@ -867,11 +922,15 @@ handle_token(wuffs_base__token t, bool start_of_token_chain) {
         if ((g_ctx != context::in_list_after_bracket) &&
             (g_ctx != context::in_dict_after_brace) &&
             !g_flags.compact_output) {
-          TRY(write_dst("\n", 1));
+          if (g_flags.output_extra_comma) {
+            TRY(write_dst(",\n", 2));
+          } else {
+            TRY(write_dst("\n", 1));
+          }
           for (uint32_t i = 0; i < g_depth; i++) {
             TRY(write_dst(
                 g_flags.tabs ? INDENT_TAB_STRING : INDENT_SPACES_STRING,
-                g_flags.tabs ? 1 : g_flags.indent));
+                g_flags.tabs ? 1 : g_flags.spaces));
           }
         }
 
@@ -901,7 +960,7 @@ handle_token(wuffs_base__token t, bool start_of_token_chain) {
           for (size_t i = 0; i < g_depth; i++) {
             TRY(write_dst(
                 g_flags.tabs ? INDENT_TAB_STRING : INDENT_SPACES_STRING,
-                g_flags.tabs ? 1 : g_flags.indent));
+                g_flags.tabs ? 1 : g_flags.spaces));
           }
         }
       }
@@ -972,9 +1031,8 @@ handle_token(wuffs_base__token t, bool start_of_token_chain) {
           // No-op.
         } else if (vbd &
                    WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_1_SRC_COPY) {
-          uint8_t* ptr = g_src.data.ptr + g_curr_token_end_src_index - len;
-          TRY(write_dst(ptr, len));
-          g_query.incremental_match_slice(ptr, len);
+          TRY(write_dst(tok.ptr, tok.len));
+          g_query.incremental_match_slice(tok.ptr, tok.len);
         } else {
           return "main: internal error: unexpected string-token conversion";
         }
@@ -995,7 +1053,7 @@ handle_token(wuffs_base__token t, bool start_of_token_chain) {
 
       case WUFFS_BASE__TOKEN__VBC__LITERAL:
       case WUFFS_BASE__TOKEN__VBC__NUMBER:
-        TRY(write_dst(g_src.data.ptr + g_curr_token_end_src_index - len, len));
+        TRY(write_dst(tok.ptr, tok.len));
         goto after_value;
     }
 
@@ -1033,7 +1091,7 @@ const char*  //
 main1(int argc, char** argv) {
   TRY(initialize_globals(argc, argv));
 
-  bool start_of_token_chain = false;
+  bool start_of_token_chain = true;
   while (true) {
     wuffs_base__status status = g_dec.decode_tokens(
         &g_tok, &g_src,
@@ -1048,7 +1106,7 @@ main1(int argc, char** argv) {
       g_curr_token_end_src_index += n;
 
       // Skip filler tokens (e.g. whitespace).
-      if (t.value() == 0) {
+      if (t.value_base_category() == WUFFS_BASE__TOKEN__VBC__FILLER) {
         start_of_token_chain = !t.continued();
         continue;
       }

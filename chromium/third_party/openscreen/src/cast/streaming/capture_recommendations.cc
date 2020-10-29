@@ -27,11 +27,10 @@ bool DoubleEquals(double a, double b) {
 
 void ApplyDisplay(const DisplayDescription& description,
                   Recommendations* recommendations) {
-  if (description.aspect_ratio_constraint &&
-      description.aspect_ratio_constraint.value() ==
-          AspectRatioConstraint::kFixed) {
-    recommendations->video.supports_scaling = false;
-  }
+  recommendations->video.supports_scaling =
+      (description.aspect_ratio_constraint &&
+       (description.aspect_ratio_constraint.value() ==
+        AspectRatioConstraint::kVariable));
 
   // We should never exceed the display's resolution, since it will always
   // force scaling.

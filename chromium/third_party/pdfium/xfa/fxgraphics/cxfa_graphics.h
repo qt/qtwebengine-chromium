@@ -11,10 +11,9 @@
 #include <vector>
 
 #include "core/fxcrt/fx_system.h"
+#include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "xfa/fxgraphics/cxfa_gecolor.h"
-
-using FX_FillMode = int32_t;
 
 enum class FX_HatchStyle {
   Horizontal = 0,
@@ -51,7 +50,7 @@ class CXFA_Graphics {
   void SetClipRect(const CFX_RectF& rect);
   void StrokePath(CXFA_GEPath* path, const CFX_Matrix* matrix);
   void FillPath(CXFA_GEPath* path,
-                FX_FillMode fillMode,
+                CFX_FillRenderOptions::FillType fill_type,
                 const CFX_Matrix* matrix);
   void ConcatMatrix(const CFX_Matrix* matrix);
 
@@ -63,21 +62,21 @@ class CXFA_Graphics {
 
     CFX_GraphStateData graphState;
     CFX_Matrix CTM;
-    bool isActOnDash;
-    CXFA_GEColor strokeColor;
-    CXFA_GEColor fillColor;
+    bool isActOnDash = false;
+    CXFA_GEColor strokeColor{nullptr};
+    CXFA_GEColor fillColor{nullptr};
   };
 
   void RenderDeviceStrokePath(const CXFA_GEPath* path,
                               const CFX_Matrix* matrix);
   void RenderDeviceFillPath(const CXFA_GEPath* path,
-                            FX_FillMode fillMode,
+                            CFX_FillRenderOptions::FillType fill_type,
                             const CFX_Matrix* matrix);
   void FillPathWithPattern(const CXFA_GEPath* path,
-                           FX_FillMode fillMode,
+                           const CFX_FillRenderOptions& fill_options,
                            const CFX_Matrix& matrix);
   void FillPathWithShading(const CXFA_GEPath* path,
-                           FX_FillMode fillMode,
+                           const CFX_FillRenderOptions& fill_options,
                            const CFX_Matrix& matrix);
   void SetDIBitsWithMatrix(const RetainPtr<CFX_DIBBase>& source,
                            const CFX_Matrix& matrix);

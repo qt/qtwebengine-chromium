@@ -15,9 +15,8 @@
 #include "src/image/SkImage_Base.h"
 
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
-#include "include/private/GrRecordingContext.h"
-#include "src/gpu/GrContextPriv.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrImageInfo.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -151,23 +150,24 @@ static bool rect_fits(const SkIRect& rect, int width, int height) {
 }
 #endif
 
-sk_sp<SkSpecialImage> SkSpecialImage::MakeFromImage(GrRecordingContext* context,
+sk_sp<SkSpecialImage> SkSpecialImage::MakeFromImage(GrRecordingContext* rContext,
                                                     const SkIRect& subset,
                                                     sk_sp<SkImage> image,
                                                     const SkSurfaceProps* props) {
     SkASSERT(rect_fits(subset, image->width(), image->height()));
 
 #if SK_SUPPORT_GPU
-    if (context) {
-        GrSurfaceProxyView view = as_IB(image)->refView(context, GrMipMapped::kNo);
-        return MakeDeferredFromGpu(context, subset, image->uniqueID(), view,
+    if (rContext) {
+        GrSurfaceProxyView view = as_IB(image)->refView(rContext, GrMipmapped::kNo);
+        return MakeDeferredFromGpu(rContext, subset, image->uniqueID(), view,
                                    SkColorTypeToGrColorType(image->colorType()),
                                    image->refColorSpace(), props);
     }
 #endif
 
+    // raster to gpu is supported here, but gpu to raster is not
     SkBitmap bm;
-    if (as_IB(image)->getROPixels(&bm)) {
+    if (!image->isTextureBacked() && as_IB(image)->getROPixels(&bm)) {
         return MakeFromRaster(subset, bm, props);
     }
     return nullptr;
@@ -409,7 +409,7 @@ public:
                                            fColorSpace);
             }
 
-            auto subsetView = GrSurfaceProxyView::Copy(fContext, fView, GrMipMapped::kNo, *subset,
+            auto subsetView = GrSurfaceProxyView::Copy(fContext, fView, GrMipmapped::kNo, *subset,
                                                        SkBackingFit::kExact, SkBudgeted::kYes);
             if (!subsetView) {
                 return nullptr;
@@ -458,7 +458,7 @@ sk_sp<SkSpecialImage> SkSpecialImage::MakeDeferredFromGpu(GrRecordingContext* co
                                                           sk_sp<SkColorSpace> colorSpace,
                                                           const SkSurfaceProps* props,
                                                           SkAlphaType at) {
-    if (!context || context->priv().abandoned() || !view.asTextureProxy()) {
+    if (!context || context->abandoned() || !view.asTextureProxy()) {
         return nullptr;
     }
     SkASSERT_RELEASE(rect_fits(subset, view.proxy()->width(), view.proxy()->height()));

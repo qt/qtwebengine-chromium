@@ -58,7 +58,7 @@ void SystraceParser::ParseZeroEvent(int64_t ts,
   systrace_utils::SystraceTracePoint point{};
   point.name = name;
   point.tgid = tgid;
-  point.value = value;
+  point.value = static_cast<double>(value);
 
   // The value of these constants can be found in the msm-google kernel.
   constexpr int32_t kSystraceEventBegin = 1 << 0;
@@ -98,7 +98,7 @@ void SystraceParser::ParseSdeTracingMarkWrite(int64_t ts,
   // the UI.
   point.tgid = 0;
 
-  point.value = value;
+  point.value = static_cast<double>(value);
   // Some versions of this trace point fill trace_type with one of (B/E/C),
   // others use the trace_begin boolean and only support begin/end events:
   if (trace_type == 0) {
@@ -161,7 +161,25 @@ void SystraceParser::ParseSystracePoint(
       TrackId track_id = context_->track_tracker->InternAndroidAsyncTrack(
           name_id, upid, cookie);
       if (point.phase == 'S') {
-        context_->slice_tracker->Begin(ts, track_id, kNullStringId, name_id);
+        // Historically, async slices on Android did not support nesting async
+        // slices (i.e. you could not have a stack of async slices). If clients
+        // were implemented correctly, we would simply be able to use the normal
+        // Begin method and we could rely on the traced code to never emit two
+        // 'S' events back to back on the same track.
+        // However, there exists buggy code in Android (in Wakelock class of
+        // PowerManager) which emits an arbitrary number of 'S' events and
+        // expects only the first one to be tracked. Moreover, this issue is
+        // compounded by an unfortunate implementation of async slices in
+        // Catapult (the legacy trace viewer) which simply tracks the details of
+        // the *most recent* emitted 'S' event which leads even more inaccurate
+        // behaviour. To support these quirks, we have the special 'unnestable'
+        // slice concept which implements workarounds for these very specific
+        // issues. No other code should ever use this method.
+        tables::SliceTable::Row row;
+        row.ts = ts;
+        row.track_id = track_id;
+        row.name = name_id;
+        context_->slice_tracker->BeginLegacyUnnestable(row);
       } else {
         context_->slice_tracker->End(ts, track_id);
       }

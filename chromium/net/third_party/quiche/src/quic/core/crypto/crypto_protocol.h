@@ -169,6 +169,7 @@ const QuicTag k5RTO = TAG('5', 'R', 'T', 'O');   // Close connection on 5 RTOs
 const QuicTag k6RTO = TAG('6', 'R', 'T', 'O');   // Close connection on 6 RTOs
 const QuicTag kCBHD = TAG('C', 'B', 'H', 'D');   // Client only blackhole
                                                  // detection.
+const QuicTag kNBHD = TAG('N', 'B', 'H', 'D');   // No blackhole detection.
 const QuicTag kCONH = TAG('C', 'O', 'N', 'H');   // Conservative Handshake
                                                  // Retransmissions.
 const QuicTag kLFAK = TAG('L', 'F', 'A', 'K');   // Don't invoke FACK on the
@@ -272,8 +273,14 @@ const QuicTag kBWP2 = TAG('B', 'W', 'P', '2');  // QUIC Initial CWND - SPDY
 const QuicTag kBWP3 = TAG('B', 'W', 'P', '3');  // QUIC Initial CWND - SPDY
                                                 // priorities 0, 1, 2 and 3.
 const QuicTag kBWP4 = TAG('B', 'W', 'P', '4');  // QUIC Initial CWND - SPDY
-                                                // priorities >= 0, 1, 2 , 3 and
-                                                 // 4.
+                                                // priorities >= 0, 1, 2, 3 and
+                                                // 4.
+const QuicTag kBWG4 = TAG('B', 'W', 'G', '4');  // QUIC Initial CWND -
+                                                // Bandwidth model 1.
+const QuicTag kBWG7 = TAG('B', 'W', 'G', '7');  // QUIC Initial CWND -
+                                                // Bandwidth model 2.
+const QuicTag kBWG8 = TAG('B', 'W', 'G', '8');  // QUIC Initial CWND -
+                                                // Bandwidth model 3.
 const QuicTag kBWS7 = TAG('B', 'W', 'S', '7');  // QUIC Initial CWND - Enabled
                                                 // with 0.75 * default
                                                 // multiplier.
@@ -285,6 +292,12 @@ const QuicTag kBWM4 = TAG('B', 'W', 'M', '4');  // Consider overshooting if
                                                 // resumption * 4 > IW.
 const QuicTag kICW1 = TAG('I', 'C', 'W', '1');  // Max initial congestion window
                                                 // 100.
+const QuicTag kDTOS = TAG('D', 'T', 'O', 'S');  // Enable overshooting
+                                                // detection.
+
+const QuicTag kFIDT = TAG('F', 'I', 'D', 'T');  // Extend idle timer by PTO
+                                                // instead of the whole idle
+                                                // timeout.
 
 // Enable path MTU discovery experiment.
 const QuicTag kMTUH = TAG('M', 'T', 'U', 'H');  // High-target MTU discovery.
@@ -297,6 +310,9 @@ const QuicTag kFIFO = TAG('F', 'I', 'F', 'O');  // Stream with the smallest ID
 const QuicTag kLIFO = TAG('L', 'I', 'F', 'O');  // Stream with the largest ID
                                                 // has the highest priority.
 const QuicTag kRRWS = TAG('R', 'R', 'W', 'S');  // Round robin write scheduling.
+
+const QuicTag kNSLC = TAG('N', 'S', 'L', 'C');  // Always send connection close
+                                                // for idle timeout.
 
 // Proof types (i.e. certificate types)
 // NOTE: although it would be silly to do so, specifying both kX509 and kX59R
@@ -342,6 +358,9 @@ const QuicTag kXLCT = TAG('X', 'L', 'C', 'T');   // Expected leaf certificate.
 const QuicTag kQLVE = TAG('Q', 'L', 'V', 'E');   // Legacy Version
                                                  // Encapsulation.
 const QuicTag kQNZR = TAG('Q', 'N', 'Z', 'R');   // Turn off QUIC crypto 0-RTT.
+
+const QuicTag kQNSP = TAG('Q', 'N', 'S', 'P');   // Turn off server push in
+                                                 // gQUIC.
 
 const QuicTag kMAD  = TAG('M', 'A', 'D', 0);     // Max Ack Delay (IETF QUIC)
 

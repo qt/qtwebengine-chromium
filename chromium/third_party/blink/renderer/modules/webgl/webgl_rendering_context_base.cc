@@ -1528,7 +1528,7 @@ void WebGLRenderingContextBase::OnErrorMessage(const char* message,
                                                int32_t id) {
   if (synthesized_errors_to_console_)
     PrintGLErrorToConsole(message);
-  probe::DidFireWebGLErrorOrWarning(canvas(), message);
+  NotifyWebGLErrorOrWarning(message);
 }
 
 WebGLRenderingContextBase::HowToClear
@@ -1858,7 +1858,7 @@ void WebGLRenderingContextBase::attachShader(WebGLProgram* program,
 void WebGLRenderingContextBase::bindAttribLocation(WebGLProgram* program,
                                                    GLuint index,
                                                    const String& name) {
-  if (!ValidateWebGLObject("bindAttribLocation", program))
+  if (!ValidateWebGLProgramOrShader("bindAttribLocation", program))
     return;
   if (!ValidateLocationLength("bindAttribLocation", name))
     return;
@@ -4684,15 +4684,17 @@ void WebGLRenderingContextBase::shaderSource(WebGLShader* shader,
   if (!ValidateWebGLProgramOrShader("shaderSource", shader))
     return;
   String string_without_comments = StripComments(string).Result();
-  // TODO(danakj): Make validateShaderSource reject characters > 255 (or utf16
-  // Strings) so we don't need to use StringUTF8Adaptor.
-  if (!ValidateShaderSource(string_without_comments))
-    return;
   shader->SetSource(string);
-  WTF::StringUTF8Adaptor adaptor(string_without_comments);
-  const GLchar* shader_data = adaptor.data();
-  // TODO(danakj): Use base::saturated_cast<GLint>.
-  const GLint shader_length = adaptor.size();
+  if (!string_without_comments.Is8Bit() ||
+      !string_without_comments.ContainsOnlyASCIIOrEmpty()) {
+    SynthesizeGLError(
+        GL_INVALID_VALUE, "shaderSource",
+        "Non ASCII character detected after comments are stripped.");
+    return;
+  }
+  const GLchar* shader_data =
+      reinterpret_cast<const GLchar*>(string_without_comments.Characters8());
+  const GLint shader_length = string_without_comments.length();
   ContextGL()->ShaderSource(ObjectOrZero(shader), 1, &shader_data,
                             &shader_length);
 }
@@ -5307,10 +5309,12 @@ void WebGLRenderingContextBase::TexImageHelperHTMLImageElement(
     return;
 
   scoped_refptr<Image> image_for_render = image->CachedImage()->GetImage();
-  if (IsA<SVGImage>(image_for_render.get())) {
-    if (canvas()) {
+  bool have_svg_image = IsA<SVGImage>(image_for_render.get());
+  if (have_svg_image || !image_for_render->HasDefaultOrientation()) {
+    if (have_svg_image && canvas()) {
       UseCounter::Count(canvas()->GetDocument(), WebFeature::kSVGInWebGL);
     }
+    // DrawImageIntoBuffer always respects orientation
     image_for_render =
         DrawImageIntoBuffer(std::move(image_for_render), image->width(),
                             image->height(), func_name);
@@ -5351,7 +5355,7 @@ void WebGLRenderingContextBase::texImage2D(ExecutionContext* execution_context,
 
 bool WebGLRenderingContextBase::CanUseTexImageViaGPU(GLenum format,
                                                      GLenum type) {
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
   // RGB5_A1 is not color-renderable on NVIDIA Mac, see crbug.com/676209.
   // Though, glCopyTextureCHROMIUM can handle RGB5_A1 internalformat by doing a
   // fallback path, but it doesn't know the type info. So, we still cannot do
@@ -5846,6 +5850,7 @@ void WebGLRenderingContextBase::TexImageHelperImageBitmap(
                        level, internalformat, width, height, depth, 0, format,
                        type, xoffset, yoffset, zoffset))
     return;
+
   scoped_refptr<StaticBitmapImage> image = bitmap->BitmapImage();
   DCHECK(image);
 
@@ -5872,9 +5877,16 @@ void WebGLRenderingContextBase::TexImageHelperImageBitmap(
     return;
   }
 
+  // Apply orientation if necessary
+  PaintImage paint_image = bitmap->BitmapImage()->PaintImageForCurrentFrame();
+  if (!image->HasDefaultOrientation()) {
+    paint_image = Image::ResizeAndOrientImage(
+        paint_image, image->CurrentFrameOrientation(), FloatSize(1, 1), 1,
+        kInterpolationNone);
+  }
+
   // TODO(kbr): refactor this away to use TexImageImpl on image.
-  sk_sp<SkImage> sk_image =
-      bitmap->BitmapImage()->PaintImageForCurrentFrame().GetSkImage();
+  sk_sp<SkImage> sk_image = paint_image.GetSkImage();
   if (!sk_image) {
     SynthesizeGLError(GL_OUT_OF_MEMORY, func_name,
                       "ImageBitmap unexpectedly empty");
@@ -7209,20 +7221,6 @@ bool WebGLRenderingContextBase::IsPrefixReserved(const String& name) {
   return false;
 }
 
-bool WebGLRenderingContextBase::ValidateShaderSource(const String& string) {
-  for (wtf_size_t i = 0; i < string.length(); ++i) {
-    // line-continuation character \ is supported in WebGL 2.0.
-    if (IsWebGL2OrHigher() && string[i] == '\\') {
-      continue;
-    }
-    if (!ValidateCharacter(string[i])) {
-      SynthesizeGLError(GL_INVALID_VALUE, "shaderSource", "string not ASCII");
-      return false;
-    }
-  }
-  return true;
-}
-
 bool WebGLRenderingContextBase::ValidateShaderType(const char* function_name,
                                                    GLenum shader_type) {
   switch (shader_type) {
@@ -7366,8 +7364,13 @@ bool WebGLRenderingContextBase::ValidateTexFuncFormatAndType(
   if (internalformat != 0 && supported_internal_formats_.find(internalformat) ==
                                  supported_internal_formats_.end()) {
     if (function_type == kTexImage) {
-      SynthesizeGLError(GL_INVALID_VALUE, function_name,
-                        "invalid internalformat");
+      if (compressed_texture_formats_.Contains(internalformat)) {
+        SynthesizeGLError(GL_INVALID_OPERATION, function_name,
+                          "compressed texture formats are not accepted");
+      } else {
+        SynthesizeGLError(GL_INVALID_VALUE, function_name,
+                          "invalid internalformat");
+      }
     } else {
       SynthesizeGLError(GL_INVALID_ENUM, function_name,
                         "invalid internalformat");
@@ -7726,12 +7729,42 @@ void WebGLRenderingContextBase::PrintGLErrorToConsole(const String& message) {
 }
 
 void WebGLRenderingContextBase::PrintWarningToConsole(const String& message) {
+  if (fast_call_.InFastCall()) {
+    fast_call_.AddDeferredConsoleWarning(message);
+    return;
+  }
+
   blink::ExecutionContext* context = Host()->GetTopExecutionContext();
   if (context && !context->IsContextDestroyed()) {
     context->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::ConsoleMessageSource::kRendering,
         mojom::ConsoleMessageLevel::kWarning, message));
   }
+}
+
+void WebGLRenderingContextBase::NotifyWebGLErrorOrWarning(
+    const String& message) {
+  if (fast_call_.InFastCall()) {
+    fast_call_.AddDeferredErrorOrWarningNotification(message);
+    return;
+  }
+  probe::DidFireWebGLErrorOrWarning(canvas(), message);
+}
+
+void WebGLRenderingContextBase::NotifyWebGLError(const String& error_type) {
+  if (fast_call_.InFastCall()) {
+    fast_call_.AddDeferredErrorNotification(error_type);
+    return;
+  }
+  probe::DidFireWebGLError(canvas(), error_type);
+}
+
+void WebGLRenderingContextBase::NotifyWebGLWarning() {
+  if (fast_call_.InFastCall()) {
+    fast_call_.AddDeferredWarningNotification();
+    return;
+  }
+  probe::DidFireWebGLWarning(canvas());
 }
 
 bool WebGLRenderingContextBase::ValidateFramebufferFuncParameters(
@@ -8276,7 +8309,7 @@ void WebGLRenderingContextBase::SynthesizeGLError(
     if (!lost_context_errors_.Contains(error))
       lost_context_errors_.push_back(error);
   }
-  probe::DidFireWebGLError(canvas(), error_type);
+  NotifyWebGLError(error_type);
 }
 
 void WebGLRenderingContextBase::EmitGLWarning(const char* function_name,
@@ -8286,7 +8319,7 @@ void WebGLRenderingContextBase::EmitGLWarning(const char* function_name,
         String("WebGL: ") + String(function_name) + ": " + String(description);
     PrintGLErrorToConsole(message);
   }
-  probe::DidFireWebGLWarning(canvas());
+  NotifyWebGLWarning();
 }
 
 void WebGLRenderingContextBase::ApplyStencilTest() {

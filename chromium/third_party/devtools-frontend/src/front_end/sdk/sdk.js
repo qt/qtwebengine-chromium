@@ -17,16 +17,19 @@ import * as ChildTargetManager from './ChildTargetManager.js';
 import * as CompilerSourceMappingContentProvider from './CompilerSourceMappingContentProvider.js';
 import * as Connections from './Connections.js';
 import * as ConsoleModel from './ConsoleModel.js';
+import * as ContentSecurityPolicyIssue from './ContentSecurityPolicyIssue.js';
 import * as Cookie from './Cookie.js';
 import * as CookieModel from './CookieModel.js';
 import * as CookieParser from './CookieParser.js';
 import * as CPUProfileDataModel from './CPUProfileDataModel.js';
 import * as CPUProfilerModel from './CPUProfilerModel.js';
+import * as CSSFontFace from './CSSFontFace.js';
 import * as CSSMatchedStyles from './CSSMatchedStyles.js';
 import * as CSSMedia from './CSSMedia.js';
 import * as CSSMetadata from './CSSMetadata.js';
 import * as CSSModel from './CSSModel.js';
 import * as CSSProperty from './CSSProperty.js';
+import * as CSSPropertyParser from './CSSPropertyParser.js';
 import * as CSSRule from './CSSRule.js';
 import * as CSSStyleDeclaration from './CSSStyleDeclaration.js';
 import * as CSSStyleSheetHeader from './CSSStyleSheetHeader.js';
@@ -35,6 +38,7 @@ import * as DOMDebuggerModel from './DOMDebuggerModel.js';
 import * as DOMModel from './DOMModel.js';
 import * as EmulationModel from './EmulationModel.js';
 import * as FilmStripModel from './FilmStripModel.js';
+import * as FrameManager from './FrameManager.js';
 import * as HARLog from './HARLog.js';
 import * as HeapProfilerModel from './HeapProfilerModel.js';
 import * as HeavyAdIssue from './HeavyAdIssue.js';
@@ -48,6 +52,7 @@ import * as NetworkLog from './NetworkLog.js';
 import * as NetworkManager from './NetworkManager.js';
 import * as NetworkRequest from './NetworkRequest.js';
 import * as OverlayModel from './OverlayModel.js';
+import * as PageResourceLoader from './PageResourceLoader.js';
 import * as PaintProfiler from './PaintProfiler.js';
 import * as PerformanceMetricsModel from './PerformanceMetricsModel.js';
 import * as ProfileTreeModel from './ProfileTreeModel.js';
@@ -55,6 +60,7 @@ import * as RemoteObject from './RemoteObject.js';
 import * as Resource from './Resource.js';
 import * as ResourceTreeModel from './ResourceTreeModel.js';
 import * as RuntimeModel from './RuntimeModel.js';
+import * as SameSiteCookieIssue from './SameSiteCookieIssue.js';
 import * as ScreenCaptureModel from './ScreenCaptureModel.js';
 import * as Script from './Script.js';
 import * as SDKModel from './SDKModel.js';
@@ -68,21 +74,29 @@ import * as TracingManager from './TracingManager.js';
 import * as TracingModel from './TracingModel.js';
 import * as WebAuthnModel from './WebAuthnModel.js';
 
+// We need to force creation of the FrameManager early to make sure no issues are missed.
+FrameManager.FrameManager.instance();
+// We need to force creation of the NetworkLog early to make sure no requests are missed.
+NetworkLog.NetworkLog.instance();
+
 export {
   ChildTargetManager,
   CompilerSourceMappingContentProvider,
   Connections,
   ConsoleModel,
+  ContentSecurityPolicyIssue,
   Cookie,
   CookieModel,
   CookieParser,
   CPUProfileDataModel,
   CPUProfilerModel,
+  CSSFontFace,
   CSSMatchedStyles,
   CSSMedia,
   CSSMetadata,
   CSSModel,
   CSSProperty,
+  CSSPropertyParser,
   CSSRule,
   CSSStyleDeclaration,
   CSSStyleSheetHeader,
@@ -91,6 +105,7 @@ export {
   DOMModel,
   EmulationModel,
   FilmStripModel,
+  FrameManager,
   HARLog,
   HeapProfilerModel,
   HeavyAdIssue,
@@ -104,6 +119,7 @@ export {
   NetworkManager,
   NetworkRequest,
   OverlayModel,
+  PageResourceLoader,
   PaintProfiler,
   PerformanceMetricsModel,
   ProfileTreeModel,
@@ -111,6 +127,7 @@ export {
   Resource,
   ResourceTreeModel,
   RuntimeModel,
+  SameSiteCookieIssue,
   ScreenCaptureModel,
   Script,
   SDKModel,

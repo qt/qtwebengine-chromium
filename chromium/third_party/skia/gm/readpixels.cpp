@@ -22,6 +22,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GrDirectContext.h"
 #include "include/third_party/skcms/skcms.h"
 #include "tools/Resources.h"
 
@@ -157,15 +158,15 @@ protected:
                 make_small_gamut(),
         };
 
-        for (sk_sp<SkColorSpace> dstColorSpace : colorSpaces) {
+        for (const sk_sp<SkColorSpace>& dstColorSpace : colorSpaces) {
             for (SkColorType srcColorType : colorTypes) {
                 canvas->save();
                 sk_sp<SkImage> image = make_raster_image(srcColorType);
                 if (!image) {
                     continue;
                 }
-                if (GrContext* context = canvas->getGrContext()) {
-                    image = image->makeTextureImage(context);
+                if (auto direct = GrAsDirectContext(canvas->recordingContext())) {
+                    image = image->makeTextureImage(direct);
                 }
                 if (image) {
                     for (SkColorType dstColorType : colorTypes) {
@@ -226,7 +227,7 @@ protected:
         };
 
         sk_sp<SkImage> image = make_codec_image();
-        for (sk_sp<SkColorSpace> dstColorSpace : colorSpaces) {
+        for (const sk_sp<SkColorSpace>& dstColorSpace : colorSpaces) {
             canvas->save();
             for (SkColorType dstColorType : colorTypes) {
                 for (SkAlphaType dstAlphaType : alphaTypes) {
@@ -292,8 +293,8 @@ protected:
                 SkImage::kDisallow_CachingHint,
         };
 
-        for (sk_sp<SkImage> image : images) {
-            for (sk_sp<SkColorSpace> dstColorSpace : colorSpaces) {
+        for (const sk_sp<SkImage>& image : images) {
+            for (const sk_sp<SkColorSpace>& dstColorSpace : colorSpaces) {
                 canvas->save();
                 for (SkColorType dstColorType : colorTypes) {
                     for (SkAlphaType dstAlphaType : alphaTypes) {

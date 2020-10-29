@@ -19,6 +19,8 @@
 
 #include "common/Constants.h"
 #include "common/SerialQueue.h"
+#include "dawn_native/BindingInfo.h"
+#include "dawn_native/Commands.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/d3d12/CommandRecordingContext.h"
 #include "dawn_native/d3d12/D3D12Info.h"
@@ -91,6 +93,18 @@ namespace dawn_native { namespace d3d12 {
                                            uint64_t destinationOffset,
                                            uint64_t size) override;
 
+        void CopyFromStagingToBufferImpl(CommandRecordingContext* commandContext,
+                                         StagingBufferBase* source,
+                                         uint64_t sourceOffset,
+                                         BufferBase* destination,
+                                         uint64_t destinationOffset,
+                                         uint64_t size);
+
+        MaybeError CopyFromStagingToTexture(const StagingBufferBase* source,
+                                            const TextureDataLayout& src,
+                                            TextureCopy* dst,
+                                            const Extent3D& copySizePixels);
+
         ResultOrError<ResourceHeapAllocation> AllocateMemory(
             D3D12_HEAP_TYPE heapType,
             const D3D12_RESOURCE_DESC& resourceDescriptor,
@@ -131,7 +145,8 @@ namespace dawn_native { namespace d3d12 {
             const BindGroupDescriptor* descriptor) override;
         ResultOrError<BindGroupLayoutBase*> CreateBindGroupLayoutImpl(
             const BindGroupLayoutDescriptor* descriptor) override;
-        ResultOrError<BufferBase*> CreateBufferImpl(const BufferDescriptor* descriptor) override;
+        ResultOrError<Ref<BufferBase>> CreateBufferImpl(
+            const BufferDescriptor* descriptor) override;
         ResultOrError<ComputePipelineBase*> CreateComputePipelineImpl(
             const ComputePipelineDescriptor* descriptor) override;
         ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
@@ -184,13 +199,24 @@ namespace dawn_native { namespace d3d12 {
         std::unique_ptr<ResourceAllocatorManager> mResourceAllocatorManager;
         std::unique_ptr<ResidencyManager> mResidencyManager;
 
-        // Index corresponds to the descriptor count in the range [0, kMaxBindingsPerGroup].
-        static constexpr uint32_t kNumOfStagingDescriptorAllocators = kMaxBindingsPerGroup + 1;
+        static constexpr uint32_t kMaxSamplerDescriptorsPerBindGroup =
+            3 * kMaxSamplersPerShaderStage;
+        static constexpr uint32_t kMaxViewDescriptorsPerBindGroup =
+            kMaxBindingsPerPipelineLayout - kMaxSamplerDescriptorsPerBindGroup;
 
-        std::array<std::unique_ptr<StagingDescriptorAllocator>, kNumOfStagingDescriptorAllocators>
+        static constexpr uint32_t kNumSamplerDescriptorAllocators =
+            ConstexprLog2Ceil(kMaxSamplerDescriptorsPerBindGroup) + 1;
+        static constexpr uint32_t kNumViewDescriptorAllocators =
+            ConstexprLog2Ceil(kMaxViewDescriptorsPerBindGroup) + 1;
+
+        // Index corresponds to Log2Ceil(descriptorCount) where descriptorCount is in
+        // the range [0, kMaxSamplerDescriptorsPerBindGroup].
+        std::array<std::unique_ptr<StagingDescriptorAllocator>, kNumViewDescriptorAllocators + 1>
             mViewAllocators;
 
-        std::array<std::unique_ptr<StagingDescriptorAllocator>, kNumOfStagingDescriptorAllocators>
+        // Index corresponds to Log2Ceil(descriptorCount) where descriptorCount is in
+        // the range [0, kMaxViewDescriptorsPerBindGroup].
+        std::array<std::unique_ptr<StagingDescriptorAllocator>, kNumSamplerDescriptorAllocators + 1>
             mSamplerAllocators;
 
         std::unique_ptr<StagingDescriptorAllocator> mRenderTargetViewAllocator;

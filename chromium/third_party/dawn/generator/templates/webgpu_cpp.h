@@ -11,7 +11,6 @@
 //* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //* See the License for the specific language governing permissions and
 //* limitations under the License.
-
 #ifndef WEBGPU_CPP_H_
 #define WEBGPU_CPP_H_
 
@@ -27,6 +26,10 @@ namespace wgpu {
             {% for value in type.values %}
                 {{as_cppEnum(value.name)}} = 0x{{format(value.value, "08X")}},
             {% endfor %}
+            //* TODO(dawn:22) remove this once the PSA is sent and the deadline passed.
+            {% if type.name.canonical_case() == "texture format" %}
+                RG11B10Float = RG11B10Ufloat,
+            {% endif %}
         };
 
     {% endfor %}

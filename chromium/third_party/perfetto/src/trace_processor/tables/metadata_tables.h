@@ -91,7 +91,9 @@ PERFETTO_TP_TABLE(PERFETTO_TP_THREAD_TABLE_DEF);
   C(base::Optional<int64_t>, end_ts)                   \
   C(base::Optional<uint32_t>, parent_upid)             \
   C(base::Optional<uint32_t>, uid)                     \
-  C(base::Optional<uint32_t>, android_appid)
+  C(base::Optional<uint32_t>, android_appid)           \
+  C(base::Optional<StringPool::Id>, cmdline)           \
+  C(uint32_t, arg_set_id)
 
 PERFETTO_TP_TABLE(PERFETTO_TP_PROCESS_TABLE_DEF);
 

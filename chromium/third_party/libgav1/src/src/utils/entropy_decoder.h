@@ -54,8 +54,7 @@ class DaalaBitReader : public BitReader {
   // largest type with fast arithmetic. size_t should meet these requirements.
   static_assert(sizeof(size_t) == sizeof(void*), "");
   using WindowSize = size_t;
-  static constexpr uint32_t kWindowSize =
-      static_cast<uint32_t>(sizeof(WindowSize)) * 8;
+  static constexpr int kWindowSize = static_cast<int>(sizeof(WindowSize)) * 8;
   static_assert(kWindowSize >= 32, "");
 
   // Reads a symbol using the |cdf| table which contains the probabilities of
@@ -69,13 +68,13 @@ class DaalaBitReader : public BitReader {
   inline int ReadSymbolImpl(const uint16_t* cdf, int symbol_count);
   // Similar to ReadSymbolImpl but it uses binary search to perform step 2 in
   // the comment above. As of now, this function is called when |symbol_count|
-  // is greater than or equal to 8.
+  // is greater than or equal to 14.
   inline int ReadSymbolImplBinarySearch(const uint16_t* cdf, int symbol_count);
   // Specialized implementation of ReadSymbolImpl based on the fact that
   // symbol_count == 2.
   inline int ReadSymbolImpl(const uint16_t* cdf);
   // ReadSymbolN is a specialization of ReadSymbol for symbol_count == N.
-  int ReadSymbol4(uint16_t* cdf);
+  LIBGAV1_ALWAYS_INLINE int ReadSymbol4(uint16_t* cdf);
   // ReadSymbolImplN is a specialization of ReadSymbolImpl for
   // symbol_count == N.
   LIBGAV1_ALWAYS_INLINE int ReadSymbolImpl8(const uint16_t* cdf);
@@ -98,6 +97,17 @@ class DaalaBitReader : public BitReader {
   // decode the next symbol. It is filled in whenever |bits_| is less than 0.
   WindowSize window_diff_;
 };
+
+extern template int DaalaBitReader::ReadSymbol<3>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<4>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<5>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<7>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<8>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<10>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<11>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<13>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<14>(uint16_t* cdf);
+extern template int DaalaBitReader::ReadSymbol<16>(uint16_t* cdf);
 
 }  // namespace libgav1
 

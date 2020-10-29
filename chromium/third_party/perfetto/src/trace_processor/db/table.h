@@ -155,7 +155,7 @@ class Table {
   Table ExtendWithColumn(const char* name,
                          std::unique_ptr<NullableVector<T>> sv,
                          uint32_t flags) const {
-    PERFETTO_DCHECK(sv->size() == row_count_);
+    PERFETTO_CHECK(sv->size() == row_count_);
     uint32_t size = sv->size();
     uint32_t row_map_count = static_cast<uint32_t>(row_maps_.size());
     Table ret = Copy();
@@ -170,7 +170,7 @@ class Table {
   Table ExtendWithColumn(const char* name,
                          NullableVector<T>* sv,
                          uint32_t flags) const {
-    PERFETTO_DCHECK(sv->size() == row_count_);
+    PERFETTO_CHECK(sv->size() == row_count_);
     uint32_t size = sv->size();
     uint32_t row_map_count = static_cast<uint32_t>(row_maps_.size());
     Table ret = Copy();
@@ -194,13 +194,13 @@ class Table {
   }
 
   template <typename T>
-  const TypedColumn<T>* GetTypedColumnByName(const char* name) const {
-    return TypedColumn<T>::FromColumn(GetColumnByName(name));
+  const TypedColumn<T>& GetTypedColumnByName(const char* name) const {
+    return *TypedColumn<T>::FromColumn(GetColumnByName(name));
   }
 
   template <typename T>
-  const IdColumn<T>* GetIdColumnByName(const char* name) const {
-    return IdColumn<T>::FromColumn(GetColumnByName(name));
+  const IdColumn<T>& GetIdColumnByName(const char* name) const {
+    return *IdColumn<T>::FromColumn(GetColumnByName(name));
   }
 
   // Returns the number of columns in the Table.
@@ -210,6 +210,9 @@ class Table {
 
   // Returns an iterator into the Table.
   Iterator IterateRows() const { return Iterator(this); }
+
+  // Creates a copy of this table.
+  Table Copy() const;
 
   uint32_t row_count() const { return row_count_; }
   const std::vector<RowMap>& row_maps() const { return row_maps_; }
@@ -226,7 +229,6 @@ class Table {
  private:
   friend class Column;
 
-  Table Copy() const;
   Table CopyExceptRowMaps() const;
 };
 

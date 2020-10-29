@@ -131,6 +131,14 @@ TEST(CertificateViewTest, PrivateKeyPem) {
   EXPECT_TRUE(legacy_key->MatchesPublicKey(*view));
 }
 
+TEST(CertificateViewTest, PrivateKeyEcdsaPem) {
+  std::stringstream pem_stream(kTestEcPrivateKeyLegacyPem);
+  std::unique_ptr<CertificatePrivateKey> key =
+      CertificatePrivateKey::LoadPemFromStream(&pem_stream);
+  ASSERT_TRUE(key != nullptr);
+  EXPECT_TRUE(key->ValidForSignatureAlgorithm(SSL_SIGN_ECDSA_SECP256R1_SHA256));
+}
+
 TEST(CertificateViewTest, DerTime) {
   EXPECT_THAT(ParseDerTime(CBS_ASN1_GENERALIZEDTIME, "19700101000024Z"),
               Optional(QuicWallTime::FromUNIXSeconds(24)));

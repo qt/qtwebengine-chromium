@@ -443,6 +443,11 @@ SHADERC_EXPORT shaderc_spvc_status
 shaderc_spvc_compile_options_set_msl_buffer_size_buffer_index(
     shaderc_spvc_compile_options_t options, uint32_t index);
 
+// Set the additional fixed sample mask for MSL
+SHADERC_EXPORT shaderc_spvc_status
+shaderc_spvc_compile_options_set_msl_additional_fixed_sample_mask(
+    shaderc_spvc_compile_options_t options, uint32_t mask);
+
 // Set HLSL shader model.  Default is 30.
 SHADERC_EXPORT shaderc_spvc_status
 shaderc_spvc_compile_options_set_hlsl_shader_model(
@@ -456,6 +461,11 @@ shaderc_spvc_compile_options_set_hlsl_point_size_compat(
 // If true, ignore PointCoord.  Default is false.
 SHADERC_EXPORT shaderc_spvc_status
 shaderc_spvc_compile_options_set_hlsl_point_coord_compat(
+    shaderc_spvc_compile_options_t options, bool b);
+
+// If true, enable 16-bit types.  Default is false.
+SHADERC_EXPORT shaderc_spvc_status
+shaderc_spvc_compile_options_set_hlsl_enable_16bit_types(
     shaderc_spvc_compile_options_t options, bool b);
 
 // If true, set non-writable storage images to be SRV, see spirv_hlsl.hpp in

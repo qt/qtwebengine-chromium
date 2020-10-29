@@ -16,9 +16,7 @@ in fragmentProcessor? inputFP;
     #include "include/private/SkColorData.h"
 
     SkPMColor4f constantOutputForConstantInput(const SkPMColor4f& inColor) const override {
-        SkPMColor4f input = this->numChildProcessors()
-                ? ConstantOutputForConstantInput(this->childProcessor(inputFP_index), inColor)
-                : inColor;
+        SkPMColor4f input = ConstantOutputForConstantInput(this->childProcessor(0), inColor);
         float luma = SK_ITU_BT709_LUM_COEFF_R * input.fR +
                      SK_ITU_BT709_LUM_COEFF_G * input.fG +
                      SK_ITU_BT709_LUM_COEFF_B * input.fB;
@@ -27,7 +25,7 @@ in fragmentProcessor? inputFP;
 }
 
 void main() {
-    half4 inputColor = sample(inputFP, sk_InColor);
+    half4 inputColor = sample(inputFP);
     const half3 SK_ITU_BT709_LUM_COEFF = half3(0.2126, 0.7152, 0.0722);
     half luma = saturate(dot(SK_ITU_BT709_LUM_COEFF, inputColor.rgb));
     sk_OutColor = half4(0, 0, 0, luma);

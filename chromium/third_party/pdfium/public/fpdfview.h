@@ -71,6 +71,7 @@ typedef struct fpdf_pagerange_t__* FPDF_PAGERANGE;
 typedef const struct fpdf_pathsegment_t* FPDF_PATHSEGMENT;
 typedef void* FPDF_RECORDER;  // Passed into skia.
 typedef struct fpdf_schhandle_t__* FPDF_SCHHANDLE;
+typedef struct fpdf_signature_t__* FPDF_SIGNATURE;
 typedef struct fpdf_structelement_t__* FPDF_STRUCTELEMENT;
 typedef struct fpdf_structtree_t__* FPDF_STRUCTTREE;
 typedef struct fpdf_textpage_t__* FPDF_TEXTPAGE;
@@ -296,9 +297,10 @@ typedef void (*PDFiumEnsureTypefaceCharactersAccessible)(const LOGFONT* font,
                                                          const wchar_t* text,
                                                          size_t text_length);
 
+// Experimental API.
 // Function: FPDF_SetTypefaceAccessibleFunc
 //          Set the function pointer that makes GDI fonts available in sandboxed
-//          environments. Experimental API.
+//          environments.
 // Parameters:
 //          func -   A function pointer. See description above.
 // Return value:
@@ -306,9 +308,9 @@ typedef void (*PDFiumEnsureTypefaceCharactersAccessible)(const LOGFONT* font,
 FPDF_EXPORT void FPDF_CALLCONV
 FPDF_SetTypefaceAccessibleFunc(PDFiumEnsureTypefaceCharactersAccessible func);
 
+// Experimental API.
 // Function: FPDF_SetPrintTextWithGDI
 //          Set whether to use GDI to draw fonts when printing on Windows.
-//          Experimental API.
 // Parameters:
 //          use_gdi -   Set to true to enable printing text with GDI.
 // Return value:
@@ -316,9 +318,9 @@ FPDF_SetTypefaceAccessibleFunc(PDFiumEnsureTypefaceCharactersAccessible func);
 FPDF_EXPORT void FPDF_CALLCONV FPDF_SetPrintTextWithGDI(FPDF_BOOL use_gdi);
 #endif  // PDFIUM_PRINT_TEXT_WITH_GDI
 
+// Experimental API.
 // Function: FPDF_SetPrintMode
 //          Set printing mode when printing on Windows.
-//          Experimental API.
 // Parameters:
 //          mode - FPDF_PRINTMODE_EMF to output EMF (default)
 //                 FPDF_PRINTMODE_TEXTONLY to output text only (for charstream
@@ -384,9 +386,9 @@ FPDF_LoadDocument(FPDF_STRING file_path, FPDF_BYTESTRING password);
 FPDF_EXPORT FPDF_DOCUMENT FPDF_CALLCONV
 FPDF_LoadMemDocument(const void* data_buf, int size, FPDF_BYTESTRING password);
 
+// Experimental API.
 // Function: FPDF_LoadMemDocument64
 //          Open and load a PDF document from memory.
-//          Experimental API.
 // Parameters:
 //          data_buf    -   Pointer to a buffer containing the PDF document.
 //          size        -   Number of bytes in the PDF document.
@@ -589,9 +591,9 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_GetFileVersion(FPDF_DOCUMENT doc,
 //          function is not defined.
 FPDF_EXPORT unsigned long FPDF_CALLCONV FPDF_GetLastError();
 
+// Experimental API.
 // Function: FPDF_DocumentHasValidCrossReferenceTable
 //          Whether the document's cross reference table is valid or not.
-//          Experimental API.
 // Parameters:
 //          document    -   Handle to a document. Returned by FPDF_LoadDocument.
 // Return value:
@@ -875,7 +877,7 @@ FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
                                 const FS_RECTF* clipping,
                                 int flags);
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 FPDF_EXPORT FPDF_RECORDER FPDF_CALLCONV FPDF_RenderPageSkp(FPDF_PAGE page,
                                                            int size_x,
                                                            int size_y);
@@ -1192,9 +1194,9 @@ FPDF_VIEWERREF_GetNumCopies(FPDF_DOCUMENT document);
 FPDF_EXPORT FPDF_PAGERANGE FPDF_CALLCONV
 FPDF_VIEWERREF_GetPrintPageRange(FPDF_DOCUMENT document);
 
+// Experimental API.
 // Function: FPDF_VIEWERREF_GetPrintPageRangeCount
 //          Returns the number of elements in a FPDF_PAGERANGE.
-//          Experimental API.
 // Parameters:
 //          pagerange   -   Handle to the page range.
 // Return value:
@@ -1202,9 +1204,9 @@ FPDF_VIEWERREF_GetPrintPageRange(FPDF_DOCUMENT document);
 FPDF_EXPORT size_t FPDF_CALLCONV
 FPDF_VIEWERREF_GetPrintPageRangeCount(FPDF_PAGERANGE pagerange);
 
+// Experimental API.
 // Function: FPDF_VIEWERREF_GetPrintPageRangeElement
 //          Returns an element from a FPDF_PAGERANGE.
-//          Experimental API.
 // Parameters:
 //          pagerange   -   Handle to the page range.
 //          index       -   Index of the element.
@@ -1289,6 +1291,65 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDF_GetNamedDest(FPDF_DOCUMENT document,
                                                       int index,
                                                       void* buffer,
                                                       long* buflen);
+
+// Experimental API.
+// Function: FPDF_GetXFAPacketCount
+//          Get the number of valid packets in the XFA entry.
+// Parameters:
+//          document - Handle to the document.
+// Return value:
+//          The number of valid packets, or -1 on error.
+FPDF_EXPORT int FPDF_CALLCONV FPDF_GetXFAPacketCount(FPDF_DOCUMENT document);
+
+// Experimental API.
+// Function: FPDF_GetXFAPacketName
+//          Get the name of a packet in the XFA array.
+// Parameters:
+//          document - Handle to the document.
+//          index    - Index number of the packet. 0 for the first packet.
+//          buffer   - Buffer for holding the name of the XFA packet.
+//          buflen   - Length of |buffer| in bytes.
+// Return value:
+//          The length of the packet name in bytes, or 0 on error.
+//
+// |document| must be valid and |index| must be in the range [0, N), where N is
+// the value returned by FPDF_GetXFAPacketCount().
+// |buffer| is only modified if it is non-NULL and |buflen| is greater than or
+// equal to the length of the packet name. The packet name includes a
+// terminating NUL character. |buffer| is unmodified on error.
+FPDF_EXPORT unsigned long FPDF_CALLCONV FPDF_GetXFAPacketName(
+    FPDF_DOCUMENT document,
+    int index,
+    void* buffer,
+    unsigned long buflen);
+
+// Experimental API.
+// Function: FPDF_GetXFAPacketContent
+//          Get the content of a packet in the XFA array.
+// Parameters:
+//          document   - Handle to the document.
+//          index      - Index number of the packet. 0 for the first packet.
+//          buffer     - Buffer for holding the content of the XFA packet.
+//          buflen     - Length of |buffer| in bytes.
+//          out_buflen - Pointer to the variable that will receive the minimum
+//                       buffer size needed to contain the content of the XFA
+//                       packet.
+// Return value:
+//          Whether the operation succeeded or not.
+//
+// |document| must be valid and |index| must be in the range [0, N), where N is
+// the value returned by FPDF_GetXFAPacketCount(). |out_buflen| must not be
+// NULL. When the aforementioned arguments are valid, the operation succeeds,
+// and |out_buflen| receives the content size. |buffer| is only modified if
+// |buffer| is non-null and long enough to contain the content. Callers must
+// check both the return value and the input |buflen| is no less than the
+// returned |out_buflen| before using the data in |buffer|.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDF_GetXFAPacketContent(
+    FPDF_DOCUMENT document,
+    int index,
+    void* buffer,
+    unsigned long buflen,
+    unsigned long* out_buflen);
 
 #ifdef PDF_ENABLE_V8
 // Function: FPDF_GetRecommendedV8Flags

@@ -150,7 +150,7 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        if (!fImage || !fImage->isValid(canvas->getGrContext())) {
+        if (!fImage || !fImage->isValid(canvas->recordingContext())) {
             fImage = make_image(canvas, kCellSize, kCellSize);
         }
 
@@ -181,7 +181,7 @@ private:
 };
 DEF_GM(return new PerspShadersGM(true);)
 DEF_GM(return new PerspShadersGM(false);)
-}
+}  // namespace skiagm
 
 //////////////////////////////////////////////////////////////////////////////
 

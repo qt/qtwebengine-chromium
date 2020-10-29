@@ -16,7 +16,6 @@
 #include "include/gpu/GrTypes.h"
 #include "include/private/GrSharedEnums.h"
 #include "include/private/SkImageInfoPriv.h"
-#include "include/private/SkWeakRefCnt.h"
 
 class GrBackendFormat;
 class GrCaps;
@@ -774,7 +773,7 @@ enum class GpuPathRenderers {
 /**
  * Used to describe the current state of Mips on a GrTexture
  */
-enum class  GrMipMapsStatus {
+enum class GrMipmapStatus {
     kNotAllocated, // Mips have not been allocated
     kDirty,        // Mips are allocated but the full mip tree does not have valid data
     kValid,        // All levels fully allocated and have valid data in them
@@ -828,6 +827,8 @@ enum class GrColorType {
     kR_16,
     kR_F16,
     kGray_F16,
+    kBGRA_4444,
+    kARGB_4444,
 
     kLast = kGray_F16
 };
@@ -865,6 +866,8 @@ static constexpr SkColorType GrColorTypeToSkColorType(GrColorType ct) {
         case GrColorType::kR_16:             return kUnknown_SkColorType;
         case GrColorType::kR_F16:            return kUnknown_SkColorType;
         case GrColorType::kGray_F16:         return kUnknown_SkColorType;
+        case GrColorType::kARGB_4444:        return kUnknown_SkColorType;
+        case GrColorType::kBGRA_4444:        return kUnknown_SkColorType;
     }
     SkUNREACHABLE;
 }
@@ -932,6 +935,8 @@ static constexpr uint32_t GrColorTypeChannelFlags(GrColorType ct) {
         case GrColorType::kR_16:             return kRed_SkColorChannelFlag;
         case GrColorType::kR_F16:            return kRed_SkColorChannelFlag;
         case GrColorType::kGray_F16:         return kGray_SkColorChannelFlag;
+        case GrColorType::kARGB_4444:        return kRGBA_SkColorChannelFlags;
+        case GrColorType::kBGRA_4444:        return kRGBA_SkColorChannelFlags;
     }
     SkUNREACHABLE;
 }
@@ -1083,6 +1088,10 @@ static constexpr GrColorTypeDesc GrGetColorTypeDesc(GrColorType ct) {
             return GrColorTypeDesc::MakeR(16, GrColorTypeEncoding::kFloat);
         case GrColorType::kGray_F16:
             return GrColorTypeDesc::MakeGray(16, GrColorTypeEncoding::kFloat);
+        case GrColorType::kARGB_4444:
+            return GrColorTypeDesc::MakeRGBA(4, GrColorTypeEncoding::kUnorm);
+        case GrColorType::kBGRA_4444:
+            return GrColorTypeDesc::MakeRGBA(4, GrColorTypeEncoding::kUnorm);
     }
     SkUNREACHABLE;
 }
@@ -1145,6 +1154,8 @@ static constexpr size_t GrColorTypeBytesPerPixel(GrColorType ct) {
         case GrColorType::kR_16:             return 2;
         case GrColorType::kR_F16:            return 2;
         case GrColorType::kGray_F16:         return 2;
+        case GrColorType::kARGB_4444:        return 2;
+        case GrColorType::kBGRA_4444:        return 2;
     }
     SkUNREACHABLE;
 }
@@ -1194,7 +1205,7 @@ private:
     Context fReleaseCtx;
 };
 
-#if GR_TEST_UTILS || defined(SK_ENABLE_DUMP_GPU)
+#if defined(SK_DEBUG) || GR_TEST_UTILS || defined(SK_ENABLE_DUMP_GPU)
 static constexpr const char* GrBackendApiToStr(GrBackendApi api) {
     switch (api) {
         case GrBackendApi::kOpenGL:   return "OpenGL";
@@ -1237,6 +1248,8 @@ static constexpr const char* GrColorTypeToStr(GrColorType ct) {
         case GrColorType::kR_16:             return "kR_16";
         case GrColorType::kR_F16:            return "kR_F16";
         case GrColorType::kGray_F16:         return "kGray_F16";
+        case GrColorType::kARGB_4444:        return "kARGB_4444";
+        case GrColorType::kBGRA_4444:        return "kBGRA_4444";
     }
     SkUNREACHABLE;
 }

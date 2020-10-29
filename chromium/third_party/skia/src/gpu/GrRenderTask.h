@@ -52,7 +52,7 @@ public:
     /*
      * Notify this GrRenderTask that it relies on the contents of 'dependedOn'
      */
-    void addDependency(GrDrawingManager*, GrSurfaceProxy* dependedOn, GrMipMapped,
+    void addDependency(GrDrawingManager*, GrSurfaceProxy* dependedOn, GrMipmapped,
                        GrTextureResolveManager, const GrCaps& caps);
 
     /*
@@ -75,13 +75,15 @@ public:
      */
     virtual GrOpsTask* asOpsTask() { return nullptr; }
 
-#ifdef SK_DEBUG
+#if GR_TEST_UTILS
     /*
      * Dump out the GrRenderTask dependency DAG
      */
     virtual void dump(bool printDependencies) const;
     virtual const char* name() const = 0;
+#endif
 
+#ifdef SK_DEBUG
     virtual int numClips() const { return 0; }
 
     virtual void visitProxies_debugOnly(const GrOp::VisitProxyFunc&) const = 0;
@@ -89,7 +91,7 @@ public:
     void visitTargetAndSrcProxies_debugOnly(const GrOp::VisitProxyFunc& fn) const {
         this->visitProxies_debugOnly(fn);
         for (int i = 0; i < this->numTargets(); ++i) {
-            fn(this->target(i).proxy(), GrMipMapped::kNo);
+            fn(this->target(i).proxy(), GrMipmapped::kNo);
         }
     }
 #endif
@@ -219,6 +221,8 @@ private:
     // (http://skbug.com/9406). To accomplish this, we make and reuse one single resolve task for
     // each render task, then add it as a dependency during makeClosed().
     GrTextureResolveRenderTask* fTextureResolveTask = nullptr;
+
+    SkDEBUGCODE(GrDrawingManager *fDrawingMgr = nullptr;)
 };
 
 #endif

@@ -28,6 +28,8 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';
@@ -71,9 +73,10 @@ export class TimelinePanel extends UI.Panel.Panel {
     this._recordingPageReload = false;
     this._millisecondsToRecordAfterLoadEvent = 5000;
     this._toggleRecordAction =
-        /** @type {!UI.Action.Action }*/ (self.UI.actionRegistry.action('timeline.toggle-recording'));
+        /** @type {!UI.Action.Action }*/ (
+            UI.ActionRegistry.ActionRegistry.instance().action('timeline.toggle-recording'));
     this._recordReloadAction =
-        /** @type {!UI.Action.Action }*/ (self.UI.actionRegistry.action('timeline.record-reload'));
+        /** @type {!UI.Action.Action }*/ (UI.ActionRegistry.ActionRegistry.instance().action('timeline.record-reload'));
 
     this._historyManager = new TimelineHistoryManager();
 
@@ -170,7 +173,7 @@ export class TimelinePanel extends UI.Panel.Panel {
    * @override
    */
   wasShown() {
-    self.UI.context.setFlavor(TimelinePanel, this);
+    UI.Context.Context.instance().setFlavor(TimelinePanel, this);
     // Record the performance tool load time.
     Host.userMetrics.panelLoaded('timeline', 'DevTools.Launch.Timeline');
   }
@@ -179,7 +182,7 @@ export class TimelinePanel extends UI.Panel.Panel {
    * @override
    */
   willHide() {
-    self.UI.context.setFlavor(TimelinePanel, null);
+    UI.Context.Context.instance().setFlavor(TimelinePanel, null);
     this._historyManager.cancelIfShowing();
   }
 
@@ -1322,7 +1325,7 @@ export class ActionDelegate {
    * @return {boolean}
    */
   handleAction(context, actionId) {
-    const panel = self.UI.context.flavor(TimelinePanel);
+    const panel = UI.Context.Context.instance().flavor(TimelinePanel);
     console.assert(panel && panel instanceof TimelinePanel);
     switch (actionId) {
       case 'timeline.toggle-recording':

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as InlineEditor from '../inline_editor/inline_editor.js';
@@ -369,6 +372,14 @@ export class AppManifestView extends UI.Widget.VBox {
           break;
         case 'prefer-related-applications':
           errorMessage = ls`Manifest specifies prefer_related_applications: true`;
+          break;
+        case 'prefer-related-applications-only-beta-stable':
+          errorMessage =
+              ls`prefer_related_applications is only supported on Chrome Beta and Stable channels on Android.`;
+          break;
+        case 'manifest-display-override-not-supported':
+          errorMessage =
+              ls`Manifest contains 'display_override' field, and the first supported display mode must be one of 'standalone', 'fullscreen', or 'minimal-ui'`;
           break;
         default:
           console.error(`Installability error id '${installabilityError.errorId}' is not recognized`);

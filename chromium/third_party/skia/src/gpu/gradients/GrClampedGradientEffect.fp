@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-// This master effect implements clamping on the layout coordinate and requires specifying the
+// This top-level effect implements clamping on the layout coordinate and requires specifying the
 // border colors that are used when outside the clamped boundary. Gradients with the
 // SkShader::kClamp_TileMode should use the colors at their first and last stop (after adding dummy
 // stops for t=0,t=1) as the border color. This will automatically replicate the edge color, even if
@@ -38,10 +38,11 @@ void main() {
     } else if (t.x > 1.0) {
         sk_OutColor = rightBorderColor;
     } else {
-        sk_OutColor = sample(colorizer, t);
+        // Always sample from (x, 0), discarding y, since the layout FP can use y as a side-channel.
+        sk_OutColor = sample(colorizer, t.x0);
     }
 
-    @if(makePremul) {
+    @if (makePremul) {
         sk_OutColor.xyz *= sk_OutColor.w;
     }
 }

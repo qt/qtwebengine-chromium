@@ -26,8 +26,10 @@ namespace SkSL {
  * collection of vectors and scalars totalling exactly the right number of scalar components.
  */
 struct Constructor : public Expression {
+    static constexpr Kind kExpressionKind = kConstructor_Kind;
+
     Constructor(int offset, const Type& type, std::vector<std::unique_ptr<Expression>> arguments)
-    : INHERITED(offset, kConstructor_Kind, type)
+    : INHERITED(offset, kExpressionKind, type)
     , fArguments(std::move(arguments)) {}
 
     std::unique_ptr<Expression> constantPropagate(const IRGenerator& irGenerator,
@@ -35,13 +37,13 @@ struct Constructor : public Expression {
         if (fArguments.size() == 1 && fArguments[0]->fKind == Expression::kIntLiteral_Kind) {
             if (fType.isFloat()) {
                 // promote float(1) to 1.0
-                int64_t intValue = ((IntLiteral&) *fArguments[0]).fValue;
+                int64_t intValue = fArguments[0]->as<IntLiteral>().fValue;
                 return std::unique_ptr<Expression>(new FloatLiteral(irGenerator.fContext,
                                                                     fOffset,
                                                                     intValue));
             } else if (fType.isInteger()) {
                 // promote uint(1) to 1u
-                int64_t intValue = ((IntLiteral&) *fArguments[0]).fValue;
+                int64_t intValue = fArguments[0]->as<IntLiteral>().fValue;
                 return std::unique_ptr<Expression>(new IntLiteral(fOffset,
                                                                   intValue,
                                                                   &fType));
@@ -87,9 +89,9 @@ struct Constructor : public Expression {
         return result;
     }
 
-    bool isConstant() const override {
+    bool isCompileTimeConstant() const override {
         for (size_t i = 0; i < fArguments.size(); i++) {
-            if (!fArguments[i]->isConstant()) {
+            if (!fArguments[i]->isCompileTimeConstant()) {
                 return false;
             }
         }
@@ -136,46 +138,86 @@ struct Constructor : public Expression {
         return true;
     }
 
-    template<typename type>
+    template <typename type>
     type getVecComponent(int index) const {
         SkASSERT(fType.kind() == Type::kVector_Kind);
         if (fArguments.size() == 1 && fArguments[0]->fType.kind() == Type::kScalar_Kind) {
+            // This constructor just wraps a scalar. Propagate out the value.
             if (std::is_floating_point<type>::value) {
                 return fArguments[0]->getConstantFloat();
             } else {
                 return fArguments[0]->getConstantInt();
             }
         }
+
+        // Walk through all the constructor arguments until we reach the index we're searching for.
         int current = 0;
-        for (const auto& arg : fArguments) {
-            SkASSERT(current <= index);
+        for (const std::unique_ptr<Expression>& arg : fArguments) {
+            if (current > index) {
+                // Somehow, we went past the argument we're looking for. Bail.
+                break;
+            }
+
             if (arg->fType.kind() == Type::kScalar_Kind) {
                 if (index == current) {
+                    // We're on the proper argument, and it's a scalar; fetch it.
                     if (std::is_floating_point<type>::value) {
-                        return arg.get()->getConstantFloat();
+                        return arg->getConstantFloat();
                     } else {
-                        return arg.get()->getConstantInt();
+                        return arg->getConstantInt();
                     }
                 }
                 current++;
-            } else if (arg->fKind == kConstructor_Kind) {
-                if (current + arg->fType.columns() > index) {
-                    return ((const Constructor&) *arg).getVecComponent<type>(index - current);
-                }
-                current += arg->fType.columns();
-            } else {
-                if (current + arg->fType.columns() > index) {
-                    SkASSERT(arg->fKind == kPrefix_Kind);
-                    const PrefixExpression& p = (PrefixExpression&) *arg;
-                    const Constructor& c = (const Constructor&) *p.fOperand;
-                    return -c.getVecComponent<type>(index - current);
-                }
-                current += arg->fType.columns();
+                continue;
             }
+
+            switch (arg->fKind) {
+                case kConstructor_Kind: {
+                    const Constructor& constructor = static_cast<const Constructor&>(*arg);
+                    if (current + constructor.fType.columns() > index) {
+                        // We've found a constructor that overlaps the proper argument. Descend into
+                        // it, honoring the type.
+                        if (constructor.fType.componentType().isFloat()) {
+                            return type(constructor.getVecComponent<SKSL_FLOAT>(index - current));
+                        } else {
+                            return type(constructor.getVecComponent<SKSL_INT>(index - current));
+                        }
+                    }
+                    break;
+                }
+                case kPrefix_Kind: {
+                    const PrefixExpression& prefix = static_cast<const PrefixExpression&>(*arg);
+                    if (current + prefix.fType.columns() > index) {
+                        // We found a prefix operator that contains the proper argument. Descend
+                        // into it. We only support for constant propagation of the unary minus, so
+                        // we shouldn't see any other tokens here.
+                        SkASSERT(prefix.fOperator == Token::Kind::TK_MINUS);
+
+                        // We expect the - prefix to always be attached to a constructor.
+                        SkASSERT(prefix.fOperand->fKind == kConstructor_Kind);
+                        const Constructor& constructor =
+                                static_cast<const Constructor&>(*prefix.fOperand);
+
+                        // Descend into this constructor, honoring the type.
+                        if (constructor.fType.componentType().isFloat()) {
+                            return -type(constructor.getVecComponent<SKSL_FLOAT>(index - current));
+                        } else {
+                            return -type(constructor.getVecComponent<SKSL_INT>(index - current));
+                        }
+                    }
+                    break;
+                }
+                default: {
+                    SkDEBUGFAILF("unexpected component %d { %s } in %s\n",
+                                 index, arg->description().c_str(), description().c_str());
+                    break;
+                }
+            }
+
+            current += arg->fType.columns();
         }
-#ifdef SK_DEBUG
-        ABORT("failed to find vector component %d in %s\n", index, description().c_str());
-#endif
+
+        SkDEBUGFAILF("failed to find vector component %d in %s\n", index, description().c_str());
         return -1;
     }
 
@@ -192,7 +234,7 @@ struct Constructor : public Expression {
     }
 
     SKSL_FLOAT getMatComponent(int col, int row) const override {
-        SkASSERT(this->isConstant());
+        SkASSERT(this->isCompileTimeConstant());
         SkASSERT(fType.kind() == Type::kMatrix_Kind);
         SkASSERT(col < fType.columns() && row < fType.rows());
         if (fArguments.size() == 1) {
@@ -238,6 +280,6 @@ struct Constructor : public Expression {
     typedef Expression INHERITED;
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

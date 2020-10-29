@@ -98,7 +98,7 @@ class RendererVk : angle::NonCopyable
     }
     const VkPhysicalDeviceSubgroupProperties &getPhysicalDeviceSubgroupProperties() const
     {
-        return mPhysicalDeviceSubgroupProperties;
+        return mSubgroupProperties;
     }
     const VkPhysicalDeviceFeatures &getPhysicalDeviceFeatures() const
     {
@@ -158,6 +158,7 @@ class RendererVk : angle::NonCopyable
     {
         return mMinImportedHostPointerAlignment;
     }
+    uint32_t getDefaultUniformBufferSize() const { return mDefaultUniformBufferSize; }
 
     bool isMockICDEnabled() const { return mEnabledICD == angle::vk::ICD::Mock; }
 
@@ -247,6 +248,7 @@ class RendererVk : angle::NonCopyable
     bool enableDebugUtils() const { return mEnableDebugUtils; }
 
     SamplerCache &getSamplerCache() { return mSamplerCache; }
+    SamplerYcbcrConversionCache &getYuvConversionCache() { return mYuvConversionCache; }
     vk::ActiveHandleCounter &getActiveHandleCounts() { return mActiveHandleCounts; }
 
     // Queue commands to worker thread for processing
@@ -256,7 +258,9 @@ class RendererVk : angle::NonCopyable
     }
     void waitForWorkerThreadIdle() { mCommandProcessor.waitForWorkComplete(); }
 
-    vk::BufferHelper &getNullBuffer() { return mTheNullBuffer; }
+    bool getEnableValidationLayers() const { return mEnableValidationLayers; }
+
+    vk::ResourceSerialFactory &getResourceSerialFactory() { return mResourceSerialFactory; }
 
   private:
     angle::Result initializeDevice(DisplayVk *displayVk, uint32_t queueFamilyIndex);
@@ -297,16 +301,18 @@ class RendererVk : angle::NonCopyable
     VkPhysicalDevice mPhysicalDevice;
     VkPhysicalDeviceProperties mPhysicalDeviceProperties;
     VkPhysicalDeviceFeatures mPhysicalDeviceFeatures;
-    VkExternalFenceProperties mExternalFenceProperties;
-    VkExternalSemaphoreProperties mExternalSemaphoreProperties;
     VkPhysicalDeviceLineRasterizationFeaturesEXT mLineRasterizationFeatures;
     VkPhysicalDeviceProvokingVertexFeaturesEXT mProvokingVertexFeatures;
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT mVertexAttributeDivisorFeatures;
     VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT mVertexAttributeDivisorProperties;
     VkPhysicalDeviceTransformFeedbackFeaturesEXT mTransformFeedbackFeatures;
     VkPhysicalDeviceIndexTypeUint8FeaturesEXT mIndexTypeUint8Features;
-    VkPhysicalDeviceSubgroupProperties mPhysicalDeviceSubgroupProperties;
-    VkPhysicalDeviceExternalMemoryHostPropertiesEXT mPhysicalDeviceExternalMemoryHostProperties;
+    VkPhysicalDeviceSubgroupProperties mSubgroupProperties;
+    VkPhysicalDeviceExternalMemoryHostPropertiesEXT mExternalMemoryHostProperties;
+    VkPhysicalDeviceShaderFloat16Int8FeaturesKHR mShaderFloat16Int8Features;
+    VkExternalFenceProperties mExternalFenceProperties;
+    VkExternalSemaphoreProperties mExternalSemaphoreProperties;
+    VkPhysicalDeviceSamplerYcbcrConversionFeatures mSamplerYcbcrConversionFeatures;
     std::vector<VkQueueFamilyProperties> mQueueFamilyProperties;
     std::mutex mQueueMutex;
     angle::PackedEnumMap<egl::ContextPriority, VkQueue> mQueues;
@@ -315,6 +321,7 @@ class RendererVk : angle::NonCopyable
     uint32_t mMaxVertexAttribDivisor;
     VkDeviceSize mMaxVertexAttribStride;
     VkDeviceSize mMinImportedHostPointerAlignment;
+    uint32_t mDefaultUniformBufferSize;
     VkDevice mDevice;
     AtomicSerialFactory mQueueSerialFactory;
     AtomicSerialFactory mShaderSerialFactory;
@@ -380,10 +387,11 @@ class RendererVk : angle::NonCopyable
 
     vk::Allocator mAllocator;
     SamplerCache mSamplerCache;
+    SamplerYcbcrConversionCache mYuvConversionCache;
     vk::ActiveHandleCounter mActiveHandleCounts;
 
-    // Vulkan does not allow binding a null vertex buffer. We use a dummy as a placeholder.
-    vk::BufferHelper mTheNullBuffer;
+    // Tracks resource serials.
+    vk::ResourceSerialFactory mResourceSerialFactory;
 };
 
 }  // namespace rx

@@ -44,12 +44,17 @@
 namespace webrtc {
 namespace {
 #if defined(WEBRTC_IOS)
-const char kVP8IosMaxNumberOfThreadFieldTrial[] =
+constexpr char kVP8IosMaxNumberOfThreadFieldTrial[] =
     "WebRTC-VP8IosMaxNumberOfThread";
-const char kVP8IosMaxNumberOfThreadFieldTrialParameter[] = "max_thread";
+constexpr char kVP8IosMaxNumberOfThreadFieldTrialParameter[] = "max_thread";
 #endif
 
-const char kVp8ForcePartitionResilience[] =
+constexpr char kVp8GetEncoderInfoOverrideFieldTrial[] =
+    "WebRTC-VP8-GetEncoderInfoOverride";
+constexpr char kVp8RequestedResolutionAlignmentFieldTrialParameter[] =
+    "requested_resolution_alignment";
+
+constexpr char kVp8ForcePartitionResilience[] =
     "WebRTC-VP8-ForcePartitionResilience";
 
 // QP is obtained from VP8-bitstream for HW, so the QP corresponds to the
@@ -222,6 +227,15 @@ void ApplyVp8EncoderConfigToVpxConfig(const Vp8EncoderConfig& encoder_config,
   }
 }
 
+absl::optional<int> GetRequestedResolutionAlignmentOverride() {
+  const std::string trial_string =
+      field_trial::FindFullName(kVp8GetEncoderInfoOverrideFieldTrial);
+  FieldTrialOptional<int> requested_resolution_alignment(
+      kVp8RequestedResolutionAlignmentFieldTrialParameter);
+  ParseFieldTrial({&requested_resolution_alignment}, trial_string);
+  return requested_resolution_alignment.GetOptional();
+}
+
 }  // namespace
 
 std::unique_ptr<VideoEncoder> VP8Encoder::Create() {
@@ -279,6 +293,8 @@ LibvpxVp8Encoder::LibvpxVp8Encoder(std::unique_ptr<LibvpxInterface> interface,
     : libvpx_(std::move(interface)),
       experimental_cpu_speed_config_arm_(CpuSpeedExperiment::GetConfigs()),
       rate_control_settings_(RateControlSettings::ParseFromFieldTrials()),
+      requested_resolution_alignment_override_(
+          GetRequestedResolutionAlignmentOverride()),
       frame_buffer_controller_factory_(
           std::move(settings.frame_buffer_controller_factory)),
       resolution_bitrate_limits_(std::move(settings.resolution_bitrate_limits)),
@@ -403,7 +419,9 @@ void LibvpxVp8Encoder::SetRates(const RateControlParameters& parameters) {
     vpx_codec_err_t err =
         libvpx_->codec_enc_config_set(&encoders_[i], &vpx_configs_[i]);
     if (err != VPX_CODEC_OK) {
-      RTC_LOG(LS_WARNING) << "Error configuring codec, error code: " << err;
+      RTC_LOG(LS_WARNING) << "Error configuring codec, error code: " << err
+                          << ", details: "
+                          << libvpx_->codec_error_detail(&encoders_[i]);
     }
   }
 }
@@ -879,7 +897,7 @@ size_t LibvpxVp8Encoder::SteadyStateSize(int sid, int tid) {
   const int encoder_id = encoders_.size() - 1 - sid;
   size_t bitrate_bps;
   float fps;
-  if (SimulcastUtility::IsConferenceModeScreenshare(codec_) ||
+  if ((SimulcastUtility::IsConferenceModeScreenshare(codec_) && sid == 0) ||
       vpx_configs_[encoder_id].ts_number_layers <= 1) {
     // In conference screenshare there's no defined per temporal layer bitrate
     // and framerate.
@@ -1198,7 +1216,7 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
                                &qp_128);
         encoded_images_[encoder_idx].qp_ = qp_128;
         encoded_complete_callback_->OnEncodedImage(encoded_images_[encoder_idx],
-                                                   &codec_specific, nullptr);
+                                                   &codec_specific);
         const size_t steady_state_size = SteadyStateSize(
             stream_idx, codec_specific.codecSpecific.VP8.temporalIdx);
         if (qp_128 > variable_framerate_experiment_.steady_state_qp ||
@@ -1232,6 +1250,10 @@ VideoEncoder::EncoderInfo LibvpxVp8Encoder::GetEncoderInfo() const {
   info.supports_simulcast = true;
   if (!resolution_bitrate_limits_.empty()) {
     info.resolution_bitrate_limits = resolution_bitrate_limits_;
+  }
+  if (requested_resolution_alignment_override_) {
+    info.requested_resolution_alignment =
+        *requested_resolution_alignment_override_;
   }
 
   const bool enable_scaling =

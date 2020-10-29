@@ -523,6 +523,7 @@ TEST_F(TestVp8Impl, KeepsTimestampOnReencode) {
   codec_settings_.maxBitrate = 1000;
   codec_settings_.mode = VideoCodecMode::kScreensharing;
   codec_settings_.VP8()->numberOfTemporalLayers = 2;
+  codec_settings_.legacy_conference_mode = true;
 
   EXPECT_CALL(*vpx, img_wrap(_, _, _, _, _, _))
       .WillOnce(Invoke([](vpx_image_t* img, vpx_img_fmt_t fmt, unsigned int d_w,
@@ -564,6 +565,19 @@ TEST(LibvpxVp8EncoderTest, GetEncoderInfoReturnsStaticInformation) {
   EXPECT_FALSE(info.has_internal_source);
   EXPECT_TRUE(info.supports_simulcast);
   EXPECT_EQ(info.implementation_name, "libvpx");
+  EXPECT_EQ(info.requested_resolution_alignment, 1);
+}
+
+TEST(LibvpxVp8EncoderTest, RequestedResolutionAlignmentFromFieldTrial) {
+  test::ScopedFieldTrials field_trials(
+      "WebRTC-VP8-GetEncoderInfoOverride/"
+      "requested_resolution_alignment:10/");
+
+  auto* const vpx = new NiceMock<MockLibvpxVp8Interface>();
+  LibvpxVp8Encoder encoder((std::unique_ptr<LibvpxInterface>(vpx)),
+                           VP8Encoder::Settings());
+
+  EXPECT_EQ(encoder.GetEncoderInfo().requested_resolution_alignment, 10);
 }
 
 TEST(LibvpxVp8EncoderTest,
@@ -653,6 +667,7 @@ TEST_F(TestVp8Impl, GetEncoderInfoFpsAllocationScreenshareLayers) {
   codec_settings_.simulcastStream[0].maxBitrate =
       kLegacyScreenshareTl1BitrateKbps;
   codec_settings_.simulcastStream[0].numberOfTemporalLayers = 2;
+  codec_settings_.legacy_conference_mode = true;
   EXPECT_EQ(WEBRTC_VIDEO_CODEC_OK,
             encoder_->InitEncode(&codec_settings_, kSettings));
 

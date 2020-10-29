@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as DataGrid from '../data_grid/data_grid.js';
@@ -64,7 +67,8 @@ export class BackgroundServiceView extends UI.Widget.VBox {
 
     /** @const {!UI.Action.Action} */
     this._recordAction =
-        /** @type {!UI.Action.Action} */ (self.UI.actionRegistry.action('background-service.toggle-recording'));
+        /** @type {!UI.Action.Action} */ (
+            UI.ActionRegistry.ActionRegistry.instance().action('background-service.toggle-recording'));
     /** @type {?UI.Toolbar.ToolbarButton} */
     this._recordButton = null;
 

@@ -15,19 +15,19 @@
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxge/cfx_face.h"
-#include "core/fxge/cfx_textrenderoptions.h"
 #include "core/fxge/fx_freetype.h"
 #include "third_party/base/span.h"
 
-#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 #include "core/fxge/fx_font.h"
 #endif
 
-class CFX_GlyphCache;
 class CFX_GlyphBitmap;
+class CFX_GlyphCache;
 class CFX_PathData;
 class CFX_SubstFont;
 class IFX_SeekableReadStream;
+struct CFX_TextRenderOptions;
 
 class CFX_Font {
  public:
@@ -79,7 +79,7 @@ class CFX_Font {
   const CFX_PathData* LoadGlyphPath(uint32_t glyph_index,
                                     uint32_t dest_width) const;
 
-#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   CFX_TypeFace* GetDeviceCache() const;
 #endif
 
@@ -90,7 +90,7 @@ class CFX_Font {
   bool IsItalic() const;
   bool IsBold() const;
   bool IsFixedWidth() const;
-#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   bool IsSubstFontBold() const;
 #endif
   bool IsVertical() const { return m_bVertical; }
@@ -107,7 +107,7 @@ class CFX_Font {
   void AdjustMMParams(int glyph_index, int dest_width, int weight) const;
   CFX_PathData* LoadGlyphPathImpl(uint32_t glyph_index,
                                   uint32_t dest_width) const;
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   void* GetPlatformFont() const { return m_pPlatformFont; }
   void SetPlatformFont(void* font) { m_pPlatformFont = font; }
 #endif
@@ -135,7 +135,7 @@ class CFX_Font {
  private:
   RetainPtr<CFX_GlyphCache> GetOrCreateGlyphCache() const;
   void ClearGlyphCache();
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   void ReleasePlatformResource();
 #endif
   ByteString GetFamilyNameOrUntitled() const;
@@ -151,7 +151,7 @@ class CFX_Font {
   pdfium::span<uint8_t> m_FontData;
   bool m_bEmbedded = false;
   bool m_bVertical = false;
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   void* m_pPlatformFont = nullptr;
 #endif
 };

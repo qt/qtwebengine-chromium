@@ -1440,7 +1440,7 @@ static AOM_INLINE void write_tokens_b(AV1_COMP *cpi, aom_writer *w,
 
   const int is_inter = is_inter_block(mbmi);
   if (!is_inter) {
-    av1_write_coeffs_mb(cm, x, w, bsize);
+    av1_write_intra_coeffs_mb(cm, x, w, bsize);
   } else {
     int block[MAX_MB_PLANE] = { 0 };
     assert(bsize == get_plane_block_size(bsize, xd->plane[0].subsampling_x,
@@ -2958,7 +2958,7 @@ static AOM_INLINE void write_uncompressed_header_obu(
 
   // Shown keyframes and switch-frames automatically refreshes all reference
   // frames.  For all other frame types, we need to write refresh_frame_flags.
-  if ((current_frame->frame_type == KEY_FRAME && !cm->show_frame) ||
+  if ((current_frame->frame_type == KEY_FRAME && cpi->no_show_fwd_kf) ||
       current_frame->frame_type == INTER_FRAME ||
       current_frame->frame_type == INTRA_ONLY_FRAME)
     aom_wb_write_literal(wb, current_frame->refresh_frame_flags, REF_FRAMES);
@@ -3867,7 +3867,7 @@ int av1_pack_bitstream(AV1_COMP *const cpi, uint8_t *dst, size_t *size,
   // The TD is now written outside the frame encode loop
 
   // write sequence header obu if KEY_FRAME, preceded by 4-byte size
-  if (cm->current_frame.frame_type == KEY_FRAME && cm->show_frame) {
+  if (cm->current_frame.frame_type == KEY_FRAME && !cpi->no_show_fwd_kf) {
     obu_header_size =
         av1_write_obu_header(level_params, OBU_SEQUENCE_HEADER, 0, data);
 
@@ -3888,7 +3888,8 @@ int av1_pack_bitstream(AV1_COMP *const cpi, uint8_t *dst, size_t *size,
 
   const int write_frame_header =
       (cpi->num_tg > 1 || encode_show_existing_frame(cm));
-  struct aom_write_bit_buffer saved_wb;
+  struct aom_write_bit_buffer saved_wb = { NULL, 0 };
+  size_t length_field = 0;
   if (write_frame_header) {
     // Write Frame Header OBU.
     fh_info.frame_header = data;
@@ -3897,26 +3898,24 @@ int av1_pack_bitstream(AV1_COMP *const cpi, uint8_t *dst, size_t *size,
     obu_payload_size =
         write_frame_header_obu(cpi, &saved_wb, data + obu_header_size, 1);
 
-    const size_t length_field_size =
-        obu_memmove(obu_header_size, obu_payload_size, data);
+    length_field = obu_memmove(obu_header_size, obu_payload_size, data);
     if (av1_write_uleb_obu_size(obu_header_size, obu_payload_size, data) !=
         AOM_CODEC_OK) {
       return AOM_CODEC_ERROR;
     }
 
     fh_info.obu_header_byte_offset = 0;
-    fh_info.total_length =
-        obu_header_size + obu_payload_size + length_field_size;
+    fh_info.total_length = obu_header_size + obu_payload_size + length_field;
     data += fh_info.total_length;
-
-    // Since length_field_size is determined adaptively after frame header
-    // encoding, saved_wb must be adjusted accordingly.
-    saved_wb.bit_buffer += length_field_size;
   }
 
   if (encode_show_existing_frame(cm)) {
     data_size = 0;
   } else {
+    // Since length_field is determined adaptively after frame header
+    // encoding, saved_wb must be adjusted accordingly.
+    saved_wb.bit_buffer += length_field;
+
     //  Each tile group obu will be preceded by 4-byte size of the tile group
     //  obu
     data_size = write_tiles_in_tg_obus(

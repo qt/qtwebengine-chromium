@@ -15,15 +15,10 @@ static inline bool SkShouldPostMessageToBus(
     return msg.fContextID == msgBusUniqueID;
 }
 
-GrTextBlobCache::GrTextBlobCache(PurgeMore purgeMore, uint32_t messageBusID)
-        : fPurgeMore(purgeMore)
-        , fSizeBudget(kDefaultBudget)
+GrTextBlobCache::GrTextBlobCache(uint32_t messageBusID)
+        : fSizeBudget(kDefaultBudget)
         , fMessageBusID(messageBusID)
         , fPurgeBlobInbox(messageBusID) { }
-
-GrTextBlobCache::~GrTextBlobCache() {
-    this->freeAll();
-}
 
 sk_sp<GrTextBlob>
 GrTextBlobCache::makeCachedBlob(const SkGlyphRunList& glyphRunList, const GrTextBlob::Key& key,
@@ -31,17 +26,30 @@ GrTextBlobCache::makeCachedBlob(const SkGlyphRunList& glyphRunList, const GrText
                                 const SkMatrix& viewMatrix) {
     sk_sp<GrTextBlob> cacheBlob(GrTextBlob::Make(glyphRunList, viewMatrix));
     cacheBlob->setupKey(key, blurRec, glyphRunList.paint());
+    SkAutoSpinlock lock{fSpinLock};
     this->internalAdd(cacheBlob);
     glyphRunList.temporaryShuntBlobNotifyAddedToCache(fMessageBusID);
     return cacheBlob;
 }
 
-sk_sp<GrTextBlob> GrTextBlobCache::find(const GrTextBlob::Key& key) const {
-    const auto* idEntry = fBlobIDCache.find(key.fUniqueID);
-    return idEntry ? idEntry->find(key) : nullptr;
+sk_sp<GrTextBlob> GrTextBlobCache::find(const GrTextBlob::Key& key) {
+    SkAutoSpinlock lock{fSpinLock};
+    const BlobIDCacheEntry* idEntry = fBlobIDCache.find(key.fUniqueID);
+    if (idEntry == nullptr) {
+        return nullptr;
+    }
+
+    sk_sp<GrTextBlob> blob = idEntry->find(key);
+    GrTextBlob* blobPtr = blob.get();
+    if (blobPtr != nullptr && blobPtr != fBlobList.head()) {
+        fBlobList.remove(blobPtr);
+        fBlobList.addToHead(blobPtr);
+    }
+    return blob;
 }
 
 void GrTextBlobCache::remove(GrTextBlob* blob) {
+    SkAutoSpinlock lock{fSpinLock};
     this->internalRemove(blob);
 }
 
@@ -58,33 +66,11 @@ void GrTextBlobCache::internalRemove(GrTextBlob* blob) {
     }
 }
 
-void GrTextBlobCache::makeMRU(GrTextBlob* blob) {
-    if (fBlobList.head() == blob) {
-        return;
-    }
-
-    fBlobList.remove(blob);
-    fBlobList.addToHead(blob);
-}
-
 void GrTextBlobCache::freeAll() {
-    fBlobIDCache.foreach([this](uint32_t, BlobIDCacheEntry* entry) {
-        for (const auto& blob : entry->fBlobs) {
-            fBlobList.remove(blob.get());
-        }
-    });
-
+    SkAutoSpinlock lock{fSpinLock};
     fBlobIDCache.reset();
-
+    fBlobList.reset();
     fCurrentSize = 0;
-
-    // There should be no allocations in the memory pool at this point
-    SkASSERT(fBlobList.isEmpty());
-}
-
-void GrTextBlobCache::setBudget(size_t budget) {
-    fSizeBudget = budget;
-    this->internalCheckPurge();
 }
 
 void GrTextBlobCache::PostPurgeBlobMessage(uint32_t blobID, uint32_t cacheID) {
@@ -93,6 +79,7 @@ void GrTextBlobCache::PostPurgeBlobMessage(uint32_t blobID, uint32_t cacheID) {
 }
 
 void GrTextBlobCache::purgeStaleBlobs() {
+    SkAutoSpinlock lock{fSpinLock};
     this->internalPurgeStaleBlobs();
 }
 
@@ -119,7 +106,13 @@ void GrTextBlobCache::internalPurgeStaleBlobs() {
 }
 
 size_t GrTextBlobCache::usedBytes() const {
+    SkAutoSpinlock lock{fSpinLock};
     return fCurrentSize;
+}
+
+bool GrTextBlobCache::isOverBudget() const {
+    SkAutoSpinlock lock{fSpinLock};
+    return fCurrentSize > fSizeBudget;
 }
 
 void GrTextBlobCache::internalCheckPurge(GrTextBlob* blob) {
@@ -136,13 +129,6 @@ void GrTextBlobCache::internalCheckPurge(GrTextBlob* blob) {
             iter.prev();
 
             this->internalRemove(lruBlob);
-        }
-
-        // If we break out of the loop with lruBlob == blob, then we haven't purged enough
-        // use the call back and try to free some more.  If we are still overbudget after this,
-        // then this single textblob is over our budget
-        if (blob && lruBlob == blob) {
-            fPurgeMore();
         }
 
     #ifdef SPEW_BUDGET_MESSAGE

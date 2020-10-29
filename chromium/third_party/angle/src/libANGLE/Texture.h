@@ -48,6 +48,8 @@ class Sampler;
 class State;
 class Texture;
 
+constexpr GLuint kInitialMaxLevel = 1000;
+
 bool IsMipmapFiltered(const SamplerState &samplerState);
 
 struct ImageDesc final
@@ -99,14 +101,6 @@ struct ContextBindingCount
     uint32_t imageBindingCount;
 };
 
-// The source of the syncState call.  Knowing why syncState is being called can help the back-end
-// make more-informed decisions.
-enum class TextureCommand
-{
-    GenerateMipmap,
-    Other,
-};
-
 // State from Table 6.9 (state per texture object) in the OpenGL ES 3.0.2 spec.
 class TextureState final : private angle::NonCopyable
 {
@@ -123,7 +117,9 @@ class TextureState final : private angle::NonCopyable
 
     // Returns true if base level changed.
     bool setBaseLevel(GLuint baseLevel);
+    GLuint getBaseLevel() const { return mBaseLevel; }
     bool setMaxLevel(GLuint maxLevel);
+    GLuint getMaxLevel() const { return mMaxLevel; }
 
     bool isCubeComplete() const;
 
@@ -150,6 +146,8 @@ class TextureState final : private angle::NonCopyable
     GLenum getUsage() const { return mUsage; }
     GLenum getDepthStencilTextureMode() const { return mDepthStencilTextureMode; }
     bool isStencilMode() const { return mDepthStencilTextureMode == GL_STENCIL_INDEX; }
+
+    // TODO(jmadill): Remove. http://anglebug.com/4500
     bool isBoundAsSamplerTexture(ContextID contextID) const
     {
         return getBindingCount(contextID).samplerBindingCount > 0;
@@ -174,6 +172,15 @@ class TextureState final : private angle::NonCopyable
 
     // Return the enabled mipmap level count.
     GLuint getEnabledLevelCount() const;
+
+    const std::vector<ContextBindingCount> &getBindingCounts() const { return mBindingCounts; }
+
+    bool getImmutableFormat() const { return mImmutableFormat; }
+    GLuint getImmutableLevels() const { return mImmutableLevels; }
+
+    const std::vector<ImageDesc> &getImageDescs() const { return mImageDescs; }
+
+    InitState getInitState() const { return mInitState; }
 
   private:
     // Texture needs access to the ImageDesc functions.
@@ -341,6 +348,8 @@ class Texture final : public RefCountObject<TextureID>,
     void setUsage(const Context *context, GLenum usage);
     GLenum getUsage() const;
 
+    const TextureState &getState() const { return mState; }
+
     void setBorderColor(const Context *context, const ColorGeneric &color);
     const ColorGeneric &getBorderColor() const;
 
@@ -449,7 +458,9 @@ class Texture final : public RefCountObject<TextureID>,
                                            GLenum internalFormat,
                                            const Extents &size,
                                            MemoryObject *memoryObject,
-                                           GLuint64 offset);
+                                           GLuint64 offset,
+                                           GLbitfield createFlags,
+                                           GLbitfield usageFlags);
 
     angle::Result setImageExternal(Context *context,
                                    TextureTarget target,
@@ -536,8 +547,8 @@ class Texture final : public RefCountObject<TextureID>,
     void setGenerateMipmapHint(GLenum generate);
     GLenum getGenerateMipmapHint() const;
 
-    void onAttach(const Context *context) override;
-    void onDetach(const Context *context) override;
+    void onAttach(const Context *context, rx::Serial framebufferSerial) override;
+    void onDetach(const Context *context, rx::Serial framebufferSerial) override;
 
     // Used specifically for FramebufferAttachmentObject.
     GLuint getId() const override;
@@ -549,6 +560,17 @@ class Texture final : public RefCountObject<TextureID>,
     InitState initState(const ImageIndex &imageIndex) const override;
     InitState initState() const { return mState.mInitState; }
     void setInitState(const ImageIndex &imageIndex, InitState initState) override;
+
+    bool isBoundToFramebuffer(rx::Serial framebufferSerial) const
+    {
+        for (size_t index = 0; index < mBoundFramebufferSerials.size(); ++index)
+        {
+            if (mBoundFramebufferSerials[index] == framebufferSerial)
+                return true;
+        }
+
+        return false;
+    }
 
     enum DirtyBitType
     {
@@ -588,7 +610,7 @@ class Texture final : public RefCountObject<TextureID>,
     };
     using DirtyBits = angle::BitSet<DIRTY_BIT_COUNT>;
 
-    angle::Result syncState(const Context *context, TextureCommand source);
+    angle::Result syncState(const Context *context, Command source);
     bool hasAnyDirtyBit() const { return mDirtyBits.any(); }
 
     // ObserverInterface implementation.
@@ -633,6 +655,14 @@ class Texture final : public RefCountObject<TextureID>,
 
     egl::Surface *mBoundSurface;
     egl::Stream *mBoundStream;
+
+    // We track all the serials of the Framebuffers this texture is attached to. Note that this
+    // allows duplicates because different ranges of a Texture can be bound to the same Framebuffer.
+    // For the purposes of depth-stencil loops, a simple "isBound" check works fine. For color
+    // attachment Feedback Loop checks we then need to check further to see when a Texture is bound
+    // to mulitple bindings that the bindings don't overlap.
+    static constexpr uint32_t kFastFramebufferSerialCount = 8;
+    angle::FastVector<rx::Serial, kFastFramebufferSerialCount> mBoundFramebufferSerials;
 
     struct SamplerCompletenessCache
     {

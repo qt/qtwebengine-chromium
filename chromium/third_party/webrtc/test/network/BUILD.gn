@@ -35,6 +35,7 @@ rtc_library("emulated_network") {
     "traffic_route.h",
   ]
   deps = [
+    "../../api:array_view",
     "../../api:network_emulation_manager_api",
     "../../api:simulated_network_api",
     "../../api:time_controller",
@@ -48,6 +49,7 @@ rtc_library("emulated_network") {
     "../../rtc_base:rtc_task_queue",
     "../../rtc_base:safe_minmax",
     "../../rtc_base:task_queue_for_test",
+    "../../rtc_base/synchronization:mutex",
     "../../rtc_base/synchronization:sequence_checker",
     "../../rtc_base/task_utils:repeating_task",
     "../../rtc_base/third_party/sigslot",
@@ -74,6 +76,7 @@ rtc_library("network_emulation_unittest") {
     "../../rtc_base:gunit_helpers",
     "../../rtc_base:logging",
     "../../rtc_base:rtc_event",
+    "../../rtc_base/synchronization:mutex",
     "../../system_wrappers:system_wrappers",
   ]
 }

@@ -13,7 +13,11 @@
 #include "xfa/fwl/cfwl_widgetmgr.h"
 
 class CFWL_NoteDriver;
-class CFWL_WidgetMgr;
+class IFWL_ThemeProvider;
+
+namespace cppgc {
+class Heap;
+}  // namespace cppgc
 
 enum FWL_KeyFlag {
   FWL_KEYFLAG_Ctrl = 1 << 0,
@@ -32,17 +36,28 @@ class CFWL_App {
     virtual ~AdapterIface() = default;
     virtual CFWL_WidgetMgr::AdapterIface* GetWidgetMgrAdapter() = 0;
     virtual TimerHandlerIface* GetTimerHandler() = 0;
+    virtual IFWL_ThemeProvider* GetThemeProvider() = 0;
+    virtual cppgc::Heap* GetHeap() = 0;
   };
 
   explicit CFWL_App(AdapterIface* pAdapter);
   ~CFWL_App();
 
-  AdapterIface* GetAdapterNative() const { return m_pAdapterNative.Get(); }
+  CFWL_WidgetMgr::AdapterIface* GetWidgetMgrAdapter() const {
+    return m_pAdapter->GetWidgetMgrAdapter();
+  }
+  TimerHandlerIface* GetTimerHandler() const {
+    return m_pAdapter->GetTimerHandler();
+  }
+  IFWL_ThemeProvider* GetThemeProvider() const {
+    return m_pAdapter->GetThemeProvider();
+  }
+  cppgc::Heap* GetHeap() const { return m_pAdapter->GetHeap(); }
   CFWL_WidgetMgr* GetWidgetMgr() const { return m_pWidgetMgr.get(); }
   CFWL_NoteDriver* GetNoteDriver() const { return m_pNoteDriver.get(); }
 
  private:
-  UnownedPtr<AdapterIface> const m_pAdapterNative;
+  UnownedPtr<AdapterIface> const m_pAdapter;
   std::unique_ptr<CFWL_WidgetMgr> m_pWidgetMgr;
   std::unique_ptr<CFWL_NoteDriver> m_pNoteDriver;
 };

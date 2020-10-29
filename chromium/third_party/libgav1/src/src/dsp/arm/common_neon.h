@@ -378,8 +378,7 @@ inline int8x8_t InterleaveHigh32(const int8x8_t a, const int8x8_t b) {
 
 inline uint16_t SumVector(const uint8x8_t a) {
 #if defined(__aarch64__)
-  // vaddv_s8() returns an int8_t value so we must expand to int16_t first.
-  return vaddv_u16(vpaddl_u8(a));
+  return vaddlv_u8(a);
 #else
   const uint16x4_t c = vpaddl_u8(a);
   const uint32x2_t d = vpaddl_u16(c);

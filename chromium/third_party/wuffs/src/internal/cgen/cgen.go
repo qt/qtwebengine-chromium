@@ -96,9 +96,11 @@ const (
 // WUFFS_CONFIG__MODULE__BASE__XXX sub-modules.
 var BaseSubModules = []string{
 	"core",
-	"f64conv",
+	"floatconv",
+	"intconv",
 	"interfaces",
 	"pixconv",
+	"utf8",
 }
 
 // Do transpiles a Wuffs program to a C program.
@@ -119,17 +121,18 @@ func Do(args []string) error {
 			}
 			buf := make(buffer, 0, 128*1024)
 			if err := expandBangBangInsert(&buf, data.BaseAllImplC, map[string]func(*buffer) error{
-				"// !! INSERT InterfaceDeclarations.\n":    insertInterfaceDeclarations,
-				"// !! INSERT InterfaceDefinitions.\n":     insertInterfaceDefinitions,
-				"// !! INSERT base/all-private.h.\n":       insertBaseAllPrivateH,
-				"// !! INSERT base/all-public.h.\n":        insertBaseAllPublicH,
-				"// !! INSERT base/copyright\n":            insertBaseCopyright,
-				"// !! INSERT base/f64conv-submodule.c.\n": insertBaseF64ConvSubmoduleC,
-				"// !! INSERT base/pixconv-submodule.c.\n": insertBasePixConvSubmoduleC,
-				"// !! INSERT base/strconv-impl.c.\n":      insertBaseStrConvImplC,
+				"// !! INSERT InterfaceDeclarations.\n":      insertInterfaceDeclarations,
+				"// !! INSERT InterfaceDefinitions.\n":       insertInterfaceDefinitions,
+				"// !! INSERT base/all-private.h.\n":         insertBaseAllPrivateH,
+				"// !! INSERT base/all-public.h.\n":          insertBaseAllPublicH,
+				"// !! INSERT base/copyright\n":              insertBaseCopyright,
+				"// !! INSERT base/floatconv-submodule.c.\n": insertBaseFloatConvSubmoduleC,
+				"// !! INSERT base/intconv-submodule.c.\n":   insertBaseIntConvSubmoduleC,
+				"// !! INSERT base/pixconv-submodule.c.\n":   insertBasePixConvSubmoduleC,
+				"// !! INSERT base/utf8-submodule.c.\n":      insertBaseUTF8SubmoduleC,
 				"// !! INSERT vtable names.\n": func(b *buffer) error {
 					for _, n := range builtin.Interfaces {
-						buf.printf("const char* wuffs_base__%s__vtable_name = "+
+						buf.printf("const char wuffs_base__%s__vtable_name[] = "+
 							"\"{vtable}wuffs_base__%s\";\n", n, n)
 					}
 					return nil
@@ -146,7 +149,7 @@ func Do(args []string) error {
 						} else if msg[0] == '#' {
 							pre = "error"
 						}
-						b.printf("const char* wuffs_base__%s__%s = \"%sbase: %s\";\n",
+						b.printf("const char wuffs_base__%s__%s[] = \"%sbase: %s\";\n",
 							pre, cName(msg, ""), msg[:1], msg[1:])
 					}
 					return nil
@@ -310,7 +313,7 @@ func insertBaseAllPublicH(buf *buffer) error {
 				} else if statusMsgIsSuspension(msg) {
 					pre = "suspension"
 				}
-				b.printf("extern const char* wuffs_base__%s__%s;\n", pre, cName(msg, ""))
+				b.printf("extern const char wuffs_base__%s__%s[];\n", pre, cName(msg, ""))
 			}
 			return nil
 		},
@@ -338,8 +341,15 @@ func insertBaseCopyright(buf *buffer) error {
 	return nil
 }
 
-func insertBaseF64ConvSubmoduleC(buf *buffer) error {
-	buf.writes(data.BaseF64ConvSubmoduleC)
+func insertBaseFloatConvSubmoduleC(buf *buffer) error {
+	buf.writes(data.BaseFloatConvSubmoduleDataC)
+	buf.writeb('\n')
+	buf.writes(data.BaseFloatConvSubmoduleCodeC)
+	return nil
+}
+
+func insertBaseIntConvSubmoduleC(buf *buffer) error {
+	buf.writes(data.BaseIntConvSubmoduleC)
 	return nil
 }
 
@@ -348,8 +358,8 @@ func insertBasePixConvSubmoduleC(buf *buffer) error {
 	return nil
 }
 
-func insertBaseStrConvImplC(buf *buffer) error {
-	buf.writes(data.BaseStrConvImplC)
+func insertBaseUTF8SubmoduleC(buf *buffer) error {
+	buf.writes(data.BaseUTF8SubmoduleC)
 	return nil
 }
 
@@ -375,7 +385,7 @@ func insertInterfaceDeclarations(buf *buffer) error {
 
 		qid := t.QID{t.IDBase, builtInTokenMap.ByName(n)}
 
-		buf.printf("extern const char* wuffs_base__%s__vtable_name;\n\n", n)
+		buf.printf("extern const char wuffs_base__%s__vtable_name[];\n\n", n)
 
 		buf.writes("typedef struct {\n")
 		for _, f := range builtInInterfaceMethods[qid] {
@@ -683,7 +693,7 @@ func (g *gen) genHeader(b *buffer) error {
 		if !z.fromThisPkg || !z.public {
 			continue
 		}
-		b.printf("extern const char* %s;\n", z.cName)
+		b.printf("extern const char %s[];\n", z.cName)
 		wroteStatus = true
 	}
 	if wroteStatus {
@@ -706,7 +716,7 @@ func (g *gen) genHeader(b *buffer) error {
 	b.writes("// etc)\" should be called before any other \"wuffs_foo__bar__xxx(self, etc)\".\n")
 	b.writes("//\n")
 	b.writes("// Pass sizeof(*self) and WUFFS_VERSION for sizeof_star_self and wuffs_version.\n")
-	b.writes("// Pass 0 (or some combination of WUFFS_INITIALIZE__XXX) for initialize_flags.\n\n")
+	b.writes("// Pass 0 (or some combination of WUFFS_INITIALIZE__XXX) for options.\n\n")
 	for _, n := range g.structList {
 		if n.Public() {
 			if err := g.writeInitializerPrototype(b, n); err != nil {
@@ -790,7 +800,7 @@ func (g *gen) genImpl(b *buffer) error {
 		if !z.fromThisPkg || z.msg == "" {
 			continue
 		}
-		b.printf("const char* %s = \"%s%s: %s\";\n", z.cName, z.msg[:1], g.pkgName, z.msg[1:])
+		b.printf("const char %s[] = \"%s%s: %s\";\n", z.cName, z.msg[:1], g.pkgName, z.msg[1:])
 		wroteStatus = true
 	}
 	if wroteStatus {
@@ -1207,8 +1217,8 @@ func (g *gen) writeCppMethods(b *buffer, n *a.Struct) error {
 	b.writes("#endif  // (__cplusplus >= 201103L) && !defined(WUFFS_IMPLEMENTATION)\n\n")
 
 	b.writes("inline wuffs_base__status WUFFS_BASE__WARN_UNUSED_RESULT\n" +
-		"initialize(\nsize_t sizeof_star_self,\nuint64_t wuffs_version,\nuint32_t initialize_flags) {\n")
-	b.printf("return %s%s__initialize(\nthis, sizeof_star_self, wuffs_version, initialize_flags);\n}\n\n",
+		"initialize(\nsize_t sizeof_star_self,\nuint64_t wuffs_version,\nuint32_t options) {\n")
+	b.printf("return %s%s__initialize(\nthis, sizeof_star_self, wuffs_version, options);\n}\n\n",
 		g.pkgPrefix, structName)
 
 	for _, impl := range n.Implements() {
@@ -1297,7 +1307,7 @@ func (g *gen) writeInitializerSignature(b *buffer, n *a.Struct, public bool) err
 		"    %s%s* self,\n"+
 		"    size_t sizeof_star_self,\n"+
 		"    uint64_t wuffs_version,\n"+
-		"    uint32_t initialize_flags)",
+		"    uint32_t options)",
 		g.pkgPrefix, structName, g.pkgPrefix, structName)
 	return nil
 }
@@ -1352,7 +1362,7 @@ func (g *gen) writeInitializerImpl(b *buffer, n *a.Struct) error {
 	b.writes("  return wuffs_base__make_status(wuffs_base__error__bad_wuffs_version);\n")
 	b.writes("}\n\n")
 
-	b.writes("if ((initialize_flags & WUFFS_INITIALIZE__ALREADY_ZEROED) != 0) {\n")
+	b.writes("if ((options & WUFFS_INITIALIZE__ALREADY_ZEROED) != 0) {\n")
 	b.writes("  // The whole point of this if-check is to detect an uninitialized *self.\n")
 	b.writes("  // We disable the warning on GCC. Clang-5.0 does not have this warning.\n")
 	b.writes("  #if !defined(__clang__) && defined(__GNUC__)\n")
@@ -1366,9 +1376,9 @@ func (g *gen) writeInitializerImpl(b *buffer, n *a.Struct) error {
 	b.writes("  #pragma GCC diagnostic pop\n")
 	b.writes("  #endif\n")
 	b.writes("} else {\n")
-	b.writes("  if ((initialize_flags & WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED) == 0) {\n")
+	b.writes("  if ((options & WUFFS_INITIALIZE__LEAVE_INTERNAL_BUFFERS_UNINITIALIZED) == 0) {\n")
 	b.writes("    memset(self, 0, sizeof(*self));\n")
-	b.writes("    initialize_flags |= WUFFS_INITIALIZE__ALREADY_ZEROED;\n")
+	b.writes("    options |= WUFFS_INITIALIZE__ALREADY_ZEROED;\n")
 	b.writes("  } else {\n")
 	b.writes("    memset(&(self->private_impl), 0, sizeof(self->private_impl));\n")
 	b.writes("  }\n")
@@ -1398,7 +1408,7 @@ func (g *gen) writeInitializerImpl(b *buffer, n *a.Struct) error {
 
 		b.printf("{\n")
 		b.printf("wuffs_base__status z = %s%s__initialize(\n"+
-			"&self->private_data.%s%s, sizeof(self->private_data.%s%s), WUFFS_VERSION, initialize_flags);\n",
+			"&self->private_data.%s%s, sizeof(self->private_data.%s%s), WUFFS_VERSION, options);\n",
 			prefix, qid[1].Str(g.tm), fPrefix, f.Name().Str(g.tm), fPrefix, f.Name().Str(g.tm))
 		b.printf("if (z.repr) {\nreturn z;\n}\n")
 		b.printf("}\n")

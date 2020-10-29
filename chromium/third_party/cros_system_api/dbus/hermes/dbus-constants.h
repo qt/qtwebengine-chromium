@@ -11,22 +11,35 @@ namespace hermes {
 const char kHermesServiceName[] = "org.chromium.Hermes";
 const char kHermesManagerInterface[] = "org.chromium.Hermes.Manager";
 const char kHermesManagerPath[] = "/org/chromium/Hermes";
+
+const char kHermesEuiccInterface[] = "org.chromium.Hermes.Euicc";
 const char kHermesProfileInterface[] = "org.chromium.Hermes.Profile";
 
 namespace manager {
 
 // Manager methods.
+const char kSetTestMode[] = "SetTestMode";
+
+// Manager properties.
+const char kAvailableEuiccsProperty[] = "AvailableEuiccs";
+
+}  // namespace manager
+
+namespace euicc {
+
+// Euicc methods.
 const char kInstallProfileFromActivationCode[] =
     "InstallProfileFromActivationCode";
 const char kInstallPendingProfile[] = "InstallPendingProfile";
 const char kUninstallProfile[] = "UninstallProfile";
 const char kRequestPendingEvents[] = "RequestPendingEvents";
-const char kSetTestMode[] = "SetTestMode";
 
-// Manager properties.
-const char kProfilesProperty[] = "Profiles";
+// Euicc properties.
+const char kInstalledProfilesProperty[] = "InstalledProfiles";
+const char kIsActiveProperty[] = "IsActive";
+const char kPendingProfilesProperty[] = "PendingProfiles";
 
-}  // namespace manager
+}  // namespace euicc
 
 namespace profile {
 

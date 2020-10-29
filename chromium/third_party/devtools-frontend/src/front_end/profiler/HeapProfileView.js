@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as PerfUI from '../perf_ui/perf_ui.js';
@@ -284,7 +287,7 @@ export class SamplingHeapProfileTypeBase extends ProfileType {
   }
 
   _startRecordingProfile() {
-    const heapProfilerModel = self.UI.context.flavor(SDK.HeapProfilerModel.HeapProfilerModel);
+    const heapProfilerModel = UI.Context.Context.instance().flavor(SDK.HeapProfilerModel.HeapProfilerModel);
     if (this.profileBeingRecorded() || !heapProfilerModel) {
       return;
     }
@@ -513,7 +516,7 @@ export class SamplingNativeHeapSnapshotType extends SamplingHeapProfileTypeBase 
     if (this.profileBeingRecorded()) {
       return;
     }
-    const heapProfilerModel = self.UI.context.flavor(SDK.HeapProfilerModel.HeapProfilerModel);
+    const heapProfilerModel = UI.Context.Context.instance().flavor(SDK.HeapProfilerModel.HeapProfilerModel);
     if (!heapProfilerModel) {
       return;
     }

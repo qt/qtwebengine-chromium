@@ -80,11 +80,6 @@ const QuicByteCount kDefaultFlowControlSendWindow = 16 * 1024;  // 16 KB
 const QuicByteCount kStreamReceiveWindowLimit = 16 * 1024 * 1024;   // 16 MB
 const QuicByteCount kSessionReceiveWindowLimit = 24 * 1024 * 1024;  // 24 MB
 
-// Default limit on the size of uncompressed headers,
-// communicated via SETTINGS_MAX_HEADER_LIST_SIZE.
-// TODO(bnc): Move this constant to quic/core/http/.
-const QuicByteCount kDefaultMaxUncompressedHeaderSize = 16 * 1024;  // 16 KB
-
 // Minimum size of the CWND, in packets, when doing bandwidth resumption.
 const QuicPacketCount kMinCongestionWindowForBandwidthResumption = 10;
 
@@ -122,6 +117,10 @@ QUIC_EXPORT_PRIVATE extern const char* const kFinalOffsetHeaderKey;
 // Uses a 25ms delayed ack timer. Helps with better signaling
 // in low-bandwidth (< ~384 kbps), where an ack is sent per packet.
 const int64_t kDefaultDelayedAckTimeMs = 25;
+
+// Default minimum delayed ack time, in ms (used only for sender control of ack
+// frequency).
+const uint32_t kDefaultMinAckDelayTimeMs = 1;
 
 // Default shift of the ACK delay in the IETF QUIC ACK frame.
 const uint32_t kDefaultAckDelayExponent = 3;

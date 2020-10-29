@@ -48,8 +48,7 @@ enum {
   kSgrProjRestoreBits = 4
 };  // anonymous enum
 
-extern const int kXByXPlus1[256];
-extern const uint8_t kSgrMa2Lookup[256];
+extern const uint8_t kSgrMaLookup[256];
 
 // Initializes Dsp::loop_restorations. This function is not thread-safe.
 void LoopRestorationInit_C();

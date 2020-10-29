@@ -21,6 +21,7 @@
 
 #include "absl/types/optional.h"
 #include "api/rtp_headers.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "modules/include/module_fec_types.h"
 #include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
@@ -33,9 +34,11 @@
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
 #include "modules/rtp_rtcp/source/rtp_sender.h"
 #include "modules/rtp_rtcp/source/rtp_sender_egress.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/gtest_prod_util.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/synchronization/sequence_checker.h"
+#include "rtc_base/task_utils/pending_task_safety_flag.h"
+#include "rtc_base/task_utils/repeating_task.h"
 
 namespace webrtc {
 
@@ -144,6 +147,11 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
 
   bool TrySendPacket(RtpPacketToSend* packet,
                      const PacedPacketInfo& pacing_info) override;
+
+  void SetFecProtectionParams(const FecProtectionParams& delta_params,
+                              const FecProtectionParams& key_params) override;
+
+  std::vector<std::unique_ptr<RtpPacketToSend>> FetchFecPackets() override;
 
   void OnPacketsAcknowledged(
       rtc::ArrayView<const uint16_t> sequence_numbers) override;
@@ -265,8 +273,9 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
   FRIEND_TEST_ALL_PREFIXES(RtpRtcpImpl2Test, Rtt);
   FRIEND_TEST_ALL_PREFIXES(RtpRtcpImpl2Test, RttForReceiverOnly);
 
-  struct RtpSenderContext {
+  struct RtpSenderContext : public SequenceNumberAssigner {
     explicit RtpSenderContext(const RtpRtcpInterface::Configuration& config);
+    void AssignSequenceNumber(RtpPacketToSend* packet) override;
     // Storage of packets, for retransmissions and padding, if applicable.
     RtpPacketHistory packet_history;
     // Handles final time timestamping/stats/etc and handover to Transport.
@@ -283,7 +292,11 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
 
   bool TimeToSendFullNackList(int64_t now) const;
 
-  SequenceChecker construction_thread_checker_;
+  // Called on a timer, once a second, on the worker_queue_, to update the RTT,
+  // check if we need to send RTCP report, send TMMBR updates and fire events.
+  void PeriodicUpdate();
+
+  TaskQueueBase* const worker_queue_;
   SequenceChecker process_thread_checker_;
 
   std::unique_ptr<RtpSenderContext> rtp_sender_;
@@ -293,7 +306,6 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
 
   Clock* const clock_;
 
-  int64_t last_bitrate_process_time_;
   int64_t last_rtt_process_time_;
   int64_t next_process_time_;
   uint16_t packet_overhead_;
@@ -305,9 +317,10 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
   RemoteBitrateEstimator* const remote_bitrate_;
 
   RtcpRttStats* const rtt_stats_;
+  RepeatingTaskHandle rtt_update_task_ RTC_GUARDED_BY(worker_queue_);
 
   // The processed RTT from RtcpRttStats.
-  rtc::CriticalSection critical_section_rtt_;
+  mutable Mutex mutex_rtt_;
   int64_t rtt_ms_;
 };
 

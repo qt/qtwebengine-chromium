@@ -4,6 +4,8 @@
 
 #include "cast/standalone_receiver/streaming_playback_controller.h"
 
+#include <string>
+
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 #include "cast/standalone_receiver/sdl_audio_player.h"
 #include "cast/standalone_receiver/sdl_glue.h"
@@ -84,8 +86,9 @@ void StreamingPlaybackController::OnNegotiated(
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 }
 
-void StreamingPlaybackController::OnConfiguredReceiversDestroyed(
-    const ReceiverSession* session) {
+void StreamingPlaybackController::OnReceiversDestroying(
+    const ReceiverSession* session,
+    ReceiversDestroyingReason reason) {
   audio_player_.reset();
   video_player_.reset();
 }

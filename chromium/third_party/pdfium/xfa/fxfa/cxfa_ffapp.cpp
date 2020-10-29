@@ -48,13 +48,13 @@ CFGAS_FontMgr* CXFA_FFApp::GetFDEFontMgr() {
   return m_pFDEFontMgr.get();
 }
 
-CXFA_FWLTheme* CXFA_FFApp::GetFWLTheme(CXFA_FFDoc* doc) {
-  if (!m_pFWLTheme) {
-    auto fwl_theme = std::make_unique<CXFA_FWLTheme>(this);
-    if (fwl_theme->LoadCalendarFont(doc))
-      m_pFWLTheme = std::move(fwl_theme);
-  }
-  return m_pFWLTheme.get();
+bool CXFA_FFApp::LoadFWLTheme(CXFA_FFDoc* doc) {
+  auto fwl_theme = std::make_unique<CXFA_FWLTheme>(this);
+  if (!fwl_theme->LoadCalendarFont(doc))
+    return false;
+
+  m_pFWLTheme = std::move(fwl_theme);
+  return true;
 }
 
 CFWL_WidgetMgr::AdapterIface* CXFA_FFApp::GetWidgetMgrAdapter() {
@@ -67,6 +67,10 @@ TimerHandlerIface* CXFA_FFApp::GetTimerHandler() {
   return m_pProvider->GetTimerHandler();
 }
 
-void CXFA_FFApp::ClearEventTargets() {
-  m_pFWLApp->GetNoteDriver()->ClearEventTargets();
+IFWL_ThemeProvider* CXFA_FFApp::GetThemeProvider() {
+  return m_pFWLTheme.get();
+}
+
+cppgc::Heap* CXFA_FFApp::GetHeap() {
+  return m_pProvider->GetGCHeap();
 }

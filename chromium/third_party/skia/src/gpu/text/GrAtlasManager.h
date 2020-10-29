@@ -46,11 +46,14 @@ public:
 
     bool hasGlyph(GrMaskFormat, GrGlyph*);
 
+    // If bilerpPadding == true then addGlyphToAtlas adds a 1 pixel border to the glyph before
+    // inserting it into the atlas.
     GrDrawOpAtlas::ErrorCode addGlyphToAtlas(const SkGlyph& skGlyph,
-                                             int padding,
                                              GrGlyph* grGlyph,
+                                             int srcPadding,
                                              GrResourceProvider* resourceProvider,
-                                             GrDeferredUploadTarget* uploadTarget);
+                                             GrDeferredUploadTarget* uploadTarget,
+                                             bool bilerpPadding = false);
 
     // To ensure the GrDrawOpAtlas does not evict the Glyph Mask from its texture backing store,
     // the client must pass in the current op token along with the GrGlyph.
@@ -104,7 +107,7 @@ public:
     ///////////////////////////////////////////////////////////////////////////
     // Functions intended debug only
 #ifdef SK_DEBUG
-    void dump(GrContext* context) const;
+    void dump(GrDirectContext*) const;
 #endif
 
     void setAtlasDimensionsToMinimum_ForTesting();

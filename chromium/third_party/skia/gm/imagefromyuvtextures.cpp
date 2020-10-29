@@ -23,12 +23,11 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAIndex.h"
 #include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkMathPriv.h"
 #include "src/core/SkYUVMath.h"
-#include "src/gpu/GrContextPriv.h"
 #include "tools/Resources.h"
 #include "tools/gpu/YUVUtils.h"
 
@@ -120,13 +119,14 @@ protected:
         return rgbaBmp;
     }
 
-    static bool CreateYUVBackendTextures(GrContext* context, SkBitmap bmps[4],
+    static bool CreateYUVBackendTextures(GrDirectContext* context, SkBitmap bmps[4],
                                          SkYUVAIndex indices[4],
                                          YUVABackendReleaseContext* beContext) {
         for (int i = 0; i < 4; ++i) {
-            GrBackendTexture tmp = context->createBackendTexture(bmps[i].pixmap(),
-                                                                    GrRenderable::kNo,
-                                                                    GrProtected::kNo);
+            GrBackendTexture tmp = context->createBackendTexture(
+                                        bmps[i].pixmap(), GrRenderable::kNo, GrProtected::kNo,
+                                        YUVABackendReleaseContext::CreationCompleteProc(i),
+                                        beContext);
             if (!tmp.isValid()) {
                 return false;
             }
@@ -149,12 +149,12 @@ protected:
         return true;
     }
 
-    sk_sp<SkImage> makeYUVAImage(GrContext* context) {
+    sk_sp<SkImage> makeYUVAImage(GrDirectContext* context) {
         auto releaseContext = new YUVABackendReleaseContext(context);
         SkYUVAIndex indices[4];
 
         if (!CreateYUVBackendTextures(context, fYUVABmps, indices, releaseContext)) {
-            YUVABackendReleaseContext::Unwind(context, releaseContext);
+            YUVABackendReleaseContext::Unwind(context, releaseContext, false);
             return nullptr;
         }
 
@@ -169,29 +169,33 @@ protected:
                                              releaseContext);
     }
 
-    sk_sp<SkImage> createReferenceImage(GrContext* context) {
-        auto planeReleaseContext = new YUVABackendReleaseContext(context);
+    sk_sp<SkImage> createReferenceImage(GrDirectContext* dContext) {
+        auto planeReleaseContext = new YUVABackendReleaseContext(dContext);
         SkYUVAIndex indices[4];
 
-        if (!CreateYUVBackendTextures(context, fYUVABmps, indices, planeReleaseContext)) {
-            YUVABackendReleaseContext::Unwind(context, planeReleaseContext);
+        if (!CreateYUVBackendTextures(dContext, fYUVABmps, indices, planeReleaseContext)) {
+            YUVABackendReleaseContext::Unwind(dContext, planeReleaseContext, false);
             return nullptr;
         }
 
-        GrBackendTexture resultTexture = context->createBackendTexture(
+        auto rgbaReleaseContext = new YUVABackendReleaseContext(dContext);
+
+        GrBackendTexture resultTexture = dContext->createBackendTexture(
                 fRGBABmp.dimensions().width(), fRGBABmp.dimensions().height(),
                 kRGBA_8888_SkColorType, SkColors::kTransparent,
-                GrMipMapped::kNo, GrRenderable::kYes, GrProtected::kNo);
+                GrMipmapped::kNo, GrRenderable::kYes, GrProtected::kNo,
+                YUVABackendReleaseContext::CreationCompleteProc(0),
+                rgbaReleaseContext);
         if (!resultTexture.isValid()) {
-            YUVABackendReleaseContext::Unwind(context, planeReleaseContext);
+            YUVABackendReleaseContext::Unwind(dContext, planeReleaseContext, false);
+            YUVABackendReleaseContext::Unwind(dContext, rgbaReleaseContext, false);
             return nullptr;
         }
 
-        auto rgbaReleaseContext = new YUVABackendReleaseContext(context);
         rgbaReleaseContext->set(0, resultTexture);
 
         auto tmp = SkImage::MakeFromYUVATexturesCopyWithExternalBackend(
-                context,
+                dContext,
                 kJPEG_SkYUVColorSpace,
                 planeReleaseContext->beTextures(),
                 indices,
@@ -201,16 +205,14 @@ protected:
                 nullptr,
                 YUVABackendReleaseContext::Release,
                 rgbaReleaseContext);
-         YUVABackendReleaseContext::Unwind(context, planeReleaseContext);
+         YUVABackendReleaseContext::Unwind(dContext, planeReleaseContext, true);
          return tmp;
     }
 
-    DrawResult onGpuSetup(GrContext* context, SkString* errorMsg) override {
+    DrawResult onGpuSetup(GrDirectContext* context, SkString* errorMsg) override {
         if (!context || context->abandoned()) {
             return DrawResult::kSkip;
         }
-
-        SkASSERT(context->priv().asDirectContext());
 
         fRGBABmp = CreateBmpAndPlanes("images/mandrill_32.png", fYUVABmps);
 
@@ -233,12 +235,17 @@ protected:
         // Some backends (e.g., Vulkan) require all work be completed for backend textures
         // before they are deleted. Since we don't know when we'll next have access to a
         // direct context, flush all the work now.
-        GrFlushInfo flushInfoSyncCpu;
-        flushInfoSyncCpu.fFlags = kSyncCpu_GrFlushFlag;
-        context->flush(flushInfoSyncCpu);
+        context->flush();
         context->submit(true);
 
         return DrawResult::kOk;
+    }
+
+    void onGpuTeardown() override {
+        for (sk_sp<SkImage>& image : fYUVAImages) {
+            image.reset();
+        }
+        fReferenceImage.reset();
     }
 
     SkImage* getYUVAImage(int index) {
@@ -246,7 +253,7 @@ protected:
         return fYUVAImages[index].get();
     }
 
-    void onDraw(GrContext*, GrRenderTargetContext*, SkCanvas* canvas) override {
+    void onDraw(GrRecordingContext*, GrRenderTargetContext*, SkCanvas* canvas) override {
         auto draw_image = [canvas](SkImage* image, SkFilterQuality fq) -> SkSize {
             if (!image) {
                 return {0, 0};
@@ -328,4 +335,4 @@ private:
 };
 
 DEF_GM(return new ImageFromYUVTextures;)
-}
+}  // namespace skiagm

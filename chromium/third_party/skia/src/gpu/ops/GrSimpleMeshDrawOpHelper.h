@@ -8,7 +8,7 @@
 #ifndef GrSimpleMeshDrawOpHelper_DEFINED
 #define GrSimpleMeshDrawOpHelper_DEFINED
 
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrPipeline.h"
@@ -114,7 +114,7 @@ public:
         }
     }
 
-#ifdef SK_DEBUG
+#if GR_TEST_UTILS
     SkString dumpInfo() const;
 #endif
     GrAAType aaType() const { return static_cast<GrAAType>(fAAType); }

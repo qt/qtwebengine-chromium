@@ -14,7 +14,6 @@
 
 #include "common/Log.h"
 #include "dawn_wire/client/ApiObjects.h"
-#include "dawn_wire/client/ApiProcs_autogen.h"
 #include "dawn_wire/client/Client.h"
 
 #include <algorithm>
@@ -157,9 +156,8 @@ namespace dawn_wire { namespace client {
                         } while (false);
 
                         if (DAWN_UNLIKELY(!sameDevice)) {
-                            ClientDeviceInjectError(reinterpret_cast<WGPUDevice>(device),
-                                                    WGPUErrorType_Validation,
-                                                    "All objects must be from the same device.");
+                            device->InjectError(WGPUErrorType_Validation,
+                                                "All objects must be from the same device.");
                             {% if method.return_type.category == "object" %}
                                 // Allocate an object without registering it on the server. This is backed by a real allocation on
                                 // the client so commands can be sent with it. But because it's not allocated on the server, it will
@@ -176,8 +174,8 @@ namespace dawn_wire { namespace client {
                     }
                 {% endif %}
 
+                auto self = reinterpret_cast<{{as_wireType(type)}}>(cSelf);
                 {% if Suffix not in client_handwritten_commands %}
-                    auto self = reinterpret_cast<{{as_wireType(type)}}>(cSelf);
                     Device* device = self->device;
                     {{Suffix}}Cmd cmd;
 
@@ -202,9 +200,9 @@ namespace dawn_wire { namespace client {
                         return reinterpret_cast<{{as_cType(method.return_type.name)}}>(allocation->object.get());
                     {% endif %}
                 {% else %}
-                    return ClientHandwritten{{Suffix}}(cSelf
+                    return self->{{method.name.CamelCase()}}(
                         {%- for arg in method.arguments -%}
-                            , {{as_varName(arg.name)}}
+                            {%if not loop.first %}, {% endif %} {{as_varName(arg.name)}}
                         {%- endfor -%});
                 {% endif %}
             }
@@ -239,6 +237,12 @@ namespace dawn_wire { namespace client {
         WGPUInstance ClientCreateInstance(WGPUInstanceDescriptor const* descriptor) {
             UNREACHABLE();
             return nullptr;
+        }
+
+        void ClientDeviceReference(WGPUDevice) {
+        }
+
+        void ClientDeviceRelease(WGPUDevice) {
         }
 
         struct ProcEntry {

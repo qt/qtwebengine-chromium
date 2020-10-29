@@ -14,10 +14,10 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkTypes.h"
 
+#include "src/gpu/effects/GrMatrixEffect.h"
 #include "src/gpu/gradients/GrGradientShader.h"
 #include "src/shaders/gradients/SkTwoPointConicalGradient.h"
 
-#include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrFragmentProcessor.h"
 
 class GrTwoPointConicalGradientLayout : public GrFragmentProcessor {
@@ -29,8 +29,6 @@ public:
     GrTwoPointConicalGradientLayout(const GrTwoPointConicalGradientLayout& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "TwoPointConicalGradientLayout"; }
-    GrCoordTransform fCoordTransform0;
-    SkMatrix gradientMatrix;
     Type type;
     bool isRadiusIncreasing;
     bool isFocalOnCircle;
@@ -40,8 +38,7 @@ public:
     SkPoint focalParams;
 
 private:
-    GrTwoPointConicalGradientLayout(SkMatrix gradientMatrix,
-                                    Type type,
+    GrTwoPointConicalGradientLayout(Type type,
                                     bool isRadiusIncreasing,
                                     bool isFocalOnCircle,
                                     bool isWellBehaved,
@@ -50,8 +47,6 @@ private:
                                     SkPoint focalParams)
             : INHERITED(kGrTwoPointConicalGradientLayout_ClassID,
                         (OptimizationFlags)kNone_OptimizationFlags)
-            , fCoordTransform0(gradientMatrix)
-            , gradientMatrix(gradientMatrix)
             , type(type)
             , isRadiusIncreasing(isRadiusIncreasing)
             , isFocalOnCircle(isFocalOnCircle)
@@ -59,11 +54,14 @@ private:
             , isSwapped(isSwapped)
             , isNativelyFocal(isNativelyFocal)
             , focalParams(focalParams) {
-        this->addCoordTransform(&fCoordTransform0);
+        this->setUsesSampleCoordsDirectly();
     }
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override;
+#endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     typedef GrFragmentProcessor INHERITED;
 };

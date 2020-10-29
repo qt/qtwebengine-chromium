@@ -28,6 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as Host from '../host/host.js';
@@ -209,20 +212,10 @@ export class GenericSettingsTab extends SettingsTab {
       'Debugger', 'Global'
     ];
 
-    // Sections only available if their corresponding experiment is enabled
-    /** @type {!Array<{name: string, experiment: string}>} */
-    const experimentalSections = [{name: 'Grid', experiment: 'cssGridFeatures'}];
-
-
     /** @type {!Map<string, !Element>} */
     this._nameToSection = new Map();
     for (const sectionName of explicitSectionOrder) {
       this._createSectionElement(sectionName);
-    }
-    for (const section of experimentalSections) {
-      if (Root.Runtime.experiments.isEnabled(section.experiment)) {
-        this._createSectionElement(section.name);
-      }
     }
     self.runtime.extensions('setting').forEach(this._addSetting.bind(this));
     self.runtime.extensions(UI.SettingsUI.SettingUI).forEach(this._addSettingUI.bind(this));
@@ -363,6 +356,9 @@ export class ExperimentsSettingsTab extends SettingsTab {
     input.name = experiment.name;
     function listener() {
       experiment.setEnabled(input.checked);
+      Host.userMetrics.experimentChanged(experiment.name, experiment.isEnabled());
+      UI.InspectorView.InspectorView.instance().displayReloadRequiredWarning(
+          ls`One or more settings have changed which requires a reload to take effect.`);
     }
     input.addEventListener('click', listener, false);
 

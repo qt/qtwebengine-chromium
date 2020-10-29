@@ -82,6 +82,7 @@ static void syntax(void)
            AVIF_SPEED_SLOWEST,
            AVIF_SPEED_FASTEST);
     printf("    -c,--codec C                      : AV1 codec to use (choose from versions list below)\n");
+    printf("    -a,--advanced KEY[=VALUE]         : Pass an advanced, codec-specific key/value string pair directly to the codec. avifenc will warn on any not used by the codec.\n");
     printf("    --duration D                      : Set all following frame durations (in timescales) to D; default 1. Can be set multiple times (before supplying each filename)\n");
     printf("    --timescale,--fps V               : Set the timescale to V. If all frames are 1 timescale in length, this is equivalent to frames per second\n");
     printf("    -k,--keyframe INTERVAL            : Set the forced keyframe interval (maximum frames between keyframes). Set to 0 to disable (default).\n");
@@ -253,7 +254,7 @@ int main(int argc, char * argv[])
     avifRange requestedRange = AVIF_RANGE_FULL;
     avifBool lossless = AVIF_FALSE;
     avifBool ignoreICC = AVIF_FALSE;
-    avifEncoder * encoder = NULL;
+    avifEncoder * encoder = avifEncoderCreate();
     avifImage * image = NULL;
     avifImage * nextImage = NULL;
     avifRWData raw = AVIF_DATA_EMPTY;
@@ -263,11 +264,12 @@ int main(int argc, char * argv[])
     avifBool cicpExplicitlySet = AVIF_FALSE;
 
     // By default, the color profile itself is unspecified, so CP/TC are set (to 2) accordingly.
-    // However, if the end-user doesn't specify any CICP, we will convert to YUV using BT709
-    // coefficients anyway (as MC:2 falls back to MC:1), so we might as well signal it explicitly.
+    // However, if the end-user doesn't specify any CICP, we will convert to YUV using BT601
+    // coefficients anyway (as MC:2 falls back to MC:5/6), so we might as well signal it explicitly.
+    // See: ISO/IEC 23000-22:2019 Amendment 2, or the comment in avifCalcYUVCoefficients()
     avifColorPrimaries colorPrimaries = AVIF_COLOR_PRIMARIES_UNSPECIFIED;
     avifTransferCharacteristics transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED;
-    avifMatrixCoefficients matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
+    avifMatrixCoefficients matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601;
 
     int argIndex = 1;
     while (argIndex < argc) {
@@ -433,6 +435,20 @@ int main(int argc, char * argv[])
                     goto cleanup;
                 }
             }
+        } else if (!strcmp(arg, "-a") || !strcmp(arg, "--advanced")) {
+            NEXTARG();
+            char * tempBuffer = strdup(arg);
+            char * value = strchr(tempBuffer, '=');
+            if (value) {
+                *value = 0; // remove equals sign,
+                ++value;    // and move past it
+
+            } else {
+                value = ""; // Pass in a non-NULL, empty string. Codecs can use the
+                            // mere existence of a key as a boolean value.
+            }
+            avifEncoderSetCodecSpecificOption(encoder, tempBuffer, value);
+            free(tempBuffer);
         } else if (!strcmp(arg, "--ignore-icc")) {
             ignoreICC = AVIF_TRUE;
         } else if (!strcmp(arg, "--pasp")) {
@@ -535,7 +551,7 @@ int main(int argc, char * argv[])
     if ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) && (image->yuvFormat != AVIF_PIXEL_FORMAT_YUV444)) {
         // matrixCoefficients was likely set to AVIF_MATRIX_COEFFICIENTS_IDENTITY as a side effect
         // of --lossless, and Identity is only valid with YUV444. Set this back to the default.
-        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
+        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601;
 
         if (cicpExplicitlySet) {
             // Only warn if someone explicitly asked for identity.
@@ -661,7 +677,6 @@ int main(int argc, char * argv[])
            tileRowsLog2,
            tileColsLog2,
            jobs);
-    encoder = avifEncoderCreate();
     encoder->maxThreads = jobs;
     encoder->minQuantizer = minQuantizer;
     encoder->maxQuantizer = maxQuantizer;

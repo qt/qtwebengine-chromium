@@ -84,9 +84,9 @@ inline __m128i Project_SSE4_1(const __m128i delta, const __m128i dst_sign) {
 inline void GetPosition(
     const __m128i division_table, const MotionVector* const mv,
     const int numerator, const int x8_start, const int x8_end, const int x8,
-    const __m128i r_offsets, const __m128i source_reference_type8,
-    const __m128i skip_r, const __m128i y8_floor8, const __m128i y8_ceiling8,
-    const __m128i d_sign, const int delta, __m128i* const r,
+    const __m128i& r_offsets, const __m128i& source_reference_type8,
+    const __m128i& skip_r, const __m128i& y8_floor8, const __m128i& y8_ceiling8,
+    const __m128i& d_sign, const int delta, __m128i* const r,
     __m128i* const position_xy, int64_t* const skip_64, __m128i mvs[2]) {
   const auto* const mv_int = reinterpret_cast<const int32_t*>(mv + x8);
   *r = _mm_shuffle_epi8(r_offsets, source_reference_type8);
@@ -386,7 +386,7 @@ void MotionFieldProjectionInit_SSE4_1() {
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 namespace libgav1 {
 namespace dsp {
 

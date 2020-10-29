@@ -8,6 +8,8 @@
 #ifndef SKSL_CONTEXT
 #define SKSL_CONTEXT
 
+#include <memory>
+
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLType.h"
 
@@ -188,7 +190,6 @@ public:
     , fBVec_Type(new Type("$bvec", { fInvalid_Type.get(), fBool2_Type.get(),
                                      fBool3_Type.get(), fBool4_Type.get() }))
     , fSkCaps_Type(new Type("$sk_Caps"))
-    , fSkArgs_Type(new Type("$sk_Args"))
     , fFragmentProcessor_Type(fp_type(fInt_Type.get(), fBool_Type.get()))
     , fDefined_Expression(new Defined(*fInvalid_Type)) {}
 
@@ -355,19 +356,20 @@ public:
     const std::unique_ptr<Type> fBVec_Type;
 
     const std::unique_ptr<Type> fSkCaps_Type;
-    const std::unique_ptr<Type> fSkArgs_Type;
     const std::unique_ptr<Type> fFragmentProcessor_Type;
 
-    // dummy expression used to mark that a variable has a value during dataflow analysis (when it
-    // could have several different values, or the analyzer is otherwise unable to assign it a
+    // sentinel expression used to mark that a variable has a value during dataflow analysis (when
+    // it could have several different values, or the analyzer is otherwise unable to assign it a
     // specific expression)
     const std::unique_ptr<Expression> fDefined_Expression;
 
 private:
     class Defined : public Expression {
     public:
+        static constexpr Kind kExpressionKind = kDefined_Kind;
+
         Defined(const Type& type)
-        : INHERITED(-1, kDefined_Kind, type) {}
+        : INHERITED(-1, kExpressionKind, type) {}
 
         bool hasProperty(Property property) const override {
             return false;
@@ -395,17 +397,16 @@ private:
         Modifiers mods(Layout(), Modifiers::kConst_Flag);
         std::vector<Type::Field> fields = {
             Type::Field(mods, "numTextureSamplers", intType),
-            Type::Field(mods, "numCoordTransforms", intType),
             Type::Field(mods, "numChildProcessors", intType),
             Type::Field(mods, "usesLocalCoords", boolType),
             Type::Field(mods, "compatibleWithCoverageAsAlpha", boolType),
             Type::Field(mods, "preservesOpaqueInput", boolType),
             Type::Field(mods, "hasConstantOutputForConstantInput", boolType)
         };
-        return std::unique_ptr<Type>(new Type("fragmentProcessor", fields));
+        return std::make_unique<Type>("fragmentProcessor", fields);
     }
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

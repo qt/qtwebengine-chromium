@@ -112,7 +112,7 @@ def gen_sql_metrics(target):
   label.srcs += [re.sub('^//', '', x) for x in sorted(target.inputs)]
   label.outs += target.outputs
   label.cmd = r'$(location gen_merged_sql_metrics_py) --cpp_out=$@ $(SRCS)'
-  label.tools += [':gen_merged_sql_metrics_py']
+  label.exec_tools += [':gen_merged_sql_metrics_py']
   return [label]
 
 
@@ -141,6 +141,7 @@ class BazelLabel(object):
     self.deps = []
     self.external_deps = []
     self.tools = []
+    self.exec_tools = []
     self.outs = []
 
   def __lt__(self, other):
@@ -155,7 +156,10 @@ class BazelLabel(object):
     res += ('# GN target: %s\n' % self.comment) if self.comment else ''
     res += '%s(\n' % self.type
     any_deps = len(self.deps) + len(self.external_deps) > 0
-    ORD = ['name', 'srcs', 'hdrs', 'visibility', 'deps', 'outs', 'cmd', 'tools']
+    ORD = [
+      'name','srcs', 'hdrs', 'visibility', 'deps', 'outs', 'cmd', 'tools',
+      'exec_tools'
+    ]
     hasher = lambda x: sum((99,) + tuple(ord(c) for c in x))
     key_sorter = lambda kv: ORD.index(kv[0]) if kv[0] in ORD else hasher(kv[0])
     for k, v in sorted(iteritems(self.__dict__), key=key_sorter):
@@ -207,10 +211,10 @@ PUBLIC_VISIBILITY = 'PERFETTO_CONFIG.public_visibility'
 def get_bazel_label_name(gn_name):
   """Converts a GN target name into a Bazel label name.
 
-  If target is in the public taraget list, returns only the GN target name,
+  If target is in the public target list, returns only the GN target name,
   e.g.: //src/ipc:perfetto_ipc -> perfetto_ipc
 
-  Otherwise, in the case of an intermediate taraget, returns a mangled path.
+  Otherwise, in the case of an intermediate target, returns a mangled path.
   e.g.:  //include/perfetto/base:base -> include_perfetto_base_base.
   """
   if gn_name in default_targets:
@@ -393,6 +397,7 @@ load(
     "perfetto_java_lite_proto_library",
     "perfetto_proto_library",
     "perfetto_py_binary",
+    "perfetto_py_library",
     "perfetto_gensignature_internal_only",
 )
 

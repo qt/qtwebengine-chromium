@@ -23,6 +23,8 @@ struct Expression;
  * read or write that storage location.
  */
 struct Variable : public Symbol {
+    static constexpr Kind kSymbolKind = kVariable_Kind;
+
     enum Storage {
         kGlobal_Storage,
         kInterfaceBlock_Storage,
@@ -32,7 +34,7 @@ struct Variable : public Symbol {
 
     Variable(int offset, Modifiers modifiers, StringFragment name, const Type& type,
              Storage storage, Expression* initialValue = nullptr)
-    : INHERITED(offset, kVariable_Kind, name)
+    : INHERITED(offset, kSymbolKind, name)
     , fModifiers(modifiers)
     , fType(type)
     , fStorage(storage)
@@ -48,7 +50,7 @@ struct Variable : public Symbol {
         SkASSERT(!fReadCount && !fWriteCount);
     }
 
-    virtual String description() const override {
+    String description() const override {
         return fModifiers.description() + fType.fName + " " + fName;
     }
 
@@ -67,7 +69,7 @@ struct Variable : public Symbol {
     const Type& fType;
     const Storage fStorage;
 
-    Expression* fInitialValue = nullptr;
+    const Expression* fInitialValue = nullptr;
 
     // Tracks how many sites read from the variable. If this is zero for a non-out variable (or
     // becomes zero during optimization), the variable is dead and may be eliminated.

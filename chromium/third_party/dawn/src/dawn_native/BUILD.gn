@@ -70,10 +70,7 @@ config("dawn_native_internal") {
 
 config("dawn_native_weak_framework") {
   if (is_mac && dawn_enable_metal) {
-    ldflags = [
-      "-weak_framework",
-      "Metal",
-    ]
+    weak_frameworks = [ "Metal.framework" ]
   }
 }
 
@@ -163,6 +160,7 @@ source_set("dawn_native_sources") {
     "BindGroupLayout.cpp",
     "BindGroupLayout.h",
     "BindGroupTracker.h",
+    "BindingInfo.cpp",
     "BindingInfo.h",
     "BuddyAllocator.cpp",
     "BuddyAllocator.h",
@@ -194,6 +192,8 @@ source_set("dawn_native_sources") {
     "DynamicUploader.h",
     "EncodingContext.cpp",
     "EncodingContext.h",
+    "EnumClassBitmasks.h",
+    "EnumMaskIterator.h",
     "Error.cpp",
     "Error.h",
     "ErrorData.cpp",
@@ -228,6 +228,8 @@ source_set("dawn_native_sources") {
     "Pipeline.h",
     "PipelineLayout.cpp",
     "PipelineLayout.h",
+    "PooledResourceMemoryAllocator.cpp",
+    "PooledResourceMemoryAllocator.h",
     "ProgrammablePassEncoder.cpp",
     "ProgrammablePassEncoder.h",
     "QuerySet.cpp",
@@ -320,6 +322,8 @@ source_set("dawn_native_sources") {
       "d3d12/PipelineLayoutD3D12.h",
       "d3d12/PlatformFunctions.cpp",
       "d3d12/PlatformFunctions.h",
+      "d3d12/QuerySetD3D12.cpp",
+      "d3d12/QuerySetD3D12.h",
       "d3d12/QueueD3D12.cpp",
       "d3d12/QueueD3D12.h",
       "d3d12/RenderPassBuilderD3D12.cpp",
@@ -357,7 +361,7 @@ source_set("dawn_native_sources") {
   }
 
   if (dawn_enable_metal) {
-    libs += [
+    frameworks = [
       "Cocoa.framework",
       "IOKit.framework",
       "IOSurface.framework",
@@ -495,6 +499,8 @@ source_set("dawn_native_sources") {
       "vulkan/NativeSwapChainImplVk.h",
       "vulkan/PipelineLayoutVk.cpp",
       "vulkan/PipelineLayoutVk.h",
+      "vulkan/QuerySetVk.cpp",
+      "vulkan/QuerySetVk.h",
       "vulkan/QueueVk.cpp",
       "vulkan/QueueVk.h",
       "vulkan/RenderPassCache.cpp",

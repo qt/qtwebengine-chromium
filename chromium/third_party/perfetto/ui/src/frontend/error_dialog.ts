@@ -26,6 +26,35 @@ const ERR_QUEUE_MAX_LEN = 10;
 
 export function maybeShowErrorDialog(errLog: string) {
   const now = performance.now();
+
+  // Here we rely on the exception message from onCannotGrowMemory function
+  if (errLog.includes('Cannot enlarge memory arrays')) {
+    showOutOfMemoryDialog();
+    // Refresh timeLastReport to prevent a different error showing a dialog
+    timeLastReport = now;
+    return;
+  }
+
+  if (errLog.includes('Unable to claim interface.') ||
+      errLog.includes('A transfer error has occurred')) {
+    showModal({
+      title: 'A WebUSB error occurred',
+      content: m(
+          'div',
+          m('span', `Is adb already running on the host? Run this command and
+        try again.`),
+          m('br'),
+          m('.modal-bash', '> adb kill-server'),
+          m('br'),
+          m('span', 'For details see '),
+          m('a', {href: 'http://b/159048331', target: '_blank'}, 'b/159048331'),
+          ),
+      buttons: []
+    });
+    timeLastReport = now;
+    return;
+  }
+
   if (timeLastReport > 0 && now - timeLastReport <= MIN_REPORT_PERIOD_MS) {
     queuedErrors.unshift(errLog);
     if (queuedErrors.length > ERR_QUEUE_MAX_LEN) queuedErrors.pop();
@@ -62,5 +91,28 @@ export function maybeShowErrorDialog(errLog: string) {
         }
       },
     ]
+  });
+}
+
+function showOutOfMemoryDialog() {
+  const url =
+      'https://perfetto.dev/docs/quickstart/trace-analysis#get-trace-processor';
+  const description = 'This is a limitation of your browser. ' +
+      'You can get around this by loading the trace ' +
+      'directly in the trace_processor binary.';
+
+  showModal({
+    title: 'Oops! Your WASM trace processor ran out of memory',
+    content: m(
+        'div',
+        m('span', description),
+        m('br'),
+        m('br'),
+        m('span', 'Example command:'),
+        m('.modal-bash', '> trace_processor trace.pftrace --http'),
+        m('span', 'For details see '),
+        m('a', {href: url, target: '_blank'}, url),
+        ),
+    buttons: []
   });
 }

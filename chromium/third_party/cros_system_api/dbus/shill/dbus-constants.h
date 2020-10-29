@@ -55,6 +55,7 @@ const char kAddWakeOnPacketConnectionFunction[] = "AddWakeOnPacketConnection";
 const char kAddWakeOnPacketOfTypesFunction[] = "AddWakeOnPacketOfTypes";
 const char kChangePinFunction[] = "ChangePin";
 const char kEnterPinFunction[] = "EnterPin";
+// Deprecated: crbug.com/938698.
 const char kPerformTDLSOperationFunction[] = "PerformTDLSOperation";
 const char kRegisterFunction[] = "Register";
 const char kRemoveAllWakeOnPacketConnectionsFunction[] =
@@ -209,7 +210,6 @@ const char kSecurityClassProperty[] = "SecurityClass";
 const char kSecurityProperty[] = "Security";
 const char kSSIDProperty[] = "SSID";
 const char kWifiBSsid[] = "WiFi.BSSID";
-const char kWifiFTEnabled[] = "WiFi.FTEnabled";
 const char kWifiFrequencyListProperty[] = "WiFi.FrequencyList";
 const char kWifiFrequency[] = "WiFi.Frequency";
 const char kWifiHexSsid[] = "WiFi.HexSSID";
@@ -321,6 +321,7 @@ const char kDhcpv6PreferredLeaseDurationSecondsProperty[] =
 // Base Device property names.
 const char kAddressProperty[] = "Address";  // Also used for IPConfig.
 const char kIPConfigsProperty[] = "IPConfigs";
+const char kIPv6DisabledProperty[] = "IPv6Disabled";
 const char kInterfaceProperty[] = "Interface";  // Network interface name.
 const char kLinkMonitorResponseTimeProperty[] = "LinkMonitorResponseTime";
 // kNameProperty: Defined above for Service. DEPRECATED (crbug.com/1011136).
@@ -582,6 +583,7 @@ const char kErrorOutOfRange[] = "out-of-range";
 const char kErrorPinMissing[] = "pin-missing";
 const char kErrorPppAuthFailed[] = "ppp-auth-failed";
 const char kErrorTooManySTAs[] = "too-many-stas";
+const char kErrorDisconnect[] = "disconnect-failure";
 const char kErrorUnknownFailure[] = "unknown-failure";
 
 // Flimflam error result codes.
@@ -673,12 +675,14 @@ const char kReceiveBitrateProperty[] = "ReceiveBitrate";
 const char kTransmitBitrateProperty[] = "TransmitBitrate";
 const char kTransmitRetriesProperty[] = "TransmitRetries";
 
+// Deprecated: crbug.com/938698.
 // WiFi TDLS operations.
 const char kTDLSDiscoverOperation[] = "Discover";
 const char kTDLSSetupOperation[] = "Setup";
 const char kTDLSStatusOperation[] = "Status";
 const char kTDLSTeardownOperation[] = "Teardown";
 
+// Deprecated: crbug.com/938698.
 // WiFi TDLS states.
 const char kTDLSConnectedState[] = "Connected";
 const char kTDLSDisabledState[] = "Disabled";

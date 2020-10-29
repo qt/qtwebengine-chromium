@@ -321,25 +321,27 @@ std::ostream& operator<<(std::ostream& out, const IPAddress& address) {
   size_t len = 0;
   char separator;
   size_t values_per_separator;
+  int value_width;
   if (address.IsV4()) {
     out << std::dec;
     address.CopyToV4(values);
     len = 4;
     separator = '.';
     values_per_separator = 1;
+    value_width = 0;
   } else if (address.IsV6()) {
-    out << std::hex;
+    out << std::hex << std::setfill('0') << std::right;
     address.CopyToV6(values);
     len = 16;
     separator = ':';
     values_per_separator = 2;
+    value_width = 2;
   }
-  out << std::setfill('0') << std::right;
   for (size_t i = 0; i < len; ++i) {
     if (i > 0 && (i % values_per_separator == 0)) {
       out << separator;
     }
-    out << std::setw(2) << static_cast<int>(values[i]);
+    out << std::setw(value_width) << static_cast<int>(values[i]);
   }
   return out;
 }

@@ -17,6 +17,7 @@
 #include "common/Assert.h"
 #include "common/Constants.h"
 #include "common/Math.h"
+#include "dawn_native/CommandBuffer.h"
 #include "dawn_native/DynamicUploader.h"
 #include "dawn_native/d3d12/CommandRecordingContext.h"
 #include "dawn_native/d3d12/D3D12Error.h"
@@ -61,6 +62,13 @@ namespace dawn_native { namespace d3d12 {
             }
             if (usage & wgpu::BufferUsage::Indirect) {
                 resourceState |= D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
+            }
+            if (usage & wgpu::BufferUsage::QueryResolve) {
+                // D3D12_RESOURCE_STATE_COPY_DEST is required by ResolveQueryData but we also add
+                // D3D12_RESOURCE_STATE_UNORDERED_ACCESS because the queries will be post-processed
+                // by a compute shader and written to this buffer via a UAV.
+                resourceState |=
+                    (D3D12_RESOURCE_STATE_UNORDERED_ACCESS | D3D12_RESOURCE_STATE_COPY_DEST);
             }
 
             return resourceState;
@@ -123,7 +131,11 @@ namespace dawn_native { namespace d3d12 {
             ToBackend(GetDevice())->AllocateMemory(heapType, resourceDescriptor, bufferUsage));
 
         if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-            DAWN_TRY(ClearBuffer(ClearValue::NonZero));
+            CommandRecordingContext* commandRecordingContext;
+            DAWN_TRY_ASSIGN(commandRecordingContext,
+                            ToBackend(GetDevice())->GetPendingCommandContext());
+
+            DAWN_TRY(ClearBuffer(commandRecordingContext, uint8_t(1u)));
         }
 
         return {};
@@ -133,7 +145,7 @@ namespace dawn_native { namespace d3d12 {
         DestroyInternal();
     }
 
-    ComPtr<ID3D12Resource> Buffer::GetD3D12Resource() const {
+    ID3D12Resource* Buffer::GetD3D12Resource() const {
         return mResourceAllocation.GetD3D12Resource();
     }
 
@@ -183,7 +195,7 @@ namespace dawn_native { namespace d3d12 {
         if (needsUAVBarrier) {
             barrier->Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
             barrier->Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-            barrier->UAV.pResource = GetD3D12Resource().Get();
+            barrier->UAV.pResource = GetD3D12Resource();
 
             mLastUsage = newUsage;
             return true;
@@ -227,7 +239,7 @@ namespace dawn_native { namespace d3d12 {
 
         barrier->Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier->Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        barrier->Transition.pResource = GetD3D12Resource().Get();
+        barrier->Transition.pResource = GetD3D12Resource();
         barrier->Transition.StateBefore = lastState;
         barrier->Transition.StateAfter = newState;
         barrier->Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
@@ -239,26 +251,68 @@ namespace dawn_native { namespace d3d12 {
         return mResourceAllocation.GetGPUPointer();
     }
 
-    bool Buffer::IsMapWritable() const {
+    bool Buffer::IsMappableAtCreation() const {
         // TODO(enga): Handle CPU-visible memory on UMA
         return (GetUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) != 0;
     }
 
-    MaybeError Buffer::MapBufferInternal(D3D12_RANGE mappedRange,
-                                         void** mappedPointer,
-                                         const char* contextInfo) {
+    MaybeError Buffer::MapInternal(bool isWrite,
+                                   size_t offset,
+                                   size_t size,
+                                   const char* contextInfo) {
         // The mapped buffer can be accessed at any time, so it must be locked to ensure it is never
         // evicted. This buffer should already have been made resident when it was created.
         Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
         DAWN_TRY(ToBackend(GetDevice())->GetResidencyManager()->LockAllocation(heap));
 
-        DAWN_TRY(
-            CheckHRESULT(GetD3D12Resource()->Map(0, &mappedRange, mappedPointer), contextInfo));
+        D3D12_RANGE range = {offset, offset + size};
+        // mMappedData is the pointer to the start of the resource, irrespective of offset.
+        // MSDN says (note the weird use of "never"):
+        //
+        //   When ppData is not NULL, the pointer returned is never offset by any values in
+        //   pReadRange.
+        //
+        // https://docs.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12resource-map
+        DAWN_TRY(CheckHRESULT(GetD3D12Resource()->Map(0, &range, &mMappedData), contextInfo));
+
+        if (isWrite) {
+            mWrittenMappedRange = range;
+        }
+
         return {};
     }
 
-    void Buffer::UnmapBufferInternal(D3D12_RANGE mappedRange) {
-        GetD3D12Resource()->Unmap(0, &mappedRange);
+    MaybeError Buffer::MapAtCreationImpl() {
+        CommandRecordingContext* commandContext;
+        DAWN_TRY_ASSIGN(commandContext, ToBackend(GetDevice())->GetPendingCommandContext());
+        DAWN_TRY(EnsureDataInitialized(commandContext));
+
+        // Setting isMapWrite to false on MapRead buffers to silence D3D12 debug layer warning.
+        bool isMapWrite = (GetUsage() & wgpu::BufferUsage::MapWrite) != 0;
+        DAWN_TRY(MapInternal(isMapWrite, 0, size_t(GetSize()), "D3D12 map at creation"));
+        return {};
+    }
+
+    MaybeError Buffer::MapReadAsyncImpl() {
+        return MapInternal(false, 0, size_t(GetSize()), "D3D12 map read async");
+    }
+
+    MaybeError Buffer::MapWriteAsyncImpl() {
+        return MapInternal(true, 0, size_t(GetSize()), "D3D12 map write async");
+    }
+
+    MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
+        CommandRecordingContext* commandContext;
+        DAWN_TRY_ASSIGN(commandContext, ToBackend(GetDevice())->GetPendingCommandContext());
+        DAWN_TRY(EnsureDataInitialized(commandContext));
+
+        return MapInternal(mode & wgpu::MapMode::Write, offset, size, "D3D12 map async");
+    }
+
+    void Buffer::UnmapImpl() {
+        GetD3D12Resource()->Unmap(0, &mWrittenMappedRange);
+        mMappedData = nullptr;
+        mWrittenMappedRange = {0, 0};
 
         // When buffers are mapped, they are locked to keep them in resident memory. We must unlock
         // them when they are unmapped.
@@ -266,52 +320,19 @@ namespace dawn_native { namespace d3d12 {
         ToBackend(GetDevice())->GetResidencyManager()->UnlockAllocation(heap);
     }
 
-    MaybeError Buffer::MapAtCreationImpl(uint8_t** mappedPointer) {
-        mWrittenMappedRange = {0, static_cast<size_t>(GetSize())};
-        DAWN_TRY(MapBufferInternal(mWrittenMappedRange, reinterpret_cast<void**>(mappedPointer),
-                                   "D3D12 map at creation"));
-        mMappedData = reinterpret_cast<char*>(mappedPointer);
-        return {};
-    }
-
-    MaybeError Buffer::MapReadAsyncImpl(uint32_t serial) {
-        mWrittenMappedRange = {};
-        D3D12_RANGE readRange = {0, static_cast<size_t>(GetSize())};
-        DAWN_TRY(MapBufferInternal(readRange, reinterpret_cast<void**>(&mMappedData),
-                                   "D3D12 map read async"));
-
-        // There is no need to transition the resource to a new state: D3D12 seems to make the GPU
-        // writes available when the fence is passed.
-        return {};
-    }
-
-    MaybeError Buffer::MapWriteAsyncImpl(uint32_t serial) {
-        mWrittenMappedRange = {0, static_cast<size_t>(GetSize())};
-        DAWN_TRY(MapBufferInternal(mWrittenMappedRange, reinterpret_cast<void**>(&mMappedData),
-                                   "D3D12 map write async"));
-
-        // There is no need to transition the resource to a new state: D3D12 seems to make the CPU
-        // writes available on queue submission.
-        return {};
-    }
-
-    void Buffer::UnmapImpl() {
-        UnmapBufferInternal(mWrittenMappedRange);
-
-        mWrittenMappedRange = {};
-        mMappedData = nullptr;
-    }
-
     void* Buffer::GetMappedPointerImpl() {
+        // The frontend asks that the pointer returned is from the start of the resource
+        // irrespective of the offset passed in MapAsyncImpl, which is what mMappedData is.
         return mMappedData;
     }
 
     void Buffer::DestroyImpl() {
-        // We must ensure that if a mapped buffer is destroyed, it does not leave a dangling lock
-        // reference on its heap.
-        if (IsMapped()) {
-            Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
-            ToBackend(GetDevice())->GetResidencyManager()->UnlockAllocation(heap);
+        if (mMappedData != nullptr) {
+            // If the buffer is currently mapped, unmap without flushing the writes to the GPU
+            // since the buffer cannot be used anymore. UnmapImpl checks mWrittenRange to know
+            // which parts to flush, so we set it to an empty range to prevent flushes.
+            mWrittenMappedRange = {0, 0};
+            UnmapImpl();
         }
 
         ToBackend(GetDevice())->DeallocateMemory(mResourceAllocation);
@@ -326,37 +347,91 @@ namespace dawn_native { namespace d3d12 {
         return mResourceAllocation.GetInfo().mMethod == allocationMethod;
     }
 
-    MaybeError Buffer::ClearBuffer(ClearValue clearValue) {
-        // TODO(jiawei.shao@intel.com): support buffer lazy-initialization to 0.
-        ASSERT(clearValue == BufferBase::ClearValue::NonZero);
-        constexpr uint8_t kClearBufferValue = 1u;
+    MaybeError Buffer::EnsureDataInitialized(CommandRecordingContext* commandContext) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return {};
+        }
 
+        DAWN_TRY(InitializeToZero(commandContext));
+
+        return {};
+    }
+
+    MaybeError Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                          uint64_t offset,
+                                                          uint64_t size) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return {};
+        }
+
+        if (IsFullBufferRange(offset, size)) {
+            SetIsDataInitialized();
+        } else {
+            DAWN_TRY(InitializeToZero(commandContext));
+        }
+
+        return {};
+    }
+
+    MaybeError Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                          const CopyTextureToBufferCmd* copy) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return {};
+        }
+
+        if (IsFullBufferOverwrittenInTextureToBufferCopy(copy)) {
+            SetIsDataInitialized();
+        } else {
+            DAWN_TRY(InitializeToZero(commandContext));
+        }
+
+        return {};
+    }
+
+    MaybeError Buffer::InitializeToZero(CommandRecordingContext* commandContext) {
+        ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse));
+        ASSERT(!IsDataInitialized());
+
+        // TODO(jiawei.shao@intel.com): skip initializing the buffer when it is created on a heap
+        // that has already been zero initialized.
+        DAWN_TRY(ClearBuffer(commandContext, uint8_t(0u)));
+        SetIsDataInitialized();
+        GetDevice()->IncrementLazyClearCountForTesting();
+
+        return {};
+    }
+
+    MaybeError Buffer::ClearBuffer(CommandRecordingContext* commandContext, uint8_t clearValue) {
         Device* device = ToBackend(GetDevice());
 
         // The state of the buffers on UPLOAD heap must always be GENERIC_READ and cannot be
         // changed away, so we can only clear such buffer with buffer mapping.
         if (D3D12HeapType(GetUsage()) == D3D12_HEAP_TYPE_UPLOAD) {
-            uint8_t* mappedData = nullptr;
-            D3D12_RANGE writeRange = {0, static_cast<size_t>(GetSize())};
-            DAWN_TRY(MapBufferInternal(writeRange, reinterpret_cast<void**>(&mappedData),
-                                       "D3D12 map at clear buffer"));
-
-            memset(mappedData, kClearBufferValue, GetSize());
-
-            UnmapBufferInternal(writeRange);
-            mappedData = nullptr;
+            DAWN_TRY(MapInternal(true, 0, size_t(GetSize()), "D3D12 map at clear buffer"));
+            memset(mMappedData, clearValue, GetSize());
+            UnmapImpl();
         } else {
             // TODO(jiawei.shao@intel.com): use ClearUnorderedAccessView*() when the buffer usage
             // includes STORAGE.
             DynamicUploader* uploader = device->GetDynamicUploader();
             UploadHandle uploadHandle;
             DAWN_TRY_ASSIGN(uploadHandle,
-                            uploader->Allocate(GetSize(), device->GetPendingCommandSerial()));
+                            uploader->Allocate(GetSize(), device->GetPendingCommandSerial(),
+                                               kCopyBufferToBufferOffsetAlignment));
 
-            memset(uploadHandle.mappedBuffer, kClearBufferValue, GetSize());
+            memset(uploadHandle.mappedBuffer, clearValue, GetSize());
 
-            DAWN_TRY(device->CopyFromStagingToBuffer(uploadHandle.stagingBuffer,
-                                                     uploadHandle.startOffset, this, 0, GetSize()));
+            device->CopyFromStagingToBufferImpl(commandContext, uploadHandle.stagingBuffer,
+                                                uploadHandle.startOffset, this, 0, GetSize());
         }
 
         return {};

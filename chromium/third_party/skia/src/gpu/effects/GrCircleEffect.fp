@@ -62,7 +62,7 @@ void main() {
     } else {
         d = half((1.0 - length((circle.xy - sk_FragCoord.xy) *  circle.w)) * circle.z);
     }
-    half4 inputColor = sample(inputFP, sk_InColor);
+    half4 inputColor = sample(inputFP);
     @if (edgeType == GrClipEdgeType::kFillAA ||
          edgeType == GrClipEdgeType::kInverseFillAA) {
         sk_OutColor = inputColor * saturate(d);
@@ -77,10 +77,10 @@ void main() {
     center.fY = testData->fRandom->nextRangeScalar(0.f, 1000.f);
     SkScalar radius = testData->fRandom->nextRangeF(1.f, 1000.f);
     bool success;
-    std::unique_ptr<GrFragmentProcessor> fp;
+    std::unique_ptr<GrFragmentProcessor> fp = testData->inputFP();
     do {
         GrClipEdgeType et = (GrClipEdgeType)testData->fRandom->nextULessThan(kGrClipEdgeTypeCnt);
-        std::tie(success, fp) = GrCircleEffect::Make(/*inputFP=*/nullptr, et, center, radius);
+        std::tie(success, fp) = GrCircleEffect::Make(std::move(fp), et, center, radius);
     } while (!success);
     return fp;
 }

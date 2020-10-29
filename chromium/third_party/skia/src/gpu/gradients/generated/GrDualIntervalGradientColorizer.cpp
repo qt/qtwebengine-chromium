@@ -10,6 +10,7 @@
  **************************************************************************************************/
 #include "GrDualIntervalGradientColorizer.h"
 
+#include "src/core/SkUtils.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
@@ -45,7 +46,7 @@ public:
         thresholdVar = args.fUniformHandler->addUniform(&_outer, kFragment_GrShaderFlag,
                                                         kHalf_GrSLType, "threshold");
         fragBuilder->codeAppendf(
-                R"SkSL(half t = %s.x;
+                R"SkSL(half t = half(%s.x);
 float4 scale, bias;
 if (t < %s) {
     scale = %s;
@@ -56,7 +57,7 @@ if (t < %s) {
 }
 %s = half4(float(t) * scale + bias);
 )SkSL",
-                args.fInputColor, args.fUniformHandler->getUniformCStr(thresholdVar),
+                args.fSampleCoord, args.fUniformHandler->getUniformCStr(thresholdVar),
                 args.fUniformHandler->getUniformCStr(scale01Var),
                 args.fUniformHandler->getUniformCStr(bias01Var),
                 args.fUniformHandler->getUniformCStr(scale23Var),
@@ -129,10 +130,23 @@ GrDualIntervalGradientColorizer::GrDualIntervalGradientColorizer(
         , bias01(src.bias01)
         , scale23(src.scale23)
         , bias23(src.bias23)
-        , threshold(src.threshold) {}
-std::unique_ptr<GrFragmentProcessor> GrDualIntervalGradientColorizer::clone() const {
-    return std::unique_ptr<GrFragmentProcessor>(new GrDualIntervalGradientColorizer(*this));
+        , threshold(src.threshold) {
+    this->cloneAndRegisterAllChildProcessors(src);
+    this->setUsesSampleCoordsDirectly();
 }
+std::unique_ptr<GrFragmentProcessor> GrDualIntervalGradientColorizer::clone() const {
+    return std::make_unique<GrDualIntervalGradientColorizer>(*this);
+}
+#if GR_TEST_UTILS
+SkString GrDualIntervalGradientColorizer::onDumpInfo() const {
+    return SkStringPrintf(
+            "(scale01=float4(%f, %f, %f, %f), bias01=float4(%f, %f, %f, %f), scale23=float4(%f, "
+            "%f, %f, %f), bias23=float4(%f, %f, %f, %f), threshold=%f)",
+            scale01.fR, scale01.fG, scale01.fB, scale01.fA, bias01.fR, bias01.fG, bias01.fB,
+            bias01.fA, scale23.fR, scale23.fG, scale23.fB, scale23.fA, bias23.fR, bias23.fG,
+            bias23.fB, bias23.fA, threshold);
+}
+#endif
 
 std::unique_ptr<GrFragmentProcessor> GrDualIntervalGradientColorizer::Make(const SkPMColor4f& c0,
                                                                            const SkPMColor4f& c1,

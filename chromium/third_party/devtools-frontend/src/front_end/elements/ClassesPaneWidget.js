@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks.
+
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 import * as SDK from '../sdk/sdk.js';
@@ -40,7 +43,7 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
     this._updateNodeThrottler = new Common.Throttler.Throttler(0);
     /** @type {?SDK.DOMModel.DOMNode} */
     this._previousTarget = null;
-    self.UI.context.addFlavorChangeListener(SDK.DOMModel.DOMNode, this._onSelectedNodeChanged, this);
+    UI.Context.Context.instance().addFlavorChangeListener(SDK.DOMModel.DOMNode, this._onSelectedNodeChanged, this);
   }
 
   /**
@@ -77,13 +80,14 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
     this._prompt.clearAutocomplete();
     event.target.textContent = '';
 
-    const node = self.UI.context.flavor(SDK.DOMModel.DOMNode);
+    const node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
     if (!node) {
       return;
     }
 
     const classNames = this._splitTextIntoClasses(text);
     if (!classNames.length) {
+      this._installNodeClasses(node);
       return;
     }
 
@@ -102,7 +106,7 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
   }
 
   _onTextChanged() {
-    const node = self.UI.context.flavor(SDK.DOMModel.DOMNode);
+    const node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
     if (!node) {
       return;
     }
@@ -145,7 +149,7 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
       return;
     }
 
-    let node = self.UI.context.flavor(SDK.DOMModel.DOMNode);
+    let node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
     if (node) {
       node = node.enclosingElementOrSelf();
     }
@@ -174,7 +178,7 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
    * @param {!Event} event
    */
   _onClick(className, event) {
-    const node = self.UI.context.flavor(SDK.DOMModel.DOMNode);
+    const node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
     if (!node) {
       return;
     }
@@ -350,7 +354,7 @@ export class ClassNamePrompt extends UI.TextPrompt.TextPrompt {
       this._classNamesPromise = null;
     }
 
-    const selectedNode = self.UI.context.flavor(SDK.DOMModel.DOMNode);
+    const selectedNode = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
     if (!selectedNode || (!prefix && !force && !expression.trim())) {
       return Promise.resolve([]);
     }

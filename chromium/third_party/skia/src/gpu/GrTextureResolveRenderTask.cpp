@@ -12,7 +12,7 @@
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrResourceAllocator.h"
-#include "src/gpu/GrTexturePriv.h"
+#include "src/gpu/GrTexture.h"
 
 void GrTextureResolveRenderTask::addProxy(GrDrawingManager* drawingMgr,
                                           sk_sp<GrSurfaceProxy> proxyRef,
@@ -37,14 +37,14 @@ void GrTextureResolveRenderTask::addProxy(GrDrawingManager* drawingMgr,
 
     if (GrSurfaceProxy::ResolveFlags::kMipMaps & flags) {
         GrTextureProxy* textureProxy = proxy->asTextureProxy();
-        SkASSERT(GrMipMapped::kYes == textureProxy->mipMapped());
-        SkASSERT(textureProxy->mipMapsAreDirty());
-        textureProxy->markMipMapsClean();
+        SkASSERT(GrMipmapped::kYes == textureProxy->mipmapped());
+        SkASSERT(textureProxy->mipmapsAreDirty());
+        textureProxy->markMipmapsClean();
     }
 
     // Add the proxy as a dependency: We will read the existing contents of this texture while
     // generating mipmap levels and/or resolving MSAA.
-    this->addDependency(drawingMgr, proxy, GrMipMapped::kNo,
+    this->addDependency(drawingMgr, proxy, GrMipmapped::kNo,
                         GrTextureResolveManager(nullptr), caps);
     this->addTarget(drawingMgr, GrSurfaceProxyView(std::move(proxyRef)));
 }
@@ -71,8 +71,7 @@ bool GrTextureResolveRenderTask::onExecute(GrOpFlushState* flushState) {
             GrSurfaceProxy* proxy = this->target(i).proxy();
             // peekRenderTarget might be null if there was an instantiation error.
             if (GrRenderTarget* renderTarget = proxy->peekRenderTarget()) {
-                flushState->gpu()->resolveRenderTarget(renderTarget, resolve.fMSAAResolveRect,
-                                                       GrGpu::ForExternalIO::kNo);
+                flushState->gpu()->resolveRenderTarget(renderTarget, resolve.fMSAAResolveRect);
             }
         }
     }
@@ -82,9 +81,9 @@ bool GrTextureResolveRenderTask::onExecute(GrOpFlushState* flushState) {
         if (GrSurfaceProxy::ResolveFlags::kMipMaps & resolve.fFlags) {
             // peekTexture might be null if there was an instantiation error.
             GrTexture* texture = this->target(i).proxy()->peekTexture();
-            if (texture && texture->texturePriv().mipMapsAreDirty()) {
+            if (texture && texture->mipmapsAreDirty()) {
                 flushState->gpu()->regenerateMipMapLevels(texture);
-                SkASSERT(!texture->texturePriv().mipMapsAreDirty());
+                SkASSERT(!texture->mipmapsAreDirty());
             }
         }
     }

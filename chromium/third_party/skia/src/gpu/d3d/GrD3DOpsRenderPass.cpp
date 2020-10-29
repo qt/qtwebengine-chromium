@@ -7,17 +7,22 @@
 
 #include "src/gpu/d3d/GrD3DOpsRenderPass.h"
 
-#include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProgramDesc.h"
-#include "src/gpu/GrRenderTargetPriv.h"
+#include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrStencilSettings.h"
 #include "src/gpu/d3d/GrD3DBuffer.h"
+#include "src/gpu/d3d/GrD3DCommandSignature.h"
 #include "src/gpu/d3d/GrD3DGpu.h"
 #include "src/gpu/d3d/GrD3DPipelineState.h"
 #include "src/gpu/d3d/GrD3DPipelineStateBuilder.h"
 #include "src/gpu/d3d/GrD3DRenderTarget.h"
 #include "src/gpu/d3d/GrD3DTexture.h"
+
+#ifdef SK_DEBUG
+#include "include/gpu/GrDirectContext.h"
+#include "src/gpu/GrContextPriv.h"
+#endif
 
 GrD3DOpsRenderPass::GrD3DOpsRenderPass(GrD3DGpu* gpu) : fGpu(gpu) {}
 
@@ -46,7 +51,11 @@ GrGpu* GrD3DOpsRenderPass::gpu() { return fGpu; }
 
 void GrD3DOpsRenderPass::onBegin() {
     GrD3DRenderTarget* d3dRT = static_cast<GrD3DRenderTarget*>(fRenderTarget);
-    d3dRT->setResourceState(fGpu, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    if (d3dRT->numSamples() > 1) {
+        d3dRT->msaaTextureResource()->setResourceState(fGpu, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    } else {
+        d3dRT->setResourceState(fGpu, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    }
     fGpu->currentCommandList()->setRenderTarget(d3dRT);
 
     if (GrLoadOp::kClear == fColorLoadOp) {
@@ -55,7 +64,7 @@ void GrD3DOpsRenderPass::onBegin() {
         fGpu->currentCommandList()->clearRenderTargetView(d3dRT, fClearColor, nullptr);
     }
 
-    if (auto stencil = d3dRT->renderTargetPriv().getStencilAttachment()) {
+    if (auto stencil = d3dRT->getStencilAttachment()) {
         GrD3DStencilAttachment* d3dStencil = static_cast<GrD3DStencilAttachment*>(stencil);
         d3dStencil->setResourceState(fGpu, D3D12_RESOURCE_STATE_DEPTH_WRITE);
         if (fStencilLoadOp == GrLoadOp::kClear) {
@@ -173,6 +182,11 @@ bool GrD3DOpsRenderPass::onBindPipeline(const GrProgramInfo& info, const SkRect&
 
     fGpu->currentCommandList()->setGraphicsRootSignature(fCurrentPipelineState->rootSignature());
     fGpu->currentCommandList()->setPipelineState(fCurrentPipelineState);
+    if (info.pipeline().isHWAntialiasState()) {
+        fGpu->currentCommandList()->setDefaultSamplePositions();
+    } else {
+        fGpu->currentCommandList()->setCenteredSamplePositions(fRenderTarget->numSamples());
+    }
 
     fCurrentPipelineState->setAndBindConstants(fGpu, fRenderTarget, info);
 
@@ -213,10 +227,11 @@ bool GrD3DOpsRenderPass::onBindTextures(const GrPrimitiveProcessor& primProc,
     for (int i = 0; i < primProc.numTextureSamplers(); ++i) {
         update_resource_state(primProcTextures[i]->peekTexture(), fRenderTarget, fGpu);
     }
-    GrFragmentProcessor::PipelineTextureSamplerRange textureSamplerRange(pipeline);
-    for (auto [sampler, fp] : textureSamplerRange) {
-        update_resource_state(sampler.peekTexture(), fRenderTarget, fGpu);
-    }
+
+    pipeline.visitTextureEffects([&](const GrTextureEffect& te) {
+        update_resource_state(te.texture(), fRenderTarget, fGpu);
+    });
+
     if (GrTexture* dstTexture = pipeline.peekDstTexture()) {
         update_resource_state(dstTexture, fRenderTarget, fGpu);
     }
@@ -227,8 +242,9 @@ bool GrD3DOpsRenderPass::onBindTextures(const GrPrimitiveProcessor& primProc,
     return true;
 }
 
-void GrD3DOpsRenderPass::onBindBuffers(const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                                       const GrBuffer* vertexBuffer,
+void GrD3DOpsRenderPass::onBindBuffers(sk_sp<const GrBuffer> indexBuffer,
+                                       sk_sp<const GrBuffer> instanceBuffer,
+                                       sk_sp<const GrBuffer> vertexBuffer,
                                        GrPrimitiveRestart primRestart) {
     SkASSERT(GrPrimitiveRestart::kNo == primRestart);
     SkASSERT(fCurrentPipelineState);
@@ -237,10 +253,8 @@ void GrD3DOpsRenderPass::onBindBuffers(const GrBuffer* indexBuffer, const GrBuff
     GrD3DDirectCommandList* currCmdList = fGpu->currentCommandList();
     SkASSERT(currCmdList);
 
-    // TODO: do we need a memory barrier here?
-
-    fCurrentPipelineState->bindBuffers(fGpu, indexBuffer, instanceBuffer, vertexBuffer,
-                                       currCmdList);
+    fCurrentPipelineState->bindBuffers(fGpu, std::move(indexBuffer), std::move(instanceBuffer),
+                                       std::move(vertexBuffer), currCmdList);
 }
 
 void GrD3DOpsRenderPass::onDrawInstanced(int instanceCount, int baseInstance, int vertexCount,
@@ -257,6 +271,26 @@ void GrD3DOpsRenderPass::onDrawIndexedInstanced(int indexCount, int baseIndex, i
                                                      baseVertex, baseInstance);
     fGpu->stats()->incNumDraws();
 }
+
+void GrD3DOpsRenderPass::onDrawIndirect(const GrBuffer* buffer, size_t offset, int drawCount) {
+    constexpr unsigned int kSlot = 0;
+    sk_sp<GrD3DCommandSignature> cmdSig = fGpu->resourceProvider().findOrCreateCommandSignature(
+            GrD3DCommandSignature::ForIndexed::kNo, kSlot);
+    fGpu->currentCommandList()->executeIndirect(cmdSig, drawCount,
+                                                static_cast<const GrD3DBuffer*>(buffer), offset);
+    fGpu->stats()->incNumDraws();
+}
+
+void GrD3DOpsRenderPass::onDrawIndexedIndirect(const GrBuffer* buffer, size_t offset,
+                                               int drawCount) {
+    constexpr unsigned int kSlot = 0;
+    sk_sp<GrD3DCommandSignature> cmdSig = fGpu->resourceProvider().findOrCreateCommandSignature(
+            GrD3DCommandSignature::ForIndexed::kYes, kSlot);
+    fGpu->currentCommandList()->executeIndirect(cmdSig, drawCount,
+                                                static_cast<const GrD3DBuffer*>(buffer), offset);
+    fGpu->stats()->incNumDraws();
+}
+
 
 static D3D12_RECT scissor_to_d3d_clear_rect(const GrScissorState& scissor,
                                             const GrSurface* surface,
@@ -287,7 +321,7 @@ void GrD3DOpsRenderPass::onClear(const GrScissorState& scissor, const SkPMColor4
 }
 
 void GrD3DOpsRenderPass::onClearStencilClip(const GrScissorState& scissor, bool insideStencilMask) {
-    GrStencilAttachment* sb = fRenderTarget->renderTargetPriv().getStencilAttachment();
+    GrStencilAttachment* sb = fRenderTarget->getStencilAttachment();
     // this should only be called internally when we know we have a
     // stencil buffer.
     SkASSERT(sb);

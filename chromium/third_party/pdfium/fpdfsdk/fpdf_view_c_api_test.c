@@ -24,6 +24,7 @@
 #include "public/fpdf_progressive.h"
 #include "public/fpdf_save.h"
 #include "public/fpdf_searchex.h"
+#include "public/fpdf_signature.h"
 #include "public/fpdf_structtree.h"
 #include "public/fpdf_sysfontinfo.h"
 #include "public/fpdf_text.h"
@@ -143,6 +144,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFLink_GetQuadPoints);
     CHK(FPDF_GetFileIdentifier);
     CHK(FPDF_GetMetaText);
+    CHK(FPDF_GetPageAAction);
     CHK(FPDF_GetPageLabel);
 
     // fpdf_edit.h
@@ -157,6 +159,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFImageObj_GetImageFilterCount);
     CHK(FPDFImageObj_GetImageMetadata);
     CHK(FPDFImageObj_GetMatrix);
+    CHK(FPDFImageObj_GetRenderedBitmap);
     CHK(FPDFImageObj_LoadJpegFile);
     CHK(FPDFImageObj_LoadJpegFileInline);
     CHK(FPDFImageObj_SetBitmap);
@@ -279,7 +282,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFPage_FormFieldZOrderAtPoint);
     CHK(FPDFPage_HasFormFieldAtPoint);
     CHK(FPDF_FFLDraw);
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
     CHK(FPDF_FFLRecord);
 #endif
     CHK(FPDF_GetFormType);
@@ -314,11 +317,23 @@ int CheckPDFiumCApi() {
     CHK(FPDFText_GetCharIndexFromTextIndex);
     CHK(FPDFText_GetTextIndexFromCharIndex);
 
+    // fpdf_signature.h
+    CHK(FPDFSignatureObj_GetByteRange);
+    CHK(FPDFSignatureObj_GetContents);
+    CHK(FPDFSignatureObj_GetReason);
+    CHK(FPDFSignatureObj_GetSubFilter);
+    CHK(FPDFSignatureObj_GetTime);
+    CHK(FPDF_GetSignatureCount);
+    CHK(FPDF_GetSignatureObject);
+
     // fpdf_structtree.h
     CHK(FPDF_StructElement_CountChildren);
     CHK(FPDF_StructElement_GetAltText);
     CHK(FPDF_StructElement_GetChildAtIndex);
+    CHK(FPDF_StructElement_GetID);
+    CHK(FPDF_StructElement_GetLang);
     CHK(FPDF_StructElement_GetMarkedContentID);
+    CHK(FPDF_StructElement_GetStringAttribute);
     CHK(FPDF_StructElement_GetTitle);
     CHK(FPDF_StructElement_GetType);
     CHK(FPDF_StructTree_Close);
@@ -435,6 +450,9 @@ int CheckPDFiumCApi() {
     CHK(FPDF_GetRecommendedV8Flags);
 #endif
     CHK(FPDF_GetSecurityHandlerRevision);
+    CHK(FPDF_GetXFAPacketContent);
+    CHK(FPDF_GetXFAPacketCount);
+    CHK(FPDF_GetXFAPacketName);
     CHK(FPDF_InitLibrary);
     CHK(FPDF_InitLibraryWithConfig);
     CHK(FPDF_LoadCustomDocument);
@@ -448,7 +466,7 @@ int CheckPDFiumCApi() {
 #endif
     CHK(FPDF_RenderPageBitmap);
     CHK(FPDF_RenderPageBitmapWithMatrix);
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
     CHK(FPDF_RenderPageSkp);
 #endif
 #if defined(_WIN32)

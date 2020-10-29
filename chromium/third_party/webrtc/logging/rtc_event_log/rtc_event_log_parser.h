@@ -611,6 +611,12 @@ class ParsedRtcEventLog {
     return generic_acks_received_;
   }
 
+  // Media
+  const std::map<uint32_t, std::vector<LoggedFrameDecoded>>& decoded_frames()
+      const {
+    return decoded_frames_;
+  }
+
   int64_t first_timestamp() const { return first_timestamp_; }
   int64_t last_timestamp() const { return last_timestamp_; }
 
@@ -726,6 +732,8 @@ class ParsedRtcEventLog {
   ParseStatus StoreDtlsTransportState(
       const rtclog2::DtlsTransportStateEvent& proto);
   ParseStatus StoreDtlsWritableState(const rtclog2::DtlsWritableState& proto);
+  ParsedRtcEventLog::ParseStatus StoreFrameDecodedEvents(
+      const rtclog2::FrameDecodedEvents& proto);
   ParseStatus StoreGenericAckReceivedEvent(
       const rtclog2::GenericAckReceived& proto);
   ParseStatus StoreGenericPacketReceivedEvent(
@@ -847,6 +855,8 @@ class ParsedRtcEventLog {
 
   std::vector<LoggedDtlsTransportState> dtls_transport_states_;
   std::vector<LoggedDtlsWritableState> dtls_writable_states_;
+
+  std::map<uint32_t, std::vector<LoggedFrameDecoded>> decoded_frames_;
 
   std::vector<LoggedIceCandidatePairConfig> ice_candidate_pair_configs_;
   std::vector<LoggedIceCandidatePairEvent> ice_candidate_pair_events_;

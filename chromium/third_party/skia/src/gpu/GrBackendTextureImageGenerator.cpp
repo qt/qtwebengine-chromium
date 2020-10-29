@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "include/gpu/GrContext.h"
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkMessageBus.h"
 #include "src/gpu/GrBackendTextureImageGenerator.h"
 #include "src/gpu/GrContextPriv.h"
@@ -19,7 +19,6 @@
 #include "src/gpu/GrResourceProviderPriv.h"
 #include "src/gpu/GrSemaphore.h"
 #include "src/gpu/GrTexture.h"
-#include "src/gpu/GrTexturePriv.h"
 #include "src/gpu/GrTextureProxyPriv.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/gl/GrGLTexture.h"
@@ -45,7 +44,7 @@ std::unique_ptr<SkImageGenerator>
 GrBackendTextureImageGenerator::Make(sk_sp<GrTexture> texture, GrSurfaceOrigin origin,
                                      std::unique_ptr<GrSemaphore> semaphore, SkColorType colorType,
                                      SkAlphaType alphaType, sk_sp<SkColorSpace> colorSpace) {
-    GrContext* context = texture->getContext();
+    GrDirectContext* context = texture->getContext();
 
     // Attach our texture to this context's resource cache. This ensures that deletion will happen
     // in the correct thread/context. This adds the only ref to the texture that will persist from
@@ -97,7 +96,7 @@ GrSurfaceProxyView GrBackendTextureImageGenerator::onGenerateTexture(
         GrRecordingContext* context,
         const SkImageInfo& info,
         const SkIPoint& origin,
-        GrMipMapped mipMapped,
+        GrMipmapped mipMapped,
         GrImageTexGenPolicy texGenPolicy) {
     SkASSERT(context);
 
@@ -147,13 +146,13 @@ GrSurfaceProxyView GrBackendTextureImageGenerator::onGenerateTexture(
 
     GrColorType grColorType = SkColorTypeToGrColorType(info.colorType());
 
-    GrMipMapped textureIsMipMapped = fBackendTexture.hasMipMaps() ? GrMipMapped::kYes
-                                                                  : GrMipMapped::kNo;
+    GrMipmapped textureIsMipMapped = fBackendTexture.hasMipmaps() ? GrMipmapped::kYes
+                                                                  : GrMipmapped::kNo;
 
     // Ganesh assumes that, when wrapping a mipmapped backend texture from a client, that its
     // mipmaps are fully fleshed out.
-    GrMipMapsStatus mipMapsStatus = fBackendTexture.hasMipMaps()
-            ? GrMipMapsStatus::kValid : GrMipMapsStatus::kNotAllocated;
+    GrMipmapStatus mipmapStatus = fBackendTexture.hasMipmaps()
+            ? GrMipmapStatus::kValid : GrMipmapStatus::kNotAllocated;
 
     GrSwizzle readSwizzle = context->priv().caps()->getReadSwizzle(backendFormat, grColorType);
 
@@ -202,7 +201,7 @@ GrSurfaceProxyView GrBackendTextureImageGenerator::onGenerateTexture(
                 return {std::move(tex), true, GrSurfaceProxy::LazyInstantiationKeyMode::kUnsynced};
             },
             backendFormat, fBackendTexture.dimensions(), GrRenderable::kNo, 1, textureIsMipMapped,
-            mipMapsStatus, GrInternalSurfaceFlags::kReadOnly, SkBackingFit::kExact, SkBudgeted::kNo,
+            mipmapStatus, GrInternalSurfaceFlags::kReadOnly, SkBackingFit::kExact, SkBudgeted::kNo,
             GrProtected::kNo, GrSurfaceProxy::UseAllocator::kYes);
     if (!proxy) {
         return {};
@@ -210,7 +209,7 @@ GrSurfaceProxyView GrBackendTextureImageGenerator::onGenerateTexture(
 
     if (texGenPolicy == GrImageTexGenPolicy::kDraw && origin.isZero() &&
         info.dimensions() == fBackendTexture.dimensions() &&
-        (mipMapped == GrMipMapped::kNo || proxy->mipMapped() == GrMipMapped::kYes)) {
+        (mipMapped == GrMipmapped::kNo || proxy->mipmapped() == GrMipmapped::kYes)) {
         // If the caller wants the entire texture and we have the correct mip support, we're done
         return GrSurfaceProxyView(std::move(proxy), fSurfaceOrigin, readSwizzle);
     } else {

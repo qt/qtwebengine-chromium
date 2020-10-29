@@ -137,13 +137,18 @@ RTC_EXPORT extern const char kH264FmtpProfileLevelId[];
 RTC_EXPORT extern const char kH264FmtpLevelAsymmetryAllowed[];
 RTC_EXPORT extern const char kH264FmtpPacketizationMode[];
 extern const char kH264FmtpSpropParameterSets[];
+extern const char kH264FmtpSpsPpsIdrInKeyframe[];
 extern const char kH264ProfileLevelConstrainedBaseline[];
+extern const char kH264ProfileLevelConstrainedHigh[];
 
 extern const int kDefaultVideoMaxFramerate;
 
 extern const size_t kConferenceMaxNumSpatialLayers;
 extern const size_t kConferenceMaxNumTemporalLayers;
 extern const size_t kConferenceDefaultNumTemporalLayers;
+
+extern const char kApplicationSpecificBandwidth[];
+extern const char kTransportSpecificBandwidth[];
 }  // namespace cricket
 
 #endif  // MEDIA_BASE_MEDIA_CONSTANTS_H_

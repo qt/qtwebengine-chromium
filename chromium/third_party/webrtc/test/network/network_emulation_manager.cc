@@ -295,6 +295,22 @@ NetworkEmulationManagerImpl::CreateEmulatedNetworkManagerInterface(
   return out;
 }
 
+void NetworkEmulationManagerImpl::GetStats(
+    rtc::ArrayView<EmulatedEndpoint*> endpoints,
+    std::function<void(std::unique_ptr<EmulatedNetworkStats>)> stats_callback) {
+  task_queue_.PostTask([endpoints, stats_callback]() {
+    EmulatedNetworkStatsBuilder stats_builder;
+    for (auto* endpoint : endpoints) {
+      // It's safe to cast here because EmulatedEndpointImpl can be the only
+      // implementation of EmulatedEndpoint, because only it has access to
+      // EmulatedEndpoint constructor.
+      auto endpoint_impl = static_cast<EmulatedEndpointImpl*>(endpoint);
+      stats_builder.AddEmulatedNetworkStats(*endpoint_impl->stats());
+    }
+    stats_callback(stats_builder.Build());
+  });
+}
+
 absl::optional<rtc::IPAddress>
 NetworkEmulationManagerImpl::GetNextIPv4Address() {
   uint32_t addresses_count = kMaxIPv4Address - kMinIPv4Address;

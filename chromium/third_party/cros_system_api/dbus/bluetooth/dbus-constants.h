@@ -130,6 +130,16 @@ constexpr char kErrorRejected[] = "org.bluez.Error.Rejected";
 constexpr char kErrorCanceled[] = "org.bluez.Error.Canceled";
 }  // namespace bluetooth_agent
 
+// https://chromium.googlesource.com/chromiumos/third_party/bluez/+/refs/heads/master/doc/battery-api.txt
+namespace bluetooth_battery {
+// Bluetooth Battery service identifiers.
+constexpr char kBluetoothBatteryServiceName[] = "org.bluez";
+constexpr char kBluetoothBatteryInterface[] = "org.bluez.Battery1";
+
+// Bluetooth Battery properties.
+constexpr char kPercentageProperty[] = "Percentage";
+}  // namespace bluetooth_battery
+
 // https://chromium.googlesource.com/chromiumos/third_party/bluez/+/refs/heads/master/doc/device-api.txt
 namespace bluetooth_device {
 // Bluetooth Device service identifiers.

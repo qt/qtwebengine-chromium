@@ -16,9 +16,8 @@
 #include "tools/debugger/DebugLayerManager.h"
 #include "tools/debugger/DrawCommand.h"
 
-#include "include/gpu/GrContext.h"
 #include "src/gpu/GrAuditTrail.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContext.h"
 
 #include <string>
@@ -87,9 +86,8 @@ DebugCanvas::DebugCanvas(int width, int height)
     this->INHERITED::onClipRect(large, kReplace_SkClipOp, kHard_ClipEdgeStyle);
 }
 
-DebugCanvas::DebugCanvas(SkIRect bounds) {
-    DebugCanvas(bounds.width(), bounds.height());
-}
+DebugCanvas::DebugCanvas(SkIRect bounds)
+        : DebugCanvas(bounds.width(), bounds.height()) {}
 
 DebugCanvas::~DebugCanvas() { fCommandVector.deleteAll(); }
 
@@ -228,7 +226,7 @@ DrawCommand* DebugCanvas::getDrawCommandAt(int index) {
 
 GrAuditTrail* DebugCanvas::getAuditTrail(SkCanvas* canvas) {
     GrAuditTrail* at  = nullptr;
-    GrContext*    ctx = canvas->getGrContext();
+    auto ctx = canvas->recordingContext();
     if (ctx) {
         at = ctx->priv().auditTrail();
     }

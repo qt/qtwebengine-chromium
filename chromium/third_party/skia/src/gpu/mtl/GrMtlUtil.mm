@@ -119,7 +119,6 @@ id<MTLLibrary> GrCompileMtlShaderLibrary(const GrMtlGpu* gpu,
 class MtlCompileResult : public SkRefCnt {
 public:
     MtlCompileResult() : fCompiledObject(nil), fError(nil) {}
-    ~MtlCompileResult() = default;
     void set(id compiledObject, NSError* error) {
         SkAutoMutexExclusive automutex(fMutex);
         fCompiledObject = compiledObject;
@@ -303,7 +302,7 @@ SkImage::CompressionType GrMtlFormatToCompressionType(MTLPixelFormat mtlFormat) 
     SkUNREACHABLE;
 }
 
-#if GR_TEST_UTILS
+#if defined(SK_DEBUG) || GR_TEST_UTILS
 bool GrMtlFormatIsBGRA8(GrMTLPixelFormat mtlFormat) {
     return mtlFormat == MTLPixelFormatBGRA8Unorm;
 }

@@ -93,6 +93,11 @@ class DisplayMtl : public DisplayImpl
 
     bool isValidNativeWindow(EGLNativeWindowType window) const override;
 
+    egl::Error validateClientBuffer(const egl::Config *configuration,
+                                    EGLenum buftype,
+                                    EGLClientBuffer clientBuffer,
+                                    const egl::AttributeMap &attribs) const override;
+
     egl::ConfigSet generateConfigs() override;
 
     std::string getRendererDescription() const;
@@ -101,6 +106,11 @@ class DisplayMtl : public DisplayImpl
     const gl::Extensions &getNativeExtensions() const;
     const gl::Limitations &getNativeLimitations() const { return mNativeLimitations; }
     const angle::FeaturesMtl &getFeatures() const { return mFeatures; }
+
+    // Check whether either of the specified iOS or Mac GPU family is supported
+    bool supportsEitherGPUFamily(uint8_t iOSFamily, uint8_t macFamily) const;
+    bool supportsIOSGPUFamily(uint8_t iOSFamily) const;
+    bool supportsMacGPUFamily(uint8_t macFamily) const;
 
     id<MTLDevice> getMetalDevice() const { return mMetalDevice; }
 
@@ -123,6 +133,10 @@ class DisplayMtl : public DisplayImpl
     const mtl::Format &getPixelFormat(angle::FormatID angleFormatId) const
     {
         return mFormatTable.getPixelFormat(angleFormatId);
+    }
+    const mtl::FormatCaps &getNativeFormatCaps(MTLPixelFormat mtlFormat) const
+    {
+        return mFormatTable.getNativeFormatCaps(mtlFormat);
     }
 
     // See mtl::FormatTable::getVertexFormat()
@@ -149,7 +163,7 @@ class DisplayMtl : public DisplayImpl
 
     mtl::CommandQueue mCmdQueue;
 
-    mtl::FormatTable mFormatTable;
+    mutable mtl::FormatTable mFormatTable;
     mtl::StateCache mStateCache;
     mtl::RenderUtils mUtils;
 

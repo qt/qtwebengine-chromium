@@ -11,7 +11,6 @@
 #include "media/engine/webrtc_voice_engine.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <functional>
 #include <string>
 #include <utility>
@@ -43,6 +42,7 @@
 #include "rtc_base/race_checker.h"
 #include "rtc_base/strings/audio_format_to_string.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/strings/string_format.h"
 #include "rtc_base/third_party/base64/base64.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/field_trial.h"
@@ -722,6 +722,11 @@ std::vector<AudioCodec> WebRtcVoiceEngine::CollectCodecs(
       }
 
       out.push_back(codec);
+
+      if (codec.name == kOpusCodecName &&
+          IsAudioRedForOpusFieldTrialEnabled()) {
+        map_format({kRedCodecName, 48000, 2}, &out);
+      }
     }
   }
 
@@ -730,11 +735,6 @@ std::vector<AudioCodec> WebRtcVoiceEngine::CollectCodecs(
     if (cn.second) {
       map_format({kCnCodecName, cn.first, 1}, &out);
     }
-  }
-
-  // Add red codec.
-  if (IsAudioRedForOpusFieldTrialEnabled()) {
-    map_format({kRedCodecName, 48000, 2}, &out);
   }
 
   // Add telephone-event codecs last.
@@ -1719,6 +1719,7 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
       send_codec_spec;
   webrtc::BitrateConstraints bitrate_config;
   absl::optional<webrtc::AudioCodecInfo> voice_codec_info;
+  size_t send_codec_position = 0;
   for (const AudioCodec& voice_codec : codecs) {
     if (!(IsCodec(voice_codec, kCnCodecName) ||
           IsCodec(voice_codec, kDtmfCodecName) ||
@@ -1742,6 +1743,7 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
       bitrate_config = GetBitrateConfigForCodec(voice_codec);
       break;
     }
+    send_codec_position++;
   }
 
   if (!send_codec_spec) {
@@ -1783,13 +1785,16 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
   if (IsAudioRedForOpusFieldTrialEnabled()) {
     // Loop through the codecs to find the RED codec that matches opus
     // with respect to clockrate and number of channels.
+    size_t red_codec_position = 0;
     for (const AudioCodec& red_codec : codecs) {
-      if (IsCodec(red_codec, kRedCodecName) &&
+      if (red_codec_position < send_codec_position &&
+          IsCodec(red_codec, kRedCodecName) &&
           red_codec.clockrate == send_codec_spec->format.clockrate_hz &&
           red_codec.channels == send_codec_spec->format.num_channels) {
         send_codec_spec->red_payload_type = red_codec.id;
         break;
       }
+      red_codec_position++;
     }
   }
 
@@ -2024,6 +2029,11 @@ void WebRtcVoiceMediaChannel::ResetUnsignaledRecvStream() {
   RTC_DCHECK(worker_thread_checker_.IsCurrent());
   RTC_LOG(LS_INFO) << "ResetUnsignaledRecvStream.";
   unsignaled_stream_params_ = StreamParams();
+  // Create a copy since RemoveRecvStream will modify |unsignaled_recv_ssrcs_|.
+  std::vector<uint32_t> to_remove = unsignaled_recv_ssrcs_;
+  for (uint32_t ssrc : to_remove) {
+    RemoveRecvStream(ssrc);
+  }
 }
 
 bool WebRtcVoiceMediaChannel::SetLocalSource(uint32_t ssrc,
@@ -2051,14 +2061,19 @@ bool WebRtcVoiceMediaChannel::SetLocalSource(uint32_t ssrc,
 
 bool WebRtcVoiceMediaChannel::SetOutputVolume(uint32_t ssrc, double volume) {
   RTC_DCHECK(worker_thread_checker_.IsCurrent());
+  RTC_LOG(LS_INFO) << rtc::StringFormat("WRVMC::%s({ssrc=%u}, {volume=%.2f})",
+                                        __func__, ssrc, volume);
   const auto it = recv_streams_.find(ssrc);
   if (it == recv_streams_.end()) {
-    RTC_LOG(LS_WARNING) << "SetOutputVolume: no recv stream " << ssrc;
+    RTC_LOG(LS_WARNING) << rtc::StringFormat(
+        "WRVMC::%s => (WARNING: no receive stream for SSRC %u)", __func__,
+        ssrc);
     return false;
   }
   it->second->SetOutputVolume(volume);
-  RTC_LOG(LS_INFO) << "SetOutputVolume() to " << volume
-                   << " for recv stream with ssrc " << ssrc;
+  RTC_LOG(LS_INFO) << rtc::StringFormat(
+      "WRVMC::%s => (stream with SSRC %u now uses volume %.2f)", __func__, ssrc,
+      volume);
   return true;
 }
 

@@ -14,6 +14,7 @@ const char kVmCiceroneServiceName[] = "org.chromium.VmCicerone";
 
 // Methods to be called from vm_concierge.
 const char kNotifyVmStartedMethod[] = "NotifyVmStarted";
+const char kNotifyVmStoppingMethod[] = "NotifyVmStopping";
 const char kNotifyVmStoppedMethod[] = "NotifyVmStopped";
 const char kGetContainerTokenMethod[] = "GetContainerToken";
 
@@ -41,6 +42,8 @@ const char kConfigureForArcSideloadMethod[] = "ConfigureForArcSideload";
 const char kStartLxdMethod[] = "StartLxd";
 const char kAddFileWatchMethod[] = "AddFileWatch";
 const char kRemoveFileWatchMethod[] = "RemoveFileWatch";
+const char kRegisterVshSessionMethod[] = "RegisterVshSession";
+const char kGetVshSessionMethod[] = "GetVshSession";
 
 // Methods to be called from chunneld.
 const char kConnectChunnelMethod[] = "ConnectChunnel";

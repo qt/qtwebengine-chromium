@@ -8,7 +8,7 @@
 #include "bench/Benchmark.h"
 
 #include "include/core/SkCanvas.h"
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrGpuResource.h"
@@ -69,7 +69,7 @@ protected:
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        sk_sp<GrContext> context(GrContext::MakeMock(nullptr));
+        sk_sp<GrDirectContext> context(GrDirectContext::MakeMock(nullptr));
         if (nullptr == context) {
             return;
         }
@@ -115,7 +115,7 @@ protected:
     }
 
     void onDelayedSetup() override {
-        fContext = GrContext::MakeMock(nullptr);
+        fContext = GrDirectContext::MakeMock(nullptr);
         if (!fContext) {
             return;
         }
@@ -150,7 +150,7 @@ protected:
     }
 
 private:
-    sk_sp<GrContext> fContext;
+    sk_sp<GrDirectContext> fContext;
     SkString fFullName;
     int fKeyData32Count;
     typedef Benchmark INHERITED;

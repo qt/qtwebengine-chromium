@@ -263,6 +263,14 @@ Go to @url{https://github.com/xiph/rav1e/} and follow the instructions to build
 the C library. To enable using rav1e in FFmpeg, pass @code{--enable-librav1e}
 to @file{./configure}.
 
+@section SVT-AV1
+
+FFmpeg can make use of the Scalable Video Technology for AV1 library for AV1 encoding.
+
+Go to @url{https://github.com/OpenVisualCloud/SVT-AV1/} and follow the instructions
+for installing the library. Then pass @code{--enable-libsvtav1} to configure to
+enable it.
+
 @section TwoLAME
 
 FFmpeg can make use of the TwoLAME library for MP2 encoding.
@@ -428,13 +436,9 @@ library:
 @item Delphine Software International CIN @tab   @tab X
     @tab Multimedia format used by Delphine Software games.
 @item Digital Speech Standard (DSS) @tab   @tab X
-@item Canopus HQ                @tab   @tab X
-@item Canopus HQA               @tab   @tab X
-@item Canopus HQX               @tab   @tab X
 @item CD+G                      @tab   @tab X
     @tab Video format used by CD+G karaoke disks
 @item Phantom Cine              @tab   @tab X
-@item Cineform HD               @tab   @tab X
 @item Commodore CDXL            @tab   @tab X
     @tab Amiga CD video format
 @item Core Audio Format         @tab X @tab X
@@ -751,6 +755,8 @@ following image formats are supported:
     @tab Portable GrayMap image
 @item PGMYUV       @tab X @tab X
     @tab PGM with U and V components in YUV 4:2:0
+@item PGX          @tab   @tab X
+    @tab PGX file decoder
 @item PIC          @tab @tab X
     @tab Pictor/PC Paint
 @item PNG          @tab X @tab X
@@ -796,6 +802,7 @@ following image formats are supported:
 @item Amazing Studio PAF Video @tab     @tab  X
 @item American Laser Games MM  @tab    @tab X
     @tab Used in games like Mad Dog McCree.
+@item Amuse Graphics Movie   @tab     @tab  X
 @item AMV Video              @tab  X  @tab  X
     @tab Used in Chinese MP3 players.
 @item ANSI/ASCII art         @tab     @tab  X
@@ -803,6 +810,7 @@ following image formats are supported:
 @item Apple MJPEG-B          @tab     @tab  X
 @item Apple Pixlet           @tab     @tab  X
 @item Apple ProRes           @tab  X  @tab  X
+    @tab fourcc: apch,apcn,apcs,apco,ap4h,ap4x
 @item Apple QuickDraw        @tab     @tab  X
     @tab fourcc: qdrw
 @item Asus v1                @tab  X  @tab  X
@@ -819,7 +827,7 @@ following image formats are supported:
 @item Autodesk RLE           @tab     @tab  X
     @tab fourcc: AASC
 @item AV1                    @tab  E  @tab  E
-    @tab Supported through external libraries libaom, libdav1d and librav1e
+    @tab Supported through external libraries libaom, libdav1d, librav1e and libsvtav1
 @item Avid 1:1 10-bit RGB Packer  @tab  X  @tab  X
     @tab fourcc: AVrp
 @item AVS (Audio Video Standard) video  @tab     @tab  X
@@ -835,6 +843,8 @@ following image formats are supported:
 @item BitJazz SheerVideo     @tab     @tab  X
 @item Bitmap Brothers JV video  @tab   @tab X
 @item y41p Brooktree uncompressed 4:1:1 12-bit     @tab  X  @tab  X
+@item Brooktree ProSumer Video  @tab     @tab  X
+    @tab fourcc: BT20
 @item Brute Force & Ignorance   @tab   @tab X
     @tab Used in the game Flash Traffic: City of Angels.
 @item C93 video              @tab     @tab  X
@@ -850,6 +860,10 @@ following image formats are supported:
 @item Delphine Software International CIN video  @tab     @tab  X
     @tab Codec used in Delphine Software International games.
 @item Discworld II BMV Video @tab     @tab  X
+@item CineForm HD            @tab  X  @tab  X
+@item Canopus HQ             @tab     @tab  X
+@item Canopus HQA            @tab     @tab  X
+@item Canopus HQX            @tab     @tab  X
 @item Canopus Lossless Codec @tab     @tab  X
 @item CDToons                @tab     @tab  X
     @tab Codec used in various Broderbund games.
@@ -968,6 +982,7 @@ following image formats are supported:
 @item MPEG-4 part 2 Microsoft variant version 3  @tab  X  @tab  X
 @item Newtek SpeedHQ               @tab     @tab  X
 @item Nintendo Gamecube THP video  @tab     @tab  X
+@item NotchLC                @tab     @tab  X
 @item NuppelVideo/RTjpeg     @tab     @tab  X
     @tab Video encoding used in NuppelVideo files.
 @item On2 VP3                @tab     @tab  X
@@ -986,8 +1001,6 @@ following image formats are supported:
     @tab encoding supported through external library libvpx
 @item Pinnacle TARGA CineWave YUV16 @tab     @tab  X
     @tab fourcc: Y216
-@item Prores                 @tab     @tab  X
-    @tab fourcc: apch,apcn,apcs,apco
 @item Q-team QPEG            @tab     @tab  X
     @tab fourccs: QPEG, Q1.0, Q1.1
 @item QuickTime 8BPS video   @tab     @tab  X
@@ -1086,7 +1099,8 @@ following image formats are supported:
 @item ACELP.KELVIN           @tab     @tab  X
 @item ADPCM 4X Movie         @tab     @tab  X
 @item APDCM Yamaha AICA      @tab     @tab  X
-@item ADPCM Argonaut Games   @tab     @tab  X
+@item ADPCM AmuseGraphics Movie @tab    @tab  X
+@item ADPCM Argonaut Games   @tab X   @tab  X
 @item ADPCM CDROM XA         @tab     @tab  X
 @item ADPCM Creative Technology @tab     @tab  X
     @tab 16 -> 4, 8 -> 4, 8 -> 3, 8 -> 2
@@ -1108,8 +1122,8 @@ following image formats are supported:
 @item ADPCM IMA Funcom       @tab     @tab  X
 @item ADPCM IMA High Voltage Software ALP   @tab     @tab  X
 @item ADPCM IMA QuickTime    @tab  X  @tab  X
-@item ADPCM IMA Simon & Schuster Interactive   @tab  @tab  X
-@item ADPCM IMA Ubisoft APM  @tab     @tab X
+@item ADPCM IMA Simon & Schuster Interactive   @tab  X  @tab  X
+@item ADPCM IMA Ubisoft APM  @tab  X  @tab  X
 @item ADPCM IMA Loki SDL MJPEG  @tab     @tab  X
 @item ADPCM IMA WAV          @tab  X  @tab  X
 @item ADPCM IMA Westwood     @tab     @tab  X

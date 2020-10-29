@@ -8,18 +8,15 @@
 #include "src/gpu/GrOpsRenderPass.h"
 
 #include "include/core/SkRect.h"
-#include "include/gpu/GrContext.h"
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrCpuBuffer.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrPrimitiveProcessor.h"
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrRenderTargetPriv.h"
 #include "src/gpu/GrScissorState.h"
 #include "src/gpu/GrSimpleMesh.h"
-#include "src/gpu/GrTexturePriv.h"
+#include "src/gpu/GrTexture.h"
 
 void GrOpsRenderPass::begin() {
     fDrawPipelineStatus = DrawPipelineStatus::kNotConfigured;
@@ -111,14 +108,14 @@ void GrOpsRenderPass::bindPipeline(const GrProgramInfo& programInfo, const SkRec
     GrProcessor::CustomFeatures processorFeatures = programInfo.requestedFeatures();
     if (GrProcessor::CustomFeatures::kSampleLocations & processorFeatures) {
         // Verify we always have the same sample pattern key, regardless of graphics state.
-        SkASSERT(this->gpu()->findOrAssignSamplePatternKey(fRenderTarget)
-                         == fRenderTarget->renderTargetPriv().getSamplePatternKey());
+        SkASSERT(this->gpu()->findOrAssignSamplePatternKey(fRenderTarget) ==
+                 fRenderTarget->getSamplePatternKey());
     }
     fScissorStatus = (programInfo.pipeline().isScissorTestEnabled()) ?
             DynamicStateStatus::kUninitialized : DynamicStateStatus::kDisabled;
     bool hasTextures = (programInfo.primProc().numTextureSamplers() > 0);
     if (!hasTextures) {
-        programInfo.pipeline().visitProxies([&hasTextures](GrSurfaceProxy*, GrMipMapped) {
+        programInfo.pipeline().visitProxies([&hasTextures](GrSurfaceProxy*, GrMipmapped) {
             hasTextures = true;
         });
     }
@@ -160,12 +157,11 @@ void GrOpsRenderPass::bindTextures(const GrPrimitiveProcessor& primProc,
 
         const GrTexture* tex = proxy->peekTexture();
         SkASSERT(tex);
-        if (GrSamplerState::Filter::kMipMap == sampler.samplerState().filter() &&
+        if (sampler.samplerState().mipmapped() == GrMipmapped::kYes &&
             (tex->width() != 1 || tex->height() != 1)) {
             // There are some cases where we might be given a non-mipmapped texture with a mipmap
             // filter. See skbug.com/7094.
-            SkASSERT(tex->texturePriv().mipMapped() != GrMipMapped::kYes ||
-                     !tex->texturePriv().mipMapsAreDirty());
+            SkASSERT(tex->mipmapped() != GrMipmapped::kYes || !tex->mipmapsAreDirty());
         }
     }
 #endif
@@ -186,8 +182,10 @@ void GrOpsRenderPass::bindTextures(const GrPrimitiveProcessor& primProc,
     SkDEBUGCODE(fTextureBindingStatus = DynamicStateStatus::kConfigured);
 }
 
-void GrOpsRenderPass::bindBuffers(const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                                  const GrBuffer* vertexBuffer, GrPrimitiveRestart primRestart) {
+void GrOpsRenderPass::bindBuffers(sk_sp<const GrBuffer> indexBuffer,
+                                  sk_sp<const GrBuffer> instanceBuffer,
+                                  sk_sp<const GrBuffer> vertexBuffer,
+                                  GrPrimitiveRestart primRestart) {
     if (DrawPipelineStatus::kOk != fDrawPipelineStatus) {
         SkASSERT(DrawPipelineStatus::kNotConfigured != fDrawPipelineStatus);
         return;
@@ -213,7 +211,8 @@ void GrOpsRenderPass::bindBuffers(const GrBuffer* indexBuffer, const GrBuffer* i
     }
 #endif
 
-    this->onBindBuffers(indexBuffer, instanceBuffer, vertexBuffer, primRestart);
+    this->onBindBuffers(std::move(indexBuffer), std::move(instanceBuffer), std::move(vertexBuffer),
+                        primRestart);
 }
 
 bool GrOpsRenderPass::prepareToDraw() {

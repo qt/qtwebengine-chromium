@@ -264,7 +264,7 @@ class ProgramState final : angle::NonCopyable
     }
     const std::vector<ImageBinding> &getImageBindings() const
     {
-        return mExecutable->getImageBindings();
+        return getExecutable().getImageBindings();
     }
     const sh::WorkGroupSize &getComputeShaderLocalSize() const { return mComputeShaderLocalSize; }
     const RangeUI &getDefaultUniformRange() const { return mExecutable->getDefaultUniformRange(); }
@@ -332,6 +332,42 @@ class ProgramState final : angle::NonCopyable
     // A Program can only either be graphics or compute, but never both, so it
     // can answer isCompute() based on which shaders it has.
     bool isCompute() const { return mExecutable->hasLinkedShaderStage(ShaderType::Compute); }
+
+    const std::string &getLabel() const { return mLabel; }
+    const ShaderMap<bool> &getAttachedShadersMarkedForDetach() const
+    {
+        return mAttachedShadersMarkedForDetach;
+    }
+
+    uint32_t getLocationsUsedForXfbExtension() const { return mLocationsUsedForXfbExtension; }
+
+    const std::vector<GLenum> &getOutputVariableTypes() const { return mOutputVariableTypes; }
+
+    ComponentTypeMask getDrawBufferTypeMask() const { return mDrawBufferTypeMask; }
+
+    bool hasBinaryRetrieveableHint() const { return mBinaryRetrieveableHint; }
+
+    bool isSeparable() const { return mSeparable; }
+
+    PrimitiveMode getGeometryShaderInputPrimitiveType() const
+    {
+        return mGeometryShaderInputPrimitiveType;
+    }
+
+    PrimitiveMode getGeometryShaderOutputPrimitiveType() const
+    {
+        return mGeometryShaderOutputPrimitiveType;
+    }
+
+    int getGeometryShaderInvocations() const { return mGeometryShaderInvocations; }
+
+    int getGeometryShaderMaxVertices() const { return mGeometryShaderMaxVertices; }
+
+    int getDrawIDLocation() const { return mDrawIDLocation; }
+
+    int getBaseVertexLocation() const { return mBaseVertexLocation; }
+
+    int getBaseInstanceLocation() const { return mBaseInstanceLocation; }
 
   private:
     friend class MemoryProgramCache;
@@ -420,7 +456,7 @@ struct ProgramVaryingRef
 
 using ProgramMergedVaryings = std::vector<ProgramVaryingRef>;
 
-class Program final : angle::NonCopyable, public LabeledObject
+class Program final : public LabeledObject, public angle::Subject
 {
   public:
     Program(rx::GLImplFactory *factory, ShaderProgramManager *manager, ShaderProgramID handle);
@@ -704,7 +740,7 @@ class Program final : angle::NonCopyable, public LabeledObject
     const std::vector<ImageBinding> &getImageBindings() const
     {
         ASSERT(!mLinkingState);
-        return mState.mExecutable->getImageBindings();
+        return getExecutable().getImageBindings();
     }
     const sh::WorkGroupSize &getComputeShaderLocalSize() const;
     PrimitiveMode getGeometryShaderInputPrimitiveType() const;

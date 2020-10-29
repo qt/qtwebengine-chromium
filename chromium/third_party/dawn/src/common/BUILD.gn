@@ -84,8 +84,9 @@ config("dawn_internal") {
   }
 
   # Only internal Dawn targets can use this config, this means only targets in
-  # this BUILD.gn file.
-  visibility = [ ":*" ]
+  # this BUILD.gn file and related subdirs.
+  visibility = [ "../*" ]
+
   cflags = []
 
   # Enable more warnings that were found when using Dawn in other projects
@@ -107,6 +108,12 @@ config("dawn_internal") {
       "-Wstrict-prototypes",
       "-Wtautological-unsigned-zero-compare",
     ]
+
+    # Allow comparison against type limits that might be tautological on 32bit
+    # or 64bit systems. Without this the following produces an error on 64bit:
+    #
+    #   if (myUint64 > std::numeric_limits<size_t>::max()) {...}
+    cflags += [ "-Wno-tautological-type-limit-compare" ]
 
     if (is_win) {
       cflags += [
@@ -165,13 +172,17 @@ if (is_win || is_linux || is_mac || is_fuchsia || is_android) {
       "SerialStorage.h",
       "SlabAllocator.cpp",
       "SlabAllocator.h",
+      "StackContainer.h",
       "SwapChainUtils.h",
       "SystemUtils.cpp",
       "SystemUtils.h",
       "TypedInteger.h",
+      "UnderlyingType.h",
       "ityp_array.h",
       "ityp_bitset.h",
       "ityp_span.h",
+      "ityp_stack_vec.h",
+      "ityp_vector.h",
       "vulkan_platform.h",
       "windows_with_undefs.h",
       "xlib_with_undefs.h",

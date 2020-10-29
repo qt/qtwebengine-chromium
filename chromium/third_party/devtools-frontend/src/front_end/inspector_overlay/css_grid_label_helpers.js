@@ -5,6 +5,8 @@
 // @ts-nocheck
 // TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
+import {AreaBounds, Bounds, Position} from './common.js';  // eslint-disable-line no-unused-vars
+
 /**
  * There are 12 different types of arrows for labels.
  *
@@ -50,75 +52,352 @@ const gridPageMargin = 20;
 // The minimum distance (in px) 2 labels can be to eachother. This is set to
 // allow 2 consecutive 2-digits labels to not overlap.
 const gridLabelDistance = 20;
+// The maximum number of custom line names that can be displayed in a label.
+const maxLineNamesCount = 3;
 
 /** @typedef {!{contentTop: number, contentLeft: number}} */
 let GridLabelPositions;  // eslint-disable-line no-unused-vars
 
+/** @typedef {!{positions: Position[], hasFirst: boolean, hasLast: boolean, names?: string[][]}} */
+let PositionData;  // eslint-disable-line no-unused-vars
+
+/** @typedef {!{positive: PositionData, negative: PositionData}} */
+let TracksPositionData;  // eslint-disable-line no-unused-vars
+
+/** @typedef {!{rows: TracksPositionData, columns: TracksPositionData, bounds: Bounds}} */
+let GridPositionNormalizedData;  // eslint-disable-line no-unused-vars
+
+/** @typedef {!{computedSize: number, x: number, y: number}} */
+let TrackSize;  // eslint-disable-line no-unused-vars
+
+/** @typedef {!{
+ * rotationAngle?: number,
+ * columnTrackSizes?: TrackSize[],
+ * rowTrackSizes?: TrackSize[],
+ * positiveRowLineNumberPositions?: Position[],
+ * negativeRowLineNumberPositions?: Position[],
+ * positiveColumnLineNumberPositions?: Position[],
+ * negativeColumnLineNumberPositions?: Position[],
+ * rowLineNameOffsets?: {name: string, x: number, y: number}[],
+ * columnLineNameOffsets?: {name: string, x: number, y: number}[],
+ * gridHighlightConfig?: Object
+ * } */
+let GridHighlightConfig;  // eslint-disable-line no-unused-vars
+
 /**
- * This is a generator function used to iterate over grid line offsets in a way
- * that skips the ones that are too close to eachother, in order to avoid overlaps.
+ * Places all of the required grid labels on the overlay. This includes row and
+ * column line number labels, and area labels.
  *
- * @param {Array} offsets
+ * @param {GridHighlightConfig} config The grid highlight configuration.
+ * @param {Bounds} gridBounds The grid container bounds.
+ * @param {AreaBounds[]} areaBounds The list of named grid areas with their bounds.
  */
-function* offsetIterator(offsets) {
-  let lastEmittedOffset = null;
+export function drawGridLabels(config, gridBounds, areaBounds) {
+  // Find and clear the layer for the node specified in the config, or the default layer:
+  // Each node has a layer for grid labels in order to draw multiple grid highlights
+  // at once.
+  const labelContainerId = window._gridLayerCounter ? `grid-${window._gridLayerCounter++}-labels` : 'grid-labels';
+  let labelContainerForNode = document.getElementById(labelContainerId);
+  if (!labelContainerForNode) {
+    const mainLabelLayerContainer = document.getElementById('grid-label-container');
+    labelContainerForNode = mainLabelLayerContainer.createChild('div');
+    labelContainerForNode.id = labelContainerId;
+  }
+  labelContainerForNode.removeChildren();
 
-  for (const [i, offset] of offsets.entries()) {
-    // Only emit the offset if this is the first.
-    const isFirst = i === 0;
-    // Or if this is the last.
-    const isLast = i === offsets.length - 1;
-    // Or if there is some minimum distance between the last emitted offset.
-    const isFarEnoughFromPrevious = offset - lastEmittedOffset > gridLabelDistance;
-    // And if there is also some minium distance from the very last offset.
-    const isFarEnoughFromLast = !isLast && offsets[offsets.length - 1] - offset > gridLabelDistance;
+  // Add the containers for the line and area to the node's layer
+  const areaNameContainer = labelContainerForNode.createChild('div', 'area-names');
+  const lineNameContainer = labelContainerForNode.createChild('div', 'line-names');
+  const lineNumberContainer = labelContainerForNode.createChild('div', 'line-numbers');
+  const trackSizesContainer = labelContainerForNode.createChild('div', 'track-sizes');
 
-    if (isFirst || isLast || (isFarEnoughFromPrevious && isFarEnoughFromLast)) {
-      yield [i, offset];
-      lastEmittedOffset = offset;
-    }
+  // Draw line numbers and names.
+  const normalizedData = _normalizePositionData(config, gridBounds);
+  if (config.gridHighlightConfig.showLineNames) {
+    drawGridLineNames(lineNameContainer, normalizedData);
+  } else {
+    drawGridLineNumbers(lineNumberContainer, normalizedData);
+  }
+
+  // Draw area names.
+  drawGridAreaNames(areaNameContainer, areaBounds);
+
+  if (config.columnTrackSizes) {
+    // Draw column sizes.
+    drawGridTrackSizes(trackSizesContainer, config.rotationAngle, config.columnTrackSizes, 'column');
+  }
+  if (config.rowTrackSizes) {
+    // Draw row sizes.
+    drawGridTrackSizes(trackSizesContainer, config.rotationAngle, config.rowTrackSizes, 'row');
   }
 }
 
 /**
- * Places the grid row and column labels on the overlay.
- * Currently only positive labels are supported.
+ * This is a generator function used to iterate over grid label positions in a way
+ * that skips the ones that are too close to eachother, in order to avoid overlaps.
  *
- * @param {Object} config
- * @param {Object} bounds
+ * @param {Position[]} positions
+ * @param {string} axis - 'x' or 'y' in Position
  */
-export function drawGridNumbers(config, bounds) {
-  const labelContainer = document.getElementById('grid-label-container');
-  labelContainer.removeChildren();
+function* positionIterator(positions, axis) {
+  let lastEmittedPos = null;
 
-  if (config.gridHighlightConfig.showPositiveLineNumbers && config.positiveColumnLineNumberOffsets) {
-    for (const [i, offset] of offsetIterator(config.positiveColumnLineNumberOffsets)) {
-      const element = _createLabelElement(labelContainer, i + 1);
-      _placePositiveColumnLabel(element, offset, config, bounds);
+  for (const [i, pos] of positions.entries()) {
+    // Only emit the position if this is the first.
+    const isFirst = i === 0;
+    // Or if this is the last.
+    const isLast = i === positions.length - 1;
+    // Or if there is some minimum distance between the last emitted position.
+    const isFarEnoughFromPrevious = pos[axis] - (lastEmittedPos ? lastEmittedPos[axis] : 0) > gridLabelDistance;
+    // And if there is also some minium distance from the very last position.
+    const isFarEnoughFromLast = !isLast && positions[positions.length - 1][axis] - pos[axis] > gridLabelDistance;
+
+    if (isFirst || isLast || (isFarEnoughFromPrevious && isFarEnoughFromLast)) {
+      yield [i, pos];
+      lastEmittedPos = pos;
+    }
+  }
+}
+
+const last = array => array[array.length - 1];
+const first = array => array[0];
+
+/**
+ * Massage the list of line name positions given by the backend for easier consumption.
+ *
+ * @param {!{name: string, x: number, y: number}[]} namePositions
+ * @return {!{positions: {x: number, y: number}[], names: string[][]}}
+ */
+function _normalizeNameData(namePositions) {
+  const positions = [];
+  const names = [];
+
+  for (const {name, x, y} of namePositions) {
+    const normalizedX = Math.round(x);
+    const normalizedY = Math.round(y);
+
+    // If the same position already exists, just add the name to the existing entry, as there can be
+    // several custom names for a single line.
+    const existingIndex = positions.findIndex(({x, y}) => x === normalizedX && y === normalizedY);
+    if (existingIndex > -1) {
+      names[existingIndex].push(name);
+    } else {
+      positions.push({x: normalizedX, y: normalizedY});
+      names.push([name]);
     }
   }
 
-  if (config.gridHighlightConfig.showPositiveLineNumbers && config.positiveRowLineNumberOffsets) {
-    for (const [i, offset] of offsetIterator(config.positiveRowLineNumberOffsets)) {
-      const element = _createLabelElement(labelContainer, i + 1);
-      _placePositiveRowLabel(element, offset, config, bounds);
+  return {positions, names};
+}
+
+/**
+ * Take the highlight config and bound objects in, and spits out an object with
+ * the same information, but with 2 key differences:
+ * - the information is organized in a way that makes the rest of the code more
+ *   readable
+ * - all pixel values are rounded to integers in order to safely compare
+ *   positions (on high-dpi monitors floats are passed by the backend, this means
+ *   checking if a position is at either edges of the container can't be done).
+ *
+ * @param {GridHighlightConfig} config The highlight config object from the backend
+ * @param {Bounds} bounds The bounds of the grid container
+ * @return {GridPositionNormalizedData} The new, normalized, data object
+ */
+export function _normalizePositionData(config, bounds) {
+  const width = Math.round(bounds.maxX - bounds.minX);
+  const height = Math.round(bounds.maxY - bounds.minY);
+
+  const data = {
+    rows: {
+      positive: {positions: [], hasFirst: false, hasLast: false},
+      negative: {positions: [], hasFirst: false, hasLast: false},
+    },
+    columns: {
+      positive: {positions: [], hasFirst: false, hasLast: false},
+      negative: {positions: [], hasFirst: false, hasLast: false},
+    },
+    bounds: {
+      minX: Math.round(bounds.minX),
+      maxX: Math.round(bounds.maxX),
+      minY: Math.round(bounds.minY),
+      maxY: Math.round(bounds.maxY),
+      width,
+      height,
+    }
+  };
+
+  // Line numbers and line names can't be shown together at once for now.
+  // If showLineNames is set to true, then don't show line numbers, even if the
+  // data is present.
+
+  if (config.gridHighlightConfig.showLineNames) {
+    const rowData = _normalizeNameData(config.rowLineNameOffsets);
+    data.rows.positive = {
+      positions: rowData.positions,
+      names: rowData.names,
+      hasFirst: rowData.positions.length && first(rowData.positions).y === data.bounds.minY,
+      hasLast: rowData.positions.length && last(rowData.positions).y === data.bounds.maxY
+    };
+
+    const columnData = _normalizeNameData(config.columnLineNameOffsets);
+    data.columns.positive = {
+      positions: columnData.positions,
+      names: columnData.names,
+      hasFirst: columnData.positions.length && first(columnData.positions).x === data.bounds.minX,
+      hasLast: columnData.positions.length && last(columnData.positions).x === data.bounds.maxX
+    };
+  } else {
+    const normalizeXY = ({x, y}) => ({x: Math.round(x), y: Math.round(y)});
+    // TODO (alexrudenko): hasFirst & hasLast checks won't probably work for rotated grids.
+    if (config.positiveRowLineNumberPositions) {
+      data.rows.positive = {
+        positions: config.positiveRowLineNumberPositions.map(normalizeXY),
+        hasFirst: Math.round(first(config.positiveRowLineNumberPositions).y) === data.bounds.minY,
+        hasLast: Math.round(last(config.positiveRowLineNumberPositions).y) === data.bounds.maxY,
+      };
+    }
+
+    if (config.negativeRowLineNumberPositions) {
+      data.rows.negative = {
+        positions: config.negativeRowLineNumberPositions.map(normalizeXY),
+        hasFirst: Math.round(first(config.negativeRowLineNumberPositions).y) === data.bounds.minY,
+        hasLast: Math.round(last(config.negativeRowLineNumberPositions).y) === data.bounds.maxY
+      };
+    }
+
+    if (config.positiveColumnLineNumberPositions) {
+      data.columns.positive = {
+        positions: config.positiveColumnLineNumberPositions.map(normalizeXY),
+        hasFirst: Math.round(first(config.positiveColumnLineNumberPositions).x) === data.bounds.minX,
+        hasLast: Math.round(last(config.positiveColumnLineNumberPositions).x) === data.bounds.maxX
+      };
+    }
+
+    if (config.negativeColumnLineNumberPositions) {
+      data.columns.negative = {
+        positions: config.negativeColumnLineNumberPositions.map(normalizeXY),
+        hasFirst: Math.round(first(config.negativeColumnLineNumberPositions).x) === data.bounds.minX,
+        hasLast: Math.round(last(config.negativeColumnLineNumberPositions).x) === data.bounds.maxX
+      };
     }
   }
 
-  if (config.gridHighlightConfig.showNegativeLineNumbers && config.negativeColumnLineNumberOffsets) {
-    for (const [i, offset] of offsetIterator(config.negativeColumnLineNumberOffsets)) {
-      // Negative offsets are sorted such that the first offset corresponds to the line closest to start edge of the grid.
-      const element = _createLabelElement(labelContainer, config.negativeColumnLineNumberOffsets.length * -1 + i);
-      _placeNegativeColumnLabel(element, offset, config, bounds);
+  return data;
+}
+
+/**
+ * Places the grid row and column number labels on the overlay.
+ *
+ * @param {HTMLElement} container
+ * @param {GridPositionNormalizedData} data
+ */
+export function drawGridLineNumbers(container, data) {
+  if (!data.columns.positive.names) {
+    for (const [i, pos] of positionIterator(data.columns.positive.positions, 'x')) {
+      const element = _createLabelElement(container, (i + 1).toString());
+      _placePositiveColumnLabel(element, pos, data);
     }
   }
 
-  if (config.gridHighlightConfig.showNegativeLineNumbers && config.negativeRowLineNumberOffsets) {
-    for (const [i, offset] of offsetIterator(config.negativeRowLineNumberOffsets)) {
-      // Negative offsets are sorted such that the first offset corresponds to the line closest to start edge of the grid.
-      const element = _createLabelElement(labelContainer, config.negativeRowLineNumberOffsets.length * -1 + i);
-      _placeNegativeRowLabel(element, offset, config, bounds);
+  if (!data.rows.positive.names) {
+    for (const [i, pos] of positionIterator(data.rows.positive.positions, 'y')) {
+      const element = _createLabelElement(container, (i + 1).toString());
+      _placePositiveRowLabel(element, pos, data);
     }
+  }
+
+  for (const [i, pos] of positionIterator(data.columns.negative.positions, 'x')) {
+    // Negative positions are sorted such that the first position corresponds to the line closest to start edge of the grid.
+    const element = _createLabelElement(container, (data.columns.negative.positions.length * -1 + i).toString());
+    _placeNegativeColumnLabel(element, pos, data);
+  }
+
+  for (const [i, pos] of positionIterator(data.rows.negative.positions, 'y')) {
+    // Negative positions are sorted such that the first position corresponds to the line closest to start edge of the grid.
+    const element = _createLabelElement(container, (data.rows.negative.positions.length * -1 + i).toString());
+    _placeNegativeRowLabel(element, pos, data);
+  }
+}
+
+/**
+ * Places the grid track size labels on the overlay.
+ *
+ * @param {HTMLElement} container
+ * @param {number} rotationAngle
+ * @param {!Array<TrackSize>} trackSizes
+ * @param {string} direction
+ */
+export function drawGridTrackSizes(container, rotationAngle, trackSizes, direction) {
+  for (const {x, y, computedSize, authoredSize} of trackSizes) {
+    const size = computedSize.toFixed(2);
+    const formattedComputed = `${size.endsWith('.00') ? size.slice(0, -3) : size}px`;
+    const element = _createLabelElement(container, `${authoredSize ? authoredSize + '·' : ''}${formattedComputed}`);
+    const labelWidth = _getAdjustedLabelWidth(element);
+    const labelHeight = element.getBoundingClientRect().height;
+
+    const flipIn = direction === 'column' ? y < gridPageMargin : x - labelWidth < gridPageMargin;
+    const arrowType =
+        _flipArrowTypeIfNeeded(direction === 'column' ? GridArrowTypes.bottomMid : GridArrowTypes.rightMid, flipIn);
+    const {contentLeft, contentTop} = _getLabelPositionByArrowType(arrowType, x, y, labelWidth, labelHeight);
+    element.classList.add(arrowType);
+    element.style.left = contentLeft + 'px';
+    element.style.top = contentTop + 'px';
+  }
+}
+
+/**
+ * Places the grid row and column name labels on the overlay.
+ *
+ * @param {HTMLElement} container
+ * @param {GridPositionNormalizedData} data
+ */
+export function drawGridLineNames(container, data) {
+  for (const [i, pos] of data.columns.positive.positions.entries()) {
+    const names = data.columns.positive.names[i];
+    const element = _createLabelElement(container, _makeLineNameLabelContent(names));
+    _placePositiveColumnLabel(element, pos, data);
+  }
+
+  for (const [i, pos] of data.rows.positive.positions.entries()) {
+    const names = data.rows.positive.names[i];
+    const element = _createLabelElement(container, _makeLineNameLabelContent(names));
+    _placePositiveRowLabel(element, pos, data);
+  }
+}
+
+/**
+ * Turn an array of custom line names into DOM content that can be used in a label.
+ *
+ * @param {string[]} names
+ * @return {HTMLElement}
+ */
+function _makeLineNameLabelContent(names) {
+  const content = document.createElement('ul');
+  const namesToDisplay = names.slice(0, maxLineNamesCount);
+
+  for (const name of namesToDisplay) {
+    content.createChild('li', 'line-name').textContent = name;
+  }
+
+  return content;
+}
+
+/**
+ * Places the grid area name labels on the overlay.
+ *
+ * @param {HTMLElement} container
+ * @param {AreaBounds[]} areaBounds
+ */
+export function drawGridAreaNames(container, areaBounds) {
+  for (const {name, bounds} of areaBounds) {
+    const element = _createLabelElement(container, name);
+
+    // The list of all points comes from the path created by the backend. This
+    // path is a rectangle with its starting point being the top left corner.
+    const topLeftCorner = bounds.allPoints[0];
+
+    element.style.left = topLeftCorner.x + 'px';
+    element.style.top = topLeftCorner.y + 'px';
   }
 }
 
@@ -126,13 +405,19 @@ export function drawGridNumbers(config, bounds) {
  * Create the necessary DOM for a single label element.
  *
  * @param {HTMLElement} container The DOM element where to append the label
- * @param {string} textContent The text to display in the label
- * @return {HTMLElement} The new label element
+ * @param {string|HTMLElement} textContent The text, or DOM node to display in the label
+ * @return {Element} The new label element
  */
 function _createLabelElement(container, textContent) {
   const wrapper = container.createChild('div');
   const element = wrapper.createChild('div', 'grid-label-content');
-  element.textContent = textContent.toString();
+
+  if (typeof textContent === 'string') {
+    element.textContent = textContent;
+  } else {
+    element.appendChild(textContent);
+  }
+
   return element;
 }
 
@@ -140,18 +425,14 @@ function _createLabelElement(container, textContent) {
  * Determine the position of a positive row label, and place it.
  *
  * @param {HTMLElement} element The label DOM element
- * @param {number} offset The corresponding grid line offset
- * @param {Object} config The grid highlight config object
- * @param {object} bounbds The grid bounds
+ * @param {Position} pos The corresponding grid line position
+ * @param {GridPositionNormalizedData} data The normalized position data
  */
-function _placePositiveRowLabel(element, offset, config, bounds) {
-  const x = bounds.minX;
-  const y = bounds.minY + offset;
-  const isAtSharedStartCorner = offset === 0 && config.gridHighlightConfig.showPositiveLineNumbers &&
-      config.positiveColumnLineNumberOffsets && config.positiveColumnLineNumberOffsets[0] === 0;
-  const isAtSharedEndCorner = offset === bounds.maxY - bounds.minY &&
-      config.gridHighlightConfig.showNegativeLineNumbers && config.negativeColumnLineNumberOffsets &&
-      config.negativeColumnLineNumberOffsets[0] === 0;
+function _placePositiveRowLabel(element, pos, data) {
+  const x = pos.x;
+  const y = pos.y;
+  const isAtSharedStartCorner = y === data.bounds.minY && data.columns && data.columns.positive.hasFirst;
+  const isAtSharedEndCorner = y === data.bounds.maxY && data.columns && data.columns.negative.hasFirst;
   const isTooCloseToViewportStart = y < gridPageMargin;
   const isTooCloseToViewportEnd = canvasHeight - y < gridPageMargin;
   const flipIn = x < gridPageMargin;
@@ -168,28 +449,21 @@ function _placePositiveRowLabel(element, offset, config, bounds) {
   }
   arrowType = _flipArrowTypeIfNeeded(arrowType, flipIn);
 
-  _placeLabel(element, arrowType, x, y);
+  _placeLineNumberLabel(element, arrowType, x, y);
 }
 
 /**
  * Determine the position of a negative row label, and place it.
  *
  * @param {HTMLElement} element The label DOM element
- * @param {number} offset The corresponding grid line offset
- * @param {Object} config The grid highlight config object
- * @param {object} bounbds The grid bounds
+ * @param {Position} pos The corresponding grid line position
+ * @param {GridPositionNormalizedData} data The normalized position data
  */
-function _placeNegativeRowLabel(element, offset, config, bounds) {
-  const x = bounds.maxX;
-  const y = bounds.minY + offset;
-  const isAtSharedStartCorner = offset === 0 && config.gridHighlightConfig.showPositiveLineNumbers &&
-      config.positiveColumnLineNumberOffsets &&
-      config.positiveColumnLineNumberOffsets[config.positiveColumnLineNumberOffsets.length - 1] ===
-          bounds.maxX - bounds.minX;
-  const isAtSharedEndCorner = offset === bounds.maxY - bounds.minY &&
-      config.gridHighlightConfig.showNegativeLineNumbers && config.negativeColumnLineNumberOffsets &&
-      config.negativeColumnLineNumberOffsets[config.negativeColumnLineNumberOffsets.length - 1] ===
-          bounds.maxX - bounds.minX;
+function _placeNegativeRowLabel(element, pos, data) {
+  const x = pos.x;
+  const y = pos.y;
+  const isAtSharedStartCorner = y === data.bounds.minY && data.columns && data.columns.positive.hasLast;
+  const isAtSharedEndCorner = y === data.bounds.maxY && data.columns && data.columns.negative.hasLast;
   const isTooCloseToViewportStart = y < gridPageMargin;
   const isTooCloseToViewportEnd = canvasHeight - y < gridPageMargin;
   const flipIn = canvasWidth - x < gridPageMargin;
@@ -206,25 +480,21 @@ function _placeNegativeRowLabel(element, offset, config, bounds) {
   }
   arrowType = _flipArrowTypeIfNeeded(arrowType, flipIn);
 
-  _placeLabel(element, arrowType, x, y);
+  _placeLineNumberLabel(element, arrowType, x, y);
 }
 
 /**
  * Determine the position of a positive column label, and place it.
  *
  * @param {HTMLElement} element The label DOM element
- * @param {number} offset The corresponding grid line offset
- * @param {Object} config The grid highlight config object
- * @param {object} bounbds The grid bounds
+ * @param {Position} pos The corresponding grid line position
+ * @param {GridPositionNormalizedData} data The normalized position data
  */
-function _placePositiveColumnLabel(element, offset, config, bounds) {
-  const x = bounds.minX + offset;
-  const y = bounds.minY;
-  const isAtSharedStartCorner = offset === 0 && config.gridHighlightConfig.showPositiveLineNumbers &&
-      config.positiveRowLineNumberOffsets && config.positiveRowLineNumberOffsets[0] === 0;
-  const isAtSharedEndCorner = offset === bounds.maxX - bounds.minX &&
-      config.gridHighlightConfig.showNegativeLineNumbers && config.negativeRowLineNumberOffsets &&
-      config.negativeRowLineNumberOffsets[0] === 0;
+function _placePositiveColumnLabel(element, pos, data) {
+  const x = pos.x;
+  const y = pos.y;
+  const isAtSharedStartCorner = x === data.bounds.minX && data.rows && data.rows.positive.hasFirst;
+  const isAtSharedEndCorner = x === data.bounds.maxX && data.rows && data.rows.negative.hasFirst;
   const isTooCloseToViewportStart = x < gridPageMargin;
   const isTooCloseToViewportEnd = canvasWidth - x < gridPageMargin;
   const flipIn = y < gridPageMargin;
@@ -241,26 +511,21 @@ function _placePositiveColumnLabel(element, offset, config, bounds) {
   }
   arrowType = _flipArrowTypeIfNeeded(arrowType, flipIn);
 
-  _placeLabel(element, arrowType, x, y);
+  _placeLineNumberLabel(element, arrowType, x, y);
 }
 
 /**
  * Determine the position of a negative column label, and place it.
  *
  * @param {HTMLElement} element The label DOM element
- * @param {number} offset The corresponding grid line offset
- * @param {Object} config The grid highlight config object
- * @param {object} bounbds The grid bounds
+ * @param {Position} pos The corresponding grid line position
+ * @param {GridPositionNormalizedData} data The normalized position data
  */
-function _placeNegativeColumnLabel(element, offset, config, bounds) {
-  const x = bounds.minX + offset;
-  const y = bounds.maxY;
-  const isAtSharedStartCorner = offset === 0 && config.gridHighlightConfig.showPositiveLineNumbers &&
-      config.positiveRowLineNumberOffsets &&
-      config.positiveRowLineNumberOffsets[config.positiveRowLineNumberOffsets.length - 1] === bounds.maxY - bounds.minY;
-  const isAtSharedEndCorner = offset === bounds.maxX - bounds.minX &&
-      config.gridHighlightConfig.showNegativeLineNumbers && config.negativeRowLineNumberOffsets &&
-      config.negativeRowLineNumberOffsets[config.negativeRowLineNumberOffsets.length - 1] === bounds.maxY - bounds.minY;
+function _placeNegativeColumnLabel(element, pos, data) {
+  const x = pos.x;
+  const y = pos.y;
+  const isAtSharedStartCorner = x === data.bounds.minX && data.rows && data.rows.positive.hasLast;
+  const isAtSharedEndCorner = x === data.bounds.maxX && data.rows && data.rows.negative.hasLast;
   const isTooCloseToViewportStart = x < gridPageMargin;
   const isTooCloseToViewportEnd = canvasWidth - x < gridPageMargin;
   const flipIn = canvasHeight - y < gridPageMargin;
@@ -277,12 +542,12 @@ function _placeNegativeColumnLabel(element, offset, config, bounds) {
   }
   arrowType = _flipArrowTypeIfNeeded(arrowType, flipIn);
 
-  _placeLabel(element, arrowType, x, y);
+  _placeLineNumberLabel(element, arrowType, x, y);
 }
 
 /**
- * Correctly place a label element in the page. The given coordinates are the
- * ones where the arrow of the label needs to point.
+ * Correctly place a line number label element in the page. The given
+ * coordinates are the ones where the arrow of the label needs to point.
  * Therefore, the width of the text in the label, and the position of the arrow
  * relative to the label are taken into account here to calculate the final x
  * and y coordinates of the label DOM element.
@@ -292,7 +557,7 @@ function _placeNegativeColumnLabel(element, offset, config, bounds) {
  * @param {number} x Where to place the label on the x axis
  * @param {number} y Where to place the label on the y axis
  */
-function _placeLabel(element, arrowType, x, y) {
+function _placeLineNumberLabel(element, arrowType, x, y) {
   const labelWidth = _getAdjustedLabelWidth(element);
   const labelHeight = element.getBoundingClientRect().height;
   const {contentLeft, contentTop} = _getLabelPositionByArrowType(arrowType, x, y, labelWidth, labelHeight);

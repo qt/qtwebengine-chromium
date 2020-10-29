@@ -31,7 +31,7 @@ namespace dawn_wire { namespace client {
         mDefaultQueue = allocation->object.get();
 
         DeviceGetDefaultQueueCmd cmd;
-        cmd.self = reinterpret_cast<WGPUDevice>(this);
+        cmd.self = ToAPI(this);
         cmd.result = ObjectHandle{allocation->object->id, allocation->generation};
 
         mClient->SerializeCommand(cmd);
@@ -85,13 +85,13 @@ namespace dawn_wire { namespace client {
         mErrorScopeStackSize++;
 
         DevicePushErrorScopeCmd cmd;
-        cmd.self = reinterpret_cast<WGPUDevice>(this);
+        cmd.self = ToAPI(this);
         cmd.filter = filter;
 
         mClient->SerializeCommand(cmd);
     }
 
-    bool Device::RequestPopErrorScope(WGPUErrorCallback callback, void* userdata) {
+    bool Device::PopErrorScope(WGPUErrorCallback callback, void* userdata) {
         if (mErrorScopeStackSize == 0) {
             return false;
         }
@@ -103,7 +103,7 @@ namespace dawn_wire { namespace client {
         mErrorScopes[serial] = {callback, userdata};
 
         DevicePopErrorScopeCmd cmd;
-        cmd.device = reinterpret_cast<WGPUDevice>(this);
+        cmd.device = ToAPI(this);
         cmd.requestSerial = serial;
 
         mClient->SerializeCommand(cmd);
@@ -111,7 +111,9 @@ namespace dawn_wire { namespace client {
         return true;
     }
 
-    bool Device::PopErrorScope(uint64_t requestSerial, WGPUErrorType type, const char* message) {
+    bool Device::OnPopErrorScopeCallback(uint64_t requestSerial,
+                                         WGPUErrorType type,
+                                         const char* message) {
         switch (type) {
             case WGPUErrorType_NoError:
             case WGPUErrorType_Validation:
@@ -135,9 +137,38 @@ namespace dawn_wire { namespace client {
         return true;
     }
 
+    void Device::InjectError(WGPUErrorType type, const char* message) {
+        DeviceInjectErrorCmd cmd;
+        cmd.self = ToAPI(this);
+        cmd.type = type;
+        cmd.message = message;
+        mClient->SerializeCommand(cmd);
+    }
+
+    WGPUBuffer Device::CreateBuffer(const WGPUBufferDescriptor* descriptor) {
+        return Buffer::Create(this, descriptor);
+    }
+
+    WGPUCreateBufferMappedResult Device::CreateBufferMapped(
+        const WGPUBufferDescriptor* descriptor) {
+        WGPUBufferDescriptor descMappedAtCreation = *descriptor;
+        descMappedAtCreation.mappedAtCreation = true;
+
+        WGPUCreateBufferMappedResult result;
+        result.buffer = CreateBuffer(&descMappedAtCreation);
+        result.data = FromAPI(result.buffer)->GetMappedRange(0, descriptor->size);
+        result.dataLength = result.data == nullptr ? 0 : descriptor->size;
+
+        return result;
+    }
+
+    WGPUBuffer Device::CreateErrorBuffer() {
+        return Buffer::CreateError(this);
+    }
+
     WGPUQueue Device::GetDefaultQueue() {
         mDefaultQueue->refcount++;
-        return reinterpret_cast<WGPUQueue>(mDefaultQueue);
+        return ToAPI(mDefaultQueue);
     }
 
 }}  // namespace dawn_wire::client

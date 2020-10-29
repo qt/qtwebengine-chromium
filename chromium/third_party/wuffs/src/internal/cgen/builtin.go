@@ -150,7 +150,7 @@ func (g *gen) ioRecvName(recv *a.Expr) (string, error) {
 
 func (g *gen) writeBuiltinIO(b *buffer, recv *a.Expr, method t.ID, args []*a.Node, depth uint32) error {
 	switch method {
-	case t.IDAvailable:
+	case t.IDLength:
 		name, err := g.ioRecvName(recv)
 		if err != nil {
 			return err
@@ -168,6 +168,20 @@ func (g *gen) writeBuiltinIOReader(b *buffer, recv *a.Expr, method t.ID, args []
 	}
 
 	switch method {
+	case t.IDValidUTF8Length:
+		name, err := g.ioRecvName(recv)
+		if err != nil {
+			return err
+		}
+		b.printf("((uint64_t)(wuffs_base__utf_8__longest_valid_prefix(%s%s,\n"+
+			"((size_t)(wuffs_base__u64__min(((uint64_t)(%s%s - %s%s)), ",
+			iopPrefix, name, io2Prefix, name, iopPrefix, name)
+		if err := g.writeExpr(b, args[0].AsArg().Value(), depth); err != nil {
+			return err
+		}
+		b.writes("))))))")
+		return nil
+
 	case t.IDUndoByte:
 		b.printf("(%s%s--, wuffs_base__make_empty_struct())", iopPrefix, name)
 		return nil
@@ -314,7 +328,7 @@ func (g *gen) writeBuiltinIOWriter(b *buffer, recv *a.Expr, method t.ID, args []
 		b.printf(", ((uint64_t)(%s%s - %s%s)))", iopPrefix, name, io0Prefix, name)
 		return nil
 
-	case t.IDHistoryAvailable, t.IDMark:
+	case t.IDHistoryLength, t.IDMark:
 		b.printf("((uint64_t)(%s%s - %s%s))", iopPrefix, name, io0Prefix, name)
 		return nil
 
@@ -356,29 +370,39 @@ func (g *gen) writeBuiltinIOWriter(b *buffer, recv *a.Expr, method t.ID, args []
 }
 
 func (g *gen) writeBuiltinTokenWriter(b *buffer, recv *a.Expr, method t.ID, args []*a.Node, depth uint32) error {
-	if method == t.IDWriteSimpleTokenFast {
-		b.printf("*iop_a_dst++ = wuffs_base__make_token(\n(((uint64_t)(")
+	switch method {
+	case t.IDWriteSimpleTokenFast, t.IDWriteExtendedTokenFast:
+		b.printf("*iop_a_dst++ = wuffs_base__make_token(\n")
 
-		if cv := args[0].AsArg().Value().ConstValue(); (cv == nil) || (cv.Sign() != 0) {
+		if method == t.IDWriteSimpleTokenFast {
+			b.writes("(((uint64_t)(")
+			if cv := args[0].AsArg().Value().ConstValue(); (cv == nil) || (cv.Sign() != 0) {
+				if err := g.writeExpr(b, args[0].AsArg().Value(), depth); err != nil {
+					return err
+				}
+				b.writes(")) << WUFFS_BASE__TOKEN__VALUE_MAJOR__SHIFT) |\n(((uint64_t)(")
+			}
+
+			if err := g.writeExpr(b, args[1].AsArg().Value(), depth); err != nil {
+				return err
+			}
+			b.writes(")) << WUFFS_BASE__TOKEN__VALUE_MINOR__SHIFT) |\n(((uint64_t)(")
+		} else {
+			b.writes("(~")
 			if err := g.writeExpr(b, args[0].AsArg().Value(), depth); err != nil {
 				return err
 			}
-			b.writes(")) << WUFFS_BASE__TOKEN__VALUE_MAJOR__SHIFT) |\n(((uint64_t)(")
+			b.writes(" << WUFFS_BASE__TOKEN__VALUE_EXTENSION__SHIFT) |\n(((uint64_t)(")
 		}
 
-		if err := g.writeExpr(b, args[1].AsArg().Value(), depth); err != nil {
-			return err
-		}
-		b.writes(")) << WUFFS_BASE__TOKEN__VALUE_MINOR__SHIFT) |\n(((uint64_t)(")
-
-		if cv := args[2].AsArg().Value().ConstValue(); (cv == nil) || (cv.Sign() != 0) {
-			if err := g.writeExpr(b, args[2].AsArg().Value(), depth); err != nil {
+		if cv := args[len(args)-2].AsArg().Value().ConstValue(); (cv == nil) || (cv.Sign() != 0) {
+			if err := g.writeExpr(b, args[len(args)-2].AsArg().Value(), depth); err != nil {
 				return err
 			}
 			b.writes(")) << WUFFS_BASE__TOKEN__CONTINUED__SHIFT) |\n(((uint64_t)(")
 		}
 
-		if err := g.writeExpr(b, args[3].AsArg().Value(), depth); err != nil {
+		if err := g.writeExpr(b, args[len(args)-1].AsArg().Value(), depth); err != nil {
 			return err
 		}
 		b.writes(")) << WUFFS_BASE__TOKEN__LENGTH__SHIFT))")

@@ -27,7 +27,6 @@
 #include "api/video_codecs/vp8_temporal_layers.h"
 #include "api/video_codecs/vp8_temporal_layers_factory.h"
 #include "call/adaptation/test/fake_adaptation_constraint.h"
-#include "call/adaptation/test/fake_adaptation_listener.h"
 #include "call/adaptation/test/fake_resource.h"
 #include "common_video/h264/h264_common.h"
 #include "common_video/include/video_frame_buffer.h"
@@ -39,6 +38,7 @@
 #include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/ref_counted_object.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 #include "system_wrappers/include/sleep.h"
@@ -139,14 +139,14 @@ class CpuOveruseDetectorProxy : public OveruseFrameDetector {
   virtual ~CpuOveruseDetectorProxy() {}
 
   void OnTargetFramerateUpdated(int framerate_fps) override {
-    rtc::CritScope cs(&lock_);
+    MutexLock lock(&lock_);
     last_target_framerate_fps_ = framerate_fps;
     OveruseFrameDetector::OnTargetFramerateUpdated(framerate_fps);
     framerate_updated_event_.Set();
   }
 
   int GetLastTargetFramerate() {
-    rtc::CritScope cs(&lock_);
+    MutexLock lock(&lock_);
     return last_target_framerate_fps_;
   }
 
@@ -155,37 +155,9 @@ class CpuOveruseDetectorProxy : public OveruseFrameDetector {
   rtc::Event* framerate_updated_event() { return &framerate_updated_event_; }
 
  private:
-  rtc::CriticalSection lock_;
+  Mutex lock_;
   int last_target_framerate_fps_ RTC_GUARDED_BY(lock_);
   rtc::Event framerate_updated_event_;
-};
-
-class FakeQualityScalerQpUsageHandlerCallback
-    : public QualityScalerQpUsageHandlerCallbackInterface {
- public:
-  FakeQualityScalerQpUsageHandlerCallback()
-      : QualityScalerQpUsageHandlerCallbackInterface(),
-        qp_usage_handled_event_(/*manual_reset=*/true,
-                                /*initially_signaled=*/false),
-        clear_qp_samples_result_(absl::nullopt) {}
-  ~FakeQualityScalerQpUsageHandlerCallback() override {
-    RTC_DCHECK(clear_qp_samples_result_.has_value());
-  }
-
-  void OnQpUsageHandled(bool clear_qp_samples) override {
-    clear_qp_samples_result_ = clear_qp_samples;
-    qp_usage_handled_event_.Set();
-  }
-
-  bool WaitForQpUsageHandled() { return qp_usage_handled_event_.Wait(5000); }
-
-  absl::optional<bool> clear_qp_samples_result() const {
-    return clear_qp_samples_result_;
-  }
-
- private:
-  rtc::Event qp_usage_handled_event_;
-  absl::optional<bool> clear_qp_samples_result_;
 };
 
 class FakeVideoSourceRestrictionsListener
@@ -205,7 +177,8 @@ class FakeVideoSourceRestrictionsListener
   void OnVideoSourceRestrictionsUpdated(
       VideoSourceRestrictions restrictions,
       const VideoAdaptationCounters& adaptation_counters,
-      rtc::scoped_refptr<Resource> reason) override {
+      rtc::scoped_refptr<Resource> reason,
+      const VideoSourceRestrictions& unfiltered_restrictions) override {
     was_restrictions_updated_ = true;
     restrictions_updated_event_.Set();
   }
@@ -320,13 +293,11 @@ class VideoStreamEncoderUnderTest : public VideoStreamEncoder {
                            task_queue_factory),
         fake_cpu_resource_(FakeResource::Create("FakeResource[CPU]")),
         fake_quality_resource_(FakeResource::Create("FakeResource[QP]")),
-        fake_adaptation_constraint_("FakeAdaptationConstraint"),
-        fake_adaptation_listener_() {
+        fake_adaptation_constraint_("FakeAdaptationConstraint") {
     InjectAdaptationResource(fake_quality_resource_,
                              VideoAdaptationReason::kQuality);
     InjectAdaptationResource(fake_cpu_resource_, VideoAdaptationReason::kCpu);
     InjectAdaptationConstraint(&fake_adaptation_constraint_);
-    InjectAdaptationListener(&fake_adaptation_listener_);
   }
 
   void SetSourceAndWaitForRestrictionsUpdated(
@@ -413,27 +384,10 @@ class VideoStreamEncoderUnderTest : public VideoStreamEncoder {
     ASSERT_TRUE(event.Wait(5000));
   }
 
-  // Fakes high QP resource usage measurements on the real
-  // QualityScalerResource. Returns whether or not QP samples would have been
-  // cleared if this had been a real signal from the QualityScaler.
-  bool TriggerQualityScalerHighQpAndReturnIfQpSamplesShouldBeCleared() {
-    rtc::scoped_refptr<FakeQualityScalerQpUsageHandlerCallback> callback =
-        new FakeQualityScalerQpUsageHandlerCallback();
-    encoder_queue()->PostTask([this, callback] {
-      // This will cause a "ping" between adaptation task queue and encoder
-      // queue. When we have the result, the |callback| will be notified.
-      quality_scaler_resource_for_testing()->OnReportQpUsageHigh(callback);
-    });
-    EXPECT_TRUE(callback->WaitForQpUsageHandled());
-    EXPECT_TRUE(callback->clear_qp_samples_result().has_value());
-    return callback->clear_qp_samples_result().value();
-  }
-
   CpuOveruseDetectorProxy* overuse_detector_proxy_;
   rtc::scoped_refptr<FakeResource> fake_cpu_resource_;
   rtc::scoped_refptr<FakeResource> fake_quality_resource_;
   FakeAdaptationConstraint fake_adaptation_constraint_;
-  FakeAdaptationListener fake_adaptation_listener_;
 };
 
 class VideoStreamFactory
@@ -498,17 +452,17 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
   ~AdaptingFrameForwarder() override {}
 
   void set_adaptation_enabled(bool enabled) {
-    rtc::CritScope cs(&crit_);
+    MutexLock lock(&mutex_);
     adaptation_enabled_ = enabled;
   }
 
   bool adaption_enabled() const {
-    rtc::CritScope cs(&crit_);
+    MutexLock lock(&mutex_);
     return adaptation_enabled_;
   }
 
   rtc::VideoSinkWants last_wants() const {
-    rtc::CritScope cs(&crit_);
+    MutexLock lock(&mutex_);
     return last_wants_;
   }
 
@@ -557,14 +511,14 @@ class AdaptingFrameForwarder : public test::FrameForwarder {
 
   void AddOrUpdateSink(rtc::VideoSinkInterface<VideoFrame>* sink,
                        const rtc::VideoSinkWants& wants) override {
-    rtc::CritScope cs(&crit_);
+    MutexLock lock(&mutex_);
     last_wants_ = sink_wants_locked();
     adapter_.OnSinkWants(wants);
     test::FrameForwarder::AddOrUpdateSinkLocked(sink, wants);
   }
   cricket::VideoAdapter adapter_;
-  bool adaptation_enabled_ RTC_GUARDED_BY(crit_);
-  rtc::VideoSinkWants last_wants_ RTC_GUARDED_BY(crit_);
+  bool adaptation_enabled_ RTC_GUARDED_BY(mutex_);
+  rtc::VideoSinkWants last_wants_ RTC_GUARDED_BY(mutex_);
   absl::optional<int> last_width_;
   absl::optional<int> last_height_;
 };
@@ -578,30 +532,30 @@ class MockableSendStatisticsProxy : public SendStatisticsProxy {
       : SendStatisticsProxy(clock, config, content_type) {}
 
   VideoSendStream::Stats GetStats() override {
-    rtc::CritScope cs(&lock_);
+    MutexLock lock(&lock_);
     if (mock_stats_)
       return *mock_stats_;
     return SendStatisticsProxy::GetStats();
   }
 
   int GetInputFrameRate() const override {
-    rtc::CritScope cs(&lock_);
+    MutexLock lock(&lock_);
     if (mock_stats_)
       return mock_stats_->input_frame_rate;
     return SendStatisticsProxy::GetInputFrameRate();
   }
   void SetMockStats(const VideoSendStream::Stats& stats) {
-    rtc::CritScope cs(&lock_);
+    MutexLock lock(&lock_);
     mock_stats_.emplace(stats);
   }
 
   void ResetMockStats() {
-    rtc::CritScope cs(&lock_);
+    MutexLock lock(&lock_);
     mock_stats_.reset();
   }
 
  private:
-  rtc::CriticalSection lock_;
+  mutable Mutex lock_;
   absl::optional<VideoSendStream::Stats> mock_stats_ RTC_GUARDED_BY(lock_);
 };
 
@@ -708,6 +662,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
     if (payload_name == "VP9") {
       VideoCodecVP9 vp9_settings = VideoEncoder::GetDefaultVp9Settings();
       vp9_settings.numberOfSpatialLayers = num_spatial_layers;
+      vp9_settings.automaticResizeOn = num_spatial_layers <= 1;
       video_encoder_config.encoder_specific_settings =
           new rtc::RefCountedObject<
               VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9_settings);
@@ -829,17 +784,17 @@ class VideoStreamEncoderTest : public ::testing::Test {
     TestEncoder() : FakeEncoder(Clock::GetRealTimeClock()) {}
 
     VideoCodec codec_config() const {
-      rtc::CritScope lock(&crit_sect_);
+      MutexLock lock(&mutex_);
       return config_;
     }
 
     void BlockNextEncode() {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       block_next_encode_ = true;
     }
 
     VideoEncoder::EncoderInfo GetEncoderInfo() const override {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       EncoderInfo info;
       if (initialized_ == EncoderState::kInitialized) {
         if (quality_scaling_) {
@@ -862,7 +817,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
 
     int32_t RegisterEncodeCompleteCallback(
         EncodedImageCallback* callback) override {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       encoded_image_callback_ = callback;
       return FakeEncoder::RegisterEncodeCompleteCallback(callback);
     }
@@ -871,60 +826,60 @@ class VideoStreamEncoderTest : public ::testing::Test {
 
     void CheckLastTimeStampsMatch(int64_t ntp_time_ms,
                                   uint32_t timestamp) const {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       EXPECT_EQ(timestamp_, timestamp);
       EXPECT_EQ(ntp_time_ms_, ntp_time_ms);
     }
 
     void SetQualityScaling(bool b) {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       quality_scaling_ = b;
     }
 
     void SetRequestedResolutionAlignment(int requested_resolution_alignment) {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       requested_resolution_alignment_ = requested_resolution_alignment;
     }
 
     void SetIsHardwareAccelerated(bool is_hardware_accelerated) {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       is_hardware_accelerated_ = is_hardware_accelerated;
     }
 
     void SetTemporalLayersSupported(size_t spatial_idx, bool supported) {
       RTC_DCHECK_LT(spatial_idx, kMaxSpatialLayers);
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       temporal_layers_supported_[spatial_idx] = supported;
     }
 
     void SetResolutionBitrateLimits(
         std::vector<ResolutionBitrateLimits> thresholds) {
-      rtc::CritScope cs(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       resolution_bitrate_limits_ = thresholds;
     }
 
     void ForceInitEncodeFailure(bool force_failure) {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       force_init_encode_failed_ = force_failure;
     }
 
     void SimulateOvershoot(double rate_factor) {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       rate_factor_ = rate_factor;
     }
 
     uint32_t GetLastFramerate() const {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       return last_framerate_;
     }
 
     VideoFrame::UpdateRect GetLastUpdateRect() const {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       return last_update_rect_;
     }
 
     const std::vector<VideoFrameType>& LastFrameTypes() const {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       return last_frame_types_;
     }
 
@@ -933,27 +888,25 @@ class VideoStreamEncoderTest : public ::testing::Test {
           keyframe ? VideoFrameType::kVideoFrameKey
                    : VideoFrameType::kVideoFrameDelta};
       {
-        rtc::CritScope lock(&local_crit_sect_);
+        MutexLock lock(&local_mutex_);
         last_frame_types_ = frame_type;
       }
       FakeEncoder::Encode(input_image, &frame_type);
     }
 
     void InjectEncodedImage(const EncodedImage& image) {
-      rtc::CritScope lock(&local_crit_sect_);
-      encoded_image_callback_->OnEncodedImage(image, nullptr, nullptr);
+      MutexLock lock(&local_mutex_);
+      encoded_image_callback_->OnEncodedImage(image, nullptr);
     }
 
-    void InjectEncodedImage(const EncodedImage& image,
-                            const CodecSpecificInfo* codec_specific_info,
-                            const RTPFragmentationHeader* fragmentation) {
-      rtc::CritScope lock(&local_crit_sect_);
-      encoded_image_callback_->OnEncodedImage(image, codec_specific_info,
-                                              fragmentation);
+    void SetEncodedImageData(
+        rtc::scoped_refptr<EncodedImageBufferInterface> encoded_image_data) {
+      MutexLock lock(&local_mutex_);
+      encoded_image_data_ = encoded_image_data;
     }
 
     void ExpectNullFrame() {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       expect_null_frame_ = true;
     }
 
@@ -965,12 +918,12 @@ class VideoStreamEncoderTest : public ::testing::Test {
     }
 
     int GetNumEncoderInitializations() const {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       return num_encoder_initializations_;
     }
 
     int GetNumSetRates() const {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       return num_set_rates_;
     }
 
@@ -979,7 +932,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
                    const std::vector<VideoFrameType>* frame_types) override {
       bool block_encode;
       {
-        rtc::CritScope lock(&local_crit_sect_);
+        MutexLock lock(&local_mutex_);
         if (expect_null_frame_) {
           EXPECT_EQ(input_image.timestamp(), 0u);
           EXPECT_EQ(input_image.width(), 1);
@@ -1006,11 +959,24 @@ class VideoStreamEncoderTest : public ::testing::Test {
       return result;
     }
 
+    CodecSpecificInfo EncodeHook(EncodedImage& encoded_image) override {
+      CodecSpecificInfo codec_specific;
+      {
+        MutexLock lock(&mutex_);
+        codec_specific.codecType = config_.codecType;
+      }
+      MutexLock lock(&local_mutex_);
+      if (encoded_image_data_) {
+        encoded_image.SetEncodedData(encoded_image_data_);
+      }
+      return codec_specific;
+    }
+
     int32_t InitEncode(const VideoCodec* config,
                        const Settings& settings) override {
       int res = FakeEncoder::InitEncode(config, settings);
 
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       EXPECT_EQ(initialized_, EncoderState::kUninitialized);
 
       ++num_encoder_initializations_;
@@ -1032,14 +998,14 @@ class VideoStreamEncoderTest : public ::testing::Test {
     }
 
     int32_t Release() override {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       EXPECT_NE(initialized_, EncoderState::kUninitialized);
       initialized_ = EncoderState::kUninitialized;
       return FakeEncoder::Release();
     }
 
     void SetRates(const RateControlParameters& parameters) {
-      rtc::CritScope lock(&local_crit_sect_);
+      MutexLock lock(&local_mutex_);
       num_set_rates_++;
       VideoBitrateAllocation adjusted_rate_allocation;
       for (size_t si = 0; si < kMaxSpatialLayers; ++si) {
@@ -1059,43 +1025,44 @@ class VideoStreamEncoderTest : public ::testing::Test {
       FakeEncoder::SetRates(adjusted_paramters);
     }
 
-    rtc::CriticalSection local_crit_sect_;
+    mutable Mutex local_mutex_;
     enum class EncoderState {
       kUninitialized,
       kInitializationFailed,
       kInitialized
-    } initialized_ RTC_GUARDED_BY(local_crit_sect_) =
-        EncoderState::kUninitialized;
-    bool block_next_encode_ RTC_GUARDED_BY(local_crit_sect_) = false;
+    } initialized_ RTC_GUARDED_BY(local_mutex_) = EncoderState::kUninitialized;
+    bool block_next_encode_ RTC_GUARDED_BY(local_mutex_) = false;
     rtc::Event continue_encode_event_;
-    uint32_t timestamp_ RTC_GUARDED_BY(local_crit_sect_) = 0;
-    int64_t ntp_time_ms_ RTC_GUARDED_BY(local_crit_sect_) = 0;
-    int last_input_width_ RTC_GUARDED_BY(local_crit_sect_) = 0;
-    int last_input_height_ RTC_GUARDED_BY(local_crit_sect_) = 0;
-    bool quality_scaling_ RTC_GUARDED_BY(local_crit_sect_) = true;
-    int requested_resolution_alignment_ RTC_GUARDED_BY(local_crit_sect_) = 1;
-    bool is_hardware_accelerated_ RTC_GUARDED_BY(local_crit_sect_) = false;
+    uint32_t timestamp_ RTC_GUARDED_BY(local_mutex_) = 0;
+    int64_t ntp_time_ms_ RTC_GUARDED_BY(local_mutex_) = 0;
+    int last_input_width_ RTC_GUARDED_BY(local_mutex_) = 0;
+    int last_input_height_ RTC_GUARDED_BY(local_mutex_) = 0;
+    bool quality_scaling_ RTC_GUARDED_BY(local_mutex_) = true;
+    int requested_resolution_alignment_ RTC_GUARDED_BY(local_mutex_) = 1;
+    bool is_hardware_accelerated_ RTC_GUARDED_BY(local_mutex_) = false;
+    rtc::scoped_refptr<EncodedImageBufferInterface> encoded_image_data_
+        RTC_GUARDED_BY(local_mutex_);
     std::unique_ptr<Vp8FrameBufferController> frame_buffer_controller_
-        RTC_GUARDED_BY(local_crit_sect_);
+        RTC_GUARDED_BY(local_mutex_);
     absl::optional<bool>
         temporal_layers_supported_[kMaxSpatialLayers] RTC_GUARDED_BY(
-            local_crit_sect_);
-    bool force_init_encode_failed_ RTC_GUARDED_BY(local_crit_sect_) = false;
-    double rate_factor_ RTC_GUARDED_BY(local_crit_sect_) = 1.0;
-    uint32_t last_framerate_ RTC_GUARDED_BY(local_crit_sect_) = 0;
+            local_mutex_);
+    bool force_init_encode_failed_ RTC_GUARDED_BY(local_mutex_) = false;
+    double rate_factor_ RTC_GUARDED_BY(local_mutex_) = 1.0;
+    uint32_t last_framerate_ RTC_GUARDED_BY(local_mutex_) = 0;
     absl::optional<VideoEncoder::RateControlParameters>
         last_rate_control_settings_;
-    VideoFrame::UpdateRect last_update_rect_
-        RTC_GUARDED_BY(local_crit_sect_) = {0, 0, 0, 0};
+    VideoFrame::UpdateRect last_update_rect_ RTC_GUARDED_BY(local_mutex_) = {
+        0, 0, 0, 0};
     std::vector<VideoFrameType> last_frame_types_;
     bool expect_null_frame_ = false;
-    EncodedImageCallback* encoded_image_callback_
-        RTC_GUARDED_BY(local_crit_sect_) = nullptr;
+    EncodedImageCallback* encoded_image_callback_ RTC_GUARDED_BY(local_mutex_) =
+        nullptr;
     NiceMock<MockFecControllerOverride> fec_controller_override_;
-    int num_encoder_initializations_ RTC_GUARDED_BY(local_crit_sect_) = 0;
+    int num_encoder_initializations_ RTC_GUARDED_BY(local_mutex_) = 0;
     std::vector<ResolutionBitrateLimits> resolution_bitrate_limits_
-        RTC_GUARDED_BY(local_crit_sect_);
-    int num_set_rates_ RTC_GUARDED_BY(local_crit_sect_) = 0;
+        RTC_GUARDED_BY(local_mutex_);
+    int num_set_rates_ RTC_GUARDED_BY(local_mutex_) = 0;
   };
 
   class TestSink : public VideoStreamEncoder::EncoderSink {
@@ -1114,7 +1081,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
       if (!encoded_frame_event_.Wait(timeout_ms))
         return false;
       {
-        rtc::CritScope lock(&crit_);
+        MutexLock lock(&mutex_);
         timestamp = last_timestamp_;
       }
       test_encoder_->CheckLastTimeStampsMatch(expected_ntp_time, timestamp);
@@ -1132,7 +1099,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
       uint32_t width = 0;
       uint32_t height = 0;
       {
-        rtc::CritScope lock(&crit_);
+        MutexLock lock(&mutex_);
         width = last_width_;
         height = last_height_;
       }
@@ -1144,7 +1111,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
       int width = 0;
       int height = 0;
       {
-        rtc::CritScope lock(&crit_);
+        MutexLock lock(&mutex_);
         width = last_width_;
         height = last_height_;
       }
@@ -1155,7 +1122,7 @@ class VideoStreamEncoderTest : public ::testing::Test {
     void CheckLastFrameRotationMatches(VideoRotation expected_rotation) {
       VideoRotation rotation;
       {
-        rtc::CritScope lock(&crit_);
+        MutexLock lock(&mutex_);
         rotation = last_rotation_;
       }
       EXPECT_EQ(expected_rotation, rotation);
@@ -1168,52 +1135,43 @@ class VideoStreamEncoderTest : public ::testing::Test {
     }
 
     void SetExpectNoFrames() {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       expect_frames_ = false;
     }
 
     int number_of_reconfigurations() const {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       return number_of_reconfigurations_;
     }
 
     int last_min_transmit_bitrate() const {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       return min_transmit_bitrate_bps_;
     }
 
     void SetNumExpectedLayers(size_t num_layers) {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       num_expected_layers_ = num_layers;
     }
 
     int64_t GetLastCaptureTimeMs() const {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       return last_capture_time_ms_;
     }
 
     std::vector<uint8_t> GetLastEncodedImageData() {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       return std::move(last_encoded_image_data_);
-    }
-
-    RTPFragmentationHeader GetLastFragmentation() {
-      rtc::CritScope lock(&crit_);
-      return std::move(last_fragmentation_);
     }
 
    private:
     Result OnEncodedImage(
         const EncodedImage& encoded_image,
-        const CodecSpecificInfo* codec_specific_info,
-        const RTPFragmentationHeader* fragmentation) override {
-      rtc::CritScope lock(&crit_);
+        const CodecSpecificInfo* codec_specific_info) override {
+      MutexLock lock(&mutex_);
       EXPECT_TRUE(expect_frames_);
       last_encoded_image_data_ = std::vector<uint8_t>(
           encoded_image.data(), encoded_image.data() + encoded_image.size());
-      if (fragmentation) {
-        last_fragmentation_.CopyFrom(*fragmentation);
-      }
       uint32_t timestamp = encoded_image.Timestamp();
       if (last_timestamp_ != timestamp) {
         num_received_layers_ = 1;
@@ -1236,16 +1194,15 @@ class VideoStreamEncoderTest : public ::testing::Test {
         bool is_svc,
         VideoEncoderConfig::ContentType content_type,
         int min_transmit_bitrate_bps) override {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       ++number_of_reconfigurations_;
       min_transmit_bitrate_bps_ = min_transmit_bitrate_bps;
     }
 
-    rtc::CriticalSection crit_;
+    mutable Mutex mutex_;
     TestEncoder* test_encoder_;
     rtc::Event encoded_frame_event_;
     std::vector<uint8_t> last_encoded_image_data_;
-    RTPFragmentationHeader last_fragmentation_;
     uint32_t last_timestamp_ = 0;
     int64_t last_capture_time_ms_ = 0;
     uint32_t last_height_ = 0;
@@ -1267,21 +1224,21 @@ class VideoStreamEncoderTest : public ::testing::Test {
 
     std::unique_ptr<VideoBitrateAllocator> CreateVideoBitrateAllocator(
         const VideoCodec& codec) override {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       codec_config_ = codec;
       return bitrate_allocator_factory_->CreateVideoBitrateAllocator(codec);
     }
 
     VideoCodec codec_config() const {
-      rtc::CritScope lock(&crit_);
+      MutexLock lock(&mutex_);
       return codec_config_;
     }
 
    private:
     std::unique_ptr<VideoBitrateAllocatorFactory> bitrate_allocator_factory_;
 
-    rtc::CriticalSection crit_;
-    VideoCodec codec_config_ RTC_GUARDED_BY(crit_);
+    mutable Mutex mutex_;
+    VideoCodec codec_config_ RTC_GUARDED_BY(mutex_);
   };
 
   VideoSendStream::Config video_send_config_;
@@ -3271,7 +3228,7 @@ class BalancedDegradationTest : public VideoStreamEncoderTest {
   AdaptingFrameForwarder source_;
 };
 
-TEST_F(BalancedDegradationTest, AdaptDownReturnsFalseIfFpsDiffLtThreshold) {
+TEST_F(BalancedDegradationTest, AdaptDownTwiceIfMinFpsDiffLtThreshold) {
   test::ScopedFieldTrials field_trials(
       "WebRTC-Video-BalancedDegradationSettings/"
       "pixels:57600|129600|230400,fps:7|10|24,fps_diff:1|1|1/");
@@ -3286,18 +3243,16 @@ TEST_F(BalancedDegradationTest, AdaptDownReturnsFalseIfFpsDiffLtThreshold) {
   InsertFrameAndWaitForEncoded();
   EXPECT_THAT(source_.sink_wants(), FpsMaxResolutionMax());
 
-  // Trigger adapt down, expect scaled down framerate (640x360@24fps).
-  // Fps diff (input-requested:0) < threshold, expect adapting down not to clear
-  // QP samples.
-  EXPECT_FALSE(
-      video_stream_encoder_
-          ->TriggerQualityScalerHighQpAndReturnIfQpSamplesShouldBeCleared());
-  EXPECT_THAT(source_.sink_wants(), FpsMatchesResolutionMax(Eq(24)));
+  // Trigger adapt down, expect scaled down framerate and resolution,
+  // since Fps diff (input-requested:0) < threshold.
+  video_stream_encoder_->TriggerQualityLow();
+  EXPECT_THAT(source_.sink_wants(),
+              AllOf(WantsFps(Eq(24)), WantsMaxPixels(Le(230400))));
 
   video_stream_encoder_->Stop();
 }
 
-TEST_F(BalancedDegradationTest, AdaptDownReturnsTrueIfFpsDiffGeThreshold) {
+TEST_F(BalancedDegradationTest, AdaptDownOnceIfFpsDiffGeThreshold) {
   test::ScopedFieldTrials field_trials(
       "WebRTC-Video-BalancedDegradationSettings/"
       "pixels:57600|129600|230400,fps:7|10|24,fps_diff:1|1|1/");
@@ -3312,12 +3267,9 @@ TEST_F(BalancedDegradationTest, AdaptDownReturnsTrueIfFpsDiffGeThreshold) {
   InsertFrameAndWaitForEncoded();
   EXPECT_THAT(source_.sink_wants(), FpsMaxResolutionMax());
 
-  // Trigger adapt down, expect scaled down framerate (640x360@24fps).
-  // Fps diff (input-requested:1) == threshold, expect adapting down to clear QP
-  // samples.
-  EXPECT_TRUE(
-      video_stream_encoder_
-          ->TriggerQualityScalerHighQpAndReturnIfQpSamplesShouldBeCleared());
+  // Trigger adapt down, expect scaled down framerate only (640x360@24fps).
+  // Fps diff (input-requested:1) == threshold.
+  video_stream_encoder_->TriggerQualityLow();
   EXPECT_THAT(source_.sink_wants(), FpsMatchesResolutionMax(Eq(24)));
 
   video_stream_encoder_->Stop();
@@ -4180,6 +4132,49 @@ TEST_F(VideoStreamEncoderTest, InitialFrameDropActivatesWhenBweDrops) {
   // Expect the sink_wants to specify a scaled frame.
   EXPECT_TRUE_WAIT(
       video_source_.sink_wants().max_pixel_count < kWidth * kHeight, 5000);
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest,
+       InitialFrameDropNotReactivatedWhenBweDropsWhenScalingDisabled) {
+  webrtc::test::ScopedFieldTrials field_trials(
+      "WebRTC-Video-QualityScalerSettings/"
+      "initial_bitrate_interval_ms:1000,initial_bitrate_factor:0.2/");
+  fake_encoder_.SetQualityScaling(false);
+  ConfigureEncoder(video_encoder_config_.Copy());
+  const int kNotTooLowBitrateForFrameSizeBps = kTargetBitrateBps * 0.2;
+  const int kTooLowBitrateForFrameSizeBps = kTargetBitrateBps * 0.19;
+  const int kWidth = 640;
+  const int kHeight = 360;
+
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      DataRate::BitsPerSec(kTargetBitrateBps),
+      DataRate::BitsPerSec(kTargetBitrateBps),
+      DataRate::BitsPerSec(kTargetBitrateBps), 0, 0, 0);
+  video_source_.IncomingCapturedFrame(CreateFrame(1, kWidth, kHeight));
+  // Frame should not be dropped.
+  WaitForEncodedFrame(1);
+
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      DataRate::BitsPerSec(kNotTooLowBitrateForFrameSizeBps),
+      DataRate::BitsPerSec(kNotTooLowBitrateForFrameSizeBps),
+      DataRate::BitsPerSec(kNotTooLowBitrateForFrameSizeBps), 0, 0, 0);
+  video_source_.IncomingCapturedFrame(CreateFrame(2, kWidth, kHeight));
+  // Frame should not be dropped.
+  WaitForEncodedFrame(2);
+
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      DataRate::BitsPerSec(kTooLowBitrateForFrameSizeBps),
+      DataRate::BitsPerSec(kTooLowBitrateForFrameSizeBps),
+      DataRate::BitsPerSec(kTooLowBitrateForFrameSizeBps), 0, 0, 0);
+  video_source_.IncomingCapturedFrame(CreateFrame(3, kWidth, kHeight));
+  // Not dropped since quality scaling is disabled.
+  WaitForEncodedFrame(3);
+
+  // Expect the sink_wants to specify a scaled frame.
+  video_stream_encoder_->WaitUntilAdaptationTaskQueueIsIdle();
+  EXPECT_THAT(video_source_.sink_wants(), ResolutionMax());
+
   video_stream_encoder_->Stop();
 }
 
@@ -5406,63 +5401,52 @@ TEST_F(VideoStreamEncoderTest, AdjustsTimestampInternalSource) {
 }
 
 TEST_F(VideoStreamEncoderTest, DoesNotRewriteH264BitstreamWithOptimalSps) {
-  // Configure internal source factory and setup test again.
-  encoder_factory_.SetHasInternalSource(true);
+  // SPS contains VUI with restrictions on the maximum number of reordered
+  // pictures, there is no need to rewrite the bitstream to enable faster
+  // decoding.
   ResetEncoder("H264", 1, 1, 1, false);
 
-  EncodedImage image(optimal_sps, sizeof(optimal_sps), sizeof(optimal_sps));
-  image._frameType = VideoFrameType::kVideoFrameKey;
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      DataRate::BitsPerSec(kTargetBitrateBps),
+      DataRate::BitsPerSec(kTargetBitrateBps),
+      DataRate::BitsPerSec(kTargetBitrateBps), 0, 0, 0);
+  video_stream_encoder_->WaitUntilTaskQueueIsIdle();
 
-  CodecSpecificInfo codec_specific_info;
-  codec_specific_info.codecType = kVideoCodecH264;
+  fake_encoder_.SetEncodedImageData(
+      EncodedImageBuffer::Create(optimal_sps, sizeof(optimal_sps)));
 
-  RTPFragmentationHeader fragmentation;
-  fragmentation.VerifyAndAllocateFragmentationHeader(1);
-  fragmentation.fragmentationOffset[0] = 4;
-  fragmentation.fragmentationLength[0] = sizeof(optimal_sps) - 4;
-
-  fake_encoder_.InjectEncodedImage(image, &codec_specific_info, &fragmentation);
-  EXPECT_TRUE(sink_.WaitForFrame(kDefaultTimeoutMs));
+  video_source_.IncomingCapturedFrame(CreateFrame(1, nullptr));
+  WaitForEncodedFrame(1);
 
   EXPECT_THAT(sink_.GetLastEncodedImageData(),
               testing::ElementsAreArray(optimal_sps));
-  RTPFragmentationHeader last_fragmentation = sink_.GetLastFragmentation();
-  ASSERT_THAT(last_fragmentation.fragmentationVectorSize, 1U);
-  EXPECT_EQ(last_fragmentation.fragmentationOffset[0], 4U);
-  EXPECT_EQ(last_fragmentation.fragmentationLength[0], sizeof(optimal_sps) - 4);
 
   video_stream_encoder_->Stop();
 }
 
 TEST_F(VideoStreamEncoderTest, RewritesH264BitstreamWithNonOptimalSps) {
+  // SPS does not contain VUI, the bitstream is will be rewritten with added
+  // VUI with restrictions on the maximum number of reordered pictures to
+  // enable faster decoding.
   uint8_t original_sps[] = {0,    0,    0,    1,    H264::NaluType::kSps,
                             0x00, 0x00, 0x03, 0x03, 0xF4,
                             0x05, 0x03, 0xC7, 0xC0};
-
-  // Configure internal source factory and setup test again.
-  encoder_factory_.SetHasInternalSource(true);
   ResetEncoder("H264", 1, 1, 1, false);
 
-  EncodedImage image(original_sps, sizeof(original_sps), sizeof(original_sps));
-  image._frameType = VideoFrameType::kVideoFrameKey;
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      DataRate::BitsPerSec(kTargetBitrateBps),
+      DataRate::BitsPerSec(kTargetBitrateBps),
+      DataRate::BitsPerSec(kTargetBitrateBps), 0, 0, 0);
+  video_stream_encoder_->WaitUntilTaskQueueIsIdle();
 
-  CodecSpecificInfo codec_specific_info;
-  codec_specific_info.codecType = kVideoCodecH264;
+  fake_encoder_.SetEncodedImageData(
+      EncodedImageBuffer::Create(original_sps, sizeof(original_sps)));
 
-  RTPFragmentationHeader fragmentation;
-  fragmentation.VerifyAndAllocateFragmentationHeader(1);
-  fragmentation.fragmentationOffset[0] = 4;
-  fragmentation.fragmentationLength[0] = sizeof(original_sps) - 4;
-
-  fake_encoder_.InjectEncodedImage(image, &codec_specific_info, &fragmentation);
-  EXPECT_TRUE(sink_.WaitForFrame(kDefaultTimeoutMs));
+  video_source_.IncomingCapturedFrame(CreateFrame(1, nullptr));
+  WaitForEncodedFrame(1);
 
   EXPECT_THAT(sink_.GetLastEncodedImageData(),
               testing::ElementsAreArray(optimal_sps));
-  RTPFragmentationHeader last_fragmentation = sink_.GetLastFragmentation();
-  ASSERT_THAT(last_fragmentation.fragmentationVectorSize, 1U);
-  EXPECT_EQ(last_fragmentation.fragmentationOffset[0], 4U);
-  EXPECT_EQ(last_fragmentation.fragmentationLength[0], sizeof(optimal_sps) - 4);
 
   video_stream_encoder_->Stop();
 }

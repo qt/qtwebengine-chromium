@@ -442,14 +442,10 @@ namespace dawn_native { namespace opengl {
     }  // namespace
 
     CommandBuffer::CommandBuffer(CommandEncoder* encoder, const CommandBufferDescriptor* descriptor)
-        : CommandBufferBase(encoder, descriptor), mCommands(encoder->AcquireCommands()) {
+        : CommandBufferBase(encoder, descriptor) {
     }
 
-    CommandBuffer::~CommandBuffer() {
-        FreeCommands(&mCommands);
-    }
-
-    void CommandBuffer::Execute() {
+    MaybeError CommandBuffer::Execute() {
         const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
 
         auto TransitionForPass = [](const PassResourceUsage& usages) {
@@ -461,6 +457,10 @@ namespace dawn_native { namespace opengl {
                 if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
                     texture->EnsureSubresourceContentInitialized(texture->GetAllSubresources());
                 }
+            }
+
+            for (BufferBase* bufferBase : usages.buffers) {
+                ToBackend(bufferBase)->EnsureDataInitialized();
             }
         };
 
@@ -493,6 +493,10 @@ namespace dawn_native { namespace opengl {
                 case Command::CopyBufferToBuffer: {
                     CopyBufferToBufferCmd* copy = mCommands.NextCommand<CopyBufferToBufferCmd>();
 
+                    ToBackend(copy->source)->EnsureDataInitialized();
+                    ToBackend(copy->destination)
+                        ->EnsureDataInitializedAsDestination(copy->destinationOffset, copy->size);
+
                     gl.BindBuffer(GL_PIXEL_PACK_BUFFER, ToBackend(copy->source)->GetHandle());
                     gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER,
                                   ToBackend(copy->destination)->GetHandle());
@@ -514,12 +518,17 @@ namespace dawn_native { namespace opengl {
                     GLenum target = texture->GetGLTarget();
                     const GLFormat& format = texture->GetGLFormat();
 
+                    if (dst.aspect == Aspect::Stencil) {
+                        return DAWN_VALIDATION_ERROR(
+                            "Copies to stencil textures unsupported on OpenGL");
+                    }
+                    ASSERT(dst.aspect == Aspect::Color);
+
+                    buffer->EnsureDataInitialized();
+
                     ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
-                    // TODO(jiawei.shao@intel.com): use copy->destination.origin.z instead of
-                    // copy->destination.arrayLayer once GPUTextureCopyView.arrayLayer to
-                    // GPUTextureCopyView.origin.z is done.
-                    SubresourceRange subresources = {dst.mipLevel, 1, dst.arrayLayer,
-                                                     copy->copySize.depth};
+                    SubresourceRange subresources =
+                        GetSubresourcesAffectedByCopy(dst, copy->copySize);
                     if (IsCompleteSubresourceCopiedTo(texture, copySize, dst.mipLevel)) {
                         texture->SetIsSubresourceContentInitialized(true, subresources);
                     } else {
@@ -545,12 +554,12 @@ namespace dawn_native { namespace opengl {
                         ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
                         uint64_t copyDataSize = (copySize.width / formatInfo.blockWidth) *
                                                 (copySize.height / formatInfo.blockHeight) *
-                                                formatInfo.blockByteSize;
+                                                formatInfo.blockByteSize * copySize.depth;
                         Extent3D copyExtent = ComputeTextureCopyExtent(dst, copySize);
 
                         if (texture->GetArrayLayers() > 1) {
                             gl.CompressedTexSubImage3D(
-                                target, dst.mipLevel, dst.origin.x, dst.origin.y, dst.arrayLayer,
+                                target, dst.mipLevel, dst.origin.x, dst.origin.y, dst.origin.z,
                                 copyExtent.width, copyExtent.height, copyExtent.depth,
                                 format.internalFormat, copyDataSize,
                                 reinterpret_cast<void*>(static_cast<uintptr_t>(src.offset)));
@@ -565,7 +574,7 @@ namespace dawn_native { namespace opengl {
                             case wgpu::TextureDimension::e2D:
                                 if (texture->GetArrayLayers() > 1) {
                                     gl.TexSubImage3D(target, dst.mipLevel, dst.origin.x,
-                                                     dst.origin.y, dst.arrayLayer, copySize.width,
+                                                     dst.origin.y, dst.origin.z, copySize.width,
                                                      copySize.height, copySize.depth, format.format,
                                                      format.type,
                                                      reinterpret_cast<void*>(
@@ -598,19 +607,21 @@ namespace dawn_native { namespace opengl {
                     auto& copySize = copy->copySize;
                     Texture* texture = ToBackend(src.texture.Get());
                     Buffer* buffer = ToBackend(dst.buffer.Get());
-                    const Format& format = texture->GetFormat();
-                    const GLFormat& glFormat = texture->GetGLFormat();
+                    const Format& formatInfo = texture->GetFormat();
+                    const GLFormat& format = texture->GetGLFormat();
                     GLenum target = texture->GetGLTarget();
 
                     // TODO(jiawei.shao@intel.com): support texture-to-buffer copy with compressed
                     // texture formats.
-                    if (format.isCompressed) {
+                    if (formatInfo.isCompressed) {
                         UNREACHABLE();
                     }
 
+                    buffer->EnsureDataInitializedAsDestination(copy);
+
                     ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
-                    SubresourceRange subresources = {src.mipLevel, 1, src.arrayLayer,
-                                                     copy->copySize.depth};
+                    SubresourceRange subresources =
+                        GetSubresourcesAffectedByCopy(src, copy->copySize);
                     texture->EnsureSubresourceContentInitialized(subresources);
                     // The only way to move data from a texture to a buffer in GL is via
                     // glReadPixels with a pack buffer. Create a temporary FBO for the copy.
@@ -620,28 +631,35 @@ namespace dawn_native { namespace opengl {
                     gl.GenFramebuffers(1, &readFBO);
                     gl.BindFramebuffer(GL_READ_FRAMEBUFFER, readFBO);
 
-                    GLenum glAttachment = 0;
-                    switch (format.aspect) {
-                        case Format::Aspect::Color:
+                    const TexelBlockInfo& blockInfo = formatInfo.GetTexelBlockInfo(src.aspect);
+
+                    gl.BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->GetHandle());
+                    gl.PixelStorei(GL_PACK_IMAGE_HEIGHT, dst.rowsPerImage);
+                    gl.PixelStorei(GL_PACK_ROW_LENGTH, dst.bytesPerRow / blockInfo.blockByteSize);
+
+                    GLenum glAttachment;
+                    GLenum glFormat;
+                    GLenum glType;
+                    switch (src.aspect) {
+                        case Aspect::Color:
                             glAttachment = GL_COLOR_ATTACHMENT0;
+                            glFormat = format.format;
+                            glType = format.type;
                             break;
-                        case Format::Aspect::Depth:
+                        case Aspect::Depth:
                             glAttachment = GL_DEPTH_ATTACHMENT;
+                            glFormat = GL_DEPTH_COMPONENT;
+                            glType = GL_FLOAT;
                             break;
-                        case Format::Aspect::Stencil:
+                        case Aspect::Stencil:
                             glAttachment = GL_STENCIL_ATTACHMENT;
-                            break;
-                        case Format::Aspect::DepthStencil:
-                            glAttachment = GL_DEPTH_STENCIL_ATTACHMENT;
+                            glFormat = GL_STENCIL_INDEX;
+                            glType = GL_UNSIGNED_BYTE;
                             break;
                         default:
                             UNREACHABLE();
                             break;
                     }
-
-                    gl.BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->GetHandle());
-                    gl.PixelStorei(GL_PACK_ROW_LENGTH, dst.bytesPerRow / format.blockByteSize);
-                    gl.PixelStorei(GL_PACK_IMAGE_HEIGHT, dst.rowsPerImage);
 
                     uint8_t* offset =
                         reinterpret_cast<uint8_t*>(static_cast<uintptr_t>(dst.offset));
@@ -651,8 +669,7 @@ namespace dawn_native { namespace opengl {
                                 gl.FramebufferTexture2D(GL_READ_FRAMEBUFFER, glAttachment, target,
                                                         texture->GetHandle(), src.mipLevel);
                                 gl.ReadPixels(src.origin.x, src.origin.y, copySize.width,
-                                              copySize.height, glFormat.format, glFormat.type,
-                                              offset);
+                                              copySize.height, glFormat, glType, offset);
                                 break;
                             }
 
@@ -660,10 +677,9 @@ namespace dawn_native { namespace opengl {
                             for (uint32_t layer = 0; layer < copySize.depth; ++layer) {
                                 gl.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, glAttachment,
                                                            texture->GetHandle(), src.mipLevel,
-                                                           src.arrayLayer + layer);
+                                                           src.origin.z + layer);
                                 gl.ReadPixels(src.origin.x, src.origin.y, copySize.width,
-                                              copySize.height, glFormat.format, glFormat.type,
-                                              offset);
+                                              copySize.height, glFormat, glType, offset);
 
                                 offset += bytesPerImage;
                             }
@@ -696,10 +712,9 @@ namespace dawn_native { namespace opengl {
                     Extent3D copySize = ComputeTextureCopyExtent(dst, copy->copySize);
                     Texture* srcTexture = ToBackend(src.texture.Get());
                     Texture* dstTexture = ToBackend(dst.texture.Get());
-                    SubresourceRange srcRange = {src.mipLevel, 1, src.arrayLayer,
-                                                 copy->copySize.depth};
-                    SubresourceRange dstRange = {dst.mipLevel, 1, dst.arrayLayer,
-                                                 copy->copySize.depth};
+
+                    SubresourceRange srcRange = GetSubresourcesAffectedByCopy(src, copy->copySize);
+                    SubresourceRange dstRange = GetSubresourcesAffectedByCopy(dst, copy->copySize);
 
                     srcTexture->EnsureSubresourceContentInitialized(srcRange);
                     if (IsCompleteSubresourceCopiedTo(dstTexture, copySize, dst.mipLevel)) {
@@ -708,10 +723,22 @@ namespace dawn_native { namespace opengl {
                         dstTexture->EnsureSubresourceContentInitialized(dstRange);
                     }
                     gl.CopyImageSubData(srcTexture->GetHandle(), srcTexture->GetGLTarget(),
-                                        src.mipLevel, src.origin.x, src.origin.y, src.arrayLayer,
+                                        src.mipLevel, src.origin.x, src.origin.y, src.origin.z,
                                         dstTexture->GetHandle(), dstTexture->GetGLTarget(),
-                                        dst.mipLevel, dst.origin.x, dst.origin.y, dst.arrayLayer,
+                                        dst.mipLevel, dst.origin.x, dst.origin.y, dst.origin.z,
                                         copySize.width, copySize.height, copy->copySize.depth);
+                    break;
+                }
+
+                case Command::ResolveQuerySet: {
+                    // TODO(hao.x.li@intel.com): Resolve non-precise occlusion query.
+                    SkipCommand(&mCommands, type);
+                    break;
+                }
+
+                case Command::WriteTimestamp: {
+                    // WriteTimestamp is not supported on OpenGL
+                    UNREACHABLE();
                     break;
                 }
 
@@ -721,6 +748,8 @@ namespace dawn_native { namespace opengl {
                 }
             }
         }
+
+        return {};
     }
 
     void CommandBuffer::ExecuteComputePass() {
@@ -789,6 +818,12 @@ namespace dawn_native { namespace opengl {
                     break;
                 }
 
+                case Command::WriteTimestamp: {
+                    // WriteTimestamp is not supported on OpenGL
+                    UNREACHABLE();
+                    break;
+                }
+
                 default: {
                     UNREACHABLE();
                     break;
@@ -853,19 +888,14 @@ namespace dawn_native { namespace opengl {
                 GLenum glAttachment = 0;
                 // TODO(kainino@chromium.org): it may be valid to just always use
                 // GL_DEPTH_STENCIL_ATTACHMENT here.
-                switch (format.aspect) {
-                    case Format::Aspect::Depth:
-                        glAttachment = GL_DEPTH_ATTACHMENT;
-                        break;
-                    case Format::Aspect::Stencil:
-                        glAttachment = GL_STENCIL_ATTACHMENT;
-                        break;
-                    case Format::Aspect::DepthStencil:
-                        glAttachment = GL_DEPTH_STENCIL_ATTACHMENT;
-                        break;
-                    default:
-                        UNREACHABLE();
-                        break;
+                if (format.aspects == (Aspect::Depth | Aspect::Stencil)) {
+                    glAttachment = GL_DEPTH_STENCIL_ATTACHMENT;
+                } else if (format.aspects == Aspect::Depth) {
+                    glAttachment = GL_DEPTH_ATTACHMENT;
+                } else if (format.aspects == Aspect::Stencil) {
+                    glAttachment = GL_STENCIL_ATTACHMENT;
+                } else {
+                    UNREACHABLE();
                 }
 
                 if (textureView->GetTexture()->GetArrayLayers() == 1) {
@@ -897,13 +927,23 @@ namespace dawn_native { namespace opengl {
                 auto* attachmentInfo = &renderPass->colorAttachments[i];
 
                 // Load op - color
-                // TODO(cwallez@chromium.org): Choose the clear function depending on the
-                // componentType: things work for now because the clear color is always a float, but
-                // when that's fixed will lose precision on integer formats when converting to
-                // float.
                 if (attachmentInfo->loadOp == wgpu::LoadOp::Clear) {
                     gl.ColorMaski(i, true, true, true, true);
-                    gl.ClearBufferfv(GL_COLOR, i, &attachmentInfo->clearColor.r);
+
+                    const Format& attachmentFormat = attachmentInfo->view->GetFormat();
+                    if (attachmentFormat.HasComponentType(Format::Type::Float)) {
+                        gl.ClearBufferfv(GL_COLOR, i, &attachmentInfo->clearColor.r);
+                    } else if (attachmentFormat.HasComponentType(Format::Type::Uint)) {
+                        const std::array<uint32_t, 4> appliedClearColor =
+                            ConvertToUnsignedIntegerColor(attachmentInfo->clearColor);
+                        gl.ClearBufferuiv(GL_COLOR, i, appliedClearColor.data());
+                    } else if (attachmentFormat.HasComponentType(Format::Type::Sint)) {
+                        const std::array<int32_t, 4> appliedClearColor =
+                            ConvertToSignedIntegerColor(attachmentInfo->clearColor);
+                        gl.ClearBufferiv(GL_COLOR, i, appliedClearColor.data());
+                    } else {
+                        UNREACHABLE();
+                    }
                 }
 
                 if (attachmentInfo->storeOp == wgpu::StoreOp::Clear) {
@@ -1137,6 +1177,12 @@ namespace dawn_native { namespace opengl {
                             DoRenderBundleCommand(iter, type);
                         }
                     }
+                    break;
+                }
+
+                case Command::WriteTimestamp: {
+                    // WriteTimestamp is not supported on OpenGL
+                    UNREACHABLE();
                     break;
                 }
 

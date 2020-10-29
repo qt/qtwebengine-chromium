@@ -3,7 +3,7 @@ if build_machine.system() == 'windows'
   subdir_done()
 endif
 
-if not find_program('gtkdoc-scan', required: get_option('gtk_doc')).found()
+if not find_program('gtkdoc-scan', required: get_option('docs')).found()
   message('Not building documentation as gtk-doc was not found')
   subdir_done()
 endif
@@ -41,7 +41,7 @@ html_images = [
 ]
 
 ignore_headers = []
-if have_gobject
+if not have_gobject
   ignore_headers += [
     'hb-gobject.h',
     'hb-gobject-enums.h',

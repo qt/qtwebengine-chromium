@@ -70,7 +70,7 @@ public:
                                    const GrBackendFormat& format,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
-                                   GrMipMapped mipMapped,
+                                   GrMipmapped mipMapped,
                                    SkBudgeted budgeted,
                                    GrProtected isProtected);
 
@@ -111,7 +111,7 @@ public:
     sk_sp<GrTexture> createCompressedTexture(SkISize dimensions,
                                              const GrBackendFormat&,
                                              SkBudgeted,
-                                             GrMipMapped,
+                                             GrMipmapped,
                                              GrProtected,
                                              SkData* data);
 
@@ -303,7 +303,7 @@ public:
     static SkISize MakeApprox(SkISize);
 
     inline GrResourceProviderPriv priv();
-    inline const GrResourceProviderPriv priv() const;
+    inline const GrResourceProviderPriv priv() const;  // NOLINT(readability-const-return-type)
 
 private:
     sk_sp<GrGpuResource> findResourceByUniqueKey(const GrUniqueKey&);
@@ -314,7 +314,7 @@ private:
                                        const GrBackendFormat&,
                                        GrRenderable,
                                        int renderTargetSampleCnt,
-                                       GrMipMapped,
+                                       GrMipmapped,
                                        GrProtected);
 
     /*
@@ -326,7 +326,7 @@ private:
                                      GrRenderable,
                                      int renderTargetSampleCnt,
                                      SkBudgeted,
-                                     GrMipMapped,
+                                     GrMipmapped,
                                      GrProtected);
 
     // Used to perform any conversions necessary to texel data before creating a texture with

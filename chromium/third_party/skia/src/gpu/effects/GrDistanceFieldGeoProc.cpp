@@ -158,8 +158,7 @@ public:
         fragBuilder->codeAppendf("%s = half4(val);", args.fOutputCoverage);
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc,
-                 const CoordTransformRange& transformRange) override {
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc) override {
         const GrDistanceFieldA8TextGeoProc& dfa8gp = proc.cast<GrDistanceFieldA8TextGeoProc>();
 
 #ifdef SK_GAMMA_APPLY_TO_A8
@@ -179,7 +178,6 @@ public:
                         1.0f / atlasDimensions.fHeight);
             fAtlasDimensions = atlasDimensions;
         }
-        this->setTransformDataHelper(pdman, transformRange);
         this->setTransform(pdman, fLocalMatrixUniform, dfa8gp.localMatrix(), &fLocalMatrix);
     }
 
@@ -293,7 +291,7 @@ GrGeometryProcessor* GrDistanceFieldA8TextGeoProc::TestCreate(GrProcessorTestDat
     GrSamplerState::WrapMode wrapModes[2];
     GrTest::TestWrapModes(d->fRandom, wrapModes);
     GrSamplerState samplerState(wrapModes, d->fRandom->nextBool()
-                                                   ? GrSamplerState::Filter::kBilerp
+                                                   ? GrSamplerState::Filter::kLinear
                                                    : GrSamplerState::Filter::kNearest);
 
     uint32_t flags = 0;
@@ -447,8 +445,7 @@ public:
         fragBuilder->codeAppendf("%s = half4(val);", args.fOutputCoverage);
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc,
-                 const CoordTransformRange& transformRange) override {
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& proc) override {
         const GrDistanceFieldPathGeoProc& dfpgp = proc.cast<GrDistanceFieldPathGeoProc>();
 
         // We always set the matrix uniform; it's either used to transform from local to device
@@ -463,8 +460,6 @@ public:
                         1.0f / atlasDimensions.fHeight);
             fAtlasDimensions = atlasDimensions;
         }
-
-        this->setTransformDataHelper(pdman, transformRange);
     }
 
     static inline void GenKey(const GrGeometryProcessor& gp,
@@ -566,7 +561,7 @@ GrGeometryProcessor* GrDistanceFieldPathGeoProc::TestCreate(GrProcessorTestData*
     GrSamplerState::WrapMode wrapModes[2];
     GrTest::TestWrapModes(d->fRandom, wrapModes);
     GrSamplerState samplerState(wrapModes, d->fRandom->nextBool()
-                                                   ? GrSamplerState::Filter::kBilerp
+                                                   ? GrSamplerState::Filter::kLinear
                                                    : GrSamplerState::Filter::kNearest);
 
     uint32_t flags = 0;
@@ -759,8 +754,8 @@ public:
         }
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& processor,
-                 const CoordTransformRange& transformRange) override {
+    void setData(const GrGLSLProgramDataManager& pdman,
+                 const GrPrimitiveProcessor& processor) override {
         SkASSERT(fDistanceAdjustUni.isValid());
 
         const GrDistanceFieldLCDTextGeoProc& dflcd = processor.cast<GrDistanceFieldLCDTextGeoProc>();
@@ -781,7 +776,6 @@ public:
                         1.0f / atlasDimensions.fHeight);
             fAtlasDimensions = atlasDimensions;
         }
-        this->setTransformDataHelper(pdman, transformRange);
         this->setTransform(pdman, fLocalMatrixUniform, dflcd.localMatrix(), &fLocalMatrix);
     }
 
@@ -890,7 +884,7 @@ GrGeometryProcessor* GrDistanceFieldLCDTextGeoProc::TestCreate(GrProcessorTestDa
     GrSamplerState::WrapMode wrapModes[2];
     GrTest::TestWrapModes(d->fRandom, wrapModes);
     GrSamplerState samplerState(wrapModes, d->fRandom->nextBool()
-                                                   ? GrSamplerState::Filter::kBilerp
+                                                   ? GrSamplerState::Filter::kLinear
                                                    : GrSamplerState::Filter::kNearest);
     DistanceAdjust wa = { 0.0f, 0.1f, -0.1f };
     uint32_t flags = kUseLCD_DistanceFieldEffectFlag;

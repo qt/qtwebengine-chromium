@@ -33,11 +33,33 @@ export class EmulationModel extends SDKModel {
       this._emulationAgent.setScriptExecutionDisabled(true);
     }
 
+    const touchSetting = Common.Settings.Settings.instance().moduleSetting('emulation.touch');
+    touchSetting.addChangeListener(() => {
+      const settingValue = touchSetting.get();
+
+      this.overrideEmulateTouch(settingValue === 'force');
+    });
+
+    const idleDetectionSetting = Common.Settings.Settings.instance().moduleSetting('emulation.idleDetection');
+    idleDetectionSetting.addChangeListener(async () => {
+      const settingValue = idleDetectionSetting.get();
+      if (settingValue === 'none') {
+        await this.clearIdleOverride();
+        return;
+      }
+
+      const emulationParams =
+          /** @type {{isUserActive: boolean, isScreenUnlocked: boolean}} */ (JSON.parse(settingValue));
+      await this.setIdleOverride(emulationParams);
+    });
+
     const mediaTypeSetting = Common.Settings.Settings.instance().moduleSetting('emulatedCSSMedia');
     const mediaFeaturePrefersColorSchemeSetting =
         Common.Settings.Settings.instance().moduleSetting('emulatedCSSMediaFeaturePrefersColorScheme');
     const mediaFeaturePrefersReducedMotionSetting =
         Common.Settings.Settings.instance().moduleSetting('emulatedCSSMediaFeaturePrefersReducedMotion');
+    const mediaFeaturePrefersReducedDataSetting =
+        Common.Settings.Settings.instance().moduleSetting('emulatedCSSMediaFeaturePrefersReducedData');
     // Note: this uses a different format than what the CDP API expects,
     // because we want to update these values per media type/feature
     // without having to search the `features` array (inefficient) or
@@ -46,6 +68,7 @@ export class EmulationModel extends SDKModel {
       ['type', mediaTypeSetting.get()],
       ['prefers-color-scheme', mediaFeaturePrefersColorSchemeSetting.get()],
       ['prefers-reduced-motion', mediaFeaturePrefersReducedMotionSetting.get()],
+      ['prefers-reduced-data', mediaFeaturePrefersReducedDataSetting.get()],
     ]);
     mediaTypeSetting.addChangeListener(() => {
       this._mediaConfiguration.set('type', mediaTypeSetting.get());
@@ -59,12 +82,22 @@ export class EmulationModel extends SDKModel {
       this._mediaConfiguration.set('prefers-reduced-motion', mediaFeaturePrefersReducedMotionSetting.get());
       this._updateCssMedia();
     });
+    mediaFeaturePrefersReducedDataSetting.addChangeListener(() => {
+      this._mediaConfiguration.set('prefers-reduced-data', mediaFeaturePrefersReducedDataSetting.get());
+      this._updateCssMedia();
+    });
     this._updateCssMedia();
 
     const visionDeficiencySetting = Common.Settings.Settings.instance().moduleSetting('emulatedVisionDeficiency');
     visionDeficiencySetting.addChangeListener(() => this._emulateVisionDeficiency(visionDeficiencySetting.get()));
     if (visionDeficiencySetting.get()) {
       this._emulateVisionDeficiency(visionDeficiencySetting.get());
+    }
+
+    const localFontsDisabledSetting = Common.Settings.Settings.instance().moduleSetting('localFontsDisabled');
+    localFontsDisabledSetting.addChangeListener(() => this._setLocalFontsDisabled(localFontsDisabledSetting.get()));
+    if (localFontsDisabledSetting.get()) {
+      this._setLocalFontsDisabled(localFontsDisabledSetting.get());
     }
 
     this._touchEnabled = false;
@@ -178,6 +211,17 @@ export class EmulationModel extends SDKModel {
   }
 
   /**
+   * @param {{isUserActive: boolean, isScreenUnlocked: boolean}} emulationParams
+   */
+  async setIdleOverride(emulationParams) {
+    await this._emulationAgent.invoke_setIdleOverride(emulationParams);
+  }
+
+  async clearIdleOverride() {
+    await this._emulationAgent.invoke_clearIdleOverride();
+  }
+
+  /**
    * @param {string} type
    * @param {!Array<{name: string, value: string}>} features
    */
@@ -193,6 +237,10 @@ export class EmulationModel extends SDKModel {
    */
   _emulateVisionDeficiency(type) {
     this._emulationAgent.setEmulatedVisionDeficiency(type);
+  }
+
+  _setLocalFontsDisabled(disabled) {
+    this._cssModel.setLocalFontsEnabled(!disabled);
   }
 
   /**
@@ -264,6 +312,10 @@ export class EmulationModel extends SDKModel {
       {
         name: 'prefers-reduced-motion',
         value: this._mediaConfiguration.get('prefers-reduced-motion'),
+      },
+      {
+        name: 'prefers-reduced-data',
+        value: this._mediaConfiguration.get('prefers-reduced-data'),
       },
     ];
     this._emulateCSSMedia(type, features);

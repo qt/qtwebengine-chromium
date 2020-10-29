@@ -101,6 +101,7 @@ if (!build_with_chromium) {
       "../../../api/video:encoded_image",
       "../../../rtc_base:checks",
       "../../../rtc_base:criticalsection",
+      "../../../rtc_base/synchronization:mutex",
     ]
     absl_deps = [ "//third_party/abseil-cpp/absl/memory" ]
   }
@@ -148,6 +149,7 @@ if (!build_with_chromium) {
       "../../../modules/video_coding:video_codec_interface",
       "../../../rtc_base:criticalsection",
       "../../../rtc_base:logging",
+      "../../../rtc_base/synchronization:mutex",
     ]
     absl_deps = [
       "//third_party/abseil-cpp/absl/strings",
@@ -173,6 +175,7 @@ if (!build_with_chromium) {
       "../../../modules/video_coding:video_codec_interface",
       "../../../rtc_base:criticalsection",
       "../../../rtc_base:logging",
+      "../../../rtc_base/synchronization:mutex",
     ]
     absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
   }
@@ -200,6 +203,7 @@ if (!build_with_chromium) {
         "../../../api/video:video_rtp_headers",
         "../../../api/video_codecs:video_codecs_api",
         "../../../rtc_base:criticalsection",
+        "../../../rtc_base/synchronization:mutex",
         "../../../test:video_test_common",
         "../../../test:video_test_support",
       ]
@@ -260,7 +264,9 @@ if (!build_with_chromium) {
         ":test_peer",
         ":video_quality_analyzer_injection_helper",
         "../..:copy_to_file_audio_capturer",
+        "../../../api:create_time_controller",
         "../../../api:peer_connection_quality_test_fixture_api",
+        "../../../api:time_controller",
         "../../../api/rtc_event_log:rtc_event_log_factory",
         "../../../api/task_queue:default_task_queue_factory",
         "../../../api/video_codecs:builtin_video_decoder_factory",
@@ -342,6 +348,7 @@ if (!build_with_chromium) {
         "../../../rtc_base:logging",
         "../../../rtc_base:rtc_base_approved",
         "../../../rtc_base:task_queue_for_test",
+        "../../../rtc_base/synchronization:mutex",
         "../../../rtc_base/task_utils:repeating_task",
         "../../../system_wrappers",
       ]
@@ -361,6 +368,7 @@ if (!build_with_chromium) {
       ]
       deps = [
         ":analyzer_helper",
+        ":cross_media_metrics_reporter",
         ":default_audio_quality_analyzer",
         ":default_video_quality_analyzer",
         ":media_helper",
@@ -383,6 +391,7 @@ if (!build_with_chromium) {
         "../../../api:peer_connection_quality_test_fixture_api",
         "../../../api:rtc_event_log_output_file",
         "../../../api:scoped_refptr",
+        "../../../api:time_controller",
         "../../../api:video_quality_analyzer_api",
         "../../../api/rtc_event_log",
         "../../../api/task_queue",
@@ -397,6 +406,7 @@ if (!build_with_chromium) {
         "../../../rtc_base:rtc_base_approved",
         "../../../rtc_base:safe_conversions",
         "../../../rtc_base:task_queue_for_test",
+        "../../../rtc_base/synchronization:mutex",
         "../../../system_wrappers",
         "../../../system_wrappers:field_trial",
       ]
@@ -448,6 +458,7 @@ if (!build_with_chromium) {
         ":default_audio_quality_analyzer",
         ":default_video_quality_analyzer",
         ":network_quality_metrics_reporter",
+        ":stats_based_network_quality_metrics_reporter",
         "../../../api:callfactory_api",
         "../../../api:create_network_emulation_manager",
         "../../../api:create_peer_connection_quality_test_frame_generator",
@@ -510,8 +521,10 @@ if (!build_with_chromium) {
         "../../../api/video:encoded_image",
         "../../../api/video:video_frame",
         "../../../api/video:video_frame_i420",
+        "../../../common_video",
         "../../../modules/rtp_rtcp:rtp_rtcp_format",
         "../../../rtc_base:stringutils",
+        "../../../rtc_tools:video_quality_analysis",
         "../../../system_wrappers",
       ]
     }
@@ -534,10 +547,11 @@ if (!build_with_chromium) {
       "analyzer_helper.h",
     ]
     deps = [
-      "../../../api:track_id_stream_label_map",
+      "../../../api:track_id_stream_info_map",
       "../../../rtc_base:macromagic",
       "../../../rtc_base/synchronization:sequence_checker",
     ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
   }
 
   rtc_library("default_audio_quality_analyzer") {
@@ -553,13 +567,15 @@ if (!build_with_chromium) {
       "../../../api:audio_quality_analyzer_api",
       "../../../api:rtc_stats_api",
       "../../../api:stats_observer_interface",
-      "../../../api:track_id_stream_label_map",
+      "../../../api:track_id_stream_info_map",
       "../../../api/units:time_delta",
       "../../../api/units:timestamp",
       "../../../rtc_base:criticalsection",
       "../../../rtc_base:logging",
       "../../../rtc_base:rtc_numerics",
+      "../../../rtc_base/synchronization:mutex",
     ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
   }
 
   rtc_library("example_video_quality_analyzer") {
@@ -578,6 +594,7 @@ if (!build_with_chromium) {
       "../../../api/video:video_rtp_headers",
       "../../../rtc_base:criticalsection",
       "../../../rtc_base:logging",
+      "../../../rtc_base/synchronization:mutex",
     ]
   }
 
@@ -593,13 +610,16 @@ if (!build_with_chromium) {
       "../..:perf_test",
       "../../../api:peer_connection_quality_test_fixture_api",
       "../../../api:rtc_stats_api",
+      "../../../api:track_id_stream_info_map",
       "../../../api/units:data_rate",
       "../../../api/units:data_size",
       "../../../api/units:time_delta",
       "../../../api/units:timestamp",
       "../../../rtc_base:criticalsection",
       "../../../rtc_base:rtc_numerics",
+      "../../../rtc_base/synchronization:mutex",
     ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
   }
 
   rtc_library("default_video_quality_analyzer") {
@@ -630,6 +650,8 @@ if (!build_with_chromium) {
       "../../../rtc_base:rtc_event",
       "../../../rtc_base:rtc_numerics",
       "../../../rtc_base:timeutils",
+      "../../../rtc_base/synchronization:mutex",
+      "../../../rtc_tools:video_quality_analysis",
       "../../../system_wrappers",
     ]
   }
@@ -646,10 +668,66 @@ if (!build_with_chromium) {
       "../../../api:network_emulation_manager_api",
       "../../../api:peer_connection_quality_test_fixture_api",
       "../../../api:rtc_stats_api",
+      "../../../api:track_id_stream_info_map",
       "../../../api/units:data_size",
       "../../../rtc_base:criticalsection",
       "../../../rtc_base:rtc_event",
+      "../../../rtc_base/synchronization:mutex",
       "../../../system_wrappers:field_trial",
+    ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
+  }
+
+  rtc_library("stats_based_network_quality_metrics_reporter") {
+    visibility = [ "*" ]
+    testonly = true
+    sources = [
+      "stats_based_network_quality_metrics_reporter.cc",
+      "stats_based_network_quality_metrics_reporter.h",
+    ]
+    deps = [
+      "../..:perf_test",
+      "../../../api:array_view",
+      "../../../api:network_emulation_manager_api",
+      "../../../api:peer_connection_quality_test_fixture_api",
+      "../../../api:rtc_stats_api",
+      "../../../api:scoped_refptr",
+      "../../../api/test/network_emulation",
+      "../../../api/units:data_rate",
+      "../../../api/units:data_size",
+      "../../../api/units:timestamp",
+      "../../../rtc_base",
+      "../../../rtc_base:rtc_event",
+      "../../../rtc_base:stringutils",
+      "../../../rtc_base/synchronization:mutex",
+      "../../../system_wrappers:field_trial",
+    ]
+    absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
+  }
+
+  rtc_library("cross_media_metrics_reporter") {
+    visibility = [ "*" ]
+    testonly = true
+    sources = [
+      "cross_media_metrics_reporter.cc",
+      "cross_media_metrics_reporter.h",
+    ]
+    deps = [
+      "../..:perf_test",
+      "../../../api:network_emulation_manager_api",
+      "../../../api:peer_connection_quality_test_fixture_api",
+      "../../../api:rtc_stats_api",
+      "../../../api:track_id_stream_info_map",
+      "../../../api/units:timestamp",
+      "../../../rtc_base:criticalsection",
+      "../../../rtc_base:rtc_event",
+      "../../../rtc_base:rtc_numerics",
+      "../../../rtc_base/synchronization:mutex",
+      "../../../system_wrappers:field_trial",
+    ]
+    absl_deps = [
+      "//third_party/abseil-cpp/absl/strings",
+      "//third_party/abseil-cpp/absl/types:optional",
     ]
   }
 

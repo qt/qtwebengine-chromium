@@ -26,6 +26,13 @@
 namespace libgav1 {
 namespace {
 
+#if !defined(LIBGAV1_FRAME_PARALLEL_THRESHOLD_MULTIPLIER)
+constexpr int kFrameParallelThresholdMultiplier = 4;
+#else
+constexpr int kFrameParallelThresholdMultiplier =
+    LIBGAV1_FRAME_PARALLEL_THRESHOLD_MULTIPLIER;
+#endif
+
 // Computes the number of frame threads to be used based on the following
 // heuristic:
 //   * If |thread_count| == 1, return 0.
@@ -38,7 +45,8 @@ namespace {
 //  This heuristic is based empirical performance data. The in-frame threading
 //  model (combination of tile multithreading, superblock row multithreading and
 //  post filter multithreading) performs better than the frame parallel model
-//  until we reach the threshold of |thread_count| > |tile_count| * 4.
+//  until we reach the threshold of |thread_count| > |tile_count| *
+//  kFrameParallelThresholdMultiplier.
 //
 //  It is a function of |tile_count| since tile threading and superblock row
 //  multithreading will scale only as a factor of |tile_count|. The threshold 4
@@ -50,7 +58,7 @@ int ComputeFrameThreadCount(int thread_count, int tile_count,
                             int tile_columns) {
   assert(thread_count > 0);
   if (thread_count == 1) return 0;
-  return (thread_count <= tile_count * 4)
+  return (thread_count <= tile_count * kFrameParallelThresholdMultiplier)
              ? 0
              : std::max(2, thread_count / (1 + tile_columns));
 }
@@ -124,7 +132,7 @@ bool ThreadingStrategy::Reset(const ObuFrameHeader& frame_header,
     thread_count -= 2;
     if (thread_count <= 0) break;
   }
-#else   // !defined(__ANDROID__)
+#else  // !defined(__ANDROID__)
   // Assign the remaining threads to each Tile.
   for (int i = 0; i < tile_count; ++i) {
     const int count = thread_count / tile_count +

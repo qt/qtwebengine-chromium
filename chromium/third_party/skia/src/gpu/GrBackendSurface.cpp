@@ -328,9 +328,8 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
     return false;
 }
 
-#if GR_TEST_UTILS
+#if defined(SK_DEBUG) || GR_TEST_UTILS
 #include "include/core/SkString.h"
-#include "src/gpu/GrTestUtils.h"
 
 #ifdef SK_GL
 #include "src/gpu/gl/GrGLUtil.h"
@@ -396,7 +395,7 @@ GrBackendTexture::GrBackendTexture(int width,
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
-        , fMipMapped(GrMipMapped(dawnInfo.fLevelCount > 1))
+        , fMipmapped(GrMipmapped(dawnInfo.fLevelCount > 1))
         , fBackend(GrBackendApi::kDawn)
         , fDawnInfo(dawnInfo) {}
 #endif
@@ -415,7 +414,7 @@ GrBackendTexture::GrBackendTexture(int width,
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
-        , fMipMapped(GrMipMapped(vkInfo.fLevelCount > 1))
+        , fMipmapped(GrMipmapped(vkInfo.fLevelCount > 1))
         , fBackend(GrBackendApi::kVulkan)
         , fVkInfo(vkInfo)
         , fMutableState(std::move(mutableState)) {}
@@ -424,13 +423,13 @@ GrBackendTexture::GrBackendTexture(int width,
 #ifdef SK_GL
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
-                                   GrMipMapped mipMapped,
+                                   GrMipmapped mipmapped,
                                    const GrGLTextureInfo glInfo,
                                    sk_sp<GrGLTextureParameters> params)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
-        , fMipMapped(mipMapped)
+        , fMipmapped(mipmapped)
         , fBackend(GrBackendApi::kOpenGL)
         , fGLInfo(glInfo, params.release()) {}
 
@@ -445,12 +444,12 @@ sk_sp<GrGLTextureParameters> GrBackendTexture::getGLTextureParams() const {
 #ifdef SK_METAL
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
-                                   GrMipMapped mipMapped,
+                                   GrMipmapped mipmapped,
                                    const GrMtlTextureInfo& mtlInfo)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
-        , fMipMapped(mipMapped)
+        , fMipmapped(mipmapped)
         , fBackend(GrBackendApi::kMetal)
         , fMtlInfo(mtlInfo) {}
 #endif
@@ -469,7 +468,7 @@ GrBackendTexture::GrBackendTexture(int width,
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
-        , fMipMapped(GrMipMapped(d3dInfo.fLevelCount > 1))
+        , fMipmapped(GrMipmapped(d3dInfo.fLevelCount > 1))
         , fBackend(GrBackendApi::kDirect3D)
         , fD3DInfo(d3dInfo, state.release()) {}
 #endif
@@ -477,9 +476,9 @@ GrBackendTexture::GrBackendTexture(int width,
 #ifdef SK_GL
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
-                                   GrMipMapped mipMapped,
+                                   GrMipmapped mipmapped,
                                    const GrGLTextureInfo& glInfo)
-        : GrBackendTexture(width, height, mipMapped, glInfo, sk_make_sp<GrGLTextureParameters>()) {
+        : GrBackendTexture(width, height, mipmapped, glInfo, sk_make_sp<GrGLTextureParameters>()) {
     // Make no assumptions about client's texture's parameters.
     this->glTextureParametersModified();
 }
@@ -487,12 +486,12 @@ GrBackendTexture::GrBackendTexture(int width,
 
 GrBackendTexture::GrBackendTexture(int width,
                                    int height,
-                                   GrMipMapped mipMapped,
+                                   GrMipmapped mipmapped,
                                    const GrMockTextureInfo& mockInfo)
         : fIsValid(true)
         , fWidth(width)
         , fHeight(height)
-        , fMipMapped(mipMapped)
+        , fMipmapped(mipmapped)
         , fBackend(GrBackendApi::kMock)
         , fMockInfo(mockInfo) {}
 
@@ -533,7 +532,7 @@ GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
     }
     fWidth = that.fWidth;
     fHeight = that.fHeight;
-    fMipMapped = that.fMipMapped;
+    fMipmapped = that.fMipmapped;
     fBackend = that.fBackend;
 
     switch (that.fBackend) {
@@ -773,7 +772,7 @@ bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBa
 
     if (t0.fWidth != t1.fWidth ||
         t0.fHeight != t1.fHeight ||
-        t0.fMipMapped != t1.fMipMapped ||
+        t0.fMipmapped != t1.fMipmapped ||
         t0.fBackend != t1.fBackend) {
         return false;
     }

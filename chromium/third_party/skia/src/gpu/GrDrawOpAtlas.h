@@ -87,6 +87,12 @@ public:
             return fGenID != 0 || fPlotIndex != 0 || fPageIndex != 0;
         }
 
+        void makeInvalid() {
+            fGenID = 0;
+            fPlotIndex = 0;
+            fPageIndex = 0;
+        }
+
         bool operator==(const PlotLocator& other) const {
             return fGenID == other.fGenID &&
                    fPlotIndex == other.fPlotIndex &&
@@ -106,7 +112,16 @@ public:
 
     class AtlasLocator {
     public:
-        std::array<uint16_t, 4> getUVs(int padding) const;
+        std::array<uint16_t, 4> getUVs() const {
+
+            // We pack the 2bit page index in the low bit of the u and v texture coords
+            uint32_t pageIndex = this->pageIndex();
+            auto [left, top] = PackIndexInTexCoords(fRect.fLeft, fRect.fTop, pageIndex);
+            auto [right, bottom] = PackIndexInTexCoords(fRect.fRight, fRect.fBottom, pageIndex);
+            return { left, top, right, bottom };
+        }
+
+        void invalidatePlotLocator() { fPlotLocator.makeInvalid(); }
 
         // TODO: Remove the small path renderer's use of this for eviction
         PlotLocator plotLocator() const { return fPlotLocator; }
@@ -117,16 +132,24 @@ public:
 
         uint64_t genID() const { return fPlotLocator.genID(); }
 
+        void insetSrc(int padding) {
+            fRect.fLeft += padding;
+            fRect.fTop += padding;
+            fRect.fRight -= padding;
+            fRect.fBottom -= padding;
+        }
+
+        GrIRect16 rect() const { return fRect; }
+
     private:
         friend class GrDrawOpAtlas;
 
         SkDEBUGCODE(void validate(const GrDrawOpAtlas*) const;)
 
-        PlotLocator fPlotLocator;
-        GrIRect16   fRect{0, 0, 0, 0};
+        PlotLocator fPlotLocator{0, 0, 0};
 
-        // TODO: the inset to the actual data w/in 'fRect' could also be stored in this class
-        // This would simplify the 'getUVs' call. The valid values would be 0, 1, 2 & 4.
+        // The inset padded bounds in the atlas.
+        GrIRect16   fRect{0, 0, 0, 0};
     };
 
     /**
@@ -187,8 +210,20 @@ public:
                            Must be in the range [0, 3].
      *  @return    The new u and v coordinates with the packed value
      */
-    static std::pair<uint16_t, uint16_t> PackIndexInTexCoords(uint16_t u, uint16_t v,
-                                                              int pageIndex);
+    static std::pair<uint16_t, uint16_t> PackIndexInTexCoords(
+            uint16_t u, uint16_t v, int pageIndex) {
+        // The two bits that make up the texture index are packed into the lower bits of the u and v
+        // coordinate respectively.
+        SkASSERT(pageIndex >= 0 && pageIndex < 4);
+        uint16_t uBit = (pageIndex >> 1u) & 0x1u;
+        uint16_t vBit = pageIndex & 0x1u;
+        u <<= 1u;
+        u |= uBit;
+        v <<= 1u;
+        v |= vBit;
+        return std::make_pair(u, v);
+    }
+
     /**
      * Unpacks a texture atlas page index from uint16 texture coordinates.
      *  @param u      Packed U texture coordinate

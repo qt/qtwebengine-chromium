@@ -42,6 +42,9 @@ namespace dawn_native {
         DisableBaseInstance,
         UseD3D12SmallShaderVisibleHeapForTesting,
         UseDXC,
+        DisableRobustness,
+        LazyClearBufferOnFirstUse,
+        MetalEnableVertexPulling,
 
         EnumCount,
         InvalidEnum = EnumCount,

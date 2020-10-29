@@ -10,10 +10,12 @@
 #define LIBANGLE_RENDERER_GL_GLX_DISPLAYGLX_H_
 
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "common/Optional.h"
 #include "libANGLE/renderer/gl/DisplayGL.h"
+#include "libANGLE/renderer/gl/RendererGL.h"
 #include "libANGLE/renderer/gl/glx/FunctionsGLX.h"
 
 namespace rx
@@ -96,6 +98,8 @@ class DisplayGLX : public DisplayGL
 
     void populateFeatureList(angle::FeatureList *features) override;
 
+    RendererGL *getRenderer() const { return mRenderer.get(); }
+
   private:
     egl::Error initializeContext(glx::FBConfig config,
                                  const egl::AttributeMap &eglAttributes,
@@ -122,6 +126,7 @@ class DisplayGLX : public DisplayGL
     XVisualInfo *mVisuals;
     glx::Context mContext;
     glx::Context mSharedContext;
+    std::unordered_map<std::thread::id, glx::Context> mCurrentContexts;
     // A pbuffer the context is current on during ANGLE initialization
     glx::Pbuffer mDummyPbuffer;
 

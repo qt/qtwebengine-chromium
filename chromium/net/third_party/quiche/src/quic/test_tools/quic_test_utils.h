@@ -55,9 +55,21 @@ uint64_t TestConnectionIdToUInt64(QuicConnectionId connection_id);
 
 enum : uint16_t { kTestPort = 12345 };
 enum : uint32_t {
+  kMaxDatagramFrameSizeForTest = 1333,
+  kMaxPacketSizeForTest = 9001,
   kInitialStreamFlowControlWindowForTest = 1024 * 1024,   // 1 MB
   kInitialSessionFlowControlWindowForTest = 1536 * 1024,  // 1.5 MB
 };
+
+enum : uint64_t {
+  kAckDelayExponentForTest = 10,
+  kMaxAckDelayForTest = 51,  // ms
+  kActiveConnectionIdLimitForTest = 52,
+  kMinAckDelayUsForTest = 1000
+};
+
+// Create an arbitrary stateless reset token, same across multiple calls.
+std::vector<uint8_t> CreateStatelessResetTokenForTest();
 
 // A hostname useful for testing, returns "test.example.org".
 std::string TestHostname();
@@ -794,7 +806,8 @@ class MockQuicSession : public QuicSession {
               SendRstStream,
               (QuicStreamId stream_id,
                QuicRstStreamErrorCode error,
-               QuicStreamOffset bytes_written),
+               QuicStreamOffset bytes_written,
+               bool send_rst_only),
               (override));
 
   MOCK_METHOD(bool, ShouldKeepConnectionAlive, (), (const, override));
@@ -822,8 +835,9 @@ class MockQuicSession : public QuicSession {
 
   void ReallySendRstStream(QuicStreamId id,
                            QuicRstStreamErrorCode error,
-                           QuicStreamOffset bytes_written) {
-    QuicSession::SendRstStream(id, error, bytes_written);
+                           QuicStreamOffset bytes_written,
+                           bool send_rst_only) {
+    QuicSession::SendRstStream(id, error, bytes_written, send_rst_only);
   }
 
  private:
@@ -845,6 +859,8 @@ class MockQuicCryptoStream : public QuicCryptoStream {
   void OnOneRttPacketAcknowledged() override {}
   void OnHandshakePacketSent() override {}
   void OnHandshakeDoneReceived() override {}
+  void OnConnectionClosed(QuicErrorCode /*error*/,
+                          ConnectionCloseSource /*source*/) override {}
   HandshakeState GetHandshakeState() const override { return HANDSHAKE_START; }
   void SetServerApplicationStateForResumption(
       std::unique_ptr<ApplicationState> /*application_state*/) override {}
@@ -912,7 +928,8 @@ class MockQuicSpdySession : public QuicSpdySession {
               SendRstStream,
               (QuicStreamId stream_id,
                QuicRstStreamErrorCode error,
-               QuicStreamOffset bytes_written),
+               QuicStreamOffset bytes_written,
+               bool send_rst_only),
               (override));
   MOCK_METHOD(void,
               SendWindowUpdate,
@@ -942,6 +959,7 @@ class MockQuicSpdySession : public QuicSpdySession {
               OnPriorityFrame,
               (QuicStreamId id, const spdy::SpdyStreamPrecedence& precedence),
               (override));
+  MOCK_METHOD(void, OnCongestionWindowChange, (QuicTime now), (override));
 
   // Returns a QuicConsumedData that indicates all of |write_length| (and |fin|
   // if set) has been consumed.
@@ -1152,6 +1170,7 @@ class TestQuicSpdyClientSession : public QuicSpdyClientSessionBase {
   MOCK_METHOD(bool, ShouldCreateOutgoingUnidirectionalStream, (), (override));
   MOCK_METHOD(std::vector<std::string>, GetAlpnsToOffer, (), (const, override));
   MOCK_METHOD(void, OnAlpnSelected, (quiche::QuicheStringPiece), (override));
+  MOCK_METHOD(void, OnConfigNegotiated, (), (override));
 
   QuicCryptoClientStream* GetMutableCryptoStream() override;
   const QuicCryptoClientStream* GetCryptoStream() const override;
@@ -1168,6 +1187,10 @@ class TestQuicSpdyClientSession : public QuicSpdyClientSessionBase {
   }
 
  private:
+  // Calls the parent class's OnConfigNegotiated method. Used to set the default
+  // mock behavior for OnConfigNegotiated.
+  void RealOnConfigNegotiated();
+
   std::unique_ptr<QuicCryptoClientStream> crypto_stream_;
   QuicClientPushPromiseIndex push_promise_index_;
   std::vector<CryptoHandshakeMessage> sent_crypto_handshake_messages_;
@@ -1301,6 +1324,7 @@ class MockLossAlgorithm : public LossDetectionInterface {
   MOCK_METHOD(void, OnMinRttAvailable, (), (override));
   MOCK_METHOD(void, OnUserAgentIdKnown, (), (override));
   MOCK_METHOD(void, OnConnectionClosed, (), (override));
+  MOCK_METHOD(void, OnReorderingDetected, (), (override));
 };
 
 class MockAckListener : public QuicAckListenerInterface {
@@ -1481,6 +1505,10 @@ class MockPacketCreatorDelegate : public QuicPacketCreator::DelegateInterface {
   MOCK_METHOD(const QuicFrames,
               MaybeBundleAckOpportunistically,
               (),
+              (override));
+  MOCK_METHOD(SerializedPacketFate,
+              GetSerializedPacketFate,
+              (bool, EncryptionLevel),
               (override));
 };
 

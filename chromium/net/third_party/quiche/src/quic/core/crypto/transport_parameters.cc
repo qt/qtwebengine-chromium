@@ -12,8 +12,6 @@
 
 #include "third_party/boringssl/src/include/openssl/digest.h"
 #include "third_party/boringssl/src/include/openssl/sha.h"
-#include "net/third_party/quiche/src/quic/core/crypto/crypto_framer.h"
-#include "net/third_party/quiche/src/quic/core/crypto/crypto_handshake_message.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_data_reader.h"
 #include "net/third_party/quiche/src/quic/core/quic_data_writer.h"
@@ -57,9 +55,13 @@ enum TransportParameters::TransportParameterId : uint64_t {
   kGoogleConnectionOptions = 0x3128,
   kGoogleUserAgentId = 0x3129,
   kGoogleSupportHandshakeDone = 0x312A,  // Only used in T050.
-  kGoogleQuicParam = 18257,  // Used for non-standard Google-specific params.
+  kGoogleKeyUpdateNotYetSupported = 0x312B,
+  // 0x4751 was used for non-standard Google-specific parameters encoded as a
+  // Google QUIC_CRYPTO CHLO, it has been replaced by individual parameters.
   kGoogleQuicVersion =
-      18258,  // Used to transmit version and supported_versions.
+      0x4752,  // Used to transmit version and supported_versions.
+
+  kMinAckDelay = 0xDE1A  // draft-iyengar-quic-delayed-ack.
 };
 
 namespace {
@@ -123,10 +125,12 @@ std::string TransportParameterIdToString(
       return "user_agent_id";
     case TransportParameters::kGoogleSupportHandshakeDone:
       return "support_handshake_done";
-    case TransportParameters::kGoogleQuicParam:
-      return "google";
+    case TransportParameters::kGoogleKeyUpdateNotYetSupported:
+      return "key_update_not_yet_supported";
     case TransportParameters::kGoogleQuicVersion:
       return "google-version";
+    case TransportParameters::kMinAckDelay:
+      return "min_ack_delay_us";
   }
   return "Unknown(" + quiche::QuicheTextUtils::Uint64ToString(param_id) + ")";
 }
@@ -156,8 +160,9 @@ bool TransportParameterIdIsKnown(
     case TransportParameters::kGoogleConnectionOptions:
     case TransportParameters::kGoogleUserAgentId:
     case TransportParameters::kGoogleSupportHandshakeDone:
-    case TransportParameters::kGoogleQuicParam:
+    case TransportParameters::kGoogleKeyUpdateNotYetSupported:
     case TransportParameters::kGoogleQuicVersion:
+    case TransportParameters::kMinAckDelay:
       return true;
   }
   return false;
@@ -435,6 +440,7 @@ std::string TransportParameters::ToString() const {
   rv += initial_max_streams_uni.ToString(/*for_use_in_list=*/true);
   rv += ack_delay_exponent.ToString(/*for_use_in_list=*/true);
   rv += max_ack_delay.ToString(/*for_use_in_list=*/true);
+  rv += min_ack_delay_us.ToString(/*for_use_in_list=*/true);
   if (disable_active_migration) {
     rv += " " + TransportParameterIdToString(kDisableActiveMigration);
   }
@@ -472,8 +478,8 @@ std::string TransportParameters::ToString() const {
   if (support_handshake_done) {
     rv += " " + TransportParameterIdToString(kGoogleSupportHandshakeDone);
   }
-  if (google_quic_params) {
-    rv += " " + TransportParameterIdToString(kGoogleQuicParam);
+  if (key_update_not_yet_supported) {
+    rv += " " + TransportParameterIdToString(kGoogleKeyUpdateNotYetSupported);
   }
   for (const auto& kv : custom_parameters) {
     rv += " 0x" + quiche::QuicheTextUtils::Hex(static_cast<uint32_t>(kv.first));
@@ -513,6 +519,10 @@ TransportParameters::TransportParameters()
                     kDefaultMaxAckDelayTransportParam,
                     0,
                     kMaxMaxAckDelayTransportParam),
+      min_ack_delay_us(kMinAckDelay,
+                       0,
+                       0,
+                       kMaxMaxAckDelayTransportParam * kNumMicrosPerMilli),
       disable_active_migration(false),
       active_connection_id_limit(kActiveConnectionIdLimit,
                                  kDefaultActiveConnectionIdLimitTransportParam,
@@ -520,7 +530,8 @@ TransportParameters::TransportParameters()
                                  kVarInt62MaxValue),
       max_datagram_frame_size(kMaxDatagramFrameSize),
       initial_round_trip_time_us(kInitialRoundTripTime),
-      support_handshake_done(false)
+      support_handshake_done(false),
+      key_update_not_yet_supported(false)
 // Important note: any new transport parameters must be added
 // to TransportParameters::AreValid, SerializeTransportParameters and
 // ParseTransportParameters, TransportParameters's custom copy constructor, the
@@ -546,6 +557,7 @@ TransportParameters::TransportParameters(const TransportParameters& other)
       initial_max_streams_uni(other.initial_max_streams_uni),
       ack_delay_exponent(other.ack_delay_exponent),
       max_ack_delay(other.max_ack_delay),
+      min_ack_delay_us(other.min_ack_delay_us),
       disable_active_migration(other.disable_active_migration),
       active_connection_id_limit(other.active_connection_id_limit),
       initial_source_connection_id(other.initial_source_connection_id),
@@ -555,14 +567,11 @@ TransportParameters::TransportParameters(const TransportParameters& other)
       google_connection_options(other.google_connection_options),
       user_agent_id(other.user_agent_id),
       support_handshake_done(other.support_handshake_done),
+      key_update_not_yet_supported(other.key_update_not_yet_supported),
       custom_parameters(other.custom_parameters) {
   if (other.preferred_address) {
     preferred_address = std::make_unique<TransportParameters::PreferredAddress>(
         *other.preferred_address);
-  }
-  if (other.google_quic_params) {
-    google_quic_params =
-        std::make_unique<CryptoHandshakeMessage>(*other.google_quic_params);
   }
 }
 
@@ -587,6 +596,7 @@ bool TransportParameters::operator==(const TransportParameters& rhs) const {
             rhs.initial_max_streams_uni.value() &&
         ack_delay_exponent.value() == rhs.ack_delay_exponent.value() &&
         max_ack_delay.value() == rhs.max_ack_delay.value() &&
+        min_ack_delay_us.value() == rhs.min_ack_delay_us.value() &&
         disable_active_migration == rhs.disable_active_migration &&
         active_connection_id_limit.value() ==
             rhs.active_connection_id_limit.value() &&
@@ -599,26 +609,21 @@ bool TransportParameters::operator==(const TransportParameters& rhs) const {
         google_connection_options == rhs.google_connection_options &&
         user_agent_id == rhs.user_agent_id &&
         support_handshake_done == rhs.support_handshake_done &&
+        key_update_not_yet_supported == rhs.key_update_not_yet_supported &&
         custom_parameters == rhs.custom_parameters)) {
     return false;
   }
 
   if ((!preferred_address && rhs.preferred_address) ||
-      (preferred_address && !rhs.preferred_address) ||
-      (!google_quic_params && rhs.google_quic_params) ||
-      (google_quic_params && !rhs.google_quic_params)) {
+      (preferred_address && !rhs.preferred_address)) {
     return false;
   }
-  bool address = true;
-  if (preferred_address && rhs.preferred_address) {
-    address = (*preferred_address == *rhs.preferred_address);
+  if (preferred_address && rhs.preferred_address &&
+      *preferred_address != *rhs.preferred_address) {
+    return false;
   }
 
-  bool google_quic = true;
-  if (google_quic_params && rhs.google_quic_params) {
-    google_quic = (*google_quic_params == *rhs.google_quic_params);
-  }
-  return address && google_quic;
+  return true;
 }
 
 bool TransportParameters::operator!=(const TransportParameters& rhs) const {
@@ -691,7 +696,7 @@ bool TransportParameters::AreValid(std::string* error_details) const {
       initial_max_stream_data_uni.IsValid() &&
       initial_max_streams_bidi.IsValid() && initial_max_streams_uni.IsValid() &&
       ack_delay_exponent.IsValid() && max_ack_delay.IsValid() &&
-      active_connection_id_limit.IsValid() &&
+      min_ack_delay_us.IsValid() && active_connection_id_limit.IsValid() &&
       max_datagram_frame_size.IsValid() && initial_round_trip_time_us.IsValid();
   if (!ok) {
     *error_details = "Invalid transport parameters " + this->ToString();
@@ -749,6 +754,7 @@ bool SerializeTransportParameters(ParsedQuicVersion version,
       kIntegerParameterLength +           // initial_max_streams_uni
       kIntegerParameterLength +           // ack_delay_exponent
       kIntegerParameterLength +           // max_ack_delay
+      kIntegerParameterLength +           // min_ack_delay_us
       kTypeAndValueLength +               // disable_active_migration
       kPreferredAddressParameterLength +  // preferred_address
       kIntegerParameterLength +           // active_connection_id_limit
@@ -759,7 +765,7 @@ bool SerializeTransportParameters(ParsedQuicVersion version,
       kTypeAndValueLength +               // google_connection_options
       kTypeAndValueLength +               // user_agent_id
       kTypeAndValueLength +               // support_handshake_done
-      kTypeAndValueLength +               // google
+      kTypeAndValueLength +               // key_update_not_yet_supported
       kTypeAndValueLength +               // google-version
       kGreaseParameterLength;             // GREASE
 
@@ -780,11 +786,6 @@ bool SerializeTransportParameters(ParsedQuicVersion version,
   // Custom parameters.
   for (const auto& kv : in.custom_parameters) {
     max_transport_param_length += kTypeAndValueLength + kv.second.length();
-  }
-  // Google-specific non-standard parameter.
-  if (in.google_quic_params) {
-    max_transport_param_length +=
-        in.google_quic_params->GetSerialized().length();
   }
 
   out->resize(max_transport_param_length);
@@ -854,6 +855,7 @@ bool SerializeTransportParameters(ParsedQuicVersion version,
       !in.initial_max_streams_uni.Write(&writer, version) ||
       !in.ack_delay_exponent.Write(&writer, version) ||
       !in.max_ack_delay.Write(&writer, version) ||
+      !in.min_ack_delay_us.Write(&writer, version) ||
       !in.active_connection_id_limit.Write(&writer, version) ||
       !in.max_datagram_frame_size.Write(&writer, version) ||
       !in.initial_round_trip_time_us.Write(&writer, version)) {
@@ -991,16 +993,13 @@ bool SerializeTransportParameters(ParsedQuicVersion version,
     }
   }
 
-  // Google-specific non-standard parameter.
-  if (in.google_quic_params) {
-    const QuicData& serialized_google_quic_params =
-        in.google_quic_params->GetSerialized();
+  // Google-specific indicator for key update not yet supported.
+  if (in.key_update_not_yet_supported) {
     if (!WriteTransportParameterId(
-            &writer, TransportParameters::kGoogleQuicParam, version) ||
-        !WriteTransportParameterStringPiece(
-            &writer, serialized_google_quic_params.AsStringPiece(), version)) {
-      QUIC_BUG << "Failed to write Google params of length "
-               << serialized_google_quic_params.length() << " for " << in;
+            &writer, TransportParameters::kGoogleKeyUpdateNotYetSupported,
+            version) ||
+        !WriteTransportParameterLength(&writer, /*length=*/0, version)) {
+      QUIC_BUG << "Failed to write key_update_not_yet_supported for " << in;
       return false;
     }
   }
@@ -1359,14 +1358,13 @@ bool ParseTransportParameters(ParsedQuicVersion version,
         }
         out->support_handshake_done = true;
         break;
-      case TransportParameters::kGoogleQuicParam: {
-        if (out->google_quic_params) {
-          *error_details = "Received a second Google parameter";
+      case TransportParameters::kGoogleKeyUpdateNotYetSupported:
+        if (out->key_update_not_yet_supported) {
+          *error_details = "Received a second key_update_not_yet_supported";
           return false;
         }
-        out->google_quic_params =
-            CryptoFramer::ParseMessage(value_reader.ReadRemainingPayload());
-      } break;
+        out->key_update_not_yet_supported = true;
+        break;
       case TransportParameters::kGoogleQuicVersion: {
         if (!value_reader.ReadUInt32(&out->version)) {
           *error_details = "Failed to read Google version extension version";
@@ -1389,6 +1387,10 @@ bool ParseTransportParameters(ParsedQuicVersion version,
           }
         }
       } break;
+      case TransportParameters::kMinAckDelay:
+        parse_success =
+            out->min_ack_delay_us.Read(&value_reader, error_details);
+        break;
       default:
         if (out->custom_parameters.find(param_id) !=
             out->custom_parameters.end()) {

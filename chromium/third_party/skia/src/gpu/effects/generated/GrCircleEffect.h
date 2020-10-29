@@ -14,7 +14,6 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkTypes.h"
 
-#include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrFragmentProcessor.h"
 
 class GrCircleEffect : public GrFragmentProcessor {
@@ -34,7 +33,6 @@ public:
     GrCircleEffect(const GrCircleEffect& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "CircleEffect"; }
-    int inputFP_index = -1;
     GrClipEdgeType edgeType;
     SkPoint center;
     float radius;
@@ -51,13 +49,14 @@ private:
             , edgeType(edgeType)
             , center(center)
             , radius(radius) {
-        if (inputFP) {
-            inputFP_index = this->registerChild(std::move(inputFP));
-        }
+        this->registerChild(std::move(inputFP), SkSL::SampleUsage::PassThrough());
     }
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override;
+#endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     typedef GrFragmentProcessor INHERITED;
 };

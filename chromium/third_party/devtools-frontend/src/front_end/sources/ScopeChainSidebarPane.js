@@ -24,6 +24,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as ObjectUI from '../object_ui/object_ui.js';
@@ -69,7 +72,7 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox {
       return;
     }
 
-    if (self.UI.context.flavor(SDK.DebuggerModel.DebuggerPausedDetails)) {
+    if (UI.Context.Context.instance().flavor(SDK.DebuggerModel.DebuggerPausedDetails)) {
       this._treeOutline.forceSelect();
     }
   }
@@ -79,8 +82,8 @@ export class ScopeChainSidebarPane extends UI.Widget.VBox {
   }
 
   _update() {
-    const callFrame = self.UI.context.flavor(SDK.DebuggerModel.CallFrame);
-    const details = self.UI.context.flavor(SDK.DebuggerModel.DebuggerPausedDetails);
+    const callFrame = UI.Context.Context.instance().flavor(SDK.DebuggerModel.CallFrame);
+    const details = UI.Context.Context.instance().flavor(SDK.DebuggerModel.DebuggerPausedDetails);
     this._linkifier.reset();
     resolveThisObject(callFrame).then(this._innerUpdate.bind(this, details, callFrame));
   }

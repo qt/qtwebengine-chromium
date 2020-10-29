@@ -39,22 +39,22 @@ class QUIC_EXPORT_PRIVATE QuicBatchWriterBase : public QuicPacketWriter {
   void SetWritable() final { write_blocked_ = false; }
 
   QuicByteCount GetMaxPacketSize(
-      const QuicSocketAddress& peer_address) const final {
+      const QuicSocketAddress& /*peer_address*/) const final {
     return kMaxOutgoingPacketSize;
   }
 
-  bool SupportsReleaseTime() const { return false; }
+  bool SupportsReleaseTime() const override { return false; }
 
   bool IsBatchMode() const final { return true; }
 
   QuicPacketBuffer GetNextWriteLocation(
-      const QuicIpAddress& self_address,
-      const QuicSocketAddress& peer_address) final {
+      const QuicIpAddress& /*self_address*/,
+      const QuicSocketAddress& /*peer_address*/) final {
     // No need to explicitly delete QuicBatchWriterBuffer.
     return {batch_buffer_->GetNextWriteLocation(), nullptr};
   }
 
-  WriteResult Flush() final;
+  WriteResult Flush() override;
 
  protected:
   const QuicBatchWriterBuffer& batch_buffer() const { return *batch_buffer_; }
@@ -64,16 +64,20 @@ class QUIC_EXPORT_PRIVATE QuicBatchWriterBase : public QuicPacketWriter {
     return batch_buffer_->buffered_writes();
   }
 
-  // Get the current time in nanos which is understood by the sending api for
-  // releasing packets in the future.
-  virtual uint64_t NowInNanosForReleaseTime() const {
-    DCHECK(false) << "Should not be called since release time is unsupported.";
-    return 0;
-  }
-
   // Given the release delay in |options| and the state of |batch_buffer_|, get
   // the absolute release time.
-  uint64_t GetReleaseTime(const PerPacketOptions* options) const;
+  struct QUIC_NO_EXPORT ReleaseTime {
+    // The actual (absolute) release time.
+    uint64_t actual_release_time = 0;
+    // The difference between |actual_release_time| and ideal release time,
+    // which is (now + |options->release_time_delay|).
+    QuicTime::Delta release_time_offset = QuicTime::Delta::Zero();
+  };
+  virtual ReleaseTime GetReleaseTime(
+      const PerPacketOptions* /*options*/) const {
+    DCHECK(false) << "Should not be called since release time is unsupported.";
+    return ReleaseTime{0, QuicTime::Delta::Zero()};
+  }
 
   struct QUIC_EXPORT_PRIVATE CanBatchResult {
     CanBatchResult(bool can_batch, bool must_flush)

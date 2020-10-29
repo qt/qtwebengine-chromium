@@ -24,15 +24,11 @@ public:
 
     // Generate the final code for assigning transformed coordinates to the varyings recorded in
     // the call to collectTransforms(). This must happen after FP code emission so that it has
-    // access to any uniforms the FPs registered for const/uniform sample matrix invocations.
+    // access to any uniforms the FPs registered for uniform sample matrix invocations.
     void emitTransformCode(GrGLSLVertexBuilder* vb,
                            GrGLSLUniformHandler* uniformHandler) override;
 
 protected:
-    // A helper which subclasses can use to upload coord transform matrices in setData().
-    void setTransformDataHelper(const GrGLSLProgramDataManager& pdman,
-                                const CoordTransformRange&);
-
     // A helper for setting the matrix on a uniform handle initialized through
     // writeOutputPosition or writeLocalCoord. Automatically handles elided uniforms,
     // scale+translate matrices, and state tracking (if provided state pointer is non-null).
@@ -113,19 +109,14 @@ private:
                            const GrShaderVar& localCoordsVar,
                            FPCoordTransformHandler* handler);
 
-    struct TransformUniform {
-        UniformHandle  fHandle;
-        GrSLType       fType = kVoid_GrSLType;
-        SkMatrix       fCurrentValue = SkMatrix::InvalidMatrix();
-    };
-
-    SkTArray<TransformUniform, true> fInstalledTransforms;
-
     struct TransformInfo {
-        const char* fName;
-        GrSLType fType;
-        SkString fMatrix;
-        SkString fLocalCoords;
+        // The vertex-shader output variable to assign the transformed coordinates to
+        GrShaderVar                fOutputCoords;
+        // The coordinate to be transformed
+        GrShaderVar                fLocalCoords;
+        // The leaf FP of a transform hierarchy to be evaluated in the vertex shader;
+        // this FP will be const-uniform sampled, and all of its parents will have a sample matrix
+        // type of none or const-uniform.
         const GrFragmentProcessor* fFP;
     };
     SkTArray<TransformInfo> fTransformInfos;

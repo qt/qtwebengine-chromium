@@ -29,16 +29,16 @@ class CXFA_FFApp : public CFWL_App::AdapterIface {
   // CFWL_App::AdapterIface:
   CFWL_WidgetMgr::AdapterIface* GetWidgetMgrAdapter() override;
   TimerHandlerIface* GetTimerHandler() override;
+  IFWL_ThemeProvider* GetThemeProvider() override;
+  cppgc::Heap* GetHeap() override;
 
+  bool LoadFWLTheme(CXFA_FFDoc* doc);
   CFWL_WidgetMgr* GetFWLWidgetMgr() const { return m_pFWLApp->GetWidgetMgr(); }
   CFGAS_FontMgr* GetFDEFontMgr();
-  CXFA_FWLTheme* GetFWLTheme(CXFA_FFDoc* doc);
 
   IXFA_AppProvider* GetAppProvider() const { return m_pProvider.Get(); }
   const CFWL_App* GetFWLApp() const { return m_pFWLApp.get(); }
   CXFA_FontMgr* GetXFAFontMgr() { return &m_pFontMgr; }
-
-  void ClearEventTargets();
 
  private:
   UnownedPtr<IXFA_AppProvider> const m_pProvider;

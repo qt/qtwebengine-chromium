@@ -5,9 +5,12 @@
  * found in the LICENSE file
  */
 
+#include "src/core/SkSpecialSurface.h"
+
+#include <memory>
+
 #include "include/core/SkCanvas.h"
 #include "src/core/SkSpecialImage.h"
-#include "src/core/SkSpecialSurface.h"
 #include "src/core/SkSurfacePriv.h"
 
  ///////////////////////////////////////////////////////////////////////////////
@@ -17,8 +20,6 @@ public:
         : INHERITED(subset, props)
         , fCanvas(nullptr) {
     }
-
-    virtual ~SkSpecialSurface_Base() { }
 
     // reset is called after an SkSpecialImage has been snapped
     void reset() { fCanvas.reset(); }
@@ -72,7 +73,7 @@ public:
         fBitmap.setInfo(info, info.minRowBytes());
         fBitmap.setPixelRef(std::move(pr), 0, 0);
 
-        fCanvas.reset(new SkCanvas(fBitmap, this->props()));
+        fCanvas = std::make_unique<SkCanvas>(fBitmap, this->props());
         fCanvas->clipRect(SkRect::Make(subset));
 #ifdef SK_IS_BOT
         fCanvas->clear(SK_ColorRED);  // catch any imageFilter sloppiness
@@ -117,7 +118,7 @@ sk_sp<SkSpecialSurface> SkSpecialSurface::MakeRaster(const SkImageInfo& info,
 
 #if SK_SUPPORT_GPU
 ///////////////////////////////////////////////////////////////////////////////
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/SkGpuDevice.h"
 
@@ -128,14 +129,13 @@ public:
                          int width, int height, const SkIRect& subset)
             : INHERITED(subset, &renderTargetContext->surfaceProps())
             , fReadView(renderTargetContext->readSurfaceView()) {
-        // CONTEXT TODO: remove this use of 'backdoor' to create an SkGpuDevice
-        auto device = SkGpuDevice::Make(context->priv().backdoor(), std::move(renderTargetContext),
+        auto device = SkGpuDevice::Make(context, std::move(renderTargetContext),
                                         SkGpuDevice::kUninit_InitContents);
         if (!device) {
             return;
         }
 
-        fCanvas.reset(new SkCanvas(std::move(device)));
+        fCanvas = std::make_unique<SkCanvas>(std::move(device));
         fCanvas->clipRect(SkRect::Make(subset));
 #ifdef SK_IS_BOT
         fCanvas->clear(SK_ColorRED);  // catch any imageFilter sloppiness
@@ -150,7 +150,7 @@ public:
 
         // Note: SkSpecialImages can only be snapShotted once, so this call is destructive and we
         // move fReadMove.
-        return SkSpecialImage::MakeDeferredFromGpu(fCanvas->getGrContext(),
+        return SkSpecialImage::MakeDeferredFromGpu(fCanvas->recordingContext(),
                                                    this->subset(),
                                                    kNeedNewImageUniqueID_SpecialImage,
                                                    std::move(fReadView), ct,
@@ -173,7 +173,7 @@ sk_sp<SkSpecialSurface> SkSpecialSurface::MakeRenderTarget(GrRecordingContext* c
     }
     auto renderTargetContext = GrRenderTargetContext::Make(
             context, colorType, std::move(colorSpace), SkBackingFit::kApprox, {width, height}, 1,
-            GrMipMapped::kNo, GrProtected::kNo, kBottomLeft_GrSurfaceOrigin, SkBudgeted::kYes,
+            GrMipmapped::kNo, GrProtected::kNo, kBottomLeft_GrSurfaceOrigin, SkBudgeted::kYes,
             props);
     if (!renderTargetContext) {
         return nullptr;

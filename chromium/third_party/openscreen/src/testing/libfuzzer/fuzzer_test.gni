@@ -14,7 +14,7 @@ import("//build_overrides/build.gni")
 # - libs - Additional libraries to link.
 # - additional_configs - additional configs to be used for compilation
 # - dict - a dictionary file for the fuzzer.
-# - environment_variables - certain whitelisted environment variables for the
+# - environment_variables - certain environment variables allowed for the
 # fuzzer (AFL_DRIVER_DONT_DEFER is the only one allowed currently).
 # - libfuzzer_options - options for the fuzzer (e.g. -close_fd_mask=N).
 # - asan_options - AddressSanitizer options (e.g. allow_user_segv_handler=1).

@@ -635,16 +635,36 @@ static void add_quads(const SkPoint p[3],
                       const SkMatrix* toSrc,
                       BezierVertex** vert) {
     SkASSERT(subdiv >= 0);
-    if (subdiv) {
-        SkPoint newP[5];
-        SkChopQuadAtHalf(p, newP);
-        add_quads(newP + 0, subdiv-1, toDevice, toSrc, vert);
-        add_quads(newP + 2, subdiv-1, toDevice, toSrc, vert);
-    } else {
-        bloat_quad(p, toDevice, toSrc, *vert);
-        set_uv_quad(p, *vert);
+    // temporary vertex storage to avoid reading the vertex buffer
+    BezierVertex outVerts[kQuadNumVertices] = {};
+
+    // storage for the chopped quad
+    // pts 0,1,2 are the first quad, and 2,3,4 the second quad
+    SkPoint choppedQuadPts[5];
+    // start off with our original curve in the second quad slot
+    memcpy(&choppedQuadPts[2], p, 3*sizeof(SkPoint));
+
+    int stepCount = 1 << subdiv;
+    while (stepCount > 1) {
+        // The general idea is:
+        // * chop the quad using pts 2,3,4 as the input
+        // * write out verts using pts 0,1,2
+        // * now 2,3,4 is the remainder of the curve, chop again until all subdivisions are done
+        SkScalar h = 1.f / stepCount;
+        SkChopQuadAt(&choppedQuadPts[2], choppedQuadPts, h);
+
+        bloat_quad(choppedQuadPts, toDevice, toSrc, outVerts);
+        set_uv_quad(choppedQuadPts, outVerts);
+        memcpy(*vert, outVerts, kQuadNumVertices*sizeof(BezierVertex));
         *vert += kQuadNumVertices;
+        --stepCount;
     }
+
+    // finish up, write out the final quad
+    bloat_quad(&choppedQuadPts[2], toDevice, toSrc, outVerts);
+    set_uv_quad(&choppedQuadPts[2], outVerts);
+    memcpy(*vert, outVerts, kQuadNumVertices * sizeof(BezierVertex));
+    *vert += kQuadNumVertices;
 }
 
 static void add_line(const SkPoint p[2],
@@ -836,17 +856,6 @@ public:
         }
     }
 
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        string.appendf("Color: 0x%08x Coverage: 0x%02x, Count: %d\n", fColor.toBytes_RGBA(),
-                       fCoverage, fPaths.count());
-        string += INHERITED::dumpInfo();
-        string += fHelper.dumpInfo();
-        return string;
-    }
-#endif
-
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
     GrProcessorSet::Analysis finalize(
@@ -943,6 +952,14 @@ private:
         fPaths.push_back_n(that->fPaths.count(), that->fPaths.begin());
         return CombineResult::kMerged;
     }
+
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        return SkStringPrintf("Color: 0x%08x Coverage: 0x%02x, Count: %d\n%s",
+                              fColor.toBytes_RGBA(), fCoverage, fPaths.count(),
+                              fHelper.dumpInfo().c_str());
+    }
+#endif
 
     const SkPMColor4f& color() const { return fColor; }
     uint8_t coverage() const { return fCoverage; }
@@ -1286,7 +1303,7 @@ bool GrAAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
 
 GR_DRAW_OP_TEST_DEFINE(AAHairlineOp) {
     SkMatrix viewMatrix = GrTest::TestMatrix(random);
-    SkPath path = GrTest::TestPath(random);
+    const SkPath& path = GrTest::TestPath(random);
     SkIRect devClipBounds;
     devClipBounds.setEmpty();
     return AAHairlineOp::Make(context, std::move(paint), viewMatrix, path,

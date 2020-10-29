@@ -262,7 +262,7 @@ if (is_mac) {
       "../../rtc_base/system:rtc_export",
       "../../sdk:helpers_objc",
     ]
-    libs = [
+    frameworks = [
       "AppKit.framework",
       "IOKit.framework",
       "IOSurface.framework",
@@ -400,6 +400,7 @@ rtc_library("desktop_capture_generic") {
       "Xfixes",
       "Xrender",
       "Xrandr",
+      "Xtst",
     ]
   }
 
@@ -459,6 +460,10 @@ rtc_library("desktop_capture_generic") {
       "win/selected_window_context.h",
       "win/window_capture_utils.cc",
       "win/window_capture_utils.h",
+      "win/window_capturer_win_gdi.cc",
+      "win/window_capturer_win_gdi.h",
+      "win/window_capturer_win_wgc.cc",
+      "win/window_capturer_win_wgc.h",
       "window_capturer_win.cc",
       "window_finder_win.cc",
       "window_finder_win.h",
@@ -476,6 +481,7 @@ rtc_library("desktop_capture_generic") {
     "../../api:scoped_refptr",
     "../../rtc_base",  # TODO(kjellander): Cleanup in bugs.webrtc.org/3806.
     "../../rtc_base:checks",
+    "../../rtc_base/synchronization:mutex",
     "../../rtc_base/synchronization:rw_lock_wrapper",
     "../../rtc_base/system:arch",
     "../../rtc_base/system:rtc_export",

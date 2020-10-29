@@ -171,6 +171,21 @@ void GetAssignedSamplerBindings(const spirv_cross::CompilerMSL &compilerMsl,
     }
 }
 
+std::string PostProcessTranslatedMsl(const std::string &translatedSource)
+{
+    // Add function_constant attribute to gl_SampleMask.
+    // Even though this varying is only used when ANGLECoverageMaskEnabled is true,
+    // the spirv-cross doesn't assign function_constant attribute to it. Thus it won't be dead-code
+    // removed when ANGLECoverageMaskEnabled=false.
+    std::string sampleMaskReplaceStr = std::string("[[sample_mask, function_constant(") +
+                                       sh::mtl::kCoverageMaskEnabledConstName + ")]]";
+
+    // This replaces "gl_SampleMask [[sample_mask]]"
+    //          with "gl_SampleMask [[sample_mask, function_constant(ANGLECoverageMaskEnabled)]]"
+    std::regex sampleMaskDeclareRegex(R"(\[\s*\[\s*sample_mask\s*\]\s*\])");
+    return std::regex_replace(translatedSource, sampleMaskDeclareRegex, sampleMaskReplaceStr);
+}
+
 // Customized spirv-cross compiler
 class SpirvToMslCompiler : public spirv_cross::CompilerMSL
 {
@@ -210,7 +225,7 @@ class SpirvToMslCompiler : public spirv_cross::CompilerMSL
         spirv_cross::CompilerMSL::set_msl_options(compOpt);
 
         // Actual compilation
-        std::string translatedMsl = spirv_cross::CompilerMSL::compile();
+        std::string translatedMsl = PostProcessTranslatedMsl(spirv_cross::CompilerMSL::compile());
 
         // Retrieve automatic texture slot assignments
         GetAssignedSamplerBindings(*this, originalSamplerBindings,
@@ -242,9 +257,29 @@ angle::Result GlslangGetShaderSpirvCode(ErrorHandler *context,
                                         const ShaderMapInterfaceVariableInfoMap &variableInfoMap,
                                         gl::ShaderMap<std::vector<uint32_t>> *shaderCodeOut)
 {
-    return rx::GlslangGetShaderSpirvCode(
+    gl::ShaderMap<SpirvBlob> initialSpirvBlobs;
+
+    ANGLE_TRY(rx::GlslangGetShaderSpirvCode(
         [context](GlslangError error) { return HandleError(context, error); }, linkedShaderStages,
-        glCaps, shaderSources, variableInfoMap, shaderCodeOut);
+        glCaps, shaderSources, variableInfoMap, &initialSpirvBlobs));
+
+    for (const gl::ShaderType shaderType : linkedShaderStages)
+    {
+        // we pass in false here to skip modifications related to  early fragment tests
+        // optimizations and line rasterization. These are done in the initProgram time since they
+        // are related to context state. We must keep original untouched spriv blobs here because we
+        // do not have ability to add back in at initProgram time.
+        angle::Result status = GlslangTransformSpirvCode(
+            [context](GlslangError error) { return HandleError(context, error); }, shaderType,
+            false, false, variableInfoMap[shaderType], initialSpirvBlobs[shaderType],
+            &(*shaderCodeOut)[shaderType]);
+        if (status != angle::Result::Continue)
+        {
+            return status;
+        }
+    }
+
+    return angle::Result::Continue;
 }
 
 angle::Result SpirvCodeToMsl(Context *context,

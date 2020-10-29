@@ -12,12 +12,11 @@
 #include "xfa/fwl/cfwl_comboedit.h"
 #include "xfa/fwl/cfwl_combolist.h"
 #include "xfa/fwl/cfwl_listbox.h"
+#include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fxgraphics/cxfa_graphics.h"
 
-class CFWL_WidgetProperties;
 class CFWL_ComboBox;
 class CFWL_ListBox;
-class CFWL_Widget;
 
 #define FWL_STYLEEXT_CMB_DropDown (1L << 0)
 #define FWL_STYLEEXT_CMB_Sort (1L << 1)
@@ -49,7 +48,6 @@ class CFWL_ComboBox final : public CFWL_Widget {
   void Update() override;
   FWL_WidgetHit HitTest(const CFX_PointF& point) override;
   void DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) override;
-  void SetThemeProvider(IFWL_ThemeProvider* pThemeProvider) override;
   void OnProcessMessage(CFWL_Message* pMessage) override;
   void OnProcessEvent(CFWL_Event* pEvent) override;
   void OnDrawWidget(CXFA_Graphics* pGraphics,
@@ -97,12 +95,11 @@ class CFWL_ComboBox final : public CFWL_Widget {
 
  private:
   bool IsDropDownStyle() const {
-    return !!(m_pProperties->m_dwStyleExes & FWL_STYLEEXT_CMB_DropDown);
+    return !!(m_Properties.m_dwStyleExes & FWL_STYLEEXT_CMB_DropDown);
   }
   void MatchEditText();
   void SyncEditText(int32_t iListItem);
   void Layout();
-  void ResetTheme();
   void ResetEditAlignment();
   void ResetListItemAlignment();
   void GetPopupPos(float fMinHeight,
@@ -110,9 +107,6 @@ class CFWL_ComboBox final : public CFWL_Widget {
                    const CFX_RectF& rtAnchor,
                    CFX_RectF* pPopupRect);
   void OnLButtonUp(CFWL_MessageMouse* pMsg);
-
-  void InitComboList();
-  void InitComboEdit();
   bool IsDropListVisible() const { return m_pListBox->IsVisible(); }
   void OnLButtonDown(CFWL_MessageMouse* pMsg);
   void OnFocusChanged(CFWL_Message* pMsg, bool bSet);
@@ -121,8 +115,8 @@ class CFWL_ComboBox final : public CFWL_Widget {
   CFX_RectF m_ClientRect;
   CFX_RectF m_ContentRect;
   CFX_RectF m_BtnRect;
-  std::unique_ptr<CFWL_ComboEdit> m_pEdit;
-  std::unique_ptr<CFWL_ComboList> m_pListBox;
+  std::unique_ptr<CFWL_ComboEdit> const m_pEdit;
+  std::unique_ptr<CFWL_ComboList> const m_pListBox;
   int32_t m_iCurSel = -1;
   int32_t m_iBtnState = CFWL_PartState_Normal;
 };

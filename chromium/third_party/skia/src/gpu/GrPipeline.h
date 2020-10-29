@@ -107,15 +107,15 @@ public:
     ///////////////////////////////////////////////////////////////////////////
     /// @name GrFragmentProcessors
 
-    int numColorFragmentProcessors() const { return fNumColorProcessors; }
-    int numCoverageFragmentProcessors() const {
-        return fFragmentProcessors.count() - fNumColorProcessors;
-    }
     int numFragmentProcessors() const { return fFragmentProcessors.count(); }
+    bool isColorFragmentProcessor(int idx) const { return idx < fNumColorProcessors; }
+    bool isCoverageFragmentProcessor(int idx) const { return idx >= fNumColorProcessors; }
+
+    void visitTextureEffects(const std::function<void(const GrTextureEffect&)>&) const;
 
     const GrXferProcessor& getXferProcessor() const {
         if (fXferProcessor) {
-            return *fXferProcessor.get();
+            return *fXferProcessor;
         } else {
             // A null xp member means the common src-over case. GrXferProcessor's ref'ing
             // mechanism is not thread safe so we do not hold a ref on this global.
@@ -148,18 +148,8 @@ public:
         return nullptr;
     }
 
-    const GrFragmentProcessor& getColorFragmentProcessor(int idx) const {
-        SkASSERT(idx < this->numColorFragmentProcessors());
-        return *fFragmentProcessors[idx].get();
-    }
-
-    const GrFragmentProcessor& getCoverageFragmentProcessor(int idx) const {
-        SkASSERT(idx < this->numCoverageFragmentProcessors());
-        return *fFragmentProcessors[fNumColorProcessors + idx].get();
-    }
-
     const GrFragmentProcessor& getFragmentProcessor(int idx) const {
-        return *fFragmentProcessors[idx].get();
+        return *fFragmentProcessors[idx];
     }
 
     /// @}
@@ -228,7 +218,8 @@ private:
 
     friend bool operator&(Flags, InputFlags);
 
-    using FragmentProcessorArray = SkAutoSTArray<8, std::unique_ptr<const GrFragmentProcessor>>;
+    // A pipeline can contain up to three processors: color, paint coverage, and clip coverage.
+    using FragmentProcessorArray = SkAutoSTArray<3, std::unique_ptr<const GrFragmentProcessor>>;
 
     GrSurfaceProxyView fDstProxyView;
     SkIPoint fDstTextureOffset;

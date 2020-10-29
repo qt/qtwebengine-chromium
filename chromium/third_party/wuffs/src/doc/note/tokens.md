@@ -45,13 +45,13 @@ contains the next token. The final token in a token chain, including
 stand-alone tokens, will have the `continued` bit set to zero.
 
 ```
-+-----+-------------+-------+---------------+-----+-----------+
-|  1  |      21     |   3   |       22      |  1  |     16    |
-+-----+-------------+-------+---------------+-----+-----------+
-[...................value...................] con     length
-[..1..|...........~value_extension..........]
-[..0..|.value_major.|......value_minor......]
-[..0..|......0......|..VBC..|......VBD......]
++-----+-------------+-------+-------------+-----+-----------+
+|  1  |      21     |   4   |      21     |  1  |     16    |
++-----+-------------+-------+-------------+-----+-----------+
+[..................value..................] con     length
+[..1..|..........~value_extension.........]
+[..0..|.value_major.|.....value_minor.....]
+[..0..|......0......|..VBC..|.....VBD.....]
 ```
 
 The value bits can be sub-divided in multiple ways. First, the high bit:
@@ -79,7 +79,9 @@ of `html`. The `value_major` forms a namespace that distinguishes e.g.
 HTML-specific tokens from JSON-specific tokens.
 
 If `value_major` is non-zero then `value_minor` has whatever meaning the
-tokenizer's package assigns to it.
+tokenizer's package assigns to it. For example, combining its low 18 bits with
+a follow-up extended token's 46 `value_extension` bits could form a 64-bit
+overall value, whose semnatics depend on the `value_minor`'s high 7 bits.
 
 
 ### VBCs and VBDs
@@ -143,13 +145,13 @@ $ gcc script/print-json-token-debug-format.c -o pjtdf
 $ ./pjtdf -all-tokens -human-readable < test/data/json-things.formatted.json
 pos=0x00000000  len=0x0001  con=0  vbc=1:Structure........  vbd=0x004011
 pos=0x00000001  len=0x0005  con=0  vbc=0:Filler...........  vbd=0x000000
-pos=0x00000006  len=0x0001  con=1  vbc=2:String...........  vbd=0x000013
-pos=0x00000007  len=0x0002  con=1  vbc=2:String...........  vbd=0x000021
-pos=0x00000009  len=0x0001  con=0  vbc=2:String...........  vbd=0x000013
+pos=0x00000006  len=0x0001  con=1  vbc=2:String...........  vbd=0x000113
+pos=0x00000007  len=0x0002  con=1  vbc=2:String...........  vbd=0x000203
+pos=0x00000009  len=0x0001  con=0  vbc=2:String...........  vbd=0x000113
 etc
 pos=0x00000090  len=0x0002  con=1  vbc=3:UnicodeCodePoint.  vbd=0x00000A
 pos=0x00000092  len=0x0002  con=1  vbc=3:UnicodeCodePoint.  vbd=0x00000A
-pos=0x00000094  len=0x0001  con=0  vbc=2:String...........  vbd=0x000013
+pos=0x00000094  len=0x0001  con=0  vbc=2:String...........  vbd=0x000113
 pos=0x00000095  len=0x0001  con=0  vbc=0:Filler...........  vbd=0x000000
 pos=0x00000096  len=0x0001  con=0  vbc=1:Structure........  vbd=0x001042
 ```

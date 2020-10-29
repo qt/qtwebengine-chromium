@@ -34,7 +34,7 @@
 import * as Common from '../common/common.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';
 
-import {DeferredDOMNode, DOMModel} from './DOMModel.js';  // eslint-disable-line no-unused-vars
+import {DeferredDOMNode, DOMModel, DOMNode} from './DOMModel.js';  // eslint-disable-line no-unused-vars
 import {Events as NetworkManagerEvents, NetworkManager} from './NetworkManager.js';
 import {NetworkRequest} from './NetworkRequest.js';  // eslint-disable-line no-unused-vars
 import {Resource} from './Resource.js';
@@ -189,17 +189,17 @@ export class ResourceTreeModel extends SDKModel {
    * @return {?ResourceTreeFrame}
    */
   _frameAttached(frameId, parentFrameId, stackTrace) {
-    const parentFrame = parentFrameId ? (this._frames.get(parentFrameId) || null) : null;
+    const sameTargetParentFrame = parentFrameId ? (this._frames.get(parentFrameId) || null) : null;
     // Do nothing unless cached resource tree is processed - it will overwrite everything.
-    if (!this._cachedResourcesProcessed && parentFrame) {
+    if (!this._cachedResourcesProcessed && sameTargetParentFrame) {
       return null;
     }
     if (this._frames.has(frameId)) {
       return null;
     }
 
-    const frame = new ResourceTreeFrame(this, parentFrame, frameId, null, stackTrace || null);
-    if (parentFrameId && !parentFrame) {
+    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, frameId, null, stackTrace || null);
+    if (parentFrameId && !sameTargetParentFrame) {
       frame._crossTargetParentFrameId = parentFrameId;
     }
     if (frame.isMainFrame() && this.mainFrame) {
@@ -214,9 +214,9 @@ export class ResourceTreeModel extends SDKModel {
    * @param {!Protocol.Page.Frame} framePayload
    */
   _frameNavigated(framePayload) {
-    const parentFrame = framePayload.parentId ? (this._frames.get(framePayload.parentId) || null) : null;
+    const sameTargetParentFrame = framePayload.parentId ? (this._frames.get(framePayload.parentId) || null) : null;
     // Do nothing unless cached resource tree is processed - it will overwrite everything.
-    if (!this._cachedResourcesProcessed && parentFrame) {
+    if (!this._cachedResourcesProcessed && sameTargetParentFrame) {
       return;
     }
     let frame = this._frames.get(framePayload.id);
@@ -260,8 +260,8 @@ export class ResourceTreeModel extends SDKModel {
       return;
     }
 
-    if (frame.parentFrame) {
-      frame.parentFrame._removeChildFrame(frame);
+    if (frame.sameTargetParentFrame()) {
+      frame.sameTargetParentFrame()._removeChildFrame(frame);
     } else {
       frame._remove();
     }
@@ -348,13 +348,13 @@ export class ResourceTreeModel extends SDKModel {
   }
 
   /**
-   * @param {?ResourceTreeFrame} parentFrame
+   * @param {?ResourceTreeFrame} sameTargetParentFrame
    * @param {!Protocol.Page.FrameResourceTree} frameTreePayload
    */
-  _addFramesRecursively(parentFrame, frameTreePayload) {
+  _addFramesRecursively(sameTargetParentFrame, frameTreePayload) {
     const framePayload = frameTreePayload.frame;
-    const frame = new ResourceTreeFrame(this, parentFrame, framePayload.id, framePayload, null);
-    if (!parentFrame && framePayload.parentId) {
+    const frame = new ResourceTreeFrame(this, sameTargetParentFrame, framePayload.id, framePayload, null);
+    if (!sameTargetParentFrame && framePayload.parentId) {
       frame._crossTargetParentFrameId = framePayload.parentId;
     }
     this._addFrame(frame);
@@ -492,7 +492,7 @@ export class ResourceTreeModel extends SDKModel {
       const parents = [];
       while (currentFrame) {
         parents.push(currentFrame);
-        currentFrame = currentFrame.parentFrame;
+        currentFrame = currentFrame.sameTargetParentFrame();
       }
       return parents.reverse();
     }
@@ -607,19 +607,27 @@ export class ResourceTreeFrame {
    */
   constructor(model, parentFrame, frameId, payload, creationStackTrace) {
     this._model = model;
-    this._parentFrame = parentFrame;
+    this._sameTargetParentFrame = parentFrame;
     this._id = frameId;
     this._url = '';
     this._crossTargetParentFrameId = null;
 
+    /**
+     * @type {!Protocol.Page.AdFrameType}
+     */
+    this._adFrameType = Protocol.Page.AdFrameType.None;
     if (payload) {
       this._loaderId = payload.loaderId;
       this._name = payload.name;
       this._url = payload.url;
+      this._domainAndRegistry = payload.domainAndRegistry;
       this._securityOrigin = payload.securityOrigin;
       this._mimeType = payload.mimeType;
       this._unreachableUrl = payload.unreachableUrl || '';
+      this._adFrameType = payload.adFrameType || Protocol.Page.AdFrameType.None;
     }
+    this._secureContextType = payload && payload.secureContextType;
+    this._crossOriginIsolatedContextType = payload && payload.crossOriginIsolatedContextType;
 
     this._creationStackTrace = creationStackTrace;
 
@@ -633,11 +641,38 @@ export class ResourceTreeFrame {
      */
     this._resourcesMap = {};
 
-    if (this._parentFrame) {
-      this._parentFrame._childFrames.add(this);
+    if (this._sameTargetParentFrame) {
+      this._sameTargetParentFrame._childFrames.add(this);
     }
   }
 
+  /**
+   * @returns {boolean}
+   */
+  isSecureContext() {
+    return !!this._secureContextType && this._secureContextType.startsWith('Secure');
+  }
+
+  /**
+   * @returns {?Protocol.Page.SecureContextType}
+   */
+  getSecureContextType() {
+    return this._secureContextType;
+  }
+
+  /**
+   * @returns {boolean}
+   */
+  isCrossOriginIsolated() {
+    return !!this._crossOriginIsolatedContextType && this._crossOriginIsolatedContextType.startsWith('Isolated');
+  }
+
+  /**
+   * @returns {?Protocol.Page.CrossOriginIsolatedContextType}
+   */
+  getCrossOriginIsolatedContextType() {
+    return this._crossOriginIsolatedContextType;
+  }
 
   /**
    * @param {!Protocol.Page.Frame} framePayload
@@ -646,9 +681,14 @@ export class ResourceTreeFrame {
     this._loaderId = framePayload.loaderId;
     this._name = framePayload.name;
     this._url = framePayload.url;
+    this._domainAndRegistry = framePayload.domainAndRegistry;
     this._securityOrigin = framePayload.securityOrigin;
     this._mimeType = framePayload.mimeType;
     this._unreachableUrl = framePayload.unreachableUrl || '';
+    this._adFrameType = framePayload.adFrameType || Protocol.Page.AdFrameType.None;
+    this._secureContextType = framePayload.secureContextType;
+    this._crossOriginIsolatedContextType = framePayload.crossOriginIsolatedContextType;
+
     const mainResource = this._resourcesMap[this._url];
     this._resourcesMap = {};
     this._removeChildFrames();
@@ -688,6 +728,13 @@ export class ResourceTreeFrame {
   /**
    * @return {string}
    */
+  domainAndRegistry() {
+    return this._domainAndRegistry;
+  }
+
+  /**
+   * @return {string}
+   */
   get securityOrigin() {
     return this._securityOrigin;
   }
@@ -707,10 +754,10 @@ export class ResourceTreeFrame {
   }
 
   /**
-   * @return {?ResourceTreeFrame}
+   * @return {!Protocol.Page.AdFrameType}
    */
-  get parentFrame() {
-    return this._parentFrame;
+  adFrameType() {
+    return this._adFrameType;
   }
 
   /**
@@ -721,6 +768,15 @@ export class ResourceTreeFrame {
   }
 
   /**
+   * Returns the parent frame if both frames are part of the same process/target.
+   * @return {?ResourceTreeFrame}
+   */
+  sameTargetParentFrame() {
+    return this._sameTargetParentFrame;
+  }
+
+  /**
+   * Returns the parent frame if both frames are part of different processes/targets (child is an OOPIF).
    * @return {?ResourceTreeFrame}
    */
   crossTargetParentFrame() {
@@ -744,6 +800,15 @@ export class ResourceTreeFrame {
   }
 
   /**
+   * Returns the parent frame. There is only 1 parent and it's either in the
+   * same target or it's cross-target.
+   * @return {?ResourceTreeFrame}
+   */
+  parentFrame() {
+    return this.sameTargetParentFrame() || this.crossTargetParentFrame();
+  }
+
+  /**
    * @param {function(!Protocol.Runtime.CallFrame):boolean} searchFn
    * @return {?Protocol.Runtime.CallFrame}
    */
@@ -760,14 +825,21 @@ export class ResourceTreeFrame {
   }
 
   /**
+   * Returns true if this is the main frame of its target. For example, this returns true for the main frame
+   * of an out-of-process iframe (OOPIF).
    * @return {boolean}
    */
   isMainFrame() {
-    return !this._parentFrame;
+    return !this._sameTargetParentFrame;
   }
 
+  /**
+   * Returns true if this is the top frame of the main target, i.e. if this is the top-most frame in the inspected
+   * tab.
+   * @return {boolean}
+   */
   isTopFrame() {
-    return !this._parentFrame && !this._crossTargetParentFrameId;
+    return !this._sameTargetParentFrame && !this._crossTargetParentFrameId;
   }
 
   /**
@@ -893,10 +965,10 @@ export class ResourceTreeFrame {
   }
 
   /**
-   * @returns {?Promise<?DeferredDOMNode>}
+   * @returns {!Promise<?DeferredDOMNode>}
    */
-  getOwnerDOMNode() {
-    const parentFrame = this.parentFrame || this.crossTargetParentFrame();
+  async getOwnerDeferredDOMNode() {
+    const parentFrame = this.parentFrame();
     if (!parentFrame) {
       return null;
     }
@@ -904,10 +976,24 @@ export class ResourceTreeFrame {
   }
 
   /**
+   * @returns {!Promise<?DOMNode>}
+   */
+  async getOwnerDOMNodeOrDocument() {
+    const deferredNode = await this.getOwnerDeferredDOMNode();
+    if (deferredNode) {
+      return deferredNode.resolvePromise();
+    }
+    if (this.isTopFrame()) {
+      return this.resourceTreeModel().domModel().requestDocument();
+    }
+    return null;
+  }
+
+  /**
    * @returns {!Promise<void>}
    */
   async highlight() {
-    const parentFrame = this.parentFrame || this.crossTargetParentFrame();
+    const parentFrame = this.parentFrame();
     if (parentFrame) {
       const domModel = parentFrame.resourceTreeModel().domModel();
       const deferredNode = await domModel.getOwnerNodeForFrame(this._id);
@@ -981,13 +1067,6 @@ export class PageDispatcher {
    * @param {!Protocol.Page.FrameNavigatedEvent} event
    */
   frameNavigated({frame}) {
-    const url = new URL(frame.url);
-    if (url.protocol === 'chrome-error:' && url.hostname === 'chromewebdata' && frame.parentId) {
-      // Skip navigation to heavy ads interstitials to
-      // allow developers to see resources of the origin they
-      // originally intended to see.
-      return;
-    }
     this._resourceTreeModel._frameNavigated(frame);
   }
 

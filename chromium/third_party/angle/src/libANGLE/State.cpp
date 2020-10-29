@@ -72,40 +72,25 @@ template <typename T>
 using ContextStateMember = T *(State::*);
 
 template <typename T>
-T *AllocateOrGetSharedResourceManager(const State *shareContextState, ContextStateMember<T> member)
+T *AllocateOrGetSharedResourceManager(const State *shareContextState,
+                                      ContextStateMember<T> member,
+                                      T *shareResources = nullptr)
 {
     if (shareContextState)
     {
         T *resourceManager = (*shareContextState).*member;
+        ASSERT(!resourceManager || resourceManager == shareResources || !shareResources);
         resourceManager->addRef();
         return resourceManager;
+    }
+    else if (shareResources)
+    {
+        shareResources->addRef();
+        return shareResources;
     }
     else
     {
         return new T();
-    }
-}
-
-TextureManager *AllocateOrGetSharedTextureManager(const State *shareContextState,
-                                                  TextureManager *shareTextures,
-                                                  ContextStateMember<TextureManager> member)
-{
-    if (shareContextState)
-    {
-        TextureManager *textureManager = (*shareContextState).*member;
-        ASSERT(shareTextures == nullptr || textureManager == shareTextures);
-        textureManager->addRef();
-        return textureManager;
-    }
-    else if (shareTextures)
-    {
-        TextureManager *textureManager = shareTextures;
-        textureManager->addRef();
-        return textureManager;
-    }
-    else
-    {
-        return new TextureManager();
     }
 }
 
@@ -308,6 +293,7 @@ ANGLE_INLINE void ActiveTexturesCache::set(ContextID contextID,
 State::State(const State *shareContextState,
              egl::ShareGroup *shareGroup,
              TextureManager *shareTextures,
+             SemaphoreManager *shareSemaphores,
              const OverlayType *overlay,
              const EGLenum clientType,
              const Version &clientVersion,
@@ -325,9 +311,9 @@ State::State(const State *shareContextState,
       mBufferManager(AllocateOrGetSharedResourceManager(shareContextState, &State::mBufferManager)),
       mShaderProgramManager(
           AllocateOrGetSharedResourceManager(shareContextState, &State::mShaderProgramManager)),
-      mTextureManager(AllocateOrGetSharedTextureManager(shareContextState,
-                                                        shareTextures,
-                                                        &State::mTextureManager)),
+      mTextureManager(AllocateOrGetSharedResourceManager(shareContextState,
+                                                         &State::mTextureManager,
+                                                         shareTextures)),
       mRenderbufferManager(
           AllocateOrGetSharedResourceManager(shareContextState, &State::mRenderbufferManager)),
       mSamplerManager(
@@ -337,8 +323,9 @@ State::State(const State *shareContextState,
       mProgramPipelineManager(new ProgramPipelineManager()),
       mMemoryObjectManager(
           AllocateOrGetSharedResourceManager(shareContextState, &State::mMemoryObjectManager)),
-      mSemaphoreManager(
-          AllocateOrGetSharedResourceManager(shareContextState, &State::mSemaphoreManager)),
+      mSemaphoreManager(AllocateOrGetSharedResourceManager(shareContextState,
+                                                           &State::mSemaphoreManager,
+                                                           shareSemaphores)),
       mMaxDrawBuffers(0),
       mMaxCombinedTextureImageUnits(0),
       mDepthClearValue(0),
@@ -1438,6 +1425,11 @@ void State::setGenerateMipmapHint(GLenum hint)
     mDirtyBits.set(DIRTY_BIT_EXTENDED);
 }
 
+GLenum State::getGenerateMipmapHint() const
+{
+    return mGenerateMipmapHint;
+}
+
 void State::setTextureFilteringHint(GLenum hint)
 {
     mTextureFilteringHint = hint;
@@ -1889,7 +1881,6 @@ angle::Result State::setProgramPipelineBinding(const Context *context, ProgramPi
 
     if (mProgramPipeline.get())
     {
-        mProgramPipeline->bind();
         ANGLE_TRY(onProgramPipelineExecutableChange(context, mProgramPipeline.get()));
 
         if (mProgramPipeline->hasAnyDirtyBit())
@@ -3063,7 +3054,7 @@ Texture *State::getTextureForActiveSampler(TextureType type, size_t index)
     return mSamplerTextures[type][index].get();
 }
 
-angle::Result State::syncTexturesInit(const Context *context)
+angle::Result State::syncTexturesInit(const Context *context, Command command)
 {
     ASSERT(mRobustResourceInit);
 
@@ -3081,7 +3072,7 @@ angle::Result State::syncTexturesInit(const Context *context)
     return angle::Result::Continue;
 }
 
-angle::Result State::syncImagesInit(const Context *context)
+angle::Result State::syncImagesInit(const Context *context, Command command)
 {
     ASSERT(mRobustResourceInit);
     ASSERT(mProgram);
@@ -3096,33 +3087,33 @@ angle::Result State::syncImagesInit(const Context *context)
     return angle::Result::Continue;
 }
 
-angle::Result State::syncReadAttachments(const Context *context)
+angle::Result State::syncReadAttachments(const Context *context, Command command)
 {
     ASSERT(mReadFramebuffer);
     ASSERT(mRobustResourceInit);
     return mReadFramebuffer->ensureReadAttachmentsInitialized(context);
 }
 
-angle::Result State::syncDrawAttachments(const Context *context)
+angle::Result State::syncDrawAttachments(const Context *context, Command command)
 {
     ASSERT(mDrawFramebuffer);
     ASSERT(mRobustResourceInit);
     return mDrawFramebuffer->ensureDrawAttachmentsInitialized(context);
 }
 
-angle::Result State::syncReadFramebuffer(const Context *context)
+angle::Result State::syncReadFramebuffer(const Context *context, Command command)
 {
     ASSERT(mReadFramebuffer);
-    return mReadFramebuffer->syncState(context, GL_READ_FRAMEBUFFER);
+    return mReadFramebuffer->syncState(context, GL_READ_FRAMEBUFFER, command);
 }
 
-angle::Result State::syncDrawFramebuffer(const Context *context)
+angle::Result State::syncDrawFramebuffer(const Context *context, Command command)
 {
     ASSERT(mDrawFramebuffer);
-    return mDrawFramebuffer->syncState(context, GL_DRAW_FRAMEBUFFER);
+    return mDrawFramebuffer->syncState(context, GL_DRAW_FRAMEBUFFER, command);
 }
 
-angle::Result State::syncTextures(const Context *context)
+angle::Result State::syncTextures(const Context *context, Command command)
 {
     if (mDirtyTextures.none())
         return angle::Result::Continue;
@@ -3132,7 +3123,7 @@ angle::Result State::syncTextures(const Context *context)
         Texture *texture = mActiveTexturesCache[textureIndex];
         if (texture && texture->hasAnyDirtyBit())
         {
-            ANGLE_TRY(texture->syncState(context, TextureCommand::Other));
+            ANGLE_TRY(texture->syncState(context, Command::Other));
         }
     }
 
@@ -3140,7 +3131,7 @@ angle::Result State::syncTextures(const Context *context)
     return angle::Result::Continue;
 }
 
-angle::Result State::syncImages(const Context *context)
+angle::Result State::syncImages(const Context *context, Command command)
 {
     if (mDirtyImages.none())
         return angle::Result::Continue;
@@ -3150,7 +3141,7 @@ angle::Result State::syncImages(const Context *context)
         Texture *texture = mImageUnits[imageUnitIndex].texture.get();
         if (texture && texture->hasAnyDirtyBit())
         {
-            ANGLE_TRY(texture->syncState(context, TextureCommand::Other));
+            ANGLE_TRY(texture->syncState(context, Command::Other));
         }
     }
 
@@ -3158,7 +3149,7 @@ angle::Result State::syncImages(const Context *context)
     return angle::Result::Continue;
 }
 
-angle::Result State::syncSamplers(const Context *context)
+angle::Result State::syncSamplers(const Context *context, Command command)
 {
     if (mDirtySamplers.none())
         return angle::Result::Continue;
@@ -3177,13 +3168,13 @@ angle::Result State::syncSamplers(const Context *context)
     return angle::Result::Continue;
 }
 
-angle::Result State::syncVertexArray(const Context *context)
+angle::Result State::syncVertexArray(const Context *context, Command command)
 {
     ASSERT(mVertexArray);
     return mVertexArray->syncState(context);
 }
 
-angle::Result State::syncProgram(const Context *context)
+angle::Result State::syncProgram(const Context *context, Command command)
 {
     // There may not be a program if the calling application only uses program pipelines.
     if (mProgram)
@@ -3193,7 +3184,7 @@ angle::Result State::syncProgram(const Context *context)
     return angle::Result::Continue;
 }
 
-angle::Result State::syncProgramPipeline(const Context *context)
+angle::Result State::syncProgramPipeline(const Context *context, Command command)
 {
     // There may not be a program pipeline if the calling application only uses programs.
     if (mProgramPipeline.get())
@@ -3233,7 +3224,7 @@ angle::Result State::syncDirtyObject(const Context *context, GLenum target)
             break;
     }
 
-    return syncDirtyObjects(context, localSet);
+    return syncDirtyObjects(context, localSet, Command::Other);
 }
 
 void State::setObjectDirty(GLenum target)
@@ -3306,7 +3297,7 @@ angle::Result State::onProgramExecutableChange(const Context *context, Program *
 
         if (image->hasAnyDirtyBit())
         {
-            ANGLE_TRY(image->syncState(context, TextureCommand::Other));
+            ANGLE_TRY(image->syncState(context, Command::Other));
         }
 
         if (mRobustResourceInit && image->initState() == InitState::MayNeedInit)
@@ -3351,7 +3342,7 @@ angle::Result State::onProgramPipelineExecutableChange(const Context *context,
 
         if (image->hasAnyDirtyBit())
         {
-            ANGLE_TRY(image->syncState(context, TextureCommand::Other));
+            ANGLE_TRY(image->syncState(context, Command::Other));
         }
 
         if (mRobustResourceInit && image->initState() == InitState::MayNeedInit)
@@ -3405,25 +3396,6 @@ void State::setImageUnit(const Context *context,
     onImageStateChange(context, unit);
 }
 
-void State::updatePPOActiveTextures()
-{
-    // TODO(http://anglebug.com/4559): Use the Subject/Observer pattern for
-    // Programs in PPOs so we can remove this.
-    if (!mProgram)
-    {
-        // There is no Program bound, so we are updating the textures for a separable Program.
-        // Only that Program's Executable has been updated so far, so we need to update the
-        // Executable for each of the PPO's in case the Program is in there as well.
-        for (ResourceMap<ProgramPipeline, ProgramPipelineID>::Iterator ppoIterator =
-                 mProgramPipelineManager->begin();
-             ppoIterator != mProgramPipelineManager->end(); ++ppoIterator)
-        {
-            ProgramPipeline *pipeline = ppoIterator->second;
-            pipeline->updateExecutableTextures();
-        }
-    }
-}
-
 // Handle a dirty texture event.
 void State::onActiveTextureChange(const Context *context, size_t textureUnit)
 {
@@ -3435,7 +3407,7 @@ void State::onActiveTextureChange(const Context *context, size_t textureUnit)
                                      : nullptr;
         updateActiveTexture(context, textureUnit, activeTexture);
 
-        updatePPOActiveTextures();
+        mExecutable->onStateChange(angle::SubjectMessage::SubjectChanged);
     }
 }
 
@@ -3473,7 +3445,7 @@ void State::onImageStateChange(const Context *context, size_t unit)
             mDirtyObjects.set(DIRTY_OBJECT_IMAGES_INIT);
         }
 
-        updatePPOActiveTextures();
+        mExecutable->onStateChange(angle::SubjectMessage::SubjectChanged);
     }
 }
 

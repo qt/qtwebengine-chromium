@@ -14,11 +14,8 @@
 
 #include "utils/WGPUHelpers.h"
 
-#include "common/Assert.h"
 #include "common/Constants.h"
 #include "common/Log.h"
-#include "common/Math.h"
-#include "utils/TextureFormatUtils.h"
 
 #include <shaderc/shaderc.hpp>
 
@@ -144,6 +141,14 @@ namespace utils {
         return CreateShaderModuleFromResult(device, result);
     }
 
+    wgpu::ShaderModule CreateShaderModuleFromWGSL(const wgpu::Device& device, const char* source) {
+        wgpu::ShaderModuleWGSLDescriptor wgslDesc;
+        wgslDesc.source = source;
+        wgpu::ShaderModuleDescriptor descriptor;
+        descriptor.nextInChain = &wgslDesc;
+        return device.CreateShaderModule(&descriptor);
+    }
+
     std::vector<uint32_t> CompileGLSLToSpirv(SingleShaderStage stage, const char* source) {
         shaderc_shader_kind kind = ShadercShaderKind(stage);
 
@@ -267,24 +272,35 @@ namespace utils {
                                               uint64_t offset,
                                               uint32_t bytesPerRow,
                                               uint32_t rowsPerImage) {
-        wgpu::BufferCopyView bufferCopyView;
+        wgpu::BufferCopyView bufferCopyView = {};
         bufferCopyView.buffer = buffer;
-        bufferCopyView.offset = offset;
-        bufferCopyView.bytesPerRow = bytesPerRow;
-        bufferCopyView.rowsPerImage = rowsPerImage;
+        bufferCopyView.layout = CreateTextureDataLayout(offset, bytesPerRow, rowsPerImage);
 
         return bufferCopyView;
     }
 
     wgpu::TextureCopyView CreateTextureCopyView(wgpu::Texture texture,
                                                 uint32_t mipLevel,
-                                                wgpu::Origin3D origin) {
+                                                wgpu::Origin3D origin,
+                                                wgpu::TextureAspect aspect) {
         wgpu::TextureCopyView textureCopyView;
         textureCopyView.texture = texture;
         textureCopyView.mipLevel = mipLevel;
         textureCopyView.origin = origin;
+        textureCopyView.aspect = aspect;
 
         return textureCopyView;
+    }
+
+    wgpu::TextureDataLayout CreateTextureDataLayout(uint64_t offset,
+                                                    uint32_t bytesPerRow,
+                                                    uint32_t rowsPerImage) {
+        wgpu::TextureDataLayout textureDataLayout;
+        textureDataLayout.offset = offset;
+        textureDataLayout.bytesPerRow = bytesPerRow;
+        textureDataLayout.rowsPerImage = rowsPerImage;
+
+        return textureDataLayout;
     }
 
     wgpu::SamplerDescriptor GetDefaultSamplerDescriptor() {
@@ -374,47 +390,4 @@ namespace utils {
         return device.CreateBindGroup(&descriptor);
     }
 
-    uint32_t GetMinimumBytesPerRow(wgpu::TextureFormat format, uint32_t width) {
-        const uint32_t bytesPerTexel = utils::GetTexelBlockSizeInBytes(format);
-        return Align(bytesPerTexel * width, kTextureBytesPerRowAlignment);
-    }
-
-    uint32_t GetBytesInBufferTextureCopy(wgpu::TextureFormat format,
-                                         uint32_t width,
-                                         uint32_t bytesPerRow,
-                                         uint32_t rowsPerImage,
-                                         uint32_t copyArrayLayerCount) {
-        ASSERT(rowsPerImage > 0);
-        const uint32_t bytesPerTexel = utils::GetTexelBlockSizeInBytes(format);
-        const uint32_t bytesAtLastImage = bytesPerRow * (rowsPerImage - 1) + bytesPerTexel * width;
-        return bytesPerRow * rowsPerImage * (copyArrayLayerCount - 1) + bytesAtLastImage;
-    }
-
-    // TODO(jiawei.shao@intel.com): support compressed texture formats
-    BufferTextureCopyLayout GetBufferTextureCopyLayoutForTexture2DAtLevel(
-        wgpu::TextureFormat format,
-        wgpu::Extent3D textureSizeAtLevel0,
-        uint32_t mipmapLevel,
-        uint32_t rowsPerImage) {
-        BufferTextureCopyLayout layout;
-
-        layout.mipSize = {textureSizeAtLevel0.width >> mipmapLevel,
-                          textureSizeAtLevel0.height >> mipmapLevel, textureSizeAtLevel0.depth};
-
-        layout.bytesPerRow = GetMinimumBytesPerRow(format, layout.mipSize.width);
-
-        uint32_t appliedRowsPerImage = rowsPerImage > 0 ? rowsPerImage : layout.mipSize.height;
-        layout.bytesPerImage = layout.bytesPerRow * appliedRowsPerImage;
-
-        layout.byteLength =
-            GetBytesInBufferTextureCopy(format, layout.mipSize.width, layout.bytesPerRow,
-                                        appliedRowsPerImage, textureSizeAtLevel0.depth);
-
-        const uint32_t bytesPerTexel = utils::GetTexelBlockSizeInBytes(format);
-        layout.texelBlocksPerRow = layout.bytesPerRow / bytesPerTexel;
-        layout.texelBlocksPerImage = layout.bytesPerImage / bytesPerTexel;
-        layout.texelBlockCount = layout.byteLength / bytesPerTexel;
-
-        return layout;
-    }
 }  // namespace utils

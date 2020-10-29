@@ -97,11 +97,10 @@ class DrawAtlasPathShader::Impl : public GrGLSLGeometryProcessor {
         args.fFragBuilder->codeAppendf(".aaaa;");
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& primProc,
-                 const CoordTransformRange& transformRange) override {
+    void setData(const GrGLSLProgramDataManager& pdman,
+                 const GrPrimitiveProcessor& primProc) override {
         const SkISize& dimensions = primProc.cast<DrawAtlasPathShader>().fAtlasDimensions;
         pdman.set2f(fAtlasAdjustUniform, 1.f / dimensions.width(), 1.f / dimensions.height());
-        this->setTransformDataHelper(pdman, transformRange);
     }
 
     GrGLSLUniformHandler::UniformHandle fAtlasAdjustUniform;
@@ -185,6 +184,6 @@ void GrDrawAtlasPathOp::onExecute(GrOpFlushState* state, const SkRect& chainBoun
 
     state->bindPipelineAndScissorClip(programInfo, this->bounds());
     state->bindTextures(shader, *fAtlasProxy, pipeline);
-    state->bindBuffers(nullptr, fInstanceBuffer.get(), nullptr);
+    state->bindBuffers(nullptr, std::move(fInstanceBuffer), nullptr);
     state->drawInstanced(fInstanceCount, fBaseInstance, 4, 0);
 }

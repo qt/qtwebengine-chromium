@@ -70,7 +70,7 @@ class Util {
     for (const audit of Object.values(clone.audits)) {
       // Turn 'not-applicable' (LHR <4.0) and 'not_applicable' (older proto versions)
       // into 'notApplicable' (LHR ≥4.0).
-      // @ts-ignore tsc rightly flags that these values shouldn't occur.
+      // @ts-expect-error tsc rightly flags that these values shouldn't occur.
       // eslint-disable-next-line max-len
       if (audit.scoreDisplayMode === 'not_applicable' || audit.scoreDisplayMode === 'not-applicable') {
         audit.scoreDisplayMode = 'notApplicable';
@@ -79,7 +79,7 @@ class Util {
       if (audit.details) {
         // Turn `auditDetails.type` of undefined (LHR <4.2) and 'diagnostic' (LHR <5.0)
         // into 'debugdata' (LHR ≥5.0).
-        // @ts-ignore tsc rightly flags that these values shouldn't occur.
+        // @ts-expect-error tsc rightly flags that these values shouldn't occur.
         if (audit.details.type === undefined || audit.details.type === 'diagnostic') {
           audit.details.type = 'debugdata';
         }
@@ -494,8 +494,18 @@ class Util {
  */
 Util.reportJson = null;
 
+/**
+ * An always-increasing counter for making unique SVG ID suffixes.
+ */
+Util.getUniqueSuffix = (() => {
+  let svgSuffix = 0;
+  return function() {
+    return svgSuffix++;
+  };
+})();
+
 /** @type {I18n} */
-// @ts-ignore: Is set in report renderer.
+// @ts-expect-error: Is set in report renderer.
 Util.i18n = null;
 
 /**
@@ -653,6 +663,29 @@ class DOM {
    */
   createElement(name, className, attrs = {}) {
     const element = this._document.createElement(name);
+    if (className) {
+      element.className = className;
+    }
+    Object.keys(attrs).forEach(key => {
+      const value = attrs[key];
+      if (typeof value !== 'undefined') {
+        element.setAttribute(key, value);
+      }
+    });
+    return element;
+  }
+
+  /**
+   * @param {string} namespaceURI
+   * @param {string} name
+   * @param {string=} className
+   * @param {Object<string, (string|undefined)>=} attrs Attribute key/val pairs.
+   *     Note: if an attribute key has an undefined value, this method does not
+   *     set the attribute on the node.
+   * @return {Element}
+   */
+  createElementNS(namespaceURI, name, className, attrs = {}) {
+    const element = this._document.createElementNS(namespaceURI, name);
     if (className) {
       element.className = className;
     }
@@ -1044,7 +1077,7 @@ Copyright © 2019 Javan Makhmali
  */
 'use strict';
 
-/* globals self CriticalRequestChainRenderer SnippetRenderer Util URL */
+/* globals self CriticalRequestChainRenderer SnippetRenderer ElementScreenshotRenderer Util URL */
 
 /** @typedef {import('./dom.js')} DOM */
 
@@ -1053,9 +1086,12 @@ const URL_PREFIXES = ['http://', 'https://', 'data:'];
 class DetailsRenderer {
   /**
    * @param {DOM} dom
+   * @param {{fullPageScreenshot?: LH.Audit.Details.FullPageScreenshot}} [options]
    */
-  constructor(dom) {
+  constructor(dom, options = {}) {
     this._dom = dom;
+    this._fullPageScreenshot = options.fullPageScreenshot;
+
     /** @type {ParentNode} */
     this._templateContext; // eslint-disable-line no-unused-expressions
   }
@@ -1087,10 +1123,11 @@ class DetailsRenderer {
       // Internal-only details, not for rendering.
       case 'screenshot':
       case 'debugdata':
+      case 'full-page-screenshot':
         return null;
 
       default: {
-        // @ts-ignore tsc thinks this is unreachable, but be forward compatible
+        // @ts-expect-error tsc thinks this is unreachable, but be forward compatible
         // with new unexpected detail types.
         return this._renderUnknown(details.type, details);
       }
@@ -1103,8 +1140,11 @@ class DetailsRenderer {
    */
   _renderBytes(details) {
     // TODO: handle displayUnit once we have something other than 'kb'
-    const value = Util.i18n.formatBytesToKB(details.value, details.granularity);
-    return this._renderText(value);
+    // Note that 'kb' is historical and actually represents KiB.
+    const value = Util.i18n.formatBytesToKiB(details.value, details.granularity);
+    const textEl = this._renderText(value);
+    textEl.title = Util.i18n.formatBytes(details.value);
+    return textEl;
   }
 
   /**
@@ -1183,7 +1223,7 @@ class DetailsRenderer {
 
   /**
    * @param {string} text
-   * @return {Element}
+   * @return {HTMLDivElement}
    */
   _renderText(text) {
     const element = this._dom.createElement('div', 'lh-text');
@@ -1192,14 +1232,13 @@ class DetailsRenderer {
   }
 
   /**
-   * @param {string} text
+   * @param {{value: number, granularity?: number}} details
    * @return {Element}
    */
-  _renderNumeric(text) {
-    // TODO: this should probably accept a number and call `formatNumber` instead of being identical
-    // to _renderText.
+  _renderNumeric(details) {
+    const value = Util.i18n.formatNumber(details.value, details.granularity);
     const element = this._dom.createElement('div', 'lh-numeric');
-    element.textContent = text;
+    element.textContent = value;
     return element;
   }
 
@@ -1242,7 +1281,7 @@ class DetailsRenderer {
    * @return {Element|null}
    */
   _renderTableValue(value, heading) {
-    if (typeof value === 'undefined' || value === null) {
+    if (value === undefined || value === null) {
       return null;
     }
 
@@ -1258,6 +1297,9 @@ class DetailsRenderer {
         }
         case 'node': {
           return this.renderNode(value);
+        }
+        case 'numeric': {
+          return this._renderNumeric(value);
         }
         case 'source-location': {
           return this.renderSourceLocation(value);
@@ -1290,8 +1332,8 @@ class DetailsRenderer {
         return this._renderMilliseconds(msValue);
       }
       case 'numeric': {
-        const strValue = String(value);
-        return this._renderNumeric(strValue);
+        const numValue = Number(value);
+        return this._renderNumeric({value: numValue, granularity: heading.granularity});
       }
       case 'text': {
         const strValue = String(value);
@@ -1343,21 +1385,15 @@ class DetailsRenderer {
    * @return {LH.Audit.Details.OpportunityColumnHeading}
    */
   _getCanonicalizedHeading(heading) {
-    let subRows;
-    if (heading.subRows) {
-      // @ts-ignore: It's ok that there is no text.
-      subRows = this._getCanonicalizedHeading(heading.subRows);
-      if (!subRows.key) {
-        // eslint-disable-next-line no-console
-        console.warn('key should not be null');
-      }
-      subRows = {...subRows, key: subRows.key || ''};
+    let subItemsHeading;
+    if (heading.subItemsHeading) {
+      subItemsHeading = this._getCanonicalizedsubItemsHeading(heading.subItemsHeading, heading);
     }
 
     return {
       key: heading.key,
       valueType: heading.itemType,
-      subRows,
+      subItemsHeading,
       label: heading.text,
       displayUnit: heading.displayUnit,
       granularity: heading.granularity,
@@ -1365,19 +1401,101 @@ class DetailsRenderer {
   }
 
   /**
-   * @param {LH.Audit.Details.ItemValue[]} values
-   * @param {LH.Audit.Details.OpportunityColumnHeading} heading
-   * @return {Element}
+   * @param {Exclude<LH.Audit.Details.TableColumnHeading['subItemsHeading'], undefined>} subItemsHeading
+   * @param {LH.Audit.Details.TableColumnHeading} parentHeading
+   * @return {LH.Audit.Details.OpportunityColumnHeading['subItemsHeading']}
    */
-  _renderSubRows(values, heading) {
-    const subRowsElement = this._dom.createElement('div', 'lh-sub-rows');
-    for (const childValue of values) {
-      const subRowElement = this._renderTableValue(childValue, heading);
-      if (!subRowElement) continue;
-      subRowElement.classList.add('lh-sub-row');
-      subRowsElement.appendChild(subRowElement);
+  _getCanonicalizedsubItemsHeading(subItemsHeading, parentHeading) {
+    // Low-friction way to prevent commiting a falsy key (which is never allowed for
+    // a subItemsHeading) from passing in CI.
+    if (!subItemsHeading.key) {
+      // eslint-disable-next-line no-console
+      console.warn('key should not be null');
     }
-    return subRowsElement;
+
+    return {
+      key: subItemsHeading.key || '',
+      valueType: subItemsHeading.itemType || parentHeading.itemType,
+      granularity: subItemsHeading.granularity || parentHeading.granularity,
+      displayUnit: subItemsHeading.displayUnit || parentHeading.displayUnit,
+    };
+  }
+
+  /**
+   * Returns a new heading where the values are defined first by `heading.subItemsHeading`,
+   * and secondly by `heading`. If there is no subItemsHeading, returns null, which will
+   * be rendered as an empty column.
+   * @param {LH.Audit.Details.OpportunityColumnHeading} heading
+   * @return {LH.Audit.Details.OpportunityColumnHeading | null}
+   */
+  _getDerivedsubItemsHeading(heading) {
+    if (!heading.subItemsHeading) return null;
+    return {
+      key: heading.subItemsHeading.key || '',
+      valueType: heading.subItemsHeading.valueType || heading.valueType,
+      granularity: heading.subItemsHeading.granularity || heading.granularity,
+      displayUnit: heading.subItemsHeading.displayUnit || heading.displayUnit,
+      label: '',
+    };
+  }
+
+  /**
+   * @param {LH.Audit.Details.OpportunityItem | LH.Audit.Details.TableItem} item
+   * @param {(LH.Audit.Details.OpportunityColumnHeading | null)[]} headings
+   */
+  _renderTableRow(item, headings) {
+    const rowElem = this._dom.createElement('tr');
+
+    for (const heading of headings) {
+      // Empty cell if no heading or heading key for this column.
+      if (!heading || !heading.key) {
+        this._dom.createChildOf(rowElem, 'td', 'lh-table-column--empty');
+        continue;
+      }
+
+      const value = item[heading.key];
+      let valueElement;
+      if (value !== undefined && value !== null) {
+        valueElement = this._renderTableValue(value, heading);
+      }
+
+      if (valueElement) {
+        const classes = `lh-table-column--${heading.valueType}`;
+        this._dom.createChildOf(rowElem, 'td', classes).appendChild(valueElement);
+      } else {
+        // Empty cell is rendered for a column if:
+        // - the pair is null
+        // - the heading key is null
+        // - the value is undefined/null
+        this._dom.createChildOf(rowElem, 'td', 'lh-table-column--empty');
+      }
+    }
+
+    return rowElem;
+  }
+
+  /**
+   * Renders one or more rows from a details table item. A single table item can
+   * expand into multiple rows, if there is a subItemsHeading.
+   * @param {LH.Audit.Details.OpportunityItem | LH.Audit.Details.TableItem} item
+   * @param {LH.Audit.Details.OpportunityColumnHeading[]} headings
+   */
+  _renderTableRowsFromItem(item, headings) {
+    const fragment = this._dom.createFragment();
+    fragment.append(this._renderTableRow(item, headings));
+
+    if (!item.subItems) return fragment;
+
+    const subItemsHeadings = headings.map(this._getDerivedsubItemsHeading);
+    if (!subItemsHeadings.some(Boolean)) return fragment;
+
+    for (const subItem of item.subItems.items) {
+      const rowEl = this._renderTableRow(subItem, subItemsHeadings);
+      rowEl.classList.add('lh-sub-item-row');
+      fragment.append(rowEl);
+    }
+
+    return fragment;
   }
 
   /**
@@ -1402,50 +1520,17 @@ class DetailsRenderer {
     }
 
     const tbodyElem = this._dom.createChildOf(tableElem, 'tbody');
-    for (const row of details.items) {
-      const rowElem = this._dom.createChildOf(tbodyElem, 'tr');
-      for (const heading of headings) {
-        const valueFragment = this._dom.createFragment();
-
-        if (heading.key === null && !heading.subRows) {
-          // eslint-disable-next-line no-console
-          console.warn('A header with a null `key` should define `subRows`.');
-        }
-
-        if (heading.key === null) {
-          const emptyElement = this._dom.createElement('div');
-          emptyElement.innerHTML = '&nbsp;';
-          valueFragment.appendChild(emptyElement);
-        } else {
-          const value = row[heading.key];
-          const valueElement =
-            value !== undefined && !Array.isArray(value) && this._renderTableValue(value, heading);
-          if (valueElement) valueFragment.appendChild(valueElement);
-        }
-
-        if (heading.subRows) {
-          const subRowsHeading = {
-            key: heading.subRows.key,
-            valueType: heading.subRows.valueType || heading.valueType,
-            granularity: heading.subRows.granularity || heading.granularity,
-            displayUnit: heading.subRows.displayUnit || heading.displayUnit,
-            label: '',
-          };
-          const values = row[subRowsHeading.key];
-          if (Array.isArray(values)) {
-            const subRowsElement = this._renderSubRows(values, subRowsHeading);
-            valueFragment.appendChild(subRowsElement);
-          }
-        }
-
-        if (valueFragment.childElementCount) {
-          const classes = `lh-table-column--${heading.valueType}`;
-          this._dom.createChildOf(rowElem, 'td', classes).appendChild(valueFragment);
-        } else {
-          this._dom.createChildOf(rowElem, 'td', 'lh-table-column--empty');
-        }
+    let even = true;
+    for (const item of details.items) {
+      const rowsFragment = this._renderTableRowsFromItem(item, headings);
+      for (const rowEl of this._dom.findAll('tr', rowsFragment)) {
+        // For zebra styling.
+        rowEl.classList.add(even ? 'lh-row--even' : 'lh-row--odd');
       }
+      even = !even;
+      tbodyElem.append(rowsFragment);
     }
+
     return tableElem;
   }
 
@@ -1487,6 +1572,20 @@ class DetailsRenderer {
     if (item.path) element.setAttribute('data-path', item.path);
     if (item.selector) element.setAttribute('data-selector', item.selector);
     if (item.snippet) element.setAttribute('data-snippet', item.snippet);
+
+    if (!item.boundingRect || !this._fullPageScreenshot) {
+      return element;
+    }
+
+    const maxThumbnailSize = {width: 147, height: 100};
+    const elementScreenshot = ElementScreenshotRenderer.render(
+      this._dom,
+      this._templateContext,
+      this._fullPageScreenshot,
+      item.boundingRect,
+      maxThumbnailSize
+    );
+    element.prepend(elementScreenshot);
 
     return element;
   }
@@ -1689,7 +1788,7 @@ class CriticalRequestChainRenderer {
       const span = dom.createElement('span', 'crc-node__chain-duration');
       span.textContent = ' - ' + Util.i18n.formatMilliseconds((endTime - startTime) * 1000) + ', ';
       const span2 = dom.createElement('span', 'crc-node__chain-duration');
-      span2.textContent = Util.i18n.formatBytesToKB(transferSize, 0.01);
+      span2.textContent = Util.i18n.formatBytesToKiB(transferSize, 0.01);
 
       treevalEl.appendChild(span);
       treevalEl.appendChild(span2);
@@ -2134,6 +2233,273 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 ;
 /**
+ * @license Copyright 2020 The Lighthouse Authors. All Rights Reserved.
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+ */
+'use strict';
+
+/**
+ * @fileoverview These functions define {Rect}s and {Size}s using two different coordinate spaces:
+ *   1. Screenshot coords (SC suffix): where 0,0 is the top left of the screenshot image
+ *   2. Display coords (DC suffix): that match the CSS pixel coordinate space of the LH report's page.
+ */
+
+/* globals self Util */
+
+/** @typedef {import('./dom.js')} DOM */
+/** @typedef {LH.Artifacts.Rect} Rect */
+/** @typedef {{width: number, height: number}} Size */
+
+/**
+ * @param {number} value
+ * @param {number} min
+ * @param {number} max
+ */
+function clamp(value, min, max) {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+/**
+ * @param {Rect} rect
+ */
+function getRectCenterPoint(rect) {
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  };
+}
+
+class ElementScreenshotRenderer {
+  /**
+   * Given the location of an element and the sizes of the preview and screenshot,
+   * compute the absolute positions (in screenshot coordinate scale) of the screenshot content
+   * and the highlighted rect around the element.
+   * @param {Rect} elementRectSC
+   * @param {Size} elementPreviewSizeSC
+   * @param {Size} screenshotSize
+   */
+  static getScreenshotPositions(elementRectSC, elementPreviewSizeSC, screenshotSize) {
+    const elementRectCenter = getRectCenterPoint(elementRectSC);
+
+    // Try to center clipped region.
+    const screenshotLeftVisibleEdge = clamp(
+      elementRectCenter.x - elementPreviewSizeSC.width / 2,
+      0, screenshotSize.width - elementPreviewSizeSC.width
+    );
+    const screenshotTopVisisbleEdge = clamp(
+      elementRectCenter.y - elementPreviewSizeSC.height / 2,
+      0, screenshotSize.height - elementPreviewSizeSC.height
+    );
+
+    return {
+      screenshot: {
+        left: screenshotLeftVisibleEdge,
+        top: screenshotTopVisisbleEdge,
+      },
+      clip: {
+        left: elementRectSC.left - screenshotLeftVisibleEdge,
+        top: elementRectSC.top - screenshotTopVisisbleEdge,
+      },
+    };
+  }
+
+  /**
+   * Render a clipPath SVG element to assist marking the element's rect.
+   * The elementRect and previewSize are in screenshot coordinate scale.
+   * @param {DOM} dom
+   * @param {HTMLElement} maskEl
+   * @param {{left: number, top: number}} positionClip
+   * @param {LH.Artifacts.Rect} elementRect
+   * @param {Size} elementPreviewSize
+   */
+  static renderClipPathInScreenshot(dom, maskEl, positionClip, elementRect, elementPreviewSize) {
+    const clipPathEl = dom.find('clipPath', maskEl);
+    const clipId = `clip-${Util.getUniqueSuffix()}`;
+    clipPathEl.id = clipId;
+    maskEl.style.clipPath = `url(#${clipId})`;
+
+    // Normalize values between 0-1.
+    const top = positionClip.top / elementPreviewSize.height;
+    const bottom = top + elementRect.height / elementPreviewSize.height;
+    const left = positionClip.left / elementPreviewSize.width;
+    const right = left + elementRect.width / elementPreviewSize.width;
+
+    const polygonsPoints = [
+      `0,0             1,0            1,${top}          0,${top}`,
+      `0,${bottom}     1,${bottom}    1,1               0,1`,
+      `0,${top}        ${left},${top} ${left},${bottom} 0,${bottom}`,
+      `${right},${top} 1,${top}       1,${bottom}       ${right},${bottom}`,
+    ];
+    for (const points of polygonsPoints) {
+      clipPathEl.append(dom.createElementNS(
+        'http://www.w3.org/2000/svg', 'polygon', undefined, {points}));
+    }
+  }
+
+  /**
+   * Called externally and must be injected to the report in order to use this renderer.
+   * @param {DOM} dom
+   * @param {LH.Audit.Details.FullPageScreenshot} fullPageScreenshot
+   */
+  static createBackgroundImageStyle(dom, fullPageScreenshot) {
+    const styleEl = dom.createElement('style');
+    styleEl.id = 'full-page-screenshot-style';
+    styleEl.textContent = `
+      .lh-element-screenshot__image {
+        background-image: url(${fullPageScreenshot.data})
+      }`;
+    return styleEl;
+  }
+
+  /**
+   * Installs the lightbox elements and wires up click listeners to all .lh-element-screenshot elements.
+   * @param {DOM} dom
+   * @param {ParentNode} templateContext
+   * @param {LH.Audit.Details.FullPageScreenshot} fullPageScreenshot
+   */
+  static installOverlayFeature(dom, templateContext, fullPageScreenshot) {
+    const reportEl = dom.find('.lh-report', dom.document());
+    const screenshotOverlayClass = 'lh-feature-screenshot-overlay';
+    if (reportEl.classList.contains(screenshotOverlayClass)) return;
+    reportEl.classList.add(screenshotOverlayClass);
+
+    const maxLightboxSize = {
+      width: dom.document().documentElement.clientWidth,
+      height: dom.document().documentElement.clientHeight * 0.75,
+    };
+
+    dom.document().addEventListener('click', e => {
+      const target = /** @type {?HTMLElement} */ (e.target);
+      if (!target) return;
+      const el = /** @type {?HTMLElement} */ (target.closest('.lh-element-screenshot'));
+      if (!el) return;
+
+      const overlay = dom.createElement('div');
+      overlay.classList.add('lh-element-screenshot__overlay');
+      const elementRectSC = {
+        width: Number(el.dataset['rectWidth']),
+        height: Number(el.dataset['rectHeight']),
+        left: Number(el.dataset['rectLeft']),
+        right: Number(el.dataset['rectLeft']) + Number(el.dataset['rectWidth']),
+        top: Number(el.dataset['rectTop']),
+        bottom: Number(el.dataset['rectTop']) + Number(el.dataset['rectHeight']),
+      };
+      overlay.appendChild(ElementScreenshotRenderer.render(
+        dom,
+        templateContext,
+        fullPageScreenshot,
+        elementRectSC,
+        maxLightboxSize
+      ));
+      overlay.addEventListener('click', () => {
+        overlay.remove();
+      });
+
+      reportEl.appendChild(overlay);
+    });
+  }
+
+  /**
+   * Given the size of the element in the screenshot and the total available size of our preview container,
+   * compute the factor by which we need to zoom out to view the entire element with context.
+   * @param {LH.Artifacts.Rect} elementRectSC
+   * @param {Size} renderContainerSizeDC
+   * @return {number}
+   */
+  static _computeZoomFactor(elementRectSC, renderContainerSizeDC) {
+    const targetClipToViewportRatio = 0.75;
+    const zoomRatioXY = {
+      x: renderContainerSizeDC.width / elementRectSC.width,
+      y: renderContainerSizeDC.height / elementRectSC.height,
+    };
+    const zoomFactor = targetClipToViewportRatio * Math.min(zoomRatioXY.x, zoomRatioXY.y);
+    return Math.min(1, zoomFactor);
+  }
+
+  /**
+   * Renders an element with surrounding context from the full page screenshot.
+   * Used to render both the thumbnail preview in details tables and the full-page screenshot in the lightbox.
+   * @param {DOM} dom
+   * @param {ParentNode} templateContext
+   * @param {LH.Audit.Details.FullPageScreenshot} fullPageScreenshot
+   * @param {LH.Artifacts.Rect} elementRectSC Region of screenshot to highlight.
+   * @param {Size} maxRenderSizeDC e.g. maxThumbnailSize or maxLightboxSize.
+   * @return {Element}
+   */
+  static render(dom, templateContext, fullPageScreenshot, elementRectSC, maxRenderSizeDC) {
+    const tmpl = dom.cloneTemplate('#tmpl-lh-element-screenshot', templateContext);
+    const containerEl = dom.find('.lh-element-screenshot', tmpl);
+
+    containerEl.dataset['rectWidth'] = elementRectSC.width.toString();
+    containerEl.dataset['rectHeight'] = elementRectSC.height.toString();
+    containerEl.dataset['rectLeft'] = elementRectSC.left.toString();
+    containerEl.dataset['rectTop'] = elementRectSC.top.toString();
+
+    // Zoom out when highlighted region takes up most of the viewport.
+    // This provides more context for where on the page this element is.
+    const zoomFactor = this._computeZoomFactor(elementRectSC, maxRenderSizeDC);
+
+    const elementPreviewSizeSC = {
+      width: maxRenderSizeDC.width / zoomFactor,
+      height: maxRenderSizeDC.height / zoomFactor,
+    };
+    elementPreviewSizeSC.width = Math.min(fullPageScreenshot.width, elementPreviewSizeSC.width);
+    /* This preview size is either the size of the thumbnail or size of the Lightbox */
+    const elementPreviewSizeDC = {
+      width: elementPreviewSizeSC.width * zoomFactor,
+      height: elementPreviewSizeSC.height * zoomFactor,
+    };
+
+    const positions = ElementScreenshotRenderer.getScreenshotPositions(
+      elementRectSC,
+      elementPreviewSizeSC,
+      {width: fullPageScreenshot.width, height: fullPageScreenshot.height}
+    );
+
+    const contentEl = dom.find('.lh-element-screenshot__content', containerEl);
+    contentEl.style.top = `-${elementPreviewSizeDC.height}px`;
+
+    const imageEl = dom.find('.lh-element-screenshot__image', containerEl);
+    imageEl.style.width = elementPreviewSizeDC.width + 'px';
+    imageEl.style.height = elementPreviewSizeDC.height + 'px';
+
+    imageEl.style.backgroundPositionY = -(positions.screenshot.top * zoomFactor) + 'px';
+    imageEl.style.backgroundPositionX = -(positions.screenshot.left * zoomFactor) + 'px';
+    imageEl.style.backgroundSize =
+      `${fullPageScreenshot.width * zoomFactor}px ${fullPageScreenshot.height * zoomFactor}px`;
+
+    const markerEl = dom.find('.lh-element-screenshot__element-marker', containerEl);
+    markerEl.style.width = elementRectSC.width * zoomFactor + 'px';
+    markerEl.style.height = elementRectSC.height * zoomFactor + 'px';
+    markerEl.style.left = positions.clip.left * zoomFactor + 'px';
+    markerEl.style.top = positions.clip.top * zoomFactor + 'px';
+
+    const maskEl = dom.find('.lh-element-screenshot__mask', containerEl);
+    maskEl.style.width = elementPreviewSizeDC.width + 'px';
+    maskEl.style.height = elementPreviewSizeDC.height + 'px';
+
+    ElementScreenshotRenderer.renderClipPathInScreenshot(
+      dom,
+      maskEl,
+      positions.clip,
+      elementRectSC,
+      elementPreviewSizeSC
+    );
+
+    return containerEl;
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = ElementScreenshotRenderer;
+} else {
+  self.ElementScreenshotRenderer = ElementScreenshotRenderer;
+}
+;
+/**
  * @license Copyright 2017 The Lighthouse Authors. All Rights Reserved.
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
  * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
@@ -2162,7 +2528,7 @@ function getFilenamePrefix(lhr) {
   const dateParts = date.toLocaleDateString('en-US', {
     year: 'numeric', month: '2-digit', day: '2-digit',
   }).split('/');
-  // @ts-ignore - parts exists
+  // @ts-expect-error - parts exists
   dateParts.unshift(dateParts.pop());
   const dateStr = dateParts.join('-');
 
@@ -2283,13 +2649,13 @@ if (typeof module !== 'undefined' && module.exports) {
  * the report.
  */
 
-/* globals getFilenamePrefix Util */
+/* globals getFilenamePrefix Util ElementScreenshotRenderer */
 
 /** @typedef {import('./dom')} DOM */
 
 /**
  * @param {HTMLTableElement} tableEl
- * @return {Array<HTMLTableRowElement>}
+ * @return {Array<HTMLElement>}
  */
 function getTableRows(tableEl) {
   return Array.from(tableEl.tBodies[0].rows);
@@ -2342,6 +2708,7 @@ class ReportUIFeatures {
     this._setupMediaQueryListeners();
     this._dropDown.setup(this.onDropDownMenuClick);
     this._setupThirdPartyFilter();
+    this._setupElementScreenshotOverlay();
     this._setUpCollapseDetailsAfterPrinting();
     this._resetUIState();
     this._document.addEventListener('keyup', this.onKeyUp);
@@ -2508,29 +2875,34 @@ class ReportUIFeatures {
 
       filterInput.id = id;
       filterInput.addEventListener('change', e => {
-        // Remove rows from the dom and keep track of them to re-add on uncheck.
-        // Why removing instead of hiding? To keep nth-child(even) background-colors working.
-        if (e.target instanceof HTMLInputElement && !e.target.checked) {
-          for (const row of thirdPartyRows.values()) {
-            row.remove();
-          }
-        } else {
-          // Add row elements back to original positions.
-          for (const [position, row] of thirdPartyRows.entries()) {
-            const childrenArr = getTableRows(tableEl);
-            tableEl.tBodies[0].insertBefore(row, childrenArr[position]);
-          }
+        const shouldHideThirdParty = e.target instanceof HTMLInputElement && !e.target.checked;
+        let even = true;
+        let rowEl = rowEls[0];
+        while (rowEl) {
+          const shouldHide = shouldHideThirdParty && thirdPartyRows.includes(rowEl);
+
+          // Iterate subsequent associated sub item rows.
+          do {
+            rowEl.classList.toggle('lh-row--hidden', shouldHide);
+            // Adjust for zebra styling.
+            rowEl.classList.toggle('lh-row--even', !shouldHide && even);
+            rowEl.classList.toggle('lh-row--odd', !shouldHide && !even);
+
+            rowEl = /** @type {HTMLElement} */ (rowEl.nextElementSibling);
+          } while (rowEl && rowEl.classList.contains('lh-sub-item-row'));
+
+          if (!shouldHide) even = !even;
         }
       });
 
       this._dom.find('label', filterTemplate).setAttribute('for', id);
       this._dom.find('.lh-3p-filter-count', filterTemplate).textContent =
-          `${thirdPartyRows.size}`;
+          `${thirdPartyRows.length}`;
       this._dom.find('.lh-3p-ui-string', filterTemplate).textContent =
           Util.i18n.strings.thirdPartyResourcesLabel;
 
-      const allThirdParty = thirdPartyRows.size === rowEls.length;
-      const allFirstParty = !thirdPartyRows.size;
+      const allThirdParty = thirdPartyRows.length === rowEls.length;
+      const allFirstParty = !thirdPartyRows.length;
 
       // If all or none of the rows are 3rd party, disable the checkbox.
       if (allThirdParty || allFirstParty) {
@@ -2551,30 +2923,41 @@ class ReportUIFeatures {
     });
   }
 
+  _setupElementScreenshotOverlay() {
+    const fullPageScreenshot =
+      this.json.audits['full-page-screenshot'] && this.json.audits['full-page-screenshot'].details;
+    if (!fullPageScreenshot || fullPageScreenshot.type !== 'full-page-screenshot') return;
+
+    ElementScreenshotRenderer.installOverlayFeature(
+      this._dom, this._templateContext, fullPageScreenshot);
+  }
+
   /**
    * From a table with URL entries, finds the rows containing third-party URLs
-   * and returns a Map of those rows, mapping from row index to row Element.
+   * and returns them.
    * @param {HTMLElement[]} rowEls
    * @param {string} finalUrl
-   * @return {Map<number, HTMLElement>}
+   * @return {Array<HTMLElement>}
    */
   _getThirdPartyRows(rowEls, finalUrl) {
-    /** @type {Map<number, HTMLElement>} */
-    const thirdPartyRows = new Map();
+    /** @type {Array<HTMLElement>} */
+    const thirdPartyRows = [];
     const finalUrlRootDomain = Util.getRootDomain(finalUrl);
 
-    rowEls.forEach((rowEl, rowPosition) => {
+    for (const rowEl of rowEls) {
+      if (rowEl.classList.contains('lh-sub-item-row')) continue;
+
       /** @type {HTMLElement|null} */
       const urlItem = rowEl.querySelector('.lh-text__url');
-      if (!urlItem) return;
+      if (!urlItem) continue;
 
       const datasetUrl = urlItem.dataset.url;
-      if (!datasetUrl) return;
+      if (!datasetUrl) continue;
       const isThirdParty = Util.getRootDomain(datasetUrl) !== finalUrlRootDomain;
-      if (!isThirdParty) return;
+      if (!isThirdParty) continue;
 
-      thirdPartyRows.set(Number(rowPosition), rowEl);
-    });
+      thirdPartyRows.push(rowEl);
+    }
 
     return thirdPartyRows;
   }
@@ -2754,7 +3137,7 @@ class ReportUIFeatures {
     });
 
     // The popup's window.name is keyed by version+url+fetchTime, so we reuse/select tabs correctly
-    // @ts-ignore - If this is a v2 LHR, use old `generatedTime`.
+    // @ts-expect-error - If this is a v2 LHR, use old `generatedTime`.
     const fallbackFetchTime = /** @type {string} */ (json.generatedTime);
     const fetchTime = json.fetchTime || fallbackFetchTime;
     const windowName = `${json.lighthouseVersion}-${json.requestedUrl}-${fetchTime}`;
@@ -3033,13 +3416,10 @@ class DropDown {
 
   /**
    * Focus out handler for the drop down menu.
-   * @param {Event} e
+   * @param {FocusEvent} e
    */
   onMenuFocusOut(e) {
-    // TODO: The focusout event is not supported in our current version of typescript (3.5.3)
-    // https://github.com/microsoft/TypeScript/issues/30716
-    const focusEvent = /** @type {FocusEvent} */ (e);
-    const focusedEl = /** @type {?HTMLElement} */ (focusEvent.relatedTarget);
+    const focusedEl = /** @type {?HTMLElement} */ (e.relatedTarget);
 
     if (!this._menuEl.contains(focusedEl)) {
       this.close();
@@ -3710,10 +4090,36 @@ class PerformanceCategoryRenderer extends CategoryRenderer {
     if (fci) v5andv6metrics.push(fci);
     if (fmp) v5andv6metrics.push(fmp);
 
+    /** @type {Record<string, string>} */
+    const acronymMapping = {
+      'cumulative-layout-shift': 'CLS',
+      'first-contentful-paint': 'FCP',
+      'first-cpu-idle': 'FCI',
+      'first-meaningful-paint': 'FMP',
+      'interactive': 'TTI',
+      'largest-contentful-paint': 'LCP',
+      'speed-index': 'SI',
+      'total-blocking-time': 'TBT',
+    };
+
+    /**
+     * Clamp figure to 2 decimal places
+     * @param {number} val
+     * @return {number}
+     */
+    const clampTo2Decimals = val => Math.round(val * 100) / 100;
+
     const metricPairs = v5andv6metrics.map(audit => {
-      const value = typeof audit.result.numericValue !== 'undefined' ?
-        audit.result.numericValue.toString() : 'null';
-      return [audit.id, value];
+      let value;
+      if (typeof audit.result.numericValue === 'number') {
+        value = audit.id === 'cumulative-layout-shift' ?
+          clampTo2Decimals(audit.result.numericValue) :
+          Math.round(audit.result.numericValue);
+        value = value.toString();
+      } else {
+        value = 'null';
+      }
+      return [acronymMapping[audit.id] || audit.id, value];
     });
     const paramPairs = [...metricPairs];
 
@@ -3756,33 +4162,22 @@ class PerformanceCategoryRenderer extends CategoryRenderer {
     metricAuditsEl.append(..._toggleEl.childNodes);
 
     const metricAudits = category.auditRefs.filter(audit => audit.group === 'metrics');
+    const metricsBoxesEl = this.dom.createChildOf(metricAuditsEl, 'div', 'lh-metrics-container');
 
-    const keyMetrics = metricAudits.slice(0, 3);
-    const otherMetrics = metricAudits.slice(3);
-
-    const metricsBoxesEl = this.dom.createChildOf(metricAuditsEl, 'div', 'lh-columns');
-    const metricsColumn1El = this.dom.createChildOf(metricsBoxesEl, 'div', 'lh-column');
-    const metricsColumn2El = this.dom.createChildOf(metricsBoxesEl, 'div', 'lh-column');
-
-    keyMetrics.forEach(item => {
-      metricsColumn1El.appendChild(this._renderMetric(item));
-    });
-    otherMetrics.forEach(item => {
-      metricsColumn2El.appendChild(this._renderMetric(item));
+    metricAudits.forEach(item => {
+      metricsBoxesEl.appendChild(this._renderMetric(item));
     });
 
-    // 'Values are estimated and may vary' is used as the category description for PSI
-    if (environment !== 'PSI') {
-      const estValuesEl = this.dom.createChildOf(metricAuditsEl, 'div', 'lh-metrics__disclaimer');
-      const disclaimerEl = this.dom.convertMarkdownLinkSnippets(strings.varianceDisclaimer);
-      estValuesEl.appendChild(disclaimerEl);
+    const estValuesEl = this.dom.createChildOf(metricAuditsEl, 'div', 'lh-metrics__disclaimer');
+    const disclaimerEl = this.dom.convertMarkdownLinkSnippets(strings.varianceDisclaimer);
+    estValuesEl.appendChild(disclaimerEl);
 
-      // Add link to score calculator.
-      const calculatorLink = this.dom.createChildOf(estValuesEl, 'a', 'lh-calclink');
-      calculatorLink.target = '_blank';
-      calculatorLink.textContent = strings.calculatorLink;
-      calculatorLink.href = this._getScoringCalculatorHref(category.auditRefs);
-    }
+    // Add link to score calculator.
+    const calculatorLink = this.dom.createChildOf(estValuesEl, 'a', 'lh-calclink');
+    calculatorLink.target = '_blank';
+    calculatorLink.textContent = strings.calculatorLink;
+    calculatorLink.href = this._getScoringCalculatorHref(category.auditRefs);
+
 
     metricAuditsEl.classList.add('lh-audit-group--metrics');
     element.appendChild(metricAuditsEl);
@@ -3902,16 +4297,6 @@ if (typeof module !== 'undefined' && module.exports) {
 'use strict';
 
 /* globals self, Util, CategoryRenderer */
-
-/**
- * An always-increasing counter for making unique SVG ID suffixes.
- */
-const getUniqueSuffix = (() => {
-  let svgSuffix = 0;
-  return function() {
-    return svgSuffix++;
-  };
-})();
 
 class PwaCategoryRenderer extends CategoryRenderer {
   /**
@@ -4059,7 +4444,7 @@ class PwaCategoryRenderer extends CategoryRenderer {
     const defsEl = svgRoot.querySelector('defs');
     if (!defsEl) return;
 
-    const idSuffix = getUniqueSuffix();
+    const idSuffix = Util.getUniqueSuffix();
     const elementsToUpdate = defsEl.querySelectorAll('[id]');
     for (const el of elementsToUpdate) {
       const oldId = el.id;
@@ -4115,7 +4500,7 @@ if (typeof module !== 'undefined' && module.exports) {
 /** @typedef {import('./category-renderer')} CategoryRenderer */
 /** @typedef {import('./dom.js')} DOM */
 
-/* globals self, Util, DetailsRenderer, CategoryRenderer, I18n, PerformanceCategoryRenderer, PwaCategoryRenderer */
+/* globals self, Util, DetailsRenderer, CategoryRenderer, I18n, PerformanceCategoryRenderer, PwaCategoryRenderer, ElementScreenshotRenderer */
 
 class ReportRenderer {
   /**
@@ -4282,7 +4667,16 @@ class ReportRenderer {
     Util.i18n = i18n;
     Util.reportJson = report;
 
-    const detailsRenderer = new DetailsRenderer(this._dom);
+    const fullPageScreenshot =
+      report.audits['full-page-screenshot'] && report.audits['full-page-screenshot'].details &&
+      report.audits['full-page-screenshot'].details.type === 'full-page-screenshot' ?
+      report.audits['full-page-screenshot'].details : undefined;
+    const detailsRenderer = new DetailsRenderer(this._dom, {
+      fullPageScreenshot,
+    });
+    const fullPageScreenshotStyleEl = fullPageScreenshot &&
+      ElementScreenshotRenderer.createBackgroundImageStyle(this._dom, fullPageScreenshot);
+
     const categoryRenderer = new CategoryRenderer(this._dom, detailsRenderer);
     categoryRenderer.setTemplateContext(this._templateContext);
 
@@ -4340,6 +4734,7 @@ class ReportRenderer {
     reportFragment.appendChild(reportContainer);
     reportContainer.appendChild(headerContainer);
     reportContainer.appendChild(reportSection);
+    fullPageScreenshotStyleEl && reportContainer.appendChild(fullPageScreenshotStyleEl);
     reportSection.appendChild(this._renderReportFooter(report));
 
     return reportFragment;
@@ -4398,9 +4793,19 @@ class I18n {
    * @param {number=} granularity Controls how coarse the displayed value is, defaults to 0.1
    * @return {string}
    */
-  formatBytesToKB(size, granularity = 0.1) {
+  formatBytesToKiB(size, granularity = 0.1) {
     const kbs = this._numberFormatter.format(Math.round(size / 1024 / granularity) * granularity);
-    return `${kbs}${NBSP2}KB`;
+    return `${kbs}${NBSP2}KiB`;
+  }
+
+  /**
+   * @param {number} size
+   * @param {number=} granularity Controls how coarse the displayed value is, defaults to 0.1
+   * @return {string}
+   */
+  formatBytes(size, granularity = 1) {
+    const kbs = this._numberFormatter.format(Math.round(size / granularity) * granularity);
+    return `${kbs}${NBSP2}bytes`;
   }
 
   /**

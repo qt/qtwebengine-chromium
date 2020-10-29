@@ -160,8 +160,8 @@ static double cal_approx_vmaf(const AV1_COMP *const cpi, double source_variance,
                               YV12_BUFFER_CONFIG *const sharpened) {
   const int bit_depth = cpi->td.mb.e_mbd.bd;
   double new_vmaf;
-  aom_calc_vmaf(cpi->oxcf.vmaf_model_path, source, sharpened, bit_depth,
-                &new_vmaf);
+  aom_calc_vmaf(cpi->oxcf.tune_cfg.vmaf_model_path, source, sharpened,
+                bit_depth, &new_vmaf);
   const double sharpened_var = frame_average_variance(cpi, sharpened);
   return source_variance / sharpened_var * (new_vmaf - kBaselineVmaf);
 }
@@ -523,8 +523,8 @@ void av1_set_mb_vmaf_rdmult_scaling(AV1_COMP *cpi) {
       &resized_source, y_width / resize_factor, y_height / resize_factor, 1, 1,
       cm->seq_params.use_highbitdepth, cpi->oxcf.border_in_pixels,
       cm->features.byte_alignment);
-  av1_resize_and_extend_frame(cpi->source, &resized_source, bit_depth,
-                              av1_num_planes(cm));
+  av1_resize_and_extend_frame_nonnormative(cpi->source, &resized_source,
+                                           bit_depth, av1_num_planes(cm));
 
   const int resized_y_width = resized_source.y_width;
   const int resized_y_height = resized_source.y_height;
@@ -555,7 +555,7 @@ void av1_set_mb_vmaf_rdmult_scaling(AV1_COMP *cpi) {
   frame_data.row = 0;
   frame_data.col = 0;
   frame_data.bit_depth = bit_depth;
-  aom_calc_vmaf_multi_frame(&frame_data, cpi->oxcf.vmaf_model_path,
+  aom_calc_vmaf_multi_frame(&frame_data, cpi->oxcf.tune_cfg.vmaf_model_path,
                             update_frame, resized_y_width, resized_y_height,
                             bit_depth, scores);
 
@@ -796,7 +796,7 @@ int av1_get_vmaf_base_qindex(const AV1_COMP *const cpi, int current_qindex) {
 void av1_update_vmaf_curve(AV1_COMP *cpi, YV12_BUFFER_CONFIG *source,
                            YV12_BUFFER_CONFIG *recon) {
   const int bit_depth = cpi->td.mb.e_mbd.bd;
-  aom_calc_vmaf(cpi->oxcf.vmaf_model_path, source, recon, bit_depth,
+  aom_calc_vmaf(cpi->oxcf.tune_cfg.vmaf_model_path, source, recon, bit_depth,
                 &cpi->vmaf_info.last_frame_vmaf);
   if (cpi->common.seq_params.use_highbitdepth) {
     assert(source->flags & YV12_FLAG_HIGHBITDEPTH);

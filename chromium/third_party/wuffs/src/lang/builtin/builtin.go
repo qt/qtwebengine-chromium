@@ -75,12 +75,18 @@ var Consts = [...]struct {
 
 	// ----
 
+	{t.IDU32, "46", "TOKEN__VALUE_EXTENSION__NUM_BITS"},
+
+	// ----
+
 	{t.IDU32, "0", "TOKEN__VBC__FILLER"},
 	{t.IDU32, "1", "TOKEN__VBC__STRUCTURE"},
 	{t.IDU32, "2", "TOKEN__VBC__STRING"},
 	{t.IDU32, "3", "TOKEN__VBC__UNICODE_CODE_POINT"},
 	{t.IDU32, "4", "TOKEN__VBC__LITERAL"},
 	{t.IDU32, "5", "TOKEN__VBC__NUMBER"},
+	{t.IDU32, "6", "TOKEN__VBC__INLINE_INTEGER_SIGNED"},
+	{t.IDU32, "7", "TOKEN__VBC__INLINE_INTEGER_UNSIGNED"},
 
 	// ----
 
@@ -101,15 +107,21 @@ var Consts = [...]struct {
 	// ----
 
 	{t.IDU32, "0x00001", "TOKEN__VBD__STRING__DEFINITELY_UTF_8"},
-	{t.IDU32, "0x00002", "TOKEN__VBD__STRING__DEFINITELY_ASCII"},
+	{t.IDU32, "0x00002", "TOKEN__VBD__STRING__CHAIN_MUST_BE_UTF_8"},
+	{t.IDU32, "0x00004", "TOKEN__VBD__STRING__CHAIN_SHOULD_BE_UTF_8"},
+	{t.IDU32, "0x00010", "TOKEN__VBD__STRING__DEFINITELY_ASCII"},
+	{t.IDU32, "0x00020", "TOKEN__VBD__STRING__CHAIN_MUST_BE_ASCII"},
+	{t.IDU32, "0x00040", "TOKEN__VBD__STRING__CHAIN_SHOULD_BE_ASCII"},
 
-	{t.IDU32, "0x00010", "TOKEN__VBD__STRING__CONVERT_0_DST_1_SRC_DROP"},
-	{t.IDU32, "0x00020", "TOKEN__VBD__STRING__CONVERT_1_DST_1_SRC_COPY"},
-	{t.IDU32, "0x00040", "TOKEN__VBD__STRING__CONVERT_1_DST_2_SRC_HEXADECIMAL"},
-	{t.IDU32, "0x00080", "TOKEN__VBD__STRING__CONVERT_1_DST_4_SRC_BACKSLASH_X"},
-	{t.IDU32, "0x00100", "TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_STD"},
-	{t.IDU32, "0x00200", "TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_URL"},
-	{t.IDU32, "0x00400", "TOKEN__VBD__STRING__CONVERT_4_DST_5_SRC_ASCII_85"},
+	{t.IDU32, "0x00100", "TOKEN__VBD__STRING__CONVERT_0_DST_1_SRC_DROP"},
+	{t.IDU32, "0x00200", "TOKEN__VBD__STRING__CONVERT_1_DST_1_SRC_COPY"},
+	{t.IDU32, "0x00400", "TOKEN__VBD__STRING__CONVERT_1_DST_2_SRC_HEXADECIMAL"},
+	{t.IDU32, "0x00800", "TOKEN__VBD__STRING__CONVERT_1_DST_4_SRC_BACKSLASH_X"},
+	{t.IDU32, "0x01000", "TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_STD"},
+	{t.IDU32, "0x02000", "TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_URL"},
+	{t.IDU32, "0x04000", "TOKEN__VBD__STRING__CONVERT_4_DST_5_SRC_ASCII_85"},
+	{t.IDU32, "0x08000", "TOKEN__VBD__STRING__CONVERT_5_DST_8_SRC_BASE_32_HEX"},
+	{t.IDU32, "0x10000", "TOKEN__VBD__STRING__CONVERT_5_DST_8_SRC_BASE_32_STD"},
 
 	// ----
 
@@ -132,6 +144,8 @@ var Consts = [...]struct {
 	{t.IDU32, "0x00100", "TOKEN__VBD__NUMBER__FORMAT_BINARY_BIG_ENDIAN"},
 	{t.IDU32, "0x00200", "TOKEN__VBD__NUMBER__FORMAT_BINARY_LITTLE_ENDIAN"},
 	{t.IDU32, "0x00400", "TOKEN__VBD__NUMBER__FORMAT_TEXT"},
+
+	{t.IDU32, "0x01000", "TOKEN__VBD__NUMBER__FORMAT_IGNORE_FIRST_BYTE"},
 
 	// ----
 
@@ -156,6 +170,7 @@ var Statuses = [...]string{
 	`"#bad argument (length too short)"`,
 	`"#bad argument"`,
 	`"#bad call sequence"`,
+	`"#bad data"`,
 	`"#bad receiver"`,
 	`"#bad restart"`,
 	`"#bad sizeof receiver"`,
@@ -331,8 +346,8 @@ var Funcs = []string{
 	"io_reader.read_u64be?() u64",
 	"io_reader.read_u64le?() u64",
 
-	// TODO: these should have an explicit pre-condition "available() >= N".
-	// For now, that's implicitly checked (i.e. hard coded).
+	// TODO: these should have an explicit pre-condition "length() >= N". For
+	// now, that's implicitly checked (i.e. hard coded).
 	//
 	// io_reader has peek_etc methods and skip_u32_fast, not read_etc_fast,
 	// because we sometimes advance the pointer by less than what's read. See
@@ -372,13 +387,14 @@ var Funcs = []string{
 	// in practice.
 	"io_reader.peek_u64le_at(offset: u32[..= 0xFFF8]) u64",
 
-	"io_reader.available() u64",
 	"io_reader.count_since(mark: u64) u64",
 	"io_reader.is_closed() bool",
+	"io_reader.length() u64",
 	"io_reader.mark() u64",
 	"io_reader.match7(a: u64) u32[..= 2]",
 	"io_reader.position() u64",
 	"io_reader.since(mark: u64) slice u8",
+	"io_reader.valid_utf_8_length(up_to: u64) u64",
 
 	"io_reader.limited_copy_u32_to_slice!(up_to: u32, s: slice u8) u32",
 
@@ -386,9 +402,8 @@ var Funcs = []string{
 	"io_reader.skip_u32?(n: u32)",
 
 	// TODO: this should have explicit pre-conditions "actual <= worst_case"
-	// and "worst_case <= available()". As an implementation restriction, we
-	// also require that worst_case has a constant value. For now, that's all
-	// implicitly checked (i.e. hard coded).
+	// and "worst_case <= length()". For now, that's all implicitly checked
+	// (i.e. hard coded).
 	"io_reader.skip_u32_fast!(actual: u32, worst_case: u32)",
 
 	// ---- io_writer
@@ -409,8 +424,8 @@ var Funcs = []string{
 	"io_writer.write_u64be?(a: u64)",
 	"io_writer.write_u64le?(a: u64)",
 
-	// TODO: these should have an explicit pre-condition "available() >= N".
-	// For now, that's implicitly checked (i.e. hard coded).
+	// TODO: these should have an explicit pre-condition "length() >= N". For
+	// now, that's implicitly checked (i.e. hard coded).
 	//
 	// io_writer has write_etc_fast methods, not poke_etc and skip_u32_fast,
 	// because skip_u32_fast could leave uninitialized bytes in the io_buffer.
@@ -430,9 +445,9 @@ var Funcs = []string{
 	"io_writer.write_u64be_fast!(a: u64)",
 	"io_writer.write_u64le_fast!(a: u64)",
 
-	"io_writer.available() u64",
 	"io_writer.count_since(mark: u64) u64",
-	"io_writer.history_available() u64",
+	"io_writer.history_length() u64",
+	"io_writer.length() u64",
 	"io_writer.mark() u64",
 	"io_writer.position() u64",
 	"io_writer.since(mark: u64) slice u8",
@@ -443,7 +458,7 @@ var Funcs = []string{
 	"io_writer.limited_copy_u32_from_slice!(up_to: u32, s: slice u8) u32",
 
 	// TODO: this should have explicit pre-conditions:
-	//  - up_to <= this.available()
+	//  - up_to <= this.length()
 	//  - distance > 0
 	//  - distance <= this.since_mark().length()
 	// For now, that's all implicitly checked (i.e. hard coded).
@@ -454,8 +469,11 @@ var Funcs = []string{
 	"token_writer.write_simple_token_fast!(" +
 		"value_major: u32[..= 0x1F_FFFF], value_minor: u32[..= 0x1FF_FFFF]," +
 		"continued: u32[..= 0x1], length: u32[..= 0xFFFF])",
+	"token_writer.write_extended_token_fast!(" +
+		"value_extension: u64[..= 0x3FFF_FFFF_FFFF]," +
+		"continued: u32[..= 0x1], length: u32[..= 0xFFFF])",
 
-	"token_writer.available() u64",
+	"token_writer.length() u64",
 
 	// ---- frame_config
 

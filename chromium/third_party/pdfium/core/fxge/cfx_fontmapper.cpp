@@ -154,13 +154,13 @@ const AltFontFamily g_AltFontFamilies[] = {
     {"ForteMT", "Forte"},
 };
 
-#if _FX_PLATFORM_ == _FX_PLATFORM_LINUX_
+#if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_ASMJS)
 const char kNarrowFamily[] = "LiberationSansNarrow";
 #elif defined(OS_ANDROID)
 const char kNarrowFamily[] = "RobotoCondensed";
 #else
 const char kNarrowFamily[] = "ArialNarrow";
-#endif  // _FX_PLATFORM_ == _FX_PLATFORM_LINUX_
+#endif  // defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_ASMJS)
 
 ByteString TT_NormalizeName(const char* family) {
   ByteString norm(family);
@@ -613,7 +613,7 @@ RetainPtr<CFX_Face> CFX_FontMapper::FindSubstFont(const ByteString& name,
       }
     } else {
       if (Charset == FX_CHARSET_Symbol) {
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
+#if defined(OS_APPLE) || defined(OS_ANDROID)
         if (SubstName == "Symbol") {
           pSubstFont->m_Family = "Chrome Symbol";
           pSubstFont->m_Charset = FX_CHARSET_Symbol;

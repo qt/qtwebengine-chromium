@@ -58,9 +58,12 @@ struct PartitionInfo {
   int height;        // prediction block height
 };
 
-constexpr int kMotionVectorPrecision = 8;
+constexpr int kMotionVectorSubPixelPrecision = 8;
+constexpr int kMotionVectorFullPixelPrecision = 1;
 
-// The frame is split to 4x4 blocks.
+// In the first pass. The frame is split to 16x16 blocks.
+// This structure contains the information of each 16x16 block.
+// In the second pass. The frame is split to 4x4 blocks.
 // This structure contains the information of each 4x4 block.
 struct MotionVectorInfo {
   // Number of valid motion vectors, always 0 if this block is in the key frame.
@@ -68,8 +71,8 @@ struct MotionVectorInfo {
   int mv_count;
   // The reference frame for motion vectors. If the second motion vector does
   // not exist (mv_count = 1), the reference frame is kNoneRefFrame.
-  // Otherwise, the reference frame is either kLastFrame, or kGoldenFrame,
-  // or kAltRefFrame.
+  // Otherwise, the reference frame is either kRefFrameTypeLast, or
+  // kRefFrameTypePast, or kRefFrameTypeFuture.
   RefFrameType ref_frame[2];
   // The row offset of motion vectors in the unit of pixel.
   // If the second motion vector does not exist, the value is 0.
@@ -245,7 +248,7 @@ struct EncodeFrameResult {
   std::vector<PartitionInfo> partition_info;
   // A vector of the motion vector information of the frame.
   // The number of elements is |num_rows_4x4| * |num_cols_4x4|.
-  // The frame is divided 4x4 blocks of |num_rows_4x4| rows and
+  // The frame is divided into 4x4 blocks of |num_rows_4x4| rows and
   // |num_cols_4x4| columns.
   // Each 4x4 block contains 0 motion vector if this is an intra predicted
   // frame (for example, the key frame). If the frame is inter predicted,
@@ -254,6 +257,12 @@ struct EncodeFrameResult {
   // share the same motion vector information.
   std::vector<MotionVectorInfo> motion_vector_info;
   ImageBuffer coded_frame;
+
+  // recode_count, q_index_history and rate_history are only available when
+  // EncodeFrameWithTargetFrameBits() is used.
+  int recode_count;
+  std::vector<int> q_index_history;
+  std::vector<int> rate_history;
 };
 
 struct GroupOfPicture {
@@ -304,6 +313,15 @@ class SimpleEncode {
   SimpleEncode(SimpleEncode &) = delete;
   SimpleEncode &operator=(const SimpleEncode &) = delete;
 
+  // Adjusts the encoder's coding speed.
+  // If this function is not called, the encoder will use default encode_speed
+  // 0. Call this function before ComputeFirstPassStats() if needed.
+  // The encode_speed is equivalent to --cpu-used of the vpxenc command.
+  // The encode_speed's range should be [0, 9].
+  // Setting the encode_speed to a higher level will yield faster coding
+  // at the cost of lower compression efficiency.
+  void SetEncodeSpeed(int encode_speed);
+
   // Makes encoder compute the first pass stats and store it at
   // impl_ptr_->first_pass_stats. key_frame_map_ is also computed based on the
   // first pass stats.
@@ -314,6 +332,12 @@ class SimpleEncode {
   // each video frame. The stats of each video frame is a vector of 25 double
   // values. For details, please check FIRSTPASS_STATS in vp9_firstpass.h
   std::vector<std::vector<double>> ObserveFirstPassStats();
+
+  // Outputs the first pass motion vectors represented by a 2-D vector.
+  // One can use the frame index at first dimension to retrieve the mvs for
+  // each video frame. The frame is divided into 16x16 blocks. The number of
+  // elements is round_up(|num_rows_4x4| / 4) * round_up(|num_cols_4x4| / 4).
+  std::vector<std::vector<MotionVectorInfo>> ObserveFirstPassMotionVectors();
 
   // Ouputs a copy of key_frame_map_, a binary vector with size equal to the
   // number of show frames in the video. For each entry in the vector, 1
@@ -373,6 +397,17 @@ class SimpleEncode {
   void EncodeFrameWithQuantizeIndex(EncodeFrameResult *encode_frame_result,
                                     int quantize_index);
 
+  // Encode a frame with target frame bits usage.
+  // The encoder will find a quantize index to make the actual frame bits usage
+  // match the target. EncodeFrameWithTargetFrameBits() will recode the frame
+  // up to 7 times to find a q_index to make the actual_frame_bits satisfy the
+  // following inequality. |actual_frame_bits - target_frame_bits| * 100 /
+  // target_frame_bits
+  // <= percent_diff.
+  void EncodeFrameWithTargetFrameBits(EncodeFrameResult *encode_frame_result,
+                                      int target_frame_bits,
+                                      double percent_diff);
+
   // Gets the number of coding frames for the video. The coding frames include
   // show frame and no show frame.
   // This function should be called after ComputeFirstPassStats().
@@ -405,6 +440,7 @@ class SimpleEncode {
   int frame_rate_den_;
   int target_bitrate_;
   int num_frames_;
+  int encode_speed_;
 
   std::FILE *in_file_;
   std::FILE *out_file_;
@@ -435,6 +471,17 @@ class SimpleEncode {
   // frame appears?
   // Reference frames info of the to-be-coded frame.
   RefFrameInfo ref_frame_info_;
+
+  // A 2-D vector of motion vector information of the frame collected
+  // from the first pass. The first dimension is the frame index.
+  // Each frame is divided into 16x16 blocks. The number of elements is
+  // round_up(|num_rows_4x4| / 4) * round_up(|num_cols_4x4| / 4).
+  // Each 16x16 block contains 0 motion vector if this is an intra predicted
+  // frame (for example, the key frame). If the frame is inter predicted,
+  // each 16x16 block contains either 1 or 2 motion vectors.
+  // The first motion vector is always from the LAST_FRAME.
+  // The second motion vector is always from the GOLDEN_FRAME.
+  std::vector<std::vector<MotionVectorInfo>> fp_motion_vector_info_;
 };
 
 }  // namespace vp9

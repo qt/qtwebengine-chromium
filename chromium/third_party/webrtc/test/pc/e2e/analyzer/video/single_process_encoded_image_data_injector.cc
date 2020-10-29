@@ -38,7 +38,7 @@ EncodedImage SingleProcessEncodedImageDataInjector::InjectData(
   memcpy(info.origin_data, &source.data()[insertion_pos],
          ExtractionInfo::kUsedBufferSize);
   {
-    rtc::CritScope crit(&lock_);
+    MutexLock lock(&lock_);
     // Will create new one if missed.
     ExtractionInfoVector& ev = extraction_cache_[id];
     info.sub_id = ev.next_sub_id++;
@@ -93,18 +93,19 @@ EncodedImageExtractionResult SingleProcessEncodedImageDataInjector::ExtractData(
     id = next_id;
     ExtractionInfo info;
     {
-      rtc::CritScope crit(&lock_);
+      MutexLock lock(&lock_);
       auto ext_vector_it = extraction_cache_.find(next_id);
-      // TODO(titovartem) add support for receiving single frame multiple times
-      // when in simulcast key frame for another spatial stream can be received.
       RTC_CHECK(ext_vector_it != extraction_cache_.end())
           << "Unknown frame_id=" << next_id;
 
       auto info_it = ext_vector_it->second.infos.find(sub_id);
       RTC_CHECK(info_it != ext_vector_it->second.infos.end())
           << "Unknown sub_id=" << sub_id << " for frame_id=" << next_id;
+      info_it->second.received_count++;
       info = info_it->second;
-      ext_vector_it->second.infos.erase(info_it);
+      if (info.received_count == expected_receivers_count_) {
+        ext_vector_it->second.infos.erase(info_it);
+      }
     }
     // We need to discard encoded image only if all concatenated encoded images
     // have to be discarded.

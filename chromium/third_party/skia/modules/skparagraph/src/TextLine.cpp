@@ -21,11 +21,11 @@
 #include "modules/skshaper/include/SkShaper.h"
 #include "src/core/SkSpan.h"
 
-#include <unicode/ubidi.h>
 #include <algorithm>
 #include <iterator>
 #include <limits>
 #include <map>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -76,9 +76,9 @@ int compareRound(SkScalar a, SkScalar b) {
     }
 }
 
-}
+}  // namespace
 
-TextLine::TextLine(ParagraphImpl* master,
+TextLine::TextLine(ParagraphImpl* owner,
                    SkVector offset,
                    SkVector advance,
                    BlockRange blocks,
@@ -88,7 +88,7 @@ TextLine::TextLine(ParagraphImpl* master,
                    ClusterRange clustersWithGhosts,
                    SkScalar widthWithSpaces,
                    InternalLineMetrics sizes)
-        : fMaster(master)
+        : fOwner(owner)
         , fBlockRange(blocks)
         , fTextRange(text)
         , fTextWithWhitespacesRange(textWithSpaces)
@@ -107,12 +107,12 @@ TextLine::TextLine(ParagraphImpl* master,
         , fAscentStyle(LineMetricStyle::CSS)
         , fDescentStyle(LineMetricStyle::CSS) {
     // Reorder visual runs
-    auto& start = master->cluster(fGhostClusterRange.start);
-    auto& end = master->cluster(fGhostClusterRange.end - 1);
+    auto& start = owner->cluster(fGhostClusterRange.start);
+    auto& end = owner->cluster(fGhostClusterRange.end - 1);
     size_t numRuns = end.runIndex() - start.runIndex() + 1;
 
     for (BlockIndex index = fBlockRange.start; index < fBlockRange.end; ++index) {
-        auto b = fMaster->styles().begin() + index;
+        auto b = fOwner->styles().begin() + index;
         if (b->fStyle.isPlaceholder()) {
             continue;
         }
@@ -131,21 +131,20 @@ TextLine::TextLine(ParagraphImpl* master,
 
     // This is just chosen to catch the common/fast cases. Feel free to tweak.
     constexpr int kPreallocCount = 4;
-
-    SkAutoSTArray<kPreallocCount, UBiDiLevel> runLevels(numRuns);
-
+    SkAutoSTArray<kPreallocCount, BidiLevel> runLevels(numRuns);
     size_t runLevelsIndex = 0;
     for (auto runIndex = start.runIndex(); runIndex <= end.runIndex(); ++runIndex) {
-        auto& run = fMaster->run(runIndex);
+        auto& run = fOwner->run(runIndex);
         runLevels[runLevelsIndex++] = run.fBidiLevel;
-        fMaxRunMetrics.add(InternalLineMetrics(run.fFontMetrics.fAscent, run.fFontMetrics.fDescent,
-                                               run.fFontMetrics.fLeading));
+        fMaxRunMetrics.add(
+            InternalLineMetrics(run.fFontMetrics.fAscent, run.fFontMetrics.fDescent, run.fFontMetrics.fLeading));
     }
     SkASSERT(runLevelsIndex == numRuns);
 
     SkAutoSTArray<kPreallocCount, int32_t> logicalOrder(numRuns);
 
-    ubidi_reorderVisual(runLevels.data(), SkToU32(numRuns), logicalOrder.data());
+    // TODO: hide all these logic in SkUnicode?
+    fOwner->getICU()->reorderVisual(runLevels.data(), numRuns, logicalOrder.data());
     auto firstRunIndex = start.runIndex();
     for (auto index : logicalOrder) {
         fRunsInVisualOrder.push_back(firstRunIndex + index);
@@ -162,14 +161,19 @@ TextLine::TextLine(ParagraphImpl* master,
 
 SkRect TextLine::calculateBoundaries() {
 
-    auto boundaries = SkRect::MakeIWH(fAdvance.fX, fAdvance.fY);
-    auto clusters = fMaster->clusters(fClusterRange);
+    // For flutter: height and/or width and/or baseline! can be Inf
+    // (coming from placeholders - we should ignore it)
+    auto boundaries = SkRect::MakeWH(
+        SkScalarIsFinite(fAdvance.fX) ? fAdvance.fX : 0,
+        SkScalarIsFinite(fAdvance.fY) ? fAdvance.fY : 0);
+    auto baseline = SkScalarIsFinite(this->baseline()) ? this->baseline() : 0;
+    auto clusters = fOwner->clusters(fClusterRange);
     Run* run = nullptr;
     auto runShift = 0.0f;
     auto clusterShift = 0.0f;
     for (auto cluster = clusters.begin(); cluster != clusters.end(); ++cluster) {
         if (run == nullptr || cluster->runIndex() != run->index()) {
-            run = &fMaster->run(cluster->runIndex());
+            run = &fOwner->run(cluster->runIndex());
             runShift += clusterShift;
             clusterShift = 0;
         }
@@ -218,8 +222,8 @@ SkRect TextLine::calculateBoundaries() {
         boundaries.fBottom += shadowRect.fBottom;
     }
 
-    boundaries.offset(this->offset());         // Line offset from the beginning of the para
-    boundaries.offset(0, this->baseline()); // Down by baseline
+    boundaries.offset(this->offset());    // Line offset from the beginning of the para
+    boundaries.offset(0, baseline);         // Down by baseline
 
     return boundaries;
 }
@@ -294,7 +298,7 @@ void TextLine::format(TextAlign align, SkScalar maxWidth) {
     if (align == TextAlign::kJustify) {
         if (!this->endsWithHardLineBreak()) {
             this->justify(maxWidth);
-        } else if (fMaster->paragraphStyle().getTextDirection() == TextDirection::kRtl) {
+        } else if (fOwner->paragraphStyle().getTextDirection() == TextDirection::kRtl) {
             // Justify -> Right align
             fShift = delta;
         }
@@ -524,7 +528,7 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
         // Shape the ellipsis
         std::unique_ptr<Run> run = shapeEllipsis(ellipsis, cluster->run());
         run->fClusterStart = cluster->textRange().start;
-        run->setMaster(fMaster);
+      run->setOwner(fOwner);
 
         // See if it fits
         if (width + run->advance().fX > maxWidth) {
@@ -546,7 +550,7 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
 
     if (!fEllipsis) {
         // Weird situation: just the ellipsis on the line (if it fits)
-        attachEllipsis(&fMaster->cluster(clusters().start));
+        attachEllipsis(&fOwner->cluster(clusters().start));
     }
 }
 
@@ -568,7 +572,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, Run* run)
 
         Buffer runBuffer(const RunInfo& info) override {
             SkASSERT(!fRun);
-            fRun = std::unique_ptr<Run>(new Run(nullptr, info, 0, fLineHeight, 0, 0));
+            fRun = std::make_unique<Run>(nullptr, info, 0, fLineHeight, 0, 0);
             return fRun->newRunBuffer();
         }
 
@@ -592,7 +596,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, Run* run)
     shaper->shape(ellipsis.c_str(), ellipsis.size(), run->font(), true,
                   std::numeric_limits<SkScalar>::max(), &handler);
     handler.run()->fTextRange = TextRange(0, ellipsis.size());
-    handler.run()->fMaster = fMaster;
+    handler.run()->fOwner = fOwner;
     return std::move(handler).run();
 }
 
@@ -634,8 +638,8 @@ TextLine::ClipContext TextLine::measureTextInsideOneRun(TextRange textRange,
         return result;
     }
 
-    auto start = &fMaster->cluster(startIndex);
-    auto end = &fMaster->cluster(endIndex);
+    auto start = &fOwner->cluster(startIndex);
+    auto end = &fOwner->cluster(endIndex);
     result.pos = start->startPos();
     result.size = (end->isHardBreak() ? end->startPos() : end->endPos()) - start->startPos();
 
@@ -702,13 +706,13 @@ void TextLine::iterateThroughClustersInGlyphsOrder(bool reversed,
     bool ignore = false;
     directional_for_each(runs, !reversed, [&](decltype(runs[0]) r) {
         if (ignore) return;
-        auto run = this->fMaster->run(r);
+        auto run = this->fOwner->run(r);
         auto trimmedRange = fClusterRange.intersection(run.clusterRange());
         auto trailedRange = fGhostClusterRange.intersection(run.clusterRange());
         SkASSERT(trimmedRange.start == trailedRange.start);
 
-        auto trailed = fMaster->clusters(trailedRange);
-        auto trimmed = fMaster->clusters(trimmedRange);
+        auto trailed = fOwner->clusters(trailedRange);
+        auto trimmed = fOwner->clusters(trimmedRange);
         directional_for_each(trailed, reversed != run.leftToRight(), [&](Cluster& cluster) {
             if (ignore) return;
             bool ghost =  &cluster >= trimmed.end();
@@ -735,7 +739,7 @@ SkScalar TextLine::iterateThroughSingleRunByStyles(const Run* run,
                                                                 0, false, false);
         TextRange testRange(run->fClusterStart, run->fClusterStart + 1);
         for (BlockIndex index = fBlockRange.start; index < fBlockRange.end; ++index) {
-           auto block = fMaster->styles().begin() + index;
+           auto block = fOwner->styles().begin() + index;
            auto intersect = intersected(block->fRange, testRange);
            if (intersect.width() > 0) {
                visitor(textRange, block->fStyle, clipContext);
@@ -765,7 +769,7 @@ SkScalar TextLine::iterateThroughSingleRunByStyles(const Run* run,
         TextRange intersect;
         TextStyle* style = nullptr;
         if (index < fBlockRange.end) {
-            auto block = fMaster->styles().begin() + index;
+            auto block = fOwner->styles().begin() + index;
 
             // Get the text
             intersect = intersected(block->fRange, textRange);
@@ -827,7 +831,7 @@ void TextLine::iterateThroughVisualRuns(bool includingGhostSpaces, const RunVisi
     auto textRange = includingGhostSpaces ? this->textWithSpaces() : this->trimmedText();
     for (auto& runIndex : fRunsInVisualOrder) {
 
-        const auto run = &this->fMaster->run(runIndex);
+        const auto run = &this->fOwner->run(runIndex);
         auto lineIntersection = intersected(run->textRange(), textRange);
         if (lineIntersection.width() == 0 && this->width() != 0) {
             // TODO: deal with empty runs in a better way
@@ -886,10 +890,10 @@ LineMetrics TextLine::getMetrics() const {
     result.fUnscaledAscent = - fMaxRunMetrics.ascent(); // TODO: implement
     result.fHeight = littleRound(fAdvance.fY);
     result.fWidth = littleRound(fAdvance.fX);
-    result.fLeft = fOffset.fX;
+    result.fLeft = this->offset().fX;
     // This is Flutter definition of a baseline
     result.fBaseline = this->offset().fY + this->height() - this->sizes().descent();
-    result.fLineNumber = this - fMaster->lines().begin();
+    result.fLineNumber = this - fOwner->lines().begin();
 
     // Fill out the style parts
     this->iterateThroughVisualRuns(false,
@@ -914,19 +918,19 @@ LineMetrics TextLine::getMetrics() const {
 }
 
 bool TextLine::isFirstLine() {
-    return this == &fMaster->lines().front();
+    return this == &fOwner->lines().front();
 }
 
 bool TextLine::isLastLine() {
-    return this == &fMaster->lines().back();
+    return this == &fOwner->lines().back();
 }
 
 bool TextLine::endsWithHardLineBreak() const {
     // TODO: For some reason Flutter imagines a hard line break at the end of the last line.
     //  To be removed...
-    return fMaster->cluster(fGhostClusterRange.end - 1).isHardBreak() ||
+    return fOwner->cluster(fGhostClusterRange.end - 1).isHardBreak() ||
            fEllipsis != nullptr ||
-           fGhostClusterRange.end == fMaster->clusters().size() - 1;
+           fGhostClusterRange.end == fOwner->clusters().size() - 1;
 }
 
 void TextLine::getRectsForRange(TextRange textRange0,
@@ -949,7 +953,7 @@ void TextLine::getRectsForRange(TextRange textRange0,
                 return true;
             }
 
-            auto paragraphStyle = fMaster->paragraphStyle();
+            auto paragraphStyle = fOwner->paragraphStyle();
 
             // Found a run that intersects with the text
             auto context = this->measureTextInsideOneRun(intersect, run, runOffsetInLine, 0, true, true);
@@ -985,10 +989,10 @@ void TextLine::getRectsForRange(TextRange textRange0,
                     break;
                 }
                 case RectHeightStyle::kStrut: {
-                    auto strutStyle = paragraphStyle.getStrutStyle();
+                    const auto& strutStyle = paragraphStyle.getStrutStyle();
                     if (strutStyle.getStrutEnabled()
                         && strutStyle.getFontSize() > 0) {
-                        auto strutMetrics = fMaster->strutMetrics();
+                        auto strutMetrics = fOwner->strutMetrics();
                         auto top = this->baseline();
                         clip.fTop = top + strutMetrics.ascent();
                         clip.fBottom = top + strutMetrics.descent();
@@ -1100,9 +1104,10 @@ void TextLine::getRectsForRange(TextRange textRange0,
                     boxes.insert(boxes.begin() + startBox + 1, left);
                 }
                 if (right.direction == TextDirection::kLtr &&
-                    right.rect.fRight >= lineEnd &&  right.rect.fRight < fMaster->widthWithTrailingSpaces()) {
+                    right.rect.fRight >= lineEnd &&
+                    right.rect.fRight < fOwner->widthWithTrailingSpaces()) {
                     right.rect.fLeft = right.rect.fRight;
-                    right.rect.fRight = fMaster->widthWithTrailingSpaces();
+                    right.rect.fRight = fOwner->widthWithTrailingSpaces();
                     boxes.emplace_back(right);
                 }
             }
@@ -1125,26 +1130,25 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
     this->iterateThroughVisualRuns(true,
         [this, dx, &result]
         (const Run* run, SkScalar runOffsetInLine, TextRange textRange, SkScalar* runWidthInLine) {
-            bool lookingForHit = true;
+            bool keepLooking = true;
             *runWidthInLine = this->iterateThroughSingleRunByStyles(
             run, runOffsetInLine, textRange, StyleType::kNone,
-            [this, dx, &result, &lookingForHit]
+            [this, dx, &result, &keepLooking]
             (TextRange textRange, const TextStyle& style, const TextLine::ClipContext& context) {
 
-                auto offsetX = this->offset().fX;
+                SkScalar offsetX = this->offset().fX;
                 if (dx < context.clip.fLeft + offsetX) {
                     // All the other runs are placed right of this one
-                    auto utf16Index = fMaster->getUTF16Index(context.run->globalClusterIndex(context.pos));
+                    auto utf16Index = fOwner->getUTF16Index(context.run->globalClusterIndex(context.pos));
                     result = { SkToS32(utf16Index), kDownstream };
-                    lookingForHit = false;
-                    return false;
+                    return keepLooking = false;
                 }
 
                 if (dx >= context.clip.fRight + offsetX) {
                     // We have to keep looking ; just in case keep the last one as the closest
-                    auto utf16Index = fMaster->getUTF16Index(context.run->globalClusterIndex(context.pos + context.size));
+                    auto utf16Index = fOwner->getUTF16Index(context.run->globalClusterIndex(context.pos + context.size));
                     result = { SkToS32(utf16Index), kUpstream };
-                    return true;
+                    return keepLooking = true;
                 }
 
                 // So we found the run that contains our coordinates
@@ -1160,41 +1164,40 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                     found = index;
                 }
 
-                auto glyphemeStart = context.run->positionX(found) + context.fTextShift + offsetX;
-                auto glyphemeWidth = context.run->positionX(found + 1) - context.run->positionX(found);
+                SkScalar glyphemePosLeft = context.run->positionX(found) + context.fTextShift + offsetX;
+                SkScalar glyphemePosWidth = context.run->positionX(found + 1) - context.run->positionX(found);
 
                 // Find the grapheme range that contains the point
                 auto clusterIndex8 = context.run->globalClusterIndex(found);
                 auto clusterEnd8 = context.run->globalClusterIndex(found + 1);
-                auto graphemeStart = fMaster->findGraphemeStart(clusterIndex8);
-                auto graphemeWidth =
-                    fMaster->findGraphemeStart(clusterEnd8) - graphemeStart;
-                auto utf16Index = fMaster->getUTF16Index(clusterIndex8);
+                TextIndex graphemeUtf8Start = fOwner->findGraphemeStart(clusterIndex8);
+                TextIndex graphemeUtf8Width = fOwner->findGraphemeStart(clusterEnd8) - graphemeUtf8Start;
+                size_t utf16Index = fOwner->getUTF16Index(clusterIndex8);
 
-                // We only need to inspect one glyph (maybe not even the entire glyph)
-                SkScalar center;
-                bool insideGlyph = false;
-                if (graphemeWidth > 1) {
-                    auto averageGlyphWidth = glyphemeWidth / graphemeWidth;
-                    auto delta = dx - glyphemeStart;
-                    auto insideIndex = SkScalarFloorToInt(delta / averageGlyphWidth);
-                    insideGlyph = delta > averageGlyphWidth;
-                    center = glyphemeStart + averageGlyphWidth * insideIndex + averageGlyphWidth / 2;
-                    utf16Index += insideIndex;
-                } else {
-                    center = glyphemeStart + glyphemeWidth / 2;
+                SkScalar center = glyphemePosLeft + glyphemePosWidth / 2;
+                bool insideGlypheme = false;
+                if (graphemeUtf8Width > 1) {
+                    // TODO: the average width of a code unit (especially UTF-8) is meaningless.
+                    // Probably want the average width of a grapheme or codepoint?
+                    SkScalar averageUtf8Width = glyphemePosWidth / graphemeUtf8Width;
+                    SkScalar delta = dx - glyphemePosLeft;
+                    int insideUtf8Offset = SkScalarNearlyZero(averageUtf8Width)
+                                         ? 0
+                                         : SkScalarFloorToInt(delta / averageUtf8Width);
+                    insideGlypheme = averageUtf8Width < delta && delta < glyphemePosWidth - averageUtf8Width;
+                    center = glyphemePosLeft + averageUtf8Width * insideUtf8Offset + averageUtf8Width / 2;
+                    utf16Index += insideUtf8Offset; // TODO: adding a utf8 offset to a utf16 index
                 }
-                if ((dx < center) == context.run->leftToRight() || insideGlyph) {
+                if ((dx < center) == context.run->leftToRight() || insideGlypheme) {
                     result = { SkToS32(utf16Index), kDownstream };
                 } else {
                     result = { SkToS32(utf16Index + 1), kUpstream };
                 }
-                // No need to continue
-                lookingForHit = false;
-                return false;
+
+                return keepLooking = false;
 
             });
-          return lookingForHit;
+          return keepLooking;
         }
     );
     return result;

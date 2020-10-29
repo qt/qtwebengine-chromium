@@ -89,7 +89,7 @@ public:
         size_t size = eagerCount * stride;
         fVertexBuffer = fResourceProvider->createBuffer(size, GrGpuBufferType::kVertex,
                                                         kStatic_GrAccessPattern);
-        if (!fVertexBuffer.get()) {
+        if (!fVertexBuffer) {
             return nullptr;
         }
         if (fCanMapVB) {
@@ -189,16 +189,6 @@ public:
             fHelper.visitProxies(func);
         }
     }
-
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        string.appendf("Color 0x%08x, aa: %d\n", fColor.toBytes_RGBA(), fAntiAlias);
-        string += fHelper.dumpInfo();
-        string += INHERITED::dumpInfo();
-        return string;
-    }
-#endif
 
     TriangulatingPathOp(Helper::MakeArgs helperArgs,
                         const SkPMColor4f& color,
@@ -401,6 +391,13 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        return SkStringPrintf("Color 0x%08x, aa: %d\n%s",
+                              fColor.toBytes_RGBA(), fAntiAlias, fHelper.dumpInfo().c_str());
+    }
+#endif
+
     Helper         fHelper;
     SkPMColor4f    fColor;
     GrStyledShape  fShape;
@@ -433,7 +430,7 @@ bool GrTriangulatingPathRenderer::onDrawPath(const DrawPathArgs& args) {
 
 GR_DRAW_OP_TEST_DEFINE(TriangulatingPathOp) {
     SkMatrix viewMatrix = GrTest::TestMatrixInvertible(random);
-    SkPath path = GrTest::TestPath(random);
+    const SkPath& path = GrTest::TestPath(random);
     SkIRect devClipBounds = SkIRect::MakeLTRB(
         random->nextU(), random->nextU(), random->nextU(), random->nextU());
     devClipBounds.sort();

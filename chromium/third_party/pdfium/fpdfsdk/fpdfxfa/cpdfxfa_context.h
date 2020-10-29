@@ -16,22 +16,20 @@
 #include "core/fxcrt/timerhandler_iface.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
-#include "fpdfsdk/fpdfxfa/cpdfxfa_docenvironment.h"
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "fxjs/gc/heap.h"
+#include "v8/include/cppgc/persistent.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 
+class CFX_XMLDocument;
 class CJS_Runtime;
-class CXFA_FFDocHandler;
-class IJS_EventContext;
-class IJS_Runtime;
+class CPDFXFA_DocEnvironment;
 
 enum LoadStatus {
   FXFA_LOADSTATUS_PRELOAD = 0,
   FXFA_LOADSTATUS_LOADING,
   FXFA_LOADSTATUS_LOADED,
   FXFA_LOADSTATUS_CLOSING,
-  FXFA_LOADSTATUS_CLOSED
 };
 
 class CPDFXFA_Context final : public CPDF_Document::Extension,
@@ -41,16 +39,26 @@ class CPDFXFA_Context final : public CPDF_Document::Extension,
   ~CPDFXFA_Context() override;
 
   bool LoadXFADoc();
-  CXFA_FFDoc* GetXFADoc() { return m_pXFADoc.get(); }
-  CXFA_FFDocView* GetXFADocView() const { return m_pXFADocView.Get(); }
-  cppgc::Heap* GetGCHeap() { return m_pGCHeap.get(); }
+  LoadStatus GetLoadStatus() const { return m_nLoadStatus; }
   FormType GetFormType() const { return m_FormType; }
+  int GetOriginalPageCount() const { return m_nPageCount; }
+  void SetOriginalPageCount(int count) {
+    m_nPageCount = count;
+    m_XFAPageList.resize(count);
+  }
+
+  CFX_XMLDocument* GetXMLDoc() { return m_pXML.get(); }
+  CXFA_FFDoc* GetXFADoc() { return m_pXFADoc; }
+  CXFA_FFDocView* GetXFADocView() const { return m_pXFADocView.Get(); }
   CPDFSDK_FormFillEnvironment* GetFormFillEnv() const {
     return m_pFormFillEnv.Get();
   }
   void SetFormFillEnv(CPDFSDK_FormFillEnvironment* pFormFillEnv);
   RetainPtr<CPDFXFA_Page> GetXFAPage(int page_index);
   RetainPtr<CPDFXFA_Page> GetXFAPage(CXFA_FFPageView* pPage) const;
+  std::vector<RetainPtr<CPDFXFA_Page>>* GetXFAPageList() {
+    return &m_XFAPageList;
+  }
   void ClearChangeMark();
 
   // CPDF_Document::Extension:
@@ -88,6 +96,7 @@ class CPDFXFA_Context final : public CPDF_Document::Extension,
                      const WideString& wsData,
                      const WideString& wsEncode) override;
   TimerHandlerIface* GetTimerHandler() const override;
+  cppgc::Heap* GetGCHeap() const override;
 
   bool SaveDatasetsPackage(const RetainPtr<IFX_SeekableStream>& pStream);
   bool SaveFormPackage(const RetainPtr<IFX_SeekableStream>& pStream);
@@ -96,38 +105,27 @@ class CPDFXFA_Context final : public CPDF_Document::Extension,
       std::vector<RetainPtr<IFX_SeekableStream>>* fileList);
 
  private:
-  friend class CPDFXFA_DocEnvironment;
-
-  int GetOriginalPageCount() const { return m_nPageCount; }
-  void SetOriginalPageCount(int count) {
-    m_nPageCount = count;
-    m_XFAPageList.resize(count);
-  }
-
-  LoadStatus GetLoadStatus() const { return m_nLoadStatus; }
-  std::vector<RetainPtr<CPDFXFA_Page>>* GetXFAPageList() {
-    return &m_XFAPageList;
-  }
-
   CJS_Runtime* GetCJSRuntime() const;
   bool SavePackage(const RetainPtr<IFX_SeekableStream>& pStream,
                    XFA_HashCode code);
-  void CloseXFADoc();
 
   FormType m_FormType = FormType::kNone;
-  UnownedPtr<CPDF_Document> const m_pPDFDoc;
-  FXGCScopedHeap m_pGCHeap;
-  std::unique_ptr<CXFA_FFDoc> m_pXFADoc;
-  ObservedPtr<CPDFSDK_FormFillEnvironment> m_pFormFillEnv;
-  UnownedPtr<CXFA_FFDocView> m_pXFADocView;
-  std::unique_ptr<CXFA_FFApp> const m_pXFAApp;
-  std::unique_ptr<CJS_Runtime> m_pRuntime;
-  std::vector<RetainPtr<CPDFXFA_Page>> m_XFAPageList;
   LoadStatus m_nLoadStatus = FXFA_LOADSTATUS_PRELOAD;
   int m_nPageCount = 0;
 
-  // Must be destroyed before |m_pFormFillEnv|.
-  CPDFXFA_DocEnvironment m_DocEnv;
+  // The order in which the following members are destroyed is critical.
+  UnownedPtr<CPDF_Document> const m_pPDFDoc;
+  std::unique_ptr<CFX_XMLDocument> m_pXML;
+  std::unique_ptr<CXFA_FFApp> const m_pXFAApp;
+  ObservedPtr<CPDFSDK_FormFillEnvironment> m_pFormFillEnv;
+  std::vector<RetainPtr<CPDFXFA_Page>> m_XFAPageList;
+
+  // Can't outlive |m_pFormFillEnv|.
+  std::unique_ptr<CPDFXFA_DocEnvironment> m_pDocEnv;
+
+  FXGCScopedHeap m_pGCHeap;
+  cppgc::Persistent<CXFA_FFDoc> m_pXFADoc;          // Can't outlive |m_pGCHeap|
+  cppgc::Persistent<CXFA_FFDocView> m_pXFADocView;  // Can't outlive |m_pGCHeap|
 };
 
 #endif  // FPDFSDK_FPDFXFA_CPDFXFA_CONTEXT_H_

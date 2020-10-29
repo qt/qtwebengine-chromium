@@ -249,6 +249,23 @@
     /* GL_ANGLE_framebuffer_blit */                                                                \
     /* GL_ANGLE_framebuffer_multisample */                                                         \
     /* GL_ANGLE_instanced_arrays */                                                                \
+    /* GL_ANGLE_memory_object_flags */                                                             \
+    void texStorageMemFlags2D(TextureType targetPacked, GLsizei levels, GLenum internalFormat,     \
+                              GLsizei width, GLsizei height, MemoryObjectID memoryPacked,          \
+                              GLuint64 offset, GLbitfield createFlags, GLbitfield usageFlags);     \
+    void texStorageMemFlags2DMultisample(                                                          \
+        TextureType targetPacked, GLsizei samples, GLenum internalFormat, GLsizei width,           \
+        GLsizei height, GLboolean fixedSampleLocations, MemoryObjectID memoryPacked,               \
+        GLuint64 offset, GLbitfield createFlags, GLbitfield usageFlags);                           \
+    void texStorageMemFlags3D(TextureType targetPacked, GLsizei levels, GLenum internalFormat,     \
+                              GLsizei width, GLsizei height, GLsizei depth,                        \
+                              MemoryObjectID memoryPacked, GLuint64 offset,                        \
+                              GLbitfield createFlags, GLbitfield usageFlags);                      \
+    void texStorageMemFlags3DMultisample(TextureType targetPacked, GLsizei samples,                \
+                                         GLenum internalFormat, GLsizei width, GLsizei height,     \
+                                         GLsizei depth, GLboolean fixedSampleLocations,            \
+                                         MemoryObjectID memoryPacked, GLuint64 offset,             \
+                                         GLbitfield createFlags, GLbitfield usageFlags);           \
     /* GL_ANGLE_memory_object_fuchsia */                                                           \
     void importMemoryZirconHandle(MemoryObjectID memoryPacked, GLuint64 size,                      \
                                   HandleType handleTypePacked, GLuint handle);                     \
@@ -332,8 +349,10 @@
     void importMemoryFd(MemoryObjectID memoryPacked, GLuint64 size, HandleType handleTypePacked,   \
                         GLint fd);                                                                 \
     /* GL_EXT_multisampled_render_to_texture */                                                    \
-    void framebufferTexture2DMultisample(GLenum target, GLenum attachment, GLenum textarget,       \
-                                         GLuint texture, GLint level, GLsizei samples);            \
+    void framebufferTexture2DMultisample(GLenum target, GLenum attachment,                         \
+                                         TextureTarget textargetPacked, TextureID texturePacked,   \
+                                         GLint level, GLsizei samples);                            \
+    /* GL_EXT_multisampled_render_to_texture2 */                                                   \
     /* GL_EXT_occlusion_query_boolean */                                                           \
     /* GL_EXT_read_format_bgra */                                                                  \
     /* GL_EXT_robustness */                                                                        \
@@ -353,6 +372,7 @@
                        const TextureID *texturesPacked, const GLenum *srcLayouts);                 \
     /* GL_EXT_semaphore_fd */                                                                      \
     void importSemaphoreFd(SemaphoreID semaphorePacked, HandleType handleTypePacked, GLint fd);    \
+    /* GL_EXT_texture_buffer */                                                                    \
     /* GL_EXT_texture_compression_bptc */                                                          \
     /* GL_EXT_texture_compression_dxt1 */                                                          \
     /* GL_EXT_texture_compression_rgtc */                                                          \
@@ -389,6 +409,7 @@
     void framebufferTexture3D(GLenum target, GLenum attachment, TextureTarget textargetPacked,     \
                               TextureID texturePacked, GLint level, GLint zoffset);                \
     /* GL_OES_texture_border_clamp */                                                              \
+    /* GL_OES_texture_buffer */                                                                    \
     /* GL_OES_texture_cube_map_array */                                                            \
     /* GL_OES_texture_half_float */                                                                \
     /* GL_OES_texture_storage_multisample_2d_array */                                              \

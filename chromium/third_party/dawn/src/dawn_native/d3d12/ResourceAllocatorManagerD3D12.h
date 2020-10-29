@@ -17,6 +17,7 @@
 
 #include "common/SerialQueue.h"
 #include "dawn_native/BuddyMemoryAllocator.h"
+#include "dawn_native/PooledResourceMemoryAllocator.h"
 #include "dawn_native/d3d12/HeapAllocatorD3D12.h"
 #include "dawn_native/d3d12/ResourceHeapAllocationD3D12.h"
 
@@ -67,17 +68,21 @@ namespace dawn_native { namespace d3d12 {
 
         void Tick(Serial lastCompletedSerial);
 
+        void DestroyPool();
+
       private:
         void FreeMemory(ResourceHeapAllocation& allocation);
 
         ResultOrError<ResourceHeapAllocation> CreatePlacedResource(
             D3D12_HEAP_TYPE heapType,
             const D3D12_RESOURCE_DESC& requestedResourceDescriptor,
+            const D3D12_CLEAR_VALUE* optimizedClearValue,
             D3D12_RESOURCE_STATES initialUsage);
 
         ResultOrError<ResourceHeapAllocation> CreateCommittedResource(
             D3D12_HEAP_TYPE heapType,
             const D3D12_RESOURCE_DESC& resourceDescriptor,
+            const D3D12_CLEAR_VALUE* optimizedClearValue,
             D3D12_RESOURCE_STATES initialUsage);
 
         Device* mDevice;
@@ -89,6 +94,9 @@ namespace dawn_native { namespace d3d12 {
         std::array<std::unique_ptr<BuddyMemoryAllocator>, ResourceHeapKind::EnumCount>
             mSubAllocatedResourceAllocators;
         std::array<std::unique_ptr<HeapAllocator>, ResourceHeapKind::EnumCount> mHeapAllocators;
+
+        std::array<std::unique_ptr<PooledResourceMemoryAllocator>, ResourceHeapKind::EnumCount>
+            mPooledHeapAllocators;
 
         SerialQueue<ResourceHeapAllocation> mAllocationsToDelete;
     };

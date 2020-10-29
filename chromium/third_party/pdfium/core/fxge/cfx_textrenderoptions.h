@@ -18,9 +18,6 @@ struct CFX_TextRenderOptions {
 
     // LCD optimization, can be enabled when anti-aliasing is allowed.
     kLcd,
-
-    // BGR stripe optimization, can be enabled when LCD optimazation is enabled.
-    kBgrStripe,
   };
 
   static const CFX_TextRenderOptions& LcdOptions();
@@ -29,11 +26,10 @@ struct CFX_TextRenderOptions {
   explicit CFX_TextRenderOptions(AliasingType type);
   CFX_TextRenderOptions(const CFX_TextRenderOptions& other);
 
-  // Indicates whether LCD optimazation is enabled.
-  bool IsLcd() const { return aliasing_type >= kLcd; }
-
-  // Indicates whether anti aliasing is enabled.
-  bool IsSmooth() const { return aliasing_type >= kAntiAliasing; }
+  // Indicates whether anti-aliasing is enabled.
+  bool IsSmooth() const {
+    return aliasing_type == kAntiAliasing || aliasing_type == kLcd;
+  }
 
   // Aliasing option for fonts.
   AliasingType aliasing_type = kAntiAliasing;
@@ -44,5 +40,17 @@ struct CFX_TextRenderOptions {
   // Using the native text output available on some platforms.
   bool native_text = true;
 };
+
+inline bool operator==(const CFX_TextRenderOptions& lhs,
+                       const CFX_TextRenderOptions& rhs) {
+  return lhs.aliasing_type == rhs.aliasing_type &&
+         lhs.font_is_cid == rhs.font_is_cid &&
+         lhs.native_text == rhs.native_text;
+}
+
+inline bool operator!=(const CFX_TextRenderOptions& lhs,
+                       const CFX_TextRenderOptions& rhs) {
+  return !(lhs == rhs);
+}
 
 #endif  // CORE_FXGE_CFX_TEXTRENDEROPTIONS_H_

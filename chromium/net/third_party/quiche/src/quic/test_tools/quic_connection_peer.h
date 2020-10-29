@@ -79,7 +79,6 @@ class QuicConnectionPeer {
   static QuicAlarm* GetPingAlarm(QuicConnection* connection);
   static QuicAlarm* GetRetransmissionAlarm(QuicConnection* connection);
   static QuicAlarm* GetSendAlarm(QuicConnection* connection);
-  static QuicAlarm* GetTimeoutAlarm(QuicConnection* connection);
   static QuicAlarm* GetMtuDiscoveryAlarm(QuicConnection* connection);
   static QuicAlarm* GetProcessUndecryptablePacketsAlarm(
       QuicConnection* connection);
@@ -142,7 +141,15 @@ class QuicConnectionPeer {
 
   static QuicTime GetBlackholeDetectionDeadline(QuicConnection* connection);
 
+  static QuicTime GetPathMtuReductionDetectionDeadline(
+      QuicConnection* connection);
+
   static QuicAlarm* GetIdleNetworkDetectorAlarm(QuicConnection* connection);
+
+  static QuicTime GetIdleNetworkDeadline(QuicConnection* connection);
+
+  static QuicIdleNetworkDetector& GetIdleNetworkDetector(
+      QuicConnection* connection);
 
   static void SetServerConnectionId(
       QuicConnection* connection,

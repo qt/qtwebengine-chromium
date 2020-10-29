@@ -126,6 +126,11 @@ class RefCountedBuffer {
   int32_t rows4x4() const { return rows4x4_; }
   int32_t columns4x4() const { return columns4x4_; }
 
+  int spatial_id() const { return spatial_id_; }
+  void set_spatial_id(int value) { spatial_id_ = value; }
+  int temporal_id() const { return temporal_id_; }
+  void set_temporal_id(int value) { temporal_id_ = value; }
+
   SegmentationMap* segmentation_map() { return &segmentation_map_; }
   const SegmentationMap* segmentation_map() const { return &segmentation_map_; }
 
@@ -306,6 +311,8 @@ class RefCountedBuffer {
   int32_t render_height_ = 0;
   int32_t columns4x4_ = 0;
   int32_t rows4x4_ = 0;
+  int spatial_id_ = 0;
+  int temporal_id_ = 0;
 
   // segmentation_map_ contains a rows4x4_ by columns4x4_ 2D array.
   SegmentationMap segmentation_map_;

@@ -4,6 +4,7 @@ import { DevicePool, TestOOMedShouldAttemptGC } from '../common/framework/gpu/de
 import { attemptGarbageCollection } from '../common/framework/util/collect_garbage.js';
 import { assert } from '../common/framework/util/util.js';
 
+import { EncodableTextureFormat, SizedTextureFormat } from './capability_info.js';
 import {
   fillTextureDataWithTexelValue,
   getTextureCopyLayout,
@@ -95,14 +96,14 @@ export class GPUTest extends Fixture {
     }
   }
 
-  createCopyForMapRead(src: GPUBuffer, start: number, size: number): GPUBuffer {
+  createCopyForMapRead(src: GPUBuffer, srcOffset: number, size: number): GPUBuffer {
     const dst = this.device.createBuffer({
       size,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
 
     const c = this.device.createCommandEncoder();
-    c.copyBufferToBuffer(src, start, dst, 0, size);
+    c.copyBufferToBuffer(src, srcOffset, dst, 0, size);
 
     this.queue.submit([c.finish()]);
 
@@ -111,16 +112,17 @@ export class GPUTest extends Fixture {
 
   // TODO: add an expectContents for textures, which logs data: uris on failure
 
-  expectContents(src: GPUBuffer, expected: TypedArrayBufferView): void {
-    this.expectSubContents(src, 0, expected);
+  expectContents(src: GPUBuffer, expected: TypedArrayBufferView, srcOffset: number = 0): void {
+    this.expectSubContents(src, srcOffset, expected);
   }
 
-  expectSubContents(src: GPUBuffer, start: number, expected: TypedArrayBufferView): void {
-    const dst = this.createCopyForMapRead(src, start, expected.buffer.byteLength);
+  expectSubContents(src: GPUBuffer, srcOffset: number, expected: TypedArrayBufferView): void {
+    const dst = this.createCopyForMapRead(src, srcOffset, expected.buffer.byteLength);
 
     this.eventualAsyncExpectation(async niceStack => {
       const constructor = expected.constructor as TypedArrayBufferViewConstructor;
-      const actual = new constructor(await dst.mapReadAsync());
+      await dst.mapAsync(GPUMapMode.READ);
+      const actual = new constructor(dst.getMappedRange());
       const check = this.checkBuffer(actual, expected);
       if (check !== undefined) {
         niceStack.message = check;
@@ -205,7 +207,7 @@ got [${failedByteActualValues.join(', ')}]`;
 
   expectSingleColor(
     src: GPUTexture,
-    format: GPUTextureFormat,
+    format: EncodableTextureFormat,
     {
       size,
       exp,
@@ -235,7 +237,7 @@ got [${failedByteActualValues.join(', ')}]`;
 
     const commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyTextureToBuffer(
-      { texture: src, mipLevel: layout?.mipLevel, arrayLayer: slice },
+      { texture: src, mipLevel: layout?.mipLevel, origin: { x: 0, y: 0, z: slice } },
       { buffer, bytesPerRow, rowsPerImage },
       mipSize
     );
@@ -245,7 +247,50 @@ got [${failedByteActualValues.join(', ')}]`;
     this.expectContents(buffer, new Uint8Array(arrayBuffer));
   }
 
-  expectGPUError<R>(filter: GPUErrorFilter, fn: () => R): R {
+  // TODO: Add check for values of depth/stencil, probably through sampling of shader
+  // TODO(natashalee): Can refactor this and expectSingleColor to use a similar base expect
+  expectSinglePixelIn2DTexture(
+    src: GPUTexture,
+    format: SizedTextureFormat,
+    { x, y }: { x: number; y: number },
+    {
+      exp,
+      slice = 0,
+      layout,
+    }: {
+      exp: Uint8Array;
+      slice?: number;
+      layout?: TextureLayoutOptions;
+    }
+  ): void {
+    const { byteLength, bytesPerRow, rowsPerImage, mipSize } = getTextureCopyLayout(
+      format,
+      '2d',
+      [1, 1, 1],
+      layout
+    );
+    const buffer = this.device.createBuffer({
+      size: byteLength,
+      usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+
+    const commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyTextureToBuffer(
+      { texture: src, mipLevel: layout?.mipLevel, origin: { x, y, z: slice } },
+      { buffer, bytesPerRow, rowsPerImage },
+      mipSize
+    );
+    this.queue.submit([commandEncoder.finish()]);
+
+    this.expectContents(buffer, exp);
+  }
+
+  expectGPUError<R>(filter: GPUErrorFilter, fn: () => R, shouldError: boolean = true): R {
+    // If no error is expected, we let the scope surrounding the test catch it.
+    if (!shouldError) {
+      return fn();
+    }
+
     this.device.pushErrorScope(filter);
     const returnValue = fn();
     const promise = this.device.popErrorScope();
@@ -255,9 +300,6 @@ got [${failedByteActualValues.join(', ')}]`;
 
       let failed = false;
       switch (filter) {
-        case 'none':
-          failed = error !== null;
-          break;
         case 'out-of-memory':
           failed = !(error instanceof GPUOutOfMemoryError);
           break;

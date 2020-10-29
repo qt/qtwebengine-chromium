@@ -8,7 +8,7 @@
 #ifndef GrContextPriv_DEFINED
 #define GrContextPriv_DEFINED
 
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 
 class GrAtlasManager;
 class GrBackendFormat;
@@ -40,13 +40,10 @@ public:
 
     GrImageContext* asImageContext() { return fContext->asImageContext(); }
     GrRecordingContext* asRecordingContext() { return fContext->asRecordingContext(); }
-    GrContext* asDirectContext() { return fContext->asDirectContext(); }
 
     // from GrImageContext
     GrProxyProvider* proxyProvider() { return fContext->proxyProvider(); }
     const GrProxyProvider* proxyProvider() const { return fContext->proxyProvider(); }
-
-    bool abandoned() const { return fContext->abandoned(); }
 
     /** This is only useful for debug purposes */
     SkDEBUGCODE(GrSingleOwner* singleOwner() const { return fContext->singleOwner(); } )
@@ -70,11 +67,6 @@ public:
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
     GrAuditTrail* auditTrail() { return fContext->auditTrail(); }
-
-    /**
-     * Create a GrContext without a resource cache
-     */
-    static sk_sp<GrContext> MakeDDL(sk_sp<GrContextThreadSafeProxy>);
 
     /**
      * Finalizes all pending reads and writes to the surfaces and also performs an MSAA resolves
@@ -120,8 +112,12 @@ public:
         return fContext->onGetAtlasManager();
     }
 
-    void moveRenderTasksToDDL(SkDeferredDisplayList*);
-    void copyRenderTasksFromDDL(const SkDeferredDisplayList*, GrRenderTargetProxy* newDest);
+    // This accessor should only ever be called by the GrOpFlushState.
+    GrSmallPathAtlasMgr* getSmallPathAtlasMgr() {
+        return fContext->onGetSmallPathAtlasMgr();
+    }
+
+    void copyRenderTasksFromDDL(sk_sp<const SkDeferredDisplayList>, GrRenderTargetProxy* newDest);
 
     bool compile(const GrProgramDesc&, const GrProgramInfo&);
 
@@ -154,10 +150,6 @@ public:
     void dumpContextStatsKeyValuePairs(SkTArray<SkString>* keys, SkTArray<double>* values) const;
     void printContextStats() const;
 
-    /** Specify the TextBlob cache limit. If the current cache exceeds this limit it will purge.
-        this is for testing only */
-    void testingOnly_setTextBlobCacheLimit(size_t bytes);
-
     /** Get pointer to atlas texture for given mask format. Note that this wraps an
         actively mutating texture in an SkImage. This could yield unexpected results
         if it gets cached or used more generally. */
@@ -175,8 +167,8 @@ public:
 
 private:
     explicit GrContextPriv(GrContext* context) : fContext(context) {}
-    GrContextPriv(const GrContextPriv&); // unimpl
-    GrContextPriv& operator=(const GrContextPriv&); // unimpl
+    GrContextPriv(const GrContextPriv&) = delete;
+    GrContextPriv& operator=(const GrContextPriv&) = delete;
 
     // No taking addresses of this type.
     const GrContextPriv* operator&() const;
@@ -189,7 +181,7 @@ private:
 
 inline GrContextPriv GrContext::priv() { return GrContextPriv(this); }
 
-inline const GrContextPriv GrContext::priv() const {
+inline const GrContextPriv GrContext::priv() const {  // NOLINT(readability-const-return-type)
     return GrContextPriv(const_cast<GrContext*>(this));
 }
 

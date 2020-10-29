@@ -11,9 +11,11 @@
 #include <vector>
 
 #include "core/fxcrt/cfx_memorystream.h"
+#include "core/fxcrt/cfx_readonlymemorystream.h"
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/xml/cfx_xmldocument.h"
-#include "core/fxcrt/xml/cfx_xmlnode.h"
+#include "core/fxcrt/xml/cfx_xmlelement.h"
+#include "core/fxcrt/xml/cfx_xmlparser.h"
 #include "fxjs/js_resources.h"
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cfxjse_value.h"
@@ -21,7 +23,7 @@
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
-#include "xfa/fxfa/parser/cxfa_document_parser.h"
+#include "xfa/fxfa/parser/cxfa_document_builder.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/xfa_basic_data.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
@@ -152,10 +154,6 @@ bool CJX_Node::DynamicTypeIs(TypeTag eType) const {
   return eType == static_type__ || ParentType__::DynamicTypeIs(eType);
 }
 
-CXFA_Node* CJX_Node::GetXFANode() const {
-  return ToNode(GetXFAObject());
-}
-
 CJS_Result CJX_Node::applyXSL(CFX_V8* runtime,
                               const std::vector<v8::Local<v8::Value>>& params) {
   if (params.size() != 1)
@@ -268,14 +266,19 @@ CJS_Result CJX_Node::loadXML(CFX_V8* runtime,
   if (params.size() >= 3)
     bOverwrite = runtime->ToBoolean(params[2]);
 
-  auto pParser = std::make_unique<CXFA_DocumentParser>(GetDocument());
-  CFX_XMLNode* pXMLNode = pParser->ParseXMLData(expression);
+  auto stream =
+      pdfium::MakeRetain<CFX_ReadOnlyMemoryStream>(expression.raw_span());
+
+  CFX_XMLParser parser(stream);
+  std::unique_ptr<CFX_XMLDocument> xml_doc = parser.Parse();
+  auto builder = std::make_unique<CXFA_DocumentBuilder>(GetDocument());
+  CFX_XMLNode* pXMLNode = builder->Build(xml_doc.get());
   if (!pXMLNode)
     return CJS_Result::Success();
 
   CFX_XMLDocument* top_xml_doc =
-      GetXFANode()->GetDocument()->GetNotify()->GetHDOC()->GetXMLDocument();
-  top_xml_doc->AppendNodesFrom(pParser->GetXMLDoc().get());
+      GetXFANode()->GetDocument()->GetNotify()->GetFFDoc()->GetXMLDocument();
+  top_xml_doc->AppendNodesFrom(xml_doc.get());
 
   if (bIgnoreRoot &&
       (pXMLNode->GetType() != CFX_XMLNode::Type::kElement ||
@@ -316,8 +319,8 @@ CJS_Result CJX_Node::loadXML(CFX_V8* runtime,
     pFakeXMLRoot->AppendLastChild(pXMLNode);
   }
 
-  pParser->ConstructXFANode(pFakeRoot, pFakeXMLRoot);
-  pFakeRoot = pParser->GetRootNode();
+  builder->ConstructXFANode(pFakeRoot, pFakeXMLRoot);
+  pFakeRoot = builder->GetRootNode();
   if (!pFakeRoot)
     return CJS_Result::Success();
 

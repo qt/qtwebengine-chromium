@@ -56,12 +56,6 @@ template.innerHTML = `
       border-radius: var(--adorner-border-radius, 10px);
     }
 
-    :host-context(.-theme-with-dark-background) slot {
-      color: var(--adorner-text-color, #ffffffde);
-      background-color: var(--adorner-background-color, #5db0d726);
-      border: var(--adorner-border, 1px solid #5db0d780);
-    }
-
     ::slotted(*) {
       height: 10px;
     }
@@ -113,13 +107,25 @@ export class Adorner extends HTMLElement {
     }
   }
 
-  toggle() {
+  /**
+   * @return {boolean}
+   */
+  isActive() {
+    return this.getAttribute('aria-pressed') === 'true';
+  }
+
+  /**
+   * Toggle the active state of the adorner. Optionally pass `true` to force-set
+   * an active state; pass `false` to force-set an inactive state.
+   * @param {boolean=} forceActiveState
+   */
+  toggle(forceActiveState) {
     if (!this._isToggle) {
       return;
     }
-    const shouldBePressed = this.getAttribute('aria-pressed') === 'false';
-    UI.ARIAUtils.setPressed(this, shouldBePressed);
-    UI.ARIAUtils.setAccessibleName(this, shouldBePressed ? this._ariaLabelActive : this._ariaLabelDefault);
+    const shouldBecomeActive = forceActiveState === undefined ? !this.isActive() : forceActiveState;
+    UI.ARIAUtils.setPressed(this, shouldBecomeActive);
+    UI.ARIAUtils.setAccessibleName(this, shouldBecomeActive ? this._ariaLabelActive : this._ariaLabelDefault);
   }
 
   show() {
@@ -140,7 +146,6 @@ export class Adorner extends HTMLElement {
   addInteraction(action, options = {}) {
     const {isToggle = false, shouldPropagateOnKeydown = false, ariaLabelDefault, ariaLabelActive} = options;
 
-    this.addEventListener('click', action);
     this._isToggle = isToggle;
 
     if (ariaLabelDefault) {
@@ -149,12 +154,16 @@ export class Adorner extends HTMLElement {
     }
 
     if (isToggle) {
-      UI.ARIAUtils.setPressed(this, false);
-      this.addEventListener('click', this.toggle);
+      this.addEventListener('click', () => {
+        this.toggle();
+      });
       if (ariaLabelActive) {
         this._ariaLabelActive = ariaLabelActive;
       }
+      this.toggle(false /* initialize inactive state */);
     }
+
+    this.addEventListener('click', action);
 
     // Simulate an ARIA-capable toggle button
     this.classList.add('clickable');

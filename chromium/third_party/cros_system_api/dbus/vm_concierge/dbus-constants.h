@@ -38,6 +38,7 @@ const char kStartPluginVmMethod[] = "StartPluginVm";
 const char kGetDnsSettingsMethod[] = "GetDnsSettings";
 const char kStartArcVmMethod[] = "StartArcVm";
 const char kSetVmCpuRestrictionMethod[] = "SetVmCpuRestriction";
+const char kAdjustVmMethod[] = "AdjustVm";
 
 const char kContainerStartupFailedSignal[] = "ContainerStartupFailed";
 const char kDiskImageProgressSignal[] = "DiskImageProgress";

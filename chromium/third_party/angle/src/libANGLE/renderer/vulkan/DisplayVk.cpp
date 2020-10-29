@@ -125,7 +125,7 @@ SurfaceImpl *DisplayVk::createPbufferSurface(const egl::SurfaceState &state,
     }
 
     ASSERT(mRenderer);
-    return new OffscreenSurfaceVk(state);
+    return new OffscreenSurfaceVk(state, mRenderer);
 }
 
 SurfaceImpl *DisplayVk::createPbufferFromClientBuffer(const egl::SurfaceState &state,
@@ -195,6 +195,7 @@ void DisplayVk::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->createContextRobustness      = getRenderer()->getNativeExtensions().robustness;
     outExtensions->surfaceOrientation           = true;
     outExtensions->displayTextureShareGroup     = true;
+    outExtensions->displaySemaphoreShareGroup   = true;
     outExtensions->robustResourceInitialization = true;
 
     // The Vulkan implementation will always say that EGL_KHR_swap_buffers_with_damage is supported.

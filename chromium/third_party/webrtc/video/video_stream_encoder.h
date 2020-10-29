@@ -28,12 +28,11 @@
 #include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
 #include "call/adaptation/adaptation_constraint.h"
-#include "call/adaptation/adaptation_listener.h"
+#include "call/adaptation/resource_adaptation_processor.h"
 #include "call/adaptation/resource_adaptation_processor_interface.h"
 #include "call/adaptation/video_source_restrictions.h"
 #include "call/adaptation/video_stream_input_state_provider.h"
 #include "modules/video_coding/utility/frame_dropper.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "rtc_base/experiments/rate_control_settings.h"
 #include "rtc_base/numerics/exp_filter.h"
@@ -120,14 +119,14 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   void OnVideoSourceRestrictionsUpdated(
       VideoSourceRestrictions restrictions,
       const VideoAdaptationCounters& adaptation_counters,
-      rtc::scoped_refptr<Resource> reason) override;
+      rtc::scoped_refptr<Resource> reason,
+      const VideoSourceRestrictions& unfiltered_restrictions) override;
 
   // Used for injected test resources.
   // TODO(eshr): Move all adaptation tests out of VideoStreamEncoder tests.
   void InjectAdaptationResource(rtc::scoped_refptr<Resource> resource,
                                 VideoAdaptationReason reason);
   void InjectAdaptationConstraint(AdaptationConstraint* adaptation_constraint);
-  void InjectAdaptationListener(AdaptationListener* adaptation_listener);
 
   rtc::scoped_refptr<QualityScalerResource>
   quality_scaler_resource_for_testing();
@@ -169,6 +168,8 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
     DataRate stable_encoder_target;
   };
 
+  class DegradationPreferenceManager;
+
   void ReconfigureEncoder() RTC_RUN_ON(&encoder_queue_);
   void OnEncoderSettingsChanged() RTC_RUN_ON(&encoder_queue_);
 
@@ -188,8 +189,7 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // Implements EncodedImageCallback.
   EncodedImageCallback::Result OnEncodedImage(
       const EncodedImage& encoded_image,
-      const CodecSpecificInfo* codec_specific_info,
-      const RTPFragmentationHeader* fragmentation) override;
+      const CodecSpecificInfo* codec_specific_info) override;
 
   void OnDroppedFrame(EncodedImageCallback::DropReason reason) override;
 
@@ -408,15 +408,17 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // Provies video stream input states: current resolution and frame rate.
   // This class is thread-safe.
   VideoStreamInputStateProvider input_state_provider_;
+
+  std::unique_ptr<VideoStreamAdapter> video_stream_adapter_
+      RTC_GUARDED_BY(&resource_adaptation_queue_);
   // Responsible for adapting input resolution or frame rate to ensure resources
   // (e.g. CPU or bandwidth) are not overused.
-  // This class is single-threaded on the resource adaptation queue.
+  // Adding resources can occur on any thread, but all other methods need to be
+  // called on the adaptation thread.
   std::unique_ptr<ResourceAdaptationProcessorInterface>
-      resource_adaptation_processor_
-          RTC_GUARDED_BY(&resource_adaptation_queue_);
+      resource_adaptation_processor_;
+  std::unique_ptr<DegradationPreferenceManager> degradation_preference_manager_;
   std::vector<AdaptationConstraint*> adaptation_constraints_
-      RTC_GUARDED_BY(&resource_adaptation_queue_);
-  std::vector<AdaptationListener*> adaptation_listeners_
       RTC_GUARDED_BY(&resource_adaptation_queue_);
   // Handles input, output and stats reporting related to VideoStreamEncoder
   // specific resources, such as "encode usage percent" measurements and "QP

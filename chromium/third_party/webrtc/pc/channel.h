@@ -38,9 +38,10 @@
 #include "pc/srtp_transport.h"
 #include "rtc_base/async_invoker.h"
 #include "rtc_base/async_udp_socket.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/network.h"
+#include "rtc_base/synchronization/sequence_checker.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
+#include "rtc_base/thread_annotations.h"
 #include "rtc_base/unique_id_generator.h"
 
 namespace webrtc {
@@ -125,6 +126,15 @@ class BaseChannel : public ChannelInterface,
   bool SetRemoteContent(const MediaContentDescription* content,
                         webrtc::SdpType type,
                         std::string* error_desc) override;
+  // Controls whether this channel will receive packets on the basis of
+  // matching payload type alone. This is needed for legacy endpoints that
+  // don't signal SSRCs or use MID/RID, but doesn't make sense if there is
+  // more than channel of specific media type, As that creates an ambiguity.
+  //
+  // This method will also remove any existing streams that were bound to this
+  // channel on the basis of payload type, since one of these streams might
+  // actually belong to a new channel. See: crbug.com/webrtc/11477
+  void SetPayloadTypeDemuxingEnabled(bool enabled) override;
 
   bool Enable(bool enable) override;
 
@@ -225,6 +235,7 @@ class BaseChannel : public ChannelInterface,
   bool AddRecvStream_w(const StreamParams& sp);
   bool RemoveRecvStream_w(uint32_t ssrc);
   void ResetUnsignaledRecvStream_w();
+  void SetPayloadTypeDemuxingEnabled_w(bool enabled);
   bool AddSendStream_w(const StreamParams& sp);
   bool RemoveSendStream_w(uint32_t ssrc);
 
@@ -262,9 +273,11 @@ class BaseChannel : public ChannelInterface,
     return worker_thread_->Invoke<T>(posted_from, functor);
   }
 
-  void AddHandledPayloadType(int payload_type);
+  // Add |payload_type| to |demuxer_criteria_| if payload type demuxing is
+  // enabled.
+  void MaybeAddHandledPayloadType(int payload_type) RTC_RUN_ON(worker_thread());
 
-  void ClearHandledPayloadTypes();
+  void ClearHandledPayloadTypes() RTC_RUN_ON(worker_thread());
 
   void UpdateRtpHeaderExtensionMap(
       const RtpHeaderExtensions& header_extensions);
@@ -309,6 +322,7 @@ class BaseChannel : public ChannelInterface,
   // well, but it can be changed only when signaling thread does a synchronous
   // call to the worker thread, so it should be safe.
   bool enabled_ = false;
+  bool payload_type_demuxing_enabled_ RTC_GUARDED_BY(worker_thread()) = true;
   std::vector<StreamParams> local_streams_;
   std::vector<StreamParams> remote_streams_;
   webrtc::RtpTransceiverDirection local_content_direction_ =

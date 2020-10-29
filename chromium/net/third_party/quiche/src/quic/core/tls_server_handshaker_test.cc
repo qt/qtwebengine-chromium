@@ -48,8 +48,8 @@ class TlsServerHandshakerTest : public QuicTest {
       : server_compressed_certs_cache_(
             QuicCompressedCertsCache::kQuicCompressedCertsCacheSize),
         server_id_(kServerHostname, kServerPort, false) {
-    SetQuicReloadableFlag(quic_enable_tls_resumption, true);
-    SetQuicReloadableFlag(quic_enable_zero_rtt_for_tls, true);
+    SetQuicRestartFlag(quic_enable_tls_resumption_v4, true);
+    SetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2, true);
     client_crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
         crypto_test_utils::ProofVerifierForTesting(),
         std::make_unique<test::SimpleSessionCache>());
@@ -297,33 +297,24 @@ TEST_F(TlsServerHandshakerTest, ConnectionClosedOnTlsError) {
   EXPECT_FALSE(server_stream()->one_rtt_keys_available());
 }
 
-TEST_F(TlsServerHandshakerTest, ClientNotSendingALPN) {
-  static_cast<TlsClientHandshaker*>(
-      QuicCryptoClientStreamPeer::GetHandshaker(client_stream()))
-      ->AllowEmptyAlpnForTests();
-  EXPECT_CALL(*client_session_, GetAlpnsToOffer())
-      .WillOnce(Return(std::vector<std::string>()));
-  EXPECT_CALL(
-      *client_connection_,
-      CloseConnection(QUIC_HANDSHAKE_FAILED, "Server did not select ALPN", _));
-  EXPECT_CALL(*server_connection_,
-              CloseConnection(QUIC_HANDSHAKE_FAILED,
-                              "Server did not receive a known ALPN", _));
-
-  // Process two flights of handshake messages.
-  AdvanceHandshakeWithFakeClient();
-  AdvanceHandshakeWithFakeClient();
-
-  EXPECT_FALSE(client_stream()->one_rtt_keys_available());
-  EXPECT_TRUE(client_stream()->encryption_established());
-  EXPECT_FALSE(server_stream()->one_rtt_keys_available());
-  EXPECT_TRUE(server_stream()->encryption_established());
-}
-
 TEST_F(TlsServerHandshakerTest, ClientSendingBadALPN) {
   const std::string kTestBadClientAlpn = "bad-client-alpn";
   EXPECT_CALL(*client_session_, GetAlpnsToOffer())
       .WillOnce(Return(std::vector<std::string>({kTestBadClientAlpn})));
+#if BORINGSSL_API_VERSION > 10
+  EXPECT_CALL(*server_connection_,
+              CloseConnection(QUIC_HANDSHAKE_FAILED,
+                              "TLS handshake failure (ENCRYPTION_INITIAL) 120: "
+                              "no application protocol",
+                              _));
+
+  AdvanceHandshakeWithFakeClient();
+
+  EXPECT_FALSE(client_stream()->one_rtt_keys_available());
+  EXPECT_FALSE(client_stream()->encryption_established());
+  EXPECT_FALSE(server_stream()->one_rtt_keys_available());
+  EXPECT_FALSE(server_stream()->encryption_established());
+#else  // BORINGSSL_API_VERSION <=10
   EXPECT_CALL(
       *client_connection_,
       CloseConnection(QUIC_HANDSHAKE_FAILED, "Server did not select ALPN", _));
@@ -339,6 +330,7 @@ TEST_F(TlsServerHandshakerTest, ClientSendingBadALPN) {
   EXPECT_TRUE(client_stream()->encryption_established());
   EXPECT_FALSE(server_stream()->one_rtt_keys_available());
   EXPECT_TRUE(server_stream()->encryption_established());
+#endif  // BORINGSSL_API_VERSION
 }
 
 TEST_F(TlsServerHandshakerTest, CustomALPNNegotiation) {
@@ -366,7 +358,6 @@ TEST_F(TlsServerHandshakerTest, CustomALPNNegotiation) {
 }
 
 TEST_F(TlsServerHandshakerTest, RejectInvalidSNI) {
-  SetQuicReloadableFlag(quic_tls_enforce_valid_sni, true);
   server_id_ = QuicServerId("invalid!.example.com", kServerPort, false);
   InitializeFakeClient();
   static_cast<TlsClientHandshaker*>(

@@ -109,6 +109,26 @@ TEST(WideString, Assign) {
     }
     EXPECT_EQ(1, string1.ReferenceCountForTesting());
   }
+  {
+    // From wchar_t*.
+    WideString string1 = L"abc";
+    EXPECT_EQ(L"abc", string1);
+    string1 = nullptr;
+    EXPECT_TRUE(string1.IsEmpty());
+    string1 = L"def";
+    EXPECT_EQ(L"def", string1);
+    string1 = L"";
+    EXPECT_TRUE(string1.IsEmpty());
+  }
+  {
+    // From WideStringView.
+    WideString string1(WideStringView(L"abc"));
+    EXPECT_EQ(L"abc", string1);
+    string1 = WideStringView(L"");
+    EXPECT_TRUE(string1.IsEmpty());
+    string1 = WideStringView(L"def");
+    EXPECT_EQ(L"def", string1);
+  }
 }
 
 TEST(WideString, OperatorLT) {
@@ -692,9 +712,8 @@ TEST(WideString, Find) {
   EXPECT_FALSE(empty_string.Find(L'a').has_value());
   EXPECT_FALSE(empty_string.Find(L'\0').has_value());
 
-  Optional<size_t> result;
   WideString single_string(L"a");
-  result = single_string.Find(L'a');
+  Optional<size_t> result = single_string.Find(L'a');
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(0u, result.value());
   EXPECT_FALSE(single_string.Find(L'b').has_value());
@@ -740,9 +759,8 @@ TEST(WideString, ReverseFind) {
   EXPECT_FALSE(empty_string.ReverseFind(L'a').has_value());
   EXPECT_FALSE(empty_string.ReverseFind(L'\0').has_value());
 
-  Optional<size_t> result;
   WideString single_string(L"a");
-  result = single_string.ReverseFind(L'a');
+  Optional<size_t> result = single_string.ReverseFind(L'a');
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(0u, result.value());
   EXPECT_FALSE(single_string.ReverseFind(L'b').has_value());
@@ -1114,6 +1132,11 @@ TEST(WideString, ToUTF16LE) {
   }
 }
 
+TEST(WideString, EncodeEntities) {
+  EXPECT_EQ(WideString(L"Symbols &<>'\".").EncodeEntities(),
+            L"Symbols &amp;&lt;&gt;&apos;&quot;.");
+}
+
 TEST(WideString, IsASCII) {
   EXPECT_TRUE(WideString(L"xy\u007fz").IsASCII());
   EXPECT_FALSE(WideString(L"xy\u0080z").IsASCII());
@@ -1449,9 +1472,8 @@ TEST(WideStringView, Find) {
   EXPECT_FALSE(empty_string.Find(L'a').has_value());
   EXPECT_FALSE(empty_string.Find(L'\0').has_value());
 
-  Optional<size_t> result;
   WideStringView single_string(L"a");
-  result = single_string.Find(L'a');
+  Optional<size_t> result = single_string.Find(L'a');
   ASSERT_TRUE(result.has_value());
   EXPECT_EQ(0u, result.value());
   EXPECT_FALSE(single_string.Find(L'b').has_value());
@@ -1644,7 +1666,7 @@ TEST(WideString, FormatString) {
   EXPECT_EQ(L"cla", WideString::Format(L"%.3ls", L"clams"));
   EXPECT_EQ(L"\u043e\u043f", WideString(L"\u043e\u043f"));
 
-#if !defined(OS_MACOSX)
+#if !defined(OS_APPLE)
   // See https://bugs.chromium.org/p/pdfium/issues/detail?id=1132
   EXPECT_EQ(L"\u043e\u043f", WideString::Format(L"\u043e\u043f"));
   EXPECT_EQ(L"\u043e\u043f", WideString::Format(L"%ls", L"\u043e\u043f"));

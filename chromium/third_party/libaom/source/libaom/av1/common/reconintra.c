@@ -1200,7 +1200,7 @@ static void build_intra_predictors_high(
     int need_bottom = extend_modes[mode] & NEED_BOTTOMLEFT;
     if (use_filter_intra) need_bottom = 0;
     if (is_dr_mode) need_bottom = p_angle > 180;
-    const int num_left_pixels_needed = txhpx + (need_bottom ? txwpx : 0);
+    const int num_left_pixels_needed = txhpx + (need_bottom ? txwpx : 3);
     i = 0;
     if (n_left_px > 0) {
       for (; i < n_left_px; i++) left_col[i] = left_ref[i * ref_stride];
@@ -1602,17 +1602,13 @@ void av1_predict_intra_block(
       col_off || (ss_x ? xd->chroma_left_available : xd->left_available);
   const int mi_row = -xd->mb_to_top_edge >> (3 + MI_SIZE_LOG2);
   const int mi_col = -xd->mb_to_left_edge >> (3 + MI_SIZE_LOG2);
-  const int xr_chr_offset = 0;
-  const int yd_chr_offset = 0;
 
   // Distance between the right edge of this prediction block to
   // the frame right edge
-  const int xr =
-      (xd->mb_to_right_edge >> (3 + ss_x)) + (wpx - x - txwpx) - xr_chr_offset;
+  const int xr = (xd->mb_to_right_edge >> (3 + ss_x)) + wpx - x - txwpx;
   // Distance between the bottom edge of this prediction block to
   // the frame bottom edge
-  const int yd =
-      (xd->mb_to_bottom_edge >> (3 + ss_y)) + (hpx - y - txhpx) - yd_chr_offset;
+  const int yd = (xd->mb_to_bottom_edge >> (3 + ss_y)) + hpx - y - txhpx;
   const int right_available =
       mi_col + ((col_off + txw) << ss_x) < xd->tile.mi_col_end;
   const int bottom_available =

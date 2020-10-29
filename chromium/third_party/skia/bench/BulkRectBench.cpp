@@ -9,7 +9,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 #include "include/utils/SkRandom.h"
 
 #include "src/gpu/GrRenderTargetContext.h"
@@ -129,7 +129,7 @@ protected:
         SkASSERT(kImageMode == ImageMode::kNone);
         SkASSERT(kDrawMode == DrawMode::kBatch);
 
-        GrContext* context = canvas->getGrContext();
+        auto context = canvas->recordingContext();
         SkASSERT(context);
 
         GrRenderTargetContext::QuadSetEntry batch[kRectCount];
@@ -215,14 +215,14 @@ protected:
         // Push the skimages to the GPU when using the GPU backend so that the texture creation is
         // not part of the bench measurements. Always remake the images since they are so simple,
         // and since they are context-specific, this works when the bench runs multiple GPU backends
-        GrContext* context = canvas->getGrContext();
+        auto direct = GrAsDirectContext(canvas->recordingContext());
         for (int i = 0; i < kImageCount; ++i) {
             SkBitmap bm;
             bm.allocN32Pixels(256, 256);
             bm.eraseColor(fColors[i].toSkColor());
             auto image = SkImage::MakeFromBitmap(bm);
 
-            fImages[i] = context ? image->makeTextureImage(context) : std::move(image);
+            fImages[i] = direct ? image->makeTextureImage(direct) : std::move(image);
         }
     }
 

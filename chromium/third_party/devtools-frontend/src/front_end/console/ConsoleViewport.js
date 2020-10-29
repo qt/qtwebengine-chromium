@@ -28,8 +28,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Components from '../components/components.js';
 import * as UI from '../ui/ui.js';
+import {ConsoleViewMessage} from './ConsoleViewMessage.js';  // eslint-disable-line no-unused-vars
 
 /**
  * @unrestricted
@@ -39,7 +43,7 @@ export class ConsoleViewport {
    * @param {!ConsoleViewportProvider} provider
    */
   constructor(provider) {
-    this.element = createElement('div');
+    this.element = document.createElement('div');
     this.element.style.overflow = 'auto';
     this._topGapElement = this.element.createChild('div');
     this._topGapElement.style.height = '0px';
@@ -122,12 +126,19 @@ export class ConsoleViewport {
     if (this._muteCopyHandler) {
       return;
     }
+
     const text = this._selectedText();
     if (!text) {
       return;
     }
+
     event.preventDefault();
-    event.clipboardData.setData('text/plain', text);
+
+    if (this._selectionContainsTable()) {
+      this.copyWithStyles();
+    } else {
+      event.clipboardData.setData('text/plain', text);
+    }
   }
 
   /**
@@ -455,6 +466,24 @@ export class ConsoleViewport {
     }
 
     selection.setBaseAndExtent(anchorElement, anchorOffset, headElement, headOffset);
+  }
+
+  _selectionContainsTable() {
+    if (!this._anchorSelection || !this._headSelection) {
+      return false;
+    }
+
+    const start = this._selectionIsBackward ? this._headSelection.item : this._anchorSelection.item;
+    const end = this._selectionIsBackward ? this._anchorSelection.item : this._headSelection.item;
+
+    for (let i = start; i <= end; i++) {
+      const element = /** @type {!ConsoleViewMessage} */ (this._providerElement(i));
+      if (element && element.consoleMessage().type === 'table') {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   refresh() {

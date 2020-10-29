@@ -40,6 +40,8 @@ namespace {
 constexpr int kDeblockedRowsForLoopRestoration[2][4] = {{54, 55, 56, 57},
                                                         {26, 27, 28, 29}};
 
+}  // namespace
+
 // The following example illustrates how ExtendFrame() extends a frame.
 // Suppose the frame width is 8 and height is 4, and left, right, top, and
 // bottom are all equal to 3.
@@ -69,18 +71,18 @@ constexpr int kDeblockedRowsForLoopRestoration[2][4] = {{54, 55, 56, 57},
 // ExtendFrame() first extends the rows to the left and to the right[1]. Then
 // it copies the extended last row to the bottom borders[2]. Finally it copies
 // the extended first row to the top borders[3].
+// static
 template <typename Pixel>
-void ExtendFrame(uint8_t* const frame_start, const int width, const int height,
-                 ptrdiff_t stride, const int left, const int right,
-                 const int top, const int bottom) {
-  auto* const start = reinterpret_cast<Pixel*>(frame_start);
-  const Pixel* src = start;
-  Pixel* dst = start - left;
-  stride /= sizeof(Pixel);
+void PostFilter::ExtendFrame(Pixel* const frame_start, const int width,
+                             const int height, const ptrdiff_t stride,
+                             const int left, const int right, const int top,
+                             const int bottom) {
+  const Pixel* src = frame_start;
+  Pixel* dst = frame_start - left;
   // Copy to left and right borders.
   for (int y = 0; y < height; ++y) {
     Memset(dst, src[0], left);
-    Memset(dst + (left + width), src[width - 1], right);
+    Memset(dst + left + width, src[width - 1], right);
     src += stride;
     dst += stride;
   }
@@ -95,7 +97,7 @@ void ExtendFrame(uint8_t* const frame_start, const int width, const int height,
   // **YYY|YZabcdef|fff
   // **YYY|YZabcdef|fff
   // **YYY|YZabcdef|fff <-- bottom right border pixel
-  assert(src == start + height * stride);
+  assert(src == frame_start + height * stride);
   dst = const_cast<Pixel*>(src) + width + right - stride;
   src = dst - stride;
   for (int y = 0; y < bottom; ++y) {
@@ -115,15 +117,27 @@ void ExtendFrame(uint8_t* const frame_start, const int width, const int height,
   // ---+--------+-----
   // AAA|ABCDEFGH|HHH** <-- Copy from the extended first row.
   // |<--- stride --->|
-  src = start - left;
-  dst = start - left - top * stride;
+  src = frame_start - left;
+  dst = frame_start - left - top * stride;
   for (int y = 0; y < top; ++y) {
     memcpy(dst, src, sizeof(Pixel) * stride);
     dst += stride;
   }
 }
 
-}  // namespace
+template void PostFilter::ExtendFrame<uint8_t>(uint8_t* const frame_start,
+                                               const int width,
+                                               const int height,
+                                               const ptrdiff_t stride,
+                                               const int left, const int right,
+                                               const int top, const int bottom);
+
+#if LIBGAV1_MAX_BITDEPTH >= 10
+template void PostFilter::ExtendFrame<uint16_t>(
+    uint16_t* const frame_start, const int width, const int height,
+    const ptrdiff_t stride, const int left, const int right, const int top,
+    const int bottom);
+#endif
 
 PostFilter::PostFilter(const ObuFrameHeader& frame_header,
                        const ObuSequenceHeader& sequence_header,
@@ -149,6 +163,8 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
                                                     : sizeof(uint16_t))),
       inner_thresh_(kInnerThresh[frame_header.loop_filter.sharpness]),
       outer_thresh_(kOuterThresh[frame_header.loop_filter.sharpness]),
+      needs_chroma_deblock_(frame_header.loop_filter.level[kPlaneU + 1] != 0 ||
+                            frame_header.loop_filter.level[kPlaneV + 1] != 0),
       cdef_index_(frame_scratch_buffer->cdef_index),
       inter_transform_sizes_(frame_scratch_buffer->inter_transform_sizes),
       threaded_window_buffer_(
@@ -202,7 +218,9 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
       if (DoRestoration() &&
           loop_restoration_.type[plane] != kLoopRestorationTypeNone) {
         horizontal_shift += frame_buffer_.alignment();
-        vertical_shift += kRestorationBorder;
+        if (!DoCdef()) {
+          vertical_shift += kRestorationVerticalBorder;
+        }
         superres_buffer_[plane] +=
             vertical_shift * frame_buffer_.stride(plane) +
             horizontal_shift * pixel_size_;
@@ -216,6 +234,8 @@ PostFilter::PostFilter(const ObuFrameHeader& frame_header,
         horizontal_shift += frame_buffer_.alignment();
         vertical_shift += kCdefBorder;
       }
+      assert(horizontal_shift <= frame_buffer_.right_border(plane));
+      assert(vertical_shift <= frame_buffer_.bottom_border(plane));
       source_buffer_[plane] += vertical_shift * frame_buffer_.stride(plane) +
                                horizontal_shift * pixel_size_;
     }
@@ -226,10 +246,11 @@ void PostFilter::ExtendFrameBoundary(uint8_t* const frame_start,
                                      const int width, const int height,
                                      const ptrdiff_t stride, const int left,
                                      const int right, const int top,
-                                     const int bottom) {
+                                     const int bottom) const {
 #if LIBGAV1_MAX_BITDEPTH >= 10
   if (bitdepth_ >= 10) {
-    ExtendFrame<uint16_t>(frame_start, width, height, stride, left, right, top,
+    ExtendFrame<uint16_t>(reinterpret_cast<uint16_t*>(frame_start), width,
+                          height, stride / sizeof(uint16_t), left, right, top,
                           bottom);
     return;
   }
@@ -340,29 +361,22 @@ void PostFilter::CopyBordersForOneSuperBlockRow(int row4x4, int sb4x4,
                                                  : frame_buffer_.data(plane)) +
                            row * stride;
     const int left_border = for_loop_restoration
-                                ? kRestorationBorder
+                                ? kRestorationHorizontalBorder
                                 : frame_buffer_.left_border(plane);
     const int right_border = for_loop_restoration
-                                 ? kRestorationBorder
+                                 ? kRestorationHorizontalBorder
                                  : frame_buffer_.right_border(plane);
     const int top_border =
-        (row == 0) ? (for_loop_restoration ? kRestorationBorder
+        (row == 0) ? (for_loop_restoration ? kRestorationVerticalBorder
                                            : frame_buffer_.top_border(plane))
                    : 0;
     const int bottom_border =
         copy_bottom
-            ? (for_loop_restoration ? kRestorationBorder
+            ? (for_loop_restoration ? kRestorationVerticalBorder
                                     : frame_buffer_.bottom_border(plane))
             : 0;
-#if LIBGAV1_MAX_BITDEPTH >= 10
-    if (bitdepth_ >= 10) {
-      ExtendFrame<uint16_t>(start, plane_width, num_rows, stride, left_border,
-                            right_border, top_border, bottom_border);
-      continue;
-    }
-#endif
-    ExtendFrame<uint8_t>(start, plane_width, num_rows, stride, left_border,
-                         right_border, top_border, bottom_border);
+    ExtendFrameBoundary(start, plane_width, num_rows, stride, left_border,
+                        right_border, top_border, bottom_border);
   }
 }
 
@@ -398,12 +412,12 @@ int PostFilter::ApplyFilteringForOneSuperBlockRow(int row4x4, int sb4x4,
   }
   if (DoRestoration()) {
     CopyBordersForOneSuperBlockRow(row4x4, sb4x4, true);
-    ApplyLoopRestorationForOneSuperBlockRow(row4x4, sb4x4);
+    ApplyLoopRestoration(row4x4, sb4x4);
     if (is_last_row) {
       // Loop restoration operates with a lag of 8 rows. So make sure to cover
       // all the rows of the last superblock row.
       CopyBordersForOneSuperBlockRow(row4x4 + sb4x4, 16, true);
-      ApplyLoopRestorationForOneSuperBlockRow(row4x4 + sb4x4, 16);
+      ApplyLoopRestoration(row4x4 + sb4x4, 16);
     }
   }
   if (frame_header_.refresh_frame_flags != 0 && DoBorderExtensionInLoop()) {

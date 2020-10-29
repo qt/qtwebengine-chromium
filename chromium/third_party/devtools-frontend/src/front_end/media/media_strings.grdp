@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <grit-part>
+  <message name="IDS_DEVTOOLS_17c9736b5d9c0a3840fbbfc5567ae847" desc="Context menu entry which downloads the json dump when clicked">
+    Save player info
+  </message>
+  <message name="IDS_DEVTOOLS_2e71b9a9b6dde4fd59a2326476d131da" desc="Menu label for text tracks, it is followed by a number, like 'Text Track #1'">
+    Text Track
+  </message>
   <message name="IDS_DEVTOOLS_3d1f92a565d3b1a61880236e33c49bf3" desc="Title for the timeline tab.">
     Timeline
   </message>
@@ -14,6 +20,12 @@
   </message>
   <message name="IDS_DEVTOOLS_368cc7b17925cc0f9c4b5a90db1e68c1" desc="The video or audio stream, much like on an old cd.">
     track
+  </message>
+  <message name="IDS_DEVTOOLS_6245bb413f62feb4e4c5cd7141a83182" desc="A right-click context menu entry which should keep the element selected, while hiding all other entries.">
+    Hide all others
+  </message>
+  <message name="IDS_DEVTOOLS_6e3e66da4fb111d1cf68b4b1e4730261" desc="A right-click context menu entry which when clicked causes the menu entry for that player to be removed.">
+    Hide player
   </message>
   <message name="IDS_DEVTOOLS_e6818a215084646ac80a1a07561ecf35" desc="A device that converts media files into playable streams of audio or video.">
     Decoder
@@ -56,12 +68,6 @@
   </message>
   <message name="IDS_DEVTOOLS_93ec972c68d5caca43370a9746a08cea" desc="Side-panel entry title text for the players section.">
     Players
-  </message>
-  <message name="IDS_DEVTOOLS_a20467c4e87b5469cbb1a6c31775393c" desc="Side-panel entry title text for the audio devices section.">
-    Audio I/O
-  </message>
-  <message name="IDS_DEVTOOLS_d9f6db9c0f0579391eccedbac66aef9b" desc="Side-panel entry title text for the video capture devices section.">
-    Video Capture Devices
   </message>
   <message name="IDS_DEVTOOLS_045b78ffe29652f98998ccf799c7ed6b" desc="Media property describing where the media is playing from.">
     Playback Frame URL

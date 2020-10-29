@@ -217,3 +217,107 @@ message ConnectNamespaceResponse {
   // namespace.
   uint32 host_ipv4_address = 5;
 }
+
+// Represents the traffic usage ({tx, rx} x {packets, bytes}) between a source
+// and a shill device (interface), since the system (CrOS) is booted up. A
+// counter will keep growing until the system (CrOS) shuts down.
+// Used in TrafficCountersResponse.
+message TrafficCounter {
+  // Possible traffic sources.
+  enum Source {
+    UNKNOWN = 0;
+    // Traffic associated with user chronos.
+    CHROME = 1;
+    // Traffic associated with user debugd, cups, and tlsdate, i.e., other user
+    // traffic except for that for user chronos.
+    USER = 2;
+    ARC = 3;
+    CROSVM = 4;
+    PLUGINVM = 5;
+    UPDATE_ENGINE = 6;
+    // As a source, VPN means traffic initiated by the VPN app/program and going
+    // to the underlying physical network (or from physical network to the VPN
+    // app/program).
+    VPN = 7;
+    // All other traffic.
+    SYSTEM = 8;
+  }
+
+  // Counter values need to be 64bits as 32bits is not enough to account for
+  // more than ~4GB of traffic.
+  uint64 rx_bytes = 1;
+  uint64 tx_bytes = 2;
+  uint64 rx_packets = 3;
+  uint64 tx_packets = 4;
+
+  Source source = 5;
+  // The shill device (interface) name (e.g., eth0) where the traffic leaves
+  // from or comes in.
+  string device = 6;
+}
+
+// Requests the traffic counters kept by patchpanel. |devices| is the set of
+// interfaces for which counters should be returned, any unknown interfaces will
+// be ignored. If |devices| is empty, counters for all known interfaces will be
+// returned. Note that if an interface once appeared but does not exist now,
+// counters for it will also be returned.
+message TrafficCountersRequest {
+  repeated string devices = 1;
+}
+
+// Response to a TrafficCountersRequest.
+message TrafficCountersResponse {
+  repeated TrafficCounter counters = 1;
+}
+
+// Request for opening and closing firewall port. If the request is valid,
+// PatchPanel will run iptables commands following the request.
+message ModifyPortRuleRequest {
+  enum Operation {
+    INVALID_OPERATION = 0;
+    CREATE = 1;
+    DELETE = 2;
+  }
+
+  enum RuleType {
+    INVALID_RULE_TYPE = 0;
+    ACCESS = 1;     // Equivalent of iptables 'ACCEPT'
+    LOCKDOWN = 2;   // Equivalent of iptables 'DROP'
+    FORWARDING = 3; // Equivalent of iptables 'DNAT'
+  }
+
+  enum Protocol {
+    INVALID_PROTOCOL = 0;
+    TCP = 1;
+    UDP = 2;
+  }
+
+  // Arguments specifying the type of operation, rule and protocol.
+  Operation op = 1;
+  RuleType type = 2;
+  Protocol proto = 3;
+
+  // A network interface name, or empty if unspecified. This is optional for
+  // ACCESS and FORWARDING, and is ignored for other rule types.
+  string input_ifname = 4;
+
+  // An IPv4 address, or empty if unspecified. This is optional for FORWARDING,
+  // and is ignored for other rule types.
+  string input_dst_ip = 5;
+
+  // A port value in-between 1 and 65535. This is required for all rule types.
+  uint32 input_dst_port = 6;
+
+  // An IPv4 address, or empty if unspecified. This is required for FORWARDING,
+  // and is ignored for other rule types.
+  string dst_ip = 7;
+
+  // A port value between 1 and 65535. This is required for FORWARDING, and is
+  // ignored for other rule types.
+  uint32 dst_port = 8;
+}
+
+// Response to a ModifyPortRuleRequest.
+message ModifyPortRuleResponse {
+  bool success = 1;
+}

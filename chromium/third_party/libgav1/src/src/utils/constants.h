@@ -57,7 +57,12 @@ enum {
   kRestorationTypeSymbolCount = 3,
   kSgrProjParamsBits = 4,
   kSgrProjPrecisionBits = 7,
-  kRestorationBorder = 3,      // Padding on each side of a restoration block.
+  // Padding on left and right side of a restoration block.
+  // 3 is enough, but padding to 4 is more efficient, and makes the temporary
+  // source buffer 8-pixel aligned.
+  kRestorationHorizontalBorder = 4,
+  // Padding on top and bottom side of a restoration block.
+  kRestorationVerticalBorder = 2,
   kCdefBorder = 2,             // Padding on each side of a cdef block.
   kConvolveBorderLeftTop = 3,  // Left/top padding of a convolve block.
   // Right/bottom padding of a convolve block. This needs to be 4 at minimum,
@@ -67,6 +72,7 @@ enum {
   kConvolveBorderBottom = 4,
   kSubPixelTaps = 8,
   kWienerFilterBits = 7,
+  kWienerFilterTaps = 7,
   kMaxPaletteSize = 8,
   kMinPaletteSize = 2,
   kMaxPaletteSquare = 64,
@@ -103,15 +109,15 @@ enum {
   kProjectionMvClamp = (1 << 14) - 1,  // == 16383
   kProjectionMvMaxHorizontalOffset = 8,
   kCdefUnitSize = 64,
-  kCdefUnitSizeWithBorders = kCdefUnitSize + 2 * kRestorationBorder,
+  kCdefUnitSizeWithBorders = kCdefUnitSize + 2 * kCdefBorder,
   kRestorationUnitOffset = 8,
   // Loop restoration's processing unit size is fixed as 64x64.
   kRestorationUnitHeight = 64,
   kRestorationUnitWidth = 256,
   kRestorationUnitHeightWithBorders =
-      kRestorationUnitHeight + 2 * kRestorationBorder,
+      kRestorationUnitHeight + 2 * kRestorationVerticalBorder,
   kRestorationUnitWidthWithBorders =
-      kRestorationUnitWidth + 2 * kRestorationBorder,
+      kRestorationUnitWidth + 2 * kRestorationHorizontalBorder,
   kSuperResFilterBits = 6,
   kSuperResFilterShifts = 1 << kSuperResFilterBits,
   kSuperResFilterTaps = 8,
@@ -120,6 +126,9 @@ enum {
   kSuperResScaleMask = (1 << 14) - 1,
   kSuperResHorizontalBorder = 8,
   kSuperResVerticalBorder = 1,
+  // The SIMD implementations of superres calculate up to 4 extra upscaled
+  // pixels which will over-read 2 downscaled pixels in the end of each row.
+  kSuperResHorizontalPadding = 2,
   // TODO(chengchen): consider merging these constants:
   // kFilterBits, kWienerFilterBits, and kSgrProjPrecisionBits, which are all 7,
   // They are designed to match AV1 convolution, which increases coeff
@@ -131,6 +140,7 @@ enum {
   // integer pixel. Sub pixel values are interpolated using adjacent integer
   // pixel values. The interpolation is a filtering process.
   kSubPixelBits = 4,
+  kSubPixelMask = (1 << kSubPixelBits) - 1,
   // Precision bits when computing inter prediction locations.
   kScaleSubPixelBits = 10,
   kWarpParamRoundingBits = 6,
@@ -151,6 +161,8 @@ enum {
   kMaxTileColumns = 64,
   kMaxTileRows = 64,
   kMaxOperatingPoints = 32,
+  // There can be a maximum of 4 spatial layers and 8 temporal layers.
+  kMaxLayers = 32,
   // The cache line size should ideally be queried at run time. 64 is a common
   // cache line size of x86 CPUs. Web searches showed the cache line size of ARM
   // CPUs is 32 or 64 bytes. So aligning to 64-byte boundary will work for all

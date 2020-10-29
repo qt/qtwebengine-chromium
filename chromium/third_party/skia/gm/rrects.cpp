@@ -17,7 +17,6 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrContext.h"
 #include "include/private/GrSharedEnums.h"
 #include "include/private/GrTypesPriv.h"
 #include "src/gpu/GrCaps.h"
@@ -82,7 +81,7 @@ protected:
     DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
         GrRenderTargetContext* renderTargetContext =
             canvas->internal_private_accessTopLayerRenderTargetContext();
-        GrContext* context = canvas->getGrContext();
+        auto context = canvas->recordingContext();
         if (kEffect_Type == fType && (!renderTargetContext || !context)) {
             *errorMsg = kErrorMsg_DrawSkippedGpuOnly;
             return DrawResult::kSkip;
@@ -125,7 +124,7 @@ protected:
                         if (success) {
                             GrPaint grPaint;
                             grPaint.setXPFactory(GrPorterDuffXPFactory::Get(SkBlendMode::kSrc));
-                            grPaint.addCoverageFragmentProcessor(std::move(fp));
+                            grPaint.setCoverageFragmentProcessor(std::move(fp));
                             grPaint.setColor4f({ 0, 0, 0, 1.f });
 
                             SkRect bounds = rrect.getBounds();
@@ -271,4 +270,4 @@ DEF_GM( return new RRectGM(RRectGM::kAA_Clip_Type); )
 DEF_GM( return new RRectGM(RRectGM::kBW_Clip_Type); )
 DEF_GM( return new RRectGM(RRectGM::kEffect_Type); )
 
-}
+}  // namespace skiagm

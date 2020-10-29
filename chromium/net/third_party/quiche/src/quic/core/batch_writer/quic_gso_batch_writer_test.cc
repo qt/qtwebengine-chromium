@@ -42,6 +42,7 @@ class QUIC_EXPORT_PRIVATE TestQuicGsoBatchWriter : public QuicGsoBatchWriter {
   using QuicGsoBatchWriter::GetReleaseTime;
   using QuicGsoBatchWriter::MaxSegments;
   using QuicGsoBatchWriter::QuicGsoBatchWriter;
+  using QuicGsoBatchWriter::ReleaseTime;
 
   static std::unique_ptr<TestQuicGsoBatchWriter>
   NewInstanceWithReleaseTimeSupport() {
@@ -198,7 +199,7 @@ std::vector<BatchCriteriaTestData> BatchCriteriaTestData_MaxSegments(
   const QuicSocketAddress peer_addr;
   std::vector<BatchCriteriaTestData> test_data_table;
   size_t max_segments = TestQuicGsoBatchWriter::MaxSegments(gso_size);
-  for (int i = 0; i < max_segments; ++i) {
+  for (size_t i = 0; i < max_segments; ++i) {
     bool is_last_in_batch = (i + 1 == max_segments);
     test_data_table.push_back({gso_size, self_addr, peer_addr,
                                /*release_time=*/0, true, is_last_in_batch});
@@ -248,38 +249,39 @@ TEST_F(QuicGsoBatchWriterTest, BatchCriteria) {
     for (size_t j = 0; j < test_data_table.size(); ++j) {
       const BatchCriteriaTestData& test_data = test_data_table[j];
       SCOPED_TRACE(testing::Message() << "i=" << i << ", j=" << j);
+      TestPerPacketOptions options;
+      options.release_time_delay = QuicTime::Delta::FromMicroseconds(
+          test_data.buffered_write.release_time);
       TestQuicGsoBatchWriter::CanBatchResult result = writer->CanBatch(
           test_data.buffered_write.buffer, test_data.buffered_write.buf_len,
           test_data.buffered_write.self_address,
-          test_data.buffered_write.peer_address,
-          /*options=*/nullptr, test_data.buffered_write.release_time);
+          test_data.buffered_write.peer_address, &options,
+          test_data.buffered_write.release_time);
 
       ASSERT_EQ(test_data.can_batch, result.can_batch);
       ASSERT_EQ(test_data.must_flush, result.must_flush);
 
       if (result.can_batch) {
-        ASSERT_TRUE(
-            writer->batch_buffer()
-                .PushBufferedWrite(test_data.buffered_write.buffer,
-                                   test_data.buffered_write.buf_len,
-                                   test_data.buffered_write.self_address,
-                                   test_data.buffered_write.peer_address,
-                                   /*options=*/nullptr,
-                                   test_data.buffered_write.release_time)
-                .succeeded);
+        ASSERT_TRUE(writer->batch_buffer()
+                        .PushBufferedWrite(
+                            test_data.buffered_write.buffer,
+                            test_data.buffered_write.buf_len,
+                            test_data.buffered_write.self_address,
+                            test_data.buffered_write.peer_address, &options,
+                            test_data.buffered_write.release_time)
+                        .succeeded);
       }
     }
   }
 }
 
 TEST_F(QuicGsoBatchWriterTest, WriteSuccess) {
-  TestQuicGsoBatchWriter writer(std::make_unique<QuicBatchWriterBuffer>(),
-                                /*fd=*/-1);
+  TestQuicGsoBatchWriter writer(/*fd=*/-1);
 
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 1000));
 
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(1100u, PacketLength(msg));
         return 1100;
       }));
@@ -289,14 +291,13 @@ TEST_F(QuicGsoBatchWriterTest, WriteSuccess) {
 }
 
 TEST_F(QuicGsoBatchWriterTest, WriteBlockDataNotBuffered) {
-  TestQuicGsoBatchWriter writer(std::make_unique<QuicBatchWriterBuffer>(),
-                                /*fd=*/-1);
+  TestQuicGsoBatchWriter writer(/*fd=*/-1);
 
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
 
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(200u, PacketLength(msg));
         errno = EWOULDBLOCK;
         return -1;
@@ -308,14 +309,13 @@ TEST_F(QuicGsoBatchWriterTest, WriteBlockDataNotBuffered) {
 }
 
 TEST_F(QuicGsoBatchWriterTest, WriteBlockDataBuffered) {
-  TestQuicGsoBatchWriter writer(std::make_unique<QuicBatchWriterBuffer>(),
-                                /*fd=*/-1);
+  TestQuicGsoBatchWriter writer(/*fd=*/-1);
 
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
 
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(250u, PacketLength(msg));
         errno = EWOULDBLOCK;
         return -1;
@@ -327,14 +327,13 @@ TEST_F(QuicGsoBatchWriterTest, WriteBlockDataBuffered) {
 }
 
 TEST_F(QuicGsoBatchWriterTest, WriteErrorWithoutDataBuffered) {
-  TestQuicGsoBatchWriter writer(std::make_unique<QuicBatchWriterBuffer>(),
-                                /*fd=*/-1);
+  TestQuicGsoBatchWriter writer(/*fd=*/-1);
 
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
 
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(200u, PacketLength(msg));
         errno = EPERM;
         return -1;
@@ -348,14 +347,13 @@ TEST_F(QuicGsoBatchWriterTest, WriteErrorWithoutDataBuffered) {
 }
 
 TEST_F(QuicGsoBatchWriterTest, WriteErrorAfterDataBuffered) {
-  TestQuicGsoBatchWriter writer(std::make_unique<QuicBatchWriterBuffer>(),
-                                /*fd=*/-1);
+  TestQuicGsoBatchWriter writer(/*fd=*/-1);
 
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
 
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(250u, PacketLength(msg));
         errno = EPERM;
         return -1;
@@ -369,14 +367,13 @@ TEST_F(QuicGsoBatchWriterTest, WriteErrorAfterDataBuffered) {
 }
 
 TEST_F(QuicGsoBatchWriterTest, FlushError) {
-  TestQuicGsoBatchWriter writer(std::make_unique<QuicBatchWriterBuffer>(),
-                                /*fd=*/-1);
+  TestQuicGsoBatchWriter writer(/*fd=*/-1);
 
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 0), WritePacket(&writer, 100));
 
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(200u, PacketLength(msg));
         errno = EINVAL;
         return -1;
@@ -391,7 +388,7 @@ TEST_F(QuicGsoBatchWriterTest, FlushError) {
 
 TEST_F(QuicGsoBatchWriterTest, ReleaseTimeNullOptions) {
   auto writer = TestQuicGsoBatchWriter::NewInstanceWithReleaseTimeSupport();
-  EXPECT_EQ(0, writer->GetReleaseTime(nullptr));
+  EXPECT_EQ(0u, writer->GetReleaseTime(nullptr).actual_release_time);
 }
 
 TEST_F(QuicGsoBatchWriterTest, ReleaseTime) {
@@ -402,47 +399,56 @@ TEST_F(QuicGsoBatchWriterTest, ReleaseTime) {
   TestPerPacketOptions options;
   EXPECT_TRUE(options.release_time_delay.IsZero());
   EXPECT_FALSE(options.allow_burst);
-  EXPECT_EQ(MillisToNanos(1), writer->GetReleaseTime(&options));
+  EXPECT_EQ(MillisToNanos(1),
+            writer->GetReleaseTime(&options).actual_release_time);
 
   // The 1st packet has no delay.
-  ASSERT_EQ(write_buffered, WritePacketWithOptions(writer.get(), &options));
+  WriteResult result = WritePacketWithOptions(writer.get(), &options);
+  ASSERT_EQ(write_buffered, result);
   EXPECT_EQ(MillisToNanos(1), writer->buffered_writes().back().release_time);
+  EXPECT_EQ(result.send_time_offset, QuicTime::Delta::Zero());
 
   // The 2nd packet has some delay, but allows burst.
   options.release_time_delay = QuicTime::Delta::FromMilliseconds(3);
   options.allow_burst = true;
-  ASSERT_EQ(write_buffered, WritePacketWithOptions(writer.get(), &options));
+  result = WritePacketWithOptions(writer.get(), &options);
+  ASSERT_EQ(write_buffered, result);
   EXPECT_EQ(MillisToNanos(1), writer->buffered_writes().back().release_time);
+  EXPECT_EQ(result.send_time_offset, QuicTime::Delta::FromMilliseconds(-3));
 
   // The 3rd packet has more delay and does not allow burst.
   // The first 2 packets are flushed due to different release time.
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(2700u, PacketLength(msg));
         errno = 0;
         return 0;
       }));
   options.release_time_delay = QuicTime::Delta::FromMilliseconds(5);
   options.allow_burst = false;
-  ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 2700),
-            WritePacketWithOptions(writer.get(), &options));
+  result = WritePacketWithOptions(writer.get(), &options);
+  ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 2700), result);
   EXPECT_EQ(MillisToNanos(6), writer->buffered_writes().back().release_time);
+  EXPECT_EQ(result.send_time_offset, QuicTime::Delta::Zero());
 
   // The 4th packet has same delay, but allows burst.
   options.allow_burst = true;
-  ASSERT_EQ(write_buffered, WritePacketWithOptions(writer.get(), &options));
+  result = WritePacketWithOptions(writer.get(), &options);
+  ASSERT_EQ(write_buffered, result);
   EXPECT_EQ(MillisToNanos(6), writer->buffered_writes().back().release_time);
+  EXPECT_EQ(result.send_time_offset, QuicTime::Delta::Zero());
 
   // The 5th packet has same delay, allows burst, but is shorter.
   // Packets 3,4 and 5 are flushed.
   EXPECT_CALL(mock_syscalls_, Sendmsg(_, _, _))
-      .WillOnce(Invoke([](int sockfd, const msghdr* msg, int flags) {
+      .WillOnce(Invoke([](int /*sockfd*/, const msghdr* msg, int /*flags*/) {
         EXPECT_EQ(3000u, PacketLength(msg));
         errno = 0;
         return 0;
       }));
   options.allow_burst = true;
-  EXPECT_EQ(MillisToNanos(6), writer->GetReleaseTime(&options));
+  EXPECT_EQ(MillisToNanos(6),
+            writer->GetReleaseTime(&options).actual_release_time);
   ASSERT_EQ(WriteResult(WRITE_STATUS_OK, 3000),
             writer->WritePacket(&packet_buffer_[0], 300, self_address_,
                                 peer_address_, &options));
@@ -452,8 +458,10 @@ TEST_F(QuicGsoBatchWriterTest, ReleaseTime) {
   // words, the release time should still be the same as packets 3-5.
   writer->ForceReleaseTimeMs(2);
   options.release_time_delay = QuicTime::Delta::FromMilliseconds(4);
-  ASSERT_EQ(write_buffered, WritePacketWithOptions(writer.get(), &options));
+  result = WritePacketWithOptions(writer.get(), &options);
+  ASSERT_EQ(write_buffered, result);
   EXPECT_EQ(MillisToNanos(6), writer->buffered_writes().back().release_time);
+  EXPECT_EQ(result.send_time_offset, QuicTime::Delta::Zero());
 }
 
 }  // namespace

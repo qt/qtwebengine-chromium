@@ -16,14 +16,11 @@
 
 #include "perfetto/profiling/memory/client_ext.h"
 
-#include <android/fdsan.h>
-#include <bionic/malloc.h>
 #include <inttypes.h>
 #include <malloc.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/system_properties.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -31,6 +28,7 @@
 #include <atomic>
 #include <memory>
 #include <tuple>
+#include <type_traits>
 
 #include "perfetto/base/build_config.h"
 #include "perfetto/base/logging.h"
@@ -40,6 +38,7 @@
 
 #include "src/profiling/common/proc_utils.h"
 #include "src/profiling/memory/client.h"
+#include "src/profiling/memory/client_ext_factory.h"
 #include "src/profiling/memory/scoped_spinlock.h"
 #include "src/profiling/memory/unhooked_allocator.h"
 #include "src/profiling/memory/wire_protocol.h"
@@ -48,6 +47,16 @@ using perfetto::profiling::ScopedSpinlock;
 using perfetto::profiling::UnhookedAllocator;
 
 namespace {
+#if defined(__GLIBC__)
+const char* getprogname() {
+  return program_invocation_short_name;
+}
+#elif !defined(__BIONIC__)
+const char* getprogname() {
+  return "";
+}
+#endif
+
 // Holds the active profiling client. Is empty at the start, or after we've
 // started shutting down a profiling session. Hook invocations take shared_ptr
 // copies (ensuring that the client stays alive until no longer needed), and do
@@ -83,9 +92,8 @@ constexpr auto kMinHeapId = 1;
 
 struct HeapprofdHeapInfoInternal {
   HeapprofdHeapInfo info;
-  bool ready;
-  bool enabled;
-  uint32_t service_heap_id;
+  std::atomic<bool> ready;
+  std::atomic<bool> enabled;
 };
 
 HeapprofdHeapInfoInternal g_heaps[256];
@@ -104,51 +112,6 @@ std::atomic<bool> g_client_lock{false};
 
 std::atomic<uint32_t> g_next_heap_id{kMinHeapId};
 
-constexpr char kHeapprofdBinPath[] = "/system/bin/heapprofd";
-
-int CloneWithoutSigchld() {
-  auto ret = clone(nullptr, nullptr, 0, nullptr);
-  if (ret == 0)
-    android_fdsan_set_error_level(ANDROID_FDSAN_ERROR_LEVEL_DISABLED);
-  return ret;
-}
-
-int ForklikeClone() {
-  auto ret = clone(nullptr, nullptr, SIGCHLD, nullptr);
-  if (ret == 0)
-    android_fdsan_set_error_level(ANDROID_FDSAN_ERROR_LEVEL_DISABLED);
-  return ret;
-}
-
-// Like daemon(), but using clone to avoid invoking pthread_atfork(3) handlers.
-int Daemonize() {
-  switch (ForklikeClone()) {
-    case -1:
-      PERFETTO_PLOG("Daemonize.clone");
-      return -1;
-      break;
-    case 0:
-      break;
-    default:
-      _exit(0);
-      break;
-  }
-  if (setsid() == -1) {
-    PERFETTO_PLOG("Daemonize.setsid");
-    return -1;
-  }
-  // best effort chdir & fd close
-  chdir("/");
-  int fd = open("/dev/null", O_RDWR, 0);
-  if (fd != -1) {
-    dup2(fd, STDIN_FILENO);
-    dup2(fd, STDOUT_FILENO);
-    dup2(fd, STDERR_FILENO);
-    if (fd > STDERR_FILENO)
-      close(fd);
-  }
-  return 0;
-}
 
 // Called only if |g_client_lock| acquisition fails, which shouldn't happen
 // unless we're in a completely unexpected state (which we won't know how to
@@ -165,159 +128,34 @@ __attribute__((noreturn, noinline)) void AbortOnSpinlockTimeout() {
   abort();
 }
 
-std::string ReadSystemProperty(const char* key) {
-  std::string prop_value;
-  const prop_info* prop = __system_property_find(key);
-  if (!prop) {
-    return prop_value;  // empty
-  }
-  __system_property_read_callback(
-      prop,
-      [](void* cookie, const char* name, const char* value, uint32_t) {
-        std::string* prop_value = reinterpret_cast<std::string*>(cookie);
-        *prop_value = value;
-      },
-      &prop_value);
-  return prop_value;
-}
-
-bool ForceForkPrivateDaemon() {
-  // Note: if renaming the property, also update system_property.cc
-  std::string mode = ReadSystemProperty("heapprofd.userdebug.mode");
-  return mode == "fork";
-}
-
-std::shared_ptr<perfetto::profiling::Client> CreateClientForCentralDaemon(
-    UnhookedAllocator<perfetto::profiling::Client> unhooked_allocator) {
-  PERFETTO_LOG("Constructing client for central daemon.");
-  using perfetto::profiling::Client;
-
-  perfetto::base::Optional<perfetto::base::UnixSocketRaw> sock =
-      Client::ConnectToHeapprofd(perfetto::profiling::kHeapprofdSocketFile);
-  if (!sock) {
-    PERFETTO_ELOG("Failed to connect to %s. This is benign on user builds.",
-                  perfetto::profiling::kHeapprofdSocketFile);
-    return nullptr;
-  }
-  return Client::CreateAndHandshake(std::move(sock.value()),
-                                    unhooked_allocator);
-}
-
-std::shared_ptr<perfetto::profiling::Client> CreateClientAndPrivateDaemon(
-    UnhookedAllocator<perfetto::profiling::Client> unhooked_allocator) {
-  PERFETTO_LOG("Setting up fork mode profiling.");
-  perfetto::base::UnixSocketRaw parent_sock;
-  perfetto::base::UnixSocketRaw child_sock;
-  std::tie(parent_sock, child_sock) = perfetto::base::UnixSocketRaw::CreatePair(
-      perfetto::base::SockFamily::kUnix, perfetto::base::SockType::kStream);
-
-  if (!parent_sock || !child_sock) {
-    PERFETTO_PLOG("Failed to create socketpair.");
-    return nullptr;
-  }
-
-  child_sock.RetainOnExec();
-
-  // Record own pid and cmdline, to pass down to the forked heapprofd.
-  pid_t target_pid = getpid();
-  std::string target_cmdline;
-  if (!perfetto::profiling::GetCmdlineForPID(target_pid, &target_cmdline)) {
-    target_cmdline = "failed-to-read-cmdline";
-    PERFETTO_ELOG(
-        "Failed to read own cmdline, proceeding as this might be a by-pid "
-        "profiling request (which will still work).");
-  }
-
-  // Prepare arguments for heapprofd.
-  std::string pid_arg =
-      std::string("--exclusive-for-pid=") + std::to_string(target_pid);
-  std::string cmd_arg =
-      std::string("--exclusive-for-cmdline=") + target_cmdline;
-  std::string fd_arg =
-      std::string("--inherit-socket-fd=") + std::to_string(child_sock.fd());
-  const char* argv[] = {kHeapprofdBinPath, pid_arg.c_str(), cmd_arg.c_str(),
-                        fd_arg.c_str(), nullptr};
-
-  // Use fork-like clone to avoid invoking the host's pthread_atfork(3)
-  // handlers. Also avoid sending the current process a SIGCHILD to further
-  // reduce our interference.
-  pid_t clone_pid = CloneWithoutSigchld();
-  if (clone_pid == -1) {
-    PERFETTO_PLOG("Failed to clone.");
-    return nullptr;
-  }
-  if (clone_pid == 0) {  // child
-    // Daemonize clones again, terminating the calling thread (i.e. the direct
-    // child of the original process). So the rest of this codepath will be
-    // executed in a new reparented process.
-    if (Daemonize() == -1) {
-      PERFETTO_PLOG("Daemonization failed.");
-      _exit(1);
-    }
-    execv(kHeapprofdBinPath, const_cast<char**>(argv));
-    PERFETTO_PLOG("Failed to execute private heapprofd.");
-    _exit(1);
-  }  // else - parent continuing the client setup
-
-  child_sock.ReleaseFd().reset();  // close child socket's fd
-  if (!parent_sock.SetTxTimeout(perfetto::profiling::kClientSockTimeoutMs)) {
-    PERFETTO_PLOG("Failed to set socket transmit timeout.");
-    return nullptr;
-  }
-
-  if (!parent_sock.SetRxTimeout(perfetto::profiling::kClientSockTimeoutMs)) {
-    PERFETTO_PLOG("Failed to set socket receive timeout.");
-    return nullptr;
-  }
-
-  // Wait on the immediate child to exit (allow for ECHILD in the unlikely case
-  // we're in a process that has made its children unwaitable).
-  int unused = 0;
-  if (PERFETTO_EINTR(waitpid(clone_pid, &unused, __WCLONE)) == -1 &&
-      errno != ECHILD) {
-    PERFETTO_PLOG("Failed to waitpid on immediate child.");
-    return nullptr;
-  }
-
-  return perfetto::profiling::Client::CreateAndHandshake(std::move(parent_sock),
-                                                         unhooked_allocator);
-}
-
-// Note: android_mallopt(M_RESET_HOOKS) is mutually exclusive with
-// heapprofd_initialize. Concurrent calls get discarded, which might be our
-// unpatching attempt if there is a concurrent re-initialization running due to
-// a new signal.
-//
 // Note: g_client can be reset by heapprofd_initialize without calling this
 // function.
 
 void DisableAllHeaps() {
-  for (size_t i = kMinHeapId; i < g_next_heap_id.load(); ++i) {
+  for (uint32_t i = kMinHeapId; i < g_next_heap_id.load(); ++i) {
     HeapprofdHeapInfoInternal& heap = GetHeap(i);
-    if (!heap.ready)
+    if (!heap.ready.load(std::memory_order_acquire))
       continue;
-    if (heap.enabled) {
-      heap.enabled = false;
+    if (heap.enabled.load(std::memory_order_acquire)) {
+      heap.enabled.store(false, std::memory_order_release);
       if (heap.info.callback)
         heap.info.callback(false);
     }
   }
 }
 
-void ShutdownLazy() {
+void ShutdownLazy(const std::shared_ptr<perfetto::profiling::Client>& client) {
   ScopedSpinlock s(&g_client_lock, ScopedSpinlock::Mode::Try);
   if (PERFETTO_UNLIKELY(!s.locked()))
     AbortOnSpinlockTimeout();
 
-  if (!*GetClientLocked())  // other invocation already initiated shutdown
+  // other invocation already initiated shutdown
+  if (*GetClientLocked() != client)
     return;
 
   DisableAllHeaps();
   // Clear primary shared pointer, such that later hook invocations become nops.
   GetClientLocked()->reset();
-
-  if (!android_mallopt(M_RESET_HOOKS, nullptr, 0))
-    PERFETTO_PLOG("Unpatching heapprofd hooks failed.");
 }
 
 // We're a library loaded into a potentially-multithreaded process, which might
@@ -376,24 +214,36 @@ __attribute__((visibility("default"))) uint32_t heapprofd_register_heap(
   // For backwards compatibility, we handle HeapprofdHeapInfo that are shorter
   // than the current one (and assume all new fields are unset). If someone
   // calls us with a *newer* HeapprofdHeapInfo than this version of the library
-  // understands, error out.
+  // understands, error out if any of the new fields are set.
   if (n > sizeof(HeapprofdHeapInfo)) {
-    return 0;
+    for (size_t i = sizeof(HeapprofdHeapInfo); i < n; ++i) {
+      const char* ptr = reinterpret_cast<const char*>(info) + i;
+      if (*ptr)
+        return 0;
+    }
+    n = sizeof(HeapprofdHeapInfo);
   }
+
+  PERFETTO_DCHECK(n <= sizeof(HeapprofdHeapInfo));
+
   uint32_t next_id = g_next_heap_id.fetch_add(1);
   if (next_id >= perfetto::base::ArraySize(g_heaps)) {
     return 0;
   }
+
+  if (next_id == kMinHeapId)
+    perfetto::profiling::StartHeapprofdIfStatic();
+
   HeapprofdHeapInfoInternal& heap = GetHeap(next_id);
   memcpy(&heap.info, info, n);
-  heap.ready = true;
+  heap.ready.store(true, std::memory_order_release);
   return next_id;
 }
 
 __attribute__((visibility("default"))) bool
 heapprofd_report_allocation(uint32_t heap_id, uint64_t id, uint64_t size) {
   const HeapprofdHeapInfoInternal& heap = GetHeap(heap_id);
-  if (!heap.enabled) {
+  if (!heap.enabled.load(std::memory_order_acquire)) {
     return false;
   }
   size_t sampled_alloc_sz = 0;
@@ -407,15 +257,16 @@ heapprofd_report_allocation(uint32_t heap_id, uint64_t id, uint64_t size) {
     if (!*g_client_ptr)  // no active client (most likely shutting down)
       return false;
 
-    sampled_alloc_sz = (*g_client_ptr)->GetSampleSizeLocked(size);
+    sampled_alloc_sz =
+        (*g_client_ptr)->GetSampleSizeLocked(static_cast<size_t>(size));
     if (sampled_alloc_sz == 0)  // not sampling
       return false;
 
-    client = *g_client_ptr;   // owning copy
-  }                           // unlock
+    client = *g_client_ptr;  // owning copy
+  }                          // unlock
 
-  if (!client->RecordMalloc(heap.service_heap_id, sampled_alloc_sz, size, id)) {
-    ShutdownLazy();
+  if (!client->RecordMalloc(heap_id, sampled_alloc_sz, size, id)) {
+    ShutdownLazy(client);
   }
   return true;
 }
@@ -424,7 +275,7 @@ __attribute__((visibility("default"))) void heapprofd_report_free(
     uint32_t heap_id,
     uint64_t id) {
   const HeapprofdHeapInfoInternal& heap = GetHeap(heap_id);
-  if (!heap.enabled) {
+  if (!heap.enabled.load(std::memory_order_acquire)) {
     return;
   }
   std::shared_ptr<perfetto::profiling::Client> client;
@@ -437,8 +288,8 @@ __attribute__((visibility("default"))) void heapprofd_report_free(
   }
 
   if (client) {
-    if (!client->RecordFree(heap.service_heap_id, id))
-      ShutdownLazy();
+    if (!client->RecordFree(heap_id, id))
+      ShutdownLazy(client);
   }
 }
 
@@ -465,7 +316,7 @@ __attribute__((visibility("default"))) bool heapprofd_init_session(
       AbortOnSpinlockTimeout();
 
     auto* g_client_ptr = GetClientLocked();
-    if (*g_client_ptr) {
+    if (*g_client_ptr && (*g_client_ptr)->IsConnected()) {
       PERFETTO_LOG("%s: Rejecting concurrent profiling initialization.",
                    getprogname());
       return true;  // success as we're in a valid state
@@ -483,11 +334,8 @@ __attribute__((visibility("default"))) bool heapprofd_init_session(
 
   // These factory functions use heap objects, so we need to run them without
   // the spinlock held.
-  std::shared_ptr<perfetto::profiling::Client> client;
-  if (!ForceForkPrivateDaemon())
-    client = CreateClientForCentralDaemon(unhooked_allocator);
-  if (!client)
-    client = CreateClientAndPrivateDaemon(unhooked_allocator);
+  std::shared_ptr<perfetto::profiling::Client> client =
+      perfetto::profiling::ConstructClient(unhooked_allocator);
 
   if (!client) {
     PERFETTO_LOG("%s: heapprofd_client not initialized, not installing hooks.",
@@ -497,29 +345,30 @@ __attribute__((visibility("default"))) bool heapprofd_init_session(
   const perfetto::profiling::ClientConfiguration& cli_config =
       client->client_config();
 
-  for (size_t j = kMinHeapId; j < g_next_heap_id.load(); ++j) {
-    HeapprofdHeapInfoInternal& heap = GetHeap(j);
-    if (!heap.ready)
+  for (uint32_t i = kMinHeapId; i < g_next_heap_id.load(); ++i) {
+    HeapprofdHeapInfoInternal& heap = GetHeap(i);
+    if (!heap.ready.load(std::memory_order_acquire))
       continue;
 
-    bool matched = false;
-    for (size_t i = 0; i < cli_config.num_heaps; ++i) {
+    bool matched = cli_config.all_heaps;
+    for (uint32_t j = 0; !matched && j < cli_config.num_heaps; ++j) {
       static_assert(sizeof(g_heaps[0].info.heap_name) == HEAPPROFD_HEAP_NAME_SZ,
                     "correct heap name size");
       static_assert(sizeof(cli_config.heaps[0]) == HEAPPROFD_HEAP_NAME_SZ,
                     "correct heap name size");
-      if (strncmp(&cli_config.heaps[i][0], &heap.info.heap_name[0],
+      if (strncmp(&cli_config.heaps[j][0], &heap.info.heap_name[0],
                   HEAPPROFD_HEAP_NAME_SZ) == 0) {
-        heap.service_heap_id = i;
-        if (!heap.enabled && heap.info.callback)
-          heap.info.callback(true);
-        heap.enabled = true;
         matched = true;
-        break;
       }
     }
-    if (!matched && heap.enabled) {
-      heap.enabled = false;
+    if (matched) {
+      if (!heap.enabled.load(std::memory_order_acquire) && heap.info.callback)
+        heap.info.callback(true);
+      heap.enabled.store(true, std::memory_order_release);
+      client->RecordHeapName(i, &heap.info.heap_name[0]);
+    }
+    if (!matched && heap.enabled.load(std::memory_order_acquire)) {
+      heap.enabled.store(false, std::memory_order_release);
       if (heap.info.callback)
         heap.info.callback(false);
     }

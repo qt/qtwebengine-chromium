@@ -17,9 +17,11 @@ namespace SkSL {
  * A block of multiple statements functioning as a single statement.
  */
 struct Block : public Statement {
+    static constexpr Kind kStatementKind = kBlock_Kind;
+
     Block(int offset, std::vector<std::unique_ptr<Statement>> statements,
           const std::shared_ptr<SymbolTable> symbols = nullptr, bool isScope = true)
-    : INHERITED(offset, kBlock_Kind)
+    : INHERITED(offset, kStatementKind)
     , fSymbols(std::move(symbols))
     , fStatements(std::move(statements))
     , fIsScope(isScope) {}
@@ -72,6 +74,6 @@ struct Block : public Statement {
     typedef Statement INHERITED;
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

@@ -21,19 +21,21 @@ CXFA_FFPasswordEdit::CXFA_FFPasswordEdit(CXFA_Node* pNode,
 
 CXFA_FFPasswordEdit::~CXFA_FFPasswordEdit() = default;
 
+void CXFA_FFPasswordEdit::Trace(cppgc::Visitor* visitor) const {
+  CXFA_FFTextEdit::Trace(visitor);
+  visitor->Trace(password_node_);
+}
+
 bool CXFA_FFPasswordEdit::LoadWidget() {
   ASSERT(!IsLoaded());
 
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retain_layout(m_pLayoutItem.Get());
-
   auto pNewEdit = std::make_unique<CFWL_Edit>(
-      GetFWLApp(), std::make_unique<CFWL_WidgetProperties>(), nullptr);
+      GetFWLApp(), CFWL_Widget::Properties(), nullptr);
   CFWL_Edit* pWidget = pNewEdit.get();
   SetNormalWidget(std::move(pNewEdit));
   pWidget->SetAdapterIface(this);
 
-  CFWL_NoteDriver* pNoteDriver = pWidget->GetOwnerApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pWidget->GetFWLApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pWidget, pWidget);
   m_pOldDelegate = pWidget->GetDelegate();
   pWidget->SetDelegate(this);

@@ -46,6 +46,7 @@
 
 #include <errno.h>
 
+#include <atomic>
 #include <sstream>  // no-presubmit-check TODO(webrtc:8982)
 #include <string>
 #include <utility>
@@ -463,9 +464,14 @@ class LogMessage {
   static void SetLogToStderr(bool log_to_stderr);
   // Stream: Any non-blocking stream interface.
   // Installs the |stream| to collect logs with severtiy |min_sev| or higher.
-  // |stream| must live until deinstalled by RemoveLogToStream
+  // |stream| must live until deinstalled by RemoveLogToStream.
+  // If |stream| is the first stream added to the system, we might miss some
+  // early concurrent log statement happening from another thread happening near
+  // this instant.
   static void AddLogToStream(LogSink* stream, LoggingSeverity min_sev);
-  // Removes the specified stream, without destroying it.
+  // Removes the specified stream, without destroying it. When the method
+  // has completed, it's guaranteed that |stream| will receive no more logging
+  // calls.
   static void RemoveLogToStream(LogSink* stream);
   // Returns the severity for the specified stream, of if none is specified,
   // the minimum stream severity.
@@ -556,6 +562,12 @@ class LogMessage {
 
   // The output streams and their associated severities
   static LogSink* streams_;
+
+  // Holds true with high probability if |streams_| is empty, false with high
+  // probability otherwise. Operated on with std::memory_order_relaxed because
+  // it's ok to lose or log some additional statements near the instant streams
+  // are added/removed.
+  static std::atomic<bool> streams_empty_;
 
   // Flags for formatting options
   static bool thread_, timestamp_;

@@ -10,17 +10,11 @@ import datetime
 import json
 import os
 import platform
-import subprocess
 import sys
 import time
-from . import util
 
 from . import base
-
-
-# Base dir of the build products for Release and Debug.
-OUT_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), '..', '..', '..', 'out'))
+from . import util
 
 
 def print_failure_header(test):
@@ -113,6 +107,28 @@ class SimpleProgressIndicator(ProgressIndicator):
       print("===")
 
 
+class StreamProgressIndicator(ProgressIndicator):
+  def __init__(self):
+    super(StreamProgressIndicator, self).__init__()
+    self._requirement = base.DROP_PASS_OUTPUT
+
+  def _on_result_for(self, test, result):
+      if not result.has_unexpected_output:
+        self.print('PASS', test)
+      elif result.output.HasCrashed():
+        self.print("CRASH", test)
+      elif result.output.HasTimedOut():
+        self.print("TIMEOUT", test)
+      else:
+        if test.is_fail:
+          self.print("UNEXPECTED PASS", test)
+        else:
+          self.print("FAIL", test)
+
+  def print(self, prefix, test):
+    print('%s: %ss' % (prefix, test))
+    sys.stdout.flush()
+
 class VerboseProgressIndicator(SimpleProgressIndicator):
   def __init__(self):
     super(VerboseProgressIndicator, self).__init__()
@@ -143,16 +159,10 @@ class VerboseProgressIndicator(SimpleProgressIndicator):
   # feedback channel from the workers, providing which tests are currently run.
   def _print_processes_linux(self):
     if platform.system() == 'Linux':
-      try:
-        cmd = 'ps -aux | grep "%s"' % OUT_DIR
-        output = subprocess.check_output(cmd, shell=True)
-        self._print('List of processes:')
-        for line in (output or '').splitlines():
-          # Show command with pid, but other process info cut off.
-          self._print('pid: %s cmd: %s' %
-                      (line.split()[1], line[line.index(OUT_DIR):]))
-      except:
-        pass
+      self._print('List of processes:')
+      for pid, cmd in util.list_processes_linux():
+        # Show command with pid, but other process info cut off.
+        self._print('pid: %d cmd: %s' % (pid, cmd))
 
   def _ensure_delay(self, delay):
     return time.time() - self._last_printed_time > delay
@@ -337,7 +347,7 @@ class MonochromeProgressIndicator(CompactProgressIndicator):
 
 
 class JsonTestProgressIndicator(ProgressIndicator):
-  def __init__(self, framework_name, arch, mode):
+  def __init__(self, framework_name):
     super(JsonTestProgressIndicator, self).__init__()
     # We want to drop stdout/err for all passed tests on the first try, but we
     # need to get outputs for all runs after the first one. To accommodate that,
@@ -346,8 +356,6 @@ class JsonTestProgressIndicator(ProgressIndicator):
     self._requirement = base.DROP_PASS_STDOUT
 
     self.framework_name = framework_name
-    self.arch = arch
-    self.mode = mode
     self.results = []
     self.duration_sum = 0
     self.test_count = 0
@@ -417,24 +425,16 @@ class JsonTestProgressIndicator(ProgressIndicator):
       }
 
   def finished(self):
-    complete_results = []
-    if os.path.exists(self.options.json_test_results):
-      with open(self.options.json_test_results, "r") as f:
-        # On bots we might start out with an empty file.
-        complete_results = json.loads(f.read() or "[]")
-
     duration_mean = None
     if self.test_count:
       duration_mean = self.duration_sum / self.test_count
 
-    complete_results.append({
-      "arch": self.arch,
-      "mode": self.mode,
+    result = {
       "results": self.results,
       "slowest_tests": self.tests.as_list(),
       "duration_mean": duration_mean,
       "test_total": self.test_count,
-    })
+    }
 
     with open(self.options.json_test_results, "w") as f:
-      f.write(json.dumps(complete_results))
+      json.dump(result, f)

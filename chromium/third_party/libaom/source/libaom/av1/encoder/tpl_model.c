@@ -40,15 +40,32 @@ static AOM_INLINE void get_quantize_error(const MACROBLOCK *x, int plane,
                                           uint16_t *eob, int64_t *recon_error,
                                           int64_t *sse) {
   const struct macroblock_plane *const p = &x->plane[plane];
+  const MACROBLOCKD *xd = &x->e_mbd;
   const SCAN_ORDER *const scan_order = &av1_default_scan_orders[tx_size];
   int pix_num = 1 << num_pels_log2_lookup[txsize_to_bsize[tx_size]];
   const int shift = tx_size == TX_32X32 ? 0 : 2;
 
-  av1_quantize_fp(coeff, pix_num, p->zbin_QTX, p->round_fp_QTX, p->quant_fp_QTX,
-                  p->quant_shift_QTX, qcoeff, dqcoeff, p->dequant_QTX, eob,
-                  scan_order->scan, scan_order->iscan);
+  QUANT_PARAM quant_param;
+  av1_setup_quant(tx_size, 0, AV1_XFORM_QUANT_FP, 0, &quant_param);
 
+#if CONFIG_AV1_HIGHBITDEPTH
+  if (is_cur_buf_hbd(xd)) {
+    av1_highbd_quantize_fp_facade(coeff, pix_num, p, qcoeff, dqcoeff, eob,
+                                  scan_order, &quant_param);
+    *recon_error =
+        av1_highbd_block_error(coeff, dqcoeff, pix_num, sse, xd->bd) >> shift;
+  } else {
+    av1_quantize_fp_facade(coeff, pix_num, p, qcoeff, dqcoeff, eob, scan_order,
+                           &quant_param);
+    *recon_error = av1_block_error(coeff, dqcoeff, pix_num, sse) >> shift;
+  }
+#else
+  (void)xd;
+  av1_quantize_fp_facade(coeff, pix_num, p, qcoeff, dqcoeff, eob, scan_order,
+                         &quant_param);
   *recon_error = av1_block_error(coeff, dqcoeff, pix_num, sse) >> shift;
+#endif  // CONFIG_AV1_HIGHBITDEPTH
+
   *recon_error = AOMMAX(*recon_error, 1);
 
   *sse = (*sse) >> shift;
@@ -144,17 +161,28 @@ static uint32_t motion_estimation(AV1_COMP *cpi, MACROBLOCK *x,
   step_param = tpl_sf->reduce_first_step_size;
   step_param = AOMMIN(step_param, MAX_MVSEARCH_STEPS - 2);
 
-  search_site_config *search_site_cfg =
-      &cpi->mv_search_params.search_site_cfg[SS_CFG_SRC];
-  if (search_site_cfg->stride != stride_ref)
-    search_site_cfg = &cpi->mv_search_params.search_site_cfg[SS_CFG_LOOKAHEAD];
+  search_site_config *search_site_cfg;
 
+  // When motion search method is FAST_DIAMOND retrive
+  // search_site_cfg from corresponding buffers.
+  if (tpl_sf->search_method == FAST_BIGDIA) {
+    search_site_cfg = &cpi->mv_search_params.search_site_cfg[SS_CFG_TPL_SRC];
+    if (search_site_cfg->stride != stride_ref)
+      search_site_cfg =
+          &cpi->mv_search_params.search_site_cfg[SS_CFG_TPL_LOOKAHEAD];
+  } else {
+    search_site_cfg = &cpi->mv_search_params.search_site_cfg[SS_CFG_SRC];
+    if (search_site_cfg->stride != stride_ref)
+      search_site_cfg =
+          &cpi->mv_search_params.search_site_cfg[SS_CFG_LOOKAHEAD];
+  }
   assert(search_site_cfg->stride == stride_ref);
 
   FULLPEL_MOTION_SEARCH_PARAMS full_ms_params;
   av1_make_default_fullpel_ms_params(&full_ms_params, cpi, x, bsize, &center_mv,
                                      search_site_cfg,
                                      /*fine_search_interval=*/0);
+  full_ms_params.search_method = tpl_sf->search_method;
 
   av1_full_pixel_search(start_mv, &full_ms_params, step_param,
                         cond_cost_list(cpi, cost_list), &best_mv->as_fullmv,
@@ -818,7 +846,7 @@ void av1_mc_flow_dispenser_row(AV1_COMP *cpi, MACROBLOCK *x, int mi_row,
 
     // Motion estimation column boundary
     av1_set_mv_col_limits(mi_params, &x->mv_limits, mi_col, mi_width,
-                          cpi->oxcf.border_in_pixels);
+                          tpl_data->border_in_pixels);
     xd->mb_to_left_edge = -GET_MV_SUBPEL(mi_col * MI_SIZE);
     xd->mb_to_right_edge =
         GET_MV_SUBPEL(mi_params->mi_cols - mi_width - mi_col);
@@ -845,7 +873,7 @@ static AOM_INLINE void mc_flow_dispenser(AV1_COMP *cpi) {
   for (int mi_row = 0; mi_row < mi_params->mi_rows; mi_row += mi_height) {
     // Motion estimation row boundary
     av1_set_mv_row_limits(mi_params, &x->mv_limits, mi_row, mi_height,
-                          cpi->oxcf.border_in_pixels);
+                          cpi->tpl_data.border_in_pixels);
     xd->mb_to_top_edge = -GET_MV_SUBPEL(mi_row * MI_SIZE);
     xd->mb_to_bottom_edge =
         GET_MV_SUBPEL((mi_params->mi_rows - mi_height - mi_row) * MI_SIZE);
@@ -892,12 +920,9 @@ static AOM_INLINE void init_gop_frames_for_tpl(
     if (frame_params.frame_type == KEY_FRAME || gop_eval) {
       tpl_data->tpl_frame[-i - 1].gf_picture = NULL;
       tpl_data->tpl_frame[-1 - 1].rec_picture = NULL;
-      tpl_data->tpl_frame[-i - 1].frame_display_index = 0;
     } else {
       tpl_data->tpl_frame[-i - 1].gf_picture = &cm->ref_frame_map[i]->buf;
       tpl_data->tpl_frame[-i - 1].rec_picture = &cm->ref_frame_map[i]->buf;
-      tpl_data->tpl_frame[-i - 1].frame_display_index =
-          cm->ref_frame_map[i]->display_order_hint;
     }
 
     ref_picture_map[i] = -i - 1;
@@ -906,11 +931,12 @@ static AOM_INLINE void init_gop_frames_for_tpl(
   *tpl_group_frames = cur_frame_idx;
 
   int gf_index;
-  int use_arf = gf_group->update_type[1] == ARF_UPDATE;
-  int anc_frame_offset = gf_group->cur_frame_idx[cur_frame_idx] + 1;
+  int use_arf = gf_group->arf_index >= 0;
+  int anc_frame_offset = gf_group->cur_frame_idx[cur_frame_idx];
   int process_frame_count = 0;
   const int gop_length =
       AOMMIN(gf_group->size - 1 + use_arf, MAX_TPL_FRAME_IDX - 1);
+
   for (gf_index = cur_frame_idx; gf_index <= gop_length; ++gf_index) {
     TplDepFrame *tpl_frame = &tpl_data->tpl_frame[gf_index];
     FRAME_UPDATE_TYPE frame_update_type = gf_group->update_type[gf_index];
@@ -928,24 +954,16 @@ static AOM_INLINE void init_gop_frames_for_tpl(
 
     if (gf_index == cur_frame_idx) {
       tpl_frame->gf_picture = frame_input->source;
-      // frame display index = frame offset within the gf group + start frame of
-      // the gf group
-      tpl_frame->frame_display_index =
-          gf_group->frame_disp_idx[gf_index] +
-          cpi->common.current_frame.display_order_hint;
     } else {
       int frame_display_index = gf_index == gf_group->size
                                     ? cpi->rc.baseline_gf_interval
-                                    : gf_group->frame_disp_idx[gf_index];
+                                    : gf_group->cur_frame_idx[gf_index] +
+                                          gf_group->arf_src_offset[gf_index];
       struct lookahead_entry *buf = av1_lookahead_peek(
           cpi->lookahead, frame_display_index - anc_frame_offset,
           cpi->compressor_stage);
       if (buf == NULL) break;
       tpl_frame->gf_picture = &buf->img;
-      // frame display index = frame offset within the gf group + start frame of
-      // the gf group
-      tpl_frame->frame_display_index =
-          frame_display_index + cpi->common.current_frame.display_order_hint;
     }
 
     if (frame_update_type != OVERLAY_UPDATE &&
@@ -1001,11 +1019,6 @@ static AOM_INLINE void init_gop_frames_for_tpl(
     tpl_frame->rec_picture = &tpl_data->tpl_rec_pool[process_frame_count];
     tpl_frame->tpl_stats_ptr = tpl_data->tpl_stats_pool[process_frame_count];
     ++process_frame_count;
-
-    // frame display index = frame offset within the gf group + start frame of
-    // the gf group
-    tpl_frame->frame_display_index =
-        frame_display_index + cpi->common.current_frame.display_order_hint;
 
     gf_group->update_type[gf_index] = LF_UPDATE;
     gf_group->q_val[gf_index] = *pframe_qindex;
@@ -1151,7 +1164,8 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
             (this_stats->recrf_dist << RDDIV_BITS) + mc_dep_delta;
       }
     }
-    beta[frame_idx - 1] = (double)mc_dep_cost_base / intra_cost_base;
+    beta[frame_idx - gf_group->arf_index] =
+        (double)mc_dep_cost_base / intra_cost_base;
   }
 
   // Allow larger GOP size if the base layer ARF has higher dependency factor
@@ -1218,16 +1232,17 @@ void av1_tpl_rdmult_setup(AV1_COMP *cpi) {
 void av1_tpl_rdmult_setup_sb(AV1_COMP *cpi, MACROBLOCK *const x,
                              BLOCK_SIZE sb_size, int mi_row, int mi_col) {
   AV1_COMMON *const cm = &cpi->common;
+  GF_GROUP *gf_group = &cpi->gf_group;
   assert(IMPLIES(cpi->gf_group.size > 0,
                  cpi->gf_group.index < cpi->gf_group.size));
   const int tpl_idx = cpi->gf_group.index;
   TplDepFrame *tpl_frame = &cpi->tpl_data.tpl_frame[tpl_idx];
 
   if (tpl_frame->is_valid == 0) return;
-  if (!is_frame_tpl_eligible(cpi)) return;
+  if (!is_frame_tpl_eligible(gf_group)) return;
   if (tpl_idx >= MAX_TPL_FRAME_IDX) return;
   if (cpi->superres_mode != AOM_SUPERRES_NONE) return;
-  if (cpi->oxcf.aq_mode != NO_AQ) return;
+  if (cpi->oxcf.q_cfg.aq_mode != NO_AQ) return;
 
   const int bsize_base = BLOCK_16X16;
   const int num_mi_w = mi_size_wide[bsize_base];

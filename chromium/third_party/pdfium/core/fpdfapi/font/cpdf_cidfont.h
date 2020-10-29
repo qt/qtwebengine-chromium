@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
+#include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/retain_ptr.h"
@@ -56,9 +57,9 @@ class CPDF_CIDFont final : public CPDF_Font {
   uint32_t CharCodeFromUnicode(wchar_t Unicode) const override;
 
   uint16_t CIDFromCharCode(uint32_t charcode) const;
-  const uint8_t* GetCIDTransform(uint16_t CID) const;
-  short GetVertWidth(uint16_t CID) const;
-  void GetVertOrigin(uint16_t CID, short& vx, short& vy) const;
+  const uint8_t* GetCIDTransform(uint16_t cid) const;
+  int16_t GetVertWidth(uint16_t cid) const;
+  CFX_Point16 GetVertOrigin(uint16_t cid) const;
   int GetCharSize(uint32_t charcode) const;
 
  private:
@@ -67,9 +68,6 @@ class CPDF_CIDFont final : public CPDF_Font {
   void LoadGB2312();
   int GetGlyphIndex(uint32_t unicodeb, bool* pVertGlyph);
   int GetVerticalGlyph(int index, bool* pVertGlyph);
-  void LoadMetricsArray(const CPDF_Array* pArray,
-                        std::vector<uint32_t>* result,
-                        int nElements);
   void LoadSubstFont();
   wchar_t GetUnicodeFromCharCode(uint32_t charcode) const;
 
@@ -83,8 +81,8 @@ class CPDF_CIDFont final : public CPDF_Font {
   bool m_bAdobeCourierStd = false;
   CIDSet m_Charset = CIDSET_UNKNOWN;
   uint16_t m_DefaultWidth = 1000;
-  short m_DefaultVY = 880;
-  short m_DefaultW1 = -1000;
+  int16_t m_DefaultVY = 880;
+  int16_t m_DefaultW1 = -1000;
   std::vector<uint32_t> m_WidthList;
   std::vector<uint32_t> m_VertMetrics;
   FX_RECT m_CharBBox[256];

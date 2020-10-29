@@ -37,7 +37,7 @@ struct UCharBufferTranslator {
       string->AddRef();
     location = string.get();
     location->SetHash(hash);
-    location->SetIsAtomic(true);
+    location->SetIsAtomic();
   }
 };
 
@@ -118,7 +118,7 @@ struct HashAndUTF8CharactersTranslator {
     new_string->AddRef();
     location = new_string.get();
     location->SetHash(hash);
-    location->SetIsAtomic(true);
+    location->SetIsAtomic();
   }
 };
 
@@ -166,7 +166,13 @@ struct LowercaseStringViewLookupTranslator {
   }
 
   static bool Equal(StringImpl* const& str, const StringView& buf) {
-    return EqualIgnoringASCIICase(StringView(str), buf);
+    // This is similar to EqualIgnoringASCIICase, but not the same.
+    // In particular, it validates that |str| is a lowercase version of |buf|.
+    // Unlike EqualIgnoringASCIICase, it returns false if they are equal
+    // ignoring ASCII case but |str| contains an uppercase ASCII character.
+    // TODO(crbug.com/1138487): Replace this with a more efficient version.
+    StringView str_view(str);
+    return EqualIgnoringASCIICase(str_view, buf) && str_view.IsLowerASCII();
   }
 };
 
@@ -181,7 +187,7 @@ AtomicStringTable::~AtomicStringTable() {
   for (StringImpl* string : table_) {
     if (!string->IsStatic()) {
       DCHECK(string->IsAtomic());
-      string->SetIsAtomic(false);
+      string->UnsetIsAtomic();
     }
   }
 }
@@ -230,7 +236,7 @@ struct LCharBufferTranslator {
     string->AddRef();
     location = string.get();
     location->SetHash(hash);
-    location->SetIsAtomic(true);
+    location->SetIsAtomic();
   }
 };
 
@@ -253,7 +259,7 @@ StringImpl* AtomicStringTable::Add(StringImpl* string) {
   StringImpl* result = *table_.insert(string).stored_value;
 
   if (!result->IsAtomic())
-    result->SetIsAtomic(true);
+    result->SetIsAtomic();
 
   DCHECK(!string->IsStatic() || result->IsStatic());
   return result;
@@ -298,6 +304,8 @@ AtomicStringTable::WeakResult AtomicStringTable::WeakFindLowercasedSlow(
   const auto& it = table_.Find<LowercaseStringViewLookupTranslator>(string);
   if (it == table_.end())
     return WeakResult();
+  DCHECK(StringView(*it).IsLowerASCII());
+  DCHECK(EqualIgnoringASCIICase(*it, string));
   return WeakResult(*it);
 }
 

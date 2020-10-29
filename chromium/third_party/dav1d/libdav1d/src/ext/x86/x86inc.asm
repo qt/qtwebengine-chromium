@@ -1,7 +1,7 @@
 ;*****************************************************************************
 ;* x86inc.asm: x264asm abstraction layer
 ;*****************************************************************************
-;* Copyright (C) 2005-2019 x264 project
+;* Copyright (C) 2005-2020 x264 project
 ;*
 ;* Authors: Loren Merritt <lorenm@u.washington.edu>
 ;*          Henrik Gramner <henrik@gramner.com>
@@ -425,16 +425,6 @@ DECLARE_REG_TMP_SIZE 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14
     %endif
 %endmacro
 
-%macro DEFINE_ARGS_INTERNAL 3+
-    %ifnum %2
-        DEFINE_ARGS %3
-    %elif %1 == 4
-        DEFINE_ARGS %2
-    %elif %1 > 4
-        DEFINE_ARGS %2, %3
-    %endif
-%endmacro
-
 %if WIN64 ; Windows x64 ;=================================================
 
 DECLARE_REG 0,  rcx
@@ -453,7 +443,7 @@ DECLARE_REG 12, R15, 104
 DECLARE_REG 13, R12, 112
 DECLARE_REG 14, R13, 120
 
-%macro PROLOGUE 2-5+ 0 ; #args, #regs, #xmm_regs, [stack_size,] arg_names...
+%macro PROLOGUE 2-5+ 0, 0 ; #args, #regs, #xmm_regs, [stack_size,] arg_names...
     %assign num_args %1
     %assign regs_used %2
     ASSERT regs_used >= num_args
@@ -465,7 +455,15 @@ DECLARE_REG 14, R13, 120
         WIN64_SPILL_XMM %3
     %endif
     LOAD_IF_USED 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14
-    DEFINE_ARGS_INTERNAL %0, %4, %5
+    %if %0 > 4
+        %ifnum %4
+            DEFINE_ARGS %5
+        %else
+            DEFINE_ARGS %4, %5
+        %endif
+    %elifnnum %4
+        DEFINE_ARGS %4
+    %endif
 %endmacro
 
 %macro WIN64_PUSH_XMM 0
@@ -561,7 +559,7 @@ DECLARE_REG 12, R15, 56
 DECLARE_REG 13, R12, 64
 DECLARE_REG 14, R13, 72
 
-%macro PROLOGUE 2-5+ 0 ; #args, #regs, #xmm_regs, [stack_size,] arg_names...
+%macro PROLOGUE 2-5+ 0, 0 ; #args, #regs, #xmm_regs, [stack_size,] arg_names...
     %assign num_args %1
     %assign regs_used %2
     %assign xmm_regs_used %3
@@ -571,7 +569,15 @@ DECLARE_REG 14, R13, 72
     PUSH_IF_USED 9, 10, 11, 12, 13, 14
     ALLOC_STACK %4
     LOAD_IF_USED 6, 7, 8, 9, 10, 11, 12, 13, 14
-    DEFINE_ARGS_INTERNAL %0, %4, %5
+    %if %0 > 4
+        %ifnum %4
+            DEFINE_ARGS %5
+        %else
+            DEFINE_ARGS %4, %5
+        %endif
+    %elifnnum %4
+        DEFINE_ARGS %4
+    %endif
 %endmacro
 
 %define has_epilogue regs_used > 9 || stack_size > 0 || vzeroupper_required
@@ -612,7 +618,7 @@ DECLARE_REG 6, ebp, 28
 
 DECLARE_ARG 7, 8, 9, 10, 11, 12, 13, 14
 
-%macro PROLOGUE 2-5+ ; #args, #regs, #xmm_regs, [stack_size,] arg_names...
+%macro PROLOGUE 2-5+ 0, 0 ; #args, #regs, #xmm_regs, [stack_size,] arg_names...
     %assign num_args %1
     %assign regs_used %2
     ASSERT regs_used >= num_args
@@ -627,7 +633,15 @@ DECLARE_ARG 7, 8, 9, 10, 11, 12, 13, 14
     PUSH_IF_USED 3, 4, 5, 6
     ALLOC_STACK %4
     LOAD_IF_USED 0, 1, 2, 3, 4, 5, 6
-    DEFINE_ARGS_INTERNAL %0, %4, %5
+    %if %0 > 4
+        %ifnum %4
+            DEFINE_ARGS %5
+        %else
+            DEFINE_ARGS %4, %5
+        %endif
+    %elifnnum %4
+        DEFINE_ARGS %4
+    %endif
 %endmacro
 
 %define has_epilogue regs_used > 3 || stack_size > 0 || vzeroupper_required
@@ -991,6 +1005,8 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
     %if WIN64
         AVX512_MM_PERMUTATION 6 ; Swap callee-saved registers with volatile registers
     %endif
+    %xdefine bcstd 1to4
+    %xdefine bcstq 1to2
 %endmacro
 
 %macro INIT_YMM 0-1+
@@ -1004,6 +1020,8 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
     INIT_CPUFLAGS %1
     DEFINE_MMREGS ymm
     AVX512_MM_PERMUTATION
+    %xdefine bcstd 1to8
+    %xdefine bcstq 1to4
 %endmacro
 
 %macro INIT_ZMM 0-1+
@@ -1017,6 +1035,8 @@ BRANCH_INSTR jz, je, jnz, jne, jl, jle, jnl, jnle, jg, jge, jng, jnge, ja, jae, 
     INIT_CPUFLAGS %1
     DEFINE_MMREGS zmm
     AVX512_MM_PERMUTATION
+    %xdefine bcstd 1to16
+    %xdefine bcstq 1to8
 %endmacro
 
 INIT_XMM
@@ -1250,6 +1270,12 @@ INIT_XMM
                 %error use of ``%1'' sse2 instruction in cpuname function: current_function
             %elif %3 == 0 && __sizeofreg == 32 && notcpuflag(avx2)
                 %error use of ``%1'' avx2 instruction in cpuname function: current_function
+            %elif __sizeofreg == 16 && notcpuflag(sse)
+                %error use of ``%1'' sse instruction in cpuname function: current_function
+            %elif __sizeofreg == 32 && notcpuflag(avx)
+                %error use of ``%1'' avx instruction in cpuname function: current_function
+            %elif __sizeofreg == 64 && notcpuflag(avx512)
+                %error use of ``%1'' avx512 instruction in cpuname function: current_function
             %elifidn %1, pextrw ; special case because the base instruction is mmx2,
                 %ifnid %6       ; but sse4 is required for memory operands
                     %if notcpuflag(sse4)
@@ -1672,6 +1698,7 @@ GPR_INSTR andn, bmi1
 GPR_INSTR bextr, bmi1
 GPR_INSTR blsi, bmi1
 GPR_INSTR blsmsk, bmi1
+GPR_INSTR blsr, bmi1
 GPR_INSTR bzhi, bmi2
 GPR_INSTR mulx, bmi2
 GPR_INSTR pdep, bmi2

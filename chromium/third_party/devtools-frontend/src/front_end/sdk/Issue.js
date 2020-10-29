@@ -10,6 +10,7 @@ export const IssueCategory = {
   MixedContent: Symbol('MixedContent'),
   SameSiteCookie: Symbol('SameSiteCookie'),
   HeavyAd: Symbol('HeavyAd'),
+  ContentSecurityPolicy: Symbol('ContentSecurityPolicy'),
   Other: Symbol('Other')
 };
 
@@ -17,6 +18,11 @@ export const IssueCategory = {
 export const IssueKind = {
   BreakingChange: Symbol('BreakingChange'),
 };
+
+/** @return {!Common.Settings.Setting<boolean>} */
+export function getShowThirdPartyIssuesSetting() {
+  return Common.Settings.Settings.instance().createSetting('showThirdPartyIssues', false);
+}
 
 /**
  * @typedef {{
@@ -28,6 +34,16 @@ export const IssueKind = {
   */
 // @ts-ignore typedef
 export let IssueDescription;  // eslint-disable-line no-unused-vars
+
+/**
+ * @typedef {{
+  *             file: string,
+  *             issueKind: !IssueKind,
+  *             links: !Array<!{link: string, linkTitle: string}>
+  *          }}
+  */
+// @ts-ignore typedef
+export let MarkdownIssueDescription;  // eslint-disable-line no-unused-vars
 
 /**
  * @typedef {{
@@ -73,6 +89,13 @@ export class Issue extends Common.ObjectWrapper.ObjectWrapper {
    */
   primaryKey() {
     throw new Error('Not implemented');
+  }
+
+  /**
+   * @return {!Iterable<!Protocol.Audits.BlockedByResponseIssueDetails>}
+   */
+  blockedByResponseDetails() {
+    return [];
   }
 
   /**
@@ -131,7 +154,7 @@ export class Issue extends Common.ObjectWrapper.ObjectWrapper {
   }
 
   /**
-   * @return {?IssueDescription}
+   * @return {?(!IssueDescription|!MarkdownIssueDescription)}
    */
   getDescription() {
     throw new Error('Not implemented');
@@ -142,5 +165,12 @@ export class Issue extends Common.ObjectWrapper.ObjectWrapper {
    */
   getCategory() {
     throw new Error('Not implemented');
+  }
+
+  /**
+   * @return {boolean}
+   */
+  isCausedByThirdParty() {
+    return false;
   }
 }

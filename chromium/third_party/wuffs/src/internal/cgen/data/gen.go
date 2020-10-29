@@ -26,6 +26,7 @@ import (
 	"go/format"
 	"io/ioutil"
 	"os"
+	"strings"
 )
 
 const columns = 1024
@@ -58,7 +59,7 @@ func main1() error {
 	out.WriteString("package data\n")
 	out.WriteString("\n")
 
-	if err := genBase(out); err != nil {
+	if err := genData(out); err != nil {
 		return err
 	}
 
@@ -69,15 +70,11 @@ func main1() error {
 	return ioutil.WriteFile("data.go", formatted, 0644)
 }
 
-func genBase(out *bytes.Buffer) error {
+func genData(out *bytes.Buffer) error {
 	files := []struct {
 		filename, varname string
 	}{
 		{"../base/all-impl.c", "BaseAllImplC"},
-		{"../base/strconv-impl.c", "BaseStrConvImplC"},
-
-		{"../base/f64conv-submodule.c", "BaseF64ConvSubmoduleC"},
-		{"../base/pixconv-submodule.c", "BasePixConvSubmoduleC"},
 
 		{"../base/fundamental-private.h", "BaseFundamentalPrivateH"},
 		{"../base/fundamental-public.h", "BaseFundamentalPublicH"},
@@ -93,6 +90,19 @@ func genBase(out *bytes.Buffer) error {
 		{"../base/strconv-public.h", "BaseStrConvPublicH"},
 		{"../base/token-private.h", "BaseTokenPrivateH"},
 		{"../base/token-public.h", "BaseTokenPublicH"},
+
+		{"../base/floatconv-submodule-code.c", "BaseFloatConvSubmoduleCodeC"},
+		{"../base/floatconv-submodule-data.c", "BaseFloatConvSubmoduleDataC"},
+		{"../base/intconv-submodule.c", "BaseIntConvSubmoduleC"},
+		{"../base/pixconv-submodule.c", "BasePixConvSubmoduleC"},
+		{"../base/utf8-submodule.c", "BaseUTF8SubmoduleC"},
+
+		{"../auxiliary/base.cc", "AuxBaseCc"},
+		{"../auxiliary/base.hh", "AuxBaseHh"},
+		{"../auxiliary/cbor.cc", "AuxCborCc"},
+		{"../auxiliary/cbor.hh", "AuxCborHh"},
+		{"../auxiliary/json.cc", "AuxJsonCc"},
+		{"../auxiliary/json.hh", "AuxJsonHh"},
 	}
 
 	prefixAfterEditing := []byte("// After editing this file,")
@@ -127,6 +137,26 @@ func genBase(out *bytes.Buffer) error {
 		writeStringConst(out, in)
 		out.WriteString("\"\"\n\n")
 	}
+
+	fmt.Fprintf(out, "var AuxNonBaseCcFiles = []string{\n")
+	for _, f := range files {
+		if strings.HasPrefix(f.varname, "Aux") &&
+			strings.HasSuffix(f.varname, "Cc") &&
+			(f.varname != "AuxBaseCc") {
+			fmt.Fprintf(out, "%s,\n", f.varname)
+		}
+	}
+	fmt.Fprintf(out, "}\n\n")
+
+	fmt.Fprintf(out, "var AuxNonBaseHhFiles = []string{\n")
+	for _, f := range files {
+		if strings.HasPrefix(f.varname, "Aux") &&
+			strings.HasSuffix(f.varname, "Hh") &&
+			(f.varname != "AuxBaseHh") {
+			fmt.Fprintf(out, "%s,\n", f.varname)
+		}
+	}
+	fmt.Fprintf(out, "}\n\n")
 
 	fmt.Fprintf(out, "const BaseCopyright = \"\" +\n")
 	writeStringConst(out, copyright)

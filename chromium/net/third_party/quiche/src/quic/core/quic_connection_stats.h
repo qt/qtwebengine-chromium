@@ -129,6 +129,9 @@ struct QUIC_EXPORT_PRIVATE QuicConnectionStats {
   // Creation time, as reported by the QuicClock.
   QuicTime connection_creation_time = QuicTime::Zero();
 
+  // Handshake completion time.
+  QuicTime handshake_completion_time = QuicTime::Zero();
+
   uint64_t blocked_frames_received = 0;
   uint64_t blocked_frames_sent = 0;
 
@@ -162,6 +165,10 @@ struct QUIC_EXPORT_PRIVATE QuicConnectionStats {
   // Number of sent packets that were encapsulated using Legacy Version
   // Encapsulation.
   QuicPacketCount sent_legacy_version_encapsulated_packets = 0;
+
+  // Number of times when the connection tries to send data but gets throttled
+  // by amplification factor.
+  size_t num_amplification_throttling = 0;
 };
 
 }  // namespace quic

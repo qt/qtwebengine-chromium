@@ -108,9 +108,11 @@ namespace dawn_native {
         // the created object will be, the "blueprint". The blueprint is just a FooBase object
         // instead of a backend Foo object. If the blueprint doesn't match an object in the
         // cache, then the descriptor is used to make a new object.
-        ResultOrError<BindGroupLayoutBase*> GetOrCreateBindGroupLayout(
+        ResultOrError<Ref<BindGroupLayoutBase>> GetOrCreateBindGroupLayout(
             const BindGroupLayoutDescriptor* descriptor);
         void UncacheBindGroupLayout(BindGroupLayoutBase* obj);
+
+        BindGroupLayoutBase* GetEmptyBindGroupLayout();
 
         ResultOrError<ComputePipelineBase*> GetOrCreateComputePipeline(
             const ComputePipelineDescriptor* descriptor);
@@ -214,6 +216,7 @@ namespace dawn_native {
         bool IsExtensionEnabled(Extension extension) const;
         bool IsToggleEnabled(Toggle toggle) const;
         bool IsValidationEnabled() const;
+        bool IsRobustnessEnabled() const;
         size_t GetLazyClearCountForTesting();
         void IncrementLazyClearCountForTesting();
         size_t GetDeprecationWarningCountForTesting();
@@ -238,7 +241,8 @@ namespace dawn_native {
             const BindGroupDescriptor* descriptor) = 0;
         virtual ResultOrError<BindGroupLayoutBase*> CreateBindGroupLayoutImpl(
             const BindGroupLayoutDescriptor* descriptor) = 0;
-        virtual ResultOrError<BufferBase*> CreateBufferImpl(const BufferDescriptor* descriptor) = 0;
+        virtual ResultOrError<Ref<BufferBase>> CreateBufferImpl(
+            const BufferDescriptor* descriptor) = 0;
         virtual ResultOrError<ComputePipelineBase*> CreateComputePipelineImpl(
             const ComputePipelineDescriptor* descriptor) = 0;
         virtual ResultOrError<PipelineLayoutBase*> CreatePipelineLayoutImpl(
@@ -264,11 +268,13 @@ namespace dawn_native {
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) = 0;
 
+        ResultOrError<Ref<BindGroupLayoutBase>> CreateEmptyBindGroupLayout();
+
         MaybeError CreateBindGroupInternal(BindGroupBase** result,
                                            const BindGroupDescriptor* descriptor);
         MaybeError CreateBindGroupLayoutInternal(BindGroupLayoutBase** result,
                                                  const BindGroupLayoutDescriptor* descriptor);
-        ResultOrError<BufferBase*> CreateBufferInternal(const BufferDescriptor* descriptor);
+        ResultOrError<Ref<BufferBase>> CreateBufferInternal(const BufferDescriptor* descriptor);
         MaybeError CreateComputePipelineInternal(ComputePipelineBase** result,
                                                  const ComputePipelineDescriptor* descriptor);
         MaybeError CreatePipelineLayoutInternal(PipelineLayoutBase** result,
@@ -339,6 +345,8 @@ namespace dawn_native {
         // additional includes.
         struct Caches;
         std::unique_ptr<Caches> mCaches;
+
+        Ref<BindGroupLayoutBase> mEmptyBindGroupLayout;
 
         std::unique_ptr<DynamicUploader> mDynamicUploader;
         std::unique_ptr<ErrorScopeTracker> mErrorScopeTracker;

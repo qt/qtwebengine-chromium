@@ -16,7 +16,7 @@
 
 class GrBackendFormat;
 class GrBackendTexture;
-class GrContext;
+class GrRecordingContext;
 class SkCanvas;
 class SkImage;
 class SkPromiseImageTexture;
@@ -50,7 +50,7 @@ public:
     // Note: ownership of the SkCanvas is not transferred via this call.
     SkCanvas* getCanvas();
 
-    std::unique_ptr<SkDeferredDisplayList> detach();
+    sk_sp<SkDeferredDisplayList> detach();
 
     using PromiseImageTextureContext = void*;
     using PromiseImageTextureFulfillProc =
@@ -66,7 +66,7 @@ public:
         image pixel data. Moreover, the SkImage may be created on a thread as the creation of the
         image does not require access to the backend API or GrContext. Instead of passing a
         GrBackendTexture the client supplies a description of the texture consisting of
-        GrBackendFormat, width, height, and GrMipMapped state. The resulting SkImage can be drawn
+        GrBackendFormat, width, height, and GrMipmapped state. The resulting SkImage can be drawn
         to a SkDeferredDisplayListRecorder or directly to a GPU-backed SkSurface.
 
         When the actual texture is required to perform a backend API draw, textureFulfillProc will
@@ -114,7 +114,7 @@ public:
             const GrBackendFormat& backendFormat,
             int width,
             int height,
-            GrMipMapped mipMapped,
+            GrMipmapped mipMapped,
             GrSurfaceOrigin origin,
             SkColorType colorType,
             SkAlphaType alphaType,
@@ -157,7 +157,7 @@ private:
     const SkSurfaceCharacterization             fCharacterization;
 
 #if SK_SUPPORT_GPU
-    sk_sp<GrContext>                            fContext;
+    sk_sp<GrRecordingContext>                   fContext;
     sk_sp<GrRenderTargetProxy>                  fTargetProxy;
     sk_sp<SkDeferredDisplayList::LazyProxyData> fLazyProxyData;
     sk_sp<SkSurface>                            fSurface;

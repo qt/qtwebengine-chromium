@@ -226,7 +226,9 @@ bool GrGLInterface::validate() const {
        (GR_IS_GR_GL_ES(fStandard) && (
           (glVer >= GR_GL_VER(3,2)) ||
           fExtensions.has("GL_OES_tessellation_shader")))) {
-        // all functions were marked optional or test_only
+        if (!fFunctions.fPatchParameteri) {
+            RETURN_FALSE_INTERFACE;
+        }
     }
 
     if ((GR_IS_GR_GL(fStandard) && (
@@ -312,6 +314,14 @@ bool GrGLInterface::validate() const {
           (glVer >= GR_GL_VER(3,1))))) {
         if (!fFunctions.fDrawArraysIndirect ||
             !fFunctions.fDrawElementsIndirect) {
+            RETURN_FALSE_INTERFACE;
+        }
+    }
+
+    if ((GR_IS_GR_GL_ES(fStandard) && (
+          fExtensions.has("GL_ANGLE_base_vertex_base_instance")))) {
+        if (!fFunctions.fMultiDrawArraysInstancedBaseInstance ||
+            !fFunctions.fMultiDrawElementsInstancedBaseVertexBaseInstance) {
             RETURN_FALSE_INTERFACE;
         }
     }

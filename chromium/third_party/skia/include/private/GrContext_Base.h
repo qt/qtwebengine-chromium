@@ -15,14 +15,19 @@
 
 class GrBaseContextPriv;
 class GrCaps;
-class GrContext;
 class GrContextThreadSafeProxy;
+class GrDirectContext;
 class GrImageContext;
 class GrRecordingContext;
 
 class GrContext_Base : public SkRefCnt {
 public:
-    virtual ~GrContext_Base();
+    ~GrContext_Base() override;
+
+    /*
+     * Safely downcast to a GrDirectContext.
+     */
+    virtual GrDirectContext* asDirectContext() { return nullptr; }
 
     /*
      * The 3D API backing this context
@@ -45,7 +50,7 @@ public:
 
     // Provides access to functions that aren't part of the public API.
     GrBaseContextPriv priv();
-    const GrBaseContextPriv priv() const;
+    const GrBaseContextPriv priv() const;  // NOLINT(readability-const-return-type)
 
 protected:
     friend class GrBaseContextPriv; // for hidden functions
@@ -64,7 +69,7 @@ protected:
     uint32_t contextID() const;
 
     bool matches(GrContext_Base* candidate) const {
-        return candidate->contextID() == this->contextID();
+        return candidate && candidate->contextID() == this->contextID();
     }
 
     /*
@@ -77,7 +82,6 @@ protected:
 
     virtual GrImageContext* asImageContext() { return nullptr; }
     virtual GrRecordingContext* asRecordingContext() { return nullptr; }
-    virtual GrContext* asDirectContext() { return nullptr; }
 
     sk_sp<GrContextThreadSafeProxy>         fThreadSafeProxy;
 

@@ -226,10 +226,15 @@ static AOM_INLINE void first_pass_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
 
   const search_site_config *first_pass_search_sites =
       &cpi->mv_search_params.search_site_cfg[SS_CFG_FPF];
+  const int fine_search_interval =
+      cpi->is_screen_content_type && cpi->common.features.allow_intrabc;
+  if (fine_search_interval) {
+    av1_set_speed_features_framesize_independent(cpi, cpi->oxcf.speed);
+  }
   FULLPEL_MOTION_SEARCH_PARAMS ms_params;
   av1_make_default_fullpel_ms_params(&ms_params, cpi, x, bsize, ref_mv,
                                      first_pass_search_sites,
-                                     /*fine_search_interval=*/0);
+                                     fine_search_interval);
   ms_params.search_method = NSTEP;
 
   FULLPEL_MV this_best_mv;
@@ -1093,8 +1098,9 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
   // Do not use periodic key frames.
   cpi->rc.frames_to_key = INT_MAX;
 
-  av1_set_quantizer(cm, cpi->oxcf.qm_minlevel, cpi->oxcf.qm_maxlevel, qindex,
-                    cpi->oxcf.enable_chroma_deltaq);
+  av1_set_quantizer(cm, cpi->oxcf.q_cfg.qm_minlevel,
+                    cpi->oxcf.q_cfg.qm_maxlevel, qindex,
+                    cpi->oxcf.q_cfg.enable_chroma_deltaq);
 
   av1_setup_block_planes(xd, seq_params->subsampling_x,
                          seq_params->subsampling_y, num_planes);

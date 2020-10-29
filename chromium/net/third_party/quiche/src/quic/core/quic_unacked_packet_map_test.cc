@@ -150,7 +150,7 @@ class QuicUnackedPacketMapTest : public QuicTestWithParam<Perspective> {
     UpdatePacketState(
         old_packet_number,
         QuicUtils::RetransmissionTypeToPacketState(transmission_type));
-    info->retransmission = QuicPacketNumber(new_packet_number);
+    info->first_sent_after_loss = QuicPacketNumber(new_packet_number);
     SerializedPacket packet(
         CreateRetransmittablePacketForStream(new_packet_number, stream_id));
     unacked_packets_.AddSentPacket(&packet, transmission_type, now_, true);
@@ -634,6 +634,8 @@ TEST_P(QuicUnackedPacketMapTest, LargestSentPacketMultiplePacketNumberSpaces) {
   EXPECT_EQ(QuicPacketNumber(4),
             unacked_packets_.GetLargestSentRetransmittableOfPacketNumberSpace(
                 APPLICATION_DATA));
+  EXPECT_TRUE(unacked_packets_.GetLastPacketContent() & (1 << STREAM_FRAME));
+  EXPECT_FALSE(unacked_packets_.GetLastPacketContent() & (1 << ACK_FRAME));
 }
 
 }  // namespace

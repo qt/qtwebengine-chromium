@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Rather than pass this to all of the checks, we override the global blacklist
-# with this one.
+# Rather than pass this to all of the checks, we override the global excluded
+# list with this one.
 _EXCLUDED_PATHS = (
   # Exclude all of third_party/ except for BUILD.gns that we maintain.
   r'third_party[\\\/].*(?<!BUILD.gn)$',
@@ -91,7 +91,7 @@ def _CommonChecks(input_api, output_api):
 
 
 def CheckChangeOnUpload(input_api, output_api):
-  input_api.DEFAULT_BLACK_LIST = _EXCLUDED_PATHS;
+  input_api.DEFAULT_BLOCK_LIST = _EXCLUDED_PATHS;
   results = []
   results.extend(_CommonChecks(input_api, output_api))
   results.extend(
@@ -100,7 +100,7 @@ def CheckChangeOnUpload(input_api, output_api):
 
 
 def CheckChangeOnCommit(input_api, output_api):
-  input_api.DEFAULT_BLACK_LIST = _EXCLUDED_PATHS;
+  input_api.DEFAULT_BLOCK_LIST = _EXCLUDED_PATHS;
   results = []
   results.extend(_CommonChecks(input_api, output_api))
   return results

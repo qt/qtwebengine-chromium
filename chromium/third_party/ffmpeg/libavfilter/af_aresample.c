@@ -126,7 +126,7 @@ static int query_formats(AVFilterContext *ctx)
 
     if(out_layout) {
         int64_t layout_list[] = { out_layout, -1 };
-        out_layouts = avfilter_make_format64_list(layout_list);
+        out_layouts = ff_make_format64_list(layout_list);
     } else
         out_layouts = ff_all_channel_counts();
 
@@ -293,9 +293,18 @@ static int request_frame(AVFilterLink *outlink)
     return ret;
 }
 
+#if FF_API_CHILD_CLASS_NEXT
 static const AVClass *resample_child_class_next(const AVClass *prev)
 {
     return prev ? NULL : swr_get_class();
+}
+#endif
+
+static const AVClass *resample_child_class_iterate(void **iter)
+{
+    const AVClass *c = *iter ? NULL : swr_get_class();
+    *iter = (void*)(uintptr_t)c;
+    return c;
 }
 
 static void *resample_child_next(void *obj, void *prev)
@@ -317,7 +326,10 @@ static const AVClass aresample_class = {
     .item_name        = av_default_item_name,
     .option           = options,
     .version          = LIBAVUTIL_VERSION_INT,
+#if FF_API_CHILD_CLASS_NEXT
     .child_class_next = resample_child_class_next,
+#endif
+    .child_class_iterate = resample_child_class_iterate,
     .child_next       = resample_child_next,
 };
 

@@ -7,7 +7,7 @@
 
 #include "src/gpu/ops/GrFillRRectOp.h"
 
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkRRectPriv.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrMemoryPool.h"
@@ -739,10 +739,7 @@ class FillRRectOp::Processor::CoverageImpl : public GrGLSLGeometryProcessor {
         f->codeAppendf("%s = half4(coverage);", args.fOutputCoverage);
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&,
-                 const CoordTransformRange& transformRange) override {
-        this->setTransformDataHelper(pdman, transformRange);
-    }
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&) override {}
 };
 
 
@@ -843,10 +840,7 @@ class FillRRectOp::Processor::MSAAImpl : public GrGLSLGeometryProcessor {
         f->codeAppendf("}");
     }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&,
-                 const CoordTransformRange& transformRange) override {
-        this->setTransformDataHelper(pdman, transformRange);
-    }
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&) override {}
 };
 
 GrGLSLPrimitiveProcessor* FillRRectOp::Processor::createGLSLInstance(
@@ -880,7 +874,8 @@ void FillRRectOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBound
 
     flushState->bindPipelineAndScissorClip(*fProgramInfo, this->bounds());
     flushState->bindTextures(fProgramInfo->primProc(), nullptr, fProgramInfo->pipeline());
-    flushState->bindBuffers(fIndexBuffer.get(), fInstanceBuffer.get(), fVertexBuffer.get());
+    flushState->bindBuffers(std::move(fIndexBuffer), std::move(fInstanceBuffer),
+                            std::move(fVertexBuffer));
     flushState->drawIndexedInstanced(fIndexCount, 0, fInstanceCount, fBaseInstance, 0);
 }
 

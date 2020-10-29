@@ -41,6 +41,9 @@ public:
         kRadialGradientStroke = 107,
         kActorEllipse         = 108,
         kActorRectangle       = 109,
+        kActorTriangle        = 110,
+        kActorStar            = 111,
+        kActorPolygon         = 112,
         kActorArtboard        = 114,
         kArtboards            = 115,
 
@@ -58,6 +61,8 @@ public:
     virtual bool  openObject(const char label[]) = 0;
     virtual void closeObject()                   = 0;
 
+
+    virtual uint16_t readId    (const char label[]) = 0;
     virtual bool     readBool  (const char label[]) = 0;
     virtual float    readFloat (const char label[]) = 0;
     virtual uint8_t  readUInt8 (const char label[]) = 0;
@@ -98,6 +103,6 @@ protected:
     virtual size_t readFloatArray(const char label[], float dst[], size_t count) = 0;
 };
 
-}
+}  // namespace skrive::internal
 
 #endif // SkRiveStreamreader_DEFINED

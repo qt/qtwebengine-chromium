@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (C) 2019 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,7 +53,8 @@ SCOPES.append('https://www.googleapis.com/auth/monitoring.write')
 
 def sha1(obj):
   hasher = hashlib.sha1()
-  hasher.update(json.dumps(obj, sort_keys=True, separators=(',', ':')))
+  hasher.update(
+      json.dumps(obj, sort_keys=True, separators=(',', ':')).encode('utf-8'))
   return hasher.hexdigest()
 
 

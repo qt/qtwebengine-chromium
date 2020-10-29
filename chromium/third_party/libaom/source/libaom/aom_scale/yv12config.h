@@ -27,6 +27,7 @@ extern "C" {
 #define AOM_INTERP_EXTEND 4
 #define AOM_BORDER_IN_PIXELS 288
 #define AOM_ENC_NO_SCALE_BORDER 160
+#define AOM_ENC_TPL_FRAME_BORDER 32
 #define AOM_DEC_BORDER_IN_PIXELS 64
 
 typedef struct yv12_buffer_config {
@@ -140,10 +141,12 @@ void aom_remove_metadata_from_frame_buffer(YV12_BUFFER_CONFIG *ybf);
 
 /*!\brief Copy metadata to YUV_BUFFER_CONFIG struct.
  *
- * Copies metadata in frame buffer.
+ * Copies metadata to frame buffer.
  * Frame buffer will clear any previous metadata and will reallocate the
  * metadata array to the new metadata size. Then, it will copy the new metadata
  * array into it.
+ * If arr metadata pointer points to the same address as current metadata in the
+ * frame buffer, function will do nothing and return 0.
  * Returns 0 on success or -1 on failure.
  *
  * \param[in]    ybf       Frame buffer struct pointer

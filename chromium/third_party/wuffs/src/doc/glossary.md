@@ -1,5 +1,10 @@
 # Glossary
 
+#### Auxiliary Code
+
+Additional library code that is not written in the Wuffs programming language.
+See the [auxiliary code](/doc/note/auxiliary-code.md) note for more details.
+
 #### Axiom
 
 A named rule for asserting new facts. See the
@@ -51,6 +56,12 @@ point in a program. See the [facts](/doc/note/facts.md) note for more details.
 
 A unit of time. One [flick](https://github.com/OculusVR/Flicks) (frame-tick) is
 `1 / 705_600_000` of a second.
+
+#### Hermetic Function
+
+A function that can modify only local state (to store the result of
+computation), not global or system state. See the
+[hermeticity](/doc/note/hermeticity.md) note for more details.
 
 #### Interval Arithmetic
 

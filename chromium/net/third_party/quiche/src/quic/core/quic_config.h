@@ -420,6 +420,14 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   bool HasReceivedMaxAckDelayMs() const;
   uint32_t ReceivedMaxAckDelayMs() const;
 
+  // Manage the IETF QUIC extension Min Ack Delay transport parameter.
+  // An endpoint uses min_ack_delay to advsertise its support for
+  // AckFrequencyFrame sent by peer.
+  void SetMinAckDelayMs(uint32_t min_ack_delay_ms);
+  uint32_t GetMinAckDelayToSendMs() const;
+  bool HasReceivedMinAckDelayMs() const;
+  uint32_t ReceivedMinAckDelayMs() const;
+
   void SetAckDelayExponentToSend(uint32_t exponent);
   uint32_t GetAckDelayExponentToSend() const;
   bool HasReceivedAckDelayExponent() const;
@@ -477,14 +485,11 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // if something prevents them from being written (e.g. a value is too large).
   bool FillTransportParameters(TransportParameters* params) const;
 
-  // ProcessTransportParameters reads from |params| which was received from a
-  // peer operating as a |hello_type|. It processes values for ICSL, MIDS, CFCW,
-  // and SFCW and sets the corresponding members of this QuicConfig.
-  // If |is_resumption|, some configs will not be processed.
+  // ProcessTransportParameters reads from |params| which were received from a
+  // peer. If |is_resumption|, some configs will not be processed.
   // On failure, it returns a QuicErrorCode and puts a detailed error in
   // |*error_details|.
   QuicErrorCode ProcessTransportParameters(const TransportParameters& params,
-                                           HelloType hello_type,
                                            bool is_resumption,
                                            std::string* error_details);
 
@@ -595,6 +600,10 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // the peer.
   // Uses the max_ack_delay transport parameter in IETF QUIC.
   QuicFixedUint32 max_ack_delay_ms_;
+
+  // Minimum ack delay. Used to enable sender control of max_ack_delay.
+  // Uses the min_ack_delay transport parameter in IETF QUIC extension.
+  QuicFixedUint32 min_ack_delay_ms_;
 
   // The sent exponent is the exponent that this node uses when serializing an
   // ACK frame (and the peer should use when deserializing the frame);

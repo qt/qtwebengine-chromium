@@ -1307,7 +1307,7 @@ class InspectorFrontendHostAPI {
   }
 
   /**
-   * @param {string} actionName
+   * @param {!InspectorFrontendHostAPI.EnumeratedHistogram} actionName
    * @param {number} actionCode
    * @param {number} bucketSize
    */
@@ -1452,6 +1452,27 @@ InspectorFrontendHostAPI.ContextMenuDescriptor;
     messageOverride: (string|undefined)
 }} */
 InspectorFrontendHostAPI.LoadNetworkResourceResult;
+
+/**
+ * Enum for recordEnumeratedHistogram
+ * Warning: There are three definitions of this enum in the DevTools code base, keep them in sync.
+ * @readonly
+ * @enum {string}
+ */
+InspectorFrontendHostAPI.EnumeratedHistogram = {
+  ActionTaken: 'DevTools.ActionTaken',
+  ColorPickerFixedColor: 'DevTools.ColorPicker.FixedColor',
+  PanelClosed: 'DevTools.PanelClosed',
+  PanelShown: 'DevTools.PanelShown',
+  KeyboardShortcutFired: 'DevTools.KeyboardShortcutFired',
+  IssuesPanelOpenedFrom: 'DevTools.IssuesPanelOpenedFrom',
+  KeybindSetSettingChanged: 'DevTools.KeybindSetSettingChanged',
+  DualScreenDeviceEmulated: 'DevTools.DualScreenDeviceEmulated',
+  CSSGridSettings: 'DevTools.CSSGridSettings',
+  ExperimentEnabledAtLaunch: 'DevTools.ExperimentEnabledAtLaunch',
+  ExperimentEnabled: 'DevTools.ExperimentEnabled',
+  ExperimentDisabled: 'DevTools.ExperimentDisabled',
+};
 
 /**
  * @interface

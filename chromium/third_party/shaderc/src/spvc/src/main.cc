@@ -38,6 +38,7 @@ Usage: spvc [options] file
 An input file of - represents standard input.
 
 Options:
+  -h                       Display available options.
   --help                   Display available options.
   -v                       Display compiler version information.
   -o <output file>         '-' means standard output.
@@ -88,6 +89,7 @@ Options:
   --msl-domain-lower-left
   --msl-argument-buffers
   --msl-discrete-descriptor-set=<number>
+  --msl-additional-fixed-sample-mask=<number>
   --emit-line-directives
   --hlsl-enable-compat
   --shader-model=<model>
@@ -110,14 +112,15 @@ bool ReadFile(const std::string& path, std::vector<uint32_t>* out) {
   out->resize(ftell(file) / sizeof((*out)[0]));
   rewind(file);
 
+  bool status = true;
   if (fread(out->data(), sizeof((*out)[0]), out->size(), file) != out->size()) {
     std::cerr << "Failed to read SPIR-V file: " << path << std::endl;
     out->clear();
-    return false;
+    status = false;
   }
 
   fclose(file);
-  return true;
+  return status;
 }
 
 bool StringPieceToEnvEnum(const string_piece& str, shaderc_spvc_spv_env* env) {
@@ -184,7 +187,7 @@ int main(int argc, char** argv) {
   shaderc_spvc::CompileOptions options(source_env, target_env);
   for (int i = 1; i < argc; ++i) {
     const string_piece arg = argv[i];
-    if (arg == "--help") {
+    if (arg == "--help" || arg == "-h") {
       ::PrintHelp(&std::cout);
       return 0;
     } else if (arg == "-v") {
@@ -237,11 +240,11 @@ int main(int argc, char** argv) {
       }
     } else if (arg == "--remove-unused-variables") {
       options.SetRemoveUnusedVariables(true);
-    } else if (arg == "--no-validate"){
+    } else if (arg == "--no-validate") {
       options.SetValidate(false);
-    } else if (arg == "--no-optimize"){
+    } else if (arg == "--no-optimize") {
       options.SetOptimize(false);
-    } else if (arg == "--robust-buffer-access-pass"){
+    } else if (arg == "--robust-buffer-access-pass") {
       options.SetRobustBufferAccessPass(true);
     } else if (arg == "--vulkan-semantics") {
       options.SetVulkanSemantics(true);
@@ -293,6 +296,17 @@ int main(int argc, char** argv) {
         return 1;
       }
       msl_discrete_descriptor.push_back(descriptor_num);
+    } else if (arg.starts_with("--msl-additional-fixed-sample-mask=")) {
+      string_piece sample_mask_str;
+      GetOptionArgument(argc, argv, &i,
+                        "--msl-additional-fixed-sample-mask=", &sample_mask_str);
+      uint32_t sample_mask_num;
+      if (!shaderc_util::ParseUint32(sample_mask_str.str(), &sample_mask_num)) {
+        std::cerr << "spvc: error: invalid value '" << sample_mask_str
+                  << "' in --msl-additional-fixed-sample-mask=" << std::endl;
+        return 1;
+      }
+      options.SetMSLAdditionalFixedSampleMask(sample_mask_num);
     } else if (arg == "--emit-line-directives") {
       options.SetEmitLineDirectives(true);
     } else if (arg.starts_with("--shader-model=")) {
@@ -324,7 +338,7 @@ int main(int argc, char** argv) {
   options.SetMSLDiscreteDescriptorSets(msl_discrete_descriptor);
 
   shaderc_spvc::CompilationResult result;
-  shaderc_spvc_status status = shaderc_spvc_status_configuration_error;
+  shaderc_spvc_status status;
 
   if (output_language == "glsl") {
     status = context.InitializeForGlsl((const uint32_t*)input.data(),

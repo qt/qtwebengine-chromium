@@ -132,7 +132,9 @@ angle::Result TextureNULL::setStorageExternalMemory(const gl::Context *context,
                                                     GLenum internalFormat,
                                                     const gl::Extents &size,
                                                     gl::MemoryObject *memoryObject,
-                                                    GLuint64 offset)
+                                                    GLuint64 offset,
+                                                    GLbitfield createFlags,
+                                                    GLbitfield usageFlags)
 {
     return angle::Result::Continue;
 }
@@ -174,7 +176,7 @@ angle::Result TextureNULL::releaseTexImage(const gl::Context *context)
 
 angle::Result TextureNULL::syncState(const gl::Context *context,
                                      const gl::Texture::DirtyBits &dirtyBits,
-                                     gl::TextureCommand source)
+                                     gl::Command source)
 {
     return angle::Result::Continue;
 }

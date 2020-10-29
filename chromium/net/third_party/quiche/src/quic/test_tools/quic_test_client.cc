@@ -423,9 +423,7 @@ ssize_t QuicTestClient::SendRequestAndRstTogether(const std::string& uri) {
 
   QuicStreamId stream_id = GetNthClientInitiatedBidirectionalStreamId(
       session->transport_version(), 0);
-  QuicStream* stream = session->GetOrCreateStream(stream_id);
-  session->ResetStream(stream_id, QUIC_STREAM_CANCELLED,
-                       stream->stream_bytes_written());
+  session->ResetStream(stream_id, QUIC_STREAM_CANCELLED);
   return ret;
 }
 
@@ -607,10 +605,6 @@ QuicErrorCode QuicTestClient::connection_error() {
   return client()->connection_error();
 }
 
-MockableQuicClient* QuicTestClient::client() {
-  return client_.get();
-}
-
 const std::string& QuicTestClient::cert_common_name() const {
   return reinterpret_cast<RecordingProofVerifier*>(client_->proof_verifier())
       ->common_name();
@@ -638,7 +632,10 @@ bool QuicTestClient::connected() const {
 }
 
 void QuicTestClient::Connect() {
-  DCHECK(!connected());
+  if (connected()) {
+    QUIC_BUG << "Cannot connect already-connected client";
+    return;
+  }
   if (!connect_attempted_) {
     client_->Initialize();
   }

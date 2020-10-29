@@ -213,6 +213,30 @@ Instruction* IRContext::KillInst(Instruction* inst) {
   return next_instruction;
 }
 
+void IRContext::KillNonSemanticInfo(Instruction* inst) {
+  if (!inst->HasResultId()) return;
+  std::vector<Instruction*> work_list;
+  std::vector<Instruction*> to_kill;
+  std::unordered_set<Instruction*> seen;
+  work_list.push_back(inst);
+
+  while (!work_list.empty()) {
+    auto* i = work_list.back();
+    work_list.pop_back();
+    get_def_use_mgr()->ForEachUser(
+        i, [&work_list, &to_kill, &seen](Instruction* user) {
+          if (user->IsNonSemanticInstruction() && seen.insert(user).second) {
+            work_list.push_back(user);
+            to_kill.push_back(user);
+          }
+        });
+  }
+
+  for (auto* dead : to_kill) {
+    KillInst(dead);
+  }
+}
+
 bool IRContext::KillDef(uint32_t id) {
   Instruction* def = get_def_use_mgr()->GetDef(id);
   if (def != nullptr) {
@@ -220,13 +244,6 @@ bool IRContext::KillDef(uint32_t id) {
     return true;
   }
   return false;
-}
-
-void IRContext::KillDebugDeclareInsts(Function* fn) {
-  fn->ForEachInst([this](Instruction* inst) {
-    if (inst->GetOpenCL100DebugOpcode() == OpenCLDebugInfo100DebugDeclare)
-      KillInst(inst);
-  });
 }
 
 bool IRContext::ReplaceAllUsesWith(uint32_t before, uint32_t after) {
@@ -355,6 +372,9 @@ void IRContext::ForgetUses(Instruction* inst) {
       get_decoration_mgr()->RemoveDecoration(inst);
     }
   }
+  if (AreAnalysesValid(kAnalysisDebugInfo)) {
+    get_debug_info_mgr()->ClearDebugInfo(inst);
+  }
   RemoveFromIdToName(inst);
 }
 
@@ -366,6 +386,9 @@ void IRContext::AnalyzeUses(Instruction* inst) {
     if (inst->IsDecoration()) {
       get_decoration_mgr()->AddDecoration(inst);
     }
+  }
+  if (AreAnalysesValid(kAnalysisDebugInfo)) {
+    get_debug_info_mgr()->AnalyzeDebugInst(inst);
   }
   if (id_to_name_ &&
       (inst->opcode() == SpvOpName || inst->opcode() == SpvOpMemberName)) {
@@ -424,10 +447,6 @@ void IRContext::KillOperandFromDebugInstructions(Instruction* inst) {
       }
     }
   }
-  // Notice that we do not need anythings to do for local variables.
-  // DebugLocalVariable does not have an OpVariable operand. Instead,
-  // DebugDeclare/DebugValue has an OpVariable operand for a local
-  // variable. The function inlining pass handles it properly.
 }
 
 void IRContext::AddCombinatorsForCapability(uint32_t capability) {

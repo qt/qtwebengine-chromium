@@ -14,14 +14,17 @@
 
 #include "dawn_native/Queue.h"
 
+#include "common/Constants.h"
 #include "dawn_native/Buffer.h"
 #include "dawn_native/CommandBuffer.h"
+#include "dawn_native/CommandValidation.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/DynamicUploader.h"
 #include "dawn_native/ErrorScope.h"
 #include "dawn_native/ErrorScopeTracker.h"
 #include "dawn_native/Fence.h"
 #include "dawn_native/FenceSignalTracker.h"
+#include "dawn_native/QuerySet.h"
 #include "dawn_native/Texture.h"
 #include "dawn_platform/DawnPlatform.h"
 #include "dawn_platform/tracing/TraceEvent.h"
@@ -49,24 +52,11 @@ namespace dawn_native {
     }
 
     void QueueBase::Submit(uint32_t commandCount, CommandBufferBase* const* commands) {
-        DeviceBase* device = GetDevice();
-        if (device->ConsumedError(device->ValidateIsAlive())) {
-            // If device is lost, don't let any commands be submitted
-            return;
-        }
+        SubmitInternal(commandCount, commands);
 
-        TRACE_EVENT0(device->GetPlatform(), General, "Queue::Submit");
-        if (device->IsValidationEnabled() &&
-            device->ConsumedError(ValidateSubmit(commandCount, commands))) {
-            return;
+        for (uint32_t i = 0; i < commandCount; ++i) {
+            commands[i]->Destroy();
         }
-        ASSERT(!IsError());
-
-        if (device->ConsumedError(SubmitImpl(commandCount, commands))) {
-            return;
-        }
-        device->GetErrorScopeTracker()->TrackUntilLastSubmitComplete(
-            device->GetCurrentErrorScope());
     }
 
     void QueueBase::Signal(Fence* fence, uint64_t signalValue) {
@@ -121,13 +111,45 @@ namespace dawn_native {
 
         UploadHandle uploadHandle;
         DAWN_TRY_ASSIGN(uploadHandle, device->GetDynamicUploader()->Allocate(
-                                          size, device->GetPendingCommandSerial()));
+                                          size, device->GetPendingCommandSerial(),
+                                          kCopyBufferToBufferOffsetAlignment));
         ASSERT(uploadHandle.mappedBuffer != nullptr);
 
         memcpy(uploadHandle.mappedBuffer, data, size);
 
         return device->CopyFromStagingToBuffer(uploadHandle.stagingBuffer, uploadHandle.startOffset,
                                                buffer, bufferOffset, size);
+    }
+
+    void QueueBase::WriteTexture(const TextureCopyView* destination,
+                                 const void* data,
+                                 size_t dataSize,
+                                 const TextureDataLayout* dataLayout,
+                                 const Extent3D* writeSize) {
+        GetDevice()->ConsumedError(
+            WriteTextureInternal(destination, data, dataSize, dataLayout, writeSize));
+    }
+
+    MaybeError QueueBase::WriteTextureInternal(const TextureCopyView* destination,
+                                               const void* data,
+                                               size_t dataSize,
+                                               const TextureDataLayout* dataLayout,
+                                               const Extent3D* writeSize) {
+        DAWN_TRY(ValidateWriteTexture(destination, dataSize, dataLayout, writeSize));
+
+        if (writeSize->width == 0 || writeSize->height == 0 || writeSize->depth == 0) {
+            return {};
+        }
+
+        return WriteTextureImpl(*destination, data, *dataLayout, *writeSize);
+    }
+
+    MaybeError QueueBase::WriteTextureImpl(const TextureCopyView& destination,
+                                           const void* data,
+                                           const TextureDataLayout& dataLayout,
+                                           const Extent3D& writeSize) {
+        // TODO(tommek@google.com): This should be implemented.
+        return {};
     }
 
     MaybeError QueueBase::ValidateSubmit(uint32_t commandCount,
@@ -137,6 +159,7 @@ namespace dawn_native {
 
         for (uint32_t i = 0; i < commandCount; ++i) {
             DAWN_TRY(GetDevice()->ValidateObject(commands[i]));
+            DAWN_TRY(commands[i]->ValidateCanUseInSubmitNow());
 
             const CommandBufferResourceUsage& usages = commands[i]->GetResourceUsages();
 
@@ -154,6 +177,9 @@ namespace dawn_native {
             }
             for (const TextureBase* texture : usages.topLevelTextures) {
                 DAWN_TRY(texture->ValidateCanUseInSubmitNow());
+            }
+            for (const QuerySetBase* querySet : usages.usedQuerySets) {
+                DAWN_TRY(querySet->ValidateCanUseInSubmitNow());
             }
         }
 
@@ -208,7 +234,102 @@ namespace dawn_native {
             return DAWN_VALIDATION_ERROR("Buffer needs the CopyDst usage bit");
         }
 
-        return buffer->ValidateCanUseOnQueueNow();
+        DAWN_TRY(buffer->ValidateCanUseOnQueueNow());
+
+        return {};
     }
 
+    MaybeError QueueBase::ValidateWriteTexture(const TextureCopyView* destination,
+                                               size_t dataSize,
+                                               const TextureDataLayout* dataLayout,
+                                               const Extent3D* writeSize) const {
+        DAWN_TRY(GetDevice()->ValidateIsAlive());
+        DAWN_TRY(GetDevice()->ValidateObject(this));
+        DAWN_TRY(GetDevice()->ValidateObject(destination->texture));
+
+        DAWN_TRY(ValidateTextureCopyView(GetDevice(), *destination));
+
+        if (dataLayout->offset > dataSize) {
+            return DAWN_VALIDATION_ERROR("Queue::WriteTexture out of range");
+        }
+
+        if (!(destination->texture->GetUsage() & wgpu::TextureUsage::CopyDst)) {
+            return DAWN_VALIDATION_ERROR("Texture needs the CopyDst usage bit");
+        }
+
+        if (destination->texture->GetSampleCount() > 1) {
+            return DAWN_VALIDATION_ERROR("The sample count of textures must be 1");
+        }
+
+        // We validate texture copy range before validating linear texture data,
+        // because in the latter we divide copyExtent.width by blockWidth and
+        // copyExtent.height by blockHeight while the divisibility conditions are
+        // checked in validating texture copy range.
+        DAWN_TRY(ValidateTextureCopyRange(*destination, *writeSize));
+        DAWN_TRY(ValidateBufferToTextureCopyRestrictions(*destination));
+        DAWN_TRY(ValidateLinearTextureData(
+            *dataLayout, dataSize,
+            destination->texture->GetFormat().GetTexelBlockInfo(destination->aspect), *writeSize));
+
+        DAWN_TRY(destination->texture->ValidateCanUseInSubmitNow());
+
+        return {};
+    }
+
+    void QueueBase::SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands) {
+        DeviceBase* device = GetDevice();
+        if (device->ConsumedError(device->ValidateIsAlive())) {
+            // If device is lost, don't let any commands be submitted
+            return;
+        }
+
+        TRACE_EVENT0(device->GetPlatform(), General, "Queue::Submit");
+        if (device->IsValidationEnabled() &&
+            device->ConsumedError(ValidateSubmit(commandCount, commands))) {
+            return;
+        }
+        ASSERT(!IsError());
+
+        if (device->ConsumedError(SubmitImpl(commandCount, commands))) {
+            return;
+        }
+
+        device->GetErrorScopeTracker()->TrackUntilLastSubmitComplete(
+            device->GetCurrentErrorScope());
+    }
+
+    void CopyTextureData(uint8_t* dstPointer,
+                         const uint8_t* srcPointer,
+                         uint32_t depth,
+                         uint32_t rowsPerImageInBlock,
+                         uint64_t imageAdditionalStride,
+                         uint32_t actualBytesPerRow,
+                         uint32_t dstBytesPerRow,
+                         uint32_t srcBytesPerRow) {
+        bool copyWholeLayer =
+            actualBytesPerRow == dstBytesPerRow && dstBytesPerRow == srcBytesPerRow;
+        bool copyWholeData = copyWholeLayer && imageAdditionalStride == 0;
+
+        if (!copyWholeLayer) {  // copy row by row
+            for (uint32_t d = 0; d < depth; ++d) {
+                for (uint32_t h = 0; h < rowsPerImageInBlock; ++h) {
+                    memcpy(dstPointer, srcPointer, actualBytesPerRow);
+                    dstPointer += dstBytesPerRow;
+                    srcPointer += srcBytesPerRow;
+                }
+                srcPointer += imageAdditionalStride;
+            }
+        } else {
+            uint64_t layerSize = uint64_t(rowsPerImageInBlock) * actualBytesPerRow;
+            if (!copyWholeData) {  // copy layer by layer
+                for (uint32_t d = 0; d < depth; ++d) {
+                    memcpy(dstPointer, srcPointer, layerSize);
+                    dstPointer += layerSize;
+                    srcPointer += layerSize + imageAdditionalStride;
+                }
+            } else {  // do a single copy
+                memcpy(dstPointer, srcPointer, layerSize * depth);
+            }
+        }
+    }
 }  // namespace dawn_native

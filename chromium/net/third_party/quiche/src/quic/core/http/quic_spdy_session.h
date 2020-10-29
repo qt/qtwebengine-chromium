@@ -22,6 +22,8 @@
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_receive_stream.h"
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_send_stream.h"
 #include "net/third_party/quiche/src/quic/core/quic_session.h"
+#include "net/third_party/quiche/src/quic/core/quic_time.h"
+#include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
@@ -128,6 +130,9 @@ class QUIC_EXPORT_PRIVATE Http3DebugVisitor {
       QuicStreamId
       /*push_id*/,
       const spdy::SpdyHeaderBlock& /*header_block*/) {}
+
+  // 0-RTT related events.
+  virtual void OnSettingsFrameResumed(const SettingsFrame& /*frame*/) {}
 };
 
 // A QUIC session for HTTP.
@@ -204,8 +209,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
       QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
 
   // Writes an HTTP/2 PRIORITY frame the to peer. Returns the size in bytes of
-  // the resulting PRIORITY frame for QUIC_VERSION_43 and above. Otherwise, does
-  // nothing and returns 0.
+  // the resulting PRIORITY frame.
   size_t WritePriority(QuicStreamId id,
                        QuicStreamId parent_stream_id,
                        int weight,
@@ -214,9 +218,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Writes an HTTP/3 PRIORITY_UPDATE frame to the peer.
   void WriteHttp3PriorityUpdate(const PriorityUpdateFrame& priority_update);
 
-  // Process received HTTP/3 GOAWAY frame. This method should only be called on
-  // the client side.
-  virtual void OnHttp3GoAway(QuicStreamId stream_id);
+  // Process received HTTP/3 GOAWAY frame.  When sent from server to client,
+  // |id| is a stream ID.  When sent from client to server, |id| is a push ID.
+  virtual void OnHttp3GoAway(uint64_t id);
 
   // Send GOAWAY if the peer is blocked on the implementation max.
   bool OnStreamsBlockedFrame(const QuicStreamsBlockedFrame& frame) override;
@@ -349,7 +353,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   Http3DebugVisitor* debug_visitor() { return debug_visitor_; }
 
-  bool http3_goaway_received() const { return http3_goaway_received_; }
+  bool http3_goaway_received() const {
+    return last_received_http3_goaway_id_.has_value();
+  }
 
   bool http3_goaway_sent() const { return http3_goaway_sent_; }
 
@@ -531,21 +537,12 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Data about the stream whose headers are being processed.
   QuicStreamId stream_id_;
   QuicStreamId promised_stream_id_;
-  bool fin_;
   size_t frame_len_;
+  bool fin_;
 
   spdy::SpdyFramer spdy_framer_;
   http2::Http2DecoderAdapter h2_deframer_;
   std::unique_ptr<SpdyFramerVisitor> spdy_framer_visitor_;
-
-  // Used in Google QUIC only.  Set every time SETTINGS_ENABLE_PUSH is received.
-  // Defaults to true.
-  bool server_push_enabled_;
-
-  // Used in IETF QUIC only.  Defaults to false.
-  // Server push is enabled for a server by calling EnableServerPush().
-  // Server push is enabled for a client by calling SetMaxPushId().
-  bool ietf_server_push_enabled_;
 
   // Used in IETF QUIC only.
   // For a server:
@@ -560,16 +557,30 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Once set, never goes back to unset.
   quiche::QuicheOptional<PushId> max_push_id_;
 
+  // Not owned by the session.
+  Http3DebugVisitor* debug_visitor_;
+
+  // Priority values received in PRIORITY_UPDATE frames for streams that are not
+  // open yet.
+  QuicHashMap<QuicStreamId, int> buffered_stream_priorities_;
+
   // An integer used for live check. The indicator is assigned a value in
   // constructor. As long as it is not the assigned value, that would indicate
   // an use-after-free.
   int32_t destruction_indicator_;
 
-  // Not owned by the session.
-  Http3DebugVisitor* debug_visitor_;
+  // Used in Google QUIC only.  Set every time SETTINGS_ENABLE_PUSH is received.
+  // Defaults to true.
+  bool server_push_enabled_;
 
-  // If the endpoint has received HTTP/3 GOAWAY frame.
-  bool http3_goaway_received_;
+  // Used in IETF QUIC only.  Defaults to false.
+  // Server push is enabled for a server by calling EnableServerPush().
+  // Server push is enabled for a client by calling SetMaxPushId().
+  bool ietf_server_push_enabled_;
+
+  // The identifier in the most recently received GOAWAY frame.  Unset if no
+  // GOAWAY frame has been received yet.
+  quiche::QuicheOptional<uint64_t> last_received_http3_goaway_id_;
   // If the endpoint has sent HTTP/3 GOAWAY frame.
   bool http3_goaway_sent_;
 
@@ -577,10 +588,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // has been sent, in which case |max_push_id_| has the value sent in the most
   // recent MAX_PUSH_ID frame.  Once true, never goes back to false.
   bool http3_max_push_id_sent_;
-
-  // Priority values received in PRIORITY_UPDATE frames for streams that are not
-  // open yet.
-  QuicHashMap<QuicStreamId, int> buffered_stream_priorities_;
 };
 
 }  // namespace quic

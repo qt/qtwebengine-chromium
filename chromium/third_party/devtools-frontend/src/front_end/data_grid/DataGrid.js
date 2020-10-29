@@ -22,6 +22,8 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
@@ -890,8 +892,10 @@ export class DataGridImpl extends Common.ObjectWrapper.ObjectWrapper {
   }
 
   _resetColumnWeights() {
-    for (let i = 0; i < this._columnsArray.length; ++i) {
-      const column = this._columnsArray[i];
+    for (const column of this._columnsArray) {
+      if (!column.defaultWeight) {
+        continue;
+      }
       column.weight = column.defaultWeight;
     }
     this._applyColumnWeights();
@@ -1944,10 +1948,10 @@ export class DataGridNode extends Common.ObjectWrapper.ObjectWrapper {
 
   /**
    * @param {string} className
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   _createTDWithClass(className) {
-    const cell = document.createElement('td');
+    const cell = /** @type {!HTMLElement} */ (document.createElement('td'));
     if (className) {
       cell.className = className;
     }
@@ -1960,7 +1964,7 @@ export class DataGridNode extends Common.ObjectWrapper.ObjectWrapper {
 
   /**
    * @param {string} columnId
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   createTD(columnId) {
     const cell = this._createTDWithClass(columnId + '-column');
@@ -1983,7 +1987,7 @@ export class DataGridNode extends Common.ObjectWrapper.ObjectWrapper {
 
   /**
    * @param {string} columnId
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   createCell(columnId) {
     const cell = this.createTD(columnId);
@@ -2568,7 +2572,8 @@ export let Parameters;
  *   disclosure: (boolean|undefined),
  *   weight: (number|undefined),
  *   allowInSortByEvenWhenHidden: (boolean|undefined),
- *   dataType: (?DataType|undefined)
+ *   dataType: (?DataType|undefined),
+ *   defaultWeight: (number|undefined)
  * }}
  */
 export let ColumnDescriptor;

@@ -10,6 +10,9 @@
 
 #include "libANGLE/renderer/vulkan/vk_internal_shaders_autogen.h"
 
+#define USE_SYSTEM_ZLIB
+#include "compression_utils_portable.h"
+
 namespace rx
 {
 namespace vk
@@ -44,18 +47,6 @@ namespace
 #include "libANGLE/renderer/vulkan/shaders/gen/BlitResolveStencilNoExport.comp.00000001.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/BlitResolveStencilNoExport.comp.00000002.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/BlitResolveStencilNoExport.comp.00000003.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000000.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000001.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000002.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000003.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000004.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000005.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000006.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000007.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000008.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.00000009.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.0000000A.inc"
-#include "libANGLE/renderer/vulkan/shaders/gen/BufferUtils.comp.0000000B.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertIndex.comp.00000000.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertIndex.comp.00000001.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertIndex.comp.00000002.inc"
@@ -73,6 +64,16 @@ namespace
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertVertex.comp.00000006.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ConvertVertex.comp.00000007.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/FullScreenQuad.vert.00000000.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000000.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000001.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000002.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000003.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000004.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000005.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000006.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000007.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000008.inc"
+#include "libANGLE/renderer/vulkan/shaders/gen/GenerateMipmap.comp.00000009.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ImageClear.frag.00000000.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ImageClear.frag.00000001.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/ImageClear.frag.00000002.inc"
@@ -133,14 +134,14 @@ namespace
 #include "libANGLE/renderer/vulkan/shaders/gen/OverlayDraw.comp.00000000.inc"
 #include "libANGLE/renderer/vulkan/shaders/gen/OverlayDraw.comp.00000001.inc"
 
-// This is SPIR-V binary blob and the size.
-struct ShaderBlob
+// This is compressed SPIR-V binary blob and size
+struct CompressedShaderBlob
 {
-    const uint32_t *code;
-    size_t codeSize;
+    const uint8_t *code;
+    uint32_t size;
 };
 
-constexpr ShaderBlob kBlitResolve_frag_shaders[] = {
+constexpr CompressedShaderBlob kBlitResolve_frag_shaders[] = {
     {kBlitResolve_frag_00000000, sizeof(kBlitResolve_frag_00000000)},
     {kBlitResolve_frag_00000001, sizeof(kBlitResolve_frag_00000001)},
     {kBlitResolve_frag_00000002, sizeof(kBlitResolve_frag_00000002)},
@@ -166,33 +167,19 @@ constexpr ShaderBlob kBlitResolve_frag_shaders[] = {
     {kBlitResolve_frag_00000016, sizeof(kBlitResolve_frag_00000016)},
     {kBlitResolve_frag_00000017, sizeof(kBlitResolve_frag_00000017)},
 };
-constexpr ShaderBlob kBlitResolveStencilNoExport_comp_shaders[] = {
+constexpr CompressedShaderBlob kBlitResolveStencilNoExport_comp_shaders[] = {
     {kBlitResolveStencilNoExport_comp_00000000, sizeof(kBlitResolveStencilNoExport_comp_00000000)},
     {kBlitResolveStencilNoExport_comp_00000001, sizeof(kBlitResolveStencilNoExport_comp_00000001)},
     {kBlitResolveStencilNoExport_comp_00000002, sizeof(kBlitResolveStencilNoExport_comp_00000002)},
     {kBlitResolveStencilNoExport_comp_00000003, sizeof(kBlitResolveStencilNoExport_comp_00000003)},
 };
-constexpr ShaderBlob kBufferUtils_comp_shaders[] = {
-    {kBufferUtils_comp_00000000, sizeof(kBufferUtils_comp_00000000)},
-    {kBufferUtils_comp_00000001, sizeof(kBufferUtils_comp_00000001)},
-    {kBufferUtils_comp_00000002, sizeof(kBufferUtils_comp_00000002)},
-    {kBufferUtils_comp_00000003, sizeof(kBufferUtils_comp_00000003)},
-    {kBufferUtils_comp_00000004, sizeof(kBufferUtils_comp_00000004)},
-    {kBufferUtils_comp_00000005, sizeof(kBufferUtils_comp_00000005)},
-    {kBufferUtils_comp_00000006, sizeof(kBufferUtils_comp_00000006)},
-    {kBufferUtils_comp_00000007, sizeof(kBufferUtils_comp_00000007)},
-    {kBufferUtils_comp_00000008, sizeof(kBufferUtils_comp_00000008)},
-    {kBufferUtils_comp_00000009, sizeof(kBufferUtils_comp_00000009)},
-    {kBufferUtils_comp_0000000A, sizeof(kBufferUtils_comp_0000000A)},
-    {kBufferUtils_comp_0000000B, sizeof(kBufferUtils_comp_0000000B)},
-};
-constexpr ShaderBlob kConvertIndex_comp_shaders[] = {
+constexpr CompressedShaderBlob kConvertIndex_comp_shaders[] = {
     {kConvertIndex_comp_00000000, sizeof(kConvertIndex_comp_00000000)},
     {kConvertIndex_comp_00000001, sizeof(kConvertIndex_comp_00000001)},
     {kConvertIndex_comp_00000002, sizeof(kConvertIndex_comp_00000002)},
     {kConvertIndex_comp_00000003, sizeof(kConvertIndex_comp_00000003)},
 };
-constexpr ShaderBlob kConvertIndexIndirectLineLoop_comp_shaders[] = {
+constexpr CompressedShaderBlob kConvertIndexIndirectLineLoop_comp_shaders[] = {
     {kConvertIndexIndirectLineLoop_comp_00000000,
      sizeof(kConvertIndexIndirectLineLoop_comp_00000000)},
     {kConvertIndexIndirectLineLoop_comp_00000001,
@@ -200,10 +187,10 @@ constexpr ShaderBlob kConvertIndexIndirectLineLoop_comp_shaders[] = {
     {kConvertIndexIndirectLineLoop_comp_00000002,
      sizeof(kConvertIndexIndirectLineLoop_comp_00000002)},
 };
-constexpr ShaderBlob kConvertIndirectLineLoop_comp_shaders[] = {
+constexpr CompressedShaderBlob kConvertIndirectLineLoop_comp_shaders[] = {
     {kConvertIndirectLineLoop_comp_00000000, sizeof(kConvertIndirectLineLoop_comp_00000000)},
 };
-constexpr ShaderBlob kConvertVertex_comp_shaders[] = {
+constexpr CompressedShaderBlob kConvertVertex_comp_shaders[] = {
     {kConvertVertex_comp_00000000, sizeof(kConvertVertex_comp_00000000)},
     {kConvertVertex_comp_00000001, sizeof(kConvertVertex_comp_00000001)},
     {kConvertVertex_comp_00000002, sizeof(kConvertVertex_comp_00000002)},
@@ -213,10 +200,22 @@ constexpr ShaderBlob kConvertVertex_comp_shaders[] = {
     {kConvertVertex_comp_00000006, sizeof(kConvertVertex_comp_00000006)},
     {kConvertVertex_comp_00000007, sizeof(kConvertVertex_comp_00000007)},
 };
-constexpr ShaderBlob kFullScreenQuad_vert_shaders[] = {
+constexpr CompressedShaderBlob kFullScreenQuad_vert_shaders[] = {
     {kFullScreenQuad_vert_00000000, sizeof(kFullScreenQuad_vert_00000000)},
 };
-constexpr ShaderBlob kImageClear_frag_shaders[] = {
+constexpr CompressedShaderBlob kGenerateMipmap_comp_shaders[] = {
+    {kGenerateMipmap_comp_00000000, sizeof(kGenerateMipmap_comp_00000000)},
+    {kGenerateMipmap_comp_00000001, sizeof(kGenerateMipmap_comp_00000001)},
+    {kGenerateMipmap_comp_00000002, sizeof(kGenerateMipmap_comp_00000002)},
+    {kGenerateMipmap_comp_00000003, sizeof(kGenerateMipmap_comp_00000003)},
+    {kGenerateMipmap_comp_00000004, sizeof(kGenerateMipmap_comp_00000004)},
+    {kGenerateMipmap_comp_00000005, sizeof(kGenerateMipmap_comp_00000005)},
+    {kGenerateMipmap_comp_00000006, sizeof(kGenerateMipmap_comp_00000006)},
+    {kGenerateMipmap_comp_00000007, sizeof(kGenerateMipmap_comp_00000007)},
+    {kGenerateMipmap_comp_00000008, sizeof(kGenerateMipmap_comp_00000008)},
+    {kGenerateMipmap_comp_00000009, sizeof(kGenerateMipmap_comp_00000009)},
+};
+constexpr CompressedShaderBlob kImageClear_frag_shaders[] = {
     {kImageClear_frag_00000000, sizeof(kImageClear_frag_00000000)},
     {kImageClear_frag_00000001, sizeof(kImageClear_frag_00000001)},
     {kImageClear_frag_00000002, sizeof(kImageClear_frag_00000002)},
@@ -242,7 +241,7 @@ constexpr ShaderBlob kImageClear_frag_shaders[] = {
     {kImageClear_frag_00000016, sizeof(kImageClear_frag_00000016)},
     {kImageClear_frag_00000017, sizeof(kImageClear_frag_00000017)},
 };
-constexpr ShaderBlob kImageCopy_frag_shaders[] = {
+constexpr CompressedShaderBlob kImageCopy_frag_shaders[] = {
     {kImageCopy_frag_00000000, sizeof(kImageCopy_frag_00000000)},
     {kImageCopy_frag_00000001, sizeof(kImageCopy_frag_00000001)},
     {kImageCopy_frag_00000002, sizeof(kImageCopy_frag_00000002)},
@@ -287,7 +286,7 @@ constexpr ShaderBlob kImageCopy_frag_shaders[] = {
     {kImageCopy_frag_00000029, sizeof(kImageCopy_frag_00000029)},
     {kImageCopy_frag_0000002A, sizeof(kImageCopy_frag_0000002A)},
 };
-constexpr ShaderBlob kOverlayCull_comp_shaders[] = {
+constexpr CompressedShaderBlob kOverlayCull_comp_shaders[] = {
     {kOverlayCull_comp_00000000, sizeof(kOverlayCull_comp_00000000)},
     {kOverlayCull_comp_00000001, sizeof(kOverlayCull_comp_00000001)},
     {kOverlayCull_comp_00000002, sizeof(kOverlayCull_comp_00000002)},
@@ -295,14 +294,14 @@ constexpr ShaderBlob kOverlayCull_comp_shaders[] = {
     {kOverlayCull_comp_00000004, sizeof(kOverlayCull_comp_00000004)},
     {kOverlayCull_comp_00000005, sizeof(kOverlayCull_comp_00000005)},
 };
-constexpr ShaderBlob kOverlayDraw_comp_shaders[] = {
+constexpr CompressedShaderBlob kOverlayDraw_comp_shaders[] = {
     {kOverlayDraw_comp_00000000, sizeof(kOverlayDraw_comp_00000000)},
     {kOverlayDraw_comp_00000001, sizeof(kOverlayDraw_comp_00000001)},
 };
 
 angle::Result GetShader(Context *context,
                         RefCounted<ShaderAndSerial> *shaders,
-                        const ShaderBlob *shaderBlobs,
+                        const CompressedShaderBlob *compressedShaderBlobs,
                         size_t shadersCount,
                         uint32_t shaderFlags,
                         RefCounted<ShaderAndSerial> **shaderOut)
@@ -317,10 +316,25 @@ angle::Result GetShader(Context *context,
     }
 
     // Create shader lazily. Access will need to be locked for multi-threading.
-    const ShaderBlob &shaderCode = shaderBlobs[shaderFlags];
-    ASSERT(shaderCode.code != nullptr);
+    const CompressedShaderBlob &compressedShaderCode = compressedShaderBlobs[shaderFlags];
+    ASSERT(compressedShaderCode.code != nullptr);
 
-    return InitShaderAndSerial(context, &shader.get(), shaderCode.code, shaderCode.codeSize);
+    uLong uncompressedSize = zlib_internal::GetGzipUncompressedSize(compressedShaderCode.code,
+                                                                    compressedShaderCode.size);
+    std::vector<uint32_t> shaderCode((uncompressedSize + 3) / 4, 0);
+
+    // Note: we assume a little-endian environment throughout ANGLE.
+    int zResult = zlib_internal::GzipUncompressHelper(
+        reinterpret_cast<uint8_t *>(shaderCode.data()), &uncompressedSize,
+        compressedShaderCode.code, compressedShaderCode.size);
+
+    if (zResult != Z_OK)
+    {
+        ERR() << "Failure to decompressed internal shader: " << zResult << "\n";
+        return angle::Result::Stop;
+    }
+
+    return InitShaderAndSerial(context, &shader.get(), shaderCode.data(), shaderCode.size() * 4);
 }
 }  // anonymous namespace
 
@@ -335,10 +349,6 @@ void ShaderLibrary::destroy(VkDevice device)
         shader.get().destroy(device);
     }
     for (RefCounted<ShaderAndSerial> &shader : mBlitResolveStencilNoExport_comp_shaders)
-    {
-        shader.get().destroy(device);
-    }
-    for (RefCounted<ShaderAndSerial> &shader : mBufferUtils_comp_shaders)
     {
         shader.get().destroy(device);
     }
@@ -359,6 +369,10 @@ void ShaderLibrary::destroy(VkDevice device)
         shader.get().destroy(device);
     }
     for (RefCounted<ShaderAndSerial> &shader : mFullScreenQuad_vert_shaders)
+    {
+        shader.get().destroy(device);
+    }
+    for (RefCounted<ShaderAndSerial> &shader : mGenerateMipmap_comp_shaders)
     {
         shader.get().destroy(device);
     }
@@ -396,14 +410,6 @@ angle::Result ShaderLibrary::getBlitResolveStencilNoExport_comp(
     return GetShader(context, mBlitResolveStencilNoExport_comp_shaders,
                      kBlitResolveStencilNoExport_comp_shaders,
                      ArraySize(kBlitResolveStencilNoExport_comp_shaders), shaderFlags, shaderOut);
-}
-
-angle::Result ShaderLibrary::getBufferUtils_comp(Context *context,
-                                                 uint32_t shaderFlags,
-                                                 RefCounted<ShaderAndSerial> **shaderOut)
-{
-    return GetShader(context, mBufferUtils_comp_shaders, kBufferUtils_comp_shaders,
-                     ArraySize(kBufferUtils_comp_shaders), shaderFlags, shaderOut);
 }
 
 angle::Result ShaderLibrary::getConvertIndex_comp(Context *context,
@@ -448,6 +454,14 @@ angle::Result ShaderLibrary::getFullScreenQuad_vert(Context *context,
 {
     return GetShader(context, mFullScreenQuad_vert_shaders, kFullScreenQuad_vert_shaders,
                      ArraySize(kFullScreenQuad_vert_shaders), shaderFlags, shaderOut);
+}
+
+angle::Result ShaderLibrary::getGenerateMipmap_comp(Context *context,
+                                                    uint32_t shaderFlags,
+                                                    RefCounted<ShaderAndSerial> **shaderOut)
+{
+    return GetShader(context, mGenerateMipmap_comp_shaders, kGenerateMipmap_comp_shaders,
+                     ArraySize(kGenerateMipmap_comp_shaders), shaderFlags, shaderOut);
 }
 
 angle::Result ShaderLibrary::getImageClear_frag(Context *context,

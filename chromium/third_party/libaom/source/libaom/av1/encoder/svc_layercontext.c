@@ -28,13 +28,15 @@ void av1_init_layer_context(AV1_COMP *const cpi) {
   int mi_cols = cpi->common.mi_params.mi_cols;
   svc->base_framerate = 30.0;
   svc->current_superframe = 0;
+  svc->force_zero_mode_spatial_ref = 1;
+  svc->num_encoded_top_layer = 0;
 
   for (int sl = 0; sl < svc->number_spatial_layers; ++sl) {
     for (int tl = 0; tl < svc->number_temporal_layers; ++tl) {
       int layer = LAYER_IDS_TO_IDX(sl, tl, svc->number_temporal_layers);
       LAYER_CONTEXT *const lc = &svc->layer_context[layer];
       RATE_CONTROL *const lrc = &lc->rc;
-      lrc->ni_av_qi = oxcf->worst_allowed_q;
+      lrc->ni_av_qi = oxcf->rc_cfg.worst_allowed_q;
       lrc->total_actual_bits = 0;
       lrc->total_target_vs_actual = 0;
       lrc->ni_tot_qi = 0;
@@ -53,7 +55,7 @@ void av1_init_layer_context(AV1_COMP *const cpi) {
       lrc->avg_frame_qindex[INTER_FRAME] = lrc->worst_quality;
       lrc->avg_frame_qindex[KEY_FRAME] = lrc->worst_quality;
       lrc->buffer_level =
-          oxcf->starting_buffer_level_ms * lc->target_bandwidth / 1000;
+          oxcf->rc_cfg.starting_buffer_level_ms * lc->target_bandwidth / 1000;
       lrc->bits_off_target = lrc->buffer_level;
       // Initialize the cyclic refresh parameters. If spatial layers are used
       // (i.e., ss_number_layers > 1), these need to be updated per spatial
@@ -77,6 +79,11 @@ void av1_init_layer_context(AV1_COMP *const cpi) {
         memset(lc->last_coded_q_map, MAXQ, last_coded_q_map_size);
       }
     }
+    svc->downsample_filter_type[sl] = BILINEAR;
+    svc->downsample_filter_phase[sl] = 8;
+  }
+  if (svc->number_spatial_layers == 3) {
+    svc->downsample_filter_type[0] = EIGHTTAP_SMOOTH;
   }
 }
 
@@ -120,6 +127,13 @@ void av1_update_layer_context_change_config(AV1_COMP *const cpi,
   }
 }
 
+/*!\brief Return layer context for current layer.
+ *
+ * \ingroup rate_control
+ * \param[in]       cpi   Top level encoder structure
+ *
+ * \return LAYER_CONTEXT for current layer.
+ */
 static LAYER_CONTEXT *get_layer_context(AV1_COMP *const cpi) {
   return &cpi->svc.layer_context[cpi->svc.spatial_layer_id *
                                      cpi->svc.number_temporal_layers +
@@ -158,15 +172,15 @@ void av1_restore_layer_context(AV1_COMP *const cpi) {
   const int old_frame_to_key = cpi->rc.frames_to_key;
   // Restore layer rate control.
   cpi->rc = lc->rc;
-  cpi->oxcf.target_bandwidth = lc->target_bandwidth;
-  gf_group->index = lc->group_index;
+  cpi->oxcf.rc_cfg.target_bandwidth = lc->target_bandwidth;
+  gf_group->index = 0;
   // Reset the frames_since_key and frames_to_key counters to their values
   // before the layer restore. Keep these defined for the stream (not layer).
   cpi->rc.frames_since_key = old_frame_since_key;
   cpi->rc.frames_to_key = old_frame_to_key;
   // For spatial-svc, allow cyclic-refresh to be applied on the spatial layers,
   // for the base temporal layer.
-  if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ &&
+  if (cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
       svc->number_spatial_layers > 1 && svc->temporal_layer_id == 0) {
     CYCLIC_REFRESH *const cr = cpi->cyclic_refresh;
     swap_ptr(&cr->map, &lc->map);
@@ -180,15 +194,15 @@ void av1_restore_layer_context(AV1_COMP *const cpi) {
   // For each reference (LAST/GOLDEN) set the skip_nonzero_last/gf frame flags.
   // This is to skip testing nonzero-mv for that reference if it was last
   // refreshed (i.e., buffer slot holding that reference was refreshed) on the
-  // previous spatial layer at the same time (current_superframe).
-  if (svc->external_ref_frame_config) {
+  // previous spatial layer(s) at the same time (current_superframe).
+  if (svc->external_ref_frame_config && svc->force_zero_mode_spatial_ref) {
     int ref_frame_idx = svc->ref_idx[LAST_FRAME - 1];
     if (svc->buffer_time_index[ref_frame_idx] == svc->current_superframe &&
-        svc->buffer_spatial_layer[ref_frame_idx] == svc->spatial_layer_id - 1)
+        svc->buffer_spatial_layer[ref_frame_idx] <= svc->spatial_layer_id - 1)
       svc->skip_nonzeromv_last = 1;
     ref_frame_idx = svc->ref_idx[GOLDEN_FRAME - 1];
     if (svc->buffer_time_index[ref_frame_idx] == svc->current_superframe &&
-        svc->buffer_spatial_layer[ref_frame_idx] == svc->spatial_layer_id - 1)
+        svc->buffer_spatial_layer[ref_frame_idx] <= svc->spatial_layer_id - 1)
       svc->skip_nonzeromv_gf = 1;
   }
 }
@@ -199,12 +213,12 @@ void av1_save_layer_context(AV1_COMP *const cpi) {
   const AV1_COMMON *const cm = &cpi->common;
   LAYER_CONTEXT *lc = get_layer_context(cpi);
   lc->rc = cpi->rc;
-  lc->target_bandwidth = (int)cpi->oxcf.target_bandwidth;
+  lc->target_bandwidth = (int)cpi->oxcf.rc_cfg.target_bandwidth;
   lc->group_index = gf_group->index;
   if (svc->spatial_layer_id == 0) svc->base_framerate = cpi->framerate;
   // For spatial-svc, allow cyclic-refresh to be applied on the spatial layers,
   // for the base temporal layer.
-  if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ &&
+  if (cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
       cpi->svc.number_spatial_layers > 1 && svc->temporal_layer_id == 0) {
     CYCLIC_REFRESH *const cr = cpi->cyclic_refresh;
     signed char *temp = lc->map;
@@ -280,7 +294,6 @@ void av1_free_svc_cyclic_refresh(AV1_COMP *const cpi) {
   }
 }
 
-// Reset on key frame: reset counters, references and buffer updates.
 void av1_svc_reset_temporal_layers(AV1_COMP *const cpi, int is_key) {
   SVC *const svc = &cpi->svc;
   LAYER_CONTEXT *lc = NULL;
@@ -294,6 +307,18 @@ void av1_svc_reset_temporal_layers(AV1_COMP *const cpi, int is_key) {
   av1_restore_layer_context(cpi);
 }
 
+/*!\brief Get resolution for current layer.
+ *
+ * \ingroup rate_control
+ * \param[in]       width_org    Original width, unscaled
+ * \param[in]       height_org   Original height, unscaled
+ * \param[in]       num          Numerator for the scale ratio
+ * \param[in]       den          Denominator for the scale ratio
+ * \param[in]       width_out    Output width, scaled for current layer
+ * \param[in]       height_out   Output height, scaled for current layer
+ *
+ * \return Nothing is returned. Instead the scaled width and height are set.
+ */
 static void get_layer_resolution(const int width_org, const int height_org,
                                  const int num, const int den, int *width_out,
                                  int *height_out) {

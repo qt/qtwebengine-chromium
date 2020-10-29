@@ -7,7 +7,7 @@
 
 #include "src/gpu/ccpr/GrStencilAtlasOp.h"
 
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrOpsRenderPass.h"
 #include "src/gpu/GrProgramInfo.h"
@@ -58,15 +58,14 @@ class StencilResolveProcessor::Impl : public GrGLSLGeometryProcessor {
         f->codeAppendf("%s = %s = half4(1);", args.fOutputColor, args.fOutputCoverage);
     }
 
-    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&,
-                 const CoordTransformRange&) override {}
+    void setData(const GrGLSLProgramDataManager&, const GrPrimitiveProcessor&) override {}
 };
 
 GrGLSLPrimitiveProcessor* StencilResolveProcessor::createGLSLInstance(const GrShaderCaps&) const {
     return new Impl();
 }
 
-}
+}  // namespace
 
 std::unique_ptr<GrDrawOp> GrStencilAtlasOp::Make(
         GrRecordingContext* context, sk_sp<const GrCCPerFlushResources> resources,

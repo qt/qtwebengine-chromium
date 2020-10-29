@@ -71,7 +71,6 @@
     "sdk",
     "ui"
   ],
-  "scripts": [],
   "modules": [
     "input.js",
     "input-legacy.js",
@@ -80,5 +79,6 @@
   ],
   "resources": [
     "inputTimeline.css"
-  ]
+  ],
+  "skip_rollup": true
 }

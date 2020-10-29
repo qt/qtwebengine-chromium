@@ -15,6 +15,8 @@
 #include "dawn_native/metal/BufferMTL.h"
 
 #include "common/Math.h"
+#include "dawn_native/CommandBuffer.h"
+#include "dawn_native/metal/CommandRecordingContext.h"
 #include "dawn_native/metal/DeviceMTL.h"
 
 #include <limits>
@@ -29,10 +31,10 @@ namespace dawn_native { namespace metal {
     static constexpr uint32_t kMaxBufferSizeFallback = 1024u * 1024u * 1024u;
 
     // static
-    ResultOrError<Buffer*> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
+    ResultOrError<Ref<Buffer>> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
         Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor));
         DAWN_TRY(buffer->Initialize());
-        return buffer.Detach();
+        return std::move(buffer);
     }
 
     MaybeError Buffer::Initialize() {
@@ -67,6 +69,7 @@ namespace dawn_native { namespace metal {
             if (currentSize > maxBufferSize) {
                 return DAWN_OUT_OF_MEMORY_ERROR("Buffer allocation is too large");
             }
+#if defined(DAWN_PLATFORM_MACOS)
         } else if (@available(macOS 10.12, *)) {
             // |maxBufferLength| isn't always available on older systems. If available, use
             // |recommendedMaxWorkingSetSize| instead. We can probably allocate more than this,
@@ -76,6 +79,7 @@ namespace dawn_native { namespace metal {
             if (currentSize > maxWorkingSetSize) {
                 return DAWN_OUT_OF_MEMORY_ERROR("Buffer allocation is too large");
             }
+#endif
         } else if (currentSize > kMaxBufferSizeFallback) {
             return DAWN_OUT_OF_MEMORY_ERROR("Buffer allocation is too large");
         }
@@ -87,7 +91,9 @@ namespace dawn_native { namespace metal {
         }
 
         if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-            ClearBuffer(BufferBase::ClearValue::NonZero);
+            CommandRecordingContext* commandContext =
+                ToBackend(GetDevice())->GetPendingCommandContext();
+            ClearBuffer(commandContext, uint8_t(1u));
         }
 
         return {};
@@ -101,26 +107,37 @@ namespace dawn_native { namespace metal {
         return mMtlBuffer;
     }
 
-    bool Buffer::IsMapWritable() const {
+    bool Buffer::IsMappableAtCreation() const {
         // TODO(enga): Handle CPU-visible memory on UMA
         return (GetUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) != 0;
     }
 
-    MaybeError Buffer::MapAtCreationImpl(uint8_t** mappedPointer) {
-        *mappedPointer = reinterpret_cast<uint8_t*>([mMtlBuffer contents]);
+    MaybeError Buffer::MapAtCreationImpl() {
+        CommandRecordingContext* commandContext =
+            ToBackend(GetDevice())->GetPendingCommandContext();
+        EnsureDataInitialized(commandContext);
+
         return {};
     }
 
-    MaybeError Buffer::MapReadAsyncImpl(uint32_t serial) {
+    MaybeError Buffer::MapReadAsyncImpl() {
         return {};
     }
 
-    MaybeError Buffer::MapWriteAsyncImpl(uint32_t serial) {
+    MaybeError Buffer::MapWriteAsyncImpl() {
+        return {};
+    }
+
+    MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
+        CommandRecordingContext* commandContext =
+            ToBackend(GetDevice())->GetPendingCommandContext();
+        EnsureDataInitialized(commandContext);
+
         return {};
     }
 
     void* Buffer::GetMappedPointerImpl() {
-        return reinterpret_cast<uint8_t*>([mMtlBuffer contents]);
+        return [mMtlBuffer contents];
     }
 
     void Buffer::UnmapImpl() {
@@ -132,16 +149,65 @@ namespace dawn_native { namespace metal {
         mMtlBuffer = nil;
     }
 
-    void Buffer::ClearBuffer(BufferBase::ClearValue clearValue) {
-        // TODO(jiawei.shao@intel.com): support buffer lazy-initialization to 0.
-        ASSERT(clearValue == BufferBase::ClearValue::NonZero);
-        const uint8_t clearBufferValue = 1;
+    void Buffer::EnsureDataInitialized(CommandRecordingContext* commandContext) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return;
+        }
 
-        Device* device = ToBackend(GetDevice());
-        CommandRecordingContext* commandContext = device->GetPendingCommandContext();
+        InitializeToZero(commandContext);
+    }
+
+    void Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                    uint64_t offset,
+                                                    uint64_t size) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return;
+        }
+
+        if (IsFullBufferRange(offset, size)) {
+            SetIsDataInitialized();
+        } else {
+            InitializeToZero(commandContext);
+        }
+    }
+
+    void Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                    const CopyTextureToBufferCmd* copy) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return;
+        }
+
+        if (IsFullBufferOverwrittenInTextureToBufferCopy(copy)) {
+            SetIsDataInitialized();
+        } else {
+            InitializeToZero(commandContext);
+        }
+    }
+
+    void Buffer::InitializeToZero(CommandRecordingContext* commandContext) {
+        ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse));
+        ASSERT(!IsDataInitialized());
+
+        ClearBuffer(commandContext, uint8_t(0u));
+
+        SetIsDataInitialized();
+        GetDevice()->IncrementLazyClearCountForTesting();
+    }
+
+    void Buffer::ClearBuffer(CommandRecordingContext* commandContext, uint8_t clearValue) {
+        ASSERT(commandContext != nullptr);
         [commandContext->EnsureBlit() fillBuffer:mMtlBuffer
                                            range:NSMakeRange(0, GetSize())
-                                           value:clearBufferValue];
+                                           value:clearValue];
     }
 
 }}  // namespace dawn_native::metal

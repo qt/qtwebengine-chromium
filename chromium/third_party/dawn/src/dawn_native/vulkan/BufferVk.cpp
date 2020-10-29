@@ -14,6 +14,7 @@
 
 #include "dawn_native/vulkan/BufferVk.h"
 
+#include "dawn_native/CommandBuffer.h"
 #include "dawn_native/vulkan/DeviceVk.h"
 #include "dawn_native/vulkan/FencedDeleter.h"
 #include "dawn_native/vulkan/ResourceHeapVk.h"
@@ -116,10 +117,10 @@ namespace dawn_native { namespace vulkan {
     }  // namespace
 
     // static
-    ResultOrError<Buffer*> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
+    ResultOrError<Ref<Buffer>> Buffer::Create(Device* device, const BufferDescriptor* descriptor) {
         Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor));
         DAWN_TRY(buffer->Initialize());
-        return buffer.Detach();
+        return std::move(buffer);
     }
 
     MaybeError Buffer::Initialize() {
@@ -166,7 +167,7 @@ namespace dawn_native { namespace vulkan {
             "vkBindBufferMemory"));
 
         if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
-            ClearBuffer(device->GetPendingRecordingContext(), ClearValue::NonZero);
+            ClearBuffer(device->GetPendingRecordingContext(), 0x01010101);
         }
 
         return {};
@@ -174,14 +175,6 @@ namespace dawn_native { namespace vulkan {
 
     Buffer::~Buffer() {
         DestroyInternal();
-    }
-
-    void Buffer::OnMapReadCommandSerialFinished(uint32_t mapSerial, const void* data) {
-        CallMapReadCallback(mapSerial, WGPUBufferMapAsyncStatus_Success, data, GetSize());
-    }
-
-    void Buffer::OnMapWriteCommandSerialFinished(uint32_t mapSerial, void* data) {
-        CallMapWriteCallback(mapSerial, WGPUBufferMapAsyncStatus_Success, data, GetSize());
     }
 
     VkBuffer Buffer::GetHandle() const {
@@ -242,17 +235,22 @@ namespace dawn_native { namespace vulkan {
         mLastUsage = usage;
     }
 
-    bool Buffer::IsMapWritable() const {
+    bool Buffer::IsMappableAtCreation() const {
         // TODO(enga): Handle CPU-visible memory on UMA
         return mMemoryAllocation.GetMappedPointer() != nullptr;
     }
 
-    MaybeError Buffer::MapAtCreationImpl(uint8_t** mappedPointer) {
-        *mappedPointer = mMemoryAllocation.GetMappedPointer();
+    MaybeError Buffer::MapAtCreationImpl() {
+        CommandRecordingContext* recordingContext =
+            ToBackend(GetDevice())->GetPendingRecordingContext();
+
+        // TODO(jiawei.shao@intel.com): initialize mapped buffer in CPU side.
+        EnsureDataInitialized(recordingContext);
+
         return {};
     }
 
-    MaybeError Buffer::MapReadAsyncImpl(uint32_t serial) {
+    MaybeError Buffer::MapReadAsyncImpl() {
         Device* device = ToBackend(GetDevice());
 
         CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
@@ -260,11 +258,28 @@ namespace dawn_native { namespace vulkan {
         return {};
     }
 
-    MaybeError Buffer::MapWriteAsyncImpl(uint32_t serial) {
+    MaybeError Buffer::MapWriteAsyncImpl() {
         Device* device = ToBackend(GetDevice());
 
         CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
         TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapWrite);
+        return {};
+    }
+
+    MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
+        Device* device = ToBackend(GetDevice());
+
+        CommandRecordingContext* recordingContext = device->GetPendingRecordingContext();
+
+        // TODO(jiawei.shao@intel.com): initialize mapped buffer in CPU side.
+        EnsureDataInitialized(recordingContext);
+
+        if (mode & wgpu::MapMode::Read) {
+            TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapRead);
+        } else {
+            ASSERT(mode & wgpu::MapMode::Write);
+            TransitionUsageNow(recordingContext, wgpu::BufferUsage::MapWrite);
+        }
         return {};
     }
 
@@ -287,13 +302,61 @@ namespace dawn_native { namespace vulkan {
         }
     }
 
-    void Buffer::ClearBuffer(CommandRecordingContext* recordingContext, ClearValue clearValue) {
+    void Buffer::EnsureDataInitialized(CommandRecordingContext* recordingContext) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return;
+        }
+
+        InitializeToZero(recordingContext);
+    }
+
+    void Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* recordingContext,
+                                                    uint64_t offset,
+                                                    uint64_t size) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return;
+        }
+
+        if (IsFullBufferRange(offset, size)) {
+            SetIsDataInitialized();
+        } else {
+            InitializeToZero(recordingContext);
+        }
+    }
+
+    void Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* recordingContext,
+                                                    const CopyTextureToBufferCmd* copy) {
+        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
+        // instead when buffer lazy initialization is completely supported.
+        if (IsDataInitialized() ||
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            return;
+        }
+
+        if (IsFullBufferOverwrittenInTextureToBufferCopy(copy)) {
+            SetIsDataInitialized();
+        } else {
+            InitializeToZero(recordingContext);
+        }
+    }
+
+    void Buffer::InitializeToZero(CommandRecordingContext* recordingContext) {
+        ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse));
+        ASSERT(!IsDataInitialized());
+
+        ClearBuffer(recordingContext, 0u);
+        GetDevice()->IncrementLazyClearCountForTesting();
+        SetIsDataInitialized();
+    }
+
+    void Buffer::ClearBuffer(CommandRecordingContext* recordingContext, uint32_t clearValue) {
         ASSERT(recordingContext != nullptr);
-
-        // TODO(jiawei.shao@intel.com): support buffer lazy-initialization to 0.
-        ASSERT(clearValue == BufferBase::ClearValue::NonZero);
-
-        constexpr uint32_t kClearBufferValue = 0x01010101;
 
         TransitionUsageNow(recordingContext, wgpu::BufferUsage::CopyDst);
 
@@ -301,6 +364,6 @@ namespace dawn_native { namespace vulkan {
         // TODO(jiawei.shao@intel.com): find out why VK_WHOLE_SIZE doesn't work on old Windows Intel
         // Vulkan drivers.
         device->fn.CmdFillBuffer(recordingContext->commandBuffer, mHandle, 0, GetSize(),
-                                 kClearBufferValue);
+                                 clearValue);
     }
 }}  // namespace dawn_native::vulkan

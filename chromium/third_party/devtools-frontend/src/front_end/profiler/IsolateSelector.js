@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 import * as SDK from '../sdk/sdk.js';
@@ -218,8 +221,9 @@ export class IsolateSelector extends UI.Widget.VBox {
       toElement.classList.add('selected');
     }
     const model = to && to.model();
-    self.UI.context.setFlavor(SDK.HeapProfilerModel.HeapProfilerModel, model && model.heapProfilerModel());
-    self.UI.context.setFlavor(
+    UI.Context.Context.instance().setFlavor(
+        SDK.HeapProfilerModel.HeapProfilerModel, model && model.heapProfilerModel());
+    UI.Context.Context.instance().setFlavor(
         SDK.CPUProfilerModel.CPUProfilerModel, model && model.target().model(SDK.CPUProfilerModel.CPUProfilerModel));
   }
 

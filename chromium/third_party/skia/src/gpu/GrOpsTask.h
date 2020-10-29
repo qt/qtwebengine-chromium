@@ -12,7 +12,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/core/SkTypes.h"
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTDArray.h"
@@ -91,7 +91,7 @@ public:
     void addOp(GrDrawingManager* drawingMgr, std::unique_ptr<GrOp> op,
                GrTextureResolveManager textureResolveManager, const GrCaps& caps) {
         auto addDependency = [ drawingMgr, textureResolveManager, &caps, this ] (
-                GrSurfaceProxy* p, GrMipMapped mipmapped) {
+                GrSurfaceProxy* p, GrMipmapped mipmapped) {
             this->addDependency(drawingMgr, p, mipmapped, textureResolveManager, caps);
         };
 
@@ -100,18 +100,12 @@ public:
         this->recordOp(std::move(op), GrProcessorSet::EmptySetAnalysis(), nullptr, nullptr, caps);
     }
 
-    void addWaitOp(GrDrawingManager* drawingMgr, std::unique_ptr<GrOp> op,
-                   GrTextureResolveManager textureResolveManager, const GrCaps& caps) {
-        fHasWaitOp = true;
-        this->addOp(drawingMgr, std::move(op), textureResolveManager, caps);
-    }
-
     void addDrawOp(GrDrawingManager* drawingMgr, std::unique_ptr<GrDrawOp> op,
                    const GrProcessorSet::Analysis& processorAnalysis,
                    GrAppliedClip&& clip, const DstProxyView& dstProxyView,
                    GrTextureResolveManager textureResolveManager, const GrCaps& caps) {
         auto addDependency = [ drawingMgr, textureResolveManager, &caps, this ] (
-                GrSurfaceProxy* p, GrMipMapped mipmapped) {
+                GrSurfaceProxy* p, GrMipmapped mipmapped) {
             this->addSampledTexture(p);
             this->addDependency(drawingMgr, p, mipmapped, textureResolveManager, caps);
         };
@@ -120,8 +114,15 @@ public:
         clip.visitProxies(addDependency);
         if (dstProxyView.proxy()) {
             this->addSampledTexture(dstProxyView.proxy());
-            addDependency(dstProxyView.proxy(), GrMipMapped::kNo);
+            addDependency(dstProxyView.proxy(), GrMipmapped::kNo);
+            if (this->target(0).asTextureProxy() == dstProxyView.proxy()) {
+                // Since we are sampling and drawing to the same surface we will need to use
+                // texture barriers.
+                fUsesXferBarriers |= true;
+            }
         }
+
+        fUsesXferBarriers |= processorAnalysis.usesNonCoherentHWBlending();
 
         this->recordOp(std::move(op), processorAnalysis, clip.doesClip() ? &clip : nullptr,
                        &dstProxyView, caps);
@@ -130,13 +131,13 @@ public:
     void discard();
 
 #ifdef SK_DEBUG
-    void dump(bool printDependencies) const override;
-    const char* name() const final { return "Ops"; }
     int numClips() const override { return fNumClips; }
     void visitProxies_debugOnly(const GrOp::VisitProxyFunc&) const override;
 #endif
 
 #if GR_TEST_UTILS
+    void dump(bool printDependencies) const override;
+    const char* name() const final { return "Ops"; }
     int numOpChains() const { return fOpChains.count(); }
     const GrOp* getChain(int index) const { return fOpChains[index].head(); }
 #endif
@@ -197,15 +198,17 @@ private:
 
     class OpChain {
     public:
-        OpChain(const OpChain&) = delete;
-        OpChain& operator=(const OpChain&) = delete;
         OpChain(std::unique_ptr<GrOp>, GrProcessorSet::Analysis, GrAppliedClip*,
                 const DstProxyView*);
-
         ~OpChain() {
             // The ops are stored in a GrMemoryPool and must be explicitly deleted via the pool.
             SkASSERT(fList.empty());
         }
+
+        OpChain(const OpChain&) = delete;
+        OpChain& operator=(const OpChain&) = delete;
+        OpChain(OpChain&&) = default;
+        OpChain& operator=(OpChain&&) = default;
 
         void visitProxies(const GrOp::VisitProxyFunc&) const;
 
@@ -291,6 +294,7 @@ private:
 
     ExpectedOutcome onMakeClosed(const GrCaps& caps, SkIRect* targetUpdateBounds) override;
 
+    friend class OpsTaskTestingAccess;
     friend class GrRenderTargetContextPriv; // for stencil clip state. TODO: this is invasive
 
     // The RTC and OpsTask have to work together to handle buffer clears. In most cases, buffer
@@ -314,17 +318,16 @@ private:
 
     uint32_t fLastClipStackGenID = SK_InvalidUniqueID;
     SkIRect fLastDevClipBounds;
-    int fLastClipNumAnalyticFPs;
+    int fLastClipNumAnalyticElements;
 
-    // We must track if we have a wait op so that we don't delete the op when we have a full clear.
-    bool fHasWaitOp = false;
+    bool fUsesXferBarriers = false;
 
     // For ops/opsTask we have mean: 5 stdDev: 28
-    SkSTArray<25, OpChain, true> fOpChains;
+    SkSTArray<25, OpChain> fOpChains;
 
     // MDB TODO: 4096 for the first allocation of the clip space will be huge overkill.
     // Gather statistics to determine the correct size.
-    SkArenaAlloc fClipAllocator{4096};
+    SkArenaAllocWithReset fClipAllocator{4096};
     SkDEBUGCODE(int fNumClips;)
 
     // TODO: We could look into this being a set if we find we're adding a lot of duplicates that is

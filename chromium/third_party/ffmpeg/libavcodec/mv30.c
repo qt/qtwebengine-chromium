@@ -107,7 +107,7 @@ static inline void idct_1d(int *blk, int step)
     const int t0 = blk[0 * step] + blk[4 * step];
     const int t1 = blk[0 * step] - blk[4 * step];
     const int t2 = blk[2 * step] + blk[6 * step];
-    const int t3 = (((blk[2 * step] - blk[6 * step]) * 362) >> 8) - t2;
+    const int t3 = ((int)((blk[2 * step] - blk[6 * step]) * 362U) >> 8) - t2;
     const int t4 = t0 + t2;
     const int t5 = t0 - t2;
     const int t6 = t1 + t3;
@@ -117,10 +117,10 @@ static inline void idct_1d(int *blk, int step)
     const int tA = blk[1 * step] + blk[7 * step];
     const int tB = blk[1 * step] - blk[7 * step];
     const int tC = t8 + tA;
-    const int tD = (tB + t9) * 473 >> 8;
-    const int tE = ((t9 * -669 >> 8) - tC) + tD;
-    const int tF = ((tA - t8) * 362 >> 8) - tE;
-    const int t10 = ((tB * 277 >> 8) - tD) + tF;
+    const int tD = (int)((tB + t9) * 473U) >> 8;
+    const int tE = (((int)(t9 * -669U) >> 8) - tC) + tD;
+    const int tF = ((int)((tA - t8) * 362U) >> 8) - tE;
+    const int t10 = (((int)(tB * 277U) >> 8) - tD) + tF;
 
     blk[0 * step] = t4 + tC;
     blk[1 * step] = t6 + tE;
@@ -200,10 +200,10 @@ static inline void idct2_1d(int *blk, int step)
 {
     const int t0 = blk[0 * step];
     const int t1 = blk[1 * step];
-    const int t2 = t1 * 473 >> 8;
+    const int t2 = (int)(t1 * 473U) >> 8;
     const int t3 = t2 - t1;
-    const int t4 = (t1 * 362 >> 8) - t3;
-    const int t5 = ((t1 * 277 >> 8) - t2) + t4;
+    const int t4 =  ((int)(t1 * 362U) >> 8) - t3;
+    const int t5 = (((int)(t1 * 277U) >> 8) - t2) + t4;
 
     blk[0 * step] = t1 + t0;
     blk[1 * step] = t0 + t3;
@@ -410,6 +410,9 @@ static int decode_intra(AVCodecContext *avctx, GetBitContext *gb, AVFrame *frame
     int ret;
 
     mgb = *gb;
+    if (get_bits_left(gb) < s->mode_size * 8)
+        return AVERROR_INVALIDDATA;
+
     skip_bits_long(gb, s->mode_size * 8);
 
     linesize[0] = frame->linesize[0];
@@ -421,7 +424,7 @@ static int decode_intra(AVCodecContext *avctx, GetBitContext *gb, AVFrame *frame
 
     for (int y = 0; y < avctx->height; y += 16) {
         GetByteContext gbyte;
-        int pfill[3][1] = { 0 };
+        int pfill[3][1] = { {0} };
         int nb_codes = get_bits(gb, 16);
 
         av_fast_padded_malloc(&s->coeffs, &s->coeffs_size, nb_codes * sizeof(*s->coeffs));
@@ -504,7 +507,7 @@ static int decode_inter(AVCodecContext *avctx, GetBitContext *gb,
 
     for (int y = 0; y < avctx->height; y += 16) {
         GetByteContext gbyte;
-        int pfill[3][1] = { 0 };
+        int pfill[3][1] = { {0} };
         int nb_codes = get_bits(gb, 16);
 
         skip_bits(gb, 8);
@@ -545,8 +548,8 @@ static int decode_inter(AVCodecContext *avctx, GetBitContext *gb,
                 int px = x + mv_x;
                 int py = y + mv_y;
 
-                if (px < 0 || px >= avctx->width ||
-                    py < 0 || py >= avctx->height)
+                if (px < 0 || px > FFALIGN(avctx->width , 16) - 16 ||
+                    py < 0 || py > FFALIGN(avctx->height, 16) - 16)
                     return AVERROR_INVALIDDATA;
 
                 src[0] = prev->data[0] + in_linesize[0] * py + px;

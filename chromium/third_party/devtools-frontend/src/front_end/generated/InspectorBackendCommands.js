@@ -167,7 +167,9 @@ export function registerCommands(inspectorBackend) {
   // Audits.
   inspectorBackend.registerEnum('Audits.SameSiteCookieExclusionReason', {
     ExcludeSameSiteUnspecifiedTreatedAsLax: 'ExcludeSameSiteUnspecifiedTreatedAsLax',
-    ExcludeSameSiteNoneInsecure: 'ExcludeSameSiteNoneInsecure'
+    ExcludeSameSiteNoneInsecure: 'ExcludeSameSiteNoneInsecure',
+    ExcludeSameSiteLax: 'ExcludeSameSiteLax',
+    ExcludeSameSiteStrict: 'ExcludeSameSiteStrict'
   });
   inspectorBackend.registerEnum('Audits.SameSiteCookieWarningReason', {
     WarnSameSiteUnspecifiedCrossSiteContext: 'WarnSameSiteUnspecifiedCrossSiteContext',
@@ -225,11 +227,19 @@ export function registerCommands(inspectorBackend) {
   inspectorBackend.registerEnum(
       'Audits.HeavyAdReason',
       {NetworkTotalLimit: 'NetworkTotalLimit', CpuTotalLimit: 'CpuTotalLimit', CpuPeakLimit: 'CpuPeakLimit'});
+  inspectorBackend.registerEnum('Audits.ContentSecurityPolicyViolationType', {
+    KInlineViolation: 'kInlineViolation',
+    KEvalViolation: 'kEvalViolation',
+    KURLViolation: 'kURLViolation',
+    KTrustedTypesSinkViolation: 'kTrustedTypesSinkViolation',
+    KTrustedTypesPolicyViolation: 'kTrustedTypesPolicyViolation'
+  });
   inspectorBackend.registerEnum('Audits.InspectorIssueCode', {
     SameSiteCookieIssue: 'SameSiteCookieIssue',
     MixedContentIssue: 'MixedContentIssue',
     BlockedByResponseIssue: 'BlockedByResponseIssue',
-    HeavyAdIssue: 'HeavyAdIssue'
+    HeavyAdIssue: 'HeavyAdIssue',
+    ContentSecurityPolicyIssue: 'ContentSecurityPolicyIssue'
   });
   inspectorBackend.registerEvent('Audits.issueAdded', ['issue']);
   inspectorBackend.registerEnum('Audits.GetEncodedResponseRequestEncoding', {Webp: 'webp', Jpeg: 'jpeg', Png: 'png'});
@@ -411,6 +421,9 @@ export function registerCommands(inspectorBackend) {
   inspectorBackend.registerCommand(
       'CSS.getStyleSheetText', [{'name': 'styleSheetId', 'type': 'string', 'optional': false}], ['text']);
   inspectorBackend.registerCommand(
+      'CSS.trackComputedStyleUpdates', [{'name': 'propertiesToTrack', 'type': 'object', 'optional': false}], []);
+  inspectorBackend.registerCommand('CSS.takeComputedStyleUpdates', [], ['nodeIds']);
+  inspectorBackend.registerCommand(
       'CSS.setEffectivePropertyValueForNode',
       [
         {'name': 'nodeId', 'type': 'number', 'optional': false},
@@ -452,6 +465,8 @@ export function registerCommands(inspectorBackend) {
   inspectorBackend.registerCommand('CSS.startRuleUsageTracking', [], []);
   inspectorBackend.registerCommand('CSS.stopRuleUsageTracking', [], ['ruleUsage']);
   inspectorBackend.registerCommand('CSS.takeCoverageDelta', [], ['coverage', 'timestamp']);
+  inspectorBackend.registerCommand(
+      'CSS.setLocalFontsEnabled', [{'name': 'enabled', 'type': 'boolean', 'optional': false}], []);
 
   // CacheStorage.
   inspectorBackend.registerEnum('CacheStorage.CachedResponseType', {
@@ -602,6 +617,14 @@ export function registerCommands(inspectorBackend) {
       'DOM.getFlattenedDocument',
       [{'name': 'depth', 'type': 'number', 'optional': true}, {'name': 'pierce', 'type': 'boolean', 'optional': true}],
       ['nodes']);
+  inspectorBackend.registerCommand(
+      'DOM.getNodesForSubtreeByStyle',
+      [
+        {'name': 'nodeId', 'type': 'number', 'optional': false},
+        {'name': 'computedStyles', 'type': 'object', 'optional': false},
+        {'name': 'pierce', 'type': 'boolean', 'optional': true}
+      ],
+      ['nodeIds']);
   inspectorBackend.registerCommand(
       'DOM.getNodeForLocation',
       [
@@ -859,6 +882,8 @@ export function registerCommands(inspectorBackend) {
     LandscapeSecondary: 'landscapeSecondary'
   });
   inspectorBackend.registerEnum(
+      'Emulation.DisplayFeatureOrientation', {Vertical: 'vertical', Horizontal: 'horizontal'});
+  inspectorBackend.registerEnum(
       'Emulation.VirtualTimePolicy',
       {Advance: 'advance', Pause: 'pause', PauseIfNetworkFetchesPending: 'pauseIfNetworkFetchesPending'});
   inspectorBackend.registerEvent('Emulation.virtualTimeBudgetExpired', []);
@@ -884,7 +909,8 @@ export function registerCommands(inspectorBackend) {
         {'name': 'positionY', 'type': 'number', 'optional': true},
         {'name': 'dontSetVisibleSize', 'type': 'boolean', 'optional': true},
         {'name': 'screenOrientation', 'type': 'object', 'optional': true},
-        {'name': 'viewport', 'type': 'object', 'optional': true}
+        {'name': 'viewport', 'type': 'object', 'optional': true},
+        {'name': 'displayFeature', 'type': 'object', 'optional': true}
       ],
       []);
   inspectorBackend.registerCommand(
@@ -922,6 +948,14 @@ export function registerCommands(inspectorBackend) {
         {'name': 'accuracy', 'type': 'number', 'optional': true}
       ],
       []);
+  inspectorBackend.registerCommand(
+      'Emulation.setIdleOverride',
+      [
+        {'name': 'isUserActive', 'type': 'boolean', 'optional': false},
+        {'name': 'isScreenUnlocked', 'type': 'boolean', 'optional': false}
+      ],
+      []);
+  inspectorBackend.registerCommand('Emulation.clearIdleOverride', [], []);
   inspectorBackend.registerCommand(
       'Emulation.setNavigatorOverrides', [{'name': 'platform', 'type': 'string', 'optional': false}], []);
   inspectorBackend.registerCommand(
@@ -1072,7 +1106,8 @@ export function registerCommands(inspectorBackend) {
         {'name': 'autoRepeat', 'type': 'boolean', 'optional': true},
         {'name': 'isKeypad', 'type': 'boolean', 'optional': true},
         {'name': 'isSystemKey', 'type': 'boolean', 'optional': true},
-        {'name': 'location', 'type': 'number', 'optional': true}
+        {'name': 'location', 'type': 'number', 'optional': true},
+        {'name': 'commands', 'type': 'object', 'optional': true}
       ],
       []);
   inspectorBackend.registerCommand('Input.insertText', [{'name': 'text', 'type': 'string', 'optional': false}], []);
@@ -1386,6 +1421,13 @@ export function registerCommands(inspectorBackend) {
     SignatureValidityUrl: 'signatureValidityUrl',
     SignatureTimestamps: 'signatureTimestamps'
   });
+  inspectorBackend.registerEnum('Network.CrossOriginOpenerPolicyValue', {
+    SameOrigin: 'SameOrigin',
+    SameOriginAllowPopups: 'SameOriginAllowPopups',
+    UnsafeNone: 'UnsafeNone',
+    SameOriginPlusCoep: 'SameOriginPlusCoep'
+  });
+  inspectorBackend.registerEnum('Network.CrossOriginEmbedderPolicyValue', {None: 'None', RequireCorp: 'RequireCorp'});
   inspectorBackend.registerEvent('Network.dataReceived', ['requestId', 'timestamp', 'dataLength', 'encodedDataLength']);
   inspectorBackend.registerEvent(
       'Network.eventSourceMessageReceived', ['requestId', 'timestamp', 'eventName', 'eventId', 'data']);
@@ -1527,6 +1569,8 @@ export function registerCommands(inspectorBackend) {
         {'name': 'userAgentMetadata', 'type': 'object', 'optional': true}
       ],
       []);
+  inspectorBackend.registerCommand(
+      'Network.getSecurityIsolationStatus', [{'name': 'frameId', 'type': 'string', 'optional': true}], ['status']);
 
   // Overlay.
   inspectorBackend.registerEnum('Overlay.ColorFormat', {Rgb: 'rgb', Hsl: 'hsl', Hex: 'hex'});
@@ -1552,6 +1596,12 @@ export function registerCommands(inspectorBackend) {
         {'name': 'colorFormat', 'type': 'string', 'optional': true},
         {'name': 'showAccessibilityInfo', 'type': 'boolean', 'optional': true}
       ],
+      ['highlight']);
+  inspectorBackend.registerCommand(
+      'Overlay.getGridHighlightObjectsForTest', [{'name': 'nodeIds', 'type': 'object', 'optional': false}],
+      ['highlights']);
+  inspectorBackend.registerCommand(
+      'Overlay.getSourceOrderHighlightObjectForTest', [{'name': 'nodeId', 'type': 'number', 'optional': false}],
       ['highlight']);
   inspectorBackend.registerCommand('Overlay.hideHighlight', [], []);
   inspectorBackend.registerCommand(
@@ -1589,6 +1639,15 @@ export function registerCommands(inspectorBackend) {
       ],
       []);
   inspectorBackend.registerCommand(
+      'Overlay.highlightSourceOrder',
+      [
+        {'name': 'sourceOrderConfig', 'type': 'object', 'optional': false},
+        {'name': 'nodeId', 'type': 'number', 'optional': true},
+        {'name': 'backendNodeId', 'type': 'number', 'optional': true},
+        {'name': 'objectId', 'type': 'string', 'optional': true}
+      ],
+      []);
+  inspectorBackend.registerCommand(
       'Overlay.setInspectMode',
       [
         {'name': 'mode', 'type': 'string', 'optional': false},
@@ -1604,6 +1663,8 @@ export function registerCommands(inspectorBackend) {
   inspectorBackend.registerCommand(
       'Overlay.setShowFPSCounter', [{'name': 'show', 'type': 'boolean', 'optional': false}], []);
   inspectorBackend.registerCommand(
+      'Overlay.setShowGridOverlays', [{'name': 'gridNodeHighlightConfigs', 'type': 'object', 'optional': false}], []);
+  inspectorBackend.registerCommand(
       'Overlay.setShowPaintRects', [{'name': 'result', 'type': 'boolean', 'optional': false}], []);
   inspectorBackend.registerCommand(
       'Overlay.setShowLayoutShiftRegions', [{'name': 'result', 'type': 'boolean', 'optional': false}], []);
@@ -1617,6 +1678,16 @@ export function registerCommands(inspectorBackend) {
       'Overlay.setShowHinge', [{'name': 'hingeConfig', 'type': 'object', 'optional': true}], []);
 
   // Page.
+  inspectorBackend.registerEnum('Page.AdFrameType', {None: 'none', Child: 'child', Root: 'root'});
+  inspectorBackend.registerEnum('Page.SecureContextType', {
+    Secure: 'Secure',
+    SecureLocalhost: 'SecureLocalhost',
+    InsecureScheme: 'InsecureScheme',
+    InsecureAncestor: 'InsecureAncestor'
+  });
+  inspectorBackend.registerEnum(
+      'Page.CrossOriginIsolatedContextType',
+      {Isolated: 'Isolated', NotIsolated: 'NotIsolated', NotIsolatedFeatureDisabled: 'NotIsolatedFeatureDisabled'});
   inspectorBackend.registerEnum('Page.TransitionType', {
     Link: 'link',
     Typed: 'typed',
@@ -2307,6 +2378,13 @@ export function registerCommands(inspectorBackend) {
         {'name': 'isUserVerified', 'type': 'boolean', 'optional': false}
       ],
       []);
+  inspectorBackend.registerCommand(
+      'WebAuthn.setAutomaticPresenceSimulation',
+      [
+        {'name': 'authenticatorId', 'type': 'string', 'optional': false},
+        {'name': 'enabled', 'type': 'boolean', 'optional': false}
+      ],
+      []);
 
   // Media.
   inspectorBackend.registerEnum(
@@ -2348,12 +2426,12 @@ export function registerCommands(inspectorBackend) {
   inspectorBackend.registerEvent('Debugger.scriptFailedToParse', [
     'scriptId', 'url', 'startLine', 'startColumn', 'endLine', 'endColumn', 'executionContextId', 'hash',
     'executionContextAuxData', 'sourceMapURL', 'hasSourceURL', 'isModule', 'length', 'stackTrace', 'codeOffset',
-    'scriptLanguage'
+    'scriptLanguage', 'embedderName'
   ]);
   inspectorBackend.registerEvent('Debugger.scriptParsed', [
     'scriptId', 'url', 'startLine', 'startColumn', 'endLine', 'endColumn', 'executionContextId', 'hash',
     'executionContextAuxData', 'isLiveEdit', 'sourceMapURL', 'hasSourceURL', 'isModule', 'length', 'stackTrace',
-    'codeOffset', 'scriptLanguage', 'debugSymbols'
+    'codeOffset', 'scriptLanguage', 'debugSymbols', 'embedderName'
   ]);
   inspectorBackend.registerEnum('Debugger.ContinueToLocationRequestTargetCallFrames', {Any: 'any', Current: 'current'});
   inspectorBackend.registerCommand(
@@ -2491,9 +2569,14 @@ export function registerCommands(inspectorBackend) {
       ],
       []);
   inspectorBackend.registerCommand(
-      'Debugger.stepInto', [{'name': 'breakOnAsyncCall', 'type': 'boolean', 'optional': true}], []);
+      'Debugger.stepInto',
+      [
+        {'name': 'breakOnAsyncCall', 'type': 'boolean', 'optional': true},
+        {'name': 'skipList', 'type': 'object', 'optional': true}
+      ],
+      []);
   inspectorBackend.registerCommand('Debugger.stepOut', [], []);
-  inspectorBackend.registerCommand('Debugger.stepOver', [], []);
+  inspectorBackend.registerCommand('Debugger.stepOver', [{'name': 'skipList', 'type': 'object', 'optional': true}], []);
 
   // HeapProfiler.
   inspectorBackend.registerEvent('HeapProfiler.addHeapSnapshotChunk', ['chunk']);

@@ -26,6 +26,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as UI from '../ui/ui.js';
 
@@ -49,7 +52,7 @@ export class ConsolePanel extends UI.Panel.Panel {
 
   static _updateContextFlavor() {
     const consoleView = ConsolePanel.instance()._view;
-    self.UI.context.setFlavor(ConsoleView, consoleView.isShowing() ? consoleView : null);
+    UI.Context.Context.instance().setFlavor(ConsoleView, consoleView.isShowing() ? consoleView : null);
   }
 
   /**

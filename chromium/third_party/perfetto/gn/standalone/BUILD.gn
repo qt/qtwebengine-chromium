@@ -19,12 +19,7 @@ import("//gn/standalone/wasm.gni")
 
 # These warnings have been introduced with the newest version of clang (only in
 # the hermetic build) and are enabled just with -Werror.
-# TODO(primiano): we should look into Wimplicit-int-float-conversion. Seems
-# failing mostly in tests though.
-hermetic_clang_suppressions = [
-  "-Wno-c99-designator",
-  "-Wno-implicit-int-float-conversion",
-]
+hermetic_clang_suppressions = [ "-Wno-c99-designator" ]
 
 config("extra_warnings") {
   cflags = [
@@ -52,6 +47,8 @@ config("extra_warnings") {
       "-Wno-padded",
       "-Wno-reserved-id-macro",
       "-Wno-unknown-sanitizers",
+      "-Wno-unknown-warning-option",
+      "-Wno-poison-system-directories",
     ]
   }
 
@@ -93,7 +90,7 @@ config("default") {
 
   cflags += [
     "-fstrict-aliasing",
-    "-fstack-protector",
+    "-fstack-protector-strong",
     "-fPIC",
     "-g",
     "-Wformat",

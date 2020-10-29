@@ -21,28 +21,14 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/base/stl_util.h"
 
+using pdfium::kTextFormChecksum;
+
 using testing::_;
 using testing::InSequence;
 using testing::NiceMock;
 using testing::StrEq;
 
 using FPDFFormFillEmbedderTest = EmbedderTest;
-
-namespace {
-
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-const char kTextFormChecksum[] = "17efe329169f5b7681fbe939894a35de";
-#else
-#if defined(OS_WIN)
-const char kTextFormChecksum[] = "d3204faa62b607f0bd3893c9c22cabcb";
-#elif defined(OS_MACOSX)
-const char kTextFormChecksum[] = "d485541d958fef08d24e8eca3e537023";
-#else
-const char kTextFormChecksum[] = "b890950d4b9bc163b1a96797f3004b53";
-#endif
-#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-
-}  // namespace
 
 // A base class for many related tests that involve clicking and typing into
 // form fields.
@@ -618,7 +604,7 @@ TEST_F(FPDFFormFillEmbedderTest, FirstTest) {
   EXPECT_CALL(mock, DoGoToAction(_, _, _, _, _)).Times(0);
   SetDelegate(&mock);
 
-  EXPECT_TRUE(OpenDocument("hello_world.pdf"));
+  ASSERT_TRUE(OpenDocument("hello_world.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   UnloadPage(page);
@@ -628,7 +614,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_487928) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_487928.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_487928.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -640,7 +626,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_507316) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_507316.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_507316.pdf"));
   FPDF_PAGE page = LoadPage(2);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -649,7 +635,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_507316) {
 }
 
 TEST_F(FPDFFormFillEmbedderTest, BUG_514690) {
-  EXPECT_TRUE(OpenDocument("hello_world.pdf"));
+  ASSERT_TRUE(OpenDocument("hello_world.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
 
@@ -664,7 +650,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_900552) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_900552.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_900552.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
   DoOpenActions();
@@ -682,7 +668,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_901654) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_901654.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_901654.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
   DoOpenActions();
@@ -701,7 +687,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_901654_2) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_901654_2.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_901654_2.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
   DoOpenActions();
@@ -890,7 +876,7 @@ TEST_F(FPDFFormFillEmbedderTest, FormFillContinuousShiftTab) {
 }
 
 TEST_F(FPDFFormFillEmbedderTest, TabWithModifiers) {
-  EXPECT_TRUE(OpenDocument("annotiter.pdf"));
+  ASSERT_TRUE(OpenDocument("annotiter.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -942,7 +928,7 @@ TEST_F(FPDFFormFillEmbedderTest, KeyPressWithNoFocusedAnnot) {
 
 #ifdef PDF_ENABLE_XFA
 TEST_F(FPDFFormFillEmbedderTest, XFAFormFillFirstTab) {
-  EXPECT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
+  ASSERT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -953,7 +939,7 @@ TEST_F(FPDFFormFillEmbedderTest, XFAFormFillFirstTab) {
 }
 
 TEST_F(FPDFFormFillEmbedderTest, XFAFormFillFirstShiftTab) {
-  EXPECT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
+  ASSERT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -965,7 +951,7 @@ TEST_F(FPDFFormFillEmbedderTest, XFAFormFillFirstShiftTab) {
 }
 
 TEST_F(FPDFFormFillEmbedderTest, XFAFormFillContinuousTab) {
-  EXPECT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
+  ASSERT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -983,7 +969,7 @@ TEST_F(FPDFFormFillEmbedderTest, XFAFormFillContinuousTab) {
 }
 
 TEST_F(FPDFFormFillEmbedderTest, XFAFormFillContinuousShiftTab) {
-  EXPECT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
+  ASSERT_TRUE(OpenDocument("xfa/email_recommended.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -1017,7 +1003,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_851821) {
   DoURIActionBlockedDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("redirect.pdf"));
+  ASSERT_TRUE(OpenDocument("redirect.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -1100,7 +1086,7 @@ TEST_F(FPDFFormFillEmbedderTest, DisableJavaScript) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocumentWithoutJavaScript("bug_551248.pdf"));
+  ASSERT_TRUE(OpenDocumentWithoutJavaScript("bug_551248.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -1129,7 +1115,7 @@ TEST_F(FPDFFormFillEmbedderTest, DocumentAActions) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("document_aactions.pdf"));
+  ASSERT_TRUE(OpenDocument("document_aactions.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
 
@@ -1153,7 +1139,7 @@ TEST_F(FPDFFormFillEmbedderTest, DocumentAActionsDisableJavaScript) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocumentWithoutJavaScript("document_aactions.pdf"));
+  ASSERT_TRUE(OpenDocumentWithoutJavaScript("document_aactions.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
 
@@ -1174,7 +1160,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_551248) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_551248.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_551248.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -1226,7 +1212,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_620428) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_620428.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_620428.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -1243,7 +1229,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_634394) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_634394.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_634394.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -1265,7 +1251,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_634716) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_634716.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_634716.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
   DoOpenActions();
@@ -1287,7 +1273,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_679649) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_679649.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_679649.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
 
@@ -1304,7 +1290,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_707673) {
   EmbedderTestTimerHandlingDelegate delegate;
   SetDelegate(&delegate);
 
-  EXPECT_TRUE(OpenDocument("bug_707673.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_707673.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
 
@@ -1319,7 +1305,7 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_707673) {
 }
 
 TEST_F(FPDFFormFillEmbedderTest, BUG_765384) {
-  EXPECT_TRUE(OpenDocument("bug_765384.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_765384.pdf"));
   FPDF_PAGE page = LoadPage(0);
   EXPECT_TRUE(page);
 
@@ -1337,7 +1323,7 @@ TEST_F(FPDFFormFillEmbedderTest, FormText) {
   const char kUnfocusedTextFormWithAbcChecksum[] =
       "4a961599a512a08468b26b89d389c30a";
 #else
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   const char kFocusedTextFormWithAbcChecksum[] =
       "c6e4a2fb10661116771ee74f54d9c5e0";
   const char kUnfocusedTextFormWithAbcChecksum[] =
@@ -1355,7 +1341,7 @@ TEST_F(FPDFFormFillEmbedderTest, FormText) {
 #endif
 #endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   {
-    EXPECT_TRUE(OpenDocument("text_form.pdf"));
+    ASSERT_TRUE(OpenDocument("text_form.pdf"));
     FPDF_PAGE page = LoadPage(0);
     ASSERT_TRUE(page);
     ScopedFPDFBitmap bitmap1 = RenderLoadedPage(page);
@@ -1428,7 +1414,7 @@ TEST_F(FPDFFormFillEmbedderTest, RemoveFormFieldHighlight) {
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   const char kMd5NoHighlight[] = "6fe3921e4fe3f4190c248acf34e9bd3b";
 #else
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   const char kMd5NoHighlight[] = "5e4b87c5b304c6fa9bd5f6311260494e";
 #elif defined(OS_WIN)
   const char kMd5NoHighlight[] = "3ec0938828e0a37ef23f687ee95a80e1";
@@ -1437,7 +1423,7 @@ TEST_F(FPDFFormFillEmbedderTest, RemoveFormFieldHighlight) {
 #endif
 #endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 
-  EXPECT_TRUE(OpenDocument("text_form.pdf"));
+  ASSERT_TRUE(OpenDocument("text_form.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
   ScopedFPDFBitmap bitmap1 = RenderLoadedPage(page);
@@ -1457,22 +1443,22 @@ TEST_F(FPDFFormFillEmbedderTest, RemoveFormFieldHighlight) {
 }
 
 TEST_F(FPDFFormFillEmbedderTest, HasFormInfoNone) {
-  EXPECT_TRUE(OpenDocument("hello_world.pdf"));
+  ASSERT_TRUE(OpenDocument("hello_world.pdf"));
   EXPECT_EQ(FORMTYPE_NONE, FPDF_GetFormType(document_));
 }
 
 TEST_F(FPDFFormFillEmbedderTest, HasFormInfoAcroForm) {
-  EXPECT_TRUE(OpenDocument("text_form.pdf"));
+  ASSERT_TRUE(OpenDocument("text_form.pdf"));
   EXPECT_EQ(FORMTYPE_ACRO_FORM, FPDF_GetFormType(document_));
 }
 
 TEST_F(FPDFFormFillEmbedderTest, HasFormInfoXFAFull) {
-  EXPECT_TRUE(OpenDocument("simple_xfa.pdf"));
+  ASSERT_TRUE(OpenDocument("simple_xfa.pdf"));
   EXPECT_EQ(FORMTYPE_XFA_FULL, FPDF_GetFormType(document_));
 }
 
 TEST_F(FPDFFormFillEmbedderTest, HasFormInfoXFAForeground) {
-  EXPECT_TRUE(OpenDocument("bug_216.pdf"));
+  ASSERT_TRUE(OpenDocument("bug_216.pdf"));
   EXPECT_EQ(FORMTYPE_XFA_FOREGROUND, FPDF_GetFormType(document_));
 }
 

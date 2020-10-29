@@ -204,7 +204,7 @@ static bool do_jpeg(sk_sp<SkData> data, SkPDFDocument* doc, SkISize size,
     }
     bool yuv = jpegColorType == SkEncodedInfo::kYUV_Color;
     bool goodColorType = yuv || jpegColorType == SkEncodedInfo::kGray_Color;
-    if (jpegSize != size  // Sanity check.
+    if (jpegSize != size  // Safety check.
             || !goodColorType
             || kTopLeft_SkEncodedOrigin != exifOrientation) {
         return false;
@@ -258,7 +258,7 @@ void serialize_image(const SkImage* img,
         return;
     }
     SkBitmap bm = to_pixels(img);
-    SkPixmap pm = bm.pixmap();
+    const SkPixmap& pm = bm.pixmap();
     bool isOpaque = pm.isOpaque() || pm.computeIsOpaque();
     if (encodingQuality <= 100 && isOpaque) {
         sk_sp<SkData> data = img->encodeToData(SkEncodedImageFormat::kJPEG, encodingQuality);

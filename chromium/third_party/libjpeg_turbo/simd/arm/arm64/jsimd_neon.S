@@ -31,6 +31,147 @@
 .section .note.GNU-stack, "", %progbits  /* mark stack as non-executable */
 #endif
 
+#if defined(__APPLE__)
+.section __DATA, __const
+#elif defined(_WIN32)
+.section .rdata
+#else
+.section .rodata, "a", %progbits
+#endif
+
+/* Constants for jsimd_*_ycc_neon() */
+
+.balign 16
+Ljsimd_rgb_ycc_neon_consts:
+  .short 19595, 38470, 7471, 11059
+  .short 21709, 32768, 27439, 5329
+  .short 32767, 128, 32767, 128
+  .short 32767, 128, 32767, 128
+
+/* Constants for jsimd_fdct_islow_neon() */
+
+#define F_0_298   2446  /* FIX(0.298631336) */
+#define F_0_390   3196  /* FIX(0.390180644) */
+#define F_0_541   4433  /* FIX(0.541196100) */
+#define F_0_765   6270  /* FIX(0.765366865) */
+#define F_0_899   7373  /* FIX(0.899976223) */
+#define F_1_175   9633  /* FIX(1.175875602) */
+#define F_1_501  12299  /* FIX(1.501321110) */
+#define F_1_847  15137  /* FIX(1.847759065) */
+#define F_1_961  16069  /* FIX(1.961570560) */
+#define F_2_053  16819  /* FIX(2.053119869) */
+#define F_2_562  20995  /* FIX(2.562915447) */
+#define F_3_072  25172  /* FIX(3.072711026) */
+
+.balign 16
+Ljsimd_fdct_islow_neon_consts:
+  .short F_0_298
+  .short -F_0_390
+  .short F_0_541
+  .short F_0_765
+  .short - F_0_899
+  .short F_1_175
+  .short F_1_501
+  .short - F_1_847
+  .short - F_1_961
+  .short F_2_053
+  .short - F_2_562
+  .short F_3_072
+  .short 0          /* padding */
+  .short 0
+  .short 0
+  .short 0
+
+#undef F_0_298
+#undef F_0_390
+#undef F_0_541
+#undef F_0_765
+#undef F_0_899
+#undef F_1_175
+#undef F_1_501
+#undef F_1_847
+#undef F_1_961
+#undef F_2_053
+#undef F_2_562
+#undef F_3_072
+
+/* Constants for jsimd_fdct_ifast_neon() */
+
+.balign 16
+Ljsimd_fdct_ifast_neon_consts:
+  .short (98 * 128)               /* XFIX_0_382683433 */
+  .short (139 * 128)              /* XFIX_0_541196100 */
+  .short (181 * 128)              /* XFIX_0_707106781 */
+  .short (334 * 128 - 256 * 128)  /* XFIX_1_306562965 */
+
+/* Constants for jsimd_h2*_downsample_neon() */
+
+.balign 16
+Ljsimd_h2_downsample_neon_consts:
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F  /* diff 0 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0E  /* diff 1 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0D, 0x0D  /* diff 2 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0C, 0x0C, 0x0C  /* diff 3 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x09, 0x0A, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B  /* diff 4 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x09, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A  /* diff 5 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09  /* diff 6 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08  /* diff 7 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
+        0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07  /* diff 8 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x06, \
+        0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06  /* diff 9 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x05, 0x05, \
+        0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05  /* diff 10 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x04, \
+        0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04  /* diff 11 */
+  .byte 0x00, 0x01, 0x02, 0x03, 0x03, 0x03, 0x03, 0x03, \
+        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03  /* diff 12 */
+  .byte 0x00, 0x01, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, \
+        0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02  /* diff 13 */
+  .byte 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, \
+        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01  /* diff 14 */
+  .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  /* diff 15 */
+
+/* Constants for jsimd_huff_encode_one_block_neon() */
+
+.balign 16
+Ljsimd_huff_encode_one_block_neon_consts:
+    .byte 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, \
+          0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80
+    .byte    0,   1,   2,   3,  16,  17,  32,  33, \
+            18,  19,   4,   5,   6,   7,  20,  21  /* L0 => L3 : 4 lines OK */
+    .byte   34,  35,  48,  49, 255, 255,  50,  51, \
+            36,  37,  22,  23,   8,   9,  10,  11  /* L0 => L3 : 4 lines OK */
+    .byte    8,   9,  22,  23,  36,  37,  50,  51, \
+           255, 255, 255, 255, 255, 255,  52,  53  /* L1 => L4 : 4 lines OK */
+    .byte   54,  55,  40,  41,  26,  27,  12,  13, \
+            14,  15,  28,  29,  42,  43,  56,  57  /* L0 => L3 : 4 lines OK */
+    .byte    6,   7,  20,  21,  34,  35,  48,  49, \
+            50,  51,  36,  37,  22,  23,   8,   9  /* L4 => L7 : 4 lines OK */
+    .byte   42,  43,  28,  29,  14,  15,  30,  31, \
+            44,  45,  58,  59, 255, 255, 255, 255  /* L1 => L4 : 4 lines OK */
+    .byte  255, 255, 255, 255,  56,  57,  42,  43, \
+            28,  29,  14,  15,  30,  31,  44,  45  /* L3 => L6 : 4 lines OK */
+    .byte   26,  27,  40,  41,  42,  43,  28,  29, \
+            14,  15,  30,  31,  44,  45,  46,  47  /* L5 => L7 : 3 lines OK */
+    .byte  255, 255, 255, 255,   0,   1, 255, 255, \
+           255, 255, 255, 255, 255, 255, 255, 255  /* L4 : 1 lines OK */
+    .byte  255, 255, 255, 255, 255, 255, 255, 255, \
+             0,   1,  16,  17,   2,   3, 255, 255  /* L5 => L6 : 2 lines OK */
+    .byte  255, 255, 255, 255, 255, 255, 255, 255, \
+           255, 255, 255, 255,   8,   9,  22,  23  /* L5 => L6 : 2 lines OK */
+    .byte    4,   5,   6,   7, 255, 255, 255, 255, \
+           255, 255, 255, 255, 255, 255, 255, 255  /* L7 : 1 line OK */
+
 .text
 
 
@@ -52,6 +193,17 @@ _\fname:
     .type \fname, %function
 #endif
 \fname:
+#endif
+.endm
+
+/* Get symbol location */
+.macro get_symbol_loc reg, symbol
+#ifdef __APPLE__
+    adrp            \reg, \symbol@PAGE
+    add             \reg, \reg, \symbol@PAGEOFF
+#else
+    adrp            \reg, \symbol
+    add             \reg, \reg, :lo12:\symbol
 #endif
 .endm
 
@@ -271,17 +423,6 @@ _\fname:
     do_rgb_to_yuv_stage1
 .endm
 
-.balign 16
-.if \fast_ld3 == 1
-Ljsimd_\colorid\()_ycc_neon_consts:
-.else
-Ljsimd_\colorid\()_ycc_neon_slowld3_consts:
-.endif
-  .short 19595, 38470, 7471, 11059
-  .short 21709, 32768, 27439, 5329
-  .short 32767, 128, 32767, 128
-  .short 32767, 128, 32767, 128
-
 .if \fast_ld3 == 1
 asm_function jsimd_\colorid\()_ycc_convert_neon
 .else
@@ -304,11 +445,7 @@ asm_function jsimd_\colorid\()_ycc_convert_neon_slowld3
     N               .req w12
 
     /* Load constants to d0, d1, d2, d3 */
-    .if \fast_ld3 == 1
-      adr           x13, Ljsimd_\colorid\()_ycc_neon_consts
-    .else
-      adr           x13, Ljsimd_\colorid\()_ycc_neon_slowld3_consts
-    .endif
+    get_symbol_loc  x13, Ljsimd_rgb_ycc_neon_consts
     ld1             {v0.8h, v1.8h}, [x13]
 
     ldr             OUTPUT_BUF0, [OUTPUT_BUF]
@@ -508,50 +645,6 @@ asm_function jsimd_convsamp_neon
 #define DESCALE_P1  (CONST_BITS - PASS1_BITS)
 #define DESCALE_P2  (CONST_BITS + PASS1_BITS)
 
-#define F_0_298   2446  /* FIX(0.298631336) */
-#define F_0_390   3196  /* FIX(0.390180644) */
-#define F_0_541   4433  /* FIX(0.541196100) */
-#define F_0_765   6270  /* FIX(0.765366865) */
-#define F_0_899   7373  /* FIX(0.899976223) */
-#define F_1_175   9633  /* FIX(1.175875602) */
-#define F_1_501  12299  /* FIX(1.501321110) */
-#define F_1_847  15137  /* FIX(1.847759065) */
-#define F_1_961  16069  /* FIX(1.961570560) */
-#define F_2_053  16819  /* FIX(2.053119869) */
-#define F_2_562  20995  /* FIX(2.562915447) */
-#define F_3_072  25172  /* FIX(3.072711026) */
-
-.balign 16
-Ljsimd_fdct_islow_neon_consts:
-  .short F_0_298
-  .short -F_0_390
-  .short F_0_541
-  .short F_0_765
-  .short - F_0_899
-  .short F_1_175
-  .short F_1_501
-  .short - F_1_847
-  .short - F_1_961
-  .short F_2_053
-  .short - F_2_562
-  .short F_3_072
-  .short 0          /* padding */
-  .short 0
-  .short 0
-  .short 0
-
-#undef F_0_298
-#undef F_0_390
-#undef F_0_541
-#undef F_0_765
-#undef F_0_899
-#undef F_1_175
-#undef F_1_501
-#undef F_1_847
-#undef F_1_961
-#undef F_2_053
-#undef F_2_562
-#undef F_3_072
 #define XFIX_P_0_298  v0.h[0]
 #define XFIX_N_0_390  v0.h[1]
 #define XFIX_P_0_541  v0.h[2]
@@ -571,7 +664,7 @@ asm_function jsimd_fdct_islow_neon
     TMP             .req x9
 
     /* Load constants */
-    adr             TMP, Ljsimd_fdct_islow_neon_consts
+    get_symbol_loc  TMP, Ljsimd_fdct_islow_neon_consts
     ld1             {v0.8h, v1.8h}, [TMP]
 
     /* Save NEON registers */
@@ -850,20 +943,13 @@ asm_function jsimd_fdct_islow_neon
 #define XFIX_0_707106781  v0.h[2]
 #define XFIX_1_306562965  v0.h[3]
 
-.balign 16
-Ljsimd_fdct_ifast_neon_consts:
-  .short (98 * 128)               /* XFIX_0_382683433 */
-  .short (139 * 128)              /* XFIX_0_541196100 */
-  .short (181 * 128)              /* XFIX_0_707106781 */
-  .short (334 * 128 - 256 * 128)  /* XFIX_1_306562965 */
-
 asm_function jsimd_fdct_ifast_neon
 
     DATA            .req x0
     TMP             .req x9
 
     /* Load constants */
-    adr             TMP, Ljsimd_fdct_ifast_neon_consts
+    get_symbol_loc  TMP, Ljsimd_fdct_ifast_neon_consts
     ld1             {v0.4h}, [TMP]
 
     /* Load all DATA into NEON registers with the following allocation:
@@ -1042,41 +1128,6 @@ asm_function jsimd_quantize_neon
  *                            JSAMPARRAY input_data, JSAMPARRAY output_data);
  */
 
-.balign 16
-Ljsimd_h2_downsample_neon_consts:
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F  /* diff 0 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0E  /* diff 1 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0D, 0x0D  /* diff 2 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0C, 0x0C, 0x0C  /* diff 3 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x09, 0x0A, 0x0B, 0x0B, 0x0B, 0x0B, 0x0B  /* diff 4 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x09, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A, 0x0A  /* diff 5 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09, 0x09  /* diff 6 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08  /* diff 7 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, \
-        0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07  /* diff 8 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x06, \
-        0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06  /* diff 9 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x05, 0x05, \
-        0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05, 0x05  /* diff 10 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x04, \
-        0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04  /* diff 11 */
-  .byte 0x00, 0x01, 0x02, 0x03, 0x03, 0x03, 0x03, 0x03, \
-        0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03  /* diff 12 */
-  .byte 0x00, 0x01, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, \
-        0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02, 0x02  /* diff 13 */
-  .byte 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, \
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01  /* diff 14 */
-  .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  /* diff 15 */
-
 asm_function jsimd_h2v1_downsample_neon
     IMAGE_WIDTH     .req x0
     MAX_V_SAMP      .req x1
@@ -1094,7 +1145,7 @@ asm_function jsimd_h2v1_downsample_neon
     mov             TMPDUP, #0x10000
     lsl             TMP2, BLOCK_WIDTH, #4
     sub             TMP2, TMP2, IMAGE_WIDTH
-    adr             TMP3, Ljsimd_h2_downsample_neon_consts
+    get_symbol_loc  TMP3, Ljsimd_h2_downsample_neon_consts
     add             TMP3, TMP3, TMP2, lsl #4
     dup             v16.4s, TMPDUP
     ld1             {v18.16b}, [TMP3]
@@ -1173,7 +1224,7 @@ asm_function jsimd_h2v2_downsample_neon
     lsl             TMP2, BLOCK_WIDTH, #4
     lsl             TMPDUP, TMPDUP, #17
     sub             TMP2, TMP2, IMAGE_WIDTH
-    adr             TMP3, Ljsimd_h2_downsample_neon_consts
+    get_symbol_loc  TMP3, Ljsimd_h2_downsample_neon_consts
     orr             TMPDUP, TMPDUP, #1
     add             TMP3, TMP3, TMP2, lsl #4
     dup             v16.4s, TMPDUP
@@ -1279,41 +1330,6 @@ asm_function jsimd_h2v2_downsample_neon
 
 .macro generate_jsimd_huff_encode_one_block fast_tbl
 
-.balign 16
-.if \fast_tbl == 1
-Ljsimd_huff_encode_one_block_neon_consts:
-.else
-Ljsimd_huff_encode_one_block_neon_slowtbl_consts:
-.endif
-    .byte 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, \
-          0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80
-.if \fast_tbl == 1
-    .byte    0,   1,   2,   3,  16,  17,  32,  33, \
-            18,  19,   4,   5,   6,   7,  20,  21  /* L0 => L3 : 4 lines OK */
-    .byte   34,  35,  48,  49, 255, 255,  50,  51, \
-            36,  37,  22,  23,   8,   9,  10,  11  /* L0 => L3 : 4 lines OK */
-    .byte    8,   9,  22,  23,  36,  37,  50,  51, \
-           255, 255, 255, 255, 255, 255,  52,  53  /* L1 => L4 : 4 lines OK */
-    .byte   54,  55,  40,  41,  26,  27,  12,  13, \
-            14,  15,  28,  29,  42,  43,  56,  57  /* L0 => L3 : 4 lines OK */
-    .byte    6,   7,  20,  21,  34,  35,  48,  49, \
-            50,  51,  36,  37,  22,  23,   8,   9  /* L4 => L7 : 4 lines OK */
-    .byte   42,  43,  28,  29,  14,  15,  30,  31, \
-            44,  45,  58,  59, 255, 255, 255, 255  /* L1 => L4 : 4 lines OK */
-    .byte  255, 255, 255, 255,  56,  57,  42,  43, \
-            28,  29,  14,  15,  30,  31,  44,  45  /* L3 => L6 : 4 lines OK */
-    .byte   26,  27,  40,  41,  42,  43,  28,  29, \
-            14,  15,  30,  31,  44,  45,  46,  47  /* L5 => L7 : 3 lines OK */
-    .byte  255, 255, 255, 255,   0,   1, 255, 255, \
-           255, 255, 255, 255, 255, 255, 255, 255  /* L4 : 1 lines OK */
-    .byte  255, 255, 255, 255, 255, 255, 255, 255, \
-             0,   1,  16,  17,   2,   3, 255, 255  /* L5 => L6 : 2 lines OK */
-    .byte  255, 255, 255, 255, 255, 255, 255, 255, \
-           255, 255, 255, 255,   8,   9,  22,  23  /* L5 => L6 : 2 lines OK */
-    .byte    4,   5,   6,   7, 255, 255, 255, 255, \
-           255, 255, 255, 255, 255, 255, 255, 255  /* L7 : 1 line OK */
-.endif
-
 .if \fast_tbl == 1
 asm_function jsimd_huff_encode_one_block_neon
 .else
@@ -1323,11 +1339,7 @@ asm_function jsimd_huff_encode_one_block_neon_slowtbl
     sub             BUFFER, BUFFER, #0x1    /* BUFFER=buffer-- */
     /* Save ARM registers */
     stp             x19, x20, [sp]
-.if \fast_tbl == 1
-    adr             x15, Ljsimd_huff_encode_one_block_neon_consts
-.else
-    adr             x15, Ljsimd_huff_encode_one_block_neon_slowtbl_consts
-.endif
+    get_symbol_loc  x15, Ljsimd_huff_encode_one_block_neon_consts
     ldr             PUT_BUFFER, [x0, #0x10]
     ldr             PUT_BITSw, [x0, #0x18]
     ldrsh           w12, [x2]               /* load DC coeff in w12 */

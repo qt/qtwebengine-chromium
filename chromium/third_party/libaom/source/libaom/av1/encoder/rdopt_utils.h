@@ -424,16 +424,16 @@ static INLINE void set_tx_size_search_method(
 
 static INLINE void set_tx_type_prune(const SPEED_FEATURES *sf,
                                      TxfmSearchParams *txfm_params,
-                                     int enable_winner_mode_tx_type_pruning,
+                                     int winner_mode_tx_type_pruning,
                                      int is_winner_mode) {
   // Populate prune transform mode appropriately
   txfm_params->prune_2d_txfm_mode = sf->tx_sf.tx_type_search.prune_2d_txfm_mode;
-  if (enable_winner_mode_tx_type_pruning) {
-    if (is_winner_mode)
-      txfm_params->prune_2d_txfm_mode = NO_PRUNE;
-    else
-      txfm_params->prune_2d_txfm_mode = PRUNE_2D_AGGRESSIVE;
-  }
+  if (!winner_mode_tx_type_pruning) return;
+
+  const int prune_mode[2][2] = { { TX_TYPE_PRUNE_4, TX_TYPE_PRUNE_0 },
+                                 { TX_TYPE_PRUNE_5, TX_TYPE_PRUNE_2 } };
+  txfm_params->prune_2d_txfm_mode =
+      prune_mode[winner_mode_tx_type_pruning - 1][is_winner_mode];
 }
 
 static INLINE void set_tx_domain_dist_params(
@@ -518,9 +518,9 @@ static INLINE void set_mode_eval_params(const struct AV1_COMP *cpi,
           cm, winner_mode_params, txfm_params,
           sf->winner_mode_sf.enable_winner_mode_for_tx_size_srch, 0);
       // Set transform type prune for mode evaluation
-      set_tx_type_prune(
-          sf, txfm_params,
-          sf->tx_sf.tx_type_search.enable_winner_mode_tx_type_pruning, 0);
+      set_tx_type_prune(sf, txfm_params,
+                        sf->tx_sf.tx_type_search.winner_mode_tx_type_pruning,
+                        0);
       break;
     case WINNER_MODE_EVAL:
       txfm_params->use_default_inter_tx_type = 0;
@@ -547,9 +547,9 @@ static INLINE void set_mode_eval_params(const struct AV1_COMP *cpi,
           cm, winner_mode_params, txfm_params,
           sf->winner_mode_sf.enable_winner_mode_for_tx_size_srch, 1);
       // Set default transform type prune mode for winner mode evaluation
-      set_tx_type_prune(
-          sf, txfm_params,
-          sf->tx_sf.tx_type_search.enable_winner_mode_tx_type_pruning, 1);
+      set_tx_type_prune(sf, txfm_params,
+                        sf->tx_sf.tx_type_search.winner_mode_tx_type_pruning,
+                        1);
 
       // Reset hash state for winner mode processing. Winner mode and subsequent
       // transform/mode evaluations (palette/IntraBC) cann't reuse old data as
@@ -595,21 +595,24 @@ static INLINE void store_winner_mode_stats(
     const AV1_COMMON *const cm, MACROBLOCK *x, const MB_MODE_INFO *mbmi,
     RD_STATS *rd_cost, RD_STATS *rd_cost_y, RD_STATS *rd_cost_uv,
     THR_MODES mode_index, uint8_t *color_map, BLOCK_SIZE bsize, int64_t this_rd,
-    int enable_multiwinner_mode_process, int txfm_search_done) {
+    int multi_winner_mode_type, int txfm_search_done) {
   WinnerModeStats *winner_mode_stats = x->winner_mode_stats;
   int mode_idx = 0;
   int is_palette_mode = mbmi->palette_mode_info.palette_size[PLANE_TYPE_Y] > 0;
   // Mode stat is not required when multiwinner mode processing is disabled
-  if (!enable_multiwinner_mode_process) return;
+  if (multi_winner_mode_type == MULTI_WINNER_MODE_OFF) return;
   // Ignore mode with maximum rd
   if (this_rd == INT64_MAX) return;
   // TODO(any): Winner mode processing is currently not applicable for palette
   // mode in Inter frames. Clean-up the following code, once support is added
   if (!frame_is_intra_only(cm) && is_palette_mode) return;
 
-  const int max_winner_mode_count = frame_is_intra_only(cm)
-                                        ? MAX_WINNER_MODE_COUNT_INTRA
-                                        : MAX_WINNER_MODE_COUNT_INTER;
+  int max_winner_mode_count = frame_is_intra_only(cm)
+                                  ? MAX_WINNER_MODE_COUNT_INTRA
+                                  : MAX_WINNER_MODE_COUNT_INTER;
+  max_winner_mode_count = (multi_winner_mode_type == MULTI_WINNER_MODE_FAST)
+                              ? AOMMIN(max_winner_mode_count, 2)
+                              : max_winner_mode_count;
   assert(x->winner_mode_count >= 0 &&
          x->winner_mode_count <= max_winner_mode_count);
 

@@ -10,6 +10,7 @@
 
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
+#include "src/core/SkMipmap.h"
 #include <atomic>
 
 #if SK_SUPPORT_GPU
@@ -17,12 +18,12 @@
 #include "src/gpu/GrSurfaceProxyView.h"
 #include "src/gpu/GrTextureProxy.h"
 
-class GrRecordingContext;
 class GrTexture;
 #endif
 
 #include <new>
 
+class GrDirectContext;
 class GrSamplerState;
 class SkCachedData;
 struct SkYUVASizeInfo;
@@ -33,11 +34,7 @@ enum {
 
 class SkImage_Base : public SkImage {
 public:
-    virtual ~SkImage_Base();
-
-    virtual SkIRect onGetSubset() const {
-        return { 0, 0, this->width(), this->height() };
-    }
+    ~SkImage_Base() override;
 
     virtual bool onPeekPixels(SkPixmap*) const { return false; }
 
@@ -46,10 +43,37 @@ public:
     virtual bool onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
                               int srcX, int srcY, CachingHint) const = 0;
 
+    virtual SkMipmap* onPeekMips() const { return nullptr; }
+
+    sk_sp<SkMipmap> refMips() const {
+        return sk_ref_sp(this->onPeekMips());
+    }
+
+    /**
+     * Default implementation does a rescale/read and then calls the callback.
+     */
+    virtual void onAsyncRescaleAndReadPixels(const SkImageInfo&,
+                                             const SkIRect& srcRect,
+                                             RescaleGamma,
+                                             SkFilterQuality,
+                                             ReadPixelsCallback,
+                                             ReadPixelsContext);
+    /**
+     * Default implementation does a rescale/read/yuv conversion and then calls the callback.
+     */
+    virtual void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
+                                                   sk_sp<SkColorSpace> dstColorSpace,
+                                                   const SkIRect& srcRect,
+                                                   const SkISize& dstSize,
+                                                   RescaleGamma,
+                                                   SkFilterQuality,
+                                                   ReadPixelsCallback,
+                                                   ReadPixelsContext);
+
     virtual GrContext* context() const { return nullptr; }
 
 #if SK_SUPPORT_GPU
-    virtual GrSemaphoresSubmitted onFlush(GrContext* context, const GrFlushInfo&) {
+    virtual GrSemaphoresSubmitted onFlush(GrDirectContext*, const GrFlushInfo&) {
         return GrSemaphoresSubmitted::kNo;
     }
 
@@ -64,7 +88,7 @@ public:
     // this call will flatten a SkImage_GpuYUV to a single texture.
     virtual const GrSurfaceProxyView* view(GrRecordingContext*) const { return nullptr; }
 
-    virtual GrSurfaceProxyView refView(GrRecordingContext*, GrMipMapped) const = 0;
+    virtual GrSurfaceProxyView refView(GrRecordingContext*, GrMipmapped) const = 0;
     virtual GrSurfaceProxyView refPinnedView(GrRecordingContext*, uint32_t* uniqueID) const {
         return {};
     }
@@ -77,10 +101,8 @@ public:
     // but only inspect them (or encode them).
     virtual bool getROPixels(SkBitmap*, CachingHint = kAllow_CachingHint) const = 0;
 
-    virtual sk_sp<SkImage> onMakeSubset(GrRecordingContext*, const SkIRect&) const = 0;
+    virtual sk_sp<SkImage> onMakeSubset(const SkIRect&, GrDirectContext*) const = 0;
 
-    virtual sk_sp<SkCachedData> getPlanes(SkYUVASizeInfo*, SkYUVAIndex[4],
-                                          SkYUVColorSpace*, const void* planes[4]);
     virtual sk_sp<SkData> onRefEncoded() const { return nullptr; }
 
     virtual bool onAsLegacyBitmap(SkBitmap*) const;
@@ -97,15 +119,20 @@ public:
         fAddedToRasterCache.store(true);
     }
 
-    virtual bool onIsValid(GrContext*) const = 0;
+    virtual bool onIsValid(GrRecordingContext*) const = 0;
 
-    virtual bool onPinAsTexture(GrContext*) const { return false; }
-    virtual void onUnpinAsTexture(GrContext*) const {}
+    virtual bool onPinAsTexture(GrRecordingContext*) const { return false; }
+    virtual void onUnpinAsTexture(GrRecordingContext*) const {}
 
-    virtual sk_sp<SkImage> onMakeColorTypeAndColorSpace(GrRecordingContext*,
-                                                        SkColorType, sk_sp<SkColorSpace>) const = 0;
+    virtual sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>,
+                                                        GrDirectContext*) const = 0;
 
     virtual sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const = 0;
+
+    // on failure, returns nullptr
+    virtual sk_sp<SkImage> onMakeWithMipmaps(sk_sp<SkMipmap>) const {
+        return nullptr;
+    }
 
 protected:
     SkImage_Base(const SkImageInfo& info, uint32_t uniqueID);

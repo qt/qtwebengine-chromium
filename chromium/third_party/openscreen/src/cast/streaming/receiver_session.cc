@@ -115,6 +115,8 @@ Json::Value CreateAnswerMessage(const Answer& answer) {
 
 }  // namespace
 
+ReceiverSession::Client::~Client() = default;
+
 Preferences::Preferences() = default;
 Preferences::Preferences(std::vector<VideoCodec> video_codecs,
                          std::vector<AudioCodec> audio_codecs)
@@ -149,7 +151,7 @@ ReceiverSession::ReceiverSession(Client* const client,
 }
 
 ReceiverSession::~ReceiverSession() {
-  ResetReceivers();
+  ResetReceivers(Client::kEndOfSession);
   message_port_->SetClient(nullptr);
 }
 
@@ -262,7 +264,7 @@ ReceiverSession::ConstructReceiver(const Stream& stream) {
 ConfiguredReceivers ReceiverSession::SpawnReceivers(const AudioStream* audio,
                                                     const VideoStream* video) {
   OSP_DCHECK(audio || video);
-  ResetReceivers();
+  ResetReceivers(Client::kRenegotiated);
 
   absl::optional<ConfiguredReceiver<AudioStream>> audio_receiver;
   absl::optional<ConfiguredReceiver<VideoStream>> video_receiver;
@@ -285,9 +287,9 @@ ConfiguredReceivers ReceiverSession::SpawnReceivers(const AudioStream* audio,
                              std::move(video_receiver)};
 }
 
-void ReceiverSession::ResetReceivers() {
+void ReceiverSession::ResetReceivers(Client::ReceiversDestroyingReason reason) {
   if (current_video_receiver_ || current_audio_receiver_) {
-    client_->OnConfiguredReceiversDestroyed(this);
+    client_->OnReceiversDestroying(this, reason);
     current_audio_receiver_.reset();
     current_video_receiver_.reset();
   }

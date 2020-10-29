@@ -8,13 +8,14 @@
 #include <memory>
 #include <vector>
 
-#include "net/third_party/quiche/src/quic/core/crypto/crypto_handshake_message.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_data_reader.h"
 #include "net/third_party/quiche/src/quic/core/quic_data_writer.h"
+#include "net/third_party/quiche/src/quic/core/quic_tag.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_containers.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
@@ -170,6 +171,10 @@ struct QUIC_EXPORT_PRIVATE TransportParameters {
   // delay sending acknowledgments.
   IntegerParameter max_ack_delay;
 
+  // Minimum amount of time in microseconds by which the endpoint will
+  // delay sending acknowledgments. Used to enable sender control of ack delay.
+  IntegerParameter min_ack_delay_us;
+
   // Indicates lack of support for connection migration.
   bool disable_active_migration;
 
@@ -205,10 +210,9 @@ struct QUIC_EXPORT_PRIVATE TransportParameters {
   // Google-specific handshake done support. This is only used for T050.
   bool support_handshake_done;
 
-  // Transport parameters used by Google QUIC but not IETF QUIC. This is
-  // serialized into a TransportParameter struct with a TransportParameterId of
-  // kGoogleQuicParamId.
-  std::unique_ptr<CryptoHandshakeMessage> google_quic_params;
+  // Google-specific mechanism to indicate that IETF QUIC Key Update has not
+  // yet been implemented. This will be removed once we implement it.
+  bool key_update_not_yet_supported;
 
   // Validates whether transport parameters are valid according to
   // the specification. If the transport parameters are not valid, this method

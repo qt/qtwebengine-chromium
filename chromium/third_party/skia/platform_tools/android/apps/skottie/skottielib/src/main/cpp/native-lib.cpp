@@ -23,12 +23,12 @@
 #include "include/gpu/gl/GrGLTypes.h"
 
 #include "modules/skottie/include/Skottie.h"
+#include "modules/sksg/include/SkSGInvalidationController.h"
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
 
 #include <GLES3/gl3.h>
-#include <android/trace.h>
 
 #define STENCIL_BUFFER_SIZE 8
 
@@ -172,7 +172,7 @@ Java_org_skia_skottie_SkottieRunner_00024SkottieAnimationImpl_nDeleteProxy(JNIEn
     delete skottieAnimation;
 }
 
-extern "C" JNIEXPORT void
+extern "C" JNIEXPORT bool
 JNICALL
 Java_org_skia_skottie_SkottieRunner_00024SkottieAnimationImpl_nDrawFrame(JNIEnv *env, jclass clazz,
                                                                      jlong nativeProxy, jint width,
@@ -181,14 +181,23 @@ Java_org_skia_skottie_SkottieRunner_00024SkottieAnimationImpl_nDrawFrame(JNIEnv 
                                                                      jfloat progress) {
     ATRACE_NAME("SkottieDrawFrame");
     if (!nativeProxy) {
-        return;
+        return false;
     }
     SkottieAnimation* skottieAnimation = reinterpret_cast<SkottieAnimation*>(nativeProxy);
 
     auto grContext = skottieAnimation->mRunner->mGrContext;
 
     if (!grContext) {
-        return;
+        return false;
+    }
+
+    sksg::InvalidationController ic;
+
+    if (skottieAnimation->mAnimation) {
+        skottieAnimation->mAnimation->seek(progress, &ic);
+        if (ic.bounds().isEmpty()) {
+            return false;
+        }
     }
 
     SkColorType colorType;
@@ -212,15 +221,13 @@ Java_org_skia_skottie_SkottieRunner_00024SkottieAnimationImpl_nDrawFrame(JNIEnv 
 
     auto canvas = renderTarget->getCanvas();
     canvas->clear(SK_ColorTRANSPARENT);
-    if (skottieAnimation->mAnimation) {
-        skottieAnimation->mAnimation->seek(progress);
 
-        SkAutoCanvasRestore acr(canvas, true);
-        SkRect bounds = SkRect::MakeWH(width, height);
-        skottieAnimation->mAnimation->render(canvas, &bounds);
-    }
+    SkAutoCanvasRestore acr(canvas, true);
+    SkRect bounds = SkRect::MakeWH(width, height);
+    skottieAnimation->mAnimation->render(canvas, &bounds);
 
     canvas->flush();
+    return true;
 }
 
 extern "C" JNIEXPORT jlong

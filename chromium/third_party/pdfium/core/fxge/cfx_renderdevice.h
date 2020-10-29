@@ -26,6 +26,7 @@ class CFX_PathData;
 class PauseIndicatorIface;
 class TextCharPos;
 struct CFX_Color;
+struct CFX_FillRenderOptions;
 struct CFX_TextRenderOptions;
 
 enum class BorderStyle { kSolid, kDash, kBeveled, kInset, kUnderline };
@@ -72,7 +73,7 @@ class CFX_RenderDevice {
   void SetBaseClip(const FX_RECT& rect);
   bool SetClip_PathFill(const CFX_PathData* pPathData,
                         const CFX_Matrix* pObject2Device,
-                        int fill_mode);
+                        const CFX_FillRenderOptions& fill_options);
   bool SetClip_PathStroke(const CFX_PathData* pPathData,
                           const CFX_Matrix* pObject2Device,
                           const CFX_GraphStateData* pGraphState);
@@ -82,16 +83,13 @@ class CFX_RenderDevice {
                 const CFX_GraphStateData* pGraphState,
                 uint32_t fill_color,
                 uint32_t stroke_color,
-                int fill_mode) {
-    return DrawPathWithBlend(pPathData, pObject2Device, pGraphState, fill_color,
-                             stroke_color, fill_mode, BlendMode::kNormal);
-  }
+                const CFX_FillRenderOptions& fill_options);
   bool DrawPathWithBlend(const CFX_PathData* pPathData,
                          const CFX_Matrix* pObject2Device,
                          const CFX_GraphStateData* pGraphState,
                          uint32_t fill_color,
                          uint32_t stroke_color,
-                         int fill_mode,
+                         const CFX_FillRenderOptions& fill_options,
                          BlendMode blend_type);
   bool FillRect(const FX_RECT& rect, uint32_t color) {
     return FillRectWithBlend(rect, color, BlendMode::kNormal);
@@ -174,7 +172,7 @@ class CFX_RenderDevice {
                     uint32_t fill_color,
                     uint32_t stroke_color,
                     CFX_PathData* pClippingPath,
-                    int nFlag);
+                    const CFX_FillRenderOptions& fill_options);
 
   void DrawFillRect(const CFX_Matrix* pUser2Device,
                     const CFX_FloatRect& rect,
@@ -211,7 +209,7 @@ class CFX_RenderDevice {
                   int32_t nStartGray,
                   int32_t nEndGray);
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
   virtual void DebugVerifyBitmapIsPreMultiplied() const;
   virtual bool SetBitsWithMask(const RetainPtr<CFX_DIBBase>& pBitmap,
                                const RetainPtr<CFX_DIBBase>& pMask,
@@ -220,7 +218,7 @@ class CFX_RenderDevice {
                                int bitmap_alpha,
                                BlendMode blend_type);
 #endif
-#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   void Flush(bool release);
 #endif
 
@@ -237,12 +235,12 @@ class CFX_RenderDevice {
                           const CFX_GraphStateData* pGraphState,
                           uint32_t fill_color,
                           uint32_t stroke_color,
-                          int fill_mode,
+                          const CFX_FillRenderOptions& fill_options,
                           BlendMode blend_type);
   bool DrawCosmeticLine(const CFX_PointF& ptMoveTo,
                         const CFX_PointF& ptLineTo,
                         uint32_t color,
-                        int fill_mode,
+                        const CFX_FillRenderOptions& fill_options,
                         BlendMode blend_type);
   bool FillRectWithBlend(const FX_RECT& rect,
                          uint32_t color,

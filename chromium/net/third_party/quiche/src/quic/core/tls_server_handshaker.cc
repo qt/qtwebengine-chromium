@@ -166,6 +166,10 @@ bool TlsServerHandshaker::ShouldSendExpectCTHeader() const {
   return false;
 }
 
+const ProofSource::Details* TlsServerHandshaker::ProofSourceDetails() const {
+  return proof_source_details_.get();
+}
+
 void TlsServerHandshaker::OnConnectionClosed(QuicErrorCode /*error*/,
                                              ConnectionCloseSource /*source*/) {
   state_ = STATE_CONNECTION_CLOSED;
@@ -299,19 +303,9 @@ bool TlsServerHandshaker::ProcessTransportParameters(
     return false;
   }
   ProcessAdditionalTransportParameters(client_params);
-  if (GetQuicReloadableFlag(quic_save_user_agent_in_quic_session) &&
-      !session()->user_agent_id().has_value()) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_save_user_agent_in_quic_session, 2, 3);
-
-    if (client_params.user_agent_id.has_value()) {
-      session()->SetUserAgentId(client_params.user_agent_id.value());
-    } else if (client_params.google_quic_params) {
-      quiche::QuicheStringPiece user_agent_id;
-      client_params.google_quic_params->GetStringPiece(kUAID, &user_agent_id);
-      if (!user_agent_id.empty()) {
-        session()->SetUserAgentId(user_agent_id.data());
-      }
-    }
+  if (!session()->user_agent_id().has_value() &&
+      client_params.user_agent_id.has_value()) {
+    session()->SetUserAgentId(client_params.user_agent_id.value());
   }
 
   return true;
@@ -381,6 +375,7 @@ void TlsServerHandshaker::FinishHandshake() {
     // FinishHandshake, we don't have any confirmation that the client is live,
     // so all end of handshake processing is deferred until the handshake is
     // actually complete.
+    QUIC_RESTART_FLAG_COUNT(quic_enable_zero_rtt_for_tls_v2);
     return;
   }
   if (!valid_alpn_received_) {
@@ -393,11 +388,11 @@ void TlsServerHandshaker::FinishHandshake() {
     return;
   }
 
-  QUIC_LOG(INFO) << "Server: handshake finished";
+  QUIC_DLOG(INFO) << "Server: handshake finished";
   state_ = STATE_HANDSHAKE_COMPLETE;
   one_rtt_keys_available_ = true;
 
-  handshaker_delegate()->OnOneRttKeysAvailable();
+  handshaker_delegate()->OnTlsHandshakeComplete();
   handshaker_delegate()->DiscardOldEncryptionKey(ENCRYPTION_HANDSHAKE);
   handshaker_delegate()->DiscardOldDecryptionKey(ENCRYPTION_HANDSHAKE);
   handshaker_delegate()->DiscardOldDecryptionKey(ENCRYPTION_ZERO_RTT);
@@ -447,6 +442,7 @@ int TlsServerHandshaker::SessionTicketSeal(uint8_t* out,
                                            size_t* out_len,
                                            size_t max_out_len,
                                            quiche::QuicheStringPiece in) {
+  QUIC_CODE_COUNT(quic_tls_ticket_seal);
   DCHECK(proof_source_->GetTicketCrypter());
   std::vector<uint8_t> ticket = proof_source_->GetTicketCrypter()->Encrypt(in);
   if (max_out_len < ticket.size()) {
@@ -466,6 +462,7 @@ ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
     size_t* out_len,
     size_t max_out_len,
     quiche::QuicheStringPiece in) {
+  QUIC_CODE_COUNT(quic_tls_ticket_open);
   DCHECK(proof_source_->GetTicketCrypter());
 
   if (!ticket_decryption_callback_) {
@@ -499,7 +496,7 @@ ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
   memcpy(out, decrypted_session_ticket_.data(),
          decrypted_session_ticket_.size());
   *out_len = decrypted_session_ticket_.size();
-  QUIC_RELOADABLE_FLAG_COUNT(quic_enable_tls_resumption);
+  QUIC_RESTART_FLAG_COUNT(quic_enable_tls_resumption_v4);
 
   return ssl_ticket_aead_success;
 }
@@ -510,14 +507,11 @@ int TlsServerHandshaker::SelectCertificate(int* out_alert) {
     hostname_ = hostname;
     crypto_negotiated_params_->sni =
         QuicHostnameUtils::NormalizeHostname(hostname_);
-    if (GetQuicReloadableFlag(quic_tls_enforce_valid_sni)) {
-      QUIC_RELOADABLE_FLAG_COUNT(quic_tls_enforce_valid_sni);
-      if (!QuicHostnameUtils::IsValidSNI(hostname_)) {
-        // TODO(b/151676147): Include this error string in the CONNECTION_CLOSE
-        // frame.
-        QUIC_LOG(ERROR) << "Invalid SNI provided: \"" << hostname_ << "\"";
-        return SSL_TLSEXT_ERR_ALERT_FATAL;
-      }
+    if (!QuicHostnameUtils::IsValidSNI(hostname_)) {
+      // TODO(b/151676147): Include this error string in the CONNECTION_CLOSE
+      // frame.
+      QUIC_LOG(ERROR) << "Invalid SNI provided: \"" << hostname_ << "\"";
+      return SSL_TLSEXT_ERR_ALERT_FATAL;
     }
   } else {
     QUIC_LOG(INFO) << "No hostname indicated in SNI";
@@ -566,8 +560,8 @@ int TlsServerHandshaker::SelectCertificate(int* out_alert) {
     return SSL_TLSEXT_ERR_ALERT_FATAL;
   }
 
-  QUIC_LOG(INFO) << "Set " << chain->certs.size() << " certs for server "
-                 << "with hostname " << hostname_;
+  QUIC_DLOG(INFO) << "Set " << chain->certs.size() << " certs for server "
+                  << "with hostname " << hostname_;
   return SSL_TLSEXT_ERR_OK;
 }
 

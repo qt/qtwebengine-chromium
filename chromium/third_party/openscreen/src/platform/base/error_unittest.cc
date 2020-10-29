@@ -22,39 +22,60 @@ class Dummy {
 namespace openscreen {
 
 TEST(ErrorTest, TestDefaultError) {
-  Error error;
+  const Error error;
   EXPECT_EQ(error, Error::None());
   EXPECT_EQ(error.message(), "");
 }
 
 TEST(ErrorTest, TestNonDefaultError) {
-  Error error(Error::Code::kCborParsing, "Parse error");
+  const Error error(Error::Code::kCborParsing, "Parse error");
   EXPECT_EQ(error.code(), Error::Code::kCborParsing);
   EXPECT_EQ(error.message(), "Parse error");
 
-  Error error2(error);
+  const Error error2(error);
   EXPECT_EQ(error2.code(), Error::Code::kCborParsing);
   EXPECT_EQ(error2.message(), "Parse error");
 
-  Error error3 = error2;
+  const Error error3 = error2;
   EXPECT_EQ(error, error2);
   EXPECT_EQ(error, error3);
   EXPECT_EQ(error2, error3);
 
-  Error default_error;
+  const Error default_error;
   EXPECT_FALSE(error == default_error);
   EXPECT_FALSE(error2 == default_error);
   EXPECT_FALSE(error3 == default_error);
 
-  Error error4(std::move(error2));
-  Error error5 = std::move(error3);
+  const Error error4(std::move(error2));
+  const Error error5 = std::move(error3);
   EXPECT_EQ(error, error4);
   EXPECT_EQ(error, error5);
 }
 
+TEST(ErrorOrTest, ErrorToString) {
+  const Error error_none(Error::Code::kNone);
+  const Error error_none_with_msg(Error::Code::kNone, "Nothing to see here");
+  const Error error_transient(Error::Code::kAgain);
+  const Error error_transient_with_msg(Error::Code::kAgain,
+                                       "Try again later maybe?");
+  const Error error(Error::Code::kAddressInUse);
+  const Error error_with_msg(Error::Code::kAddressInUse,
+                             "Somebody called dibs");
+
+  EXPECT_EQ("Success = \"\"", error_none.ToString());
+  EXPECT_EQ("Success = \"Nothing to see here\"",
+            error_none_with_msg.ToString());
+  EXPECT_EQ("Failure: Transient = \"\"", error_transient.ToString());
+  EXPECT_EQ("Failure: Transient = \"Try again later maybe?\"",
+            error_transient_with_msg.ToString());
+  EXPECT_EQ("Failure: AddressInUse = \"\"", error.ToString());
+  EXPECT_EQ("Failure: AddressInUse = \"Somebody called dibs\"",
+            error_with_msg.ToString());
+}
+
 TEST(ErrorOrTest, ErrorOrWithError) {
   ErrorOr<Dummy> error_or1(Error(Error::Code::kCborParsing, "Parse Error"));
-  ErrorOr<Dummy> error_or2(Error::Code::kCborParsing);
+  const ErrorOr<Dummy> error_or2(Error::Code::kCborParsing);
   ErrorOr<Dummy> error_or3(Error::Code::kCborParsing, "Parse Error Again");
 
   EXPECT_FALSE(error_or1);
@@ -75,8 +96,8 @@ TEST(ErrorOrTest, ErrorOrWithError) {
   EXPECT_EQ(error_or3.error().code(), Error::Code::kCborParsing);
   EXPECT_EQ(error_or3.error().message(), "Parse Error Again");
 
-  ErrorOr<Dummy> error_or4(std::move(error_or1));
-  ErrorOr<Dummy> error_or5 = std::move(error_or3);
+  const ErrorOr<Dummy> error_or4(std::move(error_or1));
+  const ErrorOr<Dummy> error_or5 = std::move(error_or3);
 
   EXPECT_FALSE(error_or4);
   EXPECT_FALSE(error_or4.is_value());
@@ -92,7 +113,7 @@ TEST(ErrorOrTest, ErrorOrWithError) {
 }
 
 TEST(ErrorOrTest, ErrorOrWithPrimitiveValue) {
-  ErrorOr<int> error_or_integer(1337);
+  const ErrorOr<int> error_or_integer(1337);
   EXPECT_TRUE(error_or_integer);
   EXPECT_TRUE(error_or_integer.is_value());
   EXPECT_FALSE(error_or_integer.is_error());
@@ -113,7 +134,7 @@ TEST(ErrorOrTest, ErrorOrWithValue) {
   EXPECT_FALSE(error_or2.is_error());
   EXPECT_EQ(error_or2.value().message, "Riverrun");
 
-  ErrorOr<Dummy> error_or3(std::move(error_or1));
+  const ErrorOr<Dummy> error_or3(std::move(error_or1));
   ErrorOr<Dummy> error_or4 = std::move(error_or2);
 
   EXPECT_TRUE(error_or3);
@@ -131,18 +152,18 @@ TEST(ErrorOrTest, ErrorOrWithValue) {
 }
 
 TEST(ErrorOrTest, ComparisonTests) {
-  ErrorOr<int> e1(7);
-  ErrorOr<int> e2(7);
-  ErrorOr<int> e3(2);
-  ErrorOr<int> e4(10);
+  const ErrorOr<int> e1(7);
+  const ErrorOr<int> e2(7);
+  const ErrorOr<int> e3(2);
+  const ErrorOr<int> e4(10);
 
-  ErrorOr<int> e5(Error::Code::kAgain);
-  ErrorOr<int> e6(Error::Code::kCborParsing);
-  ErrorOr<int> e7(Error::Code::kCborEncoding);
-  ErrorOr<int> e8(Error::Code::kCborEncoding);
+  const ErrorOr<int> e5(Error::Code::kAgain);
+  const ErrorOr<int> e6(Error::Code::kCborParsing);
+  const ErrorOr<int> e7(Error::Code::kCborEncoding);
+  const ErrorOr<int> e8(Error::Code::kCborEncoding);
 
-  ErrorOr<int> e9(Error::Code::kAgain, "foo");
-  ErrorOr<int> e10(Error::Code::kAgain, "bar");
+  const ErrorOr<int> e9(Error::Code::kAgain, "foo");
+  const ErrorOr<int> e10(Error::Code::kAgain, "bar");
 
   EXPECT_EQ(e1, e2);
   EXPECT_EQ(e7, e8);

@@ -28,9 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import {VBox} from './Widget.js';
 import {XLink} from './XLink.js';
 
@@ -60,7 +57,7 @@ export class EmptyWidget extends VBox {
    * @return {!Node}
    */
   appendLink(link) {
-    return this._contentElement.appendChild(XLink.create(link, 'Learn more'));
+    return this._contentElement.appendChild(XLink.create(link, ls`Learn more`));
   }
 
   /**

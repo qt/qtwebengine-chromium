@@ -38,9 +38,6 @@ Elements.ElementStatePaneWidget = ElementsModule.ElementStatePaneWidget.ElementS
 Elements.ElementStatePaneWidget.ButtonProvider = ElementsModule.ElementStatePaneWidget.ButtonProvider;
 
 /** @constructor */
-Elements.ElementsBreadcrumbs = ElementsModule.ElementsBreadcrumbs.ElementsBreadcrumbs;
-
-/** @constructor */
 Elements.ElementsPanel = ElementsModule.ElementsPanel.ElementsPanel;
 
 /** @constructor */
@@ -81,6 +78,9 @@ Elements.InspectElementModeController.ToggleSearchActionDelegate =
 Elements.MarkerDecorator = ElementsModule.MarkerDecorator.MarkerDecorator;
 
 Elements.GenericDecorator = ElementsModule.MarkerDecorator.GenericDecorator;
+
+/** @constructor */
+Elements.LayoutSidebarPane = ElementsModule.LayoutSidebarPane.LayoutSidebarPane;
 
 /** @constructor */
 Elements.MetricsSidebarPane = ElementsModule.MetricsSidebarPane.MetricsSidebarPane;

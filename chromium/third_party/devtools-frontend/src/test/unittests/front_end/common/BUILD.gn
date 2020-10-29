@@ -13,6 +13,7 @@ ts_library("common") {
     "Progress_test.ts",
     "ResourceType_test.ts",
     "SegmentedRange_test.ts",
+    "SettingsHelper.ts",
     "Settings_test.ts",
     "StringOutputStream_test.ts",
     "TextDictionary_test.ts",
@@ -21,5 +22,8 @@ ts_library("common") {
     "WasmDisassembly_test.ts",
   ]
 
-  deps = [ "../../../../front_end/common" ]
+  deps = [
+    "../../../../front_end/client_variations:bundle",
+    "../../../../front_end/common:bundle",
+  ]
 }

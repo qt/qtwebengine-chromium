@@ -29,25 +29,6 @@ WriteResult QuicBatchWriterBase::WritePacket(
   return result;
 }
 
-uint64_t QuicBatchWriterBase::GetReleaseTime(
-    const PerPacketOptions* options) const {
-  DCHECK(SupportsReleaseTime());
-
-  if (options == nullptr) {
-    return 0;
-  }
-
-  if ((options->release_time_delay.IsZero() || options->allow_burst) &&
-      !buffered_writes().empty()) {
-    // Send as soon as possible, but no sooner than the last buffered packet.
-    return buffered_writes().back().release_time;
-  }
-
-  // Send according to the release time delay.
-  return NowInNanosForReleaseTime() +
-         options->release_time_delay.ToMicroseconds() * 1000;
-}
-
 WriteResult QuicBatchWriterBase::InternalWritePacket(
     const char* buffer,
     size_t buf_len,
@@ -58,10 +39,13 @@ WriteResult QuicBatchWriterBase::InternalWritePacket(
     return WriteResult(WRITE_STATUS_MSG_TOO_BIG, EMSGSIZE);
   }
 
-  uint64_t release_time = SupportsReleaseTime() ? GetReleaseTime(options) : 0;
+  ReleaseTime release_time = SupportsReleaseTime()
+                                 ? GetReleaseTime(options)
+                                 : ReleaseTime{0, QuicTime::Delta::Zero()};
 
-  const CanBatchResult can_batch_result = CanBatch(
-      buffer, buf_len, self_address, peer_address, options, release_time);
+  const CanBatchResult can_batch_result =
+      CanBatch(buffer, buf_len, self_address, peer_address, options,
+               release_time.actual_release_time);
 
   bool buffered = false;
   bool flush = can_batch_result.must_flush;
@@ -69,7 +53,8 @@ WriteResult QuicBatchWriterBase::InternalWritePacket(
   if (can_batch_result.can_batch) {
     QuicBatchWriterBuffer::PushResult push_result =
         batch_buffer_->PushBufferedWrite(buffer, buf_len, self_address,
-                                         peer_address, options, release_time);
+                                         peer_address, options,
+                                         release_time.actual_release_time);
     if (push_result.succeeded) {
       buffered = true;
       // If there's no space left after the packet is buffered, force a flush.
@@ -81,12 +66,14 @@ WriteResult QuicBatchWriterBase::InternalWritePacket(
   }
 
   if (!flush) {
-    return WriteResult(WRITE_STATUS_OK, 0);
+    WriteResult result(WRITE_STATUS_OK, 0);
+    result.send_time_offset = release_time.release_time_offset;
+    return result;
   }
 
   size_t num_buffered_packets = buffered_writes().size();
   const FlushImplResult flush_result = CheckedFlush();
-  const WriteResult& result = flush_result.write_result;
+  WriteResult result = flush_result.write_result;
   QUIC_DVLOG(1) << "Internally flushed " << flush_result.num_packets_sent
                 << " out of " << num_buffered_packets
                 << " packets. WriteResult=" << result;
@@ -103,18 +90,18 @@ WriteResult QuicBatchWriterBase::InternalWritePacket(
         buffered ? buffered_writes().size() : buffered_writes().size() + 1;
 
     batch_buffer().Clear();
-    WriteResult result_with_dropped = result;
-    result_with_dropped.dropped_packets =
+    result.dropped_packets =
         dropped_packets > std::numeric_limits<uint16_t>::max()
             ? std::numeric_limits<uint16_t>::max()
             : static_cast<uint16_t>(dropped_packets);
-    return result_with_dropped;
+    return result;
   }
 
   if (!buffered) {
     QuicBatchWriterBuffer::PushResult push_result =
         batch_buffer_->PushBufferedWrite(buffer, buf_len, self_address,
-                                         peer_address, options, release_time);
+                                         peer_address, options,
+                                         release_time.actual_release_time);
     buffered = push_result.succeeded;
 
     // Since buffered_writes has been emptied, this write must have been
@@ -125,6 +112,7 @@ WriteResult QuicBatchWriterBase::InternalWritePacket(
                            << ", buf_len:" << buf_len;
   }
 
+  result.send_time_offset = release_time.release_time_offset;
   return result;
 }
 

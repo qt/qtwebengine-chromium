@@ -245,7 +245,7 @@ static bool ValidateStreamParams(const StreamParams& sp) {
 }
 
 // Returns true if the given codec is disallowed from doing simulcast.
-bool IsCodecBlacklistedForSimulcast(const std::string& codec_name) {
+bool IsCodecDisabledForSimulcast(const std::string& codec_name) {
   return !webrtc::field_trial::IsDisabled("WebRTC-H264Simulcast")
              ? absl::EqualsIgnoreCase(codec_name, kVp9CodecName)
              : absl::EqualsIgnoreCase(codec_name, kH264CodecName) ||
@@ -427,10 +427,12 @@ WebRtcVideoChannel::WebRtcVideoSendStream::ConfigureVideoEncoderSettings(
     const VideoCodec& codec) {
   RTC_DCHECK_RUN_ON(&thread_checker_);
   bool is_screencast = parameters_.options.is_screencast.value_or(false);
-  // No automatic resizing when using simulcast or screencast.
-  bool automatic_resize =
-      !is_screencast && (parameters_.config.rtp.ssrcs.size() == 1 ||
-                         NumActiveStreams(rtp_parameters_) == 1);
+  // No automatic resizing when using simulcast or screencast, or when
+  // disabled by field trial flag.
+  bool automatic_resize = !disable_automatic_resize_ && !is_screencast &&
+                          (parameters_.config.rtp.ssrcs.size() == 1 ||
+                           NumActiveStreams(rtp_parameters_) == 1);
+
   bool frame_dropping = !is_screencast;
   bool denoising;
   bool codec_default_denoising = false;
@@ -1555,7 +1557,6 @@ bool WebRtcVideoChannel::GetStats(VideoMediaInfo* info) {
   FillSendAndReceiveCodecStats(info);
   // TODO(holmer): We should either have rtt available as a metric on
   // VideoSend/ReceiveStreams, or we should remove rtt from VideoSenderInfo.
-  // TODO(nisse): Arrange to get correct RTT also when using MediaTransport.
   webrtc::Call::Stats stats = call_->GetStats();
   if (stats.rtt_ms != -1) {
     for (size_t i = 0; i < info->senders.size(); ++i) {
@@ -1947,7 +1948,9 @@ WebRtcVideoChannel::WebRtcVideoSendStream::WebRtcVideoSendStream(
       encoder_sink_(nullptr),
       parameters_(std::move(config), options, max_bitrate_bps, codec_settings),
       rtp_parameters_(CreateRtpParametersWithEncodings(sp)),
-      sending_(false) {
+      sending_(false),
+      disable_automatic_resize_(webrtc::field_trial::IsEnabled(
+          "WebRTC-Video-DisableAutomaticResize")) {
   // Maximum packet size may come in RtpConfig from external transport, for
   // example from QuicTransportInterface implementation, so do not exceed
   // given max_packet_size.
@@ -2321,11 +2324,11 @@ WebRtcVideoChannel::WebRtcVideoSendStream::CreateVideoEncoderConfig(
   }
 
   // By default, the stream count for the codec configuration should match the
-  // number of negotiated ssrcs. But if the codec is blacklisted for simulcast
+  // number of negotiated ssrcs. But if the codec is disabled for simulcast
   // or a screencast (and not in simulcast screenshare experiment), only
   // configure a single stream.
   encoder_config.number_of_streams = parameters_.config.rtp.ssrcs.size();
-  if (IsCodecBlacklistedForSimulcast(codec.name)) {
+  if (IsCodecDisabledForSimulcast(codec.name)) {
     encoder_config.number_of_streams = 1;
   }
 
@@ -2399,6 +2402,8 @@ WebRtcVideoChannel::WebRtcVideoSendStream::CreateVideoEncoderConfig(
           *rtp_parameters_.encodings[i].num_temporal_layers;
     }
   }
+
+  encoder_config.legacy_conference_mode = parameters_.conference_mode;
 
   int max_qp = kDefaultQpMax;
   codec.GetParam(kCodecParamMaxQuantization, &max_qp);
@@ -2770,12 +2775,12 @@ void WebRtcVideoChannel::WebRtcVideoReceiveStream::ConfigureCodecs(
   config_.decoders.clear();
   config_.rtp.rtx_associated_payload_types.clear();
   config_.rtp.raw_payload_types.clear();
+  config_.decoder_factory = decoder_factory_;
   for (const auto& recv_codec : recv_codecs) {
     webrtc::SdpVideoFormat video_format(recv_codec.codec.name,
                                         recv_codec.codec.params);
 
     webrtc::VideoReceiveStream::Decoder decoder;
-    decoder.decoder_factory = decoder_factory_;
     decoder.video_format = video_format;
     decoder.payload_type = recv_codec.codec.id;
     decoder.video_format =
@@ -2953,7 +2958,7 @@ void WebRtcVideoChannel::WebRtcVideoReceiveStream::
 
 void WebRtcVideoChannel::WebRtcVideoReceiveStream::OnFrame(
     const webrtc::VideoFrame& frame) {
-  rtc::CritScope crit(&sink_lock_);
+  webrtc::MutexLock lock(&sink_lock_);
 
   int64_t time_now_ms = rtc::TimeMillis();
   if (first_frame_timestamp_ < 0)
@@ -2998,7 +3003,7 @@ int WebRtcVideoChannel::WebRtcVideoReceiveStream::GetBaseMinimumPlayoutDelayMs()
 
 void WebRtcVideoChannel::WebRtcVideoReceiveStream::SetSink(
     rtc::VideoSinkInterface<webrtc::VideoFrame>* sink) {
-  rtc::CritScope crit(&sink_lock_);
+  webrtc::MutexLock lock(&sink_lock_);
   sink_ = sink;
 }
 
@@ -3038,7 +3043,7 @@ WebRtcVideoChannel::WebRtcVideoReceiveStream::GetVideoReceiverInfo(
   info.frame_height = stats.height;
 
   {
-    rtc::CritScope frame_cs(&sink_lock_);
+    webrtc::MutexLock frame_cs(&sink_lock_);
     info.capture_start_ntp_time_ms = estimated_remote_start_ntp_time_ms_;
   }
 
@@ -3395,7 +3400,7 @@ std::vector<webrtc::VideoStream> EncoderStreamFactory::CreateEncoderStreams(
       ((absl::EqualsIgnoreCase(codec_name_, kVp8CodecName) ||
         absl::EqualsIgnoreCase(codec_name_, kH264CodecName)) &&
        is_screenshare_ && conference_mode_)) {
-    return CreateSimulcastOrConfereceModeScreenshareStreams(
+    return CreateSimulcastOrConferenceModeScreenshareStreams(
         width, height, encoder_config, experimental_min_bitrate);
   }
 
@@ -3484,7 +3489,7 @@ EncoderStreamFactory::CreateDefaultVideoStreams(
 }
 
 std::vector<webrtc::VideoStream>
-EncoderStreamFactory::CreateSimulcastOrConfereceModeScreenshareStreams(
+EncoderStreamFactory::CreateSimulcastOrConferenceModeScreenshareStreams(
     int width,
     int height,
     const webrtc::VideoEncoderConfig& encoder_config,

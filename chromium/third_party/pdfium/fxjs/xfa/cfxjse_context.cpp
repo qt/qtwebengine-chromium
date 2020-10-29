@@ -14,6 +14,9 @@
 #include "fxjs/xfa/cfxjse_isolatetracker.h"
 #include "fxjs/xfa/cfxjse_runtimedata.h"
 #include "fxjs/xfa/cfxjse_value.h"
+#include "fxjs/xfa/cjx_object.h"
+#include "third_party/base/ptr_util.h"
+#include "xfa/fxfa/parser/cxfa_thisproxy.h"
 
 namespace {
 
@@ -173,9 +176,12 @@ CFXJSE_HostObject* FXJSE_RetrieveObjectBinding(
 std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
     v8::Isolate* pIsolate,
     const FXJSE_CLASS_DESCRIPTOR* pGlobalClass,
-    CFXJSE_HostObject* pGlobalObject) {
+    CFXJSE_HostObject* pGlobalObject,
+    CXFA_ThisProxy* pProxy) {
   CFXJSE_ScopeUtil_IsolateHandle scope(pIsolate);
-  auto pContext = std::make_unique<CFXJSE_Context>(pIsolate);
+
+  // Private constructor.
+  auto pContext = pdfium::WrapUnique(new CFXJSE_Context(pIsolate, pProxy));
   v8::Local<v8::ObjectTemplate> hObjectTemplate;
   if (pGlobalClass) {
     CFXJSE_Class* pGlobalClassObj =
@@ -207,7 +213,8 @@ std::unique_ptr<CFXJSE_Context> CFXJSE_Context::Create(
   return pContext;
 }
 
-CFXJSE_Context::CFXJSE_Context(v8::Isolate* pIsolate) : m_pIsolate(pIsolate) {}
+CFXJSE_Context::CFXJSE_Context(v8::Isolate* pIsolate, CXFA_ThisProxy* pProxy)
+    : m_pIsolate(pIsolate), m_pProxy(pProxy) {}
 
 CFXJSE_Context::~CFXJSE_Context() = default;
 

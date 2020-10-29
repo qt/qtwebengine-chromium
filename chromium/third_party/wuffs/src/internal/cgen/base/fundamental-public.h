@@ -1,4 +1,4 @@
-// After editing this file, run "go generate" in the parent directory.
+// After editing this file, run "go generate" in the ../data directory.
 
 // Copyright 2017 The Wuffs Authors.
 //
@@ -76,7 +76,9 @@
 #define WUFFS_BASE__WARN_UNUSED_RESULT
 #endif
 
-// Flags for wuffs_foo__bar__initialize functions.
+// --------
+
+// Options (bitwise or'ed together) for wuffs_foo__bar__initialize functions.
 
 #define WUFFS_INITIALIZE__DEFAULT_OPTIONS ((uint32_t)0x00000000)
 
@@ -254,6 +256,16 @@ typedef WUFFS_BASE__RESULT(uint64_t) wuffs_base__result_u64;
 
 // --------
 
+// wuffs_base__transform__output is the result of transforming from a src slice
+// to a dst slice.
+typedef struct {
+  wuffs_base__status status;
+  size_t num_dst;
+  size_t num_src;
+} wuffs_base__transform__output;
+
+// --------
+
 // FourCC constants.
 
 // !! INSERT FourCCs.
@@ -278,6 +290,46 @@ typedef int64_t wuffs_base__flicks;
 // They are explicitly marked inline, even if modern compilers don't use the
 // inline attribute to guide optimizations such as inlining, to avoid the
 // -Wunused-function warning, and we like to compile with -Wall -Werror.
+
+static inline int8_t  //
+wuffs_base__i8__min(int8_t x, int8_t y) {
+  return x < y ? x : y;
+}
+
+static inline int8_t  //
+wuffs_base__i8__max(int8_t x, int8_t y) {
+  return x > y ? x : y;
+}
+
+static inline int16_t  //
+wuffs_base__i16__min(int16_t x, int16_t y) {
+  return x < y ? x : y;
+}
+
+static inline int16_t  //
+wuffs_base__i16__max(int16_t x, int16_t y) {
+  return x > y ? x : y;
+}
+
+static inline int32_t  //
+wuffs_base__i32__min(int32_t x, int32_t y) {
+  return x < y ? x : y;
+}
+
+static inline int32_t  //
+wuffs_base__i32__max(int32_t x, int32_t y) {
+  return x > y ? x : y;
+}
+
+static inline int64_t  //
+wuffs_base__i64__min(int64_t x, int64_t y) {
+  return x < y ? x : y;
+}
+
+static inline int64_t  //
+wuffs_base__i64__max(int64_t x, int64_t y) {
+  return x > y ? x : y;
+}
 
 static inline uint8_t  //
 wuffs_base__u8__min(uint8_t x, uint8_t y) {
@@ -778,9 +830,63 @@ wuffs_base__empty_slice_u8() {
   return ret;
 }
 
+static inline wuffs_base__slice_u16  //
+wuffs_base__empty_slice_u16() {
+  wuffs_base__slice_u16 ret;
+  ret.ptr = NULL;
+  ret.len = 0;
+  return ret;
+}
+
+static inline wuffs_base__slice_u32  //
+wuffs_base__empty_slice_u32() {
+  wuffs_base__slice_u32 ret;
+  ret.ptr = NULL;
+  ret.len = 0;
+  return ret;
+}
+
+static inline wuffs_base__slice_u64  //
+wuffs_base__empty_slice_u64() {
+  wuffs_base__slice_u64 ret;
+  ret.ptr = NULL;
+  ret.len = 0;
+  return ret;
+}
+
 static inline wuffs_base__table_u8  //
 wuffs_base__empty_table_u8() {
   wuffs_base__table_u8 ret;
+  ret.ptr = NULL;
+  ret.width = 0;
+  ret.height = 0;
+  ret.stride = 0;
+  return ret;
+}
+
+static inline wuffs_base__table_u16  //
+wuffs_base__empty_table_u16() {
+  wuffs_base__table_u16 ret;
+  ret.ptr = NULL;
+  ret.width = 0;
+  ret.height = 0;
+  ret.stride = 0;
+  return ret;
+}
+
+static inline wuffs_base__table_u32  //
+wuffs_base__empty_table_u32() {
+  wuffs_base__table_u32 ret;
+  ret.ptr = NULL;
+  ret.width = 0;
+  ret.height = 0;
+  ret.stride = 0;
+  return ret;
+}
+
+static inline wuffs_base__table_u64  //
+wuffs_base__empty_table_u64() {
+  wuffs_base__table_u64 ret;
   ret.ptr = NULL;
   ret.width = 0;
   ret.height = 0;

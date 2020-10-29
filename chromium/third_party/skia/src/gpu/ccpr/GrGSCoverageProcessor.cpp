@@ -23,10 +23,7 @@ protected:
 
     virtual bool hasCoverage(const GrGSCoverageProcessor& proc) const { return false; }
 
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&,
-                 const CoordTransformRange& transformRange) final {
-        this->setTransformDataHelper(pdman, transformRange);
-    }
+    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor&) final {}
 
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) final {
         const GrGSCoverageProcessor& proc = args.fGP.cast<GrGSCoverageProcessor>();
@@ -434,8 +431,8 @@ void GrGSCoverageProcessor::reset(PrimitiveType primitiveType, int subpassIdx,
 }
 
 void GrGSCoverageProcessor::bindBuffers(GrOpsRenderPass* renderPass,
-                                        const GrBuffer* instanceBuffer) const {
-    renderPass->bindBuffers(nullptr, nullptr, instanceBuffer);
+                                        sk_sp<const GrBuffer> instanceBuffer) const {
+    renderPass->bindBuffers(nullptr, nullptr, std::move(instanceBuffer));
 }
 
 void GrGSCoverageProcessor::drawInstances(GrOpsRenderPass* renderPass, int instanceCount,

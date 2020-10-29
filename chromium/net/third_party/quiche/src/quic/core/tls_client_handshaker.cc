@@ -68,7 +68,6 @@ TlsClientHandshaker::TlsClientHandshaker(
       pre_shared_key_(crypto_config->pre_shared_key()),
       crypto_negotiated_params_(new QuicCryptoNegotiatedParameters),
       has_application_state_(has_application_state),
-      attempting_zero_rtt_(crypto_config->early_data_enabled_for_tls()),
       tls_connection_(crypto_config->ssl_ctx(), this) {}
 
 TlsClientHandshaker::~TlsClientHandshaker() {
@@ -116,18 +115,11 @@ bool TlsClientHandshaker::CryptoConnect() {
   }
 
   // Set a session to resume, if there is one.
-  std::unique_ptr<QuicResumptionState> cached_state;
   if (session_cache_) {
-    cached_state = session_cache_->Lookup(server_id_, SSL_get_SSL_CTX(ssl()));
+    cached_state_ = session_cache_->Lookup(server_id_, SSL_get_SSL_CTX(ssl()));
   }
-  if (cached_state) {
-    SSL_set_session(ssl(), cached_state->tls_session.get());
-    if (attempting_zero_rtt_ &&
-        SSL_SESSION_early_data_capable(cached_state->tls_session.get())) {
-      if (!PrepareZeroRttConfig(cached_state.get())) {
-        return false;
-      }
-    }
+  if (cached_state_) {
+    SSL_set_session(ssl(), cached_state_->tls_session.get());
   }
 
   // Start the handshake.
@@ -138,7 +130,8 @@ bool TlsClientHandshaker::CryptoConnect() {
 bool TlsClientHandshaker::PrepareZeroRttConfig(
     QuicResumptionState* cached_state) {
   std::string error_details;
-  if (handshaker_delegate()->ProcessTransportParameters(
+  if (!cached_state->transport_params ||
+      handshaker_delegate()->ProcessTransportParameters(
           *(cached_state->transport_params),
           /*is_resumption = */ true, &error_details) != QUIC_NO_ERROR) {
     QUIC_BUG << "Unable to parse cached transport parameters.";
@@ -146,10 +139,15 @@ bool TlsClientHandshaker::PrepareZeroRttConfig(
                     "Client failed to parse cached Transport Parameters.");
     return false;
   }
+
+  session()->connection()->OnTransportParametersResumed(
+      *(cached_state->transport_params));
   session()->OnConfigNegotiated();
 
   if (has_application_state_) {
-    if (!session()->ResumeApplicationState(cached_state->application_state)) {
+    if (!cached_state->application_state ||
+        !session()->ResumeApplicationState(
+            cached_state->application_state.get())) {
       QUIC_BUG << "Unable to parse cached application state.";
       CloseConnection(QUIC_HANDSHAKE_FAILED,
                       "Client failed to parse cached application state.");
@@ -208,13 +206,8 @@ bool TlsClientHandshaker::SetTransportParameters() {
   if (!handshaker_delegate()->FillTransportParameters(&params)) {
     return false;
   }
-  if (GetQuicRestartFlag(quic_google_transport_param_send_new)) {
-    if (!user_agent_id_.empty()) {
-      params.user_agent_id = user_agent_id_;
-    }
-  }
-  if (!GetQuicRestartFlag(quic_google_transport_param_omit_old)) {
-    params.google_quic_params->SetStringPiece(kUAID, user_agent_id_);
+  if (!user_agent_id_.empty()) {
+    params.user_agent_id = user_agent_id_;
   }
 
   // Notify QuicConnectionDebugVisitor.
@@ -437,7 +430,6 @@ void TlsClientHandshaker::AdvanceHandshake() {
     return;
   }
   switch (state_) {
-    // TODO(b/153726130): handle the case where the server rejects early data.
     case STATE_HANDSHAKE_RUNNING:
       should_close = ssl_error != SSL_ERROR_WANT_READ;
       break;
@@ -469,8 +461,11 @@ void TlsClientHandshaker::FinishHandshake() {
     // 0-RTT-capable, which means that FinishHandshake will get called twice -
     // the first time after sending the ClientHello, and the second time after
     // the handshake is complete. If we're in the first time FinishHandshake is
-    // called, we can't do any end-of-handshake processing, so we return early
-    // from this function.
+    // called, we can't do any end-of-handshake processing.
+
+    // If we're attempting a 0-RTT handshake, then we need to let the transport
+    // and application know what state to apply to early data.
+    PrepareZeroRttConfig(cached_state_.get());
     return;
   }
   QUIC_LOG(INFO) << "Client: handshake finished";
@@ -519,7 +514,7 @@ void TlsClientHandshaker::FinishHandshake() {
   QUIC_DLOG(INFO) << "Client: server selected ALPN: '" << received_alpn_string
                   << "'";
   one_rtt_keys_available_ = true;
-  handshaker_delegate()->OnOneRttKeysAvailable();
+  handshaker_delegate()->OnTlsHandshakeComplete();
 }
 
 void TlsClientHandshaker::HandleZeroRttReject() {

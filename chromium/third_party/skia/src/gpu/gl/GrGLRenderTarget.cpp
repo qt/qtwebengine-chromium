@@ -5,13 +5,13 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/gl/GrGLRenderTarget.h"
+
 #include "include/core/SkTraceMemoryDump.h"
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrGpuResourcePriv.h"
-#include "src/gpu/GrRenderTargetPriv.h"
 #include "src/gpu/gl/GrGLGpu.h"
-#include "src/gpu/gl/GrGLRenderTarget.h"
 #include "src/gpu/gl/GrGLUtil.h"
 
 #define GPUGL static_cast<GrGLGpu*>(this->getGpu())
@@ -85,7 +85,7 @@ GrBackendRenderTarget GrGLRenderTarget::getBackendRenderTarget() const {
     fbi.fFBOID = fRTFBOID;
     fbi.fFormat = GrGLFormatToEnum(this->format());
     int numStencilBits = 0;
-    if (GrStencilAttachment* stencil = this->renderTargetPriv().getStencilAttachment()) {
+    if (GrStencilAttachment* stencil = this->getStencilAttachment()) {
         numStencilBits = stencil->bits();
     }
 
@@ -102,13 +102,13 @@ GrBackendFormat GrGLRenderTarget::backendFormat() const {
 size_t GrGLRenderTarget::onGpuMemorySize() const {
     const GrCaps& caps = *this->getGpu()->caps();
     return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
-                                  fNumSamplesOwnedPerPixel, GrMipMapped::kNo);
+                                  fNumSamplesOwnedPerPixel, GrMipmapped::kNo);
 }
 
 bool GrGLRenderTarget::completeStencilAttachment() {
     GrGLGpu* gpu = this->getGLGpu();
     const GrGLInterface* interface = gpu->glInterface();
-    GrStencilAttachment* stencil = this->renderTargetPriv().getStencilAttachment();
+    GrStencilAttachment* stencil = this->getStencilAttachment();
     if (nullptr == stencil) {
         GR_GL_CALL(interface, FramebufferRenderbuffer(GR_GL_FRAMEBUFFER,
                                                       GR_GL_STENCIL_ATTACHMENT,
@@ -220,7 +220,7 @@ void GrGLRenderTarget::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) 
     if (fMSColorRenderbufferID) {
         const GrCaps& caps = *this->getGpu()->caps();
         size_t size = GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
-                                             this->msaaSamples(), GrMipMapped::kNo);
+                                             this->msaaSamples(), GrMipmapped::kNo);
 
         // Due to this resource having both a texture and a renderbuffer component, dump as
         // skia/gpu_resources/resource_#/renderbuffer

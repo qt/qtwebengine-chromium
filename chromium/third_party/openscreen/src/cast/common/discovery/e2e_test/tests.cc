@@ -46,7 +46,7 @@ class Publisher : public discovery::DnsSdServicePublisher<ServiceInfo> {
       : DnsSdServicePublisher<ServiceInfo>(service,
                                            kCastV2ServiceId,
                                            ServiceInfoToDnsSdInstance) {
-    OSP_LOG << "Initializing Publisher...\n";
+    OSP_LOG_INFO << "Initializing Publisher...\n";
   }
 
   ~Publisher() override = default;
@@ -78,7 +78,7 @@ class ServiceReceiver : public discovery::DnsSdServiceWatcher<ServiceInfo> {
                 std::vector<std::reference_wrapper<const ServiceInfo>> infos) {
               ProcessResults(std::move(infos));
             }) {
-    OSP_LOG << "Initializing ServiceReceiver...";
+    OSP_LOG_INFO << "Initializing ServiceReceiver...";
   }
 
   bool IsServiceFound(const ServiceInfo& check_service) {
@@ -141,7 +141,7 @@ class DiscoveryE2ETest : public testing::Test {
   }
 
   ~DiscoveryE2ETest() {
-    OSP_LOG << "TEST COMPLETE!";
+    OSP_LOG_INFO << "TEST COMPLETE!";
     dnssd_service_.reset();
     PlatformClientPosix::ShutDown();
   }
@@ -226,7 +226,7 @@ class DiscoveryE2ETest : public testing::Test {
       }
 
       if (waiting_on) {
-        OSP_LOG << "\tWaiting on " << waiting_on << "...";
+        OSP_LOG_INFO << "\tWaiting on " << waiting_on << "...";
         std::this_thread::sleep_for(kWaitLoopSleepTime);
         continue;
       }
@@ -353,7 +353,7 @@ TEST_F(DiscoveryE2ETest, ValidateQueryFlow) {
 
   // Wait until all probe phases complete and all instance ids are claimed. At
   // this point, all records should be published.
-  OSP_LOG << "Service publication in progress...";
+  OSP_LOG_INFO << "Service publication in progress...";
   std::atomic_bool found1{false};
   std::atomic_bool found2{false};
   std::atomic_bool found3{false};
@@ -361,10 +361,10 @@ TEST_F(DiscoveryE2ETest, ValidateQueryFlow) {
   CheckForClaimedIds(instance2, &found2);
   CheckForClaimedIds(instance3, &found3);
   WaitUntilSeen(true, &found1, &found2, &found3);
-  OSP_LOG << "\tAll services successfully published!\n";
+  OSP_LOG_INFO << "\tAll services successfully published!\n";
 
   // Make sure all services are found through discovery.
-  OSP_LOG << "Service discovery in progress...";
+  OSP_LOG_INFO << "Service discovery in progress...";
   found1 = false;
   found2 = false;
   found3 = false;
@@ -399,7 +399,7 @@ TEST_F(DiscoveryE2ETest, ValidateAnnouncementFlow) {
 
   // Wait until all probe phases complete and all instance ids are claimed. At
   // this point, all records should be published.
-  OSP_LOG << "Service publication in progress...";
+  OSP_LOG_INFO << "Service publication in progress...";
   std::atomic_bool found1{false};
   std::atomic_bool found2{false};
   std::atomic_bool found3{false};
@@ -407,10 +407,10 @@ TEST_F(DiscoveryE2ETest, ValidateAnnouncementFlow) {
   CheckForClaimedIds(instance2, &found2);
   CheckForClaimedIds(instance3, &found3);
   WaitUntilSeen(true, &found1, &found2, &found3);
-  OSP_LOG << "\tAll services successfully published and announced!\n";
+  OSP_LOG_INFO << "\tAll services successfully published and announced!\n";
 
   // Make sure all services are found through discovery.
-  OSP_LOG << "Service discovery in progress...";
+  OSP_LOG_INFO << "Service discovery in progress...";
   found1 = false;
   found2 = false;
   found3 = false;
@@ -418,10 +418,10 @@ TEST_F(DiscoveryE2ETest, ValidateAnnouncementFlow) {
   CheckForPublishedService(instance2, &found2);
   CheckForPublishedService(instance3, &found3);
   WaitUntilSeen(true, &found1, &found2, &found3);
-  OSP_LOG << "\tAll services successfully discovered!\n";
+  OSP_LOG_INFO << "\tAll services successfully discovered!\n";
 
   // Deregister all service instances.
-  OSP_LOG << "Deregister all services...";
+  OSP_LOG_INFO << "Deregister all services...";
   task_runner_->PostTask([this]() {
     ErrorOr<int> result = publisher_->DeregisterAll();
     ASSERT_FALSE(result.is_error());
@@ -459,26 +459,27 @@ TEST_F(DiscoveryE2ETest, ValidateRecordsOnlyReceivedWhenQueryRunning) {
 
   // Wait until all probe phases complete and all instance ids are claimed. At
   // this point, all records should be published.
-  OSP_LOG << "Service publication in progress...";
+  OSP_LOG_INFO << "Service publication in progress...";
   std::atomic_bool found{false};
   CheckForClaimedIds(instance, &found);
   WaitUntilSeen(true, &found);
 
   // And ensure stopped discovery does not find the records.
-  OSP_LOG << "Validating no service discovery occurs when discovery stopped...";
+  OSP_LOG_INFO
+      << "Validating no service discovery occurs when discovery stopped...";
   found = false;
   CheckNotPublishedService(instance, &found);
   WaitUntilSeen(false, &found);
 
   // Make sure all services are found through discovery.
   StartDiscovery();
-  OSP_LOG << "Service discovery in progress...";
+  OSP_LOG_INFO << "Service discovery in progress...";
   found = false;
   CheckForPublishedService(instance, &found);
   WaitUntilSeen(true, &found);
 
   // Update discovery and ensure that the updated service is seen.
-  OSP_LOG << "Updating service and waiting for discovery...";
+  OSP_LOG_INFO << "Updating service and waiting for discovery...";
   auto updated_instance = instance;
   updated_instance.friendly_name = "OtherName";
   found = false;
@@ -492,11 +493,12 @@ TEST_F(DiscoveryE2ETest, ValidateRecordsOnlyReceivedWhenQueryRunning) {
   WaitUntilSeen(false, &found);
 
   // Stop discovery.
-  OSP_LOG << "Stopping discovery...";
+  OSP_LOG_INFO << "Stopping discovery...";
   task_runner_->PostTask([this]() { receiver_->StopDiscovery(); });
 
   // Update discovery and ensure that the updated service is NOT seen.
-  OSP_LOG << "Updating service and validating the change isn't received...";
+  OSP_LOG_INFO
+      << "Updating service and validating the change isn't received...";
   found = false;
   instance.friendly_name = "ThirdName";
   UpdateRecords(instance);
@@ -506,7 +508,7 @@ TEST_F(DiscoveryE2ETest, ValidateRecordsOnlyReceivedWhenQueryRunning) {
   StartDiscovery();
   std::this_thread::sleep_for(kMaxQueryDuration);
 
-  OSP_LOG << "Service discovery in progress...";
+  OSP_LOG_INFO << "Service discovery in progress...";
   found = false;
   CheckNotPublishedService(updated_instance, &found);
   WaitUntilSeen(false, &found);
@@ -540,20 +542,20 @@ TEST_F(DiscoveryE2ETest, ValidateRefreshFlow) {
 
   // Wait until all probe phases complete and all instance ids are claimed. At
   // this point, all records should be published.
-  OSP_LOG << "Service publication in progress...";
+  OSP_LOG_INFO << "Service publication in progress...";
   std::atomic_bool found{false};
   CheckForClaimedIds(instance, &found);
   WaitUntilSeen(true, &found);
 
   // Make sure all services are found through discovery.
-  OSP_LOG << "Service discovery in progress...";
+  OSP_LOG_INFO << "Service discovery in progress...";
   found = false;
   CheckForPublishedService(instance, &found);
   WaitUntilSeen(true, &found);
 
   // Force refresh discovery, then ensure that the published service is
   // re-discovered.
-  OSP_LOG << "Force refresh discovery...";
+  OSP_LOG_INFO << "Force refresh discovery...";
   task_runner_->PostTask([this]() { receiver_->EraseReceivedServices(); });
   std::this_thread::sleep_for(kMaxQueryDuration);
   found = false;
@@ -561,14 +563,14 @@ TEST_F(DiscoveryE2ETest, ValidateRefreshFlow) {
   WaitUntilSeen(false, &found);
   task_runner_->PostTask([this]() { receiver_->ForceRefresh(); });
 
-  OSP_LOG << "Ensure that the published service is re-discovered...";
+  OSP_LOG_INFO << "Ensure that the published service is re-discovered...";
   found = false;
   CheckForPublishedService(instance, &found);
   WaitUntilSeen(true, &found);
 
   // Soft refresh discovery, then ensure that the published service is NOT
   // re-discovered.
-  OSP_LOG << "Call DiscoverNow on discovery...";
+  OSP_LOG_INFO << "Call DiscoverNow on discovery...";
   task_runner_->PostTask([this]() { receiver_->EraseReceivedServices(); });
   std::this_thread::sleep_for(kMaxQueryDuration);
   found = false;
@@ -576,7 +578,7 @@ TEST_F(DiscoveryE2ETest, ValidateRefreshFlow) {
   WaitUntilSeen(false, &found);
   task_runner_->PostTask([this]() { receiver_->DiscoverNow(); });
 
-  OSP_LOG << "Ensure that the published service is re-discovered...";
+  OSP_LOG_INFO << "Ensure that the published service is re-discovered...";
   found = false;
   CheckForPublishedService(instance, &found);
   WaitUntilSeen(true, &found);

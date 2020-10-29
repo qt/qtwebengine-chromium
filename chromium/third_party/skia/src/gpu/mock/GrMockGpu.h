@@ -20,7 +20,7 @@ class GrPipeline;
 
 class GrMockGpu : public GrGpu {
 public:
-    static sk_sp<GrGpu> Make(const GrMockOptions*, const GrContextOptions&, GrContext*);
+    static sk_sp<GrGpu> Make(const GrMockOptions*, const GrContextOptions&, GrDirectContext*);
 
     ~GrMockGpu() override {}
 
@@ -31,7 +31,8 @@ public:
             const SkIRect&,
             const GrOpsRenderPass::LoadAndStoreInfo&,
             const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-            const SkTArray<GrSurfaceProxy*, true>& sampledProxies) override;
+            const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+            bool usesXferBarriers) override;
 
     GrFence SK_WARN_UNUSED_RESULT insertFence() override { return 0; }
     bool waitFence(GrFence) override { return true; }
@@ -57,7 +58,7 @@ public:
     void checkFinishProcs() override {}
 
 private:
-    GrMockGpu(GrContext* context, const GrMockOptions&, const GrContextOptions&);
+    GrMockGpu(GrDirectContext*, const GrMockOptions&, const GrContextOptions&);
 
     void onResetContext(uint32_t resetBits) override {}
 
@@ -77,7 +78,7 @@ private:
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
                                                SkBudgeted,
-                                               GrMipMapped,
+                                               GrMipmapped,
                                                GrProtected,
                                                const void* data, size_t dataSize) override;
 
@@ -132,7 +133,7 @@ private:
 
     bool onRegenerateMipMapLevels(GrTexture*) override { return true; }
 
-    void onResolveRenderTarget(GrRenderTarget* target, const SkIRect&, ForExternalIO) override {}
+    void onResolveRenderTarget(GrRenderTarget* target, const SkIRect&) override {}
 
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override {
@@ -149,7 +150,7 @@ private:
     GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                             const GrBackendFormat&,
                                             GrRenderable,
-                                            GrMipMapped,
+                                            GrMipmapped,
                                             GrProtected) override;
 
     bool onUpdateBackendTexture(const GrBackendTexture&,
@@ -160,10 +161,15 @@ private:
 
     GrBackendTexture onCreateCompressedBackendTexture(SkISize dimensions,
                                                       const GrBackendFormat&,
-                                                      GrMipMapped,
-                                                      GrProtected,
-                                                      sk_sp<GrRefCntedCallback> finishedCallback,
-                                                      const BackendTextureData*) override;
+                                                      GrMipmapped,
+                                                      GrProtected) override;
+
+    bool onUpdateCompressedBackendTexture(const GrBackendTexture&,
+                                          sk_sp<GrRefCntedCallback> finishedCallback,
+                                          const BackendTextureData*) override {
+        return true;
+    }
+
     void deleteBackendTexture(const GrBackendTexture&) override;
 
     bool compile(const GrProgramDesc&, const GrProgramInfo&) override { return false; }

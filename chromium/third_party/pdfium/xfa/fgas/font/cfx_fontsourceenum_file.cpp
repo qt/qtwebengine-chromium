@@ -15,12 +15,12 @@ namespace {
 constexpr char kFolderSeparator = '/';
 
 constexpr const char* kFontFolders[] = {
-#if _FX_PLATFORM_ == _FX_PLATFORM_LINUX_
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
     "/usr/share/fonts",
     "/usr/share/X11/fonts/Type1",
     "/usr/share/X11/fonts/TTF",
     "/usr/local/share/fonts",
-#elif defined(OS_MACOSX)
+#elif defined(OS_APPLE)
     "~/Library/Fonts",
     "/Library/Fonts",
     "/System/Library/Fonts",

@@ -936,6 +936,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_ANGLE_framebuffer_blit"] = enableableExtension(&Extensions::framebufferBlit);
         map["GL_ANGLE_framebuffer_multisample"] = enableableExtension(&Extensions::framebufferMultisample);
         map["GL_EXT_multisampled_render_to_texture"] = enableableExtension(&Extensions::multisampledRenderToTexture);
+        map["GL_EXT_multisampled_render_to_texture2"] = enableableExtension(&Extensions::multisampledRenderToTexture2);
         map["GL_ANGLE_instanced_arrays"] = enableableExtension(&Extensions::instancedArraysANGLE);
         map["GL_EXT_instanced_arrays"] = enableableExtension(&Extensions::instancedArraysEXT);
         map["GL_ANGLE_pack_reverse_row_order"] = enableableExtension(&Extensions::packReverseRowOrder);
@@ -956,6 +957,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_OES_EGL_sync"] = esOnlyExtension(&Extensions::eglSyncOES);
         map["GL_EXT_memory_object"] = enableableExtension(&Extensions::memoryObject);
         map["GL_EXT_memory_object_fd"] = enableableExtension(&Extensions::memoryObjectFd);
+        map["GL_ANGLE_memory_object_flags"] = enableableExtension(&Extensions::memoryObjectFlagsANGLE);
         map["GL_ANGLE_memory_object_fuchsia"] = enableableExtension(&Extensions::memoryObjectFuchsiaANGLE);
         map["GL_EXT_semaphore"] = enableableExtension(&Extensions::semaphore);
         map["GL_EXT_semaphore_fd"] = enableableExtension(&Extensions::semaphoreFd);
@@ -1371,6 +1373,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_EXT_pixel_format_float",                          pixelFormatFloat,                   &extensionStrings);
     InsertExtensionString("EGL_KHR_surfaceless_context",                         surfacelessContext,                 &extensionStrings);
     InsertExtensionString("EGL_ANGLE_display_texture_share_group",               displayTextureShareGroup,           &extensionStrings);
+    InsertExtensionString("EGL_ANGLE_display_semaphore_share_group",             displaySemaphoreShareGroup,         &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_client_arrays",              createContextClientArrays,          &extensionStrings);
     InsertExtensionString("EGL_ANGLE_program_cache_control",                     programCacheControl,                &extensionStrings);
     InsertExtensionString("EGL_ANGLE_robust_resource_initialization",            robustResourceInitialization,       &extensionStrings);

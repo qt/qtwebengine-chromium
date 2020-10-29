@@ -485,6 +485,12 @@ EXPORTS
     glDrawElementsInstancedANGLE
     glVertexAttribDivisorANGLE
 
+    ; GL_ANGLE_memory_object_flags
+    glTexStorageMemFlags2DANGLE
+    glTexStorageMemFlags2DMultisampleANGLE
+    glTexStorageMemFlags3DANGLE
+    glTexStorageMemFlags3DMultisampleANGLE
+
     ; GL_ANGLE_memory_object_fuchsia
     glImportMemoryZirconHandleANGLE
 
@@ -708,6 +714,10 @@ EXPORTS
     ; GL_EXT_semaphore_fd
     glImportSemaphoreFdEXT
 
+    ; GL_EXT_texture_buffer
+    glTexBufferEXT
+    glTexBufferRangeEXT
+
     ; GL_EXT_texture_compression_bptc
 
     ; GL_EXT_texture_compression_dxt1
@@ -844,6 +854,10 @@ EXPORTS
     glSamplerParameterIuivOES
     glTexParameterIivOES
     glTexParameterIuivOES
+
+    ; GL_OES_texture_buffer
+    glTexBufferOES
+    glTexBufferRangeOES
 
     ; GL_OES_texture_cube_map
     glGetTexGenfvOES
@@ -1461,7 +1475,11 @@ EXPORTS
     glStencilOpSeparateContextANGLE
     glTestFenceNVContextANGLE
     glTexBufferContextANGLE
+    glTexBufferEXTContextANGLE
+    glTexBufferOESContextANGLE
     glTexBufferRangeContextANGLE
+    glTexBufferRangeEXTContextANGLE
+    glTexBufferRangeOESContextANGLE
     glTexCoordPointerContextANGLE
     glTexEnvfContextANGLE
     glTexEnvfvContextANGLE
@@ -1508,6 +1526,10 @@ EXPORTS
     glTexStorageMem2DMultisampleEXTContextANGLE
     glTexStorageMem3DEXTContextANGLE
     glTexStorageMem3DMultisampleEXTContextANGLE
+    glTexStorageMemFlags2DANGLEContextANGLE
+    glTexStorageMemFlags2DMultisampleANGLEContextANGLE
+    glTexStorageMemFlags3DANGLEContextANGLE
+    glTexStorageMemFlags3DMultisampleANGLEContextANGLE
     glTexSubImage2DContextANGLE
     glTexSubImage2DRobustANGLEContextANGLE
     glTexSubImage3DContextANGLE

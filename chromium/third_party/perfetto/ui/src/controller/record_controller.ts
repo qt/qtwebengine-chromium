@@ -15,7 +15,7 @@
 import {Message, Method, rpc, RPCImplCallback} from 'protobufjs';
 
 import {
-  uint8ArrayToBase64,
+  base64Encode,
 } from '../base/string_utils';
 import {Actions} from '../common/actions';
 import {
@@ -117,17 +117,15 @@ export function genConfig(
   let procThreadAssociationFtrace = false;
   let trackInitialOomScore = false;
 
-  if (uiCfg.cpuSched || uiCfg.cpuLatency) {
+  if (uiCfg.cpuSched) {
     procThreadAssociationPolling = true;
     procThreadAssociationFtrace = true;
     ftraceEvents.add('sched/sched_switch');
     ftraceEvents.add('power/suspend_resume');
-    if (uiCfg.cpuLatency) {
-      ftraceEvents.add('sched/sched_wakeup');
-      ftraceEvents.add('sched/sched_wakeup_new');
-      ftraceEvents.add('sched/sched_waking');
-      ftraceEvents.add('power/suspend_resume');
-    }
+    ftraceEvents.add('sched/sched_wakeup');
+    ftraceEvents.add('sched/sched_wakeup_new');
+    ftraceEvents.add('sched/sched_waking');
+    ftraceEvents.add('power/suspend_resume');
   }
 
   if (uiCfg.cpuFreq) {
@@ -255,6 +253,8 @@ export function genConfig(
         cdc.dumpPhaseMs = uiCfg.hpContinuousDumpsPhase;
       }
     }
+    // TODO(fmayer): Add a toggle for this to the UI?
+    cfg.blockClient = true;
     heapprofd = cfg;
   }
 
@@ -557,6 +557,14 @@ export class RecordController extends Controller<'main'> implements Consumer {
   }
 
   run() {
+    // TODO(eseckler): Use ConsumerPort's QueryServiceState instead
+    // of posting a custom extension message to retrieve the category list.
+    if (this.app.state.updateChromeCategories === true) {
+      if (this.app.state.extensionInstalled) {
+        this.extensionPort.postMessage({method: 'GetCategories'});
+      }
+      globals.dispatch(Actions.setUpdateChromeCategories({update: false}));
+    }
     if (this.app.state.recordConfig === this.config &&
         this.app.state.recordingInProgress === this.recordingInProgress) {
       return;
@@ -566,7 +574,7 @@ export class RecordController extends Controller<'main'> implements Consumer {
     const configProto =
         genConfigProto(this.config, this.app.state.recordingTarget);
     const configProtoText = toPbtxt(configProto);
-    const configProtoBase64 = uint8ArrayToBase64(configProto);
+    const configProtoBase64 = base64Encode(configProto);
     const commandline = `
       echo '${configProtoBase64}' |
       base64 --decode |

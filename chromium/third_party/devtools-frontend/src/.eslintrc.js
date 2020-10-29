@@ -123,8 +123,11 @@ module.exports = {
     // no-implicit-globals will prevent accidental globals
     'no-implicit-globals': [0],
 
-    '@typescript-eslint/interface-name-prefix': [2, {'prefixWithI': 'never'}],
+    // forbids interfaces starting with an I prefix.
+    '@typescript-eslint/naming-convention':
+        [2, {'selector': 'interface', 'format': ['PascalCase'], 'custom': {'regex': '^I[A-Z]', 'match': false}}],
     '@typescript-eslint/explicit-member-accessibility': [0],
+    '@typescript-eslint/no-explicit-any': 2,
 
     // errors on it('test') with no body
     'mocha/no-pending-tests': 2,
@@ -139,6 +142,7 @@ module.exports = {
     'rulesdir/check_license_header': 2,
     'rulesdir/check_test_definitions': 2,
     'rulesdir/avoid_assert_equal': 2,
+    'rulesdir/no_repeated_tests': 2,
   },
   'overrides': [{
     'files': ['*.ts'],

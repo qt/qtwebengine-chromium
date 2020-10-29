@@ -21,6 +21,8 @@
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
 #include "core/fpdfapi/parser/cpdf_parser.h"
+#include "core/fpdfapi/parser/cpdf_stream.h"
+#include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 #include "core/fpdfapi/render/cpdf_pagerendercache.h"
@@ -46,6 +48,7 @@
 #include "public/fpdf_formfill.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/span.h"
+#include "third_party/base/stl_util.h"
 
 #ifdef PDF_ENABLE_V8
 #include "fxjs/cfx_v8.h"
@@ -86,6 +89,54 @@ static_assert(WindowsPrintMode::kModeEmfImageMasks ==
 namespace {
 
 bool g_bLibraryInitialized = false;
+
+const CPDF_Object* GetXFAEntryFromDocument(const CPDF_Document* doc) {
+  const CPDF_Dictionary* root = doc->GetRoot();
+  if (!root)
+    return nullptr;
+
+  const CPDF_Dictionary* acro_form = root->GetDictFor("AcroForm");
+  return acro_form ? acro_form->GetObjectFor("XFA") : nullptr;
+}
+
+struct XFAPacket {
+  ByteString name;
+  const CPDF_Stream* data;
+};
+
+std::vector<XFAPacket> GetXFAPackets(const CPDF_Object* xfa_object) {
+  std::vector<XFAPacket> packets;
+
+  if (!xfa_object)
+    return packets;
+
+  const CPDF_Stream* xfa_stream = ToStream(xfa_object->GetDirect());
+  if (xfa_stream) {
+    packets.push_back({"", xfa_stream});
+    return packets;
+  }
+
+  const CPDF_Array* xfa_array = ToArray(xfa_object->GetDirect());
+  if (!xfa_array)
+    return packets;
+
+  packets.reserve(1 + (xfa_array->size() / 2));
+  for (size_t i = 0; i < xfa_array->size(); i += 2) {
+    if (i + 1 == xfa_array->size())
+      break;
+
+    const CPDF_String* name = ToString(xfa_array->GetObjectAt(i));
+    if (!name)
+      continue;
+
+    const CPDF_Stream* data = xfa_array->GetStreamAt(i + 1);
+    if (!data)
+      continue;
+
+    packets.push_back({name->GetString(), data});
+  }
+  return packets;
+}
 
 FPDF_DOCUMENT LoadDocumentImpl(
     const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
@@ -575,7 +626,7 @@ FPDF_EXPORT void FPDF_CALLCONV FPDF_RenderPageBitmap(FPDF_BITMAP bitmap,
                                 /*need_to_restore=*/true,
                                 /*pause=*/nullptr);
 
-#ifdef _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_PATHS_)
   pDevice->Flush(true);
   pBitmap->UnPreMultiply();
 #endif
@@ -619,7 +670,7 @@ FPDF_RenderPageBitmapWithMatrix(FPDF_BITMAP bitmap,
                      /*color_scheme=*/nullptr);
 }
 
-#ifdef _SKIA_SUPPORT_
+#if defined(_SKIA_SUPPORT_)
 FPDF_EXPORT FPDF_RECORDER FPDF_CALLCONV FPDF_RenderPageSkp(FPDF_PAGE page,
                                                            int size_x,
                                                            int size_y) {
@@ -642,7 +693,7 @@ FPDF_EXPORT FPDF_RECORDER FPDF_CALLCONV FPDF_RenderPageSkp(FPDF_PAGE page,
 
   return recorder;
 }
-#endif  // _SKIA_SUPPORT_
+#endif  // defined(_SKIA_SUPPORT_)
 
 FPDF_EXPORT void FPDF_CALLCONV FPDF_ClosePage(FPDF_PAGE page) {
   if (!page)
@@ -1123,4 +1174,51 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDF_GetNamedDest(FPDF_DOCUMENT document,
     *buflen = -1;
   }
   return FPDFDestFromCPDFArray(pDestObj->AsArray());
+}
+
+FPDF_EXPORT int FPDF_CALLCONV FPDF_GetXFAPacketCount(FPDF_DOCUMENT document) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc)
+    return -1;
+
+  return pdfium::CollectionSize<int>(
+      GetXFAPackets(GetXFAEntryFromDocument(doc)));
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDF_GetXFAPacketName(FPDF_DOCUMENT document,
+                      int index,
+                      void* buffer,
+                      unsigned long buflen) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc || index < 0)
+    return 0;
+
+  std::vector<XFAPacket> xfa_packets =
+      GetXFAPackets(GetXFAEntryFromDocument(doc));
+  if (static_cast<size_t>(index) >= xfa_packets.size())
+    return 0;
+
+  return NulTerminateMaybeCopyAndReturnLength(xfa_packets[index].name, buffer,
+                                              buflen);
+}
+
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDF_GetXFAPacketContent(FPDF_DOCUMENT document,
+                         int index,
+                         void* buffer,
+                         unsigned long buflen,
+                         unsigned long* out_buflen) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc || index < 0 || !out_buflen)
+    return false;
+
+  std::vector<XFAPacket> xfa_packets =
+      GetXFAPackets(GetXFAEntryFromDocument(doc));
+  if (static_cast<size_t>(index) >= xfa_packets.size())
+    return false;
+
+  *out_buflen = DecodeStreamMaybeCopyAndReturnLength(xfa_packets[index].data,
+                                                     buffer, buflen);
+  return true;
 }

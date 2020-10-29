@@ -221,7 +221,8 @@ const CFX_Font::CharsetFontMap CFX_Font::defaultTTFMap[] = {
     {FX_CHARSET_ShiftJIS, "MS Gothic"},
     {FX_CHARSET_Hangul, "Batang"},
     {FX_CHARSET_MSWin_Cyrillic, "Arial"},
-#if _FX_PLATFORM_ == _FX_PLATFORM_LINUX_ || defined(OS_MACOSX)
+#if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_ASMJS) || \
+    defined(OS_APPLE)
     {FX_CHARSET_MSWin_EasternEuropean, "Arial"},
 #else
     {FX_CHARSET_MSWin_EasternEuropean, "Tahoma"},
@@ -339,7 +340,7 @@ CFX_Font::~CFX_Font() {
   m_FontData = {};  // m_FontData can't outive m_Face.
   m_Face.Reset();
 
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   ReleasePlatformResource();
 #endif
 }
@@ -505,7 +506,7 @@ bool CFX_Font::IsFixedWidth() const {
   return m_Face && FXFT_Is_Face_fixedwidth(m_Face->GetRec()) != 0;
 }
 
-#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 bool CFX_Font::IsSubstFontBold() const {
   CFX_SubstFont* subst_font = GetSubstFont();
   return subst_font && subst_font->GetOriginalWeight() >= FXFONT_FW_BOLD;
@@ -726,7 +727,7 @@ const CFX_PathData* CFX_Font::LoadGlyphPath(uint32_t glyph_index,
   return GetOrCreateGlyphCache()->LoadGlyphPath(this, glyph_index, dest_width);
 }
 
-#if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 CFX_TypeFace* CFX_Font::GetDeviceCache() const {
   return GetOrCreateGlyphCache()->GetDeviceCache(this);
 }

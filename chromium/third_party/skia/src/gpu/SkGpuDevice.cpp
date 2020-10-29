@@ -13,7 +13,8 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/gpu/GrContext.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "include/private/SkShadowFlags.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkCanvasPriv.h"
@@ -32,9 +33,9 @@
 #include "src/core/SkVerticesPriv.h"
 #include "src/gpu/GrBitmapTextureMaker.h"
 #include "src/gpu/GrBlurUtils.h"
-#include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrImageTextureMaker.h"
+#include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
 #include "src/gpu/GrStyle.h"
 #include "src/gpu/GrSurfaceProxyPriv.h"
@@ -42,7 +43,6 @@
 #include "src/gpu/GrTracing.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/geometry/GrStyledShape.h"
-#include "src/gpu/text/GrTextTarget.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkReadPixelsRec.h"
 #include "src/image/SkSurface_Gpu.h"
@@ -75,10 +75,10 @@ bool SkGpuDevice::CheckAlphaTypeAndGetFlags(
     return true;
 }
 
-sk_sp<SkGpuDevice> SkGpuDevice::Make(GrContext* context,
+sk_sp<SkGpuDevice> SkGpuDevice::Make(GrRecordingContext* context,
                                      std::unique_ptr<GrRenderTargetContext> renderTargetContext,
                                      InitContents init) {
-    if (!renderTargetContext || context->priv().abandoned()) {
+    if (!renderTargetContext || context->abandoned()) {
         return nullptr;
     }
 
@@ -92,10 +92,10 @@ sk_sp<SkGpuDevice> SkGpuDevice::Make(GrContext* context,
     return sk_sp<SkGpuDevice>(new SkGpuDevice(context, std::move(renderTargetContext), flags));
 }
 
-sk_sp<SkGpuDevice> SkGpuDevice::Make(GrContext* context, SkBudgeted budgeted,
+sk_sp<SkGpuDevice> SkGpuDevice::Make(GrRecordingContext* context, SkBudgeted budgeted,
                                      const SkImageInfo& info, int sampleCount,
                                      GrSurfaceOrigin origin, const SkSurfaceProps* props,
-                                     GrMipMapped mipMapped, InitContents init) {
+                                     GrMipmapped mipMapped, InitContents init) {
     unsigned flags;
     if (!context->colorTypeSupportedAsSurface(info.colorType()) ||
         !CheckAlphaTypeAndGetFlags(&info, init, &flags)) {
@@ -111,6 +111,12 @@ sk_sp<SkGpuDevice> SkGpuDevice::Make(GrContext* context, SkBudgeted budgeted,
     return sk_sp<SkGpuDevice>(new SkGpuDevice(context, std::move(renderTargetContext), flags));
 }
 
+GrContext* SkGpuDevice::context() const {
+    // CONTEXT TODO: remove this use of 'backdoor'. Short term, we need to use it to support the
+    // SkCanvas::getGrContext and SkSurface::getContext calls.
+    return fContext->priv().backdoor();
+}
+
 static SkImageInfo make_info(GrRenderTargetContext* context, bool opaque) {
     SkColorType colorType = GrColorTypeToSkColorType(context->colorInfo().colorType());
     return SkImageInfo::Make(context->width(), context->height(), colorType,
@@ -118,7 +124,7 @@ static SkImageInfo make_info(GrRenderTargetContext* context, bool opaque) {
                              context->colorInfo().refColorSpace());
 }
 
-SkGpuDevice::SkGpuDevice(GrContext* context,
+SkGpuDevice::SkGpuDevice(GrRecordingContext* context,
                          std::unique_ptr<GrRenderTargetContext> renderTargetContext,
                          unsigned flags)
         : INHERITED(make_info(renderTargetContext.get(), SkToBool(flags & kIsOpaque_Flag)),
@@ -132,13 +138,13 @@ SkGpuDevice::SkGpuDevice(GrContext* context,
 }
 
 std::unique_ptr<GrRenderTargetContext> SkGpuDevice::MakeRenderTargetContext(
-        GrContext* context,
+        GrRecordingContext* context,
         SkBudgeted budgeted,
         const SkImageInfo& origInfo,
         int sampleCount,
         GrSurfaceOrigin origin,
         const SkSurfaceProps* surfaceProps,
-        GrMipMapped mipMapped) {
+        GrMipmapped mipMapped) {
     if (!context) {
         return nullptr;
     }
@@ -177,21 +183,26 @@ sk_sp<SkSpecialImage> SkGpuDevice::filterTexture(SkSpecialImage* srcImg,
 bool SkGpuDevice::onReadPixels(const SkPixmap& pm, int x, int y) {
     ASSERT_SINGLE_OWNER
 
-    if (!SkImageInfoValidConversion(pm.info(), this->imageInfo())) {
+    // Context TODO: Elevate direct context requirement to public API
+    auto dContext = fContext->asDirectContext();
+    if (!dContext || !SkImageInfoValidConversion(pm.info(), this->imageInfo())) {
         return false;
     }
 
-    return fRenderTargetContext->readPixels(pm.info(), pm.writable_addr(), pm.rowBytes(), {x, y});
+    return fRenderTargetContext->readPixels(dContext, pm.info(), pm.writable_addr(), pm.rowBytes(),
+                                            {x, y});
 }
 
 bool SkGpuDevice::onWritePixels(const SkPixmap& pm, int x, int y) {
     ASSERT_SINGLE_OWNER
 
-    if (!SkImageInfoValidConversion(this->imageInfo(), pm.info())) {
+    // Context TODO: Elevate direct context requirement to public API
+    auto dContext = fContext->asDirectContext();
+    if (!dContext || !SkImageInfoValidConversion(this->imageInfo(), pm.info())) {
         return false;
     }
 
-    return fRenderTargetContext->writePixels(pm.info(), pm.addr(), pm.rowBytes(), {x, y});
+    return fRenderTargetContext->writePixels(dContext, pm.info(), pm.addr(), pm.rowBytes(), {x, y});
 }
 
 bool SkGpuDevice::onAccessPixels(SkPixmap* pmap) {
@@ -219,7 +230,7 @@ void SkGpuDevice::replaceRenderTargetContext(std::unique_ptr<GrRenderTargetConte
     SkASSERT(rtc->numSamples() == fRenderTargetContext->numSamples());
     SkASSERT(rtc->asSurfaceProxy()->priv().isExact());
     if (mode == SkSurface::kRetain_ContentChangeMode) {
-        if (this->context()->abandoned()) {
+        if (this->recordingContext()->abandoned()) {
             return;
         }
 
@@ -239,13 +250,13 @@ void SkGpuDevice::replaceRenderTargetContext(SkSurface::ContentChangeMode mode) 
 
     // This entry point is used by SkSurface_Gpu::onCopyOnWrite so it must create a
     // kExact-backed render target context.
-    auto newRTC = MakeRenderTargetContext(this->context(),
+    auto newRTC = MakeRenderTargetContext(this->recordingContext(),
                                           budgeted,
                                           this->imageInfo(),
                                           fRenderTargetContext->numSamples(),
                                           fRenderTargetContext->origin(),
                                           &this->surfaceProps(),
-                                          fRenderTargetContext->mipMapped());
+                                          fRenderTargetContext->mipmapped());
     if (!newRTC) {
         return;
     }
@@ -259,7 +270,7 @@ void SkGpuDevice::drawPaint(const SkPaint& paint) {
     GR_CREATE_TRACE_MARKER_CONTEXT("SkGpuDevice", "drawPaint", fContext.get());
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                           this->asMatrixProvider(), &grPaint)) {
         return;
     }
@@ -291,7 +302,7 @@ void SkGpuDevice::drawPoints(SkCanvas::PointMode mode,
     if (paint.getPathEffect() && 2 == count && SkCanvas::kLines_PointMode == mode) {
         GrStyle style(paint, SkPaint::kStroke_Style);
         GrPaint grPaint;
-        if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+        if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                               this->asMatrixProvider(), &grPaint)) {
             return;
         }
@@ -334,7 +345,7 @@ void SkGpuDevice::drawPoints(SkCanvas::PointMode mode,
 #endif
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                           *matrixProvider, &grPaint)) {
         return;
     }
@@ -365,7 +376,7 @@ void SkGpuDevice::drawRect(const SkRect& rect, const SkPaint& paint) {
     }
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                           this->asMatrixProvider(), &grPaint)) {
         return;
     }
@@ -428,7 +439,7 @@ void SkGpuDevice::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
     SkASSERT(!style.pathEffect());
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                           this->asMatrixProvider(), &grPaint)) {
         return;
     }
@@ -453,7 +464,7 @@ void SkGpuDevice::drawDRRect(const SkRRect& outer, const SkRRect& inner, const S
 
     if (stroke.isFillStyle() && !paint.getMaskFilter() && !paint.getPathEffect()) {
         GrPaint grPaint;
-        if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+        if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                               this->asMatrixProvider(), &grPaint)) {
             return;
         }
@@ -489,7 +500,7 @@ void SkGpuDevice::drawRegion(const SkRegion& region, const SkPaint& paint) {
     }
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                           this->asMatrixProvider(), &grPaint)) {
         return;
     }
@@ -509,7 +520,7 @@ void SkGpuDevice::drawOval(const SkRect& oval, const SkPaint& paint) {
     }
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                           this->asMatrixProvider(), &grPaint)) {
         return;
     }
@@ -527,7 +538,7 @@ void SkGpuDevice::drawArc(const SkRect& oval, SkScalar startAngle,
         return;
     }
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                           this->asMatrixProvider(), &grPaint)) {
         return;
     }
@@ -581,7 +592,7 @@ void SkGpuDevice::drawStrokedLine(const SkPoint points[2],
     SkPreConcatMatrixProvider matrixProvider(this->asMatrixProvider(), local);
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), newPaint,
+    if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), newPaint,
                           matrixProvider, &grPaint)) {
         return;
     }
@@ -612,7 +623,7 @@ void SkGpuDevice::drawPath(const SkPath& origSrcPath, const SkPaint& paint, bool
     GR_CREATE_TRACE_MARKER_CONTEXT("SkGpuDevice", "drawPath", fContext.get());
     if (!paint.getMaskFilter()) {
         GrPaint grPaint;
-        if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), paint,
+        if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), paint,
                               this->asMatrixProvider(), &grPaint)) {
             return;
         }
@@ -650,7 +661,7 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const 
     }
 
     SkASSERT(result->isTextureBacked());
-    GrSurfaceProxyView view = result->view(this->context());
+    GrSurfaceProxyView view = result->view(this->recordingContext());
     if (!view) {
         return;
     }
@@ -662,8 +673,10 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const 
     tmpUnfiltered.setImageFilter(nullptr);
 
     auto fp = GrTextureEffect::Make(std::move(view), special->alphaType());
-    fp = GrColorSpaceXformEffect::Make(std::move(fp), result->getColorSpace(), result->alphaType(),
-                                       fRenderTargetContext->colorInfo().colorSpace());
+    fp = GrColorSpaceXformEffect::Make(
+            std::move(fp),
+            result->getColorSpace(), result->alphaType(),
+            fRenderTargetContext->colorInfo().colorSpace(), kPremul_SkAlphaType);
     if (GrColorTypeIsAlphaOnly(SkColorTypeToGrColorType(result->colorType()))) {
         fp = GrFragmentProcessor::MakeInputPremulAndMulByOutput(std::move(fp));
     } else {
@@ -675,7 +688,7 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const 
     }
 
     GrPaint grPaint;
-    if (!SkPaintToGrPaintReplaceShader(this->context(), fRenderTargetContext->colorInfo(),
+    if (!SkPaintToGrPaintReplaceShader(this->recordingContext(), fRenderTargetContext->colorInfo(),
                                        tmpUnfiltered, this->asMatrixProvider(), std::move(fp),
                                        &grPaint)) {
         return;
@@ -714,7 +727,7 @@ sk_sp<SkSpecialImage> SkGpuDevice::makeSpecial(const SkBitmap& bitmap) {
 sk_sp<SkSpecialImage> SkGpuDevice::makeSpecial(const SkImage* image) {
     SkPixmap pm;
     if (image->isTextureBacked()) {
-        const GrSurfaceProxyView* view = as_IB(image)->view(this->context());
+        const GrSurfaceProxyView* view = as_IB(image)->view(this->recordingContext());
         SkASSERT(view);
 
         return SkSpecialImage::MakeDeferredFromGpu(fContext.get(),
@@ -754,7 +767,7 @@ sk_sp<SkSpecialImage> SkGpuDevice::snapSpecial(const SkIRect& subset, bool force
         // texture that matches the device contents
         view = GrSurfaceProxyView::Copy(fContext.get(),
                                         std::move(view),
-                                        GrMipMapped::kNo,  // Don't auto generate mips
+                                        GrMipmapped::kNo,  // Don't auto generate mips
                                         subset,
                                         SkBackingFit::kApprox,
                                         SkBudgeted::kYes);  // Always budgeted
@@ -804,13 +817,12 @@ void SkGpuDevice::drawImageRect(const SkImage* image, const SkRect* src, const S
                         paint, constraint);
 }
 
-// When drawing nine-patches or n-patches, cap the filter quality at kBilerp.
+// When drawing nine-patches or n-patches, cap the filter quality at kLinear.
 static GrSamplerState::Filter compute_lattice_filter_mode(const SkPaint& paint) {
     if (paint.getFilterQuality() == kNone_SkFilterQuality) {
         return GrSamplerState::Filter::kNearest;
     }
-
-    return GrSamplerState::Filter::kBilerp;
+    return GrSamplerState::Filter::kLinear;
 }
 
 void SkGpuDevice::drawImageNine(const SkImage* image,
@@ -818,8 +830,9 @@ void SkGpuDevice::drawImageNine(const SkImage* image,
     ASSERT_SINGLE_OWNER
     uint32_t pinnedUniqueID;
     auto iter = std::make_unique<SkLatticeIter>(image->width(), image->height(), center, dst);
-    if (GrSurfaceProxyView view = as_IB(image)->refPinnedView(this->context(), &pinnedUniqueID)) {
-        GrTextureAdjuster adjuster(this->context(), std::move(view),
+    if (GrSurfaceProxyView view = as_IB(image)->refPinnedView(this->recordingContext(),
+                                                              &pinnedUniqueID)) {
+        GrTextureAdjuster adjuster(this->recordingContext(), std::move(view),
                                    image->imageInfo().colorInfo(), pinnedUniqueID);
         this->drawProducerLattice(&adjuster, std::move(iter), dst, paint);
     } else {
@@ -844,14 +857,15 @@ void SkGpuDevice::drawProducerLattice(GrTextureProducer* producer,
         paint.writable()->setColor(SkColorSetARGB(origPaint.getAlpha(), 0xFF, 0xFF, 0xFF));
     }
     GrPaint grPaint;
-    if (!SkPaintToGrPaintWithPrimitiveColor(this->context(), fRenderTargetContext->colorInfo(),
+    if (!SkPaintToGrPaintWithPrimitiveColor(this->recordingContext(),
+                                            fRenderTargetContext->colorInfo(),
                                             *paint, this->asMatrixProvider(), &grPaint)) {
         return;
     }
 
     auto dstColorSpace = fRenderTargetContext->colorInfo().colorSpace();
     const GrSamplerState::Filter filter = compute_lattice_filter_mode(*paint);
-    auto view = producer->view(filter);
+    auto view = producer->view(GrMipmapped::kNo);
     if (!view) {
         return;
     }
@@ -869,8 +883,9 @@ void SkGpuDevice::drawImageLattice(const SkImage* image,
     ASSERT_SINGLE_OWNER
     uint32_t pinnedUniqueID;
     auto iter = std::make_unique<SkLatticeIter>(lattice, dst);
-    if (GrSurfaceProxyView view = as_IB(image)->refPinnedView(this->context(), &pinnedUniqueID)) {
-        GrTextureAdjuster adjuster(this->context(), std::move(view),
+    if (GrSurfaceProxyView view = as_IB(image)->refPinnedView(this->recordingContext(),
+                                                              &pinnedUniqueID)) {
+        GrTextureAdjuster adjuster(this->recordingContext(), std::move(view),
                                    image->imageInfo().colorInfo(), pinnedUniqueID);
         this->drawProducerLattice(&adjuster, std::move(iter), dst, paint);
     } else {
@@ -885,7 +900,7 @@ void SkGpuDevice::drawImageLattice(const SkImage* image,
     }
 }
 
-static bool init_vertices_paint(GrContext* context,
+static bool init_vertices_paint(GrRecordingContext* context,
                                 const GrColorInfo& colorInfo,
                                 const SkPaint& skPaint,
                                 const SkMatrixProvider& matrixProvider,
@@ -895,8 +910,8 @@ static bool init_vertices_paint(GrContext* context,
     if (skPaint.getShader()) {
         if (hasColors) {
             // When there are colors and a shader, the shader and colors are combined using bmode.
-            return SkPaintToGrPaintWithXfermode(context, colorInfo, skPaint, matrixProvider, bmode,
-                                                grPaint);
+            return SkPaintToGrPaintWithBlend(context, colorInfo, skPaint, matrixProvider, bmode,
+                                             grPaint);
         } else {
             // We have a shader, but no colors to blend it against.
             return SkPaintToGrPaint(context, colorInfo, skPaint, matrixProvider, grPaint);
@@ -959,12 +974,12 @@ void SkGpuDevice::drawAtlas(const SkImage* atlas, const SkRSXform xform[],
 
     GrPaint grPaint;
     if (colors) {
-        if (!SkPaintToGrPaintWithXfermode(this->context(), fRenderTargetContext->colorInfo(), p,
-                                          this->asMatrixProvider(), (SkBlendMode)mode, &grPaint)) {
+        if (!SkPaintToGrPaintWithBlend(this->recordingContext(), fRenderTargetContext->colorInfo(),
+                                       p, this->asMatrixProvider(), (SkBlendMode)mode, &grPaint)) {
             return;
         }
     } else {
-        if (!SkPaintToGrPaint(this->context(), fRenderTargetContext->colorInfo(), p,
+        if (!SkPaintToGrPaint(this->recordingContext(), fRenderTargetContext->colorInfo(), p,
                               this->asMatrixProvider(), &grPaint)) {
             return;
         }
@@ -991,7 +1006,7 @@ void SkGpuDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList) {
 ///////////////////////////////////////////////////////////////////////////////
 
 void SkGpuDevice::drawDrawable(SkDrawable* drawable, const SkMatrix* matrix, SkCanvas* canvas) {
-    GrBackendApi api = this->context()->backend();
+    GrBackendApi api = this->recordingContext()->backend();
     if (GrBackendApi::kVulkan == api) {
         const SkMatrix& ctm = canvas->getTotalMatrix();
         const SkMatrix& combinedMatrix = matrix ? SkMatrix::Concat(ctm, *matrix) : ctm;
@@ -1010,8 +1025,13 @@ void SkGpuDevice::drawDrawable(SkDrawable* drawable, const SkMatrix* matrix, SkC
 ///////////////////////////////////////////////////////////////////////////////
 
 void SkGpuDevice::flush() {
+    auto direct = fContext->asDirectContext();
+    if (!direct) {
+        return;
+    }
+
     this->flush(SkSurface::BackendSurfaceAccess::kNoAccess, GrFlushInfo(), nullptr);
-    this->context()->submit();
+    direct->submit();
 }
 
 GrSemaphoresSubmitted SkGpuDevice::flush(SkSurface::BackendSurfaceAccess access,
@@ -1022,10 +1042,12 @@ GrSemaphoresSubmitted SkGpuDevice::flush(SkSurface::BackendSurfaceAccess access,
     return fRenderTargetContext->flush(access, info, newState);
 }
 
-bool SkGpuDevice::wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) {
+bool SkGpuDevice::wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores,
+                       bool deleteSemaphoresAfterWait) {
     ASSERT_SINGLE_OWNER
 
-    return fRenderTargetContext->waitOnSemaphores(numSemaphores, waitSemaphores);
+    return fRenderTargetContext->waitOnSemaphores(numSemaphores, waitSemaphores,
+                                                  deleteSemaphoresAfterWait);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1045,7 +1067,7 @@ SkBaseDevice* SkGpuDevice::onCreateDevice(const CreateInfo& cinfo, const SkPaint
     auto rtc = GrRenderTargetContext::MakeWithFallback(
             fContext.get(), SkColorTypeToGrColorType(cinfo.fInfo.colorType()),
             fRenderTargetContext->colorInfo().refColorSpace(), fit, cinfo.fInfo.dimensions(),
-            fRenderTargetContext->numSamples(), GrMipMapped::kNo,
+            fRenderTargetContext->numSamples(), GrMipmapped::kNo,
             fRenderTargetContext->asSurfaceProxy()->isProtected(), kBottomLeft_GrSurfaceOrigin,
             SkBudgeted::kYes, &props);
     if (!rtc) {

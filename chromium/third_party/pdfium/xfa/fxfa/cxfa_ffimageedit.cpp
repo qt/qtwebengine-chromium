@@ -26,22 +26,22 @@
 
 CXFA_FFImageEdit::CXFA_FFImageEdit(CXFA_Node* pNode) : CXFA_FFField(pNode) {}
 
-CXFA_FFImageEdit::~CXFA_FFImageEdit() {
+CXFA_FFImageEdit::~CXFA_FFImageEdit() = default;
+
+void CXFA_FFImageEdit::PreFinalize() {
   m_pNode->SetImageEditImage(nullptr);
+  CXFA_FFField::PreFinalize();
 }
 
 bool CXFA_FFImageEdit::LoadWidget() {
   ASSERT(!IsLoaded());
-
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retain_layout(m_pLayoutItem.Get());
 
   auto pNew = std::make_unique<CFWL_PictureBox>(GetFWLApp());
   CFWL_PictureBox* pPictureBox = pNew.get();
   SetNormalWidget(std::move(pNew));
   pPictureBox->SetAdapterIface(this);
 
-  CFWL_NoteDriver* pNoteDriver = pPictureBox->GetOwnerApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pPictureBox->GetFWLApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pPictureBox, pPictureBox);
   m_pOldDelegate = pPictureBox->GetDelegate();
   pPictureBox->SetDelegate(this);
@@ -106,9 +106,6 @@ bool CXFA_FFImageEdit::AcceptsFocusOnButtonDown(uint32_t dwFlags,
 
 bool CXFA_FFImageEdit::OnLButtonDown(uint32_t dwFlags,
                                      const CFX_PointF& point) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   SetButtonDown(true);
   SendMessageToFWLWidget(std::make_unique<CFWL_MessageMouse>(
       GetNormalWidget(), FWL_MouseCommand::LeftButtonDown, dwFlags,
@@ -139,25 +136,16 @@ bool CXFA_FFImageEdit::UpdateFWLData() {
 }
 
 void CXFA_FFImageEdit::OnProcessMessage(CFWL_Message* pMessage) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   m_pOldDelegate->OnProcessMessage(pMessage);
 }
 
 void CXFA_FFImageEdit::OnProcessEvent(CFWL_Event* pEvent) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retain_layout(m_pLayoutItem.Get());
-
   CXFA_FFField::OnProcessEvent(pEvent);
   m_pOldDelegate->OnProcessEvent(pEvent);
 }
 
 void CXFA_FFImageEdit::OnDrawWidget(CXFA_Graphics* pGraphics,
                                     const CFX_Matrix& matrix) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
 }
 

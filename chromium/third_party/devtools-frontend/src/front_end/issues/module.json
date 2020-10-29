@@ -26,16 +26,19 @@
     "host",
     "components",
     "sdk",
+    "marked",
     "network",
     "browser_sdk"
   ],
-  "scripts": [],
+  "skip_rollup": true,
   "modules": [
     "issues.js",
     "issues-legacy.js",
     "IssuesPane.js",
     "IssueRevealer.js",
-    "IssueAggregator.js"
+    "IssueAggregator.js",
+    "MarkdownIssueDescription.js",
+    "MarkdownView_bridge.js"
   ],
   "resources": [
     "issuesPane.css",

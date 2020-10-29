@@ -59,12 +59,14 @@ bool RenderDeviceDriverIface::ContinueDIBits(CFX_ImageRenderer* handle,
   return false;
 }
 
-bool RenderDeviceDriverIface::DrawDeviceText(int nChars,
-                                             const TextCharPos* pCharPos,
-                                             CFX_Font* pFont,
-                                             const CFX_Matrix& mtObject2Device,
-                                             float font_size,
-                                             uint32_t color) {
+bool RenderDeviceDriverIface::DrawDeviceText(
+    int nChars,
+    const TextCharPos* pCharPos,
+    CFX_Font* pFont,
+    const CFX_Matrix& mtObject2Device,
+    float font_size,
+    uint32_t color,
+    const CFX_TextRenderOptions& options) {
   return false;
 }
 
@@ -92,6 +94,6 @@ bool RenderDeviceDriverIface::SetBitsWithMask(
   return false;
 }
 
-#if defined _SKIA_SUPPORT_ || _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 void RenderDeviceDriverIface::Flush() {}
 #endif

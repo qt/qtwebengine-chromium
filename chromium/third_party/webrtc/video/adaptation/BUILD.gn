@@ -10,6 +10,10 @@ import("../../webrtc.gni")
 
 rtc_library("video_adaptation") {
   sources = [
+    "balanced_constraint.cc",
+    "balanced_constraint.h",
+    "bitrate_constraint.cc",
+    "bitrate_constraint.h",
     "encode_usage_resource.cc",
     "encode_usage_resource.h",
     "overuse_frame_detector.cc",
@@ -48,6 +52,7 @@ rtc_library("video_adaptation") {
     "../../rtc_base/experiments:field_trial_parser",
     "../../rtc_base/experiments:quality_rampup_experiment",
     "../../rtc_base/experiments:quality_scaler_settings",
+    "../../rtc_base/synchronization:mutex",
     "../../rtc_base/synchronization:sequence_checker",
     "../../rtc_base/task_utils:repeating_task",
     "../../rtc_base/task_utils:to_queued_task",
@@ -73,13 +78,13 @@ if (rtc_include_tests) {
     deps = [
       ":video_adaptation",
       "../../api:scoped_refptr",
-      "../../api/task_queue:default_task_queue_factory",
       "../../api/task_queue:task_queue",
       "../../api/video:encoded_image",
       "../../api/video:video_adaptation",
       "../../api/video:video_frame_i420",
       "../../api/video_codecs:video_codecs_api",
       "../../call/adaptation:resource_adaptation",
+      "../../call/adaptation:resource_adaptation_test_utilities",
       "../../modules/video_coding:video_coding_utility",
       "../../rtc_base:checks",
       "../../rtc_base:logging",

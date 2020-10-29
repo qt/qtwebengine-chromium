@@ -87,6 +87,12 @@ class PacketCollector : public QuicPacketCreator::DelegateInterface,
     return {};
   }
 
+  SerializedPacketFate GetSerializedPacketFate(
+      bool /*is_mtu_discovery*/,
+      EncryptionLevel /*encryption_level*/) override {
+    return SEND_TO_WRITER;
+  }
+
   // QuicStreamFrameDataProducer
   WriteStreamDataResult WriteStreamData(QuicStreamId /*id*/,
                                         QuicStreamOffset offset,
@@ -149,9 +155,9 @@ class StatelessConnectionTerminator {
     SerializeConnectionClosePacket(error_code, error_details);
 
     time_wait_list_manager_->AddConnectionIdToTimeWait(
-        server_connection_id_, ietf_quic,
+        server_connection_id_,
         QuicTimeWaitListManager::SEND_TERMINATION_PACKETS,
-        quic::ENCRYPTION_INITIAL, collector_.packets());
+        TimeWaitConnectionInfo(ietf_quic, collector_.packets()));
   }
 
  private:
@@ -506,8 +512,7 @@ bool QuicDispatcher::MaybeDispatchPacket(
     it->second->ProcessUdpPacket(packet_info.self_address,
                                  packet_info.peer_address, packet_info.packet);
     return true;
-  } else if (packet_info.version.transport_version !=
-             QUIC_VERSION_UNSUPPORTED) {
+  } else if (packet_info.version.IsKnown()) {
     // We did not find the connection ID, check if we've replaced it.
     // This is only performed for supported versions because packets with
     // unsupported versions can flow through this function in order to send
@@ -657,21 +662,20 @@ void QuicDispatcher::ProcessHeader(ReceivedPacketInfo* packet_info) {
         BufferEarlyPacket(*packet_info);
         break;
       }
-      if (GetQuicReloadableFlag(quic_dont_pad_chlo)) {
-        QUIC_RELOADABLE_FLAG_COUNT_N(quic_dont_pad_chlo, 2, 2);
-        // We only apply this check for versions that do not use the IETF
-        // invariant header because those versions are already checked in
-        // QuicDispatcher::MaybeDispatchPacket.
-        if (packet_info->version_flag &&
-            !packet_info->version.HasIetfInvariantHeader() &&
-            crypto_config()->validate_chlo_size() &&
-            packet_info->packet.length() < kMinClientInitialPacketLength) {
-          QUIC_DVLOG(1) << "Dropping CHLO packet which is too short, length: "
-                        << packet_info->packet.length();
-          QUIC_CODE_COUNT(quic_drop_small_chlo_packets);
-          break;
-        }
+
+      // We only apply this check for versions that do not use the IETF
+      // invariant header because those versions are already checked in
+      // QuicDispatcher::MaybeDispatchPacket.
+      if (packet_info->version_flag &&
+          !packet_info->version.HasIetfInvariantHeader() &&
+          crypto_config()->validate_chlo_size() &&
+          packet_info->packet.length() < kMinClientInitialPacketLength) {
+        QUIC_DVLOG(1) << "Dropping CHLO packet which is too short, length: "
+                      << packet_info->packet.length();
+        QUIC_CODE_COUNT(quic_drop_small_chlo_packets);
+        break;
       }
+
       if (GetQuicReloadableFlag(quic_dispatcher_legacy_version_encapsulation)) {
         QUIC_RELOADABLE_FLAG_COUNT_N(
             quic_dispatcher_legacy_version_encapsulation, 3, 3);
@@ -746,12 +750,7 @@ void QuicDispatcher::CleanUpSession(SessionMap::iterator it,
       QuicTimeWaitListManager::SEND_STATELESS_RESET;
   if (connection->termination_packets() != nullptr &&
       !connection->termination_packets()->empty()) {
-    if (GetQuicRestartFlag(quic_replace_time_wait_list_encryption_level)) {
-      QUIC_RESTART_FLAG_COUNT(quic_replace_time_wait_list_encryption_level);
-      action = QuicTimeWaitListManager::SEND_CONNECTION_CLOSE_PACKETS;
-    } else {
-      action = QuicTimeWaitListManager::SEND_TERMINATION_PACKETS;
-    }
+    action = QuicTimeWaitListManager::SEND_CONNECTION_CLOSE_PACKETS;
   } else {
     if (!connection->IsHandshakeComplete()) {
       if (!VersionHasIetfInvariantHeader(connection->transport_version())) {
@@ -781,9 +780,11 @@ void QuicDispatcher::CleanUpSession(SessionMap::iterator it,
     QUIC_CODE_COUNT(quic_v44_add_to_time_wait_list_with_stateless_reset);
   }
   time_wait_list_manager_->AddConnectionIdToTimeWait(
-      it->first, VersionHasIetfInvariantHeader(connection->transport_version()),
-      action, connection->encryption_level(),
-      connection->termination_packets());
+      it->first, action,
+      TimeWaitConnectionInfo(
+          VersionHasIetfInvariantHeader(connection->transport_version()),
+          connection->termination_packets(),
+          connection->sent_packet_manager().GetRttStats()->smoothed_rtt()));
   session_map_.erase(it);
 }
 
@@ -932,8 +933,8 @@ void QuicDispatcher::StatelesslyTerminateConnection(
                   << ", error_code:" << error_code
                   << ", error_details:" << error_details;
     time_wait_list_manager_->AddConnectionIdToTimeWait(
-        server_connection_id, format != GOOGLE_QUIC_PACKET, action,
-        ENCRYPTION_INITIAL, nullptr);
+        server_connection_id, action,
+        TimeWaitConnectionInfo(format != GOOGLE_QUIC_PACKET, nullptr));
     return;
   }
 
@@ -967,9 +968,9 @@ void QuicDispatcher::StatelesslyTerminateConnection(
       /*ietf_quic=*/format != GOOGLE_QUIC_PACKET, use_length_prefix,
       /*versions=*/{}));
   time_wait_list_manager()->AddConnectionIdToTimeWait(
-      server_connection_id, /*ietf_quic=*/format != GOOGLE_QUIC_PACKET,
-      QuicTimeWaitListManager::SEND_TERMINATION_PACKETS, ENCRYPTION_INITIAL,
-      &termination_packets);
+      server_connection_id, QuicTimeWaitListManager::SEND_TERMINATION_PACKETS,
+      TimeWaitConnectionInfo(/*ietf_quic=*/format != GOOGLE_QUIC_PACKET,
+                             &termination_packets));
 }
 
 bool QuicDispatcher::ShouldCreateSessionForUnknownVersion(
@@ -1009,9 +1010,9 @@ void QuicDispatcher::ProcessBufferedChlos(size_t max_connections_to_create) {
     server_connection_id = MaybeReplaceServerConnectionId(server_connection_id,
                                                           packet_list.version);
     std::string alpn = SelectAlpn(packet_list.alpns);
-    std::unique_ptr<QuicSession> session =
-        CreateQuicSession(server_connection_id, packets.front().peer_address,
-                          alpn, packet_list.version);
+    std::unique_ptr<QuicSession> session = CreateQuicSession(
+        server_connection_id, packets.front().self_address,
+        packets.front().peer_address, alpn, packet_list.version);
     if (original_connection_id != server_connection_id) {
       session->connection()->SetOriginalDestinationConnectionId(
           original_connection_id);
@@ -1102,14 +1103,14 @@ void QuicDispatcher::ProcessChlo(const std::vector<std::string>& alpns,
       original_connection_id, packet_info->version);
   // Creates a new session and process all buffered packets for this connection.
   std::string alpn = SelectAlpn(alpns);
-  std::unique_ptr<QuicSession> session =
-      CreateQuicSession(packet_info->destination_connection_id,
-                        packet_info->peer_address, alpn, packet_info->version);
+  std::unique_ptr<QuicSession> session = CreateQuicSession(
+      packet_info->destination_connection_id, packet_info->self_address,
+      packet_info->peer_address, alpn, packet_info->version);
   if (QUIC_PREDICT_FALSE(session == nullptr)) {
     QUIC_BUG << "CreateQuicSession returned nullptr for "
              << packet_info->destination_connection_id << " from "
-             << packet_info->peer_address << " ALPN \"" << alpn << "\" version "
-             << packet_info->version;
+             << packet_info->peer_address << " to " << packet_info->self_address
+             << " ALPN \"" << alpn << "\" version " << packet_info->version;
     return;
   }
   if (original_connection_id != packet_info->destination_connection_id) {

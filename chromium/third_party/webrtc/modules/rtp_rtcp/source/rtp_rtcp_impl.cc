@@ -258,7 +258,6 @@ void ModuleRtpRtcpImpl::SetSequenceNumber(const uint16_t seq_num) {
 
 void ModuleRtpRtcpImpl::SetRtpState(const RtpState& rtp_state) {
   rtp_sender_->packet_generator.SetRtpState(rtp_state);
-  rtp_sender_->packet_sender.SetMediaHasBeenSent(rtp_state.media_has_been_sent);
   rtcp_sender_.SetTimestampOffset(rtp_state.start_timestamp);
 }
 
@@ -268,7 +267,6 @@ void ModuleRtpRtcpImpl::SetRtxState(const RtpState& rtp_state) {
 
 RtpState ModuleRtpRtcpImpl::GetRtpState() const {
   RtpState state = rtp_sender_->packet_generator.GetRtpState();
-  state.media_has_been_sent = rtp_sender_->packet_sender.MediaHasBeenSent();
   return state;
 }
 
@@ -389,6 +387,17 @@ bool ModuleRtpRtcpImpl::TrySendPacket(RtpPacketToSend* packet,
   }
   rtp_sender_->packet_sender.SendPacket(packet, pacing_info);
   return true;
+}
+
+void ModuleRtpRtcpImpl::SetFecProtectionParams(const FecProtectionParams&,
+                                               const FecProtectionParams&) {
+  // Deferred FEC not supported in deprecated RTP module.
+}
+
+std::vector<std::unique_ptr<RtpPacketToSend>>
+ModuleRtpRtcpImpl::FetchFecPackets() {
+  // Deferred FEC not supported in deprecated RTP module.
+  return {};
 }
 
 void ModuleRtpRtcpImpl::OnPacketsAcknowledged(
@@ -718,7 +727,6 @@ void ModuleRtpRtcpImpl::SetRemoteSSRC(const uint32_t ssrc) {
   rtcp_receiver_.SetRemoteSSRC(ssrc);
 }
 
-// TODO(nisse): Delete video_rate amd fec_rate arguments.
 void ModuleRtpRtcpImpl::BitrateSent(uint32_t* total_rate,
                                     uint32_t* video_rate,
                                     uint32_t* fec_rate,
@@ -796,7 +804,7 @@ bool ModuleRtpRtcpImpl::LastReceivedNTP(
 
 void ModuleRtpRtcpImpl::set_rtt_ms(int64_t rtt_ms) {
   {
-    rtc::CritScope cs(&critical_section_rtt_);
+    MutexLock lock(&mutex_rtt_);
     rtt_ms_ = rtt_ms;
   }
   if (rtp_sender_) {
@@ -805,7 +813,7 @@ void ModuleRtpRtcpImpl::set_rtt_ms(int64_t rtt_ms) {
 }
 
 int64_t ModuleRtpRtcpImpl::rtt_ms() const {
-  rtc::CritScope cs(&critical_section_rtt_);
+  MutexLock lock(&mutex_rtt_);
   return rtt_ms_;
 }
 

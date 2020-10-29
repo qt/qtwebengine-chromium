@@ -18,7 +18,7 @@ namespace {
 constexpr Recommendations kDefaultRecommendations{
     Audio{BitRateLimits{32000, 256000}, milliseconds(4000), 2, 44100},
     Video{BitRateLimits{300000, 1920 * 1080 * 30}, Resolution{320, 240, 30},
-          Resolution{1920, 1080, 30}, true, milliseconds(4000),
+          Resolution{1920, 1080, 30}, false, milliseconds(4000),
           1920 * 1080 * 30 / 8}};
 
 constexpr DisplayDescription kEmptyDescription{};
@@ -103,7 +103,6 @@ TEST(CaptureRecommendationsTest, OnlyAspectRatioFourThirds) {
   Recommendations expected = kDefaultRecommendations;
   expected.video.minimum = Resolution{320, 240, 30.0};
   expected.video.maximum = Resolution{1440, 1080, 30.0};
-  expected.video.supports_scaling = true;
   Answer answer;
   answer.display = kValidOnlyAspectRatio;
 
@@ -114,7 +113,6 @@ TEST(CaptureRecommendationsTest, OnlyAspectRatioSixteenNine) {
   Recommendations expected = kDefaultRecommendations;
   expected.video.minimum = Resolution{426, 240, 30.0};
   expected.video.maximum = Resolution{1920, 1080, 30.0};
-  expected.video.supports_scaling = true;
   Answer answer;
   answer.display = kValidOnlyAspectRatioSixteenNine;
 
@@ -122,9 +120,11 @@ TEST(CaptureRecommendationsTest, OnlyAspectRatioSixteenNine) {
 }
 
 TEST(CaptureRecommendationsTest, OnlyAspectRatioConstraint) {
+  Recommendations expected = kDefaultRecommendations;
+  expected.video.supports_scaling = true;
   Answer answer;
   answer.display = kValidOnlyVariable;
-  EXPECT_EQ(kDefaultRecommendations, GetRecommendations(answer));
+  EXPECT_EQ(expected, GetRecommendations(answer));
 }
 
 // It doesn't make sense to just provide a "fixed" aspect ratio with no
@@ -154,6 +154,7 @@ TEST(CaptureRecommendationsTest, VariableAspectRatioConstraint) {
   Recommendations expected = kDefaultRecommendations;
   expected.video.minimum = Resolution{320, 240, 30.0};
   expected.video.maximum = Resolution{1440, 1080, 30.0};
+  expected.video.supports_scaling = true;
   Answer answer;
   answer.display = kValidVariableAspectRatio;
   EXPECT_EQ(expected, GetRecommendations(answer));
@@ -171,10 +172,11 @@ TEST(CaptureRecommendationsTest, ResolutionWithFixedConstraint) {
 }
 
 TEST(CaptureRecommendationsTest, ExplicitFhdChangesMinimum) {
-  Answer answer;
-  answer.display = kValidDisplayFhd;
   Recommendations expected = kDefaultRecommendations;
   expected.video.minimum = Resolution{426, 240, 30.0};
+  expected.video.supports_scaling = true;
+  Answer answer;
+  answer.display = kValidDisplayFhd;
   EXPECT_EQ(expected, GetRecommendations(answer));
 }
 
@@ -224,7 +226,7 @@ TEST(CaptureRecommendationsTest, HandlesHighEnd) {
   const Recommendations kExpected{
       Audio{BitRateLimits{96000, 500000}, milliseconds(6000), 5, 96100},
       Video{BitRateLimits{600000, 6000000}, Resolution{640, 480, 30},
-            Resolution{1920, 1080, 30}, true, milliseconds(6000), 6000000}};
+            Resolution{1920, 1080, 30}, false, milliseconds(6000), 6000000}};
   Answer answer;
   answer.constraints = kValidConstraintsHighEnd;
   EXPECT_EQ(kExpected, GetRecommendations(answer));
@@ -237,7 +239,7 @@ TEST(CaptureRecommendationsTest, HandlesLowEnd) {
   const Recommendations kExpected{
       Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000},
       Video{BitRateLimits{300000, 1000000}, Resolution{320, 240, 30},
-            Resolution{1200, 800, 30}, true, milliseconds(1000), 60000}};
+            Resolution{1200, 800, 30}, false, milliseconds(1000), 60000}};
   Answer answer;
   answer.constraints = kValidConstraintsLowEnd;
   EXPECT_EQ(kExpected, GetRecommendations(answer));
@@ -247,7 +249,7 @@ TEST(CaptureRecommendationsTest, HandlesTooSmallScreen) {
   const Recommendations kExpected{
       Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000},
       Video{BitRateLimits{300000, 1000000}, Resolution{320, 240, 30},
-            Resolution{320, 240, 30}, true, milliseconds(1000), 60000}};
+            Resolution{320, 240, 30}, false, milliseconds(1000), 60000}};
   Answer answer;
   answer.constraints = kValidConstraintsLowEnd;
   answer.constraints->video.max_dimensions =
@@ -259,7 +261,7 @@ TEST(CaptureRecommendationsTest, HandlesMinimumSizeScreen) {
   const Recommendations kExpected{
       Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000},
       Video{BitRateLimits{300000, 1000000}, Resolution{320, 240, 30},
-            Resolution{320, 240, 30}, true, milliseconds(1000), 60000}};
+            Resolution{320, 240, 30}, false, milliseconds(1000), 60000}};
   Answer answer;
   answer.constraints = kValidConstraintsLowEnd;
   answer.constraints->video.max_dimensions =

@@ -166,11 +166,21 @@ static TFKind classify(const skcms_TransferFunction& tf, TF_PQish*   pq = nullpt
     return Bad;
 }
 
+bool skcms_TransferFunction_isSRGBish(const skcms_TransferFunction* tf) {
+    return classify(*tf) == sRGBish;
+}
+bool skcms_TransferFunction_isPQish(const skcms_TransferFunction* tf) {
+    return classify(*tf) == PQish;
+}
+bool skcms_TransferFunction_isHLGish(const skcms_TransferFunction* tf) {
+    return classify(*tf) == HLGish;
+}
+
 bool skcms_TransferFunction_makePQish(skcms_TransferFunction* tf,
                                       float A, float B, float C,
                                       float D, float E, float F) {
     *tf = { TFKind_marker(PQish), A,B,C,D,E,F };
-    assert(classify(*tf) == PQish);
+    assert(skcms_TransferFunction_isPQish(tf));
     return true;
 }
 
@@ -178,7 +188,7 @@ bool skcms_TransferFunction_makeHLGish(skcms_TransferFunction* tf,
                                        float R, float G,
                                        float a, float b, float c) {
     *tf = { TFKind_marker(HLGish), R,G, a,b,c, 0 };
-    assert(classify(*tf) == HLGish);
+    assert(skcms_TransferFunction_isHLGish(tf));
     return true;
 }
 
@@ -485,7 +495,7 @@ static bool read_curve_para(const uint8_t* buf, uint32_t size,
             curve->parametric.f = read_big_fixed(paraTag->variable + 24);
             break;
     }
-    return classify(curve->parametric) == sRGBish;
+    return skcms_TransferFunction_isSRGBish(&curve->parametric);
 }
 
 typedef struct {
@@ -1304,7 +1314,10 @@ bool skcms_ApproximatelyEqualProfiles(const skcms_ICCProfile* A, const skcms_ICC
     // skcms_252_random_bytes are 252 of a random shuffle of all possible bytes.
     // 252 is evenly divisible by 3 and 4.  Only 192, 10, 241, and 43 are missing.
 
-    if (A->data_color_space != B->data_color_space) {
+    // We want to allow otherwise equivalent profiles tagged as grayscale and RGB
+    // to be treated as equal.  But CMYK profiles are a totally different ballgame.
+    const auto CMYK = skcms_Signature_CMYK;
+    if ((A->data_color_space == CMYK) != (B->data_color_space == CMYK)) {
         return false;
     }
 

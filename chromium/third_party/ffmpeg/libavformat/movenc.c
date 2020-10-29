@@ -4798,28 +4798,40 @@ static int mov_write_tfra_tag(AVIOContext *pb, MOVTrack *track)
 
 static int mov_write_mfra_tag(AVIOContext *pb, MOVMuxContext *mov)
 {
-    int64_t pos = avio_tell(pb);
-    int i;
+    AVIOContext *mfra_pb;
+    int i, ret, sz;
+    uint8_t *buf;
 
-    avio_wb32(pb, 0); /* size placeholder */
-    ffio_wfourcc(pb, "mfra");
+    ret = avio_open_dyn_buf(&mfra_pb);
+    if (ret < 0)
+        return ret;
+
+    avio_wb32(mfra_pb, 0); /* size placeholder */
+    ffio_wfourcc(mfra_pb, "mfra");
     /* An empty mfra atom is enough to indicate to the publishing point that
      * the stream has ended. */
     if (mov->flags & FF_MOV_FLAG_ISML)
-        return update_size(pb, pos);
+        goto done_mfra;
 
     for (i = 0; i < mov->nb_streams; i++) {
         MOVTrack *track = &mov->tracks[i];
         if (track->nb_frag_info)
-            mov_write_tfra_tag(pb, track);
+            mov_write_tfra_tag(mfra_pb, track);
     }
 
-    avio_wb32(pb, 16);
-    ffio_wfourcc(pb, "mfro");
-    avio_wb32(pb, 0); /* version + flags */
-    avio_wb32(pb, avio_tell(pb) + 4 - pos);
+    avio_wb32(mfra_pb, 16);
+    ffio_wfourcc(mfra_pb, "mfro");
+    avio_wb32(mfra_pb, 0); /* version + flags */
+    avio_wb32(mfra_pb, avio_tell(mfra_pb) + 4);
 
-    return update_size(pb, pos);
+done_mfra:
+
+    sz  = update_size(mfra_pb, 0);
+    ret = avio_get_dyn_buf(mfra_pb, &buf);
+    avio_write(pb, buf, ret);
+    ffio_free_dyn_buf(&mfra_pb);
+
+    return sz;
 }
 
 static int mov_write_mdat_tag(AVIOContext *pb, MOVMuxContext *mov)
@@ -4875,7 +4887,7 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
 {
     MOVMuxContext *mov = s->priv_data;
     int64_t pos = avio_tell(pb);
-    int has_h264 = 0, has_video = 0;
+    int has_h264 = 0, has_av1 = 0, has_video = 0;
     int i;
 
     for (i = 0; i < s->nb_streams; i++) {
@@ -4886,6 +4898,8 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
             has_video = 1;
         if (st->codecpar->codec_id == AV_CODEC_ID_H264)
             has_h264 = 1;
+        if (st->codecpar->codec_id == AV_CODEC_ID_AV1)
+            has_av1 = 1;
     }
 
     avio_wb32(pb, 0); /* size */
@@ -4909,6 +4923,8 @@ static int mov_write_ftyp_tag(AVIOContext *pb, AVFormatContext *s)
                 ffio_wfourcc(pb, "cmfc");
             if (mov->flags & FF_MOV_FLAG_FRAGMENT && !(mov->flags & FF_MOV_FLAG_NEGATIVE_CTS_OFFSETS))
                 ffio_wfourcc(pb, "iso6");
+            if (has_av1)
+                ffio_wfourcc(pb, "av01");
         } else {
             if (mov->flags & FF_MOV_FLAG_FRAGMENT)
                 ffio_wfourcc(pb, "iso6");
@@ -5504,6 +5520,23 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
         memset(trk->vos_data + trk->vos_len, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     }
 
+    if ((par->codec_id == AV_CODEC_ID_DNXHD ||
+         par->codec_id == AV_CODEC_ID_H264 ||
+         par->codec_id == AV_CODEC_ID_HEVC ||
+         par->codec_id == AV_CODEC_ID_TRUEHD ||
+         par->codec_id == AV_CODEC_ID_AC3) && !trk->vos_len &&
+         !TAG_IS_AVCI(trk->tag)) {
+        /* copy frame to create needed atoms */
+        trk->vos_len  = size;
+        trk->vos_data = av_malloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!trk->vos_data) {
+            ret = AVERROR(ENOMEM);
+            goto err;
+        }
+        memcpy(trk->vos_data, pkt->data, size);
+        memset(trk->vos_data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+    }
+
     if (par->codec_id == AV_CODEC_ID_AAC && pkt->size > 2 &&
         (AV_RB16(pkt->data) & 0xfff0) == 0xfff0) {
         if (!s->streams[pkt->stream_index]->nb_frames) {
@@ -5565,6 +5598,22 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
             goto end;
         avio_write(pb, pkt->data, size);
 #endif
+    } else if (par->codec_id == AV_CODEC_ID_EIA_608) {
+        size = 8;
+
+        for (int i = 0; i < pkt->size; i += 3) {
+            if (pkt->data[i] == 0xFC) {
+                size += 2;
+            }
+        }
+        avio_wb32(pb, size);
+        ffio_wfourcc(pb, "cdat");
+        for (int i = 0; i < pkt->size; i += 3) {
+            if (pkt->data[i] == 0xFC) {
+                avio_w8(pb, pkt->data[i + 1]);
+                avio_w8(pb, pkt->data[i + 2]);
+            }
+        }
     } else {
         if (trk->cenc.aes_ctr) {
             if (par->codec_id == AV_CODEC_ID_H264 && par->extradata_size > 4) {
@@ -5580,20 +5629,6 @@ int ff_mov_write_packet(AVFormatContext *s, AVPacket *pkt)
         } else {
             avio_write(pb, pkt->data, size);
         }
-    }
-
-    if ((par->codec_id == AV_CODEC_ID_DNXHD ||
-         par->codec_id == AV_CODEC_ID_TRUEHD ||
-         par->codec_id == AV_CODEC_ID_AC3) && !trk->vos_len) {
-        /* copy frame to create needed atoms */
-        trk->vos_len  = size;
-        trk->vos_data = av_malloc(size + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!trk->vos_data) {
-            ret = AVERROR(ENOMEM);
-            goto err;
-        }
-        memcpy(trk->vos_data, pkt->data, size);
-        memset(trk->vos_data + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
     }
 
     if (trk->entry >= trk->cluster_capacity) {
@@ -5765,7 +5800,7 @@ static int mov_write_single_packet(AVFormatContext *s, AVPacket *pkt)
             trk->par->codec_id == AV_CODEC_ID_AAC ||
             trk->par->codec_id == AV_CODEC_ID_AV1 ||
             trk->par->codec_id == AV_CODEC_ID_FLAC) {
-        int side_size = 0;
+        int side_size;
         uint8_t *side = av_packet_get_side_data(pkt, AV_PKT_DATA_NEW_EXTRADATA, &side_size);
         if (side && side_size > 0 && (side_size != par->extradata_size || memcmp(side, par->extradata, side_size))) {
             void *newextra = av_mallocz(side_size + AV_INPUT_BUFFER_PADDING_SIZE);
@@ -6964,7 +6999,9 @@ static int mov_write_trailer(AVFormatContext *s)
         }
         if (!(mov->flags & FF_MOV_FLAG_SKIP_TRAILER)) {
             avio_write_marker(s->pb, AV_NOPTS_VALUE, AVIO_DATA_MARKER_TRAILER);
-            mov_write_mfra_tag(pb, mov);
+            res = mov_write_mfra_tag(pb, mov);
+            if (res < 0)
+                return res;
         }
     }
 

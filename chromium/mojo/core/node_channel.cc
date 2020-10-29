@@ -382,7 +382,7 @@ void NodeChannel::Broadcast(Channel::MessagePtr message) {
 }
 
 void NodeChannel::BindBrokerHost(PlatformHandle broker_host_handle) {
-#if !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_FUCHSIA)
+#if !defined(OS_APPLE) && !defined(OS_NACL) && !defined(OS_FUCHSIA)
   DCHECK(broker_host_handle.is_valid());
   BindBrokerHostData* data;
   std::vector<PlatformHandle> handles;
@@ -487,7 +487,7 @@ NodeChannel::~NodeChannel() {
 
 void NodeChannel::CreateAndBindLocalBrokerHost(
     PlatformHandle broker_host_handle) {
-#if !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_FUCHSIA)
+#if !defined(OS_APPLE) && !defined(OS_NACL) && !defined(OS_FUCHSIA)
   // Self-owned.
   ConnectionParams connection_params(
       PlatformChannelEndpoint(std::move(broker_host_handle)));
@@ -753,12 +753,6 @@ void NodeChannel::OnChannelError(Channel::Error error) {
 }
 
 void NodeChannel::WriteChannelMessage(Channel::MessagePtr message) {
-  // Force a crash if this process attempts to send a message larger than the
-  // maximum allowed size. This is more useful than killing a Channel when we
-  // *receive* an oversized message, as we should consider oversized message
-  // transmission to be a bug and this helps easily identify offending code.
-  CHECK_LT(message->data_num_bytes(), GetConfiguration().max_message_num_bytes);
-
   base::AutoLock lock(channel_lock_);
   if (!channel_)
     DLOG(ERROR) << "Dropping message on closed channel.";

@@ -5,6 +5,10 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/vk/GrVkCaps.h"
+
+#include <memory>
+
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/vk/GrVkBackendContext.h"
 #include "include/gpu/vk/GrVkExtensions.h"
@@ -17,7 +21,6 @@
 #include "src/gpu/GrStencilSettings.h"
 #include "src/gpu/GrUtil.h"
 #include "src/gpu/SkGr.h"
-#include "src/gpu/vk/GrVkCaps.h"
 #include "src/gpu/vk/GrVkGpu.h"
 #include "src/gpu/vk/GrVkInterface.h"
 #include "src/gpu/vk/GrVkRenderTarget.h"
@@ -37,7 +40,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     /**************************************************************************
      * GrCaps fields
      **************************************************************************/
-    fMipMapSupport = true;   // always available in Vulkan
+    fMipmapSupport = true;   // always available in Vulkan
     fNPOTTextureTileSupport = true;  // always available in Vulkan
     fReuseScratchTextures = true; //TODO: figure this out
     fGpuTracingSupport = false; //TODO: figure this out
@@ -368,6 +371,8 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
         fShouldAlwaysUseDedicatedImageMemory = true;
     }
 
+    fMaxInputAttachmentDescriptors = properties.limits.maxDescriptorSetInputAttachments;
+
     this->initGrCaps(vkInterface, physDev, properties, memoryProperties, features, extensions);
     this->initShaderCaps(properties, features);
 
@@ -398,8 +403,20 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
         fPreferTrianglesOverSampleMask = true;
     }
 
+#ifdef SK_BUILD_FOR_UNIX
+    if (kNvidia_VkVendor == properties.vendorID) {
+        // On nvidia linux we see a big perf regression when not using dedicated image allocations.
+        fShouldAlwaysUseDedicatedImageMemory = true;
+    }
+#endif
+
     this->initFormatTable(vkInterface, physDev, properties);
     this->initStencilFormat(vkInterface, physDev);
+
+    if (contextOptions.fMaxCachedVulkanSecondaryCommandBuffers >= 0) {
+        fMaxPerPoolCachedSecondaryCommandBuffers =
+                contextOptions.fMaxCachedVulkanSecondaryCommandBuffers;
+    }
 
     if (!contextOptions.fDisableDriverCorrectnessWorkarounds) {
         this->applyDriverCorrectnessWorkarounds(properties);
@@ -409,12 +426,6 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
 }
 
 void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDeviceProperties& properties) {
-    if (kQualcomm_VkVendor == properties.vendorID) {
-        fMustDoCopiesFromOrigin = true;
-        // Transfer doesn't support this workaround.
-        fTransferFromSurfaceToBufferSupport = false;
-    }
-
 #if defined(SK_BUILD_FOR_WIN)
     if (kNvidia_VkVendor == properties.vendorID || kIntel_VkVendor == properties.vendorID) {
         fMustSleepOnTearDown = true;
@@ -425,25 +436,33 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     }
 #endif
 
+    // Defaults to zero since all our workaround checks that use this consider things "fixed" once
+    // above a certain api level. So this will just default to it being less which will enable
+    // workarounds.
+    int androidAPIVersion = 0;
 #if defined(SK_BUILD_FOR_ANDROID)
+    char androidAPIVersionStr[PROP_VALUE_MAX];
+    int strLength = __system_property_get("ro.build.version.sdk", androidAPIVersionStr);
+    // Defaults to zero since most checks care if it is greater than a specific value. So this will
+    // just default to it being less.
+    androidAPIVersion = (strLength == 0) ? 0 : atoi(androidAPIVersionStr);
+#endif
+
     // Protected memory features have problems in Android P and earlier.
     if (fSupportsProtectedMemory && (kQualcomm_VkVendor == properties.vendorID)) {
-        char androidAPIVersion[PROP_VALUE_MAX];
-        int strLength = __system_property_get("ro.build.version.sdk", androidAPIVersion);
-        if (strLength == 0 || atoi(androidAPIVersion) <= 28) {
+        if (androidAPIVersion <= 28) {
             fSupportsProtectedMemory = false;
         }
     }
-#endif
 
     // On Mali galaxy s7 we see lots of rendering issues when we suballocate VkImages.
-    if (kARM_VkVendor == properties.vendorID) {
+    if (kARM_VkVendor == properties.vendorID && androidAPIVersion <= 28) {
         fShouldAlwaysUseDedicatedImageMemory = true;
     }
 
     // On Mali galaxy s7 and s9 we see lots of rendering issues with image filters dropping out when
-    // using only primary command buffers.
-    if (kARM_VkVendor == properties.vendorID) {
+    // using only primary command buffers. We also see issues on the P30 running android 28.
+    if (kARM_VkVendor == properties.vendorID && androidAPIVersion <= 28) {
         fPreferPrimaryOverSecondaryCommandBuffers = false;
     }
 
@@ -471,12 +490,12 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     // blending, but that shouldn't be an issue because MSAA CCPR seems to work fine (even without
     // mixed samples) on later NVIDIA hardware where mixed samples would be supported.
     if ((kNvidia_VkVendor == properties.vendorID) && !fMixedSamplesSupport) {
-        fDriverBlacklistMSAACCPR = true;
+        fDriverDisableMSAACCPR = true;
     }
 
 #ifdef SK_BUILD_FOR_ANDROID
     // MSAA CCPR is slow on Android. http://skbug.com/9676
-    fDriverBlacklistMSAACCPR = true;
+    fDriverDisableMSAACCPR = true;
 #endif
 
     if (kARM_VkVendor == properties.vendorID) {
@@ -588,9 +607,7 @@ void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
             if (blendFeatures && blendFeatures->advancedBlendCoherentOperations == VK_TRUE) {
                 fBlendEquationSupport = kAdvancedCoherent_BlendEquationSupport;
             } else {
-                // TODO: Currently non coherent blends are not supported in our vulkan backend. They
-                // require us to support self dependencies in our render passes.
-                // fBlendEquationSupport = kAdvanced_BlendEquationSupport;
+                fBlendEquationSupport = kAdvanced_BlendEquationSupport;
             }
         }
     }
@@ -767,7 +784,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 2;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R8G8B8A8_UNORM, Surface: kRGBA_8888
             {
@@ -795,7 +812,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 1;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 2;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R8_UNORM, Surface: kAlpha_8
             {
@@ -824,7 +841,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_B8G8R8A8_UNORM, Surface: kBGRA_8888
             {
@@ -843,7 +860,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R5G6B5_UNORM_PACK16, Surface: kBGR_565
             {
@@ -862,7 +879,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 8;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 2;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16G16B16A16_SFLOAT, Surface: GrColorType::kRGBA_F16
             {
@@ -888,7 +905,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16_SFLOAT, Surface: kAlpha_F16
             {
@@ -909,7 +926,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 3;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R8G8B8_UNORM, Surface: kRGB_888x
             {
@@ -928,7 +945,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R8G8_UNORM, Surface: kRG_88
             {
@@ -947,7 +964,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_A2B10G10R10_UNORM_PACK32, Surface: kRGBA_1010102
             {
@@ -966,7 +983,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_A2R10G10B10_UNORM_PACK32, Surface: kBGRA_1010102
             {
@@ -985,7 +1002,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_B4G4R4A4_UNORM_PACK16, Surface: kABGR_4444
             {
@@ -998,6 +1015,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
             }
         }
     }
+
     // Format: VK_FORMAT_R4G4B4A4_UNORM_PACK16
     {
         constexpr VkFormat format = VK_FORMAT_R4G4B4A4_UNORM_PACK16;
@@ -1006,7 +1024,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R4G4B4A4_UNORM_PACK16, Surface: kABGR_4444
             {
@@ -1025,7 +1043,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R8G8B8A8_SRGB, Surface: kRGBA_8888_SRGB
             {
@@ -1044,7 +1062,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16_UNORM, Surface: kAlpha_16
             {
@@ -1065,7 +1083,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16G16_UNORM, Surface: kRG_1616
             {
@@ -1084,7 +1102,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 8;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16G16B16A16_UNORM, Surface: kRGBA_16161616
             {
@@ -1103,7 +1121,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16G16_SFLOAT, Surface: kRG_F16
             {
@@ -1127,7 +1145,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         }
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM, Surface: kRGB_888x
             {
@@ -1151,7 +1169,7 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         }
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
-            info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
+            info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_G8_B8R8_2PLANE_420_UNORM, Surface: kRGB_888x
             {
@@ -1167,7 +1185,8 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 0;
+        // Setting this to texel block size
+        info.fBytesPerPixel = 8;
         // No supported GrColorTypes.
     }
 
@@ -1176,7 +1195,8 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_BC1_RGB_UNORM_BLOCK;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 0;
+        // Setting this to texel block size
+        info.fBytesPerPixel = 8;
         // No supported GrColorTypes.
     }
 
@@ -1185,7 +1205,8 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 0;
+        // Setting this to texel block size
+        info.fBytesPerPixel = 8;
         // No supported GrColorTypes.
     }
 
@@ -1685,7 +1706,7 @@ void GrVkCaps::addExtraSamplerKey(GrProcessorKeyBuilder* b,
  * each draw  and thus is not included in this descriptor. This includes the viewport, scissor,
  * and blend constant.
  */
-GrProgramDesc GrVkCaps::makeDesc(const GrRenderTarget* rt, const GrProgramInfo& programInfo) const {
+GrProgramDesc GrVkCaps::makeDesc(GrRenderTarget* rt, const GrProgramInfo& programInfo) const {
     GrProgramDesc desc;
     if (!GrProgramDesc::Build(&desc, rt, programInfo, *this)) {
         SkASSERT(!desc.isValid());
@@ -1701,13 +1722,44 @@ GrProgramDesc GrVkCaps::makeDesc(const GrRenderTarget* rt, const GrProgramInfo& 
     // GrVkPipelineStateBuilder.cpp).
     b.add32(GrVkGpu::kShader_PersistentCacheKeyType);
 
-    GrVkRenderTarget* vkRT = (GrVkRenderTarget*) rt;
+    // Currently we only support blend barriers with the advanced blend function. Thus we pass in
+    // nullptr for the texture.
+    auto barrierType = programInfo.pipeline().xferBarrierType(nullptr, *this);
+    bool usesXferBarriers = barrierType == kBlend_GrXferBarrierType;
 
-    bool needsStencil = programInfo.numStencilSamples() || programInfo.isStencilEnabled();
-    // TODO: support failure in getSimpleRenderPass
-    const GrVkRenderPass* rp = vkRT->getSimpleRenderPass(needsStencil);
-    SkASSERT(rp);
-    rp->genKey(&b);
+    if (rt) {
+        GrVkRenderTarget* vkRT = (GrVkRenderTarget*) rt;
+
+        bool needsStencil = programInfo.numStencilSamples() || programInfo.isStencilEnabled();
+        // TODO: support failure in getSimpleRenderPass
+        const GrVkRenderPass* rp = vkRT->getSimpleRenderPass(needsStencil, usesXferBarriers);
+        SkASSERT(rp);
+        rp->genKey(&b);
+
+#ifdef SK_DEBUG
+        if (!rp->isExternal()) {
+            // This is to ensure ReconstructAttachmentsDescriptor keeps matching
+            // getSimpleRenderPass' result
+            GrVkRenderPass::AttachmentsDescriptor attachmentsDescriptor;
+            GrVkRenderPass::AttachmentFlags attachmentFlags;
+            GrVkRenderTarget::ReconstructAttachmentsDescriptor(*this, programInfo,
+                                                               &attachmentsDescriptor,
+                                                               &attachmentFlags);
+            SkASSERT(rp->isCompatible(attachmentsDescriptor, attachmentFlags, usesXferBarriers));
+        }
+#endif
+    } else {
+        GrVkRenderPass::AttachmentsDescriptor attachmentsDescriptor;
+        GrVkRenderPass::AttachmentFlags attachmentFlags;
+        GrVkRenderTarget::ReconstructAttachmentsDescriptor(*this, programInfo,
+                                                           &attachmentsDescriptor,
+                                                           &attachmentFlags);
+
+        // kExternal_AttachmentFlag is only set for wrapped secondary command buffers - which
+        // will always go through the above 'rt' path (i.e., we can always pass 0 as the final
+        // parameter to GenKey).
+        GrVkRenderPass::GenKey(&b, attachmentFlags, attachmentsDescriptor, usesXferBarriers, 0);
+    }
 
     GrStencilSettings stencil = programInfo.nonGLStencilSettings();
     stencil.genKey(&b, true);

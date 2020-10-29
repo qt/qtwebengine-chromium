@@ -169,6 +169,26 @@ class PostFilter {
   bool DoDeblock() const {
     return DoDeblock(frame_header_, do_post_filter_mask_);
   }
+
+  // This function takes the cdef filtered buffer and the deblocked buffer to
+  // prepare a block as input for loop restoration.
+  // In striped loop restoration:
+  // The filtering needs to fetch the area of size (width + 6) x (height + 4),
+  // in which (width + 6) x height area is from upscaled frame
+  // (superres_buffer). Top 2 rows and bottom 2 rows are from deblocked frame
+  // (deblock_buffer). Special cases are: (1). when it is the top border, the
+  // top 2 rows are from cdef filtered frame. (2). when it is the bottom border,
+  // the bottom 2 rows are from cdef filtered frame. This function is called
+  // only when cdef is applied for this frame.
+  template <typename Pixel>
+  static void PrepareLoopRestorationBlock(const Pixel* src_buffer,
+                                          ptrdiff_t src_stride,
+                                          const Pixel* deblock_buffer,
+                                          ptrdiff_t deblock_stride, Pixel* dst,
+                                          ptrdiff_t dst_stride, int width,
+                                          int height, bool frame_top_border,
+                                          bool frame_bottom_border);
+
   uint8_t GetZeroDeltaDeblockFilterLevel(int segment_id, int level_index,
                                          ReferenceFrameType type,
                                          int mode_id) const {
@@ -247,28 +267,20 @@ class PostFilter {
     return std::min(adjusted_frame_height, window_height);
   }
 
+  template <typename Pixel>
+  static void ExtendFrame(Pixel* frame_start, int width, int height,
+                          ptrdiff_t stride, int left, int right, int top,
+                          int bottom);
+
  private:
   // The type of the HorizontalDeblockFilter and VerticalDeblockFilter member
   // functions.
-  using DeblockFilter = void (PostFilter::*)(Plane plane, int row4x4_start,
+  using DeblockFilter = void (PostFilter::*)(int row4x4_start,
                                              int column4x4_start);
   // The lookup table for picking the deblock filter, according to deblock
   // filter type.
   const DeblockFilter deblock_filter_func_[2] = {
       &PostFilter::VerticalDeblockFilter, &PostFilter::HorizontalDeblockFilter};
-
-  // The type of GetVerticalDeblockFilterEdgeInfo* member functions.
-  using DeblockVerticalEdgeInfo = bool (PostFilter::*)(
-      const Plane plane, int row4x4, int column4x4, const int8_t subsampling_x,
-      const int8_t subsampling_y, BlockParameters* const* bp_ptr,
-      uint8_t* level, int* step, int* filter_length) const;
-  // The lookup table for picking the GetVerticalDeblockEdgeInfo based on the
-  // plane.
-  const DeblockVerticalEdgeInfo deblock_vertical_edge_info_[kMaxPlanes] = {
-      &PostFilter::GetVerticalDeblockFilterEdgeInfo,
-      &PostFilter::GetVerticalDeblockFilterEdgeInfoUV,
-      &PostFilter::GetVerticalDeblockFilterEdgeInfoUV,
-  };
 
   // Functions common to all post filters.
 
@@ -276,7 +288,7 @@ class PostFilter {
   // closest frame boundary.
   void ExtendFrameBoundary(uint8_t* frame_start, int width, int height,
                            ptrdiff_t stride, int left, int right, int top,
-                           int bottom);
+                           int bottom) const;
   // Extend frame boundary for referencing if the frame will be saved as a
   // reference frame.
   void ExtendBordersForReferenceFrame();
@@ -303,16 +315,12 @@ class PostFilter {
                MultiplyBy4(frame_header_.columns4x4);
   }
   template <typename Pixel>
-  void CopyPlane(const uint8_t* source, int source_stride, int width,
-                 int height, uint8_t* dest, int dest_stride) {
-    auto* dst = reinterpret_cast<Pixel*>(dest);
-    const auto* src = reinterpret_cast<const Pixel*>(source);
-    source_stride /= sizeof(Pixel);
-    dest_stride /= sizeof(Pixel);
+  void CopyPlane(const Pixel* src, ptrdiff_t src_stride, int width, int height,
+                 Pixel* dst, ptrdiff_t dst_stride) {
     for (int y = 0; y < height; ++y) {
       memcpy(dst, src, width * sizeof(Pixel));
-      src += source_stride;
-      dst += dest_stride;
+      src += src_stride;
+      dst += dst_stride;
     }
   }
 
@@ -325,26 +333,23 @@ class PostFilter {
   int GetDeblockUnitId(int row_unit, int column_unit) const {
     return row_unit * num_64x64_blocks_per_row_ + column_unit;
   }
-  bool GetHorizontalDeblockFilterEdgeInfo(Plane plane, int row4x4,
-                                          int column4x4, int8_t subsampling_x,
-                                          int8_t subsampling_y, uint8_t* level,
-                                          int* step, int* filter_length) const;
-  bool GetVerticalDeblockFilterEdgeInfo(Plane plane, int row4x4, int column4x4,
-                                        int8_t subsampling_x,
-                                        int8_t subsampling_y,
+  bool GetHorizontalDeblockFilterEdgeInfo(int row4x4, int column4x4,
+                                          uint8_t* level, int* step,
+                                          int* filter_length) const;
+  void GetHorizontalDeblockFilterEdgeInfoUV(int row4x4, int column4x4,
+                                            uint8_t* level_u, uint8_t* level_v,
+                                            int* step,
+                                            int* filter_length) const;
+  bool GetVerticalDeblockFilterEdgeInfo(int row4x4, int column4x4,
                                         BlockParameters* const* bp_ptr,
                                         uint8_t* level, int* step,
                                         int* filter_length) const;
-  bool GetVerticalDeblockFilterEdgeInfoUV(Plane plane, int row4x4,
-                                          int column4x4, int8_t subsampling_x,
-                                          int8_t subsampling_y,
+  void GetVerticalDeblockFilterEdgeInfoUV(int column4x4,
                                           BlockParameters* const* bp_ptr,
-                                          uint8_t* level, int* step,
-                                          int* filter_length) const;
-  void HorizontalDeblockFilter(Plane plane, int row4x4_start,
-                               int column4x4_start);
-  void VerticalDeblockFilter(Plane plane, int row4x4_start,
-                             int column4x4_start);
+                                          uint8_t* level_u, uint8_t* level_v,
+                                          int* step, int* filter_length) const;
+  void HorizontalDeblockFilter(int row4x4_start, int column4x4_start);
+  void VerticalDeblockFilter(int row4x4_start, int column4x4_start);
   // HorizontalDeblockFilter and VerticalDeblockFilter must have the correct
   // signature.
   static_assert(std::is_same<decltype(&PostFilter::HorizontalDeblockFilter),
@@ -412,30 +417,18 @@ class PostFilter {
   // Functions for the Loop Restoration filter.
 
   template <typename Pixel>
-  void ApplyLoopRestorationForOneUnit(uint8_t* cdef_buffer,
-                                      ptrdiff_t cdef_buffer_stride, Plane plane,
-                                      int plane_height, int x, int y, int row,
-                                      int column, int unit_row,
-                                      int current_process_unit_height,
-                                      int plane_unit_size,
-                                      int num_horizontal_units, int plane_width,
-                                      Array2DView<Pixel>* loop_restored_window);
-  template <typename Pixel>
-  void ApplyLoopRestorationForSuperBlock(Plane plane, int x, int y,
-                                         int unit_row,
-                                         int current_process_unit_height,
-                                         int process_unit_width);
+  void ApplyLoopRestorationForOneRowInWindow(
+      const Pixel* src_buffer, Plane plane, int plane_height, int plane_width,
+      int y, int x, int row, int unit_row, int current_process_unit_height,
+      int plane_unit_size, int window_width,
+      Array2DView<Pixel>* loop_restored_window);
   // Applies loop restoration for the superblock row starting at |row4x4_start|
   // with a height of 4*|sb4x4|.
-  void ApplyLoopRestorationForOneSuperBlockRow(int row4x4_start, int sb4x4);
+  template <typename Pixel>
+  void ApplyLoopRestorationSingleThread(int row4x4_start, int sb4x4);
+  void ApplyLoopRestoration(int row4x4_start, int sb4x4);
   template <typename Pixel>
   void ApplyLoopRestorationThreaded();
-  template <typename Pixel>
-  void ApplyLoopRestorationForOneRowInWindow(
-      uint8_t* cdef_buffer, ptrdiff_t cdef_buffer_stride, Plane plane,
-      int plane_height, int plane_width, int x, int y, int row, int unit_row,
-      int current_process_unit_height, int plane_unit_size, int window_width,
-      int num_horizontal_units);
   // Note for ApplyLoopRestoration():
   // First, we must differentiate loop restoration processing unit from loop
   // restoration unit.
@@ -483,6 +476,7 @@ class PostFilter {
   const int pixel_size_;
   const uint8_t* const inner_thresh_;
   const uint8_t* const outer_thresh_;
+  const bool needs_chroma_deblock_;
   // This stores the deblocking filter levels assuming that the delta is zero.
   // This will be used by all superblocks whose delta is zero (without having to
   // recompute them). The dimensions (in order) are: segment_id, level_index
@@ -507,7 +501,7 @@ class PostFilter {
   LoopRestorationInfo* const restoration_info_;
   // Pointer to the line buffer used by ApplySuperRes(). If SuperRes is on, then
   // the buffer will be large enough to hold one downscaled row +
-  // kSuperResHorizontalBorder.
+  // 2 * kSuperResHorizontalBorder + kSuperResHorizontalPadding.
   uint8_t* const superres_line_buffer_;
   const BlockParametersHolder& block_parameters_;
   // Frame buffer to hold cdef filtered frame.
@@ -541,14 +535,6 @@ class PostFilter {
   // Tracks the progress of the post filters.
   int progress_row_ = -1;
 
-  // A small buffer to hold input source image block for loop restoration.
-  // Its size is one processing unit size + borders.
-  // Self-guided filter needs an extra one-pixel border.
-  // Wiener filter needs extended border of three pixels.
-  // Therefore the size of the buffer is 70x70 pixels.
-  alignas(alignof(uint16_t)) uint8_t
-      block_buffer_[kRestorationUnitHeightWithBorders *
-                    kRestorationUnitWidthWithBorders * sizeof(uint16_t)];
   // A block buffer to hold the input that is converted to uint16_t before
   // cdef filtering. Only used in single threaded case.
   uint16_t cdef_block_[kCdefUnitSizeWithBorders * kCdefUnitSizeWithBorders * 3];
@@ -560,71 +546,29 @@ class PostFilter {
   friend class PostFilterHelperFuncTest;
 };
 
-template <typename Pixel>
-void CopyTwoRows(const Pixel* src, const ptrdiff_t src_stride, Pixel** dst,
-                 const ptrdiff_t dst_stride, const int width) {
-  for (int i = 0; i < kRestorationBorder - 1; ++i) {
-    memcpy(*dst, src, sizeof(Pixel) * width);
-    src += src_stride;
-    *dst += dst_stride;
-  }
-}
+extern template void PostFilter::ExtendFrame<uint8_t>(uint8_t* frame_start,
+                                                      int width, int height,
+                                                      ptrdiff_t stride,
+                                                      int left, int right,
+                                                      int top, int bottom);
+extern template void PostFilter::PrepareLoopRestorationBlock<uint8_t>(
+    const uint8_t* src_buffer, ptrdiff_t src_stride,
+    const uint8_t* deblock_buffer, ptrdiff_t deblock_stride, uint8_t* dst,
+    ptrdiff_t dst_stride, const int width, const int height,
+    const bool frame_top_border, const bool frame_bottom_border);
 
-// This function takes the cdef filtered buffer and the deblocked buffer to
-// prepare a block as input for loop restoration.
-// In striped loop restoration:
-// The filtering needs to fetch the area of size (width + 6) x (height + 4),
-// in which (width + 6) x height area is from cdef filtered frame (cdef_buffer).
-// Top 2 rows and bottom 2 rows are from deblocked frame (deblock_buffer).
-// Special cases are:
-// (1). when it is the top border, the top 2 rows are from cdef filtered frame.
-// (2). when it is the bottom border, the bottom 2 rows are from cdef filtered
-// frame.
-// This function is called only when cdef is applied for this frame.
-template <typename Pixel>
-void PrepareLoopRestorationBlock(const uint8_t* cdef_buffer,
-                                 ptrdiff_t cdef_stride,
-                                 const uint8_t* deblock_buffer,
-                                 ptrdiff_t deblock_stride, uint8_t* dest,
-                                 ptrdiff_t dest_stride, const int width,
-                                 const int height, const bool frame_top_border,
-                                 const bool frame_bottom_border) {
-  cdef_stride /= sizeof(Pixel);
-  deblock_stride /= sizeof(Pixel);
-  dest_stride /= sizeof(Pixel);
-  const auto* cdef_ptr = reinterpret_cast<const Pixel*>(cdef_buffer) -
-                         (kRestorationBorder - 1) * cdef_stride -
-                         kRestorationBorder;
-  const auto* deblock_ptr =
-      reinterpret_cast<const Pixel*>(deblock_buffer) - kRestorationBorder;
-  auto* dst = reinterpret_cast<Pixel*>(dest) + dest_stride;
-  int h = height;
-  // Top 2 rows.
-  if (frame_top_border) {
-    h += kRestorationBorder - 1;
-  } else {
-    CopyTwoRows<Pixel>(deblock_ptr, deblock_stride, &dst, dest_stride,
-                       width + 2 * kRestorationBorder);
-    cdef_ptr += (kRestorationBorder - 1) * cdef_stride;
-    // If |frame_top_border| is true, then we are in the first superblock row,
-    // so in that case, do not increment |deblock_ptr| since we don't store
-    // anything from the first superblock row into |deblock_buffer|.
-    deblock_ptr += 4 * deblock_stride;
-  }
-  if (frame_bottom_border) h += kRestorationBorder - 1;
-  // Main body.
-  do {
-    memcpy(dst, cdef_ptr, sizeof(Pixel) * (width + 2 * kRestorationBorder));
-    cdef_ptr += cdef_stride;
-    dst += dest_stride;
-  } while (--h != 0);
-  // Bottom 2 rows.
-  if (!frame_bottom_border) {
-    deblock_ptr += (kRestorationBorder - 1) * deblock_stride;
-    CopyTwoRows<Pixel>(deblock_ptr, deblock_stride, &dst, dest_stride,
-                       width + 2 * kRestorationBorder);
-  }
-}
+#if LIBGAV1_MAX_BITDEPTH >= 10
+extern template void PostFilter::ExtendFrame<uint16_t>(uint16_t* frame_start,
+                                                       int width, int height,
+                                                       ptrdiff_t stride,
+                                                       int left, int right,
+                                                       int top, int bottom);
+extern template void PostFilter::PrepareLoopRestorationBlock<uint16_t>(
+    const uint16_t* src_buffer, ptrdiff_t src_stride,
+    const uint16_t* deblock_buffer, ptrdiff_t deblock_stride, uint16_t* dst,
+    ptrdiff_t dst_stride, const int width, const int height,
+    const bool frame_top_border, const bool frame_bottom_border);
+#endif
 
 }  // namespace libgav1
 

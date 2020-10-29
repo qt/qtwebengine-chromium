@@ -2072,8 +2072,16 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glTestFenceNV";
         case EntryPoint::TexBuffer:
             return "glTexBuffer";
+        case EntryPoint::TexBufferEXT:
+            return "glTexBufferEXT";
+        case EntryPoint::TexBufferOES:
+            return "glTexBufferOES";
         case EntryPoint::TexBufferRange:
             return "glTexBufferRange";
+        case EntryPoint::TexBufferRangeEXT:
+            return "glTexBufferRangeEXT";
+        case EntryPoint::TexBufferRangeOES:
+            return "glTexBufferRangeOES";
         case EntryPoint::TexCoord1d:
             return "glTexCoord1d";
         case EntryPoint::TexCoord1dv:
@@ -2266,6 +2274,14 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glTexStorageMem3DEXT";
         case EntryPoint::TexStorageMem3DMultisampleEXT:
             return "glTexStorageMem3DMultisampleEXT";
+        case EntryPoint::TexStorageMemFlags2DANGLE:
+            return "glTexStorageMemFlags2DANGLE";
+        case EntryPoint::TexStorageMemFlags2DMultisampleANGLE:
+            return "glTexStorageMemFlags2DMultisampleANGLE";
+        case EntryPoint::TexStorageMemFlags3DANGLE:
+            return "glTexStorageMemFlags3DANGLE";
+        case EntryPoint::TexStorageMemFlags3DMultisampleANGLE:
+            return "glTexStorageMemFlags3DMultisampleANGLE";
         case EntryPoint::TexSubImage1D:
             return "glTexSubImage1D";
         case EntryPoint::TexSubImage2D:

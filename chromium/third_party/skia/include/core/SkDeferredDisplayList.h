@@ -15,7 +15,7 @@
 class SkDeferredDisplayListPriv;
 
 #if SK_SUPPORT_GPU
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "include/private/SkTArray.h"
 #include <map>
 class GrRenderTask;
@@ -29,7 +29,7 @@ using GrRenderTargetProxy = SkRefCnt;
  * This class contains pre-processed gpu operations that can be replayed into
  * an SkSurface via SkSurface::draw(SkDeferredDisplayList*).
  */
-class SkDeferredDisplayList {
+class SkDeferredDisplayList : public SkNVRefCnt<SkDeferredDisplayList> {
 public:
     SK_API ~SkDeferredDisplayList();
 
@@ -43,7 +43,7 @@ public:
      */
     class SK_API ProgramIterator {
     public:
-        ProgramIterator(GrContext*, SkDeferredDisplayList*);
+        ProgramIterator(GrDirectContext*, SkDeferredDisplayList*);
         ~ProgramIterator();
 
         // This returns true if any work was done. Getting a cache hit does not count as work.
@@ -52,7 +52,7 @@ public:
         void next();
 
     private:
-        GrContext*                                       fContext;
+        GrDirectContext*                                 fDContext;
         const SkTArray<GrRecordingContext::ProgramData>& fProgramData;
         int                                              fIndex;
     };
@@ -60,7 +60,7 @@ public:
 
     // Provides access to functions that aren't part of the public API.
     SkDeferredDisplayListPriv priv();
-    const SkDeferredDisplayListPriv priv() const;
+    const SkDeferredDisplayListPriv priv() const;  // NOLINT(readability-const-return-type)
 
 private:
     friend class GrDrawingManager; // for access to 'fRenderTasks', 'fLazyProxyData', 'fArenas'

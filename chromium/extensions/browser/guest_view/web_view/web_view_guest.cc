@@ -19,6 +19,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/post_task.h"
 #include "build/build_config.h"
+#include "build/lacros_buildflags.h"
 #include "components/guest_view/browser/guest_view_event.h"
 #include "components/guest_view/browser/guest_view_manager.h"
 #include "components/guest_view/common/guest_view_constants.h"
@@ -142,7 +143,7 @@ static std::string TerminationStatusToString(base::TerminationStatus status) {
     case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
     case base::TERMINATION_STATUS_STILL_RUNNING:
       return "abnormal";
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || BUILDFLAG(IS_LACROS)
     case base::TERMINATION_STATUS_PROCESS_WAS_KILLED_BY_OOM:
       return "oom killed";
 #endif
@@ -294,14 +295,14 @@ bool WebViewGuest::GetGuestPartitionConfigForSite(
 
 // static
 GURL WebViewGuest::GetSiteForGuestPartitionConfig(
-    const std::string& partition_domain,
-    const std::string& partition_name,
-    bool in_memory) {
-  std::string url_encoded_partition =
-      net::EscapeQueryParamValue(partition_name, false);
-  return GURL(base::StringPrintf(
-      "%s://%s/%s?%s", content::kGuestScheme, partition_domain.c_str(),
-      in_memory ? "" : "persist", url_encoded_partition.c_str()));
+    const content::StoragePartitionConfig& storage_partition_config) {
+  std::string url_encoded_partition = net::EscapeQueryParamValue(
+      storage_partition_config.partition_name(), false);
+  return GURL(
+      base::StringPrintf("%s://%s/%s?%s", content::kGuestScheme,
+                         storage_partition_config.partition_domain().c_str(),
+                         storage_partition_config.in_memory() ? "" : "persist",
+                         url_encoded_partition.c_str()));
 }
 
 // static
@@ -358,9 +359,10 @@ void WebViewGuest::CreateWebContents(const base::DictionaryValue& create_params,
     return;
   }
   std::string partition_domain = GetOwnerSiteURL().host();
-  GURL guest_site(
-      GetSiteForGuestPartitionConfig(partition_domain, storage_partition_id,
-                                     !persist_storage /* in_memory */));
+  GURL guest_site =
+      GetSiteForGuestPartitionConfig(content::StoragePartitionConfig::Create(
+          partition_domain, storage_partition_id,
+          !persist_storage /* in_memory */));
 
   // If we already have a webview tag in the same app using the same storage
   // partition, we should use the same SiteInstance so the existing tag and
@@ -660,7 +662,6 @@ void WebViewGuest::NewGuestWebViewCallback(const content::OpenURLParams& params,
   // Request permission to show the new window.
   RequestNewWindowPermission(params.disposition,
                              gfx::Rect(),
-                             params.user_gesture,
                              new_guest->web_contents());
 }
 
@@ -1114,7 +1115,7 @@ bool WebViewGuest::HandleKeyboardShortcuts(
         blink::mojom::PointerLockResult::kUserRejected);
   }
 
-#if defined(OS_MACOSX)
+#if defined(OS_MAC)
   if (event.GetModifiers() != blink::WebInputEvent::kMetaKey)
     return false;
 
@@ -1323,8 +1324,7 @@ void WebViewGuest::AddNewContents(WebContents* source,
   // https://crbug.com/832879.
   if (was_blocked)
     *was_blocked = false;
-  RequestNewWindowPermission(disposition, initial_rect, user_gesture,
-                             new_contents.release());
+  RequestNewWindowPermission(disposition, initial_rect, new_contents.release());
 }
 
 WebContents* WebViewGuest::OpenURLFromTab(
@@ -1498,7 +1498,6 @@ void WebViewGuest::LoadURLWithParams(
 
 void WebViewGuest::RequestNewWindowPermission(WindowOpenDisposition disposition,
                                               const gfx::Rect& initial_bounds,
-                                              bool user_gesture,
                                               WebContents* new_contents) {
   auto* guest = WebViewGuest::FromWebContents(new_contents);
   if (!guest)

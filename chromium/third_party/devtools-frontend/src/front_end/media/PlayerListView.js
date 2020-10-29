@@ -23,14 +23,16 @@ export class PlayerEntryTreeElement extends UI.TreeOutline.TreeElement {
   /**
    * @param {!PlayerStatus} playerStatus
    * @param {!Media.MainView} displayContainer
+   * @param {string} playerID
    */
-  constructor(playerStatus, displayContainer) {
+  constructor(playerStatus, displayContainer, playerID) {
     super(playerStatus.playerTitle, false);
     this.titleFromUrl = true;
     this._playerStatus = playerStatus;
     this._displayContainer = displayContainer;
     this.setLeadingIcons([UI.Icon.Icon.create('smallicon-videoplayer-playing', 'media-player')]);
     this.listItemElement.classList.add('player-entry-tree-element');
+    this.listItemElement.addEventListener('contextmenu', this._rightClickContextMenu.bind(this, playerID), false);
   }
 
   /**
@@ -40,6 +42,27 @@ export class PlayerEntryTreeElement extends UI.TreeOutline.TreeElement {
   onselect(selectedByUser) {
     this._displayContainer.renderMainPanel(this._playerStatus.playerID);
     return true;
+  }
+
+  _rightClickContextMenu(playerID, event) {
+    const contextMenu = new UI.ContextMenu.ContextMenu(event);
+    contextMenu.headerSection().appendItem(ls`Hide player`, this._hidePlayer.bind(this, playerID));
+    contextMenu.headerSection().appendItem(ls`Hide all others`, this._hideOthers.bind(this, playerID));
+    contextMenu.headerSection().appendItem(ls`Save player info`, this._savePlayer.bind(this, playerID));
+    contextMenu.show();
+    return true;
+  }
+
+  _hidePlayer(playerID) {
+    this._displayContainer.markPlayerForDeletion(playerID);
+  }
+
+  _savePlayer(playerID) {
+    this._displayContainer.exportPlayerData(playerID);
+  }
+
+  _hideOthers(playerID) {
+    this._displayContainer.markOtherPlayersForDeletion(playerID);
   }
 }
 
@@ -64,15 +87,14 @@ export class PlayerListView extends UI.Widget.VBox {
     this.contentElement.appendChild(this._sidebarTree.element);
     this._sidebarTree.registerRequiredCSS('media/playerListView.css');
 
-    // Audio capture / output devices.
-    this._audioDevices = this._addListSection(Common.UIString('Audio I/O'));
-
-    // Video capture devices.
-    this._videoDevices = this._addListSection(Common.UIString('Video Capture Devices'));
-
     // Players active in this tab.
     this._playerList = this._addListSection(Common.UIString('Players'));
     this._playerList.listItemElement.classList.add('player-entry-header');
+  }
+
+  deletePlayer(playerID) {
+    this._playerList.removeChild(this._playerStatuses.get(playerID));
+    this._playerStatuses.delete(playerID);
   }
 
   /**
@@ -93,7 +115,7 @@ export class PlayerListView extends UI.Widget.VBox {
    */
   addMediaElementItem(playerID) {
     const playerStatus = {playerTitle: playerID, playerID: playerID, exists: true, playing: false, titleEdited: false};
-    const playerElement = new PlayerEntryTreeElement(playerStatus, this._mainContainer);
+    const playerElement = new PlayerEntryTreeElement(playerStatus, this._mainContainer, playerID);
     this._playerStatuses.set(playerID, playerElement);
     this._playerList.appendChild(playerElement);
   }

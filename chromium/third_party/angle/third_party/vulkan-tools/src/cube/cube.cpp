@@ -34,7 +34,6 @@
 #include <sstream>
 #include <memory>
 
-#define VULKAN_HPP_NO_SMART_HANDLE
 #define VULKAN_HPP_NO_EXCEPTIONS
 #define VULKAN_HPP_TYPESAFE_CONVERSION
 #include <vulkan/vulkan.hpp>
@@ -206,6 +205,7 @@ typedef struct {
     vk::ImageView view;
     vk::Buffer uniform_buffer;
     vk::DeviceMemory uniform_memory;
+    void *uniform_memory_ptr;
     vk::Framebuffer framebuffer;
     vk::DescriptorSet descriptor_set;
 } SwapchainImageResources;
@@ -263,7 +263,11 @@ struct Demo {
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
     void run();
     void create_window();
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    void handle_directfb_event(const DFBInputEvent *);
+    void run_directfb();
+    void create_directfb_window();
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
     void run();
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
     vk::Result create_display_surface();
@@ -294,8 +298,12 @@ struct Demo {
     wl_seat *seat;
     wl_pointer *pointer;
     wl_keyboard *keyboard;
-#elif (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK))
-    void *window;
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    IDirectFB *dfb;
+    IDirectFBSurface *window;
+    IDirectFBEventBuffer *event_buffer;
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+    void *caMetalLayer;
 #endif
 
     vk::SurfaceKHR surface;
@@ -303,6 +311,7 @@ struct Demo {
     bool use_staging_buffer;
     bool use_xlib;
     bool separate_present_queue;
+    uint32_t gpu_number;
 
     vk::Instance inst;
     vk::PhysicalDevice gpu;
@@ -530,6 +539,10 @@ Demo::Demo()
       seat{nullptr},
       pointer{nullptr},
       keyboard{nullptr},
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+      dfb{nullptr},
+      window{nullptr},
+      event_buffer{nullptr},
 #endif
       prepared{false},
       use_staging_buffer{false},
@@ -644,8 +657,9 @@ void Demo::cleanup() {
 
     for (uint32_t i = 0; i < swapchainImageCount; i++) {
         device.destroyImageView(swapchain_image_resources[i].view, nullptr);
-        device.freeCommandBuffers(cmd_pool, 1, &swapchain_image_resources[i].cmd);
+        device.freeCommandBuffers(cmd_pool, {swapchain_image_resources[i].cmd});
         device.destroyBuffer(swapchain_image_resources[i].uniform_buffer, nullptr);
+        device.unmapMemory(swapchain_image_resources[i].uniform_memory);
         device.freeMemory(swapchain_image_resources[i].uniform_memory, nullptr);
     }
 
@@ -675,6 +689,10 @@ void Demo::cleanup() {
     wl_compositor_destroy(compositor);
     wl_registry_destroy(registry);
     wl_display_disconnect(display);
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    event_buffer->Release(event_buffer);
+    window->Release(window);
+    dfb->Release(dfb);
 #endif
 
     inst.destroy(nullptr);
@@ -718,7 +736,7 @@ void Demo::destroy_texture(texture_object *tex_objs) {
 void Demo::draw() {
     // Ensure no more than FRAME_LAG renderings are outstanding
     device.waitForFences(1, &fences[frame_index], VK_TRUE, UINT64_MAX);
-    device.resetFences(1, &fences[frame_index]);
+    device.resetFences({fences[frame_index]});
 
     vk::Result result;
     do {
@@ -827,9 +845,23 @@ void Demo::draw_build_cmd(vk::CommandBuffer commandBuffer) {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, 1,
                                      &swapchain_image_resources[current_buffer].descriptor_set, 0, nullptr);
-
-    auto const viewport =
-        vk::Viewport().setWidth((float)width).setHeight((float)height).setMinDepth((float)0.0f).setMaxDepth((float)1.0f);
+    float viewport_dimension;
+    float viewport_x = 0.0f;
+    float viewport_y = 0.0f;
+    if (width < height) {
+        viewport_dimension = (float)width;
+        viewport_y = (height - width) / 2.0f;
+    } else {
+        viewport_dimension = (float)height;
+        viewport_x = (width - height) / 2.0f;
+    }
+    auto const viewport = vk::Viewport()
+                              .setX(viewport_x)
+                              .setY(viewport_y)
+                              .setWidth((float)viewport_dimension)
+                              .setHeight((float)viewport_dimension)
+                              .setMinDepth((float)0.0f)
+                              .setMaxDepth((float)1.0f);
     commandBuffer.setViewport(0, 1, &viewport);
 
     vk::Rect2D const scissor(vk::Offset2D(0, 0), vk::Extent2D(width, height));
@@ -908,12 +940,8 @@ void Demo::init(int argc, char **argv) {
     presentMode = vk::PresentModeKHR::eFifo;
     frameCount = UINT32_MAX;
     use_xlib = false;
-
-#if defined(VK_USE_PLATFORM_MACOS_MVK)
-    // MoltenVK may not allow host coherent mapping to linear tiled images
-    // Force the use of a staging buffer to be safe
-    use_staging_buffer = true;
-#endif
+    /* For cube demo we just grab the first physical device by default */
+    gpu_number = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--use_staging") == 0) {
@@ -946,10 +974,15 @@ void Demo::init(int argc, char **argv) {
             suppress_popups = true;
             continue;
         }
-
+        if ((strcmp(argv[i], "--gpu_number") == 0) && (i < argc - 1)) {
+            gpu_number = atoi(argv[i + 1]);
+            i++;
+            continue;
+        }
         std::stringstream usage;
         usage << "Usage:\n  " << APP_SHORT_NAME << "\t[--use_staging] [--validate]\n"
               << "\t[--break] [--c <framecount>] [--suppress_popups]\n"
+              << "\t[--gpu_number <index of physical device>]\n"
               << "\t[--present_mode <present mode enum>]\n"
               << "\t<present_mode_enum>\n"
               << "\t\tVK_PRESENT_MODE_IMMEDIATE_KHR = " << VK_PRESENT_MODE_IMMEDIATE_KHR << "\n"
@@ -1101,20 +1134,20 @@ void Demo::init_vk() {
                 platformSurfaceExtFound = 1;
                 extension_names[enabled_extension_count++] = VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
             }
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+            if (!strcmp(VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
+                platformSurfaceExtFound = 1;
+                extension_names[enabled_extension_count++] = VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME;
+            }
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
             if (!strcmp(VK_KHR_DISPLAY_EXTENSION_NAME, instance_extensions[i].extensionName)) {
                 platformSurfaceExtFound = 1;
                 extension_names[enabled_extension_count++] = VK_KHR_DISPLAY_EXTENSION_NAME;
             }
-#elif defined(VK_USE_PLATFORM_IOS_MVK)
-            if (!strcmp(VK_MVK_IOS_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+            if (!strcmp(VK_EXT_METAL_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
                 platformSurfaceExtFound = 1;
-                extension_names[enabled_extension_count++] = VK_MVK_IOS_SURFACE_EXTENSION_NAME;
-            }
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
-            if (!strcmp(VK_MVK_MACOS_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
-                platformSurfaceExtFound = 1;
-                extension_names[enabled_extension_count++] = VK_MVK_MACOS_SURFACE_EXTENSION_NAME;
+                extension_names[enabled_extension_count++] = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
             }
 
 #endif
@@ -1155,21 +1188,20 @@ void Demo::init_vk() {
                  "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
                  "Please look at the Getting Started guide for additional information.\n",
                  "vkCreateInstance Failure");
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME
+                 " extension.\n\n"
+                 "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
+                 "Please look at the Getting Started guide for additional information.\n",
+                 "vkCreateInstance Failure");
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
         ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_KHR_DISPLAY_EXTENSION_NAME
                  " extension.\n\n"
                  "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
                  "Please look at the Getting Started guide for additional information.\n",
                  "vkCreateInstance Failure");
-#elif defined(VK_USE_PLATFORM_IOS_MVK)
-        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_MVK_IOS_SURFACE_EXTENSION_NAME
-                 " extension.\n\nDo you have a compatible "
-                 "Vulkan installable client driver (ICD) installed?\nPlease "
-                 "look at the Getting Started guide for additional "
-                 "information.\n",
-                 "vkCreateInstance Failure");
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
-        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_MVK_MACOS_SURFACE_EXTENSION_NAME
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_EXT_METAL_SURFACE_EXTENSION_NAME
                  " extension.\n\nDo you have a compatible "
                  "Vulkan installable client driver (ICD) installed?\nPlease "
                  "look at the Getting Started guide for additional "
@@ -1218,8 +1250,12 @@ void Demo::init_vk() {
         std::unique_ptr<vk::PhysicalDevice[]> physical_devices(new vk::PhysicalDevice[gpu_count]);
         result = inst.enumeratePhysicalDevices(&gpu_count, physical_devices.get());
         VERIFY(result == vk::Result::eSuccess);
-        /* For cube demo we just grab the first physical device */
-        gpu = physical_devices[0];
+        if (gpu_number > gpu_count - 1) {
+            fprintf(stderr, "Gpu %u specified is not present, gpu count = %u\n", gpu_number, gpu_count);
+            fprintf(stderr, "Continuing with gpu 0\n");
+            gpu_number = 0;
+        }
+        gpu = physical_devices[gpu_number];
     } else {
         ERR_EXIT(
             "vkEnumeratePhysicalDevices reported zero accessible devices.\n\n"
@@ -1306,18 +1342,18 @@ void Demo::create_surface() {
         auto result = inst.createXcbSurfaceKHR(&createInfo, nullptr, &surface);
         VERIFY(result == vk::Result::eSuccess);
     }
-#elif defined(VK_USE_PLATFORM_IOS_MVK)
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
     {
-        auto const createInfo = vk::IOSSurfaceCreateInfoMVK().setPView(nullptr);
+        auto const createInfo = vk::DirectFBSurfaceCreateInfoEXT().setDfb(dfb).setSurface(window);
 
-        auto result = inst.createIOSSurfaceMVK(&createInfo, nullptr, &surface);
+        auto result = inst.createDirectFBSurfaceEXT(&createInfo, nullptr, &surface);
         VERIFY(result == vk::Result::eSuccess);
     }
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
     {
-        auto const createInfo = vk::MacOSSurfaceCreateInfoMVK().setPView(window);
+        auto const createInfo = vk::MetalSurfaceCreateInfoEXT().setPLayer(static_cast<CAMetalLayer *>(caMetalLayer));
 
-        auto result = inst.createMacOSSurfaceMVK(&createInfo, nullptr, &surface);
+        auto result = inst.createMetalSurfaceEXT(&createInfo, nullptr, &surface);
         VERIFY(result == vk::Result::eSuccess);
     }
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
@@ -1718,12 +1754,11 @@ void Demo::prepare_cube_data_buffers() {
         result = device.allocateMemory(&mem_alloc, nullptr, &swapchain_image_resources[i].uniform_memory);
         VERIFY(result == vk::Result::eSuccess);
 
-        auto pData = device.mapMemory(swapchain_image_resources[i].uniform_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
-        VERIFY(pData.result == vk::Result::eSuccess);
+        result = device.mapMemory(swapchain_image_resources[i].uniform_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags(),
+                                  &swapchain_image_resources[i].uniform_memory_ptr);
+        VERIFY(result == vk::Result::eSuccess);
 
-        memcpy(pData.value, &data, sizeof data);
-
-        device.unmapMemory(swapchain_image_resources[i].uniform_memory);
+        memcpy(swapchain_image_resources[i].uniform_memory_ptr, &data, sizeof data);
 
         result =
             device.bindBufferMemory(swapchain_image_resources[i].uniform_buffer, swapchain_image_resources[i].uniform_memory, 0);
@@ -2074,7 +2109,6 @@ void Demo::prepare_texture_buffer(const char *filename, texture_object *tex_obj)
     VERIFY(result == vk::Result::eSuccess);
 
     vk::SubresourceLayout layout;
-    memset(&layout, 0, sizeof(layout));
     layout.rowPitch = tex_width * 4;
     auto data = device.mapMemory(tex_obj->mem, 0, tex_obj->mem_alloc.allocationSize);
     VERIFY(data.result == vk::Result::eSuccess);
@@ -2283,8 +2317,9 @@ void Demo::resize() {
 
     for (i = 0; i < swapchainImageCount; i++) {
         device.destroyImageView(swapchain_image_resources[i].view, nullptr);
-        device.freeCommandBuffers(cmd_pool, 1, &swapchain_image_resources[i].cmd);
+        device.freeCommandBuffers(cmd_pool, {swapchain_image_resources[i].cmd});
         device.destroyBuffer(swapchain_image_resources[i].uniform_buffer, nullptr);
+        device.unmapMemory(swapchain_image_resources[i].uniform_memory);
         device.freeMemory(swapchain_image_resources[i].uniform_memory, nullptr);
     }
 
@@ -2359,12 +2394,7 @@ void Demo::update_data_buffer() {
     mat4x4 MVP;
     mat4x4_mul(MVP, VP, model_matrix);
 
-    auto data = device.mapMemory(swapchain_image_resources[current_buffer].uniform_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
-    VERIFY(data.result == vk::Result::eSuccess);
-
-    memcpy(data.value, (const void *)&MVP[0][0], sizeof(MVP));
-
-    device.unmapMemory(swapchain_image_resources[current_buffer].uniform_memory);
+    memcpy(swapchain_image_resources[current_buffer].uniform_memory_ptr, (const void *)&MVP[0][0], sizeof(MVP));
 }
 
 /* Convert ppm image data from header file into RGBA texture image */
@@ -2715,7 +2745,84 @@ void Demo::create_window() {
     wl_shell_surface_set_toplevel(shell_surface);
     wl_shell_surface_set_title(shell_surface, APP_SHORT_NAME);
 }
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+
+void Demo::handle_directfb_event(const DFBInputEvent *event) {
+    if (event->type != DIET_KEYPRESS) return;
+    switch (event->key_symbol) {
+        case DIKS_ESCAPE:  // Escape
+            quit = true;
+            break;
+        case DIKS_CURSOR_LEFT:  // left arrow key
+            spin_angle -= spin_increment;
+            break;
+        case DIKS_CURSOR_RIGHT:  // right arrow key
+            spin_angle += spin_increment;
+            break;
+        case DIKS_SPACE:  // space bar
+            pause = !pause;
+            break;
+        default:
+            break;
+    }
+}
+
+void Demo::run_directfb() {
+    while (!quit) {
+        DFBInputEvent event;
+
+        if (pause) {
+            event_buffer->WaitForEvent(event_buffer);
+            if (!event_buffer->GetEvent(event_buffer, DFB_EVENT(&event))) handle_directfb_event(&event);
+        } else {
+            if (!event_buffer->GetEvent(event_buffer, DFB_EVENT(&event))) handle_directfb_event(&event);
+
+            draw();
+            curFrame++;
+            if (frameCount != UINT32_MAX && curFrame == frameCount) {
+                quit = true;
+            }
+        }
+    }
+}
+
+void Demo::create_directfb_window() {
+    DFBResult ret;
+
+    ret = DirectFBInit(NULL, NULL);
+    if (ret) {
+        printf("DirectFBInit failed to initialize DirectFB!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
+    ret = DirectFBCreate(&dfb);
+    if (ret) {
+        printf("DirectFBCreate failed to create main interface of DirectFB!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
+    DFBSurfaceDescription desc;
+    desc.flags = (DFBSurfaceDescriptionFlags)(DSDESC_CAPS | DSDESC_WIDTH | DSDESC_HEIGHT);
+    desc.caps = DSCAPS_PRIMARY;
+    desc.width = width;
+    desc.height = height;
+    ret = dfb->CreateSurface(dfb, &desc, &window);
+    if (ret) {
+        printf("CreateSurface failed to create DirectFB surface interface!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
+    ret = dfb->CreateInputEventBuffer(dfb, DICAPS_KEYS, DFB_FALSE, &event_buffer);
+    if (ret) {
+        printf("CreateInputEventBuffer failed to create DirectFB event buffer interface!\n");
+        fflush(stdout);
+        exit(1);
+    }
+}
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
 void Demo::run() {
     draw();
     curFrame++;
@@ -3028,6 +3135,8 @@ int main(int argc, char **argv) {
     demo.create_xlib_window();
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
     demo.create_window();
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    demo.create_directfb_window();
 #endif
 
     demo.init_vk_swapchain();
@@ -3040,6 +3149,8 @@ int main(int argc, char **argv) {
     demo.run_xlib();
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
     demo.run();
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    demo.run_directfb();
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
     demo.run_display();
 #endif
@@ -3049,12 +3160,12 @@ int main(int argc, char **argv) {
     return validation_error;
 }
 
-#elif defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK)
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
 
 // Global function invoked from NS or UI views and controllers to create demo
-static void demo_main(struct Demo &demo, void *view, int argc, const char *argv[]) {
+static void demo_main(struct Demo &demo, void *caMetalLayer, int argc, const char *argv[]) {
     demo.init(argc, (char **)argv);
-    demo.window = view;
+    demo.caMetalLayer = caMetalLayer;
     demo.init_vk_swapchain();
     demo.prepare();
     demo.spin_angle = 0.4f;

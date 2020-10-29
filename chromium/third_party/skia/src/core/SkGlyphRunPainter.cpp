@@ -8,7 +8,7 @@
 #include "src/core/SkGlyphRunPainter.h"
 
 #if SK_SUPPORT_GPU
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorInfo.h"
 #include "src/gpu/GrContextPriv.h"
@@ -173,7 +173,7 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
                 strike->prepareForSDFTDrawing(&fDrawable, &fRejects);
                 fRejects.flipRejectsToSource();
 
-                if (process) {
+                if (process && !fDrawable.drawableIsEmpty()) {
                     // processSourceSDFT must be called even if there are no glyphs to make sure
                     // runs are set correctly.
                     process->processSourceSDFT(
@@ -190,14 +190,15 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
 
             SkScopedStrikeForGPU strike = strikeSpec.findOrCreateScopedStrike(fStrikeCache);
 
-            fDrawable.startGPUDevice(fRejects.source(), origin, drawMatrix, strike->roundingSpec());
+            SkPoint residual = fDrawable.startGPUDevice(
+                    fRejects.source(), origin, drawMatrix, strike->roundingSpec());
             strike->prepareForMaskDrawing(&fDrawable, &fRejects);
             fRejects.flipRejectsToSource();
 
-            if (process) {
+            if (process && !fDrawable.drawableIsEmpty()) {
                 // processDeviceMasks must be called even if there are no glyphs to make sure runs
                 // are set correctly.
-                process->processDeviceMasks(fDrawable.drawable(), strikeSpec);
+                process->processDeviceMasks(fDrawable.drawable(), strikeSpec, residual);
             }
         }
 
@@ -220,7 +221,7 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
                 maxDimensionInSourceSpace =
                         fRejects.rejectedMaxDimension() * strikeSpec.strikeToSourceRatio();
 
-                if (process) {
+                if (process && !fDrawable.drawableIsEmpty()) {
                     // processSourcePaths must be called even if there are no glyphs to make sure
                     // runs are set correctly.
                     process->processSourcePaths(fDrawable.drawable(), runFont, strikeSpec);
@@ -242,7 +243,7 @@ void SkGlyphRunListPainter::processGlyphRunList(const SkGlyphRunList& glyphRunLi
                 fRejects.flipRejectsToSource();
                 SkASSERT(fRejects.source().empty());
 
-                if (process) {
+                if (process && !fDrawable.drawableIsEmpty()) {
                     process->processSourceMasks(fDrawable.drawable(), strikeSpec);
                 }
             }

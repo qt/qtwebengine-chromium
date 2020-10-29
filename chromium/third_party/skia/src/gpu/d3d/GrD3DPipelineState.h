@@ -33,7 +33,6 @@ public:
                        std::unique_ptr<GrGLSLPrimitiveProcessor> geometryProcessor,
                        std::unique_ptr<GrGLSLXferProcessor> xferProcessor,
                        std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fragProcessors,
-                       int fragmentProcessorCnt,
                        size_t vertexStride,
                        size_t instanceStride);
 
@@ -58,8 +57,9 @@ public:
                             const GrSurfaceProxy* const primProcTextures[],
                             const GrPipeline& pipeline);
 
-    void bindBuffers(GrD3DGpu*, const GrBuffer* indexBuffer, const GrBuffer* instanceBuffer,
-                     const GrBuffer* vertexBuffer, GrD3DDirectCommandList* commandList);
+    void bindBuffers(GrD3DGpu*, sk_sp<const GrBuffer> indexBuffer,
+                     sk_sp<const GrBuffer> instanceBuffer, sk_sp<const GrBuffer> vertexBuffer,
+                     GrD3DDirectCommandList* commandList);
 
     // We can only cache non dirty uniform values until we submit a command list. After that, the
     // next frame will get a completely different uniform buffer and/or offset into the buffer. Thus
@@ -118,7 +118,6 @@ private:
     std::unique_ptr<GrGLSLPrimitiveProcessor> fGeometryProcessor;
     std::unique_ptr<GrGLSLXferProcessor> fXferProcessor;
     std::unique_ptr<std::unique_ptr<GrGLSLFragmentProcessor>[]> fFragmentProcessors;
-    int fFragmentProcessorCnt;
 
     GrD3DPipelineStateDataManager fDataManager;
 

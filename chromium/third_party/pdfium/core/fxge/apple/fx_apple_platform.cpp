@@ -22,11 +22,11 @@
 #include "core/fxge/text_char_pos.h"
 #include "third_party/base/span.h"
 
-#ifndef _SKIA_SUPPORT_
+#if !defined(_SKIA_SUPPORT_)
 #include "core/fxge/agg/fx_agg_driver.h"
 #endif
 
-#ifndef _SKIA_SUPPORT_
+#if !defined(_SKIA_SUPPORT_)
 
 namespace {
 
@@ -102,12 +102,14 @@ void CFX_AggDeviceDriver::DestroyPlatform() {
   }
 }
 
-bool CFX_AggDeviceDriver::DrawDeviceText(int nChars,
-                                         const TextCharPos* pCharPos,
-                                         CFX_Font* pFont,
-                                         const CFX_Matrix& mtObject2Device,
-                                         float font_size,
-                                         uint32_t argb) {
+bool CFX_AggDeviceDriver::DrawDeviceText(
+    int nChars,
+    const TextCharPos* pCharPos,
+    CFX_Font* pFont,
+    const CFX_Matrix& mtObject2Device,
+    float font_size,
+    uint32_t argb,
+    const CFX_TextRenderOptions& /*options*/) {
   if (!pFont)
     return false;
 
@@ -161,7 +163,7 @@ bool CFX_AggDeviceDriver::DrawDeviceText(int nChars,
   return ret;
 }
 
-#endif  // _SKIA_SUPPORT_
+#endif  // !defined(_SKIA_SUPPORT_)
 
 void CFX_GlyphCache::InitPlatform() {}
 

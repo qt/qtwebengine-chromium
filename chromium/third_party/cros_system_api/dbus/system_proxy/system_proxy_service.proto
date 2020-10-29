@@ -25,6 +25,8 @@ message SetSystemTrafficCredentialsResponse {
   optional string error_message = 1;
 }
 
+// Both |username| and |password| use UTF-8 as character encoding and are not
+// percent-escaped (i.e. not URL encoded).
 message Credentials {
   // The username for authenticating to the remote web proxy.
   optional string username = 1;
@@ -54,7 +56,15 @@ enum TrafficOrigin {
 
   USER = 2;
 
-  BOTH = 3;
+  ALL = 3;
+}
+
+// Message request to remove the user credentials from the System-proxy service.
+message ClearUserCredentialsRequest {}
+
+message ClearUserCredentialsResponse {
+  // Error message, empty if no error occurred.
+  optional string error_message = 1;
 }
 
 message SetAuthenticationDetailsRequest {
@@ -78,6 +88,12 @@ message SetAuthenticationDetailsRequest {
 message SetAuthenticationDetailsResponse {
   // Error message, empty if no error occurred.
   optional string error_message = 1;
+}
+
+message ShutDownRequest {
+  // Indicates which worker process should be shut down. If |ALL| are selected,
+  // it will shut down the service.
+  optional TrafficOrigin traffic_type = 1;
 }
 
 message ShutDownResponse {
@@ -104,4 +120,12 @@ message WorkerActiveSignalDetails {
 // missing credentials.
 message AuthenticationRequiredDetails {
   optional ProtectionSpace proxy_protection_space = 1;
+  // If true, it means that the credentials previously acquired for proxy
+  // authentication are incorrect and the user will be prompted to introduce new
+  // proxy credentials. If new credentials are set in the authentication
+  // dialogue, they are forwarded to System-proxy via the
+  // |SetAuthenticationDetails| D-Bus call and will overwrite the existing
+  // cached credentials associated with |proxy_protection_space|, otherwise the
+  // existing incorrect credentials are not cleared from the cache.
+  optional bool bad_cached_credentials = 2;
 }

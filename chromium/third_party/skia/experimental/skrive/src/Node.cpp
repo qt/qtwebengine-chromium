@@ -19,7 +19,7 @@ size_t parse_node(StreamReader*, T*);
 
 template <>
 size_t parse_node<Node>(StreamReader* sr, Node* node) {
-    const auto parent_index = parse_node<TransformableComponent>(sr, node);
+    const auto parent_id = parse_node<TransformableComponent>(sr, node);
 
     node->setCollapsedVisibility(sr->readBool("isCollapsed"));
 
@@ -41,10 +41,10 @@ size_t parse_node<Node>(StreamReader* sr, Node* node) {
         sr->closeArray();
     }
 
-    return parent_index;
+    return parent_id;
 }
 
-} // namespace skrive
+}  // namespace internal
 
 void Node::addChild(sk_sp<Component> child) {
     child->fParent = this;
@@ -62,4 +62,16 @@ void Node::onRevalidate() {
     }
 }
 
-} // namespace internal
+void Node::onRender(SkCanvas* canvas) const {
+    SkASSERT(!this->hasInval());
+
+    TransformableComponent::ScopedTransformContext stc(this, canvas);
+
+    // TODO: draw order?
+    for (const auto& child : this->children()) {
+        child->render(canvas);
+    }
+}
+
+
+}  // namespace skrive

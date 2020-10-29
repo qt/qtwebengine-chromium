@@ -184,7 +184,7 @@ void SkPDF::AttributeList::appendStringArray(
     std::unique_ptr<SkPDFDict> attrDict = SkPDFMakeDict();
     attrDict->insertName("O", owner);
     std::unique_ptr<SkPDFArray> pdfArray = SkPDFMakeArray();
-    for (SkString element : values) {
+    for (const SkString& element : values) {
         pdfArray->appendString(element);
     }
     attrDict->insertObject(name, std::move(pdfArray));
@@ -245,13 +245,6 @@ void SkPDFTagTree::init(SkPDF::StructureElementNode* node) {
         fRoot = fArena.make<SkPDFTagNode>();
         Copy(*node, fRoot, &fArena, &fNodeMap);
     }
-}
-
-void SkPDFTagTree::reset() {
-    fArena.reset();
-    fNodeMap.reset();
-    fMarksPerPage.reset();
-    fRoot = nullptr;
 }
 
 int SkPDFTagTree::createMarkIdForNodeId(int nodeId, unsigned pageIndex) {
@@ -385,12 +378,10 @@ void SkPDFTagTree::addNodeAnnotation(int nodeId, SkPDFIndirectReference annotati
 }
 
 SkPDFIndirectReference SkPDFTagTree::makeStructTreeRoot(SkPDFDocument* doc) {
-    if (!fRoot) {
+    if (!fRoot || can_discard(fRoot)) {
         return SkPDFIndirectReference();
     }
-    if (can_discard(fRoot)) {
-        SkDEBUGFAIL("PDF has tag tree but no marked content.");
-    }
+
     SkPDFIndirectReference ref = doc->reserveRef();
 
     unsigned pageCount = SkToUInt(doc->pageCount());

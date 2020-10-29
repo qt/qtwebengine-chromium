@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkContourMeasure.h"
+#include "include/core/SkPathBuilder.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/animator/Animator.h"
@@ -55,11 +56,6 @@ public:
 
     private:
         void backfill_spatial(const SpatialValue& val) {
-            if (fTi == SkV2{0,0} && fTo == SkV2{0,0}) {
-                // no tangents => linear
-                return;
-            }
-
             SkASSERT(!fValues.empty());
             auto& prev_val = fValues.back();
             SkASSERT(!prev_val.cmeasure);
@@ -93,12 +89,12 @@ public:
             }
 
             // Finally, this looks like a legitimate spatial keyframe.
-            SkPath p;
+            SkPathBuilder p;
             p.moveTo (prev_val.v2.x        , prev_val.v2.y);
             p.cubicTo(prev_val.v2.x + fTo.x, prev_val.v2.y + fTo.y,
                            val.v2.x + fTi.x,      val.v2.y + fTi.y,
                            val.v2.x,              val.v2.y);
-            prev_val.cmeasure = SkContourMeasureIter(p, false).next();
+            prev_val.cmeasure = SkContourMeasureIter(p.detach(), false).next();
         }
 
         bool parseKFValue(const AnimationBuilder&,
@@ -110,13 +106,16 @@ public:
                 return false;
             }
 
-            this->backfill_spatial(val);
+            if (fPendingSpatial) {
+                this->backfill_spatial(val);
+            }
 
             // Track the last keyframe spatial tangents (checked on next parseValue).
-            fTi = ParseDefault<SkV2>(jkf["ti"], {0,0});
-            fTo = ParseDefault<SkV2>(jkf["to"], {0,0});
+            fTi             = ParseDefault<SkV2>(jkf["ti"], {0,0});
+            fTo             = ParseDefault<SkV2>(jkf["to"], {0,0});
+            fPendingSpatial = fTi != SkV2{0,0} || fTo != SkV2{0,0};
 
-            if (fValues.empty() || val.v2 != fValues.back().v2) {
+            if (fValues.empty() || val.v2 != fValues.back().v2 || fPendingSpatial) {
                 fValues.push_back(std::move(val));
             }
 
@@ -130,6 +129,7 @@ public:
         float*                    fRotTarget; // optional
         SkV2                      fTi{0,0},
                                   fTo{0,0};
+        bool                      fPendingSpatial = false;
     };
 
 private:
@@ -155,7 +155,33 @@ private:
     }
 
     StateChanged onSeek(float t) override {
-        const auto& lerp_info = this->getLERPInfo(t);
+        auto get_lerp_info = [this](float t) {
+            auto lerp_info = this->getLERPInfo(t);
+
+            // When tracking rotation/orientation, the last keyframe requires special handling:
+            // it doesn't store any spatial information but it is expected to maintain the
+            // previous orientation (per AE semantics).
+            //
+            // The easiest way to achieve this is to actually swap with the previous keyframe,
+            // with an adjusted weight of 1.
+            const auto vidx = lerp_info.vrec0.idx;
+            if (fRotTarget && vidx == fValues.size() - 1 && vidx > 0) {
+                SkASSERT(!fValues[vidx].cmeasure);
+                SkASSERT(lerp_info.vrec1.idx == vidx);
+
+                // Change LERPInfo{0, SIZE - 1, SIZE - 1}
+                // to     LERPInfo{1, SIZE - 2, SIZE - 1}
+                lerp_info.weight = 1;
+                lerp_info.vrec0  = {vidx - 1};
+
+                // This yields equivalent lerp results because keyframed values are contiguous
+                // i.e frame[n-1].end_val == frame[n].start_val.
+            }
+
+            return lerp_info;
+        };
+
+        const auto lerp_info = get_lerp_info(t);
 
         const auto& v0 = fValues[lerp_info.vrec0.idx];
         if (v0.cmeasure) {

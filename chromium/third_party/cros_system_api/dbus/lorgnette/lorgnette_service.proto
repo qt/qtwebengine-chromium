@@ -65,3 +65,67 @@ message ScannerCapabilities {
   // Color modes to use for a document.
   repeated ColorMode color_modes = 3;
 }
+
+// Settings for how lorgnette should perform a scan.
+message ScanSettings {
+  // The resolution, in DPI, to use for the scan.
+  uint32 resolution = 1;
+
+  // The source to scan the document from.
+  DocumentSource source = 2;
+
+  // The color mode to use for the scan.
+  ColorMode color_mode = 3;
+}
+
+// The status of a scan job.
+enum ScanState {
+  // Unknown state.
+  SCAN_STATE_UNSPECIFIED = 0;
+
+  // The scan job is currently running.
+  SCAN_STATE_IN_PROGRESS = 1;
+
+  // The scan job has completed successfully.
+  SCAN_STATE_COMPLETED = 2;
+
+  // The scan job failed.
+  SCAN_STATE_FAILED = 3;
+}
+
+// Information passed to a StartScan D-Bus request.
+// Used by lorgnette to initialize a new scan job.
+message StartScanRequest {
+  // The name of the device to scan from.
+  string device_name = 1;
+
+  // The settings to use for this scan.
+  ScanSettings settings = 2;
+}
+
+// Information returned from a StartScan D-Bus request.
+message StartScanResponse {
+  // The status of the scan.
+  ScanState state = 1;
+
+  // The failure reason if state is SCAN_STATE_FAILED.
+  string failure_reason = 2;
+
+  // A UUID identifying the scan job.
+  string scan_uuid = 3;
+}
+
+// Information sent with ScanStatus D-Bus signal.
+message ScanStatusChangedSignal {
+  // A UUID identifying the scan job.
+  string scan_uuid = 1;
+
+  // The status of the scan.
+  ScanState state = 2;
+
+  // The failure reason if state is SCAN_STATE_FAILED.
+  string failure_reason = 3;
+
+  // Scan progress from 0 to 100%.
+  uint32 progress = 4;
+}

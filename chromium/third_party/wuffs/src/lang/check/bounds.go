@@ -1023,7 +1023,7 @@ func (q *checker) bcheckExprCallSpecialCases(n *a.Expr, depth uint32) (bounds, e
 		}
 
 	} else if recvTyp.IsIOTokenType() {
-		advance, update := (*big.Int)(nil), false
+		advance, advanceExpr, update := (*big.Int)(nil), (*a.Expr)(nil), false
 
 		if method == t.IDUndoByte {
 			if err := q.canUndoByte(recv); err != nil {
@@ -1050,10 +1050,11 @@ func (q *checker) bcheckExprCallSpecialCases(n *a.Expr, depth uint32) (bounds, e
 			} else if err != nil {
 				return bounds{}, err
 			}
-			if worstCase.ConstValue() == nil {
-				return bounds{}, fmt.Errorf("check: skip_fast worst_case is not a constant value")
+			if cv := worstCase.ConstValue(); cv != nil {
+				advance, update = cv, true
+			} else {
+				advanceExpr, update = actual, true
 			}
-			advance, update = worstCase.ConstValue(), true
 
 		} else if method == t.IDPeekU64LEAt {
 			args := n.Args()
@@ -1074,12 +1075,18 @@ func (q *checker) bcheckExprCallSpecialCases(n *a.Expr, depth uint32) (bounds, e
 			}
 		}
 
-		if advance != nil {
-			if ok, err := q.optimizeIOMethodAdvance(recv, advance, update); err != nil {
+		if (advance != nil) || (advanceExpr != nil) {
+			if ok, err := q.optimizeIOMethodAdvance(recv, advance, advanceExpr, update); err != nil {
 				return bounds{}, err
 			} else if !ok {
-				return bounds{}, fmt.Errorf("check: could not prove %s pre-condition: %s.available() >= %v",
-					method.Str(q.tm), recv.Str(q.tm), advance)
+				adv := ""
+				if advance != nil {
+					adv = advance.String()
+				} else {
+					adv = advanceExpr.Str(q.tm)
+				}
+				return bounds{}, fmt.Errorf("check: could not prove %s pre-condition: %s.length() >= %s",
+					method.Str(q.tm), recv.Str(q.tm), adv)
 			}
 			// TODO: drop other recv-related facts?
 		}
@@ -1113,9 +1120,9 @@ func (q *checker) canUndoByte(recv *a.Expr) error {
 
 func (q *checker) canLimitedCopyU32FromHistoryFast(recv *a.Expr, args []*a.Node) error {
 	// As per cgen's io-private.h, there are three pre-conditions:
-	//  - n <= this.available()
+	//  - n <= this.length()
 	//  - distance > 0
-	//  - distance <= this.history_available()
+	//  - distance <= this.history_length()
 
 	if len(args) != 2 {
 		return fmt.Errorf("check: internal error: inconsistent copy_n_from_history_fast arguments")
@@ -1123,7 +1130,7 @@ func (q *checker) canLimitedCopyU32FromHistoryFast(recv *a.Expr, args []*a.Node)
 	n := args[0].AsArg().Value()
 	distance := args[1].AsArg().Value()
 
-	// Check "n <= this.available()".
+	// Check "n <= this.length()".
 check0:
 	for {
 		for _, x := range q.facts {
@@ -1141,9 +1148,9 @@ check0:
 				continue
 			}
 
-			// Check that the RHS is "recv.available()".
+			// Check that the RHS is "recv.length()".
 			y, method, yArgs := splitReceiverMethodArgs(x.RHS().AsExpr())
-			if method != t.IDAvailable || len(yArgs) != 0 {
+			if method != t.IDLength || len(yArgs) != 0 {
 				continue
 			}
 			if !y.Eq(recv) {
@@ -1152,7 +1159,7 @@ check0:
 
 			break check0
 		}
-		return fmt.Errorf("check: could not prove n <= %s.available()", recv.Str(q.tm))
+		return fmt.Errorf("check: could not prove n <= %s.length()", recv.Str(q.tm))
 	}
 
 	// Check "distance > 0".
@@ -1173,7 +1180,7 @@ check1:
 		return fmt.Errorf("check: could not prove distance > 0")
 	}
 
-	// Check "distance <= this.history_available()".
+	// Check "distance <= this.history_length()".
 check2:
 	for {
 		for _, x := range q.facts {
@@ -1191,9 +1198,9 @@ check2:
 				continue
 			}
 
-			// Check that the RHS is "recv.history_available()".
+			// Check that the RHS is "recv.history_length()".
 			y, method, yArgs := splitReceiverMethodArgs(x.RHS().AsExpr())
-			if method != t.IDHistoryAvailable || len(yArgs) != 0 {
+			if method != t.IDHistoryLength || len(yArgs) != 0 {
 				continue
 			}
 			if !y.Eq(recv) {
@@ -1202,7 +1209,7 @@ check2:
 
 			break check2
 		}
-		return fmt.Errorf("check: could not prove distance <= %s.history_available()", recv.Str(q.tm))
+		return fmt.Errorf("check: could not prove distance <= %s.history_length()", recv.Str(q.tm))
 	}
 
 	return nil
@@ -1257,7 +1264,8 @@ var ioMethodAdvances = [...]struct {
 	t.IDWriteU64BEFast - t.IDPeekU8: {eight, true},
 	t.IDWriteU64LEFast - t.IDPeekU8: {eight, true},
 
-	t.IDWriteSimpleTokenFast - t.IDPeekU8: {one, true},
+	t.IDWriteSimpleTokenFast - t.IDPeekU8:   {one, true},
+	t.IDWriteExtendedTokenFast - t.IDPeekU8: {one, true},
 }
 
 func makeConstValueExpr(tm *t.Map, cv *big.Int) (*a.Expr, error) {

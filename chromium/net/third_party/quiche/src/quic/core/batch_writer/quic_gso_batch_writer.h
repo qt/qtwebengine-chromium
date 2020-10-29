@@ -13,14 +13,11 @@ namespace quic {
 // segmentation offload(GSO) capability.
 class QUIC_EXPORT_PRIVATE QuicGsoBatchWriter : public QuicUdpBatchWriter {
  public:
-  QuicGsoBatchWriter(std::unique_ptr<QuicBatchWriterBuffer> batch_buffer,
-                     int fd);
+  explicit QuicGsoBatchWriter(int fd);
 
   // |clockid_for_release_time|: FQ qdisc requires CLOCK_MONOTONIC, EDF requires
   // CLOCK_TAI.
-  QuicGsoBatchWriter(std::unique_ptr<QuicBatchWriterBuffer> batch_buffer,
-                     int fd,
-                     clockid_t clockid_for_release_time);
+  QuicGsoBatchWriter(int fd, clockid_t clockid_for_release_time);
 
   bool SupportsReleaseTime() const final { return supports_release_time_; }
 
@@ -41,7 +38,10 @@ class QUIC_EXPORT_PRIVATE QuicGsoBatchWriter : public QuicUdpBatchWriter {
                      clockid_t clockid_for_release_time,
                      ReleaseTimeForceEnabler enabler);
 
-  uint64_t NowInNanosForReleaseTime() const override;
+  ReleaseTime GetReleaseTime(const PerPacketOptions* options) const override;
+
+  // Get the current time in nanos from |clockid_for_release_time_|.
+  virtual uint64_t NowInNanosForReleaseTime() const;
 
   static size_t MaxSegments(size_t gso_size) {
     // Max segments should be the min of UDP_MAX_SEGMENTS(64) and
@@ -84,7 +84,8 @@ class QUIC_EXPORT_PRIVATE QuicGsoBatchWriter : public QuicUdpBatchWriter {
                   << ", peer_address: " << first.peer_address.ToString()
                   << ", num_segments: " << buffered_writes().size()
                   << ", total_bytes: " << total_bytes
-                  << ", gso_size: " << gso_size;
+                  << ", gso_size: " << gso_size
+                  << ", release_time: " << first.release_time;
 
     // All segments in a GSO packet share the same fate - if the write failed,
     // none of them are sent, and it's not needed to call PopBufferedWrite().
@@ -105,6 +106,8 @@ class QUIC_EXPORT_PRIVATE QuicGsoBatchWriter : public QuicUdpBatchWriter {
   }
 
  private:
+  static std::unique_ptr<QuicBatchWriterBuffer> CreateBatchWriterBuffer();
+
   const clockid_t clockid_for_release_time_;
   const bool supports_release_time_;
 };

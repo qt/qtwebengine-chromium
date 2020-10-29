@@ -19,12 +19,14 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <sstream>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <deque>
 #include <limits>
+#include <memory>
 
 #include "perfetto/base/build_config.h"
 #include "perfetto/ext/base/string_splitter.h"
@@ -182,6 +184,9 @@ class JsonExporter {
           metadata_filter_(metadata_filter),
           label_filter_(label_filter),
           first_event_(true) {
+      Json::StreamWriterBuilder b;
+      b.settings_["indentation"] = "";
+      writer_.reset(b.newStreamWriter());
       WriteHeader();
     }
 
@@ -340,11 +345,10 @@ class JsonExporter {
       if (label_filter_ && !label_filter_("traceEvents"))
         return;
 
+      std::ostringstream ss;
       if (!first_event_)
-        output_->AppendString(",\n");
+        ss << ",\n";
 
-      Json::FastWriter writer;
-      writer.omitEndingLineFeed();
       Json::Value value;
       value["ph"] = "M";
       value["cat"] = "__metadata";
@@ -357,7 +361,8 @@ class JsonExporter {
       args["name"] = metadata_value;
       value["args"] = args;
 
-      output_->AppendString(writer.write(value));
+      writer_->write(value, &ss);
+      output_->AppendString(ss.str());
       first_event_ = false;
     }
 
@@ -380,7 +385,7 @@ class JsonExporter {
     }
 
     void SetTelemetryMetadataTimestamp(const char* key, int64_t value) {
-      metadata_["telemetry"][key] = value / 1000.0;
+      metadata_["telemetry"][key] = static_cast<double>(value) / 1000.0;
     }
 
     void SetStats(const char* key, int64_t value) {
@@ -434,14 +439,17 @@ class JsonExporter {
         }
       }
 
-      Json::FastWriter writer;
-      writer.omitEndingLineFeed();
       if ((!label_filter_ || label_filter_("traceEvents")) &&
           !user_trace_data_.empty()) {
         user_trace_data_ += "]";
-        Json::Reader reader;
+
+        Json::CharReaderBuilder builder;
+        auto reader =
+            std::unique_ptr<Json::CharReader>(builder.newCharReader());
         Json::Value result;
-        if (reader.parse(user_trace_data_, result)) {
+        if (reader->parse(user_trace_data_.data(),
+                          user_trace_data_.data() + user_trace_data_.length(),
+                          &result, nullptr)) {
           for (const auto& event : result) {
             WriteCommonEvent(event);
           }
@@ -451,27 +459,32 @@ class JsonExporter {
               user_trace_data_.c_str());
         }
       }
+
+      std::ostringstream ss;
       if (!label_filter_)
-        output_->AppendString("]");
+        ss << "]";
+
       if ((!label_filter_ || label_filter_("systemTraceEvents")) &&
           !system_trace_data_.empty()) {
-        output_->AppendString(",\"systemTraceEvents\":\n");
-        output_->AppendString(writer.write(Json::Value(system_trace_data_)));
+        ss << ",\"systemTraceEvents\":\n";
+        writer_->write(Json::Value(system_trace_data_), &ss);
       }
+
       if ((!label_filter_ || label_filter_("metadata")) && !metadata_.empty()) {
-        output_->AppendString(",\"metadata\":\n");
-        output_->AppendString(writer.write(metadata_));
+        ss << ",\"metadata\":\n";
+        writer_->write(metadata_, &ss);
       }
+
       if (!label_filter_)
-        output_->AppendString("}");
+        ss << "}";
+
+      output_->AppendString(ss.str());
     }
 
     void DoWriteEvent(const Json::Value& event) {
+      std::ostringstream ss;
       if (!first_event_)
-        output_->AppendString(",\n");
-
-      Json::FastWriter writer;
-      writer.omitEndingLineFeed();
+        ss << ",\n";
 
       ArgumentNameFilterPredicate argument_name_filter;
       bool strip_args =
@@ -489,11 +502,13 @@ class JsonExporter {
               args[member] = kStrippedArgument;
           }
         }
-        output_->AppendString(writer.write(event_copy));
+        writer_->write(event_copy, &ss);
       } else {
-        output_->AppendString(writer.write(event));
+        writer_->write(event, &ss);
       }
       first_event_ = false;
+
+      output_->AppendString(ss.str());
     }
 
     OutputWriter* output_;
@@ -501,6 +516,7 @@ class JsonExporter {
     MetadataFilterPredicate metadata_filter_;
     LabelFilterPredicate label_filter_;
 
+    std::unique_ptr<Json::StreamWriter> writer_;
     bool first_event_;
     Json::Value metadata_;
     std::string system_trace_data_;
@@ -569,9 +585,12 @@ class JsonExporter {
         case Variadic::kBool:
           return variadic.bool_value;
         case Variadic::kJson:
-          Json::Reader reader;
+          Json::CharReaderBuilder b;
+          auto reader = std::unique_ptr<Json::CharReader>(b.newCharReader());
+
           Json::Value result;
-          reader.parse(GetNonNullString(storage_, variadic.json_value), result);
+          std::string v = GetNonNullString(storage_, variadic.json_value);
+          reader->parse(v.data(), v.data() + v.length(), &result, nullptr);
           return result;
       }
       PERFETTO_FATAL("Not reached");  // For gcc.
@@ -1197,16 +1216,16 @@ class JsonExporter {
     const auto& str_values = trace_metadata.str_value();
 
     // Create a mapping from key string ids to keys.
-    std::unordered_map<StringId, metadata::KeyIDs> key_map;
+    std::unordered_map<StringId, metadata::KeyId> key_map;
     for (uint32_t i = 0; i < metadata::kNumKeys; ++i) {
       auto id = *storage_->string_pool().GetId(metadata::kNames[i]);
-      key_map[id] = static_cast<metadata::KeyIDs>(i);
+      key_map[id] = static_cast<metadata::KeyId>(i);
     }
 
     for (uint32_t pos = 0; pos < trace_metadata.row_count(); pos++) {
       // Cast away from enum type, as otherwise -Wswitch-enum will demand an
       // exhaustive list of cases, even if there's a default case.
-      metadata::KeyIDs key = key_map[keys[pos]];
+      metadata::KeyId key = key_map[keys[pos]];
       switch (static_cast<size_t>(key)) {
         case metadata::benchmark_description:
           writer_.AppendTelemetryMetadataString(

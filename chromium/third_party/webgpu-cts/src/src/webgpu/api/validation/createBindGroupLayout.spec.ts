@@ -2,13 +2,21 @@ export const description = `
 createBindGroupLayout validation tests.
 `;
 
-import { poptions, params } from '../../../common/framework/params_builder.js';
+import { pbool, poptions, params } from '../../../common/framework/params_builder.js';
 import { makeTestGroup } from '../../../common/framework/test_group.js';
 import {
   kBindingTypeInfo,
   kBindingTypes,
+  kBufferBindingTypeInfo,
   kMaxBindingsPerBindGroup,
   kShaderStages,
+  kShaderStageCombinations,
+  kTextureBindingTypeInfo,
+  kTextureComponentTypes,
+  kTextureViewDimensions,
+  kTextureViewDimensionInfo,
+  kAllTextureFormats,
+  kAllTextureFormatInfo,
 } from '../../capability_info.js';
 
 import { ValidationTest } from './validation_test.js';
@@ -39,11 +47,124 @@ g.test('some_binding_index_was_specified_more_than_once').fn(async t => {
   });
 });
 
-g.test('visibility_of_bindings_can_be_0').fn(async t => {
-  t.device.createBindGroupLayout({
-    entries: [{ binding: 0, visibility: 0, type: 'storage-buffer' }],
+g.test('visibility')
+  .params(
+    params()
+      .combine(poptions('type', kBindingTypes))
+      .combine(poptions('visibility', kShaderStageCombinations))
+  )
+  .fn(async t => {
+    const { type, visibility } = t.params;
+
+    const success = (visibility & ~kBindingTypeInfo[type].validStages) === 0;
+
+    t.expectValidationError(() => {
+      t.device.createBindGroupLayout({
+        entries: [{ binding: 0, visibility, type }],
+      });
+    }, !success);
   });
-});
+
+g.test('bindingTypeSpecific_optional_members')
+  .params(
+    params()
+      .combine(poptions('type', kBindingTypes))
+      .combine([
+        // Case with every member set to `undefined`.
+        {
+          // Workaround for TS inferring the type of [ {}, ...x ] overly conservatively, as {}[].
+          _: 0,
+        },
+        // Cases with one member set.
+        ...pbool('hasDynamicOffset'),
+        ...poptions('minBufferBindingSize', [0, 4]),
+        ...poptions('textureComponentType', kTextureComponentTypes),
+        ...pbool('multisampled'),
+        ...poptions('viewDimension', kTextureViewDimensions),
+        ...poptions('storageTextureFormat', kAllTextureFormats),
+      ])
+  )
+  .fn(t => {
+    const {
+      type,
+      hasDynamicOffset,
+      minBufferBindingSize,
+      textureComponentType,
+      multisampled,
+      viewDimension,
+      storageTextureFormat,
+    } = t.params;
+
+    let success = true;
+    if (!(type in kBufferBindingTypeInfo)) {
+      if (hasDynamicOffset !== undefined) success = false;
+      if (minBufferBindingSize !== undefined) success = false;
+    }
+    if (!(type in kTextureBindingTypeInfo)) {
+      if (viewDimension !== undefined) success = false;
+    }
+    if (kBindingTypeInfo[type].resource !== 'sampledTex') {
+      if (textureComponentType !== undefined) success = false;
+      if (multisampled !== undefined) success = false;
+    }
+    if (kBindingTypeInfo[type].resource !== 'storageTex') {
+      if (storageTextureFormat !== undefined) success = false;
+    } else {
+      if (viewDimension !== undefined && !kTextureViewDimensionInfo[viewDimension].storage) {
+        success = false;
+      }
+      if (
+        storageTextureFormat !== undefined &&
+        !kAllTextureFormatInfo[storageTextureFormat].storage
+      ) {
+        success = false;
+      }
+    }
+
+    t.expectValidationError(() => {
+      t.device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            type,
+            hasDynamicOffset,
+            minBufferBindingSize,
+            textureComponentType,
+            multisampled,
+            viewDimension,
+            storageTextureFormat,
+          },
+        ],
+      });
+    }, !success);
+  });
+
+g.test('multisample_requires_2d_view_dimension')
+  .params(
+    params()
+      .combine(poptions('multisampled', [undefined, false, true]))
+      .combine(poptions('viewDimension', [undefined, ...kTextureViewDimensions]))
+  )
+  .fn(async t => {
+    const { multisampled, viewDimension } = t.params;
+
+    const success = multisampled !== true || viewDimension === '2d' || viewDimension === undefined;
+
+    t.expectValidationError(() => {
+      t.device.createBindGroupLayout({
+        entries: [
+          {
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            type: 'sampled-texture',
+            multisampled,
+            viewDimension,
+          },
+        ],
+      });
+    }, !success);
+  });
 
 g.test('number_of_dynamic_buffers_exceeds_the_maximum_value')
   .params([
@@ -85,21 +206,6 @@ g.test('number_of_dynamic_buffers_exceeds_the_maximum_value')
     t.expectValidationError(() => {
       t.device.createBindGroupLayout(badDescriptor);
     });
-  });
-
-g.test('dynamic_set_to_true_is_allowed_only_for_buffers')
-  .params(poptions('type', kBindingTypes))
-  .fn(async t => {
-    const { type } = t.params;
-    const success = kBindingTypeInfo[type].perPipelineLimitClass.maxDynamic > 0;
-
-    const descriptor = {
-      entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, type, hasDynamicOffset: true }],
-    };
-
-    t.expectValidationError(() => {
-      t.device.createBindGroupLayout(descriptor);
-    }, !success);
   });
 
 // One bind group layout will be filled with kPerStageBindingLimit[...] of the type |type|.

@@ -10,8 +10,15 @@
 #include <memory>
 
 #include "core/fxcrt/fx_string.h"
+#include "fxjs/gc/heap.h"
 #include "fxjs/xfa/fxjse.h"
+#include "v8/include/cppgc/garbage-collected.h"
+#include "v8/include/cppgc/member.h"
 #include "xfa/fxfa/fxfa_basic.h"
+
+namespace cppgc {
+class Visitor;
+}  // namespace cppgc
 
 enum class XFA_ObjectType {
   Object,
@@ -34,12 +41,11 @@ class CXFA_Node;
 class CXFA_ThisProxy;
 class CXFA_TreeList;
 
-class CXFA_Object : public CFXJSE_HostObject {
+class CXFA_Object : public cppgc::GarbageCollected<CXFA_Object> {
  public:
-  ~CXFA_Object() override;
+  virtual ~CXFA_Object();
 
-  // CFXJSE_HostObject:
-  CXFA_Object* AsCXFAObject() override;
+  virtual void Trace(cppgc::Visitor* visitor) const;
 
   CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
   XFA_ObjectType GetObjectType() const { return m_objectType; }
@@ -95,7 +101,7 @@ class CXFA_Object : public CFXJSE_HostObject {
               XFA_Element eType,
               std::unique_ptr<CJX_Object> jsObject);
 
-  UnownedPtr<CXFA_Document> const m_pDocument;
+  cppgc::WeakMember<CXFA_Document> m_pDocument;
   const XFA_ObjectType m_objectType;
   const XFA_Element m_elementType;
   const ByteStringView m_elementName;

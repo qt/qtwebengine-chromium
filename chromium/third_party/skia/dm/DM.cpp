@@ -40,6 +40,7 @@
 #include "tools/trace/EventTracingPriv.h"
 #include "tools/trace/SkDebugfTracer.h"
 
+#include <memory>
 #include <vector>
 
 #include <stdlib.h>
@@ -59,8 +60,10 @@
 
 extern bool gSkForceRasterPipelineBlitter;
 extern bool gUseSkVMBlitter;
+extern bool gSkVMAllowJIT;
 
-static DEFINE_string(src, "tests gm skp mskp lottie svg image colorImage", "Source types to test.");
+static DEFINE_string(src, "tests gm skp mskp lottie rive svg image colorImage",
+                     "Source types to test.");
 static DEFINE_bool(nameByHash, false,
                    "If true, write to FLAGS_writePath[0]/<hash>.png instead of "
                    "to FLAGS_writePath[0]/<config>/<sourceType>/<sourceOptions>/<name>.png");
@@ -69,12 +72,12 @@ static DEFINE_string(matrix, "1 0 0 1",
                     "2x2 scale+skew matrix to apply or upright when using "
                     "'matrix' or 'upright' in config.");
 
-static DEFINE_string(blacklist, "",
-        "Space-separated config/src/srcOptions/name quadruples to blacklist. "
+static DEFINE_string(skip, "",
+        "Space-separated config/src/srcOptions/name quadruples to skip. "
         "'_' matches anything. '~' negates the match. E.g. \n"
-        "'--blacklist gpu skp _ _' will blacklist all SKPs drawn into the gpu config.\n"
-        "'--blacklist gpu skp _ _ 8888 gm _ aarects' will also blacklist the aarects GM on 8888.\n"
-        "'--blacklist ~8888 svg _ svgparse_' blocks non-8888 SVGs that contain \"svgparse_\" in "
+        "'--skip gpu skp _ _' will skip all SKPs drawn into the gpu config.\n"
+        "'--skip gpu skp _ _ 8888 gm _ aarects' will also skip the aarects GM on 8888.\n"
+        "'--skip ~8888 svg _ svgparse_' blocks non-8888 SVGs that contain \"svgparse_\" in "
                                             "the name.");
 
 static DEFINE_string2(readPath, r, "",
@@ -92,6 +95,7 @@ static DEFINE_int(shard,  0, "Which shard do I run?");
 static DEFINE_string(mskps, "", "Directory to read mskps from, or a single mskp file.");
 static DEFINE_bool(forceRasterPipeline, false, "sets gSkForceRasterPipelineBlitter");
 static DEFINE_bool(skvm, false, "sets gUseSkVMBlitter");
+static DEFINE_bool(jit,  true,  "sets gSkVMAllowJIT");
 
 static DEFINE_string(bisect, "",
         "Pair of: SKP file to bisect, followed by an l/r bisect trail string (e.g., 'lrll'). The "
@@ -109,8 +113,8 @@ static DEFINE_string(colorImages, "",
 
 static DEFINE_bool2(veryVerbose, V, false, "tell individual tests to be verbose.");
 
-static DEFINE_bool(cpu, true, "master switch for running CPU-bound work.");
-static DEFINE_bool(gpu, true, "master switch for running GPU-bound work.");
+static DEFINE_bool(cpu, true, "Run CPU-bound work?");
+static DEFINE_bool(gpu, true, "Run GPU-bound work?");
 
 static DEFINE_bool(dryRun, false,
                    "just print the tests that would be run, without actually running them.");
@@ -138,6 +142,7 @@ static DEFINE_bool2(verbose, v, false, "enable verbose output from the test driv
 
 static DEFINE_string(skps, "skps", "Directory to read skps from.");
 static DEFINE_string(lotties, "lotties", "Directory to read (Bodymovin) jsons from.");
+static DEFINE_string(rives, "rives", "Directory to read Rive/Flare files from.");
 static DEFINE_string(svgs, "", "Directory to read SVGs from, or a single SVG file.");
 
 static DEFINE_int_2(threads, j, -1,
@@ -678,7 +683,7 @@ static void push_codec_srcs(Path path) {
         return;
     }
     std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(encoded);
-    if (nullptr == codec.get()) {
+    if (nullptr == codec) {
         info("Couldn't create codec for %s.", path.c_str());
         return;
     }
@@ -833,6 +838,8 @@ static void push_codec_srcs(Path path) {
         {
             push_image_gen_src(path, ImageGenSrc::kPlatform_Mode, alphaType, false);
         }
+#elif defined(SK_ENABLE_NDK_IMAGES)
+        push_image_gen_src(path, ImageGenSrc::kPlatform_Mode, alphaType, false);
 #endif
     }
 }
@@ -869,6 +876,9 @@ static bool gather_srcs() {
 #if defined(SK_ENABLE_SKOTTIE)
     gather_file_srcs<SkottieSrc>(FLAGS_lotties, "json", "lottie");
 #endif
+#if defined(SK_ENABLE_SKRIVE)
+    gather_file_srcs<SkRiveSrc>(FLAGS_rives, "flr", "rive");
+#endif
 #if defined(SK_XML)
     gather_file_srcs<SVGSrc>(FLAGS_svgs, "svg");
 #endif
@@ -883,7 +893,7 @@ static bool gather_srcs() {
         return false;
     }
 
-    for (auto image : images) {
+    for (const SkString& image : images) {
         push_codec_srcs(image);
     }
 
@@ -892,7 +902,7 @@ static bool gather_srcs() {
         return false;
     }
 
-    for (auto colorImage : colorImages) {
+    for (const SkString& colorImage : colorImages) {
         push_src("colorImage", "decode_native", new ColorCodecSrc(colorImage, false));
         push_src("colorImage", "decode_to_dst", new ColorCodecSrc(colorImage,  true));
     }
@@ -905,7 +915,7 @@ static void push_sink(const SkCommandLineConfig& config, Sink* s) {
 
     // Try a simple Src as a canary.  If it fails, skip this sink.
     struct : public Src {
-        Result draw(GrContext*, SkCanvas* c) const override {
+        Result draw(GrDirectContext*, SkCanvas* c) const override {
             c->drawRect(SkRect::MakeWH(1,1), SkPaint());
             return Result::Ok();
         }
@@ -1088,13 +1098,13 @@ static bool match(const char* needle, const char* haystack) {
     return nullptr != strstr(haystack, needle);
 }
 
-static bool is_blacklisted(const char* sink, const char* src,
-                           const char* srcOptions, const char* name) {
-    for (int i = 0; i < FLAGS_blacklist.count() - 3; i += 4) {
-        if (match(FLAGS_blacklist[i+0], sink) &&
-            match(FLAGS_blacklist[i+1], src) &&
-            match(FLAGS_blacklist[i+2], srcOptions) &&
-            match(FLAGS_blacklist[i+3], name)) {
+static bool should_skip(const char* sink, const char* src,
+                        const char* srcOptions, const char* name) {
+    for (int i = 0; i < FLAGS_skip.count() - 3; i += 4) {
+        if (match(FLAGS_skip[i+0], sink) &&
+            match(FLAGS_skip[i+1], src) &&
+            match(FLAGS_skip[i+2], srcOptions) &&
+            match(FLAGS_skip[i+3], name)) {
             return true;
         }
     }
@@ -1163,7 +1173,7 @@ struct Task {
                         hash.writeStream(data, data->getLength());
                         data->rewind();
                     } else {
-                        hashAndEncode.reset(new HashAndEncode(bitmap));
+                        hashAndEncode = std::make_unique<HashAndEncode>(bitmap);
                         hashAndEncode->write(&hash);
                     }
                     SkMD5::Digest digest = hash.finish();
@@ -1222,7 +1232,7 @@ struct Task {
                         CGContextDrawPDFPage(ctx.get(), page);
 
                         // Skip calling hashAndEncode->write(SkMD5*)... we want the .pdf's hash.
-                        hashAndEncode.reset(new HashAndEncode(rasterized));
+                        hashAndEncode = std::make_unique<HashAndEncode>(rasterized);
                         WriteToDisk(task, md5, "png", nullptr,0, &rasterized, hashAndEncode.get());
                     } else
                 #endif
@@ -1372,7 +1382,7 @@ struct Task {
             sk_mkdir(path.c_str());
             path = SkOSPath::Join(path.c_str(), task.src.tag.c_str());
             sk_mkdir(path.c_str());
-            if (strcmp(task.src.options.c_str(), "") != 0) {
+            if (0 != strcmp(task.src.options.c_str(), "")) {
               path = SkOSPath::Join(path.c_str(), task.src.options.c_str());
               sk_mkdir(path.c_str());
             }
@@ -1458,7 +1468,7 @@ static void run_test(skiatest::Test test, const GrContextOptions& grCtxOptions) 
         bool verbose() const override { return FLAGS_veryVerbose; }
     } reporter;
 
-    if (!FLAGS_dryRun && !is_blacklisted("_", "tests", "_", test.name)) {
+    if (!FLAGS_dryRun && !should_skip("_", "tests", "_", test.name)) {
         AutoreleasePool pool;
         GrContextOptions options = grCtxOptions;
         test.modifyGrContextOptions(&options);
@@ -1494,6 +1504,7 @@ int main(int argc, char** argv) {
 
     gSkForceRasterPipelineBlitter = FLAGS_forceRasterPipeline;
     gUseSkVMBlitter               = FLAGS_skvm;
+    gSkVMAllowJIT                 = FLAGS_jit;
 
     // The bots like having a verbose.log to upload, so always touch the file even if --verbose.
     if (!FLAGS_writePath.isEmpty()) {
@@ -1546,8 +1557,8 @@ int main(int argc, char** argv) {
     for (TaggedSink& sink : *gSinks) {
         for (TaggedSrc& src : *gSrcs) {
             if (src->veto(sink->flags()) ||
-                is_blacklisted(sink.tag.c_str(), src.tag.c_str(),
-                               src.options.c_str(), src->name().c_str())) {
+                should_skip(sink.tag.c_str(), src.tag.c_str(),
+                            src.options.c_str(), src->name().c_str())) {
                 SkAutoSpinlock lock(*gMutex);
                 gPending--;
                 continue;

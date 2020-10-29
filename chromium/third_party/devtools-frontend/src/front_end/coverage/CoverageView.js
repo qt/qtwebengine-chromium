@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
 import * as SDK from '../sdk/sdk.js';
 import * as SourceFrame from '../source_frame/source_frame.js';
-import * as TextEditor from '../text_editor/text_editor.js';  // eslint-disable-line no-unused-vars
 import * as UI from '../ui/ui.js';
 import * as Workspace from '../workspace/workspace.js';  // eslint-disable-line no-unused-vars
 
@@ -32,7 +34,6 @@ export class CoverageView extends UI.Widget.VBox {
     const toolbarContainer = this.contentElement.createChild('div', 'coverage-toolbar-container');
     const toolbar = new UI.Toolbar.Toolbar('coverage-toolbar', toolbarContainer);
 
-    this._coverageType = null;
     this._coverageTypeComboBox = new UI.Toolbar.ToolbarComboBox(
         this._onCoverageTypeComboBoxSelectionChanged.bind(this),
         ls`Choose coverage granularity: Per function has low overhead, per block has significant overhead.`);
@@ -49,13 +50,15 @@ export class CoverageView extends UI.Widget.VBox {
     for (const type of coverageTypes) {
       this._coverageTypeComboBox.addOption(this._coverageTypeComboBox.createOption(type.label, type.value));
     }
-    this._coverageTypeComboBoxSetting = self.Common.settings.createSetting('coverageViewCoverageType', 0);
+    this._coverageTypeComboBoxSetting =
+        Common.Settings.Settings.instance().createSetting('coverageViewCoverageType', 0);
     this._coverageTypeComboBox.setSelectedIndex(this._coverageTypeComboBoxSetting.get());
     this._coverageTypeComboBox.setEnabled(true);
     toolbar.appendToolbarItem(this._coverageTypeComboBox);
 
     this._toggleRecordAction =
-        /** @type {!UI.Action.Action }*/ (self.UI.actionRegistry.action('coverage.toggle-recording'));
+        /** @type {!UI.Action.Action }*/ (
+            UI.ActionRegistry.ActionRegistry.instance().action('coverage.toggle-recording'));
     this._toggleRecordButton = UI.Toolbar.Toolbar.createActionButton(this._toggleRecordAction);
     toolbar.appendToolbarItem(this._toggleRecordButton);
 
@@ -65,7 +68,8 @@ export class CoverageView extends UI.Widget.VBox {
       /** @type {?Element} */
       this._inlineReloadButton = null;
       const startWithReloadAction =
-          /** @type {!UI.Action.Action }*/ (self.UI.actionRegistry.action('coverage.start-with-reload'));
+          /** @type {!UI.Action.Action }*/ (
+              UI.ActionRegistry.ActionRegistry.instance().action('coverage.start-with-reload'));
       this._startWithReloadButton = UI.Toolbar.Toolbar.createActionButton(startWithReloadAction);
       toolbar.appendToolbarItem(this._startWithReloadButton);
       this._toggleRecordButton.setEnabled(false);
@@ -290,8 +294,12 @@ export class CoverageView extends UI.Widget.VBox {
     }
   }
 
+  /**
+   * @param {!Common.EventTarget.EventTargetEvent} event
+   */
   _onCoverageDataReceived(event) {
-    this._updateViews(event.data);
+    const data = /** @type {!Array<!CoverageInfo>} */ (event.data);
+    this._updateViews(data);
   }
 
   async stopRecording() {
@@ -339,21 +347,34 @@ export class CoverageView extends UI.Widget.VBox {
   }
 
   _updateStats() {
-    let total = 0;
-    let unused = 0;
+    const all = {total: 0, unused: 0};
+    const filtered = {total: 0, unused: 0};
+    let filterApplied = false;
     for (const info of this._model.entries()) {
-      if (!this._isVisible(true, info)) {
-        continue;
+      all.total += info.size();
+      all.unused += info.unusedSize();
+      if (this._isVisible(false, info)) {
+        filtered.total += info.size();
+        filtered.unused += info.unusedSize();
+      } else {
+        filterApplied = true;
       }
-      total += info.size();
-      unused += info.unusedSize();
     }
+    this._statusMessageElement.textContent =
+        filterApplied ? ls`Filtered: ${formatStat(filtered)}  Total: ${formatStat(all)}` : formatStat(all);
 
-    const used = total - unused;
-    const percentUsed = total ? Math.round(100 * used / total) : 0;
-    this._statusMessageElement.textContent = ls`${Platform.NumberUtilities.bytesToString(used)} of ${
-        Platform.NumberUtilities.bytesToString(total)} (${percentUsed}%) used so far.
+    /**
+     *
+     * @param {!{total: number, unused: number}} stat
+     * @returns {string}
+     */
+    function formatStat({total, unused}) {
+      const used = total - unused;
+      const percentUsed = total ? Math.round(100 * used / total) : 0;
+      return ls`${Platform.NumberUtilities.bytesToString(used)} of ${Platform.NumberUtilities.bytesToString(total)} (${
+          percentUsed}%) used so far,
         ${Platform.NumberUtilities.bytesToString(unused)} unused.`;
+    }
   }
 
   _onFilterChanged() {
@@ -409,6 +430,9 @@ export class CoverageView extends UI.Widget.VBox {
     this._model.exportReport(fos);
   }
 
+  /**
+   * @param {string} url
+   */
   selectCoverageItemByUrl(url) {
     this._listView.selectByUrl(url);
   }
@@ -459,14 +483,14 @@ export class ActionDelegate {
  */
 export class LineDecorator {
   constructor() {
-    /** @type {!WeakMap<!TextEditor.CodeMirrorTextEditor.CodeMirrorTextEditor, function(!Common.EventTarget.EventTargetEvent)>} */
+    /** @type {!WeakMap<!SourceFrame.SourcesTextEditor.SourcesTextEditor, function(!Common.EventTarget.EventTargetEvent): void>} */
     this._listeners = new WeakMap();
   }
 
   /**
    * @override
    * @param {!Workspace.UISourceCode.UISourceCode} uiSourceCode
-   * @param {!TextEditor.CodeMirrorTextEditor.CodeMirrorTextEditor} textEditor
+   * @param {!SourceFrame.SourcesTextEditor.SourcesTextEditor} textEditor
    */
   decorate(uiSourceCode, textEditor) {
     const decorations = uiSourceCode.decorationsForType(decoratorType);
@@ -483,7 +507,7 @@ export class LineDecorator {
 
   /**
    * @param {!Workspace.UISourceCode.UISourceCode} uiSourceCode
-   * @param {!TextEditor.CodeMirrorTextEditor.CodeMirrorTextEditor} textEditor
+   * @param {!SourceFrame.SourcesTextEditor.SourcesTextEditor} textEditor
    * @param {!Array<boolean>} lineUsage
    */
   _innerDecorate(uiSourceCode, textEditor, lineUsage) {
@@ -509,6 +533,9 @@ export class LineDecorator {
    * @return {function(!Common.EventTarget.EventTargetEvent)}
    */
   makeGutterClickHandler(url) {
+    /**
+     * @param {!Common.EventTarget.EventTargetEvent} event
+     */
     function handleGutterClick(event) {
       const eventData = /** @type {!SourceFrame.SourcesTextEditor.GutterClickEventData} */ (event.data);
       if (eventData.gutterType !== LineDecorator._gutterType) {
@@ -528,7 +555,7 @@ export class LineDecorator {
   }
 
   /**
-     * @param {!TextEditor.CodeMirrorTextEditor.CodeMirrorTextEditor} textEditor - the text editor to install the gutter on
+     * @param {!SourceFrame.SourcesTextEditor.SourcesTextEditor} textEditor - the text editor to install the gutter on
      * @param {string} url - the url of the file in the text editor
    */
   _installGutter(textEditor, url) {
@@ -542,7 +569,7 @@ export class LineDecorator {
   }
 
   /**
-     * @param {!TextEditor.CodeMirrorTextEditor.CodeMirrorTextEditor} textEditor  - the text editor to uninstall the gutter from
+     * @param {!SourceFrame.SourcesTextEditor.SourcesTextEditor} textEditor  - the text editor to uninstall the gutter from
      */
   _uninstallGutter(textEditor) {
     textEditor.uninstallGutter(LineDecorator._gutterType);

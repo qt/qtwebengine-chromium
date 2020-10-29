@@ -43,7 +43,7 @@ constexpr int kWarpedDiffPrecisionBits = 10;
 // This assumes the two filters contain filter[x] and filter[x+2].
 inline __m128i AccumulateFilter(const __m128i sum, const __m128i filter_0,
                                 const __m128i filter_1,
-                                const __m128i src_window) {
+                                const __m128i& src_window) {
   const __m128i filter_taps = _mm_unpacklo_epi8(filter_0, filter_1);
   const __m128i src =
       _mm_unpacklo_epi8(src_window, _mm_srli_si128(src_window, 2));
@@ -513,7 +513,7 @@ void WarpInit_SSE4_1() { low_bitdepth::Init8bpp(); }
 
 }  // namespace dsp
 }  // namespace libgav1
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 
 namespace libgav1 {
 namespace dsp {

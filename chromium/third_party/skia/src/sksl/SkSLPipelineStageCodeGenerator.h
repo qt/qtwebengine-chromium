@@ -27,8 +27,6 @@ private:
 
     String getTypeName(const Type& type) override;
 
-    void writeBinaryExpression(const BinaryExpression& b, Precedence parentPrecedence) override;
-
     void writeFunctionCall(const FunctionCall& c) override;
 
     void writeIntLiteral(const IntLiteral& i) override;
@@ -48,7 +46,7 @@ private:
     typedef GLSLCodeGenerator INHERITED;
 };
 
-}
+}  // namespace SkSL
 
 #endif
 

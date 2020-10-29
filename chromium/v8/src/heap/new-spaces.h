@@ -303,8 +303,7 @@ class V8_EXPORT_PRIVATE NewSpace
   }
 
   size_t ExternalBackingStoreBytes(ExternalBackingStoreType type) const final {
-    if (V8_ARRAY_BUFFER_EXTENSION_BOOL &&
-        type == ExternalBackingStoreType::kArrayBuffer)
+    if (type == ExternalBackingStoreType::kArrayBuffer)
       return heap()->YoungArrayBufferBytes();
     DCHECK_EQ(0, from_space_.ExternalBackingStoreBytes(type));
     return to_space_.ExternalBackingStoreBytes(type);
@@ -369,11 +368,7 @@ class V8_EXPORT_PRIVATE NewSpace
     return to_space_.minimum_capacity();
   }
 
-  void ResetOriginalTop() {
-    DCHECK_GE(top(), original_top_);
-    DCHECK_LE(top(), original_limit_);
-    original_top_.store(top(), std::memory_order_release);
-  }
+  void VerifyTop();
 
   Address original_top_acquire() {
     return original_top_.load(std::memory_order_acquire);
@@ -390,13 +385,6 @@ class V8_EXPORT_PRIVATE NewSpace
   Address age_mark() { return from_space_.age_mark(); }
   // Set the age mark in the active semispace.
   void set_age_mark(Address mark) { to_space_.set_age_mark(mark); }
-
-  V8_WARN_UNUSED_RESULT V8_INLINE AllocationResult
-  AllocateRawAligned(int size_in_bytes, AllocationAlignment alignment,
-                     AllocationOrigin origin = AllocationOrigin::kRuntime);
-
-  V8_WARN_UNUSED_RESULT V8_INLINE AllocationResult AllocateRawUnaligned(
-      int size_in_bytes, AllocationOrigin origin = AllocationOrigin::kRuntime);
 
   V8_WARN_UNUSED_RESULT V8_INLINE AllocationResult
   AllocateRaw(int size_in_bytes, AllocationAlignment alignment,
@@ -466,6 +454,14 @@ class V8_EXPORT_PRIVATE NewSpace
   SemiSpace& from_space() { return from_space_; }
   SemiSpace& to_space() { return to_space_; }
 
+  void MoveOriginalTopForward() {
+    DCHECK_GE(top(), original_top_);
+    DCHECK_LE(top(), original_limit_);
+    original_top_.store(top(), std::memory_order_release);
+  }
+
+  void MaybeFreeUnusedLab(LinearAllocationArea info);
+
  private:
   // Update linear allocation area to match the current to-space page.
   void UpdateLinearAllocationArea();
@@ -482,8 +478,27 @@ class V8_EXPORT_PRIVATE NewSpace
   SemiSpace from_space_;
   VirtualMemory reservation_;
 
+  // Internal allocation methods.
+  V8_WARN_UNUSED_RESULT V8_INLINE AllocationResult
+  AllocateFastAligned(int size_in_bytes, int* aligned_size_in_bytes,
+                      AllocationAlignment alignment, AllocationOrigin origin);
+
+  V8_WARN_UNUSED_RESULT V8_INLINE AllocationResult
+  AllocateFastUnaligned(int size_in_bytes, AllocationOrigin origin);
+
+  V8_WARN_UNUSED_RESULT AllocationResult
+  AllocateRawSlow(int size_in_bytes, AllocationAlignment alignment,
+                  AllocationOrigin origin);
+
+  V8_WARN_UNUSED_RESULT AllocationResult
+  AllocateRawAligned(int size_in_bytes, AllocationAlignment alignment,
+                     AllocationOrigin origin = AllocationOrigin::kRuntime);
+
+  V8_WARN_UNUSED_RESULT AllocationResult AllocateRawUnaligned(
+      int size_in_bytes, AllocationOrigin origin = AllocationOrigin::kRuntime);
+
   bool EnsureAllocation(int size_in_bytes, AllocationAlignment alignment);
-  bool SupportsInlineAllocation() override { return true; }
+  bool SupportsAllocationObserver() override { return true; }
 
   friend class SemiSpaceObjectIterator;
 };

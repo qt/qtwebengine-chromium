@@ -77,7 +77,7 @@ struct hash<std::pair<ConstantValue, ConstantType>> {
     }
 };
 
-}
+}  // namespace std
 
 namespace SkSL {
 
@@ -112,7 +112,7 @@ public:
     , fBoolFalse(0)
     , fSetupFragPosition(false)
     , fCurrentBlock(0)
-    , fSynthetics(nullptr, errors) {
+    , fSynthetics(errors) {
         this->setupIntrinsics();
     }
 
@@ -406,6 +406,6 @@ private:
     typedef CodeGenerator INHERITED;
 };
 
-}
+}  // namespace SkSL
 
 #endif

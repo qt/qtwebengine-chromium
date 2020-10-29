@@ -541,9 +541,7 @@ struct BiControl : public UniControl {
         ,  fValHi(fMax) {
     }
 
-    virtual ~BiControl() {}
-
-    virtual void draw(SkCanvas* canvas, const ControlPaints& paints) {
+    void draw(SkCanvas* canvas, const ControlPaints& paints) override {
         UniControl::draw(canvas, paints);
         if (!fVisible || fValHi == fValLo) {
             return;
@@ -1250,7 +1248,7 @@ public:
     }
 
     void quad_coverage(SkPoint pts[3], uint8_t* distanceMap, int w, int h) {
-        SkScalar dist = pts[0].Distance(pts[0], pts[2]);
+        SkScalar dist = SkPoint::Distance(pts[0], pts[2]);
         if (dist < gCurveDistance) {
             (void) coverage(pts[0], pts[2], distanceMap, w, h);
             return;
@@ -1262,7 +1260,7 @@ public:
     }
 
     void conic_coverage(SkPoint pts[3], SkScalar weight, uint8_t* distanceMap, int w, int h) {
-        SkScalar dist = pts[0].Distance(pts[0], pts[2]);
+        SkScalar dist = SkPoint::Distance(pts[0], pts[2]);
         if (dist < gCurveDistance) {
             (void) coverage(pts[0], pts[2], distanceMap, w, h);
             return;
@@ -1277,7 +1275,7 @@ public:
     }
 
     void cubic_coverage(SkPoint pts[4], uint8_t* distanceMap, int w, int h) {
-        SkScalar dist = pts[0].Distance(pts[0], pts[3]);
+        SkScalar dist = SkPoint::Distance(pts[0], pts[3]);
         if (dist < gCurveDistance) {
             (void) coverage(pts[0], pts[3], distanceMap, w, h);
             return;
@@ -1315,7 +1313,6 @@ public:
 
     static uint8_t* set_up_dist_map(const SkImageInfo& imageInfo, SkBitmap* distMap) {
         distMap->setInfo(imageInfo);
-        distMap->setIsVolatile(true);
         SkAssertResult(distMap->tryAllocPixels());
         SkASSERT((int) distMap->rowBytes() == imageInfo.width());
         return distMap->getAddr8(0, 0);
@@ -1522,7 +1519,7 @@ public:
         return -1;
     }
 
-    virtual Sample::Click* onFindClickHandler(SkScalar x, SkScalar y, skui::ModifierKey modi) override {
+    Sample::Click* onFindClickHandler(SkScalar x, SkScalar y, skui::ModifierKey modi) override {
         SkPoint pt = {x, y};
         int ptHit = hittest_pt(pt);
         if (ptHit >= 0) {

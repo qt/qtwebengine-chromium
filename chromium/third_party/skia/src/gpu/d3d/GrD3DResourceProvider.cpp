@@ -8,6 +8,8 @@
 #include "src/gpu/d3d/GrD3DResourceProvider.h"
 
 #include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/private/SkOpts_spi.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/d3d/GrD3DBuffer.h"
 #include "src/gpu/d3d/GrD3DCommandList.h"
@@ -19,7 +21,10 @@ GrD3DResourceProvider::GrD3DResourceProvider(GrD3DGpu* gpu)
         : fGpu(gpu)
         , fCpuDescriptorManager(gpu)
         , fDescriptorTableManager(gpu)
-        , fPipelineStateCache(new PipelineStateCache(gpu)) {}
+        , fPipelineStateCache(new PipelineStateCache(gpu))
+        , fShaderResourceDescriptorTableCache(gpu)
+        , fSamplerDescriptorTableCache(gpu) {
+}
 
 void GrD3DResourceProvider::destroyResources() {
     fSamplers.reset();
@@ -58,6 +63,21 @@ sk_sp<GrD3DRootSignature> GrD3DResourceProvider::findOrCreateRootSignature(int n
     return rootSig;
 }
 
+sk_sp<GrD3DCommandSignature> GrD3DResourceProvider::findOrCreateCommandSignature(
+        GrD3DCommandSignature::ForIndexed indexed, unsigned int slot) {
+    for (int i = 0; i < fCommandSignatures.count(); ++i) {
+        if (fCommandSignatures[i]->isCompatible(indexed, slot)) {
+            return fCommandSignatures[i];
+        }
+    }
+
+    auto commandSig = GrD3DCommandSignature::Make(fGpu, indexed, slot);
+    if (!commandSig) {
+        return nullptr;
+    }
+    fCommandSignatures.push_back(commandSig);
+    return commandSig;
+}
 
 GrD3DDescriptorHeap::CPUHandle GrD3DResourceProvider::createRenderTargetView(
         ID3D12Resource* textureResource) {
@@ -108,42 +128,64 @@ static D3D12_TEXTURE_ADDRESS_MODE wrap_mode_to_d3d_address_mode(GrSamplerState::
     SK_ABORT("Unknown wrap mode.");
 }
 
+static D3D12_FILTER d3d_filter(GrSamplerState sampler) {
+    switch (sampler.mipmapMode()) {
+        // When the mode is kNone we disable filtering using maxLOD.
+        case GrSamplerState::MipmapMode::kNone:
+        case GrSamplerState::MipmapMode::kNearest:
+            switch (sampler.filter()) {
+                case GrSamplerState::Filter::kNearest: return D3D12_FILTER_MIN_MAG_MIP_POINT;
+                case GrSamplerState::Filter::kLinear:  return D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT;
+            }
+            SkUNREACHABLE;
+        case GrSamplerState::MipmapMode::kLinear:
+            switch (sampler.filter()) {
+                case GrSamplerState::Filter::kNearest: return D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR;
+                case GrSamplerState::Filter::kLinear:  return D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+            }
+            SkUNREACHABLE;
+    }
+    SkUNREACHABLE;
+}
+
 D3D12_CPU_DESCRIPTOR_HANDLE GrD3DResourceProvider::findOrCreateCompatibleSampler(
         const GrSamplerState& params) {
-    uint32_t key = GrSamplerState::GenerateKey(params);
+    uint32_t key = params.asIndex();
     D3D12_CPU_DESCRIPTOR_HANDLE* samplerPtr = fSamplers.find(key);
     if (samplerPtr) {
         return *samplerPtr;
     }
 
-    static D3D12_FILTER d3dFilterModes[] = {
-        D3D12_FILTER_MIN_MAG_MIP_POINT,
-        D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT,
-        D3D12_FILTER_MIN_MAG_MIP_LINEAR
-    };
-
-    static_assert((int)GrSamplerState::Filter::kNearest == 0);
-    static_assert((int)GrSamplerState::Filter::kBilerp == 1);
-    static_assert((int)GrSamplerState::Filter::kMipMap == 2);
-
-    D3D12_FILTER filter = d3dFilterModes[static_cast<int>(params.filter())];
+    D3D12_FILTER filter = d3d_filter(params);
+    // We disable MIP filtering using maxLOD. Otherwise, we want the max LOD to be unbounded.
+    float maxLOD = params.mipmapped() == GrMipmapped::kYes ? std::numeric_limits<float>::max()
+                                                           : 0.f;
     D3D12_TEXTURE_ADDRESS_MODE addressModeU = wrap_mode_to_d3d_address_mode(params.wrapModeX());
     D3D12_TEXTURE_ADDRESS_MODE addressModeV = wrap_mode_to_d3d_address_mode(params.wrapModeY());
 
     D3D12_CPU_DESCRIPTOR_HANDLE sampler =
             fCpuDescriptorManager.createSampler(
-            fGpu, filter, addressModeU, addressModeV).fHandle;
+            fGpu, filter, maxLOD, addressModeU, addressModeV).fHandle;
     fSamplers.set(key, sampler);
     return sampler;
 }
 
-std::unique_ptr<GrD3DDescriptorTable> GrD3DResourceProvider::createShaderOrConstantResourceTable(
-        unsigned int size) {
-    return fDescriptorTableManager.createShaderOrConstantResourceTable(fGpu, size);
+sk_sp<GrD3DDescriptorTable> GrD3DResourceProvider::findOrCreateShaderResourceTable(
+    const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& shaderResourceViews) {
+
+    auto createFunc = [this](GrD3DGpu* gpu, unsigned int numDesc) {
+        return this->fDescriptorTableManager.createShaderOrConstantResourceTable(gpu, numDesc);
+    };
+    return fShaderResourceDescriptorTableCache.findOrCreateDescTable(shaderResourceViews,
+                                                                     createFunc);
 }
 
-std::unique_ptr<GrD3DDescriptorTable> GrD3DResourceProvider::createSamplerTable(unsigned int size) {
-    return fDescriptorTableManager.createSamplerTable(fGpu, size);
+sk_sp<GrD3DDescriptorTable> GrD3DResourceProvider::findOrCreateSamplerTable(
+        const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& samplers) {
+    auto createFunc = [this](GrD3DGpu* gpu, unsigned int numDesc) {
+        return this->fDescriptorTableManager.createSamplerTable(gpu, numDesc);
+    };
+    return fShaderResourceDescriptorTableCache.findOrCreateDescTable(samplers, createFunc);
 }
 
 sk_sp<GrD3DPipelineState> GrD3DResourceProvider::findOrCreateCompatiblePipelineState(
@@ -155,28 +197,24 @@ D3D12_GPU_VIRTUAL_ADDRESS GrD3DResourceProvider::uploadConstantData(void* data, 
     // constant size has to be aligned to 256
     constexpr int kConstantAlignment = 256;
 
-    // Due to dependency on the resource cache we can't initialize this in the constructor, so
-    // we do so it here.
-    if (!fConstantBuffer) {
-        fConstantBuffer = GrD3DConstantRingBuffer::Make(fGpu, 128 * 1024, kConstantAlignment);
-        SkASSERT(fConstantBuffer);
-    }
-
     // upload the data
     size_t paddedSize = GrAlignTo(size, kConstantAlignment);
-    GrRingBuffer::Slice slice = fConstantBuffer->suballocate(paddedSize);
+    GrRingBuffer::Slice slice = fGpu->uniformsRingBuffer()->suballocate(paddedSize);
     char* destPtr = static_cast<char*>(slice.fBuffer->map()) + slice.fOffset;
     memcpy(destPtr, data, size);
 
     // create the associated constant buffer view descriptor
-    GrD3DBuffer* d3dBuffer = static_cast<GrD3DBuffer*>(slice.fBuffer.get());
+    GrD3DBuffer* d3dBuffer = static_cast<GrD3DBuffer*>(slice.fBuffer);
     D3D12_GPU_VIRTUAL_ADDRESS gpuAddress = d3dBuffer->d3dResource()->GetGPUVirtualAddress();
     return gpuAddress + slice.fOffset;
 }
 
 void GrD3DResourceProvider::prepForSubmit() {
-    fGpu->currentCommandList()->setCurrentConstantBuffer(fConstantBuffer);
     fDescriptorTableManager.prepForSubmit(fGpu);
+    // Any heap memory used for these will be returned when the command buffer finishes,
+    // so we have to invalidate all entries.
+    fShaderResourceDescriptorTableCache.release();
+    fSamplerDescriptorTableCache.release();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -259,3 +297,26 @@ void GrD3DResourceProvider::PipelineStateCache::markPipelineStateUniformsDirty()
     });
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+void GrD3DResourceProvider::DescriptorTableCache::release() {
+    fMap.reset();
+}
+
+sk_sp<GrD3DDescriptorTable> GrD3DResourceProvider::DescriptorTableCache::findOrCreateDescTable(
+        const std::vector<D3D12_CPU_DESCRIPTOR_HANDLE>& cpuDescriptors,
+        std::function<sk_sp<GrD3DDescriptorTable>(GrD3DGpu*, unsigned int numDesc)> createFunc) {
+    sk_sp<GrD3DDescriptorTable>* entry = fMap.find(cpuDescriptors);
+    if (entry) {
+        return *entry;
+    }
+
+    unsigned int numDescriptors = cpuDescriptors.size();
+    SkASSERT(numDescriptors <= kRangeSizesCount);
+    sk_sp<GrD3DDescriptorTable> descTable = createFunc(fGpu, numDescriptors);
+    fGpu->device()->CopyDescriptors(1, descTable->baseCpuDescriptorPtr(), &numDescriptors,
+                                    numDescriptors, cpuDescriptors.data(), fRangeSizes,
+                                    descTable->type());
+    entry = fMap.insert(cpuDescriptors, std::move(descTable));
+    return *entry;
+}

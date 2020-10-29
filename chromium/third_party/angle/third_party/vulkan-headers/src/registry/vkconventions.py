@@ -1,23 +1,14 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2013-2019 The Khronos Group Inc.
+# Copyright (c) 2013-2020 The Khronos Group Inc.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# SPDX-License-Identifier: Apache-2.0
 
 # Working-group-specific style conventions,
 # used in generation.
 
 import re
+import os
 
 from conventions import ConventionsBase
 
@@ -52,14 +43,19 @@ MAIN_RE = re.compile(
 
 
 class VulkanConventions(ConventionsBase):
-    def formatExtension(self, name):
-        """Mark up a name as an extension for the spec."""
-        return '`<<{}>>`'.format(name)
-
     @property
     def null(self):
         """Preferred spelling of NULL."""
         return '`NULL`'
+
+    @property
+    def struct_macro(self):
+        """Get the appropriate format macro for a structure.
+
+        Primarily affects generated valid usage statements.
+        """
+
+        return 'slink:'
 
     @property
     def constFlagBits(self):
@@ -125,11 +121,6 @@ class VulkanConventions(ConventionsBase):
             return None
 
     @property
-    def xml_supported_name_of_api(self):
-        """Return the supported= attribute used in API XML"""
-        return 'vulkan'
-
-    @property
     def api_prefix(self):
         """Return API token prefix"""
         return 'VK_'
@@ -169,7 +160,7 @@ class VulkanConventions(ConventionsBase):
            instead. N.b. this may need to change on a per-refpage basis if
            there are multiple documents involved.
         """
-        return 'https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html'
+        return 'https://www.khronos.org/registry/vulkan/specs/1.2-extensions/html/vkspec.html'
 
     @property
     def xml_api_name(self):
@@ -184,12 +175,18 @@ class VulkanConventions(ConventionsBase):
     @property
     def specification_path(self):
         """Return relpath to the Asciidoctor specification sources in this project."""
-        return '../appendices/meta'
+        return '{generated}/meta'
+
+    @property
+    def special_use_section_anchor(self):
+        """Return asciidoctor anchor name in the API Specification of the
+        section describing extension special uses in detail."""
+        return 'extendingvulkan-compatibility-specialuse'
 
     @property
     def extra_refpage_headers(self):
         """Return any extra text to add to refpage headers."""
-        return 'include::../config/attribs.txt[]'
+        return 'include::{config}/attribs.txt[]'
 
     @property
     def extension_index_prefixes(self):
@@ -205,8 +202,8 @@ class VulkanConventions(ConventionsBase):
 
     @property
     def spec_reflow_path(self):
-        """Return the relative path to the spec source folder to reflow"""
-        return '.'
+        """Return the path to the spec source folder to reflow"""
+        return os.getcwd()
 
     @property
     def spec_no_reflow_dirs(self):
@@ -237,3 +234,28 @@ class VulkanConventions(ConventionsBase):
         generate a VK_ERROR_FORMAT_NOT_SUPPORTED code."""
 
         return True
+
+    def extension_include_string(self, ext):
+        """Return format string for include:: line for an extension appendix
+           file. ext is an object with the following members:
+            - name - extension string string
+            - vendor - vendor portion of name
+            - barename - remainder of name"""
+
+        return 'include::{{appendices}}/{name}{suffix}[]'.format(
+                name=ext.name, suffix=self.file_suffix)
+
+    @property
+    def refpage_generated_include_path(self):
+        """Return path relative to the generated reference pages, to the
+           generated API include files."""
+        return "{generated}"
+
+    def valid_flag_bit(self, bitpos):
+        """Return True if bitpos is an allowed numeric bit position for
+           an API flag bit.
+
+           Vulkan uses 32 bit Vk*Flags types, and assumes C compilers may
+           cause Vk*FlagBits values with bit 31 set to result in a 64 bit
+           enumerated type, so disallows such flags."""
+        return bitpos >= 0 and bitpos < 31

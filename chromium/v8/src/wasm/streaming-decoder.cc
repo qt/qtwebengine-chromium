@@ -214,6 +214,7 @@ class V8_EXPORT_PRIVATE AsyncStreamingDecoder : public StreamingDecoder {
   bool code_section_processed_ = false;
   uint32_t module_offset_ = 0;
   size_t total_size_ = 0;
+  bool stream_finished_ = false;
 
   // We need wire bytes in an array for deserializing cached modules.
   std::vector<uint8_t> wire_bytes_for_deserializing_;
@@ -258,6 +259,8 @@ size_t AsyncStreamingDecoder::DecodingState::ReadBytes(
 
 void AsyncStreamingDecoder::Finish() {
   TRACE_STREAMING("Finish\n");
+  DCHECK(!stream_finished_);
+  stream_finished_ = true;
   if (!ok()) return;
 
   if (deserializing()) {
@@ -298,6 +301,8 @@ void AsyncStreamingDecoder::Finish() {
 
 void AsyncStreamingDecoder::Abort() {
   TRACE_STREAMING("Abort\n");
+  if (stream_finished_) return;
+  stream_finished_ = true;
   if (!ok()) return;  // Failed already.
   processor_->OnAbort();
   Fail();
@@ -410,7 +415,7 @@ class AsyncStreamingDecoder::DecodeSectionID : public DecodingState {
 class AsyncStreamingDecoder::DecodeSectionLength : public DecodeVarInt32 {
  public:
   explicit DecodeSectionLength(uint8_t id, uint32_t module_offset)
-      : DecodeVarInt32(kV8MaxWasmModuleSize, "section length"),
+      : DecodeVarInt32(max_module_size(), "section length"),
         section_id_(id),
         module_offset_(module_offset) {}
 

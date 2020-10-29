@@ -15,6 +15,7 @@
 #include "core/fpdfapi/page/cpdf_pagemodule.h"
 #include "core/fpdfapi/page/cpdf_pathobject.h"
 #include "core/fpdfapi/page/cpdf_textobject.h"
+#include "core/fpdfapi/page/cpdf_textstate.h"
 #include "core/fpdfapi/parser/cpdf_dictionary.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fpdfapi/parser/cpdf_name.h"
@@ -23,7 +24,7 @@
 #include "core/fpdfapi/parser/cpdf_stream.h"
 #include "core/fpdfapi/render/cpdf_docrenderdata.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
-#include "core/fxge/render_defines.h"
+#include "core/fxge/cfx_fillrenderoptions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/base/stl_util.h"
 
@@ -54,7 +55,7 @@ class CPDF_PageContentGeneratorTest : public testing::Test {
 TEST_F(CPDF_PageContentGeneratorTest, ProcessRect) {
   auto pPathObj = std::make_unique<CPDF_PathObject>();
   pPathObj->set_stroke(true);
-  pPathObj->set_filltype(FXFILL_ALTERNATE);
+  pPathObj->set_filltype(CFX_FillRenderOptions::FillType::kEvenOdd);
   pPathObj->path().AppendRect(10, 5, 13, 30);
 
   auto dummy_page_dict = pdfium::MakeRetain<CPDF_Dictionary>();
@@ -80,7 +81,7 @@ TEST_F(CPDF_PageContentGeneratorTest, BUG_937) {
   RetainPtr<CPDF_ColorSpace> pCS = CPDF_ColorSpace::GetStockCS(PDFCS_DEVICERGB);
   {
     auto pPathObj = std::make_unique<CPDF_PathObject>();
-    pPathObj->set_filltype(FXFILL_WINDING);
+    pPathObj->set_filltype(CFX_FillRenderOptions::FillType::kWinding);
 
     // Test code in ProcessPath that generates re operator
     pPathObj->path().AppendRect(0.000000000000000000001,
@@ -113,7 +114,7 @@ TEST_F(CPDF_PageContentGeneratorTest, BUG_937) {
     pPathObj->m_GraphState.SetLineWidth(2.000000000000000000001);
     pPathObj->Transform(CFX_Matrix(1, 0, 0, 1, 432, 500000000000000.000002));
 
-    pPathObj->set_filltype(FXFILL_WINDING);
+    pPathObj->set_filltype(CFX_FillRenderOptions::FillType::kWinding);
     pPathObj->path().AppendPoint(CFX_PointF(0.000000000000000000001f, 4.67f),
                                  FXPT_TYPE::MoveTo);
     pPathObj->path().AppendPoint(
@@ -143,7 +144,7 @@ TEST_F(CPDF_PageContentGeneratorTest, BUG_937) {
 
 TEST_F(CPDF_PageContentGeneratorTest, ProcessPath) {
   auto pPathObj = std::make_unique<CPDF_PathObject>();
-  pPathObj->set_filltype(FXFILL_WINDING);
+  pPathObj->set_filltype(CFX_FillRenderOptions::FillType::kWinding);
   pPathObj->path().AppendPoint(CFX_PointF(3.102f, 4.67f), FXPT_TYPE::MoveTo);
   pPathObj->path().AppendPoint(CFX_PointF(5.45f, 0.29f), FXPT_TYPE::LineTo);
   pPathObj->path().AppendPoint(CFX_PointF(4.24f, 3.15f), FXPT_TYPE::BezierTo);
@@ -173,7 +174,7 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessPath) {
 TEST_F(CPDF_PageContentGeneratorTest, ProcessGraphics) {
   auto pPathObj = std::make_unique<CPDF_PathObject>();
   pPathObj->set_stroke(true);
-  pPathObj->set_filltype(FXFILL_WINDING);
+  pPathObj->set_filltype(CFX_FillRenderOptions::FillType::kWinding);
   pPathObj->path().AppendPoint(CFX_PointF(1, 2), FXPT_TYPE::MoveTo);
   pPathObj->path().AppendPoint(CFX_PointF(3, 4), FXPT_TYPE::LineTo);
   pPathObj->path().AppendPointAndClose(CFX_PointF(5, 6), FXPT_TYPE::LineTo);
@@ -274,7 +275,7 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessStandardText) {
       "q 0.501961 0.701961 0.34902 rg 1 0.901961 0 RG /";
   // Color RGB values used are integers divided by 255.
   ByteString compareString2 = " gs BT 1 0 0 1 100 100 Tm /";
-  ByteString compareString3 = " 10 Tf <48656C6C6F20576F726C64> Tj ET Q\n";
+  ByteString compareString3 = " 10 Tf 0 Tr <48656C6C6F20576F726C64> Tj ET Q\n";
   EXPECT_LT(compareString1.GetLength() + compareString2.GetLength() +
                 compareString3.GetLength(),
             textString.GetLength());
@@ -329,6 +330,19 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
     pTextObj->m_TextState.SetFont(pLoadedFont);
     pTextObj->m_TextState.SetFontSize(15.5f);
     pTextObj->SetText("I am indirect");
+    pTextObj->SetTextRenderMode(TextRenderingMode::MODE_FILL_CLIP);
+
+    // Add a clipping path.
+    auto pPath = std::make_unique<CPDF_Path>();
+    pPath->AppendPoint(CFX_PointF(0, 0), FXPT_TYPE::MoveTo);
+    pPath->AppendPoint(CFX_PointF(5, 0), FXPT_TYPE::LineTo);
+    pPath->AppendPoint(CFX_PointF(5, 4), FXPT_TYPE::LineTo);
+    pPath->AppendPointAndClose(CFX_PointF(0, 4), FXPT_TYPE::LineTo);
+    pTextObj->m_ClipPath.Emplace();
+    pTextObj->m_ClipPath.AppendPath(*pPath,
+                                    CFX_FillRenderOptions::FillType::kEvenOdd,
+                                    /*bAutoMerge=*/false);
+
     TestProcessText(&generator, &buf, pTextObj.get());
   }
 
@@ -340,8 +354,9 @@ TEST_F(CPDF_PageContentGeneratorTest, ProcessText) {
   ByteString lastString =
       textString.Last(textString.GetLength() - firstResourceAt.value());
   // q and Q must be outside the BT .. ET operations
-  ByteString compareString1 = "q BT 1 0 0 1 0 0 Tm /";
-  ByteString compareString2 = " 15.5 Tf <4920616D20696E646972656374> Tj ET Q\n";
+  ByteString compareString1 = "q 0 0 5 4 re W* n 0 g BT 1 0 0 1 0 0 Tm /";
+  ByteString compareString2 =
+      " 15.5 Tf 4 Tr <4920616D20696E646972656374> Tj ET Q\n";
   EXPECT_LT(compareString1.GetLength() + compareString2.GetLength(),
             textString.GetLength());
   EXPECT_EQ(compareString1, textString.First(compareString1.GetLength()));

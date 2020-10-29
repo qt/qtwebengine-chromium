@@ -32,8 +32,8 @@
 #include "media/engine/constants.h"
 #include "media/engine/unhandled_packets_buffer.h"
 #include "rtc_base/async_invoker.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/network_route.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/thread_checker.h"
 
@@ -433,6 +433,11 @@ class WebRtcVideoChannel : public VideoMediaChannel,
     // destructed as they are used in asynchronous tasks it has to be destructed
     // first.
     rtc::AsyncInvoker invoker_;
+
+    // TODO(asapersson): investigate why setting
+    // DegrationPreferences::MAINTAIN_RESOLUTION isn't sufficient to disable
+    // downscaling everywhere in the pipeline.
+    const bool disable_automatic_resize_;
   };
 
   // Wrapper for the receiver part, contains configs etc. that are needed to
@@ -516,7 +521,7 @@ class WebRtcVideoChannel : public VideoMediaChannel,
 
     webrtc::VideoDecoderFactory* const decoder_factory_;
 
-    rtc::CriticalSection sink_lock_;
+    webrtc::Mutex sink_lock_;
     rtc::VideoSinkInterface<webrtc::VideoFrame>* sink_
         RTC_GUARDED_BY(sink_lock_);
     // Expands remote RTP timestamps to int64_t to be able to estimate how long
@@ -661,7 +666,7 @@ class EncoderStreamFactory
       const absl::optional<webrtc::DataRate>& experimental_min_bitrate) const;
 
   std::vector<webrtc::VideoStream>
-  CreateSimulcastOrConfereceModeScreenshareStreams(
+  CreateSimulcastOrConferenceModeScreenshareStreams(
       int width,
       int height,
       const webrtc::VideoEncoderConfig& encoder_config,

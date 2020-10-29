@@ -414,4 +414,18 @@ TEST(IPAddressTest, IPEndpointComparisons) {
   EXPECT_TRUE(kV6High >= kV6Low);
 }
 
+TEST(IPAddressTest, OstreamOperatorForIPv4) {
+  std::ostringstream oss;
+  oss << IPAddress{192, 168, 1, 2};
+  EXPECT_EQ("192.168.1.2", oss.str());
+
+  oss.str("");
+  oss << IPAddress{192, 168, 0, 2};
+  EXPECT_EQ("192.168.0.2", oss.str());
+
+  oss.str("");
+  oss << IPAddress{23, 45, 67, 89};
+  EXPECT_EQ("23.45.67.89", oss.str());
+}
+
 }  // namespace openscreen

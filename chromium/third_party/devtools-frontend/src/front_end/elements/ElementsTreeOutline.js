@@ -28,6 +28,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';  // eslint-disable-line no-unused-vars
 import * as SDK from '../sdk/sdk.js';
@@ -827,7 +830,7 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
   async _saveNodeToTempVariable(node) {
     const remoteObjectForConsole = await node.resolveToObject();
     await SDK.ConsoleModel.ConsoleModel.instance().saveToTempVariable(
-        self.UI.context.flavor(SDK.RuntimeModel.ExecutionContext), remoteObjectForConsole);
+        UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext), remoteObjectForConsole);
   }
 
   runPendingUpdates() {

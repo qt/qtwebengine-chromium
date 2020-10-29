@@ -25,16 +25,19 @@ struct FunctionDefinition;
  * A function declaration (not a definition -- does not contain a body).
  */
 struct FunctionDeclaration : public Symbol {
+    static constexpr Kind kSymbolKind = kFunctionDeclaration_Kind;
+
     FunctionDeclaration(int offset, Modifiers modifiers, StringFragment name,
-                        std::vector<const Variable*> parameters, const Type& returnType)
-    : INHERITED(offset, kFunctionDeclaration_Kind, std::move(name))
+                        std::vector<const Variable*> parameters, const Type& returnType,
+                        bool builtin)
+    : INHERITED(offset, kSymbolKind, std::move(name))
     , fDefinition(nullptr)
-    , fBuiltin(false)
+    , fBuiltin(builtin)
     , fModifiers(modifiers)
     , fParameters(std::move(parameters))
     , fReturnType(returnType) {}
 
-    String declaration() const {
+    String description() const override {
         String result = fReturnType.displayName() + " " + fName + "(";
         String separator;
         for (auto p : fParameters) {
@@ -44,10 +47,6 @@ struct FunctionDeclaration : public Symbol {
         }
         result += ")";
         return result;
-    }
-
-    String description() const override {
-        return this->declaration();
     }
 
     bool matches(const FunctionDeclaration& f) const {
@@ -121,6 +120,6 @@ struct FunctionDeclaration : public Symbol {
     typedef Symbol INHERITED;
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

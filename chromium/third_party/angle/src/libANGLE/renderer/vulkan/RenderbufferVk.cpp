@@ -63,6 +63,11 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
         }
     }
 
+    // TODO(syoussefi): if glRenderbufferStorageMultisampleEXT, need to create the image as
+    // single-sampled and have a multisampled image for intermediate results.  Currently, tests
+    // seem to only use this for depth/stencil buffers and don't attempt to read from it.  This
+    // needs to be fixed and tests added.  http://anglebug.com/4836
+
     if ((mImage == nullptr || !mImage->valid()) && (width != 0 && height != 0))
     {
         if (mImage == nullptr)
@@ -70,6 +75,7 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
             mImage     = new vk::ImageHelper();
             mOwnsImage = true;
             mImageObserverBinding.bind(mImage);
+            mImageViews.init(renderer);
         }
 
         const angle::Format &textureFormat = vkFormat.actualImageFormat();
@@ -87,7 +93,7 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
         VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         ANGLE_TRY(mImage->initMemory(contextVk, renderer->getMemoryProperties(), flags));
 
-        mRenderTarget.init(mImage, &mImageViews, 0, 0);
+        mRenderTarget.init(mImage, &mImageViews, nullptr, nullptr, 0, 0, false);
     }
 
     return angle::Result::Continue;
@@ -122,6 +128,7 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
     mImage           = imageVk->getImage();
     mOwnsImage       = false;
     mImageObserverBinding.bind(mImage);
+    mImageViews.init(renderer);
 
     const vk::Format &vkFormat = renderer->getFormat(image->getFormat().info->sizedInternalFormat);
     const angle::Format &textureFormat = vkFormat.actualImageFormat();
@@ -132,10 +139,9 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
     uint32_t rendererQueueFamilyIndex = contextVk->getRenderer()->getQueueFamilyIndex();
     if (mImage->isQueueChangeNeccesary(rendererQueueFamilyIndex))
     {
-        vk::CommandBuffer *commandBuffer = nullptr;
-        ANGLE_TRY(contextVk->endRenderPassAndGetCommandBuffer(&commandBuffer));
+        vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
         mImage->changeLayoutAndQueue(aspect, vk::ImageLayout::ColorAttachment,
-                                     rendererQueueFamilyIndex, commandBuffer);
+                                     rendererQueueFamilyIndex, &commandBuffer);
     }
 
     gl::TextureType viewType = imageVk->getImageTextureType();
@@ -146,7 +152,8 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
                                         imageVk->getImage()->getSamples());
     }
 
-    mRenderTarget.init(mImage, &mImageViews, imageVk->getImageLevel(), imageVk->getImageLayer());
+    mRenderTarget.init(mImage, &mImageViews, nullptr, nullptr, imageVk->getImageLevel(),
+                       imageVk->getImageLayer(), false);
 
     return angle::Result::Continue;
 }
@@ -234,6 +241,10 @@ angle::Result RenderbufferVk::getRenderbufferImage(const gl::Context *context,
 
     ContextVk *contextVk = vk::GetImpl(context);
     ANGLE_TRY(mImage->flushAllStagedUpdates(contextVk));
+
+    gl::MaybeOverrideLuminance(format, type, getColorReadFormat(context),
+                               getColorReadType(context));
+
     return mImage->readPixelsForGetImage(contextVk, packState, packBuffer, 0, 0, format, type,
                                          pixels);
 }

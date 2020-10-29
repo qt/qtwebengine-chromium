@@ -323,6 +323,7 @@ std::unique_ptr<FrameGeneratorInterface> CreateFrameGenerator(
 VideoReceiveStream::Config CreateVideoReceiveStreamConfig(
     VideoStreamConfig config,
     Transport* feedback_transport,
+    VideoDecoderFactory* decoder_factory,
     VideoReceiveStream::Decoder decoder,
     rtc::VideoSinkInterface<VideoFrame>* renderer,
     uint32_t local_ssrc,
@@ -338,6 +339,7 @@ VideoReceiveStream::Config CreateVideoReceiveStreamConfig(
   recv.rtp.nack.rtp_history_ms = config.stream.nack_history_time.ms();
   recv.rtp.protected_by_flexfec = config.stream.use_flexfec;
   recv.rtp.remote_ssrc = ssrc;
+  recv.decoder_factory = decoder_factory;
   recv.decoders.push_back(decoder);
   recv.renderer = renderer;
   if (config.stream.use_rtx) {
@@ -373,7 +375,7 @@ SendVideoStream::SendVideoStream(CallClient* sender,
     case Encoder::Implementation::kFake:
       encoder_factory_ =
           std::make_unique<FunctionVideoEncoderFactory>([this]() {
-            rtc::CritScope cs(&crit_);
+            MutexLock lock(&mutex_);
             std::unique_ptr<FakeEncoder> encoder;
             if (config_.encoder.codec == Codec::kVideoCodecVP8) {
               encoder = std::make_unique<test::FakeVp8Encoder>(sender_->clock_);
@@ -452,7 +454,7 @@ void SendVideoStream::Stop() {
 void SendVideoStream::UpdateConfig(
     std::function<void(VideoStreamConfig*)> modifier) {
   sender_->SendTask([&] {
-    rtc::CritScope cs(&crit_);
+    MutexLock lock(&mutex_);
     VideoStreamConfig prior_config = config_;
     modifier(&config_);
     if (prior_config.encoder.fake.max_rate != config_.encoder.fake.max_rate) {
@@ -473,7 +475,7 @@ void SendVideoStream::UpdateConfig(
 
 void SendVideoStream::UpdateActiveLayers(std::vector<bool> active_layers) {
   sender_->task_queue_.PostTask([=] {
-    rtc::CritScope cs(&crit_);
+    MutexLock lock(&mutex_);
     if (config_.encoder.codec ==
         VideoStreamConfig::Encoder::Codec::kVideoCodecVP8) {
       send_stream_->UpdateActiveSimulcastLayers(active_layers);
@@ -549,7 +551,6 @@ ReceiveVideoStream::ReceiveVideoStream(CallClient* receiver,
   VideoReceiveStream::Decoder decoder =
       CreateMatchingDecoder(CodecTypeToPayloadType(config.encoder.codec),
                             CodecTypeToPayloadString(config.encoder.codec));
-  decoder.decoder_factory = decoder_factory_.get();
   size_t num_streams = 1;
   if (config.encoder.codec == VideoStreamConfig::Encoder::Codec::kVideoCodecVP8)
     num_streams = config.encoder.layers.spatial;
@@ -561,7 +562,7 @@ ReceiveVideoStream::ReceiveVideoStream(CallClient* receiver,
       renderer = render_taps_.back().get();
     }
     auto recv_config = CreateVideoReceiveStreamConfig(
-        config, feedback_transport, decoder, renderer,
+        config, feedback_transport, decoder_factory_.get(), decoder, renderer,
         receiver_->GetNextVideoLocalSsrc(), send_stream->ssrcs_[i],
         send_stream->rtx_ssrcs_[i]);
     if (config.stream.use_flexfec) {

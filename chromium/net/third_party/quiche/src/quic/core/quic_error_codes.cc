@@ -205,6 +205,8 @@ const char* QuicErrorCodeToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_HTTP_STREAM_LIMIT_TOO_LOW);
     RETURN_STRING_LITERAL(QUIC_HTTP_ZERO_RTT_RESUMPTION_SETTINGS_MISMATCH);
     RETURN_STRING_LITERAL(QUIC_HTTP_ZERO_RTT_REJECTION_SETTINGS_MISMATCH);
+    RETURN_STRING_LITERAL(QUIC_HTTP_GOAWAY_INVALID_STREAM_ID);
+    RETURN_STRING_LITERAL(QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS);
     RETURN_STRING_LITERAL(QUIC_HPACK_INDEX_VARINT_ERROR);
     RETURN_STRING_LITERAL(QUIC_HPACK_NAME_LENGTH_VARINT_ERROR);
     RETURN_STRING_LITERAL(QUIC_HPACK_VALUE_LENGTH_VARINT_ERROR);
@@ -226,6 +228,7 @@ const char* QuicErrorCodeToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_ZERO_RTT_UNRETRANSMITTABLE);
     RETURN_STRING_LITERAL(QUIC_ZERO_RTT_REJECTION_LIMIT_REDUCED);
     RETURN_STRING_LITERAL(QUIC_ZERO_RTT_RESUMPTION_LIMIT_REDUCED);
+    RETURN_STRING_LITERAL(QUIC_SILENT_IDLE_TIMEOUT);
 
     RETURN_STRING_LITERAL(QUIC_LAST_ERROR);
     // Intentionally have no default case, so we'll break the build
@@ -359,6 +362,8 @@ QuicErrorCodeToIetfMapping QuicErrorCodeToTransportErrorCode(
     case QUIC_DECOMPRESSION_FAILURE:
       return {true, static_cast<uint64_t>(PROTOCOL_VIOLATION)};
     case QUIC_NETWORK_IDLE_TIMEOUT:
+      return {true, static_cast<uint64_t>(NO_IETF_QUIC_ERROR)};
+    case QUIC_SILENT_IDLE_TIMEOUT:
       return {true, static_cast<uint64_t>(NO_IETF_QUIC_ERROR)};
     case QUIC_HANDSHAKE_TIMEOUT:
       return {true, static_cast<uint64_t>(NO_IETF_QUIC_ERROR)};
@@ -576,6 +581,10 @@ QuicErrorCodeToIetfMapping QuicErrorCodeToTransportErrorCode(
       return {false, static_cast<uint64_t>(QuicHttp3ErrorCode::SETTINGS_ERROR)};
     case QUIC_HTTP_ZERO_RTT_REJECTION_SETTINGS_MISMATCH:
       return {true, static_cast<uint64_t>(INTERNAL_ERROR)};
+    case QUIC_HTTP_GOAWAY_INVALID_STREAM_ID:
+      return {false, static_cast<uint64_t>(QuicHttp3ErrorCode::ID_ERROR)};
+    case QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS:
+      return {false, static_cast<uint64_t>(QuicHttp3ErrorCode::ID_ERROR)};
     case QUIC_HPACK_INDEX_VARINT_ERROR:
       return {true, static_cast<uint64_t>(INTERNAL_ERROR)};
     case QUIC_HPACK_NAME_LENGTH_VARINT_ERROR:

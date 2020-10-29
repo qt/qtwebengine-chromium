@@ -29,6 +29,7 @@ namespace dawn_native { namespace metal {
 
     class Device;
     class PipelineLayout;
+    class RenderPipeline;
 
     class ShaderModule final : public ShaderModuleBase {
       public:
@@ -46,14 +47,16 @@ namespace dawn_native { namespace metal {
         MaybeError GetFunction(const char* functionName,
                                SingleShaderStage functionStage,
                                const PipelineLayout* layout,
-                               MetalFunctionData* out);
+                               MetalFunctionData* out,
+                               uint32_t sampleMask = 0xFFFFFFFF,
+                               const RenderPipeline* renderPipeline = nullptr);
 
       private:
         ShaderModule(Device* device, const ShaderModuleDescriptor* descriptor);
         ~ShaderModule() override = default;
         MaybeError Initialize();
 
-        shaderc_spvc::CompileOptions GetMSLCompileOptions();
+        shaderc_spvc::CompileOptions GetMSLCompileOptions(uint32_t sampleMask = 0xFFFFFFFF);
     };
 
 }}  // namespace dawn_native::metal

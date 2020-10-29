@@ -365,7 +365,7 @@ static AVFrame *alloc_frame_empty(enum AVPixelFormat format, int w, int h)
     out->format = format;
     out->width = w;
     out->height = h;
-    if (av_frame_get_buffer(out, 32) < 0) {
+    if (av_frame_get_buffer(out, 0) < 0) {
         av_frame_free(&out);
         return NULL;
     }
@@ -1321,12 +1321,12 @@ static int query_formats(AVFilterContext *ctx)
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterLink *inlink = ctx->inputs[0];
     AVFilterLink *outlink = ctx->outputs[0];
-    enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_NONE };
-    enum AVPixelFormat pix_fmts[] = {
+    static const enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_NONE };
+    static const enum AVPixelFormat pix_fmts[] = {
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P,
         AV_PIX_FMT_YUV444P, AV_PIX_FMT_RGB24, AV_PIX_FMT_NONE
     };
-    int64_t channel_layouts[] = { AV_CH_LAYOUT_STEREO, AV_CH_LAYOUT_STEREO_DOWNMIX, -1 };
+    static const int64_t channel_layouts[] = { AV_CH_LAYOUT_STEREO, AV_CH_LAYOUT_STEREO_DOWNMIX, -1 };
     int ret;
 
     /* set input audio formats */
@@ -1334,7 +1334,7 @@ static int query_formats(AVFilterContext *ctx)
     if ((ret = ff_formats_ref(formats, &inlink->out_formats)) < 0)
         return ret;
 
-    layouts = avfilter_make_format64_list(channel_layouts);
+    layouts = ff_make_format64_list(channel_layouts);
     if ((ret = ff_channel_layouts_ref(layouts, &inlink->out_channel_layouts)) < 0)
         return ret;
 

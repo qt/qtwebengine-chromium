@@ -494,6 +494,12 @@ bool QuicStream::OnStopSending(uint16_t code) {
   }
 
   stream_error_ = static_cast<QuicRstStreamErrorCode>(code);
+
+  session()->SendRstStream(id(),
+                           static_cast<quic::QuicRstStreamErrorCode>(code),
+                           stream_bytes_written(), /*send_rst_only = */ true);
+  rst_sent_ = true;
+  CloseWriteSide();
   return true;
 }
 
@@ -579,7 +585,8 @@ void QuicStream::SetFinSent() {
 
 void QuicStream::Reset(QuicRstStreamErrorCode error) {
   stream_error_ = error;
-  session()->SendRstStream(id(), error, stream_bytes_written());
+  session()->SendRstStream(id(), error, stream_bytes_written(),
+                           /*send_rst_only = */ false);
   rst_sent_ = true;
   if (read_side_closed_ && write_side_closed_ && !IsWaitingForAcks()) {
     session()->OnStreamDoneWaitingForAcks(id_);
@@ -824,7 +831,7 @@ void QuicStream::OnClose() {
     // RST_STREAM frame.
     QUIC_DLOG(INFO) << ENDPOINT << "Sending RST_STREAM in OnClose: " << id();
     session_->SendRstStream(id(), QUIC_RST_ACKNOWLEDGEMENT,
-                            stream_bytes_written());
+                            stream_bytes_written(), /*send_rst_only = */ false);
     session_->OnStreamDoneWaitingForAcks(id_);
     rst_sent_ = true;
   }
@@ -924,17 +931,47 @@ void QuicStream::AddBytesConsumed(QuicByteCount bytes) {
   }
 }
 
-bool QuicStream::ConfigSendWindowOffset(QuicStreamOffset new_offset) {
+bool QuicStream::MaybeConfigSendWindowOffset(QuicStreamOffset new_offset,
+                                             bool was_zero_rtt_rejected) {
   if (!flow_controller_.has_value()) {
     QUIC_BUG << ENDPOINT
              << "ConfigSendWindowOffset called on stream without flow control";
     return false;
   }
 
-  QUIC_BUG_IF(session()->version().AllowsLowFlowControlLimits() &&
-              new_offset < flow_controller_->send_window_offset())
-      << ENDPOINT << "The new offset " << new_offset
-      << " decreases current offset " << flow_controller_->send_window_offset();
+  // The validation code below is for QUIC with TLS only.
+  if (new_offset < flow_controller_->send_window_offset()) {
+    DCHECK(session()->version().UsesTls());
+    if (was_zero_rtt_rejected && new_offset < flow_controller_->bytes_sent()) {
+      // The client is given flow control window lower than what's written in
+      // 0-RTT. This QUIC implementation is unable to retransmit them.
+      QUIC_BUG_IF(perspective_ == Perspective::IS_SERVER)
+          << "Server streams' flow control should never be configured twice.";
+      OnUnrecoverableError(
+          QUIC_ZERO_RTT_UNRETRANSMITTABLE,
+          quiche::QuicheStrCat(
+              "Server rejected 0-RTT, aborting because new stream max data ",
+              new_offset, " for stream ", id_, " is less than currently used: ",
+              flow_controller_->bytes_sent()));
+      return false;
+    } else if (session()->version().AllowsLowFlowControlLimits()) {
+      // In IETF QUIC, if the client receives flow control limit lower than what
+      // was resumed from 0-RTT, depending on 0-RTT status, it's either the
+      // peer's fault or our implementation's fault.
+      QUIC_BUG_IF(perspective_ == Perspective::IS_SERVER)
+          << "Server streams' flow control should never be configured twice.";
+      OnUnrecoverableError(
+          was_zero_rtt_rejected ? QUIC_ZERO_RTT_REJECTION_LIMIT_REDUCED
+                                : QUIC_ZERO_RTT_RESUMPTION_LIMIT_REDUCED,
+          quiche::QuicheStrCat(
+              was_zero_rtt_rejected ? "Server rejected 0-RTT, aborting because "
+                                    : "",
+              "new stream max data ", new_offset, " decreases current limit: ",
+              flow_controller_->send_window_offset()));
+      return false;
+    }
+  }
+
   if (flow_controller_->UpdateSendWindowOffset(new_offset)) {
     // Let session unblock this stream.
     session_->MarkConnectionLevelWriteBlocked(id_);
@@ -972,7 +1009,8 @@ bool QuicStream::OnStreamFrameAcked(QuicStreamOffset offset,
     fin_outstanding_ = false;
     fin_lost_ = false;
   }
-  if (!IsWaitingForAcks()) {
+  if (!IsWaitingForAcks() && (!session()->remove_zombie_streams() ||
+                              (read_side_closed_ && write_side_closed_))) {
     session_->OnStreamDoneWaitingForAcks(id_);
   }
   return new_data_acked;
@@ -1281,20 +1319,28 @@ void QuicStream::SendStopSending(uint16_t code) {
   session_->SendStopSending(code, id_);
 }
 
-QuicFlowController* QuicStream::flow_controller() {
-  if (flow_controller_.has_value()) {
-    return &flow_controller_.value();
+bool QuicStream::IsFlowControlBlocked() const {
+  if (!flow_controller_.has_value()) {
+    QUIC_BUG << "Trying to access non-existent flow controller.";
+    return false;
   }
-  QUIC_BUG << "Trying to access non-existent flow controller.";
-  return nullptr;
+  return flow_controller_->IsBlocked();
 }
 
-const QuicFlowController* QuicStream::flow_controller() const {
-  if (flow_controller_.has_value()) {
-    return &flow_controller_.value();
+QuicStreamOffset QuicStream::highest_received_byte_offset() const {
+  if (!flow_controller_.has_value()) {
+    QUIC_BUG << "Trying to access non-existent flow controller.";
+    return 0;
   }
-  QUIC_BUG << "Trying to access non-existent flow controller.";
-  return nullptr;
+  return flow_controller_->highest_received_byte_offset();
+}
+
+void QuicStream::UpdateReceiveWindowSize(QuicStreamOffset size) {
+  if (!flow_controller_.has_value()) {
+    QUIC_BUG << "Trying to access non-existent flow controller.";
+    return;
+  }
+  flow_controller_->UpdateReceiveWindowSize(size);
 }
 
 // static

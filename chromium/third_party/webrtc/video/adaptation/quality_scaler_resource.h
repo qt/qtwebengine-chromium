@@ -19,10 +19,9 @@
 #include "api/scoped_refptr.h"
 #include "api/video/video_adaptation_reason.h"
 #include "api/video_codecs/video_encoder.h"
-#include "call/adaptation/adaptation_listener.h"
+#include "call/adaptation/degradation_preference_provider.h"
 #include "call/adaptation/resource_adaptation_processor_interface.h"
 #include "modules/video_coding/utility/quality_scaler.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/task_queue.h"
 #include "video/adaptation/video_stream_encoder_resource.h"
@@ -31,16 +30,14 @@ namespace webrtc {
 
 // Handles interaction with the QualityScaler.
 class QualityScalerResource : public VideoStreamEncoderResource,
-                              public AdaptationListener,
                               public QualityScalerQpUsageHandlerInterface {
  public:
-  static rtc::scoped_refptr<QualityScalerResource> Create();
+  static rtc::scoped_refptr<QualityScalerResource> Create(
+      DegradationPreferenceProvider* degradation_preference_provider);
 
-  QualityScalerResource();
+  explicit QualityScalerResource(
+      DegradationPreferenceProvider* degradation_preference_provider);
   ~QualityScalerResource() override;
-
-  void SetAdaptationProcessor(
-      ResourceAdaptationProcessorInterface* adaptation_processor);
 
   bool is_started() const;
 
@@ -54,27 +51,10 @@ class QualityScalerResource : public VideoStreamEncoderResource,
   void OnFrameDropped(EncodedImageCallback::DropReason reason);
 
   // QualityScalerQpUsageHandlerInterface implementation.
-  void OnReportQpUsageHigh(
-      rtc::scoped_refptr<QualityScalerQpUsageHandlerCallbackInterface> callback)
-      override;
-  void OnReportQpUsageLow(
-      rtc::scoped_refptr<QualityScalerQpUsageHandlerCallbackInterface> callback)
-      override;
-
-  // AdaptationListener implementation.
-  void OnAdaptationApplied(
-      const VideoStreamInputState& input_state,
-      const VideoSourceRestrictions& restrictions_before,
-      const VideoSourceRestrictions& restrictions_after,
-      rtc::scoped_refptr<Resource> reason_resource) override;
+  void OnReportQpUsageHigh() override;
+  void OnReportQpUsageLow() override;
 
  private:
-  size_t QueuePendingCallback(
-      rtc::scoped_refptr<QualityScalerQpUsageHandlerCallbackInterface>
-          callback);
-  void HandlePendingCallback(size_t callback_id, bool clear_qp_samples);
-  void AbortPendingCallbacks();
-
   // Members accessed on the encoder queue.
   std::unique_ptr<QualityScaler> quality_scaler_
       RTC_GUARDED_BY(encoder_queue());
@@ -83,19 +63,7 @@ class QualityScalerResource : public VideoStreamEncoderResource,
   // make sure underuse reporting is not too spammy.
   absl::optional<int64_t> last_underuse_due_to_disabled_timestamp_ms_
       RTC_GUARDED_BY(encoder_queue());
-  // Every OnReportQpUsageHigh/Low() operation has a callback that MUST be
-  // invoked on the encoder_queue(). Because usage measurements are reported on
-  // the encoder_queue() but handled by the processor on the the
-  // resource_adaptation_queue_(), handling a measurement entails a task queue
-  // "ping" round-trip. Multiple callbacks in-flight is thus possible.
-  size_t num_handled_callbacks_ RTC_GUARDED_BY(encoder_queue());
-  std::queue<rtc::scoped_refptr<QualityScalerQpUsageHandlerCallbackInterface>>
-      pending_callbacks_ RTC_GUARDED_BY(encoder_queue());
-
-  // Members accessed on the adaptation queue.
-  ResourceAdaptationProcessorInterface* adaptation_processor_
-      RTC_GUARDED_BY(resource_adaptation_queue());
-  bool clear_qp_samples_ RTC_GUARDED_BY(resource_adaptation_queue());
+  DegradationPreferenceProvider* const degradation_preference_provider_;
 };
 
 }  // namespace webrtc

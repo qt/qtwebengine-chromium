@@ -64,7 +64,6 @@ class TrackEventParser {
   void ParseCounterDescriptor(TrackId, protozero::ConstBytes);
 
   TraceProcessorContext* context_;
-  ProtoToArgsTable proto_to_args_;
 
   const StringId counter_name_thread_time_id_;
   const StringId counter_name_thread_instruction_count_id_;
@@ -95,6 +94,7 @@ class TrackEventParser {
   const StringId flow_direction_value_inout_id_;
   const StringId chrome_legacy_ipc_class_args_key_id_;
   const StringId chrome_legacy_ipc_line_args_key_id_;
+  const StringId chrome_host_app_package_name_id_;
 
   std::array<StringId, 38> chrome_legacy_ipc_class_ids_;
   std::array<StringId, 9> chrome_process_name_ids_;

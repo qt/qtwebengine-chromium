@@ -271,3 +271,84 @@ static_library("libjpeg") {
     public_deps += [ ":simd" ]
   }
 }
+
+static_library("turbojpeg") {
+  sources = [
+    "turbojpeg.c",
+    "transupp.c",
+    "jdatadst-tj.c",
+    "jdatasrc-tj.c",
+    "rdbmp.c",
+    "rdppm.c",
+    "wrbmp.c",
+    "wrppm.c",
+  ]
+
+  defines = [
+    "WITH_SIMD",
+    "BMP_SUPPORTED",
+    "PPM_SUPPORTED",
+  ]
+
+  configs += [ ":libjpeg_config" ]
+
+  public_configs = [ ":libjpeg_config" ]
+  public_deps = [
+    ":libjpeg",
+  ]
+}
+
+if (build_with_chromium) {
+  import("//testing/test.gni")
+
+  test("libjpeg_turbo_unittests") {
+    testonly = true
+
+    sources = [
+      "cdjpeg.c",
+      "cjpeg.c",
+      "djpeg.c",
+      "gtest/cjpeg-gtest-wrapper.cpp",
+      "gtest/djpeg-gtest-wrapper.cpp",
+      "gtest/gtest-utils.cpp",
+      "gtest/jpegtran-gtest-wrapper.cpp",
+      "gtest/tjbench-gtest-wrapper.cpp",
+      "gtest/tjunittest-gtest-wrapper.cpp",
+      "jpegtran.c",
+      "md5/md5.c",
+      "md5/md5hl.c",
+      "tjbench.c",
+      "tjunittest.c",
+      "tjutil.c",
+      "rdcolmap.c",
+      "rdgif.c",
+      "rdswitch.c",
+    ]
+
+    deps = [
+      ":turbojpeg",
+      "//base",
+      "//testing/gtest",
+      "//testing/gtest:gtest_main",
+    ]
+
+    data = [
+      "testimages/"
+    ]
+
+    defines = [
+      "GTEST",
+      "WITH_SIMD",
+      "BMP_SUPPORTED",
+      "PPM_SUPPORTED",
+    ]
+
+    include_dirs = [
+      "//third_party/googletest/src/googletest/include/gtest",
+      ".",
+    ]
+
+    configs -= [ "//build/config/compiler:chromium_code" ]
+    configs += [ "//build/config/compiler:no_chromium_code" ]
+  }
+}

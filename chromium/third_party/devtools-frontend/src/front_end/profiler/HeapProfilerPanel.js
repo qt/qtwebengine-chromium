@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as SDK from '../sdk/sdk.js';
@@ -81,7 +84,7 @@ export class HeapProfilerPanel extends ProfilesPanel {
    * @return {boolean}
    */
   handleAction(context, actionId) {
-    const panel = self.UI.context.flavor(HeapProfilerPanel);
+    const panel = UI.Context.Context.instance().flavor(HeapProfilerPanel);
     console.assert(panel && panel instanceof HeapProfilerPanel);
     panel.toggleRecord();
     return true;
@@ -91,7 +94,7 @@ export class HeapProfilerPanel extends ProfilesPanel {
    * @override
    */
   wasShown() {
-    self.UI.context.setFlavor(HeapProfilerPanel, this);
+    UI.Context.Context.instance().setFlavor(HeapProfilerPanel, this);
     // Record the memory tool load time.
     Host.userMetrics.panelLoaded('heap_profiler', 'DevTools.Launch.HeapProfiler');
   }
@@ -100,7 +103,7 @@ export class HeapProfilerPanel extends ProfilesPanel {
    * @override
    */
   willHide() {
-    self.UI.context.setFlavor(HeapProfilerPanel, null);
+    UI.Context.Context.instance().setFlavor(HeapProfilerPanel, null);
   }
 
   /**

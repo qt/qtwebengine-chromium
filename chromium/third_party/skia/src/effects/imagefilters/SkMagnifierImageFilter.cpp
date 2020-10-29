@@ -17,7 +17,6 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
 #include "src/gpu/GrColorSpaceXform.h"
 #include "src/gpu/effects/GrTextureEffect.h"
 #include "src/gpu/effects/generated/GrMagnifierEffect.h"
@@ -144,8 +143,9 @@ sk_sp<SkSpecialImage> SkMagnifierImageFilterImpl::onFilterImage(const Context& c
                                           invYZoom,
                                           bounds.width() * invInset,
                                           bounds.height() * invInset);
-        fp = GrColorSpaceXformEffect::Make(std::move(fp), input->getColorSpace(),
-                                           input->alphaType(), ctx.colorSpace());
+        fp = GrColorSpaceXformEffect::Make(std::move(fp),
+                                           input->getColorSpace(), input->alphaType(),
+                                           ctx.colorSpace(), kPremul_SkAlphaType);
         if (!fp) {
             return nullptr;
         }

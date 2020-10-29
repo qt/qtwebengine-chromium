@@ -7,30 +7,48 @@ import {ls} from '../common/common.js';  // eslint-disable-line rulesdir/es_modu
 import {Issue, IssueCategory, IssueDescription, IssueKind} from './Issue.js';  // eslint-disable-line no-unused-vars
 
 /**
- * @param {string} string
- * @return {string}
+ * @param {!Protocol.Audits.BlockedByResponseReason} reason
+ * @return {boolean}
  */
-function toCamelCase(string) {
-  const result = string.replace(/-\p{ASCII}/gu, match => match.substr(1).toUpperCase());
-  return result.replace(/^./, match => match.toUpperCase());
+export function isCrossOriginEmbedderPolicyIssue(reason) {
+  switch (reason) {
+    case Protocol.Audits.BlockedByResponseReason.CoepFrameResourceNeedsCoepHeader:
+      return true;
+    case Protocol.Audits.BlockedByResponseReason.CoopSandboxedIFrameCannotNavigateToCoopPage:
+      return true;
+    case Protocol.Audits.BlockedByResponseReason.CorpNotSameOrigin:
+      return true;
+    case Protocol.Audits.BlockedByResponseReason.CorpNotSameOriginAfterDefaultedToSameOriginByCoep:
+      return true;
+    case Protocol.Audits.BlockedByResponseReason.CorpNotSameSite:
+      return true;
+  }
+  return false;
 }
 
 export class CrossOriginEmbedderPolicyIssue extends Issue {
   /**
-   * @param {string} blockedReason
-   * @param {string} requestId
+   * @param {!Protocol.Audits.BlockedByResponseIssueDetails} issueDetails
    */
-  constructor(blockedReason, requestId) {
-    super(`CrossOriginEmbedderPolicy::${toCamelCase(blockedReason)}`);
-    /** @type {!Protocol.Audits.AffectedRequest} */
-    this._affectedRequest = {requestId};
+  constructor(issueDetails) {
+    super(`CrossOriginEmbedderPolicy::${issueDetails.reason}`);
+    /** @type {!Protocol.Audits.BlockedByResponseIssueDetails} */
+    this._details = issueDetails;
   }
 
   /**
    * @override
    */
   primaryKey() {
-    return `${this.code()}-(${this._affectedRequest.requestId})`;
+    return `${this.code()}-(${this._details.request.requestId})`;
+  }
+
+  /**
+   * @override
+   * @returns {!Iterable<Protocol.Audits.BlockedByResponseIssueDetails>}
+   */
+  blockedByResponseDetails() {
+    return [this._details];
   }
 
   /**
@@ -38,7 +56,7 @@ export class CrossOriginEmbedderPolicyIssue extends Issue {
    * @returns {!Iterable<Protocol.Audits.AffectedRequest>}
    */
   requests() {
-    return [this._affectedRequest];
+    return [this._details.request];
   }
 
   /**
@@ -181,9 +199,9 @@ const issueDescriptions = new Map([
   message: CorpNotSameOriginAfterDefaultedToSameOriginByCoepMessage,
   issueKind: IssueKind.BreakingChange,
   links: [
-    {link: ls`https://web.dev/coop-coep/`,
+    {link: 'https://web.dev/coop-coep/',
      linkTitle: ls`COOP and COEP`},
-    {link: ls`https://web.dev/same-site-same-origin/`,
+    {link: 'https://web.dev/same-site-same-origin/',
      linkTitle: ls`Same-Site and Same-Origin`},
   ],
 }],
@@ -192,7 +210,7 @@ const issueDescriptions = new Map([
   message: CoepFrameResourceNeedsCoepHeaderMessage,
   issueKind: IssueKind.BreakingChange,
   links: [
-    {link: ls`https://web.dev/coop-coep/`,
+    {link: 'https://web.dev/coop-coep/',
      linkTitle: ls`COOP and COEP`},
   ],
 }],
@@ -203,7 +221,7 @@ const issueDescriptions = new Map([
   This protects COOP-enabled documents from inheriting properties from its opener.`),
   issueKind: IssueKind.BreakingChange,
   links: [
-    {link: ls`https://web.dev/coop-coep/`,
+    {link: 'https://web.dev/coop-coep/',
      linkTitle: ls`COOP and COEP`},
   ],
 }],
@@ -212,9 +230,9 @@ const issueDescriptions = new Map([
   message: CorpNotSameSiteMessage,
   issueKind: IssueKind.BreakingChange,
   links: [
-    {link: ls`https://web.dev/coop-coep/`,
+    {link: 'https://web.dev/coop-coep/',
      linkTitle: ls`COOP and COEP`},
-    {link: ls`https://web.dev/same-site-same-origin/`,
+    {link: 'https://web.dev/same-site-same-origin/',
      linkTitle: ls`Same-Site and Same-Origin`},
   ],
 }],
@@ -223,9 +241,9 @@ const issueDescriptions = new Map([
   message: CorpNotSameOriginMessage,
   issueKind: IssueKind.BreakingChange,
   links: [
-    {link: ls`https://web.dev/coop-coep/`,
+    {link: 'https://web.dev/coop-coep/',
      linkTitle: ls`COOP and COEP`},
-    {link: ls`https://web.dev/same-site-same-origin/`,
+    {link: 'https://web.dev/same-site-same-origin/',
      linkTitle: ls`Same-Site and Same-Origin`},
   ],
 }],

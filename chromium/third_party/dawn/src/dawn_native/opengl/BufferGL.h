@@ -29,17 +29,25 @@ namespace dawn_native { namespace opengl {
 
         GLuint GetHandle() const;
 
+        void EnsureDataInitialized();
+        void EnsureDataInitializedAsDestination(uint64_t offset, uint64_t size);
+        void EnsureDataInitializedAsDestination(const CopyTextureToBufferCmd* copy);
+
       private:
         ~Buffer() override;
         // Dawn API
-        MaybeError MapReadAsyncImpl(uint32_t serial) override;
-        MaybeError MapWriteAsyncImpl(uint32_t serial) override;
+        MaybeError MapReadAsyncImpl() override;
+        MaybeError MapWriteAsyncImpl() override;
+        MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
         void UnmapImpl() override;
         void DestroyImpl() override;
 
-        bool IsMapWritable() const override;
-        MaybeError MapAtCreationImpl(uint8_t** mappedPointer) override;
+        bool IsMappableAtCreation() const override;
+        MaybeError MapAtCreationImpl() override;
         void* GetMappedPointerImpl() override;
+        uint64_t GetAppliedSize() const;
+
+        void InitializeToZero();
 
         GLuint mBuffer = 0;
         void* mMappedData = nullptr;

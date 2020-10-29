@@ -34,7 +34,7 @@ config("vulkan_internal_config") {
   if (is_clang || !is_win) {
     cflags = [ "-Wno-unused-function" ]
   }
-  if (is_linux) {
+  if (is_linux || is_mac) {
     defines += [
       "SYSCONFDIR=\"/etc\"",
       "FALLBACK_CONFIG_DIRS=\"/etc/xdg\"",
@@ -51,7 +51,10 @@ config("vulkan_loader_config") {
     "loader/generated",
     "loader",
   ]
-  defines = [ "API_NAME=\"Vulkan\"" ]
+  defines = [
+    "API_NAME=\"Vulkan\"",
+    "USE_UNSAFE_FILE_SEARCH=1",
+  ]
 
   if (is_win) {
     cflags = [ "/wd4201" ]
@@ -94,9 +97,11 @@ if (!is_android) {
       "loader/wsi.h",
     ]
     if (is_win) {
+      output_name = "vulkan-1"
       sources += [
         "loader/dirent_on_windows.c",
         "loader/dirent_on_windows.h",
+        "loader/vulkan-1.def",
       ]
       if (!is_clang) {
         cflags = [
@@ -105,21 +110,37 @@ if (!is_android) {
           "/wd4100",  # Unreferenced formal parameter
           "/wd4152",  # Nonstandard extension used (pointer conversion)
           "/wd4201",  # Nonstandard extension used: nameless struct/union
-          "/wd4214",  # Nonstandard extension used: bit field types other than int
-          "/wd4232",  # Nonstandard extension used: address of dllimport is not static
+          "/wd4214",  # Nonstandard extension used: bit field types other than
+                      # int
+          "/wd4232",  # Nonstandard extension used: address of dllimport is not
+                      # static
           "/wd4305",  # Type cast truncation
           "/wd4706",  # Assignment within conditional expression
           "/wd4996",  # Unsafe stdlib function
         ]
       }
+      if (is_clang) {
+        cflags = [ "-Wno-incompatible-pointer-types" ]
+      }
+      libs = [ "Cfgmgr32.lib" ]
     }
-    public_deps = [
-      "$vulkan_headers_dir:vulkan_headers",
-    ]
+    if (is_mac) {
+      frameworks = [ "CoreFoundation.framework" ]
+    }
+    public_deps = [ "$vulkan_headers_dir:vulkan_headers" ]
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [ "//build/config/compiler:no_chromium_code" ]
     configs += [ ":vulkan_internal_config" ]
     public_configs = [ ":vulkan_loader_config" ]
     configs -= vulkan_undefine_configs
+  }
+
+  if (is_linux && vulkan_loader_shared) {
+    copy("libvulkan-abi1") {
+      sources = [ "${root_out_dir}/libvulkan.so" ]
+      outputs = [ "${root_out_dir}/libvulkan.so.1" ]
+
+      deps = [ ":libvulkan" ]
+    }
   }
 }

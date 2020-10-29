@@ -258,7 +258,7 @@ static int query_formats(AVFilterContext *ctx)
     if (ret < 0)
         return ret;
 
-    layouts = avfilter_make_format64_list(chlayouts);
+    layouts = ff_make_format64_list(chlayouts);
     if (!layouts)
         return AVERROR(ENOMEM);
     ret = ff_set_common_channel_layouts(ctx, layouts);
@@ -415,8 +415,6 @@ static int aeval_config_output(AVFilterLink *outlink)
 
     return 0;
 }
-
-#define TS2T(ts, tb) ((ts) == AV_NOPTS_VALUE ? NAN : (double)(ts)*av_q2d(tb))
 
 static int filter_frame(AVFilterLink *inlink, AVFrame *in)
 {

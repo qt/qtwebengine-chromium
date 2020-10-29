@@ -32,7 +32,7 @@ We prefer no trailing whitespace but aren't very strict about it.
 
 We wrap lines at 100 columns unless it is excessively ugly (use your judgement).
 The soft line length limit was changed from 80 to 100 columns in June 2012. Thus,
-most files still adhere to the 80 column limit. It is not necessary or worth
+many files still adhere to the 80 column limit. It is not necessary or worth
 significant effort to promote 80 column wrapped files to 100 columns. Please
 don't willy-nilly insert longer lines in 80 column wrapped files. Either be
 consistent with the surrounding code or, if you really feel the need, promote
@@ -83,7 +83,18 @@ int herdCats(const Array& cats) {
 }
 ~~~~
 
-Enum values are prefixed with k. Unscoped enum values are post fixed with
+Variables declared `constexpr` or `const`, and whose value is fixed for the
+duration of the program, are named with a leading "k" and then camel-capped.
+
+<!--?prettify?-->
+~~~~
+int drawPicture() {
+    constexpr SkISize kPictureSize = {100, 100};
+    constexpr float kZoom = 1.0f;
+}
+~~~~
+
+Enum values are also prefixed with k. Unscoped enum values are postfixed with
 an underscore and singular name of the enum name. The enum itself should be
 singular for exclusive values or plural for a bitfield. If a count is needed it
 is  `k<singular enum name>Count` and not be a member of the enum (see example),
@@ -91,6 +102,7 @@ or a kLast member of the enum is fine too.
 
 <!--?prettify?-->
 ~~~~
+// Enum class does not need suffixes.
 enum class SkPancakeType {
      kBlueberry,
      kPlain,
@@ -100,28 +112,26 @@ enum class SkPancakeType {
 
 <!--?prettify?-->
 ~~~~
-enum SkPancakeType {
-     kBlueberry_PancakeType,
-     kPlain_PancakeType,
-     kChocolateChip_PancakeType,
+// Enum should have a suffix after the enum name.
+enum SkDonutType {
+     kGlazed_DonutType,
+     kSprinkles_DonutType,
+     kChocolate_DonutType,
+     kMaple_DonutType,
 
-     kLast_PancakeType = kChocolateChip_PancakeType
+     kLast_DonutType = kMaple_DonutType
 };
 
-static const SkPancakeType kPancakeTypeCount = kLast_PancakeType + 1;
+static const SkDonutType kDonutTypeCount = kLast_DonutType + 1;
 ~~~~
-
-A bitfield:
 
 <!--?prettify?-->
 ~~~~
 enum SkSausageIngredientBits {
-    kFennel_SuasageIngredientBit = 0x1,
+    kFennel_SausageIngredientBit = 0x1,
     kBeef_SausageIngredientBit   = 0x2
 };
 ~~~~
-
-or:
 
 <!--?prettify?-->
 ~~~~
@@ -129,13 +139,6 @@ enum SkMatrixFlags {
     kTranslate_MatrixFlag = 0x1,
     kRotate_MatrixFlag    = 0x2
 };
-~~~~
-
-Exception: anonymous enums can be used to declare integral constants, e.g.:
-
-<!--?prettify?-->
-~~~~
-enum { kFavoriteNumber = 7 };
 ~~~~
 
 Macros are all caps with underscores between words. Macros that have greater
@@ -270,15 +273,21 @@ switch (color) {
 }
 ~~~~
 
-Fallthrough from one case to the next is commented unless it is trivial:
+Fallthrough from one case to the next is annotated with `[[fallthrough]]`.
+However, when multiple case statements in a row are used, they do not need the
+`[[fallthrough]]` annotation.
 
 <!--?prettify?-->
 ~~~~
 switch (recipe) {
     ...
+    case kSmallCheesePizza_Recipe:
+    case kLargeCheesePizza_Recipe:
+        ingredients |= kCheese_Ingredient | kDough_Ingredient | kSauce_Ingredient;
+        break;
     case kCheeseOmelette_Recipe:
         ingredients |= kCheese_Ingredient;
-        // fallthrough
+        [[fallthrough]]
     case kPlainOmelette_Recipe:
         ingredients |= (kEgg_Ingredient | kMilk_Ingredient);
         break;
@@ -391,6 +400,52 @@ Method calls within method calls should be prefixed with dereference of the
 <!--?prettify?-->
 ~~~~
 this->method();
+~~~~
+
+A common pattern for virtual methods in Skia is to include a public non-virtual
+(or final) method, paired with a private virtual method named "onMethodName".
+This ensures that the base-class method is always invoked and gives it control
+over how the virtual method is used, rather than relying on each subclass to
+call `INHERITED::onMethodName`. For example:
+
+<!--?prettify?-->
+~~~~
+class SkSandwich {
+public:
+    void assemble() {
+        // All sandwiches must have bread on the top and bottom.
+        this->addIngredient(kBread_Ingredient);
+        this->onAssemble();
+        this->addIngredient(kBread_Ingredient);
+    }
+    bool cook() {
+        return this->onCook();
+    }
+
+private:
+    // All sandwiches must implement onAssemble.
+    virtual void onAssemble() = 0;
+    // Sandwiches can remain uncooked by default.
+    virtual bool onCook() { return true; }
+};
+
+class SkGrilledCheese : public SkSandwich {
+private:
+    void onAssemble() override {
+        this->addIngredient(kCheese_Ingredient);
+    }
+    bool onCook() override {
+        return this->toastOnGriddle();
+    }
+};
+
+class SkPeanutButterAndJelly : public SkSandwich {
+private:
+    void onAssemble() override {
+        this->addIngredient(kPeanutButter_Ingredient);
+        this->addIngredient(kGrapeJelly_Ingredient);
+    }
+};
 ~~~~
 
 Integer Types

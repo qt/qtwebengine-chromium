@@ -22,28 +22,39 @@
 
 namespace dawn_native { namespace metal {
 
+    class CommandRecordingContext;
     class Device;
 
     class Buffer : public BufferBase {
       public:
-        static ResultOrError<Buffer*> Create(Device* device, const BufferDescriptor* descriptor);
+        static ResultOrError<Ref<Buffer>> Create(Device* device,
+                                                 const BufferDescriptor* descriptor);
         id<MTLBuffer> GetMTLBuffer() const;
+
+        void EnsureDataInitialized(CommandRecordingContext* commandContext);
+        void EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                uint64_t offset,
+                                                uint64_t size);
+        void EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                const CopyTextureToBufferCmd* copy);
 
       private:
         using BufferBase::BufferBase;
         MaybeError Initialize();
         ~Buffer() override;
         // Dawn API
-        MaybeError MapReadAsyncImpl(uint32_t serial) override;
-        MaybeError MapWriteAsyncImpl(uint32_t serial) override;
+        MaybeError MapReadAsyncImpl() override;
+        MaybeError MapWriteAsyncImpl() override;
+        MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
         void UnmapImpl() override;
         void DestroyImpl() override;
         void* GetMappedPointerImpl() override;
 
-        bool IsMapWritable() const override;
-        MaybeError MapAtCreationImpl(uint8_t** mappedPointer) override;
+        bool IsMappableAtCreation() const override;
+        MaybeError MapAtCreationImpl() override;
 
-        void ClearBuffer(BufferBase::ClearValue clearValue);
+        void InitializeToZero(CommandRecordingContext* commandContext);
+        void ClearBuffer(CommandRecordingContext* commandContext, uint8_t clearValue);
 
         id<MTLBuffer> mMtlBuffer = nil;
     };

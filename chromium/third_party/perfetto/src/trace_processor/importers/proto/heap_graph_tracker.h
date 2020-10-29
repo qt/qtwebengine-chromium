@@ -61,7 +61,6 @@ void FindPathFromRoot(const TraceStorage& s,
                       tables::HeapGraphObjectTable::Id id,
                       PathFromRoot* path);
 
-base::Optional<std::string> PackageFromLocation(base::StringView location);
 base::Optional<base::StringView> GetStaticClassTypeName(base::StringView type);
 size_t NumberOfArrays(base::StringView type);
 NormalizedType GetNormalizedType(base::StringView type);
@@ -74,14 +73,12 @@ class HeapGraphTracker : public Destructible {
   struct SourceObject {
     // All ids in this are in the trace iid space, not in the trace processor
     // id space.
-    struct Reference {
-      uint64_t field_name_id = 0;
-      uint64_t owned_object_id = 0;
-    };
     uint64_t object_id = 0;
     uint64_t self_size = 0;
     uint64_t type_id = 0;
-    std::vector<Reference> references;
+
+    std::vector<uint64_t> field_name_ids;
+    std::vector<uint64_t> referred_objects;
   };
 
   struct SourceRoot {
@@ -100,13 +97,14 @@ class HeapGraphTracker : public Destructible {
 
   void AddRoot(uint32_t seq_id, UniquePid upid, int64_t ts, SourceRoot root);
   void AddObject(uint32_t seq_id, UniquePid upid, int64_t ts, SourceObject obj);
-  void AddInternedTypeName(uint32_t seq_id,
-                           uint64_t intern_id,
-                           StringPool::Id strid);
   void AddInternedType(uint32_t seq_id,
                        uint64_t intern_id,
                        StringPool::Id strid,
-                       uint64_t location_id);
+                       uint64_t location_id,
+                       uint64_t object_size,
+                       std::vector<uint64_t> field_name_ids,
+                       uint64_t superclass_id,
+                       bool no_fields);
   void AddInternedFieldName(uint32_t seq_id,
                             uint64_t intern_id,
                             base::StringView str);
@@ -118,12 +116,6 @@ class HeapGraphTracker : public Destructible {
 
   ~HeapGraphTracker() override;
   void NotifyEndOfFile();
-
-  void AddDeobfuscationMapping(base::Optional<StringPool::Id> package_name,
-                               StringPool::Id obfuscated_name,
-                               StringPool::Id deobfuscated_name);
-  StringPool::Id MaybeDeobfuscate(base::Optional<StringPool::Id> package_name,
-                                  StringPool::Id);
 
   const std::vector<tables::HeapGraphClassTable::Id>* RowsForType(
       base::Optional<StringPool::Id> package_name,
@@ -145,9 +137,6 @@ class HeapGraphTracker : public Destructible {
       const int64_t current_ts,
       const UniquePid current_upid);
 
-  // public for testing.
-  base::Optional<std::string> PackageFromLocation(base::StringView location);
-
  private:
   struct InternedField {
     StringPool::Id name;
@@ -156,6 +145,10 @@ class HeapGraphTracker : public Destructible {
   struct InternedType {
     StringPool::Id name;
     base::Optional<uint64_t> location_id;
+    uint64_t object_size;
+    std::vector<uint64_t> field_name_ids;
+    uint64_t superclass_id;
+    bool no_fields;
   };
   struct SequenceState {
     UniquePid current_upid = 0;
@@ -167,7 +160,18 @@ class HeapGraphTracker : public Destructible {
     std::map<uint64_t, tables::HeapGraphClassTable::Id> type_id_to_db_id;
     std::map<uint64_t, std::vector<tables::HeapGraphReferenceTable::Id>>
         references_for_field_name_id;
+    std::map<uint64_t, InternedField> interned_fields;
+    std::map<tables::HeapGraphClassTable::Id,
+             std::vector<tables::HeapGraphObjectTable::Id>>
+        deferred_reference_objects_for_type_;
     base::Optional<uint64_t> prev_index;
+    // For most objects, we need not store the size in the object's message
+    // itself, because all instances of the type have the same type. In this
+    // case, we defer setting self_size in the table until we process the class
+    // message in FinalizeProfile.
+    std::map<tables::HeapGraphClassTable::Id,
+             std::vector<tables::HeapGraphObjectTable::Id>>
+        deferred_size_objects_for_type_;
   };
 
   SequenceState& GetOrCreateSequence(uint32_t seq_id);
@@ -177,6 +181,9 @@ class HeapGraphTracker : public Destructible {
   tables::HeapGraphClassTable::Id GetOrInsertType(SequenceState* sequence_state,
                                                   uint64_t type_id);
   bool SetPidAndTimestamp(SequenceState* seq, UniquePid upid, int64_t ts);
+  void PopulateSuperClasses(const SequenceState& seq);
+  InternedType* GetSuperClass(SequenceState* sequence_state,
+                              const InternedType* current_type);
 
   TraceProcessorContext* const context_;
   std::map<uint32_t, SequenceState> sequence_state_;

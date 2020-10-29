@@ -28,8 +28,12 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
+import * as Emulation from '../emulation/emulation.js';
 import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';  // eslint-disable-line no-unused-vars
@@ -68,6 +72,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (this._node.nodeType() === Node.ELEMENT_NODE && !isClosingTag) {
       this._canAddAttributes = true;
     }
+    /** @type {?string} */
     this._searchQuery = null;
     this._expandedChildrenLimit = InitialChildrenLimit;
     this._decorationsThrottler = new Common.Throttler.Throttler(100);
@@ -76,12 +81,18 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       this._adornerContainer = this.listItemElement.createChild('div', 'adorner-container hidden');
       /** @type {!Array<!Adorner>} */
       this._adorners = [];
+      /** @type {!Array<!Adorner>} */
+      this._styleAdorners = [];
       this._adornersThrottler = new Common.Throttler.Throttler(100);
 
       if (Root.Runtime.experiments.isEnabled('cssGridFeatures')) {
         // This flag check is put here because currently the only style adorner is Grid;
         // we will refactor this logic when we have more style-related adorners
-        this._updateStyleAdorners();
+        this.updateStyleAdorners();
+      }
+      if (node.isAdFrameNode()) {
+        const adorner = this.adornText('Ad', AdornerCategories.Security);
+        adorner.title = ls`This frame was identified as an ad frame`;
       }
     }
 
@@ -627,6 +638,11 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     contextMenu.viewSection().appendItem(ls`Expand recursively`, this.expandRecursively.bind(this));
     contextMenu.viewSection().appendItem(ls`Collapse children`, this.collapseChildren.bind(this));
+    const deviceModeWrapperAction = new Emulation.DeviceModeWrapper.ActionDelegate();
+    contextMenu.viewSection().appendItem(
+        ls`Capture node screenshot`,
+        deviceModeWrapperAction.handleAction.bind(
+            null, UI.Context.Context.instance(), 'emulation.capture-node-screenshot'));
   }
 
   _startEditing() {
@@ -1537,6 +1553,8 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const tagNameElement =
         tagElement.createChild('span', isClosingTag ? 'webkit-html-close-tag-name' : 'webkit-html-tag-name');
     tagNameElement.textContent = (isClosingTag ? '/' : '') + tagName;
+    // Force screen readers to consider the tagname as one label, this avoids announcing <div id> as one word "divid".
+    UI.ARIAUtils.setAccessibleName(tagNameElement, tagName);
     if (!isClosingTag) {
       if (node.hasAttributes()) {
         const attributes = node.attributes();
@@ -1858,7 +1876,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
   _editAsHTML() {
     const promise = Common.Revealer.reveal(this.node());
-    promise.then(() => self.UI.actionRegistry.action('elements.edit-as-html').execute());
+    promise.then(() => UI.ActionRegistry.ActionRegistry.instance().action('elements.edit-as-html').execute());
   }
 
   // TODO: add unit tests for adorner-related methods after component and TypeScript works are done
@@ -1930,17 +1948,58 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return Promise.resolve();
   }
 
-  async _updateStyleAdorners() {
+  async updateStyleAdorners() {
+    if (this._isClosingTag) {
+      return;
+    }
+
     const node = this.node();
-    const styles = await node.domModel().cssModel().computedStylePromise(node.id);
+    const nodeId = node.id;
+    if (node.nodeType() === Node.COMMENT_NODE || nodeId === undefined) {
+      return;
+    }
+
+    for (const styleAdorner of this._styleAdorners) {
+      this.removeAdorner(styleAdorner);
+    }
+    this._styleAdorners = [];
+
+    const styles = await node.domModel().cssModel().computedStylePromise(nodeId);
     if (!styles) {
       return;
     }
 
-    if (styles.get('display') === 'grid') {
+    const display = styles.get('display');
+    if (display === 'grid' || display === 'inline-grid') {
       const gridAdorner = this.adornText('grid', AdornerCategories.Layout);
       gridAdorner.classList.add('grid');
-      // TODO(changhaohan): enable interactivity once persistent overlay is implemented
+      const onClick = /** @type {!EventListener} */ (() => {
+        if (gridAdorner.isActive()) {
+          node.domModel().overlayModel().highlightGridInPersistentOverlay(nodeId);
+        } else {
+          node.domModel().overlayModel().hideGridInPersistentOverlay(nodeId);
+        }
+      });
+      gridAdorner.addInteraction(onClick, {
+        isToggle: true,
+        shouldPropagateOnKeydown: false,
+        ariaLabelDefault: ls`Enable grid mode`,
+        ariaLabelActive: ls`Disable grid mode`,
+      });
+
+      this._styleAdorners.push(gridAdorner);
+
+      node.domModel().overlayModel().addEventListener(SDK.OverlayModel.Events.PersistentGridOverlayCleared, () => {
+        gridAdorner.toggle(false /* force inactive state */);
+      });
+      node.domModel().overlayModel().addEventListener(
+          SDK.OverlayModel.Events.PersistentGridOverlayStateChanged, event => {
+            const {nodeId: eventNodeId, enabled} = event.data;
+            if (eventNodeId !== nodeId) {
+              return;
+            }
+            gridAdorner.toggle(enabled);
+          });
     }
   }
 }

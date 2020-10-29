@@ -30,6 +30,7 @@
 #include "bytestream.h"
 #include "internal.h"
 #include "packet.h"
+#include "packet_internal.h"
 
 void av_init_packet(AVPacket *pkt)
 {
@@ -128,7 +129,8 @@ int av_grow_packet(AVPacket *pkt, int grow_by)
                 return AVERROR(ENOMEM);
         }
 
-        if (new_size + data_offset > pkt->buf->size) {
+        if (new_size + data_offset > pkt->buf->size ||
+            !av_buffer_is_writable(pkt->buf)) {
             int ret = av_buffer_realloc(&pkt->buf, new_size + data_offset);
             if (ret < 0) {
                 pkt->data = old_data;
@@ -395,8 +397,10 @@ const char *av_packet_side_data_name(enum AVPacketSideDataType type)
     case AV_PKT_DATA_ENCRYPTION_INIT_INFO:       return "Encryption initialization data";
     case AV_PKT_DATA_ENCRYPTION_INFO:            return "Encryption info";
     case AV_PKT_DATA_AFD:                        return "Active Format Description data";
+    case AV_PKT_DATA_PRFT:                       return "Producer Reference Time";
     case AV_PKT_DATA_ICC_PROFILE:                return "ICC Profile";
     case AV_PKT_DATA_DOVI_CONF:                  return "DOVI configuration record";
+    case AV_PKT_DATA_S12M_TIMECODE:              return "SMPTE ST 12-1:2014 timecode";
     }
     return NULL;
 }

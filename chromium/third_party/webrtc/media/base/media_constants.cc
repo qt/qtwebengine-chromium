@@ -111,11 +111,17 @@ const char kH264FmtpProfileLevelId[] = "profile-level-id";
 const char kH264FmtpLevelAsymmetryAllowed[] = "level-asymmetry-allowed";
 const char kH264FmtpPacketizationMode[] = "packetization-mode";
 const char kH264FmtpSpropParameterSets[] = "sprop-parameter-sets";
+const char kH264FmtpSpsPpsIdrInKeyframe[] = "sps-pps-idr-in-keyframe";
 const char kH264ProfileLevelConstrainedBaseline[] = "42e01f";
+const char kH264ProfileLevelConstrainedHigh[] = "640c1f";
 
 const int kDefaultVideoMaxFramerate = 60;
 
 const size_t kConferenceMaxNumSpatialLayers = 3;
 const size_t kConferenceMaxNumTemporalLayers = 3;
 const size_t kConferenceDefaultNumTemporalLayers = 3;
+
+// RFC 3556 and RFC 3890
+const char kApplicationSpecificBandwidth[] = "AS";
+const char kTransportSpecificBandwidth[] = "TIAS";
 }  // namespace cricket

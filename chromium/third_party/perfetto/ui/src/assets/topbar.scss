@@ -189,8 +189,18 @@
     }
 }
 
+.error {
+    position: absolute;
+    right: 10px;
+    color: #EF6C00;
+    &:hover {
+        cursor:pointer;
+    }
+}
+
 .helpful-hint {
   position: absolute;
+  z-index: 10;
   right: 5px;
   top: 5px;
   width: 300px;

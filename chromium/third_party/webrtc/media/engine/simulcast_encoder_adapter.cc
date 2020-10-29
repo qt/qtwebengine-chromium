@@ -103,8 +103,8 @@ int VerifyCodec(const webrtc::VideoCodec* inst) {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-bool StreamResolutionCompare(const webrtc::SimulcastStream& a,
-                             const webrtc::SimulcastStream& b) {
+bool StreamResolutionCompare(const webrtc::SpatialLayer& a,
+                             const webrtc::SpatialLayer& b) {
   return std::tie(a.height, a.width, a.maxBitrate, a.maxFramerate) <
          std::tie(b.height, b.width, b.maxBitrate, b.maxFramerate);
 }
@@ -120,10 +120,9 @@ class AdapterEncodedImageCallback : public webrtc::EncodedImageCallback {
 
   EncodedImageCallback::Result OnEncodedImage(
       const webrtc::EncodedImage& encoded_image,
-      const webrtc::CodecSpecificInfo* codec_specific_info,
-      const webrtc::RTPFragmentationHeader* fragmentation) override {
+      const webrtc::CodecSpecificInfo* codec_specific_info) override {
     return adapter_->OnEncodedImage(stream_idx_, encoded_image,
-                                    codec_specific_info, fragmentation);
+                                    codec_specific_info);
   }
 
  private:
@@ -559,15 +558,14 @@ void SimulcastEncoderAdapter::OnLossNotification(
 EncodedImageCallback::Result SimulcastEncoderAdapter::OnEncodedImage(
     size_t stream_idx,
     const EncodedImage& encodedImage,
-    const CodecSpecificInfo* codecSpecificInfo,
-    const RTPFragmentationHeader* fragmentation) {
+    const CodecSpecificInfo* codecSpecificInfo) {
   EncodedImage stream_image(encodedImage);
   CodecSpecificInfo stream_codec_specific = *codecSpecificInfo;
 
   stream_image.SetSpatialIndex(stream_idx);
 
-  return encoded_complete_callback_->OnEncodedImage(
-      stream_image, &stream_codec_specific, fragmentation);
+  return encoded_complete_callback_->OnEncodedImage(stream_image,
+                                                    &stream_codec_specific);
 }
 
 void SimulcastEncoderAdapter::PopulateStreamCodec(
@@ -619,6 +617,10 @@ void SimulcastEncoderAdapter::PopulateStreamCodec(
   // TODO(ronghuawu): what to do with targetBitrate.
 
   stream_codec->startBitrate = start_bitrate_kbps;
+
+  // Legacy screenshare mode is only enabled for the first simulcast layer
+  stream_codec->legacy_conference_mode =
+      inst.legacy_conference_mode && stream_index == 0;
 }
 
 bool SimulcastEncoderAdapter::Initialized() const {

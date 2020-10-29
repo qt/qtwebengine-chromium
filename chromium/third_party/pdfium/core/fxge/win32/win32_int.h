@@ -23,6 +23,7 @@
 
 class CFX_ImageRenderer;
 class TextCharPos;
+struct CFX_FillRenderOptions;
 struct WINDIB_Open_Args_;
 
 RetainPtr<CFX_DIBitmap> FX_WindowsDIB_LoadFromBuf(BITMAPINFO* pbmi,
@@ -49,7 +50,7 @@ class CGdiplusExt {
                 const CFX_GraphStateData* pGraphState,
                 uint32_t fill_argb,
                 uint32_t stroke_argb,
-                int fill_mode);
+                const CFX_FillRenderOptions& fill_options);
 
   RetainPtr<CFX_DIBitmap> LoadDIBitmap(WINDIB_Open_Args_ args);
 
@@ -85,7 +86,7 @@ class CGdiDeviceDriver : public RenderDeviceDriverIface {
   void SetBaseClip(const FX_RECT& rect) override;
   bool SetClip_PathFill(const CFX_PathData* pPathData,
                         const CFX_Matrix* pObject2Device,
-                        int fill_mode) override;
+                        const CFX_FillRenderOptions& fill_options) override;
   bool SetClip_PathStroke(const CFX_PathData* pPathData,
                           const CFX_Matrix* pObject2Device,
                           const CFX_GraphStateData* pGraphState) override;
@@ -94,7 +95,7 @@ class CGdiDeviceDriver : public RenderDeviceDriverIface {
                 const CFX_GraphStateData* pGraphState,
                 uint32_t fill_color,
                 uint32_t stroke_color,
-                int fill_mode,
+                const CFX_FillRenderOptions& fill_options,
                 BlendMode blend_type) override;
   bool FillRectWithBlend(const FX_RECT& rect,
                          uint32_t fill_color,
@@ -212,7 +213,8 @@ class CGdiPrinterDriver final : public CGdiDeviceDriver {
                       CFX_Font* pFont,
                       const CFX_Matrix& mtObject2Device,
                       float font_size,
-                      uint32_t color) override;
+                      uint32_t color,
+                      const CFX_TextRenderOptions& options) override;
 
   const int m_HorzSize;
   const int m_VertSize;
@@ -236,7 +238,7 @@ class CPSPrinterDriver final : public RenderDeviceDriverIface {
   void RestoreState(bool bKeepSaved) override;
   bool SetClip_PathFill(const CFX_PathData* pPathData,
                         const CFX_Matrix* pObject2Device,
-                        int fill_mode) override;
+                        const CFX_FillRenderOptions& fill_options) override;
   bool SetClip_PathStroke(const CFX_PathData* pPathData,
                           const CFX_Matrix* pObject2Device,
                           const CFX_GraphStateData* pGraphState) override;
@@ -245,7 +247,7 @@ class CPSPrinterDriver final : public RenderDeviceDriverIface {
                 const CFX_GraphStateData* pGraphState,
                 uint32_t fill_color,
                 uint32_t stroke_color,
-                int fill_mode,
+                const CFX_FillRenderOptions& fill_options,
                 BlendMode blend_type) override;
   bool GetClipBox(FX_RECT* pRect) override;
   bool SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
@@ -275,7 +277,8 @@ class CPSPrinterDriver final : public RenderDeviceDriverIface {
                       CFX_Font* pFont,
                       const CFX_Matrix& mtObject2Device,
                       float font_size,
-                      uint32_t color) override;
+                      uint32_t color,
+                      const CFX_TextRenderOptions& options) override;
 
   HDC m_hDC;
   const bool m_bCmykOutput;
@@ -300,7 +303,7 @@ class CTextOnlyPrinterDriver final : public RenderDeviceDriverIface {
   void RestoreState(bool bKeepSaved) override {}
   bool SetClip_PathFill(const CFX_PathData* pPathData,
                         const CFX_Matrix* pObject2Device,
-                        int fill_mode) override;
+                        const CFX_FillRenderOptions& fill_options) override;
   bool SetClip_PathStroke(const CFX_PathData* pPathData,
                           const CFX_Matrix* pObject2Device,
                           const CFX_GraphStateData* pGraphState) override;
@@ -309,7 +312,7 @@ class CTextOnlyPrinterDriver final : public RenderDeviceDriverIface {
                 const CFX_GraphStateData* pGraphState,
                 uint32_t fill_color,
                 uint32_t stroke_color,
-                int fill_mode,
+                const CFX_FillRenderOptions& fill_options,
                 BlendMode blend_type) override;
   bool GetClipBox(FX_RECT* pRect) override;
   bool SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
@@ -339,7 +342,8 @@ class CTextOnlyPrinterDriver final : public RenderDeviceDriverIface {
                       CFX_Font* pFont,
                       const CFX_Matrix& mtObject2Device,
                       float font_size,
-                      uint32_t color) override;
+                      uint32_t color,
+                      const CFX_TextRenderOptions& options) override;
 
   HDC m_hDC;
   const int m_Width;

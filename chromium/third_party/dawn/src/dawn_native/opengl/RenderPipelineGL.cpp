@@ -43,14 +43,15 @@ namespace dawn_native { namespace opengl {
         void ApplyFrontFaceAndCulling(const OpenGLFunctions& gl,
                                       wgpu::FrontFace face,
                                       wgpu::CullMode mode) {
+            // Note that we invert winding direction in OpenGL. Because Y axis is up in OpenGL,
+            // which is different from WebGPU and other backends (Y axis is down).
+            GLenum direction = (face == wgpu::FrontFace::CCW) ? GL_CW : GL_CCW;
+            gl.FrontFace(direction);
+
             if (mode == wgpu::CullMode::None) {
                 gl.Disable(GL_CULL_FACE);
             } else {
                 gl.Enable(GL_CULL_FACE);
-                // Note that we invert winding direction in OpenGL. Because Y axis is up in OpenGL,
-                // which is different from WebGPU and other backends (Y axis is down).
-                GLenum direction = (face == wgpu::FrontFace::CCW) ? GL_CW : GL_CCW;
-                gl.FrontFace(direction);
 
                 GLenum cullMode = (mode == wgpu::CullMode::Front) ? GL_FRONT : GL_BACK;
                 gl.CullFace(cullMode);
@@ -256,6 +257,13 @@ namespace dawn_native { namespace opengl {
         ApplyFrontFaceAndCulling(gl, GetFrontFace(), GetCullMode());
 
         ApplyDepthStencilState(gl, GetDepthStencilStateDescriptor(), &persistentPipelineState);
+
+        gl.SampleMaski(0, GetSampleMask());
+        if (IsAlphaToCoverageEnabled()) {
+            gl.Enable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        } else {
+            gl.Disable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        }
 
         for (uint32_t attachmentSlot : IterateBitSet(GetColorAttachmentsMask())) {
             ApplyColorState(gl, attachmentSlot, GetColorStateDescriptor(attachmentSlot));

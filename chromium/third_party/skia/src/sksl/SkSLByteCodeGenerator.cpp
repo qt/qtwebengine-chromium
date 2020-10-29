@@ -191,7 +191,6 @@ std::unique_ptr<ByteCodeFunction> ByteCodeGenerator::writeFunction(const Functio
         SkASSERT(fStackCount == 0);
     }
     this->write(ByteCodeInstruction::kReturn, 0);
-    this->write8(0);
 
     result->fLocalCount     = fLocals.size();
     result->fConditionCount = fMaxConditionCount;
@@ -265,128 +264,90 @@ int ByteCodeGenerator::StackUsage(ByteCodeInstruction inst, int count_) {
 
     switch (inst) {
         // Unary functions/operators that don't change stack depth at all:
-#define VECTOR_UNARY_OP(base)                \
-        case ByteCodeInstruction::base:      \
-        case ByteCodeInstruction::base ## 2: \
-        case ByteCodeInstruction::base ## 3: \
-        case ByteCodeInstruction::base ## 4: \
-            return 0;
 
-        VECTOR_UNARY_OP(kConvertFtoI)
-        VECTOR_UNARY_OP(kConvertStoF)
-        VECTOR_UNARY_OP(kConvertUtoF)
+#define VEC_UNARY(inst) case ByteCodeInstruction::inst: return count - count;
 
-        VECTOR_UNARY_OP(kATan)
-        VECTOR_UNARY_OP(kCeil)
-        VECTOR_UNARY_OP(kCos)
-        VECTOR_UNARY_OP(kFloor)
-        VECTOR_UNARY_OP(kFract)
-        VECTOR_UNARY_OP(kSin)
-        VECTOR_UNARY_OP(kSqrt)
-        VECTOR_UNARY_OP(kTan)
+        VEC_UNARY(kConvertFtoI)
+        VEC_UNARY(kConvertStoF)
+        VEC_UNARY(kConvertUtoF)
 
-        VECTOR_UNARY_OP(kNegateF)
-        VECTOR_UNARY_OP(kNegateI)
-        VECTOR_UNARY_OP(kNotB)
+        VEC_UNARY(kATan)
+        VEC_UNARY(kCeil)
+        VEC_UNARY(kCos)
+        VEC_UNARY(kFloor)
+        VEC_UNARY(kFract)
+        VEC_UNARY(kSin)
+        VEC_UNARY(kSqrt)
+        VEC_UNARY(kTan)
+
+        VEC_UNARY(kNegateF)
+        VEC_UNARY(kNegateI)
+        VEC_UNARY(kNotB)
+
+#undef VEC_UNARY
 
         case ByteCodeInstruction::kInverse2x2:
         case ByteCodeInstruction::kInverse3x3:
         case ByteCodeInstruction::kInverse4x4: return 0;
 
-        case ByteCodeInstruction::kClampIndex: return 0;
-        case ByteCodeInstruction::kNegateFN: return 0;
-        case ByteCodeInstruction::kShiftLeft: return 0;
+        case ByteCodeInstruction::kClampIndex:  return 0;
+        case ByteCodeInstruction::kShiftLeft:   return 0;
         case ByteCodeInstruction::kShiftRightS: return 0;
         case ByteCodeInstruction::kShiftRightU: return 0;
 
-#undef VECTOR_UNARY_OP
+        // Binary functions/operators that do a 2 -> 1 reduction, N times
+        case ByteCodeInstruction::kAndB: return -count;
+        case ByteCodeInstruction::kOrB:  return -count;
+        case ByteCodeInstruction::kXorB: return -count;
 
-        // Binary functions/operators that do a 2 -> 1 reduction (possibly N times)
-#define VECTOR_BINARY_OP(base)                          \
-        case ByteCodeInstruction::base:      return -1; \
-        case ByteCodeInstruction::base ## 2: return -2; \
-        case ByteCodeInstruction::base ## 3: return -3; \
-        case ByteCodeInstruction::base ## 4: return -4;
+        case ByteCodeInstruction::kAddI: return -count;
+        case ByteCodeInstruction::kAddF: return -count;
 
-#define VECTOR_MATRIX_BINARY_OP(base)                   \
-        VECTOR_BINARY_OP(base)                          \
-        case ByteCodeInstruction::base ## N: return -count;
+        case ByteCodeInstruction::kCompareIEQ:   return -count;
+        case ByteCodeInstruction::kCompareFEQ:   return -count;
+        case ByteCodeInstruction::kCompareINEQ:  return -count;
+        case ByteCodeInstruction::kCompareFNEQ:  return -count;
+        case ByteCodeInstruction::kCompareSGT:   return -count;
+        case ByteCodeInstruction::kCompareUGT:   return -count;
+        case ByteCodeInstruction::kCompareFGT:   return -count;
+        case ByteCodeInstruction::kCompareSGTEQ: return -count;
+        case ByteCodeInstruction::kCompareUGTEQ: return -count;
+        case ByteCodeInstruction::kCompareFGTEQ: return -count;
+        case ByteCodeInstruction::kCompareSLT:   return -count;
+        case ByteCodeInstruction::kCompareULT:   return -count;
+        case ByteCodeInstruction::kCompareFLT:   return -count;
+        case ByteCodeInstruction::kCompareSLTEQ: return -count;
+        case ByteCodeInstruction::kCompareULTEQ: return -count;
+        case ByteCodeInstruction::kCompareFLTEQ: return -count;
 
-        case ByteCodeInstruction::kAndB: return -1;
-        case ByteCodeInstruction::kOrB:  return -1;
-        case ByteCodeInstruction::kXorB: return -1;
-
-        VECTOR_BINARY_OP(kAddI)
-        VECTOR_MATRIX_BINARY_OP(kAddF)
-
-        VECTOR_BINARY_OP(kCompareIEQ)
-        VECTOR_MATRIX_BINARY_OP(kCompareFEQ)
-        VECTOR_BINARY_OP(kCompareINEQ)
-        VECTOR_MATRIX_BINARY_OP(kCompareFNEQ)
-        VECTOR_BINARY_OP(kCompareSGT)
-        VECTOR_BINARY_OP(kCompareUGT)
-        VECTOR_BINARY_OP(kCompareFGT)
-        VECTOR_BINARY_OP(kCompareSGTEQ)
-        VECTOR_BINARY_OP(kCompareUGTEQ)
-        VECTOR_BINARY_OP(kCompareFGTEQ)
-        VECTOR_BINARY_OP(kCompareSLT)
-        VECTOR_BINARY_OP(kCompareULT)
-        VECTOR_BINARY_OP(kCompareFLT)
-        VECTOR_BINARY_OP(kCompareSLTEQ)
-        VECTOR_BINARY_OP(kCompareULTEQ)
-        VECTOR_BINARY_OP(kCompareFLTEQ)
-
-        VECTOR_BINARY_OP(kDivideS)
-        VECTOR_BINARY_OP(kDivideU)
-        VECTOR_MATRIX_BINARY_OP(kDivideF)
-        VECTOR_BINARY_OP(kMaxF)
-        VECTOR_BINARY_OP(kMaxS)
-        VECTOR_BINARY_OP(kMinF)
-        VECTOR_BINARY_OP(kMinS)
-        VECTOR_BINARY_OP(kMultiplyI)
-        VECTOR_MATRIX_BINARY_OP(kMultiplyF)
-        VECTOR_BINARY_OP(kPow)
-        VECTOR_BINARY_OP(kRemainderF)
-        VECTOR_BINARY_OP(kRemainderS)
-        VECTOR_BINARY_OP(kRemainderU)
-        VECTOR_BINARY_OP(kSubtractI)
-        VECTOR_MATRIX_BINARY_OP(kSubtractF)
-
-#undef VECTOR_BINARY_OP
-#undef VECTOR_MATRIX_BINARY_OP
+        case ByteCodeInstruction::kDivideS:    return -count;
+        case ByteCodeInstruction::kDivideU:    return -count;
+        case ByteCodeInstruction::kDivideF:    return -count;
+        case ByteCodeInstruction::kMaxF:       return -count;
+        case ByteCodeInstruction::kMaxS:       return -count;
+        case ByteCodeInstruction::kMinF:       return -count;
+        case ByteCodeInstruction::kMinS:       return -count;
+        case ByteCodeInstruction::kMultiplyI:  return -count;
+        case ByteCodeInstruction::kMultiplyF:  return -count;
+        case ByteCodeInstruction::kPow:        return -count;
+        case ByteCodeInstruction::kRemainderF: return -count;
+        case ByteCodeInstruction::kRemainderS: return -count;
+        case ByteCodeInstruction::kRemainderU: return -count;
+        case ByteCodeInstruction::kSubtractI:  return -count;
+        case ByteCodeInstruction::kSubtractF:  return -count;
 
         // Ops that push or load data to grow the stack:
+        case ByteCodeInstruction::kPushImmediate:
+            return 1;
+        case ByteCodeInstruction::kLoadFragCoord:
+            return 4;
+
         case ByteCodeInstruction::kDup:
         case ByteCodeInstruction::kLoad:
         case ByteCodeInstruction::kLoadGlobal:
         case ByteCodeInstruction::kLoadUniform:
         case ByteCodeInstruction::kReadExternal:
-        case ByteCodeInstruction::kPushImmediate:
-            return 1;
-
-        case ByteCodeInstruction::kDup2:
-        case ByteCodeInstruction::kLoad2:
-        case ByteCodeInstruction::kLoadGlobal2:
-        case ByteCodeInstruction::kLoadUniform2:
-        case ByteCodeInstruction::kReadExternal2:
-            return 2;
-
-        case ByteCodeInstruction::kDup3:
-        case ByteCodeInstruction::kLoad3:
-        case ByteCodeInstruction::kLoadGlobal3:
-        case ByteCodeInstruction::kLoadUniform3:
-        case ByteCodeInstruction::kReadExternal3:
-            return 3;
-
-        case ByteCodeInstruction::kDup4:
-        case ByteCodeInstruction::kLoad4:
-        case ByteCodeInstruction::kLoadGlobal4:
-        case ByteCodeInstruction::kLoadUniform4:
-        case ByteCodeInstruction::kReadExternal4:
-        case ByteCodeInstruction::kLoadFragCoord:
-            return 4;
-
-        case ByteCodeInstruction::kDupN:
+        case ByteCodeInstruction::kReserve:
             return count;
 
         // Pushes 'count' values, minus one for the 'address' that's consumed first
@@ -397,30 +358,10 @@ int ByteCodeGenerator::StackUsage(ByteCodeInstruction inst, int count_) {
 
         // Ops that pop or store data to shrink the stack:
         case ByteCodeInstruction::kPop:
+        case ByteCodeInstruction::kReturn:
         case ByteCodeInstruction::kStore:
         case ByteCodeInstruction::kStoreGlobal:
         case ByteCodeInstruction::kWriteExternal:
-            return -1;
-
-        case ByteCodeInstruction::kPop2:
-        case ByteCodeInstruction::kStore2:
-        case ByteCodeInstruction::kStoreGlobal2:
-        case ByteCodeInstruction::kWriteExternal2:
-            return -2;
-
-        case ByteCodeInstruction::kPop3:
-        case ByteCodeInstruction::kStore3:
-        case ByteCodeInstruction::kStoreGlobal3:
-        case ByteCodeInstruction::kWriteExternal3:
-            return -3;
-
-        case ByteCodeInstruction::kPop4:
-        case ByteCodeInstruction::kStore4:
-        case ByteCodeInstruction::kStoreGlobal4:
-        case ByteCodeInstruction::kWriteExternal4:
-            return -4;
-
-        case ByteCodeInstruction::kPopN:
             return -count;
 
         // Consumes 'count' values, plus one for the 'address'
@@ -432,30 +373,24 @@ int ByteCodeGenerator::StackUsage(ByteCodeInstruction inst, int count_) {
         case ByteCodeInstruction::kCallExternal:
         case ByteCodeInstruction::kMatrixToMatrix:
         case ByteCodeInstruction::kMatrixMultiply:
-        case ByteCodeInstruction::kReserve:
-        case ByteCodeInstruction::kReturn:
         case ByteCodeInstruction::kScalarToMatrix:
         case ByteCodeInstruction::kSwizzle:
             return count;
 
         // Miscellaneous
 
+        // () -> (R, G, B, A)
+        case ByteCodeInstruction::kSample: return 4;
         // (X, Y) -> (R, G, B, A)
         case ByteCodeInstruction::kSampleExplicit: return 4 - 2;
         // (float3x3) -> (R, G, B, A)
         case ByteCodeInstruction::kSampleMatrix: return 4 - 9;
 
         // kMix does a 3 -> 1 reduction (A, B, M -> A -or- B) for each component
-        case ByteCodeInstruction::kMix:  return -2;
-        case ByteCodeInstruction::kMix2: return -4;
-        case ByteCodeInstruction::kMix3: return -6;
-        case ByteCodeInstruction::kMix4: return -8;
+        case ByteCodeInstruction::kMix:  return -(2 * count);
 
         // kLerp works the same way (producing lerp(A, B, T) for each component)
-        case ByteCodeInstruction::kLerp:  return -2;
-        case ByteCodeInstruction::kLerp2: return -4;
-        case ByteCodeInstruction::kLerp3: return -6;
-        case ByteCodeInstruction::kLerp4: return -8;
+        case ByteCodeInstruction::kLerp:  return -(2 * count);
 
         // kCall is net-zero. Max stack depth is adjusted in writeFunctionCall.
         case ByteCodeInstruction::kCall:             return 0;
@@ -583,7 +518,7 @@ ByteCodeGenerator::Location ByteCodeGenerator::getLocation(const Expression& exp
                 if (offset != 0) {
                     this->write(ByteCodeInstruction::kPushImmediate);
                     this->write32(offset);
-                    this->write(ByteCodeInstruction::kAddI);
+                    this->write(ByteCodeInstruction::kAddI, 1);
                 }
                 return baseLoc;
             } else {
@@ -596,7 +531,7 @@ ByteCodeGenerator::Location ByteCodeGenerator::getLocation(const Expression& exp
             int length = i.fBase->fType.columns();
             SkASSERT(length <= 255);
             int offset = -1;
-            if (i.fIndex->isConstant()) {
+            if (i.fIndex->isCompileTimeConstant()) {
                 int64_t index = i.fIndex->getConstantInt();
                 if (index < 0 || index >= length) {
                     fErrors.error(i.fIndex->fOffset, "Array index out of bounds.");
@@ -617,7 +552,7 @@ ByteCodeGenerator::Location ByteCodeGenerator::getLocation(const Expression& exp
                 if (stride != 1) {
                     this->write(ByteCodeInstruction::kPushImmediate);
                     this->write32(stride);
-                    this->write(ByteCodeInstruction::kMultiplyI);
+                    this->write(ByteCodeInstruction::kMultiplyI, 1);
                 }
             }
             Location baseLoc = this->getLocation(*i.fBase);
@@ -643,7 +578,7 @@ ByteCodeGenerator::Location ByteCodeGenerator::getLocation(const Expression& exp
                 this->write(ByteCodeInstruction::kPushImmediate);
                 this->write32(offset);
             }
-            this->write(ByteCodeInstruction::kAddI);
+            this->write(ByteCodeInstruction::kAddI, 1);
             return baseLoc.makeOnStack();
         }
         case Expression::kSwizzle_Kind: {
@@ -655,7 +590,7 @@ ByteCodeGenerator::Location ByteCodeGenerator::getLocation(const Expression& exp
                 if (offset != 0) {
                     this->write(ByteCodeInstruction::kPushImmediate);
                     this->write32(offset);
-                    this->write(ByteCodeInstruction::kAddI);
+                    this->write(ByteCodeInstruction::kAddI, 1);
                 }
                 return baseLoc;
             } else {
@@ -698,36 +633,40 @@ void ByteCodeGenerator::write(ByteCodeInstruction i, int count) {
         case ByteCodeInstruction::kMaskBlend: this->exitCondition();  break;
         default: /* Do nothing */ break;
     }
-    this->write16((uint16_t)i);
+    this->write8((uint8_t)i);
     fStackCount += StackUsage(i, count);
     fMaxStackCount = std::max(fMaxStackCount, fStackCount);
+
+    // Most ops have an explicit count byte after them (passed here as 'count')
+    // Ops that don't have a count byte pass the default (kUnusedStackCount)
+    // There are a handful of strange ops that pass in a computed stack delta as count, but where
+    // that value should *not* be written as a count byte (it may even be negative!)
+    if (count != kUnusedStackCount) {
+        switch (i) {
+            // Odd instructions that have a non-default count, but we shouldn't write it
+            case ByteCodeInstruction::kCallExternal:
+            case ByteCodeInstruction::kMatrixToMatrix:
+            case ByteCodeInstruction::kMatrixMultiply:
+            case ByteCodeInstruction::kScalarToMatrix:
+            case ByteCodeInstruction::kSwizzle:
+                break;
+            default:
+                this->write8(count);
+                break;
+        }
+    }
 }
 
-static ByteCodeInstruction vector_instruction(ByteCodeInstruction base, int count) {
-    SkASSERT(count >= 1 && count <= 4);
-    return ((ByteCodeInstruction) ((int) base + 1 - count));
-}
-
-void ByteCodeGenerator::writeTypedInstruction(const Type& type, ByteCodeInstruction s,
-                                              ByteCodeInstruction u, ByteCodeInstruction f,
+void ByteCodeGenerator::writeTypedInstruction(const Type& type,
+                                              ByteCodeInstruction s,
+                                              ByteCodeInstruction u,
+                                              ByteCodeInstruction f,
                                               int count) {
     switch (type_category(type)) {
         case TypeCategory::kBool:
-        case TypeCategory::kSigned:
-            this->write(vector_instruction(s, count));
-            break;
-        case TypeCategory::kUnsigned:
-            this->write(vector_instruction(u, count));
-            break;
-        case TypeCategory::kFloat: {
-            if (count > 4) {
-                this->write((ByteCodeInstruction)((int)f + 1), count);
-                this->write8(count);
-            } else {
-                this->write(vector_instruction(f, count));
-            }
-            break;
-        }
+        case TypeCategory::kSigned:   this->write(s, count); break;
+        case TypeCategory::kUnsigned: this->write(u, count); break;
+        case TypeCategory::kFloat:    this->write(f, count); break;
         default:
             SkASSERT(false);
     }
@@ -756,7 +695,7 @@ bool ByteCodeGenerator::writeBinaryExpression(const BinaryExpression& b, bool di
         op = b.fOperator;
         if (!lVecOrMtx && rVecOrMtx) {
             for (int i = SlotCount(rType); i > 1; --i) {
-                this->write(ByteCodeInstruction::kDup);
+                this->write(ByteCodeInstruction::kDup, 1);
             }
         }
     }
@@ -765,25 +704,25 @@ bool ByteCodeGenerator::writeBinaryExpression(const BinaryExpression& b, bool di
     switch (op) {
         case Token::Kind::TK_LOGICALAND: {
             SkASSERT(tc == SkSL::TypeCategory::kBool && count == 1);
-            this->write(ByteCodeInstruction::kDup);
+            this->write(ByteCodeInstruction::kDup, 1);
             this->write(ByteCodeInstruction::kMaskPush);
             this->write(ByteCodeInstruction::kBranchIfAllFalse);
             DeferredLocation falseLocation(this);
             this->writeExpression(*b.fRight);
-            this->write(ByteCodeInstruction::kAndB);
+            this->write(ByteCodeInstruction::kAndB, 1);
             falseLocation.set();
             this->write(ByteCodeInstruction::kMaskPop);
             return false;
         }
         case Token::Kind::TK_LOGICALOR: {
             SkASSERT(tc == SkSL::TypeCategory::kBool && count == 1);
-            this->write(ByteCodeInstruction::kDup);
-            this->write(ByteCodeInstruction::kNotB);
+            this->write(ByteCodeInstruction::kDup, 1);
+            this->write(ByteCodeInstruction::kNotB, 1);
             this->write(ByteCodeInstruction::kMaskPush);
             this->write(ByteCodeInstruction::kBranchIfAllFalse);
             DeferredLocation falseLocation(this);
             this->writeExpression(*b.fRight);
-            this->write(ByteCodeInstruction::kOrB);
+            this->write(ByteCodeInstruction::kOrB, 1);
             falseLocation.set();
             this->write(ByteCodeInstruction::kMaskPop);
             return false;
@@ -792,7 +731,7 @@ bool ByteCodeGenerator::writeBinaryExpression(const BinaryExpression& b, bool di
         case Token::Kind::TK_SHR: {
             SkASSERT(count == 1 && (tc == SkSL::TypeCategory::kSigned ||
                                     tc == SkSL::TypeCategory::kUnsigned));
-            if (!b.fRight->isConstant()) {
+            if (!b.fRight->isCompileTimeConstant()) {
                 fErrors.error(b.fRight->fOffset, "Shift amounts must be constant");
                 return false;
             }
@@ -819,7 +758,7 @@ bool ByteCodeGenerator::writeBinaryExpression(const BinaryExpression& b, bool di
     this->writeExpression(*b.fRight);
     if (lVecOrMtx && !rVecOrMtx) {
         for (int i = SlotCount(lType); i > 1; --i) {
-            this->write(ByteCodeInstruction::kDup);
+            this->write(ByteCodeInstruction::kDup, 1);
         }
     }
     // Special case for M*V, V*M, M*M (but not V*V!)
@@ -849,7 +788,7 @@ bool ByteCodeGenerator::writeBinaryExpression(const BinaryExpression& b, bool di
                                             count);
                 // Collapse to a single bool
                 for (int i = count; i > 1; --i) {
-                    this->write(ByteCodeInstruction::kAndB);
+                    this->write(ByteCodeInstruction::kAndB, 1);
                 }
                 break;
             case Token::Kind::TK_GT:
@@ -889,7 +828,7 @@ bool ByteCodeGenerator::writeBinaryExpression(const BinaryExpression& b, bool di
                                             count);
                 // Collapse to a single bool
                 for (int i = count; i > 1; --i) {
-                    this->write(ByteCodeInstruction::kOrB);
+                    this->write(ByteCodeInstruction::kOrB, 1);
                 }
                 break;
             case Token::Kind::TK_PERCENT:
@@ -918,24 +857,21 @@ bool ByteCodeGenerator::writeBinaryExpression(const BinaryExpression& b, bool di
                 break;
 
             case Token::Kind::TK_LOGICALXOR:
-                SkASSERT(tc == SkSL::TypeCategory::kBool && count == 1);
-                this->write(ByteCodeInstruction::kXorB);
+                SkASSERT(tc == SkSL::TypeCategory::kBool);
+                this->write(ByteCodeInstruction::kXorB, count);
                 break;
 
             case Token::Kind::TK_BITWISEAND:
-                SkASSERT(count == 1 && (tc == SkSL::TypeCategory::kSigned ||
-                                        tc == SkSL::TypeCategory::kUnsigned));
-                this->write(ByteCodeInstruction::kAndB);
+                SkASSERT(tc == SkSL::TypeCategory::kSigned || tc == SkSL::TypeCategory::kUnsigned);
+                this->write(ByteCodeInstruction::kAndB, count);
                 break;
             case Token::Kind::TK_BITWISEOR:
-                SkASSERT(count == 1 && (tc == SkSL::TypeCategory::kSigned ||
-                                        tc == SkSL::TypeCategory::kUnsigned));
-                this->write(ByteCodeInstruction::kOrB);
+                SkASSERT(tc == SkSL::TypeCategory::kSigned || tc == SkSL::TypeCategory::kUnsigned);
+                this->write(ByteCodeInstruction::kOrB, count);
                 break;
             case Token::Kind::TK_BITWISEXOR:
-                SkASSERT(count == 1 && (tc == SkSL::TypeCategory::kSigned ||
-                                        tc == SkSL::TypeCategory::kUnsigned));
-                this->write(ByteCodeInstruction::kXorB);
+                SkASSERT(tc == SkSL::TypeCategory::kSigned || tc == SkSL::TypeCategory::kUnsigned);
+                this->write(ByteCodeInstruction::kXorB, count);
                 break;
 
             default:
@@ -972,13 +908,13 @@ void ByteCodeGenerator::writeConstructor(const Constructor& c) {
             if (inCategory == TypeCategory::kFloat) {
                 SkASSERT(outCategory == TypeCategory::kSigned ||
                          outCategory == TypeCategory::kUnsigned);
-                this->write(vector_instruction(ByteCodeInstruction::kConvertFtoI, outCount));
+                this->write(ByteCodeInstruction::kConvertFtoI, outCount);
             } else if (outCategory == TypeCategory::kFloat) {
                 if (inCategory == TypeCategory::kSigned) {
-                    this->write(vector_instruction(ByteCodeInstruction::kConvertStoF, outCount));
+                    this->write(ByteCodeInstruction::kConvertStoF, outCount);
                 } else {
                     SkASSERT(inCategory == TypeCategory::kUnsigned);
-                    this->write(vector_instruction(ByteCodeInstruction::kConvertUtoF, outCount));
+                    this->write(ByteCodeInstruction::kConvertUtoF, outCount);
                 }
             } else {
                 SkASSERT(false);
@@ -1000,7 +936,7 @@ void ByteCodeGenerator::writeConstructor(const Constructor& c) {
             } else {
                 SkASSERT(outType.kind() == Type::kVector_Kind);
                 for (; inCount != outCount; ++inCount) {
-                    this->write(ByteCodeInstruction::kDup);
+                    this->write(ByteCodeInstruction::kDup, 1);
                 }
             }
         }
@@ -1025,7 +961,7 @@ void ByteCodeGenerator::writeExternalFunctionCall(const ExternalFunctionCall& f)
 
 void ByteCodeGenerator::writeExternalValue(const ExternalValueReference& e) {
     int count = SlotCount(e.fValue->type());
-    this->write(vector_instruction(ByteCodeInstruction::kReadExternal, count));
+    this->write(ByteCodeInstruction::kReadExternal, count);
     int index = fOutput->fExternalValues.size();
     fOutput->fExternalValues.push_back(e.fValue);
     SkASSERT(index <= 255);
@@ -1056,18 +992,12 @@ void ByteCodeGenerator::writeVariableExpression(const Expression& expr) {
                                         ByteCodeInstruction::kLoadExtendedGlobal,
                                         ByteCodeInstruction::kLoadExtendedUniform),
                     count);
-        this->write8(count);
     } else {
-        while (count) {
-            int loadCount = std::min(count, 4);
-            this->write(vector_instruction(location.selectLoad(ByteCodeInstruction::kLoad,
-                                                               ByteCodeInstruction::kLoadGlobal,
-                                                               ByteCodeInstruction::kLoadUniform),
-                                           loadCount));
-            this->write8(location.fSlot);
-            count -= loadCount;
-            location.fSlot += loadCount;
-        }
+        this->write(location.selectLoad(ByteCodeInstruction::kLoad,
+                                        ByteCodeInstruction::kLoadGlobal,
+                                        ByteCodeInstruction::kLoadUniform),
+                    count);
+        this->write8(location.fSlot);
     }
 }
 
@@ -1095,35 +1025,42 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
         return;
     }
     Intrinsic intrin = found->second;
-    int count = SlotCount(c.fArguments[0]->fType);
+
+    const auto& args = c.fArguments;
+    const size_t nargs = args.size();
+    SkASSERT(nargs >= 1);
+
+    int count = SlotCount(args[0]->fType);
 
     // Several intrinsics have variants where one argument is either scalar, or the same size as
     // the first argument. Call dupSmallerType(SlotCount(argType)) to ensure equal component count.
     auto dupSmallerType = [count, this](int smallCount) {
         SkASSERT(smallCount == 1 || smallCount == count);
         for (int i = smallCount; i < count; ++i) {
-            this->write(ByteCodeInstruction::kDup);
+            this->write(ByteCodeInstruction::kDup, 1);
         }
     };
 
     if (intrin.is_special && intrin.special == SpecialIntrinsic::kSample) {
-        // Sample is very special, the first argument is an FP, which can't be pushed to the stack
-        if (c.fArguments.size() != 2 ||
-            c.fArguments[0]->fType != *fContext.fFragmentProcessor_Type ||
-            (c.fArguments[1]->fType != *fContext.fFloat2_Type &&
-             c.fArguments[1]->fType != *fContext.fFloat3x3_Type)) {
+        // Sample is very special, the first argument is an FP, which can't be pushed to the stack.
+        if (nargs > 2 || args[0]->fType != *fContext.fFragmentProcessor_Type ||
+            (nargs == 2 && (args[1]->fType != *fContext.fFloat2_Type &&
+                            args[1]->fType != *fContext.fFloat3x3_Type))) {
             fErrors.error(c.fOffset, "Unsupported form of sample");
             return;
         }
 
-        // Write our coords or matrix
-        this->writeExpression(*c.fArguments[1]);
+        if (nargs == 2) {
+            // Write our coords or matrix
+            this->writeExpression(*args[1]);
+            this->write(args[1]->fType == *fContext.fFloat3x3_Type
+                                ? ByteCodeInstruction::kSampleMatrix
+                                : ByteCodeInstruction::kSampleExplicit);
+        } else {
+            this->write(ByteCodeInstruction::kSample);
+        }
 
-        this->write(c.fArguments[1]->fType == *fContext.fFloat3x3_Type
-                            ? ByteCodeInstruction::kSampleMatrix
-                            : ByteCodeInstruction::kSampleExplicit);
-
-        Location childLoc = this->getLocation(*c.fArguments[0]);
+        Location childLoc = this->getLocation(*args[0]);
         SkASSERT(childLoc.fStorage == Storage::kChildFP);
         this->write8(childLoc.fSlot);
         return;
@@ -1133,21 +1070,21 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
                               intrin.special == SpecialIntrinsic::kSaturate)) {
         // These intrinsics are extra-special, we need instructions interleaved with arguments
         bool saturate = (intrin.special == SpecialIntrinsic::kSaturate);
-        SkASSERT(c.fArguments.size() == (saturate ? 1 : 3));
-        int limitCount = saturate ? 1 : SlotCount(c.fArguments[1]->fType);
+        SkASSERT(nargs == (saturate ? 1 : 3));
+        int limitCount = saturate ? 1 : SlotCount(args[1]->fType);
 
         // 'x'
-        this->writeExpression(*c.fArguments[0]);
+        this->writeExpression(*args[0]);
 
         // 'minVal'
         if (saturate) {
             this->write(ByteCodeInstruction::kPushImmediate);
             this->write32(float_to_bits(0.0f));
         } else {
-            this->writeExpression(*c.fArguments[1]);
+            this->writeExpression(*args[1]);
         }
         dupSmallerType(limitCount);
-        this->writeTypedInstruction(c.fArguments[0]->fType,
+        this->writeTypedInstruction(args[0]->fType,
                                     ByteCodeInstruction::kMaxS,
                                     ByteCodeInstruction::kMaxS,
                                     ByteCodeInstruction::kMaxF,
@@ -1158,11 +1095,11 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
             this->write(ByteCodeInstruction::kPushImmediate);
             this->write32(float_to_bits(1.0f));
         } else {
-            SkASSERT(limitCount == SlotCount(c.fArguments[2]->fType));
-            this->writeExpression(*c.fArguments[2]);
+            SkASSERT(limitCount == SlotCount(args[2]->fType));
+            this->writeExpression(*args[2]);
         }
         dupSmallerType(limitCount);
-        this->writeTypedInstruction(c.fArguments[0]->fType,
+        this->writeTypedInstruction(args[0]->fType,
                                     ByteCodeInstruction::kMinS,
                                     ByteCodeInstruction::kMinS,
                                     ByteCodeInstruction::kMinF,
@@ -1171,7 +1108,7 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
     }
 
     // All other intrinsics can handle their arguments being on the stack in order
-    for (const auto& arg : c.fArguments) {
+    for (const auto& arg : args) {
         this->writeExpression(*arg);
     }
 
@@ -1179,48 +1116,48 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
         switch (intrin.special) {
             case SpecialIntrinsic::kAll: {
                 for (int i = count-1; i --> 0;) {
-                    this->write(ByteCodeInstruction::kAndB);
+                    this->write(ByteCodeInstruction::kAndB, 1);
                 }
             } break;
 
             case SpecialIntrinsic::kAny: {
                 for (int i = count-1; i --> 0;) {
-                    this->write(ByteCodeInstruction::kOrB);
+                    this->write(ByteCodeInstruction::kOrB, 1);
                 }
             } break;
 
             case SpecialIntrinsic::kDot: {
-                SkASSERT(c.fArguments.size() == 2);
-                SkASSERT(count == SlotCount(c.fArguments[1]->fType));
-                this->write(vector_instruction(ByteCodeInstruction::kMultiplyF, count));
+                SkASSERT(nargs == 2);
+                SkASSERT(count == SlotCount(args[1]->fType));
+                this->write(ByteCodeInstruction::kMultiplyF, count);
                 for (int i = count-1; i --> 0;) {
-                    this->write(ByteCodeInstruction::kAddF);
+                    this->write(ByteCodeInstruction::kAddF, 1);
                 }
             } break;
 
             case SpecialIntrinsic::kLength: {
-                SkASSERT(c.fArguments.size() == 1);
-                this->write(vector_instruction(ByteCodeInstruction::kDup      , count));
-                this->write(vector_instruction(ByteCodeInstruction::kMultiplyF, count));
+                SkASSERT(nargs == 1);
+                this->write(ByteCodeInstruction::kDup, count);
+                this->write(ByteCodeInstruction::kMultiplyF, count);
                 for (int i = count-1; i --> 0;) {
-                    this->write(ByteCodeInstruction::kAddF);
+                    this->write(ByteCodeInstruction::kAddF, 1);
                 }
-                this->write(ByteCodeInstruction::kSqrt);
+                this->write(ByteCodeInstruction::kSqrt, 1);
             } break;
 
             case SpecialIntrinsic::kMax:
             case SpecialIntrinsic::kMin: {
-                SkASSERT(c.fArguments.size() == 2);
+                SkASSERT(nargs == 2);
                 // There are variants where the second argument is scalar
-                dupSmallerType(SlotCount(c.fArguments[1]->fType));
+                dupSmallerType(SlotCount(args[1]->fType));
                 if (intrin.special == SpecialIntrinsic::kMax) {
-                    this->writeTypedInstruction(c.fArguments[0]->fType,
+                    this->writeTypedInstruction(args[0]->fType,
                                                 ByteCodeInstruction::kMaxS,
                                                 ByteCodeInstruction::kMaxS,
                                                 ByteCodeInstruction::kMaxF,
                                                 count);
                 } else {
-                    this->writeTypedInstruction(c.fArguments[0]->fType,
+                    this->writeTypedInstruction(args[0]->fType,
                                                 ByteCodeInstruction::kMinS,
                                                 ByteCodeInstruction::kMinS,
                                                 ByteCodeInstruction::kMinF,
@@ -1230,32 +1167,32 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
 
             case SpecialIntrinsic::kMix: {
                 // Two main variants of mix to handle
-                SkASSERT(c.fArguments.size() == 3);
-                SkASSERT(count == SlotCount(c.fArguments[1]->fType));
-                int selectorCount = SlotCount(c.fArguments[2]->fType);
+                SkASSERT(nargs == 3);
+                SkASSERT(count == SlotCount(args[1]->fType));
+                int selectorCount = SlotCount(args[2]->fType);
 
-                if (is_generic_type(&c.fArguments[2]->fType, fContext.fGenBType_Type.get())) {
+                if (is_generic_type(&args[2]->fType, fContext.fGenBType_Type.get())) {
                     // mix(genType, genType, genBoolType)
                     SkASSERT(selectorCount == count);
-                    this->write(vector_instruction(ByteCodeInstruction::kMix, count));
+                    this->write(ByteCodeInstruction::kMix, count);
                 } else {
                     // mix(genType, genType, genType) or mix(genType, genType, float)
                     dupSmallerType(selectorCount);
-                    this->write(vector_instruction(ByteCodeInstruction::kLerp, count));
+                    this->write(ByteCodeInstruction::kLerp, count);
                 }
             } break;
 
             case SpecialIntrinsic::kNormalize: {
-                SkASSERT(c.fArguments.size() == 1);
-                this->write(vector_instruction(ByteCodeInstruction::kDup      , count));
-                this->write(vector_instruction(ByteCodeInstruction::kDup      , count));
-                this->write(vector_instruction(ByteCodeInstruction::kMultiplyF, count));
+                SkASSERT(nargs == 1);
+                this->write(ByteCodeInstruction::kDup, count);
+                this->write(ByteCodeInstruction::kDup, count);
+                this->write(ByteCodeInstruction::kMultiplyF, count);
                 for (int i = count-1; i --> 0;) {
-                    this->write(ByteCodeInstruction::kAddF);
+                    this->write(ByteCodeInstruction::kAddF, 1);
                 }
-                this->write(ByteCodeInstruction::kSqrt);
+                this->write(ByteCodeInstruction::kSqrt, 1);
                 dupSmallerType(1);
-                this->write(vector_instruction(ByteCodeInstruction::kDivideF, count));
+                this->write(ByteCodeInstruction::kDivideF, count);
             } break;
 
             default:
@@ -1264,7 +1201,6 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
     } else {
         switch (intrin.inst_f) {
             case ByteCodeInstruction::kInverse2x2: {
-                SkASSERT(c.fArguments.size() > 0);
                 auto op = ByteCodeInstruction::kInverse2x2;
                 switch (count) {
                     case 4: break;  // float2x2
@@ -1277,8 +1213,11 @@ void ByteCodeGenerator::writeIntrinsicCall(const FunctionCall& c) {
             }
 
             default:
-                this->writeTypedInstruction(c.fArguments[0]->fType, intrin.inst_s, intrin.inst_u,
-                                            intrin.inst_f, count);
+                this->writeTypedInstruction(args[0]->fType,
+                                            intrin.inst_s,
+                                            intrin.inst_u,
+                                            intrin.inst_f,
+                                            count);
                 break;
         }
     }
@@ -1311,7 +1250,6 @@ void ByteCodeGenerator::writeFunctionCall(const FunctionCall& f) {
     // We may need to deal with out parameters, so the sequence is tricky
     if (int returnCount = SlotCount(f.fType)) {
         this->write(ByteCodeInstruction::kReserve, returnCount);
-        this->write8(returnCount);
     }
 
     int argCount = f.fArguments.size();
@@ -1343,11 +1281,8 @@ void ByteCodeGenerator::writeFunctionCall(const FunctionCall& f) {
     // counts for all parameters that aren't out-params, so we can pop them in one big chunk.
     int popCount = 0;
     auto pop = [&]() {
-        if (popCount > 4) {
-            this->write(ByteCodeInstruction::kPopN, popCount);
-            this->write8(popCount);
-        } else if (popCount > 0) {
-            this->write(vector_instruction(ByteCodeInstruction::kPop, popCount));
+        if (popCount > 0) {
+            this->write(ByteCodeInstruction::kPop, popCount);
         }
         popCount = 0;
     };
@@ -1419,7 +1354,7 @@ bool ByteCodeGenerator::writePrefixExpression(const PrefixExpression& p, bool di
                      (p.fOperator == Token::Kind::TK_BITWISENOT && (tc == TypeCategory::kSigned ||
                                                                  tc == TypeCategory::kUnsigned)));
             this->writeExpression(*p.fOperand);
-            this->write(ByteCodeInstruction::kNotB);
+            this->write(ByteCodeInstruction::kNotB, 1);
             break;
         }
         default:
@@ -1437,7 +1372,7 @@ bool ByteCodeGenerator::writePostfixExpression(const PostfixExpression& p, bool 
             lvalue->load();
             // If we're not supposed to discard the result, then make a copy *before* the +/-
             if (!discard) {
-                this->write(ByteCodeInstruction::kDup);
+                this->write(ByteCodeInstruction::kDup, 1);
             }
             this->write(ByteCodeInstruction::kPushImmediate);
             this->write32(type_category(p.fType) == TypeCategory::kFloat ? float_to_bits(1.0f) : 1);
@@ -1491,25 +1426,24 @@ void ByteCodeGenerator::writeTernaryExpression(const TernaryExpression& t) {
     this->write(ByteCodeInstruction::kMaskNegate);
     this->writeExpression(*t.fIfFalse);
     this->write(ByteCodeInstruction::kMaskBlend, count);
-    this->write8(count);
 }
 
 void ByteCodeGenerator::writeExpression(const Expression& e, bool discard) {
     switch (e.fKind) {
         case Expression::kBinary_Kind:
-            discard = this->writeBinaryExpression((BinaryExpression&) e, discard);
+            discard = this->writeBinaryExpression(e.as<BinaryExpression>(), discard);
             break;
         case Expression::kBoolLiteral_Kind:
-            this->writeBoolLiteral((BoolLiteral&) e);
+            this->writeBoolLiteral(e.as<BoolLiteral>());
             break;
         case Expression::kConstructor_Kind:
-            this->writeConstructor((Constructor&) e);
+            this->writeConstructor(e.as<Constructor>());
             break;
         case Expression::kExternalFunctionCall_Kind:
-            this->writeExternalFunctionCall((ExternalFunctionCall&) e);
+            this->writeExternalFunctionCall(e.as<ExternalFunctionCall>());
             break;
         case Expression::kExternalValue_Kind:
-            this->writeExternalValue((ExternalValueReference&) e);
+            this->writeExternalValue(e.as<ExternalValueReference>());
             break;
         case Expression::kFieldAccess_Kind:
         case Expression::kIndex_Kind:
@@ -1517,28 +1451,28 @@ void ByteCodeGenerator::writeExpression(const Expression& e, bool discard) {
             this->writeVariableExpression(e);
             break;
         case Expression::kFloatLiteral_Kind:
-            this->writeFloatLiteral((FloatLiteral&) e);
+            this->writeFloatLiteral(e.as<FloatLiteral>());
             break;
         case Expression::kFunctionCall_Kind:
-            this->writeFunctionCall((FunctionCall&) e);
+            this->writeFunctionCall(e.as<FunctionCall>());
             break;
         case Expression::kIntLiteral_Kind:
-            this->writeIntLiteral((IntLiteral&) e);
+            this->writeIntLiteral(e.as<IntLiteral>());
             break;
         case Expression::kNullLiteral_Kind:
-            this->writeNullLiteral((NullLiteral&) e);
+            this->writeNullLiteral(e.as<NullLiteral>());
             break;
         case Expression::kPrefix_Kind:
-            discard = this->writePrefixExpression((PrefixExpression&) e, discard);
+            discard = this->writePrefixExpression(e.as<PrefixExpression>(), discard);
             break;
         case Expression::kPostfix_Kind:
-            discard = this->writePostfixExpression((PostfixExpression&) e, discard);
+            discard = this->writePostfixExpression(e.as<PostfixExpression>(), discard);
             break;
         case Expression::kSwizzle_Kind:
-            this->writeSwizzle((Swizzle&) e);
+            this->writeSwizzle(e.as<Swizzle>());
             break;
         case Expression::kTernary_Kind:
-            this->writeTernaryExpression((TernaryExpression&) e);
+            this->writeTernaryExpression(e.as<TernaryExpression>());
             break;
         default:
 #ifdef SK_DEBUG
@@ -1548,11 +1482,8 @@ void ByteCodeGenerator::writeExpression(const Expression& e, bool discard) {
     }
     if (discard) {
         int count = SlotCount(e.fType);
-        if (count > 4) {
-            this->write(ByteCodeInstruction::kPopN, count);
-            this->write8(count);
-        } else if (count != 0) {
-            this->write(vector_instruction(ByteCodeInstruction::kPop, count));
+        if (count > 0) {
+            this->write(ByteCodeInstruction::kPop, count);
         }
         discard = false;
     }
@@ -1560,21 +1491,21 @@ void ByteCodeGenerator::writeExpression(const Expression& e, bool discard) {
 
 class ByteCodeExternalValueLValue : public ByteCodeGenerator::LValue {
 public:
-    ByteCodeExternalValueLValue(ByteCodeGenerator* generator, ExternalValue& value, int index)
+    ByteCodeExternalValueLValue(ByteCodeGenerator* generator, const ExternalValue& value, int index)
         : INHERITED(*generator)
         , fCount(ByteCodeGenerator::SlotCount(value.type()))
         , fIndex(index) {}
 
     void load() override {
-        fGenerator.write(vector_instruction(ByteCodeInstruction::kReadExternal, fCount));
+        fGenerator.write(ByteCodeInstruction::kReadExternal, fCount);
         fGenerator.write8(fIndex);
     }
 
     void store(bool discard) override {
         if (!discard) {
-            fGenerator.write(vector_instruction(ByteCodeInstruction::kDup, fCount));
+            fGenerator.write(ByteCodeInstruction::kDup, fCount);
         }
-        fGenerator.write(vector_instruction(ByteCodeInstruction::kWriteExternal, fCount));
+        fGenerator.write(ByteCodeInstruction::kWriteExternal, fCount);
         fGenerator.write8(fIndex);
     }
 
@@ -1582,7 +1513,6 @@ private:
     typedef LValue INHERITED;
 
     int fCount;
-
     int fIndex;
 };
 
@@ -1599,7 +1529,7 @@ public:
     void store(bool discard) override {
         int count = fSwizzle.fComponents.size();
         if (!discard) {
-            fGenerator.write(vector_instruction(ByteCodeInstruction::kDup, count));
+            fGenerator.write(ByteCodeInstruction::kDup, count);
         }
         // We already have the correct number of values on the stack, thanks to type checking.
         // The algorithm: Walk down the values on the stack, doing 'count' single-element stores.
@@ -1615,16 +1545,16 @@ public:
             ByteCodeGenerator::Location location = fGenerator.getLocation(*fSwizzle.fBase);
             if (!location.isOnStack()) {
                 fGenerator.write(location.selectStore(ByteCodeInstruction::kStore,
-                                                      ByteCodeInstruction::kStoreGlobal));
+                                                      ByteCodeInstruction::kStoreGlobal),
+                                 1);
                 fGenerator.write8(location.fSlot + fSwizzle.fComponents[i]);
             } else {
                 fGenerator.write(ByteCodeInstruction::kPushImmediate);
                 fGenerator.write32(fSwizzle.fComponents[i]);
-                fGenerator.write(ByteCodeInstruction::kAddI);
+                fGenerator.write(ByteCodeInstruction::kAddI, 1);
                 fGenerator.write(location.selectStore(ByteCodeInstruction::kStoreExtended,
                                                       ByteCodeInstruction::kStoreExtendedGlobal),
                                  1);
-                fGenerator.write8(1);
             }
         }
     }
@@ -1648,28 +1578,17 @@ public:
     void store(bool discard) override {
         int count = ByteCodeGenerator::SlotCount(fExpression.fType);
         if (!discard) {
-            if (count > 4) {
-                fGenerator.write(ByteCodeInstruction::kDupN, count);
-                fGenerator.write8(count);
-            } else {
-                fGenerator.write(vector_instruction(ByteCodeInstruction::kDup, count));
-            }
+            fGenerator.write(ByteCodeInstruction::kDup, count);
         }
         ByteCodeGenerator::Location location = fGenerator.getLocation(fExpression);
-        if (location.isOnStack() || count > 4) {
-            if (!location.isOnStack()) {
-                fGenerator.write(ByteCodeInstruction::kPushImmediate);
-                fGenerator.write32(location.fSlot);
-            }
+        if (location.isOnStack()) {
             fGenerator.write(location.selectStore(ByteCodeInstruction::kStoreExtended,
                                                   ByteCodeInstruction::kStoreExtendedGlobal),
                              count);
-            fGenerator.write8(count);
         } else {
-            fGenerator.write(
-                    vector_instruction(location.selectStore(ByteCodeInstruction::kStore,
-                                                            ByteCodeInstruction::kStoreGlobal),
-                                       count));
+            fGenerator.write(location.selectStore(ByteCodeInstruction::kStore,
+                                                  ByteCodeInstruction::kStoreGlobal),
+                             count);
             fGenerator.write8(location.fSlot);
         }
     }
@@ -1683,7 +1602,7 @@ private:
 std::unique_ptr<ByteCodeGenerator::LValue> ByteCodeGenerator::getLValue(const Expression& e) {
     switch (e.fKind) {
         case Expression::kExternalValue_Kind: {
-            ExternalValue* value = ((ExternalValueReference&) e).fValue;
+            const ExternalValue* value = e.as<ExternalValueReference>().fValue;
             int index = fOutput->fExternalValues.size();
             fOutput->fExternalValues.push_back(value);
             SkASSERT(index <= 255);
@@ -1694,7 +1613,7 @@ std::unique_ptr<ByteCodeGenerator::LValue> ByteCodeGenerator::getLValue(const Ex
         case Expression::kVariableReference_Kind:
             return std::unique_ptr<LValue>(new ByteCodeExpressionLValue(this, e));
         case Expression::kSwizzle_Kind: {
-            const Swizzle& s = (const Swizzle&) e;
+            const Swizzle& s = e.as<Swizzle>();
             return swizzle_is_simple(s)
                     ? std::unique_ptr<LValue>(new ByteCodeExpressionLValue(this, e))
                     : std::unique_ptr<LValue>(new ByteCodeSwizzleLValue(this, s));
@@ -1811,8 +1730,7 @@ void ByteCodeGenerator::writeReturnStatement(const ReturnStatement& r) {
     // we account for those in writeFunction().
 
     // This is all fine because we don't allow conditional returns, so we only return once anyway.
-    this->write(ByteCodeInstruction::kReturn, -count);
-    this->write8(count);
+    this->write(ByteCodeInstruction::kReturn, count);
 }
 
 void ByteCodeGenerator::writeSwitchStatement(const SwitchStatement& r) {
@@ -1828,15 +1746,8 @@ void ByteCodeGenerator::writeVarDeclarations(const VarDeclarations& v) {
         if (decl.fValue) {
             this->writeExpression(*decl.fValue);
             int count = SlotCount(decl.fValue->fType);
-            if (count > 4) {
-                this->write(ByteCodeInstruction::kPushImmediate);
-                this->write32(location.fSlot);
-                this->write(ByteCodeInstruction::kStoreExtended, count);
-                this->write8(count);
-            } else {
-                this->write(vector_instruction(ByteCodeInstruction::kStore, count));
-                this->write8(location.fSlot);
-            }
+            this->write(ByteCodeInstruction::kStore, count);
+            this->write8(location.fSlot);
         }
     }
 }
@@ -1859,42 +1770,42 @@ void ByteCodeGenerator::writeWhileStatement(const WhileStatement& w) {
 void ByteCodeGenerator::writeStatement(const Statement& s) {
     switch (s.fKind) {
         case Statement::kBlock_Kind:
-            this->writeBlock((Block&) s);
+            this->writeBlock(s.as<Block>());
             break;
         case Statement::kBreak_Kind:
-            this->writeBreakStatement((BreakStatement&) s);
+            this->writeBreakStatement(s.as<BreakStatement>());
             break;
         case Statement::kContinue_Kind:
-            this->writeContinueStatement((ContinueStatement&) s);
+            this->writeContinueStatement(s.as<ContinueStatement>());
             break;
         case Statement::kDiscard_Kind:
             // not yet implemented
             abort();
         case Statement::kDo_Kind:
-            this->writeDoStatement((DoStatement&) s);
+            this->writeDoStatement(s.as<DoStatement>());
             break;
         case Statement::kExpression_Kind:
-            this->writeExpression(*((ExpressionStatement&) s).fExpression, true);
+            this->writeExpression(*s.as<ExpressionStatement>().fExpression, true);
             break;
         case Statement::kFor_Kind:
-            this->writeForStatement((ForStatement&) s);
+            this->writeForStatement(s.as<ForStatement>());
             break;
         case Statement::kIf_Kind:
-            this->writeIfStatement((IfStatement&) s);
+            this->writeIfStatement(s.as<IfStatement>());
             break;
         case Statement::kNop_Kind:
             break;
         case Statement::kReturn_Kind:
-            this->writeReturnStatement((ReturnStatement&) s);
+            this->writeReturnStatement(s.as<ReturnStatement>());
             break;
         case Statement::kSwitch_Kind:
-            this->writeSwitchStatement((SwitchStatement&) s);
+            this->writeSwitchStatement(s.as<SwitchStatement>());
             break;
         case Statement::kVarDeclarations_Kind:
-            this->writeVarDeclarations(*((VarDeclarationsStatement&) s).fDeclaration);
+            this->writeVarDeclarations(*s.as<VarDeclarationsStatement>().fDeclaration);
             break;
         case Statement::kWhile_Kind:
-            this->writeWhileStatement((WhileStatement&) s);
+            this->writeWhileStatement(s.as<WhileStatement>());
             break;
         default:
             SkASSERT(false);
@@ -1911,4 +1822,4 @@ ByteCodeFunction::ByteCodeFunction(const FunctionDeclaration* declaration)
     }
 }
 
-}
+}  // namespace SkSL

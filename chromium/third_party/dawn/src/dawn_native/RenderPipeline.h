@@ -76,6 +76,8 @@ namespace dawn_native {
         wgpu::TextureFormat GetColorAttachmentFormat(uint32_t attachment) const;
         wgpu::TextureFormat GetDepthStencilFormat() const;
         uint32_t GetSampleCount() const;
+        uint32_t GetSampleMask() const;
+        bool IsAlphaToCoverageEnabled() const;
 
         const AttachmentState* GetAttachmentState() const;
 

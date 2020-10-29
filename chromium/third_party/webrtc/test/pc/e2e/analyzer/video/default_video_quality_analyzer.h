@@ -24,10 +24,10 @@
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_frame.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "rtc_base/numerics/samples_stats_counter.h"
 #include "rtc_base/platform_thread.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "system_wrappers/include/clock.h"
 #include "test/pc/e2e/analyzer/video/multi_head_queue.h"
 #include "test/testsupport/perf_test.h"
@@ -166,12 +166,31 @@ struct InternalStatsKey {
 bool operator<(const InternalStatsKey& a, const InternalStatsKey& b);
 bool operator==(const InternalStatsKey& a, const InternalStatsKey& b);
 
+struct DefaultVideoQualityAnalyzerOptions {
+  // Tells DefaultVideoQualityAnalyzer if heavy metrics like PSNR and SSIM have
+  // to be computed or not.
+  bool heavy_metrics_computation_enabled = true;
+  // If true DefaultVideoQualityAnalyzer will try to adjust frames before
+  // computing PSNR and SSIM for them. In some cases picture may be shifted by
+  // a few pixels after the encode/decode step. Those difference is invisible
+  // for a human eye, but it affects the metrics. So the adjustment is used to
+  // get metrics that are closer to how human persepts the video. This feature
+  // significantly slows down the comparison, so turn it on only when it is
+  // needed.
+  bool adjust_cropping_before_comparing_frames = false;
+  // Amount of frames that are queued in the DefaultVideoQualityAnalyzer from
+  // the point they were captured to the point they were rendered on all
+  // receivers per stream.
+  size_t max_frames_in_flight_per_stream_count =
+      kDefaultMaxFramesInFlightPerStream;
+};
+
 class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
  public:
   explicit DefaultVideoQualityAnalyzer(
-      bool heavy_metrics_computation_enabled = true,
-      size_t max_frames_in_flight_per_stream_count =
-          kDefaultMaxFramesInFlightPerStream);
+      webrtc::Clock* clock,
+      DefaultVideoQualityAnalyzerOptions options =
+          DefaultVideoQualityAnalyzerOptions());
   ~DefaultVideoQualityAnalyzer() override;
 
   void Start(std::string test_case_name,
@@ -483,15 +502,15 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   void StopExcludingCpuThreadTime();
   double GetCpuUsagePercent();
 
-  const bool heavy_metrics_computation_enabled_;
-  const size_t max_frames_in_flight_per_stream_count_;
+  // TODO(titovartem) restore const when old constructor will be removed.
+  DefaultVideoQualityAnalyzerOptions options_;
   webrtc::Clock* const clock_;
   std::atomic<uint16_t> next_frame_id_{0};
 
   std::string test_label_;
   std::unique_ptr<NamesCollection> peers_;
 
-  rtc::CriticalSection lock_;
+  mutable Mutex lock_;
   State state_ RTC_GUARDED_BY(lock_) = State::kNew;
   Timestamp start_time_ RTC_GUARDED_BY(lock_) = Timestamp::MinusInfinity();
   // Mapping from stream label to unique size_t value to use in stats and avoid
@@ -523,7 +542,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   std::map<size_t, std::set<uint16_t>> stream_to_frame_id_history_
       RTC_GUARDED_BY(lock_);
 
-  rtc::CriticalSection comparison_lock_;
+  mutable Mutex comparison_lock_;
   std::map<InternalStatsKey, StreamStats> stream_stats_
       RTC_GUARDED_BY(comparison_lock_);
   std::map<InternalStatsKey, Timestamp> stream_last_freeze_end_time_
@@ -534,7 +553,7 @@ class DefaultVideoQualityAnalyzer : public VideoQualityAnalyzerInterface {
   std::vector<std::unique_ptr<rtc::PlatformThread>> thread_pool_;
   rtc::Event comparison_available_event_;
 
-  rtc::CriticalSection cpu_measurement_lock_;
+  Mutex cpu_measurement_lock_;
   int64_t cpu_time_ RTC_GUARDED_BY(cpu_measurement_lock_) = 0;
   int64_t wallclock_time_ RTC_GUARDED_BY(cpu_measurement_lock_) = 0;
 };

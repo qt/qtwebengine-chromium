@@ -81,7 +81,6 @@ rtc_library("rtp_interfaces") {
   # client code gets updated.
   visibility = [ "*" ]
   sources = [
-    "rtcp_packet_sink_interface.h",
     "rtp_config.cc",
     "rtp_config.h",
     "rtp_packet_sink_interface.h",
@@ -111,17 +110,12 @@ rtc_library("rtp_interfaces") {
 rtc_library("rtp_receiver") {
   visibility = [ "*" ]
   sources = [
-    "rtcp_demuxer.cc",
-    "rtcp_demuxer.h",
     "rtp_demuxer.cc",
     "rtp_demuxer.h",
-    "rtp_rtcp_demuxer_helper.cc",
-    "rtp_rtcp_demuxer_helper.h",
     "rtp_stream_receiver_controller.cc",
     "rtp_stream_receiver_controller.h",
     "rtx_receive_stream.cc",
     "rtx_receive_stream.h",
-    "ssrc_binding_observer.h",
   ]
   deps = [
     ":rtp_interfaces",
@@ -183,6 +177,7 @@ rtc_library("rtp_sender") {
     "../rtc_base:rate_limiter",
     "../rtc_base:rtc_base_approved",
     "../rtc_base:rtc_task_queue",
+    "../rtc_base/synchronization:mutex",
     "../rtc_base/task_utils:repeating_task",
   ]
   absl_deps = [
@@ -341,6 +336,7 @@ rtc_library("simulated_network") {
     "../api/units:timestamp",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+    "../rtc_base/synchronization:mutex",
     "../rtc_base/synchronization:sequence_checker",
   ]
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
@@ -369,6 +365,7 @@ rtc_library("fake_network") {
     "../modules/utility",
     "../rtc_base:checks",
     "../rtc_base:rtc_base_approved",
+    "../rtc_base/synchronization:mutex",
     "../rtc_base/synchronization:sequence_checker",
     "../system_wrappers",
   ]
@@ -384,11 +381,9 @@ if (rtc_include_tests) {
       "call_unittest.cc",
       "flexfec_receive_stream_unittest.cc",
       "receive_time_calculator_unittest.cc",
-      "rtcp_demuxer_unittest.cc",
       "rtp_bitrate_configurator_unittest.cc",
       "rtp_demuxer_unittest.cc",
       "rtp_payload_params_unittest.cc",
-      "rtp_rtcp_demuxer_helper_unittest.cc",
       "rtp_video_sender_unittest.cc",
       "rtx_receive_stream_unittest.cc",
     ]
@@ -434,6 +429,7 @@ if (rtc_include_tests) {
       "../rtc_base:rate_limiter",
       "../rtc_base:rtc_base_approved",
       "../rtc_base:task_queue_for_test",
+      "../rtc_base/synchronization:mutex",
       "../system_wrappers",
       "../test:audio_codec_mocks",
       "../test:direct_transport",
@@ -493,6 +489,7 @@ if (rtc_include_tests) {
       "../rtc_base:rtc_base_approved",
       "../rtc_base:task_queue_for_test",
       "../rtc_base:task_queue_for_test",
+      "../rtc_base/synchronization:mutex",
       "../rtc_base/task_utils:repeating_task",
       "../system_wrappers",
       "../system_wrappers:metrics",

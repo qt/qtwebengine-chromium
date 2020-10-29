@@ -102,6 +102,9 @@ namespace dawn_native { namespace d3d12 {
         mSupportedExtensions.EnableExtension(Extension::TextureCompressionBC);
         mSupportedExtensions.EnableExtension(Extension::PipelineStatisticsQuery);
         mSupportedExtensions.EnableExtension(Extension::TimestampQuery);
+        if (mDeviceInfo.supportsShaderFloat16 && GetBackend()->GetFunctions()->IsDXCAvailable()) {
+            mSupportedExtensions.EnableExtension(Extension::ShaderFloat16);
+        }
     }
 
     MaybeError Adapter::InitializeDebugLayerFilters() {
@@ -141,12 +144,13 @@ namespace dawn_native { namespace d3d12 {
             //
 
             // Remove after warning have been addressed
-            // https://crbug.com/dawn/419
-            D3D12_MESSAGE_ID_UNMAP_RANGE_NOT_EMPTY,
-
-            // Remove after warning have been addressed
             // https://crbug.com/dawn/421
             D3D12_MESSAGE_ID_GPU_BASED_VALIDATION_INCOMPATIBLE_RESOURCE_STATE,
+
+            // For small placed resource alignment, we first request the small alignment, which may
+            // get rejected and generate a debug error. Then, we request 0 to get the allowed
+            // allowed alignment.
+            D3D12_MESSAGE_ID_CREATERESOURCE_INVALIDALIGNMENT,
         };
 
         // Create a retrieval filter with a deny list to suppress messages.

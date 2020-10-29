@@ -27,6 +27,8 @@ source_set("fxge") {
     "cfx_drawutils.h",
     "cfx_face.cpp",
     "cfx_face.h",
+    "cfx_fillrenderoptions.cpp",
+    "cfx_fillrenderoptions.h",
     "cfx_folderfontinfo.cpp",
     "cfx_folderfontinfo.h",
     "cfx_font.cpp",
@@ -161,7 +163,7 @@ source_set("fxge") {
     ]
   }
 
-  if (is_linux) {
+  if (is_linux || is_chromeos) {
     sources += [ "fx_ge_linux.cpp" ]
   }
 
@@ -173,7 +175,7 @@ source_set("fxge") {
       "apple/fx_quartz_device.cpp",
       "apple/fx_quartz_device.h",
     ]
-    libs = [ "CoreGraphics.framework" ]
+    frameworks = [ "CoreGraphics.framework" ]
   }
 
   if (is_win) {

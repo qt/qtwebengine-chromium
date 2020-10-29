@@ -115,6 +115,7 @@ source_set("fxjs") {
     if (pdf_enable_xfa) {
       sources += [
         "gc/gced_tree_node.h",
+        "gc/gced_tree_node_mixin.h",
         "gc/heap.cpp",
         "gc/heap.h",
         "xfa/cfxjse_class.cpp",
@@ -127,6 +128,8 @@ source_set("fxjs") {
         "xfa/cfxjse_formcalc_context.h",
         "xfa/cfxjse_isolatetracker.cpp",
         "xfa/cfxjse_isolatetracker.h",
+        "xfa/cfxjse_nodehelper.cpp",
+        "xfa/cfxjse_nodehelper.h",
         "xfa/cfxjse_resolveprocessor.cpp",
         "xfa/cfxjse_resolveprocessor.h",
         "xfa/cfxjse_runtimedata.cpp",
@@ -219,7 +222,6 @@ if (pdf_enable_v8) {
     sources = [
       "cfx_globaldata_unittest.cpp",
       "cfx_v8_unittest.cpp",
-      "cfx_v8_unittest.h",
       "cfxjs_engine_unittest.cpp",
       "cjs_publicmethods_unittest.cpp",
       "cjs_util_unittest.cpp",
@@ -228,6 +230,14 @@ if (pdf_enable_v8) {
     configs = [ "//v8:external_startup_data" ]
     deps = [ ":fxjs" ]
     pdfium_root_dir = "../"
+    if (pdf_enable_xfa) {
+      sources += [
+        "gc/gced_tree_node_mixin_unittest.cpp",
+        "gc/gced_tree_node_unittest.cpp",
+        "gc/heap_unittest.cpp",
+      ]
+      deps += [ "//v8:cppgc" ]
+    }
   }
 
   pdfium_embeddertest_source_set("embeddertests") {
@@ -243,8 +253,6 @@ if (pdf_enable_v8) {
     pdfium_root_dir = "../"
     if (pdf_enable_xfa) {
       sources += [
-        "gc/gced_tree_node_embeddertest.cpp",
-        "gc/heap_embeddertest.cpp",
         "xfa/cfxjse_app_embeddertest.cpp",
         "xfa/cfxjse_formcalc_context_embeddertest.cpp",
         "xfa/cfxjse_value_embeddertest.cpp",

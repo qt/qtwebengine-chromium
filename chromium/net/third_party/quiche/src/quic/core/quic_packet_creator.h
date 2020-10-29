@@ -58,6 +58,13 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
     // Called when there is data to be sent. Retrieves updated ACK frame from
     // the delegate.
     virtual const QuicFrames MaybeBundleAckOpportunistically() = 0;
+
+    // Returns the packet fate for serialized packets which will be handed over
+    // to delegate via OnSerializedPacket(). Called when a packet is about to be
+    // serialized.
+    virtual SerializedPacketFate GetSerializedPacketFate(
+        bool is_mtu_discovery,
+        EncryptionLevel encryption_level) = 0;
   };
 
   // Interface which gets callbacks from the QuicPacketCreator at interesting
@@ -189,6 +196,11 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // expand slightly when a new frame is added, and this method returns the
   // amount of expected expansion.
   size_t ExpansionOnNewFrame() const;
+
+  // Returns the number of bytes that the packet will expand by when a new frame
+  // is going to be added. |last_frame| is the last frame of the packet.
+  static size_t ExpansionOnNewFrameWithLastFrame(const QuicFrame& last_frame,
+                                                 QuicTransportVersion version);
 
   // Returns the number of bytes in the current packet, including the header,
   // if serialized with the current frames.  Adding a frame to the packet
@@ -382,6 +394,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   QuicByteCount pending_padding_bytes() const { return pending_padding_bytes_; }
 
+  ParsedQuicVersion version() const { return framer_->version(); }
+
   QuicTransportVersion transport_version() const {
     return framer_->transport_version();
   }
@@ -434,12 +448,33 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
                                   char* buffer,
                                   size_t buffer_len);
 
+  // Returns true if max_packet_length_ is currently a soft value.
+  bool HasSoftMaxPacketLength() const;
+
   void set_disable_padding_override(bool should_disable_padding) {
     disable_padding_override_ = should_disable_padding;
   }
 
+  bool determine_serialized_packet_fate_early() const {
+    return determine_serialized_packet_fate_early_;
+  }
+
+  bool coalesced_packet_of_higher_space() const {
+    return coalesced_packet_of_higher_space_;
+  }
+
  private:
   friend class test::QuicPacketCreatorPeer;
+
+  // Used to clear queued_frames_ of creator upon exiting the scope.
+  class QUIC_EXPORT_PRIVATE ScopedQueuedFramesCleaner {
+   public:
+    explicit ScopedQueuedFramesCleaner(QuicPacketCreator* creator);
+    ~ScopedQueuedFramesCleaner();
+
+   private:
+    QuicPacketCreator* creator_;  // Unowned.
+  };
 
   // Creates a stream frame which fits into the current open packet. If
   // |data_size| is 0 and fin is true, the expected behavior is to consume
@@ -538,6 +573,17 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // Returns true if packet under construction has IETF long header.
   bool HasIetfLongHeader() const;
 
+  // Get serialized frame length. Returns 0 if the frame does not fit into
+  // current packet.
+  size_t GetSerializedFrameLength(const QuicFrame& frame);
+
+  // Add extra padding to pending_padding_bytes_ to meet minimum plaintext
+  // packet size required for header protection.
+  void MaybeAddExtraPaddingForHeaderProtection();
+
+  // Returns true and close connection if it attempts to send unencrypted data.
+  bool AttemptingToSendUnencryptedStreamData();
+
   // Does not own these delegates or the framer.
   DelegateInterface* delegate_;
   DebugDelegate* debug_delegate_;
@@ -609,16 +655,22 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // negotiates this during the handshake.
   QuicByteCount max_datagram_frame_size_;
 
-  const bool avoid_leak_writer_buffer_ =
-      GetQuicReloadableFlag(quic_avoid_leak_writer_buffer);
-
-  const bool fix_min_crypto_frame_size_ =
-      GetQuicReloadableFlag(quic_fix_min_crypto_frame_size);
-
   // When true, this will override the padding generation code to disable it.
+  // TODO(fayang): remove this when deprecating
+  // quic_determine_serialized_packet_fate_early.
   bool disable_padding_override_ = false;
 
-  bool update_packet_size_ = GetQuicReloadableFlag(quic_update_packet_size);
+  const bool update_packet_size_ =
+      GetQuicReloadableFlag(quic_update_packet_size);
+
+  const bool fix_extra_padding_bytes_ =
+      GetQuicReloadableFlag(quic_fix_extra_padding_bytes);
+
+  const bool determine_serialized_packet_fate_early_ =
+      GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early);
+
+  const bool coalesced_packet_of_higher_space_ =
+      GetQuicReloadableFlag(quic_coalesced_packet_of_higher_space2);
 };
 
 }  // namespace quic

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Persistence from '../persistence/persistence.js';
 import * as Platform from '../platform/platform.js';
@@ -145,7 +148,7 @@ export class SourcesView extends UI.Widget.VBox {
       } else {
         row.createChild('div', 'tabbed-pane-no-shortcut').textContent = shortcut.description;
       }
-      const action = self.UI.actionRegistry.action(shortcut.actionId);
+      const action = UI.ActionRegistry.ActionRegistry.instance().action(shortcut.actionId);
       const actionHandler = action.execute.bind(action);
       this._placeholderOptionArray.push({element: row, handler: actionHandler});
     }
@@ -203,7 +206,7 @@ export class SourcesView extends UI.Widget.VBox {
   static defaultUISourceCodeScores() {
     /** @type {!Map.<!Workspace.UISourceCode.UISourceCode, number>} */
     const defaultScores = new Map();
-    const sourcesView = self.UI.context.flavor(SourcesView);
+    const sourcesView = UI.Context.Context.instance().flavor(SourcesView);
     if (sourcesView) {
       const uiSourceCodes = sourcesView._editorContainer.historyUISourceCodes();
       for (let i = 1; i < uiSourceCodes.length; ++i)  // Skip current element
@@ -258,14 +261,14 @@ export class SourcesView extends UI.Widget.VBox {
    */
   wasShown() {
     super.wasShown();
-    self.UI.context.setFlavor(SourcesView, this);
+    UI.Context.Context.instance().setFlavor(SourcesView, this);
   }
 
   /**
    * @override
    */
   willHide() {
-    self.UI.context.setFlavor(SourcesView, null);
+    UI.Context.Context.instance().setFlavor(SourcesView, null);
     this._resetPlaceholderState();
     super.willHide();
   }
@@ -743,7 +746,7 @@ export class SwitchFileActionDelegate {
    * @return {boolean}
    */
   handleAction(context, actionId) {
-    const sourcesView = self.UI.context.flavor(SourcesView);
+    const sourcesView = UI.Context.Context.instance().flavor(SourcesView);
     const currentUISourceCode = sourcesView.currentUISourceCode();
     if (!currentUISourceCode) {
       return false;
@@ -769,7 +772,7 @@ export class ActionDelegate {
    * @return {boolean}
    */
   handleAction(context, actionId) {
-    const sourcesView = self.UI.context.flavor(SourcesView);
+    const sourcesView = UI.Context.Context.instance().flavor(SourcesView);
     if (!sourcesView) {
       return false;
     }

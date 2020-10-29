@@ -8,6 +8,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "src/core/SkGeometry.h"
+#include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkPointPriv.h"
 #include "src/gpu/GrAuditTrail.h"
@@ -614,10 +615,8 @@ public:
         }
 
         void setData(const GrGLSLProgramDataManager& pdman,
-                     const GrPrimitiveProcessor& gp,
-                     const CoordTransformRange& transformRange) override {
+                     const GrPrimitiveProcessor& gp) override {
             const QuadEdgeEffect& qe = gp.cast<QuadEdgeEffect>();
-            this->setTransformDataHelper(pdman, transformRange);
             this->setTransform(pdman, fLocalMatrixUniform, qe.fLocalMatrix, &fLocalMatrix);
         }
 
@@ -724,16 +723,6 @@ public:
             fHelper.visitProxies(func);
         }
     }
-
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString string;
-        string.appendf("Count: %d\n", fPaths.count());
-        string += fHelper.dumpInfo();
-        string += INHERITED::dumpInfo();
-        return string;
-    }
-#endif
 
     FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
 
@@ -884,6 +873,12 @@ private:
         return CombineResult::kMerged;
     }
 
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        return SkStringPrintf("Count: %d\n%s", fPaths.count(), fHelper.dumpInfo().c_str());
+    }
+#endif
+
     struct PathData {
         SkMatrix    fViewMatrix;
         SkPath      fPath;
@@ -929,7 +924,7 @@ bool GrAAConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
 
 GR_DRAW_OP_TEST_DEFINE(AAConvexPathOp) {
     SkMatrix viewMatrix = GrTest::TestMatrixInvertible(random);
-    SkPath path = GrTest::TestPathConvex(random);
+    const SkPath& path = GrTest::TestPathConvex(random);
     const GrUserStencilSettings* stencilSettings = GrGetRandomStencil(random, context);
     return AAConvexPathOp::Make(context, std::move(paint), viewMatrix, path, stencilSettings);
 }

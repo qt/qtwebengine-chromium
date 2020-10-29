@@ -230,7 +230,6 @@ struct x509_st {
   X509_ALGOR *sig_alg;
   ASN1_BIT_STRING *signature;
   CRYPTO_refcount_t references;
-  char *name;
   CRYPTO_EX_DATA ex_data;
   // These contain copies of various extension values
   long ex_pathlen;
@@ -461,21 +460,6 @@ struct Netscape_spki_st {
   ASN1_BIT_STRING *signature;
 } /* NETSCAPE_SPKI */;
 
-// PKCS#8 private key info structure
-
-struct pkcs8_priv_key_info_st {
-  int broken;  // Flag for various broken formats
-#define PKCS8_OK 0
-#define PKCS8_NO_OCTET 1
-#define PKCS8_EMBEDDED_PARAM 2
-#define PKCS8_NS_DB 3
-#define PKCS8_NEG_PRIVKEY 4
-  ASN1_INTEGER *version;
-  X509_ALGOR *pkeyalg;
-  ASN1_TYPE *pkey;  // Should be OCTET STRING but some are broken
-  STACK_OF(X509_ATTRIBUTE) * attributes;
-};
-
 #ifdef __cplusplus
 }
 #endif
@@ -575,6 +559,17 @@ OPENSSL_EXPORT void X509_CINF_set_modified(X509_CINF *cinf);
 // |X509_get0_tbs_sigalg| instead.
 OPENSSL_EXPORT const X509_ALGOR *X509_CINF_get_signature(const X509_CINF *cinf);
 
+// X509_SIG_get0 sets |*out_alg| and |*out_digest| to non-owning pointers to
+// |sig|'s algorithm and digest fields, respectively. Either |out_alg| and
+// |out_digest| may be NULL to skip those fields.
+OPENSSL_EXPORT void X509_SIG_get0(const X509_SIG *sig,
+                                  const X509_ALGOR **out_alg,
+                                  const ASN1_OCTET_STRING **out_digest);
+
+// X509_SIG_getm behaves like |X509_SIG_get0| but returns mutable pointers.
+OPENSSL_EXPORT void X509_SIG_getm(X509_SIG *sig, X509_ALGOR **out_alg,
+                                  ASN1_OCTET_STRING **out_digest);
+
 OPENSSL_EXPORT void X509_CRL_set_default_method(const X509_CRL_METHOD *meth);
 OPENSSL_EXPORT X509_CRL_METHOD *X509_CRL_METHOD_new(
     int (*crl_init)(X509_CRL *crl), int (*crl_free)(X509_CRL *crl),
@@ -589,7 +584,7 @@ OPENSSL_EXPORT void *X509_CRL_get_meth_data(X509_CRL *crl);
 // X509_get_X509_PUBKEY returns the public key of |x509|. Note this function is
 // not const-correct for legacy reasons. Callers should not modify the returned
 // object.
-X509_PUBKEY *X509_get_X509_PUBKEY(const X509 *x509);
+OPENSSL_EXPORT X509_PUBKEY *X509_get_X509_PUBKEY(const X509 *x509);
 
 OPENSSL_EXPORT const char *X509_verify_cert_error_string(long n);
 
@@ -759,20 +754,6 @@ DECLARE_ASN1_FUNCTIONS(X509_PUBKEY)
 
 OPENSSL_EXPORT int X509_PUBKEY_set(X509_PUBKEY **x, EVP_PKEY *pkey);
 OPENSSL_EXPORT EVP_PKEY *X509_PUBKEY_get(X509_PUBKEY *key);
-OPENSSL_EXPORT int i2d_PUBKEY(const EVP_PKEY *a, unsigned char **pp);
-OPENSSL_EXPORT EVP_PKEY *d2i_PUBKEY(EVP_PKEY **a, const unsigned char **pp,
-                                    long length);
-OPENSSL_EXPORT int i2d_RSA_PUBKEY(const RSA *a, unsigned char **pp);
-OPENSSL_EXPORT RSA *d2i_RSA_PUBKEY(RSA **a, const unsigned char **pp,
-                                   long length);
-#ifndef OPENSSL_NO_DSA
-OPENSSL_EXPORT int i2d_DSA_PUBKEY(const DSA *a, unsigned char **pp);
-OPENSSL_EXPORT DSA *d2i_DSA_PUBKEY(DSA **a, const unsigned char **pp,
-                                   long length);
-#endif
-OPENSSL_EXPORT int i2d_EC_PUBKEY(const EC_KEY *a, unsigned char **pp);
-OPENSSL_EXPORT EC_KEY *d2i_EC_PUBKEY(EC_KEY **a, const unsigned char **pp,
-                                     long length);
 
 DECLARE_ASN1_FUNCTIONS(X509_SIG)
 DECLARE_ASN1_FUNCTIONS(X509_REQ_INFO)

@@ -503,19 +503,19 @@ const (
 
 	IDDecodeFrameOptions = ID(0x158)
 
-	IDCanUndoByte      = ID(0x160)
-	IDCountSince       = ID(0x161)
-	IDHistoryAvailable = ID(0x162)
-	IDIsClosed         = ID(0x163)
-	IDMark             = ID(0x164)
-	IDMatch15          = ID(0x165)
-	IDMatch31          = ID(0x166)
-	IDMatch7           = ID(0x167)
-	IDPosition         = ID(0x168)
-	IDSince            = ID(0x169)
-	IDSkip             = ID(0x16A)
-	IDSkipU32          = ID(0x16B)
-	IDSkipU32Fast      = ID(0x16C)
+	IDCanUndoByte   = ID(0x160)
+	IDCountSince    = ID(0x161)
+	IDHistoryLength = ID(0x162)
+	IDIsClosed      = ID(0x163)
+	IDMark          = ID(0x164)
+	IDMatch15       = ID(0x165)
+	IDMatch31       = ID(0x166)
+	IDMatch7        = ID(0x167)
+	IDPosition      = ID(0x168)
+	IDSince         = ID(0x169)
+	IDSkip          = ID(0x16A)
+	IDSkipU32       = ID(0x16B)
+	IDSkipU32Fast   = ID(0x16C)
 
 	IDCopyFromSlice                 = ID(0x170)
 	IDLimitedCopyU32FromHistory     = ID(0x171)
@@ -629,8 +629,8 @@ const (
 
 	// --------
 
-	// TODO: IDWriteExtendedTokenFast
-	IDWriteSimpleTokenFast = ID(0x1F1)
+	IDWriteSimpleTokenFast   = ID(0x1F1)
+	IDWriteExtendedTokenFast = ID(0x1F2)
 
 	// -------- 0x200 block.
 
@@ -651,17 +651,17 @@ const (
 	IDIsOK         = ID(0x231)
 	IDIsSuspension = ID(0x232)
 
-	IDAvailable = ID(0x240)
-	IDHeight    = ID(0x241)
-	IDLength    = ID(0x242)
-	IDPrefix    = ID(0x243)
-	IDRow       = ID(0x244)
-	IDStride    = ID(0x245)
-	IDSuffix    = ID(0x246)
-	IDWidth     = ID(0x247)
-	IDIO        = ID(0x248)
-	IDLimit     = ID(0x249)
-	IDData      = ID(0x24A)
+	IDData            = ID(0x240)
+	IDHeight          = ID(0x241)
+	IDIO              = ID(0x242)
+	IDLength          = ID(0x243)
+	IDLimit           = ID(0x244)
+	IDPrefix          = ID(0x245)
+	IDRow             = ID(0x246)
+	IDStride          = ID(0x247)
+	IDSuffix          = ID(0x248)
+	IDValidUTF8Length = ID(0x249)
+	IDWidth           = ID(0x24A)
 
 	IDSwizzleInterleavedFromReader = ID(0x280)
 )
@@ -870,19 +870,19 @@ var builtInsByID = [nBuiltInIDs]string{
 
 	IDDecodeFrameOptions: "decode_frame_options",
 
-	IDCanUndoByte:      "can_undo_byte",
-	IDCountSince:       "count_since",
-	IDHistoryAvailable: "history_available",
-	IDIsClosed:         "is_closed",
-	IDMark:             "mark",
-	IDMatch15:          "match15",
-	IDMatch31:          "match31",
-	IDMatch7:           "match7",
-	IDPosition:         "position",
-	IDSince:            "since",
-	IDSkip:             "skip",
-	IDSkipU32:          "skip_u32",
-	IDSkipU32Fast:      "skip_u32_fast",
+	IDCanUndoByte:   "can_undo_byte",
+	IDCountSince:    "count_since",
+	IDHistoryLength: "history_length",
+	IDIsClosed:      "is_closed",
+	IDMark:          "mark",
+	IDMatch15:       "match15",
+	IDMatch31:       "match31",
+	IDMatch7:        "match7",
+	IDPosition:      "position",
+	IDSince:         "since",
+	IDSkip:          "skip",
+	IDSkipU32:       "skip_u32",
+	IDSkipU32Fast:   "skip_u32_fast",
 
 	IDCopyFromSlice:                 "copy_from_slice",
 	IDLimitedCopyU32FromHistory:     "limited_copy_u32_from_history",
@@ -994,7 +994,8 @@ var builtInsByID = [nBuiltInIDs]string{
 
 	// --------
 
-	IDWriteSimpleTokenFast: "write_simple_token_fast",
+	IDWriteSimpleTokenFast:   "write_simple_token_fast",
+	IDWriteExtendedTokenFast: "write_extended_token_fast",
 
 	// -------- 0x200 block.
 
@@ -1013,17 +1014,17 @@ var builtInsByID = [nBuiltInIDs]string{
 	IDIsOK:         "is_ok",
 	IDIsSuspension: "is_suspension",
 
-	IDAvailable: "available",
-	IDHeight:    "height",
-	IDLength:    "length",
-	IDPrefix:    "prefix",
-	IDRow:       "row",
-	IDStride:    "stride",
-	IDSuffix:    "suffix",
-	IDWidth:     "width",
-	IDIO:        "io",
-	IDLimit:     "limit",
-	IDData:      "data",
+	IDData:            "data",
+	IDHeight:          "height",
+	IDIO:              "io",
+	IDLength:          "length",
+	IDLimit:           "limit",
+	IDPrefix:          "prefix",
+	IDRow:             "row",
+	IDStride:          "stride",
+	IDSuffix:          "suffix",
+	IDValidUTF8Length: "valid_utf_8_length",
+	IDWidth:           "width",
 
 	IDSwizzleInterleavedFromReader: "swizzle_interleaved_from_reader",
 }

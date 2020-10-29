@@ -7,12 +7,15 @@
 
 #include "src/gpu/GrRingBuffer.h"
 
+#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrGpu.h"
+#include "src/gpu/GrResourceProvider.h"
+
 // Get offset into buffer that has enough space for size
 // Returns fTotalSize if no space
 size_t GrRingBuffer::getAllocationOffset(size_t size) {
     // capture current state locally (because fTail could be overwritten by the completion handler)
     size_t head, tail;
-    SkAutoSpinlock lock(fMutex);
     head = fHead;
     tail = fTail;
 
@@ -52,40 +55,51 @@ size_t GrRingBuffer::getAllocationOffset(size_t size) {
 }
 
 GrRingBuffer::Slice GrRingBuffer::suballocate(size_t size) {
-    size_t offset = this->getAllocationOffset(size);
-    if (offset < fTotalSize) {
-        return { fBuffer, offset };
+    if (fCurrentBuffer) {
+        size_t offset = this->getAllocationOffset(size);
+        if (offset < fTotalSize) {
+            return { fCurrentBuffer.get(), offset };
+        }
+
+        // Try to grow allocation (old allocation will age out).
+        fTotalSize *= 2;
     }
 
-    // Try to grow allocation (old allocation will age out).
-    fTotalSize *= 2;
-    fBuffer = this->createBuffer(fTotalSize);
-    SkASSERT(fBuffer);
-    {
-        SkAutoSpinlock lock(fMutex);
-        fHead = 0;
-        fTail = 0;
-        fGenID++;
-    }
-    offset = this->getAllocationOffset(size);
+    GrResourceProvider* resourceProvider = fGpu->getContext()->priv().resourceProvider();
+    fCurrentBuffer = resourceProvider->createBuffer(fTotalSize, fType, kDynamic_GrAccessPattern);
+
+    SkASSERT(fCurrentBuffer);
+    fTrackedBuffers.push_back(fCurrentBuffer);
+    fHead = 0;
+    fTail = 0;
+    fGenID++;
+    size_t offset = this->getAllocationOffset(size);
     SkASSERT(offset < fTotalSize);
-    return { fBuffer, offset };
+    return { fCurrentBuffer.get(), offset };
 }
 
 // used when current command buffer/command list is submitted
-GrRingBuffer::SubmitData GrRingBuffer::startSubmit() {
-    SubmitData submitData;
-    SkAutoSpinlock lock(fMutex);
-    submitData.fBuffer = fBuffer;
-    submitData.fLastHead = fHead;
-    submitData.fGenID = fGenID;
-    return submitData;
+void GrRingBuffer::startSubmit(GrGpu* gpu) {
+    for (unsigned int i = 0; i < fTrackedBuffers.size(); ++i) {
+        gpu->takeOwnershipOfBuffer(std::move(fTrackedBuffers[i]));
+    }
+    fTrackedBuffers.clear();
+    // add current buffer to be tracked for next submit
+    fTrackedBuffers.push_back(fCurrentBuffer);
+
+    SubmitData* submitData = new SubmitData();
+    submitData->fOwner = this;
+    submitData->fLastHead = fHead;
+    submitData->fGenID = fGenID;
+    gpu->addFinishedProc(FinishSubmit, submitData);
 }
 
 // used when current command buffer/command list is completed
-void GrRingBuffer::finishSubmit(const GrRingBuffer::SubmitData& submitData) {
-    SkAutoSpinlock lock(fMutex);
-    if (submitData.fGenID == fGenID) {
-        fTail = submitData.fLastHead;
+void GrRingBuffer::FinishSubmit(void* finishedContext) {
+    GrRingBuffer::SubmitData* submitData = (GrRingBuffer::SubmitData*)finishedContext;
+    if (submitData && submitData->fOwner && submitData->fGenID == submitData->fOwner->fGenID) {
+        submitData->fOwner->fTail = submitData->fLastHead;
+        submitData->fOwner = nullptr;
     }
+    delete submitData;
 }

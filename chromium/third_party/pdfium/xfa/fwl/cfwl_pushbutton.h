@@ -8,7 +8,6 @@
 #define XFA_FWL_CFWL_PUSHBUTTON_H_
 
 #include "xfa/fwl/cfwl_widget.h"
-#include "xfa/fwl/cfwl_widgetproperties.h"
 
 #define FWL_STATE_PSB_Hovered (1 << FWL_WGTSTATE_MAX)
 #define FWL_STATE_PSB_Pressed (1 << (FWL_WGTSTATE_MAX + 1))
@@ -33,7 +32,6 @@ class CFWL_PushButton final : public CFWL_Widget {
 
  private:
   void DrawBkground(CXFA_Graphics* pGraphics,
-                    IFWL_ThemeProvider* pTheme,
                     const CFX_Matrix* pMatrix);
   uint32_t GetPartStates();
   void UpdateTextOutStyles();

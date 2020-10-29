@@ -19,11 +19,12 @@ extern bool gUseSkVMBlitter;
 SkSpriteBlitter::SkSpriteBlitter(const SkPixmap& source)
     : fSource(source) {}
 
-void SkSpriteBlitter::setup(const SkPixmap& dst, int left, int top, const SkPaint& paint) {
+bool SkSpriteBlitter::setup(const SkPixmap& dst, int left, int top, const SkPaint& paint) {
     fDst = dst;
     fLeft = left;
     fTop = top;
     fPaint = &paint;
+    return true;
 }
 
 void SkSpriteBlitter::blitH(int x, int y, int width) {
@@ -109,7 +110,7 @@ public:
         , fClipShader(std::move(clipShader))
     {}
 
-    void setup(const SkPixmap& dst, int left, int top, const SkPaint& paint) override {
+    bool setup(const SkPixmap& dst, int left, int top, const SkPaint& paint) override {
         fDst  = dst;
         fLeft = left;
         fTop  = top;
@@ -142,9 +143,7 @@ public:
 
         bool is_opaque = fSource.isOpaque() && fPaintColor.fA == 1.0f;
         fBlitter = SkCreateRasterPipelineBlitter(fDst, paint, p, is_opaque, fAlloc, fClipShader);
-        if (!fBlitter) {
-            fBlitter = fAlloc->make<SkNullBlitter>();
-        }
+        return fBlitter != nullptr;
     }
 
     void blitRect(int x, int y, int width, int height) override {
@@ -188,9 +187,7 @@ SkBlitter* SkBlitter::ChooseSprite(const SkPixmap& dst, const SkPaint& paint,
     SkASSERT(alloc != nullptr);
 
     if (gUseSkVMBlitter) {
-        // TODO: one day, focused SkVMBlitters with the sprite as a varying?
-        // For now, returning nullptr here will make it fall back to normal non-sprite blitting.
-        return nullptr;
+        return SkCreateSkVMSpriteBlitter(dst, paint, source,left,top, alloc, std::move(clipShader));
     }
 
     // TODO: in principle SkRasterPipelineSpriteBlitter could be made to handle this.
@@ -224,8 +221,9 @@ SkBlitter* SkBlitter::ChooseSprite(const SkPixmap& dst, const SkPaint& paint,
         blitter = alloc->make<SkRasterPipelineSpriteBlitter>(source, alloc, clipShader);
     }
 
-    if (blitter) {
-        blitter->setup(dst, left, top, paint);
+    if (blitter && blitter->setup(dst, left,top, paint)) {
+        return blitter;
     }
-    return blitter;
+
+    return SkCreateSkVMSpriteBlitter(dst, paint, source,left,top, alloc, std::move(clipShader));
 }

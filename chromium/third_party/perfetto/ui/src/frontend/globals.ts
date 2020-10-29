@@ -15,8 +15,10 @@
 import {assertExists} from '../base/logging';
 import {DeferredAction} from '../common/actions';
 import {AggregateData} from '../common/aggregation_data';
+import {Analytics} from '../common/analytics';
 import {CurrentSearchResults, SearchSummary} from '../common/search_data';
 import {CallsiteInfo, createEmptyState, State} from '../common/state';
+import {fromNs, toNs} from '../common/time';
 
 import {FrontendLocalState} from './frontend_local_state';
 import {RafScheduler} from './raf_scheduler';
@@ -86,6 +88,7 @@ export interface ThreadDesc {
   threadName: string;
   pid?: number;
   procName?: string;
+  cmdline?: string;
 }
 type ThreadMap = Map<number, ThreadDesc>;
 
@@ -99,6 +102,7 @@ class Globals {
   private _frontendLocalState?: FrontendLocalState = undefined;
   private _rafScheduler?: RafScheduler = undefined;
   private _serviceWorkerController?: ServiceWorkerController = undefined;
+  private _logging?: Analytics = undefined;
 
   // TODO(hjd): Unify trackDataStore, queryResults, overviewStore, threads.
   private _trackDataStore?: TrackDataStore = undefined;
@@ -113,11 +117,12 @@ class Globals {
   private _numQueriesQueued = 0;
   private _bufferUsage?: number = undefined;
   private _recordingLog?: string = undefined;
+  private _traceErrors?: number = undefined;
 
   private _currentSearchResults: CurrentSearchResults = {
-    sliceIds: new Float64Array(0),
-    tsStarts: new Float64Array(0),
-    utids: new Float64Array(0),
+    sliceIds: [],
+    tsStarts: [],
+    utids: [],
     trackIds: [],
     sources: [],
     totalResults: 0,
@@ -140,6 +145,7 @@ class Globals {
     this._frontendLocalState = new FrontendLocalState();
     this._rafScheduler = new RafScheduler();
     this._serviceWorkerController = new ServiceWorkerController();
+    this._logging = new Analytics();
 
     // TODO(hjd): Unify trackDataStore, queryResults, overviewStore, threads.
     this._trackDataStore = new Map<string, {}>();
@@ -171,6 +177,10 @@ class Globals {
 
   get rafScheduler() {
     return assertExists(this._rafScheduler);
+  }
+
+  get logging() {
+    return assertExists(this._logging);
   }
 
   get serviceWorkerController() {
@@ -222,6 +232,14 @@ class Globals {
     this._heapProfileDetails = assertExists(click);
   }
 
+  get traceErrors() {
+    return this._traceErrors;
+  }
+
+  setTraceErrors(arg: number) {
+    this._traceErrors = arg;
+  }
+
   get cpuProfileDetails() {
     return assertExists(this._cpuProfileDetails);
   }
@@ -271,10 +289,18 @@ class Globals {
   }
 
   getCurResolution() {
-    // Truncate the resolution to the closest power of 2.
-    // This effectively means the resolution changes every 6 zoom levels.
-    const resolution = this.frontendLocalState.timeScale.deltaPxToDuration(1);
-    return Math.pow(2, Math.floor(Math.log2(resolution)));
+    // Truncate the resolution to the closest power of 2 (in nanosecond space).
+    // We choose to work in ns space because resolution is consumed be track
+    // controllers for quantization and they rely on resolution to be a power
+    // of 2 in nanosecond form. This is property does not hold if we work in
+    // second space.
+    //
+    // This effectively means the resolution changes approximately every 6 zoom
+    // levels. Logic: each zoom level represents a delta of 0.1 * (visible
+    // window span). Therefore, zooming out by six levels is 1.1^6 ~= 2.
+    // Similarily, zooming in six levels is 0.9^6 ~= 0.5.
+    const pxToSec = this.frontendLocalState.timeScale.deltaPxToDuration(1);
+    return fromNs(Math.pow(2, Math.floor(Math.log2(toNs(pxToSec)))));
   }
 
   makeSelection(action: DeferredAction<{}>) {
@@ -301,9 +327,9 @@ class Globals {
     this._aggregateDataStore = undefined;
     this._numQueriesQueued = 0;
     this._currentSearchResults = {
-      sliceIds: new Float64Array(0),
-      tsStarts: new Float64Array(0),
-      utids: new Float64Array(0),
+      sliceIds: [],
+      tsStarts: [],
+      utids: [],
       trackIds: [],
       sources: [],
       totalResults: 0,

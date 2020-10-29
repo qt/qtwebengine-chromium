@@ -15,8 +15,7 @@
 #include "src/core/SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorSpaceXform.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -168,8 +167,9 @@ sk_sp<SkSpecialImage> SkAlphaThresholdFilterImpl::onFilterImage(const Context& c
         auto textureFP = GrTextureEffect::Make(
                 std::move(inputView), input->alphaType(),
                 SkMatrix::Translate(input->subset().x(), input->subset().y()));
-        textureFP = GrColorSpaceXformEffect::Make(std::move(textureFP), input->getColorSpace(),
-                                                  input->alphaType(), ctx.colorSpace());
+        textureFP = GrColorSpaceXformEffect::Make(std::move(textureFP),
+                                                  input->getColorSpace(), input->alphaType(),
+                                                  ctx.colorSpace(), kPremul_SkAlphaType);
         if (!textureFP) {
             return nullptr;
         }

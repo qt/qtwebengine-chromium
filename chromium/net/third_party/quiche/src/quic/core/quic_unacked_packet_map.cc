@@ -22,6 +22,90 @@ bool WillStreamFrameLengthSumWrapAround(QuicPacketLength lhs,
       "This function assumes QuicPacketLength is an unsigned integer type.");
   return std::numeric_limits<QuicPacketLength>::max() - lhs < rhs;
 }
+
+enum QuicFrameTypeBitfield : uint32_t {
+  kInvalidFrameBitfield = 0,
+  kPaddingFrameBitfield = 1,
+  kRstStreamFrameBitfield = 1 << 1,
+  kConnectionCloseFrameBitfield = 1 << 2,
+  kGoawayFrameBitfield = 1 << 3,
+  kWindowUpdateFrameBitfield = 1 << 4,
+  kBlockedFrameBitfield = 1 << 5,
+  kStopWaitingFrameBitfield = 1 << 6,
+  kPingFrameBitfield = 1 << 7,
+  kCryptoFrameBitfield = 1 << 8,
+  kHandshakeDoneFrameBitfield = 1 << 9,
+  kStreamFrameBitfield = 1 << 10,
+  kAckFrameBitfield = 1 << 11,
+  kMtuDiscoveryFrameBitfield = 1 << 12,
+  kNewConnectionIdFrameBitfield = 1 << 13,
+  kMaxStreamsFrameBitfield = 1 << 14,
+  kStreamsBlockedFrameBitfield = 1 << 15,
+  kPathResponseFrameBitfield = 1 << 16,
+  kPathChallengeFrameBitfield = 1 << 17,
+  kStopSendingFrameBitfield = 1 << 18,
+  kMessageFrameBitfield = 1 << 19,
+  kNewTokenFrameBitfield = 1 << 20,
+  kRetireConnectionIdFrameBitfield = 1 << 21,
+  kAckFrequencyFrameBitfield = 1 << 22,
+};
+
+QuicFrameTypeBitfield GetFrameTypeBitfield(QuicFrameType type) {
+  switch (type) {
+    case PADDING_FRAME:
+      return kPaddingFrameBitfield;
+    case RST_STREAM_FRAME:
+      return kRstStreamFrameBitfield;
+    case CONNECTION_CLOSE_FRAME:
+      return kConnectionCloseFrameBitfield;
+    case GOAWAY_FRAME:
+      return kGoawayFrameBitfield;
+    case WINDOW_UPDATE_FRAME:
+      return kWindowUpdateFrameBitfield;
+    case BLOCKED_FRAME:
+      return kBlockedFrameBitfield;
+    case STOP_WAITING_FRAME:
+      return kStopWaitingFrameBitfield;
+    case PING_FRAME:
+      return kPingFrameBitfield;
+    case CRYPTO_FRAME:
+      return kCryptoFrameBitfield;
+    case HANDSHAKE_DONE_FRAME:
+      return kHandshakeDoneFrameBitfield;
+    case STREAM_FRAME:
+      return kStreamFrameBitfield;
+    case ACK_FRAME:
+      return kAckFrameBitfield;
+    case MTU_DISCOVERY_FRAME:
+      return kMtuDiscoveryFrameBitfield;
+    case NEW_CONNECTION_ID_FRAME:
+      return kNewConnectionIdFrameBitfield;
+    case MAX_STREAMS_FRAME:
+      return kMaxStreamsFrameBitfield;
+    case STREAMS_BLOCKED_FRAME:
+      return kStreamsBlockedFrameBitfield;
+    case PATH_RESPONSE_FRAME:
+      return kPathResponseFrameBitfield;
+    case PATH_CHALLENGE_FRAME:
+      return kPathChallengeFrameBitfield;
+    case STOP_SENDING_FRAME:
+      return kStopSendingFrameBitfield;
+    case MESSAGE_FRAME:
+      return kMessageFrameBitfield;
+    case NEW_TOKEN_FRAME:
+      return kNewTokenFrameBitfield;
+    case RETIRE_CONNECTION_ID_FRAME:
+      return kRetireConnectionIdFrameBitfield;
+    case ACK_FREQUENCY_FRAME:
+      return kAckFrequencyFrameBitfield;
+    case NUM_FRAME_TYPES:
+      QUIC_BUG << "Unexpected frame type";
+      return kInvalidFrameBitfield;
+  }
+  QUIC_BUG << "Unexpected frame type";
+  return kInvalidFrameBitfield;
+}
+
 }  // namespace
 
 QuicUnackedPacketMap::QuicUnackedPacketMap(Perspective perspective)
@@ -63,8 +147,7 @@ void QuicUnackedPacketMap::AddSentPacket(SerializedPacket* packet,
   const bool has_crypto_handshake =
       packet->has_crypto_handshake == IS_HANDSHAKE;
   QuicTransmissionInfo info(packet->encryption_level, transmission_type,
-                            sent_time, bytes_sent, has_crypto_handshake,
-                            packet->num_padding_bytes);
+                            sent_time, bytes_sent, has_crypto_handshake);
   info.largest_acked = packet->largest_acked;
   largest_sent_largest_acked_.UpdateMax(packet->largest_acked);
 
@@ -127,7 +210,7 @@ bool QuicUnackedPacketMap::HasRetransmittableFrames(
 void QuicUnackedPacketMap::RemoveRetransmittability(
     QuicTransmissionInfo* info) {
   DeleteFrames(&info->retransmittable_frames);
-  info->retransmission.Clear();
+  info->first_sent_after_loss.Clear();
 }
 
 void QuicUnackedPacketMap::RemoveRetransmittability(
@@ -169,9 +252,9 @@ bool QuicUnackedPacketMap::IsPacketUsefulForCongestionControl(
 bool QuicUnackedPacketMap::IsPacketUsefulForRetransmittableData(
     const QuicTransmissionInfo& info) const {
   // Wait for 1 RTT before giving up on the lost packet.
-  return info.retransmission.IsInitialized() &&
+  return info.first_sent_after_loss.IsInitialized() &&
          (!largest_acked_.IsInitialized() ||
-          info.retransmission > largest_acked_);
+          info.first_sent_after_loss > largest_acked_);
 }
 
 bool QuicUnackedPacketMap::IsPacketUseless(
@@ -212,9 +295,7 @@ void QuicUnackedPacketMap::RemoveFromInFlight(QuicTransmissionInfo* info) {
       bytes_in_flight_per_packet_number_space_[packet_number_space] -=
           info->bytes_sent;
     }
-    if (GetQuicReloadableFlag(quic_fix_last_inflight_packets_sent_time) &&
-        bytes_in_flight_per_packet_number_space_[packet_number_space] == 0) {
-      QUIC_RELOADABLE_FLAG_COUNT(quic_fix_last_inflight_packets_sent_time);
+    if (bytes_in_flight_per_packet_number_space_[packet_number_space] == 0) {
       last_inflight_packets_sent_time_[packet_number_space] = QuicTime::Zero();
     }
 
@@ -252,14 +333,8 @@ QuicUnackedPacketMap::NeuterUnencryptedPackets() {
       DCHECK(!HasRetransmittableFrames(*it));
     }
   }
-  if (supports_multiple_packet_number_spaces_) {
-    if (GetQuicReloadableFlag(quic_fix_last_inflight_packets_sent_time)) {
-      DCHECK_EQ(QuicTime::Zero(),
-                last_inflight_packets_sent_time_[INITIAL_DATA]);
-    } else {
-      last_inflight_packets_sent_time_[INITIAL_DATA] = QuicTime::Zero();
-    }
-  }
+  DCHECK(!supports_multiple_packet_number_spaces_ ||
+         last_inflight_packets_sent_time_[INITIAL_DATA] == QuicTime::Zero());
   return neutered_packets;
 }
 
@@ -281,14 +356,8 @@ QuicUnackedPacketMap::NeuterHandshakePackets() {
       NotifyFramesAcked(*it, QuicTime::Delta::Zero(), QuicTime::Zero());
     }
   }
-  if (supports_multiple_packet_number_spaces()) {
-    if (GetQuicReloadableFlag(quic_fix_last_inflight_packets_sent_time)) {
-      DCHECK_EQ(QuicTime::Zero(),
-                last_inflight_packets_sent_time_[HANDSHAKE_DATA]);
-    } else {
-      last_inflight_packets_sent_time_[HANDSHAKE_DATA] = QuicTime::Zero();
-    }
-  }
+  DCHECK(!supports_multiple_packet_number_spaces() ||
+         last_inflight_packets_sent_time_[HANDSHAKE_DATA] == QuicTime::Zero());
   return neutered_packets;
 }
 
@@ -542,6 +611,23 @@ void QuicUnackedPacketMap::EnableMultiplePacketNumberSpacesSupport() {
   }
 
   supports_multiple_packet_number_spaces_ = true;
+}
+
+int32_t QuicUnackedPacketMap::GetLastPacketContent() const {
+  if (empty()) {
+    // Use -1 to distinguish with packets with no retransmittable frames nor
+    // acks.
+    return -1;
+  }
+  int32_t content = 0;
+  const QuicTransmissionInfo& last_packet = unacked_packets_.back();
+  for (const auto& frame : last_packet.retransmittable_frames) {
+    content |= GetFrameTypeBitfield(frame.type);
+  }
+  if (last_packet.largest_acked.IsInitialized()) {
+    content |= GetFrameTypeBitfield(ACK_FRAME);
+  }
+  return content;
 }
 
 }  // namespace quic

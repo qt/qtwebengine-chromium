@@ -7,6 +7,8 @@
 
 #include "src/sksl/SkSLGLSLCodeGenerator.h"
 
+#include <memory>
+
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLExtension.h"
@@ -82,7 +84,7 @@ bool GLSLCodeGenerator::usesPrecisionModifiers() const {
 String GLSLCodeGenerator::getTypeName(const Type& type) {
     switch (type.kind()) {
         case Type::kVector_Kind: {
-            Type component = type.componentType();
+            const Type& component = type.componentType();
             String result;
             if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
                 result = "vec";
@@ -104,7 +106,7 @@ String GLSLCodeGenerator::getTypeName(const Type& type) {
         }
         case Type::kMatrix_Kind: {
             String result;
-            Type component = type.componentType();
+            const Type& component = type.componentType();
             if (component == *fContext.fFloat_Type || component == *fContext.fHalf_Type) {
                 result = "mat";
             }
@@ -187,46 +189,46 @@ void GLSLCodeGenerator::writeType(const Type& type) {
 void GLSLCodeGenerator::writeExpression(const Expression& expr, Precedence parentPrecedence) {
     switch (expr.fKind) {
         case Expression::kBinary_Kind:
-            this->writeBinaryExpression((BinaryExpression&) expr, parentPrecedence);
+            this->writeBinaryExpression(expr.as<BinaryExpression>(), parentPrecedence);
             break;
         case Expression::kBoolLiteral_Kind:
-            this->writeBoolLiteral((BoolLiteral&) expr);
+            this->writeBoolLiteral(expr.as<BoolLiteral>());
             break;
         case Expression::kConstructor_Kind:
-            this->writeConstructor((Constructor&) expr, parentPrecedence);
+            this->writeConstructor(expr.as<Constructor>(), parentPrecedence);
             break;
         case Expression::kIntLiteral_Kind:
-            this->writeIntLiteral((IntLiteral&) expr);
+            this->writeIntLiteral(expr.as<IntLiteral>());
             break;
         case Expression::kFieldAccess_Kind:
-            this->writeFieldAccess(((FieldAccess&) expr));
+            this->writeFieldAccess(expr.as<FieldAccess>());
             break;
         case Expression::kFloatLiteral_Kind:
-            this->writeFloatLiteral(((FloatLiteral&) expr));
+            this->writeFloatLiteral(expr.as<FloatLiteral>());
             break;
         case Expression::kFunctionCall_Kind:
-            this->writeFunctionCall((FunctionCall&) expr);
+            this->writeFunctionCall(expr.as<FunctionCall>());
             break;
         case Expression::kPrefix_Kind:
-            this->writePrefixExpression((PrefixExpression&) expr, parentPrecedence);
+            this->writePrefixExpression(expr.as<PrefixExpression>(), parentPrecedence);
             break;
         case Expression::kPostfix_Kind:
-            this->writePostfixExpression((PostfixExpression&) expr, parentPrecedence);
+            this->writePostfixExpression(expr.as<PostfixExpression>(), parentPrecedence);
             break;
         case Expression::kSetting_Kind:
-            this->writeSetting((Setting&) expr);
+            this->writeSetting(expr.as<Setting>());
             break;
         case Expression::kSwizzle_Kind:
-            this->writeSwizzle((Swizzle&) expr);
+            this->writeSwizzle(expr.as<Swizzle>());
             break;
         case Expression::kVariableReference_Kind:
-            this->writeVariableReference((VariableReference&) expr);
+            this->writeVariableReference(expr.as<VariableReference>());
             break;
         case Expression::kTernary_Kind:
-            this->writeTernaryExpression((TernaryExpression&) expr, parentPrecedence);
+            this->writeTernaryExpression(expr.as<TernaryExpression>(), parentPrecedence);
             break;
         case Expression::kIndex_Kind:
-            this->writeIndexExpression((IndexExpression&) expr);
+            this->writeIndexExpression(expr.as<IndexExpression>());
             break;
         default:
 #ifdef SK_DEBUG
@@ -240,7 +242,7 @@ static bool is_abs(Expression& expr) {
     if (expr.fKind != Expression::kFunctionCall_Kind) {
         return false;
     }
-    return ((FunctionCall&) expr).fFunction.fName == "abs";
+    return expr.as<FunctionCall>().fFunction.fName == "abs";
 }
 
 // turns min(abs(x), y) into ((tmpVar1 = abs(x)) < (tmpVar2 = y) ? tmpVar1 : tmpVar2) to avoid a
@@ -1461,29 +1463,29 @@ void GLSLCodeGenerator::writeStatement(const Statement& s) {
             this->writeBlock((Block&) s);
             break;
         case Statement::kExpression_Kind:
-            this->writeExpression(*((ExpressionStatement&) s).fExpression, kTopLevel_Precedence);
+            this->writeExpression(*s.as<ExpressionStatement>().fExpression, kTopLevel_Precedence);
             this->write(";");
             break;
         case Statement::kReturn_Kind:
-            this->writeReturnStatement((ReturnStatement&) s);
+            this->writeReturnStatement(s.as<ReturnStatement>());
             break;
         case Statement::kVarDeclarations_Kind:
-            this->writeVarDeclarations(*((VarDeclarationsStatement&) s).fDeclaration, false);
+            this->writeVarDeclarations(*s.as<VarDeclarationsStatement>().fDeclaration, false);
             break;
         case Statement::kIf_Kind:
-            this->writeIfStatement((IfStatement&) s);
+            this->writeIfStatement(s.as<IfStatement>());
             break;
         case Statement::kFor_Kind:
-            this->writeForStatement((ForStatement&) s);
+            this->writeForStatement(s.as<ForStatement>());
             break;
         case Statement::kWhile_Kind:
-            this->writeWhileStatement((WhileStatement&) s);
+            this->writeWhileStatement(s.as<WhileStatement>());
             break;
         case Statement::kDo_Kind:
-            this->writeDoStatement((DoStatement&) s);
+            this->writeDoStatement(s.as<DoStatement>());
             break;
         case Statement::kSwitch_Kind:
-            this->writeSwitchStatement((SwitchStatement&) s);
+            this->writeSwitchStatement(s.as<SwitchStatement>());
             break;
         case Statement::kBreak_Kind:
             this->write("break;");
@@ -1548,8 +1550,7 @@ void GLSLCodeGenerator::writeForStatement(const ForStatement& f) {
         if (fProgram.fSettings.fCaps->addAndTrueToLoopCondition()) {
             std::unique_ptr<Expression> and_true(new BinaryExpression(
                     -1, f.fTest->clone(), Token::Kind::TK_LOGICALAND,
-                    std::unique_ptr<BoolLiteral>(new BoolLiteral(fContext, -1,
-                                                                 true)),
+                    std::make_unique<BoolLiteral>(fContext, -1, true),
                     *fContext.fBool_Type));
             this->writeExpression(*and_true, kTopLevel_Precedence);
         } else {
@@ -1793,7 +1794,7 @@ bool GLSLCodeGenerator::generateCode() {
     }
     write_stringstream(fExtraFunctions, *rawOut);
     write_stringstream(body, *rawOut);
-    return true;
+    return 0 == fErrors.errorCount();
 }
 
-}
+}  // namespace SkSL

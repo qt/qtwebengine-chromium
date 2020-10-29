@@ -65,11 +65,11 @@ namespace dawn_native {
                         "PipelineStatistics");
                 }
 
-                std::set<wgpu::PipelineStatisticsName> pipelineStatisticsSet;
+                std::set<wgpu::PipelineStatisticName> pipelineStatisticsSet;
                 for (uint32_t i = 0; i < descriptor->pipelineStatisticsCount; i++) {
-                    DAWN_TRY(ValidatePipelineStatisticsName(descriptor->pipelineStatistics[i]));
+                    DAWN_TRY(ValidatePipelineStatisticName(descriptor->pipelineStatistics[i]));
 
-                    std::pair<std::set<wgpu::PipelineStatisticsName>::iterator, bool> res =
+                    std::pair<std::set<wgpu::PipelineStatisticName>::iterator, bool> res =
                         pipelineStatisticsSet.insert((descriptor->pipelineStatistics[i]));
                     if (!res.second) {
                         return DAWN_VALIDATION_ERROR("Duplicate pipeline statistics found");
@@ -127,8 +127,16 @@ namespace dawn_native {
         return mQueryCount;
     }
 
-    const std::vector<wgpu::PipelineStatisticsName>& QuerySetBase::GetPipelineStatistics() const {
+    const std::vector<wgpu::PipelineStatisticName>& QuerySetBase::GetPipelineStatistics() const {
         return mPipelineStatistics;
+    }
+
+    MaybeError QuerySetBase::ValidateCanUseInSubmitNow() const {
+        ASSERT(!IsError());
+        if (mState == QuerySetState::Destroyed) {
+            return DAWN_VALIDATION_ERROR("Destroyed query set used in a submit");
+        }
+        return {};
     }
 
     void QuerySetBase::Destroy() {

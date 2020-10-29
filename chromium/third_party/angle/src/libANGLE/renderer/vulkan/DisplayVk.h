@@ -20,7 +20,8 @@ class RendererVk;
 
 class ShareGroupVk : public ShareGroupImpl
 {
-  private:
+  public:
+    ShareGroupVk() {}
 };
 
 class DisplayVk : public DisplayImpl, public vk::Context

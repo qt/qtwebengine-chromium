@@ -348,8 +348,9 @@ void MdnsPublisher::ProcessRecordQueue() {
     } else if (message.answers().empty()) {
       // This case should never happen, because it means a record is too large
       // to fit into its own message.
-      OSP_LOG << "Encountered unreasonably large message in cache. Skipping "
-              << "known answer in suppressions...";
+      OSP_LOG_INFO
+          << "Encountered unreasonably large message in cache. Skipping "
+          << "known answer in suppressions...";
       it++;
     } else {
       sender_->SendMulticast(message);

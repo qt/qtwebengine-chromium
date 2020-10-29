@@ -5,9 +5,12 @@
  * found in the LICENSE file.
  */
 
+#include <memory>
+
 #include "src/gpu/gl/GrGLGpu.h"
 
 #include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrProcessor.h"
 #include "src/gpu/GrProgramDesc.h"
@@ -95,7 +98,7 @@ sk_sp<GrGLProgram> GrGLGpu::ProgramCache::findOrCreateProgram(GrRenderTarget* re
             return nullptr;
         }
         fGpu->fStats.incNumCompilationSuccesses();
-        entry = fMap.insert(desc, std::unique_ptr<Entry>(new Entry(std::move(program))));
+        entry = fMap.insert(desc, std::make_unique<Entry>(std::move(program)));
         *stat = Stats::ProgramCacheResult::kMiss;
     }
 
@@ -119,6 +122,6 @@ bool GrGLGpu::ProgramCache::precompileShader(const SkData& key, const SkData& da
         return false;
     }
 
-    fMap.insert(desc, std::unique_ptr<Entry>(new Entry(precompiledProgram)));
+    fMap.insert(desc, std::make_unique<Entry>(precompiledProgram));
     return true;
 }

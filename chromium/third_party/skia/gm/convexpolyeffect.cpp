@@ -18,7 +18,6 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
-#include "include/gpu/GrContext.h"
 #include "include/private/GrSharedEnums.h"
 #include "include/private/GrTypesPriv.h"
 #include "src/core/SkTLList.h"
@@ -108,7 +107,7 @@ protected:
         fRects.addToTail(SkRect::MakeLTRB(100.f, 50.5f, 5.f, 0.5f));
     }
 
-    void onDraw(GrContext* context, GrRenderTargetContext* renderTargetContext,
+    void onDraw(GrRecordingContext* context, GrRenderTargetContext* renderTargetContext,
                 SkCanvas* canvas) override {
         SkScalar y = 0;
         static constexpr SkScalar kDX = 12.f;
@@ -134,7 +133,7 @@ protected:
                 GrPaint grPaint;
                 grPaint.setColor4f({ 0, 0, 0, 1.f });
                 grPaint.setXPFactory(GrPorterDuffXPFactory::Get(SkBlendMode::kSrc));
-                grPaint.addCoverageFragmentProcessor(std::move(fp));
+                grPaint.setCoverageFragmentProcessor(std::move(fp));
 
                 auto rect = p.getBounds().makeOutset(kOutset, kOutset);
                 auto op = sk_gpu_test::test_ops::MakeRect(context, std::move(grPaint), rect);
@@ -173,7 +172,7 @@ protected:
                 GrPaint grPaint;
                 grPaint.setColor4f({ 0, 0, 0, 1.f });
                 grPaint.setXPFactory(GrPorterDuffXPFactory::Get(SkBlendMode::kSrc));
-                grPaint.addCoverageFragmentProcessor(std::move(fp));
+                grPaint.setCoverageFragmentProcessor(std::move(fp));
 
                 auto drawRect = rect.makeOutset(kOutset, kOutset);
                 auto op = sk_gpu_test::test_ops::MakeRect(context, std::move(grPaint), drawRect);
@@ -207,4 +206,4 @@ private:
 };
 
 DEF_GM(return new ConvexPolyEffect;)
-}
+}  // namespace skiagm

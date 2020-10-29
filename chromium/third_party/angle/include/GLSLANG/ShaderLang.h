@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 230
+#define ANGLE_SH_VERSION 233
 
 enum ShShaderSpec
 {
@@ -339,6 +339,9 @@ const ShCompileOptions SH_IGNORE_PRECISION_QUALIFIERS = UINT64_C(1) << 54;
 // Allow compiler to do early fragment tests as an optimization.
 const ShCompileOptions SH_EARLY_FRAGMENT_TESTS_OPTIMIZATION = UINT64_C(1) << 55;
 
+// Allow compiler to insert Android pre-rotation code.
+const ShCompileOptions SH_ADD_PRE_ROTATION = UINT64_C(1) << 56;
+
 // Defines alternate strategies for implementing array index clamping.
 enum ShArrayIndexClampingStrategy
 {
@@ -388,6 +391,7 @@ struct ShBuiltInResources
     int OVR_multiview;
     int OVR_multiview2;
     int EXT_multisampled_render_to_texture;
+    int EXT_multisampled_render_to_texture2;
     int EXT_YUV_target;
     int EXT_geometry_shader;
     int EXT_gpu_shader5;
@@ -790,6 +794,12 @@ extern const char kAtomicCountersBlockName[];
 extern const char kLineRasterEmulationPosition[];
 
 }  // namespace vk
+
+namespace mtl
+{
+// Specialization constant to enable GL_SAMPLE_COVERAGE_VALUE emulation.
+extern const char kCoverageMaskEnabledConstName[];
+}  // namespace mtl
 }  // namespace sh
 
 #endif  // GLSLANG_SHADERLANG_H_

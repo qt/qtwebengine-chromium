@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Formatter from '../formatter/formatter.js';
 import * as QuickOpen from '../quick_open/quick_open.js';
+import * as UI from '../ui/ui.js';
 import * as Workspace from '../workspace/workspace.js';  // eslint-disable-line no-unused-vars
 
 import {SourcesView} from './SourcesView.js';
@@ -114,7 +118,7 @@ export class OutlineQuickOpen extends QuickOpen.FilteredListWidget.Provider {
    * @return {?Workspace.UISourceCode.UISourceCode}
    */
   _currentUISourceCode() {
-    const sourcesView = self.UI.context.flavor(SourcesView);
+    const sourcesView = UI.Context.Context.instance().flavor(SourcesView);
     if (!sourcesView) {
       return null;
     }

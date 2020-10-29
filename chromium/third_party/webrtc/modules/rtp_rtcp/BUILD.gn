@@ -98,7 +98,6 @@ rtc_library("rtp_rtcp_format") {
   ]
 
   deps = [
-    "..:module_api",
     "..:module_api_public",
     "../../api:array_view",
     "../../api:function_view",
@@ -294,7 +293,10 @@ rtc_library("rtp_rtcp") {
     "../../rtc_base:rtc_numerics",
     "../../rtc_base:safe_minmax",
     "../../rtc_base/experiments:field_trial_parser",
+    "../../rtc_base/synchronization:mutex",
     "../../rtc_base/synchronization:sequence_checker",
+    "../../rtc_base/task_utils:pending_task_safety_flag",
+    "../../rtc_base/task_utils:repeating_task",
     "../../rtc_base/task_utils:to_queued_task",
     "../../rtc_base/time:timestamp_extrapolator",
     "../../system_wrappers",
@@ -377,7 +379,6 @@ rtc_library("fec_test_helper") {
   deps = [
     ":rtp_rtcp",
     ":rtp_rtcp_format",
-    "..:module_api",
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
   ]
@@ -519,7 +520,6 @@ if (rtc_include_tests) {
       ":rtcp_transceiver",
       ":rtp_rtcp",
       ":rtp_rtcp_format",
-      "..:module_api",
       "../..:webrtc_common",
       "../../api:array_view",
       "../../api:libjingle_peerconnection_api",
@@ -551,6 +551,7 @@ if (rtc_include_tests) {
       "../../rtc_base:rtc_base_tests_utils",
       "../../rtc_base:rtc_numerics",
       "../../rtc_base:task_queue_for_test",
+      "../../rtc_base/task_utils:to_queued_task",
       "../../system_wrappers",
       "../../test:field_trial",
       "../../test:mock_frame_transformer",
@@ -558,6 +559,7 @@ if (rtc_include_tests) {
       "../../test:rtp_test_utils",
       "../../test:test_common",
       "../../test:test_support",
+      "../../test/time_controller:time_controller",
       "../video_coding:codec_globals_headers",
     ]
     absl_deps = [

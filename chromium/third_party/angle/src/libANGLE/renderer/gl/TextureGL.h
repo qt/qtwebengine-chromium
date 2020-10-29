@@ -160,7 +160,9 @@ class TextureGL : public TextureImpl
                                            GLenum internalFormat,
                                            const gl::Extents &size,
                                            gl::MemoryObject *memoryObject,
-                                           GLuint64 offset) override;
+                                           GLuint64 offset,
+                                           GLbitfield createFlags,
+                                           GLbitfield usageFlags) override;
 
     angle::Result setImageExternal(const gl::Context *context,
                                    const gl::ImageIndex &index,
@@ -191,7 +193,7 @@ class TextureGL : public TextureImpl
 
     angle::Result syncState(const gl::Context *context,
                             const gl::Texture::DirtyBits &dirtyBits,
-                            gl::TextureCommand source) override;
+                            gl::Command source) override;
     bool hasAnyDirtyBit() const;
 
     angle::Result setBaseLevel(const gl::Context *context, GLuint baseLevel) override;

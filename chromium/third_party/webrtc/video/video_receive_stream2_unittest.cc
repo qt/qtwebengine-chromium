@@ -25,7 +25,6 @@
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "modules/utility/include/process_thread.h"
 #include "modules/video_coding/encoded_frame.h"
-#include "rtc_base/critical_section.h"
 #include "rtc_base/event.h"
 #include "system_wrappers/include/clock.h"
 #include "test/fake_decoder.h"
@@ -99,26 +98,20 @@ class VideoReceiveStream2Test : public ::testing::Test {
         task_queue_factory_(CreateDefaultTaskQueueFactory()),
         config_(&mock_transport_),
         call_stats_(Clock::GetRealTimeClock(), loop_.task_queue()),
-        h264_decoder_factory_(&mock_h264_video_decoder_),
-        null_decoder_factory_(&mock_null_video_decoder_) {}
+        h264_decoder_factory_(&mock_h264_video_decoder_) {}
 
   void SetUp() {
     constexpr int kDefaultNumCpuCores = 2;
     config_.rtp.remote_ssrc = 1111;
     config_.rtp.local_ssrc = 2222;
     config_.renderer = &fake_renderer_;
+    config_.decoder_factory = &h264_decoder_factory_;
     VideoReceiveStream::Decoder h264_decoder;
     h264_decoder.payload_type = 99;
     h264_decoder.video_format = SdpVideoFormat("H264");
     h264_decoder.video_format.parameters.insert(
         {"sprop-parameter-sets", "Z0IACpZTBYmI,aMljiA=="});
-    h264_decoder.decoder_factory = &h264_decoder_factory_;
     config_.decoders.push_back(h264_decoder);
-    VideoReceiveStream::Decoder null_decoder;
-    null_decoder.payload_type = 98;
-    null_decoder.video_format = SdpVideoFormat("null");
-    null_decoder.decoder_factory = &null_decoder_factory_;
-    config_.decoders.push_back(null_decoder);
 
     clock_ = Clock::GetRealTimeClock();
     timing_ = new VCMTiming(clock_);
@@ -138,9 +131,7 @@ class VideoReceiveStream2Test : public ::testing::Test {
   VideoReceiveStream::Config config_;
   internal::CallStats call_stats_;
   MockVideoDecoder mock_h264_video_decoder_;
-  MockVideoDecoder mock_null_video_decoder_;
   test::VideoDecoderProxyFactory h264_decoder_factory_;
-  test::VideoDecoderProxyFactory null_decoder_factory_;
   cricket::FakeVideoRenderer fake_renderer_;
   MockTransport mock_transport_;
   PacketRouter packet_router_;
@@ -253,10 +244,10 @@ class VideoReceiveStream2TestWithFakeDecoder : public ::testing::Test {
     config_.rtp.remote_ssrc = 1111;
     config_.rtp.local_ssrc = 2222;
     config_.renderer = &fake_renderer_;
+    config_.decoder_factory = &fake_decoder_factory_;
     VideoReceiveStream::Decoder fake_decoder;
     fake_decoder.payload_type = 99;
     fake_decoder.video_format = SdpVideoFormat("VP8");
-    fake_decoder.decoder_factory = &fake_decoder_factory_;
     config_.decoders.push_back(fake_decoder);
     clock_ = Clock::GetRealTimeClock();
     ReCreateReceiveStream(VideoReceiveStream::RecordingState());
@@ -476,10 +467,10 @@ class VideoReceiveStream2TestWithSimulatedClock : public ::testing::Test {
     config.rtp.remote_ssrc = 1111;
     config.rtp.local_ssrc = 2222;
     config.renderer = renderer;
+    config.decoder_factory = decoder_factory;
     VideoReceiveStream::Decoder fake_decoder;
     fake_decoder.payload_type = 99;
     fake_decoder.video_format = SdpVideoFormat("VP8");
-    fake_decoder.decoder_factory = decoder_factory;
     config.decoders.push_back(fake_decoder);
     return config;
   }

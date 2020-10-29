@@ -98,7 +98,8 @@ void ResetUVModeCounters(SymbolDecoderContext* const context) {
 
 }  // namespace
 
-#define CDF_COPY(source, destination) \
+#define CDF_COPY(source, destination)                       \
+  static_assert(sizeof(source) == sizeof(destination), ""); \
   memcpy(destination, source, sizeof(source))
 
 void SymbolDecoderContext::Initialize(int base_quantizer_index) {

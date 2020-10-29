@@ -27,6 +27,14 @@ enum class NetworkBindingResult {
   NETWORK_CHANGED = -4
 };
 
+// NetworkPreference property set by operating system/firmware that has
+// information about connection strength to e.g WIFI router or CELL base towers.
+// GENERATED_JAVA_ENUM_PACKAGE: org.webrtc
+enum class NetworkPreference {
+  NEUTRAL = 0,
+  NOT_PREFERRED = -1,
+};
+
 class NetworkBinderInterface {
  public:
   // Binds a socket to the network that is attached to |address| so that all
@@ -53,8 +61,7 @@ class NetworkBinderInterface {
  *
  * Memory consideration:
  * NetworkMonitor is owned by the caller (NetworkManager). The global network
- * monitor factory is owned by the factory itself but needs to be released from
- * the factory creator.
+ * monitor factory is owned by the PeerConnectionFactory.
  */
 // Generic network monitor interface. It starts and stops monitoring network
 // changes, and fires the SignalNetworksChanged event when networks change.
@@ -74,6 +81,8 @@ class NetworkMonitorInterface {
 
   virtual AdapterType GetAdapterType(const std::string& interface_name) = 0;
   virtual AdapterType GetVpnUnderlyingAdapterType(
+      const std::string& interface_name) = 0;
+  virtual NetworkPreference GetNetworkPreference(
       const std::string& interface_name) = 0;
 };
 
@@ -96,26 +105,6 @@ class NetworkMonitorBase : public NetworkMonitorInterface,
 
  private:
   Thread* worker_thread_;
-};
-
-/*
- * NetworkMonitorFactory creates NetworkMonitors.
- */
-class NetworkMonitorFactory {
- public:
-  // This is not thread-safe; it should be called once (or once per audio/video
-  // call) during the call initialization.
-  static void SetFactory(NetworkMonitorFactory* factory);
-
-  static void ReleaseFactory(NetworkMonitorFactory* factory);
-  static NetworkMonitorFactory* GetFactory();
-
-  virtual NetworkMonitorInterface* CreateNetworkMonitor() = 0;
-
-  virtual ~NetworkMonitorFactory();
-
- protected:
-  NetworkMonitorFactory();
 };
 
 }  // namespace rtc

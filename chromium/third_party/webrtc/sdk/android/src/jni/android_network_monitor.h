@@ -18,6 +18,7 @@
 
 #include "absl/types/optional.h"
 #include "rtc_base/network_monitor.h"
+#include "rtc_base/network_monitor_factory.h"
 #include "rtc_base/thread_checker.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 
@@ -26,7 +27,7 @@ namespace jni {
 
 typedef int64_t NetworkHandle;
 
-// c++ equivalent of java NetworkMonitorAutoDetect.ConnectionType.
+// c++ equivalent of java NetworkChangeDetector.ConnectionType.
 enum NetworkType {
   NETWORK_UNKNOWN,
   NETWORK_ETHERNET,
@@ -79,8 +80,13 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorBase,
   rtc::AdapterType GetAdapterType(const std::string& if_name) override;
   rtc::AdapterType GetVpnUnderlyingAdapterType(
       const std::string& if_name) override;
+  rtc::NetworkPreference GetNetworkPreference(
+      const std::string& if_name) override;
+
   void OnNetworkConnected(const NetworkInformation& network_info);
   void OnNetworkDisconnected(NetworkHandle network_handle);
+  void OnNetworkPreference(NetworkType type, rtc::NetworkPreference preference);
+
   // Always expected to be called on the network thread.
   void SetNetworkInfos(const std::vector<NetworkInformation>& network_infos);
 
@@ -95,6 +101,10 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorBase,
   void NotifyOfActiveNetworkList(JNIEnv* env,
                                  const JavaRef<jobject>& j_caller,
                                  const JavaRef<jobjectArray>& j_network_infos);
+  void NotifyOfNetworkPreference(JNIEnv* env,
+                                 const JavaRef<jobject>& j_caller,
+                                 const JavaRef<jobject>& j_connection_type,
+                                 jint preference);
 
   // Visible for testing.
   absl::optional<NetworkHandle> FindNetworkHandleFromAddress(
@@ -113,6 +123,8 @@ class AndroidNetworkMonitor : public rtc::NetworkMonitorBase,
   std::map<std::string, rtc::AdapterType> vpn_underlying_adapter_type_by_name_;
   std::map<rtc::IPAddress, NetworkHandle> network_handle_by_address_;
   std::map<NetworkHandle, NetworkInformation> network_info_by_handle_;
+  std::map<rtc::AdapterType, rtc::NetworkPreference>
+      network_preference_by_adapter_type_;
   bool find_network_handle_without_ipv6_temporary_part_;
   bool surface_cellular_types_;
 };

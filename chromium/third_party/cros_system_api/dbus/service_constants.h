@@ -27,6 +27,7 @@
 #include "ip_peripheral/dbus-constants.h"
 #include "login_manager/dbus-constants.h"
 #include "lorgnette/dbus-constants.h"
+#include "ocr/dbus-constants.h"
 #include "oobe_config/dbus-constants.h"
 #include "patchpanel/dbus-constants.h"
 #include "permission_broker/dbus-constants.h"
@@ -175,6 +176,14 @@ const char kScreenLockServicePath[] = "/org/chromium/ScreenLockService";
 const char kScreenLockServiceInterface[] =
     "org.chromium.ScreenLockServiceInterface";
 const char kScreenLockServiceShowLockScreenMethod[] = "ShowLockScreen";
+
+const char kUserAuthenticationServiceName[] =
+    "org.chromium.UserAuthenticationService";
+const char kUserAuthenticationServicePath[] =
+    "/org/chromium/UserAuthenticationService";
+const char kUserAuthenticationServiceInterface[] =
+    "org.chromium.UserAuthenticationServiceInterface";
+const char kUserAuthenticationServiceShowAuthDialogMethod[] = "ShowAuthDialog";
 
 constexpr char kVirtualFileRequestServiceName[] =
     "org.chromium.VirtualFileRequestService";
@@ -401,7 +410,6 @@ const char kNameProperty[] = "Name";
 const char kDeviceNameProperty[] = "DeviceName";
 const char kActiveProperty[] = "Active";
 const char kPluggedTimeProperty[] = "PluggedTime";
-const char kMicPositionsProperty[] = "MicPositions";
 const char kStableDeviceIdProperty[] = "StableDeviceId";
 const char kStableDeviceIdNewProperty[] = "StableDeviceIdNew";
 const char kMaxSupportedChannelsProperty[] = "MaxSupportedChannels";
@@ -457,10 +465,7 @@ const char kCreateSecureMessageMethod[] = "CreateSecureMessage";
 const char kUnwrapSecureMessageMethod[] = "UnwrapSecureMessage";
 }  // namespace easy_unlock
 
-namespace arc_oemcrypto {
-const char kArcOemCryptoServiceInterface[] = "org.chromium.ArcOemCrypto";
-const char kArcOemCryptoServiceName[] = "org.chromium.ArcOemCrypto";
-const char kArcOemCryptoServicePath[] = "/org/chromium/ArcOemCrypto";
+namespace cdm_oemcrypto {
 const char kCdmFactoryDaemonServiceInterface[] =
     "org.chromium.CdmFactoryDaemon";
 const char kCdmFactoryDaemonServiceName[] = "org.chromium.CdmFactoryDaemon";
@@ -469,7 +474,7 @@ const char kCdmFactoryDaemonServicePath[] = "/org/chromium/CdmFactoryDaemon";
 const char kBootstrapMojoConnection[] = "BootstrapMojoConnection";
 const char kBootstrapCdmFactoryDaemonMojoConnection[] =
     "BootstrapCdmFactoryDaemonMojoConnection";
-}  // namespace arc_oemcrypto
+}  // namespace cdm_oemcrypto
 
 namespace midis {
 constexpr char kMidisServiceName[] = "org.chromium.Midis";
@@ -488,6 +493,27 @@ constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
 // Token identifying the primordial Mojo pipe passed to BootstrapMojoConnection.
 constexpr char kBootstrapMojoConnectionChannelToken[] = "ml-service-bootstrap";
 }  // namespace ml
+
+namespace iioservice {
+constexpr char kIioserviceServiceName[] = "org.chromium.Iioservice";
+constexpr char kIioserviceServicePath[] = "/org/chromium/Iioservice";
+constexpr char kIioserviceInterfaceName[] = "org.chromium.Iioservice";
+
+// Methods
+constexpr char kServerBootstrapMojoConnectionMethod[] =
+    "ServerBootstrapMojoConnection";
+// Token identifying the primordial Mojo pipe passed to
+// ServerBootstrapMojoConnection.
+constexpr char kServerBootstrapMojoConnectionChannelToken[] =
+    "iioservice-server-bootstrap";
+
+constexpr char kClientBootstrapMojoConnectionMethod[] =
+    "ClientBootstrapMojoConnection";
+// Token identifying the primordial Mojo pipe passed to
+// ClientBootstrapMojoConnection.
+constexpr char kClientBootstrapMojoConnectionChannelToken[] =
+    "iioservice-client-bootstrap";
+}  // namespace iioservice
 
 namespace virtual_file_provider {
 constexpr char kVirtualFileProviderServiceName[] =
@@ -552,6 +578,19 @@ constexpr char kMountMethod[] = "Mount";
 constexpr char kUnmountMethod[] = "Unmount";
 constexpr char kOpenFileMethod[] = "OpenFile";
 }  // namespace appfuse
+
+namespace sensor {
+// D-Bus service constants.
+constexpr char kArcSensorServiceInterface[] =
+    "org.chromium.ArcSensorService";
+constexpr char kArcSensorServiceServicePath[] =
+    "/org/chromium/ArcSensorService";
+constexpr char kArcSensorServiceServiceName[] =
+    "org.chromium.ArcSensorService";
+
+// Method names.
+constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+}  // namespace sensor
 
 }  // namespace arc
 

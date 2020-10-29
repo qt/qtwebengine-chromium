@@ -90,7 +90,7 @@ extern "C" {
 #elif defined(__x86) || defined(__i386) || defined(__i386__) || defined(_M_IX86)
 #define OPENSSL_32_BIT
 #define OPENSSL_X86
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(_M_ARM64)
 #define OPENSSL_64_BIT
 #define OPENSSL_AARCH64
 #elif defined(__arm) || defined(__arm__) || defined(_M_ARM)
@@ -184,7 +184,7 @@ extern "C" {
 // A consumer may use this symbol in the preprocessor to temporarily build
 // against multiple revisions of BoringSSL at the same time. It is not
 // recommended to do so for longer than is necessary.
-#define BORINGSSL_API_VERSION 10
+#define BORINGSSL_API_VERSION 11
 
 #if defined(BORINGSSL_SHARED_LIBRARY)
 

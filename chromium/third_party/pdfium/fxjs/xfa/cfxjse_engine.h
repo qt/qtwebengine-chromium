@@ -13,6 +13,7 @@
 
 #include "core/fxcrt/unowned_ptr.h"
 #include "fxjs/cfx_v8.h"
+#include "v8/include/cppgc/persistent.h"
 #include "v8/include/v8.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -25,7 +26,6 @@ class CFXJSE_FormCalcContext;
 class CFXJSE_HostObject;
 class CFXJSE_ResolveProcessor;
 class CJS_Runtime;
-class CXFA_List;
 
 // Flags for |dwStyles| argument to CFXJSE_Engine::ResolveObjects().
 #define XFA_RESOLVENODE_Children 0x0001
@@ -85,20 +85,20 @@ class CFXJSE_Engine final : public CFX_V8 {
                       CXFA_Node* bindNode);
 
   CFXJSE_Value* GetOrCreateJSBindingFromMap(CXFA_Object* pObject);
-  void RemoveJSBindingFromMap(CXFA_Object* pObject);
 
-  void AddToCacheList(std::unique_ptr<CXFA_List> pList);
-  CXFA_Object* GetThisObject() const { return m_pThisObject.Get(); }
-
-  void SetNodesOfRunScript(std::vector<CXFA_Node*>* pArray);
-  void AddNodesOfRunScript(CXFA_Node* pNode);
+  CXFA_Object* GetThisObject() const { return m_pThisObject; }
   CFXJSE_Class* GetJseNormalClass() const { return m_pJsClass.Get(); }
+
+  void SetNodesOfRunScript(std::vector<cppgc::Persistent<CXFA_Node>>* pArray);
+  void AddNodesOfRunScript(CXFA_Node* pNode);
 
   void SetRunAtType(XFA_AttributeValue eRunAt) { m_eRunAtType = eRunAt; }
   bool IsRunAtClient() { return m_eRunAtType != XFA_AttributeValue::Server; }
 
   CXFA_Script::Type GetType();
-  std::vector<CXFA_Node*>* GetUpObjectArray() { return &m_upObjectArray; }
+  std::vector<cppgc::Persistent<CXFA_Node>>* GetUpObjectArray() {
+    return &m_upObjectArray;
+  }
   CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
 
   CXFA_Object* ToXFAObject(v8::Local<v8::Value> obj);
@@ -115,7 +115,8 @@ class CFXJSE_Engine final : public CFX_V8 {
                        uint32_t dwFlag,
                        bool bSetting);
   bool IsStrictScopeInJavaScript();
-  CXFA_Object* GetVariablesThis(CXFA_Object* pObject, bool bScriptNode);
+  CXFA_Object* GetVariablesThis(CXFA_Object* pObject);
+  CXFA_Object* GetVariablesScript(CXFA_Object* pObject);
   bool QueryVariableValue(CXFA_Node* pScriptNode,
                           ByteStringView szPropName,
                           CFXJSE_Value* pValue,
@@ -123,21 +124,20 @@ class CFXJSE_Engine final : public CFX_V8 {
   bool RunVariablesScript(CXFA_Node* pScriptNode);
 
   UnownedPtr<CJS_Runtime> const m_pSubordinateRuntime;
-  UnownedPtr<CXFA_Document> const m_pDocument;
+  cppgc::WeakPersistent<CXFA_Document> const m_pDocument;
   std::unique_ptr<CFXJSE_Context> m_JsContext;
   UnownedPtr<CFXJSE_Class> m_pJsClass;
   CXFA_Script::Type m_eScriptType = CXFA_Script::Type::Unknown;
-  std::map<CXFA_Object*, std::unique_ptr<CFXJSE_Value>> m_mapObjectToValue;
-  std::map<CXFA_Object*, std::unique_ptr<CFXJSE_Context>>
-      m_mapVariableToContext;
+  // |m_mapObjectToValue| is what ensures the v8 object bound to a
+  // CJX_Object remains valid for the lifetime of the engine.
+  std::map<CJX_Object*, std::unique_ptr<CFXJSE_Value>> m_mapObjectToValue;
+  std::map<CJX_Object*, std::unique_ptr<CFXJSE_Context>> m_mapVariableToContext;
   UnownedPtr<CXFA_EventParam> m_eventParam;
-  std::vector<CXFA_Node*> m_upObjectArray;
-  // CacheList holds the List items so we can clean them up when we're done.
-  std::vector<std::unique_ptr<CXFA_List>> m_CacheList;
-  UnownedPtr<std::vector<CXFA_Node*>> m_pScriptNodeArray;
+  std::vector<cppgc::Persistent<CXFA_Node>> m_upObjectArray;
+  UnownedPtr<std::vector<cppgc::Persistent<CXFA_Node>>> m_pScriptNodeArray;
   std::unique_ptr<CFXJSE_ResolveProcessor> const m_ResolveProcessor;
   std::unique_ptr<CFXJSE_FormCalcContext> m_FM2JSContext;
-  UnownedPtr<CXFA_Object> m_pThisObject;
+  cppgc::Persistent<CXFA_Object> m_pThisObject;
   XFA_AttributeValue m_eRunAtType = XFA_AttributeValue::Client;
 };
 

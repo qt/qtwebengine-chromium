@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
@@ -128,7 +131,7 @@ export class DeviceModeView extends UI.Widget.VBox {
    */
   _createResizer(element, widthFactor, heightFactor) {
     const resizer = new UI.ResizerWidget.ResizerWidget();
-    resizer.addElement(element);
+    resizer.addElement(/** @type {!HTMLElement} */ (element));
     let cursor = widthFactor ? 'ew-resize' : 'ns-resize';
     if (widthFactor * heightFactor > 0) {
       cursor = 'nwse-resize';

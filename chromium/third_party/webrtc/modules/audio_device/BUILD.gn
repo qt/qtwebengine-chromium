@@ -73,6 +73,7 @@ rtc_library("audio_device_buffer") {
     "../../rtc_base:checks",
     "../../rtc_base:rtc_base_approved",
     "../../rtc_base:rtc_task_queue",
+    "../../rtc_base/synchronization:mutex",
     "../../system_wrappers",
     "../../system_wrappers:metrics",
   ]
@@ -111,6 +112,8 @@ rtc_source_set("windows_core_audio_utility") {
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
     ]
+
+    libs = [ "oleaut32.lib" ]
   }
 }
 
@@ -169,6 +172,7 @@ rtc_library("audio_device_impl") {
     "../../rtc_base:deprecation",
     "../../rtc_base:rtc_base_approved",
     "../../rtc_base:rtc_task_queue",
+    "../../rtc_base/synchronization:mutex",
     "../../rtc_base/system:arch",
     "../../rtc_base/system:file_wrapper",
     "../../rtc_base/task_utils:repeating_task",
@@ -311,6 +315,7 @@ rtc_library("audio_device_impl") {
           "wmcodecdspuuid.lib",
           "amstrmid.lib",
           "msdmo.lib",
+          "oleaut32.lib",
         ]
       }
       configs += [ ":audio_device_warnings_config" ]
@@ -331,7 +336,7 @@ rtc_library("audio_device_impl") {
 if (is_mac) {
   rtc_source_set("audio_device_impl_frameworks") {
     visibility = [ ":*" ]
-    libs = [
+    frameworks = [
       # Needed for CoreGraphics:
       "ApplicationServices.framework",
 
@@ -381,6 +386,7 @@ if (rtc_include_tests) {
       "../../rtc_base:checks",
       "../../rtc_base:ignore_wundef",
       "../../rtc_base:rtc_base_approved",
+      "../../rtc_base/synchronization:mutex",
       "../../system_wrappers",
       "../../test:fileutils",
       "../../test:test_support",

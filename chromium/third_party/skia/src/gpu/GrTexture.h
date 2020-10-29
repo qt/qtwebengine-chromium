@@ -16,8 +16,6 @@
 #include "include/private/GrTypesPriv.h"
 #include "src/gpu/GrSurface.h"
 
-class GrTexturePriv;
-
 class GrTexture : virtual public GrSurface {
 public:
     GrTexture* asTexture() override { return this; }
@@ -69,12 +67,31 @@ public:
         this->addIdleProc(sk_make_sp<GrRefCntedCallback>(callback, context), state);
     }
 
-    /** Access methods that are only to be used within Skia code. */
-    inline GrTexturePriv texturePriv();
-    inline const GrTexturePriv texturePriv() const;
+    GrTextureType textureType() const { return fTextureType; }
+    bool hasRestrictedSampling() const {
+        return GrTextureTypeHasRestrictedSampling(this->textureType());
+    }
+
+    void markMipmapsDirty();
+    void markMipmapsClean();
+    GrMipmapped mipmapped() const {
+        return GrMipmapped(fMipmapStatus != GrMipmapStatus::kNotAllocated);
+    }
+    bool mipmapsAreDirty() const { return fMipmapStatus != GrMipmapStatus::kValid; }
+    GrMipmapStatus mipmapStatus() const { return fMipmapStatus; }
+    int maxMipmapLevel() const { return fMaxMipmapLevel; }
+
+    static void ComputeScratchKey(const GrCaps& caps,
+                                  const GrBackendFormat& format,
+                                  SkISize dimensions,
+                                  GrRenderable,
+                                  int sampleCnt,
+                                  GrMipmapped,
+                                  GrProtected,
+                                  GrScratchKey* key);
 
 protected:
-    GrTexture(GrGpu*, const SkISize&, GrProtected, GrTextureType, GrMipMapsStatus);
+    GrTexture(GrGpu*, const SkISize&, GrProtected, GrTextureType, GrMipmapStatus);
 
     virtual bool onStealBackendTexture(GrBackendTexture*, SkImage::BackendTextureReleaseProc*) = 0;
 
@@ -89,13 +106,10 @@ protected:
 
 private:
     size_t onGpuMemorySize() const override;
-    void markMipMapsDirty();
-    void markMipMapsClean();
 
     GrTextureType                 fTextureType;
-    GrMipMapsStatus               fMipMapsStatus;
-    int                           fMaxMipMapLevel;
-    friend class GrTexturePriv;
+    GrMipmapStatus                fMipmapStatus;
+    int                           fMaxMipmapLevel;
     friend class GrTextureResource;
 
     typedef GrSurface INHERITED;

@@ -6,19 +6,16 @@
 #define FXJS_GC_GCED_TREE_NODE_H_
 
 #include "core/fxcrt/tree_node.h"
-#include "third_party/base/logging.h"
-#include "v8/include/cppgc/allocation.h"
+#include "v8/include/cppgc/garbage-collected.h"
 #include "v8/include/cppgc/member.h"
 #include "v8/include/cppgc/visitor.h"
 
 namespace fxjs {
 
-// For DOM/XML-ish trees, where references outside the tree are RetainPtr<T>,
-// and the parent node also "retains" its children but doesn't always have
-// a direct pointer to them.
+// For DOM/XML-ish trees, where references outside the tree are Persistent<>.
 template <typename T>
-class GCedTreeNode : public TreeNode<T, cppgc::Member<T>>,
-                     public cppgc::GarbageCollected<GCedTreeNode<T>> {
+class GCedTreeNode : public cppgc::GarbageCollected<GCedTreeNode<T>>,
+                     public TreeNode<T, cppgc::Member<T>> {
  public:
   using TreeNode<T, cppgc::Member<T>>::RemoveChild;
 

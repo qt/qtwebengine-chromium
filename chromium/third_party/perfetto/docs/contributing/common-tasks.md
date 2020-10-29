@@ -6,7 +6,7 @@ The checklists below show how to achieve some common tasks in the codebase.
 
 1. Find the `format` file for your event. The location of the file depends where `tracefs` is mounted but can often be found at `/sys/kernel/debug/tracing/events/EVENT_GROUP/EVENT_NAME/format`.
 2. Copy the format file into the codebase at `src/traced/probes/ftrace/test/data/synthetic/events/EVENT_GROUP/EVENT_NAME/format`.
-3. Add the event to [tools/ftrace_proto_gen/event_whitelist](/tools/ftrace_proto_gen/event_whitelist).
+3. Add the event to [tools/ftrace_proto_gen/event_list](/tools/ftrace_proto_gen/event_list).
 4. Run `tools/run_ftrace_proto_gen`. This will update `protos/perfetto/trace/ftrace/ftrace_event.proto` and `protos/perfetto/trace/ftrace/GROUP_NAME.proto`.
 5. Run `tools/gen_all out/YOUR_BUILD_DIRECTORY`. This will update `src/traced/probes/ftrace/event_info.cc` and `protos/perfetto/trace/perfetto_trace.proto`.
 6. If special handling in `trace_processor` is desired update [src/trace_processor/importers/ftrace/ftrace_parser.cc](/src/trace_processor/importers/ftrace/ftrace_parser.cc) to parse the event.
@@ -23,7 +23,10 @@ Here is an [example change](https://android-review.googlesource.com/c/platform/e
 4. Add a new SQL file for the metric to [src/trace_processor/metrics](/src/trace_processor/metrics). The appropriate `BUILD.gn` file should be updated as well.
   * To learn how to write new metrics, see the [trace-based metrics documentation](/docs/analysis/metrics.md).
 5. Build all targets in your out directory with `tools/ninja -C out/YOUR_BUILD_DIRECTORY`.
-6. Add a new diff test for the metric. This can be done by adding files to the [test/metrics](/test/metrics) folder and modifying the [index file](/test/metrics/index).
+6. Add a new diff test for the metric. This can be done by adding files to
+the [test/trace_processor](/test/trace_processor) folder and modifying one
+of the index files listed in
+[/test/trace_processor/include_index](/test/trace_processor/include_index).
 7. Run the newly added test with `tools/diff_test_trace_processor.py <path to trace processor binary>`.
 8. Upload and land your change as normal.
 
@@ -36,8 +39,8 @@ Here is an [example change](https://android-review.googlesource.com/c/platform/e
 2. Register the table with the trace processor in the constructor for the [TraceProcessorImpl class](/src/trace_processor/trace_processor_impl.cc).
 3. If also implementing ingestion of events into the table:
   1. Modify the appropriate parser class in [src/trace_processor/importers](/src/trace_processor/importers) and add the code to add rows to the newly added table.
-  2. Add a new diff test for the added parsing code and table using `tools/add_tp_diff_test.sh`.
-    * Make sure to modify the [index file](/test/trace_processor/index) to correctly organize the test with other similar tests.
+  2. Add a new diff test for the added parsing code and table using
+  `tools/add_tp_diff_test.py`.
   3. Run the newly added test with `tools/diff_test_trace_processor.py <path to trace processor binary>`.
 4. Upload and land your change as normal.
 

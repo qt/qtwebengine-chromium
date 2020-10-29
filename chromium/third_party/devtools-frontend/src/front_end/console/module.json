@@ -33,7 +33,10 @@
       "bindings": [
         {
           "shortcut": "Ctrl+`",
-          "keybindSets": ["devToolsDefault", "vsCode"]
+          "keybindSets": [
+            "devToolsDefault",
+            "vsCode"
+          ]
         }
       ]
     },
@@ -210,12 +213,12 @@
   "dependencies": [
     "components",
     "data_grid",
+    "host",
     "object_ui",
     "sdk",
     "formatter",
     "browser_sdk"
   ],
-  "scripts": [],
   "modules": [
     "console.js",
     "console-legacy.js",
@@ -235,5 +238,6 @@
     "consolePrompt.css",
     "consoleSidebar.css",
     "consoleView.css"
-  ]
+  ],
+  "skip_rollup": true
 }

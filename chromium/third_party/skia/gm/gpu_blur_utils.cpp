@@ -8,14 +8,15 @@
 #include "gm/gm.h"
 
 #include "include/effects/SkGradientShader.h"
+#include "include/gpu/GrDirectContext.h"
 #include "src/core/SkGpuBlurUtils.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrStyle.h"
 #include "src/gpu/SkGr.h"
-#include "src/gpu/effects/GrXfermodeFragmentProcessor.h"
+#include "src/gpu/effects/GrBlendFragmentProcessor.h"
 #include "src/image/SkImage_Base.h"
 
-static GrSurfaceProxyView blur(GrContext* ctx,
+static GrSurfaceProxyView blur(GrRecordingContext* ctx,
                                GrSurfaceProxyView src,
                                SkIRect dstB,
                                SkIRect srcB,
@@ -31,9 +32,16 @@ static GrSurfaceProxyView blur(GrContext* ctx,
     return resultRTC->readSurfaceView();
 };
 
-static void run(GrContext* ctx, GrRenderTargetContext* rtc, bool subsetSrc, bool ref) {
+static void run(GrRecordingContext* ctx, GrRenderTargetContext* rtc, bool subsetSrc, bool ref) {
+    // TODO: once MakeRenderTarget can take a GrRecordingContext this family of tests no
+    // longer needs to be disabled for the OOPR configs
+    auto direct = ctx->asDirectContext();
+    if (!direct) {
+        return;
+    }
+
     auto srcII = SkImageInfo::Make(60, 60, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto surf = SkSurface::MakeRenderTarget(ctx, SkBudgeted::kYes, srcII);
+    auto surf = SkSurface::MakeRenderTarget(direct, SkBudgeted::kYes, srcII);
     GrSurfaceProxyView src;
     if (surf) {
         SkScalar w = surf->width();
@@ -65,7 +73,7 @@ static void run(GrContext* ctx, GrRenderTargetContext* rtc, bool subsetSrc, bool
         surf->getCanvas()->drawLine({7.f*w/8.f, 0.f}, {7.f*h/8.f, h}, paint);
 
         auto img = surf->makeImageSnapshot();
-        if (auto v = as_IB(img)->view(ctx)) {
+        if (auto v = as_IB(img)->view(direct)) {
             src = *v;
         }
     }
@@ -146,12 +154,13 @@ static void run(GrContext* ctx, GrRenderTargetContext* rtc, bool subsetSrc, bool
             // Draw the src subset in the tile mode faded as a reference before drawing the blur
             // on top.
             {
+                static constexpr float kAlpha = 0.2f;
                 auto fp = GrTextureEffect::MakeSubset(src, kPremul_SkAlphaType, SkMatrix::I(),
                                                       sampler, SkRect::Make(srcRect), caps);
+                fp = GrFragmentProcessor::ModulateRGBA(std::move(fp),
+                                                       {kAlpha, kAlpha, kAlpha, kAlpha});
                 GrPaint paint;
-                paint.addColorFragmentProcessor(std::move(fp));
-                static constexpr float kAlpha = 0.2f;
-                paint.setColor4f({kAlpha, kAlpha, kAlpha, kAlpha});
+                paint.setColorFragmentProcessor(std::move(fp));
                 rtc->drawRect(nullptr, std::move(paint), GrAA::kNo, m, SkRect::Make(testArea));
             }
             // If we're in ref mode we will create a temp image that has the original image
@@ -172,7 +181,7 @@ static void run(GrContext* ctx, GrRenderTargetContext* rtc, bool subsetSrc, bool
                 auto fp = GrTextureEffect::MakeSubset(src, kPremul_SkAlphaType, tm, sampler,
                                                       SkRect::Make(srcRect), caps);
                 GrPaint paint;
-                paint.addColorFragmentProcessor(std::move(fp));
+                paint.setColorFragmentProcessor(std::move(fp));
                 refSrc->drawRect(nullptr, std::move(paint), GrAA::kNo, SkMatrix::I(),
                                  SkRect::Make(refRect.size()));
             }
@@ -204,9 +213,9 @@ static void run(GrContext* ctx, GrRenderTargetContext* rtc, bool subsetSrc, bool
                     GrPaint paint;
                     // Compose against white (default paint color) and then replace the dst
                     // (SkBlendMode::kSrc).
-                    fp = GrXfermodeFragmentProcessor::MakeFromSrcProcessor(std::move(fp),
-                                                                           SkBlendMode::kSrcOver);
-                    paint.addColorFragmentProcessor(std::move(fp));
+                    fp = GrBlendFragmentProcessor::Make(std::move(fp), /*dst=*/nullptr,
+                                                        SkBlendMode::kSrcOver);
+                    paint.setColorFragmentProcessor(std::move(fp));
                     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
                     rtc->fillRectToRect(nullptr, std::move(paint), GrAA::kNo, m,
                                         SkRect::Make(dstRect), SkRect::Make(blurView.dimensions()));

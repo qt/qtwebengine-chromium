@@ -1776,9 +1776,27 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     }
     ANGLE_FEATURE_CONDITION(features, disableGPUSwitchingSupport, isDualGPUMacWithNVIDIA);
 
-    // Workaround issue in NVIDIA GL driver on Linux
+    // Workaround issue in NVIDIA GL driver on Linux when TSAN is enabled
     // http://crbug.com/1094869
-    ANGLE_FEATURE_CONDITION(features, disableNativeParallelCompile, IsLinux() && isNvidia);
+    bool isTSANBuild = false;
+#ifdef THREAD_SANITIZER
+    isTSANBuild = true;
+#endif
+    ANGLE_FEATURE_CONDITION(features, disableNativeParallelCompile,
+                            isTSANBuild && IsLinux() && isNvidia);
+
+    // anglebug.com/4849
+    // This workaround is definitely needed on Intel and AMD GPUs. To
+    // determine whether it's needed on iOS and Apple Silicon, the
+    // workaround's being restricted to existing desktop GPUs.
+    ANGLE_FEATURE_CONDITION(features, emulatePackSkipRowsAndPackSkipPixels,
+                            IsApple() && (isAMD || isIntel || isNvidia));
+
+    // http://crbug.com/1042393
+    // XWayland defaults to a 1hz refresh rate when the "surface is not visible", which sometimes
+    // causes issues in Chrome. To get around this, default to a 30Hz refresh rate if we see bogus
+    // from the driver.
+    ANGLE_FEATURE_CONDITION(features, clampMscRate, IsLinux() && IsWayland());
 }
 
 void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFeatures *features)

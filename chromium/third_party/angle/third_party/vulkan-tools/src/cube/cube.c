@@ -97,10 +97,10 @@ void DbgMsg(char *fmt, ...) {
 
 #elif defined __ANDROID__
 #include <android/log.h>
-#define ERR_EXIT(err_msg, err_class)                                    \
-    do {                                                                \
+#define ERR_EXIT(err_msg, err_class)                                           \
+    do {                                                                       \
         ((void)__android_log_print(ANDROID_LOG_INFO, "Vulkan Cube", err_msg)); \
-        exit(1);                                                        \
+        exit(1);                                                               \
     } while (0)
 #ifdef VARARGS_WORKS_ON_ANDROID
 void DbgMsg(const char *fmt, ...) {
@@ -110,8 +110,8 @@ void DbgMsg(const char *fmt, ...) {
     va_end(va);
 }
 #else  // VARARGS_WORKS_ON_ANDROID
-#define DbgMsg(fmt, ...)                                                           \
-    do {                                                                           \
+#define DbgMsg(fmt, ...)                                                                  \
+    do {                                                                                  \
         ((void)__android_log_print(ANDROID_LOG_INFO, "Vulkan Cube", fmt, ##__VA_ARGS__)); \
     } while (0)
 #endif  // VARARGS_WORKS_ON_ANDROID
@@ -295,6 +295,7 @@ typedef struct {
     VkImageView view;
     VkBuffer uniform_buffer;
     VkDeviceMemory uniform_memory;
+    void *uniform_memory_ptr;
     VkFramebuffer framebuffer;
     VkDescriptorSet descriptor_set;
 } SwapchainImageResources;
@@ -326,16 +327,21 @@ struct demo {
     struct wl_seat *seat;
     struct wl_pointer *pointer;
     struct wl_keyboard *keyboard;
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    IDirectFB *dfb;
+    IDirectFBSurface *window;
+    IDirectFBEventBuffer *event_buffer;
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
     struct ANativeWindow *window;
-#elif (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK))
-    void *window;
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+    void *caMetalLayer;
 #endif
     VkSurfaceKHR surface;
     bool prepared;
     bool use_staging_buffer;
     bool separate_present_queue;
     bool is_minimized;
+    uint32_t gpu_number;
 
     bool VK_KHR_incremental_present_enabled;
 
@@ -523,22 +529,21 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debug_messenger_callback(VkDebugUtilsMessageSever
 #ifdef _WIN32
 
     in_callback = true;
-    if (!demo->suppress_popups)
-        MessageBox(NULL, message, "Alert", MB_OK);
+    if (!demo->suppress_popups) MessageBox(NULL, message, "Alert", MB_OK);
     in_callback = false;
 
 #elif defined(ANDROID)
 
     if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        __android_log_print(ANDROID_LOG_INFO,  APP_SHORT_NAME, "%s", message);
+        __android_log_print(ANDROID_LOG_INFO, APP_SHORT_NAME, "%s", message);
     } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        __android_log_print(ANDROID_LOG_WARN,  APP_SHORT_NAME, "%s", message);
+        __android_log_print(ANDROID_LOG_WARN, APP_SHORT_NAME, "%s", message);
     } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         __android_log_print(ANDROID_LOG_ERROR, APP_SHORT_NAME, "%s", message);
     } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
         __android_log_print(ANDROID_LOG_VERBOSE, APP_SHORT_NAME, "%s", message);
     } else {
-        __android_log_print(ANDROID_LOG_INFO,  APP_SHORT_NAME, "%s", message);
+        __android_log_print(ANDROID_LOG_INFO, APP_SHORT_NAME, "%s", message);
     }
 
 #else
@@ -766,8 +771,16 @@ static void demo_draw_build_cmd(struct demo *demo, VkCommandBuffer cmd_buf) {
                             &demo->swapchain_image_resources[demo->current_buffer].descriptor_set, 0, NULL);
     VkViewport viewport;
     memset(&viewport, 0, sizeof(viewport));
-    viewport.height = (float)demo->height;
-    viewport.width = (float)demo->width;
+    float viewport_dimension;
+    if (demo->width < demo->height) {
+        viewport_dimension = (float)demo->width;
+        viewport.y = (demo->height - demo->width) / 2.0f;
+    } else {
+        viewport_dimension = (float)demo->height;
+        viewport.x = (demo->width - demo->height) / 2.0f;
+    }
+    viewport.height = viewport_dimension;
+    viewport.width = viewport_dimension;
     viewport.minDepth = (float)0.0f;
     viewport.maxDepth = (float)1.0f;
     vkCmdSetViewport(cmd_buf, 0, 1, &viewport);
@@ -862,8 +875,6 @@ void demo_build_image_ownership_cmd(struct demo *demo, int i) {
 void demo_update_data_buffer(struct demo *demo) {
     mat4x4 MVP, Model, VP;
     int matrixSize = sizeof(MVP);
-    uint8_t *pData;
-    VkResult U_ASSERT_ONLY err;
 
     mat4x4_mul(VP, demo->projection_matrix, demo->view_matrix);
 
@@ -872,13 +883,7 @@ void demo_update_data_buffer(struct demo *demo) {
     mat4x4_rotate(demo->model_matrix, Model, 0.0f, 1.0f, 0.0f, (float)degreesToRadians(demo->spin_angle));
     mat4x4_mul(MVP, VP, demo->model_matrix);
 
-    err = vkMapMemory(demo->device, demo->swapchain_image_resources[demo->current_buffer].uniform_memory, 0, VK_WHOLE_SIZE, 0,
-                      (void **)&pData);
-    assert(!err);
-
-    memcpy(pData, (const void *)&MVP[0][0], matrixSize);
-
-    vkUnmapMemory(demo->device, demo->swapchain_image_resources[demo->current_buffer].uniform_memory);
+    memcpy(demo->swapchain_image_resources[demo->current_buffer].uniform_memory_ptr, (const void *)&MVP[0][0], matrixSize);
 }
 
 void DemoUpdateTargetIPD(struct demo *demo) {
@@ -1746,7 +1751,6 @@ void demo_prepare_cube_data_buffers(struct demo *demo) {
     VkBufferCreateInfo buf_info;
     VkMemoryRequirements mem_reqs;
     VkMemoryAllocateInfo mem_alloc;
-    uint8_t *pData;
     mat4x4 MVP, VP;
     VkResult U_ASSERT_ONLY err;
     bool U_ASSERT_ONLY pass;
@@ -1792,12 +1796,11 @@ void demo_prepare_cube_data_buffers(struct demo *demo) {
         err = vkAllocateMemory(demo->device, &mem_alloc, NULL, &demo->swapchain_image_resources[i].uniform_memory);
         assert(!err);
 
-        err = vkMapMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory, 0, VK_WHOLE_SIZE, 0, (void **)&pData);
+        err = vkMapMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory, 0, VK_WHOLE_SIZE, 0,
+                          &demo->swapchain_image_resources[i].uniform_memory_ptr);
         assert(!err);
 
-        memcpy(pData, &data, sizeof data);
-
-        vkUnmapMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory);
+        memcpy(demo->swapchain_image_resources[i].uniform_memory_ptr, &data, sizeof data);
 
         err = vkBindBufferMemory(demo->device, demo->swapchain_image_resources[i].uniform_buffer,
                                  demo->swapchain_image_resources[i].uniform_memory, 0);
@@ -1976,6 +1979,8 @@ static void demo_prepare_fs(struct demo *demo) {
 }
 
 static void demo_prepare_pipeline(struct demo *demo) {
+#define NUM_DYNAMIC_STATES 2 /*Viewport + Scissor*/
+
     VkGraphicsPipelineCreateInfo pipeline;
     VkPipelineCacheCreateInfo pipelineCache;
     VkPipelineVertexInputStateCreateInfo vi;
@@ -1985,7 +1990,7 @@ static void demo_prepare_pipeline(struct demo *demo) {
     VkPipelineDepthStencilStateCreateInfo ds;
     VkPipelineViewportStateCreateInfo vp;
     VkPipelineMultisampleStateCreateInfo ms;
-    VkDynamicState dynamicStateEnables[VK_DYNAMIC_STATE_RANGE_SIZE];
+    VkDynamicState dynamicStateEnables[NUM_DYNAMIC_STATES];
     VkPipelineDynamicStateCreateInfo dynamicState;
     VkResult U_ASSERT_ONLY err;
 
@@ -2331,6 +2336,7 @@ static void demo_cleanup(struct demo *demo) {
             vkDestroyImageView(demo->device, demo->swapchain_image_resources[i].view, NULL);
             vkFreeCommandBuffers(demo->device, demo->cmd_pool, 1, &demo->swapchain_image_resources[i].cmd);
             vkDestroyBuffer(demo->device, demo->swapchain_image_resources[i].uniform_buffer, NULL);
+            vkUnmapMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory);
             vkFreeMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory, NULL);
         }
         free(demo->swapchain_image_resources);
@@ -2365,6 +2371,10 @@ static void demo_cleanup(struct demo *demo) {
     wl_compositor_destroy(demo->compositor);
     wl_registry_destroy(demo->registry);
     wl_display_disconnect(demo->display);
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    demo->event_buffer->Release(demo->event_buffer);
+    demo->window->Release(demo->window);
+    demo->dfb->Release(demo->dfb);
 #endif
 
     vkDestroyInstance(demo->inst, NULL);
@@ -2413,6 +2423,7 @@ static void demo_resize(struct demo *demo) {
         vkDestroyImageView(demo->device, demo->swapchain_image_resources[i].view, NULL);
         vkFreeCommandBuffers(demo->device, demo->cmd_pool, 1, &demo->swapchain_image_resources[i].cmd);
         vkDestroyBuffer(demo->device, demo->swapchain_image_resources[i].uniform_buffer, NULL);
+        vkUnmapMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory);
         vkFreeMemory(demo->device, demo->swapchain_image_resources[i].uniform_memory, NULL);
     }
     vkDestroyCommandPool(demo->device, demo->cmd_pool, NULL);
@@ -2766,6 +2777,80 @@ static void demo_create_window(struct demo *demo) {
     wl_shell_surface_set_toplevel(demo->shell_surface);
     wl_shell_surface_set_title(demo->shell_surface, APP_SHORT_NAME);
 }
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+static void demo_create_directfb_window(struct demo *demo) {
+    DFBResult ret;
+
+    ret = DirectFBInit(NULL, NULL);
+    if (ret) {
+        printf("DirectFBInit failed to initialize DirectFB!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
+    ret = DirectFBCreate(&demo->dfb);
+    if (ret) {
+        printf("DirectFBCreate failed to create main interface of DirectFB!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
+    DFBSurfaceDescription desc;
+    desc.flags = DSDESC_CAPS | DSDESC_WIDTH | DSDESC_HEIGHT;
+    desc.caps = DSCAPS_PRIMARY;
+    desc.width = demo->width;
+    desc.height = demo->height;
+    ret = demo->dfb->CreateSurface(demo->dfb, &desc, &demo->window);
+    if (ret) {
+        printf("CreateSurface failed to create DirectFB surface interface!\n");
+        fflush(stdout);
+        exit(1);
+    }
+
+    ret = demo->dfb->CreateInputEventBuffer(demo->dfb, DICAPS_KEYS, DFB_FALSE, &demo->event_buffer);
+    if (ret) {
+        printf("CreateInputEventBuffer failed to create DirectFB event buffer interface!\n");
+        fflush(stdout);
+        exit(1);
+    }
+}
+
+static void demo_handle_directfb_event(struct demo *demo, const DFBInputEvent *event) {
+    if (event->type != DIET_KEYPRESS) return;
+    switch (event->key_symbol) {
+        case DIKS_ESCAPE:  // Escape
+            demo->quit = true;
+            break;
+        case DIKS_CURSOR_LEFT:  // left arrow key
+            demo->spin_angle -= demo->spin_increment;
+            break;
+        case DIKS_CURSOR_RIGHT:  // right arrow key
+            demo->spin_angle += demo->spin_increment;
+            break;
+        case DIKS_SPACE:  // space bar
+            demo->pause = !demo->pause;
+            break;
+        default:
+            break;
+    }
+}
+
+static void demo_run_directfb(struct demo *demo) {
+    while (!demo->quit) {
+        DFBInputEvent event;
+
+        if (demo->pause) {
+            demo->event_buffer->WaitForEvent(demo->event_buffer);
+            if (!demo->event_buffer->GetEvent(demo->event_buffer, DFB_EVENT(&event))) demo_handle_directfb_event(demo, &event);
+        } else {
+            if (!demo->event_buffer->GetEvent(demo->event_buffer, DFB_EVENT(&event))) demo_handle_directfb_event(demo, &event);
+
+            demo_draw(demo);
+            demo->curFrame++;
+            if (demo->frameCount != INT32_MAX && demo->curFrame == demo->frameCount) demo->quit = true;
+        }
+    }
+}
 #elif defined(VK_USE_PLATFORM_ANDROID_KHR)
 static void demo_run(struct demo *demo) {
     if (!demo->prepared) return;
@@ -2773,7 +2858,7 @@ static void demo_run(struct demo *demo) {
     demo_draw(demo);
     demo->curFrame++;
 }
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
 static void demo_run(struct demo *demo) {
     demo_draw(demo);
     demo->curFrame++;
@@ -3028,6 +3113,11 @@ static void demo_init_vk(struct demo *demo) {
                 platformSurfaceExtFound = 1;
                 demo->extension_names[demo->enabled_extension_count++] = VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME;
             }
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+            if (!strcmp(VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
+                platformSurfaceExtFound = 1;
+                demo->extension_names[demo->enabled_extension_count++] = VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME;
+            }
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
             if (!strcmp(VK_KHR_DISPLAY_EXTENSION_NAME, instance_extensions[i].extensionName)) {
                 platformSurfaceExtFound = 1;
@@ -3038,15 +3128,10 @@ static void demo_init_vk(struct demo *demo) {
                 platformSurfaceExtFound = 1;
                 demo->extension_names[demo->enabled_extension_count++] = VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
             }
-#elif defined(VK_USE_PLATFORM_IOS_MVK)
-            if (!strcmp(VK_MVK_IOS_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+            if (!strcmp(VK_EXT_METAL_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
                 platformSurfaceExtFound = 1;
-                demo->extension_names[demo->enabled_extension_count++] = VK_MVK_IOS_SURFACE_EXTENSION_NAME;
-            }
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
-            if (!strcmp(VK_MVK_MACOS_SURFACE_EXTENSION_NAME, instance_extensions[i].extensionName)) {
-                platformSurfaceExtFound = 1;
-                demo->extension_names[demo->enabled_extension_count++] = VK_MVK_MACOS_SURFACE_EXTENSION_NAME;
+                demo->extension_names[demo->enabled_extension_count++] = VK_EXT_METAL_SURFACE_EXTENSION_NAME;
             }
 #endif
             if (!strcmp(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, instance_extensions[i].extensionName)) {
@@ -3074,14 +3159,8 @@ static void demo_init_vk(struct demo *demo) {
                  "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
                  "Please look at the Getting Started guide for additional information.\n",
                  "vkCreateInstance Failure");
-#elif defined(VK_USE_PLATFORM_IOS_MVK)
-        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_MVK_IOS_SURFACE_EXTENSION_NAME
-                 " extension.\n\n"
-                 "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
-                 "Please look at the Getting Started guide for additional information.\n",
-                 "vkCreateInstance Failure");
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
-        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_MVK_MACOS_SURFACE_EXTENSION_NAME
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_EXT_METAL_SURFACE_EXTENSION_NAME
                  " extension.\n\n"
                  "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
                  "Please look at the Getting Started guide for additional information.\n",
@@ -3112,6 +3191,12 @@ static void demo_init_vk(struct demo *demo) {
                  "vkCreateInstance Failure");
 #elif defined(VK_USE_PLATFORM_XLIB_KHR)
         ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+                 " extension.\n\n"
+                 "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
+                 "Please look at the Getting Started guide for additional information.\n",
+                 "vkCreateInstance Failure");
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+        ERR_EXIT("vkEnumerateInstanceExtensionProperties failed to find the " VK_EXT_DIRECTFB_SURFACE_EXTENSION_NAME
                  " extension.\n\n"
                  "Do you have a compatible Vulkan installable client driver (ICD) installed?\n"
                  "Please look at the Getting Started guide for additional information.\n",
@@ -3187,8 +3272,12 @@ static void demo_init_vk(struct demo *demo) {
         VkPhysicalDevice *physical_devices = malloc(sizeof(VkPhysicalDevice) * gpu_count);
         err = vkEnumeratePhysicalDevices(demo->inst, &gpu_count, physical_devices);
         assert(!err);
-        /* For cube demo we just grab the first physical device */
-        demo->gpu = physical_devices[0];
+        if (demo->gpu_number > gpu_count - 1) {
+            fprintf(stderr, "Gpu %u specified is not present, gpu count = %u\n", demo->gpu_number, gpu_count);
+            fprintf(stderr, "Continuing with gpu 0\n");
+            demo->gpu_number = 0;
+        }
+        demo->gpu = physical_devices[demo->gpu_number];
         free(physical_devices);
     } else {
         ERR_EXIT(
@@ -3409,26 +3498,45 @@ static void demo_create_surface(struct demo *demo) {
     createInfo.window = demo->xcb_window;
 
     err = vkCreateXcbSurfaceKHR(demo->inst, &createInfo, NULL, &demo->surface);
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    VkDirectFBSurfaceCreateInfoEXT createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT;
+    createInfo.pNext = NULL;
+    createInfo.flags = 0;
+    createInfo.dfb = demo->dfb;
+    createInfo.surface = demo->window;
+
+    err = vkCreateDirectFBSurfaceEXT(demo->inst, &createInfo, NULL, &demo->surface);
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
     err = demo_create_display_surface(demo);
-#elif defined(VK_USE_PLATFORM_IOS_MVK)
-    VkIOSSurfaceCreateInfoMVK surface;
-    surface.sType = VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK;
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+    VkMetalSurfaceCreateInfoEXT surface;
+    surface.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
     surface.pNext = NULL;
     surface.flags = 0;
-    surface.pView = demo->window;
+    surface.pLayer = demo->caMetalLayer;
 
-    err = vkCreateIOSSurfaceMVK(demo->inst, &surface, NULL, &demo->surface);
-#elif defined(VK_USE_PLATFORM_MACOS_MVK)
-    VkMacOSSurfaceCreateInfoMVK surface;
-    surface.sType = VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK;
-    surface.pNext = NULL;
-    surface.flags = 0;
-    surface.pView = demo->window;
-
-    err = vkCreateMacOSSurfaceMVK(demo->inst, &surface, NULL, &demo->surface);
+    err = vkCreateMetalSurfaceEXT(demo->inst, &surface, NULL, &demo->surface);
 #endif
     assert(!err);
+}
+
+static VkSurfaceFormatKHR pick_surface_format(const VkSurfaceFormatKHR *surfaceFormats, uint32_t count) {
+    // Prefer non-SRGB formats...
+    for (uint32_t i = 0; i < count; i++) {
+        const VkFormat format = surfaceFormats[i].format;
+
+        if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_B8G8R8A8_UNORM ||
+            format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 ||
+            format == VK_FORMAT_R16G16B16A16_SFLOAT) {
+            return surfaceFormats[i];
+        }
+    }
+
+    printf("Can't find our preferred formats... Falling back to first exposed format. Rendering may be incorrect.\n");
+
+    assert(count >= 1);
+    return surfaceFormats[0];
 }
 
 static void demo_init_vk_swapchain(struct demo *demo) {
@@ -3508,16 +3616,9 @@ static void demo_init_vk_swapchain(struct demo *demo) {
     VkSurfaceFormatKHR *surfFormats = (VkSurfaceFormatKHR *)malloc(formatCount * sizeof(VkSurfaceFormatKHR));
     err = demo->fpGetPhysicalDeviceSurfaceFormatsKHR(demo->gpu, demo->surface, &formatCount, surfFormats);
     assert(!err);
-    // If the format list includes just one entry of VK_FORMAT_UNDEFINED,
-    // the surface has no preferred format.  Otherwise, at least one
-    // supported format will be returned.
-    if (formatCount == 1 && surfFormats[0].format == VK_FORMAT_UNDEFINED) {
-        demo->format = VK_FORMAT_B8G8R8A8_UNORM;
-    } else {
-        assert(formatCount >= 1);
-        demo->format = surfFormats[0].format;
-    }
-    demo->color_space = surfFormats[0].colorSpace;
+    VkSurfaceFormatKHR surfaceFormat = pick_surface_format(surfFormats, formatCount);
+    demo->format = surfaceFormat.format;
+    demo->color_space = surfaceFormat.colorSpace;
     free(surfFormats);
 
     demo->quit = false;
@@ -3636,12 +3737,16 @@ static const struct wl_seat_listener seat_listener = {
     seat_handle_capabilities,
 };
 
-static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t id, const char *interface,
-                                   uint32_t version UNUSED) {
+static void registry_handle_global(void *data, struct wl_registry *registry, uint32_t id, const char *interface, uint32_t version) {
     struct demo *demo = data;
     // pickup wayland objects when they appear
     if (strcmp(interface, "wl_compositor") == 0) {
-        demo->compositor = wl_registry_bind(registry, id, &wl_compositor_interface, 1);
+        uint32_t minVersion = version < 4 ? version : 4;
+        demo->compositor = wl_registry_bind(registry, id, &wl_compositor_interface, minVersion);
+        if (demo->VK_KHR_incremental_present_enabled && minVersion < 4) {
+            fprintf(stderr, "Wayland compositor doesn't support VK_KHR_incremental_present, disabling.\n");
+            demo->VK_KHR_incremental_present_enabled = false;
+        }
     } else if (strcmp(interface, "wl_shell") == 0) {
         demo->shell = wl_registry_bind(registry, id, &wl_shell_interface, 1);
     } else if (strcmp(interface, "wl_seat") == 0) {
@@ -3703,12 +3808,8 @@ static void demo_init(struct demo *demo, int argc, char **argv) {
     memset(demo, 0, sizeof(*demo));
     demo->presentMode = VK_PRESENT_MODE_FIFO_KHR;
     demo->frameCount = INT32_MAX;
-    
-#if defined(VK_USE_PLATFORM_MACOS_MVK)
-    // MoltenVK may not allow host coherent mapping to linear tiled images
-    // Force the use of a staging buffer to be safe
-    demo->use_staging_buffer = true;
-#endif
+    /* For cube demo we just grab the first physical device by default */
+    demo->gpu_number = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--use_staging") == 0) {
@@ -3754,6 +3855,11 @@ static void demo_init(struct demo *demo, int argc, char **argv) {
             demo->VK_KHR_incremental_present_enabled = true;
             continue;
         }
+        if ((strcmp(argv[i], "--gpu_number") == 0) && (i < argc - 1)) {
+            demo->gpu_number = atoi(argv[i + 1]);
+            i++;
+            continue;
+        }
 
 #if defined(ANDROID)
         ERR_EXIT("Usage: vkcube [--validate]\n", "Usage");
@@ -3762,6 +3868,7 @@ static void demo_init(struct demo *demo, int argc, char **argv) {
             "Usage:\n  %s\t[--use_staging] [--validate] [--validate-checks-disabled]\n"
             "\t[--break] [--c <framecount>] [--suppress_popups]\n"
             "\t[--incremental_present] [--display_timing]\n"
+            "\t[--gpu_number <index of physical device>]\n"
             "\t[--present_mode <present mode enum>]\n"
             "\t<present_mode_enum>\n"
             "\t\tVK_PRESENT_MODE_IMMEDIATE_KHR = %d\n"
@@ -3897,11 +4004,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine,
     return (int)msg.wParam;
 }
 
-#elif defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK)
-static void demo_main(struct demo *demo, void *view, int argc, const char *argv[]) {
-
+#elif defined(VK_USE_PLATFORM_METAL_EXT)
+static void demo_main(struct demo *demo, void *caMetalLayer, int argc, const char *argv[]) {
     demo_init(demo, argc, (char **)argv);
-    demo->window = view;
+    demo->caMetalLayer = caMetalLayer;
     demo_init_vk_swapchain(demo);
     demo_prepare(demo);
     demo->spin_angle = 0.4f;
@@ -4010,6 +4116,8 @@ int main(int argc, char **argv) {
     demo_create_xlib_window(&demo);
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
     demo_create_window(&demo);
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    demo_create_directfb_window(&demo);
 #endif
 
     demo_init_vk_swapchain(&demo);
@@ -4022,6 +4130,8 @@ int main(int argc, char **argv) {
     demo_run_xlib(&demo);
 #elif defined(VK_USE_PLATFORM_WAYLAND_KHR)
     demo_run(&demo);
+#elif defined(VK_USE_PLATFORM_DIRECTFB_EXT)
+    demo_run_directfb(&demo);
 #elif defined(VK_USE_PLATFORM_DISPLAY_KHR)
     demo_run_display(&demo);
 #endif

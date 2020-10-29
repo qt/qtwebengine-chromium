@@ -32,6 +32,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/stereo3d.h"
+#include "libavutil/timecode.h"
 
 #include "bswapdsp.h"
 #include "bytestream.h"
@@ -280,7 +281,6 @@ static int decode_lt_rps(HEVCContext *s, LongTermRPS *rps, GetBitContext *gb)
     rps->nb_refs = nb_sh + nb_sps;
 
     for (i = 0; i < rps->nb_refs; i++) {
-        uint8_t delta_poc_msb_present;
 
         if (i < nb_sps) {
             uint8_t lt_idx_sps = 0;
@@ -295,8 +295,8 @@ static int decode_lt_rps(HEVCContext *s, LongTermRPS *rps, GetBitContext *gb)
             rps->used[i] = get_bits1(gb);
         }
 
-        delta_poc_msb_present = get_bits1(gb);
-        if (delta_poc_msb_present) {
+        rps->poc_msb_present[i] = get_bits1(gb);
+        if (rps->poc_msb_present[i]) {
             int64_t delta = get_ue_golomb_long(gb);
             int64_t poc;
 
@@ -347,6 +347,15 @@ static void export_stream_params(HEVCContext *s, const HEVCSPS *sps)
         avctx->color_primaries = AVCOL_PRI_UNSPECIFIED;
         avctx->color_trc       = AVCOL_TRC_UNSPECIFIED;
         avctx->colorspace      = AVCOL_SPC_UNSPECIFIED;
+    }
+
+    avctx->chroma_sample_location = AVCHROMA_LOC_UNSPECIFIED;
+    if (sps->chroma_format_idc == 1) {
+        if (sps->vui.chroma_loc_info_present_flag) {
+            if (sps->vui.chroma_sample_loc_type_top_field <= 5)
+                avctx->chroma_sample_location = sps->vui.chroma_sample_loc_type_top_field + 1;
+        } else
+            avctx->chroma_sample_location = AVCHROMA_LOC_LEFT;
     }
 
     if (vps->vps_timing_info_present_flag) {
@@ -415,6 +424,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
 #if CONFIG_HEVC_VIDEOTOOLBOX_HWACCEL
         *fmt++ = AV_PIX_FMT_VIDEOTOOLBOX;
 #endif
+#if CONFIG_HEVC_VDPAU_HWACCEL
+        *fmt++ = AV_PIX_FMT_VDPAU;
+#endif
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
 #endif
@@ -436,6 +448,9 @@ static enum AVPixelFormat get_format(HEVCContext *s, const HEVCSPS *sps)
     case AV_PIX_FMT_YUV420P12:
     case AV_PIX_FMT_YUV444P10:
     case AV_PIX_FMT_YUV444P12:
+#if CONFIG_HEVC_VDPAU_HWACCEL
+        *fmt++ = AV_PIX_FMT_VDPAU;
+#endif
 #if CONFIG_HEVC_NVDEC_HWACCEL
         *fmt++ = AV_PIX_FMT_CUDA;
 #endif
@@ -2793,6 +2808,46 @@ static int set_side_data(HEVCContext *s)
         a53->buf_ref = NULL;
 
         s->avctx->properties |= FF_CODEC_PROPERTY_CLOSED_CAPTIONS;
+    }
+
+    for (int i = 0; i < s->sei.unregistered.nb_buf_ref; i++) {
+        HEVCSEIUnregistered *unreg = &s->sei.unregistered;
+
+        if (unreg->buf_ref[i]) {
+            AVFrameSideData *sd = av_frame_new_side_data_from_buf(out,
+                    AV_FRAME_DATA_SEI_UNREGISTERED,
+                    unreg->buf_ref[i]);
+            if (!sd)
+                av_buffer_unref(&unreg->buf_ref[i]);
+            unreg->buf_ref[i] = NULL;
+        }
+    }
+    s->sei.unregistered.nb_buf_ref = 0;
+
+    if (s->sei.timecode.present) {
+        uint32_t *tc_sd;
+        char tcbuf[AV_TIMECODE_STR_SIZE];
+        AVFrameSideData *tcside = av_frame_new_side_data(out, AV_FRAME_DATA_S12M_TIMECODE,
+                                                         sizeof(uint32_t) * 4);
+        if (!tcside)
+            return AVERROR(ENOMEM);
+
+        tc_sd = (uint32_t*)tcside->data;
+        tc_sd[0] = s->sei.timecode.num_clock_ts;
+
+        for (int i = 0; i < tc_sd[0]; i++) {
+            int drop = s->sei.timecode.cnt_dropped_flag[i];
+            int   hh = s->sei.timecode.hours_value[i];
+            int   mm = s->sei.timecode.minutes_value[i];
+            int   ss = s->sei.timecode.seconds_value[i];
+            int   ff = s->sei.timecode.n_frames[i];
+
+            tc_sd[i + 1] = av_timecode_get_smpte(s->avctx->framerate, drop, hh, mm, ss, ff);
+            av_timecode_make_smpte_tc_string(tcbuf, tc_sd[i + 1], 0);
+            av_dict_set(&out->metadata, "timecode", tcbuf, 0);
+        }
+
+        s->sei.timecode.num_clock_ts = 0;
     }
 
     return 0;

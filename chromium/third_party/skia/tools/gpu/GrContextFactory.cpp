@@ -6,6 +6,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/gpu/GrDirectContext.h"
 #include "src/gpu/GrContextPriv.h"
 #include "tools/gpu/GrContextFactory.h"
 #ifdef SK_GL
@@ -129,12 +130,13 @@ void GrContextFactory::releaseResourcesAndAbandonContexts() {
     }
 }
 
-GrContext* GrContextFactory::get(ContextType type, ContextOverrides overrides) {
-    return this->getContextInfo(type, overrides).grContext();
+GrDirectContext* GrContextFactory::get(ContextType type, ContextOverrides overrides) {
+    return this->getContextInfo(type, overrides).directContext();
 }
 
 ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOverrides overrides,
-                                                     GrContext* shareContext, uint32_t shareIndex) {
+                                                     GrDirectContext* shareContext,
+                                                     uint32_t shareIndex) {
     // (shareIndex != 0) -> (shareContext != nullptr)
     SkASSERT((shareIndex == 0) || (shareContext != nullptr));
 
@@ -151,16 +153,16 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
         }
     }
 
-    // If we're trying to create a context in a share group, find the master context
-    Context* masterContext = nullptr;
+    // If we're trying to create a context in a share group, find the primary context
+    Context* primaryContext = nullptr;
     if (shareContext) {
         for (int i = 0; i < fContexts.count(); ++i) {
             if (!fContexts[i].fAbandoned && fContexts[i].fGrContext == shareContext) {
-                masterContext = &fContexts[i];
+                primaryContext = &fContexts[i];
                 break;
             }
         }
-        SkASSERT(masterContext && masterContext->fType == type);
+        SkASSERT(primaryContext && primaryContext->fType == type);
     }
 
     std::unique_ptr<TestContext> testCtx;
@@ -168,8 +170,8 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     switch (backend) {
 #ifdef SK_GL
         case GrBackendApi::kOpenGL: {
-            GLTestContext* glShareContext = masterContext
-                    ? static_cast<GLTestContext*>(masterContext->fTestContext) : nullptr;
+            GLTestContext* glShareContext = primaryContext
+                    ? static_cast<GLTestContext*>(primaryContext->fTestContext) : nullptr;
             GLTestContext* glCtx;
             switch (type) {
                 case kGL_ContextType:
@@ -227,8 +229,8 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
 #endif  // SK_GL
 #ifdef SK_VULKAN
         case GrBackendApi::kVulkan: {
-            VkTestContext* vkSharedContext = masterContext
-                    ? static_cast<VkTestContext*>(masterContext->fTestContext) : nullptr;
+            VkTestContext* vkSharedContext = primaryContext
+                    ? static_cast<VkTestContext*>(primaryContext->fTestContext) : nullptr;
             SkASSERT(kVulkan_ContextType == type);
             testCtx.reset(CreatePlatformVkTestContext(vkSharedContext));
             if (!testCtx) {
@@ -251,8 +253,8 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
 #endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal: {
-            MtlTestContext* mtlSharedContext = masterContext
-                    ? static_cast<MtlTestContext*>(masterContext->fTestContext) : nullptr;
+            MtlTestContext* mtlSharedContext = primaryContext
+                    ? static_cast<MtlTestContext*>(primaryContext->fTestContext) : nullptr;
             SkASSERT(kMetal_ContextType == type);
             testCtx.reset(CreatePlatformMtlTestContext(mtlSharedContext));
             if (!testCtx) {
@@ -263,8 +265,8 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
 #endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D: {
-            D3DTestContext* d3dSharedContext = masterContext
-                    ? static_cast<D3DTestContext*>(masterContext->fTestContext) : nullptr;
+            D3DTestContext* d3dSharedContext = primaryContext
+                    ? static_cast<D3DTestContext*>(primaryContext->fTestContext) : nullptr;
             SkASSERT(kDirect3D_ContextType == type);
             testCtx.reset(CreatePlatformD3DTestContext(d3dSharedContext));
             if (!testCtx) {
@@ -275,8 +277,8 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
 #endif
 #ifdef SK_DAWN
         case GrBackendApi::kDawn: {
-            DawnTestContext* dawnSharedContext = masterContext
-                    ? static_cast<DawnTestContext*>(masterContext->fTestContext) : nullptr;
+            DawnTestContext* dawnSharedContext = primaryContext
+                    ? static_cast<DawnTestContext*>(primaryContext->fTestContext) : nullptr;
             testCtx.reset(CreatePlatformDawnTestContext(dawnSharedContext));
             if (!testCtx) {
                 return ContextInfo();
@@ -285,7 +287,7 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
         }
 #endif
         case GrBackendApi::kMock: {
-            TestContext* sharedContext = masterContext ? masterContext->fTestContext : nullptr;
+            TestContext* sharedContext = primaryContext ? primaryContext->fTestContext : nullptr;
             SkASSERT(kMock_ContextType == type);
             testCtx.reset(CreateMockTestContext(sharedContext));
             if (!testCtx) {
@@ -302,12 +304,12 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     if (ContextOverrides::kAvoidStencilBuffers & overrides) {
         grOptions.fAvoidStencilBuffers = true;
     }
-    sk_sp<GrContext> grCtx;
+    sk_sp<GrDirectContext> grCtx;
     {
         auto restore = testCtx->makeCurrentAndAutoRestore();
-        grCtx = testCtx->makeGrContext(grOptions);
+        grCtx = testCtx->makeContext(grOptions);
     }
-    if (!grCtx.get()) {
+    if (!grCtx) {
         return ContextInfo();
     }
 
@@ -331,7 +333,8 @@ ContextInfo GrContextFactory::getContextInfo(ContextType type, ContextOverrides 
     return this->getContextInfoInternal(type, overrides, nullptr, 0);
 }
 
-ContextInfo GrContextFactory::getSharedContextInfo(GrContext* shareContext, uint32_t shareIndex) {
+ContextInfo GrContextFactory::getSharedContextInfo(GrDirectContext* shareContext,
+                                                   uint32_t shareIndex) {
     SkASSERT(shareContext);
     for (int i = 0; i < fContexts.count(); ++i) {
         if (!fContexts[i].fAbandoned && fContexts[i].fGrContext == shareContext) {

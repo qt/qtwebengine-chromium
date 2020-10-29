@@ -488,7 +488,7 @@ def GetAttributeValuesRange(attribute, condition):
   if attribute == Attr.ARCHITECTURE and platform == 'win':
     values.intersection_update(['ia32', 'x64', 'arm64'])
   if attribute == Attr.ARCHITECTURE and platform == 'mac':
-    values.intersection_update(['x64'])
+    values.intersection_update(['x64', 'arm64'])
 
   return values
 

@@ -98,6 +98,12 @@ config("internal_config") {
     defines += [ "ANGLE_IS_32_BIT_CPU" ]
   }
 
+  if (is_win) {
+    defines += [ "ANGLE_IS_WIN" ]
+  } else if (is_linux) {
+    defines += [ "ANGLE_IS_LINUX" ]
+  }
+
   if (angle_enable_trace) {
     defines += [ "ANGLE_ENABLE_DEBUG_TRACE=1" ]
   }
@@ -244,6 +250,20 @@ config("angle_common_config") {
   }
 }
 
+# Silences the "indirect call of a function with wrong dynamic type" cfi error
+config("angle_no_cfi_icall") {
+  if (is_cfi && use_cfi_icall && current_toolchain == default_toolchain) {
+    cflags = [ "-fno-sanitize=cfi-icall" ]
+  }
+}
+
+# Silences the "cast from void* or another unrelated type to the wrong dynamic type" cfi error
+config("angle_no_cfi_unrelated_cast") {
+  if (is_cfi && use_cfi_cast && current_toolchain == default_toolchain) {
+    cflags = [ "-fno-sanitize=cfi-unrelated-cast" ]
+  }
+}
+
 angle_source_set("angle_system_utils") {
   sources = angle_system_utils_sources
 }
@@ -375,7 +395,7 @@ angle_static_library("angle_gpu_info_util") {
 
   if (is_mac) {
     sources += libangle_gpu_info_util_mac_sources
-    libs += [
+    frameworks = [
       "IOKit.framework",
       "CoreFoundation.framework",
       "CoreGraphics.framework",
@@ -471,6 +491,11 @@ action("commit_id") {
       exec_script("src/commit_id.py", [ "check" ], "value") == 1) {
     # commit id should depend on angle's HEAD revision
     inputs = [ ".git/HEAD" ]
+    branch = read_file(".git/HEAD", "string")
+    result = string_split(branch)
+    if (result[0] == "ref:") {
+      inputs += [ ".git/" + result[1] ]
+    }
   }
 
   args = [
@@ -572,7 +597,7 @@ if (angle_enable_vulkan || angle_enable_metal) {
     deps = [
       ":libANGLE_headers",
       "${angle_glslang_dir}:glslang_default_resource_limits_sources",
-      "${angle_glslang_dir}:glslang_sources",
+      "${angle_glslang_dir}:glslang_lib_sources",
       "${angle_spirv_headers_dir}:spv_headers",
       "${angle_spirv_tools_dir}:spvtools_headers",
     ]
@@ -651,6 +676,14 @@ angle_source_set("libANGLE_base") {
     sources += libangle_d3d11_blit_shaders
   }
 
+  if (!angle_is_winuwp && (angle_enable_d3d11 || angle_enable_d3d9)) {
+    sources += libangle_d3d_win32_sources
+  }
+
+  if (is_win && (angle_enable_gl || angle_enable_d3d11)) {
+    sources += libangle_gl_wgl_d3d11_common_sources
+  }
+
   if (angle_enable_gl) {
     sources += libangle_gl_sources
     include_dirs += [ "src/third_party/khronos" ]
@@ -672,7 +705,7 @@ angle_source_set("libANGLE_base") {
     }
     if (is_mac) {
       sources += libangle_gl_cgl_sources
-      libs += [
+      frameworks = [
         "Cocoa.framework",
         "IOSurface.framework",
         "OpenGL.framework",
@@ -907,6 +940,14 @@ angle_static_library("libGLESv2_static") {
   public_deps = [ ":libANGLE" ]
 }
 
+angle_static_library("libGLESv2_with_capture_static") {
+  sources = libglesv2_sources
+  configs += [ ":debug_annotations_config" ]
+  public_configs += [ ":angle_static" ]
+  deps = [ ":includes" ]
+  public_deps = [ ":libANGLE_with_capture" ]
+}
+
 angle_shared_library("libGLESv1_CM") {
   sources = libglesv1_cm_sources
   output_name = "libGLESv1_CM${angle_libs_suffix}"
@@ -987,6 +1028,19 @@ angle_shared_library("libEGL") {
 
 angle_static_library("libEGL_static") {
   sources = libegl_sources
+  configs += [
+    ":debug_annotations_config",
+    ":library_name_config",
+  ]
+  public_configs += [ ":angle_static" ]
+  deps = [
+    ":includes",
+    ":libGLESv2_static",
+  ]
+}
+
+angle_static_library("libEGL_with_capture_static") {
+  sources = libegl_sources
 
   configs += [
     ":debug_annotations_config",
@@ -997,7 +1051,7 @@ angle_static_library("libEGL_static") {
 
   deps = [
     ":includes",
-    ":libGLESv2_static",
+    ":libGLESv2_with_capture_static",
   ]
 }
 
@@ -1106,7 +1160,7 @@ if (build_with_chromium && !is_component_build && is_android &&
     current_toolchain == default_toolchain) {
   # Package ANGLE libraries
   angle_apk("angle_chromium_apk") {
-    package_name = "com.chromium.angle"
+    package_name = "org.chromium.angle"
     apk_name = "AngleLibraries"
   }
 

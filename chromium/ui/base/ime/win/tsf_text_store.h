@@ -102,12 +102,12 @@ class TextInputClient;
 class COMPONENT_EXPORT(UI_BASE_IME_WIN) TSFTextStore
     : public ITextStoreACP,
       public ITfContextOwnerCompositionSink,
-      public ITfLanguageProfileNotifySink,
       public ITfKeyTraceEventSink,
       public ITfTextEditSink {
  public:
   TSFTextStore();
   virtual ~TSFTextStore();
+  HRESULT Initialize();
 
   // ITextStoreACP:
   IFACEMETHODIMP_(ULONG) AddRef() override;
@@ -217,10 +217,6 @@ class COMPONENT_EXPORT(UI_BASE_IME_WIN) TSFTextStore
   IFACEMETHODIMP OnEndComposition(
       ITfCompositionView* composition_view) override;
 
-  // ITfLanguageProfileNotifySink:
-  IFACEMETHODIMP OnLanguageChange(LANGID langid, BOOL* pfAccept) override;
-  IFACEMETHODIMP OnLanguageChanged() override;
-
   // ITfTextEditSink:
   IFACEMETHODIMP OnEndEdit(ITfContext* context,
                            TfEditCookie read_only_edit_cookie,
@@ -299,6 +295,9 @@ class COMPONENT_EXPORT(UI_BASE_IME_WIN) TSFTextStore
                             const TfEditCookie read_only_edit_cookie,
                             size_t* committed_size,
                             ImeTextSpans* spans);
+
+  // Reset all cached flags when |TSFTextStore::RequestLock| returns.
+  void ResetCacheAfterEditSession();
 
   // Gets the style information from the display attribute for the actively
   // composed text.

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as ObjectUI from '../object_ui/object_ui.js';
 import * as SDK from '../sdk/sdk.js';
@@ -255,7 +258,7 @@ export class ConsolePin extends Common.ObjectWrapper.ObjectWrapper {
     const isEditing = this._pinElement.hasFocus();
     const throwOnSideEffect = isEditing && text !== this._committedExpression;
     const timeout = throwOnSideEffect ? 250 : undefined;
-    const executionContext = self.UI.context.flavor(SDK.RuntimeModel.ExecutionContext);
+    const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     const {preview, result} = await ObjectUI.JavaScriptREPL.JavaScriptREPL.evaluateAndBuildPreview(
         text, throwOnSideEffect, timeout, !isEditing /* allowErrors */, 'console');
     if (this._lastResult && this._lastExecutionContext) {

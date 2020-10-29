@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 import * as Common from '../common/common.js';
+import * as PerfUI from '../perf_ui/perf_ui.js';
 import * as Platform from '../platform/platform.js';
-import * as ProtocolClient from '../protocol_client/protocol_client.js';
 import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
@@ -52,7 +52,7 @@ export class ClearStorageView extends UI.ThrottledWidget.ThrottledWidget {
         ls`Learn more`);
     learnMoreRow.appendChild(learnMore);
     this._quotaUsage = null;
-    this._pieChart = new PerfUI.PieChart(
+    this._pieChart = new PerfUI.PieChart.PieChart(
         {chartName: ls`Storage Usage`, size: 110, formatter: Platform.NumberUtilities.bytesToString, showLegend: true});
     const usageBreakdownRow = quota.appendRow();
     usageBreakdownRow.classList.add('usage-breakdown-row');
@@ -176,7 +176,8 @@ export class ClearStorageView extends UI.ThrottledWidget.ThrottledWidget {
    * @param {!Array<string>} selectedStorageTypes
    */
   static clear(target, securityOrigin, selectedStorageTypes) {
-    target.storageAgent().clearDataForOrigin(securityOrigin, selectedStorageTypes.join(','));
+    target.storageAgent().invoke_clearDataForOrigin(
+        {origin: securityOrigin, storageTypes: selectedStorageTypes.join(',')});
 
     const set = new Set(selectedStorageTypes);
     const hasAll = set.has(Protocol.Storage.StorageType.All);
@@ -232,14 +233,16 @@ export class ClearStorageView extends UI.ThrottledWidget.ThrottledWidget {
    * @return {!Promise<?>}
    */
   async doUpdate() {
-    if (!this._securityOrigin) {
+    if (!this._securityOrigin || !this._target) {
+      this._quotaRow.textContent = '';
+      this._resetPieChart(0);
       return;
     }
 
     const securityOrigin = /** @type {string} */ (this._securityOrigin);
     const response = await this._target.storageAgent().invoke_getUsageAndQuota({origin: securityOrigin});
-    if (response[ProtocolClient.InspectorBackend.ProtocolError]) {
-      this._quotaRow.textContet = '';
+    if (response.getError()) {
+      this._quotaRow.textContent = '';
       this._resetPieChart(0);
       return;
     }

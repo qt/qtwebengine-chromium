@@ -45,8 +45,6 @@ source_set("fwl") {
     "cfwl_eventvalidate.h",
     "cfwl_listbox.cpp",
     "cfwl_listbox.h",
-    "cfwl_listitem.cpp",
-    "cfwl_listitem.h",
     "cfwl_message.cpp",
     "cfwl_message.h",
     "cfwl_messagekey.cpp",
@@ -77,10 +75,9 @@ source_set("fwl") {
     "cfwl_widget.h",
     "cfwl_widgetmgr.cpp",
     "cfwl_widgetmgr.h",
-    "cfwl_widgetproperties.cpp",
-    "cfwl_widgetproperties.h",
     "fwl_widgetdef.h",
     "fwl_widgethit.h",
+    "ifwl_themeprovider.cpp",
     "ifwl_themeprovider.h",
     "ifwl_widgetdelegate.h",
     "theme/cfwl_barcodetp.cpp",
@@ -126,5 +123,6 @@ source_set("fwl") {
 
 pdfium_embeddertest_source_set("embeddertests") {
   sources = [ "cfwl_edit_embeddertest.cpp" ]
+  deps = [ "//v8:cppgc" ]
   pdfium_root_dir = "../../"
 }

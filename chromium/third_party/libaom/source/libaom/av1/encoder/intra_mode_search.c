@@ -131,8 +131,7 @@ static int rd_pick_filter_intra_sby(const AV1_COMP *const cpi, MACROBLOCK *x,
     const int txfm_search_done = 1;
     store_winner_mode_stats(
         &cpi->common, x, mbmi, NULL, NULL, NULL, 0, NULL, bsize, this_rd,
-        cpi->sf.winner_mode_sf.enable_multiwinner_mode_process,
-        txfm_search_done);
+        cpi->sf.winner_mode_sf.multi_winner_mode_type, txfm_search_done);
     if (this_rd < *best_rd) {
       *best_rd = this_rd;
       best_tx_size = mbmi->tx_size;
@@ -334,9 +333,8 @@ static int cfl_rd_pick_alpha(MACROBLOCK *const x, const AV1_COMP *const cpi,
       if (i == CFL_SIGN_NEG) {
         mbmi->cfl_alpha_idx = 0;
         mbmi->cfl_alpha_signs = joint_sign;
-        av1_txfm_rd_in_plane(
-            x, cpi, &rd_stats, best_rd, 0, plane + 1, plane_bsize, tx_size,
-            cpi->sf.rd_sf.use_fast_coef_costing, FTXS_NONE, skip_trellis);
+        av1_txfm_rd_in_plane(x, cpi, &rd_stats, best_rd, 0, plane + 1,
+                             plane_bsize, tx_size, FTXS_NONE, skip_trellis);
         if (rd_stats.rate == INT_MAX) break;
       }
       const int alpha_rate = mode_costs->cfl_cost[joint_sign][plane][0];
@@ -363,9 +361,8 @@ static int cfl_rd_pick_alpha(MACROBLOCK *const x, const AV1_COMP *const cpi,
           if (i == 0) {
             mbmi->cfl_alpha_idx = (c << CFL_ALPHABET_SIZE_LOG2) + c;
             mbmi->cfl_alpha_signs = joint_sign;
-            av1_txfm_rd_in_plane(
-                x, cpi, &rd_stats, best_rd, 0, plane + 1, plane_bsize, tx_size,
-                cpi->sf.rd_sf.use_fast_coef_costing, FTXS_NONE, skip_trellis);
+            av1_txfm_rd_in_plane(x, cpi, &rd_stats, best_rd, 0, plane + 1,
+                                 plane_bsize, tx_size, FTXS_NONE, skip_trellis);
             if (rd_stats.rate == INT_MAX) break;
           }
           const int alpha_rate = mode_costs->cfl_cost[joint_sign][plane][c];
@@ -522,7 +519,7 @@ int64_t av1_rd_pick_intra_sbuv_mode(const AV1_COMP *const cpi, MACROBLOCK *x,
 
   // Search palette mode
   const int try_palette =
-      cpi->oxcf.enable_palette &&
+      cpi->oxcf.tool_cfg.enable_palette &&
       av1_allow_palette(cpi->common.features.allow_screen_content_tools,
                         mbmi->sb_type);
   if (try_palette) {
@@ -910,7 +907,7 @@ int64_t av1_handle_intra_mode(IntraModeSearchState *intra_search_state,
     // the one in av1_search_palette_mode.
     PALETTE_MODE_INFO *const pmi = &mbmi->palette_mode_info;
     const int try_palette =
-        cpi->oxcf.enable_palette &&
+        cpi->oxcf.tool_cfg.enable_palette &&
         av1_allow_palette(cm->features.allow_screen_content_tools,
                           mbmi->sb_type);
     if (intra_search_state->rate_uv_intra == INT_MAX) {
@@ -1025,7 +1022,7 @@ int64_t av1_rd_pick_intra_sby_mode(const AV1_COMP *const cpi, MACROBLOCK *x,
   const int *bmode_costs;
   PALETTE_MODE_INFO *const pmi = &mbmi->palette_mode_info;
   const int try_palette =
-      cpi->oxcf.enable_palette &&
+      cpi->oxcf.tool_cfg.enable_palette &&
       av1_allow_palette(cpi->common.features.allow_screen_content_tools,
                         mbmi->sb_type);
   uint8_t *best_palette_color_map =
@@ -1113,8 +1110,7 @@ int64_t av1_rd_pick_intra_sby_mode(const AV1_COMP *const cpi, MACROBLOCK *x,
     const int txfm_search_done = 1;
     store_winner_mode_stats(
         &cpi->common, x, mbmi, NULL, NULL, NULL, 0, NULL, bsize, this_rd,
-        cpi->sf.winner_mode_sf.enable_multiwinner_mode_process,
-        txfm_search_done);
+        cpi->sf.winner_mode_sf.multi_winner_mode_type, txfm_search_done);
     if (this_rd < best_rd) {
       best_mbmi = *mbmi;
       best_rd = this_rd;
@@ -1156,7 +1152,7 @@ int64_t av1_rd_pick_intra_sby_mode(const AV1_COMP *const cpi, MACROBLOCK *x,
   // In multi-winner mode processing, perform tx search for few best modes
   // identified during mode evaluation. Winner mode processing uses best tx
   // configuration for tx search.
-  if (cpi->sf.winner_mode_sf.enable_multiwinner_mode_process) {
+  if (cpi->sf.winner_mode_sf.multi_winner_mode_type) {
     int best_mode_idx = 0;
     int block_width, block_height;
     uint8_t *color_map_dst = xd->plane[PLANE_TYPE_Y].color_index_map;

@@ -51,7 +51,7 @@ protected:
         return str;
     }
 
-    SkISize onISize() override { return SkISize::Make(970, 780); }
+    SkISize onISize() override { return SkISize::Make(388, 780); }
 
     void onDraw(SkCanvas* canvas) override {
         SkPath path;
@@ -92,9 +92,6 @@ protected:
         } gOps[] = { //extra spaces in names for measureText
             {kIntersect_SkClipOp,         "Isect "},
             {kDifference_SkClipOp,        "Diff " },
-            {kUnion_SkClipOp,             "Union "},
-            {kXOR_SkClipOp,               "Xor "  },
-            {kReverseDifference_SkClipOp, "RDiff "}
         };
 
         canvas->translate(20, 20);
@@ -210,7 +207,7 @@ DEF_GM(return new ComplexClipGM(true, false, false);)
 DEF_GM(return new ComplexClipGM(true, false, true);)
 DEF_GM(return new ComplexClipGM(true, true, false);)
 DEF_GM(return new ComplexClipGM(true, true, true);)
-}
+}  // namespace skiagm
 
 DEF_SIMPLE_GM(clip_shader, canvas, 840, 650) {
     auto img = GetResourceAsImage("images/yellow_rose.png");
@@ -346,7 +343,7 @@ static void draw_banner(SkCanvas* canvas, Config config) {
     canvas->drawString(banner.c_str(), 20.f, -30.f, kFont, SkPaint());
 };
 
-} // anonymous
+}  // namespace
 
 DEF_SIMPLE_GM(clip_shader_persp, canvas, 1370, 1030) {
     // Each draw has a clipShader(image-shader), a clipShader(gradient-shader), a concat(persp-mat),

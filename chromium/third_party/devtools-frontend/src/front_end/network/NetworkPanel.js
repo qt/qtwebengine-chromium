@@ -28,6 +28,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
@@ -61,7 +64,8 @@ export class NetworkPanel extends UI.Panel.Panel {
     this._networkRecordFilmStripSetting =
         Common.Settings.Settings.instance().createSetting('networkRecordFilmStripSetting', false);
     this._toggleRecordAction =
-        /** @type {!UI.Action.Action }*/ (self.UI.actionRegistry.action('network.toggle-recording'));
+        /** @type {!UI.Action.Action }*/ (
+            UI.ActionRegistry.ActionRegistry.instance().action('network.toggle-recording'));
 
     /** @type {number|undefined} */
     this._pendingStopTimer;
@@ -155,7 +159,9 @@ export class NetworkPanel extends UI.Panel.Panel {
 
     this._closeButtonElement = createElement('div', 'dt-close-button');
     this._closeButtonElement.addEventListener(
-        'click', async () => await self.UI.actionRegistry.action('network.hide-request-details').execute(), false);
+        'click',
+        async () => await UI.ActionRegistry.ActionRegistry.instance().action('network.hide-request-details').execute(),
+        false);
     this._closeButtonElement.style.margin = '0 5px';
 
     this._networkLogShowOverviewSetting.addChangeListener(this._toggleShowOverview, this);
@@ -188,13 +194,17 @@ export class NetworkPanel extends UI.Panel.Panel {
   }
 
   /**
-   * @param {!Array<{filterType: !FilterType, filterValue: string}>} filters
+   * @param {!Array<{filterType: ?FilterType, filterValue: string}>} filters
    */
   static revealAndFilter(filters) {
     const panel = NetworkPanel._instance();
     let filterString = '';
     for (const filter of filters) {
-      filterString += `${filter.filterType}:${filter.filterValue} `;
+      if (filter.filterType) {
+        filterString += `${filter.filterType}:${filter.filterValue} `;
+      } else {
+        filterString += `${filter.filterValue} `;
+      }
     }
     panel._networkLogView.setTextFilterValue(filterString);
     UI.ViewManager.ViewManager.instance().showView('network');
@@ -236,7 +246,7 @@ export class NetworkPanel extends UI.Panel.Panel {
    * @param {!Common.EventTarget.EventTargetEvent} event
    */
   async _searchToggleClick(event) {
-    await self.UI.actionRegistry.action('network.search').execute();
+    await UI.ActionRegistry.ActionRegistry.instance().action('network.search').execute();
   }
 
   _setupToolbarButtons(splitWidget) {
@@ -463,7 +473,7 @@ export class NetworkPanel extends UI.Panel.Panel {
    * @override
    */
   wasShown() {
-    self.UI.context.setFlavor(NetworkPanel, this);
+    UI.Context.Context.instance().setFlavor(NetworkPanel, this);
 
     // Record the network tool load time after the panel has loaded.
     Host.userMetrics.panelLoaded('network', 'DevTools.Launch.Network');
@@ -473,7 +483,7 @@ export class NetworkPanel extends UI.Panel.Panel {
    * @override
    */
   willHide() {
-    self.UI.context.setFlavor(NetworkPanel, null);
+    UI.Context.Context.instance().setFlavor(NetworkPanel, null);
   }
 
   /**
@@ -526,9 +536,10 @@ export class NetworkPanel extends UI.Panel.Panel {
    * @param {!{data: *}} event
    */
   _onRequestActivated(event) {
-    const eventData = /** @type {!{showPanel: boolean, tab: !NetworkItemViewTabs}} */ (event.data);
+    const eventData =
+        /** @type {!{showPanel: boolean, tab: !NetworkItemViewTabs, takeFocus: (boolean|undefined)}} */ (event.data);
     if (eventData.showPanel) {
-      this._showRequestPanel(eventData.tab, /* takeFocus */ true);
+      this._showRequestPanel(eventData.tab, /* takeFocus */ eventData.takeFocus);
     } else {
       this._hideRequestPanel();
     }
@@ -852,7 +863,7 @@ export class ActionDelegate {
    * @return {boolean}
    */
   handleAction(context, actionId) {
-    const panel = self.UI.context.flavor(NetworkPanel);
+    const panel = UI.Context.Context.instance().flavor(NetworkPanel);
     console.assert(panel && panel instanceof NetworkPanel);
     switch (actionId) {
       case 'network.toggle-recording': {

@@ -14,7 +14,6 @@
 #include "src/core/SkVM.h"
 
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
 #include "src/gpu/effects/generated/GrLumaColorFilterEffect.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
@@ -23,9 +22,9 @@
 class SkLumaColorFilterImpl : public SkColorFilterBase {
 public:
 #if SK_SUPPORT_GPU
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrRecordingContext*,
-                                                             const GrColorInfo&) const override {
-        return GrLumaColorFilterEffect::Make(/*inputFP=*/nullptr);
+    GrFPResult asFragmentProcessor(std::unique_ptr<GrFragmentProcessor> inputFP,
+                                   GrRecordingContext*, const GrColorInfo&) const override {
+        return GrFPSuccess(GrLumaColorFilterEffect::Make(std::move(inputFP)));
     }
 #endif
 

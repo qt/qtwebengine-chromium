@@ -8,6 +8,7 @@
 #ifndef DDLTileHelper_DEFINED
 #define DDLTileHelper_DEFINED
 
+#include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurfaceCharacterization.h"
@@ -16,11 +17,11 @@ class DDLPromiseImageHelper;
 class PromiseImageCallbackContext;
 class SkCanvas;
 class SkData;
-class SkDeferredDisplayList;
 class SkDeferredDisplayListRecorder;
 class SkPicture;
 class SkSurface;
 class SkSurfaceCharacterization;
+class SkTaskGroup;
 
 class DDLTileHelper {
 public:
@@ -32,7 +33,7 @@ public:
         ~TileData();
 
         void init(int id,
-                  GrContext* context,
+                  GrDirectContext*,
                   const SkSurfaceCharacterization& dstChar,
                   const SkIRect& clip);
 
@@ -47,7 +48,7 @@ public:
         void dropDDL() { fDisplayList.reset(); }
 
         // Precompile all the programs required to draw this tile's DDL
-        void precompile(GrContext*);
+        void precompile(GrDirectContext*);
 
         // Just draw the re-inflated per-tile SKP directly into this tile w/o going through a DDL
         // first. This is used for determining the overhead of using DDLs (i.e., it replaces
@@ -55,7 +56,7 @@ public:
         void drawSKPDirectly(GrContext*);
 
         // Replay the recorded DDL into the tile surface - filling in 'fBackendTexture'.
-        void draw(GrContext*);
+        void draw(GrDirectContext*);
 
         void reset();
 
@@ -67,8 +68,8 @@ public:
         sk_sp<SkImage> makePromiseImage(SkDeferredDisplayListRecorder*);
         void dropCallbackContext() { fCallbackContext.reset(); }
 
-        static void CreateBackendTexture(GrContext*, TileData*);
-        static void DeleteBackendTexture(GrContext*, TileData*);
+        static void CreateBackendTexture(GrDirectContext*, TileData*);
+        static void DeleteBackendTexture(GrDirectContext*, TileData*);
 
     private:
         sk_sp<SkSurface> makeWrappedTileDest(GrContext* context);
@@ -87,15 +88,15 @@ public:
         // after 'fDisplayList' has been flushed (bc it owns the proxy the DDL's destination
         // trampoline points at).
         // TODO: fix the ref-order so we don't need 'fTileSurface' here
-        sk_sp<SkSurface>          fTileSurface;
+        sk_sp<SkSurface>              fTileSurface;
 
-        sk_sp<SkPicture>          fReconstitutedPicture;
-        SkTArray<sk_sp<SkImage>>  fPromiseImages;    // All the promise images in the
+        sk_sp<SkPicture>              fReconstitutedPicture;
+        SkTArray<sk_sp<SkImage>>      fPromiseImages;    // All the promise images in the
                                                      // reconstituted picture
-        std::unique_ptr<SkDeferredDisplayList> fDisplayList;
+        sk_sp<SkDeferredDisplayList>  fDisplayList;
     };
 
-    DDLTileHelper(GrContext* context,
+    DDLTileHelper(GrDirectContext*,
                   const SkSurfaceCharacterization& dstChar,
                   const SkIRect& viewport,
                   int numDivisions);
@@ -104,22 +105,22 @@ public:
 
     void kickOffThreadedWork(SkTaskGroup* recordingTaskGroup,
                              SkTaskGroup* gpuTaskGroup,
-                             GrContext*);
+                             GrDirectContext*);
 
     void createDDLsInParallel();
 
     // Create the DDL that will compose all the tile images into a final result.
     void createComposeDDL();
-    SkDeferredDisplayList* composeDDL() const { return fComposeDDL.get(); }
+    const sk_sp<SkDeferredDisplayList>& composeDDL() const { return fComposeDDL; }
 
-    void precompileAndDrawAllTiles(GrContext*);
+    void precompileAndDrawAllTiles(GrDirectContext*);
 
     // For each tile, create its DDL and then draw it - all on a single thread. This is to allow
     // comparison w/ just drawing the SKP directly (i.e., drawAllTilesDirectly). The
     // DDL creations and draws are interleaved to prevent starvation of the GPU.
     // Note: this is somewhat of a misuse/pessimistic-use of DDLs since they are supposed to
     // be created on a separate thread.
-    void interleaveDDLCreationAndDraw(GrContext*);
+    void interleaveDDLCreationAndDraw(GrDirectContext*);
 
     // This draws all the per-tile SKPs directly into all of the tiles w/o converting them to
     // DDLs first - all on a single thread.
@@ -130,14 +131,14 @@ public:
 
     int numTiles() const { return fNumDivisions * fNumDivisions; }
 
-    void createBackendTextures(SkTaskGroup*, GrContext*);
-    void deleteBackendTextures(SkTaskGroup*, GrContext*);
+    void createBackendTextures(SkTaskGroup*, GrDirectContext*);
+    void deleteBackendTextures(SkTaskGroup*, GrDirectContext*);
 
 private:
     int                                    fNumDivisions; // number of tiles along a side
     SkAutoTArray<TileData>                 fTiles;        // 'fNumDivisions' x 'fNumDivisions'
 
-    std::unique_ptr<SkDeferredDisplayList> fComposeDDL;
+    sk_sp<SkDeferredDisplayList>           fComposeDDL;
 
     const SkSurfaceCharacterization        fDstCharacterization;
 };

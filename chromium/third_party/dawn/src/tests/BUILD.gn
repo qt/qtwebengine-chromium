@@ -156,12 +156,14 @@ test("dawn_unittests") {
     "unittests/BuddyMemoryAllocatorTests.cpp",
     "unittests/CommandAllocatorTests.cpp",
     "unittests/EnumClassBitmasksTests.cpp",
+    "unittests/EnumMaskIteratorTests.cpp",
     "unittests/ErrorTests.cpp",
     "unittests/ExtensionTests.cpp",
     "unittests/GetProcAddressTests.cpp",
     "unittests/ITypArrayTests.cpp",
     "unittests/ITypBitsetTests.cpp",
     "unittests/ITypSpanTests.cpp",
+    "unittests/ITypVectorTests.cpp",
     "unittests/LinkedListTests.cpp",
     "unittests/MathTests.cpp",
     "unittests/ObjectBaseTests.cpp",
@@ -173,6 +175,7 @@ test("dawn_unittests") {
     "unittests/SerialMapTests.cpp",
     "unittests/SerialQueueTests.cpp",
     "unittests/SlabAllocatorTests.cpp",
+    "unittests/StackContainerTests.cpp",
     "unittests/SystemUtilsTests.cpp",
     "unittests/ToBackendTests.cpp",
     "unittests/TypedIntegerTests.cpp",
@@ -192,6 +195,7 @@ test("dawn_unittests") {
     "unittests/validation/MinimumBufferSizeValidationTests.cpp",
     "unittests/validation/QuerySetValidationTests.cpp",
     "unittests/validation/QueueSubmitValidationTests.cpp",
+    "unittests/validation/QueueWriteTextureValidationTests.cpp",
     "unittests/validation/RenderBundleValidationTests.cpp",
     "unittests/validation/RenderPassDescriptorValidationTests.cpp",
     "unittests/validation/RenderPipelineValidationTests.cpp",
@@ -259,6 +263,7 @@ source_set("dawn_end2end_tests_sources") {
     "end2end/BasicTests.cpp",
     "end2end/BindGroupTests.cpp",
     "end2end/BufferTests.cpp",
+    "end2end/BufferZeroInitTests.cpp",
     "end2end/ClipSpaceTests.cpp",
     "end2end/ColorStateTests.cpp",
     "end2end/CompressedTextureFormatTests.cpp",
@@ -271,6 +276,7 @@ source_set("dawn_end2end_tests_sources") {
     "end2end/DebugMarkerTests.cpp",
     "end2end/DeprecatedAPITests.cpp",
     "end2end/DepthSamplingTests.cpp",
+    "end2end/DepthStencilCopyTests.cpp",
     "end2end/DepthStencilStateTests.cpp",
     "end2end/DestroyTests.cpp",
     "end2end/DeviceLostTests.cpp",
@@ -290,6 +296,7 @@ source_set("dawn_end2end_tests_sources") {
     "end2end/OpArrayLengthTests.cpp",
     "end2end/PipelineLayoutTests.cpp",
     "end2end/PrimitiveTopologyTests.cpp",
+    "end2end/QueryTests.cpp",
     "end2end/QueueTests.cpp",
     "end2end/RenderBundleTests.cpp",
     "end2end/RenderPassLoadOpTests.cpp",
@@ -327,7 +334,11 @@ source_set("dawn_end2end_tests_sources") {
 
   if (dawn_enable_metal) {
     sources += [ "end2end/IOSurfaceWrappingTests.cpp" ]
-    libs += [ "IOSurface.framework" ]
+    frameworks = [ "IOSurface.framework" ]
+  }
+
+  if (dawn_enable_wgsl) {
+    sources += [ "end2end/VertexBufferRobustnessTests.cpp" ]
   }
 
   if (dawn_enable_opengl) {
@@ -470,16 +481,17 @@ test("dawn_perf_tests") {
 
   libs = []
 
-  # When building inside Chromium, use their gtest main function because it is
-  # needed to run in swarming correctly.
+  # When building inside Chromium, use their gtest main function and the
+  # other perf test scaffolding in order to run in swarming correctly.
   if (build_with_chromium) {
     deps += [ ":dawn_perf_tests_main" ]
+    data_deps = [ "//testing:run_perf_test" ]
   } else {
     sources += [ "PerfTestsMain.cpp" ]
   }
 
   if (dawn_enable_metal) {
-    libs += [ "IOSurface.framework" ]
+    frameworks = [ "IOSurface.framework" ]
   }
 
   if (dawn_enable_opengl) {

@@ -13,8 +13,8 @@ namespace quic {
 
 UberLossAlgorithm::UberLossAlgorithm() {
   for (int8_t i = INITIAL_DATA; i < NUM_PACKET_NUMBER_SPACES; ++i) {
-    general_loss_algorithms_[i].SetPacketNumberSpace(
-        static_cast<PacketNumberSpace>(i));
+    general_loss_algorithms_[i].Initialize(static_cast<PacketNumberSpace>(i),
+                                           this);
   }
 }
 
@@ -22,7 +22,7 @@ void UberLossAlgorithm::SetFromConfig(const QuicConfig& config,
                                       Perspective perspective) {
   if (config.HasClientRequestedIndependentOption(kELDT, perspective) &&
       tuner_ != nullptr) {
-    tuning_enabled_ = true;
+    tuning_configured_ = true;
     MaybeStartTuning();
   }
 }
@@ -100,8 +100,8 @@ void UberLossAlgorithm::SetLossDetectionTuner(
 }
 
 void UberLossAlgorithm::MaybeStartTuning() {
-  if (tuner_started_ || !tuning_enabled_ || !min_rtt_available_ ||
-      !user_agent_known_) {
+  if (tuner_started_ || !tuning_configured_ || !min_rtt_available_ ||
+      !user_agent_known_ || !reorder_happened_) {
     return;
   }
 
@@ -138,6 +138,22 @@ void UberLossAlgorithm::OnUserAgentIdKnown() {
 void UberLossAlgorithm::OnConnectionClosed() {
   if (tuner_ != nullptr && tuner_started_) {
     tuner_->Finish(tuned_parameters_);
+  }
+}
+
+void UberLossAlgorithm::OnReorderingDetected() {
+  const bool tuner_started_before = tuner_started_;
+  const bool reorder_happened_before = reorder_happened_;
+
+  reorder_happened_ = true;
+  MaybeStartTuning();
+
+  if (!tuner_started_before && tuner_started_) {
+    if (reorder_happened_before) {
+      QUIC_CODE_COUNT(quic_loss_tuner_started_after_first_reorder);
+    } else {
+      QUIC_CODE_COUNT(quic_loss_tuner_started_on_first_reorder);
+    }
   }
 }
 

@@ -8,7 +8,6 @@
 #ifndef GrGaussianConvolutionFragmentProcessor_DEFINED
 #define GrGaussianConvolutionFragmentProcessor_DEFINED
 
-#include "src/gpu/GrCoordTransform.h"
 #include "src/gpu/GrFragmentProcessor.h"
 
 /**
@@ -41,14 +40,6 @@ public:
 
     const char* name() const override { return "GaussianConvolution"; }
 
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        SkString str;
-        str.appendf("dir: %s radius: %d", Direction::kX == fDirection ? "X" : "Y", fRadius);
-        return str;
-    }
-#endif
-
     std::unique_ptr<GrFragmentProcessor> clone() const override {
         return std::unique_ptr<GrFragmentProcessor>(
                 new GrGaussianConvolutionFragmentProcessor(*this));
@@ -68,6 +59,13 @@ private:
 
     explicit GrGaussianConvolutionFragmentProcessor(const GrGaussianConvolutionFragmentProcessor&);
 
+#if GR_TEST_UTILS
+    SkString onDumpInfo() const override {
+        return SkStringPrintf("(dir=%s, radius=%d)",
+                              Direction::kX == fDirection ? "X" : "Y", fRadius);
+    }
+#endif
+
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
 
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
@@ -78,9 +76,6 @@ private:
 
     static constexpr int kMaxKernelWidth = 2*kMaxKernelRadius + 1;
 
-    // We really just want the unaltered local coords, but the only way to get that right now is
-    // an identity coord transform.
-    GrCoordTransform      fCoordTransform = {};
     // The array size must be a multiple of 4 because we pass it as an array of float4 uniform
     // values.
     float                 fKernel[SkAlign4(kMaxKernelWidth)];

@@ -20,6 +20,7 @@
 #include "modules/video_coding/frame_buffer2.h"
 #include "modules/video_coding/timing.h"
 #include "rtc_base/platform_thread.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread_checker.h"
 #include "system_wrappers/include/clock.h"
@@ -112,8 +113,8 @@ class VideoStreamDecoderImpl : public VideoStreamDecoderInterface {
   // safe for the |decode_queue_| to be destructed. After that the |decoder_|
   // can be destructed, and then the |bookkeeping_queue_|. Finally the
   // |frame_buffer_| can be destructed.
-  rtc::CriticalSection shut_down_crit_;
-  bool shut_down_ RTC_GUARDED_BY(shut_down_crit_);
+  Mutex shut_down_mutex_;
+  bool shut_down_ RTC_GUARDED_BY(shut_down_mutex_);
   video_coding::FrameBuffer frame_buffer_ RTC_GUARDED_BY(bookkeeping_queue_);
   rtc::TaskQueue bookkeeping_queue_;
   std::unique_ptr<VideoDecoder> decoder_ RTC_GUARDED_BY(decode_queue_);

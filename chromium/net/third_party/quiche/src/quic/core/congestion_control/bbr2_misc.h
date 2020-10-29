@@ -172,8 +172,7 @@ struct QUIC_EXPORT_PRIVATE Bbr2Params {
   bool flexible_app_limited = false;
 
   // Can be disabled by connection option 'B2NA'.
-  bool add_ack_height_to_queueing_threshold =
-      GetQuicReloadableFlag(quic_bbr2_add_ack_height_to_queueing_threshold);
+  bool add_ack_height_to_queueing_threshold = true;
 
   // Can be disabled by connection option 'B2RP'.
   bool avoid_unnecessary_probe_rtt = true;
@@ -370,6 +369,10 @@ class QUIC_EXPORT_PRIVATE Bbr2NetworkModel {
     bandwidth_sampler_.EnableOverestimateAvoidance();
   }
 
+  bool IsBandwidthOverestimateAvoidanceEnabled() const {
+    return bandwidth_sampler_.IsOverestimateAvoidanceEnabled();
+  }
+
   void OnPacketNeutered(QuicPacketNumber packet_number) {
     bandwidth_sampler_.OnPacketNeutered(packet_number);
   }
@@ -447,6 +450,10 @@ class QUIC_EXPORT_PRIVATE Bbr2NetworkModel {
   float pacing_gain() const { return pacing_gain_; }
   void set_pacing_gain(float pacing_gain) { pacing_gain_ = pacing_gain; }
 
+  bool improve_adjust_network_parameters() const {
+    return improve_adjust_network_parameters_;
+  }
+
  private:
   const Bbr2Params& Params() const { return *params_; }
   const Bbr2Params* const params_;
@@ -478,6 +485,9 @@ class QUIC_EXPORT_PRIVATE Bbr2NetworkModel {
 
   float cwnd_gain_;
   float pacing_gain_;
+
+  const bool improve_adjust_network_parameters_ =
+      GetQuicReloadableFlag(quic_bbr2_improve_adjust_network_parameters);
 };
 
 enum class Bbr2Mode : uint8_t {

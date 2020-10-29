@@ -50,6 +50,9 @@ const char kStartArcTimerMethod[] = "StartArcTimer";
 const char kDeleteArcTimersMethod[] = "DeleteArcTimers";
 const char kHasAmbientColorDeviceMethod[] = "HasAmbientColorDevice";
 const char kChangeWifiRegDomainMethod[] = "ChangeWifiRegDomain";
+const char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+// Token identifying the primordial Mojo pipe passed to BootstrapMojoConnection.
+const char kBootstrapMojoConnectionChannelToken[] = "power_manager-bootstrap";
 
 // Signals emitted by powerd.
 const char kScreenBrightnessChangedSignal[] = "ScreenBrightnessChanged";
@@ -68,6 +71,7 @@ const char kAmbientColorTemperatureChangedSignal[] =
     "AmbientColorTemperatureChanged";
 const char kLidClosedSignal[] = "LidClosed";
 const char kLidOpenedSignal[] = "LidOpened";
+const char kThermalEventSignal[] = "ThermalEvent";
 
 // Values
 const int kBrightnessTransitionGradual = 1;

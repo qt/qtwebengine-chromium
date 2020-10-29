@@ -474,6 +474,180 @@ void GL_APIENTRY VertexAttribDivisorANGLE(GLuint index, GLuint divisor)
     }
 }
 
+// GL_ANGLE_memory_object_flags
+void GL_APIENTRY TexStorageMemFlags2DANGLE(GLenum target,
+                                           GLsizei levels,
+                                           GLenum internalFormat,
+                                           GLsizei width,
+                                           GLsizei height,
+                                           GLuint memory,
+                                           GLuint64 offset,
+                                           GLbitfield createFlags,
+                                           GLbitfield usageFlags)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexStorageMemFlags2DANGLE",
+          "context = %d, GLenum target = %s, GLsizei levels = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLuint memory = %u, GLuint64 offset = %llu, "
+          "GLbitfield createFlags = %s, GLbitfield usageFlags = %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), levels,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height, memory,
+          static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexStorageMemFlags2DANGLE(
+                                context, targetPacked, levels, internalFormat, width, height,
+                                memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags2D(targetPacked, levels, internalFormat, width, height,
+                                          memoryPacked, offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags2DANGLE, isCallValid, context, targetPacked, levels,
+                      internalFormat, width, height, memoryPacked, offset, createFlags, usageFlags);
+    }
+}
+
+void GL_APIENTRY TexStorageMemFlags2DMultisampleANGLE(GLenum target,
+                                                      GLsizei samples,
+                                                      GLenum internalFormat,
+                                                      GLsizei width,
+                                                      GLsizei height,
+                                                      GLboolean fixedSampleLocations,
+                                                      GLuint memory,
+                                                      GLuint64 offset,
+                                                      GLbitfield createFlags,
+                                                      GLbitfield usageFlags)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexStorageMemFlags2DMultisampleANGLE",
+          "context = %d, GLenum target = %s, GLsizei samples = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLboolean fixedSampleLocations = %s, GLuint "
+          "memory = %u, GLuint64 offset = %llu, GLbitfield createFlags = %s, GLbitfield usageFlags "
+          "= %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), samples,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height,
+          GLbooleanToString(fixedSampleLocations), memory, static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexStorageMemFlags2DMultisampleANGLE(
+                 context, targetPacked, samples, internalFormat, width, height,
+                 fixedSampleLocations, memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags2DMultisample(targetPacked, samples, internalFormat, width,
+                                                     height, fixedSampleLocations, memoryPacked,
+                                                     offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags2DMultisampleANGLE, isCallValid, context, targetPacked,
+                      samples, internalFormat, width, height, fixedSampleLocations, memoryPacked,
+                      offset, createFlags, usageFlags);
+    }
+}
+
+void GL_APIENTRY TexStorageMemFlags3DANGLE(GLenum target,
+                                           GLsizei levels,
+                                           GLenum internalFormat,
+                                           GLsizei width,
+                                           GLsizei height,
+                                           GLsizei depth,
+                                           GLuint memory,
+                                           GLuint64 offset,
+                                           GLbitfield createFlags,
+                                           GLbitfield usageFlags)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexStorageMemFlags3DANGLE",
+          "context = %d, GLenum target = %s, GLsizei levels = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, GLuint memory = %u, "
+          "GLuint64 offset = %llu, GLbitfield createFlags = %s, GLbitfield usageFlags = %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), levels,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height, depth, memory,
+          static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexStorageMemFlags3DANGLE(
+                                context, targetPacked, levels, internalFormat, width, height, depth,
+                                memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags3D(targetPacked, levels, internalFormat, width, height,
+                                          depth, memoryPacked, offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags3DANGLE, isCallValid, context, targetPacked, levels,
+                      internalFormat, width, height, depth, memoryPacked, offset, createFlags,
+                      usageFlags);
+    }
+}
+
+void GL_APIENTRY TexStorageMemFlags3DMultisampleANGLE(GLenum target,
+                                                      GLsizei samples,
+                                                      GLenum internalFormat,
+                                                      GLsizei width,
+                                                      GLsizei height,
+                                                      GLsizei depth,
+                                                      GLboolean fixedSampleLocations,
+                                                      GLuint memory,
+                                                      GLuint64 offset,
+                                                      GLbitfield createFlags,
+                                                      GLbitfield usageFlags)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexStorageMemFlags3DMultisampleANGLE",
+          "context = %d, GLenum target = %s, GLsizei samples = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, GLboolean "
+          "fixedSampleLocations = %s, GLuint memory = %u, GLuint64 offset = %llu, GLbitfield "
+          "createFlags = %s, GLbitfield usageFlags = %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), samples,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height, depth,
+          GLbooleanToString(fixedSampleLocations), memory, static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexStorageMemFlags3DMultisampleANGLE(
+                 context, targetPacked, samples, internalFormat, width, height, depth,
+                 fixedSampleLocations, memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags3DMultisample(targetPacked, samples, internalFormat, width,
+                                                     height, depth, fixedSampleLocations,
+                                                     memoryPacked, offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags3DMultisampleANGLE, isCallValid, context, targetPacked,
+                      samples, internalFormat, width, height, depth, fixedSampleLocations,
+                      memoryPacked, offset, createFlags, usageFlags);
+    }
+}
+
 // GL_ANGLE_memory_object_fuchsia
 void GL_APIENTRY ImportMemoryZirconHandleANGLE(GLuint memory,
                                                GLuint64 size,
@@ -4420,17 +4594,20 @@ void GL_APIENTRY FramebufferTexture2DMultisampleEXT(GLenum target,
 
     if (context)
     {
+        TextureTarget textargetPacked                         = FromGL<TextureTarget>(textarget);
+        TextureID texturePacked                               = FromGL<TextureID>(texture);
         std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
-        bool isCallValid                                      = (context->skipValidation() ||
-                            ValidateFramebufferTexture2DMultisampleEXT(
-                                context, target, attachment, textarget, texture, level, samples));
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateFramebufferTexture2DMultisampleEXT(
+                 context, target, attachment, textargetPacked, texturePacked, level, samples));
         if (isCallValid)
         {
-            context->framebufferTexture2DMultisample(target, attachment, textarget, texture, level,
-                                                     samples);
+            context->framebufferTexture2DMultisample(target, attachment, textargetPacked,
+                                                     texturePacked, level, samples);
         }
         ANGLE_CAPTURE(FramebufferTexture2DMultisampleEXT, isCallValid, context, target, attachment,
-                      textarget, texture, level, samples);
+                      textargetPacked, texturePacked, level, samples);
     }
 }
 
@@ -4813,6 +4990,63 @@ void GL_APIENTRY ImportSemaphoreFdEXT(GLuint semaphore, GLenum handleType, GLint
         }
         ANGLE_CAPTURE(ImportSemaphoreFdEXT, isCallValid, context, semaphorePacked, handleTypePacked,
                       fd);
+    }
+}
+
+// GL_EXT_texture_buffer
+void GL_APIENTRY TexBufferEXT(GLenum target, GLenum internalformat, GLuint buffer)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexBufferEXT",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer);
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexBufferEXT(context, targetPacked, internalformat, bufferPacked));
+        if (isCallValid)
+        {
+            context->texBuffer(targetPacked, internalformat, bufferPacked);
+        }
+        ANGLE_CAPTURE(TexBufferEXT, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked);
+    }
+}
+
+void GL_APIENTRY TexBufferRangeEXT(GLenum target,
+                                   GLenum internalformat,
+                                   GLuint buffer,
+                                   GLintptr offset,
+                                   GLsizeiptr size)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexBufferRangeEXT",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u, "
+          "GLintptr offset = %llu, GLsizeiptr size = %llu",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer,
+          static_cast<unsigned long long>(offset), static_cast<unsigned long long>(size));
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexBufferRangeEXT(context, targetPacked, internalformat,
+                                                      bufferPacked, offset, size));
+        if (isCallValid)
+        {
+            context->texBufferRange(targetPacked, internalformat, bufferPacked, offset, size);
+        }
+        ANGLE_CAPTURE(TexBufferRangeEXT, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked, offset, size);
     }
 }
 
@@ -6916,6 +7150,63 @@ void GL_APIENTRY TexParameterIuivOES(GLenum target, GLenum pname, const GLuint *
             context->texParameterIuiv(targetPacked, pname, params);
         }
         ANGLE_CAPTURE(TexParameterIuivOES, isCallValid, context, targetPacked, pname, params);
+    }
+}
+
+// GL_OES_texture_buffer
+void GL_APIENTRY TexBufferOES(GLenum target, GLenum internalformat, GLuint buffer)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexBufferOES",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer);
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexBufferOES(context, targetPacked, internalformat, bufferPacked));
+        if (isCallValid)
+        {
+            context->texBuffer(targetPacked, internalformat, bufferPacked);
+        }
+        ANGLE_CAPTURE(TexBufferOES, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked);
+    }
+}
+
+void GL_APIENTRY TexBufferRangeOES(GLenum target,
+                                   GLenum internalformat,
+                                   GLuint buffer,
+                                   GLintptr offset,
+                                   GLsizeiptr size)
+{
+    Context *context = GetValidGlobalContext();
+    EVENT("glTexBufferRangeOES",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u, "
+          "GLintptr offset = %llu, GLsizeiptr size = %llu",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer,
+          static_cast<unsigned long long>(offset), static_cast<unsigned long long>(size));
+
+    if (context)
+    {
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexBufferRangeOES(context, targetPacked, internalformat,
+                                                      bufferPacked, offset, size));
+        if (isCallValid)
+        {
+            context->texBufferRange(targetPacked, internalformat, bufferPacked, offset, size);
+        }
+        ANGLE_CAPTURE(TexBufferRangeOES, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked, offset, size);
     }
 }
 
@@ -12061,17 +12352,20 @@ void GL_APIENTRY FramebufferTexture2DMultisampleEXTContextANGLE(GLeglContext ctx
     if (context)
     {
         ASSERT(context == GetValidGlobalContext());
+        TextureTarget textargetPacked                         = FromGL<TextureTarget>(textarget);
+        TextureID texturePacked                               = FromGL<TextureID>(texture);
         std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
-        bool isCallValid                                      = (context->skipValidation() ||
-                            ValidateFramebufferTexture2DMultisampleEXT(
-                                context, target, attachment, textarget, texture, level, samples));
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateFramebufferTexture2DMultisampleEXT(
+                 context, target, attachment, textargetPacked, texturePacked, level, samples));
         if (isCallValid)
         {
-            context->framebufferTexture2DMultisample(target, attachment, textarget, texture, level,
-                                                     samples);
+            context->framebufferTexture2DMultisample(target, attachment, textargetPacked,
+                                                     texturePacked, level, samples);
         }
         ANGLE_CAPTURE(FramebufferTexture2DMultisampleEXT, isCallValid, context, target, attachment,
-                      textarget, texture, level, samples);
+                      textargetPacked, texturePacked, level, samples);
     }
 }
 
@@ -20443,15 +20737,74 @@ void GL_APIENTRY TexBufferContextANGLE(GLeglContext ctx,
     if (context)
     {
         ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
         BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
         std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
         bool isCallValid                                      = (context->skipValidation() ||
-                            ValidateTexBuffer(context, target, internalformat, bufferPacked));
+                            ValidateTexBuffer(context, targetPacked, internalformat, bufferPacked));
         if (isCallValid)
         {
-            context->texBuffer(target, internalformat, bufferPacked);
+            context->texBuffer(targetPacked, internalformat, bufferPacked);
         }
-        ANGLE_CAPTURE(TexBuffer, isCallValid, context, target, internalformat, bufferPacked);
+        ANGLE_CAPTURE(TexBuffer, isCallValid, context, targetPacked, internalformat, bufferPacked);
+    }
+}
+
+void GL_APIENTRY TexBufferEXTContextANGLE(GLeglContext ctx,
+                                          GLenum target,
+                                          GLenum internalformat,
+                                          GLuint buffer)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexBufferEXT",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer);
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexBufferEXT(context, targetPacked, internalformat, bufferPacked));
+        if (isCallValid)
+        {
+            context->texBuffer(targetPacked, internalformat, bufferPacked);
+        }
+        ANGLE_CAPTURE(TexBufferEXT, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked);
+    }
+}
+
+void GL_APIENTRY TexBufferOESContextANGLE(GLeglContext ctx,
+                                          GLenum target,
+                                          GLenum internalformat,
+                                          GLuint buffer)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexBufferOES",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer);
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexBufferOES(context, targetPacked, internalformat, bufferPacked));
+        if (isCallValid)
+        {
+            context->texBuffer(targetPacked, internalformat, bufferPacked);
+        }
+        ANGLE_CAPTURE(TexBufferOES, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked);
     }
 }
 
@@ -20473,17 +20826,84 @@ void GL_APIENTRY TexBufferRangeContextANGLE(GLeglContext ctx,
     if (context)
     {
         ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
         BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
         std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
-        bool isCallValid =
-            (context->skipValidation() ||
-             ValidateTexBufferRange(context, target, internalformat, bufferPacked, offset, size));
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexBufferRange(context, targetPacked, internalformat,
+                                                   bufferPacked, offset, size));
         if (isCallValid)
         {
-            context->texBufferRange(target, internalformat, bufferPacked, offset, size);
+            context->texBufferRange(targetPacked, internalformat, bufferPacked, offset, size);
         }
-        ANGLE_CAPTURE(TexBufferRange, isCallValid, context, target, internalformat, bufferPacked,
-                      offset, size);
+        ANGLE_CAPTURE(TexBufferRange, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked, offset, size);
+    }
+}
+
+void GL_APIENTRY TexBufferRangeEXTContextANGLE(GLeglContext ctx,
+                                               GLenum target,
+                                               GLenum internalformat,
+                                               GLuint buffer,
+                                               GLintptr offset,
+                                               GLsizeiptr size)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexBufferRangeEXT",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u, "
+          "GLintptr offset = %llu, GLsizeiptr size = %llu",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer,
+          static_cast<unsigned long long>(offset), static_cast<unsigned long long>(size));
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexBufferRangeEXT(context, targetPacked, internalformat,
+                                                      bufferPacked, offset, size));
+        if (isCallValid)
+        {
+            context->texBufferRange(targetPacked, internalformat, bufferPacked, offset, size);
+        }
+        ANGLE_CAPTURE(TexBufferRangeEXT, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked, offset, size);
+    }
+}
+
+void GL_APIENTRY TexBufferRangeOESContextANGLE(GLeglContext ctx,
+                                               GLenum target,
+                                               GLenum internalformat,
+                                               GLuint buffer,
+                                               GLintptr offset,
+                                               GLsizeiptr size)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexBufferRangeOES",
+          "context = %d, GLenum target = %s, GLenum internalformat = %s, GLuint buffer = %u, "
+          "GLintptr offset = %llu, GLsizeiptr size = %llu",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
+          GLenumToString(GLenumGroup::InternalFormat, internalformat), buffer,
+          static_cast<unsigned long long>(offset), static_cast<unsigned long long>(size));
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        BufferID bufferPacked                                 = FromGL<BufferID>(buffer);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexBufferRangeOES(context, targetPacked, internalformat,
+                                                      bufferPacked, offset, size));
+        if (isCallValid)
+        {
+            context->texBufferRange(targetPacked, internalformat, bufferPacked, offset, size);
+        }
+        ANGLE_CAPTURE(TexBufferRangeOES, isCallValid, context, targetPacked, internalformat,
+                      bufferPacked, offset, size);
     }
 }
 
@@ -26459,6 +26879,187 @@ void GL_APIENTRY GetRenderbufferImageANGLEContextANGLE(GLeglContext ctx,
         }
         ANGLE_CAPTURE(GetRenderbufferImageANGLE, isCallValid, context, target, format, type,
                       pixels);
+    }
+}
+
+void GL_APIENTRY TexStorageMemFlags2DANGLEContextANGLE(GLeglContext ctx,
+                                                       GLenum target,
+                                                       GLsizei levels,
+                                                       GLenum internalFormat,
+                                                       GLsizei width,
+                                                       GLsizei height,
+                                                       GLuint memory,
+                                                       GLuint64 offset,
+                                                       GLbitfield createFlags,
+                                                       GLbitfield usageFlags)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexStorageMemFlags2DANGLE",
+          "context = %d, GLenum target = %s, GLsizei levels = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLuint memory = %u, GLuint64 offset = %llu, "
+          "GLbitfield createFlags = %s, GLbitfield usageFlags = %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), levels,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height, memory,
+          static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexStorageMemFlags2DANGLE(
+                                context, targetPacked, levels, internalFormat, width, height,
+                                memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags2D(targetPacked, levels, internalFormat, width, height,
+                                          memoryPacked, offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags2DANGLE, isCallValid, context, targetPacked, levels,
+                      internalFormat, width, height, memoryPacked, offset, createFlags, usageFlags);
+    }
+}
+
+void GL_APIENTRY TexStorageMemFlags2DMultisampleANGLEContextANGLE(GLeglContext ctx,
+                                                                  GLenum target,
+                                                                  GLsizei samples,
+                                                                  GLenum internalFormat,
+                                                                  GLsizei width,
+                                                                  GLsizei height,
+                                                                  GLboolean fixedSampleLocations,
+                                                                  GLuint memory,
+                                                                  GLuint64 offset,
+                                                                  GLbitfield createFlags,
+                                                                  GLbitfield usageFlags)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexStorageMemFlags2DMultisampleANGLE",
+          "context = %d, GLenum target = %s, GLsizei samples = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLboolean fixedSampleLocations = %s, GLuint "
+          "memory = %u, GLuint64 offset = %llu, GLbitfield createFlags = %s, GLbitfield usageFlags "
+          "= %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), samples,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height,
+          GLbooleanToString(fixedSampleLocations), memory, static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexStorageMemFlags2DMultisampleANGLE(
+                 context, targetPacked, samples, internalFormat, width, height,
+                 fixedSampleLocations, memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags2DMultisample(targetPacked, samples, internalFormat, width,
+                                                     height, fixedSampleLocations, memoryPacked,
+                                                     offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags2DMultisampleANGLE, isCallValid, context, targetPacked,
+                      samples, internalFormat, width, height, fixedSampleLocations, memoryPacked,
+                      offset, createFlags, usageFlags);
+    }
+}
+
+void GL_APIENTRY TexStorageMemFlags3DANGLEContextANGLE(GLeglContext ctx,
+                                                       GLenum target,
+                                                       GLsizei levels,
+                                                       GLenum internalFormat,
+                                                       GLsizei width,
+                                                       GLsizei height,
+                                                       GLsizei depth,
+                                                       GLuint memory,
+                                                       GLuint64 offset,
+                                                       GLbitfield createFlags,
+                                                       GLbitfield usageFlags)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexStorageMemFlags3DANGLE",
+          "context = %d, GLenum target = %s, GLsizei levels = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, GLuint memory = %u, "
+          "GLuint64 offset = %llu, GLbitfield createFlags = %s, GLbitfield usageFlags = %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), levels,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height, depth, memory,
+          static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid                                      = (context->skipValidation() ||
+                            ValidateTexStorageMemFlags3DANGLE(
+                                context, targetPacked, levels, internalFormat, width, height, depth,
+                                memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags3D(targetPacked, levels, internalFormat, width, height,
+                                          depth, memoryPacked, offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags3DANGLE, isCallValid, context, targetPacked, levels,
+                      internalFormat, width, height, depth, memoryPacked, offset, createFlags,
+                      usageFlags);
+    }
+}
+
+void GL_APIENTRY TexStorageMemFlags3DMultisampleANGLEContextANGLE(GLeglContext ctx,
+                                                                  GLenum target,
+                                                                  GLsizei samples,
+                                                                  GLenum internalFormat,
+                                                                  GLsizei width,
+                                                                  GLsizei height,
+                                                                  GLsizei depth,
+                                                                  GLboolean fixedSampleLocations,
+                                                                  GLuint memory,
+                                                                  GLuint64 offset,
+                                                                  GLbitfield createFlags,
+                                                                  GLbitfield usageFlags)
+{
+    Context *context = static_cast<gl::Context *>(ctx);
+    EVENT("glTexStorageMemFlags3DMultisampleANGLE",
+          "context = %d, GLenum target = %s, GLsizei samples = %d, GLenum internalFormat = %s, "
+          "GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, GLboolean "
+          "fixedSampleLocations = %s, GLuint memory = %u, GLuint64 offset = %llu, GLbitfield "
+          "createFlags = %s, GLbitfield usageFlags = %s",
+          CID(context), GLenumToString(GLenumGroup::TextureTarget, target), samples,
+          GLenumToString(GLenumGroup::DefaultGroup, internalFormat), width, height, depth,
+          GLbooleanToString(fixedSampleLocations), memory, static_cast<unsigned long long>(offset),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, createFlags).c_str(),
+          GLbitfieldToString(GLenumGroup::DefaultGroup, usageFlags).c_str());
+
+    if (context)
+    {
+        ASSERT(context == GetValidGlobalContext());
+        TextureType targetPacked                              = FromGL<TextureType>(target);
+        MemoryObjectID memoryPacked                           = FromGL<MemoryObjectID>(memory);
+        std::unique_lock<angle::GlobalMutex> shareContextLock = GetShareGroupLock(context);
+        bool isCallValid =
+            (context->skipValidation() ||
+             ValidateTexStorageMemFlags3DMultisampleANGLE(
+                 context, targetPacked, samples, internalFormat, width, height, depth,
+                 fixedSampleLocations, memoryPacked, offset, createFlags, usageFlags));
+        if (isCallValid)
+        {
+            context->texStorageMemFlags3DMultisample(targetPacked, samples, internalFormat, width,
+                                                     height, depth, fixedSampleLocations,
+                                                     memoryPacked, offset, createFlags, usageFlags);
+        }
+        ANGLE_CAPTURE(TexStorageMemFlags3DMultisampleANGLE, isCallValid, context, targetPacked,
+                      samples, internalFormat, width, height, depth, fixedSampleLocations,
+                      memoryPacked, offset, createFlags, usageFlags);
     }
 }
 

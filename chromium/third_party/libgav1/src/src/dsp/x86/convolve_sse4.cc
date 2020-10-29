@@ -65,7 +65,6 @@ int GetNumTapsInFilter(const int filter_index) {
 }
 
 constexpr int kIntermediateStride = kMaxSuperBlockSizeInPixels;
-constexpr int kSubPixelMask = (1 << kSubPixelBits) - 1;
 constexpr int kHorizontalOffset = 3;
 constexpr int kFilterIndexShift = 6;
 
@@ -1777,7 +1776,7 @@ inline void GetHalfSubPixelFilter(__m128i* output) {
 // |step_x|.
 template <int num_taps, int grade_x>
 inline void PrepareSourceVectors(const uint8_t* src, const __m128i src_indices,
-                                 __m128i source[num_taps >> 1]) {
+                                 __m128i* const source /*[num_taps >> 1]*/) {
   const __m128i src_vals = LoadUnaligned16(src);
   source[0] = _mm_shuffle_epi8(src_vals, src_indices);
   if (grade_x == 1) {
@@ -2307,7 +2306,7 @@ void ConvolveInit_SSE4_1() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_SSE4_1
+#else  // !LIBGAV1_ENABLE_SSE4_1
 namespace libgav1 {
 namespace dsp {
 

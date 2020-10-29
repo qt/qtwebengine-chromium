@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Formatter from '../formatter/formatter.js';
 import * as Platform from '../platform/platform.js';
@@ -17,7 +20,7 @@ export class JavaScriptAutocomplete {
     this._expressionCache = new Map();
     SDK.ConsoleModel.ConsoleModel.instance().addEventListener(
         SDK.ConsoleModel.Events.CommandEvaluated, this._clearCache, this);
-    self.UI.context.addFlavorChangeListener(SDK.RuntimeModel.ExecutionContext, this._clearCache, this);
+    UI.Context.Context.instance().addFlavorChangeListener(SDK.RuntimeModel.ExecutionContext, this._clearCache, this);
     SDK.SDKModel.TargetManager.instance().addModelListener(
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebuggerResumed, this._clearCache, this);
     SDK.SDKModel.TargetManager.instance().addModelListener(
@@ -51,7 +54,7 @@ export class JavaScriptAutocomplete {
     if (!functionCall) {
       return null;
     }
-    const executionContext = self.UI.context.flavor(SDK.RuntimeModel.ExecutionContext);
+    const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     if (!executionContext) {
       return null;
     }
@@ -200,7 +203,7 @@ export class JavaScriptAutocomplete {
    */
   async _mapCompletions(text, query) {
     const mapMatch = text.match(/\.\s*(get|set|delete)\s*\(\s*$/);
-    const executionContext = self.UI.context.flavor(SDK.RuntimeModel.ExecutionContext);
+    const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     if (!executionContext || !mapMatch) {
       return [];
     }
@@ -309,7 +312,7 @@ export class JavaScriptAutocomplete {
    * @return {!Promise<!UI.SuggestBox.Suggestions>}
    */
   async _completionsForExpression(fullText, query, force) {
-    const executionContext = self.UI.context.flavor(SDK.RuntimeModel.ExecutionContext);
+    const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     if (!executionContext) {
       return [];
     }
@@ -671,7 +674,7 @@ export class JavaScriptAutocomplete {
    * @return {!Promise<boolean>}
    */
   static async isExpressionComplete(expression) {
-    const currentExecutionContext = self.UI.context.flavor(SDK.RuntimeModel.ExecutionContext);
+    const currentExecutionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     if (!currentExecutionContext) {
       return true;
     }

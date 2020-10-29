@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {assertTrue} from '../../base/logging';
+import {RawQueryResult} from '../../common/protos';
 import {fromNs, toNs} from '../../common/time';
 import {
   TrackController,
@@ -25,68 +26,68 @@ import {
   PROCESS_SCHEDULING_TRACK_KIND,
 } from './common';
 
-
-// Allow to override via devtools for testing (note, needs to be done in the
-// controller-thread).
-(self as {} as {quantPx: number}).quantPx = 1;
-
 // This summary is displayed for any processes that have CPU scheduling activity
 // associated with them.
-
 class ProcessSchedulingTrackController extends TrackController<Config, Data> {
   static readonly kind = PROCESS_SCHEDULING_TRACK_KIND;
-  private setup = false;
-  private maxDurNs = 0;
+
   private maxCpu = 0;
+  private maxDurNs = 0;
+  private cachedBucketNs = Number.MAX_SAFE_INTEGER;
 
-  async onBoundsChange(start: number, end: number, resolution: number):
-      Promise<Data> {
-    if (this.config.upid === null) {
-      throw new Error('Upid not set.');
+  async onSetup() {
+    await this.createSchedView();
+
+    const cpus = await this.engine.getCpus();
+
+    // A process scheduling track should only exist in a trace that has cpus.
+    assertTrue(cpus.length > 0);
+    this.maxCpu = Math.max(...cpus) + 1;
+
+    const result = await this.query(`
+      select max(dur), count(1)
+      from ${this.tableName('process_sched')}
+    `);
+    this.maxDurNs = result.columns[0].longValues![0];
+
+    const rowCount = result.columns[1].longValues![0];
+    const bucketNs = this.cachedBucketSizeNs(rowCount);
+    if (bucketNs === undefined) {
+      return;
     }
-
-    const startNs = toNs(start);
-    const endNs = toNs(end);
-
-    const pxSize = (self as {} as {quantPx: number}).quantPx;
-
-    // ns per quantization bucket (i.e. ns per pixel). /2 * 2 is to force it to
-    // be an even number, so we can snap in the middle.
-    const bucketNs = Math.round(resolution * 1e9 * pxSize / 2) * 2;
-
-    if (this.setup === false) {
-      const cpus = await this.engine.getCpus();
-      // A process scheduling track should only exist in a trace that has cpus.
-      assertTrue(cpus.length > 0);
-      this.maxCpu = Math.max(...cpus) + 1;
-
-      const maxDurResult = await this.query(`select max(dur)
-        from sched
-        join thread using(utid)
-        where
-          utid != 0 and
-          upid = ${this.config.upid}`);
-      if (maxDurResult.numRecords === 1) {
-        this.maxDurNs = +maxDurResult.columns![0].longValues![0];
-      }
-
-      this.setup = true;
-    }
-
-    const rawResult = await this.query(`select
-        (ts + ${bucketNs / 2}) / ${bucketNs} * ${bucketNs} as tsq,
+    await this.query(`
+      create table ${this.tableName('process_sched_cached')} as
+      select
+        (ts + ${bucketNs / 2}) / ${bucketNs} * ${bucketNs} as cached_tsq,
         ts,
         max(dur) as dur,
         cpu,
         utid
-      from sched
-      join thread using(utid)
-      where
-        ts >= ${startNs - this.maxDurNs} and
-        ts <= ${endNs} and
-        utid != 0 and
-        upid = ${this.config.upid}
-      group by cpu, tsq`);
+      from ${this.tableName('process_sched')}
+      group by cached_tsq, cpu
+      order by cached_tsq, cpu
+    `);
+    this.cachedBucketNs = bucketNs;
+  }
+
+  async onBoundsChange(start: number, end: number, resolution: number):
+      Promise<Data> {
+    assertTrue(this.config.upid !== null);
+
+    // The resolution should always be a power of two for the logic of this
+    // function to make sense.
+    const resolutionNs = toNs(resolution);
+    assertTrue(Math.log2(resolutionNs) % 1 === 0);
+
+    const startNs = toNs(start);
+    const endNs = toNs(end);
+
+    // ns per quantization bucket (i.e. ns per pixel). /2 * 2 is to force it to
+    // be an even number, so we can snap in the middle.
+    const bucketNs =
+        Math.max(Math.round(resolutionNs * this.pxSize() / 2) * 2, 1);
+
+    const rawResult = await this.queryData(startNs, endNs, bucketNs);
 
     const numRows = +rawResult.numRecords;
     const slices: Data = {
@@ -123,6 +124,41 @@ class ProcessSchedulingTrackController extends TrackController<Config, Data> {
       slices.end = Math.max(slices.ends[row], slices.end);
     }
     return slices;
+  }
+
+  private queryData(startNs: number, endNs: number, bucketNs: number):
+      Promise<RawQueryResult> {
+    const isCached = this.cachedBucketNs <= bucketNs;
+    const tsq = isCached ? `cached_tsq / ${bucketNs} * ${bucketNs}` :
+                           `(ts + ${bucketNs / 2}) / ${bucketNs} * ${bucketNs}`;
+    const queryTable = isCached ? this.tableName('process_sched_cached') :
+                                  this.tableName('process_sched');
+    const constainColumn = isCached ? 'cached_tsq' : 'ts';
+    return this.query(`
+      select
+        ${tsq} as tsq,
+        ts,
+        max(dur) as dur,
+        cpu,
+        utid
+      from ${queryTable}
+      where
+        ${constainColumn} >= ${startNs - this.maxDurNs} and
+        ${constainColumn} <= ${endNs}
+      group by tsq, cpu
+      order by tsq, cpu
+    `);
+  }
+
+  private async createSchedView() {
+    await this.query(`
+      create view ${this.tableName('process_sched')} as
+      select ts, dur, cpu, utid
+      from experimental_sched_upid
+      where
+        utid != 0 and
+        upid = ${this.config.upid}
+    `);
   }
 }
 

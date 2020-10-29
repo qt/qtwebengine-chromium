@@ -19,20 +19,27 @@
 
 class SkWStream;
 
+#if defined(SKVM_JIT_WHEN_POSSIBLE)
+    #if defined(__x86_64__) || defined(_M_X64)
+        #if defined(_WIN32) || defined(__linux) || defined(__APPLE__)
+            #if !defined(SK_BUILD_FOR_IOS)  // Exclude iOS simulator.
+                #define SKVM_JIT
+            #endif
+        #endif
+    #endif
+    #if defined(__aarch64__)
+        #if defined(__ANDROID__)
+            #define SKVM_JIT
+        #endif
+    #endif
+#endif
+
 #if 0
     #define SKVM_LLVM
 #endif
 
-// JIT code isn't MSAN-instrumented, so we won't see when it uses
-// uninitialized memory, and we'll not see the writes it makes as properly
-// initializing memory.  Instead force the interpreter, which should let
-// MSAN see everything our programs do properly.
-//
-// Similarly, we can't get ASAN's checks unless we let it instrument our interpreter.
-#if defined(__has_feature)
-    #if __has_feature(memory_sanitizer) || __has_feature(address_sanitizer)
-        #undef SKVM_JIT
-    #endif
+#if 0
+    #undef SKVM_JIT
 #endif
 
 namespace skvm {
@@ -152,6 +159,9 @@ namespace skvm {
         void vpackusdw(Ymm dst, Ymm x, Operand y);
         void vpackuswb(Ymm dst, Ymm x, Operand y);
 
+        void vpunpckldq(Ymm dst, Ymm x, Operand y);
+        void vpunpckhdq(Ymm dst, Ymm x, Operand y);
+
         void vpcmpeqd(Ymm dst, Ymm x, Operand y);
         void vpcmpgtd(Ymm dst, Ymm x, Operand y);
 
@@ -167,19 +177,25 @@ namespace skvm {
         void vpsrad(Ymm dst, Ymm x, int imm);
         void vpsrlw(Ymm dst, Ymm x, int imm);
 
-        void vpermq(Ymm dst, Operand x, int imm);
+        void vpermq    (Ymm dst, Operand x, int imm);
+        void vperm2f128(Ymm dst, Ymm x, Operand y, int imm);
+        void vpermps   (Ymm dst, Ymm ix, Operand src);        // dst[i] = src[ix[i]]
 
-        enum Rounding { NEAREST, FLOOR, CEIL, TRUNC };
+        enum Rounding { NEAREST, FLOOR, CEIL, TRUNC, CURRENT };
         void vroundps(Ymm dst, Operand x, Rounding);
 
         void vmovdqa(Ymm dst, Operand x);
         void vmovups(Ymm dst, Operand x);
+        void vmovups(Xmm dst, Operand x);
         void vmovups(Operand dst, Ymm x);
         void vmovups(Operand dst, Xmm x);
 
         void vcvtdq2ps (Ymm dst, Operand x);
         void vcvttps2dq(Ymm dst, Operand x);
         void vcvtps2dq (Ymm dst, Operand x);
+
+        void vcvtps2ph(Operand dst, Ymm x, Rounding);
+        void vcvtph2ps(Ymm dst, Operand x);
 
         void vpblendvb(Ymm dst, Ymm x, Operand y, Ymm z);
 
@@ -196,6 +212,7 @@ namespace skvm {
         void vmovd(Operand dst, Xmm src);  // dst = src,  32-bit
         void vmovd(Xmm dst, Operand src);  // dst = src,  32-bit
 
+        void vpinsrd(Xmm dst, Xmm src, Operand y, int imm);  // dst = src; dst[imm] = y, 32-bit
         void vpinsrw(Xmm dst, Xmm src, Operand y, int imm);  // dst = src; dst[imm] = y, 16-bit
         void vpinsrb(Xmm dst, Xmm src, Operand y, int imm);  // dst = src; dst[imm] = y,  8-bit
 
@@ -369,35 +386,36 @@ namespace skvm {
         int disp19(Label*);
     };
 
-    // Order matters a little: Ops <=store32 are treated as having side effects.
-    #define SKVM_OPS(M)                       \
-        M(assert_true)                        \
-        M(store8)   M(store16)   M(store32)   \
-        M(index)                              \
-        M(load8)    M(load16)    M(load32)    \
-        M(gather8)  M(gather16)  M(gather32)  \
-        M(uniform8) M(uniform16) M(uniform32) \
-        M(splat)                              \
-        M(add_f32) M(add_i32)                 \
-        M(sub_f32) M(sub_i32)                 \
-        M(mul_f32) M(mul_i32)                 \
-        M(div_f32)                            \
-        M(min_f32)                            \
-        M(max_f32)                            \
-        M(fma_f32) M(fms_f32) M(fnma_f32)     \
-        M(sqrt_f32)                           \
-        M(shl_i32) M(shr_i32) M(sra_i32)      \
-        M(ceil) M(floor) M(trunc) M(round)    \
-        M(to_f32)                             \
-        M( eq_f32) M( eq_i32)                 \
-        M(neq_f32)                            \
-        M( gt_f32) M( gt_i32)                 \
-        M(gte_f32)                            \
-        M(bit_and)                            \
-        M(bit_or)                             \
-        M(bit_xor)                            \
-        M(bit_clear)                          \
-        M(select) M(pack)                     \
+    // Order matters a little: Ops <=store128 are treated as having side effects.
+    #define SKVM_OPS(M)                                            \
+        M(assert_true)                                             \
+        M(store8)   M(store16)   M(store32) M(store64) M(store128) \
+        M(index)                                                   \
+        M(load8)    M(load16)    M(load32)  M(load64) M(load128)   \
+        M(gather8)  M(gather16)  M(gather32)                       \
+        M(uniform8) M(uniform16) M(uniform32)                      \
+        M(splat)                                                   \
+        M(add_f32) M(add_i32)                                      \
+        M(sub_f32) M(sub_i32)                                      \
+        M(mul_f32) M(mul_i32)                                      \
+        M(div_f32)                                                 \
+        M(min_f32)                                                 \
+        M(max_f32)                                                 \
+        M(fma_f32) M(fms_f32) M(fnma_f32)                          \
+        M(sqrt_f32)                                                \
+        M(shl_i32) M(shr_i32) M(sra_i32)                           \
+        M(ceil) M(floor)                                           \
+        M(trunc) M(round) M(to_half) M(from_half)                  \
+        M(to_f32)                                                  \
+        M( eq_f32) M( eq_i32)                                      \
+        M(neq_f32)                                                 \
+        M( gt_f32) M( gt_i32)                                      \
+        M(gte_f32)                                                 \
+        M(bit_and)                                                 \
+        M(bit_or)                                                  \
+        M(bit_xor)                                                 \
+        M(bit_clear)                                               \
+        M(select) M(pack)                                          \
     // End of SKVM_OPS
 
     enum class Op : int {
@@ -407,7 +425,7 @@ namespace skvm {
     };
 
     static inline bool has_side_effect(Op op) {
-        return op <= Op::store32;
+        return op <= Op::store128;
     }
     static inline bool is_always_varying(Op op) {
         return op <= Op::gather32 && op != Op::assert_true;
@@ -514,6 +532,13 @@ namespace skvm {
         }
     };
 
+    struct PixelFormat {
+        enum { UNORM, FLOAT} encoding;
+        int r_bits,  g_bits,  b_bits,  a_bits,
+            r_shift, g_shift, b_shift, a_shift;
+    };
+    bool SkColorType_to_PixelFormat(SkColorType, PixelFormat*);
+
     SK_BEGIN_REQUIRE_DENSE
     struct Instruction {
         Op  op;         // v* = op(x,y,z,imm), where * == index of this Instruction.
@@ -563,20 +588,24 @@ namespace skvm {
         void assert_true(I32 cond, F32 debug) { assert_true(cond, bit_cast(debug)); }
         void assert_true(I32 cond)            { assert_true(cond, cond); }
 
-        // Store {8,16,32}-bit varying.
-        void store8 (Arg ptr, I32 val);
-        void store16(Arg ptr, I32 val);
-        void store32(Arg ptr, I32 val);
-        void storeF (Arg ptr, F32 val) { store32(ptr, bit_cast(val)); }
+        // Store {8,16,32,64,128}-bit varying.
+        void store8  (Arg ptr, I32 val);
+        void store16 (Arg ptr, I32 val);
+        void store32 (Arg ptr, I32 val);
+        void storeF  (Arg ptr, F32 val) { store32(ptr, bit_cast(val)); }
+        void store64 (Arg ptr, I32 lo, I32 hi);            // *ptr = lo|(hi<<32)
+        void store128(Arg ptr, I32 lo, I32 hi, int lane);  // 64-bit lane 0-1 at ptr = lo|(hi<<32).
 
         // Returns varying {n, n-1, n-2, ..., 1}, where n is the argument to Program::eval().
         I32 index();
 
-        // Load u8,u16,i32 varying.
-        I32 load8 (Arg ptr);
-        I32 load16(Arg ptr);
-        I32 load32(Arg ptr);
-        F32 loadF (Arg ptr) { return bit_cast(load32(ptr)); }
+        // Load {8,16,32,64,128}-bit varying.
+        I32 load8  (Arg ptr);
+        I32 load16 (Arg ptr);
+        I32 load32 (Arg ptr);
+        F32 loadF  (Arg ptr) { return bit_cast(load32(ptr)); }
+        I32 load64 (Arg ptr, int lane);  // Load 32-bit lane 0-1 of  64-bit value.
+        I32 load128(Arg ptr, int lane);  // Load 32-bit lane 0-3 of 128-bit value.
 
         // Load u8,u16,i32 uniform with byte-count offset.
         I32 uniform8 (Arg ptr, int offset);
@@ -640,7 +669,7 @@ namespace skvm {
         F32 approx_atan(F32 x);
         F32 approx_atan2(F32 y, F32 x);
 
-        F32 lerp(F32  lo, F32  hi, F32  t) { return mad(sub(hi, lo), t, lo); }
+        F32 lerp(F32  lo, F32  hi, F32  t);
         F32 lerp(F32a lo, F32a hi, F32a t) { return lerp(_(lo), _(hi), _(t)); }
 
         F32 clamp(F32  x, F32  lo, F32  hi) { return max(lo, min(x, hi)); }
@@ -651,11 +680,15 @@ namespace skvm {
         F32  fract(F32 x) { return sub(x, floor(x)); }
         F32   ceil(F32);
         F32  floor(F32);
-        I32 is_NaN(F32 x) { return neq(x,x); }
+        I32 is_NaN   (F32 x) { return neq(x,x); }
+        I32 is_finite(F32 x) { return lt(bit_and(bit_cast(x), 0x7f80'0000), 0x7f80'0000); }
 
         I32 trunc(F32 x);
         I32 round(F32 x);  // Round to int using current rounding mode (as if lrintf()).
         I32 bit_cast(F32 x) { return {x.builder, x.id}; }
+
+        I32   to_half(F32 x);
+        F32 from_half(I32 x);
 
         F32 norm(F32 x, F32 y) {
             return sqrt(add(mul(x,x),
@@ -721,9 +754,12 @@ namespace skvm {
         F32 from_unorm(int bits, I32);   // E.g. from_unorm(8, x) -> x * (1/255.0f)
         I32   to_unorm(int bits, F32);   // E.g.   to_unorm(8, x) -> round(x * 255)
 
-        Color unpack_1010102(I32 rgba);
-        Color unpack_8888   (I32 rgba);
-        Color unpack_565    (I32 bgr );  // bottom 16 bits
+        Color   load(PixelFormat, Arg ptr);
+        bool   store(PixelFormat, Arg ptr, Color);
+        Color gather(PixelFormat, Arg ptr, int offset, I32 index);
+        Color gather(PixelFormat f, Uniform u, I32 index) {
+            return gather(f, u.ptr, u.offset, index);
+        }
 
         void   premul(F32* r, F32* g, F32* b, F32 a);
         void unpremul(F32* r, F32* g, F32* b, F32 a);
@@ -853,7 +889,9 @@ namespace skvm {
         void setupJIT        (const std::vector<OptimizedInstruction>&, const char* debug_name);
         void setupLLVM       (const std::vector<OptimizedInstruction>&, const char* debug_name);
 
-        bool jit(const std::vector<OptimizedInstruction>&, int* stack_hint, Assembler*) const;
+        bool jit(const std::vector<OptimizedInstruction>&,
+                 int* stack_hint, uint32_t* registers_used,
+                 Assembler*) const;
 
         void waitForLLVM() const;
 
@@ -951,10 +989,12 @@ namespace skvm {
     static inline void assert_true(I32 cond, F32 debug) { cond->assert_true(cond,debug); }
     static inline void assert_true(I32 cond)            { cond->assert_true(cond); }
 
-    static inline void store8 (Arg ptr, I32 val) { val->store8 (ptr, val); }
-    static inline void store16(Arg ptr, I32 val) { val->store16(ptr, val); }
-    static inline void store32(Arg ptr, I32 val) { val->store32(ptr, val); }
-    static inline void storeF (Arg ptr, F32 val) { val->storeF (ptr, val); }
+    static inline void store8  (Arg ptr, I32 val)                { val->store8  (ptr, val); }
+    static inline void store16 (Arg ptr, I32 val)                { val->store16 (ptr, val); }
+    static inline void store32 (Arg ptr, I32 val)                { val->store32 (ptr, val); }
+    static inline void storeF  (Arg ptr, F32 val)                { val->storeF  (ptr, val); }
+    static inline void store64 (Arg ptr, I32 lo, I32 hi)         { lo ->store64 (ptr, lo,hi); }
+    static inline void store128(Arg ptr, I32 lo, I32 hi, int ix) { lo ->store128(ptr, lo,hi, ix); }
 
     static inline I32 gather8 (Arg ptr, int off, I32 ix) { return ix->gather8 (ptr, off, ix); }
     static inline I32 gather16(Arg ptr, int off, I32 ix) { return ix->gather16(ptr, off, ix); }
@@ -984,18 +1024,21 @@ namespace skvm {
     static inline F32 approx_atan(F32 x) { return x->approx_atan(x); }
     static inline F32 approx_atan2(F32 y, F32 x) { return x->approx_atan2(y, x); }
 
-    static inline F32 clamp01(F32 x) { return x->clamp01(x); }
-    static inline F32     abs(F32 x) { return x->    abs(x); }
-    static inline F32    ceil(F32 x) { return x->   ceil(x); }
-    static inline F32   fract(F32 x) { return x->  fract(x); }
-    static inline F32   floor(F32 x) { return x->  floor(x); }
-    static inline I32  is_NaN(F32 x) { return x-> is_NaN(x); }
+    static inline F32   clamp01(F32 x) { return x->  clamp01(x); }
+    static inline F32       abs(F32 x) { return x->      abs(x); }
+    static inline F32      ceil(F32 x) { return x->     ceil(x); }
+    static inline F32     fract(F32 x) { return x->    fract(x); }
+    static inline F32     floor(F32 x) { return x->    floor(x); }
+    static inline I32    is_NaN(F32 x) { return x->   is_NaN(x); }
+    static inline I32 is_finite(F32 x) { return x->is_finite(x); }
 
-    static inline I32    trunc(F32 x) { return x->   trunc(x); }
-    static inline I32    round(F32 x) { return x->   round(x); }
-    static inline I32 bit_cast(F32 x) { return x->bit_cast(x); }
-    static inline F32 bit_cast(I32 x) { return x->bit_cast(x); }
-    static inline F32   to_f32(I32 x) { return x->  to_f32(x); }
+    static inline I32     trunc(F32 x) { return x->    trunc(x); }
+    static inline I32     round(F32 x) { return x->    round(x); }
+    static inline I32  bit_cast(F32 x) { return x-> bit_cast(x); }
+    static inline F32  bit_cast(I32 x) { return x-> bit_cast(x); }
+    static inline F32    to_f32(I32 x) { return x->   to_f32(x); }
+    static inline I32   to_half(F32 x) { return x->  to_half(x); }
+    static inline F32 from_half(I32 x) { return x->from_half(x); }
 
     static inline F32 lerp(F32   lo, F32a  hi, F32a t) { return lo->lerp(lo,hi,t); }
     static inline F32 lerp(float lo, F32   hi, F32a t) { return hi->lerp(lo,hi,t); }
@@ -1041,9 +1084,13 @@ namespace skvm {
     static inline F32 from_unorm(int bits, I32 x) { return x->from_unorm(bits,x); }
     static inline I32   to_unorm(int bits, F32 x) { return x->  to_unorm(bits,x); }
 
-    static inline  Color unpack_1010102(I32 rgba) { return rgba->unpack_1010102(rgba); }
-    static inline  Color unpack_8888   (I32 rgba) { return rgba->unpack_8888   (rgba); }
-    static inline  Color unpack_565    (I32 bgr ) { return bgr ->unpack_565    (bgr ); }
+    static inline bool store(PixelFormat f, Arg p, Color c) { return c->store(f,p,c); }
+    static inline Color gather(PixelFormat f, Arg p, int off, I32 ix) {
+        return ix->gather(f,p,off,ix);
+    }
+    static inline Color gather(PixelFormat f, Uniform u, I32 ix) {
+        return ix->gather(f,u,ix);
+    }
 
     static inline void   premul(F32* r, F32* g, F32* b, F32 a) { a->  premul(r,g,b,a); }
     static inline void unpremul(F32* r, F32* g, F32* b, F32 a) { a->unpremul(r,g,b,a); }
@@ -1067,6 +1114,6 @@ namespace skvm {
             return poly(x, x*a+b, rest...);
         }
     }
-}
+}  // namespace skvm
 
 #endif//SkVM_DEFINED

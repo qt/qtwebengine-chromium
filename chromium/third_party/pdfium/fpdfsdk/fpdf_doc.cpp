@@ -10,6 +10,7 @@
 #include <set>
 #include <utility>
 
+#include "constants/form_fields.h"
 #include "core/fpdfapi/page/cpdf_annotcontext.h"
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -18,12 +19,14 @@
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_string.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fpdfdoc/cpdf_aaction.h"
 #include "core/fpdfdoc/cpdf_bookmark.h"
 #include "core/fpdfdoc/cpdf_bookmarktree.h"
 #include "core/fpdfdoc/cpdf_dest.h"
 #include "core/fpdfdoc/cpdf_linklist.h"
 #include "core/fpdfdoc/cpdf_pagelabel.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
+#include "public/fpdf_formfill.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
@@ -163,6 +166,8 @@ FPDF_EXPORT unsigned long FPDF_CALLCONV FPDFAction_GetType(FPDF_ACTION action) {
       return PDFACTION_GOTO;
     case CPDF_Action::GoToR:
       return PDFACTION_REMOTEGOTO;
+    case CPDF_Action::GoToE:
+      return PDFACTION_EMBEDDEDGOTO;
     case CPDF_Action::URI:
       return PDFACTION_URI;
     case CPDF_Action::Launch:
@@ -179,9 +184,10 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDFAction_GetDest(FPDF_DOCUMENT document,
     return nullptr;
 
   unsigned long type = FPDFAction_GetType(action);
-  if (type != PDFACTION_GOTO && type != PDFACTION_REMOTEGOTO)
+  if (type != PDFACTION_GOTO && type != PDFACTION_REMOTEGOTO &&
+      type != PDFACTION_EMBEDDEDGOTO) {
     return nullptr;
-
+  }
   CPDF_Action cAction(CPDFDictionaryFromFPDFAction(action));
   return FPDFDestFromCPDFArray(cAction.GetDest(pDoc).GetArray());
 }
@@ -189,8 +195,10 @@ FPDF_EXPORT FPDF_DEST FPDF_CALLCONV FPDFAction_GetDest(FPDF_DOCUMENT document,
 FPDF_EXPORT unsigned long FPDF_CALLCONV
 FPDFAction_GetFilePath(FPDF_ACTION action, void* buffer, unsigned long buflen) {
   unsigned long type = FPDFAction_GetType(action);
-  if (type != PDFACTION_REMOTEGOTO && type != PDFACTION_LAUNCH)
+  if (type != PDFACTION_REMOTEGOTO && type != PDFACTION_EMBEDDEDGOTO &&
+      type != PDFACTION_LAUNCH) {
     return 0;
+  }
 
   CPDF_Action cAction(CPDFDictionaryFromFPDFAction(action));
   ByteString path = cAction.GetFilePath().ToUTF8();
@@ -405,6 +413,30 @@ FPDFLink_GetQuadPoints(FPDF_LINK link_annot,
 
   return GetQuadPointsAtIndex(pArray, static_cast<size_t>(quad_index),
                               quad_points);
+}
+
+FPDF_EXPORT FPDF_ACTION FPDF_CALLCONV FPDF_GetPageAAction(FPDF_PAGE page,
+                                                          int aa_type) {
+  CPDF_Page* pdf_page = CPDFPageFromFPDFPage(page);
+  if (!pdf_page)
+    return nullptr;
+
+  CPDF_Dictionary* page_dict = pdf_page->GetDict();
+  CPDF_AAction aa(page_dict->GetDictFor(pdfium::form_fields::kAA));
+
+  CPDF_AAction::AActionType type;
+  if (aa_type == FPDFPAGE_AACTION_OPEN)
+    type = CPDF_AAction::kOpenPage;
+  else if (aa_type == FPDFPAGE_AACTION_CLOSE)
+    type = CPDF_AAction::kClosePage;
+  else
+    return nullptr;
+
+  if (!aa.ActionExist(type))
+    return nullptr;
+
+  CPDF_Action action = aa.GetAction(type);
+  return FPDFActionFromCPDFDictionary(action.GetDict());
 }
 
 FPDF_EXPORT unsigned long FPDF_CALLCONV

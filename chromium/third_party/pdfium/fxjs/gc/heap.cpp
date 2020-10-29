@@ -69,9 +69,16 @@ FXGCScopedHeap FXGC_CreateHeap() {
   return FXGCScopedHeap(heap.release());
 }
 
+void FXGC_ForceGarbageCollection(cppgc::Heap* heap) {
+  heap->ForceGarbageCollectionSlow("FXGC", "ForceGarbageCollection",
+                                   cppgc::Heap::StackState::kNoHeapPointers);
+}
+
 void FXGCHeapDeleter::operator()(cppgc::Heap* heap) {
   ASSERT(heap);
   ASSERT(g_platform_ref_count > 0);
   --g_platform_ref_count;
+
+  FXGC_ForceGarbageCollection(heap);
   delete heap;
 }

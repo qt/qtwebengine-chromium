@@ -47,6 +47,7 @@ import {postMessageHandler} from './post_message_handler';
 import {RecordPage, updateAvailableAdbDevices} from './record_page';
 import {Router} from './router';
 import {CheckHttpRpcConnection} from './rpc_http_dialog';
+import {TraceInfoPage} from './trace_info_page';
 import {ViewerPage} from './viewer_page';
 
 const EXTENSION_ID = 'lfmkphfpdbjijhpomgecfikhfohaoine';
@@ -182,6 +183,11 @@ class FrontendApi {
     this.redraw();
   }
 
+  publishTraceErrors(numErrors: number) {
+    globals.setTraceErrors(numErrors);
+    this.redraw();
+  }
+
   publishAggregateData(args: {data: AggregateData, kind: string}) {
     globals.setAggregateData(args.kind, args.data);
     this.redraw();
@@ -201,20 +207,6 @@ function setExtensionAvailability(available: boolean) {
   globals.dispatch(Actions.setExtensionAvailable({
     available,
   }));
-}
-
-function fetchChromeTracingCategoriesFromExtension(
-    extensionPort: chrome.runtime.Port) {
-  extensionPort.postMessage({method: 'GetCategories'});
-}
-
-function onExtensionMessage(message: object) {
-  const typedObject = message as {type: string};
-  if (typedObject.type === 'GetCategoriesResponse') {
-    const categoriesMessage = message as {categories: string[]};
-    globals.dispatch(Actions.setChromeCategories(
-        {categories: categoriesMessage.categories}));
-  }
 }
 
 function main() {
@@ -248,6 +240,9 @@ function main() {
 
   const dispatch =
       controllerChannel.port2.postMessage.bind(controllerChannel.port2);
+  globals.initialize(dispatch, controller);
+  globals.serviceWorkerController.install();
+
   const router = new Router(
       '/',
       {
@@ -255,11 +250,11 @@ function main() {
         '/viewer': ViewerPage,
         '/record': RecordPage,
         '/query': AnalyzePage,
+        '/info': TraceInfoPage,
       },
-      dispatch);
+      dispatch,
+      globals.logging);
   forwardRemoteCalls(frontendChannel.port2, new FrontendApi(router));
-  globals.initialize(dispatch, controller);
-  globals.serviceWorkerController.install();
 
   // We proxy messages between the extension and the controller because the
   // controller's worker can't access chrome.runtime.
@@ -278,10 +273,8 @@ function main() {
     // This forwards the messages from the extension to the controller.
     extensionPort.onMessage.addListener(
         (message: object, _port: chrome.runtime.Port) => {
-          onExtensionMessage(message);
           extensionLocalChannel.port2.postMessage(message);
         });
-    fetchChromeTracingCategoriesFromExtension(extensionPort);
   }
 
   updateAvailableAdbDevices();

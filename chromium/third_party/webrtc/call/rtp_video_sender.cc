@@ -197,6 +197,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
     FrameEncryptorInterface* frame_encryptor,
     const CryptoOptions& crypto_options,
     rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+    bool use_deferred_fec,
     const WebRtcKeyValueConfig& trials) {
   RTC_DCHECK_GT(rtp_config.ssrcs.size(), 0);
 
@@ -244,7 +245,9 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
     std::unique_ptr<VideoFecGenerator> fec_generator =
         MaybeCreateFecGenerator(clock, rtp_config, suspended_ssrcs, i, trials);
     configuration.fec_generator = fec_generator.get();
-    video_config.fec_generator = fec_generator.get();
+    if (!use_deferred_fec) {
+      video_config.fec_generator = fec_generator.get();
+    }
 
     configuration.rtx_send_ssrc =
         rtp_config.GetRtxSsrcAssociatedWithMediaSsrc(rtp_config.ssrcs[i]);
@@ -338,6 +341,9 @@ RtpVideoSender::RtpVideoSender(
           field_trials_.Lookup("WebRTC-UseEarlyLossDetection"),
           "Disabled")),
       has_packet_feedback_(TransportSeqNumExtensionConfigured(rtp_config)),
+      use_deferred_fec_(
+          absl::StartsWith(field_trials_.Lookup("WebRTC-DeferredFecGeneration"),
+                           "Enabled")),
       active_(false),
       module_process_thread_(nullptr),
       suspended_ssrcs_(std::move(suspended_ssrcs)),
@@ -356,6 +362,7 @@ RtpVideoSender::RtpVideoSender(
                                           frame_encryptor,
                                           crypto_options,
                                           std::move(frame_transformer),
+                                          use_deferred_fec_,
                                           field_trials_)),
       rtp_config_(rtp_config),
       codec_type_(GetVideoCodecType(rtp_config)),
@@ -460,7 +467,7 @@ void RtpVideoSender::DeRegisterProcessThread() {
 }
 
 void RtpVideoSender::SetActive(bool active) {
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   if (active_ == active)
     return;
   const std::vector<bool> active_modules(rtp_streams_.size(), active);
@@ -468,7 +475,7 @@ void RtpVideoSender::SetActive(bool active) {
 }
 
 void RtpVideoSender::SetActiveModules(const std::vector<bool> active_modules) {
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   return SetActiveModulesLocked(active_modules);
 }
 
@@ -488,7 +495,7 @@ void RtpVideoSender::SetActiveModulesLocked(
 }
 
 bool RtpVideoSender::IsActive() {
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   return IsActiveLocked();
 }
 
@@ -498,11 +505,10 @@ bool RtpVideoSender::IsActiveLocked() {
 
 EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
     const EncodedImage& encoded_image,
-    const CodecSpecificInfo* codec_specific_info,
-    const RTPFragmentationHeader* fragmentation) {
+    const CodecSpecificInfo* codec_specific_info) {
   fec_controller_->UpdateWithEncodedData(encoded_image.size(),
                                          encoded_image._frameType);
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   RTC_DCHECK(!rtp_streams_.empty());
   if (!active_)
     return Result(Result::ERROR_SEND_FAILED);
@@ -552,7 +558,6 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
 
   bool send_result = rtp_streams_[stream_index].sender_video->SendEncodedImage(
       rtp_config_.payload_type, codec_type_, rtp_timestamp, encoded_image,
-      fragmentation,
       params_[stream_index].GetRtpVideoHeader(
           encoded_image, codec_specific_info, shared_frame_id_),
       expected_retransmission_time_ms);
@@ -576,7 +581,7 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
 
 void RtpVideoSender::OnBitrateAllocationUpdated(
     const VideoBitrateAllocation& bitrate) {
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   if (IsActiveLocked()) {
     if (rtp_streams_.size() == 1) {
       // If spatial scalability is enabled, it is covered by a single stream.
@@ -719,7 +724,7 @@ std::map<uint32_t, RtpState> RtpVideoSender::GetRtpStates() const {
 
 std::map<uint32_t, RtpPayloadState> RtpVideoSender::GetRtpPayloadStates()
     const {
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   std::map<uint32_t, RtpPayloadState> payload_states;
   for (const auto& param : params_) {
     payload_states[param.ssrc()] = param.state();
@@ -730,7 +735,7 @@ std::map<uint32_t, RtpPayloadState> RtpVideoSender::GetRtpPayloadStates()
 
 void RtpVideoSender::OnTransportOverheadChanged(
     size_t transport_overhead_bytes_per_packet) {
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   transport_overhead_bytes_per_packet_ = transport_overhead_bytes_per_packet;
 
   size_t max_rtp_packet_size =
@@ -744,7 +749,7 @@ void RtpVideoSender::OnTransportOverheadChanged(
 void RtpVideoSender::OnBitrateUpdated(BitrateAllocationUpdate update,
                                       int framerate) {
   // Substract overhead from bitrate.
-  rtc::CritScope lock(&crit_);
+  MutexLock lock(&mutex_);
   size_t num_active_streams = 0;
   size_t overhead_bytes_per_packet = 0;
   for (const auto& stream : rtp_streams_) {
@@ -848,27 +853,39 @@ int RtpVideoSender::ProtectionRequest(const FecProtectionParams* delta_params,
   *sent_nack_rate_bps = 0;
   *sent_fec_rate_bps = 0;
   for (const RtpStreamSender& stream : rtp_streams_) {
-    if (stream.fec_generator) {
-      stream.fec_generator->SetProtectionParameters(*delta_params, *key_params);
-      *sent_fec_rate_bps += stream.fec_generator->CurrentFecRate().bps();
+    if (use_deferred_fec_) {
+      stream.rtp_rtcp->SetFecProtectionParams(*delta_params, *key_params);
+
+      auto send_bitrate = stream.rtp_rtcp->GetSendRates();
+      *sent_video_rate_bps += send_bitrate[RtpPacketMediaType::kVideo].bps();
+      *sent_fec_rate_bps +=
+          send_bitrate[RtpPacketMediaType::kForwardErrorCorrection].bps();
+      *sent_nack_rate_bps +=
+          send_bitrate[RtpPacketMediaType::kRetransmission].bps();
+    } else {
+      if (stream.fec_generator) {
+        stream.fec_generator->SetProtectionParameters(*delta_params,
+                                                      *key_params);
+        *sent_fec_rate_bps += stream.fec_generator->CurrentFecRate().bps();
+      }
+      *sent_video_rate_bps += stream.sender_video->VideoBitrateSent();
+      *sent_nack_rate_bps +=
+          stream.rtp_rtcp->GetSendRates()[RtpPacketMediaType::kRetransmission]
+              .bps<uint32_t>();
     }
-    *sent_video_rate_bps += stream.sender_video->VideoBitrateSent();
-    *sent_nack_rate_bps +=
-        stream.rtp_rtcp->GetSendRates()[RtpPacketMediaType::kRetransmission]
-            .bps<uint32_t>();
   }
   return 0;
 }
 
 void RtpVideoSender::SetFecAllowed(bool fec_allowed) {
-  rtc::CritScope cs(&crit_);
+  MutexLock lock(&mutex_);
   fec_allowed_ = fec_allowed;
 }
 
 void RtpVideoSender::OnPacketFeedbackVector(
     std::vector<StreamPacketInfo> packet_feedback_vector) {
   if (fec_controller_->UseLossVectorMask()) {
-    rtc::CritScope cs(&crit_);
+    MutexLock lock(&mutex_);
     for (const StreamPacketInfo& packet : packet_feedback_vector) {
       loss_mask_vector_.push_back(!packet.received);
     }

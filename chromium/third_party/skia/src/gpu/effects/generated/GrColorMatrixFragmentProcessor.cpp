@@ -10,6 +10,7 @@
  **************************************************************************************************/
 #include "GrColorMatrixFragmentProcessor.h"
 
+#include "src/core/SkUtils.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
@@ -38,22 +39,16 @@ public:
                                                 "m");
         vVar = args.fUniformHandler->addUniform(&_outer, kFragment_GrShaderFlag, kHalf4_GrSLType,
                                                 "v");
-        SkString _input585(args.fInputColor);
-        SkString _sample585;
-        if (_outer.inputFP_index >= 0) {
-            _sample585 = this->invokeChild(_outer.inputFP_index, _input585.c_str(), args);
-        } else {
-            _sample585.swap(_input585);
-        }
+        SkString _sample585 = this->invokeChild(0, args);
         fragBuilder->codeAppendf(
                 R"SkSL(half4 inputColor = %s;
 @if (%s) {
-    half4 inlineResult0;
-    half4 inlineArg1_0 = inputColor;
+    half4 _inlineResulthalf4unpremulhalf40;
+    half4 _inlineArghalf4unpremulhalf41_0 = inputColor;
     {
-        inlineResult0 = half4(inlineArg1_0.xyz / max(inlineArg1_0.w, 9.9999997473787516e-05), inlineArg1_0.w);
+        _inlineResulthalf4unpremulhalf40 = half4(_inlineArghalf4unpremulhalf41_0.xyz / max(_inlineArghalf4unpremulhalf41_0.w, 9.9999997473787516e-05), _inlineArghalf4unpremulhalf41_0.w);
     }
-    inputColor = inlineResult0;
+    inputColor = _inlineResulthalf4unpremulhalf40;
 
 }
 %s = %s * inputColor + %s;
@@ -101,9 +96,9 @@ GrGLSLFragmentProcessor* GrColorMatrixFragmentProcessor::onCreateGLSLInstance() 
 }
 void GrColorMatrixFragmentProcessor::onGetGLSLProcessorKey(const GrShaderCaps& caps,
                                                            GrProcessorKeyBuilder* b) const {
-    b->add32((int32_t)unpremulInput);
-    b->add32((int32_t)clampRGBOutput);
-    b->add32((int32_t)premulOutput);
+    b->add32((uint32_t)unpremulInput);
+    b->add32((uint32_t)clampRGBOutput);
+    b->add32((uint32_t)premulOutput);
 }
 bool GrColorMatrixFragmentProcessor::onIsEqual(const GrFragmentProcessor& other) const {
     const GrColorMatrixFragmentProcessor& that = other.cast<GrColorMatrixFragmentProcessor>();
@@ -123,13 +118,22 @@ GrColorMatrixFragmentProcessor::GrColorMatrixFragmentProcessor(
         , unpremulInput(src.unpremulInput)
         , clampRGBOutput(src.clampRGBOutput)
         , premulOutput(src.premulOutput) {
-    if (src.inputFP_index >= 0) {
-        inputFP_index = this->cloneAndRegisterChildProcessor(src.childProcessor(src.inputFP_index));
-    }
+    this->cloneAndRegisterAllChildProcessors(src);
 }
 std::unique_ptr<GrFragmentProcessor> GrColorMatrixFragmentProcessor::clone() const {
-    return std::unique_ptr<GrFragmentProcessor>(new GrColorMatrixFragmentProcessor(*this));
+    return std::make_unique<GrColorMatrixFragmentProcessor>(*this);
 }
+#if GR_TEST_UTILS
+SkString GrColorMatrixFragmentProcessor::onDumpInfo() const {
+    return SkStringPrintf(
+            "(m=half4x4(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f), "
+            "v=half4(%f, %f, %f, %f), unpremulInput=%s, clampRGBOutput=%s, premulOutput=%s)",
+            m.rc(0, 0), m.rc(1, 0), m.rc(2, 0), m.rc(3, 0), m.rc(0, 1), m.rc(1, 1), m.rc(2, 1),
+            m.rc(3, 1), m.rc(0, 2), m.rc(1, 2), m.rc(2, 2), m.rc(3, 2), m.rc(0, 3), m.rc(1, 3),
+            m.rc(2, 3), m.rc(3, 3), v.x, v.y, v.z, v.w, (unpremulInput ? "true" : "false"),
+            (clampRGBOutput ? "true" : "false"), (premulOutput ? "true" : "false"));
+}
+#endif
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrColorMatrixFragmentProcessor);
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> GrColorMatrixFragmentProcessor::TestCreate(
@@ -141,6 +145,6 @@ std::unique_ptr<GrFragmentProcessor> GrColorMatrixFragmentProcessor::TestCreate(
     bool unpremul = d->fRandom->nextBool();
     bool clampRGB = d->fRandom->nextBool();
     bool premul = d->fRandom->nextBool();
-    return Make(/*inputFP=*/nullptr, m, unpremul, clampRGB, premul);
+    return Make(d->inputFP(), m, unpremul, clampRGB, premul);
 }
 #endif

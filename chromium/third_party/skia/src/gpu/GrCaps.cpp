@@ -16,7 +16,7 @@
 #include "src/utils/SkJSONWriter.h"
 
 GrCaps::GrCaps(const GrContextOptions& options) {
-    fMipMapSupport = false;
+    fMipmapSupport = false;
     fNPOTTextureTileSupport = false;
     fReuseScratchTextures = true;
     fReuseScratchBuffers = true;
@@ -27,6 +27,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fMultisampleDisableSupport = false;
     fDrawInstancedSupport = false;
     fNativeDrawIndirectSupport = false;
+    fUseClientSideIndirectBuffers = false;
     fMixedSamplesSupport = false;
     fConservativeRasterSupport = false;
     fWireframeSupport = false;
@@ -53,11 +54,11 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fWritePixelsRowBytesSupport = false;
     fReadPixelsRowBytesSupport = false;
     fShouldCollapseSrcOverToSrcWhenAble = false;
-    fDriverBlacklistCCPR = false;
-    fDriverBlacklistMSAACCPR = false;
+    fDriverDisableCCPR = false;
+    fDriverDisableMSAACCPR = false;
 
     fBlendEquationSupport = kBasic_BlendEquationSupport;
-    fAdvBlendEqBlacklist = 0;
+    fAdvBlendEqDisableFlags = 0;
 
     fMapBufferFlags = kNone_MapFlags;
 
@@ -97,6 +98,12 @@ void GrCaps::finishInitialization(const GrContextOptions& options) {
                                this->shaderCaps()->dualSourceBlendingSupport();
     }
 
+    if (!fNativeDrawIndirectSupport) {
+        // We will implement indirect draws with a polyfill, so the commands need to reside in CPU
+        // memory.
+        fUseClientSideIndirectBuffers = true;
+    }
+
     // Overrides happen last.
     this->applyOptionsOverrides(options);
 }
@@ -105,13 +112,13 @@ void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
     fShaderCaps->applyOptionsOverrides(options);
     this->onApplyOptionsOverrides(options);
     if (options.fDisableDriverCorrectnessWorkarounds) {
-        SkASSERT(!fDriverBlacklistCCPR);
-        SkASSERT(!fDriverBlacklistMSAACCPR);
+        SkASSERT(!fDriverDisableCCPR);
+        SkASSERT(!fDriverDisableMSAACCPR);
         SkASSERT(!fAvoidStencilBuffers);
         SkASSERT(!fAvoidWritePixelsFastPath);
         SkASSERT(!fRequiresManualFBBarrierAfterTessellatedStencilDraw);
         SkASSERT(!fNativeDrawIndexedIndirectIsBroken);
-        SkASSERT(!fAdvBlendEqBlacklist);
+        SkASSERT(!fAdvBlendEqDisableFlags);
         SkASSERT(!fPerformColorClearsAsDraws);
         SkASSERT(!fPerformStencilClearsAsDraws);
         // Don't check the partial-clear workaround, since that is a backend limitation, not a
@@ -190,7 +197,7 @@ static SkString map_flags_to_string(uint32_t flags) {
 void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->beginObject();
 
-    writer->appendBool("MIP Map Support", fMipMapSupport);
+    writer->appendBool("MIP Map Support", fMipmapSupport);
     writer->appendBool("NPOT Texture Tile Support", fNPOTTextureTileSupport);
     writer->appendBool("Reuse Scratch Textures", fReuseScratchTextures);
     writer->appendBool("Reuse Scratch Buffers", fReuseScratchBuffers);
@@ -201,6 +208,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Multisample disable support", fMultisampleDisableSupport);
     writer->appendBool("Draw Instanced Support", fDrawInstancedSupport);
     writer->appendBool("Native Draw Indirect Support", fNativeDrawIndirectSupport);
+    writer->appendBool("Use client side indirect buffers", fUseClientSideIndirectBuffers);
     writer->appendBool("Mixed Samples Support", fMixedSamplesSupport);
     writer->appendBool("Conservative Raster Support", fConservativeRasterSupport);
     writer->appendBool("Wireframe Support", fWireframeSupport);
@@ -230,9 +238,9 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
                        fTransferFromSurfaceToBufferSupport);
     writer->appendBool("Write pixels row bytes support", fWritePixelsRowBytesSupport);
     writer->appendBool("Read pixels row bytes support", fReadPixelsRowBytesSupport);
-    writer->appendBool("Blacklist CCPR on current driver [workaround]", fDriverBlacklistCCPR);
-    writer->appendBool("Blacklist MSAA version of CCPR on current driver [workaround]",
-                       fDriverBlacklistMSAACCPR);
+    writer->appendBool("Disable CCPR on current driver [workaround]", fDriverDisableCCPR);
+    writer->appendBool("Disable MSAA version of CCPR on current driver [workaround]",
+                       fDriverDisableMSAACCPR);
     writer->appendBool("Clamp-to-border", fClampToBorderSupport);
 
     writer->appendBool("Prefer VRAM Use over flushes [workaround]", fPreferVRAMUseOverFlushes);
@@ -246,7 +254,7 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
                        fNativeDrawIndexedIndirectIsBroken);
 
     if (this->advancedBlendEquationSupport()) {
-        writer->appendHexU32("Advanced Blend Equation Blacklist", fAdvBlendEqBlacklist);
+        writer->appendHexU32("Advanced Blend Equation Disable Flags", fAdvBlendEqDisableFlags);
     }
 
     writer->appendS32("Max Vertex Attributes", fMaxVertexAttributes);
@@ -300,12 +308,12 @@ bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src
 
 bool GrCaps::validateSurfaceParams(const SkISize& dimensions, const GrBackendFormat& format,
                                    GrRenderable renderable, int renderTargetSampleCnt,
-                                   GrMipMapped mipped) const {
+                                   GrMipmapped mipped) const {
     if (!this->isFormatTexturable(format)) {
         return false;
     }
 
-    if (GrMipMapped::kYes == mipped && !this->mipMapSupport()) {
+    if (GrMipmapped::kYes == mipped && !this->mipmapSupport()) {
         return false;
     }
 

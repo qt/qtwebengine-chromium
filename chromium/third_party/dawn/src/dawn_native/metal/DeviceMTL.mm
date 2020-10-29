@@ -14,8 +14,10 @@
 
 #include "dawn_native/metal/DeviceMTL.h"
 
+#include "common/Platform.h"
 #include "dawn_native/BackendConnection.h"
 #include "dawn_native/BindGroupLayout.h"
+#include "dawn_native/Commands.h"
 #include "dawn_native/ErrorData.h"
 #include "dawn_native/metal/BindGroupLayoutMTL.h"
 #include "dawn_native/metal/BindGroupMTL.h"
@@ -30,6 +32,7 @@
 #include "dawn_native/metal/StagingBufferMTL.h"
 #include "dawn_native/metal/SwapChainMTL.h"
 #include "dawn_native/metal/TextureMTL.h"
+#include "dawn_native/metal/UtilsMetal.h"
 #include "dawn_platform/DawnPlatform.h"
 #include "dawn_platform/tracing/TraceEvent.h"
 
@@ -49,9 +52,7 @@ namespace dawn_native { namespace metal {
     Device::Device(AdapterBase* adapter,
                    id<MTLDevice> mtlDevice,
                    const DeviceDescriptor* descriptor)
-        : DeviceBase(adapter, descriptor),
-          mMtlDevice([mtlDevice retain]),
-          mCompletedSerial(0) {
+        : DeviceBase(adapter, descriptor), mMtlDevice([mtlDevice retain]), mCompletedSerial(0) {
         [mMtlDevice retain];
     }
 
@@ -61,6 +62,11 @@ namespace dawn_native { namespace metal {
 
     MaybeError Device::Initialize() {
         InitTogglesFromDriver();
+
+        if (!IsRobustnessEnabled() || !IsToggleEnabled(Toggle::UseSpvc)) {
+            ForceSetToggle(Toggle::MetalEnableVertexPulling, false);
+        }
+
         mCommandQueue = [mMtlDevice newCommandQueue];
 
         return DeviceBase::Initialize(new Queue(this));
@@ -70,8 +76,10 @@ namespace dawn_native { namespace metal {
         {
             bool haveStoreAndMSAAResolve = false;
 #if defined(DAWN_PLATFORM_MACOS)
-            haveStoreAndMSAAResolve =
-                [mMtlDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2];
+            if (@available(macOS 10.12, *)) {
+                haveStoreAndMSAAResolve =
+                    [mMtlDevice supportsFeatureSet:MTLFeatureSet_macOS_GPUFamily1_v2];
+            }
 #elif defined(DAWN_PLATFORM_IOS)
             haveStoreAndMSAAResolve =
                 [mMtlDevice supportsFeatureSet:MTLFeatureSet_iOS_GPUFamily3_v2];
@@ -108,7 +116,7 @@ namespace dawn_native { namespace metal {
         const BindGroupLayoutDescriptor* descriptor) {
         return new BindGroupLayout(this, descriptor);
     }
-    ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
+    ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return Buffer::Create(this, descriptor);
     }
     CommandBufferBase* Device::CreateCommandBuffer(CommandEncoder* encoder,
@@ -254,6 +262,10 @@ namespace dawn_native { namespace metal {
         // this function.
         ASSERT(size != 0);
 
+        ToBackend(destination)
+            ->EnsureDataInitializedAsDestination(GetPendingCommandContext(), destinationOffset,
+                                                 size);
+
         id<MTLBuffer> uploadBuffer = ToBackend(source)->GetBufferHandle();
         id<MTLBuffer> buffer = ToBackend(destination)->GetMTLBuffer();
         [GetPendingCommandContext()->EnsureBlit() copyFromBuffer:uploadBuffer
@@ -264,19 +276,62 @@ namespace dawn_native { namespace metal {
         return {};
     }
 
+    MaybeError Device::CopyFromStagingToTexture(StagingBufferBase* source,
+                                                const TextureDataLayout& dataLayout,
+                                                TextureCopy* dst,
+                                                const Extent3D& copySizePixels) {
+        Texture* texture = ToBackend(dst->texture.Get());
+
+        // This function assumes data is perfectly aligned. Otherwise, it might be necessary
+        // to split copying to several stages: see ComputeTextureBufferCopySplit.
+        const TexelBlockInfo& blockInfo = texture->GetFormat().GetTexelBlockInfo(dst->aspect);
+        uint32_t blockSize = blockInfo.blockByteSize;
+        uint32_t blockWidth = blockInfo.blockWidth;
+        uint32_t blockHeight = blockInfo.blockHeight;
+        ASSERT(dataLayout.rowsPerImage == (copySizePixels.height));
+        ASSERT(dataLayout.bytesPerRow == (copySizePixels.width) / blockWidth * blockSize);
+
+        EnsureDestinationTextureInitialized(texture, *dst, copySizePixels);
+
+        // Metal validation layer requires that if the texture's pixel format is a compressed
+        // format, the sourceSize must be a multiple of the pixel format's block size or be
+        // clamped to the edge of the texture if the block extends outside the bounds of a
+        // texture.
+        const Extent3D clampedSize =
+            texture->ClampToMipLevelVirtualSize(dst->mipLevel, dst->origin, copySizePixels);
+        const uint32_t copyBaseLayer = dst->origin.z;
+        const uint32_t copyLayerCount = copySizePixels.depth;
+        const uint64_t bytesPerImage =
+            dataLayout.rowsPerImage * dataLayout.bytesPerRow / blockHeight;
+
+        MTLBlitOption blitOption = ComputeMTLBlitOption(texture->GetFormat(), dst->aspect);
+
+        uint64_t bufferOffset = dataLayout.offset;
+        for (uint32_t copyLayer = copyBaseLayer; copyLayer < copyBaseLayer + copyLayerCount;
+             ++copyLayer) {
+            [GetPendingCommandContext()->EnsureBlit()
+                     copyFromBuffer:ToBackend(source)->GetBufferHandle()
+                       sourceOffset:bufferOffset
+                  sourceBytesPerRow:dataLayout.bytesPerRow
+                sourceBytesPerImage:bytesPerImage
+                         sourceSize:MTLSizeMake(clampedSize.width, clampedSize.height, 1)
+                          toTexture:texture->GetMTLTexture()
+                   destinationSlice:copyLayer
+                   destinationLevel:dst->mipLevel
+                  destinationOrigin:MTLOriginMake(dst->origin.x, dst->origin.y, 0)
+                            options:blitOption];
+
+            bufferOffset += bytesPerImage;
+        }
+
+        return {};
+    }
+
     TextureBase* Device::CreateTextureWrappingIOSurface(const ExternalImageDescriptor* descriptor,
                                                         IOSurfaceRef ioSurface,
                                                         uint32_t plane) {
         const TextureDescriptor* textureDescriptor =
             reinterpret_cast<const TextureDescriptor*>(descriptor->cTextureDescriptor);
-
-        // TODO(dawn:22): Remove once migration from GPUTextureDescriptor.arrayLayerCount to
-        // GPUTextureDescriptor.size.depth is done.
-        TextureDescriptor fixedDescriptor;
-        if (ConsumedError(FixTextureDescriptor(this, textureDescriptor), &fixedDescriptor)) {
-            return nullptr;
-        }
-        textureDescriptor = &fixedDescriptor;
 
         if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
             return nullptr;

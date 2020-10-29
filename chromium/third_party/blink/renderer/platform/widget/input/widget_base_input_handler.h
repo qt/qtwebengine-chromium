@@ -78,10 +78,6 @@ class PLATFORM_EXPORT WidgetBaseInputHandler {
     handling_input_event_ = handling_input_event;
   }
 
-  // Whether the event is protected by an IME guard to prevent intermediate
-  // IPC messages from being dispatched.
-  bool ProtectedByIMEGuard(bool show_virtual_keyboard);
-
   // Process the touch action, returning whether the action should be relayed
   // to the browser.
   bool ProcessTouchAction(WebTouchAction touch_action);
@@ -89,11 +85,6 @@ class PLATFORM_EXPORT WidgetBaseInputHandler {
   // Process the new cursor and returns true if it has changed from the last
   // cursor.
   bool DidChangeCursor(const ui::Cursor& cursor);
-
-  // Request virtual keyboard be shown. The message will be debounced during
-  // handling of input events.
-  void ShowVirtualKeyboard();
-  void UpdateTextInputState();
 
  private:
   class HandlingState;

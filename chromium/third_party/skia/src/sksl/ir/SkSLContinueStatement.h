@@ -17,8 +17,10 @@ namespace SkSL {
  * A 'continue' statement.
  */
 struct ContinueStatement : public Statement {
+    static constexpr Kind kStatementKind = kContinue_Kind;
+
     ContinueStatement(int offset)
-    : INHERITED(offset, kContinue_Kind) {}
+    : INHERITED(offset, kStatementKind) {}
 
     int nodeCount() const override {
         return 1;
@@ -35,6 +37,6 @@ struct ContinueStatement : public Statement {
     typedef Statement INHERITED;
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

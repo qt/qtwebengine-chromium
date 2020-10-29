@@ -14,9 +14,6 @@
 #include "core/fxcrt/unowned_ptr.h"
 #include "xfa/fwl/cfwl_eventscroll.h"
 #include "xfa/fwl/cfwl_widget.h"
-#include "xfa/fwl/cfwl_widgetproperties.h"
-
-class CFWL_Widget;
 
 #define FWL_STYLEEXT_SCB_Horz (0L << 0)
 #define FWL_STYLEEXT_SCB_Vert (1L << 0)
@@ -25,7 +22,7 @@ class CFWL_ScrollBar final : public CFWL_Widget,
                              public CFX_Timer::CallbackIface {
  public:
   CFWL_ScrollBar(const CFWL_App* app,
-                 std::unique_ptr<CFWL_WidgetProperties> properties,
+                 const Properties& properties,
                  CFWL_Widget* pOuter);
   ~CFWL_ScrollBar() override;
 
@@ -60,19 +57,15 @@ class CFWL_ScrollBar final : public CFWL_Widget,
 
  private:
   bool IsVertical() const {
-    return !!(m_pProperties->m_dwStyleExes & FWL_STYLEEXT_SCB_Vert);
+    return !!(m_Properties.m_dwStyleExes & FWL_STYLEEXT_SCB_Vert);
   }
   void DrawTrack(CXFA_Graphics* pGraphics,
-                 IFWL_ThemeProvider* pTheme,
                  bool bLower,
                  const CFX_Matrix* pMatrix);
   void DrawArrowBtn(CXFA_Graphics* pGraphics,
-                    IFWL_ThemeProvider* pTheme,
                     bool bMinBtn,
                     const CFX_Matrix* pMatrix);
-  void DrawThumb(CXFA_Graphics* pGraphics,
-                 IFWL_ThemeProvider* pTheme,
-                 const CFX_Matrix* pMatrix);
+  void DrawThumb(CXFA_Graphics* pGraphics, const CFX_Matrix* pMatrix);
   void Layout();
   void CalcButtonLen();
   CFX_RectF CalcMinButtonRect();

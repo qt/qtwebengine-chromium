@@ -30,6 +30,17 @@ message NotifyVmStartedRequest {
   uint32 pid = 5;
 }
 
+// Message sent to cicerone when concierge is about to stop a VM.
+// This is just for tracking purposes by cicerone. This may not be
+// sent if the VM stops unexpectedly.
+message NotifyVmStoppingRequest {
+  // Name of the VM.
+  string vm_name = 1;
+
+  // The owner of the VM.
+  string owner_id = 2;
+}
+
 // Message sent to cicerone when a VM stopped or failed to complete startup.
 // This is just for tracking purposes by cicerone.
 message NotifyVmStoppedRequest {
@@ -1533,4 +1544,59 @@ message FileWatchTriggeredSignal {
 
   // Path in container relative to $HOME that has changed.
   string path = 4;
+}
+
+// Sent by vsh to register session information such as the container shell pid,
+// keyed from the host vsh pid. Crostini terminal will look up this info for
+// features such as starting new terminals in the same cwd.
+message RegisterVshSessionRequest {
+  // Name of the VM the container is in.
+  string vm_name = 1;
+
+  // Name of the container within the VM.
+  string container_name = 2;
+
+  // The owner of the VM and container.
+  string owner_id = 3;
+
+  // Process ID of vsh running in host.
+  int32 host_vsh_pid = 4;
+
+  // Process ID of shell spawned from vshd running in container. Set to 0 to
+  // remove mapping.
+  int32 container_shell_pid = 5;
+}
+
+message RegisterVshSessionResponse {
+  // True if pid mapping was completed.
+  bool success = 1;
+
+  // The reason the pid mapping failed.
+  string failure_reason = 2;
+}
+
+// Sent by chrome to query the container shell pid associated with vsh.
+message GetVshSessionRequest {
+  // Name of the VM the container is in.
+  string vm_name = 1;
+
+  // Name of the container within the VM.
+  string container_name = 2;
+
+  // The owner of the VM and container.
+  string owner_id = 3;
+
+  // Process ID of vsh running in host.
+  int32 host_vsh_pid = 4;
+}
+
+message GetVshSessionResponse {
+  // True if container pid was found.
+  bool success = 1;
+
+  // The reason the pid was not found.
+  string failure_reason = 2;
+
+  // Process ID of shell spawned from vshd running in container.
+  int32 container_shell_pid = 3;
 }

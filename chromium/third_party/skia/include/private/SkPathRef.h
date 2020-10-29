@@ -9,6 +9,7 @@
 #define SkPathRef_DEFINED
 
 #include "include/core/SkMatrix.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
@@ -21,7 +22,9 @@
 
 #include <atomic>
 #include <limits>
+#include <tuple>
 
+struct SkPathView;
 class SkRBuffer;
 class SkWBuffer;
 
@@ -49,7 +52,7 @@ public:
         , fConicWeights(std::move(weights))
     {
         fBoundsIsDirty = true;    // this also invalidates fIsFinite
-        fGenerationID = kEmptyGenID;
+        fGenerationID = 0;        // recompute
         fSegmentMask = segmentMask;
         fIsOval = false;
         fIsRRect = false;
@@ -333,6 +336,8 @@ public:
     bool isValid() const;
     SkDEBUGCODE(void validate() const { SkASSERT(this->isValid()); } )
 
+    SkPathView view(SkPathFillType, SkPathConvexityType) const;
+
 private:
     enum SerializationOffsets {
         kLegacyRRectOrOvalStartIdx_SerializationShift = 28, // requires 3 bits, ignored.
@@ -505,6 +510,7 @@ private:
     friend class PathRefTest_Private;
     friend class ForceIsRRect_Private; // unit test isRRect
     friend class SkPath;
+    friend class SkPathBuilder;
     friend class SkPathPriv;
 };
 

@@ -68,7 +68,8 @@ class CastAgent final : public ReceiverSocketFactory::Client,
   // ReceiverSession::Client overrides.
   void OnNegotiated(const ReceiverSession* session,
                     ReceiverSession::ConfiguredReceivers receivers) override;
-  void OnConfiguredReceiversDestroyed(const ReceiverSession* session) override;
+  void OnReceiversDestroying(const ReceiverSession* session,
+                             ReceiversDestroyingReason reason) override;
   void OnError(const ReceiverSession* session, Error error) override;
 
   // StreamingPlaybackController::Client overrides

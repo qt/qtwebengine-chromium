@@ -1414,7 +1414,7 @@ bool ValidateBlitFramebufferParameters(const Context *context,
     }
 
     // Not allow blitting to MS buffers, therefore if renderToTextureSamples exist,
-    // consider it MS. needResourceSamples = false
+    // consider it MS. checkReadBufferResourceSamples = false
     if (!ValidateFramebufferNotMultisampled(context, drawFramebuffer, false))
     {
         return false;
@@ -2596,8 +2596,8 @@ bool ValidateCopyTexImageParametersBase(const Context *context,
         return false;
     }
 
-    // needResourceSamples = true. Treat renderToTexture textures as single sample since they will
-    // be resolved before copying
+    // checkReadBufferResourceSamples = true. Treat renderToTexture textures as single sample since
+    // they will be resolved before copying.
     if (!readFramebuffer->isDefault() &&
         !ValidateFramebufferNotMultisampled(context, readFramebuffer, true))
     {
@@ -3005,7 +3005,7 @@ const char *ValidateDrawStates(const Context *context)
             }
 
             // Detect rendering feedback loops for WebGL.
-            if (framebuffer->hasRenderingFeedbackLoop())
+            if (framebuffer->formsRenderingFeedbackLoopWith(context))
             {
                 return kFeedbackLoop;
             }
@@ -3541,7 +3541,7 @@ bool ValidateDiscardFramebufferBase(const Context *context,
                     if (!defaultFramebuffer)
                     {
                         context->validationError(GL_INVALID_ENUM,
-                                                 kDefaultFramebufferInvalidAttachment);
+                                                 kDefaultFramebufferAttachmentOnUserFBO);
                         return false;
                     }
                     break;
@@ -5737,6 +5737,22 @@ bool ValidatePixelPack(const Context *context,
         *length = static_cast<GLsizei>(endByte);
     }
 
+    if (context->getExtensions().webglCompatibility)
+    {
+        // WebGL 2.0 disallows the scenario:
+        //   GL_PACK_SKIP_PIXELS + width > DataStoreWidth
+        // where:
+        //   DataStoreWidth = (GL_PACK_ROW_LENGTH ? GL_PACK_ROW_LENGTH : width)
+        // Since these two pack parameters can only be set to non-zero values
+        // on WebGL 2.0 contexts, verify them for all WebGL contexts.
+        GLint dataStoreWidth = pack.rowLength ? pack.rowLength : width;
+        if (pack.skipPixels + width > dataStoreWidth)
+        {
+            context->validationError(GL_INVALID_OPERATION, kInvalidPackParametersForWebGL);
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -6616,10 +6632,11 @@ bool ValidateGetInternalFormativBase(const Context *context,
 
 bool ValidateFramebufferNotMultisampled(const Context *context,
                                         const Framebuffer *framebuffer,
-                                        bool needResourceSamples)
+                                        bool checkReadBufferResourceSamples)
 {
-    int samples = needResourceSamples ? framebuffer->getResourceSamples(context)
-                                      : framebuffer->getSamples(context);
+    int samples = checkReadBufferResourceSamples
+                      ? framebuffer->getReadBufferResourceSamples(context)
+                      : framebuffer->getSamples(context);
     if (samples != 0)
     {
         context->validationError(GL_INVALID_OPERATION, kInvalidMultisampledFramebufferOperation);

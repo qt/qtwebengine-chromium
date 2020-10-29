@@ -9,7 +9,7 @@
 // declarations instead of including more headers. If that is infeasible, adjust
 // the limit. For more info, see
 // https://chromium.googlesource.com/chromium/src/+/HEAD/docs/wmax_tokens.md
-#pragma clang max_tokens_here 860000
+#pragma clang max_tokens_here 880000
 
 #include <utility>
 
@@ -35,18 +35,18 @@
 #include "content/public/browser/url_loader_request_interceptor.h"
 #include "content/public/browser/vpn_service_proxy.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_features.h"
 #include "content/public/common/url_utils.h"
 #include "media/audio/audio_manager.h"
 #include "media/mojo/mojom/media_service.mojom.h"
-#include "mojo/public/cpp/bindings/associated_interface_ptr.h"
 #include "net/ssl/client_cert_identity.h"
 #include "net/ssl/client_cert_store.h"
-#include "net/url_request/url_request_context_getter.h"
+#include "sandbox/policy/sandbox_type.h"
 #include "services/device/public/cpp/geolocation/location_provider.h"
 #include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/service_manager/public/cpp/manifest.h"
-#include "services/service_manager/sandbox/sandbox_type.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/loader/url_loader_throttle.h"
@@ -56,6 +56,10 @@
 #include "ui/shell_dialogs/select_file_policy.h"
 #include "url/gurl.h"
 #include "url/origin.h"
+
+#if defined(OS_ANDROID)
+#include "content/public/browser/tts_environment_android.h"
+#endif
 
 namespace content {
 
@@ -142,8 +146,8 @@ bool ContentBrowserClient::DoesSiteRequireDedicatedProcess(
   return false;
 }
 
-bool ContentBrowserClient::ShouldLockToOrigin(BrowserContext* browser_context,
-                                              const GURL& effective_url) {
+bool ContentBrowserClient::ShouldLockProcess(BrowserContext* browser_context,
+                                             const GURL& effective_url) {
   DCHECK(browser_context);
   return true;
 }
@@ -293,6 +297,11 @@ std::string ContentBrowserClient::GetApplicationClientGUIDForQuarantineCheck() {
   return std::string();
 }
 
+download::QuarantineConnectionCallback
+ContentBrowserClient::GetQuarantineConnectionCallback() {
+  return base::NullCallback();
+}
+
 std::string ContentBrowserClient::GetApplicationLocale() {
   return "en-US";
 }
@@ -357,6 +366,12 @@ bool ContentBrowserClient::DoesSchemeAllowCrossOriginSharedWorker(
 
 bool ContentBrowserClient::AllowSignedExchange(BrowserContext* context) {
   return true;
+}
+
+bool ContentBrowserClient::OverrideWebPreferencesAfterNavigation(
+    WebContents* web_contents,
+    WebPreferences* prefs) {
+  return false;
 }
 
 bool ContentBrowserClient::IsDataSaverEnabled(BrowserContext* context) {
@@ -688,7 +703,7 @@ bool ContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy,
 }
 
 base::string16 ContentBrowserClient::GetAppContainerSidForSandboxType(
-    service_manager::SandboxType sandbox_type) {
+    sandbox::policy::SandboxType sandbox_type) {
   // Embedders should override this method and return different SIDs for each
   // sandbox type. Note: All content level tests will run child processes in the
   // same AppContainer.
@@ -738,6 +753,7 @@ ContentBrowserClient::CreateURLLoaderThrottles(
 
 void ContentBrowserClient::RegisterNonNetworkNavigationURLLoaderFactories(
     int frame_tree_node_id,
+    base::UkmSourceId ukm_source_id,
     NonNetworkURLLoaderFactoryMap* factories) {}
 
 void ContentBrowserClient::
@@ -830,6 +846,10 @@ void ContentBrowserClient::ConfigureNetworkContextParams(
 std::vector<base::FilePath>
 ContentBrowserClient::GetNetworkContextsParentDirectory() {
   return {};
+}
+
+base::DictionaryValue ContentBrowserClient::GetNetLogConstants() {
+  return base::DictionaryValue();
 }
 
 #if defined(OS_ANDROID)
@@ -957,18 +977,22 @@ base::FilePath ContentBrowserClient::GetSandboxedStorageServiceDataDirectory() {
   return base::FilePath();
 }
 
-content::PreviewsState ContentBrowserClient::DetermineAllowedPreviews(
-    content::PreviewsState initial_state,
-    content::NavigationHandle* navigation_handle,
-    const GURL& current_navigation_url) {
-  return content::PREVIEWS_OFF;
+bool ContentBrowserClient::ShouldSandboxAudioService() {
+  return base::FeatureList::IsEnabled(features::kAudioServiceSandbox);
 }
 
-content::PreviewsState ContentBrowserClient::DetermineCommittedPreviews(
-    content::PreviewsState initial_state,
+blink::PreviewsState ContentBrowserClient::DetermineAllowedPreviews(
+    blink::PreviewsState initial_state,
+    content::NavigationHandle* navigation_handle,
+    const GURL& current_navigation_url) {
+  return blink::PreviewsTypes::PREVIEWS_OFF;
+}
+
+blink::PreviewsState ContentBrowserClient::DetermineCommittedPreviews(
+    blink::PreviewsState initial_state,
     content::NavigationHandle* navigation_handle,
     const net::HttpResponseHeaders* response_headers) {
-  return content::PREVIEWS_OFF;
+  return blink::PreviewsTypes::PREVIEWS_OFF;
 }
 
 std::string ContentBrowserClient::GetProduct() {
@@ -992,7 +1016,7 @@ bool ContentBrowserClient::IsBuiltinComponent(BrowserContext* browser_context,
   return false;
 }
 
-bool ContentBrowserClient::IsRendererDebugURLBlacklisted(
+bool ContentBrowserClient::ShouldBlockRendererDebugURL(
     const GURL& url,
     BrowserContext* context) {
   return false;
@@ -1007,6 +1031,11 @@ ui::AXMode ContentBrowserClient::GetAXModeForBrowserContext(
 ContentBrowserClient::WideColorGamutHeuristic
 ContentBrowserClient::GetWideColorGamutHeuristic() {
   return WideColorGamutHeuristic::kNone;
+}
+
+std::unique_ptr<TtsEnvironmentAndroid>
+ContentBrowserClient::CreateTtsEnvironmentAndroid() {
+  return nullptr;
 }
 #endif
 
@@ -1096,6 +1125,14 @@ void ContentBrowserClient::BindBrowserControlInterface(
 bool ContentBrowserClient::ShouldInheritCrossOriginEmbedderPolicyImplicitly(
     const GURL& url) {
   return false;
+}
+
+network::mojom::PrivateNetworkRequestPolicy
+ContentBrowserClient::GetPrivateNetworkRequestPolicy(
+    BrowserContext* browser_context,
+    const GURL& url) {
+  return network::mojom::PrivateNetworkRequestPolicy::
+      kBlockFromInsecureToMorePrivate;
 }
 
 ukm::UkmService* ContentBrowserClient::GetUkmService() {

@@ -136,7 +136,8 @@ enum {
   BIGDIA = 3,
   SQUARE = 4,
   FAST_HEX = 5,
-  FAST_DIAMOND = 6
+  FAST_DIAMOND = 6,
+  FAST_BIGDIA = 7,
 } UENUM1BYTE(SEARCH_METHODS);
 
 // This struct holds fullpixel motion search parameters that should be constant
@@ -185,6 +186,8 @@ void av1_init_dsmotion_compensation(search_site_config *cfg, int stride);
 void av1_init_motion_fpf(search_site_config *cfg, int stride);
 // Sets up configs for all other types of motion search
 void av1_init3smotion_compensation(search_site_config *cfg, int stride);
+// Sets up configs for BIGDIA motion search
+void av1_init_motion_compensation_bigdia(search_site_config *cfg, int stride);
 
 // Set up limit values for MV components.
 // Mv beyond the range do not produce new/different prediction block.

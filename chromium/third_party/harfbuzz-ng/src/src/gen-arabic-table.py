@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 
-import io, os.path, sys
-
-if len (sys.argv) != 4:
-	print ("""usage: ./gen-arabic-table.py ArabicShaping.txt UnicodeData.txt Blocks.txt
+"""usage: ./gen-arabic-table.py ArabicShaping.txt UnicodeData.txt Blocks.txt
 
 Input files:
 * https://unicode.org/Public/UCD/latest/ucd/ArabicShaping.txt
 * https://unicode.org/Public/UCD/latest/ucd/UnicodeData.txt
 * https://unicode.org/Public/UCD/latest/ucd/Blocks.txt
-""", file=sys.stderr)
-	sys.exit (1)
+"""
 
-files = [io.open (x, encoding='utf-8') for x in sys.argv[1:]]
+import os.path, sys
+
+if len (sys.argv) != 4:
+	sys.exit (__doc__)
+
+files = [open (x, encoding='utf-8') for x in sys.argv[1:]]
 
 headers = [[files[0].readline (), files[0].readline ()], [files[2].readline (), files[2].readline ()]]
 headers.append (["UnicodeData.txt does not have a header."])
@@ -126,7 +127,7 @@ def print_joining_table(f):
 	print ("}; /* Table items: %d; occupancy: %d%% */" % (offset, occupancy))
 	print ()
 
-	page_bits = 12;
+	page_bits = 12
 	print ()
 	print ("static unsigned int")
 	print ("joining_type (hb_codepoint_t u)")
@@ -180,7 +181,6 @@ def print_shaping_table(f):
 			if items not in ligatures:
 				ligatures[items] = {}
 			ligatures[items][shape] = c
-			pass
 		else:
 			# Save shape
 			if items[0] not in names:

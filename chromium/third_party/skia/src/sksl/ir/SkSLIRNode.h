@@ -28,7 +28,6 @@ struct IRNode {
         return 1;
     }
 
-
     virtual String description() const = 0;
 
     // character offset of this element within the program being compiled, for error reporting
@@ -36,6 +35,6 @@ struct IRNode {
     int fOffset;
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

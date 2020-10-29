@@ -127,6 +127,7 @@ export const generatedProperties = [
     ]
   },
   {'name': 'appearance'},
+  {'name': 'ascent-override'},
   {'name': 'aspect-ratio', 'keywords': ['auto']},
   {'name': 'backdrop-filter', 'keywords': ['none']},
   {'name': 'backface-visibility', 'keywords': ['visible', 'hidden']},
@@ -341,6 +342,7 @@ export const generatedProperties = [
   {'svg': true, 'name': 'cx'},
   {'svg': true, 'name': 'cy'},
   {'name': 'd', 'svg': true, 'keywords': ['none']},
+  {'name': 'descent-override'},
   {'name': 'direction', 'inherited': true, 'keywords': ['ltr', 'rtl']},
   {
     'keywords': [
@@ -509,6 +511,7 @@ export const generatedProperties = [
   {'name': 'justify-self'},
   {'name': 'left', 'keywords': ['auto']},
   {'inherited': true, 'keywords': ['normal'], 'name': 'letter-spacing'},
+  {'name': 'letter-spacing-override'},
   {'name': 'lighting-color', 'svg': true, 'keywords': ['currentcolor']},
   {'name': 'line-break', 'inherited': true, 'keywords': ['auto', 'loose', 'normal', 'strict', 'anywhere']},
   {'name': 'line-height', 'inherited': true, 'keywords': ['normal']},
@@ -728,6 +731,7 @@ export const generatedProperties = [
   {'name': 'scroll-snap-align', 'keywords': ['none', 'start', 'end', 'center']},
   {'name': 'scroll-snap-stop', 'keywords': ['normal', 'always']},
   {'name': 'scroll-snap-type', 'keywords': ['none', 'x', 'y', 'block', 'inline', 'both', 'mandatory', 'proximity']},
+  {'name': 'scrollbar-gutter', 'inherited': true, 'keywords': ['auto', 'stable', 'always']},
   {'name': 'shape-image-threshold'},
   {'name': 'shape-margin', 'keywords': ['none']},
   {'name': 'shape-outside', 'keywords': ['none']},
@@ -762,15 +766,13 @@ export const generatedProperties = [
   {
     'name': 'text-align',
     'inherited': true,
-    'keywords': [
-      'left', 'right', 'center', 'justify', '-webkit-left', '-webkit-right', '-webkit-center', 'start', 'end',
-      '-internal-space-around'
-    ]
+    'keywords':
+        ['left', 'right', 'center', 'justify', '-webkit-left', '-webkit-right', '-webkit-center', 'start', 'end']
   },
   {
     'name': 'text-align-last',
     'inherited': true,
-    'keywords': ['auto', 'start', 'end', 'left', 'right', 'center', 'justify', '-internal-space-around']
+    'keywords': ['auto', 'start', 'end', 'left', 'right', 'center', 'justify']
   },
   {'name': 'text-anchor', 'svg': true, 'inherited': true, 'keywords': ['start', 'middle', 'end']},
   {'name': 'text-combine-upright', 'inherited': true, 'keywords': ['none', 'all']},
@@ -1191,6 +1193,7 @@ export const generatedPropertyValues = {
   'scroll-snap-align': {'values': ['none', 'start', 'end', 'center']},
   'scroll-snap-stop': {'values': ['normal', 'always']},
   'scroll-snap-type': {'values': ['none', 'x', 'y', 'block', 'inline', 'both', 'mandatory', 'proximity']},
+  'scrollbar-gutter': {'values': ['auto', 'stable', 'always']},
   'shape-margin': {'values': ['none']},
   'shape-outside': {'values': ['none']},
   'shape-rendering': {'values': ['auto', 'optimizespeed', 'crispedges', 'geometricprecision']},

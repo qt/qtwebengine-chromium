@@ -59,8 +59,7 @@ inline int16x8_t GetMask4x2(const uint8_t* mask, ptrdiff_t mask_stride) {
   }
   assert(subsampling_y == 0 && subsampling_x == 0);
   const uint8x8_t mask_val0 = Load4(mask);
-  const uint8x8_t mask_val =
-      Load4<1>(mask + (mask_stride << subsampling_y), mask_val0);
+  const uint8x8_t mask_val = Load4<1>(mask + mask_stride, mask_val0);
   return vreinterpretq_s16_u16(vmovl_u8(mask_val));
 }
 
@@ -275,7 +274,7 @@ inline uint8x8_t GetInterIntraMask4x2(const uint8_t* mask,
   // TODO(b/150461164): Investigate the source of |mask| and see if the stride
   // can be removed.
   // TODO(b/150461164): The unit tests start at 8x8. Does this get run?
-  return Load4<1>(mask + (mask_stride << subsampling_y), mask_val0);
+  return Load4<1>(mask + mask_stride, mask_val0);
 }
 
 template <int subsampling_x, int subsampling_y>
@@ -434,7 +433,7 @@ void MaskBlendInit_NEON() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_NEON
+#else  // !LIBGAV1_ENABLE_NEON
 
 namespace libgav1 {
 namespace dsp {

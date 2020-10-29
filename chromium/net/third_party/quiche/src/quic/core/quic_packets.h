@@ -390,10 +390,6 @@ struct QUIC_EXPORT_PRIVATE SerializedPacket {
   QuicFrames retransmittable_frames;
   QuicFrames nonretransmittable_frames;
   IsHandshake has_crypto_handshake;
-  // -1: full padding to the end of a max-sized packet
-  //  0: no padding
-  //  otherwise: only pad up to num_padding_bytes bytes
-  int16_t num_padding_bytes;
   QuicPacketNumber packet_number;
   QuicPacketNumberLength packet_number_length;
   EncryptionLevel encryption_level;
@@ -407,6 +403,7 @@ struct QUIC_EXPORT_PRIVATE SerializedPacket {
   // Indicates whether this packet has a copy of ack frame in
   // nonretransmittable_frames.
   bool has_ack_frame_copy;
+  SerializedPacketFate fate;
 };
 
 // Make a copy of |serialized| (including the underlying frames). |copy_buffer|

@@ -8,7 +8,6 @@
 # to list the dependency's destination directory.
 
 use_relative_paths = True
-use_relative_hooks = True
 
 vars = {
   'boringssl_git': 'https://boringssl.googlesource.com',
@@ -180,7 +179,7 @@ include_rules = [
   # rules when in Chromium.
   '-third_party/abseil',
 
-  # Abseil whitelist.
+  # Abseil allowed headers.
   '+absl/algorithm/container.h',
   '+absl/base/thread_annotations.h',
   '+absl/hash/hash.h',

@@ -573,7 +573,7 @@ void SkBitmapDevice::drawDevice(SkBaseDevice* device, int x, int y, const SkPain
         draw.fMatrixProvider = &matrixProvider;
         draw.fRC = &fRCStack.rc();
         paint.writable()->setShader(src->fBitmap.makeShader());
-        draw.drawBitmap(*src->fCoverage.get(),
+        draw.drawBitmap(*src->fCoverage,
                         SkMatrix::Translate(SkIntToScalar(x),SkIntToScalar(y)), nullptr, *paint);
     } else {
         BDDraw(this).drawSprite(src->fBitmap, x, y, *paint);
@@ -691,6 +691,12 @@ void SkBitmapDevice::onClipRegion(const SkRegion& rgn, SkClipOp op) {
         ptr = &tmp;
     }
     fRCStack.clipRegion(*ptr, op);
+}
+
+void SkBitmapDevice::onReplaceClip(const SkIRect& rect) {
+    // Transform from "global/canvas" coordinates to relative to this device
+    SkIRect deviceRect = this->globalToDevice().mapRect(SkRect::Make(rect)).round();
+    fRCStack.replaceClip(deviceRect);
 }
 
 void SkBitmapDevice::onSetDeviceClipRestriction(SkIRect* mutableClipRestriction) {

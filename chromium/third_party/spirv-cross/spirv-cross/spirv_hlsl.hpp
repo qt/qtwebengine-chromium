@@ -291,7 +291,8 @@ private:
 	} required_texture_size_variants;
 
 	void require_texture_query_variant(uint32_t var_id);
-	void emit_texture_size_variants(uint64_t variant_mask, const char *vecsize_qualifier, bool uav, const char *type_qualifier);
+	void emit_texture_size_variants(uint64_t variant_mask, const char *vecsize_qualifier, bool uav,
+	                                const char *type_qualifier);
 
 	enum TextureQueryVariantDim
 	{
@@ -351,6 +352,9 @@ private:
 	void remap_hlsl_resource_binding(HLSLBindingFlagBits type, uint32_t &desc_set, uint32_t &binding);
 
 	std::unordered_set<SetBindingPair, InternalHasher> force_uav_buffer_bindings;
+
+	// Returns true for BuiltInSampleMask because gl_SampleMask[] is an array in SPIR-V, but SV_Coverage is a scalar in HLSL.
+	bool builtin_translates_to_nonarray(spv::BuiltIn builtin) const override;
 };
 } // namespace SPIRV_CROSS_NAMESPACE
 

@@ -129,6 +129,9 @@ typedef struct {
 
     int format;
     int pred;
+    int sop;
+    int eph;
+    int prog;
 } Jpeg2000EncoderContext;
 
 
@@ -298,7 +301,7 @@ static int put_siz(Jpeg2000EncoderContext *s)
     bytestream_put_be16(&s->buf, s->ncomponents); // CSiz
 
     for (i = 0; i < s->ncomponents; i++){ // Ssiz_i XRsiz_i, YRsiz_i
-        bytestream_put_byte(&s->buf, 7);
+        bytestream_put_byte(&s->buf, s->cbps[i] - 1);
         bytestream_put_byte(&s->buf, i?1<<s->chroma_shift[0]:1);
         bytestream_put_byte(&s->buf, i?1<<s->chroma_shift[1]:1);
     }
@@ -308,15 +311,20 @@ static int put_siz(Jpeg2000EncoderContext *s)
 static int put_cod(Jpeg2000EncoderContext *s)
 {
     Jpeg2000CodingStyle *codsty = &s->codsty;
+    uint8_t scod = 0;
 
     if (s->buf_end - s->buf < 14)
         return -1;
 
     bytestream_put_be16(&s->buf, JPEG2000_COD);
     bytestream_put_be16(&s->buf, 12); // Lcod
-    bytestream_put_byte(&s->buf, 0);  // Scod
+    if (s->sop)
+        scod |= JPEG2000_CSTY_SOP;
+    if (s->eph)
+        scod |= JPEG2000_CSTY_EPH;
+    bytestream_put_byte(&s->buf, scod);  // Scod
     // SGcod
-    bytestream_put_byte(&s->buf, 0); // progression level
+    bytestream_put_byte(&s->buf, s->prog); // progression level
     bytestream_put_be16(&s->buf, 1); // num of layers
     if(s->avctx->pix_fmt == AV_PIX_FMT_YUV444P){
         bytestream_put_byte(&s->buf, 0); // unspecified
@@ -447,43 +455,49 @@ static int init_tiles(Jpeg2000EncoderContext *s)
     return 0;
 }
 
-static void copy_frame(Jpeg2000EncoderContext *s)
-{
-    int tileno, compno, i, y, x;
-    uint8_t *line;
-    for (tileno = 0; tileno < s->numXtiles * s->numYtiles; tileno++){
-        Jpeg2000Tile *tile = s->tile + tileno;
-        if (s->planar){
-            for (compno = 0; compno < s->ncomponents; compno++){
-                Jpeg2000Component *comp = tile->comp + compno;
-                int *dst = comp->i_data;
-                line = s->picture->data[compno]
-                       + comp->coord[1][0] * s->picture->linesize[compno]
-                       + comp->coord[0][0];
-                for (y = comp->coord[1][0]; y < comp->coord[1][1]; y++){
-                    uint8_t *ptr = line;
-                    for (x = comp->coord[0][0]; x < comp->coord[0][1]; x++)
-                        *dst++ = *ptr++ - (1 << 7);
-                    line += s->picture->linesize[compno];
-                }
-            }
-        } else{
-            line = s->picture->data[0] + tile->comp[0].coord[1][0] * s->picture->linesize[0]
-                   + tile->comp[0].coord[0][0] * s->ncomponents;
-
-            i = 0;
-            for (y = tile->comp[0].coord[1][0]; y < tile->comp[0].coord[1][1]; y++){
-                uint8_t *ptr = line;
-                for (x = tile->comp[0].coord[0][0]; x < tile->comp[0].coord[0][1]; x++, i++){
-                    for (compno = 0; compno < s->ncomponents; compno++){
-                        tile->comp[compno].i_data[i] = *ptr++  - (1 << 7);
-                    }
-                }
-                line += s->picture->linesize[0];
-            }
-        }
+#define COPY_FRAME(D, PIXEL)                                                                                                \
+    static void copy_frame_ ##D(Jpeg2000EncoderContext *s)                                                                  \
+    {                                                                                                                       \
+        int tileno, compno, i, y, x;                                                                                        \
+        PIXEL *line;                                                                                                        \
+        for (tileno = 0; tileno < s->numXtiles * s->numYtiles; tileno++){                                                   \
+            Jpeg2000Tile *tile = s->tile + tileno;                                                                          \
+            if (s->planar){                                                                                                 \
+                for (compno = 0; compno < s->ncomponents; compno++){                                                        \
+                    Jpeg2000Component *comp = tile->comp + compno;                                                          \
+                    int *dst = comp->i_data;                                                                                \
+                    int cbps = s->cbps[compno];                                                                             \
+                    line = (PIXEL*)s->picture->data[compno]                                                                 \
+                           + comp->coord[1][0] * (s->picture->linesize[compno] / sizeof(PIXEL))                             \
+                           + comp->coord[0][0];                                                                             \
+                    for (y = comp->coord[1][0]; y < comp->coord[1][1]; y++){                                                \
+                        PIXEL *ptr = line;                                                                                  \
+                        for (x = comp->coord[0][0]; x < comp->coord[0][1]; x++)                                             \
+                            *dst++ = *ptr++ - (1 << (cbps - 1));                                                            \
+                        line += s->picture->linesize[compno] / sizeof(PIXEL);                                               \
+                    }                                                                                                       \
+                }                                                                                                           \
+            } else{                                                                                                         \
+                line = (PIXEL*)s->picture->data[0] + tile->comp[0].coord[1][0] * (s->picture->linesize[0] / sizeof(PIXEL))  \
+                       + tile->comp[0].coord[0][0] * s->ncomponents;                                                        \
+                                                                                                                            \
+                i = 0;                                                                                                      \
+                for (y = tile->comp[0].coord[1][0]; y < tile->comp[0].coord[1][1]; y++){                                    \
+                    PIXEL *ptr = line;                                                                                      \
+                    for (x = tile->comp[0].coord[0][0]; x < tile->comp[0].coord[0][1]; x++, i++){                           \
+                        for (compno = 0; compno < s->ncomponents; compno++){                                                \
+                            int cbps = s->cbps[compno];                                                                     \
+                            tile->comp[compno].i_data[i] = *ptr++  - (1 << (cbps - 1));                                     \
+                        }                                                                                                   \
+                    }                                                                                                       \
+                    line += s->picture->linesize[0] / sizeof(PIXEL);                                                        \
+                }                                                                                                           \
+            }                                                                                                               \
+        }                                                                                                                   \
     }
-}
+
+COPY_FRAME(8, uint8_t)
+COPY_FRAME(16, uint16_t)
 
 static void init_quantization(Jpeg2000EncoderContext *s)
 {
@@ -713,14 +727,18 @@ static void putnumpasses(Jpeg2000EncoderContext *s, int n)
 
 
 static int encode_packet(Jpeg2000EncoderContext *s, Jpeg2000ResLevel *rlevel, int precno,
-                          uint8_t *expn, int numgbits)
+                          uint8_t *expn, int numgbits, int packetno)
 {
     int bandno, empty = 1;
-
     // init bitstream
     *s->buf = 0;
     s->bit_index = 0;
 
+    if (s->sop) {
+        bytestream_put_be16(&s->buf, JPEG2000_SOP);
+        bytestream_put_be16(&s->buf, 4);
+        bytestream_put_be16(&s->buf, packetno);
+    }
     // header
 
     // is the packet empty?
@@ -788,6 +806,10 @@ static int encode_packet(Jpeg2000EncoderContext *s, Jpeg2000ResLevel *rlevel, in
         }
     }
     j2k_flush(s);
+    if (s->eph) {
+        bytestream_put_be16(&s->buf, JPEG2000_EPH);
+    }
+
     for (bandno = 0; bandno < rlevel->nbands; bandno++){
         Jpeg2000Band *band = rlevel->band + bandno;
         Jpeg2000Prec *prec = band->prec + precno;
@@ -815,20 +837,234 @@ static int encode_packets(Jpeg2000EncoderContext *s, Jpeg2000Tile *tile, int til
     int compno, reslevelno, ret;
     Jpeg2000CodingStyle *codsty = &s->codsty;
     Jpeg2000QuantStyle  *qntsty = &s->qntsty;
+    int packetno = 0;
+    int step_x, step_y;
+    int x, y;
+    int tile_coord[2][2];
+    int col = tileno % s->numXtiles;
+    int row = tileno / s->numXtiles;
+
+    tile_coord[0][0] = col * s->tile_width;
+    tile_coord[0][1] = FFMIN(tile_coord[0][0] + s->tile_width, s->width);
+    tile_coord[1][0] = row * s->tile_height;
+    tile_coord[1][1] = FFMIN(tile_coord[1][0] + s->tile_height, s->height);
 
     av_log(s->avctx, AV_LOG_DEBUG, "tier2\n");
     // lay-rlevel-comp-pos progression
+    switch (s->prog) {
+    case JPEG2000_PGOD_LRCP:
     for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++){
         for (compno = 0; compno < s->ncomponents; compno++){
             int precno;
             Jpeg2000ResLevel *reslevel = s->tile[tileno].comp[compno].reslevel + reslevelno;
             for (precno = 0; precno < reslevel->num_precincts_x * reslevel->num_precincts_y; precno++){
                 if ((ret = encode_packet(s, reslevel, precno, qntsty->expn + (reslevelno ? 3*reslevelno-2 : 0),
-                              qntsty->nguardbits)) < 0)
+                              qntsty->nguardbits, packetno++)) < 0)
                     return ret;
             }
         }
     }
+    break;
+    case JPEG2000_PGOD_RLCP:
+    for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++){
+        for (compno = 0; compno < s->ncomponents; compno++){
+            int precno;
+            Jpeg2000ResLevel *reslevel = s->tile[tileno].comp[compno].reslevel + reslevelno;
+            for (precno = 0; precno < reslevel->num_precincts_x * reslevel->num_precincts_y; precno++){
+                if ((ret = encode_packet(s, reslevel, precno, qntsty->expn + (reslevelno ? 3*reslevelno-2 : 0),
+                              qntsty->nguardbits, packetno++)) < 0)
+                    return ret;
+            }
+        }
+    }
+    break;
+    case JPEG2000_PGOD_RPCL:
+    for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++) {
+        int precno;
+        step_x = 30;
+        step_y = 30;
+        for (compno = 0; compno < s->ncomponents; compno++) {
+            Jpeg2000Component *comp     = tile->comp + compno;
+            if (reslevelno < codsty->nreslevels) {
+                uint8_t reducedresno = codsty->nreslevels - 1 -reslevelno; //  ==> N_L - r
+                Jpeg2000ResLevel *rlevel = comp->reslevel + reslevelno;
+                step_x = FFMIN(step_x, rlevel->log2_prec_width  + reducedresno);
+                step_y = FFMIN(step_y, rlevel->log2_prec_height + reducedresno);
+            }
+        }
+
+        step_x = 1<<step_x;
+        step_y = 1<<step_y;
+        for (y = tile_coord[1][0]; y < tile_coord[1][1]; y = (y/step_y + 1)*step_y) {
+            for (x = tile_coord[0][0]; x < tile_coord[0][1]; x = (x/step_x + 1)*step_x) {
+                for (compno = 0; compno < s->ncomponents; compno++) {
+                    Jpeg2000Component *comp     = tile->comp + compno;
+                    uint8_t reducedresno = codsty->nreslevels - 1 -reslevelno; //  ==> N_L - r
+                    Jpeg2000ResLevel *reslevel = comp->reslevel + reslevelno;
+                    int log_subsampling[2] = { compno?s->chroma_shift[0]:0, compno?s->chroma_shift[1]:0};
+                    unsigned prcx, prcy;
+                    int trx0, try0;
+
+                    trx0 = ff_jpeg2000_ceildivpow2(tile_coord[0][0], log_subsampling[0] + reducedresno);
+                    try0 = ff_jpeg2000_ceildivpow2(tile_coord[1][0], log_subsampling[1] + reducedresno);
+
+                    if (!(y % ((uint64_t)1 << (reslevel->log2_prec_height + reducedresno + log_subsampling[1])) == 0 ||
+                        (y == tile_coord[1][0] && (try0 << reducedresno) % (1U << (reducedresno + reslevel->log2_prec_height)))))
+                        continue;
+
+                    if (!(x % ((uint64_t)1 << (reslevel->log2_prec_width + reducedresno + log_subsampling[0])) == 0 ||
+                        (x == tile_coord[0][0] && (trx0 << reducedresno) % (1U << (reducedresno + reslevel->log2_prec_width)))))
+                        continue;
+
+                    // check if a precinct exists
+                    prcx   = ff_jpeg2000_ceildivpow2(x, log_subsampling[0] + reducedresno) >> reslevel->log2_prec_width;
+                    prcy   = ff_jpeg2000_ceildivpow2(y, log_subsampling[1] + reducedresno) >> reslevel->log2_prec_height;
+                    prcx  -= ff_jpeg2000_ceildivpow2(comp->coord_o[0][0], reducedresno) >> reslevel->log2_prec_width;
+                    prcy  -= ff_jpeg2000_ceildivpow2(comp->coord_o[1][0], reducedresno) >> reslevel->log2_prec_height;
+                    precno = prcx + reslevel->num_precincts_x * prcy;
+
+                    if (prcx >= reslevel->num_precincts_x || prcy >= reslevel->num_precincts_y) {
+                        av_log(s->avctx, AV_LOG_WARNING, "prc %d %d outside limits %d %d\n",
+                               prcx, prcy, reslevel->num_precincts_x, reslevel->num_precincts_y);
+                        continue;
+                    }
+
+                    if ((ret = encode_packet(s, reslevel, precno, qntsty->expn + (reslevelno ? 3*reslevelno-2 : 0),
+                              qntsty->nguardbits, packetno++)) < 0)
+                        return ret;
+                    }
+                }
+            }
+    }
+    break;
+    case JPEG2000_PGOD_PCRL:
+        step_x = 32;
+        step_y = 32;
+        for (compno = 0; compno < s->ncomponents; compno++) {
+            Jpeg2000Component *comp     = tile->comp + compno;
+
+            for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++) {
+                uint8_t reducedresno = codsty->nreslevels - 1 -reslevelno; //  ==> N_L - r
+                Jpeg2000ResLevel *rlevel = comp->reslevel + reslevelno;
+                step_x = FFMIN(step_x, rlevel->log2_prec_width  + reducedresno);
+                step_y = FFMIN(step_y, rlevel->log2_prec_height + reducedresno);
+            }
+        }
+        if (step_x >= 31 || step_y >= 31){
+            avpriv_request_sample(s->avctx, "PCRL with large step");
+            return AVERROR_PATCHWELCOME;
+        }
+        step_x = 1<<step_x;
+        step_y = 1<<step_y;
+
+        for (y = tile_coord[1][0]; y < tile_coord[1][1]; y = (y/step_y + 1)*step_y) {
+            for (x = tile_coord[0][0]; x < tile_coord[0][1]; x = (x/step_x + 1)*step_x) {
+                for (compno = 0; compno < s->ncomponents; compno++) {
+                    Jpeg2000Component *comp     = tile->comp + compno;
+                    int log_subsampling[2] = { compno?s->chroma_shift[0]:0, compno?s->chroma_shift[1]:0};
+
+                    for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++) {
+                        unsigned prcx, prcy;
+                        int precno;
+                        uint8_t reducedresno = codsty->nreslevels - 1 -reslevelno; //  ==> N_L - r
+                        Jpeg2000ResLevel *reslevel = comp->reslevel + reslevelno;
+                        int trx0, try0;
+
+                        trx0 = ff_jpeg2000_ceildivpow2(tile_coord[0][0], log_subsampling[0] + reducedresno);
+                        try0 = ff_jpeg2000_ceildivpow2(tile_coord[1][0], log_subsampling[1] + reducedresno);
+
+                        if (!(y % ((uint64_t)1 << (reslevel->log2_prec_height + reducedresno + log_subsampling[1])) == 0 ||
+                            (y == tile_coord[1][0] && (try0 << reducedresno) % (1U << (reducedresno + reslevel->log2_prec_height)))))
+                            continue;
+
+                        if (!(x % ((uint64_t)1 << (reslevel->log2_prec_width + reducedresno + log_subsampling[0])) == 0 ||
+                            (x == tile_coord[0][0] && (trx0 << reducedresno) % (1U << (reducedresno + reslevel->log2_prec_width)))))
+                            continue;
+
+                        // check if a precinct exists
+                        prcx   = ff_jpeg2000_ceildivpow2(x, log_subsampling[0] + reducedresno) >> reslevel->log2_prec_width;
+                        prcy   = ff_jpeg2000_ceildivpow2(y, log_subsampling[1] + reducedresno) >> reslevel->log2_prec_height;
+                        prcx  -= ff_jpeg2000_ceildivpow2(comp->coord_o[0][0], reducedresno) >> reslevel->log2_prec_width;
+                        prcy  -= ff_jpeg2000_ceildivpow2(comp->coord_o[1][0], reducedresno) >> reslevel->log2_prec_height;
+
+                        precno = prcx + reslevel->num_precincts_x * prcy;
+
+                        if (prcx >= reslevel->num_precincts_x || prcy >= reslevel->num_precincts_y) {
+                            av_log(s->avctx, AV_LOG_WARNING, "prc %d %d outside limits %d %d\n",
+                                   prcx, prcy, reslevel->num_precincts_x, reslevel->num_precincts_y);
+                            continue;
+                        }
+                        if ((ret = encode_packet(s, reslevel, precno, qntsty->expn + (reslevelno ? 3*reslevelno-2 : 0),
+                                  qntsty->nguardbits, packetno++)) < 0)
+                            return ret;
+                    }
+                }
+            }
+        }
+    break;
+    case JPEG2000_PGOD_CPRL:
+        for (compno = 0; compno < s->ncomponents; compno++) {
+            Jpeg2000Component *comp     = tile->comp + compno;
+            int log_subsampling[2] = { compno?s->chroma_shift[0]:0, compno?s->chroma_shift[1]:0};
+            step_x = 32;
+            step_y = 32;
+
+            for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++) {
+                uint8_t reducedresno = codsty->nreslevels - 1 -reslevelno; //  ==> N_L - r
+                Jpeg2000ResLevel *rlevel = comp->reslevel + reslevelno;
+                step_x = FFMIN(step_x, rlevel->log2_prec_width  + reducedresno);
+                step_y = FFMIN(step_y, rlevel->log2_prec_height + reducedresno);
+            }
+            if (step_x >= 31 || step_y >= 31){
+                avpriv_request_sample(s->avctx, "CPRL with large step");
+                return AVERROR_PATCHWELCOME;
+            }
+            step_x = 1<<step_x;
+            step_y = 1<<step_y;
+
+            for (y = tile_coord[1][0]; y < tile_coord[1][1]; y = (y/step_y + 1)*step_y) {
+                for (x = tile_coord[0][0]; x < tile_coord[0][1]; x = (x/step_x + 1)*step_x) {
+                    for (reslevelno = 0; reslevelno < codsty->nreslevels; reslevelno++) {
+                        unsigned prcx, prcy;
+                        int precno;
+                        int trx0, try0;
+                        uint8_t reducedresno = codsty->nreslevels - 1 -reslevelno; //  ==> N_L - r
+                        Jpeg2000ResLevel *reslevel = comp->reslevel + reslevelno;
+
+                        trx0 = ff_jpeg2000_ceildivpow2(tile_coord[0][0], log_subsampling[0] + reducedresno);
+                        try0 = ff_jpeg2000_ceildivpow2(tile_coord[1][0], log_subsampling[1] + reducedresno);
+
+                        if (!(y % ((uint64_t)1 << (reslevel->log2_prec_height + reducedresno + log_subsampling[1])) == 0 ||
+                            (y == tile_coord[1][0] && (try0 << reducedresno) % (1U << (reducedresno + reslevel->log2_prec_height)))))
+                            continue;
+
+                        if (!(x % ((uint64_t)1 << (reslevel->log2_prec_width + reducedresno + log_subsampling[0])) == 0 ||
+                            (x == tile_coord[0][0] && (trx0 << reducedresno) % (1U << (reducedresno + reslevel->log2_prec_width)))))
+                            continue;
+
+                        // check if a precinct exists
+                        prcx   = ff_jpeg2000_ceildivpow2(x, log_subsampling[0] + reducedresno) >> reslevel->log2_prec_width;
+                        prcy   = ff_jpeg2000_ceildivpow2(y, log_subsampling[1] + reducedresno) >> reslevel->log2_prec_height;
+                        prcx  -= ff_jpeg2000_ceildivpow2(comp->coord_o[0][0], reducedresno) >> reslevel->log2_prec_width;
+                        prcy  -= ff_jpeg2000_ceildivpow2(comp->coord_o[1][0], reducedresno) >> reslevel->log2_prec_height;
+
+                        precno = prcx + reslevel->num_precincts_x * prcy;
+
+                        if (prcx >= reslevel->num_precincts_x || prcy >= reslevel->num_precincts_y) {
+                            av_log(s->avctx, AV_LOG_WARNING, "prc %d %d outside limits %d %d\n",
+                                   prcx, prcy, reslevel->num_precincts_x, reslevel->num_precincts_y);
+                            continue;
+                        }
+                        if ((ret = encode_packet(s, reslevel, precno, qntsty->expn + (reslevelno ? 3*reslevelno-2 : 0),
+                                  qntsty->nguardbits, packetno++)) < 0)
+                            return ret;
+                    }
+                }
+            }
+        }
+
+    }
+
     av_log(s->avctx, AV_LOG_DEBUG, "after tier2\n");
     return 0;
 }
@@ -1015,7 +1251,11 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
     s->lambda = s->picture->quality * LAMBDA_SCALE;
 
-    copy_frame(s);
+    if (avctx->pix_fmt == AV_PIX_FMT_BGR48 || avctx->pix_fmt == AV_PIX_FMT_GRAY16)
+        copy_frame_16(s);
+    else
+        copy_frame_8(s);
+
     reinit(s);
 
     if (s->format == CODEC_JP2) {
@@ -1180,12 +1420,16 @@ FF_ENABLE_DEPRECATION_WARNINGS
     s->width = avctx->width;
     s->height = avctx->height;
 
-    for (i = 0; i < 3; i++)
-        s->cbps[i] = 8;
+    for (i = 0; i < 3; i++) {
+        if (avctx->pix_fmt == AV_PIX_FMT_GRAY16 || avctx->pix_fmt == AV_PIX_FMT_RGB48)
+            s->cbps[i] = 16;
+        else
+            s->cbps[i] = 8;
+    }
 
-    if (avctx->pix_fmt == AV_PIX_FMT_RGB24){
+    if (avctx->pix_fmt == AV_PIX_FMT_RGB24 || avctx->pix_fmt == AV_PIX_FMT_RGB48){
         s->ncomponents = 3;
-    } else if (avctx->pix_fmt == AV_PIX_FMT_GRAY8 || avctx->pix_fmt == AV_PIX_FMT_PAL8){
+    } else if (avctx->pix_fmt == AV_PIX_FMT_GRAY8 || avctx->pix_fmt == AV_PIX_FMT_PAL8 || avctx->pix_fmt == AV_PIX_FMT_GRAY16){
         s->ncomponents = 1;
     } else{ // planar YUV
         s->planar = 1;
@@ -1230,7 +1474,14 @@ static const AVOption options[] = {
     { "pred",          "DWT Type",          OFFSET(pred),          AV_OPT_TYPE_INT,   { .i64 = 0           }, 0,         1,           VE, "pred"        },
     { "dwt97int",      NULL,                0,                     AV_OPT_TYPE_CONST, { .i64 = 0           }, INT_MIN, INT_MAX,       VE, "pred"        },
     { "dwt53",         NULL,                0,                     AV_OPT_TYPE_CONST, { .i64 = 0           }, INT_MIN, INT_MAX,       VE, "pred"        },
-
+    { "sop",           "SOP marker",        OFFSET(sop),           AV_OPT_TYPE_INT,   { .i64 = 0           }, 0,         1,           VE, },
+    { "eph",           "EPH marker",        OFFSET(eph),           AV_OPT_TYPE_INT,   { .i64 = 0           }, 0,         1,           VE, },
+    { "prog",          "Progression Order", OFFSET(prog),          AV_OPT_TYPE_INT,   { .i64 = 0           }, JPEG2000_PGOD_LRCP,         JPEG2000_PGOD_CPRL,           VE, "prog" },
+    { "lrcp",          NULL,                OFFSET(prog),          AV_OPT_TYPE_CONST,   { .i64 = JPEG2000_PGOD_LRCP           }, 0,         0,           VE, "prog" },
+    { "rlcp",          NULL,                OFFSET(prog),          AV_OPT_TYPE_CONST,   { .i64 = JPEG2000_PGOD_RLCP            }, 0,         0,           VE, "prog" },
+    { "rpcl",          NULL,                OFFSET(prog),          AV_OPT_TYPE_CONST,   { .i64 = JPEG2000_PGOD_RPCL            }, 0,         0,           VE, "prog" },
+    { "pcrl",          NULL,                OFFSET(prog),          AV_OPT_TYPE_CONST,   { .i64 = JPEG2000_PGOD_PCRL            }, 0,         0,           VE, "prog" },
+    { "cprl",          NULL,                OFFSET(prog),          AV_OPT_TYPE_CONST,   { .i64 = JPEG2000_PGOD_CPRL            }, 0,         0,           VE, "prog" },
     { NULL }
 };
 
@@ -1255,6 +1506,7 @@ AVCodec ff_jpeg2000_encoder = {
         AV_PIX_FMT_YUV420P, AV_PIX_FMT_YUV422P,
         AV_PIX_FMT_YUV410P, AV_PIX_FMT_YUV411P,
         AV_PIX_FMT_PAL8,
+        AV_PIX_FMT_RGB48, AV_PIX_FMT_GRAY16,
         AV_PIX_FMT_NONE
     },
     .priv_class     = &j2k_class,

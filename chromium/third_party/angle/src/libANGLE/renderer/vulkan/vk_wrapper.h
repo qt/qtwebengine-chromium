@@ -48,6 +48,7 @@ namespace vk
     FUNC(QueryPool)                \
     FUNC(RenderPass)               \
     FUNC(Sampler)                  \
+    FUNC(SamplerYcbcrConversion)   \
     FUNC(Semaphore)                \
     FUNC(ShaderModule)
 
@@ -468,7 +469,8 @@ class Allocator : public WrappedObject<Allocator, VmaAllocator>
     VkResult init(VkPhysicalDevice physicalDevice,
                   VkDevice device,
                   VkInstance instance,
-                  uint32_t apiVersion);
+                  uint32_t apiVersion,
+                  VkDeviceSize preferredLargeHeapBlockSize);
 
     // Initializes the buffer handle and memory allocation.
     VkResult createBuffer(const VkBufferCreateInfo &bufferCreateInfo,
@@ -604,6 +606,15 @@ class Sampler final : public WrappedObject<Sampler, VkSampler>
     Sampler() = default;
     void destroy(VkDevice device);
     VkResult init(VkDevice device, const VkSamplerCreateInfo &createInfo);
+};
+
+class SamplerYcbcrConversion final
+    : public WrappedObject<SamplerYcbcrConversion, VkSamplerYcbcrConversion>
+{
+  public:
+    SamplerYcbcrConversion() = default;
+    void destroy(VkDevice device);
+    VkResult init(VkDevice device, const VkSamplerYcbcrConversionCreateInfo &createInfo);
 };
 
 class Event final : public WrappedObject<Event, VkEvent>
@@ -1384,10 +1395,12 @@ ANGLE_INLINE void Allocator::destroy()
 ANGLE_INLINE VkResult Allocator::init(VkPhysicalDevice physicalDevice,
                                       VkDevice device,
                                       VkInstance instance,
-                                      uint32_t apiVersion)
+                                      uint32_t apiVersion,
+                                      VkDeviceSize preferredLargeHeapBlockSize)
 {
     ASSERT(!valid());
-    return vma::InitAllocator(physicalDevice, device, instance, apiVersion, &mHandle);
+    return vma::InitAllocator(physicalDevice, device, instance, apiVersion,
+                              preferredLargeHeapBlockSize, &mHandle);
 }
 
 ANGLE_INLINE VkResult Allocator::createBuffer(const VkBufferCreateInfo &bufferCreateInfo,
@@ -1696,6 +1709,23 @@ ANGLE_INLINE VkResult Sampler::init(VkDevice device, const VkSamplerCreateInfo &
 {
     ASSERT(!valid());
     return vkCreateSampler(device, &createInfo, nullptr, &mHandle);
+}
+
+// SamplerYuvConversion implementation.
+ANGLE_INLINE void SamplerYcbcrConversion::destroy(VkDevice device)
+{
+    if (valid())
+    {
+        vkDestroySamplerYcbcrConversionKHR(device, mHandle, nullptr);
+        mHandle = VK_NULL_HANDLE;
+    }
+}
+
+ANGLE_INLINE VkResult
+SamplerYcbcrConversion::init(VkDevice device, const VkSamplerYcbcrConversionCreateInfo &createInfo)
+{
+    ASSERT(!valid());
+    return vkCreateSamplerYcbcrConversionKHR(device, &createInfo, nullptr, &mHandle);
 }
 
 // Event implementation.

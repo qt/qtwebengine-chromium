@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <string>
 
-#include "testing/gtest/include/gtest/gtest.h"
 #include "net/third_party/quiche/src/http2/decoder/decode_buffer.h"
 #include "net/third_party/quiche/src/http2/decoder/decode_status.h"
 #include "net/third_party/quiche/src/http2/http2_constants.h"
@@ -230,7 +229,7 @@ TEST_F(Http2FrameHeaderDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2FrameHeaderDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -266,7 +265,7 @@ TEST_F(Http2PriorityFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2PriorityFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -298,7 +297,7 @@ TEST_F(Http2RstStreamFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2RstStreamFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -333,7 +332,7 @@ TEST_F(Http2SettingFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2SettingFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -366,7 +365,7 @@ TEST_F(Http2PushPromiseFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2PushPromiseFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -401,7 +400,7 @@ TEST_F(Http2PingFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2PingFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -449,7 +448,7 @@ TEST_F(Http2GoAwayFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2GoAwayFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -493,7 +492,7 @@ TEST_F(Http2WindowUpdateFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2WindowUpdateFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 //------------------------------------------------------------------------------
@@ -532,7 +531,7 @@ TEST_F(Http2AltSvcFieldsDecoderTest, DecodesLiteral) {
 }
 
 TEST_F(Http2AltSvcFieldsDecoderTest, DecodesRandomized) {
-  TestDecodingRandomizedStructures();
+  EXPECT_TRUE(TestDecodingRandomizedStructures());
 }
 
 }  // namespace

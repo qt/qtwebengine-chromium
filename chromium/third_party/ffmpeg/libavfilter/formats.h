@@ -20,6 +20,7 @@
 #define AVFILTER_FORMATS_H
 
 #include "avfilter.h"
+#include "version.h"
 
 /**
  * A list of supported formats for one end of a filter link. This is used
@@ -139,11 +140,11 @@ av_warn_unused_result
 AVFilterChannelLayouts *ff_all_channel_counts(void);
 
 av_warn_unused_result
+AVFilterChannelLayouts *ff_make_format64_list(const int64_t *fmts);
+
+#if LIBAVFILTER_VERSION_MAJOR < 8
 AVFilterChannelLayouts *avfilter_make_format64_list(const int64_t *fmts);
-
-av_warn_unused_result
-AVFilterChannelLayouts *ff_make_formatu64_list(const uint64_t *fmts);
-
+#endif
 
 /**
  * A helper for query_formats() which sets all links to the same list of channel
@@ -220,6 +221,16 @@ int ff_add_format(AVFilterFormats **avff, int64_t fmt);
  */
 av_warn_unused_result
 AVFilterFormats *ff_all_formats(enum AVMediaType type);
+
+/**
+ * Construct a formats list containing all pixel formats with certain
+ * properties
+ */
+av_warn_unused_result
+int ff_formats_pixdesc_filter(AVFilterFormats **rfmts, unsigned want, unsigned rej);
+
+//* format is software, non-planar with sub-sampling
+#define FF_PIX_FMT_FLAG_SW_FLAT_SUB (1 << 24)
 
 /**
  * Construct a formats list containing all planar sample formats.

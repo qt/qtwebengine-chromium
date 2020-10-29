@@ -17,7 +17,7 @@
 #include "src/core/SkWriteBuffer.h"
 
 #if SK_SUPPORT_GPU
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrPaint.h"
@@ -467,7 +467,7 @@ void SkLightingImageFilterInternal::drawRect(GrRenderTargetContext* renderTarget
     GrPaint paint;
     auto fp = this->makeFragmentProcessor(std::move(srcView), matrix, srcBounds, boundaryMode,
                                           *renderTargetContext->caps());
-    paint.addColorFragmentProcessor(std::move(fp));
+    paint.setColorFragmentProcessor(std::move(fp));
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
     renderTargetContext->fillRectToRect(nullptr, std::move(paint), GrAA::kNo, SkMatrix::I(),
                                         dstRect, srcRect);
@@ -487,7 +487,7 @@ sk_sp<SkSpecialImage> SkLightingImageFilterInternal::filterImageGPU(
 
     auto renderTargetContext = GrRenderTargetContext::Make(
             context, ctx.grColorType(), ctx.refColorSpace(), SkBackingFit::kApprox,
-            offsetBounds.size(), 1, GrMipMapped::kNo, inputView.proxy()->isProtected(),
+            offsetBounds.size(), 1, GrMipmapped::kNo, inputView.proxy()->isProtected(),
             kBottomLeft_GrSurfaceOrigin);
     if (!renderTargetContext) {
         return nullptr;
@@ -631,9 +631,6 @@ protected:
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
 private:
-    // We really just want the unaltered local coords, but the only way to get that right now is
-    // an identity coord transform.
-    GrCoordTransform fCoordTransform = {};
     sk_sp<const SkImageFilterLight> fLight;
     SkScalar fSurfaceScale;
     SkMatrix fFilterMatrix;
@@ -1632,8 +1629,8 @@ GrLightingEffect::GrLightingEffect(ClassID classID,
         child = GrTextureEffect::Make(std::move(view), kPremul_SkAlphaType, SkMatrix::I(), kSampler,
                                       caps);
     }
-    this->registerExplicitlySampledChild(std::move(child));
-    this->addCoordTransform(&fCoordTransform);
+    this->registerChild(std::move(child), SkSL::SampleUsage::Explicit());
+    this->setUsesSampleCoordsDirectly();
 }
 
 GrLightingEffect::GrLightingEffect(const GrLightingEffect& that)
@@ -1643,7 +1640,7 @@ GrLightingEffect::GrLightingEffect(const GrLightingEffect& that)
         , fFilterMatrix(that.fFilterMatrix)
         , fBoundaryMode(that.fBoundaryMode) {
     this->cloneAndRegisterAllChildProcessors(that);
-    this->addCoordTransform(&fCoordTransform);
+    this->setUsesSampleCoordsDirectly();
 }
 
 bool GrLightingEffect::onIsEqual(const GrFragmentProcessor& sBase) const {
@@ -1767,8 +1764,6 @@ void GrGLLightingEffect::emitCode(EmitArgs& args) {
         GrShaderVar("scale", kHalf_GrSLType),
     };
     SkString sobelFuncName;
-    SkString coords2D = fragBuilder->ensureCoords2D(args.fTransformedCoords[0].fVaryingPoint,
-                                                    args.fFp.sampleMatrix());
 
     fragBuilder->emitFunction(kHalf_GrSLType,
                               "sobel",
@@ -1804,7 +1799,7 @@ void GrGLLightingEffect::emitCode(EmitArgs& args) {
                               normalBody.c_str(),
                               &normalName);
 
-    fragBuilder->codeAppendf("\t\tfloat2 coord = %s;\n", coords2D.c_str());
+    fragBuilder->codeAppendf("\t\tfloat2 coord = %s;\n", args.fSampleCoord);
     fragBuilder->codeAppend("\t\thalf m[9];\n");
 
     const char* surfScale = uniformHandler->getUniformCStr(fSurfaceScaleUni);
@@ -1828,7 +1823,6 @@ void GrGLLightingEffect::emitCode(EmitArgs& args) {
                              args.fOutputColor, lightFunc.c_str(), normalName.c_str(), surfScale);
     fLight->emitLightColor(&le, uniformHandler, fragBuilder, "surfaceToLight");
     fragBuilder->codeAppend(");\n");
-    fragBuilder->codeAppendf("%s *= %s;\n", args.fOutputColor, args.fInputColor);
 }
 
 void GrGLLightingEffect::GenKey(const GrProcessor& proc,

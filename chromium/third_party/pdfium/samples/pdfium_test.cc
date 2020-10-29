@@ -14,11 +14,11 @@
 #include <string>
 #include <vector>
 
-#if defined PDF_ENABLE_SKIA && !defined _SKIA_SUPPORT_
+#if defined(PDF_ENABLE_SKIA) && !defined(_SKIA_SUPPORT_)
 #define _SKIA_SUPPORT_
 #endif
 
-#if defined PDF_ENABLE_SKIA_PATHS && !defined _SKIA_SUPPORT_PATHS_
+#if defined(PDF_ENABLE_SKIA_PATHS) && !defined(_SKIA_SUPPORT_PATHS_)
 #define _SKIA_SUPPORT_PATHS_
 #endif
 
@@ -66,7 +66,7 @@
 #define R_OK 4
 #endif
 
-// wordexp is a POSIX function that is only available on OSX and non-Android
+// wordexp is a POSIX function that is only available on macOS and non-Android
 // Linux platforms.
 #if defined(__APPLE__) || (defined(__linux__) && !defined(__ANDROID__))
 #define WORDEXP_AVAILABLE
@@ -76,22 +76,22 @@
 #include <wordexp.h>
 #endif  // WORDEXP_AVAILABLE
 
-enum OutputFormat {
-  OUTPUT_NONE,
-  OUTPUT_PAGEINFO,
-  OUTPUT_STRUCTURE,
-  OUTPUT_TEXT,
-  OUTPUT_PPM,
-  OUTPUT_PNG,
-  OUTPUT_ANNOT,
+enum class OutputFormat {
+  kNone,
+  kPageInfo,
+  kStructure,
+  kText,
+  kPpm,
+  kPng,
+  kAnnot,
 #ifdef _WIN32
-  OUTPUT_BMP,
-  OUTPUT_EMF,
-  OUTPUT_PS2,
-  OUTPUT_PS3,
+  kBmp,
+  kEmf,
+  kPs2,
+  kPs3,
 #endif
 #ifdef PDF_ENABLE_SKIA
-  OUTPUT_SKP,
+  kSkp,
 #endif
 };
 
@@ -119,11 +119,13 @@ struct Options {
   bool reverse_byte_order = false;
   bool save_attachments = false;
   bool save_images = false;
+  bool save_rendered_images = false;
   bool save_thumbnails = false;
   bool save_thumbnails_decoded = false;
   bool save_thumbnails_raw = false;
 #ifdef PDF_ENABLE_V8
   bool disable_javascript = false;
+  std::string js_flags;  // Extra flags to pass to v8 init.
 #ifdef PDF_ENABLE_XFA
   bool disable_xfa = false;
 #endif  // PDF_ENABLE_XFA
@@ -136,7 +138,7 @@ struct Options {
 #if defined(__APPLE__) || (defined(__linux__) && !defined(__ANDROID__))
   bool linux_no_system_fonts = false;
 #endif
-  OutputFormat output_format = OUTPUT_NONE;
+  OutputFormat output_format = OutputFormat::kNone;
   std::string password;
   std::string scale_factor_as_string;
   std::string exe_path;
@@ -452,7 +454,19 @@ bool ParseCommandLine(const std::vector<std::string>& args,
     } else if (cur_arg == "--save-attachments") {
       options->save_attachments = true;
     } else if (cur_arg == "--save-images") {
+      if (options->save_rendered_images) {
+        fprintf(stderr,
+                "--save-rendered-images conflicts with --save-images\n");
+        return false;
+      }
       options->save_images = true;
+    } else if (cur_arg == "--save-rendered-images") {
+      if (options->save_images) {
+        fprintf(stderr,
+                "--save-images conflicts with --save-rendered-images\n");
+        return false;
+      }
+      options->save_rendered_images = true;
     } else if (cur_arg == "--save-thumbs") {
       options->save_thumbnails = true;
     } else if (cur_arg == "--save-thumbs-dec") {
@@ -462,6 +476,12 @@ bool ParseCommandLine(const std::vector<std::string>& args,
 #ifdef PDF_ENABLE_V8
     } else if (cur_arg == "--disable-javascript") {
       options->disable_javascript = true;
+    } else if (ParseSwitchKeyValue(cur_arg, "--js-flags=", &value)) {
+      if (!options->js_flags.empty()) {
+        fprintf(stderr, "Duplicate --js-flags argument\n");
+        return false;
+      }
+      options->js_flags = value;
 #ifdef PDF_ENABLE_XFA
     } else if (cur_arg == "--disable-xfa") {
       options->disable_xfa = true;
@@ -476,36 +496,36 @@ bool ParseCommandLine(const std::vector<std::string>& args,
       options->linux_no_system_fonts = true;
 #endif
     } else if (cur_arg == "--ppm") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --ppm argument\n");
         return false;
       }
-      options->output_format = OUTPUT_PPM;
+      options->output_format = OutputFormat::kPpm;
     } else if (cur_arg == "--png") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --png argument\n");
         return false;
       }
-      options->output_format = OUTPUT_PNG;
+      options->output_format = OutputFormat::kPng;
     } else if (cur_arg == "--txt") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --txt argument\n");
         return false;
       }
-      options->output_format = OUTPUT_TEXT;
+      options->output_format = OutputFormat::kText;
     } else if (cur_arg == "--annot") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --annot argument\n");
         return false;
       }
-      options->output_format = OUTPUT_ANNOT;
+      options->output_format = OutputFormat::kAnnot;
 #ifdef PDF_ENABLE_SKIA
     } else if (cur_arg == "--skp") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --skp argument\n");
         return false;
       }
-      options->output_format = OUTPUT_SKP;
+      options->output_format = OutputFormat::kSkp;
 #endif  // PDF_ENABLE_SKIA
     } else if (ParseSwitchKeyValue(cur_arg, "--font-dir=", &value)) {
       if (!options->font_directory.empty()) {
@@ -529,29 +549,29 @@ bool ParseCommandLine(const std::vector<std::string>& args,
 
 #ifdef _WIN32
     } else if (cur_arg == "--emf") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --emf argument\n");
         return false;
       }
-      options->output_format = OUTPUT_EMF;
+      options->output_format = OutputFormat::kEmf;
     } else if (cur_arg == "--ps2") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --ps2 argument\n");
         return false;
       }
-      options->output_format = OUTPUT_PS2;
+      options->output_format = OutputFormat::kPs2;
     } else if (cur_arg == "--ps3") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --ps3 argument\n");
         return false;
       }
-      options->output_format = OUTPUT_PS3;
+      options->output_format = OutputFormat::kPs3;
     } else if (cur_arg == "--bmp") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --bmp argument\n");
         return false;
       }
-      options->output_format = OUTPUT_BMP;
+      options->output_format = OutputFormat::kBmp;
 #endif  // _WIN32
 
 #ifdef PDF_ENABLE_V8
@@ -584,17 +604,17 @@ bool ParseCommandLine(const std::vector<std::string>& args,
       }
       options->scale_factor_as_string = value;
     } else if (cur_arg == "--show-pageinfo") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --show-pageinfo argument\n");
         return false;
       }
-      options->output_format = OUTPUT_PAGEINFO;
+      options->output_format = OutputFormat::kPageInfo;
     } else if (cur_arg == "--show-structure") {
-      if (options->output_format != OUTPUT_NONE) {
+      if (options->output_format != OutputFormat::kNone) {
         fprintf(stderr, "Duplicate or conflicting --show-structure argument\n");
         return false;
       }
-      options->output_format = OUTPUT_STRUCTURE;
+      options->output_format = OutputFormat::kStructure;
     } else if (ParseSwitchKeyValue(cur_arg, "--pages=", &value)) {
       if (options->pages) {
         fprintf(stderr, "Duplicate --pages argument\n");
@@ -706,13 +726,13 @@ FPDF_BOOL NeedToPauseNow(IFSDK_PAUSE* p) {
   return true;
 }
 
-bool RenderPage(const std::string& name,
-                FPDF_DOCUMENT doc,
-                FPDF_FORMHANDLE form,
-                FPDF_FORMFILLINFO_PDFiumTest* form_fill_info,
-                const int page_index,
-                const Options& options,
-                const std::string& events) {
+bool ProcessPage(const std::string& name,
+                 FPDF_DOCUMENT doc,
+                 FPDF_FORMHANDLE form,
+                 FPDF_FORMFILLINFO_PDFiumTest* form_fill_info,
+                 const int page_index,
+                 const Options& options,
+                 const std::string& events) {
   FPDF_PAGE page = GetPageForIndex(form_fill_info, doc, page_index);
   if (!page)
     return false;
@@ -720,17 +740,19 @@ bool RenderPage(const std::string& name,
     SendPageEvents(form, page, events);
   if (options.save_images)
     WriteImages(page, name.c_str(), page_index);
+  if (options.save_rendered_images)
+    WriteRenderedImages(doc, page, name.c_str(), page_index);
   if (options.save_thumbnails)
     WriteThumbnail(page, name.c_str(), page_index);
   if (options.save_thumbnails_decoded)
     WriteDecodedThumbnailStream(page, name.c_str(), page_index);
   if (options.save_thumbnails_raw)
     WriteRawThumbnailStream(page, name.c_str(), page_index);
-  if (options.output_format == OUTPUT_PAGEINFO) {
+  if (options.output_format == OutputFormat::kPageInfo) {
     DumpPageInfo(page, page_index);
     return true;
   }
-  if (options.output_format == OUTPUT_STRUCTURE) {
+  if (options.output_format == OutputFormat::kStructure) {
     DumpPageStructure(page, page_index);
     return true;
   }
@@ -785,40 +807,40 @@ bool RenderPage(const std::string& name,
     std::string image_file_name;
     switch (options.output_format) {
 #ifdef _WIN32
-      case OUTPUT_BMP:
+      case OutputFormat::kBmp:
         image_file_name =
             WriteBmp(name.c_str(), page_index, buffer, stride, width, height);
         break;
 
-      case OUTPUT_EMF:
+      case OutputFormat::kEmf:
         WriteEmf(page, name.c_str(), page_index);
         break;
 
-      case OUTPUT_PS2:
-      case OUTPUT_PS3:
+      case OutputFormat::kPs2:
+      case OutputFormat::kPs3:
         WritePS(page, name.c_str(), page_index);
         break;
 #endif
-      case OUTPUT_TEXT:
-        WriteText(page, name.c_str(), page_index);
+      case OutputFormat::kText:
+        WriteText(text_page.get(), name.c_str(), page_index);
         break;
 
-      case OUTPUT_ANNOT:
+      case OutputFormat::kAnnot:
         WriteAnnot(page, name.c_str(), page_index);
         break;
 
-      case OUTPUT_PNG:
+      case OutputFormat::kPng:
         image_file_name =
             WritePng(name.c_str(), page_index, buffer, stride, width, height);
         break;
 
-      case OUTPUT_PPM:
+      case OutputFormat::kPpm:
         image_file_name =
             WritePpm(name.c_str(), page_index, buffer, stride, width, height);
         break;
 
 #ifdef PDF_ENABLE_SKIA
-      case OUTPUT_SKP: {
+      case OutputFormat::kSkp: {
         std::unique_ptr<SkPictureRecorder> recorder(
             reinterpret_cast<SkPictureRecorder*>(
                 FPDF_RenderPageSkp(page, width, height)));
@@ -845,11 +867,11 @@ bool RenderPage(const std::string& name,
   return !!bitmap;
 }
 
-void RenderPdf(const std::string& name,
-               const char* buf,
-               size_t len,
-               const Options& options,
-               const std::string& events) {
+void ProcessPdf(const std::string& name,
+                const char* buf,
+                size_t len,
+                const Options& options,
+                const std::string& events) {
   TestLoader loader({buf, len});
 
   FPDF_FILEACCESS file_access = {};
@@ -969,14 +991,14 @@ void RenderPdf(const std::string& name,
   FORM_DoDocumentOpenAction(form.get());
 
 #if _WIN32
-  if (options.output_format == OUTPUT_PS2)
+  if (options.output_format == OutputFormat::kPs2)
     FPDF_SetPrintMode(FPDF_PRINTMODE_POSTSCRIPT2);
-  else if (options.output_format == OUTPUT_PS3)
+  else if (options.output_format == OutputFormat::kPs3)
     FPDF_SetPrintMode(FPDF_PRINTMODE_POSTSCRIPT3);
 #endif
 
   int page_count = FPDF_GetPageCount(doc.get());
-  int rendered_pages = 0;
+  int processed_pages = 0;
   int bad_pages = 0;
   int first_page = options.pages ? options.first_page : 0;
   int last_page = options.pages ? options.last_page + 1 : page_count;
@@ -992,16 +1014,16 @@ void RenderPdf(const std::string& name,
         return;
       }
     }
-    if (RenderPage(name, doc.get(), form.get(), &form_callbacks, i, options,
-                   events)) {
-      ++rendered_pages;
+    if (ProcessPage(name, doc.get(), form.get(), &form_callbacks, i, options,
+                    events)) {
+      ++processed_pages;
     } else {
       ++bad_pages;
     }
   }
 
   FORM_DoDocumentAAction(form.get(), FPDFDOC_AACTION_WC);
-  fprintf(stderr, "Rendered %d pages.\n", rendered_pages);
+  fprintf(stderr, "Processed %d pages.\n", processed_pages);
   if (bad_pages)
     fprintf(stderr, "Skipped %d bad pages.\n", bad_pages);
 }
@@ -1043,52 +1065,58 @@ void ShowConfig() {
 
 constexpr char kUsageString[] =
     "Usage: pdfium_test [OPTION] [FILE]...\n"
-    "  --show-config        - print build options and exit\n"
-    "  --show-metadata      - print the file metadata\n"
-    "  --show-pageinfo      - print information about pages\n"
-    "  --show-structure     - print the structure elements from the document\n"
-    "  --send-events        - send input described by .evt file\n"
-    "  --mem-document       - load document with FPDF_LoadMemDocument()\n"
-    "  --render-oneshot     - render image without using progressive renderer\n"
-    "  --lcd-text           - render text optimized for LCD displays\n"
-    "  --no-nativetext      - render without using the native text output\n"
-    "  --grayscale          - render grayscale output\n"
-    "  --forced-color       - render in forced color mode\n"
-    "  --fill-to-stroke     - render fill as stroke in forced color mode\n"
-    "  --limit-cache        - render limiting image cache size\n"
-    "  --force-halftone     - render forcing halftone\n"
-    "  --printing           - render as if for printing\n"
-    "  --no-smoothtext      - render disabling text anti-aliasing\n"
-    "  --no-smoothimage     - render disabling image anti-alisasing\n"
-    "  --no-smoothpath      - render disabling path anti-aliasing\n"
-    "  --reverse-byte-order - render to BGRA, if supported by the output "
+    "  --show-config          - print build options and exit\n"
+    "  --show-metadata        - print the file metadata\n"
+    "  --show-pageinfo        - print information about pages\n"
+    "  --show-structure       - print the structure elements from the "
+    "document\n"
+    "  --send-events          - send input described by .evt file\n"
+    "  --mem-document         - load document with FPDF_LoadMemDocument()\n"
+    "  --render-oneshot       - render image without using progressive "
+    "renderer\n"
+    "  --lcd-text             - render text optimized for LCD displays\n"
+    "  --no-nativetext        - render without using the native text output\n"
+    "  --grayscale            - render grayscale output\n"
+    "  --forced-color         - render in forced color mode\n"
+    "  --fill-to-stroke       - render fill as stroke in forced color mode\n"
+    "  --limit-cache          - render limiting image cache size\n"
+    "  --force-halftone       - render forcing halftone\n"
+    "  --printing             - render as if for printing\n"
+    "  --no-smoothtext        - render disabling text anti-aliasing\n"
+    "  --no-smoothimage       - render disabling image anti-alisasing\n"
+    "  --no-smoothpath        - render disabling path anti-aliasing\n"
+    "  --reverse-byte-order   - render to BGRA, if supported by the output "
     "format\n"
-    "  --save-attachments   - write embedded attachments "
+    "  --save-attachments     - write embedded attachments "
     "<pdf-name>.attachment.<attachment-name>\n"
-    "  --save-images        - write embedded images "
+    "  --save-images          - write raw embedded images "
     "<pdf-name>.<page-number>.<object-number>.png\n"
-    "  --save-thumbs        - write page thumbnails "
+    "  --save-rendered-images - write embedded images as rendered on the page "
+    "<pdf-name>.<page-number>.<object-number>.png\n"
+    "  --save-thumbs          - write page thumbnails "
     "<pdf-name>.thumbnail.<page-number>.png\n"
-    "  --save-thumbs-dec    - write page thumbnails' decoded stream data"
+    "  --save-thumbs-dec      - write page thumbnails' decoded stream data"
     "<pdf-name>.thumbnail.decoded.<page-number>.png\n"
-    "  --save-thumbs-raw    - write page thumbnails' raw stream data"
+    "  --save-thumbs-raw      - write page thumbnails' raw stream data"
     "<pdf-name>.thumbnail.raw.<page-number>.png\n"
 #ifdef PDF_ENABLE_V8
-    "  --disable-javascript - do not execute JS in PDF files\n"
+    "  --disable-javascript   - do not execute JS in PDF files\n"
+    "  --js-flags=<flags>     - additional flags to pas to V8"
 #ifdef PDF_ENABLE_XFA
-    "  --disable-xfa        - do not process XFA forms\n"
+    "  --disable-xfa          - do not process XFA forms\n"
 #endif  // PDF_ENABLE_XFA
 #endif  // PDF_ENABLE_V8
 #ifdef ENABLE_CALLGRIND
-    "  --callgrind-delim    - delimit interesting section when using "
+    "  --callgrind-delim      - delimit interesting section when using "
     "callgrind\n"
 #endif
 #if defined(__APPLE__) || (defined(__linux__) && !defined(__ANDROID__))
-    "  --no-system-fonts    - do not use system fonts, overrides --font-dir\n"
+    "  --no-system-fonts      - do not use system fonts, overrides --font-dir\n"
 #endif
-    "  --bin-dir=<path>     - override path to v8 external data\n"
-    "  --font-dir=<path>    - override path to external fonts\n"
-    "  --scale=<number>     - scale output size by number (e.g. 0.5)\n"
+    "  --bin-dir=<path>       - override path to v8 external data\n"
+    "  --font-dir=<path>      - override path to external fonts\n"
+    "  --scale=<number>       - scale output size by number (e.g. 0.5)\n"
+    "  --password=<secret>    - password to decrypt the PDF with\n"
     "  --pages=<number>(-<number>) - only render the given 0-based page(s)\n"
 #ifdef _WIN32
     "  --bmp   - write page images <pdf-name>.<page-number>.bmp\n"
@@ -1146,9 +1174,9 @@ int main(int argc, const char* argv[]) {
   if (!options.disable_javascript) {
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
     platform = InitializeV8ForPDFiumWithStartupData(
-        options.exe_path, options.bin_directory, &snapshot);
+        options.exe_path, options.js_flags, options.bin_directory, &snapshot);
 #else   // V8_USE_EXTERNAL_STARTUP_DATA
-    platform = InitializeV8ForPDFium(options.exe_path);
+    platform = InitializeV8ForPDFium(options.exe_path, options.js_flags);
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
     config.m_pPlatform = platform.get();
 
@@ -1189,7 +1217,7 @@ int main(int argc, const char* argv[]) {
         GetFileContents(filename.c_str(), &file_length);
     if (!file_contents)
       continue;
-    fprintf(stderr, "Rendering PDF file %s.\n", filename.c_str());
+    fprintf(stderr, "Processing PDF file %s.\n", filename.c_str());
 
 #ifdef ENABLE_CALLGRIND
     if (options.callgrind_delimiters)
@@ -1215,7 +1243,7 @@ int main(int argc, const char* argv[]) {
         }
       }
     }
-    RenderPdf(filename, file_contents.get(), file_length, options, events);
+    ProcessPdf(filename, file_contents.get(), file_length, options, events);
 
 #ifdef PDF_ENABLE_V8
     if (!options.disable_javascript) {

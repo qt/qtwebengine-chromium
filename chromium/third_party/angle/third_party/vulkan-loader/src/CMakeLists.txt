@@ -24,10 +24,28 @@ project(Vulkan-Loader)
 
 enable_testing()
 
-add_definitions(-DAPI_NAME="Vulkan")
+set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS API_NAME="Vulkan")
+
+# Enable beta Vulkan extensions
+add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(PythonInterp 3 QUIET)
+
+if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/external/googletest)
+    option(BUILD_TESTS "Build Tests" ON)
+else()
+    option(BUILD_TESTS "Build Tests" OFF)
+endif()
+
+if(APPLE)
+    option(BUILD_STATIC_LOADER "Build a loader that can be statically linked" OFF)
+endif()
+
+if(BUILD_STATIC_LOADER)
+    message(WARNING "The ENABLE_STATIC_LOADER option has been set. Note that this will only work on MacOS and is not supported "
+        "or tested as part of the loader. Use it at your own risk.")
+endif()
 
 if (TARGET Vulkan::Headers)
     message(STATUS "Using Vulkan headers from Vulkan::Headers target")
@@ -46,7 +64,7 @@ else()
 
     # set up the Vulkan::Headers target for consistency
     add_library(vulkan-headers INTERFACE)
-    target_include_directories(vulkan-headers INTERFACE "${VulkanHeaders_INCLUDE_DIRS}")
+    target_include_directories(vulkan-headers SYSTEM INTERFACE "${VulkanHeaders_INCLUDE_DIRS}")
     add_library(Vulkan::Headers ALIAS vulkan-headers)
 endif()
 
@@ -103,6 +121,7 @@ if(UNIX AND NOT APPLE) # i.e.: Linux
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_WAYLAND_SUPPORT "Build Wayland WSI support" ON)
+    option(BUILD_WSI_DIRECTFB_SUPPORT "Build DirectFB WSI support" OFF)
 
     if(BUILD_WSI_XCB_SUPPORT)
         find_package(XCB REQUIRED)
@@ -114,39 +133,48 @@ if(UNIX AND NOT APPLE) # i.e.: Linux
 
     if(BUILD_WSI_WAYLAND_SUPPORT)
         find_package(Wayland REQUIRED)
-        include_directories(${WAYLAND_CLIENT_INCLUDE_DIR})
+        include_directories(SYSTEM ${WAYLAND_CLIENT_INCLUDE_DIR})
+    endif()
+
+    if(BUILD_WSI_DIRECTFB_SUPPORT)
+        find_package(DirectFB REQUIRED)
+        include_directories(SYSTEM ${DIRECTFB_INCLUDE_DIR})
     endif()
 endif()
 
 if(WIN32)
     option(ENABLE_WIN10_ONECORE "Link the loader with OneCore umbrella libraries" OFF)
-    option(ENABLE_STATIC_LOADER "Build the loader as a static library" OFF)
 endif()
 
 option(BUILD_LOADER "Build loader" ON)
 
-if(IS_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/external/googletest)
-    option(BUILD_TESTS "Build Tests" ON)
-else()
-    option(BUILD_TESTS "Build Tests" OFF)
-endif()
-
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-    set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-stringop-truncation -Wno-stringop-overflow")
+    set(COMMON_COMPILE_FLAGS "-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers")
     set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -fno-strict-aliasing -fno-builtin-memcmp")
 
     # For GCC version 7.1 or greater, we need to disable the implicit fallthrough warning since there's no consistent way to satisfy
     # all compilers until they all accept the C++17 standard
-    if(CMAKE_COMPILER_IS_GNUCC AND NOT (CMAKE_CXX_COMPILER_VERSION LESS 7.1))
-        set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wimplicit-fallthrough=0")
+    if(CMAKE_COMPILER_IS_GNUCC)
+        set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wno-stringop-truncation -Wno-stringop-overflow")
+        if(CMAKE_CXX_COMPILER_VERSION GREATER_EQUAL 7.1)
+            set(COMMON_COMPILE_FLAGS "${COMMON_COMPILE_FLAGS} -Wimplicit-fallthrough=0")
+        endif()
     endif()
 
     if(APPLE)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_COMPILE_FLAGS}")
+    #clang-cl on Windows
+    elseif((CMAKE_C_COMPILER_ID MATCHES "Clang") AND (CMAKE_CXX_SIMULATE_ID MATCHES "MSVC"))
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -std=c99 ${COMMON_COMPILE_FLAGS}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -std=c++11 -fno-rtti")
+    # clang (not clang-cl) or gcc
     else()
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 ${COMMON_COMPILE_FLAGS}")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fno-rtti")
     endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILE_FLAGS} -std=c++11 -fno-rtti")
+
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILE_FLAGS}")
+
     if(UNIX)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
@@ -175,18 +203,17 @@ endif()
 
 
 if(UNIX)
-    add_definitions(-DFALLBACK_CONFIG_DIRS="${FALLBACK_CONFIG_DIRS}")
-    add_definitions(-DFALLBACK_DATA_DIRS="${FALLBACK_DATA_DIRS}")
+    set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS FALLBACK_CONFIG_DIRS="${FALLBACK_CONFIG_DIRS}" FALLBACK_DATA_DIRS="${FALLBACK_DATA_DIRS}")
 
     if(NOT (SYSCONFDIR STREQUAL ""))
         # SYSCONFDIR is specified, use it and do not force /etc.
-        add_definitions(-DSYSCONFDIR="${SYSCONFDIR}")
+        set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS SYSCONFDIR="${SYSCONFDIR}")
     else()
-        add_definitions(-DSYSCONFDIR="${CMAKE_INSTALL_FULL_SYSCONFDIR}")
+        set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS SYSCONFDIR="${CMAKE_INSTALL_FULL_SYSCONFDIR}")
 
         # Make sure /etc is searched by the loader
         if(NOT (CMAKE_INSTALL_FULL_SYSCONFDIR STREQUAL "/etc"))
-            add_definitions(-DEXTRASYSCONFDIR="/etc")
+            set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS EXTRASYSCONFDIR="/etc")
         endif()
     endif()
 endif()

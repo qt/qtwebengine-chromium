@@ -23,10 +23,13 @@ include(CheckIncludeFile)
 
 check_function_exists(secure_getenv HAVE_SECURE_GETENV)
 check_function_exists(__secure_getenv HAVE___SECURE_GETENV)
+if(NOT (HAVE_SECURE_GETENV OR HAVE__SECURE_GETENV))
+    message(WARNING "Using non-secure environmental lookups. This loader will not properly disable environent variables when run with elevated permissions.")
+endif()
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/loader_cmake_config.h.in ${CMAKE_CURRENT_BINARY_DIR}/loader_cmake_config.h)
 
 if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN)
+    set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_WIN32_KHR WIN32_LEAN_AND_MEAN)
     if(MSVC AND NOT MSVC_VERSION LESS 1900)
         # Enable control flow guard
         message(STATUS "Building loader with control flow guard")
@@ -35,21 +38,24 @@ if(WIN32)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /guard:cf")
     endif()
 elseif(ANDROID)
-    add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR)
+    set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_ANDROID_KHR)
 elseif(APPLE)
-    add_definitions(-DVK_USE_PLATFORM_MACOS_MVK)
-    add_definitions(-DVK_USE_PLATFORM_METAL_EXT)
+    set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_MACOS_MVK VK_USE_PLATFORM_METAL_EXT)
 elseif(UNIX AND NOT APPLE) # i.e.: Linux
     if(BUILD_WSI_XCB_SUPPORT)
-        add_definitions(-DVK_USE_PLATFORM_XCB_KHR)
+    set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_XCB_KHR)
     endif()
 
     if(BUILD_WSI_XLIB_SUPPORT)
-        add_definitions(-DVK_USE_PLATFORM_XLIB_KHR -DVK_USE_PLATFORM_XLIB_XRANDR_EXT)
+        set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_XLIB_KHR VK_USE_PLATFORM_XLIB_XRANDR_EXT)
     endif()
 
     if(BUILD_WSI_WAYLAND_SUPPORT)
-        add_definitions(-DVK_USE_PLATFORM_WAYLAND_KHR)
+        set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_WAYLAND_KHR)
+    endif()
+
+    if(BUILD_WSI_DIRECTFB_SUPPORT)
+        set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS VK_USE_PLATFORM_DIRECTFB_EXT)
     endif()
 else()
     message(FATAL_ERROR "Unsupported Platform!")
@@ -115,6 +121,10 @@ set(NORMAL_LOADER_SRCS
     murmurhash.c
     murmurhash.h)
 
+if(WIN32)
+    set(NORMAL_LOADER_SRCS ${NORMAL_LOADER_SRCS} adapters.h)
+endif()
+
 set(OPT_LOADER_SRCS dev_ext_trampoline.c phys_dev_ext.c)
 
 # Check for assembler support
@@ -154,19 +164,17 @@ else(UNIX AND NOT APPLE) # i.e.: Linux
 
     check_include_file("cet.h" HAVE_CET_H)
     if(HAVE_CET_H)
-        add_definitions(-DHAVE_CET_H)
+        set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS HAVE_CET_H)
     endif()
-    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/asm_test.S
-               ".intel_syntax noprefix\n.text\n.global sample\nsample:\nmov ecx, [eax + 16]\n")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-    try_compile(ASSEMBLER_WORKS ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/asm_test.S)
-    file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/asm_test.S)
+    try_compile(ASSEMBLER_WORKS ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/asm_test.S)
     if(ASSEMBLER_WORKS)
         set(OPT_LOADER_SRCS ${OPT_LOADER_SRCS} unknown_ext_chain_gas.S)
         add_executable(asm_offset asm_offset.c)
         target_link_libraries(asm_offset Vulkan::Headers)
         add_custom_command(OUTPUT gen_defines.asm DEPENDS asm_offset COMMAND asm_offset GAS)
         add_custom_target(loader_asm_gen_files DEPENDS gen_defines.asm)
+        target_compile_definitions(asm_offset PRIVATE _XOPEN_SOURCE=500) # hush compiler warnings for readlink
     else()
         message(WARNING "Could not find working x86 GAS assembler\n${ASM_FAILURE_MSG}")
         set(OPT_LOADER_SRCS ${OPT_LOADER_SRCS} unknown_ext_chain.c)
@@ -186,31 +194,19 @@ if(WIN32)
     target_compile_options(loader-opt PUBLIC ${MSVC_LOADER_COMPILE_OPTIONS})
     target_include_directories(loader-opt PRIVATE "$<TARGET_PROPERTY:Vulkan::Headers,INTERFACE_INCLUDE_DIRECTORIES>")
 
-    if(NOT ENABLE_STATIC_LOADER)
-        target_compile_definitions(loader-norm PUBLIC LOADER_DYNAMIC_LIB)
-        target_compile_definitions(loader-opt PUBLIC LOADER_DYNAMIC_LIB)
-
-        add_library(vulkan
-                    SHARED
-                    $<TARGET_OBJECTS:loader-opt>
-                    $<TARGET_OBJECTS:loader-norm>
-                    $<TARGET_OBJECTS:loader-unknown-chain>
-                    ${CMAKE_CURRENT_SOURCE_DIR}/vulkan-1.def
-                    ${CMAKE_CURRENT_SOURCE_DIR}/loader.rc)
-        set_target_properties(vulkan
-                              PROPERTIES LINK_FLAGS_DEBUG
-                                         "/ignore:4098"
-                                         OUTPUT_NAME
-                                         vulkan-1)
-        target_link_libraries(vulkan Vulkan::Headers)
-    else()
-        add_library(vulkan
-                    STATIC
-                    $<TARGET_OBJECTS:loader-opt>
-                    $<TARGET_OBJECTS:loader-norm>
-                    $<TARGET_OBJECTS:loader-unknown-chain>)
-        set_target_properties(vulkan PROPERTIES OUTPUT_NAME VKstatic.1)
-    endif()
+    add_library(vulkan
+                SHARED
+                $<TARGET_OBJECTS:loader-opt>
+                $<TARGET_OBJECTS:loader-norm>
+                $<TARGET_OBJECTS:loader-unknown-chain>
+                ${CMAKE_CURRENT_SOURCE_DIR}/vulkan-1.def
+                ${CMAKE_CURRENT_SOURCE_DIR}/loader.rc)
+    set_target_properties(vulkan
+                          PROPERTIES LINK_FLAGS_DEBUG
+                                     "/ignore:4098"
+                                     OUTPUT_NAME
+                                     vulkan-1)
+    target_link_libraries(vulkan Vulkan::Headers)
 
     if(ENABLE_WIN10_ONECORE)
         target_link_libraries(vulkan OneCoreUAP.lib LIBCMT.LIB LIBCMTD.LIB LIBVCRUNTIME.LIB LIBUCRT.LIB)
@@ -231,17 +227,19 @@ else()
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-typedef-redefinition")
     endif()
 
-    add_library(vulkan SHARED ${NORMAL_LOADER_SRCS} ${OPT_LOADER_SRCS})
+    if(APPLE AND BUILD_STATIC_LOADER)
+        add_library(vulkan STATIC ${NORMAL_LOADER_SRCS} ${OPT_LOADER_SRCS})
+    else()
+        add_library(vulkan SHARED ${NORMAL_LOADER_SRCS} ${OPT_LOADER_SRCS})
+    endif()
     add_dependencies(vulkan loader_asm_gen_files)
-    target_compile_definitions(vulkan PUBLIC -DLOADER_DYNAMIC_LIB)
     set_target_properties(vulkan
                           PROPERTIES SOVERSION
                                      "1"
                                      VERSION
                                      "${VulkanHeaders_VERSION_MAJOR}.${VulkanHeaders_VERSION_MINOR}.${VulkanHeaders_VERSION_PATCH}")
-    target_link_libraries(vulkan ${CMAKE_DL_LIBS} -lpthread -lm)
+    target_link_libraries(vulkan ${CMAKE_DL_LIBS} pthread m)
     target_link_libraries(vulkan Vulkan::Headers)
-
     if(APPLE)
         find_library(COREFOUNDATION_LIBRARY NAMES CoreFoundation)
         target_link_libraries(vulkan "-framework CoreFoundation")
@@ -264,9 +262,12 @@ else()
             ${VulkanHeaders_INCLUDE_DIRS}/vulkan/vulkan_xlib_xrandr.h
             ${VulkanHeaders_INCLUDE_DIRS}/vulkan/vulkan.h
             ${VulkanHeaders_INCLUDE_DIRS}/vulkan/vulkan.hpp)
-        add_library(vulkan-framework SHARED ${NORMAL_LOADER_SRCS} ${OPT_LOADER_SRCS} ${FRAMEWORK_HEADERS})
+        if(BUILD_STATIC_LOADER)
+            add_library(vulkan-framework STATIC ${NORMAL_LOADER_SRCS} ${OPT_LOADER_SRCS} ${FRAMEWORK_HEADERS})
+        else()
+            add_library(vulkan-framework SHARED ${NORMAL_LOADER_SRCS} ${OPT_LOADER_SRCS} ${FRAMEWORK_HEADERS})
+        endif()
         add_dependencies(vulkan-framework loader_asm_gen_files)
-        target_compile_definitions(vulkan-framework PUBLIC -DLOADER_DYNAMIC_LIB)
         target_link_libraries(vulkan-framework -ldl -lpthread -lm "-framework CoreFoundation")
         target_link_libraries(vulkan-framework Vulkan::Headers)
 
@@ -293,6 +294,8 @@ else()
     endif()
 
     if(NOT APPLE)
+        target_compile_definitions(vulkan PRIVATE _XOPEN_SOURCE=500) # hush compiler warnings for readlink
+
         # Generate pkg-config file.
         include(FindPkgConfig QUIET)
         if(PKG_CONFIG_FOUND)

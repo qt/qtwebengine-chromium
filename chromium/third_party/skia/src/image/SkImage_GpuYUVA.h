@@ -9,10 +9,10 @@
 #define SkImage_GpuYUVA_DEFINED
 
 #include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContext.h"
 #include "src/core/SkCachedData.h"
 #include "src/image/SkImage_GpuBase.h"
 
+class GrContext;
 class GrTexture;
 struct SkYUVASizeInfo;
 
@@ -24,7 +24,7 @@ class SkImage_GpuYUVA : public SkImage_GpuBase {
 public:
     friend class GrYUVAImageTextureMaker;
 
-    SkImage_GpuYUVA(sk_sp<GrContext>,
+    SkImage_GpuYUVA(sk_sp<GrRecordingContext>,
                     SkISize size,
                     uint32_t uniqueID,
                     SkYUVColorSpace,
@@ -34,7 +34,7 @@ public:
                     GrSurfaceOrigin,
                     sk_sp<SkColorSpace>);
 
-    GrSemaphoresSubmitted onFlush(GrContext*, const GrFlushInfo&) override;
+    GrSemaphoresSubmitted onFlush(GrDirectContext*, const GrFlushInfo&) override;
 
     // This returns the single backing proxy if the YUV channels have already been flattened but
     // nullptr if they have not.
@@ -47,12 +47,12 @@ public:
         return true;
     }
 
-    sk_sp<SkImage> onMakeColorTypeAndColorSpace(GrRecordingContext*,
-                                                SkColorType, sk_sp<SkColorSpace>) const final;
+    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>,
+                                                GrDirectContext*) const final;
 
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const final;
 
-    virtual bool isYUVA() const override { return true; }
+    bool isYUVA() const override { return true; }
 
     bool setupMipmapsForPlanes(GrRecordingContext*) const;
 
@@ -70,7 +70,7 @@ public:
     /**
      * This is the implementation of SkDeferredDisplayListRecorder::makeYUVAPromiseTexture.
      */
-    static sk_sp<SkImage> MakePromiseYUVATexture(GrContext* context,
+    static sk_sp<SkImage> MakePromiseYUVATexture(GrRecordingContext*,
                                                  SkYUVColorSpace yuvColorSpace,
                                                  const GrBackendFormat yuvaFormats[],
                                                  const SkISize yuvaSizes[],
@@ -86,7 +86,7 @@ public:
                                                  PromiseImageApiVersion);
 
 private:
-    SkImage_GpuYUVA(const SkImage_GpuYUVA* image, sk_sp<SkColorSpace>);
+    SkImage_GpuYUVA(sk_sp<GrContext>, const SkImage_GpuYUVA* image, sk_sp<SkColorSpace>);
 
     void flattenToRGB(GrRecordingContext*) const;
 

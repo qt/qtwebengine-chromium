@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 /*
  * Copyright (C) 2006, 2007, 2008 Apple Inc.  All rights reserved.
  * Copyright (C) 2007 Matt Lilek (pewtermoose@gmail.com).
@@ -134,7 +137,6 @@ export class MainImpl {
   }
 
   _initializeExperiments() {
-    // Keep this sorted alphabetically: both keys and values.
     Root.Runtime.experiments.register('applyCustomStylesheet', 'Allow custom UI themes');
     Root.Runtime.experiments.register('captureNodeCreationStacks', 'Capture node creation stacks');
     Root.Runtime.experiments.register('sourcesPrettyPrint', 'Automatically pretty print in the Sources Panel');
@@ -150,10 +152,10 @@ export class MainImpl {
     Root.Runtime.experiments.register('emptySourceMapAutoStepping', 'Empty sourcemap auto-stepping');
     Root.Runtime.experiments.register('inputEventsOnTimelineOverview', 'Input events on Timeline overview', true);
     Root.Runtime.experiments.register('liveHeapProfile', 'Live heap profile', true);
-    Root.Runtime.experiments.register('mediaInspector', 'Media Element Inspection');
     Root.Runtime.experiments.register('nativeHeapProfiler', 'Native memory sampling heap profiler', true);
     Root.Runtime.experiments.register('protocolMonitor', 'Protocol Monitor');
     Root.Runtime.experiments.register('issuesPane', 'Issues Pane');
+    Root.Runtime.experiments.register('developerResourcesView', 'Show developer resources view');
     Root.Runtime.experiments.register(
         'recordCoverageWithPerformanceTracing', 'Record coverage while performance tracing');
     Root.Runtime.experiments.register('samplingHeapProfilerTimeline', 'Sampling heap profiler timeline', true);
@@ -161,6 +163,7 @@ export class MainImpl {
         'showOptionToNotTreatGlobalObjectsAsRoots',
         'Show option to take heap snapshot where globals are not treated as root');
     Root.Runtime.experiments.register('sourceDiff', 'Source diff');
+    Root.Runtime.experiments.register('sourceOrderViewer', 'Source order viewer');
     Root.Runtime.experiments.register('spotlight', 'Spotlight', true);
     Root.Runtime.experiments.register('webauthnPane', 'WebAuthn Pane');
     Root.Runtime.experiments.register(
@@ -183,7 +186,7 @@ export class MainImpl {
     // CSS Grid
     Root.Runtime.experiments.register(
         'cssGridFeatures',
-        'Enable new CSS Grid debugging features (configuration options available in Settings after restart)');
+        'Enable new CSS Grid debugging features (configuration options available in Layout sidebar pane in Elements after restart)');
 
     // Layout personalization
     Root.Runtime.experiments.register('movableTabs', 'Enable support to move tabs between panels');
@@ -198,12 +201,17 @@ export class MainImpl {
       'backgroundServicesNotifications',
       'backgroundServicesPushMessaging',
       'backgroundServicesPaymentHandler',
+      'customKeyboardShortcuts',
       'issuesPane',
     ]);
 
     if (Host.InspectorFrontendHost.isUnderTest() &&
         Root.Runtime.queryParam('test').includes('live-line-level-heap-profile.js')) {
       Root.Runtime.experiments.enableForTest('liveHeapProfile');
+    }
+
+    for (const experiment of Root.Runtime.experiments.enabledExperiments()) {
+      Host.userMetrics.experimentEnabledAtLaunch(experiment.name);
     }
   }
 
@@ -219,9 +227,16 @@ export class MainImpl {
     self.Persistence.isolatedFileSystemManager =
         Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance();
 
-    const themeSetting = Common.Settings.Settings.instance().createSetting('uiTheme', 'systemPreferred');
+    const defaultThemeSetting = 'systemPreferred';
+    const themeSetting = Common.Settings.Settings.instance().createSetting('uiTheme', defaultThemeSetting);
     UI.UIUtils.initializeUIUtils(document, themeSetting);
-    themeSetting.addChangeListener(Components.Reload.reload.bind(Components));
+    if (themeSetting.get() === defaultThemeSetting) {
+      const darkThemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      darkThemeMediaQuery.addEventListener('change', () => {
+        UI.InspectorView.InspectorView.instance().displayReloadRequiredWarning(
+            ls`The system-preferred color scheme has changed. To apply this change to DevTools, reload.`);
+      });
+    }
 
     UI.UIUtils.installComponentRootStyles(/** @type {!Element} */ (document.body));
 
@@ -235,7 +250,7 @@ export class MainImpl {
     UI.ContextMenu.ContextMenu.installHandler(document);
     UI.Tooltip.Tooltip.installHandler(document);
     self.SDK.consoleModel = SDK.ConsoleModel.ConsoleModel.instance();
-    self.Components.dockController = new Components.DockController.DockController(canDock);
+    self.UI.dockController = new UI.DockController.DockController(canDock);
     self.SDK.multitargetNetworkManager = SDK.NetworkManager.MultitargetNetworkManager.instance({forceNew: true});
     self.SDK.domDebuggerManager = new SDK.DOMDebuggerModel.DOMDebuggerManager();
     SDK.SDKModel.TargetManager.instance().addEventListener(
@@ -284,7 +299,7 @@ export class MainImpl {
     self.Persistence.networkPersistenceManager = new Persistence.NetworkPersistenceManager.NetworkPersistenceManager(
         Workspace.Workspace.WorkspaceImpl.instance());
 
-    new ExecutionContextSelector(SDK.SDKModel.TargetManager.instance(), self.UI.context);
+    new ExecutionContextSelector(SDK.SDKModel.TargetManager.instance(), UI.Context.Context.instance());
     self.Bindings.blackboxManager = Bindings.BlackboxManager.BlackboxManager.instance({
       forceNew: true,
       debuggerWorkspaceBinding: Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
@@ -292,8 +307,10 @@ export class MainImpl {
 
     new PauseListener();
 
-    self.UI.actionRegistry = new UI.ActionRegistry.ActionRegistry();
-    self.UI.shortcutRegistry = new UI.ShortcutRegistry.ShortcutRegistry(self.UI.actionRegistry);
+    const actionRegistryInstance = UI.ActionRegistry.ActionRegistry.instance({forceNew: true});
+    // Required for legacy a11y layout tests
+    self.UI.actionRegistry = actionRegistryInstance;
+    self.UI.shortcutRegistry = new UI.ShortcutRegistry.ShortcutRegistry(actionRegistryInstance);
     UI.ShortcutsScreen.ShortcutsScreen.registerShortcuts();
     this._registerMessageSinkListener();
 
@@ -309,10 +326,10 @@ export class MainImpl {
     MainImpl.time('Main._showAppUI');
     const app = /** @type {!Common.AppProvider.AppProvider} */ (appProvider).createApp();
     // It is important to kick controller lifetime after apps are instantiated.
-    self.Components.dockController.initialize();
+    self.UI.dockController.initialize();
     app.presentUI(document);
 
-    const toggleSearchNodeAction = self.UI.actionRegistry.action('elements.toggle-element-search');
+    const toggleSearchNodeAction = UI.ActionRegistry.ActionRegistry.instance().action('elements.toggle-element-search');
     // TODO: we should not access actions from other modules.
     if (toggleSearchNodeAction) {
       Host.InspectorFrontendHost.InspectorFrontendHostInstance.events.addEventListener(
@@ -456,7 +473,7 @@ export class MainImpl {
         shortcut.makeDescriptor(UI.KeyboardShortcut.Keys.Tilde, UI.KeyboardShortcut.Modifiers.Ctrl),
         toggleConsoleLabel);
     section.addKey(shortcut.makeDescriptor(UI.KeyboardShortcut.Keys.Esc), Common.UIString.UIString('Toggle drawer'));
-    if (self.Components.dockController.canDock()) {
+    if (self.UI.dockController.canDock()) {
       section.addKey(
           shortcut.makeDescriptor('M', UI.KeyboardShortcut.Modifiers.CtrlOrMeta | UI.KeyboardShortcut.Modifiers.Shift),
           Common.UIString.UIString('Toggle device mode'));
@@ -627,7 +644,7 @@ export class MainMenuItem {
    * @param {!UI.ContextMenu.ContextMenu} contextMenu
    */
   _handleContextMenu(contextMenu) {
-    if (self.Components.dockController.canDock()) {
+    if (self.UI.dockController.canDock()) {
       const dockItemElement = document.createElement('div');
       dockItemElement.classList.add('flex-centered');
       dockItemElement.classList.add('flex-auto');
@@ -654,18 +671,17 @@ export class MainMenuItem {
       right.addEventListener(UI.Toolbar.ToolbarButton.Events.MouseDown, event => event.data.consume());
       left.addEventListener(UI.Toolbar.ToolbarButton.Events.MouseDown, event => event.data.consume());
       undock.addEventListener(
-          UI.Toolbar.ToolbarButton.Events.Click, setDockSide.bind(null, Components.DockController.State.Undocked));
+          UI.Toolbar.ToolbarButton.Events.Click, setDockSide.bind(null, UI.DockController.State.Undocked));
       bottom.addEventListener(
-          UI.Toolbar.ToolbarButton.Events.Click,
-          setDockSide.bind(null, Components.DockController.State.DockedToBottom));
+          UI.Toolbar.ToolbarButton.Events.Click, setDockSide.bind(null, UI.DockController.State.DockedToBottom));
       right.addEventListener(
-          UI.Toolbar.ToolbarButton.Events.Click, setDockSide.bind(null, Components.DockController.State.DockedToRight));
+          UI.Toolbar.ToolbarButton.Events.Click, setDockSide.bind(null, UI.DockController.State.DockedToRight));
       left.addEventListener(
-          UI.Toolbar.ToolbarButton.Events.Click, setDockSide.bind(null, Components.DockController.State.DockedToLeft));
-      undock.setToggled(self.Components.dockController.dockSide() === Components.DockController.State.Undocked);
-      bottom.setToggled(self.Components.dockController.dockSide() === Components.DockController.State.DockedToBottom);
-      right.setToggled(self.Components.dockController.dockSide() === Components.DockController.State.DockedToRight);
-      left.setToggled(self.Components.dockController.dockSide() === Components.DockController.State.DockedToLeft);
+          UI.Toolbar.ToolbarButton.Events.Click, setDockSide.bind(null, UI.DockController.State.DockedToLeft));
+      undock.setToggled(self.UI.dockController.dockSide() === UI.DockController.State.Undocked);
+      bottom.setToggled(self.UI.dockController.dockSide() === UI.DockController.State.DockedToBottom);
+      right.setToggled(self.UI.dockController.dockSide() === UI.DockController.State.DockedToRight);
+      left.setToggled(self.UI.dockController.dockSide() === UI.DockController.State.DockedToLeft);
       dockItemToolbar.appendToolbarItem(undock);
       dockItemToolbar.appendToolbarItem(left);
       dockItemToolbar.appendToolbarItem(bottom);
@@ -699,17 +715,17 @@ export class MainMenuItem {
      */
     function setDockSide(side) {
       const hadKeyboardFocus = document.deepActiveElement().hasAttribute('data-keyboard-focus');
-      self.Components.dockController.once(Components.DockController.Events.AfterDockSideChanged).then(() => {
+      self.UI.dockController.once(UI.DockController.Events.AfterDockSideChanged).then(() => {
         button.focus();
         if (hadKeyboardFocus) {
           UI.UIUtils.markAsFocusedByKeyboard(button);
         }
       });
-      self.Components.dockController.setDockSide(side);
+      self.UI.dockController.setDockSide(side);
       contextMenu.discard();
     }
 
-    if (self.Components.dockController.dockSide() === Components.DockController.State.Undocked &&
+    if (self.UI.dockController.dockSide() === UI.DockController.State.Undocked &&
         SDK.SDKModel.TargetManager.instance().mainTarget() &&
         SDK.SDKModel.TargetManager.instance().mainTarget().type() === SDK.SDKModel.Type.Frame) {
       contextMenu.defaultSection().appendAction(
@@ -796,7 +812,7 @@ export class PauseListener {
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebuggerPaused, this._debuggerPaused, this);
     const debuggerModel = /** @type {!SDK.DebuggerModel.DebuggerModel} */ (event.data);
     const debuggerPausedDetails = debuggerModel.debuggerPausedDetails();
-    self.UI.context.setFlavor(SDK.SDKModel.Target, debuggerModel.target());
+    UI.Context.Context.instance().setFlavor(SDK.SDKModel.Target, debuggerModel.target());
     Common.Revealer.reveal(debuggerPausedDetails);
   }
 }

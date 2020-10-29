@@ -213,7 +213,7 @@ dsp::MaskBlendFunc GetMaskBlendFunc(const dsp::Dsp& dsp, bool is_inter_intra,
                                     bool is_wedge_inter_intra,
                                     int subsampling_x, int subsampling_y) {
   return (is_inter_intra && !is_wedge_inter_intra)
-             ? dsp.mask_blend[0][is_inter_intra]
+             ? dsp.mask_blend[0][/*is_inter_intra=*/true]
              : dsp.mask_blend[subsampling_x + subsampling_y][is_inter_intra];
 }
 
@@ -804,9 +804,7 @@ bool Tile::InterPrediction(const Block& block, const Plane plane, const int x,
                             dest, dest_stride);
   } else if (prediction_parameters.motion_mode == kMotionModeObmc) {
     // Obmc mode is allowed only for single reference (!is_compound).
-    if (!ObmcPrediction(block, plane, prediction_width, prediction_height)) {
-      return false;
-    }
+    return ObmcPrediction(block, plane, prediction_width, prediction_height);
   } else if (is_inter_intra) {
     // InterIntra and obmc must be mutually exclusive.
     InterIntraPrediction(
@@ -1187,9 +1185,11 @@ bool Tile::BlockInterPrediction(
   }
 
   const int has_horizontal_filter = static_cast<int>(
-      ((mv.mv[MotionVector::kColumn] * (1 << (1 - subsampling_x))) & 15) != 0);
+      ((mv.mv[MotionVector::kColumn] * (1 << (1 - subsampling_x))) &
+       kSubPixelMask) != 0);
   const int has_vertical_filter = static_cast<int>(
-      ((mv.mv[MotionVector::kRow] * (1 << (1 - subsampling_y))) & 15) != 0);
+      ((mv.mv[MotionVector::kRow] * (1 << (1 - subsampling_y))) &
+       kSubPixelMask) != 0);
   void* const output =
       (is_compound || is_inter_intra) ? prediction : static_cast<void*>(dest);
   ptrdiff_t output_stride = (is_compound || is_inter_intra)

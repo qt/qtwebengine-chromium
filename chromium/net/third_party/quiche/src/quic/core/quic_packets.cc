@@ -456,18 +456,17 @@ SerializedPacket::SerializedPacket(QuicPacketNumber packet_number,
     : encrypted_buffer(encrypted_buffer),
       encrypted_length(encrypted_length),
       has_crypto_handshake(NOT_HANDSHAKE),
-      num_padding_bytes(0),
       packet_number(packet_number),
       packet_number_length(packet_number_length),
       encryption_level(ENCRYPTION_INITIAL),
       has_ack(has_ack),
       has_stop_waiting(has_stop_waiting),
       transmission_type(NOT_RETRANSMISSION),
-      has_ack_frame_copy(false) {}
+      has_ack_frame_copy(false),
+      fate(SEND_TO_WRITER) {}
 
 SerializedPacket::SerializedPacket(SerializedPacket&& other)
     : has_crypto_handshake(other.has_crypto_handshake),
-      num_padding_bytes(other.num_padding_bytes),
       packet_number(other.packet_number),
       packet_number_length(other.packet_number_length),
       encryption_level(other.encryption_level),
@@ -475,7 +474,8 @@ SerializedPacket::SerializedPacket(SerializedPacket&& other)
       has_stop_waiting(other.has_stop_waiting),
       transmission_type(other.transmission_type),
       largest_acked(other.largest_acked),
-      has_ack_frame_copy(other.has_ack_frame_copy) {
+      has_ack_frame_copy(other.has_ack_frame_copy),
+      fate(other.fate) {
   if (this != &other) {
     if (release_encrypted_buffer && encrypted_buffer != nullptr) {
       release_encrypted_buffer(encrypted_buffer);
@@ -515,10 +515,10 @@ SerializedPacket* CopySerializedPacket(const SerializedPacket& serialized,
       serialized.encrypted_buffer, serialized.encrypted_length,
       serialized.has_ack, serialized.has_stop_waiting);
   copy->has_crypto_handshake = serialized.has_crypto_handshake;
-  copy->num_padding_bytes = serialized.num_padding_bytes;
   copy->encryption_level = serialized.encryption_level;
   copy->transmission_type = serialized.transmission_type;
   copy->largest_acked = serialized.largest_acked;
+  copy->fate = serialized.fate;
 
   if (copy_buffer) {
     copy->encrypted_buffer = CopyBuffer(serialized);
@@ -559,7 +559,7 @@ ReceivedPacketInfo::ReceivedPacketInfo(const QuicSocketAddress& self_address,
       version_flag(false),
       use_length_prefix(false),
       version_label(0),
-      version(PROTOCOL_UNSUPPORTED, QUIC_VERSION_UNSUPPORTED),
+      version(ParsedQuicVersion::Unsupported()),
       destination_connection_id(EmptyQuicConnectionId()),
       source_connection_id(EmptyQuicConnectionId()) {}
 

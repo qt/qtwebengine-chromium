@@ -131,6 +131,58 @@ bool IsBlockDimensionLessThan64(BlockSize size) {
   return size <= kBlock32x32 && size != kBlock16x64;
 }
 
+int GetUseCompoundReferenceContext(const Tile::Block& block) {
+  if (block.top_available[kPlaneY] && block.left_available[kPlaneY]) {
+    if (block.IsTopSingle() && block.IsLeftSingle()) {
+      return static_cast<int>(IsBackwardReference(block.TopReference(0))) ^
+             static_cast<int>(IsBackwardReference(block.LeftReference(0)));
+    }
+    if (block.IsTopSingle()) {
+      return 2 + static_cast<int>(IsBackwardReference(block.TopReference(0)) ||
+                                  block.IsTopIntra());
+    }
+    if (block.IsLeftSingle()) {
+      return 2 + static_cast<int>(IsBackwardReference(block.LeftReference(0)) ||
+                                  block.IsLeftIntra());
+    }
+    return 4;
+  }
+  if (block.top_available[kPlaneY]) {
+    return block.IsTopSingle()
+               ? static_cast<int>(IsBackwardReference(block.TopReference(0)))
+               : 3;
+  }
+  if (block.left_available[kPlaneY]) {
+    return block.IsLeftSingle()
+               ? static_cast<int>(IsBackwardReference(block.LeftReference(0)))
+               : 3;
+  }
+  return 1;
+}
+
+// Calculates count0 by calling block.CountReferences() on the frame types from
+// type0_start to type0_end, inclusive, and summing the results.
+// Calculates count1 by calling block.CountReferences() on the frame types from
+// type1_start to type1_end, inclusive, and summing the results.
+// Compares count0 with count1 and returns 0, 1 or 2.
+//
+// See count_refs and ref_count_ctx in 8.3.2.
+int GetReferenceContext(const Tile::Block& block,
+                        ReferenceFrameType type0_start,
+                        ReferenceFrameType type0_end,
+                        ReferenceFrameType type1_start,
+                        ReferenceFrameType type1_end) {
+  int count0 = 0;
+  int count1 = 0;
+  for (int type = type0_start; type <= type0_end; ++type) {
+    count0 += block.CountReferences(static_cast<ReferenceFrameType>(type));
+  }
+  for (int type = type1_start; type <= type1_end; ++type) {
+    count1 += block.CountReferences(static_cast<ReferenceFrameType>(type));
+  }
+  return (count0 < count1) ? 0 : (count0 == count1 ? 1 : 2);
+}
+
 }  // namespace
 
 bool Tile::ReadSegmentId(const Block& block) {
@@ -645,35 +697,6 @@ bool Tile::ReadIntraBlockModeInfo(const Block& block, bool intra_y_mode) {
   return true;
 }
 
-int Tile::GetUseCompoundReferenceContext(const Block& block) {
-  if (block.top_available[kPlaneY] && block.left_available[kPlaneY]) {
-    if (block.IsTopSingle() && block.IsLeftSingle()) {
-      return static_cast<int>(IsBackwardReference(block.TopReference(0))) ^
-             static_cast<int>(IsBackwardReference(block.LeftReference(0)));
-    }
-    if (block.IsTopSingle()) {
-      return 2 + static_cast<int>(IsBackwardReference(block.TopReference(0)) ||
-                                  block.IsTopIntra());
-    }
-    if (block.IsLeftSingle()) {
-      return 2 + static_cast<int>(IsBackwardReference(block.LeftReference(0)) ||
-                                  block.IsLeftIntra());
-    }
-    return 4;
-  }
-  if (block.top_available[kPlaneY]) {
-    return block.IsTopSingle()
-               ? static_cast<int>(IsBackwardReference(block.TopReference(0)))
-               : 3;
-  }
-  if (block.left_available[kPlaneY]) {
-    return block.IsLeftSingle()
-               ? static_cast<int>(IsBackwardReference(block.LeftReference(0)))
-               : 3;
-  }
-  return 1;
-}
-
 CompoundReferenceType Tile::ReadCompoundReferenceType(const Block& block) {
   // compound and inter.
   const bool top_comp_inter = block.top_available[kPlaneY] &&
@@ -726,22 +749,6 @@ CompoundReferenceType Tile::ReadCompoundReferenceType(const Block& block) {
   }
   return static_cast<CompoundReferenceType>(reader_.ReadSymbol(
       symbol_decoder_context_.compound_reference_type_cdf[context]));
-}
-
-int Tile::GetReferenceContext(const Block& block,
-                              ReferenceFrameType type0_start,
-                              ReferenceFrameType type0_end,
-                              ReferenceFrameType type1_start,
-                              ReferenceFrameType type1_end) const {
-  int count0 = 0;
-  int count1 = 0;
-  for (int type = type0_start; type <= type0_end; ++type) {
-    count0 += block.CountReferences(static_cast<ReferenceFrameType>(type));
-  }
-  for (int type = type1_start; type <= type1_end; ++type) {
-    count1 += block.CountReferences(static_cast<ReferenceFrameType>(type));
-  }
-  return (count0 < count1) ? 0 : (count0 == count1 ? 1 : 2);
 }
 
 template <bool is_single, bool is_backward, int index>

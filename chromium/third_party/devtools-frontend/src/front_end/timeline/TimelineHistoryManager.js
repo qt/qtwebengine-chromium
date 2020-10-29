@@ -1,6 +1,8 @@
 // Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
@@ -13,7 +15,8 @@ export class TimelineHistoryManager {
   constructor() {
     /** @type {!Array<!PerformanceModel>} */
     this._recordings = [];
-    this._action = /** @type {!UI.Action.Action} */ (self.UI.actionRegistry.action('timeline.show-history'));
+    this._action =
+        /** @type {!UI.Action.Action} */ (UI.ActionRegistry.ActionRegistry.instance().action('timeline.show-history'));
     /** @type {!Map<string, number>} */
     this._nextNumberByDomain = new Map();
     this._button = new ToolbarButton(this._action);

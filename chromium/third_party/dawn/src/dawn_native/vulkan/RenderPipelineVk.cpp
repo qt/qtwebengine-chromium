@@ -410,8 +410,13 @@ namespace dawn_native { namespace vulkan {
         multisample.rasterizationSamples = VulkanSampleCount(GetSampleCount());
         multisample.sampleShadingEnable = VK_FALSE;
         multisample.minSampleShading = 0.0f;
-        multisample.pSampleMask = nullptr;
-        multisample.alphaToCoverageEnable = VK_FALSE;
+        // VkPipelineMultisampleStateCreateInfo.pSampleMask is an array of length
+        // ceil(rasterizationSamples / 32) and since we're passing a single uint32_t
+        // we have to assert that this length is indeed 1.
+        ASSERT(multisample.rasterizationSamples <= 32);
+        VkSampleMask sampleMask = GetSampleMask();
+        multisample.pSampleMask = &sampleMask;
+        multisample.alphaToCoverageEnable = descriptor->alphaToCoverageEnabled;
         multisample.alphaToOneEnable = VK_FALSE;
 
         VkPipelineDepthStencilStateCreateInfo depthStencilState =
@@ -424,7 +429,7 @@ namespace dawn_native { namespace vulkan {
             descriptor->fragmentStage->module->GetFragmentOutputBaseTypes();
         for (uint32_t i : IterateBitSet(GetColorAttachmentsMask())) {
             const ColorStateDescriptor* colorStateDescriptor = GetColorStateDescriptor(i);
-            bool isDeclaredInFragmentShader = fragmentOutputBaseTypes[i] != Format::Other;
+            bool isDeclaredInFragmentShader = fragmentOutputBaseTypes[i] != Format::Type::Other;
             colorBlendAttachments[i] =
                 ComputeColorDesc(colorStateDescriptor, isDeclaredInFragmentShader);
         }

@@ -36,7 +36,7 @@ protected:
         }
     }
 
-    SkString onShortName() override final { return fName; }
+    SkString onShortName() final { return fName; }
     SkISize onISize() override { return SkISize::Make(500, 500); }
 
     void onOnceBeforeDraw() override {
@@ -171,4 +171,4 @@ DEF_GM( return new SimpleShapesGM(false); )
 DEF_GM( return new InnerShapesGM(true); )
 DEF_GM( return new InnerShapesGM(false); )
 
-}
+}  // namespace skiagm

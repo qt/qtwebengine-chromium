@@ -233,11 +233,10 @@ CFX_GifDecodeStatus CFX_GifContext::LoadFrame(int32_t frame_num) {
         return CFX_GifDecodeStatus::Unfinished;
       }
 
-      if (!lzw_decompressor_.get())
+      if (!lzw_decompressor_.get()) {
         lzw_decompressor_ = CFX_LZWDecompressor::Create(
-            !gif_image->local_palettes.empty() ? gif_image->local_pallette_exp
-                                               : global_pal_exp_,
-            gif_image->code_exp);
+            GetPaletteExp(gif_image), gif_image->code_exp);
+      }
       SaveDecodingStatus(GIF_D_STATUS_IMG_DATA);
       img_row_offset_ += img_row_avail_size_;
       img_row_avail_size_ = gif_img_row_bytes - img_row_offset_;
@@ -273,12 +272,10 @@ CFX_GifDecodeStatus CFX_GifContext::LoadFrame(int32_t frame_num) {
               return CFX_GifDecodeStatus::Unfinished;
             }
 
-            if (!lzw_decompressor_.get())
+            if (!lzw_decompressor_.get()) {
               lzw_decompressor_ = CFX_LZWDecompressor::Create(
-                  !gif_image->local_palettes.empty()
-                      ? gif_image->local_pallette_exp
-                      : global_pal_exp_,
-                  gif_image->code_exp);
+                  GetPaletteExp(gif_image), gif_image->code_exp);
+            }
             SaveDecodingStatus(GIF_D_STATUS_IMG_DATA);
             img_row_offset_ += img_row_avail_size_;
             img_row_avail_size_ = gif_img_row_bytes - img_row_offset_;
@@ -389,7 +386,7 @@ CFX_GifDecodeStatus CFX_GifContext::ReadLogicalScreenDescriptor() {
       return CFX_GifDecodeStatus::Unfinished;
     }
 
-    global_pal_exp_ = lsd.global_flags.pal_bits;
+    global_palette_exp_ = lsd.global_flags.pal_bits;
     global_sort_flag_ = lsd.global_flags.sort_flag;
     global_color_resolution_ = lsd.global_flags.color_resolution;
     std::swap(global_palette_, palette);
@@ -484,7 +481,7 @@ CFX_GifDecodeStatus CFX_GifContext::DecodeImageInfo() {
 
   CFX_GifLocalFlags* gif_img_info_lf = &img_info.local_flags;
   if (gif_img_info_lf->local_pal) {
-    gif_image->local_pallette_exp = gif_img_info_lf->pal_bits;
+    gif_image->local_palette_exp = gif_img_info_lf->pal_bits;
     uint32_t loc_pal_count = unsigned(2 << gif_img_info_lf->pal_bits);
     std::vector<CFX_GifPalette> loc_pal(loc_pal_count);
     if (!ReadAllOrNone(reinterpret_cast<uint8_t*>(loc_pal.data()),
@@ -511,10 +508,9 @@ CFX_GifDecodeStatus CFX_GifContext::DecodeImageInfo() {
       // Need to test that the color that is going to be transparent is actually
       // in the palette being used.
       if (graphic_control_extension_->trans_index >=
-          2 << (gif_image->local_palettes.empty()
-                    ? global_pal_exp_
-                    : gif_image->local_pallette_exp))
+          (2 << GetPaletteExp(gif_image.get()))) {
         return CFX_GifDecodeStatus::Error;
+      }
     }
     gif_image->image_GCE = std::move(graphic_control_extension_);
     graphic_control_extension_ = nullptr;
@@ -544,6 +540,11 @@ bool CFX_GifContext::ScanForTerminalMarker() {
   }
 
   return true;
+}
+
+uint8_t CFX_GifContext::GetPaletteExp(CFX_GifImage* gif_image) const {
+  return !gif_image->local_palettes.empty() ? gif_image->local_palette_exp
+                                            : global_palette_exp_;
 }
 
 }  // namespace fxcodec

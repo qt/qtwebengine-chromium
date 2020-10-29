@@ -1,4 +1,4 @@
-// After editing this file, run "go generate" in the parent directory.
+// After editing this file, run "go generate" in the ../data directory.
 
 // Copyright 2020 The Wuffs Authors.
 //
@@ -29,6 +29,7 @@ typedef struct {
   inline int64_t value_base_category() const;
   inline uint64_t value_minor() const;
   inline uint64_t value_base_detail() const;
+  inline int64_t value_base_detail__sign_extended() const;
   inline bool continued() const;
   inline uint64_t length() const;
 #endif  // __cplusplus
@@ -55,6 +56,8 @@ wuffs_base__make_token(uint64_t repr) {
 #define WUFFS_BASE__TOKEN__CONTINUED__SHIFT 16
 #define WUFFS_BASE__TOKEN__LENGTH__SHIFT 0
 
+#define WUFFS_BASE__TOKEN__VALUE_EXTENSION__NUM_BITS 46
+
 // --------
 
 #define WUFFS_BASE__TOKEN__VBC__FILLER 0
@@ -63,6 +66,8 @@ wuffs_base__make_token(uint64_t repr) {
 #define WUFFS_BASE__TOKEN__VBC__UNICODE_CODE_POINT 3
 #define WUFFS_BASE__TOKEN__VBC__LITERAL 4
 #define WUFFS_BASE__TOKEN__VBC__NUMBER 5
+#define WUFFS_BASE__TOKEN__VBC__INLINE_INTEGER_SIGNED 6
+#define WUFFS_BASE__TOKEN__VBC__INLINE_INTEGER_UNSIGNED 7
 
 // --------
 
@@ -82,15 +87,31 @@ wuffs_base__make_token(uint64_t repr) {
 
 // --------
 
-// "DEFINITELY_FOO" means that the destination bytes (and also the source
-// bytes, for 1_DST_1_SRC_COPY) are in the FOO format. Definitely means that
-// the lack of the bit is conservative: it is valid for all-ASCII strings to
-// have neither DEFINITELY_UTF_8 or DEFINITELY_ASCII bits set.
+// DEFINITELY_FOO means that the destination bytes (and also the source bytes,
+// for 1_DST_1_SRC_COPY) are in the FOO format. Definitely means that the lack
+// of the bit means "maybe FOO". It does not necessarily mean "not FOO".
+//
+// CHAIN_ETC means that decoding the entire token chain forms a UTF-8 or ASCII
+// string, not just this current token. CHAIN_ETC_UTF_8 therefore distinguishes
+// Unicode (UTF-8) strings from byte strings. MUST means that the the token
+// producer (e.g. parser) must verify this. SHOULD means that the token
+// consumer (e.g. renderer) should verify this.
+//
+// When a CHAIN_ETC_UTF_8 bit is set, the parser must ensure that non-ASCII
+// code points (with multi-byte UTF-8 encodings) do not straddle token
+// boundaries. Checking UTF-8 validity can inspect each token separately.
+//
+// The lack of any particular bit is conservative: it is valid for all-ASCII
+// strings, in a single- or multi-token chain, to have none of these bits set.
 #define WUFFS_BASE__TOKEN__VBD__STRING__DEFINITELY_UTF_8 0x00001
-#define WUFFS_BASE__TOKEN__VBD__STRING__DEFINITELY_ASCII 0x00002
+#define WUFFS_BASE__TOKEN__VBD__STRING__CHAIN_MUST_BE_UTF_8 0x00002
+#define WUFFS_BASE__TOKEN__VBD__STRING__CHAIN_SHOULD_BE_UTF_8 0x00004
+#define WUFFS_BASE__TOKEN__VBD__STRING__DEFINITELY_ASCII 0x00010
+#define WUFFS_BASE__TOKEN__VBD__STRING__CHAIN_MUST_BE_ASCII 0x00020
+#define WUFFS_BASE__TOKEN__VBD__STRING__CHAIN_SHOULD_BE_ASCII 0x00040
 
-// "CONVERT_D_DST_S_SRC" means that multiples of S source bytes (possibly
-// padded) produces multiples of D destination bytes. For example,
+// CONVERT_D_DST_S_SRC means that multiples of S source bytes (possibly padded)
+// produces multiples of D destination bytes. For example,
 // CONVERT_1_DST_4_SRC_BACKSLASH_X means a source like "\\x23\\x67\\xAB", where
 // 12 src bytes encode 3 dst bytes.
 //
@@ -101,13 +122,15 @@ wuffs_base__make_token(uint64_t repr) {
 // When src is the empty string, multiple conversion algorithms are applicable
 // (so these bits are not necessarily mutually exclusive), all producing the
 // same empty dst string.
-#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_0_DST_1_SRC_DROP 0x00010
-#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_1_SRC_COPY 0x00020
-#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_2_SRC_HEXADECIMAL 0x00040
-#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_4_SRC_BACKSLASH_X 0x00080
-#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_STD 0x00100
-#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_URL 0x00200
-#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_4_DST_5_SRC_ASCII_85 0x00400
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_0_DST_1_SRC_DROP 0x00100
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_1_SRC_COPY 0x00200
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_2_SRC_HEXADECIMAL 0x00400
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_4_SRC_BACKSLASH_X 0x00800
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_STD 0x01000
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_3_DST_4_SRC_BASE_64_URL 0x02000
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_4_DST_5_SRC_ASCII_85 0x04000
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_5_DST_8_SRC_BASE_32_HEX 0x08000
+#define WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_5_DST_8_SRC_BASE_32_STD 0x10000
 
 // --------
 
@@ -119,7 +142,7 @@ wuffs_base__make_token(uint64_t repr) {
 // --------
 
 // For a source string of "123" or "0x9A", it is valid for a tokenizer to
-// return any one of:
+// return any combination of:
 //  - WUFFS_BASE__TOKEN__VBD__NUMBER__CONTENT_FLOATING_POINT.
 //  - WUFFS_BASE__TOKEN__VBD__NUMBER__CONTENT_INTEGER_SIGNED.
 //  - WUFFS_BASE__TOKEN__VBD__NUMBER__CONTENT_INTEGER_UNSIGNED.
@@ -138,10 +161,13 @@ wuffs_base__make_token(uint64_t repr) {
 
 // The number 300 might be represented as "\x01\x2C", "\x2C\x01\x00\x00" or
 // "300", which are big-endian, little-endian or text. For binary formats, the
-// token length discriminates e.g. u16 little-endian vs u32 little-endian.
+// token length (after adjusting for FORMAT_IGNORE_ETC) discriminates
+// e.g. u16 little-endian vs u32 little-endian.
 #define WUFFS_BASE__TOKEN__VBD__NUMBER__FORMAT_BINARY_BIG_ENDIAN 0x00100
 #define WUFFS_BASE__TOKEN__VBD__NUMBER__FORMAT_BINARY_LITTLE_ENDIAN 0x00200
 #define WUFFS_BASE__TOKEN__VBD__NUMBER__FORMAT_TEXT 0x00400
+
+#define WUFFS_BASE__TOKEN__VBD__NUMBER__FORMAT_IGNORE_FIRST_BYTE 0x01000
 
 // --------
 
@@ -181,6 +207,15 @@ wuffs_base__token__value_minor(const wuffs_base__token* t) {
 static inline uint64_t  //
 wuffs_base__token__value_base_detail(const wuffs_base__token* t) {
   return (t->repr >> WUFFS_BASE__TOKEN__VALUE_BASE_DETAIL__SHIFT) & 0x1FFFFF;
+}
+
+static inline int64_t  //
+wuffs_base__token__value_base_detail__sign_extended(
+    const wuffs_base__token* t) {
+  // The VBD is 21 bits in the middle of t->repr. Left shift the high (64 - 21
+  // - ETC__SHIFT) bits off, then right shift (sign-extending) back down.
+  uint64_t u = t->repr << (43 - WUFFS_BASE__TOKEN__VALUE_BASE_DETAIL__SHIFT);
+  return ((int64_t)u) >> 43;
 }
 
 static inline bool  //
@@ -225,6 +260,11 @@ wuffs_base__token::value_base_detail() const {
   return wuffs_base__token__value_base_detail(this);
 }
 
+inline int64_t  //
+wuffs_base__token::value_base_detail__sign_extended() const {
+  return wuffs_base__token__value_base_detail__sign_extended(this);
+}
+
 inline bool  //
 wuffs_base__token::continued() const {
   return wuffs_base__token__continued(this);
@@ -246,6 +286,14 @@ wuffs_base__make_slice_token(wuffs_base__token* ptr, size_t len) {
   wuffs_base__slice_token ret;
   ret.ptr = ptr;
   ret.len = len;
+  return ret;
+}
+
+static inline wuffs_base__slice_token  //
+wuffs_base__empty_slice_token() {
+  wuffs_base__slice_token ret;
+  ret.ptr = NULL;
+  ret.len = 0;
   return ret;
 }
 
@@ -271,10 +319,14 @@ typedef struct {
 #ifdef __cplusplus
   inline bool is_valid() const;
   inline void compact();
-  inline uint64_t reader_available() const;
+  inline uint64_t reader_length() const;
+  inline wuffs_base__token* reader_pointer() const;
+  inline wuffs_base__slice_token reader_slice() const;
   inline uint64_t reader_token_position() const;
-  inline uint64_t writer_available() const;
+  inline uint64_t writer_length() const;
   inline uint64_t writer_token_position() const;
+  inline wuffs_base__token* writer_pointer() const;
+  inline wuffs_base__slice_token writer_slice() const;
 #endif  // __cplusplus
 
 } wuffs_base__token_buffer;
@@ -377,9 +429,20 @@ wuffs_base__token_buffer__compact(wuffs_base__token_buffer* buf) {
 }
 
 static inline uint64_t  //
-wuffs_base__token_buffer__reader_available(
-    const wuffs_base__token_buffer* buf) {
+wuffs_base__token_buffer__reader_length(const wuffs_base__token_buffer* buf) {
   return buf ? buf->meta.wi - buf->meta.ri : 0;
+}
+
+static inline wuffs_base__token*  //
+wuffs_base__token_buffer__reader_pointer(const wuffs_base__token_buffer* buf) {
+  return buf ? (buf->data.ptr + buf->meta.ri) : NULL;
+}
+
+static inline wuffs_base__slice_token  //
+wuffs_base__token_buffer__reader_slice(const wuffs_base__token_buffer* buf) {
+  return buf ? wuffs_base__make_slice_token(buf->data.ptr + buf->meta.ri,
+                                            buf->meta.wi - buf->meta.ri)
+             : wuffs_base__empty_slice_token();
 }
 
 static inline uint64_t  //
@@ -389,9 +452,20 @@ wuffs_base__token_buffer__reader_token_position(
 }
 
 static inline uint64_t  //
-wuffs_base__token_buffer__writer_available(
-    const wuffs_base__token_buffer* buf) {
+wuffs_base__token_buffer__writer_length(const wuffs_base__token_buffer* buf) {
   return buf ? buf->data.len - buf->meta.wi : 0;
+}
+
+static inline wuffs_base__token*  //
+wuffs_base__token_buffer__writer_pointer(const wuffs_base__token_buffer* buf) {
+  return buf ? (buf->data.ptr + buf->meta.wi) : NULL;
+}
+
+static inline wuffs_base__slice_token  //
+wuffs_base__token_buffer__writer_slice(const wuffs_base__token_buffer* buf) {
+  return buf ? wuffs_base__make_slice_token(buf->data.ptr + buf->meta.wi,
+                                            buf->data.len - buf->meta.wi)
+             : wuffs_base__empty_slice_token();
 }
 
 static inline uint64_t  //
@@ -413,8 +487,18 @@ wuffs_base__token_buffer::compact() {
 }
 
 inline uint64_t  //
-wuffs_base__token_buffer::reader_available() const {
-  return wuffs_base__token_buffer__reader_available(this);
+wuffs_base__token_buffer::reader_length() const {
+  return wuffs_base__token_buffer__reader_length(this);
+}
+
+inline wuffs_base__token*  //
+wuffs_base__token_buffer::reader_pointer() const {
+  return wuffs_base__token_buffer__reader_pointer(this);
+}
+
+inline wuffs_base__slice_token  //
+wuffs_base__token_buffer::reader_slice() const {
+  return wuffs_base__token_buffer__reader_slice(this);
 }
 
 inline uint64_t  //
@@ -423,8 +507,18 @@ wuffs_base__token_buffer::reader_token_position() const {
 }
 
 inline uint64_t  //
-wuffs_base__token_buffer::writer_available() const {
-  return wuffs_base__token_buffer__writer_available(this);
+wuffs_base__token_buffer::writer_length() const {
+  return wuffs_base__token_buffer__writer_length(this);
+}
+
+inline wuffs_base__token*  //
+wuffs_base__token_buffer::writer_pointer() const {
+  return wuffs_base__token_buffer__writer_pointer(this);
+}
+
+inline wuffs_base__slice_token  //
+wuffs_base__token_buffer::writer_slice() const {
+  return wuffs_base__token_buffer__writer_slice(this);
 }
 
 inline uint64_t  //

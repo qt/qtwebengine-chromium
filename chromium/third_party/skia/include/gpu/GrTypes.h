@@ -166,10 +166,12 @@ static constexpr GrBackendApi kMock_GrBackend = GrBackendApi::kMock;
 /**
  * Used to say whether a texture has mip levels allocated or not.
  */
-enum class GrMipMapped : bool {
+enum class GrMipmapped : bool {
     kNo = false,
     kYes = true
 };
+/** Deprecated legacy alias of GrMipmapped. */
+using GrMipMapped = GrMipmapped;
 
 /*
  * Can a GrBackendObject be rendered to?
@@ -225,12 +227,6 @@ enum GrGLBackendState {
  */
 static const uint32_t kAll_GrBackendState = 0xffffffff;
 
-enum GrFlushFlags {
-    kNone_GrFlushFlags = 0,
-    // Deprecated: Use syncCpu call on submit instead.
-    kSyncCpu_GrFlushFlag = 0x1,
-};
-
 typedef void* GrGpuFinishedContext;
 typedef void (*GrGpuFinishedProc)(GrGpuFinishedContext finishedContext);
 
@@ -273,7 +269,6 @@ typedef void (*GrGpuSubmittedProc)(GrGpuSubmittedContext submittedContext, bool 
  * backend APIs the same in terms of how the submitted procs are treated.
  */
 struct GrFlushInfo {
-    GrFlushFlags fFlags = kNone_GrFlushFlags;
     int fNumSemaphores = 0;
     GrBackendSemaphore* fSignalSemaphores = nullptr;
     GrGpuFinishedProc fFinishedProc = nullptr;

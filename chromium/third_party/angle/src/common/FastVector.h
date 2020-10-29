@@ -212,9 +212,8 @@ ANGLE_INLINE typename FastVector<T, N, Storage>::reference FastVector<T, N, Stor
 }
 
 template <class T, size_t N, class Storage>
-ANGLE_INLINE
-    typename FastVector<T, N, Storage>::const_reference FastVector<T, N, Storage>::operator[](
-        size_type pos) const
+ANGLE_INLINE typename FastVector<T, N, Storage>::const_reference
+FastVector<T, N, Storage>::operator[](size_type pos) const
 {
     ASSERT(pos < mSize);
     return mData[pos];
@@ -427,6 +426,85 @@ void FastVector<T, N, Storage>::ensure_capacity(size_t capacity)
         mReservedSize = newSize;
     }
 }
+
+template <class Key, class Value, size_t N>
+class FastUnorderedMap final
+{
+  public:
+    using Pair = std::pair<Key, Value>;
+
+    FastUnorderedMap() {}
+    ~FastUnorderedMap() {}
+
+    void insert(Key key, Value value)
+    {
+        ASSERT(!contains(key));
+        mData.push_back(Pair(key, value));
+    }
+
+    bool contains(Key key) const
+    {
+        for (size_t index = 0; index < mData.size(); ++index)
+        {
+            if (mData[index].first == key)
+                return true;
+        }
+        return false;
+    }
+
+    void clear() { mData.clear(); }
+
+    bool get(Key key, Value *value) const
+    {
+        for (size_t index = 0; index < mData.size(); ++index)
+        {
+            const Pair &item = mData[index];
+            if (item.first == key)
+            {
+                *value = item.second;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool empty() const { return mData.empty(); }
+    size_t size() const { return mData.size(); }
+
+  private:
+    FastVector<Pair, N> mData;
+};
+
+template <class T, size_t N>
+class FastUnorderedSet final
+{
+  public:
+    FastUnorderedSet() {}
+    ~FastUnorderedSet() {}
+
+    bool empty() const { return mData.empty(); }
+
+    void insert(T value)
+    {
+        ASSERT(!contains(value));
+        mData.push_back(value);
+    }
+
+    bool contains(T needle) const
+    {
+        for (T value : mData)
+        {
+            if (value == needle)
+                return true;
+        }
+        return false;
+    }
+
+    void clear() { mData.clear(); }
+
+  private:
+    FastVector<T, N> mData;
+};
 }  // namespace angle
 
 #endif  // COMMON_FASTVECTOR_H_

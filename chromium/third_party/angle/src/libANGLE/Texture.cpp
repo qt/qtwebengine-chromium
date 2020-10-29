@@ -97,7 +97,7 @@ TextureState::TextureState(TextureType type)
       mSamplerState(SamplerState::CreateDefaultForTarget(type)),
       mSrgbOverride(SrgbOverride::Default),
       mBaseLevel(0),
-      mMaxLevel(1000),
+      mMaxLevel(kInitialMaxLevel),
       mDepthStencilTextureMode(GL_DEPTH_COMPONENT),
       mImmutableFormat(false),
       mImmutableLevels(0),
@@ -1452,7 +1452,9 @@ angle::Result Texture::setStorageExternalMemory(Context *context,
                                                 GLenum internalFormat,
                                                 const Extents &size,
                                                 MemoryObject *memoryObject,
-                                                GLuint64 offset)
+                                                GLuint64 offset,
+                                                GLbitfield createFlags,
+                                                GLbitfield usageFlags)
 {
     ASSERT(type == mState.mType);
 
@@ -1461,7 +1463,7 @@ angle::Result Texture::setStorageExternalMemory(Context *context,
     ANGLE_TRY(orphanImages(context));
 
     ANGLE_TRY(mTexture->setStorageExternalMemory(context, type, levels, internalFormat, size,
-                                                 memoryObject, offset));
+                                                 memoryObject, offset, createFlags, usageFlags));
 
     mState.mImmutableFormat = true;
     mState.mImmutableLevels = static_cast<GLuint>(levels);
@@ -1501,7 +1503,7 @@ angle::Result Texture::generateMipmap(Context *context)
         return angle::Result::Continue;
     }
 
-    ANGLE_TRY(syncState(context, TextureCommand::GenerateMipmap));
+    ANGLE_TRY(syncState(context, Command::GenerateMipmap));
 
     // Clear the base image(s) immediately if needed
     if (context->isRobustResourceInitEnabled())
@@ -1715,6 +1717,14 @@ bool Texture::isRenderable(const Context *context,
     {
         return ImageSibling::isRenderable(context, binding, imageIndex);
     }
+
+    // Surfaces bound to textures are always renderable. This avoids issues with surfaces with ES3+
+    // formats not being renderable when bound to textures in ES2 contexts.
+    if (mBoundSurface)
+    {
+        return true;
+    }
+
     return getAttachmentFormat(binding, imageIndex)
         .info->textureAttachmentSupport(context->getClientVersion(), context->getExtensions());
 }
@@ -1764,13 +1774,20 @@ GLenum Texture::getGenerateMipmapHint() const
     return mState.getGenerateMipmapHint();
 }
 
-void Texture::onAttach(const Context *context)
+void Texture::onAttach(const Context *context, rx::Serial framebufferSerial)
 {
     addRef();
+
+    // Duplicates allowed for multiple attachment points. See the comment in the header.
+    mBoundFramebufferSerials.push_back(framebufferSerial);
 }
 
-void Texture::onDetach(const Context *context)
+void Texture::onDetach(const Context *context, rx::Serial framebufferSerial)
 {
+    // Erase first instance. If there are multiple bindings, leave the others.
+    ASSERT(isBoundToFramebuffer(framebufferSerial));
+    mBoundFramebufferSerials.remove_and_permute(framebufferSerial);
+
     release(context);
 }
 
@@ -1784,9 +1801,9 @@ GLuint Texture::getNativeID() const
     return mTexture->getNativeID();
 }
 
-angle::Result Texture::syncState(const Context *context, TextureCommand source)
+angle::Result Texture::syncState(const Context *context, Command source)
 {
-    ASSERT(hasAnyDirtyBit() || source == TextureCommand::GenerateMipmap);
+    ASSERT(hasAnyDirtyBit() || source == Command::GenerateMipmap);
     ANGLE_TRY(mTexture->syncState(context, mDirtyBits, source));
     mDirtyBits.reset();
     return angle::Result::Continue;
@@ -1915,10 +1932,7 @@ bool Texture::doesSubImageNeedInit(const Context *context,
     }
 
     ASSERT(mState.mInitState == InitState::MayNeedInit);
-    bool coversWholeImage = area.x == 0 && area.y == 0 && area.z == 0 &&
-                            area.width == desc.size.width && area.height == desc.size.height &&
-                            area.depth == desc.size.depth;
-    return !coversWholeImage;
+    return !area.coversSameExtent(desc.size);
 }
 
 angle::Result Texture::ensureSubImageInitialized(const Context *context,
@@ -2003,7 +2017,7 @@ angle::Result Texture::getTexImage(const Context *context,
 {
     if (hasAnyDirtyBit())
     {
-        ANGLE_TRY(syncState(context, TextureCommand::Other));
+        ANGLE_TRY(syncState(context, Command::Other));
     }
 
     return mTexture->getTexImage(context, packState, packBuffer, target, level, format, type,

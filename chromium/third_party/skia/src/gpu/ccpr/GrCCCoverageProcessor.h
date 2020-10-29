@@ -89,11 +89,6 @@ public:
 
     // GrPrimitiveProcessor overrides.
     const char* name() const override { return PrimitiveTypeName(fPrimitiveType); }
-#ifdef SK_DEBUG
-    SkString dumpInfo() const override {
-        return SkStringPrintf("%s\n%s", this->name(), this->INHERITED::dumpInfo().c_str());
-    }
-#endif
     void getGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder* b) const override {
         SkDEBUGCODE(this->getDebugBloatKey(b));
         b->add32((int)fPrimitiveType);
@@ -117,7 +112,7 @@ public:
     virtual int numSubpasses() const = 0;
     virtual void reset(PrimitiveType, int subpassIdx, GrResourceProvider*) = 0;
     void bindPipeline(GrOpFlushState*, const GrPipeline&, const SkRect& drawBounds) const;
-    virtual void bindBuffers(GrOpsRenderPass*, const GrBuffer* instanceBuffer) const = 0;
+    virtual void bindBuffers(GrOpsRenderPass*, sk_sp<const GrBuffer> instanceBuffer) const = 0;
     virtual void drawInstances(GrOpsRenderPass*, int instanceCount, int baseInstance) const = 0;
 
     // The Shader provides code to calculate each pixel's coverage in a RenderPass. It also

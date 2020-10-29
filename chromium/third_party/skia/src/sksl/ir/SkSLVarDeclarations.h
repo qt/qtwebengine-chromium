@@ -21,10 +21,12 @@ namespace SkSL {
  * instances.
  */
 struct VarDeclaration : public Statement {
+    static constexpr Kind kStatementKind = kVarDeclaration_Kind;
+
     VarDeclaration(const Variable* var,
                    std::vector<std::unique_ptr<Expression>> sizes,
                    std::unique_ptr<Expression> value)
-    : INHERITED(var->fOffset, Statement::kVarDeclaration_Kind)
+    : INHERITED(var->fOffset, kStatementKind)
     , fVar(var)
     , fSizes(std::move(sizes))
     , fValue(std::move(value)) {}
@@ -56,7 +58,7 @@ struct VarDeclaration : public Statement {
     }
 
     String description() const override {
-        String result = fVar->fName;
+        String result = fVar->fModifiers.description() + fVar->fType.name() + " " + fVar->fName;
         for (const auto& size : fSizes) {
             if (size) {
                 result += "[" + size->description() + "]";
@@ -122,10 +124,18 @@ struct VarDeclarations : public ProgramElement {
         }
         result += fBaseType.description() + " ";
         String separator;
-        for (const auto& var : fVars) {
+        for (const auto& rawVar : fVars) {
+            if (rawVar->fKind == Statement::kNop_Kind) {
+                continue;
+            }
+            SkASSERT(rawVar->fKind == Statement::kVarDeclaration_Kind);
+            VarDeclaration& var = (VarDeclaration&) *rawVar;
             result += separator;
             separator = ", ";
-            result += var->description();
+            result += var.fVar->fName;
+            if (var.fValue) {
+                result += " = " + var.fValue->description();
+            }
         }
         return result;
     }
@@ -138,6 +148,6 @@ struct VarDeclarations : public ProgramElement {
     typedef ProgramElement INHERITED;
 };
 
-} // namespace
+}  // namespace SkSL
 
 #endif

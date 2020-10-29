@@ -17,6 +17,7 @@
 #include "common/Assert.h"
 #include "dawn_native/BackendConnection.h"
 #include "dawn_native/ErrorData.h"
+#include "dawn_native/Format.h"
 #include "dawn_native/Instance.h"
 #include "dawn_native/d3d12/AdapterD3D12.h"
 #include "dawn_native/d3d12/BackendD3D12.h"
@@ -29,6 +30,7 @@
 #include "dawn_native/d3d12/D3D12Error.h"
 #include "dawn_native/d3d12/PipelineLayoutD3D12.h"
 #include "dawn_native/d3d12/PlatformFunctions.h"
+#include "dawn_native/d3d12/QuerySetD3D12.h"
 #include "dawn_native/d3d12/QueueD3D12.h"
 #include "dawn_native/d3d12/RenderPipelineD3D12.h"
 #include "dawn_native/d3d12/ResidencyManagerD3D12.h"
@@ -41,6 +43,7 @@
 #include "dawn_native/d3d12/StagingDescriptorAllocatorD3D12.h"
 #include "dawn_native/d3d12/SwapChainD3D12.h"
 #include "dawn_native/d3d12/TextureD3D12.h"
+#include "dawn_native/d3d12/UtilsD3D12.h"
 
 #include <sstream>
 
@@ -90,14 +93,15 @@ namespace dawn_native { namespace d3d12 {
         mCommandAllocatorManager = std::make_unique<CommandAllocatorManager>(this);
 
         // Zero sized allocator is never requested and does not need to exist.
-        for (uint32_t countIndex = 1; countIndex < kNumOfStagingDescriptorAllocators;
-             countIndex++) {
-            mViewAllocators[countIndex] = std::make_unique<StagingDescriptorAllocator>(
-                this, countIndex, kShaderVisibleDescriptorHeapSize,
+        for (uint32_t countIndex = 0; countIndex < kNumViewDescriptorAllocators; countIndex++) {
+            mViewAllocators[countIndex + 1] = std::make_unique<StagingDescriptorAllocator>(
+                this, 1u << countIndex, kShaderVisibleDescriptorHeapSize,
                 D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        }
 
-            mSamplerAllocators[countIndex] = std::make_unique<StagingDescriptorAllocator>(
-                this, countIndex, kShaderVisibleDescriptorHeapSize,
+        for (uint32_t countIndex = 0; countIndex < kNumSamplerDescriptorAllocators; countIndex++) {
+            mSamplerAllocators[countIndex + 1] = std::make_unique<StagingDescriptorAllocator>(
+                this, 1u << countIndex, kShaderVisibleDescriptorHeapSize,
                 D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
         }
 
@@ -270,10 +274,10 @@ namespace dawn_native { namespace d3d12 {
         const BindGroupLayoutDescriptor* descriptor) {
         return new BindGroupLayout(this, descriptor);
     }
-    ResultOrError<BufferBase*> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
+    ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         Ref<Buffer> buffer = AcquireRef(new Buffer(this, descriptor));
         DAWN_TRY(buffer->Initialize());
-        return buffer.Detach();
+        return std::move(buffer);
     }
     CommandBufferBase* Device::CreateCommandBuffer(CommandEncoder* encoder,
                                                    const CommandBufferDescriptor* descriptor) {
@@ -288,7 +292,7 @@ namespace dawn_native { namespace d3d12 {
         return PipelineLayout::Create(this, descriptor);
     }
     ResultOrError<QuerySetBase*> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
-        return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation");
+        return QuerySet::Create(this, descriptor);
     }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
@@ -336,12 +340,55 @@ namespace dawn_native { namespace d3d12 {
         DAWN_TRY_ASSIGN(commandRecordingContext, GetPendingCommandContext());
 
         Buffer* dstBuffer = ToBackend(destination);
-        StagingBuffer* srcBuffer = ToBackend(source);
-        dstBuffer->TrackUsageAndTransitionNow(commandRecordingContext, wgpu::BufferUsage::CopyDst);
 
-        commandRecordingContext->GetCommandList()->CopyBufferRegion(
-            dstBuffer->GetD3D12Resource().Get(), destinationOffset, srcBuffer->GetResource(),
+        DAWN_TRY(dstBuffer->EnsureDataInitializedAsDestination(commandRecordingContext,
+                                                               destinationOffset, size));
+
+        CopyFromStagingToBufferImpl(commandRecordingContext, source, sourceOffset, destination,
+                                    destinationOffset, size);
+
+        return {};
+    }
+
+    void Device::CopyFromStagingToBufferImpl(CommandRecordingContext* commandContext,
+                                             StagingBufferBase* source,
+                                             uint64_t sourceOffset,
+                                             BufferBase* destination,
+                                             uint64_t destinationOffset,
+                                             uint64_t size) {
+        ASSERT(commandContext != nullptr);
+        Buffer* dstBuffer = ToBackend(destination);
+        StagingBuffer* srcBuffer = ToBackend(source);
+        dstBuffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopyDst);
+
+        commandContext->GetCommandList()->CopyBufferRegion(
+            dstBuffer->GetD3D12Resource(), destinationOffset, srcBuffer->GetResource(),
             sourceOffset, size);
+    }
+
+    MaybeError Device::CopyFromStagingToTexture(const StagingBufferBase* source,
+                                                const TextureDataLayout& src,
+                                                TextureCopy* dst,
+                                                const Extent3D& copySizePixels) {
+        CommandRecordingContext* commandContext;
+        DAWN_TRY_ASSIGN(commandContext, GetPendingCommandContext());
+        Texture* texture = ToBackend(dst->texture.Get());
+        ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
+
+        SubresourceRange range = GetSubresourcesAffectedByCopy(*dst, copySizePixels);
+
+        if (IsCompleteSubresourceCopiedTo(texture, copySizePixels, dst->mipLevel)) {
+            texture->SetIsSubresourceContentInitialized(true, range);
+        } else {
+            texture->EnsureSubresourceContentInitialized(commandContext, range);
+        }
+
+        texture->TrackUsageAndTransitionNow(commandContext, wgpu::TextureUsage::CopyDst, range);
+
+        // compute the copySplits and record the CopyTextureRegion commands
+        CopyBufferToTextureWithCopySplit(commandContext, *dst, copySizePixels, texture,
+                                         ToBackend(source)->GetResource(), src.offset,
+                                         src.bytesPerRow, src.rowsPerImage, range.aspects);
 
         return {};
     }
@@ -523,8 +570,11 @@ namespace dawn_native { namespace d3d12 {
             ::CloseHandle(mFenceEvent);
         }
 
+        // Release recycled resource heaps.
+        mResourceAllocatorManager->DestroyPool();
+
         // We need to handle clearing up com object refs that were enqeued after TickImpl
-        mUsedComObjectRefs.ClearUpTo(GetCompletedCommandSerial());
+        mUsedComObjectRefs.ClearUpTo(std::numeric_limits<Serial>::max());
 
         ASSERT(mUsedComObjectRefs.Empty());
         ASSERT(!mPendingCommands.IsOpen());
@@ -540,14 +590,18 @@ namespace dawn_native { namespace d3d12 {
 
     StagingDescriptorAllocator* Device::GetViewStagingDescriptorAllocator(
         uint32_t descriptorCount) const {
-        ASSERT(descriptorCount < kNumOfStagingDescriptorAllocators);
-        return mViewAllocators[descriptorCount].get();
+        ASSERT(descriptorCount <= kMaxViewDescriptorsPerBindGroup);
+        // This is Log2 of the next power of two, plus 1.
+        uint32_t allocatorIndex = descriptorCount == 0 ? 0 : Log2Ceil(descriptorCount) + 1;
+        return mViewAllocators[allocatorIndex].get();
     }
 
     StagingDescriptorAllocator* Device::GetSamplerStagingDescriptorAllocator(
         uint32_t descriptorCount) const {
-        ASSERT(descriptorCount < kNumOfStagingDescriptorAllocators);
-        return mSamplerAllocators[descriptorCount].get();
+        ASSERT(descriptorCount <= kMaxSamplerDescriptorsPerBindGroup);
+        // This is Log2 of the next power of two, plus 1.
+        uint32_t allocatorIndex = descriptorCount == 0 ? 0 : Log2Ceil(descriptorCount) + 1;
+        return mSamplerAllocators[allocatorIndex].get();
     }
 
     StagingDescriptorAllocator* Device::GetRenderTargetViewAllocator() const {

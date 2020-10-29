@@ -131,9 +131,9 @@ struct Video {
   Resolution maximum = kDefaultMaxResolution;
 
   // Indicates whether the receiver can scale frames from a different aspect
-  // ratio, or if it needs to be done by the sender. Default is true, as we
-  // may not know the aspect ratio that the receiver supports.
-  bool supports_scaling = true;
+  // ratio, or if it needs to be done by the sender. Default is false, meaning
+  // that the sender is responsible for letterboxing.
+  bool supports_scaling = false;
 
   // Represents the maximum video delay, in milliseconds.
   std::chrono::milliseconds max_delay = kDefaultMaxDelayMs;

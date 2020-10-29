@@ -191,7 +191,9 @@ angle::Result TextureD3D::setStorageExternalMemory(const gl::Context *context,
                                                    GLenum internalFormat,
                                                    const gl::Extents &size,
                                                    gl::MemoryObject *memoryObject,
-                                                   GLuint64 offset)
+                                                   GLuint64 offset,
+                                                   GLbitfield createFlags,
+                                                   GLbitfield usageFlags)
 {
     ANGLE_HR_UNREACHABLE(GetImplAs<ContextD3D>(context));
     return angle::Result::Continue;
@@ -682,7 +684,7 @@ angle::Result TextureD3D::setBaseLevel(const gl::Context *context, GLuint baseLe
 
 angle::Result TextureD3D::syncState(const gl::Context *context,
                                     const gl::Texture::DirtyBits &dirtyBits,
-                                    gl::TextureCommand source)
+                                    gl::Command source)
 {
     // This could be improved using dirty bits.
     return angle::Result::Continue;

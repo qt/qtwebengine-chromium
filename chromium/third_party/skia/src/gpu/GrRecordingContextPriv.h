@@ -8,8 +8,10 @@
 #ifndef GrRecordingContextPriv_DEFINED
 #define GrRecordingContextPriv_DEFINED
 
-#include "include/private/GrRecordingContext.h"
+#include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/text/GrSDFTOptions.h"
+
+class SkDeferredDisplayList;
 
 /** Class that exposes methods to GrRecordingContext that are only intended for use internal to
     Skia. This class is purely a privileged window into GrRecordingContext. It should never have
@@ -28,13 +30,10 @@ public:
 
     GrImageContext* asImageContext() { return fContext->asImageContext(); }
     GrRecordingContext* asRecordingContext() { return fContext->asRecordingContext(); }
-    GrContext* asDirectContext() { return fContext->asDirectContext(); }
 
     // from GrImageContext
     GrProxyProvider* proxyProvider() { return fContext->proxyProvider(); }
     const GrProxyProvider* proxyProvider() const { return fContext->proxyProvider(); }
-
-    bool abandoned() const { return fContext->abandoned(); }
 
     /** This is only useful for debug purposes */
     SkDEBUGCODE(GrSingleOwner* singleOwner() const { return fContext->singleOwner(); } )
@@ -57,6 +56,8 @@ public:
     }
 
     GrTextBlobCache* getTextBlobCache() { return fContext->getTextBlobCache(); }
+
+    void moveRenderTasksToDDL(SkDeferredDisplayList*);
 
     /**
      * Registers an object for flush-related callbacks. (See GrOnFlushCallbackObject.)
@@ -107,10 +108,15 @@ public:
         return {this->options().fMinDistanceFieldFontSize, this->options().fGlyphsAsPathsFontSize};
     }
 
+    /**
+     * Create a GrRecordingContext without a resource cache
+     */
+    static sk_sp<GrRecordingContext> MakeDDL(sk_sp<GrContextThreadSafeProxy>);
+
 private:
     explicit GrRecordingContextPriv(GrRecordingContext* context) : fContext(context) {}
-    GrRecordingContextPriv(const GrRecordingContextPriv&); // unimpl
-    GrRecordingContextPriv& operator=(const GrRecordingContextPriv&); // unimpl
+    GrRecordingContextPriv(const GrRecordingContextPriv&) = delete;
+    GrRecordingContextPriv& operator=(const GrRecordingContextPriv&) = delete;
 
     // No taking addresses of this type.
     const GrRecordingContextPriv* operator&() const;
@@ -123,7 +129,7 @@ private:
 
 inline GrRecordingContextPriv GrRecordingContext::priv() { return GrRecordingContextPriv(this); }
 
-inline const GrRecordingContextPriv GrRecordingContext::priv () const {
+inline const GrRecordingContextPriv GrRecordingContext::priv () const {  // NOLINT(readability-const-return-type)
     return GrRecordingContextPriv(const_cast<GrRecordingContext*>(this));
 }
 

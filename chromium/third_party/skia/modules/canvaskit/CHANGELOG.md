@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.3] - 2020-08-05
+
+### Added
+ - Added `CanvasKit.TypefaceFontProvider`, which can be used to register fonts
+   with a font family alias. For example, "Roboto Light" may be registered with
+   the alias "Roboto", and it will be used when "Roboto" is used with a light
+   font weight.
+ - Added `CanvasKit.ParagraphBuilder.MakeFromFontProvider` to make a
+   `ParagraphBuilder` from a `TypefaceFontProvider`.
+ - Added `CanvasKit.ParagraphBuilder.pushPaintStyle` which can be used to stroke or fill
+   text with paints instead of simple colors.
+
+## [0.17.2] - 2020-07-22
+
+### Fixed
+ - Shader programs are no longer generated with `do-while` loops in WebGL 1.0.
+
+## [0.17.1] - 2020-07-21
+
+### Added
+ - Compile option to deserialize effects in skps `include_effects_deserialization`.
+
+### Changed
+- Pathops and SKP deserialization/serialization enabled on the npm build.
+
+## [0.17.0] - 2020-07-20
+
 ### Added
  - Added `CanvasKit.MakeImageFromCanvasImageSource` which takes either an HTMLImageElement,
    SVGImageElement, HTMLVideoElement, HTMLCanvasElement, ImageBitmap, or OffscreenCanvas and returns
@@ -21,22 +48,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the normal TypedArray version. The TypedArray which it returns is also backed by WASM memory
   and when passed into CanvasKit will be used w/o copying the data (just like
   `Malloc.toTypedArray`).
+ - `SkM44.setupCamera` to return a 4x4 matrix which sets up a perspective view from a camera.
+ - `SkPath.arcToOval`, `SkPath.arcToTangent`, and `SkPath.arcToRotated` to replace the three
+   overloads of `SkPath.arcTo`. https://github.com/flutter/flutter/issues/61305
 
 ### Changed
  - In all places where color arrays are accepted (gradient makers, drawAtlas, and MakeSkVertices),
-   You can now provide either flat Float32Arrays of float colors, Uint32Arrays of int colors, or 
+   You can now provide either flat Float32Arrays of float colors, Uint32Arrays of int colors, or
    2d Arrays of Float32Array(4) colors. The one thing you should not pass is an Array of numbers,
    since canvaskit wouldn't be able to tell whether they're ints or floats without checking them all.
    The fastest choice for gradients is the flat Float32Array, the fastest choice for drawAtlas and
    MakeSkVertices is the flat Uint32Array.
  - Color arrays may also be objects created with CanvasKit.Malloc
+ - renamed `reportBackendType` to `reportBackendTypeIsGPU` and made it return a boolean
+ - `MakeWebGLCanvasSurface` can now accept an optional dictionary of WebGL context attributes that
+   can be used to override default attributes.
 
 ### Fixed
  - `TextStyle.color` can correctly be a Malloc'd Float32Array.
- 
+ - Support wombat-dressing-room. go/npm-publish
+
 ### Deprecated
  - `CanvasKit.MakePathFromCmds` has been renamed to `CanvasKit.SkPath.MakeFromCmds`. The alias
    will be removed in an upcoming release.
+ - `SkPath.arcTo` Separated into three functions.
 
 ## [0.16.2] - 2020-06-05
 

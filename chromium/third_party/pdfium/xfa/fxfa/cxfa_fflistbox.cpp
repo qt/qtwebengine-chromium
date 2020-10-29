@@ -28,30 +28,29 @@ CFWL_ListBox* ToListBox(CFWL_Widget* widget) {
 
 CXFA_FFListBox::CXFA_FFListBox(CXFA_Node* pNode) : CXFA_FFDropDown(pNode) {}
 
-CXFA_FFListBox::~CXFA_FFListBox() {
-  if (!GetNormalWidget())
-    return;
+CXFA_FFListBox::~CXFA_FFListBox() = default;
 
-  CFWL_NoteDriver* pNoteDriver =
-      GetNormalWidget()->GetOwnerApp()->GetNoteDriver();
-  pNoteDriver->UnregisterEventTarget(GetNormalWidget());
+void CXFA_FFListBox::PreFinalize() {
+  if (GetNormalWidget()) {
+    CFWL_NoteDriver* pNoteDriver =
+        GetNormalWidget()->GetFWLApp()->GetNoteDriver();
+    pNoteDriver->UnregisterEventTarget(GetNormalWidget());
+  }
+  CXFA_FFDropDown::PreFinalize();
 }
 
 bool CXFA_FFListBox::LoadWidget() {
   ASSERT(!IsLoaded());
 
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retain_layout(m_pLayoutItem.Get());
-
   auto pNew = std::make_unique<CFWL_ListBox>(
-      GetFWLApp(), std::make_unique<CFWL_WidgetProperties>(), nullptr);
+      GetFWLApp(), CFWL_Widget::Properties(), nullptr);
   CFWL_ListBox* pListBox = pNew.get();
   pListBox->ModifyStyles(FWL_WGTSTYLE_VScroll | FWL_WGTSTYLE_NoBackground,
                          0xFFFFFFFF);
   SetNormalWidget(std::move(pNew));
   pListBox->SetAdapterIface(this);
 
-  CFWL_NoteDriver* pNoteDriver = pListBox->GetOwnerApp()->GetNoteDriver();
+  CFWL_NoteDriver* pNoteDriver = pListBox->GetFWLApp()->GetNoteDriver();
   pNoteDriver->RegisterEventTarget(pListBox, pListBox);
   m_pOldDelegate = pListBox->GetDelegate();
   pListBox->SetDelegate(this);
@@ -80,9 +79,6 @@ bool CXFA_FFListBox::LoadWidget() {
 }
 
 bool CXFA_FFListBox::OnKillFocus(CXFA_FFWidget* pNewFocus) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   ObservedPtr<CXFA_FFWidget> pNewWatched(pNewFocus);
   if (!ProcessCommittedData())
     UpdateFWLData();
@@ -110,7 +106,7 @@ bool CXFA_FFListBox::IsDataChanged() {
     return true;
 
   for (int32_t i = 0; i < iSels; ++i) {
-    CFWL_ListItem* hlistItem = pListBox->GetItem(nullptr, iSelArray[i]);
+    CFWL_ListBox::Item* hlistItem = pListBox->GetItem(nullptr, iSelArray[i]);
     if (!(hlistItem->GetStates() & FWL_ITEMSTATE_LTB_Selected))
       return true;
   }
@@ -148,16 +144,13 @@ bool CXFA_FFListBox::UpdateFWLData() {
   if (!pListBox)
     return false;
 
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   std::vector<int32_t> iSelArray = m_pNode->GetSelectedItems();
-  std::vector<CFWL_ListItem*> selItemArray(iSelArray.size());
+  std::vector<CFWL_ListBox::Item*> selItemArray(iSelArray.size());
   std::transform(iSelArray.begin(), iSelArray.end(), selItemArray.begin(),
                  [pListBox](int32_t val) { return pListBox->GetSelItem(val); });
 
   pListBox->SetSelItem(pListBox->GetSelItem(-1), false);
-  for (CFWL_ListItem* pItem : selItemArray)
+  for (CFWL_ListBox::Item* pItem : selItemArray)
     pListBox->SetSelItem(pItem, true);
 
   GetNormalWidget()->Update();
@@ -165,9 +158,6 @@ bool CXFA_FFListBox::UpdateFWLData() {
 }
 
 void CXFA_FFListBox::OnSelectChanged(CFWL_Widget* pWidget) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   CXFA_EventParam eParam;
   eParam.m_eType = XFA_EVENT_Change;
   eParam.m_pTarget = m_pNode.Get();
@@ -200,16 +190,10 @@ void CXFA_FFListBox::DeleteItem(int32_t nIndex) {
 }
 
 void CXFA_FFListBox::OnProcessMessage(CFWL_Message* pMessage) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   m_pOldDelegate->OnProcessMessage(pMessage);
 }
 
 void CXFA_FFListBox::OnProcessEvent(CFWL_Event* pEvent) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retain_layout(m_pLayoutItem.Get());
-
   CXFA_FFField::OnProcessEvent(pEvent);
   switch (pEvent->GetType()) {
     case CFWL_Event::Type::SelectChanged:
@@ -223,9 +207,6 @@ void CXFA_FFListBox::OnProcessEvent(CFWL_Event* pEvent) {
 
 void CXFA_FFListBox::OnDrawWidget(CXFA_Graphics* pGraphics,
                                   const CFX_Matrix& matrix) {
-  // Prevents destruction of the CXFA_ContentLayoutItem that owns |this|.
-  RetainPtr<CXFA_ContentLayoutItem> retainer(m_pLayoutItem.Get());
-
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
 }
 

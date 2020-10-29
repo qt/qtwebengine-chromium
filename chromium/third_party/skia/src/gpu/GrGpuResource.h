@@ -12,7 +12,6 @@
 #include "include/private/GrTypesPriv.h"
 #include "include/private/SkNoncopyable.h"
 
-class GrContext;
 class GrGpu;
 class GrResourceCache;
 class SkTraceMemoryDump;
@@ -105,8 +104,8 @@ public:
      * they no longer have an owning context. Destroying a GrContext
      * automatically releases all its resources.
      */
-    const GrContext* getContext() const;
-    GrContext* getContext();
+    const GrDirectContext* getContext() const;
+    GrDirectContext* getContext();
 
     /**
      * Retrieves the amount of GPU memory used by this resource in bytes. It is
@@ -157,7 +156,7 @@ public:
      */
     class CacheAccess;
     inline CacheAccess cacheAccess();
-    inline const CacheAccess cacheAccess() const;
+    inline const CacheAccess cacheAccess() const;  // NOLINT(readability-const-return-type)
 
     /**
      * Internal-only helper class used for manipulations of the resource by GrSurfaceProxy.
@@ -170,7 +169,7 @@ public:
      */
     class ResourcePriv;
     inline ResourcePriv resourcePriv();
-    inline const ResourcePriv resourcePriv() const;
+    inline const ResourcePriv resourcePriv() const;  // NOLINT(readability-const-return-type)
 
     /**
      * Dumps memory usage information for this GrGpuResource to traceMemoryDump.

@@ -33,6 +33,7 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_packet_creator_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_session_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_spdy_session_peer.h"
+#include "net/third_party/quiche/src/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/simple_session_cache.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
@@ -96,9 +97,8 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
             QuicUtils::GetInvalidStreamId(GetParam().transport_version)) {
     auto client_cache = std::make_unique<test::SimpleSessionCache>();
     client_session_cache_ = client_cache.get();
-    SetQuicReloadableFlag(quic_enable_tls_resumption, true);
-    SetQuicReloadableFlag(quic_enable_zero_rtt_for_tls, true);
-    SetQuicReloadableFlag(quic_fix_gquic_stream_type, true);
+    SetQuicRestartFlag(quic_enable_tls_resumption_v4, true);
+    SetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2, true);
     client_crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
         crypto_test_utils::ProofVerifierForTesting(), std::move(client_cache));
     server_crypto_config_ = crypto_test_utils::CryptoServerConfigForTesting();
@@ -226,10 +226,18 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
   test::SimpleSessionCache* client_session_cache_;
 };
 
+std::string ParamNameFormatter(
+    const testing::TestParamInfo<QuicSpdyClientSessionTest::ParamType>& info) {
+  const ParsedQuicVersion& version = info.param;
+  return quiche::QuicheStrCat(
+      QuicVersionToString(version.transport_version), "_",
+      HandshakeProtocolToString(version.handshake_protocol));
+}
+
 INSTANTIATE_TEST_SUITE_P(Tests,
                          QuicSpdyClientSessionTest,
                          ::testing::ValuesIn(AllSupportedVersions()),
-                         ::testing::PrintToStringParamName());
+                         ParamNameFormatter);
 
 TEST_P(QuicSpdyClientSessionTest, CryptoConnect) {
   CompleteCryptoHandshake();
@@ -288,7 +296,7 @@ TEST_P(QuicSpdyClientSessionTest, MaxNumStreamsWithNoFinOrRst) {
 
   // Close the stream, but without having received a FIN or a RST_STREAM
   // or MAX_STREAMS (V99) and check that a new one can not be created.
-  session_->CloseStream(stream->id());
+  session_->ResetStream(stream->id(), QUIC_STREAM_CANCELLED);
   EXPECT_EQ(1u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 
   stream = session_->CreateOutgoingBidirectionalStream();
@@ -304,7 +312,7 @@ TEST_P(QuicSpdyClientSessionTest, MaxNumStreamsWithRst) {
   EXPECT_EQ(nullptr, session_->CreateOutgoingBidirectionalStream());
 
   // Close the stream and receive an RST frame to remove the unfinished stream
-  session_->CloseStream(stream->id());
+  session_->ResetStream(stream->id(), QUIC_STREAM_CANCELLED);
   session_->OnRstStream(QuicRstStreamFrame(kInvalidControlFrameId, stream->id(),
                                            QUIC_RST_ACKNOWLEDGEMENT, 0));
   // Check that a new one can be created.
@@ -360,7 +368,7 @@ TEST_P(QuicSpdyClientSessionTest, ResetAndTrailers) {
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke(&ClearControlFrame));
   EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(1);
-  session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
+  session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY);
 
   // A new stream cannot be created as the reset stream still counts as an open
   // outgoing stream until closed by the server.
@@ -412,7 +420,7 @@ TEST_P(QuicSpdyClientSessionTest, ReceivedMalformedTrailersAfterSendingRst) {
       .Times(AtLeast(1))
       .WillRepeatedly(Invoke(&ClearControlFrame));
   EXPECT_CALL(*connection_, OnStreamReset(_, _)).Times(1);
-  session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY, 0);
+  session_->ResetStream(stream_id, QUIC_STREAM_PEER_GOING_AWAY);
 
   // The stream receives trailers with final byte offset, but the header value
   // is non-numeric and should be treated as malformed.
@@ -669,11 +677,13 @@ TEST_P(QuicSpdyClientSessionTest, PushPromiseOutOfOrder) {
                                 QuicHeaderList());
   associated_stream_id_ +=
       QuicUtils::StreamIdDelta(connection_->transport_version());
-  EXPECT_CALL(*connection_,
-              CloseConnection(QUIC_INVALID_STREAM_ID,
-                              "Received push stream id lesser or equal to the"
-                              " last accepted before",
-                              _));
+  if (!VersionUsesHttp3(session_->transport_version())) {
+    EXPECT_CALL(*connection_,
+                CloseConnection(QUIC_INVALID_STREAM_ID,
+                                "Received push stream id lesser or equal to the"
+                                " last accepted before",
+                                _));
+  }
   session_->OnPromiseHeaderList(associated_stream_id_, promised_stream_id_, 0,
                                 QuicHeaderList());
 }
@@ -862,7 +872,7 @@ TEST_P(QuicSpdyClientSessionTest, ResetPromised) {
   EXPECT_CALL(*connection_, SendControlFrame(_));
   EXPECT_CALL(*connection_,
               OnStreamReset(promised_stream_id_, QUIC_STREAM_PEER_GOING_AWAY));
-  session_->ResetStream(promised_stream_id_, QUIC_STREAM_PEER_GOING_AWAY, 0);
+  session_->ResetStream(promised_stream_id_, QUIC_STREAM_PEER_GOING_AWAY);
   QuicClientPromisedInfo* promised =
       session_->GetPromisedById(promised_stream_id_);
   EXPECT_NE(promised, nullptr);
@@ -1022,7 +1032,7 @@ TEST_P(QuicSpdyClientSessionTest, IetfZeroRttSetup) {
     auto* control_stream =
         QuicSpdySessionPeer::GetSendControlStream(session_.get());
     EXPECT_EQ(kInitialStreamFlowControlWindowForTest,
-              control_stream->flow_controller()->send_window_offset());
+              QuicStreamPeer::SendWindowOffset(control_stream));
     EXPECT_EQ(5u, session_->max_outbound_header_list_size());
   } else {
     auto* id_manager = QuicSessionPeer::GetStreamIdManager(session_.get());
@@ -1055,7 +1065,7 @@ TEST_P(QuicSpdyClientSessionTest, IetfZeroRttSetup) {
                   kHttp3StaticUnidirectionalStreamCount + 1,
               id_manager->max_outgoing_unidirectional_streams());
     EXPECT_EQ(kInitialStreamFlowControlWindowForTest + 1,
-              control_stream->flow_controller()->send_window_offset());
+              QuicStreamPeer::SendWindowOffset(control_stream));
   } else {
     auto* id_manager = QuicSessionPeer::GetStreamIdManager(session_.get());
     EXPECT_EQ(kDefaultMaxStreamsPerConnection + 1,
@@ -1076,8 +1086,6 @@ TEST_P(QuicSpdyClientSessionTest, IetfZeroRttSetup) {
 
 // Regression test for b/159168475
 TEST_P(QuicSpdyClientSessionTest, RetransmitDataOnZeroRttReject) {
-  SetQuicReloadableFlag(quic_do_not_retransmit_immediately_on_zero_rtt_reject,
-                        true);
   // This feature is TLS-only.
   if (session_->version().UsesQuicCrypto()) {
     return;
@@ -1198,11 +1206,15 @@ TEST_P(QuicSpdyClientSessionTest,
 
   if (session_->version().UsesHttp3()) {
     // Both control stream and the request stream will report errors.
-    EXPECT_CALL(*connection_,
-                CloseConnection(QUIC_ZERO_RTT_UNRETRANSMITTABLE, _, _))
-        .Times(2)
+    // Open question: should both streams be closed with the same error code?
+    EXPECT_CALL(*connection_, CloseConnection(_, _, _))
         .WillOnce(testing::Invoke(connection_,
                                   &MockQuicConnection::ReallyCloseConnection));
+    EXPECT_CALL(*connection_,
+                CloseConnection(QUIC_ZERO_RTT_UNRETRANSMITTABLE, _, _))
+        .WillOnce(testing::Invoke(connection_,
+                                  &MockQuicConnection::ReallyCloseConnection))
+        .RetiresOnSaturation();
   } else {
     EXPECT_CALL(*connection_,
                 CloseConnection(

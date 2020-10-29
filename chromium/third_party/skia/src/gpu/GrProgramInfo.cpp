@@ -22,7 +22,7 @@ GrStencilSettings GrProgramInfo::nonGLStencilSettings() const {
 }
 
 #ifdef SK_DEBUG
-#include "src/gpu/GrTexturePriv.h"
+#include "src/gpu/GrTexture.h"
 
 void GrProgramInfo::validate(bool flushTime) const {
     if (flushTime) {
@@ -31,25 +31,25 @@ void GrProgramInfo::validate(bool flushTime) const {
 }
 
 void GrProgramInfo::checkAllInstantiated() const {
-    for (auto [sampler, fp] : GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline())) {
-        SkASSERT(sampler.proxy()->isInstantiated());
-    }
+    this->pipeline().visitProxies([](GrSurfaceProxy* proxy, GrMipmapped) {
+        SkASSERT(proxy->isInstantiated());
+        return true;
+    });
 }
 
 void GrProgramInfo::checkMSAAAndMIPSAreResolved() const {
-    for (auto [sampler, fp] : GrFragmentProcessor::PipelineTextureSamplerRange(this->pipeline())) {
-        GrTexture* tex = sampler.peekTexture();
+    this->pipeline().visitTextureEffects([](const GrTextureEffect& te) {
+        GrTexture* tex = te.texture();
         SkASSERT(tex);
 
         // Ensure mipmaps were all resolved ahead of time by the DAG.
-        if (GrSamplerState::Filter::kMipMap == sampler.samplerState().filter() &&
+        if (te.samplerState().mipmapped() == GrMipmapped::kYes &&
             (tex->width() != 1 || tex->height() != 1)) {
-            // There are some cases where we might be given a non-mipmapped texture with a mipmap
-            // filter. See skbug.com/7094.
-            SkASSERT(tex->texturePriv().mipMapped() != GrMipMapped::kYes ||
-                     !tex->texturePriv().mipMapsAreDirty());
+            // There are some cases where we might be given a non-mipmapped texture with a
+            // mipmap filter. See skbug.com/7094.
+            SkASSERT(tex->mipmapped() != GrMipmapped::kYes || !tex->mipmapsAreDirty());
         }
-    }
+    });
 }
 
 #endif

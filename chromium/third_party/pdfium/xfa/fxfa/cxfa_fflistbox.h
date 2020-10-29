@@ -12,10 +12,11 @@
 
 class CXFA_FFListBox final : public CXFA_FFDropDown {
  public:
-  explicit CXFA_FFListBox(CXFA_Node* pNode);
+  CONSTRUCT_VIA_MAKE_GARBAGE_COLLECTED;
   ~CXFA_FFListBox() override;
 
   // CXFA_FFField:
+  void PreFinalize() override;
   bool LoadWidget() override;
   bool OnKillFocus(CXFA_FFWidget* pNewWidget) override WARN_UNUSED_RESULT;
   void OnProcessMessage(CFWL_Message* pMessage) override;
@@ -32,6 +33,8 @@ class CXFA_FFListBox final : public CXFA_FFDropDown {
   void SetItemState(int32_t nIndex, bool bSelected);
 
  private:
+  explicit CXFA_FFListBox(CXFA_Node* pNode);
+
   bool CommitData() override;
   bool UpdateFWLData() override;
   bool IsDataChanged() override;

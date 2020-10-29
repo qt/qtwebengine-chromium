@@ -28,6 +28,9 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as Extensions from '../extensions/extensions.js';
@@ -36,13 +39,35 @@ import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
 import {ComputedStyleWidget} from './ComputedStyleWidget.js';
-import {ElementsBreadcrumbs, Events} from './ElementsBreadcrumbs.js';
+import {createElementsBreadcrumbs, DOMNode} from './ElementsBreadcrumbs_bridge.js';  // eslint-disable-line no-unused-vars
 import {ElementsTreeElement} from './ElementsTreeElement.js';  // eslint-disable-line no-unused-vars
 import {ElementsTreeElementHighlighter} from './ElementsTreeElementHighlighter.js';
 import {ElementsTreeOutline} from './ElementsTreeOutline.js';
 import {MarkerDecorator} from './MarkerDecorator.js';  // eslint-disable-line no-unused-vars
 import {MetricsSidebarPane} from './MetricsSidebarPane.js';
-import {StylesSidebarPane} from './StylesSidebarPane.js';
+import {Events as StylesSidebarPaneEvents, StylesSidebarPane} from './StylesSidebarPane.js';
+
+/**
+ *
+ * @param {!SDK.DOMModel.DOMNode} node
+ * @return {!DOMNode}
+ */
+const legacyNodeToNewBreadcrumbsNode = node => {
+  return {
+    parentNode: node.parentNode,
+    id: /** @type {number} */ (node.id),
+    nodeType: node.nodeType(),
+    pseudoType: node.pseudoType(),
+    shadowRootType: node.shadowRootType(),
+    nodeName: node.nodeName(),
+    nodeNameNicelyCased: node.nodeNameInCorrectCase(),
+    legacyDomNode: node,
+    highlightNode: () => node.highlight(),
+    clearHighlight: () => SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(),
+    getAttribute: node.getAttribute.bind(node),
+  };
+};
+
 
 /**
  * @implements {UI.SearchableView.Searchable}
@@ -83,9 +108,13 @@ export class ElementsPanel extends UI.Panel.Panel {
         .addChangeListener(this._domWordWrapSettingChanged.bind(this));
 
     crumbsContainer.id = 'elements-crumbs';
-    this._breadcrumbs = new ElementsBreadcrumbs();
-    this._breadcrumbs.show(crumbsContainer);
-    this._breadcrumbs.addEventListener(Events.NodeSelected, this._crumbNodeSelected, this);
+
+    this._breadcrumbs = createElementsBreadcrumbs();
+    this._breadcrumbs.addEventListener('node-selected', event => {
+      this._crumbNodeSelected(/** @type {{data: *}} */ (event));
+    });
+
+    crumbsContainer.appendChild(this._breadcrumbs);
 
     this._stylesWidget = new StylesSidebarPane();
     this._computedStyleWidget = new ComputedStyleWidget();
@@ -100,6 +129,8 @@ export class ElementsPanel extends UI.Panel.Panel {
     this._treeOutlines = new Set();
     /** @type {!Map<!ElementsTreeOutline, !Element>} */
     this._treeOutlineHeaders = new Map();
+    /** @type {!Map<!SDK.CSSModel.CSSModel, !SDK.CSSModel.CSSPropertyTracker>} */
+    this._gridStyleTrackerByCSSModel = new Map();
     SDK.SDKModel.TargetManager.instance().observeModels(SDK.DOMModel.DOMModel, this);
     SDK.SDKModel.TargetManager.instance().addEventListener(
         SDK.SDKModel.Events.NameChanged,
@@ -176,6 +207,8 @@ export class ElementsPanel extends UI.Panel.Panel {
     }
     treeOutline.wireToDOMModel(domModel);
 
+    this._setupStyleTracking(domModel.cssModel());
+
     // Perform attach if necessary.
     if (this.isShowing()) {
       this.wasShown();
@@ -199,6 +232,8 @@ export class ElementsPanel extends UI.Panel.Panel {
     }
     this._treeOutlineHeaders.delete(treeOutline);
     treeOutline.element.remove();
+
+    this._removeStyleTracking(domModel.cssModel());
   }
 
   /**
@@ -234,8 +269,6 @@ export class ElementsPanel extends UI.Panel.Panel {
     for (const treeOutline of this._treeOutlines) {
       treeOutline.setVisibleWidth(width);
     }
-
-    this._breadcrumbs.updateSizes();
   }
 
   /**
@@ -259,7 +292,7 @@ export class ElementsPanel extends UI.Panel.Panel {
    * @override
    */
   wasShown() {
-    self.UI.context.setFlavor(ElementsPanel, this);
+    UI.Context.Context.instance().setFlavor(ElementsPanel, this);
 
     for (const treeOutline of this._treeOutlines) {
       // Attach heavy component lazily
@@ -272,7 +305,6 @@ export class ElementsPanel extends UI.Panel.Panel {
       }
     }
     super.wasShown();
-    this._breadcrumbs.update();
 
     const domModels = SDK.SDKModel.TargetManager.instance().models(SDK.DOMModel.DOMModel);
     for (const domModel of domModels) {
@@ -308,7 +340,7 @@ export class ElementsPanel extends UI.Panel.Panel {
       }
     }
     super.willHide();
-    self.UI.context.setFlavor(ElementsPanel, null);
+    UI.Context.Context.instance().setFlavor(ElementsPanel, null);
   }
 
   /**
@@ -323,7 +355,12 @@ export class ElementsPanel extends UI.Panel.Panel {
    * @param {!Common.EventTarget.EventTargetEvent} event
    */
   _selectedNodeChanged(event) {
-    const selectedNode = /** @type {?SDK.DOMModel.DOMNode} */ (event.data.node);
+    let selectedNode = /** @type {?SDK.DOMModel.DOMNode} */ (event.data.node);
+
+    // If the selectedNode is a pseudoNode, we want to ensure that it has a valid parentNode
+    if (selectedNode && (selectedNode.pseudoType() && !selectedNode.parentNode)) {
+      selectedNode = null;
+    }
     const focus = /** @type {boolean} */ (event.data.focus);
     for (const treeOutline of this._treeOutlines) {
       if (!selectedNode || ElementsTreeOutline.forDOMModel(selectedNode.domModel()) !== treeOutline) {
@@ -331,9 +368,23 @@ export class ElementsPanel extends UI.Panel.Panel {
       }
     }
 
-    this._breadcrumbs.setSelectedNode(selectedNode);
+    if (selectedNode) {
+      const activeNode = legacyNodeToNewBreadcrumbsNode(selectedNode);
+      const crumbs = [activeNode];
 
-    self.UI.context.setFlavor(SDK.DOMModel.DOMNode, selectedNode);
+      for (let current = selectedNode.parentNode; current; current = current.parentNode) {
+        crumbs.push(legacyNodeToNewBreadcrumbsNode(current));
+      }
+
+      this._breadcrumbs.data = {
+        crumbs,
+        selectedNode: legacyNodeToNewBreadcrumbsNode(selectedNode),
+      };
+    } else {
+      this._breadcrumbs.data = {crumbs: [], selectedNode: null};
+    }
+
+    UI.Context.Context.instance().setFlavor(SDK.DOMModel.DOMNode, selectedNode);
 
     if (!selectedNode) {
       return;
@@ -348,7 +399,7 @@ export class ElementsPanel extends UI.Panel.Panel {
     const nodeFrameId = selectedNode.frameId();
     for (const context of executionContexts) {
       if (context.frameId === nodeFrameId) {
-        self.UI.context.setFlavor(SDK.RuntimeModel.ExecutionContext, context);
+        UI.Context.Context.instance().setFlavor(SDK.RuntimeModel.ExecutionContext, context);
         break;
       }
     }
@@ -360,6 +411,8 @@ export class ElementsPanel extends UI.Panel.Panel {
   _documentUpdatedEvent(event) {
     const domModel = /** @type {!SDK.DOMModel.DOMModel} */ (event.data);
     this._documentUpdated(domModel);
+    this._removeStyleTracking(domModel.cssModel());
+    this._setupStyleTracking(domModel.cssModel());
   }
 
   /**
@@ -653,7 +706,46 @@ export class ElementsPanel extends UI.Panel.Panel {
    */
   _updateBreadcrumbIfNeeded(event) {
     const nodes = /** @type {!Array.<!SDK.DOMModel.DOMNode>} */ (event.data);
-    this._breadcrumbs.updateNodes(nodes);
+    /* If we don't have a selected node then we can tell the breadcrumbs that & bail. */
+    const selectedNode = this.selectedDOMNode();
+    if (!selectedNode) {
+      this._breadcrumbs.data = {
+        crumbs: [],
+        selectedNode: null,
+      };
+      return;
+    }
+
+    /* This function gets called whenever the tree outline is updated
+     * and contains any nodes that have changed.
+     * What we need to do is construct the new set of breadcrumb nodes, combining the Nodes
+     * that we had before with the new nodes, and pass them into the breadcrumbs component.
+     */
+
+    // Get the current set of active crumbs
+    const activeNode = legacyNodeToNewBreadcrumbsNode(selectedNode);
+    const existingCrumbs = [activeNode];
+    for (let current = selectedNode.parentNode; current; current = current.parentNode) {
+      existingCrumbs.push(legacyNodeToNewBreadcrumbsNode(current));
+    }
+
+    /* Get the change nodes from the event & convert them to breadcrumb nodes */
+    const newNodes = nodes.map(legacyNodeToNewBreadcrumbsNode);
+    const nodesThatHaveChangedMap = new Map();
+    newNodes.forEach(crumb => nodesThatHaveChangedMap.set(crumb.id, crumb));
+
+    /* Loop over our existing crumbs, and if any have an ID that matches an ID from the new nodes
+     * that we have, use the new node, rather than the one we had, because it's changed.
+     */
+    const newSetOfCrumbs = existingCrumbs.map(crumb => {
+      const replacement = nodesThatHaveChangedMap.get(crumb.id);
+      return replacement || crumb;
+    });
+
+    this._breadcrumbs.data = {
+      crumbs: newSetOfCrumbs,
+      selectedNode: activeNode,
+    };
   }
 
   /**
@@ -787,7 +879,6 @@ export class ElementsPanel extends UI.Panel.Panel {
   }
 
   /**
-   *
    * @param {!_splitMode} splitMode
    */
   _initializeSidebarPanes(splitMode) {
@@ -803,15 +894,44 @@ export class ElementsPanel extends UI.Panel.Panel {
     computedStylePanesWrapper.element.classList.add('style-panes-wrapper');
     this._computedStyleWidget.show(computedStylePanesWrapper.element);
 
+    const stylesSplitWidget = new UI.SplitWidget.SplitWidget(
+        true /* isVertical */, true /* secondIsSidebar */, 'elements.styles.sidebar.width', 100);
+    stylesSplitWidget.setMainWidget(matchedStylePanesWrapper);
+    stylesSplitWidget.hideSidebar();
+    stylesSplitWidget.enableShowModeSaving();
+    stylesSplitWidget.addEventListener(UI.SplitWidget.Events.ShowModeChanged, () => {
+      showMetricsWidgetInStylesPane();
+    });
+    this._stylesWidget.addEventListener(StylesSidebarPaneEvents.InitialUpdateCompleted, () => {
+      this._stylesWidget.appendToolbarItem(stylesSplitWidget.createShowHideSidebarButton(ls`Computed Styles sidebar`));
+    });
+
+    const showMetricsWidgetInStylesPane = () => {
+      const showMergedComputedPane = stylesSplitWidget.showMode() === UI.SplitWidget.ShowMode.Both;
+      if (showMergedComputedPane) {
+        this._metricsWidget.show(computedStylePanesWrapper.element, this._computedStyleWidget.element);
+      } else {
+        this._metricsWidget.show(matchedStylePanesWrapper.element);
+      }
+    };
+
     /**
      * @param {!Common.EventTarget.EventTargetEvent} event
      */
     const tabSelected = event => {
       const tabId = /** @type {string} */ (event.data.tabId);
       if (tabId === Common.UIString.UIString('Computed')) {
+        computedStylePanesWrapper.show(computedView.element);
         this._metricsWidget.show(computedStylePanesWrapper.element, this._computedStyleWidget.element);
       } else if (tabId === Common.UIString.UIString('Styles')) {
-        this._metricsWidget.show(matchedStylePanesWrapper.element);
+        stylesSplitWidget.setSidebarWidget(computedStylePanesWrapper);
+        if (this._stylesWidget.initialUpdateCompleted()) {
+          showMetricsWidgetInStylesPane();
+        } else {
+          this._stylesWidget.addEventListener(StylesSidebarPaneEvents.InitialUpdateCompleted, () => {
+            showMetricsWidgetInStylesPane();
+          });
+        }
       }
     };
 
@@ -825,11 +945,10 @@ export class ElementsPanel extends UI.Panel.Panel {
     const stylesView = new UI.View.SimpleView(Common.UIString.UIString('Styles'));
     this.sidebarPaneView.appendView(stylesView);
     stylesView.element.classList.add('flex-auto');
-    matchedStylePanesWrapper.show(stylesView.element);
+    stylesSplitWidget.show(stylesView.element);
 
     const computedView = new UI.View.SimpleView(Common.UIString.UIString('Computed'));
     computedView.element.classList.add('composite', 'fill');
-    computedStylePanesWrapper.show(computedView.element);
 
     tabbedPane.addEventListener(UI.TabbedPane.Events.TabSelected, tabSelected, this);
     this.sidebarPaneView.appendView(computedView);
@@ -890,6 +1009,53 @@ export class ElementsPanel extends UI.Panel.Panel {
       this.sidebarPaneView.appendView(pane);
     }
   }
+
+  /**
+   * @param {!SDK.CSSModel.CSSModel} cssModel
+   */
+  _setupStyleTracking(cssModel) {
+    if (Root.Runtime.experiments.isEnabled('cssGridFeatures')) {
+      // Style tracking is conditional on enabling experimental Grid features
+      // because it's the only use case for now.
+      const gridStyleTracker = cssModel.createCSSPropertyTracker(TrackedCSSGridProperties);
+      gridStyleTracker.start();
+      this._gridStyleTrackerByCSSModel.set(cssModel, gridStyleTracker);
+      gridStyleTracker.addEventListener(
+          SDK.CSSModel.CSSPropertyTrackerEvents.TrackedCSSPropertiesUpdated, this._trackedCSSPropertiesUpdated, this);
+    }
+  }
+
+  /**
+   * @param {!SDK.CSSModel.CSSModel} cssModel
+   */
+  _removeStyleTracking(cssModel) {
+    const gridStyleTracker = this._gridStyleTrackerByCSSModel.get(cssModel);
+    if (!gridStyleTracker) {
+      return;
+    }
+
+    gridStyleTracker.stop();
+    this._gridStyleTrackerByCSSModel.delete(cssModel);
+    gridStyleTracker.removeEventListener(
+        SDK.CSSModel.CSSPropertyTrackerEvents.TrackedCSSPropertiesUpdated, this._trackedCSSPropertiesUpdated, this);
+  }
+
+  /**
+   * @param {!Common.EventTarget.EventTargetEvent} event
+   */
+  _trackedCSSPropertiesUpdated(event) {
+    const domNodes = /** @type {!Array<?SDK.DOMModel.DOMNode>} */ (event.data.domNodes);
+
+    for (const domNode of domNodes) {
+      if (!domNode) {
+        continue;
+      }
+      const treeElement = this._treeElementForNode(domNode);
+      if (treeElement) {
+        treeElement.updateStyleAdorners();
+      }
+    }
+  }
 }
 
 ElementsPanel._firstInspectElementCompletedForTest = function() {};
@@ -899,6 +1065,17 @@ export const _splitMode = {
   Vertical: Symbol('Vertical'),
   Horizontal: Symbol('Horizontal'),
 };
+
+const TrackedCSSGridProperties = [
+  {
+    name: 'display',
+    value: 'grid',
+  },
+  {
+    name: 'display',
+    value: 'inline-grid',
+  },
+];
 
 /**
  * @implements {UI.ContextMenu.Provider}
@@ -1055,7 +1232,7 @@ export class ElementsActionDelegate {
    * @return {boolean}
    */
   handleAction(context, actionId) {
-    const node = self.UI.context.flavor(SDK.DOMModel.DOMNode);
+    const node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
     if (!node) {
       return true;
     }

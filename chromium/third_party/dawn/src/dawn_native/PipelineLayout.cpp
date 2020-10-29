@@ -17,6 +17,7 @@
 #include "common/Assert.h"
 #include "common/BitSetIterator.h"
 #include "common/HashUtils.h"
+#include "common/ityp_stack_vec.h"
 #include "dawn_native/BindGroupLayout.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/ShaderModule.h"
@@ -70,24 +71,14 @@ namespace dawn_native {
             return DAWN_VALIDATION_ERROR("too many bind group layouts");
         }
 
-        uint32_t totalDynamicUniformBufferCount = 0;
-        uint32_t totalDynamicStorageBufferCount = 0;
+        BindingCounts bindingCounts = {};
         for (uint32_t i = 0; i < descriptor->bindGroupLayoutCount; ++i) {
             DAWN_TRY(device->ValidateObject(descriptor->bindGroupLayouts[i]));
-            totalDynamicUniformBufferCount +=
-                descriptor->bindGroupLayouts[i]->GetDynamicUniformBufferCount();
-            totalDynamicStorageBufferCount +=
-                descriptor->bindGroupLayouts[i]->GetDynamicStorageBufferCount();
+            AccumulateBindingCounts(&bindingCounts,
+                                    descriptor->bindGroupLayouts[i]->GetBindingCountInfo());
         }
 
-        if (totalDynamicUniformBufferCount > kMaxDynamicUniformBufferCount) {
-            return DAWN_VALIDATION_ERROR("too many dynamic uniform buffers in pipeline layout");
-        }
-
-        if (totalDynamicStorageBufferCount > kMaxDynamicStorageBufferCount) {
-            return DAWN_VALIDATION_ERROR("too many dynamic storage buffers in pipeline layout");
-        }
-
+        DAWN_TRY(ValidateBindingCounts(bindingCounts));
         return {};
     }
 
@@ -128,9 +119,10 @@ namespace dawn_native {
         ASSERT(count > 0);
 
         // Data which BindGroupLayoutDescriptor will point to for creation
-        ityp::array<BindGroupIndex,
-                    ityp::array<BindingIndex, BindGroupLayoutEntry, kMaxBindingsPerGroup>,
-                    kMaxBindGroups>
+        ityp::array<
+            BindGroupIndex,
+            ityp::stack_vec<BindingIndex, BindGroupLayoutEntry, kMaxOptimalBindingsPerGroup>,
+            kMaxBindGroups>
             entryData = {};
 
         // A map of bindings to the index in |entryData|
@@ -140,6 +132,7 @@ namespace dawn_native {
         // A counter of how many bindings we've populated in |entryData|
         ityp::array<BindGroupIndex, BindingIndex, kMaxBindGroups> entryCounts = {};
 
+        BindingCounts bindingCounts = {};
         BindGroupIndex bindGroupLayoutCount(0);
         for (uint32_t moduleIndex = 0; moduleIndex < count; ++moduleIndex) {
             const ShaderModuleBase* module = modules[moduleIndex];
@@ -201,7 +194,9 @@ namespace dawn_native {
                         }
                     }
 
+                    IncrementBindingCounts(&bindingCounts, bindingSlot);
                     BindingIndex currentBindingCount = entryCounts[group];
+                    entryData[group].resize(currentBindingCount + BindingIndex(1));
                     entryData[group][currentBindingCount] = bindingSlot;
 
                     usedBindingsMap[group][bindingNumber] = currentBindingCount;
@@ -214,6 +209,8 @@ namespace dawn_native {
             }
         }
 
+        DAWN_TRY(ValidateBindingCounts(bindingCounts));
+
         ityp::array<BindGroupIndex, BindGroupLayoutBase*, kMaxBindGroups> bindGroupLayouts = {};
         for (BindGroupIndex group(0); group < bindGroupLayoutCount; ++group) {
             BindGroupLayoutDescriptor desc = {};
@@ -222,7 +219,10 @@ namespace dawn_native {
 
             // We should never produce a bad descriptor.
             ASSERT(!ValidateBindGroupLayoutDescriptor(device, &desc).IsError());
-            DAWN_TRY_ASSIGN(bindGroupLayouts[group], device->GetOrCreateBindGroupLayout(&desc));
+
+            Ref<BindGroupLayoutBase> bgl;
+            DAWN_TRY_ASSIGN(bgl, device->GetOrCreateBindGroupLayout(&desc));
+            bindGroupLayouts[group] = bgl.Detach();
         }
 
         PipelineLayoutDescriptor desc = {};

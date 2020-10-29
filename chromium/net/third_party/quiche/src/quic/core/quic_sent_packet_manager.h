@@ -76,6 +76,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
                                            QuicTime::Delta /*rtt*/,
                                            QuicByteCount /*old_cwnd*/,
                                            QuicByteCount /*new_cwnd*/) {}
+
+    virtual void OnOvershootingDetected() {}
   };
 
   // Interface which gets callbacks from the QuicSentPacketManager when
@@ -141,10 +143,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   void SetHandshakeConfirmed();
 
   // Requests retransmission of all unacked 0-RTT packets.
-  // Only initially encrypted packets will be retransmitted. This can happen,
+  // Only 0-RTT encrypted packets will be retransmitted. This can happen,
   // for example, when a CHLO has been rejected and the previously encrypted
   // data needs to be encrypted with a new key.
-  void RetransmitZeroRttPackets();
+  void MarkZeroRttPacketsForRetransmission();
 
   // Notify the sent packet manager of an external network measurement or
   // prediction for either |bandwidth| or |rtt|; either can be empty.
@@ -215,6 +217,11 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   const QuicTime::Delta GetNetworkBlackholeDelay(
       int8_t num_rtos_for_blackhole_detection) const;
 
+  // Returns the delay before reducing max packet size. This delay is guranteed
+  // to be smaller than the network blackhole delay.
+  QuicTime::Delta GetMtuReductionDelay(
+      int8_t num_rtos_for_blackhole_detection) const;
+
   const RttStats* GetRttStats() const { return &rtt_stats_; }
 
   // Returns the estimated bandwidth calculated by the congestion algorithm.
@@ -245,6 +252,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // Returns the size of the current congestion window size in bytes.
   QuicByteCount GetCongestionWindowInBytes() const {
     return send_algorithm_->GetCongestionWindow();
+  }
+
+  QuicBandwidth GetPacingRate() const {
+    return send_algorithm_->PacingRate(GetBytesInFlight());
   }
 
   // Returns the size of the slow start congestion window in nume of 1460 byte
@@ -310,6 +321,12 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   QuicPacketNumber GetLargestSentPacket() const {
     return unacked_packets_.largest_sent_packet();
   }
+
+  // Returns the lowest of the largest acknowledged packet and the least
+  // unacked packet. This is designed to be used when computing the packet
+  // number length to send.
+  QuicPacketNumber GetLeastPacketAwaitedByPeer(
+      EncryptionLevel encryption_level) const;
 
   QuicPacketNumber GetLargestPacketPeerKnowsIsAcked(
       EncryptionLevel decrypted_packet_level) const;
@@ -397,6 +414,12 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // Called to retransmit in flight packet of |space| if any.
   void RetransmitDataOfSpaceIfAny(PacketNumberSpace space);
 
+  // Returns true if |timeout| is less than 3 * RTO/PTO delay.
+  bool IsLessThanThreePTOs(QuicTime::Delta timeout) const;
+
+  // Returns current PTO delay.
+  QuicTime::Delta GetPtoDelay() const;
+
   bool supports_multiple_packet_number_spaces() const {
     return unacked_packets_.supports_multiple_packet_number_spaces();
   }
@@ -412,6 +435,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   bool one_rtt_packet_acked() const { return one_rtt_packet_acked_; }
 
   void OnUserAgentIdKnown() { loss_algorithm_->OnUserAgentIdKnown(); }
+
+  bool fix_packet_number_length() const { return fix_packet_number_length_; }
 
  private:
   friend class test::QuicConnectionPeer;
@@ -439,7 +464,7 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   const QuicTime::Delta GetRetransmissionDelay() const;
 
   // Returns the probe timeout.
-  const QuicTime::Delta GetProbeTimeoutDelay() const;
+  const QuicTime::Delta GetProbeTimeoutDelay(PacketNumberSpace space) const;
 
   // Update the RTT if the ack is for the largest acked packet number.
   // Returns true if the rtt was updated.
@@ -505,7 +530,7 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Indicates whether including peer_max_ack_delay_ when calculating PTO
   // timeout.
-  bool ShouldAddMaxAckDelay() const;
+  bool ShouldAddMaxAckDelay(PacketNumberSpace space) const;
 
   // Gets the earliest in flight packet sent time to calculate PTO. Also
   // updates |packet_number_space| if a PTO timer should be armed.
@@ -520,6 +545,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // timeout with TLP and RTO mode.
   QuicTime::Delta GetNConsecutiveRetransmissionTimeoutDelay(
       int num_timeouts) const;
+
+  // Returns true if peer has finished address validation, such that
+  // retransmission timer is not armed if there is no packets in flight.
+  bool PeerCompletedAddressValidation() const;
 
   // Newly serialized retransmittable packets are added to this map, which
   // contains owning pointers to any contained frames.  If a packet is
@@ -645,6 +674,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // Number of PTOs similar to TLPs.
   size_t num_tlp_timeout_ptos_;
 
+  // True if any ENCRYPTION_HANDSHAKE packet gets acknowledged.
+  bool handshake_packet_acked_;
+
   // True if any 1-RTT packet gets acknowledged.
   bool one_rtt_packet_acked_;
 
@@ -662,6 +694,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // The multiplier for caculating PTO timeout before any RTT sample is
   // available.
   float pto_multiplier_without_rtt_samples_;
+
+  const bool fix_packet_number_length_ =
+      GetQuicReloadableFlag(quic_fix_packet_number_length);
 };
 
 }  // namespace quic

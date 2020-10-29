@@ -26,6 +26,7 @@
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_system.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
+#include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_dib.h"
@@ -342,9 +343,8 @@ void DrawGouraud(const RetainPtr<CFX_DIBitmap>& pBitmap,
   if (min_y == max_y)
     return;
 
-  int min_yi = std::max(static_cast<int>(floor(min_y)), 0);
-  int max_yi = static_cast<int>(ceil(max_y));
-
+  int min_yi = std::max(static_cast<int>(floorf(min_y)), 0);
+  int max_yi = static_cast<int>(ceilf(max_y));
   if (max_yi >= pBitmap->GetHeight())
     max_yi = pBitmap->GetHeight() - 1;
 
@@ -373,39 +373,40 @@ void DrawGouraud(const RetainPtr<CFX_DIBitmap>& pBitmap,
     if (nIntersects != 2)
       continue;
 
-    int min_x, max_x, start_index, end_index;
+    int min_x;
+    int max_x;
+    int start_index;
+    int end_index;
     if (inter_x[0] < inter_x[1]) {
-      min_x = (int)floor(inter_x[0]);
-      max_x = (int)ceil(inter_x[1]);
+      min_x = static_cast<int>(floorf(inter_x[0]));
+      max_x = static_cast<int>(ceilf(inter_x[1]));
       start_index = 0;
       end_index = 1;
     } else {
-      min_x = (int)floor(inter_x[1]);
-      max_x = (int)ceil(inter_x[0]);
+      min_x = static_cast<int>(floorf(inter_x[1]));
+      max_x = static_cast<int>(ceilf(inter_x[0]));
       start_index = 1;
       end_index = 0;
     }
 
     int start_x = std::max(min_x, 0);
-    int end_x = max_x;
-    if (end_x > pBitmap->GetWidth())
-      end_x = pBitmap->GetWidth();
+    int end_x = std::min(max_x, pBitmap->GetWidth());
 
     uint8_t* dib_buf =
         pBitmap->GetBuffer() + y * pBitmap->GetPitch() + start_x * 4;
     float r_unit = (r[end_index] - r[start_index]) / (max_x - min_x);
     float g_unit = (g[end_index] - g[start_index]) / (max_x - min_x);
     float b_unit = (b[end_index] - b[start_index]) / (max_x - min_x);
-    float R = r[start_index] + (start_x - min_x) * r_unit;
-    float G = g[start_index] + (start_x - min_x) * g_unit;
-    float B = b[start_index] + (start_x - min_x) * b_unit;
+    float r_result = r[start_index] + (start_x - min_x) * r_unit;
+    float g_result = g[start_index] + (start_x - min_x) * g_unit;
+    float b_result = b[start_index] + (start_x - min_x) * b_unit;
     for (int x = start_x; x < end_x; x++) {
-      R += r_unit;
-      G += g_unit;
-      B += b_unit;
-      FXARGB_SETDIB(dib_buf,
-                    ArgbEncode(alpha, (int32_t)(R * 255), (int32_t)(G * 255),
-                               (int32_t)(B * 255)));
+      r_result += r_unit;
+      g_result += g_unit;
+      b_result += b_unit;
+      FXARGB_SETDIB(dib_buf, ArgbEncode(alpha, static_cast<int>(r_result * 255),
+                                        static_cast<int>(g_result * 255),
+                                        static_cast<int>(b_result * 255)));
       dib_buf += 4;
     }
   }
@@ -426,8 +427,6 @@ void DrawFreeGouraudShading(
     return;
 
   CPDF_MeshVertex triangle[3];
-  memset(triangle, 0, sizeof(triangle));
-
   while (!stream.BitStream()->IsEOF()) {
     CPDF_MeshVertex vertex;
     uint32_t flag;
@@ -436,9 +435,9 @@ void DrawFreeGouraudShading(
 
     if (flag == 0) {
       triangle[0] = vertex;
-      for (int j = 1; j < 3; j++) {
-        uint32_t tflag;
-        if (!stream.ReadVertex(mtObject2Bitmap, &triangle[j], &tflag))
+      for (int i = 1; i < 3; ++i) {
+        uint32_t dummy_flag;
+        if (!stream.ReadVertex(mtObject2Bitmap, &triangle[i], &dummy_flag))
           return;
       }
     } else {
@@ -701,14 +700,16 @@ struct CPDF_PatchDrawer {
       D2.GetPoints(points.subspan(3, 4));
       C2.GetPointsReverse(points.subspan(6, 4));
       D1.GetPointsReverse(points.subspan(9, 4));
-      int fillFlags = FXFILL_WINDING | FXFILL_FULLCOVER;
+      CFX_FillRenderOptions fill_options(
+          CFX_FillRenderOptions::WindingOptions());
+      fill_options.full_cover = true;
       if (bNoPathSmooth)
-        fillFlags |= FXFILL_NOPATHSMOOTH;
+        fill_options.aliased_path = true;
       pDevice->DrawPath(
           &path, nullptr, nullptr,
           ArgbEncode(alpha, div_colors[0].comp[0], div_colors[0].comp[1],
                      div_colors[0].comp[2]),
-          0, fillFlags);
+          0, fill_options);
     } else {
       if (d_bottom < COONCOLOR_THRESHOLD && d_top < COONCOLOR_THRESHOLD) {
         Coon_Bezier m1;
@@ -916,29 +917,35 @@ void CPDF_RenderShading::Draw(CFX_RenderDevice* pDevice,
     case kFreeFormGouraudTriangleMeshShading: {
       // The shading object can be a stream or a dictionary. We do not handle
       // the case of dictionary at the moment.
-      if (const CPDF_Stream* pStream = ToStream(pPattern->GetShadingObject())) {
+      const CPDF_Stream* pStream = ToStream(pPattern->GetShadingObject());
+      if (pStream) {
         DrawFreeGouraudShading(pBitmap, FinalMatrix, pStream, funcs,
                                pColorSpace, alpha);
       }
-    } break;
+      break;
+    }
     case kLatticeFormGouraudTriangleMeshShading: {
       // The shading object can be a stream or a dictionary. We do not handle
       // the case of dictionary at the moment.
-      if (const CPDF_Stream* pStream = ToStream(pPattern->GetShadingObject())) {
+      const CPDF_Stream* pStream = ToStream(pPattern->GetShadingObject());
+      if (pStream) {
         DrawLatticeGouraudShading(pBitmap, FinalMatrix, pStream, funcs,
                                   pColorSpace, alpha);
       }
-    } break;
+      break;
+    }
     case kCoonsPatchMeshShading:
     case kTensorProductPatchMeshShading: {
       // The shading object can be a stream or a dictionary. We do not handle
       // the case of dictionary at the moment.
-      if (const CPDF_Stream* pStream = ToStream(pPattern->GetShadingObject())) {
+      const CPDF_Stream* pStream = ToStream(pPattern->GetShadingObject());
+      if (pStream) {
         DrawCoonPatchMeshes(pPattern->GetShadingType(), pBitmap, FinalMatrix,
                             pStream, funcs, pColorSpace,
                             options.GetOptions().bNoPathSmooth, alpha);
       }
-    } break;
+      break;
+    }
   }
   if (bAlphaMode)
     pBitmap->LoadChannelFromAlpha(FXDIB_Red, pBitmap);

@@ -84,7 +84,6 @@ set_aom_config_var(CONFIG_SHARED 0 "Build shared libs.")
 set_aom_config_var(CONFIG_WEBM_IO 1 "Enables WebM support.")
 
 # Debugging flags.
-set_aom_config_var(CONFIG_BITSTREAM_DEBUG 0 "Bitstream debugging flag.")
 set_aom_config_var(CONFIG_DEBUG 0 "Debug build flag.")
 set_aom_config_var(CONFIG_MISMATCH_DEBUG 0 "Mismatch debugging flag.")
 
@@ -115,6 +114,8 @@ set_aom_config_var(CONFIG_COLLECT_RD_STATS 0 "AV1 experiment flag.")
 set_aom_config_var(CONFIG_DIST_8X8 0 "AV1 experiment flag.")
 set_aom_config_var(CONFIG_ENTROPY_STATS 0 "AV1 experiment flag.")
 set_aom_config_var(CONFIG_INTER_STATS_ONLY 0 "AV1 experiment flag.")
+set_aom_config_var(CONFIG_BITSTREAM_DEBUG 0
+                   "AV1 experiment flag for bitstream debugging.")
 set_aom_config_var(CONFIG_RD_DEBUG 0 "AV1 experiment flag.")
 set_aom_config_var(CONFIG_SHARP_SETTINGS 0 "AV1 experiment flag.")
 set_aom_config_var(CONFIG_DISABLE_FULL_PIXEL_SPLIT_8X8 1
@@ -125,12 +126,12 @@ set_aom_config_var(CONFIG_COLLECT_COMPONENT_TIMING 0
                    "Collect encoding component timing information.")
 set_aom_config_var(CONFIG_LPF_MASK 0
                    "Enable the use loop filter bitmasks for optimizations.")
-set_aom_config_var(CONFIG_HTB_TRELLIS 0
-                   "Enable the use of hash table for trellis optimizations.")
 set_aom_config_var(CONFIG_REALTIME_ONLY 0
                    "Build for RTC-only to reduce binary size.")
 set_aom_config_var(CONFIG_AV1_HIGHBITDEPTH 1
                    "Build with high bitdepth support.")
+set_aom_config_var(CONFIG_AV1_TEMPORAL_DENOISING 0
+                   "Build with temporal denoising support.")
 set_aom_config_var(CONFIG_NN_V2 0 "Fully-connected neural nets ver.2.")
 set_aom_config_var(CONFIG_SUPERRES_IN_RECODE 1
                    "Enable encoding both full-res and superres in recode loop"

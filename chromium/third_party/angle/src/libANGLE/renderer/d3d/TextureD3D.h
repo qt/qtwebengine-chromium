@@ -72,7 +72,9 @@ class TextureD3D : public TextureImpl, public angle::ObserverInterface
                                            GLenum internalFormat,
                                            const gl::Extents &size,
                                            gl::MemoryObject *memoryObject,
-                                           GLuint64 offset) override;
+                                           GLuint64 offset,
+                                           GLbitfield createFlags,
+                                           GLbitfield usageFlags) override;
 
     bool isImmutable() const { return mImmutable; }
 
@@ -108,7 +110,7 @@ class TextureD3D : public TextureImpl, public angle::ObserverInterface
 
     angle::Result syncState(const gl::Context *context,
                             const gl::Texture::DirtyBits &dirtyBits,
-                            gl::TextureCommand source) override;
+                            gl::Command source) override;
 
     angle::Result initializeContents(const gl::Context *context,
                                      const gl::ImageIndex &imageIndex) override;

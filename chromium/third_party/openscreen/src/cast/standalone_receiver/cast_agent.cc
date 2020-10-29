@@ -129,8 +129,18 @@ void CastAgent::OnNegotiated(const ReceiverSession* session,
   OSP_VLOG << "Successfully negotiated with sender.";
 }
 
-void CastAgent::OnConfiguredReceiversDestroyed(const ReceiverSession* session) {
-  OSP_VLOG << "Receiver instances destroyed.";
+void CastAgent::OnReceiversDestroying(const ReceiverSession* session,
+                                      ReceiversDestroyingReason reason) {
+  const auto GetReasoning = [&] {
+    switch (reason) {
+      case kEndOfSession:
+        return " at end of session.";
+      case kRenegotiated:
+        return ", to be replaced with new ones.";
+    }
+    return "";
+  };
+  OSP_VLOG << "Receiver instances destroying" << GetReasoning();
 }
 
 // Currently, we just kill the session if an error is encountered.

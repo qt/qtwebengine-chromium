@@ -14,26 +14,25 @@
         "See the License for the specific language governing permissions and",
         "limitations under the License."
     ],
+    "_todos": [
+        "Remove usage of size_t because it is not network transparent"
+    ],
     "commands": {
         "buffer map async": [
             { "name": "buffer id", "type": "ObjectId" },
             { "name": "request serial", "type": "uint32_t" },
-            { "name": "is write", "type": "bool" },
+            { "name": "mode", "type": "map mode" },
+            { "name": "offset", "type": "size_t"},
+            { "name": "size", "type": "size_t"},
             { "name": "handle create info length", "type": "uint64_t" },
             { "name": "handle create info", "type": "uint8_t", "annotation": "const*", "length": "handle create info length", "skip_serialize": true}
-        ],
-        "buffer set sub data internal": [
-            {"name": "buffer id", "type": "ObjectId" },
-            {"name": "start", "type": "uint64_t"},
-            {"name": "count", "type": "uint64_t"},
-            {"name": "data", "type": "uint8_t", "annotation": "const*", "length": "count"}
         ],
         "buffer update mapped data": [
             { "name": "buffer id", "type": "ObjectId" },
             { "name": "write flush info length", "type": "uint64_t" },
             { "name": "write flush info", "type": "uint8_t", "annotation": "const*", "length": "write flush info length", "skip_serialize": true}
         ],
-        "device create buffer mapped": [
+        "device create buffer": [
             { "name": "device", "type": "device" },
             { "name": "descriptor", "type": "buffer descriptor", "annotation": "const*" },
             { "name": "result", "type": "ObjectHandle", "handle_type": "buffer" },
@@ -54,20 +53,23 @@
             {"name": "buffer offset", "type": "uint64_t"},
             {"name": "data", "type": "uint8_t", "annotation": "const*", "length": "size"},
             {"name": "size", "type": "size_t"}
+        ],
+        "queue write texture internal": [
+            {"name": "queue id", "type": "ObjectId" },
+            {"name": "destination", "type": "texture copy view", "annotation": "const*"},
+            {"name": "data", "type": "uint8_t", "annotation": "const*", "length": "data size"},
+            {"name": "data size", "type": "size_t"},
+            {"name": "data layout", "type": "texture data layout", "annotation": "const*"},
+            {"name": "writeSize", "type": "extent 3D", "annotation": "const*"}
         ]
     },
     "return commands": {
-        "buffer map read async callback": [
+        "buffer map async callback": [
             { "name": "buffer", "type": "ObjectHandle", "handle_type": "buffer" },
             { "name": "request serial", "type": "uint32_t" },
             { "name": "status", "type": "uint32_t" },
-            { "name": "initial data info length", "type": "uint64_t" },
-            { "name": "initial data info", "type": "uint8_t", "annotation": "const*", "length": "initial data info length", "skip_serialize": true }
-        ],
-        "buffer map write async callback": [
-            { "name": "buffer", "type": "ObjectHandle", "handle_type": "buffer" },
-            { "name": "request serial", "type": "uint32_t" },
-            { "name": "status", "type": "uint32_t" }
+            { "name": "read initial data info length", "type": "uint64_t" },
+            { "name": "read initial data info", "type": "uint8_t", "annotation": "const*", "length": "read initial data info length", "skip_serialize": true }
         ],
         "device uncaptured error callback": [
             { "name": "type", "type": "error type"},
@@ -94,22 +96,27 @@
             "SurfaceDescriptorFromXlib"
         ],
         "client_side_commands": [
+            "BufferMapAsync",
             "BufferMapReadAsync",
             "BufferMapWriteAsync",
-            "BufferSetSubData",
+            "BufferGetConstMappedRange",
+            "BufferGetMappedRange",
+            "DeviceCreateBuffer",
+            "DeviceCreateBufferMapped",
             "DevicePopErrorScope",
             "DeviceSetDeviceLostCallback",
             "DeviceSetUncapturedErrorCallback",
             "FenceGetCompletedValue",
             "FenceOnCompletion",
-            "QueueWriteBuffer"
+            "QueueWriteBuffer",
+            "QueueWriteTexture"
         ],
         "client_handwritten_commands": [
             "BufferDestroy",
             "BufferUnmap",
-            "DeviceCreateBuffer",
-            "DeviceCreateBufferMapped",
+            "DeviceCreateErrorBuffer",
             "DeviceGetDefaultQueue",
+            "DeviceInjectError",
             "DevicePushErrorScope",
             "QueueCreateFence",
             "QueueSignal"
@@ -117,7 +124,8 @@
         "client_special_objects": [
             "Buffer",
             "Device",
-            "Fence"
+            "Fence",
+            "Queue"
         ],
         "server_custom_pre_handler_commands": [
             "BufferDestroy",

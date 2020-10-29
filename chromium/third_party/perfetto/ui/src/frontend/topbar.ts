@@ -238,6 +238,22 @@ class HelpPanningNotification implements m.ClassComponent {
   }
 }
 
+class TraceErrorIcon implements m.ClassComponent {
+  view() {
+    const errors = globals.traceErrors;
+    if (!errors || mode === COMMAND) return;
+    return m(
+        'a.error',
+        {href: '#!/info'},
+        m('i.material-icons',
+          {
+            title: `${globals.traceErrors} import or data loss errors detected.
+                    Click for more info.`,
+          },
+          'announcement'));
+  }
+}
+
 export class Topbar implements m.ClassComponent {
   view() {
     return m(
@@ -246,6 +262,7 @@ export class Topbar implements m.ClassComponent {
             m(NewVersionNotification) :
             m(Omnibox),
         m(Progress),
-        m(HelpPanningNotification));
+        m(HelpPanningNotification),
+        m(TraceErrorIcon));
   }
 }

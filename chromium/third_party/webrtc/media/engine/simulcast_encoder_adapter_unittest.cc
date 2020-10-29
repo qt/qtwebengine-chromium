@@ -167,8 +167,6 @@ class MockVideoEncoderFactory : public VideoEncoderFactory {
   std::unique_ptr<VideoEncoder> CreateVideoEncoder(
       const SdpVideoFormat& format) override;
 
-  CodecInfo QueryVideoEncoder(const SdpVideoFormat& format) const override;
-
   const std::vector<MockVideoEncoder*>& encoders() const;
   void SetEncoderNames(const std::vector<const char*>& encoder_names);
   void set_init_encode_return_value(int32_t value);
@@ -204,10 +202,6 @@ class MockVideoEncoder : public VideoEncoder {
               (FecControllerOverride * fec_controller_override),
               (override));
 
-  // TODO(nisse): Valid overrides commented out, because the gmock
-  // methods don't use any override declarations, and we want to avoid
-  // warnings from -Winconsistent-missing-override. See
-  // http://crbug.com/428099.
   int32_t InitEncode(const VideoCodec* codecSettings,
                      const VideoEncoder::Settings& settings) override {
     codec_ = *codecSettings;
@@ -257,7 +251,7 @@ class MockVideoEncoder : public VideoEncoder {
     image._encodedHeight = height;
     CodecSpecificInfo codec_specific_info;
     codec_specific_info.codecType = webrtc::kVideoCodecVP8;
-    callback_->OnEncodedImage(image, &codec_specific_info, nullptr);
+    callback_->OnEncodedImage(image, &codec_specific_info);
   }
 
   void set_supports_native_handle(bool enabled) {
@@ -361,11 +355,6 @@ void MockVideoEncoderFactory::DestroyVideoEncoder(VideoEncoder* encoder) {
   }
 }
 
-VideoEncoderFactory::CodecInfo MockVideoEncoderFactory::QueryVideoEncoder(
-    const SdpVideoFormat& format) const {
-  return CodecInfo();
-}
-
 const std::vector<MockVideoEncoder*>& MockVideoEncoderFactory::encoders()
     const {
   return encoders_;
@@ -433,8 +422,7 @@ class TestSimulcastEncoderAdapterFake : public ::testing::Test,
   }
 
   Result OnEncodedImage(const EncodedImage& encoded_image,
-                        const CodecSpecificInfo* codec_specific_info,
-                        const RTPFragmentationHeader* fragmentation) override {
+                        const CodecSpecificInfo* codec_specific_info) override {
     last_encoded_image_width_ = encoded_image._encodedWidth;
     last_encoded_image_height_ = encoded_image._encodedHeight;
     last_encoded_image_simulcast_index_ =
@@ -468,7 +456,6 @@ class TestSimulcastEncoderAdapterFake : public ::testing::Test,
     const VideoCodec& target =
         helper_->factory()->encoders()[stream_index]->codec();
     EXPECT_EQ(ref.codecType, target.codecType);
-    EXPECT_EQ(ref.plType, target.plType);
     EXPECT_EQ(ref.width, target.width);
     EXPECT_EQ(ref.height, target.height);
     EXPECT_EQ(ref.startBitrate, target.startBitrate);
@@ -764,7 +751,6 @@ TEST_F(TestSimulcastEncoderAdapterFake, ReinitDoesNotReorderEncoderSettings) {
 
     // webrtc::VideoCodec does not implement operator==.
     EXPECT_EQ(codec_before.codecType, codec_after.codecType);
-    EXPECT_EQ(codec_before.plType, codec_after.plType);
     EXPECT_EQ(codec_before.width, codec_after.width);
     EXPECT_EQ(codec_before.height, codec_after.height);
     EXPECT_EQ(codec_before.startBitrate, codec_after.startBitrate);

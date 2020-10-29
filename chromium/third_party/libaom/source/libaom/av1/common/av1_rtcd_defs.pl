@@ -264,6 +264,10 @@ specialize qw/av1_build_compound_diffwtd_mask_d16 sse4_1 avx2 neon/;
 add_proto qw/void av1_round_shift_array/, "int32_t *arr, int size, int bit";
 specialize "av1_round_shift_array", qw/sse4_1 neon/;
 
+# Resize functions.
+add_proto qw/void av1_resize_and_extend_frame/, "const YV12_BUFFER_CONFIG *src, YV12_BUFFER_CONFIG *dst, const InterpFilter filter, const int phase, const int num_planes";
+specialize qw/av1_resize_and_extend_frame ssse3 neon/;
+
 #
 # Encoder functions below this point.
 #
@@ -298,6 +302,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   # fdct functions
 
   add_proto qw/void av1_fwht4x4/, "const int16_t *input, tran_low_t *output, int stride";
+  specialize qw/av1_fwht4x4 neon/;
 
   #fwd txfm
   add_proto qw/void av1_lowbd_fwd_txfm/, "const int16_t *src_diff, tran_low_t *coeff, int diff_stride, TxfmParam *txfm_param";
@@ -364,12 +369,13 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   }
 
   add_proto qw/void av1_highbd_fwht4x4/, "const int16_t *input, tran_low_t *output, int stride";
+  specialize qw/av1_highbd_fwht4x4 neon/;
 
   # End av1_high encoder functions
 
   # txb
   add_proto qw/void av1_get_nz_map_contexts/, "const uint8_t *const levels, const int16_t *const scan, const uint16_t eob, const TX_SIZE tx_size, const TX_CLASS tx_class, int8_t *const coeff_contexts";
-  specialize qw/av1_get_nz_map_contexts sse2/;
+  specialize qw/av1_get_nz_map_contexts sse2 neon/;
   add_proto qw/void av1_txb_init_levels/, "const tran_low_t *const coeff, const int width, const int height, uint8_t *const levels";
   specialize qw/av1_txb_init_levels sse4_1 avx2 neon/;
 
@@ -403,10 +409,10 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
     specialize qw/av1_highbd_pixel_proj_error sse4_1 avx2/;
   }
   add_proto qw/void av1_get_horver_correlation_full/, " const int16_t *diff, int stride, int w, int h, float *hcorr, float *vcorr";
-  specialize qw/av1_get_horver_correlation_full sse4_1 avx2/;
+  specialize qw/av1_get_horver_correlation_full sse4_1 avx2 neon/;
 
   add_proto qw/void av1_nn_predict/, " const float *input_nodes, const NN_CONFIG *const nn_config, int reduce_prec, float *const output";
-  specialize qw/av1_nn_predict sse3/;
+  specialize qw/av1_nn_predict sse3 neon/;
 }
 # end encoder functions
 
@@ -444,7 +450,7 @@ specialize qw/av1_warp_affine sse4_1 avx2 neon/;
 
 if (aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
   add_proto qw/void av1_highbd_warp_affine/, "const int32_t *mat, const uint16_t *ref, int width, int height, int stride, uint16_t *pred, int p_col, int p_row, int p_width, int p_height, int p_stride, int subsampling_x, int subsampling_y, int bd, ConvolveParams *conv_params, int16_t alpha, int16_t beta, int16_t gamma, int16_t delta";
-  specialize qw/av1_highbd_warp_affine sse4_1/;
+  specialize qw/av1_highbd_warp_affine sse4_1 avx2/;
 }
 
 add_proto qw/int64_t av1_calc_frame_error/, "const uint8_t *const ref, int stride, const uint8_t *const dst, int p_width, int p_height, int p_stride";

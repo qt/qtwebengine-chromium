@@ -1,4 +1,4 @@
-// After editing this file, run "go generate" in the parent directory.
+// After editing this file, run "go generate" in the ../data directory.
 
 // Copyright 2017 The Wuffs Authors.
 //
@@ -120,8 +120,6 @@ const uint32_t wuffs_base__pixel_format__bits_per_channel[16] = {
 
 // !! INSERT vtable names.
 
-// !! INSERT base/strconv-impl.c.
-
 #endif  // !defined(WUFFS_CONFIG__MODULES) ||
         // defined(WUFFS_CONFIG__MODULE__BASE)  ||
         // defined(WUFFS_CONFIG__MODULE__BASE__CORE)
@@ -136,13 +134,22 @@ const uint32_t wuffs_base__pixel_format__bits_per_channel[16] = {
         // defined(WUFFS_CONFIG__MODULE__BASE__INTERFACES)
 
 #if !defined(WUFFS_CONFIG__MODULES) || defined(WUFFS_CONFIG__MODULE__BASE) || \
-    defined(WUFFS_CONFIG__MODULE__BASE__F64CONV)
+    defined(WUFFS_CONFIG__MODULE__BASE__FLOATCONV)
 
-// !! INSERT base/f64conv-submodule.c.
+// !! INSERT base/floatconv-submodule.c.
 
 #endif  // !defined(WUFFS_CONFIG__MODULES) ||
         // defined(WUFFS_CONFIG__MODULE__BASE) ||
-        // defined(WUFFS_CONFIG__MODULE__BASE__F64CONV)
+        // defined(WUFFS_CONFIG__MODULE__BASE__FLOATCONV)
+
+#if !defined(WUFFS_CONFIG__MODULES) || defined(WUFFS_CONFIG__MODULE__BASE) || \
+    defined(WUFFS_CONFIG__MODULE__BASE__INTCONV)
+
+// !! INSERT base/intconv-submodule.c.
+
+#endif  // !defined(WUFFS_CONFIG__MODULES) ||
+        // defined(WUFFS_CONFIG__MODULE__BASE) ||
+        // defined(WUFFS_CONFIG__MODULE__BASE__INTCONV)
 
 #if !defined(WUFFS_CONFIG__MODULES) || defined(WUFFS_CONFIG__MODULE__BASE) || \
     defined(WUFFS_CONFIG__MODULE__BASE__PIXCONV)
@@ -152,6 +159,15 @@ const uint32_t wuffs_base__pixel_format__bits_per_channel[16] = {
 #endif  // !defined(WUFFS_CONFIG__MODULES) ||
         // defined(WUFFS_CONFIG__MODULE__BASE) ||
         // defined(WUFFS_CONFIG__MODULE__BASE__PIXCONV)
+
+#if !defined(WUFFS_CONFIG__MODULES) || defined(WUFFS_CONFIG__MODULE__BASE) || \
+    defined(WUFFS_CONFIG__MODULE__BASE__UTF8)
+
+// !! INSERT base/utf8-submodule.c.
+
+#endif  // !defined(WUFFS_CONFIG__MODULES) ||
+        // defined(WUFFS_CONFIG__MODULE__BASE) ||
+        // defined(WUFFS_CONFIG__MODULE__BASE__UTF8)
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -10,6 +10,7 @@
  **************************************************************************************************/
 #include "GrRectBlurEffect.h"
 
+#include "src/core/SkUtils.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
@@ -53,16 +54,14 @@ half xCoverage, yCoverage;
                 rectFVar.isValid() ? args.fUniformHandler->getUniformCStr(rectFVar) : "float4(0)",
                 rectHVar.isValid() ? args.fUniformHandler->getUniformCStr(rectHVar) : "half4(0)",
                 rectHVar.isValid() ? args.fUniformHandler->getUniformCStr(rectHVar) : "half4(0)");
-        SkString _sample7215;
-        SkString _coords7215("float2(half2(xy.x, 0.5))");
-        _sample7215 = this->invokeChild(_outer.integral_index, args, _coords7215.c_str());
+        SkString _coords7176("float2(half2(xy.x, 0.5))");
+        SkString _sample7176 = this->invokeChild(1, args, _coords7176.c_str());
         fragBuilder->codeAppendf(
                 R"SkSL(
     xCoverage = %s.w;)SkSL",
-                _sample7215.c_str());
-        SkString _sample7273;
-        SkString _coords7273("float2(half2(xy.y, 0.5))");
-        _sample7273 = this->invokeChild(_outer.integral_index, args, _coords7273.c_str());
+                _sample7176.c_str());
+        SkString _coords7234("float2(half2(xy.y, 0.5))");
+        SkString _sample7234 = this->invokeChild(1, args, _coords7234.c_str());
         fragBuilder->codeAppendf(
                 R"SkSL(
     yCoverage = %s.w;
@@ -75,45 +74,35 @@ half xCoverage, yCoverage;
         rect.xy = half2(float2(%s.xy) - sk_FragCoord.xy);
         rect.zw = half2(sk_FragCoord.xy - float2(%s.zw));
     })SkSL",
-                _sample7273.c_str(),
+                _sample7234.c_str(),
                 rectFVar.isValid() ? args.fUniformHandler->getUniformCStr(rectFVar) : "float4(0)",
                 rectFVar.isValid() ? args.fUniformHandler->getUniformCStr(rectFVar) : "float4(0)",
                 rectHVar.isValid() ? args.fUniformHandler->getUniformCStr(rectHVar) : "half4(0)",
                 rectHVar.isValid() ? args.fUniformHandler->getUniformCStr(rectHVar) : "half4(0)");
-        SkString _sample8640;
-        SkString _coords8640("float2(half2(rect.x, 0.5))");
-        _sample8640 = this->invokeChild(_outer.integral_index, args, _coords8640.c_str());
-        SkString _sample8703;
-        SkString _coords8703("float2(half2(rect.z, 0.5))");
-        _sample8703 = this->invokeChild(_outer.integral_index, args, _coords8703.c_str());
+        SkString _coords8601("float2(half2(rect.x, 0.5))");
+        SkString _sample8601 = this->invokeChild(1, args, _coords8601.c_str());
+        SkString _coords8664("float2(half2(rect.z, 0.5))");
+        SkString _sample8664 = this->invokeChild(1, args, _coords8664.c_str());
         fragBuilder->codeAppendf(
                 R"SkSL(
     xCoverage = (1.0 - %s.w) - %s.w;)SkSL",
-                _sample8640.c_str(), _sample8703.c_str());
-        SkString _sample8767;
-        SkString _coords8767("float2(half2(rect.y, 0.5))");
-        _sample8767 = this->invokeChild(_outer.integral_index, args, _coords8767.c_str());
-        SkString _sample8830;
-        SkString _coords8830("float2(half2(rect.w, 0.5))");
-        _sample8830 = this->invokeChild(_outer.integral_index, args, _coords8830.c_str());
+                _sample8601.c_str(), _sample8664.c_str());
+        SkString _coords8728("float2(half2(rect.y, 0.5))");
+        SkString _sample8728 = this->invokeChild(1, args, _coords8728.c_str());
+        SkString _coords8791("float2(half2(rect.w, 0.5))");
+        SkString _sample8791 = this->invokeChild(1, args, _coords8791.c_str());
         fragBuilder->codeAppendf(
                 R"SkSL(
     yCoverage = (1.0 - %s.w) - %s.w;
 })SkSL",
-                _sample8767.c_str(), _sample8830.c_str());
-        SkString _input8899(args.fInputColor);
-        SkString _sample8899;
-        if (_outer.inputFP_index >= 0) {
-            _sample8899 = this->invokeChild(_outer.inputFP_index, _input8899.c_str(), args);
-        } else {
-            _sample8899.swap(_input8899);
-        }
+                _sample8728.c_str(), _sample8791.c_str());
+        SkString _sample8860 = this->invokeChild(0, args);
         fragBuilder->codeAppendf(
                 R"SkSL(
 half4 inputColor = %s;
 %s = (inputColor * xCoverage) * yCoverage;
 )SkSL",
-                _sample8899.c_str(), args.fOutputColor);
+                _sample8860.c_str(), args.fOutputColor);
     }
 
 private:
@@ -144,8 +133,8 @@ void GrRectBlurEffect::onGetGLSLProcessorKey(const GrShaderCaps& caps,
     bool highp = ((abs(rect.left()) > 16000.0 || abs(rect.top()) > 16000.0) ||
                   abs(rect.right()) > 16000.0) ||
                  abs(rect.bottom()) > 16000.0;
-    b->add32((int32_t)highp);
-    b->add32((int32_t)isFast);
+    b->add32((uint32_t)highp);
+    b->add32((uint32_t)isFast);
 }
 bool GrRectBlurEffect::onIsEqual(const GrFragmentProcessor& other) const {
     const GrRectBlurEffect& that = other.cast<GrRectBlurEffect>();
@@ -158,24 +147,24 @@ GrRectBlurEffect::GrRectBlurEffect(const GrRectBlurEffect& src)
         : INHERITED(kGrRectBlurEffect_ClassID, src.optimizationFlags())
         , rect(src.rect)
         , isFast(src.isFast) {
-    if (src.inputFP_index >= 0) {
-        inputFP_index = this->cloneAndRegisterChildProcessor(src.childProcessor(src.inputFP_index));
-    }
-    {
-        integral_index =
-                this->cloneAndRegisterChildProcessor(src.childProcessor(src.integral_index));
-    }
+    this->cloneAndRegisterAllChildProcessors(src);
 }
 std::unique_ptr<GrFragmentProcessor> GrRectBlurEffect::clone() const {
-    return std::unique_ptr<GrFragmentProcessor>(new GrRectBlurEffect(*this));
+    return std::make_unique<GrRectBlurEffect>(*this);
 }
+#if GR_TEST_UTILS
+SkString GrRectBlurEffect::onDumpInfo() const {
+    return SkStringPrintf("(rect=float4(%f, %f, %f, %f), isFast=%s)", rect.left(), rect.top(),
+                          rect.right(), rect.bottom(), (isFast ? "true" : "false"));
+}
+#endif
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrRectBlurEffect);
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> GrRectBlurEffect::TestCreate(GrProcessorTestData* data) {
     float sigma = data->fRandom->nextRangeF(3, 8);
     float width = data->fRandom->nextRangeF(200, 300);
     float height = data->fRandom->nextRangeF(200, 300);
-    return GrRectBlurEffect::Make(/*inputFP=*/nullptr, data->context(), *data->caps()->shaderCaps(),
+    return GrRectBlurEffect::Make(data->inputFP(), data->context(), *data->caps()->shaderCaps(),
                                   SkRect::MakeWH(width, height), sigma);
 }
 #endif

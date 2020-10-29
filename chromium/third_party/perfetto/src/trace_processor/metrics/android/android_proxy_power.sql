@@ -40,6 +40,20 @@
 --     FROM my_slice_power;
 
 SELECT RUN_METRIC('android/android_cpu_agg.sql');
+SELECT RUN_METRIC('android/power_profile_data.sql');
+
+CREATE VIEW device AS
+WITH
+  after_first_slash(str) AS (
+      SELECT SUBSTR(str_value, INSTR(str_value, '/') + 1)
+      FROM metadata
+      WHERE name = 'android_build_fingerprint'
+  ),
+  before_second_slash(str) AS (
+      SELECT SUBSTR(str, 0, INSTR(str, '/'))
+      FROM after_first_slash
+  )
+SELECT str AS name FROM before_second_slash;
 
 CREATE VIEW power_view AS
 SELECT
@@ -49,9 +63,17 @@ SELECT
   power AS power_ma
 FROM cpu_freq_view
 JOIN power_profile ON (
-  power_profile.cpu = cpu_freq_view.cpu
+  power_profile.device = (SELECT name FROM device)
+  AND power_profile.cpu = cpu_freq_view.cpu
   AND power_profile.freq = cpu_freq_view.freq_khz
 );
 
+-- utid = 0 is a reserved value used to mark sched slices where CPU was idle.
+-- It doesn't correspond to any real thread.
+CREATE VIEW sched_real_threads AS
+SELECT *
+FROM sched
+WHERE utid != 0;
+
 CREATE VIRTUAL TABLE power_per_thread
-USING SPAN_LEFT_JOIN(sched PARTITIONED cpu, power_view PARTITIONED cpu);
+USING SPAN_LEFT_JOIN(sched_real_threads PARTITIONED cpu, power_view PARTITIONED cpu);

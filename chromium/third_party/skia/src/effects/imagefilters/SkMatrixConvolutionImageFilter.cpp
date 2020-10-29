@@ -19,7 +19,6 @@
 #include "src/gpu/SkGr.h"
 
 #if SK_SUPPORT_GPU
-#include "include/gpu/GrContext.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrTextureProxy.h"
 #include "src/gpu/effects/GrMatrixConvolutionEffect.h"
@@ -234,12 +233,7 @@ sk_sp<SkFlattenable> SkMatrixConvolutionImageFilterImpl::CreateProc(SkReadBuffer
     kernelOffset.fX = buffer.readInt();
     kernelOffset.fY = buffer.readInt();
 
-    SkTileMode tileMode;
-    if (buffer.isVersionLT(SkPicturePriv::kCleanupImageFilterEnums_Version)) {
-        tileMode = to_sktilemode(buffer.read32LE(SkMatrixConvolutionImageFilter::kLast_TileMode));
-    } else {
-        tileMode = buffer.read32LE(SkTileMode::kLastTileMode);
-    }
+    SkTileMode tileMode = buffer.read32LE(SkTileMode::kLastTileMode);
     bool convolveAlpha = buffer.readBool();
 
     if (!buffer.isValid()) {

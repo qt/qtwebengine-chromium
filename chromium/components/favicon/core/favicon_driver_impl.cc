@@ -8,9 +8,9 @@
 
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
+#include "components/favicon/core/core_favicon_service.h"
 #include "components/favicon/core/favicon_driver_observer.h"
 #include "components/favicon/core/favicon_handler.h"
-#include "components/favicon/core/favicon_service.h"
 #include "components/favicon/core/favicon_url.h"
 
 namespace favicon {
@@ -24,11 +24,8 @@ const bool kEnableTouchIcon = false;
 
 }  // namespace
 
-FaviconDriverImpl::FaviconDriverImpl(FaviconService* favicon_service)
+FaviconDriverImpl::FaviconDriverImpl(CoreFaviconService* favicon_service)
     : favicon_service_(favicon_service) {
-  if (!favicon_service_)
-    return;
-
   if (kEnableTouchIcon) {
     handlers_.push_back(std::make_unique<FaviconHandler>(
         favicon_service_, this, FaviconDriverObserver::NON_TOUCH_LARGEST));

@@ -10,7 +10,6 @@
 #include "src/gpu/GrOnFlushResourceProvider.h"
 #include "src/gpu/GrOpsRenderPass.h"
 #include "src/gpu/GrTexture.h"
-#include "src/gpu/GrTexturePriv.h"
 #include "src/gpu/ccpr/GrCCPerFlushResources.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
@@ -108,13 +107,12 @@ public:
     }
 
 private:
-    void setData(const GrGLSLProgramDataManager& pdman, const GrPrimitiveProcessor& primProc,
-                 const CoordTransformRange& transformRange) override {
+    void setData(const GrGLSLProgramDataManager& pdman,
+                 const GrPrimitiveProcessor& primProc) override {
         const auto& proc = primProc.cast<GrCCPathProcessor>();
         pdman.set2f(fAtlasAdjustUniform,
                     1.0f / proc.fAtlasDimensions.fWidth,
                     1.0f / proc.fAtlasDimensions.fHeight);
-        this->setTransformDataHelper(pdman, transformRange);
         this->setTransform(pdman, fLocalMatrixUni, proc.fLocalMatrix, &fLocalMatrix);
     }
 

@@ -15,6 +15,7 @@
 #include "util/chrono_helpers.h"
 
 using ::testing::_;
+using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::NiceMock;
 using ::testing::Return;
@@ -267,8 +268,8 @@ class FakeClient : public ReceiverSession::Client {
               (const ReceiverSession*, ReceiverSession::ConfiguredReceivers),
               (override));
   MOCK_METHOD(void,
-              OnConfiguredReceiversDestroyed,
-              (const ReceiverSession*),
+              OnReceiversDestroying,
+              (const ReceiverSession*, ReceiversDestroyingReason),
               (override));
   MOCK_METHOD(void, OnError, (const ReceiverSession*, Error error), (override));
 };
@@ -323,6 +324,7 @@ TEST_F(ReceiverSessionTest, RegistersSelfOnMessagePort) {
 }
 
 TEST_F(ReceiverSessionTest, CanNegotiateWithDefaultPreferences) {
+  InSequence s;
   EXPECT_CALL(client_, OnNegotiated(session_.get(), _))
       .WillOnce([](const ReceiverSession* session_,
                    ReceiverSession::ConfiguredReceivers cr) {
@@ -352,7 +354,9 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithDefaultPreferences) {
         EXPECT_EQ(cr.video.value().selected_stream.stream.codec_name, "vp8");
         EXPECT_EQ(cr.video.value().selected_stream.stream.channels, 1);
       });
-  EXPECT_CALL(client_, OnConfiguredReceiversDestroyed(session_.get())).Times(1);
+  EXPECT_CALL(client_,
+              OnReceiversDestroying(session_.get(),
+                                    ReceiverSession::Client::kEndOfSession));
 
   message_port_->ReceiveMessage(kValidOfferMessage);
 
@@ -392,6 +396,7 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithCustomCodecPreferences) {
       ReceiverSession::Preferences{{ReceiverSession::VideoCodec::kVp9},
                                    {ReceiverSession::AudioCodec::kOpus}});
 
+  InSequence s;
   EXPECT_CALL(client_, OnNegotiated(&session, _))
       .WillOnce([](const ReceiverSession* session_,
                    ReceiverSession::ConfiguredReceivers cr) {
@@ -408,7 +413,8 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithCustomCodecPreferences) {
         EXPECT_EQ(cr.video.value().receiver_config.channels, 1);
         EXPECT_EQ(cr.video.value().receiver_config.rtp_timebase, 90000);
       });
-  EXPECT_CALL(client_, OnConfiguredReceiversDestroyed(&session)).Times(1);
+  EXPECT_CALL(client_, OnReceiversDestroying(
+                           &session, ReceiverSession::Client::kEndOfSession));
   message_port_->ReceiveMessage(kValidOfferMessage);
 }
 
@@ -434,8 +440,10 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithCustomConstraints) {
                                    std::move(constraints),
                                    std::move(display)});
 
-  EXPECT_CALL(client_, OnNegotiated(&session, _)).Times(1);
-  EXPECT_CALL(client_, OnConfiguredReceiversDestroyed(&session)).Times(1);
+  InSequence s;
+  EXPECT_CALL(client_, OnNegotiated(&session, _));
+  EXPECT_CALL(client_, OnReceiversDestroying(
+                           &session, ReceiverSession::Client::kEndOfSession));
   message_port_->ReceiveMessage(kValidOfferMessage);
 
   const auto& messages = message_port_->posted_messages();
@@ -485,8 +493,11 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithCustomConstraints) {
 }
 
 TEST_F(ReceiverSessionTest, HandlesNoValidAudioStream) {
-  EXPECT_CALL(client_, OnNegotiated(session_.get(), _)).Times(1);
-  EXPECT_CALL(client_, OnConfiguredReceiversDestroyed(session_.get())).Times(1);
+  InSequence s;
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnReceiversDestroying(session_.get(),
+                                    ReceiverSession::Client::kEndOfSession));
 
   message_port_->ReceiveMessage(kNoAudioOfferMessage);
   const auto& messages = message_port_->posted_messages();
@@ -519,8 +530,11 @@ TEST_F(ReceiverSessionTest, HandlesInvalidCodec) {
 }
 
 TEST_F(ReceiverSessionTest, HandlesNoValidVideoStream) {
-  EXPECT_CALL(client_, OnNegotiated(session_.get(), _)).Times(1);
-  EXPECT_CALL(client_, OnConfiguredReceiversDestroyed(session_.get())).Times(1);
+  InSequence s;
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnReceiversDestroying(session_.get(),
+                                    ReceiverSession::Client::kEndOfSession));
 
   message_port_->ReceiveMessage(kNoVideoOfferMessage);
   const auto& messages = message_port_->posted_messages();
@@ -552,8 +566,7 @@ TEST_F(ReceiverSessionTest, HandlesMalformedOffer) {
   // Note that unlike when we simply don't select any streams, when the offer
   // is actually completely invalid we call OnError.
   EXPECT_CALL(client_,
-              OnError(session_.get(), Error(Error::Code::kJsonParseError)))
-      .Times(1);
+              OnError(session_.get(), Error(Error::Code::kJsonParseError)));
 
   message_port_->ReceiveMessage(kInvalidJsonOfferMessage);
 }
@@ -562,8 +575,7 @@ TEST_F(ReceiverSessionTest, HandlesImproperlyFormattedOffer) {
   EXPECT_CALL(client_,
               OnError(session_.get(),
                       Error(Error::Code::kJsonParseError,
-                            "Failed to parse supported streams in offer")))
-      .Times(1);
+                            "Failed to parse supported streams in offer")));
 
   message_port_->ReceiveMessage(kValidJsonInvalidFormatOfferMessage);
 }
@@ -571,8 +583,7 @@ TEST_F(ReceiverSessionTest, HandlesImproperlyFormattedOffer) {
 TEST_F(ReceiverSessionTest, HandlesNullOffer) {
   EXPECT_CALL(client_, OnError(session_.get(),
                                Error(Error::Code::kJsonParseError,
-                                     "Received offer missing offer body")))
-      .Times(1);
+                                     "Received offer missing offer body")));
 
   message_port_->ReceiveMessage(kNullJsonOfferMessage);
 }
@@ -597,8 +608,15 @@ TEST_F(ReceiverSessionTest, DoesntCrashOnMessagePortError) {
 }
 
 TEST_F(ReceiverSessionTest, NotifiesReceiverDestruction) {
-  EXPECT_CALL(client_, OnNegotiated(session_.get(), _)).Times(2);
-  EXPECT_CALL(client_, OnConfiguredReceiversDestroyed(session_.get())).Times(2);
+  InSequence s;
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnReceiversDestroying(session_.get(),
+                                    ReceiverSession::Client::kRenegotiated));
+  EXPECT_CALL(client_, OnNegotiated(session_.get(), _));
+  EXPECT_CALL(client_,
+              OnReceiversDestroying(session_.get(),
+                                    ReceiverSession::Client::kEndOfSession));
 
   message_port_->ReceiveMessage(kNoAudioOfferMessage);
   message_port_->ReceiveMessage(kValidOfferMessage);

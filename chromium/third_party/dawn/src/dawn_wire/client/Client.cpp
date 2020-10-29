@@ -20,9 +20,7 @@
 namespace dawn_wire { namespace client {
 
     Client::Client(CommandSerializer* serializer, MemoryTransferService* memoryTransferService)
-        : ClientBase(),
-          mSerializer(serializer),
-          mMemoryTransferService(memoryTransferService) {
+        : ClientBase(), mSerializer(serializer), mMemoryTransferService(memoryTransferService) {
         if (mMemoryTransferService == nullptr) {
             // If a MemoryTransferService is not provided, fall back to inline memory.
             mOwnedMemoryTransferService = CreateInlineMemoryTransferService();
@@ -44,11 +42,11 @@ namespace dawn_wire { namespace client {
     }
 
     ReservedTexture Client::ReserveTexture(WGPUDevice cDevice) {
-        Device* device = reinterpret_cast<Device*>(cDevice);
+        Device* device = FromAPI(cDevice);
         ObjectAllocator<Texture>::ObjectAndSerial* allocation = TextureAllocator().New(device);
 
         ReservedTexture result;
-        result.texture = reinterpret_cast<WGPUTexture>(allocation->object.get());
+        result.texture = ToAPI(allocation->object.get());
         result.id = allocation->object->id;
         result.generation = allocation->generation;
         return result;

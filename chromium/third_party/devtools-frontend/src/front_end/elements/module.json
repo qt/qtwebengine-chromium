@@ -288,6 +288,17 @@
       "order": 10,
       "persistence": "permanent",
       "className": "Elements.NodeStackTraceWidget"
+    },
+    {
+      "type": "view",
+      "experiment": "cssGridFeatures",
+      "location": "elements-sidebar",
+      "id": "elements.layout",
+      "title": "Layout",
+      "order": 11,
+      "hasToolbar": false,
+      "persistence": "permanent",
+      "className": "Elements.LayoutSidebarPane"
     }
   ],
   "dependencies": [
@@ -297,7 +308,7 @@
     "color_picker",
     "event_listeners"
   ],
-  "scripts": [],
+  "skip_rollup": true,
   "modules": [
     "elements.js",
     "elements-legacy.js",
@@ -307,7 +318,6 @@
     "Adorner.js",
     "DOMLinkifier.js",
     "DOMPath.js",
-    "ElementsBreadcrumbs.js",
     "ElementsSidebarPane.js",
     "ElementsTreeElement.js",
     "ElementsTreeOutline.js",
@@ -321,14 +331,18 @@
     "StylesSidebarPane.js",
     "StylePropertyTreeElement.js",
     "ComputedStyleWidget.js",
+    "ComputedStyleProperty_bridge.js",
+    "ComputedStyleTrace_bridge.js",
     "ElementsPanel.js",
     "ClassesPaneWidget.js",
     "ElementStatePaneWidget.js",
     "ElementsTreeElementHighlighter.js",
-    "ImagePreviewPopover.js"
+    "ImagePreviewPopover.js",
+    "ElementsBreadcrumbs_bridge.js",
+    "LayoutSidebarPane.js",
+    "LayoutPane_bridge.js"
   ],
   "resources": [
-    "breadcrumbs.css",
     "classesPaneWidget.css",
     "computedStyleSidebarPane.css",
     "computedStyleWidgetTree.css",
@@ -336,8 +350,10 @@
     "elementsPanel.css",
     "elementStatePaneWidget.css",
     "elementsTreeOutline.css",
+    "layoutPane.css",
     "metricsSidebarPane.css",
     "platformFontsWidget.css",
+    "propertiesWidget.css",
     "nodeStackTraceWidget.css",
     "stylesSectionTree.css",
     "stylesSidebarPane.css"

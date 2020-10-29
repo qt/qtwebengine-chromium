@@ -36,7 +36,6 @@ namespace low_bitdepth {
 namespace {
 
 constexpr int kIntermediateStride = kMaxSuperBlockSizeInPixels;
-constexpr int kSubPixelMask = (1 << kSubPixelBits) - 1;
 constexpr int kHorizontalOffset = 3;
 constexpr int kFilterIndexShift = 6;
 
@@ -3113,7 +3112,7 @@ void ConvolveInit_NEON() { low_bitdepth::Init8bpp(); }
 }  // namespace dsp
 }  // namespace libgav1
 
-#else   // !LIBGAV1_ENABLE_NEON
+#else  // !LIBGAV1_ENABLE_NEON
 
 namespace libgav1 {
 namespace dsp {

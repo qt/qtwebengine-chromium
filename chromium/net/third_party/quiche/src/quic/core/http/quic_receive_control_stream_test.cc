@@ -24,6 +24,7 @@ namespace test {
 
 namespace {
 using ::testing::_;
+using ::testing::AnyNumber;
 using ::testing::StrictMock;
 
 struct TestParams {
@@ -86,6 +87,7 @@ class QuicReceiveControlStreamTest : public QuicTestWithParam<TestParams> {
             perspective(),
             SupportedVersions(GetParam().version))),
         session_(connection_) {
+    EXPECT_CALL(session_, OnCongestionWindowChange(_)).Times(AnyNumber());
     session_.Initialize();
     QuicStreamId id = perspective() == Perspective::IS_SERVER
                           ? GetNthClientInitiatedUnidirectionalStreamId(
@@ -282,7 +284,7 @@ TEST_P(QuicReceiveControlStreamTest, ReceiveGoAwayFrame) {
                       settings_frame));
   offset += settings_frame.length();
 
-  GoAwayFrame goaway{/* stream_id = */ 0};
+  GoAwayFrame goaway{/* id = */ 0};
 
   std::unique_ptr<char[]> buffer;
   QuicByteCount header_length =
@@ -294,14 +296,16 @@ TEST_P(QuicReceiveControlStreamTest, ReceiveGoAwayFrame) {
 
   EXPECT_CALL(debug_visitor, OnGoAwayFrameReceived(goaway));
 
-  if (perspective() == Perspective::IS_SERVER) {
+  if (!GetQuicReloadableFlag(quic_http3_goaway_new_behavior) &&
+      perspective() == Perspective::IS_SERVER) {
     EXPECT_CALL(
         *connection_,
         CloseConnection(QUIC_HTTP_FRAME_UNEXPECTED_ON_CONTROL_STREAM, _, _));
   }
 
   receive_control_stream_->OnStreamFrame(frame);
-  if (perspective() == Perspective::IS_CLIENT) {
+  if (GetQuicReloadableFlag(quic_http3_goaway_new_behavior) ||
+      perspective() == Perspective::IS_CLIENT) {
     EXPECT_TRUE(session_.http3_goaway_received());
   }
 }

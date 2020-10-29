@@ -23,6 +23,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
@@ -81,7 +84,7 @@ export class ProfilesPanel extends UI.Panel.PanelWithSidebar {
     const toolbar = new UI.Toolbar.Toolbar('', toolbarContainerLeft);
 
     this._toggleRecordAction =
-        /** @type {!UI.Action.Action }*/ (self.UI.actionRegistry.action(recordingActionId));
+        /** @type {!UI.Action.Action }*/ (UI.ActionRegistry.ActionRegistry.instance().action(recordingActionId));
     this._toggleRecordButton = UI.Toolbar.Toolbar.createActionButton(this._toggleRecordAction);
     toolbar.appendToolbarItem(this._toggleRecordButton);
 
@@ -113,9 +116,9 @@ export class ProfilesPanel extends UI.Panel.PanelWithSidebar {
 
     SDK.SDKModel.TargetManager.instance().addEventListener(
         SDK.SDKModel.Events.SuspendStateChanged, this._onSuspendStateChanged, this);
-    self.UI.context.addFlavorChangeListener(
+    UI.Context.Context.instance().addFlavorChangeListener(
         SDK.CPUProfilerModel.CPUProfilerModel, this._updateProfileTypeSpecificUI, this);
-    self.UI.context.addFlavorChangeListener(
+    UI.Context.Context.instance().addFlavorChangeListener(
         SDK.HeapProfilerModel.HeapProfilerModel, this._updateProfileTypeSpecificUI, this);
   }
 
@@ -220,8 +223,8 @@ export class ProfilesPanel extends UI.Panel.PanelWithSidebar {
    */
   _updateToggleRecordAction(toggled) {
     const hasSelectedTarget =
-        !!(self.UI.context.flavor(SDK.CPUProfilerModel.CPUProfilerModel) ||
-           self.UI.context.flavor(SDK.HeapProfilerModel.HeapProfilerModel));
+        !!(UI.Context.Context.instance().flavor(SDK.CPUProfilerModel.CPUProfilerModel) ||
+           UI.Context.Context.instance().flavor(SDK.HeapProfilerModel.HeapProfilerModel));
     const enable = toggled || (!SDK.SDKModel.TargetManager.instance().allTargetsSuspended() && hasSelectedTarget);
     this._toggleRecordAction.setEnabled(enable);
     this._toggleRecordAction.setToggled(toggled);
@@ -714,14 +717,14 @@ export class JSProfilerPanel extends ProfilesPanel {
    * @override
    */
   wasShown() {
-    self.UI.context.setFlavor(JSProfilerPanel, this);
+    UI.Context.Context.instance().setFlavor(JSProfilerPanel, this);
   }
 
   /**
    * @override
    */
   willHide() {
-    self.UI.context.setFlavor(JSProfilerPanel, null);
+    UI.Context.Context.instance().setFlavor(JSProfilerPanel, null);
   }
 
   /**
@@ -731,7 +734,7 @@ export class JSProfilerPanel extends ProfilesPanel {
    * @return {boolean}
    */
   handleAction(context, actionId) {
-    const panel = self.UI.context.flavor(JSProfilerPanel);
+    const panel = UI.Context.Context.instance().flavor(JSProfilerPanel);
     console.assert(panel && panel instanceof JSProfilerPanel);
     panel.toggleRecord();
     return true;

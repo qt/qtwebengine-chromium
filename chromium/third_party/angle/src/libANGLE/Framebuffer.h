@@ -21,6 +21,7 @@
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/Observer.h"
 #include "libANGLE/RefCountObject.h"
+#include "libANGLE/State.h"
 
 namespace rx
 {
@@ -49,23 +50,17 @@ class State;
 class Texture;
 class TextureCapsMap;
 
-enum class AttachmentSampleType
-{
-    // The sample count of the actual resource
-    Resource,
-    // If render_to_texture is used, this is the sample count of the multisampled
-    // texture that is created behind the scenes.
-    Emulated
-};
-
 class FramebufferState final : angle::NonCopyable
 {
   public:
-    explicit FramebufferState(ContextID owningContextID);
-    FramebufferState(const Caps &caps, FramebufferID id, ContextID owningContextID);
+    explicit FramebufferState(ContextID owningContextID, rx::Serial serial);
+    FramebufferState(const Caps &caps,
+                     FramebufferID id,
+                     ContextID owningContextID,
+                     rx::Serial serial);
     ~FramebufferState();
 
-    const std::string &getLabel();
+    const std::string &getLabel() const;
     size_t getReadIndex() const;
 
     const FramebufferAttachment *getAttachment(const Context *context, GLenum attachment) const;
@@ -131,6 +126,8 @@ class FramebufferState final : angle::NonCopyable
 
     const gl::Offset &getSurfaceTextureOffset() const { return mSurfaceTextureOffset; }
 
+    rx::Serial getFramebufferSerial() const { return mFramebufferSerial; }
+
   private:
     const FramebufferAttachment *getWebGLDepthStencilAttachment() const;
     const FramebufferAttachment *getWebGLDepthAttachment() const;
@@ -142,7 +139,12 @@ class FramebufferState final : angle::NonCopyable
 
     friend class Framebuffer;
 
+    // The Framebuffer ID is unique to a Context.
+    // The Framebuffer Serial is unique to a Share Group.
     FramebufferID mId;
+    rx::Serial mFramebufferSerial;
+
+    // TODO(jmadill): Remove the owning context ID. http://anglebug.com/4500
     ContextID mOwningContextID;
     std::string mLabel;
 
@@ -169,6 +171,7 @@ class FramebufferState final : angle::NonCopyable
     bool mWebGLDepthStencilConsistent;
 
     // Tracks rendering feedback loops.
+    // TODO(jmadill): Remove. http://anglebug.com/4500
     DrawBufferMask mDrawBufferFeedbackLoops;
     bool mDepthBufferFeedbackLoop;
     bool mStencilBufferFeedbackLoop;
@@ -192,7 +195,8 @@ class Framebuffer final : public angle::ObserverInterface,
     Framebuffer(const Caps &caps,
                 rx::GLImplFactory *factory,
                 FramebufferID id,
-                ContextID owningContextID);
+                ContextID owningContextID,
+                egl::ShareGroup *shareGroup);
     // Constructor to build default framebuffers for a surface and context pair
     Framebuffer(const Context *context, egl::Surface *surface, egl::Surface *readSurface);
     // Constructor to build a fake default framebuffer when surfaceless
@@ -248,6 +252,8 @@ class Framebuffer final : public angle::ObserverInterface,
         return mState.mColorAttachments;
     }
 
+    const FramebufferState &getState() const { return mState; }
+
     const FramebufferAttachment *getAttachment(const Context *context, GLenum attachment) const;
     bool isMultiview() const;
     bool readDisallowedByMultiview() const;
@@ -276,7 +282,7 @@ class Framebuffer final : public angle::ObserverInterface,
 
     // This method calls checkStatus.
     int getSamples(const Context *context) const;
-    int getResourceSamples(const Context *context) const;
+    int getReadBufferResourceSamples(const Context *context) const;
 
     angle::Result getSamplePosition(const Context *context, size_t index, GLfloat *xy) const;
 
@@ -306,9 +312,6 @@ class Framebuffer final : public angle::ObserverInterface,
 
         return checkStatusImpl(context);
     }
-
-    // For when we don't want to check completeness in getSamples().
-    int getCachedSamples(const Context *context, AttachmentSampleType sampleType) const;
 
     // Helper for checkStatus == GL_FRAMEBUFFER_COMPLETE.
     ANGLE_INLINE bool isComplete(const Context *context) const
@@ -356,6 +359,8 @@ class Framebuffer final : public angle::ObserverInterface,
                              const Rectangle &area,
                              GLenum format,
                              GLenum type,
+                             const PixelPackState &pack,
+                             Buffer *packBuffer,
                              void *pixels);
 
     angle::Result blit(const Context *context,
@@ -398,12 +403,17 @@ class Framebuffer final : public angle::ObserverInterface,
 
     bool hasResourceThatNeedsInit() const { return mState.mResourceNeedsInit.any(); }
 
-    angle::Result syncState(const Context *context, GLenum framebufferBinding) const;
+    angle::Result syncState(const Context *context,
+                            GLenum framebufferBinding,
+                            Command command) const;
 
     // Observer implementation
     void onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message) override;
 
+    // TODO(jmadill): Remove. http://anglebug.com/4500
     bool hasRenderingFeedbackLoop() const { return mState.mHasRenderingFeedbackLoop; }
+
+    bool formsRenderingFeedbackLoopWith(const Context *context) const;
     bool formsCopyingFeedbackLoopWith(TextureID copyTextureID,
                                       GLint copyTextureLevel,
                                       GLint copyTextureLayer) const;
@@ -419,8 +429,6 @@ class Framebuffer final : public angle::ObserverInterface,
     Box getDimensions() const;
 
     static const FramebufferID kDefaultDrawFramebufferHandle;
-
-    rx::Serial serial() const { return mSerial; }
 
   private:
     bool detachResourceById(const Context *context, GLenum resourceType, GLuint resourceId);
@@ -487,7 +495,6 @@ class Framebuffer final : public angle::ObserverInterface,
         mFloat32ColorAttachmentBits.set(index, format->type == GL_FLOAT);
     }
 
-    rx::Serial mSerial;
     FramebufferState mState;
     rx::FramebufferImpl *mImpl;
 

@@ -155,7 +155,9 @@ class TextureImpl : public FramebufferAttachmentObjectImpl
                                                    GLenum internalFormat,
                                                    const gl::Extents &size,
                                                    gl::MemoryObject *memoryObject,
-                                                   GLuint64 offset) = 0;
+                                                   GLuint64 offset,
+                                                   GLbitfield createFlags,
+                                                   GLbitfield usageFlags) = 0;
 
     virtual angle::Result setImageExternal(const gl::Context *context,
                                            const gl::ImageIndex &index,
@@ -188,7 +190,7 @@ class TextureImpl : public FramebufferAttachmentObjectImpl
 
     virtual angle::Result syncState(const gl::Context *context,
                                     const gl::Texture::DirtyBits &dirtyBits,
-                                    gl::TextureCommand source) = 0;
+                                    gl::Command source) = 0;
 
     virtual GLenum getColorReadFormat(const gl::Context *context);
     virtual GLenum getColorReadType(const gl::Context *context);

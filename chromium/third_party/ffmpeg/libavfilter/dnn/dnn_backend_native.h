@@ -42,10 +42,13 @@ typedef enum {
     DLT_MIRROR_PAD = 3,
     DLT_MAXIMUM = 4,
     DLT_MATH_BINARY = 5,
+    DLT_MATH_UNARY = 6,
+    DLT_AVG_POOL = 7,
     DLT_COUNT
 } DNNLayerType;
 
-typedef enum {DOT_INPUT = 1, DOT_OUTPUT = 2, DOT_INTERMEDIATE = DOT_INPUT | DOT_INPUT} DNNOperandType;
+typedef enum {DOT_INPUT = 1, DOT_OUTPUT = 2, DOT_INTERMEDIATE = DOT_INPUT | DOT_OUTPUT} DNNOperandType;
+typedef enum {VALID, SAME, SAME_CLAMP_TO_EDGE} DNNPaddingParam;
 
 typedef struct Layer{
     DNNLayerType type;
@@ -113,12 +116,14 @@ typedef struct ConvolutionalNetwork{
     uint32_t nb_output;
 } ConvolutionalNetwork;
 
-DNNModel *ff_dnn_load_model_native(const char *model_filename);
+DNNModel *ff_dnn_load_model_native(const char *model_filename, const char *options);
 
 DNNReturnType ff_dnn_execute_model_native(const DNNModel *model, DNNData *outputs, uint32_t nb_output);
 
 void ff_dnn_free_model_native(DNNModel **model);
 
+// NOTE: User must check for error (return value <= 0) to handle
+// case like integer overflow.
 int32_t calculate_operand_data_length(const DnnOperand *oprd);
 int32_t calculate_operand_dims_count(const DnnOperand *oprd);
 #endif

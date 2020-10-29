@@ -63,6 +63,8 @@ angle_source_set("vulkan") {
     "$angle_root:angle_common",
   ]
 
+  configs += [ "$angle_root:angle_no_cfi_icall" ]
+
   defines = [
     "ANGLE_VK_LAYERS_DIR=\"$angle_data_dir\"",
     "ANGLE_VK_MOCK_ICD_JSON=\"$angle_data_dir/VkICD_mock_icd.json\"",
@@ -96,14 +98,16 @@ angle_source_set("vulkan") {
   }
 }
 
-group("vulkan_validation_layers") {
-  data_deps = []
-  if (is_fuchsia) {
-    data_deps += [ "//third_party/fuchsia-sdk:vulkan_validation" ]
-  } else {
-    data_deps += [ "$angle_root/third_party/vulkan-validation-layers/src:vulkan_validation_layers" ]
-    if (!is_android) {
-      data_deps += [ "$angle_root/third_party/vulkan-validation-layers/src:vulkan_gen_json_files" ]
+if (angle_enable_vulkan_validation_layers) {
+  group("vulkan_validation_layers") {
+    data_deps = []
+    if (is_fuchsia) {
+      data_deps += [ "//third_party/fuchsia-sdk:vulkan_validation" ]
+    } else {
+      data_deps += [ "$angle_root/third_party/vulkan-validation-layers/src:vulkan_validation_layers" ]
+      if (!is_android) {
+        data_deps += [ "$angle_root/third_party/vulkan-validation-layers/src:vulkan_gen_json_files" ]
+      }
     }
   }
 }

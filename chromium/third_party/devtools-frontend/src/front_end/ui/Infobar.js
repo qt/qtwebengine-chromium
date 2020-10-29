@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 
 import * as ARIAUtils from './ARIAUtils.js';
@@ -28,10 +25,13 @@ export class Infobar {
     this.element = document.createElement('div');
     this.element.classList.add('flex-none');
     this._shadowRoot = createShadowRootWithCoreStyles(this.element, 'ui/infobar.css');
-    this._contentElement = this._shadowRoot.createChild('div', 'infobar infobar-' + type);
+    /** @type {!HTMLDivElement} */
+    this._contentElement =
+        /** @type {!HTMLDivElement} */ (this._shadowRoot.createChild('div', 'infobar infobar-' + type));
 
     this._mainRow = this._contentElement.createChild('div', 'infobar-main-row');
     this._detailsRows = this._contentElement.createChild('div', 'infobar-details-rows hidden');
+    this._hasDetails = false;
 
     this._infoContainer = this._mainRow.createChild('div', 'infobar-info-container');
 
@@ -40,7 +40,7 @@ export class Infobar {
     // TODO(chromium:1098185) Do we really need both sprite sheet and separate svg files?
     if (type === Type.Issue) {
       // Icon is part of sprite sheet.
-      const icon = Icon.create('largeicon-breaking-change', 'icon');
+      const icon = Icon.create('smallicon-issue-blue-text', 'icon');
       this._infoMessage.appendChild(icon);
     } else {
       // Icon is in separate file and included via CSS.
@@ -77,11 +77,15 @@ export class Infobar {
         createTextButton(ls`Learn more`, this._onToggleDetails.bind(this), 'link-style devtools-link hidden');
     this._closeContainer.appendChild(this._toggleElement);
     this._closeButton = this._closeContainer.createChild('div', 'close-button', 'dt-close-button');
+    // @ts-ignore This is a custom element defined in UIUitls.js that has a `setTabbable` that TS doesn't
+    //            know about.
     this._closeButton.setTabbable(true);
     ARIAUtils.setDescription(this._closeButton, ls`Close`);
     self.onInvokeElement(this._closeButton, this.dispose.bind(this));
 
-    this._contentElement.tabIndex = 0;
+    if (type !== Type.Issue) {
+      this._contentElement.tabIndex = 0;
+    }
     ARIAUtils.setAccessibleName(this._contentElement, text);
     this._contentElement.addEventListener('keydown', event => {
       if (event.keyCode === Keys.Esc.code) {
@@ -94,7 +98,7 @@ export class Infobar {
         return;
       }
 
-      if (event.key === 'Enter') {
+      if (event.key === 'Enter' && this._hasDetails) {
         this._onToggleDetails();
         event.consume();
         return;
@@ -163,7 +167,9 @@ export class Infobar {
     }
 
     return (() => {
-             action.delegate();
+             if (action.delegate) {
+               action.delegate();
+             }
              this.dispose();
            })
         .bind(this);
@@ -176,7 +182,9 @@ export class Infobar {
   }
 
   _onDisable() {
-    this._disableSetting.set(true);
+    if (this._disableSetting) {
+      this._disableSetting.set(true);
+    }
     this.dispose();
   }
 
@@ -191,6 +199,7 @@ export class Infobar {
    * @return {!Element}
    */
   createDetailsRowMessage(message) {
+    this._hasDetails = true;
     this._toggleElement.classList.remove('hidden');
     const infobarDetailsRow = this._detailsRows.createChild('div', 'infobar-details-row');
     const detailsRowMessage = infobarDetailsRow.createChild('span', 'infobar-row-message');
@@ -206,6 +215,7 @@ export class Infobar {
  *        dismiss: !boolean
  * }}
  */
+// @ts-ignore typedef
 export let InfobarAction;
 
 /** @enum {string} */

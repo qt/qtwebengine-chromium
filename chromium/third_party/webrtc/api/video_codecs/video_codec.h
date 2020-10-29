@@ -19,7 +19,7 @@
 #include "absl/types/optional.h"
 #include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_codec_type.h"
-#include "common_types.h"  // NOLINT(build/include_directory)
+#include "api/video_codecs/spatial_layer.h"
 #include "rtc_base/system/rtc_export.h"
 
 namespace webrtc {
@@ -103,7 +103,6 @@ class RTC_EXPORT VideoCodec {
 
   // Public variables. TODO(hta): Make them private with accessors.
   VideoCodecType codecType;
-  unsigned char plType;
 
   // TODO(nisse): Change to int, for consistency.
   uint16_t width;
@@ -121,7 +120,7 @@ class RTC_EXPORT VideoCodec {
 
   unsigned int qpMax;
   unsigned char numberOfSimulcastStreams;
-  SimulcastStream simulcastStream[kMaxSimulcastStreams];
+  SpatialLayer simulcastStream[kMaxSimulcastStreams];
   SpatialLayer spatialLayers[kMaxSpatialLayers];
 
   VideoCodecMode mode;
@@ -145,6 +144,9 @@ class RTC_EXPORT VideoCodec {
     int64_t delay_ms;
     uint16_t outlier_ratio_percent;
   } timing_frame_thresholds;
+
+  // Legacy Google conference mode flag for simulcast screenshare
+  bool legacy_conference_mode;
 
   bool operator==(const VideoCodec& other) const = delete;
   bool operator!=(const VideoCodec& other) const = delete;

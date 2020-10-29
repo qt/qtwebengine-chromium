@@ -14,6 +14,7 @@
 #include "core/fxcrt/xml/cfx_xmlelement.h"
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "core/fxcrt/xml/cfx_xmltext.h"
+#include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
@@ -25,6 +26,7 @@
 #include "xfa/fgas/layout/cfx_linkuserdata.h"
 #include "xfa/fgas/layout/cfx_rtfbreak.h"
 #include "xfa/fgas/layout/cfx_textuserdata.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_loadercontext.h"
 #include "xfa/fxfa/cxfa_pieceline.h"
 #include "xfa/fxfa/cxfa_textparsecontext.h"
@@ -74,6 +76,12 @@ CXFA_TextLayout::CXFA_TextLayout(CXFA_FFDoc* doc,
 CXFA_TextLayout::~CXFA_TextLayout() {
   m_textParser.Reset();
   Unload();
+}
+
+void CXFA_TextLayout::Trace(cppgc::Visitor* visitor) const {
+  visitor->Trace(m_pDoc);
+  visitor->Trace(m_pTextProvider);
+  visitor->Trace(m_pTextDataNode);
 }
 
 void CXFA_TextLayout::Unload() {
@@ -1238,7 +1246,8 @@ void CXFA_TextLayout::RenderPath(CFX_RenderDevice* pDevice,
   graphState.m_LineWidth = 1;
   graphState.m_MiterLimit = 10;
   graphState.m_DashPhase = 0;
-  pDevice->DrawPath(&path, &mtDoc2Device, &graphState, 0, pPiece->dwColor, 0);
+  pDevice->DrawPath(&path, &mtDoc2Device, &graphState, 0, pPiece->dwColor,
+                    CFX_FillRenderOptions());
 }
 
 size_t CXFA_TextLayout::GetDisplayPos(const CXFA_TextPiece* pPiece,

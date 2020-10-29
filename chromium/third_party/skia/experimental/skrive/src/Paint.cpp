@@ -18,11 +18,11 @@ size_t parse_node(StreamReader*, T*);
 
 template <>
 size_t parse_node<Paint>(StreamReader* sr, Paint* node) {
-    const auto parent_index = parse_node<Component>(sr, node);
+    const auto parent_id = parse_node<Component>(sr, node);
 
     node->setOpacity(sr->readFloat("opacity"));
 
-    return parent_index;
+    return parent_id;
 }
 
 void parse_fill_stroke(StreamReader* sr, Paint* node) {
@@ -69,4 +69,14 @@ void parse_fill_stroke(StreamReader* sr, Paint* node) {
 }
 
 } // namespace internal
+
+void Paint::onApply(SkPaint* paint) const {
+    paint->setAntiAlias(true);
+    paint->setStyle(this->style());
+
+    paint->setStrokeWidth(fStrokeWidth);
+    paint->setStrokeCap  (fStrokeCap  );
+    paint->setStrokeJoin (fStrokeJoin );
+}
+
 } // namespace skrive

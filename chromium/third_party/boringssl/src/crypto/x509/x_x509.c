@@ -98,7 +98,6 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
     switch (operation) {
 
     case ASN1_OP_NEW_POST:
-        ret->name = NULL;
         ret->ex_flags = 0;
         ret->ex_pathlen = -1;
         ret->skid = NULL;
@@ -116,12 +115,14 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
         break;
 
     case ASN1_OP_D2I_POST: {
-        /* The version must be one of v1(0), v2(1), or v3(2). If the version is
-         * v1(0), it must be omitted because it is DEFAULT. */
+        /* The version must be one of v1(0), v2(1), or v3(2). */
         long version = 0;
         if (ret->cert_info->version != NULL) {
             version = ASN1_INTEGER_get(ret->cert_info->version);
-            if (version <= 0 || version > 2) {
+            /* TODO(https://crbug.com/boringssl/364): |version| = 0 should also
+             * be rejected. This means an explicitly-encoded X.509v1 version.
+             * v1 is DEFAULT, so DER requires it be omitted. */
+            if (version < 0 || version > 2) {
                 OPENSSL_PUT_ERROR(X509, X509_R_INVALID_VERSION);
                 return 0;
             }
@@ -140,10 +141,6 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
             return 0;
         }
 
-        /* TODO(davidben): Remove this field once the few external accesses are
-         * removed. */
-        OPENSSL_free(ret->name);
-        ret->name = X509_NAME_oneline(ret->cert_info->subject, NULL, 0);
         break;
     }
 
@@ -158,7 +155,6 @@ static int x509_cb(int operation, ASN1_VALUE **pval, const ASN1_ITEM *it,
         GENERAL_NAMES_free(ret->altname);
         NAME_CONSTRAINTS_free(ret->nc);
         CRYPTO_BUFFER_free(ret->buf);
-        OPENSSL_free(ret->name);
         break;
 
     }

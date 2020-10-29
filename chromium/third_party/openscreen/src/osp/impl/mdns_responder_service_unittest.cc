@@ -478,7 +478,7 @@ TEST_F(MdnsResponderServiceTest, PublisherStateTransitions) {
   EXPECT_EQ(0u, mdns_responder_factory_->last_registered_services_size());
 }
 
-TEST_F(MdnsResponderServiceTest, PublisherObeysInterfaceWhitelist) {
+TEST_F(MdnsResponderServiceTest, PublisherObeysInterfaceAllowlist) {
   {
     mdns_service_->SetServiceConfig(kTestHostname, kTestServiceInstance,
                                     kTestPort, {}, {{"model", "shifty"}});

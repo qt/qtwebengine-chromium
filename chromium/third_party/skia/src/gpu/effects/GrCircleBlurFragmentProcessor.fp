@@ -38,8 +38,7 @@ uniform half4 circleData;
 }
 
 @cpp {
-    #include "include/gpu/GrContext.h"
-    #include "include/private/GrRecordingContext.h"
+    #include "include/gpu/GrRecordingContext.h"
     #include "src/gpu/GrBitmapTextureMaker.h"
     #include "src/gpu/GrProxyProvider.h"
     #include "src/gpu/GrRecordingContextPriv.h"
@@ -270,7 +269,7 @@ uniform half4 circleData;
         bm.setImmutable();
 
         GrBitmapTextureMaker maker(context, bm, GrImageTexGenPolicy::kNew_Uncached_Budgeted);
-        auto profileView = maker.view(GrMipMapped::kNo);
+        auto profileView = maker.view(GrMipmapped::kNo);
         if (!profileView) {
             return nullptr;
         }
@@ -298,7 +297,7 @@ void main() {
     // rearrange to avoid passing large values to length() that would overflow.
     half2 vec = half2((sk_FragCoord.xy - circleData.xy) * circleData.w);
     half dist = length(vec) + (0.5 - circleData.z) * circleData.w;
-    half4 inputColor = sample(inputFP, sk_InColor);
+    half4 inputColor = sample(inputFP);
     sk_OutColor = inputColor * sample(blurProfile, half2(dist, 0.5)).a;
 }
 
@@ -306,6 +305,6 @@ void main() {
     SkScalar wh = testData->fRandom->nextRangeScalar(100.f, 1000.f);
     SkScalar sigma = testData->fRandom->nextRangeF(1.f, 10.f);
     SkRect circle = SkRect::MakeWH(wh, wh);
-    return GrCircleBlurFragmentProcessor::Make(/*inputFP=*/nullptr, testData->context(),
+    return GrCircleBlurFragmentProcessor::Make(testData->inputFP(), testData->context(),
                                                circle, sigma);
 }

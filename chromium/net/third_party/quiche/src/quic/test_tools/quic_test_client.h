@@ -271,7 +271,8 @@ class QuicTestClient : public QuicSpdyStream::Visitor,
   QuicRstStreamErrorCode stream_error() { return stream_error_; }
   QuicErrorCode connection_error();
 
-  MockableQuicClient* client();
+  MockableQuicClient* client() { return client_.get(); }
+  const MockableQuicClient* client() const { return client_.get(); }
 
   // cert_common_name returns the common name value of the server's certificate,
   // or the empty std::string if no certificate was presented.
@@ -332,7 +333,9 @@ class QuicTestClient : public QuicSpdyStream::Visitor,
  protected:
   QuicTestClient();
   QuicTestClient(const QuicTestClient&) = delete;
+  QuicTestClient(const QuicTestClient&&) = delete;
   QuicTestClient& operator=(const QuicTestClient&) = delete;
+  QuicTestClient& operator=(const QuicTestClient&&) = delete;
 
  private:
   class TestClientDataToResend : public QuicClient::QuicDataToResend {

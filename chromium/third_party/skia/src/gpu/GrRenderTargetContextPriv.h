@@ -14,7 +14,6 @@
 
 class GrHardClip;
 class GrPath;
-class GrRenderTargetPriv;
 struct GrUserStencilSettings;
 
 /** Class that adds methods to GrRenderTargetContext that are only intended for use internal to
@@ -22,24 +21,25 @@ struct GrUserStencilSettings;
     additional data members or virtual methods. */
 class GrRenderTargetContextPriv {
 public:
+    GrRecordingContext* recordingContext() { return fRenderTargetContext->fContext; }
     // called to note the last clip drawn to the stencil buffer.
     // TODO: remove after clipping overhaul.
     void setLastClip(uint32_t clipStackGenID, const SkIRect& devClipBounds,
-                     int numClipAnalyticFPs) {
+                     int numClipAnalyticElements) {
         GrOpsTask* opsTask = fRenderTargetContext->getOpsTask();
         opsTask->fLastClipStackGenID = clipStackGenID;
         opsTask->fLastDevClipBounds = devClipBounds;
-        opsTask->fLastClipNumAnalyticFPs = numClipAnalyticFPs;
+        opsTask->fLastClipNumAnalyticElements = numClipAnalyticElements;
     }
 
     // called to determine if we have to render the clip into SB.
     // TODO: remove after clipping overhaul.
     bool mustRenderClip(uint32_t clipStackGenID, const SkIRect& devClipBounds,
-                        int numClipAnalyticFPs) const {
+                        int numClipAnalyticElements) const {
         GrOpsTask* opsTask = fRenderTargetContext->getOpsTask();
         return opsTask->fLastClipStackGenID != clipStackGenID ||
                !opsTask->fLastDevClipBounds.contains(devClipBounds) ||
-               opsTask->fLastClipNumAnalyticFPs != numClipAnalyticFPs;
+               opsTask->fLastClipNumAnalyticElements != numClipAnalyticElements;
     }
 
     // Clear at minimum the pixels within 'scissor', but is allowed to clear the full render target
@@ -101,15 +101,23 @@ public:
     void testingOnly_addDrawOp(const GrClip*, std::unique_ptr<GrDrawOp>,
                                const std::function<WillAddOpFn>& = std::function<WillAddOpFn>());
 
+    SkGlyphRunListPainter* testingOnly_glyphRunPainter() {
+        return &fRenderTargetContext->fGlyphPainter;
+    }
+
     bool refsWrappedObjects() const {
         return fRenderTargetContext->asRenderTargetProxy()->refsWrappedObjects();
+    }
+
+    void addDrawOp(const GrClip* clip, std::unique_ptr<GrDrawOp> op) {
+        fRenderTargetContext->addDrawOp(clip, std::move(op));
     }
 
 private:
     explicit GrRenderTargetContextPriv(GrRenderTargetContext* renderTargetContext)
         : fRenderTargetContext(renderTargetContext) {}
-    GrRenderTargetContextPriv(const GrRenderTargetPriv&) {} // unimpl
-    GrRenderTargetContextPriv& operator=(const GrRenderTargetPriv&); // unimpl
+    GrRenderTargetContextPriv(const GrRenderTargetContextPriv&) = delete;
+    GrRenderTargetContextPriv& operator=(const GrRenderTargetContextPriv&) = delete;
 
     // No taking addresses of this type.
     const GrRenderTargetContextPriv* operator&() const;
@@ -124,7 +132,7 @@ inline GrRenderTargetContextPriv GrRenderTargetContext::priv() {
     return GrRenderTargetContextPriv(this);
 }
 
-inline const GrRenderTargetContextPriv GrRenderTargetContext::priv() const {
+inline const GrRenderTargetContextPriv GrRenderTargetContext::priv() const {  // NOLINT(readability-const-return-type)
     return GrRenderTargetContextPriv(const_cast<GrRenderTargetContext*>(this));
 }
 

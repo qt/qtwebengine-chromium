@@ -42,13 +42,13 @@ struct QUIC_EXPORT_PRIVATE QuicResumptionState {
   // client didn't receive a 0-RTT capable session ticket from the server,
   // |transport_params| will be null. Otherwise, it will contain the transport
   // parameters received from the server on the original connection.
-  TransportParameters* transport_params;
+  std::unique_ptr<TransportParameters> transport_params = nullptr;
 
   // If |transport_params| is null, then |application_state| is ignored and
   // should be empty. |application_state| contains serialized state that the
   // client received from the server at the application layer that the client
   // needs to remember when performing a 0-RTT handshake.
-  ApplicationState* application_state;
+  std::unique_ptr<ApplicationState> application_state = nullptr;
 };
 
 // SessionCache is an interface for managing storing and retrieving
@@ -354,8 +354,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   void set_proof_source(std::unique_ptr<ProofSource> proof_source);
   SSL_CTX* ssl_ctx() const;
 
-  bool early_data_enabled_for_tls() const { return enable_zero_rtt_for_tls_; }
-
   // Initialize the CachedState from |canonical_crypto_config| for the
   // |canonical_server_id| as the initial CachedState for |server_id|. We will
   // copy config data only if |canonical_crypto_config| has valid proof.
@@ -396,10 +394,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
 
   bool pad_full_hello() const { return pad_full_hello_; }
   void set_pad_full_hello(bool new_value) { pad_full_hello_ = new_value; }
-
-  void set_disable_chlo_padding(bool disabled) {
-    disable_chlo_padding_ = disabled;
-  }
 
  private:
   // Sets the members to reasonable, default values.
@@ -443,8 +437,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   std::unique_ptr<SessionCache> session_cache_;
   std::unique_ptr<ProofSource> proof_source_;
 
-  // Latched value of reloadable flag quic_enable_zero_rtt_for_tls
-  bool enable_zero_rtt_for_tls_;
   bssl::UniquePtr<SSL_CTX> ssl_ctx_;
 
   // The |user_agent_id_| passed in QUIC's CHLO message.
@@ -470,7 +462,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   // other means of verifying the client.
   bool pad_inchoate_hello_ = true;
   bool pad_full_hello_ = true;
-  bool disable_chlo_padding_;
 };
 
 }  // namespace quic

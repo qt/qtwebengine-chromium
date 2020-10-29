@@ -10,6 +10,7 @@
  **************************************************************************************************/
 #include "GrTiledGradientEffect.h"
 
+#include "src/core/SkUtils.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
@@ -29,8 +30,7 @@ public:
         (void)makePremul;
         auto colorsAreOpaque = _outer.colorsAreOpaque;
         (void)colorsAreOpaque;
-        SkString _sample453;
-        _sample453 = this->invokeChild(_outer.gradLayout_index, args);
+        SkString _sample453 = this->invokeChild(1, args);
         fragBuilder->codeAppendf(
                 R"SkSL(half4 t = %s;
 if (!%s && t.y < 0.0) {
@@ -47,12 +47,10 @@ if (!%s && t.y < 0.0) {
         t.x = fract(t.x);
     })SkSL",
                 _sample453.c_str(),
-                (_outer.childProcessor(_outer.gradLayout_index).preservesOpaqueInput() ? "true"
-                                                                                       : "false"),
+                (_outer.childProcessor(1)->preservesOpaqueInput() ? "true" : "false"),
                 args.fOutputColor, (_outer.mirror ? "true" : "false"));
-        SkString _input1464("t");
-        SkString _sample1464;
-        _sample1464 = this->invokeChild(_outer.colorizer_index, _input1464.c_str(), args);
+        SkString _coords1451("float2(half2(t.x, 0))");
+        SkString _sample1451 = this->invokeChild(0, args, _coords1451.c_str());
         fragBuilder->codeAppendf(
                 R"SkSL(
     %s = %s;
@@ -61,7 +59,7 @@ if (!%s && t.y < 0.0) {
     %s.xyz *= %s.w;
 }
 )SkSL",
-                args.fOutputColor, _sample1464.c_str(), (_outer.makePremul ? "true" : "false"),
+                args.fOutputColor, _sample1451.c_str(), (_outer.makePremul ? "true" : "false"),
                 args.fOutputColor, args.fOutputColor);
     }
 
@@ -74,8 +72,8 @@ GrGLSLFragmentProcessor* GrTiledGradientEffect::onCreateGLSLInstance() const {
 }
 void GrTiledGradientEffect::onGetGLSLProcessorKey(const GrShaderCaps& caps,
                                                   GrProcessorKeyBuilder* b) const {
-    b->add32((int32_t)mirror);
-    b->add32((int32_t)makePremul);
+    b->add32((uint32_t)mirror);
+    b->add32((uint32_t)makePremul);
 }
 bool GrTiledGradientEffect::onIsEqual(const GrFragmentProcessor& other) const {
     const GrTiledGradientEffect& that = other.cast<GrTiledGradientEffect>();
@@ -90,15 +88,15 @@ GrTiledGradientEffect::GrTiledGradientEffect(const GrTiledGradientEffect& src)
         , mirror(src.mirror)
         , makePremul(src.makePremul)
         , colorsAreOpaque(src.colorsAreOpaque) {
-    {
-        colorizer_index =
-                this->cloneAndRegisterChildProcessor(src.childProcessor(src.colorizer_index));
-    }
-    {
-        gradLayout_index =
-                this->cloneAndRegisterChildProcessor(src.childProcessor(src.gradLayout_index));
-    }
+    this->cloneAndRegisterAllChildProcessors(src);
 }
 std::unique_ptr<GrFragmentProcessor> GrTiledGradientEffect::clone() const {
-    return std::unique_ptr<GrFragmentProcessor>(new GrTiledGradientEffect(*this));
+    return std::make_unique<GrTiledGradientEffect>(*this);
 }
+#if GR_TEST_UTILS
+SkString GrTiledGradientEffect::onDumpInfo() const {
+    return SkStringPrintf("(mirror=%s, makePremul=%s, colorsAreOpaque=%s)",
+                          (mirror ? "true" : "false"), (makePremul ? "true" : "false"),
+                          (colorsAreOpaque ? "true" : "false"));
+}
+#endif

@@ -233,4 +233,66 @@ TEST(FastVector, NonCopyable)
     EXPECT_EQ(1u, copy.size());
     EXPECT_EQ(3, copy[0].x);
 }
+
+// Basic functionality for FastUnorderedMap
+TEST(FastUnorderedMap, BasicUsage)
+{
+    FastUnorderedMap<int, bool, 3> testMap;
+    EXPECT_TRUE(testMap.empty());
+    EXPECT_EQ(testMap.size(), 0u);
+
+    testMap.insert(5, true);
+    EXPECT_TRUE(testMap.contains(5));
+    EXPECT_EQ(testMap.size(), 1u);
+
+    bool value = false;
+    EXPECT_TRUE(testMap.get(5, &value));
+    EXPECT_TRUE(value);
+    EXPECT_FALSE(testMap.get(6, &value));
+
+    EXPECT_FALSE(testMap.empty());
+    testMap.clear();
+    EXPECT_TRUE(testMap.empty());
+    EXPECT_EQ(testMap.size(), 0u);
+
+    for (int i = 0; i < 10; ++i)
+    {
+        testMap.insert(i, false);
+    }
+
+    EXPECT_FALSE(testMap.empty());
+    EXPECT_EQ(testMap.size(), 10u);
+
+    for (int i = 0; i < 10; ++i)
+    {
+        EXPECT_TRUE(testMap.contains(i));
+        EXPECT_TRUE(testMap.get(i, &value));
+        EXPECT_FALSE(value);
+    }
+}
+
+// Basic functionality for FastUnorderedSet
+TEST(FastUnorderedSet, BasicUsage)
+{
+    FastUnorderedSet<int, 3> testMap;
+    EXPECT_TRUE(testMap.empty());
+
+    testMap.insert(5);
+    EXPECT_TRUE(testMap.contains(5));
+    EXPECT_FALSE(testMap.contains(6));
+    EXPECT_FALSE(testMap.empty());
+
+    testMap.clear();
+    EXPECT_TRUE(testMap.empty());
+
+    for (int i = 0; i < 10; ++i)
+    {
+        testMap.insert(i);
+    }
+
+    for (int i = 0; i < 10; ++i)
+    {
+        EXPECT_TRUE(testMap.contains(i));
+    }
+}
 }  // namespace angle

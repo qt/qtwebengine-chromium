@@ -33,6 +33,8 @@
 #include "third_party/base/span.h"
 #include "third_party/base/stl_util.h"
 
+using pdfium::kAnnotationStampWithApChecksum;
+
 namespace {
 
 const wchar_t kStreamData[] =
@@ -41,27 +43,6 @@ const wchar_t kStreamData[] =
     L"c 215.4 739.0 216.8 737.1 218.9 736.1 c 220.8 735.1 221.4 733.0 "
     L"223.7 732.4 c 232.6 729.9 242.0 730.8 251.2 730.8 c 257.5 730.8 "
     L"263.0 732.9 269.0 734.4 c S";
-
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#if defined(OS_LINUX)
-const char kAnnotationStampWithApChecksum[] =
-    "db83eaadc92967e3ac9bebfc6178ca75";
-#else
-const char kAnnotationStampWithApChecksum[] =
-    "3c87b4a8e51245964357fb5f5fbc612b";
-#endif  // defined(OS_LINUX)
-#else
-#if defined(OS_WIN)
-const char kAnnotationStampWithApChecksum[] =
-    "6aa001a77ec05d0f1b0d1d22e28744d4";
-#elif defined(OS_MACOSX)
-const char kAnnotationStampWithApChecksum[] =
-    "80d7b6cc7b13a78d77a6151bc846e80b";
-#else
-const char kAnnotationStampWithApChecksum[] =
-    "b42cef463483e668eaf4055a65e4f1f5";
-#endif
-#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 
 void VerifyFocusableAnnotSubtypes(
     FPDF_FORMHANDLE form_handle,
@@ -403,23 +384,19 @@ TEST_F(FPDFAnnotEmbedderTest, RenderAnnotWithOnlyRolloverAP) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
+TEST_F(FPDFAnnotEmbedderTest, RenderMultilineMarkupAnnotWithoutAP) {
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_RenderMultilineMarkupAnnotWithoutAP \
-  DISABLED_RenderMultilineMarkupAnnotWithoutAP
+  static const char kChecksum[] = "ec1f4ccbd0aecfdea6d53893387a0101";
 #else
-#define MAYBE_RenderMultilineMarkupAnnotWithoutAP \
-  RenderMultilineMarkupAnnotWithoutAP
+  static const char kChecksum[] = "76512832d88017668d9acc7aacd13dae";
 #endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_RenderMultilineMarkupAnnotWithoutAP) {
-  static const char kMd5[] = "76512832d88017668d9acc7aacd13dae";
   // Open a file with multiline markup annotations.
   ASSERT_TRUE(OpenDocument("annotation_markup_multiline_no_ap.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
   ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
-  CompareBitmap(bitmap.get(), 595, 842, kMd5);
+  CompareBitmap(bitmap.get(), 595, 842, kChecksum);
 
   UnloadPage(page);
 }
@@ -508,13 +485,7 @@ TEST_F(FPDFAnnotEmbedderTest, ExtractHighlightLongContent) {
   UnloadPageNoEvents(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_ExtractInkMultiple DISABLED_ExtractInkMultiple
-#else
-#define MAYBE_ExtractInkMultiple ExtractInkMultiple
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_ExtractInkMultiple) {
+TEST_F(FPDFAnnotEmbedderTest, ExtractInkMultiple) {
   // Open a file with three annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_ink_multiple.pdf"));
   FPDF_PAGE page = LoadPageNoEvents(0);
@@ -555,8 +526,21 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_ExtractInkMultiple) {
     EXPECT_EQ(681.535034f, rect.top);
   }
   {
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#if defined(OS_APPLE)
+    static constexpr char kExpectedHash[] = "acddfe688a117ead56af7b249a2cf8a1";
+#else
+    static constexpr char kExpectedHash[] = "1fb0dd8dd5f0b9bb8d076e48eb59296d";
+#endif  // defined(OS_APPLE)
+#else
+#if defined(OS_WIN)
+    static constexpr char kExpectedHash[] = "49d0a81c636531a337429325273d0508";
+#else
+    static constexpr char kExpectedHash[] = "354002e1c4386d38fdde29ef8d61074a";
+#endif  // defined(OS_WIN)
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
     ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
-    CompareBitmap(bitmap.get(), 612, 792, "354002e1c4386d38fdde29ef8d61074a");
+    CompareBitmap(bitmap.get(), 612, 792, kExpectedHash);
   }
   UnloadPageNoEvents(page);
 }
@@ -658,14 +642,7 @@ TEST_F(FPDFAnnotEmbedderTest, AddFirstTextAnnotation) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_AddAndSaveUnderlineAnnotation \
-  DISABLED_AddAndSaveUnderlineAnnotation
-#else
-#define MAYBE_AddAndSaveUnderlineAnnotation AddAndSaveUnderlineAnnotation
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndSaveUnderlineAnnotation) {
+TEST_F(FPDFAnnotEmbedderTest, AddAndSaveUnderlineAnnotation) {
   // Open a file with one annotation and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_highlight_long_content.pdf"));
   FPDF_PAGE page = LoadPage(0);
@@ -700,11 +677,15 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndSaveUnderlineAnnotation) {
   UnloadPage(page);
 
   // Open the saved document.
-  static const char kMd5[] = "dba153419f67b7c0c0e3d22d3e8910d5";
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+  static const char kChecksum[] = "798fa41303381c9ba6d99092f5cd4d2b";
+#else
+  static const char kChecksum[] = "dba153419f67b7c0c0e3d22d3e8910d5";
+#endif
 
   ASSERT_TRUE(OpenSavedDocument());
   page = LoadSavedPage(0);
-  VerifySavedRendering(page, 612, 792, kMd5);
+  VerifySavedRendering(page, 612, 792, kChecksum);
 
   // Check that the saved document has 2 annotations on the first page
   EXPECT_EQ(2, FPDFPage_GetAnnotCount(page));
@@ -812,29 +793,36 @@ TEST_F(FPDFAnnotEmbedderTest, GetAndSetQuadPoints) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+// TODO(crbug.com/pdfium/1569): Fix this issue and enable the test for Skia.
+#if defined(_SKIA_SUPPORT_)
 #define MAYBE_ModifyRectQuadpointsWithAP DISABLED_ModifyRectQuadpointsWithAP
 #else
 #define MAYBE_ModifyRectQuadpointsWithAP ModifyRectQuadpointsWithAP
 #endif
 TEST_F(FPDFAnnotEmbedderTest, MAYBE_ModifyRectQuadpointsWithAP) {
-#if defined(OS_MACOSX)
-  static const char kMd5Original[] = "fc59468d154f397fd298c69f47ef565a";
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+  static const char kMd5Original[] = "00e70eb543c2a6e8f8aafb4ee951d9bf";
   static const char kMd5ModifiedHighlight[] =
-      "e64bf648f6e9354d1f3eedb47a2c9498";
-  static const char kMd5ModifiedSquare[] = "a66591662c8e7ad3c6059952e234bebf";
-#elif defined(OS_WIN)
+      "7638c4a8fe4aabbf8704e198f49b3198";
+  static const char kMd5ModifiedSquare[] = "54f507af6af63de877b9cafdab1bbdaa";
+#else
+#if defined(OS_WIN)
   static const char kMd5Original[] = "0e27376094f11490f74c65f3dc3a42c5";
   static const char kMd5ModifiedHighlight[] =
       "66f3caef3a7d488a4fa1ad37fc06310e";
   static const char kMd5ModifiedSquare[] = "a456dad0bc6801ee2d6408a4394af563";
+#elif defined(OS_APPLE)
+  static const char kMd5Original[] = "fc59468d154f397fd298c69f47ef565a";
+  static const char kMd5ModifiedHighlight[] =
+      "e64bf648f6e9354d1f3eedb47a2c9498";
+  static const char kMd5ModifiedSquare[] = "a66591662c8e7ad3c6059952e234bebf";
 #else
   static const char kMd5Original[] = "0e27376094f11490f74c65f3dc3a42c5";
   static const char kMd5ModifiedHighlight[] =
       "66f3caef3a7d488a4fa1ad37fc06310e";
   static const char kMd5ModifiedSquare[] = "a456dad0bc6801ee2d6408a4394af563";
 #endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 
   // Open a file with four annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_highlight_square_with_ap.pdf"));
@@ -1028,7 +1016,7 @@ TEST_F(FPDFAnnotEmbedderTest, RemoveAnnotation) {
 
 TEST_F(FPDFAnnotEmbedderTest, AddAndModifyPath) {
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
   static const char kMd5ModifiedPath[] = "d76382fd57fafad0233f7549f871dafa";
   static const char kMd5TwoPaths[] = "323151317b8cb62130546c7b8d70f622";
   static const char kMd5NewAnnot[] = "9a3b02d876620d19787549ee1100b63c";
@@ -1036,13 +1024,13 @@ TEST_F(FPDFAnnotEmbedderTest, AddAndModifyPath) {
   static const char kMd5ModifiedPath[] = "c9ba60887a312370d9a32198aa53aca4";
   static const char kMd5TwoPaths[] = "0768d56373094fcdf4ddf3f3364c006f";
   static const char kMd5NewAnnot[] = "6f7e1c189bcfac90ffccf2a527857006";
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_LINUX) || defined(OS_CHROMEOS)
 #else
 #if defined(OS_WIN)
   static const char kMd5ModifiedPath[] = "a7a8d675a6ddbcbdfecee65a33ba19e1";
   static const char kMd5TwoPaths[] = "7c0bdd4552329704c47a7cce47edbbd6";
   static const char kMd5NewAnnot[] = "3c48d492b4f62941fed0fb62f729f31e";
-#elif defined(OS_MACOSX)
+#elif defined(OS_APPLE)
   static const char kMd5ModifiedPath[] = "8cfae6d547fc5d6702f5f1ac631beb5e";
   static const char kMd5TwoPaths[] = "9677e4892bb02950d3e4dbe74470578f";
   static const char kMd5NewAnnot[] = "e8ebddac4db8c0a4b556ddf79aa1a26d";
@@ -1245,15 +1233,15 @@ TEST_F(FPDFAnnotEmbedderTest, ModifyAnnotationFlags) {
 #endif
 TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
 #if defined(_SKIA_SUPPORT_PATHS_)
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
   static const char kMd5NewImage[] = "26a8eb30937226a677839379e0d7ae1a";
   static const char kMd5ModifiedImage[] = "2985114b32ba1a96be78ee643fe31aa5";
 #else
   static const char kMd5NewImage[] = "14012ab500b4671fa73dd760129a8a93";
   static const char kMd5ModifiedImage[] = "5f97f98f58ed04dc393f31460485f1a2";
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_LINUX) || defined(OS_CHROMEOS)
 #else
-#if defined(OS_MACOSX)
+#if defined(OS_APPLE)
   static const char kMd5NewImage[] = "dd18709d90c245a12ce0b8c4d092bea9";
   static const char kMd5ModifiedImage[] = "8d6f478ff8c7e67d49b253f1af587a99";
 #elif defined(OS_WIN)
@@ -1337,18 +1325,18 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_AddAndModifyImage) {
 
 TEST_F(FPDFAnnotEmbedderTest, AddAndModifyText) {
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
   static const char kMd5NewText[] = "c9d853a5fb6bca31e9696ccc4462c74a";
   static const char kMd5ModifiedText[] = "bc681fa9174223983c5e4357e919d36c";
 #else
   static const char kMd5NewText[] = "4aaa34e9df2e41d621dbd81b1d535c48";
   static const char kMd5ModifiedText[] = "d6ea20beb7834ef4b6d370581ce425fc";
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_LINUX) || defined(OS_CHROMEOS)
 #else
 #if defined(OS_WIN)
   static const char kMd5NewText[] = "204cc01749a70b8afc246a4ca33c7eb6";
   static const char kMd5ModifiedText[] = "641261a45e8dfd68c89b80bfd237660d";
-#elif defined(OS_MACOSX)
+#elif defined(OS_APPLE)
   static const char kMd5NewText[] = "e657266260b88c964938efe6c9b292da";
   static const char kMd5ModifiedText[] = "7accdf2bac64463101783221f53d3188";
 #else
@@ -1428,13 +1416,7 @@ TEST_F(FPDFAnnotEmbedderTest, AddAndModifyText) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_GetSetStringValue DISABLED_GetSetStringValue
-#else
-#define MAYBE_GetSetStringValue GetSetStringValue
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_GetSetStringValue) {
+TEST_F(FPDFAnnotEmbedderTest, GetSetStringValue) {
   // Open a file with four annotations and load its first page.
   ASSERT_TRUE(OpenDocument("annotation_stamp_with_ap.pdf"));
   FPDF_PAGE page = LoadPage(0);
@@ -1489,13 +1471,21 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_GetSetStringValue) {
   EXPECT_TRUE(FPDF_SaveAsCopy(document(), this, 0));
   UnloadPage(page);
 
-#if defined(OS_MACOSX)
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+  static const char kMd5[] = "7a2b712ca88d7b71f125ea3f9c88e57a";
+#else
+  static const char kMd5[] = "626d25c5aa5baf67d22d9a0e1c23f6aa";
+#endif  // defined(OS_LINUX) || defined(OS_CHROMEOS)
+#else
+#if defined(OS_APPLE)
   static const char kMd5[] = "5e7e185b386ad21ca83b0287268c50fb";
 #elif defined(OS_WIN)
   static const char kMd5[] = "20b612ebd46babcb44c48c903e2c5a48";
 #else
   static const char kMd5[] = "1d7bea2042c6fea0558ff2aef05811b5";
 #endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 
   // Open the saved annotation.
   ASSERT_TRUE(OpenSavedDocument());
@@ -1883,7 +1873,7 @@ TEST_F(FPDFAnnotEmbedderTest, GetFormFieldFlagsComboBox) {
 
 TEST_F(FPDFAnnotEmbedderTest, GetFormAnnotNull) {
   // Open file with form text fields.
-  EXPECT_TRUE(OpenDocument("text_form.pdf"));
+  ASSERT_TRUE(OpenDocument("text_form.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -1911,7 +1901,7 @@ TEST_F(FPDFAnnotEmbedderTest, GetFormAnnotNull) {
 
 TEST_F(FPDFAnnotEmbedderTest, GetFormAnnotAndCheckFlagsTextField) {
   // Open file with form text fields.
-  EXPECT_TRUE(OpenDocument("text_form_multiple.pdf"));
+  ASSERT_TRUE(OpenDocument("text_form_multiple.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -1944,7 +1934,7 @@ TEST_F(FPDFAnnotEmbedderTest, GetFormAnnotAndCheckFlagsTextField) {
 
 TEST_F(FPDFAnnotEmbedderTest, GetFormAnnotAndCheckFlagsComboBox) {
   // Open file with form comboboxes.
-  EXPECT_TRUE(OpenDocument("combobox_form.pdf"));
+  ASSERT_TRUE(OpenDocument("combobox_form.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
@@ -2914,25 +2904,23 @@ TEST_F(FPDFAnnotEmbedderTest, FocusableAnnotSubtypes) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_FocusableAnnotRendering DISABLED_FocusableAnnotRendering
-#else
-#define MAYBE_FocusableAnnotRendering FocusableAnnotRendering
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_FocusableAnnotRendering) {
+TEST_F(FPDFAnnotEmbedderTest, FocusableAnnotRendering) {
   ASSERT_TRUE(OpenDocument("annots.pdf"));
   FPDF_PAGE page = LoadPage(0);
   ASSERT_TRUE(page);
 
   {
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+    static const char kMd5sum[] = "4ca14c670396711194b40ecc2514969b";
+#else
 #if defined(OS_WIN)
     static const char kMd5sum[] = "3877bec7cb3e3144eaa6d10f38bf7a30";
-#elif defined(OS_MACOSX)
+#elif defined(OS_APPLE)
     static const char kMd5sum[] = "04b16db5026b5490a50fb6ff0954c867";
 #else
     static const char kMd5sum[] = "40a7354d1f653127bcdac10e15f81654";
 #endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
     // Check the initial rendering.
     ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
     CompareBitmap(bitmap.get(), 612, 792, kMd5sum);
@@ -2952,13 +2940,17 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_FocusableAnnotRendering) {
   ASSERT_EQ(FPDF_ANNOT_HIGHLIGHT, subtypes[1]);
 
   {
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+    static const char kMd5sum[] = "48cb60b3f9bc364c73582aff3418451e";
+#else
 #if defined(OS_WIN)
     static const char kMd5sum[] = "a30f1bd1cac022d08ceb100df4940b5f";
-#elif defined(OS_MACOSX)
+#elif defined(OS_APPLE)
     static const char kMd5sum[] = "3f984a164f2f6d6e3d69f27fd430e346";
 #else
     static const char kMd5sum[] = "e4c4de73addabf10672c308870e8a4ee";
 #endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
     // Focus the first link and check the rendering.
     ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
     ASSERT_TRUE(annot);
@@ -2969,13 +2961,17 @@ TEST_F(FPDFAnnotEmbedderTest, MAYBE_FocusableAnnotRendering) {
   }
 
   {
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+    static const char kMd5sum[] = "d09869ff0a209daf179da2d7a58142b1";
+#else
 #if defined(OS_WIN)
     static const char kMd5sum[] = "467f5a4db98fcadd5121807ff4e2eb10";
-#elif defined(OS_MACOSX)
+#elif defined(OS_APPLE)
     static const char kMd5sum[] = "c6d6f9dc7090e8eaf3867ba714023b1e";
 #else
     static const char kMd5sum[] = "65e831885e16b7ecc977cce2e4a27110";
 #endif
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
     // Focus the first highlight and check the rendering.
     ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 4));
     ASSERT_TRUE(annot);

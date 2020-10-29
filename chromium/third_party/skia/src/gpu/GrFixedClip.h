@@ -46,10 +46,9 @@ public:
         fWindowRectsState.set(windows, mode);
     }
 
-    bool quickContains(const SkRect&) const override;
-    SkIRect getConservativeBounds() const override;
-    bool isRRect(SkRRect* rr, GrAA*) const override;
-    bool apply(GrAppliedHardClip*, SkRect*) const override;
+    SkIRect getConservativeBounds() const final;
+    Effect apply(GrAppliedHardClip*, SkIRect*) const final;
+    PreClipResult preApply(const SkRect& drawBounds, GrAA aa) const final;
 
 private:
     GrScissorState       fScissorState;

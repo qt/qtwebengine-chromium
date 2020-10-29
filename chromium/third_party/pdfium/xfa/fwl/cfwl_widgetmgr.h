@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/tree_node.h"
 #include "xfa/fxgraphics/cxfa_graphics.h"
 
 class CFWL_Message;
@@ -34,32 +35,24 @@ class CFWL_WidgetMgr {
   explicit CFWL_WidgetMgr(AdapterIface* pAdapterNative);
   ~CFWL_WidgetMgr();
 
-  static CFWL_Widget* NextTab(CFWL_Widget* parent, CFWL_Widget* focus);
-
   void OnProcessMessageToForm(std::unique_ptr<CFWL_Message> pMessage);
   void OnDrawWidget(CFWL_Widget* pWidget,
                     CXFA_Graphics* pGraphics,
                     const CFX_Matrix& matrix);
 
   CFWL_Widget* GetParentWidget(const CFWL_Widget* pWidget) const;
-  CFWL_Widget* GetOwnerWidget(const CFWL_Widget* pWidget) const;
   CFWL_Widget* GetNextSiblingWidget(CFWL_Widget* pWidget) const;
   CFWL_Widget* GetFirstChildWidget(CFWL_Widget* pWidget) const;
-  CFWL_Widget* GetSystemFormWidget(CFWL_Widget* pWidget) const;
 
   void RepaintWidget(CFWL_Widget* pWidget, const CFX_RectF& pRect);
 
   void InsertWidget(CFWL_Widget* pParent, CFWL_Widget* pChild);
   void RemoveWidget(CFWL_Widget* pWidget);
-  void SetOwner(CFWL_Widget* pOwner, CFWL_Widget* pOwned);
-  void SetParent(CFWL_Widget* pParent, CFWL_Widget* pChild);
 
   CFWL_Widget* GetWidgetAtPoint(CFWL_Widget* pParent,
                                 const CFX_PointF& point) const;
 
   CFWL_Widget* GetDefaultButton(CFWL_Widget* pParent) const;
-  void AddRedrawCounts(CFWL_Widget* pWidget);
-
   void GetAdapterPopupPos(CFWL_Widget* pWidget,
                           float fMinHeight,
                           float fMaxHeight,
@@ -67,35 +60,26 @@ class CFWL_WidgetMgr {
                           CFX_RectF* pPopupRect) const;
 
  private:
-  class Item {
+  class Item : public TreeNode<Item> {
    public:
     Item();
     explicit Item(CFWL_Widget* widget);
-    ~Item();
+    ~Item() final;
 
-    Item* pParent;
-    Item* pOwner;
-    Item* pChild;
-    Item* pPrevious;
-    Item* pNext;
     CFWL_Widget* const pWidget;
-    std::unique_ptr<CXFA_Graphics> pOffscreen;
-    int32_t iRedrawCounter;
   };
 
-  CFWL_Widget* GetFirstSiblingWidget(CFWL_Widget* pWidget) const;
   CFWL_Widget* GetPriorSiblingWidget(CFWL_Widget* pWidget) const;
   CFWL_Widget* GetLastChildWidget(CFWL_Widget* pWidget) const;
+
+  Item* GetWidgetMgrRootItem() const;
   Item* GetWidgetMgrItem(const CFWL_Widget* pWidget) const;
+  Item* CreateWidgetMgrItem(CFWL_Widget* pWidget);
 
-  void AppendWidget(CFWL_Widget* pWidget);
-  void ResetRedrawCounts(CFWL_Widget* pWidget);
-  void DrawChild(CFWL_Widget* pParent,
-                 const CFX_RectF& rtClip,
-                 CXFA_Graphics* pGraphics,
-                 const CFX_Matrix* pMatrix);
-
-  bool IsAbleNative(CFWL_Widget* pWidget) const;
+  void DrawChildren(CFWL_Widget* pParent,
+                    const CFX_RectF& rtClip,
+                    CXFA_Graphics* pGraphics,
+                    const CFX_Matrix* pMatrix);
 
   std::map<const CFWL_Widget*, std::unique_ptr<Item>> m_mapWidgetItem;
   UnownedPtr<AdapterIface> const m_pAdapter;

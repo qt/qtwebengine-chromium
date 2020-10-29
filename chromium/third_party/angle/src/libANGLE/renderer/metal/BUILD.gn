@@ -54,8 +54,14 @@ _metal_backend_sources = [
   "mtl_state_cache.mm",
   "mtl_utils.h",
   "mtl_utils.mm",
-  "shaders/compiled/mtl_default_shaders.inc",
-  "shaders/mtl_default_shaders_src_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_debug_ios_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_debug_ios_sim_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_debug_mac_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_ios_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_ios_sim_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_mac_autogen.inc",
+  "shaders/compiled/mtl_default_shaders_autogen.inc",
+  "shaders/constants.h",
 ]
 
 config("angle_metal_backend_config") {
@@ -80,6 +86,7 @@ angle_source_set("angle_metal_backend") {
 
   public_deps = [
     "${angle_root}:angle_glslang_wrapper",
+    "${angle_root}:angle_image_util",
     "${angle_root}:libANGLE_headers",
   ]
 
@@ -94,7 +101,7 @@ angle_source_set("angle_metal_backend") {
   cflags_objcc += objc_flags
 
   if (is_mac) {
-    libs += [
+    frameworks = [
       "Cocoa.framework",
       "IOSurface.framework",
       "QuartzCore.framework",

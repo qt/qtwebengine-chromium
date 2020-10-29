@@ -17,14 +17,17 @@
 
 #include "dawn_native/CommandAllocator.h"
 #include "dawn_native/Error.h"
+#include "dawn_native/Texture.h"
 
 #include <vector>
 
 namespace dawn_native {
 
     class AttachmentState;
+    class QuerySetBase;
     struct BeginRenderPassCmd;
     struct PassResourceUsage;
+    struct TexelBlockInfo;
 
     MaybeError ValidateCanPopDebugGroup(uint64_t debugGroupStackSize);
     MaybeError ValidateFinalDebugGroupStackSize(uint64_t debugGroupStackSize);
@@ -35,6 +38,36 @@ namespace dawn_native {
     MaybeError ValidateComputePass(CommandIterator* commands);
 
     MaybeError ValidatePassResourceUsage(const PassResourceUsage& usage);
+
+    MaybeError ValidateTimestampQuery(QuerySetBase* querySet, uint32_t queryIndex);
+
+    ResultOrError<uint64_t> ComputeRequiredBytesInCopy(const TexelBlockInfo& blockInfo,
+                                                       const Extent3D& copySize,
+                                                       uint32_t bytesPerRow,
+                                                       uint32_t rowsPerImage);
+
+    MaybeError ValidateLinearTextureData(const TextureDataLayout& layout,
+                                         uint64_t byteSize,
+                                         const TexelBlockInfo& blockInfo,
+                                         const Extent3D& copyExtent);
+    MaybeError ValidateTextureCopyRange(const TextureCopyView& textureCopyView,
+                                        const Extent3D& copySize);
+    MaybeError ValidateBufferToTextureCopyRestrictions(const TextureCopyView& dst);
+
+    MaybeError ValidateBufferCopyView(DeviceBase const* device,
+                                      const BufferCopyView& bufferCopyView);
+    MaybeError ValidateTextureCopyView(DeviceBase const* device,
+                                       const TextureCopyView& textureCopyView);
+
+    MaybeError ValidateRowsPerImage(const Format& format,
+                                    uint32_t rowsPerImage,
+                                    uint32_t copyHeight);
+    MaybeError ValidateBytesPerRow(const Format& format,
+                                   const Extent3D& copySize,
+                                   uint32_t bytesPerRow);
+    MaybeError ValidateCopySizeFitsInBuffer(const Ref<BufferBase>& buffer,
+                                            uint64_t offset,
+                                            uint64_t size);
 
     bool IsRangeOverlapped(uint32_t startA, uint32_t startB, uint32_t length);
 

@@ -32,7 +32,7 @@ namespace dawn_native { namespace d3d12 {
 
         MaybeError Initialize();
 
-        ComPtr<ID3D12Resource> GetD3D12Resource() const;
+        ID3D12Resource* GetD3D12Resource() const;
         D3D12_GPU_VIRTUAL_ADDRESS GetVA() const;
 
         bool TrackUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
@@ -44,34 +44,41 @@ namespace dawn_native { namespace d3d12 {
         bool CheckAllocationMethodForTesting(AllocationMethod allocationMethod) const;
         bool CheckIsResidentForTesting() const;
 
+        MaybeError EnsureDataInitialized(CommandRecordingContext* commandContext);
+        MaybeError EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                      uint64_t offset,
+                                                      uint64_t size);
+        MaybeError EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
+                                                      const CopyTextureToBufferCmd* copy);
+
       private:
         ~Buffer() override;
         // Dawn API
-        MaybeError MapReadAsyncImpl(uint32_t serial) override;
-        MaybeError MapWriteAsyncImpl(uint32_t serial) override;
+        MaybeError MapReadAsyncImpl() override;
+        MaybeError MapWriteAsyncImpl() override;
+        MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
         void UnmapImpl() override;
         void DestroyImpl() override;
 
-        bool IsMapWritable() const override;
-        virtual MaybeError MapAtCreationImpl(uint8_t** mappedPointer) override;
+        bool IsMappableAtCreation() const override;
+        virtual MaybeError MapAtCreationImpl() override;
         void* GetMappedPointerImpl() override;
-        MaybeError MapBufferInternal(D3D12_RANGE mappedRange,
-                                     void** mappedPointer,
-                                     const char* contextInfo);
-        void UnmapBufferInternal(D3D12_RANGE mappedRange);
+        MaybeError MapInternal(bool isWrite, size_t start, size_t end, const char* contextInfo);
 
         bool TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
                                                   D3D12_RESOURCE_BARRIER* barrier,
                                                   wgpu::BufferUsage newUsage);
 
-        MaybeError ClearBuffer(ClearValue clearValue);
+        MaybeError InitializeToZero(CommandRecordingContext* commandContext);
+        MaybeError ClearBuffer(CommandRecordingContext* commandContext, uint8_t clearValue);
 
         ResourceHeapAllocation mResourceAllocation;
         bool mFixedResourceState = false;
         wgpu::BufferUsage mLastUsage = wgpu::BufferUsage::None;
         Serial mLastUsedSerial = UINT64_MAX;
-        D3D12_RANGE mWrittenMappedRange;
-        char* mMappedData = nullptr;
+
+        D3D12_RANGE mWrittenMappedRange = {0, 0};
+        void* mMappedData = nullptr;
     };
 
 }}  // namespace dawn_native::d3d12

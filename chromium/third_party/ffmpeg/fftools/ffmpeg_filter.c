@@ -99,7 +99,8 @@ void choose_sample_fmt(AVStream *st, AVCodec *codec)
                 break;
         }
         if (*p == -1) {
-            if((codec->capabilities & AV_CODEC_CAP_LOSSLESS) && av_get_sample_fmt_name(st->codecpar->format) > av_get_sample_fmt_name(codec->sample_fmts[0]))
+            const AVCodecDescriptor *desc = avcodec_descriptor_get(codec->id);
+            if(desc && (desc->props & AV_CODEC_PROP_LOSSLESS) && av_get_sample_fmt_name(st->codecpar->format) > av_get_sample_fmt_name(codec->sample_fmts[0]))
                 av_log(NULL, AV_LOG_ERROR, "Conversion will not be lossless.\n");
             if(av_get_sample_fmt_name(st->codecpar->format))
             av_log(NULL, AV_LOG_WARNING,
@@ -469,7 +470,7 @@ static int configure_output_video_filter(FilterGraph *fg, OutputFilter *ofilter,
     if (ret < 0)
         return ret;
 
-    if (ofilter->width || ofilter->height) {
+    if ((ofilter->width || ofilter->height) && ofilter->ost->autoscale) {
         char args[255];
         AVFilterContext *filter;
         AVDictionaryEntry *e = NULL;

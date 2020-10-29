@@ -4545,6 +4545,9 @@ static int read_uncompressed_header(AV1Decoder *pbi,
     }
 
     cm->show_frame = aom_rb_read_bit(rb);
+    if (cm->show_frame == 0) pbi->is_arf_frame_present = 1;
+    if (cm->show_frame == 0 && cm->current_frame.frame_type == KEY_FRAME)
+      pbi->is_fwd_kf_present = 1;
     if (seq_params->still_picture &&
         (current_frame->frame_type != KEY_FRAME || !cm->show_frame)) {
       aom_internal_error(&cm->error, AOM_CODEC_CORRUPT_FRAME,
@@ -5109,7 +5112,7 @@ uint32_t av1_decode_frame_headers_and_setup(AV1Decoder *pbi,
   MACROBLOCKD *const xd = &pbi->dcb.xd;
 
 #if CONFIG_BITSTREAM_DEBUG
-  aom_bitstream_queue_set_frame_read(cm->current_frame.frame_number * 2 +
+  aom_bitstream_queue_set_frame_read(cm->current_frame.order_hint * 2 +
                                      cm->show_frame);
 #endif
 #if CONFIG_MISMATCH_DEBUG

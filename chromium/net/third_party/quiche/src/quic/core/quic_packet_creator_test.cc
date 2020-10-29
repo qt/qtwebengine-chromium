@@ -164,6 +164,10 @@ class QuicPacketCreatorTest : public QuicTestWithParam<TestParams> {
         creator_(connection_id_, &client_framer_, &delegate_, &producer_) {
     EXPECT_CALL(delegate_, GetPacketBuffer())
         .WillRepeatedly(Return(QuicPacketBuffer()));
+    if (GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early)) {
+      EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
+          .WillRepeatedly(Return(SEND_TO_WRITER));
+    }
     creator_.SetEncrypter(ENCRYPTION_INITIAL, std::make_unique<NullEncrypter>(
                                                   Perspective::IS_CLIENT));
     creator_.SetEncrypter(ENCRYPTION_HANDSHAKE, std::make_unique<NullEncrypter>(
@@ -506,6 +510,11 @@ TEST_P(QuicPacketCreatorTest, CryptoStreamFramePacketPadding) {
     EXPECT_CALL(delegate_, OnSerializedPacket(_))
         .WillRepeatedly(
             Invoke(this, &QuicPacketCreatorTest::SaveSerializedPacket));
+    if (GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early) &&
+        client_framer_.version().CanSendCoalescedPackets()) {
+      EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
+          .WillRepeatedly(Return(COALESCE));
+    }
     if (!QuicVersionUsesCryptoFrames(client_framer_.transport_version())) {
       ASSERT_TRUE(creator_.ConsumeDataToFillCurrentPacket(
           QuicUtils::GetCryptoStreamId(client_framer_.transport_version()),
@@ -706,10 +715,10 @@ TEST_P(QuicPacketCreatorTest, BuildConnectivityProbingPacket) {
 
   unsigned char* p = packet;
   size_t packet_size = QUICHE_ARRAYSIZE(packet);
-  if (VersionHasIetfQuicFrames(creator_.transport_version())) {
+  if (creator_.version().HasIetfQuicFrames()) {
     p = packet99;
     packet_size = QUICHE_ARRAYSIZE(packet99);
-  } else if (creator_.transport_version() >= QUIC_VERSION_46) {
+  } else if (creator_.version().HasIetfInvariantHeader()) {
     p = packet46;
     packet_size = QUICHE_ARRAYSIZE(packet46);
   }
@@ -1714,9 +1723,6 @@ TEST_P(QuicPacketCreatorTest, FlushWithExternalBuffer) {
         EXPECT_EQ(external_buffer.buffer, serialized_packet.encrypted_buffer);
       }));
   creator_.FlushCurrentPacket();
-  if (!GetQuicReloadableFlag(quic_avoid_leak_writer_buffer)) {
-    delete[] buffer;
-  }
 }
 
 // Test for error found in
@@ -2292,6 +2298,10 @@ class MockDelegate : public QuicPacketCreator::DelegateInterface {
               OnUnrecoverableError,
               (QuicErrorCode, const std::string&),
               (override));
+  MOCK_METHOD(SerializedPacketFate,
+              GetSerializedPacketFate,
+              (bool, EncryptionLevel),
+              (override));
 
   void SetCanWriteAnything() {
     EXPECT_CALL(*this, ShouldGeneratePacket(_, _)).WillRepeatedly(Return(true));
@@ -2443,6 +2453,10 @@ class QuicPacketCreatorMultiplePacketsTest : public QuicTest {
         ack_frame_(InitAckFrame(1)) {
     EXPECT_CALL(delegate_, GetPacketBuffer())
         .WillRepeatedly(Return(QuicPacketBuffer()));
+    if (GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early)) {
+      EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
+          .WillRepeatedly(Return(SEND_TO_WRITER));
+    }
     creator_.SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
         std::make_unique<NullEncrypter>(Perspective::IS_CLIENT));
@@ -2579,6 +2593,24 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest, AddControlFrame_NotWritable) {
   delete rst_frame;
 }
 
+TEST_F(QuicPacketCreatorMultiplePacketsTest,
+       WrongEncryptionLevelForStreamDataFastPath) {
+  if (!GetQuicReloadableFlag(quic_check_encryption_level_in_fast_path)) {
+    return;
+  }
+  creator_.set_encryption_level(ENCRYPTION_HANDSHAKE);
+  delegate_.SetCanWriteAnything();
+  // Create a 10000 byte IOVector.
+  CreateData(10000);
+  EXPECT_CALL(delegate_, OnSerializedPacket(_)).Times(0);
+  EXPECT_CALL(delegate_, OnUnrecoverableError(_, _));
+  EXPECT_QUIC_BUG(creator_.ConsumeDataFastPath(
+                      QuicUtils::GetFirstBidirectionalStreamId(
+                          framer_.transport_version(), Perspective::IS_CLIENT),
+                      &iov_, 1u, iov_.iov_len, 0, true),
+                  "");
+}
+
 TEST_F(QuicPacketCreatorMultiplePacketsTest, AddControlFrame_OnlyAckWritable) {
   delegate_.SetCanWriteOnlyNonRetransmittable();
 
@@ -2659,31 +2691,14 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest,
        ConsumeCryptoDataCheckShouldGeneratePacket) {
   delegate_.SetCanNotWrite();
 
-  if (GetQuicReloadableFlag(quic_fix_checking_should_generate_packet)) {
-    EXPECT_CALL(delegate_, OnSerializedPacket(_)).Times(0);
-  } else {
-    EXPECT_CALL(delegate_, OnSerializedPacket(_))
-        .WillOnce(
-            Invoke(this, &QuicPacketCreatorMultiplePacketsTest::SavePacket));
-  }
+  EXPECT_CALL(delegate_, OnSerializedPacket(_)).Times(0);
   std::string data = "crypto data";
   size_t consumed_bytes =
       creator_.ConsumeCryptoData(ENCRYPTION_INITIAL, data, 0);
   creator_.Flush();
-  if (GetQuicReloadableFlag(quic_fix_checking_should_generate_packet)) {
-    EXPECT_EQ(0u, consumed_bytes);
-  } else {
-    EXPECT_EQ(data.length(), consumed_bytes);
-  }
+  EXPECT_EQ(0u, consumed_bytes);
   EXPECT_FALSE(creator_.HasPendingFrames());
   EXPECT_FALSE(creator_.HasPendingRetransmittableFrames());
-  if (GetQuicReloadableFlag(quic_fix_checking_should_generate_packet)) {
-    return;
-  }
-  PacketContents contents;
-  contents.num_crypto_frames = 1;
-  contents.num_padding_frames = 1;
-  CheckPacketContains(contents, 0);
 }
 
 TEST_F(QuicPacketCreatorMultiplePacketsTest, ConsumeData_NotWritable) {
@@ -3791,6 +3806,31 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest, ConnectionId) {
   creator_.SetClientConnectionId(TestConnectionId(0x33));
   EXPECT_EQ(TestConnectionId(0x1337), creator_.GetDestinationConnectionId());
   EXPECT_EQ(TestConnectionId(0x33), creator_.GetSourceConnectionId());
+}
+
+// Regresstion test for b/159812345.
+TEST_F(QuicPacketCreatorMultiplePacketsTest, ExtraPaddingNeeded) {
+  if (!framer_.version().HasHeaderProtection()) {
+    return;
+  }
+  delegate_.SetCanWriteAnything();
+
+  EXPECT_CALL(delegate_, OnSerializedPacket(_))
+      .WillOnce(
+          Invoke(this, &QuicPacketCreatorMultiplePacketsTest::SavePacket));
+  MakeIOVector("a", &iov_);
+  creator_.ConsumeData(QuicUtils::GetFirstBidirectionalStreamId(
+                           framer_.transport_version(), Perspective::IS_CLIENT),
+                       &iov_, 1u, iov_.iov_len, 0, FIN);
+  creator_.Flush();
+  ASSERT_FALSE(packets_[0].nonretransmittable_frames.empty());
+  QuicFrame padding = packets_[0].nonretransmittable_frames[0];
+  if (GetQuicReloadableFlag(quic_fix_extra_padding_bytes)) {
+    // Verify stream frame expansion is excluded.
+    padding.padding_frame.num_padding_bytes = 3;
+  } else {
+    padding.padding_frame.num_padding_bytes = 4;
+  }
 }
 
 }  // namespace

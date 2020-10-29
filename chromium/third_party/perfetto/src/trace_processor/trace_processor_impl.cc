@@ -23,10 +23,14 @@
 #include "perfetto/base/time.h"
 #include "perfetto/ext/base/string_splitter.h"
 #include "perfetto/ext/base/string_utils.h"
+#include "src/trace_processor/dynamic/ancestor_slice_generator.h"
+#include "src/trace_processor/dynamic/descendant_slice_generator.h"
 #include "src/trace_processor/dynamic/describe_slice_generator.h"
 #include "src/trace_processor/dynamic/experimental_counter_dur_generator.h"
 #include "src/trace_processor/dynamic/experimental_flamegraph_generator.h"
+#include "src/trace_processor/dynamic/experimental_sched_upid_generator.h"
 #include "src/trace_processor/dynamic/experimental_slice_layout_generator.h"
+#include "src/trace_processor/dynamic/thread_state_generator.h"
 #include "src/trace_processor/export_json.h"
 #include "src/trace_processor/importers/additional_modules.h"
 #include "src/trace_processor/importers/ftrace/sched_event_tracker.h"
@@ -53,6 +57,7 @@
 #include "protos/perfetto/trace/trace.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
 
+#include "src/trace_processor/metrics/chrome/all_chrome_metrics.descriptor.h"
 #include "src/trace_processor/metrics/metrics.descriptor.h"
 #include "src/trace_processor/metrics/metrics.h"
 #include "src/trace_processor/metrics/sql_metrics.h"
@@ -324,6 +329,10 @@ void Demangle(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
     return;
   }
   sqlite3_value* value = argv[0];
+  if (sqlite3_value_type(value) == SQLITE_NULL) {
+    sqlite3_result_null(ctx);
+    return;
+  }
   if (sqlite3_value_type(value) != SQLITE_TEXT) {
     sqlite3_result_error(ctx, "Unsupported type of arg passed to DEMANGLE", -1);
     return;
@@ -419,6 +428,93 @@ void CreateLastNonNullFunction(sqlite3* db) {
   }
 }
 
+struct ValueAtMaxTsContext {
+  bool initialized;
+  int value_type;
+
+  int64_t max_ts;
+  int64_t int_value_at_max_ts;
+  double double_value_at_max_ts;
+};
+
+void ValueAtMaxTsStep(sqlite3_context* ctx, int, sqlite3_value** argv) {
+  sqlite3_value* ts = argv[0];
+  sqlite3_value* value = argv[1];
+
+  // Note that sqlite3_aggregate_context zeros the memory for us so all the
+  // variables of the struct should be zero.
+  ValueAtMaxTsContext* fn_ctx = reinterpret_cast<ValueAtMaxTsContext*>(
+      sqlite3_aggregate_context(ctx, sizeof(ValueAtMaxTsContext)));
+
+  // For performance reasons, we only do the check for the type of ts and value
+  // on the first call of the function.
+  if (PERFETTO_UNLIKELY(!fn_ctx->initialized)) {
+    if (sqlite3_value_type(ts) != SQLITE_INTEGER) {
+      sqlite3_result_error(ctx, "VALUE_AT_MAX_TS: ts passed was not an integer",
+                           -1);
+      return;
+    }
+
+    fn_ctx->value_type = sqlite3_value_type(value);
+    if (fn_ctx->value_type != SQLITE_INTEGER &&
+        fn_ctx->value_type != SQLITE_FLOAT) {
+      sqlite3_result_error(
+          ctx, "VALUE_AT_MAX_TS: value passed was not an integer or float", -1);
+      return;
+    }
+
+    fn_ctx->initialized = true;
+  }
+
+  // On dcheck builds however, we check every passed ts and value.
+#if PERFETTO_DCHECK_IS_ON()
+  if (sqlite3_value_type(ts) != SQLITE_INTEGER) {
+    sqlite3_result_error(ctx, "VALUE_AT_MAX_TS: ts passed was not an integer",
+                         -1);
+    return;
+  }
+  if (sqlite3_value_type(value) != fn_ctx->value_type) {
+    sqlite3_result_error(ctx, "VALUE_AT_MAX_TS: value type is inconsistent",
+                         -1);
+    return;
+  }
+#endif
+
+  int64_t ts_int = sqlite3_value_int64(ts);
+  if (PERFETTO_LIKELY(fn_ctx->max_ts < ts_int)) {
+    fn_ctx->max_ts = ts_int;
+
+    if (fn_ctx->value_type == SQLITE_INTEGER) {
+      fn_ctx->int_value_at_max_ts = sqlite3_value_int64(value);
+    } else {
+      fn_ctx->double_value_at_max_ts = sqlite3_value_double(value);
+    }
+  }
+}
+
+void ValueAtMaxTsFinal(sqlite3_context* ctx) {
+  ValueAtMaxTsContext* fn_ctx =
+      reinterpret_cast<ValueAtMaxTsContext*>(sqlite3_aggregate_context(ctx, 0));
+  if (!fn_ctx) {
+    sqlite3_result_null(ctx);
+    return;
+  }
+  if (fn_ctx->value_type == SQLITE_INTEGER) {
+    sqlite3_result_int64(ctx, fn_ctx->int_value_at_max_ts);
+  } else {
+    sqlite3_result_double(ctx, fn_ctx->double_value_at_max_ts);
+  }
+}
+
+void CreateValueAtMaxTsFunction(sqlite3* db) {
+  auto ret = sqlite3_create_function_v2(
+      db, "VALUE_AT_MAX_TS", 2, SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr,
+      nullptr, &ValueAtMaxTsStep, &ValueAtMaxTsFinal, nullptr);
+  if (ret) {
+    PERFETTO_ELOG("Error initializing VALUE_AT_MAX_TS");
+  }
+}
+
 void ExtractArg(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
   if (argc != 2) {
     sqlite3_result_error(ctx, "EXTRACT_ARG: 2 args required", -1);
@@ -438,35 +534,41 @@ void ExtractArg(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
   uint32_t arg_set_id = static_cast<uint32_t>(sqlite3_value_int(argv[0]));
   const char* key = reinterpret_cast<const char*>(sqlite3_value_text(argv[1]));
 
-  const auto& args = storage->arg_table();
-  RowMap filtered = args.FilterToRowMap(
-      {args.arg_set_id().eq(arg_set_id), args.key().eq(key)});
-  if (filtered.size() == 0) {
+  base::Optional<Variadic> opt_value;
+  util::Status status = storage->ExtractArg(arg_set_id, key, &opt_value);
+  if (!status.ok()) {
+    sqlite3_result_error(ctx, status.c_message(), -1);
+    return;
+  }
+
+  if (!opt_value) {
     sqlite3_result_null(ctx);
     return;
   }
-  if (filtered.size() > 1) {
-    sqlite3_result_error(
-        ctx, "EXTRACT_ARG: received multiple args matching arg set id and key",
-        -1);
-  }
 
-  uint32_t idx = filtered.Get(0);
-  Variadic::Type type = *storage->GetVariadicTypeForId(args.value_type()[idx]);
-  switch (type) {
-    case Variadic::kBool:
+  switch (opt_value->type) {
     case Variadic::kInt:
+      sqlite3_result_int64(ctx, opt_value->int_value);
+      break;
+    case Variadic::kBool:
+      sqlite3_result_int64(ctx, opt_value->bool_value);
+      break;
     case Variadic::kUint:
+      sqlite3_result_int64(ctx, static_cast<int64_t>(opt_value->uint_value));
+      break;
     case Variadic::kPointer:
-      sqlite3_result_int64(ctx, *args.int_value()[idx]);
+      sqlite3_result_int64(ctx, static_cast<int64_t>(opt_value->pointer_value));
       break;
     case Variadic::kJson:
+      sqlite3_result_text(ctx, storage->GetString(opt_value->json_value).data(),
+                          -1, nullptr);
+      break;
     case Variadic::kString:
-      sqlite3_result_text(ctx, args.string_value().GetString(idx).data(), -1,
-                          nullptr);
+      sqlite3_result_text(
+          ctx, storage->GetString(opt_value->string_value).data(), -1, nullptr);
       break;
     case Variadic::kReal:
-      sqlite3_result_double(ctx, *args.real_value()[idx]);
+      sqlite3_result_double(ctx, opt_value->real_value);
       break;
   }
 }
@@ -497,6 +599,8 @@ void SetupMetrics(TraceProcessor* tp,
                   sqlite3* db,
                   std::vector<metrics::SqlMetricFile>* sql_metrics) {
   tp->ExtendMetricsProto(kMetricsDescriptor.data(), kMetricsDescriptor.size());
+  tp->ExtendMetricsProto(kAllChromeMetricsDescriptor.data(),
+                         kAllChromeMetricsDescriptor.size());
 
   for (const auto& file_to_sql : metrics::sql_metrics::kFileToSql) {
     tp->RegisterMetric(file_to_sql.path, file_to_sql.sql);
@@ -512,7 +616,7 @@ void SetupMetrics(TraceProcessor* tp,
         nullptr, nullptr,
         [](void* ptr) { delete static_cast<metrics::RunMetricContext*>(ptr); });
     if (ret)
-      PERFETTO_ELOG("Error initializing RUN_METRIC");
+      PERFETTO_FATAL("Error initializing RUN_METRIC");
   }
 
   {
@@ -520,7 +624,15 @@ void SetupMetrics(TraceProcessor* tp,
         db, "RepeatedField", 1, SQLITE_UTF8, nullptr, nullptr,
         metrics::RepeatedFieldStep, metrics::RepeatedFieldFinal, nullptr);
     if (ret)
-      PERFETTO_ELOG("Error initializing RepeatedField");
+      PERFETTO_FATAL("Error initializing RepeatedField");
+  }
+
+  {
+    auto ret = sqlite3_create_function_v2(db, "NULL_IF_EMPTY", 1, SQLITE_UTF8,
+                                          nullptr, metrics::NullIfEmpty,
+                                          nullptr, nullptr, nullptr);
+    if (ret)
+      PERFETTO_FATAL("Error initializing NULL_IF_EMPTY");
   }
 }
 
@@ -565,6 +677,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   CreateLastNonNullFunction(db);
   CreateExtractArgFunction(context_.storage.get(), db);
   CreateSourceGeqFunction(db);
+  CreateValueAtMaxTsFunction(db);
 
   SetupMetrics(this, *db_, &sql_metrics_);
 
@@ -594,6 +707,15 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
       new ExperimentalSliceLayoutGenerator(
           context_.storage.get()->mutable_string_pool(),
           &storage->slice_table())));
+  RegisterDynamicTable(std::unique_ptr<AncestorSliceGenerator>(
+      new AncestorSliceGenerator(&context_)));
+  RegisterDynamicTable(std::unique_ptr<DescendantSliceGenerator>(
+      new DescendantSliceGenerator(&context_)));
+  RegisterDynamicTable(std::unique_ptr<ExperimentalSchedUpidGenerator>(
+      new ExperimentalSchedUpidGenerator(storage->sched_slice_table(),
+                                         storage->thread_table())));
+  RegisterDynamicTable(std::unique_ptr<ThreadStateGenerator>(
+      new ThreadStateGenerator(&context_)));
 
   // New style db-backed tables.
   RegisterDbTable(storage->arg_table());
@@ -601,6 +723,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->process_table());
 
   RegisterDbTable(storage->slice_table());
+  RegisterDbTable(storage->flow_table());
   RegisterDbTable(storage->sched_slice_table());
   RegisterDbTable(storage->instant_table());
   RegisterDbTable(storage->gpu_slice_table());
@@ -628,6 +751,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->symbol_table());
   RegisterDbTable(storage->heap_profile_allocation_table());
   RegisterDbTable(storage->cpu_profile_stack_sample_table());
+  RegisterDbTable(storage->perf_sample_table());
   RegisterDbTable(storage->stack_profile_callsite_table());
   RegisterDbTable(storage->stack_profile_mapping_table());
   RegisterDbTable(storage->stack_profile_frame_table());

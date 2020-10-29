@@ -10,6 +10,7 @@
  **************************************************************************************************/
 #include "GrMagnifierEffect.h"
 
+#include "src/core/SkUtils.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
@@ -47,12 +48,9 @@ public:
                                                         kFloat_GrSLType, "yInvInset");
         offsetVar = args.fUniformHandler->addUniform(&_outer, kFragment_GrShaderFlag,
                                                      kHalf2_GrSLType, "offset");
-        SkString sk_TransformedCoords2D_0 = fragBuilder->ensureCoords2D(
-                args.fTransformedCoords[0].fVaryingPoint, _outer.sampleMatrix());
         fragBuilder->codeAppendf(
-                R"SkSL(float2 coord = %s;
-float2 zoom_coord = float2(%s) + coord * float2(%s, %s);
-float2 delta = (coord - %s.xy) * %s.zw;
+                R"SkSL(float2 zoom_coord = float2(%s) + %s * float2(%s, %s);
+float2 delta = (%s - %s.xy) * %s.zw;
 delta = min(delta, float2(half2(1.0, 1.0)) - delta);
 delta *= float2(%s, %s);
 float weight = 0.0;
@@ -65,21 +63,20 @@ if (delta.x < 2.0 && delta.y < 2.0) {
     float2 delta_squared = delta * delta;
     weight = min(min(delta_squared.x, delta_squared.y), 1.0);
 })SkSL",
-                sk_TransformedCoords2D_0.c_str(), args.fUniformHandler->getUniformCStr(offsetVar),
+                args.fUniformHandler->getUniformCStr(offsetVar), args.fSampleCoord,
                 args.fUniformHandler->getUniformCStr(xInvZoomVar),
-                args.fUniformHandler->getUniformCStr(yInvZoomVar),
+                args.fUniformHandler->getUniformCStr(yInvZoomVar), args.fSampleCoord,
                 args.fUniformHandler->getUniformCStr(boundsUniformVar),
                 args.fUniformHandler->getUniformCStr(boundsUniformVar),
                 args.fUniformHandler->getUniformCStr(xInvInsetVar),
                 args.fUniformHandler->getUniformCStr(yInvInsetVar));
-        SkString _sample1112;
-        SkString _coords1112("mix(coord, zoom_coord, weight)");
-        _sample1112 = this->invokeChild(_outer.src_index, args, _coords1112.c_str());
+        SkString _coords1043 = SkStringPrintf("mix(%s, zoom_coord, weight)", args.fSampleCoord);
+        SkString _sample1043 = this->invokeChild(0, args, _coords1043.c_str());
         fragBuilder->codeAppendf(
                 R"SkSL(
 %s = %s;
 )SkSL",
-                args.fOutputColor, _sample1112.c_str());
+                args.fOutputColor, _sample1043.c_str());
     }
 
 private:
@@ -138,19 +135,28 @@ bool GrMagnifierEffect::onIsEqual(const GrFragmentProcessor& other) const {
 }
 GrMagnifierEffect::GrMagnifierEffect(const GrMagnifierEffect& src)
         : INHERITED(kGrMagnifierEffect_ClassID, src.optimizationFlags())
-        , fCoordTransform0(src.fCoordTransform0)
         , bounds(src.bounds)
         , srcRect(src.srcRect)
         , xInvZoom(src.xInvZoom)
         , yInvZoom(src.yInvZoom)
         , xInvInset(src.xInvInset)
         , yInvInset(src.yInvInset) {
-    { src_index = this->cloneAndRegisterChildProcessor(src.childProcessor(src.src_index)); }
-    this->addCoordTransform(&fCoordTransform0);
+    this->cloneAndRegisterAllChildProcessors(src);
+    this->setUsesSampleCoordsDirectly();
 }
 std::unique_ptr<GrFragmentProcessor> GrMagnifierEffect::clone() const {
-    return std::unique_ptr<GrFragmentProcessor>(new GrMagnifierEffect(*this));
+    return std::make_unique<GrMagnifierEffect>(*this);
 }
+#if GR_TEST_UTILS
+SkString GrMagnifierEffect::onDumpInfo() const {
+    return SkStringPrintf(
+            "(bounds=int4(%d, %d, %d, %d), srcRect=float4(%f, %f, %f, %f), xInvZoom=%f, "
+            "yInvZoom=%f, xInvInset=%f, yInvInset=%f)",
+            bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), srcRect.left(),
+            srcRect.top(), srcRect.right(), srcRect.bottom(), xInvZoom, yInvZoom, xInvInset,
+            yInvInset);
+}
+#endif
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrMagnifierEffect);
 #if GR_TEST_UTILS
 std::unique_ptr<GrFragmentProcessor> GrMagnifierEffect::TestCreate(GrProcessorTestData* d) {

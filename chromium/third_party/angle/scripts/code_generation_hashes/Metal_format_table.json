@@ -1,10 +1,12 @@
 {
   "src/libANGLE/renderer/angle_format.py":
     "32ba71942c0fd00e6807104f1bb80a3c",
+  "src/libANGLE/renderer/angle_format_map.json":
+    "aa4a0d3463b76858a75787b9cdec8e98",
   "src/libANGLE/renderer/metal/gen_mtl_format_table.py":
-    "b6468446dd1da3e44ac9dd11690b5bf1",
+    "91579339b484425ef81b0e900a5c04ed",
   "src/libANGLE/renderer/metal/mtl_format_map.json":
-    "223e0b729f5df7d91af382fa3af32254",
+    "b4f515e08814b5a0f148a049139d8392",
   "src/libANGLE/renderer/metal/mtl_format_table_autogen.mm":
-    "d924184394625032e8a3e97c8b936a5f"
+    "6a8cdb5d09a6ba1521fe9dab3b887451"
 }

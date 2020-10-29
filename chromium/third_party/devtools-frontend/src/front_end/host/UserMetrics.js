@@ -34,6 +34,7 @@ import * as Common from '../common/common.js';
  * @unrestricted
  */
 import {InspectorFrontendHostInstance} from './InspectorFrontendHost.js';
+import {EnumeratedHistogram} from './InspectorFrontendHostAPI.js';
 
 export class UserMetrics {
   constructor() {
@@ -43,22 +44,42 @@ export class UserMetrics {
   }
 
   /**
+   * @param {string} contrastThreshold
+   */
+  colorFixed(contrastThreshold) {
+    const code = ContrastThresholds[contrastThreshold];
+    if (code === undefined) {
+      console.error(`Unknown contrast threshold: ${contrastThreshold}`);
+      return;
+    }
+    const size = Object.keys(ContrastThresholds).length + 1;
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.ColorPickerFixedColor, code, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.ColorPickerFixedColor, {value: code});
+  }
+
+  /**
    * @param {string} panelName
    */
   panelShown(panelName) {
     const code = PanelCodes[panelName] || 0;
     const size = Object.keys(PanelCodes).length + 1;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram('DevTools.PanelShown', code, size);
-    Common.EventTarget.fireEvent('DevTools.PanelShown', {value: code});
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.PanelShown, code, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.PanelShown, {value: code});
     // Store that the user has changed the panel so we know launch histograms should not be fired.
     this._panelChangedSinceLaunch = true;
   }
 
   /**
-   * @param {string} drawerId
+   * Fired when a panel is closed (regardless if it exists in the main panel or the drawer)
+   * @param {string} panelName
    */
-  drawerShown(drawerId) {
-    this.panelShown('drawer-' + drawerId);
+  panelClosed(panelName) {
+    const code = PanelCodes[panelName] || 0;
+    const size = Object.keys(PanelCodes).length + 1;
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.PanelClosed, code, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.PanelClosed, {value: code});
+    // Store that the user has changed the panel so we know launch histograms should not be fired.
+    this._panelChangedSinceLaunch = true;
   }
 
   /**
@@ -73,8 +94,8 @@ export class UserMetrics {
    */
   actionTaken(action) {
     const size = Object.keys(Action).length + 1;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram('DevTools.ActionTaken', action, size);
-    Common.EventTarget.fireEvent('DevTools.ActionTaken', {value: action});
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.ActionTaken, action, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.ActionTaken, {value: action});
   }
 
   /**
@@ -122,8 +143,8 @@ export class UserMetrics {
   keybindSetSettingChanged(keybindSet) {
     const size = Object.keys(KeybindSetSettings).length + 1;
     const value = KeybindSetSettings[keybindSet] || 0;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram('DevTools.KeybindSetSettingChanged', value, size);
-    Common.EventTarget.fireEvent('DevTools.KeybindSetSettingChanged', {value});
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.KeybindSetSettingChanged, value, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.KeybindSetSettingChanged, {value});
   }
 
   /**
@@ -132,8 +153,8 @@ export class UserMetrics {
   keyboardShortcutFired(actionId) {
     const size = Object.keys(KeyboardShortcutAction).length + 1;
     const action = KeyboardShortcutAction[actionId] || KeyboardShortcutAction.OtherShortcut;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram('DevTools.KeyboardShortcutFired', action, size);
-    Common.EventTarget.fireEvent('DevTools.KeyboardShortcutFired', {value: action});
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.KeyboardShortcutFired, action, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.KeyboardShortcutFired, {value: action});
   }
 
   /**
@@ -141,8 +162,9 @@ export class UserMetrics {
    */
   issuesPanelOpenedFrom(issueOpener) {
     const size = Object.keys(IssueOpener).length + 1;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram('DevTools.IssuesPanelOpenedFrom', issueOpener, size);
-    Common.EventTarget.fireEvent('DevTools.IssuesPanelOpenedFrom', {value: issueOpener});
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.IssuesPanelOpenedFrom, issueOpener, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.IssuesPanelOpenedFrom, {value: issueOpener});
   }
 
   /**
@@ -150,8 +172,51 @@ export class UserMetrics {
    */
   dualScreenDeviceEmulated(emulationAction) {
     const size = Object.keys(DualScreenDeviceEmulated).length + 1;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram('DevTools.DualScreenDeviceEmulated', emulationAction, size);
-    Common.EventTarget.fireEvent('DevTools.DualScreenDeviceEmulated', {value: emulationAction});
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.DualScreenDeviceEmulated, emulationAction, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.DualScreenDeviceEmulated, {value: emulationAction});
+  }
+
+  /**
+   * @param {string} gridSettingId
+   */
+  cssGridSettings(gridSettingId) {
+    const size = Object.keys(CSSGridSettings).length + 1;
+    const gridSetting = CSSGridSettings[gridSettingId];
+    if (gridSetting === undefined) {
+      return;
+    }
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.CSSGridSettings, gridSetting, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.CSSGridSettings, {value: gridSetting});
+  }
+
+  /**
+   * @param {string} experimentId
+   */
+  experimentEnabledAtLaunch(experimentId) {
+    const size = DevtoolsExperiments['__lastValidEnumPosition'] + 1;
+    const experiment = DevtoolsExperiments[experimentId];
+    if (experiment === undefined) {
+      return;
+    }
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.ExperimentEnabledAtLaunch, experiment, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.ExperimentEnabledAtLaunch, {value: experiment});
+  }
+
+  /**
+   * @param {string} experimentId
+   * @param {boolean} isEnabled
+   */
+  experimentChanged(experimentId, isEnabled) {
+    const size = DevtoolsExperiments['__lastValidEnumPosition'] + 1;
+    const experiment = DevtoolsExperiments[experimentId];
+    if (experiment === undefined) {
+      return;
+    }
+    const actionName = isEnabled ? EnumeratedHistogram.ExperimentEnabled : EnumeratedHistogram.ExperimentDisabled;
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(actionName, experiment, size);
+    Common.EventTarget.fireEvent(actionName, {value: experiment});
   }
 }
 
@@ -201,7 +266,16 @@ export const Action = {
   SettingsOpenedFromMenu: 37,
   SettingsOpenedFromCommandMenu: 38,
   TabMovedToDrawer: 39,
-  TabMovedToMainPanel: 40
+  TabMovedToMainPanel: 40,
+  CaptureCssOverviewClicked: 41,
+  VirtualAuthenticatorEnvironmentEnabled: 42,
+  SourceOrderViewActivated: 43,
+};
+
+/** @type {!Object<string, number>} */
+export const ContrastThresholds = {
+  aa: 0,
+  aaa: 1,
 };
 
 /** @type {!Object<string, number>} */
@@ -216,25 +290,25 @@ export const PanelCodes = {
   'legacy-audits-deprecated': 7,
   console: 8,
   layers: 9,
-  'drawer-console-view': 10,
-  'drawer-animations': 11,
-  'drawer-network.config': 12,
-  'drawer-rendering': 13,
-  'drawer-sensors': 14,
-  'drawer-sources.search': 15,
+  'console-view': 10,
+  'animations': 11,
+  'network.config': 12,
+  'rendering': 13,
+  'sensors': 14,
+  'sources.search': 15,
   security: 16,
   js_profiler: 17,
   lighthouse: 18,
-  'drawer-coverage': 19,
-  'drawer-protocol-monitor': 20,
-  'drawer-remote-devices': 21,
-  'drawer-web-audio': 22,
-  'drawer-changes.changes': 23,
-  'drawer-performance.monitor': 24,
-  'drawer-release-note': 25,
-  'drawer-live_heap_profile': 26,
-  'drawer-sources.quick': 27,
-  'drawer-network.blocked-urls': 28,
+  'coverage': 19,
+  'protocol-monitor': 20,
+  'remote-devices': 21,
+  'web-audio': 22,
+  'changes.changes': 23,
+  'performance.monitor': 24,
+  'release-note': 25,
+  'live_heap_profile': 26,
+  'sources.quick': 27,
+  'network.blocked-urls': 28,
   'settings-preferences': 29,
   'settings-workspace': 30,
   'settings-experiments': 31,
@@ -243,8 +317,9 @@ export const PanelCodes = {
   'settings-throttling-conditions': 34,
   'settings-emulation-locations': 35,
   'settings-shortcuts': 36,
-  'drawer-issues-pane': 37,
-  'settings-keybinds': 38
+  'issues-pane': 37,
+  'settings-keybinds': 38,
+  'cssoverview': 39
 };
 
 /** @type {!Object<string, number>} */
@@ -279,6 +354,75 @@ export const KeyboardShortcutAction = {
   'quickOpen.show': 21,
   'settings.show': 22,
   'sources.search': 23,
+  'background-service.toggle-recording': 24,
+  'components.collect-garbage': 25,
+  'console.clear.history': 26,
+  'console.create-pin': 27,
+  'coverage.start-with-reload': 28,
+  'coverage.toggle-recording': 29,
+  'debugger.breakpoint-input-window': 30,
+  'debugger.evaluate-selection': 31,
+  'debugger.next-call-frame': 32,
+  'debugger.previous-call-frame': 33,
+  'debugger.run-snippet': 34,
+  'debugger.toggle-breakpoints-active': 35,
+  'elements.capture-area-screenshot': 36,
+  'emulation.capture-full-height-screenshot': 37,
+  'emulation.capture-node-screenshot': 38,
+  'emulation.capture-screenshot': 39,
+  'emulation.show-sensors': 40,
+  'emulation.toggle-device-mode': 41,
+  'help.release-notes': 42,
+  'help.report-issue': 43,
+  'input.start-replaying': 44,
+  'input.toggle-pause': 45,
+  'input.toggle-recording': 46,
+  'inspector_main.focus-debuggee': 47,
+  'inspector_main.hard-reload': 48,
+  'inspector_main.reload': 49,
+  'live-heap-profile.start-with-reload': 50,
+  'live-heap-profile.toggle-recording': 51,
+  'main.debug-reload': 52,
+  'main.next-tab': 53,
+  'main.previous-tab': 54,
+  'main.search-in-panel.cancel': 55,
+  'main.search-in-panel.find-next': 56,
+  'main.search-in-panel.find-previous': 57,
+  'main.toggle-dock': 58,
+  'main.zoom-in': 59,
+  'main.zoom-out': 60,
+  'main.zoom-reset': 61,
+  'network-conditions.network-low-end-mobile': 62,
+  'network-conditions.network-mid-tier-mobile': 63,
+  'network-conditions.network-offline': 64,
+  'network-conditions.network-online': 65,
+  'profiler.heap-toggle-recording': 66,
+  'profiler.js-toggle-recording': 67,
+  'resources.clear': 68,
+  'settings.documentation': 69,
+  'settings.shortcuts': 70,
+  'sources.add-folder-to-workspace': 71,
+  'sources.add-to-watch': 72,
+  'sources.close-all': 73,
+  'sources.close-editor-tab': 74,
+  'sources.create-snippet': 75,
+  'sources.go-to-line': 76,
+  'sources.go-to-member': 77,
+  'sources.jump-to-next-location': 78,
+  'sources.jump-to-previous-location': 79,
+  'sources.rename': 80,
+  'sources.save': 81,
+  'sources.save-all': 82,
+  'sources.switch-file': 83,
+  'timeline.jump-to-next-frame': 84,
+  'timeline.jump-to-previous-frame': 85,
+  'timeline.load-from-file': 86,
+  'timeline.next-recording': 87,
+  'timeline.previous-recording': 88,
+  'timeline.record-reload': 89,
+  'timeline.save-to-file': 90,
+  'timeline.show-history': 91,
+  'timeline.toggle-recording': 92,
 };
 
 /** @enum {number} */
@@ -295,4 +439,79 @@ export const DualScreenDeviceEmulated = {
   DualScreenDeviceSelected: 0,  // a dual screen or fold device is selected
   SpanButtonClicked: 1,         // span button is clicked when emulating a dual screen/fold device
   PlatformSupportUsed: 2        // user starts to use platform dual screen support feature.
+};
+
+/** @type {!Object<string, number>} */
+export const CSSGridSettings = {
+  'showGridBorder.none': 0,
+  'showGridBorder.dashed': 1,
+  'showGridBorder.solid': 2,
+  'showGridLines.none': 3,
+  'showGridLines.dashed': 4,
+  'showGridLines.solid': 5,
+  'showGridLines.extended-dashed': 6,
+  'showGridLines.extended-solid': 7,
+  'showGridLineNumbers.none': 8,
+  'showGridLineNumbers.positive': 9,
+  'showGridLineNumbers.negative': 10,
+  'showGridLineNumbers.both': 11,
+  'showGridGaps.none': 12,
+  'showGridGaps.row-gaps': 13,
+  'showGridGaps.column-gaps': 14,
+  'showGridGaps.both': 15,
+  'showGridAreas.false': 16,
+  'showGridAreas.true': 17,
+  'showGridLineNumbers.names': 18,
+  'showGridTrackSizes.false': 19,
+  'showGridTrackSizes.true': 20,
+};
+
+/**
+ * This list should contain the currently active Devtools Experiments.
+ * Therefore, it is possible that the id's will no longer be continuous
+ * as experiemnts are removed.
+ * When adding a new experiemnt:
+ * 1. Add an entry to the bottom of the list before '__lastValidEnumPosition'
+ * 2. Set the value of the new entry and '__lastValidEnumPosition' to
+ *    __lastValidEnumPosition + 1
+ * When removing an experiment, simply delete the line from the enum.
+ */
+/** @type {!Object<string, number>} */
+export const DevtoolsExperiments = {
+  'applyCustomStylesheet': 0,
+  'captureNodeCreationStacks': 1,
+  'sourcesPrettyPrint': 2,
+  'backgroundServices': 3,
+  'backgroundServicesNotifications': 4,
+  'backgroundServicesPaymentHandler': 5,
+  'backgroundServicesPushMessaging': 6,
+  'blackboxJSFramesOnTimeline': 7,
+  'cssOverview': 8,
+  'emptySourceMapAutoStepping': 9,
+  'inputEventsOnTimelineOverview': 10,
+  'liveHeapProfile': 11,
+  'nativeHeapProfiler': 12,
+  'protocolMonitor': 13,
+  'issuesPane': 14,
+  'developerResourcesView': 15,
+  'recordCoverageWithPerformanceTracing': 16,
+  'samplingHeapProfilerTimeline': 17,
+  'showOptionToNotTreatGlobalObjectsAsRoots': 18,
+  'sourceDiff': 19,
+  'sourceOrderViewer': 20,
+  'spotlight': 21,
+  'webauthnPane': 22,
+  'customKeyboardShortcuts': 23,
+  'timelineEventInitiators': 24,
+  'timelineFlowEvents': 25,
+  'timelineInvalidationTracking': 26,
+  'timelineShowAllEvents': 27,
+  'timelineV8RuntimeCallStats': 28,
+  'timelineWebGL': 29,
+  'timelineReplayEvent': 30,
+  'wasmDWARFDebugging': 31,
+  'dualScreenSupport': 32,
+  'cssGridFeatures': 33,
+  'movableTabs': 34,
+  '__lastValidEnumPosition': 34,
 };

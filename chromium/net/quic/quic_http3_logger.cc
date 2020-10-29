@@ -197,7 +197,7 @@ void QuicHttp3Logger::OnGoAwayFrameReceived(const quic::GoAwayFrame& frame) {
     return;
   }
   net_log_.AddEventWithIntParams(NetLogEventType::HTTP3_GOAWAY_RECEIVED,
-                                 "stream_id", frame.stream_id);
+                                 "stream_id", frame.id);
 }
 
 void QuicHttp3Logger::OnMaxPushIdFrameReceived(
@@ -316,6 +316,13 @@ void QuicHttp3Logger::OnSettingsFrameSent(const quic::SettingsFrame& frame) {
   if (!net_log_.IsCapturing())
     return;
   net_log_.AddEvent(NetLogEventType::HTTP3_SETTINGS_SENT,
+                    [&frame] { return NetLogSettingsParams(frame); });
+}
+
+void QuicHttp3Logger::OnSettingsFrameResumed(const quic::SettingsFrame& frame) {
+  if (!net_log_.IsCapturing())
+    return;
+  net_log_.AddEvent(NetLogEventType::HTTP3_SETTINGS_RESUMED,
                     [&frame] { return NetLogSettingsParams(frame); });
 }
 

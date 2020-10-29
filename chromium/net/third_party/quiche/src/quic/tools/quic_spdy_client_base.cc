@@ -62,6 +62,10 @@ QuicSpdyClientSession* QuicSpdyClientBase::client_session() {
   return static_cast<QuicSpdyClientSession*>(QuicClientBase::session());
 }
 
+const QuicSpdyClientSession* QuicSpdyClientBase::client_session() const {
+  return static_cast<const QuicSpdyClientSession*>(QuicClientBase::session());
+}
+
 void QuicSpdyClientBase::InitializeSession() {
   client_session()->Initialize();
   client_session()->CryptoConnect();
@@ -176,7 +180,7 @@ QuicSpdyClientStream* QuicSpdyClientBase::CreateClientStream() {
     return nullptr;
   }
   if (VersionHasIetfQuicFrames(client_session()->transport_version())) {
-    // Process MAX_STREAMS from peer.
+    // Process MAX_STREAMS from peer or wait for liveness testing succeeds.
     while (!client_session()->CanOpenNextOutgoingBidirectionalStream()) {
       network_helper()->RunEventLoop();
     }

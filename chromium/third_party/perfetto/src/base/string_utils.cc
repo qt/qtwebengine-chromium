@@ -149,5 +149,22 @@ std::string StripChars(const std::string& str,
   return res;
 }
 
+std::string ReplaceAll(std::string str,
+                       const std::string& to_replace,
+                       const std::string& replacement) {
+  PERFETTO_CHECK(!to_replace.empty());
+  size_t pos = 0;
+  while ((pos = str.find(to_replace, pos)) != std::string::npos) {
+    str.replace(pos, to_replace.length(), replacement);
+    pos += replacement.length();
+  }
+  return str;
+}
+
+std::string TrimLeading(const std::string& str) {
+  size_t idx = str.find_first_not_of(' ');
+  return idx == std::string::npos ? str : str.substr(idx);
+}
+
 }  // namespace base
 }  // namespace perfetto

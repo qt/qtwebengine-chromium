@@ -23,6 +23,7 @@
 namespace dawn_native {
 
     class BufferBase;
+    class QuerySetBase;
     class TextureBase;
 
     enum class PassType { Render, Compute };
@@ -45,8 +46,8 @@ namespace dawn_native {
     // the vector to record every single subresource's Usages. The texture usage is enough. And we
     // can decompress texture usage to a vector if necessary.
     struct PassTextureUsage {
-        wgpu::TextureUsage usage;
-        bool sameUsagesAcrossSubresources;
+        wgpu::TextureUsage usage = wgpu::TextureUsage::None;
+        bool sameUsagesAcrossSubresources = true;
         std::vector<wgpu::TextureUsage> subresourceUsages;
     };
 
@@ -68,6 +69,7 @@ namespace dawn_native {
         PerPassUsages perPass;
         std::set<BufferBase*> topLevelBuffers;
         std::set<TextureBase*> topLevelTextures;
+        std::set<QuerySetBase*> usedQuerySets;
     };
 
 }  // namespace dawn_native

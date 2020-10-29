@@ -22,7 +22,7 @@ public:
     GrImageTextureMaker(GrRecordingContext*, const SkImage* client, GrImageTexGenPolicy);
 
 private:
-    GrSurfaceProxyView refOriginalTextureProxyView(GrMipMapped) override;
+    GrSurfaceProxyView refOriginalTextureProxyView(GrMipmapped) override;
 
     const SkImage_Lazy*     fImage;
     GrImageTexGenPolicy     fTexGenPolicy;
@@ -33,21 +33,24 @@ private:
 /** This class manages the conversion of generator-backed YUVA images to GrTextures. */
 class GrYUVAImageTextureMaker final : public GrTextureMaker {
 public:
-    GrYUVAImageTextureMaker(GrContext* context, const SkImage* client);
+    GrYUVAImageTextureMaker(GrRecordingContext* context, const SkImage* client);
 
-    std::unique_ptr<GrFragmentProcessor> createFragmentProcessor(
+    std::unique_ptr<GrFragmentProcessor> createFragmentProcessor(const SkMatrix& textureMatrix,
+                                                                 const SkRect* subset,
+                                                                 const SkRect* domain,
+                                                                 GrSamplerState) override;
+
+    std::unique_ptr<GrFragmentProcessor> createBicubicFragmentProcessor(
             const SkMatrix& textureMatrix,
-            const SkRect& constraintRect,
-            FilterConstraint filterConstraint,
-            bool coordsLimitedToConstraintRect,
+            const SkRect* subset,
+            const SkRect* domain,
             GrSamplerState::WrapMode wrapX,
-            GrSamplerState::WrapMode wrapY,
-            const GrSamplerState::Filter* filterOrNullForBicubic) override;
+            GrSamplerState::WrapMode wrapY) override;
 
     bool isPlanar() const override { return true; }
 
 private:
-    GrSurfaceProxyView refOriginalTextureProxyView(GrMipMapped) override;
+    GrSurfaceProxyView refOriginalTextureProxyView(GrMipmapped) override;
 
     const SkImage_GpuYUVA*  fImage;
 

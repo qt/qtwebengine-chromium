@@ -16,6 +16,7 @@
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_substfont.h"
+#include "core/fxge/cfx_textrenderoptions.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/text_char_pos.h"
 #include "third_party/base/stl_util.h"
@@ -114,7 +115,7 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
     bRet = device->DrawNormalText(iCurCount, pCurCP, font, -fFontSize, matrix,
                                   color, options);
   }
-#if defined _SKIA_SUPPORT_ || defined _SKIA_SUPPORT_PATHS_
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   device->Flush(false);
 #endif
 
