@@ -6,6 +6,7 @@ mojom("interfaces") {
   sources = [
     "plugin.mojom",
     "qtwebchannel.mojom",
+    "qtwebenginepage.mojom"
   ]
 
   deps = [
