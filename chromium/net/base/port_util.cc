@@ -80,6 +80,8 @@ const int kRestrictedPorts[] = {
     2049,    // nfs
     3659,    // apple-sasl / PasswordServer
     4045,    // lockd
+    5060,  // sip
+    5061,  // sips
     6000,    // X11
     6665,    // Alternate IRC [Apple addition]
     6666,    // Alternate IRC [Apple addition]
