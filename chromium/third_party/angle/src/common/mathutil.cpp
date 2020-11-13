@@ -72,11 +72,11 @@ void convert999E5toRGBFloats(unsigned int input, float *red, float *green, float
     const RGB9E5Data *inputData = reinterpret_cast<const RGB9E5Data *>(&input);
 
     *red =
-        inputData->R * pow(2.0f, (int)inputData->E - g_sharedexp_bias - g_sharedexp_mantissabits);
+        inputData->R * (float)pow(2.0f, (int)inputData->E - g_sharedexp_bias - g_sharedexp_mantissabits);
     *green =
-        inputData->G * pow(2.0f, (int)inputData->E - g_sharedexp_bias - g_sharedexp_mantissabits);
+        inputData->G * (float)pow(2.0f, (int)inputData->E - g_sharedexp_bias - g_sharedexp_mantissabits);
     *blue =
-        inputData->B * pow(2.0f, (int)inputData->E - g_sharedexp_bias - g_sharedexp_mantissabits);
+        inputData->B * (float)pow(2.0f, (int)inputData->E - g_sharedexp_bias - g_sharedexp_mantissabits);
 }
 
 }  // namespace gl
