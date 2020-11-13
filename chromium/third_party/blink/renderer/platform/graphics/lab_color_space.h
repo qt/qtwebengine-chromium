@@ -130,7 +130,7 @@ class LABColorSpace {
   // https://en.wikipedia.org/wiki/CIELAB_color_space#Forward_transformation.
   FloatPoint3D toXYZ(const FloatPoint3D& lab) const {
     auto invf = [](float x) {
-      return x > kSigma ? pow(x, 3) : 3 * kSigma2 * (x - 4.0f / 29.0f);
+      return x > kSigma ? (float)pow(x, 3) : 3 * kSigma2 * (x - 4.0f / 29.0f);
     };
 
     FloatPoint3D v = {clamp(lab.X(), 0.0f, 100.0f),

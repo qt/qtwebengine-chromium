@@ -198,6 +198,20 @@ struct TimestampedTracePiece {
     return *this;
   }
 
+#if PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+  TimestampedTracePiece& operator=(TimestampedTracePiece&& ttp) const
+  {
+    if (this != &ttp) {
+      // First invoke the destructor and then invoke the move constructor
+      // inline via placement-new to implement move-assignment.
+      this->~TimestampedTracePiece();
+      new (const_cast<TimestampedTracePiece*>(this)) TimestampedTracePiece(std::move(ttp));
+    }
+
+    return const_cast<TimestampedTracePiece&>(*this);
+  }
+#endif  // PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
+
   ~TimestampedTracePiece() {
     switch (type) {
       case Type::kInvalid:
