@@ -347,7 +347,7 @@ bool IDNSpoofChecker::SafeToDisplayAsUnicode(
   if (U_FAILURE(status) || (result & USPOOF_ALL_CHECKS))
     return false;
 
-  icu::UnicodeString label_string(FALSE /* isTerminated */, label.data(),
+  icu::UnicodeString label_string(false /* isTerminated */, label.data(),
                                   base::checked_cast<int32_t>(label.size()));
 
   // A punycode label with 'xn--' prefix is not subject to the URL
@@ -677,7 +677,7 @@ bool IDNSpoofChecker::IsWholeScriptConfusableAllowedForTLD(
     base::StringPiece tld,
     base::StringPiece16 tld_unicode) {
   icu::UnicodeString tld_string(
-      FALSE /* isTerminated */, tld_unicode.data(),
+      false /* isTerminated */, tld_unicode.data(),
       base::checked_cast<int32_t>(tld_unicode.size()));
   // Allow if the TLD contains any letter from the script, in which case it's
   // likely to be a TLD in that script.
