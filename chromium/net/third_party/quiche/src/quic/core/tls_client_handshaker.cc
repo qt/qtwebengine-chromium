@@ -295,6 +295,10 @@ bool TlsClientHandshaker::EarlyDataAccepted() const {
   return SSL_early_data_accepted(ssl()) == 1;
 }
 
+ssl_early_data_reason_t TlsClientHandshaker::EarlyDataReason() const {
+  return TlsHandshaker::EarlyDataReason();
+}
+
 bool TlsClientHandshaker::ReceivedInchoateReject() const {
   QUIC_BUG_IF(!one_rtt_keys_available_);
   // REJ messages are a QUIC crypto feature, so TLS always returns false.
@@ -382,10 +386,16 @@ void TlsClientHandshaker::SetWriteSecret(
   if (level == ENCRYPTION_FORWARD_SECURE || level == ENCRYPTION_ZERO_RTT) {
     encryption_established_ = true;
   }
-  if (level == ENCRYPTION_FORWARD_SECURE) {
+  const bool postpone_discarding_zero_rtt_keys =
+      GetQuicReloadableFlag(quic_postpone_discarding_zero_rtt_keys);
+  if (!postpone_discarding_zero_rtt_keys &&
+      level == ENCRYPTION_FORWARD_SECURE) {
     handshaker_delegate()->DiscardOldEncryptionKey(ENCRYPTION_ZERO_RTT);
   }
   TlsHandshaker::SetWriteSecret(level, cipher, write_secret);
+  if (postpone_discarding_zero_rtt_keys && level == ENCRYPTION_FORWARD_SECURE) {
+    handshaker_delegate()->DiscardOldEncryptionKey(ENCRYPTION_ZERO_RTT);
+  }
 }
 
 void TlsClientHandshaker::OnHandshakeConfirmed() {
@@ -456,6 +466,14 @@ void TlsClientHandshaker::CloseConnection(QuicErrorCode error,
 }
 
 void TlsClientHandshaker::FinishHandshake() {
+  // Fill crypto_negotiated_params_:
+  const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
+  if (cipher) {
+    crypto_negotiated_params_->cipher_suite = SSL_CIPHER_get_value(cipher);
+  }
+  crypto_negotiated_params_->key_exchange_group = SSL_get_curve_id(ssl());
+  crypto_negotiated_params_->peer_signature_algorithm =
+      SSL_get_peer_signature_algorithm(ssl());
   if (SSL_in_early_data(ssl())) {
     // SSL_do_handshake returns after sending the ClientHello if the session is
     // 0-RTT-capable, which means that FinishHandshake will get called twice -
@@ -470,14 +488,6 @@ void TlsClientHandshaker::FinishHandshake() {
   }
   QUIC_LOG(INFO) << "Client: handshake finished";
   state_ = STATE_HANDSHAKE_COMPLETE;
-  // Fill crypto_negotiated_params_:
-  const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
-  if (cipher) {
-    crypto_negotiated_params_->cipher_suite = SSL_CIPHER_get_value(cipher);
-  }
-  crypto_negotiated_params_->key_exchange_group = SSL_get_curve_id(ssl());
-  crypto_negotiated_params_->peer_signature_algorithm =
-      SSL_get_peer_signature_algorithm(ssl());
 
   std::string error_details;
   if (!ProcessTransportParameters(&error_details)) {
@@ -522,7 +532,7 @@ void TlsClientHandshaker::HandleZeroRttReject() {
   DCHECK(session_cache_);
   // Disable encrytion to block outgoing data until 1-RTT keys are available.
   encryption_established_ = false;
-  handshaker_delegate()->OnZeroRttRejected();
+  handshaker_delegate()->OnZeroRttRejected(EarlyDataReason());
   SSL_reset_early_data_reject(ssl());
   session_cache_->ClearEarlyData(server_id_);
   AdvanceHandshake();

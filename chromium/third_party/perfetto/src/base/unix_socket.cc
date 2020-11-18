@@ -92,6 +92,8 @@ inline int GetSockFamily(SockFamily family) {
       return AF_UNIX;
     case SockFamily::kInet:
       return AF_INET;
+    case SockFamily::kInet6:
+      return AF_INET6;
   }
   PERFETTO_CHECK(false);  // For GCC.
 }
@@ -140,6 +142,23 @@ SockaddrAny MakeSockAddr(SockFamily family, const std::string& socket_name) {
       PERFETTO_CHECK(getaddrinfo(parts[0].c_str(), parts[1].c_str(), &hints,
                                  &addr_info) == 0);
       PERFETTO_CHECK(addr_info->ai_family == AF_INET);
+      SockaddrAny res(addr_info->ai_addr, addr_info->ai_addrlen);
+      freeaddrinfo(addr_info);
+      return res;
+    }
+    case SockFamily::kInet6: {
+      auto parts = SplitString(socket_name, "]");
+      PERFETTO_CHECK(parts.size() == 2);
+      auto address = SplitString(parts[0], "[");
+      PERFETTO_CHECK(address.size() == 1);
+      auto port = SplitString(parts[1], ":");
+      PERFETTO_CHECK(port.size() == 1);
+      struct addrinfo* addr_info = nullptr;
+      struct addrinfo hints {};
+      hints.ai_family = AF_INET6;
+      PERFETTO_CHECK(getaddrinfo(address[0].c_str(), port[0].c_str(), &hints,
+                                 &addr_info) == 0);
+      PERFETTO_CHECK(addr_info->ai_family == AF_INET6);
       SockaddrAny res(addr_info->ai_addr, addr_info->ai_addrlen);
       freeaddrinfo(addr_info);
       return res;
@@ -213,7 +232,7 @@ UnixSocketRaw::UnixSocketRaw(ScopedFile fd, SockFamily family, SockType type)
   setsockopt(*fd_, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
 #endif
 
-  if (family == SockFamily::kInet) {
+  if (family == SockFamily::kInet || family == SockFamily::kInet6) {
     int flag = 1;
     PERFETTO_CHECK(
         !setsockopt(*fd_, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)));

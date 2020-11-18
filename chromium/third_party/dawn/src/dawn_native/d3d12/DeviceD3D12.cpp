@@ -82,7 +82,7 @@ namespace dawn_native { namespace d3d12 {
         mCommandQueue.As(&mD3d12SharingContract);
 
         DAWN_TRY(
-            CheckHRESULT(mD3d12Device->CreateFence(GetLastSubmittedCommandSerial(),
+            CheckHRESULT(mD3d12Device->CreateFence(uint64_t(GetLastSubmittedCommandSerial()),
                                                    D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)),
                          "D3D12 create fence"));
 
@@ -219,7 +219,7 @@ namespace dawn_native { namespace d3d12 {
 
     MaybeError Device::TickImpl() {
         // Perform cleanup operations to free unused objects
-        Serial completedSerial = GetCompletedCommandSerial();
+        ExecutionSerial completedSerial = GetCompletedCommandSerial();
 
         mResourceAllocatorManager->Tick(completedSerial);
         DAWN_TRY(mCommandAllocatorManager->Tick(completedSerial));
@@ -239,14 +239,15 @@ namespace dawn_native { namespace d3d12 {
     MaybeError Device::NextSerial() {
         IncrementLastSubmittedCommandSerial();
 
-        return CheckHRESULT(mCommandQueue->Signal(mFence.Get(), GetLastSubmittedCommandSerial()),
-                            "D3D12 command queue signal fence");
+        return CheckHRESULT(
+            mCommandQueue->Signal(mFence.Get(), uint64_t(GetLastSubmittedCommandSerial())),
+            "D3D12 command queue signal fence");
     }
 
-    MaybeError Device::WaitForSerial(uint64_t serial) {
+    MaybeError Device::WaitForSerial(ExecutionSerial serial) {
         CheckPassedSerials();
         if (GetCompletedCommandSerial() < serial) {
-            DAWN_TRY(CheckHRESULT(mFence->SetEventOnCompletion(serial, mFenceEvent),
+            DAWN_TRY(CheckHRESULT(mFence->SetEventOnCompletion(uint64_t(serial), mFenceEvent),
                                   "D3D12 set event on completion"));
             WaitForSingleObject(mFenceEvent, INFINITE);
             CheckPassedSerials();
@@ -254,8 +255,8 @@ namespace dawn_native { namespace d3d12 {
         return {};
     }
 
-    Serial Device::CheckAndUpdateCompletedSerials() {
-        return mFence->GetCompletedValue();
+    ExecutionSerial Device::CheckAndUpdateCompletedSerials() {
+        return ExecutionSerial(mFence->GetCompletedValue());
     }
 
     void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
@@ -276,7 +277,7 @@ namespace dawn_native { namespace d3d12 {
     }
     ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         Ref<Buffer> buffer = AcquireRef(new Buffer(this, descriptor));
-        DAWN_TRY(buffer->Initialize());
+        DAWN_TRY(buffer->Initialize(descriptor->mappedAtCreation));
         return std::move(buffer);
     }
     CommandBufferBase* Device::CreateCommandBuffer(CommandEncoder* encoder,
@@ -407,7 +408,7 @@ namespace dawn_native { namespace d3d12 {
 
     Ref<TextureBase> Device::WrapSharedHandle(const ExternalImageDescriptor* descriptor,
                                               HANDLE sharedHandle,
-                                              uint64_t acquireMutexKey,
+                                              ExternalMutexSerial acquireMutexKey,
                                               bool isSwapChainTexture) {
         Ref<TextureBase> dawnTexture;
         if (ConsumedError(Texture::Create(this, descriptor, sharedHandle, acquireMutexKey,
@@ -571,10 +572,12 @@ namespace dawn_native { namespace d3d12 {
         }
 
         // Release recycled resource heaps.
-        mResourceAllocatorManager->DestroyPool();
+        if (mResourceAllocatorManager != nullptr) {
+            mResourceAllocatorManager->DestroyPool();
+        }
 
         // We need to handle clearing up com object refs that were enqeued after TickImpl
-        mUsedComObjectRefs.ClearUpTo(std::numeric_limits<Serial>::max());
+        mUsedComObjectRefs.ClearUpTo(std::numeric_limits<ExecutionSerial>::max());
 
         ASSERT(mUsedComObjectRefs.Empty());
         ASSERT(!mPendingCommands.IsOpen());
@@ -614,6 +617,18 @@ namespace dawn_native { namespace d3d12 {
 
     SamplerHeapCache* Device::GetSamplerHeapCache() {
         return mSamplerHeapCache.get();
+    }
+
+    uint32_t Device::GetOptimalBytesPerRowAlignment() const {
+        return D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
+    }
+
+    // TODO(dawn:512): Once we optimize DynamicUploader allocation with offsets we
+    // should make this return D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT = 512.
+    // Current implementations would try to allocate additional 511 bytes,
+    // so we return 1 and let ComputeTextureCopySplits take care of the alignment.
+    uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
+        return 1;
     }
 
 }}  // namespace dawn_native::d3d12

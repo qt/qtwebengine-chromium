@@ -318,6 +318,38 @@ bool IsValidStencilOp(GLenum op)
     }
 }
 
+static inline bool Valid1to4ComponentFloatColorBufferFormat(const Context *context, GLenum format)
+{
+    return (context->getExtensions().textureFloatOES &&
+            (format == GL_RGBA32F || format == GL_RGB32F || format == GL_RG32F ||
+             format == GL_R32F)) ||
+           (context->getExtensions().textureHalfFloat &&
+            (format == GL_RGBA16F || format == GL_RGB16F || format == GL_RG16F ||
+             format == GL_R16F));
+}
+
+static inline bool Valid2to4ComponentFloatColorBufferFormat(const Context *context, GLenum format)
+{
+    return (context->getExtensions().textureFloatOES &&
+            (format == GL_RGBA32F || format == GL_RGB32F || format == GL_RG32F)) ||
+           (context->getExtensions().textureHalfFloat &&
+            (format == GL_RGBA16F || format == GL_RGB16F || format == GL_RG16F));
+}
+
+static inline bool Valid3to4ComponentFloatColorBufferFormat(const Context *context, GLenum format)
+{
+    return (context->getExtensions().textureFloatOES &&
+            (format == GL_RGBA32F || format == GL_RGB32F)) ||
+           (context->getExtensions().textureHalfFloat &&
+            (format == GL_RGBA16F || format == GL_RGB16F));
+}
+
+static inline bool Valid4ComponentFloatColorBufferFormat(const Context *context, GLenum format)
+{
+    return (context->getExtensions().textureFloatOES && format == GL_RGBA32F) ||
+           (context->getExtensions().textureHalfFloat && format == GL_RGBA16F);
+}
+
 bool ValidateES2CopyTexImageParameters(const Context *context,
                                        TextureTarget target,
                                        GLint level,
@@ -365,7 +397,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
             case GL_ALPHA:
                 if (colorbufferFormat != GL_ALPHA8_EXT && colorbufferFormat != GL_RGBA4 &&
                     colorbufferFormat != GL_RGB5_A1 && colorbufferFormat != GL_RGBA8_OES &&
-                    colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -376,7 +409,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
                     colorbufferFormat != GL_RGB565 && colorbufferFormat != GL_RGB8_OES &&
                     colorbufferFormat != GL_RGBA4 && colorbufferFormat != GL_RGB5_A1 &&
                     colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_BGRA8_EXT &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid1to4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -389,7 +423,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
                     colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_R32F &&
                     colorbufferFormat != GL_RG32F && colorbufferFormat != GL_RGB32F &&
                     colorbufferFormat != GL_RGBA32F && colorbufferFormat != GL_BGRA8_EXT &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid1to4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -401,7 +436,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
                     colorbufferFormat != GL_RGB5_A1 && colorbufferFormat != GL_RGBA8_OES &&
                     colorbufferFormat != GL_RG32F && colorbufferFormat != GL_RGB32F &&
                     colorbufferFormat != GL_RGBA32F && colorbufferFormat != GL_BGRA8_EXT &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid2to4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -412,7 +448,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
                     colorbufferFormat != GL_RGBA4 && colorbufferFormat != GL_RGB5_A1 &&
                     colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_RGB32F &&
                     colorbufferFormat != GL_RGBA32F && colorbufferFormat != GL_BGRA8_EXT &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid3to4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -422,7 +459,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
             case GL_RGBA:
                 if (colorbufferFormat != GL_RGBA4 && colorbufferFormat != GL_RGB5_A1 &&
                     colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_RGBA32F &&
-                    colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -466,29 +504,21 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
             case GL_ALPHA:
                 if (colorbufferFormat != GL_ALPHA8_EXT && colorbufferFormat != GL_RGBA4 &&
                     colorbufferFormat != GL_RGB5_A1 && colorbufferFormat != GL_BGRA8_EXT &&
-                    colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
                 }
                 break;
             case GL_LUMINANCE:
-                if (colorbufferFormat != GL_R8_EXT && colorbufferFormat != GL_RG8_EXT &&
-                    colorbufferFormat != GL_RGB565 && colorbufferFormat != GL_RGB8_OES &&
-                    colorbufferFormat != GL_RGBA4 && colorbufferFormat != GL_RGB5_A1 &&
-                    colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_RGBA8_OES &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
-                {
-                    context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
-                    return false;
-                }
-                break;
             case GL_RED_EXT:
                 if (colorbufferFormat != GL_R8_EXT && colorbufferFormat != GL_RG8_EXT &&
                     colorbufferFormat != GL_RGB565 && colorbufferFormat != GL_RGB8_OES &&
                     colorbufferFormat != GL_RGBA4 && colorbufferFormat != GL_RGB5_A1 &&
                     colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_RGBA8_OES &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid1to4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -498,7 +528,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
                 if (colorbufferFormat != GL_RG8_EXT && colorbufferFormat != GL_RGB565 &&
                     colorbufferFormat != GL_RGB8_OES && colorbufferFormat != GL_RGBA4 &&
                     colorbufferFormat != GL_RGB5_A1 && colorbufferFormat != GL_BGRA8_EXT &&
-                    colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_RGBA8_OES && colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid2to4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -508,7 +539,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
                 if (colorbufferFormat != GL_RGB565 && colorbufferFormat != GL_RGB8_OES &&
                     colorbufferFormat != GL_RGBA4 && colorbufferFormat != GL_RGB5_A1 &&
                     colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_RGBA8_OES &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGR5_A1_ANGLEX &&
+                    !Valid3to4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -518,7 +550,8 @@ bool ValidateES2CopyTexImageParameters(const Context *context,
             case GL_RGBA:
                 if (colorbufferFormat != GL_RGBA4 && colorbufferFormat != GL_RGB5_A1 &&
                     colorbufferFormat != GL_BGRA8_EXT && colorbufferFormat != GL_RGBA8_OES &&
-                    colorbufferFormat != GL_BGR5_A1_ANGLEX)
+                    colorbufferFormat != GL_BGR5_A1_ANGLEX && colorbufferFormat != GL_RGBA16F &&
+                    !Valid4ComponentFloatColorBufferFormat(context, colorbufferFormat))
                 {
                     context->validationError(GL_INVALID_OPERATION, kInvalidFormat);
                     return false;
@@ -1243,8 +1276,15 @@ bool ValidateES2TexImageParametersBase(const Context *context,
                     case GL_UNSIGNED_BYTE:
                         break;
                     case GL_FLOAT:
-                    case GL_HALF_FLOAT_OES:
                         if (!context->getExtensions().textureFloatOES)
+                        {
+                            context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
+                            return false;
+                        }
+                        break;
+                    case GL_HALF_FLOAT_OES:
+                        if (!context->getExtensions().textureFloatOES &&
+                            !context->getExtensions().textureHalfFloat)
                         {
                             context->validationError(GL_INVALID_ENUM, kEnumNotSupported);
                             return false;
@@ -2758,7 +2798,7 @@ bool ValidateBlitFramebufferANGLE(const Context *context,
                     return false;
                 }
 
-                if (readBuffer->getSamples() != 0 || drawBuffer->getSamples() != 0)
+                if (readBuffer->getResourceSamples() != 0 || drawBuffer->getResourceSamples() != 0)
                 {
                     context->validationError(GL_INVALID_OPERATION,
                                              kBlitExtensionMultisampledDepthOrStencil);
@@ -3165,6 +3205,15 @@ bool ValidateMapBufferOES(const Context *context, BufferBinding target, GLenum a
     if (access != GL_WRITE_ONLY_OES)
     {
         context->validationError(GL_INVALID_ENUM, kInvalidAccessBits);
+        return false;
+    }
+
+    // Though there is no explicit mention of an interaction between GL_EXT_buffer_storage
+    // and GL_OES_mapbuffer extension, allow it as long as the access type of glMapBufferOES
+    // is compatible with the buffer's usage flags specified during glBufferStorageEXT
+    if (buffer->isImmutable() && (buffer->getStorageExtUsageFlags() & GL_MAP_WRITE_BIT) == 0)
+    {
+        context->validationError(GL_INVALID_OPERATION, kBufferNotMappable);
         return false;
     }
 
@@ -3700,6 +3749,12 @@ bool ValidateBufferData(const Context *context,
         return false;
     }
 
+    if (buffer->isImmutable())
+    {
+        context->validationError(GL_INVALID_OPERATION, kBufferImmutable);
+        return false;
+    }
+
     return true;
 }
 
@@ -3745,6 +3800,13 @@ bool ValidateBufferSubData(const Context *context,
         buffer->isBoundForTransformFeedbackAndOtherUse())
     {
         context->validationError(GL_INVALID_OPERATION, kBufferBoundForTransformFeedback);
+        return false;
+    }
+
+    if (buffer->isImmutable() &&
+        (buffer->getStorageExtUsageFlags() & GL_DYNAMIC_STORAGE_BIT_EXT) == 0)
+    {
+        context->validationError(GL_INVALID_OPERATION, kBufferNotUpdatable);
         return false;
     }
 

@@ -696,6 +696,9 @@ void P2PTransportChannel::SetIceConfig(const IceConfig& config) {
       // Make sure that nomination reaching ICE controlled asap.
       "send_ping_on_switch_ice_controlling",
       &field_trials_.send_ping_on_switch_ice_controlling,
+      // Make sure that nomination reaching ICE controlled asap.
+      "send_ping_on_selected_ice_controlling",
+      &field_trials_.send_ping_on_selected_ice_controlling,
       // Reply to nomination ASAP.
       "send_ping_on_nomination_ice_controlled",
       &field_trials_.send_ping_on_nomination_ice_controlled,
@@ -1013,7 +1016,7 @@ void P2PTransportChannel::OnUnknownAddress(PortInterface* port,
     uint16_t network_id = 0;
     uint16_t network_cost = 0;
     const StunUInt32Attribute* network_attr =
-        stun_msg->GetUInt32(STUN_ATTR_NETWORK_INFO);
+        stun_msg->GetUInt32(STUN_ATTR_GOOG_NETWORK_INFO);
     if (network_attr) {
       uint32_t network_info = network_attr->value();
       network_id = static_cast<uint16_t>(network_info >> 16);
@@ -1768,9 +1771,10 @@ void P2PTransportChannel::SwitchSelectedConnection(Connection* conn,
     RTC_LOG(LS_INFO) << ToString() << ": No selected connection";
   }
 
-  if (field_trials_.send_ping_on_switch_ice_controlling &&
-      ice_role_ == ICEROLE_CONTROLLING && old_selected_connection != nullptr &&
-      conn != nullptr) {
+  if (conn != nullptr && ice_role_ == ICEROLE_CONTROLLING &&
+      ((field_trials_.send_ping_on_switch_ice_controlling &&
+        old_selected_connection != nullptr) ||
+       field_trials_.send_ping_on_selected_ice_controlling)) {
     PingConnection(conn);
     MarkConnectionPinged(conn);
   }

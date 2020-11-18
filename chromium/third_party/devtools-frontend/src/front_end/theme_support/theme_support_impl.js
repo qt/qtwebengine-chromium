@@ -34,7 +34,7 @@
 
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
-import * as UI from '../ui/ui.js';
+import * as Root from '../root/root.js';
 
 /**
  * @type {!ThemeSupport}
@@ -117,11 +117,36 @@ export class ThemeSupport {
    */
   injectHighlightStyleSheets(element) {
     this._injectingStyleSheet = true;
-    UI.Utils.appendStyle(element, 'ui/inspectorSyntaxHighlight.css');
+    this._appendStyle(element, 'ui/inspectorSyntaxHighlight.css');
     if (this._themeName === 'dark') {
-      UI.Utils.appendStyle(element, 'ui/inspectorSyntaxHighlightDark.css');
+      this._appendStyle(element, 'ui/inspectorSyntaxHighlightDark.css');
     }
     this._injectingStyleSheet = false;
+  }
+
+  /**
+   * Note: this is a duplicate of the function in ui/utils. It exists here
+   * so there is no circular dependency between ui/utils and theme_support.
+   *
+   * @param {!Node} node
+   * @param {string} cssFile
+   * @suppressGlobalPropertiesCheck
+   */
+  _appendStyle(node, cssFile) {
+    const content = Root.Runtime.cachedResources.get(cssFile) || '';
+    if (!content) {
+      console.error(cssFile + ' not preloaded. Check module.json');
+    }
+    let styleElement = createElement('style');
+    styleElement.textContent = content;
+    node.appendChild(styleElement);
+
+    const themeStyleSheet = ThemeSupport.instance().themeStyleSheet(cssFile, content);
+    if (themeStyleSheet) {
+      styleElement = createElement('style');
+      styleElement.textContent = themeStyleSheet + '\n' + Root.Runtime.Runtime.resolveSourceURL(cssFile + '.theme');
+      node.appendChild(styleElement);
+    }
   }
 
   /**
@@ -191,12 +216,13 @@ export class ThemeSupport {
     let patch = this._cachedThemePatches.get(id);
     if (!patch) {
       const styleElement = document.createElement('style');
+      styleElement.textContent = text;
+      document.body.appendChild(styleElement);
+
       const {sheet} = styleElement;
       if (!sheet) {
         throw new Error('No sheet in stylesheet object');
       }
-      styleElement.textContent = text;
-      document.body.appendChild(styleElement);
       patch = this._patchForTheme(id, sheet);
       document.body.removeChild(styleElement);
     }
@@ -222,7 +248,7 @@ export class ThemeSupport {
           result.push(this._patchForTheme(rules[j].styleSheet.href, rules[j].styleSheet));
           continue;
         }
-        /** @type {!string[]} */
+        /** @type {!Array<string>} */
         const output = [];
         const style = rules[j].style;
         const selectorText = rules[j].selectorText;
@@ -263,6 +289,11 @@ export class ThemeSupport {
       return;
     }
     if (name === 'background-image' && value.indexOf('gradient') === -1) {
+      return;
+    }
+
+    // Don't operate on CSS variables.
+    if (/^var\(.*\)$/.test(value)) {
       return;
     }
 
@@ -317,7 +348,7 @@ export class ThemeSupport {
     const hsla = color.hsla();
     this._patchHSLA(hsla, colorUsage);
 
-    /** @type {!number[]} */
+    /** @type {!Array<number>} */
     const rgba = [];
     Common.Color.Color.hsl2rgb(hsla, rgba);
     return new Common.Color.Color(rgba, color.format());

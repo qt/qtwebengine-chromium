@@ -50,14 +50,16 @@ class QUIC_EXPORT_PRIVATE QuicVersionManager {
   // Should be called in constructor and RefilterSupportedVersions.
   void AddCustomAlpn(const std::string& alpn);
 
+  bool disable_version_q050() const { return disable_version_q050_; }
+
  private:
   // Cached value of reloadable flags.
   // quic_disable_version_draft_29 flag
   bool disable_version_draft_29_;
   // quic_disable_version_draft_27 flag
   bool disable_version_draft_27_;
-  // quic_enable_version_t051 flag
-  bool enable_version_t051_;
+  // quic_disable_version_t051 flag
+  bool disable_version_t051_;
   // quic_disable_version_t050 flag
   bool disable_version_t050_;
   // quic_disable_version_q050 flag

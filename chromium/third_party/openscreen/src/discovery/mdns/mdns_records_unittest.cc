@@ -541,38 +541,61 @@ TEST(MdnsRecordTest, Construct) {
 }
 
 TEST(MdnsRecordTest, Compare) {
-  MdnsRecord record1(DomainName{"hostname", "local"}, DnsType::kPTR,
-                     DnsClass::kIN, RecordType::kShared, kTtl,
-                     PtrRecordRdata(DomainName{"testing", "local"}));
-  MdnsRecord record2(DomainName{"hostname", "local"}, DnsType::kPTR,
-                     DnsClass::kIN, RecordType::kShared, kTtl,
-                     PtrRecordRdata(DomainName{"testing", "local"}));
-  MdnsRecord record3(DomainName{"othername", "local"}, DnsType::kPTR,
-                     DnsClass::kIN, RecordType::kShared, kTtl,
-                     PtrRecordRdata(DomainName{"testing", "local"}));
-  MdnsRecord record4(DomainName{"hostname", "local"}, DnsType::kA,
-                     DnsClass::kIN, RecordType::kShared, kTtl,
-                     ARecordRdata(IPAddress{8, 8, 8, 8}));
-  MdnsRecord record5(DomainName{"hostname", "local"}, DnsType::kPTR,
-                     DnsClass::kIN, RecordType::kUnique, kTtl,
-                     PtrRecordRdata(DomainName{"testing", "local"}));
-  MdnsRecord record6(DomainName{"hostname", "local"}, DnsType::kPTR,
-                     DnsClass::kIN, RecordType::kShared,
-                     std::chrono::seconds(200),
-                     PtrRecordRdata(DomainName{"testing", "local"}));
-  MdnsRecord record7(DomainName{"hostname", "local"}, DnsType::kPTR,
-                     DnsClass::kIN, RecordType::kShared, kTtl,
-                     PtrRecordRdata(DomainName{"device", "local"}));
+  const MdnsRecord record1(DomainName{"hostname", "local"}, DnsType::kPTR,
+                           DnsClass::kIN, RecordType::kShared, kTtl,
+                           PtrRecordRdata(DomainName{"testing", "local"}));
+  const MdnsRecord record2(DomainName{"hostname", "local"}, DnsType::kPTR,
+                           DnsClass::kIN, RecordType::kShared, kTtl,
+                           PtrRecordRdata(DomainName{"testing", "local"}));
+  const MdnsRecord record3(DomainName{"othername", "local"}, DnsType::kPTR,
+                           DnsClass::kIN, RecordType::kShared, kTtl,
+                           PtrRecordRdata(DomainName{"testing", "local"}));
+  const MdnsRecord record4(DomainName{"hostname", "local"}, DnsType::kA,
+                           DnsClass::kIN, RecordType::kShared, kTtl,
+                           ARecordRdata(IPAddress{8, 8, 8, 8}));
+  const MdnsRecord record5(DomainName{"hostname", "local"}, DnsType::kPTR,
+                           DnsClass::kIN, RecordType::kUnique, kTtl,
+                           PtrRecordRdata(DomainName{"testing", "local"}));
+  const MdnsRecord record6(DomainName{"hostname", "local"}, DnsType::kPTR,
+                           DnsClass::kIN, RecordType::kShared,
+                           std::chrono::seconds(200),
+                           PtrRecordRdata(DomainName{"testing", "local"}));
+  const MdnsRecord record7(DomainName{"hostname", "local"}, DnsType::kPTR,
+                           DnsClass::kIN, RecordType::kShared, kTtl,
+                           PtrRecordRdata(DomainName{"device", "local"}));
+  const MdnsRecord record8(
+      DomainName{"testing", "local"}, DnsType::kNSEC, DnsClass::kIN,
+      RecordType::kUnique, std::chrono::seconds(120),
+      NsecRecordRdata(DomainName{"testing", "local"}, DnsType::kA));
+  const MdnsRecord record9(
+      DomainName{"testing", "local"}, DnsType::kNSEC, DnsClass::kIN,
+      RecordType::kUnique, std::chrono::seconds(120),
+      NsecRecordRdata(DomainName{"testing", "local"}, DnsType::kAAAA));
 
   EXPECT_EQ(record1, record2);
-  EXPECT_NE(record1, record3);
-  EXPECT_NE(record1, record4);
-  EXPECT_NE(record1, record5);
+
+  // Account for intentional differences between > / < and = / !=. This is
+  // unfortunate but required difference for > / < per RFC.
   EXPECT_NE(record1, record6);
-  EXPECT_NE(record1, record7);
+  ASSERT_FALSE(record1 > record6);
+  ASSERT_FALSE(record6 > record1);
+
+  std::vector<const MdnsRecord*> records_sorted{
+      &record4, &record7, &record1, &record5, &record3, &record8, &record9};
+  for (size_t i = 0; i < records_sorted.size(); i++) {
+    for (size_t j = i + 1; j < records_sorted.size(); j++) {
+      EXPECT_NE(*records_sorted[i], *records_sorted[j])
+          << "failure for i=" << i << " , j=" << j;
+      EXPECT_GT(*records_sorted[j], *records_sorted[i])
+          << "failure for i=" << i << " , j=" << j;
+      EXPECT_LT(*records_sorted[i], *records_sorted[j])
+          << "failure for i=" << i << " , j=" << j;
+    }
+  }
 
   EXPECT_TRUE(absl::VerifyTypeImplementsAbslHashCorrectly(
-      {record1, record2, record3, record4, record5, record6, record7}));
+      {record1, record2, record3, record4, record5, record6, record7, record8,
+       record9}));
 }
 
 TEST(MdnsRecordTest, CopyAndMove) {

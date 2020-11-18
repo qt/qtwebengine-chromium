@@ -18,8 +18,7 @@
     "data_grid",
     "source_frame",
     "perf_ui"
-  ],
-  "modules": [
+  ],  "modules": [
     "media.js",
     "media-legacy.js",
     "EventDisplayTable.js",

@@ -39,6 +39,7 @@ const ProcEntry g_procTable[] = {
     {"eglCreateDeviceANGLE", P(EGL_CreateDeviceANGLE)},
     {"eglCreateImage", P(EGL_CreateImage)},
     {"eglCreateImageKHR", P(EGL_CreateImageKHR)},
+    {"eglCreateNativeClientBufferANDROID", P(EGL_CreateNativeClientBufferANDROID)},
     {"eglCreatePbufferFromClientBuffer", P(EGL_CreatePbufferFromClientBuffer)},
     {"eglCreatePbufferSurface", P(EGL_CreatePbufferSurface)},
     {"eglCreatePixmapSurface", P(EGL_CreatePixmapSurface)},
@@ -224,6 +225,8 @@ const ProcEntry g_procTable[] = {
     {"glBlitFramebufferContextANGLE", P(gl::BlitFramebufferContextANGLE)},
     {"glBufferData", P(gl::BufferData)},
     {"glBufferDataContextANGLE", P(gl::BufferDataContextANGLE)},
+    {"glBufferStorageEXT", P(gl::BufferStorageEXT)},
+    {"glBufferStorageEXTContextANGLE", P(gl::BufferStorageEXTContextANGLE)},
     {"glBufferStorageMemEXT", P(gl::BufferStorageMemEXT)},
     {"glBufferStorageMemEXTContextANGLE", P(gl::BufferStorageMemEXTContextANGLE)},
     {"glBufferSubData", P(gl::BufferSubData)},
@@ -1626,5 +1629,5 @@ const ProcEntry g_procTable[] = {
     {"glWeightPointerOES", P(gl::WeightPointerOES)},
     {"glWeightPointerOESContextANGLE", P(gl::WeightPointerOESContextANGLE)}};
 
-const size_t g_numProcs = 1529;
+const size_t g_numProcs = 1532;
 }  // namespace egl

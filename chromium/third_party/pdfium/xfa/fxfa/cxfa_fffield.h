@@ -7,8 +7,6 @@
 #ifndef XFA_FXFA_CXFA_FFFIELD_H_
 #define XFA_FXFA_CXFA_FFFIELD_H_
 
-#include <memory>
-
 #include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fwl/ifwl_widgetdelegate.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
@@ -30,6 +28,7 @@ class CXFA_FFField : public CXFA_FFWidget, public IFWL_WidgetDelegate {
   virtual CXFA_FFDropDown* AsDropDown();
 
   // CXFA_FFWidget:
+  void Trace(cppgc::Visitor* visitor) const override;
   CXFA_FFField* AsField() override;
   CFX_RectF GetBBox(FocusOption focus) override;
   void RenderWidget(CXFA_Graphics* pGS,
@@ -80,7 +79,7 @@ class CXFA_FFField : public CXFA_FFWidget, public IFWL_WidgetDelegate {
 
   CFWL_Widget* GetNormalWidget();
   const CFWL_Widget* GetNormalWidget() const;
-  void SetNormalWidget(std::unique_ptr<CFWL_Widget> widget);
+  void SetNormalWidget(CFWL_Widget* widget);
   CFX_PointF FWLToClient(const CFX_PointF& point);
   void LayoutCaption();
   void RenderCaption(CXFA_Graphics* pGS, CFX_Matrix* pMatrix);
@@ -93,7 +92,7 @@ class CXFA_FFField : public CXFA_FFWidget, public IFWL_WidgetDelegate {
                      HighlightOption highlight,
                      ShapeOption shape);
   void DrawFocus(CXFA_Graphics* pGS, CFX_Matrix* pMatrix);
-  void SendMessageToFWLWidget(std::unique_ptr<CFWL_Message> pMessage);
+  void SendMessageToFWLWidget(CFWL_Message* pMessage);
   void CapPlacement();
   void CapTopBottomPlacement(const CXFA_Margin* margin,
                              const CFX_RectF& rtWidget,
@@ -107,7 +106,7 @@ class CXFA_FFField : public CXFA_FFWidget, public IFWL_WidgetDelegate {
   CFX_RectF m_CaptionRect;
 
  private:
-  std::unique_ptr<CFWL_Widget> m_pNormalWidget;
+  cppgc::Member<CFWL_Widget> m_pNormalWidget;
 };
 
 inline CXFA_FFDropDown* ToDropDown(CXFA_FFField* field) {

@@ -60,16 +60,16 @@ git status source | sed -n '/^Untracked/,$ p' | grep source | xargs git add
 
 cd "${treeroot}"
 
-echo "Updating BUILD.gn"
+echo "Updating sources.gni"
 
 find  source/i18n -maxdepth 1  ! -type d  | egrep  '\.(c|cpp|h)$' |sort | \
-  sed 's/^\(.*\)$/    "\1",/' > i18n_src.list
-ls source/i18n/unicode/*h | sort | sed 's/^\(.*\)$/    "\1",/' > i18n_hdr.list
+  sed 's/^\(.*\)$/  "\1",/' > i18n_src.list
+ls source/i18n/unicode/*h | sort | sed 's/^\(.*\)$/  "\1",/' > i18n_hdr.list
 
 find  source/common -maxdepth 1  ! -type d  | egrep  '\.(c|cpp|h)$' |sort | \
-  sed 's/^\(.*\)$/    "\1",/' > common_src.list
+  sed 's/^\(.*\)$/  "\1",/' > common_src.list
 ls source/common/unicode/*h | sort | \
-  sed 's/^\(.*\)$/    "\1",/' > common_hdr.list
+  sed 's/^\(.*\)$/  "\1",/' > common_hdr.list
 
 sed   -i \
   '/I18N_SRC_START/,/I18N_SRC_END/ {
@@ -87,7 +87,7 @@ sed   -i \
    /COMMON_HDR_START/,/COMMON_HDR_END/ {
       /COMMON_HDR_START/ r common_hdr.list
       /source.common/ d
-   }' BUILD.gn
+   }' sources.gni
 
 echo "Updating icu.gyp* files"
 

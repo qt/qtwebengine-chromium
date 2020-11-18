@@ -1,3 +1,82 @@
+2020-09-11  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[raster] Improve the second pass (#58373).
+
+	Besides dropout control the second horizontal sweep is supposed to
+	clean up straight horizontal edges that are mishandled by the first
+	vertical sweep when a line passes through pixel centers.  This line
+	would present as perfectly aligned span edges in the second sweep.
+
+	* src/raster/ftraster.c (Horizontal_Sweep_Span): Replace the old
+	implementation with a better one focusing on aligned span edges only.
+
+2020-09-08  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[raster] Tune SMART macro (#58352).
+
+	Windows seems to perform smart dropout control at 26.6 precision.
+	To mimick Windows independent of increased precision, we need to tweak
+	the macro so that some close calls break down rather than up.
+
+	* src/raster/ftraster.c (SMART): Tweak the macro.
+
+2020-09-08  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[raster] Introduce SMART macro.
+
+	* src/raster/ftraster.c (SMART): New macro for smart dropout rounding.
+	(Verstical_Sweep_Drop, Horizontal_Sweep_Drop): Use it.
+
+2020-09-03  Boris Dalstein  <dalboris@gmail.com>
+
+	[build] Make CMake install basic version information.
+
+	* CMakeLists.txt: Do it.
+
+2020-09-02  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[truetype] Reduce Infinality footprint (cont'd).
+
+	* src/truetype/ttinterp.c (Ins_DELTAP): Shrink variable scope.
+	(Ins_SHPIX, Ins_MIRP): Revise if-logic.
+
+2020-09-02  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[truetype] Reduce Infinality footprint.
+
+	* src/truetype/ttinterp.c (Ins_SHPIX, Ins_MSIRP, Ins_MIAP, Ins_MDRP,
+	Ins_MIRP): Shrink variable scopes and consolidate ifdefs.
+
+2020-09-01  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[truetype] Refactor compensation color.
+
+	* src/truetype/ttinterp.h (TT_Round_Func): Change the last argument.
+	* src/truetype/ttinterp.c (Ins_ROUND, Ins_NROUND, Ins_MDAP, Ins_MIAP,
+	Ins_MDRP, Ins_MIRP): Move compensation retrieval from here...
+	(Round_*): ... to here.
+	* src/truetype/ttobjs.c (tt_size_init_bytecode): Reserve zero
+	compensation at color index 3.
+
+2020-08-28  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	[smooth] Don't set target in direct mode.
+
+	* src/smooth/ftsmooth.c (ft_smooth_raster_overlap): Remove assignment.
+	(ft_smooth_raster_lcd) [!FT_CONFIG_OPTION_SUBPIXEL_RENDERING]: Ditto.
+
+2020-08-25  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* src/smooth/ftsmooth.c (ft_smooth_raster_overlap): Limit width.
+
+	Segmentation fault reported as
+
+	  https://bugs.chromium.org/p/oss-fuzz/issues/detail?id=24729
+
+2020-08-22  Werner Lemberg  <wl@gnu.org>
+
+	* src/truetype/ttgload.c (TT_Get_VMetrics): Add tracing message.
+
 2020-08-05  Alexei Podtelezhnikov  <apodtele@gmail.com>
 
 	[truetype] Retain OVERLAP_SIMPLE and OVERLAP_COMPOUND.

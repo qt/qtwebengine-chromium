@@ -43,11 +43,7 @@ rtc::AsyncSocket* CreateClientSocket(int family) {
 }  // namespace
 
 PeerConnectionClient::PeerConnectionClient()
-    : MessageHandler(false),
-      callback_(NULL),
-      resolver_(NULL),
-      state_(NOT_CONNECTED),
-      my_id_(-1) {}
+    : callback_(NULL), resolver_(NULL), state_(NOT_CONNECTED), my_id_(-1) {}
 
 PeerConnectionClient::~PeerConnectionClient() {
   rtc::Thread::Current()->Clear(this);
@@ -469,8 +465,7 @@ bool PeerConnectionClient::ParseServerResponse(const std::string& response,
 
   *peer_id = -1;
 
-  // See comment in peer_channel.cc for why we use the Pragma header and
-  // not e.g. "X-Peer-Id".
+  // See comment in peer_channel.cc for why we use the Pragma header.
   GetHeaderValue(response, *eoh, "\r\nPragma: ", peer_id);
 
   return true;

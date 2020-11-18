@@ -68,11 +68,16 @@ public:
                        const SkScalar[], int conicWeightCount,
                        SkPathFillType, bool isVolatile = false);
 
-    static SkPath Rect(const SkRect&,   SkPathDirection dir = SkPathDirection::kCW);
-    static SkPath Oval(const SkRect&,   SkPathDirection dir = SkPathDirection::kCW);
+    static SkPath Rect(const SkRect&, SkPathDirection = SkPathDirection::kCW,
+                       unsigned startIndex = 0);
+    static SkPath Oval(const SkRect&, SkPathDirection = SkPathDirection::kCW);
+    static SkPath Oval(const SkRect&, SkPathDirection, unsigned startIndex);
     static SkPath Circle(SkScalar center_x, SkScalar center_y, SkScalar radius,
                          SkPathDirection dir = SkPathDirection::kCW);
     static SkPath RRect(const SkRRect&, SkPathDirection dir = SkPathDirection::kCW);
+    static SkPath RRect(const SkRRect&, SkPathDirection, unsigned startIndex);
+    static SkPath RRect(const SkRect& bounds, SkScalar rx, SkScalar ry,
+                        SkPathDirection dir = SkPathDirection::kCW);
 
     static SkPath Polygon(const SkPoint pts[], int count, bool isClosed,
                           SkPathFillType = SkPathFillType::kWinding,
@@ -219,39 +224,10 @@ public:
         fFillType ^= 2;
     }
 
-    /** Returns the comvexity type, computing if needed. Never returns kUnknown.
-        @return  path's convexity type (convex or concave)
-    */
-    SkPathConvexityType getConvexityType() const {
-        SkPathConvexityType convexity = this->getConvexityTypeOrUnknown();
-        if (convexity != SkPathConvexityType::kUnknown) {
-            return convexity;
-        }
-        return this->internalGetConvexity();
-    }
-
-    /** If the path's convexity is already known, return it, else return kUnknown.
-     *  If you always want to know the convexity, even if that means having to compute it,
-     *  call getConvexitytype().
-     *
-     *  @return  known convexity, or kUnknown
-     */
-    SkPathConvexityType getConvexityTypeOrUnknown() const {
-        return (SkPathConvexityType)fConvexity.load(std::memory_order_relaxed);
-    }
-
-    /** Stores a convexity type for this path. This is what will be returned if
-     *  getConvexityTypeOrUnknown() is called. If you pass kUnknown, then if getContexityType()
-     *  is called, the real convexity will be computed.
-     *
-     *  example: https://fiddle.skia.org/c/@Path_setConvexity
-     */
-    void setConvexityType(SkPathConvexityType convexity);
-
     /** Returns true if the path is convex. If necessary, it will first compute the convexity.
      */
     bool isConvex() const {
-        return SkPathConvexityType::kConvex == this->getConvexityType();
+        return SkPathConvexity::kConvex == this->getConvexity();
     }
 
     /** Returns true if this path is recognized as an oval or circle.
@@ -361,9 +337,11 @@ public:
         GPU surface SkPath draws are affected by volatile for some shadows and concave geometries.
 
         @param isVolatile  true if caller will alter SkPath after drawing
+        @return            reference to SkPath
     */
-    void setIsVolatile(bool isVolatile) {
+    SkPath& setIsVolatile(bool isVolatile) {
         fIsVolatile = isVolatile;
+        return *this;
     }
 
     /** Tests if line between SkPoint pair is degenerate.
@@ -1071,6 +1049,10 @@ public:
     */
     bool isRect(SkRect* rect, bool* isClosed = nullptr, SkPathDirection* direction = nullptr) const;
 
+#ifdef SK_HIDE_PATH_EDIT_METHODS
+private:
+#endif
+
     /** Adds SkRect to SkPath, appending kMove_Verb, three kLine_Verb, and kClose_Verb,
         starting with top-left corner of SkRect; followed by top-right, bottom-right,
         and bottom-left if dir is kCW_Direction; or followed by bottom-left,
@@ -1265,6 +1247,10 @@ public:
     SkPath& addPoly(const std::initializer_list<SkPoint>& list, bool close) {
         return this->addPoly(list.begin(), SkToInt(list.size()), close);
     }
+
+#ifdef SK_HIDE_PATH_EDIT_METHODS
+public:
+#endif
 
     /** \enum SkPath::AddPathMode
         AddPathMode chooses how addPath() appends. Adding one SkPath to another can extend
@@ -1816,12 +1802,13 @@ public:
     bool isValid() const { return this->isValidImpl() && fPathRef->isValid(); }
 
 private:
-    SkPath(sk_sp<SkPathRef>, SkPathFillType, bool isVolatile, SkPathConvexityType);
+    SkPath(sk_sp<SkPathRef>, SkPathFillType, bool isVolatile, SkPathConvexity,
+           SkPathFirstDirection firstDirection);
 
     sk_sp<SkPathRef>               fPathRef;
     int                            fLastMoveToIndex;
-    mutable std::atomic<uint8_t>   fConvexity;      // SkPathConvexityType
-    mutable std::atomic<uint8_t>   fFirstDirection; // really an SkPathPriv::FirstDirection
+    mutable std::atomic<uint8_t>   fConvexity;      // SkPathConvexity
+    mutable std::atomic<uint8_t>   fFirstDirection; // SkPathFirstDirection
     uint8_t                        fFillType    : 2;
     uint8_t                        fIsVolatile  : 1;
 
@@ -1861,7 +1848,7 @@ private:
 
     inline bool hasOnlyMoveTos() const;
 
-    SkPathConvexityType internalGetConvexity() const;
+    SkPathConvexity computeConvexity() const;
 
     /** Asserts if SkPath data is inconsistent.
         Debugging check intended for internal use only.
@@ -1895,9 +1882,32 @@ private:
 
     // Bottlenecks for working with fConvexity and fFirstDirection.
     // Notice the setters are const... these are mutable atomic fields.
-    void    setConvexityType(SkPathConvexityType) const;
-    void    setFirstDirection(uint8_t) const;
-    uint8_t getFirstDirection() const;
+    void  setConvexity(SkPathConvexity) const;
+
+    void setFirstDirection(SkPathFirstDirection) const;
+    SkPathFirstDirection getFirstDirection() const;
+
+    /** Returns the comvexity type, computing if needed. Never returns kUnknown.
+        @return  path's convexity type (convex or concave)
+    */
+    SkPathConvexity getConvexity() const {
+        SkPathConvexity convexity = this->getConvexityOrUnknown();
+        if (convexity == SkPathConvexity::kUnknown) {
+            convexity = this->computeConvexity();
+        }
+        SkASSERT(convexity != SkPathConvexity::kUnknown);
+        return convexity;
+    }
+    SkPathConvexity getConvexityOrUnknown() const {
+        return (SkPathConvexity)fConvexity.load(std::memory_order_relaxed);
+    }
+    /** Stores a convexity type for this path. This is what will be returned if
+     *  getConvexityOrUnknown() is called. If you pass kUnknown, then if getContexityType()
+     *  is called, the real convexity will be computed.
+     *
+     *  example: https://fiddle.skia.org/c/@Path_setConvexity
+     */
+    void setConvexity(SkPathConvexity convexity);
 
     friend class SkAutoPathBoundsUpdate;
     friend class SkAutoDisableOvalCheck;

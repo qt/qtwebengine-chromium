@@ -39,7 +39,8 @@ private:
     void onPrePrepare(GrRecordingContext*,
                       const GrSurfaceProxyView* writeView,
                       GrAppliedClip*,
-                      const GrXferProcessor::DstProxyView&) override {}
+                      const GrXferProcessor::DstProxyView&,
+                      GrXferBarrierFlags renderPassXferBarriers) override {}
 
     void onPrepare(GrOpFlushState*) override {}
 
@@ -47,7 +48,7 @@ private:
 
     std::unique_ptr<SkDrawable::GpuDrawHandler> fDrawable;
 
-    typedef GrOp INHERITED;
+    using INHERITED = GrOp;
 };
 
 #endif

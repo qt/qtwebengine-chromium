@@ -254,3 +254,12 @@ config("sysroot_runtime_libraries") {
     }
   }
 }
+
+config("operating_system_defines") {
+  defines = []
+  if (is_linux) {
+    defines += [ "OS_LINUX" ]
+  } else if (is_mac) {
+    defines += [ "MAC_OSX" ]
+  }
+}

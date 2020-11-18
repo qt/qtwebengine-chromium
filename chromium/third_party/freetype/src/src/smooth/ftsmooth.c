@@ -139,7 +139,6 @@
 
     /* Render 3 separate coverage bitmaps, shifting the outline.  */
     /* Set up direct rendering to record them on each third byte. */
-    params.target     = bitmap;
     params.source     = outline;
     params.flags      = FT_RASTER_FLAG_AA | FT_RASTER_FLAG_DIRECT;
     params.gray_spans = (FT_SpanFunc)ft_smooth_lcd_spans;
@@ -379,8 +378,12 @@
     TOrigin            target;
 
 
+    /* Reject outlines that are too wide for 16-bit FT_Span.       */
+    /* Other limits are applied upstream with the same error code. */
+    if ( bitmap->width * SCALE > 0x7FFF )
+      return FT_THROW( Raster_Overflow );
+
     /* Set up direct rendering to average oversampled spans. */
-    params.target     = bitmap;
     params.source     = outline;
     params.flags      = FT_RASTER_FLAG_AA | FT_RASTER_FLAG_DIRECT;
     params.gray_spans = (FT_SpanFunc)ft_smooth_overlap_spans;

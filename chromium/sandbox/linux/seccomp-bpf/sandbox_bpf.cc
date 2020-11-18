@@ -145,7 +145,7 @@ bool SandboxBPF::SupportsSeccompSandbox(SeccompLevel level) {
   return false;
 }
 
-bool SandboxBPF::StartSandbox(SeccompLevel seccomp_level, bool enable_ibpb) {
+bool SandboxBPF::StartSandbox(SeccompLevel seccomp_level) {
   DCHECK(policy_);
   CHECK(seccomp_level == SeccompLevel::SINGLE_THREADED ||
         seccomp_level == SeccompLevel::MULTI_THREADED);
@@ -183,7 +183,7 @@ bool SandboxBPF::StartSandbox(SeccompLevel seccomp_level, bool enable_ibpb) {
   }
 
   // Install the filters.
-  InstallFilter(seccomp_level == SeccompLevel::MULTI_THREADED, enable_ibpb);
+  InstallFilter(seccomp_level == SeccompLevel::MULTI_THREADED);
 
   return true;
 }
@@ -222,7 +222,7 @@ CodeGen::Program SandboxBPF::AssembleFilter() {
   return compiler.Compile();
 }
 
-void SandboxBPF::InstallFilter(bool must_sync_threads, bool enable_ibpb) {
+void SandboxBPF::InstallFilter(bool must_sync_threads) {
   // We want to be very careful in not imposing any requirements on the
   // policies that are set with SetSandboxPolicy(). This means, as soon as
   // the sandbox is active, we shouldn't be relying on libraries that could
@@ -267,9 +267,7 @@ void SandboxBPF::InstallFilter(bool must_sync_threads, bool enable_ibpb) {
     // opt-out SSBD when process is single-threaded and tsync is not necessary.
   } else if (KernelSupportSeccompSpecAllow()) {
     seccomp_filter_flags |= SECCOMP_FILTER_FLAG_SPEC_ALLOW;
-    if (enable_ibpb) {
-      DisableIBSpec();
-    }
+    DisableIBSpec();
 #endif
   } else {
     if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog)) {

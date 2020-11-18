@@ -149,6 +149,7 @@ angle::Result HardwareBufferImageSiblingVkAndroid::initImpl(DisplayVk *displayVk
     struct AHardwareBuffer *hardwareBuffer =
         angle::android::ANativeWindowBufferToAHardwareBuffer(windowBuffer);
 
+    AHardwareBuffer_acquire(hardwareBuffer);
     VkAndroidHardwareBufferFormatPropertiesANDROID bufferFormatProperties;
     bufferFormatProperties.sType =
         VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID;
@@ -206,7 +207,7 @@ angle::Result HardwareBufferImageSiblingVkAndroid::initImpl(DisplayVk *displayVk
         displayVk, gl::TextureType::_2D, vkExtents,
         bufferFormatProperties.format == VK_FORMAT_UNDEFINED ? externalVkFormat : vkFormat, 1,
         usage, vk::kVkImageCreateFlagsNone, vk::ImageLayout::ExternalPreInitialized,
-        &externalMemoryImageCreateInfo, 0, 0, 1, 1));
+        &externalMemoryImageCreateInfo, gl::LevelIndex(0), gl::LevelIndex(0), 1, 1));
 
     VkImportAndroidHardwareBufferInfoANDROID importHardwareBufferInfo = {};
     importHardwareBufferInfo.sType  = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;
@@ -271,6 +272,9 @@ angle::Result HardwareBufferImageSiblingVkAndroid::initImpl(DisplayVk *displayVk
 
 void HardwareBufferImageSiblingVkAndroid::onDestroy(const egl::Display *display)
 {
+    AHardwareBuffer_release(angle::android::ANativeWindowBufferToAHardwareBuffer(
+        angle::android::ClientBufferToANativeWindowBuffer(mBuffer)));
+
     ASSERT(mImage == nullptr);
 }
 

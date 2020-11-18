@@ -55,10 +55,10 @@
 #include "libANGLE/renderer/d3d/d3d11/Trim11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexArray11.h"
 #include "libANGLE/renderer/d3d/d3d11/VertexBuffer11.h"
-#include "libANGLE/renderer/d3d/d3d11/dxgi_support_table.h"
 #include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 #include "libANGLE/renderer/d3d/d3d11/texture_format_table.h"
+#include "libANGLE/renderer/dxgi_support_table.h"
 #include "libANGLE/renderer/renderer_utils.h"
 #include "libANGLE/trace.h"
 
@@ -4217,5 +4217,10 @@ angle::Result Renderer11::getIncompleteTexture(const gl::Context *context,
                                                gl::Texture **textureOut)
 {
     return GetImplAs<Context11>(context)->getIncompleteTexture(context, type, textureOut);
+}
+
+RendererD3D *CreateRenderer11(egl::Display *display)
+{
+    return new Renderer11(display);
 }
 }  // namespace rx

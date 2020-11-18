@@ -157,7 +157,7 @@ void av1_ml_prune_4_partition(
 int av1_ml_predict_breakout(const AV1_COMP *const cpi, BLOCK_SIZE bsize,
                             const MACROBLOCK *const x,
                             const RD_STATS *const rd_stats,
-                            unsigned int pb_source_variance);
+                            unsigned int pb_source_variance, int bit_depth);
 
 // The first round of partition pruning determined before any partition
 // has been tested. The decisions will be updated and passed back
@@ -270,7 +270,7 @@ static INLINE int use_auto_max_partition(const AV1_COMP *const cpi,
   assert(IMPLIES(cpi->gf_group.size > 0,
                  cpi->gf_group.index < cpi->gf_group.size));
   const AV1_COMMON *const cm = &cpi->common;
-  return !frame_is_intra_only(cm) && !cpi->is_screen_content_type &&
+  return !frame_is_intra_only(cm) && !cpi->use_screen_content_tools &&
          cpi->sf.part_sf.auto_max_partition_based_on_simple_motion !=
              NOT_IN_USE &&
          sb_size == BLOCK_128X128 &&

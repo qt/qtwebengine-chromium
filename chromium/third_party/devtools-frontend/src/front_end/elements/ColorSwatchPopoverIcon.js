@@ -80,7 +80,7 @@ export class BezierPopoverIcon {
    * @param {!Event} event
    */
   _onScroll(event) {
-    this._swatchPopoverHelper.reposition();
+    this._swatchPopoverHelper.hide(true);
   }
 
   /**
@@ -236,7 +236,7 @@ export class ColorSwatchPopoverIcon {
    * @param {!Event} event
    */
   _onScroll(event) {
-    this._swatchPopoverHelper.reposition();
+    this._swatchPopoverHelper.hide(true);
   }
 
   /**
@@ -335,7 +335,7 @@ export class ShadowSwatchPopoverHelper {
    * @param {!Event} event
    */
   _onScroll(event) {
-    this._swatchPopoverHelper.reposition();
+    this._swatchPopoverHelper.hide(true);
   }
 
   /**

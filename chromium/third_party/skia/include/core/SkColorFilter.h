@@ -74,7 +74,7 @@ private:
     SkColorFilter() = default;
     friend class SkColorFilterBase;
 
-    typedef SkFlattenable INHERITED;
+    using INHERITED = SkFlattenable;
 };
 
 class SK_API SkColorFilters {
@@ -88,6 +88,7 @@ public:
 
     // A version of Matrix which operates in HSLA space instead of RGBA.
     // I.e. HSLA-to-RGBA(Matrix(RGBA-to-HSLA(input))).
+    static sk_sp<SkColorFilter> HSLAMatrix(const SkColorMatrix&);
     static sk_sp<SkColorFilter> HSLAMatrix(const float rowMajor[20]);
 
     static sk_sp<SkColorFilter> LinearToSRGBGamma();

@@ -471,10 +471,14 @@ void ShareGroup::addRef()
     mRefCount++;
 }
 
-void ShareGroup::release(const gl::Context *context)
+void ShareGroup::release(const Display *display)
 {
     if (--mRefCount == 0)
     {
+        if (mImplementation)
+        {
+            mImplementation->onDestroy(display);
+        }
         delete this;
     }
 }
@@ -563,7 +567,11 @@ Display *Display::GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay
             // No valid display implementation for these attributes
             return nullptr;
         }
-        SetUseAndroidOpenGLTlsSlot(displayType == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE);
+
+#if defined(ANGLE_PLATFORM_ANDROID)
+        angle::gUseAndroidOpenGLTlsSlot = displayType == EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE;
+#endif  // defined(ANGLE_PLATFORM_ANDROID)
+
         display->setupDisplayPlatform(impl);
     }
 
@@ -1470,6 +1478,28 @@ EGLClientBuffer Display::GetNativeClientBuffer(const AHardwareBuffer *buffer)
     return angle::android::AHardwareBufferToClientBuffer(buffer);
 }
 
+// static
+Error Display::CreateNativeClientBuffer(const egl::AttributeMap &attribMap,
+                                        EGLClientBuffer *eglClientBuffer)
+{
+    int androidHardwareBufferFormat = gl::GetAndroidHardwareBufferFormatFromChannelSizes(attribMap);
+    int width                       = attribMap.getAsInt(EGL_WIDTH, 0);
+    int height                      = attribMap.getAsInt(EGL_HEIGHT, 0);
+    int usage                       = attribMap.getAsInt(EGL_NATIVE_BUFFER_USAGE_ANDROID, 0);
+
+    // https://developer.android.com/ndk/reference/group/a-hardware-buffer#ahardwarebuffer_lock
+    // for AHardwareBuffer_lock()
+    // The passed AHardwareBuffer must have one layer, otherwise the call will fail.
+    constexpr int kLayerCount = 1;
+
+    *eglClientBuffer = angle::android::CreateEGLClientBufferFromAHardwareBuffer(
+        width, height, kLayerCount, androidHardwareBufferFormat, usage);
+
+    return (*eglClientBuffer == nullptr)
+               ? egl::EglBadParameter() << "native client buffer allocation failed."
+               : NoError();
+}
+
 Error Display::waitClient(const gl::Context *context)
 {
     return mImplementation->waitClient(context);
@@ -1735,6 +1765,7 @@ void Display::initializeFrontendFeatures()
     // Enable on all Impls
     ANGLE_FEATURE_CONDITION((&mFrontendFeatures), loseContextOnOutOfMemory, true);
     ANGLE_FEATURE_CONDITION((&mFrontendFeatures), scalarizeVecAndMatConstructorArgs, true);
+    ANGLE_FEATURE_CONDITION((&mFrontendFeatures), allowCompressedFormats, true);
 
     mImplementation->initializeFrontendFeatures(&mFrontendFeatures);
 
@@ -1871,6 +1902,11 @@ EGLint Display::programCacheResize(EGLint limit, EGLenum mode)
     }
 }
 
+void Display::overrideFrontendFeatures(const std::vector<std::string> &featureNames, bool enabled)
+{
+    mFrontendFeatures.overrideFeatures(featureNames, enabled);
+}
+
 const char *Display::queryStringi(const EGLint name, const EGLint index)
 {
     const char *result = nullptr;
@@ -1965,5 +2001,4 @@ egl::Error Display::handleGPUSwitch()
 {
     return mImplementation->handleGPUSwitch();
 }
-
 }  // namespace egl

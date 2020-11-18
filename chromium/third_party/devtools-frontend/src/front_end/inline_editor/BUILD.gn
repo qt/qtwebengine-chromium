@@ -23,9 +23,12 @@ devtools_module("inline_editor") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [ "colorSwatch.css" ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "inline_editor.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":inline_editor" ]
 }

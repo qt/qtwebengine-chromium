@@ -6,9 +6,8 @@
 
 #include "xfa/fxfa/parser/cxfa_image.h"
 
-#include <memory>
-
 #include "fxjs/xfa/cjx_node.h"
+#include "xfa/fxfa/parser/cxfa_document.h"
 
 namespace {
 
@@ -35,7 +34,9 @@ CXFA_Image::CXFA_Image(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_Element::Image,
                 {},
                 kImageAttributeData,
-                std::make_unique<CJX_Node>(this)) {}
+                cppgc::MakeGarbageCollected<CJX_Node>(
+                    doc->GetHeap()->GetAllocationHandle(),
+                    this)) {}
 
 CXFA_Image::~CXFA_Image() = default;
 
@@ -61,11 +62,11 @@ WideString CXFA_Image::GetContent() {
 }
 
 void CXFA_Image::SetContentType(const WideString& wsContentType) {
-  JSObject()->SetCData(XFA_Attribute::ContentType, wsContentType, false, false);
+  JSObject()->SetCData(XFA_Attribute::ContentType, wsContentType);
 }
 
 void CXFA_Image::SetHref(const WideString& wsHref) {
-  JSObject()->SetCData(XFA_Attribute::Href, wsHref, false, false);
+  JSObject()->SetCData(XFA_Attribute::Href, wsHref);
 }
 
 void CXFA_Image::SetTransferEncoding(XFA_AttributeValue iTransferEncoding) {

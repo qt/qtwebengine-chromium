@@ -33,15 +33,9 @@
 #include "core/fxge/cfx_graphstatedata.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
-#include "core/fxge/cfx_textrenderoptions.h"
 #include "core/fxge/cfx_unicodeencodingex.h"
 #include "core/fxge/text_char_pos.h"
 #include "fxbarcode/BC_Writer.h"
-
-// static
-const CFX_TextRenderOptions& CBC_OneDimWriter::GetTextRenderOptions() {
-  return CFX_TextRenderOptions::LcdOptions();
-}
 
 // static
 bool CBC_OneDimWriter::HasValidContentSize(WideStringView contents) {
@@ -136,7 +130,7 @@ void CBC_OneDimWriter::CalcTextInfo(const ByteString& text,
   for (size_t i = 0; i < length; ++i) {
     charcodes[i] = encoding->CharCodeFromUnicode(text[i]);
     int32_t glyph_code = encoding->GlyphFromCharCode(charcodes[i]);
-    uint32_t glyph_value = cFont->GetGlyphWidth(glyph_code);
+    int glyph_value = cFont->GetGlyphWidth(glyph_code);
     float temp = glyph_value * fontSize / 1000.0;
     charWidth += temp;
   }

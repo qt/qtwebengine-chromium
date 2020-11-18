@@ -58,8 +58,11 @@ class TestStream : public QuicStream {
     sequencer()->set_level_triggered(true);
   }
 
-  TestStream(PendingStream* pending, StreamType type, bool is_static)
-      : QuicStream(pending, type, is_static) {}
+  TestStream(PendingStream* pending,
+             QuicSession* session,
+             StreamType type,
+             bool is_static)
+      : QuicStream(pending, session, type, is_static) {}
 
   MOCK_METHOD(void, OnDataAvailable, (), (override));
 
@@ -169,11 +172,12 @@ TEST_P(QuicStreamTest, PendingStreamStaticness) {
   Initialize();
 
   PendingStream pending(kTestStreamId + 2, session_.get());
-  TestStream stream(&pending, StreamType::BIDIRECTIONAL, false);
+  TestStream stream(&pending, session_.get(), StreamType::BIDIRECTIONAL, false);
   EXPECT_FALSE(stream.is_static());
 
   PendingStream pending2(kTestStreamId + 3, session_.get());
-  TestStream stream2(&pending2, StreamType::BIDIRECTIONAL, true);
+  TestStream stream2(&pending2, session_.get(), StreamType::BIDIRECTIONAL,
+                     true);
   EXPECT_TRUE(stream2.is_static());
 }
 
@@ -233,7 +237,8 @@ TEST_P(QuicStreamTest, FromPendingStream) {
   QuicStreamFrame frame2(kTestStreamId + 2, true, 3, ".");
   pending.OnStreamFrame(frame2);
 
-  TestStream stream(&pending, StreamType::READ_UNIDIRECTIONAL, false);
+  TestStream stream(&pending, session_.get(), StreamType::READ_UNIDIRECTIONAL,
+                    false);
   EXPECT_EQ(3, stream.num_frames_received());
   EXPECT_EQ(3u, stream.stream_bytes_read());
   EXPECT_EQ(1, stream.num_duplicate_frames_received());
@@ -251,8 +256,8 @@ TEST_P(QuicStreamTest, FromPendingStreamThenData) {
   QuicStreamFrame frame(kTestStreamId + 2, false, 2, ".");
   pending.OnStreamFrame(frame);
 
-  auto stream =
-      new TestStream(&pending, StreamType::READ_UNIDIRECTIONAL, false);
+  auto stream = new TestStream(&pending, session_.get(),
+                               StreamType::READ_UNIDIRECTIONAL, false);
   session_->ActivateStream(QuicWrapUnique(stream));
 
   QuicStreamFrame frame2(kTestStreamId + 2, true, 3, ".");
@@ -455,7 +460,7 @@ TEST_P(QuicStreamTest, RstAlwaysSentIfNoFinSent) {
 
   // Now close the stream, and expect that we send a RST.
   EXPECT_CALL(*session_, SendRstStream(_, _, _, _));
-  stream_->CloseReadSide();
+  QuicStreamPeer::CloseReadSide(stream_);
   stream_->CloseWriteSide();
   EXPECT_FALSE(session_->HasUnackedStreamData());
   EXPECT_FALSE(fin_sent());
@@ -483,7 +488,7 @@ TEST_P(QuicStreamTest, RstNotSentIfFinSent) {
   EXPECT_FALSE(rst_sent());
 
   // Now close the stream, and expect that we do not send a RST.
-  stream_->CloseReadSide();
+  QuicStreamPeer::CloseReadSide(stream_);
   stream_->CloseWriteSide();
   EXPECT_TRUE(fin_sent());
   EXPECT_FALSE(rst_sent());
@@ -508,7 +513,7 @@ TEST_P(QuicStreamTest, OnlySendOneRst) {
 
   // Now close the stream (any further resets being sent would break the
   // expectation above).
-  stream_->CloseReadSide();
+  QuicStreamPeer::CloseReadSide(stream_);
   stream_->CloseWriteSide();
   EXPECT_FALSE(fin_sent());
   EXPECT_TRUE(rst_sent());
@@ -642,7 +647,7 @@ TEST_P(QuicStreamTest, InvalidFinalByteOffsetFromRst) {
               CloseConnection(QUIC_FLOW_CONTROL_RECEIVED_TOO_MUCH_DATA, _, _));
   stream_->OnStreamReset(rst_frame);
   EXPECT_TRUE(stream_->HasReceivedFinalOffset());
-  stream_->CloseReadSide();
+  QuicStreamPeer::CloseReadSide(stream_);
   stream_->CloseWriteSide();
 }
 
@@ -1552,30 +1557,6 @@ TEST_P(QuicStreamTest, ResetStreamOnTtlExpiresEarlyRetransmitData) {
   EXPECT_CALL(*session_, SendRstStream(_, QUIC_STREAM_TTL_EXPIRED, _, _))
       .Times(1);
   stream_->RetransmitStreamData(0, 100, false, PTO_RETRANSMISSION);
-}
-
-// Test that QuicStream::StopSending A) is a no-op if the connection is not in
-// version 99, B) that it properly invokes QuicSession::StopSending, and C) that
-// the correct data is passed along, including getting the stream ID.
-TEST_P(QuicStreamTest, CheckStopSending) {
-  Initialize();
-  const int kStopSendingCode = 123;
-  // These must start as false.
-  EXPECT_FALSE(stream_->write_side_closed());
-  EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
-  // Expect to actually see a stop sending if and only if we are in version 99.
-  if (VersionHasIetfQuicFrames(connection_->transport_version())) {
-    EXPECT_CALL(*session_, SendStopSending(kStopSendingCode, stream_->id()))
-        .Times(1);
-  } else {
-    EXPECT_CALL(*session_, SendStopSending(_, _)).Times(0);
-  }
-  stream_->SendStopSending(kStopSendingCode);
-  // Sending a STOP_SENDING does not actually close the local stream.
-  // Our implementation waits for the responding RESET_STREAM to effect the
-  // closes. Therefore, read- and write-side closes should both be false.
-  EXPECT_FALSE(stream_->write_side_closed());
-  EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream_));
 }
 
 // Test that OnStreamReset does one-way (read) closes if version 99, two way

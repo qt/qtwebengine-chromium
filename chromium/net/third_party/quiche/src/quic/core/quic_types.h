@@ -46,9 +46,6 @@ using PacketTimeVector = std::vector<std::pair<QuicPacketNumber, QuicTime>>;
 enum : size_t { kQuicPathFrameBufferSize = 8 };
 using QuicPathFrameBuffer = std::array<uint8_t, kQuicPathFrameBufferSize>;
 
-// Application error code used in the QUIC Stop Sending frame.
-using QuicApplicationErrorCode = uint16_t;
-
 // The connection id sequence number specifies the order that connection
 // ids must be used in. This is also the sequence number carried in
 // the IETF QUIC NEW_CONNECTION_ID and RETIRE_CONNECTION_ID frames.
@@ -533,6 +530,9 @@ enum SentPacketState : uint8_t {
   PTO_RETRANSMITTED,
   // This packet has been retransmitted for probing purpose.
   PROBE_RETRANSMITTED,
+  // Do not collect RTT sample if this packet is the largest_acked of an
+  // incoming ACK.
+  NOT_CONTRIBUTING_RTT,
   LAST_PACKET_STATE = PROBE_RETRANSMITTED,
 };
 
@@ -687,8 +687,6 @@ enum PacketNumberSpace : uint8_t {
 QUIC_EXPORT_PRIVATE std::string PacketNumberSpaceToString(
     PacketNumberSpace packet_number_space);
 
-enum AckMode { TCP_ACKING, ACK_DECIMATION, ACK_DECIMATION_WITH_REORDERING };
-
 // Used to return the result of processing a received ACK frame.
 enum AckResult {
   PACKETS_NEWLY_ACKED,
@@ -709,10 +707,6 @@ enum SerializedPacketFate : uint8_t {
   COALESCE,        // Try to coalesce packet.
   BUFFER,          // Buffer packet in buffered_packets_.
   SEND_TO_WRITER,  // Send packet to writer.
-  // TODO(fayang): remove FAILED_TO_WRITE_COALESCED_PACKET when deprecating
-  // quic_determine_serialized_packet_fate_early.
-  FAILED_TO_WRITE_COALESCED_PACKET,  // Packet cannot be coalesced, error occurs
-                                     // when sending existing coalesced packet.
   LEGACY_VERSION_ENCAPSULATE,  // Perform Legacy Version Encapsulation on this
                                // packet.
 };

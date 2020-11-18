@@ -337,6 +337,35 @@ if (is_ios || is_mac) {
           "../rtc_base:rtc_base_approved",
         ]
       }
+
+      rtc_source_set("network_monitor_observer") {
+        visibility = [ ":*" ]
+
+        sources = [ "objc/native/src/network_monitor_observer.h" ]
+
+        deps = [ "../rtc_base" ]
+      }
+
+      rtc_library("network_monitor_objc") {
+        visibility = [ "*" ]
+
+        sources = [
+          "objc/components/network/RTCNetworkMonitor+Private.h",
+          "objc/components/network/RTCNetworkMonitor.h",
+          "objc/components/network/RTCNetworkMonitor.mm",
+        ]
+
+        configs += [ ":used_from_extension" ]
+
+        frameworks = [ "Network.framework" ]
+
+        deps = [
+          ":base_objc",
+          ":helpers_objc",
+          ":network_monitor_observer",
+          "../rtc_base/system:gcd_helpers",
+        ]
+      }
     }
 
     rtc_library("videosource_objc") {
@@ -776,8 +805,6 @@ if (is_ios || is_mac) {
       sources = [
         "objc/api/peerconnection/RTCEncodedImage+Private.h",
         "objc/api/peerconnection/RTCEncodedImage+Private.mm",
-        "objc/api/peerconnection/RTCRtpFragmentationHeader+Private.h",
-        "objc/api/peerconnection/RTCRtpFragmentationHeader+Private.mm",
         "objc/api/peerconnection/RTCVideoCodecInfo+Private.h",
         "objc/api/peerconnection/RTCVideoCodecInfo+Private.mm",
         "objc/api/peerconnection/RTCVideoEncoderSettings+Private.h",
@@ -946,6 +973,7 @@ if (is_ios || is_mac) {
         "../api/crypto:frame_encryptor_interface",
         "../api/rtc_event_log:rtc_event_log_factory",
         "../api/task_queue:default_task_queue_factory",
+        "../api/transport:field_trial_based_config",
         "../api/video:video_frame",
         "../api/video:video_rtp_headers",
         "../api/video_codecs:video_codecs_api",
@@ -975,7 +1003,6 @@ if (is_ios || is_mac) {
         "objc/Framework/Classes/Common/scoped_cftyperef.h",
         "objc/Framework/Classes/PeerConnection/RTCConfiguration+Native.h",
         "objc/Framework/Classes/PeerConnection/RTCPeerConnectionFactory+Native.h",
-        "objc/Framework/Classes/PeerConnection/RTCVideoCodec+Private.h",
         "objc/Framework/Classes/Video/RTCDefaultShader.h",
         "objc/Framework/Classes/Video/RTCNV12TextureCache.h",
         "objc/Framework/Classes/VideoToolbox/nalu_rewriter.h",
@@ -1138,7 +1165,8 @@ if (is_ios || is_mac) {
         }
 
         # These tests use static linking.
-        rtc_ios_xctest_test("sdk_unittests") {
+        rtc_test("sdk_unittests") {
+          is_xctest = true
           info_plist = "//test/ios/Info.plist"
           sources = [ "objc/unittests/main.mm" ]
 
@@ -1154,7 +1182,8 @@ if (is_ios || is_mac) {
         }
 
         # These tests link to the framework.
-        rtc_ios_xctest_test("sdk_framework_unittests") {
+        rtc_test("sdk_framework_unittests") {
+          is_xctest = true
           info_plist = "//test/ios/Info.plist"
           sources = [
             "objc/unittests/RTCDoNotPutCPlusPlusInFrameworkHeaders_xctest.m",
@@ -1266,6 +1295,7 @@ if (is_ios || is_mac) {
           "objc/components/audio/RTCAudioSessionConfiguration.h",
           "objc/components/capturer/RTCCameraVideoCapturer.h",
           "objc/components/capturer/RTCFileVideoCapturer.h",
+          "objc/components/network/RTCNetworkMonitor.h",
           "objc/components/renderer/metal/RTCMTLVideoView.h",
           "objc/components/renderer/opengl/RTCEAGLVideoView.h",
           "objc/components/renderer/opengl/RTCVideoViewShading.h",
@@ -1540,6 +1570,8 @@ if (is_ios || is_mac) {
       visibility = [ "*" ]
       allow_poison = [ "audio_codecs" ]  # TODO(bugs.webrtc.org/8396): Remove.
       sources = [
+        "objc/native/api/network_monitor_factory.h",
+        "objc/native/api/network_monitor_factory.mm",
         "objc/native/api/video_capturer.h",
         "objc/native/api/video_capturer.mm",
         "objc/native/api/video_decoder_factory.h",
@@ -1571,7 +1603,28 @@ if (is_ios || is_mac) {
         "../common_video",
         "../rtc_base",
       ]
+      if (is_ios) {
+        deps += [ ":native_network_monitor" ]
+      }
       absl_deps = [ "//third_party/abseil-cpp/absl/memory" ]
+    }
+
+    if (is_ios) {
+      rtc_library("native_network_monitor") {
+        visibility = [ "*" ]
+
+        sources = [
+          "objc/native/src/objc_network_monitor.h",
+          "objc/native/src/objc_network_monitor.mm",
+        ]
+
+        deps = [
+          ":network_monitor_objc",
+          ":network_monitor_observer",
+          "../rtc_base",
+          "../rtc_base/synchronization:sequence_checker",
+        ]
+      }
     }
 
     rtc_library("native_video") {
@@ -1618,8 +1671,8 @@ if (is_ios || is_mac) {
 
     rtc_library("video_toolbox_cc") {
       visibility = [
-        ":videotoolbox_objc",
         ":sdk_unittests_sources",
+        ":videotoolbox_objc",
       ]
       sources = [
         "objc/components/video_codec/helpers.cc",

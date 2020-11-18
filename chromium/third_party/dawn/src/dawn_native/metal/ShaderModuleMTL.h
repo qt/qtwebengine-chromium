@@ -38,25 +38,22 @@ namespace dawn_native { namespace metal {
 
         struct MetalFunctionData {
             id<MTLFunction> function = nil;
-            MTLSize localWorkgroupSize;
             bool needsStorageBufferLength;
             ~MetalFunctionData() {
                 [function release];
             }
         };
-        MaybeError GetFunction(const char* functionName,
-                               SingleShaderStage functionStage,
-                               const PipelineLayout* layout,
-                               MetalFunctionData* out,
-                               uint32_t sampleMask = 0xFFFFFFFF,
-                               const RenderPipeline* renderPipeline = nullptr);
+        MaybeError CreateFunction(const char* entryPointName,
+                                  SingleShaderStage stage,
+                                  const PipelineLayout* layout,
+                                  MetalFunctionData* out,
+                                  uint32_t sampleMask = 0xFFFFFFFF,
+                                  const RenderPipeline* renderPipeline = nullptr);
 
       private:
         ShaderModule(Device* device, const ShaderModuleDescriptor* descriptor);
         ~ShaderModule() override = default;
         MaybeError Initialize();
-
-        shaderc_spvc::CompileOptions GetMSLCompileOptions(uint32_t sampleMask = 0xFFFFFFFF);
     };
 
 }}  // namespace dawn_native::metal

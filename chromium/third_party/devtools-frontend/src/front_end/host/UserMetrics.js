@@ -49,7 +49,7 @@ export class UserMetrics {
   colorFixed(contrastThreshold) {
     const code = ContrastThresholds[contrastThreshold];
     if (code === undefined) {
-      console.error(`Unknown contrast threshold: ${contrastThreshold}`);
+      console.warn(`Unknown contrast threshold: ${contrastThreshold}`);
       return;
     }
     const size = Object.keys(ContrastThresholds).length + 1;
@@ -80,6 +80,16 @@ export class UserMetrics {
     Common.EventTarget.fireEvent(EnumeratedHistogram.PanelClosed, {value: code});
     // Store that the user has changed the panel so we know launch histograms should not be fired.
     this._panelChangedSinceLaunch = true;
+  }
+
+  /**
+   * @param {string} sidebarPaneName
+   */
+  sidebarPaneShown(sidebarPaneName) {
+    const code = SidebarPaneCodes[sidebarPaneName] || 0;
+    const size = Object.keys(SidebarPaneCodes).length + 1;
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.SidebarPaneShown, code, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.SidebarPaneShown, {value: code});
   }
 
   /**
@@ -168,6 +178,43 @@ export class UserMetrics {
   }
 
   /**
+   * @param {string | undefined} issueExpandedCategory
+   */
+  issuesPanelIssueExpanded(issueExpandedCategory) {
+    if (issueExpandedCategory === undefined) {
+      return;
+    }
+
+    const size = Object.keys(IssueExpanded).length + 1;
+    const issueExpanded = IssueExpanded[issueExpandedCategory];
+
+    if (issueExpanded === undefined) {
+      return;
+    }
+
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.IssuesPanelIssueExpanded, issueExpanded, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.IssuesPanelIssueExpanded, {value: issueExpanded});
+  }
+
+  /**
+   * @param {symbol} issueCategory
+   * @param {string} type
+   */
+  issuesPanelResourceOpened(issueCategory, type) {
+    const size = Object.keys(IssueResourceOpened).length + 1;
+    const key = issueCategory.description + type;
+    const value = IssueResourceOpened[key];
+
+    if (value === undefined) {
+      return;
+    }
+
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.IssuesPanelResourceOpened, value, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.IssuesPanelResourceOpened, {value});
+  }
+
+  /**
    * @param {!DualScreenDeviceEmulated} emulationAction
    */
   dualScreenDeviceEmulated(emulationAction) {
@@ -188,6 +235,32 @@ export class UserMetrics {
     }
     InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.CSSGridSettings, gridSetting, size);
     Common.EventTarget.fireEvent(EnumeratedHistogram.CSSGridSettings, {value: gridSetting});
+  }
+
+  /**
+   * @param {number} count The number of highlighted persistent grids
+   */
+  highlightedPersistentCssGridCount(count) {
+    const size = HighlightedPersistentCSSGridCount.length;
+
+    let code;
+    for (let i = 0; i < size; i++) {
+      const min = HighlightedPersistentCSSGridCount[i];
+      const max = HighlightedPersistentCSSGridCount[i + 1] || {threshold: Infinity};
+
+      if (count >= min.threshold && count < max.threshold) {
+        code = min.code;
+        break;
+      }
+    }
+
+    if (typeof code === 'undefined') {
+      return;
+    }
+
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.HighlightedPersistentCSSGridCount, code, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.HighlightedPersistentCSSGridCount, {value: code});
   }
 
   /**
@@ -217,6 +290,26 @@ export class UserMetrics {
     const actionName = isEnabled ? EnumeratedHistogram.ExperimentEnabled : EnumeratedHistogram.ExperimentDisabled;
     InspectorFrontendHostInstance.recordEnumeratedHistogram(actionName, experiment, size);
     Common.EventTarget.fireEvent(actionName, {value: experiment});
+  }
+
+  /**
+   * @param {boolean} isEnabled
+   */
+  computedStyleGrouping(isEnabled) {
+    const size = Object.keys(ComputedStyleGroupingState).length + 1;
+    const code = isEnabled ? ComputedStyleGroupingState.enabled : ComputedStyleGroupingState.disabled;
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.ComputedStyleGrouping, code, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.ComputedStyleGrouping, {value: code});
+  }
+
+  /**
+   * @param {!GridOverlayOpener} gridOverlayOpener
+   */
+  gridOverlayOpenedFrom(gridOverlayOpener) {
+    const size = Object.keys(GridOverlayOpener).length + 1;
+    InspectorFrontendHostInstance.recordEnumeratedHistogram(
+        EnumeratedHistogram.GridOverlayOpenedFrom, gridOverlayOpener, size);
+    Common.EventTarget.fireEvent(EnumeratedHistogram.GridOverlayOpenedFrom, {value: gridOverlayOpener});
   }
 }
 
@@ -262,14 +355,17 @@ export const Action = {
   FilmStripStartedRecording: 33,
   CoverageReportFiltered: 34,
   CoverageStartedPerBlock: 35,
-  SettingsOpenedFromGear: 36,
-  SettingsOpenedFromMenu: 37,
-  SettingsOpenedFromCommandMenu: 38,
+  'SettingsOpenedFromGear-deprecated': 36,
+  'SettingsOpenedFromMenu-deprecated': 37,
+  'SettingsOpenedFromCommandMenu-deprecated': 38,
   TabMovedToDrawer: 39,
   TabMovedToMainPanel: 40,
   CaptureCssOverviewClicked: 41,
   VirtualAuthenticatorEnvironmentEnabled: 42,
   SourceOrderViewActivated: 43,
+  UserShortcutAdded: 44,
+  ShortcutRemoved: 45,
+  ShortcutModified: 46,
 };
 
 /** @type {!Object<string, number>} */
@@ -320,6 +416,18 @@ export const PanelCodes = {
   'issues-pane': 37,
   'settings-keybinds': 38,
   'cssoverview': 39
+};
+
+/** @type {!Object<string, number>} */
+export const SidebarPaneCodes = {
+  'OtherSidebarPane': 0,
+  'Styles': 1,
+  'Computed': 2,
+  'elements.layout': 3,
+  'elements.eventListeners': 4,
+  'elements.domBreakpoints': 5,
+  'elements.domProperties': 6,
+  'accessibility.view': 7,
 };
 
 /** @type {!Object<string, number>} */
@@ -443,28 +551,28 @@ export const DualScreenDeviceEmulated = {
 
 /** @type {!Object<string, number>} */
 export const CSSGridSettings = {
-  'showGridBorder.none': 0,
-  'showGridBorder.dashed': 1,
-  'showGridBorder.solid': 2,
-  'showGridLines.none': 3,
-  'showGridLines.dashed': 4,
-  'showGridLines.solid': 5,
-  'showGridLines.extended-dashed': 6,
-  'showGridLines.extended-solid': 7,
-  'showGridLineNumbers.none': 8,
-  'showGridLineNumbers.positive': 9,
-  'showGridLineNumbers.negative': 10,
-  'showGridLineNumbers.both': 11,
-  'showGridGaps.none': 12,
-  'showGridGaps.row-gaps': 13,
-  'showGridGaps.column-gaps': 14,
-  'showGridGaps.both': 15,
-  'showGridAreas.false': 16,
-  'showGridAreas.true': 17,
-  'showGridLineNumbers.names': 18,
-  'showGridTrackSizes.false': 19,
-  'showGridTrackSizes.true': 20,
+  'showGridLineLabels.none': 0,
+  'showGridLineLabels.lineNumbers': 1,
+  'showGridLineLabels.lineNames': 2,
+  'extendGridLines.false': 3,
+  'extendGridLines.true': 4,
+  'showGridAreas.false': 5,
+  'showGridAreas.true': 6,
+  'showGridTrackSizes.false': 7,
+  'showGridTrackSizes.true': 8,
 };
+
+export const HighlightedPersistentCSSGridCount = [
+  {threshold: 0, code: 0},   // 0 highlighted grids
+  {threshold: 1, code: 1},   // 1 highlighted grid
+  {threshold: 2, code: 2},   // 2 highlighted grids
+  {threshold: 3, code: 3},   // 3 highlighted grids
+  {threshold: 4, code: 4},   // 4 highlighted grids
+  {threshold: 5, code: 5},   // 5 to 9 highlighted grids
+  {threshold: 10, code: 6},  // 10 to 19 highlighted grids
+  {threshold: 20, code: 7},  // 20 to 49 highlighted grids
+  {threshold: 50, code: 8},  // more than 50 highlighted grids
+];
 
 /**
  * This list should contain the currently active Devtools Experiments.
@@ -492,7 +600,6 @@ export const DevtoolsExperiments = {
   'liveHeapProfile': 11,
   'nativeHeapProfiler': 12,
   'protocolMonitor': 13,
-  'issuesPane': 14,
   'developerResourcesView': 15,
   'recordCoverageWithPerformanceTracing': 16,
   'samplingHeapProfilerTimeline': 17,
@@ -512,6 +619,40 @@ export const DevtoolsExperiments = {
   'wasmDWARFDebugging': 31,
   'dualScreenSupport': 32,
   'cssGridFeatures': 33,
-  'movableTabs': 34,
-  '__lastValidEnumPosition': 34,
+  'keyboardShortcutEditor': 35,
+  '__lastValidEnumPosition': 35,
+};
+
+/** @type {!Object<string, number>} */
+export const ComputedStyleGroupingState = {
+  'enabled': 0,
+  'disabled': 1,
+};
+
+/** @type {!Object<string, number>} */
+export const IssueExpanded = {
+  CrossOriginEmbedderPolicy: 0,
+  MixedContent: 1,
+  SameSiteCookie: 2,
+  HeavyAd: 3,
+  ContentSecurityPolicy: 4,
+  Other: 5
+};
+
+/** @type {!Object<string, number>} */
+export const IssueResourceOpened = {
+  CrossOriginEmbedderPolicyRequest: 0,
+  CrossOriginEmbedderPolicyElement: 1,
+  MixedContentRequest: 2,
+  SameSiteCookieCookie: 3,
+  SameSiteCookieRequest: 4,
+  HeavyAdElement: 5,
+  ContentSecurityPolicyDirective: 6,
+  ContentSecurityPolicyElement: 7
+};
+
+/** @enum {number} */
+export const GridOverlayOpener = {
+  Adorner: 0,
+  LayoutPane: 1,
 };

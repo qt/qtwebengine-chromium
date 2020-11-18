@@ -194,6 +194,10 @@ base::Optional<FrameId> SequenceStackProfileTracker::AddFrame(
                                         base::StringView(*package))};
           context_->global_stack_profile_tracker->InsertJavaFrameForName(
               nip, *cur_id);
+        } else if (mapping_name.find("/memfd:") == 0) {
+          NameInPackage nip{str_id, context_->storage->InternString("memfd")};
+          context_->global_stack_profile_tracker->InsertJavaFrameForName(
+              nip, *cur_id);
         }
       }
     }
@@ -207,7 +211,7 @@ base::Optional<CallsiteId> SequenceStackProfileTracker::AddCallstack(
     SourceCallstackId id,
     const SourceCallstack& frame_ids,
     const InternLookup* intern_lookup) {
-  if (frame_ids.size() == 0)
+  if (frame_ids.empty())
     return base::nullopt;
 
   base::Optional<CallsiteId> parent_id;

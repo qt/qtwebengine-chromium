@@ -129,27 +129,7 @@ namespace dawn_native { namespace null {
     ResultOrError<ShaderModuleBase*> Device::CreateShaderModuleImpl(
         const ShaderModuleDescriptor* descriptor) {
         Ref<ShaderModule> module = AcquireRef(new ShaderModule(this, descriptor));
-
-        if (IsToggleEnabled(Toggle::UseSpvc)) {
-            shaderc_spvc::CompileOptions options;
-            options.SetValidate(IsValidationEnabled());
-            shaderc_spvc::Context* context = module->GetContext();
-            shaderc_spvc_status status = context->InitializeForGlsl(
-                module->GetSpirv().data(), module->GetSpirv().size(), options);
-            if (status != shaderc_spvc_status_success) {
-                return DAWN_VALIDATION_ERROR("Unable to initialize instance of spvc");
-            }
-
-            spirv_cross::Compiler* compiler;
-            status = context->GetCompiler(reinterpret_cast<void**>(&compiler));
-            if (status != shaderc_spvc_status_success) {
-                return DAWN_VALIDATION_ERROR("Unable to get cross compiler");
-            }
-            DAWN_TRY(module->ExtractSpirvInfo(*compiler));
-        } else {
-            spirv_cross::Compiler compiler(module->GetSpirv());
-            DAWN_TRY(module->ExtractSpirvInfo(compiler));
-        }
+        DAWN_TRY(module->Initialize());
         return module.Detach();
     }
     ResultOrError<SwapChainBase*> Device::CreateSwapChainImpl(
@@ -197,7 +177,7 @@ namespace dawn_native { namespace null {
                                                BufferBase* destination,
                                                uint64_t destinationOffset,
                                                uint64_t size) {
-        if (IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+        if (IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             destination->SetIsDataInitialized();
         }
 
@@ -210,6 +190,13 @@ namespace dawn_native { namespace null {
 
         AddPendingOperation(std::move(operation));
 
+        return {};
+    }
+
+    MaybeError Device::CopyFromStagingToTexture(const StagingBufferBase* source,
+                                                const TextureDataLayout& src,
+                                                TextureCopy* dst,
+                                                const Extent3D& copySizePixels) {
         return {};
     }
 
@@ -232,7 +219,7 @@ namespace dawn_native { namespace null {
         return {};
     }
 
-    Serial Device::CheckAndUpdateCompletedSerials() {
+    ExecutionSerial Device::CheckAndUpdateCompletedSerials() {
         return GetLastSubmittedCommandSerial();
     }
 
@@ -280,7 +267,7 @@ namespace dawn_native { namespace null {
         ToBackend(GetDevice())->DecrementMemoryUsage(GetSize());
     }
 
-    bool Buffer::IsMappableAtCreation() const {
+    bool Buffer::IsCPUWritableAtCreation() const {
         // Only return true for mappable buffers so we can test cases that need / don't need a
         // staging buffer.
         return (GetUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) != 0;
@@ -302,14 +289,6 @@ namespace dawn_native { namespace null {
         ASSERT(bufferOffset + size <= GetSize());
         ASSERT(mBackingData);
         memcpy(mBackingData.get() + bufferOffset, data, size);
-    }
-
-    MaybeError Buffer::MapReadAsyncImpl() {
-        return {};
-    }
-
-    MaybeError Buffer::MapWriteAsyncImpl() {
-        return {};
     }
 
     MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
@@ -406,6 +385,12 @@ namespace dawn_native { namespace null {
         }
     }
 
+    // ShaderModule
+
+    MaybeError ShaderModule::Initialize() {
+        return InitializeBase();
+    }
+
     // OldSwapChain
 
     OldSwapChain::OldSwapChain(Device* device, const SwapChainDescriptor* descriptor)
@@ -466,6 +451,14 @@ namespace dawn_native { namespace null {
         mBuffer = std::make_unique<uint8_t[]>(GetSize());
         mMappedPointer = mBuffer.get();
         return {};
+    }
+
+    uint32_t Device::GetOptimalBytesPerRowAlignment() const {
+        return 1;
+    }
+
+    uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
+        return 1;
     }
 
 }}  // namespace dawn_native::null

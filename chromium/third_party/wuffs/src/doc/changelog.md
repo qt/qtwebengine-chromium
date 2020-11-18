@@ -30,6 +30,7 @@
 - Added single-quoted strings.
 - Added tokens.
 - Changed `gif.decoder_workbuf_len_max_incl_worst_case` from 1 to 0.
+- Changed default C compilers from `clang-5.0,gcc` to `clang-9,gcc`.
 - Changed the C formatting style; removed the `-cformatter` flag.
 - Changed what the `std/gif` benchmarks actually measure.
 - Made `wuffs_base__pixel_format` a struct.
@@ -40,6 +41,7 @@
 - Renamed I/O `available` methods to `length`.
 - Renamed `decode_io_writer?` methods to `transform_io?`.
 - Renamed `example/library` to `example/toy-genlib`.
+- Renamed `{read,writ}er_io_position` to `{read,writ}er_position`.
 - Renamed `swizzle_interleaved!` to `swizzle_interleaved_from_slice!`.
 - Renamed warnings to notes.
 

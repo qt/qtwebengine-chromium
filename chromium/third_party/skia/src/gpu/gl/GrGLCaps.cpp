@@ -14,7 +14,6 @@
 #include "src/core/SkTSearch.h"
 #include "src/gpu/GrBackendUtils.h"
 #include "src/gpu/GrProgramDesc.h"
-#include "src/gpu/GrRenderTargetProxyPriv.h"
 #include "src/gpu/GrShaderCaps.h"
 #include "src/gpu/GrSurfaceProxyPriv.h"
 #include "src/gpu/GrTextureProxyPriv.h"
@@ -50,7 +49,8 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fRGBA8888PixelsOpsAreSlow = false;
     fPartialFBOReadIsSlow = false;
     fBindUniformLocationSupport = false;
-    fMipmapLevelAndLodControlSupport = false;
+    fMipmapLevelControlSupport = false;
+    fMipmapLodControlSupport = false;
     fRGBAToBGRAReadbackConversionsAreSlow = false;
     fUseBufferDataNullHint = false;
     fDoManualMipmapping = false;
@@ -67,6 +67,8 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fProgramBinarySupport = false;
     fProgramParameterSupport = false;
     fSamplerObjectSupport = false;
+    fUseSamplerObjects = false;
+    fTextureSwizzleSupport = false;
     fTiledRenderingSupport = false;
     fFBFetchRequiresEnablePerSample = false;
     fSRGBWriteControl = false;
@@ -267,19 +269,21 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
 
     if (GR_IS_GR_GL(standard)) {
         if (version >= GR_GL_VER(3,3) || ctxInfo.hasExtension("GL_ARB_texture_swizzle")) {
-            this->fShaderCaps->fTextureSwizzleAppliedInShader = false;
+            fTextureSwizzleSupport = true;
         }
     } else if (GR_IS_GR_GL_ES(standard)) {
         if (version >= GR_GL_VER(3,0)) {
-            this->fShaderCaps->fTextureSwizzleAppliedInShader = false;
+            fTextureSwizzleSupport = true;
         }
     } // no WebGL support
 
     if (GR_IS_GR_GL(standard)) {
-        fMipmapLevelAndLodControlSupport = true;
+        fMipmapLevelControlSupport = true;
+        fMipmapLodControlSupport = true;
     } else if (GR_IS_GR_GL_ES(standard)) {
         if (version >= GR_GL_VER(3,0)) {
-            fMipmapLevelAndLodControlSupport = true;
+            fMipmapLevelControlSupport = true;
+            fMipmapLodControlSupport = true;
         }
     } // no WebGL support
 
@@ -716,6 +720,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     } else if (GR_IS_GR_WEBGL(standard)) {
         fSamplerObjectSupport = version >= GR_GL_VER(2,0);
     }
+    // We currently use sampler objects whenever they are available.
+    fUseSamplerObjects = fSamplerObjectSupport;
 
     if (GR_IS_GR_GL_ES(standard)) {
         fTiledRenderingSupport = ctxInfo.hasExtension("GL_QCOM_tiled_rendering");
@@ -732,8 +738,7 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
                                                 &formatWorkarounds);
     }
 
-    // Requires fTextureSwizzleSupport, msaa support, ES compatibility have
-    // already been detected.
+    // Requires msaa support, ES compatibility have already been detected.
     this->initFormatTable(ctxInfo, gli, formatWorkarounds);
 
     this->finishInitialization(contextOptions);
@@ -1217,6 +1222,8 @@ void GrGLCaps::onDumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Program binary support", fProgramBinarySupport);
     writer->appendBool("Program parameters support", fProgramParameterSupport);
     writer->appendBool("Sampler object support", fSamplerObjectSupport);
+    writer->appendBool("Using sampler objects", fUseSamplerObjects);
+    writer->appendBool("Texture swizzle support", fTextureSwizzleSupport);
     writer->appendBool("Tiled rendering support", fTiledRenderingSupport);
     writer->appendBool("FB fetch requires enable per sample", fFBFetchRequiresEnablePerSample);
     writer->appendBool("sRGB Write Control", fSRGBWriteControl);
@@ -3298,7 +3305,7 @@ static bool has_msaa_render_buffer(const GrSurfaceProxy* surf, const GrGLCaps& g
     // 3) It's not FBO 0, which is special and always auto-resolves
     return rt->numSamples() > 1 &&
            glCaps.usesMSAARenderBuffers() &&
-           !rt->rtPriv().glRTFBOIDIs0();
+           !rt->glRTFBOIDIs0();
 }
 
 bool GrGLCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
@@ -3601,11 +3608,23 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     static constexpr bool isMAC = false;
 #endif
 
+#ifdef SK_BUILD_FOR_ANDROID
+    // Older versions of Android have problems with setting GL_TEXTURE_BASE_LEVEL or
+    // GL_TEXTURE_MAX_LEVEL on GL_TEXTURE_EXTERTNAL_OES textures. We just leave them as is and hope
+    // the client never changes them either.
+    fDontSetBaseOrMaxLevelForExternalTextures = true;
+    // PowerVR can crash setting the levels on Android up to Q for any texture?
+    // https://crbug.com/1123874
+    if (ctxInfo.vendor() == kImagination_GrGLVendor) {
+        fMipmapLevelControlSupport =  false;
+    }
+#endif
+
     // We support manual mip-map generation (via iterative downsampling draw calls). This fixes
     // bugs on some cards/drivers that produce incorrect mip-maps for sRGB textures when using
     // glGenerateMipmap. Our implementation requires mip-level sampling control. Additionally,
     // it can be much slower (especially on mobile GPUs), so we opt-in only when necessary:
-    if (fMipmapLevelAndLodControlSupport &&
+    if (fMipmapLevelControlSupport &&
         (contextOptions.fDoManualMipmapping ||
          (kIntel_GrGLVendor == ctxInfo.vendor()) ||
          (kNVIDIA_GrGLDriver == ctxInfo.driver() && isMAC) ||
@@ -3907,13 +3926,6 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     }
 #endif
 
-#ifdef SK_BUILD_FOR_ANDROID
-    // Older versions of Android have problems with setting GL_TEXTURE_BASE_LEVEL or
-    // GL_TEXTURE_MAX_LEVEL on GL_TEXTURE_EXTERTNAL_OES textures. We just leave them as is and hope
-    // the client never changes them either.
-    fDontSetBaseOrMaxLevelForExternalTextures = true;
-#endif
-
     // PowerVRGX6250 drops every pixel if we modify the sample mask while color writes are disabled.
     if (kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
         fNeverDisableColorWrites = true;
@@ -4052,9 +4064,6 @@ void GrGLCaps::onApplyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fDontSetBaseOrMaxLevelForExternalTextures);
         SkASSERT(!fNeverDisableColorWrites);
         SkASSERT(!fShaderCaps->fCanOnlyUseSampleMaskWithStencil);
-    }
-    if (options.fDoManualMipmapping) {
-        fDoManualMipmapping = true;
     }
     if (options.fShaderCacheStrategy < GrContextOptions::ShaderCacheStrategy::kBackendBinary) {
         fProgramBinarySupport = false;
@@ -4445,6 +4454,13 @@ GrSwizzle GrGLCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType c
     SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType,
                  format.asGLFormat());
     return {};
+}
+
+GrDstSampleType GrGLCaps::onGetDstSampleTypeForProxy(const GrRenderTargetProxy* rt) const {
+    if (rt->asTextureProxy()) {
+        return GrDstSampleType::kAsSelfTexture;
+    }
+    return GrDstSampleType::kAsTextureCopy;
 }
 
 uint64_t GrGLCaps::computeFormatKey(const GrBackendFormat& format) const {

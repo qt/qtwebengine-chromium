@@ -27,6 +27,7 @@
 #include "src/gpu/GrPersistentCacheUtils.h"
 #include "src/gpu/GrShaderUtils.h"
 #include "src/gpu/ccpr/GrCoverageCountingPathRenderer.h"
+#include "src/image/SkImage_Base.h"
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/Resources.h"
@@ -1529,6 +1530,8 @@ void Viewer::onPaint(SkSurface* surface) {
 
     this->drawImGui();
 
+    fLastImage.reset();
+
     if (auto direct = fWindow->directContext()) {
         // Clean out cache items that haven't been used in more than 10 seconds.
         direct->performDeferredCleanup(std::chrono::seconds(10));
@@ -2428,7 +2431,8 @@ void Viewer::drawImGui() {
 
             uint32_t pixel = 0;
             SkImageInfo info = SkImageInfo::MakeN32Premul(1, 1);
-            if (fLastImage->readPixels(info, &pixel, info.minRowBytes(), xInt, yInt)) {
+            auto dContext = fWindow->directContext();
+            if (fLastImage->readPixels(dContext, info, &pixel, info.minRowBytes(), xInt, yInt)) {
                 ImGui::SameLine();
                 ImGui::Text("(X, Y): %d, %d RGBA: %X %X %X %X",
                             xInt, yInt,

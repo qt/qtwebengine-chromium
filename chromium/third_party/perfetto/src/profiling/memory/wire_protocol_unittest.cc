@@ -29,10 +29,14 @@ namespace profiling {
 
 bool operator==(const AllocMetadata& one, const AllocMetadata& other);
 bool operator==(const AllocMetadata& one, const AllocMetadata& other) {
-  return std::tie(one.sequence_number, one.alloc_size, one.alloc_address,
-                  one.stack_pointer, one.arch) ==
-             std::tie(other.sequence_number, other.alloc_size,
-                      other.alloc_address, other.stack_pointer, other.arch) &&
+  return std::tie(one.sequence_number, one.alloc_size, one.sample_size,
+                  one.alloc_address, one.stack_pointer,
+                  one.clock_monotonic_coarse_timestamp, one.heap_id,
+                  one.arch) == std::tie(other.sequence_number, other.alloc_size,
+                                        other.sample_size, other.alloc_address,
+                                        other.stack_pointer,
+                                        other.clock_monotonic_coarse_timestamp,
+                                        other.heap_id, other.arch) &&
          memcmp(one.register_data, other.register_data, kMaxRegisterDataSize) ==
              0;
 }
@@ -124,6 +128,36 @@ TEST(WireProtocolTest, FreeMessage) {
   ASSERT_EQ(recv_msg.record_type, msg.record_type);
   ASSERT_EQ(*recv_msg.free_header, *msg.free_header);
   ASSERT_EQ(recv_msg.payload_size, msg.payload_size);
+}
+
+TEST(GetHeapSamplingInterval, Default) {
+  ClientConfiguration cli_config{};
+  cli_config.all_heaps = true;
+  cli_config.num_heaps = 0;
+  cli_config.default_interval = 4096u;
+  EXPECT_EQ(GetHeapSamplingInterval(cli_config, "something"), 4096u);
+}
+
+TEST(GetHeapSamplingInterval, Selected) {
+  ClientConfiguration cli_config{};
+  cli_config.all_heaps = false;
+  cli_config.num_heaps = 1;
+  cli_config.default_interval = 1;
+  memcpy(cli_config.heaps[0].name, "something", sizeof("something"));
+  cli_config.heaps[0].interval = 4096u;
+  EXPECT_EQ(GetHeapSamplingInterval(cli_config, "something"), 4096u);
+  EXPECT_EQ(GetHeapSamplingInterval(cli_config, "else"), 0u);
+}
+
+TEST(GetHeapSamplingInterval, SelectedAndDefault) {
+  ClientConfiguration cli_config{};
+  cli_config.all_heaps = true;
+  cli_config.num_heaps = 1;
+  cli_config.default_interval = 1;
+  memcpy(cli_config.heaps[0].name, "something", sizeof("something"));
+  cli_config.heaps[0].interval = 4096u;
+  EXPECT_EQ(GetHeapSamplingInterval(cli_config, "something"), 4096u);
+  EXPECT_EQ(GetHeapSamplingInterval(cli_config, "else"), 1u);
 }
 
 }  // namespace

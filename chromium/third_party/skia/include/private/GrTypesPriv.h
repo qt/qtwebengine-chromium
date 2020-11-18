@@ -349,8 +349,9 @@ enum GrSLType {
     kTexture2DRectSampler_GrSLType,
     kTexture2D_GrSLType,
     kSampler_GrSLType,
+    kInput_GrSLType,
 
-    kLast_GrSLType = kSampler_GrSLType
+    kLast_GrSLType = kInput_GrSLType
 };
 static const int kGrSLTypeCount = kLast_GrSLType + 1;
 
@@ -434,6 +435,7 @@ static constexpr bool GrSLTypeIsFloatType(GrSLType type) {
         case kUint2_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
+        case kInput_GrSLType:
             return false;
     }
     SkUNREACHABLE;
@@ -493,6 +495,7 @@ static constexpr int GrSLTypeVecLength(GrSLType type) {
         case kTexture2DRectSampler_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
+        case kInput_GrSLType:
             return -1;
     }
     SkUNREACHABLE;
@@ -574,6 +577,7 @@ static constexpr bool GrSLTypeIsCombinedSamplerType(GrSLType type) {
         case kUShort4_GrSLType:
         case kTexture2D_GrSLType:
         case kSampler_GrSLType:
+        case kInput_GrSLType:
             return false;
     }
     SkUNREACHABLE;
@@ -716,6 +720,11 @@ enum class GrInternalSurfaceFlags {
     // This means the pixels in the render target are write-only. This is used for Dawn and Metal
     // swap chain targets which can be rendered to, but not read or copied.
     kFramebufferOnly                = 1 << 3,
+
+    // This is a Vulkan only flag. If set the surface can be used as an input attachment in a
+    // shader. This is used for doing in shader blending where we want to sample from the same
+    // image we are drawing to.
+    kVkRTSupportsInputAttachment    = 1 << 4,
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrInternalSurfaceFlags)
@@ -725,8 +734,16 @@ GR_MAKE_BITFIELD_CLASS_OPS(GrInternalSurfaceFlags)
 constexpr static int kGrInternalTextureFlagsMask = static_cast<int>(
         GrInternalSurfaceFlags::kReadOnly);
 
+// We don't include kVkRTSupportsInputAttachment in this mask since we check it manually. We don't
+// require that both the surface and proxy have matching values for this flag. Instead we require
+// if the proxy has it set then the surface must also have it set. All other flags listed here must
+// match on the proxy and surface.
+// TODO: Add back kFramebufferOnly flag here once we update SkSurfaceCharacterization to take it
+// as a flag. skbug.com/10672
 constexpr static int kGrInternalRenderTargetFlagsMask = static_cast<int>(
-        GrInternalSurfaceFlags::kGLRTFBOIDIs0 | GrInternalSurfaceFlags::kRequiresManualMSAAResolve);
+        GrInternalSurfaceFlags::kGLRTFBOIDIs0 |
+        GrInternalSurfaceFlags::kRequiresManualMSAAResolve/* |
+        GrInternalSurfaceFlags::kFramebufferOnly*/);
 
 constexpr static int kGrInternalTextureRenderTargetFlagsMask =
         kGrInternalTextureFlagsMask | kGrInternalRenderTargetFlagsMask;
@@ -1204,6 +1221,40 @@ private:
     Callback fReleaseProc;
     Context fReleaseCtx;
 };
+
+enum class GrDstSampleType {
+    kNone, // The dst value will not be sampled in the shader
+    kAsTextureCopy, // The dst value will be sampled from a copy of the dst
+    // The types below require a texture barrier
+    kAsSelfTexture, // The dst value is sampled directly from the dst itself as a texture.
+    kAsInputAttachment, // The dst value is sampled directly from the dst as an input attachment.
+};
+
+// Returns true if the sampling of the dst color in the shader is done by reading the dst directly.
+// Anything that directly reads the dst will need a barrier between draws.
+static constexpr bool GrDstSampleTypeDirectlySamplesDst(GrDstSampleType type) {
+    switch (type) {
+        case GrDstSampleType::kAsSelfTexture:  // fall through
+        case GrDstSampleType::kAsInputAttachment:
+            return true;
+        case GrDstSampleType::kNone:  // fall through
+        case GrDstSampleType::kAsTextureCopy:
+            return false;
+    }
+    SkUNREACHABLE;
+}
+
+static constexpr bool GrDstSampleTypeUsesTexture(GrDstSampleType type) {
+    switch (type) {
+        case GrDstSampleType::kAsSelfTexture:  // fall through
+        case GrDstSampleType::kAsTextureCopy:
+            return true;
+        case GrDstSampleType::kNone:  // fall through
+        case GrDstSampleType::kAsInputAttachment:
+            return false;
+    }
+    SkUNREACHABLE;
+}
 
 #if defined(SK_DEBUG) || GR_TEST_UTILS || defined(SK_ENABLE_DUMP_GPU)
 static constexpr const char* GrBackendApiToStr(GrBackendApi api) {

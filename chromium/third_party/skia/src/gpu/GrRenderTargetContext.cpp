@@ -475,28 +475,44 @@ void GrRenderTargetContext::drawGlyphRunList(const GrClip* clip,
         key.fPixelGeometry = pixelGeometry;
         key.fUniqueID = glyphRunList.uniqueID();
         key.fStyle = blobPaint.getStyle();
+        if (key.fStyle != SkPaint::kFill_Style) {
+            key.fFrameWidth = blobPaint.getStrokeWidth();
+            key.fMiterLimit = blobPaint.getStrokeMiter();
+            key.fJoin = blobPaint.getStrokeJoin();
+        }
         key.fHasBlur = SkToBool(mf);
+        if (key.fHasBlur) {
+            key.fBlurRec = blurRec;
+        }
         key.fCanonicalColor = canonicalColor;
         key.fScalerContextFlags = scalerContextFlags;
         blob = textBlobCache->find(key);
     }
 
-    const SkMatrix& drawMatrix(viewMatrix.localToDevice());
-    if (blob == nullptr || !blob->canReuse(blobPaint, blurRec, drawMatrix, drawOrigin)) {
+    SkMatrix drawMatrix(viewMatrix.localToDevice());
+    drawMatrix.preTranslate(drawOrigin.x(), drawOrigin.y());
+    if (blob == nullptr || !blob->canReuse(blobPaint, drawMatrix)) {
         if (blob != nullptr) {
             // We have to remake the blob because changes may invalidate our masks.
             // TODO we could probably get away with reuse most of the time if the pointer is unique,
             //      but we'd have to clear the SubRun information
             textBlobCache->remove(blob.get());
         }
+
+        blob = GrTextBlob::Make(glyphRunList, drawMatrix);
         if (canCache) {
-            blob = textBlobCache->makeCachedBlob(glyphRunList, key, blurRec, drawMatrix);
-        } else {
-            blob = GrTextBlob::Make(glyphRunList, drawMatrix);
+            blob->addKey(key);
+            textBlobCache->add(glyphRunList, blob);
         }
+
+        // TODO(herb): redo processGlyphRunList to handle shifted draw matrix.
         bool supportsSDFT = fContext->priv().caps()->shaderCaps()->supportsDistanceFieldText();
-        fGlyphPainter.processGlyphRunList(
-                glyphRunList, drawMatrix, fSurfaceProps, supportsSDFT, options, blob.get());
+        fGlyphPainter.processGlyphRunList(glyphRunList,
+                                          viewMatrix.localToDevice(), // Use unshifted matrix.
+                                          fSurfaceProps,
+                                          supportsSDFT,
+                                          options,
+                                          blob.get());
     }
 
     for (GrSubRun* subRun : blob->subRunList()) {
@@ -2050,7 +2066,8 @@ void GrRenderTargetContext::addDrawOp(const GrClip* clip, std::unique_ptr<GrDraw
         willAddFn(op.get(), opsTask->uniqueID());
     }
     opsTask->addDrawOp(this->drawingManager(), std::move(op), analysis, std::move(appliedClip),
-                       dstProxyView,GrTextureResolveManager(this->drawingManager()), *this->caps());
+                       dstProxyView, GrTextureResolveManager(this->drawingManager()),
+                       *this->caps());
 }
 
 bool GrRenderTargetContext::setupDstProxyView(const GrOp& op,
@@ -2062,16 +2079,21 @@ bool GrRenderTargetContext::setupDstProxyView(const GrOp& op,
         return false;
     }
 
-    if (this->caps()->textureBarrierSupport() &&
-        !this->asSurfaceProxy()->requiresManualMSAAResolve()) {
-        if (this->asTextureProxy()) {
-            // The render target is a texture, so we can read from it directly in the shader. The XP
-            // will be responsible to detect this situation and request a texture barrier.
-            dstProxyView->setProxyView(this->readSurfaceView());
-            dstProxyView->setOffset(0, 0);
-            return true;
-        }
+    if (fDstSampleType == GrDstSampleType::kNone) {
+        fDstSampleType = this->caps()->getDstSampleTypeForProxy(this->asRenderTargetProxy());
     }
+    SkASSERT(fDstSampleType != GrDstSampleType::kNone);
+
+    if (GrDstSampleTypeDirectlySamplesDst(fDstSampleType)) {
+        // The render target is a texture or input attachment, so we can read from it directly in
+        // the shader. The XP will be responsible to detect this situation and request a texture
+        // barrier.
+        dstProxyView->setProxyView(this->readSurfaceView());
+        dstProxyView->setOffset(0, 0);
+        dstProxyView->setDstSampleType(fDstSampleType);
+        return true;
+    }
+    SkASSERT(fDstSampleType == GrDstSampleType::kAsTextureCopy);
 
     GrColorType colorType = this->colorInfo().colorType();
     // MSAA consideration: When there is support for reading MSAA samples in the shader we could
@@ -2105,6 +2127,7 @@ bool GrRenderTargetContext::setupDstProxyView(const GrOp& op,
 
     dstProxyView->setProxyView({std::move(copy), this->origin(), this->readSwizzle()});
     dstProxyView->setOffset(dstOffset);
+    dstProxyView->setDstSampleType(fDstSampleType);
     return true;
 }
 

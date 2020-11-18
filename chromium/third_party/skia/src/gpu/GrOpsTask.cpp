@@ -416,7 +416,8 @@ void GrOpsTask::onPrePrepare(GrRecordingContext* context) {
             chain.head()->prePrepare(context,
                                      &fTargets[0],
                                      chain.appliedClip(),
-                                     chain.dstProxyView());
+                                     chain.dstProxyView(),
+                                     fRenderPassXferBarriers);
         }
     }
 }
@@ -445,7 +446,8 @@ void GrOpsTask::onPrepare(GrOpFlushState* flushState) {
             GrOpFlushState::OpArgs opArgs(chain.head(),
                                           &fTargets[0],
                                           chain.appliedClip(),
-                                          chain.dstProxyView());
+                                          chain.dstProxyView(),
+                                          fRenderPassXferBarriers);
 
             flushState->setOpArgs(&opArgs);
 
@@ -467,7 +469,7 @@ static GrOpsRenderPass* create_render_pass(
         const SkIRect& bounds, GrLoadOp colorLoadOp, const SkPMColor4f& loadClearColor,
         GrLoadOp stencilLoadOp, GrStoreOp stencilStoreOp,
         const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-        bool usesXferBarriers) {
+        GrXferBarrierFlags renderPassXferBarriers) {
     const GrOpsRenderPass::LoadAndStoreInfo kColorLoadStoreInfo {
         colorLoadOp,
         GrStoreOp::kStore,
@@ -486,7 +488,7 @@ static GrOpsRenderPass* create_render_pass(
 
     return gpu->getOpsRenderPass(rt, stencil, origin, bounds,
                                  kColorLoadStoreInfo, stencilLoadAndStoreInfo, sampledProxies,
-                                 usesXferBarriers);
+                                 renderPassXferBarriers);
 }
 
 // TODO: this is where GrOp::renderTarget is used (which is fine since it
@@ -571,7 +573,8 @@ bool GrOpsTask::onExecute(GrOpFlushState* flushState) {
     GrOpsRenderPass* renderPass = create_render_pass(
             flushState->gpu(), proxy->peekRenderTarget(), stencil, this->target(0).origin(),
             fClippedContentBounds, fColorLoadOp, fLoadClearColor, stencilLoadOp, stencilStoreOp,
-            fSampledProxies, fUsesXferBarriers);
+            fSampledProxies, fRenderPassXferBarriers);
+
     if (!renderPass) {
         return false;
     }
@@ -590,7 +593,8 @@ bool GrOpsTask::onExecute(GrOpFlushState* flushState) {
         GrOpFlushState::OpArgs opArgs(chain.head(),
                                       &fTargets[0],
                                       chain.appliedClip(),
-                                      chain.dstProxyView());
+                                      chain.dstProxyView(),
+                                      fRenderPassXferBarriers);
 
         flushState->setOpArgs(&opArgs);
         chain.head()->execute(flushState, chain.bounds());

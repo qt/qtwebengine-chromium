@@ -18,6 +18,7 @@
 #if LIBGAV1_ENABLE_SSE4_1
 #include <smmintrin.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -137,26 +138,23 @@ inline void WienerHorizontalTap7(const uint8_t* src, const ptrdiff_t src_stride,
   filter[1] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x0604));
   filter[2] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x0204));
   filter[3] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x8000));
-  int y = height;
-  do {
-    const __m128i s0 = LoadUnaligned16(src);
-    __m128i ss[4];
-    ss[0] = _mm_unpacklo_epi8(s0, s0);
-    ss[1] = _mm_unpackhi_epi8(s0, s0);
+  for (int y = height; y != 0; --y) {
+    __m128i s = LoadUnaligned16(src);
+    __m128i ss[3];
+    ss[0] = _mm_unpacklo_epi8(s, s);
     ptrdiff_t x = 0;
     do {
-      const __m128i s1 = LoadUnaligned16(src + x + 16);
-      ss[2] = _mm_unpacklo_epi8(s1, s1);
-      ss[3] = _mm_unpackhi_epi8(s1, s1);
+      ss[1] = _mm_unpackhi_epi8(s, s);
+      s = LoadUnaligned16(src + x + 16);
+      ss[2] = _mm_unpacklo_epi8(s, s);
       WienerHorizontalTap7Kernel(ss + 0, filter, *wiener_buffer + x + 0);
       WienerHorizontalTap7Kernel(ss + 1, filter, *wiener_buffer + x + 8);
       ss[0] = ss[2];
-      ss[1] = ss[3];
       x += 16;
     } while (x < width);
     src += src_stride;
     *wiener_buffer += width;
-  } while (--y != 0);
+  }
 }
 
 inline void WienerHorizontalTap5(const uint8_t* src, const ptrdiff_t src_stride,
@@ -167,26 +165,23 @@ inline void WienerHorizontalTap5(const uint8_t* src, const ptrdiff_t src_stride,
   filter[0] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x0402));
   filter[1] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x0406));
   filter[2] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x8002));
-  int y = height;
-  do {
-    const __m128i s0 = LoadUnaligned16(src);
-    __m128i ss[4];
-    ss[0] = _mm_unpacklo_epi8(s0, s0);
-    ss[1] = _mm_unpackhi_epi8(s0, s0);
+  for (int y = height; y != 0; --y) {
+    __m128i s = LoadUnaligned16(src);
+    __m128i ss[3];
+    ss[0] = _mm_unpacklo_epi8(s, s);
     ptrdiff_t x = 0;
     do {
-      const __m128i s1 = LoadUnaligned16(src + x + 16);
-      ss[2] = _mm_unpacklo_epi8(s1, s1);
-      ss[3] = _mm_unpackhi_epi8(s1, s1);
+      ss[1] = _mm_unpackhi_epi8(s, s);
+      s = LoadUnaligned16(src + x + 16);
+      ss[2] = _mm_unpacklo_epi8(s, s);
       WienerHorizontalTap5Kernel(ss + 0, filter, *wiener_buffer + x + 0);
       WienerHorizontalTap5Kernel(ss + 1, filter, *wiener_buffer + x + 8);
       ss[0] = ss[2];
-      ss[1] = ss[3];
       x += 16;
     } while (x < width);
     src += src_stride;
     *wiener_buffer += width;
-  } while (--y != 0);
+  }
 }
 
 inline void WienerHorizontalTap3(const uint8_t* src, const ptrdiff_t src_stride,
@@ -196,33 +191,29 @@ inline void WienerHorizontalTap3(const uint8_t* src, const ptrdiff_t src_stride,
   __m128i filter[2];
   filter[0] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x0604));
   filter[1] = _mm_shuffle_epi8(coefficients, _mm_set1_epi16(0x8004));
-  int y = height;
-  do {
-    const __m128i s0 = LoadUnaligned16(src);
-    __m128i ss[4];
-    ss[0] = _mm_unpacklo_epi8(s0, s0);
-    ss[1] = _mm_unpackhi_epi8(s0, s0);
+  for (int y = height; y != 0; --y) {
+    __m128i s = LoadUnaligned16(src);
+    __m128i ss[3];
+    ss[0] = _mm_unpacklo_epi8(s, s);
     ptrdiff_t x = 0;
     do {
-      const __m128i s1 = LoadUnaligned16(src + x + 16);
-      ss[2] = _mm_unpacklo_epi8(s1, s1);
-      ss[3] = _mm_unpackhi_epi8(s1, s1);
+      ss[1] = _mm_unpackhi_epi8(s, s);
+      s = LoadUnaligned16(src + x + 16);
+      ss[2] = _mm_unpacklo_epi8(s, s);
       WienerHorizontalTap3Kernel(ss + 0, filter, *wiener_buffer + x + 0);
       WienerHorizontalTap3Kernel(ss + 1, filter, *wiener_buffer + x + 8);
       ss[0] = ss[2];
-      ss[1] = ss[3];
       x += 16;
     } while (x < width);
     src += src_stride;
     *wiener_buffer += width;
-  } while (--y != 0);
+  }
 }
 
 inline void WienerHorizontalTap1(const uint8_t* src, const ptrdiff_t src_stride,
                                  const ptrdiff_t width, const int height,
                                  int16_t** const wiener_buffer) {
-  int y = height;
-  do {
+  for (int y = height; y != 0; --y) {
     ptrdiff_t x = 0;
     do {
       const __m128i s = LoadUnaligned16(src + x);
@@ -236,7 +227,7 @@ inline void WienerHorizontalTap1(const uint8_t* src, const ptrdiff_t src_stride,
     } while (x < width);
     src += src_stride;
     *wiener_buffer += width;
-  } while (--y != 0);
+  }
 }
 
 inline __m128i WienerVertical7(const __m128i a[2], const __m128i filter[2]) {
@@ -504,19 +495,20 @@ inline void WienerVerticalTap1(const int16_t* wiener_buffer,
   }
 }
 
-void WienerFilter_SSE4_1(const void* const source, void* const dest,
-                         const RestorationUnitInfo& restoration_info,
-                         const ptrdiff_t source_stride,
-                         const ptrdiff_t dest_stride, const int width,
-                         const int height, RestorationBuffer* const buffer) {
-  constexpr int kCenterTap = kWienerFilterTaps / 2;
+void WienerFilter_SSE4_1(const RestorationUnitInfo& restoration_info,
+                         const void* const source, const void* const top_border,
+                         const void* const bottom_border,
+                         const ptrdiff_t stride, const int width,
+                         const int height,
+                         RestorationBuffer* const restoration_buffer,
+                         void* const dest) {
   const int16_t* const number_leading_zero_coefficients =
       restoration_info.wiener_info.number_leading_zero_coefficients;
   const int number_rows_to_skip = std::max(
       static_cast<int>(number_leading_zero_coefficients[WienerInfo::kVertical]),
       1);
   const ptrdiff_t wiener_stride = Align(width, 16);
-  int16_t* const wiener_buffer_vertical = buffer->wiener_buffer;
+  int16_t* const wiener_buffer_vertical = restoration_buffer->wiener_buffer;
   // The values are saturated to 13 bits before storing.
   int16_t* wiener_buffer_horizontal =
       wiener_buffer_vertical + number_rows_to_skip * wiener_stride;
@@ -525,8 +517,11 @@ void WienerFilter_SSE4_1(const void* const source, void* const dest,
   // Over-reads up to 15 - |kRestorationHorizontalBorder| values.
   const int height_horizontal =
       height + kWienerFilterTaps - 1 - 2 * number_rows_to_skip;
-  const auto* const src = static_cast<const uint8_t*>(source) -
-                          (kCenterTap - number_rows_to_skip) * source_stride;
+  const int height_extra = (height_horizontal - height) >> 1;
+  assert(height_extra <= 2);
+  const auto* const src = static_cast<const uint8_t*>(source);
+  const auto* const top = static_cast<const uint8_t*>(top_border);
+  const auto* const bottom = static_cast<const uint8_t*>(bottom_border);
   const __m128i c =
       LoadLo8(restoration_info.wiener_info.filter[WienerInfo::kHorizontal]);
   // In order to keep the horizontal pass intermediate values within 16 bits we
@@ -534,21 +529,38 @@ void WienerFilter_SSE4_1(const void* const source, void* const dest,
   const __m128i coefficients_horizontal =
       _mm_sub_epi16(c, _mm_setr_epi16(0, 0, 0, 128, 0, 0, 0, 0));
   if (number_leading_zero_coefficients[WienerInfo::kHorizontal] == 0) {
-    WienerHorizontalTap7(src - 3, source_stride, wiener_stride,
-                         height_horizontal, coefficients_horizontal,
+    WienerHorizontalTap7(top + (2 - height_extra) * stride - 3, stride,
+                         wiener_stride, height_extra, coefficients_horizontal,
                          &wiener_buffer_horizontal);
+    WienerHorizontalTap7(src - 3, stride, wiener_stride, height,
+                         coefficients_horizontal, &wiener_buffer_horizontal);
+    WienerHorizontalTap7(bottom - 3, stride, wiener_stride, height_extra,
+                         coefficients_horizontal, &wiener_buffer_horizontal);
   } else if (number_leading_zero_coefficients[WienerInfo::kHorizontal] == 1) {
-    WienerHorizontalTap5(src - 2, source_stride, wiener_stride,
-                         height_horizontal, coefficients_horizontal,
+    WienerHorizontalTap5(top + (2 - height_extra) * stride - 2, stride,
+                         wiener_stride, height_extra, coefficients_horizontal,
                          &wiener_buffer_horizontal);
+    WienerHorizontalTap5(src - 2, stride, wiener_stride, height,
+                         coefficients_horizontal, &wiener_buffer_horizontal);
+    WienerHorizontalTap5(bottom - 2, stride, wiener_stride, height_extra,
+                         coefficients_horizontal, &wiener_buffer_horizontal);
   } else if (number_leading_zero_coefficients[WienerInfo::kHorizontal] == 2) {
     // The maximum over-reads happen here.
-    WienerHorizontalTap3(src - 1, source_stride, wiener_stride,
-                         height_horizontal, coefficients_horizontal,
+    WienerHorizontalTap3(top + (2 - height_extra) * stride - 1, stride,
+                         wiener_stride, height_extra, coefficients_horizontal,
                          &wiener_buffer_horizontal);
+    WienerHorizontalTap3(src - 1, stride, wiener_stride, height,
+                         coefficients_horizontal, &wiener_buffer_horizontal);
+    WienerHorizontalTap3(bottom - 1, stride, wiener_stride, height_extra,
+                         coefficients_horizontal, &wiener_buffer_horizontal);
   } else {
     assert(number_leading_zero_coefficients[WienerInfo::kHorizontal] == 3);
-    WienerHorizontalTap1(src, source_stride, wiener_stride, height_horizontal,
+    WienerHorizontalTap1(top + (2 - height_extra) * stride, stride,
+                         wiener_stride, height_extra,
+                         &wiener_buffer_horizontal);
+    WienerHorizontalTap1(src, stride, wiener_stride, height,
+                         &wiener_buffer_horizontal);
+    WienerHorizontalTap1(bottom, stride, wiener_stride, height_extra,
                          &wiener_buffer_horizontal);
   }
 
@@ -563,26 +575,31 @@ void WienerFilter_SSE4_1(const void* const source, void* const dest,
     // the top and bottom row of |wiener_buffer| accordingly.
     memcpy(wiener_buffer_horizontal, wiener_buffer_horizontal - wiener_stride,
            sizeof(*wiener_buffer_horizontal) * wiener_stride);
-    memcpy(buffer->wiener_buffer, buffer->wiener_buffer + wiener_stride,
-           sizeof(*buffer->wiener_buffer) * wiener_stride);
+    memcpy(restoration_buffer->wiener_buffer,
+           restoration_buffer->wiener_buffer + wiener_stride,
+           sizeof(*restoration_buffer->wiener_buffer) * wiener_stride);
     WienerVerticalTap7(wiener_buffer_vertical, wiener_stride, height,
-                       filter_vertical, dst, dest_stride);
+                       filter_vertical, dst, stride);
   } else if (number_leading_zero_coefficients[WienerInfo::kVertical] == 1) {
     WienerVerticalTap5(wiener_buffer_vertical + wiener_stride, wiener_stride,
-                       height, filter_vertical + 1, dst, dest_stride);
+                       height, filter_vertical + 1, dst, stride);
   } else if (number_leading_zero_coefficients[WienerInfo::kVertical] == 2) {
     WienerVerticalTap3(wiener_buffer_vertical + 2 * wiener_stride,
-                       wiener_stride, height, filter_vertical + 2, dst,
-                       dest_stride);
+                       wiener_stride, height, filter_vertical + 2, dst, stride);
   } else {
     assert(number_leading_zero_coefficients[WienerInfo::kVertical] == 3);
     WienerVerticalTap1(wiener_buffer_vertical + 3 * wiener_stride,
-                       wiener_stride, height, dst, dest_stride);
+                       wiener_stride, height, dst, stride);
   }
 }
 
 //------------------------------------------------------------------------------
 // SGR
+
+// SIMD overreads 8 - (width % 8) - 2 * padding pixels, where padding is 3 for
+// Pass 1 and 2 for Pass 2.
+constexpr int kOverreadInBytesPass1 = 2;
+constexpr int kOverreadInBytesPass2 = 4;
 
 // Don't use _mm_cvtepu8_epi16() or _mm_cvtepu16_epi32() in the following
 // functions. Some compilers may generate super inefficient code and the whole
@@ -591,12 +608,6 @@ void WienerFilter_SSE4_1(const void* const source, void* const dest,
 inline __m128i VaddlLo8(const __m128i src0, const __m128i src1) {
   const __m128i s0 = _mm_unpacklo_epi8(src0, _mm_setzero_si128());
   const __m128i s1 = _mm_unpacklo_epi8(src1, _mm_setzero_si128());
-  return _mm_add_epi16(s0, s1);
-}
-
-inline __m128i VaddlHi8(const __m128i src0, const __m128i src1) {
-  const __m128i s0 = _mm_unpackhi_epi8(src0, _mm_setzero_si128());
-  const __m128i s1 = _mm_unpackhi_epi8(src1, _mm_setzero_si128());
   return _mm_add_epi16(s0, s1);
 }
 
@@ -614,11 +625,6 @@ inline __m128i VaddlHi16(const __m128i src0, const __m128i src1) {
 
 inline __m128i VaddwLo8(const __m128i src0, const __m128i src1) {
   const __m128i s1 = _mm_unpacklo_epi8(src1, _mm_setzero_si128());
-  return _mm_add_epi16(src0, s1);
-}
-
-inline __m128i VaddwHi8(const __m128i src0, const __m128i src1) {
-  const __m128i s1 = _mm_unpackhi_epi8(src1, _mm_setzero_si128());
   return _mm_add_epi16(src0, s1);
 }
 
@@ -682,131 +688,66 @@ inline __m128i VrshrU32(const __m128i src0, const int src1) {
   return _mm_srli_epi32(sum, src1);
 }
 
-template <int n>
-inline __m128i CalcAxN(const __m128i a) {
-  static_assert(n == 9 || n == 25, "");
-  // _mm_mullo_epi32() has high latency. Using shifts and additions instead.
-  // Some compilers could do this for us but we make this explicit.
-  // return _mm_mullo_epi32(a, _mm_set1_epi32(n));
-  const __m128i ax9 = _mm_add_epi32(a, _mm_slli_epi32(a, 3));
-  if (n == 9) return ax9;
-  if (n == 25) return _mm_add_epi32(ax9, _mm_slli_epi32(a, 4));
+inline void Prepare3_8(const __m128i src, __m128i dst[3]) {
+  dst[0] = src;
+  dst[1] = _mm_srli_si128(src, 1);
+  dst[2] = _mm_srli_si128(src, 2);
 }
 
-template <int n>
-inline __m128i CalculateMa(const __m128i sum_sq, const __m128i sum,
-                           const uint32_t s) {
-  // a = |sum_sq|
-  // d = |sum|
-  // p = (a * n < d * d) ? 0 : a * n - d * d;
-  const __m128i dxd = _mm_madd_epi16(sum, sum);
-  const __m128i axn = CalcAxN<n>(sum_sq);
-  const __m128i sub = _mm_sub_epi32(axn, dxd);
-  const __m128i p = _mm_max_epi32(sub, _mm_setzero_si128());
-
-  // z = RightShiftWithRounding(p * s, kSgrProjScaleBits);
-  const __m128i pxs = _mm_mullo_epi32(p, _mm_set1_epi32(s));
-  return VrshrU32(pxs, kSgrProjScaleBits);
+inline void Prepare3_16(const __m128i src[2], __m128i dst[3]) {
+  dst[0] = src[0];
+  dst[1] = _mm_alignr_epi8(src[1], src[0], 2);
+  dst[2] = _mm_alignr_epi8(src[1], src[0], 4);
 }
 
-// b = ma * b * one_over_n
-// |ma| = [0, 255]
-// |sum| is a box sum with radius 1 or 2.
-// For the first pass radius is 2. Maximum value is 5x5x255 = 6375.
-// For the second pass radius is 1. Maximum value is 3x3x255 = 2295.
-// |one_over_n| = ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n
-// When radius is 2 |n| is 25. |one_over_n| is 164.
-// When radius is 1 |n| is 9. |one_over_n| is 455.
-// |kSgrProjReciprocalBits| is 12.
-// Radius 2: 255 * 6375 * 164 >> 12 = 65088 (16 bits).
-// Radius 1: 255 * 2295 * 455 >> 12 = 65009 (16 bits).
-inline __m128i CalculateIntermediate4(const __m128i ma, const __m128i sum,
-                                      const uint32_t one_over_n) {
-  const __m128i maq = _mm_unpacklo_epi8(ma, _mm_setzero_si128());
-  const __m128i s = _mm_unpackhi_epi16(maq, _mm_setzero_si128());
-  const __m128i m = _mm_madd_epi16(s, sum);
-  const __m128i b = _mm_mullo_epi32(m, _mm_set1_epi32(one_over_n));
-  const __m128i truncate_u32 = VrshrU32(b, kSgrProjReciprocalBits);
-  return _mm_packus_epi32(truncate_u32, truncate_u32);
+inline void Prepare5_8(const __m128i src, __m128i dst[5]) {
+  dst[0] = src;
+  dst[1] = _mm_srli_si128(src, 1);
+  dst[2] = _mm_srli_si128(src, 2);
+  dst[3] = _mm_srli_si128(src, 3);
+  dst[4] = _mm_srli_si128(src, 4);
 }
 
-inline __m128i CalculateIntermediate8(const __m128i ma, const __m128i sum,
-                                      const uint32_t one_over_n) {
-  const __m128i maq = _mm_unpackhi_epi8(ma, _mm_setzero_si128());
-  const __m128i m0 = VmullLo16(maq, sum);
-  const __m128i m1 = VmullHi16(maq, sum);
-  const __m128i m2 = _mm_mullo_epi32(m0, _mm_set1_epi32(one_over_n));
-  const __m128i m3 = _mm_mullo_epi32(m1, _mm_set1_epi32(one_over_n));
-  const __m128i b_lo = VrshrU32(m2, kSgrProjReciprocalBits);
-  const __m128i b_hi = VrshrU32(m3, kSgrProjReciprocalBits);
-  return _mm_packus_epi32(b_lo, b_hi);
+inline void Prepare5_16(const __m128i src[2], __m128i dst[5]) {
+  Prepare3_16(src, dst);
+  dst[3] = _mm_alignr_epi8(src[1], src[0], 6);
+  dst[4] = _mm_alignr_epi8(src[1], src[0], 8);
 }
 
-inline __m128i Sum3_16(const __m128i left, const __m128i middle,
-                       const __m128i right) {
-  const __m128i sum = _mm_add_epi16(left, middle);
-  return _mm_add_epi16(sum, right);
+inline __m128i Sum3_16(const __m128i src0, const __m128i src1,
+                       const __m128i src2) {
+  const __m128i sum = _mm_add_epi16(src0, src1);
+  return _mm_add_epi16(sum, src2);
 }
 
-inline __m128i Sum3_32(const __m128i left, const __m128i middle,
-                       const __m128i right) {
-  const __m128i sum = _mm_add_epi32(left, middle);
-  return _mm_add_epi32(sum, right);
+inline __m128i Sum3_16(const __m128i src[3]) {
+  return Sum3_16(src[0], src[1], src[2]);
 }
 
-inline __m128i Sum3W_16(const __m128i left, const __m128i middle,
-                        const __m128i right) {
-  const __m128i sum = VaddlLo8(left, middle);
-  return VaddwLo8(sum, right);
+inline __m128i Sum3_32(const __m128i src0, const __m128i src1,
+                       const __m128i src2) {
+  const __m128i sum = _mm_add_epi32(src0, src1);
+  return _mm_add_epi32(sum, src2);
 }
 
-inline __m128i Sum3WLo_16(const __m128i src[3]) {
-  return Sum3W_16(src[0], src[1], src[2]);
+inline void Sum3_32(const __m128i src[3][2], __m128i dst[2]) {
+  dst[0] = Sum3_32(src[0][0], src[1][0], src[2][0]);
+  dst[1] = Sum3_32(src[0][1], src[1][1], src[2][1]);
 }
 
-inline __m128i Sum3WHi_16(const __m128i src[3]) {
-  const __m128i sum = VaddlHi8(src[0], src[1]);
-  return VaddwHi8(sum, src[2]);
+inline __m128i Sum3W_16(const __m128i src[3]) {
+  const __m128i sum = VaddlLo8(src[0], src[1]);
+  return VaddwLo8(sum, src[2]);
 }
 
-inline __m128i Sum3WLo_32(const __m128i left, const __m128i middle,
-                          const __m128i right) {
-  const __m128i sum = VaddlLo16(left, middle);
-  return VaddwLo16(sum, right);
+inline __m128i Sum3WLo_32(const __m128i src[3]) {
+  const __m128i sum = VaddlLo16(src[0], src[1]);
+  return VaddwLo16(sum, src[2]);
 }
 
-inline __m128i Sum3WHi_32(const __m128i left, const __m128i middle,
-                          const __m128i right) {
-  const __m128i sum = VaddlHi16(left, middle);
-  return VaddwHi16(sum, right);
-}
-
-inline __m128i* Sum3W_16x2(const __m128i src[3], __m128i sum[2]) {
-  sum[0] = Sum3WLo_16(src);
-  sum[1] = Sum3WHi_16(src);
-  return sum;
-}
-
-inline __m128i* Sum3W(const __m128i src[3], __m128i sum[2]) {
-  sum[0] = Sum3WLo_32(src[0], src[1], src[2]);
-  sum[1] = Sum3WHi_32(src[0], src[1], src[2]);
-  return sum;
-}
-
-template <int index>
-inline __m128i Sum3WLo(const __m128i src[3][2]) {
-  return Sum3WLo_32(src[0][index], src[1][index], src[2][index]);
-}
-
-inline __m128i Sum3WHi(const __m128i src[3][2]) {
-  return Sum3WHi_32(src[0][0], src[1][0], src[2][0]);
-}
-
-inline __m128i* Sum3W(const __m128i src[3][2], __m128i sum[3]) {
-  sum[0] = Sum3WLo<0>(src);
-  sum[1] = Sum3WHi(src);
-  sum[2] = Sum3WLo<1>(src);
-  return sum;
+inline __m128i Sum3WHi_32(const __m128i src[3]) {
+  const __m128i sum = VaddlHi16(src[0], src[1]);
+  return VaddwHi16(sum, src[2]);
 }
 
 inline __m128i Sum5_16(const __m128i src[5]) {
@@ -816,28 +757,21 @@ inline __m128i Sum5_16(const __m128i src[5]) {
   return _mm_add_epi16(sum, src[4]);
 }
 
-inline __m128i Sum5_32(const __m128i src[5]) {
-  const __m128i sum01 = _mm_add_epi32(src[0], src[1]);
-  const __m128i sum23 = _mm_add_epi32(src[2], src[3]);
+inline __m128i Sum5_32(const __m128i* const src0, const __m128i* const src1,
+                       const __m128i* const src2, const __m128i* const src3,
+                       const __m128i* const src4) {
+  const __m128i sum01 = _mm_add_epi32(*src0, *src1);
+  const __m128i sum23 = _mm_add_epi32(*src2, *src3);
   const __m128i sum = _mm_add_epi32(sum01, sum23);
-  return _mm_add_epi32(sum, src[4]);
+  return _mm_add_epi32(sum, *src4);
 }
 
-inline __m128i Sum5WLo_16(const __m128i src[5]) {
-  const __m128i sum01 = VaddlLo8(src[0], src[1]);
-  const __m128i sum23 = VaddlLo8(src[2], src[3]);
-  const __m128i sum = _mm_add_epi16(sum01, sum23);
-  return VaddwLo8(sum, src[4]);
+inline void Sum5_32(const __m128i src[5][2], __m128i dst[2]) {
+  dst[0] = Sum5_32(&src[0][0], &src[1][0], &src[2][0], &src[3][0], &src[4][0]);
+  dst[1] = Sum5_32(&src[0][1], &src[1][1], &src[2][1], &src[3][1], &src[4][1]);
 }
 
-inline __m128i Sum5WHi_16(const __m128i src[5]) {
-  const __m128i sum01 = VaddlHi8(src[0], src[1]);
-  const __m128i sum23 = VaddlHi8(src[2], src[3]);
-  const __m128i sum = _mm_add_epi16(sum01, sum23);
-  return VaddwHi8(sum, src[4]);
-}
-
-inline __m128i Sum5WLo_32(const __m128i src[5]) {
+inline __m128i Sum5W_32(const __m128i src[5]) {
   const __m128i sum01 = VaddlLo16(src[0], src[1]);
   const __m128i sum23 = VaddlLo16(src[2], src[3]);
   const __m128i sum0123 = _mm_add_epi32(sum01, sum23);
@@ -851,198 +785,221 @@ inline __m128i Sum5WHi_32(const __m128i src[5]) {
   return VaddwHi16(sum0123, src[4]);
 }
 
-inline __m128i* Sum5W_16D(const __m128i src[5], __m128i sum[2]) {
-  sum[0] = Sum5WLo_16(src);
-  sum[1] = Sum5WHi_16(src);
-  return sum;
-}
-
-inline __m128i* Sum5W_32x2(const __m128i src[5], __m128i sum[2]) {
-  sum[0] = Sum5WLo_32(src);
-  sum[1] = Sum5WHi_32(src);
-  return sum;
-}
-
-template <int index>
-inline __m128i Sum5WLo(const __m128i src[5][2]) {
-  __m128i s[5];
-  s[0] = src[0][index];
-  s[1] = src[1][index];
-  s[2] = src[2][index];
-  s[3] = src[3][index];
-  s[4] = src[4][index];
-  return Sum5WLo_32(s);
-}
-
-inline __m128i Sum5WHi(const __m128i src[5][2]) {
-  __m128i s[5];
-  s[0] = src[0][0];
-  s[1] = src[1][0];
-  s[2] = src[2][0];
-  s[3] = src[3][0];
-  s[4] = src[4][0];
-  return Sum5WHi_32(s);
-}
-
-inline __m128i* Sum5W_32x3(const __m128i src[5][2], __m128i sum[3]) {
-  sum[0] = Sum5WLo<0>(src);
-  sum[1] = Sum5WHi(src);
-  sum[2] = Sum5WLo<1>(src);
-  return sum;
-}
-
 inline __m128i Sum3Horizontal(const __m128i src) {
-  const auto left = src;
-  const auto middle = _mm_srli_si128(src, 2);
-  const auto right = _mm_srli_si128(src, 4);
-  return Sum3_16(left, middle, right);
+  __m128i s[3];
+  Prepare3_8(src, s);
+  return Sum3W_16(s);
 }
 
-inline __m128i Sum3Horizontal_32(const __m128i src[2]) {
-  const auto left = src[0];
-  const auto middle = _mm_alignr_epi8(src[1], src[0], 4);
-  const auto right = _mm_alignr_epi8(src[1], src[0], 8);
-  return Sum3_32(left, middle, right);
-}
-
-inline __m128i Sum3HorizontalOffset1(const __m128i src) {
-  const auto left = _mm_srli_si128(src, 2);
-  const auto middle = _mm_srli_si128(src, 4);
-  const auto right = _mm_srli_si128(src, 6);
-  return Sum3_16(left, middle, right);
-}
-
-inline __m128i Sum3HorizontalOffset1_16(const __m128i src[2]) {
-  const auto left = _mm_alignr_epi8(src[1], src[0], 2);
-  const auto middle = _mm_alignr_epi8(src[1], src[0], 4);
-  const auto right = _mm_alignr_epi8(src[1], src[0], 6);
-  return Sum3_16(left, middle, right);
-}
-
-inline __m128i Sum3HorizontalOffset1_32(const __m128i src[2]) {
-  const auto left = _mm_alignr_epi8(src[1], src[0], 4);
-  const auto middle = _mm_alignr_epi8(src[1], src[0], 8);
-  const auto right = _mm_alignr_epi8(src[1], src[0], 12);
-  return Sum3_32(left, middle, right);
-}
-
-inline void Sum3HorizontalOffset1_32x2(const __m128i src[3], __m128i sum[2]) {
-  sum[0] = Sum3HorizontalOffset1_32(src + 0);
-  sum[1] = Sum3HorizontalOffset1_32(src + 1);
+inline void Sum3WHorizontal(const __m128i src[2], __m128i dst[2]) {
+  __m128i s[3];
+  Prepare3_16(src, s);
+  dst[0] = Sum3WLo_32(s);
+  dst[1] = Sum3WHi_32(s);
 }
 
 inline __m128i Sum5Horizontal(const __m128i src) {
   __m128i s[5];
-  s[0] = src;
-  s[1] = _mm_srli_si128(src, 2);
-  s[2] = _mm_srli_si128(src, 4);
-  s[3] = _mm_srli_si128(src, 6);
-  s[4] = _mm_srli_si128(src, 8);
-  return Sum5_16(s);
+  Prepare5_8(src, s);
+  const __m128i sum01 = VaddlLo8(s[0], s[1]);
+  const __m128i sum23 = VaddlLo8(s[2], s[3]);
+  const __m128i sum = _mm_add_epi16(sum01, sum23);
+  return VaddwLo8(sum, s[4]);
 }
 
-inline __m128i Sum5Horizontal_16(const __m128i src[2]) {
+inline void Sum5WHorizontal(const __m128i src[2], __m128i dst[2]) {
   __m128i s[5];
-  s[0] = src[0];
-  s[1] = _mm_alignr_epi8(src[1], src[0], 2);
-  s[2] = _mm_alignr_epi8(src[1], src[0], 4);
-  s[3] = _mm_alignr_epi8(src[1], src[0], 6);
-  s[4] = _mm_alignr_epi8(src[1], src[0], 8);
-  return Sum5_16(s);
+  Prepare5_16(src, s);
+  dst[0] = Sum5W_32(s);
+  dst[1] = Sum5WHi_32(s);
 }
 
-inline __m128i Sum5Horizontal_32(const __m128i src[2]) {
+void SumHorizontalLo(const __m128i src[5], __m128i* const row_sq3,
+                     __m128i* const row_sq5) {
+  const __m128i sum04 = VaddlLo16(src[0], src[4]);
+  const __m128i sum12 = VaddlLo16(src[1], src[2]);
+  *row_sq3 = VaddwLo16(sum12, src[3]);
+  *row_sq5 = _mm_add_epi32(sum04, *row_sq3);
+}
+
+void SumHorizontalHi(const __m128i src[5], __m128i* const row_sq3,
+                     __m128i* const row_sq5) {
+  const __m128i sum04 = VaddlHi16(src[0], src[4]);
+  const __m128i sum12 = VaddlHi16(src[1], src[2]);
+  *row_sq3 = VaddwHi16(sum12, src[3]);
+  *row_sq5 = _mm_add_epi32(sum04, *row_sq3);
+}
+
+void SumHorizontal(const __m128i src, const __m128i sq[2], __m128i* const row3,
+                   __m128i* const row5, __m128i row_sq3[2],
+                   __m128i row_sq5[2]) {
   __m128i s[5];
-  s[0] = src[0];
-  s[1] = _mm_alignr_epi8(src[1], src[0], 4);
-  s[2] = _mm_alignr_epi8(src[1], src[0], 8);
-  s[3] = _mm_alignr_epi8(src[1], src[0], 12);
-  s[4] = src[1];
-  return Sum5_32(s);
+  Prepare5_8(src, s);
+  const __m128i sum04 = VaddlLo8(s[0], s[4]);
+  const __m128i sum12 = VaddlLo8(s[1], s[2]);
+  *row3 = VaddwLo8(sum12, s[3]);
+  *row5 = _mm_add_epi16(sum04, *row3);
+  Prepare5_16(sq, s);
+  SumHorizontalLo(s, &row_sq3[0], &row_sq5[0]);
+  SumHorizontalHi(s, &row_sq3[1], &row_sq5[1]);
 }
 
-inline __m128i* Sum5Horizontal_32x2(const __m128i src[3], __m128i sum[2]) {
-  __m128i s[5];
-  s[0] = src[0];
-  s[1] = _mm_alignr_epi8(src[1], src[0], 4);
-  s[2] = _mm_alignr_epi8(src[1], src[0], 8);
-  s[3] = _mm_alignr_epi8(src[1], src[0], 12);
-  s[4] = src[1];
-  sum[0] = Sum5_32(s);
-  s[0] = src[1];
-  s[1] = _mm_alignr_epi8(src[2], src[1], 4);
-  s[2] = _mm_alignr_epi8(src[2], src[1], 8);
-  s[3] = _mm_alignr_epi8(src[2], src[1], 12);
-  s[4] = src[2];
-  sum[1] = Sum5_32(s);
-  return sum;
+inline __m128i Sum343(const __m128i src) {
+  __m128i s[3];
+  Prepare3_8(src, s);
+  const __m128i sum = Sum3W_16(s);
+  const __m128i sum3 = Sum3_16(sum, sum, sum);
+  return VaddwLo8(sum3, s[1]);
 }
 
-template <int size, int offset>
-inline void BoxFilterPreProcess4(const __m128i* const row,
-                                 const __m128i* const row_sq, const uint32_t s,
-                                 uint16_t* const dst) {
-  static_assert(size == 3 || size == 5, "");
-  static_assert(offset == 0 || offset == 1, "");
-  // Number of elements in the box being summed.
-  constexpr uint32_t n = size * size;
-  constexpr uint32_t one_over_n =
-      ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
-  __m128i sum, sum_sq;
-  if (size == 3) {
-    __m128i temp32[2];
-    if (offset == 0) {
-      sum = Sum3Horizontal(Sum3WLo_16(row));
-      sum_sq = Sum3Horizontal_32(Sum3W(row_sq, temp32));
-    } else {
-      sum = Sum3HorizontalOffset1(Sum3WLo_16(row));
-      sum_sq = Sum3HorizontalOffset1_32(Sum3W(row_sq, temp32));
-    }
-  }
-  if (size == 5) {
-    __m128i temp[2];
-    sum = Sum5Horizontal(Sum5WLo_16(row));
-    sum_sq = Sum5Horizontal_32(Sum5W_32x2(row_sq, temp));
-  }
-  const __m128i sum_32 = _mm_unpacklo_epi16(sum, _mm_setzero_si128());
-  const __m128i z0 = CalculateMa<n>(sum_sq, sum_32, s);
-  const __m128i z1 = _mm_packus_epi32(z0, z0);
-  const __m128i z = _mm_min_epu16(z1, _mm_set1_epi16(255));
-  __m128i ma = _mm_setzero_si128();
-  ma = _mm_insert_epi8(ma, kSgrMaLookup[VgetLane16<0>(z)], 4);
-  ma = _mm_insert_epi8(ma, kSgrMaLookup[VgetLane16<1>(z)], 5);
-  ma = _mm_insert_epi8(ma, kSgrMaLookup[VgetLane16<2>(z)], 6);
-  ma = _mm_insert_epi8(ma, kSgrMaLookup[VgetLane16<3>(z)], 7);
-  const __m128i b = CalculateIntermediate4(ma, sum_32, one_over_n);
-  const __m128i ma_b = _mm_unpacklo_epi64(ma, b);
-  StoreAligned16(dst, ma_b);
+inline __m128i Sum343WLo(const __m128i src[3]) {
+  const __m128i sum = Sum3WLo_32(src);
+  const __m128i sum3 = Sum3_32(sum, sum, sum);
+  return VaddwLo16(sum3, src[1]);
+}
+
+inline __m128i Sum343WHi(const __m128i src[3]) {
+  const __m128i sum = Sum3WHi_32(src);
+  const __m128i sum3 = Sum3_32(sum, sum, sum);
+  return VaddwHi16(sum3, src[1]);
+}
+
+inline void Sum343W(const __m128i src[2], __m128i dst[2]) {
+  __m128i s[3];
+  Prepare3_16(src, s);
+  dst[0] = Sum343WLo(s);
+  dst[1] = Sum343WHi(s);
+}
+
+inline __m128i Sum565(const __m128i src) {
+  __m128i s[3];
+  Prepare3_8(src, s);
+  const __m128i sum = Sum3W_16(s);
+  const __m128i sum4 = _mm_slli_epi16(sum, 2);
+  const __m128i sum5 = _mm_add_epi16(sum4, sum);
+  return VaddwLo8(sum5, s[1]);
+}
+
+inline __m128i Sum565WLo(const __m128i src[3]) {
+  const __m128i sum = Sum3WLo_32(src);
+  const __m128i sum4 = _mm_slli_epi32(sum, 2);
+  const __m128i sum5 = _mm_add_epi32(sum4, sum);
+  return VaddwLo16(sum5, src[1]);
+}
+
+inline __m128i Sum565WHi(const __m128i src[3]) {
+  const __m128i sum = Sum3WHi_32(src);
+  const __m128i sum4 = _mm_slli_epi32(sum, 2);
+  const __m128i sum5 = _mm_add_epi32(sum4, sum);
+  return VaddwHi16(sum5, src[1]);
+}
+
+inline void Sum565W(const __m128i src[2], __m128i dst[2]) {
+  __m128i s[3];
+  Prepare3_16(src, s);
+  dst[0] = Sum565WLo(s);
+  dst[1] = Sum565WHi(s);
+}
+
+inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
+                   const int height, const ptrdiff_t sum_stride,
+                   const ptrdiff_t width, uint16_t* sum3, uint16_t* sum5,
+                   uint32_t* square_sum3, uint32_t* square_sum5) {
+  int y = height;
+  do {
+    __m128i s, sq[2];
+    s = LoadLo8Msan(src, kOverreadInBytesPass1 - width);
+    sq[0] = VmullLo8(s, s);
+    ptrdiff_t x = 0;
+    do {
+      __m128i row3, row5, row_sq3[2], row_sq5[2];
+      s = LoadHi8Msan(s, src + x + 8, x + 8 + kOverreadInBytesPass1 - width);
+      sq[1] = VmullHi8(s, s);
+      SumHorizontal(s, sq, &row3, &row5, row_sq3, row_sq5);
+      StoreAligned16(sum3, row3);
+      StoreAligned16(sum5, row5);
+      StoreAligned16(square_sum3 + 0, row_sq3[0]);
+      StoreAligned16(square_sum3 + 4, row_sq3[1]);
+      StoreAligned16(square_sum5 + 0, row_sq5[0]);
+      StoreAligned16(square_sum5 + 4, row_sq5[1]);
+      s = _mm_srli_si128(s, 8);
+      sq[0] = sq[1];
+      sum3 += 8;
+      sum5 += 8;
+      square_sum3 += 8;
+      square_sum5 += 8;
+      x += 8;
+    } while (x < sum_stride);
+    src += src_stride;
+  } while (--y != 0);
 }
 
 template <int size>
-inline void BoxFilterPreProcess8(const __m128i* const row,
-                                 const __m128i row_sq[][2], const uint32_t s,
-                                 __m128i* const ma, __m128i* const b,
-                                 uint16_t* const dst) {
+inline void BoxSum(const uint8_t* src, const ptrdiff_t src_stride,
+                   const int height, const ptrdiff_t sum_stride,
+                   const ptrdiff_t width, uint16_t* sums,
+                   uint32_t* square_sums) {
   static_assert(size == 3 || size == 5, "");
-  // Number of elements in the box being summed.
-  constexpr uint32_t n = size * size;
+  constexpr int kOverreadInBytes =
+      (size == 5) ? kOverreadInBytesPass1 : kOverreadInBytesPass2;
+  int y = height;
+  do {
+    __m128i s, sq[2];
+    s = LoadLo8Msan(src, kOverreadInBytes - width);
+    sq[0] = VmullLo8(s, s);
+    ptrdiff_t x = 0;
+    do {
+      __m128i row, row_sq[2];
+      s = LoadHi8Msan(s, src + x + 8, x + 8 + kOverreadInBytes - width);
+      sq[1] = VmullHi8(s, s);
+      if (size == 3) {
+        row = Sum3Horizontal(s);
+        Sum3WHorizontal(sq, row_sq);
+      } else {
+        row = Sum5Horizontal(s);
+        Sum5WHorizontal(sq, row_sq);
+      }
+      StoreAligned16(sums, row);
+      StoreAligned16(square_sums + 0, row_sq[0]);
+      StoreAligned16(square_sums + 4, row_sq[1]);
+      s = _mm_srli_si128(s, 8);
+      sq[0] = sq[1];
+      sums += 8;
+      square_sums += 8;
+      x += 8;
+    } while (x < sum_stride);
+    src += src_stride;
+  } while (--y != 0);
+}
+
+template <int n>
+inline __m128i CalculateMa(const __m128i sum, const __m128i sum_sq,
+                           const uint32_t scale) {
+  // a = |sum_sq|
+  // d = |sum|
+  // p = (a * n < d * d) ? 0 : a * n - d * d;
+  const __m128i dxd = _mm_madd_epi16(sum, sum);
+  // _mm_mullo_epi32() has high latency. Using shifts and additions instead.
+  // Some compilers could do this for us but we make this explicit.
+  // return _mm_mullo_epi32(sum_sq, _mm_set1_epi32(n));
+  __m128i axn = _mm_add_epi32(sum_sq, _mm_slli_epi32(sum_sq, 3));
+  if (n == 25) axn = _mm_add_epi32(axn, _mm_slli_epi32(sum_sq, 4));
+  const __m128i sub = _mm_sub_epi32(axn, dxd);
+  const __m128i p = _mm_max_epi32(sub, _mm_setzero_si128());
+  const __m128i pxs = _mm_mullo_epi32(p, _mm_set1_epi32(scale));
+  return VrshrU32(pxs, kSgrProjScaleBits);
+}
+
+template <int n>
+inline void CalculateIntermediate(const __m128i sum, const __m128i sum_sq[2],
+                                  const uint32_t scale, __m128i* const ma,
+                                  __m128i* const b) {
   constexpr uint32_t one_over_n =
       ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n;
-  __m128i sum, sum_sq[2];
-  if (size == 3) {
-    __m128i temp16[2], temp32[3];
-    sum = Sum3HorizontalOffset1_16(Sum3W_16x2(row, temp16));
-    Sum3HorizontalOffset1_32x2(Sum3W(row_sq, temp32), sum_sq);
-  }
-  if (size == 5) {
-    __m128i temp16[2], temp32[3];
-    sum = Sum5Horizontal_16(Sum5W_16D(row, temp16));
-    Sum5Horizontal_32x2(Sum5W_32x3(row_sq, temp32), sum_sq);
-  }
   const __m128i sum_lo = _mm_unpacklo_epi16(sum, _mm_setzero_si128());
-  const __m128i z0 = CalculateMa<n>(sum_sq[0], sum_lo, s);
   const __m128i sum_hi = _mm_unpackhi_epi16(sum, _mm_setzero_si128());
-  const __m128i z1 = CalculateMa<n>(sum_sq[1], sum_hi, s);
+  const __m128i z0 = CalculateMa<n>(sum_lo, sum_sq[0], scale);
+  const __m128i z1 = CalculateMa<n>(sum_hi, sum_sq[1], scale);
   const __m128i z01 = _mm_packus_epi32(z0, z1);
   const __m128i z = _mm_min_epu16(z01, _mm_set1_epi16(255));
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[VgetLane16<0>(z)], 8);
@@ -1053,86 +1010,369 @@ inline void BoxFilterPreProcess8(const __m128i* const row,
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[VgetLane16<5>(z)], 13);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[VgetLane16<6>(z)], 14);
   *ma = _mm_insert_epi8(*ma, kSgrMaLookup[VgetLane16<7>(z)], 15);
-  *b = CalculateIntermediate8(*ma, sum, one_over_n);
-  const __m128i ma_b = _mm_unpackhi_epi64(*ma, *b);
-  StoreAligned16(dst, ma_b);
+  // b = ma * b * one_over_n
+  // |ma| = [0, 255]
+  // |sum| is a box sum with radius 1 or 2.
+  // For the first pass radius is 2. Maximum value is 5x5x255 = 6375.
+  // For the second pass radius is 1. Maximum value is 3x3x255 = 2295.
+  // |one_over_n| = ((1 << kSgrProjReciprocalBits) + (n >> 1)) / n
+  // When radius is 2 |n| is 25. |one_over_n| is 164.
+  // When radius is 1 |n| is 9. |one_over_n| is 455.
+  // |kSgrProjReciprocalBits| is 12.
+  // Radius 2: 255 * 6375 * 164 >> 12 = 65088 (16 bits).
+  // Radius 1: 255 * 2295 * 455 >> 12 = 65009 (16 bits).
+  const __m128i maq = _mm_unpackhi_epi8(*ma, _mm_setzero_si128());
+  const __m128i m0 = VmullLo16(maq, sum);
+  const __m128i m1 = VmullHi16(maq, sum);
+  const __m128i m2 = _mm_mullo_epi32(m0, _mm_set1_epi32(one_over_n));
+  const __m128i m3 = _mm_mullo_epi32(m1, _mm_set1_epi32(one_over_n));
+  const __m128i b_lo = VrshrU32(m2, kSgrProjReciprocalBits);
+  const __m128i b_hi = VrshrU32(m3, kSgrProjReciprocalBits);
+  *b = _mm_packus_epi32(b_lo, b_hi);
 }
 
-inline void Prepare3_8(const __m128i src, __m128i* const left,
-                       __m128i* const middle, __m128i* const right) {
-  *left = _mm_srli_si128(src, 5);
-  *middle = _mm_srli_si128(src, 6);
-  *right = _mm_srli_si128(src, 7);
+inline void CalculateIntermediate5(const __m128i s5[5], const __m128i sq5[5][2],
+                                   const uint32_t scale, __m128i* const ma,
+                                   __m128i* const b) {
+  const __m128i sum = Sum5_16(s5);
+  __m128i sum_sq[2];
+  Sum5_32(sq5, sum_sq);
+  CalculateIntermediate<25>(sum, sum_sq, scale, ma, b);
 }
 
-inline void Prepare3_16(const __m128i src[2], __m128i* const left,
-                        __m128i* const middle, __m128i* const right) {
-  *left = _mm_alignr_epi8(src[1], src[0], 10);
-  *middle = _mm_alignr_epi8(src[1], src[0], 12);
-  *right = _mm_alignr_epi8(src[1], src[0], 14);
+inline void CalculateIntermediate3(const __m128i s3[3], const __m128i sq3[3][2],
+                                   const uint32_t scale, __m128i* const ma,
+                                   __m128i* const b) {
+  const __m128i sum = Sum3_16(s3);
+  __m128i sum_sq[2];
+  Sum3_32(sq3, sum_sq);
+  CalculateIntermediate<9>(sum, sum_sq, scale, ma, b);
 }
 
-inline __m128i Sum343(const __m128i src) {
-  __m128i left, middle, right;
-  Prepare3_8(src, &left, &middle, &right);
-  const auto sum = Sum3W_16(left, middle, right);
-  const auto sum3 = Sum3_16(sum, sum, sum);
-  return VaddwLo8(sum3, middle);
+inline void Store343_444(const __m128i ma3, const __m128i b3[2],
+                         const ptrdiff_t x, __m128i* const sum_ma343,
+                         __m128i* const sum_ma444, __m128i sum_b343[2],
+                         __m128i sum_b444[2], uint16_t* const ma343,
+                         uint16_t* const ma444, uint32_t* const b343,
+                         uint32_t* const b444) {
+  __m128i s[3];
+  Prepare3_8(ma3, s);
+  const __m128i sum_ma111 = Sum3W_16(s);
+  *sum_ma444 = _mm_slli_epi16(sum_ma111, 2);
+  const __m128i sum333 = _mm_sub_epi16(*sum_ma444, sum_ma111);
+  *sum_ma343 = VaddwLo8(sum333, s[1]);
+  __m128i b[3], sum_b111[2];
+  Prepare3_16(b3, b);
+  sum_b111[0] = Sum3WLo_32(b);
+  sum_b111[1] = Sum3WHi_32(b);
+  sum_b444[0] = _mm_slli_epi32(sum_b111[0], 2);
+  sum_b444[1] = _mm_slli_epi32(sum_b111[1], 2);
+  sum_b343[0] = _mm_sub_epi32(sum_b444[0], sum_b111[0]);
+  sum_b343[1] = _mm_sub_epi32(sum_b444[1], sum_b111[1]);
+  sum_b343[0] = VaddwLo16(sum_b343[0], b[1]);
+  sum_b343[1] = VaddwHi16(sum_b343[1], b[1]);
+  StoreAligned16(ma343 + x, *sum_ma343);
+  StoreAligned16(ma444 + x, *sum_ma444);
+  StoreAligned16(b343 + x + 0, sum_b343[0]);
+  StoreAligned16(b343 + x + 4, sum_b343[1]);
+  StoreAligned16(b444 + x + 0, sum_b444[0]);
+  StoreAligned16(b444 + x + 4, sum_b444[1]);
 }
 
-inline void Sum343_444(const __m128i src, __m128i* const sum343,
-                       __m128i* const sum444) {
-  __m128i left, middle, right;
-  Prepare3_8(src, &left, &middle, &right);
-  const auto sum111 = Sum3W_16(left, middle, right);
-  *sum444 = _mm_slli_epi16(sum111, 2);
-  const __m128i sum333 = _mm_sub_epi16(*sum444, sum111);
-  *sum343 = VaddwLo8(sum333, middle);
+inline void Store343_444(const __m128i ma3, const __m128i b3[2],
+                         const ptrdiff_t x, __m128i* const sum_ma343,
+                         __m128i sum_b343[2], uint16_t* const ma343,
+                         uint16_t* const ma444, uint32_t* const b343,
+                         uint32_t* const b444) {
+  __m128i sum_ma444, sum_b444[2];
+  Store343_444(ma3, b3, x, sum_ma343, &sum_ma444, sum_b343, sum_b444, ma343,
+               ma444, b343, b444);
 }
 
-inline __m128i* Sum343W(const __m128i src[2], __m128i d[2]) {
-  __m128i left, middle, right;
-  Prepare3_16(src, &left, &middle, &right);
-  d[0] = Sum3WLo_32(left, middle, right);
-  d[1] = Sum3WHi_32(left, middle, right);
-  d[0] = Sum3_32(d[0], d[0], d[0]);
-  d[1] = Sum3_32(d[1], d[1], d[1]);
-  d[0] = VaddwLo16(d[0], middle);
-  d[1] = VaddwHi16(d[1], middle);
-  return d;
+inline void Store343_444(const __m128i ma3, const __m128i b3[2],
+                         const ptrdiff_t x, uint16_t* const ma343,
+                         uint16_t* const ma444, uint32_t* const b343,
+                         uint32_t* const b444) {
+  __m128i sum_ma343, sum_b343[2];
+  Store343_444(ma3, b3, x, &sum_ma343, sum_b343, ma343, ma444, b343, b444);
 }
 
-inline void Sum343_444W(const __m128i src[2], __m128i sum343[2],
-                        __m128i sum444[2]) {
-  __m128i left, middle, right, sum111[2];
-  Prepare3_16(src, &left, &middle, &right);
-  sum111[0] = Sum3WLo_32(left, middle, right);
-  sum111[1] = Sum3WHi_32(left, middle, right);
-  sum444[0] = _mm_slli_epi32(sum111[0], 2);
-  sum444[1] = _mm_slli_epi32(sum111[1], 2);
-  sum343[0] = _mm_sub_epi32(sum444[0], sum111[0]);
-  sum343[1] = _mm_sub_epi32(sum444[1], sum111[1]);
-  sum343[0] = VaddwLo16(sum343[0], middle);
-  sum343[1] = VaddwHi16(sum343[1], middle);
+LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess5(
+    const uint8_t* const src0, const uint8_t* const src1, const ptrdiff_t width,
+    const ptrdiff_t x, const uint32_t scale, uint16_t* const sum5[5],
+    uint32_t* const square_sum5[5], __m128i s[2], __m128i sq[2][2],
+    __m128i* const ma, __m128i* const b) {
+  __m128i s5[5], sq5[5][2];
+  s[0] = LoadHi8Msan(s[0], src0 + x + 8, x + 8 + kOverreadInBytesPass1 - width);
+  s[1] = LoadHi8Msan(s[1], src1 + x + 8, x + 8 + kOverreadInBytesPass1 - width);
+  sq[0][1] = VmullHi8(s[0], s[0]);
+  sq[1][1] = VmullHi8(s[1], s[1]);
+  s5[3] = Sum5Horizontal(s[0]);
+  s5[4] = Sum5Horizontal(s[1]);
+  Sum5WHorizontal(sq[0], sq5[3]);
+  Sum5WHorizontal(sq[1], sq5[4]);
+  StoreAligned16(sum5[3] + x, s5[3]);
+  StoreAligned16(sum5[4] + x, s5[4]);
+  StoreAligned16(square_sum5[3] + x + 0, sq5[3][0]);
+  StoreAligned16(square_sum5[3] + x + 4, sq5[3][1]);
+  StoreAligned16(square_sum5[4] + x + 0, sq5[4][0]);
+  StoreAligned16(square_sum5[4] + x + 4, sq5[4][1]);
+  s5[0] = LoadAligned16(sum5[0] + x);
+  s5[1] = LoadAligned16(sum5[1] + x);
+  s5[2] = LoadAligned16(sum5[2] + x);
+  sq5[0][0] = LoadAligned16(square_sum5[0] + x + 0);
+  sq5[0][1] = LoadAligned16(square_sum5[0] + x + 4);
+  sq5[1][0] = LoadAligned16(square_sum5[1] + x + 0);
+  sq5[1][1] = LoadAligned16(square_sum5[1] + x + 4);
+  sq5[2][0] = LoadAligned16(square_sum5[2] + x + 0);
+  sq5[2][1] = LoadAligned16(square_sum5[2] + x + 4);
+  CalculateIntermediate5(s5, sq5, scale, ma, b);
 }
 
-inline __m128i Sum565(const __m128i src) {
-  __m128i left, middle, right;
-  Prepare3_8(src, &left, &middle, &right);
-  const auto sum = Sum3W_16(left, middle, right);
-  const auto sum4 = _mm_slli_epi16(sum, 2);
-  const auto sum5 = _mm_add_epi16(sum4, sum);
-  return VaddwLo8(sum5, middle);
+LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess5LastRow(
+    const uint8_t* const src, const ptrdiff_t width, const ptrdiff_t x,
+    const uint32_t scale, const uint16_t* const sum5[5],
+    const uint32_t* const square_sum5[5], __m128i s[2], __m128i sq[2],
+    __m128i* const ma, __m128i* const b) {
+  __m128i s5[5], sq5[5][2];
+  *s = LoadHi8Msan(*s, src + x + 8, x + 8 + kOverreadInBytesPass1 - width);
+  sq[1] = VmullHi8(*s, *s);
+  s5[3] = s5[4] = Sum5Horizontal(*s);
+  Sum5WHorizontal(sq, sq5[3]);
+  sq5[4][0] = sq5[3][0];
+  sq5[4][1] = sq5[3][1];
+  s5[0] = LoadAligned16(sum5[0] + x);
+  s5[1] = LoadAligned16(sum5[1] + x);
+  s5[2] = LoadAligned16(sum5[2] + x);
+  sq5[0][0] = LoadAligned16(square_sum5[0] + x + 0);
+  sq5[0][1] = LoadAligned16(square_sum5[0] + x + 4);
+  sq5[1][0] = LoadAligned16(square_sum5[1] + x + 0);
+  sq5[1][1] = LoadAligned16(square_sum5[1] + x + 4);
+  sq5[2][0] = LoadAligned16(square_sum5[2] + x + 0);
+  sq5[2][1] = LoadAligned16(square_sum5[2] + x + 4);
+  CalculateIntermediate5(s5, sq5, scale, ma, b);
 }
 
-inline __m128i Sum565W(const __m128i src) {
-  const auto left = _mm_srli_si128(src, 2);
-  const auto middle = _mm_srli_si128(src, 4);
-  const auto right = _mm_srli_si128(src, 6);
-  const auto sum = Sum3WLo_32(left, middle, right);
-  const auto sum4 = _mm_slli_epi32(sum, 2);
-  const auto sum5 = _mm_add_epi32(sum4, sum);
-  return VaddwLo16(sum5, middle);
+LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess3(
+    const uint8_t* const src, const ptrdiff_t width, const ptrdiff_t x,
+    const uint32_t scale, uint16_t* const sum3[3],
+    uint32_t* const square_sum3[3], __m128i* const s, __m128i sq[2],
+    __m128i* const ma, __m128i* const b) {
+  __m128i s3[3], sq3[3][2];
+  *s = LoadHi8Msan(*s, src + x + 8, x + 8 + kOverreadInBytesPass2 - width);
+  sq[1] = VmullHi8(*s, *s);
+  s3[2] = Sum3Horizontal(*s);
+  Sum3WHorizontal(sq, sq3[2]);
+  StoreAligned16(sum3[2] + x, s3[2]);
+  StoreAligned16(square_sum3[2] + x + 0, sq3[2][0]);
+  StoreAligned16(square_sum3[2] + x + 4, sq3[2][1]);
+  s3[0] = LoadAligned16(sum3[0] + x);
+  s3[1] = LoadAligned16(sum3[1] + x);
+  sq3[0][0] = LoadAligned16(square_sum3[0] + x + 0);
+  sq3[0][1] = LoadAligned16(square_sum3[0] + x + 4);
+  sq3[1][0] = LoadAligned16(square_sum3[1] + x + 0);
+  sq3[1][1] = LoadAligned16(square_sum3[1] + x + 4);
+  CalculateIntermediate3(s3, sq3, scale, ma, b);
+}
+
+LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcess(
+    const uint8_t* const src0, const uint8_t* const src1, const ptrdiff_t width,
+    const ptrdiff_t x, const uint16_t scales[2], uint16_t* const sum3[4],
+    uint16_t* const sum5[5], uint32_t* const square_sum3[4],
+    uint32_t* const square_sum5[5], __m128i s[2], __m128i sq[2][2],
+    __m128i* const ma3_0, __m128i* const ma3_1, __m128i* const b3_0,
+    __m128i* const b3_1, __m128i* const ma5, __m128i* const b5) {
+  __m128i s3[4], s5[5], sq3[4][2], sq5[5][2];
+  s[0] = LoadHi8Msan(s[0], src0 + x + 8, x + 8 + kOverreadInBytesPass1 - width);
+  s[1] = LoadHi8Msan(s[1], src1 + x + 8, x + 8 + kOverreadInBytesPass1 - width);
+  sq[0][1] = VmullHi8(s[0], s[0]);
+  sq[1][1] = VmullHi8(s[1], s[1]);
+  SumHorizontal(s[0], sq[0], &s3[2], &s5[3], sq3[2], sq5[3]);
+  SumHorizontal(s[1], sq[1], &s3[3], &s5[4], sq3[3], sq5[4]);
+  StoreAligned16(sum3[2] + x, s3[2]);
+  StoreAligned16(sum3[3] + x, s3[3]);
+  StoreAligned16(square_sum3[2] + x + 0, sq3[2][0]);
+  StoreAligned16(square_sum3[2] + x + 4, sq3[2][1]);
+  StoreAligned16(square_sum3[3] + x + 0, sq3[3][0]);
+  StoreAligned16(square_sum3[3] + x + 4, sq3[3][1]);
+  StoreAligned16(sum5[3] + x, s5[3]);
+  StoreAligned16(sum5[4] + x, s5[4]);
+  StoreAligned16(square_sum5[3] + x + 0, sq5[3][0]);
+  StoreAligned16(square_sum5[3] + x + 4, sq5[3][1]);
+  StoreAligned16(square_sum5[4] + x + 0, sq5[4][0]);
+  StoreAligned16(square_sum5[4] + x + 4, sq5[4][1]);
+  s3[0] = LoadAligned16(sum3[0] + x);
+  s3[1] = LoadAligned16(sum3[1] + x);
+  sq3[0][0] = LoadAligned16(square_sum3[0] + x + 0);
+  sq3[0][1] = LoadAligned16(square_sum3[0] + x + 4);
+  sq3[1][0] = LoadAligned16(square_sum3[1] + x + 0);
+  sq3[1][1] = LoadAligned16(square_sum3[1] + x + 4);
+  s5[0] = LoadAligned16(sum5[0] + x);
+  s5[1] = LoadAligned16(sum5[1] + x);
+  s5[2] = LoadAligned16(sum5[2] + x);
+  sq5[0][0] = LoadAligned16(square_sum5[0] + x + 0);
+  sq5[0][1] = LoadAligned16(square_sum5[0] + x + 4);
+  sq5[1][0] = LoadAligned16(square_sum5[1] + x + 0);
+  sq5[1][1] = LoadAligned16(square_sum5[1] + x + 4);
+  sq5[2][0] = LoadAligned16(square_sum5[2] + x + 0);
+  sq5[2][1] = LoadAligned16(square_sum5[2] + x + 4);
+  CalculateIntermediate3(s3, sq3, scales[1], ma3_0, b3_0);
+  CalculateIntermediate3(s3 + 1, sq3 + 1, scales[1], ma3_1, b3_1);
+  CalculateIntermediate5(s5, sq5, scales[0], ma5, b5);
+}
+
+LIBGAV1_ALWAYS_INLINE void BoxFilterPreProcessLastRow(
+    const uint8_t* const src, const ptrdiff_t width, const ptrdiff_t x,
+    const uint16_t scales[2], const uint16_t* const sum3[4],
+    const uint16_t* const sum5[5], const uint32_t* const square_sum3[4],
+    const uint32_t* const square_sum5[5], __m128i* const s, __m128i sq[2],
+    __m128i* const ma3, __m128i* const ma5, __m128i* const b3,
+    __m128i* const b5) {
+  __m128i s3[3], s5[5], sq3[3][2], sq5[5][2];
+  *s = LoadHi8Msan(*s, src + x + 8, x + 8 + kOverreadInBytesPass1 - width);
+  sq[1] = VmullHi8(*s, *s);
+  SumHorizontal(*s, sq, &s3[2], &s5[3], sq3[2], sq5[3]);
+  s5[0] = LoadAligned16(sum5[0] + x);
+  s5[1] = LoadAligned16(sum5[1] + x);
+  s5[2] = LoadAligned16(sum5[2] + x);
+  s5[4] = s5[3];
+  sq5[0][0] = LoadAligned16(square_sum5[0] + x + 0);
+  sq5[0][1] = LoadAligned16(square_sum5[0] + x + 4);
+  sq5[1][0] = LoadAligned16(square_sum5[1] + x + 0);
+  sq5[1][1] = LoadAligned16(square_sum5[1] + x + 4);
+  sq5[2][0] = LoadAligned16(square_sum5[2] + x + 0);
+  sq5[2][1] = LoadAligned16(square_sum5[2] + x + 4);
+  sq5[4][0] = sq5[3][0];
+  sq5[4][1] = sq5[3][1];
+  CalculateIntermediate5(s5, sq5, scales[0], ma5, b5);
+  s3[0] = LoadAligned16(sum3[0] + x);
+  s3[1] = LoadAligned16(sum3[1] + x);
+  sq3[0][0] = LoadAligned16(square_sum3[0] + x + 0);
+  sq3[0][1] = LoadAligned16(square_sum3[0] + x + 4);
+  sq3[1][0] = LoadAligned16(square_sum3[1] + x + 0);
+  sq3[1][1] = LoadAligned16(square_sum3[1] + x + 4);
+  CalculateIntermediate3(s3, sq3, scales[1], ma3, b3);
+}
+
+inline void BoxSumFilterPreProcess5(const uint8_t* const src0,
+                                    const uint8_t* const src1, const int width,
+                                    const uint32_t scale,
+                                    uint16_t* const sum5[5],
+                                    uint32_t* const square_sum5[5],
+                                    uint16_t* ma565, uint32_t* b565) {
+  __m128i s[2], mas, sq[2][2], bs[2];
+  s[0] = LoadLo8Msan(src0, kOverreadInBytesPass1 - width);
+  s[1] = LoadLo8Msan(src1, kOverreadInBytesPass1 - width);
+  sq[0][0] = VmullLo8(s[0], s[0]);
+  sq[1][0] = VmullLo8(s[1], s[1]);
+  BoxFilterPreProcess5(src0, src1, width, 0, scale, sum5, square_sum5, s, sq,
+                       &mas, &bs[0]);
+
+  int x = 0;
+  do {
+    s[0] = _mm_srli_si128(s[0], 8);
+    s[1] = _mm_srli_si128(s[1], 8);
+    sq[0][0] = sq[0][1];
+    sq[1][0] = sq[1][1];
+    mas = _mm_srli_si128(mas, 8);
+    BoxFilterPreProcess5(src0, src1, width, x + 8, scale, sum5, square_sum5, s,
+                         sq, &mas, &bs[1]);
+    const __m128i ma = Sum565(mas);
+    __m128i b[2];
+    Sum565W(bs, b);
+    StoreAligned16(ma565, ma);
+    StoreAligned16(b565 + 0, b[0]);
+    StoreAligned16(b565 + 4, b[1]);
+    bs[0] = bs[1];
+    ma565 += 8;
+    b565 += 8;
+    x += 8;
+  } while (x < width);
+}
+
+template <bool calculate444>
+LIBGAV1_ALWAYS_INLINE void BoxSumFilterPreProcess3(
+    const uint8_t* const src, const int width, const uint32_t scale,
+    uint16_t* const sum3[3], uint32_t* const square_sum3[3], uint16_t* ma343,
+    uint16_t* ma444, uint32_t* b343, uint32_t* b444) {
+  __m128i s, mas, sq[2], bs[2];
+  s = LoadLo8Msan(src, kOverreadInBytesPass2 - width);
+  sq[0] = VmullLo8(s, s);
+  BoxFilterPreProcess3(src, width, 0, scale, sum3, square_sum3, &s, sq, &mas,
+                       &bs[0]);
+
+  int x = 0;
+  do {
+    s = _mm_srli_si128(s, 8);
+    sq[0] = sq[1];
+    mas = _mm_srli_si128(mas, 8);
+    BoxFilterPreProcess3(src, width, x + 8, scale, sum3, square_sum3, &s, sq,
+                         &mas, &bs[1]);
+    if (calculate444) {  // NOLINT(readability-simplify-boolean-expr)
+      Store343_444(mas, bs, 0, ma343, ma444, b343, b444);
+      ma444 += 8;
+      b444 += 8;
+    } else {
+      const __m128i ma = Sum343(mas);
+      __m128i b[2];
+      Sum343W(bs, b);
+      StoreAligned16(ma343, ma);
+      StoreAligned16(b343 + 0, b[0]);
+      StoreAligned16(b343 + 4, b[1]);
+    }
+    bs[0] = bs[1];
+    ma343 += 8;
+    b343 += 8;
+    x += 8;
+  } while (x < width);
+}
+
+inline void BoxSumFilterPreProcess(
+    const uint8_t* const src0, const uint8_t* const src1, const int width,
+    const uint16_t scales[2], uint16_t* const sum3[4], uint16_t* const sum5[5],
+    uint32_t* const square_sum3[4], uint32_t* const square_sum5[5],
+    uint16_t* const ma343[4], uint16_t* const ma444[2], uint16_t* ma565,
+    uint32_t* const b343[4], uint32_t* const b444[2], uint32_t* b565) {
+  __m128i s[2], ma3[2], ma5, sq[2][2], b3[2][2], b5[2];
+  s[0] = LoadLo8Msan(src0, kOverreadInBytesPass1 - width);
+  s[1] = LoadLo8Msan(src1, kOverreadInBytesPass1 - width);
+  sq[0][0] = VmullLo8(s[0], s[0]);
+  sq[1][0] = VmullLo8(s[1], s[1]);
+  BoxFilterPreProcess(src0, src1, width, 0, scales, sum3, sum5, square_sum3,
+                      square_sum5, s, sq, &ma3[0], &ma3[1], &b3[0][0],
+                      &b3[1][0], &ma5, &b5[0]);
+
+  int x = 0;
+  do {
+    s[0] = _mm_srli_si128(s[0], 8);
+    s[1] = _mm_srli_si128(s[1], 8);
+    sq[0][0] = sq[0][1];
+    sq[1][0] = sq[1][1];
+    ma3[0] = _mm_srli_si128(ma3[0], 8);
+    ma3[1] = _mm_srli_si128(ma3[1], 8);
+    ma5 = _mm_srli_si128(ma5, 8);
+    BoxFilterPreProcess(src0, src1, width, x + 8, scales, sum3, sum5,
+                        square_sum3, square_sum5, s, sq, &ma3[0], &ma3[1],
+                        &b3[0][1], &b3[1][1], &ma5, &b5[1]);
+    __m128i ma = Sum343(ma3[0]);
+    __m128i b[2];
+    Sum343W(b3[0], b);
+    StoreAligned16(ma343[0] + x, ma);
+    StoreAligned16(b343[0] + x, b[0]);
+    StoreAligned16(b343[0] + x + 4, b[1]);
+    Store343_444(ma3[1], b3[1], x, ma343[1], ma444[0], b343[1], b444[0]);
+    ma = Sum565(ma5);
+    Sum565W(b5, b);
+    StoreAligned16(ma565, ma);
+    StoreAligned16(b565 + 0, b[0]);
+    StoreAligned16(b565 + 4, b[1]);
+    b3[0][0] = b3[0][1];
+    b3[1][0] = b3[1][1];
+    b5[0] = b5[1];
+    ma565 += 8;
+    b565 += 8;
+    x += 8;
+  } while (x < width);
 }
 
 template <int shift>
@@ -1149,40 +1389,31 @@ inline __m128i FilterOutput(const __m128i ma_x_src, const __m128i b) {
 }
 
 template <int shift>
-inline __m128i CalculateFilteredOutput(const __m128i src, const __m128i a,
+inline __m128i CalculateFilteredOutput(const __m128i src, const __m128i ma,
                                        const __m128i b[2]) {
   const __m128i src_u16 = _mm_unpacklo_epi8(src, _mm_setzero_si128());
-  const __m128i ma_x_src_lo = VmullLo16(a, src_u16);
-  const __m128i ma_x_src_hi = VmullHi16(a, src_u16);
+  const __m128i ma_x_src_lo = VmullLo16(ma, src_u16);
+  const __m128i ma_x_src_hi = VmullHi16(ma, src_u16);
   const __m128i dst_lo = FilterOutput<shift>(ma_x_src_lo, b[0]);
   const __m128i dst_hi = FilterOutput<shift>(ma_x_src_hi, b[1]);
   return _mm_packs_epi32(dst_lo, dst_hi);  // 13 bits
 }
 
-inline __m128i BoxFilterPass1(const __m128i src_u8, const __m128i ma,
-                              const __m128i b[2], __m128i ma565[2],
-                              __m128i b565[2][2]) {
+inline __m128i CalculateFilteredOutputPass1(const __m128i s, __m128i ma[2],
+                                            __m128i b[2][2]) {
+  const __m128i ma_sum = _mm_add_epi16(ma[0], ma[1]);
   __m128i b_sum[2];
-  ma565[1] = Sum565(ma);
-  b565[1][0] = Sum565W(_mm_alignr_epi8(b[1], b[0], 8));
-  b565[1][1] = Sum565W(b[1]);
-  __m128i ma_sum = _mm_add_epi16(ma565[0], ma565[1]);
-  b_sum[0] = _mm_add_epi32(b565[0][0], b565[1][0]);
-  b_sum[1] = _mm_add_epi32(b565[0][1], b565[1][1]);
-  return CalculateFilteredOutput<5>(src_u8, ma_sum, b_sum);  // 13 bits
+  b_sum[0] = _mm_add_epi32(b[0][0], b[1][0]);
+  b_sum[1] = _mm_add_epi32(b[0][1], b[1][1]);
+  return CalculateFilteredOutput<5>(s, ma_sum, b_sum);
 }
 
-inline __m128i BoxFilterPass2(const __m128i src_u8, const __m128i ma,
-                              const __m128i b[2], __m128i ma343[4],
-                              __m128i ma444[3], __m128i b343[4][2],
-                              __m128i b444[3][2]) {
+inline __m128i CalculateFilteredOutputPass2(const __m128i s, __m128i ma[3],
+                                            __m128i b[3][2]) {
+  const __m128i ma_sum = Sum3_16(ma);
   __m128i b_sum[2];
-  Sum343_444(ma, &ma343[2], &ma444[1]);
-  __m128i ma_sum = Sum3_16(ma343[0], ma444[0], ma343[2]);
-  Sum343_444W(b, b343[2], b444[1]);
-  b_sum[0] = Sum3_32(b343[0][0], b444[0][0], b343[2][0]);
-  b_sum[1] = Sum3_32(b343[0][1], b444[0][1], b343[2][1]);
-  return CalculateFilteredOutput<5>(src_u8, ma_sum, b_sum);  // 13 bits
+  Sum3_32(b, b_sum);
+  return CalculateFilteredOutput<5>(s, ma_sum, b_sum);
 }
 
 inline void SelfGuidedFinal(const __m128i src, const __m128i v[2],
@@ -1218,555 +1449,524 @@ inline void SelfGuidedSingleMultiplier(const __m128i src, const __m128i filter,
   SelfGuidedFinal(src, v, dst);
 }
 
-inline void BoxFilterProcess(const uint8_t* const src,
-                             const ptrdiff_t src_stride,
-                             const RestorationUnitInfo& restoration_info,
-                             const int width, const int height,
-                             const uint16_t scale[2], uint16_t* const temp,
-                             uint8_t* const dst, const ptrdiff_t dst_stride) {
-  // We have combined PreProcess and Process for the first pass by storing
-  // intermediate values in the |ma| region. The values stored are one
-  // vertical column of interleaved |ma| and |b| values and consume 8 *
-  // |height| values. This is |height| and not |height| * 2 because PreProcess
-  // only generates output for every other row. When processing the next column
-  // we write the new scratch values right after reading the previously saved
-  // ones.
+LIBGAV1_ALWAYS_INLINE void BoxFilterPass1(
+    const uint8_t* const src, const uint8_t* const src0,
+    const uint8_t* const src1, const ptrdiff_t stride, uint16_t* const sum5[5],
+    uint32_t* const square_sum5[5], const int width, const uint32_t scale,
+    const int16_t w0, uint16_t* const ma565[2], uint32_t* const b565[2],
+    uint8_t* const dst) {
+  __m128i s[2], mas, sq[2][2], bs[2];
+  s[0] = LoadLo8Msan(src0, kOverreadInBytesPass1 - width);
+  s[1] = LoadLo8Msan(src1, kOverreadInBytesPass1 - width);
+  sq[0][0] = VmullLo8(s[0], s[0]);
+  sq[1][0] = VmullLo8(s[1], s[1]);
+  BoxFilterPreProcess5(src0, src1, width, 0, scale, sum5, square_sum5, s, sq,
+                       &mas, &bs[0]);
 
-  // The PreProcess phase calculates a 5x5 box sum for every other row
-  //
-  // PreProcess and Process have been combined into the same step. We need 12
-  // input values to generate 8 output values for PreProcess:
-  // 0 1 2 3 4 5 6 7 8 9 10 11
-  // 2 = 0 + 1 + 2 +  3 +  4
-  // 3 = 1 + 2 + 3 +  4 +  5
-  // 4 = 2 + 3 + 4 +  5 +  6
-  // 5 = 3 + 4 + 5 +  6 +  7
-  // 6 = 4 + 5 + 6 +  7 +  8
-  // 7 = 5 + 6 + 7 +  8 +  9
-  // 8 = 6 + 7 + 8 +  9 + 10
-  // 9 = 7 + 8 + 9 + 10 + 11
-  //
-  // and then we need 10 input values to generate 8 output values for Process:
-  // 0 1 2 3 4 5 6 7 8 9
-  // 1 = 0 + 1 + 2
-  // 2 = 1 + 2 + 3
-  // 3 = 2 + 3 + 4
-  // 4 = 3 + 4 + 5
-  // 5 = 4 + 5 + 6
-  // 6 = 5 + 6 + 7
-  // 7 = 6 + 7 + 8
-  // 8 = 7 + 8 + 9
-  //
-  // To avoid re-calculating PreProcess values over and over again we will do a
-  // single column of 8 output values and store the second half of them
-  // interleaved in |temp|. The first half is not stored, since it is used
-  // immediately and becomes useless for the next column. Next we will start the
-  // second column. When 2 rows have been calculated we can calculate Process
-  // and output the results.
-
-  // Calculate and store a single column. Scope so we can re-use the variable
-  // names for the next step.
-  uint16_t* ab_ptr = temp;
-  const uint8_t* const src_pre_process = src - 2 * src_stride;
-  // Calculate intermediate results, including two-pixel border, for example, if
-  // unit size is 64x64, we calculate 68x68 pixels.
-  {
-    const uint8_t* column = src_pre_process - 4;
-    __m128i row[5], row_sq[5];
-    row[0] = row[1] = LoadLo8(column);
-    column += src_stride;
-    row[2] = LoadLo8(column);
-    row_sq[0] = row_sq[1] = VmullLo8(row[1], row[1]);
-    row_sq[2] = VmullLo8(row[2], row[2]);
-
-    int y = (height + 2) >> 1;
-    do {
-      column += src_stride;
-      row[3] = LoadLo8(column);
-      column += src_stride;
-      row[4] = LoadLo8(column);
-      row_sq[3] = VmullLo8(row[3], row[3]);
-      row_sq[4] = VmullLo8(row[4], row[4]);
-      BoxFilterPreProcess4<5, 1>(row + 0, row_sq + 0, scale[0], ab_ptr + 0);
-      BoxFilterPreProcess4<3, 1>(row + 1, row_sq + 1, scale[1], ab_ptr + 8);
-      BoxFilterPreProcess4<3, 1>(row + 2, row_sq + 2, scale[1], ab_ptr + 16);
-      row[0] = row[2];
-      row[1] = row[3];
-      row[2] = row[4];
-      row_sq[0] = row_sq[2];
-      row_sq[1] = row_sq[3];
-      row_sq[2] = row_sq[4];
-      ab_ptr += 24;
-    } while (--y != 0);
-
-    if ((height & 1) != 0) {
-      column += src_stride;
-      row[3] = row[4] = LoadLo8(column);
-      row_sq[3] = row_sq[4] = VmullLo8(row[3], row[3]);
-      BoxFilterPreProcess4<5, 1>(row + 0, row_sq + 0, scale[0], ab_ptr + 0);
-      BoxFilterPreProcess4<3, 1>(row + 1, row_sq + 1, scale[1], ab_ptr + 8);
-    }
-  }
-
-  const int w0 = restoration_info.sgr_proj_info.multiplier[0];
-  const int w1 = restoration_info.sgr_proj_info.multiplier[1];
-  const int w2 = (1 << kSgrProjPrecisionBits) - w0 - w1;
   int x = 0;
   do {
-    // |src_pre_process| is X but we already processed the first column of 4
-    // values so we want to start at Y and increment from there.
-    // X s s s Y s s
-    // s s s s s s s
-    // s s i i i i i
-    // s s i o o o o
-    // s s i o o o o
-
-    // Seed the loop with one line of output. Then, inside the loop, for each
-    // iteration we can output one even row and one odd row and carry the new
-    // line to the next iteration. In the diagram below 'i' values are
-    // intermediary values from the first step and '-' values are empty.
-    // iiii
-    // ---- > even row
-    // iiii - odd row
-    // ---- > even row
-    // iiii
-    __m128i ma[2], b[2][2], ma565[2], ma343[4], ma444[3];
-    __m128i b565[2][2], b343[4][2], b444[3][2];
-    ab_ptr = temp;
-    ma[0] = b[0][0] = LoadAligned16(ab_ptr);
-    ma[1] = b[1][0] = LoadAligned16(ab_ptr + 8);
-    const uint8_t* column = src_pre_process + x;
-    __m128i row[5], row_sq[5][2];
-    // Need |width| + 3 pixels, but we read max(|x|) + 16 pixels.
-    // Mask max(|x|) + 13 - |width| extra pixels.
-    row[0] = row[1] = LoadUnaligned16Msan(column, x + 13 - width);
-    column += src_stride;
-    row[2] = LoadUnaligned16Msan(column, x + 13 - width);
-    column += src_stride;
-    row[3] = LoadUnaligned16Msan(column, x + 13 - width);
-    column += src_stride;
-    row[4] = LoadUnaligned16Msan(column, x + 13 - width);
-    row_sq[0][0] = row_sq[1][0] = VmullLo8(row[1], row[1]);
-    row_sq[0][1] = row_sq[1][1] = VmullHi8(row[1], row[1]);
-    row_sq[2][0] = VmullLo8(row[2], row[2]);
-    row_sq[2][1] = VmullHi8(row[2], row[2]);
-    row_sq[3][0] = VmullLo8(row[3], row[3]);
-    row_sq[3][1] = VmullHi8(row[3], row[3]);
-    row_sq[4][0] = VmullLo8(row[4], row[4]);
-    row_sq[4][1] = VmullHi8(row[4], row[4]);
-    BoxFilterPreProcess8<5>(row, row_sq, scale[0], &ma[0], &b[0][1], ab_ptr);
-    BoxFilterPreProcess8<3>(row + 1, row_sq + 1, scale[1], &ma[1], &b[1][1],
-                            ab_ptr + 8);
-
-    // Pass 1 Process. These are the only values we need to propagate between
-    // rows.
-    ma565[0] = Sum565(ma[0]);
-    b565[0][0] = Sum565W(_mm_alignr_epi8(b[0][1], b[0][0], 8));
-    b565[0][1] = Sum565W(b[0][1]);
-    ma343[0] = Sum343(ma[1]);
-    Sum343W(b[1], b343[0]);
-    ma[1] = b[1][0] = LoadAligned16(ab_ptr + 16);
-    BoxFilterPreProcess8<3>(row + 2, row_sq + 2, scale[1], &ma[1], &b[1][1],
-                            ab_ptr + 16);
-    Sum343_444(ma[1], &ma343[1], &ma444[0]);
-    Sum343_444W(b[1], b343[1], b444[0]);
-
-    uint8_t* dst_ptr = dst + x;
-    // Calculate one output line. Add in the line from the previous pass and
-    // output one even row. Sum the new line and output the odd row. Carry the
-    // new row into the next pass.
-    for (int y = height >> 1; y != 0; --y) {
-      ab_ptr += 24;
-      ma[0] = b[0][0] = LoadAligned16(ab_ptr);
-      ma[1] = b[1][0] = LoadAligned16(ab_ptr + 8);
-      row[0] = row[2];
-      row[1] = row[3];
-      row[2] = row[4];
-      row_sq[0][0] = row_sq[2][0], row_sq[0][1] = row_sq[2][1];
-      row_sq[1][0] = row_sq[3][0], row_sq[1][1] = row_sq[3][1];
-      row_sq[2][0] = row_sq[4][0], row_sq[2][1] = row_sq[4][1];
-      column += src_stride;
-      row[3] = LoadUnaligned16Msan(column, x + 13 - width);
-      column += src_stride;
-      row[4] = LoadUnaligned16Msan(column, x + 13 - width);
-      row_sq[3][0] = VmullLo8(row[3], row[3]);
-      row_sq[3][1] = VmullHi8(row[3], row[3]);
-      row_sq[4][0] = VmullLo8(row[4], row[4]);
-      row_sq[4][1] = VmullHi8(row[4], row[4]);
-      BoxFilterPreProcess8<5>(row, row_sq, scale[0], &ma[0], &b[0][1], ab_ptr);
-      BoxFilterPreProcess8<3>(row + 1, row_sq + 1, scale[1], &ma[1], &b[1][1],
-                              ab_ptr + 8);
-      __m128i p[2];
-      p[0] = BoxFilterPass1(row[1], ma[0], b[0], ma565, b565);
-      p[1] = BoxFilterPass2(row[1], ma[1], b[1], ma343, ma444, b343, b444);
-      SelfGuidedDoubleMultiplier(row[1], p, w0, w2, dst_ptr);
-      dst_ptr += dst_stride;
-      p[0] = CalculateFilteredOutput<4>(row[2], ma565[1], b565[1]);
-      ma[1] = b[1][0] = LoadAligned16(ab_ptr + 16);
-      BoxFilterPreProcess8<3>(row + 2, row_sq + 2, scale[1], &ma[1], &b[1][1],
-                              ab_ptr + 16);
-      p[1] = BoxFilterPass2(row[2], ma[1], b[1], ma343 + 1, ma444 + 1, b343 + 1,
-                            b444 + 1);
-      SelfGuidedDoubleMultiplier(row[2], p, w0, w2, dst_ptr);
-      dst_ptr += dst_stride;
-      ma565[0] = ma565[1];
-      b565[0][0] = b565[1][0], b565[0][1] = b565[1][1];
-      ma343[0] = ma343[2];
-      ma343[1] = ma343[3];
-      ma444[0] = ma444[2];
-      b343[0][0] = b343[2][0], b343[0][1] = b343[2][1];
-      b343[1][0] = b343[3][0], b343[1][1] = b343[3][1];
-      b444[0][0] = b444[2][0], b444[0][1] = b444[2][1];
-    }
-
-    if ((height & 1) != 0) {
-      ab_ptr += 24;
-      ma[0] = b[0][0] = LoadAligned16(ab_ptr);
-      ma[1] = b[1][0] = LoadAligned16(ab_ptr + 8);
-      row[0] = row[2];
-      row[1] = row[3];
-      row[2] = row[4];
-      row_sq[0][0] = row_sq[2][0], row_sq[0][1] = row_sq[2][1];
-      row_sq[1][0] = row_sq[3][0], row_sq[1][1] = row_sq[3][1];
-      row_sq[2][0] = row_sq[4][0], row_sq[2][1] = row_sq[4][1];
-      column += src_stride;
-      row[3] = row[4] = LoadUnaligned16Msan(column, x + 13 - width);
-      row_sq[3][0] = row_sq[4][0] = VmullLo8(row[3], row[3]);
-      row_sq[3][1] = row_sq[4][1] = VmullHi8(row[3], row[3]);
-      BoxFilterPreProcess8<5>(row, row_sq, scale[0], &ma[0], &b[0][1], ab_ptr);
-      BoxFilterPreProcess8<3>(row + 1, row_sq + 1, scale[1], &ma[1], &b[1][1],
-                              ab_ptr + 8);
-      __m128i p[2];
-      p[0] = BoxFilterPass1(row[1], ma[0], b[0], ma565, b565);
-      p[1] = BoxFilterPass2(row[1], ma[1], b[1], ma343, ma444, b343, b444);
-      SelfGuidedDoubleMultiplier(row[1], p, w0, w2, dst_ptr);
-    }
+    s[0] = _mm_srli_si128(s[0], 8);
+    s[1] = _mm_srli_si128(s[1], 8);
+    sq[0][0] = sq[0][1];
+    sq[1][0] = sq[1][1];
+    mas = _mm_srli_si128(mas, 8);
+    BoxFilterPreProcess5(src0, src1, width, x + 8, scale, sum5, square_sum5, s,
+                         sq, &mas, &bs[1]);
+    __m128i ma[2], b[2][2];
+    ma[1] = Sum565(mas);
+    Sum565W(bs, b[1]);
+    StoreAligned16(ma565[1] + x, ma[1]);
+    StoreAligned16(b565[1] + x + 0, b[1][0]);
+    StoreAligned16(b565[1] + x + 4, b[1][1]);
+    const __m128i sr0 = LoadLo8(src + x);
+    const __m128i sr1 = LoadLo8(src + stride + x);
+    __m128i p0, p1;
+    ma[0] = LoadAligned16(ma565[0] + x);
+    b[0][0] = LoadAligned16(b565[0] + x + 0);
+    b[0][1] = LoadAligned16(b565[0] + x + 4);
+    p0 = CalculateFilteredOutputPass1(sr0, ma, b);
+    p1 = CalculateFilteredOutput<4>(sr1, ma[1], b[1]);
+    SelfGuidedSingleMultiplier(sr0, p0, w0, dst + x);
+    SelfGuidedSingleMultiplier(sr1, p1, w0, dst + stride + x);
+    bs[0] = bs[1];
     x += 8;
   } while (x < width);
 }
 
-inline void BoxFilterProcessPass1(const uint8_t* const src,
-                                  const ptrdiff_t src_stride,
-                                  const RestorationUnitInfo& restoration_info,
-                                  const int width, const int height,
-                                  const uint32_t scale, uint16_t* const temp,
-                                  uint8_t* const dst,
-                                  const ptrdiff_t dst_stride) {
-  // We have combined PreProcess and Process for the first pass by storing
-  // intermediate values in the |ma| region. The values stored are one
-  // vertical column of interleaved |ma| and |b| values and consume 8 *
-  // |height| values. This is |height| and not |height| * 2 because PreProcess
-  // only generates output for every other row. When processing the next column
-  // we write the new scratch values right after reading the previously saved
-  // ones.
+inline void BoxFilterPass1LastRow(const uint8_t* const src,
+                                  const uint8_t* const src0, const int width,
+                                  const uint32_t scale, const int16_t w0,
+                                  uint16_t* const sum5[5],
+                                  uint32_t* const square_sum5[5],
+                                  uint16_t* ma565, uint32_t* b565,
+                                  uint8_t* const dst) {
+  __m128i s, mas, sq[2], bs[2];
+  s = LoadLo8Msan(src0, kOverreadInBytesPass1 - width);
+  sq[0] = VmullLo8(s, s);
+  BoxFilterPreProcess5LastRow(src0, width, 0, scale, sum5, square_sum5, &s, sq,
+                              &mas, &bs[0]);
 
-  // The PreProcess phase calculates a 5x5 box sum for every other row
-  //
-  // PreProcess and Process have been combined into the same step. We need 12
-  // input values to generate 8 output values for PreProcess:
-  // 0 1 2 3 4 5 6 7 8 9 10 11
-  // 2 = 0 + 1 + 2 +  3 +  4
-  // 3 = 1 + 2 + 3 +  4 +  5
-  // 4 = 2 + 3 + 4 +  5 +  6
-  // 5 = 3 + 4 + 5 +  6 +  7
-  // 6 = 4 + 5 + 6 +  7 +  8
-  // 7 = 5 + 6 + 7 +  8 +  9
-  // 8 = 6 + 7 + 8 +  9 + 10
-  // 9 = 7 + 8 + 9 + 10 + 11
-  //
-  // and then we need 10 input values to generate 8 output values for Process:
-  // 0 1 2 3 4 5 6 7 8 9
-  // 1 = 0 + 1 + 2
-  // 2 = 1 + 2 + 3
-  // 3 = 2 + 3 + 4
-  // 4 = 3 + 4 + 5
-  // 5 = 4 + 5 + 6
-  // 6 = 5 + 6 + 7
-  // 7 = 6 + 7 + 8
-  // 8 = 7 + 8 + 9
-  //
-  // To avoid re-calculating PreProcess values over and over again we will do a
-  // single column of 8 output values and store the second half of them
-  // interleaved in |temp|. The first half is not stored, since it is used
-  // immediately and becomes useless for the next column. Next we will start the
-  // second column. When 2 rows have been calculated we can calculate Process
-  // and output the results.
-
-  // Calculate and store a single column. Scope so we can re-use the variable
-  // names for the next step.
-  uint16_t* ab_ptr = temp;
-  const uint8_t* const src_pre_process = src - 2 * src_stride;
-  // Calculate intermediate results, including two-pixel border, for example, if
-  // unit size is 64x64, we calculate 68x68 pixels.
-  {
-    const uint8_t* column = src_pre_process - 4;
-    __m128i row[5], row_sq[5];
-    row[0] = row[1] = LoadLo8(column);
-    column += src_stride;
-    row[2] = LoadLo8(column);
-    row_sq[0] = row_sq[1] = VmullLo8(row[1], row[1]);
-    row_sq[2] = VmullLo8(row[2], row[2]);
-
-    int y = (height + 2) >> 1;
-    do {
-      column += src_stride;
-      row[3] = LoadLo8(column);
-      column += src_stride;
-      row[4] = LoadLo8(column);
-      row_sq[3] = VmullLo8(row[3], row[3]);
-      row_sq[4] = VmullLo8(row[4], row[4]);
-      BoxFilterPreProcess4<5, 1>(row, row_sq, scale, ab_ptr);
-      row[0] = row[2];
-      row[1] = row[3];
-      row[2] = row[4];
-      row_sq[0] = row_sq[2];
-      row_sq[1] = row_sq[3];
-      row_sq[2] = row_sq[4];
-      ab_ptr += 8;
-    } while (--y != 0);
-
-    if ((height & 1) != 0) {
-      column += src_stride;
-      row[3] = row[4] = LoadLo8(column);
-      row_sq[3] = row_sq[4] = VmullLo8(row[3], row[3]);
-      BoxFilterPreProcess4<5, 1>(row, row_sq, scale, ab_ptr);
-    }
-  }
-
-  const int w0 = restoration_info.sgr_proj_info.multiplier[0];
   int x = 0;
   do {
-    // |src_pre_process| is X but we already processed the first column of 4
-    // values so we want to start at Y and increment from there.
-    // X s s s Y s s
-    // s s s s s s s
-    // s s i i i i i
-    // s s i o o o o
-    // s s i o o o o
-
-    // Seed the loop with one line of output. Then, inside the loop, for each
-    // iteration we can output one even row and one odd row and carry the new
-    // line to the next iteration. In the diagram below 'i' values are
-    // intermediary values from the first step and '-' values are empty.
-    // iiii
-    // ---- > even row
-    // iiii - odd row
-    // ---- > even row
-    // iiii
-    __m128i ma[2], b[2], ma565[2], b565[2][2];
-    ab_ptr = temp;
-    ma[0] = b[0] = LoadAligned16(ab_ptr);
-    const uint8_t* column = src_pre_process + x;
-    __m128i row[5], row_sq[5][2];
-    // Need |width| + 3 pixels, but we read max(|x|) + 16 pixels.
-    // Mask max(|x|) + 13 - |width| extra pixels.
-    row[0] = row[1] = LoadUnaligned16Msan(column, x + 13 - width);
-    column += src_stride;
-    row[2] = LoadUnaligned16Msan(column, x + 13 - width);
-    column += src_stride;
-    row[3] = LoadUnaligned16Msan(column, x + 13 - width);
-    column += src_stride;
-    row[4] = LoadUnaligned16Msan(column, x + 13 - width);
-    row_sq[0][0] = row_sq[1][0] = VmullLo8(row[1], row[1]);
-    row_sq[0][1] = row_sq[1][1] = VmullHi8(row[1], row[1]);
-    row_sq[2][0] = VmullLo8(row[2], row[2]);
-    row_sq[2][1] = VmullHi8(row[2], row[2]);
-    row_sq[3][0] = VmullLo8(row[3], row[3]);
-    row_sq[3][1] = VmullHi8(row[3], row[3]);
-    row_sq[4][0] = VmullLo8(row[4], row[4]);
-    row_sq[4][1] = VmullHi8(row[4], row[4]);
-    BoxFilterPreProcess8<5>(row, row_sq, scale, &ma[0], &b[1], ab_ptr);
-
-    // Pass 1 Process. These are the only values we need to propagate between
-    // rows.
-    ma565[0] = Sum565(ma[0]);
-    b565[0][0] = Sum565W(_mm_alignr_epi8(b[1], b[0], 8));
-    b565[0][1] = Sum565W(b[1]);
-    uint8_t* dst_ptr = dst + x;
-    // Calculate one output line. Add in the line from the previous pass and
-    // output one even row. Sum the new line and output the odd row. Carry the
-    // new row into the next pass.
-    for (int y = height >> 1; y != 0; --y) {
-      ab_ptr += 8;
-      ma[0] = b[0] = LoadAligned16(ab_ptr);
-      row[0] = row[2];
-      row[1] = row[3];
-      row[2] = row[4];
-      row_sq[0][0] = row_sq[2][0], row_sq[0][1] = row_sq[2][1];
-      row_sq[1][0] = row_sq[3][0], row_sq[1][1] = row_sq[3][1];
-      row_sq[2][0] = row_sq[4][0], row_sq[2][1] = row_sq[4][1];
-      column += src_stride;
-      row[3] = LoadUnaligned16Msan(column, x + 13 - width);
-      column += src_stride;
-      row[4] = LoadUnaligned16Msan(column, x + 13 - width);
-      row_sq[3][0] = VmullLo8(row[3], row[3]);
-      row_sq[3][1] = VmullHi8(row[3], row[3]);
-      row_sq[4][0] = VmullLo8(row[4], row[4]);
-      row_sq[4][1] = VmullHi8(row[4], row[4]);
-      BoxFilterPreProcess8<5>(row, row_sq, scale, &ma[0], &b[1], ab_ptr);
-      const __m128i p0 = BoxFilterPass1(row[1], ma[0], b, ma565, b565);
-      SelfGuidedSingleMultiplier(row[1], p0, w0, dst_ptr);
-      dst_ptr += dst_stride;
-      const __m128i p1 = CalculateFilteredOutput<4>(row[2], ma565[1], b565[1]);
-      SelfGuidedSingleMultiplier(row[2], p1, w0, dst_ptr);
-      dst_ptr += dst_stride;
-      ma565[0] = ma565[1];
-      b565[0][0] = b565[1][0], b565[0][1] = b565[1][1];
-    }
-
-    if ((height & 1) != 0) {
-      ab_ptr += 8;
-      ma[0] = b[0] = LoadAligned16(ab_ptr);
-      row[0] = row[2];
-      row[1] = row[3];
-      row[2] = row[4];
-      row_sq[0][0] = row_sq[2][0], row_sq[0][1] = row_sq[2][1];
-      row_sq[1][0] = row_sq[3][0], row_sq[1][1] = row_sq[3][1];
-      row_sq[2][0] = row_sq[4][0], row_sq[2][1] = row_sq[4][1];
-      column += src_stride;
-      row[3] = row[4] = LoadUnaligned16Msan(column, x + 13 - width);
-      row_sq[3][0] = row_sq[4][0] = VmullLo8(row[3], row[3]);
-      row_sq[3][1] = row_sq[4][1] = VmullHi8(row[3], row[3]);
-      BoxFilterPreProcess8<5>(row, row_sq, scale, &ma[0], &b[1], ab_ptr);
-      const __m128i p0 = BoxFilterPass1(row[1], ma[0], b, ma565, b565);
-      SelfGuidedSingleMultiplier(row[1], p0, w0, dst_ptr);
-    }
+    s = _mm_srli_si128(s, 8);
+    sq[0] = sq[1];
+    mas = _mm_srli_si128(mas, 8);
+    BoxFilterPreProcess5LastRow(src0, width, x + 8, scale, sum5, square_sum5,
+                                &s, sq, &mas, &bs[1]);
+    __m128i ma[2], b[2][2];
+    ma[1] = Sum565(mas);
+    Sum565W(bs, b[1]);
+    bs[0] = bs[1];
+    ma[0] = LoadAligned16(ma565);
+    b[0][0] = LoadAligned16(b565 + 0);
+    b[0][1] = LoadAligned16(b565 + 4);
+    const __m128i sr = LoadLo8(src + x);
+    const __m128i p = CalculateFilteredOutputPass1(sr, ma, b);
+    SelfGuidedSingleMultiplier(sr, p, w0, dst + x);
+    ma565 += 8;
+    b565 += 8;
     x += 8;
   } while (x < width);
 }
 
-inline void BoxFilterProcessPass2(const uint8_t* src,
-                                  const ptrdiff_t src_stride,
-                                  const RestorationUnitInfo& restoration_info,
-                                  const int width, const int height,
-                                  const uint32_t scale, uint16_t* const temp,
-                                  uint8_t* const dst,
-                                  const ptrdiff_t dst_stride) {
-  // Calculate intermediate results, including one-pixel border, for example, if
-  // unit size is 64x64, we calculate 66x66 pixels.
-  // Because of the vectors this calculates start in blocks of 4 so we actually
-  // get 68 values.
-  uint16_t* ab_ptr = temp;
-  const uint8_t* const src_pre_process = src - 2 * src_stride;
-  {
-    const uint8_t* column = src_pre_process - 3;
-    __m128i row[3], row_sq[3];
-    row[0] = LoadLo8(column);
-    column += src_stride;
-    row[1] = LoadLo8(column);
-    row_sq[0] = VmullLo8(row[0], row[0]);
-    row_sq[1] = VmullLo8(row[1], row[1]);
-    int y = height + 2;
-    do {
-      column += src_stride;
-      row[2] = LoadLo8(column);
-      row_sq[2] = VmullLo8(row[2], row[2]);
-      BoxFilterPreProcess4<3, 0>(row, row_sq, scale, ab_ptr);
-      row[0] = row[1];
-      row[1] = row[2];
-      row_sq[0] = row_sq[1];
-      row_sq[1] = row_sq[2];
-      ab_ptr += 8;
-    } while (--y != 0);
+LIBGAV1_ALWAYS_INLINE void BoxFilterPass2(
+    const uint8_t* const src, const uint8_t* const src0, const int width,
+    const uint32_t scale, const int16_t w0, uint16_t* const sum3[3],
+    uint32_t* const square_sum3[3], uint16_t* const ma343[3],
+    uint16_t* const ma444[2], uint32_t* const b343[3], uint32_t* const b444[2],
+    uint8_t* const dst) {
+  __m128i s, mas, sq[2], bs[2];
+  s = LoadLo8Msan(src0, kOverreadInBytesPass2 - width);
+  sq[0] = VmullLo8(s, s);
+  BoxFilterPreProcess3(src0, width, 0, scale, sum3, square_sum3, &s, sq, &mas,
+                       &bs[0]);
+
+  int x = 0;
+  do {
+    s = _mm_srli_si128(s, 8);
+    sq[0] = sq[1];
+    mas = _mm_srli_si128(mas, 8);
+    BoxFilterPreProcess3(src0, width, x + 8, scale, sum3, square_sum3, &s, sq,
+                         &mas, &bs[1]);
+    __m128i ma[3], b[3][2];
+    Store343_444(mas, bs, x, &ma[2], b[2], ma343[2], ma444[1], b343[2],
+                 b444[1]);
+    const __m128i sr = LoadLo8(src + x);
+    ma[0] = LoadAligned16(ma343[0] + x);
+    ma[1] = LoadAligned16(ma444[0] + x);
+    b[0][0] = LoadAligned16(b343[0] + x + 0);
+    b[0][1] = LoadAligned16(b343[0] + x + 4);
+    b[1][0] = LoadAligned16(b444[0] + x + 0);
+    b[1][1] = LoadAligned16(b444[0] + x + 4);
+    const __m128i p = CalculateFilteredOutputPass2(sr, ma, b);
+    SelfGuidedSingleMultiplier(sr, p, w0, dst + x);
+    bs[0] = bs[1];
+    x += 8;
+  } while (x < width);
+}
+
+LIBGAV1_ALWAYS_INLINE void BoxFilter(
+    const uint8_t* const src, const uint8_t* const src0,
+    const uint8_t* const src1, const ptrdiff_t stride, const int width,
+    const uint16_t scales[2], const int16_t w0, const int16_t w2,
+    uint16_t* const sum3[4], uint16_t* const sum5[5],
+    uint32_t* const square_sum3[4], uint32_t* const square_sum5[5],
+    uint16_t* const ma343[4], uint16_t* const ma444[3],
+    uint16_t* const ma565[2], uint32_t* const b343[4], uint32_t* const b444[3],
+    uint32_t* const b565[2], uint8_t* const dst) {
+  __m128i s[2], ma3[2], ma5, sq[2][2], b3[2][2], b5[2];
+  s[0] = LoadLo8Msan(src0, kOverreadInBytesPass1 - width);
+  s[1] = LoadLo8Msan(src1, kOverreadInBytesPass1 - width);
+  sq[0][0] = VmullLo8(s[0], s[0]);
+  sq[1][0] = VmullLo8(s[1], s[1]);
+  BoxFilterPreProcess(src0, src1, width, 0, scales, sum3, sum5, square_sum3,
+                      square_sum5, s, sq, &ma3[0], &ma3[1], &b3[0][0],
+                      &b3[1][0], &ma5, &b5[0]);
+
+  int x = 0;
+  do {
+    s[0] = _mm_srli_si128(s[0], 8);
+    s[1] = _mm_srli_si128(s[1], 8);
+    sq[0][0] = sq[0][1];
+    sq[1][0] = sq[1][1];
+    ma3[0] = _mm_srli_si128(ma3[0], 8);
+    ma3[1] = _mm_srli_si128(ma3[1], 8);
+    ma5 = _mm_srli_si128(ma5, 8);
+    BoxFilterPreProcess(src0, src1, width, x + 8, scales, sum3, sum5,
+                        square_sum3, square_sum5, s, sq, &ma3[0], &ma3[1],
+                        &b3[0][1], &b3[1][1], &ma5, &b5[1]);
+    __m128i ma[3][3], b[3][3][2];
+    Store343_444(ma3[0], b3[0], x, &ma[1][2], &ma[2][1], b[1][2], b[2][1],
+                 ma343[2], ma444[1], b343[2], b444[1]);
+    Store343_444(ma3[1], b3[1], x, &ma[2][2], b[2][2], ma343[3], ma444[2],
+                 b343[3], b444[2]);
+    ma[0][1] = Sum565(ma5);
+    Sum565W(b5, b[0][1]);
+    StoreAligned16(ma565[1] + x, ma[0][1]);
+    StoreAligned16(b565[1] + x, b[0][1][0]);
+    StoreAligned16(b565[1] + x + 4, b[0][1][1]);
+    b3[0][0] = b3[0][1];
+    b3[1][0] = b3[1][1];
+    b5[0] = b5[1];
+    __m128i p[2][2];
+    const __m128i sr0 = LoadLo8(src + x);
+    const __m128i sr1 = LoadLo8(src + stride + x);
+    ma[0][0] = LoadAligned16(ma565[0] + x);
+    b[0][0][0] = LoadAligned16(b565[0] + x);
+    b[0][0][1] = LoadAligned16(b565[0] + x + 4);
+    p[0][0] = CalculateFilteredOutputPass1(sr0, ma[0], b[0]);
+    p[1][0] = CalculateFilteredOutput<4>(sr1, ma[0][1], b[0][1]);
+    ma[1][0] = LoadAligned16(ma343[0] + x);
+    ma[1][1] = LoadAligned16(ma444[0] + x);
+    b[1][0][0] = LoadAligned16(b343[0] + x);
+    b[1][0][1] = LoadAligned16(b343[0] + x + 4);
+    b[1][1][0] = LoadAligned16(b444[0] + x);
+    b[1][1][1] = LoadAligned16(b444[0] + x + 4);
+    p[0][1] = CalculateFilteredOutputPass2(sr0, ma[1], b[1]);
+    ma[2][0] = LoadAligned16(ma343[1] + x);
+    b[2][0][0] = LoadAligned16(b343[1] + x);
+    b[2][0][1] = LoadAligned16(b343[1] + x + 4);
+    p[1][1] = CalculateFilteredOutputPass2(sr1, ma[2], b[2]);
+    SelfGuidedDoubleMultiplier(sr0, p[0], w0, w2, dst + x);
+    SelfGuidedDoubleMultiplier(sr1, p[1], w0, w2, dst + stride + x);
+    x += 8;
+  } while (x < width);
+}
+
+inline void BoxFilterLastRow(
+    const uint8_t* const src, const uint8_t* const src0, const int width,
+    const uint16_t scales[2], const int16_t w0, const int16_t w2,
+    uint16_t* const sum3[4], uint16_t* const sum5[5],
+    uint32_t* const square_sum3[4], uint32_t* const square_sum5[5],
+    uint16_t* const ma343[4], uint16_t* const ma444[3],
+    uint16_t* const ma565[2], uint32_t* const b343[4], uint32_t* const b444[3],
+    uint32_t* const b565[2], uint8_t* const dst) {
+  __m128i s, ma3, ma5, sq[2], b3[2], b5[2], ma[3], b[3][2];
+  s = LoadLo8Msan(src0, kOverreadInBytesPass1 - width);
+  sq[0] = VmullLo8(s, s);
+  BoxFilterPreProcessLastRow(src0, width, 0, scales, sum3, sum5, square_sum3,
+                             square_sum5, &s, sq, &ma3, &ma5, &b3[0], &b5[0]);
+
+  int x = 0;
+  do {
+    s = _mm_srli_si128(s, 8);
+    sq[0] = sq[1];
+    ma3 = _mm_srli_si128(ma3, 8);
+    ma5 = _mm_srli_si128(ma5, 8);
+    BoxFilterPreProcessLastRow(src0, width, x + 8, scales, sum3, sum5,
+                               square_sum3, square_sum5, &s, sq, &ma3, &ma5,
+                               &b3[1], &b5[1]);
+    ma[1] = Sum565(ma5);
+    Sum565W(b5, b[1]);
+    b5[0] = b5[1];
+    ma[2] = Sum343(ma3);
+    Sum343W(b3, b[2]);
+    b3[0] = b3[1];
+    const __m128i sr = LoadLo8(src + x);
+    __m128i p[2];
+    ma[0] = LoadAligned16(ma565[0] + x);
+    b[0][0] = LoadAligned16(b565[0] + x + 0);
+    b[0][1] = LoadAligned16(b565[0] + x + 4);
+    p[0] = CalculateFilteredOutputPass1(sr, ma, b);
+    ma[0] = LoadAligned16(ma343[0] + x);
+    ma[1] = LoadAligned16(ma444[0] + x);
+    b[0][0] = LoadAligned16(b343[0] + x + 0);
+    b[0][1] = LoadAligned16(b343[0] + x + 4);
+    b[1][0] = LoadAligned16(b444[0] + x + 0);
+    b[1][1] = LoadAligned16(b444[0] + x + 4);
+    p[1] = CalculateFilteredOutputPass2(sr, ma, b);
+    SelfGuidedDoubleMultiplier(sr, p, w0, w2, dst + x);
+    x += 8;
+  } while (x < width);
+}
+
+LIBGAV1_ALWAYS_INLINE void BoxFilterProcess(
+    const RestorationUnitInfo& restoration_info, const uint8_t* src,
+    const uint8_t* const top_border, const uint8_t* bottom_border,
+    const ptrdiff_t stride, const int width, const int height,
+    SgrBuffer* const sgr_buffer, uint8_t* dst) {
+  const auto temp_stride = Align<ptrdiff_t>(width, 8);
+  const ptrdiff_t sum_stride = temp_stride + 8;
+  const int sgr_proj_index = restoration_info.sgr_proj_info.index;
+  const uint16_t* const scales = kSgrScaleParameter[sgr_proj_index];  // < 2^12.
+  const int16_t w0 = restoration_info.sgr_proj_info.multiplier[0];
+  const int16_t w1 = restoration_info.sgr_proj_info.multiplier[1];
+  const int16_t w2 = (1 << kSgrProjPrecisionBits) - w0 - w1;
+  uint16_t *sum3[4], *sum5[5], *ma343[4], *ma444[3], *ma565[2];
+  uint32_t *square_sum3[4], *square_sum5[5], *b343[4], *b444[3], *b565[2];
+  sum3[0] = sgr_buffer->sum3;
+  square_sum3[0] = sgr_buffer->square_sum3;
+  ma343[0] = sgr_buffer->ma343;
+  b343[0] = sgr_buffer->b343;
+  for (int i = 1; i <= 3; ++i) {
+    sum3[i] = sum3[i - 1] + sum_stride;
+    square_sum3[i] = square_sum3[i - 1] + sum_stride;
+    ma343[i] = ma343[i - 1] + temp_stride;
+    b343[i] = b343[i - 1] + temp_stride;
+  }
+  sum5[0] = sgr_buffer->sum5;
+  square_sum5[0] = sgr_buffer->square_sum5;
+  for (int i = 1; i <= 4; ++i) {
+    sum5[i] = sum5[i - 1] + sum_stride;
+    square_sum5[i] = square_sum5[i - 1] + sum_stride;
+  }
+  ma444[0] = sgr_buffer->ma444;
+  b444[0] = sgr_buffer->b444;
+  for (int i = 1; i <= 2; ++i) {
+    ma444[i] = ma444[i - 1] + temp_stride;
+    b444[i] = b444[i - 1] + temp_stride;
+  }
+  ma565[0] = sgr_buffer->ma565;
+  ma565[1] = ma565[0] + temp_stride;
+  b565[0] = sgr_buffer->b565;
+  b565[1] = b565[0] + temp_stride;
+  assert(scales[0] != 0);
+  assert(scales[1] != 0);
+  BoxSum(top_border, stride, 2, sum_stride, width, sum3[0], sum5[1],
+         square_sum3[0], square_sum5[1]);
+  sum5[0] = sum5[1];
+  square_sum5[0] = square_sum5[1];
+  const uint8_t* const s = (height > 1) ? src + stride : bottom_border;
+  BoxSumFilterPreProcess(src, s, width, scales, sum3, sum5, square_sum3,
+                         square_sum5, ma343, ma444, ma565[0], b343, b444,
+                         b565[0]);
+  sum5[0] = sgr_buffer->sum5;
+  square_sum5[0] = sgr_buffer->square_sum5;
+
+  for (int y = (height >> 1) - 1; y > 0; --y) {
+    Circulate4PointersBy2<uint16_t>(sum3);
+    Circulate4PointersBy2<uint32_t>(square_sum3);
+    Circulate5PointersBy2<uint16_t>(sum5);
+    Circulate5PointersBy2<uint32_t>(square_sum5);
+    BoxFilter(src + 3, src + 2 * stride, src + 3 * stride, stride, width,
+              scales, w0, w2, sum3, sum5, square_sum3, square_sum5, ma343,
+              ma444, ma565, b343, b444, b565, dst);
+    src += 2 * stride;
+    dst += 2 * stride;
+    Circulate4PointersBy2<uint16_t>(ma343);
+    Circulate4PointersBy2<uint32_t>(b343);
+    std::swap(ma444[0], ma444[2]);
+    std::swap(b444[0], b444[2]);
+    std::swap(ma565[0], ma565[1]);
+    std::swap(b565[0], b565[1]);
   }
 
+  Circulate4PointersBy2<uint16_t>(sum3);
+  Circulate4PointersBy2<uint32_t>(square_sum3);
+  Circulate5PointersBy2<uint16_t>(sum5);
+  Circulate5PointersBy2<uint32_t>(square_sum5);
+  if ((height & 1) == 0 || height > 1) {
+    const uint8_t* sr[2];
+    if ((height & 1) == 0) {
+      sr[0] = bottom_border;
+      sr[1] = bottom_border + stride;
+    } else {
+      sr[0] = src + 2 * stride;
+      sr[1] = bottom_border;
+    }
+    BoxFilter(src + 3, sr[0], sr[1], stride, width, scales, w0, w2, sum3, sum5,
+              square_sum3, square_sum5, ma343, ma444, ma565, b343, b444, b565,
+              dst);
+  }
+  if ((height & 1) != 0) {
+    if (height > 1) {
+      src += 2 * stride;
+      dst += 2 * stride;
+      Circulate4PointersBy2<uint16_t>(sum3);
+      Circulate4PointersBy2<uint32_t>(square_sum3);
+      Circulate5PointersBy2<uint16_t>(sum5);
+      Circulate5PointersBy2<uint32_t>(square_sum5);
+      Circulate4PointersBy2<uint16_t>(ma343);
+      Circulate4PointersBy2<uint32_t>(b343);
+      std::swap(ma444[0], ma444[2]);
+      std::swap(b444[0], b444[2]);
+      std::swap(ma565[0], ma565[1]);
+      std::swap(b565[0], b565[1]);
+    }
+    BoxFilterLastRow(src + 3, bottom_border + stride, width, scales, w0, w2,
+                     sum3, sum5, square_sum3, square_sum5, ma343, ma444, ma565,
+                     b343, b444, b565, dst);
+  }
+}
+
+inline void BoxFilterProcessPass1(const RestorationUnitInfo& restoration_info,
+                                  const uint8_t* src,
+                                  const uint8_t* const top_border,
+                                  const uint8_t* bottom_border,
+                                  const ptrdiff_t stride, const int width,
+                                  const int height, SgrBuffer* const sgr_buffer,
+                                  uint8_t* dst) {
+  const auto temp_stride = Align<ptrdiff_t>(width, 8);
+  const ptrdiff_t sum_stride = temp_stride + 8;
+  const int sgr_proj_index = restoration_info.sgr_proj_info.index;
+  const uint32_t scale = kSgrScaleParameter[sgr_proj_index][0];  // < 2^12.
+  const int16_t w0 = restoration_info.sgr_proj_info.multiplier[0];
+  uint16_t *sum5[5], *ma565[2];
+  uint32_t *square_sum5[5], *b565[2];
+  sum5[0] = sgr_buffer->sum5;
+  square_sum5[0] = sgr_buffer->square_sum5;
+  for (int i = 1; i <= 4; ++i) {
+    sum5[i] = sum5[i - 1] + sum_stride;
+    square_sum5[i] = square_sum5[i - 1] + sum_stride;
+  }
+  ma565[0] = sgr_buffer->ma565;
+  ma565[1] = ma565[0] + temp_stride;
+  b565[0] = sgr_buffer->b565;
+  b565[1] = b565[0] + temp_stride;
+  assert(scale != 0);
+  BoxSum<5>(top_border, stride, 2, sum_stride, width, sum5[1], square_sum5[1]);
+  sum5[0] = sum5[1];
+  square_sum5[0] = square_sum5[1];
+  const uint8_t* const s = (height > 1) ? src + stride : bottom_border;
+  BoxSumFilterPreProcess5(src, s, width, scale, sum5, square_sum5, ma565[0],
+                          b565[0]);
+  sum5[0] = sgr_buffer->sum5;
+  square_sum5[0] = sgr_buffer->square_sum5;
+
+  for (int y = (height >> 1) - 1; y > 0; --y) {
+    Circulate5PointersBy2<uint16_t>(sum5);
+    Circulate5PointersBy2<uint32_t>(square_sum5);
+    BoxFilterPass1(src + 3, src + 2 * stride, src + 3 * stride, stride, sum5,
+                   square_sum5, width, scale, w0, ma565, b565, dst);
+    src += 2 * stride;
+    dst += 2 * stride;
+    std::swap(ma565[0], ma565[1]);
+    std::swap(b565[0], b565[1]);
+  }
+
+  Circulate5PointersBy2<uint16_t>(sum5);
+  Circulate5PointersBy2<uint32_t>(square_sum5);
+  if ((height & 1) == 0 || height > 1) {
+    const uint8_t* sr[2];
+    if ((height & 1) == 0) {
+      sr[0] = bottom_border;
+      sr[1] = bottom_border + stride;
+    } else {
+      sr[0] = src + 2 * stride;
+      sr[1] = bottom_border;
+    }
+    BoxFilterPass1(src + 3, sr[0], sr[1], stride, sum5, square_sum5, width,
+                   scale, w0, ma565, b565, dst);
+  }
+  if ((height & 1) != 0) {
+    src += 3;
+    if (height > 1) {
+      src += 2 * stride;
+      dst += 2 * stride;
+      std::swap(ma565[0], ma565[1]);
+      std::swap(b565[0], b565[1]);
+      Circulate5PointersBy2<uint16_t>(sum5);
+      Circulate5PointersBy2<uint32_t>(square_sum5);
+    }
+    BoxFilterPass1LastRow(src, bottom_border + stride, width, scale, w0, sum5,
+                          square_sum5, ma565[0], b565[0], dst);
+  }
+}
+
+inline void BoxFilterProcessPass2(const RestorationUnitInfo& restoration_info,
+                                  const uint8_t* src,
+                                  const uint8_t* const top_border,
+                                  const uint8_t* bottom_border,
+                                  const ptrdiff_t stride, const int width,
+                                  const int height, SgrBuffer* const sgr_buffer,
+                                  uint8_t* dst) {
   assert(restoration_info.sgr_proj_info.multiplier[0] == 0);
-  const int w1 = restoration_info.sgr_proj_info.multiplier[1];
-  const int w0 = (1 << kSgrProjPrecisionBits) - w1;
-  int x = 0;
-  do {
-    ab_ptr = temp;
-    __m128i ma, b[2], ma343[3], ma444[2], b343[3][2], b444[2][2];
-    ma = b[0] = LoadAligned16(ab_ptr);
-    const uint8_t* column = src_pre_process + x;
-    __m128i row[3], row_sq[3][2];
-    // Need |width| + 2 pixels, but we read max(|x|) + 16 pixels.
-    // Mask max(|x|) + 14 - |width| extra pixels.
-    row[0] = LoadUnaligned16Msan(column, x + 14 - width);
-    column += src_stride;
-    row[1] = LoadUnaligned16Msan(column, x + 14 - width);
-    column += src_stride;
-    row[2] = LoadUnaligned16Msan(column, x + 14 - width);
-    row_sq[0][0] = VmullLo8(row[0], row[0]);
-    row_sq[0][1] = VmullHi8(row[0], row[0]);
-    row_sq[1][0] = VmullLo8(row[1], row[1]);
-    row_sq[1][1] = VmullHi8(row[1], row[1]);
-    row_sq[2][0] = VmullLo8(row[2], row[2]);
-    row_sq[2][1] = VmullHi8(row[2], row[2]);
-    BoxFilterPreProcess8<3>(row, row_sq, scale, &ma, &b[1], ab_ptr);
-    ma343[0] = Sum343(ma);
-    Sum343W(b, b343[0]);
-    ab_ptr += 8;
-    ma = b[0] = LoadAligned16(ab_ptr);
-    row[0] = row[1];
-    row[1] = row[2];
-    row_sq[0][0] = row_sq[1][0], row_sq[0][1] = row_sq[1][1];
-    row_sq[1][0] = row_sq[2][0], row_sq[1][1] = row_sq[2][1];
-    column += src_stride;
-    row[2] = LoadUnaligned16Msan(column, x + 14 - width);
-    row_sq[2][0] = VmullLo8(row[2], row[2]);
-    row_sq[2][1] = VmullHi8(row[2], row[2]);
-    BoxFilterPreProcess8<3>(row, row_sq, scale, &ma, &b[1], ab_ptr);
-    Sum343_444(ma, &ma343[1], &ma444[0]);
-    Sum343_444W(b, b343[1], b444[0]);
+  const auto temp_stride = Align<ptrdiff_t>(width, 8);
+  const ptrdiff_t sum_stride = temp_stride + 8;
+  const int16_t w1 = restoration_info.sgr_proj_info.multiplier[1];
+  const int16_t w0 = (1 << kSgrProjPrecisionBits) - w1;
+  const int sgr_proj_index = restoration_info.sgr_proj_info.index;
+  const uint32_t scale = kSgrScaleParameter[sgr_proj_index][1];  // < 2^12.
+  uint16_t *sum3[3], *ma343[3], *ma444[2];
+  uint32_t *square_sum3[3], *b343[3], *b444[2];
+  sum3[0] = sgr_buffer->sum3;
+  square_sum3[0] = sgr_buffer->square_sum3;
+  ma343[0] = sgr_buffer->ma343;
+  b343[0] = sgr_buffer->b343;
+  for (int i = 1; i <= 2; ++i) {
+    sum3[i] = sum3[i - 1] + sum_stride;
+    square_sum3[i] = square_sum3[i - 1] + sum_stride;
+    ma343[i] = ma343[i - 1] + temp_stride;
+    b343[i] = b343[i - 1] + temp_stride;
+  }
+  ma444[0] = sgr_buffer->ma444;
+  ma444[1] = ma444[0] + temp_stride;
+  b444[0] = sgr_buffer->b444;
+  b444[1] = b444[0] + temp_stride;
+  assert(scale != 0);
+  BoxSum<3>(top_border, stride, 2, sum_stride, width, sum3[0], square_sum3[0]);
+  BoxSumFilterPreProcess3<false>(src, width, scale, sum3, square_sum3, ma343[0],
+                                 nullptr, b343[0], nullptr);
+  Circulate3PointersBy1<uint16_t>(sum3);
+  Circulate3PointersBy1<uint32_t>(square_sum3);
+  const uint8_t* s;
+  if (height > 1) {
+    s = src + stride;
+  } else {
+    s = bottom_border;
+    bottom_border += stride;
+  }
+  BoxSumFilterPreProcess3<true>(s, width, scale, sum3, square_sum3, ma343[1],
+                                ma444[0], b343[1], b444[0]);
 
-    uint8_t* dst_ptr = dst + x;
-    int y = height;
-    do {
-      ab_ptr += 8;
-      ma = b[0] = LoadAligned16(ab_ptr);
-      row[0] = row[1];
-      row[1] = row[2];
-      row_sq[0][0] = row_sq[1][0], row_sq[0][1] = row_sq[1][1];
-      row_sq[1][0] = row_sq[2][0], row_sq[1][1] = row_sq[2][1];
-      column += src_stride;
-      row[2] = LoadUnaligned16Msan(column, x + 14 - width);
-      row_sq[2][0] = VmullLo8(row[2], row[2]);
-      row_sq[2][1] = VmullHi8(row[2], row[2]);
-      BoxFilterPreProcess8<3>(row, row_sq, scale, &ma, &b[1], ab_ptr);
-      const __m128i p = BoxFilterPass2(row[0], ma, b, ma343, ma444, b343, b444);
-      SelfGuidedSingleMultiplier(row[0], p, w0, dst_ptr);
-      ma343[0] = ma343[1];
-      ma343[1] = ma343[2];
-      ma444[0] = ma444[1];
-      b343[0][0] = b343[1][0], b343[0][1] = b343[1][1];
-      b343[1][0] = b343[2][0], b343[1][1] = b343[2][1];
-      b444[0][0] = b444[1][0], b444[0][1] = b444[1][1];
-      dst_ptr += dst_stride;
-    } while (--y != 0);
-    x += 8;
-  } while (x < width);
+  for (int y = height - 2; y > 0; --y) {
+    Circulate3PointersBy1<uint16_t>(sum3);
+    Circulate3PointersBy1<uint32_t>(square_sum3);
+    BoxFilterPass2(src + 2, src + 2 * stride, width, scale, w0, sum3,
+                   square_sum3, ma343, ma444, b343, b444, dst);
+    src += stride;
+    dst += stride;
+    Circulate3PointersBy1<uint16_t>(ma343);
+    Circulate3PointersBy1<uint32_t>(b343);
+    std::swap(ma444[0], ma444[1]);
+    std::swap(b444[0], b444[1]);
+  }
+
+  int y = std::min(height, 2);
+  src += 2;
+  do {
+    Circulate3PointersBy1<uint16_t>(sum3);
+    Circulate3PointersBy1<uint32_t>(square_sum3);
+    BoxFilterPass2(src, bottom_border, width, scale, w0, sum3, square_sum3,
+                   ma343, ma444, b343, b444, dst);
+    src += stride;
+    dst += stride;
+    bottom_border += stride;
+    Circulate3PointersBy1<uint16_t>(ma343);
+    Circulate3PointersBy1<uint32_t>(b343);
+    std::swap(ma444[0], ma444[1]);
+    std::swap(b444[0], b444[1]);
+  } while (--y != 0);
 }
 
 // If |width| is non-multiple of 8, up to 7 more pixels are written to |dest| in
 // the end of each row. It is safe to overwrite the output as it will not be
 // part of the visible frame.
-void SelfGuidedFilter_SSE4_1(const void* const source, void* const dest,
-                             const RestorationUnitInfo& restoration_info,
-                             const ptrdiff_t source_stride,
-                             const ptrdiff_t dest_stride, const int width,
-                             const int height,
-                             RestorationBuffer* const buffer) {
+void SelfGuidedFilter_SSE4_1(
+    const RestorationUnitInfo& restoration_info, const void* const source,
+    const void* const top_border, const void* const bottom_border,
+    const ptrdiff_t stride, const int width, const int height,
+    RestorationBuffer* const restoration_buffer, void* const dest) {
   const int index = restoration_info.sgr_proj_info.index;
   const int radius_pass_0 = kSgrProjParams[index][0];  // 2 or 0
   const int radius_pass_1 = kSgrProjParams[index][2];  // 1 or 0
-  const auto* src = static_cast<const uint8_t*>(source);
-  auto* dst = static_cast<uint8_t*>(dest);
+  const auto* const src = static_cast<const uint8_t*>(source);
+  const auto* top = static_cast<const uint8_t*>(top_border);
+  const auto* bottom = static_cast<const uint8_t*>(bottom_border);
+  auto* const dst = static_cast<uint8_t*>(dest);
+  SgrBuffer* const sgr_buffer = &restoration_buffer->sgr_buffer;
   if (radius_pass_1 == 0) {
     // |radius_pass_0| and |radius_pass_1| cannot both be 0, so we have the
     // following assertion.
     assert(radius_pass_0 != 0);
-    BoxFilterProcessPass1(src, source_stride, restoration_info, width, height,
-                          kSgrScaleParameter[index][0],
-                          buffer->sgr_buffer.temp_buffer, dst, dest_stride);
+    BoxFilterProcessPass1(restoration_info, src - 3, top - 3, bottom - 3,
+                          stride, width, height, sgr_buffer, dst);
   } else if (radius_pass_0 == 0) {
-    BoxFilterProcessPass2(src, source_stride, restoration_info, width, height,
-                          kSgrScaleParameter[index][1],
-                          buffer->sgr_buffer.temp_buffer, dst, dest_stride);
+    BoxFilterProcessPass2(restoration_info, src - 2, top - 2, bottom - 2,
+                          stride, width, height, sgr_buffer, dst);
   } else {
-    BoxFilterProcess(src, source_stride, restoration_info, width, height,
-                     kSgrScaleParameter[index], buffer->sgr_buffer.temp_buffer,
-                     dst, dest_stride);
+    BoxFilterProcess(restoration_info, src - 3, top - 3, bottom - 3, stride,
+                     width, height, sgr_buffer, dst);
   }
 }
 

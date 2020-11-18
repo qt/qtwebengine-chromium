@@ -223,6 +223,10 @@ struct DefInfo {
   /// at all.  The "last" ordering is determined by the function block order.
   uint32_t last_use_pos = 0;
 
+  /// Is this value used in a construct other than the one in which it was
+  /// defined?
+  bool used_in_another_construct = false;
+
   /// True if this ID requires a WGSL 'const' definition, due to context. It
   /// might get one anyway (so this is *not* an if-and-only-if condition).
   bool requires_named_const_def = false;
@@ -248,7 +252,7 @@ struct DefInfo {
   std::string phi_var;
 
   /// The storage class to use for this value, if it is of pointer type.
-  /// This is required to carry a stroage class override from a storage
+  /// This is required to carry a storage class override from a storage
   /// buffer expressed in the old style (with Uniform storage class)
   /// that needs to be remapped to StorageBuffer storage class.
   /// This is kNone for non-pointers.
@@ -700,6 +704,23 @@ class FunctionEmitter {
   /// @param statement the new statement
   /// @returns a pointer to the statement.
   ast::Statement* AddStatement(std::unique_ptr<ast::Statement> statement);
+
+  /// Appends a new statement to the top of the statement stack, and attaches
+  /// source location information from the given instruction. Does nothing if
+  /// the statement is null.
+  /// @param statement the new statement
+  /// @returns a pointer to the statement.
+  ast::Statement* AddStatementForInstruction(
+      std::unique_ptr<ast::Statement> statement,
+      const spvtools::opt::Instruction& inst);
+
+  /// Sets the source information for the given instruction to the given
+  /// node, if the node doesn't already have a source record.  Does nothing
+  /// if |nodes| is null.
+  /// @param node the AST node
+  /// @param inst the SPIR-V instruction
+  void ApplySourceForInstruction(ast::Node* node,
+                                 const spvtools::opt::Instruction& inst);
 
   /// @returns the last statetment in the top of the statement stack.
   ast::Statement* LastStatement();

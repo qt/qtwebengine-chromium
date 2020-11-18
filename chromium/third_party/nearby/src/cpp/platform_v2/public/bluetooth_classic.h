@@ -201,6 +201,10 @@ class BluetoothClassicMedium final {
 
   api::BluetoothClassicMedium& GetImpl() { return *impl_; }
   BluetoothAdapter& GetAdapter() { return adapter_; }
+  std::string GetMacAddress() const { return adapter_.GetMacAddress(); }
+  BluetoothDevice GetRemoteDevice(const std::string& mac_address) {
+    return BluetoothDevice(impl_->GetRemoteDevice(mac_address));
+  }
 
  private:
   Mutex mutex_;

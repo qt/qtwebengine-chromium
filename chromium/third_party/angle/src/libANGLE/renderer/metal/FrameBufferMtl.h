@@ -121,6 +121,13 @@ class FramebufferMtl : public FramebufferImpl
   private:
     void reset();
     angle::Result invalidateImpl(ContextMtl *contextMtl, size_t count, const GLenum *attachments);
+    angle::Result blitWithDraw(const gl::Context *context,
+                               FramebufferMtl *srcFrameBuffer,
+                               bool blitColorBuffer,
+                               bool blitDepthBuffer,
+                               bool blitStencilBuffer,
+                               GLenum filter,
+                               const mtl::BlitParams &baseParams);
     angle::Result clearImpl(const gl::Context *context,
                             gl::DrawBufferMask clearColorBuffers,
                             mtl::ClearRectParams *clearOpts);
@@ -128,6 +135,15 @@ class FramebufferMtl : public FramebufferImpl
     angle::Result clearWithLoadOp(const gl::Context *context,
                                   gl::DrawBufferMask clearColorBuffers,
                                   const mtl::ClearRectParams &clearOpts);
+
+    angle::Result clearWithLoadOpRenderPassNotStarted(const gl::Context *context,
+                                                      gl::DrawBufferMask clearColorBuffers,
+                                                      const mtl::ClearRectParams &clearOpts);
+
+    angle::Result clearWithLoadOpRenderPassStarted(const gl::Context *context,
+                                                   gl::DrawBufferMask clearColorBuffers,
+                                                   const mtl::ClearRectParams &clearOpts,
+                                                   mtl::RenderCommandEncoder *encoder);
 
     angle::Result clearWithDraw(const gl::Context *context,
                                 gl::DrawBufferMask clearColorBuffers,
@@ -155,6 +171,11 @@ class FramebufferMtl : public FramebufferImpl
     angle::Result updateCachedRenderTarget(const gl::Context *context,
                                            const gl::FramebufferAttachment *attachment,
                                            RenderTargetMtl **cachedRenderTarget);
+
+    angle::Result readPixelsToPBO(const gl::Context *context,
+                                  const gl::Rectangle &area,
+                                  const PackPixelsParams &packPixelsParams,
+                                  RenderTargetMtl *renderTarget);
 
     // NOTE: we cannot use RenderTargetCache here because it doesn't support separate
     // depth & stencil attachments as of now. Separate depth & stencil could be useful to

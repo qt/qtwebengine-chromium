@@ -85,6 +85,14 @@ std::vector<sk_sp<SkTypeface>> FontCollection::findTypefaces(const std::vector<S
 
     if (typefaces.empty()) {
         sk_sp<SkTypeface> match = matchTypeface(fDefaultFamilyName, fontStyle);
+        if (!match) {
+            for (const auto& manager : this->getFontManagerOrder()) {
+                match = manager->legacyMakeTypeface(nullptr, fontStyle);
+                if (match) {
+                    break;
+                }
+            }
+        }
         if (match) {
             typefaces.emplace_back(std::move(match));
         }
@@ -138,6 +146,11 @@ sk_sp<SkTypeface> FontCollection::defaultFallback() {
 
 void FontCollection::disableFontFallback() { fEnableFontFallback = false; }
 void FontCollection::enableFontFallback() { fEnableFontFallback = true; }
+
+void FontCollection::clearCaches() {
+    fParagraphCache.reset();
+    fTypefaces.reset();
+}
 
 }  // namespace textlayout
 }  // namespace skia

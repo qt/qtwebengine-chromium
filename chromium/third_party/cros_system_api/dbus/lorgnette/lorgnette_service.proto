@@ -15,6 +15,16 @@ enum SourceType {
   SOURCE_PLATEN = 1;
   SOURCE_ADF_SIMPLEX = 2;
   SOURCE_ADF_DUPLEX = 3;
+
+  // SourceType used for the implicit default source on devices that do not
+  // expose a source option.
+  SOURCE_DEFAULT = 4;
+}
+
+// Dimensions of the scannable area, in mm.
+message ScannableArea {
+  double width = 1;
+  double height = 2;
 }
 
 // A source that can be scanned from for a scanner.
@@ -24,6 +34,9 @@ message DocumentSource {
 
   // The name for this source used by the scanner backend.
   string name = 2;
+
+  // The dimensions of the scannable area for this source.
+  ScannableArea area = 3;
 }
 
 // The color modes that may be supported for a particular scanner.
@@ -66,16 +79,33 @@ message ScannerCapabilities {
   repeated ColorMode color_modes = 3;
 }
 
+// Specifies a region to be scanned.
+message ScanRegion {
+  // The coordinates of the top-left corner of the scan region, in mm.
+  double top_left_x = 1;
+  double top_left_y = 2;
+
+  // The coordinates of the bottom-right corner of the scan region, in mm.
+  double bottom_right_x = 3;
+  double bottom_right_y = 4;
+}
+
 // Settings for how lorgnette should perform a scan.
 message ScanSettings {
   // The resolution, in DPI, to use for the scan.
   uint32 resolution = 1;
 
-  // The source to scan the document from.
-  DocumentSource source = 2;
+  reserved "source";
+  reserved 2;
 
   // The color mode to use for the scan.
   ColorMode color_mode = 3;
+
+  // The name of the source to scan the document from.
+  string source_name = 4;
+  //
+  // The region to be scanned.
+  ScanRegion scan_region = 5;
 }
 
 // The status of a scan job.
@@ -91,6 +121,9 @@ enum ScanState {
 
   // The scan job failed.
   SCAN_STATE_FAILED = 3;
+
+  // Scanning of the current page completed successfully.
+  SCAN_STATE_PAGE_COMPLETED = 4;
 }
 
 // Information passed to a StartScan D-Bus request.
@@ -115,6 +148,22 @@ message StartScanResponse {
   string scan_uuid = 3;
 }
 
+// Information passed to a GetNextImage D-Bus request.
+// Used by lorgnette to read image data for a scan job.
+message GetNextImageRequest {
+  // A UUID identifying the scan job.
+  string scan_uuid = 1;
+}
+
+// Information returned from a GetNextImage D-Bus request;
+message GetNextImageResponse {
+  // True if initiating this image fetch was successful.
+  bool success = 1;
+
+  // The failure reason if success is false.
+  string failure_reason = 2;
+}
+
 // Information sent with ScanStatus D-Bus signal.
 message ScanStatusChangedSignal {
   // A UUID identifying the scan job.
@@ -128,4 +177,14 @@ message ScanStatusChangedSignal {
 
   // Scan progress from 0 to 100%.
   uint32 progress = 4;
+
+  // The page field will be set to the page currently being scanned for
+  // SCAN_STATE_IN_PROGRESS, or the page that has just been completed for
+  // SCAN_STATE_PAGE_COMPLETED.
+  // Pages are 0-indexed.
+  uint32 page = 5;
+
+  // If state is SCAN_STATE_PAGE_COMPLETED and more_pages is true, the client
+  // should send another GetNextImage request in order to fetch the next page.
+  bool more_pages = 6;
 }

@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "fxjs/gc/container_trace.h"
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/compiler_specific.h"
 #include "third_party/base/containers/adapters.h"
@@ -267,32 +268,31 @@ void RelocateTableRowCells(CXFA_ContentLayoutItem* pLayoutRow,
       CXFA_Para* pParaNode =
           pLayoutChild->GetFormNode()->GetFirstChildByClass<CXFA_Para>(
               XFA_Element::Para);
-      if (pParaNode && pLayoutChild->GetFirstChild()) {
-        float fOffHeight = fContentCalculatedHeight - fOldChildHeight;
-        XFA_AttributeValue eVType =
-            pParaNode->JSObject()->GetEnum(XFA_Attribute::VAlign);
-        switch (eVType) {
-          case XFA_AttributeValue::Middle:
-            fOffHeight = fOffHeight / 2;
-            break;
-          case XFA_AttributeValue::Bottom:
-            break;
-          case XFA_AttributeValue::Top:
-          default:
-            fOffHeight = 0;
-            break;
-        }
-        if (fOffHeight > 0) {
-          for (CXFA_LayoutItem* pInnerIter = pLayoutChild->GetFirstChild();
-               pInnerIter; pInnerIter = pInnerIter->GetNextSibling()) {
-            CXFA_ContentLayoutItem* pInnerChild =
-                pInnerIter->AsContentLayoutItem();
-            if (!pInnerChild)
-              continue;
+      if (!pParaNode || !pLayoutChild->GetFirstChild())
+        continue;
 
-            pInnerChild->m_sPos.y += fOffHeight;
-          }
-        }
+      float fOffHeight = fContentCalculatedHeight - fOldChildHeight;
+      XFA_AttributeValue eVType =
+          pParaNode->JSObject()->GetEnum(XFA_Attribute::VAlign);
+      switch (eVType) {
+        case XFA_AttributeValue::Middle:
+          fOffHeight = fOffHeight / 2;
+          break;
+        case XFA_AttributeValue::Bottom:
+          break;
+        case XFA_AttributeValue::Top:
+        default:
+          fOffHeight = 0;
+          break;
+      }
+      if (fOffHeight <= 0)
+        continue;
+
+      for (CXFA_LayoutItem* pInnerIter = pLayoutChild->GetFirstChild();
+           pInnerIter; pInnerIter = pInnerIter->GetNextSibling()) {
+        CXFA_ContentLayoutItem* pInnerChild = pInnerIter->AsContentLayoutItem();
+        if (pInnerChild)
+          pInnerChild->m_sPos.y += fOffHeight;
       }
     }
   }
@@ -640,8 +640,8 @@ void CXFA_ContentLayoutProcessor::Trace(cppgc::Visitor* visitor) const {
   visitor->Trace(m_pLayoutItem);
   visitor->Trace(m_pOldLayoutItem);
   visitor->Trace(m_pViewLayoutProcessor);
-  for (const auto& item : m_ArrayKeepItems)
-    visitor->Trace(item);
+  ContainerTrace(visitor, m_ArrayKeepItems);
+  ContainerTrace(visitor, m_PendingNodes);
 }
 
 CXFA_ContentLayoutItem* CXFA_ContentLayoutProcessor::CreateContentLayoutItem(
@@ -1406,7 +1406,7 @@ float CXFA_ContentLayoutProcessor::InsertKeepLayoutItems() {
 bool CXFA_ContentLayoutProcessor::ProcessKeepForSplit(
     CXFA_ContentLayoutProcessor* pChildProcessor,
     Result eRetValue,
-    std::vector<CXFA_ContentLayoutItem*>* rgCurLineLayoutItem,
+    std::vector<cppgc::Persistent<CXFA_ContentLayoutItem>>* rgCurLineLayoutItem,
     float* fContentCurRowAvailWidth,
     float* fContentCurRowHeight,
     float* fContentCurRowY,
@@ -1574,7 +1574,8 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
     float fContentCurRowHeight = 0;
     float fContentCurRowAvailWidth = fContentWidthLimit;
     m_fWidthLimit = fContentCurRowAvailWidth;
-    std::vector<CXFA_ContentLayoutItem*> rgCurLineLayoutItems[3];
+    std::vector<cppgc::Persistent<CXFA_ContentLayoutItem>>
+        rgCurLineLayoutItems[3];
     uint8_t uCurHAlignState =
         (eFlowStrategy != XFA_AttributeValue::Rl_tb ? 0 : 2);
     if (pLastChild) {
@@ -1770,7 +1771,8 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
         }
         case Stage::kBookendTrailer: {
           if (m_pCurChildPreprocessor) {
-            pProcessor = std::move(m_pCurChildPreprocessor);
+            pProcessor = m_pCurChildPreprocessor;
+            m_pCurChildPreprocessor.Clear();
           } else if (m_pViewLayoutProcessor) {
             CXFA_Node* pTrailerNode =
                 m_pViewLayoutProcessor->ProcessBookendTrailer(m_pCurChildNode);
@@ -1811,7 +1813,8 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
 
           bool bNewRow = false;
           if (m_pCurChildPreprocessor) {
-            pProcessor = std::move(m_pCurChildPreprocessor);
+            pProcessor = m_pCurChildPreprocessor;
+            m_pCurChildPreprocessor.Clear();
             bNewRow = true;
           } else {
             pProcessor =
@@ -1856,8 +1859,10 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
         break;
       continue;
     SuspendAndCreateNewRow:
-      if (pProcessor)
-        m_pCurChildPreprocessor = std::move(pProcessor);
+      if (pProcessor) {
+        m_pCurChildPreprocessor = pProcessor;
+        pProcessor = nullptr;
+      }
       break;
     }
 
@@ -1899,7 +1904,8 @@ CXFA_ContentLayoutProcessor::DoLayoutFlowedContainer(
 }
 
 bool CXFA_ContentLayoutProcessor::CalculateRowChildPosition(
-    std::vector<CXFA_ContentLayoutItem*> (&rgCurLineLayoutItems)[3],
+    std::vector<cppgc::Persistent<CXFA_ContentLayoutItem>> (
+        &rgCurLineLayoutItems)[3],
     XFA_AttributeValue eFlowStrategy,
     bool bContainerHeightAutoSize,
     bool bContainerWidthAutoSize,
@@ -2326,7 +2332,8 @@ CXFA_ContentLayoutProcessor::InsertFlowedItem(
     float fContainerHeight,
     XFA_AttributeValue eFlowStrategy,
     uint8_t* uCurHAlignState,
-    std::vector<CXFA_ContentLayoutItem*> (&rgCurLineLayoutItems)[3],
+    std::vector<cppgc::Persistent<CXFA_ContentLayoutItem>> (
+        &rgCurLineLayoutItems)[3],
     bool bUseBreakControl,
     float fAvailHeight,
     float fRealHeight,

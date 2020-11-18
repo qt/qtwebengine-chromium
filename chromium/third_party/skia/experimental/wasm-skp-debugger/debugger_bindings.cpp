@@ -1,4 +1,10 @@
 /*
+ * This file defines SkpDebugPlayer, a class which loads a SKP or MSKP file and draws it
+ * to an SkSurface with annotation, and detailed playback controls. It holds as many DebugCanvases
+ * as there are frames in the file.
+ *
+ * It also defines emscripten bindings for SkpDebugPlayer and other classes necessary to us it.
+ *
  * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
@@ -21,6 +27,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <map>
 #include <emscripten.h>
 #include <emscripten/bind.h>
 
@@ -180,6 +187,11 @@ class SkpDebugPlayer {
       }
       // doesn't matter in layers
     }
+    void setOriginVisible(bool on) {
+      for (int i=0; i < frames.size(); i++) {
+        frames[i]->setOriginVisible(on);
+      }
+    }
     // The two operations below only apply to the current frame, because they concern the command
     // list, which is unique to each frame.
     void deleteCommand(int index) {
@@ -262,6 +274,29 @@ class SkpDebugPlayer {
     // Get the image info of one of the resource images.
     SimpleImageInfo getImageInfo(int index) {
       return toSimpleImageInfo(fImages[index]->imageInfo());
+    }
+
+    // returns a JSON string representing commands where each image is referenced.
+    std::string imageUseInfoForFrame(int framenumber) {
+      std::map<int, std::vector<int>> m = frames[framenumber]->getImageIdToCommandMap(udm);
+
+      SkDynamicMemoryWStream stream;
+      SkJSONWriter writer(&stream, SkJSONWriter::Mode::kFast);
+      writer.beginObject(); // root
+
+      for (auto it = m.begin(); it != m.end(); ++it) {
+        writer.beginArray(std::to_string(it->first).c_str());
+        for (const int commandId : it->second) {
+          writer.appendU64((uint64_t)commandId);
+        }
+        writer.endArray();
+      }
+
+      writer.endObject(); // root
+      writer.flush();
+      auto skdata = stream.detachAsData();
+      std::string_view data_view(reinterpret_cast<const char*>(skdata->data()), skdata->size());
+      return std::string(data_view);
     }
 
     // return a list of layer draw events that happened at the beginning of this frame.
@@ -396,6 +431,10 @@ sk_sp<GrContext> MakeGrContext(EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context)
     }
     // setup GrContext
     auto interface = GrGLMakeNativeInterface();
+    if (!interface) {
+        SkDebugf("failed to make GrGLMakeNativeInterface\n");
+        return nullptr;
+    }
     // setup contexts
     sk_sp<GrContext> grContext(GrContext::MakeGL(interface));
     return grContext;
@@ -465,6 +504,7 @@ EMSCRIPTEN_BINDINGS(my_module) {
     .function("getImageInfo",         &SkpDebugPlayer::getImageInfo)
     .function("getLayerSummaries",    &SkpDebugPlayer::getLayerSummaries)
     .function("getSize",              &SkpDebugPlayer::getSize)
+    .function("imageUseInfoForFrame", &SkpDebugPlayer::imageUseInfoForFrame)
     .function("jsonCommandList",      &SkpDebugPlayer::jsonCommandList, allow_raw_pointers())
     .function("lastCommandInfo",      &SkpDebugPlayer::lastCommandInfo)
     .function("loadSkp",              &SkpDebugPlayer::loadSkp, allow_raw_pointers())
@@ -472,6 +512,7 @@ EMSCRIPTEN_BINDINGS(my_module) {
     .function("setCommandVisibility", &SkpDebugPlayer::setCommandVisibility)
     .function("setGpuOpBounds",       &SkpDebugPlayer::setGpuOpBounds)
     .function("setInspectedLayer",    &SkpDebugPlayer::setInspectedLayer)
+    .function("setOriginVisible",     &SkpDebugPlayer::setOriginVisible)
     .function("setOverdrawVis",       &SkpDebugPlayer::setOverdrawVis)
     .function("setAndroidClipViz",    &SkpDebugPlayer::setAndroidClipViz);
 

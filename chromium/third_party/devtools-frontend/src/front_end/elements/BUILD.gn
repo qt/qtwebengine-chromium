@@ -24,6 +24,8 @@ devtools_module("elements") {
     "ElementsBreadcrumbsUtils.ts",
     "ElementsBreadcrumbs_bridge.js",
     "ElementsPanel.js",
+    "ElementsPanelLink.ts",
+    "ElementsPanelLink_bridge.js",
     "ElementsSidebarPane.js",
     "ElementsTreeElement.js",
     "ElementsTreeElementHighlighter.js",
@@ -41,6 +43,7 @@ devtools_module("elements") {
     "NodeText.ts",
     "PlatformFontsWidget.js",
     "PropertiesWidget.js",
+    "PropertyNameCategories.js",
     "StylePropertyHighlighter.js",
     "StylePropertyTreeElement.js",
     "StylesSidebarPane.js",
@@ -62,6 +65,7 @@ devtools_module("elements") {
     "../object_ui:bundle",
     "../platform:bundle",
     "../protocol_client:bundle",
+    "../root:bundle",
     "../sdk:bundle",
     "../sdk:bundle",
     "../third_party/lit-html:bundle",
@@ -70,18 +74,17 @@ devtools_module("elements") {
   ]
 
   visibility = [
-    "../component_docs/computed_style_property",
-    "../component_docs/computed_style_trace",
-    "../component_docs/elements_breadcrumbs",
-    "../component_docs/layout_pane",
     "../../test/unittests/front_end/elements",
+    "../component_docs/*",
   ]
+}
+
+copy_to_gen("legacy_css") {
+  sources = [ "layoutPane.css" ]
 }
 
 devtools_entrypoint("bundle") {
   entrypoint = "elements.js"
-
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":elements" ]
 }

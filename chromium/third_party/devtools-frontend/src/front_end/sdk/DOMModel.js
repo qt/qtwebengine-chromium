@@ -1189,6 +1189,8 @@ export class DOMDocument extends DOMNode {
    */
   constructor(domModel, payload) {
     super(domModel);
+    this.body = null;
+    this.documentElement = null;
     this._init(this, false, payload);
     this.documentURL = payload.documentURL || '';
     this.baseURL = payload.baseURL || '';
@@ -1679,6 +1681,7 @@ export class DOMModel extends SDKModel {
    * @return {!Promise<!Array<number>>}
    */
   async getNodesByStyle(computedStyles, pierce = false) {
+    await this.requestDocument();
     const response =
         await this._agent.invoke_getNodesForSubtreeByStyle({nodeId: this._document.id, computedStyles, pierce});
     if (response.getError()) {
@@ -1823,7 +1826,7 @@ export const Events = {
 };
 
 /**
- * @implements {ProtocolProxyApiWorkaround_DOMDispatcher}
+ * @implements {ProtocolProxyApi.DOMDispatcher}
  */
 class DOMDispatcher {
   /**

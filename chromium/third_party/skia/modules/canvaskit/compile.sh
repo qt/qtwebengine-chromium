@@ -25,7 +25,7 @@ EMCC=`which emcc`
 EMCXX=`which em++`
 EMAR=`which emar`
 
-RELEASE_CONF="-Oz --closure 1 --llvm-lto 1 -DSK_RELEASE --pre-js $BASE_DIR/release.js \
+RELEASE_CONF="-Oz --closure 1 -DSK_RELEASE --pre-js $BASE_DIR/release.js \
               -DGR_GL_CHECK_ALLOC_WITH_GET_ERROR=0"
 EXTRA_CFLAGS="\"-DSK_RELEASE\", \"-DGR_GL_CHECK_ALLOC_WITH_GET_ERROR=0\","
 IS_OFFICIAL_BUILD="true"
@@ -39,7 +39,7 @@ fi
 
 if [[ $@ == *debug* ]]; then
   echo "Building a Debug build"
-  EXTRA_CFLAGS="\"-DSK_DEBUG\""
+  EXTRA_CFLAGS="\"-DSK_DEBUG\","
   RELEASE_CONF="-O0 --js-opts 0 -s DEMANGLE_SUPPORT=1 -s ASSERTIONS=1 -s GL_ASSERTIONS=1 -g4 \
                 --source-map-base /node_modules/canvaskit/bin/ -DSK_DEBUG --pre-js $BASE_DIR/debug.js"
   BUILD_DIR=${BUILD_DIR:="out/canvaskit_wasm_debug"}
@@ -56,7 +56,7 @@ fi
 
 if [[ $@ == *simd* ]]; then
   RELEASE_CONF+=" -msimd128"
-  EXTRA_CFLAGS+=" \"-msimd128\""
+  EXTRA_CFLAGS+="\"-msimd128\","
 fi
 
 mkdir -p $BUILD_DIR
@@ -66,7 +66,7 @@ rm -f $BUILD_DIR/*.a
 
 GN_GPU="skia_enable_gpu=true skia_gl_standard = \"webgl\""
 GN_GPU_FLAGS="\"-DSK_DISABLE_LEGACY_SHADERCONTEXT\","
-WASM_GPU="-lEGL -lGLESv2 -DSK_SUPPORT_GPU=1 -DSK_GL \
+WASM_GPU="-lGL -DSK_SUPPORT_GPU=1 -DSK_GL \
           -DSK_DISABLE_LEGACY_SHADERCONTEXT --pre-js $BASE_DIR/cpu.js --pre-js $BASE_DIR/gpu.js\
           -s USE_WEBGL2=1"
 if [[ $@ == *cpu* ]]; then
@@ -197,7 +197,7 @@ else
 fi
 
 if [[ $@ == *no_alias_font* ]]; then
-EXTRA_CFLAGS+=" \"-DCANVASKIT_NO_ALIAS_FONT\""
+EXTRA_CFLAGS+="\"-DCANVASKIT_NO_ALIAS_FONT\","
 FONT_CFLAGS+=" -DCANVASKIT_NO_ALIAS_FONT"
 fi
 
@@ -262,6 +262,10 @@ set -e
 
 echo "Compiling bitcode"
 
+# With emsdk 2.0.0 we get a false positive on tautological-value-range-compare. This appears to be
+# fixed in the emsdk 2.0.4 toolchain. Disable the warning while we maintain support for 2.0.0.
+EXTRA_CFLAGS+="\"-Wno-tautological-value-range-compare\","
+
 # Inspired by https://github.com/Zubnix/skia-wasm-port/blob/master/build_bindings.sh
 ./bin/gn gen ${BUILD_DIR} \
   --args="cc=\"${EMCC}\" \
@@ -283,7 +287,7 @@ echo "Compiling bitcode"
   \
   skia_use_angle=false \
   skia_use_dng_sdk=false \
-  skia_use_egl=true \
+  skia_use_webgl=true \
   skia_use_fontconfig=false \
   skia_use_freetype=true \
   skia_use_libheif=false \
@@ -328,10 +332,18 @@ export EMCC_CLOSURE_ARGS="--externs $BASE_DIR/externs.js "
 
 echo "Generating final wasm"
 
+# Disable '-s STRICT=1' outside of Linux until
+# https://github.com/emscripten-core/emscripten/issues/12118 is resovled.
+STRICTNESS="-s STRICT=1"
+if [[ `uname` != "Linux" ]]; then
+  echo "Disabling '-s STRICT=1'. See: https://github.com/emscripten-core/emscripten/issues/12118"
+  STRICTNESS=""
+fi
+
 # Emscripten prefers that the .a files go last in order, otherwise, it
 # may drop symbols that it incorrectly thinks aren't used. One day,
 # Emscripten will use LLD, which may relax this requirement.
-${EMCXX} \
+EMCC_DEBUG=1 ${EMCXX} \
     $RELEASE_CONF \
     -I. \
     -Ithird_party/icu \
@@ -373,14 +385,15 @@ ${EMCXX} \
     $SHAPER_LIB \
     $BUILD_DIR/libskia.a \
     $BUILTIN_FONT \
+    -s LLD_REPORT_UNDEFINED \
     -s ALLOW_MEMORY_GROWTH=1 \
     -s EXPORT_NAME="CanvasKitInit" \
     -s FORCE_FILESYSTEM=0 \
     -s FILESYSTEM=0 \
     -s MODULARIZE=1 \
     -s NO_EXIT_RUNTIME=1 \
-    -s STRICT=1 \
     -s INITIAL_MEMORY=128MB \
     -s WARN_UNALIGNED=1 \
     -s WASM=1 \
+    $STRICTNESS \
     -o $BUILD_DIR/canvaskit.js

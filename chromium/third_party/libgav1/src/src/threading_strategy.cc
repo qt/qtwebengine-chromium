@@ -27,7 +27,7 @@ namespace libgav1 {
 namespace {
 
 #if !defined(LIBGAV1_FRAME_PARALLEL_THRESHOLD_MULTIPLIER)
-constexpr int kFrameParallelThresholdMultiplier = 4;
+constexpr int kFrameParallelThresholdMultiplier = 3;
 #else
 constexpr int kFrameParallelThresholdMultiplier =
     LIBGAV1_FRAME_PARALLEL_THRESHOLD_MULTIPLIER;

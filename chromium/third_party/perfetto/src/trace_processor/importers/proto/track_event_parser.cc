@@ -35,6 +35,7 @@
 
 #include "protos/perfetto/trace/interned_data/interned_data.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_compositor_scheduler_state.pbzero.h"
+#include "protos/perfetto/trace/track_event/chrome_histogram_sample.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_legacy_ipc.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_process_descriptor.pbzero.h"
 #include "protos/perfetto/trace/track_event/chrome_thread_descriptor.pbzero.h"
@@ -632,7 +633,7 @@ class TrackEventParser::EventImporter {
     auto opt_source_id = GetLegacyEventId();
     if (!opt_source_id) {
       storage_->IncrementStats(stats::flow_invalid_id);
-      return ParseLegacyEventAsRawEvent();
+      return util::ErrStatus("Invalid id for flow event v1");
     }
     FlowId flow_id = context_->flow_tracker->GetFlowIdForV1Event(
         opt_source_id.value(), category_id_, name_id_);
@@ -648,7 +649,7 @@ class TrackEventParser::EventImporter {
                                     legacy_event_.bind_to_enclosing());
         break;
     }
-    return ParseLegacyEventAsRawEvent();
+    return util::OkStatus();
   }
 
   void MaybeParseFlowEventV2() {
@@ -902,6 +903,10 @@ class TrackEventParser::EventImporter {
     if (event_.has_log_message()) {
       log_errors(ParseLogMessage(event_.log_message(), inserter));
     }
+    if (event_.has_chrome_histogram_sample()) {
+      log_errors(
+          ParseHistogramName(event_.chrome_histogram_sample(), inserter));
+    }
 
     log_errors(
         parser_->context_->proto_to_args_table_->InternProtoFieldsIntoArgsTable(
@@ -912,39 +917,6 @@ class TrackEventParser::EventImporter {
       inserter->AddArg(parser_->legacy_event_passthrough_utid_id_,
                        Variadic::UnsignedInteger(*legacy_passthrough_utid_),
                        ArgsTracker::UpdatePolicy::kSkipIfExists);
-    }
-
-    // TODO(eseckler): Parse legacy flow events into flow events table once we
-    // have a design for it.
-    if (legacy_event_.has_bind_id()) {
-      inserter->AddArg(parser_->legacy_event_bind_id_key_id_,
-                       Variadic::UnsignedInteger(legacy_event_.bind_id()));
-    }
-
-    if (legacy_event_.bind_to_enclosing()) {
-      inserter->AddArg(parser_->legacy_event_bind_to_enclosing_key_id_,
-                       Variadic::Boolean(true));
-    }
-
-    if (legacy_event_.flow_direction()) {
-      StringId value = kNullStringId;
-      switch (legacy_event_.flow_direction()) {
-        case LegacyEvent::FLOW_IN:
-          value = parser_->flow_direction_value_in_id_;
-          break;
-        case LegacyEvent::FLOW_OUT:
-          value = parser_->flow_direction_value_out_id_;
-          break;
-        case LegacyEvent::FLOW_INOUT:
-          value = parser_->flow_direction_value_inout_id_;
-          break;
-        default:
-          PERFETTO_ELOG("Unknown flow direction: %d",
-                        legacy_event_.flow_direction());
-          break;
-      }
-      inserter->AddArg(parser_->legacy_event_flow_direction_key_id_,
-                       Variadic::String(value));
     }
   }
 
@@ -1130,6 +1102,30 @@ class TrackEventParser::EventImporter {
     return util::OkStatus();
   }
 
+  util::Status ParseHistogramName(ConstBytes blob, BoundInserter* inserter) {
+    protos::pbzero::ChromeHistogramSample::Decoder sample(blob);
+    if (!sample.has_name_iid()) {
+      PERFETTO_DLOG("name_iid is not set for ChromeHistogramSample");
+      return util::OkStatus();
+    }
+
+    if (sample.has_name()) {
+      return util::ErrStatus(
+          "name is already set for ChromeHistogramSample: only one of name and "
+          "name_iid can be set.");
+    }
+
+    auto* decoder = sequence_state_->LookupInternedMessage<
+        protos::pbzero::InternedData::kHistogramNamesFieldNumber,
+        protos::pbzero::HistogramName>(sample.name_iid());
+    if (!decoder)
+      return util::ErrStatus("HistogramName with invalid name_iid");
+
+    inserter->AddArg(parser_->histogram_name_key_id_,
+                     Variadic::String(storage_->InternString(decoder->name())));
+    return util::OkStatus();
+  }
+
   TraceProcessorContext* context_;
   TraceStorage* storage_;
   TrackEventParser* parser_;
@@ -1207,6 +1203,8 @@ TrackEventParser::TrackEventParser(TraceProcessorContext* context)
           context->storage->InternString("legacy_event.bind_to_enclosing")),
       legacy_event_flow_direction_key_id_(
           context->storage->InternString("legacy_event.flow_direction")),
+      histogram_name_key_id_(
+          context->storage->InternString("chrome_histogram_sample.name")),
       flow_direction_value_in_id_(context->storage->InternString("in")),
       flow_direction_value_out_id_(context->storage->InternString("out")),
       flow_direction_value_inout_id_(context->storage->InternString("inout")),

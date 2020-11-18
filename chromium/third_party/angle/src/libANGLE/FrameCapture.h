@@ -179,18 +179,18 @@ class DataCounters final : angle::NonCopyable
     std::map<Counter, int> mData;
 };
 
-constexpr int kStringNotFound = -1;
+constexpr int kStringsNotFound = -1;
 class StringCounters final : angle::NonCopyable
 {
   public:
     StringCounters();
     ~StringCounters();
 
-    int getStringCounter(std::string &str);
-    void setStringCounter(std::string &str, int &counter);
+    int getStringCounter(std::vector<std::string> &str);
+    void setStringCounter(std::vector<std::string> &str, int &counter);
 
   private:
-    std::map<std::string, int> mStringCounterMap;
+    std::map<std::vector<std::string>, int> mStringCounterMap;
 };
 
 class DataTracker final : angle::NonCopyable
@@ -388,6 +388,10 @@ void CaptureCallToFrameCapture(CaptureFuncT captureFunc,
         return;
 
     CallCapture call = captureFunc(context->getState(), isCallValid, captureParams...);
+
+    if (!isCallValid)
+        INFO() << "FrameCapture: Capturing invalid call to " << GetEntryPointName(call.entryPoint);
+
     frameCapture->captureCall(context, std::move(call));
 }
 

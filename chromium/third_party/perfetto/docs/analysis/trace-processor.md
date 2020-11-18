@@ -347,6 +347,31 @@ SELECT
 FROM interesting_slices
 ```
 
+### Following/Preceding/Connected flows
+following_flow, preceding_flow, connected_flow are custom operator tables that
+take a [slice table's id column](/docs/analysis/sql-tables.autogen#slice) and
+collect all entries of [flow table](/docs/analysis/sql-tables.autogen#flow),
+that are directly or indirectly connected to the given starting slice.
+
+`FOLLOWING_FLOW(start_slice_id)` - contains all entries of
+[flow table](/docs/analysis/sql-tables.autogen#flow)
+that are present in any chain of kind: `flow[0] -> flow[1] -> ... -> flow[n]`,
+where `flow[i].slice_out = flow[i+1].slice_in` and
+`flow[0].slice_out = start_slice_id`.
+
+`PRECEDING_FLOW(start_slice_id)` - contains all entries of
+[flow table](/docs/analysis/sql-tables.autogen#flow)
+that are present in any chain of kind: `flow[n] -> flow[n-1] -> ... -> flow[0]`,
+where `flow[i].slice_in = flow[i+1].slice_out` and
+`flow[0].slice_in = start_slice_id`.
+
+`CONNECTED_FLOW(start_slice_id)` - contains a union of both
+`FOLLOWING_FLOW(start_slice_id)` and `PRECEDING_FLOW(start_slice_id)` tables.
+
+```sql
+--number of following flows for each slice
+SELECT (SELECT COUNT(*) FROM FOLLOWING_FLOW(slice_id)) as following FROM slice;
+```
 
 ## Metrics
 
@@ -429,10 +454,13 @@ query tables and run metrics without requiring the `trace_processor` binary to b
 downloaded or installed.
 
 ### Setup
-Note: The API is only compatible with Python3.
-
 ```
-from trace_processor.api import TraceProcessor
+pip install perfetto
+```
+NOTE: The API is only compatible with Python3.
+
+```python
+from perfetto.trace_processor import TraceProcessor
 # Initialise TraceProcessor with a trace file
 tp = TraceProcessor(file_path='trace.pftrace')
 ```
@@ -458,7 +486,7 @@ The query() function takes an SQL query as input and returns an iterator through
 of the result.
 
 ```python
-from trace_processor.api import TraceProcessor
+from perfetto.trace_processor import TraceProcessor
 tp = TraceProcessor(file_path='trace.pftrace')
 
 qr_it = tp.query('SELECT ts, dur, name FROM slice')
@@ -477,11 +505,11 @@ for row in qr_it:
 The QueryResultIterator can also be converted to a Pandas DataFrame, although this
 requires you to have both the `NumPy` and `Pandas` modules installed.
 ```python
-from trace_processor.api import TraceProcessor
+from perfetto.trace_processor import TraceProcessor
 tp = TraceProcessor(file_path='trace.pftrace')
 
 qr_it = tp.query('SELECT ts, dur, name FROM slice')
-qr_df = qr_it.as_pandas()
+qr_df = qr_it.as_pandas_dataframe()
 print(qr_df.to_string())
 ```
 **Output**
@@ -498,24 +526,24 @@ ts                   dur                  name
 Furthermore, you can use the query result in a Pandas DataFrame format to easily
 make visualisations from the trace data.
 ```python
-from trace_processor.api import TraceProcessor
+from perfetto.trace_processor import TraceProcessor
 tp = TraceProcessor(file_path='trace.pftrace')
 
 qr_it = tp.query('SELECT ts, value FROM counter WHERE track_id=50')
-qr_df = qr_it.as_pandas()
+qr_df = qr_it.as_pandas_dataframe()
 qr_df = qr_df.replace(np.nan,0)
 qr_df = qr_df.set_index('ts')['value'].plot()
 ```
 **Output**
 
-[](/docs/images/example_pd_graph.png)
+![Graph made frpm the query results](/docs/images/example_pd_graph.png)
 
 
 #### Metric
 The metric() function takes in a list of trace metrics and returns the results as a Protobuf.
 
-```
-from trace_processor.api import TraceProcessor
+```python
+from perfetto.trace_processor import TraceProcessor
 tp = TraceProcessor(file_path='trace.pftrace')
 
 ad_cpu_metrics = tp.metric(['android_cpu'])

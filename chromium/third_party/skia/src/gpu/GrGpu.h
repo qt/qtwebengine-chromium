@@ -360,7 +360,7 @@ public:
             const GrOpsRenderPass::LoadAndStoreInfo&,
             const GrOpsRenderPass::StencilLoadAndStoreInfo&,
             const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            bool usesXferBarriers) = 0;
+            GrXferBarrierFlags renderPassXferBarriers) = 0;
 
     // Called by GrDrawingManager when flushing.
     // Provides a hook for post-flush actions (e.g. Vulkan command buffer submits). This will also
@@ -525,10 +525,12 @@ public:
         void incTextureCreates() {}
         void incTextureUploads() {}
         void incTransfersToTexture() {}
+        void incTransfersFromSurface() {}
         void incStencilAttachmentCreates() {}
         void incNumDraws() {}
         void incNumFailedDraws() {}
         void incNumSubmitToGpus() {}
+        void incNumScratchTexturesReused() {}
         void incNumInlineCompilationFailures() {}
         void incNumInlineProgramCacheResult(ProgramCacheResult stat) {}
         void incNumPreCompilationFailures() {}
@@ -635,12 +637,14 @@ public:
 
     virtual bool setBackendTextureState(const GrBackendTexture&,
                                         const GrBackendSurfaceMutableState&,
+                                        GrBackendSurfaceMutableState* previousState,
                                         sk_sp<GrRefCntedCallback> finishedCallback) {
         return false;
     }
 
     virtual bool setBackendRenderTargetState(const GrBackendRenderTarget&,
                                              const GrBackendSurfaceMutableState&,
+                                             GrBackendSurfaceMutableState* previousState,
                                              sk_sp<GrRefCntedCallback> finishedCallback) {
         return false;
     }
@@ -691,7 +695,7 @@ public:
     // Returns nullptr if compatible sb could not be created, otherwise the caller owns the ref on
     // the GrStencilAttachment.
     virtual GrStencilAttachment* createStencilAttachmentForRenderTarget(
-            const GrRenderTarget*, int width, int height, int numStencilSamples) = 0;
+            const GrRenderTarget*, SkISize dimensions, int numStencilSamples) = 0;
 
     void handleDirtyContext() {
         if (fResetBits) {
@@ -871,7 +875,7 @@ private:
     bool fOOMed = false;
 
     friend class GrPathRendering;
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 };
 
 #endif

@@ -21,9 +21,15 @@ devtools_module("inspector_main") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [
+    "nodeIcon.css",
+    "renderingOptions.css",
+  ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "inspector_main.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":inspector_main" ]
 }

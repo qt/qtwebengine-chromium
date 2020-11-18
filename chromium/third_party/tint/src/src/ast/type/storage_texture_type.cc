@@ -31,7 +31,7 @@ bool IsValidStorageDimension(TextureDimension dim) {
 }
 
 #endif  // NDEBUG
-  
+
 }  // namespace
 
 std::ostream& operator<<(std::ostream& out, StorageAccess access) {
@@ -162,6 +162,14 @@ StorageTextureType::StorageTextureType(TextureDimension dim,
                                        ImageFormat format)
     : TextureType(dim), storage_access_(access), image_format_(format) {
   assert(IsValidStorageDimension(dim));
+}
+
+void StorageTextureType::set_type(Type* const type) {
+  type_ = type;
+}
+
+Type* StorageTextureType::type() const {
+  return type_;
 }
 
 StorageTextureType::StorageTextureType(StorageTextureType&&) = default;

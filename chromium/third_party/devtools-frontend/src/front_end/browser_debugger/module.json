@@ -117,8 +117,7 @@
     "elements",
     "sources",
     "console"
-  ],
-  "modules": [
+  ],  "modules": [
     "browser_debugger.js",
     "browser_debugger-legacy.js",
     "DOMBreakpointsSidebarPane.js",

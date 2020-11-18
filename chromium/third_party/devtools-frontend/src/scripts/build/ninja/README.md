@@ -88,8 +88,6 @@ devtools_module("my_module") {
 devtools_entrypoint("bundle") {
   entrypoint = "my_module.js"
 
-  is_legacy_javascript_entrypoint = [ "crbug.com/<BUG ID HERE>" ]
-
   deps = [
     ":my_module",
   ]
@@ -98,40 +96,6 @@ devtools_entrypoint("bundle") {
 
 Here, both the entrypoint and the sources of the module are all JavaScript files.
 All of these files are typechecked by Closure Compiler and TypeScript.
-Since this is inherited from the legacy implementations, the entrypoint is marked with `is_legacy_javascript_entrypoint`.
-Every `is_legacy_javascript_entrypoint` must include a new CRBug for that specific module.
-As soon as Closure Compiler is no longer typechecking this module, the entrypoint and source files can be converted to TypeScript-authored files and the `is_legacy_javascript_entrypoint` attribute can be removed.
-
-#### Closure Compiler only
-
-For any module that has not been typescriptified (e.g. the TypeScript compiler does not typecheck the module), we can not use `devtools_module`.
-Instead, we assume that the files are considered "pre-built", as the files are checked by the out-of-process Closure Compiler typecheck pass.
-
-As such, the following layout is used for Closure Compiler only modules:
-
-```python
-import("../../scripts/build/ninja/devtools_entrypoint.gni")
-import("../../scripts/build/ninja/devtools_pre_built.gni")
-
-devtools_pre_built("my_module") {
-  sources = [
-    "implementation_detail.js",
-    "some_other_file.js",
-  ]
-
-  deps = [
-    "../other_dependency:bundle",
-  ]
-}
-
-devtools_entrypoint("bundle") {
-  entrypoint = "my_module.js"
-
-  deps = [
-    ":my_module",
-  ]
-}
-```
 
 ## GRD file generation
 
@@ -155,5 +119,3 @@ All implementation files for components are listed in `/all_devtools_modules.gni
 > Rule: the implementation files are only present in the GRD file in a debug build, because the release build bundles all files into the respective entrypoint
 
 > Rule: all implementation files that are checked by TypeScript (this includes typescriptified implementaion files) or are copied with `devtools_pre_built` are listed in `all_typescript_module_sources`
-
-> Rule: all implementation files that are **only** checked by Closure Compiler and are not part of `devtools_module` or `devtools_pre_built` are listed in `all_devtools_module_sources`

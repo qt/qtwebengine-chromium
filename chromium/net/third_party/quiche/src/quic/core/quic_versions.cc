@@ -49,7 +49,7 @@ void SetVersionFlag(const ParsedQuicVersion& version, bool should_enable) {
   } else if (version == ParsedQuicVersion::Draft27()) {
     SetQuicReloadableFlag(quic_disable_version_draft_27, disable);
   } else if (version == ParsedQuicVersion::T051()) {
-    SetQuicReloadableFlag(quic_enable_version_t051, enable);
+    SetQuicReloadableFlag(quic_disable_version_t051, disable);
   } else if (version == ParsedQuicVersion::T050()) {
     SetQuicReloadableFlag(quic_disable_version_t050, disable);
   } else if (version == ParsedQuicVersion::Q050()) {
@@ -360,7 +360,6 @@ ParsedQuicVersion ParseQuicVersionString(
       return version;
     }
   }
-  if (GetQuicReloadableFlag(quic_fix_print_draft_version)) {
     for (const ParsedQuicVersion& version : AllSupportedVersions()) {
       if (version.UsesHttp3() &&
           version_string ==
@@ -368,7 +367,6 @@ ParsedQuicVersion ParseQuicVersionString(
         return version;
       }
     }
-  }
   // Reading from the client so this should not be considered an ERROR.
   QUIC_DLOG(INFO) << "Unsupported QUIC version string: \"" << version_string
                   << "\".";
@@ -424,7 +422,7 @@ ParsedQuicVersionVector FilterSupportedVersions(
         filtered_versions.push_back(version);
       }
     } else if (version == ParsedQuicVersion::T051()) {
-      if (GetQuicReloadableFlag(quic_enable_version_t051)) {
+      if (!GetQuicReloadableFlag(quic_disable_version_t051)) {
         filtered_versions.push_back(version);
       }
     } else if (version == ParsedQuicVersion::T050()) {
@@ -563,16 +561,14 @@ std::string ParsedQuicVersionToString(ParsedQuicVersion version) {
   if (version == UnsupportedQuicVersion()) {
     return "0";
   }
-  if (GetQuicReloadableFlag(quic_fix_print_draft_version)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_fix_print_draft_version);
-    if (version == ParsedQuicVersion::Draft29()) {
-      DCHECK(version.UsesHttp3());
-      return "draft29";
-    } else if (version == ParsedQuicVersion::Draft27()) {
-      DCHECK(version.UsesHttp3());
-      return "draft27";
-    }
+  if (version == ParsedQuicVersion::Draft29()) {
+    DCHECK(version.UsesHttp3());
+    return "draft29";
+  } else if (version == ParsedQuicVersion::Draft27()) {
+    DCHECK(version.UsesHttp3());
+    return "draft27";
   }
+
   return QuicVersionLabelToString(CreateQuicVersionLabel(version));
 }
 
@@ -667,7 +663,6 @@ std::string AlpnForVersion(ParsedQuicVersion parsed_version) {
 
 void QuicVersionInitializeSupportForIetfDraft() {
   // Enable necessary flags.
-  SetQuicRestartFlag(quic_enable_tls_resumption_v4, true);
   SetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2, true);
 }
 

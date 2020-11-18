@@ -131,6 +131,9 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
   }
 
   // QuicCryptoStream implementation
+  ssl_early_data_reason_t EarlyDataReason() const override {
+    return ssl_early_data_unknown;
+  }
   bool encryption_established() const override {
     return encryption_established_;
   }
@@ -1080,9 +1083,88 @@ TEST_P(QuicSpdySessionTestServer, SendHttp3GoAway) {
 
   EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
-  EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(_));
+  // No client-initiated stream has been received, therefore a GOAWAY frame with
+  // stream ID = 0 is sent to notify the client that all requests can be retried
+  // on a different connection.
+  EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(/* stream_id = */ 0));
   session_.SendHttp3GoAway();
-  EXPECT_TRUE(session_.http3_goaway_sent());
+  EXPECT_TRUE(session_.goaway_sent());
+
+  const QuicStreamId kTestStreamId =
+      GetNthClientInitiatedBidirectionalStreamId(transport_version(), 0);
+  EXPECT_CALL(*connection_, OnStreamReset(kTestStreamId, _)).Times(0);
+  EXPECT_TRUE(session_.GetOrCreateStream(kTestStreamId));
+}
+
+TEST_P(QuicSpdySessionTestServer, SendHttp3GoAwayAfterStreamIsCreated) {
+  if (!VersionUsesHttp3(transport_version())) {
+    return;
+  }
+
+  if (!GetQuicReloadableFlag(quic_fix_http3_goaway_stream_id)) {
+    return;
+  }
+
+  CompleteHandshake();
+  StrictMock<MockHttp3DebugVisitor> debug_visitor;
+  session_.set_debug_visitor(&debug_visitor);
+
+  const QuicStreamId kTestStreamId =
+      GetNthClientInitiatedBidirectionalStreamId(transport_version(), 0);
+  EXPECT_TRUE(session_.GetOrCreateStream(kTestStreamId));
+
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
+  // The first stream, of kTestStreamId = 0, could already have been processed.
+  // A GOAWAY frame is sent to notify the client that requests starting with
+  // stream ID = 4 can be retried on a different connection.
+  EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(/* stream_id = */ 4));
+  session_.SendHttp3GoAway();
+  EXPECT_TRUE(session_.goaway_sent());
+
+  // No more GOAWAY frames are sent because they could not convey new
+  // information to the client.
+  session_.SendHttp3GoAway();
+}
+
+TEST_P(QuicSpdySessionTestServer, SendHttp3Shutdown) {
+  if (!VersionUsesHttp3(transport_version())) {
+    return;
+  }
+
+  CompleteHandshake();
+  StrictMock<MockHttp3DebugVisitor> debug_visitor;
+  session_.set_debug_visitor(&debug_visitor);
+
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+      .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
+  EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(_));
+  session_.SendHttp3Shutdown();
+  EXPECT_TRUE(session_.goaway_sent());
+
+  const QuicStreamId kTestStreamId =
+      GetNthClientInitiatedBidirectionalStreamId(transport_version(), 0);
+  EXPECT_CALL(*connection_, OnStreamReset(kTestStreamId, _)).Times(0);
+  EXPECT_TRUE(session_.GetOrCreateStream(kTestStreamId));
+}
+
+TEST_P(QuicSpdySessionTestServer, SendHttp3GoAwayAfterShutdownNotice) {
+  if (!VersionUsesHttp3(transport_version())) {
+    return;
+  }
+
+  CompleteHandshake();
+  StrictMock<MockHttp3DebugVisitor> debug_visitor;
+  session_.set_debug_visitor(&debug_visitor);
+
+  EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
+      .Times(2)
+      .WillRepeatedly(Return(WriteResult(WRITE_STATUS_OK, 0)));
+  EXPECT_CALL(debug_visitor, OnGoAwayFrameSent(_)).Times(2);
+
+  session_.SendHttp3Shutdown();
+  EXPECT_TRUE(session_.goaway_sent());
+  session_.SendHttp3GoAway();
 
   const QuicStreamId kTestStreamId =
       GetNthClientInitiatedBidirectionalStreamId(transport_version(), 0);
@@ -1116,14 +1198,11 @@ TEST_P(QuicSpdySessionTestServer, Http3GoAwayLargerIdThanBefore) {
   if (!VersionUsesHttp3(transport_version())) {
     return;
   }
-  if (!GetQuicReloadableFlag(quic_http3_goaway_new_behavior)) {
-    return;
-  }
 
-  EXPECT_FALSE(session_.http3_goaway_received());
+  EXPECT_FALSE(session_.goaway_received());
   PushId push_id1 = 0;
   session_.OnHttp3GoAway(push_id1);
-  EXPECT_TRUE(session_.http3_goaway_received());
+  EXPECT_TRUE(session_.goaway_received());
 
   EXPECT_CALL(
       *connection_,
@@ -1138,6 +1217,7 @@ TEST_P(QuicSpdySessionTestServer, Http3GoAwayLargerIdThanBefore) {
 // Test that server session will send a connectivity probe in response to a
 // connectivity probe on the same path.
 TEST_P(QuicSpdySessionTestServer, ServerReplyToConnecitivityProbe) {
+  connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
   QuicSocketAddress old_peer_address =
       QuicSocketAddress(QuicIpAddress::Loopback4(), kTestPort);
   EXPECT_EQ(old_peer_address, session_.peer_address());
@@ -1145,8 +1225,14 @@ TEST_P(QuicSpdySessionTestServer, ServerReplyToConnecitivityProbe) {
   QuicSocketAddress new_peer_address =
       QuicSocketAddress(QuicIpAddress::Loopback4(), kTestPort + 1);
 
-  EXPECT_CALL(*connection_,
-              SendConnectivityProbingResponsePacket(new_peer_address));
+  if (connection_->send_path_response()) {
+    EXPECT_CALL(*connection_,
+                SendConnectivityProbingPacket(nullptr, new_peer_address));
+  } else {
+    EXPECT_CALL(*connection_,
+                SendConnectivityProbingResponsePacket(new_peer_address));
+  }
+
   if (VersionHasIetfQuicFrames(transport_version())) {
     // Need to explicitly do this to emulate the reception of a PathChallenge,
     // which stores its payload for use in generating the response.
@@ -1198,9 +1284,9 @@ TEST_P(QuicSpdySessionTestServer, RstStreamBeforeHeadersDecompressed) {
   // one-way close.
   if (VersionHasIetfQuicFrames(transport_version())) {
     // Only needed for version 99/IETF QUIC.
-    QuicStopSendingFrame stop_sending(
-        kInvalidControlFrameId, GetNthClientInitiatedBidirectionalId(0),
-        static_cast<QuicApplicationErrorCode>(QUIC_ERROR_PROCESSING_STREAM));
+    QuicStopSendingFrame stop_sending(kInvalidControlFrameId,
+                                      GetNthClientInitiatedBidirectionalId(0),
+                                      QUIC_ERROR_PROCESSING_STREAM);
     // Expect the RESET_STREAM that is generated in response to receiving a
     // STOP_SENDING.
     EXPECT_CALL(*connection_,
@@ -1480,9 +1566,8 @@ TEST_P(QuicSpdySessionTestServer,
   // one-way close.
   if (VersionHasIetfQuicFrames(transport_version())) {
     // Only needed for version 99/IETF QUIC.
-    QuicStopSendingFrame stop_sending(
-        kInvalidControlFrameId, stream->id(),
-        static_cast<QuicApplicationErrorCode>(QUIC_STREAM_CANCELLED));
+    QuicStopSendingFrame stop_sending(kInvalidControlFrameId, stream->id(),
+                                      QUIC_STREAM_CANCELLED);
     // Expect the RESET_STREAM that is generated in response to receiving a
     // STOP_SENDING.
     EXPECT_CALL(*connection_,
@@ -2143,7 +2228,7 @@ TEST_P(QuicSpdySessionTestServer, OnPriorityUpdateFrame) {
 
   // PRIORITY_UPDATE frame arrives after stream creation.
   TestStream* stream1 = session_.CreateIncomingStream(stream_id1);
-  EXPECT_EQ(QuicStream::kDefaultUrgency,
+  EXPECT_EQ(QuicStream::DefaultUrgency(),
             stream1->precedence().spdy3_priority());
   EXPECT_CALL(debug_visitor, OnPriorityUpdateFrameReceived(priority_update1));
   session_.OnStreamFrame(data3);
@@ -2193,9 +2278,15 @@ TEST_P(QuicSpdySessionTestServer, SimplePendingStreamType) {
 
           QuicStopSendingFrame* stop_sending = frame.stop_sending_frame;
           EXPECT_EQ(stream_id, stop_sending->stream_id);
-          EXPECT_EQ(QuicHttp3ErrorCode::STREAM_CREATION_ERROR,
-                    static_cast<QuicHttp3ErrorCode>(
-                        stop_sending->application_error_code));
+          EXPECT_EQ(
+              GetQuicReloadableFlag(quic_stop_sending_uses_ietf_error_code)
+                  ? QUIC_STREAM_STREAM_CREATION_ERROR
+                  : static_cast<QuicRstStreamErrorCode>(
+                        QuicHttp3ErrorCode::STREAM_CREATION_ERROR),
+              stop_sending->error_code);
+          EXPECT_EQ(
+              static_cast<uint64_t>(QuicHttp3ErrorCode::STREAM_CREATION_ERROR),
+              stop_sending->ietf_error_code);
 
           return ClearControlFrame(frame);
         }));
@@ -2324,7 +2415,7 @@ TEST_P(QuicSpdySessionTestServer, ReceiveControlStream) {
 
   SettingsFrame settings;
   settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 512;
-  settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
+  settings.values[SETTINGS_MAX_FIELD_SECTION_SIZE] = 5;
   settings.values[SETTINGS_QPACK_BLOCKED_STREAMS] = 42;
   std::string data = EncodeSettings(settings);
   QuicStreamFrame frame(stream_id, false, 1, quiche::QuicheStringPiece(data));
@@ -2356,8 +2447,8 @@ TEST_P(QuicSpdySessionTestServer, ReceiveControlStreamOutOfOrderDelivery) {
       GetNthClientInitiatedUnidirectionalStreamId(transport_version(), 3);
   char type[] = {kControlStream};
   SettingsFrame settings;
-  settings.values[3] = 2;
-  settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
+  settings.values[10] = 2;
+  settings.values[SETTINGS_MAX_FIELD_SECTION_SIZE] = 5;
   std::string data = EncodeSettings(settings);
 
   QuicStreamFrame data1(stream_id, false, 1, quiche::QuicheStringPiece(data));
@@ -2679,17 +2770,9 @@ TEST_P(QuicSpdySessionTestClient, InvalidHttp3GoAway) {
   if (!VersionUsesHttp3(transport_version())) {
     return;
   }
-  if (GetQuicReloadableFlag(quic_http3_goaway_new_behavior)) {
-    EXPECT_CALL(*connection_,
-                CloseConnection(QUIC_HTTP_GOAWAY_INVALID_STREAM_ID,
-                                "GOAWAY with invalid stream ID", _));
-  } else {
-    EXPECT_CALL(
-        *connection_,
-        CloseConnection(
-            QUIC_INVALID_STREAM_ID,
-            "GOAWAY's last stream id has to point to a request stream", _));
-  }
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_HTTP_GOAWAY_INVALID_STREAM_ID,
+                              "GOAWAY with invalid stream ID", _));
   QuicStreamId stream_id =
       GetNthServerInitiatedUnidirectionalStreamId(transport_version(), 0);
   session_.OnHttp3GoAway(stream_id);
@@ -2699,15 +2782,12 @@ TEST_P(QuicSpdySessionTestClient, Http3GoAwayLargerIdThanBefore) {
   if (!VersionUsesHttp3(transport_version())) {
     return;
   }
-  if (!GetQuicReloadableFlag(quic_http3_goaway_new_behavior)) {
-    return;
-  }
 
-  EXPECT_FALSE(session_.http3_goaway_received());
+  EXPECT_FALSE(session_.goaway_received());
   QuicStreamId stream_id1 =
       GetNthClientInitiatedBidirectionalStreamId(transport_version(), 0);
   session_.OnHttp3GoAway(stream_id1);
-  EXPECT_TRUE(session_.http3_goaway_received());
+  EXPECT_TRUE(session_.goaway_received());
 
   EXPECT_CALL(
       *connection_,
@@ -2777,7 +2857,7 @@ TEST_P(QuicSpdySessionTestServer, OnSetting) {
   if (VersionUsesHttp3(transport_version())) {
     EXPECT_EQ(std::numeric_limits<size_t>::max(),
               session_.max_outbound_header_list_size());
-    session_.OnSetting(SETTINGS_MAX_HEADER_LIST_SIZE, 5);
+    session_.OnSetting(SETTINGS_MAX_FIELD_SECTION_SIZE, 5);
     EXPECT_EQ(5u, session_.max_outbound_header_list_size());
 
     EXPECT_CALL(*writer_, WritePacket(_, _, _, _, _))
@@ -2798,7 +2878,7 @@ TEST_P(QuicSpdySessionTestServer, OnSetting) {
 
   EXPECT_EQ(std::numeric_limits<size_t>::max(),
             session_.max_outbound_header_list_size());
-  session_.OnSetting(SETTINGS_MAX_HEADER_LIST_SIZE, 5);
+  session_.OnSetting(SETTINGS_MAX_FIELD_SECTION_SIZE, 5);
   EXPECT_EQ(5u, session_.max_outbound_header_list_size());
 
   EXPECT_TRUE(session_.server_push_enabled());
@@ -2900,8 +2980,7 @@ TEST_P(QuicSpdySessionTestServer, PeerClosesCriticalSendStream) {
   ASSERT_TRUE(control_stream);
 
   QuicStopSendingFrame stop_sending_control_stream(
-      kInvalidControlFrameId, control_stream->id(),
-      static_cast<QuicApplicationErrorCode>(QUIC_STREAM_CANCELLED));
+      kInvalidControlFrameId, control_stream->id(), QUIC_STREAM_CANCELLED);
   EXPECT_CALL(
       *connection_,
       CloseConnection(QUIC_HTTP_CLOSED_CRITICAL_STREAM,
@@ -2913,8 +2992,7 @@ TEST_P(QuicSpdySessionTestServer, PeerClosesCriticalSendStream) {
   ASSERT_TRUE(decoder_stream);
 
   QuicStopSendingFrame stop_sending_decoder_stream(
-      kInvalidControlFrameId, decoder_stream->id(),
-      static_cast<QuicApplicationErrorCode>(QUIC_STREAM_CANCELLED));
+      kInvalidControlFrameId, decoder_stream->id(), QUIC_STREAM_CANCELLED);
   EXPECT_CALL(
       *connection_,
       CloseConnection(QUIC_HTTP_CLOSED_CRITICAL_STREAM,
@@ -2926,8 +3004,7 @@ TEST_P(QuicSpdySessionTestServer, PeerClosesCriticalSendStream) {
   ASSERT_TRUE(encoder_stream);
 
   QuicStopSendingFrame stop_sending_encoder_stream(
-      kInvalidControlFrameId, encoder_stream->id(),
-      static_cast<QuicApplicationErrorCode>(QUIC_STREAM_CANCELLED));
+      kInvalidControlFrameId, encoder_stream->id(), QUIC_STREAM_CANCELLED);
   EXPECT_CALL(
       *connection_,
       CloseConnection(QUIC_HTTP_CLOSED_CRITICAL_STREAM,
@@ -3025,6 +3102,25 @@ TEST_P(QuicSpdySessionTestClient, DoNotSendInitialMaxPushIdIfSetToDefaut) {
   InSequence s;
   EXPECT_CALL(debug_visitor, OnSettingsFrameSent(_));
   CompleteHandshake();
+}
+
+TEST_P(QuicSpdySessionTestClient, ReceiveSpdySettingInHttp3) {
+  if (!VersionUsesHttp3(transport_version()) ||
+      !GetQuicReloadableFlag(quic_reject_spdy_settings)) {
+    return;
+  }
+
+  SettingsFrame frame;
+  frame.values[SETTINGS_MAX_FIELD_SECTION_SIZE] = 5;
+  // https://datatracker.ietf.org/doc/html/draft-ietf-quic-http-30#section-7.2.4.1
+  // specifies the presence of HTTP/2 setting as error.
+  frame.values[spdy::SETTINGS_INITIAL_WINDOW_SIZE] = 100;
+
+  CompleteHandshake();
+
+  EXPECT_CALL(*connection_,
+              CloseConnection(QUIC_HTTP_RECEIVE_SPDY_SETTING, _, _));
+  session_.OnSettingsFrame(frame);
 }
 
 }  // namespace

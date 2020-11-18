@@ -8,6 +8,7 @@
 
 #include <utility>
 
+#include "fxjs/gc/container_trace.h"
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/stl_util.h"
@@ -206,7 +207,7 @@ CXFA_Node* ResolveBreakTarget(CXFA_Node* pPageSetRoot,
       if (wsExpr.First(4).EqualsASCII("som(") && wsExpr.Back() == L')')
         wsProcessedTarget = wsExpr.Substr(4, wsExpr.GetLength() - 5);
 
-      XFA_RESOLVENODE_RS rs;
+      XFA_ResolveNodeRS rs;
       bool bRet = pDocument->GetScriptContext()->ResolveObjects(
           pPageSetRoot, wsProcessedTarget.AsStringView(), &rs,
           XFA_RESOLVENODE_Children | XFA_RESOLVENODE_Properties |
@@ -369,8 +370,7 @@ void CXFA_ViewLayoutProcessor::Trace(cppgc::Visitor* visitor) const {
   if (m_CurrentViewRecordIter != m_ProposedViewRecords.end())
     visitor->Trace(*m_CurrentViewRecordIter);
 
-  for (const auto& page : m_PageArray)
-    visitor->Trace(page);
+  ContainerTrace(visitor, m_PageArray);
 }
 
 bool CXFA_ViewLayoutProcessor::InitLayoutPage(CXFA_Node* pFormNode) {
@@ -1673,7 +1673,7 @@ void CXFA_ViewLayoutProcessor::MergePageSetContents() {
   auto* pDocLayout = CXFA_LayoutProcessor::FromDocument(pDocument);
   CXFA_ViewLayoutItem* pRootLayout = GetRootLayoutItem();
 
-  int32_t iIndex = 0;
+  size_t pending_index = 0;
   for (; pRootLayout;
        pRootLayout = ToViewLayoutItem(pRootLayout->GetNextSibling())) {
     CXFA_Node* pPendingPageSet = nullptr;
@@ -1681,10 +1681,9 @@ void CXFA_ViewLayoutProcessor::MergePageSetContents() {
     CXFA_ViewLayoutItem* pRootPageSetViewItem = iterator.GetCurrent();
     ASSERT(pRootPageSetViewItem->GetFormNode()->GetElementType() ==
            XFA_Element::PageSet);
-    if (iIndex <
-        pdfium::CollectionSize<int32_t>(pDocument->m_pPendingPageSet)) {
-      pPendingPageSet = pDocument->m_pPendingPageSet[iIndex];
-      iIndex++;
+    if (pending_index < pDocument->GetPendingNodesCount()) {
+      pPendingPageSet = pDocument->GetPendingNodeAtIndex(pending_index);
+      ++pending_index;
     }
     if (!pPendingPageSet) {
       if (pRootPageSetViewItem->GetFormNode()->GetPacketType() ==
@@ -1928,8 +1927,10 @@ void CXFA_ViewLayoutProcessor::PrepareLayout() {
   CXFA_ViewLayoutItem* pRootLayoutItem = m_pPageSetRootLayoutItem;
   if (pRootLayoutItem &&
       pRootLayoutItem->GetFormNode()->GetPacketType() == XFA_PacketType::Form) {
+    CXFA_Document* const pRootDocument =
+        pRootLayoutItem->GetFormNode()->GetDocument();
     CXFA_Node* pPageSetFormNode = pRootLayoutItem->GetFormNode();
-    pRootLayoutItem->GetFormNode()->GetDocument()->m_pPendingPageSet.clear();
+    pRootDocument->ClearPendingNodes();
     if (pPageSetFormNode->HasRemovedChildren()) {
       XFA_ReleaseLayoutItem(pRootLayoutItem);
       m_pPageSetRootLayoutItem = nullptr;
@@ -1943,9 +1944,7 @@ void CXFA_ViewLayoutProcessor::PrepareLayout() {
               XFA_Element::PageSet);
       pPageSetFormNode->GetParent()->RemoveChildAndNotify(pPageSetFormNode,
                                                           false);
-      pRootLayoutItem->GetFormNode()
-          ->GetDocument()
-          ->m_pPendingPageSet.push_back(pPageSetFormNode);
+      pRootDocument->AppendPendingNode(pPageSetFormNode);
       pPageSetFormNode = pNextPageSet;
     }
   }

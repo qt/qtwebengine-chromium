@@ -543,19 +543,14 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
       ERROR("Only --enable_chroma_deltaq=0 can be used with --lossless=1.");
   }
 
-  if (cfg->rc_resize_mode != RESIZE_NONE &&
-      extra_cfg->aq_mode == CYCLIC_REFRESH_AQ) {
-    ERROR("--aq_mode=3 is only supported for --resize-mode=0.");
-  }
-
   RANGE_CHECK(extra_cfg, max_reference_frames, 3, 7);
   RANGE_CHECK(extra_cfg, enable_reduced_reference_set, 0, 1);
   RANGE_CHECK_HI(extra_cfg, chroma_subsampling_x, 1);
   RANGE_CHECK_HI(extra_cfg, chroma_subsampling_y, 1);
 
   RANGE_CHECK_HI(extra_cfg, disable_trellis_quant, 3);
-  RANGE_CHECK(extra_cfg, coeff_cost_upd_freq, 0, 2);
-  RANGE_CHECK(extra_cfg, mode_cost_upd_freq, 0, 2);
+  RANGE_CHECK(extra_cfg, coeff_cost_upd_freq, 0, 3);
+  RANGE_CHECK(extra_cfg, mode_cost_upd_freq, 0, 3);
   RANGE_CHECK(extra_cfg, mv_cost_upd_freq, 0, 3);
 
   RANGE_CHECK(extra_cfg, min_partition_size, 4, 128);
@@ -601,10 +596,6 @@ static aom_codec_err_t validate_img(aom_codec_alg_priv_t *ctx,
 
   if (img->d_w != ctx->cfg.g_w || img->d_h != ctx->cfg.g_h)
     ERROR("Image size must match encoder init configuration size");
-
-  if (img->fmt != AOM_IMG_FMT_I420 && !ctx->extra_cfg.enable_tx64) {
-    ERROR("TX64 can only be disabled on I420 images.");
-  }
 
   return AOM_CODEC_OK;
 }
@@ -724,8 +715,6 @@ static aom_codec_err_t set_encoder_config(AV1EncoderConfig *oxcf,
 
   DecoderModelCfg *const dec_model_cfg = &oxcf->dec_model_cfg;
 
-  TwoPassCfg *const two_pass_cfg = &oxcf->two_pass_cfg;
-
   RateControlCfg *const rc_cfg = &oxcf->rc_cfg;
 
   QuantizationCfg *const q_cfg = &oxcf->q_cfg;
@@ -826,6 +815,9 @@ static aom_codec_err_t set_encoder_config(AV1EncoderConfig *oxcf,
   rc_cfg->target_bandwidth = 1000 * cfg->rc_target_bitrate;
   rc_cfg->drop_frames_water_mark = cfg->rc_dropframe_thresh;
   rc_cfg->vbr_corpus_complexity_lap = extra_cfg->vbr_corpus_complexity_lap;
+  rc_cfg->vbrbias = cfg->rc_2pass_vbr_bias_pct;
+  rc_cfg->vbrmin_section = cfg->rc_2pass_vbr_minsection_pct;
+  rc_cfg->vbrmax_section = cfg->rc_2pass_vbr_maxsection_pct;
 
   // Set Toolset related configuration.
   tool_cfg->bit_depth = cfg->g_bit_depth;
@@ -907,11 +899,8 @@ static aom_codec_err_t set_encoder_config(AV1EncoderConfig *oxcf,
   algo_cfg->enable_tpl_model =
       resize_cfg->resize_mode ? 0 : extra_cfg->enable_tpl_model;
 
-  // Set two-pass configuration.
-  two_pass_cfg->vbrbias = cfg->rc_2pass_vbr_bias_pct;
-  two_pass_cfg->vbrmin_section = cfg->rc_2pass_vbr_minsection_pct;
-  two_pass_cfg->vbrmax_section = cfg->rc_2pass_vbr_maxsection_pct;
-  two_pass_cfg->stats_in = cfg->rc_twopass_stats_in;
+  // Set two-pass stats configuration.
+  oxcf->twopass_stats_in = cfg->rc_twopass_stats_in;
 
   // Set Key frame configuration.
   kf_cfg->fwd_kf_enabled = cfg->fwd_kf_enabled;
@@ -1162,6 +1151,14 @@ static aom_codec_err_t ctrl_get_quantizer64(aom_codec_alg_priv_t *ctx,
   int *const arg = va_arg(args, int *);
   if (arg == NULL) return AOM_CODEC_INVALID_PARAM;
   *arg = av1_qindex_to_quantizer(av1_get_quantizer(ctx->cpi));
+  return AOM_CODEC_OK;
+}
+
+static aom_codec_err_t ctrl_get_baseline_gf_interval(aom_codec_alg_priv_t *ctx,
+                                                     va_list args) {
+  int *const arg = va_arg(args, int *);
+  if (arg == NULL) return AOM_CODEC_INVALID_PARAM;
+  *arg = ctx->cpi->rc.baseline_gf_interval;
   return AOM_CODEC_OK;
 }
 
@@ -2884,6 +2881,7 @@ static aom_codec_ctrl_fn_map_t encoder_ctrl_maps[] = {
   { AV1E_SET_CHROMA_SUBSAMPLING_X, ctrl_set_chroma_subsampling_x },
   { AV1E_SET_CHROMA_SUBSAMPLING_Y, ctrl_set_chroma_subsampling_y },
   { AV1E_GET_SEQ_LEVEL_IDX, ctrl_get_seq_level_idx },
+  { AV1E_GET_BASELINE_GF_INTERVAL, ctrl_get_baseline_gf_interval },
 
   CTRL_MAP_END,
 };
@@ -2895,8 +2893,8 @@ static const aom_codec_enc_cfg_t encoder_usage_cfg[] = {
       0,                       // g_threads
       0,                       // g_profile
 
-      320,         // g_width
-      240,         // g_height
+      320,         // g_w
+      240,         // g_h
       0,           // g_limit
       0,           // g_forced_max_frame_width
       0,           // g_forced_max_frame_height
@@ -2965,8 +2963,8 @@ static const aom_codec_enc_cfg_t encoder_usage_cfg[] = {
       0,                   // g_threads
       0,                   // g_profile
 
-      320,         // g_width
-      240,         // g_height
+      320,         // g_w
+      240,         // g_h
       0,           // g_limit
       0,           // g_forced_max_frame_width
       0,           // g_forced_max_frame_height
@@ -2986,11 +2984,11 @@ static const aom_codec_enc_cfg_t encoder_usage_cfg[] = {
       SCALE_NUMERATOR,  // rc_resize_denominator
       SCALE_NUMERATOR,  // rc_resize_kf_denominator
 
-      0,                // rc_superres_mode
-      SCALE_NUMERATOR,  // rc_superres_denominator
-      SCALE_NUMERATOR,  // rc_superres_kf_denominator
-      63,               // rc_superres_qthresh
-      32,               // rc_superres_kf_qthresh
+      AOM_SUPERRES_NONE,  // rc_superres_mode
+      SCALE_NUMERATOR,    // rc_superres_denominator
+      SCALE_NUMERATOR,    // rc_superres_kf_denominator
+      63,                 // rc_superres_qthresh
+      32,                 // rc_superres_kf_qthresh
 
       AOM_CBR,      // rc_end_usage
       { NULL, 0 },  // rc_twopass_stats_in

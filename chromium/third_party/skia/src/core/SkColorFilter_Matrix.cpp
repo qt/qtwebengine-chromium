@@ -119,7 +119,7 @@ skvm::Color SkColorFilter_Matrix::onProgram(skvm::Builder* p, skvm::Color c,
         c = {r,g,b,a};
     }
 
-    return premul(c);    // note: rasterpipeline version does clamp01 first
+    return premul(clamp01(c));
 }
 
 #if SK_SUPPORT_GPU
@@ -171,6 +171,10 @@ sk_sp<SkColorFilter> SkColorFilters::Matrix(const SkColorMatrix& cm) {
 
 sk_sp<SkColorFilter> SkColorFilters::HSLAMatrix(const float array[20]) {
     return MakeMatrix(array, SkColorFilter_Matrix::Domain::kHSLA);
+}
+
+sk_sp<SkColorFilter> SkColorFilters::HSLAMatrix(const SkColorMatrix& cm) {
+    return MakeMatrix(cm.fMat.data(), SkColorFilter_Matrix::Domain::kHSLA);
 }
 
 void SkColorFilter_Matrix::RegisterFlattenables() {

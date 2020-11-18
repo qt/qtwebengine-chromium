@@ -170,6 +170,9 @@ class QUIC_EXPORT_PRIVATE QuicConnectionVisitorInterface {
   // transactions expecting a response.
   virtual bool ShouldKeepConnectionAlive() const = 0;
 
+  // Called to retrieve streams information for logging purpose.
+  virtual std::string GetStreamsInfoForLogging() const = 0;
+
   // Called when a self address change is observed. Returns true if self address
   // change is allowed.
   virtual bool AllowSelfAddressChange() const = 0;
@@ -199,8 +202,19 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
   ~QuicConnectionDebugVisitor() override {}
 
   // Called when a packet has been sent.
+  // TODO(wub): Delete when deprecating
+  // --quic_give_sent_packet_to_debug_visitor_after_sent.
   virtual void OnPacketSent(const SerializedPacket& /*serialized_packet*/,
                             TransmissionType /*transmission_type*/,
+                            QuicTime /*sent_time*/) {}
+
+  virtual void OnPacketSent(QuicPacketNumber /*packet_number*/,
+                            QuicPacketLength /*packet_length*/,
+                            bool /*has_crypto_handshake*/,
+                            TransmissionType /*transmission_type*/,
+                            EncryptionLevel /*encryption_level*/,
+                            const QuicFrames& /*retransmittable_frames*/,
+                            const QuicFrames& /*nonretransmittable_frames*/,
                             QuicTime /*sent_time*/) {}
 
   // Called when a coalesced packet has been sent.
@@ -361,7 +375,14 @@ class QUIC_EXPORT_PRIVATE QuicConnectionDebugVisitor
       const TransportParameters& /*transport_parameters*/) {}
 
   // Called for QUIC+TLS versions when 0-RTT is rejected.
-  virtual void OnZeroRttRejected() {}
+  virtual void OnZeroRttRejected(int /*reject_reason*/) {}
+
+  // Called for QUIC+TLS versions when 0-RTT packet gets acked.
+  virtual void OnZeroRttPacketAcked() {}
+
+  // Called on peer address change.
+  virtual void OnPeerAddressChange(AddressChangeType /*type*/,
+                                   QuicTime::Delta /*connection_time*/) {}
 };
 
 class QUIC_EXPORT_PRIVATE QuicConnectionHelperInterface {
@@ -716,8 +737,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Mark all sent 0-RTT encrypted packets for retransmission. Called when new
   // 0-RTT or 1-RTT key is available in gQUIC, or when 0-RTT is rejected in IETF
-  // QUIC.
-  void MarkZeroRttPacketsForRetransmission();
+  // QUIC. |reject_reason| is used in TLS-QUIC to log why 0-RTT was rejected.
+  void MarkZeroRttPacketsForRetransmission(int reject_reason);
 
   // Calls |sent_packet_manager_|'s NeuterUnencryptedPackets. Used when the
   // connection becomes forward secure and hasn't received acks for all packets.
@@ -800,6 +821,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     // If true, when this flusher goes out of scope, flush connection and set
     // retransmission alarm if there is one pending.
     bool flush_and_set_pending_retransmission_alarm_on_delete_;
+    // Latched connection's handshake_packet_sent_ on creation of this flusher.
+    const bool handshake_packet_sent_;
   };
 
   QuicPacketWriter* writer() { return writer_; }
@@ -823,6 +846,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Sends response to a connectivity probe. Sends either a Padded Ping
   // or an IETF PATH_RESPONSE based on the version of the connection.
   // Is the counterpart to SendConnectivityProbingPacket().
+  // TODO(danzh): remove this method after deprecating
+  // --gfe2_reloadable_flag_quic_send_path_response.
   virtual void SendConnectivityProbingResponsePacket(
       const QuicSocketAddress& peer_address);
 
@@ -908,8 +933,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   size_t min_received_before_ack_decimation() const;
   void set_min_received_before_ack_decimation(size_t new_value);
-
-  void set_ack_frequency(size_t new_value);
 
   // If |defer| is true, configures the connection to defer sending packets in
   // response to an ACK to the SendAlarm. If |defer| is false, packets may be
@@ -1007,10 +1030,22 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Can only be set if this is a client connection.
   void EnableLegacyVersionEncapsulation(const std::string& server_name);
 
+  bool send_path_response() const { return send_path_response_; }
+
   // If now is close to idle timeout, returns true and sends a connectivity
   // probing packet to test the connection for liveness. Otherwise, returns
   // false.
   bool MaybeTestLiveness();
+
+  bool can_receive_ack_frequency_frame() const {
+    return can_receive_ack_frequency_frame_;
+  }
+
+  void set_can_receive_ack_frequency_frame() {
+    can_receive_ack_frequency_frame_ = true;
+  }
+
+  bool check_keys_before_writing() const { return check_keys_before_writing_; }
 
  protected:
   // Calls cancel() on all the alarms owned by this connection.
@@ -1131,6 +1166,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
     // This gets set to true if 1) connection sucessfully processed the packet
     // or 2) connection failed to process the packet and will not try to process
     // it later.
+    // TODO(fayang): Remove this when deprecating
+    // quic_fix_undecryptable_packets2.
     bool processed;
   };
 
@@ -1247,9 +1284,9 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   void UpdateReleaseTimeIntoFuture();
 
   // Sends generic path probe packet to the peer. If we are not IETF QUIC, will
-  // always send a padded ping, regardless of whether this is a request or
-  // response. If version 99/ietf quic, will send a PATH_RESPONSE if
-  // |is_response| is true, a PATH_CHALLENGE if not.
+  // always send a padded ping, regardless of whether this is a request or not.
+  // TODO(danzh): remove |is_response| after deprecating
+  // --gfe2_reloadable_flag_quic_send_path_response.
   bool SendGenericPathProbePacket(QuicPacketWriter* probing_writer,
                                   const QuicSocketAddress& peer_address,
                                   bool is_response);
@@ -1368,6 +1405,17 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // deprecated.
   void MaybeRespondToConnectivityProbingOrMigration();
 
+  // Called in IETF QUIC. Start peer migration if a non-probing frame is
+  // received and the current packet number is largest received so far.
+  void MaybeStartIetfPeerMigration(QuicFrameType type);
+
+  // Send PATH_RESPONSE to the given peer address.
+  bool SendPathResponse(const QuicPathFrameBuffer& data_buffer,
+                        QuicSocketAddress peer_address_to_send);
+
+  // Update both connection's and packet creator's peer address.
+  void UpdatePeerAddress(QuicSocketAddress peer_address);
+
   QuicFramer framer_;
 
   // Contents received in the current packet, especially used to identify
@@ -1377,6 +1425,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // detected as a connectivity probing.
   // Always false outside the context of ProcessUdpPacket().
   bool is_current_packet_connectivity_probing_;
+
+  bool has_path_challenge_in_current_packet_;
 
   // Caches the current effective peer migration type if a effective peer
   // migration might be initiated. As soon as the current packet is confirmed
@@ -1403,6 +1453,8 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   QuicSocketAddress self_address_;
   QuicSocketAddress peer_address_;
 
+  // Other than initialization, do not modify it directly, use
+  // UpdatePeerAddress() instead.
   QuicSocketAddress direct_peer_address_;
   // Address of the endpoint behind the proxy if the connection is proxied.
   // Otherwise it is the same as |peer_address_|.
@@ -1448,7 +1500,7 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // established, but which could not be decrypted.  We buffer these on
   // the assumption that they could not be processed because they were
   // sent with the INITIAL encryption and the CHLO message was lost.
-  QuicCircularDeque<UndecryptablePacket> undecryptable_packets_;
+  std::deque<UndecryptablePacket> undecryptable_packets_;
 
   // Collection of coalesced packets which were received while processing
   // the current packet.
@@ -1460,13 +1512,6 @@ class QUIC_EXPORT_PRIVATE QuicConnection
 
   // Maximum number of tracked packets.
   QuicPacketCount max_tracked_packets_;
-
-  // When the version negotiation packet could not be sent because the socket
-  // was not writable, this is set to true.
-  bool pending_version_negotiation_packet_;
-  // Used when pending_version_negotiation_packet_ is true.
-  bool send_ietf_version_negotiation_packet_;
-  bool send_version_negotiation_packet_with_prefixed_lengths_;
 
   // Contains the connection close packets if the connection has been closed.
   std::unique_ptr<std::vector<std::unique_ptr<QuicEncryptedPacket>>>
@@ -1651,7 +1696,15 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // Deque because the peer might no be using this implementation, and others
   // might send a packet with more than one PATH_CHALLENGE, so all need to be
   // saved and responded to.
+  // TODO(danzh) deprecate this field when deprecating
+  // --quic_send_path_response.
   QuicCircularDeque<QuicPathFrameBuffer> received_path_challenge_payloads_;
+
+  // Buffer outstanding PATH_CHALLENGEs if socket write is blocked, future
+  // OnCanWrite will attempt to respond with PATH_RESPONSEs using the retained
+  // payload and peer addresses.
+  QuicCircularDeque<std::pair<QuicPathFrameBuffer, QuicSocketAddress>>
+      pending_path_challenge_payloads_;
 
   // Set of connection IDs that should be accepted as destination on
   // received packets. This is conceptually a set but is implemented as a
@@ -1720,6 +1773,37 @@ class QUIC_EXPORT_PRIVATE QuicConnection
   // True if next packet is intended to consume remaining space in the
   // coalescer.
   bool fill_coalesced_packet_ = false;
+
+  size_t anti_amplification_factor_ =
+      GetQuicFlag(FLAGS_quic_anti_amplification_factor);
+
+  bool start_peer_migration_earlier_ =
+      GetQuicReloadableFlag(quic_start_peer_migration_earlier);
+
+  bool fix_missing_connected_checks_ =
+      GetQuicReloadableFlag(quic_add_missing_connected_checks);
+
+  // latch --gfe2_reloadable_flag_quic_send_path_response and
+  // --gfe2_reloadable_flag_quic_start_peer_migration_earlier.
+  bool send_path_response_ = start_peer_migration_earlier_ &&
+                             GetQuicReloadableFlag(quic_send_path_response);
+  // True if AckFrequencyFrame is supported.
+  bool can_receive_ack_frequency_frame_ = false;
+
+  // Indicate whether coalescing is done.
+  bool coalescing_done_ = false;
+
+  // Indicate whether any ENCRYPTION_HANDSHAKE packet has been sent.
+  bool handshake_packet_sent_ = false;
+
+  const bool fix_missing_initial_keys_ =
+      GetQuicReloadableFlag(quic_fix_missing_initial_keys2);
+
+  const bool fix_out_of_order_sending_ =
+      GetQuicReloadableFlag(quic_fix_out_of_order_sending2);
+
+  const bool check_keys_before_writing_ =
+      GetQuicReloadableFlag(quic_check_keys_before_writing);
 };
 
 }  // namespace quic

@@ -20,7 +20,6 @@ public:
     SkSurface_Base(const SkImageInfo&, const SkSurfaceProps*);
     ~SkSurface_Base() override;
 
-    virtual GrContext* onGetContext_deprecated();
     virtual GrRecordingContext* onGetRecordingContext();
 
     virtual GrBackendTexture onGetBackendTexture(BackendHandleAccess);
@@ -149,7 +148,7 @@ private:
     friend class SkCanvas;
     friend class SkSurface;
 
-    typedef SkSurface INHERITED;
+    using INHERITED = SkSurface;
 };
 
 SkCanvas* SkSurface_Base::getCachedCanvas() {

@@ -10,13 +10,13 @@
 #include <memory>
 #include <vector>
 
+#include "cast/common/channel/cast_socket_message_port.h"
 #include "cast/common/channel/virtual_connection_manager.h"
 #include "cast/common/channel/virtual_connection_router.h"
 #include "cast/common/public/cast_socket.h"
 #include "cast/receiver/channel/device_auth_namespace_handler.h"
+#include "cast/receiver/channel/static_credentials.h"
 #include "cast/receiver/public/receiver_socket_factory.h"
-#include "cast/standalone_receiver/cast_socket_message_port.h"
-#include "cast/standalone_receiver/static_credentials.h"
 #include "cast/standalone_receiver/streaming_playback_controller.h"
 #include "cast/streaming/environment.h"
 #include "cast/streaming/receiver_session.h"
@@ -45,7 +45,7 @@ class CastAgent final : public ReceiverSocketFactory::Client,
  public:
   CastAgent(
       TaskRunner* task_runner,
-      InterfaceInfo interface,
+      const InterfaceInfo& interface,
       DeviceAuthNamespaceHandler::CredentialsProvider* credentials_provider,
       TlsCredentials tls_credentials);
   ~CastAgent();
@@ -87,7 +87,6 @@ class CastAgent final : public ReceiverSocketFactory::Client,
   TaskRunner* const task_runner_;
   IPEndpoint receive_endpoint_;
   DeviceAuthNamespaceHandler::CredentialsProvider* credentials_provider_;
-  CastSocketMessagePort message_port_;
   TlsCredentials tls_credentials_;
 
   // Member variables set as part of starting up.
@@ -95,6 +94,7 @@ class CastAgent final : public ReceiverSocketFactory::Client,
   SerialDeletePtr<TlsConnectionFactory> connection_factory_;
   VirtualConnectionManager connection_manager_;
   SerialDeletePtr<VirtualConnectionRouter> router_;
+  SerialDeletePtr<CastSocketMessagePort> message_port_;
   SerialDeletePtr<ReceiverSocketFactory> socket_factory_;
   SerialDeletePtr<ScopedWakeLock> wake_lock_;
 

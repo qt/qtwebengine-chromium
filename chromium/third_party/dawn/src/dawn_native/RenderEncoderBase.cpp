@@ -20,6 +20,7 @@
 #include "dawn_native/Commands.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/RenderPipeline.h"
+#include "dawn_native/ValidationUtils_autogen.h"
 
 #include <math.h>
 #include <cstring>
@@ -136,8 +137,23 @@ namespace dawn_native {
     }
 
     void RenderEncoderBase::SetIndexBuffer(BufferBase* buffer, uint64_t offset, uint64_t size) {
+        GetDevice()->EmitDeprecationWarning(
+            "RenderEncoderBase::SetIndexBuffer is deprecated. Use RenderEncoderBase::SetIndexBufferWithFormat instead");
+
+        SetIndexBufferCommon(buffer, wgpu::IndexFormat::Undefined, offset, size, false);
+    }
+
+    void RenderEncoderBase::SetIndexBufferWithFormat(BufferBase* buffer, wgpu::IndexFormat format,
+                                                     uint64_t offset, uint64_t size) {
+        SetIndexBufferCommon(buffer, format, offset, size, true);
+    }
+
+    void RenderEncoderBase::SetIndexBufferCommon(BufferBase* buffer, wgpu::IndexFormat format,
+                                                 uint64_t offset, uint64_t size,
+                                                 bool requireFormat) {
         mEncodingContext->TryEncode(this, [&](CommandAllocator* allocator) -> MaybeError {
             DAWN_TRY(GetDevice()->ValidateObject(buffer));
+            DAWN_TRY(ValidateIndexFormat(format));
 
             uint64_t bufferSize = buffer->GetSize();
             if (offset > bufferSize) {
@@ -153,9 +169,16 @@ namespace dawn_native {
                 }
             }
 
+            if (requireFormat && format == wgpu::IndexFormat::Undefined) {
+                return DAWN_VALIDATION_ERROR("Index format must be specified");
+            } else if (!requireFormat) {
+                ASSERT(format == wgpu::IndexFormat::Undefined);
+            }
+
             SetIndexBufferCmd* cmd =
                 allocator->Allocate<SetIndexBufferCmd>(Command::SetIndexBuffer);
             cmd->buffer = buffer;
+            cmd->format = format;
             cmd->offset = offset;
             cmd->size = size;
 
@@ -192,7 +215,7 @@ namespace dawn_native {
 
             SetVertexBufferCmd* cmd =
                 allocator->Allocate<SetVertexBufferCmd>(Command::SetVertexBuffer);
-            cmd->slot = slot;
+            cmd->slot = VertexBufferSlot(static_cast<uint8_t>(slot));
             cmd->buffer = buffer;
             cmd->offset = offset;
             cmd->size = size;

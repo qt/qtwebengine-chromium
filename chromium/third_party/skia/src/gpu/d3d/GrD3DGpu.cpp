@@ -14,6 +14,7 @@
 #include "src/gpu/GrBackendUtils.h"
 #include "src/gpu/GrDataUtils.h"
 #include "src/gpu/GrTexture.h"
+#include "src/gpu/d3d/GrD3DAMDMemoryAllocator.h"
 #include "src/gpu/d3d/GrD3DBuffer.h"
 #include "src/gpu/d3d/GrD3DCaps.h"
 #include "src/gpu/d3d/GrD3DOpsRenderPass.h"
@@ -30,7 +31,18 @@
 
 sk_sp<GrGpu> GrD3DGpu::Make(const GrD3DBackendContext& backendContext,
                             const GrContextOptions& contextOptions, GrDirectContext* direct) {
-    return sk_sp<GrGpu>(new GrD3DGpu(direct, contextOptions, backendContext));
+    sk_sp<GrD3DMemoryAllocator> memoryAllocator = backendContext.fMemoryAllocator;
+    if (!memoryAllocator) {
+        // We were not given a memory allocator at creation
+        memoryAllocator = GrD3DAMDMemoryAllocator::Make(
+                backendContext.fAdapter.get(), backendContext.fDevice.get());
+    }
+    if (!memoryAllocator) {
+        SkDEBUGFAIL("No supplied Direct3D memory allocator and unable to create one internally.");
+        return nullptr;
+    }
+
+    return sk_sp<GrGpu>(new GrD3DGpu(direct, contextOptions, backendContext, memoryAllocator));
 }
 
 // This constant determines how many OutstandingCommandLists are allocated together as a block in
@@ -43,10 +55,12 @@ static const int kDefaultOutstandingAllocCnt = 8;
 constexpr int kConstantAlignment = 256;
 
 GrD3DGpu::GrD3DGpu(GrDirectContext* direct, const GrContextOptions& contextOptions,
-                   const GrD3DBackendContext& backendContext)
+                   const GrD3DBackendContext& backendContext,
+                   sk_sp<GrD3DMemoryAllocator> allocator)
         : INHERITED(direct)
         , fDevice(backendContext.fDevice)
         , fQueue(backendContext.fQueue)
+        , fMemoryAllocator(std::move(allocator))
         , fResourceProvider(this)
         , fStagingBufferManager(this)
         , fConstantsRingBuffer(this, 128 * 1024, kConstantAlignment, GrGpuBufferType::kVertex)
@@ -107,7 +121,7 @@ GrOpsRenderPass* GrD3DGpu::getOpsRenderPass(
         const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
         const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
         const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-        bool usesXferBarriers) {
+        GrXferBarrierFlags renderPassXferBarriers) {
     if (!fCachedOpsRenderPass) {
         fCachedOpsRenderPass.reset(new GrD3DOpsRenderPass(this));
     }
@@ -785,6 +799,10 @@ static bool check_tex_resource_info(const GrD3DCaps& caps, const GrD3DTextureRes
     if (!caps.isFormatTexturable(info.fFormat)) {
         return false;
     }
+    // We don't support sampling from multisampled textures.
+    if (info.fSampleCount != 1) {
+        return false;
+    }
     return true;
 }
 
@@ -917,6 +935,12 @@ sk_sp<GrRenderTarget> GrD3DGpu::onWrapBackendTextureAsRenderTarget(const GrBacke
         return nullptr;
     }
 
+    // If sampleCnt is > 1 we will create an intermediate MSAA VkImage and then resolve into
+    // the wrapped VkImage. We don't yet support rendering directly to client-provided MSAA texture.
+    if (textureInfo.fSampleCount != 1) {
+        return nullptr;
+    }
+
     if (!check_rt_resource_info(this->d3dCaps(), textureInfo, sampleCnt)) {
         return nullptr;
     }
@@ -949,16 +973,15 @@ sk_sp<GrGpuBuffer> GrD3DGpu::onCreateBuffer(size_t sizeInBytes, GrGpuBufferType 
 }
 
 GrStencilAttachment* GrD3DGpu::createStencilAttachmentForRenderTarget(
-        const GrRenderTarget* rt, int width, int height, int numStencilSamples) {
+        const GrRenderTarget* rt, SkISize dimensions, int numStencilSamples) {
     SkASSERT(numStencilSamples == rt->numSamples() || this->caps()->mixedSamplesSupport());
-    SkASSERT(width >= rt->width());
-    SkASSERT(height >= rt->height());
+    SkASSERT(dimensions.width() >= rt->width());
+    SkASSERT(dimensions.height() >= rt->height());
 
     const GrD3DCaps::StencilFormat& sFmt = this->d3dCaps().preferredStencilFormat();
 
     GrD3DStencilAttachment* stencil(GrD3DStencilAttachment::Make(this,
-                                                                 width,
-                                                                 height,
+                                                                 dimensions,
                                                                  numStencilSamples,
                                                                  sFmt));
     fStats.incStencilAttachmentCreates();
@@ -1259,7 +1282,7 @@ GrBackendRenderTarget GrD3DGpu::createTestingOnlyBackendRenderTarget(int w, int 
         return {};
     }
 
-    return GrBackendRenderTarget(w, h, 1, info);
+    return GrBackendRenderTarget(w, h, info);
 }
 
 void GrD3DGpu::deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget& rt) {

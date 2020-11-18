@@ -188,6 +188,16 @@ bool ObuParser::ParseColorConfig(ObuSequenceHeader* sequence_header) {
       color_config->color_range = kColorRangeFull;
       color_config->subsampling_x = 0;
       color_config->subsampling_y = 0;
+      // YUV 4:4:4 is only allowed in profile 1, or profile 2 with bit depth 12.
+      // See the table at the beginning of Section 6.4.1.
+      if (sequence_header->profile != kProfile1 &&
+          (sequence_header->profile != kProfile2 ||
+           color_config->bitdepth != 12)) {
+        LIBGAV1_DLOG(ERROR,
+                     "YUV 4:4:4 is not allowed in profile %d for bitdepth %d.",
+                     sequence_header->profile, color_config->bitdepth);
+        return false;
+      }
     } else {
       OBU_READ_BIT_OR_FAIL;
       color_config->color_range = static_cast<ColorRange>(scratch);
@@ -1149,8 +1159,7 @@ bool ObuParser::ParseLoopRestorationParameters() {
         unit_shift += unit_extra_shift;
       }
     }
-    loop_restoration->unit_size[kPlaneY] =
-        kLoopRestorationTileSizeMax >> (2 - unit_shift);
+    loop_restoration->unit_size_log2[kPlaneY] = 6 + unit_shift;
     uint8_t uv_shift = 0;
     if (sequence_header_.color_config.subsampling_x != 0 &&
         sequence_header_.color_config.subsampling_y != 0 &&
@@ -1158,9 +1167,9 @@ bool ObuParser::ParseLoopRestorationParameters() {
       OBU_READ_BIT_OR_FAIL;
       uv_shift = scratch;
     }
-    loop_restoration->unit_size[kPlaneU] =
-        loop_restoration->unit_size[kPlaneV] =
-            loop_restoration->unit_size[0] >> uv_shift;
+    loop_restoration->unit_size_log2[kPlaneU] =
+        loop_restoration->unit_size_log2[kPlaneV] =
+            loop_restoration->unit_size_log2[0] - uv_shift;
   }
   return true;
 }
@@ -1861,6 +1870,7 @@ bool ObuParser::ParseFrameParameters() {
   if (frame_header_.frame_type == kFrameKey && frame_header_.show_frame) {
     decoder_state_.reference_valid.fill(false);
     decoder_state_.reference_order_hint.fill(0);
+    decoder_state_.reference_frame.fill(nullptr);
   }
   OBU_READ_BIT_OR_FAIL;
   frame_header_.enable_cdf_update = !static_cast<bool>(scratch);
@@ -1890,27 +1900,28 @@ bool ObuParser::ParseFrameParameters() {
     frame_header_.current_frame_id = static_cast<uint16_t>(scratch);
     const int previous_frame_id = decoder_state_.current_frame_id;
     decoder_state_.current_frame_id = frame_header_.current_frame_id;
-    if ((frame_header_.frame_type != kFrameKey || !frame_header_.show_frame) &&
-        previous_frame_id >= 0) {
-      // Section 6.8.2: ..., it is a requirement of bitstream conformance
-      // that all of the following conditions are true:
-      //   * current_frame_id is not equal to PrevFrameID,
-      //   * DiffFrameID is less than 1 << ( idLen - 1 )
-      int diff_frame_id = decoder_state_.current_frame_id - previous_frame_id;
-      const int id_length_max_value = 1
-                                      << sequence_header_.frame_id_length_bits;
-      if (diff_frame_id <= 0) {
-        diff_frame_id += id_length_max_value;
+    if (frame_header_.frame_type != kFrameKey || !frame_header_.show_frame) {
+      if (previous_frame_id >= 0) {
+        // Section 6.8.2: ..., it is a requirement of bitstream conformance
+        // that all of the following conditions are true:
+        //   * current_frame_id is not equal to PrevFrameID,
+        //   * DiffFrameID is less than 1 << ( idLen - 1 )
+        int diff_frame_id = decoder_state_.current_frame_id - previous_frame_id;
+        const int id_length_max_value =
+            1 << sequence_header_.frame_id_length_bits;
+        if (diff_frame_id <= 0) {
+          diff_frame_id += id_length_max_value;
+        }
+        if (diff_frame_id >= DivideBy2(id_length_max_value)) {
+          LIBGAV1_DLOG(ERROR,
+                       "current_frame_id (%d) equals or differs too much from "
+                       "previous_frame_id (%d).",
+                       decoder_state_.current_frame_id, previous_frame_id);
+          return false;
+        }
       }
-      if (diff_frame_id >= DivideBy2(id_length_max_value)) {
-        LIBGAV1_DLOG(ERROR,
-                     "current_frame_id (%d) equals or differs too much from "
-                     "previous_frame_id (%d).",
-                     decoder_state_.current_frame_id, previous_frame_id);
-        return false;
-      }
+      MarkInvalidReferenceFrames();
     }
-    MarkInvalidReferenceFrames();
   } else {
     frame_header_.current_frame_id = 0;
     decoder_state_.current_frame_id = frame_header_.current_frame_id;
@@ -2043,20 +2054,6 @@ bool ObuParser::ParseFrameParameters() {
                        reference_frame_index);
           return false;
         }
-      }
-    }
-    // Validate frame_header_.primary_reference_frame.
-    if (frame_header_.primary_reference_frame != kPrimaryReferenceNone) {
-      const int index =
-          frame_header_
-              .reference_frame_index[frame_header_.primary_reference_frame];
-      if (decoder_state_.reference_frame[index] == nullptr) {
-        LIBGAV1_DLOG(ERROR,
-                     "primary_ref_frame is %d but ref_frame_idx[%d] (%d) is "
-                     "not a decoded frame.",
-                     frame_header_.primary_reference_frame,
-                     frame_header_.primary_reference_frame, index);
-        return false;
       }
     }
     if (frame_header_.frame_size_override_flag &&

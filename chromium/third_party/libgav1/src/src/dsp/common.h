@@ -57,8 +57,9 @@ struct SgrBuffer {
   alignas(kMaxAlignment) uint32_t b343[4 * kRestorationUnitWidth];
   alignas(kMaxAlignment) uint32_t b444[3 * kRestorationUnitWidth];
   alignas(kMaxAlignment) uint32_t b565[2 * kRestorationUnitWidth];
-  alignas(kMaxAlignment) uint16_t
-      temp_buffer[12 * (kRestorationUnitHeight + 2)];
+  // The following 2 buffers are only used by the C functions. Since SgrBuffer
+  // is smaller than |wiener_buffer| in RestorationBuffer which is an union,
+  // it's OK to always keep the following 2 buffers.
   alignas(kMaxAlignment) uint8_t ma[kSgrStride];  // [0, 255]
   // b is less than 2^16 for 8-bit. However, making it a template slows down the
   // C function by 5%. So b is fixed to 32-bit.

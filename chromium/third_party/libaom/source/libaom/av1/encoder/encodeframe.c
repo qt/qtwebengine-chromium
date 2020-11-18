@@ -217,6 +217,22 @@ void av1_setup_src_planes(MACROBLOCK *x, const YV12_BUFFER_CONFIG *src,
 }
 
 #if !CONFIG_REALTIME_ONLY
+/*!\brief Assigns different quantization parameters to each super
+ * block based on its TPL weight.
+ *
+ * \ingroup tpl_modelling
+ *
+ * \param[in]     cpi         Top level encoder instance structure
+ * \param[in,out] td          Thread data structure
+ * \param[in,out] x           Macro block level data for this block.
+ * \param[in]     tile_info   Tile infromation / identification
+ * \param[in]     mi_row      Block row (in "MI_SIZE" units) index
+ * \param[in]     mi_col      Block column (in "MI_SIZE" units) index
+ * \param[out]    num_planes  Number of image planes (e.g. Y,U,V)
+ *
+ * \return No return value but updates macroblock and thread data
+ * relating to the q / q delta to be used.
+ */
 static AOM_INLINE void setup_delta_q(AV1_COMP *const cpi, ThreadData *td,
                                      MACROBLOCK *const x,
                                      const TileInfo *const tile_info,
@@ -321,7 +337,7 @@ static void init_ref_frame_space(AV1_COMP *cpi, ThreadData *td, int mi_row,
   av1_zero(x->tpl_keep_ref_frame);
 
   if (tpl_frame->is_valid == 0) return;
-  if (!is_frame_tpl_eligible(gf_group)) return;
+  if (!is_frame_tpl_eligible(gf_group, gf_group->index)) return;
   if (frame_idx >= MAX_TPL_FRAME_IDX) return;
   if (cpi->superres_mode != AOM_SUPERRES_NONE) return;
   if (cpi->oxcf.q_cfg.aq_mode != NO_AQ) return;
@@ -1063,8 +1079,13 @@ static AOM_INLINE void set_default_interp_skip_flags(
 }
 
 static AOM_INLINE void setup_prune_ref_frame_mask(AV1_COMP *cpi) {
-  if (!cpi->sf.rt_sf.use_nonrd_pick_mode &&
-      cpi->sf.inter_sf.selective_ref_frame >= 2) {
+  if ((!cpi->oxcf.ref_frm_cfg.enable_onesided_comp ||
+       cpi->sf.inter_sf.disable_onesided_comp) &&
+      cpi->all_one_sided_refs) {
+    // Disable all compound references
+    cpi->prune_ref_frame_mask = (1 << MODE_CTX_REF_FRAMES) - (1 << REF_FRAMES);
+  } else if (!cpi->sf.rt_sf.use_nonrd_pick_mode &&
+             cpi->sf.inter_sf.selective_ref_frame >= 2) {
     AV1_COMMON *const cm = &cpi->common;
     const OrderHintInfo *const order_hint_info =
         &cm->seq_params.order_hint_info;
@@ -1261,7 +1282,8 @@ static AOM_INLINE void encode_frame_internal(AV1_COMP *cpi) {
     // frames currently.
     const GF_GROUP *gf_group = &cpi->gf_group;
     if (cm->delta_q_info.delta_q_present_flag) {
-      if (deltaq_mode == DELTA_Q_OBJECTIVE && !is_frame_tpl_eligible(gf_group))
+      if (deltaq_mode == DELTA_Q_OBJECTIVE &&
+          !is_frame_tpl_eligible(gf_group, gf_group->index))
         cm->delta_q_info.delta_q_present_flag = 0;
     }
 
@@ -1334,13 +1356,13 @@ static AOM_INLINE void encode_frame_internal(AV1_COMP *cpi) {
   enc_row_mt->sync_write_ptr = av1_row_mt_sync_write_dummy;
   mt_info->row_mt_enabled = 0;
 
-  if (oxcf->row_mt && (oxcf->max_threads > 1)) {
+  if (oxcf->row_mt && (mt_info->num_workers > 1)) {
     mt_info->row_mt_enabled = 1;
     enc_row_mt->sync_read_ptr = av1_row_mt_sync_read;
     enc_row_mt->sync_write_ptr = av1_row_mt_sync_write;
     av1_encode_tiles_row_mt(cpi);
   } else {
-    if (AOMMIN(oxcf->max_threads, cm->tiles.cols * cm->tiles.rows) > 1)
+    if (AOMMIN(mt_info->num_workers, cm->tiles.cols * cm->tiles.rows) > 1)
       av1_encode_tiles_mt(cpi);
     else
       encode_tiles(cpi);

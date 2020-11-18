@@ -1671,12 +1671,6 @@
                             "type": "boolean"
                         },
                         {
-                            "name": "type",
-                            "description": "For \"wake-lock\" permission, must specify type as either \"screen\" or \"system\".",
-                            "optional": true,
-                            "type": "string"
-                        },
-                        {
                             "name": "allowWithoutSanitization",
                             "description": "For \"clipboard\" permission, may specify allowWithoutSanitization.",
                             "optional": true,
@@ -2216,7 +2210,12 @@
                         },
                         {
                             "name": "isMutable",
-                            "description": "Whether this stylesheet is mutable. Inline stylesheets become mutable\nafter they have been modified via CSSOM API.\n<link> element's stylesheets are never mutable. Constructed stylesheets\n(new CSSStyleSheet()) are mutable immediately after creation.",
+                            "description": "Whether this stylesheet is mutable. Inline stylesheets become mutable\nafter they have been modified via CSSOM API.\n<link> element's stylesheets become mutable only if DevTools modifies them.\nConstructed stylesheets (new CSSStyleSheet()) are mutable immediately after creation.",
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "isConstructed",
+                            "description": "Whether this stylesheet is a constructed stylesheet (created using new CSSStyleSheet()).",
                             "type": "boolean"
                         },
                         {
@@ -10446,6 +10445,20 @@
                         {
                             "name": "value",
                             "$ref": "CrossOriginOpenerPolicyValue"
+                        },
+                        {
+                            "name": "reportOnlyValue",
+                            "$ref": "CrossOriginOpenerPolicyValue"
+                        },
+                        {
+                            "name": "reportingEndpoint",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "reportOnlyReportingEndpoint",
+                            "optional": true,
+                            "type": "string"
                         }
                     ]
                 },
@@ -10466,6 +10479,20 @@
                         {
                             "name": "value",
                             "$ref": "CrossOriginEmbedderPolicyValue"
+                        },
+                        {
+                            "name": "reportOnlyValue",
+                            "$ref": "CrossOriginEmbedderPolicyValue"
+                        },
+                        {
+                            "name": "reportingEndpoint",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "reportOnlyReportingEndpoint",
+                            "optional": true,
+                            "type": "string"
                         }
                     ]
                 },
@@ -10481,6 +10508,62 @@
                         {
                             "name": "coep",
                             "$ref": "CrossOriginEmbedderPolicyStatus"
+                        }
+                    ]
+                },
+                {
+                    "id": "LoadNetworkResourcePageResult",
+                    "description": "An object providing the result of a network resource load.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "success",
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "netError",
+                            "description": "Optional values used for error reporting.",
+                            "optional": true,
+                            "type": "number"
+                        },
+                        {
+                            "name": "netErrorName",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "httpStatusCode",
+                            "optional": true,
+                            "type": "number"
+                        },
+                        {
+                            "name": "stream",
+                            "description": "If successful, one of the following two fields holds the result.",
+                            "optional": true,
+                            "$ref": "IO.StreamHandle"
+                        },
+                        {
+                            "name": "headers",
+                            "description": "Response headers.",
+                            "optional": true,
+                            "$ref": "Network.Headers"
+                        }
+                    ]
+                },
+                {
+                    "id": "LoadNetworkResourceOptions",
+                    "description": "An options object that may be extended later to better support CORS,\nCORB and streaming.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "disableCache",
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "includeCredentials",
+                            "type": "boolean"
                         }
                     ]
                 }
@@ -11021,6 +11104,18 @@
                     ]
                 },
                 {
+                    "name": "setAttachDebugHeader",
+                    "description": "Specifies whether to sned a debug header to all outgoing requests.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "enabled",
+                            "description": "Whether to send a debug header.",
+                            "type": "boolean"
+                        }
+                    ]
+                },
+                {
                     "name": "setRequestInterception",
                     "description": "Sets the requests to intercept that match the provided patterns and optionally resource types.\nDeprecated, please use Fetch.enable instead.",
                     "experimental": true,
@@ -11083,6 +11178,34 @@
                         {
                             "name": "status",
                             "$ref": "SecurityIsolationStatus"
+                        }
+                    ]
+                },
+                {
+                    "name": "loadNetworkResource",
+                    "description": "Fetches the resource and returns the content.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "frameId",
+                            "description": "Frame id to get the resource for.",
+                            "$ref": "Page.FrameId"
+                        },
+                        {
+                            "name": "url",
+                            "description": "URL of the resource to get content for.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "options",
+                            "description": "Options for the request.",
+                            "$ref": "LoadNetworkResourceOptions"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "resource",
+                            "$ref": "LoadNetworkResourcePageResult"
                         }
                     ]
                 }
@@ -11787,6 +11910,12 @@
                         {
                             "name": "areaBorderColor",
                             "description": "The named grid areas border color (Default: transparent).",
+                            "optional": true,
+                            "$ref": "DOM.RGBA"
+                        },
+                        {
+                            "name": "gridBackgroundColor",
+                            "description": "The grid container background color (Default: transparent).",
                             "optional": true,
                             "$ref": "DOM.RGBA"
                         }
@@ -16686,7 +16815,6 @@
         {
             "domain": "Fetch",
             "description": "A domain for letting clients substitute browser's network layer with client code.",
-            "experimental": true,
             "dependencies": [
                 "Network",
                 "IO",
@@ -16701,7 +16829,6 @@
                 {
                     "id": "RequestStage",
                     "description": "Stages of the request to handle. Request will intercept before the request is\nsent. Response will intercept after the response is received (but before response\nbody is received.",
-                    "experimental": true,
                     "type": "string",
                     "enum": [
                         "Request",
@@ -16710,7 +16837,6 @@
                 },
                 {
                     "id": "RequestPattern",
-                    "experimental": true,
                     "type": "object",
                     "properties": [
                         {
@@ -16751,7 +16877,6 @@
                 {
                     "id": "AuthChallenge",
                     "description": "Authorization challenge for HTTP status code 401 or 407.",
-                    "experimental": true,
                     "type": "object",
                     "properties": [
                         {
@@ -16784,7 +16909,6 @@
                 {
                     "id": "AuthChallengeResponse",
                     "description": "Response to an AuthChallenge.",
-                    "experimental": true,
                     "type": "object",
                     "properties": [
                         {
@@ -17213,7 +17337,7 @@
                 },
                 {
                     "id": "AudioListener",
-                    "description": "Protocol object for AudioListner",
+                    "description": "Protocol object for AudioListener",
                     "type": "object",
                     "properties": [
                         {
@@ -19891,6 +20015,29 @@
                             "type": "integer"
                         }
                     ]
+                },
+                {
+                    "id": "RuntimeCallCounterInfo",
+                    "description": "Runtime call counter information.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "name",
+                            "description": "Counter name.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "value",
+                            "description": "Counter value.",
+                            "type": "number"
+                        },
+                        {
+                            "name": "time",
+                            "description": "Counter time in seconds.",
+                            "type": "number"
+                        }
+                    ]
                 }
             ],
             "commands": [
@@ -20018,6 +20165,31 @@
                     ]
                 },
                 {
+                    "name": "enableCounters",
+                    "description": "Enable counters collection.",
+                    "experimental": true
+                },
+                {
+                    "name": "disableCounters",
+                    "description": "Disable counters collection.",
+                    "experimental": true
+                },
+                {
+                    "name": "getCounters",
+                    "description": "Retrieve counters.",
+                    "experimental": true,
+                    "returns": [
+                        {
+                            "name": "result",
+                            "description": "Collected counters information.",
+                            "type": "array",
+                            "items": {
+                                "$ref": "CounterInfo"
+                            }
+                        }
+                    ]
+                },
+                {
                     "name": "enableRuntimeCallStats",
                     "description": "Enable run time call stats collection.",
                     "experimental": true
@@ -20034,10 +20206,10 @@
                     "returns": [
                         {
                             "name": "result",
-                            "description": "Collected counter information.",
+                            "description": "Collected runtime call counter information.",
                             "type": "array",
                             "items": {
-                                "$ref": "CounterInfo"
+                                "$ref": "RuntimeCallCounterInfo"
                             }
                         }
                     ]

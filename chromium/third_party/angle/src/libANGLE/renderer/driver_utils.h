@@ -28,6 +28,7 @@ enum VendorID : uint32_t
     // This is Qualcomm PCI Vendor ID.
     // Android doesn't have a PCI bus, but all we need is a unique id.
     VENDOR_ID_QUALCOMM = 0x5143,
+    VENDOR_ID_SAMSUNG  = 0x144D,
     VENDOR_ID_VMWARE   = 0x15AD,
 };
 
@@ -35,8 +36,8 @@ enum AndroidDeviceID : uint32_t
 {
     ANDROID_DEVICE_ID_UNKNOWN     = 0x0,
     ANDROID_DEVICE_ID_NEXUS5X     = 0x4010800,
-    ANDROID_DEVICE_ID_PIXEL1XL    = 0x5040001,
-    ANDROID_DEVICE_ID_PIXEL2      = 0x5030004,
+    ANDROID_DEVICE_ID_PIXEL2      = 0x5040001,
+    ANDROID_DEVICE_ID_PIXEL1XL    = 0x5030004,
     ANDROID_DEVICE_ID_SWIFTSHADER = 0xC0DE,
 };
 
@@ -78,6 +79,11 @@ inline bool IsQualcomm(uint32_t vendorId)
 inline bool IsVMWare(uint32_t vendorId)
 {
     return vendorId == VENDOR_ID_VMWARE;
+}
+
+inline bool IsSamsung(uint32_t vendorId)
+{
+    return vendorId == VENDOR_ID_SAMSUNG;
 }
 
 inline bool IsNexus5X(uint32_t vendorId, uint32_t deviceId)

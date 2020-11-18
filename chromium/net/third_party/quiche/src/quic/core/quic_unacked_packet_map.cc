@@ -128,12 +128,14 @@ QuicUnackedPacketMap::~QuicUnackedPacketMap() {
   }
 }
 
-void QuicUnackedPacketMap::AddSentPacket(SerializedPacket* packet,
+void QuicUnackedPacketMap::AddSentPacket(SerializedPacket* mutable_packet,
                                          TransmissionType transmission_type,
                                          QuicTime sent_time,
-                                         bool set_in_flight) {
-  QuicPacketNumber packet_number = packet->packet_number;
-  QuicPacketLength bytes_sent = packet->encrypted_length;
+                                         bool set_in_flight,
+                                         bool measure_rtt) {
+  const SerializedPacket& packet = *mutable_packet;
+  QuicPacketNumber packet_number = packet.packet_number;
+  QuicPacketLength bytes_sent = packet.encrypted_length;
   QUIC_BUG_IF(largest_sent_packet_.IsInitialized() &&
               largest_sent_packet_ >= packet_number)
       << "largest_sent_packet_: " << largest_sent_packet_
@@ -144,12 +146,17 @@ void QuicUnackedPacketMap::AddSentPacket(SerializedPacket* packet,
     unacked_packets_.back().state = NEVER_SENT;
   }
 
-  const bool has_crypto_handshake =
-      packet->has_crypto_handshake == IS_HANDSHAKE;
-  QuicTransmissionInfo info(packet->encryption_level, transmission_type,
-                            sent_time, bytes_sent, has_crypto_handshake);
-  info.largest_acked = packet->largest_acked;
-  largest_sent_largest_acked_.UpdateMax(packet->largest_acked);
+  const bool has_crypto_handshake = packet.has_crypto_handshake == IS_HANDSHAKE;
+  QuicTransmissionInfo info(packet.encryption_level, transmission_type,
+                            sent_time, bytes_sent, has_crypto_handshake,
+                            packet.has_ack_frequency);
+  info.largest_acked = packet.largest_acked;
+  largest_sent_largest_acked_.UpdateMax(packet.largest_acked);
+
+  if (!measure_rtt) {
+    QUIC_BUG_IF(set_in_flight);
+    info.state = NOT_CONTRIBUTING_RTT;
+  }
 
   largest_sent_packet_ = packet_number;
   if (set_in_flight) {
@@ -170,7 +177,7 @@ void QuicUnackedPacketMap::AddSentPacket(SerializedPacket* packet,
     last_crypto_packet_sent_time_ = sent_time;
   }
 
-  packet->retransmittable_frames.swap(
+  mutable_packet->retransmittable_frames.swap(
       unacked_packets_.back().retransmittable_frames);
 }
 
@@ -240,7 +247,8 @@ bool QuicUnackedPacketMap::IsPacketUsefulForMeasuringRtt(
   // Packet can be used for RTT measurement if it may yet be acked as the
   // largest observed packet by the receiver.
   return QuicUtils::IsAckable(info.state) &&
-         (!largest_acked_.IsInitialized() || packet_number > largest_acked_);
+         (!largest_acked_.IsInitialized() || packet_number > largest_acked_) &&
+         info.state != NOT_CONTRIBUTING_RTT;
 }
 
 bool QuicUnackedPacketMap::IsPacketUsefulForCongestionControl(

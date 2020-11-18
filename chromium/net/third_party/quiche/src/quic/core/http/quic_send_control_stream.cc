@@ -30,7 +30,7 @@ void QuicSendControlStream::OnStreamReset(const QuicRstStreamFrame& /*frame*/) {
   QUIC_BUG << "OnStreamReset() called for write unidirectional stream.";
 }
 
-bool QuicSendControlStream::OnStopSending(uint16_t /* code */) {
+bool QuicSendControlStream::OnStopSending(QuicRstStreamErrorCode /* code */) {
   stream_delegate()->OnStreamError(
       QUIC_HTTP_CLOSED_CRITICAL_STREAM,
       "STOP_SENDING received for send control stream");
@@ -128,7 +128,8 @@ void QuicSendControlStream::SendGoAway(QuicStreamId id) {
   GoAwayFrame frame;
   // If the peer has not created any stream yet, use stream ID 0 to indicate no
   // request is accepted.
-  if (id == QuicUtils::GetInvalidStreamId(session()->transport_version())) {
+  if (!GetQuicReloadableFlag(quic_fix_http3_goaway_stream_id) &&
+      id == QuicUtils::GetInvalidStreamId(session()->transport_version())) {
     id = 0;
   }
   frame.id = id;

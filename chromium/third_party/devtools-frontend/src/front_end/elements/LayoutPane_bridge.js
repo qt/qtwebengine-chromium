@@ -11,6 +11,14 @@
 
 import './LayoutPane.js';
 /**
+* @typedef {{
+* settings:!Array.<!Setting>,
+* gridElements:!Array.<!LayoutElement>,
+* }}
+*/
+// @ts-ignore we export this for Closure not TS
+export let LayoutPaneData;
+/**
 * @typedef {EnumSetting|BooleanSetting}
 */
 // @ts-ignore we export this for Closure not TS
@@ -18,10 +26,16 @@ export let Setting;
 /**
 * @typedef {{
 * id:number,
+* color:string,
 * name:string,
 * domId:(string|undefined),
 * domClasses:(!Array.<string>|undefined),
 * enabled:boolean,
+* reveal:function():void,
+* toggle:function(boolean):void,
+* setColor:function(string):void,
+* highlight:function():void,
+* hideHighlight:function():void,
 * }}
 */
 // @ts-ignore we export this for Closure not TS
@@ -75,7 +89,7 @@ export let BooleanSettingOption;
 // eslint-disable-next-line no-unused-vars
 export class LayoutPaneClosureInterface extends HTMLElement {
   /**
-  * @param {{settings: !Array.<!Setting>, gridElements: !Array.<!LayoutElement>}} data
+  * @param {!LayoutPaneData} data
   */
   set data(data) {
   }

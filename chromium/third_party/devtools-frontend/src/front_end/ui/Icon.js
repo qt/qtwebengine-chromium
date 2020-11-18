@@ -196,6 +196,7 @@ const initialDescriptors = new Map([
   ['mediumicon-checkmark', {position: 'g2', spritesheet: 'mediumicons', isMask: true}],
   ['mediumicon-not-available', {position: 'g3', spritesheet: 'mediumicons', isMask: true}],
   ['mediumicon-warning-circle', {position: 'g5', spritesheet: 'mediumicons', isMask: true}],
+  ['mediumicon-feedback', {position: 'g6', spritesheet: 'mediumicons', isMask: true}],
 
   ['badge-navigator-file-sync', {position: 'a9', spritesheet: 'largeicons'}],
   ['largeicon-add', {position: 'a8', spritesheet: 'largeicons', isMask: true}],
@@ -265,7 +266,7 @@ const initialDescriptors = new Map([
   ['largeicon-visibility', {position: 'h9', spritesheet: 'largeicons', isMask: true}],
   ['largeicon-waterfall', {position: 'h8', spritesheet: 'largeicons', isMask: true}],
   ['largeicon-breaking-change', {position: 'h3', spritesheet: 'largeicons'}],
-  ['largeicon-link', {position: 'i1', spritesheet: 'largeicons'}],
+  ['largeicon-link', {position: 'i1', spritesheet: 'largeicons', isMask: true}],
   ['largeicon-dual-screen', {position: 'i2', spritesheet: 'largeicons', isMask: true}],
   ['largeicon-experimental-api', {position: 'i3', spritesheet: 'largeicons', isMask: true}],
 

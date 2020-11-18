@@ -19,6 +19,7 @@
 #include <inttypes.h>
 
 #include <algorithm>
+#include <atomic>
 #include <queue>
 
 #include "perfetto/base/logging.h"
@@ -209,9 +210,13 @@ base::Optional<int64_t> ClockTracker::ConvertSlowpath(ClockId src_clock_id,
 
   ClockPath path = FindPath(src_clock_id, target_clock_id);
   if (!path.valid()) {
-    PERFETTO_DLOG("No path from clock %" PRIu64 " to %" PRIu64
-                  " at timestamp %" PRId64,
-                  src_clock_id, target_clock_id, src_timestamp);
+    // Too many logs maybe emitted when path is invalid.
+    static std::atomic<uint32_t> dlog_count(0);
+    if (dlog_count++ < 10) {
+      PERFETTO_DLOG("No path from clock %" PRIu64 " to %" PRIu64
+                    " at timestamp %" PRId64,
+                    src_clock_id, target_clock_id, src_timestamp);
+    }
     context_->storage->IncrementStats(stats::clock_sync_failure);
     return base::nullopt;
   }

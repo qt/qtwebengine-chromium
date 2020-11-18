@@ -433,7 +433,7 @@ bool FilmGrain<bitdepth>::AllocateNoiseStripes() {
   if (!is_monochrome_) {
     noise_buffer_size += 2 * max_luma_num *
                          (kNoiseStripeHeight >> subsampling_y_) *
-                         RightShiftWithRounding(width_, subsampling_x_);
+                         SubsampledValue(width_, subsampling_x_);
   }
   noise_buffer_.reset(new (std::nothrow) GrainType[noise_buffer_size]);
   if (noise_buffer_ == nullptr) return false;
@@ -444,18 +444,16 @@ bool FilmGrain<bitdepth>::AllocateNoiseStripes() {
     noise_buffer += max_luma_num * kNoiseStripeHeight * width_;
   }
   if (!is_monochrome_) {
-    noise_stripes_[kPlaneU].Reset(
-        max_luma_num,
-        (kNoiseStripeHeight >> subsampling_y_) *
-            RightShiftWithRounding(width_, subsampling_x_),
-        noise_buffer);
+    noise_stripes_[kPlaneU].Reset(max_luma_num,
+                                  (kNoiseStripeHeight >> subsampling_y_) *
+                                      SubsampledValue(width_, subsampling_x_),
+                                  noise_buffer);
     noise_buffer += max_luma_num * (kNoiseStripeHeight >> subsampling_y_) *
-                    RightShiftWithRounding(width_, subsampling_x_);
-    noise_stripes_[kPlaneV].Reset(
-        max_luma_num,
-        (kNoiseStripeHeight >> subsampling_y_) *
-            RightShiftWithRounding(width_, subsampling_x_),
-        noise_buffer);
+                    SubsampledValue(width_, subsampling_x_);
+    noise_stripes_[kPlaneV].Reset(max_luma_num,
+                                  (kNoiseStripeHeight >> subsampling_y_) *
+                                      SubsampledValue(width_, subsampling_x_),
+                                  noise_buffer);
   }
   return true;
 }
@@ -715,8 +713,8 @@ bool FilmGrain<bitdepth>::AddNoise(
       planes_to_blend[num_planes++] = kPlaneU;
       planes_to_blend[num_planes++] = kPlaneV;
     } else {
-      const int height_uv = RightShiftWithRounding(height_, subsampling_y_);
-      const int width_uv = RightShiftWithRounding(width_, subsampling_x_);
+      const int height_uv = SubsampledValue(height_, subsampling_y_);
+      const int width_uv = SubsampledValue(width_, subsampling_x_);
 
       // Noise is applied according to a lookup table defined by pieceiwse
       // linear "points." If the lookup table is empty, that corresponds to

@@ -1796,6 +1796,10 @@ export namespace ProtocolMapping {
      */
     'Network.setExtraHTTPHeaders': {paramsType: [Protocol.Network.SetExtraHTTPHeadersRequest]; returnType: void;};
     /**
+     * Specifies whether to sned a debug header to all outgoing requests.
+     */
+    'Network.setAttachDebugHeader': {paramsType: [Protocol.Network.SetAttachDebugHeaderRequest]; returnType: void;};
+    /**
      * Sets the requests to intercept that match the provided patterns and optionally resource types.
      * Deprecated, please use Fetch.enable instead.
      */
@@ -1810,6 +1814,13 @@ export namespace ProtocolMapping {
     'Network.getSecurityIsolationStatus': {
       paramsType: [Protocol.Network.GetSecurityIsolationStatusRequest?];
       returnType: Protocol.Network.GetSecurityIsolationStatusResponse;
+    };
+    /**
+     * Fetches the resource and returns the content.
+     */
+    'Network.loadNetworkResource': {
+      paramsType: [Protocol.Network.LoadNetworkResourceRequest];
+      returnType: Protocol.Network.LoadNetworkResourceResponse;
     };
     /**
      * Disables domain notifications.
@@ -2752,6 +2763,18 @@ export namespace ProtocolMapping {
      * Collect type profile.
      */
     'Profiler.takeTypeProfile': {paramsType: []; returnType: Protocol.Profiler.TakeTypeProfileResponse;};
+    /**
+     * Enable counters collection.
+     */
+    'Profiler.enableCounters': {paramsType: []; returnType: void;};
+    /**
+     * Disable counters collection.
+     */
+    'Profiler.disableCounters': {paramsType: []; returnType: void;};
+    /**
+     * Retrieve counters.
+     */
+    'Profiler.getCounters': {paramsType: []; returnType: Protocol.Profiler.GetCountersResponse;};
     /**
      * Enable run time call stats collection.
      */

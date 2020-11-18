@@ -13,6 +13,7 @@
 #include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/spirv.h"
+#include <algorithm>
 #include <climits>
 #include <vector>
 #include <memory>
@@ -21,12 +22,40 @@ namespace SkSL {
 
 class Context;
 
+struct CoercionCost {
+    static CoercionCost Free()              { return {    0,    0, false }; }
+    static CoercionCost Normal(int cost)    { return { cost,    0, false }; }
+    static CoercionCost Narrowing(int cost) { return {    0, cost, false }; }
+    static CoercionCost Impossible()        { return {    0,    0,  true }; }
+
+    bool isPossible(bool allowNarrowing) const {
+        return !fImpossible && (fNarrowingCost == 0 || allowNarrowing);
+    }
+
+    // Addition of two costs. Saturates at Impossible().
+    CoercionCost operator+(CoercionCost rhs) const {
+        if (fImpossible || rhs.fImpossible) {
+            return Impossible();
+        }
+        return { fNormalCost + rhs.fNormalCost, fNarrowingCost + rhs.fNarrowingCost, false };
+    }
+
+    bool operator<(CoercionCost rhs) const {
+        return std::tie(    fImpossible,     fNarrowingCost,     fNormalCost) <
+               std::tie(rhs.fImpossible, rhs.fNarrowingCost, rhs.fNormalCost);
+    }
+
+    int  fNormalCost;
+    int  fNarrowingCost;
+    bool fImpossible;
+};
+
 /**
  * Represents a type, such as int or float4.
  */
 class Type : public Symbol {
 public:
-    static constexpr Kind kSymbolKind = kType_Kind;
+    static constexpr Kind kSymbolKind = Kind::kType;
 
     struct Field {
         Field(Modifiers modifiers, StringFragment name, const Type* type)
@@ -43,26 +72,26 @@ public:
         const Type* fType;
     };
 
-    enum Kind {
-        kArray_Kind,
-        kEnum_Kind,
-        kGeneric_Kind,
-        kNullable_Kind,
-        kMatrix_Kind,
-        kOther_Kind,
-        kSampler_Kind,
-        kSeparateSampler_Kind,
-        kScalar_Kind,
-        kStruct_Kind,
-        kTexture_Kind,
-        kVector_Kind
+    enum class TypeKind {
+        kArray,
+        kEnum,
+        kGeneric,
+        kNullable,
+        kMatrix,
+        kOther,
+        kSampler,
+        kSeparateSampler,
+        kScalar,
+        kStruct,
+        kTexture,
+        kVector
     };
 
-    enum NumberKind {
-        kFloat_NumberKind,
-        kSigned_NumberKind,
-        kUnsigned_NumberKind,
-        kNonnumeric_NumberKind
+    enum class NumberKind {
+        kFloat,
+        kSigned,
+        kUnsigned,
+        kNonnumeric
     };
 
     // Create an "other" (special) type with the given name. These types cannot be directly
@@ -70,8 +99,8 @@ public:
     Type(const char* name)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kOther_Kind)
-    , fNumberKind(kNonnumeric_NumberKind) {
+    , fTypeKind(TypeKind::kOther)
+    , fNumberKind(NumberKind::kNonnumeric) {
         fName.fChars = fNameString.c_str();
         fName.fLength = fNameString.size();
     }
@@ -80,19 +109,19 @@ public:
     Type(const char* name, std::vector<Field> fields)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kOther_Kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fTypeKind(TypeKind::kOther)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fFields(std::move(fields)) {
         fName.fChars = fNameString.c_str();
         fName.fLength = fNameString.size();
     }
 
     // Create a simple type.
-    Type(String name, Kind kind)
+    Type(String name, TypeKind kind)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(std::move(name))
     , fTypeKind(kind)
-    , fNumberKind(kNonnumeric_NumberKind) {
+    , fNumberKind(NumberKind::kNonnumeric) {
         fName.fChars = fNameString.c_str();
         fName.fLength = fNameString.size();
     }
@@ -101,8 +130,8 @@ public:
     Type(const char* name, std::vector<const Type*> types)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kGeneric_Kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fTypeKind(TypeKind::kGeneric)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fCoercibleTypes(std::move(types)) {
         fName.fChars = fNameString.c_str();
         fName.fLength = fNameString.size();
@@ -112,8 +141,8 @@ public:
     Type(int offset, String name, std::vector<Field> fields)
     : INHERITED(offset, kSymbolKind, StringFragment())
     , fNameString(std::move(name))
-    , fTypeKind(kStruct_Kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fTypeKind(TypeKind::kStruct)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fFields(std::move(fields)) {
         fName.fChars = fNameString.c_str();
         fName.fLength = fNameString.size();
@@ -123,7 +152,7 @@ public:
     Type(const char* name, NumberKind numberKind, int priority, bool highPrecision = false)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kScalar_Kind)
+    , fTypeKind(TypeKind::kScalar)
     , fNumberKind(numberKind)
     , fPriority(priority)
     , fColumns(1)
@@ -140,7 +169,7 @@ public:
          std::vector<const Type*> coercibleTypes)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kScalar_Kind)
+    , fTypeKind(TypeKind::kScalar)
     , fNumberKind(numberKind)
     , fPriority(priority)
     , fCoercibleTypes(std::move(coercibleTypes))
@@ -151,11 +180,11 @@ public:
     }
 
     // Create a nullable type.
-    Type(String name, Kind kind, const Type& componentType)
+    Type(String name, TypeKind kind, const Type& componentType)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(std::move(name))
     , fTypeKind(kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fComponentType(&componentType)
     , fColumns(1)
     , fRows(1)
@@ -166,14 +195,14 @@ public:
 
     // Create a vector type.
     Type(const char* name, const Type& componentType, int columns)
-    : Type(name, kVector_Kind, componentType, columns) {}
+    : Type(name, TypeKind::kVector, componentType, columns) {}
 
     // Create a vector or array type.
-    Type(String name, Kind kind, const Type& componentType, int columns)
+    Type(String name, TypeKind kind, const Type& componentType, int columns)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(std::move(name))
     , fTypeKind(kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fComponentType(&componentType)
     , fColumns(columns)
     , fRows(1)
@@ -186,8 +215,8 @@ public:
     Type(const char* name, const Type& componentType, int columns, int rows)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kMatrix_Kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fTypeKind(TypeKind::kMatrix)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fComponentType(&componentType)
     , fColumns(columns)
     , fRows(rows)
@@ -201,8 +230,8 @@ public:
          bool isSampled)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kTexture_Kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fTypeKind(TypeKind::kTexture)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fDimensions(dimensions)
     , fIsDepth(isDepth)
     , fIsArrayed(isArrayed)
@@ -217,8 +246,8 @@ public:
     Type(const char* name, const Type& textureType)
     : INHERITED(-1, kSymbolKind, StringFragment())
     , fNameString(name)
-    , fTypeKind(kSampler_Kind)
-    , fNumberKind(kNonnumeric_NumberKind)
+    , fTypeKind(TypeKind::kSampler)
+    , fNumberKind(NumberKind::kNonnumeric)
     , fDimensions(textureType.dimensions())
     , fIsDepth(textureType.isDepth())
     , fIsArrayed(textureType.isArrayed())
@@ -259,7 +288,7 @@ public:
     /**
      * Returns the category (scalar, vector, matrix, etc.) of this type.
      */
-    Kind kind() const {
+    TypeKind typeKind() const {
         return fTypeKind;
     }
 
@@ -267,28 +296,28 @@ public:
      * Returns true if this is a numeric scalar type.
      */
     bool isNumber() const {
-        return fNumberKind != kNonnumeric_NumberKind;
+        return fNumberKind != NumberKind::kNonnumeric;
     }
 
     /**
      * Returns true if this is a floating-point scalar type (float or half).
      */
     bool isFloat() const {
-        return fNumberKind == kFloat_NumberKind;
+        return fNumberKind == NumberKind::kFloat;
     }
 
     /**
      * Returns true if this is a signed scalar type (int or short).
      */
     bool isSigned() const {
-        return fNumberKind == kSigned_NumberKind;
+        return fNumberKind == NumberKind::kSigned;
     }
 
     /**
      * Returns true if this is an unsigned scalar type (uint or ushort).
      */
     bool isUnsigned() const {
-        return fNumberKind == kUnsigned_NumberKind;
+        return fNumberKind == NumberKind::kUnsigned;
     }
 
     /**
@@ -310,8 +339,8 @@ public:
      * Returns true if an instance of this type can be freely coerced (implicitly converted) to
      * another type.
      */
-    bool canCoerceTo(const Type& other) const {
-        return coercionCost(other) != INT_MAX;
+    bool canCoerceTo(const Type& other, bool allowNarrowing) const {
+        return this->coercionCost(other).isPossible(allowNarrowing);
     }
 
     /**
@@ -319,7 +348,7 @@ public:
      * is a number with no particular meaning other than that lower costs are preferable to higher
      * costs. Returns INT_MAX if the coercion is not possible.
      */
-    int coercionCost(const Type& other) const;
+    CoercionCost coercionCost(const Type& other) const;
 
     /**
      * For matrices and vectors, returns the type of individual cells (e.g. mat2 has a component
@@ -343,7 +372,7 @@ public:
      * For nullable types, returns the base type, otherwise returns the type itself.
      */
     const Type& nonnullable() const {
-        if (fTypeKind == kNullable_Kind) {
+        if (fTypeKind == TypeKind::kNullable) {
             return this->componentType();
         }
         return *this;
@@ -355,8 +384,8 @@ public:
      * For all other types, causes an SkASSERTion failure.
      */
     int columns() const {
-        SkASSERT(fTypeKind == kScalar_Kind || fTypeKind == kVector_Kind ||
-                 fTypeKind == kMatrix_Kind || fTypeKind == kArray_Kind);
+        SkASSERT(fTypeKind == TypeKind::kScalar || fTypeKind == TypeKind::kVector ||
+                 fTypeKind == TypeKind::kMatrix || fTypeKind == TypeKind::kArray);
         return fColumns;
     }
 
@@ -370,7 +399,7 @@ public:
     }
 
     const std::vector<Field>& fields() const {
-        SkASSERT(fTypeKind == kStruct_Kind || fTypeKind == kOther_Kind);
+        SkASSERT(fTypeKind == TypeKind::kStruct || fTypeKind == TypeKind::kOther);
         return fFields;
     }
 
@@ -384,27 +413,27 @@ public:
     }
 
     SpvDim_ dimensions() const {
-        SkASSERT(kSampler_Kind == fTypeKind || kTexture_Kind == fTypeKind);
+        SkASSERT(TypeKind::kSampler == fTypeKind || TypeKind::kTexture == fTypeKind);
         return fDimensions;
     }
 
     bool isDepth() const {
-        SkASSERT(kSampler_Kind == fTypeKind || kTexture_Kind == fTypeKind);
+        SkASSERT(TypeKind::kSampler == fTypeKind || TypeKind::kTexture == fTypeKind);
         return fIsDepth;
     }
 
     bool isArrayed() const {
-        SkASSERT(kSampler_Kind == fTypeKind || kTexture_Kind == fTypeKind);
+        SkASSERT(TypeKind::kSampler == fTypeKind || TypeKind::kTexture == fTypeKind);
         return fIsArrayed;
     }
 
     bool isMultisampled() const {
-        SkASSERT(kSampler_Kind == fTypeKind || kTexture_Kind == fTypeKind);
+        SkASSERT(TypeKind::kSampler == fTypeKind || TypeKind::kTexture == fTypeKind);
         return fIsMultisampled;
     }
 
     bool isSampled() const {
-        SkASSERT(kSampler_Kind == fTypeKind || kTexture_Kind == fTypeKind);
+        SkASSERT(TypeKind::kSampler == fTypeKind || TypeKind::kTexture == fTypeKind);
         return fIsSampled;
     }
 
@@ -422,10 +451,10 @@ public:
     const Type& toCompound(const Context& context, int columns, int rows) const;
 
 private:
-    typedef Symbol INHERITED;
+    using INHERITED = Symbol;
 
     String fNameString;
-    Kind fTypeKind;
+    TypeKind fTypeKind;
     // always kNonnumeric_NumberKind for non-scalar values
     NumberKind fNumberKind;
     int fPriority = -1;

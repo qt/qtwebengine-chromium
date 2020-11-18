@@ -46,26 +46,6 @@ CFX_PointF HardClip(const CFX_PointF& pos) {
                     pdfium::clamp(pos.y, -kMaxPos, kMaxPos));
 }
 
-void RgbByteOrderSetPixel(const RetainPtr<CFX_DIBitmap>& pBitmap,
-                          int x,
-                          int y,
-                          uint32_t argb) {
-  if (x < 0 || x >= pBitmap->GetWidth() || y < 0 || y >= pBitmap->GetHeight())
-    return;
-
-  uint8_t* pos = pBitmap->GetBuffer() + y * pBitmap->GetPitch() +
-                 x * pBitmap->GetBPP() / 8;
-  if (pBitmap->GetFormat() == FXDIB_Argb) {
-    FXARGB_SETRGBORDERDIB(pos, argb);
-    return;
-  }
-
-  int alpha = FXARGB_A(argb);
-  pos[0] = (FXARGB_R(argb) * alpha + pos[0] * (255 - alpha)) / 255;
-  pos[1] = (FXARGB_G(argb) * alpha + pos[1] * (255 - alpha)) / 255;
-  pos[2] = (FXARGB_B(argb) * alpha + pos[2] * (255 - alpha)) / 255;
-}
-
 void RgbByteOrderCompositeRect(const RetainPtr<CFX_DIBitmap>& pBitmap,
                                int left,
                                int top,
@@ -90,9 +70,7 @@ void RgbByteOrderCompositeRect(const RetainPtr<CFX_DIBitmap>& pBitmap,
       uint8_t* dest_scan =
           pBuffer + row * pBitmap->GetPitch() + rect.left * Bpp;
       if (Bpp == 4) {
-        uint32_t* scan = reinterpret_cast<uint32_t*>(dest_scan);
-        for (int col = 0; col < width; col++)
-          *scan++ = dib_argb;
+        std::fill_n(reinterpret_cast<uint32_t*>(dest_scan), width, dib_argb);
       } else {
         for (int col = 0; col < width; col++) {
           *dest_scan++ = src_r;
@@ -110,8 +88,7 @@ void RgbByteOrderCompositeRect(const RetainPtr<CFX_DIBitmap>& pBitmap,
       for (int col = 0; col < width; col++) {
         uint8_t back_alpha = dest_scan[3];
         if (back_alpha == 0) {
-          FXARGB_SETRGBORDERDIB(dest_scan,
-                                ArgbEncode(src_alpha, src_r, src_g, src_b));
+          FXARGB_SETRGBORDERDIB(dest_scan, argb);
           dest_scan += 4;
           continue;
         }
@@ -170,8 +147,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
           pSrcBitmap->GetScanline(src_top + row) + src_left * Bpp;
       if (Bpp == 4) {
         for (int col = 0; col < width; col++) {
-          FXARGB_SETDIB(dest_scan, ArgbEncode(src_scan[3], src_scan[0],
-                                              src_scan[1], src_scan[2]));
+          FXARGB_SETRGBORDERDIB(dest_scan,
+                                *reinterpret_cast<const uint32_t*>(src_scan));
           dest_scan += 4;
           src_scan += 4;
         }
@@ -233,20 +210,6 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
       dest_scan += 4;
     }
   }
-}
-
-bool DibSetPixel(const RetainPtr<CFX_DIBitmap>& pDevice,
-                 int x,
-                 int y,
-                 uint32_t color) {
-  int alpha = FXARGB_A(color);
-  if (pDevice->IsCmykImage())
-    return false;
-
-  pDevice->SetPixel(x, y, color);
-  if (pDevice->m_pAlphaMask)
-    pDevice->m_pAlphaMask->SetPixel(x, y, alpha << 24);
-  return true;
 }
 
 void RasterizeStroke(agg::rasterizer_scanline_aa* rasterizer,
@@ -1382,38 +1345,6 @@ bool CFX_AggDeviceDriver::DrawPath(const CFX_PathData* pPathData,
                   matrix1.a, fill_options.stroke_text_mode);
   return RenderRasterizer(rasterizer, stroke_color, fill_options.full_cover,
                           m_bGroupKnockout);
-}
-
-bool CFX_AggDeviceDriver::SetPixel(int x, int y, uint32_t color) {
-  if (!m_pBitmap->GetBuffer())
-    return true;
-
-  if (!m_pClipRgn) {
-    if (!m_bRgbByteOrder)
-      return DibSetPixel(m_pBitmap, x, y, color);
-    RgbByteOrderSetPixel(m_pBitmap, x, y, color);
-    return true;
-  }
-  if (!m_pClipRgn->GetBox().Contains(x, y))
-    return true;
-
-  if (m_pClipRgn->GetType() == CFX_ClipRgn::RectI) {
-    if (!m_bRgbByteOrder)
-      return DibSetPixel(m_pBitmap, x, y, color);
-    RgbByteOrderSetPixel(m_pBitmap, x, y, color);
-    return true;
-  }
-  if (m_pClipRgn->GetType() != CFX_ClipRgn::MaskF)
-    return true;
-
-  int new_alpha =
-      FXARGB_A(color) * m_pClipRgn->GetMask()->GetScanline(y)[x] / 255;
-  color = (color & 0xffffff) | (new_alpha << 24);
-  if (m_bRgbByteOrder) {
-    RgbByteOrderSetPixel(m_pBitmap, x, y, color);
-    return true;
-  }
-  return DibSetPixel(m_pBitmap, x, y, color);
 }
 
 bool CFX_AggDeviceDriver::FillRectWithBlend(const FX_RECT& rect,

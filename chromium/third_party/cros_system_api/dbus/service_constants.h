@@ -10,6 +10,7 @@
 // We use relative includes here to make this compatible with both the
 // Chromium OS and Chromium environment.
 #include "anomaly_detector/dbus-constants.h"
+#include "arc-data-snapshotd/dbus-constants.h"
 #include "authpolicy/dbus-constants.h"
 #include "biod/dbus-constants.h"
 #include "bluetooth/dbus-constants.h"
@@ -184,6 +185,7 @@ const char kUserAuthenticationServicePath[] =
 const char kUserAuthenticationServiceInterface[] =
     "org.chromium.UserAuthenticationServiceInterface";
 const char kUserAuthenticationServiceShowAuthDialogMethod[] = "ShowAuthDialog";
+const char kUserAuthenticationServiceCancelMethod[] = "Cancel";
 
 constexpr char kVirtualFileRequestServiceName[] =
     "org.chromium.VirtualFileRequestService";
@@ -200,8 +202,7 @@ const char kChromeFeaturesServiceName[] = "org.chromium.ChromeFeaturesService";
 const char kChromeFeaturesServicePath[] = "/org/chromium/ChromeFeaturesService";
 const char kChromeFeaturesServiceInterface[] =
     "org.chromium.ChromeFeaturesServiceInterface";
-const char kChromeFeaturesServiceIsFeatureEnabledMethod[] =
-    "IsFeatureEnabled";
+const char kChromeFeaturesServiceIsFeatureEnabledMethod[] = "IsFeatureEnabled";
 const char kChromeFeaturesServiceIsCrostiniEnabledMethod[] =
     "IsCrostiniEnabled";
 const char kChromeFeaturesServiceIsCryptohomeDistributedModelEnabledMethod[] =
@@ -307,8 +308,7 @@ const char kModemManager1ModemInterface[] =
     "org.freedesktop.ModemManager1.Modem";
 const char kModemManager1MessagingInterface[] =
     "org.freedesktop.ModemManager1.Modem.Messaging";
-const char kModemManager1SmsInterface[] =
-    "org.freedesktop.ModemManager1.Sms";
+const char kModemManager1SmsInterface[] = "org.freedesktop.ModemManager1.Sms";
 const char kSMSAddedSignal[] = "Added";
 }  // namespace modemmanager
 
@@ -401,6 +401,7 @@ const char kSetPlayerPosition[] = "SetPlayerPosition";
 const char kSetPlayerMetadata[] = "SetPlayerMetadata";
 const char kSetNextHandsfreeProfile[] = "SetNextHandsfreeProfile";
 const char kSetFixA2dpPacketSize[] = "SetFixA2dpPacketSize";
+const char kResendBluetoothBattery[] = "ResendBluetoothBattery";
 
 // Names of properties returned by GetNodes()
 const char kIsInputProperty[] = "IsInput";
@@ -494,26 +495,42 @@ constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
 constexpr char kBootstrapMojoConnectionChannelToken[] = "ml-service-bootstrap";
 }  // namespace ml
 
-namespace iioservice {
-constexpr char kIioserviceServiceName[] = "org.chromium.Iioservice";
-constexpr char kIioserviceServicePath[] = "/org/chromium/Iioservice";
-constexpr char kIioserviceInterfaceName[] = "org.chromium.Iioservice";
+namespace federated {
+constexpr char kFederatedServiceName[] = "org.chromium.Federated";
+constexpr char kFederatedServicePath[] = "/org/chromium/Federated";
+constexpr char kFederatedInterfaceName[] = "org.chromium.Federated";
+// Methods
+constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+// Token identifying the primordial Mojo pipe passed to BootstrapMojoConnection.
+constexpr char kBootstrapMojoConnectionChannelToken[] =
+    "federated-service-bootstrap";
+}  // namespace federated
+
+// D-Bus MojoConnectionServiceProvider (go/mojo_connection_service) is a D-Bus
+// service provider in Chrome that bootstraps CrOS services' mojo connection.
+namespace mojo_connection_service {
+constexpr char kMojoConnectionServiceServiceName[] =
+    "org.chromium.MojoConnectionService";
+constexpr char kMojoConnectionServiceServicePath[] =
+    "/org/chromium/MojoConnectionService";
+constexpr char kMojoConnectionServiceInterface[] =
+    "org.chromium.MojoConnectionService";
 
 // Methods
-constexpr char kServerBootstrapMojoConnectionMethod[] =
-    "ServerBootstrapMojoConnection";
+constexpr char kBootstrapMojoConnectionForIioServiceMethod[] =
+    "BootstrapMojoConnectionForIioService";
 // Token identifying the primordial Mojo pipe passed to
-// ServerBootstrapMojoConnection.
-constexpr char kServerBootstrapMojoConnectionChannelToken[] =
-    "iioservice-server-bootstrap";
+// BootstrapMojoConnectionForIioService.
+constexpr char kBootstrapMojoConnectionForIioServiceChannelToken[] =
+    "sensors-iioservice-bootstrap";
 
-constexpr char kClientBootstrapMojoConnectionMethod[] =
-    "ClientBootstrapMojoConnection";
+constexpr char kBootstrapMojoConnectionForSensorClientsMethod[] =
+    "BootstrapMojoConnectionForSensorClients";
 // Token identifying the primordial Mojo pipe passed to
-// ClientBootstrapMojoConnection.
-constexpr char kClientBootstrapMojoConnectionChannelToken[] =
-    "iioservice-client-bootstrap";
-}  // namespace iioservice
+// BootstrapMojoConnectionForSensorClients.
+constexpr char kBootstrapMojoConnectionForSensorClientsChannelToken[] =
+    "sensors-clients-bootstrap";
+}  // namespace mojo_connection_service
 
 namespace virtual_file_provider {
 constexpr char kVirtualFileProviderServiceName[] =
@@ -533,7 +550,7 @@ constexpr char kCrosDnsInterfaceName[] = "org.chromium.CrosDns";
 // Methods
 constexpr char kSetHostnameIpMappingMethod[] = "SetHostnameIpMapping";
 constexpr char kRemoveHostnameIpMappingMethod[] = "RemoveHostnameIpMapping";
-}
+}  // namespace crosdns
 
 namespace arc {
 
@@ -581,12 +598,10 @@ constexpr char kOpenFileMethod[] = "OpenFile";
 
 namespace sensor {
 // D-Bus service constants.
-constexpr char kArcSensorServiceInterface[] =
-    "org.chromium.ArcSensorService";
+constexpr char kArcSensorServiceInterface[] = "org.chromium.ArcSensorService";
 constexpr char kArcSensorServiceServicePath[] =
     "/org/chromium/ArcSensorService";
-constexpr char kArcSensorServiceServiceName[] =
-    "org.chromium.ArcSensorService";
+constexpr char kArcSensorServiceServiceName[] = "org.chromium.ArcSensorService";
 
 // Method names.
 constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
@@ -642,5 +657,18 @@ const char kLockToSingleUserServiceName[] = "org.chromium.LockToSingleUser";
 
 const char kNotifyVmStartingMethod[] = "NotifyVmStarting";
 }  // namespace lock_to_single_user
+
+namespace memory_pressure {
+const char kMemoryPressureInterface[] = "org.chromium.MemoryPressure";
+const char kMemoryPressureServicePath[] = "/org/chromium/MemoryPressure";
+const char kMemoryPressureServiceName[] = "org.chromium.MemoryPressure";
+// Method names.
+const char kGetAvailableMemoryKBMethod[] = "GetAvailableMemoryKB";
+const char kGetMemoryMarginKBMethod[] = "GetMemoryMarginKB";
+const char kGetMemoryMarginsKBMethod[] = "GetMemoryMarginsKB";
+// Signals.
+const char kCriticalMemoryPressure[] = "CriticalMemoryPressure";
+const char kModerateMemoryPressure[] = "ModerateMemoryPressure";
+}  // namespace memory_pressure
 
 #endif  // SYSTEM_API_DBUS_SERVICE_CONSTANTS_H_

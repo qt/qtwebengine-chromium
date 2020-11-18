@@ -246,11 +246,6 @@ uint64_t ClipboardWin::GetSequenceNumber(ClipboardBuffer buffer) const {
   return ::GetClipboardSequenceNumber();
 }
 
-void ClipboardWin::SetClipboardDlpController(
-    std::unique_ptr<ClipboardDlpController> dlp_controller) {
-  NOTIMPLEMENTED();
-}
-
 // |data_dst| is not used. It's only passed to be consistent with other
 // platforms.
 bool ClipboardWin::IsFormatAvailable(
@@ -454,6 +449,22 @@ void ClipboardWin::ReadHTML(ClipboardBuffer buffer,
 
 // |data_dst| is not used. It's only passed to be consistent with other
 // platforms.
+void ClipboardWin::ReadSvg(ClipboardBuffer buffer,
+                           const ClipboardDataEndpoint* data_dst,
+                           base::string16* result) const {
+  DCHECK_EQ(buffer, ClipboardBuffer::kCopyPaste);
+  RecordRead(ClipboardFormatMetric::kSvg);
+
+  std::string data;
+  ReadData(ClipboardFormatType::GetSvgType(), data_dst, &data);
+  result->assign(reinterpret_cast<const base::char16*>(data.data()),
+                 data.size() / sizeof(base::char16));
+
+  TrimAfterNull(result);
+}
+
+// |data_dst| is not used. It's only passed to be consistent with other
+// platforms.
 void ClipboardWin::ReadRTF(ClipboardBuffer buffer,
                            const ClipboardDataEndpoint* data_dst,
                            std::string* result) const {
@@ -607,6 +618,14 @@ void ClipboardWin::WriteHTML(const char* markup_data,
   HGLOBAL glob = CreateGlobalData(html_fragment);
 
   WriteToClipboard(ClipboardFormatType::GetHtmlType(), glob);
+}
+
+void ClipboardWin::WriteSvg(const char* markup_data, size_t markup_len) {
+  base::string16 markup;
+  base::UTF8ToUTF16(markup_data, markup_len, &markup);
+  HGLOBAL glob = CreateGlobalData(markup);
+
+  WriteToClipboard(ClipboardFormatType::GetSvgType(), glob);
 }
 
 void ClipboardWin::WriteRTF(const char* rtf_data, size_t data_len) {

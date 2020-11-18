@@ -7061,10 +7061,10 @@ struct LoaderSortedPhysicalDevice {
 VkResult ReadSortedPhysicalDevices(struct loader_instance *inst, struct LoaderSortedPhysicalDevice **sorted_devices, uint32_t* sorted_count)
 {
     VkResult res = VK_SUCCESS;
-    uint32_t sorted_alloc = 0;
-    struct loader_icd_term* icd_term = NULL;
 
 #if defined(_WIN32)
+    uint32_t sorted_alloc = 0;
+    struct loader_icd_term *icd_term = NULL;
     IDXGIFactory6* dxgi_factory = NULL;
     HRESULT hres = fpCreateDXGIFactory1(&IID_IDXGIFactory6, &dxgi_factory);
     if (hres != S_OK) {
@@ -7125,8 +7125,10 @@ VkResult ReadSortedPhysicalDevices(struct loader_instance *inst, struct LoaderSo
                 VkResult vkres = icd_term->scanned_icd->EnumerateAdapterPhysicalDevices(icd_term->instance, description.AdapterLuid, &count, NULL);
                 if (vkres == VK_ERROR_INCOMPATIBLE_DRIVER) {
                     continue; // This driver doesn't support the adapter
-                }
-                else if (vkres != VK_SUCCESS) {
+                } else if (vkres == VK_ERROR_OUT_OF_HOST_MEMORY) {
+                    res = VK_ERROR_OUT_OF_HOST_MEMORY;
+                    goto out;
+                } else if (vkres != VK_SUCCESS) {
                     loader_log(inst, VK_DEBUG_REPORT_WARNING_BIT_EXT, 0, "Failed to convert DXGI adapter into Vulkan physical device with unexpected error code");
                     continue;
                 }
@@ -7147,8 +7149,8 @@ VkResult ReadSortedPhysicalDevices(struct loader_instance *inst, struct LoaderSo
                 if (vkres != VK_SUCCESS) {
                     loader_log(inst, VK_DEBUG_REPORT_WARNING_BIT_EXT, 0, "Failed to convert DXGI adapter into Vulkan physical device");
                     continue;
-                }
-                else if (res == VK_ERROR_OUT_OF_HOST_MEMORY) {
+                } else if (vkres == VK_ERROR_OUT_OF_HOST_MEMORY) {
+                    res = VK_ERROR_OUT_OF_HOST_MEMORY;
                     goto out;
                 }
                 inst->total_gpu_count += (sorted_array[*sorted_count].device_count = count);
@@ -7212,8 +7214,9 @@ VkResult setupLoaderTermPhysDevs(struct loader_instance *inst) {
         icd_phys_dev_array[icd_idx].this_icd_term = NULL;
 
         // This is the legacy behavior which should be skipped if EnumerateAdapterPhysicalDevices is available
+        // and we successfully enumerated sorted adapters using ReadSortedPhysicalDevices.
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
-        if (icd_term->scanned_icd->EnumerateAdapterPhysicalDevices != NULL) {
+        if (sorted_count && icd_term->scanned_icd->EnumerateAdapterPhysicalDevices != NULL) {
             continue;
         }
 #endif
@@ -7274,8 +7277,7 @@ VkResult setupLoaderTermPhysDevs(struct loader_instance *inst) {
 #if defined(_WIN32)
     // Copy over everything found through sorted enumeration
     for (uint32_t i = 0; i < sorted_count; ++i) {
-        for (uint32_t j = 0; j < sorted_phys_dev_array[i].device_count; ++i) {
-
+        for (uint32_t j = 0; j < sorted_phys_dev_array[i].device_count; ++j) {
             // Check if this physical device is already in the old buffer
             if (NULL != inst->phys_devs_term) {
                 for (uint32_t old_idx = 0; old_idx < inst->phys_dev_count_term; old_idx++) {
@@ -7562,10 +7564,26 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_EnumerateDeviceExtensionProperties(VkP
     // This case is during the call down the instance chain with pLayerName == NULL
     struct loader_icd_term *icd_term = phys_dev_term->this_icd_term;
     uint32_t icd_ext_count = *pPropertyCount;
+    VkExtensionProperties *icd_props_list = pProperties;
     VkResult res;
 
-    // Get the available device extensions
-    res = icd_term->dispatch.EnumerateDeviceExtensionProperties(phys_dev_term->phys_dev, NULL, &icd_ext_count, pProperties);
+    if (NULL == icd_props_list) {
+        // We need to find the count without duplicates. This requires querying the driver for the names of the extensions.
+        // A small amount of storage is then needed to facilitate the de-duplication.
+        res = icd_term->dispatch.EnumerateDeviceExtensionProperties(phys_dev_term->phys_dev, NULL, &icd_ext_count, NULL);
+        if (res != VK_SUCCESS) {
+            goto out;
+        }
+        icd_props_list = loader_instance_heap_alloc(icd_term->this_instance, sizeof(VkExtensionProperties) * icd_ext_count,
+                                                    VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if (NULL == icd_props_list) {
+            res = VK_ERROR_OUT_OF_HOST_MEMORY;
+            goto out;
+        }
+    }
+
+    // Get the available device extension count, and if pProperties is not NULL, the extensions as well
+    res = icd_term->dispatch.EnumerateDeviceExtensionProperties(phys_dev_term->phys_dev, NULL, &icd_ext_count, icd_props_list);
     if (res != VK_SUCCESS) {
         goto out;
     }
@@ -7576,36 +7594,36 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_EnumerateDeviceExtensionProperties(VkP
     }
 
     loaderAddImplicitLayers(icd_term->this_instance, &implicit_layer_list, NULL, &icd_term->this_instance->instance_layer_list);
+
+    // Initialize dev_extension list within the physicalDevice object
+    res = loader_init_device_extensions(icd_term->this_instance, phys_dev_term, icd_ext_count, icd_props_list, &icd_exts);
+    if (res != VK_SUCCESS) {
+        goto out;
+    }
+
     // We need to determine which implicit layers are active, and then add their extensions. This can't be cached as
     // it depends on results of environment variables (which can change).
-    if (pProperties != NULL) {
-        // Initialize dev_extension list within the physicalDevice object
-        res = loader_init_device_extensions(icd_term->this_instance, phys_dev_term, icd_ext_count, pProperties, &icd_exts);
-        if (res != VK_SUCCESS) {
-            goto out;
-        }
+    res = loader_add_to_ext_list(icd_term->this_instance, &all_exts, icd_exts.count, icd_exts.list);
+    if (res != VK_SUCCESS) {
+        goto out;
+    }
 
-        // We need to determine which implicit layers are active, and then add their extensions. This can't be cached as
-        // it depends on results of environment variables (which can change).
-        res = loader_add_to_ext_list(icd_term->this_instance, &all_exts, icd_exts.count, icd_exts.list);
-        if (res != VK_SUCCESS) {
-            goto out;
-        }
+    loaderAddImplicitLayers(icd_term->this_instance, &implicit_layer_list, NULL, &icd_term->this_instance->instance_layer_list);
 
-        loaderAddImplicitLayers(icd_term->this_instance, &implicit_layer_list, NULL, &icd_term->this_instance->instance_layer_list);
-
-        for (uint32_t i = 0; i < implicit_layer_list.count; i++) {
-            for (uint32_t j = 0; j < implicit_layer_list.list[i].device_extension_list.count; j++) {
-                res = loader_add_to_ext_list(icd_term->this_instance, &all_exts, 1,
-                                             &implicit_layer_list.list[i].device_extension_list.list[j].props);
-                if (res != VK_SUCCESS) {
-                    goto out;
-                }
+    for (uint32_t i = 0; i < implicit_layer_list.count; i++) {
+        for (uint32_t j = 0; j < implicit_layer_list.list[i].device_extension_list.count; j++) {
+            res = loader_add_to_ext_list(icd_term->this_instance, &all_exts, 1,
+                                         &implicit_layer_list.list[i].device_extension_list.list[j].props);
+            if (res != VK_SUCCESS) {
+                goto out;
             }
         }
-        uint32_t capacity = *pPropertyCount;
-        VkExtensionProperties *props = pProperties;
+    }
+    uint32_t capacity = *pPropertyCount;
+    VkExtensionProperties *props = pProperties;
 
+    res = VK_SUCCESS;
+    if (NULL != pProperties) {
         for (uint32_t i = 0; i < all_exts.count && i < capacity; i++) {
             props[i] = all_exts.list[i];
         }
@@ -7617,47 +7635,7 @@ VKAPI_ATTR VkResult VKAPI_CALL terminator_EnumerateDeviceExtensionProperties(VkP
             *pPropertyCount = all_exts.count;
         }
     } else {
-        // Have to find the number of unique extensions, ie no duplicates, as the properties list returned contains no duplicates.
-
-        // Find the current number of extensions (with duplicates). This is the upper bound for the ext_name_list
-        uint32_t max_exts_num = icd_ext_count;
-        for (uint32_t i = 0; i < implicit_layer_list.count; i++) {
-            max_exts_num += implicit_layer_list.list[i].device_extension_list.count;
-        }
-
-        const struct loader_instance *inst = icd_term->this_instance;
-
-        uint32_t ext_name_count = 0;
-        char **ext_name_list = loader_instance_heap_alloc(inst, sizeof(char *) * max_exts_num, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-        if (ext_name_list == NULL) {
-            // Failed to allocate string list, bail
-            res = VK_ERROR_OUT_OF_HOST_MEMORY;
-            goto out;
-        }
-
-        // Look through the implicit_layer_list of device extensions and determine if its not in the ext_name_list, add it if it
-        // isn't. If it is, ignore it, as it is a duplicate
-        for (uint32_t i = 0; i < implicit_layer_list.count; i++) {
-            for (uint32_t j = 0; j < implicit_layer_list.list[i].device_extension_list.count; j++) {
-                char *extension_name = implicit_layer_list.list[i].device_extension_list.list[j].props.extensionName;
-                bool in_list = false;
-                for (uint32_t k = 0; k < ext_name_count; k++) {
-                    if (strncmp(extension_name, ext_name_list[k], 256) == 0) {
-                        in_list = true;
-                        break;
-                    }
-                }
-                if (!in_list) {
-                    ext_name_list[ext_name_count] = implicit_layer_list.list[i].device_extension_list.list[j].props.extensionName;
-                    ext_name_count++;
-                }
-            }
-        }
-        loader_instance_heap_free(inst, ext_name_list);
-        // Add the device extensions already found. Can't check for duplicates from the devices because the names aren't available
-        *pPropertyCount = ext_name_count + icd_ext_count;
-
-        res = VK_SUCCESS;
+        *pPropertyCount = all_exts.count;
     }
 
 out:
@@ -7671,7 +7649,9 @@ out:
     if (NULL != icd_exts.list) {
         loader_destroy_generic_list(icd_term->this_instance, (struct loader_generic_list *)&icd_exts);
     }
-
+    if (NULL == pProperties && NULL != icd_props_list) {
+        loader_instance_heap_free(icd_term->this_instance, icd_props_list);
+    }
     return res;
 }
 

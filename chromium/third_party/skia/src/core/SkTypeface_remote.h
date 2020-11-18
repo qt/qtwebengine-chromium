@@ -38,7 +38,7 @@ protected:
 
 private:
     sk_sp<SkStrikeClient::DiscardableHandleManager> fDiscardableManager;
-    typedef SkScalerContext INHERITED;
+    using INHERITED = SkScalerContext;
 };
 
 class SkTypefaceProxy : public SkTypeface {
@@ -77,6 +77,9 @@ protected:
     void onGetFamilyName(SkString* familyName) const override {
         // Used by SkStrikeCache::DumpMemoryStatistics.
         *familyName = "";
+    }
+    bool onGetPostScriptName(SkString*) const override {
+        SK_ABORT("Should never be called.");
     }
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override {
         SK_ABORT("Should never be called.");
@@ -128,7 +131,7 @@ private:
     sk_sp<SkStrikeClient::DiscardableHandleManager> fDiscardableManager;
 
 
-    typedef SkTypeface INHERITED;
+    using INHERITED = SkTypeface;
 };
 
 #endif  // SkRemoteTypeface_DEFINED

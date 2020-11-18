@@ -7,11 +7,11 @@
 #ifndef XFA_FXFA_PARSER_CXFA_NODE_H_
 #define XFA_FXFA_PARSER_CXFA_NODE_H_
 
-#include <memory>
 #include <utility>
 #include <vector>
 
 #include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/fx_dib.h"
 #include "fxjs/gc/gced_tree_node_mixin.h"
 #include "third_party/base/optional.h"
@@ -45,7 +45,7 @@ class CXFA_Ui;
 class CXFA_Validate;
 class CXFA_Value;
 class CXFA_WidgetLayoutData;
-class LocaleIface;
+class GCedLocaleIface;
 
 #define XFA_NODEFILTER_Children 0x01
 #define XFA_NODEFILTER_Properties 0x02
@@ -193,11 +193,12 @@ class CXFA_Node : public CXFA_Object, public GCedTreeNodeMixin<CXFA_Node> {
   CXFA_Node* GetBindData();
   bool HasBindItems() const { return !binding_nodes_.empty(); }
   std::vector<CXFA_Node*> GetBindItemsCopy() const;
-  int32_t AddBindItem(CXFA_Node* pFormNode);
-  int32_t RemoveBindItem(CXFA_Node* pFormNode);
+  void AddBindItem(CXFA_Node* pFormNode);
+  // Returns true if there are still more items.
+  bool RemoveBindItem(CXFA_Node* pFormNode);
   bool HasBindItem() const;
   CXFA_Node* GetContainerNode();
-  LocaleIface* GetLocale();
+  GCedLocaleIface* GetLocale();
   Optional<WideString> GetLocaleName();
   XFA_AttributeValue GetIntact();
   WideString GetNameExpression();
@@ -314,7 +315,7 @@ class CXFA_Node : public CXFA_Object, public GCedTreeNodeMixin<CXFA_Node> {
   void SetImageImage(const RetainPtr<CFX_DIBitmap>& newImage);
   void SetImageEditImage(const RetainPtr<CFX_DIBitmap>& newImage);
 
-  RetainPtr<CFGAS_GEFont> GetFDEFont(CXFA_FFDoc* doc);
+  RetainPtr<CFGAS_GEFont> GetFGASFont(CXFA_FFDoc* doc);
 
   bool IsListBox();
   bool IsRadioButton();
@@ -397,7 +398,7 @@ class CXFA_Node : public CXFA_Object, public GCedTreeNodeMixin<CXFA_Node> {
             XFA_Element eType,
             pdfium::span<const PropertyData> properties,
             pdfium::span<const AttributeData> attributes,
-            std::unique_ptr<CJX_Object> js_object);
+            CJX_Object* js_object);
 
   virtual XFA_Element GetValueNodeType() const;
   virtual XFA_FFWidgetType GetDefaultFFWidgetType() const;

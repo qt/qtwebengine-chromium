@@ -7,12 +7,10 @@
 #ifndef XFA_FXFA_CXFA_FFDOCVIEW_H_
 #define XFA_FXFA_CXFA_FFDOCVIEW_H_
 
-#include <deque>
+#include <list>
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/observed_ptr.h"
-#include "core/fxcrt/unowned_ptr.h"
 #include "fxjs/gc/heap.h"
 #include "v8/include/cppgc/garbage-collected.h"
 #include "v8/include/cppgc/member.h"
@@ -26,7 +24,6 @@ class CXFA_BindItems;
 class CXFA_FFDoc;
 class CXFA_FFWidgetHandler;
 class CXFA_Node;
-class CXFA_ReadyNodeIterator;
 class CXFA_Subform;
 class CXFA_ViewLayoutItem;
 
@@ -68,9 +65,9 @@ class CXFA_FFDocView : public cppgc::GarbageCollected<CXFA_FFDocView> {
   CXFA_FFPageView* GetPageView(int32_t nIndex) const;
 
   void ResetNode(CXFA_Node* pNode);
+  CXFA_Node* GetRootSubform();
   CXFA_FFWidgetHandler* GetWidgetHandler();
-  std::unique_ptr<CXFA_ReadyNodeIterator> CreateReadyNodeIterator();
-  CXFA_FFWidget* GetFocusWidget() const { return m_pFocusWidget.Get(); }
+  CXFA_FFWidget* GetFocusWidget() const { return m_pFocusWidget; }
   bool SetFocus(CXFA_FFWidget* pNewFocus);
   CXFA_FFWidget* GetWidgetForNode(CXFA_Node* node);
   CXFA_FFWidget* GetWidgetByName(const WideString& wsName,
@@ -93,7 +90,7 @@ class CXFA_FFDocView : public cppgc::GarbageCollected<CXFA_FFDocView> {
   bool RunLayout();
   void AddNewFormNode(CXFA_Node* pNode);
   void AddIndexChangedSubform(CXFA_Node* pNode);
-  CXFA_Node* GetFocusNode() const { return m_pFocusNode.Get(); }
+  CXFA_Node* GetFocusNode() const { return m_pFocusNode; }
   void SetFocusNode(CXFA_Node* pNode);
   void DeleteLayoutItem(CXFA_FFWidget* pWidget);
   XFA_EventError ExecEventActivityByDeepFirst(CXFA_Node* pFormNode,
@@ -117,7 +114,6 @@ class CXFA_FFDocView : public cppgc::GarbageCollected<CXFA_FFDocView> {
   size_t RunCalculateRecursive(size_t index);
   void ShowNullTestMsg();
   bool ResetSingleNodeData(CXFA_Node* pNode);
-  CXFA_Subform* GetRootSubform();
 
   bool IsUpdateLocked() const { return m_iLock > 0; }
   bool InitValidate(CXFA_Node* pNode);
@@ -128,12 +124,12 @@ class CXFA_FFDocView : public cppgc::GarbageCollected<CXFA_FFDocView> {
   cppgc::Member<CXFA_FFDoc> const m_pDoc;
   cppgc::Member<CXFA_FFWidgetHandler> m_pWidgetHandler;
   cppgc::Member<CXFA_Node> m_pFocusNode;
-  ObservedPtr<CXFA_FFWidget> m_pFocusWidget;
-  std::deque<cppgc::Member<CXFA_Node>> m_ValidateNodes;
+  cppgc::Member<CXFA_FFWidget> m_pFocusWidget;
+  std::list<cppgc::Member<CXFA_Node>> m_ValidateNodes;
   std::vector<cppgc::Member<CXFA_Node>> m_CalculateNodes;
-  std::deque<cppgc::Member<CXFA_BindItems>> m_BindItems;
-  std::deque<cppgc::Member<CXFA_Node>> m_NewAddedNodes;
-  std::deque<cppgc::Member<CXFA_Node>> m_IndexChangedSubforms;
+  std::list<cppgc::Member<CXFA_BindItems>> m_BindItems;
+  std::list<cppgc::Member<CXFA_Node>> m_NewAddedNodes;
+  std::list<cppgc::Member<CXFA_Node>> m_IndexChangedSubforms;
   XFA_DOCVIEW_LAYOUTSTATUS m_iStatus = XFA_DOCVIEW_LAYOUTSTATUS_None;
   int32_t m_iLock = 0;
 };

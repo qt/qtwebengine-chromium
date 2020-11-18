@@ -26,6 +26,7 @@ public:
     GrDualIntervalGradientColorizer(const GrDualIntervalGradientColorizer& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "DualIntervalGradientColorizer"; }
+    bool usesExplicitReturn() const override;
     SkPMColor4f scale01;
     SkPMColor4f bias01;
     SkPMColor4f scale23;
@@ -53,6 +54,6 @@ private:
     SkString onDumpInfo() const override;
 #endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 #endif

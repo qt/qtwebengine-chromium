@@ -436,9 +436,7 @@ void SkDraw::drawPoints(SkCanvas::PointMode mode, size_t count,
                     SkStrokeRec rec(paint);
                     SkPathEffect::PointData pointData;
 
-                    SkPath path;
-                    path.moveTo(pts[0]);
-                    path.lineTo(pts[1]);
+                    SkPath path = SkPath::Line(pts[0], pts[1]);
 
                     SkRect cullRect = SkRect::Make(fRC->getBounds());
 
@@ -957,6 +955,12 @@ void SkDraw::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
 
     // transform the path into device space
     pathPtr->transform(matrixProvider->localToDevice(), devPathPtr);
+
+#if defined(SK_BUILD_FOR_FUZZER)
+    if (devPathPtr->countPoints() > 1000) {
+        return;
+    }
+#endif
 
     this->drawDevPath(*devPathPtr, *paint, drawCoverage, customBlitter, doFill);
 }

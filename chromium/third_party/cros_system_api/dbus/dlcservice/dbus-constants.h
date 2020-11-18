@@ -15,6 +15,7 @@ constexpr char kInstallMethod[] = "InstallDlc";
 constexpr char kInstallDlcMethod[] = "InstallDlc";
 constexpr char kUninstallMethod[] = "Uninstall";
 constexpr char kPurgeMethod[] = "Purge";
+constexpr char kGetDlcStateMethod[] = "GetDlcState";
 constexpr char kGetExistingDlcsMethod[] = "GetExistingDlcs";
 constexpr char kDlcStateChangedSignal[] = "DlcStateChanged";
 

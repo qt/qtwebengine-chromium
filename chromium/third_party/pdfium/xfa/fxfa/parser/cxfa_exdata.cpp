@@ -6,9 +6,8 @@
 
 #include "xfa/fxfa/parser/cxfa_exdata.h"
 
-#include <memory>
-
 #include "fxjs/xfa/cjx_object.h"
+#include "xfa/fxfa/parser/cxfa_document.h"
 
 namespace {
 
@@ -35,10 +34,12 @@ CXFA_ExData::CXFA_ExData(CXFA_Document* doc, XFA_PacketType packet)
                 XFA_Element::ExData,
                 {},
                 kExDataAttributeData,
-                std::make_unique<CJX_Object>(this)) {}
+                cppgc::MakeGarbageCollected<CJX_Object>(
+                    doc->GetHeap()->GetAllocationHandle(),
+                    this)) {}
 
 CXFA_ExData::~CXFA_ExData() = default;
 
 void CXFA_ExData::SetContentType(const WideString& wsContentType) {
-  JSObject()->SetCData(XFA_Attribute::ContentType, wsContentType, false, false);
+  JSObject()->SetCData(XFA_Attribute::ContentType, wsContentType);
 }

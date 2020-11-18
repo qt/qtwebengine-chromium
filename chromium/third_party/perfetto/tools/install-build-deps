@@ -54,12 +54,12 @@ BUILD_DEPS_HOST = [
     # clang-format
     Dependency(
         'buildtools/mac/clang-format',
-        'https://storage.googleapis.com/chromium-clang-format/025ca7c75f37ef4a40f3a67d81ddd11d7d0cdb9b',
-        '025ca7c75f37ef4a40f3a67d81ddd11d7d0cdb9b', 'darwin'),
+        'https://storage.googleapis.com/chromium-clang-format/62bde1baa7196ad9df969fc1f06b66360b1a927b',
+        '62bde1baa7196ad9df969fc1f06b66360b1a927b', 'darwin'),
     Dependency(
         'buildtools/linux64/clang-format',
-        'https://storage.googleapis.com/chromium-clang-format/942fc8b1789144b8071d3fc03ff0fcbe1cf81ac8',
-        '942fc8b1789144b8071d3fc03ff0fcbe1cf81ac8', 'linux'),
+        'https://storage.googleapis.com/chromium-clang-format/1baf0089e895c989a311b6a38ed94d0e8be4c0a7',
+        '1baf0089e895c989a311b6a38ed94d0e8be4c0a7', 'linux'),
     # Keep the SHA1 in sync with |clang_format_rev| in chromium //buildtools/DEPS.
     Dependency(
         'buildtools/clang_format/script',
@@ -92,23 +92,23 @@ BUILD_DEPS_HOST = [
     # lib from sources. Keep the SHA1s in sync with Chrome's src/buildtools/DEPS.
     Dependency(
         'buildtools/libcxx',
-        'https://chromium.googlesource.com/chromium/llvm-project/libcxx.git',
-        '78d6a7767ed57b50122a161b91f59f19c9bd0d19', 'all'),
+        'https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxx.git',
+        'd9040c75cfea5928c804ab7c235fed06a63f743a', 'all'),
     Dependency(
         'buildtools/libcxxabi',
-        'https://chromium.googlesource.com/chromium/llvm-project/libcxxabi.git',
-        '0d529660e32d77d9111912d73f2c74fc5fa2a858', 'all'),
+        'https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxxabi.git',
+        '196ba1aaa8ac285d94f4ea8d9836390a45360533', 'all'),
     Dependency(
         'buildtools/libunwind',
-        'https://chromium.googlesource.com/external/llvm.org/libunwind.git',
-        '69d9b84cca8354117b9fe9705a4430d789ee599b', 'all'),
+        'https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libunwind.git',
+        'd999d54f4bca789543a2eb6c995af2d9b5a1f3ed', 'all'),
 
     # Keep the revision in sync with Chrome's PACKAGE_VERSION in
     # tools/clang/scripts/update.py.
     Dependency(
         'buildtools/clang.tgz',
-        'https://commondatastorage.googleapis.com/chromium-browser-clang/Linux_x64/clang-n362116-1bd7046e-2.tgz',
-        '7c028bced1243c7430509e90f94b23c1cbeccb85', 'linux'),
+        'https://commondatastorage.googleapis.com/chromium-browser-clang/Linux_x64/clang-llvmorg-12-init-5035-gd0abc757-3.tgz',
+        'd5f013c57681a7b07dc17c18eaa927fab43fe5db', 'linux'),
 
     # Keep in sync with chromium DEPS.
     Dependency(
@@ -166,8 +166,8 @@ BUILD_DEPS_HOST = [
     # Example traces for regression tests.
     Dependency(
         'buildtools/test_data.zip',
-        'https://storage.googleapis.com/perfetto/test-data-20200811-161047.zip',
-        'ffe5b473a3edfb94d1fa04610e86171d4cdc35de',
+        'https://storage.googleapis.com/perfetto/test-data-20200910-141649.zip',
+        '8439e07570cbae4114f6495c68c4490c207bff58',
         'all',
     ),
 
@@ -243,14 +243,6 @@ UI_DEPS = [
         'buildtools/emsdk/llvm.tgz',
         'https://storage.googleapis.com/perfetto/emscripten-llvm-e1.37.40-static-linux.tar.gz',
         '478501b9b7a14884e546c84efe209a90052cbb07', 'linux'),
-    Dependency(
-        'buildtools/d8.tgz',
-        'https://storage.googleapis.com/perfetto/d8-linux-5.7.492.65.tar.gz',
-        '95e82ad7faf0a6f74d950c2aa65e3858b7bdb6c6', 'linux'),
-    Dependency(
-        'buildtools/d8.tgz',
-        'https://storage.googleapis.com/perfetto/d8-darwin-6.6.346.32.tar.gz',
-        '1abd630619bb1977ab62095570a113d782a1545d', 'darwin'),
     Dependency(
         'buildtools/catapult_trace_viewer.tgz',
         'https://storage.googleapis.com/perfetto/catapult_trace_viewer-%s.tar.gz'

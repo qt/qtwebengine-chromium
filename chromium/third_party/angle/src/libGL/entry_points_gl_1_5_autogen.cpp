@@ -30,7 +30,7 @@ namespace gl
 void GL_APIENTRY BeginQuery(GLenum target, GLuint id)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glBeginQuery", "context = %d, GLenum target = %s, GLuint id = %u", CID(context),
+    EVENT(context, "glBeginQuery", "context = %d, GLenum target = %s, GLuint id = %u", CID(context),
           GLenumToString(GLenumGroup::QueryTarget, target), id);
 
     if (context)
@@ -46,13 +46,17 @@ void GL_APIENTRY BeginQuery(GLenum target, GLuint id)
         }
         ANGLE_CAPTURE(BeginQuery, isCallValid, context, targetPacked, idPacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY BindBuffer(GLenum target, GLuint buffer)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glBindBuffer", "context = %d, GLenum target = %s, GLuint buffer = %u", CID(context),
-          GLenumToString(GLenumGroup::BufferTargetARB, target), buffer);
+    EVENT(context, "glBindBuffer", "context = %d, GLenum target = %s, GLuint buffer = %u",
+          CID(context), GLenumToString(GLenumGroup::BufferTargetARB, target), buffer);
 
     if (context)
     {
@@ -67,12 +71,16 @@ void GL_APIENTRY BindBuffer(GLenum target, GLuint buffer)
         }
         ANGLE_CAPTURE(BindBuffer, isCallValid, context, targetPacked, bufferPacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY BufferData(GLenum target, GLsizeiptr size, const void *data, GLenum usage)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glBufferData",
+    EVENT(context, "glBufferData",
           "context = %d, GLenum target = %s, GLsizeiptr size = %llu, const void *data = "
           "0x%016" PRIxPTR ", GLenum usage = %s",
           CID(context), GLenumToString(GLenumGroup::BufferTargetARB, target),
@@ -92,12 +100,16 @@ void GL_APIENTRY BufferData(GLenum target, GLsizeiptr size, const void *data, GL
         }
         ANGLE_CAPTURE(BufferData, isCallValid, context, targetPacked, size, data, usagePacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY BufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void *data)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glBufferSubData",
+    EVENT(context, "glBufferSubData",
           "context = %d, GLenum target = %s, GLintptr offset = %llu, GLsizeiptr size = %llu, const "
           "void *data = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::BufferTargetARB, target),
@@ -116,12 +128,16 @@ void GL_APIENTRY BufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, 
         }
         ANGLE_CAPTURE(BufferSubData, isCallValid, context, targetPacked, offset, size, data);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY DeleteBuffers(GLsizei n, const GLuint *buffers)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glDeleteBuffers",
+    EVENT(context, "glDeleteBuffers",
           "context = %d, GLsizei n = %d, const GLuint *buffers = 0x%016" PRIxPTR "", CID(context),
           n, (uintptr_t)buffers);
 
@@ -137,13 +153,18 @@ void GL_APIENTRY DeleteBuffers(GLsizei n, const GLuint *buffers)
         }
         ANGLE_CAPTURE(DeleteBuffers, isCallValid, context, n, buffersPacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY DeleteQueries(GLsizei n, const GLuint *ids)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glDeleteQueries", "context = %d, GLsizei n = %d, const GLuint *ids = 0x%016" PRIxPTR "",
-          CID(context), n, (uintptr_t)ids);
+    EVENT(context, "glDeleteQueries",
+          "context = %d, GLsizei n = %d, const GLuint *ids = 0x%016" PRIxPTR "", CID(context), n,
+          (uintptr_t)ids);
 
     if (context)
     {
@@ -157,12 +178,16 @@ void GL_APIENTRY DeleteQueries(GLsizei n, const GLuint *ids)
         }
         ANGLE_CAPTURE(DeleteQueries, isCallValid, context, n, idsPacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY EndQuery(GLenum target)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glEndQuery", "context = %d, GLenum target = %s", CID(context),
+    EVENT(context, "glEndQuery", "context = %d, GLenum target = %s", CID(context),
           GLenumToString(GLenumGroup::QueryTarget, target));
 
     if (context)
@@ -176,13 +201,18 @@ void GL_APIENTRY EndQuery(GLenum target)
         }
         ANGLE_CAPTURE(EndQuery, isCallValid, context, targetPacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GenBuffers(GLsizei n, GLuint *buffers)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGenBuffers", "context = %d, GLsizei n = %d, GLuint *buffers = 0x%016" PRIxPTR "",
-          CID(context), n, (uintptr_t)buffers);
+    EVENT(context, "glGenBuffers",
+          "context = %d, GLsizei n = %d, GLuint *buffers = 0x%016" PRIxPTR "", CID(context), n,
+          (uintptr_t)buffers);
 
     if (context)
     {
@@ -196,12 +226,16 @@ void GL_APIENTRY GenBuffers(GLsizei n, GLuint *buffers)
         }
         ANGLE_CAPTURE(GenBuffers, isCallValid, context, n, buffersPacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GenQueries(GLsizei n, GLuint *ids)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGenQueries", "context = %d, GLsizei n = %d, GLuint *ids = 0x%016" PRIxPTR "",
+    EVENT(context, "glGenQueries", "context = %d, GLsizei n = %d, GLuint *ids = 0x%016" PRIxPTR "",
           CID(context), n, (uintptr_t)ids);
 
     if (context)
@@ -215,12 +249,16 @@ void GL_APIENTRY GenQueries(GLsizei n, GLuint *ids)
         }
         ANGLE_CAPTURE(GenQueries, isCallValid, context, n, idsPacked);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GetBufferParameteriv(GLenum target, GLenum pname, GLint *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGetBufferParameteriv",
+    EVENT(context, "glGetBufferParameteriv",
           "context = %d, GLenum target = %s, GLenum pname = %s, GLint *params = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::BufferTargetARB, target),
           GLenumToString(GLenumGroup::DefaultGroup, pname), (uintptr_t)params);
@@ -237,12 +275,16 @@ void GL_APIENTRY GetBufferParameteriv(GLenum target, GLenum pname, GLint *params
         }
         ANGLE_CAPTURE(GetBufferParameteriv, isCallValid, context, targetPacked, pname, params);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GetBufferPointerv(GLenum target, GLenum pname, void **params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGetBufferPointerv",
+    EVENT(context, "glGetBufferPointerv",
           "context = %d, GLenum target = %s, GLenum pname = %s, void **params = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::BufferTargetARB, target),
           GLenumToString(GLenumGroup::DefaultGroup, pname), (uintptr_t)params);
@@ -259,12 +301,16 @@ void GL_APIENTRY GetBufferPointerv(GLenum target, GLenum pname, void **params)
         }
         ANGLE_CAPTURE(GetBufferPointerv, isCallValid, context, targetPacked, pname, params);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GetBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, void *data)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGetBufferSubData",
+    EVENT(context, "glGetBufferSubData",
           "context = %d, GLenum target = %s, GLintptr offset = %llu, GLsizeiptr size = %llu, void "
           "*data = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::BufferTargetARB, target),
@@ -282,12 +328,16 @@ void GL_APIENTRY GetBufferSubData(GLenum target, GLintptr offset, GLsizeiptr siz
         }
         ANGLE_CAPTURE(GetBufferSubData, isCallValid, context, target, offset, size, data);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GetQueryObjectiv(GLuint id, GLenum pname, GLint *params)
 {
     Context *context = GetGlobalContext();
-    EVENT("glGetQueryObjectiv",
+    EVENT(context, "glGetQueryObjectiv",
           "context = %d, GLuint id = %u, GLenum pname = %s, GLint *params = 0x%016" PRIxPTR "",
           CID(context), id, GLenumToString(GLenumGroup::QueryObjectParameterName, pname),
           (uintptr_t)params);
@@ -304,12 +354,14 @@ void GL_APIENTRY GetQueryObjectiv(GLuint id, GLenum pname, GLint *params)
         }
         ANGLE_CAPTURE(GetQueryObjectiv, isCallValid, context, idPacked, pname, params);
     }
+    else
+    {}
 }
 
 void GL_APIENTRY GetQueryObjectuiv(GLuint id, GLenum pname, GLuint *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGetQueryObjectuiv",
+    EVENT(context, "glGetQueryObjectuiv",
           "context = %d, GLuint id = %u, GLenum pname = %s, GLuint *params = 0x%016" PRIxPTR "",
           CID(context), id, GLenumToString(GLenumGroup::QueryObjectParameterName, pname),
           (uintptr_t)params);
@@ -326,12 +378,16 @@ void GL_APIENTRY GetQueryObjectuiv(GLuint id, GLenum pname, GLuint *params)
         }
         ANGLE_CAPTURE(GetQueryObjectuiv, isCallValid, context, idPacked, pname, params);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GetQueryiv(GLenum target, GLenum pname, GLint *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGetQueryiv",
+    EVENT(context, "glGetQueryiv",
           "context = %d, GLenum target = %s, GLenum pname = %s, GLint *params = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::QueryTarget, target),
           GLenumToString(GLenumGroup::QueryParameterName, pname), (uintptr_t)params);
@@ -348,12 +404,16 @@ void GL_APIENTRY GetQueryiv(GLenum target, GLenum pname, GLint *params)
         }
         ANGLE_CAPTURE(GetQueryiv, isCallValid, context, targetPacked, pname, params);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 GLboolean GL_APIENTRY IsBuffer(GLuint buffer)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glIsBuffer", "context = %d, GLuint buffer = %u", CID(context), buffer);
+    EVENT(context, "glIsBuffer", "context = %d, GLuint buffer = %u", CID(context), buffer);
 
     GLboolean returnValue;
     if (context)
@@ -373,6 +433,7 @@ GLboolean GL_APIENTRY IsBuffer(GLuint buffer)
     }
     else
     {
+        GenerateContextLostErrorOnCurrentGlobalContext();
         returnValue = GetDefaultReturnValue<EntryPoint::IsBuffer, GLboolean>();
     }
     return returnValue;
@@ -381,7 +442,7 @@ GLboolean GL_APIENTRY IsBuffer(GLuint buffer)
 GLboolean GL_APIENTRY IsQuery(GLuint id)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glIsQuery", "context = %d, GLuint id = %u", CID(context), id);
+    EVENT(context, "glIsQuery", "context = %d, GLuint id = %u", CID(context), id);
 
     GLboolean returnValue;
     if (context)
@@ -401,6 +462,7 @@ GLboolean GL_APIENTRY IsQuery(GLuint id)
     }
     else
     {
+        GenerateContextLostErrorOnCurrentGlobalContext();
         returnValue = GetDefaultReturnValue<EntryPoint::IsQuery, GLboolean>();
     }
     return returnValue;
@@ -409,8 +471,8 @@ GLboolean GL_APIENTRY IsQuery(GLuint id)
 void *GL_APIENTRY MapBuffer(GLenum target, GLenum access)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glMapBuffer", "context = %d, GLenum target = %s, GLenum access = %s", CID(context),
-          GLenumToString(GLenumGroup::BufferTargetARB, target),
+    EVENT(context, "glMapBuffer", "context = %d, GLenum target = %s, GLenum access = %s",
+          CID(context), GLenumToString(GLenumGroup::BufferTargetARB, target),
           GLenumToString(GLenumGroup::BufferAccessARB, access));
 
     void *returnValue;
@@ -432,6 +494,7 @@ void *GL_APIENTRY MapBuffer(GLenum target, GLenum access)
     }
     else
     {
+        GenerateContextLostErrorOnCurrentGlobalContext();
         returnValue = GetDefaultReturnValue<EntryPoint::MapBuffer, void *>();
     }
     return returnValue;
@@ -440,7 +503,7 @@ void *GL_APIENTRY MapBuffer(GLenum target, GLenum access)
 GLboolean GL_APIENTRY UnmapBuffer(GLenum target)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glUnmapBuffer", "context = %d, GLenum target = %s", CID(context),
+    EVENT(context, "glUnmapBuffer", "context = %d, GLenum target = %s", CID(context),
           GLenumToString(GLenumGroup::BufferTargetARB, target));
 
     GLboolean returnValue;
@@ -462,6 +525,7 @@ GLboolean GL_APIENTRY UnmapBuffer(GLenum target)
     }
     else
     {
+        GenerateContextLostErrorOnCurrentGlobalContext();
         returnValue = GetDefaultReturnValue<EntryPoint::UnmapBuffer, GLboolean>();
     }
     return returnValue;

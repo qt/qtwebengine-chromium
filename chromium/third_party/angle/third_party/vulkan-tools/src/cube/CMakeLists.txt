@@ -38,7 +38,14 @@ else()
     elseif(UNIX AND NOT APPLE) # i.e. Linux
         execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SCRIPTS_DIR}/fetch_glslangvalidator.py glslang-master-linux-Release.zip)
     endif()
-    find_program(GLSLANG_VALIDATOR NAMES ${GLSLANG_VALIDATOR_NAME} HINTS "${PROJECT_SOURCE_DIR}/glslang/bin")
+    if (WIN32)
+        set(PLATFORM_DIR "${PROJECT_SOURCE_DIR}/glslang/windows/bin")
+    elseif(APPLE)
+        set(PLATFORM_DIR "${PROJECT_SOURCE_DIR}/glslang/darwin/bin")
+    else()
+        set(PLATFORM_DIR "${PROJECT_SOURCE_DIR}/glslang/linux/bin")
+    endif()
+    find_program(GLSLANG_VALIDATOR NAMES ${GLSLANG_VALIDATOR_NAME} HINTS ${PLATFORM_DIR})
 endif()
 
 if(UNIX AND NOT APPLE) # i.e. Linux
@@ -70,8 +77,8 @@ endif()
 
 if(WIN32)
     add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DWIN32_LEAN_AND_MEAN)
-    if(NOT MSVC_VERSION LESS 1900)
-        # Enable control flow guard
+    if(MSVC AND NOT MSVC_VERSION LESS 1900)
+        # If MSVC, Enable control flow guard
         message(STATUS "Building vkcube with control flow guard")
         add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/guard:cf>")
         set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /guard:cf")

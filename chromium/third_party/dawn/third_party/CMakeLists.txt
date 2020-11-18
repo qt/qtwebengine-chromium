@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+if (NOT TARGET spirv-cross)
+    set(SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS ON CACHE BOOL "" FORCE)
+    set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    set(SPIRV_CROSS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
+
+    message(STATUS "Dawn: using spirv-cross at ${DAWN_SPIRV_CROSS_DIR}")
+    add_subdirectory(${DAWN_SPIRV_CROSS_DIR})
+endif()
+
 if (NOT TARGET SPIRV-Headers)
     set(SPIRV_HEADERS_SKIP_EXAMPLES ON CACHE BOOL "" FORCE)
     set(SPIRV_HEADERS_SKIP_INSTALL ON CACHE BOOL "" FORCE)
@@ -39,27 +48,17 @@ if (NOT TARGET glslang)
     add_subdirectory(${DAWN_GLSLANG_DIR})
 endif()
 
-if (TARGET shaderc)
-    if (NOT TARGET shaderc_spvc)
-        message(FATAL_ERROR "Dawn: If shaderc is configured before Dawn, it must include SPVC")
-    endif()
-else()
+if (NOT TARGET shaderc)
     set(SHADERC_SKIP_TESTS ON CACHE BOOL "" FORCE)
     set(SHADERC_SKIP_INSTALL ON CACHE BOOL "" FORCE)
-    set(SHADERC_ENABLE_SPVC ON CACHE BOOL "" FORCE)
 
     # Change the default value of SHADERC_ENABLE_SHARED_CRT to ON as that's what matches the
     # CMake defaults better.
     if(MSVC)
-        option(SHADERC_ENABLE_SHARED_CRT "Use the shared CRT instead of the static CRT" ON CACHE BOOL "" FORCE)
+        set(SHADERC_ENABLE_SHARED_CRT ON CACHE BOOL "Use the shared CRT instead of the static CRT")
     endif()
 
-    # Let SPVC's CMakeLists.txt deal with configuring SPIRV-Cross
-    set(SPIRV_CROSS_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-    set(SHADERC_SPIRV_CROSS_DIR "${DAWN_SPIRV_CROSS_DIR}" CACHE BOOL "" FORCE)
-
-    message(STATUS "Dawn: using shaderc[_spvc] at ${DAWN_SHADERC_DIR}")
-    message(STATUS "Dawn:  - with SPIRV-Cross at ${DAWN_SPIRV_CROSS_DIR}")
+    message(STATUS "Dawn: using shaderc at ${DAWN_SHADERC_DIR}")
     add_subdirectory(${DAWN_SHADERC_DIR})
 endif()
 

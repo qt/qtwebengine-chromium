@@ -53,7 +53,7 @@ $ make heapprofd_standalone_client
 You will find the built library in
 `out/target/product/generic_arm64/system/lib64/heapprofd_standalone_client.so`.
 The header for the API can be found in
-`external/perfetto/include/perfetto/profiling/memory/client_ext.h`.
+`external/perfetto/include/perfetto/profiling/memory/heap_profile.h`.
 
 WARNING: Only use the header from the checkout you used to build the library,
          as the API is not stable yet.
@@ -86,18 +86,18 @@ To find out where in a program these two functions get called, we instrument
 the allocator using this API:
 
 ```
-#include "path/to/client_ext.h"
+#include "path/to/heap_profile.h"
 
-static HeapprofdHeapInfo g_info{"invalid.example", nullptr};
-static uint32_t g_heap_id = heapprofd_register_heap(&g_info, sizeof(g_info));
+static uint32_t g_heap_id = AHeapProfile_registerHeap(
+  AHeapInfo_create("invalid.example"));
 void* my_malloc(size_t size) {
   void* ptr = [code to somehow allocate get size bytes];
-  heapprofd_report_allocation(g_heap_id, static_cast<uintptr_t>(ptr), size);
+  AHeapProfile_reportAllocation(g_heap_id, static_cast<uintptr_t>(ptr), size);
   return ptr;
 }
 
 void my_free(void* ptr) {
-  heapprofd_report_free(g_heap_id, static_cast<uintptr_t>(ptr));
+  AHeapProfile_reportFree(g_heap_id, static_cast<uintptr_t>(ptr));
   [code to somehow free ptr]
 }
 ```

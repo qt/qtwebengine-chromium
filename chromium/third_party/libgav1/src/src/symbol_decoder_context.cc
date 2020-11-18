@@ -319,20 +319,4 @@ int SymbolDecoderContext::PartitionCdfSize(int block_size_log2) {
   }
 }
 
-int SymbolDecoderContext::TxTypeIndex(TransformSet tx_set) {
-  assert(tx_set != kTransformSetDctOnly);
-  switch (tx_set) {
-    case kTransformSetInter1:
-    case kTransformSetIntra1:
-      return 0;
-    case kTransformSetInter2:
-    case kTransformSetIntra2:
-      return 1;
-    case kTransformSetInter3:
-      return 2;
-    default:
-      return -1;
-  }
-}
-
 }  // namespace libgav1

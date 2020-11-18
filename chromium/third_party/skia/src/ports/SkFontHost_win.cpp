@@ -285,6 +285,7 @@ protected:
     void getPostScriptGlyphNames(SkString*) const override;
     int onGetUPEM() const override;
     void onGetFamilyName(SkString* familyName) const override;
+    bool onGetPostScriptName(SkString*) const override { return false; }
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override;
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override
@@ -327,7 +328,7 @@ private:
 
     HANDLE fFontMemResource;
 
-    typedef LogFontTypeface INHERITED;
+    using INHERITED = LogFontTypeface;
 };
 
 static const LOGFONT& get_default_font() {

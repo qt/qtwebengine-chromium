@@ -15,14 +15,13 @@
 #include <vector>
 
 #include "core/fxcrt/fx_coordinates.h"
-#include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "fxjs/gc/heap.h"
 #include "third_party/base/optional.h"
 #include "v8/include/cppgc/garbage-collected.h"
 #include "v8/include/cppgc/macros.h"
 #include "v8/include/cppgc/member.h"
-#include "v8/include/cppgc/visitor.h"
+#include "v8/include/cppgc/persistent.h"
 #include "xfa/fxfa/fxfa_basic.h"
 
 constexpr float kXFALayoutPrecision = 0.0005f;
@@ -97,7 +96,8 @@ class CXFA_ContentLayoutProcessor
   bool ProcessKeepForSplit(
       CXFA_ContentLayoutProcessor* pChildProcessor,
       Result eRetValue,
-      std::vector<CXFA_ContentLayoutItem*>* rgCurLineLayoutItem,
+      std::vector<cppgc::Persistent<CXFA_ContentLayoutItem>>*
+          rgCurLineLayoutItem,
       float* fContentCurRowAvailWidth,
       float* fContentCurRowHeight,
       float* fContentCurRowY,
@@ -122,7 +122,8 @@ class CXFA_ContentLayoutProcessor
                        float fSplitPos);
   float InsertKeepLayoutItems();
   bool CalculateRowChildPosition(
-      std::vector<CXFA_ContentLayoutItem*> (&rgCurLineLayoutItems)[3],
+      std::vector<cppgc::Persistent<CXFA_ContentLayoutItem>> (
+          &rgCurLineLayoutItems)[3],
       XFA_AttributeValue eFlowStrategy,
       bool bContainerHeightAutoSize,
       bool bContainerWidthAutoSize,
@@ -179,7 +180,8 @@ class CXFA_ContentLayoutProcessor
       float fContainerHeight,
       XFA_AttributeValue eFlowStrategy,
       uint8_t* uCurHAlignState,
-      std::vector<CXFA_ContentLayoutItem*> (&rgCurLineLayoutItems)[3],
+      std::vector<cppgc::Persistent<CXFA_ContentLayoutItem>> (
+          &rgCurLineLayoutItems)[3],
       bool bUseBreakControl,
       float fAvailHeight,
       float fRealHeight,
@@ -235,7 +237,7 @@ class CXFA_ContentLayoutProcessor
   cppgc::Member<CXFA_ViewLayoutProcessor> m_pViewLayoutProcessor;
   std::vector<float> m_rgSpecifiedColumnWidths;
   std::vector<cppgc::Member<CXFA_ContentLayoutItem>> m_ArrayKeepItems;
-  std::list<CXFA_Node*> m_PendingNodes;
+  std::list<cppgc::Member<CXFA_Node>> m_PendingNodes;
   std::map<CXFA_Node*, int32_t> m_PendingNodesCount;
   cppgc::Member<CXFA_ContentLayoutProcessor> m_pCurChildPreprocessor;
 };

@@ -25,14 +25,15 @@ namespace connections {
 
 PcpManager::PcpManager(Mediums& mediums,
                        EndpointChannelManager& channel_manager,
-                       EndpointManager& endpoint_manager) {
+                       EndpointManager& endpoint_manager,
+                       BwuManager& bwu_manager) {
   handlers_[Pcp::kP2pCluster] = std::make_unique<P2pClusterPcpHandler>(
-      mediums, &endpoint_manager, &channel_manager);
+      &mediums, &endpoint_manager, &channel_manager, &bwu_manager);
   handlers_[Pcp::kP2pStar] = std::make_unique<P2pStarPcpHandler>(
-      mediums, endpoint_manager, channel_manager);
+      mediums, endpoint_manager, channel_manager, bwu_manager);
   handlers_[Pcp::kP2pPointToPoint] =
       std::make_unique<P2pPointToPointPcpHandler>(mediums, endpoint_manager,
-                                                  channel_manager);
+                                                  channel_manager, bwu_manager);
 }
 
 void PcpManager::DisconnectFromEndpointManager() {
@@ -83,12 +84,13 @@ void PcpManager::StopDiscovery(ClientProxy* client) {
 
 Status PcpManager::RequestConnection(ClientProxy* client,
                                      const string& endpoint_id,
-                                     const ConnectionRequestInfo& info) {
+                                     const ConnectionRequestInfo& info,
+                                     const ConnectionOptions& options) {
   if (!current_) {
     return {Status::kOutOfOrderApiCall};
   }
 
-  return current_->RequestConnection(client, endpoint_id, info);
+  return current_->RequestConnection(client, endpoint_id, info, options);
 }
 
 Status PcpManager::AcceptConnection(ClientProxy* client,

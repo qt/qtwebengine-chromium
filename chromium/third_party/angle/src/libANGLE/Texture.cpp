@@ -49,9 +49,9 @@ InitState DetermineInitState(const Context *context, Buffer *unpackBuffer, const
 }
 }  // namespace
 
-bool IsMipmapFiltered(const SamplerState &samplerState)
+bool IsMipmapFiltered(GLenum minFilterMode)
 {
-    switch (samplerState.getMinFilter())
+    switch (minFilterMode)
     {
         case GL_NEAREST:
         case GL_LINEAR:
@@ -64,6 +64,34 @@ bool IsMipmapFiltered(const SamplerState &samplerState)
         default:
             UNREACHABLE();
             return false;
+    }
+}
+
+GLenum ConvertToNearestFilterMode(GLenum filterMode)
+{
+    switch (filterMode)
+    {
+        case GL_LINEAR:
+            return GL_NEAREST;
+        case GL_LINEAR_MIPMAP_NEAREST:
+            return GL_NEAREST_MIPMAP_NEAREST;
+        case GL_LINEAR_MIPMAP_LINEAR:
+            return GL_NEAREST_MIPMAP_LINEAR;
+        default:
+            return filterMode;
+    }
+}
+
+GLenum ConvertToNearestMipFilterMode(GLenum filterMode)
+{
+    switch (filterMode)
+    {
+        case GL_LINEAR_MIPMAP_LINEAR:
+            return GL_LINEAR_MIPMAP_NEAREST;
+        case GL_NEAREST_MIPMAP_LINEAR:
+            return GL_NEAREST_MIPMAP_NEAREST;
+        default:
+            return filterMode;
     }
 }
 
@@ -99,6 +127,7 @@ TextureState::TextureState(TextureType type)
       mBaseLevel(0),
       mMaxLevel(kInitialMaxLevel),
       mDepthStencilTextureMode(GL_DEPTH_COMPONENT),
+      mHasBeenBoundAsImage(false),
       mImmutableFormat(false),
       mImmutableLevels(0),
       mUsage(GL_NONE),
@@ -314,7 +343,7 @@ bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
         }
     }
 
-    if (mType != TextureType::_2DMultisample && IsMipmapFiltered(samplerState))
+    if (mType != TextureType::_2DMultisample && IsMipmapFiltered(samplerState.getMinFilter()))
     {
         if (!npotSupport)
         {
@@ -1187,9 +1216,17 @@ angle::Result Texture::copyImage(Context *context,
     // the copy lies entirely off the source framebuffer, initialize as though a zero-size box is
     // going to be set during the copy operation.
     Box destBox;
+    bool forceCopySubImage = false;
     if (context->isRobustResourceInitEnabled())
     {
-        Extents fbSize = source->getReadColorAttachment()->getSize();
+        const FramebufferAttachment *sourceReadAttachment = source->getReadColorAttachment();
+        Extents fbSize                                    = sourceReadAttachment->getSize();
+        // Force using copySubImage when the source area is out of bounds AND
+        // we're not copying to and from the same texture
+        forceCopySubImage = ((sourceArea.x < 0) || (sourceArea.y < 0) ||
+                             ((sourceArea.x + sourceArea.width) > fbSize.width) ||
+                             ((sourceArea.y + sourceArea.height) > fbSize.height)) &&
+                            (sourceReadAttachment->getResource() != this);
         Rectangle clippedArea;
         if (ClipRectangle(sourceArea, Rectangle(0, 0, fbSize.width, fbSize.height), &clippedArea))
         {
@@ -1204,7 +1241,7 @@ angle::Result Texture::copyImage(Context *context,
     // an initializeContents call, and then a copySubImage call. This ensures the destination
     // texture exists before we try to clear it.
     Extents size(sourceArea.width, sourceArea.height, 1);
-    if (doesSubImageNeedInit(context, index, destBox))
+    if (forceCopySubImage || doesSubImageNeedInit(context, index, destBox))
     {
         ANGLE_TRY(mTexture->setImage(context, index, internalFormat, size,
                                      internalFormatInfo.format, internalFormatInfo.type,
@@ -2024,15 +2061,12 @@ angle::Result Texture::getTexImage(const Context *context,
                                  pixels);
 }
 
-void Texture::onBindAsImageTexture(ContextID contextID)
+void Texture::onBindAsImageTexture()
 {
-    ContextBindingCount &bindingCount = mState.getBindingCount(contextID);
-
-    ASSERT(bindingCount.imageBindingCount < std::numeric_limits<uint32_t>::max());
-    mState.getBindingCount(contextID).imageBindingCount++;
-    if (bindingCount.imageBindingCount == 1)
+    if (!mState.mHasBeenBoundAsImage)
     {
         mDirtyBits.set(DIRTY_BIT_BOUND_AS_IMAGE);
+        mState.mHasBeenBoundAsImage = true;
     }
 }
 

@@ -596,6 +596,8 @@ Util.UIStrings = {
   runtimeSettingsUANetwork: 'User agent (network)',
   /** Label for a row in a table that shows the estimated CPU power of the machine running Lighthouse. Example row values: 532, 1492, 783. */
   runtimeSettingsBenchmark: 'CPU/Memory Power',
+  /** Label for a row in a table that shows the version of the Axe library used. Example row values: 2.1.0, 3.2.3 */
+  runtimeSettingsAxeVersion: 'Axe version',
 
   /** Label for button to create an issue against the Lighthouse Github project. */
   footerIssue: 'File an issue',
@@ -1081,6 +1083,13 @@ Copyright © 2019 Javan Makhmali
 
 /** @typedef {import('./dom.js')} DOM */
 
+// Convenience types for localized AuditDetails.
+/** @typedef {LH.FormattedIcu<LH.Audit.Details>} AuditDetails */
+/** @typedef {LH.FormattedIcu<LH.Audit.Details.Opportunity>} OpportunityTable */
+/** @typedef {LH.FormattedIcu<LH.Audit.Details.Table>} Table */
+/** @typedef {LH.FormattedIcu<LH.Audit.Details.TableItem>} TableItem */
+/** @typedef {LH.FormattedIcu<LH.Audit.Details.ItemValue>} TableItemValue */
+
 const URL_PREFIXES = ['http://', 'https://', 'data:'];
 
 class DetailsRenderer {
@@ -1104,7 +1113,7 @@ class DetailsRenderer {
   }
 
   /**
-   * @param {LH.Audit.Details} details
+   * @param {AuditDetails} details
    * @return {Element|null}
    */
   render(details) {
@@ -1173,7 +1182,7 @@ class DetailsRenderer {
     try {
       const parsed = Util.parseURL(url);
       displayedPath = parsed.file === '/' ? parsed.origin : parsed.file;
-      displayedHost = parsed.file === '/' ? '' : `(${parsed.hostname})`;
+      displayedHost = parsed.file === '/' || parsed.hostname === '' ? '' : `(${parsed.hostname})`;
       title = url;
     } catch (e) {
       displayedPath = url;
@@ -1209,7 +1218,9 @@ class DetailsRenderer {
 
     if (!url || !allowedProtocols.includes(url.protocol)) {
       // Fall back to just the link text if invalid or protocol not allowed.
-      return this._renderText(details.text);
+      const element = this._renderText(details.text);
+      element.classList.add('lh-link');
+      return element;
     }
 
     const a = this._dom.createElement('a');
@@ -1217,7 +1228,7 @@ class DetailsRenderer {
     a.target = '_blank';
     a.textContent = details.text;
     a.href = url.href;
-
+    a.classList.add('lh-link');
     return a;
   }
 
@@ -1276,7 +1287,7 @@ class DetailsRenderer {
    * Render a details item value for embedding in a table. Renders the value
    * based on the heading's valueType, unless the value itself has a `type`
    * property to override it.
-   * @param {LH.Audit.Details.ItemValue} value
+   * @param {TableItemValue} value
    * @param {LH.Audit.Details.OpportunityColumnHeading} heading
    * @return {Element|null}
    */
@@ -1366,8 +1377,8 @@ class DetailsRenderer {
    * Get the headings of a table-like details object, converted into the
    * OpportunityColumnHeading type until we have all details use the same
    * heading format.
-   * @param {LH.Audit.Details.Table|LH.Audit.Details.Opportunity} tableLike
-   * @return {Array<LH.Audit.Details.OpportunityColumnHeading>}
+   * @param {Table|OpportunityTable} tableLike
+   * @return {OpportunityTable['headings']}
    */
   _getCanonicalizedHeadingsFromTable(tableLike) {
     if (tableLike.type === 'opportunity') {
@@ -1381,8 +1392,8 @@ class DetailsRenderer {
    * Get the headings of a table-like details object, converted into the
    * OpportunityColumnHeading type until we have all details use the same
    * heading format.
-   * @param {LH.Audit.Details.TableColumnHeading} heading
-   * @return {LH.Audit.Details.OpportunityColumnHeading}
+   * @param {Table['headings'][number]} heading
+   * @return {OpportunityTable['headings'][number]}
    */
   _getCanonicalizedHeading(heading) {
     let subItemsHeading;
@@ -1440,7 +1451,7 @@ class DetailsRenderer {
   }
 
   /**
-   * @param {LH.Audit.Details.OpportunityItem | LH.Audit.Details.TableItem} item
+   * @param {TableItem} item
    * @param {(LH.Audit.Details.OpportunityColumnHeading | null)[]} headings
    */
   _renderTableRow(item, headings) {
@@ -1477,7 +1488,7 @@ class DetailsRenderer {
   /**
    * Renders one or more rows from a details table item. A single table item can
    * expand into multiple rows, if there is a subItemsHeading.
-   * @param {LH.Audit.Details.OpportunityItem | LH.Audit.Details.TableItem} item
+   * @param {TableItem} item
    * @param {LH.Audit.Details.OpportunityColumnHeading[]} headings
    */
   _renderTableRowsFromItem(item, headings) {
@@ -1499,7 +1510,7 @@ class DetailsRenderer {
   }
 
   /**
-   * @param {LH.Audit.Details.Table|LH.Audit.Details.Opportunity} details
+   * @param {OpportunityTable|Table} details
    * @return {Element}
    */
   _renderTable(details) {
@@ -1607,7 +1618,7 @@ class DetailsRenderer {
     let element;
     if (item.urlProvider === 'network') {
       element = this.renderTextURL(item.url);
-      this._dom.find('a', element).textContent += `:${line}:${column}`;
+      this._dom.find('.lh-link', element).textContent += `:${line}:${column}`;
     } else {
       element = this._renderText(`${item.url}:${line}:${column} (from sourceURL)`);
     }
@@ -2724,11 +2735,14 @@ class ReportUIFeatures {
       turnOffTheLights = true;
     }
 
-    // Fireworks.
-    const scoresAll100 = Object.values(report.categories).every(cat => cat.score === 1);
-    const hasAllCoreCategories =
-      Object.keys(report.categories).filter(id => !Util.isPluginCategory(id)).length >= 5;
-    if (scoresAll100 && hasAllCoreCategories) {
+    // Fireworks!
+    // To get fireworks you need 100 scores in all core categories, except PWA (because going the PWA route is discretionary).
+    const fireworksRequiredCategoryIds = ['performance', 'accessibility', 'best-practices', 'seo'];
+    const scoresAll100 = fireworksRequiredCategoryIds.every(id => {
+      const cat = report.categories[id];
+      return cat && cat.score === 1;
+    });
+    if (scoresAll100) {
       turnOffTheLights = true;
       this._enableFireworks();
     }
@@ -3813,7 +3827,6 @@ class CategoryRenderer {
     const tmpl = this.dom.cloneTemplate('#tmpl-lh-gauge', this.templateContext);
     const wrapper = /** @type {HTMLAnchorElement} */ (this.dom.find('.lh-gauge__wrapper', tmpl));
     wrapper.href = `#${category.id}`;
-    wrapper.classList.add(`lh-gauge__wrapper--${Util.calculateRating(category.score)}`);
 
     if (Util.isPluginCategory(category.id)) {
       wrapper.classList.add('lh-gauge__wrapper--plugin');
@@ -3835,8 +3848,26 @@ class CategoryRenderer {
       percentageEl.title = Util.i18n.strings.errorLabel;
     }
 
+    // Render a numerical score if the category has applicable audits, or no audits whatsoever.
+    if (category.auditRefs.length === 0 || this.hasApplicableAudits(category)) {
+      wrapper.classList.add(`lh-gauge__wrapper--${Util.calculateRating(category.score)}`);
+    } else {
+      wrapper.classList.add(`lh-gauge__wrapper--not-applicable`);
+      percentageEl.textContent = '-';
+      percentageEl.title = Util.i18n.strings.notApplicableAuditsGroupTitle;
+    }
+
     this.dom.find('.lh-gauge__label', tmpl).textContent = category.title;
     return tmpl;
+  }
+
+  /**
+   * Returns true if an LH category has any non-"notApplicable" audits.
+   * @param {LH.ReportResult.Category} category
+   * @return {boolean}
+   */
+  hasApplicableAudits(category) {
+    return category.auditRefs.some(ref => ref.result.scoreDisplayMode !== 'notApplicable');
   }
 
   /**
@@ -4573,7 +4604,7 @@ class ReportRenderer {
     this._dom.find('.lh-env__title', footer).textContent = Util.i18n.strings.runtimeSettingsTitle;
 
     const envValues = Util.getEnvironmentDisplayValues(report.configSettings || {});
-    [
+    const runtimeValues = [
       {name: Util.i18n.strings.runtimeSettingsUrl, description: report.finalUrl},
       {name: Util.i18n.strings.runtimeSettingsFetchTime,
         description: Util.i18n.formatDateTime(report.fetchTime)},
@@ -4584,14 +4615,22 @@ class ReportRenderer {
         report.environment.networkUserAgent},
       {name: Util.i18n.strings.runtimeSettingsBenchmark, description: report.environment &&
         report.environment.benchmarkIndex.toFixed(0)},
-    ].forEach(runtime => {
-      if (!runtime.description) return;
+    ];
+    if (report.environment.credits && report.environment.credits['axe-core']) {
+      runtimeValues.push({
+        name: Util.i18n.strings.runtimeSettingsAxeVersion,
+        description: report.environment.credits['axe-core'],
+      });
+    }
+
+    for (const runtime of runtimeValues) {
+      if (!runtime.description) continue;
 
       const item = this._dom.cloneTemplate('#tmpl-lh-env__items', env);
       this._dom.find('.lh-env__name', item).textContent = runtime.name;
       this._dom.find('.lh-env__description', item).textContent = runtime.description;
       env.appendChild(item);
-    });
+    }
 
     this._dom.find('.lh-footer__version_issue', footer).textContent = Util.i18n.strings.footerIssue;
     this._dom.find('.lh-footer__version', footer).textContent = report.lighthouseVersion;
@@ -4815,7 +4854,9 @@ class I18n {
    */
   formatMilliseconds(ms, granularity = 10) {
     const coarseTime = Math.round(ms / granularity) * granularity;
-    return `${this._numberFormatter.format(coarseTime)}${NBSP2}ms`;
+    return coarseTime === 0
+      ? `${this._numberFormatter.format(0)}${NBSP2}ms`
+      : `${this._numberFormatter.format(coarseTime)}${NBSP2}ms`;
   }
 
   /**
@@ -4839,17 +4880,21 @@ class I18n {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: 'numeric', timeZoneName: 'short',
     };
-    let formatter = new Intl.DateTimeFormat(this._numberDateLocale, options);
 
     // Force UTC if runtime timezone could not be detected.
     // See https://github.com/GoogleChrome/lighthouse/issues/1056
-    const tz = formatter.resolvedOptions().timeZone;
-    if (!tz || tz.toLowerCase() === 'etc/unknown') {
+    // and https://github.com/GoogleChrome/lighthouse/pull/9822
+    let formatter;
+    try {
+      formatter = new Intl.DateTimeFormat(this._numberDateLocale, options);
+    } catch (err) {
       options.timeZone = 'UTC';
       formatter = new Intl.DateTimeFormat(this._numberDateLocale, options);
     }
+
     return formatter.format(new Date(date));
   }
+
   /**
    * Converts a time in milliseconds into a duration string, i.e. `1d 2h 13m 52s`
    * @param {number} timeInMilliseconds

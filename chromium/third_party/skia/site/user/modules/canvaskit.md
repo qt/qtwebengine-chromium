@@ -63,7 +63,7 @@ Samples
   <figure>
     <canvas id=shader1 width=512 height=512></canvas>
     <figcaption>
-      <a href="https://jsfiddle.skia.org/canvaskit/33ff9bed883cd5742b4770169da0b36fb0cbc18fd395ddd9563213e178362d30"
+      <a href="https://jsfiddle.skia.org/canvaskit/8ab89ac8f24840509debec604030b9abded5a73de8f6dbc376433f08ed3fba56"
           target=_blank rel=noopener>
         Shader JSFiddle</a>
     </figcaption>
@@ -71,7 +71,7 @@ Samples
   <figure>
     <canvas id=camera3d width=400 height=400></canvas>
     <figcaption>
-      <a href="https://jsfiddle.skia.org/canvaskit/4b7f2cb6683ad3254ac46e3bab62da9a09e994044b2e7512c93d166abeaa2549"
+      <a href="https://jsfiddle.skia.org/canvaskit/146208fef1df1a3dea1f1c6125bd9adeee818676133105b1158310f01963ba87"
           target=_blank rel=noopener>
         3D Cube JSFiddle</a>
     </figcaption>
@@ -138,7 +138,7 @@ Samples
   let drinksJSON = null;
   let confettiJSON = null;
   let onboardingJSON = null;
-  let fullBounds = {fLeft: 0, fTop: 0, fRight: 500, fBottom: 500};
+  let fullBounds = [0, 0, 500, 500];
   const ckLoaded = CanvasKitInit({
     locateFile: (file) => locate_file + file,
   });
@@ -149,7 +149,7 @@ Samples
     InkExample(CanvasKit);
     ShapingExample(CanvasKit);
      // Set bounds to fix the 4:3 resolution of the legos
-    SkottieExample(CanvasKit, 'sk_legos', legoJSON, {fLeft: -50, fTop: 0, fRight: 350, fBottom: 300});
+    SkottieExample(CanvasKit, 'sk_legos', legoJSON, [-183, -100, 483, 400]);
     // Re-size to fit
     SkottieExample(CanvasKit, 'sk_drinks', drinksJSON, fullBounds);
     SkottieExample(CanvasKit, 'sk_party', confettiJSON, fullBounds);
@@ -160,7 +160,7 @@ Samples
   fetch('https://storage.googleapis.com/skia-cdn/misc/lego_loader.json').then((resp) => {
     resp.text().then((str) => {
       legoJSON = str;
-      SkottieExample(CanvasKit, 'sk_legos', legoJSON, {fLeft: -50, fTop: 0, fRight: 350, fBottom: 300});
+      SkottieExample(CanvasKit, 'sk_legos', legoJSON, [-183, -100, 483, 400]);
     });
   });
 
@@ -489,7 +489,7 @@ uniform float2 in_center;
 uniform float4 in_colors0;
 uniform float4 in_colors1;
 
-void main(float2 p, inout half4 color) {
+half4 main(float2 p) {
     float2 pp = p - in_center;
     float radius = sqrt(dot(pp, pp));
     radius = sqrt(radius);
@@ -497,7 +497,7 @@ void main(float2 p, inout half4 color) {
     float t = (angle + 3.1415926/2) / (3.1415926);
     t += radius * rad_scale;
     t = fract(t);
-    color = half4(mix(in_colors0, in_colors1, t));
+    return half4(mix(in_colors0, in_colors1, t));
 }
 `;
 
@@ -550,13 +550,15 @@ void main(float2 p, inout half4 color) {
     const rr = CanvasKit.RRectXY(CanvasKit.LTRBRect(margin, margin,
       vSphereRadius - margin, vSphereRadius - margin), margin*2.5, margin*2.5);
 
-    const camNear = 0.05;
-    const camFar = 4;
     const camAngle = Math.PI / 12;
-
-    const camEye = [0, 0, 1 / Math.tan(camAngle/2) - 1];
-    const camCOA = [0, 0, 0];
-    const camUp =  [0, 1, 0];
+    const cam = {
+      'eye'  : [0, 0, 1 / Math.tan(camAngle/2) - 1],
+      'coa'  : [0, 0, 0],
+      'up'   : [0, 1, 0],
+      'near' : 0.05,
+      'far'  : 4,
+      'angle': camAngle,
+    };
 
     let mouseDown = false;
     let clickDown = [0, 0]; // location of click down
@@ -590,7 +592,7 @@ void main(float2 p, inout half4 color) {
         return n;
       }
 
-      void main(float2 p, inout half4 color) {
+      half4 main(float2 p) {
         float3 norm = convert_normal_sample(sample(normal_map, p));
         float3 plane_norm = normalize(localToWorldAdjInv * float4(norm, 0)).xyz;
 
@@ -601,7 +603,7 @@ void main(float2 p, inout half4 color) {
         float dp = dot(plane_norm, light_dir);
         float scale = min(ambient + max(dp, 0), 1);
 
-        color = sample(color_map, p) * half4(float4(scale, scale, scale, 1));
+        return sample(color_map, p) * half4(float4(scale, scale, scale, 1));
       }
 `;
 
@@ -664,43 +666,15 @@ void main(float2 p, inout half4 color) {
       return m2[10]
     }
 
-    // Return the inverse of an SkM44. throw an error if it's not invertible
-    function mustInvert(m) {
-      var m2 = CanvasKit.SkM44.invert(m);
-      if (m2 === null) {
-        throw "Matrix not invertible";
-      }
-      return m2;
-    }
-
-    function saveCamera(canvas, /* rect */ area, /* scalar */ zscale) {
-      const camera = CanvasKit.SkM44.lookat(camEye, camCOA, camUp);
-      const perspective = CanvasKit.SkM44.perspective(camNear, camFar, camAngle);
-      // Calculate viewport scale. Even through we know these values are all constants in this
-      // example it might be handy to change the size later.
-      const center = [(area.fLeft + area.fRight)/2, (area.fTop + area.fBottom)/2, 0];
-      const viewScale = [(area.fRight - area.fLeft)/2, (area.fBottom - area.fTop)/2, zscale];
-      const viewport = CanvasKit.SkM44.multiply(
-        CanvasKit.SkM44.translated(center),
-        CanvasKit.SkM44.scaled(viewScale));
-
-      // want "world" to be in our big coordinates (e.g. area), so apply this inverse
-      // as part of our "camera".
-      canvas.concat(CanvasKit.SkM44.multiply(viewport, perspective));
-      canvas.concat(CanvasKit.SkM44.multiply(camera, mustInvert(viewport)));
-      // Mark the matrix to make it available to the shader by this name.
-      canvas.markCTM('local_to_world');
-    }
-
     function setClickToWorld(canvas, matrix) {
       const l2d = canvas.getLocalToDevice();
-      worldToClick = CanvasKit.SkM44.multiply(mustInvert(matrix), l2d);
-      clickToWorld = mustInvert(worldToClick);
+      worldToClick = CanvasKit.SkM44.multiply(CanvasKit.SkM44.mustInvert(matrix), l2d);
+      clickToWorld = CanvasKit.SkM44.mustInvert(worldToClick);
     }
 
     function drawCubeFace(canvas, m, color) {
       const trans = new CanvasKit.SkM44.translated([vSphereRadius/2, vSphereRadius/2, 0]);
-      canvas.concat(CanvasKit.SkM44.multiply(trans, m, mustInvert(trans)));
+      canvas.concat(CanvasKit.SkM44.multiply(trans, m, CanvasKit.SkM44.mustInvert(trans)));
       const znormal = front(canvas.getLocalToDevice());
       if (znormal < 0) {
         return; // skip faces facing backwards
@@ -720,7 +694,10 @@ void main(float2 p, inout half4 color) {
       canvas.save();
       canvas.translate(vSphereCenter[0] - vSphereRadius/2, vSphereCenter[1] - vSphereRadius/2);
       // pass surface dimensions as viewport size.
-      saveCamera(canvas, CanvasKit.LTRBRect(0, 0, vSphereRadius, vSphereRadius), vSphereRadius/2);
+      canvas.concat(CanvasKit.SkM44.setupCamera(
+        CanvasKit.LTRBRect(0, 0, vSphereRadius, vSphereRadius), vSphereRadius/2, cam));
+      // Mark the matrix to make it available to the shader by this name.
+      canvas.markCTM('local_to_world');
       setClickToWorld(canvas, clickM);
       for (let f of faces) {
         const saveCount = canvas.getSaveCount();

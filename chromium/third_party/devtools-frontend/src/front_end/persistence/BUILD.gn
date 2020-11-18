@@ -33,9 +33,15 @@ devtools_module("persistence") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [
+    "editFileSystemView.css",
+    "workspaceSettingsTab.css",
+  ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "persistence.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":persistence" ]
 }

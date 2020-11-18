@@ -22,9 +22,15 @@ devtools_module("text_editor") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [
+    "autocompleteTooltip.css",
+    "cmdevtools.css",
+  ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "text_editor.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [
     ":text_editor",

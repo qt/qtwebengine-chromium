@@ -18,19 +18,6 @@
 
 namespace webrtc {
 
-EncodedImageCallback::Result EncodedImageCallback::OnEncodedImage(
-    const EncodedImage& encoded_image,
-    const CodecSpecificInfo* codec_specific_info,
-    const RTPFragmentationHeader* /*fragmentation*/) {
-  return OnEncodedImage(encoded_image, codec_specific_info);
-}
-
-EncodedImageCallback::Result EncodedImageCallback::OnEncodedImage(
-    const EncodedImage& encoded_image,
-    const CodecSpecificInfo* codec_specific_info) {
-  return OnEncodedImage(encoded_image, codec_specific_info, nullptr);
-}
-
 // TODO(mflodman): Add default complexity for VP9 and VP9.
 VideoCodecVP8 VideoEncoder::GetDefaultVp8Settings() {
   VideoCodecVP8 vp8_settings;
@@ -107,6 +94,7 @@ bool VideoEncoder::ResolutionBitrateLimits::operator==(
 VideoEncoder::EncoderInfo::EncoderInfo()
     : scaling_settings(VideoEncoder::ScalingSettings::kOff),
       requested_resolution_alignment(1),
+      apply_alignment_to_all_simulcast_layers(false),
       supports_native_handle(false),
       implementation_name("unknown"),
       has_trusted_rate_controller(false),
@@ -136,6 +124,8 @@ std::string VideoEncoder::EncoderInfo::ToString() const {
   oss << "min_pixels_per_frame = " << scaling_settings.min_pixels_per_frame
       << " }";
   oss << ", requested_resolution_alignment = " << requested_resolution_alignment
+      << ", apply_alignment_to_all_simulcast_layers = "
+      << apply_alignment_to_all_simulcast_layers
       << ", supports_native_handle = " << supports_native_handle
       << ", implementation_name = '" << implementation_name
       << "'"

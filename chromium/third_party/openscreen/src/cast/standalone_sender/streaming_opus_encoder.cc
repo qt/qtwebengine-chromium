@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <chrono>
 
+#include "util/chrono_helpers.h"
+
 namespace openscreen {
 namespace cast {
 

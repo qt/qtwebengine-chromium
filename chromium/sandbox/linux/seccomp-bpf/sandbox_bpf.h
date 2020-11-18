@@ -15,8 +15,9 @@
 #include "sandbox/linux/bpf_dsl/policy.h"
 #include "sandbox/sandbox_export.h"
 
-namespace sandbox {
 struct arch_seccomp_data;
+
+namespace sandbox {
 
 // This class can be used to apply a syscall sandboxing policy expressed in a
 // bpf_dsl::Policy object to the current process.
@@ -61,11 +62,7 @@ class SANDBOX_EXPORT SandboxBPF {
   // disallowed.
   // Finally, stacking does add more kernel overhead than having a single
   // combined policy. So, it should only be used if there are no alternatives.
-  //
-  // |enable_ibpb| controls if the sandbox will forcibly enable indirect branch
-  // prediction barrier through prctl(2) to mitigate Spectre variant 2.
-  bool StartSandbox(SeccompLevel level,
-                    bool enable_ibpb = true) WARN_UNUSED_RESULT;
+  bool StartSandbox(SeccompLevel level) WARN_UNUSED_RESULT;
 
   // The sandbox needs to be able to access files in "/proc/self/". If
   // this directory is not accessible when "StartSandbox()" gets called, the
@@ -103,7 +100,7 @@ class SANDBOX_EXPORT SandboxBPF {
 
   // Assembles and installs a filter based on the policy that has previously
   // been configured with SetSandboxPolicy().
-  void InstallFilter(bool must_sync_threads, bool enable_ibpb);
+  void InstallFilter(bool must_sync_threads);
 
   // Disable indirect branch speculation by prctl. This will be done by
   // seccomp if SECCOMP_FILTER_FLAG_SPEC_ALLOW is not set. Seccomp will

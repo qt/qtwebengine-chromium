@@ -4,6 +4,12 @@
  * found in the LICENSE file.
  */
 
+.close-button {
+  position: absolute;
+  top: 7px;
+  left: 5px;
+}
+
 .console-pins {
   max-height: 200px;
   overflow-y: auto;
@@ -70,7 +76,7 @@
 }
 
 .console-delete-pin:hover,
-.console-delete-pin[data-keyboard-focus="true"]:focus {
+.console-delete-pin:focus-visible {
   opacity: 100%;
 }
 

@@ -11,6 +11,7 @@
 #include "src/sksl/SkSLFileOutputStream.h"
 #include "src/sksl/SkSLIRGenerator.h"
 #include "src/sksl/SkSLStringStream.h"
+#include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLEnum.h"
 #include "src/sksl/ir/SkSLUnresolvedFunction.h"
 
@@ -32,14 +33,158 @@ static SkSL::String base_name(const char* fpPath, const char* prefix, const char
     return result;
 }
 
+// Given a string containing an SkSL program, searches for a #pragma settings comment, like so:
+//    /*#pragma settings Default Sharpen*/
+// The passed-in Settings object will be updated accordingly. Any number of options can be provided.
+static void detect_shader_settings(const SkSL::String& text, SkSL::Program::Settings* settings) {
+    using Factory = SkSL::ShaderCapsFactory;
+
+    // Find a matching comment and isolate the name portion.
+    static constexpr char kPragmaSettings[] = "/*#pragma settings ";
+    const char* settingsPtr = strstr(text.c_str(), kPragmaSettings);
+    if (settingsPtr != nullptr) {
+        // Subtract one here in order to preserve the leading space, which is necessary to allow
+        // consumeSuffix to find the first item.
+        settingsPtr += strlen(kPragmaSettings) - 1;
+
+        const char* settingsEnd = strstr(settingsPtr, "*/");
+        if (settingsEnd != nullptr) {
+            SkSL::String settingsText{settingsPtr, size_t(settingsEnd - settingsPtr)};
+
+            // Apply settings as requested. Since they can come in any order, repeat until we've
+            // consumed them all.
+            for (;;) {
+                const size_t startingLength = settingsText.length();
+
+                if (settingsText.consumeSuffix(" AddAndTrueToLoopCondition")) {
+                    static auto s_addAndTrueCaps = Factory::AddAndTrueToLoopCondition();
+                    settings->fCaps = s_addAndTrueCaps.get();
+                }
+                if (settingsText.consumeSuffix(" CannotUseFractForNegativeValues")) {
+                    static auto s_negativeFractCaps = Factory::CannotUseFractForNegativeValues();
+                    settings->fCaps = s_negativeFractCaps.get();
+                }
+                if (settingsText.consumeSuffix(" CannotUseFragCoord")) {
+                    static auto s_noFragCoordCaps = Factory::CannotUseFragCoord();
+                    settings->fCaps = s_noFragCoordCaps.get();
+                }
+                if (settingsText.consumeSuffix(" CannotUseMinAndAbsTogether")) {
+                    static auto s_minAbsCaps = Factory::CannotUseMinAndAbsTogether();
+                    settings->fCaps = s_minAbsCaps.get();
+                }
+                if (settingsText.consumeSuffix(" Default")) {
+                    static auto s_defaultCaps = Factory::Default();
+                    settings->fCaps = s_defaultCaps.get();
+                }
+                if (settingsText.consumeSuffix(" EmulateAbsIntFunction")) {
+                    static auto s_emulateAbsIntCaps = Factory::EmulateAbsIntFunction();
+                    settings->fCaps = s_emulateAbsIntCaps.get();
+                }
+                if (settingsText.consumeSuffix(" FragCoordsOld")) {
+                    static auto s_fragCoordsOld = Factory::FragCoordsOld();
+                    settings->fCaps = s_fragCoordsOld.get();
+                }
+                if (settingsText.consumeSuffix(" FragCoordsNew")) {
+                    static auto s_fragCoordsNew = Factory::FragCoordsNew();
+                    settings->fCaps = s_fragCoordsNew.get();
+                }
+                if (settingsText.consumeSuffix(" GeometryShaderExtensionString")) {
+                    static auto s_geometryExtCaps = Factory::GeometryShaderExtensionString();
+                    settings->fCaps = s_geometryExtCaps.get();
+                }
+                if (settingsText.consumeSuffix(" GeometryShaderSupport")) {
+                    static auto s_geometryShaderCaps = Factory::GeometryShaderSupport();
+                    settings->fCaps = s_geometryShaderCaps.get();
+                }
+                if (settingsText.consumeSuffix(" GSInvocationsExtensionString")) {
+                    static auto s_gsInvocationCaps = Factory::GSInvocationsExtensionString();
+                    settings->fCaps = s_gsInvocationCaps.get();
+                }
+                if (settingsText.consumeSuffix(" IncompleteShortIntPrecision")) {
+                    static auto s_incompleteShortIntCaps = Factory::IncompleteShortIntPrecision();
+                    settings->fCaps = s_incompleteShortIntCaps.get();
+                }
+                if (settingsText.consumeSuffix(" MustForceNegatedAtanParamToFloat")) {
+                    static auto s_negativeAtanCaps = Factory::MustForceNegatedAtanParamToFloat();
+                    settings->fCaps = s_negativeAtanCaps.get();
+                }
+                if (settingsText.consumeSuffix(" NoGSInvocationsSupport")) {
+                    static auto s_noGSInvocations = Factory::NoGSInvocationsSupport();
+                    settings->fCaps = s_noGSInvocations.get();
+                }
+                if (settingsText.consumeSuffix(" RemovePowWithConstantExponent")) {
+                    static auto s_powCaps = Factory::RemovePowWithConstantExponent();
+                    settings->fCaps = s_powCaps.get();
+                }
+                if (settingsText.consumeSuffix(" RewriteDoWhileLoops")) {
+                    static auto s_rewriteLoopCaps = Factory::RewriteDoWhileLoops();
+                    settings->fCaps = s_rewriteLoopCaps.get();
+                }
+                if (settingsText.consumeSuffix(" ShaderDerivativeExtensionString")) {
+                    static auto s_derivativeCaps = Factory::ShaderDerivativeExtensionString();
+                    settings->fCaps = s_derivativeCaps.get();
+                }
+                if (settingsText.consumeSuffix(" UnfoldShortCircuitAsTernary")) {
+                    static auto s_ternaryCaps = Factory::UnfoldShortCircuitAsTernary();
+                    settings->fCaps = s_ternaryCaps.get();
+                }
+                if (settingsText.consumeSuffix(" UsesPrecisionModifiers")) {
+                    static auto s_precisionCaps = Factory::UsesPrecisionModifiers();
+                    settings->fCaps = s_precisionCaps.get();
+                }
+                if (settingsText.consumeSuffix(" Version110")) {
+                    static auto s_version110Caps = Factory::Version110();
+                    settings->fCaps = s_version110Caps.get();
+                }
+                if (settingsText.consumeSuffix(" Version450Core")) {
+                    static auto s_version450CoreCaps = Factory::Version450Core();
+                    settings->fCaps = s_version450CoreCaps.get();
+                }
+                if (settingsText.consumeSuffix(" FlipY")) {
+                    settings->fFlipY = true;
+                }
+                if (settingsText.consumeSuffix(" ForceHighPrecision")) {
+                    settings->fForceHighPrecision = true;
+                }
+                if (settingsText.consumeSuffix(" Sharpen")) {
+                    settings->fSharpenTextures = true;
+                }
+
+                if (settingsText.empty()) {
+                    break;
+                }
+                if (settingsText.length() == startingLength) {
+                    printf("Unrecognized #pragma settings: %s\n", settingsText.c_str());
+                    exit(3);
+                }
+            }
+        }
+    }
+}
+
 /**
  * Very simple standalone executable to facilitate testing.
  */
 int main(int argc, const char** argv) {
-    if (argc != 3) {
-        printf("usage: skslc <input> <output>\n");
+    bool honorSettings = true;
+    if (argc == 4) {
+        if (0 == strcmp(argv[3], "--settings")) {
+            honorSettings = true;
+        } else if (0 == strcmp(argv[3], "--nosettings")) {
+            honorSettings = false;
+        } else {
+            printf("unrecognized flag: %s\n", argv[3]);
+            exit(1);
+        }
+    } else if (argc != 3) {
+        printf("usage: skslc <input> <output> <flags>\n"
+               "\n"
+               "Allowed flags:\n"
+               "--settings:   honor embedded /*#pragma settings*/ comments.\n"
+               "--nosettings: ignore /*#pragma settings*/ comments\n");
         exit(1);
     }
+
     SkSL::Program::Kind kind;
     SkSL::String input(argv[1]);
     if (input.endsWith(".vert")) {
@@ -59,14 +204,17 @@ int main(int argc, const char** argv) {
     }
 
     std::ifstream in(argv[1]);
-    std::string stdText((std::istreambuf_iterator<char>(in)),
-                        std::istreambuf_iterator<char>());
-    SkSL::String text(stdText.c_str());
+    SkSL::String text((std::istreambuf_iterator<char>(in)),
+                       std::istreambuf_iterator<char>());
     if (in.rdstate()) {
         printf("error reading '%s'\n", argv[1]);
         exit(2);
     }
+
     SkSL::Program::Settings settings;
+    if (honorSettings) {
+        detect_shader_settings(text, &settings);
+    }
     SkSL::String name(argv[2]);
     if (name.endsWith(".spirv")) {
         SkSL::FileOutputStream out(argv[2]);
@@ -161,22 +309,15 @@ int main(int argc, const char** argv) {
         std::vector<std::unique_ptr<SkSL::ProgramElement>> elements;
         compiler.processIncludeFile(kind, argv[1], nullptr, &elements, &symbols);
         SkSL::Dehydrator dehydrator;
-        for (int i = symbols->fParent->fOwnedSymbols.size() - 1; i >= 0; --i) {
-            symbols->fOwnedSymbols.insert(symbols->fOwnedSymbols.begin(),
-                                          std::move(symbols->fParent->fOwnedSymbols[i]));
-        }
-        for (const auto& p : *symbols->fParent) {
-            symbols->addWithoutOwnership(p.first, p.second);
-        }
         dehydrator.write(*symbols);
         dehydrator.write(elements);
-        SkSL::String name = base_name(argv[1], "", ".sksl");
+        SkSL::String baseName = base_name(argv[1], "", ".sksl");
         SkSL::StringStream buffer;
         dehydrator.finish(buffer);
         const SkSL::String& data = buffer.str();
-        out.printf("static constexpr size_t SKSL_INCLUDE_%s_LENGTH = %d;\n", name.c_str(),
+        out.printf("static constexpr size_t SKSL_INCLUDE_%s_LENGTH = %d;\n", baseName.c_str(),
                    (int) data.length());
-        out.printf("static uint8_t SKSL_INCLUDE_%s[%d] = {", name.c_str(), (int) data.length());
+        out.printf("static uint8_t SKSL_INCLUDE_%s[%d] = {", baseName.c_str(), (int) data.length());
         for (size_t i = 0; i < data.length(); ++i) {
             out.printf("%d,", (uint8_t) data[i]);
         }

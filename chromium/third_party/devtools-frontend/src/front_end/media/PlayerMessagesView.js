@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as UI from '../ui/ui.js';
 
@@ -188,7 +191,7 @@ export class PlayerMessagesView extends UI.Widget.VBox {
 
   _buildToolbar() {
     const toolbar = new UI.Toolbar.Toolbar('media-messages-toolbar', this._headerPanel);
-    toolbar.appendText(ls`Log Level:`);
+    toolbar.appendText(ls`Log level:`);
     toolbar.appendToolbarItem(this._createDropdown());
     toolbar.appendSeparator();
     toolbar.appendToolbarItem(this._createFilterInput());
@@ -214,7 +217,7 @@ export class PlayerMessagesView extends UI.Widget.VBox {
   }
 
   _createFilterInput() {
-    const filterInput = new UI.Toolbar.ToolbarInput(ls`filter log messages`);
+    const filterInput = new UI.Toolbar.ToolbarInput(ls`Filter log messages`);
     filterInput.addEventListener(UI.Toolbar.ToolbarInput.Event.TextChanged, this._filterByString, this);
     return filterInput;
   }

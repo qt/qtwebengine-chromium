@@ -79,6 +79,11 @@ class CastSocket : public TlsConnection::Client {
   WeakPtrFactory<CastSocket> weak_factory_{this};
 };
 
+// Returns socket->socket_id() if |socket| is not null, otherwise 0.
+inline int ToCastSocketId(CastSocket* socket) {
+  return socket ? socket->socket_id() : 0;
+}
+
 }  // namespace cast
 }  // namespace openscreen
 

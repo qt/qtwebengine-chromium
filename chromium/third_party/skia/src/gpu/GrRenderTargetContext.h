@@ -600,6 +600,7 @@ private:
     GrAAType chooseAAType(GrAA);
 
     friend class GrClipStackClip;               // for access to getOpsTask
+    friend class GrClipStack;                   // ""
     friend class GrOnFlushResourceProvider;     // for access to getOpsTask (http://skbug.com/9357)
 
     friend class GrRenderTargetContextPriv;
@@ -717,11 +718,14 @@ private:
     bool fManagedOpsTask;
 
     int fNumStencilSamples = 0;
+
+    GrDstSampleType fDstSampleType = GrDstSampleType::kNone;
+
 #if GR_TEST_UTILS
     bool fPreserveOpsOnFullClear_TestingOnly = false;
 #endif
     SkGlyphRunListPainter fGlyphPainter;
-    typedef GrSurfaceContext INHERITED;
+    using INHERITED = GrSurfaceContext;
 };
 
 #endif

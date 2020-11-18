@@ -86,6 +86,7 @@ static uint32_t grsltype_to_alignment_mask(GrSLType type) {
         case kTexture2DRectSampler_GrSLType:
         case kSampler_GrSLType:
         case kTexture2D_GrSLType:
+        case kInput_GrSLType:
             break;
     }
     SK_ABORT("Unexpected type");
@@ -169,6 +170,7 @@ static inline uint32_t grsltype_to_vk_size(GrSLType type) {
         case kTexture2DRectSampler_GrSLType:
         case kSampler_GrSLType:
         case kTexture2D_GrSLType:
+        case kInput_GrSLType:
             break;
     }
     SK_ABORT("Unexpected type");
@@ -261,7 +263,7 @@ GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addSampler(
     SkASSERT(name && strlen(name));
 
     SkString mangleName;
-    char prefix = 'u';
+    const char prefix = 'u';
     fProgramBuilder->nameVariable(&mangleName, prefix, name, true);
 
     SkString layoutQualifier;
@@ -287,10 +289,30 @@ GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addSampler(
         SkASSERT(info.fImmutableSampler);
     }
 
-    SkASSERT(shaderCaps->textureSwizzleAppliedInShader());
     fSamplerSwizzles.push_back(swizzle);
     SkASSERT(fSamplerSwizzles.count() == fSamplers.count());
     return GrGLSLUniformHandler::SamplerHandle(fSamplers.count() - 1);
+}
+
+GrGLSLUniformHandler::SamplerHandle GrVkUniformHandler::addInputSampler(const GrSwizzle& swizzle,
+                                                                        const char* name) {
+    SkASSERT(name && strlen(name));
+    SkASSERT(fInputUniform.fVariable.getType() == kVoid_GrSLType);
+
+    SkString mangleName;
+    const char prefix = 'u';
+    fProgramBuilder->nameVariable(&mangleName, prefix, name, true);
+
+    SkString layoutQualifier;
+    layoutQualifier.appendf("input_attachment_index=%d, set=%d, binding=%d",
+                            kDstInputAttachmentIndex, kInputDescSet, kInputBinding);
+
+    fInputUniform = {
+            GrShaderVar{std::move(mangleName), kInput_GrSLType, GrShaderVar::TypeModifier::Uniform,
+                        GrShaderVar::kNonArray, std::move(layoutQualifier), SkString()},
+            kFragment_GrShaderFlag, nullptr, SkString(name)};
+    fInputSwizzle = swizzle;
+    return GrGLSLUniformHandler::SamplerHandle(0);
 }
 
 void GrVkUniformHandler::appendUniformDecls(GrShaderFlags visibility, SkString* out) const {
@@ -299,6 +321,13 @@ void GrVkUniformHandler::appendUniformDecls(GrShaderFlags visibility, SkString* 
                  sampler.fVariable.getType() == kTextureExternalSampler_GrSLType);
         if (visibility == sampler.fVisibility) {
             sampler.fVariable.appendDecl(fProgramBuilder->shaderCaps(), out);
+            out->append(";\n");
+        }
+    }
+    if (fInputUniform.fVariable.getType() == kInput_GrSLType) {
+        if (visibility == fInputUniform.fVisibility) {
+            SkASSERT(visibility == kFragment_GrShaderFlag);
+            fInputUniform.fVariable.appendDecl(fProgramBuilder->shaderCaps(), out);
             out->append(";\n");
         }
     }

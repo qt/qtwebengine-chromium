@@ -63,9 +63,11 @@ namespace dawn_native { namespace metal {
                     return MTLTextureTypeCube;
                 case wgpu::TextureViewDimension::CubeArray:
                     return MTLTextureTypeCubeArray;
-                default:
+
+                case wgpu::TextureViewDimension::e1D:
+                case wgpu::TextureViewDimension::e3D:
+                case wgpu::TextureViewDimension::Undefined:
                     UNREACHABLE();
-                    return MTLTextureType2D;
             }
         }
 
@@ -225,7 +227,7 @@ namespace dawn_native { namespace metal {
                 return MTLPixelFormatBC5_RGSnorm;
             case wgpu::TextureFormat::BC5RGUnorm:
                 return MTLPixelFormatBC5_RGUnorm;
-            case wgpu::TextureFormat::BC6HRGBSfloat:
+            case wgpu::TextureFormat::BC6HRGBFloat:
                 return MTLPixelFormatBC6H_RGBFloat;
             case wgpu::TextureFormat::BC6HRGBUfloat:
                 return MTLPixelFormatBC6H_RGBUfloat;
@@ -316,7 +318,8 @@ namespace dawn_native { namespace metal {
                 }
                 break;
 
-            default:
+            case wgpu::TextureDimension::e1D:
+            case wgpu::TextureDimension::e3D:
                 UNREACHABLE();
         }
 
@@ -355,7 +358,7 @@ namespace dawn_native { namespace metal {
                                                                  plane:plane];
         [mtlDesc release];
 
-        SetIsSubresourceContentInitialized(descriptor->isCleared, GetAllSubresources());
+        SetIsSubresourceContentInitialized(descriptor->isInitialized, GetAllSubresources());
     }
 
     Texture::~Texture() {
@@ -430,7 +433,6 @@ namespace dawn_native { namespace metal {
                                     break;
                                 default:
                                     UNREACHABLE();
-                                    break;
                             }
                         }
 
@@ -488,15 +490,17 @@ namespace dawn_native { namespace metal {
         } else {
             // Compute the buffer size big enough to fill the largest mip.
             Extent3D largestMipSize = GetMipLevelVirtualSize(range.baseMipLevel);
+            const TexelBlockInfo& blockInfo =
+                GetFormat().GetTexelBlockInfo(wgpu::TextureAspect::All);
 
             // Metal validation layers: sourceBytesPerRow must be at least 64.
             uint32_t largestMipBytesPerRow = std::max(
-                (largestMipSize.width / GetFormat().blockWidth) * GetFormat().blockByteSize, 64u);
+                (largestMipSize.width / blockInfo.blockWidth) * blockInfo.blockByteSize, 64u);
 
             // Metal validation layers: sourceBytesPerImage must be at least 512.
             uint64_t largestMipBytesPerImage =
                 std::max(static_cast<uint64_t>(largestMipBytesPerRow) *
-                             (largestMipSize.height / GetFormat().blockHeight),
+                             (largestMipSize.height / blockInfo.blockHeight),
                          512llu);
 
             // TODO(enga): Multiply by largestMipSize.depth and do a larger 3D copy to clear a whole
@@ -511,7 +515,7 @@ namespace dawn_native { namespace metal {
             UploadHandle uploadHandle;
             DAWN_TRY_ASSIGN(uploadHandle,
                             uploader->Allocate(bufferSize, device->GetPendingCommandSerial(),
-                                               GetFormat().blockByteSize));
+                                               blockInfo.blockByteSize));
             memset(uploadHandle.mappedBuffer, clearColor, bufferSize);
 
             id<MTLBlitCommandEncoder> encoder = commandContext->EnsureBlit();

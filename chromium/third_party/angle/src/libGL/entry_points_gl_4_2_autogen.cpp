@@ -36,7 +36,7 @@ void GL_APIENTRY BindImageTexture(GLuint unit,
                                   GLenum format)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glBindImageTexture",
+    EVENT(context, "glBindImageTexture",
           "context = %d, GLuint unit = %u, GLuint texture = %u, GLint level = %d, GLboolean "
           "layered = %s, GLint layer = %d, GLenum access = %s, GLenum format = %s",
           CID(context), unit, texture, level, GLbooleanToString(layered), layer,
@@ -57,6 +57,10 @@ void GL_APIENTRY BindImageTexture(GLuint unit,
         ANGLE_CAPTURE(BindImageTexture, isCallValid, context, unit, texturePacked, level, layered,
                       layer, access, format);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY DrawArraysInstancedBaseInstance(GLenum mode,
@@ -66,7 +70,7 @@ void GL_APIENTRY DrawArraysInstancedBaseInstance(GLenum mode,
                                                  GLuint baseinstance)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glDrawArraysInstancedBaseInstance",
+    EVENT(context, "glDrawArraysInstancedBaseInstance",
           "context = %d, GLenum mode = %s, GLint first = %d, GLsizei count = %d, GLsizei "
           "instancecount = %d, GLuint baseinstance = %u",
           CID(context), GLenumToString(GLenumGroup::PrimitiveType, mode), first, count,
@@ -87,6 +91,10 @@ void GL_APIENTRY DrawArraysInstancedBaseInstance(GLenum mode,
         ANGLE_CAPTURE(DrawArraysInstancedBaseInstance, isCallValid, context, modePacked, first,
                       count, instancecount, baseinstance);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY DrawElementsInstancedBaseInstance(GLenum mode,
@@ -97,7 +105,7 @@ void GL_APIENTRY DrawElementsInstancedBaseInstance(GLenum mode,
                                                    GLuint baseinstance)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glDrawElementsInstancedBaseInstance",
+    EVENT(context, "glDrawElementsInstancedBaseInstance",
           "context = %d, GLenum mode = %s, GLsizei count = %d, GLenum type = %s, const void "
           "*indices = 0x%016" PRIxPTR ", GLsizei instancecount = %d, GLuint baseinstance = %u",
           CID(context), GLenumToString(GLenumGroup::PrimitiveType, mode), count,
@@ -118,6 +126,10 @@ void GL_APIENTRY DrawElementsInstancedBaseInstance(GLenum mode,
         ANGLE_CAPTURE(DrawElementsInstancedBaseInstance, isCallValid, context, mode, count, type,
                       indices, instancecount, baseinstance);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY DrawElementsInstancedBaseVertexBaseInstance(GLenum mode,
@@ -129,7 +141,7 @@ void GL_APIENTRY DrawElementsInstancedBaseVertexBaseInstance(GLenum mode,
                                                              GLuint baseinstance)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glDrawElementsInstancedBaseVertexBaseInstance",
+    EVENT(context, "glDrawElementsInstancedBaseVertexBaseInstance",
           "context = %d, GLenum mode = %s, GLsizei count = %d, GLenum type = %s, const void "
           "*indices = 0x%016" PRIxPTR
           ", GLsizei instancecount = %d, GLint basevertex = %d, GLuint baseinstance = %u",
@@ -154,12 +166,16 @@ void GL_APIENTRY DrawElementsInstancedBaseVertexBaseInstance(GLenum mode,
         ANGLE_CAPTURE(DrawElementsInstancedBaseVertexBaseInstance, isCallValid, context, modePacked,
                       count, typePacked, indices, instancecount, basevertex, baseinstance);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY DrawTransformFeedbackInstanced(GLenum mode, GLuint id, GLsizei instancecount)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glDrawTransformFeedbackInstanced",
+    EVENT(context, "glDrawTransformFeedbackInstanced",
           "context = %d, GLenum mode = %s, GLuint id = %u, GLsizei instancecount = %d",
           CID(context), GLenumToString(GLenumGroup::PrimitiveType, mode), id, instancecount);
 
@@ -177,6 +193,10 @@ void GL_APIENTRY DrawTransformFeedbackInstanced(GLenum mode, GLuint id, GLsizei 
         ANGLE_CAPTURE(DrawTransformFeedbackInstanced, isCallValid, context, mode, idPacked,
                       instancecount);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY DrawTransformFeedbackStreamInstanced(GLenum mode,
@@ -185,7 +205,7 @@ void GL_APIENTRY DrawTransformFeedbackStreamInstanced(GLenum mode,
                                                       GLsizei instancecount)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glDrawTransformFeedbackStreamInstanced",
+    EVENT(context, "glDrawTransformFeedbackStreamInstanced",
           "context = %d, GLenum mode = %s, GLuint id = %u, GLuint stream = %u, GLsizei "
           "instancecount = %d",
           CID(context), GLenumToString(GLenumGroup::PrimitiveType, mode), id, stream,
@@ -205,6 +225,10 @@ void GL_APIENTRY DrawTransformFeedbackStreamInstanced(GLenum mode,
         ANGLE_CAPTURE(DrawTransformFeedbackStreamInstanced, isCallValid, context, mode, idPacked,
                       stream, instancecount);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GetActiveAtomicCounterBufferiv(GLuint program,
@@ -213,7 +237,7 @@ void GL_APIENTRY GetActiveAtomicCounterBufferiv(GLuint program,
                                                 GLint *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGetActiveAtomicCounterBufferiv",
+    EVENT(context, "glGetActiveAtomicCounterBufferiv",
           "context = %d, GLuint program = %u, GLuint bufferIndex = %u, GLenum pname = %s, GLint "
           "*params = 0x%016" PRIxPTR "",
           CID(context), program, bufferIndex,
@@ -233,6 +257,10 @@ void GL_APIENTRY GetActiveAtomicCounterBufferiv(GLuint program,
         ANGLE_CAPTURE(GetActiveAtomicCounterBufferiv, isCallValid, context, programPacked,
                       bufferIndex, pname, params);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY GetInternalformativ(GLenum target,
@@ -242,7 +270,7 @@ void GL_APIENTRY GetInternalformativ(GLenum target,
                                      GLint *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glGetInternalformativ",
+    EVENT(context, "glGetInternalformativ",
           "context = %d, GLenum target = %s, GLenum internalformat = %s, GLenum pname = %s, "
           "GLsizei bufSize = %d, GLint *params = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::TextureTarget, target),
@@ -262,12 +290,16 @@ void GL_APIENTRY GetInternalformativ(GLenum target,
         ANGLE_CAPTURE(GetInternalformativ, isCallValid, context, target, internalformat, pname,
                       bufSize, params);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY MemoryBarrier(GLbitfield barriers)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glMemoryBarrier", "context = %d, GLbitfield barriers = %s", CID(context),
+    EVENT(context, "glMemoryBarrier", "context = %d, GLbitfield barriers = %s", CID(context),
           GLbitfieldToString(GLenumGroup::MemoryBarrierMask, barriers).c_str());
 
     if (context)
@@ -280,12 +312,16 @@ void GL_APIENTRY MemoryBarrier(GLbitfield barriers)
         }
         ANGLE_CAPTURE(MemoryBarrier, isCallValid, context, barriers);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY TexStorage1D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glTexStorage1D",
+    EVENT(context, "glTexStorage1D",
           "context = %d, GLenum target = %s, GLsizei levels = %d, GLenum internalformat = %s, "
           "GLsizei width = %d",
           CID(context), GLenumToString(GLenumGroup::TextureTarget, target), levels,
@@ -302,13 +338,17 @@ void GL_APIENTRY TexStorage1D(GLenum target, GLsizei levels, GLenum internalform
         }
         ANGLE_CAPTURE(TexStorage1D, isCallValid, context, target, levels, internalformat, width);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY
 TexStorage2D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glTexStorage2D",
+    EVENT(context, "glTexStorage2D",
           "context = %d, GLenum target = %s, GLsizei levels = %d, GLenum internalformat = %s, "
           "GLsizei width = %d, GLsizei height = %d",
           CID(context), GLenumToString(GLenumGroup::TextureTarget, target), levels,
@@ -328,6 +368,10 @@ TexStorage2D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width
         ANGLE_CAPTURE(TexStorage2D, isCallValid, context, targetPacked, levels, internalformat,
                       width, height);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY TexStorage3D(GLenum target,
@@ -338,7 +382,7 @@ void GL_APIENTRY TexStorage3D(GLenum target,
                               GLsizei depth)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glTexStorage3D",
+    EVENT(context, "glTexStorage3D",
           "context = %d, GLenum target = %s, GLsizei levels = %d, GLenum internalformat = %s, "
           "GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d",
           CID(context), GLenumToString(GLenumGroup::TextureTarget, target), levels,
@@ -357,6 +401,10 @@ void GL_APIENTRY TexStorage3D(GLenum target,
         }
         ANGLE_CAPTURE(TexStorage3D, isCallValid, context, targetPacked, levels, internalformat,
                       width, height, depth);
+    }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
     }
 }
 }  // namespace gl

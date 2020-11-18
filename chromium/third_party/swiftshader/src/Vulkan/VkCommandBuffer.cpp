@@ -1405,10 +1405,18 @@ void CommandBuffer::addCommand(Args &&... args)
 }
 
 void CommandBuffer::beginRenderPass(RenderPass *renderPass, Framebuffer *framebuffer, VkRect2D renderArea,
-                                    uint32_t clearValueCount, const VkClearValue *clearValues, VkSubpassContents contents)
+                                    uint32_t clearValueCount, const VkClearValue *clearValues, VkSubpassContents contents,
+                                    const VkRenderPassAttachmentBeginInfo *attachmentInfo)
 {
 	ASSERT(state == RECORDING);
 
+	if(attachmentInfo)
+	{
+		for(uint32_t i = 0; i < attachmentInfo->attachmentCount; i++)
+		{
+			framebuffer->setAttachment(vk::Cast(attachmentInfo->pAttachments[i]), i);
+		}
+	}
 	addCommand<::CmdBeginRenderPass>(renderPass, framebuffer, renderArea, clearValueCount, clearValues);
 }
 
@@ -1810,11 +1818,9 @@ void CommandBuffer::submit(CommandBuffer::ExecutionState &executionState)
 	auto debuggerContext = device->getDebuggerContext();
 	if(debuggerContext)
 	{
-		auto lock = debuggerContext->lock();
-		debuggerThread = lock.currentThread();
+		debuggerThread = debuggerContext->lock().currentThread();
 		debuggerThread->setName("vkQueue processor");
-		debuggerThread->enter(lock, debuggerFile, "vkCommandBuffer::submit");
-		lock.unlock();
+		debuggerThread->enter(debuggerFile, "vkCommandBuffer::submit");
 	}
 	defer(if(debuggerThread) { debuggerThread->exit(); });
 	int line = 1;

@@ -13,6 +13,7 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkYUVAIndex.h"
+#include "include/core/SkYUVAPixmaps.h"
 #include "include/core/SkYUVASizeInfo.h"
 
 class GrRecordingContext;
@@ -89,6 +90,32 @@ public:
     }
 
     /**
+     *  If decoding to YUV is supported, this returns true. Otherwise, this
+     *  returns false and the caller will ignore output parameter yuvaPixmapInfo.
+     *
+     * @param  supportedDataTypes Indicates the data type/planar config combinations that are
+     *                            supported by the caller. If the generator supports decoding to
+     *                            YUV(A), but not as a type in supportedDataTypes, this method
+     *                            returns false.
+     *  @param yuvaPixmapInfo Output parameter that specifies the planar configuration, subsampling,
+     *                        orientation, chroma siting, plane color types, and row bytes.
+     */
+    bool queryYUVAInfo(const SkYUVAPixmapInfo::SupportedDataTypes& supportedDataTypes,
+                       SkYUVAPixmapInfo* yuvaPixmapInfo) const;
+
+    /**
+     *  Returns true on success and false on failure.
+     *  This always attempts to perform a full decode. To get the planar
+     *  configuration without decoding use queryYUVAInfo().
+     *
+     *  @param yuvaPixmaps  Contains preallocated pixmaps configured according to a successful call
+     *                      to queryYUVAInfo().
+     */
+    bool getYUVAPlanes(const SkYUVAPixmaps& yuvaPixmaps);
+
+    /**
+     *  Deprecated. Use queryYUVAInfo instead for more structured YUVA plane specification.
+     *
      *  If decoding to YUV is supported, this returns true.  Otherwise, this
      *  returns false and does not modify any of the parameters.
      *
@@ -102,6 +129,8 @@ public:
                     SkYUVColorSpace* colorSpace) const;
 
     /**
+     *  Deprecated. Use getYUVAPlanes instead for more structured YUVA plane retrieval.
+     *
      *  Returns true on success and false on failure.
      *  This always attempts to perform a full decode.  If the client only
      *  wants size, it should call queryYUVA8().
@@ -180,6 +209,9 @@ protected:
     struct Options {};
     virtual bool onGetPixels(const SkImageInfo&, void*, size_t, const Options&) { return false; }
     virtual bool onIsValid(GrRecordingContext*) const { return true; }
+    virtual bool onQueryYUVAInfo(const SkYUVAPixmapInfo::SupportedDataTypes&,
+                                 SkYUVAPixmapInfo*) const { return false; }
+    virtual bool onGetYUVAPlanes(const SkYUVAPixmaps&) { return false; }
     virtual bool onQueryYUVA8(SkYUVASizeInfo*, SkYUVAIndex[SkYUVAIndex::kIndexCount],
                               SkYUVColorSpace*) const { return false; }
     virtual bool onGetYUVA8Planes(const SkYUVASizeInfo&, const SkYUVAIndex[SkYUVAIndex::kIndexCount],

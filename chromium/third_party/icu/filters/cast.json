@@ -637,15 +637,14 @@
         "windowsZones"
       ]
     },
-// Based on the ICU63 version of
-// https://cs.chromium.org/chromium/src/third_party/icu/source/data/rbnf/rbnflocal.mk?rcl=797b7c
     "rbnf_tree": {
-      "filterType": "exclude"
+      "whitelist": [
+// Needed by "y=jpanyear" in locales/ja.txt for calendar="japanese"
+        "ja",
+// Needed by "d=hanidays" in locales/zh*.txt for calendar="chinese"
+        "zh"
+      ]
     },
-    "rbnf_index": {
-      "filterType": "exclude"
-    },
-
 // Based on the ICU63 version of
 // https://cs.chromium.org/chromium/src/third_party/icu/source/data/region/reslocal.mk?rcl=797b7c
 // Includes the items from REGION_ALIAS_SOURCE and REGION_SOURCE
@@ -2206,7 +2205,6 @@
         "coll_tree",
         "curr_tree",
         "lang_tree",
-        "rbnf_tree",
         "region_tree",
         "zone_tree"
       ],

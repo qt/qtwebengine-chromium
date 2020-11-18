@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import './NodeText.js';
+
 import * as Common from '../common/common.js';
 import * as ComponentHelpers from '../component_helpers/component_helpers.js';
 import * as LitHtml from '../third_party/lit-html/lit-html.js';
 
 import {BooleanSetting, EnumSetting, LayoutElement, Setting, SettingType} from './LayoutPaneUtils.js';
-import {NodeText} from './NodeText.js';
+
+import type {NodeTextData} from './NodeText.js';
 
 const {render, html} = LitHtml;
 const ls = Common.ls;
@@ -23,24 +26,6 @@ export class SettingChangedEvent extends Event {
   }
 }
 
-export class OverlayChangedEvent extends Event {
-  data: {id: number, value: boolean};
-
-  constructor(id: number, value: boolean) {
-    super('overlay-changed', {});
-    this.data = {id, value};
-  }
-}
-
-export class ElementClickedEvent extends Event {
-  data: {id: number};
-
-  constructor(id: number) {
-    super('element-clicked', {});
-    this.data = {id};
-  }
-}
-
 interface HTMLInputElementEvent extends Event {
   target: HTMLInputElement;
 }
@@ -53,6 +38,11 @@ function isBooleanSetting(setting: Setting): setting is BooleanSetting {
   return setting.type === SettingType.BOOLEAN;
 }
 
+export interface LayoutPaneData {
+  settings: Setting[];
+  gridElements: LayoutElement[];
+}
+
 export class LayoutPane extends HTMLElement {
   private readonly shadow = this.attachShadow({mode: 'open'});
   private settings: Readonly<Setting[]> = [];
@@ -63,11 +53,11 @@ export class LayoutPane extends HTMLElement {
     this.shadow.adoptedStyleSheets = [
       ...getStyleSheets('ui/inspectorCommon.css', {patchThemeSupport: true}),
       ...getStyleSheets('ui/inspectorSyntaxHighlight.css', {patchThemeSupport: true}),
-      ...getStyleSheets('elements/layoutPane.css'),
+      ...getStyleSheets('elements/layoutPane.css', {patchThemeSupport: false}),
     ];
   }
 
-  set data(data: {settings: Setting[], gridElements: LayoutElement[]}) {
+  set data(data: LayoutPaneData) {
     this.settings = data.settings;
     this.gridElements = data.gridElements;
     this.render();
@@ -81,22 +71,25 @@ export class LayoutPane extends HTMLElement {
         <summary class="header">
           ${ls`Grid`}
         </summary>
-        ${this.gridElements ?
-          html`<div class="content-section">
-            <h3 class="content-section-title">${ls`Grid overlays`}</h3>
-            <div class="elements">
-              ${this.gridElements.map(element => this.renderElement(element))}
-            </div>
-          </div>` : ''}
         <div class="content-section">
           <h3 class="content-section-title">${ls`Overlay display settings`}</h3>
-          <div class="checkbox-settings">
-            ${this.getBooleanSettings().map(setting => this.renderBooleanSetting(setting))}
-          </div>
           <div class="select-settings">
             ${this.getEnumSettings().map(setting => this.renderEnumSetting(setting))}
           </div>
+          <div class="checkbox-settings">
+            ${this.getBooleanSettings().map(setting => this.renderBooleanSetting(setting))}
+          </div>
         </div>
+        ${this.gridElements ?
+          html`<div class="content-section">
+            <h3 class="content-section-title">
+              ${this.gridElements.length ? ls`Grid overlays` : ls`No grid layouts found on this page`}
+            </h3>
+            ${this.gridElements.length ?
+              html`<div class="elements">
+                ${this.gridElements.map(element => this.renderElement(element))}
+              </div>` : ''}
+          </div>` : ''}
       </details>
     `, this.shadow, {
       eventContext: this,
@@ -124,32 +117,63 @@ export class LayoutPane extends HTMLElement {
 
   private onElementToggle(element: LayoutElement, event: HTMLInputElementEvent) {
     event.preventDefault();
-    this.dispatchEvent(new OverlayChangedEvent(element.id, event.target.checked));
+    element.toggle(event.target.checked);
   }
 
   private onElementClick(element: LayoutElement, event: HTMLInputElementEvent) {
     event.preventDefault();
-    this.dispatchEvent(new ElementClickedEvent(element.id));
+    element.reveal();
+  }
+
+  private onColorChange(element: LayoutElement, event: HTMLInputElementEvent) {
+    event.preventDefault();
+    element.setColor(event.target.value);
+    this.render();
+  }
+
+  private onElementMouseEnter(element: LayoutElement, event: HTMLInputElementEvent) {
+    event.preventDefault();
+    element.highlight();
+  }
+
+  private onElementMouseLeave(element: LayoutElement, event: HTMLInputElementEvent) {
+    event.preventDefault();
+    element.hideHighlight();
   }
 
   private renderElement(element: LayoutElement) {
-    const nodeText = new NodeText();
-    nodeText.data = {
-      nodeId: element.domId,
-      nodeTitle: element.name,
-      nodeClasses: element.domClasses,
-    };
     const onElementToggle = this.onElementToggle.bind(this, element);
     const onElementClick = this.onElementClick.bind(this, element);
+    const onColorChange = this.onColorChange.bind(this, element);
+    const onMouseEnter = this.onElementMouseEnter.bind(this, element);
+    const onMouseLeave = this.onElementMouseLeave.bind(this, element);
+    const onColorLabelKeyUp = (event: KeyboardEvent) => {
+      // Handle Enter and Space events to make the color picker accessible.
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+      const target = event.target as HTMLLabelElement;
+      const input = target.querySelector('input') as HTMLInputElement;
+      input.click();
+      event.preventDefault();
+    };
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     return html`<div class="element">
       <label data-element="true" class="checkbox-label" title=${element.name}>
         <input data-input="true" type="checkbox" .checked=${element.enabled} @change=${onElementToggle} />
-        <span data-label="true">${nodeText}</span>
-        </label>
-        <button @click=${onElementClick} title=${showElementButtonTitle} class="show-element">
-        </button>
+        <span class="node-text-container" data-label="true" @mouseenter=${onMouseEnter} @mouseleave=${onMouseLeave}>
+          <devtools-node-text .data=${{
+            nodeId: element.domId,
+            nodeTitle: element.name,
+            nodeClasses: element.domClasses,
+          } as NodeTextData}></devtools-node-text>
+        </span>
+      </label>
+      <label @keyup=${onColorLabelKeyUp} tabindex="0" class="color-picker-label" style="background:${element.color}">
+        <input @change=${onColorChange} @input=${onColorChange} class="color-picker" type="color" value=${element.color} />
+      </label>
+      <button tabindex="0" @click=${onElementClick} title=${showElementButtonTitle} class="show-element"></button>
     </div>`;
     // clang-format on
   }
@@ -165,7 +189,6 @@ export class LayoutPane extends HTMLElement {
   private renderEnumSetting(setting: EnumSetting) {
     const onEnumSettingChange = this.onEnumSettingChange.bind(this, setting);
     return html`<label data-enum-setting="true" class="select-label" title=${setting.title}>
-      <span data-label="true">${setting.title}</span>
       <select class="chrome-select" data-input="true" @change=${onEnumSettingChange}>
         ${
         setting.options.map(

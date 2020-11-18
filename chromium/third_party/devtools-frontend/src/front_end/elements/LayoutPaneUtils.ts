@@ -30,8 +30,14 @@ export type Setting = EnumSetting|BooleanSetting;
 
 export interface LayoutElement {
   id: number;
+  color: string;
   name: string;
   domId?: string;
   domClasses?: string[];
   enabled: boolean;
+  reveal: () => void;
+  toggle: (value: boolean) => void;
+  setColor: (value: string) => void;
+  highlight: () => void;
+  hideHighlight: () => void;
 }

@@ -63,6 +63,7 @@ gles_extensions = [
     "GL_ANGLE_texture_multisample",
     "GL_ANGLE_translated_shader_source",
     "GL_EXT_blend_func_extended",
+    "GL_EXT_buffer_storage",
     "GL_EXT_debug_marker",
     "GL_EXT_discard_framebuffer",
     "GL_EXT_disjoint_timer_query",
@@ -110,6 +111,7 @@ gles_extensions = [
     "GL_OES_texture_buffer",
     "GL_OES_texture_cube_map_array",
     "GL_OES_texture_half_float",
+    "GL_OES_texture_stencil8",
     "GL_OES_texture_storage_multisample_2d_array",
     "GL_OES_vertex_array_object",
     "GL_OVR_multiview",
@@ -120,6 +122,7 @@ supported_extensions = sorted(angle_extensions + gles1_extensions + gles_extensi
 
 supported_egl_extensions = [
     "EGL_ANDROID_blob_cache",
+    "EGL_ANDROID_create_native_client_buffer",
     "EGL_ANDROID_framebuffer_target",
     "EGL_ANDROID_get_frame_timestamps",
     "EGL_ANDROID_get_native_client_buffer",

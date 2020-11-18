@@ -113,9 +113,10 @@ namespace dawn_native { namespace d3d12 {
                     break;
                 }
 
+                case wgpu::BindingType::SampledTexture:
+                case wgpu::BindingType::MultisampledTexture:
                 // Readonly storage is implemented as SRV so it can be used at the same time as a
                 // sampled texture.
-                case wgpu::BindingType::SampledTexture:
                 case wgpu::BindingType::ReadonlyStorageTexture: {
                     auto* view = ToBackend(GetBindingAsTextureView(bindingIndex));
                     auto& srv = view->GetSRVDescriptor();
@@ -138,12 +139,6 @@ namespace dawn_native { namespace d3d12 {
                         viewAllocation.OffsetFrom(viewSizeIncrement, bindingOffsets[bindingIndex]));
                     break;
                 }
-
-                case wgpu::BindingType::StorageTexture:
-                    UNREACHABLE();
-                    break;
-
-                    // TODO(shaobo.yan@intel.com): Implement dynamic buffer offset.
             }
         }
     }

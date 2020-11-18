@@ -330,20 +330,18 @@ be completely sure that a loader is present, they can include a loader or
 runtime installer with their application.
 
 ###### Static Linking
-The loader can also be used as a static library (this is shipped in the
-Windows SDK as `VKstatic.1.lib`). Linking to the static loader means that the
-user does not need to have a Vulkan runtime installed, and it also guarantees
-that your application will use a specific version of the loader. However, there
-are several downsides to this approach:
+In previous versions of the loader, it was possible to statically link the loader.
+This was removed and is no longer possible. The decision to remove static linking
+was because of changes to the driver which made older applications that statically
+linked unable to find newer drivers.
 
-  - The static library can never be updated without re-linking the application
-  - This opens up the possibility that two included libraries could contain
+Additionally, static linking posed several problems:
+  - The loader can never be updated without re-linking the application
+  - The possibility that two included libraries could contain
   different versions of the loader
-    - This could potentially cause conflicts between the different loader versions
+    - Could cause conflicts between the different loader versions
 
-As a result, it is recommended that users prefer linking to the dynamic
-versions of the loader.
-
+The only exception to this is for macOS, but is not supported or tested.
 
 ##### Indirectly Linking to the Loader
 Applications are not required to link directly to the loader library, instead
@@ -589,10 +587,10 @@ layers. Layers specified via environment variable are top-most (closest to the
 application) while layers specified by the application are bottom-most.
 
 An example of using these environment variables to activate the validation
-layer `VK_LAYER_LUNARG_parameter_validation` on Linux or macOS is as follows:
+layer `VK_LAYER_KHRONOS_validation` on Linux or macOS is as follows:
 
 ```
-> $ export VK_INSTANCE_LAYERS=VK_LAYER_LUNARG_parameter_validation
+> $ export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
 ```
 
 
@@ -605,14 +603,11 @@ as follows:
 
 Ordering may also be important internal to the list of explicit layers.
 Some layers may be dependent on other behavior being implemented before
-or after the loader calls it.  For example: the VK_LAYER_LUNARG_core_validation
-layer expects the VK_LAYER_LUNARG_parameter_validation layer to be called first.
-This is because the VK_LAYER_LUNARG_parameter_validation layer will filter out any
-invalid `NULL` pointer calls prior to the rest of the validation checking
-done by the VK_LAYER_LUNARG_core_validation layer.  If not done properly, you may see
-crashes in the VK_LAYER_LUNARG_core_validation layer that would otherwise be
-avoided.
-
+or after the loader calls it.  For example: An overlay layer may want to
+to use VK_LAYER_KHRONOS_validation to verify that the overlay layer is
+behaving appropriately. This requires putting the overlay layer closer to
+the application so that the validation layer can intercept any Vulkan API
+calls the overlay layer needs to make to function.
 
 #### Application Usage of Extensions
 
@@ -1526,6 +1521,15 @@ instantiation of the layer name would be ignored.
 The
 Manifest file formatting necessary to define a meta-layer can be found in the
 [Layer Manifest File Format](#layer-manifest-file-format) section.
+
+##### Override Meta-Layer
+
+If an implicit meta-layer was found on the system with the name `VK_LAYER_LUNARG_override`,
+the loader uses it as an 'override' layer. This is used to selectively enable and disable
+other layers from being loaded. It can be applied globally or to a specific application
+or applications. Disabling layers and specifying the application requires the layer manifest have the following keys:
+  * `blacklisted_layers` - List of explicit layer names that should not be loaded even if requested by the application.
+  * `app_keys` - List of paths to executables that the override layer applies to. When an application starts up and the override layer is present, the loader first checks to see if the application is in the list. If it isn't, the override layer is not applied. If the list is empty or if `app_keys` doesn't exist, the loader makes the override layer global and applies it to every application upon startup.
 
 #### Pre-Instance Functions
 

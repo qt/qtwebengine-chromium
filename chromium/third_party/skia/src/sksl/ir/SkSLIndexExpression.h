@@ -18,7 +18,7 @@ namespace SkSL {
  * Given a type, returns the type that will result from extracting an array value from it.
  */
 static const Type& index_type(const Context& context, const Type& type) {
-    if (type.kind() == Type::kMatrix_Kind) {
+    if (type.typeKind() == Type::TypeKind::kMatrix) {
         if (type.componentType() == *context.fFloat_Type) {
             switch (type.rows()) {
                 case 2: return *context.fFloat2_Type;
@@ -42,27 +42,23 @@ static const Type& index_type(const Context& context, const Type& type) {
  * An expression which extracts a value from an array or matrix, as in 'm[2]'.
  */
 struct IndexExpression : public Expression {
-    static constexpr Kind kExpressionKind = kIndex_Kind;
+    static constexpr Kind kExpressionKind = Kind::kIndex;
 
     IndexExpression(const Context& context, std::unique_ptr<Expression> base,
                     std::unique_ptr<Expression> index)
-    : INHERITED(base->fOffset, kExpressionKind, index_type(context, base->fType))
+    : INHERITED(base->fOffset, kExpressionKind, &index_type(context, base->type()))
     , fBase(std::move(base))
     , fIndex(std::move(index)) {
-        SkASSERT(fIndex->fType == *context.fInt_Type || fIndex->fType == *context.fUInt_Type);
+        SkASSERT(fIndex->type() == *context.fInt_Type || fIndex->type() == *context.fUInt_Type);
     }
 
     bool hasProperty(Property property) const override {
         return fBase->hasProperty(property) || fIndex->hasProperty(property);
     }
 
-    int nodeCount() const override {
-        return 1 + fBase->nodeCount() + fIndex->nodeCount();
-    }
-
     std::unique_ptr<Expression> clone() const override {
         return std::unique_ptr<Expression>(new IndexExpression(fBase->clone(), fIndex->clone(),
-                                                               &fType));
+                                                               &this->type()));
     }
 
     String description() const override {
@@ -72,12 +68,12 @@ struct IndexExpression : public Expression {
     std::unique_ptr<Expression> fBase;
     std::unique_ptr<Expression> fIndex;
 
-    typedef Expression INHERITED;
+    using INHERITED = Expression;
 
 private:
     IndexExpression(std::unique_ptr<Expression> base, std::unique_ptr<Expression> index,
                     const Type* type)
-    : INHERITED(base->fOffset, kIndex_Kind, *type)
+    : INHERITED(base->fOffset, Kind::kIndex, type)
     , fBase(std::move(base))
     , fIndex(std::move(index)) {}
 };

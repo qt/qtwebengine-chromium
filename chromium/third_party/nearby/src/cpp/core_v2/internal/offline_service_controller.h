@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "core_v2/internal/bwu_manager.h"
 #include "core_v2/internal/client_proxy.h"
 #include "core_v2/internal/endpoint_channel_manager.h"
 #include "core_v2/internal/endpoint_manager.h"
@@ -40,23 +41,20 @@ class OfflineServiceController : public ServiceController {
   OfflineServiceController() = default;
   ~OfflineServiceController() override;
 
-  Status StartAdvertising(ClientProxy* client,
-                          const std::string& service_id,
+  Status StartAdvertising(ClientProxy* client, const std::string& service_id,
                           const ConnectionOptions& options,
                           const ConnectionRequestInfo& info) override;
   void StopAdvertising(ClientProxy* client) override;
 
-  Status StartDiscovery(ClientProxy* client,
-                        const std::string& service_id,
+  Status StartDiscovery(ClientProxy* client, const std::string& service_id,
                         const ConnectionOptions& options,
                         const DiscoveryListener& listener) override;
   void StopDiscovery(ClientProxy* client) override;
 
-  Status RequestConnection(ClientProxy* client,
-                           const std::string& endpoint_id,
-                           const ConnectionRequestInfo& info) override;
-  Status AcceptConnection(ClientProxy* client,
-                          const std::string& endpoint_id,
+  Status RequestConnection(ClientProxy* client, const std::string& endpoint_id,
+                           const ConnectionRequestInfo& info,
+                           const ConnectionOptions& options) override;
+  Status AcceptConnection(ClientProxy* client, const std::string& endpoint_id,
                           const PayloadListener& listener) override;
   Status RejectConnection(ClientProxy* client,
                           const std::string& endpoint_id) override;
@@ -65,10 +63,9 @@ class OfflineServiceController : public ServiceController {
                                 const std::string& endpoint_id) override;
 
   void SendPayload(ClientProxy* client,
-                           const std::vector<std::string>& endpoint_ids,
-                           Payload payload) override;
-  Status CancelPayload(ClientProxy* client,
-                       Payload::Id payload_id) override;
+                   const std::vector<std::string>& endpoint_ids,
+                   Payload payload) override;
+  Status CancelPayload(ClientProxy* client, Payload::Id payload_id) override;
 
   void DisconnectFromEndpoint(ClientProxy* client,
                               const std::string& endpoint_id) override;
@@ -84,7 +81,10 @@ class OfflineServiceController : public ServiceController {
   EndpointChannelManager channel_manager_;
   EndpointManager endpoint_manager_{&channel_manager_};
   PayloadManager payload_manager_{endpoint_manager_};
-  PcpManager pcp_manager_{mediums_, channel_manager_, endpoint_manager_};
+  BwuManager bwu_manager_{
+      mediums_, endpoint_manager_, channel_manager_, {}, {}};
+  PcpManager pcp_manager_{mediums_, channel_manager_, endpoint_manager_,
+                          bwu_manager_};
 };
 
 }  // namespace connections

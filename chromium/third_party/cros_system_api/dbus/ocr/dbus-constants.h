@@ -7,21 +7,17 @@
 
 namespace ocr {
 
-constexpr char kOcrServiceName[] =
-    "org.chromium.OpticalCharacterRecognition";
+constexpr char kOcrServiceName[] = "org.chromium.OpticalCharacterRecognition";
 constexpr char kOcrServiceInterface[] =
     "org.chromium.OpticalCharacterRecognition";
-constexpr char kOcrServicePath[] =
-    "/org/chromium/OpticalCharacterRecognition";
+constexpr char kOcrServicePath[] = "/org/chromium/OpticalCharacterRecognition";
 
-constexpr char kBootstrapMojoConnectionMethod[] =
-    "BootstrapMojoConnection";
+constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
 
 // Token (pipe name) used to extract the message pipe from a
 // Mojo invitation. This constant needs to be known on both ends of the
 // pipe (Chromium and daemon).
-constexpr char kBootstrapMojoConnectionChannelToken[] =
-    "ocr-service-bootstrap";
+constexpr char kBootstrapMojoConnectionChannelToken[] = "ocr-service-bootstrap";
 
 }  // namespace ocr
 

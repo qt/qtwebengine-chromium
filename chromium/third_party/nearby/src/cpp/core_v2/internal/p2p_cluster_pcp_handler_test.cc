@@ -16,6 +16,7 @@
 
 #include <memory>
 
+#include "core_v2/internal/bwu_manager.h"
 #include "core_v2/options.h"
 #include "platform_v2/base/medium_environment.h"
 #include "platform_v2/public/count_down_latch.h"
@@ -29,31 +30,58 @@ namespace nearby {
 namespace connections {
 namespace {
 
-class P2pClusterPcpHandlerTest : public ::testing::Test {
+constexpr BooleanMediumSelector kTestCases[] = {
+    BooleanMediumSelector{
+        .bluetooth = true,
+    },
+    BooleanMediumSelector{
+        .wifi_lan = true,
+    },
+    BooleanMediumSelector{
+        .bluetooth = true,
+        .wifi_lan = true,
+    },
+};
+
+class P2pClusterPcpHandlerTest
+    : public ::testing::TestWithParam<BooleanMediumSelector> {
  protected:
   void SetUp() override {
     NEARBY_LOG(INFO, "SetUp: begin");
     env_.Stop();
+    if (options_.allowed.bluetooth) {
+      NEARBY_LOG(INFO, "SetUp: BT enabled");
+    }
+    if (options_.allowed.wifi_lan) {
+      NEARBY_LOG(INFO, "SetUp: Wifi LAN enabled");
+    }
+    if (options_.allowed.web_rtc) {
+      NEARBY_LOG(INFO, "SetUp: WebRTC enabled");
+    }
     NEARBY_LOG(INFO, "SetUp: end");
   }
 
   ClientProxy client_a_;
   ClientProxy client_b_;
   std::string service_id_{"service"};
-  ConnectionOptions options_{.strategy = Strategy::kP2pCluster};
+  ConnectionOptions options_{
+      .strategy = Strategy::kP2pCluster,
+      .allowed = GetParam(),
+  };
   MediumEnvironment& env_{MediumEnvironment::Instance()};
 };
 
-TEST_F(P2pClusterPcpHandlerTest, CanConstructOne) {
+TEST_P(P2pClusterPcpHandlerTest, CanConstructOne) {
   env_.Start();
   Mediums mediums;
   EndpointChannelManager ecm;
   EndpointManager em(&ecm);
-  P2pClusterPcpHandler handler(mediums, &em, &ecm);
+  BwuManager bwu(mediums, em, ecm, {}, {});
+  P2pClusterPcpHandler handler(&mediums, &em, &ecm, &bwu);
   env_.Stop();
 }
 
-TEST_F(P2pClusterPcpHandlerTest, CanConstructMultiple) {
+TEST_P(P2pClusterPcpHandlerTest, CanConstructMultiple) {
   env_.Start();
   Mediums mediums_a;
   Mediums mediums_b;
@@ -61,25 +89,29 @@ TEST_F(P2pClusterPcpHandlerTest, CanConstructMultiple) {
   EndpointChannelManager ecm_b;
   EndpointManager em_a(&ecm_a);
   EndpointManager em_b(&ecm_b);
-  P2pClusterPcpHandler handler_a(mediums_a, &em_a, &ecm_a);
-  P2pClusterPcpHandler handler_b(mediums_b, &em_b, &ecm_b);
+  BwuManager bwu_a(mediums_a, em_a, ecm_a, {}, {});
+  BwuManager bwu_b(mediums_b, em_b, ecm_b, {}, {});
+  P2pClusterPcpHandler handler_a(&mediums_a, &em_a, &ecm_a, &bwu_a);
+  P2pClusterPcpHandler handler_b(&mediums_b, &em_b, &ecm_b, &bwu_b);
   env_.Stop();
 }
 
-TEST_F(P2pClusterPcpHandlerTest, CanAdvertise) {
+TEST_P(P2pClusterPcpHandlerTest, CanAdvertise) {
   env_.Start();
   std::string endpoint_name{"endpoint_name"};
   Mediums mediums_a;
   EndpointChannelManager ecm_a;
   EndpointManager em_a(&ecm_a);
-  P2pClusterPcpHandler handler_a(mediums_a, &em_a, &ecm_a);
-  EXPECT_EQ(handler_a.StartAdvertising(&client_a_, service_id_, options_,
-                                       {.name = endpoint_name}),
-            Status{Status::kSuccess});
+  BwuManager bwu_a(mediums_a, em_a, ecm_a, {}, {});
+  P2pClusterPcpHandler handler_a(&mediums_a, &em_a, &ecm_a, &bwu_a);
+  EXPECT_EQ(
+      handler_a.StartAdvertising(&client_a_, service_id_, options_,
+                                 {.endpoint_info = ByteArray{endpoint_name}}),
+      Status{Status::kSuccess});
   env_.Stop();
 }
 
-TEST_F(P2pClusterPcpHandlerTest, CanDiscover) {
+TEST_P(P2pClusterPcpHandlerTest, CanDiscover) {
   env_.Start();
   std::string endpoint_name{"endpoint_name"};
   Mediums mediums_a;
@@ -88,18 +120,21 @@ TEST_F(P2pClusterPcpHandlerTest, CanDiscover) {
   EndpointChannelManager ecm_b;
   EndpointManager em_a(&ecm_a);
   EndpointManager em_b(&ecm_b);
-  P2pClusterPcpHandler handler_a(mediums_a, &em_a, &ecm_a);
-  P2pClusterPcpHandler handler_b(mediums_b, &em_b, &ecm_b);
+  BwuManager bwu_a(mediums_a, em_a, ecm_a, {}, {});
+  BwuManager bwu_b(mediums_b, em_b, ecm_b, {}, {});
+  P2pClusterPcpHandler handler_a(&mediums_a, &em_a, &ecm_a, &bwu_a);
+  P2pClusterPcpHandler handler_b(&mediums_b, &em_b, &ecm_b, &bwu_b);
   CountDownLatch latch(1);
-  EXPECT_EQ(handler_a.StartAdvertising(&client_a_, service_id_, options_,
-                                       {.name = endpoint_name}),
-            Status{Status::kSuccess});
+  EXPECT_EQ(
+      handler_a.StartAdvertising(&client_a_, service_id_, options_,
+                                 {.endpoint_info = ByteArray{endpoint_name}}),
+      Status{Status::kSuccess});
   EXPECT_EQ(handler_b.StartDiscovery(
                 &client_b_, service_id_, options_,
                 {
                     .endpoint_found_cb =
                         [&latch](const std::string& endpoint_id,
-                                 const std::string& endpoint_name,
+                                 const ByteArray& endpoint_info,
                                  const std::string& service_id) {
                           NEARBY_LOG(INFO, "Device discovered: id=%s",
                                      endpoint_id.c_str());
@@ -108,10 +143,13 @@ TEST_F(P2pClusterPcpHandlerTest, CanDiscover) {
                 }),
             Status{Status::kSuccess});
   EXPECT_TRUE(latch.Await(absl::Milliseconds(1000)).result());
+  // We discovered endpoint over one medium. Before we finish the test, we have
+  // to stop discovery for other mediums that may be still ongoing.
+  handler_b.StopDiscovery(&client_b_);
   env_.Stop();
 }
 
-TEST_F(P2pClusterPcpHandlerTest, CanConnect) {
+TEST_P(P2pClusterPcpHandlerTest, CanConnect) {
   env_.Start();
   std::string endpoint_name_a{"endpoint_name"};
   Mediums mediums_a;
@@ -124,20 +162,24 @@ TEST_F(P2pClusterPcpHandlerTest, CanConnect) {
   EndpointChannelManager ecm_b;
   EndpointManager em_a(&ecm_a);
   EndpointManager em_b(&ecm_b);
-  P2pClusterPcpHandler handler_a(mediums_a, &em_a, &ecm_a);
-  P2pClusterPcpHandler handler_b(mediums_b, &em_b, &ecm_b);
+  BwuManager bwu_a(mediums_a, em_a, ecm_a, {},
+                   {.allow_upgrade_to = {.bluetooth = true}});
+  BwuManager bwu_b(mediums_b, em_b, ecm_b, {},
+                   {.allow_upgrade_to = {.bluetooth = true}});
+  P2pClusterPcpHandler handler_a(&mediums_a, &em_a, &ecm_a, &bwu_a);
+  P2pClusterPcpHandler handler_b(&mediums_b, &em_b, &ecm_b, &bwu_b);
   CountDownLatch discover_latch(1);
   CountDownLatch connect_latch(2);
   struct DiscoveredInfo {
     std::string endpoint_id;
-    std::string endpoint_name;
+    ByteArray endpoint_info;
     std::string service_id;
   } discovered;
   EXPECT_EQ(
       handler_a.StartAdvertising(
           &client_a_, service_id_, options_,
           {
-              .name = endpoint_name_a,
+              .endpoint_info = ByteArray{endpoint_name_a},
               .listener =
                   {
                       .initiated_cb =
@@ -156,13 +198,13 @@ TEST_F(P2pClusterPcpHandlerTest, CanConnect) {
                     .endpoint_found_cb =
                         [&discover_latch, &discovered](
                             const std::string& endpoint_id,
-                            const std::string& endpoint_name,
+                            const ByteArray& endpoint_info,
                             const std::string& service_id) {
                           NEARBY_LOG(INFO, "Device discovered: id=%s",
                                      endpoint_id.c_str());
                           discovered = {
                               .endpoint_id = endpoint_id,
-                              .endpoint_name = endpoint_name,
+                              .endpoint_info = endpoint_info,
                               .service_id = service_id,
                           };
                           discover_latch.CountDown();
@@ -171,12 +213,12 @@ TEST_F(P2pClusterPcpHandlerTest, CanConnect) {
             Status{Status::kSuccess});
 
   EXPECT_TRUE(discover_latch.Await(absl::Milliseconds(1000)).result());
-  EXPECT_EQ(endpoint_name_a, discovered.endpoint_name);
+  EXPECT_EQ(endpoint_name_a, std::string{discovered.endpoint_info});
 
   handler_b.RequestConnection(
       &client_b_, discovered.endpoint_id,
       {
-          .name = discovered.endpoint_name,
+          .endpoint_info = discovered.endpoint_info,
           .listener =
               {
                   .initiated_cb =
@@ -187,10 +229,16 @@ TEST_F(P2pClusterPcpHandlerTest, CanConnect) {
                         connect_latch.CountDown();
                       },
               },
-      });
+      },
+      options_);
   EXPECT_TRUE(connect_latch.Await(absl::Milliseconds(1000)).result());
+  bwu_a.Shutdown();
+  bwu_b.Shutdown();
   env_.Stop();
 }
+
+INSTANTIATE_TEST_SUITE_P(ParametrisedPcpHandlerTest, P2pClusterPcpHandlerTest,
+                         ::testing::ValuesIn(kTestCases));
 
 }  // namespace
 }  // namespace connections

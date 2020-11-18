@@ -32,6 +32,7 @@ import * as Common from '../common/common.js';
 import * as Extensions from '../extensions/extensions.js';
 import * as Host from '../host/host.js';
 import * as ObjectUI from '../object_ui/object_ui.js';
+import * as Root from '../root/root.js';
 import * as SDK from '../sdk/sdk.js';
 import * as Snippets from '../snippets/snippets.js';
 import * as UI from '../ui/ui.js';
@@ -43,6 +44,9 @@ import {NavigatorView} from './NavigatorView.js';
 import {Events, SourcesView} from './SourcesView.js';
 import {ThreadsSidebarPane} from './ThreadsSidebarPane.js';
 import {UISourceCodeFrame} from './UISourceCodeFrame.js';
+
+/** @type {!SourcesPanel} */
+let sourcesPanelInstance;
 
 /**
  * @implements {UI.ContextMenu.Provider}
@@ -125,7 +129,7 @@ export class SourcesPanel extends UI.Panel.Panel {
 
     this._threadsSidebarPane = null;
     this._watchSidebarPane = /** @type {!UI.View.View} */ (UI.ViewManager.ViewManager.instance().view('sources.watch'));
-    this._callstackPane = self.runtime.sharedInstance(CallStackSidebarPane);
+    this._callstackPane = CallStackSidebarPane.instance();
 
     Common.Settings.Settings.instance()
         .moduleSetting('sidebarPosition')
@@ -156,19 +160,22 @@ export class SourcesPanel extends UI.Panel.Panel {
     SDK.SDKModel.TargetManager.instance().addModelListener(
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.GlobalObjectCleared,
         event => this._debuggerResumed(/** @type {!SDK.DebuggerModel.DebuggerModel} */ (event.data)));
-    self.Extensions.extensionServer.addEventListener(
+    Extensions.ExtensionServer.ExtensionServer.instance().addEventListener(
         Extensions.ExtensionServer.Events.SidebarPaneAdded, this._extensionSidebarPaneAdded, this);
     SDK.SDKModel.TargetManager.instance().observeTargets(this);
   }
 
   /**
+   * @param {{forceNew: ?boolean}=} opts
    * @return {!SourcesPanel}
    */
-  static instance() {
-    if (SourcesPanel._instance) {
-      return SourcesPanel._instance;
+  static instance(opts = {forceNew: null}) {
+    const {forceNew} = opts;
+    if (!sourcesPanelInstance || forceNew) {
+      sourcesPanelInstance = new SourcesPanel();
     }
-    return /** @type {!SourcesPanel} */ (self.runtime.sharedInstance(SourcesPanel));
+
+    return sourcesPanelInstance;
   }
 
   /**
@@ -178,7 +185,7 @@ export class SourcesPanel extends UI.Panel.Panel {
     panel._sourcesView.leftToolbar().removeToolbarItems();
     panel._sourcesView.rightToolbar().removeToolbarItems();
     panel._sourcesView.bottomToolbar().removeToolbarItems();
-    const isInWrapper = WrapperView.isShowing() && !self.UI.inspectorView.isDrawerMinimized();
+    const isInWrapper = WrapperView.isShowing() && !UI.InspectorView.InspectorView.instance().isDrawerMinimized();
     if (panel._splitWidget.isVertical() || isInWrapper) {
       panel._splitWidget.uninstallResizer(panel._sourcesView.toolbarContainerElement());
     } else {
@@ -264,7 +271,7 @@ export class SourcesPanel extends UI.Panel.Panel {
     super.wasShown();
     const wrapper = WrapperView._instance;
     if (wrapper && wrapper.isShowing()) {
-      self.UI.inspectorView.setDrawerMinimized(true);
+      UI.InspectorView.InspectorView.instance().setDrawerMinimized(true);
       SourcesPanel.updateResizerAndSidebarButtons(this);
     }
     this.editorView.setMainWidget(this._sourcesView);
@@ -278,7 +285,7 @@ export class SourcesPanel extends UI.Panel.Panel {
     UI.Context.Context.instance().setFlavor(SourcesPanel, null);
     if (WrapperView.isShowing()) {
       WrapperView._instance._showViewInWrapper();
-      self.UI.inspectorView.setDrawerMinimized(false);
+      UI.InspectorView.InspectorView.instance().setDrawerMinimized(false);
       SourcesPanel.updateResizerAndSidebarButtons(this);
     }
   }
@@ -303,7 +310,7 @@ export class SourcesPanel extends UI.Panel.Panel {
     if (WrapperView.isShowing()) {
       return true;
     }
-    if (!self.UI.inspectorView.canSelectPanel('sources')) {
+    if (!UI.InspectorView.InspectorView.instance().canSelectPanel('sources')) {
       return false;
     }
     UI.ViewManager.ViewManager.instance().showView('sources');
@@ -428,7 +435,7 @@ export class SourcesPanel extends UI.Panel.Panel {
    * @param {boolean=} skipReveal
    */
   _revealInNavigator(uiSourceCode, skipReveal) {
-    const extensions = self.runtime.extensions(NavigatorView);
+    const extensions = Root.Runtime.Runtime.instance().extensions(NavigatorView);
     Promise.all(extensions.map(extension => extension.instance())).then(filterNavigators.bind(this));
 
     /**
@@ -938,7 +945,7 @@ export class SourcesPanel extends UI.Panel.Panel {
     } else if (position === 'bottom') {
       vertically = true;
     } else {
-      vertically = self.UI.inspectorView.element.offsetWidth < 680;
+      vertically = UI.InspectorView.InspectorView.instance().element.offsetWidth < 680;
     }
 
     if (this.sidebarPaneView && vertically === !this._splitWidget.isVertical()) {
@@ -1018,7 +1025,7 @@ export class SourcesPanel extends UI.Panel.Panel {
     }
 
     this._sidebarPaneStack.appendApplicableItems('sources.sidebar-bottom');
-    const extensionSidebarPanes = self.Extensions.extensionServer.sidebarPanes();
+    const extensionSidebarPanes = Extensions.ExtensionServer.ExtensionServer.instance().sidebarPanes();
     for (let i = 0; i < extensionSidebarPanes.length; ++i) {
       this._addExtensionSidebarPane(extensionSidebarPanes[i]);
     }
@@ -1262,7 +1269,7 @@ export class WrapperView extends UI.Widget.VBox {
     if (!SourcesPanel.instance().isShowing()) {
       this._showViewInWrapper();
     } else {
-      self.UI.inspectorView.setDrawerMinimized(true);
+      UI.InspectorView.InspectorView.instance().setDrawerMinimized(true);
     }
     SourcesPanel.updateResizerAndSidebarButtons(SourcesPanel.instance());
   }
@@ -1271,7 +1278,7 @@ export class WrapperView extends UI.Widget.VBox {
    * @override
    */
   willHide() {
-    self.UI.inspectorView.setDrawerMinimized(false);
+    UI.InspectorView.InspectorView.instance().setDrawerMinimized(false);
     setImmediate(() => SourcesPanel.updateResizerAndSidebarButtons(SourcesPanel.instance()));
   }
 

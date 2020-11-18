@@ -285,6 +285,7 @@ source_set("dawn_end2end_tests_sources") {
     "end2end/DrawIndirectTests.cpp",
     "end2end/DrawTests.cpp",
     "end2end/DynamicBufferOffsetTests.cpp",
+    "end2end/EntryPointTests.cpp",
     "end2end/FenceTests.cpp",
     "end2end/GpuMemorySynchronizationTests.cpp",
     "end2end/IndexFormatTests.cpp",
@@ -395,7 +396,7 @@ source_set("dawn_white_box_tests_sources") {
     sources += [
       "white_box/D3D12DescriptorHeapTests.cpp",
       "white_box/D3D12ResidencyTests.cpp",
-      "white_box/D3D12SmallTextureTests.cpp",
+      "white_box/D3D12ResourceHeapTests.cpp",
     ]
   }
 

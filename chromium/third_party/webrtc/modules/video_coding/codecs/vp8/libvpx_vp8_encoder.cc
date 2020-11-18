@@ -291,7 +291,6 @@ vpx_enc_frame_flags_t LibvpxVp8Encoder::EncodeFlags(
 LibvpxVp8Encoder::LibvpxVp8Encoder(std::unique_ptr<LibvpxInterface> interface,
                                    VP8Encoder::Settings settings)
     : libvpx_(std::move(interface)),
-      experimental_cpu_speed_config_arm_(CpuSpeedExperiment::GetConfigs()),
       rate_control_settings_(RateControlSettings::ParseFromFieldTrials()),
       requested_resolution_alignment_override_(
           GetRequestedResolutionAlignmentOverride()),
@@ -730,13 +729,16 @@ int LibvpxVp8Encoder::GetCpuSpeed(int width, int height) {
   // On mobile platform, use a lower speed setting for lower resolutions for
   // CPUs with 4 or more cores.
   RTC_DCHECK_GT(number_of_cores_, 0);
+  if (experimental_cpu_speed_config_arm_
+          .GetValue(width * height, number_of_cores_)
+          .has_value()) {
+    return experimental_cpu_speed_config_arm_
+        .GetValue(width * height, number_of_cores_)
+        .value();
+  }
+
   if (number_of_cores_ <= 3)
     return -12;
-
-  if (experimental_cpu_speed_config_arm_) {
-    return CpuSpeedExperiment::GetValue(width * height,
-                                        *experimental_cpu_speed_config_arm_);
-  }
 
   if (width * height <= 352 * 288)
     return -8;
@@ -1310,14 +1312,14 @@ int LibvpxVp8Encoder::RegisterEncodeCompleteCallback(
 // static
 LibvpxVp8Encoder::VariableFramerateExperiment
 LibvpxVp8Encoder::ParseVariableFramerateConfig(std::string group_name) {
-  FieldTrialFlag enabled = FieldTrialFlag("Enabled");
+  FieldTrialFlag disabled = FieldTrialFlag("Disabled");
   FieldTrialParameter<double> framerate_limit("min_fps", 5.0);
   FieldTrialParameter<int> qp("min_qp", 15);
   FieldTrialParameter<int> undershoot_percentage("undershoot", 30);
-  ParseFieldTrial({&enabled, &framerate_limit, &qp, &undershoot_percentage},
+  ParseFieldTrial({&disabled, &framerate_limit, &qp, &undershoot_percentage},
                   field_trial::FindFullName(group_name));
   VariableFramerateExperiment config;
-  config.enabled = enabled.Get();
+  config.enabled = !disabled.Get();
   config.framerate_limit = framerate_limit.Get();
   config.steady_state_qp = qp.Get();
   config.steady_state_undershoot_percentage = undershoot_percentage.Get();

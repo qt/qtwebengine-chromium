@@ -384,8 +384,7 @@ void DnsDataGraphImpl::StartTracking(const DomainName& domain,
   ScopedCallbackHandler creation_handler =
       GetScopedCreationHandler(std::move(on_start_tracking));
 
-  auto pair =
-      nodes_.emplace(domain, std::make_unique<Node>(std::move(domain), this));
+  auto pair = nodes_.emplace(domain, std::make_unique<Node>(domain, this));
 
   OSP_DCHECK(pair.second);
   OSP_DCHECK(nodes_.find(domain) != nodes_.end());

@@ -30,8 +30,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
                 case wgpu::LoadOp::Load:
                     return D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -41,8 +39,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_DISCARD;
                 case wgpu::StoreOp::Store:
                     return D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_PRESERVE;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -110,9 +106,9 @@ namespace dawn_native { namespace d3d12 {
         }
     }
 
-    void RenderPassBuilder::SetRenderTargetView(uint32_t attachmentIndex,
+    void RenderPassBuilder::SetRenderTargetView(ColorAttachmentIndex attachmentIndex,
                                                 D3D12_CPU_DESCRIPTOR_HANDLE baseDescriptor) {
-        ASSERT(mColorAttachmentCount < kMaxColorAttachments);
+        ASSERT(mColorAttachmentCount < kMaxColorAttachmentsTyped);
         mRenderTargetViews[attachmentIndex] = baseDescriptor;
         mRenderPassRenderTargetDescriptors[attachmentIndex].cpuDescriptor = baseDescriptor;
         mColorAttachmentCount++;
@@ -122,7 +118,7 @@ namespace dawn_native { namespace d3d12 {
         mRenderPassDepthStencilDesc.cpuDescriptor = baseDescriptor;
     }
 
-    uint32_t RenderPassBuilder::GetColorAttachmentCount() const {
+    ColorAttachmentIndex RenderPassBuilder::GetColorAttachmentCount() const {
         return mColorAttachmentCount;
     }
 
@@ -130,9 +126,9 @@ namespace dawn_native { namespace d3d12 {
         return mHasDepth;
     }
 
-    const D3D12_RENDER_PASS_RENDER_TARGET_DESC*
+    ityp::span<ColorAttachmentIndex, const D3D12_RENDER_PASS_RENDER_TARGET_DESC>
     RenderPassBuilder::GetRenderPassRenderTargetDescriptors() const {
-        return mRenderPassRenderTargetDescriptors.data();
+        return {mRenderPassRenderTargetDescriptors.data(), mColorAttachmentCount};
     }
 
     const D3D12_RENDER_PASS_DEPTH_STENCIL_DESC*
@@ -148,7 +144,7 @@ namespace dawn_native { namespace d3d12 {
         return mRenderTargetViews.data();
     }
 
-    void RenderPassBuilder::SetRenderTargetBeginningAccess(uint32_t attachment,
+    void RenderPassBuilder::SetRenderTargetBeginningAccess(ColorAttachmentIndex attachment,
                                                            wgpu::LoadOp loadOp,
                                                            dawn_native::Color clearColor,
                                                            DXGI_FORMAT format) {
@@ -168,13 +164,13 @@ namespace dawn_native { namespace d3d12 {
         }
     }
 
-    void RenderPassBuilder::SetRenderTargetEndingAccess(uint32_t attachment,
+    void RenderPassBuilder::SetRenderTargetEndingAccess(ColorAttachmentIndex attachment,
                                                         wgpu::StoreOp storeOp) {
         mRenderPassRenderTargetDescriptors[attachment].EndingAccess.Type =
             D3D12EndingAccessType(storeOp);
     }
 
-    void RenderPassBuilder::SetRenderTargetEndingAccessResolve(uint32_t attachment,
+    void RenderPassBuilder::SetRenderTargetEndingAccessResolve(ColorAttachmentIndex attachment,
                                                                wgpu::StoreOp storeOp,
                                                                TextureView* resolveSource,
                                                                TextureView* resolveDestination) {

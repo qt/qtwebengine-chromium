@@ -222,10 +222,10 @@ class UniformEncodingVisitorD3D : public sh::BlockEncoderVisitor
           mUniformMapOut(uniformMapOut)
     {}
 
-    void visitNamedSampler(const sh::ShaderVariable &sampler,
-                           const std::string &name,
-                           const std::string &mappedName,
-                           const std::vector<unsigned int> &arraySizes) override
+    void visitNamedSamplerOrImage(const sh::ShaderVariable &sampler,
+                                  const std::string &name,
+                                  const std::string &mappedName,
+                                  const std::vector<unsigned int> &arraySizes) override
     {
         auto uniformMapEntry = mUniformMapOut->find(name);
         if (uniformMapEntry == mUniformMapOut->end())
@@ -524,7 +524,7 @@ bool ProgramD3DMetadata::usesCustomOutVars() const
 {
 
     const rx::ShaderD3D *shader = mAttachedShaders[gl::ShaderType::Vertex];
-    int version                 = shader ? shader->getData().getShaderVersion() : -1;
+    int version                 = shader ? shader->getState().getShaderVersion() : -1;
 
     switch (mClientType)
     {
@@ -2032,7 +2032,8 @@ angle::Result ProgramD3D::getComputeExecutableForImage2DBindLayout(
 
 std::unique_ptr<LinkEvent> ProgramD3D::link(const gl::Context *context,
                                             const gl::ProgramLinkedResources &resources,
-                                            gl::InfoLog &infoLog)
+                                            gl::InfoLog &infoLog,
+                                            const gl::ProgramMergedVaryings & /*mergedVaryings*/)
 {
     ANGLE_TRACE_EVENT0("gpu.angle", "ProgramD3D::link");
     const auto &data = context->getState();
@@ -2642,7 +2643,7 @@ template <typename T>
 void ProgramD3D::setUniformImpl(const gl::VariableLocation &locationInfo,
                                 GLsizei count,
                                 const T *v,
-                                uint8_t *targetData,
+                                uint8_t *targetState,
                                 GLenum uniformType)
 {
     D3DUniform *targetUniform             = mD3DUniforms[locationInfo.index];
@@ -2651,7 +2652,7 @@ void ProgramD3D::setUniformImpl(const gl::VariableLocation &locationInfo,
 
     if (targetUniform->typeInfo.type == uniformType)
     {
-        T *dest         = reinterpret_cast<T *>(targetData) + arrayElementOffset * 4;
+        T *dest         = reinterpret_cast<T *>(targetState) + arrayElementOffset * 4;
         const T *source = v;
 
         for (GLint i = 0; i < count; i++, dest += 4, source += components)
@@ -2662,7 +2663,7 @@ void ProgramD3D::setUniformImpl(const gl::VariableLocation &locationInfo,
     else
     {
         ASSERT(targetUniform->typeInfo.type == gl::VariableBoolVectorType(uniformType));
-        GLint *boolParams = reinterpret_cast<GLint *>(targetData) + arrayElementOffset * 4;
+        GLint *boolParams = reinterpret_cast<GLint *>(targetState) + arrayElementOffset * 4;
 
         for (GLint i = 0; i < count; i++)
         {

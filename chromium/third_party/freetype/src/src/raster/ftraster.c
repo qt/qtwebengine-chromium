@@ -459,6 +459,10 @@
 #define IS_TOP_OVERSHOOT( x )    \
           (Bool)( x - FLOOR( x ) >= ras.precision_half )
 
+  /* smart dropout rounding to find which pixel is closer to span ends;    */
+  /* to mimick Windows, symmetric cases break down indepenent of precision */
+#define SMART( p, q )  FLOOR( ( (p) + (q) + ras.precision * 63 / 64 ) >> 1 )
+
 #if FT_RENDER_POOL_SIZE > 2048
 #define FT_MAX_BLACK_POOL  ( FT_RENDER_POOL_SIZE / sizeof ( Long ) )
 #else
@@ -2241,11 +2245,10 @@
 
     /* in high-precision mode, we need 12 digits after the comma to */
     /* represent multiples of 1/(1<<12) = 1/4096                    */
-    FT_TRACE7(( "  y=%d x=[%.12f;%.12f], drop-out=%d",
+    FT_TRACE7(( "  y=%d x=[% .12f;% .12f]",
                 y,
                 x1 / (double)ras.precision,
-                x2 / (double)ras.precision,
-                dropOutControl ));
+                x2 / (double)ras.precision ));
 
     /* Drop-out control */
 
@@ -2315,7 +2318,7 @@
     Short  c1, f1;
 
 
-    FT_TRACE7(( "  y=%d x=[%.12f;%.12f]",
+    FT_TRACE7(( "  y=%d x=[% .12f;% .12f]",
                 y,
                 x1 / (double)ras.precision,
                 x2 / (double)ras.precision ));
@@ -2352,8 +2355,6 @@
       Int  dropOutControl = left->flags & 7;
 
 
-      FT_TRACE7(( ", drop-out=%d", dropOutControl ));
-
       if ( e1 == e2 + ras.precision )
       {
         switch ( dropOutControl )
@@ -2363,7 +2364,7 @@
           break;
 
         case 4: /* smart drop-outs including stubs */
-          pxl = FLOOR( ( x1 + x2 - 1 ) / 2 + ras.precision_half );
+          pxl = SMART( x1, x2 );
           break;
 
         case 1: /* simple drop-outs excluding stubs */
@@ -2412,7 +2413,7 @@
           if ( dropOutControl == 1 )
             pxl = e2;
           else
-            pxl = FLOOR( ( x1 + x2 - 1 ) / 2 + ras.precision_half );
+            pxl = SMART( x1, x2 );
           break;
 
         default: /* modes 2, 3, 6, 7 */
@@ -2447,7 +2448,7 @@
 
     if ( e1 >= 0 && e1 < ras.bWidth )
     {
-      FT_TRACE7(( " -> x=%ld (drop-out)", e1 ));
+      FT_TRACE7(( " -> x=%ld", e1 ));
 
       c1 = (Short)( e1 >> 3 );
       f1 = (Short)( e1 & 7 );
@@ -2456,7 +2457,7 @@
     }
 
   Exit:
-    FT_TRACE7(( "\n" ));
+    FT_TRACE7(( " dropout=%d\n", left->flags & 7 ));
   }
 
 
@@ -2494,44 +2495,68 @@
                                   PProfile    left,
                                   PProfile    right )
   {
+    Long  e1, e2;
+
     FT_UNUSED( left );
     FT_UNUSED( right );
 
 
-    if ( x2 - x1 < ras.precision )
+    FT_TRACE7(( "  x=%d y=[% .12f;% .12f]",
+                y,
+                x1 / (double)ras.precision,
+                x2 / (double)ras.precision ));
+
+    /* We should not need this procedure but the vertical sweep   */
+    /* mishandles horizontal lines through pixel centers. So we   */
+    /* have to check perfectly aligned span edges here.           */
+    /*                                                            */
+    /* XXX: Can we handle horizontal lines better and drop this?  */
+
+    e1 = CEILING( x1 );
+
+    if ( x1 == e1 )
     {
-      Long  e1, e2;
+      e1 = TRUNC( e1 );
 
-
-      FT_TRACE7(( "  x=%d y=[%.12f;%.12f]",
-                  y,
-                  x1 / (double)ras.precision,
-                  x2 / (double)ras.precision ));
-
-      e1 = CEILING( x1 );
-      e2 = FLOOR  ( x2 );
-
-      if ( e1 == e2 )
+      if ( e1 >= 0 && (ULong)e1 < ras.target.rows )
       {
-        e1 = TRUNC( e1 );
-
-        if ( e1 >= 0 && (ULong)e1 < ras.target.rows )
-        {
-          Byte   f1;
-          PByte  bits;
+        Byte   f1;
+        PByte  bits;
 
 
-          FT_TRACE7(( " -> y=%ld (drop-out)", e1 ));
+        bits = ras.bOrigin + ( y >> 3 ) - e1 * ras.target.pitch;
+        f1   = (Byte)( 0x80 >> ( y & 7 ) );
 
-          bits = ras.bOrigin + ( y >> 3 ) - e1 * ras.target.pitch;
-          f1   = (Byte)( 0x80 >> ( y & 7 ) );
+        FT_TRACE7(( bits[0] & f1 ? " redundant"
+                                 : " -> y=%ld edge", e1 ));
 
-          bits[0] |= f1;
-        }
+        bits[0] |= f1;
       }
-
-      FT_TRACE7(( "\n" ));
     }
+
+    e2 = FLOOR  ( x2 );
+
+    if ( x2 == e2 )
+    {
+      e2 = TRUNC( e2 );
+
+      if ( e2 >= 0 && (ULong)e2 < ras.target.rows )
+      {
+        Byte   f1;
+        PByte  bits;
+
+
+        bits = ras.bOrigin + ( y >> 3 ) - e2 * ras.target.pitch;
+        f1   = (Byte)( 0x80 >> ( y & 7 ) );
+
+        FT_TRACE7(( bits[0] & f1 ? " redundant"
+                                 : " -> y=%ld edge", e2 ));
+
+        bits[0] |= f1;
+      }
+    }
+
+    FT_TRACE7(( "\n" ));
   }
 
 
@@ -2547,7 +2572,7 @@
     Byte   f1;
 
 
-    FT_TRACE7(( "  x=%d y=[%.12f;%.12f]",
+    FT_TRACE7(( "  x=%d y=[% .12f;% .12f]",
                 y,
                 x1 / (double)ras.precision,
                 x2 / (double)ras.precision ));
@@ -2573,8 +2598,6 @@
       Int  dropOutControl = left->flags & 7;
 
 
-      FT_TRACE7(( ", dropout=%d", dropOutControl ));
-
       if ( e1 == e2 + ras.precision )
       {
         switch ( dropOutControl )
@@ -2584,7 +2607,7 @@
           break;
 
         case 4: /* smart drop-outs including stubs */
-          pxl = FLOOR( ( x1 + x2 - 1 ) / 2 + ras.precision_half );
+          pxl = SMART( x1, x2 );
           break;
 
         case 1: /* simple drop-outs excluding stubs */
@@ -2608,7 +2631,7 @@
           if ( dropOutControl == 1 )
             pxl = e2;
           else
-            pxl = FLOOR( ( x1 + x2 - 1 ) / 2 + ras.precision_half );
+            pxl = SMART( x1, x2 );
           break;
 
         default: /* modes 2, 3, 6, 7 */
@@ -2644,7 +2667,7 @@
 
     if ( e1 >= 0 && (ULong)e1 < ras.target.rows )
     {
-      FT_TRACE7(( " -> y=%ld (drop-out)", e1 ));
+      FT_TRACE7(( " -> y=%ld", e1 ));
 
       bits  = ras.bOrigin + ( y >> 3 ) - e1 * ras.target.pitch;
       f1    = (Byte)( 0x80 >> ( y & 7 ) );
@@ -2653,7 +2676,7 @@
     }
 
   Exit:
-    FT_TRACE7(( "\n" ));
+    FT_TRACE7(( " dropout=%d\n", left->flags & 7 ));
   }
 
 

@@ -80,7 +80,7 @@ namespace dawn_native { namespace d3d12 {
         const D3D12DeviceInfo& GetDeviceInfo() const;
 
         MaybeError NextSerial();
-        MaybeError WaitForSerial(Serial serial);
+        MaybeError WaitForSerial(ExecutionSerial serial);
 
         void ReferenceUntilUnused(ComPtr<IUnknown> object);
 
@@ -103,7 +103,7 @@ namespace dawn_native { namespace d3d12 {
         MaybeError CopyFromStagingToTexture(const StagingBufferBase* source,
                                             const TextureDataLayout& src,
                                             TextureCopy* dst,
-                                            const Extent3D& copySizePixels);
+                                            const Extent3D& copySizePixels) override;
 
         ResultOrError<ResourceHeapAllocation> AllocateMemory(
             D3D12_HEAP_TYPE heapType,
@@ -130,13 +130,16 @@ namespace dawn_native { namespace d3d12 {
 
         Ref<TextureBase> WrapSharedHandle(const ExternalImageDescriptor* descriptor,
                                           HANDLE sharedHandle,
-                                          uint64_t acquireMutexKey,
+                                          ExternalMutexSerial acquireMutexKey,
                                           bool isSwapChainTexture);
         ResultOrError<ComPtr<IDXGIKeyedMutex>> CreateKeyedMutexForTexture(
             ID3D12Resource* d3d12Resource);
         void ReleaseKeyedMutexForTexture(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex);
 
         void InitTogglesFromDriver();
+
+        uint32_t GetOptimalBytesPerRowAlignment() const override;
+        uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
 
       private:
         using DeviceBase::DeviceBase;
@@ -177,7 +180,7 @@ namespace dawn_native { namespace d3d12 {
 
         ComPtr<ID3D12Fence> mFence;
         HANDLE mFenceEvent = nullptr;
-        Serial CheckAndUpdateCompletedSerials() override;
+        ExecutionSerial CheckAndUpdateCompletedSerials() override;
 
         ComPtr<ID3D12Device> mD3d12Device;  // Device is owned by adapter and will not be outlived.
         ComPtr<ID3D12CommandQueue> mCommandQueue;
@@ -193,7 +196,7 @@ namespace dawn_native { namespace d3d12 {
 
         CommandRecordingContext mPendingCommands;
 
-        SerialQueue<ComPtr<IUnknown>> mUsedComObjectRefs;
+        SerialQueue<ExecutionSerial, ComPtr<IUnknown>> mUsedComObjectRefs;
 
         std::unique_ptr<CommandAllocatorManager> mCommandAllocatorManager;
         std::unique_ptr<ResourceAllocatorManager> mResourceAllocatorManager;

@@ -22,14 +22,13 @@
 #include "dawn_native/Error.h"
 #include "dawn_native/Format.h"
 #include "dawn_native/Forward.h"
+#include "dawn_native/IntegerTypes.h"
 #include "dawn_native/PerStage.h"
-
 #include "dawn_native/dawn_platform.h"
-
-#include "spvc/spvc.hpp"
 
 #include <bitset>
 #include <map>
+#include <unordered_map>
 #include <vector>
 
 namespace spirv_cross {
@@ -38,20 +37,25 @@ namespace spirv_cross {
 
 namespace dawn_native {
 
+    struct EntryPointMetadata;
+
     MaybeError ValidateShaderModuleDescriptor(DeviceBase* device,
                                               const ShaderModuleDescriptor* descriptor);
+    MaybeError ValidateCompatibilityWithPipelineLayout(const EntryPointMetadata& entryPoint,
+                                                       const PipelineLayoutBase* layout);
 
-    class ShaderModuleBase : public CachedObject {
-      public:
-        enum class Type { Undefined, Spirv, Wgsl };
+    RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata& entryPoint,
+                                                            const PipelineLayoutBase* layout);
 
-        ShaderModuleBase(DeviceBase* device, const ShaderModuleDescriptor* descriptor);
-        ~ShaderModuleBase() override;
+    // Contains all the reflection data for a valid (ShaderModule, entryPoint, stage). They are
+    // stored in the ShaderModuleBase and destroyed only when the shader module is destroyed so
+    // pointers to EntryPointMetadata are safe to store as long as you also keep a Ref to the
+    // ShaderModuleBase.
+    struct EntryPointMetadata {
+        EntryPointMetadata();
 
-        static ShaderModuleBase* MakeError(DeviceBase* device);
-
-        MaybeError ExtractSpirvInfo(const spirv_cross::Compiler& compiler);
-
+        // Per-binding shader metadata contains some SPIRV specific information in addition to
+        // most of the frontend per-binding information.
         struct ShaderBindingInfo : BindingInfo {
             // The SPIRV ID of the resource.
             uint32_t id;
@@ -63,22 +67,42 @@ namespace dawn_native {
             using BindingInfo::visibility;
         };
 
-        using BindingInfoMap = std::map<BindingNumber, ShaderBindingInfo>;
-        using ModuleBindingInfo = ityp::array<BindGroupIndex, BindingInfoMap, kMaxBindGroups>;
+        // bindings[G][B] is the reflection data for the binding defined with
+        // [[group=G, binding=B]] in WGSL / SPIRV.
+        using BindingGroupInfoMap = std::map<BindingNumber, ShaderBindingInfo>;
+        using BindingInfo = ityp::array<BindGroupIndex, BindingGroupInfoMap, kMaxBindGroups>;
+        BindingInfo bindings;
 
-        const ModuleBindingInfo& GetBindingInfo() const;
-        const std::bitset<kMaxVertexAttributes>& GetUsedVertexAttributes() const;
-        SingleShaderStage GetExecutionModel() const;
+        // The set of vertex attributes this entryPoint uses.
+        std::bitset<kMaxVertexAttributes> usedVertexAttributes;
 
         // An array to record the basic types (float, int and uint) of the fragment shader outputs
         // or Format::Type::Other means the fragment shader output is unused.
-        using FragmentOutputBaseTypes = std::array<Format::Type, kMaxColorAttachments>;
-        const FragmentOutputBaseTypes& GetFragmentOutputBaseTypes() const;
+        using FragmentOutputBaseTypes =
+            ityp::array<ColorAttachmentIndex, Format::Type, kMaxColorAttachments>;
+        FragmentOutputBaseTypes fragmentOutputFormatBaseTypes;
 
-        MaybeError ValidateCompatibilityWithPipelineLayout(const PipelineLayoutBase* layout) const;
+        // The local workgroup size declared for a compute entry point (or 0s otehrwise).
+        Origin3D localWorkgroupSize;
 
-        RequiredBufferSizes ComputeRequiredBufferSizesForLayout(
-            const PipelineLayoutBase* layout) const;
+        // The shader stage for this binding.
+        SingleShaderStage stage;
+    };
+
+    class ShaderModuleBase : public CachedObject {
+      public:
+        ShaderModuleBase(DeviceBase* device, const ShaderModuleDescriptor* descriptor);
+        ~ShaderModuleBase() override;
+
+        static ShaderModuleBase* MakeError(DeviceBase* device);
+
+        // Return true iff the module has an entrypoint called `entryPoint` for stage `stage`.
+        bool HasEntryPoint(const std::string& entryPoint, SingleShaderStage stage) const;
+
+        // Returns the metadata for the given `entryPoint` and `stage`. HasEntryPoint with the same
+        // arguments must be true.
+        const EntryPointMetadata& GetEntryPoint(const std::string& entryPoint,
+                                                SingleShaderStage stage) const;
 
         // Functors necessary for the unordered_set<ShaderModuleBase*>-based cache.
         struct HashFunc {
@@ -88,7 +112,6 @@ namespace dawn_native {
             bool operator()(const ShaderModuleBase* a, const ShaderModuleBase* b) const;
         };
 
-        shaderc_spvc::Context* GetContext();
         const std::vector<uint32_t>& GetSpirv() const;
 
 #ifdef DAWN_ENABLE_WGSL
@@ -99,36 +122,19 @@ namespace dawn_native {
 #endif
 
       protected:
-        static MaybeError CheckSpvcSuccess(shaderc_spvc_status status, const char* error_msg);
-        shaderc_spvc::CompileOptions GetCompileOptions() const;
         MaybeError InitializeBase();
-
-        shaderc_spvc::Context mSpvcContext;
 
       private:
         ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag);
 
-        MaybeError ValidateCompatibilityWithBindGroupLayout(
-            BindGroupIndex group,
-            const BindGroupLayoutBase* layout) const;
-
-        std::vector<uint64_t> GetBindGroupMinBufferSizes(const BindingInfoMap& shaderMap,
-                                                         const BindGroupLayoutBase* layout) const;
-
-        // Different implementations reflection into the shader depending on
-        // whether using spvc, or directly accessing spirv-cross.
-        MaybeError ExtractSpirvInfoWithSpvc();
-        MaybeError ExtractSpirvInfoWithSpirvCross(const spirv_cross::Compiler& compiler);
-
+        enum class Type { Undefined, Spirv, Wgsl };
         Type mType;
+        std::vector<uint32_t> mOriginalSpirv;
         std::vector<uint32_t> mSpirv;
         std::string mWgsl;
 
-        ModuleBindingInfo mBindingInfo;
-        std::bitset<kMaxVertexAttributes> mUsedVertexAttributes;
-        SingleShaderStage mExecutionModel;
-
-        FragmentOutputBaseTypes mFragmentOutputFormatBaseTypes;
+        // A map from [name, stage] to EntryPointMetadata.
+        std::unordered_map<std::string, PerStage<std::unique_ptr<EntryPointMetadata>>> mEntryPoints;
     };
 
 }  // namespace dawn_native

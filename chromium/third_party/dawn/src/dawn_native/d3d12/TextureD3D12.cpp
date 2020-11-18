@@ -96,7 +96,9 @@ namespace dawn_native { namespace d3d12 {
             switch (dimension) {
                 case wgpu::TextureDimension::e2D:
                     return D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-                default:
+
+                case wgpu::TextureDimension::e1D:
+                case wgpu::TextureDimension::e3D:
                     UNREACHABLE();
             }
         }
@@ -191,7 +193,7 @@ namespace dawn_native { namespace d3d12 {
                 case wgpu::TextureFormat::BC5RGUnorm:
                     return DXGI_FORMAT_BC5_TYPELESS;
 
-                case wgpu::TextureFormat::BC6HRGBSfloat:
+                case wgpu::TextureFormat::BC6HRGBFloat:
                 case wgpu::TextureFormat::BC6HRGBUfloat:
                     return DXGI_FORMAT_BC6H_TYPELESS;
 
@@ -199,7 +201,7 @@ namespace dawn_native { namespace d3d12 {
                 case wgpu::TextureFormat::BC7RGBAUnormSrgb:
                     return DXGI_FORMAT_BC7_TYPELESS;
 
-                default:
+                case wgpu::TextureFormat::Undefined:
                     UNREACHABLE();
             }
         }
@@ -312,7 +314,7 @@ namespace dawn_native { namespace d3d12 {
                 return DXGI_FORMAT_BC5_SNORM;
             case wgpu::TextureFormat::BC5RGUnorm:
                 return DXGI_FORMAT_BC5_UNORM;
-            case wgpu::TextureFormat::BC6HRGBSfloat:
+            case wgpu::TextureFormat::BC6HRGBFloat:
                 return DXGI_FORMAT_BC6H_SF16;
             case wgpu::TextureFormat::BC6HRGBUfloat:
                 return DXGI_FORMAT_BC6H_UF16;
@@ -321,7 +323,7 @@ namespace dawn_native { namespace d3d12 {
             case wgpu::TextureFormat::BC7RGBAUnormSrgb:
                 return DXGI_FORMAT_BC7_UNORM_SRGB;
 
-            default:
+            case wgpu::TextureFormat::Undefined:
                 UNREACHABLE();
         }
     }
@@ -387,7 +389,7 @@ namespace dawn_native { namespace d3d12 {
     ResultOrError<Ref<TextureBase>> Texture::Create(Device* device,
                                                     const ExternalImageDescriptor* descriptor,
                                                     HANDLE sharedHandle,
-                                                    uint64_t acquireMutexKey,
+                                                    ExternalMutexSerial acquireMutexKey,
                                                     bool isSwapChainTexture) {
         const TextureDescriptor* textureDescriptor =
             reinterpret_cast<const TextureDescriptor*>(descriptor->cTextureDescriptor);
@@ -396,14 +398,14 @@ namespace dawn_native { namespace d3d12 {
             AcquireRef(new Texture(device, textureDescriptor, TextureState::OwnedExternal));
         DAWN_TRY(dawnTexture->InitializeAsExternalTexture(textureDescriptor, sharedHandle,
                                                           acquireMutexKey, isSwapChainTexture));
-        dawnTexture->SetIsSubresourceContentInitialized(descriptor->isCleared,
+        dawnTexture->SetIsSubresourceContentInitialized(descriptor->isInitialized,
                                                         dawnTexture->GetAllSubresources());
         return std::move(dawnTexture);
     }
 
     MaybeError Texture::InitializeAsExternalTexture(const TextureDescriptor* descriptor,
                                                     HANDLE sharedHandle,
-                                                    uint64_t acquireMutexKey,
+                                                    ExternalMutexSerial acquireMutexKey,
                                                     bool isSwapChainTexture) {
         Device* dawnDevice = ToBackend(GetDevice());
         DAWN_TRY(ValidateTextureDescriptor(dawnDevice, descriptor));
@@ -420,7 +422,7 @@ namespace dawn_native { namespace d3d12 {
         DAWN_TRY_ASSIGN(dxgiKeyedMutex,
                         dawnDevice->CreateKeyedMutexForTexture(d3d12Resource.Get()));
 
-        DAWN_TRY(CheckHRESULT(dxgiKeyedMutex->AcquireSync(acquireMutexKey, INFINITE),
+        DAWN_TRY(CheckHRESULT(dxgiKeyedMutex->AcquireSync(uint64_t(acquireMutexKey), INFINITE),
                               "D3D12 acquiring shared mutex"));
 
         mAcquireMutexKey = acquireMutexKey;
@@ -487,7 +489,7 @@ namespace dawn_native { namespace d3d12 {
         : TextureBase(device, descriptor, state),
           mSubresourceStateAndDecay(
               GetSubresourceCount(),
-              {D3D12_RESOURCE_STATES::D3D12_RESOURCE_STATE_COMMON, UINT64_MAX, false}) {
+              {D3D12_RESOURCE_STATES::D3D12_RESOURCE_STATE_COMMON, kMaxExecutionSerial, false}) {
     }
 
     Texture::Texture(Device* device,
@@ -527,7 +529,7 @@ namespace dawn_native { namespace d3d12 {
         device->DeallocateMemory(mResourceAllocation);
 
         if (mDxgiKeyedMutex != nullptr) {
-            mDxgiKeyedMutex->ReleaseSync(mAcquireMutexKey + 1);
+            mDxgiKeyedMutex->ReleaseSync(uint64_t(mAcquireMutexKey) + 1);
             device->ReleaseKeyedMutexForTexture(std::move(mDxgiKeyedMutex));
         }
     }
@@ -552,7 +554,6 @@ namespace dawn_native { namespace d3d12 {
                         return DXGI_FORMAT_R8_UINT;
                     default:
                         UNREACHABLE();
-                        return GetD3D12Format();
                 }
             default:
                 ASSERT(HasOneBit(GetFormat().aspects));
@@ -606,7 +607,7 @@ namespace dawn_native { namespace d3d12 {
     void Texture::TransitionSingleOrAllSubresources(std::vector<D3D12_RESOURCE_BARRIER>* barriers,
                                                     uint32_t index,
                                                     D3D12_RESOURCE_STATES newState,
-                                                    const Serial pendingCommandSerial,
+                                                    ExecutionSerial pendingCommandSerial,
                                                     bool allSubresources) {
         StateAndDecay* state = &mSubresourceStateAndDecay[index];
         // Reuse the subresource(s) directly and avoid transition when it isn't needed, and
@@ -686,6 +687,14 @@ namespace dawn_native { namespace d3d12 {
         }
     }
 
+    void Texture::TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
+                                                       std::vector<D3D12_RESOURCE_BARRIER>* barrier,
+                                                       wgpu::TextureUsage usage,
+                                                       const SubresourceRange& range) {
+        TransitionUsageAndGetResourceBarrier(commandContext, barrier,
+                                             D3D12TextureUsage(usage, GetFormat()), range);
+    }
+
     void Texture::TransitionUsageAndGetResourceBarrier(
         CommandRecordingContext* commandContext,
         std::vector<D3D12_RESOURCE_BARRIER>* barriers,
@@ -693,7 +702,8 @@ namespace dawn_native { namespace d3d12 {
         const SubresourceRange& range) {
         HandleTransitionSpecialCases(commandContext);
 
-        const Serial pendingCommandSerial = ToBackend(GetDevice())->GetPendingCommandSerial();
+        const ExecutionSerial pendingCommandSerial =
+            ToBackend(GetDevice())->GetPendingCommandSerial();
 
         // This transitions assume it is a 2D texture
         ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
@@ -742,7 +752,8 @@ namespace dawn_native { namespace d3d12 {
 
         HandleTransitionSpecialCases(commandContext);
 
-        const Serial pendingCommandSerial = ToBackend(GetDevice())->GetPendingCommandSerial();
+        const ExecutionSerial pendingCommandSerial =
+            ToBackend(GetDevice())->GetPendingCommandSerial();
         uint32_t subresourceCount = GetSubresourceCount();
         ASSERT(textureUsages.subresourceUsages.size() == subresourceCount);
         // This transitions assume it is a 2D texture
@@ -880,7 +891,6 @@ namespace dawn_native { namespace d3d12 {
                                     break;
                                 default:
                                     UNREACHABLE();
-                                    break;
                             }
                         }
 
@@ -952,7 +962,7 @@ namespace dawn_native { namespace d3d12 {
                 UploadHandle uploadHandle;
                 DAWN_TRY_ASSIGN(uploadHandle,
                                 uploader->Allocate(bufferSize, device->GetPendingCommandSerial(),
-                                                   GetFormat().blockByteSize));
+                                                   blockInfo.blockByteSize));
                 memset(uploadHandle.mappedBuffer, clearColor, bufferSize);
 
                 for (uint32_t level = range.baseMipLevel;
@@ -1042,6 +1052,7 @@ namespace dawn_native { namespace d3d12 {
                     ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
                     mSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
                     break;
+
                 default:
                     UNREACHABLE();
             }
@@ -1069,7 +1080,10 @@ namespace dawn_native { namespace d3d12 {
                     mSrvDesc.TextureCubeArray.MipLevels = descriptor->mipLevelCount;
                     mSrvDesc.TextureCubeArray.ResourceMinLODClamp = 0;
                     break;
-                default:
+
+                case wgpu::TextureViewDimension::e1D:
+                case wgpu::TextureViewDimension::e3D:
+                case wgpu::TextureViewDimension::Undefined:
                     UNREACHABLE();
             }
         }

@@ -125,14 +125,14 @@ public:
             const GrOpsRenderPass::LoadAndStoreInfo&,
             const GrOpsRenderPass::StencilLoadAndStoreInfo&,
             const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            bool usesXferBarriers) override;
+            GrXferBarrierFlags renderPassXferBarriers) override;
 
     void invalidateBoundRenderTarget() {
         fHWBoundRenderTargetUniqueID.makeInvalid();
     }
 
     GrStencilAttachment* createStencilAttachmentForRenderTarget(
-            const GrRenderTarget* rt, int width, int height, int numStencilSamples) override;
+            const GrRenderTarget* rt, SkISize dimensions, int numStencilSamples) override;
     void deleteBackendTexture(const GrBackendTexture&) override;
 
     bool compile(const GrProgramDesc&, const GrProgramInfo&) override;
@@ -752,7 +752,7 @@ private:
 
     friend class GrGLPathRendering; // For accessing setTextureUnit.
 
-    typedef GrGpu INHERITED;
+    using INHERITED = GrGpu;
 };
 
 #endif

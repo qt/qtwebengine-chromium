@@ -57,7 +57,7 @@ struct EncodedFrame {
         temporal_unit(nullptr),
         frame(frame),
         position_in_temporal_unit(position_in_temporal_unit) {
-    obu->MoveTileBuffer(&tile_buffers);
+    obu->MoveTileBuffers(&tile_buffers);
     frame->MarkFrameAsStarted();
   }
 

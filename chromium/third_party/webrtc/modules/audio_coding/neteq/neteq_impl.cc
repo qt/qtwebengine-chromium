@@ -387,22 +387,39 @@ int NetEqImpl::FilteredCurrentDelayMs() const {
 int NetEqImpl::NetworkStatistics(NetEqNetworkStatistics* stats) {
   MutexLock lock(&mutex_);
   assert(decoder_database_.get());
-  const size_t total_samples_in_buffers =
-      packet_buffer_->NumSamplesInBuffer(decoder_frame_length_) +
-      sync_buffer_->FutureLength();
-  assert(controller_.get());
-  stats->preferred_buffer_size_ms = controller_->TargetLevelMs();
-  stats->jitter_peaks_found = controller_->PeakFound();
-  stats_->GetNetworkStatistics(fs_hz_, total_samples_in_buffers,
-                               decoder_frame_length_, stats);
+  *stats = CurrentNetworkStatisticsInternal();
+  stats_->GetNetworkStatistics(decoder_frame_length_, stats);
   // Compensate for output delay chain.
-  stats->current_buffer_size_ms += output_delay_chain_ms_;
-  stats->preferred_buffer_size_ms += output_delay_chain_ms_;
   stats->mean_waiting_time_ms += output_delay_chain_ms_;
   stats->median_waiting_time_ms += output_delay_chain_ms_;
   stats->min_waiting_time_ms += output_delay_chain_ms_;
   stats->max_waiting_time_ms += output_delay_chain_ms_;
   return 0;
+}
+
+NetEqNetworkStatistics NetEqImpl::CurrentNetworkStatistics() const {
+  MutexLock lock(&mutex_);
+  return CurrentNetworkStatisticsInternal();
+}
+
+NetEqNetworkStatistics NetEqImpl::CurrentNetworkStatisticsInternal() const {
+  assert(decoder_database_.get());
+  NetEqNetworkStatistics stats;
+  const size_t total_samples_in_buffers =
+      packet_buffer_->NumSamplesInBuffer(decoder_frame_length_) +
+      sync_buffer_->FutureLength();
+
+  assert(controller_.get());
+  stats.preferred_buffer_size_ms = controller_->TargetLevelMs();
+  stats.jitter_peaks_found = controller_->PeakFound();
+  RTC_DCHECK_GT(fs_hz_, 0);
+  stats.current_buffer_size_ms =
+      static_cast<uint16_t>(total_samples_in_buffers * 1000 / fs_hz_);
+
+  // Compensate for output delay chain.
+  stats.current_buffer_size_ms += output_delay_chain_ms_;
+  stats.preferred_buffer_size_ms += output_delay_chain_ms_;
+  return stats;
 }
 
 NetEqLifetimeStatistics NetEqImpl::GetLifetimeStatistics() const {
@@ -1309,13 +1326,6 @@ int NetEqImpl::GetDecision(Operation* operation,
   int extracted_samples = 0;
   if (packet) {
     sync_buffer_->IncreaseEndTimestamp(packet->timestamp - end_timestamp);
-    if (controller_->CngOff()) {
-      // Adjustment of timestamp only corresponds to an actual packet loss
-      // if comfort noise is not played. If comfort noise was just played,
-      // this adjustment of timestamp is only done to get back in sync with the
-      // stream timestamp; no loss to report.
-      stats_->LostSamples(packet->timestamp - end_timestamp);
-    }
 
     if (*operation != Operation::kRfc3389Cng) {
       // We are about to decode and use a non-CNG packet.

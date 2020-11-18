@@ -15,7 +15,6 @@
 #ifndef DAWNNATIVE_D3D12_BUFFERD3D12_H_
 #define DAWNNATIVE_D3D12_BUFFERD3D12_H_
 
-#include "common/SerialQueue.h"
 #include "dawn_native/Buffer.h"
 
 #include "dawn_native/d3d12/ResourceHeapAllocationD3D12.h"
@@ -30,7 +29,7 @@ namespace dawn_native { namespace d3d12 {
       public:
         Buffer(Device* device, const BufferDescriptor* descriptor);
 
-        MaybeError Initialize();
+        MaybeError Initialize(bool mappedAtCreation);
 
         ID3D12Resource* GetD3D12Resource() const;
         D3D12_GPU_VIRTUAL_ADDRESS GetVA() const;
@@ -53,16 +52,13 @@ namespace dawn_native { namespace d3d12 {
 
       private:
         ~Buffer() override;
-        // Dawn API
-        MaybeError MapReadAsyncImpl() override;
-        MaybeError MapWriteAsyncImpl() override;
         MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
         void UnmapImpl() override;
         void DestroyImpl() override;
-
-        bool IsMappableAtCreation() const override;
+        bool IsCPUWritableAtCreation() const override;
         virtual MaybeError MapAtCreationImpl() override;
         void* GetMappedPointerImpl() override;
+
         MaybeError MapInternal(bool isWrite, size_t start, size_t end, const char* contextInfo);
 
         bool TransitionUsageAndGetResourceBarrier(CommandRecordingContext* commandContext,
@@ -75,7 +71,7 @@ namespace dawn_native { namespace d3d12 {
         ResourceHeapAllocation mResourceAllocation;
         bool mFixedResourceState = false;
         wgpu::BufferUsage mLastUsage = wgpu::BufferUsage::None;
-        Serial mLastUsedSerial = UINT64_MAX;
+        ExecutionSerial mLastUsedSerial = std::numeric_limits<ExecutionSerial>::max();
 
         D3D12_RANGE mWrittenMappedRange = {0, 0};
         void* mMappedData = nullptr;

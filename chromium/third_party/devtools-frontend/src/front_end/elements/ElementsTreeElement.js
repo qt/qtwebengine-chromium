@@ -155,15 +155,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   /**
    * @param {!UI.ContextMenu.ContextMenu} contextMenu
    * @param {!SDK.DOMModel.DOMNode} node
-   * @suppressGlobalPropertiesCheck
    */
   static populateForcedPseudoStateItems(contextMenu, node) {
-    const pseudoClasses = ['active', 'hover', 'focus', 'visited', 'focus-within'];
-    try {
-      document.querySelector(':focus-visible');  // Will throw if not supported
-      pseudoClasses.push('focus-visible');
-    } catch (e) {
-    }
+    const pseudoClasses = ['active', 'hover', 'focus', 'visited', 'focus-within', 'focus-visible'];
     const forcedPseudoState = node.domModel().cssModel().pseudoState(node);
     const stateMenu = contextMenu.debugSection().appendSubMenuItem(Common.UIString.UIString('Force state'));
     for (let i = 0; i < pseudoClasses.length; ++i) {
@@ -318,7 +312,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
    */
   onbind() {
     if (!this._isClosingTag) {
-      this._node[this.treeOutline.treeElementSymbol()] = this;
+      this.treeOutline.treeElementByNode.set(this._node, this);
     }
   }
 
@@ -329,8 +323,8 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (this._editing) {
       this._editing.cancel();
     }
-    if (this._node[this.treeOutline.treeElementSymbol()] === this) {
-      this._node[this.treeOutline.treeElementSymbol()] = null;
+    if (this.treeOutline.treeElementByNode.get(this._node) === this) {
+      this.treeOutline.treeElementByNode.delete(this._node);
     }
   }
 
@@ -630,7 +624,8 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     menuItem = contextMenu.debugSection().appendCheckboxItem(
         Common.UIString.UIString('Hide element'), treeOutline.toggleHideElement.bind(treeOutline, this._node),
         treeOutline.isToggledToHidden(this._node));
-    menuItem.setShortcut(self.UI.shortcutRegistry.shortcutTitleForAction('elements.hide-element'));
+    menuItem.setShortcut(
+        UI.ShortcutRegistry.ShortcutRegistry.instance().shortcutTitleForAction('elements.hide-element'));
 
     if (isEditable) {
       contextMenu.editSection().appendItem(Common.UIString.UIString('Delete element'), this.remove.bind(this));
@@ -899,7 +894,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     // Append editor.
     this.listItemElement.appendChild(this._htmlEditElement);
 
-    self.runtime.extension(UI.TextEditor.TextEditorFactory).instance().then(gotFactory.bind(this));
+    Root.Runtime.Runtime.instance().extension(UI.TextEditor.TextEditorFactory).instance().then(factory => {
+      gotFactory.call(this, /** @type {!UI.TextEditor.TextEditorFactory} */ (factory));
+    });
 
     /**
      * @param {!UI.TextEditor.TextEditorFactory} factory
@@ -1266,7 +1263,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const node = this._node;
 
     if (!this.treeOutline._decoratorExtensions) {
-      this.treeOutline._decoratorExtensions = self.runtime.extensions(MarkerDecorator);
+      this.treeOutline._decoratorExtensions = Root.Runtime.Runtime.instance().extensions(MarkerDecorator);
     }
 
     const markerToExtension = new Map();
@@ -1955,16 +1952,16 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     const node = this.node();
     const nodeId = node.id;
-    if (node.nodeType() === Node.COMMENT_NODE || nodeId === undefined) {
+    if (node.nodeType() === Node.COMMENT_NODE || node.nodeType() === Node.DOCUMENT_FRAGMENT_NODE ||
+        nodeId === undefined) {
       return;
     }
 
+    const styles = await node.domModel().cssModel().computedStylePromise(nodeId);
     for (const styleAdorner of this._styleAdorners) {
       this.removeAdorner(styleAdorner);
     }
     this._styleAdorners = [];
-
-    const styles = await node.domModel().cssModel().computedStylePromise(nodeId);
     if (!styles) {
       return;
     }
@@ -1975,7 +1972,8 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       gridAdorner.classList.add('grid');
       const onClick = /** @type {!EventListener} */ (() => {
         if (gridAdorner.isActive()) {
-          node.domModel().overlayModel().highlightGridInPersistentOverlay(nodeId);
+          node.domModel().overlayModel().highlightGridInPersistentOverlay(
+              nodeId, Host.UserMetrics.GridOverlayOpener.Adorner);
         } else {
           node.domModel().overlayModel().hideGridInPersistentOverlay(nodeId);
         }

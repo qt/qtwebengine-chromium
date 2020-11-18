@@ -23,6 +23,7 @@
 #include "core/fxcrt/xml/cfx_xmltext.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_font.h"
+#include "fxjs/gc/container_trace.h"
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cfxjse_value.h"
 #include "fxjs/xfa/cjx_node.h"
@@ -545,12 +546,19 @@ bool SplitDateTime(const WideString& wsDateTime,
   return true;
 }
 
-std::vector<CXFA_Node*> NodesSortedByDocumentIdx(
-    const std::set<CXFA_Node*>& rgNodeSet) {
-  if (rgNodeSet.empty())
-    return std::vector<CXFA_Node*>();
+// Stack allocated. Using containers of members would be correct here
+// if advanced GC worked with STL.
+using NodeSet = std::set<cppgc::Member<CXFA_Node>>;
+using NodeSetPair = std::pair<NodeSet, NodeSet>;
+using NodeSetPairMap = std::map<uint32_t, NodeSetPair>;
+using NodeSetPairMapMap = std::map<CXFA_Node*, NodeSetPairMap>;
+using NodeVector = std::vector<cppgc::Member<CXFA_Node>>;
 
-  std::vector<CXFA_Node*> rgNodeArray;
+NodeVector NodesSortedByDocumentIdx(const NodeSet& rgNodeSet) {
+  if (rgNodeSet.empty())
+    return NodeVector();
+
+  NodeVector rgNodeArray;
   CXFA_Node* pCommonParent = (*rgNodeSet.begin())->GetParent();
   for (CXFA_Node* pNode = pCommonParent->GetFirstChild(); pNode;
        pNode = pNode->GetNextSibling()) {
@@ -560,40 +568,26 @@ std::vector<CXFA_Node*> NodesSortedByDocumentIdx(
   return rgNodeArray;
 }
 
-using CXFA_NodeSetPair = std::pair<std::set<CXFA_Node*>, std::set<CXFA_Node*>>;
-using CXFA_NodeSetPairMap =
-    std::map<uint32_t, std::unique_ptr<CXFA_NodeSetPair>>;
-using CXFA_NodeSetPairMapMap =
-    std::map<CXFA_Node*, std::unique_ptr<CXFA_NodeSetPairMap>>;
-
-CXFA_NodeSetPair* NodeSetPairForNode(CXFA_Node* pNode,
-                                     CXFA_NodeSetPairMapMap* pMap) {
+NodeSetPair* NodeSetPairForNode(CXFA_Node* pNode, NodeSetPairMapMap* pMap) {
   CXFA_Node* pParentNode = pNode->GetParent();
   uint32_t dwNameHash = pNode->GetNameHash();
   if (!pParentNode || !dwNameHash)
     return nullptr;
 
-  if (!(*pMap)[pParentNode])
-    (*pMap)[pParentNode] = std::make_unique<CXFA_NodeSetPairMap>();
-
-  CXFA_NodeSetPairMap* pNodeSetPairMap = (*pMap)[pParentNode].get();
-  if (!(*pNodeSetPairMap)[dwNameHash])
-    (*pNodeSetPairMap)[dwNameHash] = std::make_unique<CXFA_NodeSetPair>();
-
-  return (*pNodeSetPairMap)[dwNameHash].get();
+  return &((*pMap)[pParentNode][dwNameHash]);
 }
 
-void ReorderDataNodes(const std::set<CXFA_Node*>& sSet1,
-                      const std::set<CXFA_Node*>& sSet2,
+void ReorderDataNodes(const NodeSet& sSet1,
+                      const NodeSet& sSet2,
                       bool bInsertBefore) {
-  CXFA_NodeSetPairMapMap rgMap;
+  NodeSetPairMapMap rgMap;
   for (CXFA_Node* pNode : sSet1) {
-    CXFA_NodeSetPair* pNodeSetPair = NodeSetPairForNode(pNode, &rgMap);
+    NodeSetPair* pNodeSetPair = NodeSetPairForNode(pNode, &rgMap);
     if (pNodeSetPair)
       pNodeSetPair->first.insert(pNode);
   }
   for (CXFA_Node* pNode : sSet2) {
-    CXFA_NodeSetPair* pNodeSetPair = NodeSetPairForNode(pNode, &rgMap);
+    NodeSetPair* pNodeSetPair = NodeSetPairForNode(pNode, &rgMap);
     if (pNodeSetPair) {
       if (pdfium::Contains(pNodeSetPair->first, pNode))
         pNodeSetPair->first.erase(pNode);
@@ -601,19 +595,13 @@ void ReorderDataNodes(const std::set<CXFA_Node*>& sSet1,
         pNodeSetPair->second.insert(pNode);
     }
   }
-  for (const auto& iter1 : rgMap) {
-    CXFA_NodeSetPairMap* pNodeSetPairMap = iter1.second.get();
-    if (!pNodeSetPairMap)
-      continue;
-
-    for (const auto& iter2 : *pNodeSetPairMap) {
-      CXFA_NodeSetPair* pNodeSetPair = iter2.second.get();
-      if (!pNodeSetPair)
-        continue;
+  for (auto& iter1 : rgMap) {
+    NodeSetPairMap* pNodeSetPairMap = &iter1.second;
+    for (auto& iter2 : *pNodeSetPairMap) {
+      NodeSetPair* pNodeSetPair = &iter2.second;
       if (!pNodeSetPair->first.empty() && !pNodeSetPair->second.empty()) {
-        std::vector<CXFA_Node*> rgNodeArray1 =
-            NodesSortedByDocumentIdx(pNodeSetPair->first);
-        std::vector<CXFA_Node*> rgNodeArray2 =
+        NodeVector rgNodeArray1 = NodesSortedByDocumentIdx(pNodeSetPair->first);
+        NodeVector rgNodeArray2 =
             NodesSortedByDocumentIdx(pNodeSetPair->second);
         CXFA_Node* pParentNode = nullptr;
         CXFA_Node* pBeforeNode = nullptr;
@@ -625,7 +613,7 @@ void ReorderDataNodes(const std::set<CXFA_Node*>& sSet1,
           pParentNode = pLastNode->GetParent();
           pBeforeNode = pLastNode->GetNextSibling();
         }
-        for (auto* pCurNode : rgNodeArray1) {
+        for (auto& pCurNode : rgNodeArray1) {
           pParentNode->RemoveChildAndNotify(pCurNode, true);
           pParentNode->InsertChildAndNotify(pCurNode, pBeforeNode);
         }
@@ -988,8 +976,8 @@ CXFA_Node::CXFA_Node(CXFA_Document* pDoc,
                      XFA_Element eType,
                      pdfium::span<const PropertyData> properties,
                      pdfium::span<const AttributeData> attributes,
-                     std::unique_ptr<CJX_Object> js_object)
-    : CXFA_Object(pDoc, oType, eType, std::move(js_object)),
+                     CJX_Object* js_object)
+    : CXFA_Object(pDoc, oType, eType, js_object),
       m_Properties(properties),
       m_Attributes(attributes),
       m_ValidPackets(validPackets),
@@ -1003,8 +991,7 @@ void CXFA_Node::Trace(cppgc::Visitor* visitor) const {
   CXFA_Object::Trace(visitor);
   GCedTreeNodeMixin<CXFA_Node>::Trace(visitor);
   visitor->Trace(m_pAuxNode);
-  for (const auto& node : binding_nodes_)
-    visitor->Trace(node);
+  ContainerTrace(visitor, binding_nodes_);
   visitor->Trace(m_pLayoutData);
   visitor->Trace(ui_);
 }
@@ -1302,38 +1289,30 @@ std::vector<CXFA_Node*> CXFA_Node::GetBindItemsCopy() const {
   return std::vector<CXFA_Node*>(binding_nodes_.begin(), binding_nodes_.end());
 }
 
-int32_t CXFA_Node::AddBindItem(CXFA_Node* pFormNode) {
+void CXFA_Node::AddBindItem(CXFA_Node* pFormNode) {
   ASSERT(pFormNode);
 
   if (BindsFormItems()) {
-    bool found = false;
-    for (const auto& v : binding_nodes_) {
-      if (v == pFormNode) {
-        found = true;
-        break;
-      }
-    }
-    if (!found)
+    if (!pdfium::Contains(binding_nodes_, pFormNode))
       binding_nodes_.emplace_back(pFormNode);
-    return pdfium::CollectionSize<int32_t>(binding_nodes_);
+    return;
   }
 
   CXFA_Node* pOldFormItem = GetBindingNode();
   if (!pOldFormItem) {
     SetBindingNode(pFormNode);
-    return 1;
+    return;
   }
   if (pOldFormItem == pFormNode)
-    return 1;
+    return;
 
   binding_nodes_.clear();
   binding_nodes_.push_back(pOldFormItem);
   binding_nodes_.push_back(pFormNode);
   m_uNodeFlags |= XFA_NodeFlag_BindFormItems;
-  return 2;
 }
 
-int32_t CXFA_Node::RemoveBindItem(CXFA_Node* pFormNode) {
+bool CXFA_Node::RemoveBindItem(CXFA_Node* pFormNode) {
   if (BindsFormItems()) {
     auto it =
         std::find(binding_nodes_.begin(), binding_nodes_.end(), pFormNode);
@@ -1342,17 +1321,17 @@ int32_t CXFA_Node::RemoveBindItem(CXFA_Node* pFormNode) {
 
     if (binding_nodes_.size() == 1) {
       m_uNodeFlags &= ~XFA_NodeFlag_BindFormItems;
-      return 1;
+      return true;
     }
-    return pdfium::CollectionSize<int32_t>(binding_nodes_);
+    return !binding_nodes_.empty();
   }
 
   CXFA_Node* pOldFormItem = GetBindingNode();
   if (pOldFormItem != pFormNode)
-    return pOldFormItem ? 1 : 0;
+    return !!pOldFormItem;
 
   SetBindingNode(nullptr);
-  return 0;
+  return false;
 }
 
 bool CXFA_Node::HasBindItem() const {
@@ -1412,7 +1391,7 @@ CXFA_Node* CXFA_Node::GetContainerNode() {
   return pParentOfValueNode ? pParentOfValueNode->GetContainerNode() : nullptr;
 }
 
-LocaleIface* CXFA_Node::GetLocale() {
+GCedLocaleIface* CXFA_Node::GetLocale() {
   Optional<WideString> localeName = GetLocaleName();
   if (!localeName.has_value())
     return nullptr;
@@ -1424,39 +1403,39 @@ LocaleIface* CXFA_Node::GetLocale() {
 Optional<WideString> CXFA_Node::GetLocaleName() {
   CXFA_Node* pForm = ToNode(GetDocument()->GetXFAObject(XFA_HASHCODE_Form));
   if (!pForm)
-    return {};
+    return pdfium::nullopt;
 
   CXFA_Subform* pTopSubform =
       pForm->GetFirstChildByClass<CXFA_Subform>(XFA_Element::Subform);
   if (!pTopSubform)
-    return {};
+    return pdfium::nullopt;
 
+  Optional<WideString> localeName;
   CXFA_Node* pLocaleNode = this;
   do {
-    Optional<WideString> localeName =
+    localeName =
         pLocaleNode->JSObject()->TryCData(XFA_Attribute::Locale, false);
-    if (localeName)
+    if (localeName.has_value())
       return localeName;
 
     pLocaleNode = pLocaleNode->GetParent();
   } while (pLocaleNode && pLocaleNode != pTopSubform);
 
   CXFA_Node* pConfig = ToNode(GetDocument()->GetXFAObject(XFA_HASHCODE_Config));
-  WideString wsLocaleName =
-      GetDocument()->GetLocaleMgr()->GetConfigLocaleName(pConfig);
-  if (!wsLocaleName.IsEmpty())
-    return wsLocaleName;
+  localeName = GetDocument()->GetLocaleMgr()->GetConfigLocaleName(pConfig);
+  if (localeName.has_value())
+    return localeName;
 
   if (pTopSubform) {
-    Optional<WideString> localeName =
+    localeName =
         pTopSubform->JSObject()->TryCData(XFA_Attribute::Locale, false);
-    if (localeName)
+    if (localeName.has_value())
       return localeName;
   }
 
   LocaleIface* pLocale = GetDocument()->GetLocaleMgr()->GetDefLocale();
   if (!pLocale)
-    return {};
+    return pdfium::nullopt;
 
   return pLocale->GetName();
 }
@@ -1926,29 +1905,25 @@ void CXFA_Node::InsertItem(CXFA_Node* pNewInstance,
         iCount > 0 ? item->GetNextSibling() : GetNextSibling();
     GetParent()->InsertChildAndNotify(pNewInstance, pNextSibling);
     if (bMoveDataBindingNodes) {
-      std::set<CXFA_Node*> sNew;
-      std::set<CXFA_Node*> sAfter;
+      NodeSet sNew;
       CXFA_NodeIteratorTemplate<CXFA_Node,
                                 CXFA_TraverseStrategy_XFAContainerNode>
           sIteratorNew(pNewInstance);
       for (CXFA_Node* pNode = sIteratorNew.GetCurrent(); pNode;
            pNode = sIteratorNew.MoveToNext()) {
         CXFA_Node* pDataNode = pNode->GetBindData();
-        if (!pDataNode)
-          continue;
-
-        sNew.insert(pDataNode);
+        if (pDataNode)
+          sNew.insert(pDataNode);
       }
+      NodeSet sAfter;
       CXFA_NodeIteratorTemplate<CXFA_Node,
                                 CXFA_TraverseStrategy_XFAContainerNode>
           sIteratorAfter(pNextSibling);
       for (CXFA_Node* pNode = sIteratorAfter.GetCurrent(); pNode;
            pNode = sIteratorAfter.MoveToNext()) {
         CXFA_Node* pDataNode = pNode->GetBindData();
-        if (!pDataNode)
-          continue;
-
-        sAfter.insert(pDataNode);
+        if (pDataNode)
+          sAfter.insert(pDataNode);
       }
       ReorderDataNodes(sNew, sAfter, false);
     }
@@ -1961,29 +1936,25 @@ void CXFA_Node::InsertItem(CXFA_Node* pNewInstance,
 
     GetParent()->InsertChildAndNotify(pNewInstance, pBeforeInstance);
     if (bMoveDataBindingNodes) {
-      std::set<CXFA_Node*> sNew;
-      std::set<CXFA_Node*> sBefore;
+      NodeSet sNew;
       CXFA_NodeIteratorTemplate<CXFA_Node,
                                 CXFA_TraverseStrategy_XFAContainerNode>
           sIteratorNew(pNewInstance);
       for (CXFA_Node* pNode = sIteratorNew.GetCurrent(); pNode;
            pNode = sIteratorNew.MoveToNext()) {
         CXFA_Node* pDataNode = pNode->GetBindData();
-        if (!pDataNode)
-          continue;
-
-        sNew.insert(pDataNode);
+        if (pDataNode)
+          sNew.insert(pDataNode);
       }
+      NodeSet sBefore;
       CXFA_NodeIteratorTemplate<CXFA_Node,
                                 CXFA_TraverseStrategy_XFAContainerNode>
           sIteratorBefore(pBeforeInstance);
       for (CXFA_Node* pNode = sIteratorBefore.GetCurrent(); pNode;
            pNode = sIteratorBefore.MoveToNext()) {
         CXFA_Node* pDataNode = pNode->GetBindData();
-        if (!pDataNode)
-          continue;
-
-        sBefore.insert(pDataNode);
+        if (pDataNode)
+          sBefore.insert(pDataNode);
       }
       ReorderDataNodes(sNew, sBefore, true);
     }
@@ -2004,7 +1975,7 @@ void CXFA_Node::RemoveItem(CXFA_Node* pRemoveInstance,
     if (!pDataNode)
       continue;
 
-    if (pDataNode->RemoveBindItem(pFormNode) == 0) {
+    if (!pDataNode->RemoveBindItem(pFormNode)) {
       if (CXFA_Node* pDataParent = pDataNode->GetParent()) {
         pDataParent->RemoveChildAndNotify(pDataNode, true);
       }
@@ -2556,7 +2527,7 @@ XFA_EventError CXFA_Node::ProcessFormatTestValidate(CXFA_FFDocView* pDocView,
   if (wsRawValue.IsEmpty())
     return XFA_EventError::kError;
 
-  LocaleIface* pLocale = GetLocale();
+  GCedLocaleIface* pLocale = GetLocale();
   if (!pLocale)
     return XFA_EventError::kNotExist;
 
@@ -2818,11 +2789,8 @@ std::pair<XFA_EventError, bool> CXFA_Node::ExecuteBoolScript(
         if (pRefNode == this)
           continue;
 
-        CXFA_CalcData* pGlobalData = pRefNode->JSObject()->GetCalcData();
-        if (!pGlobalData) {
-          pRefNode->JSObject()->SetCalcData(std::make_unique<CXFA_CalcData>());
-          pGlobalData = pRefNode->JSObject()->GetCalcData();
-        }
+        CJX_Object::CalcData* pGlobalData =
+            pRefNode->JSObject()->GetOrCreateCalcData(pDoc->GetHeap());
         if (!pdfium::Contains(pGlobalData->m_Globals, this))
           pGlobalData->m_Globals.push_back(this);
       }
@@ -3155,11 +3123,10 @@ void CXFA_Node::SetImageEdit(const WideString& wsContentType,
       image->SetTransferEncoding(XFA_AttributeValue::Base64);
     return;
   }
-  pBind->JSObject()->SetCData(XFA_Attribute::ContentType, wsContentType, false,
-                              false);
+  pBind->JSObject()->SetCData(XFA_Attribute::ContentType, wsContentType);
   CXFA_Node* pHrefNode = pBind->GetFirstChild();
   if (pHrefNode) {
-    pHrefNode->JSObject()->SetCData(XFA_Attribute::Value, wsHref, false, false);
+    pHrefNode->JSObject()->SetCData(XFA_Attribute::Value, wsHref);
     return;
   }
   CFX_XMLElement* pElement = ToXMLElement(pBind->GetXMLMappingNode());
@@ -3310,7 +3277,7 @@ void CXFA_Node::CalculateTextContentSize(CXFA_FFDoc* doc, CFX_SizeF* pSize) {
   if (!layoutData->m_pTextOut) {
     layoutData->m_pTextOut = std::make_unique<CFDE_TextOut>();
     CFDE_TextOut* pTextOut = layoutData->m_pTextOut.get();
-    pTextOut->SetFont(GetFDEFont(doc));
+    pTextOut->SetFont(GetFGASFont(doc));
     pTextOut->SetFontSize(fFontSize);
     pTextOut->SetLineBreakTolerance(fFontSize * 0.2f);
     pTextOut->SetLineSpace(GetLineHeight());
@@ -3942,7 +3909,7 @@ void CXFA_Node::SetImageEditImage(const RetainPtr<CFX_DIBitmap>& newImage) {
     pData->m_pDIBitmap = newImage;
 }
 
-RetainPtr<CFGAS_GEFont> CXFA_Node::GetFDEFont(CXFA_FFDoc* doc) {
+RetainPtr<CFGAS_GEFont> CXFA_Node::GetFGASFont(CXFA_FFDoc* doc) {
   WideString wsFontName = L"Courier";
   uint32_t dwFontStyle = 0;
   CXFA_Font* font = GetFontIfExists();
@@ -4708,7 +4675,7 @@ bool CXFA_Node::SetValue(XFA_VALUEPICTURE eValueType,
   XFA_Element eType = pNode->GetElementType();
   if (!wsPicture.IsEmpty()) {
     CXFA_LocaleMgr* pLocaleMgr = GetDocument()->GetLocaleMgr();
-    LocaleIface* pLocale = GetLocale();
+    GCedLocaleIface* pLocale = GetLocale();
     CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
     bValidate =
         widgetValue.ValidateValue(wsValue, wsPicture, pLocale, &wsPicture);
@@ -4758,13 +4725,17 @@ WideString CXFA_Node::GetPictureContent(XFA_VALUEPICTURE ePicture) {
       uint32_t dwType = widgetValue.GetType();
       switch (dwType) {
         case XFA_VT_DATE:
-          return pLocale->GetDatePattern(FX_LOCALEDATETIMESUBCATEGORY_Medium);
+          return pLocale->GetDatePattern(
+              LocaleIface::DateTimeSubcategory::kMedium);
         case XFA_VT_TIME:
-          return pLocale->GetTimePattern(FX_LOCALEDATETIMESUBCATEGORY_Medium);
+          return pLocale->GetTimePattern(
+              LocaleIface::DateTimeSubcategory::kMedium);
         case XFA_VT_DATETIME:
-          return pLocale->GetDatePattern(FX_LOCALEDATETIMESUBCATEGORY_Medium) +
+          return pLocale->GetDatePattern(
+                     LocaleIface::DateTimeSubcategory::kMedium) +
                  L"T" +
-                 pLocale->GetTimePattern(FX_LOCALEDATETIMESUBCATEGORY_Medium);
+                 pLocale->GetTimePattern(
+                     LocaleIface::DateTimeSubcategory::kMedium);
         case XFA_VT_DECIMAL:
         case XFA_VT_FLOAT:
         default:
@@ -4790,13 +4761,17 @@ WideString CXFA_Node::GetPictureContent(XFA_VALUEPICTURE ePicture) {
       uint32_t dwType = widgetValue.GetType();
       switch (dwType) {
         case XFA_VT_DATE:
-          return pLocale->GetDatePattern(FX_LOCALEDATETIMESUBCATEGORY_Short);
+          return pLocale->GetDatePattern(
+              LocaleIface::DateTimeSubcategory::kShort);
         case XFA_VT_TIME:
-          return pLocale->GetTimePattern(FX_LOCALEDATETIMESUBCATEGORY_Short);
+          return pLocale->GetTimePattern(
+              LocaleIface::DateTimeSubcategory::kShort);
         case XFA_VT_DATETIME:
-          return pLocale->GetDatePattern(FX_LOCALEDATETIMESUBCATEGORY_Short) +
+          return pLocale->GetDatePattern(
+                     LocaleIface::DateTimeSubcategory::kShort) +
                  L"T" +
-                 pLocale->GetTimePattern(FX_LOCALEDATETIMESUBCATEGORY_Short);
+                 pLocale->GetTimePattern(
+                     LocaleIface::DateTimeSubcategory::kShort);
         default:
           return WideString();
       }
@@ -4849,7 +4824,8 @@ WideString CXFA_Node::GetValue(XFA_VALUEPICTURE eValueType) {
   if (wsPicture.IsEmpty())
     return wsValue;
 
-  if (LocaleIface* pLocale = GetLocale()) {
+  GCedLocaleIface* pLocale = GetLocale();
+  if (pLocale) {
     CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
     CXFA_LocaleMgr* pLocaleMgr = GetDocument()->GetLocaleMgr();
     switch (widgetValue.GetType()) {
@@ -4888,7 +4864,7 @@ WideString CXFA_Node::GetNormalizeDataValue(const WideString& wsValue) {
     return wsValue;
 
   CXFA_LocaleMgr* pLocaleMgr = GetDocument()->GetLocaleMgr();
-  LocaleIface* pLocale = GetLocale();
+  GCedLocaleIface* pLocale = GetLocale();
   CXFA_LocaleValue widgetValue = XFA_GetLocaleValue(this);
   if (widgetValue.ValidateValue(wsValue, wsPicture, pLocale, &wsPicture)) {
     widgetValue = CXFA_LocaleValue(widgetValue.GetType(), wsValue, wsPicture,
@@ -4907,7 +4883,8 @@ WideString CXFA_Node::GetFormatDataValue(const WideString& wsValue) {
     return wsValue;
 
   WideString wsFormattedValue = wsValue;
-  if (LocaleIface* pLocale = GetLocale()) {
+  GCedLocaleIface* pLocale = GetLocale();
+  if (pLocale) {
     CXFA_Value* pNodeValue = GetChild<CXFA_Value>(0, XFA_Element::Value, false);
     if (!pNodeValue)
       return wsValue;

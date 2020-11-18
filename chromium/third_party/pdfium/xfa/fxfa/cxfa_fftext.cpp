@@ -12,9 +12,7 @@
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
-#include "xfa/fxfa/cxfa_pieceline.h"
 #include "xfa/fxfa/cxfa_textlayout.h"
-#include "xfa/fxfa/cxfa_textpiece.h"
 #include "xfa/fxfa/parser/cxfa_margin.h"
 #include "xfa/fxgraphics/cxfa_graphics.h"
 
@@ -151,13 +149,5 @@ const wchar_t* CXFA_FFText::GetLinkURLAtPoint(const CFX_PointF& point) {
     return nullptr;
 
   CFX_RectF rect = GetRectWithoutRotate();
-  for (const auto& pPieceLine : *pTextLayout->GetPieceLines()) {
-    for (const auto& pPiece : pPieceLine->m_textPieces) {
-      if (pPiece->pLinkData &&
-          pPiece->rtPiece.Contains(point - rect.TopLeft())) {
-        return pPiece->pLinkData->GetLinkURL();
-      }
-    }
-  }
-  return nullptr;
+  return pTextLayout->GetLinkURLAtPoint(point - rect.TopLeft());
 }

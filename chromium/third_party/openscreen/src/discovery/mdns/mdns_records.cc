@@ -47,25 +47,27 @@ bool IsGreaterThan(const Rdata& lhs, const Rdata& rhs) {
   const RDataType& lhs_cast = absl::get<RDataType>(lhs);
   const RDataType& rhs_cast = absl::get<RDataType>(rhs);
 
-  size_t lhs_size = lhs_cast.MaxWireSize();
-  size_t rhs_size = rhs_cast.MaxWireSize();
-  size_t min_size = std::min(lhs_size, rhs_size);
+  // The Extra 2 in length is from the record size that Write() prepends to the
+  // result.
+  const size_t lhs_size = lhs_cast.MaxWireSize() + 2;
+  const size_t rhs_size = rhs_cast.MaxWireSize() + 2;
 
   uint8_t lhs_bytes[lhs_size];
   uint8_t rhs_bytes[rhs_size];
   MdnsWriter lhs_writer(lhs_bytes, lhs_size);
   MdnsWriter rhs_writer(rhs_bytes, rhs_size);
 
-  lhs_writer.Write(lhs_cast);
-  rhs_writer.Write(rhs_cast);
-  for (size_t i = 0; i < min_size; i++) {
+  const bool lhs_write = lhs_writer.Write(lhs_cast);
+  const bool rhs_write = rhs_writer.Write(rhs_cast);
+  OSP_DCHECK(lhs_write);
+  OSP_DCHECK(rhs_write);
+
+  // Skip the size bits.
+  const size_t min_size = std::min(lhs_writer.offset(), rhs_writer.offset());
+  for (size_t i = 2; i < min_size; i++) {
     if (lhs_bytes[i] != rhs_bytes[i]) {
       return lhs_bytes[i] > rhs_bytes[i];
     }
-  }
-
-  if (lhs_size == rhs_size) {
-    return false;
   }
 
   return lhs_size > rhs_size;
@@ -619,6 +621,15 @@ bool MdnsRecord::operator>(const MdnsRecord& rhs) const {
   // "lexicographically later" is performed by first comparing the record class,
   // then the record type, then raw comparison of the binary content of the
   // rdata without regard for meaning or structure.
+  // NOTE: Per RFC, the TTL is not included in this comparison.
+  if (name() != rhs.name()) {
+    return name() > rhs.name();
+  }
+
+  if (record_type() != rhs.record_type()) {
+    return record_type() == RecordType::kUnique;
+  }
+
   if (dns_class() != rhs.dns_class()) {
     return dns_class() > rhs.dns_class();
   }

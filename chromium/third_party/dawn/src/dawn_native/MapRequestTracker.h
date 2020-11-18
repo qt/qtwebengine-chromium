@@ -16,30 +16,28 @@
 #define DAWNNATIVE_MAPREQUESTTRACKER_H_
 
 #include "common/SerialQueue.h"
-#include "dawn_native/Device.h"
+#include "dawn_native/Buffer.h"
+#include "dawn_native/Forward.h"
+#include "dawn_native/IntegerTypes.h"
 
 namespace dawn_native {
-
-    // TODO(dawn:22) remove this enum once MapReadAsync/MapWriteAsync are removed.
-    enum class MapType : uint32_t { Read, Write, Async };
 
     class MapRequestTracker {
       public:
         MapRequestTracker(DeviceBase* device);
         ~MapRequestTracker();
 
-        void Track(BufferBase* buffer, uint32_t mapSerial, MapType type);
-        void Tick(Serial finishedSerial);
+        void Track(BufferBase* buffer, MapRequestID mapID);
+        void Tick(ExecutionSerial finishedSerial);
 
       private:
         DeviceBase* mDevice;
 
         struct Request {
             Ref<BufferBase> buffer;
-            uint32_t mapSerial;
-            MapType type;
+            MapRequestID id;
         };
-        SerialQueue<Request> mInflightRequests;
+        SerialQueue<ExecutionSerial, Request> mInflightRequests;
     };
 
 }  // namespace dawn_native

@@ -10,8 +10,7 @@
       "className": "DeveloperResources.DeveloperResourcesView",
       "experiment": "developerResourcesView"
     }
-  ],
-  "dependencies": [
+  ],  "dependencies": [
     "common",
     "platform",
     "ui",

@@ -33,8 +33,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_VERTEX_INPUT_RATE_VERTEX;
                 case wgpu::InputStepMode::Instance:
                     return VK_VERTEX_INPUT_RATE_INSTANCE;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -100,8 +98,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_FORMAT_R32G32B32_SINT;
                 case wgpu::VertexFormat::Int4:
                     return VK_FORMAT_R32G32B32A32_SINT;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -117,8 +113,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
                 case wgpu::PrimitiveTopology::TriangleStrip:
                     return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -133,8 +127,6 @@ namespace dawn_native { namespace vulkan {
                 case wgpu::PrimitiveTopology::LineStrip:
                 case wgpu::PrimitiveTopology::TriangleStrip:
                     return true;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -144,8 +136,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_FRONT_FACE_COUNTER_CLOCKWISE;
                 case wgpu::FrontFace::CW:
                     return VK_FRONT_FACE_CLOCKWISE;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -157,8 +147,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_CULL_MODE_FRONT_BIT;
                 case wgpu::CullMode::Back:
                     return VK_CULL_MODE_BACK_BIT;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -190,8 +178,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_BLEND_FACTOR_CONSTANT_COLOR;
                 case wgpu::BlendFactor::OneMinusBlendColor:
                     return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -207,8 +193,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_BLEND_OP_MIN;
                 case wgpu::BlendOperation::Max:
                     return VK_BLEND_OP_MAX;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -269,8 +253,6 @@ namespace dawn_native { namespace vulkan {
                     return VK_STENCIL_OP_INCREMENT_AND_WRAP;
                 case wgpu::StencilOperation::DecrementWrap:
                     return VK_STENCIL_OP_DECREMENT_AND_WRAP;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -424,10 +406,11 @@ namespace dawn_native { namespace vulkan {
 
         // Initialize the "blend state info" that will be chained in the "create info" from the data
         // pre-computed in the ColorState
-        std::array<VkPipelineColorBlendAttachmentState, kMaxColorAttachments> colorBlendAttachments;
-        const ShaderModuleBase::FragmentOutputBaseTypes& fragmentOutputBaseTypes =
-            descriptor->fragmentStage->module->GetFragmentOutputBaseTypes();
-        for (uint32_t i : IterateBitSet(GetColorAttachmentsMask())) {
+        ityp::array<ColorAttachmentIndex, VkPipelineColorBlendAttachmentState, kMaxColorAttachments>
+            colorBlendAttachments;
+        const EntryPointMetadata::FragmentOutputBaseTypes& fragmentOutputBaseTypes =
+            GetStage(SingleShaderStage::Fragment).metadata->fragmentOutputFormatBaseTypes;
+        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
             const ColorStateDescriptor* colorStateDescriptor = GetColorStateDescriptor(i);
             bool isDeclaredInFragmentShader = fragmentOutputBaseTypes[i] != Format::Type::Other;
             colorBlendAttachments[i] =
@@ -469,7 +452,7 @@ namespace dawn_native { namespace vulkan {
         {
             RenderPassCacheQuery query;
 
-            for (uint32_t i : IterateBitSet(GetColorAttachmentsMask())) {
+            for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
                 query.SetColor(i, GetColorAttachmentFormat(i), wgpu::LoadOp::Load, false);
             }
 
@@ -516,11 +499,11 @@ namespace dawn_native { namespace vulkan {
         PipelineVertexInputStateCreateInfoTemporaryAllocations* tempAllocations) {
         // Fill in the "binding info" that will be chained in the create info
         uint32_t bindingCount = 0;
-        for (uint32_t i : IterateBitSet(GetVertexBufferSlotsUsed())) {
-            const VertexBufferInfo& bindingInfo = GetVertexBuffer(i);
+        for (VertexBufferSlot slot : IterateBitSet(GetVertexBufferSlotsUsed())) {
+            const VertexBufferInfo& bindingInfo = GetVertexBuffer(slot);
 
             VkVertexInputBindingDescription* bindingDesc = &tempAllocations->bindings[bindingCount];
-            bindingDesc->binding = i;
+            bindingDesc->binding = static_cast<uint8_t>(slot);
             bindingDesc->stride = bindingInfo.arrayStride;
             bindingDesc->inputRate = VulkanInputRate(bindingInfo.stepMode);
 
@@ -529,13 +512,13 @@ namespace dawn_native { namespace vulkan {
 
         // Fill in the "attribute info" that will be chained in the create info
         uint32_t attributeCount = 0;
-        for (uint32_t i : IterateBitSet(GetAttributeLocationsUsed())) {
-            const VertexAttributeInfo& attributeInfo = GetAttribute(i);
+        for (VertexAttributeLocation loc : IterateBitSet(GetAttributeLocationsUsed())) {
+            const VertexAttributeInfo& attributeInfo = GetAttribute(loc);
 
             VkVertexInputAttributeDescription* attributeDesc =
                 &tempAllocations->attributes[attributeCount];
-            attributeDesc->location = i;
-            attributeDesc->binding = attributeInfo.vertexBufferSlot;
+            attributeDesc->location = static_cast<uint8_t>(loc);
+            attributeDesc->binding = static_cast<uint8_t>(attributeInfo.vertexBufferSlot);
             attributeDesc->format = VulkanVertexFormat(attributeInfo.format);
             attributeDesc->offset = attributeInfo.offset;
 

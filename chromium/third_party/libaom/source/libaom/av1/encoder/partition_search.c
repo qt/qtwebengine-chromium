@@ -28,6 +28,10 @@
 #include "av1/encoder/tokenize.h"
 #include "av1/encoder/var_based_part.h"
 
+#if CONFIG_TUNE_VMAF
+#include "av1/encoder/tune_vmaf.h"
+#endif
+
 static void update_txfm_count(MACROBLOCK *x, MACROBLOCKD *xd,
                               FRAME_COUNTS *counts, TX_SIZE tx_size, int depth,
                               int blk_row, int blk_col,
@@ -2991,7 +2995,7 @@ static AOM_INLINE void set_part_none_allowed_flag(
   assert(part_search_state->terminate_partition_search == 0);
 
   // Set PARTITION_NONE for screen content.
-  if (cpi->is_screen_content_type)
+  if (cpi->use_screen_content_tools)
     part_search_state->partition_none_allowed =
         blk_params.has_rows && blk_params.has_cols;
 }
@@ -3047,10 +3051,10 @@ static void prune_partitions_after_none(AV1_COMP *const cpi, MACROBLOCK *x,
       !x->e_mbd.lossless[xd->mi[0]->segment_id] && ctx_none->skippable) {
     const int use_ml_based_breakout =
         bsize <= cpi->sf.part_sf.use_square_partition_only_threshold &&
-        bsize > BLOCK_4X4 && xd->bd == 8;
+        bsize > BLOCK_4X4 && cpi->sf.part_sf.ml_predict_breakout_level >= 1;
     if (use_ml_based_breakout) {
-      if (av1_ml_predict_breakout(cpi, bsize, x, this_rdc,
-                                  *pb_source_variance)) {
+      if (av1_ml_predict_breakout(cpi, bsize, x, this_rdc, *pb_source_variance,
+                                  xd->bd)) {
         part_search_state->do_square_split = 0;
         part_search_state->do_rectangular_split = 0;
       }
@@ -3513,6 +3517,14 @@ BEGIN_PARTITION_SEARCH:
   split_partition_search(cpi, td, tile_data, tp, x, pc_tree, sms_tree, &x_ctx,
                          &part_search_state, &best_rdc, multi_pass_mode,
                          &part_split_rd);
+
+  // Terminate partition search for child partition,
+  // when NONE and SPLIT partition rd_costs are INT64_MAX.
+  if (cpi->sf.part_sf.early_term_after_none_split &&
+      part_none_rd == INT64_MAX && part_split_rd == INT64_MAX &&
+      !x->must_find_valid_partition && (bsize != cm->seq_params.sb_size)) {
+    part_search_state.terminate_partition_search = 1;
+  }
 
   // Prune partitions based on PARTITION_NONE and PARTITION_SPLIT.
   prune_partitions_after_split(cpi, x, sms_tree, &part_search_state, &best_rdc,

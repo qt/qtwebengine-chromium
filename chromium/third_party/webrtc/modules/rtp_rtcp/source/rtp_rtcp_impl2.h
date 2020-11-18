@@ -37,6 +37,7 @@
 #include "rtc_base/gtest_prod_util.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/synchronization/sequence_checker.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/task_utils/pending_task_safety_flag.h"
 #include "rtc_base/task_utils/repeating_task.h"
 
@@ -250,11 +251,6 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
                        uint32_t* NTPfrac,
                        uint32_t* remote_sr) const;
 
-  void BitrateSent(uint32_t* total_rate,
-                   uint32_t* video_rate,
-                   uint32_t* fec_rate,
-                   uint32_t* nackRate) const override;
-
   RtpSendRates GetSendRates() const override;
 
   void OnReceivedNack(
@@ -297,7 +293,7 @@ class ModuleRtpRtcpImpl2 final : public RtpRtcpInterface,
   void PeriodicUpdate();
 
   TaskQueueBase* const worker_queue_;
-  SequenceChecker process_thread_checker_;
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker process_thread_checker_;
 
   std::unique_ptr<RtpSenderContext> rtp_sender_;
 

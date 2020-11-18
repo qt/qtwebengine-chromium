@@ -28,6 +28,18 @@ struct SkPathView;
 class SkRBuffer;
 class SkWBuffer;
 
+enum class SkPathConvexity {
+    kConvex,
+    kConcave,
+    kUnknown,
+};
+
+enum class SkPathFirstDirection {
+    kCW,         // == SkPathDirection::kCW
+    kCCW,        // == SkPathDirection::kCCW
+    kUnknown,
+};
+
 /**
  * Holds the path verbs and points. It is versioned by a generation ID. None of its public methods
  * modify the contents. To modify or append to the verbs/points wrap the SkPathRef in an
@@ -60,6 +72,8 @@ public:
         fRRectOrOvalIsCCW = false;
         fRRectOrOvalStartIdx = 0xAC;
         SkDEBUGCODE(fEditorsAttached.store(0);)
+
+        this->computeBounds();  // do this now, before we worry about multiple owners/threads
         SkDEBUGCODE(this->validate();)
     }
 
@@ -336,7 +350,7 @@ public:
     bool isValid() const;
     SkDEBUGCODE(void validate() const { SkASSERT(this->isValid()); } )
 
-    SkPathView view(SkPathFillType, SkPathConvexityType) const;
+    SkPathView view(SkPathFillType, SkPathConvexity) const;
 
 private:
     enum SerializationOffsets {

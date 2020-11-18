@@ -53,8 +53,6 @@ StreamingPlaybackController::StreamingPlaybackController(
 }
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 
-// TODO(jophba): add async tracing to streaming implementation for exposing
-// how long the OFFER/ANSWER and receiver startup takes.
 void StreamingPlaybackController::OnNegotiated(
     const ReceiverSession* session,
     ReceiverSession::ConfiguredReceivers receivers) {
@@ -62,26 +60,25 @@ void StreamingPlaybackController::OnNegotiated(
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
   if (receivers.audio) {
     audio_player_ = std::make_unique<SDLAudioPlayer>(
-        &Clock::now, task_runner_, receivers.audio->receiver,
-        receivers.audio->selected_stream.stream.codec_name, [this] {
+        &Clock::now, task_runner_, receivers.audio_receiver,
+        receivers.audio_config.codec, [this] {
           client_->OnPlaybackError(this, audio_player_->error_status());
         });
   }
   if (receivers.video) {
     video_player_ = std::make_unique<SDLVideoPlayer>(
-        &Clock::now, task_runner_, receivers.video->receiver,
-        receivers.video->selected_stream.stream.codec_name, renderer_.get(),
-        [this] {
+        &Clock::now, task_runner_, receivers.video_receiver,
+        receivers.video_config.codec, renderer_.get(), [this] {
           client_->OnPlaybackError(this, video_player_->error_status());
         });
   }
 #else
-  if (receivers.audio) {
-    audio_player_ = std::make_unique<DummyPlayer>(receivers.audio->receiver);
+  if (receivers.audio_receiver) {
+    audio_player_ = std::make_unique<DummyPlayer>(receivers.audio_receiver);
   }
 
-  if (receivers.video) {
-    video_player_ = std::make_unique<DummyPlayer>(receivers.video->receiver);
+  if (receivers.video_receiver) {
+    video_player_ = std::make_unique<DummyPlayer>(receivers.video_receiver);
   }
 #endif  // defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
 }

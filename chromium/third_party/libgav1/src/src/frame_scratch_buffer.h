@@ -54,20 +54,18 @@ struct FrameScratchBuffer {
   TemporalMotionField motion_field;
   SymbolDecoderContext symbol_decoder_context;
   std::unique_ptr<ResidualBufferPool> residual_buffer_pool;
-  // threaded_window_buffer will be subdivided by PostFilter into windows of
-  // width 512 pixels. Each row in the window is filtered by a worker thread.
-  // To avoid false sharing, each 512-pixel row processed by one thread should
-  // not share a cache line with a row processed by another thread. So we align
-  // threaded_window_buffer to the cache line size. In addition, it is faster to
-  // memcpy from an aligned buffer.
-  AlignedDynamicBuffer<uint8_t, kCacheLineSize> threaded_window_buffer;
+  // Buffer used to store the cdef borders. This buffer will store 4 rows for
+  // every 64x64 block (4 rows for every 32x32 for chroma with subsampling). The
+  // indices of the rows that are stored are specified in |kCdefBorderRows|.
+  YuvBuffer cdef_border;
+  AlignedDynamicBuffer<uint8_t, 16> superres_coefficients[kNumPlaneTypes];
   // Buffer used to temporarily store the input row for applying SuperRes.
-  AlignedDynamicBuffer<uint8_t, 16> superres_line_buffer;
-  // Buffer used to store the deblocked pixels that are necessary for loop
-  // restoration. This buffer will store 4 rows for every 64x64 block (4 rows
-  // for every 32x32 for chroma with subsampling). The indices of the rows that
-  // are stored are specified in |kDeblockedRowsForLoopRestoration|.
-  YuvBuffer deblock_buffer;
+  YuvBuffer superres_line_buffer;
+  // Buffer used to store the loop restoration borders. This buffer will store 4
+  // rows for every 64x64 block (4 rows for every 32x32 for chroma with
+  // subsampling). The indices of the rows that are stored are specified in
+  // |kLoopRestorationBorderRows|.
+  YuvBuffer loop_restoration_border;
   // The size of this dynamic buffer is |tile_rows|.
   DynamicBuffer<IntraPredictionBuffer> intra_prediction_buffers;
   TileScratchBufferPool tile_scratch_buffer_pool;

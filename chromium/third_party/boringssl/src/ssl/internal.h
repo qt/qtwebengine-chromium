@@ -345,6 +345,9 @@ class Array {
     if (new_size > size_) {
       abort();
     }
+    for (size_t i = new_size; i < size_; i++) {
+      data_[i].~T();
+    }
     size_ = new_size;
   }
 
@@ -630,9 +633,6 @@ const EVP_MD *ssl_get_handshake_digest(uint16_t version,
 // considered an error regardless of |strict|.
 bool ssl_create_cipher_list(UniquePtr<SSLCipherPreferenceList> *out_cipher_list,
                             const char *rule_str, bool strict);
-
-// ssl_cipher_get_value returns the cipher suite id of |cipher|.
-uint16_t ssl_cipher_get_value(const SSL_CIPHER *cipher);
 
 // ssl_cipher_auth_mask_for_key returns the mask of cipher |algorithm_auth|
 // values suitable for use with |key| in TLS 1.2 and below.
@@ -1649,6 +1649,10 @@ struct SSL_HANDSHAKE {
   // the peer. This is only set on the server's end. The server does not
   // advertise this extension to the client.
   Array<uint16_t> peer_supported_group_list;
+
+  // peer_delegated_credential_sigalgs are the signature algorithms the peer
+  // supports with delegated credentials.
+  Array<uint16_t> peer_delegated_credential_sigalgs;
 
   // peer_key is the peer's ECDH key for a TLS 1.2 client.
   Array<uint8_t> peer_key;

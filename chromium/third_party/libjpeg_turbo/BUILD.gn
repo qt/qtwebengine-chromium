@@ -128,7 +128,7 @@ if (current_cpu == "x86" || current_cpu == "x64") {
       }
     } else if (is_mac || is_ios) {
       defines += [ "MACHO" ]
-    } else if (is_linux || is_android || is_fuchsia) {
+    } else if (is_linux || is_android || is_fuchsia || is_chromeos) {
       defines += [ "ELF" ]
     }
   }
@@ -155,12 +155,18 @@ static_library("simd") {
     sources = [
       "simd/arm/arm/jsimd.c",
       "simd/arm/arm/jsimd_neon.S",
+      "simd/arm/common/jccolor-neon.c",
+      "simd/arm/common/jcgray-neon.c",
+      "simd/arm/common/jcsample-neon.c",
       "simd/arm/common/jdcolor-neon.c",
       "simd/arm/common/jdmerge-neon.c",
       "simd/arm/common/jdsample-neon.c",
+      "simd/arm/common/jfdctfst-neon.c",
+      "simd/arm/common/jfdctint-neon.c",
       "simd/arm/common/jidctfst-neon.c",
       "simd/arm/common/jidctint-neon.c",
       "simd/arm/common/jidctred-neon.c",
+      "simd/arm/common/jquanti-neon.c",
     ]
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_speed" ]
@@ -168,12 +174,18 @@ static_library("simd") {
     sources = [
       "simd/arm/arm64/jsimd.c",
       "simd/arm/arm64/jsimd_neon.S",
+      "simd/arm/common/jccolor-neon.c",
+      "simd/arm/common/jcgray-neon.c",
+      "simd/arm/common/jcsample-neon.c",
       "simd/arm/common/jdcolor-neon.c",
       "simd/arm/common/jdmerge-neon.c",
       "simd/arm/common/jdsample-neon.c",
+      "simd/arm/common/jfdctfst-neon.c",
+      "simd/arm/common/jfdctint-neon.c",
       "simd/arm/common/jidctfst-neon.c",
       "simd/arm/common/jidctint-neon.c",
       "simd/arm/common/jidctred-neon.c",
+      "simd/arm/common/jquanti-neon.c",
     ]
     configs -= [ "//build/config/compiler:default_optimization" ]
     configs += [ "//build/config/compiler:optimize_speed" ]

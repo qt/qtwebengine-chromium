@@ -86,7 +86,8 @@ namespace dawn_native {
 
     struct BeginRenderPassCmd {
         Ref<AttachmentState> attachmentState;
-        RenderPassColorAttachmentInfo colorAttachments[kMaxColorAttachments];
+        ityp::array<ColorAttachmentIndex, RenderPassColorAttachmentInfo, kMaxColorAttachments>
+            colorAttachments;
         RenderPassDepthStencilAttachmentInfo depthStencilAttachment;
 
         // Cache the width and height of all attachments for convenience
@@ -228,12 +229,13 @@ namespace dawn_native {
 
     struct SetIndexBufferCmd {
         Ref<BufferBase> buffer;
+        wgpu::IndexFormat format;
         uint64_t offset;
         uint64_t size;
     };
 
     struct SetVertexBufferCmd {
-        uint32_t slot;
+        VertexBufferSlot slot;
         Ref<BufferBase> buffer;
         uint64_t offset;
         uint64_t size;

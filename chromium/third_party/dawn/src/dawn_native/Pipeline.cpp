@@ -14,6 +14,7 @@
 
 #include "dawn_native/Pipeline.h"
 
+#include "common/HashUtils.h"
 #include "dawn_native/BindGroupLayout.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/PipelineLayout.h"
@@ -25,16 +26,17 @@ namespace dawn_native {
                                                    const ProgrammableStageDescriptor* descriptor,
                                                    const PipelineLayoutBase* layout,
                                                    SingleShaderStage stage) {
-        DAWN_TRY(device->ValidateObject(descriptor->module));
+        const ShaderModuleBase* module = descriptor->module;
+        DAWN_TRY(device->ValidateObject(module));
 
-        if (descriptor->entryPoint != std::string("main")) {
-            return DAWN_VALIDATION_ERROR("Entry point must be \"main\"");
+        if (!module->HasEntryPoint(descriptor->entryPoint, stage)) {
+            return DAWN_VALIDATION_ERROR("Entry point doesn't exist in the module");
         }
-        if (descriptor->module->GetExecutionModel() != stage) {
-            return DAWN_VALIDATION_ERROR("Setting module with wrong stages");
-        }
+
         if (layout != nullptr) {
-            DAWN_TRY(descriptor->module->ValidateCompatibilityWithPipelineLayout(layout));
+            const EntryPointMetadata& metadata =
+                module->GetEntryPoint(descriptor->entryPoint, stage);
+            DAWN_TRY(ValidateCompatibilityWithPipelineLayout(metadata, layout));
         }
         return {};
     }
@@ -43,21 +45,43 @@ namespace dawn_native {
 
     PipelineBase::PipelineBase(DeviceBase* device,
                                PipelineLayoutBase* layout,
-                               wgpu::ShaderStage stages,
-                               RequiredBufferSizes minimumBufferSizes)
-        : CachedObject(device),
-          mStageMask(stages),
-          mLayout(layout),
-          mMinimumBufferSizes(std::move(minimumBufferSizes)) {
+                               std::vector<StageAndDescriptor> stages)
+        : CachedObject(device), mLayout(layout) {
+        ASSERT(!stages.empty());
+
+        for (const StageAndDescriptor& stage : stages) {
+            // Extract argument for this stage.
+            SingleShaderStage shaderStage = stage.first;
+            ShaderModuleBase* module = stage.second->module;
+            const char* entryPointName = stage.second->entryPoint;
+            const EntryPointMetadata& metadata = module->GetEntryPoint(entryPointName, shaderStage);
+
+            // Record them internally.
+            bool isFirstStage = mStageMask == wgpu::ShaderStage::None;
+            mStageMask |= StageBit(shaderStage);
+            mStages[shaderStage] = {module, entryPointName, &metadata};
+
+            // Compute the max() of all minBufferSizes across all stages.
+            RequiredBufferSizes stageMinBufferSizes =
+                ComputeRequiredBufferSizesForLayout(metadata, layout);
+
+            if (isFirstStage) {
+                mMinBufferSizes = std::move(stageMinBufferSizes);
+            } else {
+                for (BindGroupIndex group(0); group < mMinBufferSizes.size(); ++group) {
+                    ASSERT(stageMinBufferSizes[group].size() == mMinBufferSizes[group].size());
+
+                    for (size_t i = 0; i < stageMinBufferSizes[group].size(); ++i) {
+                        mMinBufferSizes[group][i] =
+                            std::max(mMinBufferSizes[group][i], stageMinBufferSizes[group][i]);
+                    }
+                }
+            }
+        }
     }
 
     PipelineBase::PipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag)
         : CachedObject(device, tag) {
-    }
-
-    wgpu::ShaderStage PipelineBase::GetStageMask() const {
-        ASSERT(!IsError());
-        return mStageMask;
     }
 
     PipelineLayoutBase* PipelineBase::GetLayout() {
@@ -70,9 +94,18 @@ namespace dawn_native {
         return mLayout.Get();
     }
 
-    const RequiredBufferSizes& PipelineBase::GetMinimumBufferSizes() const {
+    const RequiredBufferSizes& PipelineBase::GetMinBufferSizes() const {
         ASSERT(!IsError());
-        return mMinimumBufferSizes;
+        return mMinBufferSizes;
+    }
+
+    const ProgrammableStage& PipelineBase::GetStage(SingleShaderStage stage) const {
+        ASSERT(!IsError());
+        return mStages[stage];
+    }
+
+    const PerStage<ProgrammableStage>& PipelineBase::GetAllStages() const {
+        return mStages;
     }
 
     MaybeError PipelineBase::ValidateGetBindGroupLayout(uint32_t groupIndex) {
@@ -100,6 +133,41 @@ namespace dawn_native {
         }
         bgl->Reference();
         return bgl;
+    }
+
+    // static
+    size_t PipelineBase::HashForCache(const PipelineBase* pipeline) {
+        size_t hash = 0;
+
+        // The layout is deduplicated so it can be hashed by pointer.
+        HashCombine(&hash, pipeline->mLayout.Get());
+
+        HashCombine(&hash, pipeline->mStageMask);
+        for (SingleShaderStage stage : IterateStages(pipeline->mStageMask)) {
+            // The module is deduplicated so it can be hashed by pointer.
+            HashCombine(&hash, pipeline->mStages[stage].module.Get());
+            HashCombine(&hash, pipeline->mStages[stage].entryPoint);
+        }
+
+        return hash;
+    }
+
+    // static
+    bool PipelineBase::EqualForCache(const PipelineBase* a, const PipelineBase* b) {
+        // The layout is deduplicated so it can be compared by pointer.
+        if (a->mLayout.Get() != b->mLayout.Get() || a->mStageMask != b->mStageMask) {
+            return false;
+        }
+
+        for (SingleShaderStage stage : IterateStages(a->mStageMask)) {
+            // The module is deduplicated so it can be compared by pointer.
+            if (a->mStages[stage].module.Get() != b->mStages[stage].module.Get() ||
+                a->mStages[stage].entryPoint != b->mStages[stage].entryPoint) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
 }  // namespace dawn_native

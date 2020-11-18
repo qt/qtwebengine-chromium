@@ -28,6 +28,46 @@ message ShutdownDispatcherResponse {
   SrvErrorCode error = 1;
 }
 
+// Request to generate and send problem report to Parallels.
+message SendProblemReportRequest {
+  // The cryptohome id of the session owner.
+  string owner_id = 1;
+
+  // Optional VM identifier. May be omitted (empty) when requesting
+  // a non-VM-specific report.
+  string vm_name_uuid = 2;
+
+  // Optional flag indicating that report should include extended info.
+  bool detailed = 3;
+
+  // Optional user name to be added to the problem report (may be empty).
+  string name = 4;
+
+  // Optional email to be added to the problem report (may be empty).
+  string email = 5;
+
+  // Optional problem description text to be attached to the problem
+  // report (may be empty).
+  string description = 6;
+}
+
+// Response to an SendProblemReportRequest.
+message SendProblemReportResponse {
+  // If true, the report was sent.
+  bool success = 1;
+
+  // If the attempt to submit report was successful, the ID of the generated
+  // report.
+  string report_id = 2;
+
+  // If the attempt to submit report failed, the reason for the failure,
+  // as native Parallels error code.
+  sint32 result_code = 3;
+
+  // Error message corresponding to the result code (non-localized).
+  string error_message = 4;
+}
+
 // Error codes for operations involving VMs.
 enum VmErrorCode {
   // Success.

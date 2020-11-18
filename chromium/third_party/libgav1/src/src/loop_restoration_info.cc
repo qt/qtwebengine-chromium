@@ -70,18 +70,16 @@ bool LoopRestorationInfo::Reset(const LoopRestoration* const loop_restoration,
       continue;
     }
     plane_needs_filtering_[plane] = true;
-    const int plane_width = (plane == kPlaneY)
-                                ? width
-                                : RightShiftWithRounding(width, subsampling_x_);
+    const int plane_width =
+        (plane == kPlaneY) ? width : SubsampledValue(width, subsampling_x_);
     const int plane_height =
-        (plane == kPlaneY) ? height
-                           : RightShiftWithRounding(height, subsampling_y_);
-    num_horizontal_units_[plane] = std::max(
-        1, (plane_width + DivideBy2(loop_restoration_->unit_size[plane])) /
-               loop_restoration_->unit_size[plane]);
+        (plane == kPlaneY) ? height : SubsampledValue(height, subsampling_y_);
+    num_horizontal_units_[plane] =
+        std::max(1, RightShiftWithRounding(
+                        plane_width, loop_restoration_->unit_size_log2[plane]));
     num_vertical_units_[plane] = std::max(
-        1, (plane_height + DivideBy2(loop_restoration_->unit_size[plane])) /
-               loop_restoration_->unit_size[plane]);
+        1, RightShiftWithRounding(plane_height,
+                                  loop_restoration_->unit_size_log2[plane]));
     num_units_[plane] =
         num_horizontal_units_[plane] * num_vertical_units_[plane];
     total_num_units += num_units_[plane];
@@ -109,29 +107,25 @@ bool LoopRestorationInfo::PopulateUnitInfoForSuperBlock(
     LoopRestorationUnitInfo* const unit_info) const {
   assert(unit_info != nullptr);
   if (!plane_needs_filtering_[plane]) return false;
-  const int denominator_column =
-      is_superres_scaled
-          ? loop_restoration_->unit_size[plane] * kSuperResScaleNumerator
-          : loop_restoration_->unit_size[plane];
   const int numerator_column =
       is_superres_scaled ? superres_scale_denominator : 1;
   const int pixel_column_start =
       RowOrColumn4x4ToPixel(column4x4, plane, subsampling_x_);
   const int pixel_column_end = RowOrColumn4x4ToPixel(
       column4x4 + kNum4x4BlocksWide[block_size], plane, subsampling_x_);
-  const int unit_row = loop_restoration_->unit_size[plane];
+  const int unit_row_log2 = loop_restoration_->unit_size_log2[plane];
+  const int denominator_column_log2 =
+      unit_row_log2 + (is_superres_scaled ? 3 : 0);
   const int pixel_row_start =
       RowOrColumn4x4ToPixel(row4x4, plane, subsampling_y_);
   const int pixel_row_end = RowOrColumn4x4ToPixel(
       row4x4 + kNum4x4BlocksHigh[block_size], plane, subsampling_y_);
-  unit_info->column_start =
-      (pixel_column_start * numerator_column + denominator_column - 1) /
-      denominator_column;
-  unit_info->column_end =
-      (pixel_column_end * numerator_column + denominator_column - 1) /
-      denominator_column;
-  unit_info->row_start = (pixel_row_start + unit_row - 1) / unit_row;
-  unit_info->row_end = (pixel_row_end + unit_row - 1) / unit_row;
+  unit_info->column_start = RightShiftWithCeiling(
+      pixel_column_start * numerator_column, denominator_column_log2);
+  unit_info->column_end = RightShiftWithCeiling(
+      pixel_column_end * numerator_column, denominator_column_log2);
+  unit_info->row_start = RightShiftWithCeiling(pixel_row_start, unit_row_log2);
+  unit_info->row_end = RightShiftWithCeiling(pixel_row_end, unit_row_log2);
   unit_info->column_end =
       std::min(unit_info->column_end, num_horizontal_units_[plane]);
   unit_info->row_end = std::min(unit_info->row_end, num_vertical_units_[plane]);

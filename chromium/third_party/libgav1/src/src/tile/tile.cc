@@ -503,7 +503,7 @@ Tile::Tile(int tile_number, const uint8_t* const data, size_t size,
   memset(delta_lf_, 0, sizeof(delta_lf_));
   delta_lf_all_zero_ = true;
   const YuvBuffer& buffer = post_filter_.frame_buffer();
-  for (int plane = 0; plane < PlaneCount(); ++plane) {
+  for (int plane = kPlaneY; plane < PlaneCount(); ++plane) {
     // Verify that the borders are big enough for Reconstruct(). max_tx_length
     // is the maximum value of tx_width and tx_height for the plane.
     const int max_tx_length = (plane == kPlaneY) ? 64 : 32;
@@ -543,12 +543,12 @@ Tile::Tile(int tile_number, const uint8_t* const data, size_t size,
                          buffer.stride(plane),
                          post_filter_.GetUnfilteredBuffer(plane));
     const int plane_height =
-        RightShiftWithRounding(frame_header_.height, subsampling_y_[plane]);
+        SubsampledValue(frame_header_.height, subsampling_y_[plane]);
     deblock_row_limit_[plane] =
         std::min(frame_header_.rows4x4, DivideBy4(plane_height + 3)
                                             << subsampling_y_[plane]);
     const int plane_width =
-        RightShiftWithRounding(frame_header_.width, subsampling_x_[plane]);
+        SubsampledValue(frame_header_.width, subsampling_x_[plane]);
     deblock_column_limit_[plane] =
         std::min(frame_header_.columns4x4, DivideBy4(plane_width + 3)
                                                << subsampling_x_[plane]);
@@ -921,7 +921,7 @@ void Tile::PopulateIntraPredictionBuffer(int row4x4) {
   const size_t pixel_size =
       (sequence_header_.color_config.bitdepth == 8 ? sizeof(uint8_t)
                                                    : sizeof(uint16_t));
-  for (int plane = 0; plane < PlaneCount(); ++plane) {
+  for (int plane = kPlaneY; plane < PlaneCount(); ++plane) {
     const int row_to_copy =
         (MultiplyBy4(row4x4 + block_width4x4) >> subsampling_y_[plane]) - 1;
     const size_t pixels_to_copy =
@@ -1452,33 +1452,38 @@ int Tile::ReadTransformCoefficients(const Block& block, Plane plane,
   const PlaneType plane_type = GetPlaneType(plane);
   const TransformClass tx_class = GetTransformClass(*tx_type);
   context = static_cast<int>(tx_class != kTransformClass2D);
-  uint16_t* cdf;
+  int eob_pt = 1;
   switch (eob_multi_size) {
     case 0:
-      cdf = symbol_decoder_context_.eob_pt_16_cdf[plane_type][context];
+      eob_pt += reader_.ReadSymbol<kEobPt16SymbolCount>(
+          symbol_decoder_context_.eob_pt_16_cdf[plane_type][context]);
       break;
     case 1:
-      cdf = symbol_decoder_context_.eob_pt_32_cdf[plane_type][context];
+      eob_pt += reader_.ReadSymbol<kEobPt32SymbolCount>(
+          symbol_decoder_context_.eob_pt_32_cdf[plane_type][context]);
       break;
     case 2:
-      cdf = symbol_decoder_context_.eob_pt_64_cdf[plane_type][context];
+      eob_pt += reader_.ReadSymbol<kEobPt64SymbolCount>(
+          symbol_decoder_context_.eob_pt_64_cdf[plane_type][context]);
       break;
     case 3:
-      cdf = symbol_decoder_context_.eob_pt_128_cdf[plane_type][context];
+      eob_pt += reader_.ReadSymbol<kEobPt128SymbolCount>(
+          symbol_decoder_context_.eob_pt_128_cdf[plane_type][context]);
       break;
     case 4:
-      cdf = symbol_decoder_context_.eob_pt_256_cdf[plane_type][context];
+      eob_pt += reader_.ReadSymbol<kEobPt256SymbolCount>(
+          symbol_decoder_context_.eob_pt_256_cdf[plane_type][context]);
       break;
     case 5:
-      cdf = symbol_decoder_context_.eob_pt_512_cdf[plane_type];
+      eob_pt += reader_.ReadSymbol<kEobPt512SymbolCount>(
+          symbol_decoder_context_.eob_pt_512_cdf[plane_type]);
       break;
     case 6:
     default:
-      cdf = symbol_decoder_context_.eob_pt_1024_cdf[plane_type];
+      eob_pt += reader_.ReadSymbol<kEobPt1024SymbolCount>(
+          symbol_decoder_context_.eob_pt_1024_cdf[plane_type]);
       break;
   }
-  const int eob_pt =
-      1 + reader_.ReadSymbol(cdf, kEobPt16SymbolCount + eob_multi_size);
   int eob = (eob_pt < 2) ? eob_pt : ((1 << (eob_pt - 2)) + 1);
   if (eob_pt >= 3) {
     context = eob_pt - 3;
@@ -1501,10 +1506,9 @@ int Tile::ReadTransformCoefficients(const Block& block, Plane plane,
     context = GetCoeffBaseContextEob(tx_size, eob - 1);
     const uint16_t pos = scan[eob - 1];
     int level =
-        1 + reader_.ReadSymbol(
+        1 + reader_.ReadSymbol<kCoeffBaseEobSymbolCount>(
                 symbol_decoder_context_
-                    .coeff_base_eob_cdf[tx_size_context][plane_type][context],
-                kCoeffBaseEobSymbolCount);
+                    .coeff_base_eob_cdf[tx_size_context][plane_type][context]);
     if (level > kNumQuantizerBaseLevels) {
       level += ReadCoeffBaseRange(
           clamped_tx_size_context,
@@ -1793,8 +1797,9 @@ bool Tile::Residual(const Block& block, ProcessingMode mode) {
   const BlockParameters& bp = *block.bp;
   for (int chunk_y = 0; chunk_y < height_chunks; ++chunk_y) {
     for (int chunk_x = 0; chunk_x < width_chunks; ++chunk_x) {
-      for (int plane = 0; plane < (block.HasChroma() ? PlaneCount() : 1);
-           ++plane) {
+      const int num_planes = block.HasChroma() ? PlaneCount() : 1;
+      int plane = kPlaneY;
+      do {
         const int subsampling_x = subsampling_x_[plane];
         const int subsampling_y = subsampling_y_[plane];
         // For Y Plane, when lossless is true |bp.transform_size| is always
@@ -1833,7 +1838,7 @@ bool Tile::Residual(const Block& block, ProcessingMode mode) {
             }
           }
         }
-      }
+      } while (++plane < num_planes);
     }
   }
   return true;
@@ -1998,7 +2003,9 @@ bool Tile::AssignIntraMv(const Block& block) {
 }
 
 void Tile::ResetEntropyContext(const Block& block) {
-  for (int plane = 0; plane < (block.HasChroma() ? PlaneCount() : 1); ++plane) {
+  const int num_planes = block.HasChroma() ? PlaneCount() : 1;
+  int plane = kPlaneY;
+  do {
     const int subsampling_x = subsampling_x_[plane];
     const int start_x = block.column4x4 >> subsampling_x;
     const int end_x =
@@ -2017,7 +2024,7 @@ void Tile::ResetEntropyContext(const Block& block) {
            end_y - start_y);
     memset(&dc_categories_[kEntropyContextLeft][plane][start_y], 0,
            end_y - start_y);
-  }
+  } while (++plane < num_planes);
 }
 
 bool Tile::ComputePrediction(const Block& block) {
@@ -2036,7 +2043,7 @@ bool Tile::ComputePrediction(const Block& block) {
   bool is_local_valid = false;
   // Local warping parameters, similar usage as is_local_valid.
   GlobalMotion local_warp_params;
-  int plane = 0;
+  int plane = kPlaneY;
   do {
     const int8_t subsampling_x = subsampling_x_[plane];
     const int8_t subsampling_y = subsampling_y_[plane];
@@ -2367,7 +2374,7 @@ void Tile::ClearBlockDecoded(TileScratchBuffer* const scratch_buffer,
          sizeof(scratch_buffer->block_decoded));
   // Set specific edge cases to true.
   const int sb_size4 = sequence_header_.use_128x128_superblock ? 32 : 16;
-  for (int plane = 0; plane < PlaneCount(); ++plane) {
+  for (int plane = kPlaneY; plane < PlaneCount(); ++plane) {
     const int subsampling_x = subsampling_x_[plane];
     const int subsampling_y = subsampling_y_[plane];
     const int sb_width4 = (column4x4_end_ - column4x4) >> subsampling_x;

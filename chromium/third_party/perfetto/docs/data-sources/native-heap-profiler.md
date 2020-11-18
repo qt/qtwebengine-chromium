@@ -56,7 +56,7 @@ heap profiling can be enabled alongside any other tracing data sources.
 
 #### Using the tools/heap_profile script (recommended)
 
-On Linux / MacOS, use the `tools/heap_profile` script. If you are having trouble
+You can use the `tools/heap_profile` script. If you are having trouble
 make sure you are using the
 [latest version](
 https://raw.githubusercontent.com/google/perfetto/master/tools/heap_profile).
@@ -365,6 +365,12 @@ to not strip them.
 
 ## Known Issues
 
+### Android 11
+
+* 32-bit programs cannot be targeted on 64-bit devices.
+* Setting `sampling_interval_bytes` to 0 crashes the target process.
+  This is an invalid config that should be rejected instead.
+
 ### Android 10
 
 * On ARM32, the bottom-most frame is always `ERROR 2`. This is harmless and
@@ -380,6 +386,9 @@ to not strip them.
   memory in the child process will prematurely end the profile.
   `java.lang.Runtime.exec` does this, calling it will prematurely end
   the profile. Note that this is in violation of the POSIX standard.
+* 32-bit programs cannot be targeted on 64-bit devices.
+* Setting `sampling_interval_bytes` to 0 crashes the target process.
+  This is an invalid config that should be rejected instead.
 
 ## Heapprofd vs malloc_info() vs RSS
 

@@ -12,7 +12,6 @@
 #include "include/core/SkRefCnt.h"
 #include "src/gpu/GrColor.h"
 #include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrNonAtomicRef.h"
 #include "src/gpu/GrProcessorSet.h"
 #include "src/gpu/GrScissorState.h"
 #include "src/gpu/GrSurfaceProxyView.h"
@@ -68,7 +67,6 @@ public:
 
     struct InitArgs {
         InputFlags fInputFlags = InputFlags::kNone;
-        const GrUserStencilSettings* fUserStencil = &GrUserStencilSettings::kUnused;
         const GrCaps* fCaps = nullptr;
         GrXferProcessor::DstProxyView fDstProxyView;
         GrSwizzle fWriteSwizzle;
@@ -82,19 +80,16 @@ public:
     GrPipeline(GrScissorTest scissor,
                SkBlendMode blend,
                const GrSwizzle& writeSwizzle,
-               InputFlags flags = InputFlags::kNone,
-               const GrUserStencilSettings* stencil = &GrUserStencilSettings::kUnused)
+               InputFlags flags = InputFlags::kNone)
             : GrPipeline(scissor,
                          GrPorterDuffXPFactory::MakeNoCoverageXP(blend),
                          writeSwizzle,
-                         flags,
-                         stencil) {}
+                         flags) {}
 
     GrPipeline(GrScissorTest,
                sk_sp<const GrXferProcessor>,
                const GrSwizzle& writeSwizzle,
-               InputFlags = InputFlags::kNone,
-               const GrUserStencilSettings* = &GrUserStencilSettings::kUnused);
+               InputFlags = InputFlags::kNone);
 
     GrPipeline(const InitArgs& args, sk_sp<const GrXferProcessor>, const GrAppliedHardClip&);
     GrPipeline(const InitArgs&, GrProcessorSet&&, GrAppliedClip&&);
@@ -123,20 +118,34 @@ public:
         }
     }
 
+    GrDstSampleType dstSampleType() const {
+        return fDstSampleType;
+    }
+
+    // Helper functions to quickly know if this GrPipeline will access the dst as a texture or an
+    // input attachment.
+    bool usesDstTexture() const {
+        return GrDstSampleTypeUsesTexture(fDstSampleType);
+    }
+    bool usesInputAttachment() const {
+        return fDstSampleType == GrDstSampleType::kAsInputAttachment;
+    }
+
     /**
      * This returns the GrSurfaceProxyView for the texture used to access the dst color. If the
      * GrXferProcessor does not use the dst color then the proxy on the GrSurfaceProxyView will be
      * nullptr.
      */
-    const GrSurfaceProxyView& dstProxyView() const {
-        return fDstProxyView;
-    }
+    const GrSurfaceProxyView& dstProxyView() const { return fDstProxyView; }
 
     /**
      * If the GrXferProcessor uses a texture to access the dst color, then this returns that
      * texture and the offset to the dst contents within that texture.
      */
     GrTexture* peekDstTexture(SkIPoint* offset = nullptr) const {
+        if (!this->usesDstTexture()) {
+            return nullptr;
+        }
         if (offset) {
             *offset = fDstTextureOffset;
         }
@@ -154,14 +163,6 @@ public:
 
     /// @}
 
-    const GrUserStencilSettings* getUserStencil() const { return fUserStencilSettings; }
-    void setUserStencil(const GrUserStencilSettings* stencil) {
-        fUserStencilSettings = stencil;
-        if (!fUserStencilSettings->isDisabled(fFlags & Flags::kHasStencilClip)) {
-            fFlags |= Flags::kStencilEnabled;
-        }
-    }
-
     bool isScissorTestEnabled() const {
         return SkToBool(fFlags & Flags::kScissorTestEnabled);
     }
@@ -176,9 +177,6 @@ public:
     }
     bool hasStencilClip() const {
         return SkToBool(fFlags & Flags::kHasStencilClip);
-    }
-    bool isStencilEnabled() const {
-        return SkToBool(fFlags & Flags::kStencilEnabled);
     }
 #ifdef SK_DEBUG
     bool allProxiesInstantiated() const {
@@ -195,7 +193,7 @@ public:
     }
 #endif
 
-    GrXferBarrierType xferBarrierType(GrTexture*, const GrCaps&) const;
+    GrXferBarrierType xferBarrierType(const GrCaps&) const;
 
     // Used by Vulkan and Metal to cache their respective pipeline objects
     void genKey(GrProcessorKeyBuilder*, const GrCaps&) const;
@@ -210,8 +208,7 @@ private:
     /** This is a continuation of the public "InputFlags" enum. */
     enum class Flags : uint8_t {
         kHasStencilClip = (kLastInputFlag << 1),
-        kStencilEnabled = (kLastInputFlag << 2),
-        kScissorTestEnabled = (kLastInputFlag << 3),
+        kScissorTestEnabled = (kLastInputFlag << 2),
     };
 
     GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(Flags);
@@ -223,8 +220,11 @@ private:
 
     GrSurfaceProxyView fDstProxyView;
     SkIPoint fDstTextureOffset;
+    // This is the GrDstSampleType that is used for the render pass that this GrPipeline will be
+    // used in (i.e. if this GrPipeline does read the dst, it will do so using this
+    // GrDstSampleType).
+    GrDstSampleType fDstSampleType = GrDstSampleType::kNone;
     GrWindowRectsState fWindowRectsState;
-    const GrUserStencilSettings* fUserStencilSettings;
     Flags fFlags;
     sk_sp<const GrXferProcessor> fXferProcessor;
     FragmentProcessorArray fFragmentProcessors;

@@ -23,6 +23,7 @@ class GrRecordingContextPriv;
 class GrSurfaceContext;
 class GrSurfaceProxy;
 class GrTextBlobCache;
+class GrThreadSafeUniquelyKeyedProxyViewCache;
 class SkArenaAlloc;
 class SkJSONWriter;
 
@@ -62,6 +63,21 @@ public:
 
         return this->maxSurfaceSampleCountForColorType(colorType) > 0;
     }
+
+    /**
+     * Gets the maximum supported texture size.
+     */
+    SK_API int maxTextureSize() const;
+
+    /**
+     * Gets the maximum supported render target size.
+     */
+    SK_API int maxRenderTargetSize() const;
+
+    /**
+     * Can a SkImage be created with the given color type.
+     */
+    SK_API bool colorTypeSupportedAsImage(SkColorType) const;
 
     /**
      * Gets the maximum supported sample count for a color type. 1 is returned if only non-MSAA
@@ -158,6 +174,9 @@ protected:
     GrTextBlobCache* getTextBlobCache();
     const GrTextBlobCache* getTextBlobCache() const;
 
+    GrThreadSafeUniquelyKeyedProxyViewCache* threadSafeViewCache();
+    const GrThreadSafeUniquelyKeyedProxyViewCache* threadSafeViewCache() const;
+
     /**
      * Registers an object for flush-related callbacks. (See GrOnFlushCallbackObject.)
      *
@@ -214,18 +233,18 @@ private:
 
     std::unique_ptr<GrAuditTrail>     fAuditTrail;
 
-#ifdef GR_TEST_UTILS
+#if GR_TEST_UTILS
     int fSuppressWarningMessages = 0;
 #endif
 
-    typedef GrImageContext INHERITED;
+    using INHERITED = GrImageContext;
 };
 
 /**
- * Safely cast a possibly-null recording context to direct context.
+ * Safely cast a possibly-null base context to direct context.
  */
-static inline GrDirectContext* GrAsDirectContext(GrRecordingContext* recording) {
-    return recording ? recording->asDirectContext() : nullptr;
+static inline GrDirectContext* GrAsDirectContext(GrContext_Base* base) {
+    return base ? base->asDirectContext() : nullptr;
 }
 
 #endif

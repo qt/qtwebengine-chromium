@@ -97,6 +97,8 @@ struct VirtualConnection {
   //    generated and intended to be unique within that device.
   //  - GUID-style hex string: Random string identifying a particular receiver
   //    app on the device.
+  //
+  // Additionally, |peer_id| can be an asterisk when broadcast-sending.
   std::string local_id;
   std::string peer_id;
   int socket_id;

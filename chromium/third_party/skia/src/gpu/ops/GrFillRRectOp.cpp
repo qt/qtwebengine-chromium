@@ -104,7 +104,8 @@ private:
                              SkArenaAlloc*,
                              const GrSurfaceProxyView* writeView,
                              GrAppliedClip&&,
-                             const GrXferProcessor::DstProxyView&) final;
+                             const GrXferProcessor::DstProxyView&,
+                             GrXferBarrierFlags renderPassXferBarriers) final;
 
     Helper         fHelper;
     SkPMColor4f    fColor;
@@ -125,7 +126,7 @@ private:
     // onExecute. In the prePrepared case it will have been stored in the record-time arena.
     GrProgramInfo* fProgramInfo = nullptr;
 
-    typedef GrMeshDrawOp INHERITED;
+    using INHERITED = GrMeshDrawOp;
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(FillRRectOp::ProcessorFlags)
@@ -361,7 +362,7 @@ private:
     class CoverageImpl;
     class MSAAImpl;
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 constexpr GrPrimitiveProcessor::Attribute FillRRectOp::Processor::kVertexAttribs[];
@@ -855,12 +856,14 @@ void FillRRectOp::onCreateProgramInfo(const GrCaps* caps,
                                       SkArenaAlloc* arena,
                                       const GrSurfaceProxyView* writeView,
                                       GrAppliedClip&& appliedClip,
-                                      const GrXferProcessor::DstProxyView& dstProxyView) {
+                                      const GrXferProcessor::DstProxyView& dstProxyView,
+                                      GrXferBarrierFlags renderPassXferBarriers) {
     GrGeometryProcessor* gp = Processor::Make(arena, fHelper.aaType(), fProcessorFlags);
     SkASSERT(gp->instanceStride() == (size_t)fInstanceStride);
 
     fProgramInfo = fHelper.createProgramInfo(caps, arena, writeView, std::move(appliedClip),
-                                             dstProxyView, gp, GrPrimitiveType::kTriangles);
+                                             dstProxyView, gp, GrPrimitiveType::kTriangles,
+                                             renderPassXferBarriers);
 }
 
 void FillRRectOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) {

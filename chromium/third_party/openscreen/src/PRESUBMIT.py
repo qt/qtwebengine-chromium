@@ -91,7 +91,7 @@ def _CommonChecks(input_api, output_api):
 
 
 def CheckChangeOnUpload(input_api, output_api):
-  input_api.DEFAULT_BLOCK_LIST = _EXCLUDED_PATHS;
+  input_api.DEFAULT_FILES_TO_SKIP = _EXCLUDED_PATHS;
   results = []
   results.extend(_CommonChecks(input_api, output_api))
   results.extend(
@@ -100,7 +100,7 @@ def CheckChangeOnUpload(input_api, output_api):
 
 
 def CheckChangeOnCommit(input_api, output_api):
-  input_api.DEFAULT_BLOCK_LIST = _EXCLUDED_PATHS;
+  input_api.DEFAULT_FILES_TO_SKIP = _EXCLUDED_PATHS;
   results = []
   results.extend(_CommonChecks(input_api, output_api))
   return results

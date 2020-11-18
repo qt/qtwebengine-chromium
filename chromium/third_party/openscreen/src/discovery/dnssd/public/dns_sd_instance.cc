@@ -133,8 +133,11 @@ bool IsServiceValid(const std::string& service) {
       }
       last_char_hyphen = true;
     } else if (std::isalpha(service[i])) {
+      last_char_hyphen = false;
       seen_letter = true;
-    } else if (!std::isdigit(service[i])) {
+    } else if (std::isdigit(service[i])) {
+      last_char_hyphen = false;
+    } else {
       return false;
     }
   }

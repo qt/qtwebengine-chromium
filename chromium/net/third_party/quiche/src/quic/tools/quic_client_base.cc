@@ -114,14 +114,17 @@ void QuicClientBase::StartConnect() {
     UpdateStats();
   }
 
+  const quic::ParsedQuicVersionVector client_supported_versions =
+      can_reconnect_with_different_version
+          ? ParsedQuicVersionVector{mutual_version}
+          : supported_versions();
+
   session_ = CreateQuicClientSession(
-      supported_versions(),
+      client_supported_versions,
       new QuicConnection(GetNextConnectionId(), server_address(), helper(),
                          alarm_factory(), writer,
                          /* owns_writer= */ false, Perspective::IS_CLIENT,
-                         can_reconnect_with_different_version
-                             ? ParsedQuicVersionVector{mutual_version}
-                             : supported_versions()));
+                         client_supported_versions));
   if (connection_debug_visitor_ != nullptr) {
     session()->connection()->set_debug_visitor(connection_debug_visitor_);
   }
@@ -283,7 +286,7 @@ bool QuicClientBase::connected() const {
 }
 
 bool QuicClientBase::goaway_received() const {
-  return session_ != nullptr && session_->goaway_received();
+  return session_ != nullptr && session_->transport_goaway_received();
 }
 
 int QuicClientBase::GetNumSentClientHellos() {

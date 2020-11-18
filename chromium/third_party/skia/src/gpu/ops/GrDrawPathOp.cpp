@@ -83,8 +83,7 @@ void GrDrawPathOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBoun
 
     auto pipeline = GrSimpleMeshDrawOpHelper::CreatePipeline(flushState,
                                                              this->detachProcessorSet(),
-                                                             pipelineFlags,
-                                                             &kCoverPass);
+                                                             pipelineFlags);
 
     sk_sp<GrPathProcessor> pathProc(GrPathProcessor::Create(this->color(), this->viewMatrix()));
 
@@ -94,8 +93,11 @@ void GrDrawPathOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBoun
                               proxy->backendFormat(),
                               flushState->writeView()->origin(),
                               pipeline,
+                              &kCoverPass,
                               pathProc.get(),
-                              GrPrimitiveType::kPath);
+                              GrPrimitiveType::kPath,
+                              0,
+                              flushState->renderPassBarriers());
 
     flushState->bindPipelineAndScissorClip(programInfo, this->bounds());
     flushState->bindTextures(programInfo.primProc(), nullptr, programInfo.pipeline());

@@ -205,7 +205,7 @@ IterableBitSet<N>::Iterator::Iterator(const std::bitset<N> &bitset)
     }
     else
     {
-        mOffset = static_cast<unsigned long>(rx::roundUp(N, BitsPerWord));
+        mOffset = static_cast<unsigned long>(rx::roundUpPow2(N, BitsPerWord));
     }
 }
 
@@ -509,6 +509,9 @@ std::size_t BitSetT<N, BitsT, ParamT>::Iterator::getNextBit()
 
 template <size_t N>
 using BitSet8 = BitSetT<N, uint8_t>;
+
+template <size_t N>
+using BitSet16 = BitSetT<N, uint16_t>;
 
 template <size_t N>
 using BitSet32 = BitSetT<N, uint32_t>;

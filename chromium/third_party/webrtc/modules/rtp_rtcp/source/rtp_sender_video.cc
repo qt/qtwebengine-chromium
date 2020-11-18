@@ -36,6 +36,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "modules/rtp_rtcp/source/time_util.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/trace_event.h"
 
@@ -44,6 +45,8 @@ namespace webrtc {
 namespace {
 constexpr size_t kRedForFecHeaderLength = 1;
 constexpr int64_t kMaxUnretransmittableFrameIntervalMs = 33 * 4;
+constexpr char kIncludeCaptureClockOffset[] =
+    "WebRTC-IncludeCaptureClockOffset";
 
 void BuildRedPayload(const RtpPacketToSend& media_packet,
                      RtpPacketToSend* red_packet) {
@@ -109,8 +112,21 @@ const char* FrameTypeToString(VideoFrameType frame_type) {
 }
 #endif
 
-bool IsNoopDelay(const PlayoutDelay& delay) {
+bool IsNoopDelay(const VideoPlayoutDelay& delay) {
   return delay.min_ms == -1 && delay.max_ms == -1;
+}
+
+absl::optional<VideoPlayoutDelay> LoadVideoPlayoutDelayOverride(
+    const WebRtcKeyValueConfig* key_value_config) {
+  RTC_DCHECK(key_value_config);
+  FieldTrialOptional<int> playout_delay_min_ms("min_ms", absl::nullopt);
+  FieldTrialOptional<int> playout_delay_max_ms("max_ms", absl::nullopt);
+  ParseFieldTrial({&playout_delay_max_ms, &playout_delay_min_ms},
+                  key_value_config->Lookup("WebRTC-ForceSendPlayoutDelay"));
+  return playout_delay_max_ms && playout_delay_min_ms
+             ? absl::make_optional<VideoPlayoutDelay>(*playout_delay_min_ms,
+                                                      *playout_delay_max_ms)
+             : absl::nullopt;
 }
 
 }  // namespace
@@ -126,6 +142,7 @@ RTPSenderVideo::RTPSenderVideo(const Config& config)
       transmit_color_space_next_frame_(false),
       current_playout_delay_{-1, -1},
       playout_delay_pending_(false),
+      forced_playout_delay_(LoadVideoPlayoutDelayOverride(config.field_trials)),
       red_payload_type_(config.red_payload_type),
       fec_generator_(config.fec_generator),
       fec_type_(config.fec_type),
@@ -146,7 +163,10 @@ RTPSenderVideo::RTPSenderVideo(const Config& config)
                     config.frame_transformer,
                     rtp_sender_->SSRC(),
                     config.send_transport_queue)
-              : nullptr) {
+              : nullptr),
+      include_capture_clock_offset_(absl::StartsWith(
+          config.field_trials->Lookup(kIncludeCaptureClockOffset),
+          "Enabled")) {
   if (frame_transformer_delegate_)
     frame_transformer_delegate_->Init();
 }
@@ -394,7 +414,8 @@ bool RTPSenderVideo::SendVideo(
     int64_t capture_time_ms,
     rtc::ArrayView<const uint8_t> payload,
     RTPVideoHeader video_header,
-    absl::optional<int64_t> expected_retransmission_time_ms) {
+    absl::optional<int64_t> expected_retransmission_time_ms,
+    absl::optional<int64_t> estimated_capture_clock_offset_ms) {
 #if RTC_TRACE_EVENTS_ENABLED
   TRACE_EVENT_ASYNC_STEP1("webrtc", "Video", capture_time_ms, "Send", "type",
                           FrameTypeToString(video_header.frame_type));
@@ -446,7 +467,9 @@ bool RTPSenderVideo::SendVideo(
                                                single_packet->Csrcs()),
           single_packet->Timestamp(), kVideoPayloadTypeFrequency,
           Int64MsToUQ32x32(single_packet->capture_time_ms() + NtpOffsetMs()),
-          /*estimated_capture_clock_offset=*/absl::nullopt);
+          /*estimated_capture_clock_offset=*/
+          include_capture_clock_offset_ ? estimated_capture_clock_offset_ms
+                                        : absl::nullopt);
 
   auto first_packet = std::make_unique<RtpPacketToSend>(*single_packet);
   auto middle_packet = std::make_unique<RtpPacketToSend>(*single_packet);
@@ -782,11 +805,12 @@ bool RTPSenderVideo::UpdateConditionalRetransmit(
 
 void RTPSenderVideo::MaybeUpdateCurrentPlayoutDelay(
     const RTPVideoHeader& header) {
-  if (IsNoopDelay(header.playout_delay)) {
+  VideoPlayoutDelay requested_delay =
+      forced_playout_delay_.value_or(header.playout_delay);
+
+  if (IsNoopDelay(requested_delay)) {
     return;
   }
-
-  PlayoutDelay requested_delay = header.playout_delay;
 
   if (requested_delay.min_ms > PlayoutDelayLimits::kMaxMs ||
       requested_delay.max_ms > PlayoutDelayLimits::kMaxMs) {

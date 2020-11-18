@@ -12,8 +12,8 @@
 
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
-#include <mutex>
 #include <ostream>
 #include <vector>
 
@@ -81,7 +81,7 @@ std::ostream *gSwallowStream;
 
 bool DebugAnnotationsActive()
 {
-#if defined(ANGLE_ENABLE_DEBUG_ANNOTATIONS)
+#if defined(ANGLE_ENABLE_DEBUG_ANNOTATIONS) || defined(ANGLE_ENABLE_DEBUG_TRACE)
     return g_debugAnnotator != nullptr && g_debugAnnotator->getStatus();
 #else
     return false;
@@ -113,7 +113,14 @@ void InitializeDebugMutexIfNeeded()
     }
 }
 
-ScopedPerfEventHelper::ScopedPerfEventHelper(const char *format, ...) : mFunctionName(nullptr)
+std::mutex &GetDebugMutex()
+{
+    ASSERT(g_debugMutex);
+    return *g_debugMutex;
+}
+
+ScopedPerfEventHelper::ScopedPerfEventHelper(gl::Context *context, const char *format, ...)
+    : mFunctionName(nullptr)
 {
     bool dbgTrace = DebugAnnotationsActive();
 #if !defined(ANGLE_ENABLE_DEBUG_TRACE)
@@ -133,7 +140,7 @@ ScopedPerfEventHelper::ScopedPerfEventHelper(const char *format, ...) : mFunctio
     va_end(vararg);
     if (dbgTrace)
     {
-        g_debugAnnotator->beginEvent(mFunctionName, buffer.data());
+        g_debugAnnotator->beginEvent(context, mFunctionName, buffer.data());
     }
 }
 
@@ -145,13 +152,14 @@ ScopedPerfEventHelper::~ScopedPerfEventHelper()
     }
 }
 
-LogMessage::LogMessage(const char *function, int line, LogSeverity severity)
-    : mFunction(function), mLine(line), mSeverity(severity)
+LogMessage::LogMessage(const char *file, const char *function, int line, LogSeverity severity)
+    : mFile(file), mFunction(function), mLine(line), mSeverity(severity)
 {
     // EVENT() does not require additional function(line) info.
     if (mSeverity != LOG_EVENT)
     {
-        mStream << mFunction << "(" << mLine << "): ";
+        const char *slash = std::max(strrchr(mFile, '/'), strrchr(mFile, '\\'));
+        mStream << (slash ? (slash + 1) : mFile) << ":" << mLine << " (" << mFunction << "): ";
     }
 }
 

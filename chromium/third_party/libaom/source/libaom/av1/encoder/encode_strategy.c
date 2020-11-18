@@ -46,7 +46,8 @@ static INLINE void set_refresh_frame_flags(
 
 void av1_configure_buffer_updates(
     AV1_COMP *const cpi, RefreshFrameFlagsInfo *const refresh_frame_flags,
-    const FRAME_UPDATE_TYPE type, int force_refresh_all) {
+    const FRAME_UPDATE_TYPE type, const FRAME_TYPE frame_type,
+    int force_refresh_all) {
   // NOTE(weitinglin): Should we define another function to take care of
   // cpi->rc.is_$Source_Type to make this function as it is in the comment?
 
@@ -74,7 +75,13 @@ void av1_configure_buffer_updates(
 
     case ARF_UPDATE:
       // NOTE: BWDREF does not get updated along with ALTREF_FRAME.
-      set_refresh_frame_flags(refresh_frame_flags, false, false, true);
+      if (frame_type == KEY_FRAME && !cpi->no_show_fwd_kf) {
+        // TODO(bohanli): consider moving this to force_refresh_all?
+        // This is Keyframe as arf
+        set_refresh_frame_flags(refresh_frame_flags, true, true, true);
+      } else {
+        set_refresh_frame_flags(refresh_frame_flags, false, false, true);
+      }
       break;
 
     case INTNL_OVERLAY_UPDATE:
@@ -386,7 +393,19 @@ static struct lookahead_entry *choose_frame_source(
   // buffer. If the current frame is not arf, then pop it. This assumes the
   // first frame in the GF group is not arf. May need to change if it is not
   // true.
-  const int pop_lookahead = (src_index == 0);
+  int pop_lookahead = (src_index == 0);
+  // If this is a key frame and keyframe filtering is enabled with overlay,
+  // then do not pop.
+  if (pop_lookahead && cpi->oxcf.kf_cfg.enable_keyframe_filtering > 1 &&
+      cpi->rc.frames_to_key == 0 && cpi->rc.frames_till_gf_update_due == 0 &&
+      !is_stat_generation_stage(cpi) && cpi->lookahead) {
+    if (cpi->lookahead->read_ctxs[cpi->compressor_stage].sz &&
+        (*flush ||
+         cpi->lookahead->read_ctxs[cpi->compressor_stage].sz ==
+             cpi->lookahead->read_ctxs[cpi->compressor_stage].pop_sz)) {
+      pop_lookahead = 0;
+    }
+  }
   frame_params->show_frame = pop_lookahead;
   if (pop_lookahead) {
     // show frame, pop from buffer
@@ -527,11 +546,12 @@ static void dump_ref_frame_images(AV1_COMP *cpi) {
 #endif  // DUMP_REF_FRAME_IMAGES == 1
 
 int av1_get_refresh_ref_frame_map(int refresh_frame_flags) {
-  int ref_map_index = INVALID_IDX;
+  int ref_map_index;
 
   for (ref_map_index = 0; ref_map_index < REF_FRAMES; ++ref_map_index)
     if ((refresh_frame_flags >> ref_map_index) & 1) break;
 
+  if (ref_map_index == REF_FRAMES) ref_map_index = INVALID_IDX;
   return ref_map_index;
 }
 
@@ -572,7 +592,8 @@ static void update_arf_stack(int ref_map_index,
 // Update reference frame stack info.
 void av1_update_ref_frame_map(AV1_COMP *cpi,
                               FRAME_UPDATE_TYPE frame_update_type,
-                              int show_existing_frame, int ref_map_index,
+                              FRAME_TYPE frame_type, int show_existing_frame,
+                              int ref_map_index,
                               RefBufferStack *ref_buffer_stack) {
   AV1_COMMON *const cm = &cpi->common;
   // TODO(jingning): Consider the S-frame same as key frame for the
@@ -612,7 +633,16 @@ void av1_update_ref_frame_map(AV1_COMP *cpi,
       break;
     case ARF_UPDATE:
     case INTNL_ARF_UPDATE:
-      update_arf_stack(ref_map_index, ref_buffer_stack);
+      if (frame_type == KEY_FRAME && !cpi->no_show_fwd_kf) {
+        stack_reset(ref_buffer_stack->lst_stack,
+                    &ref_buffer_stack->lst_stack_size);
+        stack_reset(ref_buffer_stack->gld_stack,
+                    &ref_buffer_stack->gld_stack_size);
+        stack_reset(ref_buffer_stack->arf_stack,
+                    &ref_buffer_stack->arf_stack_size);
+      } else {
+        update_arf_stack(ref_map_index, ref_buffer_stack);
+      }
       stack_push(ref_buffer_stack->arf_stack, &ref_buffer_stack->arf_stack_size,
                  ref_map_index);
       break;
@@ -912,8 +942,9 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
     // Do tpl after ARF is filtered, or if no ARF, at the second frame of GF
     // group.
     // TODO(bohanli): if no ARF, just do it at the first frame.
-    int which_frame_tpl = AOMMAX(cpi->gf_group.arf_index, 1);
-    allow_tpl = allow_tpl && (cpi->gf_group.index == which_frame_tpl);
+    int gf_index = gf_group->index;
+    allow_tpl = allow_tpl && (gf_group->update_type[gf_index] == ARF_UPDATE ||
+                              gf_group->update_type[gf_index] == GF_UPDATE);
     if (allow_tpl) {
       // Need to set the size for TPL for ARF
       // TODO(bohanli): Why is this? what part of it is necessary?
@@ -1024,10 +1055,13 @@ void av1_get_ref_frames(AV1_COMP *const cpi, RefBufferStack *ref_buffer_stack) {
           find_unused_ref_frame(remapped_ref_idx, lst_stack, lst_stack_size);
     }
 
-    if (ref_map_index != INVALID_IDX)
+    if (ref_map_index != INVALID_IDX) {
       remapped_ref_idx[idx] = ref_map_index;
-    else
+    } else if (!gld_stack_size && arf_stack_size) {
+      remapped_ref_idx[idx] = ref_buffer_stack->arf_stack[0];
+    } else {
       remapped_ref_idx[idx] = ref_buffer_stack->gld_stack[0];
+    }
   }
 }
 
@@ -1048,6 +1082,16 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   memset(&frame_input, 0, sizeof(frame_input));
   memset(&frame_params, 0, sizeof(frame_params));
   memset(&frame_results, 0, sizeof(frame_results));
+
+  // Check if we need to stuff more src frames
+  if (flush == 0) {
+    int srcbuf_size =
+        av1_lookahead_depth(cpi->lookahead, cpi->compressor_stage);
+    int pop_size = av1_lookahead_pop_sz(cpi->lookahead, cpi->compressor_stage);
+
+    // Continue buffering look ahead buffer.
+    if (srcbuf_size < pop_size) return -1;
+  }
 
   // TODO(sarahparker) finish bit allocation for one pass pyramid
   if (has_no_stats_stage(cpi)) {
@@ -1161,9 +1205,9 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   // TODO(david.turner@argondesign.com): Change all the encode strategy to
   // modify frame_params instead of cm or cpi.
 
-  // Per-frame encode speed.  In theory this can vary, but things may have been
-  // written assuming speed-level will not change within a sequence, so this
-  // parameter should be used with caution.
+  // Per-frame encode speed.  In theory this can vary, but things may have
+  // been written assuming speed-level will not change within a sequence, so
+  // this parameter should be used with caution.
   frame_params.speed = oxcf->speed;
 
   // Work out some encoding parameters specific to the pass:
@@ -1199,7 +1243,8 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
       !frame_params.show_existing_frame;
 
   av1_configure_buffer_updates(cpi, &frame_params.refresh_frame,
-                               frame_update_type, force_refresh_all);
+                               frame_update_type, frame_params.frame_type,
+                               force_refresh_all);
 
   if (!is_stat_generation_stage(cpi)) {
     const RefCntBuffer *ref_frames[INTER_REFS_PER_FRAME];
@@ -1217,9 +1262,18 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
       ref_frames[i] = get_ref_frame_buf(cm, ref_frame_priority_order[i]);
       ref_frame_buf[i] = ref_frames[i] != NULL ? &ref_frames[i]->buf : NULL;
     }
+
     // Work out which reference frame slots may be used.
-    frame_params.ref_frame_flags = get_ref_frame_flags(
-        &cpi->sf, ref_frame_buf, ext_flags->ref_frame_flags);
+    if (av1_check_keyframe_overlay(gf_group->index, gf_group,
+                                   cpi->rc.frames_since_key)) {
+      // This is a KF overlay, it should refer to arf. However KF overlay
+      // has the same LAST and ALTREF references, so ALTREF will be disabled
+      // in function get_ref_frame_flags. Therefore setting it manually.
+      frame_params.ref_frame_flags = av1_ref_frame_flag_list[ALTREF_FRAME];
+    } else {
+      frame_params.ref_frame_flags = get_ref_frame_flags(
+          &cpi->sf, ref_frame_buf, ext_flags->ref_frame_flags);
+    }
 
     frame_params.primary_ref_frame =
         choose_primary_ref_frame(cpi, &frame_params);
@@ -1238,9 +1292,9 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
 
   // The way frame_params->remapped_ref_idx is setup is a placeholder.
   // Currently, reference buffer assignment is done by update_ref_frame_map()
-  // which is called by high-level strategy AFTER encoding a frame.  It modifies
-  // cm->remapped_ref_idx.  If you want to use an alternative method to
-  // determine reference buffer assignment, just put your assignments into
+  // which is called by high-level strategy AFTER encoding a frame.  It
+  // modifies cm->remapped_ref_idx.  If you want to use an alternative method
+  // to determine reference buffer assignment, just put your assignments into
   // frame_params->remapped_ref_idx here and they will be used when encoding
   // this frame.  If frame_params->remapped_ref_idx is setup independently of
   // cm->remapped_ref_idx then update_ref_frame_map() will have no effect.
@@ -1252,6 +1306,7 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   if (!frame_params.show_existing_frame) {
     cm->quant_params.using_qmatrix = oxcf->q_cfg.using_qm;
   }
+
 #if CONFIG_REALTIME_ONLY
   if (av1_encode(cpi, dest, &frame_input, &frame_params, &frame_results) !=
       AOM_CODEC_OK) {
@@ -1277,8 +1332,9 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
     if (!ext_flags->refresh_frame.update_pending) {
       int ref_map_index =
           av1_get_refresh_ref_frame_map(cm->current_frame.refresh_frame_flags);
-      av1_update_ref_frame_map(cpi, frame_update_type, cm->show_existing_frame,
-                               ref_map_index, &cpi->ref_buffer_stack);
+      av1_update_ref_frame_map(cpi, frame_update_type, frame_params.frame_type,
+                               cm->show_existing_frame, ref_map_index,
+                               &cpi->ref_buffer_stack);
     }
   }
 
@@ -1313,4 +1369,26 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   if (cpi->use_svc) av1_save_layer_context(cpi);
 
   return AOM_CODEC_OK;
+}
+
+// Determine whether a frame is a keyframe arf. Will return 0 for fwd kf arf.
+// Note it depends on frame_since_key and gf_group, therefore should be called
+// after the gf group is defined, or otherwise a keyframe arf may still return
+// 0.
+int av1_check_keyframe_arf(int gf_index, GF_GROUP *gf_group,
+                           int frame_since_key) {
+  if (gf_index >= gf_group->size) return 0;
+  return gf_group->update_type[gf_index] == ARF_UPDATE &&
+         gf_group->update_type[gf_index + 1] == OVERLAY_UPDATE &&
+         frame_since_key == 0;
+}
+
+// Determine whether a frame is a keyframe overlay (will also return 0 for fwd
+// kf overlays).
+int av1_check_keyframe_overlay(int gf_index, GF_GROUP *gf_group,
+                               int frame_since_key) {
+  if (gf_index < 1) return 0;
+  return gf_group->update_type[gf_index - 1] == ARF_UPDATE &&
+         gf_group->update_type[gf_index] == OVERLAY_UPDATE &&
+         frame_since_key == 0;
 }

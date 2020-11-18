@@ -37,10 +37,11 @@
   /** Keep margin-left & padding-left in sync with ElementsTreeElements.updateDecorators **/
   padding: 1px 0 0 14px;
   margin-left: -2px;
-  word-wrap: break-word;
+  word-break: normal;
   position: relative;
   min-height: 15px;
   line-height: 1.36;
+  min-width: 200px;
 }
 
 .elements-disclosure li.parent {
@@ -112,7 +113,7 @@
   margin-left: -12px;
 }
 
-.elements-disclosure .elements-tree-outline.hide-selection-when-blurred .selected:focus[data-keyboard-focus="true"] .highlight > * {
+.elements-disclosure .elements-tree-outline.hide-selection-when-blurred .selected:focus-visible .highlight > * {
   background: var(--focus-bg-color);
   border-radius: 2px;
   box-shadow: 0 0 0 2px var(--focus-bg-color);
@@ -132,10 +133,11 @@
 
 .elements-disclosure ol.children {
   display: none;
+  min-width: 100%;
 }
 
 .elements-disclosure ol.children.expanded {
-  display: block;
+  display: inline-block;
 }
 
 .elements-disclosure > ol {
@@ -314,22 +316,20 @@ li.selected {
 li.hovered:not(.always-parent) + ol.children,
 .elements-tree-outline ol.shadow-root,
 li.selected:not(.always-parent) + ol.children {
-  margin-left: 5px;
-  padding-inline-start: 6px;
-  border-width: 1px;
-  border-left-style: solid;
+  background: linear-gradient(to right, var(--indentation-level-border-color), var(--indentation-level-border-color) 0.5px, transparent 0);
+  background-position-x: 5px;
 }
 
 li.selected:not(.always-parent) + ol.children {
-  border-color: hsl(216deg 68% 80% / 100%) !important;
+  --indentation-level-border-color: hsl(216deg 68% 80% / 100%) !important;
 }
 
 li.hovered:not(.always-parent) + ol.children:not(.shadow-root) {
-  border-color: hsl(0deg 0% 0% / 10%);
+  --indentation-level-border-color: hsl(0deg 0% 0% / 10%);
 }
 
 .elements-tree-outline ol.shadow-root {
-  border-color: hsl(0deg 0% 80% / 100%);
+  --indentation-level-border-color: hsl(0deg 0% 80% / 100%);
 }
 
 @media (forced-colors: active) {
@@ -353,27 +353,4 @@ li.hovered:not(.always-parent) + ol.children:not(.shadow-root) {
   .gutter-menu-icon {
     forced-color-adjust: none;
   }
-}
-
-/** Adorner */
-.adorner-container {
-  display: inline-block;
-}
-
-.adorner-container.hidden {
-  display: none;
-}
-
-.adorner-container devtools-adorner {
-  margin-left: 3px;
-  vertical-align: text-bottom;
-}
-
-:host-context(.-theme-with-dark-background) devtools-adorner {
-  --adorner-text-color: #ffffffde;
-  --adorner-background-color: #5db0d726;
-  --adorner-border: 1px solid #5db0d780;
-  --adorner-border-focus: 1px solid #5db0d7;
-  --adorner-text-color-active: #242424;
-  --adorner-background-color-active: #5db0d7;
 }

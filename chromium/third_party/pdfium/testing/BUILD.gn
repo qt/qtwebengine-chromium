@@ -23,10 +23,9 @@ source_set("test_support") {
     "utils/file_util.h",
     "utils/hash.cpp",
     "utils/hash.h",
-    "utils/path_service.cpp",
-    "utils/path_service.h",
   ]
   data = [ "resources/" ]
+  public_deps = [ ":path_service" ]
   deps = [
     "../:pdfium_public_headers",
     "../core/fdrm",
@@ -49,6 +48,17 @@ source_set("test_support") {
   }
 }
 
+source_set("path_service") {
+  testonly = true
+  sources = [
+    "utils/path_service.cpp",
+    "utils/path_service.h",
+  ]
+  deps = [ "../core/fxcrt" ]
+  configs += [ "../:pdfium_core_config" ]
+  visibility = [ "../*" ]
+}
+
 source_set("test_environments") {
   testonly = true
   sources = [
@@ -68,6 +78,7 @@ source_set("test_environments") {
       "v8_test_environment.h",
     ]
     deps += [
+      "../fxjs",
       "//v8",
       "//v8:v8_libplatform",
     ]
@@ -79,8 +90,8 @@ source_set("test_environments") {
       "xfa_test_environment.h",
     ]
     deps += [
+      "../fxjs:gc",
       "../xfa/fgas",
-      "//v8:cppgc",
     ]
   }
 }
@@ -109,6 +120,10 @@ source_set("unit_test_support") {
         "fxgc_unittest.cpp",
         "fxgc_unittest.h",
       ]
+      deps += [
+        "../fxjs:gc",
+        "//testing/gtest",
+      ]
     }
   }
 }
@@ -120,6 +135,8 @@ source_set("embedder_test_support") {
     "embedder_test.h",
     "embedder_test_constants.cpp",
     "embedder_test_constants.h",
+    "embedder_test_environment.cpp",
+    "embedder_test_environment.h",
     "embedder_test_mock_delegate.h",
     "embedder_test_timer_handling_delegate.h",
     "fake_file_access.cpp",

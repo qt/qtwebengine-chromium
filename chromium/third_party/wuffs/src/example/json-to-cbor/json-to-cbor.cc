@@ -114,7 +114,11 @@ static const char* g_usage =
 
 // ----
 
-uint8_t g_dst_array[32768];
+#ifndef DST_BUFFER_ARRAY_SIZE
+#define DST_BUFFER_ARRAY_SIZE (32 * 1024)
+#endif
+
+uint8_t g_dst_array[DST_BUFFER_ARRAY_SIZE];
 wuffs_base__io_buffer g_dst;
 
 std::vector<uint32_t> g_quirks;
@@ -190,7 +194,7 @@ flush_dst() {
 }
 
 std::string  //
-write_dst(const void* s, size_t n) {
+write_dst_slow(const void* s, size_t n) {
   const uint8_t* p = static_cast<const uint8_t*>(s);
   while (n > 0) {
     size_t i = g_dst.writer_length();
@@ -211,6 +215,16 @@ write_dst(const void* s, size_t n) {
     n -= i;
   }
   return "";
+}
+
+inline std::string  //
+write_dst(const void* s, size_t n) {
+  if (n <= (DST_BUFFER_ARRAY_SIZE - g_dst.meta.wi)) {
+    memcpy(g_dst.data.ptr + g_dst.meta.wi, s, n);
+    g_dst.meta.wi += n;
+    return "";
+  }
+  return write_dst_slow(s, n);
 }
 
 // ----
@@ -275,11 +289,6 @@ class Callbacks : public wuffs_aux::DecodeJsonCallbacks {
                       : Append(static_cast<uint64_t>(-(val + 1)), 0x20);
   }
 
-  std::string AppendByteString(std::string&& val) override {
-    TRY(Append(val.size(), 0x40));
-    return write_dst(val.data(), val.size());
-  }
-
   std::string AppendTextString(std::string&& val) override {
     TRY(Append(val.size(), 0x60));
     return write_dst(val.data(), val.size());
@@ -298,8 +307,7 @@ class Callbacks : public wuffs_aux::DecodeJsonCallbacks {
 
 std::string  //
 main1(int argc, char** argv) {
-  g_dst = wuffs_base__ptr_u8__writer(
-      &g_dst_array[0], (sizeof(g_dst_array) / sizeof(g_dst_array[0])));
+  g_dst = wuffs_base__ptr_u8__writer(&g_dst_array[0], DST_BUFFER_ARRAY_SIZE);
 
   TRY(parse_flags(argc, argv));
 

@@ -22,6 +22,7 @@ sql_files = [
   "android/android_surfaceflinger.sql",
   "android/android_cpu_agg.sql",
   "android/android_cpu_raw_metrics_per_core.sql",
+  "android/android_gpu.sql",
   "android/android_mem.sql",
   "android/android_mem_unagg.sql",
   "android/android_ion.sql",
@@ -51,10 +52,10 @@ sql_files = [
   "android/mem_stats_priority_breakdown.sql",
   "android/span_view_stats.sql",
   "android/process_counter_span_view.sql",
-  "android/counter_span_view.sql",
-  "android/unmapped_java_symbols.sql",
+  "android/global_counter_span_view.sql",
   "android/unsymbolized_frames.sql",
   "chrome/chrome_processes.sql",
+  "chrome/chrome_thread_slice_with_cpu_time.sql",
   "chrome/scroll_jank.sql",
   "chrome/scroll_jank_cause.sql",
   "chrome/scroll_jank_cause_blocking_task.sql",
@@ -82,12 +83,52 @@ action("gen_merged_sql_metrics") {
   public_configs = [ ":gen_config" ]
 }
 
+action("gen_cc_metrics_descriptor") {
+  descriptor_target = "../../../protos/perfetto/metrics:descriptor"
+  generated_header = "${target_gen_dir}/metrics.descriptor.h"
+
+  descriptor_file_path = get_label_info(descriptor_target, "target_gen_dir") +
+                         "/metrics.descriptor"
+
+  script = "../../../tools/gen_cc_proto_descriptor.py"
+  deps = [ descriptor_target ]
+  args = [
+    "--gen_dir",
+    rebase_path(root_gen_dir, root_build_dir),
+    "--cpp_out",
+    rebase_path(generated_header, root_build_dir),
+    rebase_path(descriptor_file_path, root_build_dir),
+  ]
+  inputs = [ descriptor_file_path ]
+  outputs = [ generated_header ]
+  public_configs = [ ":gen_config" ]
+}
+
+action("gen_cc_all_chrome_metrics_descriptor") {
+  descriptor_target = "../../../protos/perfetto/metrics/chrome:descriptor"
+  generated_header = "${target_gen_dir}/chrome/all_chrome_metrics.descriptor.h"
+
+  descriptor_file_path = get_label_info(descriptor_target, "target_gen_dir") +
+                         "/all_chrome_metrics.descriptor"
+
+  script = "../../../tools/gen_cc_proto_descriptor.py"
+  deps = [ descriptor_target ]
+  args = [
+    "--gen_dir",
+    rebase_path(root_gen_dir, root_build_dir),
+    "--cpp_out",
+    rebase_path(generated_header, root_build_dir),
+    rebase_path(descriptor_file_path, root_build_dir),
+  ]
+  inputs = [ descriptor_file_path ]
+  outputs = [ generated_header ]
+  public_configs = [ ":gen_config" ]
+}
+
 if (enable_perfetto_trace_processor_sqlite) {
   source_set("lib") {
     sources = [
-      "chrome/all_chrome_metrics.descriptor.h",
       "metrics.cc",
-      "metrics.descriptor.h",
       "metrics.h",
     ]
     deps = [
@@ -102,6 +143,8 @@ if (enable_perfetto_trace_processor_sqlite) {
       "../sqlite",
     ]
     public_deps = [
+      ":gen_cc_all_chrome_metrics_descriptor",
+      ":gen_cc_metrics_descriptor",
       ":gen_merged_sql_metrics",
       "../util:descriptors",
     ]

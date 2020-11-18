@@ -200,6 +200,8 @@ set(TINT_LIB_SRCS
   validator.h
   validator_impl.cc
   validator_impl.h
+  validator_test_helper.cc
+  validator_test_helper.h
   writer/text.cc
   writer/text.h
   writer/text_generator.cc
@@ -417,6 +419,7 @@ if(${TINT_BUILD_WGSL_READER})
     reader/wgsl/parser_impl_entry_point_decl_test.cc
     reader/wgsl/parser_impl_equality_expression_test.cc
     reader/wgsl/parser_impl_exclusive_or_expression_test.cc
+    reader/wgsl/parser_impl_for_stmt_test.cc
     reader/wgsl/parser_impl_function_decl_test.cc
     reader/wgsl/parser_impl_function_header_test.cc
     reader/wgsl/parser_impl_function_type_decl_test.cc
@@ -478,6 +481,7 @@ if(${TINT_BUILD_SPV_WRITER})
     writer/spirv/builder_constructor_expression_test.cc
     writer/spirv/builder_discard_test.cc
     writer/spirv/builder_entry_point_test.cc
+    writer/spirv/builder_format_conversion_test.cc
     writer/spirv/builder_function_test.cc
     writer/spirv/builder_function_variable_test.cc
     writer/spirv/builder_global_variable_test.cc
@@ -574,14 +578,21 @@ if (${TINT_BUILD_HLSL_WRITER})
     writer/hlsl/generator_impl_binary_test.cc
     writer/hlsl/generator_impl_block_test.cc
     writer/hlsl/generator_impl_break_test.cc
+    writer/hlsl/generator_impl_call_test.cc
     writer/hlsl/generator_impl_case_test.cc
+    writer/hlsl/generator_impl_cast_test.cc
     writer/hlsl/generator_impl_constructor_test.cc
     writer/hlsl/generator_impl_continue_test.cc
     writer/hlsl/generator_impl_discard_test.cc
+    writer/hlsl/generator_impl_entry_point_test.cc
+    writer/hlsl/generator_impl_function_test.cc
     writer/hlsl/generator_impl_identifier_test.cc
     writer/hlsl/generator_impl_if_test.cc
+    writer/hlsl/generator_impl_intrinsic_test.cc
+    writer/hlsl/generator_impl_import_test.cc
     writer/hlsl/generator_impl_loop_test.cc
     writer/hlsl/generator_impl_member_accessor_test.cc
+    writer/hlsl/generator_impl_module_constant_test.cc
     writer/hlsl/generator_impl_return_test.cc
     writer/hlsl/generator_impl_switch_test.cc
     writer/hlsl/generator_impl_test.cc
@@ -589,6 +600,7 @@ if (${TINT_BUILD_HLSL_WRITER})
     writer/hlsl/generator_impl_unary_op_test.cc
     writer/hlsl/generator_impl_variable_decl_statement_test.cc
     writer/hlsl/namer_test.cc
+    writer/hlsl/test_helper.h
   )
 endif()
 

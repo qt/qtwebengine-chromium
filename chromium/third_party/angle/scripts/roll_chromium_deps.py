@@ -34,6 +34,7 @@ ANGLE_CHROMIUM_DEPS = [
     'build',
     'buildtools',
     'testing',
+    'third_party/abseil-cpp',
     'third_party/libjpeg_turbo',
     'third_party/nasm',
     'third_party/Python-Markdown',
@@ -42,8 +43,13 @@ ANGLE_CHROMIUM_DEPS = [
     'third_party/zlib',
     'tools/clang',
     'tools/clang/dsymutil',
+    'tools/luci-go',
+    'tools/mb',
     'tools/md_browser',
     'tools/memory',
+    'tools/skia_goldctl/linux',
+    'tools/skia_goldctl/mac',
+    'tools/skia_goldctl/win',
 ]
 
 ANGLE_URL = 'https://chromium.googlesource.com/angle/angle'
@@ -318,7 +324,7 @@ def CalculateChangedDeps(angle_deps, new_cr_deps):
 
             if isinstance(cr_deps_entry, CipdDepsEntry):
                 result.extend(
-                    _FindChangedCipdPackages(chrome_path, angle_deps_entry.packages,
+                    _FindChangedCipdPackages(path, angle_deps_entry.packages,
                                              cr_deps_entry.packages))
                 continue
 

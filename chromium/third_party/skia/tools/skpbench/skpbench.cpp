@@ -258,7 +258,8 @@ static void run_ddl_benchmark(sk_gpu_test::TestContext* testContext, GrDirectCon
 
     SkIRect viewport = dstSurface->imageInfo().bounds();
 
-    DDLPromiseImageHelper promiseImageHelper;
+    SkYUVAPixmapInfo::SupportedDataTypes supportedYUVADataTypes(*context);
+    DDLPromiseImageHelper promiseImageHelper(supportedYUVADataTypes);
     sk_sp<SkData> compressedPictureData = promiseImageHelper.deflateSKP(inputPicture);
     if (!compressedPictureData) {
         exitf(ExitErr::kUnavailable, "DDL: conversion of skp failed");
@@ -679,8 +680,7 @@ static sk_sp<SkPicture> create_warmup_skp() {
     stroke.setStrokeWidth(2);
 
     // Use a big path to (theoretically) warmup the CPU.
-    SkPath bigPath;
-    ToolUtils::make_big_path(bigPath);
+    SkPath bigPath = ToolUtils::make_big_path();
     recording->drawPath(bigPath, stroke);
 
     // Use a perlin shader to warmup the GPU.

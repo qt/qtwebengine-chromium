@@ -73,7 +73,7 @@ static double calculate_modified_err(const FRAME_INFO *frame_info,
   double modified_error =
       av_err * pow(this_frame->coded_error * this_frame->weight /
                        DOUBLE_DIVIDE_CHECK(av_err),
-                   oxcf->two_pass_cfg.vbrbias / 100.0);
+                   oxcf->rc_cfg.vbrbias / 100.0);
 
   // Correction for active area. Frames with a reduced active area
   // (eg due to formatting bars) have a higher error per mb for the
@@ -154,7 +154,7 @@ static void subtract_stats(FIRSTPASS_STATS *section,
 static int frame_max_bits(const RATE_CONTROL *rc,
                           const AV1EncoderConfig *oxcf) {
   int64_t max_bits = ((int64_t)rc->avg_frame_bandwidth *
-                      (int64_t)oxcf->two_pass_cfg.vbrmax_section) /
+                      (int64_t)oxcf->rc_cfg.vbrmax_section) /
                      100;
   if (max_bits < 0)
     max_bits = 0;
@@ -1580,8 +1580,8 @@ static void define_gf_group(AV1_COMP *cpi, FIRSTPASS_STATS *this_frame,
 
   int flash_detected;
   int64_t gf_group_bits;
-  const int is_intra_only = frame_params->frame_type == KEY_FRAME ||
-                            frame_params->frame_type == INTRA_ONLY_FRAME;
+  const int is_intra_only =
+      rc->frames_since_key == 0 || frame_params->frame_type == INTRA_ONLY_FRAME;
   const int arf_active_or_kf = is_intra_only || rc->source_alt_ref_active;
 
   cpi->internal_altref_allowed = (gf_cfg->gf_max_pyr_height > 1);
@@ -2749,9 +2749,12 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
 
   if (is_stat_consumption_stage(cpi) && !twopass->stats_in) return;
 
+  const int update_type = gf_group->update_type[gf_group->index];
+  if (update_type != KF_UPDATE) frame_params->frame_type = INTER_FRAME;
+  if (rc->frames_since_key > 0) frame_params->frame_type = INTER_FRAME;
+
   if (rc->frames_till_gf_update_due > 0 && !(frame_flags & FRAMEFLAGS_KEY)) {
     assert(gf_group->index < gf_group->size);
-    const int update_type = gf_group->update_type[gf_group->index];
 
     setup_target_rate(cpi);
 
@@ -2770,7 +2773,6 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
       if (cpi->sf.part_sf.allow_partition_search_skip && oxcf->pass == 2) {
         cpi->partition_search_skippable_frame = is_skippable_frame(cpi);
       }
-
       return;
     }
   }
@@ -2783,7 +2785,12 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
   av1_zero(this_frame);
   // call above fn
   if (is_stat_consumption_stage(cpi)) {
-    process_first_pass_stats(cpi, &this_frame);
+    // Do not read if it is overlay for kf arf, since kf already
+    // advanced the first pass stats pointer
+    if (!av1_check_keyframe_overlay(gf_group->index, gf_group,
+                                    rc->frames_since_key)) {
+      process_first_pass_stats(cpi, &this_frame);
+    }
   } else {
     rc->active_worst_quality = oxcf->rc_cfg.cq_level;
   }
@@ -2798,12 +2805,10 @@ void av1_get_second_pass_params(AV1_COMP *cpi,
     find_next_key_frame(cpi, &this_frame);
     this_frame = this_frame_copy;
   } else {
-    frame_params->frame_type = INTER_FRAME;
     const int altref_enabled = is_altref_enabled(oxcf->gf_cfg.lag_in_frames,
                                                  oxcf->gf_cfg.enable_auto_arf);
     const int sframe_dist = oxcf->kf_cfg.sframe_dist;
     const int sframe_mode = oxcf->kf_cfg.sframe_mode;
-    const int update_type = gf_group->update_type[gf_group->index];
     CurrentFrame *const current_frame = &cpi->common.current_frame;
     if (sframe_dist != 0) {
       if (altref_enabled) {
@@ -2944,9 +2949,9 @@ void av1_init_second_pass(AV1_COMP *cpi) {
     const FIRSTPASS_STATS *s = twopass->stats_in;
     double modified_error_total = 0.0;
     twopass->modified_error_min =
-        (avg_error * oxcf->two_pass_cfg.vbrmin_section) / 100;
+        (avg_error * oxcf->rc_cfg.vbrmin_section) / 100;
     twopass->modified_error_max =
-        (avg_error * oxcf->two_pass_cfg.vbrmax_section) / 100;
+        (avg_error * oxcf->rc_cfg.vbrmax_section) / 100;
     while (s < twopass->stats_buf_ctx->stats_in_end) {
       modified_error_total +=
           calculate_modified_err(frame_info, twopass, oxcf, s);

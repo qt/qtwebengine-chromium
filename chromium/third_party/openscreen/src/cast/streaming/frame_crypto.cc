@@ -5,12 +5,14 @@
 #include "cast/streaming/frame_crypto.h"
 
 #include <random>
+#include <utility>
 
 #include "openssl/crypto.h"
 #include "openssl/err.h"
 #include "openssl/rand.h"
 #include "util/big_endian.h"
 #include "util/crypto/openssl_util.h"
+#include "util/crypto/random_bytes.h"
 
 namespace openscreen {
 namespace cast {
@@ -100,19 +102,6 @@ void FrameCrypto::EncryptCommon(FrameId frame_id,
   unsigned int block_offset = 0;
   AES_ctr128_encrypt(in.data(), out.data(), in.size(), &aes_key_,
                      aes_nonce.data(), ecount_buf.data(), &block_offset);
-}
-
-// static
-std::array<uint8_t, 16> FrameCrypto::GenerateRandomBytes() {
-  std::array<uint8_t, 16> result;
-  const int return_code = RAND_bytes(result.data(), sizeof(result));
-  if (return_code != 1) {
-    ClearOpenSSLERRStack(CURRENT_LOCATION);
-    OSP_LOG_FATAL
-        << "Failure when generating random bytes; unsafe to continue.";
-    OSP_NOTREACHED();
-  }
-  return result;
 }
 
 }  // namespace cast

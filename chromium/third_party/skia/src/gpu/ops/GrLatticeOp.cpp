@@ -115,7 +115,7 @@ private:
     sk_sp<GrColorSpaceXform> fColorSpaceXform;
     TextureSampler fSampler;
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 class NonAALatticeOp final : public GrMeshDrawOp {
@@ -197,7 +197,8 @@ private:
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView* writeView,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView) override {
+                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             GrXferBarrierFlags renderPassXferBarriers) override {
 
         auto gp = LatticeGP::Make(arena, fView, fColorSpaceXform, fFilter, fWideColor);
         if (!gp) {
@@ -209,6 +210,7 @@ private:
                                                                    dstProxyView, gp,
                                                                    fHelper.detachProcessorSet(),
                                                                    GrPrimitiveType::kTriangles,
+                                                                   renderPassXferBarriers,
                                                                    fHelper.pipelineFlags(),
                                                                    &GrUserStencilSettings::kUnused);
     }
@@ -358,7 +360,7 @@ private:
     GrSimpleMesh*  fMesh = nullptr;
     GrProgramInfo* fProgramInfo = nullptr;
 
-    typedef GrMeshDrawOp INHERITED;
+    using INHERITED = GrMeshDrawOp;
 };
 
 }  // anonymous namespace

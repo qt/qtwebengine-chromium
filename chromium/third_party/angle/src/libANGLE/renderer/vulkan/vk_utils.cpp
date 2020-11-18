@@ -739,10 +739,10 @@ void ClearValuesArray::store(uint32_t index,
     if ((aspectFlags & VK_IMAGE_ASPECT_STENCIL_BIT) != 0)
     {
         // Ensure for packed DS we're writing to the depth index.
-        ASSERT(index == kClearValueDepthIndex ||
-               (index == kClearValueStencilIndex && aspectFlags == VK_IMAGE_ASPECT_STENCIL_BIT));
+        ASSERT(index == kUnpackedDepthIndex ||
+               (index == kUnpackedStencilIndex && aspectFlags == VK_IMAGE_ASPECT_STENCIL_BIT));
 
-        storeNoDepthStencil(kClearValueStencilIndex, clearValue);
+        storeNoDepthStencil(kUnpackedStencilIndex, clearValue);
     }
 
     if (aspectFlags != VK_IMAGE_ASPECT_STENCIL_BIT)
@@ -764,8 +764,10 @@ ResourceSerialFactory::~ResourceSerialFactory() {}
 
 uint32_t ResourceSerialFactory::issueSerial()
 {
-    ASSERT(mCurrentUniqueSerial + 1 > mCurrentUniqueSerial);
-    return mCurrentUniqueSerial++;
+    uint32_t newSerial = ++mCurrentUniqueSerial;
+    // make sure serial does not wrap
+    ASSERT(newSerial > 0);
+    return newSerial;
 }
 
 #define ANGLE_DEFINE_GEN_VK_SERIAL(Type)                         \
@@ -833,6 +835,9 @@ PFN_vkGetPhysicalDeviceExternalSemaphorePropertiesKHR
 PFN_vkCreateSamplerYcbcrConversionKHR vkCreateSamplerYcbcrConversionKHR   = nullptr;
 PFN_vkDestroySamplerYcbcrConversionKHR vkDestroySamplerYcbcrConversionKHR = nullptr;
 
+// VK_KHR_create_renderpass2
+PFN_vkCreateRenderPass2KHR vkCreateRenderPass2KHR = nullptr;
+
 #    if defined(ANGLE_PLATFORM_FUCHSIA)
 // VK_FUCHSIA_imagepipe_surface
 PFN_vkCreateImagePipeSurfaceFUCHSIA vkCreateImagePipeSurfaceFUCHSIA = nullptr;
@@ -898,6 +903,12 @@ void InitSamplerYcbcrKHRFunctions(VkDevice device)
 {
     GET_DEVICE_FUNC(vkCreateSamplerYcbcrConversionKHR);
     GET_DEVICE_FUNC(vkDestroySamplerYcbcrConversionKHR);
+}
+
+// VK_KHR_create_renderpass2
+void InitRenderPass2KHRFunctions(VkDevice device)
+{
+    GET_DEVICE_FUNC(vkCreateRenderPass2KHR);
 }
 
 #    if defined(ANGLE_PLATFORM_FUCHSIA)
@@ -1296,6 +1307,12 @@ void GetExtentsAndLayerCount(gl::TextureType textureType,
             break;
     }
 }
+
+vk::LevelIndex GetLevelIndex(gl::LevelIndex levelGL, gl::LevelIndex baseLevel)
+{
+    ASSERT(baseLevel <= levelGL);
+    return vk::LevelIndex(levelGL.get() - baseLevel.get());
+}
 }  // namespace gl_vk
 
 namespace vk_gl
@@ -1333,6 +1350,11 @@ GLuint GetSampleCount(VkSampleCountFlags supportedCounts, GLuint requestedCount)
 
     UNREACHABLE();
     return 0;
+}
+
+gl::LevelIndex GetLevelIndex(vk::LevelIndex levelVk, gl::LevelIndex baseLevel)
+{
+    return gl::LevelIndex(levelVk.get() + baseLevel.get());
 }
 }  // namespace vk_gl
 }  // namespace rx

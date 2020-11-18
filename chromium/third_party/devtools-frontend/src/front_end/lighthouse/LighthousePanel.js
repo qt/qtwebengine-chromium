@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';
 import * as Emulation from '../emulation/emulation.js';  // eslint-disable-line no-unused-vars
 import * as HostModule from '../host/host.js';
+import * as Root from '../root/root.js';
 import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
@@ -195,7 +199,7 @@ export class LighthousePanel extends UI.Panel.Panel {
     const dom = new DOM(/** @type {!Document} */ (this._auditResultsElement.ownerDocument));
     const renderer = new LighthouseReportRenderer(dom);
 
-    const templatesHTML = self.Runtime.cachedResources['third_party/lighthouse/report-assets/templates.html'];
+    const templatesHTML = Root.Runtime.cachedResources.get('third_party/lighthouse/report-assets/templates.html');
     const templatesDOM = new DOMParser().parseFromString(templatesHTML, 'text/html');
     if (!templatesDOM) {
       return;
@@ -310,10 +314,6 @@ export class LighthousePanel extends UI.Panel.Panel {
       this._buildReportUI(lighthouseResponse.lhr, lighthouseResponse.artifacts);
       // Give focus to the new audit button when completed
       this._newButton.element.focus();
-      const keyboardInitiated = /** @type {boolean} */ (event.data);
-      if (keyboardInitiated) {
-        UI.UIUtils.markAsFocusedByKeyboard(this._newButton.element);
-      }
     } catch (err) {
       await this._resetEmulationAndProtocolConnection();
       if (err instanceof Error) {

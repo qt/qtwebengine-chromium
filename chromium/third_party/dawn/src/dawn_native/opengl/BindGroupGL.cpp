@@ -48,13 +48,9 @@ namespace dawn_native { namespace opengl {
                 case wgpu::BindingType::StorageBuffer:
                 case wgpu::BindingType::ReadonlyStorageBuffer:
                 case wgpu::BindingType::SampledTexture:
+                case wgpu::BindingType::MultisampledTexture:
                 case wgpu::BindingType::Sampler:
                 case wgpu::BindingType::ComparisonSampler:
-                    break;
-
-                case wgpu::BindingType::StorageTexture:
-                default:
-                    UNREACHABLE();
                     break;
             }
         }

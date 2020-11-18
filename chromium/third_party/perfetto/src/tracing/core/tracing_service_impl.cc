@@ -183,12 +183,17 @@ std::tuple<size_t /*shm_size*/, size_t /*page_size*/> EnsureValidShmSizes(
   page_size = std::min<size_t>(page_size, kMaxPageSize);
   shm_size = std::min<size_t>(shm_size, TracingServiceImpl::kMaxShmSize);
 
-  // Page size has to be multiple of system's page size.
-  bool page_size_is_valid = page_size >= base::kPageSize;
-  page_size_is_valid &= page_size % base::kPageSize == 0;
+  // The tracing page size has to be multiple of 4K. On some systems (e.g. Mac
+  // on Arm64) the system page size can be larger (e.g., 16K). That doesn't
+  // matter here, because the tracing page size is just a logical partitioning
+  // and does not have any dependencies on kernel mm syscalls (read: it's fine
+  // to have trace page sizes of 4K on a system where the kernel page size is
+  // 16K).
+  bool page_size_is_valid = page_size >= SharedMemoryABI::kMinPageSize;
+  page_size_is_valid &= page_size % SharedMemoryABI::kMinPageSize == 0;
 
   // Only allow power of two numbers of pages, i.e. 1, 2, 4, 8 pages.
-  size_t num_pages = page_size / base::kPageSize;
+  size_t num_pages = page_size / SharedMemoryABI::kMinPageSize;
   page_size_is_valid &= (num_pages & (num_pages - 1)) == 0;
 
   if (!page_size_is_valid || shm_size < page_size ||
@@ -548,8 +553,14 @@ bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
       return false;
     }
     uint64_t buf_size_sum = 0;
-    for (const auto& buf : cfg.buffers())
+    for (const auto& buf : cfg.buffers()) {
+      if (buf.size_kb() % 4 != 0) {
+        PERFETTO_ELOG("buffers.size_kb must be a multiple of 4, got %" PRIu32,
+                      buf.size_kb());
+        return false;
+      }
       buf_size_sum += buf.size_kb();
+    }
     if (buf_size_sum > kGuardrailsMaxTracingBufferSizeKb) {
       PERFETTO_ELOG("Requested too large trace buffer (%" PRIu64
                     "kB  > %" PRIu32 " kB)",
@@ -824,7 +835,7 @@ void TracingServiceImpl::ChangeTraceConfig(ConsumerEndpointImpl* consumer,
     std::vector<std::string> new_producer_name_filter;
     std::vector<std::string> new_producer_name_regex_filter;
     bool found_data_source = false;
-    for (auto it : updated_cfg.data_sources()) {
+    for (const auto& it : updated_cfg.data_sources()) {
       if (cfg_data_source.config().name() == it.config().name()) {
         new_producer_name_filter = it.producer_name_filter();
         new_producer_name_regex_filter = it.producer_name_regex_filter();
@@ -1624,7 +1635,8 @@ void TracingServiceImpl::PeriodicFlushTask(TracingSessionID tsid,
         if (weak_this)
           weak_this->PeriodicFlushTask(tsid, /*post_next_only=*/false);
       },
-      flush_period_ms - (base::GetWallTimeMs().count() % flush_period_ms));
+      flush_period_ms - static_cast<uint32_t>(base::GetWallTimeMs().count() %
+                                              flush_period_ms));
 
   if (post_next_only)
     return;
@@ -1653,7 +1665,8 @@ void TracingServiceImpl::PeriodicClearIncrementalStateTask(
           weak_this->PeriodicClearIncrementalStateTask(
               tsid, /*post_next_only=*/false);
       },
-      clear_period_ms - (base::GetWallTimeMs().count() % clear_period_ms));
+      clear_period_ms - static_cast<uint32_t>(base::GetWallTimeMs().count() %
+                                              clear_period_ms));
 
   if (post_next_only)
     return;
@@ -2090,11 +2103,16 @@ void TracingServiceImpl::UnregisterDataSource(ProducerID producer_id,
       if (it->first == producer_id && it->second.data_source_name == name) {
         DataSourceInstanceID ds_inst_id = it->second.instance_id;
         if (it->second.state != DataSourceInstance::STOPPED) {
-          if (it->second.state != DataSourceInstance::STOPPING)
+          if (it->second.state != DataSourceInstance::STOPPING) {
             StopDataSourceInstance(producer, &kv.second, &it->second,
                                    /* disable_immediately = */ false);
+          }
+
           // Mark the instance as stopped immediately, since we are
           // unregistering it below.
+          //
+          //  The StopDataSourceInstance above might have set the state to
+          //  STOPPING so this condition isn't an else.
           if (it->second.state == DataSourceInstance::STOPPING)
             NotifyDataSourceStopped(producer_id, ds_inst_id);
         }
@@ -2472,7 +2490,8 @@ void TracingServiceImpl::PeriodicSnapshotTask(TracingSession* tracing_session) {
           return;
         weak_this->PeriodicSnapshotTask(tracing_session_ptr);
       },
-      interval_ms - (base::GetWallTimeMs().count() % interval_ms));
+      interval_ms -
+          static_cast<uint32_t>(base::GetWallTimeMs().count() % interval_ms));
 }
 
 void TracingServiceImpl::SnapshotLifecyleEvent(TracingSession* tracing_session,

@@ -17,10 +17,12 @@ devtools_module("console_counters") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [ "errorWarningCounter.css" ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "console_counters.js"
-
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":console_counters" ]
 }

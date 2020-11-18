@@ -16,8 +16,10 @@ namespace SkSL {
  * A section declaration (e.g. @body { body code here })..
  */
 struct Section : public ProgramElement {
+    static constexpr Kind kProgramElementKind = Kind::kSection;
+
     Section(int offset, String name, String arg, String text)
-    : INHERITED(offset, kSection_Kind)
+    : INHERITED(offset, kProgramElementKind)
     , fName(std::move(name))
     , fArgument(std::move(arg))
     , fText(std::move(text)) {}
@@ -39,7 +41,7 @@ struct Section : public ProgramElement {
     const String fArgument;
     const String fText;
 
-    typedef ProgramElement INHERITED;
+    using INHERITED = ProgramElement;
 };
 
 }  // namespace SkSL

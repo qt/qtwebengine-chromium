@@ -61,7 +61,8 @@ struct EGLPlatformParameters
         return std::tie(renderer, majorVersion, minorVersion, deviceType, presentPath,
                         debugLayersEnabled, contextVirtualization, transformFeedbackFeature,
                         allocateNonZeroMemoryFeature, emulateCopyTexImage2DFromRenderbuffers,
-                        platformMethods, robustness);
+                        shaderStencilOutputFeature, genMultipleMipsPerPassFeature, platformMethods,
+                        robustness);
     }
 
     EGLint renderer                               = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
@@ -75,6 +76,8 @@ struct EGLPlatformParameters
     EGLint transformFeedbackFeature               = EGL_DONT_CARE;
     EGLint allocateNonZeroMemoryFeature           = EGL_DONT_CARE;
     EGLint emulateCopyTexImage2DFromRenderbuffers = EGL_DONT_CARE;
+    EGLint shaderStencilOutputFeature             = EGL_DONT_CARE;
+    EGLint genMultipleMipsPerPassFeature          = EGL_DONT_CARE;
     angle::PlatformMethods *platformMethods       = nullptr;
 };
 

@@ -40,8 +40,6 @@ class RenderDeviceDriverIface {
   virtual DeviceType GetDeviceType() const = 0;
   virtual int GetDeviceCaps(int caps_id) const = 0;
 
-  virtual bool StartRendering();
-  virtual void EndRendering();
   virtual void SaveState() = 0;
   virtual void RestoreState(bool bKeepSaved) = 0;
 
@@ -59,7 +57,6 @@ class RenderDeviceDriverIface {
                         uint32_t stroke_color,
                         const CFX_FillRenderOptions& fill_options,
                         BlendMode blend_type) = 0;
-  virtual bool SetPixel(int x, int y, uint32_t color);
   virtual bool FillRectWithBlend(const FX_RECT& rect,
                                  uint32_t fill_color,
                                  BlendMode blend_type);
@@ -105,18 +102,19 @@ class RenderDeviceDriverIface {
                               uint32_t color,
                               const CFX_TextRenderOptions& options);
   virtual int GetDriverType() const;
-  virtual void ClearDriver();
   virtual bool DrawShading(const CPDF_ShadingPattern* pPattern,
                            const CFX_Matrix* pMatrix,
                            const FX_RECT& clip_rect,
                            int alpha,
                            bool bAlphaMode);
+#if defined(_SKIA_SUPPORT_)
   virtual bool SetBitsWithMask(const RetainPtr<CFX_DIBBase>& pBitmap,
                                const RetainPtr<CFX_DIBBase>& pMask,
                                int left,
                                int top,
                                int bitmap_alpha,
                                BlendMode blend_type);
+#endif
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   virtual void Flush();
 #endif

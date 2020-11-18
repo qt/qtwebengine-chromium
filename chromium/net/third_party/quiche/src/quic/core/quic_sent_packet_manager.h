@@ -6,6 +6,7 @@
 #define QUICHE_QUIC_CORE_QUIC_SENT_PACKET_MANAGER_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <set>
@@ -18,6 +19,7 @@
 #include "net/third_party/quiche/src/quic/core/congestion_control/send_algorithm_interface.h"
 #include "net/third_party/quiche/src/quic/core/congestion_control/uber_loss_algorithm.h"
 #include "net/third_party/quiche/src/quic/core/proto/cached_network_parameters_proto.h"
+#include "net/third_party/quiche/src/quic/core/quic_circular_deque.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_sustained_bandwidth_recorder.h"
 #include "net/third_party/quiche/src/quic/core/quic_transmission_info.h"
@@ -186,12 +188,14 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   }
 
   // Called when we have sent bytes to the peer.  This informs the manager both
-  // the number of bytes sent and if they were retransmitted.  Returns true if
-  // the sender should reset the retransmission timer.
-  bool OnPacketSent(SerializedPacket* serialized_packet,
+  // the number of bytes sent and if they were retransmitted and if this packet
+  // is used for rtt measuring.  Returns true if the sender should reset the
+  // retransmission timer.
+  bool OnPacketSent(SerializedPacket* mutable_packet,
                     QuicTime sent_time,
                     TransmissionType transmission_type,
-                    HasRetransmittableData has_retransmittable_data);
+                    HasRetransmittableData has_retransmittable_data,
+                    bool measure_rtt);
 
   // Called when the retransmission timer expires and returns the retransmission
   // mode.
@@ -432,11 +436,15 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
     return skip_packet_number_for_pto_;
   }
 
+  bool zero_rtt_packet_acked() const { return zero_rtt_packet_acked_; }
+
   bool one_rtt_packet_acked() const { return one_rtt_packet_acked_; }
 
   void OnUserAgentIdKnown() { loss_algorithm_->OnUserAgentIdKnown(); }
 
-  bool fix_packet_number_length() const { return fix_packet_number_length_; }
+  bool give_sent_packet_to_debug_visitor_after_sent() const {
+    return give_sent_packet_to_debug_visitor_after_sent_;
+  }
 
  private:
   friend class test::QuicConnectionPeer;
@@ -550,6 +558,14 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // retransmission timer is not armed if there is no packets in flight.
   bool PeerCompletedAddressValidation() const;
 
+  // Called when an AckFrequencyFrame is sent.
+  void OnAckFrequencyFrameSent(
+      const QuicAckFrequencyFrame& ack_frequency_frame);
+
+  // Called when an AckFrequencyFrame is acked.
+  void OnAckFrequencyFrameAcked(
+      const QuicAckFrequencyFrame& ack_frequency_frame);
+
   // Newly serialized retransmittable packets are added to this map, which
   // contains owning pointers to any contained frames.  If a packet is
   // retransmitted, this map will contain entries for both the old and the new
@@ -629,10 +645,16 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   QuicPacketNumber
       largest_packets_peer_knows_is_acked_[NUM_PACKET_NUMBER_SPACES];
 
-  // The maximum ACK delay time that the peer uses. Initialized to be the
+  // The maximum ACK delay time that the peer might uses. Initialized to be the
   // same as local_max_ack_delay_, may be changed via transport parameter
-  // negotiation.
+  // negotiation or subsequently by AckFrequencyFrame.
   QuicTime::Delta peer_max_ack_delay_;
+
+  // The history of outstanding max_ack_delays sent to peer. Outstanding means
+  // a max_ack_delay is sent as part of the last acked AckFrequencyFrame or
+  // an unacked AckFrequencyFrame after that.
+  QuicCircularDeque<std::pair<QuicTime::Delta, /*sequence_number=*/uint64_t>>
+      in_use_sent_ack_delays_;
 
   // Latest received ack frame.
   QuicAckFrame last_ack_frame_;
@@ -677,6 +699,9 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // True if any ENCRYPTION_HANDSHAKE packet gets acknowledged.
   bool handshake_packet_acked_;
 
+  // True if any 0-RTT packet gets acknowledged.
+  bool zero_rtt_packet_acked_;
+
   // True if any 1-RTT packet gets acknowledged.
   bool one_rtt_packet_acked_;
 
@@ -695,8 +720,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // available.
   float pto_multiplier_without_rtt_samples_;
 
-  const bool fix_packet_number_length_ =
-      GetQuicReloadableFlag(quic_fix_packet_number_length);
+  const bool give_sent_packet_to_debug_visitor_after_sent_ =
+      GetQuicReloadableFlag(quic_give_sent_packet_to_debug_visitor_after_sent);
 };
 
 }  // namespace quic

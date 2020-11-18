@@ -28,16 +28,16 @@ vars = {
   'checkout_angle_internal': False,
 
   # Version of Chromium our Chromium-based DEPS are mirrored from.
-  'chromium_revision': '84714fcf811ee8112eae8b4e1a558d388dc98903',
+  'chromium_revision': '5efa84e265f7c919226d9e3f96606487505ea9c1',
   # We never want to checkout chromium,
   # but need a dummy DEPS entry for the autoroller
   'dummy_checkout_chromium': False,
 
   # Current revision of VK-GL-CTS (a.k.a dEQP).
-  'vk_gl_cts_revision': 'fb86cfb19849570ccc6b4dc5aa0fe0e35432d442',
+  'vk_gl_cts_revision': '02da53e45d9e700234873dc4449f816390c0d55d',
 
   # Current revision of glslang, the Khronos SPIRV compiler.
-  'glslang_revision': 'f257e0ea6b9aeab2dc7af3207ac6d29d2bbc01d0',
+  'glslang_revision': 'bacaef3237c515e40d1a24722be48c0a0b30f75f',
 
   # Current revision of googletest.
   # Note: this dep cannot be auto-rolled b/c of nesting.
@@ -80,40 +80,50 @@ vars = {
   'spirv_headers_revision': '3fdabd0da2932c276b25b9b4a988ba134eba1aa6',
 
   # Current revision of SPIRV-Tools for Vulkan.
-  'spirv_tools_revision': 'a711c594b8cc36a808ac5358b868db568be1aaaa',
+  'spirv_tools_revision': '615fbe6cbc78463f6b58cecdb155dad0534d22b4',
 
   # Current revision of Khronos Vulkan-Headers.
-  'vulkan_headers_revision': '834673eaa34a04669eedea764e88d881338243a2',
+  'vulkan_headers_revision': 'e1ba543c67893e13c7dae9bd38d3e5cba4ecb7c0',
 
   # Current revision of Khronos Vulkan-Loader.
-  'vulkan_loader_revision': '2979391e5b0c951ad976625686c9644c3da6fc96',
+  'vulkan_loader_revision': '0c0ac2c6c458acdb8ca28902fc990342902fc0a3',
 
   # Current revision of Khronos Vulkan-Tools.
-  'vulkan_tools_revision': 'eceb318c06a291e678d1eef96c6bfd6f2710df21',
+  'vulkan_tools_revision': 'c5c6265c026e4d6cc2826aedf86f5eb352dc470d',
 
   # Current revision of Khronos Vulkan-ValidationLayers.
-  'vulkan_validation_revision': '0d6b4440549bc4d43aee580604d15ad36238721e',
+  'vulkan_validation_revision': '7a78cc629cca4830f1a5d7531cacf03a6e0a3914',
 
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling catapult
   # and whatever else without interference from each other.
   'catapult_revision': '1b3fb455bf1849f1e6187e1eaeaef32b9f30d3c5',
+
+  # Three lines of non-changing comments so that
+  # the commit queue can handle CLs rolling luci-go
+  # and whatever else without interference from each other.
+  'luci_go': 'git_revision:83c3df996b224edf5061840744395707a0e513e7',
 }
 
 deps = {
 
   'build': {
-    'url': '{chromium_git}/chromium/src/build.git@7076d3be06d6b4749d6b7afd53d31a51b926447e',
+    'url': '{chromium_git}/chromium/src/build.git@83b9c33a0b14ff19a0cd340d46c283f6e06bba8d',
     'condition': 'not build_with_chromium',
   },
 
   'buildtools': {
-    'url': '{chromium_git}/chromium/src/buildtools.git@b00ad0af636401e5eb4b5d0ab01b65164dca1914',
+    'url': '{chromium_git}/chromium/src/buildtools.git@4be464e050b3d05060471788f926b34c641db9fd',
     'condition': 'not build_with_chromium',
   },
 
   'testing': {
-    'url': '{chromium_git}/chromium/src/testing@855f6eb5b64bbc59b236e1fd06a198827e7c2489',
+    'url': '{chromium_git}/chromium/src/testing@66ad7ae0990a258c4ecb68f2b8d9b65f215df281',
+    'condition': 'not build_with_chromium',
+  },
+
+  'third_party/abseil-cpp': {
+    'url': '{chromium_git}/chromium/src/third_party/abseil-cpp@3187b54c0ca3a17d4de6dfe7aeb37ceab8f1cfae',
     'condition': 'not build_with_chromium',
   },
 
@@ -138,15 +148,6 @@ deps = {
   'third_party/dummy_chromium': {
     'url': '{chromium_git}/chromium/src.git@{chromium_revision}',
     'condition': 'dummy_checkout_chromium',
-  },
-
-  'third_party/vulkan_memory_allocator': {
-    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@431d6e57284aeb08118ff428dfbd51c94342faa1',
-    'condition': 'not build_with_chromium',
-  },
-
-  'third_party/VK-GL-CTS/src': {
-    'url': '{chromium_git}/external/github.com/KhronosGroup/VK-GL-CTS@{vk_gl_cts_revision}',
   },
 
   'third_party/fuchsia-sdk': {
@@ -177,7 +178,7 @@ deps = {
 
   # libjpeg_turbo is used by glmark2.
   'third_party/libjpeg_turbo': {
-    'url': '{chromium_git}/chromium/deps/libjpeg_turbo.git@9d4f8005bc6c888e66b00fd00188531ee9bd3344',
+    'url': '{chromium_git}/chromium/deps/libjpeg_turbo.git@d5148db386ceb4a608058320071cbed890bd6ad2',
     'condition': 'not build_with_chromium',
   },
 
@@ -243,8 +244,12 @@ deps = {
   },
 
   'third_party/SwiftShader': {
-    'url': '{swiftshader_git}/SwiftShader@cbfd396756c6530ee31268d88e5e742ba761fc57',
+    'url': '{swiftshader_git}/SwiftShader@5e947adaf26eee51de47e406a9f7943afd1a882f',
     'condition': 'not build_with_chromium',
+  },
+
+  'third_party/VK-GL-CTS/src': {
+    'url': '{chromium_git}/external/github.com/KhronosGroup/VK-GL-CTS@{vk_gl_cts_revision}',
   },
 
   'third_party/vulkan-headers/src': {
@@ -253,6 +258,11 @@ deps = {
 
   'third_party/vulkan-loader/src': {
     'url': '{chromium_git}/external/github.com/KhronosGroup/Vulkan-Loader@{vulkan_loader_revision}',
+  },
+
+  'third_party/vulkan_memory_allocator': {
+    'url': '{chromium_git}/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@065e739079d9d58bef28ccd793cbf512261f09ed',
+    'condition': 'not build_with_chromium',
   },
 
   'third_party/vulkan-tools/src': {
@@ -264,12 +274,12 @@ deps = {
   },
 
   'third_party/zlib': {
-    'url': '{chromium_git}/chromium/src/third_party/zlib@d53accfbd0382a98ad7378045631866449b5f92e',
+    'url': '{chromium_git}/chromium/src/third_party/zlib@26211a5a8e7e28286fc28a84a0e102cc96bf0f0b',
     'condition': 'not build_with_chromium',
   },
 
   'tools/clang': {
-    'url': '{chromium_git}/chromium/src/tools/clang.git@299e8a233942b1978a4c0dbc301f363a6729c4e2',
+    'url': '{chromium_git}/chromium/src/tools/clang.git@921f37180791fb9cf8e4bdeb3794a8d113c78340',
     'condition': 'not build_with_chromium',
   },
 
@@ -284,6 +294,30 @@ deps = {
     'dep_type': 'cipd',
   },
 
+  'tools/luci-go': {
+    'packages': [
+      {
+        'package': 'infra/tools/luci/isolate/${{platform}}',
+        'version': Var('luci_go'),
+      },
+      {
+        'package': 'infra/tools/luci/isolated/${{platform}}',
+        'version': Var('luci_go'),
+      },
+      {
+        'package': 'infra/tools/luci/swarming/${{platform}}',
+        'version': Var('luci_go'),
+      },
+    ],
+    'condition': 'not build_with_chromium',
+    'dep_type': 'cipd',
+  },
+
+  'tools/mb': {
+    'url': '{chromium_git}/chromium/src/tools/mb@410285a57eae11398c1a2b6fd53511b2b5963b3a',
+    'condition': 'not build_with_chromium',
+  },
+
   'tools/md_browser': {
     'url': '{chromium_git}/chromium/src/tools/md_browser@60141af3603925d99bf3fb22fdfca138416339b1',
     'condition': 'not build_with_chromium',
@@ -292,6 +326,39 @@ deps = {
   'tools/memory': {
     'url': '{chromium_git}/chromium/src/tools/memory@ee1e2448132431e7519c2a72ff612e079f13a9d6',
     'condition': 'not build_with_chromium',
+  },
+
+  'tools/skia_goldctl/linux': {
+      'packages': [
+        {
+          'package': 'skia/tools/goldctl/linux-amd64',
+          'version': 'dMvix4BkhDJmKBK1tudaxlOMub1Dif3ZPcqzSY72-ZAC',
+        },
+      ],
+      'dep_type': 'cipd',
+      'condition': 'checkout_linux and not build_with_chromium',
+  },
+
+  'tools/skia_goldctl/win': {
+      'packages': [
+        {
+          'package': 'skia/tools/goldctl/windows-amd64',
+          'version': 'cLgS219WFD65Hr6NfoCQYA5KEE2FfO3FBl30KYhpTFoC',
+        },
+      ],
+      'dep_type': 'cipd',
+      'condition': 'checkout_win and not build_with_chromium',
+  },
+
+  'tools/skia_goldctl/mac': {
+      'packages': [
+        {
+          'package': 'skia/tools/goldctl/mac-amd64',
+          'version': 'xJncEfNMb0HaDG9EglMx2YNbKAxqk6qJbckhfn0BXb8C',
+        },
+      ],
+      'dep_type': 'cipd',
+      'condition': 'checkout_mac and not build_with_chromium',
   },
 }
 
@@ -464,8 +531,8 @@ hooks = [
     'pattern': '\\.sha1',
     'condition': 'checkout_angle_internal',
     'action': [ 'python',
-                'src/tests/perf_tests/restricted_traces/download_restricted_traces.py',
-                'src/tests/perf_tests/restricted_traces',
+                'src/tests/restricted_traces/download_restricted_traces.py',
+                'src/tests/restricted_traces',
     ]
   }
 ]

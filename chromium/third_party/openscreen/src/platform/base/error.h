@@ -63,7 +63,10 @@ class Error {
     kSocketReadFailure,
     kSocketSendFailure,
 
+    // MDNS errors.
     kMdnsRegisterFailure,
+    kMdnsReadFailure,
+    kMdnsNonConformingFailure,
 
     kParseError,
     kUnknownMessageType,
@@ -116,6 +119,9 @@ class Error {
 
     // The certificate failed to chain to a trusted root.
     kErrCertsVerifyGeneric,
+
+    // The certificate was not found in the trust store.
+    kErrCertsVerifyUntrustedCert,
 
     // The CRL is missing or failed to verify.
     kErrCrlInvalid,

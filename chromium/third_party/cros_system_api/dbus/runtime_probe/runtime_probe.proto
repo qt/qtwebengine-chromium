@@ -225,6 +225,8 @@ message Network {
     uint32 pci_device_id = 5;
     // Device revision, 8 bits
     uint32 pci_revision = 6;
+    // Subsystem ID, 16 bits
+    uint32 pci_subsystem = 12;
 
     // The following are fields for USB. Every field name comes with
     // prefix "usb_".
@@ -252,6 +254,12 @@ message Network {
   Information information = 3;
 }
 
+enum UsbRemovable {
+  UNKNOWN = 0;
+  REMOVABLE = 1;
+  FIXED = 2;
+}
+
 // Things about cameras.
 message Camera {
   message Fields {
@@ -271,6 +279,9 @@ message Camera {
     uint32 usb_product_id = 4;
     // Device Release Number, 16 bits.
     uint32 usb_bcd_device = 5;
+
+    // Whether this USB device is removable or not.
+    UsbRemovable usb_removable = 6;
   }
   // Component alias.
   string name = 1;

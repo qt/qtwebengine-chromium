@@ -161,6 +161,7 @@ _shared_binary_target_configs = [
   "//build/config:compiler_cpu_abi",
   "//build/config:default_optimization",
   "//build/config:sysroot_runtime_libraries",
+  "//build/config:operating_system_defines",
 ]
 
 # Apply that default list to the binary target types.

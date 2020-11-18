@@ -19,6 +19,7 @@ class GrBackendFormat;
 class GrCaps;
 class GrContextThreadSafeProxyPriv;
 class GrTextBlobCache;
+class GrThreadSafeUniquelyKeyedProxyViewCache;
 class SkSurfaceCharacterization;
 class SkSurfaceProps;
 
@@ -72,7 +73,8 @@ public:
                                   bool isMipMapped,
                                   bool willUseGLFBO0 = false,
                                   bool isTextureable = true,
-                                  GrProtected isProtected = GrProtected::kNo);
+                                  GrProtected isProtected = GrProtected::kNo,
+                                  bool vkRTSupportsInputAttachment = false);
 
     /*
      * Retrieve the default GrBackendFormat for a given SkColorType and renderability.
@@ -116,6 +118,7 @@ private:
     const uint32_t                   fContextID;
     sk_sp<const GrCaps>              fCaps;
     std::unique_ptr<GrTextBlobCache> fTextBlobCache;
+    std::unique_ptr<GrThreadSafeUniquelyKeyedProxyViewCache> fThreadSafeViewCache;
     std::atomic<bool>                fAbandoned{false};
 };
 

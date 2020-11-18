@@ -326,15 +326,15 @@ namespace dawn_native {
         return mMapRequestTracker.get();
     }
 
-    Serial DeviceBase::GetCompletedCommandSerial() const {
+    ExecutionSerial DeviceBase::GetCompletedCommandSerial() const {
         return mCompletedSerial;
     }
 
-    Serial DeviceBase::GetLastSubmittedCommandSerial() const {
+    ExecutionSerial DeviceBase::GetLastSubmittedCommandSerial() const {
         return mLastSubmittedSerial;
     }
 
-    Serial DeviceBase::GetFutureCallbackSerial() const {
+    ExecutionSerial DeviceBase::GetFutureCallbackSerial() const {
         return mFutureCallbackSerial;
     }
 
@@ -343,28 +343,29 @@ namespace dawn_native {
     }
 
     void DeviceBase::AssumeCommandsComplete() {
-        Serial maxSerial = std::max(mLastSubmittedSerial + 1, mFutureCallbackSerial);
+        ExecutionSerial maxSerial = ExecutionSerial(
+            std::max(mLastSubmittedSerial + ExecutionSerial(1), mFutureCallbackSerial));
         mLastSubmittedSerial = maxSerial;
         mCompletedSerial = maxSerial;
     }
 
-    Serial DeviceBase::GetPendingCommandSerial() const {
-        return mLastSubmittedSerial + 1;
+    ExecutionSerial DeviceBase::GetPendingCommandSerial() const {
+        return mLastSubmittedSerial + ExecutionSerial(1);
     }
 
-    void DeviceBase::AddFutureCallbackSerial(Serial serial) {
+    void DeviceBase::AddFutureCallbackSerial(ExecutionSerial serial) {
         if (serial > mFutureCallbackSerial) {
             mFutureCallbackSerial = serial;
         }
     }
 
     void DeviceBase::CheckPassedSerials() {
-        Serial completedSerial = CheckAndUpdateCompletedSerials();
+        ExecutionSerial completedSerial = CheckAndUpdateCompletedSerials();
 
         ASSERT(completedSerial <= mLastSubmittedSerial);
         // completedSerial should not be less than mCompletedSerial unless it is 0.
         // It can be 0 when there's no fences to check.
-        ASSERT(completedSerial >= mCompletedSerial || completedSerial == 0);
+        ASSERT(completedSerial >= mCompletedSerial || completedSerial == ExecutionSerial(0));
 
         if (completedSerial > mCompletedSerial) {
             mCompletedSerial = completedSerial;
@@ -611,27 +612,6 @@ namespace dawn_native {
         }
 
         return result.Detach();
-    }
-    WGPUCreateBufferMappedResult DeviceBase::CreateBufferMapped(
-        const BufferDescriptor* descriptor) {
-        EmitDeprecationWarning(
-            "CreateBufferMapped is deprecated, use wgpu::BufferDescriptor::mappedAtCreation and "
-            "wgpu::Buffer::GetMappedRange instead");
-
-        BufferDescriptor fixedDesc = *descriptor;
-        fixedDesc.mappedAtCreation = true;
-        BufferBase* buffer = CreateBuffer(&fixedDesc);
-
-        WGPUCreateBufferMappedResult result = {};
-        result.buffer = reinterpret_cast<WGPUBuffer>(buffer);
-        result.data = buffer->GetMappedRange(0, descriptor->size);
-        result.dataLength = descriptor->size;
-
-        if (result.data != nullptr) {
-            memset(result.data, 0, result.dataLength);
-        }
-
-        return result;
     }
     CommandEncoder* DeviceBase::CreateCommandEncoder(const CommandEncoderDescriptor* descriptor) {
         return new CommandEncoder(this, descriptor);
@@ -898,9 +878,9 @@ namespace dawn_native {
         if (descriptor->layout == nullptr) {
             ComputePipelineDescriptor descriptorWithDefaultLayout = *descriptor;
 
-            DAWN_TRY_ASSIGN(
-                descriptorWithDefaultLayout.layout,
-                PipelineLayoutBase::CreateDefault(this, &descriptor->computeStage.module, 1));
+            DAWN_TRY_ASSIGN(descriptorWithDefaultLayout.layout,
+                            PipelineLayoutBase::CreateDefault(
+                                this, {{SingleShaderStage::Compute, &descriptor->computeStage}}));
             // Ref will keep the pipeline layout alive until the end of the function where
             // the pipeline will take another reference.
             Ref<PipelineLayoutBase> layoutRef = AcquireRef(descriptorWithDefaultLayout.layout);
@@ -955,18 +935,14 @@ namespace dawn_native {
         if (descriptor->layout == nullptr) {
             RenderPipelineDescriptor descriptorWithDefaultLayout = *descriptor;
 
-            const ShaderModuleBase* modules[2];
-            modules[0] = descriptor->vertexStage.module;
-            uint32_t count;
-            if (descriptor->fragmentStage == nullptr) {
-                count = 1;
-            } else {
-                modules[1] = descriptor->fragmentStage->module;
-                count = 2;
+            std::vector<StageAndDescriptor> stages;
+            stages.emplace_back(SingleShaderStage::Vertex, &descriptor->vertexStage);
+            if (descriptor->fragmentStage != nullptr) {
+                stages.emplace_back(SingleShaderStage::Fragment, descriptor->fragmentStage);
             }
 
             DAWN_TRY_ASSIGN(descriptorWithDefaultLayout.layout,
-                            PipelineLayoutBase::CreateDefault(this, modules, count));
+                            PipelineLayoutBase::CreateDefault(this, std::move(stages)));
             // Ref will keep the pipeline layout alive until the end of the function where
             // the pipeline will take another reference.
             Ref<PipelineLayoutBase> layoutRef = AcquireRef(descriptorWithDefaultLayout.layout);
@@ -1081,7 +1057,6 @@ namespace dawn_native {
 
     void DeviceBase::SetDefaultToggles() {
         SetToggle(Toggle::LazyClearResourceOnFirstUse, true);
-        SetToggle(Toggle::UseSpvc, false);
     }
 
     void DeviceBase::ApplyToggleOverrides(const DeviceDescriptor* deviceDescriptor) {

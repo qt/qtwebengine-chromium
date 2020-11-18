@@ -95,6 +95,8 @@ struct Extensions
     Extensions();
     Extensions(const Extensions &other);
 
+    Extensions &operator=(const Extensions &other);
+
     // Generate a vector of supported extension strings
     std::vector<std::string> getStrings() const;
 
@@ -639,6 +641,15 @@ struct Extensions
     {
         return (textureCubeMapArrayOES || textureCubeMapArrayEXT);
     }
+
+    // GL_EXT_shadow_samplers
+    bool shadowSamplersEXT = false;
+
+    // GL_EXT_buffer_storage
+    bool bufferStorageEXT = false;
+
+    // GL_NV_robustness_video_memory_purge
+    bool robustnessVideoMemoryPurgeNV = false;
 };
 
 // Pointer to a boolean memeber of the Extensions struct
@@ -695,6 +706,8 @@ struct TypePrecision
 {
     TypePrecision();
     TypePrecision(const TypePrecision &other);
+
+    TypePrecision &operator=(const TypePrecision &other);
 
     void setIEEEFloat();
     void setTwosComplementInt(unsigned int bits);
@@ -1044,6 +1057,9 @@ struct DisplayExtensions
     // EGL_ANDROID_get_native_client_buffer
     bool getNativeClientBufferANDROID = false;
 
+    // EGL_ANDROID_create_native_client_buffer
+    bool createNativeClientBufferANDROID = false;
+
     // EGL_ANDROID_native_fence_sync
     bool nativeFenceSyncANDROID = false;
 
@@ -1094,6 +1110,9 @@ struct DisplayExtensions
 
     // EGL_NOK_texture_from_pixmap
     bool textureFromPixmapNOK = false;
+
+    // EGL_NV_robustness_video_memory_purge
+    bool robustnessVideoMemoryPurgeNV = false;
 };
 
 struct DeviceExtensions

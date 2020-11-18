@@ -57,6 +57,7 @@ namespace dawn_native { namespace vulkan {
             case wgpu::BindingType::ComparisonSampler:
                 return VK_DESCRIPTOR_TYPE_SAMPLER;
             case wgpu::BindingType::SampledTexture:
+            case wgpu::BindingType::MultisampledTexture:
                 return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
             case wgpu::BindingType::StorageBuffer:
             case wgpu::BindingType::ReadonlyStorageBuffer:
@@ -67,9 +68,6 @@ namespace dawn_native { namespace vulkan {
             case wgpu::BindingType::ReadonlyStorageTexture:
             case wgpu::BindingType::WriteonlyStorageTexture:
                 return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-            case wgpu::BindingType::StorageTexture:
-            default:
-                UNREACHABLE();
         }
     }
 
@@ -176,7 +174,7 @@ namespace dawn_native { namespace vulkan {
         mBindGroupAllocator.Deallocate(bindGroup);
     }
 
-    void BindGroupLayout::FinishDeallocation(Serial completedSerial) {
+    void BindGroupLayout::FinishDeallocation(ExecutionSerial completedSerial) {
         mDescriptorSetAllocator->FinishDeallocation(completedSerial);
     }
 

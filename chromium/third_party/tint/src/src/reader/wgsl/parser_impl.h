@@ -52,6 +52,26 @@ namespace wgsl {
 
 class Lexer;
 
+/// Struct holding information for a for loop
+struct ForHeader {
+  /// Constructor
+  /// @param init the initializer statement
+  /// @param cond the condition statement
+  /// @param cont the continuing statement
+  ForHeader(std::unique_ptr<ast::Statement> init,
+            std::unique_ptr<ast::Expression> cond,
+            std::unique_ptr<ast::Statement> cont);
+
+  ~ForHeader();
+
+  /// The for loop initializer
+  std::unique_ptr<ast::Statement> initializer;
+  /// The for loop condition
+  std::unique_ptr<ast::Expression> condition;
+  /// The for loop continuing statement
+  std::unique_ptr<ast::Statement> continuing;
+};
+
 /// ParserImpl for WGSL source data
 class ParserImpl {
  public:
@@ -227,6 +247,12 @@ class ParserImpl {
   /// Parses a `loop_stmt` grammar element
   /// @returns the parsed loop or nullptr
   std::unique_ptr<ast::LoopStatement> loop_stmt();
+  /// Parses a `for_header` grammar element
+  /// @returns the parsed for header or nullptr
+  std::unique_ptr<ForHeader> for_header();
+  /// Parses a `for_stmt` grammar element
+  /// @returns the parsed for loop or nullptr
+  std::unique_ptr<ast::Statement> for_stmt();
   /// Parses a `continuing_stmt` grammar element
   /// @returns the parsed statements
   std::unique_ptr<ast::BlockStatement> continuing_stmt();
@@ -343,6 +369,9 @@ class ParserImpl {
   ast::type::Type* type_decl_array(Token t, uint32_t stride);
   uint32_t array_decoration_list();
   ast::type::Type* type_decl_matrix(Token t);
+
+  std::unique_ptr<ast::ConstructorExpression> const_expr_internal(
+      uint32_t depth);
 
   Context& ctx_;
   std::string error_;

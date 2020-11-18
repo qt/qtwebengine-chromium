@@ -37,11 +37,10 @@ namespace dawn_native { namespace vulkan {
         // `commands`.
         // TODO(cwallez@chromium.org): coalesce barriers and do them early when possible.
         void TransitionUsageNow(CommandRecordingContext* recordingContext, wgpu::BufferUsage usage);
-        void TransitionUsageNow(CommandRecordingContext* recordingContext,
-                                wgpu::BufferUsage usage,
-                                std::vector<VkBufferMemoryBarrier>* bufferBarriers,
-                                VkPipelineStageFlags* srcStages,
-                                VkPipelineStageFlags* dstStages);
+        bool TransitionUsageAndGetResourceBarrier(wgpu::BufferUsage usage,
+                                                  VkBufferMemoryBarrier* barrier,
+                                                  VkPipelineStageFlags* srcStages,
+                                                  VkPipelineStageFlags* dstStages);
 
         void EnsureDataInitialized(CommandRecordingContext* recordingContext);
         void EnsureDataInitializedAsDestination(CommandRecordingContext* recordingContext,
@@ -53,18 +52,14 @@ namespace dawn_native { namespace vulkan {
       private:
         ~Buffer() override;
         using BufferBase::BufferBase;
-        MaybeError Initialize();
+        MaybeError Initialize(bool mappedAtCreation);
         void InitializeToZero(CommandRecordingContext* recordingContext);
         void ClearBuffer(CommandRecordingContext* recordingContext, uint32_t clearValue);
 
-        // Dawn API
-        MaybeError MapReadAsyncImpl() override;
-        MaybeError MapWriteAsyncImpl() override;
         MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
         void UnmapImpl() override;
         void DestroyImpl() override;
-
-        bool IsMappableAtCreation() const override;
+        bool IsCPUWritableAtCreation() const override;
         MaybeError MapAtCreationImpl() override;
         void* GetMappedPointerImpl() override;
 

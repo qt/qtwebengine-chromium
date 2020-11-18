@@ -29,9 +29,10 @@ namespace cast {
 
 Receiver::Receiver(Environment* environment,
                    ReceiverPacketRouter* packet_router,
-                   const SessionConfig& config)
+                   SessionConfig config)
     : now_(environment->now_function()),
       packet_router_(packet_router),
+      config_(config),
       rtcp_session_(config.sender_ssrc, config.receiver_ssrc, now_()),
       rtcp_parser_(&rtcp_session_),
       rtcp_builder_(&rtcp_session_),

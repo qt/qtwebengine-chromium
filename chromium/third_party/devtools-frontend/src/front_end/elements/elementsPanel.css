@@ -34,7 +34,7 @@
 }
 
 .style-panes-wrapper {
-  overflow: hidden auto;
+  overflow: scroll;
 }
 
 .style-panes-wrapper > div:not(:first-child) {
@@ -46,12 +46,7 @@
   min-width: 100%;
 }
 
-#elements-content.elements-wrap {
-  overflow-x: hidden;
-}
-
 #elements-crumbs {
-  flex: 0 0 23px;
   background-color: white;
   border-top: 1px solid var(--divider-color);
   overflow: hidden;

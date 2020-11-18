@@ -56,6 +56,8 @@ angle::Result SyncHelper::initialize(ContextVk *contextVk)
     commandBuffer.setEvent(mEvent.getHandle(), VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
     retain(&contextVk->getResourceUseList());
 
+    contextVk->onSyncHelperInitialize();
+
     return angle::Result::Continue;
 }
 
@@ -190,7 +192,7 @@ angle::Result SyncHelperNativeFence::initializeWithFd(ContextVk *contextVk, int 
         Serial serialOut;
         VkSubmitInfo submitInfo = {};
         submitInfo.sType        = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        ANGLE_TRY(renderer->queueSubmit(contextVk, contextVk->getPriority(), submitInfo,
+        ANGLE_TRY(renderer->queueSubmit(contextVk, contextVk->getPriority(), submitInfo, nullptr,
                                         &fence.get(), &serialOut));
 
         VkFenceGetFdInfoKHR fenceGetFdInfo = {};

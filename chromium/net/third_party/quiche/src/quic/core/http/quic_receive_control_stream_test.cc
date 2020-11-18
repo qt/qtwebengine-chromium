@@ -156,8 +156,8 @@ TEST_P(QuicReceiveControlStreamTest, ResetControlStream) {
 
 TEST_P(QuicReceiveControlStreamTest, ReceiveSettings) {
   SettingsFrame settings;
-  settings.values[3] = 2;
-  settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
+  settings.values[10] = 2;
+  settings.values[SETTINGS_MAX_FIELD_SECTION_SIZE] = 5;
   settings.values[SETTINGS_QPACK_BLOCKED_STREAMS] = 12;
   settings.values[SETTINGS_QPACK_MAX_TABLE_CAPACITY] = 37;
   std::string data = EncodeSettings(settings);
@@ -223,8 +223,8 @@ TEST_P(QuicReceiveControlStreamTest, ReceiveSettingsTwice) {
 
 TEST_P(QuicReceiveControlStreamTest, ReceiveSettingsFragments) {
   SettingsFrame settings;
-  settings.values[3] = 2;
-  settings.values[SETTINGS_MAX_HEADER_LIST_SIZE] = 5;
+  settings.values[10] = 2;
+  settings.values[SETTINGS_MAX_FIELD_SECTION_SIZE] = 5;
   std::string data = EncodeSettings(settings);
   std::string data1 = data.substr(0, 1);
   std::string data2 = data.substr(1, data.length() - 1);
@@ -292,22 +292,12 @@ TEST_P(QuicReceiveControlStreamTest, ReceiveGoAwayFrame) {
   std::string data = std::string(buffer.get(), header_length);
 
   QuicStreamFrame frame(receive_control_stream_->id(), false, offset, data);
-  EXPECT_FALSE(session_.http3_goaway_received());
+  EXPECT_FALSE(session_.goaway_received());
 
   EXPECT_CALL(debug_visitor, OnGoAwayFrameReceived(goaway));
 
-  if (!GetQuicReloadableFlag(quic_http3_goaway_new_behavior) &&
-      perspective() == Perspective::IS_SERVER) {
-    EXPECT_CALL(
-        *connection_,
-        CloseConnection(QUIC_HTTP_FRAME_UNEXPECTED_ON_CONTROL_STREAM, _, _));
-  }
-
   receive_control_stream_->OnStreamFrame(frame);
-  if (GetQuicReloadableFlag(quic_http3_goaway_new_behavior) ||
-      perspective() == Perspective::IS_CLIENT) {
-    EXPECT_TRUE(session_.http3_goaway_received());
-  }
+  EXPECT_TRUE(session_.goaway_received());
 }
 
 TEST_P(QuicReceiveControlStreamTest, PushPromiseOnControlStreamShouldClose) {

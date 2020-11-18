@@ -20,9 +20,10 @@ using openscreen::operator<<;  // For std::chrono::duration logging.
 
 Sender::Sender(Environment* environment,
                SenderPacketRouter* packet_router,
-               const SessionConfig& config,
+               SessionConfig config,
                RtpPayloadType rtp_payload_type)
-    : packet_router_(packet_router),
+    : config_(config),
+      packet_router_(packet_router),
       rtcp_session_(config.sender_ssrc,
                     config.receiver_ssrc,
                     environment->now()),

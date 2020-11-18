@@ -117,9 +117,9 @@
             {"value": 3, "name": "sampler"},
             {"value": 4, "name": "comparison sampler"},
             {"value": 5, "name": "sampled texture"},
-            {"value": 6, "name": "readonly storage texture"},
-            {"value": 7, "name": "writeonly storage texture"},
-            {"value": 8, "name": "storage texture"}
+            {"value": 6, "name": "multisampled texture"},
+            {"value": 7, "name": "readonly storage texture"},
+            {"value": 8, "name": "writeonly storage texture"}
         ]
     },
     "blend descriptor": {
@@ -175,20 +175,6 @@
     "buffer": {
         "category": "object",
         "methods": [
-            {
-                "name": "map read async",
-                "args": [
-                    {"name": "callback", "type": "buffer map read callback"},
-                    {"name": "userdata", "type": "void", "annotation": "*"}
-                ]
-            },
-            {
-                "name": "map write async",
-                "args": [
-                    {"name": "callback", "type": "buffer map write callback"},
-                    {"name": "userdata", "type": "void", "annotation": "*"}
-                ]
-            },
             {
                 "name": "map async",
                 "args": [
@@ -248,31 +234,15 @@
             {"name": "userdata", "type": "void", "annotation": "*"}
         ]
     },
-    "buffer map read callback": {
-        "category": "callback",
-        "args": [
-            {"name": "status", "type": "buffer map async status"},
-            {"name": "data", "type": "void", "annotation": "const*"},
-            {"name": "data length", "type": "uint64_t"},
-            {"name": "userdata", "type": "void", "annotation": "*"}
-        ]
-    },
-    "buffer map write callback": {
-        "category": "callback",
-        "args": [
-            {"name": "status", "type": "buffer map async status"},
-            {"name": "data", "type": "void", "annotation": "*"},
-            {"name": "data length", "type": "uint64_t"},
-            {"name": "userdata", "type": "void", "annotation": "*"}
-        ]
-    },
     "buffer map async status": {
         "category": "enum",
         "values": [
             {"value": 0, "name": "success"},
             {"value": 1, "name": "error"},
             {"value": 2, "name": "unknown"},
-            {"value": 3, "name": "device lost"}
+            {"value": 3, "name": "device lost"},
+            {"value": 4, "name": "destroyed before callback"},
+            {"value": 5, "name": "unmapped before callback"}
         ]
     },
     "buffer usage": {
@@ -294,21 +264,13 @@
     "char": {
         "category": "native"
     },
-    "create buffer mapped result": {
-        "category": "structure",
-        "members": [
-            {"name": "buffer", "type": "buffer"},
-            {"name": "data length", "type": "uint64_t"},
-            {"name": "data", "type": "void", "annotation": "*", "length": "data length"}
-        ]
-    },
     "color": {
         "category": "structure",
         "members": [
-            {"name": "r", "type": "float"},
-            {"name": "g", "type": "float"},
-            {"name": "b", "type": "float"},
-            {"name": "a", "type": "float"}
+            {"name": "r", "type": "double"},
+            {"name": "g", "type": "double"},
+            {"name": "b", "type": "double"},
+            {"name": "a", "type": "double"}
         ]
     },
     "color write mask": {
@@ -576,13 +538,6 @@
                 "TODO": "enga@: Make this part of a dawn_wire extension"
             },
             {
-                "name": "create buffer mapped",
-                "returns": "create buffer mapped result",
-                "args": [
-                    {"name": "descriptor", "type": "buffer descriptor", "annotation": "const*"}
-                ]
-            },
-            {
                 "name": "create command encoder",
                 "returns": "command encoder",
                 "args": [
@@ -731,6 +686,9 @@
             {"name": "stencil write mask", "type": "uint32_t", "default": "0xFFFFFFFF"}
         ]
     },
+    "double": {
+        "category": "native"
+    },
     "error callback": {
         "category": "callback",
         "args": [
@@ -826,8 +784,9 @@
     "index format": {
         "category": "enum",
         "values": [
-            {"value": 0, "name": "uint16"},
-            {"value": 1, "name": "uint32"}
+            {"value": 0, "name": "undefined", "jsrepr": "undefined"},
+            {"value": 1, "name": "uint16"},
+            {"value": 2, "name": "uint32"}
         ]
     },
     "instance": {
@@ -870,7 +829,7 @@
         "category": "structure",
         "extensible": true,
         "members": [
-            {"name": "index format", "type": "index format", "default": "uint32"},
+            {"name": "index format", "type": "index format", "default": "undefined"},
             {"name": "vertex buffer count", "type": "uint32_t", "default": 0},
             {"name": "vertex buffers", "type": "vertex buffer layout descriptor", "annotation": "const*", "length": "vertex buffer count"}
         ]
@@ -1134,6 +1093,15 @@
                 ]
             },
             {
+                "name": "set index buffer with format",
+                "args": [
+                    {"name": "buffer", "type": "buffer"},
+                    {"name": "format", "type": "index format"},
+                    {"name": "offset", "type": "uint64_t", "default": "0"},
+                    {"name": "size", "type": "uint64_t", "default": "0"}
+                ]
+            },
+            {
                 "name": "finish",
                 "returns": "render bundle",
                 "args": [
@@ -1319,6 +1287,15 @@
                 "name": "set index buffer",
                 "args": [
                     {"name": "buffer", "type": "buffer"},
+                    {"name": "offset", "type": "uint64_t", "default": "0"},
+                    {"name": "size", "type": "uint64_t", "default": "0"}
+                ]
+            },
+            {
+                "name": "set index buffer with format",
+                "args": [
+                    {"name": "buffer", "type": "buffer"},
+                    {"name": "format", "type": "index format"},
                     {"name": "offset", "type": "uint64_t", "default": "0"},
                     {"name": "size", "type": "uint64_t", "default": "0"}
                 ]
@@ -1674,7 +1651,7 @@
             {"value": 48, "name": "BC5 RG unorm"},
             {"value": 49, "name": "BC5 RG snorm"},
             {"value": 50, "name": "BC6H RGB ufloat"},
-            {"value": 51, "name": "BC6H RGB sfloat"},
+            {"value": 51, "name": "BC6H RGB float"},
             {"value": 52, "name": "BC7 RGBA unorm"},
             {"value": 53, "name": "BC7 RGBA unorm srgb"}
         ]

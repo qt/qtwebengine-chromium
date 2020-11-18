@@ -69,6 +69,7 @@
   --color-informative: var(--color-blue-900);
   --color-pass-secondary: var(--color-green-700);
   --color-pass: var(--color-green);
+  --color-not-applicable: var(--color-gray-600);
 
   /* Component variables */
   --audit-description-padding-left: calc(var(--score-icon-size) + var(--score-icon-margin-left) + var(--score-icon-margin-right));
@@ -439,7 +440,8 @@
 .lh-audit--pass .lh-audit__display-text {
   color: var(--color-pass-secondary);
 }
-.lh-audit--pass .lh-audit__score-icon {
+.lh-audit--pass .lh-audit__score-icon, 
+.lh-scorescale-range--pass::before {
   border-radius: 100%;
   background: var(--color-pass);
 }
@@ -447,7 +449,8 @@
 .lh-audit--average .lh-audit__display-text {
   color: var(--color-average-secondary);
 }
-.lh-audit--average .lh-audit__score-icon {
+.lh-audit--average .lh-audit__score-icon, 
+.lh-scorescale-range--average::before {
   background: var(--color-average);
   width: var(--icon-square-size);
   height: var(--icon-square-size);
@@ -457,7 +460,8 @@
   color: var(--color-fail-secondary);
 }
 .lh-audit--fail .lh-audit__score-icon,
-.lh-audit--error .lh-audit__score-icon {
+.lh-audit--error .lh-audit__score-icon, 
+.lh-scorescale-range--fail::before {
   border-left: calc(var(--score-icon-size) / 2) solid transparent;
   border-right: calc(var(--score-icon-size) / 2) solid transparent;
   border-bottom: var(--score-icon-size) solid var(--color-fail);
@@ -684,7 +688,8 @@
   flex: 1;
 }
 
-.lh-metric .lh-metric__innerwrap::before {
+.lh-metric .lh-metric__innerwrap::before, 
+.lh-scorescale-range::before {
   content: '';
   width: var(--score-icon-size);
   height: var(--score-icon-size);
@@ -1063,6 +1068,12 @@
   stroke: var(--color-fail);
 }
 
+.lh-gauge__wrapper--not-applicable {
+  color: var(--color-not-applicable);
+  fill: var(--color-not-applicable);
+  stroke: var(--color-not-applicable);
+}
+
 .lh-gauge {
   stroke-linecap: round;
   width: var(--gauge-circle-size);
@@ -1189,27 +1200,6 @@
   margin: 0 12px;
   font-family: var(--report-font-family-monospace);
   white-space: nowrap;
-}
-
-.lh-scorescale-range::before {
-  content: '';
-  width: var(--scorescale-width);
-  height: var(--scorescale-height);
-  border-radius: 10px;
-  display: block;
-  margin-right: 10px;
-}
-
-.lh-scorescale-range--pass::before {
-  background-color: var(--color-pass);
-}
-
-.lh-scorescale-range--average::before {
-  background-color: var(--color-average);
-}
-
-.lh-scorescale-range--fail::before {
-  background-color: var(--color-fail);
 }
 
 /* Hide category score gauages if it's a single category report */
@@ -1359,6 +1349,10 @@
 .lh-table-column--code,
 .lh-table-column--node {
   text-align: left;
+}
+
+.lh-table-column--code {
+  min-width: 100px;
 }
 
 .lh-table-column--bytes,

@@ -449,6 +449,7 @@ const char kApnNameProperty[] = "name";
 const char kApnLocalizedNameProperty[] = "localized_name";
 const char kApnLanguageProperty[] = "language";
 const char kApnAuthenticationProperty[] = "authentication";
+const char kApnAttachProperty[] = "attach";
 
 // APN authentication property values (as expected by ModemManager).
 const char kApnAuthenticationPap[] = "pap";

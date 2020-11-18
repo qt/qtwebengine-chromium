@@ -56,11 +56,12 @@ private:
     void onPrePrepare(GrRecordingContext*,
                       const GrSurfaceProxyView* writeView,
                       GrAppliedClip*,
-                      const GrXferProcessor::DstProxyView&) override {}
+                      const GrXferProcessor::DstProxyView&,
+                      GrXferBarrierFlags renderPassXferBarriers) override {}
     void onPrepare(GrOpFlushState*) override {}
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
-    void drawResolve(GrOpFlushState*, const GrPipeline&, const GrPrimitiveProcessor&,
-                     const SkIRect& drawBounds) const;
+    void drawResolve(GrOpFlushState*, const GrPipeline&, const GrUserStencilSettings*,
+                     const GrPrimitiveProcessor&, const SkIRect& drawBounds) const;
 
     friend class ::GrOpMemoryPool; // for ctor
 

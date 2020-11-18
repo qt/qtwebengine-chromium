@@ -109,12 +109,8 @@ QuicByteCount GetReceivedFlowControlWindow(QuicSession* session,
 // static
 const SpdyPriority QuicStream::kDefaultPriority;
 
-// static
-const int QuicStream::kDefaultUrgency;
-
 PendingStream::PendingStream(QuicStreamId id, QuicSession* session)
     : id_(id),
-      session_(session),
       stream_delegate_(session),
       stream_bytes_read_(0),
       fin_received_(false),
@@ -125,8 +121,8 @@ PendingStream::PendingStream(QuicStreamId id, QuicSession* session)
                        GetReceivedFlowControlWindow(session, id),
                        GetInitialStreamFlowControlWindowToSend(session, id),
                        kStreamReceiveWindowLimit,
-                       session_->flow_controller()->auto_tune_receive_window(),
-                       session_->flow_controller()),
+                       session->flow_controller()->auto_tune_receive_window(),
+                       session->flow_controller()),
       sequencer_(this) {}
 
 void PendingStream::OnDataAvailable() {
@@ -267,9 +263,12 @@ void PendingStream::StopReading() {
   sequencer_.StopReading();
 }
 
-QuicStream::QuicStream(PendingStream* pending, StreamType type, bool is_static)
+QuicStream::QuicStream(PendingStream* pending,
+                       QuicSession* session,
+                       StreamType type,
+                       bool is_static)
     : QuicStream(pending->id_,
-                 pending->session_,
+                 session,
                  std::move(pending->sequencer_),
                  is_static,
                  type,
@@ -362,6 +361,7 @@ QuicStream::QuicStream(QuicStreamId id,
                                            session->IsIncomingStream(id_),
                                            session->version())
                 : type),
+      creation_time_(session->connection()->clock()->ApproximateNow()),
       perspective_(session->perspective()) {
   if (type_ == WRITE_UNIDIRECTIONAL) {
     fin_received_ = true;
@@ -385,6 +385,16 @@ QuicStream::~QuicStream() {
   }
   if (stream_delegate_ != nullptr && type_ != CRYPTO) {
     stream_delegate_->UnregisterStreamPriority(id(), is_static_);
+  }
+}
+
+// static
+int QuicStream::DefaultUrgency() {
+  if (GetQuicReloadableFlag(quic_http3_new_default_urgency_value)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_http3_new_default_urgency_value);
+    return 3;
+  } else {
+    return 1;
   }
 }
 
@@ -475,7 +485,7 @@ void QuicStream::OnStreamFrame(const QuicStreamFrame& frame) {
   sequencer_.OnStreamFrame(frame);
 }
 
-bool QuicStream::OnStopSending(uint16_t code) {
+bool QuicStream::OnStopSending(QuicRstStreamErrorCode code) {
   // Do not reset the stream if all data has been sent and acknowledged.
   if (write_side_closed() && !IsWaitingForAcks()) {
     QUIC_DVLOG(1) << ENDPOINT
@@ -493,11 +503,10 @@ bool QuicStream::OnStopSending(uint16_t code) {
     return false;
   }
 
-  stream_error_ = static_cast<QuicRstStreamErrorCode>(code);
+  stream_error_ = code;
 
-  session()->SendRstStream(id(),
-                           static_cast<quic::QuicRstStreamErrorCode>(code),
-                           stream_bytes_written(), /*send_rst_only = */ true);
+  session()->SendRstStream(id(), code, stream_bytes_written(),
+                           /*send_rst_only = */ true);
   rst_sent_ = true;
   CloseWriteSide();
   return true;
@@ -1009,8 +1018,7 @@ bool QuicStream::OnStreamFrameAcked(QuicStreamOffset offset,
     fin_outstanding_ = false;
     fin_lost_ = false;
   }
-  if (!IsWaitingForAcks() && (!session()->remove_zombie_streams() ||
-                              (read_side_closed_ && write_side_closed_))) {
+  if (!IsWaitingForAcks() && read_side_closed_ && write_side_closed_) {
     session_->OnStreamDoneWaitingForAcks(id_);
   }
   return new_data_acked;
@@ -1206,10 +1214,6 @@ void QuicStream::WriteBufferedData() {
   if (consumed_data.bytes_consumed > 0 || consumed_data.fin_consumed) {
     busy_counter_ = 0;
   }
-
-  if (IsWaitingForAcks()) {
-    session_->OnStreamWaitingForAcks(id_);
-  }
 }
 
 uint64_t QuicStream::BufferedDataBytes() const {
@@ -1309,16 +1313,6 @@ void QuicStream::OnDeadlinePassed() {
   Reset(QUIC_STREAM_TTL_EXPIRED);
 }
 
-void QuicStream::SendStopSending(uint16_t code) {
-  if (!VersionHasIetfQuicFrames(transport_version())) {
-    // If the connection is not version 99, do nothing.
-    // Do not QUIC_BUG or anything; the application really does not need to know
-    // what version the connection is in.
-    return;
-  }
-  session_->SendStopSending(code, id_);
-}
-
 bool QuicStream::IsFlowControlBlocked() const {
   if (!flow_controller_.has_value()) {
     QUIC_BUG << "Trying to access non-existent flow controller.";
@@ -1347,7 +1341,7 @@ void QuicStream::UpdateReceiveWindowSize(QuicStreamOffset size) {
 spdy::SpdyStreamPrecedence QuicStream::CalculateDefaultPriority(
     const QuicSession* session) {
   if (VersionUsesHttp3(session->transport_version())) {
-    return spdy::SpdyStreamPrecedence(QuicStream::kDefaultUrgency);
+    return spdy::SpdyStreamPrecedence(DefaultUrgency());
   }
 
   if (session->use_http2_priority_write_scheduler()) {

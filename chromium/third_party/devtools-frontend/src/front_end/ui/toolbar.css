@@ -9,6 +9,10 @@
   padding: 0 2px;
 }
 
+:host-context(.-theme-with-dark-background) {
+  --accent-color: #4688f1;
+}
+
 .toolbar-shadow {
   position: relative;
   white-space: nowrap;
@@ -108,9 +112,29 @@ select.toolbar-item:disabled + .toolbar-dropdown-arrow {
 
 .toolbar-render-as-links * {
   font-weight: initial;
-  color: rgb(17 85 204);
+  color: var(--link-color);
   text-decoration: underline;
   cursor: pointer;
+}
+
+.toolbar-render-as-links button {
+  height: 14px;
+  margin: 2px;
+}
+
+.toolbar-render-as-links button:focus-visible {
+  outline: auto 5px -webkit-focus-ring-color;
+}
+
+:not(.toolbar-render-as-links) .toolbar-button:focus-visible::after {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  right: 2px;
+  background-color: rgb(0 0 0 / 8%);
+  border-radius: 2px;
+  content: "";
 }
 
 .toolbar-glyph {
@@ -225,12 +249,12 @@ select.toolbar-item:disabled {
   opacity: 50%;
 }
 
-select.toolbar-item[data-keyboard-focus="true"]:focus {
+select.toolbar-item:focus-visible {
   background: rgb(0 0 0 / 8%);
   border-radius: 2px;
 }
 
-select.toolbar-item[data-keyboard-focus="true"]:focus > * {
+select.toolbar-item:focus-visible > * {
   background: white;
 }
 
@@ -307,17 +331,6 @@ select.toolbar-item[data-keyboard-focus="true"]:focus > * {
 
 .toolbar-button.emulate-active {
   background-color: rgb(163 163 163);
-}
-
-.toolbar-button[data-keyboard-focus="true"]:focus::after {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 2px;
-  right: 2px;
-  background-color: rgb(0 0 0 / 8%);
-  border-radius: 2px;
-  content: "";
 }
 
 .toolbar-shadow.floating {

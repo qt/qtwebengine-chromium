@@ -262,15 +262,37 @@ angle::Result InitAttachment(const Context *context, FramebufferAttachment *atta
     }
     return angle::Result::Continue;
 }
+
+bool AttachmentOverlapsWithTexture(const FramebufferAttachment &attachment,
+                                   const Texture *texture,
+                                   const Sampler *sampler)
+{
+    if (!attachment.isTextureWithId(texture->id()))
+    {
+        return false;
+    }
+
+    const gl::ImageIndex &index = attachment.getTextureImageIndex();
+    GLuint attachmentLevel      = static_cast<GLuint>(index.getLevelIndex());
+    GLuint textureBaseLevel     = texture->getBaseLevel();
+    GLuint textureMaxLevel      = textureBaseLevel;
+    if ((sampler && IsMipmapFiltered(sampler->getSamplerState().getMinFilter())) ||
+        IsMipmapFiltered(texture->getSamplerState().getMinFilter()))
+    {
+        textureMaxLevel = texture->getMipmapMaxLevel();
+    }
+
+    return attachmentLevel >= textureBaseLevel && attachmentLevel <= textureMaxLevel;
+}
 }  // anonymous namespace
 
 // This constructor is only used for default framebuffers.
-FramebufferState::FramebufferState(ContextID owningContextID, rx::Serial serial)
+FramebufferState::FramebufferState(rx::Serial serial)
     : mId(Framebuffer::kDefaultDrawFramebufferHandle),
       mFramebufferSerial(serial),
-      mOwningContextID(owningContextID),
       mLabel(),
       mColorAttachments(1),
+      mColorAttachmentsMask(0),
       mDrawBufferStates(1, GL_BACK),
       mReadBufferState(GL_BACK),
       mDrawBufferTypeMask(),
@@ -280,24 +302,18 @@ FramebufferState::FramebufferState(ContextID owningContextID, rx::Serial serial)
       mDefaultFixedSampleLocations(GL_FALSE),
       mDefaultLayers(0),
       mWebGLDepthStencilConsistent(true),
-      mDepthBufferFeedbackLoop(false),
-      mStencilBufferFeedbackLoop(false),
-      mHasRenderingFeedbackLoop(false),
       mDefaultFramebufferReadAttachmentInitialized(false)
 {
     ASSERT(mDrawBufferStates.size() > 0);
     mEnabledDrawBuffers.set(0);
 }
 
-FramebufferState::FramebufferState(const Caps &caps,
-                                   FramebufferID id,
-                                   ContextID owningContextID,
-                                   rx::Serial serial)
+FramebufferState::FramebufferState(const Caps &caps, FramebufferID id, rx::Serial serial)
     : mId(id),
       mFramebufferSerial(serial),
-      mOwningContextID(owningContextID),
       mLabel(),
       mColorAttachments(caps.maxColorAttachments),
+      mColorAttachmentsMask(0),
       mDrawBufferStates(caps.maxDrawBuffers, GL_NONE),
       mReadBufferState(GL_COLOR_ATTACHMENT0_EXT),
       mDrawBufferTypeMask(),
@@ -307,9 +323,6 @@ FramebufferState::FramebufferState(const Caps &caps,
       mDefaultFixedSampleLocations(GL_FALSE),
       mDefaultLayers(0),
       mWebGLDepthStencilConsistent(true),
-      mDepthBufferFeedbackLoop(false),
-      mStencilBufferFeedbackLoop(false),
-      mHasRenderingFeedbackLoop(false),
       mDefaultFramebufferReadAttachmentInitialized(false)
 {
     ASSERT(mId != Framebuffer::kDefaultDrawFramebufferHandle);
@@ -376,13 +389,11 @@ const FramebufferAttachment *FramebufferState::getAttachment(const Context *cont
     }
 }
 
-size_t FramebufferState::getReadIndex() const
+uint32_t FramebufferState::getReadIndex() const
 {
     ASSERT(mReadBufferState == GL_BACK ||
            (mReadBufferState >= GL_COLOR_ATTACHMENT0 && mReadBufferState <= GL_COLOR_ATTACHMENT15));
-    size_t readIndex = (mReadBufferState == GL_BACK
-                            ? 0
-                            : static_cast<size_t>(mReadBufferState - GL_COLOR_ATTACHMENT0));
+    uint32_t readIndex = mReadBufferState == GL_BACK ? 0 : mReadBufferState - GL_COLOR_ATTACHMENT0;
     ASSERT(readIndex < mColorAttachments.size());
     return readIndex;
 }
@@ -394,7 +405,7 @@ const FramebufferAttachment *FramebufferState::getReadAttachment() const
         return nullptr;
     }
 
-    size_t readIndex = getReadIndex();
+    uint32_t readIndex = getReadIndex();
     const gl::FramebufferAttachment &framebufferAttachment =
         isDefault() ? mDefaultFramebufferReadAttachment : mColorAttachments[readIndex];
 
@@ -661,61 +672,13 @@ bool FramebufferState::isDefault() const
     return mId == Framebuffer::kDefaultDrawFramebufferHandle;
 }
 
-bool FramebufferState::updateAttachmentFeedbackLoopAndReturnIfChanged(size_t dirtyBit)
-{
-    bool previous;
-    bool loop;
-
-    switch (dirtyBit)
-    {
-        case Framebuffer::DIRTY_BIT_DEPTH_ATTACHMENT:
-            previous                 = mDepthBufferFeedbackLoop;
-            loop                     = mDepthAttachment.isBoundAsSamplerOrImage(mOwningContextID);
-            mDepthBufferFeedbackLoop = loop;
-            break;
-
-        case Framebuffer::DIRTY_BIT_STENCIL_ATTACHMENT:
-            previous = mStencilBufferFeedbackLoop;
-            loop     = mStencilAttachment.isBoundAsSamplerOrImage(mOwningContextID);
-            mStencilBufferFeedbackLoop = loop;
-            break;
-
-        default:
-        {
-            ASSERT(dirtyBit <= Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_MAX);
-            previous = mDrawBufferFeedbackLoops.test(dirtyBit);
-            loop     = mColorAttachments[dirtyBit].isBoundAsSamplerOrImage(mOwningContextID);
-            mDrawBufferFeedbackLoops[dirtyBit] = loop;
-            break;
-        }
-    }
-
-    updateHasRenderingFeedbackLoop();
-    return previous != loop;
-}
-
-void FramebufferState::updateHasRenderingFeedbackLoop()
-{
-    // We don't handle tricky cases where the default FBO is bound as a sampler.
-    // We also don't handle tricky cases with EGLImages and mipmap selection.
-    // TODO(http://anglebug.com/4500): Tricky rendering feedback loop cases.
-    if (isDefault())
-    {
-        return;
-    }
-
-    mHasRenderingFeedbackLoop =
-        mDrawBufferFeedbackLoops.any() || mDepthBufferFeedbackLoop || mStencilBufferFeedbackLoop;
-}
-
 const FramebufferID Framebuffer::kDefaultDrawFramebufferHandle = {0};
 
 Framebuffer::Framebuffer(const Caps &caps,
                          rx::GLImplFactory *factory,
                          FramebufferID id,
-                         ContextID owningContextID,
                          egl::ShareGroup *shareGroup)
-    : mState(caps, id, owningContextID, shareGroup->generateFramebufferSerial()),
+    : mState(caps, id, shareGroup->generateFramebufferSerial()),
       mImpl(factory->createFramebuffer(mState)),
       mCachedStatus(),
       mDirtyDepthAttachmentBinding(this, DIRTY_BIT_DEPTH_ATTACHMENT),
@@ -733,7 +696,7 @@ Framebuffer::Framebuffer(const Caps &caps,
 }
 
 Framebuffer::Framebuffer(const Context *context, egl::Surface *surface, egl::Surface *readSurface)
-    : mState(context->id(), context->getShareGroup()->generateFramebufferSerial()),
+    : mState(context->getShareGroup()->generateFramebufferSerial()),
       mImpl(surface->getImplementation()->createDefaultFramebuffer(context, mState)),
       mCachedStatus(GL_FRAMEBUFFER_COMPLETE),
       mDirtyDepthAttachmentBinding(this, DIRTY_BIT_DEPTH_ATTACHMENT),
@@ -775,7 +738,7 @@ Framebuffer::Framebuffer(const Context *context, egl::Surface *surface, egl::Sur
 Framebuffer::Framebuffer(const Context *context,
                          rx::GLImplFactory *factory,
                          egl::Surface *readSurface)
-    : mState(context->id(), context->getShareGroup()->generateFramebufferSerial()),
+    : mState(context->getShareGroup()->generateFramebufferSerial()),
       mImpl(factory->createFramebuffer(mState)),
       mCachedStatus(GL_FRAMEBUFFER_UNDEFINED_OES),
       mDirtyDepthAttachmentBinding(this, DIRTY_BIT_DEPTH_ATTACHMENT),
@@ -1827,6 +1790,8 @@ void Framebuffer::setAttachmentImpl(const Context *context,
             updateAttachment(context, &mState.mColorAttachments[0], DIRTY_BIT_COLOR_ATTACHMENT_0,
                              &mDirtyColorAttachmentBindings[0], type, binding, textureIndex,
                              resource, numViews, baseViewIndex, isMultiview, samples);
+            mState.mColorAttachmentsMask.set(0);
+
             break;
 
         default:
@@ -1841,11 +1806,13 @@ void Framebuffer::setAttachmentImpl(const Context *context,
             if (!resource)
             {
                 mFloat32ColorAttachmentBits.reset(colorIndex);
+                mState.mColorAttachmentsMask.reset(colorIndex);
             }
             else
             {
                 updateFloat32ColorAttachmentBits(
                     colorIndex, resource->getAttachmentFormat(binding, textureIndex).info);
+                mState.mColorAttachmentsMask.set(colorIndex);
             }
 
             bool enabled = (type != GL_NONE && getDrawBufferState(colorIndex) != GL_NONE);
@@ -1876,7 +1843,6 @@ void Framebuffer::updateAttachment(const Context *context,
     mState.mResourceNeedsInit.set(dirtyBit, attachment->initState() == InitState::MayNeedInit);
     onDirtyBinding->bind(resource);
 
-    mState.updateAttachmentFeedbackLoopAndReturnIfChanged(dirtyBit);
     invalidateCompletenessCache();
 }
 
@@ -1911,16 +1877,7 @@ void Framebuffer::onSubjectStateChange(angle::SubjectIndex index, angle::Subject
             return;
         }
 
-        // Triggered by changes to Texture feedback loops.
-        if (message == angle::SubjectMessage::BindingChanged)
-        {
-            if (mState.updateAttachmentFeedbackLoopAndReturnIfChanged(index))
-            {
-                mDirtyBits.set(index);
-                onStateChange(angle::SubjectMessage::DirtyBitsFlagged);
-            }
-            return;
-        }
+        ASSERT(message != angle::SubjectMessage::BindingChanged);
 
         // This can be triggered by external changes to the default framebuffer.
         if (message == angle::SubjectMessage::SurfaceChanged)
@@ -1989,8 +1946,24 @@ bool Framebuffer::formsRenderingFeedbackLoopWith(const Context *context) const
         if (texture && texture->isSamplerComplete(context, sampler) &&
             texture->isBoundToFramebuffer(mState.mFramebufferSerial))
         {
-            // TODO(jmadill): Subresource check. http://anglebug.com/4500
-            return true;
+            // Check for level overlap.
+            for (const FramebufferAttachment &attachment : mState.mColorAttachments)
+            {
+                if (AttachmentOverlapsWithTexture(attachment, texture, sampler))
+                {
+                    return true;
+                }
+            }
+
+            if (AttachmentOverlapsWithTexture(mState.mDepthAttachment, texture, sampler))
+            {
+                return true;
+            }
+
+            if (AttachmentOverlapsWithTexture(mState.mStencilAttachment, texture, sampler))
+            {
+                return true;
+            }
         }
     }
 

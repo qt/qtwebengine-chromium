@@ -96,8 +96,7 @@ const QuicTag kBBR3 = TAG('B', 'B', 'R', '3');   // Fully drain the queue once
                                                  // per cycle
 const QuicTag kBBR4 = TAG('B', 'B', 'R', '4');   // 20 RTT ack aggregation
 const QuicTag kBBR5 = TAG('B', 'B', 'R', '5');   // 40 RTT ack aggregation
-const QuicTag kBBR9 = TAG('B', 'B', 'R', '9');   // Ignore app-limited calls in
-                                                 // BBR if enough inflight.
+const QuicTag kBBR9 = TAG('B', 'B', 'R', '9');   // DEPRECATED
 const QuicTag kBBRS = TAG('B', 'B', 'R', 'S');   // DEPRECATED
 const QuicTag kBBQ1 = TAG('B', 'B', 'Q', '1');   // BBR with lower 2.77 STARTUP
                                                  // pacing and CWND gain.
@@ -127,6 +126,7 @@ const QuicTag kB2CL = TAG('B', '2', 'C', 'L');   // For BBRv2, allow PROBE_BW
 const QuicTag kB2LO = TAG('B', '2', 'L', 'O');   // Ignore inflight_lo in BBR2
 const QuicTag kB2HI = TAG('B', '2', 'H', 'I');   // Limit inflight_hi reduction
                                                  // based on CWND.
+const QuicTag kB2HR = TAG('B', '2', 'H', 'R');   // 15% inflight_hi headroom.
 const QuicTag kBSAO = TAG('B', 'S', 'A', 'O');   // Avoid Overestimation in
                                                  // Bandwidth Sampler with ack
                                                  // aggregation
@@ -160,6 +160,7 @@ const QuicTag kAKDU = TAG('A', 'K', 'D', 'U');   // Unlimited number of packets
                                                  // received before acking
 const QuicTag kACKQ = TAG('A', 'C', 'K', 'Q');   // Send an immediate ack after
                                                  // 1 RTT of not receiving.
+const QuicTag kAFFE = TAG('A', 'F', 'F', 'E');   // AckFrequencyFrame Enabled.
 const QuicTag kSSLR = TAG('S', 'S', 'L', 'R');   // Slow Start Large Reduction.
 const QuicTag kNPRR = TAG('N', 'P', 'R', 'R');   // Pace at unity instead of PRR
 const QuicTag k2RTO = TAG('2', 'R', 'T', 'O');   // Close connection on 2 RTOs
@@ -298,6 +299,9 @@ const QuicTag kDTOS = TAG('D', 'T', 'O', 'S');  // Enable overshooting
 const QuicTag kFIDT = TAG('F', 'I', 'D', 'T');  // Extend idle timer by PTO
                                                 // instead of the whole idle
                                                 // timeout.
+
+const QuicTag k3AFF = TAG('3', 'A', 'F', 'F');  // 3 anti amplification factor.
+const QuicTag k10AF = TAG('1', '0', 'A', 'F');  // 10 anti amplification factor.
 
 // Enable path MTU discovery experiment.
 const QuicTag kMTUH = TAG('M', 'T', 'U', 'H');  // High-target MTU discovery.

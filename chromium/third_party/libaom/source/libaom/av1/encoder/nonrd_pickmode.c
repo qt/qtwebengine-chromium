@@ -148,7 +148,9 @@ static int combined_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
   const int num_planes = av1_num_planes(cm);
   MB_MODE_INFO *mi = xd->mi[0];
   struct buf_2d backup_yv12[MAX_MB_PLANE] = { { 0, 0, 0, 0, 0 } };
-  int step_param = cpi->mv_search_params.mv_step_param;
+  int step_param = (cpi->sf.rt_sf.fullpel_search_step_param)
+                       ? cpi->sf.rt_sf.fullpel_search_step_param
+                       : cpi->mv_search_params.mv_step_param;
   FULLPEL_MV start_mv;
   const int ref = mi->ref_frame[0];
   const MV ref_mv = av1_get_ref_mv(x, mi->ref_mv_idx).as_mv;
@@ -176,9 +178,8 @@ static int combined_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
     center_mv = ref_mv;
   else
     center_mv = tmp_mv->as_mv;
-
   const search_site_config *src_search_sites =
-      &cpi->mv_search_params.search_site_cfg[SS_CFG_SRC];
+      cpi->mv_search_params.search_site_cfg[SS_CFG_SRC];
   FULLPEL_MOTION_SEARCH_PARAMS full_ms_params;
   av1_make_default_fullpel_ms_params(&full_ms_params, cpi, x, bsize, &center_mv,
                                      src_search_sites,
@@ -2003,6 +2004,7 @@ void av1_nonrd_pick_inter_mode_sb(AV1_COMP *cpi, TileDataEnc *tile_data,
   int64_t thresh_sad_pred = INT64_MAX;
   const int mi_row = xd->mi_row;
   const int mi_col = xd->mi_col;
+  int use_modeled_non_rd_cost = 0;
 
   init_best_pickmode(&best_pickmode);
 
@@ -2067,11 +2069,18 @@ void av1_nonrd_pick_inter_mode_sb(AV1_COMP *cpi, TileDataEnc *tile_data,
 
   // TODO(marpan): Look into reducing these conditions. For now constrain
   // it to avoid significant bdrate loss.
-  const int use_modeled_non_rd_cost =
-      (cpi->sf.rt_sf.use_modeled_non_rd_cost &&
-       quant_params->base_qindex > 120 && x->source_variance > 100 &&
-       bsize <= BLOCK_16X16 && x->content_state_sb != kLowVarHighSumdiff &&
-       x->content_state_sb != kHighSad);
+  if (cpi->sf.rt_sf.use_modeled_non_rd_cost) {
+    if (cpi->svc.non_reference_frame)
+      use_modeled_non_rd_cost = 1;
+    else if (cpi->svc.number_temporal_layers > 1 &&
+             cpi->svc.temporal_layer_id == 0)
+      use_modeled_non_rd_cost = 0;
+    else
+      use_modeled_non_rd_cost =
+          (quant_params->base_qindex > 120 && x->source_variance > 100 &&
+           bsize <= BLOCK_16X16 && x->content_state_sb != kLowVarHighSumdiff &&
+           x->content_state_sb != kHighSad);
+  }
 
 #if COLLECT_PICK_MODE_STAT
   ms_stat.num_blocks[bsize]++;

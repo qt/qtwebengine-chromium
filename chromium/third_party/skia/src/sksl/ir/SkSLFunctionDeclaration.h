@@ -25,7 +25,7 @@ struct FunctionDefinition;
  * A function declaration (not a definition -- does not contain a body).
  */
 struct FunctionDeclaration : public Symbol {
-    static constexpr Kind kSymbolKind = kFunctionDeclaration_Kind;
+    static constexpr Kind kSymbolKind = Kind::kFunctionDeclaration;
 
     FunctionDeclaration(int offset, Modifiers modifiers, StringFragment name,
                         std::vector<const Variable*> parameters, const Type& returnType,
@@ -43,7 +43,7 @@ struct FunctionDeclaration : public Symbol {
         for (auto p : fParameters) {
             result += separator;
             separator = ", ";
-            result += p->fType.displayName();
+            result += p->type().displayName();
         }
         result += ")";
         return result;
@@ -57,7 +57,7 @@ struct FunctionDeclaration : public Symbol {
             return false;
         }
         for (size_t i = 0; i < fParameters.size(); i++) {
-            if (fParameters[i]->fType != f.fParameters[i]->fType) {
+            if (fParameters[i]->type() != f.fParameters[i]->type()) {
                 return false;
             }
         }
@@ -74,6 +74,10 @@ struct FunctionDeclaration : public Symbol {
      * does not guarantee that the function can be successfully called with those arguments, merely
      * indicates that an attempt should be made. If false is returned, the state of
      * outParameterTypes and outReturnType are undefined.
+     *
+     * This always assumes narrowing conversions are *allowed*. The calling code needs to verify
+     * that each argument can actually be coerced to the final parameter type, respecting the
+     * narrowing-conversions flag. This is handled in callCost(), or in convertCall() (via coerce).
      */
     bool determineFinalTypes(const std::vector<std::unique_ptr<Expression>>& arguments,
                              std::vector<const Type*>* outParameterTypes,
@@ -81,11 +85,12 @@ struct FunctionDeclaration : public Symbol {
         SkASSERT(arguments.size() == fParameters.size());
         int genericIndex = -1;
         for (size_t i = 0; i < arguments.size(); i++) {
-            if (fParameters[i]->fType.kind() == Type::kGeneric_Kind) {
-                std::vector<const Type*> types = fParameters[i]->fType.coercibleTypes();
+            const Type& parameterType = fParameters[i]->type();
+            if (parameterType.typeKind() == Type::TypeKind::kGeneric) {
+                std::vector<const Type*> types = parameterType.coercibleTypes();
                 if (genericIndex == -1) {
                     for (size_t j = 0; j < types.size(); j++) {
-                        if (arguments[i]->fType.canCoerceTo(*types[j])) {
+                        if (arguments[i]->type().canCoerceTo(*types[j], /*allowNarrowing=*/true)) {
                             genericIndex = j;
                             break;
                         }
@@ -96,10 +101,10 @@ struct FunctionDeclaration : public Symbol {
                 }
                 outParameterTypes->push_back(types[genericIndex]);
             } else {
-                outParameterTypes->push_back(&fParameters[i]->fType);
+                outParameterTypes->push_back(&parameterType);
             }
         }
-        if (fReturnType.kind() == Type::kGeneric_Kind) {
+        if (fReturnType.typeKind() == Type::TypeKind::kGeneric) {
             if (genericIndex == -1) {
                 return false;
             }
@@ -117,7 +122,7 @@ struct FunctionDeclaration : public Symbol {
     const Type& fReturnType;
     mutable std::atomic<int> fCallCount = 0;
 
-    typedef Symbol INHERITED;
+    using INHERITED = Symbol;
 };
 
 }  // namespace SkSL

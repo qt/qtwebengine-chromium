@@ -860,7 +860,7 @@ static AOM_INLINE int compute_num_enc_tile_mt_workers(AV1_COMMON *const cm,
 // Computes the number of workers for encoding stage (row/tile multi-threading)
 int av1_compute_num_enc_workers(AV1_COMP *cpi, int max_workers) {
   if (max_workers <= 1) return 1;
-  if (cpi->oxcf.row_mt && (max_workers > 1))
+  if (cpi->oxcf.row_mt)
     return compute_num_enc_row_mt_workers(&cpi->common, max_workers);
   else
     return compute_num_enc_tile_mt_workers(&cpi->common, max_workers);
@@ -1176,7 +1176,7 @@ static int tpl_worker_hook(void *arg1, void *unused) {
   MACROBLOCK *x = &thread_data->td->mb;
   MACROBLOCKD *xd = &x->e_mbd;
   CommonModeInfoParams *mi_params = &cm->mi_params;
-  BLOCK_SIZE bsize = convert_length_to_bsize(MC_FLOW_BSIZE_1D);
+  BLOCK_SIZE bsize = convert_length_to_bsize(cpi->tpl_data.tpl_bsize_1d);
   TX_SIZE tx_size = max_txsize_lookup[bsize];
   int mi_height = mi_size_high[bsize];
   int num_active_workers = cpi->tpl_data.tpl_mt_sync.num_threads_working;

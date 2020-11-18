@@ -19,7 +19,7 @@ class SymbolTable;
  * A 'switch' statement.
  */
 struct SwitchStatement : public Statement {
-    static constexpr Kind kStatementKind = kSwitch_Kind;
+    static constexpr Kind kStatementKind = Kind::kSwitch;
 
     SwitchStatement(int offset, bool isStatic, std::unique_ptr<Expression> value,
                     std::vector<std::unique_ptr<SwitchCase>> cases,
@@ -29,14 +29,6 @@ struct SwitchStatement : public Statement {
     , fValue(std::move(value))
     , fSymbols(std::move(symbols))
     , fCases(std::move(cases)) {}
-
-    int nodeCount() const override {
-        int result = 1 + fValue->nodeCount();
-        for (const auto& c : fCases) {
-            result += c->nodeCount();
-        }
-        return result;
-    }
 
     std::unique_ptr<Statement> clone() const override {
         std::vector<std::unique_ptr<SwitchCase>> cloned;
@@ -67,7 +59,7 @@ struct SwitchStatement : public Statement {
     const std::shared_ptr<SymbolTable> fSymbols;
     std::vector<std::unique_ptr<SwitchCase>> fCases;
 
-    typedef Statement INHERITED;
+    using INHERITED = Statement;
 };
 
 }  // namespace SkSL

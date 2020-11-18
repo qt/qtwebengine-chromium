@@ -286,12 +286,7 @@ public:
 
         @return  GPU context, if available; nullptr otherwise
 
-        example: https://fiddle.skia.org/c/@Canvas_getGrContext
-    */
-    virtual GrContext* getGrContext();
-
-    /**
-     * Experimental. SkCanvases can actually only guarantee a GrRecordingContext.
+        example: https://fiddle.skia.org/c/@Canvas_recordingContext
      */
     virtual GrRecordingContext* recordingContext();
 
@@ -2795,7 +2790,7 @@ private:
 
     std::unique_ptr<SkGlyphRunBuilder> fScratchGlyphRunBuilder;
 
-    typedef SkRefCnt INHERITED;
+    using INHERITED = SkRefCnt;
 };
 
 /** \class SkAutoCanvasRestore

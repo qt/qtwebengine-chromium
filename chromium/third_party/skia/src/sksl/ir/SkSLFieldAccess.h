@@ -24,11 +24,11 @@ struct FieldAccess : public Expression {
         kAnonymousInterfaceBlock_OwnerKind
     };
 
-    static constexpr Kind kExpressionKind = kFieldAccess_Kind;
+    static constexpr Kind kExpressionKind = Kind::kFieldAccess;
 
     FieldAccess(std::unique_ptr<Expression> base, int fieldIndex,
                 OwnerKind ownerKind = kDefault_OwnerKind)
-    : INHERITED(base->fOffset, kExpressionKind, *base->fType.fields()[fieldIndex].fType)
+    : INHERITED(base->fOffset, kExpressionKind, base->type().fields()[fieldIndex].fType)
     , fBase(std::move(base))
     , fFieldIndex(fieldIndex)
     , fOwnerKind(ownerKind) {}
@@ -37,24 +37,20 @@ struct FieldAccess : public Expression {
         return fBase->hasProperty(property);
     }
 
-    int nodeCount() const override {
-        return 1 + fBase->nodeCount();
-    }
-
     std::unique_ptr<Expression> clone() const override {
         return std::unique_ptr<Expression>(new FieldAccess(fBase->clone(), fFieldIndex,
                                                            fOwnerKind));
     }
 
     String description() const override {
-        return fBase->description() + "." + fBase->fType.fields()[fFieldIndex].fName;
+        return fBase->description() + "." + fBase->type().fields()[fFieldIndex].fName;
     }
 
     std::unique_ptr<Expression> fBase;
     const int fFieldIndex;
     const OwnerKind fOwnerKind;
 
-    typedef Expression INHERITED;
+    using INHERITED = Expression;
 };
 
 }  // namespace SkSL

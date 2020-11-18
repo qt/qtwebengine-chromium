@@ -15,7 +15,7 @@
 
 import argparse
 
-from trace_processor.api import TraceProcessor
+from perfetto.trace_processor import TraceProcessor
 
 
 def main():
@@ -53,7 +53,7 @@ def main():
   # Convert QueryResultIterator into a pandas dataframe + iterate. This yields
   # the same results as the function above.
   try:
-    res_df = tp.query('select * from slice limit 10').as_pandas()
+    res_df = tp.query('select * from slice limit 10').as_pandas_dataframe()
     for index, row in res_df.iterrows():
       print(row['name'])
   except Exception:

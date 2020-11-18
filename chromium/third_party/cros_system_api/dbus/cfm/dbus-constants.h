@@ -14,8 +14,11 @@ constexpr char kServiceInterfaceName[] = "org.chromium.CfmHotlined";
 constexpr char kServicePath[] = "/org/chromium/CfmHotlined";
 constexpr char kServiceName[] = "org.chromium.CfmHotlined";
 
-// Method names
+// Method names.
 constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
+
+// Signal names.
+constexpr char kMojoServiceRequestedSignal[] = "MojoServiceRequested";
 
 }  // namespace broker
 }  // namespace cfm

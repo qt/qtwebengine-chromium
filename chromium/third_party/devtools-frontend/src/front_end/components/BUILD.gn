@@ -26,10 +26,15 @@ devtools_module("components") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [
+    "imagePreview.css",
+    "jsUtils.css",
+  ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "components.js"
-
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":components" ]
 }

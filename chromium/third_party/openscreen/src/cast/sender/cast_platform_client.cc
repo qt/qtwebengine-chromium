@@ -4,7 +4,9 @@
 
 #include "cast/sender/cast_platform_client.h"
 
+#include <memory>
 #include <random>
+#include <utility>
 
 #include "absl/strings/str_cat.h"
 #include "cast/common/channel/virtual_connection_manager.h"
@@ -22,6 +24,8 @@ static constexpr std::chrono::seconds kRequestTimeout = std::chrono::seconds(5);
 
 namespace {
 
+// TODO(miu): This is duplicated in another teammate's WIP CL. De-dupe this by
+// placing the utility in cast/common.
 std::string MakeRandomSenderId() {
   static auto& rd = *new std::random_device();
   static auto& gen = *new std::mt19937(rd());
@@ -149,8 +153,9 @@ void CastPlatformClient::OnMessage(VirtualConnectionRouter* router,
   if (request_id) {
     auto entry = std::find_if(
         socket_id_by_device_id_.begin(), socket_id_by_device_id_.end(),
-        [socket](const std::pair<std::string, int>& entry) {
-          return entry.second == socket->socket_id();
+        [socket_id =
+             ToCastSocketId(socket)](const std::pair<std::string, int>& entry) {
+          return entry.second == socket_id;
         });
     if (entry != socket_id_by_device_id_.end()) {
       HandleResponse(entry->first, request_id.value(), dict);

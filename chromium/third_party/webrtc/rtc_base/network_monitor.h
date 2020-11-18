@@ -13,7 +13,6 @@
 
 #include "rtc_base/network_constants.h"
 #include "rtc_base/third_party/sigslot/sigslot.h"
-#include "rtc_base/thread.h"
 
 namespace rtc {
 
@@ -34,6 +33,8 @@ enum class NetworkPreference {
   NEUTRAL = 0,
   NOT_PREFERRED = -1,
 };
+
+const char* NetworkPreferenceToString(NetworkPreference preference);
 
 class NetworkBinderInterface {
  public:
@@ -75,36 +76,25 @@ class NetworkMonitorInterface {
   virtual void Start() = 0;
   virtual void Stop() = 0;
 
-  // Implementations should call this method on the base when networks change,
-  // and the base will fire SignalNetworksChanged on the right thread.
-  virtual void OnNetworksChanged() = 0;
-
   virtual AdapterType GetAdapterType(const std::string& interface_name) = 0;
   virtual AdapterType GetVpnUnderlyingAdapterType(
       const std::string& interface_name) = 0;
+
   virtual NetworkPreference GetNetworkPreference(
       const std::string& interface_name) = 0;
-};
 
-class NetworkMonitorBase : public NetworkMonitorInterface,
-                           public MessageHandler,
-                           public sigslot::has_slots<> {
- public:
-  NetworkMonitorBase();
-  ~NetworkMonitorBase() override;
-
-  void OnNetworksChanged() override;
-
-  void OnMessage(Message* msg) override;
-
-  AdapterType GetVpnUnderlyingAdapterType(
-      const std::string& interface_name) override;
-
- protected:
-  Thread* worker_thread() { return worker_thread_; }
-
- private:
-  Thread* worker_thread_;
+  // Is this interface available to use? WebRTC shouldn't attempt to use it if
+  // this returns false.
+  //
+  // It's possible for this status to change, in which case
+  // SignalNetworksChanged will be fired.
+  //
+  // These specific use case this was added for was a phone with two SIM cards,
+  // where attempting to use all interfaces returned from getifaddrs caused the
+  // connection to be dropped.
+  virtual bool IsAdapterAvailable(const std::string& interface_name) {
+    return true;
+  }
 };
 
 }  // namespace rtc

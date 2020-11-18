@@ -442,6 +442,9 @@ enum QuicErrorCode {
   QUIC_HTTP_GOAWAY_INVALID_STREAM_ID = 166,
   // Received GOAWAY frame with ID that is greater than previously received ID.
   QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS = 167,
+  // HTTP/3 session received SETTINGS frame which contains HTTP/2 specific
+  // settings.
+  QUIC_HTTP_RECEIVE_SPDY_SETTING = 169,
 
   // HPACK header block decoding errors.
   // Index varint beyond implementation limit.
@@ -492,8 +495,11 @@ enum QuicErrorCode {
   // The connection silently timed out due to no network activity.
   QUIC_SILENT_IDLE_TIMEOUT = 168,
 
+  // Try to write data without the right write keys.
+  QUIC_MISSING_WRITE_KEYS = 170,
+
   // No error. Used as bound while iterating.
-  QUIC_LAST_ERROR = 169,
+  QUIC_LAST_ERROR = 171,
 };
 // QuicErrorCodes is encoded as four octets on-the-wire when doing Google QUIC,
 // or a varint62 when doing IETF QUIC. Ensure that its value does not exceed
@@ -580,13 +586,13 @@ enum class QuicHttpQpackErrorCode {
 
 // Convert a QuicRstStreamErrorCode to an application error code to be used in
 // an IETF QUIC RESET_STREAM frame
-uint64_t RstStreamErrorCodeToIetfResetStreamErrorCode(
+QUIC_EXPORT_PRIVATE uint64_t RstStreamErrorCodeToIetfResetStreamErrorCode(
     QuicRstStreamErrorCode rst_stream_error_code);
 
 // Convert the application error code of an IETF QUIC RESET_STREAM frame
 // to QuicRstStreamErrorCode.
-QuicRstStreamErrorCode IetfResetStreamErrorCodeToRstStreamErrorCode(
-    uint64_t ietf_error_code);
+QUIC_EXPORT_PRIVATE QuicRstStreamErrorCode
+IetfResetStreamErrorCodeToRstStreamErrorCode(uint64_t ietf_error_code);
 
 QUIC_EXPORT_PRIVATE inline std::string HistogramEnumString(
     QuicErrorCode enum_value) {
@@ -597,6 +603,36 @@ QUIC_EXPORT_PRIVATE inline std::string HistogramEnumDescription(
     QuicErrorCode /*dummy*/) {
   return "cause";
 }
+
+enum QuicFailToSerializePacketLocation {
+  kQuicFailToAppendPacketHeaderFastPath = 0,
+  kQuicFailToAppendTypeFastPath = 1,
+  kQuicFailToAppendStreamFrameFastPath = 2,
+  kQuicFailToAddPaddingFastPath = 3,
+  kQuicFailToWriteIetfLongHeaderLengthFastPath = 4,
+  kQuicFailToEncryptPacketFastPath = 5,
+  kQuicSerializePacketNonEmptyBuffer = 6,
+  kQuicMissingInitialKey = 7,
+  kQuicMissingHandshakeKey = 8,
+  kQuicMissingZeroRttKey = 9,
+  kQuicMissingOneRttKey = 10,
+  kQuicFailToBuildPacketWithPaddingInitial = 11,
+  kQuicFailToBuildPacketInitial = 12,
+  kQuicFailToBuildPacketWithPaddingHandshake = 13,
+  kQuicFailToBuildPacketHandshake = 14,
+  kQuicFailToBuildPacketWithPaddingZeroRtt = 15,
+  kQuicFailToBuildPacketZeroRtt = 16,
+  kQuicFailToBuildPacketWithPaddingOneRtt = 17,
+  kQuicFailToBuildPacketOneRtt = 18,
+  kQuicFailToEncryptInitial = 19,
+  kQuicFailToEncryptHandshake = 20,
+  kQuicFailToEncryptZeroRtt = 21,
+  kQuicFailToEncryptOneRtt = 22,
+  kMaxFailLocationValue = kQuicFailToEncryptOneRtt
+};
+
+QUIC_EXPORT_PRIVATE void RecordFailToSerializePacketLocation(
+    QuicFailToSerializePacketLocation location);
 
 }  // namespace quic
 

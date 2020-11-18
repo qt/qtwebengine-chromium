@@ -57,9 +57,9 @@ CXFA_FFDoc::CXFA_FFDoc(CXFA_FFApp* pApp,
                        CPDF_Document* pPDFDoc,
                        cppgc::Heap* pHeap)
     : m_pDocEnvironment(pDocEnvironment),
-      m_pApp(pApp),
       m_pPDFDoc(pPDFDoc),
       m_pHeap(pHeap),
+      m_pApp(pApp),
       m_pNotify(cppgc::MakeGarbageCollected<CXFA_FFNotify>(
           pHeap->GetAllocationHandle(),
           this)),
@@ -82,6 +82,7 @@ void CXFA_FFDoc::PreFinalize() {
 }
 
 void CXFA_FFDoc::Trace(cppgc::Visitor* visitor) const {
+  visitor->Trace(m_pApp);
   visitor->Trace(m_pNotify);
   visitor->Trace(m_pDocument);
   visitor->Trace(m_DocView);
@@ -231,14 +232,9 @@ bool CXFA_FFDoc::OpenDoc(CFX_XMLDocument* pXML) {
   if (!BuildDoc(pXML))
     return false;
 
-  CFGAS_FontMgr* mgr = GetApp()->GetFDEFontMgr();
-  if (!mgr)
-    return false;
-
   // At this point we've got an XFA document and we want to always return
   // true to signify the load succeeded.
-  m_pPDFFontMgr = std::make_unique<CFGAS_PDFFontMgr>(GetPDFDoc(), mgr);
-
+  m_pPDFFontMgr = std::make_unique<CFGAS_PDFFontMgr>(GetPDFDoc());
   m_FormType = FormType::kXFAForeground;
   CXFA_Node* pConfig = ToNode(m_pDocument->GetXFAObject(XFA_HASHCODE_Config));
   if (!pConfig)

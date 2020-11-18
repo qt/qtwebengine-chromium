@@ -50,7 +50,7 @@ namespace dawn_native { namespace null {
     class Queue;
     using RenderPipeline = RenderPipelineBase;
     using Sampler = SamplerBase;
-    using ShaderModule = ShaderModuleBase;
+    class ShaderModule;
     class SwapChain;
     using Texture = TextureBase;
     using TextureView = TextureViewBase;
@@ -105,9 +105,16 @@ namespace dawn_native { namespace null {
                                            BufferBase* destination,
                                            uint64_t destinationOffset,
                                            uint64_t size) override;
+        MaybeError CopyFromStagingToTexture(const StagingBufferBase* source,
+                                            const TextureDataLayout& src,
+                                            TextureCopy* dst,
+                                            const Extent3D& copySizePixels) override;
 
         MaybeError IncrementMemoryUsage(uint64_t bytes);
         void DecrementMemoryUsage(uint64_t bytes);
+
+        uint32_t GetOptimalBytesPerRowAlignment() const override;
+        uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
 
       private:
         using DeviceBase::DeviceBase;
@@ -141,7 +148,7 @@ namespace dawn_native { namespace null {
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) override;
 
-        Serial CheckAndUpdateCompletedSerials() override;
+        ExecutionSerial CheckAndUpdateCompletedSerials() override;
 
         void ShutDownImpl() override;
         MaybeError WaitForIdleForDestruction() override;
@@ -197,15 +204,10 @@ namespace dawn_native { namespace null {
 
       private:
         ~Buffer() override;
-
-        // Dawn API
-        MaybeError MapReadAsyncImpl() override;
-        MaybeError MapWriteAsyncImpl() override;
         MaybeError MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) override;
         void UnmapImpl() override;
         void DestroyImpl() override;
-
-        bool IsMappableAtCreation() const override;
+        bool IsCPUWritableAtCreation() const override;
         MaybeError MapAtCreationImpl() override;
         void* GetMappedPointerImpl() override;
 
@@ -215,7 +217,6 @@ namespace dawn_native { namespace null {
     class CommandBuffer final : public CommandBufferBase {
       public:
         CommandBuffer(CommandEncoder* encoder, const CommandBufferDescriptor* descriptor);
-
     };
 
     class QuerySet final : public QuerySetBase {
@@ -239,6 +240,13 @@ namespace dawn_native { namespace null {
                                    uint64_t bufferOffset,
                                    const void* data,
                                    size_t size) override;
+    };
+
+    class ShaderModule final : public ShaderModuleBase {
+      public:
+        using ShaderModuleBase::ShaderModuleBase;
+
+        MaybeError Initialize();
     };
 
     class SwapChain final : public NewSwapChainBase {

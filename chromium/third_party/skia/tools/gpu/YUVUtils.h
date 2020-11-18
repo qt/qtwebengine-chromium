@@ -10,6 +10,7 @@
 
 #include "include/core/SkImage.h"
 #include "include/core/SkYUVAIndex.h"
+#include "include/core/SkYUVAPixmaps.h"
 #include "include/core/SkYUVASizeInfo.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "src/core/SkAutoMalloc.h"
@@ -33,11 +34,12 @@ public:
 
 private:
     // Decoded YUV data
+    SkYUVAPixmaps fPixmaps;
+
+    // Legacy representation used to import to SkImage.
     SkYUVASizeInfo fSizeInfo;
-    SkYUVColorSpace fColorSpace;
     SkYUVAIndex fComponents[SkYUVAIndex::kIndexCount];
-    SkAutoMalloc fPlaneData;
-    SkPixmap fPlanes[SkYUVASizeInfo::kMaxCount];
+
     GrMipmapped fMipmapped;
 
     // Memoized SkImage formed with planes

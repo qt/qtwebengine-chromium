@@ -199,9 +199,8 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
     AddToCache("/foo", 200, kFooResponseBody);
     AddToCache("/bar", 200, kBarResponseBody);
     // Enable fixes for bugs found in tests and prod.
-    SetQuicReloadableFlag(quic_fix_packet_number_length, true);
-    SetQuicRestartFlag(quic_enable_tls_resumption_v4, true);
     SetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2, true);
+    SetQuicReloadableFlag(quic_fix_out_of_order_sending2, true);
   }
 
   ~EndToEndTest() override { QuicRecyclePort(server_address_.port()); }
@@ -531,8 +530,7 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
       if (server_connection != nullptr) {
         QuicConnectionStats server_stats = server_connection->GetStats();
         if (!had_packet_loss) {
-          EXPECT_EQ(0u, server_stats.packets_lost -
-                            server_stats.packet_spuriously_detected_lost);
+          EXPECT_EQ(0u, server_stats.packets_lost);
         }
         EXPECT_EQ(0u, server_stats.packets_discarded);
         EXPECT_EQ(server_session->user_agent_id().value_or("MissingUserAgent"),
@@ -1497,7 +1495,6 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
   EXPECT_FALSE(client_session->ReceivedInchoateReject());
   EXPECT_FALSE(client_->client()->EarlyDataAccepted());
   EXPECT_FALSE(client_->client()->ReceivedInchoateReject());
-
   VerifyCleanConnection(false);
 }
 
@@ -1608,7 +1605,7 @@ TEST_P(EndToEndTest, LargePostSynchronousRequest) {
 }
 
 // This is a regression test for b/162595387
-TEST_P(EndToEndTest, LargePostZeroRTTRequestDuringHandshake) {
+TEST_P(EndToEndTest, PostZeroRTTRequestDuringHandshake) {
   if (!version_.UsesTls()) {
     // This test is TLS specific.
     ASSERT_TRUE(Initialize());
@@ -1620,15 +1617,7 @@ TEST_P(EndToEndTest, LargePostZeroRTTRequestDuringHandshake) {
   connection_debug_visitor_ = &visitor;
   ASSERT_TRUE(Initialize());
 
-  std::string body(20480, 'a');
-  SpdyHeaderBlock headers;
-  headers[":method"] = "POST";
-  headers[":path"] = "/foo";
-  headers[":scheme"] = "https";
-  headers[":authority"] = server_hostname_;
-
-  EXPECT_EQ(kFooResponseBody,
-            client_->SendCustomSynchronousRequest(headers, body));
+  SendSynchronousFooRequestAndCheckResponse();
   QuicSpdyClientSession* client_session = GetClientSession();
   ASSERT_TRUE(client_session);
   EXPECT_FALSE(client_session->EarlyDataAccepted());
@@ -1640,8 +1629,7 @@ TEST_P(EndToEndTest, LargePostZeroRTTRequestDuringHandshake) {
 
   // The 0-RTT handshake should succeed.
   ON_CALL(visitor, OnCryptoFrame(_))
-      .WillByDefault(Invoke([this, &headers,
-                             &body](const QuicCryptoFrame& frame) {
+      .WillByDefault(Invoke([this](const QuicCryptoFrame& frame) {
         if (frame.level != ENCRYPTION_HANDSHAKE) {
           return;
         }
@@ -1654,9 +1642,14 @@ TEST_P(EndToEndTest, LargePostZeroRTTRequestDuringHandshake) {
         EXPECT_TRUE(
             GetClientConnection()->framer().HasEncrypterOfEncryptionLevel(
                 ENCRYPTION_HANDSHAKE));
-        EXPECT_GT(client_->SendMessage(headers, body, /*fin*/ true,
-                                       /*flush*/ false),
-                  0);
+        SpdyHeaderBlock headers;
+        headers[":method"] = "POST";
+        headers[":path"] = "/foo";
+        headers[":scheme"] = "https";
+        headers[":authority"] = server_hostname_;
+        EXPECT_GT(
+            client_->SendMessage(headers, "", /*fin*/ true, /*flush*/ false),
+            0);
       }));
   client_->Connect();
   ASSERT_TRUE(client_->client()->WaitForOneRttKeysAvailable());
@@ -1669,6 +1662,65 @@ TEST_P(EndToEndTest, LargePostZeroRTTRequestDuringHandshake) {
   ASSERT_TRUE(client_session);
   EXPECT_TRUE(client_session->EarlyDataAccepted());
   EXPECT_TRUE(client_->client()->EarlyDataAccepted());
+}
+
+// Regression test for b/166836136.
+TEST_P(EndToEndTest, RetransmissionAfterZeroRTTRejectBeforeOneRtt) {
+  if (!version_.UsesTls()) {
+    // This test is TLS specific.
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+  // Send a request and then disconnect. This prepares the client to attempt
+  // a 0-RTT handshake for the next request.
+  NiceMock<MockQuicConnectionDebugVisitor> visitor;
+  connection_debug_visitor_ = &visitor;
+  ASSERT_TRUE(Initialize());
+
+  SendSynchronousFooRequestAndCheckResponse();
+  QuicSpdyClientSession* client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  EXPECT_FALSE(client_session->ReceivedInchoateReject());
+  EXPECT_FALSE(client_->client()->EarlyDataAccepted());
+  EXPECT_FALSE(client_->client()->ReceivedInchoateReject());
+
+  client_->Disconnect();
+
+  client_->Connect();
+  EXPECT_TRUE(client_->client()->WaitForOneRttKeysAvailable());
+  ASSERT_TRUE(client_->client()->connected());
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_TRUE(client_session->EarlyDataAccepted());
+  EXPECT_TRUE(client_->client()->EarlyDataAccepted());
+
+  client_->Disconnect();
+
+  // Restart the server so that the 0-RTT handshake will take 1 RTT.
+  StopServer();
+  server_writer_ = new PacketDroppingTestWriter();
+  StartServer();
+
+  ON_CALL(visitor, OnZeroRttRejected(_)).WillByDefault(Invoke([this]() {
+    EXPECT_FALSE(GetClientSession()->IsEncryptionEstablished());
+    // Trigger an OnCanWrite() to make sure no unencrypted data will be written.
+    GetClientSession()->OnCanWrite();
+  }));
+
+  // The 0-RTT handshake should fail.
+  client_->Connect();
+  ASSERT_TRUE(client_->client()->WaitForOneRttKeysAvailable());
+  client_->WaitForWriteToFlush();
+  client_->WaitForResponse();
+  ASSERT_TRUE(client_->client()->connected());
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  EXPECT_FALSE(client_->client()->EarlyDataAccepted());
 }
 
 TEST_P(EndToEndTest, RejectWithPacketLoss) {
@@ -2108,10 +2160,17 @@ TEST_P(EndToEndTest, MaxInitialRTT) {
         client_sent_packet_manager->GetRttStats()->smoothed_rtt().IsInfinite());
     const RttStats* server_rtt_stats =
         server_sent_packet_manager->GetRttStats();
-    EXPECT_EQ(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
-              server_rtt_stats->initial_rtt().ToMicroseconds());
-    EXPECT_GE(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
-              server_rtt_stats->smoothed_rtt().ToMicroseconds());
+    if (GetQuicReloadableFlag(quic_cap_large_client_initial_rtt)) {
+      EXPECT_EQ(static_cast<int64_t>(1 * kNumMicrosPerSecond),
+                server_rtt_stats->initial_rtt().ToMicroseconds());
+      EXPECT_GE(static_cast<int64_t>(1 * kNumMicrosPerSecond),
+                server_rtt_stats->smoothed_rtt().ToMicroseconds());
+    } else {
+      EXPECT_EQ(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
+                server_rtt_stats->initial_rtt().ToMicroseconds());
+      EXPECT_GE(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
+                server_rtt_stats->smoothed_rtt().ToMicroseconds());
+    }
   } else {
     ADD_FAILURE() << "Missing sent packet manager";
   }
@@ -2606,7 +2665,7 @@ TEST_P(EndToEndTest, FlowControlsSynced) {
   if (!version_.UsesHttp3()) {
     SpdyFramer spdy_framer(SpdyFramer::ENABLE_COMPRESSION);
     SpdySettingsIR settings_frame;
-    settings_frame.AddSetting(SETTINGS_MAX_HEADER_LIST_SIZE,
+    settings_frame.AddSetting(spdy::SETTINGS_MAX_HEADER_LIST_SIZE,
                               kDefaultMaxUncompressedHeaderSize);
     SpdySerializedFrame frame(spdy_framer.SerializeFrame(settings_frame));
 
@@ -3103,7 +3162,6 @@ TEST_P(EndToEndTest, CanceledStreamDoesNotBecomeZombie) {
   QuicSession* session = GetClientSession();
   ASSERT_TRUE(session);
   // Verify canceled stream does not become zombie.
-  EXPECT_TRUE(QuicSessionPeer::zombie_streams(session).empty());
   EXPECT_EQ(1u, QuicSessionPeer::closed_streams(session).size());
 }
 
@@ -4353,86 +4411,6 @@ TEST_P(EndToEndPacketReorderingTest, Buffer0RttRequest) {
   EXPECT_TRUE(client_->client()->EarlyDataAccepted());
 }
 
-// This observer is used to check whether stream write side is closed when
-// receiving STOP_SENDING (which ends up as noop).
-class StopSendingObserver : public QuicConnectionDebugVisitor {
- public:
-  explicit StopSendingObserver(QuicTestClient* client)
-      : num_stop_sending_frames_(0),
-        client_(client),
-        stream_write_side_closed_before_receiving_stop_sending_(false) {}
-
-  void OnStopSendingFrame(const QuicStopSendingFrame& /*frame*/) override {
-    ++num_stop_sending_frames_;
-    stream_write_side_closed_before_receiving_stop_sending_ =
-        static_cast<QuicSimpleClientStream*>(client_->latest_created_stream())
-            ->write_side_closed();
-  }
-
-  size_t num_stop_sending_frames() const { return num_stop_sending_frames_; }
-
-  bool stream_write_side_closed_before_receiving_stop_sending() const {
-    return stream_write_side_closed_before_receiving_stop_sending_;
-  }
-
- private:
-  size_t num_stop_sending_frames_;
-  QuicTestClient* client_;
-  bool stream_write_side_closed_before_receiving_stop_sending_;
-};
-
-// Test that STOP_SENDING makes it to the peer.  Create a stream and send a
-// STOP_SENDING. The receiver should get a call to QuicStream::OnStopSending.
-TEST_P(EndToEndTest, SimpleStopSendingTest) {
-  const uint16_t kStopSendingTestCode = 123;
-  ASSERT_TRUE(Initialize());
-  if (!version_.HasIetfQuicFrames()) {
-    return;
-  }
-  QuicSession* client_session = GetClientSession();
-  ASSERT_TRUE(client_session);
-  StopSendingObserver observer(client_.get());
-  QuicConnection* client_connection = client_session->connection();
-  ASSERT_TRUE(client_connection);
-  client_connection->set_debug_visitor(&observer);
-
-  std::string response_body(1305, 'a');
-  SpdyHeaderBlock response_headers;
-  response_headers[":status"] = quiche::QuicheTextUtils::Uint64ToString(200);
-  response_headers["content-length"] =
-      quiche::QuicheTextUtils::Uint64ToString(response_body.length());
-  memory_cache_backend_.AddStopSendingResponse(
-      server_hostname_, "/test_url", std::move(response_headers), response_body,
-      kStopSendingTestCode);
-
-  EXPECT_TRUE(client_->client()->WaitForOneRttKeysAvailable());
-  client_->WaitForDelayedAcks();
-
-  QuicStreamId stream_id =
-      client_session->next_outgoing_bidirectional_stream_id();
-  client_->SendRequest("/test_url");
-  // Wait for the connection to become idle.
-  client_->WaitForDelayedAcks();
-
-  EXPECT_THAT(client_->connection_error(), IsQuicNoError());
-  QuicSimpleClientStream* client_stream =
-      static_cast<QuicSimpleClientStream*>(client_->latest_created_stream());
-  if (client_stream != nullptr) {
-    // Ensure the stream has been write closed upon receiving STOP_SENDING.
-    EXPECT_EQ(stream_id, client_stream->id());
-    EXPECT_TRUE(client_stream->write_side_closed());
-    client_->WaitUntil(
-        -1, [&observer]() { return observer.num_stop_sending_frames() > 0; });
-    if (!observer.stream_write_side_closed_before_receiving_stop_sending()) {
-      EXPECT_EQ(kStopSendingTestCode,
-                static_cast<uint16_t>(client_stream->stream_error()));
-    }
-  } else {
-    ADD_FAILURE() << "Missing client stream";
-  }
-  client_connection->set_debug_visitor(nullptr);
-}
-
 TEST_P(EndToEndTest, SimpleStopSendingRstStreamTest) {
   ASSERT_TRUE(Initialize());
 
@@ -4726,7 +4704,6 @@ TEST_P(EndToEndTest, LegacyVersionEncapsulation) {
     ASSERT_TRUE(Initialize());
     return;
   }
-  SetQuicReloadableFlag(quic_dispatcher_legacy_version_encapsulation, true);
   client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
   ASSERT_TRUE(Initialize());
   SendSynchronousFooRequestAndCheckResponse();
@@ -4750,7 +4727,6 @@ TEST_P(EndToEndTest, LegacyVersionEncapsulationWithMultiPacketChlo) {
     ASSERT_TRUE(Initialize());
     return;
   }
-  SetQuicReloadableFlag(quic_dispatcher_legacy_version_encapsulation, true);
   client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
   constexpr auto kCustomParameter =
       static_cast<TransportParameters::TransportParameterId>(0xff34);
@@ -4774,7 +4750,6 @@ TEST_P(EndToEndTest, LegacyVersionEncapsulationWithVersionNegotiation) {
   }
   client_supported_versions_.insert(client_supported_versions_.begin(),
                                     QuicVersionReservedForNegotiation());
-  SetQuicReloadableFlag(quic_dispatcher_legacy_version_encapsulation, true);
   client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
   ASSERT_TRUE(Initialize());
   SendSynchronousFooRequestAndCheckResponse();
@@ -4793,7 +4768,6 @@ TEST_P(EndToEndTest, LegacyVersionEncapsulationWithLoss) {
     return;
   }
   SetPacketLossPercentage(30);
-  SetQuicReloadableFlag(quic_dispatcher_legacy_version_encapsulation, true);
   client_config_.SetClientConnectionOptions(QuicTagVector{kQLVE});
   // Disable blackhole detection as this test is testing loss recovery.
   client_extra_copts_.push_back(kNBHD);

@@ -13,6 +13,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_bandwidth.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 
 namespace quic {
@@ -73,8 +74,10 @@ Bbr2Sender::Bbr2Sender(QuicTime now,
              /*cwnd_gain=*/1.0,
              /*pacing_gain=*/kInitialPacingGain,
              old_sender ? &old_sender->sampler_ : nullptr),
-      initial_cwnd_(
-          cwnd_limits().ApplyLimits(initial_cwnd_in_packets * kDefaultTCPMSS)),
+      initial_cwnd_(cwnd_limits().ApplyLimits(
+          (GetQuicReloadableFlag(quic_copy_bbr_cwnd_to_bbr2) && old_sender)
+              ? old_sender->GetCongestionWindow()
+              : (initial_cwnd_in_packets * kDefaultTCPMSS))),
       cwnd_(initial_cwnd_),
       pacing_rate_(kInitialPacingGain * QuicBandwidth::FromBytesAndTimeDelta(
                                             cwnd_,
@@ -84,6 +87,10 @@ Bbr2Sender::Bbr2Sender(QuicTime now,
       probe_bw_(this, &model_),
       probe_rtt_(this, &model_),
       last_sample_is_app_limited_(false) {
+  if (GetQuicReloadableFlag(quic_copy_bbr_cwnd_to_bbr2) && old_sender) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_copy_bbr_cwnd_to_bbr2);
+  }
+
   QUIC_DVLOG(2) << this << " Initializing Bbr2Sender. mode:" << mode_
                 << ", PacingRate:" << pacing_rate_ << ", Cwnd:" << cwnd_
                 << ", CwndLimits:" << cwnd_limits() << "  @ " << now;
@@ -115,15 +122,18 @@ void Bbr2Sender::SetFromConfig(const QuicConfig& config,
     QUIC_RELOADABLE_FLAG_COUNT_N(quic_bbr2_fewer_startup_round_trips, 2, 2);
     params_.startup_full_bw_rounds = 2;
   }
-  if (GetQuicReloadableFlag(quic_bbr2_ignore_inflight_lo) &&
-      config.HasClientRequestedIndependentOption(kB2LO, perspective)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_ignore_inflight_lo);
+  if (config.HasClientRequestedIndependentOption(kB2LO, perspective)) {
     params_.ignore_inflight_lo = true;
   }
   if (GetQuicReloadableFlag(quic_bbr2_limit_inflight_hi) &&
       config.HasClientRequestedIndependentOption(kB2HI, perspective)) {
     QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_limit_inflight_hi);
     params_.limit_inflight_hi_by_cwnd = true;
+  }
+  if (GetQuicReloadableFlag(quic_bbr2_use_tcp_inflight_hi_headroom) &&
+      config.HasClientRequestedIndependentOption(kB2HR, perspective)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_use_tcp_inflight_hi_headroom);
+    params_.inflight_hi_headroom = 0.15;
   }
 
   ApplyConnectionOptions(config.ClientRequestedIndependentOptions(perspective));
@@ -162,33 +172,21 @@ const Limits<QuicByteCount>& Bbr2Sender::cwnd_limits() const {
 }
 
 void Bbr2Sender::AdjustNetworkParameters(const NetworkParams& params) {
-  model_.UpdateNetworkParameters(params.bandwidth, params.rtt);
+  model_.UpdateNetworkParameters(params.rtt);
 
   if (mode_ == Bbr2Mode::STARTUP) {
     const QuicByteCount prior_cwnd = cwnd_;
 
-    if (model_.improve_adjust_network_parameters()) {
-      QUIC_RELOADABLE_FLAG_COUNT(quic_bbr2_improve_adjust_network_parameters);
-      QuicBandwidth effective_bandwidth =
-          std::max(params.bandwidth, model_.BandwidthEstimate());
-      cwnd_ = cwnd_limits().ApplyLimits(model_.BDP(effective_bandwidth));
-    } else {
-      // Normally UpdateCongestionWindow updates |cwnd_| towards the target by a
-      // small step per congestion event, by changing |cwnd_| to the bdp at here
-      // we are reducing the number of updates needed to arrive at the target.
-      cwnd_ = model_.BDP(model_.BandwidthEstimate());
-      UpdateCongestionWindow(0);
-    }
+    QuicBandwidth effective_bandwidth =
+        std::max(params.bandwidth, model_.BandwidthEstimate());
+    cwnd_ = cwnd_limits().ApplyLimits(model_.BDP(effective_bandwidth));
 
     if (!params.allow_cwnd_to_decrease) {
       cwnd_ = std::max(cwnd_, prior_cwnd);
     }
 
-    if (model_.improve_adjust_network_parameters()) {
-      pacing_rate_ = std::max(
-          pacing_rate_,
-          QuicBandwidth::FromBytesAndTimeDelta(cwnd_, model_.MinRtt()));
-    }
+    pacing_rate_ = std::max(pacing_rate_, QuicBandwidth::FromBytesAndTimeDelta(
+                                              cwnd_, model_.MinRtt()));
   }
 }
 

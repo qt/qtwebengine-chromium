@@ -58,7 +58,7 @@ GrOpsRenderPass* GrMockGpu::getOpsRenderPass(
                                 const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
                                 const GrOpsRenderPass::StencilLoadAndStoreInfo&,
                                 const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-                                bool usesXferBarriers) {
+                                GrXferBarrierFlags renderPassXferBarriers) {
     return new GrMockOpsRenderPass(this, rt, origin, colorInfo);
 }
 
@@ -267,11 +267,11 @@ sk_sp<GrGpuBuffer> GrMockGpu::onCreateBuffer(size_t sizeInBytes, GrGpuBufferType
 }
 
 GrStencilAttachment* GrMockGpu::createStencilAttachmentForRenderTarget(
-        const GrRenderTarget* rt, int width, int height, int numStencilSamples) {
+        const GrRenderTarget* rt, SkISize dimensions, int numStencilSamples) {
     SkASSERT(numStencilSamples == rt->numSamples());
     static constexpr int kBits = 8;
     fStats.incStencilAttachmentCreates();
-    return new GrMockStencilAttachment(this, width, height, kBits, rt->numSamples());
+    return new GrMockStencilAttachment(this, dimensions, kBits, rt->numSamples());
 }
 
 GrBackendTexture GrMockGpu::onCreateBackendTexture(SkISize dimensions,

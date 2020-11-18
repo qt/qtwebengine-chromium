@@ -27,6 +27,7 @@
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 
+#include "libavcodec/ac3_parser_internal.h"
 #include "libavcodec/internal.h"
 
 #include "avformat.h"
@@ -244,6 +245,8 @@ typedef struct MpegTSWriteStream {
     /* For Opus */
     int opus_queued_samples;
     int opus_pending_trim_start;
+
+    DVBAC3Descriptor *dvb_ac3_desc;
 } MpegTSWriteStream;
 
 static void mpegts_write_pat(AVFormatContext *s)
@@ -484,11 +487,34 @@ static int mpegts_write_pmt(AVFormatContext *s, MpegTSService *service)
         /* write optional descriptors here */
         switch (st->codecpar->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
+            if (codec_id == AV_CODEC_ID_AC3)
+                put_registration_descriptor(&q, MKTAG('A', 'C', '-', '3'));
+            if (codec_id == AV_CODEC_ID_EAC3)
+                put_registration_descriptor(&q, MKTAG('E', 'A', 'C', '3'));
             if (ts->flags & MPEGTS_FLAG_SYSTEM_B) {
                 if (codec_id == AV_CODEC_ID_AC3) {
+                    DVBAC3Descriptor *dvb_ac3_desc = ts_st->dvb_ac3_desc;
+
                     *q++=0x6a; // AC3 descriptor see A038 DVB SI
-                    *q++=1; // 1 byte, all flags sets to 0
-                    *q++=0; // omit all fields...
+                    if (dvb_ac3_desc) {
+                        int len = 1 +
+                                  !!(dvb_ac3_desc->component_type_flag) +
+                                  !!(dvb_ac3_desc->bsid_flag) +
+                                  !!(dvb_ac3_desc->mainid_flag) +
+                                  !!(dvb_ac3_desc->asvc_flag);
+
+                        *q++ = len;
+                        *q++ = dvb_ac3_desc->component_type_flag << 7 | dvb_ac3_desc->bsid_flag << 6 |
+                               dvb_ac3_desc->mainid_flag         << 5 | dvb_ac3_desc->asvc_flag << 4;
+
+                        if (dvb_ac3_desc->component_type_flag) *q++ = dvb_ac3_desc->component_type;
+                        if (dvb_ac3_desc->bsid_flag)           *q++ = dvb_ac3_desc->bsid;
+                        if (dvb_ac3_desc->mainid_flag)         *q++ = dvb_ac3_desc->mainid;
+                        if (dvb_ac3_desc->asvc_flag)           *q++ = dvb_ac3_desc->asvc;
+                    } else {
+                        *q++=1; // 1 byte, all flags sets to 0
+                        *q++=0; // omit all fields...
+                    }
                 } else if (codec_id == AV_CODEC_ID_EAC3) {
                     *q++=0x7a; // EAC3 descriptor see A038 DVB SI
                     *q++=1; // 1 byte, all flags sets to 0
@@ -1718,24 +1744,24 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
                 av_log(s, AV_LOG_ERROR, "AAC bitstream not in ADTS format "
                                         "and extradata missing\n");
             } else {
-            av_init_packet(&pkt2);
-            pkt2.data = pkt->data;
-            pkt2.size = pkt->size;
-            av_assert0(pkt->dts != AV_NOPTS_VALUE);
-            pkt2.dts = av_rescale_q(pkt->dts, st->time_base, ts_st->amux->streams[0]->time_base);
+                av_init_packet(&pkt2);
+                pkt2.data = pkt->data;
+                pkt2.size = pkt->size;
+                av_assert0(pkt->dts != AV_NOPTS_VALUE);
+                pkt2.dts = av_rescale_q(pkt->dts, st->time_base, ts_st->amux->streams[0]->time_base);
 
-            ret = avio_open_dyn_buf(&ts_st->amux->pb);
-            if (ret < 0)
-                return ret;
+                ret = avio_open_dyn_buf(&ts_st->amux->pb);
+                if (ret < 0)
+                    return ret;
 
-            ret = av_write_frame(ts_st->amux, &pkt2);
-            if (ret < 0) {
-                ffio_free_dyn_buf(&ts_st->amux->pb);
-                return ret;
-            }
-            size            = avio_close_dyn_buf(ts_st->amux->pb, &data);
-            ts_st->amux->pb = NULL;
-            buf             = data;
+                ret = av_write_frame(ts_st->amux, &pkt2);
+                if (ret < 0) {
+                    ffio_free_dyn_buf(&ts_st->amux->pb);
+                    return ret;
+                }
+                size            = avio_close_dyn_buf(ts_st->amux->pb, &data);
+                ts_st->amux->pb = NULL;
+                buf             = data;
             }
         }
     } else if (st->codecpar->codec_id == AV_CODEC_ID_HEVC) {
@@ -1843,6 +1869,63 @@ static int mpegts_write_packet_internal(AVFormatContext *s, AVPacket *pkt)
              * need to count the samples of that too! */
             av_log(s, AV_LOG_WARNING, "Got MPEG-TS formatted Opus data, unhandled");
         }
+    } else if (st->codecpar->codec_id == AV_CODEC_ID_AC3 && !ts_st->dvb_ac3_desc) {
+        AC3HeaderInfo *hdr = NULL;
+
+        if (avpriv_ac3_parse_header(&hdr, pkt->data, pkt->size) >= 0) {
+            uint8_t number_of_channels_flag;
+            uint8_t service_type_flag;
+            uint8_t full_service_flag = 1;
+            DVBAC3Descriptor *dvb_ac3_desc;
+
+            dvb_ac3_desc = av_mallocz(sizeof(*dvb_ac3_desc));
+            if (!dvb_ac3_desc) {
+                av_free(hdr);
+                return AVERROR(ENOMEM);
+            }
+
+            service_type_flag = hdr->bitstream_mode;
+            switch (hdr->channel_mode) {
+                case AC3_CHMODE_DUALMONO:
+                    number_of_channels_flag = 1;
+                    break;
+                case AC3_CHMODE_MONO:
+                    number_of_channels_flag = 0;
+                    break;
+                case AC3_CHMODE_STEREO:
+                    if (hdr->dolby_surround_mode == AC3_DSURMOD_ON)
+                        number_of_channels_flag = 3;
+                    else
+                        number_of_channels_flag = 2;
+                    break;
+                case AC3_CHMODE_3F:
+                case AC3_CHMODE_2F1R:
+                case AC3_CHMODE_3F1R:
+                case AC3_CHMODE_2F2R:
+                case AC3_CHMODE_3F2R:
+                    number_of_channels_flag = 4;
+                    break;
+                default: /* reserved */
+                    number_of_channels_flag = 7;
+                    break;
+            }
+
+            if (service_type_flag  == 1 || service_type_flag == 4 ||
+                (service_type_flag == 7 && !number_of_channels_flag))
+                full_service_flag = 0;
+
+            dvb_ac3_desc->component_type_flag = 1;
+            dvb_ac3_desc->component_type = (full_service_flag << 6)              |
+                                           ((service_type_flag      & 0x7) << 3) |
+                                           (number_of_channels_flag & 0x7);
+            dvb_ac3_desc->bsid_flag   = 1;
+            dvb_ac3_desc->bsid        = hdr->bitstream_id;
+            dvb_ac3_desc->mainid_flag = 0;
+            dvb_ac3_desc->asvc_flag   = 0;
+
+            ts_st->dvb_ac3_desc = dvb_ac3_desc;
+        }
+        av_free(hdr);
     }
 
     if (ts_st->payload_size && (ts_st->payload_size + size > ts->pes_payload_size ||
@@ -1934,6 +2017,7 @@ static void mpegts_deinit(AVFormatContext *s)
         AVStream *st = s->streams[i];
         MpegTSWriteStream *ts_st = st->priv_data;
         if (ts_st) {
+            av_freep(&ts_st->dvb_ac3_desc);
             av_freep(&ts_st->payload);
             if (ts_st->amux) {
                 avformat_free_context(ts_st->amux);

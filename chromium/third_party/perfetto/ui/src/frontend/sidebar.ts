@@ -27,6 +27,7 @@ import {
   openFileWithLegacyTraceViewer,
 } from './legacy_trace_viewer';
 import {showModal} from './modal';
+import {isDownloadable, isShareable} from './trace_attrs';
 
 const ALL_PROCESSES_QUERY = 'select name, pid from process order by name;';
 
@@ -75,15 +76,15 @@ select process.name as process, thread, core, cpu_sec from (
 
 const HEAP_GRAPH_BYTES_PER_TYPE = `
 select
-  upid,
-  graph_sample_ts,
-  type_name,
-  sum(self_size) as total_self_size
-from heap_graph_object
+  o.upid,
+  o.graph_sample_ts,
+  c.name,
+  sum(o.self_size) as total_self_size
+from heap_graph_object o join heap_graph_class c on o.type_id = c.id
 group by
- upid,
- graph_sample_ts,
- type_name
+ o.upid,
+ o.graph_sample_ts,
+ c.name
 order by total_self_size desc
 limit 100;`;
 
@@ -107,6 +108,16 @@ function createCannedQuery(query: string): (_: Event) => void {
       engineId: '0',
       queryId: 'command',
       query,
+    }));
+  };
+}
+
+function showDebugTrack(): (_: Event) => void {
+  return (e: Event) => {
+    e.preventDefault();
+    globals.dispatch(Actions.addDebugTrack({
+      engineId: Object.keys(globals.state.engines)[0],
+      name: 'Debug Slices',
     }));
   };
 }
@@ -155,6 +166,7 @@ const SECTIONS = [
       },
       {t: 'Legacy UI', a: openCurrentTraceWithOldUI, i: 'filter_none'},
       {t: 'Query (SQL)', a: navigateAnalyze, i: 'control_camera'},
+      {t: 'Metrics', a: navigateMetrics, i: 'speed'},
       {t: 'Info and stats', a: navigateInfo, i: 'info'},
     ],
   },
@@ -179,6 +191,11 @@ const SECTIONS = [
     title: 'Metrics and auditors',
     summary: 'Compute summary statistics',
     items: [
+      {
+        t: 'Show Debug Track',
+        a: showDebugTrack(),
+        i: 'view_day',
+      },
       {
         t: 'All Processes',
         a: createCannedQuery(ALL_PROCESSES_QUERY),
@@ -283,13 +300,30 @@ function openCurrentTraceWithOldUI(e: Event) {
     openInOldUIWithSizeCheck(new Blob([src.buffer]));
   } else if (src.type === 'FILE') {
     openInOldUIWithSizeCheck(src.file);
+  } else if (src.type === 'URL') {
+    m.request({
+       method: 'GET',
+       url: src.url,
+       // TODO(hjd): Once mithril is updated we can use responseType here rather
+       // than using config and remove the extract below.
+       config: xhr => {
+         xhr.responseType = 'blob';
+         xhr.onprogress = progress => {
+           const percent = (100 * progress.loaded / progress.total).toFixed(1);
+           globals.dispatch(Actions.updateStatus({
+             msg: `Downloading trace ${percent}%`,
+             timestamp: Date.now() / 1000,
+           }));
+         };
+       },
+       extract: xhr => {
+         return xhr.response;
+       }
+     }).then(result => {
+      openInOldUIWithSizeCheck(result as Blob);
+    });
   } else {
-    throw new Error('Loading from a URL to catapult is not yet supported');
-    // TODO(nicomazz): Find how to get the data of the current trace if it is
-    // from a URL. It seems that the trace downloaded is given to the trace
-    // processor, but not kept somewhere accessible. Maybe the only way is to
-    // download the trace (again), and then open it. An alternative can be to
-    // save a copy.
+    throw new Error(`Loading to catapult from source with type ${src.type}`);
   }
 }
 
@@ -433,6 +467,11 @@ function navigateAnalyze(e: Event) {
   globals.dispatch(Actions.navigate({route: '/query'}));
 }
 
+function navigateMetrics(e: Event) {
+  e.preventDefault();
+  globals.dispatch(Actions.navigate({route: '/metrics'}));
+}
+
 function navigateInfo(e: Event) {
   e.preventDefault();
   globals.dispatch(Actions.navigate({route: '/info'}));
@@ -443,29 +482,22 @@ function navigateViewer(e: Event) {
   globals.dispatch(Actions.navigate({route: '/viewer'}));
 }
 
-function isDownloadAndShareDisabled(): boolean {
-  if (globals.frontendLocalState.localOnlyMode) return true;
-  const engine = Object.values(globals.state.engines)[0];
-  if (engine && engine.source.type === 'HTTP_RPC') return true;
-  return false;
-}
-
 function dispatchCreatePermalink(e: Event) {
   e.preventDefault();
-  if (isDownloadAndShareDisabled() || !isTraceLoaded()) return;
+  if (!isShareable() || !isTraceLoaded()) return;
 
   const result = confirm(
       `Upload the trace and generate a permalink. ` +
       `The trace will be accessible by anybody with the permalink.`);
   if (result) {
     globals.logging.logEvent('Trace Actions', 'Create permalink');
-    globals.dispatch(Actions.createPermalink({}));
+    globals.dispatch(Actions.createPermalink({isRecordingConfig: false}));
   }
 }
 
 function downloadTrace(e: Event) {
   e.preventDefault();
-  if (!isTraceLoaded() || isDownloadAndShareDisabled()) return;
+  if (!isDownloadable() || !isTraceLoaded()) return;
   globals.logging.logEvent('Trace Actions', 'Download trace');
 
   const engine = Object.values(globals.state.engines)[0];
@@ -656,8 +688,7 @@ export class Sidebar implements m.ClassComponent {
         if ((item as {internalUserOnly: boolean}).internalUserOnly === true) {
           if (!globals.isInternalUser) continue;
         }
-        if (isDownloadAndShareDisabled() &&
-            item.hasOwnProperty('checkDownloadDisabled')) {
+        if (!isDownloadable() && item.hasOwnProperty('checkDownloadDisabled')) {
           attrs = {
             onclick: e => {
               e.preventDefault();

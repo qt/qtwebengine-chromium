@@ -6,6 +6,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+ - SkRect are no longer returned from `CanvasKit.LTRBRect`, `CanvasKit.XYWHRect` nor
+   are accepted as JS objects. Instead, the format is 4 floats in either an array, a
+   Float32Array or a piece of memory returned by CanvasKit.Malloc. These floats are the
+   left, top, right, bottom numbers of the rectangle.
+ - SkIRect (Rectangles with Integer values) are no longer accepted as JS objects.
+   Instead, the format is 4 ints in either an array, an Int32Array or a piece of memory
+   returned by CanvasKit.Malloc. These ints are the left, top, right, bottom numbers of
+   the rectangle.
+ - SkRRect (Rectangles with rounded corners) are no longer returned from `CanvasKit.RRectXY`
+   nor are accepted as JS objects. Instead, the format is 12 floats in either an array, a
+   Float32Array or a piece of memory returned by CanvasKit.Malloc. The first 4 floats
+   are the left, top, right, bottom numbers of the rectangle and then 4 sets of points
+   starting in the upper left corner and going clockwise. This change allows for faster
+   transfer between JS and WASM code.
+ - `SkPath.addRoundRect` has been replaced with `SkPath.addRRect`. The same functionality
+   can be had with the `CanvasKit.RRectXY` helper.
+ - `SkPath.addRect` no longer accepts 4 floats as separate arguments. It only accepts
+   an SkRect (an array/Float32Array of 4 floats) and an optional boolean for
+   determining clockwise or counter-clockwise directionality.
+ - The order of `SkCanvas.saveLayer` arguments is slightly different (more consistent).
+   It is now `paint, bounds, backdrop, flags`
+
+### Changed
+ - We now compile CanvasKit with emsdk 2.0.0 when testing and deploying to npm.
+ - WebGL interface creation is a little leaner in terms of code size and speed.
+ - The signature of `main` used with SkSL passed to `CanvasKit.SkRuntimeEffect.Make` has changed.
+   There is no longer an `inout half4 color` parameter, effects must return their color instead.
+   Valid signatures are now `half4 main()` or `half4 main(float2 coord)`.
+ - `SkPath.getBounds`, `SkShapedText.getBounds`, and `SkVertices.bounds` now
+   take an optional argument. If a Float32Array with length 4 or greater is
+   provided, the bounds will be copied into this array instead of allocating
+   a new one.
+ - `SkCanvas.drawAnimatedImage` has been removed in favor of calling
+   `SkCanvas.drawImageAtCurrentFrame` or `SkAnimatedImage.makeImageAtCurrentFrame` and then
+   `SkCanvas.drawImage`.
+ - `SkTextBlob.MakeFromRSXform` also accepts a (possibly Malloc'd) Float32Array of RSXforms (
+   see SkRSXform for more.)
+
+### Removed
+ - `SkCanvas.drawRoundRect` has been removed in favor of `SkCanvas.drawRRect`
+   The same functionality can be had with the `CanvasKit.RRectXY` helper.
+ - `SkPath.arcTo` which had been deprecated in favor of `SkPath.arcToOval`,
+   `SkPath.arcToRotated`, `SkPath.arcToTangent`.
+ - Extraneous ColorTypes from `ColorType` enum.
+
+### Added
+ - `CanvasKit.LTRBiRect` and `CanvasKit.XYWHiRect` as helpers to create SkIRects.
+ - `SkCanvas.drawRect4f` as a somewhat experimental way to have array-free APIs for clients that
+   already have their own representation of Rect. This is experimental because we don't know
+   if it's faster/better under real-world use and because we don't want to commit to having these
+   for all Rect APIs (and for similar types) until it has baked in a bit.
+ - `SkFont.getGlyphIDs`, `SkFont.getGlyphBounds`, `SkFont.getGlyphWidths` for turning code points
+   into GlyphIDs and getting the associated metrics with those glyphs. Note: glyph ids are only
+   valid for the font of which they were requested.
+ - `SkTextBlob.MakeFromRSXformGlyphs` and `SkTextBlob.MakeFromGlyphs` as a way to build TextBlobs
+   using GlyphIDs instead of code points.
+ - `CanvasKit.MallocGlyphIDs` as a helper for pre-allocating space on the WASM heap for Glyph IDs.
+
+### Deprecated
+ - `SkAnimatedImage.getCurrentFrame`; prefer `SkAnimatedImage.makeImageAtCurrentFrame` (which
+   follows the establishing naming convention).
+ - `SkSurface.captureFrameAsSkPicture` will be removed in a future release. Callers can simply
+   use `SkPictureRecorder` directly.
+
+### Fixed
+ - Addressed Memory leak in `SkCanvas.drawText`.
+ - Made SkTextBlob hang on to less memory during its lifetime.
+
 ## [0.17.3] - 2020-08-05
 
 ### Added
@@ -29,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Compile option to deserialize effects in skps `include_effects_deserialization`.
 
 ### Changed
-- Pathops and SKP deserialization/serialization enabled on the npm build.
+ - Pathops and SKP deserialization/serialization enabled on the npm build.
 
 ## [0.17.0] - 2020-07-20
 

@@ -18,7 +18,13 @@ DawnJSONGenerator(
     RESULT_VARIABLE "DAWN_NATIVE_UTILS_GEN_SOURCES"
 )
 
-add_library(dawn_native STATIC ${DAWN_DUMMY_FILE})
+add_library(dawn_native ${DAWN_DUMMY_FILE})
+
+target_compile_definitions(dawn_native PRIVATE "DAWN_NATIVE_IMPLEMENTATION")
+if(BUILD_SHARED_LIBS)
+    target_compile_definitions(dawn_native PRIVATE "DAWN_NATIVE_SHARED_LIBRARY")
+endif()
+
 target_sources(dawn_native PRIVATE
     "${DAWN_INCLUDE_DIR}/dawn_native/DawnNative.h"
     "${DAWN_INCLUDE_DIR}/dawn_native/dawn_native_export.h"
@@ -31,7 +37,6 @@ target_sources(dawn_native PRIVATE
     "BackendConnection.h"
     "BindGroup.cpp"
     "BindGroup.h"
-    "BindGroupAndStorageBarrierTracker.h"
     "BindGroupLayout.cpp"
     "BindGroupLayout.h"
     "BindGroupTracker.h"
@@ -90,6 +95,7 @@ target_sources(dawn_native PRIVATE
     "Forward.h"
     "Instance.cpp"
     "Instance.h"
+    "IntegerTypes.h"
     "MapRequestTracker.cpp"
     "MapRequestTracker.h"
     "ObjectBase.cpp"
@@ -131,6 +137,8 @@ target_sources(dawn_native PRIVATE
     "Sampler.h"
     "ShaderModule.cpp"
     "ShaderModule.h"
+    "SpirvUtils.cpp"
+    "SpirvUtils.h"
     "StagingBuffer.cpp"
     "StagingBuffer.h"
     "Surface.cpp"
@@ -149,8 +157,11 @@ target_link_libraries(dawn_native
     PRIVATE dawn_common
             dawn_platform
             dawn_internal_config
-            shaderc_spvc
             spirv-cross-core
+            spirv-cross-glsl
+            spirv-cross-hlsl
+            spirv-cross-msl
+            SPIRV-Tools
 )
 
 if (DAWN_USE_X11)
@@ -198,6 +209,7 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/HeapAllocatorD3D12.h"
         "d3d12/HeapD3D12.cpp"
         "d3d12/HeapD3D12.h"
+	"d3d12/IntegerTypes.h"
         "d3d12/NativeSwapChainImplD3D12.cpp"
         "d3d12/NativeSwapChainImplD3D12.h"
         "d3d12/PageableD3D12.cpp"

@@ -16,11 +16,15 @@
 #define SRC_VALIDATOR_IMPL_H_
 
 #include <string>
+#include <unordered_map>
 
 #include "src/ast/assignment_statement.h"
+#include "src/ast/call_expression.h"
+#include "src/ast/entry_point.h"
 #include "src/ast/expression.h"
 #include "src/ast/identifier_expression.h"
 #include "src/ast/module.h"
+#include "src/ast/return_statement.h"
 #include "src/ast/statement.h"
 #include "src/ast/variable.h"
 #include "src/scope_stack.h"
@@ -49,6 +53,10 @@ class ValidatorImpl {
   /// @param src the source causing the error
   /// @param msg the error message
   void set_error(const Source& src, const std::string& msg);
+  /// Validate global variables
+  /// @param global_vars list of global variables to check
+  /// @returns true if the validation was successful
+  bool ValidateGlobalVariables(const ast::VariableList& global_vars);
   /// Validates Functions
   /// @param funcs the functions to check
   /// @returns true if the validation was successful
@@ -75,7 +83,7 @@ class ValidatorImpl {
   bool CheckImports(const ast::Module* module);
   /// Validates an expression
   /// @param expr the expression to check
-  /// @return true if the expresssion is valid
+  /// @return true if the expression is valid
   bool ValidateExpression(const ast::Expression* expr);
   /// Validates v-0006:Variables must be defined before use
   /// @param ident the identifer to check if its in the scope
@@ -94,10 +102,25 @@ class ValidatorImpl {
   /// @returns true if no previous decleration with the |decl|'s name
   /// exist in the variable stack
   bool ValidateDeclStatement(const ast::VariableDeclStatement* decl);
+  /// Validates return statement
+  /// @param ret the return statement to check
+  /// @returns true if function return type matches the return statement type
+  bool ValidateReturnStatement(const ast::ReturnStatement* ret);
+  /// Validates function calls
+  /// @param expr the call to validate
+  /// @returns true if successful
+  bool ValidateCallExpr(const ast::CallExpression* expr);
+  /// Validates entry points
+  /// this funtion must be called after populating function_stack_
+  /// @param eps the vector of entry points to check
+  /// @return true if the validation was successful
+  bool ValidateEntryPoints(const ast::EntryPointList& eps);
 
  private:
   std::string error_;
   ScopeStack<ast::Variable*> variable_stack_;
+  ScopeStack<ast::Function*> function_stack_;
+  ast::Function* current_function_ = nullptr;
 };
 
 }  // namespace tint

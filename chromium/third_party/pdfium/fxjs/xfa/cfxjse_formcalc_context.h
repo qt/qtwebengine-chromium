@@ -12,11 +12,16 @@
 
 #include "core/fxcrt/unowned_ptr.h"
 #include "fxjs/xfa/fxjse.h"
+#include "third_party/base/optional.h"
 #include "xfa/fxfa/parser/xfa_resolvenode_rs.h"
 
 class CFXJSE_Context;
 class CFX_WideTextBuf;
 class CXFA_Document;
+
+namespace cppgc {
+class Heap;
+}  // namespace cppgc
 
 class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
  public:
@@ -277,16 +282,15 @@ class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
   static bool ResolveObjects(CFXJSE_HostObject* pThis,
                              CFXJSE_Value* pParentValue,
                              ByteStringView bsSomExp,
-                             XFA_RESOLVENODE_RS* resolveNodeRS,
+                             XFA_ResolveNodeRS* resolveNodeRS,
                              bool bdotAccessor,
                              bool bHasNoResolveName);
   static void ParseResolveResult(
       CFXJSE_HostObject* pThis,
-      const XFA_RESOLVENODE_RS& resolveNodeRS,
+      const XFA_ResolveNodeRS& resolveNodeRS,
       CFXJSE_Value* pParentValue,
       std::vector<std::unique_ptr<CFXJSE_Value>>* resultValues,
       bool* bAttribute);
-
   static std::unique_ptr<CFXJSE_Value> GetSimpleValue(
       CFXJSE_HostObject* pThis,
       const v8::FunctionCallbackInfo<v8::Value>& info,
@@ -299,9 +303,8 @@ class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
   static double ExtractDouble(CFXJSE_HostObject* pThis,
                               CFXJSE_Value* src,
                               bool* ret);
-
-  static bool Translate(WideStringView wsFormcalc,
-                        CFX_WideTextBuf* wsJavascript);
+  static Optional<CFX_WideTextBuf> Translate(cppgc::Heap* pHeap,
+                                             WideStringView wsFormcalc);
 
   void GlobalPropertyGetter(CFXJSE_Value* pValue);
 

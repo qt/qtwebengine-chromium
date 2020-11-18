@@ -50,7 +50,8 @@ private:
     void onPrePrepare(GrRecordingContext*,
                       const GrSurfaceProxyView* writeView,
                       GrAppliedClip*,
-                      const GrXferProcessor::DstProxyView&) override {}
+                      const GrXferProcessor::DstProxyView&,
+                      GrXferBarrierFlags renderPassXferBarriers) override {}
 
     void onPrepare(GrOpFlushState*) override {}
 
@@ -68,7 +69,7 @@ private:
     GrScissorState            fScissor;
     sk_sp<const GrPath>       fPath;
 
-    typedef GrOp INHERITED;
+    using INHERITED = GrOp;
 };
 
 #endif

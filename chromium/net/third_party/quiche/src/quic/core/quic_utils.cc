@@ -173,6 +173,7 @@ const char* QuicUtils::SentPacketStateToString(SentPacketState state) {
     RETURN_STRING_LITERAL(RTO_RETRANSMITTED);
     RETURN_STRING_LITERAL(PTO_RETRANSMITTED);
     RETURN_STRING_LITERAL(PROBE_RETRANSMITTED);
+    RETURN_STRING_LITERAL(NOT_CONTRIBUTING_RTT)
   }
   return "INVALID_SENT_PACKET_STATE";
 }
@@ -304,6 +305,9 @@ bool QuicUtils::IsRetransmittableFrame(QuicFrameType type) {
     case PADDING_FRAME:
     case STOP_WAITING_FRAME:
     case MTU_DISCOVERY_FRAME:
+    case PATH_CHALLENGE_FRAME:
+    case PATH_RESPONSE_FRAME:
+    case NEW_CONNECTION_ID_FRAME:
       return false;
     default:
       return true;
@@ -650,6 +654,19 @@ EncryptionLevel QuicUtils::GetEncryptionLevel(
     default:
       DCHECK(false);
       return NUM_ENCRYPTION_LEVELS;
+  }
+}
+
+// static
+bool QuicUtils::IsProbingFrame(QuicFrameType type) {
+  switch (type) {
+    case PATH_CHALLENGE_FRAME:
+    case PATH_RESPONSE_FRAME:
+    case NEW_CONNECTION_ID_FRAME:
+    case PADDING_FRAME:
+      return true;
+    default:
+      return false;
   }
 }
 

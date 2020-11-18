@@ -287,17 +287,17 @@ public:
     /**
      * Gets the maximum supported texture size.
      */
-    int maxTextureSize() const;
+    using GrRecordingContext::maxTextureSize;
 
     /**
      * Gets the maximum supported render target size.
      */
-    int maxRenderTargetSize() const;
+    using GrRecordingContext::maxRenderTargetSize;
 
     /**
      * Can a SkImage be created with the given color type.
      */
-    bool colorTypeSupportedAsImage(SkColorType) const;
+    using GrRecordingContext::colorTypeSupportedAsImage;
 
     /**
      * Can a SkSurface be created with the given color type. To check whether MSAA is supported
@@ -457,16 +457,6 @@ public:
                                           GrRenderable,
                                           GrProtected = GrProtected::kNo);
 
-
-    /**
-     * If possible, create an uninitialized backend texture that is compatible with the
-     * provided characterization. The client should ensure that the returned backend texture
-     * is valid.
-     * For the Vulkan backend the layout of the created VkImage will be:
-     *      VK_IMAGE_LAYOUT_UNDEFINED.
-     */
-    GrBackendTexture createBackendTexture(const SkSurfaceCharacterization& characterization);
-
     /**
      * If possible, create a backend texture initialized to a particular color. The client should
      * ensure that the returned backend texture is valid. The client can pass in a finishedProc
@@ -502,22 +492,6 @@ public:
                                           GrMipmapped,
                                           GrRenderable,
                                           GrProtected = GrProtected::kNo,
-                                          GrGpuFinishedProc finishedProc = nullptr,
-                                          GrGpuFinishedContext finishedContext = nullptr);
-
-    /**
-     * If possible, create a backend texture initialized to a particular color that is
-     * compatible with the provided characterization. The client should ensure that the
-     * returned backend texture is valid. The client can pass in a finishedProc to be notified when
-     * the data has been uploaded by the gpu and the texture can be deleted. The client is required
-     * to call GrContext::submit to send the upload work to the gpu. The finishedProc will always
-     * get called even if we failed to create the GrBackendTexture.
-     * For the Vulkan backend the layout of the created VkImage will be:
-     *      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL if texturaeble
-     *      VK_IMAGE_LAYOUT_UNDEFINED                if not textureable
-     */
-    GrBackendTexture createBackendTexture(const SkSurfaceCharacterization& characterization,
-                                          const SkColor4f& color,
                                           GrGpuFinishedProc finishedProc = nullptr,
                                           GrGpuFinishedContext finishedContext = nullptr);
 
@@ -714,13 +688,22 @@ public:
      * called with finishedContext after the state transition is known to have occurred on the GPU.
      *
      * See GrBackendSurfaceMutableState to see what state can be set via this call.
+     *
+     * If the backend API is Vulkan, the caller can set the GrBackendSurfaceMutableState's
+     * VkImageLayout to VK_IMAGE_LAYOUT_UNDEFINED or queueFamilyIndex to VK_QUEUE_FAMILY_IGNORED to
+     * tell Skia to not change those respective states.
+     *
+     * If previousState is not null and this returns true, then Skia will have filled in
+     * previousState to have the values of the state before this call.
      */
     bool setBackendTextureState(const GrBackendTexture&,
                                 const GrBackendSurfaceMutableState&,
+                                GrBackendSurfaceMutableState* previousState = nullptr,
                                 GrGpuFinishedProc finishedProc = nullptr,
                                 GrGpuFinishedContext finishedContext = nullptr);
     bool setBackendRenderTargetState(const GrBackendRenderTarget&,
                                      const GrBackendSurfaceMutableState&,
+                                     GrBackendSurfaceMutableState* previousState = nullptr,
                                      GrGpuFinishedProc finishedProc = nullptr,
                                      GrGpuFinishedContext finishedContext = nullptr);
 
@@ -783,7 +766,7 @@ private:
     // TODO: have the GrClipStackClip use renderTargetContexts and rm this friending
     friend class GrContextPriv;
 
-    typedef GrRecordingContext INHERITED;
+    using INHERITED = GrRecordingContext;
 };
 
 #endif

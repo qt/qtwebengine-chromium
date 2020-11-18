@@ -71,6 +71,7 @@ config("tint_public_config") {
   include_dirs = [
     "${tint_root_dir}/",
     "${tint_root_dir}/include/",
+    "${tint_spirv_headers_dir}/include",
   ]
 }
 
@@ -378,6 +379,8 @@ source_set("libtint_core_src") {
     "src/validator.h",
     "src/validator_impl.cc",
     "src/validator_impl.h",
+    "src/validator_test_helper.cc",
+    "src/validator_test_helper.h",
     "src/writer/text.cc",
     "src/writer/text.h",
     "src/writer/text_generator.cc",
@@ -826,6 +829,7 @@ source_set("tint_unittests_spv_writer_src") {
     "src/writer/spirv/builder_constructor_expression_test.cc",
     "src/writer/spirv/builder_discard_test.cc",
     "src/writer/spirv/builder_entry_point_test.cc",
+    "src/writer/spirv/builder_format_conversion_test.cc",
     "src/writer/spirv/builder_function_test.cc",
     "src/writer/spirv/builder_function_variable_test.cc",
     "src/writer/spirv/builder_global_variable_test.cc",
@@ -884,6 +888,7 @@ source_set("tint_unittests_wgsl_reader_src") {
     "src/reader/wgsl/parser_impl_entry_point_decl_test.cc",
     "src/reader/wgsl/parser_impl_equality_expression_test.cc",
     "src/reader/wgsl/parser_impl_exclusive_or_expression_test.cc",
+    "src/reader/wgsl/parser_impl_for_stmt_test.cc",
     "src/reader/wgsl/parser_impl_function_decl_test.cc",
     "src/reader/wgsl/parser_impl_function_header_test.cc",
     "src/reader/wgsl/parser_impl_function_type_decl_test.cc",
@@ -1063,14 +1068,21 @@ source_set("tint_unittests_hlsl_writer_src") {
     "src/writer/hlsl/generator_impl_binary_test.cc",
     "src/writer/hlsl/generator_impl_block_test.cc",
     "src/writer/hlsl/generator_impl_break_test.cc",
+    "src/writer/hlsl/generator_impl_call_test.cc",
     "src/writer/hlsl/generator_impl_case_test.cc",
+    "src/writer/hlsl/generator_impl_cast_test.cc",
     "src/writer/hlsl/generator_impl_constructor_test.cc",
     "src/writer/hlsl/generator_impl_continue_test.cc",
     "src/writer/hlsl/generator_impl_discard_test.cc",
+    "src/writer/hlsl/generator_impl_entry_point_test.cc",
+    "src/writer/hlsl/generator_impl_function_test.cc",
     "src/writer/hlsl/generator_impl_identifier_test.cc",
     "src/writer/hlsl/generator_impl_if_test.cc",
+    "src/writer/hlsl/generator_impl_import_test.cc",
+    "src/writer/hlsl/generator_impl_intrinsic_test.cc",
     "src/writer/hlsl/generator_impl_loop_test.cc",
     "src/writer/hlsl/generator_impl_member_accessor_test.cc",
+    "src/writer/hlsl/generator_impl_module_constant_test.cc",
     "src/writer/hlsl/generator_impl_return_test.cc",
     "src/writer/hlsl/generator_impl_switch_test.cc",
     "src/writer/hlsl/generator_impl_test.cc",
@@ -1078,6 +1090,7 @@ source_set("tint_unittests_hlsl_writer_src") {
     "src/writer/hlsl/generator_impl_unary_op_test.cc",
     "src/writer/hlsl/generator_impl_variable_decl_statement_test.cc",
     "src/writer/hlsl/namer_test.cc",
+    "src/writer/hlsl/test_helper.h",
   ]
 
   configs += [

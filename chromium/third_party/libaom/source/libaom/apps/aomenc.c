@@ -156,8 +156,12 @@ static const arg_def_t quietarg =
     ARG_DEF("q", "quiet", 0, "Do not print encode progress");
 static const arg_def_t verbosearg =
     ARG_DEF("v", "verbose", 0, "Show encoder parameters");
-static const arg_def_t psnrarg =
-    ARG_DEF(NULL, "psnr", 0, "Show PSNR in status line");
+static const arg_def_t psnrarg = ARG_DEF(
+    NULL, "psnr", -1,
+    "Show PSNR in status line"
+    "(0: Disable PSNR status line display, 1: PSNR calculated using input "
+    "bit-depth (default), 2: PSNR calculated using stream bit-depth), "
+    "takes default option when arguments are not specified");
 static const arg_def_t use_cfg = ARG_DEF("c", "cfg", 1, "Config file to use");
 
 static const struct arg_enum_list test_decode_enum[] = {
@@ -334,6 +338,12 @@ static const arg_def_t buf_initial_sz =
     ARG_DEF(NULL, "buf-initial-sz", 1, "Client initial buffer size (ms)");
 static const arg_def_t buf_optimal_sz =
     ARG_DEF(NULL, "buf-optimal-sz", 1, "Client optimal buffer size (ms)");
+static const arg_def_t bias_pct =
+    ARG_DEF(NULL, "bias-pct", 1, "CBR/VBR bias (0=CBR, 100=VBR)");
+static const arg_def_t minsection_pct =
+    ARG_DEF(NULL, "minsection-pct", 1, "GOP min bitrate (% of target)");
+static const arg_def_t maxsection_pct =
+    ARG_DEF(NULL, "maxsection-pct", 1, "GOP max bitrate (% of target)");
 static const arg_def_t *rc_args[] = { &dropframe_thresh,
                                       &resize_mode,
                                       &resize_denominator,
@@ -352,16 +362,11 @@ static const arg_def_t *rc_args[] = { &dropframe_thresh,
                                       &buf_sz,
                                       &buf_initial_sz,
                                       &buf_optimal_sz,
+                                      &bias_pct,
+                                      &minsection_pct,
+                                      &maxsection_pct,
                                       NULL };
 
-static const arg_def_t bias_pct =
-    ARG_DEF(NULL, "bias-pct", 1, "CBR/VBR bias (0=CBR, 100=VBR)");
-static const arg_def_t minsection_pct =
-    ARG_DEF(NULL, "minsection-pct", 1, "GOP min bitrate (% of target)");
-static const arg_def_t maxsection_pct =
-    ARG_DEF(NULL, "maxsection-pct", 1, "GOP max bitrate (% of target)");
-static const arg_def_t *rc_twopass_args[] = { &bias_pct, &minsection_pct,
-                                              &maxsection_pct, NULL };
 static const arg_def_t fwd_kf_enabled =
     ARG_DEF(NULL, "enable-fwd-kf", 1, "Enable forward reference keyframes");
 static const arg_def_t kf_min_dist =
@@ -423,8 +428,9 @@ static const arg_def_t enable_tpl_model =
             "This is required for deltaq mode.");
 static const arg_def_t enable_keyframe_filtering =
     ARG_DEF(NULL, "enable-keyframe-filtering", 1,
-            "Apply temporal filtering on key frame "
-            "(0: false, 1: true (default)");
+            "Apply temporal filtering on key frame"
+            "(0: no filter, 1: filter without overlay (default),"
+            "2: filter with overlay)");
 static const arg_def_t tile_width =
     ARG_DEF(NULL, "tile-width", 1, "Tile widths (comma separated)");
 static const arg_def_t tile_height =
@@ -584,11 +590,11 @@ static const arg_def_t quant_b_adapt =
 static const arg_def_t coeff_cost_upd_freq =
     ARG_DEF(NULL, "coeff-cost-upd-freq", 1,
             "Update freq for coeff costs"
-            "0: SB, 1: SB Row per Tile, 2: Tile");
+            "0: SB, 1: SB Row per Tile, 2: Tile, 3: Off");
 static const arg_def_t mode_cost_upd_freq =
     ARG_DEF(NULL, "mode-cost-upd-freq", 1,
             "Update freq for mode costs"
-            "0: SB, 1: SB Row per Tile, 2: Tile");
+            "0: SB, 1: SB Row per Tile, 2: Tile, 3: Off");
 static const arg_def_t mv_cost_upd_freq =
     ARG_DEF(NULL, "mv-cost-upd-freq", 1,
             "Update freq for mv costs"
@@ -1048,8 +1054,6 @@ static void show_help(FILE *fout, int shorthelp) {
   arg_show_usage(fout, global_args);
   fprintf(fout, "\nRate Control Options:\n");
   arg_show_usage(fout, rc_args);
-  fprintf(fout, "\nTwopass Rate Control Options:\n");
-  arg_show_usage(fout, rc_twopass_args);
   fprintf(fout, "\nKeyframe Placement Options:\n");
   arg_show_usage(fout, kf_args);
 #if CONFIG_AV1_ENCODER
@@ -1114,10 +1118,10 @@ struct stream_state {
   FILE *file;
   struct rate_hist *rate_hist;
   struct WebmOutputContext webm_ctx;
-  uint64_t psnr_sse_total;
-  uint64_t psnr_samples_total;
-  double psnr_totals[4];
-  int psnr_count;
+  uint64_t psnr_sse_total[2];
+  uint64_t psnr_samples_total[2];
+  double psnr_totals[2][4];
+  int psnr_count[2];
   int counts[64];
   aom_codec_ctx_t encoder;
   unsigned int frames_out;
@@ -1167,6 +1171,7 @@ static void parse_global_config(struct AvxEncoderConfig *global, char ***argv) {
   global->passes = 0;
   global->color_type = I420;
   global->csp = AOM_CSP_UNKNOWN;
+  global->show_psnr = 0;
 
   int cfg_included = 0;
   init_config(&global->encoder_config);
@@ -1223,11 +1228,14 @@ static void parse_global_config(struct AvxEncoderConfig *global, char ***argv) {
       global->limit = arg_parse_uint(&arg);
     else if (arg_match(&arg, &skip, argi))
       global->skip_frames = arg_parse_uint(&arg);
-    else if (arg_match(&arg, &psnrarg, argi))
-      global->show_psnr = 1;
-    else if (arg_match(&arg, &recontest, argi))
+    else if (arg_match(&arg, &psnrarg, argi)) {
+      if (arg.val)
+        global->show_psnr = arg_parse_int(&arg);
+      else
+        global->show_psnr = 1;
+    } else if (arg_match(&arg, &recontest, argi)) {
       global->test_decode = arg_parse_enum_or_int(&arg);
-    else if (arg_match(&arg, &framerate, argi)) {
+    } else if (arg_match(&arg, &framerate, argi)) {
       global->framerate = arg_parse_rational(&arg);
       validate_positive_rational(arg.name, &global->framerate);
       global->have_framerate = 1;
@@ -1515,12 +1523,6 @@ static int parse_stream_params(struct AvxEncoderConfig *global,
       config->cfg.g_error_resilient = arg_parse_uint(&arg);
     } else if (arg_match(&arg, &lag_in_frames, argi)) {
       config->cfg.g_lag_in_frames = arg_parse_uint(&arg);
-      if (global->usage == AOM_USAGE_REALTIME &&
-          config->cfg.rc_end_usage == AOM_CBR &&
-          config->cfg.g_lag_in_frames != 0) {
-        warn("non-zero %s option ignored in realtime CBR mode.\n", arg.name);
-        config->cfg.g_lag_in_frames = 0;
-      }
     } else if (arg_match(&arg, &large_scale_tile, argi)) {
       config->cfg.large_scale_tile = arg_parse_uint(&arg);
       if (config->cfg.large_scale_tile) {
@@ -1640,6 +1642,10 @@ static int parse_stream_params(struct AvxEncoderConfig *global,
   }
   config->use_16bit_internal |= config->cfg.g_bit_depth > AOM_BITS_8;
 
+  if (global->usage == AOM_USAGE_REALTIME && config->cfg.g_lag_in_frames != 0) {
+    warn("non-zero lag-in-frames option ignored in realtime mode.\n");
+    config->cfg.g_lag_in_frames = 0;
+  }
   return eos_mark_found;
 }
 
@@ -1911,7 +1917,7 @@ static void initialize_encoder(struct stream_state *stream,
   int i;
   int flags = 0;
 
-  flags |= global->show_psnr ? AOM_CODEC_USE_PSNR : 0;
+  flags |= (global->show_psnr >= 1) ? AOM_CODEC_USE_PSNR : 0;
   flags |= stream->config.use_16bit_internal ? AOM_CODEC_USE_HIGHBITDEPTH : 0;
 
   /* Construct Encoder Context */
@@ -2137,17 +2143,31 @@ static void get_cx_data(struct stream_state *stream,
         break;
       case AOM_CODEC_PSNR_PKT:
 
-        if (global->show_psnr) {
+        if (global->show_psnr >= 1) {
           int i;
 
-          stream->psnr_sse_total += pkt->data.psnr.sse[0];
-          stream->psnr_samples_total += pkt->data.psnr.samples[0];
+          stream->psnr_sse_total[0] += pkt->data.psnr.sse[0];
+          stream->psnr_samples_total[0] += pkt->data.psnr.samples[0];
           for (i = 0; i < 4; i++) {
             if (!global->quiet)
               fprintf(stderr, "%.3f ", pkt->data.psnr.psnr[i]);
-            stream->psnr_totals[i] += pkt->data.psnr.psnr[i];
+            stream->psnr_totals[0][i] += pkt->data.psnr.psnr[i];
           }
-          stream->psnr_count++;
+          stream->psnr_count[0]++;
+
+#if CONFIG_AV1_HIGHBITDEPTH
+          if (stream->config.cfg.g_input_bit_depth <
+              (unsigned int)stream->config.cfg.g_bit_depth) {
+            stream->psnr_sse_total[1] += pkt->data.psnr.sse_hbd[0];
+            stream->psnr_samples_total[1] += pkt->data.psnr.samples_hbd[0];
+            for (i = 0; i < 4; i++) {
+              if (!global->quiet)
+                fprintf(stderr, "%.3f ", pkt->data.psnr.psnr_hbd[i]);
+              stream->psnr_totals[1][i] += pkt->data.psnr.psnr_hbd[i];
+            }
+            stream->psnr_count[1]++;
+          }
+#endif
         }
 
         break;
@@ -2160,15 +2180,15 @@ static void show_psnr(struct stream_state *stream, double peak, int64_t bps) {
   int i;
   double ovpsnr;
 
-  if (!stream->psnr_count) return;
+  if (!stream->psnr_count[0]) return;
 
   fprintf(stderr, "Stream %d PSNR (Overall/Avg/Y/U/V)", stream->index);
-  ovpsnr = sse_to_psnr((double)stream->psnr_samples_total, peak,
-                       (double)stream->psnr_sse_total);
+  ovpsnr = sse_to_psnr((double)stream->psnr_samples_total[0], peak,
+                       (double)stream->psnr_sse_total[0]);
   fprintf(stderr, " %.3f", ovpsnr);
 
   for (i = 0; i < 4; i++) {
-    fprintf(stderr, " %.3f", stream->psnr_totals[i] / stream->psnr_count);
+    fprintf(stderr, " %.3f", stream->psnr_totals[0][i] / stream->psnr_count[0]);
   }
   if (bps > 0) {
     fprintf(stderr, " %7" PRId64 " bps", bps);
@@ -2176,6 +2196,30 @@ static void show_psnr(struct stream_state *stream, double peak, int64_t bps) {
   fprintf(stderr, " %7" PRId64 " ms", stream->cx_time / 1000);
   fprintf(stderr, "\n");
 }
+
+#if CONFIG_AV1_HIGHBITDEPTH
+static void show_psnr_hbd(struct stream_state *stream, double peak,
+                          int64_t bps) {
+  int i;
+  double ovpsnr;
+  // Compute PSNR based on stream bit depth
+  if (!stream->psnr_count[1]) return;
+
+  fprintf(stderr, "Stream %d PSNR (Overall/Avg/Y/U/V)", stream->index);
+  ovpsnr = sse_to_psnr((double)stream->psnr_samples_total[1], peak,
+                       (double)stream->psnr_sse_total[1]);
+  fprintf(stderr, " %.3f", ovpsnr);
+
+  for (i = 0; i < 4; i++) {
+    fprintf(stderr, " %.3f", stream->psnr_totals[1][i] / stream->psnr_count[1]);
+  }
+  if (bps > 0) {
+    fprintf(stderr, " %7" PRId64 " bps", bps);
+  }
+  fprintf(stderr, " %7" PRId64 " ms", stream->cx_time / 1000);
+  fprintf(stderr, "\n");
+}
+#endif
 
 static float usec_to_fps(uint64_t usec, unsigned int frames) {
   return (float)(usec > 0 ? frames * 1000000.0 / (float)usec : 0);
@@ -2484,6 +2528,20 @@ int main(int argc, const char **argv_) {
                 "match input format.\n",
                 stream->config.cfg.g_profile);
       }
+      if ((global.show_psnr == 2) && (stream->config.cfg.g_input_bit_depth ==
+                                      stream->config.cfg.g_bit_depth)) {
+        fprintf(stderr,
+                "Warning: --psnr==2 and --psnr==1 will provide same "
+                "results when input bit-depth == stream bit-depth, "
+                "falling back to default psnr value\n");
+        global.show_psnr = 1;
+      }
+      if (global.show_psnr < 0 || global.show_psnr > 2) {
+        fprintf(stderr,
+                "Warning: --psnr can take only 0,1,2 as values,"
+                "falling back to default psnr value\n");
+        global.show_psnr = 1;
+      }
       /* Set limit */
       stream->config.cfg.g_limit = global.limit;
     }
@@ -2724,16 +2782,27 @@ int main(int argc, const char **argv_) {
       }
     }
 
-    if (global.show_psnr) {
+    if (global.show_psnr >= 1) {
       if (get_fourcc_by_aom_encoder(global.codec) == AV1_FOURCC) {
         FOREACH_STREAM(stream, streams) {
           int64_t bps = 0;
-          if (stream->psnr_count && seen_frames && global.framerate.den) {
-            bps = (int64_t)stream->nbytes * 8 * (int64_t)global.framerate.num /
-                  global.framerate.den / seen_frames;
+          if (global.show_psnr == 1) {
+            if (stream->psnr_count[0] && seen_frames && global.framerate.den) {
+              bps = (int64_t)stream->nbytes * 8 *
+                    (int64_t)global.framerate.num / global.framerate.den /
+                    seen_frames;
+            }
+            show_psnr(stream, (1 << stream->config.cfg.g_input_bit_depth) - 1,
+                      bps);
           }
-          show_psnr(stream, (1 << stream->config.cfg.g_input_bit_depth) - 1,
-                    bps);
+          if (global.show_psnr == 2) {
+#if CONFIG_AV1_HIGHBITDEPTH
+            if (stream->config.cfg.g_input_bit_depth <
+                (unsigned int)stream->config.cfg.g_bit_depth)
+              show_psnr_hbd(stream, (1 << stream->config.cfg.g_bit_depth) - 1,
+                            bps);
+#endif
+          }
         }
       } else {
         FOREACH_STREAM(stream, streams) { show_psnr(stream, 255.0, 0); }

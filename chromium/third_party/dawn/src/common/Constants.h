@@ -18,7 +18,7 @@
 #include <cstdint>
 
 static constexpr uint32_t kMaxBindGroups = 4u;
-static constexpr uint32_t kMaxVertexAttributes = 16u;
+static constexpr uint8_t kMaxVertexAttributes = 16u;
 // Vulkan has a standalone limit named maxVertexInputAttributeOffset (2047u at least) for vertex
 // attribute offset. The limit might be meaningless because Vulkan has another limit named
 // maxVertexInputBindingStride (2048u at least). We use maxVertexAttributeEnd (2048u) here to
@@ -26,10 +26,10 @@ static constexpr uint32_t kMaxVertexAttributes = 16u;
 // (char). We may use maxVertexInputBindingStride (maxVertexBufferStride below) instead to replace
 // maxVertexAttributeEnd in future.
 static constexpr uint32_t kMaxVertexAttributeEnd = 2048u;
-static constexpr uint32_t kMaxVertexBuffers = 16u;
+static constexpr uint8_t kMaxVertexBuffers = 16u;
 static constexpr uint32_t kMaxVertexBufferStride = 2048u;
 static constexpr uint32_t kNumStages = 3;
-static constexpr uint32_t kMaxColorAttachments = 4u;
+static constexpr uint8_t kMaxColorAttachments = 4u;
 static constexpr uint32_t kTextureBytesPerRowAlignment = 256u;
 // Dynamic buffer offsets require offset to be divisible by 256
 static constexpr uint64_t kMinDynamicBufferOffsetAlignment = 256u;

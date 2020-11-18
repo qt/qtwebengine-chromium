@@ -12,39 +12,6 @@
 #include "src/gpu/GrStencilSettings.h"
 #include "src/gpu/dawn/GrDawnGpu.h"
 #include "src/gpu/dawn/GrDawnTexture.h"
-#include "src/sksl/SkSLCompiler.h"
-
-static SkSL::String sksl_to_spirv(const GrDawnGpu* gpu, const char* shaderString,
-                                  SkSL::Program::Kind kind, bool flipY, uint32_t rtHeightOffset,
-                                  SkSL::Program::Inputs* inputs) {
-    SkSL::Program::Settings settings;
-    settings.fCaps = gpu->caps()->shaderCaps();
-    settings.fFlipY = flipY;
-    settings.fRTHeightOffset = rtHeightOffset;
-    settings.fRTHeightBinding = 0;
-    settings.fRTHeightSet = 0;
-#ifdef SK_BUILD_FOR_WIN
-    // Work around the fact that D3D12 gives w in fragcoord.w, while the other APIs give 1/w.
-    // This difference may be better handled by Dawn, at which point this workaround can be removed.
-    // (See http://skbug.com/10475).
-    settings.fInverseW = true;
-#endif
-    std::unique_ptr<SkSL::Program> program = gpu->shaderCompiler()->convertProgram(
-        kind,
-        shaderString,
-        settings);
-    if (!program) {
-        SkDebugf("SkSL error:\n%s\n", gpu->shaderCompiler()->errorText().c_str());
-        SkASSERT(false);
-        return "";
-    }
-    *inputs = program->fInputs;
-    SkSL::String code;
-    if (!gpu->shaderCompiler()->toSPIRV(*program, &code)) {
-        return "";
-    }
-    return code;
-}
 
 static wgpu::BlendFactor to_dawn_blend_factor(GrBlendCoeff coeff) {
     switch (coeff) {
@@ -357,7 +324,7 @@ sk_sp<GrDawnProgram> GrDawnProgramBuilder::Build(GrDawnGpu* gpu,
     wgpu::DepthStencilStateDescriptor depthStencilState;
 
 #ifdef SK_DEBUG
-    if (pipeline.isStencilEnabled()) {
+    if (programInfo.isStencilEnabled()) {
         SkASSERT(renderTarget->numStencilBits() == 8);
     }
 #endif
@@ -455,20 +422,13 @@ wgpu::ShaderModule GrDawnProgramBuilder::createShaderModule(const GrGLSLShaderBu
     printf("converting program:\n%s\n", sksl.c_str());
 #endif
 
-    SkSL::String spirvSource = sksl_to_spirv(fGpu, source.c_str(), kind, flipY,
-                                             fUniformHandler.getRTHeightOffset(), inputs);
+    SkSL::String spirvSource = fGpu->SkSLToSPIRV(source.c_str(), kind, flipY,
+                                                 fUniformHandler.getRTHeightOffset(), inputs);
     if (inputs->fRTHeight) {
         this->addRTHeightUniform(SKSL_RTHEIGHT_NAME);
     }
 
-    wgpu::ShaderModuleSPIRVDescriptor desc;
-    desc.codeSize = spirvSource.size() / 4;
-    desc.code = reinterpret_cast<const uint32_t*>(spirvSource.c_str());
-
-    wgpu::ShaderModuleDescriptor smDesc;
-    smDesc.nextInChain = &desc;
-
-    return device.CreateShaderModule(&smDesc);
+    return fGpu->createShaderModule(spirvSource);
 };
 
 const GrCaps* GrDawnProgramBuilder::caps() const {
@@ -502,7 +462,7 @@ static void set_texture(GrDawnGpu* gpu, GrSamplerState state, GrTexture* texture
     wgpu::Sampler sampler = gpu->getOrCreateSampler(state);
     bindings->push_back(make_bind_group_entry((*binding)++, sampler));
     GrDawnTexture* tex = static_cast<GrDawnTexture*>(texture);
-    wgpu::TextureView textureView = tex->textureView();
+    wgpu::TextureView textureView = tex->texture().CreateView();
     bindings->push_back(make_bind_group_entry((*binding)++, textureView));
 }
 

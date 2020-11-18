@@ -320,7 +320,7 @@ struct TileInfo {
 
 struct LoopRestoration {
   LoopRestorationType type[kMaxPlanes];
-  int unit_size[kMaxPlanes];
+  int unit_size_log2[kMaxPlanes];
 };
 
 // Stores the quantization parameters of Section 5.9.12.

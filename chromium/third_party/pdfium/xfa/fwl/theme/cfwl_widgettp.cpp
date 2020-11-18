@@ -54,7 +54,7 @@ void CFWL_WidgetTP::DrawText(const CFWL_ThemeText& pParams) {
 }
 
 const RetainPtr<CFGAS_GEFont>& CFWL_WidgetTP::GetFont() const {
-  return m_pFDEFont;
+  return m_pFGASFont;
 }
 
 void CFWL_WidgetTP::InitializeArrowColorData() {
@@ -84,9 +84,9 @@ void CFWL_WidgetTP::EnsureTTOInitialized() {
   if (m_pTextOut)
     return;
 
-  m_pFDEFont = CFWL_FontManager::GetInstance()->FindFont(L"Helvetica", 0, 0);
+  m_pFGASFont = CFWL_FontManager::GetInstance()->FindFont(L"Helvetica", 0, 0);
   m_pTextOut = std::make_unique<CFDE_TextOut>();
-  m_pTextOut->SetFont(m_pFDEFont);
+  m_pTextOut->SetFont(m_pFGASFont);
   m_pTextOut->SetFontSize(FWLTHEME_CAPACITY_FontSize);
   m_pTextOut->SetTextColor(FWLTHEME_CAPACITY_TextColor);
 }
@@ -239,15 +239,10 @@ bool CFWL_FontData::LoadFont(WideStringView wsFontFamily,
   m_wsFamily = wsFontFamily;
   m_dwStyles = dwFontStyles;
   m_dwCodePage = dwCodePage;
-  if (!m_pFontMgr) {
-    m_pFontMgr = std::make_unique<CFGAS_FontMgr>();
-    if (!m_pFontMgr->EnumFonts())
-      m_pFontMgr = nullptr;
-  }
 
   // TODO(tsepez): check usage of c_str() below.
   m_pFont = CFGAS_GEFont::LoadFont(wsFontFamily.unterminated_c_str(),
-                                   dwFontStyles, dwCodePage, m_pFontMgr.get());
+                                   dwFontStyles, dwCodePage);
   return !!m_pFont;
 }
 

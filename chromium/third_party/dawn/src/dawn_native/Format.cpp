@@ -32,8 +32,6 @@ namespace dawn_native {
             case wgpu::TextureComponentType::Sint:
             case wgpu::TextureComponentType::Uint:
                 break;
-            default:
-                UNREACHABLE();
         }
         // Check that Type correctly mirrors TextureComponentType except for "Other".
         static_assert(static_cast<Type>(wgpu::TextureComponentType::Float) == Type::Float, "");
@@ -49,7 +47,8 @@ namespace dawn_native {
             case Type::Sint:
             case Type::Uint:
                 break;
-            default:
+
+            case Type::Other:
                 UNREACHABLE();
         }
         // Check that Type correctly mirrors TextureComponentType except for "Other".
@@ -82,21 +81,13 @@ namespace dawn_native {
     TexelBlockInfo Format::GetTexelBlockInfo(wgpu::TextureAspect aspect) const {
         switch (aspect) {
             case wgpu::TextureAspect::All:
-                switch (aspects) {
-                    case Aspect::Color:
-                    case Aspect::Depth:
-                    case Aspect::Stencil:
-                        break;
-                    default:
-                        UNREACHABLE();
-                }
-                return *this;
+                return blockInfo;
 
             case wgpu::TextureAspect::DepthOnly:
                 ASSERT(HasDepth());
                 switch (format) {
                     case wgpu::TextureFormat::Depth32Float:
-                        return *this;
+                        return blockInfo;
                     default:
                         UNREACHABLE();
                         break;
@@ -113,10 +104,6 @@ namespace dawn_native {
                         break;
                 }
                 break;
-
-            default:
-                UNREACHABLE();
-                break;
         }
     }
 
@@ -126,11 +113,11 @@ namespace dawn_native {
         switch (aspect) {
             case Aspect::Color:
                 ASSERT(aspects == aspect);
-                return *this;
+                return blockInfo;
             case Aspect::Depth:
                 switch (format) {
                     case wgpu::TextureFormat::Depth32Float:
-                        return *this;
+                        return blockInfo;
                     default:
                         UNREACHABLE();
                         break;
@@ -144,9 +131,9 @@ namespace dawn_native {
                         break;
                 }
                 break;
-            default:
+
+            case Aspect::None:
                 UNREACHABLE();
-                break;
         }
     }
 
@@ -195,9 +182,9 @@ namespace dawn_native {
             internalFormat.supportsStorageUsage = supportsStorageUsage;
             internalFormat.aspects = Aspect::Color;
             internalFormat.type = type;
-            internalFormat.blockByteSize = byteSize;
-            internalFormat.blockWidth = 1;
-            internalFormat.blockHeight = 1;
+            internalFormat.blockInfo.blockByteSize = byteSize;
+            internalFormat.blockInfo.blockWidth = 1;
+            internalFormat.blockInfo.blockHeight = 1;
             AddFormat(internalFormat);
         };
 
@@ -211,9 +198,9 @@ namespace dawn_native {
             internalFormat.supportsStorageUsage = false;
             internalFormat.aspects = aspects;
             internalFormat.type = Type::Other;
-            internalFormat.blockByteSize = byteSize;
-            internalFormat.blockWidth = 1;
-            internalFormat.blockHeight = 1;
+            internalFormat.blockInfo.blockByteSize = byteSize;
+            internalFormat.blockInfo.blockWidth = 1;
+            internalFormat.blockInfo.blockHeight = 1;
             AddFormat(internalFormat);
         };
 
@@ -227,9 +214,9 @@ namespace dawn_native {
             internalFormat.supportsStorageUsage = false;
             internalFormat.aspects = Aspect::Depth;
             internalFormat.type = type;
-            internalFormat.blockByteSize = byteSize;
-            internalFormat.blockWidth = 1;
-            internalFormat.blockHeight = 1;
+            internalFormat.blockInfo.blockByteSize = byteSize;
+            internalFormat.blockInfo.blockWidth = 1;
+            internalFormat.blockInfo.blockHeight = 1;
             AddFormat(internalFormat);
         };
 
@@ -243,9 +230,9 @@ namespace dawn_native {
             internalFormat.supportsStorageUsage = false;
             internalFormat.aspects = Aspect::Color;
             internalFormat.type = Type::Float;
-            internalFormat.blockByteSize = byteSize;
-            internalFormat.blockWidth = width;
-            internalFormat.blockHeight = height;
+            internalFormat.blockInfo.blockByteSize = byteSize;
+            internalFormat.blockInfo.blockWidth = width;
+            internalFormat.blockInfo.blockHeight = height;
             AddFormat(internalFormat);
         };
 
@@ -320,7 +307,7 @@ namespace dawn_native {
         AddCompressedFormat(wgpu::TextureFormat::BC3RGBAUnormSrgb, 16, 4, 4, isBCFormatSupported);
         AddCompressedFormat(wgpu::TextureFormat::BC5RGSnorm, 16, 4, 4, isBCFormatSupported);
         AddCompressedFormat(wgpu::TextureFormat::BC5RGUnorm, 16, 4, 4, isBCFormatSupported);
-        AddCompressedFormat(wgpu::TextureFormat::BC6HRGBSfloat, 16, 4, 4, isBCFormatSupported);
+        AddCompressedFormat(wgpu::TextureFormat::BC6HRGBFloat, 16, 4, 4, isBCFormatSupported);
         AddCompressedFormat(wgpu::TextureFormat::BC6HRGBUfloat, 16, 4, 4, isBCFormatSupported);
         AddCompressedFormat(wgpu::TextureFormat::BC7RGBAUnorm, 16, 4, 4, isBCFormatSupported);
         AddCompressedFormat(wgpu::TextureFormat::BC7RGBAUnormSrgb, 16, 4, 4, isBCFormatSupported);

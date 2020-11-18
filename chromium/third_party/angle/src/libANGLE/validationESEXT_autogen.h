@@ -767,6 +767,13 @@ bool ValidateGetProgramResourceLocationIndexEXT(const Context *context,
                                                 GLenum programInterface,
                                                 const GLchar *name);
 
+// GL_EXT_buffer_storage
+bool ValidateBufferStorageEXT(const Context *context,
+                              BufferBinding targetPacked,
+                              GLsizeiptr size,
+                              const void *data,
+                              GLbitfield flags);
+
 // GL_EXT_debug_marker
 bool ValidateInsertEventMarkerEXT(const Context *context, GLsizei length, const GLchar *marker);
 bool ValidatePopGroupMarkerEXT(const Context *context);
@@ -1481,6 +1488,8 @@ bool ValidateTexGenxvOES(const Context *context, GLenum coord, GLenum pname, con
 // GL_OES_texture_cube_map_array
 
 // GL_OES_texture_half_float
+
+// GL_OES_texture_stencil8
 
 // GL_OES_texture_storage_multisample_2d_array
 bool ValidateTexStorage3DMultisampleOES(const Context *context,

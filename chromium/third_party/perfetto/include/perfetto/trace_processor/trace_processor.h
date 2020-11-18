@@ -65,6 +65,19 @@ class PERFETTO_EXPORT TraceProcessor : public TraceProcessorStorage {
       const std::vector<std::string>& metric_names,
       std::vector<uint8_t>* metrics_proto) = 0;
 
+  enum MetricResultFormat {
+    kProtoText = 0,
+    kJson = 1,
+  };
+
+  // Computes metrics as the ComputeMetric function above, but instead of
+  // producing proto encoded bytes, the output argument |metrics_string| is
+  // filled with the metric formatted in the requested |format|.
+  virtual util::Status ComputeMetricText(
+      const std::vector<std::string>& metric_names,
+      MetricResultFormat format,
+      std::string* metrics_string) = 0;
+
   // Interrupts the current query. Typically used by Ctrl-C handler.
   virtual void InterruptQuery() = 0;
 
@@ -92,6 +105,12 @@ class PERFETTO_EXPORT TraceProcessor : public TraceProcessorStorage {
   // read.
   virtual util::Status DisableAndReadMetatrace(
       std::vector<uint8_t>* trace_proto) = 0;
+
+  // Gets all the currently loaded proto descriptors used in metric computation.
+  // This includes all compiled-in binary descriptors, and all proto descriptors
+  // loaded by trace processor shell at runtime. The message is encoded as
+  // DescriptorSet, defined in perfetto/trace_processor/trace_processor.proto.
+  virtual std::vector<uint8_t> GetMetricDescriptors() = 0;
 };
 
 // When set, logs SQLite actions on the console.

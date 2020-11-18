@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import * as Root from '../root/root.js';
-import * as UI from '../ui/ui.js';
+import * as ThemeSupport from '../theme_support/theme_support.js';
 
 const sheetsCache = new Map<string, {sheets: CSSStyleSheet[], patchThemeSupport: boolean}>();
 
@@ -22,11 +22,7 @@ export function getStyleSheets(path: string, {patchThemeSupport = false} = {}): 
     return cachedResult.sheets;
   }
 
-  if (!self.Runtime) {
-    return [];
-  }
-
-  const content = self.Runtime.cachedResources[path] || '';
+  const content = Root.Runtime.cachedResources.get(path) || '';
   if (!content) {
     throw new Error(`${path} not preloaded.`);
   }
@@ -34,7 +30,7 @@ export function getStyleSheets(path: string, {patchThemeSupport = false} = {}): 
   const originalStylesheet = new CSSStyleSheet();
   originalStylesheet.replaceSync(content);
 
-  const themeStyleSheet = self.UI && (self.UI.themeSupport as UI.UIUtils.ThemeSupport).themeStyleSheet(path, content);
+  const themeStyleSheet = ThemeSupport.ThemeSupport.instance().themeStyleSheet(path, content);
   if (!patchThemeSupport || !themeStyleSheet) {
     sheetsCache.set(path, {patchThemeSupport, sheets: [originalStylesheet]});
     return [originalStylesheet];
@@ -69,22 +65,6 @@ export function applyDarkModeClassIfNeeded() {
   }
 
   return '';
-}
-
-export async function populateRuntimeCacheForTests() {
-  if (self.Runtime) {
-    console.error('poulateRuntimeCacheForTests found existing Runtime, refusing to overwrite it.');
-  }
-
-  self.Runtime = {cachedResources: {}};
-
-  const allPromises = CSS_RESOURCES_TO_LOAD_INTO_RUNTIME.map(resourcePath => {
-    return fetch('/' + resourcePath).then(response => response.text()).then(cssText => {
-      self.Runtime.cachedResources[resourcePath] = cssText;
-    });
-  });
-
-  return Promise.all(allPromises);
 }
 
 /*
@@ -150,6 +130,7 @@ export const CSS_RESOURCES_TO_LOAD_INTO_RUNTIME = [
   'emulation/locationsSettingsTab.css',
   'emulation/mediaQueryInspector.css',
   'emulation/sensors.css',
+  'inline_editor/colorSwatch.css',
   'inspector_main/nodeIcon.css',
   'inspector_main/renderingOptions.css',
   'data_grid/dataGrid.css',

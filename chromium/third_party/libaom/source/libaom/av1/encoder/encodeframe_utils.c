@@ -73,7 +73,7 @@ int av1_get_hier_tpl_rdmult(const AV1_COMP *const cpi, MACROBLOCK *const x,
   const TplDepFrame *tpl_frame = &cpi->tpl_data.tpl_frame[tpl_idx];
   const int deltaq_rdmult = set_deltaq_rdmult(cpi, x);
   if (tpl_frame->is_valid == 0) return deltaq_rdmult;
-  if (!is_frame_tpl_eligible(gf_group)) return deltaq_rdmult;
+  if (!is_frame_tpl_eligible(gf_group, gf_group->index)) return deltaq_rdmult;
   if (tpl_idx >= MAX_TPL_FRAME_IDX) return deltaq_rdmult;
   if (cpi->superres_mode != AOM_SUPERRES_NONE) return deltaq_rdmult;
   if (cpi->oxcf.q_cfg.aq_mode != NO_AQ) return deltaq_rdmult;
@@ -662,7 +662,7 @@ int av1_get_rdmult_delta(AV1_COMP *cpi, BLOCK_SIZE bsize, int analysis_type,
 
   if (tpl_frame->is_valid == 0) return orig_rdmult;
 
-  if (!is_frame_tpl_eligible(gf_group)) return orig_rdmult;
+  if (!is_frame_tpl_eligible(gf_group, gf_group->index)) return orig_rdmult;
 
   if (cpi->gf_group.index >= MAX_TPL_FRAME_IDX) return orig_rdmult;
 
@@ -818,7 +818,7 @@ void av1_get_tpl_stats_sb(AV1_COMP *cpi, BLOCK_SIZE bsize, int mi_row,
   // TPL store unit size is not the same as the motion estimation unit size.
   // Here always use motion estimation size to avoid getting repetitive inter/
   // intra cost.
-  const BLOCK_SIZE tpl_bsize = convert_length_to_bsize(MC_FLOW_BSIZE_1D);
+  const BLOCK_SIZE tpl_bsize = convert_length_to_bsize(tpl_data->tpl_bsize_1d);
   const int step = mi_size_wide[tpl_bsize];
   assert(mi_size_wide[tpl_bsize] == mi_size_high[tpl_bsize]);
 
@@ -876,7 +876,7 @@ int av1_get_q_for_deltaq_objective(AV1_COMP *const cpi, BLOCK_SIZE bsize,
 
   if (tpl_frame->is_valid == 0) return base_qindex;
 
-  if (!is_frame_tpl_eligible(gf_group)) return base_qindex;
+  if (!is_frame_tpl_eligible(gf_group, gf_group->index)) return base_qindex;
 
   if (cpi->gf_group.index >= MAX_TPL_FRAME_IDX) return base_qindex;
 
@@ -1272,6 +1272,7 @@ void av1_set_cost_upd_freq(AV1_COMP *cpi, ThreadData *td,
   MACROBLOCKD *const xd = &x->e_mbd;
 
   switch (cpi->oxcf.cost_upd_freq.coeff) {
+    case COST_UPD_OFF: break;
     case COST_UPD_TILE:  // Tile level
       if (mi_row != tile_info->mi_row_start) break;
       AOM_FALLTHROUGH_INTENDED;
@@ -1288,6 +1289,7 @@ void av1_set_cost_upd_freq(AV1_COMP *cpi, ThreadData *td,
   }
 
   switch (cpi->oxcf.cost_upd_freq.mode) {
+    case COST_UPD_OFF: break;
     case COST_UPD_TILE:  // Tile level
       if (mi_row != tile_info->mi_row_start) break;
       AOM_FALLTHROUGH_INTENDED;

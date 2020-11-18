@@ -18,17 +18,17 @@ class GrGLSLVertexGeoBuilder : public GrGLSLShaderBuilder {
 protected:
     GrGLSLVertexGeoBuilder(GrGLSLProgramBuilder* program) : INHERITED(program) {}
 
-    void emitNormalizedSkPosition(const char* devPos, const char* rtAdjustName,
+    void emitNormalizedSkPosition(const char* devPos,
                                   GrSLType devPosType = GrSLType::kFloat2_GrSLType) {
-        this->emitNormalizedSkPosition(&this->code(), devPos, rtAdjustName, devPosType);
+        this->emitNormalizedSkPosition(&this->code(), devPos, devPosType);
     }
 
-    void emitNormalizedSkPosition(SkString* out, const char* devPos, const char* rtAdjustName,
+    void emitNormalizedSkPosition(SkString* out, const char* devPos,
                                   GrSLType devPosType = GrSLType::kFloat2_GrSLType);
 
     friend class GrGLSLGeometryProcessor;
 
-    typedef GrGLSLShaderBuilder INHERITED;
+    using INHERITED = GrGLSLShaderBuilder;
 };
 
 
@@ -41,7 +41,7 @@ private:
 
     friend class GrGLProgramBuilder;
 
-    typedef GrGLSLVertexGeoBuilder INHERITED;
+    using INHERITED = GrGLSLVertexGeoBuilder;
 };
 
 
@@ -64,11 +64,10 @@ public:
     void configure(InputType, OutputType, int maxVertices, int numInvocations = 1);
     bool isConfigured() const { return fNumInvocations; }
 
-    void emitVertex(const char* devPos, const char* rtAdjustName,
-                    GrSLType devPosType = GrSLType::kFloat2_GrSLType) {
-        this->emitVertex(&this->code(), devPos, rtAdjustName, devPosType);
+    void emitVertex(const char* devPos, GrSLType devPosType = GrSLType::kFloat2_GrSLType) {
+        this->emitVertex(&this->code(), devPos, devPosType);
     }
-    void emitVertex(SkString* out, const char* devPos, const char* rtAdjustName,
+    void emitVertex(SkString* out, const char* devPos,
                     GrSLType devPosType = GrSLType::kFloat2_GrSLType);
 
     void endPrimitive();
@@ -80,7 +79,7 @@ private:
 
     friend class GrGLProgramBuilder;
 
-    typedef GrGLSLVertexGeoBuilder INHERITED;
+    using INHERITED = GrGLSLVertexGeoBuilder;
 };
 
 #endif

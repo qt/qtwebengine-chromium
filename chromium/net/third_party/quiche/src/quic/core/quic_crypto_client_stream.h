@@ -116,6 +116,10 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientStream
     // Returns true if early data (0-RTT) was accepted in the connection.
     virtual bool EarlyDataAccepted() const = 0;
 
+    // Returns the ssl_early_data_reason_t describing why 0-RTT was accepted or
+    // rejected.
+    virtual ssl_early_data_reason_t EarlyDataReason() const = 0;
+
     // Returns true if the client received an inchoate REJ during the handshake,
     // extending the handshake by one round trip. This only applies for QUIC
     // crypto handshakes. The equivalent feature in IETF QUIC is a Retry packet,
@@ -203,6 +207,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientStream
   int num_sent_client_hellos() const override;
   bool IsResumption() const override;
   bool EarlyDataAccepted() const override;
+  ssl_early_data_reason_t EarlyDataReason() const override;
   bool ReceivedInchoateReject() const override;
 
   int num_scup_messages_received() const override;

@@ -336,6 +336,8 @@ message GetTpmStatusReply {
   map<int32, bool> enrollment_preparations = 18;
   // Whether the device is locked to a single user mount.
   optional bool is_locked_to_single_user = 19;
+  // Whether the device has reset lock permissions.
+  optional bool has_reset_lock_permissions = 20;
 }
 
 message GetEndorsementInfoRequest {

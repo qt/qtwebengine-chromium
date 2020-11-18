@@ -41,9 +41,14 @@
 #include "src/ast/type/array_type.h"
 #include "src/ast/type/bool_type.h"
 #include "src/ast/type/f32_type.h"
+#include "src/ast/type/i32_type.h"
 #include "src/ast/type/matrix_type.h"
 #include "src/ast/type/pointer_type.h"
+#include "src/ast/type/sampled_texture_type.h"
+#include "src/ast/type/storage_texture_type.h"
 #include "src/ast/type/struct_type.h"
+#include "src/ast/type/texture_type.h"
+#include "src/ast/type/u32_type.h"
 #include "src/ast/type/vector_type.h"
 #include "src/ast/type_constructor_expression.h"
 #include "src/ast/unary_op_expression.h"
@@ -177,6 +182,18 @@ void TypeDeterminer::set_referenced_from_function_if_needed(
 }
 
 bool TypeDeterminer::Determine() {
+  for (auto& iter : ctx_.type_mgr().types()) {
+    auto& type = iter.second;
+    if (!type->IsTexture() || !type->AsTexture()->IsStorage()) {
+      continue;
+    }
+    if (!DetermineStorageTextureSubtype(type->AsTexture()->AsStorage())) {
+      set_error(Source{}, "unable to determine storage texture subtype for: " +
+                              type->type_name());
+      return false;
+    }
+  }
+
   for (const auto& var : mod_->global_variables()) {
     variable_stack_.set_global(var->name(), var.get());
 
@@ -424,7 +441,9 @@ bool TypeDeterminer::DetermineArrayAccessor(
     ret = ctx_.type_mgr().Get(
         std::make_unique<ast::type::VectorType>(m->type(), m->rows()));
   } else {
-    set_error(expr->source(), "invalid parent type in array accessor");
+    set_error(expr->source(), "invalid parent type (" +
+                                  parent_type->type_name() +
+                                  ") in array accessor");
     return false;
   }
 
@@ -511,10 +530,20 @@ bool TypeDeterminer::DetermineCall(ast::CallExpression* expr) {
       return false;
     }
   }
+
+  if (!expr->func()->result_type()) {
+    auto func_name = expr->func()->AsIdentifier()->name();
+    set_error(
+        expr->source(),
+        "v-0005: function must be declared before use: '" + func_name + "'");
+    return false;
+  }
+
   expr->set_result_type(expr->func()->result_type());
   return true;
 }
 
+// TODO(tommek): Update names to camel case
 bool TypeDeterminer::DetermineIntrinsic(const std::string& name,
                                         ast::CallExpression* expr) {
   if (ast::intrinsic::IsDerivative(name)) {
@@ -557,6 +586,46 @@ bool TypeDeterminer::DetermineIntrinsic(const std::string& name,
     } else {
       expr->func()->set_result_type(bool_type);
     }
+    return true;
+  }
+  if (ast::intrinsic::IsTextureOperationIntrinsic(name)) {
+    uint32_t num_of_params =
+        (name == "texture_load" || name == "texture_sample") ? 3 : 4;
+    if (expr->params().size() != num_of_params) {
+      set_error(expr->source(),
+                "incorrect number of parameters for " + name + ", got " +
+                    std::to_string(expr->params().size()) + " and expected " +
+                    std::to_string(num_of_params));
+      return false;
+    }
+
+    if (name == "texture_sample_compare") {
+      expr->func()->set_result_type(
+          ctx_.type_mgr().Get(std::make_unique<ast::type::F32Type>()));
+      return true;
+    }
+
+    auto& texture_param = expr->params()[0];
+    if (!DetermineResultType(texture_param.get())) {
+      return false;
+    }
+    if (!texture_param->result_type()->UnwrapPtrIfNeeded()->IsTexture()) {
+      set_error(expr->source(), "invalid first argument for " + name);
+      return false;
+    }
+    ast::type::TextureType* texture =
+        texture_param->result_type()->UnwrapPtrIfNeeded()->AsTexture();
+
+    if (!texture->IsStorage() && !texture->IsSampled()) {
+      set_error(expr->source(), "invalid texture for " + name);
+      return false;
+    }
+
+    expr->func()->set_result_type(
+        ctx_.type_mgr().Get(std::make_unique<ast::type::VectorType>(
+            texture->IsStorage() ? texture->AsStorage()->type()
+                                 : texture->AsSampled()->type(),
+            4)));
     return true;
   }
   if (name == "dot") {
@@ -813,6 +882,67 @@ bool TypeDeterminer::DetermineUnaryOp(ast::UnaryOpExpression* expr) {
   return true;
 }
 
+bool TypeDeterminer::DetermineStorageTextureSubtype(
+    ast::type::StorageTextureType* tex) {
+  if (tex->type() != nullptr) {
+    return true;
+  }
+
+  switch (tex->image_format()) {
+    case ast::type::ImageFormat::kR8Unorm:
+    case ast::type::ImageFormat::kRg8Unorm:
+    case ast::type::ImageFormat::kRgba8Unorm:
+    case ast::type::ImageFormat::kRgba8UnormSrgb:
+    case ast::type::ImageFormat::kBgra8Unorm:
+    case ast::type::ImageFormat::kBgra8UnormSrgb:
+    case ast::type::ImageFormat::kRgb10A2Unorm:
+    case ast::type::ImageFormat::kR8Uint:
+    case ast::type::ImageFormat::kR16Uint:
+    case ast::type::ImageFormat::kRg8Uint:
+    case ast::type::ImageFormat::kR32Uint:
+    case ast::type::ImageFormat::kRg16Uint:
+    case ast::type::ImageFormat::kRgba8Uint:
+    case ast::type::ImageFormat::kRg32Uint:
+    case ast::type::ImageFormat::kRgba16Uint:
+    case ast::type::ImageFormat::kRgba32Uint: {
+      tex->set_type(
+          ctx_.type_mgr().Get(std::make_unique<ast::type::U32Type>()));
+      return true;
+    }
+
+    case ast::type::ImageFormat::kR8Snorm:
+    case ast::type::ImageFormat::kRg8Snorm:
+    case ast::type::ImageFormat::kRgba8Snorm:
+    case ast::type::ImageFormat::kR8Sint:
+    case ast::type::ImageFormat::kR16Sint:
+    case ast::type::ImageFormat::kRg8Sint:
+    case ast::type::ImageFormat::kR32Sint:
+    case ast::type::ImageFormat::kRg16Sint:
+    case ast::type::ImageFormat::kRgba8Sint:
+    case ast::type::ImageFormat::kRg32Sint:
+    case ast::type::ImageFormat::kRgba16Sint:
+    case ast::type::ImageFormat::kRgba32Sint: {
+      tex->set_type(
+          ctx_.type_mgr().Get(std::make_unique<ast::type::I32Type>()));
+      return true;
+    }
+
+    case ast::type::ImageFormat::kR16Float:
+    case ast::type::ImageFormat::kR32Float:
+    case ast::type::ImageFormat::kRg16Float:
+    case ast::type::ImageFormat::kRg11B10Float:
+    case ast::type::ImageFormat::kRg32Float:
+    case ast::type::ImageFormat::kRgba16Float:
+    case ast::type::ImageFormat::kRgba32Float: {
+      tex->set_type(
+          ctx_.type_mgr().Get(std::make_unique<ast::type::F32Type>()));
+      return true;
+    }
+  }
+
+  return false;
+}
+
 ast::type::Type* TypeDeterminer::GetImportData(
     const Source& source,
     const std::string& path,
@@ -820,6 +950,7 @@ ast::type::Type* TypeDeterminer::GetImportData(
     const ast::ExpressionList& params,
     uint32_t* id) {
   if (path != "GLSL.std.450") {
+    set_error(source, "unknown import path " + path);
     return nullptr;
   }
 

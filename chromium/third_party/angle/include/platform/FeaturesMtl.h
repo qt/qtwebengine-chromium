@@ -30,6 +30,12 @@ struct FeaturesMtl : FeatureSetBase
     Feature hasNonUniformDispatch = {
         "has_non_uniform_dispatch", FeatureCategory::MetalFeatures,
         "The renderer supports non uniform compute shader dispatch's group size", &members};
+
+    // fragment stencil output support
+    Feature hasStencilOutput = {"has_shader_stencil_output", FeatureCategory::MetalFeatures,
+                                "The renderer supports stencil output from fragment shader",
+                                &members};
+
     // Texture swizzle support:
     Feature hasTextureSwizzle = {"has_texture_swizzle", FeatureCategory::MetalFeatures,
                                  "The renderer supports texture swizzle", &members};
@@ -53,6 +59,10 @@ struct FeaturesMtl : FeatureSetBase
     Feature allowMultisampleStoreAndResolve = {
         "allow_msaa_store_and_resolve", FeatureCategory::MetalFeatures,
         "The renderer supports MSAA store and resolve in the same pass", &members};
+
+    Feature allowGenMultipleMipsPerPass = {
+        "gen_multiple_mips_per_pass", FeatureCategory::MetalFeatures,
+        "The renderer supports generating multiple mipmaps per pass", &members};
 };
 
 }  // namespace angle

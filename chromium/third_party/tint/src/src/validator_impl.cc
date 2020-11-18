@@ -13,6 +13,10 @@
 // limitations under the License.
 
 #include "src/validator_impl.h"
+#include "src/ast/call_statement.h"
+#include "src/ast/function.h"
+#include "src/ast/intrinsic.h"
+#include "src/ast/type/void_type.h"
 #include "src/ast/variable_decl_statement.h"
 
 namespace tint {
@@ -30,13 +34,9 @@ bool ValidatorImpl::Validate(const ast::Module* module) {
   if (!module) {
     return false;
   }
-  for (const auto& var : module->global_variables()) {
-    if (variable_stack_.has(var->name())) {
-      set_error(var->source(),
-                "v-0011: redeclared global identifier '" + var->name() + "'");
-      return false;
-    }
-    variable_stack_.set_global(var->name(), var.get());
+  function_stack_.push_scope();
+  if (!ValidateGlobalVariables(module->global_variables())) {
+    return false;
   }
   if (!CheckImports(module)) {
     return false;
@@ -44,14 +44,99 @@ bool ValidatorImpl::Validate(const ast::Module* module) {
   if (!ValidateFunctions(module->functions())) {
     return false;
   }
+  // ValidateEntryPoints must be done after populating function_stack_
+  if (!ValidateEntryPoints(module->entry_points())) {
+    return false;
+  }
+
+  function_stack_.pop_scope();
+
+  return true;
+}
+
+bool ValidatorImpl::ValidateGlobalVariables(
+    const ast::VariableList& global_vars) {
+  for (const auto& var : global_vars) {
+    if (variable_stack_.has(var->name())) {
+      set_error(var->source(),
+                "v-0011: redeclared global identifier '" + var->name() + "'");
+      return false;
+    }
+    if (var->storage_class() == ast::StorageClass::kNone) {
+      set_error(var->source(),
+                "v-0022: global variables must have a storage class");
+      return false;
+    }
+    variable_stack_.set_global(var->name(), var.get());
+  }
+  return true;
+}
+
+bool ValidatorImpl::ValidateEntryPoints(const ast::EntryPointList& eps) {
+  ScopeStack<ast::PipelineStage> entry_point_map;
+  entry_point_map.push_scope();
+  for (const auto& ep : eps) {
+    auto* ep_ptr = ep.get();
+    if (!function_stack_.has(ep_ptr->function_name())) {
+      set_error(ep_ptr->source(),
+                "v-0019: Function used in entry point does not exist: '" +
+                    ep_ptr->function_name() + "'");
+      return false;
+    }
+
+    ast::Function* func;
+    function_stack_.get(ep_ptr->function_name(), &func);
+    if (!func->return_type()->IsVoid()) {
+      set_error(ep_ptr->source(),
+                "v-0024: Entry point function must return void: '" +
+                    ep_ptr->function_name() + "'");
+      return false;
+    }
+
+    if (func->params().size() != 0) {
+      set_error(ep_ptr->source(),
+                "v-0023: Entry point function must accept no parameters: '" +
+                    ep_ptr->function_name() + "'");
+      return false;
+    }
+
+    ast::PipelineStage pipeline_stage;
+    if (entry_point_map.get(ep_ptr->name(), &pipeline_stage)) {
+      if (pipeline_stage == ep_ptr->stage()) {
+        set_error(ep_ptr->source(),
+                  "v-0020: The pair of <entry point name, pipeline stage> must "
+                  "be unique");
+        return false;
+      }
+    }
+    entry_point_map.set(ep_ptr->name(), ep_ptr->stage());
+  }
+
+  if (eps.empty()) {
+    set_error(Source{0, 0},
+              "v-0003: At least one of vertex, fragment or compute shader must "
+              "be present");
+    return false;
+  }
+  entry_point_map.pop_scope();
   return true;
 }
 
 bool ValidatorImpl::ValidateFunctions(const ast::FunctionList& funcs) {
   for (const auto& func : funcs) {
-    if (!ValidateFunction(func.get())) {
+    auto* func_ptr = func.get();
+    if (function_stack_.has(func_ptr->name())) {
+      set_error(func_ptr->source(), "v-0016: function names must be unique '" +
+                                        func_ptr->name() + "'");
       return false;
     }
+
+    function_stack_.set(func_ptr->name(), func_ptr);
+    current_function_ = func_ptr;
+    if (!ValidateFunction(func_ptr)) {
+      return false;
+    }
+    current_function_ = nullptr;
   }
   return true;
 }
@@ -65,8 +150,35 @@ bool ValidatorImpl::ValidateFunction(const ast::Function* func) {
   if (!ValidateStatements(func->body())) {
     return false;
   }
-
   variable_stack_.pop_scope();
+
+  if (!func->get_last_statement() || !func->get_last_statement()->IsReturn()) {
+    set_error(func->source(),
+              "v-0002: function must end with a return statement");
+    return false;
+  }
+  return true;
+}
+
+bool ValidatorImpl::ValidateReturnStatement(const ast::ReturnStatement* ret) {
+  // TODO(sarahM0): update this when this issue resolves:
+  // https://github.com/gpuweb/gpuweb/issues/996
+  ast::type::Type* func_type = current_function_->return_type();
+
+  ast::type::VoidType void_type;
+  auto* ret_type = ret->has_value()
+                       ? ret->value()->result_type()->UnwrapAliasPtrAlias()
+                       : &void_type;
+
+  if (func_type->type_name() != ret_type->type_name()) {
+    set_error(ret->source(),
+              "v-000y: return statement type must match its function return "
+              "type, returned '" +
+                  ret_type->type_name() + "', expected '" +
+                  func_type->type_name() + "'");
+    return false;
+  }
+
   return true;
 }
 
@@ -104,11 +216,58 @@ bool ValidatorImpl::ValidateStatement(const ast::Statement* stmt) {
     return false;
   }
   if (stmt->IsVariableDecl()) {
-    return ValidateDeclStatement(stmt->AsVariableDecl());
+    auto* v = stmt->AsVariableDecl();
+    bool constructor_valid =
+        v->variable()->has_constructor()
+            ? ValidateExpression(v->variable()->constructor())
+            : true;
+
+    return constructor_valid && ValidateDeclStatement(stmt->AsVariableDecl());
   }
   if (stmt->IsAssign()) {
     return ValidateAssign(stmt->AsAssign());
   }
+  if (stmt->IsReturn()) {
+    return ValidateReturnStatement(stmt->AsReturn());
+  }
+  if (stmt->IsCall()) {
+    return ValidateCallExpr(stmt->AsCall()->expr());
+  }
+  return true;
+}
+
+bool ValidatorImpl::ValidateCallExpr(const ast::CallExpression* expr) {
+  if (!expr) {
+    // TODO(sarahM0): Here and other Validate.*: figure out whether return false
+    // or true
+    return false;
+  }
+
+  if (expr->func()->IsIdentifier()) {
+    auto* ident = expr->func()->AsIdentifier();
+    auto func_name = ident->name();
+    if (ident->has_path()) {
+      // TODO(sarahM0): validate import statements
+    } else if (ast::intrinsic::IsIntrinsic(ident->name())) {
+      // TODO(sarahM0): validate intrinsics - tied with type-determiner
+    } else {
+      if (!function_stack_.has(func_name)) {
+        set_error(expr->source(),
+                  "v-0005: function must be declared before use: '" +
+                      func_name + "'");
+        return false;
+      }
+      if (func_name == current_function_->name()) {
+        set_error(expr->source(),
+                  "v-0004: recursion is not allowed: '" + func_name + "'");
+        return false;
+      }
+    }
+  } else {
+    set_error(expr->source(), "Invalid function call expression");
+    return false;
+  }
+
   return true;
 }
 
@@ -174,6 +333,9 @@ bool ValidatorImpl::ValidateExpression(const ast::Expression* expr) {
     return ValidateIdentifier(expr->AsIdentifier());
   }
 
+  if (expr->IsCall()) {
+    return ValidateCallExpr(expr->AsCall());
+  }
   return true;
 }
 

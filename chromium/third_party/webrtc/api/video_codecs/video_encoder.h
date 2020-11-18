@@ -30,7 +30,6 @@
 
 namespace webrtc {
 
-class RTPFragmentationHeader;
 // TODO(pbos): Expose these through a public (root) header or change these APIs.
 struct CodecSpecificInfo;
 
@@ -73,16 +72,9 @@ class RTC_EXPORT EncodedImageCallback {
   };
 
   // Callback function which is called when an image has been encoded.
-  // Deprecated, use OnEncodedImage below instead, see bugs.webrtc.org/6471
-  virtual Result OnEncodedImage(const EncodedImage& encoded_image,
-                                const CodecSpecificInfo* codec_specific_info,
-                                const RTPFragmentationHeader* fragmentation);
-
-  // Callback function which is called when an image has been encoded.
-  // TODO(bugs.webrtc.org/6471): Make pure virtual
-  // when OnEncodedImage above is deleted.
-  virtual Result OnEncodedImage(const EncodedImage& encoded_image,
-                                const CodecSpecificInfo* codec_specific_info);
+  virtual Result OnEncodedImage(
+      const EncodedImage& encoded_image,
+      const CodecSpecificInfo* codec_specific_info) = 0;
 
   virtual void OnDroppedFrame(DropReason reason) {}
 };
@@ -181,6 +173,15 @@ class RTC_EXPORT VideoEncoder {
     // Note that this field is unrelated to any horizontal or vertical stride
     // requirements the encoder has on the incoming video frame buffers.
     int requested_resolution_alignment;
+
+    // Same as above but if true, each simulcast layer should also be divisible
+    // by |requested_resolution_alignment|.
+    // Note that scale factors |scale_resolution_down_by| may be adjusted so a
+    // common multiple is not too large to avoid largely cropped frames and
+    // possibly with an aspect ratio far from the original.
+    // Warning: large values of scale_resolution_down_by could be changed
+    // considerably, especially if |requested_resolution_alignment| is large.
+    bool apply_alignment_to_all_simulcast_layers;
 
     // If true, encoder supports working with a native handle (e.g. texture
     // handle for hw codecs) rather than requiring a raw I420 buffer.

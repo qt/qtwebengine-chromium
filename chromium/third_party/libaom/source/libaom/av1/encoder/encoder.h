@@ -133,9 +133,10 @@ enum {
 } UENUM1BYTE(DELTAQ_MODE);
 
 enum {
-  RESIZE_NONE = 0,    // No frame resizing allowed.
-  RESIZE_FIXED = 1,   // All frames are coded at the specified scale.
-  RESIZE_RANDOM = 2,  // All frames are coded at a random scale.
+  RESIZE_NONE = 0,     // No frame resizing allowed.
+  RESIZE_FIXED = 1,    // All frames are coded at the specified scale.
+  RESIZE_RANDOM = 2,   // All frames are coded at a random scale.
+  RESIZE_DYNAMIC = 3,  // Frames coded at lower scale based on rate control.
   RESIZE_MODES
 } UENUM1BYTE(RESIZE_MODE);
 
@@ -150,9 +151,7 @@ enum {
   SS_CFG_SRC = 0,
   SS_CFG_LOOKAHEAD = 1,
   SS_CFG_FPF = 2,
-  SS_CFG_TPL_SRC = 3,
-  SS_CFG_TPL_LOOKAHEAD = 4,
-  SS_CFG_TOTAL = 5
+  SS_CFG_TOTAL = 3
 } UENUM1BYTE(SS_CFG_OFFSET);
 
 enum {
@@ -496,6 +495,23 @@ typedef struct {
    * constant quality.
    */
   enum aom_rc_mode mode;
+  /*!
+   * Indicates the bias (expressed on a scale of 0 to 100) for determining
+   * target size for the current frame. The value 0 indicates the optimal CBR
+   * mode value should be used, and 100 indicates the optimal VBR mode value
+   * should be used.
+   */
+  int vbrbias;
+  /*!
+   * Indicates the minimum bitrate to be used for a single frame as a percentage
+   * of the target bitrate.
+   */
+  int vbrmin_section;
+  /*!
+   * Indicates the maximum bitrate to be used for a single frame as a percentage
+   * of the target bitrate.
+   */
+  int vbrmax_section;
 } RateControlCfg;
 
 /*!\cond */
@@ -585,38 +601,6 @@ typedef struct {
   // Indicates if timing info for each frame is present.
   bool timing_info_present;
 } DecoderModelCfg;
-
-/*!\endcond */
-/*!
- * \brief Two pass specific rate control configuration parameters
- */
-typedef struct {
-  // TWO PASS DATARATE CONTROL OPTIONS.
-  /*!
-   * stats_in buffer contains all of the stats packets produced in the first
-   * pass, concatenated.
-   */
-  aom_fixed_buf_t stats_in;
-
-  /*!
-   * Indicates the bias (expressed on a scale of 0 to 100) for determining
-   * target size for the current frame. The value 0 indicates the optimal CBR
-   * mode value should be used, and 100 indicates the optimal VBR mode value
-   * should be used.
-   */
-  int vbrbias;
-  /*!
-   * Indicates the minimum bitrate to be used for a single GOP as a percentage
-   *  of the target bitrate.
-   */
-  int vbrmin_section;
-  /*!
-   * Indicates the maximum bitrate to be used for a single GOP as a percentage
-   * of the target bitrate.
-   */
-  int vbrmax_section;
-} TwoPassCfg;
-/*!\cond */
 
 typedef struct {
   // Indicates the update frequency for coeff costs.
@@ -835,9 +819,10 @@ typedef struct AV1EncoderConfig {
 
   /*!\endcond */
   /*!
-   * Two pass specific rate control configuration parameters
+   * stats_in buffer contains all of the stats packets produced in the first
+   * pass, concatenated.
    */
-  TwoPassCfg two_pass_cfg;
+  aom_fixed_buf_t twopass_stats_in;
   /*!\cond */
 
   // Configuration related to encoder toolsets.
@@ -1704,7 +1689,7 @@ typedef struct {
    * motion search. search_site_cfg[SS_CFG_LOOKAHEAD]: Used in intraBC, temporal
    * filter search_site_cfg[SS_CFG_FPF]: Used during first pass and lookahead
    */
-  search_site_config search_site_cfg[SS_CFG_TOTAL];
+  search_site_config search_site_cfg[SS_CFG_TOTAL][NUM_DISTINCT_SEARCH_METHODS];
 } MotionVectorSearchParams;
 
 /*!
@@ -2248,10 +2233,10 @@ typedef struct AV1_COMP {
 
   unsigned int mode_chosen_counts[MAX_MODES];
 
-  int count;
-  uint64_t total_sq_error;
-  uint64_t total_samples;
-  ImageStat psnr;
+  int count[2];
+  uint64_t total_sq_error[2];
+  uint64_t total_samples[2];
+  ImageStat psnr[2];
 
   double total_blockiness;
   double worst_blockiness;
@@ -2409,7 +2394,19 @@ typedef struct AV1_COMP {
   InterpSearchFlags interp_search_flags;
 
   /*!
-   * Set for screen contents or when screen content tools are enabled.
+   * Turn on screen content tools flag.
+   * Note that some videos are not screen content videos, but
+   * screen content tools could also improve coding efficiency.
+   * For example, videos with large flat regions, gaming videos that look
+   * like natural videos.
+   */
+  int use_screen_content_tools;
+
+  /*!
+   * A flag to indicate "real" screen content videos.
+   * For example, screen shares, screen editing.
+   * This type is true indicates |use_screen_content_tools| must be true.
+   * In addition, rate control strategy is adjusted when this flag is true.
    */
   int is_screen_content_type;
 
@@ -2536,15 +2533,17 @@ typedef struct AV1_COMP {
   int frames_left;
 } AV1_COMP;
 
-/*!\cond */
-
+/*!
+ * \brief Input frames and last input frame
+ */
 typedef struct EncodeFrameInput {
+  /*!\cond */
   YV12_BUFFER_CONFIG *source;
   YV12_BUFFER_CONFIG *last_source;
   int64_t ts_duration;
+  /*!\endcond */
 } EncodeFrameInput;
 
-/*!\endcond */
 /*!
  * \brief contains per-frame encoding parameters decided upon by
  * av1_encode_strategy() and passed down to av1_encode().
@@ -2723,12 +2722,14 @@ int av1_convert_sect5obus_to_annexb(uint8_t *buffer, size_t *input_size);
 // This function estimates whether to use screen content tools, by counting
 // the portion of blocks that have few luma colors.
 // Modifies:
-//   cpi->commom.allow_screen_content_tools
-//   cpi->common.allow_intrabc
+//   cpi->commom.features.allow_screen_content_tools
+//   cpi->common.features.allow_intrabc
+//   cpi->use_screen_content_tools
+//   cpi->is_screen_content_type
 // However, the estimation is not accurate and may misclassify videos.
 // A slower but more accurate approach that determines whether to use screen
-// content tools is employed later. See determine_sc_tools_with_encoding().
-void av1_set_screen_content_options(const struct AV1_COMP *cpi,
+// content tools is employed later. See av1_determine_sc_tools_with_encoding().
+void av1_set_screen_content_options(struct AV1_COMP *cpi,
                                     FeatureFlags *features);
 
 // TODO(jingning): Move these functions as primitive members for the new cpi
@@ -2867,11 +2868,20 @@ static INLINE int is_stat_consumption_stage(const AV1_COMP *const cpi) {
            cpi->lap_enabled));
 }
 
-// Check if the current stage has statistics
+/*!\endcond */
+/*!\brief Check if the current stage has statistics
+ *
+ *\ingroup two_pass_algo
+ *
+ * \param[in]    cpi     Top - level encoder instance structure
+ *
+ * \return 0 if no stats for current stage else 1
+ */
 static INLINE int has_no_stats_stage(const AV1_COMP *const cpi) {
   assert(IMPLIES(!cpi->lap_enabled, cpi->compressor_stage == ENCODE_STAGE));
   return (cpi->oxcf.pass == 0 && !cpi->lap_enabled);
 }
+/*!\cond */
 
 // Function return size of frame stats buffer
 static INLINE int get_stats_buf_size(int num_lap_buffer, int num_lag_buffer) {
@@ -3088,10 +3098,19 @@ aom_fixed_buf_t *av1_get_global_headers(AV1_COMP *cpi);
 #define MAX_GFUBOOST_FACTOR 10.0
 #define MIN_GFUBOOST_FACTOR 4.0
 
-static INLINE int is_frame_tpl_eligible(const GF_GROUP *const gf_group) {
-  const FRAME_UPDATE_TYPE update_type = gf_group->update_type[gf_group->index];
+static INLINE int is_frame_tpl_eligible(const GF_GROUP *const gf_group,
+                                        uint8_t index) {
+  const FRAME_UPDATE_TYPE update_type = gf_group->update_type[index];
   return update_type == ARF_UPDATE || update_type == GF_UPDATE ||
          update_type == KF_UPDATE;
+}
+
+static INLINE int is_frame_eligible_for_ref_pruning(const GF_GROUP *gf_group,
+                                                    int selective_ref_frame,
+                                                    int prune_ref_frames,
+                                                    int gf_index) {
+  return (selective_ref_frame > 0) && (prune_ref_frames > 0) &&
+         !is_frame_tpl_eligible(gf_group, gf_index);
 }
 
 // Get update type of the current frame.

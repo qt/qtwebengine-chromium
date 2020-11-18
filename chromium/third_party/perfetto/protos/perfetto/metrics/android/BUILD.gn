@@ -15,10 +15,15 @@
 import("../../../../gn/proto_library.gni")
 
 perfetto_proto_library("@TYPE@") {
+  proto_generators = [
+    "lite",
+    "source_set",
+  ]
   sources = [
     "batt_metric.proto",
     "cpu_metric.proto",
     "display_metrics.proto",
+    "gpu_metric.proto",
     "heap_profile_callsites.proto",
     "hwui_metric.proto",
     "ion_metric.proto",
@@ -35,7 +40,6 @@ perfetto_proto_library("@TYPE@") {
     "surfaceflinger.proto",
     "task_names.proto",
     "thread_time_in_state_metric.proto",
-    "unmapped_java_symbols.proto",
     "unsymbolized_frames.proto",
   ]
 }

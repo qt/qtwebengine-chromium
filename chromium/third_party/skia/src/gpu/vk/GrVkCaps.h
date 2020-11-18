@@ -162,6 +162,8 @@ public:
 
     uint32_t maxInputAttachmentDescriptors() const { return fMaxInputAttachmentDescriptors; }
 
+    bool preferCachedCpuMemory() const { return fPreferCachedCpuMemory; }
+
     bool mustInvalidatePrimaryCmdBufferStateAfterClearAttachments() const {
         return fMustInvalidatePrimaryCmdBufferStateAfterClearAttachments;
     }
@@ -200,6 +202,8 @@ public:
                             const GrBackendFormat&) const override;
 
     GrProgramDesc makeDesc(GrRenderTarget*, const GrProgramInfo&) const override;
+
+    GrInternalSurfaceFlags getExtraSurfaceFlagsForDeferredRT() const override;
 
 #if GR_TEST_UTILS
     std::vector<TestFormatColorTypeCombination> getTestingCombinations() const override;
@@ -243,6 +247,7 @@ private:
 
     GrSwizzle onGetReadSwizzle(const GrBackendFormat&, GrColorType) const override;
 
+    GrDstSampleType onGetDstSampleTypeForProxy(const GrRenderTargetProxy*) const override;
 
     // ColorTypeInfo for a specific format
     struct ColorTypeInfo {
@@ -340,7 +345,9 @@ private:
 
     uint32_t fMaxInputAttachmentDescriptors = 0;
 
-    typedef GrCaps INHERITED;
+    bool fPreferCachedCpuMemory = true;
+
+    using INHERITED = GrCaps;
 };
 
 #endif

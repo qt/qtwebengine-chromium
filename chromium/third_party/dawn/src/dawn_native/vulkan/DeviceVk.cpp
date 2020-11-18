@@ -95,7 +95,7 @@ namespace dawn_native { namespace vulkan {
         // the decision if it is not applicable.
         ApplyDepth24PlusS8Toggle();
 
-        return DeviceBase::Initialize(new Queue(this));
+        return DeviceBase::Initialize(Queue::Create(this));
     }
 
     Device::~Device() {
@@ -161,7 +161,7 @@ namespace dawn_native { namespace vulkan {
     MaybeError Device::TickImpl() {
         RecycleCompletedCommands();
 
-        Serial completedSerial = GetCompletedCommandSerial();
+        ExecutionSerial completedSerial = GetCompletedCommandSerial();
 
         for (Ref<BindGroupLayout>& bgl :
              mBindGroupLayoutsPendingDeallocation.IterateUpTo(completedSerial)) {
@@ -254,7 +254,7 @@ namespace dawn_native { namespace vulkan {
         }
 
         IncrementLastSubmittedCommandSerial();
-        Serial lastSubmittedSerial = GetLastSubmittedCommandSerial();
+        ExecutionSerial lastSubmittedSerial = GetLastSubmittedCommandSerial();
         mFencesInFlight.emplace(fence, lastSubmittedSerial);
 
         CommandPoolAndBuffer submittedCommands = {mRecordingContext.commandPool,
@@ -498,11 +498,11 @@ namespace dawn_native { namespace vulkan {
         return fence;
     }
 
-    Serial Device::CheckAndUpdateCompletedSerials() {
-        Serial fenceSerial = 0;
+    ExecutionSerial Device::CheckAndUpdateCompletedSerials() {
+        ExecutionSerial fenceSerial(0);
         while (!mFencesInFlight.empty()) {
             VkFence fence = mFencesInFlight.front().first;
-            Serial tentativeSerial = mFencesInFlight.front().second;
+            ExecutionSerial tentativeSerial = mFencesInFlight.front().second;
             VkResult result = VkResult::WrapUnsafe(
                 INJECT_ERROR_OR_RUN(fn.GetFenceStatus(mVkDevice, fence), VK_ERROR_DEVICE_LOST));
             // TODO: Handle DeviceLost error.
@@ -621,7 +621,7 @@ namespace dawn_native { namespace vulkan {
         return {};
     }
 
-    MaybeError Device::CopyFromStagingToTexture(StagingBufferBase* source,
+    MaybeError Device::CopyFromStagingToTexture(const StagingBufferBase* source,
                                                 const TextureDataLayout& src,
                                                 TextureCopy* dst,
                                                 const Extent3D& copySizePixels) {
@@ -658,7 +658,7 @@ namespace dawn_native { namespace vulkan {
         return {};
     }
 
-    MaybeError Device::ImportExternalImage(const ExternalImageDescriptor* descriptor,
+    MaybeError Device::ImportExternalImage(const ExternalImageDescriptorVk* descriptor,
                                            ExternalMemoryHandle memoryHandle,
                                            VkImage image,
                                            const std::vector<ExternalSemaphoreHandle>& waitHandles,
@@ -702,22 +702,35 @@ namespace dawn_native { namespace vulkan {
         return {};
     }
 
-    MaybeError Device::SignalAndExportExternalTexture(Texture* texture,
-                                                      ExternalSemaphoreHandle* outHandle) {
-        DAWN_TRY(ValidateObject(texture));
+    bool Device::SignalAndExportExternalTexture(
+        Texture* texture,
+        VkImageLayout desiredLayout,
+        ExternalImageExportInfoVk* info,
+        std::vector<ExternalSemaphoreHandle>* semaphoreHandles) {
+        return !ConsumedError([&]() -> MaybeError {
+            DAWN_TRY(ValidateObject(texture));
 
-        VkSemaphore outSignalSemaphore;
-        DAWN_TRY(texture->SignalAndDestroy(&outSignalSemaphore));
+            VkSemaphore signalSemaphore;
+            VkImageLayout releasedOldLayout;
+            VkImageLayout releasedNewLayout;
+            DAWN_TRY(texture->ExportExternalTexture(desiredLayout, &signalSemaphore,
+                                                    &releasedOldLayout, &releasedNewLayout));
 
-        // This has to happen right after SignalAndDestroy, since the semaphore will be
-        // deleted when the fenced deleter runs after the queue submission
-        DAWN_TRY_ASSIGN(*outHandle, mExternalSemaphoreService->ExportSemaphore(outSignalSemaphore));
+            ExternalSemaphoreHandle semaphoreHandle;
+            DAWN_TRY_ASSIGN(semaphoreHandle,
+                            mExternalSemaphoreService->ExportSemaphore(signalSemaphore));
+            semaphoreHandles->push_back(semaphoreHandle);
+            info->releasedOldLayout = releasedOldLayout;
+            info->releasedNewLayout = releasedNewLayout;
+            info->isInitialized =
+                texture->IsSubresourceContentInitialized(texture->GetAllSubresources());
 
-        return {};
+            return {};
+        }());
     }
 
     TextureBase* Device::CreateTextureWrappingVulkanImage(
-        const ExternalImageDescriptor* descriptor,
+        const ExternalImageDescriptorVk* descriptor,
         ExternalMemoryHandle memoryHandle,
         const std::vector<ExternalSemaphoreHandle>& waitHandles) {
         const TextureDescriptor* textureDescriptor =
@@ -811,7 +824,7 @@ namespace dawn_native { namespace vulkan {
         // Make sure all fences are complete by explicitly waiting on them all
         while (!mFencesInFlight.empty()) {
             VkFence fence = mFencesInFlight.front().first;
-            Serial fenceSerial = mFencesInFlight.front().second;
+            ExecutionSerial fenceSerial = mFencesInFlight.front().second;
             ASSERT(fenceSerial > GetCompletedCommandSerial());
 
             VkResult result = VkResult::WrapUnsafe(VK_TIMEOUT);
@@ -906,7 +919,7 @@ namespace dawn_native { namespace vulkan {
         // force all operations to look as if they were completed, and delete all objects before
         // destroying the Deleter and vkDevice.
         ASSERT(mDeleter != nullptr);
-        mDeleter->Tick(std::numeric_limits<Serial>::max());
+        mDeleter->Tick(kMaxExecutionSerial);
         mDeleter = nullptr;
 
         // VkQueues are destroyed when the VkDevice is destroyed
@@ -915,6 +928,14 @@ namespace dawn_native { namespace vulkan {
         ASSERT(mVkDevice != VK_NULL_HANDLE);
         fn.DestroyDevice(mVkDevice, nullptr);
         mVkDevice = VK_NULL_HANDLE;
+    }
+
+    uint32_t Device::GetOptimalBytesPerRowAlignment() const {
+        return mDeviceInfo.properties.limits.optimalBufferCopyRowPitchAlignment;
+    }
+
+    uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
+        return mDeviceInfo.properties.limits.optimalBufferCopyOffsetAlignment;
     }
 
 }}  // namespace dawn_native::vulkan

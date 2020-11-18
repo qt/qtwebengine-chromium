@@ -59,7 +59,10 @@ std::vector<MergedCallsite> GetMergedCallsites(TraceStorage* storage,
 
   if (!symbol_set_id) {
     StringId frame_name = frames_tbl.name()[frame_idx];
-    return {{frame_name, mapping_name, base::nullopt}};
+    base::Optional<StringId> deobfuscated_name =
+        frames_tbl.deobfuscated_name()[frame_idx];
+    return {{deobfuscated_name ? *deobfuscated_name : frame_name, mapping_name,
+             base::nullopt}};
   }
 
   std::vector<MergedCallsite> result;
@@ -106,11 +109,14 @@ std::unique_ptr<tables::ExperimentalFlamegraphNodesTable> BuildNativeFlamegraph(
     auto opt_parent_id = callsites_tbl.parent_id()[i];
     if (opt_parent_id) {
       parent_idx = callsites_tbl.id().IndexOf(*opt_parent_id);
-      parent_idx = callsite_to_merged_callsite[*parent_idx];
+      // Make sure what we index into has been populated already.
       PERFETTO_CHECK(*parent_idx < i);
+      parent_idx = callsite_to_merged_callsite[*parent_idx];
     }
 
     auto callsites = GetMergedCallsites(storage, i);
+    // Loop below needs to run at least once for parent_idx to get updated.
+    PERFETTO_CHECK(!callsites.empty());
     for (MergedCallsite& merged_callsite : callsites) {
       merged_callsite.parent_idx = parent_idx;
       auto it = merged_callsites_to_table_idx.find(merged_callsite);
@@ -137,6 +143,7 @@ std::unique_ptr<tables::ExperimentalFlamegraphNodesTable> BuildNativeFlamegraph(
       }
       parent_idx = it->second;
     }
+
     PERFETTO_CHECK(parent_idx);
     callsite_to_merged_callsite[i] = *parent_idx;
   }

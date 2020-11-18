@@ -175,7 +175,7 @@ TEST_F(FPDFTextEmbedderTest, Text) {
   EXPECT_NEAR(20.847, left, 0.001);
   EXPECT_NEAR(135.167, right, 0.001);
   EXPECT_NEAR(96.655, bottom, 0.001);
-  EXPECT_NEAR(116.000, top, 0.001);
+  EXPECT_NEAR(111.648, top, 0.001);
 
   // Test out of range indicies set outputs to (0.0, 0.0, 0.0, 0.0).
   left = -1.0;
@@ -1600,6 +1600,62 @@ TEST_F(FPDFTextEmbedderTest, CharBox) {
     ASSERT_TRUE(FPDFText_GetLooseCharBox(text_page.get(), 8, &rect));
     EXPECT_FLOAT_EQ(kExpectedLooseCharWidth, rect.right - rect.left);
     EXPECT_FLOAT_EQ(kExpectedLooseCharHeight, rect.top - rect.bottom);
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFTextEmbedderTest, SmallType3Glyph) {
+  ASSERT_TRUE(OpenDocument("bug_1591.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFTextPage text_page(FPDFText_LoadPage(page));
+    ASSERT_TRUE(text_page);
+    ASSERT_EQ(5, FPDFText_CountChars(text_page.get()));
+
+    EXPECT_EQ(49u, FPDFText_GetUnicode(text_page.get(), 0));
+    EXPECT_EQ(32u, FPDFText_GetUnicode(text_page.get(), 1));
+    EXPECT_EQ(50u, FPDFText_GetUnicode(text_page.get(), 2));
+    EXPECT_EQ(32u, FPDFText_GetUnicode(text_page.get(), 3));
+    EXPECT_EQ(49u, FPDFText_GetUnicode(text_page.get(), 4));
+
+    // Check the character box size.
+    double left;
+    double right;
+    double bottom;
+    double top;
+    ASSERT_TRUE(
+        FPDFText_GetCharBox(text_page.get(), 0, &left, &right, &bottom, &top));
+    EXPECT_DOUBLE_EQ(63.439998626708984, left);
+    EXPECT_DOUBLE_EQ(65.360000610351562, right);
+    EXPECT_DOUBLE_EQ(50.0, bottom);
+    EXPECT_DOUBLE_EQ(61.520000457763672, top);
+    ASSERT_TRUE(
+        FPDFText_GetCharBox(text_page.get(), 1, &left, &right, &bottom, &top));
+    EXPECT_DOUBLE_EQ(62.007999420166016, left);
+    EXPECT_DOUBLE_EQ(62.007999420166016, right);
+    EXPECT_DOUBLE_EQ(50.0, bottom);
+    EXPECT_DOUBLE_EQ(50.0, top);
+    ASSERT_TRUE(
+        FPDFText_GetCharBox(text_page.get(), 2, &left, &right, &bottom, &top));
+    EXPECT_DOUBLE_EQ(86.0, left);
+    EXPECT_DOUBLE_EQ(88.400001525878906, right);
+    EXPECT_DOUBLE_EQ(50.0, bottom);
+    EXPECT_DOUBLE_EQ(50.240001678466797, top);
+    ASSERT_TRUE(
+        FPDFText_GetCharBox(text_page.get(), 3, &left, &right, &bottom, &top));
+    EXPECT_DOUBLE_EQ(86.010002136230469, left);
+    EXPECT_DOUBLE_EQ(86.010002136230469, right);
+    EXPECT_DOUBLE_EQ(50.0, bottom);
+    EXPECT_DOUBLE_EQ(50.0, top);
+    ASSERT_TRUE(
+        FPDFText_GetCharBox(text_page.get(), 4, &left, &right, &bottom, &top));
+    EXPECT_DOUBLE_EQ(99.44000244140625, left);
+    EXPECT_DOUBLE_EQ(101.36000061035156, right);
+    EXPECT_DOUBLE_EQ(50.0, bottom);
+    EXPECT_DOUBLE_EQ(61.520000457763672, top);
   }
 
   UnloadPage(page);

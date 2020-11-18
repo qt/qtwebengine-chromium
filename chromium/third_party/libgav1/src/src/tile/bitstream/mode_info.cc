@@ -510,9 +510,9 @@ void Tile::ReadMotionVector(const Block& block, int index) {
   BlockParameters& bp = *block.bp;
   const int context =
       static_cast<int>(block.bp->prediction_parameters->use_intra_block_copy);
-  const auto mv_joint = static_cast<MvJointType>(
-      reader_.ReadSymbol(symbol_decoder_context_.mv_joint_cdf[context],
-                         static_cast<int>(kNumMvJointTypes)));
+  const auto mv_joint =
+      static_cast<MvJointType>(reader_.ReadSymbol<kNumMvJointTypes>(
+          symbol_decoder_context_.mv_joint_cdf[context]));
   if (mv_joint == kMvJointTypeHorizontalZeroVerticalNonZero ||
       mv_joint == kMvJointTypeNonZero) {
     bp.mv.mv[index].mv[0] = ReadMotionVectorComponent(block, 0);

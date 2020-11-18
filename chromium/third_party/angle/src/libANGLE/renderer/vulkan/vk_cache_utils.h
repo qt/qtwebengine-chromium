@@ -18,8 +18,41 @@
 namespace rx
 {
 
+// Some descriptor set and pipeline layout constants.
+//
+// The set/binding assignment is done as following:
+//
+// - Set 0 contains the ANGLE driver uniforms at binding 0.  Note that driver uniforms are updated
+//   only under rare circumstances, such as viewport or depth range change.  However, there is only
+//   one binding in this set.  This set is placed before Set 1 containing transform feedback
+//   buffers, so that switching between xfb and non-xfb programs doesn't require rebinding this set.
+//   Otherwise, as the layout of Set 1 changes (due to addition and removal of xfb buffers), and all
+//   subsequent sets need to be rebound (due to Vulkan pipeline layout validation rules), we would
+//   have needed to invalidateGraphicsDriverUniforms().
+// - Set 1 contains uniform blocks created to encompass default uniforms.  1 binding is used per
+//   pipeline stage.  Additionally, transform feedback buffers are bound from binding 2 and up.
+// - Set 2 contains all textures.
+// - Set 3 contains all other shader resources, such as uniform and storage blocks, atomic counter
+//   buffers and images.
+
+// ANGLE driver uniforms set index (binding is always 0):
+enum DescriptorSetIndex : uint32_t
+{
+    // All internal shaders assume there is only one descriptor set, indexed at 0
+    InternalShader = 0,
+
+    DriverUniforms = 0,  // ANGLE driver uniforms set index
+    UniformsAndXfb,      // Uniforms set index
+    Texture,             // Textures set index
+    ShaderResource,      // Other shader resources set index
+
+    InvalidEnum,
+    EnumCount = InvalidEnum,
+};
+
 namespace vk
 {
+class DynamicDescriptorPool;
 class ImageHelper;
 enum class ImageLayout;
 
@@ -74,6 +107,19 @@ inline void UpdateAccess(ResourceAccess *oldAccess, ResourceAccess newAccess)
     }
 }
 
+// There can be a maximum of IMPLEMENTATION_MAX_DRAW_BUFFERS color and resolve attachments, plus one
+// depth/stencil attachment and one depth/stencil resolve attachment.
+constexpr size_t kMaxFramebufferAttachments = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS * 2 + 2;
+template <typename T>
+using FramebufferAttachmentArray = std::array<T, kMaxFramebufferAttachments>;
+template <typename T>
+using FramebufferAttachmentsVector = angle::FixedVector<T, kMaxFramebufferAttachments>;
+
+constexpr size_t kMaxFramebufferNonResolveAttachments = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1;
+template <typename T>
+using FramebufferNonResolveAttachmentArray = std::array<T, kMaxFramebufferNonResolveAttachments>;
+using FramebufferNonResolveAttachmentMask  = angle::BitSet16<kMaxFramebufferNonResolveAttachments>;
+
 class alignas(4) RenderPassDesc final
 {
   public:
@@ -89,8 +135,21 @@ class alignas(4) RenderPassDesc final
     // The caller must pack the depth/stencil attachment last, which is packed right after the color
     // attachments (including gaps), i.e. with an index starting from |colorAttachmentRange()|.
     void packDepthStencilAttachment(angle::FormatID angleFormatID, ResourceAccess access);
+    void updateDepthStencilAccess(ResourceAccess access);
     // Indicate that a color attachment should have a corresponding resolve attachment.
     void packColorResolveAttachment(size_t colorIndexGL);
+    // Remove the resolve attachment.  Used when optimizing blit through resolve attachment to
+    // temporarily pack a resolve attachment and then remove it.
+    void removeColorResolveAttachment(size_t colorIndexGL);
+    // Indicate that a color attachment should take its data from the resolve attachment initially.
+    void packColorUnresolveAttachment(size_t colorIndexGL);
+    void removeColorUnresolveAttachment(size_t colorIndexGL);
+    // Indicate that a depth/stencil attachment should have a corresponding resolve attachment.
+    void packDepthStencilResolveAttachment(bool resolveDepth, bool resolveStencil);
+    // Indicate that a depth/stencil attachment should take its data from the resolve attachment
+    // initially.
+    void packDepthStencilUnresolveAttachment(bool unresolveDepth, bool unresolveStencil);
+    void removeDepthStencilUnresolveAttachment();
 
     size_t hash() const;
 
@@ -108,6 +167,38 @@ class alignas(4) RenderPassDesc final
     {
         return mColorResolveAttachmentMask.test(colorIndexGL);
     }
+    gl::DrawBufferMask getColorUnresolveAttachmentMask() const
+    {
+        return mColorUnresolveAttachmentMask;
+    }
+    bool hasColorUnresolveAttachment(size_t colorIndexGL) const
+    {
+        return mColorUnresolveAttachmentMask.test(colorIndexGL);
+    }
+    bool hasDepthStencilResolveAttachment() const
+    {
+        return (mAttachmentFormats.back() & (kResolveDepthFlag | kResolveStencilFlag)) != 0;
+    }
+    bool hasDepthResolveAttachment() const
+    {
+        return (mAttachmentFormats.back() & kResolveDepthFlag) != 0;
+    }
+    bool hasStencilResolveAttachment() const
+    {
+        return (mAttachmentFormats.back() & kResolveStencilFlag) != 0;
+    }
+    bool hasDepthStencilUnresolveAttachment() const
+    {
+        return (mAttachmentFormats.back() & (kUnresolveDepthFlag | kUnresolveStencilFlag)) != 0;
+    }
+    bool hasDepthUnresolveAttachment() const
+    {
+        return (mAttachmentFormats.back() & kUnresolveDepthFlag) != 0;
+    }
+    bool hasStencilUnresolveAttachment() const
+    {
+        return (mAttachmentFormats.back() & kUnresolveStencilFlag) != 0;
+    }
 
     // Get the number of attachments in the Vulkan render pass, i.e. after removing disabled
     // color attachments.
@@ -120,7 +211,13 @@ class alignas(4) RenderPassDesc final
     angle::FormatID operator[](size_t index) const
     {
         ASSERT(index < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1);
-        return static_cast<angle::FormatID>(mAttachmentFormats[index]);
+
+        uint8_t format = mAttachmentFormats[index];
+        if (index >= depthStencilAttachmentIndex())
+        {
+            format &= kDepthStencilFormatStorageMask;
+        }
+        return static_cast<angle::FormatID>(format);
     }
 
   private:
@@ -140,7 +237,14 @@ class alignas(4) RenderPassDesc final
     // currently not well supported, so ANGLE always takes a fallback path for them.  When a resolve
     // path is implemented for depth/stencil attachments, another bit must be made free
     // (mAttachmentFormats is one element too large, so there are 8 bits there to take).
-    angle::BitSet8<gl::IMPLEMENTATION_MAX_DRAW_BUFFERS> mColorResolveAttachmentMask;
+    gl::DrawBufferMask mColorResolveAttachmentMask;
+
+    // Whether each color attachment with a corresponding resolve attachment should be initialized
+    // with said resolve attachment in an initial subpass.  This is an optimization to avoid
+    // loadOp=LOAD on the implicit multisampled image used with multisampled-render-to-texture
+    // render targets.  This operation is referred to as "unresolve".
+    gl::DrawBufferMask mColorUnresolveAttachmentMask;
+
     // Color attachment formats are stored with their GL attachment indices.  The depth/stencil
     // attachment formats follow the last enabled color attachment.  When creating a render pass,
     // the disabled attachments are removed and the resulting attachments are packed.
@@ -163,7 +267,20 @@ class alignas(4) RenderPassDesc final
     //
     // The resolve attachments are packed after the non-resolve attachments.  They use the same
     // formats, so they are not specified in this array.
-    gl::AttachmentArray<uint8_t> mAttachmentFormats;
+    //
+    // The depth/stencil angle::FormatID values are in the range [1, 7], and therefore require only
+    // 3 bits to be stored.  As a result, the upper 5 bits of mAttachmentFormats.back() is free to
+    // use for other purposes.
+    FramebufferNonResolveAttachmentArray<uint8_t> mAttachmentFormats;
+
+    // Depth/stencil format is stored in 3 bits.
+    static constexpr uint8_t kDepthStencilFormatStorageMask = 0x7;
+
+    // Flags stored in the upper 5 bits of mAttachmentFormats.back().
+    static constexpr uint8_t kResolveDepthFlag     = 0x80;
+    static constexpr uint8_t kResolveStencilFlag   = 0x40;
+    static constexpr uint8_t kUnresolveDepthFlag   = 0x20;
+    static constexpr uint8_t kUnresolveStencilFlag = 0x10;
 };
 
 bool operator==(const RenderPassDesc &lhs, const RenderPassDesc &rhs);
@@ -187,6 +304,8 @@ struct PackedAttachmentOpsDesc final
 
 static_assert(sizeof(PackedAttachmentOpsDesc) == 2, "Size check failed");
 
+class PackedAttachmentIndex;
+
 class AttachmentOpsArray final
 {
   public:
@@ -195,18 +314,26 @@ class AttachmentOpsArray final
     AttachmentOpsArray(const AttachmentOpsArray &other);
     AttachmentOpsArray &operator=(const AttachmentOpsArray &other);
 
-    const PackedAttachmentOpsDesc &operator[](size_t index) const;
-    PackedAttachmentOpsDesc &operator[](size_t index);
+    const PackedAttachmentOpsDesc &operator[](PackedAttachmentIndex index) const;
+    PackedAttachmentOpsDesc &operator[](PackedAttachmentIndex index);
 
     // Initialize an attachment op with all load and store operations.
-    void initWithLoadStore(size_t index, ImageLayout initialLayout, ImageLayout finalLayout);
+    void initWithLoadStore(PackedAttachmentIndex index,
+                           ImageLayout initialLayout,
+                           ImageLayout finalLayout);
 
-    void setLayouts(size_t index, ImageLayout initialLayout, ImageLayout finalLayout);
-    void setOps(size_t index, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp);
-    void setStencilOps(size_t index, VkAttachmentLoadOp loadOp, VkAttachmentStoreOp storeOp);
+    void setLayouts(PackedAttachmentIndex index,
+                    ImageLayout initialLayout,
+                    ImageLayout finalLayout);
+    void setOps(PackedAttachmentIndex index,
+                VkAttachmentLoadOp loadOp,
+                VkAttachmentStoreOp storeOp);
+    void setStencilOps(PackedAttachmentIndex index,
+                       VkAttachmentLoadOp loadOp,
+                       VkAttachmentStoreOp storeOp);
 
-    void setClearOp(size_t index);
-    void setClearStencilOp(size_t index);
+    void setClearOp(PackedAttachmentIndex index);
+    void setClearStencilOp(PackedAttachmentIndex index);
 
     size_t hash() const;
 
@@ -223,8 +350,10 @@ struct PackedAttribDesc final
     uint8_t format;
     uint8_t divisor;
 
-    // Can only take 11 bits on NV.
-    uint16_t offset;
+    // Desktop drivers support
+    uint16_t offset : kAttributeOffsetMaxBits;
+
+    uint16_t compressed : 1;
 
     // Although technically stride can be any value in ES 2.0, in practice supporting stride
     // greater than MAX_USHORT should not be that helpful. Note that stride limits are
@@ -245,8 +374,11 @@ static_assert(kVertexInputAttributesSize == 96, "Size mismatch");
 
 struct RasterizationStateBits final
 {
-    uint32_t depthClampEnable : 4;
-    uint32_t rasterizationDiscardEnable : 4;
+    // Note: Currently only 2 subpasses possible, so there are 5 bits in subpass that can be
+    // repurposed.
+    uint32_t subpass : 6;
+    uint32_t depthClampEnable : 1;
+    uint32_t rasterizationDiscardEnable : 1;
     uint32_t polygonMode : 4;
     uint32_t cullMode : 4;
     uint32_t frontFace : 4;
@@ -429,6 +561,7 @@ class GraphicsPipelineDesc final
                            GLuint stride,
                            GLuint divisor,
                            angle::FormatID format,
+                           bool compressed,
                            GLuint relativeOffset);
 
     // Input assembly info
@@ -473,11 +606,13 @@ class GraphicsPipelineDesc final
     void updateBlendEquations(GraphicsPipelineTransitionBits *transition,
                               const gl::BlendState &blendState);
     void setColorWriteMask(VkColorComponentFlags colorComponentFlags,
-                           const gl::DrawBufferMask &alphaMask);
+                           const gl::DrawBufferMask &alphaMask,
+                           const gl::DrawBufferMask &enabledDrawBuffers);
     void setSingleColorWriteMask(uint32_t colorIndexGL, VkColorComponentFlags colorComponentFlags);
     void updateColorWriteMask(GraphicsPipelineTransitionBits *transition,
                               VkColorComponentFlags colorComponentFlags,
-                              const gl::DrawBufferMask &alphaMask);
+                              const gl::DrawBufferMask &alphaMask,
+                              const gl::DrawBufferMask &enabledDrawBuffers);
 
     // Depth/stencil states.
     void setDepthTestEnabled(bool enabled);
@@ -532,7 +667,13 @@ class GraphicsPipelineDesc final
     void setScissor(const VkRect2D &scissor);
     void updateScissor(GraphicsPipelineTransitionBits *transition, const VkRect2D &scissor);
 
+    // Subpass
+    void resetSubpass(GraphicsPipelineTransitionBits *transition);
+    void nextSubpass(GraphicsPipelineTransitionBits *transition);
+
   private:
+    void updateSubpass(GraphicsPipelineTransitionBits *transition, uint32_t subpass);
+
     VertexInputAttributes mVertexInputAttribs;
     RenderPassDesc mRenderPassDesc;
     PackedRasterizationAndMultisampleStateInfo mRasterizationAndMultisampleStateInfo;
@@ -611,7 +752,7 @@ struct PackedPushConstantRange
 };
 
 template <typename T>
-using DescriptorSetLayoutArray = std::array<T, kMaxDescriptorSetLayouts>;
+using DescriptorSetLayoutArray = std::array<T, static_cast<size_t>(DescriptorSetIndex::EnumCount)>;
 using DescriptorSetLayoutPointerArray =
     DescriptorSetLayoutArray<BindingPointer<DescriptorSetLayout>>;
 template <typename T>
@@ -628,7 +769,8 @@ class PipelineLayoutDesc final
     size_t hash() const;
     bool operator==(const PipelineLayoutDesc &other) const;
 
-    void updateDescriptorSetLayout(uint32_t setIndex, const DescriptorSetLayoutDesc &desc);
+    void updateDescriptorSetLayout(DescriptorSetIndex setIndex,
+                                   const DescriptorSetLayoutDesc &desc);
     void updatePushConstantRange(gl::ShaderType shaderType, uint32_t offset, uint32_t size);
 
     const PushConstantRangeArray<PackedPushConstantRange> &getPushConstantRanges() const;
@@ -657,13 +799,19 @@ class SamplerDesc final
 {
   public:
     SamplerDesc();
-    SamplerDesc(const gl::SamplerState &samplerState, bool stencilMode, uint64_t externalFormat);
+    SamplerDesc(const angle::FeaturesVk &featuresVk,
+                const gl::SamplerState &samplerState,
+                bool stencilMode,
+                uint64_t externalFormat);
     ~SamplerDesc();
 
     SamplerDesc(const SamplerDesc &other);
     SamplerDesc &operator=(const SamplerDesc &rhs);
 
-    void update(const gl::SamplerState &samplerState, bool stencilMode, uint64_t externalFormat);
+    void update(const angle::FeaturesVk &featuresVk,
+                const gl::SamplerState &samplerState,
+                bool stencilMode,
+                uint64_t externalFormat);
     void reset();
     angle::Result init(ContextVk *contextVk, vk::Sampler *sampler) const;
 
@@ -905,20 +1053,21 @@ class UniformsAndXfbDesc
     std::array<BufferSerial, kMaxBufferCount> mBufferSerials;
 };
 
-// There can be a maximum of IMPLEMENTATION_MAX_DRAW_BUFFERS color and resolve attachments, plus one
-// depth/stencil attachment.
-constexpr size_t kMaxFramebufferAttachments = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS * 2 + 1;
-template <typename T>
-using FramebufferAttachmentArray = std::array<T, kMaxFramebufferAttachments>;
-
 // In the FramebufferDesc object:
 //  - Depth/stencil serial is at index 0
 //  - Color serials are at indices [1:gl::IMPLEMENTATION_MAX_DRAW_BUFFERS]
-//  - Resolve attachments are at indices [gl::IMPLEMENTATION_MAX_DRAW_BUFFERS+1,
-//                                        gl::IMPLEMENTATION_MAX_DRAW_BUFFERS*2]
-constexpr size_t kFramebufferDescDepthStencilIndex  = 0;
-constexpr size_t kFramebufferDescColorIndexOffset   = 1;
-constexpr size_t kFramebufferDescResolveIndexOffset = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1;
+//  - Depth/stencil resolve attachment is at index gl::IMPLEMENTATION_MAX_DRAW_BUFFERS+1
+//  - Resolve attachments are at indices [gl::IMPLEMENTATION_MAX_DRAW_BUFFERS+2,
+//                                        gl::IMPLEMENTATION_MAX_DRAW_BUFFERS*2+1]
+constexpr size_t kFramebufferDescDepthStencilIndex = 0;
+constexpr size_t kFramebufferDescColorIndexOffset  = kFramebufferDescDepthStencilIndex + 1;
+constexpr size_t kFramebufferDescDepthStencilResolveIndexOffset =
+    kFramebufferDescColorIndexOffset + gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+constexpr size_t kFramebufferDescColorResolveIndexOffset =
+    kFramebufferDescDepthStencilResolveIndexOffset + 1;
+
+// Enable struct padding warnings for the code below since it is used in caches.
+ANGLE_ENABLE_STRUCT_PADDING_WARNINGS
 
 class FramebufferDesc
 {
@@ -931,8 +1080,9 @@ class FramebufferDesc
 
     void updateColor(uint32_t index, ImageViewSubresourceSerial serial);
     void updateColorResolve(uint32_t index, ImageViewSubresourceSerial serial);
+    void updateUnresolveMask(FramebufferNonResolveAttachmentMask unresolveMask);
     void updateDepthStencil(ImageViewSubresourceSerial serial);
-    void updateReadOnlyDepth(bool readOnlyDepth);
+    void updateDepthStencilResolve(ImageViewSubresourceSerial serial);
     size_t hash() const;
     void reset();
 
@@ -951,9 +1101,17 @@ class FramebufferDesc
 
     // Note: this is an exclusive index. If there is one index it will be "1".
     uint16_t mMaxIndex;
-    uint16_t mReadOnlyDepth;
+
+    // If the render pass contains an initial subpass to unresolve a number of attachments, the
+    // subpass description is derived from the following mask, specifying which attachments need
+    // to be unresolved.  Includes both color and depth/stencil attachments.
+    FramebufferNonResolveAttachmentMask mUnresolveAttachmentMask;
+
     FramebufferAttachmentArray<ImageViewSubresourceSerial> mSerials;
 };
+
+// Disable warnings about struct padding.
+ANGLE_DISABLE_STRUCT_PADDING_WARNINGS
 
 // The SamplerHelper allows a Sampler to be coupled with a serial.
 // Must be included before we declare SamplerCache.
@@ -1228,32 +1386,6 @@ class SamplerYcbcrConversionCache final : angle::NonCopyable
   private:
     std::unordered_map<uint64_t, vk::RefCountedSamplerYcbcrConversion> mPayload;
 };
-
-// Some descriptor set and pipeline layout constants.
-//
-// The set/binding assignment is done as following:
-//
-// - Set 0 contains the ANGLE driver uniforms at binding 0.  Note that driver uniforms are updated
-//   only under rare circumstances, such as viewport or depth range change.  However, there is only
-//   one binding in this set.  This set is placed before Set 1 containing transform feedback
-//   buffers, so that switching between xfb and non-xfb programs doesn't require rebinding this set.
-//   Otherwise, as the layout of Set 1 changes (due to addition and removal of xfb buffers), and all
-//   subsequent sets need to be rebound (due to Vulkan pipeline layout validation rules), we would
-//   have needed to invalidateGraphicsDriverUniforms().
-// - Set 1 contains uniform blocks created to encompass default uniforms.  1 binding is used per
-//   pipeline stage.  Additionally, transform feedback buffers are bound from binding 2 and up.
-// - Set 2 contains all textures.
-// - Set 3 contains all other shader resources, such as uniform and storage blocks, atomic counter
-//   buffers and images.
-
-// ANGLE driver uniforms set index (binding is always 0):
-constexpr uint32_t kDriverUniformsDescriptorSetIndex = 0;
-// Uniforms set index:
-constexpr uint32_t kUniformsAndXfbDescriptorSetIndex = 1;
-// Textures set index:
-constexpr uint32_t kTextureDescriptorSetIndex = 2;
-// Other shader resources set index:
-constexpr uint32_t kShaderResourceDescriptorSetIndex = 3;
 
 // Only 1 driver uniform binding is used.
 constexpr uint32_t kReservedDriverUniformBindingCount = 1;

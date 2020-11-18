@@ -123,6 +123,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
   void OnAckNeedsRetransmittableFrame() override;
   void SendPing() override;
   bool WillingAndAbleToWrite() const override;
+  std::string GetStreamsInfoForLogging() const override;
   void OnPathDegrading() override;
   void OnForwardProgressMadeAfterPathDegrading() override;
   bool AllowSelfAddressChange() const override;
@@ -231,13 +232,8 @@ class QUIC_EXPORT_PRIVATE QuicSession
   virtual void SendWindowUpdate(QuicStreamId id, QuicStreamOffset byte_offset);
 
   // Create and transmit a STOP_SENDING frame
-  virtual void SendStopSending(uint16_t code, QuicStreamId stream_id);
-
-  // Close stream |stream_id|. Whether sending RST_STREAM (and STOP_SENDING)
-  // depends on the sending and receiving states.
-  // TODO(b/136274541): Deprecate CloseStream, instead always use ResetStream to
-  // close a stream from session.
-  virtual void CloseStream(QuicStreamId stream_id);
+  virtual void SendStopSending(QuicRstStreamErrorCode code,
+                               QuicStreamId stream_id);
 
   // Called by stream |stream_id| when it gets closed.
   virtual void OnStreamClosed(QuicStreamId stream_id);
@@ -266,7 +262,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
   void DiscardOldEncryptionKey(EncryptionLevel level) override;
   void NeuterUnencryptedData() override;
   void NeuterHandshakeData() override;
-  void OnZeroRttRejected() override;
+  void OnZeroRttRejected(int reason) override;
   bool FillTransportParameters(TransportParameters* params) override;
   QuicErrorCode ProcessTransportParameters(const TransportParameters& params,
                                            bool is_resumption,
@@ -350,10 +346,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // TODO(b/136274541): rename to CloseZombieStreams.
   void OnStreamDoneWaitingForAcks(QuicStreamId id);
 
-  // TODO(b/136274541): Remove this once quic_remove_streams_waiting_for_acks is
-  // deprecated. Called when stream |id| is newly waiting for acks.
-  void OnStreamWaitingForAcks(QuicStreamId id);
-
   // Returns true if there is pending handshake data in the crypto stream.
   // TODO(ianswett): Make this private or remove.
   bool HasPendingHandshake() const;
@@ -372,9 +364,9 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // connection ID lengths do not change.
   QuicPacketLength GetGuaranteedLargestMessagePayload() const;
 
-  bool goaway_sent() const { return goaway_sent_; }
+  bool transport_goaway_sent() const { return transport_goaway_sent_; }
 
-  bool goaway_received() const { return goaway_received_; }
+  bool transport_goaway_received() const { return transport_goaway_received_; }
 
   // Returns the Google QUIC error code
   QuicErrorCode error() const { return on_closed_frame_.quic_error_code; }
@@ -499,8 +491,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
     return liveness_testing_in_progress_;
   }
 
-  bool remove_zombie_streams() const { return remove_zombie_streams_; }
-
  protected:
   using StreamMap = QuicHashMap<QuicStreamId, std::unique_ptr<QuicStream>>;
 
@@ -574,8 +564,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   ClosedStreams* closed_streams() { return &closed_streams_; }
 
-  const ZombieStreamMap& zombie_streams() const { return zombie_streams_; }
-
   void set_largest_peer_created_stream_id(
       QuicStreamId largest_peer_created_stream_id);
 
@@ -625,8 +613,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
   size_t num_zombie_streams() const { return num_zombie_streams_; }
 
   bool was_zero_rtt_rejected() const { return was_zero_rtt_rejected_; }
-
-  bool do_not_use_stream_map() const { return do_not_use_stream_map_; }
 
   size_t num_outgoing_draining_streams() const {
     return num_outgoing_draining_streams_;
@@ -759,9 +745,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
   QuicWriteBlockedList write_blocked_streams_;
 
   ClosedStreams closed_streams_;
-  // Streams which are closed, but need to be kept alive. Currently, the only
-  // reason is the stream's sent data (including FIN) does not get fully acked.
-  ZombieStreamMap zombie_streams_;
 
   QuicConfig config_;
 
@@ -771,11 +754,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // Map from StreamId to PendingStreams for peer-created unidirectional streams
   // which are waiting for the first byte of payload to arrive.
   PendingStreamMap pending_stream_map_;
-
-  // TODO(b/136274541): Remove this once quic_remove_streams_waiting_for_acks is
-  // deprecated. Set of stream ids that are waiting for acks excluding crypto
-  // stream id.
-  QuicHashSet<QuicStreamId> streams_waiting_for_acks_;
 
   // TODO(fayang): Consider moving LegacyQuicStreamIdManager into
   // UberQuicStreamIdManager.
@@ -810,11 +788,15 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // call stack of OnCanWrite.
   QuicStreamId currently_writing_stream_id_;
 
-  // Whether a GoAway has been sent.
-  bool goaway_sent_;
+  // Whether a transport layer GOAWAY frame has been sent.
+  // Such a frame only exists in Google QUIC, therefore |transport_goaway_sent_|
+  // is always false when using IETF QUIC.
+  bool transport_goaway_sent_;
 
-  // Whether a GoAway has been received.
-  bool goaway_received_;
+  // Whether a transport layer GOAWAY frame has been received.
+  // Such a frame only exists in Google QUIC, therefore
+  // |transport_goaway_received_| is always false when using IETF QUIC.
+  bool transport_goaway_received_;
 
   QuicControlFrameManager control_frame_manager_;
 
@@ -855,15 +837,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
   // This indicates a liveness testing is in progress, and push back the
   // creation of new outgoing bidirectional streams.
   bool liveness_testing_in_progress_;
-
-  // Latched value of flag quic_remove_streams_waiting_for_acks.
-  const bool remove_streams_waiting_for_acks_;
-
-  // Latched value of flag quic_do_not_use_stream_map.
-  const bool do_not_use_stream_map_;
-
-  // Latched value of flag quic_remove_zombie_streams.
-  const bool remove_zombie_streams_;
 };
 
 }  // namespace quic

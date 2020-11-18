@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2019 The ANGLE Project Authors. All rights reserved.
+// Copyright 2019 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -8,6 +8,7 @@
 
 #include "libANGLE/renderer/metal/DisplayMtl.h"
 
+#include "gpu_info_util/SystemInfo.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
@@ -70,6 +71,8 @@ angle::Result DisplayMtl::initializeImpl(egl::Display *display)
             return angle::Result::Stop;
         }
 
+        mMetalDeviceVendorId = mtl::GetDeviceVendorId(mMetalDevice);
+
         mCmdQueue.set([[mMetalDevice.get() newCommandQueue] ANGLE_MTL_AUTORELEASE]);
 
         mCapsInitialized = false;
@@ -99,6 +102,8 @@ void DisplayMtl::terminate()
     mDefaultShaders  = nil;
     mMetalDevice     = nil;
     mCapsInitialized = false;
+
+    mMetalDeviceVendorId = 0;
 
     if (mGlslangInitialized)
     {
@@ -516,21 +521,20 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.fragmentMediumpInt.setTwosComplementInt(32);
     mNativeCaps.fragmentLowpInt.setTwosComplementInt(32);
 
-    GLuint maxUniformVectors = mtl::kDefaultUniformsMaxSize / (sizeof(GLfloat) * 4);
+    GLuint maxDefaultUniformVectors = mtl::kDefaultUniformsMaxSize / (sizeof(GLfloat) * 4);
 
-    const GLuint maxUniformComponents = maxUniformVectors * 4;
+    const GLuint maxDefaultUniformComponents = maxDefaultUniformVectors * 4;
 
     // Uniforms are implemented using a uniform buffer, so the max number of uniforms we can
     // support is the max buffer range divided by the size of a single uniform (4X float).
-    mNativeCaps.maxVertexUniformVectors                              = maxUniformVectors;
-    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Vertex]   = maxUniformComponents;
-    mNativeCaps.maxFragmentUniformVectors                            = maxUniformVectors;
-    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Fragment] = maxUniformComponents;
+    mNativeCaps.maxVertexUniformVectors                              = maxDefaultUniformVectors;
+    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Vertex]   = maxDefaultUniformComponents;
+    mNativeCaps.maxFragmentUniformVectors                            = maxDefaultUniformVectors;
+    mNativeCaps.maxShaderUniformComponents[gl::ShaderType::Fragment] = maxDefaultUniformComponents;
 
-    // NOTE(hqle): support UBO (ES 3.0 feature)
-    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Vertex]   = 0;
-    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Fragment] = 0;
-    mNativeCaps.maxCombinedUniformBlocks                         = 0;
+    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Vertex]   = mtl::kMaxShaderUBOs;
+    mNativeCaps.maxShaderUniformBlocks[gl::ShaderType::Fragment] = mtl::kMaxShaderUBOs;
+    mNativeCaps.maxCombinedUniformBlocks                         = mtl::kMaxGLUBOBindings;
 
     // Note that we currently implement textures as combined image+samplers, so the limit is
     // the minimum of supported samplers and sampled images.
@@ -545,18 +549,20 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxCombinedShaderStorageBlocks                   = maxPerStageStorageBuffers;
 
     // Fill in additional limits for UBOs and SSBOs.
-    mNativeCaps.maxUniformBufferBindings     = 0;
-    mNativeCaps.maxUniformBlockSize          = 0;
-    mNativeCaps.uniformBufferOffsetAlignment = 0;
+    mNativeCaps.maxUniformBufferBindings = mNativeCaps.maxCombinedUniformBlocks;
+    mNativeCaps.maxUniformBlockSize      = mtl::kMaxUBOSize;  // Default according to GLES 3.0 spec.
+    mNativeCaps.uniformBufferOffsetAlignment = 1;
 
     mNativeCaps.maxShaderStorageBufferBindings     = 0;
     mNativeCaps.maxShaderStorageBlockSize          = 0;
     mNativeCaps.shaderStorageBufferOffsetAlignment = 0;
 
     // NOTE(hqle): support UBO
+    const uint32_t maxCombinedUniformComponents =
+        maxDefaultUniformComponents + mtl::kMaxUBOSize * mtl::kMaxShaderUBOs / 4;
     for (gl::ShaderType shaderType : gl::kAllGraphicsShaderTypes)
     {
-        mNativeCaps.maxCombinedShaderUniformComponents[shaderType] = maxUniformComponents;
+        mNativeCaps.maxCombinedShaderUniformComponents[shaderType] = maxCombinedUniformComponents;
     }
 
     mNativeCaps.maxCombinedShaderOutputResources = 0;
@@ -583,11 +589,11 @@ void DisplayMtl::initializeExtensions() const
     // Enable this for simple buffer readback testing, but some functionality is missing.
     // NOTE(hqle): Support full mapBufferRange extension.
     mNativeExtensions.mapBufferOES           = true;
-    mNativeExtensions.mapBufferRange         = false;
+    mNativeExtensions.mapBufferRange         = true;
     mNativeExtensions.textureStorage         = true;
-    mNativeExtensions.drawBuffers            = false;
+    mNativeExtensions.drawBuffers            = true;
     mNativeExtensions.fragDepth              = true;
-    mNativeExtensions.framebufferBlit        = false;
+    mNativeExtensions.framebufferBlit        = true;
     mNativeExtensions.framebufferMultisample = false;
     mNativeExtensions.copyTexture            = true;
     mNativeExtensions.copyCompressedTexture  = false;
@@ -622,8 +628,7 @@ void DisplayMtl::initializeExtensions() const
 
     mNativeExtensions.eglSyncOES = false;
 
-    // NOTE(hqle): support occlusion query
-    mNativeExtensions.occlusionQueryBoolean = false;
+    mNativeExtensions.occlusionQueryBoolean = true;
 
     mNativeExtensions.disjointTimerQuery          = false;
     mNativeExtensions.queryCounterBitsTimeElapsed = false;
@@ -634,7 +639,7 @@ void DisplayMtl::initializeExtensions() const
 
     mNativeExtensions.textureNPOTOES = true;
 
-    mNativeExtensions.texture3DOES = false;
+    mNativeExtensions.texture3DOES = true;
 
     mNativeExtensions.standardDerivativesOES = true;
 
@@ -642,6 +647,9 @@ void DisplayMtl::initializeExtensions() const
 
     // GL_APPLE_clip_distance
     mNativeExtensions.clipDistanceAPPLE = true;
+
+    // GL_NV_pixel_buffer_object
+    mNativeExtensions.pixelBufferObjectNV = true;
 }
 
 void DisplayMtl::initializeTextureCaps() const
@@ -662,7 +670,13 @@ void DisplayMtl::initializeTextureCaps() const
 
 void DisplayMtl::initializeFeatures()
 {
+    bool isMetal2_1 = false;
     bool isMetal2_2 = false;
+    if (ANGLE_APPLE_AVAILABLE_XCI(10.14, 13.0, 12.0))
+    {
+        isMetal2_1 = true;
+    }
+
     if (ANGLE_APPLE_AVAILABLE_XCI(10.15, 13.0, 13.0))
     {
         isMetal2_2 = true;
@@ -672,8 +686,10 @@ void DisplayMtl::initializeFeatures()
     mFeatures.hasBaseVertexInstancedDraw.enabled        = true;
     mFeatures.hasDepthTextureFiltering.enabled          = false;
     mFeatures.hasNonUniformDispatch.enabled             = true;
+    mFeatures.hasStencilOutput.enabled                  = false;
     mFeatures.hasTextureSwizzle.enabled                 = false;
     mFeatures.allowSeparatedDepthStencilBuffers.enabled = false;
+    mFeatures.allowGenMultipleMipsPerPass.enabled       = true;
 
     ANGLE_FEATURE_CONDITION((&mFeatures), hasDepthTextureFiltering,
                             TARGET_OS_OSX || TARGET_OS_MACCATALYST);
@@ -681,6 +697,11 @@ void DisplayMtl::initializeFeatures()
     ANGLE_FEATURE_CONDITION((&mFeatures), hasStencilAutoResolve, supportsEitherGPUFamily(5, 2));
     ANGLE_FEATURE_CONDITION((&mFeatures), allowMultisampleStoreAndResolve,
                             supportsEitherGPUFamily(3, 1));
+
+    // http://anglebug.com/4919
+    // Stencil blit shader is not compiled on Intel & NVIDIA, need investigation.
+    ANGLE_FEATURE_CONDITION((&mFeatures), hasStencilOutput,
+                            isMetal2_1 && !isIntel() && !isNVIDIA());
 
     ANGLE_FEATURE_CONDITION((&mFeatures), hasTextureSwizzle,
                             isMetal2_2 && supportsEitherGPUFamily(1, 2));
@@ -710,11 +731,27 @@ angle::Result DisplayMtl::initializeShaderLibrary()
     size_t compiled_shader_binary_len;
 
 #if !defined(NDEBUG)
-    compiled_shader_binary     = compiled_default_metallib_debug;
-    compiled_shader_binary_len = compiled_default_metallib_debug_len;
+    if (getFeatures().hasStencilOutput.enabled)
+    {
+        compiled_shader_binary     = compiled_default_metallib_2_1_debug;
+        compiled_shader_binary_len = compiled_default_metallib_2_1_debug_len;
+    }
+    else
+    {
+        compiled_shader_binary     = compiled_default_metallib_debug;
+        compiled_shader_binary_len = compiled_default_metallib_debug_len;
+    }
 #else
-    compiled_shader_binary     = compiled_default_metallib;
-    compiled_shader_binary_len = compiled_default_metallib_len;
+    if (getFeatures().hasStencilOutput.enabled)
+    {
+        compiled_shader_binary     = compiled_default_metallib_2_1;
+        compiled_shader_binary_len = compiled_default_metallib_2_1_len;
+    }
+    else
+    {
+        compiled_shader_binary     = compiled_default_metallib;
+        compiled_shader_binary_len = compiled_default_metallib_len;
+    }
 #endif
 
     mDefaultShaders = CreateShaderLibraryFromBinary(getMetalDevice(), compiled_shader_binary,
@@ -877,6 +914,21 @@ bool DisplayMtl::supportsMacGPUFamily(uint8_t macFamily) const
 bool DisplayMtl::supportsEitherGPUFamily(uint8_t iOSFamily, uint8_t macFamily) const
 {
     return supportsIOSGPUFamily(iOSFamily) || supportsMacGPUFamily(macFamily);
+}
+
+bool DisplayMtl::isAMD() const
+{
+    return angle::IsAMD(mMetalDeviceVendorId);
+}
+
+bool DisplayMtl::isIntel() const
+{
+    return angle::IsIntel(mMetalDeviceVendorId);
+}
+
+bool DisplayMtl::isNVIDIA() const
+{
+    return angle::IsNVIDIA(mMetalDeviceVendorId);
 }
 
 }  // namespace rx

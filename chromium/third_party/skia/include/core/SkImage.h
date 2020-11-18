@@ -25,12 +25,14 @@
 
 class SkData;
 class SkCanvas;
+class SkImage;
 class SkImageFilter;
 class SkImageGenerator;
 class SkMipmap;
 class SkPaint;
 class SkPicture;
 class SkSurface;
+class SkYUVAPixmaps;
 class GrBackendTexture;
 class GrContext;
 class GrDirectContext;
@@ -63,10 +65,20 @@ public:
     int countLevels() const;
     SkPixmap level(int index) const;
 
-    sk_sp<SkMipmap> detach();
+    /**
+     *  If these levels are compatible with src, return a new Image that combines src's base level
+     *  with these levels as mip levels. If not compatible, this returns nullptr.
+     */
+    sk_sp<SkImage> attachTo(const SkImage* src);
+
+    sk_sp<SkImage> attachTo(sk_sp<SkImage> src) {
+        return this->attachTo(src.get());
+    }
 
 private:
     sk_sp<SkMipmap> fMM;
+
+    friend class SkImage;
 };
 
 /** \class SkImage
@@ -500,10 +512,39 @@ public:
         @return                       created SkImage, or nullptr
     */
     static sk_sp<SkImage> MakeFromYUVAPixmaps(
-            GrContext* context, SkYUVColorSpace yuvColorSpace, const SkPixmap yuvaPixmaps[],
-            const SkYUVAIndex yuvaIndices[4], SkISize imageSize, GrSurfaceOrigin imageOrigin,
-            bool buildMips, bool limitToMaxTextureSize = false,
+            GrRecordingContext* context, SkYUVColorSpace yuvColorSpace,
+            const SkPixmap yuvaPixmaps[], const SkYUVAIndex yuvaIndices[4], SkISize imageSize,
+            GrSurfaceOrigin imageOrigin, bool buildMips, bool limitToMaxTextureSize = false,
             sk_sp<SkColorSpace> imageColorSpace = nullptr);
+
+    /** Creates SkImage from SkYUVAPixmaps.
+
+        The image will remain planar with each plane converted to a texture using the passed
+        GrRecordingContext.
+
+        SkYUVAPixmaps has a SkYUVAInfo which specifies the transformation from YUV to RGB.
+        The SkColorSpace of the resulting RGB values is specified by imageColorSpace. This will
+        be the SkColorSpace reported by the image and when drawn the RGB values will be converted
+        from this space into the destination space (if the destination is tagged).
+
+        Currently, this is only supported using the GPU backend and will fail if context is nullptr.
+
+        SkYUVAPixmaps does not need to remain valid after this returns.
+
+        @param context                GPU context
+        @param pixmaps                The planes as pixmaps with supported SkYUVAInfo that
+                                      specifies conversion to RGB.
+        @param buildMips              create internal YUVA textures as mip map if kYes. This is
+                                      silently ignored if the context does not support mip maps.
+        @param limitToMaxTextureSize  downscale image to GPU maximum texture size, if necessary
+        @param imageColorSpace        range of colors of the resulting image; may be nullptr
+        @return                       created SkImage, or nullptr
+    */
+    static sk_sp<SkImage> MakeFromYUVAPixmaps(GrRecordingContext* context,
+                                              const SkYUVAPixmaps& pixmaps,
+                                              GrMipMapped buildMips = GrMipmapped::kNo,
+                                              bool limitToMaxTextureSize = false,
+                                              sk_sp<SkColorSpace> imageColorSpace = nullptr);
 
     /** To be deprecated.
     */
@@ -900,15 +941,21 @@ public:
         If cachingHint is kAllow_CachingHint, pixels may be retained locally.
         If cachingHint is kDisallow_CachingHint, pixels are not added to the local cache.
 
+        @param context      the GrDirectContext in play, if it exists
         @param dstInfo      destination width, height, SkColorType, SkAlphaType, SkColorSpace
         @param dstPixels    destination pixel storage
         @param dstRowBytes  destination row length
         @param srcX         column index whose absolute value is less than width()
         @param srcY         row index whose absolute value is less than height()
+        @param cachingHint  whether the pixels should be cached locally
         @return             true if pixels are copied to dstPixels
     */
-    bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                    int srcX, int srcY, CachingHint cachingHint = kAllow_CachingHint) const;
+    bool readPixels(GrDirectContext* context,
+                    const SkImageInfo& dstInfo,
+                    void* dstPixels,
+                    size_t dstRowBytes,
+                    int srcX, int srcY,
+                    CachingHint cachingHint = kAllow_CachingHint) const;
 
     /** Copies a SkRect of pixels from SkImage to dst. Copy starts at (srcX, srcY), and
         does not exceed SkImage (width(), height()).
@@ -934,13 +981,26 @@ public:
         If cachingHint is kAllow_CachingHint, pixels may be retained locally.
         If cachingHint is kDisallow_CachingHint, pixels are not added to the local cache.
 
+        @param context      the GrDirectContext in play, if it exists
         @param dst          destination SkPixmap: SkImageInfo, pixels, row bytes
         @param srcX         column index whose absolute value is less than width()
         @param srcY         row index whose absolute value is less than height()
+        @param cachingHint  whether the pixels should be cached locallyZ
         @return             true if pixels are copied to dst
     */
+    bool readPixels(GrDirectContext* context,
+                    const SkPixmap& dst,
+                    int srcX,
+                    int srcY,
+                    CachingHint cachingHint = kAllow_CachingHint) const;
+
+#ifndef SK_IMAGE_READ_PIXELS_DISABLE_LEGACY_API
+    /** Deprecated. Use the variants that accept a GrDirectContext. */
+    bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
+                    int srcX, int srcY, CachingHint cachingHint = kAllow_CachingHint) const;
     bool readPixels(const SkPixmap& dst, int srcX, int srcY,
                     CachingHint cachingHint = kAllow_CachingHint) const;
+#endif
 
     /** The result from asyncRescaleAndReadPixels() or asyncRescaleAndReadPixelsYUV420(). */
     class AsyncReadResult {
@@ -1148,12 +1208,9 @@ public:
 
     /**
      *  Returns an image with the same "base" pixels as the this image, but with mipmap levels
-     *  as well. If this image already has mipmap levels, they will be replaced with new ones.
-     *
-     *  If data == nullptr, the mipmap levels are computed automatically.
-     *  If data != nullptr, then the caller has provided the data for each level.
+     *  automatically generated and attached.
      */
-    sk_sp<SkImage> withMipmaps(sk_sp<SkMipmap> data) const;
+    sk_sp<SkImage> withDefaultMipmaps() const;
 
     /** Returns SkImage backed by GPU texture associated with context. Returned SkImage is
         compatible with SkSurface created with dstColorSpace. The returned SkImage respects
@@ -1341,11 +1398,14 @@ public:
 private:
     SkImage(const SkImageInfo& info, uint32_t uniqueID);
     friend class SkImage_Base;
+    friend class SkMipmapBuilder;
 
     SkImageInfo     fInfo;
     const uint32_t  fUniqueID;
 
-    typedef SkRefCnt INHERITED;
+    sk_sp<SkImage> withMipmaps(sk_sp<SkMipmap>) const;
+
+    using INHERITED = SkRefCnt;
 };
 
 #endif

@@ -21,7 +21,6 @@
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fgas/crt/cfgas_decimal.h"
-#include "xfa/fgas/crt/locale_iface.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
 #include "xfa/fxfa/fm2js/cxfa_fmparser.h"
 #include "xfa/fxfa/fm2js/cxfa_fmtojavascriptdepth.h"
@@ -30,6 +29,7 @@
 #include "xfa/fxfa/parser/cxfa_node.h"
 #include "xfa/fxfa/parser/cxfa_thisproxy.h"
 #include "xfa/fxfa/parser/cxfa_timezoneprovider.h"
+#include "xfa/fxfa/parser/gced_locale_iface.h"
 #include "xfa/fxfa/parser/xfa_utils.h"
 
 using pdfium::fxjse::kClassTag;
@@ -411,9 +411,9 @@ CFXJSE_FormCalcContext* ToFormCalcContext(CFXJSE_HostObject* pHostObj) {
   return pHostObj ? pHostObj->AsFormCalcContext() : nullptr;
 }
 
-LocaleIface* LocaleFromString(CXFA_Document* pDoc,
-                              CXFA_LocaleMgr* pMgr,
-                              ByteStringView bsLocale) {
+GCedLocaleIface* LocaleFromString(CXFA_Document* pDoc,
+                                  CXFA_LocaleMgr* pMgr,
+                                  ByteStringView bsLocale) {
   if (!bsLocale.IsEmpty())
     return pMgr->GetLocaleByName(WideString::FromUTF8(bsLocale));
 
@@ -425,21 +425,21 @@ WideString FormatFromString(LocaleIface* pLocale, ByteStringView bsFormat) {
   if (!bsFormat.IsEmpty())
     return WideString::FromUTF8(bsFormat);
 
-  return pLocale->GetDatePattern(FX_LOCALEDATETIMESUBCATEGORY_Default);
+  return pLocale->GetDatePattern(LocaleIface::DateTimeSubcategory::kDefault);
 }
 
-FX_LOCALEDATETIMESUBCATEGORY SubCategoryFromInt(int32_t iStyle) {
+LocaleIface::DateTimeSubcategory SubCategoryFromInt(int32_t iStyle) {
   switch (iStyle) {
     case 1:
-      return FX_LOCALEDATETIMESUBCATEGORY_Short;
+      return LocaleIface::DateTimeSubcategory::kShort;
     case 3:
-      return FX_LOCALEDATETIMESUBCATEGORY_Long;
+      return LocaleIface::DateTimeSubcategory::kLong;
     case 4:
-      return FX_LOCALEDATETIMESUBCATEGORY_Full;
+      return LocaleIface::DateTimeSubcategory::kFull;
     case 0:
     case 2:
     default:
-      return FX_LOCALEDATETIMESUBCATEGORY_Medium;
+      return LocaleIface::DateTimeSubcategory::kMedium;
   }
 }
 
@@ -453,7 +453,7 @@ ByteString GetLocalDateTimeFormat(CXFA_Document* pDoc,
   if (!pLocale)
     return ByteString();
 
-  FX_LOCALEDATETIMESUBCATEGORY category = SubCategoryFromInt(iStyle);
+  LocaleIface::DateTimeSubcategory category = SubCategoryFromInt(iStyle);
   WideString wsLocal = bIsDate ? pLocale->GetDatePattern(category)
                                : pLocale->GetTimePattern(category);
   if (!bStandard)
@@ -2372,7 +2372,7 @@ void CFXJSE_FormCalcContext::Time2Num(
 
   CXFA_Document* pDoc = ToFormCalcContext(pThis)->GetDocument();
   CXFA_LocaleMgr* pMgr = pDoc->GetLocaleMgr();
-  LocaleIface* pLocale = nullptr;
+  GCedLocaleIface* pLocale = nullptr;
   if (bsLocale.IsEmpty()) {
     CXFA_Node* pThisNode = ToNode(pDoc->GetScriptContext()->GetThisObject());
     pLocale = pThisNode->GetLocale();
@@ -2382,11 +2382,12 @@ void CFXJSE_FormCalcContext::Time2Num(
   }
 
   WideString wsFormat;
-  if (bsFormat.IsEmpty())
-    wsFormat = pLocale->GetTimePattern(FX_LOCALEDATETIMESUBCATEGORY_Default);
-  else
+  if (bsFormat.IsEmpty()) {
+    wsFormat =
+        pLocale->GetTimePattern(LocaleIface::DateTimeSubcategory::kDefault);
+  } else {
     wsFormat = WideString::FromUTF8(bsFormat.AsStringView());
-
+  }
   wsFormat = L"time{" + wsFormat + L"}";
   CXFA_LocaleValue localeValue(XFA_VT_TIME,
                                WideString::FromUTF8(bsTime.AsStringView()),
@@ -2464,7 +2465,7 @@ ByteString CFXJSE_FormCalcContext::Local2IsoDate(CFXJSE_HostObject* pThis,
     return ByteString();
 
   CXFA_LocaleMgr* pMgr = pDoc->GetLocaleMgr();
-  LocaleIface* pLocale = LocaleFromString(pDoc, pMgr, bsLocale);
+  GCedLocaleIface* pLocale = LocaleFromString(pDoc, pMgr, bsLocale);
   if (!pLocale)
     return ByteString();
 
@@ -2487,7 +2488,7 @@ ByteString CFXJSE_FormCalcContext::IsoDate2Local(CFXJSE_HostObject* pThis,
     return ByteString();
 
   CXFA_LocaleMgr* pMgr = pDoc->GetLocaleMgr();
-  LocaleIface* pLocale = LocaleFromString(pDoc, pMgr, bsLocale);
+  GCedLocaleIface* pLocale = LocaleFromString(pDoc, pMgr, bsLocale);
   if (!pLocale)
     return ByteString();
 
@@ -2508,7 +2509,7 @@ ByteString CFXJSE_FormCalcContext::IsoTime2Local(CFXJSE_HostObject* pThis,
     return ByteString();
 
   CXFA_LocaleMgr* pMgr = pDoc->GetLocaleMgr();
-  LocaleIface* pLocale = LocaleFromString(pDoc, pMgr, bsLocale);
+  GCedLocaleIface* pLocale = LocaleFromString(pDoc, pMgr, bsLocale);
   if (!pLocale)
     return ByteString();
 
@@ -3200,10 +3201,10 @@ void CFXJSE_FormCalcContext::Eval(
     return;
   }
 
-  CFX_WideTextBuf wsJavaScriptBuf;
-  if (!CFXJSE_FormCalcContext::Translate(
-          WideString::FromUTF8(bsUtf8Script.AsStringView()).AsStringView(),
-          &wsJavaScriptBuf)) {
+  WideString wsCalcScript = WideString::FromUTF8(bsUtf8Script.AsStringView());
+  Optional<CFX_WideTextBuf> wsJavaScriptBuf = CFXJSE_FormCalcContext::Translate(
+      pContext->GetDocument()->GetHeap(), wsCalcScript.AsStringView());
+  if (!wsJavaScriptBuf.has_value()) {
     pContext->ThrowCompilerErrorException();
     return;
   }
@@ -3213,8 +3214,8 @@ void CFXJSE_FormCalcContext::Eval(
 
   auto returnValue = std::make_unique<CFXJSE_Value>(pIsolate);
   pNewContext->ExecuteScript(
-      FX_UTF8Encode(wsJavaScriptBuf.AsStringView()).c_str(), returnValue.get(),
-      nullptr);
+      FX_UTF8Encode(wsJavaScriptBuf.value().AsStringView()).c_str(),
+      returnValue.get(), nullptr);
 
   info.GetReturnValue().Set(returnValue->DirectGetValue());
 }
@@ -3697,7 +3698,7 @@ void CFXJSE_FormCalcContext::Format(
   CXFA_Document* pDoc = pContext->GetDocument();
   CXFA_LocaleMgr* pMgr = pDoc->GetLocaleMgr();
   CXFA_Node* pThisNode = ToNode(pDoc->GetScriptContext()->GetThisObject());
-  LocaleIface* pLocale = pThisNode->GetLocale();
+  GCedLocaleIface* pLocale = pThisNode->GetLocale();
   WideString wsPattern = WideString::FromUTF8(bsPattern.AsStringView());
   WideString wsValue = WideString::FromUTF8(bsValue.AsStringView());
   bool bPatternIsString;
@@ -3874,7 +3875,7 @@ void CFXJSE_FormCalcContext::Parse(
   CXFA_Document* pDoc = pContext->GetDocument();
   CXFA_LocaleMgr* pMgr = pDoc->GetLocaleMgr();
   CXFA_Node* pThisNode = ToNode(pDoc->GetScriptContext()->GetThisObject());
-  LocaleIface* pLocale = pThisNode->GetLocale();
+  GCedLocaleIface* pLocale = pThisNode->GetLocale();
   WideString wsPattern = WideString::FromUTF8(bsPattern.AsStringView());
   WideString wsValue = WideString::FromUTF8(bsValue.AsStringView());
   bool bPatternIsString;
@@ -5010,16 +5011,16 @@ void CFXJSE_FormCalcContext::eval_translation(
     return;
   }
 
-  WideString wsScript = WideString::FromUTF8(bsArg.AsStringView());
-  CFX_WideTextBuf wsJavaScriptBuf;
-  if (!CFXJSE_FormCalcContext::Translate(wsScript.AsStringView(),
-                                         &wsJavaScriptBuf)) {
+  WideString wsCalcScript = WideString::FromUTF8(bsArg.AsStringView());
+  Optional<CFX_WideTextBuf> wsJavaScriptBuf = CFXJSE_FormCalcContext::Translate(
+      pContext->GetDocument()->GetHeap(), wsCalcScript.AsStringView());
+  if (!wsJavaScriptBuf.has_value()) {
     pContext->ThrowCompilerErrorException();
     return;
   }
   info.GetReturnValue().Set(fxv8::NewStringHelper(
       info.GetIsolate(),
-      FX_UTF8Encode(wsJavaScriptBuf.AsStringView()).AsStringView()));
+      FX_UTF8Encode(wsJavaScriptBuf.value().AsStringView()).AsStringView()));
 }
 
 // static
@@ -5391,14 +5392,14 @@ bool CFXJSE_FormCalcContext::GetObjectForName(CFXJSE_HostObject* pThis,
     return false;
 
   CFXJSE_Engine* pScriptContext = pDoc->GetScriptContext();
-  XFA_RESOLVENODE_RS resolveNodeRS;
+  XFA_ResolveNodeRS resolveNodeRS;
   uint32_t dwFlags = XFA_RESOLVENODE_Children | XFA_RESOLVENODE_Properties |
                      XFA_RESOLVENODE_Siblings | XFA_RESOLVENODE_Parent;
   bool bRet = pScriptContext->ResolveObjects(
       pScriptContext->GetThisObject(),
       WideString::FromUTF8(bsAccessorName).AsStringView(), &resolveNodeRS,
       dwFlags, nullptr);
-  if (bRet && resolveNodeRS.dwFlags == XFA_ResolveNode_RSType_Nodes) {
+  if (bRet && resolveNodeRS.dwFlags == XFA_ResolveNodeRS::Type::kNodes) {
     accessorValue->Assign(pScriptContext->GetOrCreateJSBindingFromMap(
         resolveNodeRS.objects.front().Get()));
     return true;
@@ -5410,7 +5411,7 @@ bool CFXJSE_FormCalcContext::GetObjectForName(CFXJSE_HostObject* pThis,
 bool CFXJSE_FormCalcContext::ResolveObjects(CFXJSE_HostObject* pThis,
                                             CFXJSE_Value* pRefValue,
                                             ByteStringView bsSomExp,
-                                            XFA_RESOLVENODE_RS* resolveNodeRS,
+                                            XFA_ResolveNodeRS* resolveNodeRS,
                                             bool bDotAccessor,
                                             bool bHasNoResolveName) {
   CXFA_Document* pDoc = ToFormCalcContext(pThis)->GetDocument();
@@ -5461,7 +5462,7 @@ bool CFXJSE_FormCalcContext::ResolveObjects(CFXJSE_HostObject* pThis,
 // static
 void CFXJSE_FormCalcContext::ParseResolveResult(
     CFXJSE_HostObject* pThis,
-    const XFA_RESOLVENODE_RS& resolveNodeRS,
+    const XFA_ResolveNodeRS& resolveNodeRS,
     CFXJSE_Value* pParentValue,
     std::vector<std::unique_ptr<CFXJSE_Value>>* resultValues,
     bool* bAttribute) {
@@ -5472,7 +5473,7 @@ void CFXJSE_FormCalcContext::ParseResolveResult(
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   v8::Isolate* pIsolate = pContext->GetScriptRuntime();
 
-  if (resolveNodeRS.dwFlags == XFA_ResolveNode_RSType_Nodes) {
+  if (resolveNodeRS.dwFlags == XFA_ResolveNodeRS::Type::kNodes) {
     *bAttribute = false;
     CFXJSE_Engine* pScriptContext = pContext->GetDocument()->GetScriptContext();
     for (auto& pObject : resolveNodeRS.objects) {
@@ -5647,24 +5648,27 @@ ByteString CFXJSE_FormCalcContext::ValueToUTF8String(CFXJSE_Value* arg) {
   return arg->ToString();
 }
 
-// static.
-bool CFXJSE_FormCalcContext::Translate(WideStringView wsFormcalc,
-                                       CFX_WideTextBuf* wsJavascript) {
-  if (wsFormcalc.IsEmpty()) {
-    wsJavascript->Clear();
-    return true;
-  }
+Optional<CFX_WideTextBuf> CFXJSE_FormCalcContext::Translate(
+    cppgc::Heap* pHeap,
+    WideStringView wsFormcalc) {
+  if (wsFormcalc.IsEmpty())
+    return CFX_WideTextBuf();
 
-  CXFA_FMParser parser(wsFormcalc);
-  std::unique_ptr<CXFA_FMAST> ast = parser.Parse();
+  CXFA_FMLexer lexer(wsFormcalc);
+  CXFA_FMParser parser(pHeap, &lexer);
+  CXFA_FMAST* ast = parser.Parse();
   if (!ast || parser.HasError())
-    return false;
+    return pdfium::nullopt;
 
   CXFA_FMToJavaScriptDepth::Reset();
-  if (!ast->ToJavaScript(wsJavascript))
-    return false;
+  Optional<CFX_WideTextBuf> wsJavaScript = ast->ToJavaScript();
+  if (!wsJavaScript.has_value())
+    return pdfium::nullopt;
 
-  return !CXFA_IsTooBig(wsJavascript);
+  if (CXFA_IsTooBig(wsJavaScript.value()))
+    return pdfium::nullopt;
+
+  return wsJavaScript;
 }
 
 CFXJSE_FormCalcContext::CFXJSE_FormCalcContext(v8::Isolate* pScriptIsolate,
@@ -5734,7 +5738,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     bool bAllEmpty = true;
     for (int32_t i = 2; i < iLength; i++) {
       argAccessor->GetObjectPropertyByIdx(i, hJSObjValue.get());
-      XFA_RESOLVENODE_RS resolveNodeRS;
+      XFA_ResolveNodeRS resolveNodeRS;
       if (ResolveObjects(pThis, hJSObjValue.get(), bsSomExp.AsStringView(),
                          &resolveNodeRS, bDotAccessor, bHasNoResolveName)) {
         ParseResolveResult(pThis, resolveNodeRS, hJSObjValue.get(),
@@ -5770,7 +5774,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     return;
   }
 
-  XFA_RESOLVENODE_RS resolveNodeRS;
+  XFA_ResolveNodeRS resolveNodeRS;
   bool bRet = false;
   ByteString bsAccessorName =
       fxv8::ReentrantToByteStringHelper(info.GetIsolate(), info[1]);

@@ -77,11 +77,17 @@ class QUIC_EXPORT_PRIVATE QuicControlFrameManager {
 
   // Tries to send an IETF-QUIC STOP_SENDING frame. The frame is buffered if it
   // can not be sent immediately.
-  void WriteOrBufferStopSending(uint16_t code, QuicStreamId stream_id);
+  void WriteOrBufferStopSending(QuicRstStreamErrorCode code,
+                                QuicStreamId stream_id);
 
   // Tries to send an HANDSHAKE_DONE frame. The frame is buffered if it can not
   // be sent immediately.
   void WriteOrBufferHandshakeDone();
+
+  // Tries to send an AckFrequencyFrame. The frame is buffered if it cannot be
+  // sent immediately.
+  void WriteOrBufferAckFrequency(uint64_t packet_tolerance,
+                                 QuicTime::Delta max_ack_delay);
 
   // Sends a PING_FRAME. Do not send PING if there is buffered frames.
   void WritePing();

@@ -8,6 +8,7 @@
     { "name": "dom_extension", "type": "autostart" },
     { "name": "extensions", "type": "autostart" },
     { "name": "host", "type": "autostart" },
+    { "name": "i18n", "type": "autostart" },
     { "name": "main", "type": "autostart" },
     { "name": "persistence", "type": "autostart" },
     { "name": "platform", "type": "autostart" },
@@ -16,6 +17,7 @@
     { "name": "sdk", "type": "autostart" },
     { "name": "services", "type": "autostart" },
     { "name": "text_utils", "type": "autostart" },
+    { "name": "theme_support", "type": "autostart" },
     { "name": "ui", "type": "autostart" },
     { "name": "workspace", "type": "autostart" },
 

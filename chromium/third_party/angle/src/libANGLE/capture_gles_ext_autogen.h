@@ -890,6 +890,14 @@ angle::CallCapture CaptureGetProgramResourceLocationIndexEXT(const State &glStat
                                                              const GLchar *name,
                                                              GLint returnValue);
 
+// GL_EXT_buffer_storage
+angle::CallCapture CaptureBufferStorageEXT(const State &glState,
+                                           bool isCallValid,
+                                           BufferBinding targetPacked,
+                                           GLsizeiptr size,
+                                           const void *data,
+                                           GLbitfield flags);
+
 // GL_EXT_debug_marker
 angle::CallCapture CaptureInsertEventMarkerEXT(const State &glState,
                                                bool isCallValid,
@@ -1861,6 +1869,8 @@ angle::CallCapture CaptureTexGenxvOES(const State &glState,
 // GL_OES_texture_cube_map_array
 
 // GL_OES_texture_half_float
+
+// GL_OES_texture_stencil8
 
 // GL_OES_texture_storage_multisample_2d_array
 angle::CallCapture CaptureTexStorage3DMultisampleOES(const State &glState,
@@ -3205,6 +3215,13 @@ void CaptureGetProgramResourceLocationIndexEXT_name(const State &glState,
                                                     GLenum programInterface,
                                                     const GLchar *name,
                                                     angle::ParamCapture *paramCapture);
+void CaptureBufferStorageEXT_data(const State &glState,
+                                  bool isCallValid,
+                                  BufferBinding targetPacked,
+                                  GLsizeiptr size,
+                                  const void *data,
+                                  GLbitfield flags,
+                                  angle::ParamCapture *paramCapture);
 void CaptureInsertEventMarkerEXT_marker(const State &glState,
                                         bool isCallValid,
                                         GLsizei length,

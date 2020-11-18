@@ -10,6 +10,7 @@
 #ifndef LIBANGLE_CONTEXT_H_
 #define LIBANGLE_CONTEXT_H_
 
+#include <mutex>
 #include <set>
 #include <string>
 
@@ -203,6 +204,7 @@ class StateCache final : angle::NonCopyable
     // 2. onVertexArrayBufferStateChange.
     // 3. onBufferBindingChange.
     // 4. onVertexArrayStateChange.
+    // 5. onVertexArrayBindingStateChange.
     intptr_t getBasicDrawElementsError(const Context *context) const
     {
         if (mCachedBasicDrawElementsError != kInvalidPointer)
@@ -506,6 +508,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     angle::Result prepareForDispatch();
 
     MemoryProgramCache *getMemoryProgramCache() const { return mMemoryProgramCache; }
+    std::mutex &getProgramCacheMutex() const;
 
     bool hasBeenCurrent() const { return mHasBeenCurrent; }
     egl::Display *getDisplay() const { return mDisplay; }
@@ -682,6 +685,12 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
                           UniformLocation location,
                           GLsizei count,
                           const GLint *v);
+    void renderbufferStorageMultisampleImpl(GLenum target,
+                                            GLsizei samples,
+                                            GLenum internalformat,
+                                            GLsizei width,
+                                            GLsizei height,
+                                            MultisamplingMode mode);
 
     void convertPpoToComputeOrDraw(bool isCompute);
 
@@ -774,7 +783,6 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     angle::ObserverBinding mVertexArrayObserverBinding;
     angle::ObserverBinding mDrawFramebufferObserverBinding;
     angle::ObserverBinding mReadFramebufferObserverBinding;
-    angle::ObserverBinding mProgramPipelineObserverBinding;
     std::vector<angle::ObserverBinding> mUniformBufferObserverBindings;
     std::vector<angle::ObserverBinding> mSamplerObserverBindings;
     std::vector<angle::ObserverBinding> mImageObserverBindings;
@@ -792,6 +800,10 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
 
     OverlayType mOverlay;
 };
+
+// Thread-local current valid context bound to the thread.
+extern thread_local Context *gCurrentValidContext;
+
 }  // namespace gl
 
 #endif  // LIBANGLE_CONTEXT_H_

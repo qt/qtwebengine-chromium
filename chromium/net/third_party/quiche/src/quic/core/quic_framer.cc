@@ -621,7 +621,7 @@ size_t QuicFramer::GetBlockedFrameSize(QuicTransportVersion version,
 // static
 size_t QuicFramer::GetStopSendingFrameSize(const QuicStopSendingFrame& frame) {
   return kQuicFrameTypeSize + QuicDataWriter::GetVarInt62Len(frame.stream_id) +
-         QuicDataWriter::GetVarInt62Len(frame.application_error_code);
+         QuicDataWriter::GetVarInt62Len(frame.ietf_error_code);
 }
 
 // static
@@ -2034,6 +2034,23 @@ bool QuicFramer::HasDecrypterOfEncryptionLevel(EncryptionLevel level) const {
   return decrypter_[level] != nullptr;
 }
 
+bool QuicFramer::HasAnEncrypterForSpace(PacketNumberSpace space) const {
+  switch (space) {
+    case INITIAL_DATA:
+      return HasEncrypterOfEncryptionLevel(ENCRYPTION_INITIAL);
+    case HANDSHAKE_DATA:
+      return HasEncrypterOfEncryptionLevel(ENCRYPTION_HANDSHAKE);
+    case APPLICATION_DATA:
+      return HasEncrypterOfEncryptionLevel(ENCRYPTION_ZERO_RTT) ||
+             HasEncrypterOfEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
+    case NUM_PACKET_NUMBER_SPACES:
+      break;
+  }
+  QUIC_BUG << ENDPOINT
+           << "Try to send data of space: " << PacketNumberSpaceToString(space);
+  return false;
+}
+
 bool QuicFramer::AppendPacketHeader(const QuicPacketHeader& header,
                                     QuicDataWriter* writer,
                                     size_t* length_field_offset) {
@@ -2948,12 +2965,6 @@ bool QuicFramer::ProcessFrameData(QuicDataReader* reader,
       }
 
       case STOP_WAITING_FRAME: {
-        if (GetQuicReloadableFlag(quic_do_not_accept_stop_waiting) &&
-            version_.HasIetfInvariantHeader()) {
-          QUIC_RELOADABLE_FLAG_COUNT(quic_do_not_accept_stop_waiting);
-          set_detailed_error("STOP WAITING not supported in version 44+.");
-          return RaiseError(QUIC_INVALID_STOP_WAITING_DATA);
-        }
         QuicStopWaitingFrame stop_waiting_frame;
         if (!ProcessStopWaitingFrame(reader, header, &stop_waiting_frame)) {
           return RaiseError(QUIC_INVALID_STOP_WAITING_DATA);
@@ -4047,7 +4058,8 @@ bool QuicFramer::ProcessConnectionCloseFrame(QuicDataReader* reader,
     return false;
   }
 
-  if (error_code >= QUIC_LAST_ERROR) {
+  if (!GetQuicReloadableFlag(quic_do_not_clip_received_error_code) &&
+      error_code >= QUIC_LAST_ERROR) {
     // Ignore invalid QUIC error code if any.
     error_code = QUIC_LAST_ERROR;
   }
@@ -4075,7 +4087,8 @@ bool QuicFramer::ProcessGoAwayFrame(QuicDataReader* reader,
     return false;
   }
 
-  if (error_code >= QUIC_LAST_ERROR) {
+  if (!GetQuicReloadableFlag(quic_do_not_clip_received_error_code) &&
+      error_code >= QUIC_LAST_ERROR) {
     // Ignore invalid QUIC error code if any.
     error_code = QUIC_LAST_ERROR;
   }
@@ -5907,19 +5920,28 @@ bool QuicFramer::ProcessStopSendingFrame(
     return false;
   }
 
-  uint64_t error_code;
-  if (!reader->ReadVarInt62(&error_code)) {
+  if (!reader->ReadVarInt62(&stop_sending_frame->ietf_error_code)) {
     set_detailed_error("Unable to read stop sending application error code.");
     return false;
   }
+
+  if (GetQuicReloadableFlag(quic_stop_sending_uses_ietf_error_code)) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_stop_sending_uses_ietf_error_code, 2, 2);
+    stop_sending_frame->error_code =
+        IetfResetStreamErrorCodeToRstStreamErrorCode(
+            stop_sending_frame->ietf_error_code);
+    return true;
+  }
+
   // TODO(fkastenholz): when error codes go to uint64_t, remove this.
-  if (error_code > 0xffff) {
-    stop_sending_frame->application_error_code = 0xffff;
-    QUIC_DLOG(ERROR) << "Stop sending error code (" << error_code
-                     << ") > 0xffff";
+  if (stop_sending_frame->ietf_error_code > 0xffff) {
+    stop_sending_frame->error_code =
+        static_cast<QuicRstStreamErrorCode>(0xffff);
+    QUIC_DLOG(ERROR) << "Stop sending error code ("
+                     << stop_sending_frame->ietf_error_code << ") > 0xffff";
   } else {
-    stop_sending_frame->application_error_code =
-        static_cast<uint16_t>(error_code);
+    stop_sending_frame->error_code = static_cast<QuicRstStreamErrorCode>(
+        stop_sending_frame->ietf_error_code);
   }
   return true;
 }
@@ -5932,7 +5954,7 @@ bool QuicFramer::AppendStopSendingFrame(
     return false;
   }
   if (!writer->WriteVarInt62(
-          static_cast<uint64_t>(stop_sending_frame.application_error_code))) {
+          static_cast<uint64_t>(stop_sending_frame.ietf_error_code))) {
     set_detailed_error("Can not write application error code");
     return false;
   }

@@ -45,6 +45,7 @@ namespace dawn_native { namespace opengl {
                         samplerIndex++;
                         break;
                     case wgpu::BindingType::SampledTexture:
+                    case wgpu::BindingType::MultisampledTexture:
                         mIndexInfo[group][bindingIndex] = sampledTextureIndex;
                         sampledTextureIndex++;
                         break;
@@ -60,12 +61,6 @@ namespace dawn_native { namespace opengl {
                         mIndexInfo[group][bindingIndex] = storageTextureIndex;
                         storageTextureIndex++;
                         break;
-
-                    case wgpu::BindingType::StorageTexture:
-                        UNREACHABLE();
-                        break;
-
-                        // TODO(shaobo.yan@intel.com): Implement dynamic buffer offset
                 }
             }
         }

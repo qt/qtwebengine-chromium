@@ -39,7 +39,8 @@ namespace trace_processor {
 //
 // TODO(ddrone): replace with a predicate on field id to import new fields
 // automatically
-static constexpr uint16_t kReflectFields[] = {24, 25, 26, 27, 28, 29, 32};
+static constexpr uint16_t kReflectFields[] = {24, 25, 26, 27, 28, 29,
+                                              32, 33, 34, 35, 40};
 
 class PacketSequenceStateGeneration;
 class TraceProcessorContext;
@@ -89,6 +90,7 @@ class TrackEventParser {
   const StringId legacy_event_bind_id_key_id_;
   const StringId legacy_event_bind_to_enclosing_key_id_;
   const StringId legacy_event_flow_direction_key_id_;
+  const StringId histogram_name_key_id_;
   const StringId flow_direction_value_in_id_;
   const StringId flow_direction_value_out_id_;
   const StringId flow_direction_value_inout_id_;

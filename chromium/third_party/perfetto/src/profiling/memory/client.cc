@@ -17,10 +17,12 @@
 #include "src/profiling/memory/client.h"
 
 #include <inttypes.h>
+#include <signal.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
+
 #include <unwindstack/MachineArm.h>
 #include <unwindstack/MachineArm64.h>
 #include <unwindstack/MachineMips.h>
@@ -34,6 +36,7 @@
 #include <atomic>
 #include <new>
 
+#include "perfetto/base/compiler.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/thread_utils.h"
 #include "perfetto/base/time.h"
@@ -55,34 +58,13 @@ inline bool IsMainThread() {
   return getpid() == base::GetThreadId();
 }
 
-// The implementation of pthread_getattr_np for the main thread uses malloc,
-// so we cannot use it in GetStackBase, which we use inside of RecordMalloc
-// (which is called from malloc). We would re-enter malloc if we used it.
-//
-// This is why we find the stack base for the main-thread when constructing
-// the client and remember it.
-char* FindMainThreadStack() {
-  base::ScopedFstream maps(fopen("/proc/self/maps", "re"));
-  if (!maps) {
-    return nullptr;
-  }
-  while (!feof(*maps)) {
-    char line[1024];
-    char* data = fgets(line, sizeof(line), *maps);
-    if (data != nullptr && strstr(data, "[stack]")) {
-      char* sep = strstr(data, "-");
-      if (sep == nullptr)
-        continue;
-      sep++;
-      return reinterpret_cast<char*>(strtoll(sep, nullptr, 16));
-    }
-  }
-  return nullptr;
-}
-
 int UnsetDumpable(int) {
   prctl(PR_SET_DUMPABLE, 0);
   return 0;
+}
+
+bool Contained(const StackRange& base, const char* ptr) {
+  return (ptr >= base.begin && ptr < base.end);
 }
 
 }  // namespace
@@ -96,10 +78,10 @@ uint64_t GetMaxTries(const ClientConfiguration& client_config) {
       1ul, client_config.block_client_timeout_us / kResendBackoffUs);
 }
 
-const char* GetThreadStackBase() {
+StackRange GetThreadStackRange() {
   pthread_attr_t attr;
   if (pthread_getattr_np(pthread_self(), &attr) != 0)
-    return nullptr;
+    return {nullptr, nullptr};
   base::ScopedResource<pthread_attr_t*, pthread_attr_destroy, nullptr> cleanup(
       &attr);
 
@@ -107,8 +89,51 @@ const char* GetThreadStackBase() {
   size_t stacksize;
   if (pthread_attr_getstack(&attr, reinterpret_cast<void**>(&stackaddr),
                             &stacksize) != 0)
-    return nullptr;
-  return stackaddr + stacksize;
+    return {nullptr, nullptr};
+  return {stackaddr, stackaddr + stacksize};
+}
+
+StackRange GetSigAltStackRange() {
+  stack_t altstack;
+
+  if (sigaltstack(nullptr, &altstack) == -1) {
+    PERFETTO_PLOG("sigaltstack");
+    return {nullptr, nullptr};
+  }
+
+  if ((altstack.ss_flags & SS_ONSTACK) == 0) {
+    return {nullptr, nullptr};
+  }
+
+  return {static_cast<char*>(altstack.ss_sp),
+          static_cast<char*>(altstack.ss_sp) + altstack.ss_size};
+}
+
+// The implementation of pthread_getattr_np for the main thread uses malloc,
+// so we cannot use it in GetStackEnd, which we use inside of RecordMalloc
+// (which is called from malloc). We would re-enter malloc if we used it.
+//
+// This is why we find the stack base for the main-thread when constructing
+// the client and remember it.
+StackRange GetMainThreadStackRange() {
+  base::ScopedFstream maps(fopen("/proc/self/maps", "re"));
+  if (!maps) {
+    return {nullptr, nullptr};
+  }
+  while (!feof(*maps)) {
+    char line[1024];
+    char* data = fgets(line, sizeof(line), *maps);
+    if (data != nullptr && strstr(data, "[stack]")) {
+      char* sep = strstr(data, "-");
+      if (sep == nullptr)
+        continue;
+
+      char* min = reinterpret_cast<char*>(strtoll(data, nullptr, 16));
+      char* max = reinterpret_cast<char*>(strtoll(sep + 1, nullptr, 16));
+      return {min, max};
+    }
+  }
+  return {nullptr, nullptr};
 }
 
 // static
@@ -225,27 +250,22 @@ std::shared_ptr<Client> Client::CreateAndHandshake(
     return nullptr;
   }
 
-  PERFETTO_DCHECK(client_config.interval >= 1);
   sock.SetBlocking(false);
-  Sampler sampler{client_config.interval};
   // note: the shared_ptr will retain a copy of the unhooked_allocator
   return std::allocate_shared<Client>(unhooked_allocator, std::move(sock),
                                       client_config, std::move(shmem.value()),
-                                      std::move(sampler), getpid(),
-                                      FindMainThreadStack());
+                                      getpid(), GetMainThreadStackRange());
 }
 
 Client::Client(base::UnixSocketRaw sock,
                ClientConfiguration client_config,
                SharedRingBuffer shmem,
-               Sampler sampler,
                pid_t pid_at_creation,
-               const char* main_thread_stack_base)
+               StackRange main_thread_stack_range)
     : client_config_(client_config),
       max_shmem_tries_(GetMaxTries(client_config_)),
-      sampler_(std::move(sampler)),
       sock_(std::move(sock)),
-      main_thread_stack_base_(main_thread_stack_base),
+      main_thread_stack_range_(main_thread_stack_range),
       shmem_(std::move(shmem)),
       pid_at_creation_(pid_at_creation) {}
 
@@ -263,15 +283,21 @@ Client::~Client() {
     close(fd);
 }
 
-const char* Client::GetStackBase() {
+const char* Client::GetStackEnd(const char* stackptr) {
+  StackRange thread_stack_range;
   if (IsMainThread()) {
-    if (!main_thread_stack_base_)
-      // Because pthread_attr_getstack reads and parses /proc/self/maps and
-      // /proc/self/stat, we have to cache the result here.
-      main_thread_stack_base_ = GetThreadStackBase();
-    return main_thread_stack_base_;
+    thread_stack_range = main_thread_stack_range_;
+  } else {
+    thread_stack_range = GetThreadStackRange();
   }
-  return GetThreadStackBase();
+  if (Contained(thread_stack_range, stackptr)) {
+    return thread_stack_range.end;
+  }
+  StackRange sigalt_stack_range = GetSigAltStackRange();
+  if (Contained(sigalt_stack_range, stackptr)) {
+    return sigalt_stack_range.end;
+  }
+  return nullptr;
 }
 
 // Best-effort detection of whether we're continuing work in a forked child of
@@ -323,13 +349,13 @@ bool Client::IsPostFork() {
 //
 //               +------------+
 //               |SendWireMsg |
-// stacktop +--> +------------+ 0x1000
+// stackptr +--> +------------+ 0x1000
 //               |RecordMalloc|    +
 //               +------------+    |
 //               | malloc     |    |
 //               +------------+    |
 //               |  main      |    v
-// stackbase +-> +------------+ 0xffff
+// stackend  +-> +------------+ 0xffff
 bool Client::RecordMalloc(uint32_t heap_id,
                           uint64_t sample_size,
                           uint64_t alloc_size,
@@ -339,20 +365,18 @@ bool Client::RecordMalloc(uint32_t heap_id,
   }
 
   AllocMetadata metadata;
-  const char* stackbase = GetStackBase();
-  const char* stacktop = reinterpret_cast<char*>(__builtin_frame_address(0));
+  const char* stackptr = reinterpret_cast<char*>(__builtin_frame_address(0));
   unwindstack::AsmGetRegs(metadata.register_data);
-
-  if (PERFETTO_UNLIKELY(stackbase < stacktop)) {
-    PERFETTO_DFATAL_OR_ELOG("Stackbase >= stacktop.");
+  const char* stackend = GetStackEnd(stackptr);
+  if (!stackend) {
+    PERFETTO_ELOG("Failed to find stackend.");
     return false;
   }
-
-  uint64_t stack_size = static_cast<uint64_t>(stackbase - stacktop);
+  uint64_t stack_size = static_cast<uint64_t>(stackend - stackptr);
   metadata.sample_size = sample_size;
   metadata.alloc_size = alloc_size;
   metadata.alloc_address = alloc_address;
-  metadata.stack_pointer = reinterpret_cast<uint64_t>(stacktop);
+  metadata.stack_pointer = reinterpret_cast<uint64_t>(stackptr);
   metadata.arch = unwindstack::Regs::CurrentArch();
   metadata.sequence_number =
       1 + sequence_number_[heap_id].fetch_add(1, std::memory_order_acq_rel);
@@ -369,7 +393,7 @@ bool Client::RecordMalloc(uint32_t heap_id,
   WireMessage msg{};
   msg.record_type = RecordType::Malloc;
   msg.alloc_header = &metadata;
-  msg.payload = const_cast<char*>(stacktop);
+  msg.payload = const_cast<char*>(stackptr);
   msg.payload_size = static_cast<size_t>(stack_size);
 
   if (SendWireMessageWithRetriesIfBlocking(msg) == -1)

@@ -7,6 +7,7 @@
 
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 #include "net/third_party/quiche/src/quic/core/quic_error_codes.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_client_stats.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
 
@@ -207,6 +208,7 @@ const char* QuicErrorCodeToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_HTTP_ZERO_RTT_REJECTION_SETTINGS_MISMATCH);
     RETURN_STRING_LITERAL(QUIC_HTTP_GOAWAY_INVALID_STREAM_ID);
     RETURN_STRING_LITERAL(QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS);
+    RETURN_STRING_LITERAL(QUIC_HTTP_RECEIVE_SPDY_SETTING);
     RETURN_STRING_LITERAL(QUIC_HPACK_INDEX_VARINT_ERROR);
     RETURN_STRING_LITERAL(QUIC_HPACK_NAME_LENGTH_VARINT_ERROR);
     RETURN_STRING_LITERAL(QUIC_HPACK_VALUE_LENGTH_VARINT_ERROR);
@@ -229,6 +231,7 @@ const char* QuicErrorCodeToString(QuicErrorCode error) {
     RETURN_STRING_LITERAL(QUIC_ZERO_RTT_REJECTION_LIMIT_REDUCED);
     RETURN_STRING_LITERAL(QUIC_ZERO_RTT_RESUMPTION_LIMIT_REDUCED);
     RETURN_STRING_LITERAL(QUIC_SILENT_IDLE_TIMEOUT);
+    RETURN_STRING_LITERAL(QUIC_MISSING_WRITE_KEYS);
 
     RETURN_STRING_LITERAL(QUIC_LAST_ERROR);
     // Intentionally have no default case, so we'll break the build
@@ -585,6 +588,8 @@ QuicErrorCodeToIetfMapping QuicErrorCodeToTransportErrorCode(
       return {false, static_cast<uint64_t>(QuicHttp3ErrorCode::ID_ERROR)};
     case QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS:
       return {false, static_cast<uint64_t>(QuicHttp3ErrorCode::ID_ERROR)};
+    case QUIC_HTTP_RECEIVE_SPDY_SETTING:
+      return {false, static_cast<uint64_t>(QuicHttp3ErrorCode::SETTINGS_ERROR)};
     case QUIC_HPACK_INDEX_VARINT_ERROR:
       return {true, static_cast<uint64_t>(INTERNAL_ERROR)};
     case QUIC_HPACK_NAME_LENGTH_VARINT_ERROR:
@@ -623,6 +628,8 @@ QuicErrorCodeToIetfMapping QuicErrorCodeToTransportErrorCode(
       return {true, static_cast<uint64_t>(INTERNAL_ERROR)};
     case QUIC_ZERO_RTT_RESUMPTION_LIMIT_REDUCED:
       return {true, static_cast<uint64_t>(PROTOCOL_VIOLATION)};
+    case QUIC_MISSING_WRITE_KEYS:
+      return {true, static_cast<uint64_t>(INTERNAL_ERROR)};
     case QUIC_LAST_ERROR:
       return {false, static_cast<uint64_t>(QUIC_LAST_ERROR)};
   }
@@ -761,6 +768,13 @@ QuicRstStreamErrorCode IetfResetStreamErrorCodeToRstStreamErrorCode(
       return QUIC_STREAM_DECODER_STREAM_ERROR;
   }
   return QUIC_STREAM_UNKNOWN_APPLICATION_ERROR_CODE;
+}
+
+void RecordFailToSerializePacketLocation(
+    QuicFailToSerializePacketLocation location) {
+  QUIC_CLIENT_HISTOGRAM_ENUM("QuicSession.FailToSerializePacketLocation",
+                             location, kMaxFailLocationValue,
+                             "The reason why a packet fails to serialize");
 }
 
 #undef RETURN_STRING_LITERAL  // undef for jumbo builds

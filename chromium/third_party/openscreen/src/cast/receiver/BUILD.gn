@@ -9,6 +9,8 @@ source_set("channel") {
     "channel/message_util.cc",
     "channel/message_util.h",
     "channel/receiver_socket_factory.cc",
+    "channel/static_credentials.cc",
+    "channel/static_credentials.h",
     "public/receiver_socket_factory.h",
   ]
 
@@ -46,9 +48,7 @@ source_set("test_helpers") {
 
 source_set("unittests") {
   testonly = true
-  sources = [
-    "channel/device_auth_namespace_handler_unittest.cc",
-  ]
+  sources = [ "channel/device_auth_namespace_handler_unittest.cc" ]
 
   deps = [
     ":channel",
@@ -61,7 +61,5 @@ source_set("unittests") {
     "../common/channel/proto:channel_proto",
   ]
 
-  data = [
-    "../../test/data/cast/receiver/channel/",
-  ]
+  data = [ "../../test/data/cast/receiver/channel/" ]
 }

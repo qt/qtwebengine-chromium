@@ -14,6 +14,7 @@
 
 #include "dawn_native/metal/DeviceMTL.h"
 
+#include "common/GPUInfo.h"
 #include "common/Platform.h"
 #include "dawn_native/BackendConnection.h"
 #include "dawn_native/BindGroupLayout.h"
@@ -25,6 +26,7 @@
 #include "dawn_native/metal/CommandBufferMTL.h"
 #include "dawn_native/metal/ComputePipelineMTL.h"
 #include "dawn_native/metal/PipelineLayoutMTL.h"
+#include "dawn_native/metal/QuerySetMTL.h"
 #include "dawn_native/metal/QueueMTL.h"
 #include "dawn_native/metal/RenderPipelineMTL.h"
 #include "dawn_native/metal/SamplerMTL.h"
@@ -63,7 +65,7 @@ namespace dawn_native { namespace metal {
     MaybeError Device::Initialize() {
         InitTogglesFromDriver();
 
-        if (!IsRobustnessEnabled() || !IsToggleEnabled(Toggle::UseSpvc)) {
+        if (!IsRobustnessEnabled()) {
             ForceSetToggle(Toggle::MetalEnableVertexPulling, false);
         }
 
@@ -106,6 +108,14 @@ namespace dawn_native { namespace metal {
 
         // TODO(jiawei.shao@intel.com): tighten this workaround when the driver bug is fixed.
         SetToggle(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
+
+        // TODO(hao.x.li@intel.com): Use MTLStorageModeShared instead of MTLStorageModePrivate when
+        // creating MTLCounterSampleBuffer in QuerySet on Intel platforms, otherwise it fails to
+        // create the buffer. Change to use MTLStorageModePrivate when the bug is fixed.
+        if (@available(macOS 10.15, iOS 14.0, *)) {
+            bool useSharedMode = gpu_info::IsIntel(this->GetAdapter()->GetPCIInfo().vendorId);
+            SetToggle(Toggle::MetalUseSharedModeForCounterSampleBuffer, useSharedMode);
+        }
     }
 
     ResultOrError<BindGroupBase*> Device::CreateBindGroupImpl(
@@ -132,7 +142,7 @@ namespace dawn_native { namespace metal {
         return new PipelineLayout(this, descriptor);
     }
     ResultOrError<QuerySetBase*> Device::CreateQuerySetImpl(const QuerySetDescriptor* descriptor) {
-        return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation");
+        return QuerySet::Create(this, descriptor);
     }
     ResultOrError<RenderPipelineBase*> Device::CreateRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
@@ -164,16 +174,16 @@ namespace dawn_native { namespace metal {
         return new TextureView(texture, descriptor);
     }
 
-    Serial Device::CheckAndUpdateCompletedSerials() {
-        if (GetCompletedCommandSerial() > mCompletedSerial) {
+    ExecutionSerial Device::CheckAndUpdateCompletedSerials() {
+        uint64_t frontendCompletedSerial{GetCompletedCommandSerial()};
+        if (frontendCompletedSerial > mCompletedSerial) {
             // sometimes we increase the serials, in which case the completed serial in
             // the device base will surpass the completed serial we have in the metal backend, so we
             // must update ours when we see that the completed serial from device base has
             // increased.
-            mCompletedSerial = GetCompletedCommandSerial();
+            mCompletedSerial = frontendCompletedSerial;
         }
-        static_assert(std::is_same<Serial, uint64_t>::value, "");
-        return mCompletedSerial.load();
+        return ExecutionSerial(mCompletedSerial.load());
     }
 
     MaybeError Device::TickImpl() {
@@ -231,17 +241,17 @@ namespace dawn_native { namespace metal {
 
         // Update the completed serial once the completed handler is fired. Make a local copy of
         // mLastSubmittedSerial so it is captured by value.
-        Serial pendingSerial = GetLastSubmittedCommandSerial();
+        ExecutionSerial pendingSerial = GetLastSubmittedCommandSerial();
         // this ObjC block runs on a different thread
         [pendingCommands addCompletedHandler:^(id<MTLCommandBuffer>) {
             TRACE_EVENT_ASYNC_END0(GetPlatform(), GPUWork, "DeviceMTL::SubmitPendingCommandBuffer",
-                                   pendingSerial);
-            ASSERT(pendingSerial > mCompletedSerial.load());
-            this->mCompletedSerial = pendingSerial;
+                                   uint64_t(pendingSerial));
+            ASSERT(uint64_t(pendingSerial) > mCompletedSerial.load());
+            this->mCompletedSerial = uint64_t(pendingSerial);
         }];
 
         TRACE_EVENT_ASYNC_BEGIN0(GetPlatform(), GPUWork, "DeviceMTL::SubmitPendingCommandBuffer",
-                                 pendingSerial);
+                                 uint64_t(pendingSerial));
         [pendingCommands commit];
         [pendingCommands release];
     }
@@ -276,7 +286,10 @@ namespace dawn_native { namespace metal {
         return {};
     }
 
-    MaybeError Device::CopyFromStagingToTexture(StagingBufferBase* source,
+    // In Metal we don't write from the CPU to the texture directly which can be done using the
+    // replaceRegion function, because the function requires a non-private storage mode and Dawn
+    // sets the private storage mode by default for all textures except IOSurfaces on macOS.
+    MaybeError Device::CopyFromStagingToTexture(const StagingBufferBase* source,
                                                 const TextureDataLayout& dataLayout,
                                                 TextureCopy* dst,
                                                 const Extent3D& copySizePixels) {
@@ -372,6 +385,14 @@ namespace dawn_native { namespace metal {
 
         [mMtlDevice release];
         mMtlDevice = nil;
+    }
+
+    uint32_t Device::GetOptimalBytesPerRowAlignment() const {
+        return 1;
+    }
+
+    uint64_t Device::GetOptimalBufferToTextureCopyOffsetAlignment() const {
+        return 1;
     }
 
 }}  // namespace dawn_native::metal

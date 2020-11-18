@@ -324,6 +324,8 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                        VkPipelineStageFlags dstStageMask,
                        const VkMemoryBarrier *memoryBarrier);
 
+    void nextSubpass(VkSubpassContents subpassContents);
+
     void pipelineBarrier(VkPipelineStageFlags srcStageMask,
                          VkPipelineStageFlags dstStageMask,
                          VkDependencyFlags dependencyFlags,
@@ -511,6 +513,7 @@ class RenderPass final : public WrappedObject<RenderPass, VkRenderPass>
     void destroy(VkDevice device);
 
     VkResult init(VkDevice device, const VkRenderPassCreateInfo &createInfo);
+    VkResult init2(VkDevice device, const VkRenderPassCreateInfo2 &createInfo);
 };
 
 enum class StagingUsage
@@ -749,6 +752,12 @@ ANGLE_INLINE void CommandBuffer::memoryBarrier(VkPipelineStageFlags srcStageMask
     ASSERT(valid());
     vkCmdPipelineBarrier(mHandle, srcStageMask, dstStageMask, 0, 1, memoryBarrier, 0, nullptr, 0,
                          nullptr);
+}
+
+ANGLE_INLINE void CommandBuffer::nextSubpass(VkSubpassContents subpassContents)
+{
+    ASSERT(valid());
+    vkCmdNextSubpass(mHandle, subpassContents);
 }
 
 ANGLE_INLINE void CommandBuffer::pipelineBarrier(VkPipelineStageFlags srcStageMask,
@@ -1491,6 +1500,12 @@ ANGLE_INLINE VkResult RenderPass::init(VkDevice device, const VkRenderPassCreate
 {
     ASSERT(!valid());
     return vkCreateRenderPass(device, &createInfo, nullptr, &mHandle);
+}
+
+ANGLE_INLINE VkResult RenderPass::init2(VkDevice device, const VkRenderPassCreateInfo2 &createInfo)
+{
+    ASSERT(!valid());
+    return vkCreateRenderPass2KHR(device, &createInfo, nullptr, &mHandle);
 }
 
 // Buffer implementation.

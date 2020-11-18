@@ -85,7 +85,8 @@ namespace dawn_native {
     }
 
     void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
-        for (uint32_t i : IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
+        for (ColorAttachmentIndex i :
+             IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
             auto& attachmentInfo = renderPass->colorAttachments[i];
             TextureViewBase* view = attachmentInfo.view.Get();
             bool hasResolveTarget = attachmentInfo.resolveTarget.Get() != nullptr;
@@ -119,10 +120,6 @@ namespace dawn_native {
 
                 case wgpu::StoreOp::Clear:
                     view->GetTexture()->SetIsSubresourceContentInitialized(false, range);
-                    break;
-
-                default:
-                    UNREACHABLE();
                     break;
             }
         }
@@ -162,7 +159,6 @@ namespace dawn_native {
         }
     }
 
-    // TODO(jiawei.shao@intel.com): support copying with depth stencil textures
     bool IsFullBufferOverwrittenInTextureToBufferCopy(const CopyTextureToBufferCmd* copy) {
         ASSERT(copy != nullptr);
 
@@ -175,16 +171,17 @@ namespace dawn_native {
         }
 
         const TextureBase* texture = copy->source.texture.Get();
-        const uint64_t copyTextureDataSizePerRow = copy->copySize.width /
-                                                   texture->GetFormat().blockWidth *
-                                                   texture->GetFormat().blockByteSize;
+        const TexelBlockInfo& blockInfo =
+            texture->GetFormat().GetTexelBlockInfo(copy->source.aspect);
+        const uint64_t copyTextureDataSizePerRow =
+            copy->copySize.width / blockInfo.blockWidth * blockInfo.blockByteSize;
         if (copy->destination.bytesPerRow > copyTextureDataSizePerRow) {
             return false;
         }
 
-        const uint64_t overwrittenRangeSize =
-            copyTextureDataSizePerRow * (copy->copySize.height / texture->GetFormat().blockHeight) *
-            copy->copySize.depth;
+        const uint64_t overwrittenRangeSize = copyTextureDataSizePerRow *
+                                              (copy->copySize.height / blockInfo.blockHeight) *
+                                              copy->copySize.depth;
         if (copy->destination.buffer->GetSize() > overwrittenRangeSize) {
             return false;
         }
@@ -192,17 +189,41 @@ namespace dawn_native {
         return true;
     }
 
-    std::array<int32_t, 4> ConvertToSignedIntegerColor(dawn_native::Color color) {
-        const std::array<int32_t, 4> outputValue = {
-            static_cast<int32_t>(color.r), static_cast<int32_t>(color.g),
-            static_cast<int32_t>(color.b), static_cast<int32_t>(color.a)};
+    // The below functions convert a dawn_native::Color (doubles) to floats, then to the desired
+    // data type. This intermediate conversion to float must be done to ensure all backends produce
+    // consistent results.
+
+    std::array<double, 4> ConvertToFloatToDoubleColor(dawn_native::Color color) {
+        const std::array<double, 4> outputValue = {
+            static_cast<double>(static_cast<float>(color.r)),
+            static_cast<double>(static_cast<float>(color.g)),
+            static_cast<double>(static_cast<float>(color.b)),
+            static_cast<double>(static_cast<float>(color.a))};
         return outputValue;
     }
 
-    std::array<uint32_t, 4> ConvertToUnsignedIntegerColor(dawn_native::Color color) {
-        const std::array<uint32_t, 4> outputValue = {
-            static_cast<uint32_t>(color.r), static_cast<uint32_t>(color.g),
-            static_cast<uint32_t>(color.b), static_cast<uint32_t>(color.a)};
+    std::array<float, 4> ConvertToFloatColor(dawn_native::Color color) {
+        const std::array<float, 4> outputValue = {
+            static_cast<float>(color.r), static_cast<float>(color.g), static_cast<float>(color.b),
+            static_cast<float>(color.a)};
         return outputValue;
     }
+    std::array<int32_t, 4> ConvertToFloatToSignedIntegerColor(dawn_native::Color color) {
+        const std::array<int32_t, 4> outputValue = {
+            static_cast<int32_t>(static_cast<float>(color.r)),
+            static_cast<int32_t>(static_cast<float>(color.g)),
+            static_cast<int32_t>(static_cast<float>(color.b)),
+            static_cast<int32_t>(static_cast<float>(color.a))};
+        return outputValue;
+    }
+
+    std::array<uint32_t, 4> ConvertToFloatToUnsignedIntegerColor(dawn_native::Color color) {
+        const std::array<uint32_t, 4> outputValue = {
+            static_cast<uint32_t>(static_cast<float>(color.r)),
+            static_cast<uint32_t>(static_cast<float>(color.g)),
+            static_cast<uint32_t>(static_cast<float>(color.b)),
+            static_cast<uint32_t>(static_cast<float>(color.a))};
+        return outputValue;
+    }
+
 }  // namespace dawn_native

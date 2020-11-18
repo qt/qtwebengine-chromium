@@ -84,20 +84,19 @@ inline void WriteMaskBlendLine4x2(const int16_t* const pred_0,
                                   const int16x8_t pred_mask_0,
                                   const int16x8_t pred_mask_1, uint8_t* dst,
                                   const ptrdiff_t dst_stride) {
-  const int16x4_t pred_val_0_lo = vld1_s16(pred_0);
-  const int16x4_t pred_val_0_hi = vld1_s16(pred_0 + 4);
-  const int16x4_t pred_val_1_lo = vld1_s16(pred_1);
-  const int16x4_t pred_val_1_hi = vld1_s16(pred_1 + 4);
+  const int16x8_t pred_val_0 = vld1q_s16(pred_0);
+  const int16x8_t pred_val_1 = vld1q_s16(pred_1);
   // int res = (mask_value * prediction_0[x] +
   //      (64 - mask_value) * prediction_1[x]) >> 6;
   const int32x4_t weighted_pred_0_lo =
-      vmull_s16(vget_low_s16(pred_mask_0), pred_val_0_lo);
+      vmull_s16(vget_low_s16(pred_mask_0), vget_low_s16(pred_val_0));
   const int32x4_t weighted_pred_0_hi =
-      vmull_s16(vget_high_s16(pred_mask_0), pred_val_0_hi);
-  const int32x4_t weighted_combo_lo =
-      vmlal_s16(weighted_pred_0_lo, vget_low_s16(pred_mask_1), pred_val_1_lo);
+      vmull_s16(vget_high_s16(pred_mask_0), vget_high_s16(pred_val_0));
+  const int32x4_t weighted_combo_lo = vmlal_s16(
+      weighted_pred_0_lo, vget_low_s16(pred_mask_1), vget_low_s16(pred_val_1));
   const int32x4_t weighted_combo_hi =
-      vmlal_s16(weighted_pred_0_hi, vget_high_s16(pred_mask_1), pred_val_1_hi);
+      vmlal_s16(weighted_pred_0_hi, vget_high_s16(pred_mask_1),
+                vget_high_s16(pred_val_1));
   // dst[x] = static_cast<Pixel>(
   //     Clip3(RightShiftWithRounding(res, inter_post_round_bits), 0,
   //         (1 << kBitdepth8) - 1));

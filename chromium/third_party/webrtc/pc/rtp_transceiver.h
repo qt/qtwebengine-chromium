@@ -177,6 +177,10 @@ class RtpTransceiver final
   // PeerConnection is closed.
   void SetPeerConnectionClosed();
 
+  // Executes the "stop the RTCRtpTransceiver" procedure from
+  // the webrtc-pc specification, described under the stop() method.
+  void StopTransceiverProcedure();
+
   // Fired when the RtpTransceiver state changes such that negotiation is now
   // needed (e.g., in response to a direction change).
   sigslot::signal0<> SignalNegotiationNeeded;
@@ -240,7 +244,7 @@ class RtpTransceiver final
 
 BEGIN_SIGNALING_PROXY_MAP(RtpTransceiver)
 PROXY_SIGNALING_THREAD_DESTRUCTOR()
-PROXY_CONSTMETHOD0(cricket::MediaType, media_type)
+BYPASS_PROXY_CONSTMETHOD0(cricket::MediaType, media_type)
 PROXY_CONSTMETHOD0(absl::optional<std::string>, mid)
 PROXY_CONSTMETHOD0(rtc::scoped_refptr<RtpSenderInterface>, sender)
 PROXY_CONSTMETHOD0(rtc::scoped_refptr<RtpReceiverInterface>, receiver)

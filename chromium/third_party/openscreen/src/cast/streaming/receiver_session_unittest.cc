@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "cast/streaming/mock_environment.h"
+#include "cast/streaming/receiver.h"
+#include "cast/streaming/testing/simple_message_port.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "platform/base/ip_address.h"
@@ -200,6 +202,20 @@ constexpr char kInvalidJsonOfferMessage[] = R"({
   }
 })";
 
+constexpr char kMissingMandatoryFieldOfferMessage[] = R"({
+  "type": "OFFER",
+  "seqNum": 1337
+})";
+
+constexpr char kMissingSeqNumOfferMessage[] = R"({
+  "type": "OFFER",
+  "offer": {
+    "castMode": "mirroring",
+    "receiverGetStatus": true,
+    "supportedStreams": []
+  }
+})";
+
 constexpr char kValidJsonInvalidFormatOfferMessage[] = R"({
   "type": "OFFER",
   "seqNum": 1337,
@@ -229,37 +245,6 @@ constexpr char kInvalidTypeMessage[] = R"({
   "type": 39,
   "seqNum": 1337
 })";
-
-class SimpleMessagePort : public MessagePort {
- public:
-  ~SimpleMessagePort() override {}
-  void SetClient(MessagePort::Client* client) override { client_ = client; }
-
-  void ReceiveMessage(absl::string_view message) {
-    ASSERT_NE(client_, nullptr);
-    client_->OnMessage("sender-id", "namespace", message);
-  }
-
-  void ReceiveError(Error error) {
-    ASSERT_NE(client_, nullptr);
-    client_->OnError(error);
-  }
-
-  void PostMessage(absl::string_view sender_id,
-                   absl::string_view message_namespace,
-                   absl::string_view message) override {
-    posted_messages_.emplace_back(std::move(message));
-  }
-
-  MessagePort::Client* client() const { return client_; }
-  const std::vector<std::string> posted_messages() const {
-    return posted_messages_;
-  }
-
- private:
-  MessagePort::Client* client_ = nullptr;
-  std::vector<std::string> posted_messages_;
-};
 
 class FakeClient : public ReceiverSession::Client {
  public:
@@ -328,31 +313,23 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithDefaultPreferences) {
   EXPECT_CALL(client_, OnNegotiated(session_.get(), _))
       .WillOnce([](const ReceiverSession* session_,
                    ReceiverSession::ConfiguredReceivers cr) {
-        EXPECT_TRUE(cr.audio);
-        EXPECT_EQ(cr.audio.value().receiver_config.sender_ssrc, 19088747u);
-        EXPECT_EQ(cr.audio.value().receiver_config.receiver_ssrc, 19088748u);
-        EXPECT_EQ(cr.audio.value().receiver_config.channels, 2);
-        EXPECT_EQ(cr.audio.value().receiver_config.rtp_timebase, 48000);
+        EXPECT_TRUE(cr.audio_receiver);
+        EXPECT_EQ(cr.audio_receiver->config().sender_ssrc, 19088747u);
+        EXPECT_EQ(cr.audio_receiver->config().receiver_ssrc, 19088748u);
+        EXPECT_EQ(cr.audio_receiver->config().channels, 2);
+        EXPECT_EQ(cr.audio_receiver->config().rtp_timebase, 48000);
 
         // We should have chosen opus
-        EXPECT_EQ(cr.audio.value().selected_stream.stream.index, 1337);
-        EXPECT_EQ(cr.audio.value().selected_stream.stream.type,
-                  Stream::Type::kAudioSource);
-        EXPECT_EQ(cr.audio.value().selected_stream.stream.codec_name, "opus");
-        EXPECT_EQ(cr.audio.value().selected_stream.stream.channels, 2);
+        EXPECT_EQ(cr.audio_config.codec, AudioCodec::kOpus);
 
-        EXPECT_TRUE(cr.video);
-        EXPECT_EQ(cr.video.value().receiver_config.sender_ssrc, 19088745u);
-        EXPECT_EQ(cr.video.value().receiver_config.receiver_ssrc, 19088746u);
-        EXPECT_EQ(cr.video.value().receiver_config.channels, 1);
-        EXPECT_EQ(cr.video.value().receiver_config.rtp_timebase, 90000);
+        EXPECT_TRUE(cr.video_receiver);
+        EXPECT_EQ(cr.video_receiver->config().sender_ssrc, 19088745u);
+        EXPECT_EQ(cr.video_receiver->config().receiver_ssrc, 19088746u);
+        EXPECT_EQ(cr.video_receiver->config().channels, 1);
+        EXPECT_EQ(cr.video_receiver->config().rtp_timebase, 90000);
 
         // We should have chosen vp8
-        EXPECT_EQ(cr.video.value().selected_stream.stream.index, 31338);
-        EXPECT_EQ(cr.video.value().selected_stream.stream.type,
-                  Stream::Type::kVideoSource);
-        EXPECT_EQ(cr.video.value().selected_stream.stream.codec_name, "vp8");
-        EXPECT_EQ(cr.video.value().selected_stream.stream.channels, 1);
+        EXPECT_EQ(cr.video_config.codec, VideoCodec::kVp8);
       });
   EXPECT_CALL(client_,
               OnReceiversDestroying(session_.get(),
@@ -393,25 +370,25 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithDefaultPreferences) {
 TEST_F(ReceiverSessionTest, CanNegotiateWithCustomCodecPreferences) {
   ReceiverSession session(
       &client_, environment_.get(), message_port_.get(),
-      ReceiverSession::Preferences{{ReceiverSession::VideoCodec::kVp9},
-                                   {ReceiverSession::AudioCodec::kOpus}});
+      ReceiverSession::Preferences{{VideoCodec::kVp9}, {AudioCodec::kOpus}});
 
   InSequence s;
   EXPECT_CALL(client_, OnNegotiated(&session, _))
       .WillOnce([](const ReceiverSession* session_,
                    ReceiverSession::ConfiguredReceivers cr) {
-        EXPECT_TRUE(cr.audio);
-        EXPECT_EQ(cr.audio.value().receiver_config.sender_ssrc, 19088747u);
-        EXPECT_EQ(cr.audio.value().receiver_config.receiver_ssrc, 19088748u);
-        EXPECT_EQ(cr.audio.value().receiver_config.channels, 2);
-        EXPECT_EQ(cr.audio.value().receiver_config.rtp_timebase, 48000);
+        EXPECT_TRUE(cr.audio_receiver);
+        EXPECT_EQ(cr.audio_receiver->config().sender_ssrc, 19088747u);
+        EXPECT_EQ(cr.audio_receiver->config().receiver_ssrc, 19088748u);
+        EXPECT_EQ(cr.audio_receiver->config().channels, 2);
+        EXPECT_EQ(cr.audio_receiver->config().rtp_timebase, 48000);
+        EXPECT_EQ(cr.audio_config.codec, AudioCodec::kOpus);
 
-        EXPECT_TRUE(cr.video);
-        // We should have chosen vp9
-        EXPECT_EQ(cr.video.value().receiver_config.sender_ssrc, 19088743u);
-        EXPECT_EQ(cr.video.value().receiver_config.receiver_ssrc, 19088744u);
-        EXPECT_EQ(cr.video.value().receiver_config.channels, 1);
-        EXPECT_EQ(cr.video.value().receiver_config.rtp_timebase, 90000);
+        EXPECT_TRUE(cr.video_receiver);
+        EXPECT_EQ(cr.video_receiver->config().sender_ssrc, 19088743u);
+        EXPECT_EQ(cr.video_receiver->config().receiver_ssrc, 19088744u);
+        EXPECT_EQ(cr.video_receiver->config().channels, 1);
+        EXPECT_EQ(cr.video_receiver->config().rtp_timebase, 90000);
+        EXPECT_EQ(cr.video_config.codec, VideoCodec::kVp9);
       });
   EXPECT_CALL(client_, OnReceiversDestroying(
                            &session, ReceiverSession::Client::kEndOfSession));
@@ -433,12 +410,11 @@ TEST_F(ReceiverSessionTest, CanNegotiateWithCustomConstraints) {
       absl::optional<AspectRatio>(AspectRatio{16, 9}),
       absl::optional<AspectRatioConstraint>(AspectRatioConstraint::kFixed)});
 
-  ReceiverSession session(
-      &client_, environment_.get(), message_port_.get(),
-      ReceiverSession::Preferences{{ReceiverSession::VideoCodec::kVp9},
-                                   {ReceiverSession::AudioCodec::kOpus},
-                                   std::move(constraints),
-                                   std::move(display)});
+  ReceiverSession session(&client_, environment_.get(), message_port_.get(),
+                          ReceiverSession::Preferences{{VideoCodec::kVp9},
+                                                       {AudioCodec::kOpus},
+                                                       std::move(constraints),
+                                                       std::move(display)});
 
   InSequence s;
   EXPECT_CALL(client_, OnNegotiated(&session, _));
@@ -564,27 +540,46 @@ TEST_F(ReceiverSessionTest, HandlesNoValidStreams) {
 
 TEST_F(ReceiverSessionTest, HandlesMalformedOffer) {
   // Note that unlike when we simply don't select any streams, when the offer
-  // is actually completely invalid we call OnError.
-  EXPECT_CALL(client_,
-              OnError(session_.get(), Error(Error::Code::kJsonParseError)));
+  // is not valid JSON we actually have no way of knowing it's an offer at all,
+  // so we call OnError and do not reply with an Answer.
+  EXPECT_CALL(client_, OnError(session_.get(), _));
 
   message_port_->ReceiveMessage(kInvalidJsonOfferMessage);
 }
 
+TEST_F(ReceiverSessionTest, HandlesMissingSeqNumInOffer) {
+  // If the OFFER is missing a sequence number it gets rejected before being
+  // parsed as an OFFER, since the sender expects all messages to come back
+  // with a sequence number.
+  message_port_->ReceiveMessage(kMissingSeqNumOfferMessage);
+}
+
+TEST_F(ReceiverSessionTest, HandlesOfferMissingMandatoryFields) {
+  // If the OFFER is missing mandatory fields, we notify the client as well as
+  // reply with an error-case Answer.
+  EXPECT_CALL(client_, OnError(session_.get(), _));
+
+  message_port_->ReceiveMessage(kMissingMandatoryFieldOfferMessage);
+  const auto& messages = message_port_->posted_messages();
+  EXPECT_EQ(1u, messages.size());
+
+  auto message_body = json::Parse(messages[0]);
+  ExpectIsErrorAnswerMessage(message_body);
+}
+
 TEST_F(ReceiverSessionTest, HandlesImproperlyFormattedOffer) {
-  EXPECT_CALL(client_,
-              OnError(session_.get(),
-                      Error(Error::Code::kJsonParseError,
-                            "Failed to parse supported streams in offer")));
+  EXPECT_CALL(client_, OnError(session_.get(), _));
 
   message_port_->ReceiveMessage(kValidJsonInvalidFormatOfferMessage);
+  const auto& messages = message_port_->posted_messages();
+  EXPECT_EQ(1u, messages.size());
+
+  auto message_body = json::Parse(messages[0]);
+  ExpectIsErrorAnswerMessage(message_body);
 }
 
 TEST_F(ReceiverSessionTest, HandlesNullOffer) {
-  EXPECT_CALL(client_, OnError(session_.get(),
-                               Error(Error::Code::kJsonParseError,
-                                     "Received offer missing offer body")));
-
+  EXPECT_CALL(client_, OnError(session_.get(), _));
   message_port_->ReceiveMessage(kNullJsonOfferMessage);
 }
 

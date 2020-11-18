@@ -13,6 +13,7 @@
   ],
   "dependencies": [
     "common",
+    "data_grid",
     "platform",
     "ui",
     "host"

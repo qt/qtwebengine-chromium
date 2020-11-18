@@ -35,8 +35,6 @@ namespace dawn_native { namespace opengl {
                     return GL_TRIANGLES;
                 case wgpu::PrimitiveTopology::TriangleStrip:
                     return GL_TRIANGLE_STRIP;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -86,8 +84,6 @@ namespace dawn_native { namespace opengl {
                     return alpha ? GL_CONSTANT_ALPHA : GL_CONSTANT_COLOR;
                 case wgpu::BlendFactor::OneMinusBlendColor:
                     return alpha ? GL_ONE_MINUS_CONSTANT_ALPHA : GL_ONE_MINUS_CONSTANT_COLOR;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -103,27 +99,27 @@ namespace dawn_native { namespace opengl {
                     return GL_MIN;
                 case wgpu::BlendOperation::Max:
                     return GL_MAX;
-                default:
-                    UNREACHABLE();
             }
         }
 
         void ApplyColorState(const OpenGLFunctions& gl,
-                             uint32_t attachment,
+                             ColorAttachmentIndex attachment,
                              const ColorStateDescriptor* descriptor) {
+            GLuint colorBuffer = static_cast<GLuint>(static_cast<uint8_t>(attachment));
             if (BlendEnabled(descriptor)) {
-                gl.Enablei(GL_BLEND, attachment);
-                gl.BlendEquationSeparatei(attachment, GLBlendMode(descriptor->colorBlend.operation),
+                gl.Enablei(GL_BLEND, colorBuffer);
+                gl.BlendEquationSeparatei(colorBuffer,
+                                          GLBlendMode(descriptor->colorBlend.operation),
                                           GLBlendMode(descriptor->alphaBlend.operation));
-                gl.BlendFuncSeparatei(attachment,
+                gl.BlendFuncSeparatei(colorBuffer,
                                       GLBlendFactor(descriptor->colorBlend.srcFactor, false),
                                       GLBlendFactor(descriptor->colorBlend.dstFactor, false),
                                       GLBlendFactor(descriptor->alphaBlend.srcFactor, true),
                                       GLBlendFactor(descriptor->alphaBlend.dstFactor, true));
             } else {
-                gl.Disablei(GL_BLEND, attachment);
+                gl.Disablei(GL_BLEND, colorBuffer);
             }
-            gl.ColorMaski(attachment, descriptor->writeMask & wgpu::ColorWriteMask::Red,
+            gl.ColorMaski(colorBuffer, descriptor->writeMask & wgpu::ColorWriteMask::Red,
                           descriptor->writeMask & wgpu::ColorWriteMask::Green,
                           descriptor->writeMask & wgpu::ColorWriteMask::Blue,
                           descriptor->writeMask & wgpu::ColorWriteMask::Alpha);
@@ -147,8 +143,6 @@ namespace dawn_native { namespace opengl {
                     return GL_INCR_WRAP;
                 case wgpu::StencilOperation::DecrementWrap:
                     return GL_DECR_WRAP;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -202,7 +196,7 @@ namespace dawn_native { namespace opengl {
         modules[SingleShaderStage::Vertex] = ToBackend(descriptor->vertexStage.module);
         modules[SingleShaderStage::Fragment] = ToBackend(descriptor->fragmentStage->module);
 
-        PipelineGL::Initialize(device->gl, ToBackend(GetLayout()), modules);
+        PipelineGL::Initialize(device->gl, ToBackend(GetLayout()), GetAllStages());
         CreateVAOForVertexState(descriptor->vertexState);
     }
 
@@ -216,32 +210,37 @@ namespace dawn_native { namespace opengl {
         return mGlPrimitiveTopology;
     }
 
+    ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes>
+    RenderPipeline::GetAttributesUsingVertexBuffer(VertexBufferSlot slot) const {
+        ASSERT(!IsError());
+        return mAttributesUsingVertexBuffer[slot];
+    }
+
     void RenderPipeline::CreateVAOForVertexState(const VertexStateDescriptor* vertexState) {
         const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
 
         gl.GenVertexArrays(1, &mVertexArrayObject);
         gl.BindVertexArray(mVertexArrayObject);
 
-        for (uint32_t location : IterateBitSet(GetAttributeLocationsUsed())) {
+        for (VertexAttributeLocation location : IterateBitSet(GetAttributeLocationsUsed())) {
             const auto& attribute = GetAttribute(location);
-            gl.EnableVertexAttribArray(location);
+            GLuint glAttrib = static_cast<GLuint>(static_cast<uint8_t>(location));
+            gl.EnableVertexAttribArray(glAttrib);
 
-            attributesUsingVertexBuffer[attribute.vertexBufferSlot][location] = true;
+            mAttributesUsingVertexBuffer[attribute.vertexBufferSlot][location] = true;
             const VertexBufferInfo& vertexBuffer = GetVertexBuffer(attribute.vertexBufferSlot);
 
             if (vertexBuffer.arrayStride == 0) {
                 // Emulate a stride of zero (constant vertex attribute) by
                 // setting the attribute instance divisor to a huge number.
-                gl.VertexAttribDivisor(location, 0xffffffff);
+                gl.VertexAttribDivisor(glAttrib, 0xffffffff);
             } else {
                 switch (vertexBuffer.stepMode) {
                     case wgpu::InputStepMode::Vertex:
                         break;
                     case wgpu::InputStepMode::Instance:
-                        gl.VertexAttribDivisor(location, 1);
+                        gl.VertexAttribDivisor(glAttrib, 1);
                         break;
-                    default:
-                        UNREACHABLE();
                 }
             }
         }
@@ -265,7 +264,7 @@ namespace dawn_native { namespace opengl {
             gl.Disable(GL_SAMPLE_ALPHA_TO_COVERAGE);
         }
 
-        for (uint32_t attachmentSlot : IterateBitSet(GetColorAttachmentsMask())) {
+        for (ColorAttachmentIndex attachmentSlot : IterateBitSet(GetColorAttachmentsMask())) {
             ApplyColorState(gl, attachmentSlot, GetColorStateDescriptor(attachmentSlot));
         }
     }

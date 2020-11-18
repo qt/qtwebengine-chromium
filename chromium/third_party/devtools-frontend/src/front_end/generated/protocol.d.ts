@@ -1148,10 +1148,6 @@ declare namespace Protocol {
        */
       userVisibleOnly?: boolean;
       /**
-       * For "wake-lock" permission, must specify type as either "screen" or "system".
-       */
-      type?: string;
-      /**
        * For "clipboard" permission, may specify allowWithoutSanitization.
        */
       allowWithoutSanitization?: boolean;
@@ -1525,10 +1521,14 @@ declare namespace Protocol {
       /**
        * Whether this stylesheet is mutable. Inline stylesheets become mutable
        * after they have been modified via CSSOM API.
-       * <link> element's stylesheets are never mutable. Constructed stylesheets
-       * (new CSSStyleSheet()) are mutable immediately after creation.
+       * <link> element's stylesheets become mutable only if DevTools modifies them.
+       * Constructed stylesheets (new CSSStyleSheet()) are mutable immediately after creation.
        */
       isMutable: boolean;
+      /**
+       * Whether this stylesheet is a constructed stylesheet (created using new CSSStyleSheet()).
+       */
+      isConstructed: boolean;
       /**
        * Line offset of the stylesheet within the resource (zero based).
        */
@@ -7134,6 +7134,9 @@ declare namespace Protocol {
 
     export interface CrossOriginOpenerPolicyStatus {
       value: CrossOriginOpenerPolicyValue;
+      reportOnlyValue: CrossOriginOpenerPolicyValue;
+      reportingEndpoint?: string;
+      reportOnlyReportingEndpoint?: string;
     }
 
     export enum CrossOriginEmbedderPolicyValue {
@@ -7143,11 +7146,44 @@ declare namespace Protocol {
 
     export interface CrossOriginEmbedderPolicyStatus {
       value: CrossOriginEmbedderPolicyValue;
+      reportOnlyValue: CrossOriginEmbedderPolicyValue;
+      reportingEndpoint?: string;
+      reportOnlyReportingEndpoint?: string;
     }
 
     export interface SecurityIsolationStatus {
       coop: CrossOriginOpenerPolicyStatus;
       coep: CrossOriginEmbedderPolicyStatus;
+    }
+
+    /**
+     * An object providing the result of a network resource load.
+     */
+    export interface LoadNetworkResourcePageResult {
+      success: boolean;
+      /**
+       * Optional values used for error reporting.
+       */
+      netError?: number;
+      netErrorName?: string;
+      httpStatusCode?: number;
+      /**
+       * If successful, one of the following two fields holds the result.
+       */
+      stream?: IO.StreamHandle;
+      /**
+       * Response headers.
+       */
+      headers?: Network.Headers;
+    }
+
+    /**
+     * An options object that may be extended later to better support CORS,
+     * CORB and streaming.
+     */
+    export interface LoadNetworkResourceOptions {
+      disableCache: boolean;
+      includeCredentials: boolean;
     }
 
     export interface CanClearBrowserCacheResponse extends ProtocolResponseWithError {
@@ -7489,6 +7525,13 @@ declare namespace Protocol {
       headers: Headers;
     }
 
+    export interface SetAttachDebugHeaderRequest {
+      /**
+       * Whether to send a debug header.
+       */
+      enabled: boolean;
+    }
+
     export interface SetRequestInterceptionRequest {
       /**
        * Requests matching any of these patterns will be forwarded and wait for the corresponding
@@ -7525,6 +7568,25 @@ declare namespace Protocol {
 
     export interface GetSecurityIsolationStatusResponse extends ProtocolResponseWithError {
       status: SecurityIsolationStatus;
+    }
+
+    export interface LoadNetworkResourceRequest {
+      /**
+       * Frame id to get the resource for.
+       */
+      frameId: Page.FrameId;
+      /**
+       * URL of the resource to get content for.
+       */
+      url: string;
+      /**
+       * Options for the request.
+       */
+      options: LoadNetworkResourceOptions;
+    }
+
+    export interface LoadNetworkResourceResponse extends ProtocolResponseWithError {
+      resource: LoadNetworkResourcePageResult;
     }
 
     /**
@@ -8086,6 +8148,10 @@ declare namespace Protocol {
        * The named grid areas border color (Default: transparent).
        */
       areaBorderColor?: DOM.RGBA;
+      /**
+       * The grid container background color (Default: transparent).
+       */
+      gridBackgroundColor?: DOM.RGBA;
     }
 
     /**
@@ -11750,7 +11816,7 @@ declare namespace Protocol {
     }
 
     /**
-     * Protocol object for AudioListner
+     * Protocol object for AudioListener
      */
     export interface AudioListener {
       listenerId: GraphObjectId;
@@ -13456,6 +13522,24 @@ declare namespace Protocol {
       value: integer;
     }
 
+    /**
+     * Runtime call counter information.
+     */
+    export interface RuntimeCallCounterInfo {
+      /**
+       * Counter name.
+       */
+      name: string;
+      /**
+       * Counter value.
+       */
+      value: number;
+      /**
+       * Counter time in seconds.
+       */
+      time: number;
+    }
+
     export interface GetBestEffortCoverageResponse extends ProtocolResponseWithError {
       /**
        * Coverage data for the current isolate.
@@ -13517,11 +13601,18 @@ declare namespace Protocol {
       result: ScriptTypeProfile[];
     }
 
-    export interface GetRuntimeCallStatsResponse extends ProtocolResponseWithError {
+    export interface GetCountersResponse extends ProtocolResponseWithError {
       /**
-       * Collected counter information.
+       * Collected counters information.
        */
       result: CounterInfo[];
+    }
+
+    export interface GetRuntimeCallStatsResponse extends ProtocolResponseWithError {
+      /**
+       * Collected runtime call counter information.
+       */
+      result: RuntimeCallCounterInfo[];
     }
 
     export interface ConsoleProfileFinishedEvent {

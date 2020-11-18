@@ -12,13 +12,14 @@
 #include <utility>
 #include <vector>
 
-#include "core/fxcrt/unowned_ptr.h"
 #include "core/fxcrt/widestring.h"
+#include "fxjs/gc/heap.h"
 #include "fxjs/xfa/fxjse.h"
 #include "fxjs/xfa/jse_define.h"
 #include "third_party/base/optional.h"
 #include "third_party/base/span.h"
-#include "v8/include/cppgc/persistent.h"
+#include "v8/include/cppgc/garbage-collected.h"
+#include "v8/include/cppgc/member.h"
 #include "xfa/fxfa/fxfa_basic.h"
 #include "xfa/fxfa/parser/cxfa_measurement.h"
 
@@ -26,7 +27,6 @@ class CFX_XMLElement;
 class CFXJSE_Value;
 class CFX_V8;
 class CJX_Object;
-class CXFA_CalcData;
 class CXFA_Document;
 class CXFA_LayoutItem;
 class CXFA_Node;
@@ -57,7 +57,8 @@ enum XFA_SOM_MESSAGETYPE {
   XFA_SOM_MandatoryMessage
 };
 
-class CJX_Object : public CFXJSE_HostObject {
+class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
+                   public CFXJSE_HostObject {
  public:
   // Corresponds 1:1 with CJX_ subclasses.
   enum class TypeTag {
@@ -98,12 +99,26 @@ class CJX_Object : public CFXJSE_HostObject {
     Xfa,
   };
 
-  explicit CJX_Object(CXFA_Object* obj);
+  class CalcData : public cppgc::GarbageCollected<CalcData> {
+   public:
+    CONSTRUCT_VIA_MAKE_GARBAGE_COLLECTED;
+    ~CalcData();
+
+    void Trace(cppgc::Visitor* visitor) const;
+
+    std::vector<cppgc::Member<CXFA_Node>> m_Globals;
+
+   private:
+    CalcData();
+  };
+
+  CONSTRUCT_VIA_MAKE_GARBAGE_COLLECTED;
   ~CJX_Object() override;
 
   // CFXJSE_HostObject:
   CJX_Object* AsCJXObject() override;
 
+  virtual void Trace(cppgc::Visitor* visitor) const;
   virtual bool DynamicTypeIs(TypeTag eType) const;
 
   JSE_PROP(className);
@@ -123,14 +138,13 @@ class CJX_Object : public CFXJSE_HostObject {
                        const std::vector<v8::Local<v8::Value>>& params);
 
   bool HasAttribute(XFA_Attribute eAttr);
-  void SetAttribute(XFA_Attribute eAttr, WideStringView wsValue, bool bNotify);
-  void SetAttribute(WideStringView wsAttr,
-                    WideStringView wsValue,
-                    bool bNotify);
+  void SetAttributeByEnum(XFA_Attribute eAttr,
+                          WideStringView wsValue,
+                          bool bNotify);
+  void SetAttributeByString(WideStringView wsAttr, WideStringView wsValue);
   void RemoveAttribute(WideStringView wsAttr);
-  WideString GetAttribute(WideStringView attr);
-  WideString GetAttribute(XFA_Attribute attr);
-  Optional<WideString> TryAttribute(WideStringView wsAttr, bool bUseDefault);
+  WideString GetAttributeByString(WideStringView attr);
+  WideString GetAttributeByEnum(XFA_Attribute attr);
   Optional<WideString> TryAttribute(XFA_Attribute eAttr, bool bUseDefault);
 
   Optional<WideString> TryContent(bool bScriptModify, bool bProto);
@@ -154,9 +168,7 @@ class CJX_Object : public CFXJSE_HostObject {
   }
 
   void SetAttributeValue(const WideString& wsValue,
-                         const WideString& wsXMLValue,
-                         bool bNotify,
-                         bool bScriptModify);
+                         const WideString& wsXMLValue);
 
   // Not actual properties, but invoked as property handlers to cover
   // a broad range of underlying properties.
@@ -187,10 +199,7 @@ class CJX_Object : public CFXJSE_HostObject {
   int32_t GetInteger(XFA_Attribute eAttr) const;
 
   Optional<WideString> TryCData(XFA_Attribute eAttr, bool bUseDefault) const;
-  void SetCData(XFA_Attribute eAttr,
-                const WideString& wsValue,
-                bool bNotify,
-                bool bScriptModify);
+  void SetCData(XFA_Attribute eAttr, const WideString& wsValue);
   WideString GetCData(XFA_Attribute eAttr) const;
 
   Optional<XFA_AttributeValue> TryEnum(XFA_Attribute eAttr,
@@ -211,9 +220,9 @@ class CJX_Object : public CFXJSE_HostObject {
 
   void MergeAllData(CXFA_Object* pDstModule);
 
-  void SetCalcData(std::unique_ptr<CXFA_CalcData> data);
-  CXFA_CalcData* GetCalcData() const { return calc_data_.get(); }
-  std::unique_ptr<CXFA_CalcData> ReleaseCalcData();
+  CalcData* GetCalcData() const { return calc_data_; }
+  CalcData* GetOrCreateCalcData(cppgc::Heap* heap);
+  void TakeCalcDataFrom(CJX_Object* that);
 
   void ThrowInvalidPropertyException() const;
   void ThrowArgumentMismatchException() const;
@@ -222,6 +231,16 @@ class CJX_Object : public CFXJSE_HostObject {
   void ThrowTooManyOccurancesException(const WideString& obj) const;
 
  protected:
+  explicit CJX_Object(CXFA_Object* obj);
+
+  void SetAttributeValueImpl(const WideString& wsValue,
+                             const WideString& wsXMLValue,
+                             bool bNotify,
+                             bool bScriptModify);
+  void SetCDataImpl(XFA_Attribute eAttr,
+                    const WideString& wsValue,
+                    bool bNotify,
+                    bool bScriptModify);
   void DefineMethods(pdfium::span<const CJX_MethodSpec> methods);
   void MoveBufferMapData(CXFA_Object* pSrcModule, CXFA_Object* pDstModule);
   void SetMapModuleString(void* pKey, WideStringView wsValue);
@@ -261,10 +280,10 @@ class CJX_Object : public CFXJSE_HostObject {
   void RemoveMapModuleKey(void* pKey);
   void MoveBufferMapData(CXFA_Object* pDstModule);
 
-  UnownedPtr<CXFA_Object> object_;
-  CXFA_LayoutItem* layout_item_ = nullptr;
+  cppgc::Member<CXFA_Object> object_;
+  cppgc::Member<CXFA_LayoutItem> layout_item_;
+  cppgc::Member<CalcData> calc_data_;
   std::unique_ptr<XFA_MAPMODULEDATA> map_module_data_;
-  std::unique_ptr<CXFA_CalcData> calc_data_;
   std::map<ByteString, CJX_MethodCall> method_specs_;
   size_t calc_recursion_count_ = 0;
 };

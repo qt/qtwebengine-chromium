@@ -1,6 +1,7 @@
 Name: icu
 URL: https://github.com/unicode-org/icu
 Version: 67.1
+CPEPrefix: cpe:/a:icu-project:international_components_for_unicode:67.1
 License: MIT
 Security Critical: yes
 
@@ -14,13 +15,14 @@ A. How to update ICU
    It does preserve Chrome-specific build files and
    converter files. (see section C)
 
-   BUILD.gn and icu.gyp* files are automatically updated, too.
+   source.gni and icu.gyp* files are automatically updated, too.
 
 2. Review and apply patches/changes in "D. Local Modifications" if
    necessary/applicable. Update patch files in patches/.
 
 3. Follow the instructions in section B on building ICU data files
 
+4. Update version.gni with the major version number for ICU.
 
 B. How to build ICU data files
 
@@ -80,7 +82,7 @@ Pre-built data files are generated and checked in with the following steps
      non-Android and Android platforms.
 
   c. Whenever data is updated (e.g timezone update), take step b as long
-  as the ICU build directory used in a is kept.
+     as the ICU build directory used in a. is kept.
 
 2. Note on the locale data customization
 

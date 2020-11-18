@@ -78,9 +78,9 @@ class ActiveTexturesCache final : angle::NonCopyable
 
     Texture *operator[](size_t textureIndex) const { return mTextures[textureIndex]; }
 
-    void clear(ContextID contextID);
-    void set(ContextID contextID, size_t textureIndex, Texture *texture);
-    void reset(ContextID contextID, size_t textureIndex);
+    void clear();
+    void set(size_t textureIndex, Texture *texture);
+    void reset(size_t textureIndex);
     bool empty() const;
 
   private:
@@ -168,6 +168,7 @@ class State : angle::NonCopyable
 
     // Depth test state manipulation
     bool isDepthTestEnabled() const { return mDepthStencil.depthTest; }
+    bool isDepthWriteEnabled() const { return mDepthStencil.depthTest && mDepthStencil.depthMask; }
     void setDepthTest(bool enabled);
     void setDepthFunc(GLenum depthFunc);
     void setDepthRange(float zNear, float zFar);
@@ -430,6 +431,11 @@ class State : angle::NonCopyable
 
     size_t getAtomicCounterBufferCount() const { return mAtomicCounterBuffers.size(); }
 
+    ANGLE_INLINE bool hasValidAtomicCounterBuffer() const
+    {
+        return mValidAtomicCounterBufferCount > 0;
+    }
+
     const OffsetBindingPointer<Buffer> &getIndexedUniformBuffer(size_t index) const;
     const OffsetBindingPointer<Buffer> &getIndexedAtomicCounterBuffer(size_t index) const;
     const OffsetBindingPointer<Buffer> &getIndexedShaderStorageBuffer(size_t index) const;
@@ -645,6 +651,7 @@ class State : angle::NonCopyable
     // TODO(jmadill): Consider storing dirty objects in a list instead of by binding.
     enum DirtyObjectType
     {
+        DIRTY_OBJECT_ACTIVE_TEXTURES,  // Top-level dirty bit. Also see mDirtyActiveTextures.
         DIRTY_OBJECT_TEXTURES_INIT,
         DIRTY_OBJECT_IMAGES_INIT,
         DIRTY_OBJECT_READ_ATTACHMENTS,
@@ -656,7 +663,6 @@ class State : angle::NonCopyable
         DIRTY_OBJECT_IMAGES,    // Top-level dirty bit. Also see mDirtyImages.
         DIRTY_OBJECT_SAMPLERS,  // Top-level dirty bit. Also see mDirtySamplers.
         DIRTY_OBJECT_PROGRAM,
-        DIRTY_OBJECT_PROGRAM_PIPELINE,
         DIRTY_OBJECT_UNKNOWN,
         DIRTY_OBJECT_MAX = DIRTY_OBJECT_UNKNOWN,
     };
@@ -694,11 +700,6 @@ class State : angle::NonCopyable
         mDirtyObjects.set(DIRTY_OBJECT_DRAW_ATTACHMENTS);
     }
 
-    ANGLE_INLINE void setProgramPipelineDirty()
-    {
-        mDirtyObjects.set(DIRTY_OBJECT_PROGRAM_PIPELINE);
-    }
-
     // This actually clears the current value dirty bits.
     // TODO(jmadill): Pass mutable dirty bits into Impl.
     AttributesMask getAndResetDirtyCurrentValues() const;
@@ -719,7 +720,7 @@ class State : angle::NonCopyable
     // "onActiveTextureChange" is called when a texture binding changes.
     void onActiveTextureChange(const Context *context, size_t textureUnit);
 
-    // "onActiveTextureStateChange" calls when the Texture itself changed but the binding did not.
+    // "onActiveTextureStateChange" is called when the Texture changed but the binding did not.
     void onActiveTextureStateChange(const Context *context, size_t textureUnit);
 
     void onImageStateChange(const Context *context, size_t unit);
@@ -813,7 +814,10 @@ class State : angle::NonCopyable
         return mNoSimultaneousConstantColorAndAlphaBlendFunc;
     }
 
-    bool isEarlyFragmentTestsOptimizationAllowed() const { return isSampleCoverageEnabled(); }
+    bool canEnableEarlyFragmentTestsOptimization() const
+    {
+        return !isSampleAlphaToCoverageEnabled();
+    }
 
     const BufferVector &getOffsetBindingPointerUniformBuffers() const { return mUniformBuffers; }
 
@@ -854,17 +858,19 @@ class State : angle::NonCopyable
     friend class Context;
 
     void unsetActiveTextures(ActiveTextureMask textureMask);
-    void updateActiveTexture(const Context *context, size_t textureIndex, Texture *texture);
-    void updateActiveTextureState(const Context *context,
-                                  size_t textureIndex,
-                                  const Sampler *sampler,
-                                  Texture *texture);
+    void setActiveTextureDirty(size_t textureIndex, Texture *texture);
+    void updateTextureBinding(const Context *context, size_t textureIndex, Texture *texture);
+    void updateActiveTextureStateOnSync(const Context *context,
+                                        size_t textureIndex,
+                                        const Sampler *sampler,
+                                        Texture *texture);
     Texture *getTextureForActiveSampler(TextureType type, size_t index);
 
     bool hasConstantColor(GLenum sourceRGB, GLenum destRGB) const;
     bool hasConstantAlpha(GLenum sourceRGB, GLenum destRGB) const;
 
     // Functions to synchronize dirty states
+    angle::Result syncActiveTextures(const Context *context, Command command);
     angle::Result syncTexturesInit(const Context *context, Command command);
     angle::Result syncImagesInit(const Context *context, Command command);
     angle::Result syncReadAttachments(const Context *context, Command command);
@@ -876,34 +882,33 @@ class State : angle::NonCopyable
     angle::Result syncImages(const Context *context, Command command);
     angle::Result syncSamplers(const Context *context, Command command);
     angle::Result syncProgram(const Context *context, Command command);
-    angle::Result syncProgramPipeline(const Context *context, Command command);
 
     using DirtyObjectHandler = angle::Result (State::*)(const Context *context, Command command);
     static constexpr DirtyObjectHandler kDirtyObjectHandlers[DIRTY_OBJECT_MAX] = {
-        &State::syncTexturesInit,    &State::syncImagesInit,      &State::syncReadAttachments,
-        &State::syncDrawAttachments, &State::syncReadFramebuffer, &State::syncDrawFramebuffer,
-        &State::syncVertexArray,     &State::syncTextures,        &State::syncImages,
-        &State::syncSamplers,        &State::syncProgram,         &State::syncProgramPipeline,
-    };
+        &State::syncActiveTextures,  &State::syncTexturesInit,    &State::syncImagesInit,
+        &State::syncReadAttachments, &State::syncDrawAttachments, &State::syncReadFramebuffer,
+        &State::syncDrawFramebuffer, &State::syncVertexArray,     &State::syncTextures,
+        &State::syncImages,          &State::syncSamplers,        &State::syncProgram};
 
     // Robust init must happen before Framebuffer init for the Vulkan back-end.
+    static_assert(DIRTY_OBJECT_ACTIVE_TEXTURES < DIRTY_OBJECT_TEXTURES_INIT, "init order");
     static_assert(DIRTY_OBJECT_TEXTURES_INIT < DIRTY_OBJECT_DRAW_FRAMEBUFFER, "init order");
     static_assert(DIRTY_OBJECT_IMAGES_INIT < DIRTY_OBJECT_DRAW_FRAMEBUFFER, "init order");
     static_assert(DIRTY_OBJECT_DRAW_ATTACHMENTS < DIRTY_OBJECT_DRAW_FRAMEBUFFER, "init order");
     static_assert(DIRTY_OBJECT_READ_ATTACHMENTS < DIRTY_OBJECT_READ_FRAMEBUFFER, "init order");
 
-    static_assert(DIRTY_OBJECT_TEXTURES_INIT == 0, "check DIRTY_OBJECT_TEXTURES_INIT index");
-    static_assert(DIRTY_OBJECT_IMAGES_INIT == 1, "check DIRTY_OBJECT_IMAGES_INIT index");
-    static_assert(DIRTY_OBJECT_READ_ATTACHMENTS == 2, "check DIRTY_OBJECT_READ_ATTACHMENTS index");
-    static_assert(DIRTY_OBJECT_DRAW_ATTACHMENTS == 3, "check DIRTY_OBJECT_DRAW_ATTACHMENTS index");
-    static_assert(DIRTY_OBJECT_READ_FRAMEBUFFER == 4, "check DIRTY_OBJECT_READ_FRAMEBUFFER index");
-    static_assert(DIRTY_OBJECT_DRAW_FRAMEBUFFER == 5, "check DIRTY_OBJECT_DRAW_FRAMEBUFFER index");
-    static_assert(DIRTY_OBJECT_VERTEX_ARRAY == 6, "check DIRTY_OBJECT_VERTEX_ARRAY index");
-    static_assert(DIRTY_OBJECT_TEXTURES == 7, "check DIRTY_OBJECT_TEXTURES index");
-    static_assert(DIRTY_OBJECT_IMAGES == 8, "check DIRTY_OBJECT_IMAGES index");
-    static_assert(DIRTY_OBJECT_SAMPLERS == 9, "check DIRTY_OBJECT_SAMPLERS index");
-    static_assert(DIRTY_OBJECT_PROGRAM == 10, "check DIRTY_OBJECT_PROGRAM index");
-    static_assert(DIRTY_OBJECT_PROGRAM_PIPELINE == 11, "check DIRTY_OBJECT_PROGRAM_PIPELINE index");
+    static_assert(DIRTY_OBJECT_ACTIVE_TEXTURES == 0, "check DIRTY_OBJECT_ACTIVE_TEXTURES index");
+    static_assert(DIRTY_OBJECT_TEXTURES_INIT == 1, "check DIRTY_OBJECT_TEXTURES_INIT index");
+    static_assert(DIRTY_OBJECT_IMAGES_INIT == 2, "check DIRTY_OBJECT_IMAGES_INIT index");
+    static_assert(DIRTY_OBJECT_READ_ATTACHMENTS == 3, "check DIRTY_OBJECT_READ_ATTACHMENTS index");
+    static_assert(DIRTY_OBJECT_DRAW_ATTACHMENTS == 4, "check DIRTY_OBJECT_DRAW_ATTACHMENTS index");
+    static_assert(DIRTY_OBJECT_READ_FRAMEBUFFER == 5, "check DIRTY_OBJECT_READ_FRAMEBUFFER index");
+    static_assert(DIRTY_OBJECT_DRAW_FRAMEBUFFER == 6, "check DIRTY_OBJECT_DRAW_FRAMEBUFFER index");
+    static_assert(DIRTY_OBJECT_VERTEX_ARRAY == 7, "check DIRTY_OBJECT_VERTEX_ARRAY index");
+    static_assert(DIRTY_OBJECT_TEXTURES == 8, "check DIRTY_OBJECT_TEXTURES index");
+    static_assert(DIRTY_OBJECT_IMAGES == 9, "check DIRTY_OBJECT_IMAGES index");
+    static_assert(DIRTY_OBJECT_SAMPLERS == 10, "check DIRTY_OBJECT_SAMPLERS index");
+    static_assert(DIRTY_OBJECT_PROGRAM == 11, "check DIRTY_OBJECT_PROGRAM index");
 
     // Dispatch table for buffer update functions.
     static const angle::PackedEnumMap<BufferBinding, BufferBindingSetter> kBufferSetters;
@@ -994,20 +999,15 @@ class State : angle::NonCopyable
 
     TextureBindingMap mSamplerTextures;
 
-    // Texture Completeness Caching
-    // ----------------------------
-    // The texture completeness cache uses dirty bits to avoid having to scan the list of textures
-    // each draw call. This gl::State class implements angle::Observer interface. When subject
-    // Textures have state changes, messages reach 'State' (also any observing Framebuffers) via the
-    // onSubjectStateChange method (above). This then invalidates the completeness cache.
+    // Active Textures Cache
+    // ---------------------
+    // The active textures cache gives ANGLE components access to a complete array of textures
+    // on a draw call. gl::State implements angle::Observer and watches gl::Texture for state
+    // changes via the onSubjectStateChange method above. We update the cache before draws.
+    // See Observer.h and the design doc linked there for more info on Subject/Observer events.
     //
-    // Note this requires that we also invalidate the completeness cache manually on events like
-    // re-binding textures/samplers or a change in the program. For more information see the
-    // Observer.h header and the design doc linked there.
-
-    // A cache of complete textures. nullptr indicates unbound or incomplete.
-    // Don't use BindingPointer because this cache is only valid within a draw call.
-    // Also stores a notification channel to the texture itself to handle texture change events.
+    // On state change events (re-binding textures, samplers, programs etc) we clear the cache
+    // and flag dirty bits. nullptr indicates unbound or incomplete.
     ActiveTexturesCache mActiveTexturesCache;
     std::vector<angle::ObserverBinding> mCompleteTextureBindings;
 
@@ -1027,6 +1027,7 @@ class State : angle::NonCopyable
 
     BufferVector mUniformBuffers;
     BufferVector mAtomicCounterBuffers;
+    uint32_t mValidAtomicCounterBufferCount;
     BufferVector mShaderStorageBuffers;
 
     BindingPointer<TransformFeedback> mTransformFeedback;
@@ -1067,6 +1068,7 @@ class State : angle::NonCopyable
     DirtyBits mDirtyBits;
     DirtyObjects mDirtyObjects;
     mutable AttributesMask mDirtyCurrentValues;
+    ActiveTextureMask mDirtyActiveTextures;
     ActiveTextureMask mDirtyTextures;
     ActiveTextureMask mDirtySamplers;
     ImageUnitMask mDirtyImages;

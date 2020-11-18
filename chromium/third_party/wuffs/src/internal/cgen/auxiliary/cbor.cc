@@ -45,6 +45,8 @@ DecodeCbor(DecodeCborCallbacks& callbacks,
     fallback_io_buf = wuffs_base__ptr_u8__writer(fallback_io_array.get(), 4096);
     io_buf = &fallback_io_buf;
   }
+  // cursor_index is discussed at
+  // https://nigeltao.github.io/blog/2020/jsonptr.html#the-cursor-index
   size_t cursor_index = 0;
   std::string ret_error_message;
   std::string io_error_message;
@@ -60,7 +62,7 @@ DecodeCbor(DecodeCborCallbacks& callbacks,
       dec->set_quirk_enabled(quirks.ptr[i], true);
     }
 
-    // Prepare the wuffs_base__tok_buffer.
+    // Prepare the wuffs_base__tok_buffer. 256 tokens is 2KiB.
     wuffs_base__token tok_array[256];
     wuffs_base__token_buffer tok_buf =
         wuffs_base__slice_token__writer(wuffs_base__make_slice_token(

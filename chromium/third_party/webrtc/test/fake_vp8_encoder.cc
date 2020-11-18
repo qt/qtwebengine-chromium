@@ -90,7 +90,9 @@ CodecSpecificInfo FakeVp8Encoder::PopulateCodecSpecific(
   return codec_specific;
 }
 
-CodecSpecificInfo FakeVp8Encoder::EncodeHook(EncodedImage& encoded_image) {
+CodecSpecificInfo FakeVp8Encoder::EncodeHook(
+    EncodedImage& encoded_image,
+    rtc::scoped_refptr<EncodedImageBuffer> buffer) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
   uint8_t stream_idx = encoded_image.SpatialIndex().value_or(0);
   frame_buffer_controller_->NextFrameConfig(stream_idx,
@@ -101,7 +103,7 @@ CodecSpecificInfo FakeVp8Encoder::EncodeHook(EncodedImage& encoded_image) {
 
   // Write width and height to the payload the same way as the real encoder
   // does.
-  WriteFakeVp8(encoded_image.data(), encoded_image._encodedWidth,
+  WriteFakeVp8(buffer->data(), encoded_image._encodedWidth,
                encoded_image._encodedHeight,
                encoded_image._frameType == VideoFrameType::kVideoFrameKey);
   return codec_specific;
@@ -110,6 +112,17 @@ CodecSpecificInfo FakeVp8Encoder::EncodeHook(EncodedImage& encoded_image) {
 VideoEncoder::EncoderInfo FakeVp8Encoder::GetEncoderInfo() const {
   EncoderInfo info;
   info.implementation_name = "FakeVp8Encoder";
+  MutexLock lock(&mutex_);
+  for (int sid = 0; sid < config_.numberOfSimulcastStreams; ++sid) {
+    int number_of_temporal_layers =
+        config_.simulcastStream[sid].numberOfTemporalLayers;
+    info.fps_allocation[sid].clear();
+    for (int tid = 0; tid < number_of_temporal_layers; ++tid) {
+      // {1/4, 1/2, 1} allocation for num layers = 3.
+      info.fps_allocation[sid].push_back(255 /
+                                         (number_of_temporal_layers - tid));
+    }
+  }
   return info;
 }
 

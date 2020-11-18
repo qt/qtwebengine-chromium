@@ -1049,4 +1049,62 @@ bool ValidateTexStorageMemFlags3DMultisampleANGLE(const Context *context,
     UNIMPLEMENTED();
     return false;
 }
+
+// GL_EXT_buffer_storage
+bool ValidateBufferStorageEXT(const Context *context,
+                              BufferBinding targetPacked,
+                              GLsizeiptr size,
+                              const void *data,
+                              GLbitfield flags)
+{
+    if (!context->isValidBufferBinding(targetPacked))
+    {
+        context->validationError(GL_INVALID_ENUM, kInvalidBufferTypes);
+        return false;
+    }
+
+    if (size < 0)
+    {
+        context->validationError(GL_INVALID_VALUE, kNegativeSize);
+        return false;
+    }
+
+    constexpr GLbitfield kAllUsageFlags =
+        (GL_DYNAMIC_STORAGE_BIT_EXT | GL_MAP_READ_BIT | GL_MAP_WRITE_BIT |
+         GL_MAP_PERSISTENT_BIT_EXT | GL_MAP_PERSISTENT_BIT_EXT | GL_CLIENT_STORAGE_BIT_EXT);
+    if ((flags & ~kAllUsageFlags) != 0)
+    {
+        context->validationError(GL_INVALID_VALUE, kInvalidBufferUsageFlags);
+        return false;
+    }
+
+    if (((flags & GL_MAP_PERSISTENT_BIT_EXT) != 0) &&
+        ((flags & (GL_MAP_READ_BIT | GL_MAP_WRITE_BIT)) == 0))
+    {
+        context->validationError(GL_INVALID_VALUE, kInvalidBufferUsageFlags);
+        return false;
+    }
+
+    if (((flags & GL_MAP_COHERENT_BIT_EXT) != 0) && ((flags & GL_MAP_PERSISTENT_BIT_EXT) == 0))
+    {
+        context->validationError(GL_INVALID_VALUE, kInvalidBufferUsageFlags);
+        return false;
+    }
+
+    Buffer *buffer = context->getState().getTargetBuffer(targetPacked);
+
+    if (buffer == nullptr)
+    {
+        context->validationError(GL_INVALID_OPERATION, kBufferNotBound);
+        return false;
+    }
+
+    if (buffer->isImmutable())
+    {
+        context->validationError(GL_INVALID_OPERATION, kBufferImmutable);
+        return false;
+    }
+
+    return true;
+}
 }  // namespace gl

@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as UI from '../ui/ui.js';  // eslint-disable-line no-unused-vars
 
 import {Events, LighthouseController, Presets, RuntimeSettings} from './LighthouseController.js';  // eslint-disable-line no-unused-vars
@@ -97,7 +100,7 @@ export class StartView extends UI.Widget.Widget {
         ls`Generate report`,
         () => this._controller.dispatchEventToListeners(
             Events.RequestLighthouseStart,
-            /* keyboardInitiated */ UI.UIUtils.elementIsFocusedByKeyboard(this._startButton)),
+            /* keyboardInitiated */ this._startButton.matches(':focus-visible')),
         /* className */ '', /* primary */ true);
     this.setDefaultFocusedElement(this._startButton);
 

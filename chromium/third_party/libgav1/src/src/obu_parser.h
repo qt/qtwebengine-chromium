@@ -284,7 +284,7 @@ class ObuParser : public Allocable {
   }
 
   // Moves |tile_buffers_| into |tile_buffers|.
-  void MoveTileBuffer(Vector<TileBuffer>* tile_buffers) {
+  void MoveTileBuffers(Vector<TileBuffer>* tile_buffers) {
     *tile_buffers = std::move(tile_buffers_);
   }
 
@@ -362,7 +362,8 @@ class ObuParser : public Allocable {
   // ParseMetadata() can find the trailing bit of the OBU and either extract
   // or skip over the payload data as an opaque chunk of data.
   bool ParseMetadata(const uint8_t* data, size_t size);  // 5.8.
-  // Adds and populates the TileBuffer for each tile in the tile group.
+  // Adds and populates the TileBuffer for each tile in the tile group and
+  // updates |next_tile_group_start_|
   bool AddTileBuffers(int start, int end, size_t total_size,
                       size_t tg_header_size, size_t bytes_consumed_so_far);
   bool ParseTileGroup(size_t size, size_t bytes_consumed_so_far);  // 5.11.1.

@@ -18,7 +18,7 @@ namespace SkSL {
  * A 'for' statement.
  */
 struct ForStatement : public Statement {
-    static constexpr Kind kStatementKind = kFor_Kind;
+    static constexpr Kind kStatementKind = Kind::kFor;
 
     ForStatement(int offset, std::unique_ptr<Statement> initializer,
                  std::unique_ptr<Expression> test, std::unique_ptr<Expression> next,
@@ -29,21 +29,6 @@ struct ForStatement : public Statement {
     , fTest(std::move(test))
     , fNext(std::move(next))
     , fStatement(std::move(statement)) {}
-
-    int nodeCount() const override {
-        int result = 1;
-        if (fInitializer) {
-            result += fInitializer->nodeCount();
-        }
-        if (fTest) {
-            result += fTest->nodeCount();
-        }
-        if (fNext) {
-            result += fNext->nodeCount();
-        }
-        result += fStatement->nodeCount();
-        return result;
-    }
 
     std::unique_ptr<Statement> clone() const override {
         return std::unique_ptr<Statement>(new ForStatement(fOffset,
@@ -81,7 +66,7 @@ struct ForStatement : public Statement {
     std::unique_ptr<Expression> fNext;
     std::unique_ptr<Statement> fStatement;
 
-    typedef Statement INHERITED;
+    using INHERITED = Statement;
 };
 
 }  // namespace SkSL

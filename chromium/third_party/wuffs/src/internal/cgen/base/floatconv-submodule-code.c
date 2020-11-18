@@ -978,8 +978,14 @@ wuffs_base__private_implementation__high_prec_dec__round_just_enough(
 //
 // Preconditions:
 //  - man is non-zero.
-//  - exp10 is in the range -326 ..= 310, the same range of the
+//  - exp10 is in the range [-307 ..= 288], the same range of the
 //    wuffs_base__private_implementation__powers_of_10 array.
+//
+// The exp10 range (and the fact that man is in the range [1 ..= UINT64_MAX],
+// approximately [1 ..= 1.85e+19]) means that (man * (10 ** exp10)) is in the
+// range [1e-307 ..= 1.85e+307]. This is entirely within the range of normal
+// (neither subnormal nor non-finite) f64 values: DBL_MIN and DBL_MAX are
+// approximately 2.23e–308 and 1.80e+308.
 static int64_t  //
 wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
     uint64_t man,
@@ -987,8 +993,8 @@ wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
   // Look up the (possibly truncated) base-2 representation of (10 ** exp10).
   // The look-up table was constructed so that it is already normalized: the
   // table entry's mantissa's MSB (most significant bit) is on.
-  const uint32_t* po10 =
-      &wuffs_base__private_implementation__powers_of_10[5 * (exp10 + 326)];
+  const uint64_t* po10 =
+      &wuffs_base__private_implementation__powers_of_10[exp10 + 307][0];
 
   // Normalize the man argument. The (man != 0) precondition means that a
   // non-zero bit exists.
@@ -996,8 +1002,21 @@ wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
   man <<= clz;
 
   // Calculate the return value's base-2 exponent. We might tweak it by ±1
-  // later, but its initial value comes from the look-up table and clz.
-  uint64_t ret_exp2 = ((uint64_t)po10[4]) - ((uint64_t)clz);
+  // later, but its initial value comes from a linear scaling of exp10,
+  // converting from power-of-10 to power-of-2, and adjusting by clz.
+  //
+  // The magic constants are:
+  //  - 1087 = 1023 + 64. The 1023 is the f64 exponent bias. The 64 is because
+  //    the look-up table uses 64-bit mantissas.
+  //  - 217706 is such that the ratio 217706 / 65536 ≈ 3.321930 is close enough
+  //    (over the practical range of exp10) to log(10) / log(2) ≈ 3.321928.
+  //  - 65536 = 1<<16 is arbitrary but a power of 2, so division is a shift.
+  //
+  // Equality of the linearly-scaled value and the actual power-of-2, over the
+  // range of exp10 arguments that this function accepts, is confirmed by
+  // script/print-mpb-powers-of-10.go
+  uint64_t ret_exp2 =
+      ((uint64_t)(((217706 * exp10) >> 16) + 1087)) - ((uint64_t)clz);
 
   // Multiply the two mantissas. Normalization means that both mantissas are at
   // least (1<<63), so the 128-bit product must be at least (1<<126). The high
@@ -1006,19 +1025,9 @@ wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
   // As a consequence, x_hi has either 0 or 1 leading zeroes. Shifting x_hi
   // right by either 9 or 10 bits (depending on x_hi's MSB) will therefore
   // leave the top 10 MSBs (bits 54 ..= 63) off and the 11th MSB (bit 53) on.
-#if defined(__SIZEOF_INT128__)
-  // See commit 18449ad75d582dd015c236abc85a16f333b796f3 "Optimize 128-bit muls
-  // in parse_number_f64_eisel" for benchmark numbers.
-  __uint128_t x =
-      ((__uint128_t)man) * (((uint64_t)po10[2]) | (((uint64_t)po10[3]) << 32));
-  uint64_t x_hi = ((uint64_t)(x >> 64));
-  uint64_t x_lo = ((uint64_t)(x));
-#else
-  wuffs_base__multiply_u64__output x = wuffs_base__multiply_u64(
-      man, ((uint64_t)po10[2]) | (((uint64_t)po10[3]) << 32));
+  wuffs_base__multiply_u64__output x = wuffs_base__multiply_u64(man, po10[1]);
   uint64_t x_hi = x.hi;
   uint64_t x_lo = x.lo;
-#endif
 
   // Before we shift right by at least 9 bits, recall that the look-up table
   // entry was possibly truncated. We have so far only calculated a lower bound
@@ -1034,19 +1043,9 @@ wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
     // a "low resolution" 64-bit mantissa. Now use a "high resolution" 128-bit
     // mantissa. We've already calculated x = (man * bits_0_to_63_incl_of_e).
     // Now calculate y = (man * bits_64_to_127_incl_of_e).
-#if defined(__SIZEOF_INT128__)
-    // See commit 18449ad75d582dd015c236abc85a16f333b796f3 "Optimize 128-bit
-    // muls in parse_number_f64_eisel" for benchmark numbers.
-    __uint128_t y = ((__uint128_t)man) *
-                    (((uint64_t)po10[0]) | (((uint64_t)po10[1]) << 32));
-    uint64_t y_hi = ((uint64_t)(y >> 64));
-    uint64_t y_lo = ((uint64_t)(y));
-#else
-    wuffs_base__multiply_u64__output y = wuffs_base__multiply_u64(
-        man, ((uint64_t)po10[0]) | (((uint64_t)po10[1]) << 32));
+    wuffs_base__multiply_u64__output y = wuffs_base__multiply_u64(man, po10[0]);
     uint64_t y_hi = y.hi;
     uint64_t y_lo = y.lo;
-#endif
 
     // Merge the 128-bit x and 128-bit y, which overlap by 64 bits, to
     // calculate the 192-bit product of the 64-bit man by the 128-bit e.
@@ -1103,6 +1102,11 @@ wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
   // carrying up overflowed, shift again.
   ret_mantissa += ret_mantissa & 1;
   ret_mantissa >>= 1;
+  // This if block is equivalent to (but benchmarks slightly faster than) the
+  // following branchless form:
+  //    uint64_t overflow_adjustment = ret_mantissa >> 53;
+  //    ret_mantissa >>= overflow_adjustment;
+  //    ret_exp2 += overflow_adjustment;
   if ((ret_mantissa >> 53) > 0) {
     ret_mantissa >>= 1;
     ret_exp2++;
@@ -1111,12 +1115,6 @@ wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
   // Starting with a 53-bit number, IEEE 754 double-precision normal numbers
   // have an implicit mantissa bit. Mask that away and keep the low 52 bits.
   ret_mantissa &= 0x000FFFFFFFFFFFFF;
-
-  // IEEE 754 double-precision floating point has 11 exponent bits. All off (0)
-  // means subnormal numbers. All on (2047) means infinity or NaN.
-  if ((ret_exp2 <= 0) || (2047 <= ret_exp2)) {
-    return -1;
-  }
 
   // Pack the bits and return.
   return ((int64_t)(ret_mantissa | (ret_exp2 << 52)));
@@ -1264,7 +1262,7 @@ wuffs_base__private_implementation__high_prec_dec__to_f64(
         man = (10 * man) + h->digits[i];
       }
       int32_t exp10 = h->decimal_point - ((int32_t)(h->num_digits));
-      if ((man != 0) && (-326 <= exp10) && (exp10 <= 310)) {
+      if ((man != 0) && (-307 <= exp10) && (exp10 <= 288)) {
         int64_t r =
             wuffs_base__private_implementation__parse_number_f64_eisel_lemire(
                 man, exp10);
@@ -1304,7 +1302,7 @@ wuffs_base__private_implementation__high_prec_dec__to_f64(
         if (h->digits[0] >= 5) {
           break;
         }
-        shift = (h->digits[0] <= 2) ? 2 : 1;
+        shift = (h->digits[0] < 2) ? 2 : 1;
       } else {
         uint32_t n = (uint32_t)(-h->decimal_point);
         shift = (n < num_powers)
@@ -1573,14 +1571,13 @@ wuffs_base__parse_number_f64(wuffs_base__slice_u8 s, uint32_t options) {
     }
 
     // The wuffs_base__private_implementation__parse_number_f64_eisel_lemire
-    // preconditions include that exp10 is in the range -326 ..= 310.
-    if ((exp10 < -326) || (310 < exp10)) {
+    // preconditions include that exp10 is in the range [-307 ..= 288].
+    if ((exp10 < -307) || (288 < exp10)) {
       goto fallback;
     }
 
-    // If man and exp10 are small enough, all three of (man), (10 ** exp10) and
-    // (man ** (10 ** exp10)) are exactly representable by a double. We don't
-    // need to run the Eisel-Lemire algorithm.
+    // If both man and (10 ** exp10) are exactly representable by a double, we
+    // don't need to run the Eisel-Lemire algorithm.
     if ((-22 <= exp10) && (exp10 <= 22) && ((man >> 53) == 0)) {
       double d = (double)man;
       if (exp10 >= 0) {
@@ -1596,7 +1593,7 @@ wuffs_base__parse_number_f64(wuffs_base__slice_u8 s, uint32_t options) {
 
     // The wuffs_base__private_implementation__parse_number_f64_eisel_lemire
     // preconditions include that man is non-zero. Parsing "0" should be caught
-    // by the "If man and exp10 are small enough" above, but "0e99" might not.
+    // by the "If both man and (10 ** exp10)" above, but "0e99" might not.
     if (man == 0) {
       goto fallback;
     }

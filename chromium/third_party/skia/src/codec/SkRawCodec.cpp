@@ -145,7 +145,7 @@ public:
     }
 
 private:
-    typedef dng_host INHERITED;
+    using INHERITED = dng_host;
 };
 
 // T must be unsigned type.
@@ -209,7 +209,7 @@ private:
     // streaming too large data chunk. We can always adjust the limit here if we need.
     const size_t kMaxStreamSize = 100 * 1024 * 1024;  // 100MB
 
-    typedef SkDynamicMemoryWStream INHERITED;
+    using INHERITED = SkDynamicMemoryWStream;
 };
 
 // Note: the maximum buffer size is 100MB (limited by SkRawLimitedDynamicMemoryWStream).
@@ -435,7 +435,7 @@ public:
      */
     static SkDngImage* NewFromStream(SkRawStream* stream) {
         std::unique_ptr<SkDngImage> dngImage(new SkDngImage(stream));
-#if defined(IS_FUZZING_WITH_LIBFUZZER)
+#if defined(SK_BUILD_FOR_LIBFUZZER)
         // Libfuzzer easily runs out of memory after here. To avoid that
         // We just pretend all streams are invalid. Our AFL-fuzzer
         // should still exercise this code; it's more resistant to OOM.

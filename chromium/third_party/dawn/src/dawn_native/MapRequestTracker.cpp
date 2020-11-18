@@ -13,12 +13,11 @@
 // limitations under the License.
 
 #include "dawn_native/MapRequestTracker.h"
+
 #include "dawn_native/Buffer.h"
 #include "dawn_native/Device.h"
 
 namespace dawn_native {
-    struct Request;
-    class DeviceBase;
 
     MapRequestTracker::MapRequestTracker(DeviceBase* device) : mDevice(device) {
     }
@@ -27,19 +26,18 @@ namespace dawn_native {
         ASSERT(mInflightRequests.Empty());
     }
 
-    void MapRequestTracker::Track(BufferBase* buffer, uint32_t mapSerial, MapType type) {
+    void MapRequestTracker::Track(BufferBase* buffer, MapRequestID mapID) {
         Request request;
         request.buffer = buffer;
-        request.mapSerial = mapSerial;
-        request.type = type;
+        request.id = mapID;
 
         mInflightRequests.Enqueue(std::move(request), mDevice->GetPendingCommandSerial());
         mDevice->AddFutureCallbackSerial(mDevice->GetPendingCommandSerial());
     }
 
-    void MapRequestTracker::Tick(Serial finishedSerial) {
+    void MapRequestTracker::Tick(ExecutionSerial finishedSerial) {
         for (auto& request : mInflightRequests.IterateUpTo(finishedSerial)) {
-            request.buffer->OnMapCommandSerialFinished(request.mapSerial, request.type);
+            request.buffer->OnMapRequestCompleted(request.id);
         }
         mInflightRequests.ClearUpTo(finishedSerial);
     }

@@ -61,7 +61,7 @@ public:
 
     /**
      * A helper that uses findOrCreateProxyByUniqueKey() to find a proxy and if found creates a view
-     *a view for the found proxy using the passed in origin and color type. It is assumed that if
+     * a view for the found proxy using the passed in origin and color type. It is assumed that if
      * the proxy is renderable then it was created by GrRenderTargetContext::MakeWithFallback and
      * the fallback color type will be used to create the view.
      */
@@ -157,9 +157,9 @@ public:
 
     /**
      * Creates a texture proxy that will be instantiated by a user-supplied callback during flush.
-     * (Stencil is not supported by this method.) The width and height must either both be greater
-     * than 0 or both less than or equal to zero. A non-positive value is a signal that the width
-     * and height are currently unknown.
+     * The width and height must either both be greater than 0 or both less than or equal to zero. A
+     * non-positive value is a signal that the width height are currently unknown. The texture will
+     * not be renderable.
      *
      * When called, the callback must be able to cleanup any resources that it captured at creation.
      * It also must support being passed in a null GrResourceProvider. When this happens, the
@@ -168,8 +168,6 @@ public:
     sk_sp<GrTextureProxy> createLazyProxy(LazyInstantiateCallback&&,
                                           const GrBackendFormat&,
                                           SkISize dimensions,
-                                          GrRenderable,
-                                          int renderTargetSampleCnt,
                                           GrMipmapped,
                                           GrMipmapStatus,
                                           GrInternalSurfaceFlags,

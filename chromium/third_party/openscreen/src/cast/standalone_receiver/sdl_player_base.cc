@@ -10,6 +10,7 @@
 
 #include "absl/types/span.h"
 #include "cast/standalone_receiver/avcodec_glue.h"
+#include "cast/streaming/constants.h"
 #include "cast/streaming/encoded_frame.h"
 #include "util/big_endian.h"
 #include "util/chrono_helpers.h"

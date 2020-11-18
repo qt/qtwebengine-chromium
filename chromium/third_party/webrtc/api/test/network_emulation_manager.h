@@ -46,6 +46,13 @@ class EmulatedRoute;
 
 struct EmulatedEndpointConfig {
   enum class IpAddressFamily { kIpv4, kIpv6 };
+  enum class StatsGatheringMode {
+    // Gather main network stats counters.
+    kDefault,
+    // kDefault + also gather per packet statistics. In this mode more memory
+    // will be used.
+    kDebug
+  };
 
   IpAddressFamily generated_ip_family = IpAddressFamily::kIpv4;
   // If specified will be used as IP address for endpoint node. Must be unique
@@ -56,6 +63,7 @@ struct EmulatedEndpointConfig {
   bool start_as_enabled = true;
   // Network type which will be used to represent endpoint to WebRTC.
   rtc::AdapterType type = rtc::AdapterType::ADAPTER_TYPE_UNKNOWN;
+  StatsGatheringMode stats_gathering_mode = StatsGatheringMode::kDefault;
 };
 
 
@@ -79,7 +87,8 @@ class EmulatedNetworkManagerInterface {
   virtual std::vector<EmulatedEndpoint*> endpoints() const = 0;
 
   // Passes summarized network stats for endpoints for this manager into
-  // specified |stats_callback|.
+  // specified |stats_callback|. Callback will be executed on network emulation
+  // internal task queue.
   virtual void GetStats(
       std::function<void(std::unique_ptr<EmulatedNetworkStats>)> stats_callback)
       const = 0;
@@ -194,8 +203,9 @@ class NetworkEmulationManager {
   CreateEmulatedNetworkManagerInterface(
       const std::vector<EmulatedEndpoint*>& endpoints) = 0;
 
-  // Passes summarized network stats for specified |endpoints| into specifield
-  // |stats_callback|.
+  // Passes summarized network stats for specified |endpoints| into specified
+  // |stats_callback|. Callback will be executed on network emulation
+  // internal task queue.
   virtual void GetStats(
       rtc::ArrayView<EmulatedEndpoint*> endpoints,
       std::function<void(std::unique_ptr<EmulatedNetworkStats>)>

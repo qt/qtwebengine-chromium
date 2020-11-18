@@ -31,6 +31,7 @@
 #include "modules/audio_processing/include/audio_processing_statistics.h"
 #include "modules/audio_processing/include/config.h"
 #include "rtc_base/arraysize.h"
+#include "rtc_base/constructor_magic.h"
 #include "rtc_base/deprecation.h"
 #include "rtc_base/ref_count.h"
 #include "rtc_base/system/file_wrapper.h"
@@ -104,7 +105,7 @@ struct ExperimentalAgc {
 // AudioProcessing::Config::TransientSuppression.
 //
 // Use to enable experimental noise suppression. It can be set in the
-// constructor or using AudioProcessing::SetExtraOptions().
+// constructor.
 // TODO(webrtc:5298): Remove.
 struct ExperimentalNs {
   ExperimentalNs() : enabled(false) {}
@@ -344,9 +345,16 @@ class RTC_EXPORT AudioProcessing : public rtc::RefCountInterface {
       } fixed_digital;
       struct {
         bool enabled = false;
+        float vad_probability_attack = 1.f;
         LevelEstimator level_estimator = kRms;
+        int level_estimator_adjacent_speech_frames_threshold = 1;
+        // TODO(crbug.com/webrtc/7494): Remove `use_saturation_protector`.
         bool use_saturation_protector = true;
+        float initial_saturation_margin_db = 20.f;
         float extra_saturation_margin_db = 2.f;
+        int gain_applier_adjacent_speech_frames_threshold = 1;
+        float max_gain_change_db_per_second = 3.f;
+        float max_output_noise_level_dbfs = -50.f;
       } adaptive_digital;
     } gain_controller2;
 
@@ -488,6 +496,7 @@ class RTC_EXPORT AudioProcessing : public rtc::RefCountInterface {
   // rate and number of channels) have changed. Passing updated parameters
   // directly to |ProcessStream()| and |ProcessReverseStream()| is permissible.
   // If the parameters are known at init-time though, they may be provided.
+  // TODO(webrtc:5298): Change to return void.
   virtual int Initialize() = 0;
 
   // The int16 interfaces require:
@@ -514,10 +523,6 @@ class RTC_EXPORT AudioProcessing : public rtc::RefCountInterface {
   // TODO(peah): This method is a temporary solution used to take control
   // over the parameters in the audio processing module and is likely to change.
   virtual void ApplyConfig(const Config& config) = 0;
-
-  // Pass down additional options which don't have explicit setters. This
-  // ensures the options are applied immediately.
-  virtual void SetExtraOptions(const webrtc::Config& config) = 0;
 
   // TODO(ajm): Only intended for internal use. Make private and friend the
   // necessary classes?

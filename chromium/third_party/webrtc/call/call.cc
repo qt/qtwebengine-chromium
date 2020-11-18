@@ -51,6 +51,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/synchronization/sequence_checker.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/task_utils/pending_task_safety_flag.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
@@ -259,6 +260,8 @@ class Call final : public webrtc::Call,
   RtpTransportControllerSendInterface* GetTransportControllerSend() override;
 
   Stats GetStats() const override;
+
+  const WebRtcKeyValueConfig& trials() const override;
 
   // Implements PacketReceiver.
   DeliveryStatus DeliverPacket(MediaType media_type,
@@ -530,7 +533,7 @@ class SharedModuleThread::Impl {
   }
 
  private:
-  SequenceChecker sequence_checker_;
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker sequence_checker_;
   mutable int ref_count_ RTC_GUARDED_BY(sequence_checker_) = 0;
   std::unique_ptr<ProcessThread> const module_thread_;
   std::function<void()> const on_one_ref_remaining_;
@@ -1110,6 +1113,10 @@ Call::Stats Call::GetStats() const {
   stats.max_padding_bitrate_bps = configured_max_padding_bitrate_bps_;
 
   return stats;
+}
+
+const WebRtcKeyValueConfig& Call::trials() const {
+  return *config_.trials;
 }
 
 void Call::SignalChannelNetworkState(MediaType media, NetworkState state) {

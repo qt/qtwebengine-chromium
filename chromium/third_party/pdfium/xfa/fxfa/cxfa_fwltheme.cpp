@@ -9,7 +9,9 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
+#include "xfa/fgas/font/cfgas_fontmgr.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
+#include "xfa/fgas/font/cfgas_gemodule.h"
 #include "xfa/fwl/cfwl_barcode.h"
 #include "xfa/fwl/cfwl_caret.h"
 #include "xfa/fwl/cfwl_checkbox.h"
@@ -26,12 +28,13 @@
 #include "xfa/fwl/theme/cfwl_widgettp.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
+#include "xfa/fxfa/cxfa_fontmgr.h"
 #include "xfa/fxfa/parser/cxfa_para.h"
 #include "xfa/fxgraphics/cxfa_gecolor.h"
 
 namespace {
 
-const wchar_t* const g_FWLTheme_CalFonts[] = {
+constexpr const wchar_t* kFWLThemeCalFonts[] = {
     L"Arial",
     L"Courier New",
     L"DejaVu Sans",
@@ -50,27 +53,30 @@ CXFA_FFWidget* GetOutmostFFWidget(CFWL_Widget* pWidget) {
 CXFA_FWLTheme::CXFA_FWLTheme(CXFA_FFApp* pApp)
     : m_pTextOut(std::make_unique<CFDE_TextOut>()), m_pApp(pApp) {}
 
-bool CXFA_FWLTheme::LoadCalendarFont(CXFA_FFDoc* doc) {
-  for (size_t i = 0; !m_pCalendarFont && i < pdfium::size(g_FWLTheme_CalFonts);
-       ++i) {
-    m_pCalendarFont =
-        m_pApp->GetXFAFontMgr()->GetFont(doc, g_FWLTheme_CalFonts[i], 0);
-  }
+CXFA_FWLTheme::~CXFA_FWLTheme() = default;
 
-  if (!m_pCalendarFont) {
-    CFGAS_FontMgr* font_mgr = m_pApp->GetFDEFontMgr();
-    if (font_mgr) {
-      m_pCalendarFont = font_mgr->GetFontByCodePage(
-          FX_CODEPAGE_MSWin_WesternEuropean, 0, nullptr);
-    }
-  }
-
-  return m_pCalendarFont != nullptr;
-}
-
-CXFA_FWLTheme::~CXFA_FWLTheme() {
+void CXFA_FWLTheme::PreFinalize() {
   m_pTextOut.reset();
   CFWL_FontManager::DestroyInstance();
+}
+
+void CXFA_FWLTheme::Trace(cppgc::Visitor* visitor) const {
+  visitor->Trace(m_pApp);
+}
+
+bool CXFA_FWLTheme::LoadCalendarFont(CXFA_FFDoc* doc) {
+  if (m_pCalendarFont)
+    return true;
+
+  for (const wchar_t* font : kFWLThemeCalFonts) {
+    m_pCalendarFont = m_pApp->GetXFAFontMgr()->GetFont(doc, font, 0);
+    if (m_pCalendarFont)
+      return true;
+  }
+
+  m_pCalendarFont = CFGAS_GEModule::Get()->GetFontMgr()->GetFontByCodePage(
+      FX_CODEPAGE_MSWin_WesternEuropean, 0, nullptr);
+  return !!m_pCalendarFont;
 }
 
 void CXFA_FWLTheme::DrawBackground(const CFWL_ThemeBackground& pParams) {
@@ -121,7 +127,7 @@ void CXFA_FWLTheme::DrawText(const CFWL_ThemeText& pParams) {
   CFX_RenderDevice* pRenderDevice = pGraphics->GetRenderDevice();
   m_pTextOut->SetStyles(pParams.m_dwTTOStyles);
   m_pTextOut->SetAlignment(pParams.m_iTTOAlign);
-  m_pTextOut->SetFont(pNode->GetFDEFont(pWidget->GetDoc()));
+  m_pTextOut->SetFont(pNode->GetFGASFont(pWidget->GetDoc()));
   m_pTextOut->SetFontSize(pNode->GetFontSize());
   m_pTextOut->SetTextColor(pNode->GetTextColor());
   CFX_Matrix mtPart = pParams.m_matrix;
@@ -177,7 +183,7 @@ float CXFA_FWLTheme::GetFontSize(const CFWL_ThemePart& pThemePart) const {
 RetainPtr<CFGAS_GEFont> CXFA_FWLTheme::GetFont(
     const CFWL_ThemePart& pThemePart) const {
   if (CXFA_FFWidget* pWidget = GetOutmostFFWidget(pThemePart.m_pWidget))
-    return pWidget->GetNode()->GetFDEFont(pWidget->GetDoc());
+    return pWidget->GetNode()->GetFGASFont(pWidget->GetDoc());
   return GetTheme(pThemePart.m_pWidget)->GetFont();
 }
 
@@ -231,7 +237,7 @@ void CXFA_FWLTheme::CalcTextRect(const CFWL_ThemeText& pParams,
   }
 
   CXFA_Node* pNode = pWidget->GetNode();
-  m_pTextOut->SetFont(pNode->GetFDEFont(pWidget->GetDoc()));
+  m_pTextOut->SetFont(pNode->GetFGASFont(pWidget->GetDoc()));
   m_pTextOut->SetFontSize(pNode->GetFontSize());
   m_pTextOut->SetTextColor(pNode->GetTextColor());
   m_pTextOut->SetAlignment(pParams.m_iTTOAlign);

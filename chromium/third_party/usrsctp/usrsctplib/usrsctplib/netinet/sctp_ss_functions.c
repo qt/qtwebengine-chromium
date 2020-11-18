@@ -28,9 +28,9 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) && !defined(__Userspace__)
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_ss_functions.c 345505 2019-03-25 16:40:54Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_ss_functions.c 362173 2020-06-14 09:50:00Z tuexen $");
 #endif
 
 #include <netinet/sctp_pcb.h>
@@ -521,6 +521,9 @@ sctp_ss_prio_select(struct sctp_tcb *stcb SCTP_UNUSED, struct sctp_nets *net,
 {
 	struct sctp_stream_out *strq, *strqt, *strqn;
 
+	if (asoc->ss_data.locked_on_sending) {
+		return (asoc->ss_data.locked_on_sending);
+	}
 	strqt = asoc->ss_data.last_out_stream;
 prio_again:
 	/* Find the next stream to use */
@@ -697,6 +700,9 @@ sctp_ss_fb_select(struct sctp_tcb *stcb SCTP_UNUSED, struct sctp_nets *net,
 {
 	struct sctp_stream_out *strq = NULL, *strqt;
 
+	if (asoc->ss_data.locked_on_sending) {
+		return (asoc->ss_data.locked_on_sending);
+	}
 	if (asoc->ss_data.last_out_stream == NULL ||
 	    TAILQ_FIRST(&asoc->ss_data.out.wheel) == TAILQ_LAST(&asoc->ss_data.out.wheel, sctpwheel_listhead)) {
 		strqt = TAILQ_FIRST(&asoc->ss_data.out.wheel);
@@ -764,8 +770,8 @@ sctp_ss_fb_scheduled(struct sctp_tcb *stcb, struct sctp_nets *net SCTP_UNUSED,
  */
 static void
 sctp_ss_fcfs_add(struct sctp_tcb *stcb, struct sctp_association *asoc,
-                 struct sctp_stream_out *strq, struct sctp_stream_queue_pending *sp,
-                 int holds_lock);
+                 struct sctp_stream_out *strq SCTP_UNUSED,
+                 struct sctp_stream_queue_pending *sp, int holds_lock);
 
 static void
 sctp_ss_fcfs_init(struct sctp_tcb *stcb, struct sctp_association *asoc,
@@ -905,6 +911,9 @@ sctp_ss_fcfs_select(struct sctp_tcb *stcb SCTP_UNUSED, struct sctp_nets *net,
 	struct sctp_stream_out *strq;
 	struct sctp_stream_queue_pending *sp;
 
+	if (asoc->ss_data.locked_on_sending) {
+		return (asoc->ss_data.locked_on_sending);
+	}
 	sp = TAILQ_FIRST(&asoc->ss_data.out.list);
 default_again:
 	if (sp != NULL) {
@@ -940,7 +949,7 @@ default_again:
 const struct sctp_ss_functions sctp_ss_functions[] = {
 /* SCTP_SS_DEFAULT */
 {
-#if defined(__Windows__) || defined(__Userspace_os_Windows)
+#if defined(_WIN32)
 	sctp_ss_default_init,
 	sctp_ss_default_clear,
 	sctp_ss_default_init_stream,
@@ -970,7 +979,7 @@ const struct sctp_ss_functions sctp_ss_functions[] = {
 },
 /* SCTP_SS_ROUND_ROBIN */
 {
-#if defined(__Windows__) || defined(__Userspace_os_Windows)
+#if defined(_WIN32)
 	sctp_ss_default_init,
 	sctp_ss_default_clear,
 	sctp_ss_default_init_stream,
@@ -1000,7 +1009,7 @@ const struct sctp_ss_functions sctp_ss_functions[] = {
 },
 /* SCTP_SS_ROUND_ROBIN_PACKET */
 {
-#if defined(__Windows__) || defined(__Userspace_os_Windows)
+#if defined(_WIN32)
 	sctp_ss_default_init,
 	sctp_ss_default_clear,
 	sctp_ss_default_init_stream,
@@ -1030,7 +1039,7 @@ const struct sctp_ss_functions sctp_ss_functions[] = {
 },
 /* SCTP_SS_PRIORITY */
 {
-#if defined(__Windows__) || defined(__Userspace_os_Windows)
+#if defined(_WIN32)
 	sctp_ss_default_init,
 	sctp_ss_prio_clear,
 	sctp_ss_prio_init_stream,
@@ -1060,7 +1069,7 @@ const struct sctp_ss_functions sctp_ss_functions[] = {
 },
 /* SCTP_SS_FAIR_BANDWITH */
 {
-#if defined(__Windows__) || defined(__Userspace_os_Windows)
+#if defined(_WIN32)
 	sctp_ss_default_init,
 	sctp_ss_fb_clear,
 	sctp_ss_fb_init_stream,
@@ -1090,7 +1099,7 @@ const struct sctp_ss_functions sctp_ss_functions[] = {
 },
 /* SCTP_SS_FIRST_COME */
 {
-#if defined(__Windows__) || defined(__Userspace_os_Windows)
+#if defined(_WIN32)
 	sctp_ss_fcfs_init,
 	sctp_ss_fcfs_clear,
 	sctp_ss_fcfs_init_stream,

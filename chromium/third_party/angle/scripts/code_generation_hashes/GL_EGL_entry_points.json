@@ -4,15 +4,15 @@
   "scripts/egl_angle_ext.xml":
     "087d6a3996a91fbb0b664cac57c50c4c",
   "scripts/entry_point_packed_gl_enums.json":
-    "776bf87905f92e8bc21abfceb2ccf723",
+    "2d46a38023361f8e95af71042626667c",
   "scripts/generate_entry_points.py":
-    "a324715209392c00e7b7dcf978d8be8b",
+    "d3db7e3324326d25e90f98f8e9b9dda5",
   "scripts/gl.xml":
     "e74a595068cbdd6064300be1e71b7cc9",
   "scripts/gl_angle_ext.xml":
     "5b91263f1099308e4e75f89d85be564e",
   "scripts/registry_xml.py":
-    "40961fa253854a2e9644c0c5d78daae9",
+    "f421eb939974ca5fe3c2301acffb4985",
   "scripts/wgl.xml":
     "aa96419c582af2f6673430e2847693f4",
   "src/libANGLE/Context_gl_1_0_autogen.h":
@@ -48,7 +48,7 @@
   "src/libANGLE/Context_gl_4_3_autogen.h":
     "fbc402c961d759be5e221a84a9cb5d65",
   "src/libANGLE/Context_gl_4_4_autogen.h":
-    "27b04d8d3b1f7a2804d49b85627e78a9",
+    "f723877386ca9277ac4acea820a0d7f1",
   "src/libANGLE/Context_gl_4_5_autogen.h":
     "f06e102c161b2804caaa943027f157ad",
   "src/libANGLE/Context_gl_4_6_autogen.h":
@@ -64,7 +64,7 @@
   "src/libANGLE/Context_gles_3_2_autogen.h":
     "48567dca16fd881dfe6d61fee0e3106f",
   "src/libANGLE/Context_gles_ext_autogen.h":
-    "803fd99c6dd45aeeac2245c5e72f6407",
+    "d5f4caa9a62ea98fbbe384ff37ea7844",
   "src/libANGLE/capture_gles_1_0_autogen.cpp":
     "1ee3e4aceb1afa9585aa458c600665a9",
   "src/libANGLE/capture_gles_1_0_autogen.h":
@@ -86,15 +86,15 @@
   "src/libANGLE/capture_gles_3_2_autogen.h":
     "3d8f561944c8e5c06c7c9e68559ff364",
   "src/libANGLE/capture_gles_ext_autogen.cpp":
-    "a392c54277ac3f609ea31095fe690287",
+    "701406c4e0704c416e3577fa2766de2b",
   "src/libANGLE/capture_gles_ext_autogen.h":
-    "39ba68d335d2a9b1227229c644d8acd1",
+    "0ea709677f797f58ed77294c63c27997",
   "src/libANGLE/entry_points_enum_autogen.cpp":
-    "56e4b6b6fa81c4044aa6f78840989c23",
+    "6eba92f7df9d0896ed6e6e633704ad2d",
   "src/libANGLE/entry_points_enum_autogen.h":
-    "023b6a1438d11469cb7ea083a840adab",
+    "5bfe6a82d530ef5ff020239e24dbfb57",
   "src/libANGLE/frame_capture_replay_autogen.cpp":
-    "f3ed8be401bd247a025530297b33722f",
+    "09901bfdd8b16c9e888380179b53aa7a",
   "src/libANGLE/frame_capture_utils_autogen.cpp":
     "7a4f16a96714e43faaa0bef299ad7028",
   "src/libANGLE/frame_capture_utils_autogen.h":
@@ -110,7 +110,7 @@
   "src/libANGLE/validationES3_autogen.h":
     "86ba503835328438158d9a464943f3bd",
   "src/libANGLE/validationESEXT_autogen.h":
-    "1df35b2a44339242296f284389058b9a",
+    "d88620e6be6b7ad6fca01616902fbd92",
   "src/libANGLE/validationGL11_autogen.h":
     "aadd145c1404de9c34d6b7c00404f10f",
   "src/libANGLE/validationGL12_autogen.h":
@@ -142,7 +142,7 @@
   "src/libANGLE/validationGL43_autogen.h":
     "0d05f9873cb5c65b0c68a60423e9c724",
   "src/libANGLE/validationGL44_autogen.h":
-    "ee89bec1bf4eab31b3b653c0f1a88d33",
+    "658f2758447628218db4547a27210b0e",
   "src/libANGLE/validationGL45_autogen.h":
     "a0af5104f0d3949c9d945387d11e6302",
   "src/libANGLE/validationGL46_autogen.h":
@@ -150,79 +150,79 @@
   "src/libANGLE/validationGL4_autogen.h":
     "cbe3f917024a93a3adcbd2806f3e951f",
   "src/libGL/entry_points_gl_1_0_autogen.cpp":
-    "e984e675dab9624214609fc86f1330a8",
+    "925b9d8fb9b7b5a31cea2e42be55977a",
   "src/libGL/entry_points_gl_1_0_autogen.h":
     "4ff00afc21780bc6c138b5431a2d067c",
   "src/libGL/entry_points_gl_1_1_autogen.cpp":
-    "253205804905c1e5bf6422c1df606079",
+    "8126de39d664a78199531f152fd10a0f",
   "src/libGL/entry_points_gl_1_1_autogen.h":
     "570a839bb336d8f5f83d3b50fe49411a",
   "src/libGL/entry_points_gl_1_2_autogen.cpp":
-    "0ca1ad8d1a3a48c8053b4081bdf5f5e4",
+    "2ebf92844642a358700ac1faa1839d08",
   "src/libGL/entry_points_gl_1_2_autogen.h":
     "3f52187f299fe96672384e1646f4a1cb",
   "src/libGL/entry_points_gl_1_3_autogen.cpp":
-    "5bce9f7bb2639a7de57e925a028039ef",
+    "ecbce375ec337cba0fd913169cd62573",
   "src/libGL/entry_points_gl_1_3_autogen.h":
     "5ea36d869b82a824d5f290625c4ea052",
   "src/libGL/entry_points_gl_1_4_autogen.cpp":
-    "e799387d084ae718fe0762d48c1a40b9",
+    "3d5b17a5f607d0524d9ae7887d0914c0",
   "src/libGL/entry_points_gl_1_4_autogen.h":
     "2c5d31ca248507a024e4724c74283ec4",
   "src/libGL/entry_points_gl_1_5_autogen.cpp":
-    "aaddbde89c780194ac4754f7a1177c84",
+    "d52266614198e7932022134dea8f596c",
   "src/libGL/entry_points_gl_1_5_autogen.h":
     "978457aa9a40e427846b6dea24608903",
   "src/libGL/entry_points_gl_2_0_autogen.cpp":
-    "68fbf332b51401391978bc4bb3ece654",
+    "4671cbf319484fa9be8d59ff0e8c316e",
   "src/libGL/entry_points_gl_2_0_autogen.h":
     "41b0cd064167fac84bcdb1896a275b1b",
   "src/libGL/entry_points_gl_2_1_autogen.cpp":
-    "4e31b9d8a88dc69a9f1f07b0adb98965",
+    "4dc98ca201c19021413a83f2f9f9bc3d",
   "src/libGL/entry_points_gl_2_1_autogen.h":
     "1da48dec560ea5ff8cadf4d0b6bfde1c",
   "src/libGL/entry_points_gl_3_0_autogen.cpp":
-    "6decc6494c9acdfb63d5379b0bb7e767",
+    "da2b2f8eefd812d02c0f9fe417f18675",
   "src/libGL/entry_points_gl_3_0_autogen.h":
     "0fad8005f23815beb8ee9b3797c00b83",
   "src/libGL/entry_points_gl_3_1_autogen.cpp":
-    "84675c4c273fb0b7ba59b433507b50ef",
+    "05992a041ed6405293e941e52b336cdd",
   "src/libGL/entry_points_gl_3_1_autogen.h":
     "a68ff6c69f0ce95d9730e22bb4c63366",
   "src/libGL/entry_points_gl_3_2_autogen.cpp":
-    "d7cddaca9a2c6e051a4dec76b03611f2",
+    "673f96a154f18c3b50db81e30c2e04af",
   "src/libGL/entry_points_gl_3_2_autogen.h":
     "f162c4e93a64ab2e43048a0937f7c46f",
   "src/libGL/entry_points_gl_3_3_autogen.cpp":
-    "30f8dfd5b902d203abab84c5795e4e4b",
+    "d7dd06ccabde43095ccfcec64adbc8cf",
   "src/libGL/entry_points_gl_3_3_autogen.h":
     "51c0e4f074c85447f5d910c63b9ea61c",
   "src/libGL/entry_points_gl_4_0_autogen.cpp":
-    "4e4c098104082451d2b1c450d48bca72",
+    "587b158677d194867b51d3c6363b6be2",
   "src/libGL/entry_points_gl_4_0_autogen.h":
     "35d611138951cebc29db99c9bf3a9e5f",
   "src/libGL/entry_points_gl_4_1_autogen.cpp":
-    "af2ffeafdee8535470bc8fb4ee9e62fd",
+    "32ae4a7cedeaabb595d1eca83d20f975",
   "src/libGL/entry_points_gl_4_1_autogen.h":
     "beec6659a3a77695dad66df90717c6ba",
   "src/libGL/entry_points_gl_4_2_autogen.cpp":
-    "048be315948850676439b43fbc215d80",
+    "7e057bc3340d009496ea2d921c9ddb19",
   "src/libGL/entry_points_gl_4_2_autogen.h":
     "a2cb2a48cceaf6131f96bf8ec556aa55",
   "src/libGL/entry_points_gl_4_3_autogen.cpp":
-    "38e576aefe518d0fd80c73836798234f",
+    "09150b8e6a67e1393badf39a3c646d12",
   "src/libGL/entry_points_gl_4_3_autogen.h":
     "abfa431742a2b643db21220944e10ab0",
   "src/libGL/entry_points_gl_4_4_autogen.cpp":
-    "cb8e53abee5240a9b21261ece4245344",
+    "1152c196dc69bee8b780cd8941892b50",
   "src/libGL/entry_points_gl_4_4_autogen.h":
     "cdf1651f00d26db547b153afc09acc1c",
   "src/libGL/entry_points_gl_4_5_autogen.cpp":
-    "506e903d618ca6039eafe639a0d358f4",
+    "ab8bcdd329ba81a5f24501f9661c1317",
   "src/libGL/entry_points_gl_4_5_autogen.h":
     "9f5de9513c06b82aca60856860f7b716",
   "src/libGL/entry_points_gl_4_6_autogen.cpp":
-    "a007b9c5e0b5c445adf64e9f00ab7092",
+    "1cd516361c0ad896f5ef09316eff7538",
   "src/libGL/entry_points_gl_4_6_autogen.h":
     "ee3150d4a8d267271a02e38e8feb923a",
   "src/libGL/libGL_autogen.cpp":
@@ -230,35 +230,35 @@
   "src/libGL/libGL_autogen.def":
     "2789d87b05eea9f53d52e2aff499b785",
   "src/libGLESv2/entry_points_gles_1_0_autogen.cpp":
-    "9047ef2452a45c86c4a92b568f6877c3",
+    "44e4989ed328e0c646b3eeb60d03f999",
   "src/libGLESv2/entry_points_gles_1_0_autogen.h":
     "899dcff9383465380f94fbdfe5bcf0a0",
   "src/libGLESv2/entry_points_gles_2_0_autogen.cpp":
-    "5a54d106e1196795ab9bb22d24f32dc4",
+    "e4929b3a274290064d4724a8d6f380db",
   "src/libGLESv2/entry_points_gles_2_0_autogen.h":
     "26387e27cbddf5e34d6cd9f850cb8b64",
   "src/libGLESv2/entry_points_gles_3_0_autogen.cpp":
-    "bce7650df5a83ae9c6b080b1a4a9164b",
+    "eb0dbdf103f69f5f4fe2d949864c3f30",
   "src/libGLESv2/entry_points_gles_3_0_autogen.h":
     "0d246024379fbf55b87204db5d6a37e3",
   "src/libGLESv2/entry_points_gles_3_1_autogen.cpp":
-    "f449340852be3a389f52fb10ddd29d94",
+    "c3f6b12daef593051f3e35902027e39f",
   "src/libGLESv2/entry_points_gles_3_1_autogen.h":
     "69bae5c94ed4665836a8464b6c353f9a",
   "src/libGLESv2/entry_points_gles_3_2_autogen.cpp":
-    "d091d689219c1bbd547c68be8f8801c1",
+    "9588ecd5ec35e761c629e656ea01e554",
   "src/libGLESv2/entry_points_gles_3_2_autogen.h":
     "5798aa0a73af1d4ba5dfe99b6217a247",
   "src/libGLESv2/entry_points_gles_ext_autogen.cpp":
-    "13fbf4d66d8646e4f0ca017dcaf0acd3",
+    "f6686acc3bbc87b5c49267b3e11f0309",
   "src/libGLESv2/entry_points_gles_ext_autogen.h":
-    "cd61ad92a58edf34dfd2fa09e612edf5",
+    "6d115fefeb5f3ceb605d7525d8b55be2",
   "src/libGLESv2/libGLESv2_autogen.cpp":
-    "980929401e0c450b481ff9e5f91ced41",
+    "86697d38957d11fffe0ea83bb7bf26e0",
   "src/libGLESv2/libGLESv2_autogen.def":
-    "b0be95ed88c909eca24e1da272fdc0df",
+    "1c6935497f1be9a224f6cf6f7f692ab2",
   "src/libGLESv2/libGLESv2_no_capture_autogen.def":
-    "11eb5d8818ae828bd27594f31cdfb6bc",
+    "44a505badd1a6f08dcdd142023d4e5b9",
   "src/libGLESv2/libGLESv2_with_capture_autogen.def":
-    "bc9de308d0e85b4ee6922a490397bcb8"
+    "cc6ede0180e2882d8836a2f0940b3d3d"
 }

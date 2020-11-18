@@ -58,11 +58,9 @@ const char kCryptohomeAsyncDoesUsersExist[] = "AsyncDoesUsersExist";
 const char kCryptohomeInstallAttributesGet[] = "InstallAttributesGet";
 const char kCryptohomeInstallAttributesSet[] = "InstallAttributesSet";
 const char kCryptohomeInstallAttributesCount[] = "InstallAttributesCount";
-const char kCryptohomeInstallAttributesFinalize[] =
-    "InstallAttributesFinalize";
+const char kCryptohomeInstallAttributesFinalize[] = "InstallAttributesFinalize";
 const char kCryptohomeInstallAttributesIsReady[] = "InstallAttributesIsReady";
-const char kCryptohomeInstallAttributesIsSecure[] =
-    "InstallAttributesIsSecure";
+const char kCryptohomeInstallAttributesIsSecure[] = "InstallAttributesIsSecure";
 const char kCryptohomeInstallAttributesIsInvalid[] =
     "InstallAttributesIsInvalid";
 const char kCryptohomeInstallAttributesIsFirstInstall[] =
@@ -118,10 +116,8 @@ const char kCryptohomeTpmAttestationGetKeyPayload[] =
     "TpmAttestationGetKeyPayload";
 const char kCryptohomeTpmAttestationSetKeyPayload[] =
     "TpmAttestationSetKeyPayload";
-const char kCryptohomeTpmAttestationDeleteKey[] =
-    "TpmAttestationDeleteKey";
-const char kCryptohomeTpmAttestationDeleteKeys[] =
-    "TpmAttestationDeleteKeys";
+const char kCryptohomeTpmAttestationDeleteKey[] = "TpmAttestationDeleteKey";
+const char kCryptohomeTpmAttestationDeleteKeys[] = "TpmAttestationDeleteKeys";
 const char kCryptohomeTpmAttestationGetEnrollmentId[] =
     "TpmAttestationGetEnrollmentId";
 const char kCryptohomeTpmGetVersionStructured[] = "TpmGetVersionStructured";
@@ -161,6 +157,9 @@ const char kCryptohomeLockToSingleUserMountUntilReboot[] =
     "LockToSingleUserMountUntilReboot";
 const char kCryptohomeGetRsuDeviceId[] = "GetRsuDeviceId";
 const char kCryptohomeCheckHealth[] = "CheckHealth";
+const char kCryptohomeStartFingerprintAuthSession[] =
+    "StartFingerprintAuthSession";
+const char kCryptohomeEndFingerprintAuthSession[] = "EndFingerprintAuthSession";
 
 // Signals of the |kCryptohomeInterface| interface:
 const char kSignalAsyncCallStatus[] = "AsyncCallStatus";

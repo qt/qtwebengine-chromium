@@ -91,8 +91,6 @@ namespace dawn_native { namespace d3d12 {
                     return DXGI_FORMAT_R32G32B32_SINT;
                 case wgpu::VertexFormat::Int4:
                     return DXGI_FORMAT_R32G32B32A32_SINT;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -102,8 +100,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
                 case wgpu::InputStepMode::Instance:
                     return D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -119,8 +115,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
                 case wgpu::PrimitiveTopology::TriangleStrip:
                     return D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -135,8 +129,6 @@ namespace dawn_native { namespace d3d12 {
                 case wgpu::PrimitiveTopology::TriangleList:
                 case wgpu::PrimitiveTopology::TriangleStrip:
                     return D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -148,8 +140,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_CULL_MODE_FRONT;
                 case wgpu::CullMode::Back:
                     return D3D12_CULL_MODE_BACK;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -181,8 +171,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_BLEND_BLEND_FACTOR;
                 case wgpu::BlendFactor::OneMinusBlendColor:
                     return D3D12_BLEND_INV_BLEND_FACTOR;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -198,8 +186,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_BLEND_OP_MIN;
                 case wgpu::BlendOperation::Max:
                     return D3D12_BLEND_OP_MAX;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -252,8 +238,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_STENCIL_OP_INCR;
                 case wgpu::StencilOperation::DecrementWrap:
                     return D3D12_STENCIL_OP_DECR;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -327,20 +311,21 @@ namespace dawn_native { namespace d3d12 {
 
         wgpu::ShaderStage renderStages = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
         for (auto stage : IterateStages(renderStages)) {
+            // Note that the HLSL entryPoint will always be "main".
             std::string hlslSource;
-            DAWN_TRY_ASSIGN(hlslSource, modules[stage]->GetHLSLSource(ToBackend(GetLayout())));
+            DAWN_TRY_ASSIGN(hlslSource,
+                            modules[stage]->TranslateToHLSL(GetStage(stage).entryPoint.c_str(),
+                                                            stage, ToBackend(GetLayout())));
 
             if (device->IsToggleEnabled(Toggle::UseDXC)) {
                 DAWN_TRY_ASSIGN(compiledDXCShader[stage],
-                                modules[stage]->CompileShaderDXC(stage, hlslSource,
-                                                                 entryPoints[stage], compileFlags));
+                                CompileShaderDXC(device, stage, hlslSource, "main", compileFlags));
 
                 shaders[stage]->pShaderBytecode = compiledDXCShader[stage]->GetBufferPointer();
                 shaders[stage]->BytecodeLength = compiledDXCShader[stage]->GetBufferSize();
             } else {
                 DAWN_TRY_ASSIGN(compiledFXCShader[stage],
-                                modules[stage]->CompileShaderFXC(stage, hlslSource,
-                                                                 entryPoints[stage], compileFlags));
+                                CompileShaderFXC(device, stage, hlslSource, "main", compileFlags));
 
                 shaders[stage]->pShaderBytecode = compiledFXCShader[stage]->GetBufferPointer();
                 shaders[stage]->BytecodeLength = compiledFXCShader[stage]->GetBufferSize();
@@ -376,9 +361,10 @@ namespace dawn_native { namespace d3d12 {
             descriptorD3D12.DSVFormat = D3D12TextureFormat(GetDepthStencilFormat());
         }
 
-        for (uint32_t i : IterateBitSet(GetColorAttachmentsMask())) {
-            descriptorD3D12.RTVFormats[i] = D3D12TextureFormat(GetColorAttachmentFormat(i));
-            descriptorD3D12.BlendState.RenderTarget[i] =
+        for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
+            descriptorD3D12.RTVFormats[static_cast<uint8_t>(i)] =
+                D3D12TextureFormat(GetColorAttachmentFormat(i));
+            descriptorD3D12.BlendState.RenderTarget[static_cast<uint8_t>(i)] =
                 ComputeColorDesc(GetColorStateDescriptor(i));
         }
         descriptorD3D12.NumRenderTargets = static_cast<uint32_t>(GetColorAttachmentsMask().count());
@@ -417,17 +403,17 @@ namespace dawn_native { namespace d3d12 {
     D3D12_INPUT_LAYOUT_DESC RenderPipeline::ComputeInputLayout(
         std::array<D3D12_INPUT_ELEMENT_DESC, kMaxVertexAttributes>* inputElementDescriptors) {
         unsigned int count = 0;
-        for (auto i : IterateBitSet(GetAttributeLocationsUsed())) {
+        for (VertexAttributeLocation loc : IterateBitSet(GetAttributeLocationsUsed())) {
             D3D12_INPUT_ELEMENT_DESC& inputElementDescriptor = (*inputElementDescriptors)[count++];
 
-            const VertexAttributeInfo& attribute = GetAttribute(i);
+            const VertexAttributeInfo& attribute = GetAttribute(loc);
 
             // If the HLSL semantic is TEXCOORDN the SemanticName should be "TEXCOORD" and the
             // SemanticIndex N
             inputElementDescriptor.SemanticName = "TEXCOORD";
-            inputElementDescriptor.SemanticIndex = static_cast<uint32_t>(i);
+            inputElementDescriptor.SemanticIndex = static_cast<uint8_t>(loc);
             inputElementDescriptor.Format = VertexFormatType(attribute.format);
-            inputElementDescriptor.InputSlot = attribute.vertexBufferSlot;
+            inputElementDescriptor.InputSlot = static_cast<uint8_t>(attribute.vertexBufferSlot);
 
             const VertexBufferInfo& input = GetVertexBuffer(attribute.vertexBufferSlot);
 

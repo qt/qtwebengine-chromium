@@ -25,6 +25,10 @@ const char kConnectNamespaceMethod[] = "ConnectNamespace";
 const char kGetTrafficCountersMethod[] = "GetTrafficCounters";
 const char kModifyPortRuleMethod[] = "ModifyPortRule";
 
+// Signals.
+const char kNeighborConnectedStateChangedSignal[] =
+    "NeighborConnectedStateChanged";
+
 }  // namespace patchpanel
 
 #endif  // SYSTEM_API_DBUS_PATCHPANEL_DBUS_CONSTANTS_H_

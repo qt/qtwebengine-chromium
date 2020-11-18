@@ -47,7 +47,8 @@ private:
                                       const GrCaps& caps) override;
 
     void onPrePrepare(GrRecordingContext*, const GrSurfaceProxyView* writeView, GrAppliedClip*,
-                      const GrXferProcessor::DstProxyView&) override {}
+                      const GrXferProcessor::DstProxyView&,
+                      GrXferBarrierFlags renderPassXferBarriers) override {}
 
     void onPrepare(GrOpFlushState*) override {}
 
@@ -71,7 +72,7 @@ private:
     bool           fStencilInsideMask;
     Buffer         fBuffer;
 
-    typedef GrOp INHERITED;
+    using INHERITED = GrOp;
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(GrClearOp::Buffer)

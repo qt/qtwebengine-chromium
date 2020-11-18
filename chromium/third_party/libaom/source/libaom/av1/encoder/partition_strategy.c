@@ -1230,7 +1230,7 @@ void av1_ml_prune_4_partition(
 int av1_ml_predict_breakout(const AV1_COMP *const cpi, BLOCK_SIZE bsize,
                             const MACROBLOCK *const x,
                             const RD_STATS *const rd_stats,
-                            unsigned int pb_source_variance) {
+                            unsigned int pb_source_variance, int bit_depth) {
   const NN_CONFIG *nn_config = NULL;
   int thresh = 0;
   switch (bsize) {
@@ -1258,6 +1258,12 @@ int av1_ml_predict_breakout(const AV1_COMP *const cpi, BLOCK_SIZE bsize,
   }
   if (!nn_config || thresh < 0) return 0;
 
+  const float ml_predict_breakout_thresh_scale[3] = { 1.15f, 1.05f, 1.0f };
+  thresh =
+      (int)((float)thresh *
+            ml_predict_breakout_thresh_scale[cpi->sf.part_sf
+                                                 .ml_predict_breakout_level]);
+
   // Generate feature values.
   float features[FEATURES];
   int feature_index = 0;
@@ -1275,7 +1281,7 @@ int av1_ml_predict_breakout(const AV1_COMP *const cpi, BLOCK_SIZE bsize,
 
   features[feature_index++] = (float)pb_source_variance;
 
-  const int dc_q = (int)x->plane[0].dequant_QTX[0];
+  const int dc_q = (int)x->plane[0].dequant_QTX[0] >> (bit_depth - 8);
   features[feature_index++] = (float)(dc_q * dc_q) / 256.0f;
   assert(feature_index == FEATURES);
 
@@ -1301,7 +1307,7 @@ void av1_prune_partitions_before_search(
   // A CNN-based speed feature pruning out either split or all non-split
   // partition in INTRA frame coding.
   const int try_intra_cnn_split =
-      !cpi->is_screen_content_type && frame_is_intra_only(cm) &&
+      !cpi->use_screen_content_tools && frame_is_intra_only(cm) &&
       cpi->sf.part_sf.intra_cnn_split &&
       cm->seq_params.sb_size >= BLOCK_64X64 && bsize <= BLOCK_64X64 &&
       bsize >= BLOCK_8X8 &&
@@ -1319,7 +1325,7 @@ void av1_prune_partitions_before_search(
   // must be done prior to PARTITION_SPLIT to propagate the initial mvs to a
   // smaller blocksize.
   const int try_split_only =
-      !cpi->is_screen_content_type &&
+      !cpi->use_screen_content_tools &&
       cpi->sf.part_sf.simple_motion_search_split && *do_square_split &&
       bsize >= BLOCK_8X8 &&
       mi_row + mi_size_high[bsize] <= mi_params->mi_rows &&
@@ -1337,7 +1343,7 @@ void av1_prune_partitions_before_search(
   // direction. The results are stored in prune_horz and prune_vert in order to
   // bypass future related pruning checks if a pruning decision has been made.
   const int try_prune_rect =
-      !cpi->is_screen_content_type &&
+      !cpi->use_screen_content_tools &&
       cpi->sf.part_sf.simple_motion_search_prune_rect &&
       !frame_is_intra_only(cm) && *do_rectangular_split &&
       (*do_square_split || *partition_none_allowed ||

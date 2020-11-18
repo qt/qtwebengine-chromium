@@ -177,13 +177,14 @@ export class HeapProfileView extends ProfileView {
 
     text += '\nBinary Images:\n';
     for (const module of modules) {
+      const endAddress = /** @type {bigint} */ (module.endAddress);
       const fileName = /[^/\\]*$/.exec(module.name)[0];
       const version = '1.0';
       const formattedUuid = module.uuid.includes('-') ?
           module.uuid :
           module.uuid.replace(/(.{8})(.{4})(.{4})(.{4})(.{12}).*/, '$1-$2-$3-$4-$5');
       text += `${('0x' + module.address.toString(16)).padStart(18)} - `;
-      text += `${('0x' + (module.endAddress - BigInt(1)).toString(16)).padStart(18)}`;
+      text += `${('0x' + (endAddress - BigInt(1)).toString(16)).padStart(18)}`;
       text += `  ${fileName} (${version}) <${formattedUuid}> ${module.name}\n`;
     }
 
@@ -208,11 +209,12 @@ export class HeapProfileView extends ProfileView {
           (addressText ? node.functionName.substr(addressText.length + 1) : node.functionName) || '???';
       text += `${padding}${Math.round(node.total / 1024)}  ${functionName}  `;
       if (module) {
+        const address = /** @type {bigint} */ (module.address);
         const fileName = /[^/\\]*$/.exec(module.name);
         if (fileName) {
           text += `(in ${fileName})  `;
         }
-        const offset = BigInt(addressText) - module.address;
+        const offset = BigInt(addressText) - address;
         text += `load address ${module.baseAddress} + 0x${offset.toString(16)}  `;
       }
       if (addressText) {
@@ -298,7 +300,7 @@ export class SamplingHeapProfileTypeBase extends ProfileType {
 
     const icon = UI.Icon.Icon.create('smallicon-warning');
     icon.title = ls`Heap profiler is recording`;
-    self.UI.inspectorView.setPanelIcon('heap_profiler', icon);
+    UI.InspectorView.InspectorView.instance().setPanelIcon('heap_profiler', icon);
 
     this._recording = true;
     this._startSampling();
@@ -319,7 +321,7 @@ export class SamplingHeapProfileTypeBase extends ProfileType {
       recordedProfile.updateStatus('');
       this.setProfileBeingRecorded(null);
     }
-    self.UI.inspectorView.setPanelIcon('heap_profiler', null);
+    UI.InspectorView.InspectorView.instance().setPanelIcon('heap_profiler', null);
     this.dispatchEventToListeners(ProfileEvents.ProfileComplete, recordedProfile);
   }
 

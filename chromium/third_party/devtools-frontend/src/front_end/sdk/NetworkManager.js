@@ -230,6 +230,20 @@ export class NetworkManager extends SDKModel {
     }
     return result.status;
   }
+
+  /**
+    * @param {string} frameId
+    * @param {string} url
+    * @param {!Protocol.Network.LoadNetworkResourceOptions} options
+    * @return {!Promise<!Protocol.Network.LoadNetworkResourcePageResult>}
+    */
+  async loadNetworkResource(frameId, url, options) {
+    const result = await this._networkAgent.invoke_loadNetworkResource({frameId, url, options});
+    if (result.getError()) {
+      throw new Error(result.getError());
+    }
+    return result.resource;
+  }
 }
 
 /** @enum {symbol} */
@@ -279,7 +293,7 @@ export const Fast3GConditions = {
 const MAX_EAGER_POST_REQUEST_BODY_LENGTH = 64 * 1024;  // bytes
 
 /**
- * @implements {ProtocolProxyApiWorkaround_NetworkDispatcher}
+ * @implements {ProtocolProxyApi.NetworkDispatcher}
  * @unrestricted
  */
 export class NetworkDispatcher {
@@ -553,6 +567,7 @@ export class NetworkDispatcher {
     if (!networkRequest) {
       const lastModifiedHeader = lowercaseHeaders['last-modified'];
       // We missed the requestWillBeSent.
+      /** @type {!RequestUpdateDroppedEventData} */
       const eventData = {
         url: response.url,
         frameId: frameId || '',
@@ -1697,3 +1712,7 @@ export let InterceptionPattern;
 /** @typedef {!function(!InterceptedRequest):!Promise<void>} */
 // @ts-ignore typedef
 export let RequestInterceptor;
+
+/** @typedef {!{url: string, frameId: string, loaderId: string, resourceType: Protocol.Network.ResourceType, mimeType: string, lastModified: ?Date}} */
+// @ts-ignore typedef
+export let RequestUpdateDroppedEventData;

@@ -53,7 +53,8 @@ VendorID GetVendorID(const FunctionsGL *functions)
         return VENDOR_ID_NVIDIA;
     }
     else if (nativeVendorString.find("ATI") != std::string::npos ||
-             nativeVendorString.find("AMD") != std::string::npos)
+             nativeVendorString.find("AMD") != std::string::npos ||
+             nativeVendorString.find("Radeon") != std::string::npos)
     {
         return VENDOR_ID_AMD;
     }
@@ -288,6 +289,18 @@ static gl::TextureCaps GenerateTextureFormatCaps(const FunctionsGL *functions,
     textureCaps.blendable         = textureCaps.renderbuffer || textureCaps.textureAttachment;
 
     // Do extra renderability validation for some formats.
+    if (internalFormat == GL_R16F || internalFormat == GL_RG16F || internalFormat == GL_RGB16F)
+    {
+        // SupportRequirement can't currently express a condition of the form (version && extension)
+        // || other extensions, so do the (version && extension) part here.
+        if (functions->isAtLeastGLES(gl::Version(3, 0)) &&
+            functions->hasGLESExtension("GL_EXT_color_buffer_half_float"))
+        {
+            textureCaps.textureAttachment = true;
+            textureCaps.renderbuffer      = true;
+        }
+    }
+
     // We require GL_RGBA16F is renderable to expose EXT_color_buffer_half_float but we can't know
     // if the format is supported unless we try to create a framebuffer.
     if (internalFormat == GL_RGBA16F)
@@ -1481,7 +1494,8 @@ void GenerateCaps(const FunctionsGL *functions,
     // EXT_float_blend
     // Assume all desktop driver supports this by default.
     extensions->floatBlend = functions->standard == STANDARD_GL_DESKTOP ||
-                             functions->hasGLESExtension("GL_EXT_float_blend");
+                             functions->hasGLESExtension("GL_EXT_float_blend") ||
+                             functions->isAtLeastGLES(gl::Version(3, 2));
 
     // ANGLE_base_vertex_base_instance
     extensions->baseVertexBaseInstance =
@@ -1536,6 +1550,10 @@ void GenerateCaps(const FunctionsGL *functions,
                                 functions->hasGLExtension("GL_ARB_gpu_shader5") ||
                                 functions->hasGLESExtension("GL_EXT_gpu_shader5");
 
+    extensions->shadowSamplersEXT = functions->isAtLeastGL(gl::Version(2, 0)) ||
+                                    functions->isAtLeastGLES(gl::Version(3, 0)) ||
+                                    functions->hasGLESExtension("GL_EXT_shadow_samplers");
+
     // GL_APPLE_clip_distance
     extensions->clipDistanceAPPLE = functions->isAtLeastGL(gl::Version(3, 0));
     if (extensions->clipDistanceAPPLE)
@@ -1550,8 +1568,22 @@ void GenerateCaps(const FunctionsGL *functions,
 
 void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *features)
 {
-    VendorID vendor = GetVendorID(functions);
-    uint32_t device = GetDeviceID(functions);
+    angle::VendorID vendor;
+    angle::DeviceID device;
+
+    angle::SystemInfo systemInfo;
+    bool isGetSystemInfoSuccess = angle::GetSystemInfo(&systemInfo);
+    if (isGetSystemInfoSuccess)
+    {
+        vendor = systemInfo.gpus[systemInfo.activeGPUIndex].vendorId;
+        device = systemInfo.gpus[systemInfo.activeGPUIndex].deviceId;
+    }
+    else
+    {
+        vendor = GetVendorID(functions);
+        device = GetDeviceID(functions);
+    }
+
     bool isAMD      = IsAMD(vendor);
     bool isIntel    = IsIntel(vendor);
     bool isNvidia   = IsNvidia(vendor);
@@ -1765,13 +1797,12 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     bool isDualGPUMacWithNVIDIA = false;
     if (IsApple() && functions->standard == STANDARD_GL_DESKTOP)
     {
-        angle::SystemInfo info;
-        if (angle::GetSystemInfo(&info))
+        if (isGetSystemInfoSuccess)
         {
             // The full system information must be queried to see whether it's a dual-GPU
             // NVIDIA MacBook Pro since it's likely that the integrated GPU will be active
             // when these features are initialized.
-            isDualGPUMacWithNVIDIA = info.isMacSwitchable && info.hasNVIDIAGPU();
+            isDualGPUMacWithNVIDIA = systemInfo.isMacSwitchable && systemInfo.hasNVIDIAGPU();
         }
     }
     ANGLE_FEATURE_CONDITION(features, disableGPUSwitchingSupport, isDualGPUMacWithNVIDIA);

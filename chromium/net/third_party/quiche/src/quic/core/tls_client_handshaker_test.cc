@@ -174,7 +174,6 @@ class TlsClientHandshakerTest : public QuicTestWithParam<ParsedQuicVersion> {
         server_id_(kServerHostname, kServerPort, false),
         server_compressed_certs_cache_(
             QuicCompressedCertsCache::kQuicCompressedCertsCacheSize) {
-    SetQuicRestartFlag(quic_enable_tls_resumption_v4, true);
     SetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2, true);
     crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
         std::make_unique<TestProofVerifier>(),
@@ -376,6 +375,8 @@ TEST_P(TlsClientHandshakerTest, ResumptionRejection) {
   EXPECT_TRUE(stream()->one_rtt_keys_available());
   EXPECT_FALSE(stream()->IsResumption());
   EXPECT_FALSE(stream()->EarlyDataAccepted());
+  EXPECT_EQ(stream()->EarlyDataReason(),
+            ssl_early_data_unsupported_for_session);
 }
 
 TEST_P(TlsClientHandshakerTest, ZeroRttResumption) {
@@ -399,6 +400,9 @@ TEST_P(TlsClientHandshakerTest, ZeroRttResumption) {
   // messages from the server.
   stream()->CryptoConnect();
   EXPECT_TRUE(stream()->encryption_established());
+  EXPECT_NE(stream()->crypto_negotiated_params().cipher_suite, 0);
+  EXPECT_NE(stream()->crypto_negotiated_params().key_exchange_group, 0);
+  EXPECT_NE(stream()->crypto_negotiated_params().peer_signature_algorithm, 0);
   // Finish the handshake with the server.
   QuicConfig config;
   crypto_test_utils::HandshakeWithFakeServer(
@@ -410,6 +414,7 @@ TEST_P(TlsClientHandshakerTest, ZeroRttResumption) {
   EXPECT_TRUE(stream()->one_rtt_keys_available());
   EXPECT_TRUE(stream()->IsResumption());
   EXPECT_TRUE(stream()->EarlyDataAccepted());
+  EXPECT_EQ(stream()->EarlyDataReason(), ssl_early_data_accepted);
 }
 
 TEST_P(TlsClientHandshakerTest, ZeroRttRejection) {
@@ -458,6 +463,7 @@ TEST_P(TlsClientHandshakerTest, ZeroRttRejection) {
   EXPECT_TRUE(stream()->one_rtt_keys_available());
   EXPECT_TRUE(stream()->IsResumption());
   EXPECT_FALSE(stream()->EarlyDataAccepted());
+  EXPECT_EQ(stream()->EarlyDataReason(), ssl_early_data_peer_declined);
 }
 
 TEST_P(TlsClientHandshakerTest, ZeroRttAndResumptionRejection) {
@@ -506,6 +512,7 @@ TEST_P(TlsClientHandshakerTest, ZeroRttAndResumptionRejection) {
   EXPECT_TRUE(stream()->one_rtt_keys_available());
   EXPECT_FALSE(stream()->IsResumption());
   EXPECT_FALSE(stream()->EarlyDataAccepted());
+  EXPECT_EQ(stream()->EarlyDataReason(), ssl_early_data_session_not_resumed);
 }
 
 TEST_P(TlsClientHandshakerTest, ClientSendsNoSNI) {
@@ -553,16 +560,11 @@ TEST_P(TlsClientHandshakerTest, ServerRequiresCustomALPN) {
           [kTestAlpn](const std::vector<quiche::QuicheStringPiece>& alpns) {
             return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
           });
-#if BORINGSSL_API_VERSION > 10
   EXPECT_CALL(*server_connection_,
               CloseConnection(QUIC_HANDSHAKE_FAILED,
                               "TLS handshake failure (ENCRYPTION_INITIAL) 120: "
                               "no application protocol",
                               _));
-#else  // BORINGSSL_API_VERSION <= 10
-  EXPECT_CALL(*connection_, CloseConnection(QUIC_HANDSHAKE_FAILED,
-                                            "Server did not select ALPN", _));
-#endif  // BORINGSSL_API_VERSION
 
   stream()->CryptoConnect();
   crypto_test_utils::AdvanceHandshake(connection_, stream(), 0,
@@ -570,13 +572,8 @@ TEST_P(TlsClientHandshakerTest, ServerRequiresCustomALPN) {
 
   EXPECT_FALSE(stream()->one_rtt_keys_available());
   EXPECT_FALSE(server_stream()->one_rtt_keys_available());
-#if BORINGSSL_API_VERSION > 10
   EXPECT_FALSE(stream()->encryption_established());
   EXPECT_FALSE(server_stream()->encryption_established());
-#else  // BORINGSSL_API_VERSION <= 10
-  EXPECT_TRUE(stream()->encryption_established());
-  EXPECT_TRUE(server_stream()->encryption_established());
-#endif  // BORINGSSL_API_VERSION
 }
 
 TEST_P(TlsClientHandshakerTest, ZeroRTTNotAttemptedOnALPNChange) {
@@ -603,6 +600,7 @@ TEST_P(TlsClientHandshakerTest, ZeroRTTNotAttemptedOnALPNChange) {
   EXPECT_TRUE(stream()->encryption_established());
   EXPECT_TRUE(stream()->one_rtt_keys_available());
   EXPECT_FALSE(stream()->EarlyDataAccepted());
+  EXPECT_EQ(stream()->EarlyDataReason(), ssl_early_data_alpn_mismatch);
 }
 
 TEST_P(TlsClientHandshakerTest, InvalidSNI) {

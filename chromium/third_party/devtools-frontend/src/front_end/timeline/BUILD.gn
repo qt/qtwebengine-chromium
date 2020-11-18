@@ -39,13 +39,13 @@ devtools_module("timeline") {
     "../mobile_throttling:bundle",
     "../perf_ui:bundle",
     "../profiler:bundle",
+    "../theme_support:bundle",
     "../timeline_model:bundle",
   ]
 }
 
 devtools_entrypoint("bundle") {
   entrypoint = "timeline.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":timeline" ]
 }

@@ -23,6 +23,7 @@
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffdocview.h"
+#include "xfa/fxfa/cxfa_ffpageview.h"
 #include "xfa/fxfa/cxfa_ffwidgethandler.h"
 #include "xfa/fxfa/cxfa_imagerenderer.h"
 #include "xfa/fxfa/layout/cxfa_layoutprocessor.h"
@@ -216,16 +217,13 @@ void XFA_RectWithoutMargin(CFX_RectF* rt, const CXFA_Margin* margin) {
               margin->GetRightInset(), margin->GetBottomInset());
 }
 
-CXFA_FFWidget* XFA_GetWidgetFromLayoutItem(CXFA_LayoutItem* pLayoutItem) {
+// static
+CXFA_FFWidget* CXFA_FFWidget::FromLayoutItem(CXFA_LayoutItem* pLayoutItem) {
   if (!pLayoutItem->GetFormNode()->HasCreatedUIWidget())
     return nullptr;
 
   return GetFFWidget(ToContentLayoutItem(pLayoutItem));
 }
-
-CXFA_CalcData::CXFA_CalcData() = default;
-
-CXFA_CalcData::~CXFA_CalcData() = default;
 
 CXFA_FFWidget::CXFA_FFWidget(CXFA_Node* node) : m_pNode(node) {}
 
@@ -235,11 +233,12 @@ void CXFA_FFWidget::PreFinalize() {}
 
 void CXFA_FFWidget::Trace(cppgc::Visitor* visitor) const {
   visitor->Trace(m_pLayoutItem);
-  visitor->Trace(m_pNode);
   visitor->Trace(m_pDocView);
+  visitor->Trace(m_pPageView);
+  visitor->Trace(m_pNode);
 }
 
-const CFWL_App* CXFA_FFWidget::GetFWLApp() {
+CFWL_App* CXFA_FFWidget::GetFWLApp() const {
   return GetPageView()->GetDocView()->GetDoc()->GetApp()->GetFWLApp();
 }
 
@@ -438,22 +437,17 @@ bool CXFA_FFWidget::OnSetFocus(CXFA_FFWidget* pOldWidget) {
 }
 
 bool CXFA_FFWidget::OnKillFocus(CXFA_FFWidget* pNewWidget) {
-  ObservedPtr<CXFA_FFWidget> pNewWatched(pNewWidget);
   GetLayoutItem()->ClearStatusBits(XFA_WidgetStatus_Focused);
   EventKillFocus();
   if (!pNewWidget)
     return true;
 
-  if (!pNewWatched)
-    return false;
-
-  // OnKillFocus event may remove |pNewWidget|.
   CXFA_FFWidget* pParent = GetFFWidget(ToContentLayoutItem(GetParent()));
   if (pParent && !pParent->IsAncestorOf(pNewWidget)) {
     if (!pParent->OnKillFocus(pNewWidget))
       return false;
   }
-  return !!pNewWatched;
+  return true;
 }
 
 bool CXFA_FFWidget::OnKeyDown(uint32_t dwKeyCode, uint32_t dwFlags) {

@@ -21,6 +21,7 @@ package perfetto.protos;
 import "protos/perfetto/metrics/android/batt_metric.proto";
 import "protos/perfetto/metrics/android/cpu_metric.proto";
 import "protos/perfetto/metrics/android/display_metrics.proto";
+import "protos/perfetto/metrics/android/gpu_metric.proto";
 import "protos/perfetto/metrics/android/heap_profile_callsites.proto";
 import "protos/perfetto/metrics/android/hwui_metric.proto";
 import "protos/perfetto/metrics/android/ion_metric.proto";
@@ -36,7 +37,6 @@ import "protos/perfetto/metrics/android/startup_metric.proto";
 import "protos/perfetto/metrics/android/surfaceflinger.proto";
 import "protos/perfetto/metrics/android/task_names.proto";
 import "protos/perfetto/metrics/android/thread_time_in_state_metric.proto";
-import "protos/perfetto/metrics/android/unmapped_java_symbols.proto";
 import "protos/perfetto/metrics/android/unsymbolized_frames.proto";
 
 // Trace processor metadata
@@ -53,9 +53,9 @@ message TraceMetadata {
 
 // Root message for all Perfetto-based metrics.
 //
-// Next id: 26
+// Next id: 27
 message TraceMetrics {
-  reserved 4, 10, 13, 14;
+  reserved 4, 10, 13, 14, 19;
 
   // Battery counters metric on Android.
   optional AndroidBatteryMetric android_batt = 5;
@@ -105,9 +105,6 @@ message TraceMetrics {
   // Metrics used to find potential culprits of low-memory kills.
   optional AndroidLmkReasonMetric android_lmk_reason = 18;
 
-  // Java type names that have no deobfuscation mappings.
-  optional UnmappedJavaSymbols unmapped_java_symbols = 19;
-
   optional AndroidHwuiMetric android_hwui_metric = 20;
 
   optional AndroidDisplayMetrics display_metrics = 22;
@@ -118,6 +115,9 @@ message TraceMetrics {
 
   // Metric associated with surfaceflinger.
   optional AndroidSurfaceflingerMetric android_surfaceflinger = 25;
+
+  // GPU metrics on Android.
+  optional AndroidGpuMetric android_gpu = 26;
 
   // Demo extensions.
   extensions 450 to 499;

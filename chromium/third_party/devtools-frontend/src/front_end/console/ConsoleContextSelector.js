@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
 import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
@@ -68,9 +65,9 @@ export class ConsoleContextSelector {
   highlightedItemChanged(from, to, fromElement, toElement) {
     SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
     if (to && to.frameId) {
-      const overlayModel = to.target().model(SDK.OverlayModel.OverlayModel);
-      if (overlayModel) {
-        overlayModel.highlightFrame(to.frameId);
+      const frame = SDK.FrameManager.FrameManager.instance().getFrame(to.frameId);
+      if (frame && !frame.isTopFrame()) {
+        frame.highlight();
       }
     }
     if (fromElement) {
@@ -122,10 +119,12 @@ export class ConsoleContextSelector {
       }
     }
     let targetDepth = 0;
+    let parentTarget = target.parentTarget();
     // Special casing service workers to be top-level.
-    while (target.parentTarget() && target.type() !== SDK.SDKModel.Type.ServiceWorker) {
+    while (parentTarget && target.type() !== SDK.SDKModel.Type.ServiceWorker) {
       targetDepth++;
-      target = target.parentTarget();
+      target = parentTarget;
+      parentTarget = target.parentTarget();
     }
     depth += targetDepth;
     return depth;
@@ -255,7 +254,8 @@ export class ConsoleContextSelector {
    */
   _subtitleFor(executionContext) {
     const target = executionContext.target();
-    let frame;
+    /** @type {?SDK.ResourceTreeModel.ResourceTreeFrame} */
+    let frame = null;
     if (executionContext.frameId) {
       const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
       frame = resourceTreeModel && resourceTreeModel.frameForId(executionContext.frameId);
@@ -263,8 +263,8 @@ export class ConsoleContextSelector {
     if (executionContext.origin.startsWith('chrome-extension://')) {
       return Common.UIString.UIString('Extension');
     }
-    if (!frame || !frame.sameTargetParentFrame() ||
-        frame.sameTargetParentFrame().securityOrigin !== executionContext.origin) {
+    const sameTargetParentFrame = frame && frame.sameTargetParentFrame();
+    if (!frame || !sameTargetParentFrame || sameTargetParentFrame.securityOrigin !== executionContext.origin) {
       const url = Common.ParsedURL.ParsedURL.fromString(executionContext.origin);
       if (url) {
         return url.domain();

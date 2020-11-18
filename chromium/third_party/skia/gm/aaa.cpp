@@ -12,6 +12,7 @@
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkScalar.h"
 #include "include/private/SkFloatBits.h"
+#include "include/private/SkPathRef.h"
 #include "src/core/SkPathPriv.h"
 
 #define W   800
@@ -64,7 +65,7 @@ DEF_SIMPLE_GM(analytic_antialias_convex, canvas, W, H) {
             SkBits2Float(0x4344f079), SkBits2Float(0x4397e900), SkBits2Float(0x3f3504f3));
     path.close();
     // Manually setting convexity is required. Otherwise, this path will be considered concave.
-    SkPathPriv::SetConvexityType(&path, SkPathConvexityType::kConvex);
+    SkPathPriv::SetConvexity(&path, SkPathConvexity::kConvex);
     canvas->drawPath(path.detach(), p);
 
     // skbug.com/7573
@@ -121,16 +122,14 @@ DEF_SIMPLE_GM(analytic_antialias_general, canvas, W, H) {
     // column where the left rect and the right rect abut.
     p.setStyle(SkPaint::kFill_Style);
     canvas->translate(0, 300);
-    path.reset();
-    path.addRect({20, 20, 100.4999f, 100});
-    path.addRect({100.5001f, 20, 200, 100});
-    canvas->drawPath(path, p);
+    canvas->drawPath(SkPathBuilder().addRect({20, 20, 100.4999f, 100})
+                                    .addRect({100.5001f, 20, 200, 100})
+                                    .detach(), p);
 
     canvas->translate(300, 0);
-    path.reset();
-    path.addRect({20, 20, 100.1f, 100});
-    path.addRect({100.9f, 20, 200, 100});
-    canvas->drawPath(path, p);
+    canvas->drawPath(SkPathBuilder().addRect({20, 20, 100.1f, 100})
+                                    .addRect({100.9f, 20, 200, 100})
+                                    .detach(), p);
 }
 
 DEF_SIMPLE_GM(analytic_antialias_inverse, canvas, W, H) {

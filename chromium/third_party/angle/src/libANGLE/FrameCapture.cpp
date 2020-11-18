@@ -366,33 +366,47 @@ void WriteStringPointerParamReplay(DataTracker *dataTracker,
                                    const ParamCapture &param)
 {
     // Concatenate the strings to ensure we get an accurate counter
-    // TODO (anglebug.com/4941): Explore a way to avoid lumping the strings together
-    std::string str;
+    std::vector<std::string> strings;
     for (const std::vector<uint8_t> &data : param.data)
     {
         // null terminate C style string
         ASSERT(data.size() > 0 && data.back() == '\0');
-        str += std::string(data.begin(), data.end() - 1);
+        strings.push_back(std::string(data.begin(), data.end() - 1));
     }
 
-    int counter = dataTracker->getStringCounters().getStringCounter(str);
-    if (counter == kStringNotFound)
+    int counter = dataTracker->getStringCounters().getStringCounter(strings);
+    if (counter == kStringsNotFound)
     {
-        // This is a unique string, so set up its declaration and update its counter
+        // This is a unique set of strings, so set up their declaration and update the counter
         counter = dataTracker->getCounters().getAndIncrement(call.entryPoint, param.name);
-        dataTracker->getStringCounters().setStringCounter(str, counter);
+        dataTracker->getStringCounters().setStringCounter(strings, counter);
 
         header << "const char *";
         WriteParamStaticVarName(call, param, counter, header);
         header << "[] = { \n";
 
-        // Break up long strings for MSVC
-        for (size_t i = 0; i < str.length(); i += kStringLengthLimit)
+        for (const std::string &str : strings)
         {
-            size_t copyLength = ((str.length() - i) >= kStringLengthLimit) ? kStringLengthLimit
-                                                                           : (str.length() - i);
-            header << "    R\"(" << str.substr(i, copyLength) << ")\"\n";
+            // Break up long strings for MSVC
+            size_t copyLength = 0;
+            std::string separator;
+            for (size_t i = 0; i < str.length(); i += kStringLengthLimit)
+            {
+                if ((str.length() - i) <= kStringLengthLimit)
+                {
+                    copyLength = str.length() - i;
+                    separator  = ",";
+                }
+                else
+                {
+                    copyLength = kStringLengthLimit;
+                    separator  = "";
+                }
+
+                header << "    R\"(" << str.substr(i, copyLength) << ")\"" << separator << "\n";
+            }
         }
+
         header << " };\n";
     }
 
@@ -475,7 +489,7 @@ void WriteBinaryParamReplay(DataTracker *dataTracker,
     {
         // Store in binary file if data are not of type string or enum
         // Round up to 16-byte boundary for cross ABI safety
-        size_t offset = rx::roundUp(binaryData->size(), kBinaryAlignment);
+        size_t offset = rx::roundUpPow2(binaryData->size(), kBinaryAlignment);
         binaryData->resize(offset + data.size());
         memcpy(binaryData->data() + offset, data.data(), data.size());
         out << "reinterpret_cast<" << ParamTypeToString(overrideType) << ">(&gBinaryData[" << offset
@@ -1015,7 +1029,7 @@ void WriteCppReplay(bool compression,
             Result::Continue)
         {
             size_t serializedContextLength = serializedContextData.length();
-            size_t serializedContextOffset = rx::roundUp(binaryData->size(), kBinaryAlignment);
+            size_t serializedContextOffset = rx::roundUpPow2(binaryData->size(), kBinaryAlignment);
             binaryData->resize(serializedContextOffset + serializedContextLength);
             memcpy(binaryData->data() + serializedContextOffset, serializedContextData.data(),
                    serializedContextLength);
@@ -2943,8 +2957,8 @@ void CaptureMidExecutionSetup(const gl::Context *context,
     const gl::SyncManager &syncs = apiState.getSyncManagerForCapture();
     for (const auto &syncIter : syncs)
     {
-        GLsync syncID  = reinterpret_cast<GLsync>(syncIter.first);
-        gl::Sync *sync = syncIter.second;
+        GLsync syncID        = gl::bitCast<GLsync>(syncIter.first);
+        const gl::Sync *sync = syncIter.second;
 
         if (!sync)
         {
@@ -3214,6 +3228,39 @@ void CaptureMidExecutionSetup(const gl::Context *context,
 
     // Allow the replayState object to be destroyed conveniently.
     replayState.setBufferBinding(context, gl::BufferBinding::Array, nullptr);
+}
+
+bool SkipCall(gl::EntryPoint entryPoint)
+{
+    switch (entryPoint)
+    {
+        case gl::EntryPoint::DebugMessageCallback:
+        case gl::EntryPoint::DebugMessageCallbackKHR:
+        case gl::EntryPoint::DebugMessageControl:
+        case gl::EntryPoint::DebugMessageControlKHR:
+        case gl::EntryPoint::DebugMessageInsert:
+        case gl::EntryPoint::DebugMessageInsertKHR:
+        case gl::EntryPoint::GetDebugMessageLog:
+        case gl::EntryPoint::GetDebugMessageLogKHR:
+        case gl::EntryPoint::GetObjectLabelKHR:
+        case gl::EntryPoint::GetObjectPtrLabelKHR:
+        case gl::EntryPoint::GetPointervKHR:
+        case gl::EntryPoint::InsertEventMarkerEXT:
+        case gl::EntryPoint::ObjectLabelKHR:
+        case gl::EntryPoint::ObjectPtrLabelKHR:
+        case gl::EntryPoint::PopDebugGroupKHR:
+        case gl::EntryPoint::PopGroupMarkerEXT:
+        case gl::EntryPoint::PushDebugGroupKHR:
+        case gl::EntryPoint::PushGroupMarkerEXT:
+            // Purposefully skip KHR_debug and EXT_debug_marker entry points
+            // There is no need to capture these for replaying a trace in our harness
+            return true;
+
+        default:
+            break;
+    }
+
+    return false;
 }
 }  // namespace
 
@@ -3975,6 +4022,9 @@ void FrameCapture::maybeCaptureClientData(const gl::Context *context, CallCaptur
 
 void FrameCapture::captureCall(const gl::Context *context, CallCapture &&call)
 {
+    if (SkipCall(call.entryPoint))
+        return;
+
     maybeOverrideEntryPoint(context, call);
 
     // Process client data snapshots.
@@ -4271,23 +4321,23 @@ StringCounters::StringCounters() = default;
 
 StringCounters::~StringCounters() = default;
 
-int StringCounters::getStringCounter(std::string &str)
+int StringCounters::getStringCounter(std::vector<std::string> &strings)
 {
-    const auto &id = mStringCounterMap.find(str);
+    const auto &id = mStringCounterMap.find(strings);
     if (id == mStringCounterMap.end())
     {
-        return kStringNotFound;
+        return kStringsNotFound;
     }
     else
     {
-        return mStringCounterMap[str];
+        return mStringCounterMap[strings];
     }
 }
 
-void StringCounters::setStringCounter(std::string &str, int &counter)
+void StringCounters::setStringCounter(std::vector<std::string> &strings, int &counter)
 {
     ASSERT(counter >= 0);
-    mStringCounterMap[str] = counter;
+    mStringCounterMap[strings] = counter;
 }
 
 ResourceTracker::ResourceTracker() = default;
@@ -4306,7 +4356,7 @@ void ResourceTracker::setDeletedBuffer(gl::BufferID id)
 
     // Ensure this buffer was in our starting set
     // It's possible this could fire if the app deletes buffers that were never generated
-    ASSERT(mStartingBuffers.find(id) != mStartingBuffers.end());
+    ASSERT(mStartingBuffers.empty() || (mStartingBuffers.find(id) != mStartingBuffers.end()));
 
     // In this case, the app is deleting a buffer we started with, we need to regen on loop
     mBuffersToRegen.insert(id);

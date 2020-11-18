@@ -32,9 +32,9 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef __FreeBSD__
+#if defined(__FreeBSD__) && !defined(__Userspace__)
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_auth.c 355931 2019-12-20 15:25:08Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_auth.c 362054 2020-06-11 13:34:09Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -567,11 +567,7 @@ sctp_auth_key_acquire(struct sctp_tcb *stcb, uint16_t key_id)
 }
 
 void
-sctp_auth_key_release(struct sctp_tcb *stcb, uint16_t key_id, int so_locked
-#if !defined(__APPLE__) && !defined(SCTP_SO_LOCK_TESTING)
-	SCTP_UNUSED
-#endif
-)
+sctp_auth_key_release(struct sctp_tcb *stcb, uint16_t key_id, int so_locked)
 {
 	sctp_sharedkey_t *skey;
 
@@ -660,7 +656,6 @@ sctp_free_hmaclist(sctp_hmaclist_t *list)
 {
 	if (list != NULL) {
 		SCTP_FREE(list,SCTP_M_AUTH_HL);
-		list = NULL;
 	}
 }
 
@@ -1650,6 +1645,11 @@ sctp_handle_auth(struct sctp_tcb *stcb, struct sctp_auth_chunk *auth,
 		"SCTP AUTH Chunk: shared key %u, HMAC id %u\n",
 		shared_key_id, hmac_id);
 
+#if defined(__Userspace__)
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+	return (0);
+#endif
+#endif
 	/* is the indicated HMAC supported? */
 	if (!sctp_auth_is_supported_hmac(stcb->asoc.local_hmacs, hmac_id)) {
 		struct mbuf *op_err;
@@ -1730,11 +1730,6 @@ sctp_handle_auth(struct sctp_tcb *stcb, struct sctp_auth_chunk *auth,
 	(void)sctp_compute_hmac_m(hmac_id, stcb->asoc.authinfo.recv_key,
 	    m, offset, computed_digest);
 
-#if defined(__Userspace__)
-#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-	return (0);
-#endif
-#endif
 	/* compare the computed digest with the one in the AUTH chunk */
 	if (timingsafe_bcmp(digest, computed_digest, digestlen) != 0) {
 		SCTP_STAT_INCR(sctps_recvauthfailed);
@@ -1750,11 +1745,7 @@ sctp_handle_auth(struct sctp_tcb *stcb, struct sctp_auth_chunk *auth,
  */
 void
 sctp_notify_authentication(struct sctp_tcb *stcb, uint32_t indication,
-			   uint16_t keyid, uint16_t alt_keyid, int so_locked
-#if !defined(__APPLE__) && !defined(SCTP_SO_LOCK_TESTING)
-	SCTP_UNUSED
-#endif
-)
+			   uint16_t keyid, uint16_t alt_keyid, int so_locked)
 {
 	struct mbuf *m_notify;
 	struct sctp_authkey_event *auth;

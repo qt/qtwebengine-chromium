@@ -67,6 +67,11 @@ namespace reader {
 namespace wgsl {
 namespace {
 
+/// Controls the maximum number of times we'll call into the const_expr function
+/// from itself. This is to guard against stack overflow when there is an
+/// excessive number of type constructors inside the const_expr.
+uint32_t kMaxConstExprDepth = 128;
+
 ast::Builtin ident_to_builtin(const std::string& str) {
   if (str == "position") {
     return ast::Builtin::kPosition;
@@ -1016,12 +1021,6 @@ std::unique_ptr<ast::type::StructType> ParserImpl::struct_decl() {
     return nullptr;
   }
 
-  t = peek();
-  if (!t.IsBraceLeft()) {
-    set_error(t, "missing { for struct declaration");
-    return nullptr;
-  }
-
   auto body = struct_body_decl();
   if (has_error()) {
     return nullptr;
@@ -1070,14 +1069,17 @@ ast::StructDecoration ParserImpl::struct_decoration(Token t) {
 //   : BRACKET_LEFT struct_member* BRACKET_RIGHT
 ast::StructMemberList ParserImpl::struct_body_decl() {
   auto t = peek();
-  if (!t.IsBraceLeft())
+  if (!t.IsBraceLeft()) {
+    set_error(t, "missing { for struct declaration");
     return {};
-
+  }
   next();  // Consume the peek
 
   t = peek();
-  if (t.IsBraceRight())
+  if (t.IsBraceRight()) {
+    next();  // Consume the peek
     return {};
+  }
 
   ast::StructMemberList members;
   for (;;) {
@@ -1473,12 +1475,14 @@ std::unique_ptr<ast::BlockStatement> ParserImpl::statements() {
 //   | if_stmt
 //   | switch_stmt
 //   | loop_stmt
+//   | for_stmt
 //   | func_call_stmt SEMICOLON
 //   | variable_stmt SEMICOLON
 //   | break_stmt SEMICOLON
 //   | continue_stmt SEMICOLON
 //   | DISCARD SEMICOLON
 //   | assignment_stmt SEMICOLON
+//   | body_stmt
 std::unique_ptr<ast::Statement> ParserImpl::statement() {
   auto t = peek();
   if (t.IsSemicolon()) {
@@ -1515,6 +1519,12 @@ std::unique_ptr<ast::Statement> ParserImpl::statement() {
     return nullptr;
   if (loop != nullptr)
     return loop;
+
+  auto stmt_for = for_stmt();
+  if (has_error())
+    return nullptr;
+  if (stmt_for != nullptr)
+    return stmt_for;
 
   auto func = func_call_stmt();
   if (has_error())
@@ -1587,6 +1597,12 @@ std::unique_ptr<ast::Statement> ParserImpl::statement() {
     }
     return assign;
   }
+
+  auto body = body_stmt();
+  if (has_error())
+    return nullptr;
+  if (body != nullptr)
+    return body;
 
   return nullptr;
 }
@@ -1970,6 +1986,160 @@ std::unique_ptr<ast::LoopStatement> ParserImpl::loop_stmt() {
 
   return std::make_unique<ast::LoopStatement>(source, std::move(body),
                                               std::move(continuing));
+}
+
+ForHeader::ForHeader(std::unique_ptr<ast::Statement> init,
+                     std::unique_ptr<ast::Expression> cond,
+                     std::unique_ptr<ast::Statement> cont)
+    : initializer(std::move(init)),
+      condition(std::move(cond)),
+      continuing(std::move(cont)) {}
+
+ForHeader::~ForHeader() = default;
+
+// for_header
+//   : (variable_stmt | assignment_stmt | func_call_stmt)?
+//   SEMICOLON
+//      logical_or_expression? SEMICOLON
+//      (assignment_stmt | func_call_stmt)?
+std::unique_ptr<ForHeader> ParserImpl::for_header() {
+  std::unique_ptr<ast::Statement> initializer = nullptr;
+  if (initializer == nullptr) {
+    initializer = func_call_stmt();
+    if (has_error()) {
+      return nullptr;
+    }
+  }
+  if (initializer == nullptr) {
+    initializer = variable_stmt();
+    if (has_error()) {
+      return nullptr;
+    }
+  }
+  if (initializer == nullptr) {
+    initializer = assignment_stmt();
+    if (has_error()) {
+      return nullptr;
+    }
+  }
+
+  auto t = next();
+  if (!t.IsSemicolon()) {
+    set_error(t, "missing ';' after initializer in for loop");
+    return nullptr;
+  }
+
+  auto condition = logical_or_expression();
+  if (has_error()) {
+    return nullptr;
+  }
+
+  t = next();
+  if (!t.IsSemicolon()) {
+    set_error(t, "missing ';' after condition in for loop");
+    return nullptr;
+  }
+
+  std::unique_ptr<ast::Statement> continuing = nullptr;
+  if (continuing == nullptr) {
+    continuing = func_call_stmt();
+    if (has_error()) {
+      return nullptr;
+    }
+  }
+  if (continuing == nullptr) {
+    continuing = assignment_stmt();
+    if (has_error()) {
+      return nullptr;
+    }
+  }
+
+  return std::make_unique<ForHeader>(
+      std::move(initializer), std::move(condition), std::move(continuing));
+}
+
+// for_statement
+//   : FOR PAREN_LEFT for_header PAREN_RIGHT BRACE_LEFT statements BRACE_RIGHT
+std::unique_ptr<ast::Statement> ParserImpl::for_stmt() {
+  auto t = peek();
+  if (!t.IsFor())
+    return nullptr;
+
+  auto source = t.source();
+  next();  // Consume the peek
+
+  t = next();
+  if (!t.IsParenLeft()) {
+    set_error(t, "missing for loop (");
+    return nullptr;
+  }
+
+  auto header = for_header();
+  if (has_error())
+    return nullptr;
+
+  t = next();
+  if (!t.IsParenRight()) {
+    set_error(t, "missing for loop )");
+    return nullptr;
+  }
+
+  t = next();
+  if (!t.IsBraceLeft()) {
+    set_error(t, "missing for loop {");
+    return nullptr;
+  }
+
+  auto body = statements();
+  if (has_error())
+    return nullptr;
+
+  t = next();
+  if (!t.IsBraceRight()) {
+    set_error(t, "missing for loop }");
+    return nullptr;
+  }
+
+  // The for statement is a syntactic sugar on top of the loop statement.
+  // We create corresponding nodes in ast with the exact same behaviour
+  // as we would expect from the loop statement.
+
+  if (header->condition != nullptr) {
+    // !condition
+    auto not_condition = std::make_unique<ast::UnaryOpExpression>(
+        header->condition->source(), ast::UnaryOp::kNot,
+        std::move(header->condition));
+    // { break; }
+    auto break_stmt =
+        std::make_unique<ast::BreakStatement>(not_condition->source());
+    auto break_body =
+        std::make_unique<ast::BlockStatement>(not_condition->source());
+    break_body->append(std::move(break_stmt));
+    // if (!condition) { break; }
+    auto break_if_not_condition = std::make_unique<ast::IfStatement>(
+        not_condition->source(), std::move(not_condition),
+        std::move(break_body));
+    body->insert(0, std::move(break_if_not_condition));
+  }
+
+  std::unique_ptr<ast::BlockStatement> continuing_body = nullptr;
+  if (header->continuing != nullptr) {
+    continuing_body =
+        std::make_unique<ast::BlockStatement>(header->continuing->source());
+    continuing_body->append(std::move(header->continuing));
+  }
+
+  auto loop = std::make_unique<ast::LoopStatement>(source, std::move(body),
+                                                   std::move(continuing_body));
+
+  if (header->initializer != nullptr) {
+    auto result = std::make_unique<ast::BlockStatement>(source);
+    result->append(std::move(header->initializer));
+    result->append(std::move(loop));
+    return result;
+  }
+
+  return loop;
 }
 
 // func_call_stmt
@@ -2792,7 +2962,18 @@ std::unique_ptr<ast::Literal> ParserImpl::const_literal() {
 //   : type_decl PAREN_LEFT (const_expr COMMA)? const_expr PAREN_RIGHT
 //   | const_literal
 std::unique_ptr<ast::ConstructorExpression> ParserImpl::const_expr() {
+  return const_expr_internal(0);
+}
+
+std::unique_ptr<ast::ConstructorExpression> ParserImpl::const_expr_internal(
+    uint32_t depth) {
   auto t = peek();
+
+  if (depth > kMaxConstExprDepth) {
+    set_error(t, "max const_expr depth reached");
+    return nullptr;
+  }
+
   auto source = t.source();
 
   auto* type = type_decl();
@@ -2804,7 +2985,7 @@ std::unique_ptr<ast::ConstructorExpression> ParserImpl::const_expr() {
     }
 
     ast::ExpressionList params;
-    auto param = const_expr();
+    auto param = const_expr_internal(depth + 1);
     if (has_error())
       return nullptr;
     if (param == nullptr) {
@@ -2819,7 +3000,7 @@ std::unique_ptr<ast::ConstructorExpression> ParserImpl::const_expr() {
 
       next();  // Consume the peek
 
-      param = const_expr();
+      param = const_expr_internal(depth + 1);
       if (has_error())
         return nullptr;
       if (param == nullptr) {

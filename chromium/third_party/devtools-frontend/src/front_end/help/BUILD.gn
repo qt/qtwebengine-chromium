@@ -19,9 +19,12 @@ devtools_module("help") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [ "releaseNote.css" ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "help.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":help" ]
 }

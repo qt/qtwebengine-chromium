@@ -953,6 +953,18 @@ OPENSSL_EXPORT size_t SSL_get0_certificate_types(const SSL *ssl,
 OPENSSL_EXPORT size_t
 SSL_get0_peer_verify_algorithms(const SSL *ssl, const uint16_t **out_sigalgs);
 
+// SSL_get0_peer_delegation_algorithms sets |*out_sigalgs| to an array
+// containing the signature algorithms the peer is willing to use with delegated
+// credentials.  It returns the length of the array. If not sent, the empty
+// array is returned.
+//
+// The behavior of this function is undefined except during the callbacks set by
+// by |SSL_CTX_set_cert_cb| and |SSL_CTX_set_client_cert_cb| or when the
+// handshake is paused because of them.
+OPENSSL_EXPORT size_t
+SSL_get0_peer_delegation_algorithms(const SSL *ssl,
+                                    const uint16_t **out_sigalgs);
+
 // SSL_certs_clear resets the private key, leaf certificate, and certificate
 // chain of |ssl|.
 OPENSSL_EXPORT void SSL_certs_clear(SSL *ssl);
@@ -1281,8 +1293,8 @@ OPENSSL_EXPORT const SSL_CIPHER *SSL_get_cipher_by_value(uint16_t value);
 // cast to a |uint16_t| to get it.
 OPENSSL_EXPORT uint32_t SSL_CIPHER_get_id(const SSL_CIPHER *cipher);
 
-// SSL_CIPHER_get_value returns |cipher|'s IANA-assigned number.
-OPENSSL_EXPORT uint16_t SSL_CIPHER_get_value(const SSL_CIPHER *cipher);
+// SSL_CIPHER_get_protocol_id returns |cipher|'s IANA-assigned number.
+OPENSSL_EXPORT uint16_t SSL_CIPHER_get_protocol_id(const SSL_CIPHER *cipher);
 
 // SSL_CIPHER_is_aead returns one if |cipher| uses an AEAD cipher.
 OPENSSL_EXPORT int SSL_CIPHER_is_aead(const SSL_CIPHER *cipher);
@@ -4704,6 +4716,13 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_status_arg(SSL_CTX *ctx, void *arg);
 #define SSL_R_TLSV1_BAD_CERTIFICATE_HASH_VALUE \
   SSL_R_TLSV1_ALERT_BAD_CERTIFICATE_HASH_VALUE
 #define SSL_R_TLSV1_CERTIFICATE_REQUIRED SSL_R_TLSV1_ALERT_CERTIFICATE_REQUIRED
+
+// SSL_CIPHER_get_value calls |SSL_CIPHER_get_protocol_id|.
+//
+// TODO(davidben): |SSL_CIPHER_get_value| was our name for this function, but
+// upstream added it as |SSL_CIPHER_get_protocol_id|. Switch callers to the new
+// name and remove this one.
+OPENSSL_EXPORT uint16_t SSL_CIPHER_get_value(const SSL_CIPHER *cipher);
 
 
 // Nodejs compatibility section (hidden).

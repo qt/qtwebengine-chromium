@@ -91,8 +91,9 @@ protected:
             SkDebugf("hash: %d ", this->hash());
             SkDebugf("domain: %d ", this->domain());
             SkDebugf("size: %dB ", this->internalSize());
-            for (size_t i = 0; i < this->internalSize(); ++i) {
-                SkDebugf("%d ", fKey[SkTo<int>(i)]);
+            size_t dataCount = this->internalSize() / sizeof(uint32_t) - kMetaDataCnt;
+            for (size_t i = 0; i < dataCount; ++i) {
+                SkDebugf("%d ", fKey[SkTo<int>(kMetaDataCnt+i)]);
             }
             SkDebugf("\n");
         }
@@ -184,7 +185,7 @@ private:
  */
 class GrScratchKey : public GrResourceKey {
 private:
-    typedef GrResourceKey INHERITED;
+    using INHERITED = GrResourceKey;
 
 public:
     /** Uniquely identifies the type of resource that is cached as scratch. */
@@ -236,7 +237,7 @@ public:
  */
 class GrUniqueKey : public GrResourceKey {
 private:
-    typedef GrResourceKey INHERITED;
+    using INHERITED = GrResourceKey;
 
 public:
     typedef uint32_t Domain;

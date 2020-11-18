@@ -138,6 +138,15 @@ export function genConfig(
     ftraceEvents.add('power/gpu_frequency');
   }
 
+  if (uiCfg.gpuMemTotal) {
+    ftraceEvents.add('gpu_mem/gpu_mem_total');
+
+    const ds = new TraceConfig.DataSource();
+    ds.config = new DataSourceConfig();
+    ds.config.name = 'android.gpu.memory';
+    protoCfg.dataSources.push(ds);
+  }
+
   if (uiCfg.cpuSyscall) {
     ftraceEvents.add('raw_syscalls/sys_enter');
     ftraceEvents.add('raw_syscalls/sys_exit');

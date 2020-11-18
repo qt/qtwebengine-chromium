@@ -175,6 +175,10 @@ void TlsServerHandshaker::OnConnectionClosed(QuicErrorCode /*error*/,
   state_ = STATE_CONNECTION_CLOSED;
 }
 
+ssl_early_data_reason_t TlsServerHandshaker::EarlyDataReason() const {
+  return TlsHandshaker::EarlyDataReason();
+}
+
 bool TlsServerHandshaker::encryption_established() const {
   return encryption_established_;
 }
@@ -287,6 +291,19 @@ bool TlsServerHandshaker::ProcessTransportParameters(
   // Notify QuicConnectionDebugVisitor.
   session()->connection()->OnTransportParametersReceived(client_params);
 
+  // Chrome clients before 86.0.4233.0 did not send the
+  // key_update_not_yet_supported transport parameter, but they did send a
+  // Google-internal transport parameter with identifier 0x4751. We treat
+  // reception of 0x4751 as having received key_update_not_yet_supported to
+  // ensure we do not use key updates with those older clients.
+  // TODO(dschinazi) remove this workaround once all of our QUIC+TLS Finch
+  // experiments have a min_version greater than 86.0.4233.0.
+  if (client_params.custom_parameters.find(
+          static_cast<TransportParameters::TransportParameterId>(0x4751)) !=
+      client_params.custom_parameters.end()) {
+    client_params.key_update_not_yet_supported = true;
+  }
+
   // When interoperating with non-Google implementations that do not send
   // the version extension, set it to what we expect.
   if (client_params.version == 0) {
@@ -388,7 +405,10 @@ void TlsServerHandshaker::FinishHandshake() {
     return;
   }
 
-  QUIC_DLOG(INFO) << "Server: handshake finished";
+  ssl_early_data_reason_t reason_code = EarlyDataReason();
+  QUIC_DLOG(INFO) << "Server: handshake finished. Early data reason "
+                  << reason_code << " ("
+                  << CryptoUtils::EarlyDataReasonToString(reason_code) << ")";
   state_ = STATE_HANDSHAKE_COMPLETE;
   one_rtt_keys_available_ = true;
 
@@ -442,7 +462,6 @@ int TlsServerHandshaker::SessionTicketSeal(uint8_t* out,
                                            size_t* out_len,
                                            size_t max_out_len,
                                            quiche::QuicheStringPiece in) {
-  QUIC_CODE_COUNT(quic_tls_ticket_seal);
   DCHECK(proof_source_->GetTicketCrypter());
   std::vector<uint8_t> ticket = proof_source_->GetTicketCrypter()->Encrypt(in);
   if (max_out_len < ticket.size()) {
@@ -462,7 +481,6 @@ ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
     size_t* out_len,
     size_t max_out_len,
     quiche::QuicheStringPiece in) {
-  QUIC_CODE_COUNT(quic_tls_ticket_open);
   DCHECK(proof_source_->GetTicketCrypter());
 
   if (!ticket_decryption_callback_) {
@@ -496,7 +514,6 @@ ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
   memcpy(out, decrypted_session_ticket_.data(),
          decrypted_session_ticket_.size());
   *out_len = decrypted_session_ticket_.size();
-  QUIC_RESTART_FLAG_COUNT(quic_enable_tls_resumption_v4);
 
   return ssl_ticket_aead_success;
 }
@@ -532,19 +549,8 @@ int TlsServerHandshaker::SelectCertificate(int* out_alert) {
     return SSL_TLSEXT_ERR_ALERT_FATAL;
   }
 
-  std::vector<CRYPTO_BUFFER*> certs;
-  certs.resize(chain->certs.size());
-  for (size_t i = 0; i < certs.size(); i++) {
-    certs[i] = CRYPTO_BUFFER_new(
-        reinterpret_cast<const uint8_t*>(chain->certs[i].data()),
-        chain->certs[i].length(), nullptr);
-  }
-
-  tls_connection_.SetCertChain(certs);
-
-  for (size_t i = 0; i < certs.size(); i++) {
-    CRYPTO_BUFFER_free(certs[i]);
-  }
+  CryptoBuffers cert_buffers = chain->ToCryptoBuffers();
+  tls_connection_.SetCertChain(cert_buffers.value);
 
   std::string error_details;
   if (!ProcessTransportParameters(&error_details)) {

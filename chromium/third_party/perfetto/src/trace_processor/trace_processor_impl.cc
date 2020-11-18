@@ -24,6 +24,7 @@
 #include "perfetto/ext/base/string_splitter.h"
 #include "perfetto/ext/base/string_utils.h"
 #include "src/trace_processor/dynamic/ancestor_slice_generator.h"
+#include "src/trace_processor/dynamic/connected_flow_generator.h"
 #include "src/trace_processor/dynamic/descendant_slice_generator.h"
 #include "src/trace_processor/dynamic/describe_slice_generator.h"
 #include "src/trace_processor/dynamic/experimental_counter_dur_generator.h"
@@ -52,6 +53,7 @@
 #include "src/trace_processor/sqlite/window_operator_table.h"
 #include "src/trace_processor/tp_metatrace.h"
 #include "src/trace_processor/types/variadic.h"
+#include "src/trace_processor/util/protozero_to_text.h"
 
 #include "protos/perfetto/trace/perfetto/perfetto_metatrace.pbzero.h"
 #include "protos/perfetto/trace/trace.pbzero.h"
@@ -136,9 +138,28 @@ void CreateBuiltinTables(sqlite3* db) {
     PERFETTO_ELOG("Error initializing: %s", error);
     sqlite3_free(error);
   }
+  // Ensure that the entries in power_profile are unique to prevent duplicates
+  // when the power_profile is augmented with additional profiles.
   sqlite3_exec(db,
-               "CREATE TABLE power_profile"
-               "(device STRING, cpu INT, cluster INT, freq INT, power DOUBLE);",
+               "CREATE TABLE power_profile("
+               "device STRING, cpu INT, cluster INT, freq INT, power DOUBLE,"
+               "UNIQUE(device, cpu, cluster, freq));",
+               0, 0, &error);
+  if (error) {
+    PERFETTO_ELOG("Error initializing: %s", error);
+    sqlite3_free(error);
+  }
+  sqlite3_exec(db, "CREATE TABLE trace_metrics(name STRING)", 0, 0, &error);
+  if (error) {
+    PERFETTO_ELOG("Error initializing: %s", error);
+    sqlite3_free(error);
+  }
+  // This is a table intended to be used for metric debugging/developing. Data
+  // in the table is shown specially in the UI, and users can insert rows into
+  // this table to draw more things.
+  sqlite3_exec(db,
+               "CREATE TABLE debug_slices (id BIG INT, name STRING, ts BIG INT,"
+               "dur BIG INT, depth BIG INT)",
                0, 0, &error);
   if (error) {
     PERFETTO_ELOG("Error initializing: %s", error);
@@ -644,6 +665,18 @@ void EnsureSqliteInitialized() {
   PERFETTO_CHECK(init_once);
 }
 
+void InsertIntoTraceMetricsTable(sqlite3* db, const std::string& metric_name) {
+  char* insert_sql = sqlite3_mprintf(
+      "INSERT INTO trace_metrics(name) VALUES('%q')", metric_name.c_str());
+  char* insert_error = nullptr;
+  sqlite3_exec(db, insert_sql, nullptr, nullptr, &insert_error);
+  sqlite3_free(insert_sql);
+  if (insert_error) {
+    PERFETTO_ELOG("Error registering table: %s", insert_error);
+    sqlite3_free(insert_error);
+  }
+}
+
 }  // namespace
 
 TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
@@ -711,6 +744,15 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
       new AncestorSliceGenerator(&context_)));
   RegisterDynamicTable(std::unique_ptr<DescendantSliceGenerator>(
       new DescendantSliceGenerator(&context_)));
+  RegisterDynamicTable(
+      std::unique_ptr<ConnectedFlowGenerator>(new ConnectedFlowGenerator(
+          ConnectedFlowGenerator::Direction::BOTH, &context_)));
+  RegisterDynamicTable(
+      std::unique_ptr<ConnectedFlowGenerator>(new ConnectedFlowGenerator(
+          ConnectedFlowGenerator::Direction::FOLLOWING, &context_)));
+  RegisterDynamicTable(
+      std::unique_ptr<ConnectedFlowGenerator>(new ConnectedFlowGenerator(
+          ConnectedFlowGenerator::Direction::PRECEDING, &context_)));
   RegisterDynamicTable(std::unique_ptr<ExperimentalSchedUpidGenerator>(
       new ExperimentalSchedUpidGenerator(storage->sched_slice_table(),
                                          storage->thread_table())));
@@ -876,6 +918,16 @@ void TraceProcessorImpl::InterruptQuery() {
   sqlite3_interrupt(db_.get());
 }
 
+bool TraceProcessorImpl::IsRootMetricField(const std::string& metric_name) {
+  base::Optional<uint32_t> desc_idx =
+      pool_.FindDescriptorIdx(".perfetto.protos.TraceMetrics");
+  if (!desc_idx.has_value())
+    return false;
+  base::Optional<uint32_t> field_idx =
+      pool_.descriptors()[*desc_idx].FindFieldIdxByName(metric_name);
+  return field_idx.has_value();
+}
+
 util::Status TraceProcessorImpl::RegisterMetric(const std::string& path,
                                                 const std::string& sql) {
   std::string stripped_sql;
@@ -908,9 +960,14 @@ util::Status TraceProcessorImpl::RegisterMetric(const std::string& path,
 
   metrics::SqlMetricFile metric;
   metric.path = path;
-  metric.proto_field_name = no_ext_name;
-  metric.output_table_name = no_ext_name + "_output";
   metric.sql = stripped_sql;
+
+  if (IsRootMetricField(no_ext_name)) {
+    metric.proto_field_name = no_ext_name;
+    metric.output_table_name = no_ext_name + "_output";
+    InsertIntoTraceMetricsTable(*db_, no_ext_name);
+  }
+
   sql_metrics_.emplace_back(metric);
   return util::OkStatus();
 }
@@ -954,6 +1011,33 @@ util::Status TraceProcessorImpl::ComputeMetric(
   const auto& root_descriptor = pool_.descriptors()[opt_idx.value()];
   return metrics::ComputeMetrics(this, metric_names, sql_metrics_,
                                  root_descriptor, metrics_proto);
+}
+
+util::Status TraceProcessorImpl::ComputeMetricText(
+    const std::vector<std::string>& metric_names,
+    TraceProcessor::MetricResultFormat format,
+    std::string* metrics_string) {
+  std::vector<uint8_t> metrics_proto;
+  util::Status status = ComputeMetric(metric_names, &metrics_proto);
+  if (!status.ok())
+    return status;
+  switch (format) {
+    case TraceProcessor::MetricResultFormat::kProtoText:
+      *metrics_string = protozero_to_text::ProtozeroToText(
+          pool_, ".perfetto.protos.TraceMetrics",
+          protozero::ConstBytes{metrics_proto.data(), metrics_proto.size()},
+          protozero_to_text::kIncludeNewLines);
+      break;
+    case TraceProcessor::MetricResultFormat::kJson:
+      // TODO(dproy): Implement this.
+      PERFETTO_FATAL("Json formatted metrics not supported yet.");
+      break;
+  }
+  return status;
+}
+
+std::vector<uint8_t> TraceProcessorImpl::GetMetricDescriptors() {
+  return pool_.SerializeAsDescriptorSet();
 }
 
 void TraceProcessorImpl::EnableMetatrace() {

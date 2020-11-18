@@ -129,7 +129,8 @@ source_set("dawn_native_sources") {
     ":dawn_native_headers",
     ":dawn_native_utils_gen",
     "${dawn_root}/src/common",
-    "${dawn_shaderc_dir}:spirv_cross",
+    "${dawn_root}/third_party/gn/spirv_cross:spirv_cross",
+    "${dawn_spirv_tools_dir}:spvtools_opt",
     "${dawn_spirv_tools_dir}:spvtools_val",
   ]
   defines = []
@@ -141,10 +142,7 @@ source_set("dawn_native_sources") {
   # Dependencies that are needed to compile dawn_native entry points in
   # FooBackend.cpp need to be public deps so they are propagated to the
   # dawn_native target
-  public_deps = [
-    "${dawn_root}/src/dawn_platform",
-    "${dawn_shaderc_dir}:libshaderc_spvc",
-  ]
+  public_deps = [ "${dawn_root}/src/dawn_platform" ]
 
   sources = get_target_outputs(":dawn_native_utils_gen")
   sources += [
@@ -156,7 +154,6 @@ source_set("dawn_native_sources") {
     "BackendConnection.h",
     "BindGroup.cpp",
     "BindGroup.h",
-    "BindGroupAndStorageBarrierTracker.h",
     "BindGroupLayout.cpp",
     "BindGroupLayout.h",
     "BindGroupTracker.h",
@@ -215,6 +212,7 @@ source_set("dawn_native_sources") {
     "Forward.h",
     "Instance.cpp",
     "Instance.h",
+    "IntegerTypes.h",
     "MapRequestTracker.cpp",
     "MapRequestTracker.h",
     "ObjectBase.cpp",
@@ -256,6 +254,8 @@ source_set("dawn_native_sources") {
     "Sampler.h",
     "ShaderModule.cpp",
     "ShaderModule.h",
+    "SpirvUtils.cpp",
+    "SpirvUtils.h",
     "StagingBuffer.cpp",
     "StagingBuffer.h",
     "Surface.cpp",
@@ -314,6 +314,7 @@ source_set("dawn_native_sources") {
       "d3d12/HeapAllocatorD3D12.h",
       "d3d12/HeapD3D12.cpp",
       "d3d12/HeapD3D12.h",
+      "d3d12/IntegerTypes.h",
       "d3d12/NativeSwapChainImplD3D12.cpp",
       "d3d12/NativeSwapChainImplD3D12.h",
       "d3d12/PageableD3D12.cpp",
@@ -388,6 +389,8 @@ source_set("dawn_native_sources") {
       "metal/Forward.h",
       "metal/PipelineLayoutMTL.h",
       "metal/PipelineLayoutMTL.mm",
+      "metal/QuerySetMTL.h",
+      "metal/QuerySetMTL.mm",
       "metal/QueueMTL.h",
       "metal/QueueMTL.mm",
       "metal/RenderPipelineMTL.h",
@@ -590,7 +593,6 @@ source_set("dawn_native_sources") {
 
   if (dawn_enable_wgsl) {
     deps += [ "${dawn_tint_dir}:libtint" ]
-    defines += [ "DAWN_ENABLE_WGSL" ]
   }
 }
 

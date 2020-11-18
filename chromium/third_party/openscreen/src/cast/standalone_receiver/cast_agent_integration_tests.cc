@@ -6,9 +6,9 @@
 #include "cast/common/certificate/testing/test_helpers.h"
 #include "cast/common/channel/virtual_connection_manager.h"
 #include "cast/common/channel/virtual_connection_router.h"
+#include "cast/receiver/channel/static_credentials.h"
 #include "cast/sender/public/sender_socket_factory.h"
 #include "cast/standalone_receiver/cast_agent.h"
-#include "cast/standalone_receiver/static_credentials.h"
 #include "gtest/gtest.h"
 #include "platform/api/serial_delete_ptr.h"
 #include "platform/api/time.h"
@@ -120,7 +120,7 @@ class CastAgentIntegrationTest : public ::testing::Test {
   SerialDeletePtr<TlsConnectionFactory> sender_tls_factory_;
 };
 
-TEST_F(CastAgentIntegrationTest, StartsListeningProperly) {
+TEST_F(CastAgentIntegrationTest, CanConnect) {
   absl::optional<InterfaceInfo> loopback = GetLoopbackInterfaceForTesting();
   ASSERT_TRUE(loopback.has_value());
 

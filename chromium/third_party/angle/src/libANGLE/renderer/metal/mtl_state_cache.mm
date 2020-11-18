@@ -114,7 +114,12 @@ MTLVertexDescriptor *ToObjC(const VertexDesc &desc)
 
     for (uint8_t i = 0; i < desc.numBufferLayouts; ++i)
     {
-        [objCDesc.layouts setObject:ToObjC(desc.layouts[i]) atIndexedSubscript:i];
+        // Ignore if stepFunction is kVertexStepFunctionInvalid.
+        // If we don't set this slot, it will apparently be disabled by metal runtime.
+        if (desc.layouts[i].stepFunction != kVertexStepFunctionInvalid)
+        {
+            [objCDesc.layouts setObject:ToObjC(desc.layouts[i]) atIndexedSubscript:i];
+        }
     }
 
     return [objCDesc ANGLE_MTL_AUTORELEASE];
@@ -183,6 +188,7 @@ void BaseRenderPassAttachmentDescToObjC(const RenderPassAttachmentDesc &src,
         dst.texture        = ToObjC(implicitMsTexture);
         dst.level          = 0;
         dst.slice          = 0;
+        dst.depthPlane     = 0;
         dst.resolveTexture = ToObjC(src.texture);
         dst.resolveLevel   = src.level;
         if (dst.resolveTexture.textureType == MTLTextureType3D)
@@ -210,9 +216,10 @@ void BaseRenderPassAttachmentDescToObjC(const RenderPassAttachmentDesc &src,
             dst.slice      = src.sliceOrDepth;
             dst.depthPlane = 0;
         }
-        dst.resolveTexture = nil;
-        dst.resolveLevel   = 0;
-        dst.resolveSlice   = 0;
+        dst.resolveTexture    = nil;
+        dst.resolveLevel      = 0;
+        dst.resolveSlice      = 0;
+        dst.resolveDepthPlane = 0;
     }
 
     ANGLE_OBJC_CP_PROPERTY(dst, src, loadAction);
@@ -618,6 +625,17 @@ bool RenderPipelineOutputDesc::operator==(const RenderPipelineOutputDesc &rhs) c
            ANGLE_PROP_EQ(*this, rhs, stencilAttachmentPixelFormat);
 }
 
+void RenderPipelineOutputDesc::updateEnabledDrawBuffers(gl::DrawBufferMask enabledBuffers)
+{
+    for (uint32_t colorIndex = 0; colorIndex < this->numColorAttachments; ++colorIndex)
+    {
+        if (!enabledBuffers.test(colorIndex))
+        {
+            this->colorAttachments[colorIndex].writeMask = MTLColorWriteMaskNone;
+        }
+    }
+}
+
 // RenderPipelineDesc implementation
 RenderPipelineDesc::RenderPipelineDesc()
 {
@@ -716,11 +734,10 @@ void RenderPassDesc::populateRenderPipelineOutputDesc(const BlendDesc &blendStat
         auto &renderPassColorAttachment = this->colorAttachments[i];
         auto texture                    = renderPassColorAttachment.texture;
 
-        // Copy parameters from blend state
-        outputDescriptor.colorAttachments[i].update(blendState);
-
         if (texture)
         {
+            // Copy parameters from blend state
+            outputDescriptor.colorAttachments[i].update(blendState);
 
             outputDescriptor.colorAttachments[i].pixelFormat = texture->pixelFormat();
 
@@ -731,7 +748,9 @@ void RenderPassDesc::populateRenderPipelineOutputDesc(const BlendDesc &blendStat
         }
         else
         {
-            outputDescriptor.colorAttachments[i].pixelFormat = MTLPixelFormatInvalid;
+
+            outputDescriptor.colorAttachments[i].blendingEnabled = false;
+            outputDescriptor.colorAttachments[i].pixelFormat     = MTLPixelFormatInvalid;
         }
     }
 

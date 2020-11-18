@@ -29,13 +29,23 @@ devtools_module("console") {
     "../platform:bundle",
     "../sdk:bundle",
     "../text_utils:bundle",
+    "../theme_support:bundle",
     "../ui:bundle",
+  ]
+}
+
+copy_to_gen("legacy_css") {
+  sources = [
+    "consoleContextSelector.css",
+    "consolePinPane.css",
+    "consolePrompt.css",
+    "consoleSidebar.css",
+    "consoleView.css",
   ]
 }
 
 devtools_entrypoint("bundle") {
   entrypoint = "console.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":console" ]
 }

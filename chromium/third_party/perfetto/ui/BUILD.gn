@@ -99,7 +99,16 @@ template("node_bin") {
     if (defined(invoker.suppress_stderr) && invoker.suppress_stderr) {
       args += [ "--suppress_stderr" ]
     }
+
+    # Some of the node_bin rules *cough*transpile_all_ts*cough* don't
+    # accuratly report the output files. This means if they can run,
+    # change something, and not cause their dependees to rerun causing
+    # bugs. Adding a stamp file which is always rewritten avoids this.
+    # See also b/120010518
+    stamp_path = "$ui_dir/$target_name.node_bin.stamp"
+    outputs += [ stamp_path ]
     args += [
+              "--stamp=" + rebase_path(stamp_path, root_build_dir),
               "--path=$nodejs_bin",
               "node",
               rebase_path("node_modules/.bin/$_node_cmd", root_build_dir),
@@ -258,7 +267,6 @@ node_bin("protos_to_ts") {
 # Builds all .ts sources in the repo under |src|.
 node_bin("transpile_all_ts") {
   deps = [
-    ":copy_protobufjs",
     ":dist_symlink",
     ":protos_to_ts",
     ":wasm_gen",
@@ -287,6 +295,7 @@ node_bin("transpile_all_ts") {
 
   node_cmd = "tsc"
   args = [
+    "--incremental",
     "--project",
     rebase_path(".", root_build_dir),
     "--outDir",
@@ -323,6 +332,7 @@ scss_srcs = [
   "src/assets/analyze_page.scss",
   "src/assets/common.scss",
   "src/assets/details.scss",
+  "src/assets/metrics_page.scss",
   "src/assets/modal.scss",
   "src/assets/record.scss",
   "src/assets/sidebar.scss",
@@ -384,6 +394,7 @@ copy("assets_dist") {
               "src/assets/rec_cpu_freq.png",
               "src/assets/rec_cpu_voltage.png",
               "src/assets/rec_ftrace.png",
+              "src/assets/rec_gpu_mem_total.png",
               "src/assets/rec_java_heap_dump.png",
               "src/assets/rec_lmk.png",
               "src/assets/rec_logcat.png",
@@ -563,46 +574,9 @@ copy("copy_tests_script") {
   outputs = [ "$root_build_dir/ui_tests" ]
 }
 
-# We use the prebundled protobufjs light because rollup cannot bundle
-# protobufjs/light (or protobufjs/full) due to circular dependencies. We copy
-# over the correct js and types files, and make small local changes.
-action("copy_protobufjs") {
-  deps = [
-    ":copy_protobufjs_light_sources",
-    ":copy_protobufjs_light_types",
-  ]
-  inputs = [ "../gn/standalone/modify_protobufjs.py" ]
-  script = "../gn/standalone/build_tool_wrapper.py"
-  stamp_file = "$target_out_dir/.$target_name.stamp"
-  args = [
-    "--stamp",
-    rebase_path(stamp_file, root_build_dir),
-    rebase_path("../gn/standalone/modify_protobufjs.py", root_build_dir),
-    rebase_path("$ui_gen_dir/protobufjs-light/protobuf.js"),
-  ]
-  outputs = [ stamp_file ]
-}
-
-copy("copy_protobufjs_light_sources") {
-  deps = [ ":node_modules" ]
-  sources = [
-    "node_modules/protobufjs/dist/light/protobuf.js",
-    "node_modules/protobufjs/dist/light/protobuf.js.map",
-  ]
-  outputs = [ "$ui_gen_dir/protobufjs-light/{{source_file_part}}" ]
-}
-
-copy("copy_protobufjs_light_types") {
-  deps = [ ":node_modules" ]
-
-  # The types are same for light and full.
-  sources = [ "node_modules/protobufjs/index.d.ts" ]
-  outputs = [ "$ui_gen_dir/protobufjs-light/protobuf.d.ts" ]
-}
-
 # This target generates an map containing all the UI subresources and their
 # hashes. This is used by the service worker code for offline caching.
-# This taarget needs to be kept at the end of the BUILD.gn file, because of the
+# This target needs to be kept at the end of the BUILD.gn file, because of the
 # get_target_outputs() call (fails otherwise due to GN's evaluation order).
 action("gen_dist_file_map") {
   out_file_path = "$ui_gen_dir/dist_file_map.ts"

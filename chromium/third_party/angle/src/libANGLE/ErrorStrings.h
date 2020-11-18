@@ -54,10 +54,12 @@ MSG kBlitTypeMismatchSignedInteger = "If the read buffer contains signed integer
 MSG kBlitTypeMismatchUnsignedInteger = "If the read buffer contains unsigned integer values the draw buffer must as well.";
 MSG kBufferAlreadyMapped = "Buffer is already mapped.";
 MSG kBufferBoundForTransformFeedback = "Buffer is bound for transform feedback.";
+MSG kBufferImmutable = "Buffer is immutable.";
 MSG kBufferMapped = "An active buffer is mapped";
 MSG kBufferNotBound = "A buffer must be bound.";
 MSG kBufferNotMappable = "Attempted to map buffer object zero.";
 MSG kBufferNotMapped = "Buffer is not mapped.";
+MSG kBufferNotUpdatable = "Buffer is not updatable.";
 MSG kBufferOffsetOverflow = "Buffer offset overflow.";
 MSG kBufferPointerNotAvailable = "Can not get pointer for reserved buffer name zero.";
 MSG kCannotPopDefaultDebugGroup = "Cannot pop the default debug group.";
@@ -181,6 +183,7 @@ MSG kInvalidBorder = "Border must be 0.";
 MSG kInvalidBufferName = "name is not a valid buffer.";
 MSG kInvalidBufferTypes = "Invalid buffer target.";
 MSG kInvalidBufferUsage = "Invalid buffer usage enum.";
+MSG kInvalidBufferUsageFlags = "Invalid buffer usage flags.";
 MSG kInvalidClearMask = "Invalid mask bits.";
 MSG kInvalidClientState = "Invalid client vertex array type.";
 MSG kInvalidClipPlane = "Invalid clip plane.";
@@ -454,6 +457,7 @@ MSG kTextureTargetRequiresES31 = "Texture target requires at least OpenGL ES 3.1
 MSG kTextureTypeConflict = "Two textures of different types use the same sampler location.";
 MSG kTextureTypeMismatch = "Passed in texture type must match the one originally used to define the texture.";
 MSG kTextureWidthOrHeightOutOfRange = "Width and height must be less than or equal to GL_MAX_TEXTURE_SIZE.";
+MSG kTextureDepthOutOfRange = "Depth must be less than or equal to MAX_ARRAY_TEXTURE_LAYERS";
 MSG kTransfomFeedbackAlreadyActive = "Transform feedback is already active.";
 MSG kTransformFeedbackActiveDelete = "Attempt to delete an active transform feedback.";
 MSG kTransformFeedbackActiveDuringLink = "Cannot link program while program is associated with an active transform feedback object.";
@@ -494,6 +498,7 @@ MSG kUnrecognizedShaderStageBit = "Unrecognized shader stage bit.";
 MSG kProgramNotSeparable = "Program object was not linked with its PROGRAM_SEPARABLE status set.";
 MSG kProgramPipelineDoesNotExist = "Program pipeline does not exist.";
 MSG kNotAllStagesOfSeparableProgramUsed = "A program object is active for at least one, but not all of the shader stages that were present when the program was linked.";
+MSG kProgramPipelineLinkFailed = "Program pipeline link failed";
 
 // clang-format on
 

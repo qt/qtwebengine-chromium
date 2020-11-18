@@ -345,6 +345,9 @@ typedef struct TPL_SPEED_FEATURES {
 
   // Not run TPL for filtered Key frame.
   int disable_filtered_key_tpl;
+
+  // Prune reference frames in TPL.
+  int prune_ref_frames_in_tpl;
 } TPL_SPEED_FEATURES;
 
 typedef struct GLOBAL_MOTION_SPEED_FEATURES {
@@ -466,6 +469,15 @@ typedef struct PARTITION_SPEED_FEATURES {
 
   // Prune AB partition search using split and HORZ/VERT info
   int prune_ab_partition_using_split_info;
+
+  // Terminate partition search for child partition,
+  // when NONE and SPLIT partition rd_costs are INT64_MAX.
+  int early_term_after_none_split;
+
+  // Level used to adjust threshold for av1_ml_predict_breakout(). At lower
+  // levels, more conservative threshold is used. Value of 2 corresponds to
+  // default case with no adjustment to lbd thresholds.
+  int ml_predict_breakout_level;
 } PARTITION_SPEED_FEATURES;
 
 typedef struct MV_SPEED_FEATURES {
@@ -526,6 +538,10 @@ typedef struct MV_SPEED_FEATURES {
 
   // Accurate full pixel motion search based on TPL stats.
   int full_pixel_search_level;
+
+  // Whether to downsample the rows in sad calculation during motion search.
+  // This is only active when there are at least 16 rows.
+  int use_downsampled_sad;
 } MV_SPEED_FEATURES;
 
 typedef struct INTER_MODE_SPEED_FEATURES {
@@ -998,6 +1014,16 @@ typedef struct REAL_TIME_SPEED_FEATURES {
 
   // uses results of temporal noise estimate
   int use_temporal_noise_estimate;
+
+  // Parameter indicating initial search window to be used in full-pixel search
+  // for nonrd_pickmode. Range [0, MAX_MVSEARCH_STEPS - 1]. Lower value
+  // indicates larger window. If set to 0, step_param is set based on internal
+  // logic in set_mv_search_params().
+  int fullpel_search_step_param;
+
+  // Skip loopfilter (and cdef) in svc real-time mode for
+  // non_reference/droppable frames.
+  int skip_loopfilter_non_reference;
 } REAL_TIME_SPEED_FEATURES;
 
 /*!\endcond */
@@ -1075,13 +1101,46 @@ typedef struct SPEED_FEATURES {
 
 struct AV1_COMP;
 
+/*!\endcond */
+/*!\brief Frame size independent speed vs quality trade off flags
+ *
+ *\ingroup speed_features
+ *
+ * \param[in]    cpi     Top - level encoder instance structure
+ * \param[in]    speed   Speed setting passed in from the command  line
+ *
+ * \return No return value but configures the various speed trade off flags
+ *         based on the passed in speed setting. (Higher speed gives lower
+ *         quality)
+ */
 void av1_set_speed_features_framesize_independent(struct AV1_COMP *cpi,
                                                   int speed);
+
+/*!\brief Frame size dependent speed vs quality trade off flags
+ *
+ *\ingroup speed_features
+ *
+ * \param[in]    cpi     Top - level encoder instance structure
+ * \param[in]    speed   Speed setting passed in from the command  line
+ *
+ * \return No return value but configures the various speed trade off flags
+ *         based on the passed in speed setting and frame size. (Higher speed
+ *         corresponds to lower quality)
+ */
 void av1_set_speed_features_framesize_dependent(struct AV1_COMP *cpi,
                                                 int speed);
+/*!\brief Q index dependent speed vs quality trade off flags
+ *
+ *\ingroup speed_features
+ *
+ * \param[in]    cpi     Top - level encoder instance structure
+ * \param[in]    speed   Speed setting passed in from the command  line
+ *
+ * \return No return value but configures the various speed trade off flags
+ *         based on the passed in speed setting and current frame's Q index.
+ *         (Higher speed corresponds to lower quality)
+ */
 void av1_set_speed_features_qindex_dependent(struct AV1_COMP *cpi, int speed);
-
-/*!\endcond */
 
 #ifdef __cplusplus
 }  // extern "C"

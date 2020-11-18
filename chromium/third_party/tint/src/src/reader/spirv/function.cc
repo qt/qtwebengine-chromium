@@ -426,6 +426,12 @@ class StructuredTraverser {
   std::unordered_set<uint32_t> visited_;
 };
 
+/// @param src a source record
+/// @returns true if |src| is a non-default Source
+bool HasSource(const Source& src) {
+  return src.line != 0 || src.column != 0;
+}
+
 }  // namespace
 
 BlockInfo::BlockInfo(const spvtools::opt::BasicBlock& bb)
@@ -523,6 +529,14 @@ ast::Statement* FunctionEmitter::AddStatement(
     statements_stack_.back().statements_->append(std::move(statement));
   }
   return result;
+}
+
+ast::Statement* FunctionEmitter::AddStatementForInstruction(
+    std::unique_ptr<ast::Statement> statement,
+    const spvtools::opt::Instruction& inst) {
+  auto* node = AddStatement(std::move(statement));
+  ApplySourceForInstruction(node, inst);
+  return node;
 }
 
 ast::Statement* FunctionEmitter::LastStatement() {
@@ -1655,7 +1669,7 @@ bool FunctionEmitter::EmitFunctionVariables() {
     // TODO(dneto): Add the initializer via Variable::set_constructor.
     auto var_decl_stmt =
         std::make_unique<ast::VariableDeclStatement>(std::move(var));
-    AddStatement(std::move(var_decl_stmt));
+    AddStatementForInstruction(std::move(var_decl_stmt), inst);
     // Save this as an already-named value.
     identifier_values_.insert(inst.result_id());
   }
@@ -2430,7 +2444,6 @@ bool FunctionEmitter::EmitStatementsInBasicBlock(const BlockInfo& block_info,
     // Only emit this part of the basic block once.
     return true;
   }
-
   // Returns the given list of local definition IDs, sorted by their index.
   auto sorted_by_index = [this](const std::vector<uint32_t>& ids) {
     auto sorted = ids;
@@ -2514,8 +2527,8 @@ bool FunctionEmitter::EmitConstDefinition(
   }
   ast_const->set_constructor(std::move(ast_expr.expr));
   ast_const->set_is_const(true);
-  AddStatement(
-      std::make_unique<ast::VariableDeclStatement>(std::move(ast_const)));
+  AddStatementForInstruction(
+      std::make_unique<ast::VariableDeclStatement>(std::move(ast_const)), inst);
   // Save this as an already-named value.
   identifier_values_.insert(inst.result_id());
   return success();
@@ -2528,9 +2541,11 @@ bool FunctionEmitter::EmitConstDefOrWriteToHoistedVar(
   const auto* def_info = GetDefInfo(result_id);
   if (def_info && def_info->requires_hoisted_def) {
     // Emit an assignment of the expression to the hoisted variable.
-    AddStatement(std::make_unique<ast::AssignmentStatement>(
-        std::make_unique<ast::IdentifierExpression>(namer_.Name(result_id)),
-        std::move(ast_expr.expr)));
+    AddStatementForInstruction(
+        std::make_unique<ast::AssignmentStatement>(
+            std::make_unique<ast::IdentifierExpression>(namer_.Name(result_id)),
+            std::move(ast_expr.expr)),
+        inst);
     return true;
   }
   return EmitConstDefinition(inst, std::move(ast_expr));
@@ -2593,8 +2608,9 @@ bool FunctionEmitter::EmitStatement(const spvtools::opt::Instruction& inst) {
       // TODO(dneto): Order of evaluation?
       auto lhs = MakeExpression(ptr_id);
       auto rhs = MakeExpression(value_id);
-      AddStatement(std::make_unique<ast::AssignmentStatement>(
-          std::move(lhs.expr), std::move(rhs.expr)));
+      AddStatementForInstruction(std::make_unique<ast::AssignmentStatement>(
+                                     std::move(lhs.expr), std::move(rhs.expr)),
+                                 inst);
       return success();
     }
     case SpvOpLoad: {
@@ -2851,30 +2867,43 @@ TypedExpression FunctionEmitter::MakeAccessChain(
     }
   }
 
-  const auto* ptr_type = type_mgr_->GetType(ptr_ty_id);
-  if (!ptr_type || !ptr_type->AsPointer()) {
+  const auto* ptr_type_inst = def_use_mgr_->GetDef(ptr_ty_id);
+  if (!ptr_type_inst || (ptr_type_inst->opcode() != SpvOpTypePointer)) {
     Fail() << "Access chain %" << inst.result_id()
            << " base pointer is not of pointer type";
     return {};
   }
-  SpvStorageClass storage_class = ptr_type->AsPointer()->storage_class();
-  const auto* pointee_type = ptr_type->AsPointer()->pointee_type();
+  SpvStorageClass storage_class =
+      static_cast<SpvStorageClass>(ptr_type_inst->GetSingleWordInOperand(0));
+  uint32_t pointee_type_id = ptr_type_inst->GetSingleWordInOperand(1);
+
+  // Build up a nested expression for the access chain by walking down the type
+  // hierarchy, maintaining |pointee_type_id| as the SPIR-V ID of the type of
+  // the object pointed to after processing the previous indices.
   for (uint32_t index = first_index; index < num_in_operands; ++index) {
     const auto* index_const =
         constants[index] ? constants[index]->AsIntConstant() : nullptr;
     const int64_t index_const_val =
         index_const ? index_const->GetSignExtendedValue() : 0;
     std::unique_ptr<ast::Expression> next_expr;
-    switch (pointee_type->kind()) {
-      case spvtools::opt::analysis::Type::kVector:
+
+    const auto* pointee_type_inst = def_use_mgr_->GetDef(pointee_type_id);
+    if (!pointee_type_inst) {
+      Fail() << "pointee type %" << pointee_type_id
+             << " is invalid after following " << (index - first_index)
+             << " indices: " << inst.PrettyPrint();
+      return {};
+    }
+    switch (pointee_type_inst->opcode()) {
+      case SpvOpTypeVector:
         if (index_const) {
-          // Try generating a MemberAccessor expression.
-          if (index_const_val < 0 ||
-              pointee_type->AsVector()->element_count() <= index_const_val) {
+          // Try generating a MemberAccessor expression
+          const auto num_elems = pointee_type_inst->GetSingleWordInOperand(1);
+          if (index_const_val < 0 || num_elems <= index_const_val) {
             Fail() << "Access chain %" << inst.result_id() << " index %"
                    << inst.GetSingleWordInOperand(index) << " value "
                    << index_const_val << " is out of bounds for vector of "
-                   << pointee_type->AsVector()->element_count() << " elements";
+                   << num_elems << " elements";
             return {};
           }
           if (uint64_t(index_const_val) >=
@@ -2893,61 +2922,58 @@ TypedExpression FunctionEmitter::MakeAccessChain(
               std::move(current_expr.expr),
               std::move(MakeOperand(inst, index).expr));
         }
-        pointee_type = pointee_type->AsVector()->element_type();
+        // All vector components are the same type.
+        pointee_type_id = pointee_type_inst->GetSingleWordInOperand(0);
         break;
-      case spvtools::opt::analysis::Type::kMatrix:
+      case SpvOpTypeMatrix:
         // Use array syntax.
         next_expr = std::make_unique<ast::ArrayAccessorExpression>(
             std::move(current_expr.expr),
             std::move(MakeOperand(inst, index).expr));
-        pointee_type = pointee_type->AsMatrix()->element_type();
+        // All matrix components are the same type.
+        pointee_type_id = pointee_type_inst->GetSingleWordInOperand(0);
         break;
-      case spvtools::opt::analysis::Type::kArray:
+      case SpvOpTypeArray:
         next_expr = std::make_unique<ast::ArrayAccessorExpression>(
             std::move(current_expr.expr),
             std::move(MakeOperand(inst, index).expr));
-        pointee_type = pointee_type->AsArray()->element_type();
+        pointee_type_id = pointee_type_inst->GetSingleWordInOperand(0);
         break;
-      case spvtools::opt::analysis::Type::kRuntimeArray:
+      case SpvOpTypeRuntimeArray:
         next_expr = std::make_unique<ast::ArrayAccessorExpression>(
             std::move(current_expr.expr),
             std::move(MakeOperand(inst, index).expr));
-        pointee_type = pointee_type->AsRuntimeArray()->element_type();
+        pointee_type_id = pointee_type_inst->GetSingleWordInOperand(0);
         break;
-      case spvtools::opt::analysis::Type::kStruct: {
+      case SpvOpTypeStruct: {
         if (!index_const) {
           Fail() << "Access chain %" << inst.result_id() << " index %"
                  << inst.GetSingleWordInOperand(index)
                  << " is a non-constant index into a structure %"
-                 << type_mgr_->GetId(pointee_type);
+                 << pointee_type_id;
           return {};
         }
-        if ((index_const_val < 0) ||
-            pointee_type->AsStruct()->element_types().size() <=
-                uint64_t(index_const_val)) {
+        const auto num_members = pointee_type_inst->NumInOperands();
+        if ((index_const_val < 0) || num_members <= uint64_t(index_const_val)) {
           Fail() << "Access chain %" << inst.result_id() << " index value "
                  << index_const_val << " is out of bounds for structure %"
-                 << type_mgr_->GetId(pointee_type) << " having "
-                 << pointee_type->AsStruct()->element_types().size()
-                 << " elements";
+                 << pointee_type_id << " having " << num_members << " members";
           return {};
         }
-        auto member_access =
-            std::make_unique<ast::IdentifierExpression>(namer_.GetMemberName(
-                type_mgr_->GetId(pointee_type), uint32_t(index_const_val)));
+        auto member_access = std::make_unique<ast::IdentifierExpression>(
+            namer_.GetMemberName(pointee_type_id, uint32_t(index_const_val)));
 
         next_expr = std::make_unique<ast::MemberAccessorExpression>(
             std::move(current_expr.expr), std::move(member_access));
-        pointee_type =
-            pointee_type->AsStruct()->element_types()[index_const_val];
+        pointee_type_id = pointee_type_inst->GetSingleWordInOperand(
+            static_cast<uint32_t>(index_const_val));
         break;
       }
       default:
-        Fail() << "Access chain with unknown pointee type %"
-               << type_mgr_->GetId(pointee_type) << " " << pointee_type->str();
+        Fail() << "Access chain with unknown or invalid pointee type %"
+               << pointee_type_id << ": " << pointee_type_inst->PrettyPrint();
         return {};
     }
-    const auto pointee_type_id = type_mgr_->GetId(pointee_type);
     const auto pointer_type_id =
         type_mgr_->FindPointerToType(pointee_type_id, storage_class);
     auto* ast_pointer_type = parser_impl_.ConvertType(pointer_type_id);
@@ -2978,20 +3004,31 @@ TypedExpression FunctionEmitter::MakeCompositeExtract(
   static const char* swizzles[] = {"x", "y", "z", "w"};
 
   const auto composite = inst.GetSingleWordInOperand(0);
-  const auto composite_type_id = def_use_mgr_->GetDef(composite)->type_id();
-  const auto* current_type = type_mgr_->GetType(composite_type_id);
+  auto current_type_id = def_use_mgr_->GetDef(composite)->type_id();
+  // Build up a nested expression for the access chain by walking down the type
+  // hierarchy, maintaining |current_type_id| as the SPIR-V ID of the type of
+  // the object pointed to after processing the previous indices.
   const auto num_in_operands = inst.NumInOperands();
   for (uint32_t index = 1; index < num_in_operands; ++index) {
     const uint32_t index_val = inst.GetSingleWordInOperand(index);
+
+    const auto* current_type_inst = def_use_mgr_->GetDef(current_type_id);
+    if (!current_type_inst) {
+      Fail() << "composite type %" << current_type_id
+             << " is invalid after following " << (index - 1)
+             << " indices: " << inst.PrettyPrint();
+      return {};
+    }
     std::unique_ptr<ast::Expression> next_expr;
-    switch (current_type->kind()) {
-      case spvtools::opt::analysis::Type::kVector: {
+    switch (current_type_inst->opcode()) {
+      case SpvOpTypeVector: {
         // Try generating a MemberAccessor expression. That result in something
         // like  "foo.z", which is more idiomatic than "foo[2]".
-        if (current_type->AsVector()->element_count() <= index_val) {
+        const auto num_elems = current_type_inst->GetSingleWordInOperand(1);
+        if (num_elems <= index_val) {
           Fail() << "CompositeExtract %" << inst.result_id() << " index value "
-                 << index_val << " is out of bounds for vector of "
-                 << current_type->AsVector()->element_count() << " elements";
+                 << index_val << " is out of bounds for vector of " << num_elems
+                 << " elements";
           return {};
         }
         if (index_val >= sizeof(swizzles) / sizeof(swizzles[0])) {
@@ -3003,15 +3040,17 @@ TypedExpression FunctionEmitter::MakeCompositeExtract(
             std::make_unique<ast::IdentifierExpression>(swizzles[index_val]);
         next_expr = std::make_unique<ast::MemberAccessorExpression>(
             std::move(current_expr.expr), std::move(letter_index));
-        current_type = current_type->AsVector()->element_type();
+        // All vector components are the same type.
+        current_type_id = current_type_inst->GetSingleWordInOperand(0);
         break;
       }
-      case spvtools::opt::analysis::Type::kMatrix:
+      case SpvOpTypeMatrix: {
         // Check bounds
-        if (current_type->AsMatrix()->element_count() <= index_val) {
+        const auto num_elems = current_type_inst->GetSingleWordInOperand(1);
+        if (num_elems <= index_val) {
           Fail() << "CompositeExtract %" << inst.result_id() << " index value "
-                 << index_val << " is out of bounds for matrix of "
-                 << current_type->AsMatrix()->element_count() << " elements";
+                 << index_val << " is out of bounds for matrix of " << num_elems
+                 << " elements";
           return {};
         }
         if (index_val >= sizeof(swizzles) / sizeof(swizzles[0])) {
@@ -3022,45 +3061,44 @@ TypedExpression FunctionEmitter::MakeCompositeExtract(
         // Use array syntax.
         next_expr = std::make_unique<ast::ArrayAccessorExpression>(
             std::move(current_expr.expr), make_index(index_val));
-        current_type = current_type->AsMatrix()->element_type();
+        // All matrix components are the same type.
+        current_type_id = current_type_inst->GetSingleWordInOperand(0);
         break;
-      case spvtools::opt::analysis::Type::kArray:
+      }
+      case SpvOpTypeArray:
         // The array size could be a spec constant, and so it's not always
         // statically checkable.  Instead, rely on a runtime index clamp
         // or runtime check to keep this safe.
         next_expr = std::make_unique<ast::ArrayAccessorExpression>(
             std::move(current_expr.expr), make_index(index_val));
-        current_type = current_type->AsArray()->element_type();
+        current_type_id = current_type_inst->GetSingleWordInOperand(0);
         break;
-      case spvtools::opt::analysis::Type::kRuntimeArray:
+      case SpvOpTypeRuntimeArray:
         Fail() << "can't do OpCompositeExtract on a runtime array";
         return {};
-      case spvtools::opt::analysis::Type::kStruct: {
-        if (current_type->AsStruct()->element_types().size() <= index_val) {
+      case SpvOpTypeStruct: {
+        const auto num_members = current_type_inst->NumInOperands();
+        if (num_members <= index_val) {
           Fail() << "CompositeExtract %" << inst.result_id() << " index value "
                  << index_val << " is out of bounds for structure %"
-                 << type_mgr_->GetId(current_type) << " having "
-                 << current_type->AsStruct()->element_types().size()
-                 << " elements";
+                 << current_type_id << " having " << num_members << " members";
           return {};
         }
-        auto member_access =
-            std::make_unique<ast::IdentifierExpression>(namer_.GetMemberName(
-                type_mgr_->GetId(current_type), uint32_t(index_val)));
+        auto member_access = std::make_unique<ast::IdentifierExpression>(
+            namer_.GetMemberName(current_type_id, uint32_t(index_val)));
 
         next_expr = std::make_unique<ast::MemberAccessorExpression>(
             std::move(current_expr.expr), std::move(member_access));
-        current_type = current_type->AsStruct()->element_types()[index_val];
+        current_type_id = current_type_inst->GetSingleWordInOperand(index_val);
         break;
       }
       default:
-        Fail() << "CompositeExtract with bad type %"
-               << type_mgr_->GetId(current_type) << " " << current_type->str();
+        Fail() << "CompositeExtract with bad type %" << current_type_id << ": "
+               << current_type_inst->PrettyPrint();
         return {};
     }
     current_expr.reset(TypedExpression(
-        parser_impl_.ConvertType(type_mgr_->GetId(current_type)),
-        std::move(next_expr)));
+        parser_impl_.ConvertType(current_type_id), std::move(next_expr)));
   }
   return current_expr;
 }
@@ -3222,18 +3260,25 @@ void FunctionEmitter::FindValuesNeedingNamedOrHoistedDefinition() {
     const auto* block_info = GetBlockInfo(block_id);
     const auto block_pos = block_info->pos;
     for (const auto& inst : *(block_info->basic_block)) {
-      // Update the usage span for IDs used by this instruction.
-      // But skip uses in OpPhi because they are handled differently.
-      if (inst.opcode() != SpvOpPhi) {
-        inst.ForEachInId([this, block_pos](const uint32_t* id_ptr) {
-          auto* def_info = GetDefInfo(*id_ptr);
-          if (def_info) {
-            def_info->num_uses++;
-            def_info->last_use_pos =
-                std::max(def_info->last_use_pos, block_pos);
+      // Update bookkeeping for locally-defined IDs used by this instruction.
+      inst.ForEachInId([this, block_pos, block_info](const uint32_t* id_ptr) {
+        auto* def_info = GetDefInfo(*id_ptr);
+        if (def_info) {
+          // Update usage count.
+          def_info->num_uses++;
+          // Update usage span.
+          def_info->last_use_pos = std::max(def_info->last_use_pos, block_pos);
+
+          // Determine whether this ID is defined in a different construct
+          // from this use.
+          const auto defining_block = block_order_[def_info->block_pos];
+          const auto* def_in_construct =
+              GetBlockInfo(defining_block)->construct;
+          if (def_in_construct != block_info->construct) {
+            def_info->used_in_another_construct = true;
           }
-        });
-      }
+        }
+      });
 
       if (inst.opcode() == SpvOpPhi) {
         // Declare a name for the variable used to carry values to a phi.
@@ -3295,12 +3340,34 @@ void FunctionEmitter::FindValuesNeedingNamedOrHoistedDefinition() {
     const auto first_pos = def_info->block_pos;
     const auto last_use_pos = def_info->last_use_pos;
 
-    const auto* const def_in_construct =
+    const auto* def_in_construct =
         GetBlockInfo(block_order_[first_pos])->construct;
-    const auto* const construct_with_last_use =
-        GetBlockInfo(block_order_[last_use_pos])->construct;
+    // A definition in the first block of an kIfSelection or kSwitchSelection
+    // occurs before the branch, and so that definition should count as
+    // having been defined at the scope of the parent construct.
+    if (first_pos == def_in_construct->begin_pos) {
+      if ((def_in_construct->kind == Construct::kIfSelection) ||
+          (def_in_construct->kind == Construct::kSwitchSelection)) {
+        def_in_construct = def_in_construct->parent;
+      }
+    }
 
-    if (def_in_construct != construct_with_last_use) {
+    bool should_hoist = false;
+    if (!def_in_construct->ContainsPos(last_use_pos)) {
+      // To satisfy scoping, we have to hoist the definition out to an enclosing
+      // construct.
+      should_hoist = true;
+    } else {
+      // Avoid moving combinatorial values across constructs.  This is a
+      // simple heuristic to avoid changing the cost of an operation
+      // by moving it into or out of a loop, for example.
+      if ((def_info->storage_class == ast::StorageClass::kNone) &&
+          def_info->used_in_another_construct) {
+        should_hoist = true;
+      }
+    }
+
+    if (should_hoist) {
       const auto* enclosing_construct =
           GetEnclosingScope(first_pos, last_use_pos);
       if (enclosing_construct == def_in_construct) {
@@ -3405,8 +3472,10 @@ bool FunctionEmitter::EmitFunctionCall(const spvtools::opt::Instruction& inst) {
   }
 
   if (result_type->IsVoid()) {
-    return nullptr != AddStatement(std::make_unique<ast::CallStatement>(
-                          std::move(call_expr)));
+    return nullptr !=
+           AddStatementForInstruction(
+               std::make_unique<ast::CallStatement>(std::move(call_expr)),
+               inst);
   }
 
   return EmitConstDefOrWriteToHoistedVar(inst,
@@ -3438,6 +3507,18 @@ TypedExpression FunctionEmitter::MakeSimpleSelect(
                 std::move(params))};
   }
   return {};
+}
+
+void FunctionEmitter::ApplySourceForInstruction(
+    ast::Node* node,
+    const spvtools::opt::Instruction& inst) {
+  if (!node) {
+    return;
+  }
+  const Source& existing = node->source();
+  if (!HasSource(existing)) {
+    node->set_source(parser_impl_.GetSourceForInst(&inst));
+  }
 }
 
 }  // namespace spirv

@@ -14,7 +14,6 @@
 #include <atomic>
 
 #include "src/post_filter.h"
-#include "src/utils/blocking_counter.h"
 
 namespace libgav1 {
 namespace {
@@ -481,67 +480,23 @@ void PostFilter::ApplyDeblockFilterForOneSuperBlockRow(int row4x4_start,
   }
 }
 
-void PostFilter::DeblockFilterWorker(int jobs_per_plane,
-                                     const Plane* /*planes*/,
-                                     int /*num_planes*/,
-                                     std::atomic<int>* job_counter,
-                                     DeblockFilter deblock_filter) {
-  const int total_jobs = jobs_per_plane;
-  int job_index;
-  while ((job_index = job_counter->fetch_add(1, std::memory_order_relaxed)) <
-         total_jobs) {
-    const int row_unit = job_index % jobs_per_plane;
-    const int row4x4 = row_unit * kNum4x4InLoopFilterUnit;
+template <LoopFilterType loop_filter_type>
+void PostFilter::DeblockFilterWorker(std::atomic<int>* row4x4_atomic) {
+  int row4x4;
+  while ((row4x4 = row4x4_atomic->fetch_add(kNum4x4InLoopFilterUnit,
+                                            std::memory_order_relaxed)) <
+         frame_header_.rows4x4) {
     for (int column4x4 = 0; column4x4 < frame_header_.columns4x4;
          column4x4 += kNum4x4InLoopFilterUnit) {
-      (this->*deblock_filter)(row4x4, column4x4);
+      (this->*deblock_filter_func_[loop_filter_type])(row4x4, column4x4);
     }
   }
 }
 
-void PostFilter::ApplyDeblockFilterThreaded() {
-  const int jobs_per_plane = DivideBy16(frame_header_.rows4x4 + 15);
-  const int num_workers = thread_pool_->num_threads();
-  std::array<Plane, kMaxPlanes> planes;
-  planes[0] = kPlaneY;
-  int num_planes = 1;
-  for (int plane = kPlaneU; plane < planes_; ++plane) {
-    if (frame_header_.loop_filter.level[plane + 1] != 0) {
-      planes[num_planes++] = static_cast<Plane>(plane);
-    }
-  }
-  // The vertical filters are not dependent on each other. So simply schedule
-  // them for all possible rows.
-  //
-  // The horizontal filter for a row/column depends on the vertical filter being
-  // finished for the blocks to the top and to the right. To work around
-  // this synchronization, we simply wait for the vertical filter to finish for
-  // all rows. Now, the horizontal filters can also be scheduled
-  // unconditionally similar to the vertical filters.
-  //
-  // The only synchronization involved is to know when the each directional
-  // filter is complete for the entire frame.
-  for (const auto& type :
-       {kLoopFilterTypeVertical, kLoopFilterTypeHorizontal}) {
-    const DeblockFilter deblock_filter = deblock_filter_func_[type];
-    std::atomic<int> job_counter(0);
-    BlockingCounter pending_workers(num_workers);
-    for (int i = 0; i < num_workers; ++i) {
-      thread_pool_->Schedule([this, jobs_per_plane, &planes, num_planes,
-                              &job_counter, deblock_filter,
-                              &pending_workers]() {
-        DeblockFilterWorker(jobs_per_plane, planes.data(), num_planes,
-                            &job_counter, deblock_filter);
-        pending_workers.Decrement();
-      });
-    }
-    // Run the jobs on the current thread.
-    DeblockFilterWorker(jobs_per_plane, planes.data(), num_planes, &job_counter,
-                        deblock_filter);
-    // Wait for the threadpool jobs to finish.
-    pending_workers.Wait();
-  }
-}
+template void PostFilter::DeblockFilterWorker<kLoopFilterTypeVertical>(
+    std::atomic<int>* row4x4_atomic);
+template void PostFilter::DeblockFilterWorker<kLoopFilterTypeHorizontal>(
+    std::atomic<int>* row4x4_atomic);
 
 void PostFilter::ApplyDeblockFilter(LoopFilterType loop_filter_type,
                                     int row4x4_start, int column4x4_start,

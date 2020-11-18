@@ -17,6 +17,7 @@
 
 #include "dawn_native/Error.h"
 #include "dawn_native/Forward.h"
+#include "dawn_native/IntegerTypes.h"
 #include "dawn_native/ObjectBase.h"
 
 #include "dawn_native/dawn_platform.h"
@@ -25,8 +26,6 @@ namespace dawn_native {
 
     class QueueBase : public ObjectBase {
       public:
-        QueueBase(DeviceBase* device);
-
         static QueueBase* MakeError(DeviceBase* device);
 
         // Dawn API
@@ -40,9 +39,11 @@ namespace dawn_native {
                           const TextureDataLayout* dataLayout,
                           const Extent3D* writeSize);
 
-      private:
+      protected:
+        QueueBase(DeviceBase* device);
         QueueBase(DeviceBase* device, ObjectBase::ErrorTag tag);
 
+      private:
         MaybeError WriteBufferInternal(BufferBase* buffer,
                                        uint64_t bufferOffset,
                                        const void* data,
@@ -53,7 +54,8 @@ namespace dawn_native {
                                         const TextureDataLayout* dataLayout,
                                         const Extent3D* writeSize);
 
-        virtual MaybeError SubmitImpl(uint32_t commandCount, CommandBufferBase* const* commands);
+        virtual MaybeError SubmitImpl(uint32_t commandCount,
+                                      CommandBufferBase* const* commands) = 0;
         virtual MaybeError WriteBufferImpl(BufferBase* buffer,
                                            uint64_t bufferOffset,
                                            const void* data,
@@ -64,7 +66,7 @@ namespace dawn_native {
                                             const Extent3D& writeSize);
 
         MaybeError ValidateSubmit(uint32_t commandCount, CommandBufferBase* const* commands) const;
-        MaybeError ValidateSignal(const Fence* fence, uint64_t signalValue) const;
+        MaybeError ValidateSignal(const Fence* fence, FenceAPISerial signalValue) const;
         MaybeError ValidateCreateFence(const FenceDescriptor* descriptor) const;
         MaybeError ValidateWriteBuffer(const BufferBase* buffer,
                                        uint64_t bufferOffset,
@@ -77,16 +79,6 @@ namespace dawn_native {
         void SubmitInternal(uint32_t commandCount, CommandBufferBase* const* commands);
     };
 
-    // A helper function used in Queue::WriteTexture. The destination data layout must not
-    // contain any additional rows per image.
-    void CopyTextureData(uint8_t* dstPointer,
-                         const uint8_t* srcPointer,
-                         uint32_t depth,
-                         uint32_t rowsPerImageInBlock,
-                         uint64_t imageAdditionalStride,
-                         uint32_t actualBytesPerRow,
-                         uint32_t dstBytesPerRow,
-                         uint32_t srcBytesPerRow);
 }  // namespace dawn_native
 
 #endif  // DAWNNATIVE_QUEUE_H_

@@ -5,8 +5,11 @@
 syntax = "proto3";
 option optimize_for = LITE_RUNTIME;
 
-// This file defines messages for notifying the networking daemon about guest
-// lifetime (startup, teardown) events.
+// This file defines the messages used by the patchpanel D-Bus API. It is
+// strongly recommended to not use the patchpanel D-Bus API directly and to
+// instead use the thin client defined at platform2/patchpanel/client.h that
+// provides additional functionalities and abstracts the details of the wire
+// format. Access control for clients is defined in platform2/patchpanel/dbus.
 package patchpanel;
 
 // Notification that the ARC++ container is starting up.
@@ -320,4 +323,29 @@ message ModifyPortRuleRequest {
 // Response to a ModifyPortRuleRequest.
 message ModifyPortRuleResponse {
   bool success = 1;
+}
+
+// Signal for notifying a change in the layer 2 connectivity state of a neighbor
+// monitored by NeighborLinkMonitor. Note that we assume the state of a new
+// neighbor is "connected" and thus no signal will be sent out if there is no L2
+// connectivity issue. See the class comment of NeighborLinkMonitor for more
+// details.
+message NeighborConnectedStateChangedSignal {
+  // Possible roles of a neighbor in the corresponding ipconfig.
+  enum Role {
+    INVALID_ROLE = 0;
+    GATEWAY = 1;
+    DNS_SERVER = 2;
+    GATEWAY_AND_DNS_SERVER = 3;
+  };
+
+  // The interface index of the device that connects to this neighbor.
+  int32 ifindex = 1;
+
+  // Neighbor properties.
+  string ip_addr = 2;
+  Role role = 3;
+
+  // The new connectivity state of this neighbor.
+  bool connected = 4;
 }

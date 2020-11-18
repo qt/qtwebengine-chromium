@@ -1145,7 +1145,7 @@ StatusCode DecoderImpl::CopyFrameToOutputBuffer(
   buffer_.bitdepth = yuv_buffer->bitdepth();
   const int num_planes =
       yuv_buffer->is_monochrome() ? kMaxPlanesMonochrome : kMaxPlanes;
-  int plane = 0;
+  int plane = kPlaneY;
   for (; plane < num_planes; ++plane) {
     buffer_.stride[plane] = yuv_buffer->stride(plane);
     buffer_.plane[plane] = yuv_buffer->data(plane);
@@ -1188,6 +1188,12 @@ StatusCode DecoderImpl::DecodeTiles(
                  "Failed to allocate memory for loop restoration info units.");
     return kStatusOutOfMemory;
   }
+  ThreadingStrategy& threading_strategy =
+      frame_scratch_buffer->threading_strategy;
+  if (!is_frame_parallel_ &&
+      !threading_strategy.Reset(frame_header, settings_.threads)) {
+    return kStatusOutOfMemory;
+  }
   const bool do_cdef =
       PostFilter::DoCdef(frame_header, settings_.post_filter_mask);
   const int num_planes = sequence_header.color_config.is_monochrome
@@ -1198,15 +1204,11 @@ StatusCode DecoderImpl::DecodeTiles(
   const bool do_superres =
       PostFilter::DoSuperRes(frame_header, settings_.post_filter_mask);
   // Use kBorderPixels for the left, right, and top borders. Only the bottom
-  // border may need to be bigger. SuperRes border is needed only if we are
-  // applying SuperRes in-place which is being done only in single threaded
-  // mode.
+  // border may need to be bigger. Cdef border is needed only if we apply Cdef
+  // without multithreading.
   const int bottom_border = GetBottomBorderPixels(
-      do_cdef, do_restoration,
-      do_superres &&
-          frame_scratch_buffer->threading_strategy.post_filter_thread_pool() ==
-              nullptr,
-      sequence_header.color_config.subsampling_y);
+      do_cdef && threading_strategy.post_filter_thread_pool() == nullptr,
+      do_restoration, do_superres, sequence_header.color_config.subsampling_y);
   current_frame->set_chroma_sample_position(
       sequence_header.color_config.chroma_sample_position);
   if (!current_frame->Realloc(sequence_header.color_config.bitdepth,
@@ -1288,12 +1290,6 @@ StatusCode DecoderImpl::DecodeTiles(
     LIBGAV1_DLOG(ERROR, "tiles.reserve(%d) failed.\n", tile_count);
     return kStatusOutOfMemory;
   }
-  ThreadingStrategy& threading_strategy =
-      frame_scratch_buffer->threading_strategy;
-  if (!is_frame_parallel_ &&
-      !threading_strategy.Reset(frame_header, settings_.threads)) {
-    return kStatusOutOfMemory;
-  }
 
   if (threading_strategy.row_thread_pool(0) != nullptr || is_frame_parallel_) {
     if (frame_scratch_buffer->residual_buffer_pool == nullptr) {
@@ -1318,43 +1314,36 @@ StatusCode DecoderImpl::DecodeTiles(
     }
   }
 
-  if (threading_strategy.post_filter_thread_pool() != nullptr &&
-      (do_cdef || do_restoration)) {
-    const int window_buffer_width = PostFilter::GetWindowBufferWidth(
-        threading_strategy.post_filter_thread_pool(), frame_header);
-    size_t threaded_window_buffer_size =
-        window_buffer_width *
-        PostFilter::GetWindowBufferHeight(
-            threading_strategy.post_filter_thread_pool(), frame_header) *
-        (sequence_header.color_config.bitdepth == 8 ? sizeof(uint8_t)
-                                                    : sizeof(uint16_t));
-    if (do_cdef) {
-      // TODO(chengchen): for cdef U, V planes, if there's subsampling, we can
-      // use smaller buffer.
-      threaded_window_buffer_size *= num_planes;
-    }
-    // To avoid false sharing, PostFilter's window width in bytes should be a
-    // multiple of the cache line size. For simplicity, we check the window
-    // width in pixels.
-    assert(window_buffer_width % kCacheLineSize == 0);
-    if (!frame_scratch_buffer->threaded_window_buffer.Resize(
-            threaded_window_buffer_size)) {
-      LIBGAV1_DLOG(ERROR,
-                   "Failed to resize threaded loop restoration buffer.\n");
+  if (threading_strategy.post_filter_thread_pool() != nullptr && do_cdef) {
+    // We need to store 4 rows per 64x64 unit.
+    const int num_units =
+        MultiplyBy4(RightShiftWithCeiling(frame_header.rows4x4, 4));
+    // subsampling_y is set to zero irrespective of the actual frame's
+    // subsampling since we need to store exactly |num_units| rows of the loop
+    // restoration border pixels.
+    if (!frame_scratch_buffer->cdef_border.Realloc(
+            sequence_header.color_config.bitdepth,
+            sequence_header.color_config.is_monochrome,
+            MultiplyBy4(frame_header.columns4x4), num_units,
+            sequence_header.color_config.subsampling_x,
+            /*subsampling_y=*/0, kBorderPixels, kBorderPixels, kBorderPixels,
+            kBorderPixels, nullptr, nullptr, nullptr)) {
       return kStatusOutOfMemory;
     }
   }
 
-  if (do_cdef && do_restoration) {
+  if (do_restoration &&
+      (do_cdef || threading_strategy.post_filter_thread_pool() != nullptr)) {
     // We need to store 4 rows per 64x64 unit.
-    const int num_deblock_units = MultiplyBy4(Ceil(frame_header.rows4x4, 16));
+    const int num_units =
+        MultiplyBy4(RightShiftWithCeiling(frame_header.rows4x4, 4));
     // subsampling_y is set to zero irrespective of the actual frame's
-    // subsampling since we need to store exactly |num_deblock_units| rows of
-    // the deblocked pixels.
-    if (!frame_scratch_buffer->deblock_buffer.Realloc(
+    // subsampling since we need to store exactly |num_units| rows of the loop
+    // restoration border pixels.
+    if (!frame_scratch_buffer->loop_restoration_border.Realloc(
             sequence_header.color_config.bitdepth,
             sequence_header.color_config.is_monochrome,
-            frame_header.upscaled_width, num_deblock_units,
+            frame_header.upscaled_width, num_units,
             sequence_header.color_config.subsampling_x,
             /*subsampling_y=*/0, kBorderPixels, kBorderPixels, kBorderPixels,
             kBorderPixels, nullptr, nullptr, nullptr)) {
@@ -1363,18 +1352,45 @@ StatusCode DecoderImpl::DecodeTiles(
   }
 
   if (do_superres) {
+    const int pixel_size = sequence_header.color_config.bitdepth == 8
+                               ? sizeof(uint8_t)
+                               : sizeof(uint16_t);
+    if (!frame_scratch_buffer->superres_coefficients[kPlaneTypeY].Resize(
+            kSuperResFilterTaps * Align(frame_header.upscaled_width, 16) *
+            pixel_size)) {
+      LIBGAV1_DLOG(ERROR,
+                   "Failed to Resize superres_coefficients[kPlaneTypeY].");
+      return kStatusOutOfMemory;
+    }
+    if (!sequence_header.color_config.is_monochrome &&
+        sequence_header.color_config.subsampling_x != 0 &&
+        !frame_scratch_buffer->superres_coefficients[kPlaneTypeUV].Resize(
+            kSuperResFilterTaps *
+            Align(SubsampledValue(frame_header.upscaled_width, 1), 16) *
+            pixel_size)) {
+      LIBGAV1_DLOG(ERROR,
+                   "Failed to Resize superres_coefficients[kPlaneTypeUV].");
+      return kStatusOutOfMemory;
+    }
+  }
+
+  if (do_superres && threading_strategy.post_filter_thread_pool() != nullptr) {
     const int num_threads =
-        1 + ((threading_strategy.post_filter_thread_pool() == nullptr)
-                 ? 0
-                 : threading_strategy.post_filter_thread_pool()->num_threads());
-    const size_t superres_line_buffer_size =
-        num_threads *
-        (MultiplyBy4(frame_header.columns4x4) +
-         MultiplyBy2(kSuperResHorizontalBorder) + kSuperResHorizontalPadding) *
-        (sequence_header.color_config.bitdepth == 8 ? sizeof(uint8_t)
-                                                    : sizeof(uint16_t));
-    if (!frame_scratch_buffer->superres_line_buffer.Resize(
-            superres_line_buffer_size)) {
+        threading_strategy.post_filter_thread_pool()->num_threads() + 1;
+    // subsampling_y is set to zero irrespective of the actual frame's
+    // subsampling since we need to store exactly |num_threads| rows of the
+    // down-scaled pixels.
+    // Left and right borders are for line extension. They are doubled for the Y
+    // plane to make sure the U and V planes have enough space after possible
+    // subsampling.
+    if (!frame_scratch_buffer->superres_line_buffer.Realloc(
+            sequence_header.color_config.bitdepth,
+            sequence_header.color_config.is_monochrome,
+            MultiplyBy4(frame_header.columns4x4), num_threads,
+            sequence_header.color_config.subsampling_x,
+            /*subsampling_y=*/0, 2 * kSuperResHorizontalBorder,
+            2 * (kSuperResHorizontalBorder + kSuperResHorizontalPadding), 0, 0,
+            nullptr, nullptr, nullptr)) {
       LIBGAV1_DLOG(ERROR, "Failed to resize superres line buffer.\n");
       return kStatusOutOfMemory;
     }
@@ -1384,14 +1400,11 @@ StatusCode DecoderImpl::DecodeTiles(
                          current_frame->buffer(), dsp,
                          settings_.post_filter_mask);
 
-  if (is_frame_parallel_) {
+  if (is_frame_parallel_ && !IsIntraFrame(frame_header.frame_type)) {
     // We can parse the current frame if all the reference frames have been
     // parsed.
-    for (int i = 0; i < kNumReferenceFrameTypes; ++i) {
-      if (!state.reference_valid[i] || state.reference_frame[i] == nullptr) {
-        continue;
-      }
-      if (!state.reference_frame[i]->WaitUntilParsed()) {
+    for (const int index : frame_header.reference_frame_index) {
+      if (!state.reference_frame[index]->WaitUntilParsed()) {
         return kStatusUnknownError;
       }
     }
@@ -1434,7 +1447,7 @@ StatusCode DecoderImpl::DecodeTiles(
     }
     IntraPredictionBuffer* const intra_prediction_buffers =
         frame_scratch_buffer->intra_prediction_buffers.get();
-    for (int plane = 0; plane < num_planes; ++plane) {
+    for (int plane = kPlaneY; plane < num_planes; ++plane) {
       const int subsampling =
           (plane == kPlaneY) ? 0 : sequence_header.color_config.subsampling_x;
       const size_t intra_prediction_buffer_size =

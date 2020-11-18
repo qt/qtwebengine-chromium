@@ -20,9 +20,12 @@ devtools_module("data_grid") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [ "dataGrid.css" ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "data_grid.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":data_grid" ]
 }

@@ -23,7 +23,7 @@ struct Expression;
  * read or write that storage location.
  */
 struct Variable : public Symbol {
-    static constexpr Kind kSymbolKind = kVariable_Kind;
+    static constexpr Kind kSymbolKind = Kind::kVariable;
 
     enum Storage {
         kGlobal_Storage,
@@ -32,13 +32,13 @@ struct Variable : public Symbol {
         kParameter_Storage
     };
 
-    Variable(int offset, Modifiers modifiers, StringFragment name, const Type& type,
-             Storage storage, Expression* initialValue = nullptr)
-    : INHERITED(offset, kSymbolKind, name)
+    Variable(int offset, Modifiers modifiers, StringFragment name, const Type* type,
+             bool builtin, Storage storage, Expression* initialValue = nullptr)
+    : INHERITED(offset, kSymbolKind, name, type)
     , fModifiers(modifiers)
-    , fType(type)
     , fStorage(storage)
     , fInitialValue(initialValue)
+    , fBuiltin(builtin)
     , fReadCount(0)
     , fWriteCount(initialValue ? 1 : 0) {}
 
@@ -51,7 +51,7 @@ struct Variable : public Symbol {
     }
 
     String description() const override {
-        return fModifiers.description() + fType.fName + " " + fName;
+        return fModifiers.description() + this->type().fName + " " + fName;
     }
 
     bool dead() const {
@@ -66,10 +66,10 @@ struct Variable : public Symbol {
     }
 
     mutable Modifiers fModifiers;
-    const Type& fType;
     const Storage fStorage;
 
     const Expression* fInitialValue = nullptr;
+    bool fBuiltin;
 
     // Tracks how many sites read from the variable. If this is zero for a non-out variable (or
     // becomes zero during optimization), the variable is dead and may be eliminated.
@@ -78,7 +78,7 @@ struct Variable : public Symbol {
     // eliminated.
     mutable int fWriteCount;
 
-    typedef Symbol INHERITED;
+    using INHERITED = Symbol;
 };
 
 } // namespace SkSL

@@ -16,9 +16,18 @@
 class SK_API SkPathBuilder {
 public:
     SkPathBuilder();
+    SkPathBuilder(SkPathFillType);
+    SkPathBuilder(const SkPath&);
+    SkPathBuilder(const SkPathBuilder&) = default;
     ~SkPathBuilder();
 
-    SkPath snapshot();  // the builder is unchanged after returning this path
+    SkPathBuilder& operator=(const SkPath&);
+    SkPathBuilder& operator=(const SkPathBuilder&) = default;
+
+    SkPathFillType fillType() const { return fFillType; }
+    SkRect computeBounds() const;
+
+    SkPath snapshot() const;  // the builder is unchanged after returning this path
     SkPath detach();    // the builder is reset to empty after returning this path
 
     SkPathBuilder& setFillType(SkPathFillType ft) { fFillType = ft; return *this; }
@@ -55,6 +64,12 @@ public:
     }
 
     SkPathBuilder& close();
+
+    // Append a series of lineTo(...)
+    SkPathBuilder& polylineTo(const SkPoint pts[], int count);
+    SkPathBuilder& polylineTo(const std::initializer_list<SkPoint>& list) {
+        return this->polylineTo(list.begin(), SkToInt(list.size()));
+    }
 
     // Relative versions of segments, relative to the previous position.
 
@@ -194,6 +209,13 @@ public:
         this->incReserve(extraPtCount, extraPtCount);
     }
 
+    SkPathBuilder& offset(SkScalar dx, SkScalar dy);
+
+    SkPathBuilder& toggleInverseFillType() {
+        fFillType = (SkPathFillType)((unsigned)fFillType ^ 2);
+        return *this;
+    }
+
 private:
     SkTDArray<SkPoint>  fPts;
     SkTDArray<uint8_t>  fVerbs;
@@ -217,7 +239,7 @@ private:
     bool fIsACCW  = false;  // tracks direction iff fIsA is not unknown
 
     // for testing
-    SkPathConvexityType fConvexity = SkPathConvexityType::kUnknown;
+    SkPathConvexity fOverrideConvexity = SkPathConvexity::kUnknown;
 
     int countVerbs() const { return fVerbs.count(); }
 
@@ -231,8 +253,10 @@ private:
 
     SkPath make(sk_sp<SkPathRef>) const;
 
+    SkPathBuilder& privateReverseAddPath(const SkPath&);
+
     // For testing
-    void privateSetConvexityType(SkPathConvexityType c) { fConvexity = c; }
+    void privateSetConvexity(SkPathConvexity c) { fOverrideConvexity = c; }
 
     friend class SkPathPriv;
 };

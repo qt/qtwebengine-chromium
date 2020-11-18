@@ -27,11 +27,6 @@ DecodeJsonResult::DecodeJsonResult(std::string&& error_message0,
     : error_message(std::move(error_message0)),
       cursor_position(cursor_position0) {}
 
-std::string  //
-DecodeJsonCallbacks::AppendByteString(std::string&& val) {
-  return "wuffs_aux::DecodeJson: unexpected JSON byte string";
-}
-
 void  //
 DecodeJsonCallbacks::Done(DecodeJsonResult& result,
                           sync_io::Input& input,
@@ -145,32 +140,6 @@ DecodeJson_SplitJsonPointer(std::string& s,
   return std::make_pair(std::move(fragment), i);
 }
 
-std::string  //
-DecodeJson_DecodeBackslashX(std::string& str,
-                            uint8_t* token_ptr,
-                            size_t token_len) {
-  wuffs_base__slice_u8 encoded =
-      wuffs_base__make_slice_u8(token_ptr, token_len);
-  while (encoded.len > 0) {
-    uint8_t decoded[64];
-    constexpr bool src_closed = true;
-    wuffs_base__transform__output o = wuffs_base__base_16__decode4(
-        wuffs_base__make_slice_u8(&decoded[0], sizeof decoded), encoded,
-        src_closed, WUFFS_BASE__BASE_16__DEFAULT_OPTIONS);
-    if (o.status.is_error()) {
-      return o.status.message();
-    } else if ((o.num_dst > (sizeof decoded)) || (o.num_src > encoded.len)) {
-      return "wuffs_aux::DecodeJson: internal error: inconsistent base16 "
-             "decoding";
-    }
-    str.append(  // Convert from (uint8_t*).
-        static_cast<const char*>(static_cast<void*>(&decoded[0])), o.num_dst);
-    encoded.ptr += o.num_src;
-    encoded.len -= o.num_src;
-  }
-  return "";
-}
-
 // --------
 
 std::string  //
@@ -229,14 +198,6 @@ do_dict:
             const char* ptr =  // Convert from (uint8_t*).
                 static_cast<const char*>(static_cast<void*>(token_ptr));
             str.append(ptr, token_len);
-          } else if (
-              vbd &
-              WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_4_SRC_BACKSLASH_X) {
-            ret_error_message =
-                DecodeJson_DecodeBackslashX(str, token_ptr, token_len);
-            if (!ret_error_message.empty()) {
-              goto done;
-            }
           } else {
             goto fail;
           }
@@ -379,6 +340,8 @@ DecodeJson(DecodeJsonCallbacks& callbacks,
     fallback_io_buf = wuffs_base__ptr_u8__writer(fallback_io_array.get(), 4096);
     io_buf = &fallback_io_buf;
   }
+  // cursor_index is discussed at
+  // https://nigeltao.github.io/blog/2020/jsonptr.html#the-cursor-index
   size_t cursor_index = 0;
   std::string ret_error_message;
   std::string io_error_message;
@@ -399,7 +362,7 @@ DecodeJson(DecodeJsonCallbacks& callbacks,
       }
     }
 
-    // Prepare the wuffs_base__tok_buffer.
+    // Prepare the wuffs_base__tok_buffer. 256 tokens is 2KiB.
     wuffs_base__token tok_array[256];
     wuffs_base__token_buffer tok_buf =
         wuffs_base__slice_token__writer(wuffs_base__make_slice_token(
@@ -465,24 +428,13 @@ DecodeJson(DecodeJsonCallbacks& callbacks,
             const char* ptr =  // Convert from (uint8_t*).
                 static_cast<const char*>(static_cast<void*>(token_ptr));
             str.append(ptr, token_len);
-          } else if (
-              vbd &
-              WUFFS_BASE__TOKEN__VBD__STRING__CONVERT_1_DST_4_SRC_BACKSLASH_X) {
-            ret_error_message =
-                DecodeJson_DecodeBackslashX(str, token_ptr, token_len);
-            if (!ret_error_message.empty()) {
-              goto done;
-            }
           } else {
             goto fail;
           }
           if (token.continued()) {
             continue;
           }
-          ret_error_message =
-              (vbd & WUFFS_BASE__TOKEN__VBD__STRING__CHAIN_MUST_BE_UTF_8)
-                  ? callbacks.AppendTextString(std::move(str))
-                  : callbacks.AppendByteString(std::move(str));
+          ret_error_message = callbacks.AppendTextString(std::move(str));
           str.clear();
           goto parsed_a_value;
         }

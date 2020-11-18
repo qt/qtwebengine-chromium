@@ -50,7 +50,7 @@ protected:
     bool generateGlyphPath(FT_Face face, SkPath* path);
     bool generateFacePath(FT_Face face, SkGlyphID glyphID, SkPath* path);
 private:
-    typedef SkScalerContext INHERITED;
+    using INHERITED = SkScalerContext;
 };
 
 class SkTypeface_FreeType : public SkTypeface {
@@ -106,6 +106,7 @@ protected:
     void getGlyphToUnicodeMap(SkUnichar*) const override;
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override;
     void getPostScriptGlyphNames(SkString* dstArray) const override;
+    bool onGetPostScriptName(SkString*) const override;
     int onGetUPEM() const override;
     bool onGetKerningPairAdjustments(const uint16_t glyphs[], int count,
                                      int32_t adjustments[]) const override;
@@ -129,7 +130,7 @@ private:
     mutable SkMutex fC2GCacheMutex;
     mutable SkCharToGlyphCache fC2GCache;
 
-    typedef SkTypeface INHERITED;
+    using INHERITED = SkTypeface;
 };
 
 #endif // SKFONTHOST_FREETYPE_COMMON_H_

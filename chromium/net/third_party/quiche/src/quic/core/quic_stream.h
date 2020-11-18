@@ -90,9 +90,7 @@ class QUIC_EXPORT_PRIVATE PendingStream
   // ID of this stream.
   QuicStreamId id_;
 
-  // Session which owns this.
-  // TODO(b/136274541): Remove session pointer from streams.
-  QuicSession* session_;
+  // |stream_delegate_| must outlive this stream.
   StreamDelegateInterface* stream_delegate_;
 
   // Bytes read refers to payload bytes only: they do not include framing,
@@ -113,6 +111,7 @@ class QUIC_EXPORT_PRIVATE PendingStream
 class QUIC_EXPORT_PRIVATE QuicStream
     : public QuicStreamSequencer::StreamInterface {
  public:
+  // Default priority for Google QUIC.
   // This is somewhat arbitrary.  It's possible, but unlikely, we will either
   // fail to set a priority client-side, or cancel a stream before stripping the
   // priority from the wire server-side.  In either case, start out with a
@@ -121,10 +120,6 @@ class QUIC_EXPORT_PRIVATE QuicStream
   static_assert(kDefaultPriority ==
                     (spdy::kV3LowestPriority + spdy::kV3HighestPriority) / 2,
                 "Unexpected value of kDefaultPriority");
-  // On the other hand, when using IETF QUIC, use the default value defined by
-  // the priority extension at
-  // https://httpwg.org/http-extensions/draft-ietf-httpbis-priority.html#default.
-  static const int kDefaultUrgency = 1;
 
   // Creates a new stream with stream_id |id| associated with |session|. If
   // |is_static| is true, then the stream will be given precedence
@@ -136,11 +131,20 @@ class QUIC_EXPORT_PRIVATE QuicStream
              QuicSession* session,
              bool is_static,
              StreamType type);
-  QuicStream(PendingStream* pending, StreamType type, bool is_static);
+  QuicStream(PendingStream* pending,
+             QuicSession* session,
+             StreamType type,
+             bool is_static);
   QuicStream(const QuicStream&) = delete;
   QuicStream& operator=(const QuicStream&) = delete;
 
   virtual ~QuicStream();
+
+  // Default priority for IETF QUIC, defined by the priority extension at
+  // https://httpwg.org/http-extensions/draft-ietf-httpbis-priority.html#urgency.
+  // TODO(bnc): Remove this method and reinstate static const int
+  // kDefaultUrgency member when removing quic_http3_new_default_urgency_value.
+  static int DefaultUrgency();
 
   // QuicStreamSequencer::StreamInterface implementation.
   QuicStreamId id() const override { return id_; }
@@ -338,29 +342,9 @@ class QUIC_EXPORT_PRIVATE QuicStream
 
   StreamType type() const { return type_; }
 
-  // Creates and sends a STOP_SENDING frame.  This can be called regardless of
-  // the version that has been negotiated.  If not IETF QUIC/Version 99 then the
-  // method is a noop, relieving the application of the necessity of
-  // understanding the connection's QUIC version and knowing whether it can call
-  // this method or not.
-  void SendStopSending(uint16_t code);
-
   // Handle received StopSending frame. Returns true if the processing finishes
   // gracefully.
-  virtual bool OnStopSending(uint16_t code);
-
-  // Close the write side of the socket.  Further writes will fail.
-  // Can be called by the subclass or internally.
-  // Does not send a FIN.  May cause the stream to be closed.
-  virtual void CloseWriteSide();
-
-  // Close the read side of the stream.  May cause the stream to be closed.
-  // Subclasses and consumers should use StopReading to terminate reading early
-  // if expecting a FIN. Can be used directly by subclasses if not expecting a
-  // FIN.
-  // TODO(fayang): move this to protected when removing
-  // QuicSession::CloseStream.
-  void CloseReadSide();
+  virtual bool OnStopSending(QuicRstStreamErrorCode code);
 
   // Returns true if the stream is static.
   bool is_static() const { return is_static_; }
@@ -369,6 +353,10 @@ class QUIC_EXPORT_PRIVATE QuicStream
 
   static spdy::SpdyStreamPrecedence CalculateDefaultPriority(
       const QuicSession* session);
+
+  QuicTime creation_time() const { return creation_time_; }
+
+  bool fin_buffered() const { return fin_buffered_; }
 
  protected:
   // Called when data of [offset, offset + data_length] is buffered in send
@@ -414,12 +402,15 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // empty.
   void SetFinSent();
 
+  // Close the write side of the socket.  Further writes will fail.
+  // Can be called by the subclass or internally.
+  // Does not send a FIN.  May cause the stream to be closed.
+  virtual void CloseWriteSide();
+
   void set_rst_received(bool rst_received) { rst_received_ = rst_received; }
   void set_stream_error(QuicRstStreamErrorCode error) { stream_error_ = error; }
 
   StreamDelegateInterface* stream_delegate() { return stream_delegate_; }
-
-  bool fin_buffered() const { return fin_buffered_; }
 
   const QuicSession* session() const { return session_; }
   QuicSession* session() { return session_; }
@@ -460,6 +451,9 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // Write buffered data in send buffer. TODO(fayang): Consider combine
   // WriteOrBufferData, Writev and WriteBufferedData.
   void WriteBufferedData();
+
+  // Close the read side of the stream.  May cause the stream to be closed.
+  void CloseReadSide();
 
   // Called when bytes are sent to the peer.
   void AddBytesSent(QuicByteCount bytes);
@@ -552,6 +546,9 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // Indicates whether this stream is bidirectional, read unidirectional or
   // write unidirectional.
   const StreamType type_;
+
+  // Creation time of this stream, as reported by the QuicClock.
+  const QuicTime creation_time_;
 
   Perspective perspective_;
 };

@@ -53,7 +53,6 @@
 #endif  // !defined(OS_NACL_NONSFI)
 
 #if defined(OS_CHROMEOS)
-#include "sandbox/policy/features.h"
 #include "sandbox/policy/linux/bpf_ime_policy_linux.h"
 #include "sandbox/policy/linux/bpf_tts_policy_linux.h"
 #endif  // defined(OS_CHROMEOS)
@@ -260,14 +259,7 @@ bool SandboxSeccompBPF::StartSandboxWithExternalPolicy(
     // doing so does not stop the sandbox.
     SandboxBPF sandbox(std::move(policy));
     sandbox.SetProcFd(std::move(proc_fd));
-    bool enable_ibpb = true;
-#if defined(OS_CHROMEOS)
-    enable_ibpb =
-        base::FeatureList::IsEnabled(
-            features::kForceSpectreVariant2Mitigation) ||
-        base::FeatureList::IsEnabled(features::kSpectreVariant2Mitigation);
-#endif  // defined(OS_CHROMEOS)
-    CHECK(sandbox.StartSandbox(seccomp_level, enable_ibpb));
+    CHECK(sandbox.StartSandbox(seccomp_level));
     return true;
   }
 #endif  // BUILDFLAG(USE_SECCOMP_BPF)

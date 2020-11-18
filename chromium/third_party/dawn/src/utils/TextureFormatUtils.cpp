@@ -58,9 +58,9 @@ namespace utils {
             case wgpu::TextureFormat::RGBA16Sint:
             case wgpu::TextureFormat::RGBA32Sint:
                 return "i";
+
             default:
                 UNREACHABLE();
-                return "";
         }
     }
 
@@ -83,6 +83,7 @@ namespace utils {
             case wgpu::TextureFormat::RGBA32Sint:
             case wgpu::TextureFormat::RGBA32Float:
                 return true;
+
             default:
                 return false;
         }
@@ -150,7 +151,7 @@ namespace utils {
             case wgpu::TextureFormat::BC5RGUnorm:
             case wgpu::TextureFormat::BC5RGSnorm:
             case wgpu::TextureFormat::BC6HRGBUfloat:
-            case wgpu::TextureFormat::BC6HRGBSfloat:
+            case wgpu::TextureFormat::BC6HRGBFloat:
             case wgpu::TextureFormat::BC7RGBAUnorm:
             case wgpu::TextureFormat::BC7RGBAUnormSrgb:
                 return 16u;
@@ -158,9 +159,7 @@ namespace utils {
             case wgpu::TextureFormat::Depth24Plus:
             case wgpu::TextureFormat::Depth24PlusStencil8:
             case wgpu::TextureFormat::Undefined:
-            default:
                 UNREACHABLE();
-                return 0u;
         }
     }
 
@@ -218,15 +217,13 @@ namespace utils {
             case wgpu::TextureFormat::BC5RGUnorm:
             case wgpu::TextureFormat::BC5RGSnorm:
             case wgpu::TextureFormat::BC6HRGBUfloat:
-            case wgpu::TextureFormat::BC6HRGBSfloat:
+            case wgpu::TextureFormat::BC6HRGBFloat:
             case wgpu::TextureFormat::BC7RGBAUnorm:
             case wgpu::TextureFormat::BC7RGBAUnormSrgb:
                 return 4u;
 
             case wgpu::TextureFormat::Undefined:
-            default:
                 UNREACHABLE();
-                return 0u;
         }
     }
 
@@ -284,15 +281,13 @@ namespace utils {
             case wgpu::TextureFormat::BC5RGUnorm:
             case wgpu::TextureFormat::BC5RGSnorm:
             case wgpu::TextureFormat::BC6HRGBUfloat:
-            case wgpu::TextureFormat::BC6HRGBSfloat:
+            case wgpu::TextureFormat::BC6HRGBFloat:
             case wgpu::TextureFormat::BC7RGBAUnorm:
             case wgpu::TextureFormat::BC7RGBAUnormSrgb:
                 return 4u;
 
             case wgpu::TextureFormat::Undefined:
-            default:
                 UNREACHABLE();
-                return 0u;
         }
     }
 
@@ -378,7 +373,7 @@ namespace utils {
             case wgpu::TextureFormat::BC5RGUnorm:
             case wgpu::TextureFormat::BC5RGSnorm:
             case wgpu::TextureFormat::BC6HRGBUfloat:
-            case wgpu::TextureFormat::BC6HRGBSfloat:
+            case wgpu::TextureFormat::BC6HRGBFloat:
             case wgpu::TextureFormat::BC7RGBAUnorm:
             case wgpu::TextureFormat::BC7RGBAUnormSrgb:
             case wgpu::TextureFormat::Depth32Float:
@@ -386,7 +381,6 @@ namespace utils {
             case wgpu::TextureFormat::Depth24PlusStencil8:
             case wgpu::TextureFormat::Undefined:
                 UNREACHABLE();
-                return "";
         }
     }
 }  // namespace utils

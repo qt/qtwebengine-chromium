@@ -115,6 +115,9 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
   }
 
   // QuicCryptoStream implementation
+  ssl_early_data_reason_t EarlyDataReason() const override {
+    return ssl_early_data_unknown;
+  }
   bool encryption_established() const override {
     return encryption_established_;
   }
@@ -165,10 +168,9 @@ class TestStream : public QuicStream {
              StreamType type)
       : QuicStream(id, session, is_static, type) {}
 
-  TestStream(PendingStream* pending, StreamType type)
-      : QuicStream(pending, type, /*is_static=*/false) {}
+  TestStream(PendingStream* pending, QuicSession* session, StreamType type)
+      : QuicStream(pending, session, type, /*is_static=*/false) {}
 
-  using QuicStream::CloseReadSide;
   using QuicStream::CloseWriteSide;
   using QuicStream::WriteMemSlices;
 
@@ -258,8 +260,9 @@ class TestSession : public QuicSession {
   TestStream* CreateIncomingStream(PendingStream* pending) override {
     QuicStreamId id = pending->id();
     TestStream* stream = new TestStream(
-        pending, DetermineStreamType(id, connection()->version(), perspective(),
-                                     /*is_incoming=*/true, BIDIRECTIONAL));
+        pending, this,
+        DetermineStreamType(id, connection()->version(), perspective(),
+                            /*is_incoming=*/true, BIDIRECTIONAL));
     ActivateStream(QuicWrapUnique(stream));
     ++num_incoming_streams_created_;
     return stream;
@@ -364,7 +367,6 @@ class TestSession : public QuicSession {
   using QuicSession::GetNextOutgoingBidirectionalStreamId;
   using QuicSession::GetNextOutgoingUnidirectionalStreamId;
   using QuicSession::stream_map;
-  using QuicSession::zombie_streams;
 
  private:
   StrictMock<TestCryptoStream> crypto_stream_;
@@ -1425,7 +1427,7 @@ TEST_P(QuicSessionTestServer, SendGoAway) {
       .WillOnce(
           Invoke(connection_, &MockQuicConnection::ReallySendControlFrame));
   session_.SendGoAway(QUIC_PEER_GOING_AWAY, "Going Away.");
-  EXPECT_TRUE(session_.goaway_sent());
+  EXPECT_TRUE(session_.transport_goaway_sent());
 
   const QuicStreamId kTestStreamId = 5u;
   EXPECT_CALL(*connection_, SendControlFrame(_)).Times(0);
@@ -1443,7 +1445,7 @@ TEST_P(QuicSessionTestServer, DoNotSendGoAwayTwice) {
   EXPECT_CALL(*connection_, SendControlFrame(_))
       .WillOnce(Invoke(&ClearControlFrame));
   session_.SendGoAway(QUIC_PEER_GOING_AWAY, "Going Away.");
-  EXPECT_TRUE(session_.goaway_sent());
+  EXPECT_TRUE(session_.transport_goaway_sent());
   session_.SendGoAway(QUIC_PEER_GOING_AWAY, "Going Away.");
 }
 
@@ -1460,6 +1462,10 @@ TEST_P(QuicSessionTestServer, InvalidGoAway) {
 // Test that server session will send a connectivity probe in response to a
 // connectivity probe on the same path.
 TEST_P(QuicSessionTestServer, ServerReplyToConnectivityProbe) {
+  if (connection_->send_path_response() &&
+      VersionHasIetfQuicFrames(transport_version())) {
+    return;
+  }
   connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
   QuicSocketAddress old_peer_address =
       QuicSocketAddress(QuicIpAddress::Loopback4(), kTestPort);
@@ -1472,10 +1478,17 @@ TEST_P(QuicSessionTestServer, ServerReplyToConnectivityProbe) {
       QuicConnectionPeer::GetWriter(session_.connection()));
   EXPECT_CALL(*writer, WritePacket(_, _, _, new_peer_address, _))
       .WillOnce(Return(WriteResult(WRITE_STATUS_OK, 0)));
-  EXPECT_CALL(*connection_, SendConnectivityProbingResponsePacket(_))
-      .WillOnce(Invoke(
-          connection_,
-          &MockQuicConnection::ReallySendConnectivityProbingResponsePacket));
+  if (connection_->send_path_response()) {
+    EXPECT_CALL(*connection_, SendConnectivityProbingPacket(_, _))
+        .WillOnce(
+            Invoke(connection_,
+                   &MockQuicConnection::ReallySendConnectivityProbingPacket));
+  } else {
+    EXPECT_CALL(*connection_, SendConnectivityProbingResponsePacket(_))
+        .WillOnce(Invoke(
+            connection_,
+            &MockQuicConnection::ReallySendConnectivityProbingResponsePacket));
+  }
   if (VersionHasIetfQuicFrames(transport_version())) {
     // Need to explicitly do this to emulate the reception of a PathChallenge,
     // which stores its payload for use in generating the response.
@@ -1491,7 +1504,8 @@ TEST_P(QuicSessionTestServer, ServerReplyToConnectivityProbe) {
 // packet, the response has both of them AND we do not do migration.  This for
 // IETF QUIC only.
 TEST_P(QuicSessionTestServer, ServerReplyToConnectivityProbes) {
-  if (!VersionHasIetfQuicFrames(transport_version())) {
+  if (connection_->send_path_response() ||
+      !VersionHasIetfQuicFrames(transport_version())) {
     return;
   }
   connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
@@ -2207,6 +2221,17 @@ TEST_P(QuicSessionTestClient, IncomingStreamWithClientInitiatedStreamId) {
   session_.OnStreamFrame(frame);
 }
 
+TEST_P(QuicSessionTestClient, MinAckDelaySetOnTheClientQuicConfig) {
+  if (!session_.version().HasIetfQuicFrames()) {
+    return;
+  }
+  session_.config()->SetClientConnectionOptions({kAFFE});
+  session_.Initialize();
+  ASSERT_EQ(session_.config()->GetMinAckDelayToSendMs(),
+            kDefaultMinAckDelayTimeMs);
+  ASSERT_TRUE(session_.connection()->can_receive_ack_frequency_frame());
+}
+
 TEST_P(QuicSessionTestClient, FailedToCreateStreamIfTooCloseToIdleTimeout) {
   connection_->SetDefaultEncryptionLevel(ENCRYPTION_FORWARD_SECURE);
   EXPECT_TRUE(session_.CanOpenNextOutgoingBidirectionalStream());
@@ -2235,11 +2260,9 @@ TEST_P(QuicSessionTestServer, ZombieStreams) {
   EXPECT_TRUE(stream2->IsWaitingForAcks());
 
   CloseStream(stream2->id());
-  EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream2->id()));
   ASSERT_EQ(1u, session_.closed_streams()->size());
   EXPECT_EQ(stream2->id(), session_.closed_streams()->front()->id());
   session_.OnStreamDoneWaitingForAcks(stream2->id());
-  EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream2->id()));
   EXPECT_EQ(1u, session_.closed_streams()->size());
   EXPECT_EQ(stream2->id(), session_.closed_streams()->front()->id());
 }
@@ -2294,7 +2317,6 @@ TEST_P(QuicSessionTestServer, TestZombieStreams) {
     EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
     session_.OnStopSendingFrame(frame);
   }
-  EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream2->id()));
   ASSERT_EQ(1u, session_.closed_streams()->size());
   EXPECT_EQ(stream2->id(), session_.closed_streams()->front()->id());
 
@@ -2316,7 +2338,6 @@ TEST_P(QuicSessionTestServer, TestZombieStreams) {
   // QUIC it sends both a RST_STREAM and a STOP_SENDING (each of which
   // closes in only one direction).
   stream4->Reset(QUIC_STREAM_CANCELLED);
-  EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream4->id()));
   EXPECT_EQ(2u, session_.closed_streams()->size());
 }
 
@@ -2560,17 +2581,13 @@ TEST_P(QuicSessionTestServer, LocallyResetZombieStreams) {
   session_.set_writev_consumes_all_data(true);
   TestStream* stream2 = session_.CreateOutgoingBidirectionalStream();
   std::string body(100, '.');
-  stream2->CloseReadSide();
+  QuicStreamPeer::CloseReadSide(stream2);
   stream2->WriteOrBufferData(body, true, nullptr);
   EXPECT_TRUE(stream2->IsWaitingForAcks());
   // Verify stream2 is a zombie streams.
-  if (!session_.remove_zombie_streams()) {
-    EXPECT_TRUE(QuicContainsKey(session_.zombie_streams(), stream2->id()));
-  } else {
-    ASSERT_TRUE(QuicContainsKey(session_.stream_map(), stream2->id()));
-    auto* stream = session_.stream_map().find(stream2->id())->second.get();
-    EXPECT_TRUE(stream->IsZombie());
-  }
+  ASSERT_TRUE(QuicContainsKey(session_.stream_map(), stream2->id()));
+  auto* stream = session_.stream_map().find(stream2->id())->second.get();
+  EXPECT_TRUE(stream->IsZombie());
 
   QuicStreamFrame frame(stream2->id(), true, 0, 100);
   EXPECT_CALL(*stream2, HasPendingRetransmission())
@@ -2584,7 +2601,6 @@ TEST_P(QuicSessionTestServer, LocallyResetZombieStreams) {
   stream2->Reset(QUIC_STREAM_CANCELLED);
 
   // Verify stream 2 gets closed.
-  EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream2->id()));
   EXPECT_TRUE(session_.IsClosedStream(stream2->id()));
   EXPECT_CALL(*stream2, OnCanWrite()).Times(0);
   session_.OnCanWrite();
@@ -2599,7 +2615,6 @@ TEST_P(QuicSessionTestServer, CleanUpClosedStreamsAlarm) {
   EXPECT_FALSE(stream2->IsWaitingForAcks());
 
   CloseStream(stream2->id());
-  EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream2->id()));
   EXPECT_EQ(1u, session_.closed_streams()->size());
   EXPECT_TRUE(
       QuicSessionPeer::GetCleanUpClosedStreamsAlarm(&session_)->IsSet());
@@ -2616,15 +2631,10 @@ TEST_P(QuicSessionTestServer, WriteUnidirectionalStream) {
   session_.ActivateStream(QuicWrapUnique(stream4));
   std::string body(100, '.');
   stream4->WriteOrBufferData(body, false, nullptr);
-  EXPECT_FALSE(QuicContainsKey(session_.zombie_streams(), stream4->id()));
   stream4->WriteOrBufferData(body, true, nullptr);
-  if (!session_.remove_zombie_streams()) {
-    EXPECT_TRUE(QuicContainsKey(session_.zombie_streams(), stream4->id()));
-  } else {
-    ASSERT_TRUE(QuicContainsKey(session_.stream_map(), stream4->id()));
-    auto* stream = session_.stream_map().find(stream4->id())->second.get();
-    EXPECT_TRUE(stream->IsZombie());
-  }
+  ASSERT_TRUE(QuicContainsKey(session_.stream_map(), stream4->id()));
+  auto* stream = session_.stream_map().find(stream4->id())->second.get();
+  EXPECT_TRUE(stream->IsZombie());
 }
 
 TEST_P(QuicSessionTestServer, ReceivedDataOnWriteUnidirectionalStream) {
@@ -2809,7 +2819,7 @@ TEST_P(QuicSessionTestServer, OnStopSendingInvalidStreamId) {
     return;
   }
   // Check that "invalid" stream ids are rejected.
-  QuicStopSendingFrame frame(1, -1, 123);
+  QuicStopSendingFrame frame(1, -1, QUIC_STREAM_CANCELLED);
   EXPECT_CALL(
       *connection_,
       CloseConnection(QUIC_INVALID_STREAM_ID,
@@ -2822,7 +2832,8 @@ TEST_P(QuicSessionTestServer, OnStopSendingReadUnidirectional) {
     return;
   }
   // It's illegal to send STOP_SENDING with a stream ID that is read-only.
-  QuicStopSendingFrame frame(1, GetNthClientInitiatedUnidirectionalId(1), 123);
+  QuicStopSendingFrame frame(1, GetNthClientInitiatedUnidirectionalId(1),
+                             QUIC_STREAM_CANCELLED);
   EXPECT_CALL(
       *connection_,
       CloseConnection(QUIC_INVALID_STREAM_ID,
@@ -2840,7 +2851,7 @@ TEST_P(QuicSessionTestServer, OnStopSendingStaticStreams) {
       stream_id, &session_, /*is_static*/ true, BIDIRECTIONAL);
   QuicSessionPeer::ActivateStream(&session_, std::move(fake_static_stream));
   // Check that a stream id in the static stream map is ignored.
-  QuicStopSendingFrame frame(1, stream_id, 123);
+  QuicStopSendingFrame frame(1, stream_id, QUIC_STREAM_CANCELLED);
   EXPECT_CALL(*connection_,
               CloseConnection(QUIC_INVALID_STREAM_ID,
                               "Received STOP_SENDING for a static stream", _));
@@ -2858,7 +2869,7 @@ TEST_P(QuicSessionTestServer, OnStopSendingForWriteClosedStream) {
   QuicStreamPeer::SetFinSent(stream);
   stream->CloseWriteSide();
   EXPECT_TRUE(stream->write_side_closed());
-  QuicStopSendingFrame frame(1, stream_id, 123);
+  QuicStopSendingFrame frame(1, stream_id, QUIC_STREAM_CANCELLED);
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
   session_.OnStopSendingFrame(frame);
 }
@@ -2872,7 +2883,7 @@ TEST_P(QuicSessionTestServer, OnStopSendingClosedStream) {
   TestStream* stream = session_.CreateOutgoingBidirectionalStream();
   QuicStreamId stream_id = stream->id();
   CloseStream(stream_id);
-  QuicStopSendingFrame frame(1, stream_id, 123);
+  QuicStopSendingFrame frame(1, stream_id, QUIC_STREAM_CANCELLED);
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
   session_.OnStopSendingFrame(frame);
 }
@@ -2885,7 +2896,7 @@ TEST_P(QuicSessionTestServer, OnStopSendingInputNonExistentLocalStream) {
   }
 
   QuicStopSendingFrame frame(1, GetNthServerInitiatedBidirectionalId(123456),
-                             123);
+                             QUIC_STREAM_CANCELLED);
   EXPECT_CALL(*connection_, CloseConnection(QUIC_HTTP_STREAM_WRONG_DIRECTION,
                                             "Data for nonexistent stream", _))
       .Times(1);
@@ -2898,7 +2909,8 @@ TEST_P(QuicSessionTestServer, OnStopSendingNewStream) {
   if (!VersionHasIetfQuicFrames(transport_version())) {
     return;
   }
-  QuicStopSendingFrame frame(1, GetNthClientInitiatedBidirectionalId(1), 123);
+  QuicStopSendingFrame frame(1, GetNthClientInitiatedBidirectionalId(1),
+                             QUIC_STREAM_CANCELLED);
 
   // A Rst will be sent as a response for STOP_SENDING.
   EXPECT_CALL(*connection_, SendControlFrame(_)).Times(1);
@@ -2925,12 +2937,10 @@ TEST_P(QuicSessionTestServer, OnStopSendingInputValidStream) {
   EXPECT_FALSE(QuicStreamPeer::read_side_closed(stream));
 
   QuicStreamId stream_id = stream->id();
-  QuicStopSendingFrame frame(1, stream_id, 123);
+  QuicStopSendingFrame frame(1, stream_id, QUIC_STREAM_CANCELLED);
   // Expect a reset to come back out.
   EXPECT_CALL(*connection_, SendControlFrame(_));
-  EXPECT_CALL(
-      *connection_,
-      OnStreamReset(stream_id, static_cast<QuicRstStreamErrorCode>(123)));
+  EXPECT_CALL(*connection_, OnStreamReset(stream_id, QUIC_STREAM_CANCELLED));
   EXPECT_CALL(*connection_, CloseConnection(_, _, _)).Times(0);
   session_.OnStopSendingFrame(frame);
 
@@ -2952,6 +2962,9 @@ TEST_P(QuicSessionTestServer, WriteBufferedCryptoFrames) {
   EXPECT_TRUE(session_.WillingAndAbleToWrite());
 
   EXPECT_CALL(*connection_, SendCryptoData(_, _, _)).Times(0);
+  connection_->SetEncrypter(
+      ENCRYPTION_ZERO_RTT,
+      std::make_unique<NullEncrypter>(connection_->perspective()));
   crypto_stream->WriteCryptoData(ENCRYPTION_ZERO_RTT, data);
 
   EXPECT_CALL(*connection_, SendCryptoData(ENCRYPTION_INITIAL, 350, 1000))

@@ -89,8 +89,8 @@ QuicSession::QuicSession(
           perspective() == Perspective::IS_SERVER,
           nullptr),
       currently_writing_stream_id_(0),
-      goaway_sent_(false),
-      goaway_received_(false),
+      transport_goaway_sent_(false),
+      transport_goaway_received_(false),
       control_frame_manager_(this),
       last_message_id_(0),
       datagram_queue_(this),
@@ -100,13 +100,7 @@ QuicSession::QuicSession(
       is_configured_(false),
       enable_round_robin_scheduling_(false),
       was_zero_rtt_rejected_(false),
-      liveness_testing_in_progress_(false),
-      remove_streams_waiting_for_acks_(
-          GetQuicReloadableFlag(quic_remove_streams_waiting_for_acks)),
-      do_not_use_stream_map_(GetQuicReloadableFlag(quic_do_not_use_stream_map)),
-      remove_zombie_streams_(
-          GetQuicReloadableFlag(quic_remove_zombie_streams) &&
-          do_not_use_stream_map_ && remove_streams_waiting_for_acks_) {
+      liveness_testing_in_progress_(false) {
   closed_streams_clean_up_alarm_ =
       QuicWrapUnique<QuicAlarm>(connection_->alarm_factory()->CreateAlarm(
           new ClosedStreamsCleanUpDelegate(this)));
@@ -126,6 +120,12 @@ void QuicSession::Initialize() {
   connection_->SetSessionNotifier(this);
   connection_->SetDataProducer(this);
   connection_->SetFromConfig(config_);
+  if (perspective_ == Perspective::IS_CLIENT &&
+      config_.HasClientRequestedIndependentOption(kAFFE, perspective_) &&
+      version().HasIetfQuicFrames()) {
+    connection_->set_can_receive_ack_frequency_frame();
+    config_.SetMinAckDelayMs(kDefaultMinAckDelayTimeMs);
+  }
   if (perspective() == Perspective::IS_CLIENT && version().UsesTls() &&
       !version().HasHandshakeDone()) {
     config_.SetSupportHandshakeDone();
@@ -145,15 +145,7 @@ void QuicSession::Initialize() {
             GetMutableCryptoStream()->id());
 }
 
-QuicSession::~QuicSession() {
-  if (!remove_zombie_streams_) {
-    QUIC_LOG_IF(WARNING, !zombie_streams_.empty())
-        << "Still have zombie streams";
-  } else {
-    QUIC_LOG_IF(WARNING, num_zombie_streams_ > 0)
-        << "Still have zombie streams";
-  }
-}
+QuicSession::~QuicSession() {}
 
 void QuicSession::PendingStreamOnStreamFrame(const QuicStreamFrame& frame) {
   DCHECK(VersionUsesHttp3(transport_version()));
@@ -265,7 +257,7 @@ void QuicSession::OnStopSendingFrame(const QuicStopSendingFrame& frame) {
     return;
   }
 
-  stream->OnStopSending(frame.application_error_code);
+  stream->OnStopSending(frame.error_code);
 }
 
 void QuicSession::OnPacketDecrypted(EncryptionLevel level) {
@@ -348,7 +340,7 @@ void QuicSession::OnGoAway(const QuicGoAwayFrame& /*frame*/) {
   QUIC_BUG_IF(version().UsesHttp3())
       << "gQUIC GOAWAY received on version " << version();
 
-  goaway_received_ = true;
+  transport_goaway_received_ = true;
 }
 
 void QuicSession::OnMessageReceived(quiche::QuicheStringPiece message) {
@@ -391,66 +383,17 @@ void QuicSession::OnConnectionClosed(const QuicConnectionCloseFrame& frame,
 
   GetMutableCryptoStream()->OnConnectionClosed(frame.quic_error_code, source);
 
-  if (!do_not_use_stream_map_) {
-    // Copy all non static streams in a new map for the ease of deleting.
-    std::vector<QuicStream*> non_static_streams;
-    for (const auto& it : stream_map_) {
-      if (!it.second->is_static()) {
-        non_static_streams.push_back(it.second.get());
-      }
+  PerformActionOnActiveStreams([this, frame, source](QuicStream* stream) {
+    QuicStreamId id = stream->id();
+    stream->OnConnectionClosed(frame.quic_error_code, source);
+    auto it = stream_map_.find(id);
+    if (it != stream_map_.end()) {
+      QUIC_BUG_IF(!it->second->IsZombie())
+          << ENDPOINT << "Non-zombie stream " << id
+          << " failed to close under OnConnectionClosed";
     }
-
-    for (QuicStream* stream : non_static_streams) {
-      QuicStreamId id = stream->id();
-      stream->OnConnectionClosed(frame.quic_error_code, source);
-      QUIC_RELOADABLE_FLAG_COUNT(
-          quic_do_not_close_stream_again_on_connection_close);
-      if (stream_map_.find(id) != stream_map_.end()) {
-        QUIC_BUG << ENDPOINT << "Stream " << id
-                 << " failed to close under OnConnectionClosed";
-        if (!GetQuicReloadableFlag(
-                quic_do_not_close_stream_again_on_connection_close)) {
-          CloseStream(id);
-        }
-      }
-    }
-  } else {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_do_not_use_stream_map, 1, 2);
-    PerformActionOnActiveStreams([this, frame, source](QuicStream* stream) {
-      QuicStreamId id = stream->id();
-      stream->OnConnectionClosed(frame.quic_error_code, source);
-      QUIC_RELOADABLE_FLAG_COUNT(
-          quic_do_not_close_stream_again_on_connection_close);
-      auto it = stream_map_.find(id);
-      if (it != stream_map_.end()) {
-        if (!remove_zombie_streams_) {
-          QUIC_BUG << ENDPOINT << "Stream " << id
-                   << " failed to close under OnConnectionClosed";
-        } else {
-          QUIC_BUG_IF(!it->second->IsZombie())
-              << ENDPOINT << "Non-zombie stream " << id
-              << " failed to close under OnConnectionClosed";
-        }
-        if (!GetQuicReloadableFlag(
-                quic_do_not_close_stream_again_on_connection_close)) {
-          CloseStream(id);
-        }
-      }
-      return true;
-    });
-  }
-
-  if (!remove_zombie_streams_) {
-    // Cleanup zombie stream map on connection close.
-    while (!zombie_streams_.empty()) {
-      ZombieStreamMap::iterator it = zombie_streams_.begin();
-      closed_streams_.push_back(std::move(it->second));
-      zombie_streams_.erase(it);
-    }
-  } else {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_zombie_streams, 1, 4);
-    DCHECK(zombie_streams_.empty());
-  }
+    return true;
+  });
 
   closed_streams_clean_up_alarm_->Cancel();
 
@@ -479,7 +422,14 @@ void QuicSession::OnPacketReceived(const QuicSocketAddress& /*self_address*/,
   if (is_connectivity_probe && perspective() == Perspective::IS_SERVER) {
     // Server only sends back a connectivity probe after received a
     // connectivity probe from a new peer address.
-    connection_->SendConnectivityProbingResponsePacket(peer_address);
+    if (connection_->send_path_response()) {
+      // SendConnectivityProbingResponsePacket() will be deprecated.
+      // SendConnectivityProbingPacket() will be used to send both probing
+      // request and response as both of them are padded PING.
+      connection_->SendConnectivityProbingPacket(nullptr, peer_address);
+    } else {
+      connection_->SendConnectivityProbingResponsePacket(peer_address);
+    }
   }
 }
 
@@ -704,6 +654,34 @@ bool QuicSession::WillingAndAbleToWrite() const {
          write_blocked_streams_.HasWriteBlockedDataStreams();
 }
 
+std::string QuicSession::GetStreamsInfoForLogging() const {
+  std::string info = quiche::QuicheStrCat(
+      "num_active_streams: ", GetNumActiveStreams(),
+      ", num_pending_streams: ", pending_streams_size(),
+      ", num_outgoing_draining_streams: ", num_outgoing_draining_streams(),
+      " ");
+  // Log info for up to 5 streams.
+  size_t i = 5;
+  for (const auto& it : stream_map_) {
+    if (it.second->is_static()) {
+      continue;
+    }
+    // Calculate the stream creation delay.
+    const QuicTime::Delta delay =
+        connection_->clock()->ApproximateNow() - it.second->creation_time();
+    info = quiche::QuicheStrCat(
+        info, "{", it.second->id(), ":", delay.ToDebuggingValue(), ";",
+        it.second->stream_bytes_written(), ",", it.second->fin_sent(), ",",
+        it.second->HasBufferedData(), ",", it.second->fin_buffered(), ";",
+        it.second->stream_bytes_read(), ",", it.second->fin_received(), "}");
+    --i;
+    if (i == 0) {
+      break;
+    }
+  }
+  return info;
+}
+
 bool QuicSession::HasPendingHandshake() const {
   if (QuicVersionUsesCryptoFrames(transport_version())) {
     return GetCryptoStream()->HasPendingCryptoRetransmission() ||
@@ -734,8 +712,15 @@ QuicConsumedData QuicSession::WritevData(
       !QuicUtils::IsCryptoStreamId(transport_version(), id)) {
     // Do not let streams write without encryption. The calling stream will end
     // up write blocked until OnCanWrite is next called.
-    QUIC_BUG << ENDPOINT << "Try to send data of stream " << id
-             << " before encryption is established.";
+    if (was_zero_rtt_rejected_ && !OneRttKeysAvailable()) {
+      DCHECK(version().UsesTls() && perspective() == Perspective::IS_CLIENT);
+      QUIC_BUG_IF(type == NOT_RETRANSMISSION)
+          << ENDPOINT << "Try to send new data on stream " << id
+          << "before 1-RTT keys are available while 0-RTT is rejected.";
+    } else {
+      QUIC_BUG << ENDPOINT << "Try to send data of stream " << id
+               << " before encryption is established.";
+    }
     return QuicConsumedData(0, false);
   }
 
@@ -765,6 +750,17 @@ size_t QuicSession::SendCryptoData(EncryptionLevel level,
                                    QuicStreamOffset offset,
                                    TransmissionType type) {
   DCHECK(QuicVersionUsesCryptoFrames(transport_version()));
+  if (connection()->check_keys_before_writing() &&
+      !connection()->framer().HasEncrypterOfEncryptionLevel(level)) {
+    const std::string error_details = quiche::QuicheStrCat(
+        "Try to send crypto data with missing keys of encryption level: ",
+        EncryptionLevelToString(level));
+    QUIC_BUG << ENDPOINT << error_details;
+    connection()->CloseConnection(
+        QUIC_MISSING_WRITE_KEYS, error_details,
+        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
+    return 0;
+  }
   SetTransmissionType(type);
   const auto current_level = connection()->encryption_level();
   connection_->SetDefaultEncryptionLevel(level);
@@ -847,10 +843,10 @@ void QuicSession::SendGoAway(QuicErrorCode error_code,
                              const std::string& reason) {
   // GOAWAY frame is not supported in v99.
   DCHECK(!VersionHasIetfQuicFrames(transport_version()));
-  if (goaway_sent_) {
+  if (transport_goaway_sent_) {
     return;
   }
-  goaway_sent_ = true;
+  transport_goaway_sent_ = true;
   control_frame_manager_.WriteOrBufferGoAway(
       error_code, stream_id_manager_.largest_peer_created_stream_id(), reason);
 }
@@ -880,31 +876,6 @@ void QuicSession::SendMaxStreams(QuicStreamCount stream_count,
   control_frame_manager_.WriteOrBufferMaxStreams(stream_count, unidirectional);
 }
 
-void QuicSession::CloseStream(QuicStreamId stream_id) {
-  QUIC_DVLOG(1) << ENDPOINT << "Closing stream " << stream_id;
-
-  StreamMap::iterator it = stream_map_.find(stream_id);
-  if (it == stream_map_.end()) {
-    // When CloseStream has been called recursively (via
-    // QuicStream::OnClose), the stream will already have been deleted
-    // from stream_map_, so return immediately.
-    QUIC_DVLOG(1) << ENDPOINT << "Stream is already closed: " << stream_id;
-    return;
-  }
-  QuicStream* stream = it->second.get();
-  if (stream->is_static()) {
-    QUIC_DVLOG(1) << ENDPOINT
-                  << "Try to close a static stream, id: " << stream_id
-                  << " Closing connection";
-    connection()->CloseConnection(
-        QUIC_INVALID_STREAM_ID, "Try to close a static stream",
-        ConnectionCloseBehavior::SEND_CONNECTION_CLOSE_PACKET);
-    return;
-  }
-  stream->CloseReadSide();
-  stream->CloseWriteSide();
-}
-
 void QuicSession::InsertLocallyClosedStreamsHighestOffset(
     const QuicStreamId id,
     QuicStreamOffset offset) {
@@ -923,26 +894,11 @@ void QuicSession::OnStreamClosed(QuicStreamId stream_id) {
 
   const bool stream_waiting_for_acks = stream->IsWaitingForAcks();
   if (stream_waiting_for_acks) {
-    if (remove_zombie_streams_) {
-      // The stream needs to be kept alive because it's waiting for acks.
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_zombie_streams, 2, 4);
-      ++num_zombie_streams_;
-    } else {
-      zombie_streams_[stream_id] = std::move(it->second);
-    }
+    // The stream needs to be kept alive because it's waiting for acks.
+    ++num_zombie_streams_;
   } else {
-    // Clean up the stream since it is no longer waiting for acks.
-    if (remove_streams_waiting_for_acks_) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_streams_waiting_for_acks, 1, 4);
-    } else {
-      streams_waiting_for_acks_.erase(stream_id);
-    }
     closed_streams_.push_back(std::move(it->second));
-    if (remove_zombie_streams_) {
-      // When zombie_streams_ is removed, stream is only erased from stream map
-      // if it's not zombie.
-      stream_map_.erase(it);
-    }
+    stream_map_.erase(it);
     // Do not retransmit data of a closed stream.
     streams_with_pending_retransmission_.erase(stream_id);
     if (!closed_streams_clean_up_alarm_->IsSet()) {
@@ -960,18 +916,12 @@ void QuicSession::OnStreamClosed(QuicStreamId stream_id) {
     DCHECK(!stream->was_draining());
     InsertLocallyClosedStreamsHighestOffset(
         stream_id, stream->highest_received_byte_offset());
-    if (!remove_zombie_streams_) {
-      stream_map_.erase(it);
-    }
     return;
   }
 
   const bool stream_was_draining = stream->was_draining();
   QUIC_DVLOG_IF(1, stream_was_draining)
       << ENDPOINT << "Stream " << stream_id << " was draining";
-  if (!remove_zombie_streams_) {
-    stream_map_.erase(it);
-  }
   if (stream_was_draining) {
     QUIC_BUG_IF(num_draining_streams_ == 0);
     --num_draining_streams_;
@@ -1580,7 +1530,7 @@ void QuicSession::SetDefaultEncryptionLevel(EncryptionLevel level) {
       if (perspective() == Perspective::IS_CLIENT) {
         // Retransmit old 0-RTT data (if any) with the new 0-RTT keys, since
         // they can't be decrypted by the server.
-        connection_->MarkZeroRttPacketsForRetransmission();
+        connection_->MarkZeroRttPacketsForRetransmission(0);
         // Given any streams blocked by encryption a chance to write.
         OnCanWrite();
       }
@@ -1646,17 +1596,14 @@ void QuicSession::DiscardOldEncryptionKey(EncryptionLevel level) {
 }
 
 void QuicSession::NeuterHandshakeData() {
-  if (GetQuicReloadableFlag(quic_fix_neuter_handshake_data)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_fix_neuter_handshake_data);
-    GetMutableCryptoStream()->NeuterStreamDataOfEncryptionLevel(
-        ENCRYPTION_HANDSHAKE);
-  }
+  GetMutableCryptoStream()->NeuterStreamDataOfEncryptionLevel(
+      ENCRYPTION_HANDSHAKE);
   connection()->OnHandshakeComplete();
 }
 
-void QuicSession::OnZeroRttRejected() {
+void QuicSession::OnZeroRttRejected(int reason) {
   was_zero_rtt_rejected_ = true;
-  connection_->MarkZeroRttPacketsForRetransmission();
+  connection_->MarkZeroRttPacketsForRetransmission(reason);
   if (connection_->encryption_level() == ENCRYPTION_FORWARD_SECURE) {
     QUIC_BUG << "1-RTT keys already available when 0-RTT is rejected.";
     connection_->CloseConnection(
@@ -1818,11 +1765,7 @@ QuicStream* QuicSession::GetOrCreateStream(const QuicStreamId stream_id) {
 
   StreamMap::iterator it = stream_map_.find(stream_id);
   if (it != stream_map_.end()) {
-    if (remove_zombie_streams_ && it->second->IsZombie()) {
-      QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_zombie_streams, 3, 4);
-      return nullptr;
-    }
-    return it->second.get();
+    return it->second->IsZombie() ? nullptr : it->second.get();
   }
 
   if (IsClosedStream(stream_id)) {
@@ -1834,10 +1777,10 @@ QuicStream* QuicSession::GetOrCreateStream(const QuicStreamId stream_id) {
     return nullptr;
   }
 
-  // TODO(fkastenholz): If we are creating a new stream and we have
-  // sent a goaway, we should ignore the stream creation. Need to
-  // add code to A) test if goaway was sent ("if (goaway_sent_)") and
-  // B) reject stream creation ("return nullptr")
+  // TODO(fkastenholz): If we are creating a new stream and we have sent a
+  // goaway, we should ignore the stream creation. Need to add code to A) test
+  // if goaway was sent ("if (transport_goaway_sent_)") and B) reject stream
+  // creation ("return nullptr")
 
   if (!MaybeIncreaseLargestPeerStreamId(stream_id)) {
     return nullptr;
@@ -1968,7 +1911,7 @@ bool QuicSession::IsOpenStream(QuicStreamId id) {
   DCHECK_NE(QuicUtils::GetInvalidStreamId(transport_version()), id);
   const StreamMap::iterator it = stream_map_.find(id);
   if (it != stream_map_.end()) {
-    return remove_zombie_streams_ ? !it->second->IsZombie() : true;
+    return !it->second->IsZombie();
   }
   if (QuicContainsKey(pending_stream_map_, id) ||
       QuicUtils::IsCryptoStreamId(transport_version(), id)) {
@@ -1987,17 +1930,6 @@ bool QuicSession::IsStaticStream(QuicStreamId id) const {
 }
 
 size_t QuicSession::GetNumActiveStreams() const {
-  if (!VersionHasIetfQuicFrames(transport_version()) &&
-      !GetQuicReloadableFlag(quic_get_stream_information_from_stream_map)) {
-    // Exclude locally_closed_streams when determine whether to keep connection
-    // alive.
-    return stream_id_manager_.num_open_incoming_streams() +
-           stream_id_manager_.num_open_outgoing_streams() -
-           locally_closed_streams_highest_offset_.size();
-  }
-  if (GetQuicReloadableFlag(quic_get_stream_information_from_stream_map)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_get_stream_information_from_stream_map);
-  }
   DCHECK_GE(static_cast<QuicStreamCount>(stream_map_.size()),
             num_static_streams_ + num_draining_streams_ + num_zombie_streams_);
   return stream_map_.size() - num_draining_streams_ - num_static_streams_ -
@@ -2071,30 +2003,13 @@ bool QuicSession::IsIncomingStream(QuicStreamId id) const {
 }
 
 void QuicSession::OnStreamDoneWaitingForAcks(QuicStreamId id) {
-  if (remove_streams_waiting_for_acks_) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_streams_waiting_for_acks, 2, 4);
-  } else {
-    streams_waiting_for_acks_.erase(id);
+  auto it = stream_map_.find(id);
+  if (it == stream_map_.end()) {
+    return;
   }
-
-  if (!remove_zombie_streams_) {
-    auto it = zombie_streams_.find(id);
-    if (it == zombie_streams_.end()) {
-      return;
-    }
-
-    closed_streams_.push_back(std::move(it->second));
-    zombie_streams_.erase(it);
-  } else {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_zombie_streams, 4, 4);
-    auto it = stream_map_.find(id);
-    if (it == stream_map_.end()) {
-      return;
-    }
-    --num_zombie_streams_;
-    closed_streams_.push_back(std::move(it->second));
-    stream_map_.erase(it);
-  }
+  --num_zombie_streams_;
+  closed_streams_.push_back(std::move(it->second));
+  stream_map_.erase(it);
 
   if (!closed_streams_clean_up_alarm_->IsSet()) {
     closed_streams_clean_up_alarm_->Set(connection_->clock()->ApproximateNow());
@@ -2103,41 +2018,10 @@ void QuicSession::OnStreamDoneWaitingForAcks(QuicStreamId id) {
   streams_with_pending_retransmission_.erase(id);
 }
 
-void QuicSession::OnStreamWaitingForAcks(QuicStreamId id) {
-  if (remove_streams_waiting_for_acks_) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_streams_waiting_for_acks, 3, 4);
-    return;
-  }
-  // Exclude crypto stream's status since it is counted in HasUnackedCryptoData.
-  if (GetCryptoStream() != nullptr && id == GetCryptoStream()->id()) {
-    return;
-  }
-
-  streams_waiting_for_acks_.insert(id);
-
-  // The number of the streams waiting for acks should not be larger than the
-  // number of streams.
-  DCHECK(!remove_zombie_streams_ || zombie_streams_.empty());
-  if (static_cast<size_t>(stream_map_.size() + zombie_streams_.size()) <
-      streams_waiting_for_acks_.size()) {
-    QUIC_BUG << "More streams are waiting for acks than the number of streams. "
-             << "Sizes: streams: " << stream_map_.size()
-             << ", zombie streams: " << zombie_streams_.size()
-             << ", vs streams waiting for acks: "
-             << streams_waiting_for_acks_.size();
-  }
-}
-
 QuicStream* QuicSession::GetStream(QuicStreamId id) const {
   auto active_stream = stream_map_.find(id);
   if (active_stream != stream_map_.end()) {
     return active_stream->second.get();
-  }
-
-  DCHECK(!remove_zombie_streams_ || zombie_streams_.empty());
-  auto zombie_stream = zombie_streams_.find(id);
-  if (zombie_stream != zombie_streams_.end()) {
-    return zombie_stream->second.get();
   }
 
   if (QuicUtils::IsCryptoStreamId(transport_version(), id)) {
@@ -2280,14 +2164,6 @@ bool QuicSession::HasUnackedCryptoData() const {
 }
 
 bool QuicSession::HasUnackedStreamData() const {
-  if (!remove_streams_waiting_for_acks_) {
-    return !streams_waiting_for_acks_.empty();
-  }
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_remove_streams_waiting_for_acks, 4, 4);
-  DCHECK(!remove_zombie_streams_ || zombie_streams_.empty());
-  if (!zombie_streams().empty()) {
-    return true;
-  }
   for (const auto& it : stream_map_) {
     if (it.second->IsWaitingForAcks()) {
       return true;
@@ -2457,7 +2333,8 @@ QuicPacketLength QuicSession::GetGuaranteedLargestMessagePayload() const {
   return connection_->GetGuaranteedLargestMessagePayload();
 }
 
-void QuicSession::SendStopSending(uint16_t code, QuicStreamId stream_id) {
+void QuicSession::SendStopSending(QuicRstStreamErrorCode code,
+                                  QuicStreamId stream_id) {
   control_frame_manager_.WriteOrBufferStopSending(code, stream_id);
 }
 
@@ -2534,8 +2411,7 @@ void QuicSession::PerformActionOnActiveStreams(
     std::function<bool(QuicStream*)> action) {
   std::vector<QuicStream*> active_streams;
   for (const auto& it : stream_map_) {
-    if (!it.second->is_static() &&
-        (!remove_zombie_streams_ || !it.second->IsZombie())) {
+    if (!it.second->is_static() && !it.second->IsZombie()) {
       active_streams.push_back(it.second.get());
     }
   }
@@ -2550,8 +2426,7 @@ void QuicSession::PerformActionOnActiveStreams(
 void QuicSession::PerformActionOnActiveStreams(
     std::function<bool(QuicStream*)> action) const {
   for (const auto& it : stream_map_) {
-    if (!it.second->is_static() &&
-        (!remove_zombie_streams_ || !it.second->IsZombie()) &&
+    if (!it.second->is_static() && !it.second->IsZombie() &&
         !action(it.second.get())) {
       return;
     }

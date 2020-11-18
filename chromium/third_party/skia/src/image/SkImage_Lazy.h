@@ -14,6 +14,9 @@
 #include "src/image/SkImage_Base.h"
 
 #if SK_SUPPORT_GPU
+#include "include/core/SkYUVAIndex.h"
+#include "include/core/SkYUVAPixmaps.h"
+#include "include/core/SkYUVASizeInfo.h"
 #include "src/gpu/GrTextureMaker.h"
 #endif
 
@@ -34,14 +37,14 @@ public:
 
     SkImage_Lazy(Validator* validator);
 
-    bool onReadPixels(const SkImageInfo&, void*, size_t, int srcX, int srcY,
+    bool onReadPixels(GrDirectContext*, const SkImageInfo&, void*, size_t, int srcX, int srcY,
                       CachingHint) const override;
 #if SK_SUPPORT_GPU
     GrSurfaceProxyView refView(GrRecordingContext*, GrMipmapped) const override;
 #endif
     sk_sp<SkData> onRefEncoded() const override;
     sk_sp<SkImage> onMakeSubset(const SkIRect&, GrDirectContext*) const override;
-    bool getROPixels(SkBitmap*, CachingHint) const override;
+    bool getROPixels(GrDirectContext*, SkBitmap*, CachingHint) const override;
     bool onIsLazyGenerated() const override { return true; }
     sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>,
                                                 GrDirectContext*) const override;
@@ -66,10 +69,11 @@ public:
 private:
     void addUniqueIDListener(sk_sp<SkIDChangeListener>) const;
 #if SK_SUPPORT_GPU
-    sk_sp<SkCachedData> getPlanes(SkYUVASizeInfo*,
-                                  SkYUVAIndex[4],
-                                  SkYUVColorSpace*,
-                                  const void* planes[4]) const;
+    sk_sp<SkCachedData> getPlanes(const SkYUVAPixmapInfo::SupportedDataTypes& supportedDataTypes,
+                                  SkYUVASizeInfo* yuvaSizeInfo,
+                                  SkYUVAIndex yuvaIndices[SkYUVAIndex::kIndexCount],
+                                  SkYUVColorSpace* yuvColorSpace,
+                                  SkPixmap planes[SkYUVASizeInfo::kMaxCount]) const;
     GrSurfaceProxyView textureProxyViewFromPlanes(GrRecordingContext*, SkBudgeted) const;
 #endif
 
@@ -91,7 +95,7 @@ private:
     mutable SkIDChangeListener::List fUniqueIDListeners;
 #endif
 
-    typedef SkImage_Base INHERITED;
+    using INHERITED = SkImage_Base;
 };
 
 #endif

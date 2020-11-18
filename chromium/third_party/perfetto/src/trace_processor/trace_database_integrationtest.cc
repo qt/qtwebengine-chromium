@@ -20,8 +20,12 @@
 #include <string>
 
 #include "perfetto/base/logging.h"
+#include "perfetto/ext/base/optional.h"
 #include "perfetto/ext/base/scoped_file.h"
 #include "perfetto/trace_processor/trace_processor.h"
+#include "protos/perfetto/common/descriptor.pbzero.h"
+#include "protos/perfetto/trace_processor/trace_processor.pbzero.h"
+
 #include "src/base/test/utils.h"
 #include "test/gtest_and_gmock.h"
 
@@ -58,6 +62,8 @@ class TraceProcessorIntegrationTest : public ::testing::Test {
   Iterator Query(const std::string& query) {
     return processor_->ExecuteQuery(query.c_str());
   }
+
+  TraceProcessor* Processor() { return processor_.get(); }
 
   size_t RestoreInitialTables() { return processor_->RestoreInitialTables(); }
 
@@ -170,6 +176,38 @@ TEST_F(TraceProcessorIntegrationTest, UnsortedTrace) {
   ASSERT_FALSE(it.Next());
 }
 
+TEST_F(TraceProcessorIntegrationTest, SerializeMetricDescriptors) {
+  std::vector<uint8_t> desc_set_bytes = Processor()->GetMetricDescriptors();
+  protos::pbzero::DescriptorSet::Decoder desc_set(desc_set_bytes.data(),
+                                                  desc_set_bytes.size());
+
+  ASSERT_TRUE(desc_set.has_descriptors());
+  int trace_metrics_count = 0;
+  for (auto desc = desc_set.descriptors(); desc; ++desc) {
+    protos::pbzero::DescriptorProto::Decoder proto_desc(*desc);
+    if (proto_desc.name().ToStdString() == ".perfetto.protos.TraceMetrics") {
+      ASSERT_TRUE(proto_desc.has_field());
+      trace_metrics_count++;
+    }
+  }
+
+  // There should be exactly one definition of TraceMetrics. This can be not
+  // true if we're not deduping descriptors properly.
+  ASSERT_EQ(trace_metrics_count, 1);
+}
+
+TEST_F(TraceProcessorIntegrationTest, ComputeMetricsFormatted) {
+  std::string metric_output;
+  util::Status status = Processor()->ComputeMetricText(
+      std::vector<std::string>{"test_chrome_metric"},
+      TraceProcessor::MetricResultFormat::kProtoText, &metric_output);
+  ASSERT_TRUE(status.ok());
+  ASSERT_EQ(metric_output,
+            "test_chrome_metric: {\n"
+            "  test_value: 1\n"
+            "}");
+}
+
 // TODO(hjd): Add trace to test_data.
 TEST_F(TraceProcessorIntegrationTest, DISABLED_AndroidBuildTrace) {
   ASSERT_TRUE(LoadTrace("android_build_trace.json", strlen("[\n{")).ok());
@@ -240,7 +278,7 @@ TEST_F(TraceProcessorIntegrationTest, MAYBE_Clusterfuzz20215) {
 }
 
 TEST_F(TraceProcessorIntegrationTest, MAYBE_Clusterfuzz20292) {
-  ASSERT_TRUE(LoadTrace("clusterfuzz_20292", 4096).ok());
+  ASSERT_FALSE(LoadTrace("clusterfuzz_20292", 4096).ok());
 }
 
 TEST_F(TraceProcessorIntegrationTest, MAYBE_Clusterfuzz21178) {
@@ -248,11 +286,11 @@ TEST_F(TraceProcessorIntegrationTest, MAYBE_Clusterfuzz21178) {
 }
 
 TEST_F(TraceProcessorIntegrationTest, MAYBE_Clusterfuzz21890) {
-  ASSERT_TRUE(LoadTrace("clusterfuzz_21890", 4096).ok());
+  ASSERT_FALSE(LoadTrace("clusterfuzz_21890", 4096).ok());
 }
 
 TEST_F(TraceProcessorIntegrationTest, MAYBE_Clusterfuzz23053) {
-  ASSERT_TRUE(LoadTrace("clusterfuzz_23053", 4096).ok());
+  ASSERT_FALSE(LoadTrace("clusterfuzz_23053", 4096).ok());
 }
 
 TEST_F(TraceProcessorIntegrationTest, RestoreInitialTables) {

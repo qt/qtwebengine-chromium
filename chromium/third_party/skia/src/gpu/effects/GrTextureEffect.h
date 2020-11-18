@@ -91,6 +91,7 @@ public:
             const float border[4] = kDefaultBorder);
 
     std::unique_ptr<GrFragmentProcessor> clone() const override;
+    bool usesExplicitReturn() const override { return true; }
 
     const char* name() const override { return "TextureEffect"; }
 
@@ -166,6 +167,6 @@ private:
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 #endif

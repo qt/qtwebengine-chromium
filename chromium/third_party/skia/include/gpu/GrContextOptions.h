@@ -98,7 +98,7 @@ struct SK_API GrContextOptions {
 
     /** Construct mipmaps manually, via repeated downsampling draw-calls. This is used when
         the driver's implementation (glGenerateMipmap) contains bugs. This requires mipmap
-        level and LOD control (ie desktop or ES3). */
+        level control (ie desktop or ES3). */
     bool fDoManualMipmapping = false;
 
     /**
@@ -261,6 +261,17 @@ struct SK_API GrContextOptions {
      * If true, the caps will never support tessellation shaders.
      */
     bool fSuppressTessellationShaders = false;
+
+    /**
+     * If greater than zero and less than the actual hardware limit, overrides the maximum number of
+     * tessellation segments supported by the caps.
+     */
+    int  fMaxTessellationSegmentsOverride = 0;
+
+    /**
+     * If true, then all paths are processed as if "setIsVolatile" had been called.
+     */
+    bool fAllPathsVolatile = false;
 
     /**
      * Render everything in wireframe

@@ -1419,16 +1419,14 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
   if (params->tab_ids.as_integers) {
     std::vector<int>& tab_ids = *params->tab_ids.as_integers;
     num_tabs = tab_ids.size();
-    for (size_t i = 0; i < tab_ids.size(); ++i) {
-      if (!MoveTab(tab_ids[i], &new_index, i, tab_values.get(), window_id,
-                   &error)) {
+    for (int tab_id : tab_ids) {
+      if (!MoveTab(tab_id, &new_index, tab_values.get(), window_id, &error))
         return RespondNow(Error(std::move(error)));
-      }
     }
   } else {
     EXTENSION_FUNCTION_VALIDATE(params->tab_ids.as_integer);
     num_tabs = 1;
-    if (!MoveTab(*params->tab_ids.as_integer, &new_index, 0, tab_values.get(),
+    if (!MoveTab(*params->tab_ids.as_integer, &new_index, tab_values.get(),
                  window_id, &error)) {
       return RespondNow(Error(std::move(error)));
     }
@@ -1453,7 +1451,6 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
 
 bool TabsMoveFunction::MoveTab(int tab_id,
                                int* new_index,
-                               int iteration,
                                base::ListValue* tab_values,
                                int* window_id,
                                std::string* error) {
@@ -1472,9 +1469,6 @@ bool TabsMoveFunction::MoveTab(int tab_id,
     *error = tabs_constants::kTabStripNotEditableError;
     return false;
   }
-
-  // Insert the tabs one after another.
-  *new_index += iteration;
 
   if (window_id) {
     Browser* target_browser = NULL;
@@ -1529,6 +1523,9 @@ bool TabsMoveFunction::MoveTab(int tab_id,
                                ->ToValue());
       }
 
+      // Insert the tabs one after another.
+      *new_index += 1;
+
       return true;
     }
   }
@@ -1550,6 +1547,9 @@ bool TabsMoveFunction::MoveTab(int tab_id,
                                              source_tab_strip, *new_index)
                            ->ToValue());
   }
+
+  // Insert the tabs one after another.
+  *new_index += 1;
 
   return true;
 }
@@ -1949,6 +1949,14 @@ ExecuteCodeFunction::InitResult ExecuteCodeInTabFunction::Init() {
   return set_init_result(SUCCESS);
 }
 
+bool ExecuteCodeInTabFunction::ShouldInsertCSS() const {
+  return false;
+}
+
+bool ExecuteCodeInTabFunction::ShouldRemoveCSS() const {
+  return false;
+}
+
 bool ExecuteCodeInTabFunction::CanExecuteScriptOnPage(std::string* error) {
   content::WebContents* contents = nullptr;
 
@@ -2032,11 +2040,11 @@ const GURL& ExecuteCodeInTabFunction::GetWebViewSrc() const {
   return GURL::EmptyGURL();
 }
 
-bool TabsExecuteScriptFunction::ShouldInsertCSS() const {
-  return false;
+bool TabsInsertCSSFunction::ShouldInsertCSS() const {
+  return true;
 }
 
-bool TabsInsertCSSFunction::ShouldInsertCSS() const {
+bool TabsRemoveCSSFunction::ShouldRemoveCSS() const {
   return true;
 }
 

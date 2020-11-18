@@ -13,6 +13,7 @@
 #include "src/gpu/tessellate/GrMiddleOutPolygonTriangulator.h"
 #include "src/gpu/tessellate/GrPathTessellateOp.h"
 #include "src/gpu/tessellate/GrResolveLevelCounter.h"
+#include "src/gpu/tessellate/GrStrokePatchBuilder.h"
 #include "src/gpu/tessellate/GrWangsFormula.h"
 #include "tools/ToolUtils.h"
 
@@ -63,9 +64,21 @@ public:
                           int* startVertex) override {
         if (vertexSize * vertexCount > sizeof(fStaticVertexData)) {
             SK_ABORT("FATAL: wanted %zu bytes of static vertex data; only have %zu.\n",
-                     vertexSize * vertexCount, SK_ARRAY_COUNT(fStaticVertexData));
+                     vertexSize * vertexCount, sizeof(fStaticVertexData));
         }
         *startVertex = 0;
+        return fStaticVertexData;
+    }
+
+    void* makeVertexSpaceAtLeast(size_t vertexSize, int minVertexCount, int fallbackVertexCount,
+                                 sk_sp<const GrBuffer>*, int* startVertex,
+                                 int* actualVertexCount) override {
+        if (vertexSize * minVertexCount > sizeof(fStaticVertexData)) {
+            SK_ABORT("FATAL: wanted %zu bytes of static vertex data; only have %zu.\n",
+                     vertexSize * minVertexCount, sizeof(fStaticVertexData));
+        }
+        *startVertex = 0;
+        *actualVertexCount = sizeof(fStaticVertexData) / vertexSize;
         return fStaticVertexData;
     }
 
@@ -83,7 +96,6 @@ public:
     UNIMPL(void recordDraw(const GrGeometryProcessor*, const GrSimpleMesh[], int,
                            const GrSurfaceProxy* const[], GrPrimitiveType))
     UNIMPL(uint16_t* makeIndexSpace(int, sk_sp<const GrBuffer>*, int*))
-    UNIMPL(void* makeVertexSpaceAtLeast(size_t, int, int, sk_sp<const GrBuffer>*, int*, int*))
     UNIMPL(uint16_t* makeIndexSpaceAtLeast(int, int, sk_sp<const GrBuffer>*, int*, int*))
     UNIMPL(GrDrawIndirectCommand* makeDrawIndirectSpace(int, sk_sp<const GrBuffer>*, size_t*))
     UNIMPL(void putBackIndices(int))
@@ -92,6 +104,7 @@ public:
     UNIMPL(const GrAppliedClip* appliedClip() const)
     UNIMPL(GrAppliedClip detachAppliedClip())
     UNIMPL(const GrXferProcessor::DstProxyView& dstProxyView() const)
+    UNIMPL(GrXferBarrierFlags renderPassBarriers() const)
     UNIMPL(GrStrikeCache* strikeCache() const)
     UNIMPL(GrAtlasManager* atlasManager() const)
     UNIMPL(SkTArray<GrSurfaceProxy*, true>* sampledProxyArray())
@@ -134,10 +147,16 @@ private:
         }
         for (int i = 0; i < loops; ++i) {
             fOp.fTriangleBuffer.reset();
-            fOp.fDoStencilTriangleBuffer = false;
-            fOp.fDoFillTriangleBuffer = false;
+            fOp.fTriangleVertexCount = 0;
+            fOp.fPipelineForStencils = nullptr;
+            fOp.fPipelineForFills = nullptr;
+            fOp.fStencilTrianglesProgram = nullptr;
+            fOp.fFillTrianglesProgram = nullptr;
             fOp.fCubicBuffer.reset();
-            fOp.fStencilCubicsShader = nullptr;
+            fOp.fCubicVertexCount = 0;
+            // Make fStencilCubicsProgram non-null to keep assertions happy.
+            fOp.fStencilCubicsProgram = (GrProgramInfo*)-1;
+            fOp.fFillPathProgram = nullptr;
             this->runBench(&fTarget, &fOp);
             fTarget.resetAllocator();
         }
@@ -150,7 +169,7 @@ private:
     SkString fName;
 };
 
-#define DEF_TESS_BENCH(NAME, PATH, MATRIX, TARGET, OP) \
+#define DEF_PATH_TESS_BENCH(NAME, PATH, MATRIX, TARGET, OP) \
     class GrPathTessellateOp::TestingOnly_Benchmark::NAME \
             : public GrPathTessellateOp::TestingOnly_Benchmark { \
     public: \
@@ -161,27 +180,30 @@ private:
     void GrPathTessellateOp::TestingOnly_Benchmark::NAME::runBench( \
             GrMeshDrawOp::Target* TARGET, GrPathTessellateOp* op)
 
-DEF_TESS_BENCH(prepareMiddleOutStencilGeometry, make_cubic_path(), SkMatrix::I(), target, op) {
+DEF_PATH_TESS_BENCH(prepareMiddleOutStencilGeometry, make_cubic_path(), SkMatrix::I(), target, op) {
+    // Make fStencilTrianglesProgram non-null so we benchmark the tessellation path with separate
+    // triangles.
+    op->fStencilTrianglesProgram = (GrProgramInfo*)-1;
     op->prepareMiddleOutTrianglesAndCubics(target);
 }
 
-DEF_TESS_BENCH(prepareMiddleOutStencilGeometry_indirect, make_cubic_path(), SkMatrix::I(), target,
-               op) {
+DEF_PATH_TESS_BENCH(prepareMiddleOutStencilGeometry_indirect, make_cubic_path(), SkMatrix::I(),
+                    target, op) {
     GrResolveLevelCounter resolveLevelCounter;
-    op->prepareMiddleOutTrianglesAndCubics(target, &resolveLevelCounter, true);
+    op->prepareMiddleOutTrianglesAndCubics(target, &resolveLevelCounter);
 }
 
-DEF_TESS_BENCH(prepareIndirectOuterCubics, make_cubic_path(), SkMatrix::I(), target, op) {
+DEF_PATH_TESS_BENCH(prepareIndirectOuterCubics, make_cubic_path(), SkMatrix::I(), target, op) {
     GrResolveLevelCounter resolveLevelCounter;
     resolveLevelCounter.reset(op->fPath, SkMatrix::I(), 4);
     op->prepareIndirectOuterCubics(target, resolveLevelCounter);
 }
 
-DEF_TESS_BENCH(prepareTessellatedOuterCubics, make_cubic_path(), SkMatrix::I(), target, op) {
+DEF_PATH_TESS_BENCH(prepareTessellatedOuterCubics, make_cubic_path(), SkMatrix::I(), target, op) {
     op->prepareTessellatedOuterCubics(target, kNumCubicsInChalkboard);
 }
 
-DEF_TESS_BENCH(prepareTessellatedCubicWedges, make_cubic_path(), SkMatrix::I(), target, op) {
+DEF_PATH_TESS_BENCH(prepareTessellatedCubicWedges, make_cubic_path(), SkMatrix::I(), target, op) {
     op->prepareTessellatedCubicWedges(target);
 }
 
@@ -199,23 +221,23 @@ static void benchmark_wangs_formula_cubic_log2(const SkMatrix& matrix, const SkP
     }
 }
 
-DEF_TESS_BENCH(wangs_formula_cubic_log2, make_cubic_path(), SkMatrix::I(), target, op) {
+DEF_PATH_TESS_BENCH(wangs_formula_cubic_log2, make_cubic_path(), SkMatrix::I(), target, op) {
     benchmark_wangs_formula_cubic_log2(op->fViewMatrix, op->fPath);
 }
 
-DEF_TESS_BENCH(wangs_formula_cubic_log2_scale, make_cubic_path(), SkMatrix::Scale(1.1f, 0.9f),
-               target, op) {
+DEF_PATH_TESS_BENCH(wangs_formula_cubic_log2_scale, make_cubic_path(), SkMatrix::Scale(1.1f, 0.9f),
+                    target, op) {
     benchmark_wangs_formula_cubic_log2(op->fViewMatrix, op->fPath);
 }
 
-DEF_TESS_BENCH(wangs_formula_cubic_log2_affine, make_cubic_path(),
-               SkMatrix::MakeAll(.9f,0.9f,0,  1.1f,1.1f,0, 0,0,1), target, op) {
+DEF_PATH_TESS_BENCH(wangs_formula_cubic_log2_affine, make_cubic_path(),
+                    SkMatrix::MakeAll(.9f,0.9f,0,  1.1f,1.1f,0, 0,0,1), target, op) {
     benchmark_wangs_formula_cubic_log2(op->fViewMatrix, op->fPath);
 }
 
-DEF_TESS_BENCH(middle_out_triangulation,
-               ToolUtils::make_star(SkRect::MakeWH(500, 500), kNumCubicsInChalkboard),
-               SkMatrix::I(), target, op) {
+DEF_PATH_TESS_BENCH(middle_out_triangulation,
+                    ToolUtils::make_star(SkRect::MakeWH(500, 500), kNumCubicsInChalkboard),
+                    SkMatrix::I(), target, op) {
     int baseVertex;
     auto vertexData = static_cast<SkPoint*>(target->makeVertexSpace(
             sizeof(SkPoint), kNumCubicsInChalkboard, nullptr, &baseVertex));
@@ -239,3 +261,38 @@ DEF_TESS_BENCH(middle_out_triangulation,
         middleOut.closeAndMove(pts[0]);
     }
 }
+
+class StrokePatchBuilderBench : public Benchmark {
+    const char* onGetName() override { return "tessellate_StrokePatchBuilder"; }
+    bool isSuitableFor(Backend backend) final { return backend == kNonRendering_Backend; }
+
+    void onDelayedSetup() override {
+        fPath.reset().moveTo(0, 0);
+        for (int i = 0; i < kNumCubicsInChalkboard/2; ++i) {
+            fPath.cubicTo(100, 0, 0, 100, 100, 100);
+            fPath.cubicTo(100, 0, 0, 100, 0, 0);
+        }
+        fStrokeRec.setStrokeStyle(8);
+        fStrokeRec.setStrokeParams(SkPaint::kButt_Cap, SkPaint::kMiter_Join, 4);
+    }
+
+    void onDraw(int loops, SkCanvas*) final {
+        if (!fTarget.mockContext()) {
+            SkDebugf("ERROR: could not create mock context.");
+            return;
+        }
+        for (int i = 0; i < loops; ++i) {
+            fPatchChunks.reset();
+            GrStrokePatchBuilder builder(&fTarget, &fPatchChunks, 1, fStrokeRec,
+                                         fPath.countVerbs());
+            builder.addPath(fPath);
+        }
+    }
+
+    BenchmarkTarget fTarget;
+    SkPath fPath;
+    SkStrokeRec fStrokeRec = SkStrokeRec(SkStrokeRec::kFill_InitStyle);
+    SkSTArray<8, GrStrokePatchBuilder::PatchChunk> fPatchChunks;
+};
+
+DEF_BENCH( return new StrokePatchBuilderBench(); )

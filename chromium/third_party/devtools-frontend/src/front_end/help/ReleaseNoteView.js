@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Host from '../host/host.js';
 import * as UI from '../ui/ui.js';
 
@@ -68,15 +65,15 @@ export class ReleaseNoteView extends UI.Widget.VBox {
 
     actionContainer.appendChild(UI.UIUtils.createTextButton(ls`Close`, event => {
       event.consume(true);
-      self.UI.inspectorView.closeDrawerTab(releaseNoteViewId, true);
+      UI.InspectorView.InspectorView.instance().closeDrawerTab(releaseNoteViewId, true);
     }, 'close-release-note'));
 
-    const imageLink = UI.XLink.XLink.create(releaseNote.link, ' ');
+    const imageLink = /** @type {!HTMLElement} */ (UI.XLink.XLink.create(releaseNote.link, ' '));
     imageLink.classList.add('release-note-image');
     imageLink.title = ls`${latestReleaseNote().header}`;
 
     hbox.appendChild(imageLink);
-    const image = imageLink.createChild('img');
+    const image = /** @type {!HTMLImageElement} */ (imageLink.createChild('img'));
     image.src = 'Images/whatsnew.png';
     image.title = imageLink.title;
     image.alt = image.title;

@@ -316,10 +316,14 @@
         }
       ]
     },
-// Based on the ICU63 version of
-// https://cs.chromium.org/chromium/src/third_party/icu/source/data/rbnf/rbnflocal.mk?rcl=797b7c
-    "rbnf_tree": { "filterType": "exclude" },
-    "rbnf_index": { "filterType": "exclude" },
+    "rbnf_tree": {
+      "whitelist": [
+// Needed by "y=jpanyear" in locales/ja.txt for calendar="japanese"
+        "ja",
+// Needed by "d=hanidays" in locales/zh*.txt for calendar="chinese"
+        "zh"
+      ]
+    },
 // Based on
 // https://cs.chromium.org/chromium/src/third_party/icu/android/patch_locale.sh?rcl=797b7c
     "region_tree": {
@@ -1612,7 +1616,6 @@
         "coll_tree",
         "curr_tree",
         "lang_tree",
-        "rbnf_tree",
         "region_tree",
         "unit_tree",
         "zone_tree"

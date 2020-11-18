@@ -15,30 +15,27 @@
 #include <memory>
 #include <vector>
 
-#include "gtest/gtest.h"
 #include "src/ast/assignment_statement.h"
 #include "src/ast/identifier_expression.h"
 #include "src/ast/module.h"
-#include "src/writer/hlsl/generator_impl.h"
+#include "src/writer/hlsl/test_helper.h"
 
 namespace tint {
 namespace writer {
 namespace hlsl {
 namespace {
 
-using HlslGeneratorImplTest = testing::Test;
+using HlslGeneratorImplTest_Assign = TestHelper;
 
-TEST_F(HlslGeneratorImplTest, Emit_Assign) {
+TEST_F(HlslGeneratorImplTest_Assign, Emit_Assign) {
   auto lhs = std::make_unique<ast::IdentifierExpression>("lhs");
   auto rhs = std::make_unique<ast::IdentifierExpression>("rhs");
   ast::AssignmentStatement assign(std::move(lhs), std::move(rhs));
 
-  ast::Module m;
-  GeneratorImpl g(&m);
-  g.increment_indent();
+  gen().increment_indent();
 
-  ASSERT_TRUE(g.EmitStatement(&assign)) << g.error();
-  EXPECT_EQ(g.result(), "  lhs = rhs;\n");
+  ASSERT_TRUE(gen().EmitStatement(out(), &assign)) << gen().error();
+  EXPECT_EQ(result(), "  lhs = rhs;\n");
 }
 
 }  // namespace

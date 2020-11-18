@@ -54,7 +54,7 @@ ffmpeg_c_sources = []
 ffmpeg_gas_sources = []
 ffmpeg_asm_sources = []
 
-use_linux_config = is_linux || is_fuchsia
+use_linux_config = is_linux || is_chromeos || is_fuchsia
 
 """
 GN_CONDITION_BEGIN = """if (%s) {

@@ -138,8 +138,7 @@ bool GrSurfaceContext::readPixels(GrDirectContext* dContext, const GrImageInfo& 
     RETURN_FALSE_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
     GR_AUDIT_TRAIL_AUTO_FRAME(this->auditTrail(), "GrSurfaceContext::readPixels");
-
-    if (!dContext) {
+    if (!fContext->priv().matches(dContext)) {
         return false;
     }
 
@@ -1142,7 +1141,7 @@ std::unique_ptr<GrRenderTargetContext> GrSurfaceContext::rescale(const GrImageIn
                 dir = GrBicubicEffect::Direction::kX;
             }
             static constexpr auto kWM     = GrSamplerState::WrapMode::kClamp;
-            static constexpr auto kKernel = GrBicubicEffect::Kernel::kCatmullRom;
+            static constexpr auto kKernel = GrBicubicEffect::gCatmullRom;
             fp = GrBicubicEffect::MakeSubset(std::move(texView), prevAlphaType, matrix, kWM, kWM,
                                              SkRect::Make(srcRect), kKernel, dir, *this->caps());
             if (xform) {

@@ -3798,6 +3798,15 @@ GLint GL_APIENTRY glGetProgramResourceLocationIndexEXT(GLuint program,
     return gl::GetProgramResourceLocationIndexEXT(program, programInterface, name);
 }
 
+// GL_EXT_buffer_storage
+void GL_APIENTRY glBufferStorageEXT(GLenum target,
+                                    GLsizeiptr size,
+                                    const void *data,
+                                    GLbitfield flags)
+{
+    return gl::BufferStorageEXT(target, size, data, flags);
+}
+
 // GL_EXT_debug_marker
 void GL_APIENTRY glInsertEventMarkerEXT(GLsizei length, const GLchar *marker)
 {
@@ -4903,6 +4912,8 @@ void GL_APIENTRY glTexGenxvOES(GLenum coord, GLenum pname, const GLfixed *params
 
 // GL_OES_texture_half_float
 
+// GL_OES_texture_stencil8
+
 // GL_OES_texture_storage_multisample_2d_array
 void GL_APIENTRY glTexStorage3DMultisampleOES(GLenum target,
                                               GLsizei samples,
@@ -5281,6 +5292,15 @@ void GL_APIENTRY glBufferDataContextANGLE(GLeglContext ctx,
                                           GLenum usage)
 {
     return gl::BufferDataContextANGLE(ctx, target, size, data, usage);
+}
+
+void GL_APIENTRY glBufferStorageEXTContextANGLE(GLeglContext ctx,
+                                                GLenum target,
+                                                GLsizeiptr size,
+                                                const void *data,
+                                                GLbitfield flags)
+{
+    return gl::BufferStorageEXTContextANGLE(ctx, target, size, data, flags);
 }
 
 void GL_APIENTRY glBufferStorageMemEXTContextANGLE(GLeglContext ctx,

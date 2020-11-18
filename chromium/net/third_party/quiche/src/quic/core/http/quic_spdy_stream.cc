@@ -199,7 +199,7 @@ QuicSpdyStream::QuicSpdyStream(QuicStreamId id,
       sequencer_offset_(0),
       is_decoder_processing_input_(false),
       ack_listener_(nullptr),
-      last_sent_urgency_(kDefaultUrgency) {
+      last_sent_urgency_(DefaultUrgency()) {
   DCHECK_EQ(session()->connection(), spdy_session->connection());
   DCHECK_EQ(transport_version(), spdy_session->transport_version());
   DCHECK(!QuicUtils::IsCryptoStreamId(transport_version(), id));
@@ -220,7 +220,7 @@ QuicSpdyStream::QuicSpdyStream(QuicStreamId id,
 QuicSpdyStream::QuicSpdyStream(PendingStream* pending,
                                QuicSpdySession* spdy_session,
                                StreamType type)
-    : QuicStream(pending, type, /*is_static=*/false),
+    : QuicStream(pending, spdy_session, type, /*is_static=*/false),
       spdy_session_(spdy_session),
       on_body_available_called_because_sequencer_is_closed_(false),
       visitor_(nullptr),
@@ -235,7 +235,7 @@ QuicSpdyStream::QuicSpdyStream(PendingStream* pending,
       sequencer_offset_(sequencer()->NumBytesConsumed()),
       is_decoder_processing_input_(false),
       ack_listener_(nullptr),
-      last_sent_urgency_(kDefaultUrgency) {
+      last_sent_urgency_(DefaultUrgency()) {
   DCHECK_EQ(session()->connection(), spdy_session->connection());
   DCHECK_EQ(transport_version(), spdy_session->transport_version());
   DCHECK(!QuicUtils::IsCryptoStreamId(transport_version(), id()));
@@ -800,6 +800,11 @@ void QuicSpdyStream::OnDataAvailable() {
 
 void QuicSpdyStream::OnClose() {
   QuicStream::OnClose();
+
+  if (GetQuicReloadableFlag(quic_abort_qpack_on_stream_close)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_abort_qpack_on_stream_close);
+    qpack_decoded_headers_accumulator_.reset();
+  }
 
   if (visitor_) {
     Visitor* visitor = visitor_;

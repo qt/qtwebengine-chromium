@@ -72,9 +72,6 @@ class FrameCrypto {
     return encrypted_frame.data.size();
   }
 
-  // Returns random bytes from a cryptographically-secure RNG source.
-  static std::array<uint8_t, 16> GenerateRandomBytes();
-
  private:
   // The 244-byte AES_KEY struct, derived from the |aes_key| passed to the ctor,
   // and initialized by boringssl's AES_set_encrypt_key() function.

@@ -45,6 +45,7 @@ namespace dawn_native {
                 break;
 
             case wgpu::BindingType::SampledTexture:
+            case wgpu::BindingType::MultisampledTexture:
                 perStageBindingCountMember = &PerStageBindingCounts::sampledTextureCount;
                 break;
 
@@ -56,11 +57,6 @@ namespace dawn_native {
             case wgpu::BindingType::ReadonlyStorageTexture:
             case wgpu::BindingType::WriteonlyStorageTexture:
                 perStageBindingCountMember = &PerStageBindingCounts::storageTextureCount;
-                break;
-
-            case wgpu::BindingType::StorageTexture:
-            default:
-                UNREACHABLE();
                 break;
         }
 

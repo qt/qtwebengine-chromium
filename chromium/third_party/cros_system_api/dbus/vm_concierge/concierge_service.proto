@@ -10,6 +10,9 @@ package vm_tools.concierge;
 option go_package = "vm_concierge_proto";
 
 // Specification of the key components of a VM.
+//
+// TODO(crbug/1121046): This spec may be insufficient for DLC, consider
+// re-designing it.
 message VirtualMachineSpec {
   // Path to the kernel that should be used for the VM.
   string kernel = 1;
@@ -17,6 +20,14 @@ message VirtualMachineSpec {
   // Path to the disk image that should be used as the root file system for
   // the VM.
   string rootfs = 2;
+
+  // ID of a DLC package that contains the kernel and rootfs. If this field is
+  // set, the kernel() and rootfs() fields will be ignored when calculating the
+  // path to the VM's image files.
+  string dlc_id = 3;
+
+  // Optional path to the initrd that should be used for the VM.
+  string initrd = 4;
 }
 
 // The type of disk image.
@@ -83,6 +94,19 @@ message VmInfo {
   // granted to the VM. The token is also to be used to identify VM to the
   // service providers (camera, CRAS, etc).
   string permission_token = 5;
+
+  enum VmType {
+    // Default value indicating an unknown or custom VM.
+    UNKNOWN = 0;
+
+    // VM is associated with a specific feature.
+    TERMINA = 1;
+    ARC_VM = 2;
+    PLUGIN_VM = 3;
+  };
+
+  // What type of VM this is.
+  VmType vm_type = 6;
 }
 
 // Optional fields for network configuration.
@@ -94,8 +118,7 @@ message NetworkOptions {
 // Information that must be included with every StartVm dbus message.
 message StartVmRequest {
   // The VM that should be started. This is ignored if starting a termina VM,
-  // which will always use the latest component from imageloader. Also ignored
-  // if |allow_untrusted| is set to false.
+  // which will always use the latest component from imageloader.
   VirtualMachineSpec vm = 1;
 
   // Any additional disks that should be mounted inside the VM.
@@ -113,11 +136,6 @@ message StartVmRequest {
   // If true, concierge should also perform termina-specific setup.
   bool start_termina = 5;
 
-  // If true, a file descriptor must be passed along with the message and that
-  // file descriptor will be used for storage.
-  // Ignored unless |start_termina| is true.
-  bool use_fd_for_storage = 6;
-
   // The owner of the vm.
   string owner_id = 7;
 
@@ -131,8 +149,11 @@ message StartVmRequest {
   // contain a virtio TPM driver.
   bool software_tpm = 9;
 
-  // Allow untrusted VMs to be started.
-  bool allow_untrusted = 10;
+  // This flag is only respected in developer mode and offers two things -
+  // - It can treat a trusted VM as untrusted and run it on insecure host
+  // kernels.
+  // - It can run an untrusted VM on insecure host kernels.
+  bool run_as_untrusted = 10;
 
   // Enable audio capture in the started Vm.
   bool enable_audio_capture = 11;
@@ -140,6 +161,25 @@ message StartVmRequest {
   // The number of CPUs to give to the VM.  Cannot be larger than the number of
   // CPUs on the device and cannot be 0.
   uint32 cpus = 12;
+
+  // If true, a file descriptor must be passed along with the message and that
+  // file descriptor will be used for kernel.
+  // Ignored unless |start_termina| is true.
+  bool use_fd_for_kernel = 13;
+
+  // If true, a file descriptor must be passed along with the message and that
+  // file descriptor will be used for rootfs.
+  // If |use_fd_for_kernel| is true, the fd for rootfs must be passed after
+  // that for kernel.
+  // Ignored unless |start_termina| is true.
+  bool use_fd_for_rootfs = 14;
+
+  // If true, a file descriptor must be passed along with the message and that
+  // file descriptor will be used for storage.
+  // If |use_fd_for_kernel| or |use_fd_for_rootfs| is true, the fd for storage
+  // must be passed after ones for kernel and rootfs.
+  // Ignored unless |start_termina| is true.
+  bool use_fd_for_storage = 6;
 }
 
 // Information that must be included with every StartPluginVm request.
@@ -382,9 +422,10 @@ message GetVmEnterpriseReportingInfoRequest {
   string owner_id = 2;
 }
 
-// Response sent back by vm_concierge after it receives a GetEnterpriseReportingInfo
-// call. Right now this only returns the kernel version of the Termina VM.
-// The VM must be running in order for the call to deliver the kernel version.
+// Response sent back by vm_concierge after it receives a
+// GetEnterpriseReportingInfo call. Right now this only returns the kernel
+// version of the Termina VM. The VM must be running in order for the call to
+// deliver the kernel version.
 message GetVmEnterpriseReportingInfoResponse {
   bool success = 1;
   string failure_reason = 2;
@@ -440,7 +481,8 @@ message CreateDiskImageRequest {
 
   // The logical size of the new disk image, in bytes.
   // If non-zero, the disk will be preallocated and fixed to the given size.
-  // If unspecified or 0, a size will be chosen automatically and the image will be sparse.
+  // If unspecified or 0, a size will be chosen automatically and the image will
+  // be sparse.
   uint64 disk_size = 3;
 
   // The type of disk image to be created.
@@ -488,7 +530,8 @@ message DestroyDiskImageResponse {
   // If DISK_STATUS_DOES_NOT_EXIST, the disk image had already been removed.
   DiskImageStatus status = 1;
 
-  // The failure reason if the disk image could not be destroyed or doesn't exist.
+  // The failure reason if the disk image could not be destroyed or doesn't
+  // exist.
   string failure_reason = 3;
 }
 
@@ -650,6 +693,9 @@ message VmDiskInfo {
   // True if the user chose the size for this disk.
   // False if the disk is automatically sized based on free space.
   bool user_chosen_size = 6;
+
+  // The absolute path to the disk.
+  string path = 7;
 }
 
 // Response to ListVmDisks {
@@ -699,7 +745,7 @@ message StartContainerRequest {
   string container_username = 3;
 
   // Async mode is always used now.
-  bool async = 4 [deprecated=true];
+  bool async = 4 [deprecated = true];
 
   // The cryptohome id for the user's encrypted storage. This is used for SSH
   // key storage.
@@ -739,7 +785,7 @@ enum ContainerStatus {
 // message.
 message StartContainerResponse {
   // Use the status field instead.
-  bool success = 1 [deprecated=true];
+  bool success = 1 [deprecated = true];
 
   // The failure_reason if the status is CONTAINER_STATUS_FAILURE.
   string failure_reason = 2;
@@ -957,3 +1003,24 @@ message AdjustVmResponse {
   // If the attempt to adjust VM failed, the reason for the failure.
   string failure_reason = 2;
 };
+
+// Request to set owner id of a given VM.
+message SetVmIdRequest {
+  // An identifier for this VM.
+  string name = 1;
+
+  // The current cyptohome id of this VM.
+  string src_owner_id = 2;
+
+  // The cryptohome id to set for this VM.
+  string dest_owner_id = 3;
+}
+
+// Response to a SetVmIdRequest.
+message SetVmIdResponse {
+  // If true, the owner id of the VM was successfully changed.
+  bool success = 1;
+
+  // If the attempt to set the owner id failed, the reason for failure.
+  string failure_reason = 2;
+}

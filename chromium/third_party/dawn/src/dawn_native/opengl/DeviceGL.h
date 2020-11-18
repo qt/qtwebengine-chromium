@@ -62,6 +62,14 @@ namespace dawn_native { namespace opengl {
                                            uint64_t destinationOffset,
                                            uint64_t size) override;
 
+        MaybeError CopyFromStagingToTexture(const StagingBufferBase* source,
+                                            const TextureDataLayout& src,
+                                            TextureCopy* dst,
+                                            const Extent3D& copySizePixels) override;
+
+        uint32_t GetOptimalBytesPerRowAlignment() const override;
+        uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const override;
+
       private:
         Device(AdapterBase* adapter,
                const DeviceDescriptor* descriptor,
@@ -97,11 +105,11 @@ namespace dawn_native { namespace opengl {
             const TextureViewDescriptor* descriptor) override;
 
         void InitTogglesFromDriver();
-        Serial CheckAndUpdateCompletedSerials() override;
+        ExecutionSerial CheckAndUpdateCompletedSerials() override;
         void ShutDownImpl() override;
         MaybeError WaitForIdleForDestruction() override;
 
-        std::queue<std::pair<GLsync, Serial>> mFencesInFlight;
+        std::queue<std::pair<GLsync, ExecutionSerial>> mFencesInFlight;
 
         GLFormatTable mFormatTable;
     };

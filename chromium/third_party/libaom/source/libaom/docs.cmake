@@ -112,6 +112,7 @@ if(CONFIG_AV1_ENCODER)
                           "${AOM_ROOT}/doc/dev_guide/av1_encoder.dox")
   set(AOM_DOXYGEN_SOURCES
       ${AOM_DOXYGEN_SOURCES}
+      "${AOM_ROOT}/aom_scale/yv12config.h"
       "${AOM_ROOT}/av1/encoder/bitstream.h"
       "${AOM_ROOT}/av1/encoder/block.h"
       "${AOM_ROOT}/av1/encoder/aq_cyclicrefresh.h"
@@ -145,6 +146,9 @@ if(CONFIG_AV1_ENCODER)
       "${AOM_ROOT}/av1/encoder/speed_features.h"
       "${AOM_ROOT}/av1/encoder/svc_layercontext.c"
       "${AOM_ROOT}/av1/encoder/svc_layercontext.h"
+      "${AOM_ROOT}/av1/encoder/temporal_filter.h"
+      "${AOM_ROOT}/av1/encoder/temporal_filter.c"
+      "${AOM_ROOT}/av1/encoder/tpl_model.h"
       "${AOM_ROOT}/av1/encoder/tx_search.h"
       "${AOM_ROOT}/av1/encoder/var_based_part.h"
       "${AOM_ROOT}/av1/encoder/nonrd_pickmode.c")

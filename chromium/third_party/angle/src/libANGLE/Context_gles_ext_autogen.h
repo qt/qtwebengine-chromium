@@ -298,6 +298,9 @@
     GLint getFragDataIndex(ShaderProgramID programPacked, const GLchar *name);                     \
     GLint getProgramResourceLocationIndex(ShaderProgramID programPacked, GLenum programInterface,  \
                                           const GLchar *name);                                     \
+    /* GL_EXT_buffer_storage */                                                                    \
+    void bufferStorage(BufferBinding targetPacked, GLsizeiptr size, const void *data,              \
+                       GLbitfield flags);                                                          \
     /* GL_EXT_compressed_ETC1_RGB8_sub_texture */                                                  \
     /* GL_EXT_debug_marker */                                                                      \
     void insertEventMarker(GLsizei length, const GLchar *marker);                                  \
@@ -352,6 +355,8 @@
     void framebufferTexture2DMultisample(GLenum target, GLenum attachment,                         \
                                          TextureTarget textargetPacked, TextureID texturePacked,   \
                                          GLint level, GLsizei samples);                            \
+    void renderbufferStorageMultisampleEXT(GLenum target, GLsizei samples, GLenum internalformat,  \
+                                           GLsizei width, GLsizei height);                         \
     /* GL_EXT_multisampled_render_to_texture2 */                                                   \
     /* GL_EXT_occlusion_query_boolean */                                                           \
     /* GL_EXT_read_format_bgra */                                                                  \
@@ -412,6 +417,7 @@
     /* GL_OES_texture_buffer */                                                                    \
     /* GL_OES_texture_cube_map_array */                                                            \
     /* GL_OES_texture_half_float */                                                                \
+    /* GL_OES_texture_stencil8 */                                                                  \
     /* GL_OES_texture_storage_multisample_2d_array */                                              \
     /* GL_OES_vertex_array_object */                                                               \
     /* GL_OVR_multiview */                                                                         \

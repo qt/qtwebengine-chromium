@@ -1405,6 +1405,10 @@ message StartLxdRequest {
 
   // The owner of the VM.
   string owner_id = 2;
+
+  // If true, opt-in to resetting the LXD DB on launch. If false, use whatever
+  // the default behaviour is.
+  bool reset_lxd_db = 3;
 }
 
 message StartLxdResponse {

@@ -10,7 +10,9 @@
 #include "libANGLE/renderer/vulkan/UtilsVk.h"
 
 #include "libANGLE/renderer/vulkan/ContextVk.h"
+#include "libANGLE/renderer/vulkan/DisplayVk.h"
 #include "libANGLE/renderer/vulkan/FramebufferVk.h"
+#include "libANGLE/renderer/vulkan/GlslangWrapperVk.h"
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
 
@@ -29,9 +31,6 @@ namespace GenerateMipmap_comp               = vk::InternalShader::GenerateMipmap
 
 namespace
 {
-// All internal shaders assume there is only one descriptor set, indexed at 0
-constexpr uint32_t kSetIndex = 0;
-
 constexpr uint32_t kConvertIndexDestinationBinding           = 0;
 constexpr uint32_t kConvertVertexDestinationBinding          = 0;
 constexpr uint32_t kConvertVertexSourceBinding               = 1;
@@ -69,14 +68,13 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
 
     // Assert on the types to make sure the shader supports its.  These are based on
     // ConvertVertex_comp::Conversion values.
-    ASSERT(!destIsSint || srcIsSint);           // If destination is sint, src must be sint too
-    ASSERT(!destIsUint || srcIsUint);           // If destination is uint, src must be uint too
-    ASSERT(!srcIsFixed || destIsFloat);         // If source is fixed, dest must be float
-    ASSERT(srcIsHalfFloat == destIsHalfFloat);  // Both src and dest are half float or neither
+    ASSERT(!destIsSint || srcIsSint);    // If destination is sint, src must be sint too
+    ASSERT(!destIsUint || srcIsUint);    // If destination is uint, src must be uint too
+    ASSERT(!srcIsFixed || destIsFloat);  // If source is fixed, dest must be float
 
     // One of each bool set must be true
     ASSERT(srcIsSint || srcIsUint || srcIsSnorm || srcIsUnorm || srcIsFixed || srcIsFloat);
-    ASSERT(destIsSint || destIsUint || destIsFloat);
+    ASSERT(destIsSint || destIsUint || destIsFloat || destIsHalfFloat);
 
     // We currently don't have any big-endian devices in the list of supported platforms.  The
     // shader is capable of supporting big-endian architectures, but the relevant flag (IsBigEndian)
@@ -91,6 +89,10 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
     {
         // Note that HalfFloat conversion uses the same shader as Uint.
         flags |= ConvertVertex_comp::kUintToUint;
+    }
+    else if (srcIsFloat && destIsHalfFloat)
+    {
+        flags |= ConvertVertex_comp::kFloatToHalf;
     }
     else if (srcIsSint && destIsSint)
     {
@@ -271,6 +273,59 @@ uint32_t GetGenerateMipmapFlags(ContextVk *contextVk, const vk::Format &format)
     return flags;
 }
 
+enum UnresolveColorAttachmentType
+{
+    kUnresolveTypeUnused = 0,
+    kUnresolveTypeFloat  = 1,
+    kUnresolveTypeSint   = 2,
+    kUnresolveTypeUint   = 3,
+};
+
+uint32_t GetUnresolveFlags(uint32_t colorAttachmentCount,
+                           const gl::DrawBuffersArray<vk::ImageHelper *> &colorSrc,
+                           bool unresolveDepth,
+                           bool unresolveStencil,
+                           gl::DrawBuffersArray<UnresolveColorAttachmentType> *attachmentTypesOut)
+{
+    uint32_t flags = 0;
+
+    for (uint32_t attachmentIndex = 0; attachmentIndex < colorAttachmentCount; ++attachmentIndex)
+    {
+        const angle::Format &format = colorSrc[attachmentIndex]->getFormat().intendedFormat();
+
+        UnresolveColorAttachmentType type = kUnresolveTypeFloat;
+        if (format.isSint())
+        {
+            type = kUnresolveTypeSint;
+        }
+        else if (format.isUint())
+        {
+            type = kUnresolveTypeUint;
+        }
+
+        (*attachmentTypesOut)[attachmentIndex] = type;
+
+        // |flags| is comprised of |colorAttachmentCount| values from
+        // |UnresolveColorAttachmentType|, each taking up 2 bits.
+        flags |= type << (2 * attachmentIndex);
+    }
+
+    // Additionally, two bits are used for depth and stencil unresolve.
+    constexpr uint32_t kDepthUnresolveFlagBit   = 2 * gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+    constexpr uint32_t kStencilUnresolveFlagBit = kDepthUnresolveFlagBit + 1;
+    if (unresolveDepth)
+    {
+        flags |= 1 << kDepthUnresolveFlagBit;
+    }
+
+    if (unresolveStencil)
+    {
+        flags |= 1 << kStencilUnresolveFlagBit;
+    }
+
+    return flags;
+}
+
 uint32_t GetFormatDefaultChannelMask(const vk::Format &format)
 {
     uint32_t mask = 0;
@@ -307,6 +362,142 @@ void CalculateResolveOffset(const UtilsVk::BlitResolveParameters &params, int32_
     // There's no stretching in resolve.
     offset[0] = params.destOffset[0] - params.srcOffset[0] * srcOffsetFactorX;
     offset[1] = params.destOffset[1] - params.srcOffset[1] * srcOffsetFactorY;
+}
+
+// Sets the appropriate settings in the pipeline for the shader to output stencil.  Requires the
+// shader stencil export extension.
+void SetStencilForShaderExport(ContextVk *contextVk, vk::GraphicsPipelineDesc *desc)
+{
+    ASSERT(contextVk->getRenderer()->getFeatures().supportsShaderStencilExport.enabled);
+
+    const uint8_t completeMask    = 0xFF;
+    const uint8_t unusedReference = 0x00;
+
+    desc->setStencilTestEnabled(true);
+    desc->setStencilFrontFuncs(unusedReference, VK_COMPARE_OP_ALWAYS, completeMask);
+    desc->setStencilBackFuncs(unusedReference, VK_COMPARE_OP_ALWAYS, completeMask);
+    desc->setStencilFrontOps(VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_REPLACE);
+    desc->setStencilBackOps(VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_REPLACE);
+    desc->setStencilFrontWriteMask(completeMask);
+    desc->setStencilBackWriteMask(completeMask);
+}
+
+// Creates a shader that looks like the following, based on the number and types of unresolve
+// attachments.
+//
+//     #version 450 core
+//     #extension GL_ARB_shader_stencil_export : require
+//
+//     layout(location = 0) out vec4 colorOut0;
+//     layout(location = 1) out ivec4 colorOut1;
+//     layout(location = 2) out uvec4 colorOut2;
+//     layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput colorIn0;
+//     layout(input_attachment_index = 1, set = 0, binding = 1) uniform isubpassInput colorIn1;
+//     layout(input_attachment_index = 2, set = 0, binding = 2) uniform usubpassInput colorIn2;
+//     layout(input_attachment_index = 3, set = 0, binding = 3) uniform subpassInput depthIn;
+//     layout(input_attachment_index = 3, set = 0, binding = 4) uniform usubpassInput stencilIn;
+//
+//     void main()
+//     {
+//         colorOut0 = subpassLoad(colorIn0);
+//         colorOut1 = subpassLoad(colorIn1);
+//         colorOut2 = subpassLoad(colorIn2);
+//         gl_FragDepth = subpassLoad(depthIn).x;
+//         gl_FragStencilRefARB = int(subpassLoad(stencilIn).x);
+//     }
+angle::Result MakeUnresolveFragShader(
+    vk::Context *context,
+    uint32_t colorAttachmentCount,
+    gl::DrawBuffersArray<UnresolveColorAttachmentType> &colorAttachmentTypes,
+    bool unresolveDepth,
+    bool unresolveStencil,
+    SpirvBlob *spirvBlobOut)
+{
+    std::ostringstream source;
+
+    source << "#version 450 core\n";
+
+    if (unresolveStencil)
+    {
+        source << "#extension GL_ARB_shader_stencil_export : require\n";
+    }
+
+    for (uint32_t attachmentIndex = 0; attachmentIndex < colorAttachmentCount; ++attachmentIndex)
+    {
+        const UnresolveColorAttachmentType type = colorAttachmentTypes[attachmentIndex];
+        ASSERT(type != kUnresolveTypeUnused);
+
+        const char *prefix =
+            type == kUnresolveTypeUint ? "u" : type == kUnresolveTypeSint ? "i" : "";
+
+        source << "layout(location=" << attachmentIndex << ") out " << prefix << "vec4 colorOut"
+               << attachmentIndex << ";\n";
+        source << "layout(input_attachment_index=" << attachmentIndex
+               << ", set=" << DescriptorSetIndex::InternalShader << ", binding=" << attachmentIndex
+               << ") uniform " << prefix << "subpassInput colorIn" << attachmentIndex << ";\n";
+    }
+
+    const uint32_t depthStencilInputIndex = colorAttachmentCount;
+    uint32_t depthStencilBindingIndex     = colorAttachmentCount;
+    if (unresolveDepth)
+    {
+        source << "layout(input_attachment_index=" << depthStencilInputIndex
+               << ", set=" << DescriptorSetIndex::InternalShader
+               << ", binding=" << depthStencilBindingIndex << ") uniform subpassInput depthIn;\n";
+        ++depthStencilBindingIndex;
+    }
+    if (unresolveStencil)
+    {
+        source << "layout(input_attachment_index=" << depthStencilInputIndex
+               << ", set=" << DescriptorSetIndex::InternalShader
+               << ", binding=" << depthStencilBindingIndex
+               << ") uniform usubpassInput stencilIn;\n";
+    }
+
+    source << "void main(){\n";
+
+    for (uint32_t attachmentIndex = 0; attachmentIndex < colorAttachmentCount; ++attachmentIndex)
+    {
+        source << "colorOut" << attachmentIndex << " = subpassLoad(colorIn" << attachmentIndex
+               << ");\n";
+    }
+
+    if (unresolveDepth)
+    {
+        source << "gl_FragDepth = subpassLoad(depthIn).x;\n";
+    }
+
+    if (unresolveStencil)
+    {
+        source << "gl_FragStencilRefARB = int(subpassLoad(stencilIn).x);\n";
+    }
+
+    source << "}\n";
+
+    return GlslangWrapperVk::CompileShaderOneOff(context, gl::ShaderType::Fragment, source.str(),
+                                                 spirvBlobOut);
+}
+
+angle::Result GetUnresolveFrag(
+    vk::Context *context,
+    uint32_t colorAttachmentCount,
+    gl::DrawBuffersArray<UnresolveColorAttachmentType> &colorAttachmentTypes,
+    bool unresolveDepth,
+    bool unresolveStencil,
+    vk::RefCounted<vk::ShaderAndSerial> *shader)
+{
+    if (shader->get().valid())
+    {
+        return angle::Result::Continue;
+    }
+
+    SpirvBlob shaderCode;
+    ANGLE_TRY(MakeUnresolveFragShader(context, colorAttachmentCount, colorAttachmentTypes,
+                                      unresolveDepth, unresolveStencil, &shaderCode));
+
+    // Create shader lazily. Access will need to be locked for multi-threading.
+    return vk::InitShaderAndSerial(context, &shader->get(), shaderCode.data(),
+                                   shaderCode.size() * 4);
 }
 }  // namespace
 
@@ -398,6 +589,20 @@ void UtilsVk::destroy(RendererVk *renderer)
         program.destroy(device);
     }
 
+    for (auto &programIter : mUnresolvePrograms)
+    {
+        vk::ShaderProgramHelper &program = programIter.second;
+        program.destroy(device);
+    }
+    mUnresolvePrograms.clear();
+
+    for (auto &shaderIter : mUnresolveFragShaders)
+    {
+        vk::RefCounted<vk::ShaderAndSerial> &shader = shaderIter.second;
+        shader.get().destroy(device);
+    }
+    mUnresolveFragShaders.clear();
+
     mPointSampler.destroy(device);
     mLinearSampler.destroy(device);
 }
@@ -408,8 +613,6 @@ angle::Result UtilsVk::ensureResourcesInitialized(ContextVk *contextVk,
                                                   size_t setSizesCount,
                                                   size_t pushConstantsSize)
 {
-    RendererVk *renderer = contextVk->getRenderer();
-
     vk::DescriptorSetLayoutDesc descriptorSetDesc;
     bool isCompute = function >= Function::ComputeStartIndex;
     const VkShaderStageFlags descStages =
@@ -423,8 +626,34 @@ angle::Result UtilsVk::ensureResourcesInitialized(ContextVk *contextVk,
         ++currentBinding;
     }
 
-    ANGLE_TRY(renderer->getDescriptorSetLayout(contextVk, descriptorSetDesc,
-                                               &mDescriptorSetLayouts[function][kSetIndex]));
+    ANGLE_TRY(contextVk->getDescriptorSetLayoutCache().getDescriptorSetLayout(
+        contextVk, descriptorSetDesc,
+        &mDescriptorSetLayouts[function][ToUnderlying(DescriptorSetIndex::InternalShader)]));
+
+    vk::DescriptorSetLayoutBindingVector bindingVector;
+    std::vector<VkSampler> immutableSamplers;
+    descriptorSetDesc.unpackBindings(&bindingVector, &immutableSamplers);
+    std::vector<VkDescriptorPoolSize> descriptorPoolSizes;
+
+    for (const VkDescriptorSetLayoutBinding &binding : bindingVector)
+    {
+        if (binding.descriptorCount > 0)
+        {
+            VkDescriptorPoolSize poolSize = {};
+
+            poolSize.type            = binding.descriptorType;
+            poolSize.descriptorCount = binding.descriptorCount;
+            descriptorPoolSizes.emplace_back(poolSize);
+        }
+    }
+    if (!descriptorPoolSizes.empty())
+    {
+        ANGLE_TRY(mDescriptorPools[function].init(
+            contextVk, descriptorPoolSizes.data(), descriptorPoolSizes.size(),
+            mDescriptorSetLayouts[function][ToUnderlying(DescriptorSetIndex::InternalShader)]
+                .get()
+                .getHandle()));
+    }
 
     gl::ShaderType pushConstantsShaderStage =
         isCompute ? gl::ShaderType::Compute : gl::ShaderType::Fragment;
@@ -432,22 +661,17 @@ angle::Result UtilsVk::ensureResourcesInitialized(ContextVk *contextVk,
     // Corresponding pipeline layouts:
     vk::PipelineLayoutDesc pipelineLayoutDesc;
 
-    pipelineLayoutDesc.updateDescriptorSetLayout(kSetIndex, descriptorSetDesc);
+    pipelineLayoutDesc.updateDescriptorSetLayout(DescriptorSetIndex::InternalShader,
+                                                 descriptorSetDesc);
     if (pushConstantsSize)
     {
         pipelineLayoutDesc.updatePushConstantRange(pushConstantsShaderStage, 0,
                                                    static_cast<uint32_t>(pushConstantsSize));
     }
 
-    ANGLE_TRY(renderer->getPipelineLayout(contextVk, pipelineLayoutDesc,
-                                          mDescriptorSetLayouts[function],
-                                          &mPipelineLayouts[function]));
-
-    if (setSizesCount > 0)
-    {
-        ANGLE_TRY(mDescriptorPools[function].init(contextVk, setSizes,
-                                                  static_cast<uint32_t>(setSizesCount)));
-    }
+    ANGLE_TRY(contextVk->getPipelineLayoutCache().getPipelineLayout(contextVk, pipelineLayoutDesc,
+                                                                    mDescriptorSetLayouts[function],
+                                                                    &mPipelineLayouts[function]));
 
     return angle::Result::Continue;
 }
@@ -651,6 +875,26 @@ angle::Result UtilsVk::ensureGenerateMipmapResourcesInitialized(ContextVk *conte
                                       ArraySize(setSizes), sizeof(GenerateMipmapShaderParams));
 }
 
+angle::Result UtilsVk::ensureUnresolveResourcesInitialized(ContextVk *contextVk,
+                                                           Function function,
+                                                           uint32_t attachmentCount)
+{
+    ASSERT(static_cast<uint32_t>(function) -
+               static_cast<uint32_t>(Function::Unresolve1Attachment) ==
+           attachmentCount - 1);
+
+    if (mPipelineLayouts[function].valid())
+    {
+        return angle::Result::Continue;
+    }
+
+    vk::FramebufferAttachmentArray<VkDescriptorPoolSize> setSizes;
+    std::fill(setSizes.begin(), setSizes.end(),
+              VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1});
+
+    return ensureResourcesInitialized(contextVk, function, setSizes.data(), attachmentCount, 0);
+}
+
 angle::Result UtilsVk::ensureSamplersInitialized(ContextVk *contextVk)
 {
     VkSamplerCreateInfo samplerInfo     = {};
@@ -746,15 +990,16 @@ angle::Result UtilsVk::setupProgram(ContextVk *contextVk,
 
     if (descriptorSet != VK_NULL_HANDLE)
     {
-        commandBuffer->bindDescriptorSets(pipelineLayout.get(), pipelineBindPoint, 0, 1,
-                                          &descriptorSet, 0, nullptr);
+        commandBuffer->bindDescriptorSets(pipelineLayout.get(), pipelineBindPoint,
+                                          DescriptorSetIndex::InternalShader, 1, &descriptorSet, 0,
+                                          nullptr);
         if (isCompute)
         {
-            contextVk->invalidateComputeDescriptorSet(0);
+            contextVk->invalidateComputeDescriptorSet(DescriptorSetIndex::InternalShader);
         }
         else
         {
-            contextVk->invalidateGraphicsDescriptorSet(0);
+            contextVk->invalidateGraphicsDescriptorSet(DescriptorSetIndex::InternalShader);
         }
     }
 
@@ -1120,14 +1365,15 @@ angle::Result UtilsVk::startRenderPass(ContextVk *contextVk,
     ANGLE_VK_TRY(contextVk, framebuffer.init(contextVk->getDevice(), framebufferInfo));
 
     vk::AttachmentOpsArray renderPassAttachmentOps;
-    vk::ClearValuesArray clearValues;
-    clearValues.store(0, VK_IMAGE_ASPECT_COLOR_BIT, {});
+    vk::PackedClearValuesArray clearValues;
+    clearValues.store(vk::kAttachmentIndexZero, VK_IMAGE_ASPECT_COLOR_BIT, {});
 
-    renderPassAttachmentOps.initWithLoadStore(0, vk::ImageLayout::ColorAttachment,
+    renderPassAttachmentOps.initWithLoadStore(vk::kAttachmentIndexZero,
+                                              vk::ImageLayout::ColorAttachment,
                                               vk::ImageLayout::ColorAttachment);
 
     ANGLE_TRY(contextVk->beginNewRenderPass(framebuffer, renderArea, renderPassDesc,
-                                            renderPassAttachmentOps, vk::kInvalidAttachmentIndex,
+                                            renderPassAttachmentOps, vk::kAttachmentIndexInvalid,
                                             clearValues, commandBufferOut));
 
     contextVk->addGarbage(&framebuffer);
@@ -1142,9 +1388,33 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     ANGLE_TRY(ensureImageClearResourcesInitialized(contextVk));
 
     const gl::Rectangle &scissoredRenderArea = params.clearArea;
-
+    vk::Framebuffer *currentFramebuffer      = nullptr;
     vk::CommandBuffer *commandBuffer;
-    ANGLE_TRY(contextVk->startRenderPass(scissoredRenderArea, &commandBuffer));
+
+    // Start a new render pass if not already started
+    ANGLE_TRY(framebuffer->getFramebuffer(contextVk, &currentFramebuffer, nullptr));
+    if (contextVk->hasStartedRenderPassWithFramebuffer(currentFramebuffer))
+    {
+        commandBuffer = &contextVk->getStartedRenderPassCommands().getCommandBuffer();
+    }
+    else
+    {
+        ANGLE_TRY(contextVk->startRenderPass(scissoredRenderArea, &commandBuffer));
+    }
+
+    if (params.clearStencil)
+    {
+        vk::CommandBufferHelper *renderpassCommands;
+        renderpassCommands = &contextVk->getStartedRenderPassCommands();
+
+        // Because clear is not affected by stencil test, we have to explicitly mark stencil write
+        // here.
+        renderpassCommands->onStencilAccess(vk::ResourceAccess::Write);
+
+        // We may have changed depth stencil access mode, so update read only depth stencil mode
+        // here.
+        ANGLE_TRY(framebuffer->updateRenderPassReadOnlyDepthMode(contextVk, renderpassCommands));
+    }
 
     ImageClearShaderParams shaderParams;
     shaderParams.clearValue = params.colorClearValue;
@@ -1152,7 +1422,7 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     vk::GraphicsPipelineDesc pipelineDesc;
     pipelineDesc.initDefaults();
     pipelineDesc.setCullMode(VK_CULL_MODE_NONE);
-    pipelineDesc.setColorWriteMask(0, gl::DrawBufferMask());
+    pipelineDesc.setColorWriteMask(0, gl::DrawBufferMask(), gl::DrawBufferMask());
     pipelineDesc.setSingleColorWriteMask(params.colorAttachmentIndexGL, params.colorMaskFlags);
     pipelineDesc.setRasterizationSamples(framebuffer->getSamples());
     pipelineDesc.setRenderPassDesc(framebuffer->getRenderPassDesc());
@@ -1202,8 +1472,11 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     ANGLE_TRY(setupProgram(contextVk, Function::ImageClear, fragmentShader, vertexShader,
                            imageClearProgram, &pipelineDesc, VK_NULL_HANDLE, &shaderParams,
                            sizeof(shaderParams), commandBuffer));
-    commandBuffer->draw(6, 0);
-    return angle::Result::Continue;
+
+    // Make sure this draw call doesn't count towards occlusion query results.
+    ANGLE_TRY(contextVk->pauseOcclusionQueryIfActive());
+    commandBuffer->draw(3, 0);
+    return contextVk->resumeOcclusionQueryIfActive();
 }
 
 angle::Result UtilsVk::colorBlitResolve(ContextVk *contextVk,
@@ -1364,11 +1637,12 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     if (blitColor)
     {
         pipelineDesc.setColorWriteMask(kAllColorComponents,
-                                       framebuffer->getEmulatedAlphaAttachmentMask());
+                                       framebuffer->getEmulatedAlphaAttachmentMask(),
+                                       ~gl::DrawBufferMask());
     }
     else
     {
-        pipelineDesc.setColorWriteMask(0, gl::DrawBufferMask());
+        pipelineDesc.setColorWriteMask(0, gl::DrawBufferMask(), gl::DrawBufferMask());
     }
     pipelineDesc.setCullMode(VK_CULL_MODE_NONE);
     pipelineDesc.setRenderPassDesc(framebuffer->getRenderPassDesc());
@@ -1378,20 +1652,7 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
 
     if (blitStencil)
     {
-        ASSERT(contextVk->getRenderer()->getFeatures().supportsShaderStencilExport.enabled);
-
-        const uint8_t completeMask    = 0xFF;
-        const uint8_t unusedReference = 0x00;
-
-        pipelineDesc.setStencilTestEnabled(true);
-        pipelineDesc.setStencilFrontFuncs(unusedReference, VK_COMPARE_OP_ALWAYS, completeMask);
-        pipelineDesc.setStencilBackFuncs(unusedReference, VK_COMPARE_OP_ALWAYS, completeMask);
-        pipelineDesc.setStencilFrontOps(VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_REPLACE,
-                                        VK_STENCIL_OP_REPLACE);
-        pipelineDesc.setStencilBackOps(VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_REPLACE,
-                                       VK_STENCIL_OP_REPLACE);
-        pipelineDesc.setStencilFrontWriteMask(completeMask);
-        pipelineDesc.setStencilBackWriteMask(completeMask);
+        SetStencilForShaderExport(contextVk, &pipelineDesc);
     }
 
     VkViewport viewport;
@@ -1402,7 +1663,7 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     pipelineDesc.setScissor(gl_vk::GetRect(params.blitArea));
 
     vk::CommandBuffer *commandBuffer;
-    ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, params.blitArea, &commandBuffer));
+    ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, false, params.blitArea, &commandBuffer));
     contextVk->onImageRenderPassRead(src->getAspectFlags(), vk::ImageLayout::FragmentShaderReadOnly,
                                      src);
 
@@ -1467,7 +1728,11 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     ANGLE_TRY(setupProgram(contextVk, Function::BlitResolve, fragmentShader, vertexShader,
                            &mBlitResolvePrograms[flags], &pipelineDesc, descriptorSet,
                            &shaderParams, sizeof(shaderParams), commandBuffer));
-    commandBuffer->draw(6, 0);
+
+    // Note: this utility starts the render pass directly, thus bypassing
+    // ContextVk::startRenderPass. As such, occlusion queries are not enabled.
+    commandBuffer->draw(3, 0);
+
     descriptorPoolBinding.reset();
 
     return angle::Result::Continue;
@@ -1548,25 +1813,27 @@ angle::Result UtilsVk::stencilBlitResolveNoShaderExport(ContextVk *contextVk,
         case SurfaceRotation::Rotated180Degrees:
             if (isResolve)
             {
-                shaderParams.offset.resolve[0] += params.rotatedOffsetFactor[0];
+                // Align the offset with minus 1, or the sample position near the edge will be
+                // wrong.
+                shaderParams.offset.resolve[0] += params.rotatedOffsetFactor[0] - 1;
                 shaderParams.offset.resolve[1] += params.rotatedOffsetFactor[1];
             }
             else
             {
-                shaderParams.offset.blit[0] += params.rotatedOffsetFactor[0];
+                shaderParams.offset.blit[0] += params.rotatedOffsetFactor[0] - 1;
                 shaderParams.offset.blit[1] += params.rotatedOffsetFactor[1];
             }
             break;
         case SurfaceRotation::Rotated270Degrees:
             if (isResolve)
             {
-                shaderParams.offset.resolve[0] += params.rotatedOffsetFactor[0];
-                shaderParams.offset.resolve[1] += params.rotatedOffsetFactor[1];
+                shaderParams.offset.resolve[0] += params.rotatedOffsetFactor[0] - 1;
+                shaderParams.offset.resolve[1] += params.rotatedOffsetFactor[1] - 1;
             }
             else
             {
-                shaderParams.offset.blit[0] += params.rotatedOffsetFactor[0];
-                shaderParams.offset.blit[1] += params.rotatedOffsetFactor[1];
+                shaderParams.offset.blit[0] += params.rotatedOffsetFactor[0] - 1;
+                shaderParams.offset.blit[1] += params.rotatedOffsetFactor[1] - 1;
             }
             shaderParams.rotateXY = 1;
             break;
@@ -1652,12 +1919,14 @@ angle::Result UtilsVk::stencilBlitResolveNoShaderExport(ContextVk *contextVk,
                                   0, nullptr);
 
     // Copy the resulting buffer into dest.
-    VkBufferImageCopy region               = {};
-    region.bufferOffset                    = 0;
-    region.bufferRowLength                 = bufferRowLengthInUints * sizeof(uint32_t);
-    region.bufferImageHeight               = params.blitArea.height;
-    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_STENCIL_BIT;
-    region.imageSubresource.mipLevel       = depthStencilRenderTarget->getLevelIndex();
+    VkBufferImageCopy region           = {};
+    region.bufferOffset                = 0;
+    region.bufferRowLength             = bufferRowLengthInUints * sizeof(uint32_t);
+    region.bufferImageHeight           = params.blitArea.height;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+    region.imageSubresource.mipLevel =
+        depthStencilImage->toVkLevel(gl::LevelIndex(depthStencilRenderTarget->getLevelIndex()))
+            .get();
     region.imageSubresource.baseArrayLayer = depthStencilRenderTarget->getLayerIndex();
     region.imageSubresource.layerCount     = 1;
     region.imageOffset.x                   = params.blitArea.x;
@@ -1666,12 +1935,6 @@ angle::Result UtilsVk::stencilBlitResolveNoShaderExport(ContextVk *contextVk,
     region.imageExtent.width               = params.blitArea.width;
     region.imageExtent.height              = params.blitArea.height;
     region.imageExtent.depth               = 1;
-    if ((params.rotation == SurfaceRotation::Rotated270Degrees) && (params.blitArea.width > 32))
-    {
-        // TODO(ianelliott): Figure out why this adjustment is needed
-        // https://issuetracker.google.com/issues/159995959
-        region.imageOffset.x += 2;
-    }
 
     commandBuffer.copyBufferToImage(blitBuffer.get().getBuffer().getHandle(),
                                     depthStencilImage->getImage(),
@@ -1849,7 +2112,11 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     ANGLE_TRY(setupProgram(contextVk, Function::ImageCopy, fragmentShader, vertexShader,
                            &mImageCopyPrograms[flags], &pipelineDesc, descriptorSet, &shaderParams,
                            sizeof(shaderParams), commandBuffer));
-    commandBuffer->draw(6, 0);
+
+    // Note: this utility creates its own framebuffer, thus bypassing ContextVk::startRenderPass.
+    // As such, occlusion queries are not enabled.
+    commandBuffer->draw(3, 0);
+
     descriptorPoolBinding.reset();
 
     // Close the render pass for this temporary framebuffer.
@@ -1868,7 +2135,7 @@ angle::Result UtilsVk::generateMipmap(ContextVk *contextVk,
 {
     ANGLE_TRY(ensureGenerateMipmapResourcesInitialized(contextVk));
 
-    const gl::Extents &srcExtents = src->getLevelExtents(params.srcLevel);
+    const gl::Extents &srcExtents = src->getLevelExtents(vk::LevelIndex(params.srcLevel));
     ASSERT(srcExtents.depth == 1);
 
     // Each workgroup processes a 64x64 tile of the image.
@@ -1877,10 +2144,9 @@ angle::Result UtilsVk::generateMipmap(ContextVk *contextVk,
     const uint32_t workGroupY = UnsignedCeilDivide(srcExtents.height, kPixelWorkgroupRatio);
 
     GenerateMipmapShaderParams shaderParams;
-    shaderParams.levelCount      = params.destLevelCount;
-    shaderParams.numWorkGroups   = workGroupX * workGroupY;
     shaderParams.invSrcExtent[0] = 1.0f / srcExtents.width;
     shaderParams.invSrcExtent[1] = 1.0f / srcExtents.height;
+    shaderParams.levelCount      = params.destLevelCount;
 
     uint32_t flags = GetGenerateMipmapFlags(contextVk, src->getFormat());
 
@@ -1931,6 +2197,174 @@ angle::Result UtilsVk::generateMipmap(ContextVk *contextVk,
 
     commandBuffer.dispatch(workGroupX, workGroupY, 1);
     descriptorPoolBinding.reset();
+
+    return angle::Result::Continue;
+}
+
+angle::Result UtilsVk::unresolve(ContextVk *contextVk,
+                                 const FramebufferVk *framebuffer,
+                                 const UnresolveParameters &params)
+{
+    // Get attachment count and pointers to resolve images and views.
+    gl::DrawBuffersArray<vk::ImageHelper *> colorSrc         = {};
+    gl::DrawBuffersArray<const vk::ImageView *> colorSrcView = {};
+
+    vk::DeviceScoped<vk::ImageView> depthView(contextVk->getDevice());
+    vk::DeviceScoped<vk::ImageView> stencilView(contextVk->getDevice());
+
+    const vk::ImageView *depthSrcView   = nullptr;
+    const vk::ImageView *stencilSrcView = nullptr;
+
+    // The subpass that initializes the multisampled-render-to-texture attachments packs the
+    // attachments that need to be unresolved, so the attachment indices of this subpass are not the
+    // same.  See InitializeUnresolveSubpass for details.
+    vk::PackedAttachmentIndex colorIndexVk(0);
+    for (size_t colorIndexGL : params.unresolveColorMask)
+    {
+        RenderTargetVk *colorRenderTarget = framebuffer->getColorDrawRenderTarget(colorIndexGL);
+
+        ASSERT(colorRenderTarget->hasResolveAttachment());
+        ASSERT(colorRenderTarget->isImageTransient());
+
+        colorSrc[colorIndexVk.get()] = &colorRenderTarget->getResolveImageForRenderPass();
+        ANGLE_TRY(
+            colorRenderTarget->getResolveImageView(contextVk, &colorSrcView[colorIndexVk.get()]));
+
+        ++colorIndexVk;
+    }
+
+    if (params.unresolveDepth || params.unresolveStencil)
+    {
+        RenderTargetVk *depthStencilRenderTarget = framebuffer->getDepthStencilRenderTarget();
+
+        ASSERT(depthStencilRenderTarget->hasResolveAttachment());
+        ASSERT(depthStencilRenderTarget->isImageTransient());
+
+        vk::ImageHelper *depthStencilSrc =
+            &depthStencilRenderTarget->getResolveImageForRenderPass();
+
+        // The resolved depth/stencil image is necessarily single-sampled.
+        ASSERT(depthStencilSrc->getSamples() == 1);
+        gl::TextureType textureType = vk::Get2DTextureType(depthStencilSrc->getLayerCount(), 1);
+
+        const vk::LevelIndex levelIndex = gl_vk::GetLevelIndex(
+            depthStencilRenderTarget->getLevelIndex(), depthStencilSrc->getBaseLevel());
+        const uint32_t layerIndex = depthStencilRenderTarget->getLayerIndex();
+
+        if (params.unresolveDepth)
+        {
+            ANGLE_TRY(depthStencilSrc->initLayerImageView(
+                contextVk, textureType, VK_IMAGE_ASPECT_DEPTH_BIT, gl::SwizzleState(),
+                &depthView.get(), levelIndex, 1, layerIndex, 1));
+            depthSrcView = &depthView.get();
+        }
+
+        if (params.unresolveStencil)
+        {
+            ANGLE_TRY(depthStencilSrc->initLayerImageView(
+                contextVk, textureType, VK_IMAGE_ASPECT_STENCIL_BIT, gl::SwizzleState(),
+                &stencilView.get(), levelIndex, 1, layerIndex, 1));
+            stencilSrcView = &stencilView.get();
+        }
+    }
+
+    const uint32_t colorAttachmentCount = colorIndexVk.get();
+    const uint32_t depthStencilBindingCount =
+        (params.unresolveDepth ? 1 : 0) + (params.unresolveStencil ? 1 : 0);
+    const uint32_t totalBindingCount = colorAttachmentCount + depthStencilBindingCount;
+
+    ASSERT(totalBindingCount > 0);
+    const Function function = static_cast<Function>(
+        static_cast<uint32_t>(Function::Unresolve1Attachment) + totalBindingCount - 1);
+
+    ANGLE_TRY(ensureUnresolveResourcesInitialized(contextVk, function, totalBindingCount));
+
+    vk::GraphicsPipelineDesc pipelineDesc;
+    pipelineDesc.initDefaults();
+    pipelineDesc.setCullMode(VK_CULL_MODE_NONE);
+    pipelineDesc.setRasterizationSamples(framebuffer->getSamples());
+    pipelineDesc.setRenderPassDesc(framebuffer->getRenderPassDesc());
+    pipelineDesc.setDepthTestEnabled(params.unresolveDepth);
+    pipelineDesc.setDepthWriteEnabled(params.unresolveDepth);
+    pipelineDesc.setDepthFunc(VK_COMPARE_OP_ALWAYS);
+
+    if (params.unresolveStencil)
+    {
+        SetStencilForShaderExport(contextVk, &pipelineDesc);
+    }
+
+    VkViewport viewport;
+    gl::Rectangle completeRenderArea = framebuffer->getRotatedCompleteRenderArea(contextVk);
+    bool invertViewport              = contextVk->isViewportFlipEnabledForDrawFBO();
+    gl_vk::GetViewport(completeRenderArea, 0.0f, 1.0f, invertViewport, completeRenderArea.height,
+                       &viewport);
+    pipelineDesc.setViewport(viewport);
+
+    pipelineDesc.setScissor(gl_vk::GetRect(completeRenderArea));
+
+    VkDescriptorSet descriptorSet;
+    vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
+    ANGLE_TRY(allocateDescriptorSet(contextVk, function, &descriptorPoolBinding, &descriptorSet));
+
+    vk::FramebufferAttachmentArray<VkDescriptorImageInfo> inputImageInfo = {};
+    for (uint32_t attachmentIndex = 0; attachmentIndex < colorAttachmentCount; ++attachmentIndex)
+    {
+        inputImageInfo[attachmentIndex].imageView   = colorSrcView[attachmentIndex]->getHandle();
+        inputImageInfo[attachmentIndex].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    uint32_t depthStencilBindingIndex = colorAttachmentCount;
+    if (params.unresolveDepth)
+    {
+        inputImageInfo[depthStencilBindingIndex].imageView = depthSrcView->getHandle();
+        inputImageInfo[depthStencilBindingIndex].imageLayout =
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        ++depthStencilBindingIndex;
+    }
+    if (params.unresolveStencil)
+    {
+        inputImageInfo[depthStencilBindingIndex].imageView = stencilSrcView->getHandle();
+        inputImageInfo[depthStencilBindingIndex].imageLayout =
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    VkWriteDescriptorSet writeInfo = {};
+    writeInfo.sType                = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writeInfo.dstSet               = descriptorSet;
+    writeInfo.dstBinding           = 0;
+    writeInfo.descriptorCount      = totalBindingCount;
+    writeInfo.descriptorType       = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+    writeInfo.pImageInfo           = inputImageInfo.data();
+
+    vkUpdateDescriptorSets(contextVk->getDevice(), 1, &writeInfo, 0, nullptr);
+
+    gl::DrawBuffersArray<UnresolveColorAttachmentType> colorAttachmentTypes;
+    uint32_t flags = GetUnresolveFlags(colorAttachmentCount, colorSrc, params.unresolveDepth,
+                                       params.unresolveStencil, &colorAttachmentTypes);
+
+    vk::ShaderLibrary &shaderLibrary                    = contextVk->getShaderLibrary();
+    vk::RefCounted<vk::ShaderAndSerial> *vertexShader   = nullptr;
+    vk::RefCounted<vk::ShaderAndSerial> *fragmentShader = &mUnresolveFragShaders[flags];
+    ANGLE_TRY(shaderLibrary.getFullScreenQuad_vert(contextVk, 0, &vertexShader));
+    ANGLE_TRY(GetUnresolveFrag(contextVk, colorAttachmentCount, colorAttachmentTypes,
+                               params.unresolveDepth, params.unresolveStencil, fragmentShader));
+
+    vk::CommandBuffer *commandBuffer =
+        &contextVk->getStartedRenderPassCommands().getCommandBuffer();
+
+    ANGLE_TRY(setupProgram(contextVk, function, fragmentShader, vertexShader,
+                           &mUnresolvePrograms[flags], &pipelineDesc, descriptorSet, nullptr, 0,
+                           commandBuffer));
+    // This draw call is made before ContextVk gets a chance to start the occlusion query.  As such,
+    // occlusion queries are not enabled.
+    commandBuffer->draw(3, 0);
+
+    // Release temporary views
+    vk::ImageView depthViewObject   = depthView.release();
+    vk::ImageView stencilViewObject = stencilView.release();
+
+    contextVk->addGarbage(&depthViewObject);
+    contextVk->addGarbage(&stencilViewObject);
 
     return angle::Result::Continue;
 }
@@ -2119,8 +2553,11 @@ angle::Result UtilsVk::allocateDescriptorSet(ContextVk *contextVk,
                                              VkDescriptorSet *descriptorSetOut)
 {
     ANGLE_TRY(mDescriptorPools[function].allocateSets(
-        contextVk, mDescriptorSetLayouts[function][kSetIndex].get().ptr(), 1, bindingOut,
-        descriptorSetOut));
+        contextVk,
+        mDescriptorSetLayouts[function][ToUnderlying(DescriptorSetIndex::InternalShader)]
+            .get()
+            .ptr(),
+        1, bindingOut, descriptorSetOut));
     bindingOut->get().updateSerial(contextVk->getCurrentQueueSerial());
     return angle::Result::Continue;
 }

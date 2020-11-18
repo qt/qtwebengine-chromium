@@ -728,7 +728,7 @@ TEST_F(SpvParserTest,
        EmitStatement_CombinatorialValue_Immediate_UsedOnceDifferentConstruct) {
   // Translation should not sink expensive operations into or out of control
   // flow. As a simple heuristic, don't move *any* combinatorial operation
-  // across any constrol flow.
+  // across any control flow.
   auto assembly = Preamble() + R"(
      %100 = OpFunction %void None %voidfn
 
@@ -929,6 +929,327 @@ Return{}
 )")) << ToString(fe.ast_body());
 }
 
+TEST_F(
+    SpvParserTest,
+    EmitStatement_CombinatorialNonPointer_Hoisting_DefFirstBlockIf_InFunction) {
+  // This is a hoisting case, where the definition is in the first block
+  // of an if selection construct. In this case the definition should count
+  // as being in the parent (enclosing) construct.
+  //
+  // The definition of %1 is in an IfSelection construct and also the enclosing
+  // Function construct, both of which start at block %10. For the purpose of
+  // determining the construct containing %10, go to the parent construct of
+  // the IfSelection.
+  auto assembly = Preamble() + R"(
+     %pty = OpTypePointer Private %uint
+     %200 = OpVariable %pty Private
+     %cond = OpConstantTrue %bool
+
+     %100 = OpFunction %void None %voidfn
+
+     ; in IfSelection construct, nested in Function construct
+     %10 = OpLabel
+     %1 = OpCopyObject %uint %uint_1
+     OpSelectionMerge %99 None
+     OpBranchConditional %cond %20 %99
+
+     %20 = OpLabel  ; in IfSelection construct
+     OpBranch %99
+
+     %99 = OpLabel
+     %3 = OpCopyObject %uint %1; in Function construct
+     OpStore %200 %3
+     OpReturn
+
+     OpFunctionEnd
+  )";
+  auto* p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
+  FunctionEmitter fe(p, *spirv_function(100));
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+
+  // We don't hoist x_1 into its own mutable variable. It is emitted as
+  // a const definition.
+  EXPECT_THAT(ToString(fe.ast_body()), Eq(R"(VariableDeclStatement{
+  Variable{
+    x_1
+    none
+    __u32
+    {
+      ScalarConstructor{1}
+    }
+  }
+}
+If{
+  (
+    ScalarConstructor{true}
+  )
+  {
+  }
+}
+VariableDeclStatement{
+  Variable{
+    x_3
+    none
+    __u32
+    {
+      Identifier{x_1}
+    }
+  }
+}
+Assignment{
+  Identifier{x_200}
+  Identifier{x_3}
+}
+Return{}
+)")) << ToString(fe.ast_body());
+}
+
+TEST_F(SpvParserTest,
+       EmitStatement_CombinatorialNonPointer_Hoisting_DefFirstBlockIf_InIf) {
+  // This is like the previous case, but the IfSelection is nested inside
+  // another IfSelection.
+  // This tests that the hoisting algorithm goes to only one parent of
+  // the definining if-selection block, and doesn't jump all the way out
+  // to the Function construct that encloses everything.
+  //
+  // We should not hoist %1 because its definition should count as being
+  // in the outer IfSelection, not the inner IfSelection.
+  auto assembly = Preamble() + R"(
+
+     %pty = OpTypePointer Private %uint
+     %200 = OpVariable %pty Private
+     %cond = OpConstantTrue %bool
+
+     %100 = OpFunction %void None %voidfn
+
+     ; outer IfSelection
+     %10 = OpLabel
+     OpSelectionMerge %99 None
+     OpBranchConditional %cond %20 %99
+
+     ; inner IfSelection
+     %20 = OpLabel
+     %1 = OpCopyObject %uint %uint_1
+     OpSelectionMerge %89 None
+     OpBranchConditional %cond %30 %89
+
+     %30 = OpLabel ; last block of inner IfSelection
+     OpBranch %89
+
+     ; in outer IfSelection
+     %89 = OpLabel
+     %3 = OpCopyObject %uint %1; Last use of %1, in outer IfSelection
+     OpStore %200 %3
+     OpBranch %99
+
+     %99 = OpLabel
+     OpReturn
+
+     OpFunctionEnd
+  )";
+  auto* p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
+  FunctionEmitter fe(p, *spirv_function(100));
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+
+  EXPECT_THAT(ToString(fe.ast_body()), Eq(R"(If{
+  (
+    ScalarConstructor{true}
+  )
+  {
+    VariableDeclStatement{
+      Variable{
+        x_1
+        none
+        __u32
+        {
+          ScalarConstructor{1}
+        }
+      }
+    }
+    If{
+      (
+        ScalarConstructor{true}
+      )
+      {
+      }
+    }
+    VariableDeclStatement{
+      Variable{
+        x_3
+        none
+        __u32
+        {
+          Identifier{x_1}
+        }
+      }
+    }
+    Assignment{
+      Identifier{x_200}
+      Identifier{x_3}
+    }
+  }
+}
+Return{}
+)")) << ToString(fe.ast_body());
+}
+
+TEST_F(
+    SpvParserTest,
+    EmitStatement_CombinatorialNonPointer_Hoisting_DefFirstBlockSwitch_InIf) {
+  // This is like the previous case, but the definition is in a SwitchSelection
+  // inside another IfSelection.
+  // Tests that definitions in the first block of a switch count as being
+  // in the parent of the switch construct.
+  auto assembly = Preamble() + R"(
+     %pty = OpTypePointer Private %uint
+     %200 = OpVariable %pty Private
+     %cond = OpConstantTrue %bool
+
+     %100 = OpFunction %void None %voidfn
+
+     ; outer IfSelection
+     %10 = OpLabel
+     OpSelectionMerge %99 None
+     OpBranchConditional %cond %20 %99
+
+     ; inner SwitchSelection
+     %20 = OpLabel
+     %1 = OpCopyObject %uint %uint_1
+     OpSelectionMerge %89 None
+     OpSwitch %uint_1 %89 0 %30
+
+     %30 = OpLabel ; last block of inner SwitchSelection
+     OpBranch %89
+
+     ; in outer IfSelection
+     %89 = OpLabel
+     %3 = OpCopyObject %uint %1; Last use of %1, in outer IfSelection
+     OpStore %200 %3
+     OpBranch %99
+
+     %99 = OpLabel
+     OpReturn
+     OpFunctionEnd
+  )";
+  auto* p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
+  FunctionEmitter fe(p, *spirv_function(100));
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+
+  EXPECT_THAT(ToString(fe.ast_body()), Eq(R"(If{
+  (
+    ScalarConstructor{true}
+  )
+  {
+    VariableDeclStatement{
+      Variable{
+        x_1
+        none
+        __u32
+        {
+          ScalarConstructor{1}
+        }
+      }
+    }
+    Switch{
+      ScalarConstructor{1}
+      {
+        Case 0{
+        }
+        Default{
+        }
+      }
+    }
+    VariableDeclStatement{
+      Variable{
+        x_3
+        none
+        __u32
+        {
+          Identifier{x_1}
+        }
+      }
+    }
+    Assignment{
+      Identifier{x_200}
+      Identifier{x_3}
+    }
+  }
+}
+Return{}
+)")) << ToString(fe.ast_body());
+}
+
+TEST_F(SpvParserTest,
+       EmitStatement_CombinatorialNonPointer_Hoisting_DefAndUseFirstBlockIf) {
+  // In this test, both the defintion and the use are in the first block
+  // of an IfSelection.  No hoisting occurs because hoisting is triggered
+  // on whether the defining construct contains the last use, rather than
+  // whether the two constructs are the same.
+  //
+  // This example has two SSA IDs which are tempting to hoist but should not:
+  //   %1 is defined and used in the first block of an IfSelection.
+  //       Do not hoist it.
+  auto assembly = Preamble() + R"(
+     %cond = OpConstantTrue %bool
+
+     %100 = OpFunction %void None %voidfn
+
+     ; in IfSelection construct, nested in Function construct
+     %10 = OpLabel
+     %1 = OpCopyObject %uint %uint_1
+     %2 = OpCopyObject %uint %1
+     OpSelectionMerge %99 None
+     OpBranchConditional %cond %20 %99
+
+     %20 = OpLabel  ; in IfSelection construct
+     OpBranch %99
+
+     %99 = OpLabel
+     OpReturn
+
+     OpFunctionEnd
+  )";
+  auto* p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
+  FunctionEmitter fe(p, *spirv_function(100));
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+
+  // We don't hoist x_1 into its own mutable variable. It is emitted as
+  // a const definition.
+  EXPECT_THAT(ToString(fe.ast_body()), Eq(R"(VariableDeclStatement{
+  Variable{
+    x_1
+    none
+    __u32
+    {
+      ScalarConstructor{1}
+    }
+  }
+}
+VariableDeclStatement{
+  Variable{
+    x_2
+    none
+    __u32
+    {
+      Identifier{x_1}
+    }
+  }
+}
+If{
+  (
+    ScalarConstructor{true}
+  )
+  {
+  }
+}
+Return{}
+)")) << ToString(fe.ast_body());
+}
+
 TEST_F(SpvParserTest, EmitStatement_Phi_SingleBlockLoopIndex) {
   auto assembly = Preamble() + R"(
      %pty = OpTypePointer Private %uint
@@ -1042,23 +1363,13 @@ TEST_F(SpvParserTest, EmitStatement_Phi_SingleBlockLoopIndex) {
         }
       }
     }
-    VariableDeclStatement{
-      Variable{
-        x_4
-        none
-        __u32
-        {
-          Binary{
-            Identifier{x_2}
-            add
-            ScalarConstructor{1}
-          }
-        }
-      }
-    }
     Assignment{
       Identifier{x_2_phi}
-      Identifier{x_4}
+      Binary{
+        Identifier{x_2}
+        add
+        ScalarConstructor{1}
+      }
     }
     Assignment{
       Identifier{x_3_phi}
@@ -1176,6 +1487,13 @@ TEST_F(SpvParserTest, EmitStatement_Phi_MultiBlockLoopIndex) {
   Loop{
     VariableDeclStatement{
       Variable{
+        x_4
+        function
+        __u32
+      }
+    }
+    VariableDeclStatement{
+      Variable{
         x_2
         none
         __u32
@@ -1203,18 +1521,12 @@ TEST_F(SpvParserTest, EmitStatement_Phi_MultiBlockLoopIndex) {
       }
     }
     continuing {
-      VariableDeclStatement{
-        Variable{
-          x_4
-          none
-          __u32
-          {
-            Binary{
-              Identifier{x_2}
-              add
-              ScalarConstructor{1}
-            }
-          }
+      Assignment{
+        Identifier{x_4}
+        Binary{
+          Identifier{x_2}
+          add
+          ScalarConstructor{1}
         }
       }
       Assignment{
@@ -1313,6 +1625,13 @@ Loop{
   Loop{
     VariableDeclStatement{
       Variable{
+        x_7
+        function
+        __u32
+      }
+    }
+    VariableDeclStatement{
+      Variable{
         x_2
         none
         __u32
@@ -1368,18 +1687,12 @@ Loop{
       }
     }
     continuing {
-      VariableDeclStatement{
-        Variable{
-          x_7
-          none
-          __u32
-          {
-            Binary{
-              Identifier{x_4}
-              add
-              Identifier{x_6}
-            }
-          }
+      Assignment{
+        Identifier{x_7}
+        Binary{
+          Identifier{x_4}
+          add
+          Identifier{x_6}
         }
       }
       Assignment{
@@ -1629,6 +1942,103 @@ Loop{
     Assignment{
       Identifier{x_1}
       Identifier{x_2}
+    }
+  }
+}
+Return{}
+)")) << ToString(fe.ast_body());
+}
+
+TEST_F(SpvParserTest, EmitStatement_UseInPhiCountsAsUse) {
+  // From crbug.com/215
+  // If the only use of a combinatorially computed ID is as the value
+  // in an OpPhi, then we still have to emit it.  The algorithm fix
+  // is to always count uses in Phis.
+  // This is the reduced case from the bug report.
+  //
+  // The only use of %12 is in the phi.
+  // The only use of %11 is in %12.
+  // Both definintions need to be emitted to the output.
+  auto assembly = Preamble() + R"(
+        %100 = OpFunction %void None %voidfn
+
+         %10 = OpLabel
+         %11 = OpLogicalAnd %bool %true %true
+         %12 = OpLogicalNot %bool %11  ;
+               OpSelectionMerge %99 None
+               OpBranchConditional %true %20 %99
+
+         %20 = OpLabel
+               OpBranch %99
+
+         %99 = OpLabel
+        %101 = OpPhi %bool %11 %10 %12 %20
+               OpReturn
+
+               OpFunctionEnd
+
+  )";
+  auto* p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
+  FunctionEmitter fe(p, *spirv_function(100));
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+
+  EXPECT_THAT(ToString(fe.ast_body()), Eq(R"(VariableDeclStatement{
+  Variable{
+    x_101_phi
+    function
+    __bool
+  }
+}
+VariableDeclStatement{
+  Variable{
+    x_11
+    none
+    __bool
+    {
+      Binary{
+        ScalarConstructor{true}
+        logical_and
+        ScalarConstructor{true}
+      }
+    }
+  }
+}
+VariableDeclStatement{
+  Variable{
+    x_12
+    none
+    __bool
+    {
+      UnaryOp{
+        not
+        Identifier{x_11}
+      }
+    }
+  }
+}
+Assignment{
+  Identifier{x_101_phi}
+  Identifier{x_11}
+}
+If{
+  (
+    ScalarConstructor{true}
+  )
+  {
+    Assignment{
+      Identifier{x_101_phi}
+      Identifier{x_12}
+    }
+  }
+}
+VariableDeclStatement{
+  Variable{
+    x_101
+    none
+    __bool
+    {
+      Identifier{x_101_phi}
     }
   }
 }

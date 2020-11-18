@@ -31,6 +31,7 @@ public:
     GrArithmeticProcessor(const GrArithmeticProcessor& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "ArithmeticProcessor"; }
+    bool usesExplicitReturn() const override;
     SkV4 k;
     bool enforcePMColor;
 
@@ -53,6 +54,6 @@ private:
     SkString onDumpInfo() const override;
 #endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 #endif

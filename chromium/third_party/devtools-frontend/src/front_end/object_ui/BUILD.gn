@@ -27,9 +27,17 @@ devtools_module("object_ui") {
   ]
 }
 
+copy_to_gen("legacy_css") {
+  sources = [
+    "customPreviewComponent.css",
+    "objectPopover.css",
+    "objectPropertiesSection.css",
+    "objectValue.css",
+  ]
+}
+
 devtools_entrypoint("bundle") {
   entrypoint = "object_ui.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":object_ui" ]
 }

@@ -114,6 +114,10 @@ TEST(DnsSdInstanceTests, ServiceProtocolNameFormatting) {
   EXPECT_FALSE(IsServiceValid("_0a1b--c02d._udp"));
   EXPECT_FALSE(IsServiceValid("_0a--1._udp"));
   EXPECT_FALSE(IsServiceValid("_a--b._udp"));
+
+  // Multiple, non-adjacent hyphens.
+  EXPECT_TRUE(IsServiceValid("_a-b-c._udp"));
+  EXPECT_TRUE(IsServiceValid("_a-1-c._udp"));
 }
 
 TEST(DnsSdInstanceTests, DomainDotPositions) {

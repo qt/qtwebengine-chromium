@@ -573,7 +573,6 @@ export class StylesSidebarPane extends ElementsSidebarPane {
       const element = section.closestPropertyForEditing(propertyIndex);
       if (!element) {
         section.element.focus();
-        UI.UIUtils.markAsFocusedByKeyboard(section.element);
         return;
       }
       element.startEditing();
@@ -1110,6 +1109,16 @@ export class StylePropertiesSection {
     const closeBrace = this._innerElement.createChild('div', 'sidebar-pane-closing-brace');
     closeBrace.textContent = '}';
 
+    if (this._style.parentRule) {
+      const newRuleButton =
+          new UI.Toolbar.ToolbarButton(Common.UIString.UIString('Insert Style Rule Below'), 'largeicon-add');
+      newRuleButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this._onNewRuleClick, this);
+      newRuleButton.element.tabIndex = -1;
+      const expandToolbar = new UI.Toolbar.Toolbar('sidebar-pane-section-toolbar', this._innerElement);
+      expandToolbar.appendToolbarItem(newRuleButton);
+      UI.ARIAUtils.markAsHidden(expandToolbar.element);
+    }
+
     this._selectorElement.addEventListener('click', this._handleSelectorClick.bind(this), false);
     this.element.addEventListener('mousedown', this._handleEmptySpaceMouseDown.bind(this), false);
     this.element.addEventListener('click', this._handleEmptySpaceClick.bind(this), false);
@@ -1166,8 +1175,8 @@ export class StylePropertiesSection {
 
     const header = rule.styleSheetId ? matchedStyles.cssModel().styleSheetHeaderForId(rule.styleSheetId) : null;
 
-    if (header && header.isMutable) {
-      const label = header.isInline ? '<style>' : Common.UIString.UIString('constructed stylesheet');
+    if (header && header.isMutable && !header.isViaInspector()) {
+      const label = header.isConstructed ? Common.UIString.UIString('constructed stylesheet') : '<style>';
       if (header.ownerNode) {
         const link = linkifyDeferredNodeReference(header.ownerNode);
         link.textContent = label;
@@ -1429,6 +1438,17 @@ export class StylePropertiesSection {
     } while (curElement && !curElement._section);
 
     return curElement ? curElement._section : null;
+  }
+
+  /**
+   * @param {!Common.EventTarget.EventTargetEvent} event
+   */
+  _onNewRuleClick(event) {
+    event.data.consume();
+    const rule = this._style.parentRule;
+    const range =
+        TextUtils.TextRange.TextRange.createFromLocation(rule.style.range.endLine, rule.style.range.endColumn + 1);
+    this._parentPane._addBlankSection(this, /** @type {string} */ (rule.styleSheetId), range);
   }
 
   /**
@@ -1870,11 +1890,9 @@ export class StylePropertiesSection {
   }
 
   /**
-   * @param {!Element} editor
-   * @param {!Event} blurEvent
    * @return {boolean}
    */
-  _editingMediaBlurHandler(editor, blurEvent) {
+  _editingMediaBlurHandler() {
     return true;
   }
 

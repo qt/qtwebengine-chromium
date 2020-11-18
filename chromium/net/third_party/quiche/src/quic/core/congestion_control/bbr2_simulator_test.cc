@@ -449,9 +449,6 @@ TEST_F(Bbr2DefaultTopologyTest, SimpleTransfer2RTTAggregationBytes) {
 
 TEST_F(Bbr2DefaultTopologyTest, SimpleTransferAckDecimation) {
   SetConnectionOption(kBSAO);
-  // Enable Ack Decimation on the receiver.
-  QuicConnectionPeer::SetAckMode(receiver_endpoint_.connection(),
-                                 AckMode::ACK_DECIMATION);
   DefaultTopologyParams params;
   CreateNetwork(params);
 
@@ -664,10 +661,10 @@ TEST_F(Bbr2DefaultTopologyTest, InFlightAwareGainCycling) {
   }
 
   // Now that in-flight is almost zero and the pacing gain is still above 1,
-  // send approximately 1.25 BDPs worth of data.  This should cause the
-  // PROBE_BW mode to enter low gain cycle(PROBE_DOWN), and exit it earlier than
-  // one min_rtt due to running out of data to send.
-  sender_endpoint_.AddBytesToTransfer(1.3 * params.BDP());
+  // send approximately 1.4 BDPs worth of data. This should cause the PROBE_BW
+  // mode to enter low gain cycle(PROBE_DOWN), and exit it earlier than one
+  // min_rtt due to running out of data to send.
+  sender_endpoint_.AddBytesToTransfer(1.4 * params.BDP());
   simulator_result = simulator_.RunUntilOrTimeout(
       [this]() {
         return sender_->ExportDebugState().probe_bw.phase ==
@@ -915,7 +912,7 @@ TEST_F(Bbr2DefaultTopologyTest, SwitchToBbr2MidConnection) {
   BbrSender old_sender(sender_connection()->clock()->Now(),
                        sender_connection()->sent_packet_manager().GetRttStats(),
                        GetUnackedMap(sender_connection()),
-                       kDefaultInitialCwndPackets,
+                       kDefaultInitialCwndPackets + 1,
                        GetQuicFlag(FLAGS_quic_max_congestion_window), &random_,
                        QuicConnectionPeer::GetStats(sender_connection()));
 
@@ -930,7 +927,11 @@ TEST_F(Bbr2DefaultTopologyTest, SwitchToBbr2MidConnection) {
   }
 
   // Switch from |old_sender| to |sender_|.
+  const QuicByteCount old_sender_cwnd = old_sender.GetCongestionWindow();
   sender_ = SetupBbr2Sender(&sender_endpoint_, &old_sender);
+  if (GetQuicReloadableFlag(quic_copy_bbr_cwnd_to_bbr2)) {
+    EXPECT_EQ(old_sender_cwnd, sender_->GetCongestionWindow());
+  }
 
   // Send packets 5-7.
   now = now + QuicTime::Delta::FromMilliseconds(10);
@@ -1007,13 +1008,9 @@ TEST_F(Bbr2DefaultTopologyTest, AdjustNetworkParameters) {
 
   EXPECT_EQ(params.BDP(), sender_->ExportDebugState().congestion_window);
 
-  if (GetQuicReloadableFlag(quic_bbr2_improve_adjust_network_parameters)) {
-    EXPECT_EQ(params.BottleneckBandwidth(),
-              sender_->PacingRate(/*bytes_in_flight=*/0));
-    EXPECT_NE(params.BottleneckBandwidth(), sender_->BandwidthEstimate());
-  } else {
-    EXPECT_EQ(params.BottleneckBandwidth(), sender_->BandwidthEstimate());
-  }
+  EXPECT_EQ(params.BottleneckBandwidth(),
+            sender_->PacingRate(/*bytes_in_flight=*/0));
+  EXPECT_NE(params.BottleneckBandwidth(), sender_->BandwidthEstimate());
 
   EXPECT_APPROX_EQ(params.RTT(), sender_->ExportDebugState().min_rtt, 0.01f);
 

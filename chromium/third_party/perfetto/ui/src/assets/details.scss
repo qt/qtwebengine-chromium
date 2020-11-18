@@ -255,6 +255,11 @@
   }
 }
 
+.flow-link:hover {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 table.half-width {
   max-width: 50%;
 }
@@ -304,16 +309,28 @@ table.half-width {
   }
 }
 
+.sum {
+  font-weight: bolder;
+  font-size: 12px;
+  .sum-data {
+    border-bottom: 1px solid rgba(60, 76, 92, 0.4);
+  }
+}
+
 .log-panel {
   width: 100%;
   height: 100%;
   display: grid;
   grid-template-rows: auto 1fr;
+  font-family: 'Roboto Condensed', sans-serif;
 
   header {
     position: sticky;
     top: 0px;
     z-index: 1;
+    background-color: white;
+    color: #3c4b5d;
+    padding: 5px;
   }
 
   header.stale {

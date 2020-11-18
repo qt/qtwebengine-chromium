@@ -152,7 +152,7 @@ export class DebuggerWorkspaceBinding {
    * @param {!Array<!SDK.DebuggerModel.Location>} rawLocations
    * @param {function(!LiveLocation)} updateDelegate
    * @param {!LiveLocationPool} locationPool
-   * @return {!Promise<!Bindings.LiveLocation>}
+   * @return {!Promise<!LiveLocation>}
    */
   async createStackTraceTopFrameLiveLocation(rawLocations, updateDelegate, locationPool) {
     console.assert(rawLocations.length);
@@ -469,6 +469,9 @@ class ModelData {
    */
   _beforePaused(debuggerPausedDetails) {
     const callFrame = debuggerPausedDetails.callFrames[0];
+    if (!callFrame) {
+      return false;
+    }
     if (callFrame.script.sourceMapURL !== SDK.SourceMap.WasmSourceMap.FAKE_URL &&
         !Root.Runtime.experiments.isEnabled('emptySourceMapAutoStepping')) {
       return true;

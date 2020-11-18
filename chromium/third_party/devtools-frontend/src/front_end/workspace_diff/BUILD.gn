@@ -12,13 +12,13 @@ devtools_module("workspace_diff") {
     "../common:bundle",
     "../diff:bundle",
     "../host:bundle",
+    "../persistence:bundle",
     "../workspace:bundle",
   ]
 }
 
 devtools_entrypoint("bundle") {
   entrypoint = "workspace_diff.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":workspace_diff" ]
 }

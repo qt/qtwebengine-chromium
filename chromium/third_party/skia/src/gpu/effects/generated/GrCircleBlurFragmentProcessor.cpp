@@ -14,6 +14,7 @@
 #include "src/gpu/GrBitmapTextureMaker.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/GrThreadSafeUniquelyKeyedProxyViewCache.h"
 
 // Computes an unnormalized half kernel (right side). Returns the summation of all the half
 // kernel values.
@@ -176,7 +177,7 @@ static void create_half_plane_profile(uint8_t* profile, int profileWidth) {
     profile[profileWidth - 1] = 0;
 }
 
-static std::unique_ptr<GrFragmentProcessor> create_profile_effect(GrRecordingContext* context,
+static std::unique_ptr<GrFragmentProcessor> create_profile_effect(GrRecordingContext* rContext,
                                                                   const SkRect& circle,
                                                                   float sigma,
                                                                   float* solidRadius,
@@ -185,6 +186,9 @@ static std::unique_ptr<GrFragmentProcessor> create_profile_effect(GrRecordingCon
     if (circleR < SK_ScalarNearlyZero) {
         return nullptr;
     }
+
+    auto threadSafeViewCache = rContext->priv().threadSafeViewCache();
+
     // Profile textures are cached by the ratio of sigma to circle radius and by the size of the
     // profile texture (binned by powers of 2).
     SkScalar sigmaToCircleRRatio = sigma / circleR;
@@ -225,11 +229,10 @@ static std::unique_ptr<GrFragmentProcessor> create_profile_effect(GrRecordingCon
     builder[0] = sigmaToCircleRRatioFixed;
     builder.finish();
 
-    GrProxyProvider* proxyProvider = context->priv().proxyProvider();
-    if (sk_sp<GrTextureProxy> blurProfile = proxyProvider->findOrCreateProxyByUniqueKey(key)) {
-        GrSwizzle swizzle = context->priv().caps()->getReadSwizzle(blurProfile->backendFormat(),
-                                                                   GrColorType::kAlpha_8);
-        GrSurfaceProxyView profileView{std::move(blurProfile), kTopLeft_GrSurfaceOrigin, swizzle};
+    GrSurfaceProxyView profileView = threadSafeViewCache->find(key);
+    if (profileView) {
+        SkASSERT(profileView.asTextureProxy());
+        SkASSERT(profileView.origin() == kTopLeft_GrSurfaceOrigin);
         return GrTextureEffect::Make(std::move(profileView), kPremul_SkAlphaType, texM);
     }
 
@@ -249,12 +252,13 @@ static std::unique_ptr<GrFragmentProcessor> create_profile_effect(GrRecordingCon
 
     bm.setImmutable();
 
-    GrBitmapTextureMaker maker(context, bm, GrImageTexGenPolicy::kNew_Uncached_Budgeted);
-    auto profileView = maker.view(GrMipmapped::kNo);
+    GrBitmapTextureMaker maker(rContext, bm, GrImageTexGenPolicy::kNew_Uncached_Budgeted);
+    profileView = maker.view(GrMipmapped::kNo);
     if (!profileView) {
         return nullptr;
     }
-    proxyProvider->assignUniqueKeyToProxy(key, profileView.asTextureProxy());
+
+    profileView = threadSafeViewCache->add(key, profileView);
     return GrTextureEffect::Make(std::move(profileView), kPremul_SkAlphaType, texM);
 }
 
@@ -297,25 +301,24 @@ public:
         circleDataVar = args.fUniformHandler->addUniform(&_outer, kFragment_GrShaderFlag,
                                                          kHalf4_GrSLType, "circleData");
         fragBuilder->codeAppendf(
-                R"SkSL(;
-half2 vec = half2((sk_FragCoord.xy - float2(%s.xy)) * float(%s.w));
+                R"SkSL(half2 vec = half2((sk_FragCoord.xy - float2(%s.xy)) * float(%s.w));
 half dist = length(vec) + (0.5 - %s.z) * %s.w;)SkSL",
                 args.fUniformHandler->getUniformCStr(circleDataVar),
                 args.fUniformHandler->getUniformCStr(circleDataVar),
                 args.fUniformHandler->getUniformCStr(circleDataVar),
                 args.fUniformHandler->getUniformCStr(circleDataVar));
-        SkString _sample13902 = this->invokeChild(0, args);
+        SkString _sample13801 = this->invokeChild(0, args);
         fragBuilder->codeAppendf(
                 R"SkSL(
 half4 inputColor = %s;)SkSL",
-                _sample13902.c_str());
-        SkString _coords13950("float2(half2(dist, 0.5))");
-        SkString _sample13950 = this->invokeChild(1, args, _coords13950.c_str());
+                _sample13801.c_str());
+        SkString _coords13849("float2(half2(dist, 0.5))");
+        SkString _sample13849 = this->invokeChild(1, args, _coords13849.c_str());
         fragBuilder->codeAppendf(
                 R"SkSL(
 %s = inputColor * %s.w;
 )SkSL",
-                args.fOutputColor, _sample13950.c_str());
+                args.fOutputColor, _sample13849.c_str());
     }
 
 private:
@@ -349,6 +352,7 @@ bool GrCircleBlurFragmentProcessor::onIsEqual(const GrFragmentProcessor& other) 
     if (textureRadius != that.textureRadius) return false;
     return true;
 }
+bool GrCircleBlurFragmentProcessor::usesExplicitReturn() const { return false; }
 GrCircleBlurFragmentProcessor::GrCircleBlurFragmentProcessor(
         const GrCircleBlurFragmentProcessor& src)
         : INHERITED(kGrCircleBlurFragmentProcessor_ClassID, src.optimizationFlags())

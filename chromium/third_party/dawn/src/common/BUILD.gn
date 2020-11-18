@@ -75,6 +75,10 @@ config("dawn_internal") {
     defines += [ "DAWN_ENABLE_BACKEND_VULKAN" ]
   }
 
+  if (dawn_enable_wgsl) {
+    defines += [ "DAWN_ENABLE_WGSL" ]
+  }
+
   if (dawn_use_x11) {
     defines += [ "DAWN_USE_X11" ]
   }
@@ -96,6 +100,7 @@ config("dawn_internal") {
       "-Wcstring-format-directive",
       "-Wc++11-narrowing",
       "-Wdeprecated-copy",
+      "-Wduplicate-enum",
       "-Wextra-semi-stmt",
       "-Wimplicit-fallthrough",
       "-Winconsistent-missing-destructor-override",
@@ -103,6 +108,7 @@ config("dawn_internal") {
       "-Wmissing-field-initializers",
       "-Wnon-c-typedef-for-linkage",
       "-Wpessimizing-move",
+      "-Wrange-loop-analysis",
       "-Wreturn-std-move-in-c++11",
       "-Wshadow-field",
       "-Wstrict-prototypes",
@@ -142,7 +148,7 @@ config("dawn_internal") {
 # This GN file is discovered by all Chromium builds, but common doesn't support
 # all of Chromium's OSes so we explicitly make the target visible only on
 # systems we know Dawn is able to compile on.
-if (is_win || is_linux || is_mac || is_fuchsia || is_android) {
+if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android) {
   static_library("common") {
     sources = [
       "Assert.cpp",
@@ -166,7 +172,6 @@ if (is_win || is_linux || is_mac || is_fuchsia || is_android) {
       "RefCounted.h",
       "Result.cpp",
       "Result.h",
-      "Serial.h",
       "SerialMap.h",
       "SerialQueue.h",
       "SerialStorage.h",

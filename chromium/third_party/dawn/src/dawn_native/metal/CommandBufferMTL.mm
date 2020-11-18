@@ -41,28 +41,38 @@ namespace dawn_native { namespace metal {
             MTLStoreActionStoreAndMultisampleResolve;
 #pragma clang diagnostic pop
 
+        MTLIndexType MTLIndexFormat(wgpu::IndexFormat format) {
+            switch (format) {
+                case wgpu::IndexFormat::Uint16:
+                    return MTLIndexTypeUInt16;
+                case wgpu::IndexFormat::Uint32:
+                    return MTLIndexTypeUInt32;
+                case wgpu::IndexFormat::Undefined:
+                    UNREACHABLE();
+            }
+        }
+
         // Creates an autoreleased MTLRenderPassDescriptor matching desc
         MTLRenderPassDescriptor* CreateMTLRenderPassDescriptor(BeginRenderPassCmd* renderPass) {
             MTLRenderPassDescriptor* descriptor = [MTLRenderPassDescriptor renderPassDescriptor];
 
-            for (uint32_t i :
+            for (ColorAttachmentIndex attachment :
                  IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
-                auto& attachmentInfo = renderPass->colorAttachments[i];
+                uint8_t i = static_cast<uint8_t>(attachment);
+                auto& attachmentInfo = renderPass->colorAttachments[attachment];
 
                 switch (attachmentInfo.loadOp) {
-                    case wgpu::LoadOp::Clear:
+                    case wgpu::LoadOp::Clear: {
                         descriptor.colorAttachments[i].loadAction = MTLLoadActionClear;
+                        const std::array<double, 4> clearColor =
+                            ConvertToFloatToDoubleColor(attachmentInfo.clearColor);
                         descriptor.colorAttachments[i].clearColor = MTLClearColorMake(
-                            attachmentInfo.clearColor.r, attachmentInfo.clearColor.g,
-                            attachmentInfo.clearColor.b, attachmentInfo.clearColor.a);
+                            clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
                         break;
+                    }
 
                     case wgpu::LoadOp::Load:
                         descriptor.colorAttachments[i].loadAction = MTLLoadActionLoad;
-                        break;
-
-                    default:
-                        UNREACHABLE();
                         break;
                 }
 
@@ -93,10 +103,6 @@ namespace dawn_native { namespace metal {
                     case wgpu::StoreOp::Clear:
                         descriptor.colorAttachments[i].storeAction = MTLStoreActionDontCare;
                         break;
-
-                    default:
-                        UNREACHABLE();
-                        break;
                 }
             }
 
@@ -120,10 +126,6 @@ namespace dawn_native { namespace metal {
                         case wgpu::StoreOp::Clear:
                             descriptor.depthAttachment.storeAction = MTLStoreActionDontCare;
                             break;
-
-                        default:
-                            UNREACHABLE();
-                            break;
                     }
 
                     switch (attachmentInfo.depthLoadOp) {
@@ -134,10 +136,6 @@ namespace dawn_native { namespace metal {
 
                         case wgpu::LoadOp::Load:
                             descriptor.depthAttachment.loadAction = MTLLoadActionLoad;
-                            break;
-
-                        default:
-                            UNREACHABLE();
                             break;
                     }
                 }
@@ -155,10 +153,6 @@ namespace dawn_native { namespace metal {
                         case wgpu::StoreOp::Clear:
                             descriptor.stencilAttachment.storeAction = MTLStoreActionDontCare;
                             break;
-
-                        default:
-                            UNREACHABLE();
-                            break;
                     }
 
                     switch (attachmentInfo.stencilLoadOp) {
@@ -169,10 +163,6 @@ namespace dawn_native { namespace metal {
 
                         case wgpu::LoadOp::Load:
                             descriptor.stencilAttachment.loadAction = MTLLoadActionLoad;
-                            break;
-
-                        default:
-                            UNREACHABLE();
                             break;
                     }
                 }
@@ -447,6 +437,7 @@ namespace dawn_native { namespace metal {
                         }
 
                         case wgpu::BindingType::SampledTexture:
+                        case wgpu::BindingType::MultisampledTexture:
                         case wgpu::BindingType::ReadonlyStorageTexture:
                         case wgpu::BindingType::WriteonlyStorageTexture: {
                             auto textureView =
@@ -465,10 +456,6 @@ namespace dawn_native { namespace metal {
                             }
                             break;
                         }
-
-                        case wgpu::BindingType::StorageTexture:
-                            UNREACHABLE();
-                            break;
                     }
                 }
             }
@@ -494,16 +481,13 @@ namespace dawn_native { namespace metal {
                 : mLengthTracker(lengthTracker) {
             }
 
-            void OnSetVertexBuffer(uint32_t slot, Buffer* buffer, uint64_t offset) {
+            void OnSetVertexBuffer(VertexBufferSlot slot, Buffer* buffer, uint64_t offset) {
                 mVertexBuffers[slot] = buffer->GetMTLBuffer();
                 mVertexBufferOffsets[slot] = offset;
 
                 ASSERT(buffer->GetSize() < std::numeric_limits<uint32_t>::max());
                 mVertexBufferBindingSizes[slot] = static_cast<uint32_t>(buffer->GetSize() - offset);
-
-                // Use 64 bit masks and make sure there are no shift UB
-                static_assert(kMaxVertexBuffers <= 8 * sizeof(unsigned long long) - 1, "");
-                mDirtyVertexBuffers |= 1ull << slot;
+                mDirtyVertexBuffers.set(slot);
             }
 
             void OnSetPipeline(RenderPipeline* lastPipeline, RenderPipeline* pipeline) {
@@ -516,21 +500,21 @@ namespace dawn_native { namespace metal {
             void Apply(id<MTLRenderCommandEncoder> encoder,
                        RenderPipeline* pipeline,
                        bool enableVertexPulling) {
-                std::bitset<kMaxVertexBuffers> vertexBuffersToApply =
+                const auto& vertexBuffersToApply =
                     mDirtyVertexBuffers & pipeline->GetVertexBufferSlotsUsed();
 
-                for (uint32_t dawnIndex : IterateBitSet(vertexBuffersToApply)) {
-                    uint32_t metalIndex = pipeline->GetMtlVertexBufferIndex(dawnIndex);
+                for (VertexBufferSlot slot : IterateBitSet(vertexBuffersToApply)) {
+                    uint32_t metalIndex = pipeline->GetMtlVertexBufferIndex(slot);
 
                     if (enableVertexPulling) {
                         // Insert lengths for vertex buffers bound as storage buffers
                         mLengthTracker->data[SingleShaderStage::Vertex][metalIndex] =
-                            mVertexBufferBindingSizes[dawnIndex];
+                            mVertexBufferBindingSizes[slot];
                         mLengthTracker->dirtyStages |= wgpu::ShaderStage::Vertex;
                     }
 
-                    [encoder setVertexBuffers:&mVertexBuffers[dawnIndex]
-                                      offsets:&mVertexBufferOffsets[dawnIndex]
+                    [encoder setVertexBuffers:&mVertexBuffers[slot]
+                                      offsets:&mVertexBufferOffsets[slot]
                                     withRange:NSMakeRange(metalIndex, 1)];
                 }
 
@@ -539,10 +523,10 @@ namespace dawn_native { namespace metal {
 
           private:
             // All the indices in these arrays are Dawn vertex buffer indices
-            std::bitset<kMaxVertexBuffers> mDirtyVertexBuffers;
-            std::array<id<MTLBuffer>, kMaxVertexBuffers> mVertexBuffers;
-            std::array<NSUInteger, kMaxVertexBuffers> mVertexBufferOffsets;
-            std::array<uint32_t, kMaxVertexBuffers> mVertexBufferBindingSizes;
+            ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mDirtyVertexBuffers;
+            ityp::array<VertexBufferSlot, id<MTLBuffer>, kMaxVertexBuffers> mVertexBuffers;
+            ityp::array<VertexBufferSlot, NSUInteger, kMaxVertexBuffers> mVertexBufferOffsets;
+            ityp::array<VertexBufferSlot, uint32_t, kMaxVertexBuffers> mVertexBufferBindingSizes;
 
             StorageBufferLengthTracker* mLengthTracker;
         };
@@ -632,7 +616,7 @@ namespace dawn_native { namespace metal {
 
                     TextureBufferCopySplit splitCopies = ComputeTextureBufferCopySplit(
                         texture, dst.mipLevel, dst.origin, copySize, buffer->GetSize(), src.offset,
-                        src.bytesPerRow, src.rowsPerImage);
+                        src.bytesPerRow, src.rowsPerImage, dst.aspect);
 
                     for (uint32_t i = 0; i < splitCopies.count; ++i) {
                         const TextureBufferCopySplit::CopyInfo& copyInfo = splitCopies.copies[i];
@@ -682,7 +666,7 @@ namespace dawn_native { namespace metal {
 
                     TextureBufferCopySplit splitCopies = ComputeTextureBufferCopySplit(
                         texture, src.mipLevel, src.origin, copySize, buffer->GetSize(), dst.offset,
-                        dst.bytesPerRow, dst.rowsPerImage);
+                        dst.bytesPerRow, dst.rowsPerImage, src.aspect);
 
                     for (uint32_t i = 0; i < splitCopies.count; ++i) {
                         const TextureBufferCopySplit::CopyInfo& copyInfo = splitCopies.copies[i];
@@ -761,10 +745,36 @@ namespace dawn_native { namespace metal {
                     return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation.");
                 }
 
-                default: {
-                    UNREACHABLE();
+                case Command::InsertDebugMarker: {
+                    // MTLCommandBuffer does not implement insertDebugSignpost
+                    SkipCommand(&mCommands, type);
                     break;
                 }
+
+                case Command::PopDebugGroup: {
+                    mCommands.NextCommand<PopDebugGroupCmd>();
+
+                    if (@available(macos 10.13, *)) {
+                        [commandContext->GetCommands() popDebugGroup];
+                    }
+                    break;
+                }
+
+                case Command::PushDebugGroup: {
+                    PushDebugGroupCmd* cmd = mCommands.NextCommand<PushDebugGroupCmd>();
+                    char* label = mCommands.NextData<char>(cmd->length + 1);
+
+                    if (@available(macos 10.13, *)) {
+                        NSString* mtlLabel = [[NSString alloc] initWithUTF8String:label];
+                        [commandContext->GetCommands() pushDebugGroup:mtlLabel];
+                        [mtlLabel release];
+                    }
+
+                    break;
+                }
+
+                default:
+                    UNREACHABLE();
             }
         }
 
@@ -979,6 +989,7 @@ namespace dawn_native { namespace metal {
         RenderPipeline* lastPipeline = nullptr;
         id<MTLBuffer> indexBuffer = nil;
         uint32_t indexBufferBaseOffset = 0;
+        wgpu::IndexFormat indexBufferFormat = wgpu::IndexFormat::Undefined;
         StorageBufferLengthTracker storageBufferLengths = {};
         VertexBufferTracker vertexBuffers(&storageBufferLengths);
         BindGroupTracker bindGroups(&storageBufferLengths);
@@ -1015,12 +1026,19 @@ namespace dawn_native { namespace metal {
 
                 case Command::DrawIndexed: {
                     DrawIndexedCmd* draw = iter->NextCommand<DrawIndexedCmd>();
-                    size_t formatSize =
-                        IndexFormatSize(lastPipeline->GetVertexStateDescriptor()->indexFormat);
 
                     vertexBuffers.Apply(encoder, lastPipeline, enableVertexPulling);
                     bindGroups.Apply(encoder);
                     storageBufferLengths.Apply(encoder, lastPipeline, enableVertexPulling);
+
+                    // If a index format was specified in setIndexBuffer always use it.
+                    wgpu::IndexFormat indexFormat = indexBufferFormat;
+                    if (indexFormat == wgpu::IndexFormat::Undefined) {
+                        // Otherwise use the pipeline's index format.
+                        // TODO(crbug.com/dawn/502): This path is deprecated.
+                        indexFormat = lastPipeline->GetVertexStateDescriptor()->indexFormat;
+                    }
+                    size_t formatSize = IndexFormatSize(indexFormat);
 
                     // The index and instance count must be non-zero, otherwise no-op
                     if (draw->indexCount != 0 && draw->instanceCount != 0) {
@@ -1029,7 +1047,7 @@ namespace dawn_native { namespace metal {
                         if (draw->baseVertex == 0 && draw->firstInstance == 0) {
                             [encoder drawIndexedPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                                                 indexCount:draw->indexCount
-                                                 indexType:lastPipeline->GetMTLIndexType()
+                                                 indexType:MTLIndexFormat(indexFormat)
                                                indexBuffer:indexBuffer
                                          indexBufferOffset:indexBufferBaseOffset +
                                                            draw->firstIndex * formatSize
@@ -1037,7 +1055,7 @@ namespace dawn_native { namespace metal {
                         } else {
                             [encoder drawIndexedPrimitives:lastPipeline->GetMTLPrimitiveTopology()
                                                 indexCount:draw->indexCount
-                                                 indexType:lastPipeline->GetMTLIndexType()
+                                                 indexType:MTLIndexFormat(indexFormat)
                                                indexBuffer:indexBuffer
                                          indexBufferOffset:indexBufferBaseOffset +
                                                            draw->firstIndex * formatSize
@@ -1071,10 +1089,18 @@ namespace dawn_native { namespace metal {
                     bindGroups.Apply(encoder);
                     storageBufferLengths.Apply(encoder, lastPipeline, enableVertexPulling);
 
+                    // If a index format was specified in setIndexBuffer always use it.
+                    wgpu::IndexFormat indexFormat = indexBufferFormat;
+                    if (indexFormat == wgpu::IndexFormat::Undefined) {
+                        // Otherwise use the pipeline's index format.
+                        // TODO(crbug.com/dawn/502): This path is deprecated.
+                        indexFormat = lastPipeline->GetVertexStateDescriptor()->indexFormat;
+                    }
+
                     Buffer* buffer = ToBackend(draw->indirectBuffer.Get());
                     id<MTLBuffer> indirectBuffer = buffer->GetMTLBuffer();
                     [encoder drawIndexedPrimitives:lastPipeline->GetMTLPrimitiveTopology()
-                                         indexType:lastPipeline->GetMTLIndexType()
+                                         indexType:MTLIndexFormat(indexFormat)
                                        indexBuffer:indexBuffer
                                  indexBufferOffset:indexBufferBaseOffset
                                     indirectBuffer:indirectBuffer
@@ -1142,6 +1168,9 @@ namespace dawn_native { namespace metal {
                     auto b = ToBackend(cmd->buffer.Get());
                     indexBuffer = b->GetMTLBuffer();
                     indexBufferBaseOffset = cmd->offset;
+                    // TODO(crbug.com/dawn/502): Once setIndexBuffer is required to specify an
+                    // index buffer format store as an MTLIndexType.
+                    indexBufferFormat = cmd->format;
                     break;
                 }
 
@@ -1211,10 +1240,12 @@ namespace dawn_native { namespace metal {
 
                 case Command::SetBlendColor: {
                     SetBlendColorCmd* cmd = mCommands.NextCommand<SetBlendColorCmd>();
-                    [encoder setBlendColorRed:cmd->color.r
-                                        green:cmd->color.g
-                                         blue:cmd->color.b
-                                        alpha:cmd->color.a];
+                    const std::array<double, 4> blendColor =
+                        ConvertToFloatToDoubleColor(cmd->color);
+                    [encoder setBlendColorRed:blendColor[0]
+                                        green:blendColor[1]
+                                         blue:blendColor[2]
+                                        alpha:blendColor[3]];
                     break;
                 }
 

@@ -96,9 +96,8 @@ void av1_single_motion_search(const AV1_COMP *const cpi, MACROBLOCK *x,
     start_mv = get_fullmv_from_mv(&ref_mv);
 
   // cand stores start_mv and all possible MVs in a SB.
-  cand_mv_t cand[MAX_MC_FLOW_BLK_IN_SB * MAX_MC_FLOW_BLK_IN_SB + 1] = {
-    { { 0, 0 }, 0 }
-  };
+  cand_mv_t cand[MAX_TPL_BLK_IN_SB * MAX_TPL_BLK_IN_SB + 1] = { { { 0, 0 },
+                                                                  0 } };
   cand[0].fmv = start_mv;
   int cnt = 1;
   int total_weight = 0;
@@ -107,7 +106,8 @@ void av1_single_motion_search(const AV1_COMP *const cpi, MACROBLOCK *x,
       mbmi->motion_mode == SIMPLE_TRANSLATION) {
     SuperBlockEnc *sb_enc = &x->sb_enc;
     if (sb_enc->tpl_data_count) {
-      const BLOCK_SIZE tpl_bsize = convert_length_to_bsize(MC_FLOW_BSIZE_1D);
+      const BLOCK_SIZE tpl_bsize =
+          convert_length_to_bsize(cpi->tpl_data.tpl_bsize_1d);
       const int tplw = mi_size_wide[tpl_bsize];
       const int tplh = mi_size_high[tpl_bsize];
       const int nw = mi_size_wide[bsize] / tplw;
@@ -163,7 +163,8 @@ void av1_single_motion_search(const AV1_COMP *const cpi, MACROBLOCK *x,
   // Further reduce the search range.
   if (search_range < INT_MAX) {
     const search_site_config *search_site_cfg =
-        &mv_search_params->search_site_cfg[SS_CFG_SRC];
+        &mv_search_params
+             ->search_site_cfg[SS_CFG_SRC][cpi->sf.mv_sf.search_method];
     // Max step_param is search_site_cfg->num_search_steps.
     if (search_range < 1) {
       step_param = search_site_cfg->num_search_steps;
@@ -182,7 +183,7 @@ void av1_single_motion_search(const AV1_COMP *const cpi, MACROBLOCK *x,
   // Allow more mesh searches for screen content type on the ARF.
   const int fine_search_interval = use_fine_search_interval(cpi);
   const search_site_config *src_search_sites =
-      &mv_search_params->search_site_cfg[SS_CFG_SRC];
+      mv_search_params->search_site_cfg[SS_CFG_SRC];
   FULLPEL_MOTION_SEARCH_PARAMS full_ms_params;
   av1_make_default_fullpel_ms_params(&full_ms_params, cpi, x, bsize, &ref_mv,
                                      src_search_sites, fine_search_interval);
@@ -746,7 +747,7 @@ int_mv av1_simple_motion_search(AV1_COMP *const cpi, MACROBLOCK *x, int mi_row,
                  cpi->sf.part_sf.simple_motion_search_reduce_search_steps,
              MAX_MVSEARCH_STEPS - 2);
   const search_site_config *src_search_sites =
-      &cpi->mv_search_params.search_site_cfg[SS_CFG_SRC];
+      cpi->mv_search_params.search_site_cfg[SS_CFG_SRC];
   int cost_list[5];
   const int ref_idx = 0;
   int var;

@@ -47,27 +47,21 @@ bool LazyYUVImage::reset(sk_sp<SkData> data, GrMipmapped mipmapped) {
         return false;
     }
 
-    if (!codec->queryYUVA8(&fSizeInfo, fComponents, &fColorSpace)) {
+    SkYUVAPixmapInfo yuvaPixmapInfo;
+    if (!codec->queryYUVAInfo(SkYUVAPixmapInfo::SupportedDataTypes::All(), &yuvaPixmapInfo)) {
+        return false;
+    }
+    fPixmaps = SkYUVAPixmaps::Allocate(yuvaPixmapInfo);
+    if (!fPixmaps.isValid()) {
         return false;
     }
 
-    fPlaneData.reset(fSizeInfo.computeTotalBytes());
-    void* planes[SkYUVASizeInfo::kMaxCount];
-    fSizeInfo.computePlanes(fPlaneData.get(), planes);
-    if (!codec->getYUVA8Planes(fSizeInfo, fComponents, planes)) {
+    if (!codec->getYUVAPlanes(fPixmaps)) {
         return false;
     }
 
-    for (int i = 0; i < SkYUVASizeInfo::kMaxCount; ++i) {
-        if (fSizeInfo.fSizes[i].isEmpty()) {
-            fPlanes[i].reset();
-        } else {
-            SkASSERT(planes[i]);
-            auto planeInfo = SkImageInfo::Make(fSizeInfo.fSizes[i].fWidth,
-                                               fSizeInfo.fSizes[i].fHeight,
-                                               kGray_8_SkColorType, kOpaque_SkAlphaType, nullptr);
-            fPlanes[i].reset(planeInfo, planes[i], fSizeInfo.fWidthBytes[i]);
-        }
+    if (!fPixmaps.toLegacy(&fSizeInfo, fComponents)) {
+        return false;
     }
     // The SkPixmap data is fully configured now for MakeFromYUVAPixmaps once we get a GrContext
     return true;
@@ -81,14 +75,7 @@ bool LazyYUVImage::ensureYUVImage(GrRecordingContext* rContext) {
         return true; // Have already made a YUV image valid for this context.
     }
     // Try to make a new YUV image for this context.
-    fYUVImage = SkImage::MakeFromYUVAPixmaps(rContext->priv().backdoor(),
-                                             fColorSpace,
-                                             fPlanes,
-                                             fComponents,
-                                             fSizeInfo.fSizes[0],
-                                             kTopLeft_GrSurfaceOrigin,
-                                             static_cast<bool>(fMipmapped),
-                                             false);
+    fYUVImage = SkImage::MakeFromYUVAPixmaps(rContext, fPixmaps, fMipmapped, false, nullptr);
     return fYUVImage != nullptr;
 }
 

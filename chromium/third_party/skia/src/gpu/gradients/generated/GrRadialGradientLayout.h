@@ -27,6 +27,7 @@ public:
     GrRadialGradientLayout(const GrRadialGradientLayout& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "RadialGradientLayout"; }
+    bool usesExplicitReturn() const override;
 
 private:
     GrRadialGradientLayout()
@@ -41,6 +42,6 @@ private:
     SkString onDumpInfo() const override;
 #endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 #endif

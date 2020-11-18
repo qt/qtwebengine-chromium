@@ -79,7 +79,8 @@ public:
             const SkRect* subset,
             const SkRect* domain,
             GrSamplerState::WrapMode wrapX,
-            GrSamplerState::WrapMode wrapY) = 0;
+            GrSamplerState::WrapMode wrapY,
+            SkImage::CubicResampler kernel) = 0;
 
     /**
      * Returns a texture view, possibly with MIP maps. The request for MIP maps may not be honored
@@ -117,7 +118,8 @@ protected:
             const SkRect* subset,
             const SkRect* domain,
             GrSamplerState::WrapMode wrapX,
-            GrSamplerState::WrapMode wrapY);
+            GrSamplerState::WrapMode wrapY,
+            SkImage::CubicResampler kernel);
 
     GrRecordingContext* context() const { return fContext; }
 
@@ -127,7 +129,7 @@ private:
     GrRecordingContext* fContext;
     const GrImageInfo fImageInfo;
 
-    typedef SkNoncopyable INHERITED;
+    using INHERITED = SkNoncopyable;
 };
 
 #endif

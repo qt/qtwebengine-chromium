@@ -20,7 +20,10 @@ namespace quic {
 QuicReceiveControlStream::QuicReceiveControlStream(
     PendingStream* pending,
     QuicSpdySession* spdy_session)
-    : QuicStream(pending, READ_UNIDIRECTIONAL, /*is_static=*/true),
+    : QuicStream(pending,
+                 spdy_session,
+                 READ_UNIDIRECTIONAL,
+                 /*is_static=*/true),
       settings_frame_received_(false),
       decoder_(this),
       spdy_session_(spdy_session) {
@@ -104,13 +107,6 @@ bool QuicReceiveControlStream::OnGoAwayFrame(const GoAwayFrame& frame) {
   if (!settings_frame_received_) {
     stream_delegate()->OnStreamError(QUIC_HTTP_MISSING_SETTINGS_FRAME,
                                      "GOAWAY frame received before SETTINGS.");
-    return false;
-  }
-
-  if (GetQuicReloadableFlag(quic_http3_goaway_new_behavior)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_http3_goaway_new_behavior);
-  } else if (spdy_session()->perspective() == Perspective::IS_SERVER) {
-    OnWrongFrame("Go Away");
     return false;
   }
 

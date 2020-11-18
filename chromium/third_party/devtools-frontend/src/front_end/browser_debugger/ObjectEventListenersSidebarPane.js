@@ -80,11 +80,21 @@ export class ObjectEventListenersSidebarPane extends UI.Widget.VBox {
               includeCommandLineAPI: false,
               silent: true,
               returnByValue: false,
-              generatePreview: false
+              generatePreview: false,
+              timeout: undefined,
+              throwOnSideEffect: undefined,
+              disableBreaks: undefined,
+              replMode: undefined,
+              allowUnsafeEvalBlockedByCSP: undefined,
             },
             /* userGesture */ false,
             /* awaitPromise */ false)
-        .then(result => result.object && !result.exceptionDetails ? result.object : null);
+        .then(result => {
+          if ('error' in result || result.exceptionDetails) {
+            return null;
+          }
+          return result.object;
+        });
   }
 
   /**

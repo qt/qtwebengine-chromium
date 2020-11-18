@@ -295,7 +295,7 @@
       "location": "elements-sidebar",
       "id": "elements.layout",
       "title": "Layout",
-      "order": 11,
+      "order": 4,
       "hasToolbar": false,
       "persistence": "permanent",
       "className": "Elements.LayoutSidebarPane"
@@ -307,9 +307,7 @@
     "inline_editor",
     "color_picker",
     "event_listeners"
-  ],
-  "skip_rollup": true,
-  "modules": [
+  ],  "modules": [
     "elements.js",
     "elements-legacy.js",
     "InspectElementModeController.js",
@@ -333,12 +331,14 @@
     "ComputedStyleWidget.js",
     "ComputedStyleProperty_bridge.js",
     "ComputedStyleTrace_bridge.js",
+    "PropertyNameCategories.js",
     "ElementsPanel.js",
     "ClassesPaneWidget.js",
     "ElementStatePaneWidget.js",
     "ElementsTreeElementHighlighter.js",
     "ImagePreviewPopover.js",
     "ElementsBreadcrumbs_bridge.js",
+    "ElementsPanelLink_bridge.js",
     "LayoutSidebarPane.js",
     "LayoutPane_bridge.js"
   ],

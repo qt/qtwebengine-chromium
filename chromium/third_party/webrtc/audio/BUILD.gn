@@ -92,6 +92,7 @@ rtc_library("audio") {
     "../rtc_base/experiments:field_trial_parser",
     "../rtc_base/synchronization:mutex",
     "../rtc_base/synchronization:sequence_checker",
+    "../rtc_base/system:no_unique_address",
     "../rtc_base/task_utils:to_queued_task",
     "../system_wrappers",
     "../system_wrappers:field_trial",
@@ -254,7 +255,7 @@ if (rtc_include_tests) {
         data += [ "${root_out_dir}/low_bandwidth_audio_test" ]
       }
 
-      if (is_linux || is_android) {
+      if (is_linux || is_chromeos || is_android) {
         data += [
           "../tools_webrtc/audio_quality/linux/PolqaOem64",
           "../tools_webrtc/audio_quality/linux/pesq",

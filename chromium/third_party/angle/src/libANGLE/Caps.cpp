@@ -137,6 +137,8 @@ Extensions::Extensions() = default;
 
 Extensions::Extensions(const Extensions &other) = default;
 
+Extensions &Extensions::operator=(const Extensions &other) = default;
+
 std::vector<std::string> Extensions::getStrings() const
 {
     std::vector<std::string> extensionStrings;
@@ -1017,6 +1019,8 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_EXT_gpu_shader5"] = enableableExtension(&Extensions::gpuShader5EXT);
         map["GL_APPLE_clip_distance"] = enableableExtension(&Extensions::clipDistanceAPPLE);
         map["GL_EXT_EGL_image_array"] = enableableExtension(&Extensions::eglImageArray);
+        map["GL_EXT_buffer_storage"] = enableableExtension(&Extensions::bufferStorageEXT);
+        map["GL_NV_robustness_video_memory_purge"] = esOnlyExtension(&Extensions::robustnessVideoMemoryPurgeNV);
         // GLES1 extensions
         map["GL_OES_point_size_array"] = enableableExtension(&Extensions::pointSizeArrayOES);
         map["GL_OES_texture_cube_map"] = enableableExtension(&Extensions::textureCubeMapOES);
@@ -1027,6 +1031,7 @@ const ExtensionInfoMap &GetExtensionInfoMap()
         map["GL_WEBGL_video_texture"] = enableableExtension(&Extensions::webglVideoTexture);
         map["GL_OES_texture_cube_map_array"] = enableableExtension(&Extensions::textureCubeMapArrayOES);
         map["GL_EXT_texture_cube_map_array"] = enableableExtension(&Extensions::textureCubeMapArrayEXT);
+        map["GL_EXT_shadow_samplers"] = enableableExtension(&Extensions::shadowSamplersEXT);
         // clang-format on
 
 #if defined(ANGLE_ENABLE_ASSERTS)
@@ -1047,6 +1052,8 @@ const ExtensionInfoMap &GetExtensionInfoMap()
 TypePrecision::TypePrecision() = default;
 
 TypePrecision::TypePrecision(const TypePrecision &other) = default;
+
+TypePrecision &TypePrecision::operator=(const TypePrecision &other) = default;
 
 void TypePrecision::setIEEEFloat()
 {
@@ -1387,6 +1394,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_ANDROID_recordable",                              recordable,                         &extensionStrings);
     InsertExtensionString("EGL_ANGLE_power_preference",                          powerPreference,                    &extensionStrings);
     InsertExtensionString("EGL_ANGLE_image_d3d11_texture",                       imageD3D11Texture,                  &extensionStrings);
+    InsertExtensionString("EGL_ANDROID_create_native_client_buffer",             createNativeClientBufferANDROID,    &extensionStrings);
     InsertExtensionString("EGL_ANDROID_get_native_client_buffer",                getNativeClientBufferANDROID,       &extensionStrings);
     InsertExtensionString("EGL_ANDROID_native_fence_sync",                       nativeFenceSyncANDROID,             &extensionStrings);
     InsertExtensionString("EGL_ANGLE_create_context_backwards_compatible",       createContextBackwardsCompatible,   &extensionStrings);
@@ -1396,6 +1404,7 @@ std::vector<std::string> DisplayExtensions::getStrings() const
     InsertExtensionString("EGL_EXT_image_dma_buf_import",                        imageDmaBufImportEXT,               &extensionStrings);
     InsertExtensionString("EGL_EXT_image_dma_buf_import_modifiers",              imageDmaBufImportModifiersEXT,      &extensionStrings);
     InsertExtensionString("EGL_NOK_texture_from_pixmap",                         textureFromPixmapNOK,               &extensionStrings);
+    InsertExtensionString("EGL_NV_robustness_video_memory_purge",                robustnessVideoMemoryPurgeNV,               &extensionStrings);
     // clang-format on
 
     return extensionStrings;

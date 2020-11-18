@@ -40,6 +40,31 @@ import {Capability, SDKModel, Target, Type} from './SDKModel.js';  // eslint-dis
 import {SourceMapManager} from './SourceMapManager.js';
 
 /**
+*  @param {!Array<!LocationRange>} locationRanges
+*  @return {!Array<!LocationRange>}
+*/
+export function sortAndMergeRanges(locationRanges) {
+  if (locationRanges.length === 0) {
+    return [];
+  }
+  locationRanges.sort(LocationRange.comparator);
+  let prev = locationRanges[0];
+  const merged = [];
+  for (let i = 1; i < locationRanges.length; ++i) {
+    const current = locationRanges[i];
+    if (prev.overlap(current)) {
+      const largerEnd = prev.end.compareTo(current.end) > 0 ? prev.end : current.end;
+      prev = new LocationRange(prev.scriptId, prev.start, largerEnd);
+    } else {
+      merged.push(prev);
+      prev = current;
+    }
+  }
+  merged.push(prev);
+  return merged;
+}
+
+/**
  * TODO(bmeurer): Introduce a dedicated {DebuggerLocationRange} class or something!
  *
  * @param {!Location} location
@@ -103,8 +128,6 @@ export class DebuggerModel extends SDKModel {
     /** @type {!Common.ObjectWrapper.ObjectWrapper} */
     this._breakpointResolvedEventTarget = new Common.ObjectWrapper.ObjectWrapper();
 
-    /** @type {!Array<!{start: !Location, end: !Location}>} */
-    this._autoStepSkipList = [];
     /** @type {boolean} */
     this._autoStepOver = false;
 
@@ -293,7 +316,7 @@ export class DebuggerModel extends SDKModel {
   }
 
   /**
-   *  @return {!Promise<!Array<!{start: !Location, end: !Location}>>}
+   *  @return {!Promise<!Array<!LocationRange>>}
    */
   async _computeAutoStepSkipList() {
     // @ts-ignore
@@ -308,7 +331,13 @@ export class DebuggerModel extends SDKModel {
         if (ranges) {
           // TODO(bmeurer): Remove the {rawLocation} from the {ranges}?
           // @ts-ignore
-          return ranges.filter(range => contained(rawLocation, range));
+          const filtered = ranges.filter(range => contained(rawLocation, range));
+          const skipList = filtered.map(
+              // @ts-ignore
+              location => new LocationRange(
+                  location.start.scriptId, new ScriptPosition(location.start.lineNumber, location.start.columnNumber),
+                  new ScriptPosition(location.end.lineNumber, location.end.columnNumber)));
+          return sortAndMergeRanges(skipList);
         }
       }
     }
@@ -316,16 +345,16 @@ export class DebuggerModel extends SDKModel {
   }
 
   async stepInto() {
-    this._autoStepSkipList = await this._computeAutoStepSkipList();
-    this._agent.invoke_stepInto({breakOnAsyncCall: false});
+    const skipList = await this._computeAutoStepSkipList();
+    this._agent.invoke_stepInto({breakOnAsyncCall: false, skipList: skipList.map(x => x.payload())});
   }
 
   async stepOver() {
     // Mark that in case of auto-stepping, we should be doing
     // step-over instead of step-in.
     this._autoStepOver = true;
-    this._autoStepSkipList = await this._computeAutoStepSkipList();
-    this._agent.invoke_stepOver({});
+    const skipList = await this._computeAutoStepSkipList();
+    this._agent.invoke_stepOver({skipList: skipList.map(x => x.payload())});
   }
 
   stepOut() {
@@ -517,7 +546,6 @@ export class DebuggerModel extends SDKModel {
     this._stringMap.clear();
     this._discardableScripts = [];
     this._autoStepOver = false;
-    this._autoStepSkipList = [];
   }
 
   /**
@@ -621,12 +649,6 @@ export class DebuggerModel extends SDKModel {
     this._isPausing = false;
     this._debuggerPausedDetails = debuggerPausedDetails;
     if (debuggerPausedDetails) {
-      const rawLocation = debuggerPausedDetails.callFrames[0].location();
-      for (const range of this._autoStepSkipList) {
-        if (contained(rawLocation, range)) {
-          return false;
-        }
-      }
       if (this._beforePausedCallback) {
         if (!this._beforePausedCallback.call(null, debuggerPausedDetails)) {
           return false;
@@ -643,7 +665,6 @@ export class DebuggerModel extends SDKModel {
       // If we resolved a location in auto-stepping callback, reset the
       // step-over marker.
       this._autoStepOver = false;
-      this._autoStepSkipList = [];
       this.dispatchEventToListeners(Events.DebuggerPaused, this);
       this.setSelectedCallFrame(debuggerPausedDetails.callFrames[0]);
     } else {
@@ -1334,6 +1355,101 @@ export class Location {
   }
 }
 
+export class ScriptPosition {
+  /**
+   * @param {number} lineNumber
+   * @param {number} columnNumber
+   */
+  constructor(lineNumber, columnNumber) {
+    this.lineNumber = lineNumber;
+    this.columnNumber = columnNumber;
+  }
+
+  /**
+   * @return {!Protocol.Debugger.ScriptPosition}
+   */
+  payload() {
+    return {lineNumber: this.lineNumber, columnNumber: this.columnNumber};
+  }
+
+  /**
+  * @param {!ScriptPosition} other
+  * @return {number}
+  */
+  compareTo(other) {
+    if (this.lineNumber !== other.lineNumber) {
+      return this.lineNumber - other.lineNumber;
+    }
+    return this.columnNumber - other.columnNumber;
+  }
+}
+
+export class LocationRange {
+  /**
+   * @param {string} scriptId
+   * @param {!ScriptPosition} start
+   * @param {!ScriptPosition} end
+   */
+  constructor(scriptId, start, end) {
+    this.scriptId = scriptId;
+    this.start = start;
+    this.end = end;
+  }
+
+  /**
+   * @return {!Protocol.Debugger.LocationRange}
+   */
+  payload() {
+    return {scriptId: this.scriptId, start: this.start.payload(), end: this.end.payload()};
+  }
+
+  /**
+   * @param {!LocationRange} location1
+   * @param {!LocationRange} location2
+   * @return {number}
+   */
+  static comparator(location1, location2) {
+    return location1.compareTo(location2);
+  }
+
+  /**
+   * @param {!LocationRange} other
+   * @return {number}
+   */
+  compareTo(other) {
+    if (this.scriptId !== other.scriptId) {
+      return this.scriptId > other.scriptId ? 1 : -1;
+    }
+
+    const startCmp = this.start.compareTo(other.start);
+    if (startCmp) {
+      return startCmp;
+    }
+
+    return this.end.compareTo(other.end);
+  }
+
+  /**
+   * @param {!LocationRange} other
+   * @return boolean
+   */
+  overlap(other) {
+    if (this.scriptId !== other.scriptId) {
+      return false;
+    }
+
+    const startCmp = this.start.compareTo(other.start);
+    if (startCmp < 0) {
+      return this.end.compareTo(other.start) >= 0;
+    }
+    if (startCmp > 0) {
+      return this.start.compareTo(other.end) <= 0;
+    }
+
+    return true;
+  }
+}
+
 export class BreakLocation extends Location {
   /**
    * @param {!DebuggerModel} debuggerModel
@@ -1368,7 +1484,7 @@ export class CallFrame {
    */
   constructor(debuggerModel, script, payload) {
     this.debuggerModel = debuggerModel;
-    /** @type {?Array<!RemoteObjectImpl>} */
+    /** @type {?Array<!ScopeChainEntry>} */
     this.sourceScopeChain = null;
     this._script = script;
     this._payload = payload;
@@ -1533,6 +1649,71 @@ export class CallFrame {
   }
 }
 
+/**
+ * @interface
+ */
+export class ScopeChainEntry {
+  /**
+   * @return {!CallFrame}
+   */
+  callFrame() {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * @return {string}
+   */
+  type() {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * @return {string}
+   */
+  typeName() {
+    throw new Error('not implemented');
+  }
+
+
+  /**
+   * @return {string|undefined}
+   */
+  name() {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * @return {?Location}
+   */
+  startLocation() {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * @return {?Location}
+   */
+  endLocation() {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * @return {!RemoteObject}
+   */
+  object() {
+    throw new Error('not implemented');
+  }
+
+  /**
+   * @return {string}
+   */
+  description() {
+    throw new Error('not implemented');
+  }
+}
+
+/**
+ * @implements {ScopeChainEntry}
+ */
 export class Scope {
   /**
    * @param {!CallFrame} callFrame
@@ -1553,6 +1734,7 @@ export class Scope {
   }
 
   /**
+   * @override
    * @return {!CallFrame}
    */
   callFrame() {
@@ -1560,6 +1742,7 @@ export class Scope {
   }
 
   /**
+   * @override
    * @return {string}
    */
   type() {
@@ -1567,6 +1750,7 @@ export class Scope {
   }
 
   /**
+   * @override
    * @return {string}
    */
   typeName() {
@@ -1595,6 +1779,7 @@ export class Scope {
 
 
   /**
+   * @override
    * @return {string|undefined}
    */
   name() {
@@ -1602,6 +1787,7 @@ export class Scope {
   }
 
   /**
+   * @override
    * @return {?Location}
    */
   startLocation() {
@@ -1609,6 +1795,7 @@ export class Scope {
   }
 
   /**
+   * @override
    * @return {?Location}
    */
   endLocation() {
@@ -1616,6 +1803,7 @@ export class Scope {
   }
 
   /**
+   * @override
    * @return {!RemoteObject}
    */
   object() {
@@ -1637,6 +1825,7 @@ export class Scope {
   }
 
   /**
+   * @override
    * @return {string}
    */
   description() {

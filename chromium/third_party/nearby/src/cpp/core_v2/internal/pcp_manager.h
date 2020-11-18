@@ -18,6 +18,7 @@
 #include <string>
 
 #include "core_v2/internal/base_pcp_handler.h"
+#include "core_v2/internal/bwu_manager.h"
 #include "core_v2/internal/client_proxy.h"
 #include "core_v2/internal/endpoint_channel_manager.h"
 #include "core_v2/internal/endpoint_manager.h"
@@ -43,24 +44,25 @@ namespace connections {
 class PcpManager {
  public:
   PcpManager(Mediums& mediums, EndpointChannelManager& channel_manager,
-             EndpointManager& endpoint_manager);
+             EndpointManager& endpoint_manager, BwuManager& bwu_manager);
   ~PcpManager();
 
-  Status StartAdvertising(ClientProxy* client_proxy, const string& service_id,
+  Status StartAdvertising(ClientProxy* client, const string& service_id,
                           const ConnectionOptions& options,
                           const ConnectionRequestInfo& info);
-  void StopAdvertising(ClientProxy* client_proxy);
+  void StopAdvertising(ClientProxy* client);
 
-  Status StartDiscovery(ClientProxy* client_proxy, const string& service_id,
+  Status StartDiscovery(ClientProxy* client, const string& service_id,
                         const ConnectionOptions& options,
                         DiscoveryListener listener);
-  void StopDiscovery(ClientProxy* client_proxy);
+  void StopDiscovery(ClientProxy* client);
 
-  Status RequestConnection(ClientProxy* client_proxy, const string& endpoint_id,
-                           const ConnectionRequestInfo& info);
-  Status AcceptConnection(ClientProxy* client_proxy, const string& endpoint_id,
+  Status RequestConnection(ClientProxy* client, const string& endpoint_id,
+                           const ConnectionRequestInfo& info,
+                           const ConnectionOptions& options);
+  Status AcceptConnection(ClientProxy* client, const string& endpoint_id,
                           const PayloadListener& payload_listener);
-  Status RejectConnection(ClientProxy* client_proxy, const string& endpoint_id);
+  Status RejectConnection(ClientProxy* client, const string& endpoint_id);
 
   proto::connections::Medium GetBandwidthUpgradeMedium();
   void DisconnectFromEndpointManager();

@@ -103,9 +103,42 @@ enum class TextureDimension
     TEX_2D_ARRAY,
 };
 
+// A maximum offset of 4096 covers almost every Vulkan driver on desktop (80%) and mobile (99%). The
+// next highest values to meet native drivers are 16 bits or 32 bits.
+constexpr uint32_t kAttributeOffsetMaxBits = 15;
+
 namespace vk
 {
 struct Format;
+
+// A packed attachment index interface with vulkan API
+class PackedAttachmentIndex final
+{
+  public:
+    explicit constexpr PackedAttachmentIndex(uint32_t index) : mAttachmentIndex(index) {}
+    constexpr PackedAttachmentIndex(const PackedAttachmentIndex &other) = default;
+    constexpr PackedAttachmentIndex &operator=(const PackedAttachmentIndex &other) = default;
+
+    constexpr uint32_t get() const { return mAttachmentIndex; }
+    PackedAttachmentIndex &operator++()
+    {
+        ++mAttachmentIndex;
+        return *this;
+    }
+    constexpr bool operator==(const PackedAttachmentIndex &other) const
+    {
+        return mAttachmentIndex == other.mAttachmentIndex;
+    }
+    constexpr bool operator!=(const PackedAttachmentIndex &other) const
+    {
+        return mAttachmentIndex != other.mAttachmentIndex;
+    }
+
+  private:
+    uint32_t mAttachmentIndex;
+};
+static constexpr PackedAttachmentIndex kAttachmentIndexInvalid = PackedAttachmentIndex(-1);
+static constexpr PackedAttachmentIndex kAttachmentIndexZero    = PackedAttachmentIndex(0);
 
 // Prepend ptr to the pNext chain at chainStart
 template <typename VulkanStruct1, typename VulkanStruct2>
@@ -646,8 +679,8 @@ using SpecializationConstantMap = angle::PackedEnumMap<sh::vk::SpecializationCon
 
 void MakeDebugUtilsLabel(GLenum source, const char *marker, VkDebugUtilsLabelEXT *label);
 
-constexpr size_t kClearValueDepthIndex   = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
-constexpr size_t kClearValueStencilIndex = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1;
+constexpr size_t kUnpackedDepthIndex   = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS;
+constexpr size_t kUnpackedStencilIndex = gl::IMPLEMENTATION_MAX_DRAW_BUFFERS + 1;
 
 class ClearValuesArray final
 {
@@ -668,24 +701,17 @@ class ClearValuesArray final
     }
 
     bool test(size_t index) const { return mEnabled.test(index); }
-    bool testDepth() const { return mEnabled.test(kClearValueDepthIndex); }
-    bool testStencil() const { return mEnabled.test(kClearValueStencilIndex); }
+    bool testDepth() const { return mEnabled.test(kUnpackedDepthIndex); }
+    bool testStencil() const { return mEnabled.test(kUnpackedStencilIndex); }
 
     const VkClearValue &operator[](size_t index) const { return mValues[index]; }
 
-    float getDepthValue() const { return mValues[kClearValueDepthIndex].depthStencil.depth; }
-    uint32_t getStencilValue() const
-    {
-        return mValues[kClearValueStencilIndex].depthStencil.stencil;
-    }
+    float getDepthValue() const { return mValues[kUnpackedDepthIndex].depthStencil.depth; }
+    uint32_t getStencilValue() const { return mValues[kUnpackedStencilIndex].depthStencil.stencil; }
 
     const VkClearValue *data() const { return mValues.data(); }
     bool empty() const { return mEnabled.none(); }
-
-    gl::DrawBufferMask getEnabledColorAttachmentsMask() const
-    {
-        return gl::DrawBufferMask(mEnabled.to_ulong());
-    }
+    bool any() const { return mEnabled.any(); }
 
   private:
     gl::AttachmentArray<VkClearValue> mValues;
@@ -754,7 +780,17 @@ struct PerfCounters
     uint32_t writeDescriptorSets;
     uint32_t flushedOutsideRenderPassCommandBuffers;
     uint32_t resolveImageCommands;
+    uint32_t depthClears;
+    uint32_t depthLoads;
+    uint32_t depthStores;
+    uint32_t stencilClears;
+    uint32_t stencilLoads;
+    uint32_t stencilStores;
+    uint32_t readOnlyDepthStencilRenderPasses;
 };
+
+// A Vulkan image level index.
+using LevelIndex = gl::LevelIndexWrapper<uint32_t>;
 }  // namespace vk
 
 #if !defined(ANGLE_SHARED_LIBVULKAN)
@@ -764,6 +800,7 @@ void InitDebugReportEXTFunctions(VkInstance instance);
 void InitGetPhysicalDeviceProperties2KHRFunctions(VkInstance instance);
 void InitTransformFeedbackEXTFunctions(VkDevice device);
 void InitSamplerYcbcrKHRFunctions(VkDevice device);
+void InitRenderPass2KHRFunctions(VkDevice device);
 
 #    if defined(ANGLE_PLATFORM_FUCHSIA)
 // VK_FUCHSIA_imagepipe_surface
@@ -838,6 +875,8 @@ void GetExtentsAndLayerCount(gl::TextureType textureType,
                              const gl::Extents &extents,
                              VkExtent3D *extentsOut,
                              uint32_t *layerCountOut);
+
+vk::LevelIndex GetLevelIndex(gl::LevelIndex levelGL, gl::LevelIndex baseLevel);
 }  // namespace gl_vk
 
 namespace vk_gl
@@ -862,6 +901,8 @@ void AddSampleCounts(VkSampleCountFlags sampleCounts, gl::SupportedSampleSet *ou
 GLuint GetMaxSampleCount(VkSampleCountFlags sampleCounts);
 // Return a supported sample count that's at least as large as the requested one.
 GLuint GetSampleCount(VkSampleCountFlags supportedCounts, GLuint requestedCount);
+
+gl::LevelIndex GetLevelIndex(vk::LevelIndex levelVk, gl::LevelIndex baseLevel);
 }  // namespace vk_gl
 
 }  // namespace rx

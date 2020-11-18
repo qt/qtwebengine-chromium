@@ -14,11 +14,15 @@ devtools_module("ui_utils") {
     "measured-scrollbar-width.js",
     "register-custom-element.js",
   ]
+
+  deps = [
+    "../../root:bundle",
+    "../../theme_support:bundle",
+  ]
 }
 
 devtools_entrypoint("bundle") {
   entrypoint = "utils.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":ui_utils" ]
 }

@@ -71,6 +71,15 @@ following changes which are not merged to upstream:
   - Implement slow IDCT using Arm NEON intrinsics
   - Precompute DCT block output pointers in IDCT functions
   - Implement fast IDCT using Arm NEON intrinsics
+  - Add Arm NEON implementation of h2v1_downsample
+  - Add Arm NEON implementation of h2v2_downsample
+  - Implement RGB->YCbCr using Arm NEON intrinsics
+  - Add Arm NEON implementation of RGB->Grayscale
+  - Add compiler-independent alignment macro
+  - Implement sample conversion using Arm NEON intrinsics
+  - Implement quantization using Arm NEON intrinsics
+  - Implement fast DCT using Arm NEON intrinsics
+  - Implement accurate DCT using Arm NEON intrinsics
 * Patches to enable running the upstream unit tests through gtest.
   The upstream unit tests are defined here under the section 'TESTS':
   https://github.com/libjpeg-turbo/libjpeg-turbo/blob/master/CMakeLists.txt

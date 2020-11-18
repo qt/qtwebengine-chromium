@@ -120,7 +120,7 @@ protected:
     }
 
 private:
-    typedef skiagm::GM INHERITED;
+    using INHERITED = skiagm::GM;
 };
 DEF_GM( return new ImagePictGM; )
 
@@ -292,9 +292,10 @@ protected:
         canvas->drawLine(r.left(), r.bottom(), r.right(), r.top(), paint);
     }
 
-    static void draw_as_bitmap(SkCanvas* canvas, SkImage* image, SkScalar x, SkScalar y) {
+    static void draw_as_bitmap(GrDirectContext* dContext, SkCanvas* canvas, SkImage* image,
+                               SkScalar x, SkScalar y) {
         SkBitmap bitmap;
-        if (as_IB(image)->getROPixels(&bitmap)) {
+        if (as_IB(image)->getROPixels(dContext, &bitmap)) {
             canvas->drawBitmap(bitmap, x, y);
         } else {
             draw_placeholder(canvas, x, y, image->width(), image->height());
@@ -312,18 +313,15 @@ protected:
             return;
         }
 
-        // CONTEXT TODO: remove this use of the 'backdoor' to create an image
-        GrContext* tmp = canvas->recordingContext()->priv().backdoor();
-
         // No API to draw a GrTexture directly, so we cheat and create a private image subclass
-        sk_sp<SkImage> texImage(new SkImage_Gpu(sk_ref_sp(tmp),
+        sk_sp<SkImage> texImage(new SkImage_Gpu(sk_ref_sp(canvas->recordingContext()),
                                                 image->uniqueID(), std::move(view),
                                                 image->colorType(), image->alphaType(),
                                                 image->refColorSpace()));
         canvas->drawImage(texImage.get(), x, y);
     }
 
-    void drawRow(SkCanvas* canvas, float scale) const {
+    void drawRow(GrDirectContext* dContext, SkCanvas* canvas, float scale) const {
         canvas->scale(scale, scale);
 
         SkMatrix matrix = SkMatrix::Translate(-100, -100);
@@ -335,36 +333,37 @@ protected:
         draw_as_tex(canvas, fImage.get(), 150, 0);
         draw_as_tex(canvas, fImageSubset.get(), 150+101, 0);
 
-        draw_as_bitmap(canvas, fImage.get(), 310, 0);
-        draw_as_bitmap(canvas, fImageSubset.get(), 310+101, 0);
+        draw_as_bitmap(dContext, canvas, fImage.get(), 310, 0);
+        draw_as_bitmap(dContext, canvas, fImageSubset.get(), 310+101, 0);
     }
 
     DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
-        if (!this->makeCaches(GrAsDirectContext(canvas->recordingContext()))) {
+        auto dContext = GrAsDirectContext(canvas->recordingContext());
+        if (!this->makeCaches(dContext)) {
             errorMsg->printf("Could not create cached images");
             return DrawResult::kSkip;
         }
 
         canvas->save();
             canvas->translate(20, 20);
-            this->drawRow(canvas, 1.0);
+            this->drawRow(dContext, canvas, 1.0);
         canvas->restore();
 
         canvas->save();
             canvas->translate(20, 150);
-            this->drawRow(canvas, 0.25f);
+            this->drawRow(dContext, canvas, 0.25f);
         canvas->restore();
 
         canvas->save();
             canvas->translate(20, 220);
-            this->drawRow(canvas, 2.0f);
+            this->drawRow(dContext, canvas, 2.0f);
         canvas->restore();
 
         return DrawResult::kOk;
     }
 
 private:
-    typedef skiagm::GM INHERITED;
+    using INHERITED = skiagm::GM;
 };
 
 DEF_GM( return new ImageCacheratorGM("picture", make_pic_generator); )

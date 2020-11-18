@@ -60,6 +60,7 @@ message ApplicationList {
   enum VmType {
     TERMINA = 0;
     PLUGIN_VM = 1;
+    BOREALIS = 2;
   }
 
   repeated App apps = 1;

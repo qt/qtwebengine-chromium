@@ -60,14 +60,3 @@ Persistence.PlatformFileSystem = PersistenceModule.PlatformFileSystem.PlatformFi
 
 /** @constructor */
 Persistence.WorkspaceSettingsTab = PersistenceModule.WorkspaceSettingsTab.WorkspaceSettingsTab;
-
-/**
- * @type {!PersistenceModule.IsolatedFileSystemManager.IsolatedFileSystemManager}
- */
-self.Persistence.isolatedFileSystemManager;
-
-/** @type {!PersistenceModule.NetworkPersistenceManager.NetworkPersistenceManager} */
-self.Persistence.networkPersistenceManager;
-
-/** @type {!PersistenceModule.Persistence.PersistenceImpl} */
-self.Persistence.persistence;

@@ -64,7 +64,7 @@ private:
     const SkImageFilter* getDisplacementInput() const { return getInput(0); }
     const SkImageFilter* getColorInput() const { return getInput(1); }
 
-    typedef SkImageFilter_Base INHERITED;
+    using INHERITED = SkImageFilter_Base;
 };
 
 // Shift values to extract channels from an SkColor (SkColorGetR, SkColorGetG, etc)
@@ -224,7 +224,7 @@ private:
     SkColorChannel fYChannelSelector;
     SkVector fScale;
 
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 
 }  // anonymous namespace
@@ -417,6 +417,9 @@ SkIRect SkDisplacementMapEffectImpl::onFilterNodeBounds(
 
 SkIRect SkDisplacementMapEffectImpl::onFilterBounds(
         const SkIRect& src, const SkMatrix& ctm, MapDirection dir, const SkIRect* inputRect) const {
+    if (kReverse_MapDirection == dir) {
+        return INHERITED::onFilterBounds(src, ctm, dir, inputRect);
+    }
     // Recurse only into color input.
     if (this->getColorInput()) {
         return this->getColorInput()->filterBounds(src, ctm, dir, inputRect);
@@ -441,7 +444,7 @@ private:
 
     UniformHandle fScaleUni;
 
-    typedef GrGLSLFragmentProcessor INHERITED;
+    using INHERITED = GrGLSLFragmentProcessor;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

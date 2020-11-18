@@ -137,7 +137,7 @@ FPDF_SetSystemFontInfo(FPDF_SYSFONTINFO* pFontInfoExt) {
 }
 
 FPDF_EXPORT const FPDF_CharsetFontMap* FPDF_CALLCONV FPDF_GetDefaultTTFMap() {
-  return reinterpret_cast<const FPDF_CharsetFontMap*>(CFX_Font::defaultTTFMap);
+  return reinterpret_cast<const FPDF_CharsetFontMap*>(CFX_Font::kDefaultTTFMap);
 }
 
 struct FPDF_SYSFONTINFO_DEFAULT final : public FPDF_SYSFONTINFO {
@@ -211,7 +211,7 @@ static void DefaultDeleteFont(struct _FPDF_SYSFONTINFO* pThis, void* hFont) {
 
 FPDF_EXPORT FPDF_SYSFONTINFO* FPDF_CALLCONV FPDF_GetDefaultSystemFontInfo() {
   std::unique_ptr<SystemFontInfoIface> pFontInfo =
-      SystemFontInfoIface::CreateDefault(nullptr);
+      CFX_GEModule::Get()->GetPlatform()->CreateDefaultSystemFontInfo();
   if (!pFontInfo)
     return nullptr;
 

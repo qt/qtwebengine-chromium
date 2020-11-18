@@ -23,12 +23,12 @@
 #include "modules/video_coding/inter_frame_delay.h"
 #include "modules/video_coding/jitter_estimator.h"
 #include "modules/video_coding/utility/decoded_frames_history.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/event.h"
 #include "rtc_base/experiments/rtt_mult_experiment.h"
 #include "rtc_base/numerics/sequence_number_util.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/synchronization/sequence_checker.h"
+#include "rtc_base/system/no_unique_address.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/task_utils/repeating_task.h"
 #include "rtc_base/thread_annotations.h"
@@ -49,6 +49,10 @@ class FrameBuffer {
   FrameBuffer(Clock* clock,
               VCMTiming* timing,
               VCMReceiveStatisticsCallback* stats_callback);
+
+  FrameBuffer() = delete;
+  FrameBuffer(const FrameBuffer&) = delete;
+  FrameBuffer& operator=(const FrameBuffer&) = delete;
 
   virtual ~FrameBuffer();
 
@@ -156,8 +160,8 @@ class FrameBuffer {
   EncodedFrame* CombineAndDeleteFrames(
       const std::vector<EncodedFrame*>& frames) const;
 
-  SequenceChecker construction_checker_;
-  SequenceChecker callback_checker_;
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker construction_checker_;
+  RTC_NO_UNIQUE_ADDRESS SequenceChecker callback_checker_;
 
   // Stores only undecoded frames.
   FrameMap frames_ RTC_GUARDED_BY(mutex_);
@@ -188,8 +192,6 @@ class FrameBuffer {
 
   // rtt_mult experiment settings.
   const absl::optional<RttMultExperiment::Settings> rtt_mult_settings_;
-
-  RTC_DISALLOW_IMPLICIT_CONSTRUCTORS(FrameBuffer);
 };
 
 }  // namespace video_coding

@@ -363,7 +363,7 @@ public:
         };
         std::vector<MarkedUniform> fCustomMatrixUniforms;
 
-        typedef GrGLSLGeometryProcessor INHERITED;
+        using INHERITED = GrGLSLGeometryProcessor;
     };
 
     void getGLSLProcessorKey(const GrShaderCaps& caps, GrProcessorKeyBuilder* b) const override {
@@ -431,7 +431,7 @@ private:
     int                          fCustomAttributeCount;
     const MarkedMatrices*        fCustomMatrices;
 
-    typedef GrGeometryProcessor INHERITED;
+    using INHERITED = GrGeometryProcessor;
 };
 
 class DrawVerticesOp final : public GrMeshDrawOp {
@@ -467,7 +467,8 @@ private:
                              SkArenaAlloc*,
                              const GrSurfaceProxyView* writeView,
                              GrAppliedClip&&,
-                             const GrXferProcessor::DstProxyView&) override;
+                             const GrXferProcessor::DstProxyView&,
+                             GrXferBarrierFlags renderPassXferBarriers) override;
 
     void onPrepareDraws(Target*) override;
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
@@ -533,7 +534,7 @@ private:
     GrSimpleMesh*  fMesh = nullptr;
     GrProgramInfo* fProgramInfo = nullptr;
 
-    typedef GrMeshDrawOp INHERITED;
+    using INHERITED = GrMeshDrawOp;
 };
 
 DrawVerticesOp::DrawVerticesOp(const Helper::MakeArgs& helperArgs,
@@ -634,10 +635,12 @@ void DrawVerticesOp::onCreateProgramInfo(const GrCaps* caps,
                                          SkArenaAlloc* arena,
                                          const GrSurfaceProxyView* writeView,
                                          GrAppliedClip&& appliedClip,
-                                         const GrXferProcessor::DstProxyView& dstProxyView) {
+                                         const GrXferProcessor::DstProxyView& dstProxyView,
+                                         GrXferBarrierFlags renderPassXferBarriers) {
     GrGeometryProcessor* gp = this->makeGP(arena);
     fProgramInfo = fHelper.createProgramInfo(caps, arena, writeView, std::move(appliedClip),
-                                             dstProxyView, gp, this->primitiveType());
+                                             dstProxyView, gp, this->primitiveType(),
+                                             renderPassXferBarriers);
 }
 
 void DrawVerticesOp::onPrepareDraws(Target* target) {

@@ -43,8 +43,9 @@ set(includedir 				${prefix}/include/usrsctp)
 set(CMAKE_REQUIRED_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMAKE_MACOSX_RPATH 		1)
 
+include(CheckCCompilerFlag)
+
 add_definitions(-D__Userspace__)
-add_definitions(-D__Userspace_os_${CMAKE_SYSTEM_NAME})
 add_definitions(-DSCTP_SIMPLE_ALLOCATOR)
 add_definitions(-DSCTP_PROCESS_LEVEL_LOCKS)
 
@@ -53,35 +54,22 @@ add_definitions(-DSCTP_PROCESS_LEVEL_LOCKS)
 # OS DEPENDENT
 #################################################
 
-check_c_compiler_flag(-Wno-address-of-packed-member has_wno_address_of_packet_member)
-if (has_wno_address_of_packet_member)
+check_c_compiler_flag(-Wno-address-of-packed-member has_wno_address_of_packed_member)
+if (has_wno_address_of_packed_member)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-address-of-packed-member")
+endif ()
+
+check_c_compiler_flag(-Wno-deprecated-declarations has_wno_deprecated_declarations)
+if (has_wno_deprecated_declarations)
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
 endif ()
 
 if (CMAKE_SYSTEM_NAME MATCHES "Linux")
 	add_definitions(-D_GNU_SOURCE)
 endif ()
 
-if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
-	add_definitions(-U__FreeBSD__)
-endif ()
-
 if (CMAKE_SYSTEM_NAME MATCHES "Darwin")
-	add_definitions(-U__APPLE__)
 	add_definitions(-D__APPLE_USE_RFC_2292)
-	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-deprecated-declarations")
-endif ()
-
-if (CMAKE_SYSTEM_NAME MATCHES "DragonFly")
-	add_definitions(-U__DragonFly__)
-endif ()
-
-if (CMAKE_SYSTEM_NAME MATCHES "NetBSD")
-	add_definitions(-U__NetBSD__)
-endif ()
-
-if (CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
-	add_definitions(-U__OpenBSD__)
 endif ()
 
 #################################################

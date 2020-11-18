@@ -11,14 +11,15 @@
 #include <vector>
 
 #include "absl/strings/str_cat.h"
+#include "cast/common/channel/cast_socket_message_port.h"
 #include "cast/common/channel/message_util.h"
-#include "cast/standalone_receiver/cast_socket_message_port.h"
 #include "cast/streaming/constants.h"
 #include "cast/streaming/offer_messages.h"
 #include "platform/base/tls_credentials.h"
 #include "platform/base/tls_listen_options.h"
 #include "util/json/json_serialization.h"
 #include "util/osp_logging.h"
+#include "util/trace_logging.h"
 
 namespace openscreen {
 namespace cast {
@@ -31,12 +32,12 @@ const TlsListenOptions kDefaultListenOptions{kDefaultMaxBacklogSize};
 
 CastAgent::CastAgent(
     TaskRunner* task_runner,
-    InterfaceInfo interface,
+    const InterfaceInfo& interface,
     DeviceAuthNamespaceHandler::CredentialsProvider* credentials_provider,
     TlsCredentials tls_credentials)
     : task_runner_(task_runner),
       credentials_provider_(credentials_provider),
-      tls_credentials_(tls_credentials) {
+      tls_credentials_(std::move(tls_credentials)) {
   const IPAddress address = interface.GetIpAddressV4()
                                 ? interface.GetIpAddressV4()
                                 : interface.GetIpAddressV6();
@@ -50,19 +51,21 @@ CastAgent::CastAgent(
 CastAgent::~CastAgent() = default;
 
 Error CastAgent::Start() {
+  TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneReceiver);
   OSP_CHECK(!current_session_);
-
-  auth_handler_ = MakeSerialDelete<DeviceAuthNamespaceHandler>(
-      task_runner_, credentials_provider_);
-  router_ = MakeSerialDelete<VirtualConnectionRouter>(task_runner_,
-                                                      &connection_manager_);
-  router_->AddHandlerForLocalId(kPlatformReceiverId, auth_handler_.get());
-  socket_factory_ = MakeSerialDelete<ReceiverSocketFactory>(task_runner_, this,
-                                                            router_.get());
 
   task_runner_->PostTask([this] {
     wake_lock_ = ScopedWakeLock::Create(task_runner_);
 
+    auth_handler_ = MakeSerialDelete<DeviceAuthNamespaceHandler>(
+        task_runner_, credentials_provider_);
+    router_ = MakeSerialDelete<VirtualConnectionRouter>(task_runner_,
+                                                        &connection_manager_);
+    message_port_ =
+        MakeSerialDelete<CastSocketMessagePort>(task_runner_, router_.get());
+    router_->AddHandlerForLocalId(kPlatformReceiverId, auth_handler_.get());
+    socket_factory_ = MakeSerialDelete<ReceiverSocketFactory>(
+        task_runner_, this, router_.get());
     connection_factory_ = SerialDeletePtr<TlsConnectionFactory>(
         task_runner_,
         TlsConnectionFactory::CreateFactory(socket_factory_.get(), task_runner_)
@@ -90,18 +93,19 @@ Error CastAgent::Stop() {
 void CastAgent::OnConnected(ReceiverSocketFactory* factory,
                             const IPEndpoint& endpoint,
                             std::unique_ptr<CastSocket> socket) {
+  TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneReceiver);
   if (current_session_) {
     OSP_LOG_WARN << "Already connected, dropping peer at: " << endpoint;
     return;
   }
 
   OSP_LOG_INFO << "Received connection from peer at: " << endpoint;
-  message_port_.SetSocket(socket->GetWeakPtr());
+  message_port_->SetSocket(socket->GetWeakPtr());
   router_->TakeSocket(this, std::move(socket));
   controller_ =
       std::make_unique<StreamingPlaybackController>(task_runner_, this);
   current_session_ = std::make_unique<ReceiverSession>(
-      controller_.get(), environment_.get(), &message_port_,
+      controller_.get(), environment_.get(), message_port_.get(),
       ReceiverSession::Preferences{});
 }
 
@@ -156,10 +160,10 @@ void CastAgent::OnPlaybackError(StreamingPlaybackController* controller,
 }
 
 void CastAgent::StopCurrentSession() {
-  controller_.reset();
   current_session_.reset();
-  router_->CloseSocket(message_port_.GetSocketId());
-  message_port_.SetSocket(nullptr);
+  controller_.reset();
+  router_->CloseSocket(message_port_->GetSocketId());
+  message_port_->SetSocket(nullptr);
 }
 
 }  // namespace cast

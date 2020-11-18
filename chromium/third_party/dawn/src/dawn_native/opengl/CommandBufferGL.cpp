@@ -42,7 +42,7 @@ namespace dawn_native { namespace opengl {
                     return GL_UNSIGNED_SHORT;
                 case wgpu::IndexFormat::Uint32:
                     return GL_UNSIGNED_INT;
-                default:
+                case wgpu::IndexFormat::Undefined:
                     UNREACHABLE();
             }
         }
@@ -87,8 +87,6 @@ namespace dawn_native { namespace opengl {
                 case wgpu::VertexFormat::Int3:
                 case wgpu::VertexFormat::Int4:
                     return GL_INT;
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -142,13 +140,10 @@ namespace dawn_native { namespace opengl {
                 mIndexBuffer = ToBackend(buffer);
             }
 
-            void OnSetVertexBuffer(uint32_t slot, BufferBase* buffer, uint64_t offset) {
+            void OnSetVertexBuffer(VertexBufferSlot slot, BufferBase* buffer, uint64_t offset) {
                 mVertexBuffers[slot] = ToBackend(buffer);
                 mVertexBufferOffsets[slot] = offset;
-
-                // Use 64 bit masks and make sure there are no shift UB
-                static_assert(kMaxVertexBuffers <= 8 * sizeof(unsigned long long) - 1, "");
-                mDirtyVertexBuffers |= 1ull << slot;
+                mDirtyVertexBuffers.set(slot);
             }
 
             void OnSetPipeline(RenderPipelineBase* pipeline) {
@@ -168,13 +163,14 @@ namespace dawn_native { namespace opengl {
                     mIndexBufferDirty = false;
                 }
 
-                for (uint32_t slot : IterateBitSet(mDirtyVertexBuffers &
-                                                   mLastPipeline->GetVertexBufferSlotsUsed())) {
-                    for (uint32_t location :
-                         IterateBitSet(mLastPipeline->GetAttributesUsingVertexBuffer(slot))) {
+                for (VertexBufferSlot slot : IterateBitSet(
+                         mDirtyVertexBuffers & mLastPipeline->GetVertexBufferSlotsUsed())) {
+                    for (VertexAttributeLocation location : IterateBitSet(
+                             ToBackend(mLastPipeline)->GetAttributesUsingVertexBuffer(slot))) {
                         const VertexAttributeInfo& attribute =
                             mLastPipeline->GetAttribute(location);
 
+                        GLuint attribIndex = static_cast<GLuint>(static_cast<uint8_t>(location));
                         GLuint buffer = mVertexBuffers[slot]->GetHandle();
                         uint64_t offset = mVertexBufferOffsets[slot];
 
@@ -186,11 +182,11 @@ namespace dawn_native { namespace opengl {
                         gl.BindBuffer(GL_ARRAY_BUFFER, buffer);
                         if (VertexFormatIsInt(attribute.format)) {
                             gl.VertexAttribIPointer(
-                                location, components, formatType, vertexBuffer.arrayStride,
+                                attribIndex, components, formatType, vertexBuffer.arrayStride,
                                 reinterpret_cast<void*>(
                                     static_cast<intptr_t>(offset + attribute.offset)));
                         } else {
-                            gl.VertexAttribPointer(location, components, formatType, normalized,
+                            gl.VertexAttribPointer(attribIndex, components, formatType, normalized,
                                                    vertexBuffer.arrayStride,
                                                    reinterpret_cast<void*>(static_cast<intptr_t>(
                                                        offset + attribute.offset)));
@@ -205,9 +201,9 @@ namespace dawn_native { namespace opengl {
             bool mIndexBufferDirty = false;
             Buffer* mIndexBuffer = nullptr;
 
-            std::bitset<kMaxVertexBuffers> mDirtyVertexBuffers;
-            std::array<Buffer*, kMaxVertexBuffers> mVertexBuffers;
-            std::array<uint64_t, kMaxVertexBuffers> mVertexBufferOffsets;
+            ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mDirtyVertexBuffers;
+            ityp::array<VertexBufferSlot, Buffer*, kMaxVertexBuffers> mVertexBuffers;
+            ityp::array<VertexBufferSlot, uint64_t, kMaxVertexBuffers> mVertexBufferOffsets;
 
             RenderPipelineBase* mLastPipeline = nullptr;
         };
@@ -299,7 +295,8 @@ namespace dawn_native { namespace opengl {
                             break;
                         }
 
-                        case wgpu::BindingType::SampledTexture: {
+                        case wgpu::BindingType::SampledTexture:
+                        case wgpu::BindingType::MultisampledTexture: {
                             TextureView* view =
                                 ToBackend(group->GetBindingAsTextureView(bindingIndex));
                             GLuint handle = view->GetHandle();
@@ -329,9 +326,9 @@ namespace dawn_native { namespace opengl {
                                 case wgpu::BindingType::WriteonlyStorageTexture:
                                     access = GL_WRITE_ONLY;
                                     break;
+
                                 default:
                                     UNREACHABLE();
-                                    break;
                             }
 
                             // OpenGL ES only supports either binding a layer or the entire texture
@@ -350,12 +347,6 @@ namespace dawn_native { namespace opengl {
                                                 texture->GetGLFormat().internalFormat);
                             break;
                         }
-
-                        case wgpu::BindingType::StorageTexture:
-                            UNREACHABLE();
-                            break;
-
-                            // TODO(shaobo.yan@intel.com): Implement dynamic buffer offset.
                     }
                 }
             }
@@ -370,7 +361,7 @@ namespace dawn_native { namespace opengl {
             GLuint readFbo = 0;
             GLuint writeFbo = 0;
 
-            for (uint32_t i :
+            for (ColorAttachmentIndex i :
                  IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
                 if (renderPass->colorAttachments[i].resolveTarget.Get() != nullptr) {
                     if (readFbo == 0) {
@@ -473,7 +464,7 @@ namespace dawn_native { namespace opengl {
                 case Command::BeginComputePass: {
                     mCommands.NextCommand<BeginComputePassCmd>();
                     TransitionForPass(passResourceUsages[nextPassNumber]);
-                    ExecuteComputePass();
+                    DAWN_TRY(ExecuteComputePass());
 
                     nextPassNumber++;
                     break;
@@ -484,7 +475,7 @@ namespace dawn_native { namespace opengl {
                     TransitionForPass(passResourceUsages[nextPassNumber]);
 
                     LazyClearRenderPassAttachments(cmd);
-                    ExecuteRenderPass(cmd);
+                    DAWN_TRY(ExecuteRenderPass(cmd));
 
                     nextPassNumber++;
                     break;
@@ -540,21 +531,21 @@ namespace dawn_native { namespace opengl {
                     gl.BindTexture(target, texture->GetHandle());
 
                     const Format& formatInfo = texture->GetFormat();
-                    gl.PixelStorei(
-                        GL_UNPACK_ROW_LENGTH,
-                        src.bytesPerRow / formatInfo.blockByteSize * formatInfo.blockWidth);
+                    const TexelBlockInfo& blockInfo = formatInfo.GetTexelBlockInfo(dst.aspect);
+                    gl.PixelStorei(GL_UNPACK_ROW_LENGTH, src.bytesPerRow / blockInfo.blockByteSize *
+                                                             blockInfo.blockWidth);
                     gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, src.rowsPerImage);
 
                     if (formatInfo.isCompressed) {
-                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, formatInfo.blockByteSize);
-                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, formatInfo.blockWidth);
-                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, formatInfo.blockHeight);
+                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, blockInfo.blockByteSize);
+                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, blockInfo.blockWidth);
+                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, blockInfo.blockHeight);
                         gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_DEPTH, 1);
 
                         ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
-                        uint64_t copyDataSize = (copySize.width / formatInfo.blockWidth) *
-                                                (copySize.height / formatInfo.blockHeight) *
-                                                formatInfo.blockByteSize * copySize.depth;
+                        uint64_t copyDataSize = (copySize.width / blockInfo.blockWidth) *
+                                                (copySize.height / blockInfo.blockHeight) *
+                                                blockInfo.blockByteSize * copySize.depth;
                         Extent3D copyExtent = ComputeTextureCopyExtent(dst, copySize);
 
                         if (texture->GetArrayLayers() > 1) {
@@ -588,7 +579,8 @@ namespace dawn_native { namespace opengl {
                                 }
                                 break;
 
-                            default:
+                            case wgpu::TextureDimension::e1D:
+                            case wgpu::TextureDimension::e3D:
                                 UNREACHABLE();
                         }
                     }
@@ -656,9 +648,9 @@ namespace dawn_native { namespace opengl {
                             glFormat = GL_STENCIL_INDEX;
                             glType = GL_UNSIGNED_BYTE;
                             break;
-                        default:
+
+                        case Aspect::None:
                             UNREACHABLE();
-                            break;
                     }
 
                     uint8_t* offset =
@@ -687,7 +679,8 @@ namespace dawn_native { namespace opengl {
                             break;
                         }
 
-                        default:
+                        case wgpu::TextureDimension::e1D:
+                        case wgpu::TextureDimension::e3D:
                             UNREACHABLE();
                     }
 
@@ -737,22 +730,27 @@ namespace dawn_native { namespace opengl {
                 }
 
                 case Command::WriteTimestamp: {
-                    // WriteTimestamp is not supported on OpenGL
-                    UNREACHABLE();
+                    return DAWN_UNIMPLEMENTED_ERROR("WriteTimestamp unimplemented");
+                }
+
+                case Command::InsertDebugMarker:
+                case Command::PopDebugGroup:
+                case Command::PushDebugGroup: {
+                    // Due to lack of linux driver support for GL_EXT_debug_marker
+                    // extension these functions are skipped.
+                    SkipCommand(&mCommands, type);
                     break;
                 }
 
-                default: {
+                default:
                     UNREACHABLE();
-                    break;
-                }
             }
         }
 
         return {};
     }
 
-    void CommandBuffer::ExecuteComputePass() {
+    MaybeError CommandBuffer::ExecuteComputePass() {
         const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
         ComputePipeline* lastPipeline = nullptr;
         BindGroupTracker bindGroupTracker = {};
@@ -762,7 +760,7 @@ namespace dawn_native { namespace opengl {
             switch (type) {
                 case Command::EndComputePass: {
                     mCommands.NextCommand<EndComputePassCmd>();
-                    return;
+                    return {};
                 }
 
                 case Command::Dispatch: {
@@ -819,15 +817,11 @@ namespace dawn_native { namespace opengl {
                 }
 
                 case Command::WriteTimestamp: {
-                    // WriteTimestamp is not supported on OpenGL
-                    UNREACHABLE();
-                    break;
+                    return DAWN_UNIMPLEMENTED_ERROR("WriteTimestamp unimplemented");
                 }
 
-                default: {
+                default:
                     UNREACHABLE();
-                    break;
-                }
             }
         }
 
@@ -835,7 +829,7 @@ namespace dawn_native { namespace opengl {
         UNREACHABLE();
     }
 
-    void CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
+    MaybeError CommandBuffer::ExecuteRenderPass(BeginRenderPassCmd* renderPass) {
         const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
         GLuint fbo = 0;
 
@@ -854,30 +848,33 @@ namespace dawn_native { namespace opengl {
 
             // Mapping from attachmentSlot to GL framebuffer attachment points. Defaults to zero
             // (GL_NONE).
-            std::array<GLenum, kMaxColorAttachments> drawBuffers = {};
+            ityp::array<ColorAttachmentIndex, GLenum, kMaxColorAttachments> drawBuffers = {};
 
             // Construct GL framebuffer
 
-            unsigned int attachmentCount = 0;
-            for (uint32_t i :
+            ColorAttachmentIndex attachmentCount(uint8_t(0));
+            for (ColorAttachmentIndex i :
                  IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
                 TextureViewBase* textureView = renderPass->colorAttachments[i].view.Get();
                 GLuint texture = ToBackend(textureView->GetTexture())->GetHandle();
 
+                GLenum glAttachment = GL_COLOR_ATTACHMENT0 + static_cast<uint8_t>(i);
+
                 // Attach color buffers.
                 if (textureView->GetTexture()->GetArrayLayers() == 1) {
                     GLenum target = ToBackend(textureView->GetTexture())->GetGLTarget();
-                    gl.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, target,
-                                            texture, textureView->GetBaseMipLevel());
+                    gl.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, glAttachment, target, texture,
+                                            textureView->GetBaseMipLevel());
                 } else {
-                    gl.FramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i,
-                                               texture, textureView->GetBaseMipLevel(),
+                    gl.FramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, glAttachment, texture,
+                                               textureView->GetBaseMipLevel(),
                                                textureView->GetBaseArrayLayer());
                 }
-                drawBuffers[i] = GL_COLOR_ATTACHMENT0 + i;
-                attachmentCount = i + 1;
+                drawBuffers[i] = glAttachment;
+                attachmentCount = i;
+                attachmentCount++;
             }
-            gl.DrawBuffers(attachmentCount, drawBuffers.data());
+            gl.DrawBuffers(static_cast<uint8_t>(attachmentCount), drawBuffers.data());
 
             if (renderPass->attachmentState->HasDepthStencilAttachment()) {
                 TextureViewBase* textureView = renderPass->depthStencilAttachment.view.Get();
@@ -922,9 +919,10 @@ namespace dawn_native { namespace opengl {
 
         // Clear framebuffer attachments as needed
         {
-            for (uint32_t i :
+            for (ColorAttachmentIndex index :
                  IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
-                auto* attachmentInfo = &renderPass->colorAttachments[i];
+                uint8_t i = static_cast<uint8_t>(index);
+                auto* attachmentInfo = &renderPass->colorAttachments[index];
 
                 // Load op - color
                 if (attachmentInfo->loadOp == wgpu::LoadOp::Clear) {
@@ -932,14 +930,16 @@ namespace dawn_native { namespace opengl {
 
                     const Format& attachmentFormat = attachmentInfo->view->GetFormat();
                     if (attachmentFormat.HasComponentType(Format::Type::Float)) {
-                        gl.ClearBufferfv(GL_COLOR, i, &attachmentInfo->clearColor.r);
+                        const std::array<float, 4> appliedClearColor =
+                            ConvertToFloatColor(attachmentInfo->clearColor);
+                        gl.ClearBufferfv(GL_COLOR, i, appliedClearColor.data());
                     } else if (attachmentFormat.HasComponentType(Format::Type::Uint)) {
                         const std::array<uint32_t, 4> appliedClearColor =
-                            ConvertToUnsignedIntegerColor(attachmentInfo->clearColor);
+                            ConvertToFloatToUnsignedIntegerColor(attachmentInfo->clearColor);
                         gl.ClearBufferuiv(GL_COLOR, i, appliedClearColor.data());
                     } else if (attachmentFormat.HasComponentType(Format::Type::Sint)) {
                         const std::array<int32_t, 4> appliedClearColor =
-                            ConvertToSignedIntegerColor(attachmentInfo->clearColor);
+                            ConvertToFloatToSignedIntegerColor(attachmentInfo->clearColor);
                         gl.ClearBufferiv(GL_COLOR, i, appliedClearColor.data());
                     } else {
                         UNREACHABLE();
@@ -982,6 +982,7 @@ namespace dawn_native { namespace opengl {
 
         RenderPipeline* lastPipeline = nullptr;
         uint64_t indexBufferBaseOffset = 0;
+        wgpu::IndexFormat indexBufferFormat;
 
         VertexStateBufferBindingTracker vertexStateBufferBindingTracker;
         BindGroupTracker bindGroupTracker = {};
@@ -1011,14 +1012,19 @@ namespace dawn_native { namespace opengl {
                     vertexStateBufferBindingTracker.Apply(gl);
                     bindGroupTracker.Apply(gl);
 
-                    wgpu::IndexFormat indexFormat =
-                        lastPipeline->GetVertexStateDescriptor()->indexFormat;
+                    // If a index format was specified in setIndexBuffer always use it.
+                    wgpu::IndexFormat indexFormat = indexBufferFormat;
+                    if (indexFormat == wgpu::IndexFormat::Undefined) {
+                        // Otherwise use the pipeline's index format.
+                        // TODO(crbug.com/dawn/502): This path is deprecated.
+                        indexFormat = lastPipeline->GetVertexStateDescriptor()->indexFormat;
+                    }
                     size_t formatSize = IndexFormatSize(indexFormat);
-                    GLenum formatType = IndexFormatType(indexFormat);
 
                     if (draw->firstInstance > 0) {
                         gl.DrawElementsInstancedBaseVertexBaseInstance(
-                            lastPipeline->GetGLPrimitiveTopology(), draw->indexCount, formatType,
+                            lastPipeline->GetGLPrimitiveTopology(), draw->indexCount,
+                            IndexFormatType(indexFormat),
                             reinterpret_cast<void*>(draw->firstIndex * formatSize +
                                                     indexBufferBaseOffset),
                             draw->instanceCount, draw->baseVertex, draw->firstInstance);
@@ -1027,7 +1033,7 @@ namespace dawn_native { namespace opengl {
                         if (draw->baseVertex != 0) {
                             gl.DrawElementsInstancedBaseVertex(
                                 lastPipeline->GetGLPrimitiveTopology(), draw->indexCount,
-                                formatType,
+                                IndexFormatType(indexFormat),
                                 reinterpret_cast<void*>(draw->firstIndex * formatSize +
                                                         indexBufferBaseOffset),
                                 draw->instanceCount, draw->baseVertex);
@@ -1035,7 +1041,7 @@ namespace dawn_native { namespace opengl {
                             // This branch is only needed on OpenGL < 3.2; ES < 3.2
                             gl.DrawElementsInstanced(
                                 lastPipeline->GetGLPrimitiveTopology(), draw->indexCount,
-                                formatType,
+                                IndexFormatType(indexFormat),
                                 reinterpret_cast<void*>(draw->firstIndex * formatSize +
                                                         indexBufferBaseOffset),
                                 draw->instanceCount);
@@ -1064,16 +1070,20 @@ namespace dawn_native { namespace opengl {
                     vertexStateBufferBindingTracker.Apply(gl);
                     bindGroupTracker.Apply(gl);
 
-                    wgpu::IndexFormat indexFormat =
-                        lastPipeline->GetVertexStateDescriptor()->indexFormat;
-                    GLenum formatType = IndexFormatType(indexFormat);
-
                     uint64_t indirectBufferOffset = draw->indirectOffset;
                     Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
 
+                    // If a index format was specified in setIndexBuffer always use it.
+                    wgpu::IndexFormat indexFormat = indexBufferFormat;
+                    if (indexFormat == wgpu::IndexFormat::Undefined) {
+                        // Otherwise use the pipeline's index format.
+                        // TODO(crbug.com/dawn/502): This path is deprecated.
+                        indexFormat = lastPipeline->GetVertexStateDescriptor()->indexFormat;
+                    }
+
                     gl.BindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer->GetHandle());
                     gl.DrawElementsIndirect(
-                        lastPipeline->GetGLPrimitiveTopology(), formatType,
+                        lastPipeline->GetGLPrimitiveTopology(), IndexFormatType(indexFormat),
                         reinterpret_cast<void*>(static_cast<intptr_t>(indirectBufferOffset)));
                     break;
                 }
@@ -1110,6 +1120,9 @@ namespace dawn_native { namespace opengl {
 
                 case Command::SetIndexBuffer: {
                     SetIndexBufferCmd* cmd = iter->NextCommand<SetIndexBufferCmd>();
+                    // TODO(crbug.com/dawn/502): Once setIndexBuffer is required to specify an
+                    // index buffer format store as an GLenum.
+                    indexBufferFormat = cmd->format;
                     indexBufferBaseOffset = cmd->offset;
                     vertexStateBufferBindingTracker.OnSetIndexBuffer(cmd->buffer.Get());
                     break;
@@ -1138,7 +1151,7 @@ namespace dawn_native { namespace opengl {
                         ResolveMultisampledRenderTargets(gl, renderPass);
                     }
                     gl.DeleteFramebuffers(1, &fbo);
-                    return;
+                    return {};
                 }
 
                 case Command::SetStencilReference: {
@@ -1162,7 +1175,8 @@ namespace dawn_native { namespace opengl {
 
                 case Command::SetBlendColor: {
                     SetBlendColorCmd* cmd = mCommands.NextCommand<SetBlendColorCmd>();
-                    gl.BlendColor(cmd->color.r, cmd->color.g, cmd->color.b, cmd->color.a);
+                    const std::array<float, 4> blendColor = ConvertToFloatColor(cmd->color);
+                    gl.BlendColor(blendColor[0], blendColor[1], blendColor[2], blendColor[3]);
                     break;
                 }
 
@@ -1180,11 +1194,8 @@ namespace dawn_native { namespace opengl {
                     break;
                 }
 
-                case Command::WriteTimestamp: {
-                    // WriteTimestamp is not supported on OpenGL
-                    UNREACHABLE();
-                    break;
-                }
+                case Command::WriteTimestamp:
+                    return DAWN_UNIMPLEMENTED_ERROR("WriteTimestamp unimplemented");
 
                 default: {
                     DoRenderBundleCommand(&mCommands, type);

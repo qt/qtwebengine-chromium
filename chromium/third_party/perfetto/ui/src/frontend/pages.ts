@@ -25,13 +25,14 @@ function renderPermalink(): m.Children {
   const permalink = globals.state.permalink;
   if (!permalink.requestId || !permalink.hash) return null;
   const url = `${self.location.origin}/#!/?s=${permalink.hash}`;
+
   return m('.alert-permalink', [
     m('div', 'Permalink: ', m(`a[href=${url}]`, url)),
     m('button',
       {
         onclick: () => globals.dispatch(Actions.clearPermalink({})),
       },
-      m('i.material-icons', 'close')),
+      m('i.material-icons.disallow-selection', 'close')),
   ]);
 }
 

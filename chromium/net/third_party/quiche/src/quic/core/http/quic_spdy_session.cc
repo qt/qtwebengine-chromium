@@ -404,8 +404,8 @@ QuicSpdySession::QuicSpdySession(
       server_push_enabled_(true),
       ietf_server_push_enabled_(
           GetQuicFlag(FLAGS_quic_enable_http3_server_push)),
-      http3_goaway_sent_(false),
-      http3_max_push_id_sent_(false) {
+      http3_max_push_id_sent_(false),
+      reject_spdy_settings_(GetQuicReloadableFlag(quic_reject_spdy_settings)) {
   h2_deframer_.set_visitor(spdy_framer_visitor_.get());
   h2_deframer_.set_debug_visitor(spdy_framer_visitor_.get());
   spdy_framer_.set_debug_visitor(spdy_framer_visitor_.get());
@@ -415,21 +415,22 @@ QuicSpdySession::~QuicSpdySession() {
   QUIC_BUG_IF(destruction_indicator_ != 123456789)
       << "QuicSpdyStream use after free. " << destruction_indicator_
       << QuicStackTrace();
+  destruction_indicator_ = 987654321;
+
+  if (GetQuicReloadableFlag(quic_clean_up_spdy_session_destructor)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_clean_up_spdy_session_destructor);
+    return;
+  }
   // Set the streams' session pointers in closed and dynamic stream lists
   // to null to avoid subsequent use of this session.
   for (auto& stream : *closed_streams()) {
     static_cast<QuicSpdyStream*>(stream.get())->ClearSession();
-  }
-  DCHECK(!remove_zombie_streams() || zombie_streams().empty());
-  for (auto const& kv : zombie_streams()) {
-    static_cast<QuicSpdyStream*>(kv.second.get())->ClearSession();
   }
   for (auto const& kv : stream_map()) {
     if (!kv.second->is_static()) {
       static_cast<QuicSpdyStream*>(kv.second.get())->ClearSession();
     }
   }
-  destruction_indicator_ = 987654321;
 }
 
 void QuicSpdySession::Initialize() {
@@ -471,7 +472,7 @@ void QuicSpdySession::FillSettingsFrame() {
       qpack_maximum_dynamic_table_capacity_;
   settings_.values[SETTINGS_QPACK_BLOCKED_STREAMS] =
       qpack_maximum_blocked_streams_;
-  settings_.values[SETTINGS_MAX_HEADER_LIST_SIZE] =
+  settings_.values[SETTINGS_MAX_FIELD_SECTION_SIZE] =
       max_inbound_header_list_size_;
 }
 
@@ -660,42 +661,21 @@ void QuicSpdySession::OnHttp3GoAway(uint64_t id) {
   QUIC_BUG_IF(!version().UsesHttp3())
       << "HTTP/3 GOAWAY received on version " << version();
 
-  if (GetQuicReloadableFlag(quic_http3_goaway_new_behavior)) {
-    if (last_received_http3_goaway_id_.has_value() &&
-        id > last_received_http3_goaway_id_.value()) {
-      CloseConnectionWithDetails(
-          QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS,
-          quiche::QuicheStrCat("GOAWAY received with ID ", id,
-                               " greater than previously received ID ",
-                               last_received_http3_goaway_id_.value()));
-      return;
-    }
-    last_received_http3_goaway_id_ = id;
-
-    if (perspective() == Perspective::IS_SERVER) {
-      // TODO(b/151749109): Cancel server pushes with push ID larger than |id|.
-      return;
-    }
-
-    // QuicStreamId is uint32_t.  Casting to this narrower type is well-defined
-    // and preserves the lower 32 bits.  Both IsBidirectionalStreamId() and
-    // IsIncomingStream() give correct results, because their return value is
-    // determined by the least significant two bits.
-    QuicStreamId stream_id = static_cast<QuicStreamId>(id);
-    if (!QuicUtils::IsBidirectionalStreamId(stream_id, version()) ||
-        IsIncomingStream(stream_id)) {
-      CloseConnectionWithDetails(QUIC_HTTP_GOAWAY_INVALID_STREAM_ID,
-                                 "GOAWAY with invalid stream ID");
-      return;
-    }
-
-    // TODO(b/161252736): Cancel client requests with ID larger than |id|.
-    // If |id| is larger than numeric_limits<QuicStreamId>::max(), then use
-    // max() instead of downcast value.
+  if (last_received_http3_goaway_id_.has_value() &&
+      id > last_received_http3_goaway_id_.value()) {
+    CloseConnectionWithDetails(
+        QUIC_HTTP_GOAWAY_ID_LARGER_THAN_PREVIOUS,
+        quiche::QuicheStrCat("GOAWAY received with ID ", id,
+                             " greater than previously received ID ",
+                             last_received_http3_goaway_id_.value()));
     return;
   }
+  last_received_http3_goaway_id_ = id;
 
-  DCHECK_EQ(perspective(), Perspective::IS_CLIENT);
+  if (perspective() == Perspective::IS_SERVER) {
+    // TODO(b/151749109): Cancel server pushes with push ID larger than |id|.
+    return;
+  }
 
   // QuicStreamId is uint32_t.  Casting to this narrower type is well-defined
   // and preserves the lower 32 bits.  Both IsBidirectionalStreamId() and
@@ -704,12 +684,14 @@ void QuicSpdySession::OnHttp3GoAway(uint64_t id) {
   QuicStreamId stream_id = static_cast<QuicStreamId>(id);
   if (!QuicUtils::IsBidirectionalStreamId(stream_id, version()) ||
       IsIncomingStream(stream_id)) {
-    CloseConnectionWithDetails(
-        QUIC_INVALID_STREAM_ID,
-        "GOAWAY's last stream id has to point to a request stream");
+    CloseConnectionWithDetails(QUIC_HTTP_GOAWAY_INVALID_STREAM_ID,
+                               "GOAWAY with invalid stream ID");
     return;
   }
-  last_received_http3_goaway_id_ = id;
+
+  // TODO(b/161252736): Cancel client requests with ID larger than |id|.
+  // If |id| is larger than numeric_limits<QuicStreamId>::max(), then use
+  // max() instead of downcast value.
 }
 
 bool QuicSpdySession::OnStreamsBlockedFrame(
@@ -731,9 +713,51 @@ bool QuicSpdySession::OnStreamsBlockedFrame(
 void QuicSpdySession::SendHttp3GoAway() {
   DCHECK_EQ(perspective(), Perspective::IS_SERVER);
   DCHECK(VersionUsesHttp3(transport_version()));
-  http3_goaway_sent_ = true;
-  send_control_stream_->SendGoAway(
-      GetLargestPeerCreatedStreamId(/*unidirectional = */ false));
+
+  QuicStreamId stream_id =
+      GetLargestPeerCreatedStreamId(/*unidirectional = */ false);
+
+  if (GetQuicReloadableFlag(quic_fix_http3_goaway_stream_id)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_fix_http3_goaway_stream_id);
+    if (stream_id == QuicUtils::GetInvalidStreamId(transport_version())) {
+      // No client-initiated bidirectional streams received yet.
+      // Send 0 to let client know that all requests can be retried.
+      stream_id = 0;
+    } else {
+      // Tell client that streams starting with the next after the largest
+      // received one can be retried.
+      stream_id += QuicUtils::StreamIdDelta(transport_version());
+    }
+    if (last_sent_http3_goaway_id_.has_value() &&
+        last_sent_http3_goaway_id_.value() <= stream_id) {
+      // MUST not send GOAWAY with identifier larger than previously sent.
+      // Do not bother sending one with same identifier as before, since GOAWAY
+      // frames on the control stream are guaranteed to be processed in order.
+      return;
+    }
+  }
+
+  send_control_stream_->SendGoAway(stream_id);
+  last_sent_http3_goaway_id_ = stream_id;
+}
+
+void QuicSpdySession::SendHttp3Shutdown() {
+  DCHECK_EQ(perspective(), Perspective::IS_SERVER);
+  DCHECK(VersionUsesHttp3(transport_version()));
+  QuicStreamCount advertised_max_incoming_bidirectional_streams =
+      GetAdvertisedMaxIncomingBidirectionalStreams();
+  const QuicStreamId stream_id =
+      QuicUtils::GetFirstBidirectionalStreamId(transport_version(),
+                                               Perspective::IS_CLIENT) +
+      QuicUtils::StreamIdDelta(transport_version()) *
+          advertised_max_incoming_bidirectional_streams;
+  if (last_sent_http3_goaway_id_.has_value() &&
+      last_sent_http3_goaway_id_.value() < stream_id) {
+    send_control_stream_->SendGoAway(last_sent_http3_goaway_id_.value());
+    return;
+  }
+  send_control_stream_->SendGoAway(stream_id);
+  last_sent_http3_goaway_id_ = stream_id;
 }
 
 void QuicSpdySession::WritePushPromise(QuicStreamId original_stream_id,
@@ -944,6 +968,9 @@ bool QuicSpdySession::OnSettingsFrame(const SettingsFrame& frame) {
 
 bool QuicSpdySession::OnSetting(uint64_t id, uint64_t value) {
   if (VersionUsesHttp3(transport_version())) {
+    if (reject_spdy_settings_) {
+      QUIC_RELOADABLE_FLAG_COUNT(quic_reject_spdy_settings);
+    }
     // SETTINGS frame received on the control stream.
     switch (id) {
       case SETTINGS_QPACK_MAX_TABLE_CAPACITY: {
@@ -974,9 +1001,9 @@ bool QuicSpdySession::OnSetting(uint64_t id, uint64_t value) {
             std::min(value, qpack_maximum_dynamic_table_capacity_));
         break;
       }
-      case SETTINGS_MAX_HEADER_LIST_SIZE:
+      case SETTINGS_MAX_FIELD_SECTION_SIZE:
         QUIC_DVLOG(1) << ENDPOINT
-                      << "SETTINGS_MAX_HEADER_LIST_SIZE received with value "
+                      << "SETTINGS_MAX_FIELD_SECTION_SIZE received with value "
                       << value;
         if (GetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2) &&
             max_outbound_header_list_size_ !=
@@ -990,7 +1017,7 @@ bool QuicSpdySession::OnSetting(uint64_t id, uint64_t value) {
                   was_zero_rtt_rejected()
                       ? "Server rejected 0-RTT, aborting because "
                       : "",
-                  "Server sent an SETTINGS_MAX_HEADER_LIST_SIZE: ", value,
+                  "Server sent an SETTINGS_MAX_FIELD_SECTION_SIZE: ", value,
                   "which reduces current value: ",
                   max_outbound_header_list_size_));
           return false;
@@ -1018,6 +1045,21 @@ bool QuicSpdySession::OnSetting(uint64_t id, uint64_t value) {
         }
         break;
       }
+      case spdy::SETTINGS_ENABLE_PUSH:
+        QUIC_FALLTHROUGH_INTENDED;
+      case spdy::SETTINGS_MAX_CONCURRENT_STREAMS:
+        QUIC_FALLTHROUGH_INTENDED;
+      case spdy::SETTINGS_INITIAL_WINDOW_SIZE:
+        QUIC_FALLTHROUGH_INTENDED;
+      case spdy::SETTINGS_MAX_FRAME_SIZE:
+        if (reject_spdy_settings_) {
+          CloseConnectionWithDetails(
+              QUIC_HTTP_RECEIVE_SPDY_SETTING,
+              quiche::QuicheStrCat(
+                  "received HTTP/2 specific setting in HTTP/3 session: ", id));
+          return false;
+        }
+        break;
       default:
         QUIC_DVLOG(1) << ENDPOINT << "Unknown setting identifier " << id
                       << " received with value " << value;
@@ -1239,7 +1281,7 @@ bool QuicSpdySession::ProcessPendingStream(PendingStream* pending) {
         return false;
       }
       auto encoder_receive = std::make_unique<QpackReceiveStream>(
-          pending, qpack_decoder_->encoder_stream_receiver());
+          pending, this, qpack_decoder_->encoder_stream_receiver());
       qpack_encoder_receive_stream_ = encoder_receive.get();
       ActivateStream(std::move(encoder_receive));
       qpack_encoder_receive_stream_->SetUnblocked();
@@ -1256,7 +1298,7 @@ bool QuicSpdySession::ProcessPendingStream(PendingStream* pending) {
         return false;
       }
       auto decoder_receive = std::make_unique<QpackReceiveStream>(
-          pending, qpack_encoder_->decoder_stream_receiver());
+          pending, this, qpack_encoder_->decoder_stream_receiver());
       qpack_decoder_receive_stream_ = decoder_receive.get();
       ActivateStream(std::move(decoder_receive));
       qpack_decoder_receive_stream_->SetUnblocked();
@@ -1268,9 +1310,13 @@ bool QuicSpdySession::ProcessPendingStream(PendingStream* pending) {
       return true;
     }
     default:
-      SendStopSending(static_cast<QuicApplicationErrorCode>(
-                          QuicHttp3ErrorCode::STREAM_CREATION_ERROR),
-                      pending->id());
+      if (GetQuicReloadableFlag(quic_stop_sending_uses_ietf_error_code)) {
+        SendStopSending(QUIC_STREAM_STREAM_CREATION_ERROR, pending->id());
+      } else {
+        SendStopSending(static_cast<QuicRstStreamErrorCode>(
+                            QuicHttp3ErrorCode::STREAM_CREATION_ERROR),
+                        pending->id());
+      }
       pending->StopReading();
   }
   return false;
@@ -1401,6 +1447,18 @@ void QuicSpdySession::EnableServerPush() {
   DCHECK_EQ(perspective(), Perspective::IS_SERVER);
 
   ietf_server_push_enabled_ = true;
+}
+
+bool QuicSpdySession::goaway_received() const {
+  return VersionUsesHttp3(transport_version())
+             ? last_received_http3_goaway_id_.has_value()
+             : transport_goaway_received();
+}
+
+bool QuicSpdySession::goaway_sent() const {
+  return VersionUsesHttp3(transport_version())
+             ? last_sent_http3_goaway_id_.has_value()
+             : transport_goaway_sent();
 }
 
 bool QuicSpdySession::CanCreatePushStreamWithId(PushId push_id) {

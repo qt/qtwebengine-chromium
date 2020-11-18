@@ -6,8 +6,6 @@
 
 #include "xfa/fwl/cfwl_barcode.h"
 
-#include <utility>
-
 #include "fxbarcode/cfx_barcode.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fwl/cfwl_notedriver.h"
@@ -15,7 +13,7 @@
 #include "xfa/fwl/ifwl_themeprovider.h"
 #include "xfa/fwl/theme/cfwl_utils.h"
 
-CFWL_Barcode::CFWL_Barcode(const CFWL_App* app)
+CFWL_Barcode::CFWL_Barcode(CFWL_App* app)
     : CFWL_Edit(app, Properties(), nullptr) {}
 
 CFWL_Barcode::~CFWL_Barcode() = default;

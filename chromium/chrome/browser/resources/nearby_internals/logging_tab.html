@@ -7,12 +7,13 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    white-space: pre-wrap;
   }
 
   log-object {
+    border-inline-end: var(--standard-border);
+    border-inline-start: var(--standard-border);
     border-top: var(--standard-border);
-    border-right: var(--standard-border);
-    border-left: var(--standard-border);
   }
 
   log-object:last-child {
@@ -29,7 +30,7 @@
 </cr-button>
 <iron-list items="[[logList_]]" as="log" id="logs-list">
   <template>
-    <log-object item="[[log]]">
+    <log-object log-message="[[log]]">
     </log-object>
   </template>
 </iron-list>

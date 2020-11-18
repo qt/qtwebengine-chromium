@@ -346,30 +346,50 @@ using CdefFilteringFunc = void (*)(const uint16_t* source,
 // |primary_strength| only, [2]: |secondary_strength| only.
 using CdefFilteringFuncs = CdefFilteringFunc[2][3];
 
-// Upscaling process function signature. Section 7.16.
-// Operates on a single row.
-// |source| is the input frame buffer at the given row.
-// |dest| is the output row.
+// Upscaling coefficients function signature. Section 7.16.
+// This is an auxiliary function for SIMD optimizations and has no corresponding
+// C function. Different SIMD versions may have different outputs. So it must
+// pair with the corresponding version of SuperResFunc.
 // |upscaled_width| is the width of the output frame.
 // |step| is the number of subpixels to move the kernel for the next destination
 // pixel.
 // |initial_subpixel_x| is a base offset from which |step| increments.
-using SuperResRowFunc = void (*)(const void* source, const int upscaled_width,
-                                 const int initial_subpixel_x, const int step,
-                                 void* const dest);
+// |coefficients| is the upscale filter used by each pixel in a row.
+using SuperResCoefficientsFunc = void (*)(int upscaled_width,
+                                          int initial_subpixel_x, int step,
+                                          void* coefficients);
+
+// Upscaling process function signature. Section 7.16.
+// |coefficients| is the upscale filter used by each pixel in a row. It is not
+// used by the C function.
+// |source| is the input frame buffer. It will be line extended.
+// |dest| is the output buffer.
+// |stride| is given in pixels, and shared by |source| and |dest|.
+// |height| is the height of the block to be processed.
+// |downscaled_width| is the width of the input frame.
+// |upscaled_width| is the width of the output frame.
+// |step| is the number of subpixels to move the kernel for the next destination
+// pixel.
+// |initial_subpixel_x| is a base offset from which |step| increments.
+using SuperResFunc = void (*)(const void* coefficients, void* source,
+                              ptrdiff_t stride, int height,
+                              int downscaled_width, int upscaled_width,
+                              int initial_subpixel_x, int step, void* dest);
 
 // Loop restoration function signature. Sections 7.16, 7.17.
-// |source| is the input frame buffer, which is deblocked and cdef filtered.
-// |dest| is the output.
 // |restoration_info| contains loop restoration information, such as filter
 // type, strength.
-// |source_stride| and |dest_stride| are given in pixels.
-// |buffer| contains buffers required for self guided filter and wiener filter.
-// They must be initialized before calling.
+// |source| is the input frame buffer, which is deblocked and cdef filtered.
+// |top_border| and |bottom_border| are the top and bottom borders.
+// |dest| is the output.
+// |stride| is given in pixels, and shared by |source|, |top_border|,
+// |bottom_border| and |dest|.
+// |restoration_buffer| contains buffers required for self guided filter and
+// wiener filter. They must be initialized before calling.
 using LoopRestorationFunc = void (*)(
-    const void* source, void* dest, const RestorationUnitInfo& restoration_info,
-    ptrdiff_t source_stride, ptrdiff_t dest_stride, int width, int height,
-    RestorationBuffer* buffer);
+    const RestorationUnitInfo& restoration_info, const void* source,
+    const void* top_border, const void* bottom_border, ptrdiff_t stride,
+    int width, int height, RestorationBuffer* restoration_buffer, void* dest);
 
 // Index 0 is Wiener Filter.
 // Index 1 is Self Guided Restoration Filter.
@@ -383,7 +403,7 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 // |vertical_filter_index|/|horizontal_filter_index| is the index to
 // retrieve the type of filter to be applied for vertical/horizontal direction
 // from the filter lookup table 'kSubPixelFilters'.
-// |subpixel_x| and |subpixel_y| are starting positions in units of 1/1024.
+// |horizontal_filter_id| and |vertical_filter_id| are the filter ids.
 // |width| and |height| are width and height of the block to be filtered.
 // |ref_last_x| and |ref_last_y| are the last pixel of the reference frame in
 // x/y direction.
@@ -395,9 +415,10 @@ using LoopRestorationFuncs = LoopRestorationFunc[2];
 // be used.
 using ConvolveFunc = void (*)(const void* reference, ptrdiff_t reference_stride,
                               int horizontal_filter_index,
-                              int vertical_filter_index, int subpixel_x,
-                              int subpixel_y, int width, int height,
-                              void* prediction, ptrdiff_t pred_stride);
+                              int vertical_filter_index,
+                              int horizontal_filter_id, int vertical_filter_id,
+                              int width, int height, void* prediction,
+                              ptrdiff_t pred_stride);
 
 // Convolve functions signature. Each points to one convolve function with
 // a specific setting:
@@ -815,7 +836,8 @@ struct Dsp {
   MvProjectionCompoundFunc mv_projection_compound[3];
   MvProjectionSingleFunc mv_projection_single[3];
   ObmcBlendFuncs obmc_blend;
-  SuperResRowFunc super_res_row;
+  SuperResCoefficientsFunc super_res_coefficients;
+  SuperResFunc super_res;
   WarpCompoundFunc warp_compound;
   WarpFunc warp;
   WeightMaskFuncs weight_mask;

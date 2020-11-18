@@ -19,9 +19,7 @@ source_set("certificate") {
     "certificate/types.cc",
     "certificate/types.h",
   ]
-  public_deps = [
-    "../../third_party/boringssl",
-  ]
+  public_deps = [ "../../third_party/boringssl" ]
 
   deps = [
     "../../platform",
@@ -34,6 +32,8 @@ source_set("certificate") {
 source_set("channel") {
   sources = [
     "channel/cast_socket.cc",
+    "channel/cast_socket_message_port.cc",
+    "channel/cast_socket_message_port.h",
     "channel/connection_namespace_handler.cc",
     "channel/connection_namespace_handler.h",
     "channel/message_framer.cc",
@@ -50,9 +50,7 @@ source_set("channel") {
     "public/cast_socket.h",
   ]
 
-  deps = [
-    "certificate/proto:certificate_proto",
-  ]
+  deps = [ "certificate/proto:certificate_proto" ]
 
   public_deps = [
     "../../platform",
@@ -64,6 +62,7 @@ source_set("channel") {
 
 source_set("public") {
   sources = [
+    "public/message_port.h",
     "public/service_info.cc",
     "public/service_info.h",
   ]
@@ -81,9 +80,7 @@ if (!build_with_chromium) {
     testonly = true
 
     if (!is_mac) {
-      sources = [
-        "discovery/e2e_test/tests.cc",
-      ]
+      sources = [ "discovery/e2e_test/tests.cc" ]
     }
 
     deps = [
@@ -112,9 +109,11 @@ source_set("test_helpers") {
     ":channel",
     ":public",
     "../../platform:test",
+    "../../testing/util",
     "../../third_party/abseil",
     "../../third_party/boringssl",
     "../../third_party/googletest:gmock",
+    "../../third_party/googletest:gtest",
   ]
   deps = [
     "../../platform",
@@ -152,18 +151,12 @@ source_set("unittests") {
     "channel/proto:channel_proto",
   ]
 
-  data = [
-    "../../test/data/cast/common/certificate/",
-  ]
+  data = [ "../../test/data/cast/common/certificate/" ]
 }
 
 openscreen_fuzzer_test("message_framer_fuzzer") {
-  sources = [
-    "channel/message_framer_fuzzer.cc",
-  ]
-  deps = [
-    ":channel",
-  ]
+  sources = [ "channel/message_framer_fuzzer.cc" ]
+  deps = [ ":channel" ]
 
   seed_corpus = "channel/message_framer_fuzzer_seeds"
 

@@ -105,6 +105,18 @@ sk_sp<GrGpu> GrMtlGpu::Make(GrDirectContext* direct, const GrContextOptions& opt
     if (!device || !queue) {
         return nullptr;
     }
+    if (@available(macOS 10.14, iOS 9.0, *)) {
+        // no warning needed
+    } else {
+        SkDebugf("*** Warning ***: this OS version is deprecated and will no longer be supported " \
+                 "in future releases.\n");
+#ifdef SK_BUILD_FOR_IOS
+        SkDebugf("Minimum recommended version is iOS 9.0.\n");
+#else
+        SkDebugf("Minimum recommended version is MacOS 10.14.\n");
+#endif
+    }
+
     MTLFeatureSet featureSet;
     if (!get_feature_set(device, &featureSet)) {
         return nullptr;
@@ -176,7 +188,7 @@ GrOpsRenderPass* GrMtlGpu::getOpsRenderPass(
             const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
             const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
             const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            bool usesXferBarriers) {
+            GrXferBarrierFlags renderPassXferBarriers) {
     return new GrMtlOpsRenderPass(this, renderTarget, origin, colorInfo, stencilInfo);
 }
 
@@ -486,18 +498,17 @@ bool GrMtlGpu::clearTexture(GrMtlTexture* tex, size_t bpp, uint32_t levelMask) {
 }
 
 GrStencilAttachment* GrMtlGpu::createStencilAttachmentForRenderTarget(
-        const GrRenderTarget* rt, int width, int height, int numStencilSamples) {
+        const GrRenderTarget* rt, SkISize dimensions, int numStencilSamples) {
     SkASSERT(numStencilSamples == rt->numSamples());
-    SkASSERT(width >= rt->width());
-    SkASSERT(height >= rt->height());
+    SkASSERT(dimensions.width() >= rt->width());
+    SkASSERT(dimensions.height() >= rt->height());
 
     int samples = rt->numSamples();
 
     const GrMtlCaps::StencilFormat& sFmt = this->mtlCaps().preferredStencilFormat();
 
     GrMtlStencilAttachment* stencil(GrMtlStencilAttachment::Create(this,
-                                                                   width,
-                                                                   height,
+                                                                   dimensions,
                                                                    samples,
                                                                    sFmt));
     fStats.incStencilAttachmentCreates();
@@ -702,6 +713,10 @@ sk_sp<GrTexture> GrMtlGpu::onWrapBackendTexture(const GrBackendTexture& backendT
     if (!mtlTexture) {
         return nullptr;
     }
+    // We don't currently support sampling from a MSAA texture in shaders.
+    if (mtlTexture.sampleCount != 1) {
+        return nullptr;
+    }
 
     return GrMtlTexture::MakeWrappedTexture(this, backendTex.dimensions(), mtlTexture, cacheable,
                                             ioType);
@@ -712,6 +727,10 @@ sk_sp<GrTexture> GrMtlGpu::onWrapCompressedBackendTexture(const GrBackendTexture
                                                           GrWrapCacheable cacheable) {
     id<MTLTexture> mtlTexture = get_texture_from_backend(backendTex);
     if (!mtlTexture) {
+        return nullptr;
+    }
+    // We don't currently support sampling from a MSAA texture in shaders.
+    if (mtlTexture.sampleCount != 1) {
         return nullptr;
     }
 
@@ -725,6 +744,10 @@ sk_sp<GrTexture> GrMtlGpu::onWrapRenderableBackendTexture(const GrBackendTexture
                                                           GrWrapCacheable cacheable) {
     id<MTLTexture> mtlTexture = get_texture_from_backend(backendTex);
     if (!mtlTexture) {
+        return nullptr;
+    }
+    // We don't currently support sampling from a MSAA texture in shaders.
+    if (mtlTexture.sampleCount != 1) {
         return nullptr;
     }
 
@@ -1093,7 +1116,7 @@ GrBackendRenderTarget GrMtlGpu::createTestingOnlyBackendRenderTarget(int w, int 
         return {};
     }
 
-    GrBackendRenderTarget backendRT(w, h, 1, info);
+    GrBackendRenderTarget backendRT(w, h, info);
     return backendRT;
 }
 

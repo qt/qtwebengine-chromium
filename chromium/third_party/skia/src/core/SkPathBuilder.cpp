@@ -10,11 +10,16 @@
 #include "include/private/SkPathRef.h"
 #include "include/private/SkSafe32.h"
 #include "src/core/SkGeometry.h"
+#include "src/core/SkPathPriv.h"
 // need SkDVector
 #include "src/pathops/SkPathOpsPoint.h"
 
 SkPathBuilder::SkPathBuilder() {
     this->reset();
+}
+
+SkPathBuilder::SkPathBuilder(const SkPath& src) {
+    *this = src;
 }
 
 SkPathBuilder::~SkPathBuilder() {
@@ -32,8 +37,26 @@ SkPathBuilder& SkPathBuilder::reset() {
     fSegmentMask = 0;
     fLastMovePoint = {0, 0};
     fNeedsMoveVerb = true;
-    fConvexity = SkPathConvexityType::kUnknown;
 
+    // testing
+    fOverrideConvexity = SkPathConvexity::kUnknown;
+
+    return *this;
+}
+
+SkPathBuilder& SkPathBuilder::operator=(const SkPath& src) {
+    this->reset().setFillType(src.getFillType());
+
+    for (auto [verb, pts, w] : SkPathPriv::Iterate(src)) {
+        switch (verb) {
+            case SkPathVerb::kMove:  this->moveTo(pts[0]); break;
+            case SkPathVerb::kLine:  this->lineTo(pts[1]); break;
+            case SkPathVerb::kQuad:  this->quadTo(pts[1], pts[2]); break;
+            case SkPathVerb::kConic: this->conicTo(pts[1], pts[2], w[0]); break;
+            case SkPathVerb::kCubic: this->cubicTo(pts[1], pts[2], pts[3]); break;
+            case SkPathVerb::kClose: this->close(); break;
+        }
+    }
     return *this;
 }
 
@@ -42,11 +65,17 @@ void SkPathBuilder::incReserve(int extraPtCount, int extraVbCount) {
     fVerbs.setReserve(Sk32_sat_add(fVerbs.count(), extraVbCount));
 }
 
+SkRect SkPathBuilder::computeBounds() const {
+    SkRect bounds;
+    bounds.setBounds(fPts.begin(), fPts.count());
+    return bounds;
+}
+
 /*
  *  Some old behavior in SkPath -- should we keep it?
  *
  *  After each edit (i.e. adding a verb)
-        this->setConvexityType(SkPathConvexityType::kUnknown);
+        this->setConvexityType(SkPathConvexity::kUnknown);
         this->setFirstDirection(SkPathPriv::kUnknown_FirstDirection);
  */
 
@@ -108,12 +137,14 @@ SkPathBuilder& SkPathBuilder::cubicTo(SkPoint pt1, SkPoint pt2, SkPoint pt3) {
 }
 
 SkPathBuilder& SkPathBuilder::close() {
-    this->ensureMove();
+    if (fVerbs.count() > 0) {
+        this->ensureMove();
 
-    fVerbs.push_back((uint8_t)SkPathVerb::kClose);
+        fVerbs.push_back((uint8_t)SkPathVerb::kClose);
 
-    // fLastMovePoint stays where it is -- the previous moveTo
-    fNeedsMoveVerb = true;
+        // fLastMovePoint stays where it is -- the previous moveTo
+        fNeedsMoveVerb = true;
+    }
     return *this;
 }
 
@@ -145,15 +176,35 @@ SkPathBuilder& SkPathBuilder::rCubicTo(SkPoint p1, SkPoint p2, SkPoint p3) {
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 SkPath SkPathBuilder::make(sk_sp<SkPathRef> pr) const {
+    auto convexity = SkPathConvexity::kUnknown;
+    SkPathFirstDirection dir = SkPathFirstDirection::kUnknown;
+
     switch (fIsA) {
-        case kIsA_Oval:  pr->setIsOval( true, fIsACCW, fIsAStart); break;
-        case kIsA_RRect: pr->setIsRRect(true, fIsACCW, fIsAStart); break;
+        case kIsA_Oval:
+            pr->setIsOval( true, fIsACCW, fIsAStart);
+            convexity = SkPathConvexity::kConvex;
+            dir = fIsACCW ? SkPathFirstDirection::kCCW : SkPathFirstDirection::kCW;
+            break;
+        case kIsA_RRect:
+            pr->setIsRRect(true, fIsACCW, fIsAStart);
+            convexity = SkPathConvexity::kConvex;
+            dir = fIsACCW ? SkPathFirstDirection::kCCW : SkPathFirstDirection::kCW;
+            break;
         default: break;
     }
-    return SkPath(std::move(pr), fFillType, fIsVolatile, fConvexity);
+
+    if (fOverrideConvexity != SkPathConvexity::kUnknown) {
+        convexity = fOverrideConvexity;
+    }
+
+    // Wonder if we can combine convexity and dir internally...
+    //  unknown, convex_cw, convex_ccw, concave
+    // Do we ever have direction w/o convexity, or viceversa (inside path)?
+    //
+    return SkPath(std::move(pr), fFillType, fIsVolatile, convexity, dir);
 }
 
-SkPath SkPathBuilder::snapshot() {
+SkPath SkPathBuilder::snapshot() const {
     return this->make(sk_sp<SkPathRef>(new SkPathRef(fPts,
                                                      fVerbs,
                                                      fConicWeights,
@@ -691,17 +742,81 @@ SkPathBuilder& SkPathBuilder::addPolygon(const SkPoint pts[], int count, bool is
         return *this;
     }
 
-    this->incReserve(count, count + isClosed);
-
     this->moveTo(pts[0]);
-    if (count > 1) {
-        count -= 1;
-        memcpy(fPts.append(count), &pts[1], count * sizeof(SkPoint));
+    this->polylineTo(&pts[1], count - 1);
+    if (isClosed) {
+        this->close();
+    }
+    return *this;
+}
+
+SkPathBuilder& SkPathBuilder::polylineTo(const SkPoint pts[], int count) {
+    if (count > 0) {
+        this->ensureMove();
+
+        this->incReserve(count, count);
+        memcpy(fPts.append(count), pts, count * sizeof(SkPoint));
         memset(fVerbs.append(count), (uint8_t)SkPathVerb::kLine, count);
         fSegmentMask |= kLine_SkPathSegmentMask;
     }
-    if (isClosed) {
-        this->close();
+    return *this;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+SkPathBuilder& SkPathBuilder::offset(SkScalar dx, SkScalar dy) {
+    for (auto& p : fPts) {
+        p += {dx, dy};
+    }
+    return *this;
+}
+
+SkPathBuilder& SkPathBuilder::privateReverseAddPath(const SkPath& src) {
+
+    const uint8_t* verbsBegin = src.fPathRef->verbsBegin();
+    const uint8_t* verbs = src.fPathRef->verbsEnd();
+    const SkPoint* pts = src.fPathRef->pointsEnd();
+    const SkScalar* conicWeights = src.fPathRef->conicWeightsEnd();
+
+    bool needMove = true;
+    bool needClose = false;
+    while (verbs > verbsBegin) {
+        uint8_t v = *--verbs;
+        int n = SkPathPriv::PtsInVerb(v);
+
+        if (needMove) {
+            --pts;
+            this->moveTo(pts->fX, pts->fY);
+            needMove = false;
+        }
+        pts -= n;
+        switch ((SkPathVerb)v) {
+            case SkPathVerb::kMove:
+                if (needClose) {
+                    this->close();
+                    needClose = false;
+                }
+                needMove = true;
+                pts += 1;   // so we see the point in "if (needMove)" above
+                break;
+            case SkPathVerb::kLine:
+                this->lineTo(pts[0]);
+                break;
+            case SkPathVerb::kQuad:
+                this->quadTo(pts[1], pts[0]);
+                break;
+            case SkPathVerb::kConic:
+                this->conicTo(pts[1], pts[0], *--conicWeights);
+                break;
+            case SkPathVerb::kCubic:
+                this->cubicTo(pts[2], pts[1], pts[0]);
+                break;
+            case SkPathVerb::kClose:
+                needClose = true;
+                break;
+            default:
+                SkDEBUGFAIL("unexpected verb");
+        }
     }
     return *this;
 }

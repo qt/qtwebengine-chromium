@@ -29,11 +29,7 @@ from compat import iteritems
 SOURCE_TARGET = [
     (
       'protos/perfetto/config/perfetto_config.proto',
-      'src/perfetto_cmd/perfetto_config.descriptor.h'
-    ),
-    (
-      'protos/perfetto/metrics/metrics.proto',
-      'src/trace_processor/metrics/metrics.descriptor.h'
+      'src/perfetto_cmd/perfetto_config.descriptor.h',
     ),
     (
       'src/protozero/test/example_proto/test_messages.proto',
@@ -44,16 +40,12 @@ SOURCE_TARGET = [
       'src/trace_processor/importers/proto/track_event.descriptor.h'
     ),
     (
-      'protos/perfetto/metrics/chrome/all_chrome_metrics.proto',
-      'src/trace_processor/metrics/chrome/all_chrome_metrics.descriptor.h'
-    ),
-    (
       'protos/perfetto/trace_processor/trace_processor.proto',
-      'src/trace_processor/python/trace_processor/trace_processor.descriptor'
+      'src/trace_processor/python/perfetto/trace_processor/trace_processor.descriptor'
     ),
     (
       'protos/perfetto/metrics/metrics.proto',
-      'src/trace_processor/python/trace_processor/metrics.descriptor'
+      'src/trace_processor/python/perfetto/trace_processor/metrics.descriptor'
     ),
 ]
 

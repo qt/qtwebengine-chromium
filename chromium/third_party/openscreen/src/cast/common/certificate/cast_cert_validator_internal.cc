@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "cast/common/certificate/types.h"
+#include "util/crypto/pem_helpers.h"
 #include "util/osp_logging.h"
 
 namespace openscreen {
@@ -95,7 +96,8 @@ bssl::UniquePtr<ASN1_BIT_STRING> GetKeyUsage(X509* cert) {
 
 Error::Code VerifyCertificateChain(const std::vector<CertPathStep>& path,
                                    uint32_t step_index,
-                                   const DateTime& time) {
+                                   const DateTime& time,
+                                   TrustStore::Mode mode) {
   // Default max path length is the number of intermediate certificates.
   int max_pathlen = path.size() - 2;
 
@@ -132,33 +134,37 @@ Error::Code VerifyCertificateChain(const std::vector<CertPathStep>& path,
       }
     }
 
-    // Check that basicConstraints is present, specifies the CA bit, and use
-    // pathLenConstraint if present.
-    const int basic_constraints_index =
-        X509_get_ext_by_NID(issuer, NID_basic_constraints, -1);
-    if (basic_constraints_index == -1) {
-      return Error::Code::kErrCertsVerifyGeneric;
-    }
-    X509_EXTENSION* const basic_constraints_extension =
-        X509_get_ext(issuer, basic_constraints_index);
-    bssl::UniquePtr<BASIC_CONSTRAINTS> basic_constraints{
-        reinterpret_cast<BASIC_CONSTRAINTS*>(
-            X509V3_EXT_d2i(basic_constraints_extension))};
-
-    if (!basic_constraints || !basic_constraints->ca) {
-      return Error::Code::kErrCertsVerifyGeneric;
-    }
-
-    if (basic_constraints->pathlen) {
-      if (basic_constraints->pathlen->length != 1) {
+    // Certificates issued by a valid CA authority shall have the
+    // basicConstraints property present with the CA bit set. Self-signed
+    // certificates do not have this property present.
+    if (mode == TrustStore::Mode::kStrict) {
+      const int basic_constraints_index =
+          X509_get_ext_by_NID(issuer, NID_basic_constraints, -1);
+      if (basic_constraints_index == -1) {
         return Error::Code::kErrCertsVerifyGeneric;
-      } else {
-        const int pathlen = *basic_constraints->pathlen->data;
-        if (pathlen < 0) {
+      }
+
+      X509_EXTENSION* const basic_constraints_extension =
+          X509_get_ext(issuer, basic_constraints_index);
+      bssl::UniquePtr<BASIC_CONSTRAINTS> basic_constraints{
+          reinterpret_cast<BASIC_CONSTRAINTS*>(
+              X509V3_EXT_d2i(basic_constraints_extension))};
+
+      if (!basic_constraints || !basic_constraints->ca) {
+        return Error::Code::kErrCertsVerifyGeneric;
+      }
+
+      if (basic_constraints->pathlen) {
+        if (basic_constraints->pathlen->length != 1) {
           return Error::Code::kErrCertsVerifyGeneric;
-        }
-        if (pathlen < max_pathlen) {
-          max_pathlen = pathlen;
+        } else {
+          const int pathlen = *basic_constraints->pathlen->data;
+          if (pathlen < 0) {
+            return Error::Code::kErrCertsVerifyGeneric;
+          }
+          if (pathlen < max_pathlen) {
+            max_pathlen = pathlen;
+          }
         }
       }
     }
@@ -355,6 +361,21 @@ bool GetCertValidTimeRange(X509* cert,
   return times_valid;
 }
 
+// static
+TrustStore TrustStore::CreateInstanceFromPemFile(absl::string_view file_path,
+                                                 TrustStore::Mode mode) {
+  TrustStore store;
+
+  std::vector<std::string> certs = ReadCertificatesFromPemFile(file_path);
+  for (const auto& der_cert : certs) {
+    const uint8_t* data = (const uint8_t*)der_cert.data();
+    store.certs.emplace_back(d2i_X509(nullptr, &data, der_cert.size()));
+  }
+
+  store.mode = mode;
+  return store;
+}
+
 bool VerifySignedData(const EVP_MD* digest,
                       EVP_PKEY* public_key,
                       const ConstDataSpan& data,
@@ -374,7 +395,7 @@ Error FindCertificatePath(const std::vector<std::string>& der_certs,
                           CertificatePathResult* result_path,
                           TrustStore* trust_store) {
   if (der_certs.empty()) {
-    return Error::Code::kErrCertsMissing;
+    return Error(Error::Code::kErrCertsMissing, "Missing DER certificates");
   }
 
   bssl::UniquePtr<X509>& target_cert = result_path->target_cert;
@@ -500,7 +521,7 @@ Error FindCertificatePath(const std::vector<std::string>& der_certs,
         if (last_error == Error::Code::kNone) {
           OSP_DVLOG << "FindCertificatePath: Failed after trying all "
                        "certificate paths, no matches";
-          return Error::Code::kErrCertsVerifyGeneric;
+          return Error::Code::kErrCertsVerifyUntrustedCert;
         }
         return last_error;
       } else {
@@ -512,7 +533,8 @@ Error FindCertificatePath(const std::vector<std::string>& der_certs,
     }
 
     if (path_cert_in_trust_store) {
-      last_error = VerifyCertificateChain(path, path_index, time);
+      last_error =
+          VerifyCertificateChain(path, path_index, time, trust_store->mode);
       if (last_error != Error::Code::kNone) {
         CertPathStep& last_step = path[path_index++];
         trust_store_index = last_step.trust_store_index;

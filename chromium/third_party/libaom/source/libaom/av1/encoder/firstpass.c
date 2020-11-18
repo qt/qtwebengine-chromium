@@ -225,7 +225,7 @@ static AOM_INLINE void first_pass_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
   const int step_param = 3 + sr;
 
   const search_site_config *first_pass_search_sites =
-      &cpi->mv_search_params.search_site_cfg[SS_CFG_FPF];
+      cpi->mv_search_params.search_site_cfg[SS_CFG_FPF];
   const int fine_search_interval =
       cpi->is_screen_content_type && cpi->common.features.allow_intrabc;
   if (fine_search_interval) {
@@ -235,7 +235,7 @@ static AOM_INLINE void first_pass_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
   av1_make_default_fullpel_ms_params(&ms_params, cpi, x, bsize, ref_mv,
                                      first_pass_search_sites,
                                      fine_search_interval);
-  ms_params.search_method = NSTEP;
+  av1_set_mv_search_method(&ms_params, first_pass_search_sites, NSTEP);
 
   FULLPEL_MV this_best_mv;
   tmp_err = av1_full_pixel_search(start_mv, &ms_params, step_param, NULL,
@@ -360,13 +360,6 @@ static int firstpass_intra_prediction(
 
   av1_encode_intra_block_plane(cpi, x, bsize, 0, DRY_RUN_NORMAL, 0);
   int this_intra_error = aom_get_mb_ss(x->plane[0].src_diff);
-
-  if (this_intra_error < UL_INTRA_THRESH) {
-    ++stats->intra_skip_count;
-  } else if ((mb_col > 0) && (stats->image_data_start_row == INVALID_ROW)) {
-    stats->image_data_start_row = mb_row;
-  }
-
   if (seq_params->use_highbitdepth) {
     switch (seq_params->bit_depth) {
       case AOM_BITS_8: break;
@@ -378,6 +371,12 @@ static int firstpass_intra_prediction(
                "AOM_BITS_10 or AOM_BITS_12");
         return -1;
     }
+  }
+
+  if (this_intra_error < UL_INTRA_THRESH) {
+    ++stats->intra_skip_count;
+  } else if ((mb_col > 0) && (stats->image_data_start_row == INVALID_ROW)) {
+    stats->image_data_start_row = mb_row;
   }
 
   aom_clear_system_state();
@@ -393,6 +392,19 @@ static int firstpass_intra_prediction(
     level_sample = CONVERT_TO_SHORTPTR(x->plane[0].src.buf)[0];
   } else {
     level_sample = x->plane[0].src.buf[0];
+  }
+
+  if (seq_params->use_highbitdepth) {
+    switch (seq_params->bit_depth) {
+      case AOM_BITS_8: break;
+      case AOM_BITS_10: level_sample >>= 2; break;
+      case AOM_BITS_12: level_sample >>= 4; break;
+      default:
+        assert(0 &&
+               "seq_params->bit_depth should be AOM_BITS_8, "
+               "AOM_BITS_10 or AOM_BITS_12");
+        return -1;
+    }
   }
   if ((level_sample < DARK_THRESH) && (log_intra < 9.0)) {
     stats->brightness_factor += 1.0 + (0.01 * (DARK_THRESH - level_sample));
@@ -1058,7 +1070,6 @@ void av1_first_pass(AV1_COMP *cpi, const int64_t ts_duration) {
   if (frame_is_intra_only(cm)) {
     FeatureFlags *const features = &cm->features;
     av1_set_screen_content_options(cpi, features);
-    cpi->is_screen_content_type = features->allow_screen_content_tools;
   }
   // First pass coding proceeds in raster scan order with unit size of 16x16.
   const BLOCK_SIZE fp_block_size = BLOCK_16X16;

@@ -102,8 +102,8 @@ namespace dawn_wire { namespace client {
 
     Buffer::~Buffer() {
         // Callbacks need to be fired in all cases, as they can handle freeing resources
-        // so we call them with "Unknown" status.
-        ClearMapRequests(WGPUBufferMapAsyncStatus_Unknown);
+        // so we call them with "DestroyedBeforeCallback" status.
+        ClearMapRequests(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
     }
 
     void Buffer::ClearMapRequests(WGPUBufferMapAsyncStatus status) {
@@ -113,78 +113,6 @@ namespace dawn_wire { namespace client {
             }
         }
         mRequests.clear();
-    }
-
-    void Buffer::MapReadAsync(WGPUBufferMapReadCallback callback, void* userdata) {
-        struct ProxyData {
-            WGPUBufferMapReadCallback callback;
-            void* userdata;
-            Buffer* self;
-        };
-        ProxyData* proxy = new ProxyData;
-        proxy->callback = callback;
-        proxy->userdata = userdata;
-        proxy->self = this;
-
-        MapAsync(
-            WGPUMapMode_Read, 0, mSize,
-            [](WGPUBufferMapAsyncStatus status, void* userdata) {
-                ProxyData* proxy = static_cast<ProxyData*>(userdata);
-                Buffer* self = proxy->self;
-
-                if (status == WGPUBufferMapAsyncStatus_Success) {
-                    // On buffer creation we assert that a mappable buffer cannot be bigger than
-                    // MAX_SIZE_T so we should never have a successful mapping in this case.
-                    ASSERT(self->mSize <= std::numeric_limits<size_t>::max());
-                    self->mMapOffset = 0;
-                    self->mMapSize = self->mSize;
-                }
-
-                if (proxy->callback) {
-                    const void* data = self->GetConstMappedRange(0, self->mSize);
-                    uint64_t dataLength = data == nullptr ? 0 : self->mSize;
-                    proxy->callback(status, data, dataLength, proxy->userdata);
-                }
-
-                delete proxy;
-            },
-            proxy);
-    }
-
-    void Buffer::MapWriteAsync(WGPUBufferMapWriteCallback callback, void* userdata) {
-        struct ProxyData {
-            WGPUBufferMapWriteCallback callback;
-            void* userdata;
-            Buffer* self;
-        };
-        ProxyData* proxy = new ProxyData;
-        proxy->callback = callback;
-        proxy->userdata = userdata;
-        proxy->self = this;
-
-        MapAsync(
-            WGPUMapMode_Write, 0, mSize,
-            [](WGPUBufferMapAsyncStatus status, void* userdata) {
-                ProxyData* proxy = static_cast<ProxyData*>(userdata);
-                Buffer* self = proxy->self;
-
-                if (status == WGPUBufferMapAsyncStatus_Success) {
-                    // On buffer creation we assert that a mappable buffer cannot be bigger than
-                    // MAX_SIZE_T so we should never have a successful mapping in this case.
-                    ASSERT(self->mSize <= std::numeric_limits<size_t>::max());
-                    self->mMapOffset = 0;
-                    self->mMapSize = self->mSize;
-                }
-
-                if (proxy->callback) {
-                    void* data = self->GetMappedRange(0, self->mSize);
-                    uint64_t dataLength = data == nullptr ? 0 : self->mSize;
-                    proxy->callback(status, data, dataLength, proxy->userdata);
-                }
-
-                delete proxy;
-            },
-            proxy);
     }
 
     void Buffer::MapAsync(WGPUMapModeFlags mode,
@@ -398,7 +326,7 @@ namespace dawn_wire { namespace client {
         mMappedData = nullptr;
         mMapOffset = 0;
         mMapSize = 0;
-        ClearMapRequests(WGPUBufferMapAsyncStatus_Unknown);
+        ClearMapRequests(WGPUBufferMapAsyncStatus_UnmappedBeforeCallback);
 
         BufferUnmapCmd cmd;
         cmd.self = ToAPI(this);
@@ -410,7 +338,7 @@ namespace dawn_wire { namespace client {
         mWriteHandle = nullptr;
         mReadHandle = nullptr;
         mMappedData = nullptr;
-        ClearMapRequests(WGPUBufferMapAsyncStatus_Unknown);
+        ClearMapRequests(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
 
         BufferDestroyCmd cmd;
         cmd.self = ToAPI(this);

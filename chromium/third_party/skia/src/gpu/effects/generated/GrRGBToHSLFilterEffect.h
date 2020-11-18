@@ -40,6 +40,7 @@ public:
     GrRGBToHSLFilterEffect(const GrRGBToHSLFilterEffect& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "RGBToHSLFilterEffect"; }
+    bool usesExplicitReturn() const override;
 
 private:
     GrRGBToHSLFilterEffect(std::unique_ptr<GrFragmentProcessor> inputFP)
@@ -57,6 +58,6 @@ private:
     SkString onDumpInfo() const override;
 #endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 #endif

@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "core/fxcrt/fx_extension.h"
+#include "fxjs/gc/container_trace.h"
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/stl_util.h"
@@ -66,21 +67,12 @@ void CXFA_FFDocView::Trace(cppgc::Visitor* visitor) const {
   visitor->Trace(m_pDoc);
   visitor->Trace(m_pWidgetHandler);
   visitor->Trace(m_pFocusNode);
-
-  for (const auto& node : m_ValidateNodes)
-    visitor->Trace(node);
-
-  for (const auto& node : m_CalculateNodes)
-    visitor->Trace(node);
-
-  for (const auto& node : m_NewAddedNodes)
-    visitor->Trace(node);
-
-  for (const auto& node : m_BindItems)
-    visitor->Trace(node);
-
-  for (const auto& node : m_IndexChangedSubforms)
-    visitor->Trace(node);
+  visitor->Trace(m_pFocusWidget);
+  ContainerTrace(visitor, m_ValidateNodes);
+  ContainerTrace(visitor, m_CalculateNodes);
+  ContainerTrace(visitor, m_NewAddedNodes);
+  ContainerTrace(visitor, m_BindItems);
+  ContainerTrace(visitor, m_IndexChangedSubforms);
 }
 
 void CXFA_FFDocView::InitLayout(CXFA_Node* pNode) {
@@ -156,7 +148,7 @@ void CXFA_FFDocView::StopLayout() {
 
   m_CalculateNodes.clear();
   if (m_pFocusNode && !m_pFocusWidget)
-    SetFocusNode(m_pFocusNode.Get());
+    SetFocusNode(m_pFocusNode);
 
   m_iStatus = XFA_DOCVIEW_LAYOUTSTATUS_End;
 }
@@ -222,13 +214,8 @@ void CXFA_FFDocView::UpdateUIDisplay(CXFA_Node* pNode, CXFA_FFWidget* pExcept) {
          pWidget->IsFocused())) {
       continue;
     }
-    ObservedPtr<CXFA_FFWidget> pWatched(pWidget);
-    ObservedPtr<CXFA_FFWidget> pWatchedNext(pNext);
-    pWatched->UpdateFWLData();
-    if (pWatched)
-      pWatched->InvalidateRect();
-    if (!pWatchedNext)
-      break;
+    pWidget->UpdateFWLData();
+    pWidget->InvalidateRect();
   }
 }
 
@@ -305,13 +292,6 @@ CXFA_FFWidgetHandler* CXFA_FFDocView::GetWidgetHandler() {
   return m_pWidgetHandler;
 }
 
-std::unique_ptr<CXFA_ReadyNodeIterator>
-CXFA_FFDocView::CreateReadyNodeIterator() {
-  CXFA_Subform* pFormRoot = GetRootSubform();
-  return pFormRoot ? std::make_unique<CXFA_ReadyNodeIterator>(pFormRoot)
-                   : nullptr;
-}
-
 bool CXFA_FFDocView::SetFocus(CXFA_FFWidget* pNewFocus) {
   if (pNewFocus == m_pFocusWidget)
     return false;
@@ -322,8 +302,8 @@ bool CXFA_FFDocView::SetFocus(CXFA_FFWidget* pNewFocus) {
         !pItem->TestStatusBits(XFA_WidgetStatus_Focused)) {
       if (!m_pFocusWidget->IsLoaded())
         m_pFocusWidget->LoadWidget();
-      if (!m_pFocusWidget->OnSetFocus(m_pFocusWidget.Get()))
-        m_pFocusWidget.Reset();
+      if (!m_pFocusWidget->OnSetFocus(m_pFocusWidget))
+        m_pFocusWidget.Clear();
     }
   }
   if (m_pFocusWidget) {
@@ -335,17 +315,17 @@ bool CXFA_FFDocView::SetFocus(CXFA_FFWidget* pNewFocus) {
     if (pNewFocus->GetLayoutItem()->TestStatusBits(XFA_WidgetStatus_Visible)) {
       if (!pNewFocus->IsLoaded())
         pNewFocus->LoadWidget();
-      if (!pNewFocus->OnSetFocus(m_pFocusWidget.Get()))
+      if (!pNewFocus->OnSetFocus(m_pFocusWidget))
         pNewFocus = nullptr;
     }
   }
   if (pNewFocus) {
     CXFA_Node* node = pNewFocus->GetNode();
     m_pFocusNode = node->IsWidgetReady() ? node : nullptr;
-    m_pFocusWidget.Reset(pNewFocus);
+    m_pFocusWidget = pNewFocus;
   } else {
     m_pFocusNode.Clear();
-    m_pFocusWidget.Reset();
+    m_pFocusWidget.Clear();
   }
   return true;
 }
@@ -359,15 +339,15 @@ void CXFA_FFDocView::SetFocusNode(CXFA_Node* node) {
   if (m_iStatus != XFA_DOCVIEW_LAYOUTSTATUS_End)
     return;
 
-  m_pDoc->SetFocusWidget(m_pFocusWidget.Get());
+  m_pDoc->SetFocusWidget(m_pFocusWidget);
 }
 
 void CXFA_FFDocView::DeleteLayoutItem(CXFA_FFWidget* pWidget) {
   if (m_pFocusNode != pWidget->GetNode())
     return;
 
-  m_pFocusNode = nullptr;
-  m_pFocusWidget.Reset();
+  m_pFocusNode.Clear();
+  m_pFocusWidget.Clear();
 }
 
 static XFA_EventError XFA_ProcessEvent(CXFA_FFDocView* pDocView,
@@ -457,7 +437,7 @@ CXFA_FFWidget* CXFA_FFDocView::GetWidgetByName(const WideString& wsName,
   }
   WideString wsExpression = (!pRefNode ? L"$form." : L"") + wsName;
 
-  XFA_RESOLVENODE_RS resolveNodeRS;
+  XFA_ResolveNodeRS resolveNodeRS;
   constexpr uint32_t kStyle = XFA_RESOLVENODE_Children |
                               XFA_RESOLVENODE_Properties |
                               XFA_RESOLVENODE_Siblings | XFA_RESOLVENODE_Parent;
@@ -466,7 +446,7 @@ CXFA_FFWidget* CXFA_FFDocView::GetWidgetByName(const WideString& wsName,
     return nullptr;
   }
 
-  if (resolveNodeRS.dwFlags == XFA_ResolveNode_RSType_Nodes) {
+  if (resolveNodeRS.dwFlags == XFA_ResolveNodeRS::Type::kNodes) {
     CXFA_Node* pNode = resolveNodeRS.objects.front()->AsNode();
     if (pNode && pNode->IsWidgetReady())
       return GetWidgetForNode(pNode);
@@ -548,11 +528,11 @@ void CXFA_FFDocView::AddCalculateNode(CXFA_Node* node) {
 }
 
 void CXFA_FFDocView::AddCalculateNodeNotify(CXFA_Node* pNodeChange) {
-  CXFA_CalcData* pGlobalData = pNodeChange->JSObject()->GetCalcData();
+  CJX_Object::CalcData* pGlobalData = pNodeChange->JSObject()->GetCalcData();
   if (!pGlobalData)
     return;
 
-  for (auto* pResult : pGlobalData->m_Globals) {
+  for (auto pResult : pGlobalData->m_Globals) {
     if (!pResult->HasRemovedChildren() && pResult->IsWidgetReady())
       AddCalculateNode(pResult);
   }
@@ -657,11 +637,11 @@ void CXFA_FFDocView::RunBindItems() {
     constexpr uint32_t kStyle =
         XFA_RESOLVENODE_Children | XFA_RESOLVENODE_Properties |
         XFA_RESOLVENODE_Siblings | XFA_RESOLVENODE_Parent | XFA_RESOLVENODE_ALL;
-    XFA_RESOLVENODE_RS rs;
+    XFA_ResolveNodeRS rs;
     pScriptContext->ResolveObjects(pWidgetNode, wsRef.AsStringView(), &rs,
                                    kStyle, nullptr);
     pWidgetNode->DeleteItem(-1, false, false);
-    if (rs.dwFlags != XFA_ResolveNode_RSType_Nodes || rs.objects.empty())
+    if (rs.dwFlags != XFA_ResolveNodeRS::Type::kNodes || rs.objects.empty())
       continue;
 
     WideString wsValueRef = item->GetValueRef();
@@ -711,7 +691,7 @@ void CXFA_FFDocView::SetChangeMark() {
   m_pDoc->SetChangeMark();
 }
 
-CXFA_Subform* CXFA_FFDocView::GetRootSubform() {
+CXFA_Node* CXFA_FFDocView::GetRootSubform() {
   CXFA_Node* pFormPacketNode =
       ToNode(m_pDoc->GetXFADoc()->GetXFAObject(XFA_HASHCODE_Form));
   if (!pFormPacketNode)

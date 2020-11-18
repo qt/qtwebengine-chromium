@@ -63,16 +63,12 @@ void SetupGlobalMv(const Tile::Block& block, int index,
   const ObuFrameHeader& frame_header = block.tile.frame_header();
   ReferenceFrameType reference_type = bp.reference_frame[index];
   const auto& gm = frame_header.global_motion[reference_type];
-  GlobalMotionTransformationType global_motion_type =
-      (reference_type != kReferenceFrameIntra)
-          ? gm.type
-          : kNumGlobalMotionTransformationTypes;
   if (reference_type == kReferenceFrameIntra ||
-      global_motion_type == kGlobalMotionTransformationTypeIdentity) {
+      gm.type == kGlobalMotionTransformationTypeIdentity) {
     mv->mv32 = 0;
     return;
   }
-  if (global_motion_type == kGlobalMotionTransformationTypeTranslation) {
+  if (gm.type == kGlobalMotionTransformationTypeTranslation) {
     for (int i = 0; i < 2; ++i) {
       mv->mv[i] = gm.params[i] >> (kWarpedModelPrecisionBits - 3);
     }
@@ -127,18 +123,19 @@ void SearchStack(const Tile::Block& block, const BlockParameters& mv_bp,
   *found_new_mv |= kPredictionModeNewMvMask.Contains(mv_bp.y_mode);
   *found_match = true;
   MotionVector* const ref_mv_stack = prediction_parameters.ref_mv_stack;
-  const auto result = std::find_if(ref_mv_stack, ref_mv_stack + *num_mv_found,
+  const int num_found = *num_mv_found;
+  const auto result = std::find_if(ref_mv_stack, ref_mv_stack + num_found,
                                    [&candidate_mv](const MotionVector& ref_mv) {
                                      return ref_mv == candidate_mv;
                                    });
-  if (result != ref_mv_stack + *num_mv_found) {
+  if (result != ref_mv_stack + num_found) {
     prediction_parameters.IncreaseWeight(std::distance(ref_mv_stack, result),
                                          weight);
     return;
   }
-  if (*num_mv_found >= kMaxRefMvStackSize) return;
-  ref_mv_stack[*num_mv_found] = candidate_mv;
-  prediction_parameters.SetWeightIndexStackEntry(*num_mv_found, weight);
+  if (num_found >= kMaxRefMvStackSize) return;
+  ref_mv_stack[num_found] = candidate_mv;
+  prediction_parameters.SetWeightIndexStackEntry(num_found, weight);
   ++*num_mv_found;
 }
 
@@ -163,19 +160,20 @@ void CompoundSearchStack(const Tile::Block& block, const BlockParameters& mv_bp,
   *found_match = true;
   CompoundMotionVector* const compound_ref_mv_stack =
       prediction_parameters.compound_ref_mv_stack;
+  const int num_found = *num_mv_found;
   const auto result =
-      std::find_if(compound_ref_mv_stack, compound_ref_mv_stack + *num_mv_found,
+      std::find_if(compound_ref_mv_stack, compound_ref_mv_stack + num_found,
                    [&candidate_mv](const CompoundMotionVector& ref_mv) {
                      return ref_mv == candidate_mv;
                    });
-  if (result != compound_ref_mv_stack + *num_mv_found) {
+  if (result != compound_ref_mv_stack + num_found) {
     prediction_parameters.IncreaseWeight(
         std::distance(compound_ref_mv_stack, result), weight);
     return;
   }
-  if (*num_mv_found >= kMaxRefMvStackSize) return;
-  compound_ref_mv_stack[*num_mv_found] = candidate_mv;
-  prediction_parameters.SetWeightIndexStackEntry(*num_mv_found, weight);
+  if (num_found >= kMaxRefMvStackSize) return;
+  compound_ref_mv_stack[num_found] = candidate_mv;
+  prediction_parameters.SetWeightIndexStackEntry(num_found, weight);
   ++*num_mv_found;
 }
 
@@ -305,24 +303,26 @@ void AddTemporalReferenceMvCandidate(
     }
     CompoundMotionVector* const compound_ref_mv_stack =
         prediction_parameters->compound_ref_mv_stack;
+    int num_found = *num_mv_found;
     int index = 0;
     do {
       const CompoundMotionVector& candidate_mv = candidate_mvs[index];
-      const auto result = std::find_if(
-          compound_ref_mv_stack, compound_ref_mv_stack + *num_mv_found,
-          [&candidate_mv](const CompoundMotionVector& ref_mv) {
-            return ref_mv == candidate_mv;
-          });
-      if (result != compound_ref_mv_stack + *num_mv_found) {
+      const auto result =
+          std::find_if(compound_ref_mv_stack, compound_ref_mv_stack + num_found,
+                       [&candidate_mv](const CompoundMotionVector& ref_mv) {
+                         return ref_mv == candidate_mv;
+                       });
+      if (result != compound_ref_mv_stack + num_found) {
         prediction_parameters->IncreaseWeight(
             std::distance(compound_ref_mv_stack, result), 2);
         continue;
       }
-      if (*num_mv_found >= kMaxRefMvStackSize) continue;
-      compound_ref_mv_stack[*num_mv_found] = candidate_mv;
-      prediction_parameters->SetWeightIndexStackEntry(*num_mv_found, 2);
-      ++*num_mv_found;
+      if (num_found >= kMaxRefMvStackSize) continue;
+      compound_ref_mv_stack[num_found] = candidate_mv;
+      prediction_parameters->SetWeightIndexStackEntry(num_found, 2);
+      ++num_found;
     } while (++index < count);
+    *num_mv_found = num_found;
     return;
   }
   MotionVector* const ref_mv_stack = prediction_parameters->ref_mv_stack;
@@ -333,19 +333,20 @@ void AddTemporalReferenceMvCandidate(
       *zero_mv_context = static_cast<int>(max_difference >= 16);
     }
     const MotionVector candidate_mv = {};
+    const int num_found = *num_mv_found;
     const auto result =
-        std::find_if(ref_mv_stack, ref_mv_stack + *num_mv_found,
+        std::find_if(ref_mv_stack, ref_mv_stack + num_found,
                      [&candidate_mv](const MotionVector& ref_mv) {
                        return ref_mv == candidate_mv;
                      });
-    if (result != ref_mv_stack + *num_mv_found) {
+    if (result != ref_mv_stack + num_found) {
       prediction_parameters->IncreaseWeight(std::distance(ref_mv_stack, result),
                                             2 * count);
       return;
     }
-    if (*num_mv_found >= kMaxRefMvStackSize) return;
-    ref_mv_stack[*num_mv_found] = candidate_mv;
-    prediction_parameters->SetWeightIndexStackEntry(*num_mv_found, 2 * count);
+    if (num_found >= kMaxRefMvStackSize) return;
+    ref_mv_stack[num_found] = candidate_mv;
+    prediction_parameters->SetWeightIndexStackEntry(num_found, 2 * count);
     ++*num_mv_found;
     return;
   }
@@ -361,24 +362,26 @@ void AddTemporalReferenceMvCandidate(
                  std::abs(candidate_mvs[0].mv[1] - global_mv[0].mv[1]));
     *zero_mv_context = static_cast<int>(max_difference >= 16);
   }
+  int num_found = *num_mv_found;
   int index = 0;
   do {
     const MotionVector& candidate_mv = candidate_mvs[index];
     const auto result =
-        std::find_if(ref_mv_stack, ref_mv_stack + *num_mv_found,
+        std::find_if(ref_mv_stack, ref_mv_stack + num_found,
                      [&candidate_mv](const MotionVector& ref_mv) {
                        return ref_mv == candidate_mv;
                      });
-    if (result != ref_mv_stack + *num_mv_found) {
+    if (result != ref_mv_stack + num_found) {
       prediction_parameters->IncreaseWeight(std::distance(ref_mv_stack, result),
                                             2);
       continue;
     }
-    if (*num_mv_found >= kMaxRefMvStackSize) continue;
-    ref_mv_stack[*num_mv_found] = candidate_mv;
-    prediction_parameters->SetWeightIndexStackEntry(*num_mv_found, 2);
-    ++*num_mv_found;
+    if (num_found >= kMaxRefMvStackSize) continue;
+    ref_mv_stack[num_found] = candidate_mv;
+    prediction_parameters->SetWeightIndexStackEntry(num_found, 2);
+    ++num_found;
   } while (++index < count);
+  *num_mv_found = num_found;
 }
 
 // Part of 7.10.2.5.
@@ -397,9 +400,6 @@ constexpr BitMaskSet kTemporalScanMask(kBlock8x8, kBlock8x16, kBlock8x32,
                                        kBlock32x8, kBlock32x16, kBlock32x32);
 
 // 7.10.2.5.
-//
-// The |zero_mv_context| output parameter may be null. If |zero_mv_context| is
-// not null, the function may set |*zero_mv_context|.
 void TemporalScan(const Tile::Block& block, bool is_compound,
                   int* const zero_mv_context, int* const num_mv_found) {
   const int step_w = (block.width4x4 >= 16) ? 4 : 2;
@@ -552,6 +552,7 @@ void AddExtraSingleMvCandidate(const Tile::Block& block, int mv_row,
   PredictionParameters& prediction_parameters =
       *block.bp->prediction_parameters;
   MotionVector* const ref_mv_stack = prediction_parameters.ref_mv_stack;
+  int num_found = *num_mv_found;
   for (int i = 0; i < 2; ++i) {
     const ReferenceFrameType candidate_reference_frame = bp.reference_frame[i];
     if (candidate_reference_frame <= kReferenceFrameIntra) continue;
@@ -561,15 +562,16 @@ void AddExtraSingleMvCandidate(const Tile::Block& block, int mv_row,
       candidate_mv.mv[0] *= -1;
       candidate_mv.mv[1] *= -1;
     }
-    assert(*num_mv_found <= 2);
-    if ((*num_mv_found != 0 && ref_mv_stack[0] == candidate_mv) ||
-        (*num_mv_found == 2 && ref_mv_stack[1] == candidate_mv)) {
+    assert(num_found <= 2);
+    if ((num_found != 0 && ref_mv_stack[0] == candidate_mv) ||
+        (num_found == 2 && ref_mv_stack[1] == candidate_mv)) {
       continue;
     }
-    ref_mv_stack[*num_mv_found] = candidate_mv;
-    prediction_parameters.SetWeightIndexStackEntry(*num_mv_found, 0);
-    ++*num_mv_found;
+    ref_mv_stack[num_found] = candidate_mv;
+    prediction_parameters.SetWeightIndexStackEntry(num_found, 0);
+    ++num_found;
   }
+  *num_mv_found = num_found;
 }
 
 // 7.10.2.12.

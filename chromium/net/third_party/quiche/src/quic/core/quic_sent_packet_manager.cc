@@ -105,6 +105,7 @@ QuicSentPacketManager::QuicSentPacketManager(
       pto_rttvar_multiplier_(4),
       num_tlp_timeout_ptos_(0),
       handshake_packet_acked_(false),
+      zero_rtt_packet_acked_(false),
       one_rtt_packet_acked_(false),
       one_rtt_packet_sent_(false),
       first_pto_srtt_multiplier_(0),
@@ -559,6 +560,11 @@ QuicTime QuicSentPacketManager::GetEarliestPacketSentTimeForPto(
 
 bool QuicSentPacketManager::ShouldArmPtoForApplicationData() const {
   DCHECK(supports_multiple_packet_number_spaces());
+  if (GetQuicReloadableFlag(quic_fix_arm_pto_for_application_data)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_fix_arm_pto_for_application_data);
+    // Do not arm PTO for application data until handshake gets confirmed.
+    return handshake_finished_;
+  }
   // Application data must be ignored before handshake completes (1-RTT key
   // is available). Not arming PTO for application data to prioritize the
   // completion of handshake. On the server side, handshake_finished_
@@ -640,6 +646,13 @@ void QuicSentPacketManager::MarkPacketHandled(QuicPacketNumber packet_number,
                                               QuicTime ack_receive_time,
                                               QuicTime::Delta ack_delay_time,
                                               QuicTime receive_timestamp) {
+  if (info->has_ack_frequency) {
+    for (const auto& frame : info->retransmittable_frames) {
+      if (frame.type == ACK_FREQUENCY_FRAME) {
+        OnAckFrequencyFrameAcked(*frame.ack_frequency_frame);
+      }
+    }
+  }
   // Try to aggregate acked stream frames if acked packet is not a
   // retransmission.
   if (info->transmission_type == NOT_RETRANSMISSION) {
@@ -688,36 +701,58 @@ void QuicSentPacketManager::MarkPacketHandled(QuicPacketNumber packet_number,
 }
 
 bool QuicSentPacketManager::OnPacketSent(
-    SerializedPacket* serialized_packet,
+    SerializedPacket* mutable_packet,
     QuicTime sent_time,
     TransmissionType transmission_type,
-    HasRetransmittableData has_retransmittable_data) {
-  QuicPacketNumber packet_number = serialized_packet->packet_number;
+    HasRetransmittableData has_retransmittable_data,
+    bool measure_rtt) {
+  const SerializedPacket& packet = *mutable_packet;
+  QuicPacketNumber packet_number = packet.packet_number;
   DCHECK_LE(FirstSendingPacketNumber(), packet_number);
   DCHECK(!unacked_packets_.IsUnacked(packet_number));
-  QUIC_BUG_IF(serialized_packet->encrypted_length == 0)
-      << "Cannot send empty packets.";
+  QUIC_BUG_IF(packet.encrypted_length == 0) << "Cannot send empty packets.";
   if (pending_timer_transmission_count_ > 0) {
     --pending_timer_transmission_count_;
   }
 
   bool in_flight = has_retransmittable_data == HAS_RETRANSMITTABLE_DATA;
   if (using_pacing_) {
-    pacing_sender_.OnPacketSent(
-        sent_time, unacked_packets_.bytes_in_flight(), packet_number,
-        serialized_packet->encrypted_length, has_retransmittable_data);
+    pacing_sender_.OnPacketSent(sent_time, unacked_packets_.bytes_in_flight(),
+                                packet_number, packet.encrypted_length,
+                                has_retransmittable_data);
   } else {
-    send_algorithm_->OnPacketSent(
-        sent_time, unacked_packets_.bytes_in_flight(), packet_number,
-        serialized_packet->encrypted_length, has_retransmittable_data);
+    send_algorithm_->OnPacketSent(sent_time, unacked_packets_.bytes_in_flight(),
+                                  packet_number, packet.encrypted_length,
+                                  has_retransmittable_data);
   }
 
-  if (serialized_packet->encryption_level == ENCRYPTION_FORWARD_SECURE) {
+  if (packet.encryption_level == ENCRYPTION_FORWARD_SECURE) {
     one_rtt_packet_sent_ = true;
   }
 
-  unacked_packets_.AddSentPacket(serialized_packet, transmission_type,
-                                 sent_time, in_flight);
+  if (GetQuicReloadableFlag(quic_deallocate_message_right_after_sent)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_deallocate_message_right_after_sent);
+    // Deallocate message data in QuicMessageFrame immediately after packet
+    // sent.
+    if (packet.has_message) {
+      for (auto& frame : mutable_packet->retransmittable_frames) {
+        if (frame.type == MESSAGE_FRAME) {
+          frame.message_frame->message_data.clear();
+          frame.message_frame->message_length = 0;
+        }
+      }
+    }
+  }
+
+  if (packet.has_ack_frequency) {
+    for (const auto& frame : packet.retransmittable_frames) {
+      if (frame.type == ACK_FREQUENCY_FRAME) {
+        OnAckFrequencyFrameSent(*frame.ack_frequency_frame);
+      }
+    }
+  }
+  unacked_packets_.AddSentPacket(mutable_packet, transmission_type, sent_time,
+                                 in_flight, measure_rtt);
   // Reset the retransmission timer anytime a pending packet is sent.
   return in_flight;
 }
@@ -767,6 +802,8 @@ QuicSentPacketManager::OnRetransmissionTimeout() {
       pending_timer_transmission_count_ = max_probe_packets_per_pto_;
       return PTO_MODE;
   }
+  QUIC_BUG << "Unknown retransmission mode " << GetRetransmissionMode();
+  return GetRetransmissionMode();
 }
 
 void QuicSentPacketManager::RetransmitCryptoPackets() {
@@ -921,6 +958,10 @@ void QuicSentPacketManager::EnableIetfPtoAndLossDetection() {
   max_probe_packets_per_pto_ = 1;
   skip_packet_number_for_pto_ = true;
   first_pto_srtt_multiplier_ = 1.5;
+  if (GetQuicReloadableFlag(quic_default_to_2_rttvar)) {
+    QUIC_RELOADABLE_FLAG_COUNT(quic_default_to_2_rttvar);
+    pto_rttvar_multiplier_ = 2;
+  }
 }
 
 void QuicSentPacketManager::StartExponentialBackoffAfterNthPto(
@@ -942,6 +983,11 @@ void QuicSentPacketManager::RetransmitDataOfSpaceIfAny(
         unacked_packets_.HasRetransmittableFrames(*it) &&
         unacked_packets_.GetPacketNumberSpace(it->encryption_level) == space) {
       DCHECK(it->in_flight);
+      if (GetQuicReloadableFlag(quic_fix_pto_pending_timer_count) &&
+          pending_timer_transmission_count_ == 0) {
+        QUIC_RELOADABLE_FLAG_COUNT(quic_fix_pto_pending_timer_count);
+        pending_timer_transmission_count_ = 1;
+      }
       MarkForRetransmission(packet_number, PTO_RETRANSMISSION);
       return;
     }
@@ -1250,10 +1296,8 @@ const QuicTime::Delta QuicSentPacketManager::GetProbeTimeoutDelay(
                QuicTime::Delta::FromMilliseconds(kMinHandshakeTimeoutMs)) *
            (1 << consecutive_pto_count_);
   }
-  if (GetQuicReloadableFlag(quic_use_half_rtt_as_first_pto) &&
-      enable_half_rtt_tail_loss_probe_ && consecutive_pto_count_ == 0 &&
+  if (enable_half_rtt_tail_loss_probe_ && consecutive_pto_count_ == 0 &&
       handshake_finished_) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_use_half_rtt_as_first_pto);
     return std::max(min_tlp_timeout_, rtt_stats_.smoothed_rtt() * 0.5);
   }
   const QuicTime::Delta rtt_var = use_standard_deviation_for_pto_
@@ -1432,8 +1476,9 @@ AckResult QuicSentPacketManager::OnAckFrameEnd(
     last_ack_frame_.packets.Add(acked_packet.packet_number);
     if (info->encryption_level == ENCRYPTION_HANDSHAKE) {
       handshake_packet_acked_ = true;
-    }
-    if (info->encryption_level == ENCRYPTION_FORWARD_SECURE) {
+    } else if (info->encryption_level == ENCRYPTION_ZERO_RTT) {
+      zero_rtt_packet_acked_ = true;
+    } else if (info->encryption_level == ENCRYPTION_FORWARD_SECURE) {
       one_rtt_packet_acked_ = true;
     }
     largest_packet_peer_knows_is_acked_.UpdateMax(info->largest_acked);
@@ -1488,8 +1533,13 @@ NextReleaseTimeResult QuicSentPacketManager::GetNextReleaseTime() const {
 void QuicSentPacketManager::SetInitialRtt(QuicTime::Delta rtt) {
   const QuicTime::Delta min_rtt =
       QuicTime::Delta::FromMicroseconds(kMinInitialRoundTripTimeUs);
-  const QuicTime::Delta max_rtt =
+  QuicTime::Delta max_rtt =
       QuicTime::Delta::FromMicroseconds(kMaxInitialRoundTripTimeUs);
+  if (GetQuicReloadableFlag(quic_cap_large_client_initial_rtt)) {
+    // TODO(fayang): change the value of kMaxInitialRoundTripTimeUs when
+    // deprecating quic_cap_large_client_initial_rtt.
+    max_rtt = QuicTime::Delta::FromSeconds(1);
+  }
   rtt_stats_.set_initial_rtt(std::max(min_rtt, std::min(max_rtt, rtt)));
 }
 
@@ -1507,10 +1557,6 @@ QuicPacketNumber QuicSentPacketManager::GetLargestAckedPacket(
 
 QuicPacketNumber QuicSentPacketManager::GetLeastPacketAwaitedByPeer(
     EncryptionLevel encryption_level) const {
-  if (!fix_packet_number_length_) {
-    return GetLeastUnacked();
-  }
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_fix_packet_number_length, 1, 2);
   QuicPacketNumber largest_acked;
   if (supports_multiple_packet_number_spaces()) {
     largest_acked = GetLargestAckedPacket(encryption_level);
@@ -1589,6 +1635,38 @@ bool QuicSentPacketManager::IsLessThanThreePTOs(QuicTime::Delta timeout) const {
 QuicTime::Delta QuicSentPacketManager::GetPtoDelay() const {
   return pto_enabled_ ? GetProbeTimeoutDelay(APPLICATION_DATA)
                       : GetRetransmissionDelay();
+}
+
+void QuicSentPacketManager::OnAckFrequencyFrameSent(
+    const QuicAckFrequencyFrame& ack_frequency_frame) {
+  in_use_sent_ack_delays_.emplace_back(ack_frequency_frame.max_ack_delay,
+                                       ack_frequency_frame.sequence_number);
+  if (ack_frequency_frame.max_ack_delay > peer_max_ack_delay_) {
+    peer_max_ack_delay_ = ack_frequency_frame.max_ack_delay;
+  }
+}
+
+void QuicSentPacketManager::OnAckFrequencyFrameAcked(
+    const QuicAckFrequencyFrame& ack_frequency_frame) {
+  int stale_entry_count = 0;
+  for (auto it = in_use_sent_ack_delays_.cbegin();
+       it != in_use_sent_ack_delays_.cend(); ++it) {
+    if (it->second < ack_frequency_frame.sequence_number) {
+      ++stale_entry_count;
+    } else {
+      break;
+    }
+  }
+  if (stale_entry_count > 0) {
+    in_use_sent_ack_delays_.pop_front_n(stale_entry_count);
+  }
+  if (in_use_sent_ack_delays_.empty()) {
+    QUIC_BUG << "in_use_sent_ack_delays_ is empty.";
+    return;
+  }
+  peer_max_ack_delay_ = std::max_element(in_use_sent_ack_delays_.cbegin(),
+                                         in_use_sent_ack_delays_.cend())
+                            ->first;
 }
 
 #undef ENDPOINT  // undef for jumbo builds

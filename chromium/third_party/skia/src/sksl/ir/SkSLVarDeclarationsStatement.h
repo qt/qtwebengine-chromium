@@ -17,7 +17,7 @@ namespace SkSL {
  * One or more variable declarations appearing as a statement within a function.
  */
 struct VarDeclarationsStatement : public Statement {
-    static constexpr Kind kStatementKind = kVarDeclarations_Kind;
+    static constexpr Kind kStatementKind = Kind::kVarDeclarations;
 
     VarDeclarationsStatement(std::unique_ptr<VarDeclarations> decl)
     : INHERITED(decl->fOffset, kStatementKind)
@@ -32,10 +32,6 @@ struct VarDeclarationsStatement : public Statement {
         return true;
     }
 
-    int nodeCount() const override {
-        return 1 + fDeclaration->nodeCount();
-    }
-
     std::unique_ptr<Statement> clone() const override {
         std::unique_ptr<VarDeclarations> cloned((VarDeclarations*) fDeclaration->clone().release());
         return std::unique_ptr<Statement>(new VarDeclarationsStatement(std::move(cloned)));
@@ -47,7 +43,7 @@ struct VarDeclarationsStatement : public Statement {
 
     std::unique_ptr<VarDeclarations> fDeclaration;
 
-    typedef Statement INHERITED;
+    using INHERITED = Statement;
 };
 
 }  // namespace SkSL

@@ -45,7 +45,7 @@ group("examples") {
     deps += [ ":AppRTCMobile" ]
   }
 
-  if (is_linux || is_win) {
+  if (is_linux || is_chromeos || is_win) {
     deps += [
       ":peerconnection_server",
       ":stunserver",
@@ -130,6 +130,7 @@ if (is_android) {
       "androidapp/src/org/appspot/apprtc/util/AsyncHttpURLConnection.java",
     ]
 
+    resources_package = "org.appspot.apprtc"
     deps = [
       ":AppRTCMobile_resources",
       "../rtc_base:base_java",
@@ -187,9 +188,9 @@ if (is_android) {
       "androidapp/res/values/strings.xml",
       "androidapp/res/xml/preferences.xml",
     ]
-    custom_package = "org.appspot.apprtc"
 
     # Needed for Bazel converter.
+    custom_package = "org.appspot.apprtc"
     resource_dirs = [ "androidapp/res" ]
     assert(resource_dirs != [])  # Mark as used.
   }
@@ -630,7 +631,8 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
         ]
       }
 
-      rtc_ios_xctest_test("apprtcmobile_tests") {
+      rtc_test("apprtcmobile_tests") {
+        is_xctest = true
         info_plist = "objc/AppRTCMobile/ios/Info.plist"
         sources = [ "objc/AppRTCMobile/tests/main.mm" ]
         deps = [
@@ -645,7 +647,7 @@ if (is_ios || (is_mac && target_cpu != "x86")) {
   }
 }
 
-if (is_linux || is_win) {
+if (is_linux || is_chromeos || is_win) {
   rtc_executable("peerconnection_client") {
     testonly = true
     sources = [
@@ -670,6 +672,7 @@ if (is_linux || is_win) {
       "../api/video_codecs:video_codecs_api",
       "../media:rtc_media_base",
       "../p2p:rtc_p2p",
+      "../pc:video_track_source",
       "../rtc_base:checks",
       "../rtc_base/third_party/sigslot",
       "../system_wrappers:field_trial",
@@ -687,9 +690,12 @@ if (is_linux || is_win) {
         "peerconnection/client/main_wnd.h",
       ]
       configs += [ "//build/config/win:windowed" ]
-      deps += [ "../media:rtc_media_base" ]
+      deps += [
+        "../media:rtc_media_base",
+        "../rtc_base:win32",
+      ]
     }
-    if (is_linux) {
+    if (is_linux || is_chromeos) {
       sources += [
         "peerconnection/client/linux/main.cc",
         "peerconnection/client/linux/main_wnd.cc",
@@ -817,6 +823,7 @@ if (is_win || is_android) {
       "../modules/video_capture:video_capture_module",
       "../pc:libjingle_peerconnection",
       "../pc:peerconnection",
+      "../pc:video_track_source",
       "../rtc_base",
       "../test:platform_video_capturer",
       "../test:video_test_common",

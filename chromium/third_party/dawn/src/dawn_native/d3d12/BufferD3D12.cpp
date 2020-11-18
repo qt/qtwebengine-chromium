@@ -83,19 +83,35 @@ namespace dawn_native { namespace d3d12 {
                 return D3D12_HEAP_TYPE_DEFAULT;
             }
         }
+
+        size_t D3D12BufferSizeAlignment(wgpu::BufferUsage usage) {
+            switch (usage) {
+                case wgpu::BufferUsage::Uniform:
+                    return D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+                default:
+                    return 1;
+            }
+        }
     }  // namespace
 
     Buffer::Buffer(Device* device, const BufferDescriptor* descriptor)
         : BufferBase(device, descriptor) {
     }
 
-    MaybeError Buffer::Initialize() {
+    MaybeError Buffer::Initialize(bool mappedAtCreation) {
         D3D12_RESOURCE_DESC resourceDescriptor;
         resourceDescriptor.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         resourceDescriptor.Alignment = 0;
         // TODO(cwallez@chromium.org): Have a global "zero" buffer that can do everything instead
         // of creating a new 4-byte buffer?
-        resourceDescriptor.Width = std::max(GetSize(), uint64_t(4u));
+        // D3D buffers are always resource size aligned to 64KB. However, D3D12's validation forbids
+        // binding a CBV to an unaligned size. To prevent, one can always safely align the buffer
+        // desc size to the CBV data alignment as other buffer usages ignore it (no size check).
+        // The validation will still enforce bound checks with the unaligned size returned by
+        // GetSize().
+        // https://docs.microsoft.com/en-us/windows/win32/direct3d12/uploading-resources#buffer-alignment
+        resourceDescriptor.Width =
+            Align(std::max(GetSize(), uint64_t(4u)), D3D12BufferSizeAlignment(GetUsage()));
         resourceDescriptor.Height = 1;
         resourceDescriptor.DepthOrArraySize = 1;
         resourceDescriptor.MipLevels = 1;
@@ -103,7 +119,7 @@ namespace dawn_native { namespace d3d12 {
         resourceDescriptor.SampleDesc.Count = 1;
         resourceDescriptor.SampleDesc.Quality = 0;
         resourceDescriptor.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-        // Add CopyDst for non-mappable buffer initialization in CreateBufferMapped
+        // Add CopyDst for non-mappable buffer initialization with mappedAtCreation
         // and robust resource initialization.
         resourceDescriptor.Flags = D3D12ResourceFlags(GetUsage() | wgpu::BufferUsage::CopyDst);
 
@@ -130,7 +146,10 @@ namespace dawn_native { namespace d3d12 {
             mResourceAllocation,
             ToBackend(GetDevice())->AllocateMemory(heapType, resourceDescriptor, bufferUsage));
 
-        if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+        // The buffers with mappedAtCreation == true will be initialized in
+        // BufferBase::MapAtCreation().
+        if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
+            !mappedAtCreation) {
             CommandRecordingContext* commandRecordingContext;
             DAWN_TRY_ASSIGN(commandRecordingContext,
                             ToBackend(GetDevice())->GetPendingCommandContext());
@@ -221,7 +240,8 @@ namespace dawn_native { namespace d3d12 {
         // occur. When that buffer is used again, the previously recorded serial must be compared to
         // the last completed serial to determine if the buffer has implicity decayed to the common
         // state.
-        const Serial pendingCommandSerial = ToBackend(GetDevice())->GetPendingCommandSerial();
+        const ExecutionSerial pendingCommandSerial =
+            ToBackend(GetDevice())->GetPendingCommandSerial();
         if (pendingCommandSerial > mLastUsedSerial) {
             lastState = D3D12_RESOURCE_STATE_COMMON;
             mLastUsedSerial = pendingCommandSerial;
@@ -251,9 +271,17 @@ namespace dawn_native { namespace d3d12 {
         return mResourceAllocation.GetGPUPointer();
     }
 
-    bool Buffer::IsMappableAtCreation() const {
+    bool Buffer::IsCPUWritableAtCreation() const {
+        // We use a staging buffer for the buffers with mappedAtCreation == true and created on the
+        // READBACK heap because for the buffers on the READBACK heap, the data written on the CPU
+        // side won't be uploaded to GPU. When we enable zero-initialization, the CPU side memory
+        // of the buffer is all written to 0 but not the GPU side memory, so on the next mapping
+        // operation the zeroes get overwritten by whatever was in the GPU memory when the buffer
+        // was created. With a staging buffer, the data on the CPU side will first upload to the
+        // staging buffer, and copied from the staging buffer to the GPU memory of the current
+        // buffer in the unmap() call.
         // TODO(enga): Handle CPU-visible memory on UMA
-        return (GetUsage() & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) != 0;
+        return (GetUsage() & wgpu::BufferUsage::MapWrite) != 0;
     }
 
     MaybeError Buffer::MapInternal(bool isWrite,
@@ -283,22 +311,16 @@ namespace dawn_native { namespace d3d12 {
     }
 
     MaybeError Buffer::MapAtCreationImpl() {
-        CommandRecordingContext* commandContext;
-        DAWN_TRY_ASSIGN(commandContext, ToBackend(GetDevice())->GetPendingCommandContext());
-        DAWN_TRY(EnsureDataInitialized(commandContext));
+        // We will use a staging buffer for MapRead buffers instead so we just clear the staging
+        // buffer and initialize the original buffer by copying the staging buffer to the original
+        // buffer one the first time Unmap() is called.
+        ASSERT((GetUsage() & wgpu::BufferUsage::MapWrite) != 0);
 
-        // Setting isMapWrite to false on MapRead buffers to silence D3D12 debug layer warning.
-        bool isMapWrite = (GetUsage() & wgpu::BufferUsage::MapWrite) != 0;
-        DAWN_TRY(MapInternal(isMapWrite, 0, size_t(GetSize()), "D3D12 map at creation"));
+        // The buffers with mappedAtCreation == true will be initialized in
+        // BufferBase::MapAtCreation().
+        DAWN_TRY(MapInternal(true, 0, size_t(GetSize()), "D3D12 map at creation"));
+
         return {};
-    }
-
-    MaybeError Buffer::MapReadAsyncImpl() {
-        return MapInternal(false, 0, size_t(GetSize()), "D3D12 map read async");
-    }
-
-    MaybeError Buffer::MapWriteAsyncImpl() {
-        return MapInternal(true, 0, size_t(GetSize()), "D3D12 map write async");
     }
 
     MaybeError Buffer::MapAsyncImpl(wgpu::MapMode mode, size_t offset, size_t size) {
@@ -348,10 +370,8 @@ namespace dawn_native { namespace d3d12 {
     }
 
     MaybeError Buffer::EnsureDataInitialized(CommandRecordingContext* commandContext) {
-        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
-        // instead when buffer lazy initialization is completely supported.
         if (IsDataInitialized() ||
-            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return {};
         }
 
@@ -363,10 +383,8 @@ namespace dawn_native { namespace d3d12 {
     MaybeError Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
                                                           uint64_t offset,
                                                           uint64_t size) {
-        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
-        // instead when buffer lazy initialization is completely supported.
         if (IsDataInitialized() ||
-            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return {};
         }
 
@@ -381,10 +399,8 @@ namespace dawn_native { namespace d3d12 {
 
     MaybeError Buffer::EnsureDataInitializedAsDestination(CommandRecordingContext* commandContext,
                                                           const CopyTextureToBufferCmd* copy) {
-        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
-        // instead when buffer lazy initialization is completely supported.
         if (IsDataInitialized() ||
-            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return {};
         }
 
@@ -398,7 +414,7 @@ namespace dawn_native { namespace d3d12 {
     }
 
     MaybeError Buffer::InitializeToZero(CommandRecordingContext* commandContext) {
-        ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse));
+        ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse));
         ASSERT(!IsDataInitialized());
 
         // TODO(jiawei.shao@intel.com): skip initializing the buffer when it is created on a heap

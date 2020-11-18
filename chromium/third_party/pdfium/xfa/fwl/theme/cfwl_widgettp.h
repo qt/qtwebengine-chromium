@@ -17,7 +17,6 @@
 #include "xfa/fxgraphics/cxfa_graphics.h"
 
 class CFDE_TextOut;
-class CFGAS_FontMgr;
 class CFGAS_GEFont;
 class CFWL_ThemeBackground;
 class CFWL_ThemeText;
@@ -73,7 +72,7 @@ class CFWL_WidgetTP {
                     const CFX_Matrix& matrix);
 
   std::unique_ptr<CFDE_TextOut> m_pTextOut;
-  RetainPtr<CFGAS_GEFont> m_pFDEFont;
+  RetainPtr<CFGAS_GEFont> m_pFGASFont;
   std::unique_ptr<CColorData> m_pColorData;
 };
 
@@ -94,7 +93,6 @@ class CFWL_FontData final {
   WideString m_wsFamily;
   uint32_t m_dwStyles;
   uint32_t m_dwCodePage;
-  std::unique_ptr<CFGAS_FontMgr> m_pFontMgr;
   RetainPtr<CFGAS_GEFont> m_pFont;
 };
 

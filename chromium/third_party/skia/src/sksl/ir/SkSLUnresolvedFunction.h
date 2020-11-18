@@ -16,7 +16,7 @@ namespace SkSL {
  * A symbol representing multiple functions with the same name.
  */
 struct UnresolvedFunction : public Symbol {
-    static constexpr Kind kSymbolKind = kUnresolvedFunction_Kind;
+    static constexpr Kind kSymbolKind = Kind::kUnresolvedFunction;
 
     UnresolvedFunction(std::vector<const FunctionDeclaration*> funcs)
     : INHERITED(-1, kSymbolKind, funcs[0]->fName)
@@ -34,7 +34,7 @@ struct UnresolvedFunction : public Symbol {
 
     const std::vector<const FunctionDeclaration*> fFunctions;
 
-    typedef Symbol INHERITED;
+    using INHERITED = Symbol;
 };
 
 }  // namespace SkSL

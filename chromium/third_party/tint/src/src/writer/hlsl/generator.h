@@ -15,6 +15,7 @@
 #ifndef SRC_WRITER_HLSL_GENERATOR_H_
 #define SRC_WRITER_HLSL_GENERATOR_H_
 
+#include <sstream>
 #include <string>
 
 #include "src/writer/hlsl/generator_impl.h"
@@ -43,6 +44,7 @@ class Generator : public Text {
   std::string error() const;
 
  private:
+  std::ostringstream out_;
   GeneratorImpl impl_;
 };
 

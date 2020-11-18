@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+// TODO(crbug.com/1011811): Enable TypeScript compiler checks
+
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as UI from '../ui/ui.js';
 
@@ -281,8 +284,11 @@ export class StatusView {
    * @param {string} auditURL
    */
   _renderBugReportBody(err, auditURL) {
+    // @ts-ignore Lighthouse sets `friendlyMessage` on certain
+    // important errors such as PROTOCOL_TIMEOUT.
+    const errorMessage = err.friendlyMessage || err.message;
     const issueBody = `
-${err.message}
+${errorMessage}
 \`\`\`
 Channel: DevTools
 Initial URL: ${auditURL}

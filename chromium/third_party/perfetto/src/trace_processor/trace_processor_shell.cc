@@ -350,23 +350,6 @@ util::Status ExtendMetricsProto(const std::string& extend_metrics_proto,
   google::protobuf::compiler::Parser parser;
   parser.Parse(&tokenizer, file_desc);
 
-  // Go through all the imports (dependencies) and make the import
-  // paths relative to the Perfetto root. This allows trace processor embedders
-  // to have paths relative to their own root for imports when using metric
-  // proto extensions.
-  for (int i = 0; i < file_desc->dependency_size(); ++i) {
-    static constexpr char kPrefix[] = "protos/perfetto/metrics/";
-    auto* dep = file_desc->mutable_dependency(i);
-
-    // If the file being imported contains kPrefix, it is probably an import of
-    // a Perfetto metrics proto. Strip anything before kPrefix to ensure that
-    // we resolve the paths correctly.
-    size_t idx = dep->find(kPrefix);
-    if (idx != std::string::npos) {
-      *dep = dep->substr(idx);
-    }
-  }
-
   file_desc->set_name(BaseName(extend_metrics_proto));
   pool->BuildFile(*file_desc);
 
@@ -714,6 +697,7 @@ struct CommandLineOptions {
   std::string metric_names;
   std::string metric_output;
   std::string trace_file_path;
+  std::string port_number;
   bool launch_shell = false;
   bool enable_httpd = false;
   bool wide = false;
@@ -802,6 +786,7 @@ Options:
                                       This query is executed before the selected
                                       metrics and can't output any results.
  -D, --httpd                          Enables the HTTP RPC server.
+ --http-port PORT                     Specify what port to run HTTP RPC server.
  -i, --interactive                    Starts interactive mode even after a query
                                       file is specified with -q or
                                       --run-metrics.
@@ -832,6 +817,7 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
     OPT_PRE_METRICS,
     OPT_METRICS_OUTPUT,
     OPT_FORCE_FULL_SORT,
+    OPT_HTTP_PORT,
   };
 
   static const struct option long_options[] = {
@@ -849,6 +835,7 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       {"pre-metrics", required_argument, nullptr, OPT_PRE_METRICS},
       {"metrics-output", required_argument, nullptr, OPT_METRICS_OUTPUT},
       {"full-sort", no_argument, nullptr, OPT_FORCE_FULL_SORT},
+      {"http-port", required_argument, nullptr, OPT_HTTP_PORT},
       {nullptr, 0, nullptr, 0}};
 
   bool explicit_interactive = false;
@@ -926,6 +913,11 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
 
     if (option == OPT_FORCE_FULL_SORT) {
       command_line_options.force_full_sort = true;
+      continue;
+    }
+
+    if (option == OPT_HTTP_PORT) {
+      command_line_options.port_number = optarg;
       continue;
     }
 
@@ -1052,15 +1044,17 @@ util::Status RunMetrics(const CommandLineOptions& options) {
       continue;
 
     std::string no_ext_name = metric_or_path.substr(0, ext_idx);
-    util::Status status = RegisterMetric(no_ext_name + ".sql");
+
+    // The proto must be extended before registering the metric.
+    util::Status status = ExtendMetricsProto(no_ext_name + ".proto", &pool);
     if (!status.ok()) {
-      return util::ErrStatus("Unable to register metric %s: %s",
+      return util::ErrStatus("Unable to extend metrics proto %s: %s",
                              metric_or_path.c_str(), status.c_message());
     }
 
-    status = ExtendMetricsProto(no_ext_name + ".proto", &pool);
+    status = RegisterMetric(no_ext_name + ".sql");
     if (!status.ok()) {
-      return util::ErrStatus("Unable to extend metrics proto %s: %s",
+      return util::ErrStatus("Unable to register metric %s: %s",
                              metric_or_path.c_str(), status.c_message());
     }
 
@@ -1110,7 +1104,7 @@ util::Status TraceProcessorMain(int argc, char** argv) {
 
 #if PERFETTO_BUILDFLAG(PERFETTO_TP_HTTPD)
   if (options.enable_httpd) {
-    RunHttpRPCServer(std::move(tp));
+    RunHttpRPCServer(std::move(tp), options.port_number);
     PERFETTO_FATAL("Should never return");
   }
 #endif

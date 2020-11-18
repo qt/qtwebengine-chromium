@@ -13,17 +13,11 @@
 #include "modules/skparagraph/include/TextStyle.h"
 #include "modules/skparagraph/src/OneLineShaper.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
-#include "modules/skparagraph/src/ParagraphUtil.h"
 #include "modules/skparagraph/src/Run.h"
 #include "modules/skparagraph/src/TextLine.h"
 #include "modules/skparagraph/src/TextWrapper.h"
 #include "src/core/SkSpan.h"
 #include "src/utils/SkUTF.h"
-
-#if defined(SK_USING_THIRD_PARTY_ICU)
-#include "third_party/icu/SkLoadICU.h"
-#endif
-
 #include <math.h>
 #include <algorithm>
 #include <utility>
@@ -71,7 +65,8 @@ ParagraphImpl::ParagraphImpl(const SkString& text,
                              ParagraphStyle style,
                              SkTArray<Block, true> blocks,
                              SkTArray<Placeholder, true> placeholders,
-                             sk_sp<FontCollection> fonts)
+                             sk_sp<FontCollection> fonts,
+                             std::unique_ptr<SkUnicode> unicode)
         : Paragraph(std::move(style), std::move(fonts))
         , fTextStyles(std::move(blocks))
         , fPlaceholders(std::move(placeholders))
@@ -82,21 +77,27 @@ ParagraphImpl::ParagraphImpl(const SkString& text,
         , fStrutMetrics(false)
         , fOldWidth(0)
         , fOldHeight(0)
-        , fOrigin(SkRect::MakeEmpty()) {
-    fICU = ::skia::SkUnicode::Make();
+        , fUnicode(std::move(unicode))
+{
+    SkASSERT(fUnicode);
 }
 
 ParagraphImpl::ParagraphImpl(const std::u16string& utf16text,
                              ParagraphStyle style,
                              SkTArray<Block, true> blocks,
                              SkTArray<Placeholder, true> placeholders,
-                             sk_sp<FontCollection> fonts)
-        : ParagraphImpl(SkStringFromU16String(utf16text),
+                             sk_sp<FontCollection> fonts,
+                             std::unique_ptr<SkUnicode> unicode)
+        : ParagraphImpl(SkString(),
                         std::move(style),
                         std::move(blocks),
                         std::move(placeholders),
-                        std::move(fonts))
-{ }
+                        std::move(fonts),
+                        std::move(unicode))
+{
+    SkASSERT(fUnicode);
+    fText =  fUnicode->convertUtf16ToUtf8(utf16text);
+}
 
 ParagraphImpl::~ParagraphImpl() = default;
 
@@ -117,8 +118,9 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
         fState >= kLineBroken &&
          fLines.size() == 1 && fLines.front().ellipsis() == nullptr) {
         // Most common case: one line of text (and one line is never justified, so no cluster shifts)
+        // We cannot mark it as kLineBroken because the new width can be bigger than the old width
         fWidth = floorWidth;
-        fState = kLineBroken;
+        fState = kMarked;
     } else if (fState >= kLineBroken && fOldWidth != floorWidth) {
         // We can use the results from SkShaper but have to do EVERYTHING ELSE again
         fState = kShaped;
@@ -184,8 +186,6 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
     if (fState < kFormatted) {
         // Build the picture lazily not until we actually have to paint (or never)
         this->formatLines(fWidth);
-        // We have to calculate the paragraph boundaries only after we format the lines
-        this->calculateBoundaries();
         fState = kFormatted;
     }
 
@@ -207,14 +207,29 @@ void ParagraphImpl::layout(SkScalar rawWidth) {
 
 void ParagraphImpl::paint(SkCanvas* canvas, SkScalar x, SkScalar y) {
 
+    if (fParagraphStyle.getDrawOptions() == DrawOptions::kDirect) {
+        // Paint the text without recording it
+        this->paintLines(canvas, x, y);
+        return;
+    }
+
     if (fState < kDrawn) {
         // Record the picture anyway (but if we have some pieces in the cache they will be used)
-        this->paintLinesIntoPicture();
+        this->paintLinesIntoPicture(0, 0);
         fState = kDrawn;
     }
 
-    SkMatrix matrix = SkMatrix::Translate(x + fOrigin.fLeft, y + fOrigin.fTop);
-    canvas->drawPicture(fPicture, &matrix, nullptr);
+    if (fParagraphStyle.getDrawOptions() == DrawOptions::kReplay) {
+        // Replay the recorded picture
+        canvas->save();
+        canvas->translate(x, y);
+        fPicture->playback(canvas);
+        canvas->restore();
+    } else {
+        // Draw the picture
+        SkMatrix matrix = SkMatrix::Translate(x, y);
+        canvas->drawPicture(fPicture, &matrix, nullptr);
+    }
 }
 
 void ParagraphImpl::resetContext() {
@@ -230,26 +245,23 @@ void ParagraphImpl::resetContext() {
 }
 
 // shapeTextIntoEndlessLine is the thing that calls this method
-// (that contains all ICU dependencies except for words)
 bool ParagraphImpl::computeCodeUnitProperties() {
 
-    #if defined(SK_USING_THIRD_PARTY_ICU)
-    if (!SkLoadICU()) {
+    if (nullptr == fUnicode) {
         return false;
     }
-    #endif
 
     // Get bidi regions
-    Direction textDirection = fParagraphStyle.getTextDirection() == TextDirection::kLtr
-                              ? Direction::kLTR
-                              : Direction::kRTL;
-    if (!fICU->getBidiRegions(fText.c_str(), fText.size(), textDirection, &fBidiRegions)) {
+    auto textDirection = fParagraphStyle.getTextDirection() == TextDirection::kLtr
+                              ? SkUnicode::TextDirection::kLTR
+                              : SkUnicode::TextDirection::kRTL;
+    if (!fUnicode->getBidiRegions(fText.c_str(), fText.size(), textDirection, &fBidiRegions)) {
         return false;
     }
 
     // Get white spaces
-    std::vector<Position> whitespaces;
-    if (!fICU->getWhitespaces(fText.c_str(), fText.size(), &whitespaces)) {
+    std::vector<SkUnicode::Position> whitespaces;
+    if (!fUnicode->getWhitespaces(fText.c_str(), fText.size(), &whitespaces)) {
         return false;
     }
     for (auto whitespace : whitespaces) {
@@ -257,19 +269,19 @@ bool ParagraphImpl::computeCodeUnitProperties() {
     }
 
     // Get line breaks
-    std::vector<LineBreakBefore> lineBreaks;
-    if (!fICU->getLineBreaks(fText.c_str(), fText.size(), &lineBreaks)) {
+    std::vector<SkUnicode::LineBreakBefore> lineBreaks;
+    if (!fUnicode->getLineBreaks(fText.c_str(), fText.size(), &lineBreaks)) {
         return false;
     }
     for (auto& lineBreak : lineBreaks) {
-        fCodeUnitProperties[lineBreak.pos] |= lineBreak.breakType == LineBreakType::kHardLineBreak
+        fCodeUnitProperties[lineBreak.pos] |= lineBreak.breakType == SkUnicode::LineBreakType::kHardLineBreak
                                            ? CodeUnitFlags::kHardLineBreakBefore
                                            : CodeUnitFlags::kSoftLineBreakBefore;
     }
 
     // Get graphemes
-    std::vector<Position> graphemes;
-    if (!fICU->getGraphemes(fText.c_str(), fText.size(), &graphemes)) {
+    std::vector<SkUnicode::Position> graphemes;
+    if (!fUnicode->getGraphemes(fText.c_str(), fText.size(), &graphemes)) {
         return false;
     }
     for (auto pos : graphemes) {
@@ -416,14 +428,7 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
                 // TODO: Take in account clipped edges
                 auto& line = this->addLine(offset, advance, text, textWithSpaces, clusters, clustersWithGhosts, widthWithSpaces, metrics);
                 if (addEllipsis) {
-                    line.createEllipsis(maxWidth, fParagraphStyle.getEllipsis(), true);
-                    if (line.ellipsis() != nullptr) {
-                        // Make sure the paragraph boundaries include its ellipsis
-                        auto size = line.ellipsis()->advance();
-                        auto offset = line.ellipsis()->offset();
-                        SkRect boundaries = SkRect::MakeXYWH(offset.fX, offset.fY, size.fX, size.fY);
-                        fOrigin.joinPossiblyEmptyRect(boundaries);
-                    }
+                    line.createEllipsis(maxWidth, getEllipsis(), true);
                 }
 
                 fLongestLine = std::max(fLongestLine, nearlyZero(advance.fX) ? widthWithSpaces : advance.fX);
@@ -474,16 +479,23 @@ void ParagraphImpl::formatLines(SkScalar maxWidth) {
     }
 }
 
-void ParagraphImpl::paintLinesIntoPicture() {
+void ParagraphImpl::paintLinesIntoPicture(SkScalar x, SkScalar y) {
     SkPictureRecorder recorder;
-    SkCanvas* textCanvas = recorder.beginRecording(fOrigin.width(), fOrigin.height(), nullptr, 0);
-    textCanvas->translate(-fOrigin.fLeft, -fOrigin.fTop);
+    SkCanvas* textCanvas = recorder.beginRecording(this->getMaxWidth(), this->getHeight());
 
+    auto bounds = SkRect::MakeEmpty();
     for (auto& line : fLines) {
-        line.paint(textCanvas);
+        auto boundaries = line.paint(textCanvas, x, y);
+        bounds.joinPossiblyEmptyRect(boundaries);
     }
 
-    fPicture = recorder.finishRecordingAsPicture();
+    fPicture = recorder.finishRecordingAsPictureWithCull(bounds);
+}
+
+void ParagraphImpl::paintLines(SkCanvas* canvas, SkScalar x, SkScalar y) {
+    for (auto& line : fLines) {
+        line.paint(canvas, x, y);
+    }
 }
 
 void ParagraphImpl::resolveStrut() {
@@ -537,12 +549,6 @@ BlockRange ParagraphImpl::findAllBlocks(TextRange textRange) {
     }
 
     return { begin, end + 1 };
-}
-
-void ParagraphImpl::calculateBoundaries() {
-    for (auto& line : fLines) {
-        fOrigin.joinPossiblyEmptyRect(line.calculateBoundaries());
-    }
 }
 
 TextLine& ParagraphImpl::addLine(SkVector offset,
@@ -679,7 +685,7 @@ PositionWithAffinity ParagraphImpl::getGlyphPositionAtCoordinate(SkScalar dx, Sk
 SkRange<size_t> ParagraphImpl::getWordBoundary(unsigned offset) {
 
     if (fWords.empty()) {
-        if (!fICU->getWords(fText.c_str(), fText.size(), &fWords)) {
+        if (!fUnicode->getWords(fText.c_str(), fText.size(), &fWords)) {
             return {0, 0 };
         }
     }
@@ -827,6 +833,17 @@ void ParagraphImpl::computeEmptyMetrics() {
 
     if (fParagraphStyle.getStrutStyle().getStrutEnabled()) {
         fStrutMetrics.updateLineMetrics(fEmptyMetrics);
+    }
+}
+
+SkString ParagraphImpl::getEllipsis() const {
+
+    auto ellipsis8 = fParagraphStyle.getEllipsis();
+    auto ellipsis16 = fParagraphStyle.getEllipsisUtf16();
+    if (!ellipsis8.isEmpty()) {
+        return ellipsis8;
+    } else {
+        return fUnicode->convertUtf16ToUtf8(fParagraphStyle.getEllipsisUtf16());
     }
 }
 

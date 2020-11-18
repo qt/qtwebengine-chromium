@@ -136,12 +136,12 @@ void GrDawnGpu::disconnect(DisconnectType type) {
 ///////////////////////////////////////////////////////////////////////////////
 
 GrOpsRenderPass* GrDawnGpu::getOpsRenderPass(
-            GrRenderTarget* rt, GrStencilAttachment*,
-            GrSurfaceOrigin origin, const SkIRect& bounds,
-            const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
-            const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
-            const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            bool usesXferBarriers) {
+        GrRenderTarget* rt, GrStencilAttachment*,
+        GrSurfaceOrigin origin, const SkIRect& bounds,
+        const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
+        const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
+        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+        GrXferBarrierFlags renderPassXferBarriers) {
     fOpsRenderPass.reset(new GrDawnOpsRenderPass(this, rt, origin, colorInfo, stencilInfo));
     return fOpsRenderPass.get();
 }
@@ -287,12 +287,9 @@ sk_sp<GrRenderTarget> GrDawnGpu::onWrapBackendTextureAsRenderTarget(const GrBack
 }
 
 GrStencilAttachment* GrDawnGpu::createStencilAttachmentForRenderTarget(const GrRenderTarget* rt,
-                                                                       int width,
-                                                                       int height,
+                                                                       SkISize dimensions,
                                                                        int numStencilSamples) {
-    GrDawnStencilAttachment* stencil(GrDawnStencilAttachment::Create(this,
-                                                                     width,
-                                                                     height,
+    GrDawnStencilAttachment* stencil(GrDawnStencilAttachment::Create(this, dimensions,
                                                                      numStencilSamples));
     fStats.incStencilAttachmentCreates();
     return stencil;
@@ -746,4 +743,42 @@ void GrDawnGpu::moveStagingBuffersToBusyAndMapAsync() {
         fBusyStagingBuffers.push_back(std::move(fSubmittedStagingBuffers[i]));
     }
     fSubmittedStagingBuffers.clear();
+}
+
+SkSL::String GrDawnGpu::SkSLToSPIRV(const char* shaderString, SkSL::Program::Kind kind, bool flipY,
+                                    uint32_t rtHeightOffset, SkSL::Program::Inputs* inputs) {
+    SkSL::Program::Settings settings;
+    settings.fCaps = this->caps()->shaderCaps();
+    settings.fFlipY = flipY;
+    settings.fRTHeightOffset = rtHeightOffset;
+    settings.fRTHeightBinding = 0;
+    settings.fRTHeightSet = 0;
+    std::unique_ptr<SkSL::Program> program = this->shaderCompiler()->convertProgram(
+        kind,
+        shaderString,
+        settings);
+    if (!program) {
+        SkDebugf("SkSL error:\n%s\n", this->shaderCompiler()->errorText().c_str());
+        SkASSERT(false);
+        return "";
+    }
+    if (inputs) {
+        *inputs = program->fInputs;
+    }
+    SkSL::String code;
+    if (!this->shaderCompiler()->toSPIRV(*program, &code)) {
+        return "";
+    }
+    return code;
+}
+
+wgpu::ShaderModule GrDawnGpu::createShaderModule(const SkSL::String& spirvSource) {
+    wgpu::ShaderModuleSPIRVDescriptor desc;
+    desc.codeSize = spirvSource.size() / 4;
+    desc.code = reinterpret_cast<const uint32_t*>(spirvSource.c_str());
+
+    wgpu::ShaderModuleDescriptor smDesc;
+    smDesc.nextInChain = &desc;
+
+    return fDevice.CreateShaderModule(&smDesc);
 }

@@ -232,6 +232,8 @@ def cross_compile_msl(shader, spirv, opt, iterations, paths):
         msl_args.append('--emit-line-directives')
     if '.multiview.' in shader:
         msl_args.append('--msl-multiview')
+    if '.no-layered.' in shader:
+        msl_args.append('--msl-multiview-no-layered-rendering')
     if '.viewfromdev.' in shader:
         msl_args.append('--msl-view-index-from-device-index')
     if '.dispatchbase.' in shader:
@@ -296,6 +298,8 @@ def cross_compile_msl(shader, spirv, opt, iterations, paths):
     if '.fixed-sample-mask.' in shader:
         msl_args.append('--msl-additional-fixed-sample-mask')
         msl_args.append('0x00000022')
+    if '.arrayed-subpass.' in shader:
+        msl_args.append('--msl-arrayed-subpass-input')
 
     subprocess.check_call(msl_args)
 

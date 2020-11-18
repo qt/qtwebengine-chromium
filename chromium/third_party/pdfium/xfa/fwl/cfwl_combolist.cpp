@@ -6,8 +6,6 @@
 
 #include "xfa/fwl/cfwl_combolist.h"
 
-#include <utility>
-
 #include "xfa/fwl/cfwl_combobox.h"
 #include "xfa/fwl/cfwl_comboedit.h"
 #include "xfa/fwl/cfwl_listbox.h"
@@ -16,12 +14,14 @@
 #include "xfa/fwl/cfwl_messagemouse.h"
 #include "xfa/fwl/fwl_widgetdef.h"
 
-CFWL_ComboList::CFWL_ComboList(const CFWL_App* app,
+CFWL_ComboList::CFWL_ComboList(CFWL_App* app,
                                const Properties& properties,
                                CFWL_Widget* pOuter)
     : CFWL_ListBox(app, properties, pOuter) {
   ASSERT(pOuter);
 }
+
+CFWL_ComboList::~CFWL_ComboList() = default;
 
 int32_t CFWL_ComboList::MatchItem(WideStringView wsMatch) {
   if (wsMatch.IsEmpty())

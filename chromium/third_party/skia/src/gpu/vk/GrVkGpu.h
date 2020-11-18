@@ -79,10 +79,12 @@ public:
 
     bool setBackendTextureState(const GrBackendTexture&,
                                 const GrBackendSurfaceMutableState&,
+                                GrBackendSurfaceMutableState* previousState,
                                 sk_sp<GrRefCntedCallback> finishedCallback) override;
 
     bool setBackendRenderTargetState(const GrBackendRenderTarget&,
                                      const GrBackendSurfaceMutableState&,
+                                     GrBackendSurfaceMutableState* previousState,
                                      sk_sp<GrRefCntedCallback> finishedCallback) override;
 
     void deleteBackendTexture(const GrBackendTexture&) override;
@@ -103,7 +105,7 @@ public:
 #endif
 
     GrStencilAttachment* createStencilAttachmentForRenderTarget(
-            const GrRenderTarget*, int width, int height, int numStencilSamples) override;
+            const GrRenderTarget*, SkISize dimensions, int numStencilSamples) override;
 
     GrOpsRenderPass* getOpsRenderPass(
             GrRenderTarget*, GrStencilAttachment*,
@@ -111,7 +113,7 @@ public:
             const GrOpsRenderPass::LoadAndStoreInfo&,
             const GrOpsRenderPass::StencilLoadAndStoreInfo&,
             const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            bool usesXferBarriers) override;
+            GrXferBarrierFlags renderPassXferBarriers) override;
 
     void addBufferMemoryBarrier(const GrManagedResource*,
                                 VkPipelineStageFlags srcStageMask,
@@ -186,7 +188,7 @@ private:
         kSkip_SyncQueue
     };
 
-    GrVkGpu(GrDirectContext*, const GrContextOptions&, const GrVkBackendContext&,
+    GrVkGpu(GrDirectContext*, const GrVkBackendContext&, const sk_sp<GrVkCaps> caps,
             sk_sp<const GrVkInterface>, uint32_t instanceVersion, uint32_t physicalDeviceVersion,
             sk_sp<GrVkMemoryAllocator>);
 
@@ -215,7 +217,8 @@ private:
     bool setBackendSurfaceState(GrVkImageInfo info,
                                 sk_sp<GrBackendSurfaceMutableStateImpl> currentState,
                                 SkISize dimensions,
-                                const GrVkSharedImageInfo& newInfo);
+                                const GrVkSharedImageInfo& newInfo,
+                                GrBackendSurfaceMutableState* previousState);
 
     sk_sp<GrTexture> onCreateTexture(SkISize,
                                      const GrBackendFormat&,
@@ -361,7 +364,7 @@ private:
 
     std::unique_ptr<GrVkOpsRenderPass>                    fCachedOpsRenderPass;
 
-    typedef GrGpu INHERITED;
+    using INHERITED = GrGpu;
 };
 
 #endif

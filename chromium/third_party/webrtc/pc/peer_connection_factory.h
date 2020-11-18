@@ -71,8 +71,9 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   bool StartAecDump(FILE* file, int64_t max_size_bytes) override;
   void StopAecDump() override;
 
-  virtual std::unique_ptr<cricket::SctpTransportInternalFactory>
-  CreateSctpTransportInternalFactory();
+  SctpTransportFactoryInterface* sctp_transport_factory() {
+    return sctp_factory_.get();
+  }
 
   virtual cricket::ChannelManager* channel_manager();
 
@@ -85,6 +86,8 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   rtc::Thread* network_thread() { return network_thread_; }
 
   const Options& options() const { return options_; }
+
+  const WebRtcKeyValueConfig& trials() const { return *trials_.get(); }
 
  protected:
   // This structure allows simple management of all new dependencies being added
@@ -125,6 +128,7 @@ class PeerConnectionFactory : public PeerConnectionFactoryInterface {
   std::unique_ptr<NetworkControllerFactoryInterface>
       injected_network_controller_factory_;
   std::unique_ptr<NetEqFactory> neteq_factory_;
+  std::unique_ptr<SctpTransportFactoryInterface> sctp_factory_;
   const std::unique_ptr<WebRtcKeyValueConfig> trials_;
 };
 

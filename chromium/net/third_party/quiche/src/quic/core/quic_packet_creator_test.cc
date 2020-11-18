@@ -164,10 +164,8 @@ class QuicPacketCreatorTest : public QuicTestWithParam<TestParams> {
         creator_(connection_id_, &client_framer_, &delegate_, &producer_) {
     EXPECT_CALL(delegate_, GetPacketBuffer())
         .WillRepeatedly(Return(QuicPacketBuffer()));
-    if (GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early)) {
-      EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
-          .WillRepeatedly(Return(SEND_TO_WRITER));
-    }
+    EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
+        .WillRepeatedly(Return(SEND_TO_WRITER));
     creator_.SetEncrypter(ENCRYPTION_INITIAL, std::make_unique<NullEncrypter>(
                                                   Perspective::IS_CLIENT));
     creator_.SetEncrypter(ENCRYPTION_HANDSHAKE, std::make_unique<NullEncrypter>(
@@ -510,8 +508,7 @@ TEST_P(QuicPacketCreatorTest, CryptoStreamFramePacketPadding) {
     EXPECT_CALL(delegate_, OnSerializedPacket(_))
         .WillRepeatedly(
             Invoke(this, &QuicPacketCreatorTest::SaveSerializedPacket));
-    if (GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early) &&
-        client_framer_.version().CanSendCoalescedPackets()) {
+    if (client_framer_.version().CanSendCoalescedPackets()) {
       EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
           .WillRepeatedly(Return(COALESCE));
     }
@@ -2453,10 +2450,8 @@ class QuicPacketCreatorMultiplePacketsTest : public QuicTest {
         ack_frame_(InitAckFrame(1)) {
     EXPECT_CALL(delegate_, GetPacketBuffer())
         .WillRepeatedly(Return(QuicPacketBuffer()));
-    if (GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early)) {
-      EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
-          .WillRepeatedly(Return(SEND_TO_WRITER));
-    }
+    EXPECT_CALL(delegate_, GetSerializedPacketFate(_, _))
+        .WillRepeatedly(Return(SEND_TO_WRITER));
     creator_.SetEncrypter(
         ENCRYPTION_FORWARD_SECURE,
         std::make_unique<NullEncrypter>(Perspective::IS_CLIENT));
@@ -2595,9 +2590,6 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest, AddControlFrame_NotWritable) {
 
 TEST_F(QuicPacketCreatorMultiplePacketsTest,
        WrongEncryptionLevelForStreamDataFastPath) {
-  if (!GetQuicReloadableFlag(quic_check_encryption_level_in_fast_path)) {
-    return;
-  }
   creator_.set_encryption_level(ENCRYPTION_HANDSHAKE);
   delegate_.SetCanWriteAnything();
   // Create a 10000 byte IOVector.
@@ -3825,12 +3817,136 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest, ExtraPaddingNeeded) {
   creator_.Flush();
   ASSERT_FALSE(packets_[0].nonretransmittable_frames.empty());
   QuicFrame padding = packets_[0].nonretransmittable_frames[0];
-  if (GetQuicReloadableFlag(quic_fix_extra_padding_bytes)) {
-    // Verify stream frame expansion is excluded.
-    padding.padding_frame.num_padding_bytes = 3;
-  } else {
-    padding.padding_frame.num_padding_bytes = 4;
+  // Verify stream frame expansion is excluded.
+  padding.padding_frame.num_padding_bytes = 3;
+}
+
+TEST_F(QuicPacketCreatorMultiplePacketsTest,
+       PeerAddressContextWithSameAddress) {
+  QuicSocketAddress peer_addr(QuicIpAddress::Any4(), 12345);
+  creator_.SetDefaultPeerAddress(peer_addr);
+  // Send some stream data.
+  MakeIOVector("foo", &iov_);
+  EXPECT_CALL(delegate_, ShouldGeneratePacket(_, _))
+      .WillRepeatedly(Return(true));
+  QuicConsumedData consumed = creator_.ConsumeData(
+      QuicUtils::GetFirstBidirectionalStreamId(creator_.transport_version(),
+                                               Perspective::IS_CLIENT),
+      &iov_, 1u, iov_.iov_len, 0, NO_FIN);
+  EXPECT_EQ(3u, consumed.bytes_consumed);
+  EXPECT_TRUE(creator_.HasPendingFrames());
+  {
+    // Set a different address via context which should trigger flush.
+    QuicPacketCreator::ScopedPeerAddressContext context(&creator_, peer_addr);
+    EXPECT_TRUE(creator_.HasPendingFrames());
+    // Queue another STREAM_FRAME.
+    QuicConsumedData consumed = creator_.ConsumeData(
+        QuicUtils::GetFirstBidirectionalStreamId(creator_.transport_version(),
+                                                 Perspective::IS_CLIENT),
+        &iov_, 1u, iov_.iov_len, 0, FIN);
+    EXPECT_EQ(3u, consumed.bytes_consumed);
   }
+  // After exiting the scope, the last queued frame should be flushed.
+  EXPECT_TRUE(creator_.HasPendingFrames());
+  EXPECT_CALL(delegate_, OnSerializedPacket(_))
+      .WillOnce(Invoke([=](SerializedPacket packet) {
+        EXPECT_EQ(peer_addr, packet.peer_address);
+        ASSERT_EQ(2u, packet.retransmittable_frames.size());
+        EXPECT_EQ(STREAM_FRAME, packet.retransmittable_frames.front().type);
+        EXPECT_EQ(STREAM_FRAME, packet.retransmittable_frames.back().type);
+      }));
+  creator_.FlushCurrentPacket();
+}
+
+TEST_F(QuicPacketCreatorMultiplePacketsTest,
+       PeerAddressContextWithDifferentAddress) {
+  QuicSocketAddress peer_addr(QuicIpAddress::Any4(), 12345);
+  creator_.SetDefaultPeerAddress(peer_addr);
+  // Send some stream data.
+  MakeIOVector("foo", &iov_);
+  EXPECT_CALL(delegate_, ShouldGeneratePacket(_, _))
+      .WillRepeatedly(Return(true));
+  QuicConsumedData consumed = creator_.ConsumeData(
+      QuicUtils::GetFirstBidirectionalStreamId(creator_.transport_version(),
+                                               Perspective::IS_CLIENT),
+      &iov_, 1u, iov_.iov_len, 0, NO_FIN);
+  EXPECT_EQ(3u, consumed.bytes_consumed);
+
+  QuicSocketAddress peer_addr1(QuicIpAddress::Any4(), 12346);
+  EXPECT_CALL(delegate_, OnSerializedPacket(_))
+      .WillOnce(Invoke([=](SerializedPacket packet) {
+        EXPECT_EQ(peer_addr, packet.peer_address);
+        ASSERT_EQ(1u, packet.retransmittable_frames.size());
+        EXPECT_EQ(STREAM_FRAME, packet.retransmittable_frames.front().type);
+      }))
+      .WillOnce(Invoke([=](SerializedPacket packet) {
+        EXPECT_EQ(peer_addr1, packet.peer_address);
+        ASSERT_EQ(1u, packet.retransmittable_frames.size());
+        EXPECT_EQ(STREAM_FRAME, packet.retransmittable_frames.front().type);
+      }));
+  EXPECT_TRUE(creator_.HasPendingFrames());
+  {
+    // Set a different address via context which should trigger flush.
+    QuicPacketCreator::ScopedPeerAddressContext context(&creator_, peer_addr1);
+    EXPECT_FALSE(creator_.HasPendingFrames());
+    // Queue another STREAM_FRAME.
+    QuicConsumedData consumed = creator_.ConsumeData(
+        QuicUtils::GetFirstBidirectionalStreamId(creator_.transport_version(),
+                                                 Perspective::IS_CLIENT),
+        &iov_, 1u, iov_.iov_len, 0, FIN);
+    EXPECT_EQ(3u, consumed.bytes_consumed);
+    EXPECT_TRUE(creator_.HasPendingFrames());
+  }
+  // After exiting the scope, the last queued frame should be flushed.
+  EXPECT_FALSE(creator_.HasPendingFrames());
+}
+
+TEST_F(QuicPacketCreatorMultiplePacketsTest,
+       NestedPeerAddressContextWithDifferentAddress) {
+  QuicSocketAddress peer_addr(QuicIpAddress::Any4(), 12345);
+  creator_.SetDefaultPeerAddress(peer_addr);
+  QuicPacketCreator::ScopedPeerAddressContext context(&creator_, peer_addr);
+
+  // Send some stream data.
+  MakeIOVector("foo", &iov_);
+  EXPECT_CALL(delegate_, ShouldGeneratePacket(_, _))
+      .WillRepeatedly(Return(true));
+  QuicConsumedData consumed = creator_.ConsumeData(
+      QuicUtils::GetFirstBidirectionalStreamId(creator_.transport_version(),
+                                               Perspective::IS_CLIENT),
+      &iov_, 1u, iov_.iov_len, 0, NO_FIN);
+  EXPECT_EQ(3u, consumed.bytes_consumed);
+  EXPECT_TRUE(creator_.HasPendingFrames());
+
+  QuicSocketAddress peer_addr1(QuicIpAddress::Any4(), 12346);
+  EXPECT_CALL(delegate_, OnSerializedPacket(_))
+      .WillOnce(Invoke([=](SerializedPacket packet) {
+        EXPECT_EQ(peer_addr, packet.peer_address);
+        ASSERT_EQ(1u, packet.retransmittable_frames.size());
+        EXPECT_EQ(STREAM_FRAME, packet.retransmittable_frames.front().type);
+
+        // Set up another context with a different address.
+        QuicPacketCreator::ScopedPeerAddressContext context(&creator_,
+                                                            peer_addr1);
+        MakeIOVector("foo", &iov_);
+        EXPECT_CALL(delegate_, ShouldGeneratePacket(_, _))
+            .WillRepeatedly(Return(true));
+        QuicConsumedData consumed = creator_.ConsumeData(
+            QuicUtils::GetFirstBidirectionalStreamId(
+                creator_.transport_version(), Perspective::IS_CLIENT),
+            &iov_, 1u, iov_.iov_len, 0, NO_FIN);
+        EXPECT_EQ(3u, consumed.bytes_consumed);
+        EXPECT_TRUE(creator_.HasPendingFrames());
+        // This should trigger another OnSerializedPacket() with the 2nd
+        // address.
+        creator_.FlushCurrentPacket();
+      }))
+      .WillOnce(Invoke([=](SerializedPacket packet) {
+        EXPECT_EQ(peer_addr1, packet.peer_address);
+        ASSERT_EQ(1u, packet.retransmittable_frames.size());
+        EXPECT_EQ(STREAM_FRAME, packet.retransmittable_frames.front().type);
+      }));
+  creator_.FlushCurrentPacket();
 }
 
 }  // namespace

@@ -18,13 +18,6 @@ const gnPath = path.resolve(__dirname, '..', 'BUILD.gn');
 const gnFile = fs.readFileSync(gnPath, 'utf-8');
 const gnLines = gnFile.split('\n');
 
-const EXCLUDED_FILE_NAMES = [
-  // TODO: ignore generated until the import locations are using devtools_{module,entrypoint,pre_built}
-  '../generated/SupportedCSSProperties.js',
-  '../generated/ARIAProperties.js',
-  '../generated/InspectorBackendCommands.js',
-];
-
 /**
  * Ensures that generated module files are in the right list in BUILD.gn.
  * This is primarily to avoid remote modules from accidentally getting
@@ -41,7 +34,7 @@ function checkNonAutostartNonRemoteModules() {
     ];
   }
   const text = lines.join('\n');
-  const modules = manifestModules.filter(m => m.type !== 'autostart' && m.type !== 'remote').map(m => m.name);
+  const modules = manifestModules.filter(m => m.type !== 'autostart').map(m => m.name);
 
   const missingModules = modules.filter(m => !text.includes(`${m}/${m}_module.js`));
   if (missingModules.length) {
@@ -65,48 +58,20 @@ function checkNonAutostartNonRemoteModules() {
  */
 function checkAllDevToolsFiles() {
   return checkGNVariable('all_devtools_files', 'all_devtools_files', moduleJSON => {
-    const scripts = moduleJSON.scripts || [];
     const resources = moduleJSON.resources || [];
     return [
       'module.json',
-      ...scripts,
       ...resources,
     ];
   });
-}
-
-function checkAllDevToolsModules() {
-  return checkGNVariable(
-      'all_devtools_modules', 'all_devtools_module_sources',
-      (moduleJSON, folderName) => {
-        if (moduleJSON.skip_rollup) {
-          return [];
-        }
-        return (moduleJSON.modules || []).filter(fileName => {
-          if (EXCLUDED_FILE_NAMES.includes(fileName) || fileName.startsWith('../third_party/codemirror') ||
-              fileName.startsWith('../third_party/acorn')) {
-            return false;
-          }
-          return fileName !== `${folderName}.js` && fileName !== `${folderName}-legacy.js`;
-        });
-      },
-      buildGNPath => filename => {
-        const relativePath = path.normalize(`${buildGNPath}/${filename}`);
-        return `"${relativePath}",`;
-      });
 }
 
 function checkDevtoolsModuleEntrypoints() {
   return checkGNVariable(
       'devtools_module_entrypoints', 'devtools_module_entrypoint_sources',
       (moduleJSON, folderName) => {
-        // TODO(crbug.com/1101738): Remove the exemption and change the variable to
-        // `generated_typescript_entrypoint_sources` instead.
-        if (moduleJSON.skip_rollup) {
-          return [];
-        }
         return (moduleJSON.modules || []).filter(fileName => {
-          return fileName === `${folderName}.js` || fileName === `${folderName}-legacy.js`;
+          return fileName === `${folderName}-legacy.js`;
         });
       },
       buildGNPath => filename => {
@@ -121,7 +86,8 @@ function checkGNVariable(fileName, gnVariable, obtainFiles, obtainRelativePath) 
   const linesToCheck = fileContent.split('\n');
 
   const errors = [];
-  const excludedFiles = ['axe.js', 'formatter_worker/', 'third_party/lighthouse/'].map(path.normalize);
+  const excludedFiles =
+      ['axe.js', 'formatter_worker/', 'third_party/lighthouse/', 'third_party/i18n/'].map(path.normalize);
   const lines = selectGNLines(`${gnVariable} = [`, ']', linesToCheck).map(path.normalize);
   if (!lines.length) {
     return [
@@ -190,7 +156,6 @@ function main() {
   const errors = [
     ...checkNonAutostartNonRemoteModules(),
     ...checkAllDevToolsFiles(),
-    ...checkAllDevToolsModules(),
     ...checkDevtoolsModuleEntrypoints(),
   ];
   if (errors.length) {

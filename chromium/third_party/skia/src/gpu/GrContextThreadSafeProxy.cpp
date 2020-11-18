@@ -13,6 +13,7 @@
 #include "include/core/SkSurfaceCharacterization.h"
 #include "src/gpu/GrBaseContextPriv.h"
 #include "src/gpu/GrCaps.h"
+#include "src/gpu/GrThreadSafeUniquelyKeyedProxyViewCache.h"
 #include "src/gpu/effects/GrSkSLFP.h"
 #include "src/image/SkSurface_Gpu.h"
 
@@ -39,6 +40,7 @@ GrContextThreadSafeProxy::~GrContextThreadSafeProxy() = default;
 void GrContextThreadSafeProxy::init(sk_sp<const GrCaps> caps) {
     fCaps = std::move(caps);
     fTextBlobCache = std::make_unique<GrTextBlobCache>(fContextID);
+    fThreadSafeViewCache = std::make_unique<GrThreadSafeUniquelyKeyedProxyViewCache>();
 }
 
 SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
@@ -47,7 +49,7 @@ SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
                                      int sampleCnt, GrSurfaceOrigin origin,
                                      const SkSurfaceProps& surfaceProps,
                                      bool isMipMapped, bool willUseGLFBO0, bool isTextureable,
-                                     GrProtected isProtected) {
+                                     GrProtected isProtected, bool vkRTSupportsInputAttachment) {
     SkASSERT(fCaps);
     if (!backendFormat.isValid()) {
         return {};
@@ -57,6 +59,11 @@ SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
 
     if (GrBackendApi::kOpenGL != backendFormat.backend() && willUseGLFBO0) {
         // The willUseGLFBO0 flags can only be used for a GL backend.
+        return {};
+    }
+
+    if (GrBackendApi::kVulkan != backendFormat.backend() && vkRTSupportsInputAttachment) {
+        // The vkRTSupportsInputAttachment flags can only be used for a Vulkan backend.
         return {};
     }
 
@@ -106,15 +113,17 @@ SkSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
 #endif
     }
 
-    return SkSurfaceCharacterization(sk_ref_sp<GrContextThreadSafeProxy>(this),
-                                     cacheMaxResourceBytes, ii, backendFormat,
-                                     origin, sampleCnt,
-                                     SkSurfaceCharacterization::Textureable(isTextureable),
-                                     SkSurfaceCharacterization::MipMapped(isMipMapped),
-                                     SkSurfaceCharacterization::UsesGLFBO0(willUseGLFBO0),
-                                     SkSurfaceCharacterization::VulkanSecondaryCBCompatible(false),
-                                     isProtected,
-                                     surfaceProps);
+    return SkSurfaceCharacterization(
+            sk_ref_sp<GrContextThreadSafeProxy>(this),
+            cacheMaxResourceBytes, ii, backendFormat,
+            origin, sampleCnt,
+            SkSurfaceCharacterization::Textureable(isTextureable),
+            SkSurfaceCharacterization::MipMapped(isMipMapped),
+            SkSurfaceCharacterization::UsesGLFBO0(willUseGLFBO0),
+            SkSurfaceCharacterization::VkRTSupportsInputAttachment(vkRTSupportsInputAttachment),
+            SkSurfaceCharacterization::VulkanSecondaryCBCompatible(false),
+            isProtected,
+            surfaceProps);
 }
 
 GrBackendFormat GrContextThreadSafeProxy::defaultBackendFormat(SkColorType skColorType,

@@ -27,7 +27,7 @@ private:
     const SkImage_Lazy*     fImage;
     GrImageTexGenPolicy     fTexGenPolicy;
 
-    typedef GrTextureMaker INHERITED;
+    using INHERITED = GrTextureMaker;
 };
 
 /** This class manages the conversion of generator-backed YUVA images to GrTextures. */
@@ -45,7 +45,8 @@ public:
             const SkRect* subset,
             const SkRect* domain,
             GrSamplerState::WrapMode wrapX,
-            GrSamplerState::WrapMode wrapY) override;
+            GrSamplerState::WrapMode wrapY,
+            SkImage::CubicResampler) override;
 
     bool isPlanar() const override { return true; }
 
@@ -54,7 +55,7 @@ private:
 
     const SkImage_GpuYUVA*  fImage;
 
-    typedef GrTextureMaker INHERITED;
+    using INHERITED = GrTextureMaker;
 };
 
 #endif

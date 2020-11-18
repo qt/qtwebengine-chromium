@@ -45,6 +45,8 @@ public:
 
     std::unique_ptr<GrFragmentProcessor> clone() const override;
 
+    bool usesExplicitReturn() const override { return true; }
+
 private:
     using ShaderErrorHandler = GrContextOptions::ShaderErrorHandler;
 
@@ -68,7 +70,7 @@ private:
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 
     friend class GrGLSLSkSLFP;
 

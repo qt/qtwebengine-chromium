@@ -387,8 +387,6 @@ private:
     SpvId fBoolTrue;
     SpvId fBoolFalse;
     std::unordered_map<std::pair<ConstantValue, ConstantType>, SpvId> fNumberConstants;
-    // The constant float2(0, 1), used in swizzling
-    SpvId fConstantZeroOneVector = 0;
     bool fSetupFragPosition;
     // label of the current block, or 0 if we are not in a block
     SpvId fCurrentBlock;
@@ -403,7 +401,7 @@ private:
     friend class PointerLValue;
     friend class SwizzleLValue;
 
-    typedef CodeGenerator INHERITED;
+    using INHERITED = CodeGenerator;
 };
 
 }  // namespace SkSL

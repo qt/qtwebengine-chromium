@@ -17,6 +17,7 @@
 
 #include "dawn_native/Error.h"
 #include "dawn_native/RingBufferAllocator.h"
+#include "dawn_native/d3d12/IntegerTypes.h"
 #include "dawn_native/d3d12/PageableD3D12.h"
 #include "dawn_native/d3d12/d3d12_platform.h"
 
@@ -54,17 +55,17 @@ namespace dawn_native { namespace d3d12 {
         // Returns true if the allocation was successful, when false is returned the current heap is
         // full and AllocateAndSwitchShaderVisibleHeap() must be called.
         bool AllocateGPUDescriptors(uint32_t descriptorCount,
-                                    Serial pendingSerial,
+                                    ExecutionSerial pendingSerial,
                                     D3D12_CPU_DESCRIPTOR_HANDLE* baseCPUDescriptor,
                                     GPUDescriptorHeapAllocation* allocation);
 
-        void Tick(uint64_t completedSerial);
+        void Tick(ExecutionSerial completedSerial);
 
         ID3D12DescriptorHeap* GetShaderVisibleHeap() const;
         MaybeError AllocateAndSwitchShaderVisibleHeap();
 
         // For testing purposes only.
-        Serial GetShaderVisibleHeapSerialForTesting() const;
+        HeapVersionID GetShaderVisibleHeapSerialForTesting() const;
         uint64_t GetShaderVisibleHeapSizeForTesting() const;
         uint64_t GetShaderVisiblePoolSizeForTesting() const;
         bool IsShaderVisibleHeapLockedResidentForTesting() const;
@@ -74,7 +75,7 @@ namespace dawn_native { namespace d3d12 {
 
       private:
         struct SerialDescriptorHeap {
-            Serial heapSerial;
+            ExecutionSerial heapSerial;
             std::unique_ptr<ShaderVisibleDescriptorHeap> heap;
         };
 
@@ -91,7 +92,7 @@ namespace dawn_native { namespace d3d12 {
         // The serial value of 0 means the shader-visible heaps have not been allocated.
         // This value is never returned in the GPUDescriptorHeapAllocation after
         // AllocateGPUDescriptors() is called.
-        Serial mHeapSerial = 0;
+        HeapVersionID mHeapSerial = HeapVersionID(0);
 
         uint32_t mSizeIncrement;
 

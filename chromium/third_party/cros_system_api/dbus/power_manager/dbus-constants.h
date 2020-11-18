@@ -50,9 +50,8 @@ const char kStartArcTimerMethod[] = "StartArcTimer";
 const char kDeleteArcTimersMethod[] = "DeleteArcTimers";
 const char kHasAmbientColorDeviceMethod[] = "HasAmbientColorDevice";
 const char kChangeWifiRegDomainMethod[] = "ChangeWifiRegDomain";
-const char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
-// Token identifying the primordial Mojo pipe passed to BootstrapMojoConnection.
-const char kBootstrapMojoConnectionChannelToken[] = "power_manager-bootstrap";
+// TODO(b/166543531): Remove after migrating to BlueZ Battery Provider API.
+const char kRefreshBluetoothBatteryMethod[] = "RefreshBluetoothBattery";
 
 // Signals emitted by powerd.
 const char kScreenBrightnessChangedSignal[] = "ScreenBrightnessChanged";

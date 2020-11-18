@@ -27,6 +27,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_macros.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
@@ -80,6 +81,20 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
     // Called when a stream frame is coalesced with an existing stream frame.
     // |frame| is the new stream frame.
     virtual void OnStreamFrameCoalesced(const QuicStreamFrame& /*frame*/) {}
+  };
+
+  // Set the peer address which the serialized packet will be sent to during the
+  // scope of this object. Upon exiting the scope, the original peer address is
+  // restored.
+  class QUIC_EXPORT_PRIVATE ScopedPeerAddressContext {
+   public:
+    ScopedPeerAddressContext(QuicPacketCreator* creator,
+                             QuicSocketAddress address);
+    ~ScopedPeerAddressContext();
+
+   private:
+    QuicPacketCreator* creator_;
+    QuicSocketAddress old_peer_address_;
   };
 
   QuicPacketCreator(QuicConnectionId server_connection_id,
@@ -149,14 +164,14 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Returns true if current open packet can accommodate more stream frames of
   // stream |id| at |offset| and data length |data_size|, false otherwise.
-  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
+  // TODO(fayang): mark this const by moving RemoveSoftMaxPacketLength out.
   bool HasRoomForStreamFrame(QuicStreamId id,
                              QuicStreamOffset offset,
                              size_t data_size);
 
   // Returns true if current open packet can accommodate a message frame of
   // |length|.
-  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
+  // TODO(fayang): mark this const by moving RemoveSoftMaxPacketLength out.
   bool HasRoomForMessageFrame(QuicByteCount length);
 
   // Serializes all added frames into a single packet and invokes the delegate_
@@ -188,8 +203,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // frames in the packet.  Since stream frames are slightly smaller when they
   // are the last frame in a packet, this method will return a different
   // value than max_packet_size - PacketSize(), in this case.
-  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
-  size_t BytesFree();
+  size_t BytesFree() const;
 
   // Returns the number of bytes that the packet will expand by if a new frame
   // is added to the packet. If the last frame was a stream frame, it will
@@ -206,8 +220,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // if serialized with the current frames.  Adding a frame to the packet
   // may change the serialized length of existing frames, as per the comment
   // in BytesFree.
-  // TODO(fayang): mark this const when deprecating quic_update_packet_size.
-  size_t PacketSize();
+  size_t PacketSize() const;
 
   // Tries to add |frame| to the packet creator's list of frames to be
   // serialized. If the frame does not fit into the current packet, flushes the
@@ -242,6 +255,9 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
       const QuicCircularDeque<QuicPathFrameBuffer>& payloads,
       const bool is_padded);
 
+  // Add PATH_RESPONSE to current packet, flush before or afterwards if needed.
+  bool AddPathResponseFrame(const QuicPathFrameBuffer& data_buffer);
+
   // Returns a dummy packet that is valid but contains no useful information.
   static SerializedPacket NoPacket();
 
@@ -268,9 +284,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   void SetClientConnectionId(QuicConnectionId client_connection_id);
 
   // Sets the encryption level that will be applied to new packets.
-  void set_encryption_level(EncryptionLevel level) {
-    packet_.encryption_level = level;
-  }
+  void set_encryption_level(EncryptionLevel level);
   EncryptionLevel encryption_level() { return packet_.encryption_level; }
 
   // packet number of the last created packet, or 0 if no packets have been
@@ -451,26 +465,19 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // Returns true if max_packet_length_ is currently a soft value.
   bool HasSoftMaxPacketLength() const;
 
-  void set_disable_padding_override(bool should_disable_padding) {
-    disable_padding_override_ = should_disable_padding;
-  }
-
-  bool determine_serialized_packet_fate_early() const {
-    return determine_serialized_packet_fate_early_;
-  }
-
-  bool coalesced_packet_of_higher_space() const {
-    return coalesced_packet_of_higher_space_;
-  }
+  // Use this address to sent to the peer from now on. If this address is
+  // different from the current one, flush all the queue frames first.
+  void SetDefaultPeerAddress(QuicSocketAddress address);
 
  private:
   friend class test::QuicPacketCreatorPeer;
 
-  // Used to clear queued_frames_ of creator upon exiting the scope.
-  class QUIC_EXPORT_PRIVATE ScopedQueuedFramesCleaner {
+  // Used to 1) clear queued_frames_, 2) report unrecoverable error (if
+  // serialization fails) upon exiting the scope.
+  class QUIC_EXPORT_PRIVATE ScopedSerializationFailureHandler {
    public:
-    explicit ScopedQueuedFramesCleaner(QuicPacketCreator* creator);
-    ~ScopedQueuedFramesCleaner();
+    explicit ScopedSerializationFailureHandler(QuicPacketCreator* creator);
+    ~ScopedSerializationFailureHandler();
 
    private:
     QuicPacketCreator* creator_;  // Unowned.
@@ -501,10 +508,11 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Serializes all frames which have been added and adds any which should be
   // retransmitted to packet_.retransmittable_frames. All frames must fit into
-  // a single packet.
-  // Fails if |encrypted_buffer_len| isn't long enough for the encrypted packet.
-  void SerializePacket(QuicOwnedPacketBuffer encrypted_buffer,
-                       size_t encrypted_buffer_len);
+  // a single packet. Returns true on success, otherwise, returns false.
+  // Fails if |encrypted_buffer| is not large enough for the encrypted packet.
+  QUIC_MUST_USE_RESULT bool SerializePacket(
+      QuicOwnedPacketBuffer encrypted_buffer,
+      size_t encrypted_buffer_len);
 
   // Called after a new SerialiedPacket is created to call the delegate's
   // OnSerializedPacket and reset state.
@@ -655,22 +663,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // negotiates this during the handshake.
   QuicByteCount max_datagram_frame_size_;
 
-  // When true, this will override the padding generation code to disable it.
-  // TODO(fayang): remove this when deprecating
-  // quic_determine_serialized_packet_fate_early.
-  bool disable_padding_override_ = false;
-
-  const bool update_packet_size_ =
-      GetQuicReloadableFlag(quic_update_packet_size);
-
-  const bool fix_extra_padding_bytes_ =
-      GetQuicReloadableFlag(quic_fix_extra_padding_bytes);
-
-  const bool determine_serialized_packet_fate_early_ =
-      GetQuicReloadableFlag(quic_determine_serialized_packet_fate_early);
-
-  const bool coalesced_packet_of_higher_space_ =
-      GetQuicReloadableFlag(quic_coalesced_packet_of_higher_space2);
+  const bool close_connection_on_serialization_failure_ =
+      GetQuicReloadableFlag(quic_close_connection_on_serialization_failure);
 };
 
 }  // namespace quic

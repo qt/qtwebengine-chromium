@@ -4157,17 +4157,8 @@ TEST_P(QuicFramerTest, NewStopWaitingFrame) {
 
   std::unique_ptr<QuicEncryptedPacket> encrypted(
       AssemblePacketFromFragments(fragments));
-  if (GetQuicReloadableFlag(quic_do_not_accept_stop_waiting) &&
-      framer_.version().HasIetfInvariantHeader()) {
-    EXPECT_FALSE(framer_.ProcessPacket(*encrypted));
-    EXPECT_THAT(framer_.error(), IsError(QUIC_INVALID_STOP_WAITING_DATA));
-    EXPECT_EQ("STOP WAITING not supported in version 44+.",
-              framer_.detailed_error());
-    return;
-  }
 
   EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
-
   EXPECT_THAT(framer_.error(), IsQuicNoError());
   ASSERT_TRUE(visitor_.header_.get());
   EXPECT_TRUE(CheckDecryption(
@@ -4184,9 +4175,8 @@ TEST_P(QuicFramerTest, NewStopWaitingFrame) {
 
 TEST_P(QuicFramerTest, InvalidNewStopWaitingFrame) {
   // The Stop Waiting frame is not in IETF QUIC
-  if (VersionHasIetfQuicFrames(version_.transport_version) ||
-      (GetQuicReloadableFlag(quic_do_not_accept_stop_waiting) &&
-       framer_.version().HasIetfInvariantHeader())) {
+  if (VersionHasIetfQuicFrames(version_.transport_version) &&
+      framer_.version().HasIetfInvariantHeader()) {
     return;
   }
   SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
@@ -4408,8 +4398,9 @@ TEST_P(QuicFramerTest, ConnectionCloseFrame) {
       {"Unable to read connection close error details.",
        {
          // error details length
-         kVarInt62OneByte + 0x0d,
-         // error details
+         kVarInt62OneByte + 0x11,
+         // error details with QuicErrorCode serialized
+         '1',  '1',  '5',  ':',
          'b',  'e',  'c',  'a',
          'u',  's',  'e',  ' ',
          'I',  ' ',  'c',  'a',
@@ -4439,13 +4430,143 @@ TEST_P(QuicFramerTest, ConnectionCloseFrame) {
   if (VersionHasIetfQuicFrames(framer_.transport_version())) {
     EXPECT_EQ(0x1234u,
               visitor_.connection_close_frame_.transport_close_frame_type);
-    EXPECT_THAT(visitor_.connection_close_frame_.quic_error_code,
-                IsError(QUIC_IETF_GQUIC_ERROR_MISSING));
+    EXPECT_EQ(115u, visitor_.connection_close_frame_.quic_error_code);
   } else {
     // For Google QUIC frame, |quic_error_code| and |wire_error_code| has the
     // same value.
     EXPECT_EQ(0x11u, static_cast<unsigned>(
                          visitor_.connection_close_frame_.quic_error_code));
+  }
+
+  ASSERT_EQ(0u, visitor_.ack_frames_.size());
+
+  CheckFramingBoundaries(fragments, QUIC_INVALID_CONNECTION_CLOSE_DATA);
+}
+
+TEST_P(QuicFramerTest, ConnectionCloseFrameWithUnknownErrorCode) {
+  SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
+  // clang-format off
+  PacketFragments packet = {
+      // public flags (8 byte connection_id)
+      {"",
+       {0x28}},
+      // connection_id
+      {"",
+       {0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}},
+      // packet number
+      {"",
+       {0x12, 0x34, 0x56, 0x78}},
+      // frame type (connection close frame)
+      {"",
+       {0x02}},
+      // error code larger than QUIC_LAST_ERROR
+      {"Unable to read connection close error code.",
+       {0x00, 0x00, 0xC0, 0xDE}},
+      {"Unable to read connection close error details.",
+       {
+         // error details length
+         0x0, 0x0d,
+         // error details
+         'b',  'e',  'c',  'a',
+         'u',  's',  'e',  ' ',
+         'I',  ' ',  'c',  'a',
+         'n'}
+      }
+  };
+
+  PacketFragments packet46 = {
+      // type (short header, 4 byte packet number)
+      {"",
+       {0x43}},
+      // connection_id
+      {"",
+       {0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}},
+      // packet number
+      {"",
+       {0x12, 0x34, 0x56, 0x78}},
+      // frame type (connection close frame)
+      {"",
+       {0x02}},
+      // error code larger than QUIC_LAST_ERROR
+      {"Unable to read connection close error code.",
+       {0x00, 0x00, 0xC0, 0xDE}},
+      {"Unable to read connection close error details.",
+       {
+         // error details length
+         0x0, 0x0d,
+         // error details
+         'b',  'e',  'c',  'a',
+         'u',  's',  'e',  ' ',
+         'I',  ' ',  'c',  'a',
+         'n'}
+      }
+  };
+
+  PacketFragments packet99 = {
+      // type (short header, 4 byte packet number)
+      {"",
+       {0x43}},
+      // connection_id
+      {"",
+       {0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}},
+      // packet number
+      {"",
+       {0x12, 0x34, 0x56, 0x78}},
+      // frame type (IETF Transport CONNECTION_CLOSE frame)
+      {"",
+       {0x1c}},
+      // error code
+      {"Unable to read connection close error code.",
+       {kVarInt62FourBytes + 0x00, 0x00, 0xC0, 0xDE}},
+      {"Unable to read connection close frame type.",
+       {kVarInt62TwoBytes + 0x12, 0x34 }},
+      {"Unable to read connection close error details.",
+       {
+         // error details length
+         kVarInt62OneByte + 0x11,
+         // error details with QuicErrorCode larger than QUIC_LAST_ERROR
+         '8',  '4',  '9',  ':',
+         'b',  'e',  'c',  'a',
+         'u',  's',  'e',  ' ',
+         'I',  ' ',  'c',  'a',
+         'n'}
+      }
+  };
+  // clang-format on
+
+  PacketFragments& fragments =
+      VersionHasIetfQuicFrames(framer_.transport_version())
+          ? packet99
+          : (framer_.version().HasIetfInvariantHeader() ? packet46 : packet);
+  std::unique_ptr<QuicEncryptedPacket> encrypted(
+      AssemblePacketFromFragments(fragments));
+  EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
+
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
+  ASSERT_TRUE(visitor_.header_.get());
+  EXPECT_TRUE(CheckDecryption(
+      *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
+      PACKET_8BYTE_CONNECTION_ID, PACKET_0BYTE_CONNECTION_ID));
+
+  EXPECT_EQ(0u, visitor_.stream_frames_.size());
+  EXPECT_EQ("because I can", visitor_.connection_close_frame_.error_details);
+  if (VersionHasIetfQuicFrames(framer_.transport_version())) {
+    EXPECT_EQ(0x1234u,
+              visitor_.connection_close_frame_.transport_close_frame_type);
+    EXPECT_EQ(0xC0DEu, visitor_.connection_close_frame_.wire_error_code);
+    EXPECT_EQ(849u, visitor_.connection_close_frame_.quic_error_code);
+  } else {
+    // For Google QUIC frame, |quic_error_code| and |wire_error_code| has the
+    // same value.
+    if (GetQuicReloadableFlag(quic_do_not_clip_received_error_code)) {
+      EXPECT_EQ(0xC0DEu, visitor_.connection_close_frame_.wire_error_code);
+      EXPECT_EQ(0xC0DEu, visitor_.connection_close_frame_.quic_error_code);
+    } else {
+      EXPECT_EQ(QUIC_LAST_ERROR,
+                visitor_.connection_close_frame_.wire_error_code);
+      EXPECT_EQ(QUIC_LAST_ERROR,
+                visitor_.connection_close_frame_.quic_error_code);
+    }
   }
 
   ASSERT_EQ(0u, visitor_.ack_frames_.size());
@@ -4795,6 +4916,101 @@ TEST_P(QuicFramerTest, GoAwayFrame) {
 
   EXPECT_EQ(kStreamId, visitor_.goaway_frame_.last_good_stream_id);
   EXPECT_EQ(0x9u, visitor_.goaway_frame_.error_code);
+  EXPECT_EQ("because I can", visitor_.goaway_frame_.reason_phrase);
+
+  CheckFramingBoundaries(fragments, QUIC_INVALID_GOAWAY_DATA);
+}
+
+TEST_P(QuicFramerTest, GoAwayFrameWithUnknownErrorCode) {
+  if (VersionHasIetfQuicFrames(framer_.transport_version())) {
+    // This frame is not in IETF QUIC.
+    return;
+  }
+  SetDecrypterLevel(ENCRYPTION_FORWARD_SECURE);
+  // clang-format off
+  PacketFragments packet = {
+      // public flags (8 byte connection_id)
+      {"",
+       {0x28}},
+      // connection_id
+      {"",
+       {0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}},
+      // packet number
+      {"",
+       {0x12, 0x34, 0x56, 0x78}},
+      // frame type (go away frame)
+      {"",
+       {0x03}},
+      // error code larger than QUIC_LAST_ERROR
+      {"Unable to read go away error code.",
+       {0x00, 0x00, 0xC0, 0xDE}},
+      // stream id
+      {"Unable to read last good stream id.",
+       {0x01, 0x02, 0x03, 0x04}},
+      // stream id
+      {"Unable to read goaway reason.",
+       {
+         // error details length
+         0x0, 0x0d,
+         // error details
+         'b',  'e',  'c',  'a',
+         'u',  's',  'e',  ' ',
+         'I',  ' ',  'c',  'a',
+         'n'}
+      }
+  };
+
+  PacketFragments packet46 = {
+      // type (short header, 4 byte packet number)
+      {"",
+       {0x43}},
+      // connection_id
+      {"",
+       {0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10}},
+      // packet number
+      {"",
+       {0x12, 0x34, 0x56, 0x78}},
+      // frame type (go away frame)
+      {"",
+       {0x03}},
+      // error code larger than QUIC_LAST_ERROR
+      {"Unable to read go away error code.",
+       {0x00, 0x00, 0xC0, 0xDE}},
+      // stream id
+      {"Unable to read last good stream id.",
+       {0x01, 0x02, 0x03, 0x04}},
+      // stream id
+      {"Unable to read goaway reason.",
+       {
+         // error details length
+         0x0, 0x0d,
+         // error details
+         'b',  'e',  'c',  'a',
+         'u',  's',  'e',  ' ',
+         'I',  ' ',  'c',  'a',
+         'n'}
+      }
+  };
+  // clang-format on
+
+  PacketFragments& fragments =
+      framer_.version().HasIetfInvariantHeader() ? packet46 : packet;
+  std::unique_ptr<QuicEncryptedPacket> encrypted(
+      AssemblePacketFromFragments(fragments));
+  EXPECT_TRUE(framer_.ProcessPacket(*encrypted));
+
+  EXPECT_THAT(framer_.error(), IsQuicNoError());
+  ASSERT_TRUE(visitor_.header_.get());
+  EXPECT_TRUE(CheckDecryption(
+      *encrypted, !kIncludeVersion, !kIncludeDiversificationNonce,
+      PACKET_8BYTE_CONNECTION_ID, PACKET_0BYTE_CONNECTION_ID));
+
+  EXPECT_EQ(kStreamId, visitor_.goaway_frame_.last_good_stream_id);
+  if (GetQuicReloadableFlag(quic_do_not_clip_received_error_code)) {
+    EXPECT_EQ(0xC0DE, visitor_.goaway_frame_.error_code);
+  } else {
+    EXPECT_EQ(QUIC_LAST_ERROR, visitor_.goaway_frame_.error_code);
+  }
   EXPECT_EQ("because I can", visitor_.goaway_frame_.reason_phrase);
 
   CheckFramingBoundaries(fragments, QUIC_INVALID_GOAWAY_DATA);
@@ -10977,7 +11193,14 @@ TEST_P(QuicFramerTest, IetfStopSendingFrame) {
       PACKET_8BYTE_CONNECTION_ID, PACKET_0BYTE_CONNECTION_ID));
 
   EXPECT_EQ(kStreamId, visitor_.stop_sending_frame_.stream_id);
-  EXPECT_EQ(0x7654, visitor_.stop_sending_frame_.application_error_code);
+  if (GetQuicReloadableFlag(quic_stop_sending_uses_ietf_error_code)) {
+    EXPECT_EQ(QUIC_STREAM_UNKNOWN_APPLICATION_ERROR_CODE,
+              visitor_.stop_sending_frame_.error_code);
+  } else {
+    EXPECT_EQ(0x7654, visitor_.stop_sending_frame_.error_code);
+  }
+  EXPECT_EQ(static_cast<uint64_t>(0x7654),
+            visitor_.stop_sending_frame_.ietf_error_code);
 
   CheckFramingBoundaries(packet99, QUIC_INVALID_STOP_SENDING_FRAME_DATA);
 }
@@ -10996,7 +11219,9 @@ TEST_P(QuicFramerTest, BuildIetfStopSendingPacket) {
 
   QuicStopSendingFrame frame;
   frame.stream_id = kStreamId;
-  frame.application_error_code = 0xffff;
+  frame.error_code = QUIC_STREAM_ENCODER_STREAM_ERROR;
+  frame.ietf_error_code =
+      static_cast<uint64_t>(QuicHttpQpackErrorCode::ENCODER_STREAM_ERROR);
   QuicFrames frames = {QuicFrame(&frame)};
 
   // clang-format off
@@ -11013,7 +11238,7 @@ TEST_P(QuicFramerTest, BuildIetfStopSendingPacket) {
     // Stream ID
     kVarInt62FourBytes + 0x01, 0x02, 0x03, 0x04,
     // Application error code
-    kVarInt62FourBytes + 0x00, 0x00, 0xff, 0xff
+    kVarInt62TwoBytes + 0x02, 0x01,
   };
   // clang-format on
 
@@ -11260,7 +11485,7 @@ TEST_P(QuicFramerTest, GetRetransmittableControlFrameSize) {
             QuicFramer::GetRetransmittableControlFrameSize(
                 framer_.transport_version(), QuicFrame(&path_challenge_frame)));
 
-  QuicStopSendingFrame stop_sending_frame(10, 3, 20);
+  QuicStopSendingFrame stop_sending_frame(10, 3, QUIC_STREAM_CANCELLED);
   EXPECT_EQ(QuicFramer::GetStopSendingFrameSize(stop_sending_frame),
             QuicFramer::GetRetransmittableControlFrameSize(
                 framer_.transport_version(), QuicFrame(&stop_sending_frame)));

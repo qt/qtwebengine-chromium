@@ -631,8 +631,7 @@ template <bool is_2d = false, bool is_compound = false>
 LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
     const uint8_t* const src, const ptrdiff_t src_stride, void* const dst,
     const ptrdiff_t dst_stride, const int width, const int height,
-    const int subpixel, const int filter_index) {
-  const int filter_id = (subpixel >> 6) & kSubPixelMask;
+    const int filter_id, const int filter_index) {
   assert(filter_id != 0);
   __m128i v_tap[4];
   const __m128i v_horizontal_filter =
@@ -668,9 +667,11 @@ LIBGAV1_ALWAYS_INLINE void DoHorizontalPass(
 void Convolve2D_SSE4_1(const void* const reference,
                        const ptrdiff_t reference_stride,
                        const int horizontal_filter_index,
-                       const int vertical_filter_index, const int subpixel_x,
-                       const int subpixel_y, const int width, const int height,
-                       void* prediction, const ptrdiff_t pred_stride) {
+                       const int vertical_filter_index,
+                       const int horizontal_filter_id,
+                       const int vertical_filter_id, const int width,
+                       const int height, void* prediction,
+                       const ptrdiff_t pred_stride) {
   const int horiz_filter_index = GetFilterIndex(horizontal_filter_index, width);
   const int vert_filter_index = GetFilterIndex(vertical_filter_index, height);
   const int vertical_taps = GetNumTapsInFilter(vert_filter_index);
@@ -686,18 +687,17 @@ void Convolve2D_SSE4_1(const void* const reference,
                     (vertical_taps / 2 - 1) * src_stride - kHorizontalOffset;
 
   DoHorizontalPass</*is_2d=*/true>(src, src_stride, intermediate_result, width,
-                                   width, intermediate_height, subpixel_x,
-                                   horiz_filter_index);
+                                   width, intermediate_height,
+                                   horizontal_filter_id, horiz_filter_index);
 
   // Vertical filter.
   auto* dest = static_cast<uint8_t*>(prediction);
   const ptrdiff_t dest_stride = pred_stride;
-  const int filter_id = ((subpixel_y & 1023) >> 6) & kSubPixelMask;
-  assert(filter_id != 0);
+  assert(vertical_filter_id != 0);
 
   __m128i taps[4];
   const __m128i v_filter =
-      LoadLo8(kHalfSubPixelFilters[vert_filter_index][filter_id]);
+      LoadLo8(kHalfSubPixelFilters[vert_filter_index][vertical_filter_id]);
 
   if (vertical_taps == 8) {
     SetupTaps<8, /*is_2d_vertical=*/true>(&v_filter, taps);
@@ -1351,9 +1351,10 @@ void ConvolveVertical_SSE4_1(const void* const reference,
                              const ptrdiff_t reference_stride,
                              const int /*horizontal_filter_index*/,
                              const int vertical_filter_index,
-                             const int /*subpixel_x*/, const int subpixel_y,
-                             const int width, const int height,
-                             void* prediction, const ptrdiff_t pred_stride) {
+                             const int /*horizontal_filter_id*/,
+                             const int vertical_filter_id, const int width,
+                             const int height, void* prediction,
+                             const ptrdiff_t pred_stride) {
   const int filter_index = GetFilterIndex(vertical_filter_index, height);
   const int vertical_taps = GetNumTapsInFilter(filter_index);
   const ptrdiff_t src_stride = reference_stride;
@@ -1361,12 +1362,11 @@ void ConvolveVertical_SSE4_1(const void* const reference,
                     (vertical_taps / 2 - 1) * src_stride;
   auto* dest = static_cast<uint8_t*>(prediction);
   const ptrdiff_t dest_stride = pred_stride;
-  const int filter_id = (subpixel_y >> 6) & kSubPixelMask;
-  assert(filter_id != 0);
+  assert(vertical_filter_id != 0);
 
   __m128i taps[4];
   const __m128i v_filter =
-      LoadLo8(kHalfSubPixelFilters[filter_index][filter_id]);
+      LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
 
   if (filter_index < 2) {  // 6 tap.
     SetupTaps<6>(&v_filter, taps);
@@ -1424,11 +1424,14 @@ void ConvolveVertical_SSE4_1(const void* const reference,
   }
 }
 
-void ConvolveCompoundCopy_SSE4(
-    const void* const reference, const ptrdiff_t reference_stride,
-    const int /*horizontal_filter_index*/, const int /*vertical_filter_index*/,
-    const int /*subpixel_x*/, const int /*subpixel_y*/, const int width,
-    const int height, void* prediction, const ptrdiff_t pred_stride) {
+void ConvolveCompoundCopy_SSE4(const void* const reference,
+                               const ptrdiff_t reference_stride,
+                               const int /*horizontal_filter_index*/,
+                               const int /*vertical_filter_index*/,
+                               const int /*horizontal_filter_id*/,
+                               const int /*vertical_filter_id*/,
+                               const int width, const int height,
+                               void* prediction, const ptrdiff_t pred_stride) {
   const auto* src = static_cast<const uint8_t*>(reference);
   const ptrdiff_t src_stride = reference_stride;
   auto* dest = static_cast<uint16_t*>(prediction);
@@ -1485,20 +1488,20 @@ void ConvolveCompoundCopy_SSE4(
 void ConvolveCompoundVertical_SSE4_1(
     const void* const reference, const ptrdiff_t reference_stride,
     const int /*horizontal_filter_index*/, const int vertical_filter_index,
-    const int /*subpixel_x*/, const int subpixel_y, const int width,
-    const int height, void* prediction, const ptrdiff_t /*pred_stride*/) {
+    const int /*horizontal_filter_id*/, const int vertical_filter_id,
+    const int width, const int height, void* prediction,
+    const ptrdiff_t /*pred_stride*/) {
   const int filter_index = GetFilterIndex(vertical_filter_index, height);
   const int vertical_taps = GetNumTapsInFilter(filter_index);
   const ptrdiff_t src_stride = reference_stride;
   const auto* src = static_cast<const uint8_t*>(reference) -
                     (vertical_taps / 2 - 1) * src_stride;
   auto* dest = static_cast<uint16_t*>(prediction);
-  const int filter_id = (subpixel_y >> 6) & kSubPixelMask;
-  assert(filter_id != 0);
+  assert(vertical_filter_id != 0);
 
   __m128i taps[4];
   const __m128i v_filter =
-      LoadLo8(kHalfSubPixelFilters[filter_index][filter_id]);
+      LoadLo8(kHalfSubPixelFilters[filter_index][vertical_filter_id]);
 
   if (filter_index < 2) {  // 6 tap.
     SetupTaps<6>(&v_filter, taps);
@@ -1556,7 +1559,8 @@ void ConvolveHorizontal_SSE4_1(const void* const reference,
                                const ptrdiff_t reference_stride,
                                const int horizontal_filter_index,
                                const int /*vertical_filter_index*/,
-                               const int subpixel_x, const int /*subpixel_y*/,
+                               const int horizontal_filter_id,
+                               const int /*vertical_filter_id*/,
                                const int width, const int height,
                                void* prediction, const ptrdiff_t pred_stride) {
   const int filter_index = GetFilterIndex(horizontal_filter_index, width);
@@ -1565,28 +1569,32 @@ void ConvolveHorizontal_SSE4_1(const void* const reference,
   auto* dest = static_cast<uint8_t*>(prediction);
 
   DoHorizontalPass(src, reference_stride, dest, pred_stride, width, height,
-                   subpixel_x, filter_index);
+                   horizontal_filter_id, filter_index);
 }
 
 void ConvolveCompoundHorizontal_SSE4_1(
     const void* const reference, const ptrdiff_t reference_stride,
     const int horizontal_filter_index, const int /*vertical_filter_index*/,
-    const int subpixel_x, const int /*subpixel_y*/, const int width,
-    const int height, void* prediction, const ptrdiff_t /*pred_stride*/) {
+    const int horizontal_filter_id, const int /*vertical_filter_id*/,
+    const int width, const int height, void* prediction,
+    const ptrdiff_t /*pred_stride*/) {
   const int filter_index = GetFilterIndex(horizontal_filter_index, width);
   const auto* src = static_cast<const uint8_t*>(reference) - kHorizontalOffset;
   auto* dest = static_cast<uint16_t*>(prediction);
 
   DoHorizontalPass</*is_2d=*/false, /*is_compound=*/true>(
-      src, reference_stride, dest, width, width, height, subpixel_x,
+      src, reference_stride, dest, width, width, height, horizontal_filter_id,
       filter_index);
 }
 
-void ConvolveCompound2D_SSE4_1(
-    const void* const reference, const ptrdiff_t reference_stride,
-    const int horizontal_filter_index, const int vertical_filter_index,
-    const int subpixel_x, const int subpixel_y, const int width,
-    const int height, void* prediction, const ptrdiff_t /*pred_stride*/) {
+void ConvolveCompound2D_SSE4_1(const void* const reference,
+                               const ptrdiff_t reference_stride,
+                               const int horizontal_filter_index,
+                               const int vertical_filter_index,
+                               const int horizontal_filter_id,
+                               const int vertical_filter_id, const int width,
+                               const int height, void* prediction,
+                               const ptrdiff_t /*pred_stride*/) {
   // The output of the horizontal filter, i.e. the intermediate_result, is
   // guaranteed to fit in int16_t.
   alignas(16) uint16_t
@@ -1609,17 +1617,16 @@ void ConvolveCompound2D_SSE4_1(
 
   DoHorizontalPass</*is_2d=*/true, /*is_compound=*/true>(
       src, src_stride, intermediate_result, width, width, intermediate_height,
-      subpixel_x, horiz_filter_index);
+      horizontal_filter_id, horiz_filter_index);
 
   // Vertical filter.
   auto* dest = static_cast<uint16_t*>(prediction);
-  const int filter_id = ((subpixel_y & 1023) >> 6) & kSubPixelMask;
-  assert(filter_id != 0);
+  assert(vertical_filter_id != 0);
 
   const ptrdiff_t dest_stride = width;
   __m128i taps[4];
   const __m128i v_filter =
-      LoadLo8(kHalfSubPixelFilters[vert_filter_index][filter_id]);
+      LoadLo8(kHalfSubPixelFilters[vert_filter_index][vertical_filter_id]);
 
   if (vertical_taps == 8) {
     SetupTaps<8, /*is_2d_vertical=*/true>(&v_filter, taps);

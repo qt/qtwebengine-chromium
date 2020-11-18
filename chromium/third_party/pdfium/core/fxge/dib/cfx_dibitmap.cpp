@@ -6,30 +6,23 @@
 
 #include "core/fxge/dib/cfx_dibitmap.h"
 
-#include <limits.h>
-
 #include <limits>
 #include <memory>
 #include <utility>
 
 #include "build/build_config.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/cfx_cliprgn.h"
 #include "core/fxge/dib/cfx_cmyk_to_srgb.h"
 #include "core/fxge/dib/cfx_scanlinecompositor.h"
 
 namespace {
 
-constexpr size_t kMaxOOMLimit = 12000000;
 constexpr int8_t kChannelOffset[] = {0, 2, 1, 0, 0, 1, 2, 3, 3};
 
 }  // namespace
 
-CFX_DIBitmap::CFX_DIBitmap() {
-  m_pPalette = nullptr;
-#if defined(_SKIA_SUPPORT_PATHS_)
-  m_nFormat = Format::kCleared;
-#endif
-}
+CFX_DIBitmap::CFX_DIBitmap() = default;
 
 bool CFX_DIBitmap::Create(int width, int height, FXDIB_Format format) {
   return Create(width, height, format, nullptr, 0);
@@ -47,27 +40,27 @@ bool CFX_DIBitmap::Create(int width,
   m_Height = 0;
   m_Pitch = 0;
 
-  uint32_t calculatedSize;
-  if (!CalculatePitchAndSize(height, width, format, &pitch, &calculatedSize))
+  Optional<PitchAndSize> pitch_size =
+      CalculatePitchAndSize(width, height, format, pitch);
+  if (!pitch_size.has_value())
     return false;
 
   if (pBuffer) {
     m_pBuffer.Reset(pBuffer);
   } else {
-    size_t bufferSize = calculatedSize + 4;
-    if (bufferSize >= kMaxOOMLimit) {
-      m_pBuffer = std::unique_ptr<uint8_t, FxFreeDeleter>(
-          FX_TryAlloc(uint8_t, bufferSize));
-      if (!m_pBuffer)
-        return false;
-    } else {
-      m_pBuffer = std::unique_ptr<uint8_t, FxFreeDeleter>(
-          FX_Alloc(uint8_t, bufferSize));
-    }
+    FX_SAFE_SIZE_T safe_buffer_size = pitch_size.value().size;
+    safe_buffer_size += 4;
+    if (!safe_buffer_size.IsValid())
+      return false;
+
+    m_pBuffer = std::unique_ptr<uint8_t, FxFreeDeleter>(
+        FX_TryAlloc(uint8_t, safe_buffer_size.ValueOrDie()));
+    if (!m_pBuffer)
+      return false;
   }
   m_Width = width;
   m_Height = height;
-  m_Pitch = pitch;
+  m_Pitch = pitch_size.value().pitch;
   if (!HasAlpha() || format == FXDIB_Argb)
     return true;
 
@@ -541,6 +534,7 @@ bool CFX_DIBitmap::MultiplyAlpha(int alpha) {
   return true;
 }
 
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 uint32_t CFX_DIBitmap::GetPixel(int x, int y) const {
   if (!m_pBuffer)
     return 0;
@@ -575,7 +569,9 @@ uint32_t CFX_DIBitmap::GetPixel(int x, int y) const {
   }
   return 0;
 }
+#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 
+#if defined(_SKIA_SUPPORT_)
 void CFX_DIBitmap::SetPixel(int x, int y, uint32_t color) {
   if (!m_pBuffer)
     return;
@@ -645,6 +641,7 @@ void CFX_DIBitmap::SetPixel(int x, int y, uint32_t color) {
       break;
   }
 }
+#endif  // defined(_SKIA_SUPPORT_)
 
 void CFX_DIBitmap::DownSampleScanline(int line,
                                       uint8_t* dest_scan,
@@ -840,29 +837,38 @@ bool CFX_DIBitmap::ConvertColorScale(uint32_t forecolor, uint32_t backcolor) {
 }
 
 // static
-bool CFX_DIBitmap::CalculatePitchAndSize(int height,
-                                         int width,
-                                         FXDIB_Format format,
-                                         uint32_t* pitch,
-                                         uint32_t* size) {
+Optional<CFX_DIBitmap::PitchAndSize> CFX_DIBitmap::CalculatePitchAndSize(
+    int width,
+    int height,
+    FXDIB_Format format,
+    uint32_t pitch) {
   if (width <= 0 || height <= 0)
-    return false;
+    return pdfium::nullopt;
 
   int bpp = GetBppFromFormat(format);
   if (!bpp)
-    return false;
+    return pdfium::nullopt;
 
-  if ((INT_MAX - 31) / width < bpp)
-    return false;
+  uint32_t actual_pitch = pitch;
+  if (actual_pitch == 0) {
+    FX_SAFE_UINT32 safe_pitch = width;
+    safe_pitch *= bpp;
+    safe_pitch += 31;
+    // Note: This is not the same as /8 due to truncation.
+    safe_pitch /= 32;
+    safe_pitch *= 4;
+    if (!safe_pitch.IsValid())
+      return pdfium::nullopt;
 
-  if (!*pitch)
-    *pitch = static_cast<uint32_t>((width * bpp + 31) / 32 * 4);
+    actual_pitch = safe_pitch.ValueOrDie();
+  }
 
-  if ((1 << 30) / *pitch < static_cast<uint32_t>(height))
-    return false;
+  FX_SAFE_UINT32 safe_size = actual_pitch;
+  safe_size *= height;
+  if (!safe_size.IsValid())
+    return pdfium::nullopt;
 
-  *size = *pitch * static_cast<uint32_t>(height);
-  return true;
+  return PitchAndSize{actual_pitch, safe_size.ValueOrDie()};
 }
 
 bool CFX_DIBitmap::CompositeBitmap(int dest_left,

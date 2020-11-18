@@ -1326,6 +1326,7 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
           *error_details = "MinAckDelay is greater than MaxAckDelay.";
           return IETF_QUIC_PROTOCOL_VIOLATION;
         }
+        QUIC_RELOADABLE_FLAG_COUNT(quic_record_received_min_ack_delay);
         min_ack_delay_ms_.SetReceivedValue(params.min_ack_delay_us.value() /
                                            kNumMicrosPerMilli);
       }
@@ -1353,14 +1354,11 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
     }
   }
 
-  bool google_params_already_parsed = false;
   if (params.initial_round_trip_time_us.value() > 0) {
-    google_params_already_parsed = true;
     initial_round_trip_time_us_.SetReceivedValue(
         params.initial_round_trip_time_us.value());
   }
   if (params.google_connection_options.has_value()) {
-    google_params_already_parsed = true;
     connection_options_.SetReceivedValues(
         params.google_connection_options.value());
   }

@@ -73,7 +73,7 @@ class ShareGroup final : angle::NonCopyable
 
     void addRef();
 
-    void release(const gl::Context *context);
+    void release(const egl::Display *display);
 
     rx::ShareGroupImpl *getImplementation() const { return mImplementation; }
 
@@ -199,6 +199,8 @@ class Display final : public LabeledObject,
     BlobCache &getBlobCache() { return mBlobCache; }
 
     static EGLClientBuffer GetNativeClientBuffer(const struct AHardwareBuffer *buffer);
+    static Error CreateNativeClientBuffer(const egl::AttributeMap &attribMap,
+                                          EGLClientBuffer *eglClientBuffer);
 
     Error waitClient(const gl::Context *context);
     Error waitNative(const gl::Context *context, EGLint engine);
@@ -237,6 +239,7 @@ class Display final : public LabeledObject,
     const ContextSet &getContextSet() { return mContextSet; }
 
     const angle::FrontendFeatures &getFrontendFeatures() { return mFrontendFeatures; }
+    void overrideFrontendFeatures(const std::vector<std::string> &featureNames, bool enabled);
 
     const angle::FeatureList &getFeatures() const { return mFeatures; }
 
@@ -251,6 +254,9 @@ class Display final : public LabeledObject,
     void returnZeroFilledBuffer(angle::ScratchBuffer zeroFilledBuffer);
 
     egl::Error handleGPUSwitch();
+
+    std::mutex &getDisplayGlobalMutex() { return mDisplayGlobalMutex; }
+    std::mutex &getProgramCacheMutex() { return mProgramCacheMutex; }
 
   private:
     Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDevice);
@@ -320,6 +326,9 @@ class Display final : public LabeledObject,
     std::mutex mScratchBufferMutex;
     std::vector<angle::ScratchBuffer> mScratchBuffers;
     std::vector<angle::ScratchBuffer> mZeroFilledBuffers;
+
+    std::mutex mDisplayGlobalMutex;
+    std::mutex mProgramCacheMutex;
 };
 
 }  // namespace egl

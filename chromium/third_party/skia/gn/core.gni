@@ -94,6 +94,8 @@ skia_core_public = [
   "$_include/core/SkUnPreMultiply.h",
   "$_include/core/SkVertices.h",
   "$_include/core/SkYUVAIndex.h",
+  "$_include/core/SkYUVAInfo.h",
+  "$_include/core/SkYUVAPixmaps.h",
   "$_include/core/SkYUVASizeInfo.h",
 ]
 
@@ -325,6 +327,7 @@ skia_core_sources = [
   "$_src/core/SkRemoteGlyphCache.h",
   "$_src/core/SkResourceCache.cpp",
   "$_src/core/SkRuntimeEffect.cpp",
+  "$_src/core/SkSafeMath.h",
   "$_src/core/SkScalar.cpp",
   "$_src/core/SkScaleToSides.h",
   "$_src/core/SkScalerCache.cpp",
@@ -412,6 +415,8 @@ skia_core_sources = [
   "$_src/core/SkXfermode.cpp",
   "$_src/core/SkXfermodeInterpretation.cpp",
   "$_src/core/SkXfermodeInterpretation.h",
+  "$_src/core/SkYUVAInfo.cpp",
+  "$_src/core/SkYUVAPixmaps.cpp",
   "$_src/core/SkYUVASizeInfo.cpp",
   "$_src/core/SkYUVMath.cpp",
   "$_src/core/SkYUVPlanesCache.cpp",
@@ -437,6 +442,7 @@ skia_core_sources = [
   "$_src/opts/SkRasterPipeline_opts.h",
   "$_src/opts/SkSwizzler_opts.h",
   "$_src/opts/SkUtils_opts.h",
+  "$_src/opts/SkVM_opts.h",
   "$_src/opts/SkXfermode_opts.h",
   "$_src/shaders/SkBitmapProcShader.cpp",
   "$_src/shaders/SkBitmapProcShader.h",
@@ -483,6 +489,7 @@ skia_core_sources = [
   "$_include/private/SkTemplates.h",
   "$_include/private/SkThreadAnnotations.h",
   "$_include/private/SkThreadID.h",
+  "$_include/private/SkVx.h",
   "$_include/private/SkWeakRefCnt.h",
 ]
 

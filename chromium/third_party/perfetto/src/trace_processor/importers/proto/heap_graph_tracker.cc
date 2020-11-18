@@ -22,6 +22,7 @@
 #include "src/trace_processor/tables/profiler_tables.h"
 
 #include <set>
+#include <utility>
 
 namespace perfetto {
 namespace trace_processor {
@@ -446,6 +447,7 @@ void HeapGraphTracker::SetPacketIndex(uint32_t seq_id, uint64_t index) {
   }
 
   if (dropped_packet) {
+    sequence_state.truncated = true;
     if (sequence_state.prev_index) {
       PERFETTO_ELOG("Missing packets between %" PRIu64 " and %" PRIu64,
                     *sequence_state.prev_index, index);
@@ -478,6 +480,10 @@ HeapGraphTracker::InternedType* HeapGraphTracker::GetSuperClass(
 
 void HeapGraphTracker::FinalizeProfile(uint32_t seq_id) {
   SequenceState& sequence_state = GetOrCreateSequence(seq_id);
+  if (sequence_state.truncated) {
+    truncated_graphs_.emplace(
+        std::make_pair(sequence_state.current_upid, sequence_state.current_ts));
+  }
 
   // We do this in FinalizeProfile because the interned_location_names get
   // written at the end of the dump.
@@ -709,13 +715,22 @@ void FindPathFromRoot(const TraceStorage& storage,
 
     tables::HeapGraphClassTable::Id type_id =
         storage.heap_graph_object_table().type_id()[row];
-    auto it = path->nodes[parent_id].children.find(type_id);
+
+    uint32_t type_row = *storage.heap_graph_class_table().id().IndexOf(type_id);
+    base::Optional<StringPool::Id> opt_class_name_id =
+        storage.heap_graph_class_table().deobfuscated_name()[type_row];
+    if (!opt_class_name_id) {
+      opt_class_name_id = storage.heap_graph_class_table().name()[type_row];
+    }
+    PERFETTO_CHECK(opt_class_name_id);
+    StringPool::Id class_name_id = *opt_class_name_id;
+    auto it = path->nodes[parent_id].children.find(class_name_id);
     if (it == path->nodes[parent_id].children.end()) {
       size_t path_id = path->nodes.size();
       path->nodes.emplace_back(PathFromRoot::Node{});
       std::tie(it, std::ignore) =
-          path->nodes[parent_id].children.emplace(type_id, path_id);
-      path->nodes.back().type_id = type_id;
+          path->nodes[parent_id].children.emplace(class_name_id, path_id);
+      path->nodes.back().class_name_id = class_name_id;
       path->nodes.back().depth = depth;
       path->nodes.back().parent_id = parent_id;
     }
@@ -765,22 +780,44 @@ void FindPathFromRoot(const TraceStorage& storage,
 std::unique_ptr<tables::ExperimentalFlamegraphNodesTable>
 HeapGraphTracker::BuildFlamegraph(const int64_t current_ts,
                                   const UniquePid current_upid) {
-  auto it = roots_.find(std::make_pair(current_upid, current_ts));
-  if (it == roots_.end())
-    return nullptr;
-
-  const std::set<tables::HeapGraphObjectTable::Id>& roots = it->second;
+  auto profile_type = context_->storage->InternString("graph");
+  auto java_mapping = context_->storage->InternString("JAVA");
 
   std::unique_ptr<tables::ExperimentalFlamegraphNodesTable> tbl(
       new tables::ExperimentalFlamegraphNodesTable(
           context_->storage->mutable_string_pool(), nullptr));
 
+  auto it = roots_.find(std::make_pair(current_upid, current_ts));
+  if (it == roots_.end()) {
+    // TODO(fmayer): This should not be within the flame graph but some marker
+    // in the UI.
+    if (IsTruncated(current_upid, current_ts)) {
+      tables::ExperimentalFlamegraphNodesTable::Row alloc_row{};
+      alloc_row.ts = current_ts;
+      alloc_row.upid = current_upid;
+      alloc_row.profile_type = profile_type;
+      alloc_row.depth = 0;
+      alloc_row.name =
+          context_->storage->InternString("ERROR: INCOMPLETE GRAPH");
+      alloc_row.map_name = java_mapping;
+      alloc_row.count = 1;
+      alloc_row.cumulative_count = 1;
+      alloc_row.size = 1;
+      alloc_row.cumulative_size = 1;
+      alloc_row.parent_id = base::nullopt;
+      tbl->Insert(alloc_row);
+      return tbl;
+    }
+    // We haven't seen this graph, so we should raise an error.
+    return nullptr;
+  }
+
+  const std::set<tables::HeapGraphObjectTable::Id>& roots = it->second;
+
   PathFromRoot init_path;
   for (tables::HeapGraphObjectTable::Id root : roots) {
     FindPathFromRoot(*context_->storage, root, &init_path);
   }
-  auto profile_type = context_->storage->InternString("graph");
-  auto java_mapping = context_->storage->InternString("JAVA");
 
   std::vector<int32_t> node_to_cumulative_size(init_path.nodes.size());
   std::vector<int32_t> node_to_cumulative_count(init_path.nodes.size());
@@ -804,22 +841,12 @@ HeapGraphTracker::BuildFlamegraph(const int64_t current_ts,
       parent_id = node_to_id[node.parent_id];
     const uint32_t depth = node.depth;
 
-    uint32_t type_row =
-        *context_->storage->heap_graph_class_table().id().IndexOf(node.type_id);
-    base::Optional<StringPool::Id> name =
-        context_->storage->heap_graph_class_table()
-            .deobfuscated_name()[type_row];
-    if (!name) {
-      name = context_->storage->heap_graph_class_table().name()[type_row];
-    }
-    PERFETTO_CHECK(name);
-
     tables::ExperimentalFlamegraphNodesTable::Row alloc_row{};
     alloc_row.ts = current_ts;
     alloc_row.upid = current_upid;
     alloc_row.profile_type = profile_type;
     alloc_row.depth = depth;
-    alloc_row.name = *name;
+    alloc_row.name = node.class_name_id;
     alloc_row.map_name = java_mapping;
     alloc_row.count = static_cast<int64_t>(node.count);
     alloc_row.cumulative_count =
@@ -841,6 +868,24 @@ void HeapGraphTracker::NotifyEndOfFile() {
       FinalizeProfile(sequence_state_.begin()->first);
     }
   }
+}
+
+bool HeapGraphTracker::IsTruncated(UniquePid upid, int64_t ts) {
+  // The graph was finalized but was missing packets.
+  if (truncated_graphs_.find(std::make_pair(upid, ts)) !=
+      truncated_graphs_.end()) {
+    return true;
+  }
+
+  // Or the graph was never finalized, so is missing packets at the end.
+  for (const auto& p : sequence_state_) {
+    const SequenceState& sequence_state = p.second;
+    if (sequence_state.current_upid == upid &&
+        sequence_state.current_ts == ts) {
+      return true;
+    }
+  }
+  return false;
 }
 
 HeapGraphTracker::~HeapGraphTracker() = default;

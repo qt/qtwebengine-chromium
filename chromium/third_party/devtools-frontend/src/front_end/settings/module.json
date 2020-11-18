@@ -82,11 +82,6 @@
     },
     {
       "type": "view",
-      "id": "settings-default",
-      "title": "Settings"
-    },
-    {
-      "type": "view",
       "location": "settings-view",
       "id": "preferences",
       "title": "Preferences",
@@ -140,6 +135,5 @@
     "frameworkBlackboxSettingsTab.css",
     "settingsScreen.css",
     "keybindsSettingsTab.css"
-  ],
-  "skip_rollup": true
+  ]
 }

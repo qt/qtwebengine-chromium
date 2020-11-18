@@ -5,6 +5,8 @@
 #ifndef QUICHE_QUIC_CORE_QUIC_RECEIVED_PACKET_MANAGER_H_
 #define QUICHE_QUIC_CORE_QUIC_RECEIVED_PACKET_MANAGER_H_
 
+#include <cstddef>
+#include "net/third_party/quiche/src/quic/core/frames/quic_ack_frequency_frame.h"
 #include "net/third_party/quiche/src/quic/core/quic_config.h"
 #include "net/third_party/quiche/src/quic/core/quic_framer.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
@@ -62,7 +64,6 @@ class QUIC_EXPORT_PRIVATE QuicReceivedPacketManager {
   // Otherwise, ACK needs to be sent by the specified time.
   void MaybeUpdateAckTimeout(bool should_last_packet_instigate_acks,
                              QuicPacketNumber last_received_packet_number,
-                             QuicTime time_of_last_received_packet,
                              QuicTime now,
                              const RttStats* rtt_stats);
 
@@ -124,6 +125,8 @@ class QUIC_EXPORT_PRIVATE QuicReceivedPacketManager {
 
   QuicTime ack_timeout() const { return ack_timeout_; }
 
+  void OnAckFrequencyFrame(const QuicAckFrequencyFrame& frame);
+
  private:
   friend class test::QuicConnectionPeer;
   friend class test::QuicReceivedPacketManagerPeer;
@@ -137,6 +140,10 @@ class QUIC_EXPORT_PRIVATE QuicReceivedPacketManager {
 
   QuicTime::Delta GetMaxAckDelay(QuicPacketNumber last_received_packet_number,
                                  const RttStats& rtt_stats) const;
+
+  bool AckFrequencyFrameReceived() const {
+    return last_ack_frequency_frame_sequence_number_ >= 0;
+  }
 
   // Least packet number of the the packet sent by the peer for which it
   // hasn't received an ack.
@@ -165,7 +172,6 @@ class QUIC_EXPORT_PRIVATE QuicReceivedPacketManager {
 
   QuicConnectionStats* stats_;
 
-  AckMode ack_mode_;
   // How many retransmittable packets have arrived without sending an ack.
   QuicPacketCount num_retransmittable_packets_received_since_last_ack_sent_;
   // Ack decimation will start happening after this many packets are received.
@@ -177,13 +183,10 @@ class QUIC_EXPORT_PRIVATE QuicReceivedPacketManager {
   // When true, removes ack decimation's max number of packets(10) before
   // sending an ack.
   bool unlimited_ack_decimation_;
-  // When true, use a 1ms delayed ack timer if it's been an SRTT since a packet
-  // was received.
-  // TODO(haoyuewang) Remove fast_ack_after_quiescence_ when
-  // quic_remove_unused_ack_options flag is deprecated.
-  bool fast_ack_after_quiescence_;
   // When true, only send 1 immediate ACK when reordering is detected.
   bool one_immediate_ack_;
+  // When true, do not ack immediately upon observation of packet reordering.
+  bool ignore_order_;
 
   // The local node's maximum ack delay time. This is the maximum amount of
   // time to wait before sending an acknowledgement.
@@ -197,17 +200,12 @@ class QUIC_EXPORT_PRIVATE QuicReceivedPacketManager {
   // Whether the most recent packet was missing before it was received.
   bool was_last_packet_missing_;
 
-  // TODO(haoyuewang) Remove TCP_ACKING when
-  // fast_ack_after_quiescence_ when this flag is deprecated.
-  const bool remove_unused_ack_options_ =
-      GetQuicReloadableFlag(quic_remove_unused_ack_options);
-
-  const bool simplify_received_packet_manager_ack_ =
-      remove_unused_ack_options_ &&
-      GetQuicReloadableFlag(quic_simplify_received_packet_manager_ack);
-
   // Last sent largest acked, which gets updated when ACK was successfully sent.
   QuicPacketNumber last_sent_largest_acked_;
+
+  // The sequence number of the last received AckFrequencyFrame. Negative if
+  // none received.
+  int64_t last_ack_frequency_frame_sequence_number_;
 };
 
 }  // namespace quic

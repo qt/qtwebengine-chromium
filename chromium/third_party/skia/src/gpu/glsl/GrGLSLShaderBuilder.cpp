@@ -46,20 +46,22 @@ void GrGLSLShaderBuilder::emitFunction(GrSLType returnType,
                                        int argCnt,
                                        const GrShaderVar* args,
                                        const char* body,
-                                       SkString* outName) {
-    this->functions().append(GrGLSLTypeString(returnType));
+                                       SkString* outName,
+                                       bool forceInline) {
     fProgramBuilder->nameVariable(outName, '\0', name);
-    this->functions().appendf(" %s", outName->c_str());
-    this->functions().append("(");
+    this->functions().appendf("%s%s %s(",
+                              forceInline ? "inline " : "",
+                              GrGLSLTypeString(returnType),
+                              outName->c_str());
     for (int i = 0; i < argCnt; ++i) {
         args[i].appendDecl(fProgramBuilder->shaderCaps(), &this->functions());
         if (i < argCnt - 1) {
             this->functions().append(", ");
         }
     }
-    this->functions().append(") {\n");
-    this->functions().append(body);
-    this->functions().append("}\n\n");
+    this->functions().appendf(") {\n"
+                              "%s"
+                              "}\n\n", body);
 }
 
 static inline void append_texture_swizzle(SkString* out, GrSwizzle swizzle) {
@@ -108,6 +110,14 @@ void GrGLSLShaderBuilder::appendTextureLookupAndBlend(
         this->appendColorGamutXform(lookup.c_str(), colorXformHelper);
         this->codeAppendf(", %s)", dst);
     }
+}
+
+void GrGLSLShaderBuilder::appendInputLoad(SamplerHandle samplerHandle) {
+    const char* input = fProgramBuilder->inputSamplerVariable(samplerHandle);
+    SkString load;
+    load.appendf("subpassLoad(%s)", input);
+    append_texture_swizzle(&load, fProgramBuilder->inputSamplerSwizzle(samplerHandle));
+    this->codeAppend(load.c_str());
 }
 
 void GrGLSLShaderBuilder::appendColorGamutXform(SkString* out,

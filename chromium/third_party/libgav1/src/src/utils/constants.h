@@ -106,6 +106,7 @@ enum {
   kMaxScaledSuperBlockSizeInPixels = 128 * 2,
   kMaxSuperBlockSizeSquareInPixels = 128 * 128,
   kNum4x4InLoopFilterUnit = 16,
+  kNum4x4InLoopRestorationUnit = 16,
   kProjectionMvClamp = (1 << 14) - 1,  // == 16383
   kProjectionMvMaxHorizontalOffset = 8,
   kCdefUnitSize = 64,
@@ -124,11 +125,12 @@ enum {
   kSuperResScaleBits = 14,
   kSuperResExtraBits = kSuperResScaleBits - kSuperResFilterBits,
   kSuperResScaleMask = (1 << 14) - 1,
-  kSuperResHorizontalBorder = 8,
+  kSuperResHorizontalBorder = 4,
   kSuperResVerticalBorder = 1,
-  // The SIMD implementations of superres calculate up to 4 extra upscaled
-  // pixels which will over-read 2 downscaled pixels in the end of each row.
-  kSuperResHorizontalPadding = 2,
+  // The SIMD implementations of superres calculate up to 15 extra upscaled
+  // pixels which will over-read up to 15 downscaled pixels in the end of each
+  // row. Set the padding to 16 for alignment purposes.
+  kSuperResHorizontalPadding = 16,
   // TODO(chengchen): consider merging these constants:
   // kFilterBits, kWienerFilterBits, and kSgrProjPrecisionBits, which are all 7,
   // They are designed to match AV1 convolution, which increases coeff

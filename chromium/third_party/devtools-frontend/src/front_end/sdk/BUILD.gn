@@ -38,6 +38,7 @@ devtools_module("sdk") {
     "HARLog.js",
     "HeapProfilerModel.js",
     "HeavyAdIssue.js",
+    "IOModel.js",
     "IsolateManager.js",
     "Issue.js",
     "IssuesModel.js",
@@ -84,8 +85,6 @@ devtools_module("sdk") {
 
 devtools_entrypoint("bundle") {
   entrypoint = "sdk.js"
-
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":sdk" ]
 }

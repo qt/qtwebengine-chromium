@@ -66,10 +66,15 @@ public:
     }
 
     GrSwizzle samplerSwizzle(SamplerHandle handle) const {
-        if (this->caps()->shaderCaps()->textureSwizzleAppliedInShader()) {
-            return this->uniformHandler()->samplerSwizzle(handle);
-        }
-        return GrSwizzle::RGBA();
+        return this->uniformHandler()->samplerSwizzle(handle);
+    }
+
+    const char* inputSamplerVariable(SamplerHandle handle) const {
+        return this->uniformHandler()->inputSamplerVariable(handle);
+    }
+
+    GrSwizzle inputSamplerSwizzle(SamplerHandle handle) const {
+        return this->uniformHandler()->inputSamplerSwizzle(handle);
     }
 
     // Used to add a uniform for the RenderTarget width (used for sk_Width) without mangling
@@ -160,6 +165,7 @@ private:
     void emitAndInstallXferProc(const SkString& colorIn, const SkString& coverageIn);
     SamplerHandle emitSampler(const GrBackendFormat&, GrSamplerState, const GrSwizzle&,
                               const char* name);
+    SamplerHandle emitInputSampler(const GrSwizzle& swizzle, const char* name);
     bool checkSamplerCounts();
 
 #ifdef SK_DEBUG

@@ -21,6 +21,18 @@ namespace dawn_native { namespace opengl {
 
     // Buffer
 
+    // static
+    ResultOrError<Ref<Buffer>> Buffer::CreateInternalBuffer(Device* device,
+                                                            const BufferDescriptor* descriptor,
+                                                            bool shouldLazyClear) {
+        Ref<Buffer> buffer = AcquireRef(new Buffer(device, descriptor, shouldLazyClear));
+        if (descriptor->mappedAtCreation) {
+            DAWN_TRY(buffer->MapAtCreationInternal());
+        }
+
+        return std::move(buffer);
+    }
+
     Buffer::Buffer(Device* device, const BufferDescriptor* descriptor)
         : BufferBase(device, descriptor) {
         // TODO(cwallez@chromium.org): Have a global "zero" buffer instead of creating a new 4-byte
@@ -30,11 +42,21 @@ namespace dawn_native { namespace opengl {
         device->gl.GenBuffers(1, &mBuffer);
         device->gl.BindBuffer(GL_ARRAY_BUFFER, mBuffer);
 
-        if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting)) {
+        // The buffers with mappedAtCreation == true will be initialized in
+        // BufferBase::MapAtCreation().
+        if (device->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
+            !descriptor->mappedAtCreation) {
             std::vector<uint8_t> clearValues(size, 1u);
             device->gl.BufferData(GL_ARRAY_BUFFER, size, clearValues.data(), GL_STATIC_DRAW);
         } else {
             device->gl.BufferData(GL_ARRAY_BUFFER, size, nullptr, GL_STATIC_DRAW);
+        }
+    }
+
+    Buffer::Buffer(Device* device, const BufferDescriptor* descriptor, bool shouldLazyClear)
+        : Buffer(device, descriptor) {
+        if (!shouldLazyClear) {
+            SetIsDataInitialized();
         }
     }
 
@@ -53,10 +75,8 @@ namespace dawn_native { namespace opengl {
     }
 
     void Buffer::EnsureDataInitialized() {
-        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
-        // instead when buffer lazy initialization is completely supported.
         if (IsDataInitialized() ||
-            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return;
         }
 
@@ -64,10 +84,8 @@ namespace dawn_native { namespace opengl {
     }
 
     void Buffer::EnsureDataInitializedAsDestination(uint64_t offset, uint64_t size) {
-        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
-        // instead when buffer lazy initialization is completely supported.
         if (IsDataInitialized() ||
-            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return;
         }
 
@@ -79,10 +97,8 @@ namespace dawn_native { namespace opengl {
     }
 
     void Buffer::EnsureDataInitializedAsDestination(const CopyTextureToBufferCmd* copy) {
-        // TODO(jiawei.shao@intel.com): check Toggle::LazyClearResourceOnFirstUse
-        // instead when buffer lazy initialization is completely supported.
         if (IsDataInitialized() ||
-            !GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse)) {
+            !GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
             return;
         }
 
@@ -94,7 +110,7 @@ namespace dawn_native { namespace opengl {
     }
 
     void Buffer::InitializeToZero() {
-        ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearBufferOnFirstUse));
+        ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse));
         ASSERT(!IsDataInitialized());
 
         const uint64_t size = GetAppliedSize();
@@ -108,36 +124,14 @@ namespace dawn_native { namespace opengl {
         SetIsDataInitialized();
     }
 
-    bool Buffer::IsMappableAtCreation() const {
+    bool Buffer::IsCPUWritableAtCreation() const {
         // TODO(enga): All buffers in GL can be mapped. Investigate if mapping them will cause the
         // driver to migrate it to shared memory.
         return true;
     }
 
     MaybeError Buffer::MapAtCreationImpl() {
-        EnsureDataInitialized();
-
         const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
-        gl.BindBuffer(GL_ARRAY_BUFFER, mBuffer);
-        mMappedData = gl.MapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
-        return {};
-    }
-
-    MaybeError Buffer::MapReadAsyncImpl() {
-        const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
-
-        // TODO(cwallez@chromium.org): this does GPU->CPU synchronization, we could require a high
-        // version of OpenGL that would let us map the buffer unsynchronized.
-        gl.BindBuffer(GL_ARRAY_BUFFER, mBuffer);
-        mMappedData = gl.MapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY);
-        return {};
-    }
-
-    MaybeError Buffer::MapWriteAsyncImpl() {
-        const OpenGLFunctions& gl = ToBackend(GetDevice())->gl;
-
-        // TODO(cwallez@chromium.org): this does GPU->CPU synchronization, we could require a high
-        // version of OpenGL that would let us map the buffer unsynchronized.
         gl.BindBuffer(GL_ARRAY_BUFFER, mBuffer);
         mMappedData = gl.MapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY);
         return {};

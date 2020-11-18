@@ -6,9 +6,7 @@ import("//build_overrides/build.gni")
 
 if (build_with_chromium) {
   source_set("abseil") {
-    public_deps = [
-      "//third_party/abseil-cpp:absl",
-    ]
+    public_deps = [ "//third_party/abseil-cpp:absl" ]
   }
 } else {
   config("abseil_config") {
@@ -19,9 +17,16 @@ if (build_with_chromium) {
     cflags = [
       "-Wno-sign-compare",
       "-Wno-extra-semi",
+      "-Wno-range-loop-analysis",
     ]
+
+    if (is_mac) {
+      cflags += [ "-Wno-range-loop-analysis" ]
+    }
   }
 
+  # NOTE: StrFormat is specifically excluded from the Abseil source set due
+  # to binary size concerns.
   source_set("abseil") {
     sources = [
       "src/absl/base/attributes.h",
@@ -74,7 +79,6 @@ if (build_with_chromium) {
       "src/absl/strings/numbers.h",
       "src/absl/strings/str_cat.cc",
       "src/absl/strings/str_cat.h",
-      "src/absl/strings/str_format.h",
       "src/absl/strings/str_join.h",
       "src/absl/strings/str_replace.cc",
       "src/absl/strings/str_replace.h",

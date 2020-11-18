@@ -22,6 +22,9 @@ enum AttestationStatus {
   STATUS_REQUEST_DENIED_BY_CA = 6;
   STATUS_CA_NOT_AVAILABLE = 7;
   STATUS_NOT_SUPPORTED = 8;
+  // The error that is translated into by the client to indicate any kind of
+  // D-Bus error.
+  STATUS_DBUS_ERROR = 9;
 }
 
 enum ACAType {

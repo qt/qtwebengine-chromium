@@ -19,26 +19,24 @@
 #include "include/core/SkScalar.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkBlurMask.h"
+#include "src/core/SkBlurPriv.h"
 #include "src/core/SkMathPriv.h"
 #include "src/gpu/GrBitmapTextureMaker.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrShaderCaps.h"
+#include "src/gpu/GrThreadSafeUniquelyKeyedProxyViewCache.h"
 #include "src/gpu/effects/GrTextureEffect.h"
 
 #include "src/gpu/GrFragmentProcessor.h"
 
 class GrRectBlurEffect : public GrFragmentProcessor {
 public:
-    static std::unique_ptr<GrFragmentProcessor> MakeIntegralFP(GrRecordingContext* context,
+    static std::unique_ptr<GrFragmentProcessor> MakeIntegralFP(GrRecordingContext* rContext,
                                                                float sixSigma) {
-        // The texture we're producing represents the integral of a normal distribution over a
-        // six-sigma range centered at zero. We want enough resolution so that the linear
-        // interpolation done in texture lookup doesn't introduce noticeable artifacts. We
-        // conservatively choose to have 2 texels for each dst pixel.
-        int minWidth = 2 * sk_float_ceil2int(sixSigma);
-        // Bin by powers of 2 with a minimum so we get good profile reuse.
-        int width = std::max(SkNextPow2(minWidth), 32);
+        auto threadSafeViewCache = rContext->priv().threadSafeViewCache();
+
+        int width = SkCreateIntegralTable(sixSigma, nullptr);
 
         static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
         GrUniqueKey key;
@@ -48,37 +46,28 @@ public:
 
         SkMatrix m = SkMatrix::Scale(width / sixSigma, 1.f);
 
-        GrProxyProvider* proxyProvider = context->priv().proxyProvider();
-        if (sk_sp<GrTextureProxy> proxy = proxyProvider->findOrCreateProxyByUniqueKey(key)) {
-            GrSwizzle swizzle = context->priv().caps()->getReadSwizzle(proxy->backendFormat(),
-                                                                       GrColorType::kAlpha_8);
-            GrSurfaceProxyView view{std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle};
+        GrSurfaceProxyView view = threadSafeViewCache->find(key);
+
+        if (view) {
+            SkASSERT(view.origin() == kTopLeft_GrSurfaceOrigin);
             return GrTextureEffect::Make(std::move(view), kPremul_SkAlphaType, m,
                                          GrSamplerState::Filter::kLinear);
         }
 
         SkBitmap bitmap;
-        if (!bitmap.tryAllocPixels(SkImageInfo::MakeA8(width, 1))) {
+        if (!SkCreateIntegralTable(sixSigma, &bitmap)) {
             return {};
         }
-        *bitmap.getAddr8(0, 0) = 255;
-        const float invWidth = 1.f / width;
-        for (int i = 1; i < width - 1; ++i) {
-            float x = (i + 0.5f) * invWidth;
-            x = (-6 * x + 3) * SK_ScalarRoot2Over2;
-            float integral = 0.5f * (std::erf(x) + 1.f);
-            *bitmap.getAddr8(i, 0) = SkToU8(sk_float_round2int(255.f * integral));
-        }
-        *bitmap.getAddr8(width - 1, 0) = 0;
-        bitmap.setImmutable();
 
-        GrBitmapTextureMaker maker(context, bitmap, GrImageTexGenPolicy::kNew_Uncached_Budgeted);
-        auto view = maker.view(GrMipmapped::kNo);
+        GrBitmapTextureMaker maker(rContext, bitmap, GrImageTexGenPolicy::kNew_Uncached_Budgeted);
+        view = maker.view(GrMipmapped::kNo);
         if (!view) {
             return {};
         }
+
+        view = threadSafeViewCache->add(key, view);
+
         SkASSERT(view.origin() == kTopLeft_GrSurfaceOrigin);
-        proxyProvider->assignUniqueKeyToProxy(key, view.asTextureProxy());
         return GrTextureEffect::Make(std::move(view), kPremul_SkAlphaType, m,
                                      GrSamplerState::Filter::kLinear);
     }
@@ -86,9 +75,38 @@ public:
     static std::unique_ptr<GrFragmentProcessor> Make(std::unique_ptr<GrFragmentProcessor> inputFP,
                                                      GrRecordingContext* context,
                                                      const GrShaderCaps& caps,
-                                                     const SkRect& rect,
-                                                     float sigma) {
-        SkASSERT(rect.isSorted());
+                                                     const SkRect& srcRect,
+                                                     const SkMatrix& viewMatrix,
+                                                     float transformedSigma) {
+        SkASSERT(viewMatrix.preservesRightAngles());
+        SkASSERT(srcRect.isSorted());
+
+        SkMatrix invM;
+        SkRect rect;
+        if (viewMatrix.rectStaysRect()) {
+            invM = SkMatrix::I();
+            // We can do everything in device space when the src rect projects to a rect in device
+            // space.
+            SkAssertResult(viewMatrix.mapRect(&rect, srcRect));
+        } else {
+            // The view matrix may scale, perhaps anisotropically. But we want to apply our device
+            // space "transformedSigma" to the delta of frag coord from the rect edges. Factor out
+            // the scaling to define a space that is purely rotation/translation from device space
+            // (and scale from src space) We'll meet in the middle: pre-scale the src rect to be in
+            // this space and then apply the inverse of the rotation/translation portion to the
+            // frag coord.
+            SkMatrix m;
+            SkSize scale;
+            if (!viewMatrix.decomposeScale(&scale, &m)) {
+                return nullptr;
+            }
+            if (!m.invert(&invM)) {
+                return nullptr;
+            }
+            rect = {srcRect.left() * scale.width(), srcRect.top() * scale.height(),
+                    srcRect.right() * scale.width(), srcRect.bottom() * scale.height()};
+        }
+
         if (!caps.floatIs32Bits()) {
             // We promote the math that gets us into the Gaussian space to full float when the rect
             // coords are large. If we don't have full float then fail. We could probably clip the
@@ -99,7 +117,7 @@ public:
             }
         }
 
-        const float sixSigma = 6 * sigma;
+        const float sixSigma = 6 * transformedSigma;
         std::unique_ptr<GrFragmentProcessor> integral = MakeIntegralFP(context, sixSigma);
         if (!integral) {
             return nullptr;
@@ -110,35 +128,44 @@ public:
         // inset the rect so that the edge of the inset rect corresponds to t = 0 in the texture.
         // It actually simplifies things a bit in the !isFast case, too.
         float threeSigma = sixSigma / 2;
-        SkRect insetRect = {rect.fLeft + threeSigma, rect.fTop + threeSigma,
-                            rect.fRight - threeSigma, rect.fBottom - threeSigma};
+        SkRect insetRect = {rect.left() + threeSigma, rect.top() + threeSigma,
+                            rect.right() - threeSigma, rect.bottom() - threeSigma};
 
         // In our fast variant we find the nearest horizontal and vertical edges and for each
         // do a lookup in the integral texture for each and multiply them. When the rect is
         // less than 6 sigma wide then things aren't so simple and we have to consider both the
         // left and right edge of the rectangle (and similar in y).
         bool isFast = insetRect.isSorted();
-        return std::unique_ptr<GrFragmentProcessor>(
-                new GrRectBlurEffect(std::move(inputFP), insetRect, std::move(integral), isFast,
-                                     GrSamplerState::Filter::kLinear));
+        return std::unique_ptr<GrFragmentProcessor>(new GrRectBlurEffect(std::move(inputFP),
+                                                                         insetRect,
+                                                                         !invM.isIdentity(),
+                                                                         invM,
+                                                                         std::move(integral),
+                                                                         isFast));
     }
     GrRectBlurEffect(const GrRectBlurEffect& src);
     std::unique_ptr<GrFragmentProcessor> clone() const override;
     const char* name() const override { return "RectBlurEffect"; }
+    bool usesExplicitReturn() const override;
     SkRect rect;
+    bool applyInvVM;
+    SkMatrix invVM;
     bool isFast;
 
 private:
     GrRectBlurEffect(std::unique_ptr<GrFragmentProcessor> inputFP,
                      SkRect rect,
+                     bool applyInvVM,
+                     SkMatrix invVM,
                      std::unique_ptr<GrFragmentProcessor> integral,
-                     bool isFast,
-                     GrSamplerState samplerParams)
+                     bool isFast)
             : INHERITED(kGrRectBlurEffect_ClassID,
                         (OptimizationFlags)(inputFP ? ProcessorOptimizationFlags(inputFP.get())
                                                     : kAll_OptimizationFlags) &
                                 kCompatibleWithCoverageAsAlpha_OptimizationFlag)
             , rect(rect)
+            , applyInvVM(applyInvVM)
+            , invVM(invVM)
             , isFast(isFast) {
         this->registerChild(std::move(inputFP), SkSL::SampleUsage::PassThrough());
         SkASSERT(integral);
@@ -151,6 +178,6 @@ private:
     SkString onDumpInfo() const override;
 #endif
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
-    typedef GrFragmentProcessor INHERITED;
+    using INHERITED = GrFragmentProcessor;
 };
 #endif

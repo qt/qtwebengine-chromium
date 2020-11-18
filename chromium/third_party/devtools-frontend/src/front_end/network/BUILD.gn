@@ -53,6 +53,7 @@ devtools_module("network") {
     "../search:bundle",
     "../source_frame:bundle",
     "../text_utils:bundle",
+    "../theme_support:bundle",
     "../ui:bundle",
     "../workspace:bundle",
   ]
@@ -60,7 +61,6 @@ devtools_module("network") {
 
 devtools_entrypoint("bundle") {
   entrypoint = "network.js"
-  is_legacy_javascript_entrypoint = [ "crbug.com/1011811" ]
 
   deps = [ ":network" ]
 }

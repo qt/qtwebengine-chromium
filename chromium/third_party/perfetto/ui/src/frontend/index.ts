@@ -28,25 +28,31 @@ import {
   LogExists,
   LogExistsKey
 } from '../common/logs';
+import {MetricResult} from '../common/metric_data';
 import {CurrentSearchResults, SearchSummary} from '../common/search_data';
 
 import {AnalyzePage} from './analyze_page';
+import {loadAndroidBugToolInfo} from './android_bug_tool';
 import {maybeShowErrorDialog} from './error_dialog';
 import {
   CounterDetails,
   CpuProfileDetails,
+  Flow,
   globals,
   HeapProfileDetails,
   QuantizedLoad,
   SliceDetails,
-  ThreadDesc
+  ThreadDesc,
+  ThreadStateDetails
 } from './globals';
 import {HomePage} from './home_page';
 import {openBufferWithLegacyTraceViewer} from './legacy_trace_viewer';
+import {MetricsPage} from './metrics_page';
 import {postMessageHandler} from './post_message_handler';
 import {RecordPage, updateAvailableAdbDevices} from './record_page';
 import {Router} from './router';
 import {CheckHttpRpcConnection} from './rpc_http_dialog';
+import {taskTracker} from './task_tracker';
 import {TraceInfoPage} from './trace_info_page';
 import {ViewerPage} from './viewer_page';
 
@@ -123,6 +129,16 @@ class FrontendApi {
     this.redraw();
   }
 
+  publishThreadStateDetails(click: ThreadStateDetails) {
+    globals.threadStateDetails = click;
+    this.redraw();
+  }
+
+  publishBoundFlows(boundFlows: Flow[]) {
+    globals.boundFlows = boundFlows;
+    this.redraw();
+  }
+
   publishCounterDetails(click: CounterDetails) {
     globals.counterDetails = click;
     this.redraw();
@@ -188,6 +204,17 @@ class FrontendApi {
     this.redraw();
   }
 
+  publishMetricError(error: string) {
+    globals.setMetricError(error);
+    globals.logging.logError(error, false);
+    this.redraw();
+  }
+
+  publishMetricResult(metricResult: MetricResult) {
+    globals.setMetricResult(metricResult);
+    this.redraw();
+  }
+
   publishAggregateData(args: {data: AggregateData, kind: string}) {
     globals.setAggregateData(args.kind, args.data);
     this.redraw();
@@ -250,6 +277,7 @@ function main() {
         '/viewer': ViewerPage,
         '/record': RecordPage,
         '/query': AnalyzePage,
+        '/metrics': MetricsPage,
         '/info': TraceInfoPage,
       },
       dispatch,
@@ -306,14 +334,32 @@ function main() {
   // /?s=xxxx for permalinks.
   const stateHash = Router.param('s');
   const urlHash = Router.param('url');
-  if (stateHash) {
+  const androidBugTool = Router.param('openFromAndroidBugTool');
+  if (typeof stateHash === 'string' && stateHash) {
     globals.dispatch(Actions.loadPermalink({
       hash: stateHash,
     }));
-  } else if (urlHash) {
+  } else if (typeof urlHash === 'string' && urlHash) {
     globals.dispatch(Actions.openTraceFromUrl({
       url: urlHash,
     }));
+  } else if (androidBugTool) {
+    // TODO(hjd): Unify updateStatus and TaskTracker
+    globals.dispatch(Actions.updateStatus({
+      msg: 'Loading trace from ABT extension',
+      timestamp: Date.now() / 1000
+    }));
+    const loadInfo = loadAndroidBugToolInfo();
+    taskTracker.trackPromise(loadInfo, 'Loading trace from ABT extension');
+    loadInfo
+        .then(info => {
+          globals.dispatch(Actions.openTraceFromFile({
+            file: info.file,
+          }));
+        })
+        .catch(e => {
+          console.error(e);
+        });
   }
 
   // Prevent pinch zoom.

@@ -98,17 +98,32 @@ static int construct_multi_layer_gf_structure(
          first_frame_update_type == OVERLAY_UPDATE ||
          first_frame_update_type == GF_UPDATE);
 
-  gf_group->update_type[frame_index] = first_frame_update_type;
-  gf_group->arf_src_offset[frame_index] = 0;
-  gf_group->cur_frame_idx[frame_index] = cur_frame_index;
-  gf_group->layer_depth[frame_index] =
-      first_frame_update_type == OVERLAY_UPDATE ? MAX_ARF_LAYERS + 1 : 0;
-  gf_group->max_layer_depth = 0;
-  ++frame_index;
-  // TODO(jingning): Increase cur_frame_index when a frame is displayed.
-  // When key frame is decomposed into an ARF and overlay frame, increase
-  // cur_frame_index after the overlay frame.
-  ++cur_frame_index;
+  if (first_frame_update_type == KF_UPDATE &&
+      cpi->oxcf.kf_cfg.enable_keyframe_filtering > 1) {
+    gf_group->update_type[frame_index] = ARF_UPDATE;
+    gf_group->arf_src_offset[frame_index] = 0;
+    gf_group->cur_frame_idx[frame_index] = cur_frame_index;
+    gf_group->layer_depth[frame_index] = 0;
+    gf_group->max_layer_depth = 0;
+    ++frame_index;
+
+    gf_group->update_type[frame_index] = OVERLAY_UPDATE;
+    gf_group->arf_src_offset[frame_index] = 0;
+    gf_group->cur_frame_idx[frame_index] = cur_frame_index;
+    gf_group->layer_depth[frame_index] = 0;
+    gf_group->max_layer_depth = 0;
+    ++frame_index;
+    cur_frame_index++;
+  } else {
+    gf_group->update_type[frame_index] = first_frame_update_type;
+    gf_group->arf_src_offset[frame_index] = 0;
+    gf_group->cur_frame_idx[frame_index] = cur_frame_index;
+    gf_group->layer_depth[frame_index] =
+        first_frame_update_type == OVERLAY_UPDATE ? MAX_ARF_LAYERS + 1 : 0;
+    gf_group->max_layer_depth = 0;
+    ++frame_index;
+    ++cur_frame_index;
+  }
 
   // ALTREF.
   const int use_altref = gf_group->max_layer_depth_allowed > 0;
@@ -129,39 +144,15 @@ static int construct_multi_layer_gf_structure(
   set_multi_layer_params(twopass, gf_group, rc, frame_info, 0, gf_interval,
                          &cur_frame_index, &frame_index, use_altref + 1);
 
-  // The end frame will be Overlay frame for an ARF GOP; otherwise set it to
-  // be GF, for consistency, which will be updated in the next GOP.
-  gf_group->update_type[frame_index] = use_altref ? OVERLAY_UPDATE : GF_UPDATE;
-  gf_group->arf_src_offset[frame_index] = 0;
+  if (use_altref) {
+    gf_group->update_type[frame_index] = OVERLAY_UPDATE;
+    gf_group->arf_src_offset[frame_index] = 0;
+    gf_group->cur_frame_idx[frame_index] = cur_frame_index;
+    gf_group->layer_depth[frame_index] = MAX_ARF_LAYERS;
+    gf_group->arf_boost[frame_index] = NORMAL_BOOST;
+  }
   return frame_index;
 }
-
-#define CHECK_GF_PARAMETER 0
-#if CHECK_GF_PARAMETER
-void check_frame_params(GF_GROUP *const gf_group, int gf_interval) {
-  static const char *update_type_strings[FRAME_UPDATE_TYPES] = {
-    "KF_UPDATE",       "LF_UPDATE",      "GF_UPDATE",
-    "ARF_UPDATE",      "OVERLAY_UPDATE", "INTNL_OVERLAY_UPDATE",
-    "INTNL_ARF_UPDATE"
-  };
-  FILE *fid = fopen("GF_PARAMS.txt", "a");
-
-  fprintf(fid, "\ngf_interval = {%d}\n", gf_interval);
-  for (int i = 0; i < gf_group->size; ++i) {
-    fprintf(fid, "#%2d : %s %d %d %d %d\n", i,
-            update_type_strings[gf_group->update_type[i]],
-            gf_group->arf_src_offset[i], gf_group->arf_pos_in_gf[i],
-            gf_group->arf_update_idx[i], gf_group->pyramid_level[i]);
-  }
-
-  fprintf(fid, "number of nodes in each level: \n");
-  for (int i = 0; i < gf_group->pyramid_height; ++i) {
-    fprintf(fid, "lvl %d: %d ", i, gf_group->pyramid_lvl_nodes[i]);
-  }
-  fprintf(fid, "\n");
-  fclose(fid);
-}
-#endif  // CHECK_GF_PARAMETER
 
 void av1_gop_setup_structure(AV1_COMP *cpi,
                              const EncodeFrameParams *const frame_params) {
@@ -176,8 +167,4 @@ void av1_gop_setup_structure(AV1_COMP *cpi,
   gf_group->size = construct_multi_layer_gf_structure(
       cpi, twopass, gf_group, rc, frame_info, rc->baseline_gf_interval,
       first_frame_update_type);
-
-#if CHECK_GF_PARAMETER
-  check_frame_params(gf_group, rc->baseline_gf_interval);
-#endif
 }

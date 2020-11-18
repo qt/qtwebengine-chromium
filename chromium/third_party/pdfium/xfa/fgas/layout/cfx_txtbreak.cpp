@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "build/build_config.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/text_char_pos.h"
 #include "third_party/base/containers/adapters.h"
@@ -846,8 +847,6 @@ size_t CFX_TxtBreak::GetDisplayPos(const Run* pTxtRun,
 #if defined(OS_APPLE)
         pCharPos->m_ExtGID = pCharPos->m_GlyphIndex;
 #endif
-        // TODO(npm): change widths in this method to unsigned to avoid implicit
-        // cast in the following line.
         pCharPos->m_FontCharWidth = iCharWidth;
       }
 

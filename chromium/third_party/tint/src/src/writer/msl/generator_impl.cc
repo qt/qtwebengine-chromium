@@ -706,7 +706,6 @@ bool GeneratorImpl::EmitImportFunction(ast::CallExpression* expr) {
     case GLSLstd450Radians:
     case GLSLstd450RoundEven:
     case GLSLstd450SSign:
-    default:
       error_ = "Unknown import method: " + ident->name();
       return false;
   }
@@ -1347,6 +1346,10 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::EntryPoint* ep) {
     // we should instead be using a provided mapping that uses both buffer and
     // set. https://bugs.chromium.org/p/tint/issues/detail?id=104
     auto* binding = data.second.binding;
+    if (binding == nullptr) {
+      error_ = "unable to find binding information for uniform: " + var->name();
+      return false;
+    }
     // auto* set = data.second.set;
 
     out_ << "constant ";
@@ -1459,6 +1462,19 @@ bool GeneratorImpl::EmitLoop(ast::LoopStatement* stmt) {
 
     make_indent();
     out_ << "bool " << guard << " = true;" << std::endl;
+
+    // A continuing block may use variables declared in the method body. As a
+    // first pass, if we have a continuing, we pull all declarations outside
+    // the for loop into the continuing scope. Then, the variable declarations
+    // will be turned into assignments.
+    for (const auto& s : *(stmt->body())) {
+      if (!s->IsVariableDecl()) {
+        continue;
+      }
+      if (!EmitVariable(s->AsVariableDecl()->variable(), true)) {
+        return false;
+      }
+    }
   }
 
   make_indent();
@@ -1479,6 +1495,26 @@ bool GeneratorImpl::EmitLoop(ast::LoopStatement* stmt) {
   }
 
   for (const auto& s : *(stmt->body())) {
+    // If we have a continuing block we've already emitted the variable
+    // declaration before the loop, so treat it as an assignment.
+    if (s->IsVariableDecl() && stmt->has_continuing()) {
+      make_indent();
+
+      auto* var = s->AsVariableDecl()->variable();
+      out_ << var->name() << " = ";
+      if (var->constructor() != nullptr) {
+        if (!EmitExpression(var->constructor())) {
+          return false;
+        }
+      } else {
+        if (!EmitZeroValue(var->type())) {
+          return false;
+        }
+      }
+      out_ << ";" << std::endl;
+      continue;
+    }
+
     if (!EmitStatement(s.get())) {
       return false;
     }
@@ -1649,7 +1685,7 @@ bool GeneratorImpl::EmitStatement(ast::Statement* stmt) {
     return EmitSwitch(stmt->AsSwitch());
   }
   if (stmt->IsVariableDecl()) {
-    return EmitVariable(stmt->AsVariableDecl()->variable());
+    return EmitVariable(stmt->AsVariableDecl()->variable(), false);
   }
 
   error_ = "unknown statement type: " + stmt->str();
@@ -1812,7 +1848,7 @@ bool GeneratorImpl::EmitUnaryOp(ast::UnaryOpExpression* expr) {
   return true;
 }
 
-bool GeneratorImpl::EmitVariable(ast::Variable* var) {
+bool GeneratorImpl::EmitVariable(ast::Variable* var, bool skip_constructor) {
   make_indent();
 
   // TODO(dsinclair): Handle variable decorations
@@ -1831,7 +1867,7 @@ bool GeneratorImpl::EmitVariable(ast::Variable* var) {
     out_ << " " << var->name();
   }
 
-  if (var->constructor() != nullptr) {
+  if (!skip_constructor && var->constructor() != nullptr) {
     out_ << " = ";
     if (!EmitExpression(var->constructor())) {
       return false;

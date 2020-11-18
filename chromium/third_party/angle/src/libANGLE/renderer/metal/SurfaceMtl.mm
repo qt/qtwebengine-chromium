@@ -57,9 +57,11 @@ struct IOSurfaceFormatInfo
 
 // clang-format off
 // NOTE(hqle): Support R16_UINT once GLES3 is complete.
-constexpr std::array<IOSurfaceFormatInfo, 6> kIOSurfaceFormats = {{
+constexpr std::array<IOSurfaceFormatInfo, 8> kIOSurfaceFormats = {{
     {GL_RED,      GL_UNSIGNED_BYTE,               1, angle::FormatID::R8_UNORM},
+    {GL_RED,      GL_UNSIGNED_SHORT,              2, angle::FormatID::R16_UNORM},
     {GL_RG,       GL_UNSIGNED_BYTE,               2, angle::FormatID::R8G8_UNORM},
+    {GL_RG,       GL_UNSIGNED_SHORT,              4, angle::FormatID::R16G16_UNORM},
     {GL_RGB,      GL_UNSIGNED_BYTE,               4, angle::FormatID::B8G8R8A8_UNORM},
     {GL_BGRA_EXT, GL_UNSIGNED_BYTE,               4, angle::FormatID::B8G8R8A8_UNORM},
     {GL_RGBA,     GL_HALF_FLOAT,                  8, angle::FormatID::R16G16B16A16_FLOAT},
@@ -80,26 +82,32 @@ int FindIOSurfaceFormatIndex(GLenum internalFormat, GLenum type)
     return -1;
 }
 
-angle::Result CreateTexture(const gl::Context *context,
-                            const mtl::Format &format,
-                            uint32_t width,
-                            uint32_t height,
-                            uint32_t samples,
-                            bool renderTargetOnly,
-                            mtl::TextureRef *textureOut)
+angle::Result CreateOrResizeTexture(const gl::Context *context,
+                                    const mtl::Format &format,
+                                    uint32_t width,
+                                    uint32_t height,
+                                    uint32_t samples,
+                                    bool renderTargetOnly,
+                                    mtl::TextureRef *textureOut)
 {
     ContextMtl *contextMtl = mtl::GetImpl(context);
-    if (samples > 1)
+    bool allowFormatView   = format.hasDepthAndStencilBits();
+    if (*textureOut)
+    {
+        ANGLE_TRY((*textureOut)->resize(contextMtl, width, height));
+    }
+    else if (samples > 1)
     {
         ANGLE_TRY(mtl::Texture::Make2DMSTexture(contextMtl, format, width, height, samples,
                                                 /** renderTargetOnly */ renderTargetOnly,
-                                                /** allowFormatView */ false, textureOut));
+                                                /** allowFormatView */ allowFormatView,
+                                                textureOut));
     }
     else
     {
         ANGLE_TRY(mtl::Texture::Make2DTexture(contextMtl, format, width, height, 1,
                                               /** renderTargetOnly */ renderTargetOnly,
-                                              /** allowFormatView */ false, textureOut));
+                                              /** allowFormatView */ allowFormatView, textureOut));
     }
     return angle::Result::Continue;
 }
@@ -243,6 +251,8 @@ SurfaceMtl::SurfaceMtl(DisplayMtl *display,
                        const egl::AttributeMap &attribs)
     : SurfaceImpl(state)
 {
+    mRobustResourceInit =
+        attribs.get(EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE, EGL_FALSE) == EGL_TRUE;
     mColorFormat = display->getPixelFormat(angle::FormatID::B8G8R8A8_UNORM);
 
     mSamples = state.config->samples;
@@ -291,6 +301,7 @@ void SurfaceMtl::destroy(const egl::Display *display)
     mMSColorTexture = nullptr;
 
     mColorRenderTarget.reset();
+    mColorManualResolveRenderTarget.reset();
     mDepthRenderTarget.reset();
     mStencilRenderTarget.reset();
 }
@@ -413,7 +424,32 @@ EGLint SurfaceMtl::getSwapBehavior() const
 angle::Result SurfaceMtl::initializeContents(const gl::Context *context,
                                              const gl::ImageIndex &imageIndex)
 {
-    UNIMPLEMENTED();
+    ASSERT(mColorTexture);
+    ContextMtl *contextMtl = mtl::GetImpl(context);
+
+    // Use loadAction=clear
+    mtl::RenderPassDesc rpDesc;
+    rpDesc.sampleCount         = mColorTexture->samples();
+    rpDesc.numColorAttachments = 1;
+
+    mColorRenderTarget.toRenderPassAttachmentDesc(&rpDesc.colorAttachments[0]);
+    rpDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
+    MTLClearColor black                   = {};
+    rpDesc.colorAttachments[0].clearColor =
+        mtl::EmulatedAlphaClearColor(black, mColorTexture->getColorWritableMask());
+    if (mDepthTexture)
+    {
+        mDepthRenderTarget.toRenderPassAttachmentDesc(&rpDesc.depthAttachment);
+        rpDesc.depthAttachment.loadAction = MTLLoadActionClear;
+    }
+    if (mStencilTexture)
+    {
+        mStencilRenderTarget.toRenderPassAttachmentDesc(&rpDesc.stencilAttachment);
+        rpDesc.stencilAttachment.loadAction = MTLLoadActionClear;
+    }
+    mtl::RenderCommandEncoder *encoder = contextMtl->getRenderPassCommandEncoder(rpDesc);
+    encoder->setStoreAction(MTLStoreActionStore);
+
     return angle::Result::Continue;
 }
 
@@ -456,9 +492,9 @@ angle::Result SurfaceMtl::ensureCompanionTexturesSizeCorrect(const gl::Context *
     {
         mAutoResolveMSColorTexture =
             contextMtl->getDisplay()->getFeatures().allowMultisampleStoreAndResolve.enabled;
-        ANGLE_TRY(CreateTexture(context, mColorFormat, size.width, size.height, mSamples,
-                                /** renderTargetOnly */ mAutoResolveMSColorTexture,
-                                &mMSColorTexture));
+        ANGLE_TRY(CreateOrResizeTexture(context, mColorFormat, size.width, size.height, mSamples,
+                                        /** renderTargetOnly */ mAutoResolveMSColorTexture,
+                                        &mMSColorTexture));
 
         if (mAutoResolveMSColorTexture)
         {
@@ -473,8 +509,8 @@ angle::Result SurfaceMtl::ensureCompanionTexturesSizeCorrect(const gl::Context *
 
     if (mDepthFormat.valid() && (!mDepthTexture || mDepthTexture->size() != size))
     {
-        ANGLE_TRY(CreateTexture(context, mDepthFormat, size.width, size.height, mSamples,
-                                /** renderTargetOnly */ true, &mDepthTexture));
+        ANGLE_TRY(CreateOrResizeTexture(context, mDepthFormat, size.width, size.height, mSamples,
+                                        /** renderTargetOnly */ false, &mDepthTexture));
 
         mDepthRenderTarget.set(mDepthTexture, 0, 0, mDepthFormat);
     }
@@ -487,8 +523,9 @@ angle::Result SurfaceMtl::ensureCompanionTexturesSizeCorrect(const gl::Context *
         }
         else
         {
-            ANGLE_TRY(CreateTexture(context, mStencilFormat, size.width, size.height, mSamples,
-                                    /** renderTargetOnly */ true, &mStencilTexture));
+            ANGLE_TRY(CreateOrResizeTexture(context, mStencilFormat, size.width, size.height,
+                                            mSamples,
+                                            /** renderTargetOnly */ false, &mStencilTexture));
         }
 
         mStencilRenderTarget.set(mStencilTexture, 0, 0, mStencilFormat);
@@ -505,11 +542,13 @@ angle::Result SurfaceMtl::resolveColorTextureIfNeeded(const gl::Context *context
         // Manually resolve texture
         ContextMtl *contextMtl = mtl::GetImpl(context);
 
+        mColorManualResolveRenderTarget.set(mColorTexture, 0, 0, mColorFormat);
         mtl::RenderCommandEncoder *encoder =
-            contextMtl->getRenderCommandEncoder(mColorTexture, gl::ImageIndex::Make2D(0));
-        ANGLE_TRY(
-            contextMtl->getDisplay()->getUtils().blitWithDraw(context, encoder, mMSColorTexture));
+            contextMtl->getRenderTargetCommandEncoder(mColorManualResolveRenderTarget);
+        ANGLE_TRY(contextMtl->getDisplay()->getUtils().blitColorWithDraw(context, encoder,
+                                                                         mMSColorTexture));
         contextMtl->endEncoding(true);
+        mColorManualResolveRenderTarget.reset();
     }
     return angle::Result::Continue;
 }
@@ -627,20 +666,40 @@ EGLint WindowSurfaceMtl::getSwapBehavior() const
     return EGL_BUFFER_DESTROYED;
 }
 
+angle::Result WindowSurfaceMtl::initializeContents(const gl::Context *context,
+                                                   const gl::ImageIndex &imageIndex)
+{
+    bool newDrawable;
+    ANGLE_TRY(ensureCurrentDrawableObtained(context, &newDrawable));
+
+    if (!newDrawable)
+    {
+        return angle::Result::Continue;
+    }
+
+    return SurfaceMtl::initializeContents(context, imageIndex);
+}
+
 angle::Result WindowSurfaceMtl::getAttachmentRenderTarget(const gl::Context *context,
                                                           GLenum binding,
                                                           const gl::ImageIndex &imageIndex,
                                                           GLsizei samples,
                                                           FramebufferAttachmentRenderTarget **rtOut)
 {
-    ANGLE_TRY(ensureCurrentDrawableObtained(context));
+    ANGLE_TRY(ensureCurrentDrawableObtained(context, nullptr));
     ANGLE_TRY(ensureCompanionTexturesSizeCorrect(context));
 
     return SurfaceMtl::getAttachmentRenderTarget(context, binding, imageIndex, samples, rtOut);
 }
 
-angle::Result WindowSurfaceMtl::ensureCurrentDrawableObtained(const gl::Context *context)
+angle::Result WindowSurfaceMtl::ensureCurrentDrawableObtained(const gl::Context *context,
+                                                              bool *newDrawableOut)
 {
+    if (newDrawableOut)
+    {
+        *newDrawableOut = !mCurrentDrawable;
+    }
+
     if (!mCurrentDrawable)
     {
         ANGLE_TRY(obtainNextDrawable(context));
@@ -663,7 +722,7 @@ angle::Result WindowSurfaceMtl::ensureCompanionTexturesSizeCorrect(const gl::Con
 
 angle::Result WindowSurfaceMtl::ensureColorTextureReadyForReadPixels(const gl::Context *context)
 {
-    ANGLE_TRY(ensureCurrentDrawableObtained(context));
+    ANGLE_TRY(ensureCurrentDrawableObtained(context, nullptr));
 
     if (mMSColorTexture)
     {
@@ -850,8 +909,8 @@ angle::Result OffscreenSurfaceMtl::ensureTexturesSizeCorrect(const gl::Context *
 {
     if (!mColorTexture || mColorTexture->size() != mSize)
     {
-        ANGLE_TRY(CreateTexture(context, mColorFormat, mSize.width, mSize.height, 1,
-                                /** renderTargetOnly */ false, &mColorTexture));
+        ANGLE_TRY(CreateOrResizeTexture(context, mColorFormat, mSize.width, mSize.height, 1,
+                                        /** renderTargetOnly */ false, &mColorTexture));
 
         mColorRenderTarget.set(mColorTexture, 0, 0, mColorFormat);
     }
@@ -969,8 +1028,11 @@ angle::Result IOSurfaceSurfaceMtl::ensureColorTextureCreated(const gl::Context *
     if (kIOSurfaceFormats[mIOSurfaceFormatIdx].internalFormat == GL_RGB)
     {
         // This format has emulated alpha channel. Initialize texture's alpha channel to 1.0.
-        ANGLE_TRY(mtl::InitializeTextureContentsGPU(
-            context, mColorTexture, gl::ImageIndex::Make2D(0), MTLColorWriteMaskAlpha));
+        const mtl::Format &rgbClearFormat =
+            contextMtl->getPixelFormat(angle::FormatID::R8G8B8_UNORM);
+        ANGLE_TRY(mtl::InitializeTextureContentsGPU(context, mColorTexture, rgbClearFormat,
+                                                    gl::ImageIndex::Make2D(0),
+                                                    MTLColorWriteMaskAlpha));
 
         // Disable subsequent rendering to alpha channel.
         mColorTexture->setColorWritableMask(MTLColorWriteMaskAll & (~MTLColorWriteMaskAlpha));

@@ -6,7 +6,10 @@
 
 #include "core/fxcodec/fx_codec.h"
 
+#include <algorithm>
+
 #include "core/fxcrt/fx_memory.h"
+#include "core/fxge/fx_dib.h"
 
 namespace fxcodec {
 
@@ -22,16 +25,13 @@ CFX_DIBAttribute::~CFX_DIBAttribute() {
 void ReverseRGB(uint8_t* pDestBuf, const uint8_t* pSrcBuf, int pixels) {
   if (pDestBuf == pSrcBuf) {
     for (int i = 0; i < pixels; i++) {
-      uint8_t temp = pDestBuf[2];
-      pDestBuf[2] = pDestBuf[0];
-      pDestBuf[0] = temp;
+      std::swap(pDestBuf[0], pDestBuf[2]);
       pDestBuf += 3;
     }
   } else {
     for (int i = 0; i < pixels; i++) {
-      *pDestBuf++ = pSrcBuf[2];
-      *pDestBuf++ = pSrcBuf[1];
-      *pDestBuf++ = pSrcBuf[0];
+      ReverseCopy3Bytes(pDestBuf, pSrcBuf);
+      pDestBuf += 3;
       pSrcBuf += 3;
     }
   }

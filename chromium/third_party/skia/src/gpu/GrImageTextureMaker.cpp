@@ -8,7 +8,7 @@
 #include "src/gpu/GrImageTextureMaker.h"
 
 #include "src/gpu/GrColorSpaceXform.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrImageContextPriv.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/effects/GrBicubicEffect.h"
@@ -92,7 +92,8 @@ std::unique_ptr<GrFragmentProcessor> GrYUVAImageTextureMaker::createBicubicFragm
         const SkRect* subset,
         const SkRect* domain,
         GrSamplerState::WrapMode wrapX,
-        GrSamplerState::WrapMode wrapY) {
+        GrSamplerState::WrapMode wrapY,
+        SkImage::CubicResampler kernel) {
     const auto& caps = *fImage->context()->priv().caps();
     GrSamplerState samplerState(wrapX, wrapY, GrSamplerState::Filter::kNearest);
     auto fp = GrYUVtoRGBEffect::Make(fImage->fViews, fImage->fYUVAIndices, fImage->fYUVColorSpace,
@@ -100,7 +101,7 @@ std::unique_ptr<GrFragmentProcessor> GrYUVAImageTextureMaker::createBicubicFragm
     fp = GrBicubicEffect::Make(std::move(fp),
                                fImage->alphaType(),
                                textureMatrix,
-                               GrBicubicEffect::Kernel::kMitchell,
+                               kernel /*GrBicubicEffect::gMitchell*/,
                                GrBicubicEffect::Direction::kXY);
     if (fImage->fFromColorSpace) {
         fp = GrColorSpaceXformEffect::Make(std::move(fp),

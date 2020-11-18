@@ -13,7 +13,7 @@
 #include "core/fxcrt/fx_extension.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fwl/cfwl_app.h"
-#include "xfa/fwl/cfwl_eventtarget.h"
+#include "xfa/fwl/cfwl_event.h"
 #include "xfa/fwl/cfwl_messagekey.h"
 #include "xfa/fwl/cfwl_messagekillfocus.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
@@ -32,6 +32,15 @@ CFWL_NoteDriver::CFWL_NoteDriver() = default;
 
 CFWL_NoteDriver::~CFWL_NoteDriver() = default;
 
+void CFWL_NoteDriver::Trace(cppgc::Visitor* visitor) const {
+  for (const auto& item : m_eventTargets)
+    item.second->Trace(visitor);
+
+  visitor->Trace(m_pHover);
+  visitor->Trace(m_pFocus);
+  visitor->Trace(m_pGrab);
+}
+
 void CFWL_NoteDriver::SendEvent(CFWL_Event* pNote) {
   for (const auto& pair : m_eventTargets) {
     if (pair.second->IsValid())
@@ -47,7 +56,7 @@ void CFWL_NoteDriver::RegisterEventTarget(CFWL_Widget* pListener,
     pListener->SetEventKey(key);
   }
   if (!m_eventTargets[key])
-    m_eventTargets[key] = std::make_unique<CFWL_EventTarget>(pListener);
+    m_eventTargets[key] = std::make_unique<Target>(pListener);
 
   m_eventTargets[key]->SetEventSource(pEventSource);
 }
@@ -82,16 +91,16 @@ void CFWL_NoteDriver::NotifyTargetDestroy(CFWL_Widget* pNoteTarget) {
   UnregisterEventTarget(pNoteTarget);
 }
 
-void CFWL_NoteDriver::ProcessMessage(std::unique_ptr<CFWL_Message> pMessage) {
+void CFWL_NoteDriver::ProcessMessage(CFWL_Message* pMessage) {
   CFWL_Widget* pMessageForm = pMessage->GetDstTarget();
   if (!pMessageForm)
     return;
 
-  if (!DispatchMessage(pMessage.get(), pMessageForm))
+  if (!DispatchMessage(pMessage, pMessageForm))
     return;
 
   if (pMessage->GetType() == CFWL_Message::Type::kMouse)
-    MouseSecondary(pMessage.get());
+    MouseSecondary(pMessage);
 }
 
 bool CFWL_NoteDriver::DispatchMessage(CFWL_Message* pMessage,
@@ -238,4 +247,30 @@ void CFWL_NoteDriver::MouseSecondary(CFWL_Message* pMessage) {
 
   CFWL_MessageMouse msHover(pTarget, FWL_MouseCommand::Hover, 0, pMsg->m_pos);
   DispatchMessage(&msHover, nullptr);
+}
+
+CFWL_NoteDriver::Target::Target(CFWL_Widget* pListener)
+    : m_pListener(pListener) {}
+
+CFWL_NoteDriver::Target::~Target() = default;
+
+void CFWL_NoteDriver::Target::Trace(cppgc::Visitor* visitor) const {
+  visitor->Trace(m_pListener);
+  for (auto& widget : m_widgets)
+    visitor->Trace(widget);
+}
+
+void CFWL_NoteDriver::Target::SetEventSource(CFWL_Widget* pSource) {
+  if (pSource)
+    m_widgets.insert(pSource);
+}
+
+bool CFWL_NoteDriver::Target::ProcessEvent(CFWL_Event* pEvent) {
+  IFWL_WidgetDelegate* pDelegate = m_pListener->GetDelegate();
+  if (!pDelegate)
+    return false;
+  if (!m_widgets.empty() && m_widgets.count(pEvent->GetSrcTarget()) == 0)
+    return false;
+  pDelegate->OnProcessEvent(pEvent);
+  return true;
 }

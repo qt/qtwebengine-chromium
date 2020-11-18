@@ -9,33 +9,26 @@ import("//build_overrides/build.gni")
 # standalone platform implementation; since this is itself a standalone
 # application.
 if (!build_with_chromium) {
-  source_set("standalone_receiver") {
-    sources = [
-      "cast_agent.cc",
-      "cast_agent.h",
-      "cast_socket_message_port.cc",
-      "cast_socket_message_port.h",
-      "static_credentials.cc",
-      "static_credentials.h",
-      "streaming_playback_controller.cc",
-      "streaming_playback_controller.h",
-    ]
+  shared_sources = [
+    "cast_agent.cc",
+    "cast_agent.h",
+    "streaming_playback_controller.cc",
+    "streaming_playback_controller.h",
+  ]
 
-    deps = [
-      "../../platform",
-      "../../third_party/jsoncpp",
-      "../common:public",
-      "../common/channel/proto:channel_proto",
-      "../receiver:channel",
-      "../streaming:receiver",
-    ]
+  shared_deps = [
+    "../common:public",
+    "../streaming:receiver",
+  ]
 
-    defines = []
-    include_dirs = []
-    lib_dirs = []
-    libs = []
-    if (have_ffmpeg && have_libsdl2) {
-      defines += [ "CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS" ]
+  have_external_libs = have_ffmpeg && have_libsdl2
+
+  if (have_external_libs) {
+    source_set("standalone_receiver_sdl") {
+      sources = shared_sources
+      deps = shared_deps
+
+      defines = [ "CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS" ]
       sources += [
         "avcodec_glue.h",
         "decoder.cc",
@@ -49,23 +42,29 @@ if (!build_with_chromium) {
         "sdl_video_player.cc",
         "sdl_video_player.h",
       ]
-      include_dirs += ffmpeg_include_dirs + libsdl2_include_dirs
-      lib_dirs += ffmpeg_lib_dirs + libsdl2_lib_dirs
-      libs += ffmpeg_libs + libsdl2_libs
-    } else {
-      sources += [
-        "dummy_player.cc",
-        "dummy_player.h",
-      ]
+      include_dirs = ffmpeg_include_dirs + libsdl2_include_dirs
+      lib_dirs = ffmpeg_lib_dirs + libsdl2_lib_dirs
+      libs = ffmpeg_libs + libsdl2_libs
     }
+  }
+
+  source_set("standalone_receiver_dummy") {
+    sources = shared_sources
+    deps = shared_deps
+
+    sources += [
+      "dummy_player.cc",
+      "dummy_player.h",
+    ]
   }
 
   source_set("e2e_tests") {
     testonly = true
+
     sources = [ "cast_agent_integration_tests.cc" ]
 
     deps = [
-      ":standalone_receiver",
+      ":standalone_receiver_dummy",
       "../../third_party/boringssl",
       "../../third_party/googletest:gtest",
       "../receiver:channel",
@@ -75,9 +74,12 @@ if (!build_with_chromium) {
   executable("cast_receiver") {
     sources = [ "main.cc" ]
 
-    deps = [
-      ":standalone_receiver",
-      "../receiver:channel",
-    ]
+    deps = [ "../receiver:channel" ]
+
+    if (have_external_libs) {
+      deps += [ ":standalone_receiver_sdl" ]
+    } else {
+      deps += [ ":standalone_receiver_dummy" ]
+    }
   }
 }

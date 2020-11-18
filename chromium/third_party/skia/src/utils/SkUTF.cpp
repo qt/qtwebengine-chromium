@@ -1,6 +1,7 @@
 // Copyright 2018 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
+#include "include/private/SkTFitsIn.h"
 #include "src/utils/SkUTF.h"
 
 #include <climits>
@@ -94,7 +95,7 @@ int SkUTF::CountUTF16(const uint16_t* utf16, size_t byteLength) {
 }
 
 int SkUTF::CountUTF32(const int32_t* utf32, size_t byteLength) {
-    if (!is_align4(intptr_t(utf32)) || !is_align4(byteLength) || byteLength >> 2 > INT_MAX) {
+    if (!is_align4(intptr_t(utf32)) || !is_align4(byteLength) || !SkTFitsIn<int>(byteLength >> 2)) {
         return -1;
     }
     const uint32_t kInvalidUnicharMask = 0xFF000000;    // unichar fits in 24 bits
@@ -283,4 +284,34 @@ int SkUTF::UTF8ToUTF16(uint16_t dst[], int dstCapacity, const char src[], size_t
     return dstLength;
 }
 
+int SkUTF::UTF16ToUTF8(char dst[], int dstCapacity, const uint16_t src[], size_t srcLength) {
+    if (!dst) {
+        dstCapacity = 0;
+    }
 
+    int dstLength = 0;
+    const char* endDst = dst + dstCapacity;
+    const uint16_t* endSrc = src + srcLength;
+    while (src < endSrc) {
+        SkUnichar uni = NextUTF16(&src, endSrc);
+        if (uni < 0) {
+            return -1;
+        }
+
+        char utf8[SkUTF::kMaxBytesInUTF8Sequence];
+        size_t count = ToUTF8(uni, utf8);
+        if (count == 0) {
+            return -1;
+        }
+        dstLength += count;
+
+        if (dst) {
+            const char* elems = utf8;
+            while (dst < endDst && count > 0) {
+                *dst++ = *elems++;
+                count -= 1;
+            }
+        }
+    }
+    return dstLength;
+}

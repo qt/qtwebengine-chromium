@@ -126,6 +126,8 @@ class TracingMuxerImpl : public TracingMuxer {
       std::function<void(TracingSession::ReadTraceCallbackArgs)>);
   void GetTraceStats(TracingSessionGlobalID,
                      TracingSession::GetTraceStatsCallback);
+  void QueryServiceState(TracingSessionGlobalID,
+                         TracingSession::QueryServiceStateCallback);
 
  private:
   // For each TracingBackend we create and register one ProducerImpl instance.
@@ -137,7 +139,9 @@ class TracingMuxerImpl : public TracingMuxer {
   // because the Producer virtual methods don't allow to identify the service.
   class ProducerImpl : public Producer {
    public:
-    ProducerImpl(TracingMuxerImpl*, TracingBackendId);
+    ProducerImpl(TracingMuxerImpl*,
+                 TracingBackendId,
+                 uint32_t shmem_batch_commits_duration_ms);
     ~ProducerImpl() override;
 
     void Initialize(std::unique_ptr<ProducerEndpoint> endpoint);
@@ -161,6 +165,8 @@ class TracingMuxerImpl : public TracingMuxer {
     TracingMuxerImpl* const muxer_;
     TracingBackendId const backend_id_;
     bool connected_ = false;
+
+    const uint32_t shmem_batch_commits_duration_ms_ = 0;
 
     // Set of data sources that have been actually registered on this producer.
     // This can be a subset of the global |data_sources_|, because data sources
@@ -248,6 +254,9 @@ class TracingMuxerImpl : public TracingMuxer {
     // Callback passed to GetTraceStats().
     TracingSession::GetTraceStatsCallback get_trace_stats_callback_;
 
+    // Callback for a pending call to QueryServiceState().
+    TracingSession::QueryServiceStateCallback query_service_state_callback_;
+
     // The states of all data sources in this tracing session. |true| means the
     // data source has started tracing.
     using DataSourceHandle = std::pair<std::string, std::string>;
@@ -272,6 +281,7 @@ class TracingMuxerImpl : public TracingMuxer {
     void ReadTrace(ReadTraceCallback) override;
     void SetOnStopCallback(std::function<void()>) override;
     void GetTraceStats(GetTraceStatsCallback) override;
+    void QueryServiceState(QueryServiceStateCallback) override;
 
    private:
     TracingMuxerImpl* const muxer_;

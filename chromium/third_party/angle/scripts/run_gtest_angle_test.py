@@ -58,6 +58,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('executable', help='Test executable.')
     parser.add_argument('--isolated-script-test-output', type=str, required=True)
+    # TODO(jmadill): Remove when removed from the recipes. http://anglebug.com/3162
     parser.add_argument('--isolated-script-test-perf-output', type=str, required=False)
     parser.add_argument('--isolated-script-test-filter', type=str, required=False)
     parser.add_argument('--xvfb', help='Start xvfb.', action='store_true')
@@ -66,12 +67,12 @@ def main():
 
     env = os.environ.copy()
 
-    # total_shards = None
-    # shard_index = None
     if 'GTEST_TOTAL_SHARDS' in env:
-        extra_flags += ['--shard-count=%d' % env['GTEST_TOTAL_SHARDS']]
+        extra_flags += ['--shard-count=' + env['GTEST_TOTAL_SHARDS']]
+        env.pop('GTEST_TOTAL_SHARDS')
     if 'GTEST_SHARD_INDEX' in env:
-        extra_flags += ['--shard-index=%d' % env['GTEST_SHARD_INDEX']]
+        extra_flags += ['--shard-index=' + env['GTEST_SHARD_INDEX']]
+        env.pop('GTEST_SHARD_INDEX')
 
     # Assume we want to set up the sandbox environment variables all the
     # time; doing so is harmless on non-Linux platforms and is needed
@@ -82,10 +83,8 @@ def main():
     try:
         # Consider adding stdio control flags.
         if args.isolated_script_test_output:
-            extra_flags.append('--results-file=%s' % args.isolated_script_test_output)
-
-        if args.isolated_script_test_perf_output:
-            extra_flags.append('--histogram-json-file=%s' % args.isolated_script_test_perf_output)
+            extra_flags.append('--isolated-script-test-output=%s' %
+                               args.isolated_script_test_output)
 
         if args.isolated_script_test_filter:
             filter_list = common.extract_filter_list(args.isolated_script_test_filter)

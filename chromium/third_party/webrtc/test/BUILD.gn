@@ -35,8 +35,8 @@ group("test") {
 
 rtc_library("frame_generator_impl") {
   visibility = [
-    "../api:create_frame_generator",
     ":*",
+    "../api:create_frame_generator",
   ]
   testonly = true
   sources = [
@@ -53,6 +53,7 @@ rtc_library("frame_generator_impl") {
     "../api/video:video_frame",
     "../api/video:video_frame_i010",
     "../api/video:video_frame_i420",
+    "../api/video:video_frame_nv12",
     "../api/video:video_rtp_headers",
     "../api/video_codecs:video_codecs_api",
     "../common_video",
@@ -246,11 +247,13 @@ rtc_library("perf_test") {
   ]
   deps = [
     "../api:array_view",
+    "../api/numerics",
     "../rtc_base:checks",
     "../rtc_base:criticalsection",
     "../rtc_base:logging",
     "../rtc_base:rtc_numerics",
     "../rtc_base/synchronization:mutex",
+    "../test:fileutils",
   ]
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
   if (rtc_enable_protobuf) {
@@ -637,7 +640,7 @@ rtc_library("fileutils") {
     deps += [ ":fileutils_mac_objc" ]
   }
   if (is_win) {
-    deps += [ "../rtc_base" ]
+    deps += [ "../rtc_base:win32" ]
   }
 }
 
@@ -666,7 +669,7 @@ rtc_library("fileutils_override_impl") {
     deps += [ ":fileutils_mac_objc" ]
   }
   if (is_win) {
-    deps += [ "../rtc_base" ]
+    deps += [ "../rtc_base:win32" ]
   }
 }
 
@@ -966,17 +969,17 @@ rtc_library("test_renderer_generic") {
     ]
     deps += [ "../api:scoped_refptr" ]
   }
-  if (!(is_linux && rtc_use_x11) && !is_mac && !is_win) {
+  if (!((is_linux || is_chromeos) && rtc_use_x11) && !is_mac && !is_win) {
     sources += [ "null_platform_renderer.cc" ]
   }
-  if ((is_linux && rtc_use_x11) || is_mac) {
+  if (((is_linux || is_chromeos) && rtc_use_x11) || is_mac) {
     sources += [
       "gl/gl_renderer.cc",
       "gl/gl_renderer.h",
     ]
   }
 
-  if (is_linux && rtc_use_x11) {
+  if ((is_linux || is_chromeos) && rtc_use_x11) {
     sources += [
       "linux/glx_renderer.cc",
       "linux/glx_renderer.h",

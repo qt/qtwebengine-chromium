@@ -65,14 +65,14 @@
 
 // If building this program in an environment that doesn't easily accommodate
 // relative includes, you can use the script/inline-c-relative-includes.go
-// program to generate a stand-alone C++ file.
+// program to generate a stand-alone C file.
 #include "../release/c/wuffs-unsupported-snapshot.c"
 
 // Uncomment this to use the github.com/lemire/fast_double_parser library. This
 // header-only library is C++, not C.
-// #define USE_FAST_DOUBLE_PARSER
+// #define USE_LEMIRE_FAST_DOUBLE_PARSER
 
-#ifdef USE_FAST_DOUBLE_PARSER
+#ifdef USE_LEMIRE_FAST_DOUBLE_PARSER
 #include "/the/path/to/fast_double_parser/include/fast_double_parser.h"
 #endif
 
@@ -238,7 +238,7 @@ main1(int argc, char** argv) {
         if (g_flags.parse_number_f64) {
           wuffs_base__result_f64 r;
 
-#ifdef USE_FAST_DOUBLE_PARSER
+#ifdef USE_LEMIRE_FAST_DOUBLE_PARSER
           // Wuffs (and its JSON parser) works with slices (pointer-length
           // pairs) but fast_double_parser works with NUL-terminated strings.
           char buf[1024];

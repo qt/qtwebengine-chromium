@@ -33,7 +33,7 @@ void GL_APIENTRY UniformMatrix2x3fv(GLint location,
                                     const GLfloat *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glUniformMatrix2x3fv",
+    EVENT(context, "glUniformMatrix2x3fv",
           "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
           "GLfloat *value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
@@ -52,6 +52,10 @@ void GL_APIENTRY UniformMatrix2x3fv(GLint location,
         ANGLE_CAPTURE(UniformMatrix2x3fv, isCallValid, context, locationPacked, count, transpose,
                       value);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY UniformMatrix2x4fv(GLint location,
@@ -60,7 +64,7 @@ void GL_APIENTRY UniformMatrix2x4fv(GLint location,
                                     const GLfloat *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glUniformMatrix2x4fv",
+    EVENT(context, "glUniformMatrix2x4fv",
           "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
           "GLfloat *value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
@@ -79,6 +83,10 @@ void GL_APIENTRY UniformMatrix2x4fv(GLint location,
         ANGLE_CAPTURE(UniformMatrix2x4fv, isCallValid, context, locationPacked, count, transpose,
                       value);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY UniformMatrix3x2fv(GLint location,
@@ -87,7 +95,7 @@ void GL_APIENTRY UniformMatrix3x2fv(GLint location,
                                     const GLfloat *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glUniformMatrix3x2fv",
+    EVENT(context, "glUniformMatrix3x2fv",
           "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
           "GLfloat *value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
@@ -106,6 +114,10 @@ void GL_APIENTRY UniformMatrix3x2fv(GLint location,
         ANGLE_CAPTURE(UniformMatrix3x2fv, isCallValid, context, locationPacked, count, transpose,
                       value);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY UniformMatrix3x4fv(GLint location,
@@ -114,7 +126,7 @@ void GL_APIENTRY UniformMatrix3x4fv(GLint location,
                                     const GLfloat *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glUniformMatrix3x4fv",
+    EVENT(context, "glUniformMatrix3x4fv",
           "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
           "GLfloat *value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
@@ -133,6 +145,10 @@ void GL_APIENTRY UniformMatrix3x4fv(GLint location,
         ANGLE_CAPTURE(UniformMatrix3x4fv, isCallValid, context, locationPacked, count, transpose,
                       value);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY UniformMatrix4x2fv(GLint location,
@@ -141,7 +157,7 @@ void GL_APIENTRY UniformMatrix4x2fv(GLint location,
                                     const GLfloat *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glUniformMatrix4x2fv",
+    EVENT(context, "glUniformMatrix4x2fv",
           "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
           "GLfloat *value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
@@ -160,6 +176,10 @@ void GL_APIENTRY UniformMatrix4x2fv(GLint location,
         ANGLE_CAPTURE(UniformMatrix4x2fv, isCallValid, context, locationPacked, count, transpose,
                       value);
     }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
+    }
 }
 
 void GL_APIENTRY UniformMatrix4x3fv(GLint location,
@@ -168,7 +188,7 @@ void GL_APIENTRY UniformMatrix4x3fv(GLint location,
                                     const GLfloat *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT("glUniformMatrix4x3fv",
+    EVENT(context, "glUniformMatrix4x3fv",
           "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
           "GLfloat *value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
@@ -186,6 +206,10 @@ void GL_APIENTRY UniformMatrix4x3fv(GLint location,
         }
         ANGLE_CAPTURE(UniformMatrix4x3fv, isCallValid, context, locationPacked, count, transpose,
                       value);
+    }
+    else
+    {
+        GenerateContextLostErrorOnCurrentGlobalContext();
     }
 }
 }  // namespace gl

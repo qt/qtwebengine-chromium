@@ -100,13 +100,15 @@ public:
                   ParagraphStyle style,
                   SkTArray<Block, true> blocks,
                   SkTArray<Placeholder, true> placeholders,
-                  sk_sp<FontCollection> fonts);
+                  sk_sp<FontCollection> fonts,
+                  std::unique_ptr<SkUnicode> unicode);
 
     ParagraphImpl(const std::u16string& utf16text,
                   ParagraphStyle style,
                   SkTArray<Block, true> blocks,
                   SkTArray<Placeholder, true> placeholders,
-                  sk_sp<FontCollection> fonts);
+                  sk_sp<FontCollection> fonts,
+                  std::unique_ptr<SkUnicode> unicode);
     ~ParagraphImpl() override;
 
     void layout(SkScalar width) override;
@@ -155,6 +157,8 @@ public:
     }
     InternalLineMetrics strutMetrics() const { return fStrutMetrics; }
 
+    SkString getEllipsis() const;
+
     SkSpan<const char> text(TextRange textRange);
     SkSpan<Cluster> clusters(ClusterRange clusterRange);
     Cluster& cluster(ClusterIndex clusterIndex);
@@ -179,7 +183,6 @@ public:
 
     void setState(InternalState state);
     sk_sp<SkPicture> getPicture() { return fPicture; }
-    SkRect getBoundaries() const { return fOrigin; }
 
     SkScalar widthWithTrailingSpaces() { return fMaxWidthWithTrailingSpaces; }
 
@@ -192,7 +195,8 @@ public:
     void spaceGlyphs();
     bool shapeTextIntoEndlessLine();
     void breakShapedTextIntoLines(SkScalar maxWidth);
-    void paintLinesIntoPicture();
+    void paintLinesIntoPicture(SkScalar x, SkScalar y);
+    void paintLines(SkCanvas* canvas, SkScalar x, SkScalar y);
 
     void updateTextAlign(TextAlign textAlign) override;
     void updateText(size_t from, SkString text) override;
@@ -218,7 +222,7 @@ public:
 
     bool codeUnitHasProperty(size_t index, CodeUnitFlags property) const { return (fCodeUnitProperties[index] & property) == property; }
 
-    SkUnicode* getICU() { return fICU.get(); }
+    SkUnicode* getUnicode() { return fUnicode.get(); }
 
 private:
     friend class ParagraphBuilder;
@@ -228,8 +232,6 @@ private:
 
     friend class TextWrapper;
     friend class OneLineShaper;
-
-    void calculateBoundaries();
 
     void computeEmptyMetrics();
 
@@ -251,7 +253,7 @@ private:
     SkTArray<CodeUnitFlags> fCodeUnitProperties;
     SkTArray<size_t> fClustersIndexFromCodeUnit;
     std::vector<size_t> fWords;
-    std::vector<BidiRegion> fBidiRegions;
+    std::vector<SkUnicode::BidiRegion> fBidiRegions;
     // These two arrays are used in measuring methods (getRectsForRange, getGlyphPositionAtCoordinate)
     // They are filled lazily whenever they need and cached
     SkTArray<TextIndex, true> fUTF8IndexForUTF16Index;
@@ -269,9 +271,8 @@ private:
     SkScalar fOldWidth;
     SkScalar fOldHeight;
     SkScalar fMaxWidthWithTrailingSpaces;
-    SkRect fOrigin;
 
-    std::unique_ptr<SkUnicode> fICU;
+    std::unique_ptr<SkUnicode> fUnicode;
 };
 }  // namespace textlayout
 }  // namespace skia

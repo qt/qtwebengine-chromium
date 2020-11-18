@@ -158,6 +158,7 @@ constexpr char kExecuteWrite[] = "ExecuteWrite";
 
 // Bluetooth Device properties.
 constexpr char kAddressProperty[] = "Address";
+constexpr char kAddressTypeProperty[] = "AddressType";
 constexpr char kNameProperty[] = "Name";
 constexpr char kIconProperty[] = "Icon";
 constexpr char kClassProperty[] = "Class";
@@ -203,6 +204,10 @@ constexpr char kErrorAuthenticationTimeout[] =
     "org.bluez.Error.AuthenticationTimeout";
 constexpr char kErrorConnectionAttemptFailed[] =
     "org.bluez.Error.ConnectionAttemptFailed";
+
+// Possible values for the "AddressType" property.
+constexpr char kAddressTypePublic[] = "public";
+constexpr char kAddressTypeRandom[] = "random";
 }  // namespace bluetooth_device
 
 // https://chromium.googlesource.com/chromiumos/third_party/bluez/+/refs/heads/master/doc/gatt-api.txt
@@ -532,6 +537,7 @@ constexpr char kServiceDataProperty[] = "ServiceData";
 constexpr char kSolicitUUIDsProperty[] = "SolicitUUIDs";
 constexpr char kTypeProperty[] = "Type";
 constexpr char kIncludeTxPowerProperty[] = "IncludeTxPower";
+constexpr char kScanResponseDataProperty[] = "ScanResponseData";
 
 // Possible values for the "Type" property.
 constexpr char kTypeBroadcast[] = "broadcast";

@@ -53,15 +53,12 @@ class TextureCapsMap;
 class FramebufferState final : angle::NonCopyable
 {
   public:
-    explicit FramebufferState(ContextID owningContextID, rx::Serial serial);
-    FramebufferState(const Caps &caps,
-                     FramebufferID id,
-                     ContextID owningContextID,
-                     rx::Serial serial);
+    explicit FramebufferState(rx::Serial serial);
+    FramebufferState(const Caps &caps, FramebufferID id, rx::Serial serial);
     ~FramebufferState();
 
     const std::string &getLabel() const;
-    size_t getReadIndex() const;
+    uint32_t getReadIndex() const;
 
     const FramebufferAttachment *getAttachment(const Context *context, GLenum attachment) const;
     const FramebufferAttachment *getReadAttachment() const;
@@ -82,6 +79,7 @@ class FramebufferState final : angle::NonCopyable
     {
         return mColorAttachments;
     }
+    const DrawBufferMask getColorAttachmentsMask() const { return mColorAttachmentsMask; }
 
     bool attachmentsHaveSameDimensions() const;
     bool hasSeparateDepthAndStencilAttachments() const;
@@ -119,11 +117,6 @@ class FramebufferState final : angle::NonCopyable
 
     bool isDefault() const;
 
-    bool hasDepthStencilFeedbackLoop() const
-    {
-        return mDepthBufferFeedbackLoop || mStencilBufferFeedbackLoop;
-    }
-
     const gl::Offset &getSurfaceTextureOffset() const { return mSurfaceTextureOffset; }
 
     rx::Serial getFramebufferSerial() const { return mFramebufferSerial; }
@@ -133,24 +126,20 @@ class FramebufferState final : angle::NonCopyable
     const FramebufferAttachment *getWebGLDepthAttachment() const;
     const FramebufferAttachment *getWebGLStencilAttachment() const;
 
-    // Returns true if there was a change in this attachments feedback-loop-ness.
-    bool updateAttachmentFeedbackLoopAndReturnIfChanged(size_t dirtyBit);
-    void updateHasRenderingFeedbackLoop();
-
     friend class Framebuffer;
 
     // The Framebuffer ID is unique to a Context.
     // The Framebuffer Serial is unique to a Share Group.
     FramebufferID mId;
     rx::Serial mFramebufferSerial;
-
-    // TODO(jmadill): Remove the owning context ID. http://anglebug.com/4500
-    ContextID mOwningContextID;
     std::string mLabel;
 
     std::vector<FramebufferAttachment> mColorAttachments;
     FramebufferAttachment mDepthAttachment;
     FramebufferAttachment mStencilAttachment;
+
+    // Tracks all the color buffers attached to this FramebufferDesc
+    gl::DrawBufferMask mColorAttachmentsMask;
 
     std::vector<GLenum> mDrawBufferStates;
     GLenum mReadBufferState;
@@ -170,13 +159,6 @@ class FramebufferState final : angle::NonCopyable
     FramebufferAttachment mWebGLStencilAttachment;
     bool mWebGLDepthStencilConsistent;
 
-    // Tracks rendering feedback loops.
-    // TODO(jmadill): Remove. http://anglebug.com/4500
-    DrawBufferMask mDrawBufferFeedbackLoops;
-    bool mDepthBufferFeedbackLoop;
-    bool mStencilBufferFeedbackLoop;
-    bool mHasRenderingFeedbackLoop;
-
     // Tracks if we need to initialize the resources for each attachment.
     angle::BitSet<IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS + 2> mResourceNeedsInit;
 
@@ -195,7 +177,6 @@ class Framebuffer final : public angle::ObserverInterface,
     Framebuffer(const Caps &caps,
                 rx::GLImplFactory *factory,
                 FramebufferID id,
-                ContextID owningContextID,
                 egl::ShareGroup *shareGroup);
     // Constructor to build default framebuffers for a surface and context pair
     Framebuffer(const Context *context, egl::Surface *surface, egl::Surface *readSurface);
@@ -409,9 +390,6 @@ class Framebuffer final : public angle::ObserverInterface,
 
     // Observer implementation
     void onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message) override;
-
-    // TODO(jmadill): Remove. http://anglebug.com/4500
-    bool hasRenderingFeedbackLoop() const { return mState.mHasRenderingFeedbackLoop; }
 
     bool formsRenderingFeedbackLoopWith(const Context *context) const;
     bool formsCopyingFeedbackLoopWith(TextureID copyTextureID,

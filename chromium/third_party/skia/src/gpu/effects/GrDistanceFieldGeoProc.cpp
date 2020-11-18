@@ -61,10 +61,7 @@ public:
                               dfTexEffect.localMatrix(), &fLocalMatrixUniform);
 
         // add varyings
-        GrGLSLVarying uv(kFloat2_GrSLType);
-        GrSLType texIdxType = args.fShaderCaps->integerSupport() ? kInt_GrSLType : kFloat_GrSLType;
-        GrGLSLVarying texIdx(texIdxType);
-        GrGLSLVarying st(kFloat2_GrSLType);
+        GrGLSLVarying uv, texIdx, st;
         append_index_uv_varyings(args, dfTexEffect.numTextureSamplers(),
                                  dfTexEffect.inTextureCoords().name(), atlasDimensionsInvName, &uv,
                                  &texIdx, &st);
@@ -202,7 +199,7 @@ private:
     SkMatrix      fLocalMatrix = SkMatrix::InvalidMatrix();
     UniformHandle fLocalMatrixUniform;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -339,10 +336,7 @@ public:
                                                                 "AtlasDimensionsInv",
                                                                 &atlasDimensionsInvName);
 
-        GrGLSLVarying uv(kFloat2_GrSLType);
-        GrSLType texIdxType = args.fShaderCaps->integerSupport() ? kInt_GrSLType : kFloat_GrSLType;
-        GrGLSLVarying texIdx(texIdxType);
-        GrGLSLVarying st(kFloat2_GrSLType);
+        GrGLSLVarying uv, texIdx, st;
         append_index_uv_varyings(args, dfPathEffect.numTextureSamplers(),
                                  dfPathEffect.inTextureCoords().name(), atlasDimensionsInvName, &uv,
                                  &texIdx, &st);
@@ -481,7 +475,7 @@ private:
     SkISize       fAtlasDimensions;
     UniformHandle fAtlasDimensionsInvUniform;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -619,10 +613,7 @@ public:
                               &fLocalMatrixUniform);
 
         // set up varyings
-        GrGLSLVarying uv(kFloat2_GrSLType);
-        GrSLType texIdxType = args.fShaderCaps->integerSupport() ? kInt_GrSLType : kFloat_GrSLType;
-        GrGLSLVarying texIdx(texIdxType);
-        GrGLSLVarying st(kFloat2_GrSLType);
+        GrGLSLVarying uv, texIdx, st;
         append_index_uv_varyings(args, dfTexEffect.numTextureSamplers(),
                                  dfTexEffect.inTextureCoords().name(), atlasDimensionsInvName, &uv,
                                  &texIdx, &st);
@@ -800,7 +791,7 @@ private:
     SkMatrix                                      fLocalMatrix;
     UniformHandle                                 fLocalMatrixUniform;
 
-    typedef GrGLSLGeometryProcessor INHERITED;
+    using INHERITED = GrGLSLGeometryProcessor;
 };
 
 ///////////////////////////////////////////////////////////////////////////////

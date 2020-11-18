@@ -415,12 +415,10 @@ add_library(
   x509v3/v3_pci.c
   x509v3/v3_pcia.c
   x509v3/v3_pcons.c
-  x509v3/v3_pku.c
   x509v3/v3_pmaps.c
   x509v3/v3_prn.c
   x509v3/v3_purp.c
   x509v3/v3_skey.c
-  x509v3/v3_sxnet.c
   x509v3/v3_utl.c
 
   $<TARGET_OBJECTS:fipsmodule>
@@ -497,6 +495,7 @@ add_executable(
   compiler_test.cc
   constant_time_test.cc
   cpu-arm-linux_test.cc
+  crypto_test.cc
   curve25519/ed25519_test.cc
   curve25519/spake25519_test.cc
   curve25519/x25519_test.cc

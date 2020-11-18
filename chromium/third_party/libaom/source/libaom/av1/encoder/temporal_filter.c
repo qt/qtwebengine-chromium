@@ -35,40 +35,49 @@
 #include "aom_ports/system_state.h"
 #include "aom_scale/aom_scale.h"
 
+/*!\cond */
+
 // NOTE: All `tf` in this file means `temporal filtering`.
 
 // Forward Declaration.
 static void tf_determine_block_partition(const MV block_mv, const int block_mse,
                                          MV *subblock_mvs, int *subblock_mses);
 
-// Does motion search for blocks in temporal filtering. This is the first step
-// for temporal filtering. More specifically, given a frame to be filtered and
-// another frame as reference, this function searches the reference frame to
-// find out the most similar block as that from the frame to be filtered. This
-// found block will be further used for weighted averaging.
-// NOTE: Besides doing motion search for the entire block, this function will
-//       also do motion search for each 1/4 sub-block to get more precise
-//       predictions. Then, this function will determines whether to use 4
-//       sub-blocks to replace the entire block. If we do need to split the
-//       entire block, 4 elements in `subblock_mvs` and `subblock_mses` refer to
-//       the searched motion vector and search error (MSE) w.r.t. each sub-block
-//       respectively. Otherwise, the 4 elements will be the same, all of which
-//       are assigned as the searched motion vector and search error (MSE) for
-//       the entire block.
-// Inputs:
-//   cpi: Pointer to the composed information of input video.
-//   frame_to_filter: Pointer to the frame to be filtered.
-//   ref_frame: Pointer to the reference frame.
-//   block_size: Block size used for motion search.
-//   mb_row: Row index of the block in the entire frame.
-//   mb_col: Column index of the block in the entire frame.
-//   ref_mv: Reference motion vector, which is commonly inherited from the
-//           motion search result of previous frame.
-//   subblock_mvs: Pointer to the motion vectors for 4 sub-blocks.
-//   subblock_mses: Pointer to the search errors (MSE) for 4 sub-blocks.
-// Returns:
-//   Nothing will be returned. Results are saved in `subblock_mvs` and
-//   `subblock_mses`.
+/*!\endcond */
+/*!\brief Does motion search for blocks in temporal filtering. This is
+ *  the first step for temporal filtering. More specifically, given a frame to
+ * be filtered and another frame as reference, this function searches the
+ * reference frame to find out the most similar block as that from the frame
+ * to be filtered. This found block will be further used for weighted
+ * averaging.
+ *
+ * NOTE: Besides doing motion search for the entire block, this function will
+ *       also do motion search for each 1/4 sub-block to get more precise
+ *       predictions. Then, this function will determines whether to use 4
+ *       sub-blocks to replace the entire block. If we do need to split the
+ *       entire block, 4 elements in `subblock_mvs` and `subblock_mses` refer to
+ *       the searched motion vector and search error (MSE) w.r.t. each sub-block
+ *       respectively. Otherwise, the 4 elements will be the same, all of which
+ *       are assigned as the searched motion vector and search error (MSE) for
+ *       the entire block.
+ *
+ * \ingroup src_frame_proc
+ * \param[in]   cpi             Top level encoder instance structure
+ * \param[in]   frame_to_filter Pointer to the frame to be filtered
+ * \param[in]   ref_frame       Pointer to the reference frame
+ * \param[in]   block_size      Block size used for motion search
+ * \param[in]   mb_row          Row index of the block in the frame
+ * \param[in]   mb_col          Column index of the block in the frame
+ * \param[in]   ref_mv          Reference motion vector, which is commonly
+ *                              inherited from the motion search result of
+ *                              previous frame.
+ * \param[out]  subblock_mvs    Pointer to the motion vectors for 4 sub-blocks
+ * \param[out]  subblock_mses   Pointer to the search errors (MSE) for 4
+ *                              sub-blocks
+ *
+ * \return Nothing will be returned. Results are saved in subblock_mvs and
+ *         subblock_mses
+ */
 static void tf_motion_search(AV1_COMP *cpi,
                              const YV12_BUFFER_CONFIG *frame_to_filter,
                              const YV12_BUFFER_CONFIG *ref_frame,
@@ -95,9 +104,9 @@ static void tf_motion_search(AV1_COMP *cpi,
   // Parameters used for motion search.
   FULLPEL_MOTION_SEARCH_PARAMS full_ms_params;
   SUBPEL_MOTION_SEARCH_PARAMS ms_params;
-  const search_site_config search_site_cfg =
+  const SEARCH_METHODS search_method = NSTEP;
+  const search_site_config *search_site_cfg =
       cpi->mv_search_params.search_site_cfg[SS_CFG_LOOKAHEAD];
-  const SEARCH_METHODS full_search_method = NSTEP;
   const int step_param = av1_init_search_range(
       AOMMAX(frame_to_filter->y_crop_width, frame_to_filter->y_crop_height));
   const SUBPEL_SEARCH_TYPE subpel_search_type = USE_8_TAPS;
@@ -128,10 +137,10 @@ static void tf_motion_search(AV1_COMP *cpi,
   MV block_mv = kZeroMv;
 
   av1_make_default_fullpel_ms_params(&full_ms_params, cpi, mb, block_size,
-                                     &baseline_mv, &search_site_cfg,
+                                     &baseline_mv, search_site_cfg,
                                      /*fine_search_interval=*/0);
+  av1_set_mv_search_method(&full_ms_params, search_site_cfg, search_method);
   full_ms_params.run_mesh_search = 1;
-  full_ms_params.search_method = full_search_method;
   full_ms_params.mv_cost_params.mv_cost_type = mv_cost_type;
 
   av1_full_pixel_search(start_mv, &full_ms_params, step_param,
@@ -178,13 +187,13 @@ static void tf_motion_search(AV1_COMP *cpi,
         const int offset = i * y_stride + j;
         mb->plane[0].src.buf = frame_to_filter->y_buffer + y_offset + offset;
         mbd->plane[0].pre[0].buf = ref_frame->y_buffer + y_offset + offset;
-
         av1_make_default_fullpel_ms_params(&full_ms_params, cpi, mb,
                                            subblock_size, &baseline_mv,
-                                           &search_site_cfg,
+                                           search_site_cfg,
                                            /*fine_search_interval=*/0);
+        av1_set_mv_search_method(&full_ms_params, search_site_cfg,
+                                 search_method);
         full_ms_params.run_mesh_search = 1;
-        full_ms_params.search_method = full_search_method;
         full_ms_params.mv_cost_params.mv_cost_type = mv_cost_type;
 
         av1_full_pixel_search(start_mv, &full_ms_params, step_param,
@@ -224,6 +233,7 @@ static void tf_motion_search(AV1_COMP *cpi,
     *ref_mv = kZeroMv;
   }
 }
+/*!\cond */
 
 // Determines whether to split the entire block to 4 sub-blocks for filtering.
 // In particular, this decision is made based on the comparison between the
@@ -268,27 +278,35 @@ static INLINE int is_frame_high_bitdepth(const YV12_BUFFER_CONFIG *frame) {
   return (frame->flags & YV12_FLAG_HIGHBITDEPTH) ? 1 : 0;
 }
 
-// Builds predictor for blocks in temporal filtering. This is the second step
-// for temporal filtering, which is to construct predictions from all reference
-// frames INCLUDING the frame to be filtered itself. These predictors are built
-// based on the motion search results (motion vector is set as 0 for the frame
-// to be filtered), and will be futher used for weighted averaging.
-// Inputs:
-//   ref_frame: Pointer to the reference frame (or the frame to be filtered).
-//   mbd: Pointer to the block for filtering. Besides containing the subsampling
-//        information of all planes, this field also gives the searched motion
-//        vector for the entire block, i.e., `mbd->mi[0]->mv[0]`. This vector
-//        should be 0 if the `ref_frame` itself is the frame to be filtered.
-//   block_size: Size of the block.
-//   mb_row: Row index of the block in the entire frame.
-//   mb_col: Column index of the block in the entire frame.
-//   num_planes: Number of planes in the frame.
-//   scale: Scaling factor.
-//   subblock_mvs: The motion vectors for each sub-block (row-major order).
-//   pred: Pointer to the predictor to build.
-// Returns:
-//   Nothing will be returned. But the content to which `pred` points will be
-//   modified.
+/*!\endcond */
+/*!\brief Builds predictor for blocks in temporal filtering. This is the
+ * second step for temporal filtering, which is to construct predictions from
+ * all reference frames INCLUDING the frame to be filtered itself. These
+ * predictors are built based on the motion search results (motion vector is
+ * set as 0 for the frame to be filtered), and will be futher used for
+ * weighted averaging.
+ *
+ * \ingroup src_frame_proc
+ * \param[in]   ref_frame      Pointer to the reference frame (or the frame
+ *                             to be filtered)
+ * \param[in]   mbd            Pointer to the block for filtering. Besides
+ *                             containing the subsampling information of all
+ *                             planes, this field also gives the searched
+ *                             motion vector for the entire block, i.e.,
+ *                             `mbd->mi[0]->mv[0]`. This vector  should be 0
+ *                             if the `ref_frame` itself is the frame to be
+ *                             filtered.
+ * \param[in]   block_size     Size of the block
+ * \param[in]   mb_row         Row index of the block in the frame
+ * \param[in]   mb_col         Column index of the block in the frame
+ * \param[in]   num_planes     Number of planes in the frame
+ * \param[in]   scale          Scaling factor
+ * \param[in]   subblock_mvs   The motion vectors for each sub-block (row-major
+ *                             order)
+ * \param[out]  pred           Pointer to the predictor to be built
+ *
+ * \return Nothing returned, But the contents of `pred` will be modified
+ */
 static void tf_build_predictor(const YV12_BUFFER_CONFIG *ref_frame,
                                const MACROBLOCKD *mbd,
                                const BLOCK_SIZE block_size, const int mb_row,
@@ -353,6 +371,7 @@ static void tf_build_predictor(const YV12_BUFFER_CONFIG *ref_frame,
     plane_offset += mb_pels;
   }
 }
+/*!\cond */
 
 // Computes temporal filter weights and accumulators for the frame to be
 // filtered. More concretely, the filter weights for all pixels are the same.
@@ -446,30 +465,39 @@ static INLINE void compute_square_diff(const uint8_t *ref, const int ref_offset,
   }
 }
 
-// Applies temporal filtering.
-// Inputs:
-//   frame_to_filter: Pointer to the frame to be filtered, which is used as
-//                    reference to compute squared differece from the predictor.
-//   mbd: Pointer to the block for filtering, which is ONLY used to get
-//        subsampling information of all planes.
-//   block_size: Size of the block.
-//   mb_row: Row index of the block in the entire frame.
-//   mb_col: Column index of the block in the entire frame.
-//   num_planes: Number of planes in the frame.
-//   noise_levels: Pointer to the noise levels of the to-filter frame, estimated
-//                 with each plane (in Y, U, V order).
-//   subblock_mvs:  Pointer to the motion vectors for 4 sub-blocks.
-//   subblock_mses: Pointer to the search errors (MSE) for 4 sub-blocks.
-//   q_factor: Quantization factor. This is actually the `q` defined in libaom,
-//             which is converted from `qindex`.
-//   filter_strength: Filtering strength. This value lies in range [0, 6], where
-//                    6 is the maximum filtering strength.
-//   pred: Pointer to the well-built predictors.
-//   accum: Pointer to the pixel-wise accumulator for filtering.
-//   count: Pointer to the pixel-wise counter fot filtering.
-// Returns:
-//   Nothing will be returned. But the content to which `accum` and `pred`
-//   point will be modified.
+/*!\endcond */
+/*!\brief Applies temporal filtering. NOTE that there are various optimised
+ * versions of this function called where the appropriate instruction set is
+ * supported.
+ *
+ * \ingroup src_frame_proc
+ * \param[in]   frame_to_filter Pointer to the frame to be filtered, which is
+ *                              used as reference to compute squared
+ *                              difference from the predictor.
+ * \param[in]   mbd             Pointer to the block for filtering, ONLY used
+ *                              to get subsampling information for the  planes
+ * \param[in]   block_size      Size of the block
+ * \param[in]   mb_row          Row index of the block in the frame
+ * \param[in]   mb_col          Column index of the block in the frame
+ * \param[in]   num_planes      Number of planes in the frame
+ * \param[in]   noise_levels    Estimated noise levels for each plane
+ *                              in the frame (Y,U,V)
+ * \param[in]   subblock_mvs    Pointer to the motion vectors for 4 sub-blocks
+ * \param[in]   subblock_mses   Pointer to the search errors (MSE) for 4
+ *                              sub-blocks
+ * \param[in]   q_factor        Quantization factor. This is actually the `q`
+ *                              defined in libaom, converted from `qindex`
+ * \param[in]   filter_strength Filtering strength. This value lies in range
+ *                              [0, 6] where 6 is the maximum strength.
+ * \param[out]  pred            Pointer to the well-built predictors
+ * \param[out]  accum           Pointer to the pixel-wise accumulator for
+ *                              filtering
+ * \param[out]  count           Pointer to the pixel-wise counter for
+ *                              filtering
+ *
+ * \return Nothing returned, But the contents of `accum`, `pred` and 'count'
+ *         will be modified
+ */
 void av1_apply_temporal_filter_c(
     const YV12_BUFFER_CONFIG *frame_to_filter, const MACROBLOCKD *mbd,
     const BLOCK_SIZE block_size, const int mb_row, const int mb_col,
@@ -554,7 +582,7 @@ void av1_apply_temporal_filter_c(
         }
 
         // Scale down the difference for high bit depth input.
-        if (mbd->bd > 8) sum_square_diff >>= (mbd->bd - 8) * (mbd->bd - 8);
+        if (mbd->bd > 8) sum_square_diff >>= ((mbd->bd - 8) * 2);
 
         // Combine window error and block error, and normalize it.
         const double window_error = (double)sum_square_diff / num_ref_pixels;
@@ -598,21 +626,38 @@ void av1_apply_temporal_filter_c(
 
   aom_free(square_diff);
 }
-
-// Normalizes the accumulated filtering result to produce the filtered frame.
-// Inputs:
-//   mbd: Pointer to the block for filtering, which is ONLY used to get
-//        subsampling information of all planes.
-//   block_size: Size of the block.
-//   mb_row: Row index of the block in the entire frame.
-//   mb_col: Column index of the block in the entire frame.
-//   num_planes: Number of planes in the frame.
-//   accum: Pointer to the pre-computed accumulator.
-//   count: Pointer to the pre-computed count.
-//   result_buffer: Pointer to result buffer.
-// Returns:
-//   Nothing will be returned. But the content to which `result_buffer` point
-//   will be modified.
+#if CONFIG_AV1_HIGHBITDEPTH
+// Calls High bit-depth temporal filter
+void av1_highbd_apply_temporal_filter_c(
+    const YV12_BUFFER_CONFIG *frame_to_filter, const MACROBLOCKD *mbd,
+    const BLOCK_SIZE block_size, const int mb_row, const int mb_col,
+    const int num_planes, const double *noise_levels, const MV *subblock_mvs,
+    const int *subblock_mses, const int q_factor, const int filter_strength,
+    const uint8_t *pred, uint32_t *accum, uint16_t *count) {
+  av1_apply_temporal_filter_c(frame_to_filter, mbd, block_size, mb_row, mb_col,
+                              num_planes, noise_levels, subblock_mvs,
+                              subblock_mses, q_factor, filter_strength, pred,
+                              accum, count);
+}
+#endif  // CONFIG_AV1_HIGHBITDEPTH
+/*!\brief Normalizes the accumulated filtering result to produce the filtered
+ *        frame
+ *
+ * \ingroup src_frame_proc
+ * \param[in]   mbd            Pointer to the block for filtering, which is
+ *                             ONLY used to get subsampling information for
+ *                             all the planes
+ * \param[in]   block_size     Size of the block
+ * \param[in]   mb_row         Row index of the block in the frame
+ * \param[in]   mb_col         Column index of the block in the frame
+ * \param[in]   num_planes     Number of planes in the frame
+ * \param[in]   accum          Pointer to the pre-computed accumulator
+ * \param[in]   count          Pointer to the pre-computed count
+ * \param[out]  result_buffer  Pointer to result buffer
+ *
+ * \return Nothing returned, but the content to which `result_buffer` pointer
+ *         will be modified
+ */
 static void tf_normalize_filtered_frame(
     const MACROBLOCKD *mbd, const BLOCK_SIZE block_size, const int mb_row,
     const int mb_col, const int num_planes, const uint32_t *accum,
@@ -652,6 +697,7 @@ static void tf_normalize_filtered_frame(
     plane_offset += mb_pels;
   }
 }
+/*!\cond */
 
 // Helper function to compute number of blocks on either side of the frame.
 static INLINE int get_num_blocks(const int frame_length, const int mb_length) {
@@ -667,24 +713,34 @@ static INLINE int get_q(const AV1_COMP *cpi) {
   return q;
 }
 
+/*!\endcond */
+/*!
+ * \brief Sum and SSE source vs filtered framee difference returned by
+ *  temporal filter.
+ */
 typedef struct {
+  /*!\cond */
   int64_t sum;
   int64_t sse;
+  /*!\endcond */
 } FRAME_DIFF;
 
-// Does temporal filter for a particular frame.
-// Inputs:
-//   cpi: Pointer to the composed information of input video.
-//   frames: Frame buffers used for temporal filtering.
-//   num_frames: Number of frames in the frame buffer.
-//   filter_frame_idx: Index of the frame to be filtered.
-//   is_key_frame: Whether the to-filter is a key frame.
-//   block_size: Block size used for temporal filtering.
-//   scale: Scaling factor.
-//   noise_levels: Pointer to the noise levels of the to-filter frame, estimated
-//                 with each plane (in Y, U, V order).
-// Returns:
-//   Difference between filtered frame and the original frame.
+/*!\brief Does temporal filter for a given frame.
+ *
+ * \ingroup src_frame_proc
+ * \param[in]   cpi              Top level encoder instance structure
+ * \param[in]   frames           Frame buffers used for temporal filtering
+ * \param[in]   num_frames       Number of frames in the frame buffer
+ * \param[in]   filter_frame_idx Index of the frame to be filtered
+ * \param[in]   is_key_frame     Is the to-filter is a key frame
+ * \param[in]   block_size       Block size used for temporal filtering
+ * \param[in]   scale            Frame scaling factor
+ * \param[in]   noise_levels     Estimated noise levels for each plane
+ *                               in the frame (Y,U,V)
+ *
+ * \return Difference between filtered frame and the original frame
+ *         (sum and sse)
+ */
 static FRAME_DIFF tf_do_filtering(AV1_COMP *cpi, YV12_BUFFER_CONFIG **frames,
                                   const int num_frames,
                                   const int filter_frame_idx,
@@ -792,21 +848,39 @@ static FRAME_DIFF tf_do_filtering(AV1_COMP *cpi, YV12_BUFFER_CONFIG **frames,
           // only supports 32x32 block size, 5x5 filtering window, 8-bit
           // encoding, and the case when the video is not with `YUV 4:2:2`
           // format.
-          if (TF_BLOCK_SIZE == BLOCK_32X32 && TF_WINDOW_LENGTH == 5 &&
-              !is_frame_high_bitdepth(frame_to_filter) && !is_yuv422_format) {
-            av1_apply_temporal_filter(frame_to_filter, mbd, block_size, mb_row,
-                                      mb_col, num_planes, noise_levels,
-                                      subblock_mvs, subblock_mses, q_factor,
-                                      filter_strength, pred, accum, count);
-          } else {
-            av1_apply_temporal_filter_c(
-                frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
-                noise_levels, subblock_mvs, subblock_mses, q_factor,
-                filter_strength, pred, accum, count);
+          if (is_frame_high_bitdepth(frame_to_filter)) {  // for high bit-depth
+#if CONFIG_AV1_HIGHBITDEPTH
+            if (TF_BLOCK_SIZE == BLOCK_32X32 && TF_WINDOW_LENGTH == 5 &&
+                !is_yuv422_format) {
+              av1_highbd_apply_temporal_filter(
+                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
+                  noise_levels, subblock_mvs, subblock_mses, q_factor,
+                  filter_strength, pred, accum, count);
+            } else {
+#endif  // CONFIG_AV1_HIGHBITDEPTH
+              av1_apply_temporal_filter_c(
+                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
+                  noise_levels, subblock_mvs, subblock_mses, q_factor,
+                  filter_strength, pred, accum, count);
+#if CONFIG_AV1_HIGHBITDEPTH
+            }
+#endif              // CONFIG_AV1_HIGHBITDEPTH
+          } else {  // for 8-bit
+            if (TF_BLOCK_SIZE == BLOCK_32X32 && TF_WINDOW_LENGTH == 5 &&
+                !is_yuv422_format) {
+              av1_apply_temporal_filter(
+                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
+                  noise_levels, subblock_mvs, subblock_mses, q_factor,
+                  filter_strength, pred, accum, count);
+            } else {
+              av1_apply_temporal_filter_c(
+                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
+                  noise_levels, subblock_mvs, subblock_mses, q_factor,
+                  filter_strength, pred, accum, count);
+            }
           }
         }
       }
-
       tf_normalize_filtered_frame(mbd, block_size, mb_row, mb_col, num_planes,
                                   accum, count, &cpi->alt_ref_buffer);
 
@@ -845,26 +919,32 @@ static FRAME_DIFF tf_do_filtering(AV1_COMP *cpi, YV12_BUFFER_CONFIG **frames,
   return diff;
 }
 
-// Setups the frame buffer for temporal filtering. Basically, this fuction
-// determines how many frames will be used for temporal filtering and then
-// groups them into a buffer. This function will also estimate the noise level
-// of the to-filter frame.
-// Inputs:
-//   cpi: Pointer to the composed information of input video.
-//   filter_frame_lookahead_idx: The index of the to-filter frame in the
-//                               lookahead buffer `cpi->lookahead`.
-//   is_second_arf: Whether the to-filter frame is the second ARF. This field
-//                  will affect the number of frames used for filtering.
-//   frames: Pointer to the frame buffer to setup.
-//   num_frames_for_filtering: Number of frames used for filtering.
-//   filter_frame_idx: Index of the to-filter frame in the setup frame buffer.
-//   noise_levels: Pointer to the noise levels of the to-filter frame, estimated
-//                 with each plane (in Y, U, V order).
-// Returns:
-//   Nothing will be returned. But the frame buffer `frames`, number of frames
-//   in the buffer `num_frames_for_filtering`, and the index of the to-filter
-//   frame in the buffer `filter_frame_idx` will be updated in this function.
-//   Estimated noise levels for YUV planes will be saved in `noise_levels`.
+/*!\brief Setups the frame buffer for temporal filtering. This fuction
+ * determines how many frames will be used for temporal filtering and then
+ * groups them into a buffer. This function will also estimate the noise level
+ * of the to-filter frame.
+ *
+ * \ingroup src_frame_proc
+ * \param[in]   cpi             Top level encoder instance structure
+ * \param[in]   filter_frame_lookahead_idx  The index of the to-filter frame
+ *                              in the lookahead buffer cpi->lookahead
+ * \param[in]   is_second_arf   Whether the to-filter frame is the second ARF.
+ *                              This field will affect the number of frames
+ *                              used for filtering.
+ * \param[in,out] frames        Pointer to the frame buffer to setup
+ * \param[in,out] num_frames_for_filtering  Number of frames used for filtering
+ * \param[in,out] filter_frame_idx Index of the to-filter frame in the setup
+ *                              frame buffer.
+ * \param[out]    noise_levels  Pointer to the noise levels of the to-filter
+ *                              frame, estimated with each plane (in Y, U, V
+ *                              order).
+ *
+ * \return Nothing will be returned. But the frame buffer `frames`, number of
+ *         frames in the buffer `num_frames_for_filtering`, and the index of
+ *         the to-filter frame in the buffer `filter_frame_idx` will be updated
+ *         in this function. Estimated noise levels for YUV planes will be
+ *         saved in `noise_levels`.
+ */
 static void tf_setup_filtering_buffer(const AV1_COMP *cpi,
                                       const int filter_frame_lookahead_idx,
                                       const int is_second_arf,
@@ -935,7 +1015,8 @@ static void tf_setup_filtering_buffer(const AV1_COMP *cpi,
   }
   num_frames = AOMMIN(num_frames + adjust_num, lookahead_depth + 1);
 
-  if (filter_frame_lookahead_idx == -1) {  // Key frame.
+  if (filter_frame_lookahead_idx == -1 ||
+      filter_frame_lookahead_idx == 0) {  // Key frame.
     num_before = 0;
     num_after = AOMMIN(num_frames - 1, max_after);
   } else if (filter_frame_lookahead_idx < -1) {  // Key frame in one-pass mode.
@@ -963,6 +1044,8 @@ static void tf_setup_filtering_buffer(const AV1_COMP *cpi,
   *filter_frame_idx = num_before;
   assert(frames[*filter_frame_idx] == to_filter_frame);
 }
+
+/*!\cond */
 
 // A constant number, sqrt(pi / 2),  used for noise estimation.
 static const double SQRT_PI_BY_2 = 1.25331413732;
@@ -1059,7 +1142,7 @@ int av1_temporal_filter(AV1_COMP *cpi, const int filter_frame_lookahead_idx,
   }
 
   // Do filtering.
-  const int is_key_frame = (filter_frame_lookahead_idx < 0);
+  const int is_key_frame = (filter_frame_lookahead_idx <= 0);
   // Setup scaling factors. Scaling on each of the arnr frames is not
   // supported.
   // ARF is produced at the native frame size and resized when coded.
@@ -1114,3 +1197,4 @@ int av1_temporal_filter(AV1_COMP *cpi, const int filter_frame_lookahead_idx,
 
   return 1;
 }
+/*!\endcond */

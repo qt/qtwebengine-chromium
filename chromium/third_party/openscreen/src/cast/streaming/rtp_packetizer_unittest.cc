@@ -14,6 +14,7 @@
 #include "cast/streaming/ssrc.h"
 #include "gtest/gtest.h"
 #include "util/chrono_helpers.h"
+#include "util/crypto/random_bytes.h"
 
 namespace openscreen {
 namespace cast {
@@ -126,8 +127,7 @@ class RtpPacketizerTest : public testing::Test {
   // The RtpPacketizer instance under test, plus some surrounding dependencies
   // to generate its input and examine its output.
   const Ssrc ssrc_{GenerateSsrc(true)};
-  const FrameCrypto crypto_{FrameCrypto::GenerateRandomBytes(),
-                            FrameCrypto::GenerateRandomBytes()};
+  const FrameCrypto crypto_{GenerateRandomBytes16(), GenerateRandomBytes16()};
   RtpPacketizer packetizer_{kPayloadType, ssrc_,
                             kMaxRtpPacketSizeForIpv4UdpOnEthernet};
   RtpPacketParser parser_{ssrc_};

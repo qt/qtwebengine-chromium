@@ -93,16 +93,6 @@ namespace dawn_native {
              {Toggle::SkipValidation,
               {"skip_validation", "Skip expensive validation of Dawn commands.",
                "https://crbug.com/dawn/271"}},
-             {Toggle::UseSpvc,
-              {"use_spvc",
-               "Enable use of spvc for shader compilation, instead of accessing spirv_cross "
-               "directly.",
-               "https://crbug.com/dawn/288"}},
-             {Toggle::UseSpvcParser,
-              {"use_spvc_parser",
-               "Enable usage of spvc's internal parsing and IR generation code, instead of "
-               "spirv_cross's.",
-               "https://crbug.com/dawn/288"}},
              {Toggle::VulkanUseD32S8,
               {"vulkan_use_d32s8",
                "Vulkan mandates support of either D32_FLOAT_S8 or D24_UNORM_S8. When available the "
@@ -114,6 +104,13 @@ namespace dawn_native {
                "Disables the use of sampler compare on Metal. This is unsupported before A9 "
                "processors.",
                "https://crbug.com/dawn/342"}},
+             {Toggle::MetalUseSharedModeForCounterSampleBuffer,
+              {"metal_use_shared_mode_for_counter_sample_buffer",
+               "The query set on Metal need to create MTLCounterSampleBuffer which storage mode "
+               "must be either MTLStorageModeShared or MTLStorageModePrivate. But the private mode "
+               "does not work properly on Intel platforms. The workaround is use shared mode "
+               "instead.",
+               "https://crbug.com/dawn/434"}},
              {Toggle::DisableBaseVertex,
               {"disable_base_vertex",
                "Disables the use of non-zero base vertex which is unsupported on some platforms.",
@@ -133,12 +130,6 @@ namespace dawn_native {
                "https://crbug.com/dawn/402"}},
              {Toggle::DisableRobustness,
               {"disable_robustness", "Disable robust buffer access", "https://crbug.com/dawn/480"}},
-             {Toggle::LazyClearBufferOnFirstUse,
-              {"lazy_clear_buffer_on_first_use",
-               "Clear buffers on their first use. This is a temporary toggle only for the "
-               "development of buffer lazy initialization and will be removed after buffer lazy "
-               "initialization is completely implemented.",
-               "https://crbug.com/dawn/414"}},
              {Toggle::MetalEnableVertexPulling,
               {"metal_enable_vertex_pulling",
                "Uses vertex pulling to protect out-of-bounds reads on Metal",

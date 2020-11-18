@@ -47,9 +47,11 @@ namespace dawn_native {
                 case wgpu::TextureViewDimension::Cube:
                 case wgpu::TextureViewDimension::CubeArray:
                     return textureDimension == wgpu::TextureDimension::e2D;
-                default:
+
+                case wgpu::TextureViewDimension::e1D:
+                case wgpu::TextureViewDimension::e3D:
+                case wgpu::TextureViewDimension::Undefined:
                     UNREACHABLE();
-                    return false;
             }
         }
 
@@ -66,9 +68,11 @@ namespace dawn_native {
                     return textureViewArrayLayer == 6u;
                 case wgpu::TextureViewDimension::CubeArray:
                     return textureViewArrayLayer % 6 == 0;
-                default:
+
+                case wgpu::TextureViewDimension::e1D:
+                case wgpu::TextureViewDimension::e3D:
+                case wgpu::TextureViewDimension::Undefined:
                     UNREACHABLE();
-                    return false;
             }
         }
 
@@ -82,9 +86,11 @@ namespace dawn_native {
                 case wgpu::TextureViewDimension::e2D:
                 case wgpu::TextureViewDimension::e2DArray:
                     return true;
-                default:
+
+                case wgpu::TextureViewDimension::e1D:
+                case wgpu::TextureViewDimension::e3D:
+                case wgpu::TextureViewDimension::Undefined:
                     UNREACHABLE();
-                    return false;
             }
         }
 
@@ -159,8 +165,9 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR("Texture has too many mip levels");
             }
 
-            if (format->isCompressed && (descriptor->size.width % format->blockWidth != 0 ||
-                                         descriptor->size.height % format->blockHeight != 0)) {
+            const TexelBlockInfo& blockInfo = format->GetTexelBlockInfo(wgpu::TextureAspect::All);
+            if (format->isCompressed && (descriptor->size.width % blockInfo.blockWidth != 0 ||
+                                         descriptor->size.height % blockInfo.blockHeight != 0)) {
                 return DAWN_VALIDATION_ERROR(
                     "The size of the texture is incompatible with the texture format");
             }
@@ -315,9 +322,6 @@ namespace dawn_native {
                 case wgpu::TextureDimension::e3D:
                     desc.dimension = wgpu::TextureViewDimension::e3D;
                     break;
-
-                default:
-                    UNREACHABLE();
             }
         }
 
@@ -360,9 +364,6 @@ namespace dawn_native {
             case wgpu::TextureAspect::StencilOnly:
                 ASSERT(format.aspects & Aspect::Stencil);
                 return Aspect::Stencil;
-            default:
-                UNREACHABLE();
-                break;
         }
     }
 
@@ -557,8 +558,9 @@ namespace dawn_native {
         // 4 at non-zero mipmap levels.
         if (mFormat.isCompressed) {
             // TODO(jiawei.shao@intel.com): check if there are any overflows.
-            uint32_t blockWidth = mFormat.blockWidth;
-            uint32_t blockHeight = mFormat.blockHeight;
+            const TexelBlockInfo& blockInfo = mFormat.GetTexelBlockInfo(wgpu::TextureAspect::All);
+            uint32_t blockWidth = blockInfo.blockWidth;
+            uint32_t blockHeight = blockInfo.blockHeight;
             extent.width = (extent.width + blockWidth - 1) / blockWidth * blockWidth;
             extent.height = (extent.height + blockHeight - 1) / blockHeight * blockHeight;
         }

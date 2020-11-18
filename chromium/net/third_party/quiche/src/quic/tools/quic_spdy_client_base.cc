@@ -188,11 +188,13 @@ QuicSpdyClientStream* QuicSpdyClientBase::CreateClientStream() {
   auto* stream = static_cast<QuicSpdyClientStream*>(
       client_session()->CreateOutgoingBidirectionalStream());
   if (stream) {
-    stream->SetPriority(
-        spdy::SpdyStreamPrecedence(QuicStream::kDefaultPriority));
     stream->set_visitor(this);
   }
   return stream;
+}
+
+bool QuicSpdyClientBase::goaway_received() const {
+  return client_session() && client_session()->goaway_received();
 }
 
 bool QuicSpdyClientBase::EarlyDataAccepted() {

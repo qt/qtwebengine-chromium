@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "build/build_config.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/text_char_pos.h"
 #include "third_party/base/containers/adapters.h"
@@ -757,7 +758,7 @@ size_t CFX_RTFBreak::GetDisplayPos(const CFX_TextPiece* pPiece,
       continue;
     }
 
-    uint32_t iCharWidth = abs(iWidth);
+    int iCharWidth = abs(iWidth);
     const bool bEmptyChar = (dwCharType >= FX_CHARTYPE::kTab &&
                              dwCharType <= FX_CHARTYPE::kControl);
     if (!bEmptyChar)

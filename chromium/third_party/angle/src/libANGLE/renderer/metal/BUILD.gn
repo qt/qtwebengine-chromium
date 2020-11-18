@@ -23,6 +23,8 @@ _metal_backend_sources = [
   "FrameBufferMtl.mm",
   "ProgramMtl.h",
   "ProgramMtl.mm",
+  "QueryMtl.h",
+  "QueryMtl.mm",
   "RenderBufferMtl.h",
   "RenderBufferMtl.mm",
   "RenderTargetMtl.h",
@@ -33,6 +35,8 @@ _metal_backend_sources = [
   "SurfaceMtl.mm",
   "TextureMtl.h",
   "TextureMtl.mm",
+  "TransformFeedbackMtl.h",
+  "TransformFeedbackMtl.mm",
   "VertexArrayMtl.h",
   "VertexArrayMtl.mm",
   "mtl_buffer_pool.h",
@@ -46,6 +50,8 @@ _metal_backend_sources = [
   "mtl_format_utils.mm",
   "mtl_glslang_utils.h",
   "mtl_glslang_utils.mm",
+  "mtl_occlusion_query_pool.h",
+  "mtl_occlusion_query_pool.mm",
   "mtl_render_utils.h",
   "mtl_render_utils.mm",
   "mtl_resources.h",
@@ -54,6 +60,12 @@ _metal_backend_sources = [
   "mtl_state_cache.mm",
   "mtl_utils.h",
   "mtl_utils.mm",
+  "shaders/compiled/compiled_default_metallib_2_1_debug_ios_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_2_1_debug_ios_sim_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_2_1_debug_mac_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_2_1_ios_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_2_1_ios_sim_autogen.inc",
+  "shaders/compiled/compiled_default_metallib_2_1_mac_autogen.inc",
   "shaders/compiled/compiled_default_metallib_debug_ios_autogen.inc",
   "shaders/compiled/compiled_default_metallib_debug_ios_sim_autogen.inc",
   "shaders/compiled/compiled_default_metallib_debug_mac_autogen.inc",
@@ -62,6 +74,7 @@ _metal_backend_sources = [
   "shaders/compiled/compiled_default_metallib_mac_autogen.inc",
   "shaders/compiled/mtl_default_shaders_autogen.inc",
   "shaders/constants.h",
+  "shaders/format_autogen.h",
 ]
 
 config("angle_metal_backend_config") {
@@ -86,6 +99,7 @@ angle_source_set("angle_metal_backend") {
 
   public_deps = [
     "${angle_root}:angle_glslang_wrapper",
+    "${angle_root}:angle_gpu_info_util",
     "${angle_root}:angle_image_util",
     "${angle_root}:libANGLE_headers",
   ]
