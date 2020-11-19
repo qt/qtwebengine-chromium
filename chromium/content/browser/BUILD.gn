@@ -2846,6 +2846,8 @@ jumbo_static_library("browser") {
     sources += [
       "net/cross_origin_embedder_policy_reporter.cc",
       "net/cross_origin_embedder_policy_reporter.h",
+      "net/cross_origin_opener_policy_reporter.cc",
+      "net/cross_origin_opener_policy_reporter.h",
     ]
   }
 

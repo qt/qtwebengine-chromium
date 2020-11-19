@@ -179,7 +179,7 @@ void __attribute__((noreturn)) ChildProcess(ChildProcessArgs* args) {
 
 }  // namespace
 
-Subprocess::Args::Args(Args&&) noexcept = default;
+Subprocess::Args::Args(Args&&) = default;
 Subprocess::Args& Subprocess::Args::operator=(Args&&) = default;
 
 Subprocess::Subprocess(std::initializer_list<std::string> a) : args(a) {
