@@ -17,7 +17,7 @@ static_library("content") {
 
   deps = [
     "//base",
-    "//components/dom_distiller/core",
+#    "//components/dom_distiller/core",
     "//components/strings",
     "//content/public/browser",
     "//content/public/common",

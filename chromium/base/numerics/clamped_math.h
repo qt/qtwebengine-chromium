@@ -38,7 +38,7 @@ class ClampedNumeric {
   template <typename Src>
   constexpr ClampedNumeric(Src value)  // NOLINT(runtime/explicit)
       : value_(saturated_cast<T>(value)) {
-    static_assert(std::is_arithmetic<Src>::value, "Argument must be numeric.");
+//     static_assert(std::is_arithmetic<Src>::value, "Argument must be numeric.");
   }
 
   // This is not an explicit constructor because we want a seamless conversion

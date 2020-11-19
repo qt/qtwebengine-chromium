@@ -90,6 +90,7 @@ void PopulateAdvancedCapsLocalization(
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
+#ifndef TOOLKIT_QT
 // Returns a dictionary representing printer capabilities as CDD, or an empty
 // value if no capabilities are provided.
 base::Value AssemblePrinterCapabilities(
@@ -125,6 +126,7 @@ base::Value AssemblePrinterCapabilities(
 
   return cloud_print::PrinterSemanticCapsAndDefaultsToCdd(*caps);
 }
+#endif
 
 }  // namespace
 
@@ -149,6 +151,7 @@ std::string GetUserFriendlyName(const std::string& printer_name) {
 }
 #endif
 
+#ifndef TOOLKIT_QT
 base::Value AssemblePrinterSettings(
     const std::string& device_name,
     const PrinterBasicInfo& basic_info,
@@ -207,5 +210,6 @@ base::Value GetSettingsOnBlockingTaskRunner(
                                  has_secure_protocol,
                                  base::OptionalOrNullptr(caps));
 }
+#endif
 
 }  // namespace printing

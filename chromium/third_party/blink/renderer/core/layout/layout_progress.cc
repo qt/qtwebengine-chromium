@@ -31,7 +31,7 @@ namespace {
 
 constexpr base::TimeDelta kAnimationInterval =
     base::TimeDelta::FromMilliseconds(125);
-constexpr base::TimeDelta kAnimationDuration = kAnimationInterval * 20;
+const base::TimeDelta kAnimationDuration = kAnimationInterval * 20;
 
 }  // namespace
 

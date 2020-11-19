@@ -85,6 +85,10 @@ class V8IdleRequestCallback;
 class V8VoidFunction;
 class WindowAgent;
 
+class InputMethodController;
+class TextSuggestionController;
+class SpellChecker;
+
 enum PageTransitionEventPersistence {
   kPageTransitionEventNotPersisted = 0,
   kPageTransitionEventPersisted = 1

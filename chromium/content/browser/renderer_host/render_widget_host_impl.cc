@@ -1245,7 +1245,7 @@ void RenderWidgetHostImpl::LostCapture() {
 
 void RenderWidgetHostImpl::SetActive(bool active) {
   const bool is_frame_widget = owner_delegate_;
-  if (is_frame_widget)
+  if (is_frame_widget && blink_frame_widget_.is_bound())
     blink_frame_widget_->SetActive(active);
 }
 
