@@ -21,7 +21,7 @@
 #include "components/performance_manager/public/graph/graph.h"
 #include "components/performance_manager/v8_memory/v8_context_tracker.h"
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
 #include "components/performance_manager/public/decorators/site_data_recorder.h"
 #endif
 
@@ -48,7 +48,7 @@ void DefaultGraphCreatedCallback(
   graph->PassToGraph(std::make_unique<ProcessNodeImplDescriber>());
   graph->PassToGraph(std::make_unique<TabPropertiesDecorator>());
   graph->PassToGraph(std::make_unique<WorkerNodeImplDescriber>());
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   graph->PassToGraph(std::make_unique<SiteDataRecorder>());
 #endif
 

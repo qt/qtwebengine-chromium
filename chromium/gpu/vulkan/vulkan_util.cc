@@ -102,7 +102,7 @@ std::string VkVersionToString(uint32_t version) {
                             VK_VERSION_PATCH(version));
 }
 
-VkResult QueueSubmitHook(VkQueue queue,
+VKAPI_ATTR VkResult VKAPI_CALL QueueSubmitHook(VkQueue queue,
                          uint32_t submitCount,
                          const VkSubmitInfo* pSubmits,
                          VkFence fence) {
