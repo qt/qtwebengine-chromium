@@ -21,6 +21,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_client.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "net/base/url_util.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "url/origin.h"
 
@@ -169,7 +170,7 @@ void QuotaManagerHost::DidGetPermissionResponse(
 
   // Otherwise, return the new quota.
   quota_manager_->SetPersistentHostQuota(
-      origin_.host(), requested_quota,
+      net::GetHostOrSpecFromURL(origin_.GetURL()), requested_quota,
       base::BindOnce(&QuotaManagerHost::DidSetHostQuota,
                      weak_factory_.GetWeakPtr(), current_usage,
                      std::move(callback)));
