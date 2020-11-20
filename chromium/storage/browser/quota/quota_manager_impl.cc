@@ -49,6 +49,7 @@
 #include "components/services/storage/public/cpp/buckets/constants.h"
 #include "components/services/storage/public/mojom/quota_client.mojom.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "net/base/url_util.h"
 #include "storage/browser/quota/client_usage_tracker.h"
 #include "storage/browser/quota/quota_callbacks.h"
 #include "storage/browser/quota/quota_client_type.h"
@@ -219,7 +220,7 @@ class QuotaManagerImpl::UsageAndQuotaInfoGatherer : public QuotaTask {
       SetDesiredStorageKeyQuota(barrier, blink::mojom::QuotaStatusCode::kOk,
                                 kSyncableStorageDefaultHostQuota);
     } else if (type_ == StorageType::kPersistent) {
-      const std::string& host = storage_key_.origin().host();
+      const std::string host = net::GetHostOrSpecFromURL(storage_key_.origin().GetURL());
       manager()->GetPersistentHostQuota(
           host,
           base::BindOnce(&UsageAndQuotaInfoGatherer::SetDesiredStorageKeyQuota,
