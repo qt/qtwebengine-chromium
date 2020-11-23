@@ -485,7 +485,7 @@ NetworkContext::NetworkContext(
   SetSCTAuditingEnabled(params_->enable_sct_auditing);
 #endif
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
   if (params_->cookie_manager)
     GetCookieManager(std::move(params_->cookie_manager));
 #endif
