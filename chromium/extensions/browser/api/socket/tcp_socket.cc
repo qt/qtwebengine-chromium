@@ -213,7 +213,7 @@ void TCPSocket::SetKeepAlive(bool enable,
                              int delay,
                              SetKeepAliveCallback callback) {
   if (!client_socket_) {
-    std::move(callback).Run(net::ERR_FAILED);
+    std::move(callback).Run(false);
     return;
   }
   client_socket_->SetKeepAlive(enable, delay, std::move(callback));
@@ -221,7 +221,7 @@ void TCPSocket::SetKeepAlive(bool enable,
 
 void TCPSocket::SetNoDelay(bool no_delay, SetNoDelayCallback callback) {
   if (!client_socket_) {
-    std::move(callback).Run(net::ERR_FAILED);
+    std::move(callback).Run(false);
     return;
   }
   client_socket_->SetNoDelay(no_delay, std::move(callback));
