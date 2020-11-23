@@ -440,7 +440,6 @@ struct NetworkContextParams {
 
   // Binds to the cookie manager associated with this network context, which
   // should only be handed out to trusted processes.
-  [EnableIf=is_android]
   pending_receiver<CookieManager>? cookie_manager;
 
   // Whether to enable Domain Reliability.
