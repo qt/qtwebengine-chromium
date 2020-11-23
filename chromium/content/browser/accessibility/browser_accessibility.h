@@ -92,6 +92,8 @@ class CONTENT_EXPORT BrowserAccessibility : public ui::AXPlatformNodeDelegate {
   // function to construct a COM object.
   virtual void Init(BrowserAccessibilityManager* manager, ui::AXNode* node);
 
+  virtual void Destroy();
+
   // Called after the object is first initialized and again every time
   // its data changes.
   virtual void OnDataChanged() {}

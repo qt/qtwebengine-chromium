@@ -49,6 +49,11 @@ BrowserAccessibility::BrowserAccessibility() = default;
 
 BrowserAccessibility::~BrowserAccessibility() = default;
 
+void BrowserAccessibility::Destroy()
+{
+    delete this;
+}
+
 namespace {
 
 const BrowserAccessibility* GetTextContainerForPlainTextField(
