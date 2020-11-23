@@ -557,7 +557,7 @@ NetworkContext::NetworkContext(
   sct_auditing_handler()->SetMode(params_->sct_auditing_mode);
 #endif
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || defined(TOOLKIT_QT)
   if (params_->cookie_manager)
     GetCookieManager(std::move(params_->cookie_manager));
 #endif
