@@ -23,6 +23,11 @@
 
 namespace base {
 
+namespace internal {
+OomFunction g_oom_handling_function = nullptr;
+}
+
+
 template <bool thread_safe>
 NOINLINE void PartitionRoot<thread_safe>::OutOfMemory(size_t size) {
 #if !defined(ARCH_CPU_64_BITS)

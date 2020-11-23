@@ -216,7 +216,7 @@ ALWAYS_INLINE size_t PartitionSizeAdjustSubtract(bool allow_extras,
 }
 
 // g_oom_handling_function is invoked when PartitionAlloc hits OutOfMemory.
-static OomFunction g_oom_handling_function = nullptr;
+extern OomFunction g_oom_handling_function;
 
 }  // namespace internal
 
