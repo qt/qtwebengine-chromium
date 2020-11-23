@@ -1413,7 +1413,7 @@ void BrowserAccessibilityManager::OnNodeDeleted(ui::AXTree* tree,
   DCHECK_NE(node_id, ui::kInvalidAXNodeID);
   if (BrowserAccessibility* wrapper = GetFromID(node_id)) {
     id_wrapper_map_.erase(node_id);
-    delete wrapper;
+    wrapper->Destroy();
   }
 
   if (popup_root_ids_.find(node_id) != popup_root_ids_.end())

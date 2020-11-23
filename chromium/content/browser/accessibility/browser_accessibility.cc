@@ -49,6 +49,11 @@ BrowserAccessibility::BrowserAccessibility() = default;
 
 BrowserAccessibility::~BrowserAccessibility() = default;
 
+void BrowserAccessibility::Destroy()
+{
+    delete this;
+}
+
 namespace {
 
 // Get the native text field's deepest container; the lowest descendant that
