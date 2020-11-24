@@ -59,6 +59,7 @@ JSDateTimeFormat::HourCycle ToHourCycle(const std::string& hc) {
   return JSDateTimeFormat::HourCycle::kUndefined;
 }
 
+#if U_ICU_VERSION_MAJOR_NUM >= 67
 JSDateTimeFormat::HourCycle ToHourCycle(UDateFormatHourCycle hc) {
   switch (hc) {
     case UDAT_HOUR_CYCLE_11:
@@ -73,6 +74,7 @@ JSDateTimeFormat::HourCycle ToHourCycle(UDateFormatHourCycle hc) {
       return JSDateTimeFormat::HourCycle::kUndefined;
   }
 }
+#endif
 
 Maybe<JSDateTimeFormat::HourCycle> GetHourCycle(Isolate* isolate,
                                                 Handle<JSReceiver> options,
@@ -1576,7 +1578,12 @@ MaybeHandle<JSDateTimeFormat> JSDateTimeFormat::New(
       generator_cache.Pointer()->CreateGenerator(icu_locale));
 
   // 15.Let hcDefault be dataLocaleData.[[hourCycle]].
+#if U_ICU_VERSION_MAJOR_NUM >= 67
   HourCycle hc_default = ToHourCycle(generator->getDefaultHourCycle(status));
+#else
+  icu::UnicodeString hour_pattern = generator->getBestPattern("jjmm", status);
+  HourCycle hc_default = HourCycleFromPattern(hour_pattern);
+#endif
   DCHECK(U_SUCCESS(status));
 
   // 16.Let hc be r.[[hc]].
