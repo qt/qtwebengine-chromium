@@ -1316,6 +1316,13 @@ class RepresentationSelector {
 
     Type left_feedback_type = TypeOf(node->InputAt(0));
     Type right_feedback_type = TypeOf(node->InputAt(1));
+
+    // Using Signed32 as restriction type amounts to promising there won't be
+    // signed overflow. This is incompatible with relying on a Word32
+    // truncation in order to skip the overflow check.
+    Type const restriction =
+        truncation.IsUsedAsWord32() ? Type::Any() : Type::Signed32();
+
     // Handle the case when no int32 checks on inputs are necessary (but
     // an overflow check is needed on the output). Note that we do not
     // have to do any check if at most one side can be minus zero. For
@@ -1329,7 +1336,7 @@ class RepresentationSelector {
         right_upper.Is(Type::Signed32OrMinusZero()) &&
         (left_upper.Is(Type::Signed32()) || right_upper.Is(Type::Signed32()))) {
       VisitBinop(node, UseInfo::TruncatingWord32(),
-                 MachineRepresentation::kWord32, Type::Signed32());
+                 MachineRepresentation::kWord32, restriction);
     } else {
       // If the output's truncation is identify-zeros, we can pass it
       // along. Moreover, if the operation is addition and we know the
@@ -1349,7 +1356,7 @@ class RepresentationSelector {
       UseInfo right_use = CheckedUseInfoAsWord32FromHint(hint, VectorSlotPair(),
                                                          kIdentifyZeros);
       VisitBinop(node, left_use, right_use, MachineRepresentation::kWord32,
-                 Type::Signed32());
+                 restriction);
     }
     if (lower()) {
       if (truncation.IsUsedAsWord32() ||
