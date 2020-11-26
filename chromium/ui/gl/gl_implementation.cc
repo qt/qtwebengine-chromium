@@ -244,6 +244,10 @@ CurrentGL*& GetGlContextForCurrentThread() {
 EGLApi* g_current_egl_context;
 #endif
 
+#if defined(OS_WIN)
+WGLApi* g_current_wgl_context;
+#endif
+
 #if defined(USE_GLX)
 GLXApi* g_current_glx_context;
 #endif
