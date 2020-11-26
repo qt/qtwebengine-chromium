@@ -15,11 +15,25 @@
 #include "ui/gfx/x/glx.h"
 #endif
 
+#if defined(OS_WIN)
+#include "ui/gl/gl_surface_wgl.h"
+#endif
+
 #if defined(USE_EGL)
 #include "ui/gl/gl_surface_egl.h"
 #endif
 
 namespace gl {
+
+#if defined(OS_WIN)
+std::string DriverWGL::GetPlatformExtensions() {
+  const char* str = nullptr;
+  str = wglGetExtensionsStringARB(GLSurfaceWGL::GetDisplayDC());
+  if (str)
+    return str;
+  return wglGetExtensionsStringEXT();
+}
+#endif
 
 #if defined(USE_EGL)
 #if !defined(TOOLKIT_QT)
