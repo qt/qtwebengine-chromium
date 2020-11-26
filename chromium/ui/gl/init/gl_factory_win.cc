@@ -10,12 +10,15 @@
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_context_egl.h"
 #include "ui/gl/gl_context_stub.h"
+#include "ui/gl/gl_context_wgl.h"
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_share_group.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/gl_surface_stub.h"
+#include "ui/gl/gl_surface_wgl.h"
+#include "ui/gl/gl_wgl_api_implementation.h"
 #include "ui/gl/vsync_provider_win.h"
 
 namespace gl {
@@ -31,6 +34,8 @@ std::vector<GLImplementationParts> GetAllowedGLImplementations() {
 bool GetGLWindowSystemBindingInfo(const GLVersionInfo& gl_info,
                                   GLWindowSystemBindingInfo* info) {
   switch (GetGLImplementation()) {
+    case kGLImplementationDesktopGL:
+      return GetGLWindowSystemBindingInfoWGL(info);
     case kGLImplementationEGLANGLE:
       return GetGLWindowSystemBindingInfoEGL(info);
     default:
@@ -45,6 +50,9 @@ scoped_refptr<GLContext> CreateGLContext(GLShareGroup* share_group,
   switch (GetGLImplementation()) {
     case kGLImplementationEGLANGLE:
       return InitializeGLContext(new GLContextEGL(share_group),
+                                 compatible_surface, attribs);
+    case kGLImplementationDesktopGL:
+      return InitializeGLContext(new GLContextWGL(share_group),
                                  compatible_surface, attribs);
     case kGLImplementationMockGL:
       return new GLContextStub(share_group);
@@ -72,6 +80,9 @@ scoped_refptr<GLSurface> CreateViewGLSurface(GLDisplay* display,
           display->GetAs<gl::GLDisplayEGL>(), window,
           std::make_unique<VSyncProviderWin>(window)));
     }
+    case kGLImplementationDesktopGL:
+      return InitializeGLSurface(
+          base::MakeRefCounted<NativeViewGLSurfaceWGL>(window));
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
       return new GLSurfaceStub;
@@ -98,6 +109,9 @@ scoped_refptr<GLSurface> CreateOffscreenGLSurfaceWithFormat(
             new PbufferGLSurfaceEGL(display_egl, size), format);
       }
     }
+    case kGLImplementationDesktopGL:
+      return InitializeGLSurfaceWithFormat(
+          new PbufferGLSurfaceWGL(size), format);
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
       return new GLSurfaceStub;
@@ -112,6 +126,9 @@ void SetDisabledExtensionsPlatform(const std::string& disabled_extensions) {
   GLImplementation implementation = GetGLImplementation();
   DCHECK_NE(kGLImplementationNone, implementation);
   switch (implementation) {
+    case kGLImplementationDesktopGL:
+      SetDisabledExtensionsWGL(disabled_extensions);
+      break;
     case kGLImplementationEGLANGLE:
       SetDisabledExtensionsEGL(disabled_extensions);
       break;
@@ -127,6 +144,8 @@ bool InitializeExtensionSettingsOneOffPlatform(GLDisplay* display) {
   GLImplementation implementation = GetGLImplementation();
   DCHECK_NE(kGLImplementationNone, implementation);
   switch (implementation) {
+    case kGLImplementationDesktopGL:
+      return InitializeExtensionSettingsOneOffWGL();
     case kGLImplementationEGLANGLE:
       return InitializeExtensionSettingsOneOffEGL(
           display->GetAs<GLDisplayEGL>());

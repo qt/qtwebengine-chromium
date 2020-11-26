@@ -350,8 +350,16 @@ jumbo_component("gl") {
       "direct_composition_surface_win.h",
       "gl_angle_util_win.cc",
       "gl_angle_util_win.h",
+      "gl_bindings_autogen_wgl.cc",
+      "gl_bindings_autogen_wgl.h",
+      "gl_context_wgl.cc",
+      "gl_context_wgl.h",
       "gl_fence_win.cc",
       "gl_fence_win.h",
+      "gl_surface_wgl.cc",
+      "gl_surface_wgl.h",
+      "gl_wgl_api_implementation.cc",
+      "gl_wgl_api_implementation.h",
       "hdr_metadata_helper_win.cc",
       "hdr_metadata_helper_win.h",
       "swap_chain_presenter.cc",
@@ -625,6 +633,7 @@ test("gl_unittests") {
       "direct_composition_surface_win_unittest.cc",
       "gl_fence_win_unittest.cc",
       "hdr_metadata_helper_win_unittest.cc",
+      "wgl_api_unittest.cc",
     ]
   }
 
