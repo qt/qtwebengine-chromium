@@ -22,6 +22,8 @@
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_utils.h"
+#include "ui/gl/gl_surface_wgl.h"
+#include "ui/gl/gl_wgl_api_implementation.h"
 #include "ui/gl/vsync_provider_win.h"
 
 namespace gl {
@@ -121,6 +123,71 @@ bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
   return true;
 }
 
+bool InitializeStaticWGLInternal() {
+  base::NativeLibrary library =
+      base::LoadNativeLibrary(base::FilePath(L"opengl32.dll"), nullptr);
+  if (!library) {
+    DVLOG(1) << "opengl32.dll not found";
+    return false;
+  }
+
+  GLGetProcAddressProc get_proc_address =
+      reinterpret_cast<GLGetProcAddressProc>(
+          base::GetFunctionPointerFromNativeLibrary(library,
+                                                    "wglGetProcAddress"));
+  if (!get_proc_address) {
+    LOG(ERROR) << "wglGetProcAddress not found.";
+    base::UnloadNativeLibrary(library);
+    return false;
+  }
+
+  SetGLGetProcAddressProc(get_proc_address);
+  AddGLNativeLibrary(library);
+  SetGLImplementation(kGLImplementationDesktopGL);
+
+  // Initialize GL surface and get some functions needed for the context
+  // creation below.
+  if (!GLSurfaceWGL::InitializeOneOff()) {
+    LOG(ERROR) << "GLSurfaceWGL::InitializeOneOff failed.";
+    return false;
+  }
+  wglCreateContextProc wglCreateContextFn =
+      reinterpret_cast<wglCreateContextProc>(
+          GetGLProcAddress("wglCreateContext"));
+  wglDeleteContextProc wglDeleteContextFn =
+      reinterpret_cast<wglDeleteContextProc>(
+          GetGLProcAddress("wglDeleteContext"));
+  wglMakeCurrentProc wglMakeCurrentFn =
+      reinterpret_cast<wglMakeCurrentProc>(GetGLProcAddress("wglMakeCurrent"));
+
+  // Create a temporary GL context to bind to entry points. This is needed
+  // because wglGetProcAddress is specified to return nullptr for all queries
+  // if a context is not current in MSDN documentation, and the static
+  // bindings may contain functions that need to be queried with
+  // wglGetProcAddress. OpenGL wiki further warns that other error values
+  // than nullptr could also be returned from wglGetProcAddress on some
+  // implementations, so we need to clear the WGL bindings and reinitialize
+  // them after the context creation.
+  HGLRC gl_context = wglCreateContextFn(GLSurfaceWGL::GetDisplayDC());
+  if (!gl_context) {
+    LOG(ERROR) << "Failed to create temporary context.";
+    return false;
+  }
+  if (!wglMakeCurrentFn(GLSurfaceWGL::GetDisplayDC(), gl_context)) {
+    LOG(ERROR) << "Failed to make temporary GL context current.";
+    wglDeleteContextFn(gl_context);
+    return false;
+  }
+
+  InitializeStaticGLBindingsGL();
+  InitializeStaticGLBindingsWGL();
+
+  wglMakeCurrent(nullptr, nullptr);
+  wglDeleteContext(gl_context);
+
+  return true;
+}
+
 }  // namespace
 
 #if !defined(TOOLKIT_QT)
@@ -129,6 +196,12 @@ GLDisplay* InitializeGLOneOffPlatform(uint64_t system_device_id) {
 
   GLDisplayEGL* display = GetDisplayEGL(system_device_id);
   switch (GetGLImplementation()) {
+    case kGLImplementationDesktopGL:
+      if (!GLSurfaceWGL::InitializeOneOff()) {
+        LOG(ERROR) << "GLSurfaceWGL::InitializeOneOff failed.";
+        return false;
+      }
+      break;
     case kGLImplementationEGLANGLE:
       if (!display->Initialize(EGLDisplayPlatform(GetDC(nullptr)))) {
         LOG(ERROR) << "GLDisplayEGL::Initialize failed.";
@@ -161,6 +234,8 @@ bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   switch (implementation.gl) {
     case kGLImplementationEGLANGLE:
       return InitializeStaticEGLInternal(implementation);
+    case kGLImplementationDesktopGL:
+      return InitializeStaticWGLInternal();
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
       SetGLImplementationParts(implementation);
@@ -179,6 +254,7 @@ void ShutdownGLPlatform(GLDisplay* display) {
     display->Shutdown();
   ClearBindingsEGL();
   ClearBindingsGL();
+  ClearBindingsWGL();
 }
 
 }  // namespace init
