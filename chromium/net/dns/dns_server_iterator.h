@@ -5,6 +5,7 @@
 #ifndef NET_DNS_DNS_SERVER_ITERATOR_H_
 #define NET_DNS_DNS_SERVER_ITERATOR_H_
 
+#include <cstddef>
 #include <vector>
 
 #include "net/base/net_export.h"

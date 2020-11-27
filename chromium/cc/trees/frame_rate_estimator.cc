@@ -47,8 +47,8 @@ void FrameRateEstimator::WillDraw(base::TimeTicks now) {
   // we assume that BeginFrames can not be throttled. But if the animation
   // frequency is lower than that, then using a lower frame rate is permitted.
   // The delta below is to account for minor offsets in frame times.
-  constexpr auto kFudgeDelta = base::TimeDelta::FromMilliseconds(1);
-  constexpr auto kMinDelta =
+  const auto kFudgeDelta = base::TimeDelta::FromMilliseconds(1);
+  const auto kMinDelta =
       (viz::BeginFrameArgs::DefaultInterval() * 2) + kFudgeDelta;
   if (draw_delta < kMinDelta)
     num_of_consecutive_frames_with_min_delta_++;

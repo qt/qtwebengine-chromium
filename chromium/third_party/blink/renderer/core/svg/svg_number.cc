@@ -66,7 +66,7 @@ SVGParsingError SVGNumber::SetValueAsString(const String& string) {
     return SVGParseStatus::kNoError;
 
   return WTF::VisitCharacters(string, [&](const auto* chars, unsigned length) {
-    return Parse(chars, chars + length);
+    return this->Parse(chars, chars + length);
   });
 }
 

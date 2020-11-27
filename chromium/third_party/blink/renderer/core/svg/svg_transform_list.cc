@@ -378,7 +378,7 @@ SVGParsingError SVGTransformList::SetValueAsString(const String& value) {
   }
   SVGParsingError parse_error =
       WTF::VisitCharacters(value, [&](const auto* chars, unsigned length) {
-        return ParseInternal(chars, chars + length);
+        return this->ParseInternal(chars, chars + length);
       });
   if (parse_error != SVGParseStatus::kNoError)
     Clear();

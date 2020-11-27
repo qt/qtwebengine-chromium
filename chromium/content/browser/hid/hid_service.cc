@@ -189,7 +189,7 @@ void HidService::OnPermissionRevoked(const url::Origin& requesting_origin,
     if (!device_info)
       return true;
 
-    if (delegate->HasDevicePermission(web_contents, origin(), *device_info)) {
+    if (delegate->HasDevicePermission(web_contents, this->origin(), *device_info)) {
       return false;
     }
 

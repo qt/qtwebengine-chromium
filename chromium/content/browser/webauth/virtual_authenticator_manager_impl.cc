@@ -79,8 +79,8 @@ VirtualAuthenticator* VirtualAuthenticatorManagerImpl::AddAuthenticator(
     std::unique_ptr<VirtualAuthenticator> authenticator) {
   VirtualAuthenticator* authenticator_ptr = authenticator.get();
   bool was_inserted;
-  std::tie(std::ignore, was_inserted) = authenticators_.insert(
-      {authenticator_ptr->unique_id(), std::move(authenticator)});
+  std::tie(std::ignore, was_inserted) = authenticators_.emplace(
+      authenticator_ptr->unique_id(), std::move(authenticator));
   if (!was_inserted) {
     NOTREACHED() << "unique_id() must be unique";
     return nullptr;

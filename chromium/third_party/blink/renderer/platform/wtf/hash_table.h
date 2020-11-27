@@ -1013,8 +1013,8 @@ class HashTable final
             typename Y,
             typename Z>
   friend struct WeakProcessingHashTableHelper;
-  template <typename T, size_t, typename U, typename V>
-  friend class ListHashSet;
+//  template <typename T, size_t, typename U, typename V>
+//  friend class ListHashSet;
 };
 
 template <typename Key,

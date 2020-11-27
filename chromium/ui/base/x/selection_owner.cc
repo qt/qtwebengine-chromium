@@ -127,6 +127,7 @@ void SelectionOwner::OnSelectionRequest(const x11::Event& x11_event) {
   // Incrementally build our selection. By default this is a refusal, and we'll
   // override the parts indicating success in the different cases.
   x11::SelectionNotifyEvent reply{
+      .send_event = false, .sequence = 0,
       .time = request.time,
       .requestor = requestor,
       .selection = request.selection,

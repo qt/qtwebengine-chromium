@@ -14,7 +14,6 @@ class DiskDataMetadata {
  public:
   int64_t start_offset() const { return start_offset_; }
   size_t size() const { return size_; }
-  DiskDataMetadata(DiskDataMetadata&& other) = delete;
 
  private:
   DiskDataMetadata(int64_t start_offset, size_t size)

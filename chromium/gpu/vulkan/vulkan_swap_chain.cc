@@ -182,23 +182,21 @@ bool VulkanSwapChain::InitializeSwapChain(
   VkDevice device = device_queue_->GetVulkanDevice();
   VkResult result = VK_SUCCESS;
 
-  VkSwapchainCreateInfoKHR swap_chain_create_info = {
-      .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-      .flags = use_protected_memory ? VK_SWAPCHAIN_CREATE_PROTECTED_BIT_KHR : 0,
-      .surface = surface,
-      .minImageCount = min_image_count,
-      .imageFormat = surface_format.format,
-      .imageColorSpace = surface_format.colorSpace,
-      .imageExtent = {image_size.width(), image_size.height()},
-      .imageArrayLayers = 1,
-      .imageUsage = image_usage_flags,
-      .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-      .preTransform = pre_transform,
-      .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-      .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-      .clipped = VK_TRUE,
-      .oldSwapchain = VK_NULL_HANDLE,
-  };
+  VkSwapchainCreateInfoKHR swap_chain_create_info = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
+  swap_chain_create_info.flags = use_protected_memory ? VK_SWAPCHAIN_CREATE_PROTECTED_BIT_KHR : 0;
+  swap_chain_create_info.surface = surface;
+  swap_chain_create_info.minImageCount = min_image_count;
+  swap_chain_create_info.imageFormat = surface_format.format;
+  swap_chain_create_info.imageColorSpace = surface_format.colorSpace;
+  swap_chain_create_info.imageExtent = {image_size.width(), image_size.height()};
+  swap_chain_create_info.imageArrayLayers = 1;
+  swap_chain_create_info.imageUsage = image_usage_flags;
+  swap_chain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  swap_chain_create_info.preTransform = pre_transform;
+  swap_chain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  swap_chain_create_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+  swap_chain_create_info.clipped = VK_TRUE;
+  swap_chain_create_info.oldSwapchain = VK_NULL_HANDLE;
 
   if (LIKELY(old_swap_chain)) {
     base::AutoLock auto_lock(old_swap_chain->lock_);
@@ -370,21 +368,19 @@ bool VulkanSwapChain::PresentBuffer(const gfx::Rect& rect) {
       .pRectangles = &rect_layer,
   };
 
-  VkPresentRegionsKHR present_regions = {
-      .sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR,
-      .swapchainCount = 1,
-      .pRegions = &present_region,
-  };
+  VkPresentRegionsKHR present_regions;
+  present_regions.sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR;
+  present_regions.swapchainCount = 1;
+  present_regions.pRegions = &present_region;
 
-  VkPresentInfoKHR present_info = {
-      .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-      .pNext = is_incremental_present_supported_ ? &present_regions : nullptr,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &current_image_data.present_semaphore,
-      .swapchainCount = 1,
-      .pSwapchains = &swap_chain_,
-      .pImageIndices = &acquired_image_.value(),
-  };
+  VkPresentInfoKHR present_info;
+  present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  present_info.pNext = is_incremental_present_supported_ ? &present_regions : nullptr;
+  present_info.waitSemaphoreCount = 1;
+  present_info.pWaitSemaphores = &current_image_data.present_semaphore;
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = &swap_chain_;
+  present_info.pImageIndices = &acquired_image_.value();
 
   VkQueue queue = device_queue_->GetVulkanQueue();
   auto result = vkQueuePresentKHR(queue, &present_info);

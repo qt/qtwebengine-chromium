@@ -70,7 +70,7 @@ Optional<OpjImageRgbData> alloc_rgb(size_t size) {
   if (!data.b)
     return {};
 
-  return data;
+  return std::move(data);
 }
 
 void sycc_to_rgb(int offset,

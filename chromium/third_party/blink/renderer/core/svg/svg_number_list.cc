@@ -54,7 +54,7 @@ SVGParsingError SVGNumberList::SetValueAsString(const String& value) {
   // valid items before error.
   // Spec: http://www.w3.org/TR/SVG/single-page.html#implnote-ErrorProcessing
   return WTF::VisitCharacters(value, [&](const auto* chars, unsigned length) {
-    return Parse(chars, chars + length);
+    return this->Parse(chars, chars + length);
   });
 }
 

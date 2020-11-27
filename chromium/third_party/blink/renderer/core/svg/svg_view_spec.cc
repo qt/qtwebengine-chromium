@@ -64,7 +64,7 @@ bool SVGViewSpec::ParseViewSpec(const String& spec) {
   if (spec.IsEmpty())
     return false;
   return WTF::VisitCharacters(spec, [&](const auto* chars, unsigned length) {
-    return ParseViewSpecInternal(chars, chars + length);
+    return this->ParseViewSpecInternal(chars, chars + length);
   });
 }
 

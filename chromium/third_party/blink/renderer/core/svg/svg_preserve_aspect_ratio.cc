@@ -165,7 +165,7 @@ SVGParsingError SVGPreserveAspectRatio::SetValueAsString(const String& string) {
     return SVGParseStatus::kNoError;
 
   return WTF::VisitCharacters(string, [&](const auto* chars, unsigned length) {
-    return ParseInternal(chars, chars + length, true);
+    return this->ParseInternal(chars, chars + length, true);
   });
 }
 

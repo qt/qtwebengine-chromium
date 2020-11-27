@@ -75,7 +75,7 @@ SVGParsingError SVGLengthList::SetValueAsString(const String& value) {
     return SVGParseStatus::kNoError;
 
   return WTF::VisitCharacters(value, [&](const auto* chars, unsigned length) {
-    return ParseInternal(chars, chars + length);
+    return this->ParseInternal(chars, chars + length);
   });
 }
 

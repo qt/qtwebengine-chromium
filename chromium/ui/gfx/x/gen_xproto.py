@@ -1032,11 +1032,12 @@ class GenXproto(FileWriter):
         if not reply:
             return
 
+        self.write('namespace detail {')
         self.write('template<> COMPONENT_EXPORT(X11)')
         self.write('std::unique_ptr<%s>' % reply_name)
-        sig = 'detail::ReadReply<%s>(ReadBuffer* buffer) {' % reply_name
+        sig = 'ReadReply<%s>(ReadBuffer* buffer) {' % reply_name
         with Indent(self, sig, '}'):
-            self.namespace = ['x11']
+            self.namespace = ['x11::detail']
             self.write('auto& buf = *buffer;')
             self.write('auto reply = std::make_unique<%s>();' % reply_name)
             self.write()
@@ -1047,6 +1048,7 @@ class GenXproto(FileWriter):
             self.write('DCHECK_EQ(%s, 4 * length);' % offset)
             self.write()
             self.write('return reply;')
+        self.write('}  // namespace detail')
         self.write()
 
     def define_event(self, event, name):

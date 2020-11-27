@@ -43,7 +43,7 @@ StructTraits<viz::mojom::BitmapInSharedMemoryDataView, SkBitmap>::pixels(
       return base::nullopt;
     memcpy(mapping.memory(), sk_bitmap.getPixels(), byte_size);
   }
-  return region;
+  return std::move(region);
 }
 
 // static

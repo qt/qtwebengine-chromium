@@ -603,6 +603,7 @@ bool XWindow::IsActive() const {
 
 void XWindow::SetSize(const gfx::Size& size_in_pixels) {
   connection_->ConfigureWindow({.window = xwindow_,
+                                .x = 0, .y = 0,
                                 .width = size_in_pixels.width(),
                                 .height = size_in_pixels.height()});
   bounds_in_pixels_.set_size(size_in_pixels);

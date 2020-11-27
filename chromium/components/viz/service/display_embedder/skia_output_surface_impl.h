@@ -25,6 +25,7 @@
 #include "third_party/skia/include/core/SkOverdrawCanvas.h"
 #include "third_party/skia/include/core/SkSurfaceCharacterization.h"
 #include "third_party/skia/include/core/SkYUVAIndex.h"
+#include "third_party/skia/src/gpu/GrRenderTargetProxy.h"
 
 namespace base {
 class WaitableEvent;

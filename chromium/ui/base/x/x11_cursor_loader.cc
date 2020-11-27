@@ -382,6 +382,7 @@ scoped_refptr<X11Cursor> XCursorLoader::CreateCursor(
       .gc = static_cast<x11::GraphicsContext>(gc),
       .width = width,
       .height = height,
+      .dst_x = 0, .dst_y = 0, .left_pad = 0,
       .depth = 32,
       .data = base::RefCountedBytes::TakeVector(&vec),
   };

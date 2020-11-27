@@ -107,10 +107,12 @@ struct ProtocolTypeTraits<{{"::".join(config.protocol.namespace)}}::Binary> {
   static void Serialize(const {{"::".join(config.protocol.namespace)}}::Binary& value, std::vector<uint8_t>* bytes);
 };
 
+namespace detail {
 template <>
-struct {{config.crdtp.namespace}}::detail::MaybeTypedef<{{"::".join(config.protocol.namespace)}}::Binary> {
+struct MaybeTypedef<{{"::".join(config.protocol.namespace)}}::Binary> {
   typedef ValueMaybe<{{"::".join(config.protocol.namespace)}}::Binary> type;
 };
+}  // detail
 
 }  // {{config.crdtp.namespace}}
 

@@ -22,13 +22,16 @@ namespace mojom {
 class AudioService;
 }
 }  // namespace audio
+
+namespace content {
 template <>
 inline sandbox::policy::SandboxType
-content::GetServiceSandboxType<audio::mojom::AudioService>() {
+GetServiceSandboxType<audio::mojom::AudioService>() {
   return GetContentClient()->browser()->ShouldSandboxAudioService()
              ? sandbox::policy::SandboxType::kAudio
              : sandbox::policy::SandboxType::kNoSandbox;
 }
+}  // namespace content
 
 // media::mojom::CdmService
 namespace media {
@@ -36,10 +39,13 @@ namespace mojom {
 class CdmService;
 }
 }  // namespace media
+
+namespace content {
 template <>
 inline sandbox::policy::SandboxType
-content::GetServiceSandboxType<media::mojom::CdmService>() {
+GetServiceSandboxType<media::mojom::CdmService>() {
   return sandbox::policy::SandboxType::kCdm;
+}
 }
 
 // network::mojom::NetworkService
@@ -48,10 +54,13 @@ namespace mojom {
 class NetworkService;
 }
 }  // namespace network
+
+namespace content {
 template <>
 inline sandbox::policy::SandboxType
-content::GetServiceSandboxType<network::mojom::NetworkService>() {
+GetServiceSandboxType<network::mojom::NetworkService>() {
   return sandbox::policy::SandboxType::kNetwork;
+}
 }
 
 // device::mojom::XRDeviceService
@@ -74,10 +83,12 @@ namespace mojom {
 class VideoCaptureService;
 }
 }  // namespace video_capture
+namespace content {
 template <>
 inline sandbox::policy::SandboxType
-content::GetServiceSandboxType<video_capture::mojom::VideoCaptureService>() {
+GetServiceSandboxType<video_capture::mojom::VideoCaptureService>() {
   return sandbox::policy::SandboxType::kVideoCapture;
+}
 }
 
 #endif  // CONTENT_BROWSER_SERVICE_SANDBOX_TYPE_H_

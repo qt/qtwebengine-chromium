@@ -59,7 +59,7 @@ AuthenticatorMakeCredentialResponse::CreateFromU2fRegisterResponse(
       transport_used, AttestationObject(std::move(authenticator_data),
                                         std::move(fido_attestation_statement)));
   response.is_resident_key = false;
-  return response;
+  return std::move(response);
 }
 
 AuthenticatorMakeCredentialResponse::AuthenticatorMakeCredentialResponse(

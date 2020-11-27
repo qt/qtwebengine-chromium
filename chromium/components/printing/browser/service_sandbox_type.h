@@ -19,10 +19,12 @@ class PrintCompositor;
 }
 }  // namespace printing
 
+namespace content {
 template <>
 inline sandbox::policy::SandboxType
-content::GetServiceSandboxType<printing::mojom::PrintCompositor>() {
+GetServiceSandboxType<printing::mojom::PrintCompositor>() {
   return sandbox::policy::SandboxType::kPrintCompositor;
 }
+}  // namespace content
 
 #endif  // COMPONENTS_PRINTING_BROWSER_SERVICE_SANDBOX_TYPE_H_

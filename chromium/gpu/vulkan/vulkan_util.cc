@@ -76,10 +76,9 @@ VkSemaphore CreateExternalVkSemaphore(
       },
       base::Time::Now()));
 
-  VkExportSemaphoreCreateInfo export_info = {
-      .sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO,
-      .handleTypes = handle_types,
-  };
+  VkExportSemaphoreCreateInfo export_info;
+  export_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+  export_info.handleTypes = handle_types;
 
   VkSemaphoreCreateInfo sem_info = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,

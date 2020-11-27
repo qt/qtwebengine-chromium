@@ -317,10 +317,12 @@ class JobHandleImpl : public v8::JobHandle {
 
 }  // namespace gin
 
+namespace base {
+namespace trace_event {
 // Allow std::unique_ptr<v8::ConvertableToTraceFormat> to be a valid
 // initialization value for trace macros.
 template <>
-struct base::trace_event::TraceValue::Helper<
+struct TraceValue::Helper<
     std::unique_ptr<v8::ConvertableToTraceFormat>> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_CONVERTABLE;
   static inline void SetValue(
@@ -333,6 +335,7 @@ struct base::trace_event::TraceValue::Helper<
   }
 };
 
+}}  // namespace
 namespace gin {
 
 class V8Platform::TracingControllerImpl : public v8::TracingController {

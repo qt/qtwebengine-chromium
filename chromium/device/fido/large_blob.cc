@@ -264,7 +264,7 @@ base::Optional<std::vector<LargeBlobData>> LargeBlobArrayReader::Materialize() {
     large_blob_array.emplace_back(std::move(*large_blob_data));
   }
 
-  return large_blob_array;
+  return std::move(large_blob_array);
 }
 
 LargeBlobArrayWriter::LargeBlobArrayWriter(

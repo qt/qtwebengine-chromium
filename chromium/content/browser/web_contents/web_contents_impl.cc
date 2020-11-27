@@ -4015,14 +4015,14 @@ base::Optional<CreatedWindow> WebContentsImpl::GetCreatedWindow(
 
   // Don't initialize the guest WebContents immediately.
   if (BrowserPluginGuest::IsGuest(new_contents))
-    return result;
+    return std::move(result);
 
   if (!new_contents->GetMainFrame()->GetProcess()->IsInitializedAndNotDead() ||
       !new_contents->GetMainFrame()->GetView()) {
     return base::nullopt;
   }
 
-  return result;
+  return std::move(result);
 }
 
 RenderWidgetHostView* WebContentsImpl::GetCreatedWidget(int process_id,

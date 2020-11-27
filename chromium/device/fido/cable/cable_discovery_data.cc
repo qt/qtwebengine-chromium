@@ -115,7 +115,7 @@ base::Optional<std::unique_ptr<Pairing>> Pairing::Parse(
     return base::nullopt;
   }
 
-  return pairing;
+  return std::move(pairing);
 }
 
 }  // namespace cablev2

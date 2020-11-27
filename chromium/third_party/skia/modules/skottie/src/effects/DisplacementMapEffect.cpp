@@ -376,7 +376,9 @@ private:
 
 sk_sp<sksg::RenderNode> EffectBuilder::attachDisplacementMapEffect(
         const skjson::ArrayValue& jprops, sk_sp<sksg::RenderNode> layer) const {
-    auto [ displ, displ_size ] = DisplacementMapAdapter::GetDisplacementSource(jprops, this);
+    auto t = DisplacementMapAdapter::GetDisplacementSource(jprops, this);
+    auto displ_size = std::get<1>(t);
+    auto displ = std::get<0>(std::move(t));
 
     auto displ_node = DisplacementNode::Make(layer, fLayerSize, std::move(displ), displ_size);
 
