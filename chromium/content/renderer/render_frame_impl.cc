@@ -4510,6 +4510,11 @@ void RenderFrameImpl::RunScriptsAtDocumentReady(bool document_is_empty) {
     return;
 
   WebURL unreachable_url = frame_->GetDocument().Url();
+
+  // Allow the embedder to suppress an error page.
+  if (GetContentClient()->renderer()->ShouldSuppressErrorPage(this, unreachable_url))
+    return;
+
   std::string error_html;
   GetContentClient()->renderer()->PrepareErrorPageForHttpStatusError(
       this, unreachable_url, document_loader->HttpMethod().Ascii(),
