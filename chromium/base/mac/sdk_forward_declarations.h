@@ -9,7 +9,7 @@
 #define BASE_MAC_SDK_FORWARD_DECLARATIONS_H_
 
 #include <AvailabilityMacros.h>
-#include <AvailabilityVersions.h>
+#include "base/mac/AvailabilityVersions.h"
 #include <os/availability.h>
 
 // NOTE: If an #import is needed only for a newer SDK, it might be found below.
