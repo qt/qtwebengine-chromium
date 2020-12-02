@@ -77,6 +77,12 @@ void SetupCompileFlags(const Target* target,
       FrameworksWriter(ESCAPE_COMMAND, true, "-framework "), frameworks_out);
   base::EscapeJSONString(frameworks_out.str(), false, &flags.frameworks);
 
+  std::ostringstream weak_frameworks_out;
+  RecursiveTargetConfigToStream<std::string>(
+      target, &ConfigValues::weak_frameworks,
+      FrameworksWriter(ESCAPE_COMMAND, true, "-weak_framework "), weak_frameworks_out);
+  base::EscapeJSONString(weak_frameworks_out.str(), false, &flags.frameworks);
+
   std::ostringstream includes_out;
   RecursiveTargetConfigToStream<SourceDir>(target, &ConfigValues::include_dirs,
                                            IncludeWriter(path_output),

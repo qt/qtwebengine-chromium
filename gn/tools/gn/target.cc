@@ -369,6 +369,8 @@ bool Target::OnResolved(Err* err) {
     all_framework_dirs_.append(cur.framework_dirs().begin(),
                                cur.framework_dirs().end());
     all_frameworks_.append(cur.frameworks().begin(), cur.frameworks().end());
+    all_weak_frameworks_.append(cur.weak_frameworks().begin(),
+                                cur.weak_frameworks().end());
   }
 
   PullRecursiveBundleData();
@@ -580,6 +582,7 @@ void Target::PullDependentTargetLibsFrom(const Target* dep, bool is_public) {
 
     all_framework_dirs_.append(dep->all_framework_dirs());
     all_frameworks_.append(dep->all_frameworks());
+    all_weak_frameworks_.append(dep->all_weak_frameworks());
   }
 }
 
