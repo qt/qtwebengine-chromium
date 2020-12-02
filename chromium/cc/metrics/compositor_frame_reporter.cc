@@ -175,7 +175,7 @@ constexpr const char* GetStageName(int stage_type_index,
         kBlinkBreakdownInitialIndex:
       return "SendBeginMainFrameToCommit.BeginMainSentToStarted";
     default:
-      NOTREACHED();
+//      NOTREACHED();
       return "";
   }
 }

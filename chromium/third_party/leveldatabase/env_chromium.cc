@@ -64,7 +64,7 @@ const constexpr size_t kFileLimitToDisableEviction = 10'000;
 
 // The maximum time for the |Retrier| to indicate that an operation should
 // be retried.
-constexpr auto kMaxRetryDuration = base::TimeDelta::FromMilliseconds(1000);
+const auto kMaxRetryDuration = base::TimeDelta::FromMilliseconds(1000);
 
 const FilePath::CharType table_extension[] = FILE_PATH_LITERAL(".ldb");
 

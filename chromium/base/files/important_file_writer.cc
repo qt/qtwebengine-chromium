@@ -40,7 +40,7 @@ namespace base {
 
 namespace {
 
-constexpr auto kDefaultCommitInterval = TimeDelta::FromSeconds(10);
+const auto kDefaultCommitInterval = TimeDelta::FromSeconds(10);
 
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
@@ -115,7 +115,7 @@ void DeleteTmpFileWithRetry(File tmp_file,
   // Retry every 250ms for up to two seconds. These values were pulled out of
   // thin air, and may be adjusted in the future based on the metrics collected.
   static constexpr int kMaxDeleteAttempts = 8;
-  static constexpr TimeDelta kDeleteFileRetryDelay =
+  static const TimeDelta kDeleteFileRetryDelay =
       TimeDelta::FromMilliseconds(250);
 
   if (!DeleteFile(tmp_file_path)) {

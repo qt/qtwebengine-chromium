@@ -97,7 +97,7 @@ bool WebAppShortcutIconsHandler::Parse(Extension* extension,
 
 base::span<const char* const> WebAppShortcutIconsHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kWebAppShortcutIcons};
-  return kKeys;
+  return base::span<const char* const>(kKeys);
 }
 
 }  // namespace extensions

@@ -21,8 +21,9 @@ class _OutputContext(object):
   the name is expected to be long lived or can be temporary.
   """
 
-  def __init__(self, value):
+  def __init__(self, value, depth):
     self.value = value
+    self.depth = depth
 
   @abstractmethod
   def AddSingleValue(self, trace_type, parameter_value):
@@ -92,8 +93,8 @@ class _ArrayItem(_OutputContext):
       |base::trace_event::TracedValue*| this object represents.
   """
 
-  def __init__(self, value):
-    super(_ArrayItem, self).__init__(value)
+  def __init__(self, value, depth):
+    super(_ArrayItem, self).__init__(value, depth)
 
   def AddSingleValue(self, trace_type, parameter_value):
     """Return a line of C++ code that will append a single value to
@@ -144,8 +145,8 @@ class _DictionaryItemWithLiteralKey(_OutputContext):
       traced. Used inside double-quotes in method calls.
   """
 
-  def __init__(self, name, value):
-    super(_DictionaryItemWithLiteralKey, self).__init__(value)
+  def __init__(self, name, value, depth):
+    super(_DictionaryItemWithLiteralKey, self).__init__(value, depth)
     self.name = name
 
   def AddSingleValue(self, trace_type, parameter_value):
@@ -191,8 +192,8 @@ class _DictionaryItemWithCopiedKey(_OutputContext):
       traced. Used directly (not in double quotes) in method calls.
   """
 
-  def __init__(self, name, value):
-    super(_DictionaryItemWithCopiedKey, self).__init__(value)
+  def __init__(self, name, value, depth):
+    super(_DictionaryItemWithCopiedKey, self).__init__(value, depth)
     self.name = name
 
   def AddSingleValue(self, trace_type, parameter_value):
@@ -313,12 +314,12 @@ def _WriteInputParamForTracingImpl(generator, kind, cpp_parameter_name,
     return
 
   if mojom.IsArrayKind(kind):
-    iterator_name = 'item'
+    iterator_name = 'item' + str(output_context.depth)
     loop_body = _WriteInputParamForTracingImpl(generator=generator,
                                                kind=kind.kind,
                                                cpp_parameter_name=iterator_name,
                                                output_context=_ArrayItem(
-                                                   output_context.value))
+                                                   output_context.value, output_context.depth + 1))
     loop_generator = lambda cpp_parameter_name: output_context.TraceContainer(
         container_type='Array',
         iterator_name=iterator_name,
@@ -334,7 +335,7 @@ def _WriteInputParamForTracingImpl(generator, kind, cpp_parameter_name,
         cpp_parameter_name, generator._GetCppWrapperParamType(kind))
 
   if mojom.IsMapKind(kind):
-    iterator_name = 'item'
+    iterator_name = 'item' + str(output_context.depth)
     if generator.for_blink:
       # WTF::HashMap<,>
       key_access = '.key'
@@ -351,7 +352,8 @@ def _WriteInputParamForTracingImpl(generator, kind, cpp_parameter_name,
             value=output_context.value,
             name=_TraceEventToString(cpp_parameter_name=iterator_name +
                                      key_access,
-                                     kind=kind.key_kind)))
+                                     kind=kind.key_kind),
+            depth=output_context.depth + 1))
     loop_generator = lambda cpp_parameter_name: output_context.TraceContainer(
         container_type="Dictionary",
         iterator_name=iterator_name,
@@ -404,5 +406,6 @@ def WriteInputParamForTracing(generator, kind, parameter_name,
       kind=kind,
       cpp_parameter_name=cpp_parameter_name,
       output_context=_DictionaryItemWithLiteralKey(name=parameter_name,
-                                                   value=value)):
+                                                   value=value,
+                                                   depth=0)):
     yield line

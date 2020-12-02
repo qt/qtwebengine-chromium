@@ -189,7 +189,7 @@ bool WebAppLinkedShortcutItemsHandler::Parse(Extension* extension,
 
 base::span<const char* const> WebAppLinkedShortcutItemsHandler::Keys() const {
   static constexpr const char* kKeys[] = {keys::kWebAppLinkedShortcutItems};
-  return kKeys;
+  return base::span<const char* const>(kKeys);
 }
 
 }  // namespace extensions

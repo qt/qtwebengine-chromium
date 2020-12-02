@@ -173,7 +173,9 @@ void LogRoughness(
   static constexpr char kRoughnessHistogramName[] = "Media.Video.Roughness";
   const char* suffix = nullptr;
   static std::tuple<double, const char*> fps_buckets[] = {
-      {24, "24fps"}, {25, "25fps"}, {30, "30fps"}, {50, "50fps"}, {60, "60fps"},
+      std::make_tuple(24., "24fps"), std::make_tuple(25., "25fps"),
+      std::make_tuple(30., "30fps"), std::make_tuple(50., "50fps"),
+      std::make_tuple(60., "60fps"),
   };
   for (auto& bucket : fps_buckets) {
     if (fps == std::get<0>(bucket)) {

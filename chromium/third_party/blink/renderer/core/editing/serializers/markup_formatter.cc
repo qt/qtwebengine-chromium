@@ -106,7 +106,7 @@ void MarkupFormatter::AppendCharactersReplacingEntities(
   DEFINE_STATIC_LOCAL(const std::string, line_feed_reference, ("&#10;"));
   DEFINE_STATIC_LOCAL(const std::string, carriage_return_reference, ("&#13;"));
 
-  static const EntityDescription kEntityMaps[] = {
+  const EntityDescription kEntityMaps[] = {
       {'&', amp_reference, kEntityAmp},
       {'<', lt_reference, kEntityLt},
       {'>', gt_reference, kEntityGt},

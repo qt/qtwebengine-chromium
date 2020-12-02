@@ -38,7 +38,7 @@ constexpr base::FeatureParam<bool> kHangWatchUIThread{
 constexpr base::FeatureParam<bool> kHangWatchThreadPool{
     &kEnableHangWatcher, "hang_watch_threadpool", false};
 
-constexpr base::TimeDelta HangWatchScopeEnabled::kDefaultHangWatchTime =
+const base::TimeDelta HangWatchScopeEnabled::kDefaultHangWatchTime =
     base::TimeDelta::FromSeconds(10);
 
 namespace {
@@ -270,7 +270,7 @@ void HangWatcher::Wait() {
   while (true) {
     // Amount by which the actual time spent sleeping can deviate from
     // the target time and still be considered timely.
-    constexpr base::TimeDelta kWaitDriftTolerance =
+    const base::TimeDelta kWaitDriftTolerance =
         base::TimeDelta::FromMilliseconds(100);
 
     const base::TimeTicks time_before_wait = tick_clock_->NowTicks();

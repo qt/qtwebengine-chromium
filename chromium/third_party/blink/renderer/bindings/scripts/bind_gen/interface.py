@@ -6430,7 +6430,7 @@ def _make_v8_context_snapshot_get_reference_table_function(
                               return_type="base::span<const intptr_t>")
     func_def.set_base_template_vars(cg_context.template_bindings())
     body = func_def.body
-    body.extend([table_node, TextNode("return kReferenceTable;")])
+    body.extend([table_node, TextNode("return base::span<const intptr_t>(kReferenceTable);")])
 
     return func_decl, func_def
 

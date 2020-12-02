@@ -58,6 +58,12 @@ class WebGraphicsContext3DProviderWrapper;
 //   2) use Canvas() to get a drawing interface
 //   3) Call Snapshot() to acquire a bitmap with the rendered image in it.
 
+#if defined(__cpp_enumerator_attributes) && __cpp_enumerator_attributes >= 201411
+#define ENUM_DEPECATED [[deprecated]]
+#else
+#define ENUM_DEPECATED
+#endif
+
 class PLATFORM_EXPORT CanvasResourceProvider
     : public WebGraphicsContext3DProviderWrapper::DestructionObserver,
       public base::CheckedObserver,
@@ -66,13 +72,13 @@ class PLATFORM_EXPORT CanvasResourceProvider
   // These values are persisted to logs. Entries should not be renumbered and
   // numeric values should never be reused.
   enum ResourceProviderType {
-    kTexture [[deprecated]] = 0,
+    kTexture ENUM_DEPECATED = 0,
     kBitmap = 1,
     kSharedBitmap = 2,
-    kTextureGpuMemoryBuffer [[deprecated]] = 3,
-    kBitmapGpuMemoryBuffer [[deprecated]] = 4,
+    kTextureGpuMemoryBuffer ENUM_DEPECATED = 3,
+    kBitmapGpuMemoryBuffer ENUM_DEPECATED = 4,
     kSharedImage = 5,
-    kDirectGpuMemoryBuffer [[deprecated]] = 6,
+    kDirectGpuMemoryBuffer ENUM_DEPECATED = 6,
     kPassThrough = 7,
     kSwapChain = 8,
     kSkiaDawnSharedImage = 9,

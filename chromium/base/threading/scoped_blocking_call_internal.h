@@ -88,9 +88,9 @@ class BASE_EXPORT IOJankMonitoringWindow
     scoped_refptr<IOJankMonitoringWindow> assigned_jank_window_;
   };
 
-  static constexpr TimeDelta kIOJankInterval = TimeDelta::FromSeconds(1);
-  static constexpr TimeDelta kMonitoringWindow = TimeDelta::FromMinutes(1);
-  static constexpr TimeDelta kTimeDiscrepancyTimeout = kIOJankInterval * 10;
+  static constexpr TimeDelta kIOJankInterval = TimeDelta::FromMicroseconds(1000 * 1000 * 1000); //TimeDelta::FromSeconds(1);
+  static constexpr TimeDelta kMonitoringWindow = TimeDelta::FromMicroseconds(60 * 1000 * 1000 * 1000LL); //TimeDelta::FromMinutes(1);
+  static constexpr TimeDelta kTimeDiscrepancyTimeout = TimeDelta::FromMicroseconds(10 * 1000 * 1000 * 1000LL);
   static constexpr int kNumIntervals = kMonitoringWindow / kIOJankInterval;
 
  private:
@@ -140,7 +140,7 @@ class BASE_EXPORT IOJankMonitoringWindow
       EXCLUSIVE_LOCKS_REQUIRED(current_jank_window_lock());
 
   Lock intervals_lock_;
-  size_t intervals_jank_count_[kNumIntervals] GUARDED_BY(intervals_lock_) = {};
+  size_t intervals_jank_count_[60] GUARDED_BY(intervals_lock_);
 
   const TimeTicks start_time_;
 

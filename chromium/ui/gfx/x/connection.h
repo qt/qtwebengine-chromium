@@ -15,6 +15,17 @@
 #include "ui/gfx/x/extension_manager.h"
 #include "ui/gfx/x/xproto.h"
 
+namespace std {
+template <>
+struct hash<x11::VisualId> {
+    using argument_type = x11::VisualId;
+    using result_type = size_t;
+    size_t operator()(x11::VisualId s) const noexcept {
+        return static_cast<int>(s);
+    }
+};
+}
+
 namespace x11 {
 
 // Represents a socket to the X11 server.

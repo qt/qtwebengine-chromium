@@ -120,7 +120,7 @@ base::span<const char* const> ExtensionActionHandler::Keys() const {
       manifest_keys::kPageAction,
       manifest_keys::kBrowserAction,
   };
-  return kKeys;
+  return base::span<const char* const>(kKeys);
 }
 
 }  // namespace extensions

@@ -26,13 +26,13 @@ namespace net {
 // conclusions about it.
 class NET_EXPORT_PRIVATE DnsUdpTracker {
  public:
-  static constexpr base::TimeDelta kMaxAge = base::TimeDelta::FromMinutes(10);
+  static constexpr base::TimeDelta kMaxAge = base::TimeDelta::FromMicroseconds(10 * 60 * 1000 * 1000 * 1000LL);
   static constexpr size_t kMaxRecordedQueries = 256;
 
   // How recently an ID needs to be recorded in a recent query to be considered
   // "recognized".
   static constexpr base::TimeDelta kMaxRecognizedIdAge =
-      base::TimeDelta::FromSeconds(15);
+      base::TimeDelta::FromMicroseconds(15 * 1000 * 1000);
 
   // Numbers of ID mismatches required to set the |low_entropy_| flag. Also
   // serves as the max number of mismatches to be recorded, as no more entries

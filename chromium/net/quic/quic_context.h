@@ -29,23 +29,23 @@ inline NET_EXPORT_PRIVATE quic::ParsedQuicVersionVector ObsoleteQuicVersions() {
 
 // When a connection is idle for 30 seconds it will be closed.
 constexpr base::TimeDelta kIdleConnectionTimeout =
-    base::TimeDelta::FromSeconds(30);
+    base::TimeDelta::FromMicroseconds(30 * 1000 * 1000);
 
 // Sessions can migrate if they have been idle for less than this period.
 constexpr base::TimeDelta kDefaultIdleSessionMigrationPeriod =
-    base::TimeDelta::FromSeconds(30);
+    base::TimeDelta::FromMicroseconds(30 * 1000 * 1000);
 
 // The default maximum time allowed to have no retransmittable packets on the
 // wire (after sending the first retransmittable packet) if
 // |migrate_session_early_v2_| is true. PING frames will be sent as needed to
 // enforce this.
 constexpr base::TimeDelta kDefaultRetransmittableOnWireTimeout =
-    base::TimeDelta::FromMilliseconds(200);
+    base::TimeDelta::FromMicroseconds(200 * 1000);
 
 // The default maximum time QUIC session could be on non-default network before
 // migrate back to default network.
 constexpr base::TimeDelta kMaxTimeOnNonDefaultNetwork =
-    base::TimeDelta::FromSeconds(128);
+    base::TimeDelta::FromMicroseconds(128 * 1000 * 1000);
 
 // The default maximum number of migrations to non default network on write
 // error per network.

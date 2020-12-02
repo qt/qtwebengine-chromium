@@ -7,6 +7,7 @@
 #include "fxjs/cjs_runtime.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fxjs/cfx_globaldata.h"
@@ -38,6 +39,10 @@
 #include "fxjs/cjs_zoomtype.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/js_define.h"
+
+#ifdef isnan
+#undef isnan
+#endif
 
 CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
     : m_pFormFillEnv(pFormFillEnv) {

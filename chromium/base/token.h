@@ -31,9 +31,9 @@ class BASE_EXPORT Token {
   constexpr Token(uint64_t high, uint64_t low) : high_(high), low_(low) {}
 
   constexpr Token(const Token&) = default;
-  constexpr Token& operator=(const Token&) = default;
+  Token& operator=(const Token&) = default;
   constexpr Token(Token&&) noexcept = default;
-  constexpr Token& operator=(Token&&) = default;
+  Token& operator=(Token&&) = default;
 
   // Constructs a new Token with random |high| and |low| values taken from a
   // cryptographically strong random source.
@@ -54,7 +54,7 @@ class BASE_EXPORT Token {
   }
 
   constexpr bool operator<(const Token& other) const {
-    return std::tie(high_, low_) < std::tie(other.high_, other.low_);
+    return high_ < other.high_ || (high_ == other.high_ && low_ < other.low_);
   }
 
   // Generates a string representation of this Token useful for e.g. logging.

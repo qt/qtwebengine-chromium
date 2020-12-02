@@ -24,11 +24,11 @@ namespace {
 constexpr int64_t kMaxArcSize = 270;
 
 // The amount of time it takes to grow the "spinning" arc from 0 to 270 degrees.
-constexpr auto kArcTime = base::TimeDelta::FromSecondsD(2.0 / 3.0);
+const auto kArcTime = base::TimeDelta::FromSecondsD(2.0 / 3.0);
 
 // The amount of time it takes for the "spinning" throbber to make a full
 // rotation.
-constexpr auto kRotationTime = base::TimeDelta::FromMilliseconds(1568);
+const auto kRotationTime = base::TimeDelta::FromMilliseconds(1568);
 
 void PaintArc(Canvas* canvas,
               const Rect& bounds,

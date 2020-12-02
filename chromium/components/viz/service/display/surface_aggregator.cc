@@ -2110,8 +2110,8 @@ void SurfaceAggregator::CreateDeJellyRenderPassQuads(
   // Next, if this is a RenderPass quad, find any filters and expand the
   // visible rect.
   if (quad->material == DrawQuad::Material::kCompositorRenderPass) {
-    auto target_id = AggregatedRenderPassId(uint64_t{
-        CompositorRenderPassDrawQuad::MaterialCast(quad)->render_pass_id});
+    auto target_id = AggregatedRenderPassId(uint64_t(
+        CompositorRenderPassDrawQuad::MaterialCast(quad)->render_pass_id));
     for (auto& rp : *dest_pass_list_) {
       if (rp->id == target_id) {
         render_pass_visible_rect_f = gfx::RectF(

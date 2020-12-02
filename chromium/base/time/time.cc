@@ -88,7 +88,7 @@ constexpr Optional<ParsedDecimal> ConsumeDurationNumber(
     const int d = number_string.front() - '0';
     if (d < 0 || d >= 10)
       break;
-    DCHECK_LT(res.frac_part, res.frac_scale);
+//    DCHECK_LT(res.frac_part, res.frac_scale);
     if (res.frac_scale <= std::numeric_limits<int64_t>::max() / 10) {
       // |frac_part| will not overflow because it is always < |frac_scale|.
       res.frac_part *= 10;

@@ -56,7 +56,7 @@ class COMPONENT_EXPORT(MOJO_CPP_BINDINGS) MessageQuotaChecker
 
     // The length of a sampling interval in seconds.
     static constexpr base::TimeDelta kSamplingInterval =
-        base::TimeDelta::FromSeconds(5);
+        base::TimeDelta::FromMicroseconds(5 * 1000 * 1000);
 
     // Returns the start of the sampling interval after the interval that
     // |when| falls into.

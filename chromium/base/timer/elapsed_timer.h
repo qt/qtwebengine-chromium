@@ -56,7 +56,7 @@ class BASE_EXPORT ElapsedThreadTimer {
 class BASE_EXPORT ScopedMockElapsedTimersForTest {
  public:
   static constexpr TimeDelta kMockElapsedTime =
-      TimeDelta::FromMilliseconds(1337);
+      TimeDelta::FromMicroseconds(1337 * 1000);
 
   // ScopedMockElapsedTimersForTest is not thread-safe (it must be instantiated
   // in a test before other threads begin using ElapsedTimers; and it must

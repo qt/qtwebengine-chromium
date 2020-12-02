@@ -2590,13 +2590,13 @@ class ComputedStyle : public ComputedStyleBase,
   void LoadDeferredImages(Document&) const;
 
   enum ColorScheme ComputedColorScheme() const {
-    return DarkColorScheme() ? ColorScheme::kDark : ColorScheme::kLight;
+    return DarkColorScheme() ? blink::ColorScheme::kDark : blink::ColorScheme::kLight;
   }
 
   enum ColorScheme UsedColorScheme() const {
     return RuntimeEnabledFeatures::CSSColorSchemeUARenderingEnabled()
                ? ComputedColorScheme()
-               : ColorScheme::kLight;
+               : blink::ColorScheme::kLight;
   }
 
   enum ColorScheme UsedColorSchemeForInitialColors() const {

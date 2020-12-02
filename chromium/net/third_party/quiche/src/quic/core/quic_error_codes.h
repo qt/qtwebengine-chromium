@@ -636,4 +636,15 @@ QUIC_EXPORT_PRIVATE void RecordFailToSerializePacketLocation(
 
 }  // namespace quic
 
+namespace std {
+template <>
+struct hash<quic::QuicErrorCode> {
+    using argument_type = quic::QuicErrorCode;
+    using result_type = size_t;
+    size_t operator()(quic::QuicErrorCode s) const noexcept {
+        return static_cast<int>(s);
+    }
+};
+}
+
 #endif  // QUICHE_QUIC_CORE_QUIC_ERROR_CODES_H_

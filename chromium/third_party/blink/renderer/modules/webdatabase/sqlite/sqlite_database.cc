@@ -57,7 +57,7 @@ std::tuple<int, sqlite3*> OpenDatabase(const String& filename) {
       connection = nullptr;
     }
   }
-  return {status, connection};
+  return std::make_tuple(status, connection);
 }
 
 }  // namespace

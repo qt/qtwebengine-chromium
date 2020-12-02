@@ -285,7 +285,7 @@ bool operator!=(const Ptr& lhs, const Ptr& rhs) {
 template <typename Ptr, std::enable_if_t<IsStructPtrV<Ptr>>* = nullptr>
 bool operator<(const Ptr& lhs, const Ptr& rhs) {
   if (!lhs || !rhs)
-    return bool{lhs} < bool{rhs};
+    return !!lhs < !!rhs;
   return *lhs < *rhs;
 }
 

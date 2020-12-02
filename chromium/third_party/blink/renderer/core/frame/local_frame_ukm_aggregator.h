@@ -179,7 +179,7 @@ class CORE_EXPORT LocalFrameUkmAggregator
         {"UpdateLayers", false},
         {"WaitForCommit", true}};
     static_assert(base::size(data) == kCount, "Metrics data mismatch");
-    return data;
+    return base::span<const MetricInitializationData>(data);
   }
 
   // Modify this array if the UMA ratio metrics should be bucketed in a
@@ -188,7 +188,7 @@ class CORE_EXPORT LocalFrameUkmAggregator
     static const base::TimeDelta thresholds[] = {
         base::TimeDelta::FromMilliseconds(1),
         base::TimeDelta::FromMilliseconds(5)};
-    return thresholds;
+    return base::span<const base::TimeDelta>(thresholds);
   }
 
  public:

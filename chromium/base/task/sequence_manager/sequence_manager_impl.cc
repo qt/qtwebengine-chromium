@@ -90,7 +90,7 @@ using TimeRecordingPolicy =
 
 namespace {
 
-constexpr TimeDelta kLongTaskTraceEventThreshold =
+const TimeDelta kLongTaskTraceEventThreshold =
     TimeDelta::FromMilliseconds(50);
 // Proportion of tasks which will record thread time for metrics.
 const double kTaskSamplingRateForRecordingCPUTime = 0.01;
@@ -1218,7 +1218,8 @@ internal::TaskQueueImpl* SequenceManagerImpl::currently_executing_task_queue()
   return main_thread_only().task_execution_stack.rbegin()->task_queue;
 }
 
-constexpr TimeDelta SequenceManagerImpl::kReclaimMemoryInterval;
+const TimeDelta SequenceManagerImpl::kReclaimMemoryInterval =
+    TimeDelta::FromSeconds(30);
 
 }  // namespace internal
 }  // namespace sequence_manager

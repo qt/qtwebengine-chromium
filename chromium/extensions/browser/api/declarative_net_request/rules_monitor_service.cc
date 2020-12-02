@@ -498,12 +498,12 @@ void RulesMonitorService::OnNewStaticRulesetsLoaded(
 
   size_t static_rules_count = 0;
   size_t static_regex_rules_count = 0;
-  CompositeMatcher* matcher =
+  CompositeMatcher* cmatcher =
       ruleset_manager_.GetMatcherForExtension(load_data.extension_id);
-  if (matcher) {
+  if (cmatcher) {
     // Iterate over the existing matchers to compute |static_rules_count| and
     // |static_regex_rules_count|.
-    for (const std::unique_ptr<RulesetMatcher>& matcher : matcher->matchers()) {
+    for (const std::unique_ptr<RulesetMatcher>& matcher : cmatcher->matchers()) {
       // Exclude since we are only including static rulesets.
       if (matcher->id() == kDynamicRulesetID)
         continue;
@@ -553,7 +553,7 @@ void RulesMonitorService::OnNewStaticRulesetsLoaded(
     return;
   }
 
-  if (!matcher) {
+  if (!cmatcher) {
     // The extension didn't have any existing rulesets. Hence just add a new
     // CompositeMatcher with |new_matchers|.
     AddCompositeMatcher(
@@ -565,11 +565,11 @@ void RulesMonitorService::OnNewStaticRulesetsLoaded(
 
   bool had_extra_headers_matcher = ruleset_manager_.HasAnyExtraHeadersMatcher();
 
-  matcher->RemoveRulesetsWithIDs(ids_to_disable);
-  matcher->AddOrUpdateRulesets(std::move(new_matchers));
+  cmatcher->RemoveRulesetsWithIDs(ids_to_disable);
+  cmatcher->AddOrUpdateRulesets(std::move(new_matchers));
 
   prefs_->SetDNREnabledStaticRulesets(load_data.extension_id,
-                                      matcher->ComputeStaticRulesetIDs());
+                                      cmatcher->ComputeStaticRulesetIDs());
 
   AdjustExtraHeaderListenerCountIfNeeded(had_extra_headers_matcher);
 

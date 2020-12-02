@@ -23,7 +23,7 @@ class Value;
 namespace net {
 
 // Default to 1 second timeout (before exponential backoff).
-constexpr base::TimeDelta kDnsDefaultTimeout = base::TimeDelta::FromSeconds(1);
+constexpr base::TimeDelta kDnsDefaultTimeout = base::TimeDelta::FromMicroseconds(1000 * 1000);
 
 // DnsConfig stores configuration of the system resolver.
 struct NET_EXPORT DnsConfig {

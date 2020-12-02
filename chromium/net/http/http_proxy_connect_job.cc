@@ -50,7 +50,7 @@ namespace {
 constexpr base::TimeDelta kHttpProxyConnectJobTunnelTimeout =
     base::TimeDelta::FromSeconds(10);
 #else
-constexpr base::TimeDelta kHttpProxyConnectJobTunnelTimeout =
+const base::TimeDelta kHttpProxyConnectJobTunnelTimeout =
     base::TimeDelta::FromSeconds(30);
 #endif
 

@@ -141,13 +141,13 @@ media::mojom::CdmService& GetCdmService(const base::Token& guid,
   std::string display_name = cdm_info.name;
 
   if (base::FeatureList::IsEnabled(media::kCdmProcessSiteIsolation)) {
-    key = {guid, browser_context, site};
+    key = std::make_tuple(guid, browser_context, site);
     auto site_display_name =
         GetContentClient()->browser()->GetSiteDisplayNameForCdmProcess(
             browser_context, site);
     display_name += " (" + site_display_name + ")";
   } else {
-    key = {guid, nullptr, GURL()};
+    key = std::make_tuple(guid, nullptr, GURL());
   }
   DVLOG(2) << __func__ << ": key=" << key;
 

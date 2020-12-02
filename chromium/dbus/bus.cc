@@ -634,7 +634,7 @@ DBusMessage* Bus::SendWithReplyAndBlock(DBusMessage* request,
   DBusMessage* reply = dbus_connection_send_with_reply_and_block(
       connection_, request, timeout_ms, error);
 
-  constexpr base::TimeDelta kLongCall = base::TimeDelta::FromSeconds(1);
+  const base::TimeDelta kLongCall = base::TimeDelta::FromSeconds(1);
   LOG_IF(WARNING, elapsed.Elapsed() >= kLongCall)
       << "Bus::SendWithReplyAndBlock took "
       << elapsed.Elapsed().InMilliseconds() << "ms to process message: "

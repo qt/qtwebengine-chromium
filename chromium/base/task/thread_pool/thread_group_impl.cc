@@ -73,12 +73,12 @@ constexpr size_t kMaxNumberOfWorkers = 256;
 // Currently, only 1. is true as the configuration is per thread group.
 // TODO(https://crbug.com/927755): Fix racy condition when MayBlockThreshold ==
 // BlockedWorkersPoll.
-constexpr TimeDelta kForegroundMayBlockThreshold =
+const TimeDelta kForegroundMayBlockThreshold =
     TimeDelta::FromMilliseconds(1000);
-constexpr TimeDelta kForegroundBlockedWorkersPoll =
+const TimeDelta kForegroundBlockedWorkersPoll =
     TimeDelta::FromMilliseconds(1200);
-constexpr TimeDelta kBackgroundMayBlockThreshold = TimeDelta::FromSeconds(10);
-constexpr TimeDelta kBackgroundBlockedWorkersPoll = TimeDelta::FromSeconds(12);
+const TimeDelta kBackgroundMayBlockThreshold = TimeDelta::FromSeconds(10);
+const TimeDelta kBackgroundBlockedWorkersPoll = TimeDelta::FromSeconds(12);
 
 // Only used in DCHECKs.
 bool ContainsWorker(const std::vector<scoped_refptr<WorkerThread>>& workers,
