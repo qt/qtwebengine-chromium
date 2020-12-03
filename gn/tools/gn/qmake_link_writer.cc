@@ -242,6 +242,22 @@ void QMakeLinkWriter::Run() {
       EscapeStringToStream(out_, lib_value, lib_escape_opts);
     }
   }
+  const OrderedSet<std::string> all_frameworks = target_->all_frameworks();
+  for (size_t i = 0; i < all_frameworks.size(); i++) {
+    const std::string& lib_value = all_frameworks[i];
+    out_ << " -framework ";
+    EscapeStringToStream(
+        out_, lib_value.substr(0, lib_value.size() - framework_ending.size()),
+        lib_escape_opts);
+  }
+  const OrderedSet<std::string> weak_frameworks = target_->all_weak_frameworks();
+  for (size_t i = 0; i < weak_frameworks.size(); i++) {
+    const std::string& lib_value = weak_frameworks[i];
+    out_ << " -weak_framework ";
+    EscapeStringToStream(
+        out_, lib_value.substr(0, lib_value.size() - framework_ending.size()),
+        lib_escape_opts);
+  }
   out_ << std::endl;
 
   // solibs
