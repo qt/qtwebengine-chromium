@@ -110,7 +110,9 @@ namespace SkOpts {
     void Init_sse42();
     void Init_avx();
     void Init_hsw();
+#if !defined(TOOLKIT_QT)
     void Init_skx();
+#endif
     void Init_crc32();
 
     static void init() {
@@ -129,9 +131,11 @@ namespace SkOpts {
             if (SkCpu::Supports(SkCpu::HSW)) { Init_hsw();   }
         #endif
 
+#if !defined(TOOLKIT_QT)
         #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SKX
             if (SkCpu::Supports(SkCpu::SKX)) { Init_skx(); }
         #endif
+#endif
 
     #elif defined(SK_CPU_ARM64)
         if (SkCpu::Supports(SkCpu::CRC32)) { Init_crc32(); }
