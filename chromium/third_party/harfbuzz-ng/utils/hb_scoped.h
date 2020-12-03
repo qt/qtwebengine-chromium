@@ -7,9 +7,7 @@
 
 // clang-format off
 #include <hb.h>
-#if defined(HAVE_HB_SUBSET_H)
-  #include <hb-subset.h>
-#endif
+#include <hb-subset.h>
 // clang-format on
 
 #include <memory>
@@ -59,8 +57,6 @@ using HbScoped = std::unique_ptr<T, HbSpecializedDeleter<T>>;
 
 HB_TYPE_DESTRUCTOR_PAIRS_REPEAT(SPECIALIZED_DELETER_FOR_HARFBUZZ_TYPE)
 
-#if defined(HAVE_HB_SUBSET_H)
 SPECIALIZED_DELETER_FOR_HARFBUZZ_TYPE(hb_subset_input_t, hb_subset_input_destroy)
-#endif
 
 #endif  // THIRD_PARTY_HARFBUZZ_NG_UTILS_HB_SCOPED_H_

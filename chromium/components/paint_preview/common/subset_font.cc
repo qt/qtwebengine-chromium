@@ -6,11 +6,7 @@
 
 // clang-format off
 #include <hb.h>
-
-#if defined(HAVE_HB_SUBSET_H)
 #include <hb-subset.h>
-#include "third_party/harfbuzz-ng/utils/hb_scoped.h"
-#endif
 // clang-format on
 
 #include <memory>
@@ -18,12 +14,12 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "third_party/harfbuzz-ng/utils/hb_scoped.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 
 namespace paint_preview {
 
-#if defined(HAVE_HB_SUBSET_H)
 namespace {
 
 // Converts and SkStream to an SkData object without copy if possible or
@@ -62,11 +58,9 @@ void AddGlyphs(hb_set_t* glyph_id_set, uint16_t glyph_id) {
 }
 
 }  // namespace
-#endif
 
 // Implementation based on SkPDFSubsetFont() using harfbuzz.
 sk_sp<SkData> SubsetFont(SkTypeface* typeface, const GlyphUsage& usage) {
-#if defined(HAVE_HB_SUBSET_H)
   int ttc_index = 0;
   sk_sp<SkData> data = StreamToData(typeface->openStream(&ttc_index));
   HbScoped<hb_face_t> face(hb_face_create(MakeBlob(data).get(), ttc_index));
@@ -104,9 +98,6 @@ sk_sp<SkData> SubsetFont(SkTypeface* typeface, const GlyphUsage& usage) {
     return nullptr;
   return sk_subset_typeface->serialize(
       SkTypeface::SerializeBehavior::kDoIncludeData);
-#else
-  return nullptr;
-#endif
 }
 
 }  // namespace paint_preview
