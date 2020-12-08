@@ -2354,7 +2354,7 @@ config("symbols") {
       ]
     }
 
-    if (is_apple) {
+    if (is_apple && !use_qt) {
       swiftflags = [ "-g" ]
     }
 
