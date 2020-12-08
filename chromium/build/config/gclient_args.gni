@@ -7,3 +7,4 @@ checkout_ios_webkit = false
 checkout_nacl = false
 checkout_oculus_sdk = false
 checkout_openxr = false
+mac_xcode_version = "default"

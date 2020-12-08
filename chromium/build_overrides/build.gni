@@ -9,11 +9,12 @@ import("//build/config/gclient_args.gni")
 # default_android_ndk_root = "//third_party/android_ndk"
 # default_android_ndk_version = "r10e"
 
-# Some non-Chromium builds don't support building java targets.
-enable_java_templates = true
 
 # Features used by //base/trace_event and //services/tracing.
 declare_args() {
+  # Some non-Chromium builds don't support building java targets.
+  enable_java_templates = true
+
   # Tracing support requires //third_party/perfetto, which is not available in
   # libchrome (CrOS's version of //base). This flag can disable tracing support
   # altogether, in which case all tracing instrumentation in //base becomes a
