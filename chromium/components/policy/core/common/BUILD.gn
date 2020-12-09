@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
 group("common") {
@@ -14,7 +15,7 @@ group("common") {
   }
 }
 
-source_set("internal") {
+jumbo_source_set("internal") {
   visibility = [ "//components/policy/*" ]
 
   configs += [ "//components/policy:component_implementation" ]
@@ -319,7 +320,7 @@ source_set("internal") {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "cloud/mock_cloud_external_data_manager.cc",

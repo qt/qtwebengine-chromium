@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 import("//device/vr/buildflags/buildflags.gni")
@@ -22,7 +23,7 @@ source_set("gfx_export") {
 }
 
 # Used for color generation at build time without importing all the gfx.
-component("color_utils") {
+jumbo_component("color_utils") {
   sources = [
     "color_palette.h",
     "color_utils.cc",
@@ -37,7 +38,7 @@ component("color_utils") {
   ]
 }
 
-component("geometry_skia") {
+jumbo_component("geometry_skia") {
   sources = [
     "geometry_skia_export.h",
     "mask_filter_info.cc",
@@ -66,7 +67,7 @@ component("geometry_skia") {
   defines = [ "GEOMETRY_SKIA_IMPLEMENTATION" ]
 }
 
-component("gfx") {
+jumbo_component("gfx") {
   sources = [
     "break_list.h",
     "color_analysis.cc",
@@ -431,7 +432,7 @@ component("gfx") {
   }
 }
 
-component("color_space") {
+jumbo_component("color_space") {
   sources = [
     "color_space.cc",
     "color_space.h",
@@ -543,7 +544,7 @@ group("memory_buffer") {
 }
 
 # Cannot be a static_library in component builds due to exported functions
-source_set("memory_buffer_sources") {
+jumbo_source_set("memory_buffer_sources") {
   visibility = [ ":*" ]  # Depend on through ":memory_buffer".
 
   # TODO(brettw) refactor this so these sources are in a coherent directory
@@ -632,7 +633,7 @@ source_set("memory_buffer_sources") {
 }
 
 # TODO(ccameron): This can be moved into a separate source_set.
-component("gfx_switches") {
+jumbo_component("gfx_switches") {
   sources = [
     "switches.cc",
     "switches.h",
@@ -644,7 +645,7 @@ component("gfx_switches") {
   deps = [ "//base" ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "animation/animation_test_api.cc",

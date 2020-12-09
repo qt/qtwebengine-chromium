@@ -27,7 +27,7 @@ blink_core_sources("v8") {
   ]
 }
 
-source_set("testing") {
+jumbo_source_set("testing") {
   testonly = true
 
   visibility = []
@@ -59,8 +59,6 @@ group("generated") {
     "//third_party/blink/renderer/core/*",
   ]
 
-  public_deps =
-      [ "//third_party/blink/renderer/bindings:generate_bindings_all" ]
 }
 
 fuzzer_test("v8_serialized_script_value_fuzzer") {
