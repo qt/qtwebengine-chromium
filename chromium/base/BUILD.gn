@@ -26,6 +26,7 @@ import("//build/config/chromecast_build.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/dcheck_always_on.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/logging.gni")
 import("//build/config/nacl/config.gni")
 import("//build/config/profiling/profiling.gni")
@@ -169,7 +170,7 @@ config("perfetto_config") {
 # base compilation units to be linked in where they wouldn't have otherwise.
 # This does not include test code (test support and anything in the test
 # directory) which should use source_set as is recommended for GN targets).
-component("base") {
+jumbo_component("base") {
   sources = [
     "allocator/allocator_check.cc",
     "allocator/allocator_check.h",

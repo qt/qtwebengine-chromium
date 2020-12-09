@@ -4,6 +4,7 @@
 
 import("//build/buildflag_header.gni")
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//testing/test.gni")
 import("//ui/base/ui_features.gni")
 
@@ -36,7 +37,7 @@ component("color_switches") {
   public_deps = [ "//base" ]
 }
 
-component("color") {
+jumbo_component("color") {
   sources = [
     "color_mixer.cc",
     "color_provider.cc",
@@ -124,7 +125,7 @@ if (is_win) {
   }
 }
 
-component("mixers") {
+jumbo_component("mixers") {
   sources = [
     "color_mixers.cc",
     "color_mixers.h",
