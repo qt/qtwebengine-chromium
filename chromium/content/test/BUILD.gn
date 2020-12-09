@@ -8,6 +8,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//build/nocompile.gni")
 import("//content/common/features.gni")
@@ -30,7 +31,7 @@ if (is_android) {
 
 # Use a static library here because many test binaries depend on this but don't
 # require many files from it. This makes linking more efficient.
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
 
   # See comment at the top of //content/BUILD.gn for why this is disabled in
@@ -739,7 +740,7 @@ group("telemetry_gpu_integration_test_support") {
 
 # browsertest_support can be used by targets that run content_shell based
 # browser tests.
-static_library("browsertest_support") {
+jumbo_static_library("browsertest_support") {
   testonly = true
 
   # See comment at the top of //content/BUILD.gn for why this is disabled in

@@ -198,7 +198,8 @@ your own `clang-apply-replacements` binary if you want to use the `-fix` option
 noted below.
 
 Running clang-tidy is (hopefully) simple.
-1.  Build chrome normally.
+1.  Build chrome normally.\* Note that [Jumbo builds](jumbo.md) are not
+    supported.
 ```
 ninja -C out/Release chrome
 ```
@@ -237,6 +238,14 @@ Copy-Paste Friendly (though you'll still need to stub in the variables):
     -fix \
     'chrome/browser/.*'
 ```
+
+\*It's not clear which, if any, `gn` flags outside of `use_jumbo_build` may
+cause issues for `clang-tidy`. I've had no problems building a component release
+build, both with and without goma. if you run into issues, let us know!
+||||||| fa98118a45f
+\*It's not clear which, if any, `gn` flags may cause issues for
+`clang-tidy`. I've had no problems building a component release build,
+both with and without goma. if you run into issues, let us know!
 
 Note that the source file regex must match how the build specified the file.
 This means that on Windows, you must use (escaped) backslashes even from a bash

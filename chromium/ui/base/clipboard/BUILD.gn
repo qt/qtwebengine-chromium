@@ -4,9 +4,10 @@
 
 import("///build/config/ozone.gni")
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 
-component("clipboard_types") {
+jumbo_component("clipboard_types") {
   output_name = "ui_base_clipboard_types"
   sources = [
     "clipboard_buffer.h",
@@ -53,7 +54,7 @@ component("clipboard_types") {
   }
 }
 
-component("clipboard") {
+jumbo_component("clipboard") {
   output_name = "ui_base_clipboard"
 
   sources = [
@@ -182,7 +183,7 @@ component("clipboard") {
 
 }
 
-source_set("clipboard_test_support") {
+jumbo_source_set("clipboard_test_support") {
   testonly = true
 
   if (!is_ios) {

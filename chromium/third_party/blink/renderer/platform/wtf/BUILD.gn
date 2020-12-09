@@ -6,6 +6,7 @@ assert(!is_ios)
 
 import("//build/buildflag_header.gni")
 import("//build/config/compiler/compiler.gni")
+import("//build/config/jumbo.gni")
 import("//testing/test.gni")
 import("//third_party/blink/public/public_features.gni")
 import("//third_party/blink/renderer/config.gni")
@@ -41,7 +42,7 @@ config("wtf_config") {
   }
 }
 
-component("wtf") {
+jumbo_component("wtf") {
   configs += [ "//build/config/compiler:noshadowing" ]
 
   sources = [
@@ -286,7 +287,7 @@ test("wtf_unittests") {
   deps = [ ":wtf_unittests_sources" ]
 }
 
-source_set("wtf_unittests_sources") {
+jumbo_source_set("wtf_unittests_sources") {
   visibility = []  # Allow re-assignment of list.
   visibility = [ "*" ]
   testonly = true
