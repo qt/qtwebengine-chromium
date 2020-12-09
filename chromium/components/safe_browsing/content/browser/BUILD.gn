@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//components/optimization_guide/features.gni")
 import("//components/safe_browsing/buildflags.gni")
 
@@ -70,7 +71,7 @@ if (safe_browsing_mode > 0) {
   }
 }
 
-source_set("browser") {
+jumbo_source_set("browser") {
   sources = [
     "async_check_tracker.cc",
     "async_check_tracker.h",
@@ -234,7 +235,7 @@ source_set("unit_tests") {
   ]
 }
 
-source_set("client_side_detection_images_cache") {
+jumbo_source_set("client_side_detection_images_cache") {
   sources = [
     "client_side_detection_feature_cache.cc",
     "client_side_detection_feature_cache.h",

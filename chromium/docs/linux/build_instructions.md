@@ -373,6 +373,15 @@ Reach out to
 [build@chromium.org](https://groups.google.com/a/chromium.org/g/build)
 if you have any questions about remote execution usage.
 
+#### Jumbo/Unity builds
+
+Jumbo builds merge many translation units ("source files") and compile them
+together. Since a large portion of Chromium's code is in shared header files,
+this dramatically reduces the total amount of work needed. Check out the
+[Jumbo / Unity builds](jumbo.md) for more information.
+
+Enable jumbo builds by setting the GN arg `use_jumbo_build=true`.
+
 #### Include fewer debug symbols
 
 By default GN produces a build with all of the debug assertions enabled

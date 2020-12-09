@@ -6,6 +6,7 @@ import("//build/buildflag_header.gni")
 import("//build/compiled_action.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//components/optimization_guide/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//third_party/protobuf/proto_library.gni")
@@ -123,7 +124,7 @@ proto_library("amount_extraction_heuristic_regexes_proto") {
   sources = [ "payments/amount_extraction_heuristic_regexes.proto" ]
 }
 
-source_set("unique_ids") {
+jumbo_source_set("unique_ids") {
   sources = [ "../common/unique_ids.h" ]
   deps = [
     "//base",
@@ -131,7 +132,7 @@ source_set("unique_ids") {
   ]
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   sources = [
     "autofill_ai_form_rationalization.cc",
     "autofill_ai_form_rationalization.h",
@@ -1217,7 +1218,7 @@ static_library("browser") {
   }
 }
 
-static_library("legal_message_line") {
+jumbo_static_library("legal_message_line") {
   sources = [
     "payments/legal_message_line.cc",
     "payments/legal_message_line.h",
@@ -1231,7 +1232,7 @@ static_library("legal_message_line") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-source_set("payments_sync_utils") {
+jumbo_source_set("payments_sync_utils") {
   sources = [
     "webdata/payments/payments_sync_util.cc",
     "webdata/payments/payments_sync_util.h",
@@ -1256,7 +1257,7 @@ if (is_android) {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "autofill_field_test_api.h",

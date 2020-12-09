@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
+
 group("browser") {
   if (is_component_build) {
     public_deps = [ "//components/policy" ]
@@ -10,7 +12,7 @@ group("browser") {
   }
 }
 
-source_set("internal") {
+jumbo_source_set("internal") {
   visibility = [ "//components/policy/*" ]
   sources = [
     "boolean_disabling_policy_handler.cc",
@@ -121,7 +123,7 @@ source_set("internal") {
   ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "configuration_policy_pref_store_test.cc",

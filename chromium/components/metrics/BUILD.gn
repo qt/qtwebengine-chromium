@@ -4,6 +4,7 @@
 
 import("//build/config/cronet/config.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//testing/test.gni")
 import("//tools/grit/grit_rule.gni")
 
@@ -110,7 +111,7 @@ if (!is_cronet_build || is_ios) {
   # linked into multiple components (such as //content and //chrome), each component would get
   # their own copy of these singletons, causing issues. For that reason make sure they are part of
   # a component that can be linked to by multiple other components.
-  component("metrics_component") {
+  jumbo_component("metrics_component") {
     sources = [
       "android_metrics_helper.cc",
       "android_metrics_helper.h",
@@ -142,7 +143,7 @@ if (!is_cronet_build || is_ios) {
     }
   }
 
-  static_library("metrics") {
+  jumbo_static_library("metrics") {
     sources = [
       "call_stacks/call_stack_profile_metrics_provider.cc",
       "child_histogram_fetcher_impl.cc",
@@ -355,7 +356,7 @@ if (!is_cronet_build || is_ios) {
     }
   }
 
-  static_library("test_support") {
+  jumbo_static_library("test_support") {
     testonly = true
     sources = [
       "test/scoped_metrics_id_provider.cc",

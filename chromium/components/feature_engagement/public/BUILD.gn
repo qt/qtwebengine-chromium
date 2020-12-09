@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
+
 if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
@@ -26,7 +28,7 @@ component("feature_constants") {
   ]
 }
 
-static_library("public") {
+jumbo_static_library("public") {
   sources = [
     "configuration.cc",
     "configuration.h",
@@ -90,7 +92,7 @@ static_library("public") {
   }
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
 
   visibility = [ "//components/feature_engagement:unit_tests" ]

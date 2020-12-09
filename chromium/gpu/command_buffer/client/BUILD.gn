@@ -4,6 +4,7 @@
 
 import("//build/config/ozone.gni")
 import("//skia/features.gni")
+import("//build/config/jumbo.gni")
 import("//ui/gl/features.gni")
 
 declare_args() {
@@ -51,7 +52,7 @@ source_set("export") {
   sources = [ "gpu_command_buffer_client_export.h" ]
 }
 
-source_set("client_sources") {
+jumbo_source_set("client_sources") {
   # External code should depend on this via //gpu/client above rather than
   # depending on this directly or the component build will break.
   visibility = [ ":client" ]
@@ -225,7 +226,7 @@ source_set("webgpu_interface") {
 }
 
 # Library emulates GLES2 using command_buffers.
-component("gles2_implementation") {
+jumbo_component("gles2_implementation") {
   sources = gles2_implementation_source_files
 
   defines = [ "GLES2_IMPL_IMPLEMENTATION" ]
@@ -317,7 +318,7 @@ source_set("webgpu_sources") {
 }
 
 # Library emulates GLES2 using command_buffers.
-component("gles2_implementation_no_check") {
+jumbo_component("gles2_implementation_no_check") {
   sources = gles2_implementation_source_files
 
   defines = [ "GLES2_IMPL_IMPLEMENTATION" ]

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/buildflag_header.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//content/browser/devtools/features.gni")
 import("//content/public/common/features.gni")
@@ -166,7 +167,7 @@ component("main_function_params") {
   configs += [ "//content:content_implementation" ]
 }
 
-source_set("common_sources") {
+jumbo_source_set("common_sources") {
   # External code should depend on via ":common" above.
   visibility = [ "//content/*" ]
 
