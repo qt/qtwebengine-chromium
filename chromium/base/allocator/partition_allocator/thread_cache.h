@@ -177,6 +177,7 @@ class BASE_EXPORT ThreadCache {
   static ThreadCache* Create(PartitionRoot<ThreadSafe>* root);
   static ThreadCache* Create(PartitionRoot<NotThreadSafe>* root) {
     IMMEDIATE_CRASH();
+    return nullptr;
   }
 
   ~ThreadCache();

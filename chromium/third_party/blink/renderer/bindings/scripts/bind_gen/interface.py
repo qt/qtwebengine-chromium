@@ -2480,7 +2480,7 @@ ${class_name}::NamedPropertyDeleterCallback(property_name, ${info});
 // step 1.3. Return false.
 const bool is_supported = ${index} < ${blink_receiver}->length();
 bindings::V8SetReturnValue(${info}, !is_supported);
-if (is_supported and ${info}.ShouldThrowOnError()) {
+if (is_supported && ${info}.ShouldThrowOnError()) {
   ExceptionState exception_state(${info}.GetIsolate(),
                                  ExceptionState::kIndexedDeletionContext,
                                  "${interface.identifier}");

@@ -1820,7 +1820,7 @@ void NetworkContext::LookupProxyAuthCredentials(
 }
 #endif
 
-const net::HttpAuthPreferences* NetworkContext::GetHttpAuthPreferences() const {
+const net::HttpAuthPreferences* NetworkContext::GetHttpAuthPreferences() const noexcept {
   return &http_auth_merged_preferences_;
 }
 

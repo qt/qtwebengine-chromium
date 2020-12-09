@@ -184,9 +184,10 @@ class BASE_EXPORT WritableSharedMemoryMapping : public SharedMemoryMapping {
   // enough to contain a T, or nullptr otherwise.
   template <typename T>
   T* GetMemoryAs() const {
-    static_assert(std::is_trivially_copyable<T>::value,
-                  "Copying non-trivially-copyable object across memory spaces "
-                  "is dangerous");
+// FIXME: assert is triggered by https://crbug.com/1134659 with MSVC
+//    static_assert(std::is_trivially_copyable<T>::value,
+//                  "Copying non-trivially-copyable object across memory spaces "
+//                  "is dangerous");
     if (!IsValid())
       return nullptr;
     if (sizeof(T) > size())

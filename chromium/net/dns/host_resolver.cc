@@ -88,6 +88,7 @@ class FailingRequestImpl : public HostResolver::ResolveHostRequest,
 const base::Optional<std::vector<bool>>&
 HostResolver::ResolveHostRequest::GetExperimentalResultsForTesting() const {
   IMMEDIATE_CRASH();
+  return base::Optional<std::vector<bool>>();
 }
 
 const size_t HostResolver::ManagerOptions::kDefaultRetryAttempts =

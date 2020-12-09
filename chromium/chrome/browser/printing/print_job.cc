@@ -51,7 +51,7 @@ void HoldRefCallback(scoped_refptr<PrintJob> job, base::OnceClosure callback) {
   std::move(callback).Run();
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
 // Those must be kept in sync with the values defined in policy_templates.json.
 enum class PrintRasterizationMode {
   // Do full page rasterization if necessary. Default value when policy not set.

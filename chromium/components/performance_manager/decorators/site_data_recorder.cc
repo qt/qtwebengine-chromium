@@ -56,6 +56,7 @@ class SiteDataNodeData : public NodeAttachedDataImpl<SiteDataNodeData>,
  public:
   struct Traits : public NodeAttachedDataOwnedByNodeType<PageNodeImpl> {};
 
+  SiteDataNodeData() = default;
   explicit SiteDataNodeData(const PageNodeImpl* page_node)
       : page_node_(page_node) {}
   ~SiteDataNodeData() override = default;
@@ -362,9 +363,6 @@ void SiteDataRecorder::SetPageNodeDataCache(const PageNode* page_node) {
       SiteDataCacheFactory::GetInstance()->GetDataCacheForBrowserContext(
           page_node->GetBrowserContextID()));
 }
-
-SiteDataNodeData::Data::Data() = default;
-SiteDataNodeData::Data::~Data() = default;
 
 // static
 const SiteDataRecorder::Data* SiteDataRecorder::Data::FromPageNode(

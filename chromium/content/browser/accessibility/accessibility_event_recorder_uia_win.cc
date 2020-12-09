@@ -103,9 +103,11 @@ void AccessibilityEventRecorderUia::Thread::ThreadMain() {
                    IID_IUIAutomation, &uia_);
   CHECK(uia_.Get());
 
+#if !defined(TOOLKIT_QT)
   // Register the custom event to mark the end of the test.
   shutdown_sentinel_ =
       ui::UiaRegistrarWin::GetInstance().GetTestCompleteEventId();
+#endif
 
   // Find the IUIAutomationElement for the root content window
   uia_->ElementFromHandle(hwnd_, &root_);

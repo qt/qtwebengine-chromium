@@ -69,7 +69,7 @@ PartitionPageShift() {
 #endif
 PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE size_t
 PartitionPageSize() {
-  return 1 << PartitionPageShift();
+  return 1ULL << PartitionPageShift();
 }
 PAGE_ALLOCATOR_CONSTANTS_DECLARE_CONSTEXPR ALWAYS_INLINE size_t
 PartitionPageOffsetMask() {

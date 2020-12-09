@@ -68,9 +68,12 @@
 // prevent code folding, see NO_CODE_FOLDING() in base/debug/alias.h.
 // Use like:
 //   void NOT_TAIL_CALLED FooBar();
-#if defined(__clang__) && __has_attribute(not_tail_called)
+#if defined(__clang__)
+#if __has_attribute(not_tail_called)
 #define NOT_TAIL_CALLED __attribute__((not_tail_called))
-#else
+#endif
+#endif
+#ifndef NOT_TAIL_CALLED
 #define NOT_TAIL_CALLED
 #endif
 

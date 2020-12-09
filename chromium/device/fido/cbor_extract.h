@@ -147,12 +147,14 @@ struct StepOrByte {
 
 template <typename S>
 constexpr StepOrByte<S> IntKey(int key) {
+#ifdef __GNUC__
   if (key > std::numeric_limits<int8_t>::max() ||
       key < std::numeric_limits<int8_t>::min() ||
       key == StepOrByte<S>::STRING_KEY) {
     // It's a compile-time error if __builtin_unreachable is reachable.
     __builtin_unreachable();
   }
+#endif
   return StepOrByte<S>(static_cast<char>(key));
 }
 
