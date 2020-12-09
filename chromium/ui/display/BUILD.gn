@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//remoting/remoting_enable.gni")
 import("//testing/test.gni")
@@ -17,7 +18,7 @@ component("display_features") {
   deps = [ "//base" ]
 }
 
-component("display") {
+jumbo_component("display") {
   sources = [
     "display.cc",
     "display.h",
@@ -173,7 +174,7 @@ if (is_chromeos) {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "test/display_matchers.cc",
