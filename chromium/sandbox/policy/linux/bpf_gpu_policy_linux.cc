@@ -22,6 +22,13 @@
 #include "sandbox/policy/linux/sandbox_linux.h"
 #include "sandbox/policy/linux/sandbox_seccomp_bpf_linux.h"
 
+#ifndef F_SEAL_SEAL
+#define F_SEAL_SEAL     0x0001
+#define F_SEAL_SHRINK   0x0002
+#define F_SEAL_GROW     0x0004
+#define F_ADD_SEALS     1033
+#endif
+
 using sandbox::bpf_dsl::Allow;
 using sandbox::bpf_dsl::Arg;
 using sandbox::bpf_dsl::Error;
