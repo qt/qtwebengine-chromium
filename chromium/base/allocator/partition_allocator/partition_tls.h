@@ -76,9 +76,11 @@ ALWAYS_INLINE bool PartitionTlsCreate(PartitionTlsKey* key,
                                       void (*destructor)(void*)) {
   // NOTIMPLEMENTED() may allocate, crash instead.
   IMMEDIATE_CRASH();
+  return false;
 }
 ALWAYS_INLINE void* PartitionTlsGet(PartitionTlsKey key) {
   IMMEDIATE_CRASH();
+  return nullptr;
 }
 ALWAYS_INLINE void PartitionTlsSet(PartitionTlsKey key, void* value) {
   IMMEDIATE_CRASH();

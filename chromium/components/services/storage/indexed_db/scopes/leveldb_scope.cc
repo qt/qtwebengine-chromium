@@ -105,12 +105,16 @@ class LevelDBScope::UndoLogWriter : public leveldb::WriteBatch::Handler {
   leveldb::Status error_ = leveldb::Status::OK();
 };
 
-LevelDBScope::EmptyRangeLessThan::EmptyRangeLessThan() = default;
+LevelDBScope::EmptyRangeLessThan::EmptyRangeLessThan() noexcept = default;
 LevelDBScope::EmptyRangeLessThan::EmptyRangeLessThan(
-    const leveldb::Comparator* comparator)
+    const leveldb::Comparator* comparator) noexcept
     : comparator_(comparator) {}
+LevelDBScope::EmptyRangeLessThan::EmptyRangeLessThan(const LevelDBScope::EmptyRangeLessThan& other) noexcept = default;
 LevelDBScope::EmptyRangeLessThan& LevelDBScope::EmptyRangeLessThan::operator=(
-    const LevelDBScope::EmptyRangeLessThan& other) = default;
+    const LevelDBScope::EmptyRangeLessThan& other) noexcept = default;
+LevelDBScope::EmptyRangeLessThan::EmptyRangeLessThan(LevelDBScope::EmptyRangeLessThan&& other) noexcept = default;
+LevelDBScope::EmptyRangeLessThan& LevelDBScope::EmptyRangeLessThan::operator=(
+    LevelDBScope::EmptyRangeLessThan&& other) noexcept = default;
 
 // The ranges are expected to be disjoint.
 bool LevelDBScope::EmptyRangeLessThan::operator()(const EmptyRange& lhs,

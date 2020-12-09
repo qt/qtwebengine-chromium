@@ -44,7 +44,11 @@ NOINLINE void ReportErrorOnScopedHandleOperation(
   auto creation_stack_copy = creation_stack;
   base::debug::Alias(&creation_stack_copy);
   CHECK(false);
+#if !defined(COMPILER_MSVC)
   __builtin_unreachable();
+#else
+  __assume(0);
+#endif
 }
 
 NOINLINE void ReportErrorOnScopedHandleOperation(
@@ -55,7 +59,11 @@ NOINLINE void ReportErrorOnScopedHandleOperation(
   auto creation_stack_copy = creation_stack;
   base::debug::Alias(&creation_stack_copy);
   CHECK(false);
+#if !defined(COMPILER_MSVC)
   __builtin_unreachable();
+#else
+  __assume(0);
+#endif
 }
 
 }  // namespace
@@ -87,10 +95,10 @@ ScopedHandleVerifierInfo::ScopedHandleVerifierInfo(
 
 ScopedHandleVerifierInfo::~ScopedHandleVerifierInfo() = default;
 
-ScopedHandleVerifierInfo::ScopedHandleVerifierInfo(ScopedHandleVerifierInfo&&) =
+ScopedHandleVerifierInfo::ScopedHandleVerifierInfo(ScopedHandleVerifierInfo&&) noexcept =
     default;
 ScopedHandleVerifierInfo& ScopedHandleVerifierInfo::operator=(
-    ScopedHandleVerifierInfo&&) = default;
+    ScopedHandleVerifierInfo&&) noexcept = default;
 
 ScopedHandleVerifier::ScopedHandleVerifier(bool enabled)
     : enabled_(enabled), lock_(GetLock()) {}

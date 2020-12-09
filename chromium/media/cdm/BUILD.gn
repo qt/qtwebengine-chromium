@@ -94,7 +94,7 @@ source_set("cdm") {
     }
   }
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     sources += [
       "win/media_foundation_cdm.cc",
       "win/media_foundation_cdm.h",

@@ -477,7 +477,11 @@ void CanvasPath::roundRect(double double_x,
 
   FloatRect rect = FloatRect(x, y, width, height);
 
+#if !defined(COMPILER_MSVC)
   FloatSize r[num_radii];
+#else
+  FloatSize r[4];
+#endif
   for (int i = 0; i < num_radii; ++i) {
     if (radii[i].IsDouble()) {
       float a = base::saturated_cast<float>(radii[i].GetAsDouble());

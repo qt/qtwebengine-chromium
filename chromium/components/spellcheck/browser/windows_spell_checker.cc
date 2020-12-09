@@ -69,11 +69,13 @@ class BackgroundHelper {
       int document_tag,
       const base::string16& text);
 
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   // Gets spelling suggestions for |word| from all active spell checkers (all
   // languages), keeping the suggestions separate per language, and returns
   // the results in a vector of vector of strings.
   spellcheck::PerLanguageSuggestions GetPerLanguageSuggestions(
       const base::string16& word);
+#endif
 
   // Fills the given vector |optional_suggestions| with a number (up to
   // kMaxSuggestions) of suggestions for the string |wrong_word| using the
@@ -272,7 +274,7 @@ std::vector<SpellCheckResult> BackgroundHelper::RequestTextCheckForAllLanguages(
   return final_results;
 }
 
-#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
 spellcheck::PerLanguageSuggestions BackgroundHelper::GetPerLanguageSuggestions(
     const base::string16& word) {
   DCHECK(background_task_runner_->RunsTasksInCurrentSequence());
@@ -531,7 +533,7 @@ void WindowsSpellChecker::RequestTextCheck(
       std::move(callback));
 }
 
-#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
 void WindowsSpellChecker::GetPerLanguageSuggestions(
     const base::string16& word,
     spellcheck_platform::GetSuggestionsCallback callback) {
