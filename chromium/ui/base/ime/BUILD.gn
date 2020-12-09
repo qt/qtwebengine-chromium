@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 
 source_set("text_input_types") {
@@ -14,7 +15,7 @@ source_set("text_input_types") {
   ]
 }
 
-component("ime_types") {
+jumbo_component("ime_types") {
   output_name = "ui_base_ime_types"
   sources = [
     "candidate_window.cc",
@@ -52,7 +53,7 @@ component("ime_types") {
   }
 }
 
-component("ime") {
+jumbo_component("ime") {
   output_name = "ui_base_ime"
   sources = [
     "constants.cc",

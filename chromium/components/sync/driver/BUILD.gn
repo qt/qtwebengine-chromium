@@ -4,9 +4,10 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//tools/grit/grit_rule.gni")
 
-static_library("driver") {
+jumbo_static_library("driver") {
   sources = [
     "active_devices_provider.h",
     "backend_migrator.cc",

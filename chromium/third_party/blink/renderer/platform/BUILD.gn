@@ -7,6 +7,7 @@ import("//build/buildflag_header.gni")
 import("//build/compiled_action.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//media/media_options.gni")
 import("//skia/features.gni")
@@ -250,7 +251,7 @@ source_set("platform_export") {
   ]
 }
 
-component("platform") {
+jumbo_component("platform") {
   visibility = []  # Allow re-assignment of list.
   visibility = [
     "//components/pdf/common:interfaces_blink",
@@ -1831,7 +1832,7 @@ component("platform") {
   configs += blink_symbols_config
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   visibility += [
     "//third_party/blink/*",
     "//tools/privacy_budget/font_indexer:*",
@@ -1952,7 +1953,7 @@ test("blink_platform_unittests") {
   deps = [ ":blink_platform_unittests_sources" ]
 }
 
-source_set("blink_platform_unittests_sources") {
+jumbo_source_set("blink_platform_unittests_sources") {
   visibility = []  # Allow re-assignment of list.
   visibility = [ "*" ]
   testonly = true
@@ -2398,7 +2399,7 @@ test("blink_fuzzer_unittests") {
 
 # This source set is used for fuzzers that need an environment similar to unit
 # tests.
-source_set("blink_fuzzer_test_support") {
+jumbo_source_set("blink_fuzzer_test_support") {
   testonly = true
   visibility = []  # Allow re-assignment of list.
   visibility = [ "*" ]
@@ -2532,7 +2533,7 @@ blink_text_codec_fuzzer("WINDOWS_1252") {
 # NOTE: These are legacy unit tests and tests that require a Platform
 # object. Do not add more unless the test requires a Platform object.
 # These tests are a part of the blink_unittests binary.
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   visibility = []
   visibility = [ "//third_party/blink/renderer/*" ]

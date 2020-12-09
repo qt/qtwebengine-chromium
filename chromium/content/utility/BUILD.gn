@@ -3,10 +3,11 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//media/media_options.gni")
 
-source_set("utility") {
+jumbo_source_set("utility") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones other than test) should depend on the public one.
   visibility = [

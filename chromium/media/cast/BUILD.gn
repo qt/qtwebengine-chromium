@@ -5,6 +5,7 @@
 import("//build/config/android/config.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//testing/test.gni")
 import("//third_party/protobuf/proto_library.gni")
@@ -14,7 +15,7 @@ proto_library("logging_proto") {
 }
 
 # Common code shared by all cast components.
-source_set("common") {
+jumbo_source_set("common") {
   sources = [
     "cast_config.cc",
     "cast_config.h",
@@ -65,7 +66,7 @@ source_set("common") {
   ]
 }
 
-source_set("net") {
+jumbo_source_set("net") {
   sources = [
     "net/cast_transport.h",
     "net/cast_transport_config.cc",
@@ -117,7 +118,7 @@ source_set("net") {
   public_deps = [ ":common" ]
 }
 
-source_set("sender") {
+jumbo_source_set("sender") {
   sources = [
     "cast_sender.h",
     "cast_sender_impl.cc",
@@ -181,7 +182,7 @@ source_set("sender") {
   }
 }
 
-source_set("receiver") {
+jumbo_source_set("receiver") {
   sources = [
     "cast_receiver.h",
     "net/rtp/cast_message_builder.cc",

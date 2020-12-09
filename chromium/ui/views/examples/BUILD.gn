@@ -3,11 +3,12 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//testing/test.gni")
 import("//tools/grit/grit_rule.gni")
 
-component("views_examples_lib") {
+jumbo_component("views_examples_lib") {
   testonly = true
 
   sources = [
@@ -196,7 +197,7 @@ executable("views_examples") {
   ]
 }
 
-component("views_examples_with_content_lib") {
+jumbo_component("views_examples_with_content_lib") {
   testonly = true
   sources = [
     "examples_window_with_content.cc",

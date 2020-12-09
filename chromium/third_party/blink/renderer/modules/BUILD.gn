@@ -34,7 +34,7 @@ make_names("media_capabilities_names") {
   deps = []  # Don't use default deps (otherwise it will be circular).
 }
 
-component("modules") {
+jumbo_component("modules") {
   output_name = "blink_modules"
 
   visibility = []  # Allow re-assignment of list.
@@ -219,7 +219,7 @@ component("modules") {
   configs += blink_optimization_config
 }
 
-source_set("modules_testing") {
+jumbo_source_set("modules_testing") {
   testonly = true
 
   sources = [
@@ -279,7 +279,7 @@ group("make_modules_generated") {
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
 
   # TODO(crbug.com/1173961): avoid depending on testonly webrtc targets.

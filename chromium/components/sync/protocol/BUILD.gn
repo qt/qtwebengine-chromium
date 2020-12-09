@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//third_party/protobuf/proto_library.gni")
 import("protocol_sources.gni")
 
@@ -15,7 +16,7 @@ proto_library("protocol") {
 # it being listed in public_deps of upper directories (even though it doesn't
 # fit the definition of public_deps). Consider using a group() to expose this
 # together with the "protocol" target and simplify things.
-static_library("util") {
+jumbo_static_library("util") {
   sources = [
     "proto_enum_conversions.cc",
     "proto_enum_conversions.h",
