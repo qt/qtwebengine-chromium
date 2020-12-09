@@ -5,6 +5,7 @@
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/cronet/config.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//testing/test.gni")
 
 if (is_android) {
@@ -78,7 +79,7 @@ if (!is_cronet_build && is_android) {
 }
 
 if (!is_cronet_build || is_ios) {
-  static_library("metrics") {
+  jumbo_static_library("metrics") {
     sources = [
       "android_metrics_helper.cc",
       "android_metrics_helper.h",
@@ -287,7 +288,7 @@ if (!is_cronet_build || is_ios) {
     }
   }
 
-  static_library("test_support") {
+  jumvo_static_library("test_support") {
     testonly = true
     sources = [
       "test/test_enabled_state_provider.cc",
