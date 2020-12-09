@@ -3,8 +3,9 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 
-static_library("core") {
+jumbo_static_library("core") {
   sources = [
     "android_app_description.cc",
     "android_app_description.h",
@@ -107,7 +108,7 @@ static_library("core") {
   ]
 }
 
-static_library("error_strings") {
+jumbo_static_library("error_strings") {
   sources = [
     "error_strings.cc",
     "error_strings.h",
@@ -123,14 +124,14 @@ static_library("error_strings") {
   }
 }
 
-static_library("method_strings") {
+jumbo_static_library("method_strings") {
   sources = [
     "method_strings.cc",
     "method_strings.h",
   ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "payments_test_util.cc",
@@ -156,7 +157,7 @@ static_library("test_support") {
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   sources = [
     "android_app_description_tools_unittest.cc",

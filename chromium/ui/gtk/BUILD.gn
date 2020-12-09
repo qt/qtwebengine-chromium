@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/linux/gtk/gtk.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/ozone.gni")
@@ -68,9 +69,8 @@ generate_stubs("gtk_stubs") {
   logging_include = "ui/gtk/log_noop.h"
 }
 
-component("gtk") {
+jumbo_component("gtk") {
   public = [ "gtk_ui_factory.h" ]
-
   sources = [
     "gtk_color_mixers.cc",
     "gtk_color_mixers.h",

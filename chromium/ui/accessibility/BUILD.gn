@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/ui.gni")
 import("//mojo/public/tools/bindings/mojom.gni")
@@ -34,7 +35,7 @@ mojom_component("ax_enums_mojo") {
 # included by Blink. The rule of thumb (for now) is that it's
 # anything platform-neutral (no platform/ directory) that
 # relates to a single accessibility node (no trees, etc.).
-component("ax_base") {
+jumbo_component("ax_base") {
   defines = [ "AX_BASE_IMPLEMENTATION" ]
 
   sources = [
@@ -103,7 +104,7 @@ component("ax_base") {
 #  }
 #}
 
-component("accessibility") {
+jumbo_component("accessibility") {
   defines = [ "AX_IMPLEMENTATION" ]
 
   sources = [

@@ -3,13 +3,30 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//testing/test.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
-static_library("metrics") {
+jumbo_static_library("demographic_metrics_provider") {
+  sources = [
+    "demographic_metrics_provider.cc",
+    "demographic_metrics_provider.h",
+  ]
+
+  public_deps = [ "//third_party/metrics_proto" ]
+
+  deps = [
+    ":metrics",
+    "//base",
+    "//components/sync/base",
+    "//components/sync/driver",
+  ]
+}
+
+jumbo_static_library("metrics") {
   sources = [
     "android_metrics_provider.cc",
     "android_metrics_provider.h",
@@ -279,7 +296,7 @@ source_set("library_support") {
   ]
 }
 
-static_library("net") {
+jumbo_static_library("net") {
   sources = [
     "net/cellular_logic_helper.cc",
     "net/cellular_logic_helper.h",
@@ -398,7 +415,7 @@ source_set("call_stack_profile_collector") {
   ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "test/test_enabled_state_provider.cc",

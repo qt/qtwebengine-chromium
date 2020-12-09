@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//build/config/rust.gni")
 import("//build/rust/mixed_target.gni")
 
@@ -30,4 +31,11 @@ set_defaults("mixed_component") {
 
   # TODO(crbug.com/1292951): Remove this line.
   configs -= [ "//build/config/compiler:prevent_unsafe_narrowing" ]
+}
+
+template("jumbo_mixed_component") {
+  internal_jumbo_target(target_name) {
+    target_type = "mixed_component"
+    forward_variables_from(invoker, "*")
+  }
 }

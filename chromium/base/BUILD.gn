@@ -27,6 +27,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/dcheck_always_on.gni")
 import("//build/config/ios/config.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/logging.gni")
 import("//build/config/nacl/config.gni")
 import("//build/config/profiling/profiling.gni")
@@ -182,7 +183,7 @@ buildflag_header("ios_cronet_buildflags") {
 #
 # mixed_component is a regular C++ "component", but may have some Rust files
 # if Rust is enabled.
-mixed_component("base") {
+jumbo_mixed_component("base") {
   sources = [
     "allocator/allocator_check.cc",
     "allocator/allocator_check.h",

@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//third_party/libprotobuf-mutator/fuzzable_proto_library.gni")
 
@@ -17,7 +18,7 @@ config("password_reuse_detection_config") {
   }
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   sources = [
     "android_affiliation/affiliated_match_helper.cc",
     "android_affiliation/affiliated_match_helper.h",
@@ -478,7 +479,7 @@ fuzzable_proto_library("proto") {
   sources = [ "android_affiliation/affiliation_api.proto" ]
 }
 
-static_library("password_hash_data") {
+jumbo_static_library("password_hash_data") {
   sources = [
     "password_hash_data.cc",
     "password_hash_data.h",
@@ -504,7 +505,7 @@ static_library("hash_password_manager") {
   ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "android_affiliation/fake_affiliation_api.cc",

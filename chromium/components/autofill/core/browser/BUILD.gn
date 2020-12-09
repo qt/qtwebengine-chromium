@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chrome_build.gni")
+import("//build/config/jumbo.gni")
 import("//build/util/version.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//tools/grit/grit_rule.gni")
@@ -30,7 +31,7 @@ action("regex_patterns_inl_h") {
          rebase_path(outputs, root_build_dir)
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   sources = [
     "address_normalization_manager.cc",
     "address_normalization_manager.h",
@@ -541,7 +542,7 @@ if (is_android) {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "autofill_form_test_utils.cc",
