@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 import("//third_party/libaom/options.gni")
@@ -12,7 +13,7 @@ proto_library("logging_proto") {
 }
 
 # Common code shared by all cast components.
-source_set("common") {
+jumbo_source_set("common") {
   sources = [
     "cast_callbacks.h",
     "cast_config.cc",
@@ -68,7 +69,7 @@ source_set("common") {
   ]
 }
 
-source_set("encoding") {
+jumbo_source_set("encoding") {
   sources = [
     "encoding/audio_encoder.cc",
     "encoding/audio_encoder.h",
@@ -126,7 +127,7 @@ source_set("encoding") {
   }
 }
 
-source_set("sender") {
+jumbo_source_set("sender") {
   sources = [
     "sender/audio_sender.cc",
     "sender/audio_sender.h",
@@ -157,7 +158,7 @@ source_set("sender") {
   ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "test/fake_openscreen_clock.cc",

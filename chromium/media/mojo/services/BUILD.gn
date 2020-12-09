@@ -4,6 +4,7 @@
 
 import("//build/config/cast.gni")
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//media/gpu/args.gni")
 import("//media/media_options.gni")
 import("//mojo/public/tools/fuzzers/mojolpm.gni")
@@ -12,7 +13,7 @@ import("//testing/test.gni")
 enable_playback_events_recorder =
     enable_cast_receiver && (is_fuchsia || is_android)
 
-component("services") {
+jumbo_component("services") {
   output_name = "media_mojo_services"
   sources = [
     "deferred_destroy_unique_receiver_set.h",

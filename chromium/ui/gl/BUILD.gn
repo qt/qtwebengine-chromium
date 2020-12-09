@@ -5,6 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/chromeos/ui_mode.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/linux/pkg_config.gni")
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
@@ -51,7 +52,7 @@ component("gl_enums") {
   public_deps = [ "//third_party/angle:includes" ]
 }
 
-component("gl") {
+jumbo_component("gl") {
   output_name = "gl_wrapper"  # Avoid colliding with OS X"s libGL.dylib.
 
   sources = [
@@ -421,7 +422,7 @@ if (is_mac) {
   }
 }
 
-static_library("gl_unittest_utils") {
+jumbo_static_library("gl_unittest_utils") {
   testonly = true
   sources = [
     "egl_bindings_autogen_mock.cc",
@@ -446,7 +447,7 @@ static_library("gl_unittest_utils") {
   ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "test/gl_surface_test_support.cc",

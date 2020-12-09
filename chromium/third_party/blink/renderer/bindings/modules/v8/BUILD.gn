@@ -31,7 +31,7 @@ blink_modules_sources("v8") {
   ]
 }
 
-source_set("testing") {
+jumbo_source_set("testing") {
   testonly = true
 
   visibility = []

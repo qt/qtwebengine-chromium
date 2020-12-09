@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//third_party/libprotobuf-mutator/fuzzable_proto_library.gni")
 
 fuzzable_proto_library("proto") {
@@ -25,7 +26,7 @@ source_set("leak_detection_interface_headers") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-source_set("leak_detection") {
+jumbo_source_set("leak_detection") {
   sources = [
     "bulk_leak_check_impl.cc",
     "bulk_leak_check_impl.h",
@@ -72,7 +73,7 @@ source_set("leak_detection") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
   sources = [
     "mock_bulk_leak_check_service.cc",
@@ -93,7 +94,7 @@ source_set("test_support") {
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   sources = [
     "bulk_leak_check_impl_unittest.cc",

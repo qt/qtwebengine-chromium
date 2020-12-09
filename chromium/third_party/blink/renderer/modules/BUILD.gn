@@ -25,7 +25,7 @@ config("modules_implementation") {
   defines = [ "BLINK_MODULES_IMPLEMENTATION=1" ]
 }
 
-component("modules") {
+jumbo_component("modules") {
   output_name = "blink_modules"
 
   visibility = []  # Allow re-assignment of list.
@@ -222,7 +222,7 @@ component("modules") {
   configs += blink_optimization_config
 }
 
-source_set("modules_testing") {
+jumbo_source_set("modules_testing") {
   testonly = true
 
   sources = [
@@ -399,7 +399,7 @@ blink_modules_sources("modules_generated") {
   }
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
 
   sources = [

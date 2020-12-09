@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
+
 if (is_chromeos) {
   import("//build/config/chromeos/ui_mode.gni")
 }
@@ -12,7 +14,7 @@ if (is_android) {
   import("//third_party/jni_zero/jni_zero.gni")
 }
 
-source_set("public") {
+jumbo_source_set("public") {
   sources = [
     "configuration.cc",
     "configuration.h",
@@ -85,7 +87,7 @@ source_set("public") {
   }
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
 
   visibility = [ "//components/feature_engagement:unit_tests" ]
