@@ -6,6 +6,7 @@ import("//build/buildflag_header.gni")
 import("//build/compiled_action.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/python.gni")
 import("//components/optimization_guide/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -129,7 +130,7 @@ proto_library("amount_extraction_heuristic_regexes_proto") {
   sources = [ "payments/amount_extraction_heuristic_regexes.proto" ]
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   _configs = configs
   configs = []
   configs = [ "//third_party/tflite:tflite_shim_config" ] + _configs
@@ -1277,7 +1278,7 @@ static_library("browser") {
   }
 }
 
-static_library("legal_message_line") {
+jumbo_static_library("legal_message_line") {
   sources = [
     "payments/legal_message_line.cc",
     "payments/legal_message_line.h",
@@ -1291,7 +1292,7 @@ static_library("legal_message_line") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-source_set("payments_sync_utils") {
+jumbo_source_set("payments_sync_utils") {
   sources = [
     "webdata/payments/payments_sync_util.cc",
     "webdata/payments/payments_sync_util.h",
@@ -1316,7 +1317,7 @@ if (is_android) {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "at_memory/at_memory_manager_test_api.h",

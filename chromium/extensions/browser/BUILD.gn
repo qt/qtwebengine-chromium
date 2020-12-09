@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//components/guest_view/buildflags/buildflags.gni")
 import("//components/safe_browsing/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
@@ -98,7 +99,7 @@ source_set("core_keyed_service_factories") {
 # nodes" and could be easily toggled on-and-off through dependencies for
 # different platforms).
 # See also https://crbug.com/883570.
-source_set("browser_sources") {
+jumbo_source_set("browser_sources") {
   visibility = [ "./*" ]
 
   sources = [
@@ -935,7 +936,7 @@ source_set("browser_sources") {
   }
 }
 
-source_set("keepalive") {
+jumbo_source_set("keepalive") {
   sources = [
     "scoped_extension_keep_alive.cc",
     "scoped_extension_keep_alive.h",
@@ -998,7 +999,7 @@ source_set("webstore_installer") {
   ]
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
   sources = [
     "api/declarative_net_request/test_utils.cc",

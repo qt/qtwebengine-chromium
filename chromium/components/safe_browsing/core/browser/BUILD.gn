@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-source_set("browser") {
+import("//build/config/jumbo.gni")
+
+jumbo_source_set("browser") {
   sources = [
     "client_side_detection_host_base.cc",
     "client_side_detection_host_base.h",

@@ -18,7 +18,7 @@ blink_modules_sources("hid") {
   deps = [ "//services/device/public/cpp:device_features" ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   sources = [ "hid_device_test.cc" ]
 

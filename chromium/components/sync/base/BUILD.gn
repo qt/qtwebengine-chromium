@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
 declare_args() {
@@ -17,7 +18,7 @@ source_set("features") {
   deps = [ "//base" ]
 }
 
-static_library("base") {
+jumbo_static_library("base") {
   sources = [
     "account_pref_utils.cc",
     "account_pref_utils.h",

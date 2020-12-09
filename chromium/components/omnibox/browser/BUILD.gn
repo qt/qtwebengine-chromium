@@ -4,6 +4,7 @@
 
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//components/vector_icons/vector_icons.gni")
 import("//device/vr/buildflags/buildflags.gni")
@@ -150,7 +151,7 @@ proto_library("partner_location_descriptor_proto") {
   sources = [ "proto/partner_location_descriptor.proto" ]
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   _configs = configs
   configs = []
   configs = [ "//third_party/tflite:tflite_shim_config" ] + _configs
@@ -791,7 +792,7 @@ if (is_android) {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "autocomplete_match_test_util.cc",

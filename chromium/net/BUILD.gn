@@ -7,6 +7,7 @@ import("//build/config/cast.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/cronet/config.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//crypto/features.gni")
 import("//net/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -147,7 +148,7 @@ proto_library("device_bound_sessions_storage_proto") {
   sources = [ "device_bound_sessions/proto/storage.proto" ]
 }
 
-source_set("net_features") {
+jumbo_source_set("net_features") {
   sources = [ "base/features.h" ]
   deps = [
     ":buildflags",
@@ -158,7 +159,7 @@ source_set("net_features") {
   ]
 }
 
-component("net") {
+jumbo_component("net") {
   sources = [
     "base/address_family.cc",
     "base/address_family.h",
@@ -1953,7 +1954,7 @@ component("net") {
 # Private dependencies for the //net component and for any build targets (e.g.
 # source sets with circular dependencies with //net) that need to share the same
 # dependencies.
-source_set("net_deps") {
+jumbo_source_set("net_deps") {
   visibility = [
     ":net",
     "//crypto",
@@ -2094,7 +2095,7 @@ proto_library("isolation_info_proto") {
   sources = [ "base/isolation_info.proto" ]
 }
 
-component("extras") {
+jumbo_component("extras") {
   sources = [
     "extras/sqlite/cookie_crypto_delegate.h",
     "extras/sqlite/sqlite_persistent_cookie_store.cc",
@@ -2122,7 +2123,7 @@ component("extras") {
   }
 }
 
-component("shared_dictionary_info") {
+jumbo_component("shared_dictionary_info") {
   sources = [
     "extras/shared_dictionary/shared_dictionary_info.cc",
     "extras/shared_dictionary/shared_dictionary_info.h",
@@ -2136,7 +2137,7 @@ component("shared_dictionary_info") {
   ]
 }
 
-static_library("preload_decoder") {
+jumbo_static_library("preload_decoder") {
   sources = [
     "extras/preload_data/decoder.cc",
     "extras/preload_data/decoder.h",

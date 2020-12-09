@@ -179,6 +179,15 @@ improves link speed. See
 [Linkers for macOS and iOS builds](apple_platform_linkers.md)
 for more information.
 
+#### Jumbo/Unity builds
+
+Jumbo builds merge many translation units ("source files") and compile them
+together. Since a large portion of Chromium's code is in shared header files,
+this dramatically reduces the total amount of work needed. Check out the
+[Jumbo / Unity builds](jumbo.md) for more information.
+
+Enable jumbo builds by setting the GN arg `use_jumbo_build=true`.
+
 #### Use Reclient
 
 In addition, Google employees should use Reclient, a distributed compilation system.

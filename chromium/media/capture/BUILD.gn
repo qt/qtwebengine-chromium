@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//media/media_options.gni")
 import("//testing/test.gni")
@@ -30,7 +31,7 @@ component("capture_switches") {
 }
 
 # Things needed by //media/capture/mojom/video_capture_types.mojom.
-component("capture_base") {
+jumbo_component("capture_base") {
   defines = [ "CAPTURE_IMPLEMENTATION" ]
   sources = [
     "capture_export.h",
@@ -52,7 +53,7 @@ component("capture_base") {
 }
 
 # Target which allows breakout of platform-specific BUILD.gn files.
-source_set("capture_device_specific") {
+jumbo_source_set("capture_device_specific") {
   visibility = [
     ":capture_lib",
     "//media/capture/video/android",
@@ -126,7 +127,7 @@ source_set("capture_device_specific") {
   ]
 }
 
-component("capture_lib") {
+jumbo_component("capture_lib") {
   defines = [ "CAPTURE_IMPLEMENTATION" ]
   sources = [
     "video/create_video_capture_device_factory.cc",
