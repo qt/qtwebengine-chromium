@@ -183,7 +183,7 @@ blink_modules_sources("peerconnection") {
   }
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
 
   sources = [

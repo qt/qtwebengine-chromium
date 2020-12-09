@@ -9,7 +9,9 @@
 import("//build/config/deprecated_default_sources_assignment_filter.gni")
 set_sources_assignment_filter(deprecated_default_sources_assignment_filter)
 
-static_library("common") {
+import("//build/config/jumbo.gni")
+
+jumbo_static_library("common") {
   sources = [
     "cdm_message_generator.cc",
     "cdm_message_generator.h",

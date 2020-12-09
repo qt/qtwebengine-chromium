@@ -9,6 +9,8 @@
 import("//build/config/deprecated_default_sources_assignment_filter.gni")
 set_sources_assignment_filter(deprecated_default_sources_assignment_filter)
 
+import("//build/config/jumbo.gni")
+
 assert(is_win)
 
 config("delay_load_mf") {
@@ -19,7 +21,7 @@ config("delay_load_mf") {
   ]
 }
 
-component("media_foundation_util") {
+jumbo_component("media_foundation_util") {
   defines = [ "MF_INITIALIZER_IMPLEMENTATION" ]
   set_sources_assignment_filter([])
   sources = [

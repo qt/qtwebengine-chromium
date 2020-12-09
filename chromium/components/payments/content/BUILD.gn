@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-static_library("content") {
+import("//build/config/jumbo.gni")
+
+jumbo_static_library("content") {
   sources = [
     "android_app_communication.cc",
     "android_app_communication.h",
@@ -112,7 +114,7 @@ static_library("content") {
 }
 
 # Files used by content and utility.
-static_library("content_common") {
+jumbo_static_library("content_common") {
   sources = [
     "web_app_manifest.cc",
     "web_app_manifest.h",
@@ -124,7 +126,7 @@ static_library("content_common") {
   ]
 }
 
-static_library("utils") {
+jumbo_static_library("utils") {
   sources = [
     "developer_console_logger.cc",
     "developer_console_logger.h",
@@ -165,7 +167,7 @@ static_library("utils") {
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   sources = [
     "android_app_communication_test_support.h",
