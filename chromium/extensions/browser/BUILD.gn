@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//extensions/buildflags/buildflags.gni")
 
 assert(enable_extensions)
@@ -49,7 +50,7 @@ source_set("browser_context_keyed_service_factories") {
   }
 }
 
-source_set("browser_sources") {
+jumbo_source_set("browser_sources") {
   visibility = [ "./*" ]
 
   sources = [
@@ -711,7 +712,7 @@ source_set("browser_tests") {
   }
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
   sources = [
     "api/declarative_net_request/test_utils.cc",
@@ -765,7 +766,7 @@ source_set("test_support") {
   }
 }
 
-source_set("value_store_test_support") {
+jumbo_source_set("value_store_test_support") {
   testonly = true
   sources = [
     "value_store/value_store_unittest.cc",

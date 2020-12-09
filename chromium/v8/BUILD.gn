@@ -6,6 +6,7 @@ import("//build/config/android/config.gni")
 import("//build/config/arm.gni")
 import("//build/config/dcheck_always_on.gni")
 import("//build/config/host_byteorder.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/mips.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build_overrides/build.gni")
@@ -2015,8 +2016,13 @@ v8_source_set("v8_snapshot") {
       if (emit_builtins_as_inline_asm) {
         deps += [ ":asm_to_inline_asm_trusted" ]
         sources += [ "$target_gen_dir/embedded_trusted.cc" ]
+        jumbo_excluded_sources = [ "$target_gen_dir/embedded_trusted.cc" ]
       } else {
         sources += [ "$target_gen_dir/embedded_trusted.S" ]
+        jumbo_excluded_sources = [
+          # Duplicated symbols with embedded.S
+          "$target_gen_dir/embedded_trusted.S",
+        ]
       }
     }
   } else {
@@ -2121,6 +2127,17 @@ v8_source_set("v8_initializers") {
       "src/builtins/builtins-wasm-gen.h",
     ]
   }
+
+  jumbo_excluded_sources = [
+    # TODO(mostynb@vewd.com): don't exclude these http://crbug.com/752428
+    "src/builtins/builtins-async-iterator-gen.cc",
+    "src/builtins/builtins-async-generator-gen.cc",
+
+    # These source files take an unusually large amount of time to
+    # compile.  Build them separately to avoid bottlenecks.
+    "src/builtins/builtins-regexp-gen.cc",
+    "src/codegen/code-stub-assembler.cc",
+  ]
 
   if (v8_current_cpu == "x86") {
     sources += [
@@ -4117,6 +4134,23 @@ v8_source_set("v8_base_without_compiler") {
     ]
   }
 
+  jumbo_excluded_sources = [
+    # TODO(mostynb@vewd.com): don't exclude these http://crbug.com/752428
+    "src/profiler/heap-snapshot-generator.cc",  # Macro clash in mman-linux.h
+    "src/heap/local-heap.cc",
+    "src/heap/safepoint.cc",
+    "src/objects/js-display-names.cc",
+    "src/objects/js-relative-time-format.cc",
+
+    # These source files take an unusually large amount of time to
+    # compile.  Build them separately to avoid bottlenecks.
+    "src/api/api.cc",
+    "src/heap/heap.cc",
+    "src/objects/elements.cc",
+    "src/objects/objects.cc",
+    "src/parsing/parser.cc",
+  ]
+
   if (v8_current_cpu == "x86") {
     sources += [  ### gcmole(arch:ia32) ###
       "src/codegen/ia32/assembler-ia32.cc",
@@ -4216,6 +4250,11 @@ v8_source_set("v8_base_without_compiler") {
     if (is_win) {
       sources += [ "src/diagnostics/unwinding-info-win64.cc" ]
     }
+    jumbo_excluded_sources += [
+      # TODO(mostynb@vewd.com): fix this code so it doesn't need
+      # to be excluded, see the comments inside.
+      "src/codegen/arm64/instructions-arm64-constants.cc",
+    ]
   } else if (v8_current_cpu == "mips" || v8_current_cpu == "mipsel") {
     sources += [  ### gcmole(arch:mipsel) ###
       "src/codegen/mips/assembler-mips.cc",

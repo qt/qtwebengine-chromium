@@ -4,13 +4,14 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 
 declare_args() {
   # Controls the product part of the user agent calculated in sync_util.cc.
   sync_user_agent_product = "Chrome"
 }
 
-static_library("base") {
+jumbo_static_library("base") {
   sources = [
     "bind_to_task_runner.h",
     "client_tag_hash.cc",
