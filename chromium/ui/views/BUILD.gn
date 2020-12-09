@@ -5,6 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 import("//components/metrics/generate_histograms_variants_allowlist.gni")
@@ -72,7 +73,7 @@ buildflag_header("buildflags") {
   ]
 }
 
-component("views") {
+jumbo_component("views") {
   all_dependent_configs = [ ":flags" ]
 
   public = [
@@ -976,7 +977,7 @@ component("views") {
 }
 
 if (is_win || is_mac || is_linux || is_chromeos) {
-  static_library("view_pixel_diff_test_support") {
+  jumbo_static_library("view_pixel_diff_test_support") {
     testonly = true
     sources = [
       "test/view_skia_gold_pixel_diff.cc",
@@ -995,7 +996,7 @@ if (is_win || is_mac || is_linux || is_chromeos) {
   }
 }
 
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
   sources = [
     "animation/test/flood_fill_ink_drop_ripple_test_api.cc",

@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/cronet/config.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//gpu/vulkan/features.gni")
 import("//skia/features.gni")
@@ -165,7 +166,7 @@ if (!use_static_angle) {
   }
 }  # if (!use_static_angle)
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "command_buffer/client/client_test_helper.cc",

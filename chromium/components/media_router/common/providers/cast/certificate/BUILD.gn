@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//third_party/openscreen/src/build/config/cast.gni")
 
 config("developer_certificate_config") {
@@ -11,7 +12,7 @@ config("developer_certificate_config") {
   }
 }
 
-source_set("certificate_reader") {
+jumbo_source_set("certificate_reader") {
   sources = [
     "cast_cert_reader.cc",
     "cast_cert_reader.h",
@@ -32,7 +33,7 @@ source_set("certificate_roots") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-static_library("certificate") {
+jumbo_static_library("certificate") {
   sources = [
     "cast_cert_printer.cc",
     "cast_cert_printer.h",
@@ -61,7 +62,7 @@ static_library("certificate") {
   ]
 }
 
-source_set("openscreen_certificate_verifier") {
+jumbo_source_set("openscreen_certificate_verifier") {
   sources = [
     "net_parsed_certificate.cc",
     "net_parsed_certificate.h",
@@ -77,7 +78,7 @@ source_set("openscreen_certificate_verifier") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "cast_cert_test_helpers.cc",
@@ -93,7 +94,7 @@ static_library("test_support") {
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   sources = [
     "cast_cert_validator_unittest.cc",

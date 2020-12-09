@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//third_party/libprotobuf-mutator/fuzzable_proto_library.gni")
 
 if (is_android) {
@@ -17,7 +18,7 @@ config("password_reuse_detection_config") {
   }
 }
 
-source_set("sql_builder") {
+jumbo_source_set("sql_builder") {
   sources = [
     "sql_table_builder.cc",
     "sql_table_builder.h",
@@ -29,7 +30,7 @@ source_set("sql_builder") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   sources = [
     "browser_save_password_progress_logger.cc",
     "browser_save_password_progress_logger.h",
@@ -305,7 +306,7 @@ if (is_android) {
   }
 }
 
-static_library("password_hash_data") {
+jumbo_static_library("password_hash_data") {
   sources = [
     "password_hash_data.cc",
     "password_hash_data.h",
@@ -333,7 +334,7 @@ static_library("hash_password_manager") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "fake_form_fetcher.cc",

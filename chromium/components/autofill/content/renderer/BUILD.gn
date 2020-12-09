@@ -2,7 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-static_library("renderer") {
+import("//build/config/jumbo.gni")
+
+jumbo_static_library("renderer") {
   sources = [
     "a11y_utils.cc",
     "a11y_utils.h",
@@ -62,7 +64,7 @@ static_library("renderer") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "autofill_agent_test_api.h",
