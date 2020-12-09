@@ -4,6 +4,7 @@
 
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//components/optimization_guide/features.gni")
 import("//components/vector_icons/vector_icons.gni")
@@ -132,7 +133,7 @@ static_library("vector_icons") {
   ]
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   sources = [
     "actions/omnibox_action.cc",
     "actions/omnibox_action.h",
@@ -682,7 +683,7 @@ if (is_android) {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "fake_autocomplete_provider.cc",
