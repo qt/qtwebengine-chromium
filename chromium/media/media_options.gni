@@ -7,6 +7,7 @@ import("//build/config/chromecast_build.gni")
 import("//build/config/chromeos/args.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//media/gpu/args.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -100,7 +101,7 @@ declare_args() {
   # Enable logging override, e.g. enable DVLOGs through level 2 at build time.
   # On Cast devices, these are logged as INFO.
   # When enabled on Fuchsia, these are logged as VLOGs.
-  enable_logging_override = is_cast_media_device
+  enable_logging_override = !use_jumbo_build && is_cast_media_device
 
   enable_dav1d_decoder = use_blink
 
@@ -176,6 +177,9 @@ assert(!enable_hevc_parser_and_hw_decoder || enable_platform_hevc,
 # https://professionalsupport.dolby.com/s/article/What-is-Dolby-Vision-Profile
 assert(!enable_platform_dolby_vision || enable_platform_hevc,
        "enable_platform_hevc required for enable_platform_dolby_vision")
+
+# Logging override must not be enabled in jumbo builds.
+assert(!use_jumbo_build || !enable_logging_override)
 
 # Use another declare_args() to pick up possible overrides of |use_cras|.
 declare_args() {

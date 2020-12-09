@@ -4,6 +4,7 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 
@@ -73,7 +74,7 @@ source_set("core_keyed_service_factories") {
 # nodes" and could be easily toggled on-and-off through dependencies for
 # different platforms).
 # See also https://crbug.com/883570.
-source_set("browser_sources") {
+jumbo_source_set("browser_sources") {
   visibility = [ "./*" ]
 
   sources = [
@@ -837,7 +838,7 @@ source_set("browser_tests") {
 }
 
 # The set of sources that are needed for both browser and unit tests.
-source_set("test_support") {
+jumbo_source_set("test_support") {
   testonly = true
   sources = [
     "api/declarative_net_request/test_utils.cc",
