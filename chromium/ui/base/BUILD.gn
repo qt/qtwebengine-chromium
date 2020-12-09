@@ -6,6 +6,7 @@ import("//build/buildflag_header.gni")
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/compiler/compiler.gni")
 import("//build/config/dcheck_always_on.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/linux/gtk/gtk.gni")
 import("//build/config/linux/pangocairo/pangocairo.gni")
 import("//build/config/locales.gni")
@@ -105,7 +106,7 @@ source_set("types") {
   deps = [ "//build:chromeos_buildflags" ]
 }
 
-component("base") {
+jumbo_component("base") {
   output_name = "ui_base"
 
   sources = [
@@ -741,7 +742,7 @@ component("features") {
 }
 
 if (is_win || is_mac || is_linux || is_chromeos) {
-  static_library("pixel_diff_test_support") {
+  jumbo_static_library("pixel_diff_test_support") {
     testonly = true
     sources = [
       "test/skia_gold_matching_algorithm.cc",
@@ -784,7 +785,7 @@ if (!is_ios) {
   }
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "interaction/element_test_util.cc",

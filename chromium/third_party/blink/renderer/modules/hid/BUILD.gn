@@ -17,7 +17,7 @@ blink_modules_sources("hid") {
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   sources = [ "hid_device_test.cc" ]
 

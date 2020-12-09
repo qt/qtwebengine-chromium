@@ -4,12 +4,13 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 if (is_android) {
   import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
 }
 
-static_library("sync_device_info") {
+jumbo_static_library("sync_device_info") {
   sources = [
     "device_count_metrics_provider.cc",
     "device_count_metrics_provider.h",
