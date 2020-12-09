@@ -80,6 +80,11 @@
       'V8 Linux64 - shared - builder': 'release_x64_shared_verify_heap',
       'V8 Linux64 - verify csa - builder': 'release_x64_verify_csa',
       'V8 Linux64 - no wasm - builder': 'release_x64_webassembly_disabled',
+      # Jumbo.
+      'V8 Linux64 Jumbo': 'release_x64_jumbo',
+      'V8 Linux64 Jumbo - debug': 'debug_x64_jumbo',
+      'V8 Linux64 Jumbo - limited': 'release_x64_jumbo_limited',
+      'V8 Linux64 Jumbo - limited - debug': 'debug_x64_jumbo_limited',
       # Windows.
       'V8 Win - arm64 - debug builder': 'debug_arm64',
       'V8 Win32 - builder': 'release_x86_minimal_symbols',
@@ -709,6 +714,10 @@
       'debug_bot', 'x64', 'v8_disable_leaptiering'],
     'debug_x64_no_shared_cage': [
       'debug_bot', 'x64', 'v8_disable_pointer_compression_shared_cage'],
+    'debug_x64_jumbo': [
+      'debug_bot', 'x64', 'jumbo'],
+    'debug_x64_jumbo_limited': [
+      'debug_bot', 'x64', 'jumbo_limited'],
     'debug_x64_minimal_symbols': [
       'debug_bot', 'x64', 'minimal_symbols'],
     'debug_x64_non_default_cppgc': [
@@ -915,6 +924,14 @@
     'ios_simulator': {
       'gn_args': 'target_cpu="x64" target_os="ios" '
                  'target_environment="simulator" use_blink=true',
+    },
+
+    'jumbo': {
+      'gn_args': 'use_jumbo_build=true',
+    },
+
+    'jumbo_limited': {
+      'gn_args': 'use_jumbo_build=true jumbo_file_merge_limit=50',
     },
 
     'lld': {

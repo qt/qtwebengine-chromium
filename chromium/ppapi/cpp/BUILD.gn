@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//ppapi/buildflags/buildflags.gni")
 
 if (is_nacl) {
@@ -13,7 +14,7 @@ assert(enable_ppapi)
 if (is_nacl && is_nacl_glibc) {
   cpp_target_type = "shared_library"
 } else {
-  cpp_target_type = "static_library"
+  cpp_target_type = "jumbo_static_library"
 }
 
 # Link to this target to get the PPAPI C++ wrapper objects and plugin startup
@@ -54,7 +55,7 @@ target(cpp_target_type, "cpp") {
 # Link to this target to get only the PPAPI C++ wrapper objects but not the
 # plugin startup code. Some plugins need special startup code that they supply
 # themselves.
-source_set("objects") {
+jumbo_source_set("objects") {
   sources = [
     "array_output.cc",
     "array_output.h",

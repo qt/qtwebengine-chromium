@@ -5,6 +5,7 @@
 import("//build/buildflag_header.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//chrome/version.gni")
 import("//components/optimization_guide/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -77,7 +78,7 @@ proto_library("amount_extraction_heuristic_regexes_proto") {
   sources = [ "payments/amount_extraction_heuristic_regexes.proto" ]
 }
 
-static_library("browser") {
+jumbo_static_library("browser") {
   sources = [
     "autofill_browser_util.cc",
     "autofill_browser_util.h",
@@ -887,7 +888,7 @@ static_library("browser") {
   }
 }
 
-static_library("legal_message_line") {
+jumbo_static_library("legal_message_line") {
   sources = [
     "payments/legal_message_line.cc",
     "payments/legal_message_line.h",
@@ -901,7 +902,7 @@ static_library("legal_message_line") {
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 }
 
-static_library("test_support") {
+jumbo_static_library("test_support") {
   testonly = true
   sources = [
     "crowdsourcing/autofill_crowdsourcing_manager_test_api.h",
