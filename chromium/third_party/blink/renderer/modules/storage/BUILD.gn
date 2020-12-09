@@ -27,7 +27,7 @@ blink_modules_sources("storage") {
   ]
 }
 
-source_set("unit_tests") {
+jumbo_source_set("unit_tests") {
   testonly = true
   sources = [
     "cached_storage_area_test.cc",
