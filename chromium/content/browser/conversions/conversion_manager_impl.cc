@@ -23,7 +23,7 @@
 
 namespace content {
 
-const constexpr base::TimeDelta kConversionManagerQueueReportsInterval =
+const base::TimeDelta kConversionManagerQueueReportsInterval =
     base::TimeDelta::FromMinutes(30);
 
 ConversionManager* ConversionManagerProviderImpl::GetManager(

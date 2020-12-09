@@ -34,8 +34,10 @@ constexpr uint32_t Base32Ord(char c) {
     return c - 'a';
   } else if (c >= '2' && c <= '7') {
     return 26 + c - '2';
+#ifdef __GNUC__
   } else {
     __builtin_unreachable();
+#endif
   }
 }
 
@@ -52,9 +54,11 @@ enum class TLD {
 // domain plus a TLD, into a 22-bit value.
 constexpr uint32_t EncodeDomain(const char label[5], TLD tld) {
   const uint32_t tld_value = static_cast<uint32_t>(tld);
+#ifdef __GNUC__
   if (tld_value > 3 || label[4] != 0) {
     __builtin_unreachable();
   }
+#endif
   return ((Base32Ord(label[0]) << 15 | Base32Ord(label[1]) << 10 |
            Base32Ord(label[2]) << 5 | Base32Ord(label[3]))
           << 2) |

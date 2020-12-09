@@ -24,7 +24,6 @@
 #include "url/origin.h"
 
 namespace blink {
-namespace {
 namespace internal {
 // Following is the intermediate represetnation(IR) of feature policy.
 // Parsing of syntax structures is done in this IR, but semantic checks, e.g.
@@ -36,6 +35,7 @@ struct FeaturePolicyDeclarationNode {
 using FeaturePolicyNode = Vector<FeaturePolicyDeclarationNode>;
 }  // namespace internal
 
+namespace {
 class ParsedFeaturePolicies final
     : public GarbageCollected<ParsedFeaturePolicies>,
       public Supplement<ExecutionContext> {

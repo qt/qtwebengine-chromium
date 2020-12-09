@@ -319,7 +319,7 @@ class COMPONENT_EXPORT(URL) Origin {
    public:
     // Creates a nonce to hold a newly-generated UnguessableToken. The actual
     // token value will be generated lazily.
-    Nonce();
+    Nonce() noexcept = default;
 
     // Creates a nonce to hold an already-generated UnguessableToken value. This
     // constructor should only be used for IPC serialization and testing --

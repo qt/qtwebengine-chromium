@@ -453,8 +453,8 @@ bool ExternalVkImageBacking::BeginAccess(
     GrBackendSemaphore backend_semaphore;
     backend_semaphore.initVulkan(vk_semaphore);
     GrFlushInfo flush_info = {
-        .fNumSemaphores = 1,
-        .fSignalSemaphores = &backend_semaphore,
+        /* .fNumSemaphores = */ 1,
+        /* .fSignalSemaphores = */ &backend_semaphore,
     };
     gpu::AddVulkanCleanupTaskForSkiaFlush(
         context_state()->vk_context_provider(), &flush_info);
@@ -946,8 +946,8 @@ bool ExternalVkImageBacking::WritePixelsWithData(
   GrBackendSemaphore end_access_backend_semaphore;
   end_access_backend_semaphore.initVulkan(vk_end_access_semaphore);
   GrFlushInfo flush_info = {
-      .fNumSemaphores = 1,
-      .fSignalSemaphores = &end_access_backend_semaphore,
+      /* .fNumSemaphores = */ 1,
+      /* .fSignalSemaphores = */ &end_access_backend_semaphore,
   };
   gr_context->flush(flush_info);
 

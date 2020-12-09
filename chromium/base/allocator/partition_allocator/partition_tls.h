@@ -40,9 +40,11 @@ inline bool PartitionTlsCreate(PartitionTlsKey* key,
                                void (*destructor)(void*)) {
   // Cannot use NOIMPLEMENTED() as it may allocate.
   IMMEDIATE_CRASH();
+  return false;
 }
 inline void* PartitionTlsGet(PartitionTlsKey key) {
   IMMEDIATE_CRASH();
+  return nullptr;
 }
 inline void PartitionTlsSet(PartitionTlsKey key, void* value) {
   IMMEDIATE_CRASH();

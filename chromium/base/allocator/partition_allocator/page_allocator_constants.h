@@ -65,7 +65,7 @@ PageAllocationGranularity() {
 #if defined(OS_APPLE)
   return vm_page_size;
 #else
-  return 1 << PageAllocationGranularityShift();
+  return 1ULL << PageAllocationGranularityShift();
 #endif
 }
 

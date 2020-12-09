@@ -50,7 +50,7 @@ class WindowsSpellChecker : public PlatformSpellChecker {
       const base::string16& text,
       spellcheck_platform::TextCheckCompleteCallback callback) override;
 
-#if BUILDFLAG(USE_WIN_HYBRID_SPELLCHECKER)
+#if BUILDFLAG(USE_BROWSER_SPELLCHECKER)
   void GetPerLanguageSuggestions(
       const base::string16& word,
       spellcheck_platform::GetSuggestionsCallback callback);

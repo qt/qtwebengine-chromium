@@ -81,8 +81,8 @@ VkSemaphore CreateExternalVkSemaphore(
   export_info.handleTypes = handle_types;
 
   VkSemaphoreCreateInfo sem_info = {
-      .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-      .pNext = &export_info,
+      /* .sType = */ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+      /* .pNext = */ &export_info,
   };
 
   VkSemaphore semaphore = VK_NULL_HANDLE;

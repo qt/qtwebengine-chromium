@@ -131,9 +131,9 @@ PictureSerializationContext::PictureSerializationContext() = default;
 PictureSerializationContext::~PictureSerializationContext() = default;
 
 PictureSerializationContext::PictureSerializationContext(
-    PictureSerializationContext&&) = default;
+    PictureSerializationContext&&) noexcept = default;
 PictureSerializationContext& PictureSerializationContext::operator=(
-    PictureSerializationContext&&) = default;
+    PictureSerializationContext&&) noexcept = default;
 
 TypefaceSerializationContext::TypefaceSerializationContext(
     TypefaceUsageMap* usage)

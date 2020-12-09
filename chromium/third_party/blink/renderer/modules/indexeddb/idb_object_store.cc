@@ -527,8 +527,8 @@ IDBRequest* IDBObjectStore::DoPutAll(ScriptState* script_state,
     Vector<IDBIndexKeys> keys_for_value;
     for (const auto& it : Metadata().indexes) {
       keys_for_value.emplace_back(IDBIndexKeys{
-          .id = it.key,
-          .keys = GenerateIndexKeysForValue(script_state->GetIsolate(),
+          /* .id = */ it.key,
+          /* .keys = */ GenerateIndexKeysForValue(script_state->GetIsolate(),
                                             Metadata(), *it.value, clones[i])});
     }
     puts[i]->index_keys = std::move(keys_for_value);

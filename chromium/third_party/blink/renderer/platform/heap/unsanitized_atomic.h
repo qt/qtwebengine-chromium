@@ -19,10 +19,19 @@ namespace internal {
 // Currently is only used to access poisoned HeapObjectHeader. For derived or
 // user types an explicit instantiation must be added to unsanitized_atomic.cc.
 template <typename T>
+#if !defined(COMPILER_MSVC)
 class PLATFORM_EXPORT UnsanitizedAtomic final {
+ private:
+  T value_;
+
  public:
   UnsanitizedAtomic() = default;
   explicit UnsanitizedAtomic(T value) : value_(value) {}
+#else
+class PLATFORM_EXPORT UnsanitizedAtomic final : private std::atomic<T> {
+  using Base = std::atomic<T>;
+ public:
+#endif // !defined(COMPILER_MSVC)
 
   void store(T, std::memory_order = std::memory_order_seq_cst);
   T load(std::memory_order = std::memory_order_seq_cst) const;
@@ -37,8 +46,6 @@ class PLATFORM_EXPORT UnsanitizedAtomic final {
                              std::memory_order = std::memory_order_seq_cst);
   bool compare_exchange_weak(T&, T, std::memory_order, std::memory_order);
 
- private:
-  T value_;
 };
 
 template <typename T>

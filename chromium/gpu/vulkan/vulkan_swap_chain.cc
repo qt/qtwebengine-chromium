@@ -358,14 +358,14 @@ bool VulkanSwapChain::PresentBuffer(const gfx::Rect& rect) {
   DCHECK(current_image_data.present_semaphore != VK_NULL_HANDLE);
 
   VkRectLayerKHR rect_layer = {
-      .offset = {rect.x(), rect.y()},
-      .extent = {rect.width(), rect.height()},
-      .layer = 0,
+      /* .offset = */ {rect.x(), rect.y()},
+      /* .extent = */ {rect.width(), rect.height()},
+      /* .layer = */ 0,
   };
 
   VkPresentRegionKHR present_region = {
-      .rectangleCount = 1,
-      .pRectangles = &rect_layer,
+      /* .rectangleCount = */ 1,
+      /* .pRectangles = */ &rect_layer,
   };
 
   VkPresentRegionsKHR present_regions;
@@ -439,12 +439,13 @@ bool VulkanSwapChain::AcquireNextImage() {
   VkSemaphore acquire_semaphore = fence_and_semaphores.semaphores[0];
   VkSemaphore present_semaphore = fence_and_semaphores.semaphores[1];
   uint32_t next_image;
-  auto result = ({
+  VkResult result;
+  {
     base::ScopedBlockingCall scoped_blocking_call(
         FROM_HERE, base::BlockingType::MAY_BLOCK);
-    vkAcquireNextImageKHR(device, swap_chain_, kTimeout, acquire_semaphore,
-                          acquire_fence, &next_image);
-  });
+    result = vkAcquireNextImageKHR(device, swap_chain_, kTimeout,
+                                   acquire_semaphore, acquire_fence, &next_image);
+  }
 
   if (UNLIKELY(result == VK_TIMEOUT)) {
     LOG(ERROR) << "vkAcquireNextImageKHR() hangs.";
@@ -517,7 +518,7 @@ VulkanSwapChain::GetOrCreateFenceAndSemaphores() {
 
     if (UNLIKELY(fence_and_semaphores.fence == VK_NULL_HANDLE)) {
       constexpr VkFenceCreateInfo fence_create_info = {
-          .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+          /* .sType = */ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
       };
       auto result =
           vkCreateFence(device, &fence_create_info,

@@ -644,8 +644,8 @@ class RasterDecoderImpl final : public RasterDecoder,
     // false, so the begin_semaphores can be released, and end_semaphores can
     // be signalled.
     GrFlushInfo flush_info = {
-        .fNumSemaphores = signal_semaphores.size(),
-        .fSignalSemaphores = signal_semaphores.data(),
+        /* .fNumSemaphores = */ signal_semaphores.size(),
+        /* .fSignalSemaphores = */ signal_semaphores.data(),
     };
     gpu::AddVulkanCleanupTaskForSkiaFlush(
         shared_context_state_->vk_context_provider(), &flush_info);

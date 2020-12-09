@@ -47,10 +47,12 @@
 #include "ui/ozone/public/surface_factory_ozone.h"
 #endif
 
-#if defined(OS_WIN) && !defined(TOOLKIT_QT)
+#if defined(OS_WIN)
+#if !defined(TOOLKIT_QT)
 #include "gpu/config/gpu_driver_bug_workarounds.h"
-#include "ui/gl/direct_composition_surface_win.h"
 #include "ui/gl/gl_surface_egl.h"
+#endif
+#include "ui/gl/direct_composition_surface_win.h"
 #endif
 
 #if defined(OS_ANDROID)
