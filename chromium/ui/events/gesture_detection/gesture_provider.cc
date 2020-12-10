@@ -331,7 +331,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
     // received by Qt, due to having an inverse Y coordinate and also because they overlap with
     // each other, thus scrolling sometimes goes into one direction, and sometimes
     // into the opposite direction.
-#if defined(TOOLKIT_QT) && defined(OS_MACOSX)
+#if defined(TOOLKIT_QT) && defined(OS_MAC)
   return true;
 #endif
 
@@ -401,7 +401,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
                float velocity_y) override {
      // Do not use gesture detection for flings on macOS. See explanation at the beginning
      // of OnScroll.
-#if defined(TOOLKIT_QT) && defined(OS_MACOSX)
+#if defined(TOOLKIT_QT) && defined(OS_MAC)
     return true;
 #endif
 
