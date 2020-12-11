@@ -544,7 +544,7 @@ std::tuple<int, double> OscillatorHandler::ProcessARateVector(
 
   float* higher_wave_data[4];
   float* lower_wave_data[4];
-  float table_interpolation_factor[4] __attribute__((aligned(16)));
+  alignas(16) float table_interpolation_factor[4];
 
   int k = 0;
   int n_loops = n / 4;
