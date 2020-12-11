@@ -151,10 +151,12 @@ void SetWebEventLocationFromEventInView(blink::WebMouseEvent* result,
       NOTREACHED();
     }
 #endif
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 101500
     result->movement_x = CGEventGetIntegerValueField(
         cgEvent, kCGEventUnacceleratedPointerMovementX);
     result->movement_y = CGEventGetIntegerValueField(
         cgEvent, kCGEventUnacceleratedPointerMovementY);
+#endif
     result->is_raw_movement_event = true;
   } else {
     result->movement_x = [event deltaX];

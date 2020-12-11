@@ -67,15 +67,15 @@ base::string16 TimeFormat::DetailedWithMonthAndYear(
   constexpr TimeDelta kDay = TimeDelta::FromDays(1);
 
   // Simplify one year to be 365 days.
-  constexpr TimeDelta kYear = 365 * kDay;
+  const TimeDelta kYear = 365 * kDay;
 
   // An average month is a twelfth of a year.
-  constexpr TimeDelta kMonth = kYear / 12;
+  const TimeDelta kMonth = kYear / 12;
 
-  constexpr TimeDelta kHalfSecond = TimeDelta::FromSeconds(1) / 2;
-  constexpr TimeDelta kHalfMinute = kMinute / 2;
-  constexpr TimeDelta kHalfHour = kHour / 2;
-  constexpr TimeDelta kHalfDay = kDay / 2;
+  const TimeDelta kHalfSecond = TimeDelta::FromSeconds(1) / 2;
+  const TimeDelta kHalfMinute = kMinute / 2;
+  const TimeDelta kHalfHour = kHour / 2;
+  const TimeDelta kHalfDay = kDay / 2;
 
   // Rationale: Start by determining major (first) unit, then add minor (second)
   // unit if mandated by |cutoff|.

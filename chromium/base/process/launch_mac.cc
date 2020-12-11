@@ -91,7 +91,9 @@ class PosixSpawnFileActions {
   }
 
   void Chdir(const char* path) API_AVAILABLE(macos(10.15)) {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 101500
     DPSXCHECK(posix_spawn_file_actions_addchdir_np(&file_actions_, path));
+#endif
   }
 
   const posix_spawn_file_actions_t* get() const { return &file_actions_; }

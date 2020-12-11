@@ -67,11 +67,13 @@
 #if !defined(MAC_OS_X_VERSION_10_15) || \
     MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_15
 
+#ifdef __OBJC__
 @interface NSScreen (ForwardDeclare)
 @property(readonly)
     CGFloat maximumPotentialExtendedDynamicRangeColorComponentValue
         API_AVAILABLE(macos(10.15));
 @end
+#endif
 
 #endif  // MAC_OS_X_VERSION_10_15
 

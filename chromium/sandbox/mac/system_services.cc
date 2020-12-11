@@ -39,9 +39,11 @@ void DisableLaunchServices() {
 }
 
 void DisableCoreServicesCheckFix() {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 101500
   if (__builtin_available(macOS 10.15, *)) {
     _CSCheckFixDisable();
   }
+#endif
 }
 
 }  // namespace sandbox
