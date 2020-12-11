@@ -59,12 +59,18 @@ void MatchedFilterCore_AccumulatedError_AVX2(
         chunk1 != h_size ? scratch_memory.data() : &x[x_start_index];
     const float* h_p = &h[0];
     float* a_p = &accumulated_error[0];
-    __m256 s_inst_hadd_256;
+    union {
+        __m256  p;
+        float v[8];
+    } s_inst_hadd_256;
     __m256 s_inst_256;
     __m256 s_inst_256_8;
     __m256 x2_sum_256 = _mm256_set1_ps(0);
     __m256 x2_sum_256_8 = _mm256_set1_ps(0);
-    __m128 e_128;
+    union {
+        __m128 p;
+        float v[4];
+    } e_128;
     float x2_sum = 0.0f;
     float s_acum = 0;
     const int limit_by_16 = h_size >> 4;
@@ -79,19 +85,19 @@ void MatchedFilterCore_AccumulatedError_AVX2(
       x2_sum_256_8 = _mm256_fmadd_ps(x_k_8, x_k_8, x2_sum_256_8);
       s_inst_256 = _mm256_mul_ps(h_k, x_k);
       s_inst_256_8 = _mm256_mul_ps(h_k_8, x_k_8);
-      s_inst_hadd_256 = _mm256_hadd_ps(s_inst_256, s_inst_256_8);
-      s_inst_hadd_256 = _mm256_hadd_ps(s_inst_hadd_256, s_inst_hadd_256);
-      s_acum += s_inst_hadd_256[0];
-      e_128[0] = s_acum - y[i];
-      s_acum += s_inst_hadd_256[4];
-      e_128[1] = s_acum - y[i];
-      s_acum += s_inst_hadd_256[1];
-      e_128[2] = s_acum - y[i];
-      s_acum += s_inst_hadd_256[5];
-      e_128[3] = s_acum - y[i];
+      s_inst_hadd_256.p = _mm256_hadd_ps(s_inst_256, s_inst_256_8);
+      s_inst_hadd_256.p = _mm256_hadd_ps(s_inst_hadd_256.p, s_inst_hadd_256.p);
+      s_acum += s_inst_hadd_256.v[0];
+      e_128.v[0] = s_acum - y[i];
+      s_acum += s_inst_hadd_256.v[4];
+      e_128.v[1] = s_acum - y[i];
+      s_acum += s_inst_hadd_256.v[1];
+      e_128.v[2] = s_acum - y[i];
+      s_acum += s_inst_hadd_256.v[5];
+      e_128.v[3] = s_acum - y[i];
 
       __m128 accumulated_error = _mm_load_ps(a_p);
-      accumulated_error = _mm_fmadd_ps(e_128, e_128, accumulated_error);
+      accumulated_error = _mm_fmadd_ps(e_128.p, e_128.p, accumulated_error);
       _mm_storeu_ps(a_p, accumulated_error);
     }
     // Sum components together.
@@ -209,8 +215,11 @@ void MatchedFilterCore_AVX2(size_t x_start_index,
     x2_sum_256 = _mm256_add_ps(x2_sum_256, x2_sum_256_8);
     s_256 = _mm256_add_ps(s_256, s_256_8);
     __m128 sum = hsum_ab(x2_sum_256, s_256);
-    x2_sum += sum[0];
-    s += sum[1];
+    float f0, f1;
+    _MM_EXTRACT_FLOAT(f0, sum, 0);
+    _MM_EXTRACT_FLOAT(f1, sum, 1);
+    x2_sum += f0;
+    s += f1;
 
     // Compute the matched filter error.
     float e = y[i] - s;
