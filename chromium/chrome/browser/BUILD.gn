@@ -3905,7 +3905,6 @@ static_library("browser") {
       "//chrome/browser/resources:component_extension_resources",
       "//chrome/browser/search:generated",
       "//chrome/browser/ui/color:color_headers",
-      "//chrome/common/apps/platform_apps",
       "//chrome/common/importer:interfaces",
 #      "//chrome/common/search:generate_chrome_colors_info",
 #      "//chrome/common/search:generate_colors_info",
@@ -3948,7 +3947,10 @@ static_library("browser") {
       ]
     }
     if (enable_extensions) {
-      deps += [ "//extensions/browser" ]
+      deps += [
+        "//chrome/common/apps/platform_apps",
+        "//extensions/browser"
+      ]
     }
 
     if (is_posix || is_fuchsia) {
