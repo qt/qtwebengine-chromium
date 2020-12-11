@@ -30,7 +30,7 @@ static __m128 WrapVirtualIndexVector(__m128 x,
   // cmplt(a,b) returns 0xffffffff (-1) if a < b and 0 if not.  So cmp is -1 or
   // 0 depending on whether r < f, which is what we need to compute floor(r).
   const __m128i cmp =
-      reinterpret_cast<__m128i>(_mm_cmplt_ps(r, _mm_cvtepi32_ps(f)));
+      _mm_castps_si128(_mm_cmplt_ps(r, _mm_cvtepi32_ps(f)));
 
   // This subtracts 1 if needed to get floor(r).
   f = _mm_add_epi32(f, cmp);
@@ -88,10 +88,10 @@ std::tuple<int, double> OscillatorHandler::ProcessKRateVector(
   // interpolation.  Align these for best efficiency on older CPUs where aligned
   // access is much faster than unaliged.
   // TODO(1013118): Is there a faster way to do this?
-  float sample1_lower[4] __attribute__((aligned(16)));
-  float sample2_lower[4] __attribute__((aligned(16)));
-  float sample1_higher[4] __attribute__((aligned(16)));
-  float sample2_higher[4] __attribute__((aligned(16)));
+  alignas(16) float sample1_lower[4];
+  alignas(16) float sample2_lower[4];
+  alignas(16) float sample1_higher[4];
+  alignas(16) float sample2_higher[4];
 
   int k = 0;
   int n_loops = n / 4;
@@ -176,7 +176,7 @@ static __m128d WrapVirtualIndexVectorPd(__m128d x,
   // cmplt(a,b) returns 0xffffffffffffffff (-1) if a < b and 0 if not.  So cmp
   // is -1 or 0 depending on whether r < f, which is what we need to compute
   // floor(r).
-  __m128i cmp = reinterpret_cast<__m128i>(_mm_cmplt_pd(r, _mm_cvtepi32_pd(f)));
+  __m128i cmp = _mm_castpd_si128(_mm_cmplt_pd(r, _mm_cvtepi32_pd(f)));
 
   // Take the low 32 bits of each 64-bit result and move them into the two
   // lowest 32-bit fields.
@@ -228,9 +228,9 @@ double OscillatorHandler::ProcessARateVectorKernel(
 
   // Convert the virtual read index (parts) to an integer, and carefully
   // merge them into one vector.
-  __m128i v_read0 = reinterpret_cast<__m128i>(_mm_movelh_ps(
-      reinterpret_cast<__m128>(_mm_cvttpd_epi32(v_read_index_lo)),
-      reinterpret_cast<__m128>(_mm_cvttpd_epi32(v_read_index_hi))));
+  __m128i v_read0 = _mm_castps_si128(_mm_movelh_ps(
+      _mm_castsi128_ps(_mm_cvttpd_epi32(v_read_index_lo)),
+      _mm_castsi128_ps(_mm_cvttpd_epi32(v_read_index_hi))));
 
   // Get index to next element being sure to wrap the index around if needed.
   __m128i v_read1 = _mm_add_epi32(v_read0, _mm_set1_epi32(1));
@@ -243,10 +243,10 @@ double OscillatorHandler::ProcessARateVectorKernel(
     v_read1 = _mm_and_si128(v_read1, v_mask);
   }
 
-  float sample1_lower[4] __attribute__((aligned(16)));
-  float sample2_lower[4] __attribute__((aligned(16)));
-  float sample1_higher[4] __attribute__((aligned(16)));
-  float sample2_higher[4] __attribute__((aligned(16)));
+  alignas(16) float sample1_lower[4];
+  alignas(16) float sample2_lower[4];
+  alignas(16) float sample1_higher[4];
+  alignas(16) float sample2_higher[4];
 
   const unsigned* read0 = reinterpret_cast<const unsigned*>(&v_read0);
   const unsigned* read1 = reinterpret_cast<const unsigned*>(&v_read1);
