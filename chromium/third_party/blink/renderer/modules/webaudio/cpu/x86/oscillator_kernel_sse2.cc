@@ -34,7 +34,7 @@ __m128 WrapVirtualIndexVector(__m128 x,
   // cmplt(a,b) returns 0xffffffff (-1) if a < b and 0 if not.  So cmp is -1 or
   // 0 depending on whether r < f, which is what we need to compute floor(r).
   const __m128i cmp =
-      reinterpret_cast<__m128i>(_mm_cmplt_ps(r, _mm_cvtepi32_ps(f)));
+      _mm_castps_si128(_mm_cmplt_ps(r, _mm_cvtepi32_ps(f)));
 
   // This subtracts 1 if needed to get floor(r).
   f = _mm_add_epi32(f, cmp);
@@ -64,7 +64,7 @@ __m128d WrapVirtualIndexVectorPd(__m128d x,
   // cmplt(a,b) returns 0xffffffffffffffff (-1) if a < b and 0 if not.  So cmp
   // is -1 or 0 depending on whether r < f, which is what we need to compute
   // floor(r).
-  __m128i cmp = reinterpret_cast<__m128i>(_mm_cmplt_pd(r, _mm_cvtepi32_pd(f)));
+  __m128i cmp = _mm_castpd_si128(_mm_cmplt_pd(r, _mm_cvtepi32_pd(f)));
 
   // Take the low 32 bits of each 64-bit result and move them into the two
   // lowest 32-bit fields.
@@ -232,9 +232,9 @@ double OscillatorHandler::ProcessARateVectorKernel(
 
   // Convert the virtual read index (parts) to an integer, and carefully
   // merge them into one vector.
-  __m128i v_read0 = reinterpret_cast<__m128i>(_mm_movelh_ps(
-      reinterpret_cast<__m128>(_mm_cvttpd_epi32(v_read_index_lo)),
-      reinterpret_cast<__m128>(_mm_cvttpd_epi32(v_read_index_hi))));
+  __m128i v_read0 = _mm_castps_si128(_mm_movelh_ps(
+      _mm_castsi128_ps(_mm_cvttpd_epi32(v_read_index_lo)),
+      _mm_castsi128_ps(_mm_cvttpd_epi32(v_read_index_hi))));
 
   // Get index to next element being sure to wrap the index around if needed.
   __m128i v_read1 = _mm_add_epi32(v_read0, _mm_set1_epi32(1));

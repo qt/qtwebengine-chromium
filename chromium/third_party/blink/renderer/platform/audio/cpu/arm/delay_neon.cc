@@ -24,7 +24,7 @@ ALWAYS_INLINE static int32x4_t WrapIndexVector(int32x4_t v_write_index,
 
   // If write_index >= buffer_length, cmp = 0xffffffff.  Otherwise 0.
   int32x4_t cmp =
-      reinterpret_cast<int32x4_t>(vcgeq_s32(v_write_index, v_buffer_length));
+      vreinterpretq_s32_u32(vcgeq_s32(v_write_index, v_buffer_length));
 
   // Bitwise-and cmp with buffer length to get buffer length or 0 depending on
   // whether write_index >= buffer_length or not.  Subtract this from the index
@@ -48,8 +48,8 @@ ALWAYS_INLINE static float32x4_t WrapPositionVector(
   // whether read_position >= buffer length or not.  Then subtract from the
   // position to wrap it around if needed.
   return vsubq_f32(v_position,
-                   reinterpret_cast<float32x4_t>(vandq_u32(
-                       reinterpret_cast<uint32x4_t>(v_buffer_length), cmp)));
+                   vreinterpretq_f32_u32(vandq_u32(
+                       vreinterpretq_u32_f32(v_buffer_length), cmp)));
 }
 
 std::tuple<size_t, size_t> Delay::ProcessARateVector(
@@ -73,18 +73,26 @@ std::tuple<size_t, size_t> Delay::ProcessARateVector(
   const int32x4_t v_incr = vdupq_n_s32(4);
 
   // Temp arrays for storing the samples needed for interpolation
-  std::array<float, 4> sample1 __attribute((aligned(16)));
-  std::array<float, 4> sample2 __attribute((aligned(16)));
+  alignas(16) std::array<float, 4> sample1;
+  alignas(16) std::array<float, 4> sample2;
 
   // Temp array for holding the indices so we can access them
   // individually.
-  std::array<int, 4> read_index1 __attribute((aligned(16)));
-  std::array<int, 4> read_index2 __attribute((aligned(16)));
+  alignas(16) std::array<int, 4> read_index1;
+  alignas(16) std::array<int, 4> read_index2;
 
   // Initialize the write index vector, and  wrap the values if needed.
+#if defined(_MSC_VER) && !defined(__clang__)
+  int32x4_t v_write_index;
+  vsetq_lane_s32(w_index + 0, v_write_index, 0);
+  vsetq_lane_s32(w_index + 1, v_write_index, 1);
+  vsetq_lane_s32(w_index + 2, v_write_index, 2);
+  vsetq_lane_s32(w_index + 3, v_write_index, 3);
+#else
   int32x4_t v_write_index = {
       static_cast<int32_t>(w_index + 0), static_cast<int32_t>(w_index + 1),
       static_cast<int32_t>(w_index + 2), static_cast<int32_t>(w_index + 3)};
+#endif
   v_write_index = WrapIndexVector(v_write_index, v_buffer_length_int);
 
   int number_of_loops = frames_to_process / 4;
@@ -165,14 +173,14 @@ void Delay::HandleNaN(base::span<float> delay_times,
     // Otherwise, preserve x.  We pun the types here so we can apply
     // the  mask to the floating point numbers.  A integer value of
     // 0 corresponds to a floating-point +0.0, which is what we want.
-    uint32x4_t xint = vandq_u32(cmp, reinterpret_cast<uint32x4_t>(x));
+    uint32x4_t xint = vandq_u32(cmp, vreinterpretq_u32_f32(x));
 
     // Invert the mask.
     cmp = vmvnq_u32(cmp);
 
     // More punning of the types so we can apply the complement mask
     // to set cmp to either max_time (if NaN) or 0 (otherwise)
-    cmp = vandq_u32(cmp, reinterpret_cast<uint32x4_t>(v_max_time));
+    cmp = vandq_u32(cmp, vreinterpretq_u32_f32(v_max_time));
 
     // Merge i (bitwise or) x and cmp.  This makes x = max_time if x was NaN and
     // preserves x if not.  More type punning to do bitwise or the results
@@ -181,7 +189,7 @@ void Delay::HandleNaN(base::span<float> delay_times,
 
     // Finally, save the float result.
     vst1q_f32(delay_times.subspan(k, 4u).data(),
-              reinterpret_cast<float32x4_t>(xint));
+              vreinterpretq_f32_u32(xint));
   }
 
   // Handle any frames not done in the loop above.
