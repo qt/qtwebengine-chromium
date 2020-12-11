@@ -261,7 +261,7 @@ void PeriodicWaveImpl::WaveDataForFundamentalFrequency(
   // bit of the float numbers, effecitvely taking the absolute value.
   const __m128 frequency =
       _mm_and_ps(_mm_loadu_ps(fundamental_frequency.data()),
-                 reinterpret_cast<__m128>(_mm_set1_epi32(0x7fffffff)));
+                 _mm_castsi128_ps(_mm_set1_epi32(0x7fffffff)));
 
   // pos = 0xffffffff if freq > 0; otherwise 0
   const __m128 pos = _mm_cmpgt_ps(frequency, _mm_set1_ps(0));

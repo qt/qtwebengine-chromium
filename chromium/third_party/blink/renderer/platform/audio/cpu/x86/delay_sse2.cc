@@ -74,8 +74,8 @@ std::tuple<size_t, size_t> Delay::ProcessARateVector(
   const __m128i v_incr = _mm_set1_epi32(4);
 
   // Temp arrays for storing the samples needed for interpolation
-  std::array<float, 4> sample1 __attribute((aligned(16)));
-  std::array<float, 4> sample2 __attribute((aligned(16)));
+  std::array<float, 4> sample1 alignas(16);
+  std::array<float, 4> sample2 alignas(16);
 
   // Initialize the write index vector, and  wrap the values if needed.
   int w_index_3 = base::CheckAdd(w_index, 3u).ValueOrDie<int>();
