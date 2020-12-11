@@ -35,7 +35,7 @@ namespace {
 // This has some startup cost to load the constants and such, so it's
 // usually not worth it for short strings.
 size_t FindInitialQuerySafeString(const char* source, size_t length) {
-#if defined(__SSE2__) || defined(__aarch64__)
+#if (defined(__SSE2__) || defined(__aarch64__)) && defined(__clang__)
   constexpr size_t kChunkSize = 16;
   size_t i;
   for (i = 0; i < base::bits::AlignDown(length, kChunkSize); i += kChunkSize) {
@@ -58,6 +58,31 @@ size_t FindInitialQuerySafeString(const char* source, size_t length) {
       return i;
     }
 #endif
+  }
+  return i;
+#elif defined(__SSE2__)
+  constexpr size_t kChunkSize = 16;
+  size_t i;
+  for (i = 0; i < base::bits::AlignDown(length, kChunkSize); i += kChunkSize) {
+    __m128i b;
+    // memcpy((char*)&b, source + i, sizeof(b));
+    b = _mm_loadu_si128((__m128i*)(source + i));
+
+    // auto mask = b >= 0x24 && b <= 0x7e && b != 0x27 && b != 0x3c && b != 0x3e;
+    __m128i mask1 = _mm_cmplt_epi8(b, _mm_set1_epi8(0x24));
+    __m128i mask2 = _mm_cmpgt_epi8(b, _mm_set1_epi8(0x7e));
+    __m128i mask3 = _mm_cmpeq_epi8(b, _mm_set1_epi8(0x27));
+    __m128i mask4 = _mm_cmpeq_epi8(b, _mm_set1_epi8(0x3c));
+    __m128i mask5 = _mm_cmpeq_epi8(b, _mm_set1_epi8(0x3e));
+
+    mask1 = _mm_or_si128(mask1, mask2);
+    mask2 = _mm_or_si128(mask3, mask4);
+    mask1 = _mm_or_si128(mask1, mask5);
+    mask1 = _mm_or_si128(mask1, mask2);
+
+    if (_mm_movemask_epi8(reinterpret_cast<__m128i>(mask1)) != 0) {
+      return i;
+    }
   }
   return i;
 #else
