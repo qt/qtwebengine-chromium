@@ -22,6 +22,8 @@ declare_args() {
   # snapshots if the parameter `treatGlobalObjectsAsRoots` of `takeHeapSnapshot`
   # is set.
   enable_additional_blink_object_names = enable_blink_heap_verification
+
+  use_rollup = !is_debug
 }
 
 # Unhandled Tap enable means Contextual Search aka Touch to Search.
