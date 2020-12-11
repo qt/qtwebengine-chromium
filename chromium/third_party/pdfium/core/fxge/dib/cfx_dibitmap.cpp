@@ -866,7 +866,7 @@ Optional<CFX_DIBitmap::PitchAndSize> CFX_DIBitmap::CalculatePitchAndSize(
   size_t safe_size = actual_pitch;
   safe_size *= height;
   // The final size of the buffer will be (*size + 4). We are trying to not exceed this.
-  if (((std::numeric_limits<std::size_t>::max() - 4) / pitch) < static_cast<uint32_t>(height))
+  if (((std::numeric_limits<std::size_t>::max() - 4) / actual_pitch) < static_cast<uint32_t>(height))
     return pdfium::nullopt;
 
   return PitchAndSize{actual_pitch, safe_size};
