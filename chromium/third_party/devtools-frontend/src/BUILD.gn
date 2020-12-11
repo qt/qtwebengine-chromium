@@ -286,7 +286,7 @@ action("generate_devtools_grd") {
   # Always assume the release files are included.
   _expected_files = []
   _expected_files += grd_files_release_sources
-  if (is_debug) {
+  if (!use_rollup) {
     _expected_files += grd_files_debug_sources
   }
 
@@ -338,7 +338,7 @@ action("devtools_extension_api") {
 
 build_release_devtools_args = []
 
-if (have_nodejs && !is_debug) {
+if (use_rollup) {
   build_release_devtools_args += [ "--rollup" ]
 }
 

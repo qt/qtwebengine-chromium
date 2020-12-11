@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//third_party/blink/public/public_features.gni")
 import("../third_party/typescript/typescript.gni")
 
 resources_out_dir = "$root_out_dir/resources/inspector_overlay"
@@ -68,9 +69,13 @@ action("build_inspector_overlay") {
     rebase_path(target_gen_dir, root_build_dir),
     "--output_path",
     rebase_path(resources_out_dir, root_build_dir),
-    "--rollup_plugin",
-    rebase_path("loadCSS.rollup.js", root_build_dir),
   ]
+  if (use_rollup) {
+    args += [
+      "--rollup_plugin",
+      rebase_path("loadCSS.rollup.js", root_build_dir),
+    ]
+  }
 
   public_deps = [
     ":copy_css_to_gen",

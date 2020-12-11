@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//third_party/blink/public/public_features.gni")
 import("../../../all_devtools_modules.gni")
 import("../../../third_party/typescript/typescript.gni")
 import("./copy.gni")
@@ -27,7 +28,7 @@ template("devtools_module") {
     is_web_worker = defined(invoker.is_web_worker) && invoker.is_web_worker
   }
 
-  if (is_debug) {
+  if (!use_rollup) {
     copy_gen_to_resources(target_name) {
       sources = filter_include(get_target_outputs(_typescript_target_dep),
                                [

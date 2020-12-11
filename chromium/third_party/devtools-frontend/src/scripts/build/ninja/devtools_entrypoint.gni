@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//third_party/blink/public/public_features.gni")
 import("../../../devtools_module_entrypoints.gni")
 import("../../../third_party/typescript/typescript.gni")
 import("./copy.gni")
@@ -32,7 +33,7 @@ template("devtools_entrypoint") {
   # In debug mode, the entrypoint is kept as-is. This means we only
   # need to compile with TypeScript, which means it will fetch all
   # of its files as separate network requests.
-  if (is_debug) {
+  if (!use_rollup) {
     _ts_library_target_name = _entrypoint_target_name + "-typescript"
 
     ts_library(_ts_library_target_name) {
