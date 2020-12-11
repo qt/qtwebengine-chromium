@@ -675,7 +675,7 @@ std::vector<AXNode::AXID> AXNode::GetTableColHeaderNodeIds(
   if (col_index < 0 || size_t(col_index) >= table_info->col_count)
     return std::vector<AXNode::AXID>();
 
-  return std::vector<AXNode::AXID>(table_info->col_headers[size_t{col_index}]);
+  return std::vector<AXNode::AXID>(table_info->col_headers[(size_t)col_index]);
 }
 
 std::vector<AXNode::AXID> AXNode::GetTableRowHeaderNodeIds(
@@ -687,7 +687,7 @@ std::vector<AXNode::AXID> AXNode::GetTableRowHeaderNodeIds(
   if (row_index < 0 || size_t(row_index) >= table_info->row_count)
     return std::vector<AXNode::AXID>();
 
-  return std::vector<AXNode::AXID>(table_info->row_headers[size_t{row_index}]);
+  return std::vector<AXNode::AXID>(table_info->row_headers[(size_t)row_index]);
 }
 
 std::vector<AXNode::AXID> AXNode::GetTableUniqueCellIds() const {

@@ -188,7 +188,7 @@ bool VulkanSwapChain::InitializeSwapChain(
   swap_chain_create_info.minImageCount = min_image_count;
   swap_chain_create_info.imageFormat = surface_format.format;
   swap_chain_create_info.imageColorSpace = surface_format.colorSpace;
-  swap_chain_create_info.imageExtent = {image_size.width(), image_size.height()};
+  swap_chain_create_info.imageExtent = {(uint32_t)image_size.width(), (uint32_t)image_size.height()};
   swap_chain_create_info.imageArrayLayers = 1;
   swap_chain_create_info.imageUsage = image_usage_flags;
   swap_chain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
