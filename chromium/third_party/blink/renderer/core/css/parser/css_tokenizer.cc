@@ -10,7 +10,7 @@
 
 #ifdef __SSE2__
 #include <immintrin.h>
-#elif defined(__ARM_NEON__)
+#elif defined(__ARM_NEON__) || defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
 
@@ -727,7 +727,7 @@ StringView CSSTokenizer::ConsumeName() {
   StringView buffer = input_.Peek();
 
   unsigned size = 0;
-#if defined(__SSE2__) || defined(__ARM_NEON__)
+#if defined(__SSE2__) || defined(__ARM_NEON__) || defined(__ARM_NEON)
   if (buffer.Is8Bit()) {
     const LChar* ptr = buffer.Characters8();
     while (size + 16 <= buffer.length()) {
@@ -760,7 +760,7 @@ StringView CSSTokenizer::ConsumeName() {
       // or all-one for each byte, so we can use the code from
       // https://community.arm.com/arm-community-blogs/b/infrastructure-solutions-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
       non_name_mask = non_name_mask && (b >= 0);
-      uint8x8_t narrowed_mask = vshrn_n_u16(non_name_mask, 4);
+      uint8x8_t narrowed_mask = vshrn_n_u16(vreinterpretq_u16_s8(non_name_mask), 4);
       uint64_t bits = vget_lane_u64(vreinterpret_u64_u8(narrowed_mask), 0);
       if (bits == 0) {
         size += 16;
