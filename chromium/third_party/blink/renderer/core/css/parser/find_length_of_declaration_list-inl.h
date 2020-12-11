@@ -551,8 +551,8 @@ ALWAYS_INLINE static size_t FindLengthOfDeclarationList(
     const uint8x8x2_t eq_newline_table{0, 0, 0,    0, 0,    0,    0, 0,
                                        0, 0, 0xff, 0, 0xff, 0xff, 0, 0};
     const uint8x16_t eq_newline =
-        vcombine_s8(vtbl2_u8(eq_newline_table, vget_low_s8(x)),
-                    vtbl2_u8(eq_newline_table, vget_high_s8(x)));
+        vcombine_u8(vtbl2_u8(eq_newline_table, vget_low_u8(x)),
+                    vtbl2_u8(eq_newline_table, vget_high_u8(x)));
 #endif
     const uint8x16_t quoted_newline = is_quoted & eq_newline;
 

@@ -121,13 +121,13 @@ static void RGBA_to_rgbA_portable(uint32_t* dst, const uint32_t* src, int count)
 // Note: that vrndns_f32 is the single float version of vcvtnq_u32_f32.
 
 SI uint32_t pixel_round_as_RP(float n) {
-#if defined(SK_ARM_HAS_NEON) && defined(SK_CPU_ARM64)
+#if defined(SK_ARM_HAS_NEON) && defined(SK_CPU_ARM64) && defined(__clang__)
     return vrndns_f32(n);
-#elif defined(SK_ARM_HAS_NEON) && !defined(SK_CPU_ARM64)
+#elif defined(SK_ARM_HAS_NEON)
     float32x4_t vN{n + 0.5f};
-    return vcvtq_u32_f32(vN)[0];
-#elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE2 && (defined(__clang__) || !defined(_MSC_VER))
-    return _mm_cvtps_epi32(__m128{n})[0];
+    return vgetq_lane_u32(vcvtq_u32_f32(vN), 0);
+#elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE2
+    return _mm_cvtss_si32(_mm_set_ss(n));
 #else
     return (uint32_t)(n + 0.5f);
 #endif
