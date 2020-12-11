@@ -70,8 +70,8 @@ std::tuple<unsigned, int> AudioDelayDSPKernel::ProcessARateVector(
   const __m128i v_incr = _mm_set1_epi32(4);
 
   // Temp arrays for storing the samples needed for interpolation
-  float sample1[4] __attribute((aligned(16)));
-  float sample2[4] __attribute((aligned(16)));
+  alignas(16) float sample1[4];
+  alignas(16) float sample2[4];
 
   // Initialize the write index vector, and  wrap the values if needed.
   __m128i v_write_index =
