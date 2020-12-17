@@ -70,8 +70,12 @@ void ColorChooserPopupUIController::Trace(Visitor* visitor) const {
 }
 
 void ColorChooserPopupUIController::OpenUI() {
+#if !defined(TOOLKIT_QT)
   if (client_->ShouldShowSuggestions() ||
       ::features::IsFormControlsRefreshEnabled())
+#else
+  if (client_->ShouldShowSuggestions())
+#endif // !defined(TOOLKIT_QT)
     OpenPopup();
   else
     OpenColorChooser();
