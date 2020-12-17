@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//build/config/features.gni")
 
 # This file depends on the legacy global sources assignment filter. It should
@@ -11,7 +12,7 @@ import("//build/config/features.gni")
 import("//build/config/deprecated_default_sources_assignment_filter.gni")
 set_sources_assignment_filter(deprecated_default_sources_assignment_filter)
 
-static_library("storage_monitor") {
+jumbo_static_library("storage_monitor") {
   sources = [
     "media_storage_util.cc",
     "media_storage_util.h",

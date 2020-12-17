@@ -30,7 +30,7 @@ const double kDefaultPerHostRatio = 0.75;
 const double kDefaultPoolSizeRatio = 0.8;
 
 // Skews |value| by +/- |percent|.
-int64_t RandomizeByPercent(int64_t value, int percent) {
+int64_t MyRandomizeByPercent(int64_t value, int percent) {
   double random_percent = (base::RandDouble() - 0.5) * percent * 2;
   return value + (value * (random_percent / 100.0));
 }
@@ -49,7 +49,7 @@ QuotaSettings CalculateIncognitoDynamicSettings(
     max_incognito_pool_size = std::numeric_limits<int64_t>::max();
   } else {
     max_incognito_pool_size =
-        RandomizeByPercent(max_incognito_pool_size, kRandomizedPercentage);
+        MyRandomizeByPercent(max_incognito_pool_size, kRandomizedPercentage);
   }
 
   QuotaSettings settings;
@@ -136,7 +136,7 @@ base::Optional<QuotaSettings> CalculateNominalDynamicSettings(
                static_cast<int64_t>(total * kMustRemainAvailableRatio));
   settings.per_host_quota = pool_size * kPerHostTemporaryRatio;
   settings.session_only_per_host_quota = std::min(
-      RandomizeByPercent(kMaxSessionOnlyHostQuota, kRandomizedPercentage),
+      MyRandomizeByPercent(kMaxSessionOnlyHostQuota, kRandomizedPercentage),
       static_cast<int64_t>(settings.per_host_quota *
                            kSessionOnlyHostQuotaRatio));
   settings.refresh_interval = base::TimeDelta::FromSeconds(60);

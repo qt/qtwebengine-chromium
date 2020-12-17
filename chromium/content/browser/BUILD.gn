@@ -28,6 +28,82 @@ import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 import("//build/config/deprecated_default_sources_assignment_filter.gni")
 set_sources_assignment_filter(deprecated_default_sources_assignment_filter)
 
+jumbo_static_library("devtools_protocol") {
+  configs += [
+    "//build/config:precompiled_headers",
+    "//content:content_implementation",
+  ]
+
+  deps = [
+    "//base",
+    "//content/browser/devtools:devtools_background_services_proto",
+    "//content/browser/devtools:protocol_sources",
+    "//content/common:buildflags",
+    "//third_party/inspector_protocol:crdtp",
+  ]
+
+  sources = [
+    "$target_gen_dir/devtools/protocol/audits.cc",
+    "$target_gen_dir/devtools/protocol/audits.h",
+    "$target_gen_dir/devtools/protocol/background_service.cc",
+    "$target_gen_dir/devtools/protocol/background_service.h",
+    "$target_gen_dir/devtools/protocol/base_string_adapter.cc",
+    "$target_gen_dir/devtools/protocol/base_string_adapter.h",
+    "$target_gen_dir/devtools/protocol/browser.cc",
+    "$target_gen_dir/devtools/protocol/browser.h",
+    "$target_gen_dir/devtools/protocol/dom.cc",
+    "$target_gen_dir/devtools/protocol/dom.h",
+    "$target_gen_dir/devtools/protocol/emulation.cc",
+    "$target_gen_dir/devtools/protocol/emulation.h",
+    "$target_gen_dir/devtools/protocol/fetch.cc",
+    "$target_gen_dir/devtools/protocol/fetch.h",
+    "$target_gen_dir/devtools/protocol/forward.h",
+    "$target_gen_dir/devtools/protocol/input.cc",
+    "$target_gen_dir/devtools/protocol/input.h",
+    "$target_gen_dir/devtools/protocol/inspector.cc",
+    "$target_gen_dir/devtools/protocol/inspector.h",
+    "$target_gen_dir/devtools/protocol/io.cc",
+    "$target_gen_dir/devtools/protocol/io.h",
+    "$target_gen_dir/devtools/protocol/log.cc",
+    "$target_gen_dir/devtools/protocol/log.h",
+    "$target_gen_dir/devtools/protocol/memory.cc",
+    "$target_gen_dir/devtools/protocol/memory.h",
+    "$target_gen_dir/devtools/protocol/network.cc",
+    "$target_gen_dir/devtools/protocol/network.h",
+    "$target_gen_dir/devtools/protocol/overlay.cc",
+    "$target_gen_dir/devtools/protocol/overlay.h",
+    "$target_gen_dir/devtools/protocol/page.cc",
+    "$target_gen_dir/devtools/protocol/page.h",
+    "$target_gen_dir/devtools/protocol/protocol.cc",
+    "$target_gen_dir/devtools/protocol/protocol.h",
+    "$target_gen_dir/devtools/protocol/runtime.cc",
+    "$target_gen_dir/devtools/protocol/runtime.h",
+    "$target_gen_dir/devtools/protocol/schema.cc",
+    "$target_gen_dir/devtools/protocol/schema.h",
+    "$target_gen_dir/devtools/protocol/security.cc",
+    "$target_gen_dir/devtools/protocol/security.h",
+    "$target_gen_dir/devtools/protocol/service_worker.cc",
+    "$target_gen_dir/devtools/protocol/service_worker.h",
+    "$target_gen_dir/devtools/protocol/storage.cc",
+    "$target_gen_dir/devtools/protocol/storage.h",
+    "$target_gen_dir/devtools/protocol/system_info.cc",
+    "$target_gen_dir/devtools/protocol/system_info.h",
+    "$target_gen_dir/devtools/protocol/target.cc",
+    "$target_gen_dir/devtools/protocol/target.h",
+    "$target_gen_dir/devtools/protocol/tethering.cc",
+    "$target_gen_dir/devtools/protocol/tethering.h",
+    "$target_gen_dir/devtools/protocol/tracing.cc",
+    "$target_gen_dir/devtools/protocol/tracing.h",
+  ]
+  if (!is_android) {
+    # The WebAuthn devtools protocol API is not supported in Android yet.
+    sources += [
+      "$target_gen_dir/devtools/protocol/web_authn.cc",
+      "$target_gen_dir/devtools/protocol/web_authn.h",
+    ]
+  }
+}
+
 jumbo_static_library("browser") {
   # Only the public target should depend on this. All other targets (even
   # internal content ones) should depend on the public one.
@@ -111,8 +187,6 @@ jumbo_static_library("browser") {
     "//content/browser/content_index:content_index_proto",
     "//content/browser/conversions:mojo_bindings",
     "//content/browser/cookie_store:cookie_store_proto",
-    "//content/browser/devtools:devtools_background_services_proto",
-    "//content/browser/devtools:protocol_sources",
     "//content/browser/file_system_access:proto",
     "//content/browser/notifications:notification_proto",
     "//content/browser/payments:payment_app_proto",
@@ -255,6 +329,7 @@ jumbo_static_library("browser") {
     "//ui/snapshot",
     "//ui/touch_selection",
     "//v8:v8_version",
+    ":devtools_protocol",
   ]
 
   public_deps = [
@@ -268,57 +343,6 @@ jumbo_static_library("browser") {
   ]
 
   sources = [
-    "$target_gen_dir/devtools/protocol/audits.cc",
-    "$target_gen_dir/devtools/protocol/audits.h",
-    "$target_gen_dir/devtools/protocol/background_service.cc",
-    "$target_gen_dir/devtools/protocol/background_service.h",
-    "$target_gen_dir/devtools/protocol/base_string_adapter.cc",
-    "$target_gen_dir/devtools/protocol/base_string_adapter.h",
-    "$target_gen_dir/devtools/protocol/browser.cc",
-    "$target_gen_dir/devtools/protocol/browser.h",
-    "$target_gen_dir/devtools/protocol/dom.cc",
-    "$target_gen_dir/devtools/protocol/dom.h",
-    "$target_gen_dir/devtools/protocol/emulation.cc",
-    "$target_gen_dir/devtools/protocol/emulation.h",
-    "$target_gen_dir/devtools/protocol/fetch.cc",
-    "$target_gen_dir/devtools/protocol/fetch.h",
-    "$target_gen_dir/devtools/protocol/forward.h",
-    "$target_gen_dir/devtools/protocol/input.cc",
-    "$target_gen_dir/devtools/protocol/input.h",
-    "$target_gen_dir/devtools/protocol/inspector.cc",
-    "$target_gen_dir/devtools/protocol/inspector.h",
-    "$target_gen_dir/devtools/protocol/io.cc",
-    "$target_gen_dir/devtools/protocol/io.h",
-    "$target_gen_dir/devtools/protocol/log.cc",
-    "$target_gen_dir/devtools/protocol/log.h",
-    "$target_gen_dir/devtools/protocol/memory.cc",
-    "$target_gen_dir/devtools/protocol/memory.h",
-    "$target_gen_dir/devtools/protocol/network.cc",
-    "$target_gen_dir/devtools/protocol/network.h",
-    "$target_gen_dir/devtools/protocol/overlay.cc",
-    "$target_gen_dir/devtools/protocol/overlay.h",
-    "$target_gen_dir/devtools/protocol/page.cc",
-    "$target_gen_dir/devtools/protocol/page.h",
-    "$target_gen_dir/devtools/protocol/protocol.cc",
-    "$target_gen_dir/devtools/protocol/protocol.h",
-    "$target_gen_dir/devtools/protocol/runtime.cc",
-    "$target_gen_dir/devtools/protocol/runtime.h",
-    "$target_gen_dir/devtools/protocol/schema.cc",
-    "$target_gen_dir/devtools/protocol/schema.h",
-    "$target_gen_dir/devtools/protocol/security.cc",
-    "$target_gen_dir/devtools/protocol/security.h",
-    "$target_gen_dir/devtools/protocol/service_worker.cc",
-    "$target_gen_dir/devtools/protocol/service_worker.h",
-    "$target_gen_dir/devtools/protocol/storage.cc",
-    "$target_gen_dir/devtools/protocol/storage.h",
-    "$target_gen_dir/devtools/protocol/system_info.cc",
-    "$target_gen_dir/devtools/protocol/system_info.h",
-    "$target_gen_dir/devtools/protocol/target.cc",
-    "$target_gen_dir/devtools/protocol/target.h",
-    "$target_gen_dir/devtools/protocol/tethering.cc",
-    "$target_gen_dir/devtools/protocol/tethering.h",
-    "$target_gen_dir/devtools/protocol/tracing.cc",
-    "$target_gen_dir/devtools/protocol/tracing.h",
     "../app_shim_remote_cocoa/web_drag_source_mac.h",
     "../app_shim_remote_cocoa/web_drag_source_mac.mm",
     "about_url_loader_factory.cc",
@@ -2033,6 +2057,7 @@ jumbo_static_library("browser") {
   ]
 
   jumbo_excluded_sources = [
+    "push_messaging/push_messaging_router.cc",
     "renderer_host/media/media_devices_manager.cc",
     "service_worker/service_worker_registry.cc",
     "web_package/web_bundle_blob_data_source.cc",
@@ -2603,10 +2628,6 @@ jumbo_static_library("browser") {
   } else {
     # Not Android.
     sources += [
-      # The WebAuthn devtools protocol API is not supported in Android yet.
-      "$target_gen_dir/devtools/protocol/web_authn.cc",
-      "$target_gen_dir/devtools/protocol/web_authn.h",
-
       # Devtools frontend not included in Android
       "devtools/devtools_frontend_host_impl.cc",
       "devtools/devtools_frontend_host_impl.h",
@@ -2833,6 +2854,7 @@ jumbo_static_library("browser") {
       "gpu/viz_devtools_connector.cc",
       "gpu/viz_devtools_connector.h",
     ]
+    jumbo_excluded_sources += [ "gpu/viz_devtools_connector.cc" ]
   }
 
   if (enable_vr) {

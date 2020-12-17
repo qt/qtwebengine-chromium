@@ -42,7 +42,7 @@ if (!is_android && !is_fuchsia) {
 }
 
 inspector_protocol_generate("protocol_sources") {
-  visibility = [ "//content/browser" ]
+  visibility = [ "//content/browser:*" ]
   deps = [ "//third_party/blink/public/devtools_protocol:protocol_version" ]
   _blink_protocol_path = rebase_path(
           "$root_gen_dir/third_party/blink/public/devtools_protocol/protocol.json",

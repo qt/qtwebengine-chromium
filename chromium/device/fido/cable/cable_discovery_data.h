@@ -94,7 +94,7 @@ struct COMPONENT_EXPORT(DEVICE_FIDO) Pairing {
   // within the structure is validated by using |local_identity_seed| and
   // |handshake_hash|.
   static base::Optional<std::unique_ptr<Pairing>> Parse(
-      const cbor::Value& cbor,
+      const ::cbor::Value& cbor,
       uint32_t tunnel_server_domain,
       base::span<const uint8_t, kQRSeedSize> local_identity_seed,
       base::span<const uint8_t, 32> handshake_hash);
