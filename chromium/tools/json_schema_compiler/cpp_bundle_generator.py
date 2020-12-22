@@ -379,7 +379,7 @@ class _SchemasCCGenerator(object):
     c.Append('// static')
     c.Sblock('base::StringPiece %s::Get(base::StringPiece name) {' %
              self._bundle._GenerateBundleClass('GeneratedSchemas'))
-    c.Sblock('static constexpr struct kSchemaMapping {')
+    c.Sblock('static const struct kSchemaMapping {')
     c.Append('const base::StringPiece name;')
     c.Append('const base::StringPiece schema;')
     c.Sblock('constexpr bool operator<(const kSchemaMapping& that) const {')
@@ -393,8 +393,8 @@ class _SchemasCCGenerator(object):
       schema_constant_name = _FormatNameAsConstant(namespace)
       c.Append('{"%s", %s},' % (namespace, schema_constant_name))
     c.Eblock('};')
-    c.Append('static_assert(base::STLIsSorted(kSchemas), "|kSchemas| should be '
-             'sorted.");')
+    #c.Append('static_assert(base::STLIsSorted(kSchemas), "|kSchemas| should be '
+    #         'sorted.");')
 
     c.Sblock('auto it = std::lower_bound(std::begin(kSchemas), '
              'std::end(kSchemas),')

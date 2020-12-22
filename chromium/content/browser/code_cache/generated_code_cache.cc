@@ -103,7 +103,7 @@ constexpr size_t kLargeDataLimit = 64 * 1024;
 constexpr base::Feature kCodeCacheDeduplicationStudy{
     "CodeCacheDeduplicationStudy", base::FEATURE_DISABLED_BY_DEFAULT};
 constexpr base::FeatureParam<int> kCodeCacheDeduplicationThreshold{
-    &kCodeCacheDeduplicationStudy, "size", kLargeDataLimit};
+    &kCodeCacheDeduplicationStudy, "size", (int)kLargeDataLimit};
 
 size_t GetLargeDataLimit() {
   // The large data limit should be greater than or equal to kSmallDataLimit.

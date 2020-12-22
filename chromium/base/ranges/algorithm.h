@@ -201,7 +201,7 @@ constexpr bool all_of(InputIterator first,
                       Pred pred,
                       Proj proj = {}) {
   for (; first != last; ++first) {
-    if (!invoke(pred, invoke(proj, *first)))
+    if (!base::invoke(pred, base::invoke(proj, *first)))
       return false;
   }
 
@@ -247,7 +247,7 @@ constexpr bool any_of(InputIterator first,
                       Pred pred,
                       Proj proj = {}) {
   for (; first != last; ++first) {
-    if (invoke(pred, invoke(proj, *first)))
+    if (base::invoke(pred, base::invoke(proj, *first)))
       return true;
   }
 

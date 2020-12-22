@@ -1867,6 +1867,12 @@ jumbo_component("base") {
       defines += [ "COM_INIT_CHECK_HOOK_DISABLED" ]
     }
 
+    if (!use_custom_libcxx) {
+      # Enable the VS 2015 Update 2 fix when building with the MSVC standard
+      # library.
+      defines += [ "_ENABLE_ATOMIC_ALIGNMENT_FIX" ]
+    }
+
     # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
     configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 

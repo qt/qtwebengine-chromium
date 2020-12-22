@@ -9,6 +9,8 @@
 #include "base/macros.h"
 #include "third_party/perfetto/include/perfetto/ext/tracing/core/trace_packet.h"
 
+#include <algorithm>
+
 namespace tracing {
 namespace {
 
