@@ -2175,7 +2175,7 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns true if the embedder has an error page to show for the given http
   // status code.
-  virtual bool HasErrorPage(int http_status_code);
+  virtual bool HasErrorPage(int http_status_code, WebContents* web_contents = nullptr);
 
   // Creates a modal window that intermediates the exchange of ID tokens.
   virtual std::unique_ptr<IdentityRequestDialogController>
