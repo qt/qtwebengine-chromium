@@ -1122,7 +1122,7 @@ ukm::UkmService* ContentBrowserClientImpl::GetUkmService() {
 #endif
 }
 
-bool ContentBrowserClientImpl::HasErrorPage(int http_status_code) {
+bool ContentBrowserClientImpl::HasErrorPage(int http_status_code, content::WebContents* contents) {
   // Use an internal error page, if we have one for the status code.
   return error_page::LocalizedError::HasStrings(
       error_page::Error::kHttpErrorDomain, http_status_code);
