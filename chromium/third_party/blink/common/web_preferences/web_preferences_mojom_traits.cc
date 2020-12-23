@@ -114,6 +114,7 @@ bool StructTraits<blink::mojom::WebPreferencesDataView,
   out->inverted_colors = data.inverted_colors();
   out->touch_event_feature_detection_enabled =
       data.touch_event_feature_detection_enabled();
+  out->enable_error_page = data.enable_error_page();
   out->pointer_events_max_touch_points = data.pointer_events_max_touch_points();
   out->available_pointer_types = data.available_pointer_types();
   out->available_hover_types = data.available_hover_types();
