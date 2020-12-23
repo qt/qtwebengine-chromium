@@ -1255,7 +1255,7 @@ bool ContentBrowserClient::SetupEmbedderSandboxParameters(
 void ContentBrowserClient::GetHyphenationDictionary(
     base::OnceCallback<void(const base::FilePath&)>) {}
 
-bool ContentBrowserClient::HasErrorPage(int http_status_code) {
+bool ContentBrowserClient::HasErrorPage(int http_status_code, WebContents* contents) {
   return false;
 }
 
