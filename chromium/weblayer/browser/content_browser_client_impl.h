@@ -224,7 +224,7 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
   content::XrIntegrationClient* GetXrIntegrationClient() override;
 #endif  // BUILDFLAG(ENABLE_ARCORE)
   ukm::UkmService* GetUkmService() override;
-  bool HasErrorPage(int http_status_code) override;
+  bool HasErrorPage(int http_status_code, content::WebContents* contents) override;
   bool IsClipboardPasteAllowed(
       content::RenderFrameHost* render_frame_host) override;
   bool ShouldPreconnectNavigation(
