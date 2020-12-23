@@ -1005,7 +1005,7 @@ ukm::UkmService* ContentBrowserClientImpl::GetUkmService() {
 #endif
 }
 
-bool ContentBrowserClientImpl::HasErrorPage(int http_status_code) {
+bool ContentBrowserClientImpl::HasErrorPage(int http_status_code, content::WebContents* contents) {
   return http_status_code >= 400;
 }
 
