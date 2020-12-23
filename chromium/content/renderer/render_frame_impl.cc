@@ -4613,6 +4613,10 @@ void RenderFrameImpl::RunScriptsAtDocumentReady(bool document_is_empty) {
   if (!document_is_empty || !IsMainFrame())
     return;
 
+  // Allow the embedder to suppress an error page.
+  if (!GetBlinkPreferences().enable_error_page)
+      return;
+
   WebDocumentLoader* document_loader = frame_->GetDocumentLoader();
   int http_status_code = document_loader->GetResponse().HttpStatusCode();
   if (!GetContentClient()->renderer()->HasErrorPage(http_status_code))
