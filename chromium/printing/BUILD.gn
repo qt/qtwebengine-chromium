@@ -135,7 +135,7 @@ component("printing") {
     ]
   }
 
-  if (is_desktop_linux) {
+  if (is_linux) {
     sources += [
       "printed_document_linux.cc",
       "printing_context_linux.cc",
