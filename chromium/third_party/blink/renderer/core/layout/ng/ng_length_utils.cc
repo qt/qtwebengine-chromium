@@ -620,7 +620,7 @@ LayoutUnit ComputeBlockSizeForFragment(
     return content_size;
 
   return ComputeBlockSizeForFragmentInternal(
-      constraint_space, style, border_padding, content_size, inline_size);
+      constraint_space, style, border_padding, content_size, base::pass_optional(inline_size));
 }
 
 // Computes size for a replaced element.
