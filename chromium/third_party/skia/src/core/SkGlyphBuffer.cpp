@@ -95,9 +95,9 @@ SkPoint SkDrawableGlyphBuffer::startGPUDevice(
 
     for (auto t
             : SkMakeZip(fMultiBuffer.get(), source.get<0>(), fPositions.get())) {
-        auto packedGlyphID = std::get<0>(t);
-        auto glyphID = std::get<1>(t);
-        auto pos = std::get<2>(t);
+        SkGlyphVariant& packedGlyphID = std::get<0>(t);
+        const SkGlyphID glyphID = std::get<1>(t);
+        SkPoint& pos = std::get<2>(t);
         packedGlyphID = SkPackedGlyphID{glyphID, pos, roundingSpec.ignorePositionFieldMask};
         pos = floor(pos - qFloor);
     }
