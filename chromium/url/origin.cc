@@ -69,7 +69,11 @@ Origin Origin::Resolve(const GURL& url, const Origin& base_origin) {
 Origin::Origin(const Origin&) = default;
 Origin& Origin::operator=(const Origin&) = default;
 Origin::Origin(Origin&&) noexcept = default;
-Origin& Origin::operator=(Origin&&) noexcept = default;
+Origin& Origin::operator=(Origin&& that) noexcept {
+  std::swap(tuple_, that.tuple_);
+  std::swap(nonce_, that.nonce_);
+  return *this;
+}
 Origin::~Origin() = default;
 
 // static

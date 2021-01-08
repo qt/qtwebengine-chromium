@@ -67,9 +67,9 @@ class BASE_EXPORT UnguessableToken {
   constexpr UnguessableToken() = default;
 
   constexpr UnguessableToken(const UnguessableToken&) = default;
-  constexpr UnguessableToken& operator=(const UnguessableToken&) = default;
+  UnguessableToken& operator=(const UnguessableToken&) = default;
   constexpr UnguessableToken(UnguessableToken&&) noexcept = default;
-  constexpr UnguessableToken& operator=(UnguessableToken&&) = default;
+  UnguessableToken& operator=(UnguessableToken&&) = default;
 
   // NOTE: Serializing an empty UnguessableToken is an illegal operation.
   uint64_t GetHighForSerialization() const {

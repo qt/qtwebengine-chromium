@@ -71,14 +71,14 @@ UrlRequest::UrlRequest() = default;
 UrlRequest::UrlRequest(const UrlRequest& other) = default;
 UrlRequest::UrlRequest(UrlRequest&& other) noexcept = default;
 UrlRequest& UrlRequest::operator=(const UrlRequest& other) = default;
-UrlRequest& UrlRequest::operator=(UrlRequest&& other) noexcept = default;
+UrlRequest& UrlRequest::operator=(UrlRequest&& other) = default;
 UrlRequest::~UrlRequest() = default;
 
 UrlResponse::UrlResponse() = default;
 UrlResponse::UrlResponse(const UrlResponse& other) = default;
 UrlResponse::UrlResponse(UrlResponse&& other) noexcept = default;
 UrlResponse& UrlResponse::operator=(const UrlResponse& other) = default;
-UrlResponse& UrlResponse::operator=(UrlResponse&& other) noexcept = default;
+UrlResponse& UrlResponse::operator=(UrlResponse&& other) = default;
 UrlResponse::~UrlResponse() = default;
 
 UrlLoader::UrlLoader() = default;

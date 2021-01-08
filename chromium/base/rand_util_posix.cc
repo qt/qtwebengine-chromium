@@ -21,7 +21,7 @@
 #include "third_party/lss/linux_syscall_support.h"
 #endif
 
-#if !defined(OS_IOS) && !defined(OS_NACL)
+#if !defined(OS_IOS) && !defined(OS_NACL) && defined(OS_MAC)
 // TODO(crbug.com/995996): Waiting for this header to appear in the iOS SDK.
 // (See below.)
 #include <sys/random.h>

@@ -40,7 +40,7 @@ struct UrlRequest final {
   UrlRequest(const UrlRequest& other);
   UrlRequest(UrlRequest&& other) noexcept;
   UrlRequest& operator=(const UrlRequest& other);
-  UrlRequest& operator=(UrlRequest&& other) noexcept;
+  UrlRequest& operator=(UrlRequest&& other);
   ~UrlRequest();
 
   // Request URL.
@@ -79,7 +79,7 @@ struct UrlResponse final {
   UrlResponse(const UrlResponse& other);
   UrlResponse(UrlResponse&& other) noexcept;
   UrlResponse& operator=(const UrlResponse& other);
-  UrlResponse& operator=(UrlResponse&& other) noexcept;
+  UrlResponse& operator=(UrlResponse&& other);
   ~UrlResponse();
 
   // HTTP status code.

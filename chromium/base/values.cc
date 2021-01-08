@@ -245,7 +245,11 @@ Value::Value(span<const Value> in_list)
 
 Value::Value(ListStorage&& in_list) noexcept : data_(std::move(in_list)) {}
 
-Value& Value::operator=(Value&& that) noexcept = default;
+Value& Value::operator=(Value&& that) noexcept {
+  data_ = std::move(that.data_);
+  that.data_ = {};
+  return *this;
+}
 
 Value::Value(absl::monostate) {}
 

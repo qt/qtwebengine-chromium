@@ -186,7 +186,10 @@ FilePath::~FilePath() = default;
 
 FilePath& FilePath::operator=(const FilePath& that) = default;
 
-FilePath& FilePath::operator=(FilePath&& that) noexcept = default;
+FilePath& FilePath::operator=(FilePath&& that) noexcept {
+  std::swap(path_, that.path_);
+  return *this;
+}
 
 bool FilePath::operator==(const FilePath& that) const {
 #if defined(FILE_PATH_USES_DRIVE_LETTERS)
