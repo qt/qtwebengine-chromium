@@ -30,6 +30,7 @@ devtools_module_entrypoint_sources = [
   "formatter/formatter-legacy.js",
   "har_importer/har_importer-legacy.js",
   "heap_snapshot_model/heap_snapshot_model-legacy.js",
+  "heap_snapshot_worker/heap_snapshot_worker-legacy.js",
   "help/help-legacy.js",
   "host/host-legacy.js",
   "inline_editor/inline_editor-legacy.js",
@@ -120,6 +121,7 @@ generated_typescript_entrypoint_sources = [
   "$resources_out_dir/formatter_worker/formatter_worker.js",
   "$resources_out_dir/har_importer/har_importer.js",
   "$resources_out_dir/heap_snapshot_model/heap_snapshot_model.js",
+  "$resources_out_dir/heap_snapshot_worker/heap_snapshot_worker.js",
   "$resources_out_dir/help/help.js",
   "$resources_out_dir/host/host.js",
   "$resources_out_dir/i18n/i18n.js",
@@ -173,6 +175,7 @@ generated_typescript_entrypoint_sources = [
   "$resources_out_dir/toolbox_bootstrap/toolbox_bootstrap.js",
   "$resources_out_dir/ui/ui.js",
   "$resources_out_dir/ui/utils/utils.js",
+  "$resources_out_dir/wasmparser_worker/wasmparser_worker.js",
   "$resources_out_dir/web_audio/graph_visualizer/graph_visualizer.js",
   "$resources_out_dir/web_audio/web_audio.js",
   "$resources_out_dir/webauthn/webauthn.js",
@@ -181,14 +184,3 @@ generated_typescript_entrypoint_sources = [
   "$resources_out_dir/workspace/workspace.js",
   "$resources_out_dir/workspace_diff/workspace_diff.js",
 ]
-
-if (have_nodejs) {
-  devtools_module_entrypoint_sources += [
-    "heap_snapshot_worker/heap_snapshot_worker-legacy.js",
-  ]
-
-  generated_typescript_entrypoint_sources += [
-    "$resources_out_dir/heap_snapshot_worker/heap_snapshot_worker.js",
-    "$resources_out_dir/wasmparser_worker/wasmparser_worker.js",
-  ]
-}

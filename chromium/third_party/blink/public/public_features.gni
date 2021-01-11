@@ -20,8 +20,6 @@ declare_args() {
   # is set.
   enable_additional_blink_object_names = enable_blink_heap_verification
 
-  have_nodejs = true
-
   use_rollup = !is_debug
 }
 
