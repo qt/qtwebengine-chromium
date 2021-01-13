@@ -557,18 +557,20 @@ pp::Rect PDFiumPage::PageToScreen(const pp::Point& offset,
 
   int new_left;
   int new_top;
+  if (!FPDF_PageToDevice(
+          page(), static_cast<int>(start_x), static_cast<int>(start_y),
+          static_cast<int>(ceil(size_x)), static_cast<int>(ceil(size_y)), rotation,
+          left, top, &new_left, &new_top)) {
+    return pp::Rect();
+  }
   int new_right;
   int new_bottom;
-  FPDF_BOOL ret = FPDF_PageToDevice(
-      page(), static_cast<int>(start_x), static_cast<int>(start_y),
-      static_cast<int>(ceil(size_x)), static_cast<int>(ceil(size_y)), rotation,
-      left, top, &new_left, &new_top);
-  DCHECK(ret);
-  ret = FPDF_PageToDevice(
-      page(), static_cast<int>(start_x), static_cast<int>(start_y),
-      static_cast<int>(ceil(size_x)), static_cast<int>(ceil(size_y)), rotation,
-      right, bottom, &new_right, &new_bottom);
-  DCHECK(ret);
+  if (!FPDF_PageToDevice(
+          page(), static_cast<int>(start_x), static_cast<int>(start_y),
+          static_cast<int>(ceil(size_x)), static_cast<int>(ceil(size_y)), rotation,
+          right, bottom, &new_right, &new_bottom)) {
+    return pp::Rect();
+  }
 
   // If the PDF is rotated, the horizontal/vertical coordinates could be
   // flipped.  See
