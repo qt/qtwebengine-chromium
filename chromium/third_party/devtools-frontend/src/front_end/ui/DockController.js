@@ -63,7 +63,7 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper {
 
     if (!canDock) {
       this._dockSide = State.Undocked;
-      this._closeButton.setVisible(false);
+//       this._closeButton.setVisible(false);
       return;
     }
 
