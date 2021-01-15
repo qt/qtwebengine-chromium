@@ -81,7 +81,7 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper<EventType
 
     if (!canDock) {
       this.dockSideInternal = DockState.UNDOCKED;
-      this.closeButton.setVisible(false);
+//       this.closeButton.setVisible(false);
       return;
     }
 
@@ -162,7 +162,7 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.currentDockStateSetting.set(dockSide);
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.setIsDocked(
         dockSide !== DockState.UNDOCKED, this.setIsDockedResponse.bind(this, eventData));
-    this.closeButton.setVisible(this.dockSideInternal !== DockState.UNDOCKED);
+//    this.closeButton.setVisible(this.dockSideInternal !== DockState.UNDOCKED);
     this.dispatchEventToListeners(Events.DOCK_SIDE_CHANGED, eventData);
   }
 
