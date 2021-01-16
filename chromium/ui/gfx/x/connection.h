@@ -5,9 +5,6 @@
 #ifndef UI_GFX_X_CONNECTION_H_
 #define UI_GFX_X_CONNECTION_H_
 
-#include <list>
-#include <queue>
-
 #include "base/component_export.h"
 #include "base/sequence_checker.h"
 #include "ui/events/platform/platform_event_source.h"
@@ -137,8 +134,10 @@ class COMPONENT_EXPORT(X11) Connection : public XProto,
 
   KeySym KeycodeToKeysym(uint32_t keycode, unsigned int modifiers);
 
-  // Access the event buffer.  Clients can add, delete, or modify events.
-  std::list<Event>& events() {
+  // Access the event buffer.  Clients may modify the queue, including
+  // "deleting" events by setting events[i] = x11::Event(), which will
+  // guarantee all calls to x11::Event::As() will return nullptr.
+  base::circular_deque<Event>& events() {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return events_;
   }
@@ -171,6 +170,8 @@ class COMPONENT_EXPORT(X11) Connection : public XProto,
   void AddRequest(unsigned int sequence, FutureBase::ResponseCallback callback);
 
   bool HasNextResponse() const;
+
+  bool HasNextEvent();
 
   void PreDispatchEvent(const Event& event);
 
@@ -205,7 +206,7 @@ class COMPONENT_EXPORT(X11) Connection : public XProto,
   uint8_t mode_switch_ = 0;
   uint8_t num_lock_ = 0;
 
-  std::list<Event> events_;
+  base::circular_deque<Event> events_;
 
   std::queue<Request> requests_;
 
