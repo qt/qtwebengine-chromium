@@ -36,12 +36,21 @@ Animation* ElementAnimation::animate(
   if (exception_state.HadException())
     return nullptr;
 
+  // Creation of the keyframe effect parses JavaScript, which could result
+  // in destruction of the execution context. Recheck that it is still valid.
+  if (!element.GetExecutionContext())
+    return nullptr;
+
   Timing timing =
       TimingInput::Convert(options, &element.GetDocument(), exception_state);
   if (exception_state.HadException())
     return nullptr;
 
   Animation* animation = animateInternal(element, effect, timing);
+
+  if (!animation)
+    return nullptr;
+
   if (options.IsKeyframeAnimationOptions())
     animation->setId(options.GetAsKeyframeAnimationOptions().id());
   return animation;
@@ -56,6 +65,10 @@ Animation* ElementAnimation::animate(ScriptState* script_state,
                            script_state, exception_state);
   if (exception_state.HadException())
     return nullptr;
+
+  if (!element.GetExecutionContext())
+    return nullptr;
+
   return animateInternal(element, effect, Timing());
 }
 
