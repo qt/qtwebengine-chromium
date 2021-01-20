@@ -2046,7 +2046,7 @@ void EventHandler::ApplyTouchAdjustment(WebGestureEvent* gesture_event,
   // crbug.com/398914
   if (adjusted) {
     PhysicalOffset point(frame_->View()->ConvertFromRootFrame(adjusted_point));
-    DCHECK(location.ContainsPoint(FloatPoint(point)));
+    DCHECK(location.EnclosingIntRect().Contains(adjusted_point));
     DCHECK(location.IsRectBasedTest());
     location = hit_test_result->ResolveRectBasedTest(adjusted_node, point);
     gesture_event->ApplyTouchAdjustment(
