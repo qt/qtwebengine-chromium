@@ -232,5 +232,9 @@ function createBrowserApiForPrintPreview() {
  *     current environment.
  */
 export function createBrowserApi() {
+  if (location.origin === 'chrome://print') {
     return createBrowserApiForPrintPreview();
+  }
+
+  return createBrowserApiForMimeHandlerView();
 }
