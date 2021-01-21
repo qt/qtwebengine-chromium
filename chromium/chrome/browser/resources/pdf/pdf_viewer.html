@@ -108,10 +108,12 @@ import {AnnotationMode} from './constants.js';
       </cr-page-selector>
     ` : ''}
   </if>
+  <if expr="enable_screen_ai_service">
   <cr-toast id="searchifyProgress">
     <div class="spinner"></div>
     <span>$i18n{searchifyInProgress}</span>
   </cr-toast>
+  </if>
 </div>
 
 ${this.showErrorDialog ? html`<viewer-error-dialog id="error-dialog">
