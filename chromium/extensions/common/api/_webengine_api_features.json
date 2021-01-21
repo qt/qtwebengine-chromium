@@ -16,7 +16,7 @@
   },
   "resourcesPrivate": [{
     "dependencies": ["permission:resourcesPrivate"],
-    "contexts": ["blessed_extension"]
+    "contexts": ["privileged_extension", "content_script"]
   }, {
     "channel": "stable",
     "contexts": ["webui"],
@@ -26,6 +26,10 @@
   }],
   "enterprise.hardwarePlatform": {
     "dependencies": ["permission:enterprise.hardwarePlatform"],
+    "contexts": ["privileged_extension"]
+  },
+  "pdfViewerPrivate": {
+    "dependencies": ["permission:pdfViewerPrivate"],
     "contexts": ["privileged_extension"]
   },
   "webrtcDesktopCapturePrivate": {

@@ -1,0 +1,56 @@
+// Copyright 2022 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// Use the <code>chrome.pdfViewerPrivate</code> API for specific browser
+// functionality that the PDF Viewer needs from outside the PDF plugin. This API
+// is exclusively for the PDF Viewer.
+namespace pdfViewerPrivate {
+  // Must match `SaveRequestType` in `pdf/mojom/pdf.mojom` and
+  // `tools/typescript/definitions/pdf_viewer_private.d.ts`.
+  enum SaveRequestType {
+    ANNOTATION,
+    ORIGINAL,
+    EDITED,
+    SEARCHIFIED
+  };
+
+  enum SaveToDriveErrorType {
+    NO_ERROR,
+    UNKNOWN_ERROR,
+    QUOTA_EXCEEDED,
+    OFFLINE,
+    OAUTH_ERROR,
+    ACCOUNT_CHOOSER_CANCELED,
+    PARENT_FOLDER_SELECTION_FAILED
+  };
+
+  enum SaveToDriveStatus {
+    NOT_STARTED,
+    INITIATED,
+    ACCOUNT_CHOOSER_SHOWN,
+    ACCOUNT_SELECTED,
+    ACCOUNT_ADD_SELECTED,
+    ACCOUNT_ADDED,
+    FETCH_OAUTH,
+    FETCH_PARENT_FOLDER,
+    UPLOAD_STARTED,
+    UPLOAD_IN_PROGRESS,
+    UPLOAD_COMPLETED,
+    UPLOAD_RETRIED,
+    UPLOAD_FAILED
+  };
+
+  dictionary SaveToDriveProgress {
+    SaveToDriveStatus status;
+    SaveToDriveErrorType errorType;
+    DOMString? driveItemId;
+    long? fileSizeBytes;
+    long? uploadedBytes;
+    DOMString? fileMetadata;
+    DOMString? fileName;
+    DOMString? parentFolderName;
+    DOMString? accountEmail;
+    boolean? accountIsManaged;
+  };
+};

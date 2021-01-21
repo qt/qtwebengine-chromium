@@ -1,4 +1,6 @@
 webengine_extensions_api_schema_files_ = [
+  "pdf_viewer_private.idl",
+  "resources_private.idl",
   "webrtc_desktop_capture_private.idl",
 ]
 
