@@ -91,10 +91,12 @@
             @current-type-changed="${this.onBrushTypeChanged_}">
       </viewer-side-panel>` : ''}
   </if>
+  <if expr="enable_screen_ai_service">
   <cr-toast id="searchifyProgress">
     <div class="spinner"></div>
     <span>$i18n{searchifyInProgress}</span>
   </cr-toast>
+  </if>
 </div>
 
 ${this.showErrorDialog ? html`<viewer-error-dialog id="error-dialog">
