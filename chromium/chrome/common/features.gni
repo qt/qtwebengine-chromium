@@ -93,6 +93,7 @@ chrome_grit_defines = [
   "enable_dice_support=$enable_dice_support",
   "enable_pdf=$enable_pdf",
   "enable_print_preview=$enable_print_preview",
+  "enable_screen_ai_service=$enable_screen_ai_service",
   "enable_screen_capture=$enable_screen_capture",
   "enable_supervised_users=$enable_supervised_users",
   "enable_vr=$enable_vr",
