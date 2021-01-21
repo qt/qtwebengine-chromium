@@ -994,8 +994,10 @@ ui::AXNodeData* PdfAccessibilityTreeBuilder::CreateOcrWrapperNode(
   wrapper_node->relative_bounds.bounds = gfx::RectF(position, gfx::SizeF(1, 1));
 
   ui::AXNodeData* text_node = CreateStaticTextNode();
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
   text_node->SetNameChecked(l10n_util::GetStringUTF8(
       start ? IDS_PDF_OCR_RESULT_BEGIN : IDS_PDF_OCR_RESULT_END));
+#endif
   text_node->relative_bounds.bounds = wrapper_node->relative_bounds.bounds;
   wrapper_node->child_ids.push_back(text_node->id);
   return wrapper_node;
