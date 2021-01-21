@@ -16,7 +16,7 @@
   },
   "resourcesPrivate": [{
     "dependencies": ["permission:resourcesPrivate"],
-    "contexts": ["blessed_extension"]
+    "contexts": ["blessed_extension", "content_script"]
   }, {
     "channel": "stable",
     "contexts": ["webui"],
