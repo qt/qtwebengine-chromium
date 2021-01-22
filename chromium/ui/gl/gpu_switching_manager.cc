@@ -16,25 +16,30 @@ GpuSwitchingManager::GpuSwitchingManager() {}
 GpuSwitchingManager::~GpuSwitchingManager() {}
 
 void GpuSwitchingManager::AddObserver(GpuSwitchingObserver* observer) {
+  base::AutoLock auto_lock(lock_);
   observer_list_.AddObserver(observer);
 }
 
 void GpuSwitchingManager::RemoveObserver(GpuSwitchingObserver* observer) {
+  base::AutoLock auto_lock(lock_);
   observer_list_.RemoveObserver(observer);
 }
 
 void GpuSwitchingManager::NotifyGpuSwitched(
     gl::GpuPreference active_gpu_heuristic) {
+  base::AutoLock auto_lock(lock_);
   for (GpuSwitchingObserver& observer : observer_list_)
     observer.OnGpuSwitched(active_gpu_heuristic);
 }
 
 void GpuSwitchingManager::NotifyDisplayAdded() {
+  base::AutoLock auto_lock(lock_);
   for (GpuSwitchingObserver& observer : observer_list_)
     observer.OnDisplayAdded();
 }
 
 void GpuSwitchingManager::NotifyDisplayRemoved() {
+  base::AutoLock auto_lock(lock_);
   for (GpuSwitchingObserver& observer : observer_list_)
     observer.OnDisplayRemoved();
 }
