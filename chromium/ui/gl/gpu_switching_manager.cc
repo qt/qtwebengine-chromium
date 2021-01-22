@@ -16,10 +16,12 @@ GpuSwitchingManager::GpuSwitchingManager() {}
 GpuSwitchingManager::~GpuSwitchingManager() {}
 
 void GpuSwitchingManager::AddObserver(GpuSwitchingObserver* observer) {
+  base::AutoLock auto_lock(lock_);
   observer_list_.AddObserver(observer);
 }
 
 void GpuSwitchingManager::RemoveObserver(GpuSwitchingObserver* observer) {
+  base::AutoLock auto_lock(lock_);
   observer_list_.RemoveObserver(observer);
 }
 
