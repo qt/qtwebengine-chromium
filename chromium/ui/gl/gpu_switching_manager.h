@@ -7,6 +7,7 @@
 
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
+#include "base/synchronization/lock.h"
 #include "build/build_config.h"
 #include "ui/gl/gl_export.h"
 #include "ui/gl/gpu_preference.h"
@@ -50,7 +51,8 @@ class GL_EXPORT GpuSwitchingManager {
   GpuSwitchingManager();
   virtual ~GpuSwitchingManager();
 
-  base::ObserverList<GpuSwitchingObserver>::Unchecked observer_list_;
+  base::Lock lock_;
+  base::ObserverList<GpuSwitchingObserver>::Unchecked GUARDED_BY(lock_) observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuSwitchingManager);
 };
