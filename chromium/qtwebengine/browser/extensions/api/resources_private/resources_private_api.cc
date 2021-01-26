@@ -48,8 +48,8 @@
 #include <string>
 #include <utility>
 
-#include "chrome/common/extensions/api/resources_private.h"
 #include "qtwebengine/browser/pdf/pdf_extension_util.h"
+#include "qtwebengine/common/extensions/api/resources_private.h"
 
 namespace extensions {
 
