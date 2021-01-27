@@ -222,13 +222,6 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
                                       "ImageBitmap construction failed");
   }
 
-  RecordIdentifiabilityMetric(
-      blink::IdentifiableSurface::FromTypeAndToken(
-          blink::IdentifiableSurface::Type::kCanvasReadback,
-          context_ ? context_->GetContextType()
-                   : CanvasRenderingContext::kContextTypeUnknown),
-      0);
-
   return image;
 }
 
