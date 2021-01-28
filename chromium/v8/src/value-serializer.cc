@@ -824,6 +824,12 @@ Maybe<bool> ValueSerializer::WriteJSArrayBuffer(
     return ThrowIfOutOfMemory();
   }
 
+  if (!array_buffer->is_neuterable()) {
+    ThrowDataCloneError(
+        MessageTemplate::kDataCloneErrorNonNeuterableArrayBuffer);
+    return Nothing<bool>();
+  }
+
   uint32_t* transfer_entry = array_buffer_transfer_map_.Find(array_buffer);
   if (transfer_entry) {
     WriteTag(SerializationTag::kArrayBufferTransfer);

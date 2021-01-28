@@ -751,6 +751,8 @@ class ErrorUtils : public AllStatic {
   T(DataCloneErrorOutOfMemory, "Data cannot be cloned, out of memory.")        \
   T(DataCloneErrorNeuteredArrayBuffer,                                         \
     "An ArrayBuffer is neutered and could not be cloned.")                     \
+  T(DataCloneErrorNonNeuterableArrayBuffer,                                   \
+    "ArrayBuffer is not neuterable and could not be cloned.")                  \
   T(DataCloneErrorSharedArrayBufferTransferred,                                \
     "A SharedArrayBuffer could not be cloned. SharedArrayBuffer must not be "  \
     "transferred.")                                                            \
