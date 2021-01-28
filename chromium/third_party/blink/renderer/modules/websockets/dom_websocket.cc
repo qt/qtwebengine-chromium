@@ -75,8 +75,8 @@ DOMWebSocket::EventQueue::EventQueue(EventTarget* target)
           this,
           &EventQueue::ResumeTimerFired) {}
 
-DOMWebSocket::EventQueue::~EventQueue() {
-  ContextDestroyed();
+DOMWebSocket::EventQueue::~EventQueue()  {
+  resume_timer_.Stop();
 }
 
 void DOMWebSocket::EventQueue::Dispatch(Event* event) {
