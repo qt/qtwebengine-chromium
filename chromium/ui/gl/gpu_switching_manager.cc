@@ -27,16 +27,19 @@ void GpuSwitchingManager::RemoveObserver(GpuSwitchingObserver* observer) {
 
 void GpuSwitchingManager::NotifyGpuSwitched(
     gl::GpuPreference active_gpu_heuristic) {
+  base::AutoLock auto_lock(lock_);
   for (GpuSwitchingObserver& observer : observer_list_)
     observer.OnGpuSwitched(active_gpu_heuristic);
 }
 
 void GpuSwitchingManager::NotifyDisplayAdded() {
+  base::AutoLock auto_lock(lock_);
   for (GpuSwitchingObserver& observer : observer_list_)
     observer.OnDisplayAdded();
 }
 
 void GpuSwitchingManager::NotifyDisplayRemoved() {
+  base::AutoLock auto_lock(lock_);
   for (GpuSwitchingObserver& observer : observer_list_)
     observer.OnDisplayRemoved();
 }
