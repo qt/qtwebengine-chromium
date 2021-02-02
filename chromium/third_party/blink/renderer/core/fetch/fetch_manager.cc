@@ -423,16 +423,21 @@ void FetchManager::Loader::DidReceiveResponse(
   FetchResponseData* response_data = FetchResponseData::CreateWithBuffer(
       BodyStreamBuffer::Create(script_state, place_holder_body_, signal_));
 
-  response_data->InitFromResourceResponse(
-      url_list_, fetch_request_data_->Method(),
-      fetch_request_data_->Credentials(), tainting, response);
-
-  FetchResponseData* tainted_response = nullptr;
-
   DCHECK(!(network_utils::IsRedirectResponseCode(response_http_status_code_) &&
            HasNonEmptyLocationHeader(response_data->HeaderList()) &&
            fetch_request_data_->Redirect() != RedirectMode::kManual));
 
+  auto response_type = response.GetType();
+  if (network_utils::IsRedirectResponseCode(response_http_status_code_) &&
+      fetch_request_data_->Redirect() == RedirectMode::kManual)
+    response_type = network::mojom::FetchResponseType::kOpaqueRedirect;
+
+  response_data->InitFromResourceResponse(
+      execution_context_, response_type, url_list_,
+      fetch_request_data_->Method(), fetch_request_data_->Credentials(),
+      tainting, response);
+
+  FetchResponseData* tainted_response = nullptr;
   if (network_utils::IsRedirectResponseCode(response_http_status_code_) &&
       fetch_request_data_->Redirect() == RedirectMode::kManual) {
     tainted_response = response_data->CreateOpaqueRedirectFilteredResponse();
