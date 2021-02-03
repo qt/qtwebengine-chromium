@@ -47,7 +47,6 @@
 #include "net/base/net_errors.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
-#include "storage/common/quota/padding_key.h"
 #include "third_party/blink/public/mojom/quota/quota_types.mojom.h"
 
 using blink::mojom::CacheStorageError;
@@ -117,8 +116,7 @@ class LegacyCacheStorage::CacheLoader {
   virtual std::unique_ptr<LegacyCacheStorageCache> CreateCache(
       const std::string& cache_name,
       int64_t cache_size,
-      int64_t cache_padding,
-      std::unique_ptr<SymmetricKey> cache_padding_key) = 0;
+      int64_t cache_padding) = 0;
 
   // Deletes any pre-existing cache of the same name and then loads it.
   virtual void PrepareNewCacheDestination(const std::string& cache_name,
@@ -186,19 +184,16 @@ class LegacyCacheStorage::MemoryLoader
   std::unique_ptr<LegacyCacheStorageCache> CreateCache(
       const std::string& cache_name,
       int64_t cache_size,
-      int64_t cache_padding,
-      std::unique_ptr<SymmetricKey> cache_padding_key) override {
+      int64_t cache_padding) override {
     return LegacyCacheStorageCache::CreateMemoryCache(
         origin_, owner_, cache_name, cache_storage_, scheduler_task_runner_,
-        quota_manager_proxy_, blob_storage_context_,
-        storage::CopyDefaultPaddingKey());
+        quota_manager_proxy_, blob_storage_context_);
   }
 
   void PrepareNewCacheDestination(const std::string& cache_name,
                                   CacheAndErrorCallback callback) override {
     std::unique_ptr<LegacyCacheStorageCache> cache =
-        CreateCache(cache_name, 0 /*cache_size*/, 0 /* cache_padding */,
-                    storage::CopyDefaultPaddingKey());
+        CreateCache(cache_name, /*cache_size=*/0, /*cache_padding=*/0);
     std::move(callback).Run(std::move(cache), CacheStorageError::kSuccess);
   }
 
@@ -259,8 +254,7 @@ class LegacyCacheStorage::SimpleCacheLoader
   std::unique_ptr<LegacyCacheStorageCache> CreateCache(
       const std::string& cache_name,
       int64_t cache_size,
-      int64_t cache_padding,
-      std::unique_ptr<SymmetricKey> cache_padding_key) override {
+      int64_t cache_padding) override {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     DCHECK(base::Contains(cache_name_to_cache_dir_, cache_name));
 
@@ -269,7 +263,7 @@ class LegacyCacheStorage::SimpleCacheLoader
     return LegacyCacheStorageCache::CreatePersistentCache(
         origin_, owner_, cache_name, cache_storage_, cache_path,
         scheduler_task_runner_, quota_manager_proxy_, blob_storage_context_,
-        cache_size, cache_padding, std::move(cache_padding_key));
+        cache_size, cache_padding);
   }
 
   void PrepareNewCacheDestination(const std::string& cache_name,
@@ -324,8 +318,7 @@ class LegacyCacheStorage::SimpleCacheLoader
     cache_name_to_cache_dir_[cache_name] = cache_dir;
     std::move(callback).Run(
         CreateCache(cache_name, LegacyCacheStorage::kSizeUnknown,
-                    LegacyCacheStorage::kSizeUnknown,
-                    storage::CopyDefaultPaddingKey()),
+                    LegacyCacheStorage::kSizeUnknown),
         CacheStorageError::kSuccess);
   }
 
@@ -371,7 +364,6 @@ class LegacyCacheStorage::SimpleCacheLoader
         index_cache->clear_size();
       else
         index_cache->set_size(cache_metadata.size);
-      index_cache->set_padding_key(cache_metadata.padding_key);
       index_cache->set_padding(cache_metadata.padding);
       index_cache->set_padding_version(
           LegacyCacheStorageCache::GetResponsePaddingVersion());
@@ -449,13 +441,8 @@ class LegacyCacheStorage::SimpleCacheLoader
         cache_padding = LegacyCacheStorage::kSizeUnknown;
       }
 
-      std::string cache_padding_key =
-          cache.has_padding_key() ? cache.padding_key()
-                                  : storage::SerializeDefaultPaddingKey();
-
-      index->Insert(CacheStorageIndex::CacheMetadata(
-          cache.name(), cache_size, cache_padding,
-          std::move(cache_padding_key)));
+      index->Insert(CacheStorageIndex::CacheMetadata(cache.name(), cache_size,
+                                                     cache_padding));
       cache_name_to_cache_dir_[cache.name()] = cache.cache_dir();
       cache_dirs->insert(cache.cache_dir());
     }
@@ -1058,8 +1045,7 @@ void LegacyCacheStorage::CreateCacheDidCreateCache(
 
   cache_map_.insert(std::make_pair(cache_name, std::move(cache)));
   cache_index_->Insert(CacheStorageIndex::CacheMetadata(
-      cache_name, cache_ptr->cache_size(), cache_ptr->cache_padding(),
-      cache_ptr->cache_padding_key()->key()));
+      cache_name, cache_ptr->cache_size(), cache_ptr->cache_padding()));
 
   CacheStorageCacheHandle handle = cache_ptr->CreateHandle();
   index_write_task_.Cancel();
@@ -1363,8 +1349,7 @@ CacheStorageCacheHandle LegacyCacheStorage::GetLoadedCache(
     DCHECK(metadata);
     std::unique_ptr<LegacyCacheStorageCache> new_cache =
         cache_loader_->CreateCache(
-            cache_name, metadata->size, metadata->padding,
-            storage::DeserializePaddingKey(metadata->padding_key));
+            cache_name, metadata->size, metadata->padding);
     CacheStorageCache* cache_ptr = new_cache.get();
     map_iter->second = std::move(new_cache);
 

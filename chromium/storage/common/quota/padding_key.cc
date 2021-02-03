@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "crypto/hmac.h"
 #include "crypto/random.h"
+#include "crypto/symmetric_key.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
 #include "net/http/http_request_headers.h"
@@ -99,29 +100,6 @@ static url::Origin SchemefuleSiteReplacement(
 
 }  // namespace
 
-const SymmetricKey* GetDefaultPaddingKey() {
-  return GetPaddingKeyInternal()->get();
-}
-
-std::unique_ptr<SymmetricKey> CopyDefaultPaddingKey() {
-  return SymmetricKey::Import(kPaddingKeyAlgorithm,
-                              (*GetPaddingKeyInternal())->key());
-}
-
-std::unique_ptr<SymmetricKey> DeserializePaddingKey(
-    const std::string& raw_key) {
-  return SymmetricKey::Import(kPaddingKeyAlgorithm, raw_key);
-}
-
-std::string SerializeDefaultPaddingKey() {
-  return (*GetPaddingKeyInternal())->key();
-}
-
-void ResetPaddingKeyForTesting() {
-  *GetPaddingKeyInternal() =
-      SymmetricKey::GenerateRandomKey(kPaddingKeyAlgorithm, 128);
-}
-
 bool ShouldPadResponseType(network::mojom::FetchResponseType type) {
   return type == network::mojom::FetchResponseType::kOpaque ||
          type == network::mojom::FetchResponseType::kOpaqueRedirect;
@@ -157,7 +135,7 @@ int64_t ComputeStableResponsePadding(const url::Origin& origin,
       site.Serialize().c_str(), request_method.c_str(), side_data_size);
 
   crypto::HMAC hmac(crypto::HMAC::SHA256);
-  CHECK(hmac.Init(GetDefaultPaddingKey()));
+  CHECK(hmac.Init(GetPaddingKeyInternal()->get()));
 
   uint64_t digest_start = 0;
   CHECK(hmac.Sign(key, reinterpret_cast<uint8_t*>(&digest_start),
