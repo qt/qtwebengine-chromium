@@ -72,9 +72,8 @@ chrome.runtime.onMessageExternal.addListener(function(
           requestInfo, origin, metaData, doSendResponse);
       return true;
     } else if (method == 'logging.start') {
-      //chrome.webrtcLoggingPrivate.start(requestInfo, origin, doSendResponse);
-      // Disable webrtc logging for QtWebEngine.
-      return false;
+      chrome.webrtcLoggingPrivate.start(requestInfo, origin, doSendResponse);
+      return true;
     } else if (method == 'logging.uploadOnRenderClose') {
       chrome.webrtcLoggingPrivate.setUploadOnRenderClose(
           requestInfo, origin, true);
