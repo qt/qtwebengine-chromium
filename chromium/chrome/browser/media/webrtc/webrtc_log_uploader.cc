@@ -23,7 +23,9 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/browser_process.h"
+#endif
 #include "components/version_info/version_info.h"
 #include "components/webrtc_logging/browser/log_cleanup.h"
 #include "components/webrtc_logging/browser/text_log_list.h"
@@ -447,6 +449,7 @@ std::string WebRtcLogUploader::CompressLog(WebRtcLogBuffer* buffer) {
 void WebRtcLogUploader::UploadCompressedLog(
     WebRtcLogUploader::UploadDoneData upload_done_data,
     std::unique_ptr<std::string> post_data) {
+#if !defined(TOOLKIT_QT)
   DCHECK_CALLED_ON_VALID_SEQUENCE(main_sequence_checker_);
 
   DecreaseLogCount();
@@ -504,6 +507,9 @@ void WebRtcLogUploader::UploadCompressedLog(
       base::BindOnce(&WebRtcLogUploader::OnSimpleLoaderComplete,
                      base::Unretained(this), std::move(it),
                      std::move(upload_done_data)));
+#else
+  NOTREACHED();
+#endif // !defined(TOOLKIT_QT)
 }
 
 void WebRtcLogUploader::DecreaseLogCount() {
