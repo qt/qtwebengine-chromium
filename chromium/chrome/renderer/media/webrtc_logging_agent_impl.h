@@ -7,7 +7,11 @@
 
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/common/media/webrtc_logging.mojom.h"
+#else
+#include "qtwebengine/common/media/webrtc_logging.mojom.h"
+#endif
 #include "mojo/public/cpp/bindings/receiver_set.h"
 
 namespace chrome {
