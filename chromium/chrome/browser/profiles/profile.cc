@@ -7,6 +7,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
+// static
 Profile* Profile::FromBrowserContext(content::BrowserContext* browser_context) {
   // This is safe; this is the only implementation of the browser context.
   return static_cast<Profile*>(browser_context);
@@ -15,4 +16,12 @@ Profile* Profile::FromBrowserContext(content::BrowserContext* browser_context) {
 // static
 Profile* Profile::FromWebUI(content::WebUI* web_ui) {
   return FromBrowserContext(web_ui->GetWebContents()->GetBrowserContext());
+}
+
+Profile* Profile::GetOriginalProfile() {
+  return this;
+}
+
+const Profile* Profile::GetOriginalProfile() const {
+  return this;
 }

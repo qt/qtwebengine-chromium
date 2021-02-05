@@ -17,9 +17,13 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/unguessable_token.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/policy/profile_policy_connector.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#if !defined(TOOLKIT_QT)
 #include "components/policy/core/common/policy_service.h"
+#endif
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
@@ -645,7 +649,8 @@ LogCompressor::Result GzipLogCompressor::CompressInternal(
     DCHECK(input.empty());
     stream_.next_in = nullptr;
   } else {
-    stream_.next_in = reinterpret_cast<z_const Bytef*>(input.c_str());
+    //stream_.next_in = reinterpret_cast<z_const Bytef*>(input.c_str());
+    stream_.next_in = (z_const Bytef*)&input.c_str()[0];
   }
 
   DCHECK_LE(input.length(),
@@ -1036,6 +1041,7 @@ bool DoesProfileDefaultToLoggingEnabled(const Profile* const profile) {
   }
 #endif
 
+#if !defined(TOOLKIT_QT)
   // We only want a default of true for regular (i.e. logged-in) profiles
   // receiving cloud-based user-level enterprise policies. Supervised (child)
   // profiles are considered regular and can also receive cloud policies in some
@@ -1052,6 +1058,11 @@ bool DoesProfileDefaultToLoggingEnabled(const Profile* const profile) {
   return policy_connector->policy_service()->IsInitializationComplete(
              policy::POLICY_DOMAIN_CHROME) &&
          policy_connector->IsManaged();
+#else
+  // WebRtcRemoteEventLog feature is not supported by QtWebEngine.
+  NOTREACHED();
+  return false;
+#endif
 }
 
 }  // namespace webrtc_event_logging

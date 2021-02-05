@@ -25,7 +25,7 @@
     //"processes",
     "system.cpu",
     //"webrtcAudioPrivate",
-    //"webrtcLoggingPrivate",
+    "webrtcLoggingPrivate",
     "webrtcDesktopCapturePrivate"
   ]
 }

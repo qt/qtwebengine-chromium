@@ -163,6 +163,7 @@ if (use_qt) {
   schema_sources_ = [ ]
   schema_sources_ = [
     "enterprise_hardware_platform.idl",
+    "webrtc_logging_private.idl",
   ]
 
   uncompiled_sources_ = [ ]
