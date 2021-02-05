@@ -128,9 +128,9 @@ bool SystemMemoryPressureEvaluator::InferThresholds() {
   if (!GetSystemMemoryInfo(&mem_info))
     return false;
   critical_threshold_mb_ =
-      mem_info.total * (100 - kDefaultCriticalThresholdPc) / 100 / kKiBperMiB;
+      mem_info.total * (float((100 - kDefaultCriticalThresholdPc)) / (100 * kKiBperMiB));
   moderate_threshold_mb_ =
-      mem_info.total * (100 - kDefaultModerateThresholdPc) / 100 / kKiBperMiB;
+      mem_info.total * (float((100 - kDefaultModerateThresholdPc)) / (100 * kKiBperMiB));
   return true;
 }
 
