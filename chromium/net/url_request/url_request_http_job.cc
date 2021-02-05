@@ -585,10 +585,13 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
                                                request_->site_for_cookies())) {
       force_ignore_site_for_cookies = true;
     }
+    bool is_main_frame_navigation = IsolationInfo::RedirectMode::kUpdateTopFrame ==
+                                    request_->isolation_info().redirect_mode();
     options.set_same_site_cookie_context(
         net::cookie_util::ComputeSameSiteContextForRequest(
             request_->method(), request_->url(), request_->site_for_cookies(),
-            request_->initiator(), force_ignore_site_for_cookies));
+            request_->initiator(), is_main_frame_navigation,
+            force_ignore_site_for_cookies));
     static_cast<CookieMonster*>(cookie_store)->GetCookieListWithOptionsAsyncAndFiltered(
         request_->url(), request_->site_for_cookies(), options,
         base::BindOnce(&URLRequestHttpJob::SetCookieHeaderAndStart,
@@ -728,10 +731,12 @@ void URLRequestHttpJob::SaveCookiesAndNotifyHeadersComplete(int result) {
           request_->url(), request_->site_for_cookies())) {
     force_ignore_site_for_cookies = true;
   }
+  bool is_main_frame_navigation = IsolationInfo::RedirectMode::kUpdateTopFrame ==
+                                  request_->isolation_info().redirect_mode();
   options.set_same_site_cookie_context(
       net::cookie_util::ComputeSameSiteContextForResponse(
           request_->url(), request_->site_for_cookies(), request_->initiator(),
-          force_ignore_site_for_cookies));
+          is_main_frame_navigation, force_ignore_site_for_cookies));
 
   options.set_return_excluded_cookies();
 
