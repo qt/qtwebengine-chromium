@@ -11,5 +11,7 @@
 # required. See the declare_args block of BUILDCONFIG.gn for advice on how
 # to set up feature flags.
 
-# True if NSS is used for certificate handling.
-use_nss_certs = is_linux || is_chromeos
+declare_args() {
+  # True if NSS is used for certificate handling.
+  use_nss_certs = is_linux || is_chromeos
+}
