@@ -2598,8 +2598,6 @@ jumbo_static_library("browser") {
 
     sources -= [
       "media/session/audio_focus_delegate_default.cc",
-      "tracing/tracing_ui.cc",
-      "tracing/tracing_ui.h",
     ]
     deps += [
       ":reflection_jni_headers",
