@@ -14,7 +14,6 @@ from py_vulcanize import html_generation_controller
 from py_vulcanize import js_utils
 from py_vulcanize import module
 from py_vulcanize import strip_js_comments
-import six
 
 
 def _AddToPathIfNeeded(path):
@@ -53,6 +52,7 @@ def _InitBeautifulSoup():
 
 _InitBeautifulSoup()
 import bs4
+import six
 
 class Script(object):
 
