@@ -5128,4 +5128,8 @@ bool NavigationRequest::MaybeCancelFailedNavigation() {
   return false;
 }
 
+bool NavigationRequest::IsWaitingForBeforeUnload() {
+  return state_ < WILL_START_NAVIGATION;
+}
+
 }  // namespace content
