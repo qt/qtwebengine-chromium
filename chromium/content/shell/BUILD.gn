@@ -425,15 +425,6 @@ repack("pak") {
     "//ui/strings",
   ]
 
-  if (use_qt) {
-    sources -= [
-      "$root_gen_dir/content/browser/tracing/tracing_resources.pak",
-    ]
-    deps -= [
-      "//content/browser/tracing:resources",
-    ]
-  }
-
   if (toolkit_views && !is_chromecast) {
     deps += [ "//ui/views/resources" ]
     sources +=

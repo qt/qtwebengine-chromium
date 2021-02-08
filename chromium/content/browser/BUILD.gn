@@ -2166,7 +2166,7 @@ jumbo_static_library("browser") {
   if (!is_mac) {
     deps += [ "//sandbox" ]
   }
-  if (!is_android && !use_qt) {
+  if (!is_android) {
     deps += [
       "//components/vector_icons",
       "//content/browser/tracing:resources",
@@ -2916,8 +2916,6 @@ jumbo_static_library("browser") {
       "payments/respond_with_callback.h",
       "payments/service_worker_core_thread_event_dispatcher.cc",
       "payments/service_worker_core_thread_event_dispatcher.h",
-      "tracing/tracing_ui.cc",
-      "tracing/tracing_ui.h",
     ]
     deps -= [
       "//components/payments/content/icon",
