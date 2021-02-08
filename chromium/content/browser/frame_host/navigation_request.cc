@@ -1848,4 +1848,8 @@ void NavigationRequest::IgnorePipeDisconnection() {
       base::DoNothing());
 }
 
+bool NavigationRequest::IsWaitingForBeforeUnload() {
+  return state_ < STARTED;
+}
+
 }  // namespace content

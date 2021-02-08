@@ -222,6 +222,10 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // Only used with PerNavigationMojoInterface enabled.
   mojom::NavigationClient* GetCommitNavigationClient();
 
+  // Whether this navigation request waits for the result of beforeunload before
+  // proceeding.
+  bool IsWaitingForBeforeUnload();
+
  private:
   NavigationRequest(FrameTreeNode* frame_tree_node,
                     const CommonNavigationParams& common_params,
