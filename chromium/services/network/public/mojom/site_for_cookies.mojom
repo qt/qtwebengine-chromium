@@ -12,4 +12,5 @@ struct SiteForCookies {
   // net::SiteForCookies.
   SchemefulSite site;
   bool schemefully_same;
+  string first_party_url;
 };
