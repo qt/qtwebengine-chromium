@@ -12,12 +12,17 @@ bool StructTraits<network::mojom::SiteForCookiesDataView, net::SiteForCookies>::
     Read(network::mojom::SiteForCookiesDataView data,
          net::SiteForCookies* out) {
   net::SchemefulSite site;
+  std::string first_party_url;
   if (!data.ReadSite(&site)) {
     return false;
   }
 
+  if (!data.ReadFirstPartyUrl(&first_party_url)) {
+    return false;
+  }
+
   bool result =
-      net::SiteForCookies::FromWire(site, data.schemefully_same(), out);
+      net::SiteForCookies::FromWire(site, data.schemefully_same(), GURL(first_party_url), out);
   if (!result) {
     network::debug::SetDeserializationCrashKeyString("site_for_cookie");
   }
