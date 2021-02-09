@@ -529,17 +529,20 @@ void ParamTraits<net::SiteForCookies>::Write(base::Pickle* m,
                                              const param_type& p) {
   WriteParam(m, p.site());
   WriteParam(m, p.schemefully_same());
+  WriteParam(m, p.first_party_url().spec());
 }
 
 bool ParamTraits<net::SiteForCookies>::Read(const base::Pickle* m,
                                             base::PickleIterator* iter,
                                             param_type* r) {
   net::SchemefulSite site;
+  std::string first_party_url;
   bool schemefully_same;
-  if (!ReadParam(m, iter, &site) || !ReadParam(m, iter, &schemefully_same))
+  if (!ReadParam(m, iter, &site) || !ReadParam(m, iter, &schemefully_same) ||
+      !ReadParam(m, iter, &first_party_url))
     return false;
 
-  return net::SiteForCookies::FromWire(site, schemefully_same, r);
+  return net::SiteForCookies::FromWire(site, schemefully_same, GURL(first_party_url), r);
 }
 
 void ParamTraits<net::SiteForCookies>::Log(const param_type& p,
@@ -565,6 +568,7 @@ void ParamTraits<url::Origin>::Write(base::Pickle* m, const url::Origin& p) {
   if (nonce) {
     WriteParam(m, *nonce);
   }
+  WriteParam(m, p.GetFullURL().spec());
 }
 
 bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
@@ -573,9 +577,11 @@ bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
   std::string scheme;
   std::string host;
   uint16_t port;
+  std::string full_url;
   absl::optional<base::UnguessableToken> nonce_if_opaque;
   if (!ReadParam(m, iter, &scheme) || !ReadParam(m, iter, &host) ||
-      !ReadParam(m, iter, &port) || !ReadParam(m, iter, &nonce_if_opaque)) {
+      !ReadParam(m, iter, &port) || !ReadParam(m, iter, &nonce_if_opaque)
+      || !ReadParam(m, iter, &full_url)) {
     return false;
   }
 
@@ -589,6 +595,7 @@ bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
     return false;
 
   *p = std::move(creation_result.value());
+  p->SetFullURL(GURL(full_url));
   return true;
 }
 
