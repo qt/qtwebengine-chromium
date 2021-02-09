@@ -64,7 +64,10 @@ Origin Origin::Create(const GURL& url) {
 
   if (!tuple.IsValid())
     return Origin();
-  return Origin(std::move(tuple));
+
+  Origin origin = Origin(std::move(tuple));
+  origin.full_url_ = url;
+  return origin;
 }
 
 Origin Origin::Resolve(const GURL& url, const Origin& base_origin) {
@@ -156,6 +159,17 @@ GURL Origin::GetURL() const {
     return GURL("file:///");
 
   return tuple_.GetURL();
+}
+
+GURL Origin::GetFullURL() const {
+  if (opaque())
+    return GURL();
+
+  return full_url_;
+}
+
+void Origin::SetFullURL(const GURL &url) {
+  full_url_ = url;
 }
 
 const base::UnguessableToken* Origin::GetNonceForSerialization() const {
@@ -416,6 +430,26 @@ std::ostream& operator<<(std::ostream& out, const url::Origin::Nonce& nonce) {
     return (out << "(nonce TBD)");
   else
     return (out << nonce.raw_token());
+}
+
+bool Origin::operator<(const Origin& other) const {
+  return tuple_ < other.tuple_ || (tuple_ == other.tuple_ && nonce_ < other.nonce_);
+}
+
+bool Origin::operator==(const Origin& other) const {
+  return tuple_ == other.tuple_ && nonce_ == other.nonce_;
+}
+
+bool Origin::operator!=(const Origin& other) const {
+  return tuple_ != other.tuple_ || nonce_ != other.nonce_;
+}
+
+std::strong_ordering Origin::operator<=>(const Origin& other) const {
+  if (tuple_ < other.tuple_)
+    return std::strong_ordering::less;
+  if (tuple_ == other.tuple_)
+    return nonce_ <=> other.nonce_;
+  return std::strong_ordering::greater;
 }
 
 bool IsSameOriginWith(const GURL& a, const GURL& b) {
