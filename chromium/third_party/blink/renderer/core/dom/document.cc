@@ -7055,15 +7055,15 @@ net::SiteForCookies Document::SiteForCookies() const {
   // like images or video. We do so because when third-party cookie blocking is
   // enabled, access-controlled media cannot be rendered. We only make this
   // exception in this special case to minimize security/privacy risk.
+  url::Origin url_origin = origin->ToUrlOrigin();
   if (override_site_for_cookies_for_csp_media_ && origin->IsOpaque()) {
-    url::Origin url_origin = origin->ToUrlOrigin();
     if (!url_origin.GetTupleOrPrecursorTupleIfOpaque().host().empty()) {
       return net::SiteForCookies::FromOrigin(url::Origin::Create(
           url_origin.GetTupleOrPrecursorTupleIfOpaque().GetURL()));
     }
   }
 
-  net::SiteForCookies candidate(origin->GetSchemefulSite());
+  net::SiteForCookies candidate = net::SiteForCookies::FromOrigin(url_origin);
 
   // If true, CompareWithFrameTreeSiteAndRevise() is skipped if the
   // SecurityOrigin of the frames is the same. If any frame has a different

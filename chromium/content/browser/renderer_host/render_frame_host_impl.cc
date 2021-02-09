@@ -5551,7 +5551,8 @@ net::IsolationInfo RenderFrameHostImpl::ComputeIsolationInfoInternal(
 
   net::SchemefulSite top_frame_site = net::SchemefulSite(top_frame_origin);
 
-  net::SiteForCookies candidate_site_for_cookies(top_frame_site);
+  net::SiteForCookies candidate_site_for_cookies =
+      net::SiteForCookies::FromOrigin(top_frame_origin);
 
   std::optional<net::IsolationInfo::FrameAncestorRelation>
       candidate_frame_ancestor_relation =
@@ -5598,7 +5599,7 @@ net::IsolationInfo RenderFrameHostImpl::ComputeIsolationInfoInternal(
   if (GetContentClient()->browser()->ShouldTreatAsFirstPartyWhenTopLevel(
           top_frame_origin,
           GURL::SchemeIsCryptographic(frame_origin.scheme()))) {
-    candidate_site_for_cookies = net::SiteForCookies(top_frame_site);
+    candidate_site_for_cookies = net::SiteForCookies::FromOrigin(top_frame_origin);
   }
 
   std::optional<base::UnguessableToken> nonce =
