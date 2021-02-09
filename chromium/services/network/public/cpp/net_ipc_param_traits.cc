@@ -534,17 +534,20 @@ void ParamTraits<net::SiteForCookies>::Write(base::Pickle* m,
                                              const param_type& p) {
   WriteParam(m, p.site());
   WriteParam(m, p.schemefully_same());
+  WriteParam(m, p.first_party_url().spec());
 }
 
 bool ParamTraits<net::SiteForCookies>::Read(const base::Pickle* m,
                                             base::PickleIterator* iter,
                                             param_type* r) {
   net::SchemefulSite site;
+  std::string first_party_url;
   bool schemefully_same;
-  if (!ReadParam(m, iter, &site) || !ReadParam(m, iter, &schemefully_same))
+  if (!ReadParam(m, iter, &site) || !ReadParam(m, iter, &schemefully_same) ||
+      !ReadParam(m, iter, &first_party_url))
     return false;
 
-  return net::SiteForCookies::FromWire(site, schemefully_same, r);
+  return net::SiteForCookies::FromWire(site, schemefully_same, GURL(first_party_url), r);
 }
 
 void ParamTraits<net::SiteForCookies>::Log(const param_type& p,

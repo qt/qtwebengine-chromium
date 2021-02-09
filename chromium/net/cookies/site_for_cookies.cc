@@ -31,8 +31,10 @@ SiteForCookies& SiteForCookies::operator=(SiteForCookies&& site_for_cookies) =
 // static
 bool SiteForCookies::FromWire(const SchemefulSite& site,
                               bool schemefully_same,
+                              GURL first_party_url,
                               SiteForCookies* out) {
   SiteForCookies candidate(site);
+  candidate.first_party_url_ = first_party_url;
   if (site != candidate.site_)
     return false;
 
@@ -44,7 +46,12 @@ bool SiteForCookies::FromWire(const SchemefulSite& site,
 
 // static
 SiteForCookies SiteForCookies::FromOrigin(const url::Origin& origin) {
-  return SiteForCookies(SchemefulSite(origin));
+  SiteForCookies site_for_cookies = SiteForCookies(SchemefulSite(origin));
+  if (!origin.GetFullURL().is_empty())
+    site_for_cookies.first_party_url_ = origin.GetFullURL();
+  else
+    site_for_cookies.first_party_url_ = origin.GetURL();
+  return site_for_cookies;
 }
 
 // static
@@ -199,6 +206,13 @@ void SiteForCookies::MarkIfCrossScheme(const SchemefulSite& other) {
 
   // Mark that the two are cross-scheme to each other.
   schemefully_same_ = false;
+}
+
+GURL SiteForCookies::first_party_url() const {
+  if (first_party_url_.is_empty())
+    return RepresentativeUrl();
+
+  return first_party_url_;
 }
 
 }  // namespace net
