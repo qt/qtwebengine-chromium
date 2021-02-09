@@ -54,7 +54,10 @@ Origin Origin::Create(const GURL& url) {
 
   if (!tuple.IsValid())
     return Origin();
-  return Origin(std::move(tuple));
+
+  Origin origin = Origin(std::move(tuple));
+  origin.full_url_ = url;
+  return origin;
 }
 
 Origin Origin::Resolve(const GURL& url, const Origin& base_origin) {
@@ -150,6 +153,17 @@ GURL Origin::GetURL() const {
     return GURL("file:///");
 
   return tuple_.GetURL();
+}
+
+GURL Origin::GetFullURL() const {
+  if (opaque())
+    return GURL();
+
+  return full_url_;
+}
+
+void Origin::SetFullURL(const GURL &url) {
+  full_url_ = url;
 }
 
 base::Optional<base::UnguessableToken> Origin::GetNonceForSerialization()

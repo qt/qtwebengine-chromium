@@ -52,6 +52,7 @@ class NET_EXPORT SiteForCookies {
   static bool FromWire(const std::string& scheme,
                        const std::string& registrable_domain,
                        bool schemefully_same,
+                       GURL first_party_url,
                        SiteForCookies* out);
 
   // If the origin is opaque, returns SiteForCookies that matches nothing.
@@ -112,6 +113,8 @@ class NET_EXPORT SiteForCookies {
 
   const std::string& registrable_domain() const { return registrable_domain_; }
 
+  GURL first_party_url() const;
+
   // Used for serialization/deserialization. This value is irrelevant if
   // IsNull() is true.
   bool schemefully_same() const { return schemefully_same_; }
@@ -162,6 +165,8 @@ class NET_EXPORT SiteForCookies {
   // irrelevant (For tests this value can also be modified by
   // SetSchemefullySameForTesting()).
   bool schemefully_same_;
+
+  GURL first_party_url_;
 };
 
 }  // namespace net

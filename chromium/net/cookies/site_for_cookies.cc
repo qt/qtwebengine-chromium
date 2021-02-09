@@ -37,6 +37,7 @@ SiteForCookies& SiteForCookies::operator=(SiteForCookies&& site_for_cookies) =
 bool SiteForCookies::FromWire(const std::string& scheme,
                               const std::string& registrable_domain,
                               bool schemefully_same,
+                              GURL first_party_url,
                               SiteForCookies* out) {
   // Make sure scheme meets precondition of methods like
   // GURL::SchemeIsCryptographic.
@@ -45,6 +46,8 @@ bool SiteForCookies::FromWire(const std::string& scheme,
 
   // registrable_domain_ should also be canonicalized.
   SiteForCookies candidate(scheme, registrable_domain);
+  candidate.first_party_url_ = first_party_url;
+
   if (registrable_domain != candidate.registrable_domain_)
     return false;
 
@@ -60,7 +63,12 @@ SiteForCookies SiteForCookies::FromOrigin(const url::Origin& origin) {
   if (origin.opaque())
     return SiteForCookies();
 
-  return SiteForCookies(origin.scheme(), origin.host());
+  SiteForCookies site_for_cookies = SiteForCookies(origin.scheme(), origin.host());
+  if (!origin.GetFullURL().is_empty())
+    site_for_cookies.first_party_url_ = origin.GetFullURL();
+  else
+    site_for_cookies.first_party_url_ = origin.GetURL();
+  return site_for_cookies;
 }
 
 // static
@@ -189,6 +197,13 @@ bool SiteForCookies::IsSchemelesslyFirstParty(const GURL& url) const {
     return other_registrable_domain.empty() && (scheme_ == url.scheme());
 
   return registrable_domain_ == other_registrable_domain;
+}
+
+GURL SiteForCookies::first_party_url() const {
+  if (first_party_url_.is_empty())
+    return RepresentativeUrl();
+
+  return first_party_url_;
 }
 
 }  // namespace net

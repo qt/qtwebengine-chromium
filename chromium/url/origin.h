@@ -20,6 +20,7 @@
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "ipc/ipc_param_traits.h"
+#include "url/gurl.h"
 #include "url/scheme_host_port.h"
 #include "url/third_party/mozilla/url_parse.h"
 #include "url/url_canon.h"
@@ -260,6 +261,9 @@ class COMPONENT_EXPORT(URL) Origin {
   // URL (e.g. with a path component).
   GURL GetURL() const;
 
+  GURL GetFullURL() const;
+  void SetFullURL(const GURL &url);
+
   // Same as GURL::DomainIs. If |this| origin is opaque, then returns false.
   bool DomainIs(base::StringPiece canonical_domain) const;
 
@@ -414,6 +418,8 @@ class COMPONENT_EXPORT(URL) Origin {
   // nonce is preserved when an opaque origin is copied or moved. An Origin
   // is considered opaque if and only if |nonce_| holds a value.
   base::Optional<Nonce> nonce_;
+
+  GURL full_url_;
 };
 
 // Pretty-printers for logging. These expose the internal state of the nonce.
