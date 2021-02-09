@@ -779,7 +779,7 @@ const net::SiteForCookies StorageKey::ToNetSiteForCookies() const {
   }
 
   // Otherwise we are in a first party context.
-  return net::SiteForCookies(top_level_site_);
+  return net::SiteForCookies(top_level_site_, origin_.GetFullURL());
 }
 
 const net::IsolationInfo StorageKey::ToPartialNetIsolationInfo() const {
