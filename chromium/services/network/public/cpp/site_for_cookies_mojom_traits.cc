@@ -11,7 +11,7 @@ namespace mojo {
 bool StructTraits<network::mojom::SiteForCookiesDataView, net::SiteForCookies>::
     Read(network::mojom::SiteForCookiesDataView data,
          net::SiteForCookies* out) {
-  std::string scheme, registrable_domain;
+  std::string scheme, registrable_domain, first_party_url;
   if (!data.ReadScheme(&scheme)) {
     return false;
   }
@@ -19,8 +19,13 @@ bool StructTraits<network::mojom::SiteForCookiesDataView, net::SiteForCookies>::
     return false;
   }
 
+  if (!data.ReadFirstPartyUrl(&first_party_url)) {
+    return false;
+  }
+
   bool result = net::SiteForCookies::FromWire(scheme, registrable_domain,
-                                              data.schemefully_same(), out);
+                                              data.schemefully_same(),
+                                              GURL(first_party_url), out);
   if (!result) {
     network::debug::SetDeserializationCrashKeyString("site_for_cookie");
   }

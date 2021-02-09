@@ -11,4 +11,5 @@ struct SiteForCookies {
   string scheme;
   string registrable_domain;
   bool schemefully_same;
+  string first_party_url;
 };
