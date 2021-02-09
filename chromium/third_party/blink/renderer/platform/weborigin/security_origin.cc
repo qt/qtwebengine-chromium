@@ -152,14 +152,15 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
           // an origin with an effective port of 0.
           (url.HasPort() || !url.IsValid() || !url.IsHierarchical())
               ? url.Port()
-              : DefaultPortForProtocol(url.Protocol())) {}
+              : DefaultPortForProtocol(url.Protocol())) {
+  full_url_ = url.Copy();
+}
 
 SecurityOrigin::SecurityOrigin(const String& protocol,
                                const String& host,
                                uint16_t port)
     : protocol_(protocol), host_(host), domain_(host_), port_(port) {
   DCHECK(!IsOpaque());
-
   // NOTE(juvaldma)(Chromium 67.0.3396.47)
   //
   // If DefaultPortForProtocol and IsDefaultPortForProtocol were appropriately
@@ -205,7 +206,8 @@ SecurityOrigin::SecurityOrigin(const SecurityOrigin* other,
       agent_cluster_id_(other->agent_cluster_id_),
       precursor_origin_(other->precursor_origin_
                             ? other->precursor_origin_->IsolatedCopy()
-                            : nullptr) {}
+                            : nullptr),
+      full_url_(other->full_url_.Copy()) {}
 
 SecurityOrigin::SecurityOrigin(const SecurityOrigin* other,
                                ConstructSameThreadCopy)
@@ -223,7 +225,8 @@ SecurityOrigin::SecurityOrigin(const SecurityOrigin* other,
           other->is_opaque_origin_potentially_trustworthy_),
       cross_agent_cluster_access_(other->cross_agent_cluster_access_),
       agent_cluster_id_(other->agent_cluster_id_),
-      precursor_origin_(other->precursor_origin_) {}
+      precursor_origin_(other->precursor_origin_),
+      full_url_(other->full_url_.Copy()) {}
 
 scoped_refptr<SecurityOrigin> SecurityOrigin::CreateWithReferenceOrigin(
     const KURL& url,
@@ -293,6 +296,7 @@ scoped_refptr<SecurityOrigin> SecurityOrigin::CreateFromUrlOrigin(
         url::Origin::Nonce(*nonce_if_opaque), tuple_origin.get()));
   }
   CHECK(tuple_origin);
+  tuple_origin->full_url_ = KURL(origin.GetFullURL());
   return tuple_origin;
 }
 
@@ -309,6 +313,7 @@ url::Origin SecurityOrigin::ToUrlOrigin() const {
   }
   url::Origin result = url::Origin::CreateFromNormalizedTuple(
       std::move(scheme), std::move(host), port);
+  result.SetFullURL(full_url_);
   CHECK(!result.opaque());
   return result;
 }
