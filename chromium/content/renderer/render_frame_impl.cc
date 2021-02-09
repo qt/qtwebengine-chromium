@@ -2526,6 +2526,10 @@ void RenderFrameImpl::CommitNavigation(
   AssertNavigationCommits assert_navigation_commits(
       this, kMayReplaceInitialEmptyDocument);
 
+  if (commit_params->origin_to_commit) {
+    commit_params->origin_to_commit->SetFullURL(frame_->GetDocumentLoader()->OriginalUrl());
+  }
+
   SetOldPageLifecycleStateFromNewPageCommitIfNeeded(
       commit_params->old_page_info.get());
 
