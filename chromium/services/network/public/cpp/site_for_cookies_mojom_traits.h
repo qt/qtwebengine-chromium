@@ -24,6 +24,11 @@ struct COMPONENT_EXPORT(NETWORK_CPP_COOKIES)
     return input.schemefully_same();
   }
 
+  static std::string first_party_url(
+      const net::SiteForCookies& input) {
+    return input.first_party_url().spec();
+  }
+
   static bool Read(network::mojom::SiteForCookiesDataView data,
                    net::SiteForCookies* out);
 };

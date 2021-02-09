@@ -59,6 +59,7 @@ class NET_EXPORT SiteForCookies {
   // did not lie, merely that they are well-formed.
   static bool FromWire(const SchemefulSite& site,
                        bool schemefully_same,
+                       GURL first_party_url,
                        SiteForCookies* out);
 
   // If the origin is opaque, returns SiteForCookies that matches nothing.
@@ -156,6 +157,8 @@ class NET_EXPORT SiteForCookies {
     return site_.site_as_origin_.host();
   }
 
+  GURL first_party_url() const;
+
   // Used for serialization/deserialization. This value is irrelevant if
   // site().opaque() is true.
   bool schemefully_same() const { return schemefully_same_; }
@@ -204,6 +207,8 @@ class NET_EXPORT SiteForCookies {
   // irrelevant (For tests this value can also be modified by
   // SetSchemefullySameForTesting()).
   bool schemefully_same_ = false;
+
+  GURL first_party_url_;
 };
 
 }  // namespace net
