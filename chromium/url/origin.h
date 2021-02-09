@@ -21,6 +21,7 @@
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "build/robolectric_buildflags.h"
+#include "url/gurl.h"
 #include "url/scheme_host_port.h"
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_ROBOLECTRIC)
@@ -277,13 +278,18 @@ class COMPONENT_EXPORT(URL) Origin {
   // URL (e.g. with a path component).
   GURL GetURL() const;
 
+  GURL GetFullURL() const;
+  void SetFullURL(const GURL &url);
+
   // Same as GURL::DomainIs. If |this| origin is opaque, then returns false.
   bool DomainIs(std::string_view canonical_domain) const;
 
   // Allows Origin to be used as a key in STL (for example, a std::set or
   // std::map).
-  friend bool operator==(const Origin& left, const Origin& right) = default;
-  friend auto operator<=>(const Origin& left, const Origin& right) = default;
+  std::strong_ordering operator<=>(const Origin& other) const;
+  bool operator<(const Origin& other) const;
+  bool operator==(const Origin& other) const;
+  bool operator!=(const Origin& other) const;
 
   // Allows Origin to be used as a key in ABSL (for example, absl::flat_hash_set
   // or absl::flat_hash_map).
@@ -483,6 +489,8 @@ class COMPONENT_EXPORT(URL) Origin {
   // nonce is preserved when an opaque origin is copied or moved. An Origin
   // is considered opaque if and only if |nonce_| holds a value.
   std::optional<Nonce> nonce_;
+
+  GURL full_url_;
 };
 
 // Pretty-printers for logging. These expose the internal state of the nonce.

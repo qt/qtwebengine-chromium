@@ -5397,7 +5397,8 @@ net::IsolationInfo RenderFrameHostImpl::ComputeIsolationInfoInternal(
   url::Origin top_frame_origin = ComputeTopFrameOrigin(frame_origin);
   net::SchemefulSite top_frame_site = net::SchemefulSite(top_frame_origin);
 
-  net::SiteForCookies candidate_site_for_cookies(top_frame_site);
+  net::SiteForCookies candidate_site_for_cookies =
+      net::SiteForCookies::FromOrigin(top_frame_origin);
 
   std::optional<net::IsolationInfo::FrameAncestorRelation>
       candidate_frame_ancestor_relation =
