@@ -44,13 +44,24 @@ bool DOMArrayBuffer::Transfer(v8::Isolate* isolate,
     to_transfer =
         DOMArrayBuffer::Create(Buffer()->Data(), Buffer()->ByteLength());
   }
+  return to_transfer->TransferNeuterable(isolate, result);
+}
 
-  if (!to_transfer->Buffer()->Transfer(result))
+bool DOMArrayBuffer::TransferNeuterable(v8::Isolate* isolate,
+                                        WTF::ArrayBufferContents& result) {
+  DCHECK(IsNeuterable(isolate));
+
+  if (IsNeutered()) {
+    result.Neuter();
+    return false;
+  }
+
+  if (!Buffer()->Transfer(result))
     return false;
 
   Vector<v8::Local<v8::ArrayBuffer>, 4> buffer_handles;
   v8::HandleScope handle_scope(isolate);
-  AccumulateArrayBuffersForAllWorlds(isolate, to_transfer, buffer_handles);
+  AccumulateArrayBuffersForAllWorlds(isolate, this, buffer_handles);
 
   for (const auto& buffer_handle : buffer_handles)
     buffer_handle->Neuter();

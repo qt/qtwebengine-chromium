@@ -54,6 +54,8 @@ class CORE_EXPORT DOMArrayBuffer final : public DOMArrayBufferBase {
                              v8::Local<v8::Object> creation_context) override;
 
  private:
+  bool TransferNeuterable(v8::Isolate*, WTF::ArrayBufferContents& result);
+
   explicit DOMArrayBuffer(scoped_refptr<WTF::ArrayBuffer> buffer)
       : DOMArrayBufferBase(std::move(buffer)) {}
 };
