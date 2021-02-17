@@ -11,18 +11,12 @@
 
 namespace performance_manager {
 
-namespace {
-
-const char kDescriberName[] = "PageNodeImpl";
-
-}  // namespace
-
 PageNodeImplDescriber::PageNodeImplDescriber() = default;
 PageNodeImplDescriber::~PageNodeImplDescriber() = default;
 
 void PageNodeImplDescriber::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "PageNodeImpl");
 }
 
 void PageNodeImplDescriber::OnTakenFromGraph(Graph* graph) {

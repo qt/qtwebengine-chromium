@@ -2,13 +2,14 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/jumbo.gni")
 import("//third_party/protobuf/proto_library.gni")
 
 proto_library("site_data_proto") {
   sources = [ "persistence/site_data/site_data.proto" ]
 }
 
-static_library("performance_manager") {
+jumbo_static_library("performance_manager") {
   sources = [
     "decorators/frame_visibility_decorator.cc",
     "decorators/frame_visibility_decorator.h",
@@ -196,6 +197,7 @@ static_library("performance_manager") {
       "public/persistence/site_data/feature_usage.h",
       "public/persistence/site_data/site_data_reader.h",
     ]
+    jumbo_excluded_sources = [ "decorators/site_data_recorder.cc" ]
 
     public_deps += [
       ":site_data_proto",

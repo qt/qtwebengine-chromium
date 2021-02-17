@@ -87,8 +87,6 @@ class PageLiveStateDataImpl
   bool was_discarded_ = false;
 };
 
-const char kDescriberName[] = "PageLiveStateDecorator";
-
 }  // namespace
 
 // static
@@ -172,7 +170,7 @@ void PageLiveStateDecorator::SetWasDiscarded(content::WebContents* contents,
 
 void PageLiveStateDecorator::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "PageLiveStateDecorator");
 }
 
 void PageLiveStateDecorator::OnTakenFromGraph(Graph* graph) {

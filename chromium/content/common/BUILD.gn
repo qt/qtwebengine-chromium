@@ -4,6 +4,7 @@
 
 import("//build/buildflag_header.gni")
 import("//build/config/features.gni")
+import("//build/config/jumbo.gni")
 import("//build/config/ui.gni")
 import("//content/public/common/zygote/features.gni")
 import("//ipc/features.gni")
@@ -30,7 +31,7 @@ buildflag_header("buildflags") {
   ]
 }
 
-static_library("common") {
+jumbo_static_library("common") {
   # Targets external to content should always link to the public API.
   # In addition, targets outside of the content component (shell and tests)
   # must not link to this because it will duplicate the code in the component
@@ -156,6 +157,11 @@ static_library("common") {
     "user_agent.cc",
     "web_package/signed_exchange_utils.cc",
     "web_package/signed_exchange_utils.h",
+  ]
+  jumbo_excluded_sources = [
+    "common_param_traits.cc",
+    "content_message_generator.cc",
+    "content_param_traits.cc",
   ]
 
   configs += [

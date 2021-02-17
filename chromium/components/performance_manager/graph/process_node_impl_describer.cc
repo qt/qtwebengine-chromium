@@ -23,8 +23,6 @@ namespace performance_manager {
 
 namespace {
 
-const char kDescriberName[] = "ProcessNodeImpl";
-
 base::Value GetProcessValueDict(const base::Process& process) {
   base::Value ret(base::Value::Type::DICTIONARY);
 
@@ -81,7 +79,7 @@ base::Value GetProcessValueDict(const base::Process& process) {
 
 void ProcessNodeImplDescriber::OnPassedToGraph(Graph* graph) {
   graph->GetNodeDataDescriberRegistry()->RegisterDescriber(this,
-                                                           kDescriberName);
+                                                           "ProcessNodeImpl");
 }
 
 void ProcessNodeImplDescriber::OnTakenFromGraph(Graph* graph) {
