@@ -17,6 +17,9 @@
 #ifdef LIBYUV_USE_GFLAGS
 #include "gflags/gflags.h"
 #endif
+#ifdef LIBYUV_USE_BASE_FLAGS
+#include "base/commandlineflags.h"
+#endif
 #include "libyuv/cpu_id.h"
 
 unsigned int fastrand_seed = 0xfb;
@@ -65,6 +68,9 @@ int TestCpuEnv(int cpu_info) {
 #if defined(__mips__) && defined(__linux__)
   if (TestEnv("LIBYUV_DISABLE_MSA")) {
     cpu_info &= ~libyuv::kCpuHasMSA;
+  }
+  if (TestEnv("LIBYUV_DISABLE_MMI")) {
+    cpu_info &= ~libyuv::kCpuHasMMI;
   }
 #endif
 #if !defined(__pnacl__) && !defined(__CLR_VER) &&                   \

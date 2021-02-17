@@ -36,6 +36,15 @@ void TransposePlane(const uint8_t* src,
   void (*TransposeWx8)(const uint8_t* src, int src_stride, uint8_t* dst,
                        int dst_stride, int width) = TransposeWx8_C;
 #endif
+
+#if defined(HAS_TRANSPOSEWX16_MSA)
+  if (TestCpuFlag(kCpuHasMSA)) {
+    TransposeWx16 = TransposeWx16_Any_MSA;
+    if (IS_ALIGNED(width, 16)) {
+      TransposeWx16 = TransposeWx16_MSA;
+    }
+  }
+#else
 #if defined(HAS_TRANSPOSEWX8_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     TransposeWx8 = TransposeWx8_NEON;
@@ -49,6 +58,11 @@ void TransposePlane(const uint8_t* src,
     }
   }
 #endif
+#if defined(HAS_TRANSPOSEWX8_MMI)
+  if (TestCpuFlag(kCpuHasMMI)) {
+    TransposeWx8 = TransposeWx8_MMI;
+  }
+#endif
 #if defined(HAS_TRANSPOSEWX8_FAST_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3)) {
     TransposeWx8 = TransposeWx8_Fast_Any_SSSE3;
@@ -57,14 +71,7 @@ void TransposePlane(const uint8_t* src,
     }
   }
 #endif
-#if defined(HAS_TRANSPOSEWX16_MSA)
-  if (TestCpuFlag(kCpuHasMSA)) {
-    TransposeWx16 = TransposeWx16_Any_MSA;
-    if (IS_ALIGNED(width, 16)) {
-      TransposeWx16 = TransposeWx16_MSA;
-    }
-  }
-#endif
+#endif /* defined(HAS_TRANSPOSEWX16_MSA) */
 
 #if defined(HAS_TRANSPOSEWX16_MSA)
   // Work across the source in 16x16 tiles
@@ -137,7 +144,7 @@ void RotatePlane180(const uint8_t* src,
 #if defined(HAS_MIRRORROW_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     MirrorRow = MirrorRow_Any_NEON;
-    if (IS_ALIGNED(width, 16)) {
+    if (IS_ALIGNED(width, 32)) {
       MirrorRow = MirrorRow_NEON;
     }
   }
@@ -155,6 +162,14 @@ void RotatePlane180(const uint8_t* src,
     MirrorRow = MirrorRow_Any_AVX2;
     if (IS_ALIGNED(width, 32)) {
       MirrorRow = MirrorRow_AVX2;
+    }
+  }
+#endif
+#if defined(HAS_MIRRORROW_MMI)
+  if (TestCpuFlag(kCpuHasMMI)) {
+    MirrorRow = MirrorRow_Any_MMI;
+    if (IS_ALIGNED(width, 8)) {
+      MirrorRow = MirrorRow_MMI;
     }
   }
 #endif
@@ -186,14 +201,19 @@ void RotatePlane180(const uint8_t* src,
     CopyRow = IS_ALIGNED(width, 32) ? CopyRow_NEON : CopyRow_Any_NEON;
   }
 #endif
+#if defined(HAS_COPYROW_MMI)
+  if (TestCpuFlag(kCpuHasMMI)) {
+    CopyRow = IS_ALIGNED(width, 8) ? CopyRow_MMI : CopyRow_Any_MMI;
+  }
+#endif
 
   // Odd height will harmlessly mirror the middle row twice.
   for (y = 0; y < half_height; ++y) {
-    MirrorRow(src, row, width);  // Mirror first row into a buffer
-    src += src_stride;
+    CopyRow(src, row, width);        // Copy first row into buffer
     MirrorRow(src_bot, dst, width);  // Mirror last row into first row
+    MirrorRow(row, dst_bot, width);  // Mirror buffer into last row
+    src += src_stride;
     dst += dst_stride;
-    CopyRow(row, dst_bot, width);  // Copy first mirrored row into last
     src_bot -= src_stride;
     dst_bot -= dst_stride;
   }
@@ -219,6 +239,15 @@ void TransposeUV(const uint8_t* src,
                          int dst_stride_a, uint8_t* dst_b, int dst_stride_b,
                          int width) = TransposeUVWx8_C;
 #endif
+
+#if defined(HAS_TRANSPOSEUVWX16_MSA)
+  if (TestCpuFlag(kCpuHasMSA)) {
+    TransposeUVWx16 = TransposeUVWx16_Any_MSA;
+    if (IS_ALIGNED(width, 8)) {
+      TransposeUVWx16 = TransposeUVWx16_MSA;
+    }
+  }
+#else
 #if defined(HAS_TRANSPOSEUVWX8_NEON)
   if (TestCpuFlag(kCpuHasNEON)) {
     TransposeUVWx8 = TransposeUVWx8_NEON;
@@ -232,14 +261,15 @@ void TransposeUV(const uint8_t* src,
     }
   }
 #endif
-#if defined(HAS_TRANSPOSEUVWX16_MSA)
-  if (TestCpuFlag(kCpuHasMSA)) {
-    TransposeUVWx16 = TransposeUVWx16_Any_MSA;
-    if (IS_ALIGNED(width, 8)) {
-      TransposeUVWx16 = TransposeUVWx16_MSA;
+#if defined(HAS_TRANSPOSEUVWX8_MMI)
+  if (TestCpuFlag(kCpuHasMMI)) {
+    TransposeUVWx8 = TransposeUVWx8_Any_MMI;
+    if (IS_ALIGNED(width, 4)) {
+      TransposeUVWx8 = TransposeUVWx8_MMI;
     }
   }
 #endif
+#endif /* defined(HAS_TRANSPOSEUVWX16_MSA) */
 
 #if defined(HAS_TRANSPOSEUVWX16_MSA)
   // Work through the source in 8x8 tiles.
@@ -314,21 +344,26 @@ void RotateUV180(const uint8_t* src,
                  int width,
                  int height) {
   int i;
-  void (*MirrorUVRow)(const uint8_t* src, uint8_t* dst_u, uint8_t* dst_v,
-                      int width) = MirrorUVRow_C;
-#if defined(HAS_MIRRORUVROW_NEON)
-  if (TestCpuFlag(kCpuHasNEON) && IS_ALIGNED(width, 8)) {
-    MirrorUVRow = MirrorUVRow_NEON;
+  void (*MirrorSplitUVRow)(const uint8_t* src, uint8_t* dst_u, uint8_t* dst_v,
+                           int width) = MirrorSplitUVRow_C;
+#if defined(HAS_MIRRORSPLITUVROW_NEON)
+  if (TestCpuFlag(kCpuHasNEON) && IS_ALIGNED(width, 16)) {
+    MirrorSplitUVRow = MirrorSplitUVRow_NEON;
   }
 #endif
-#if defined(HAS_MIRRORUVROW_SSSE3)
+#if defined(HAS_MIRRORSPLITUVROW_SSSE3)
   if (TestCpuFlag(kCpuHasSSSE3) && IS_ALIGNED(width, 16)) {
-    MirrorUVRow = MirrorUVRow_SSSE3;
+    MirrorSplitUVRow = MirrorSplitUVRow_SSSE3;
   }
 #endif
-#if defined(HAS_MIRRORUVROW_MSA)
+#if defined(HAS_MIRRORSPLITUVROW_MMI)
+  if (TestCpuFlag(kCpuHasMMI) && IS_ALIGNED(width, 8)) {
+    MirrorSplitUVRow = MirrorSplitUVRow_MMI;
+  }
+#endif
+#if defined(HAS_MIRRORSPLITUVROW_MSA)
   if (TestCpuFlag(kCpuHasMSA) && IS_ALIGNED(width, 32)) {
-    MirrorUVRow = MirrorUVRow_MSA;
+    MirrorSplitUVRow = MirrorSplitUVRow_MSA;
   }
 #endif
 
@@ -336,7 +371,7 @@ void RotateUV180(const uint8_t* src,
   dst_b += dst_stride_b * (height - 1);
 
   for (i = 0; i < height; ++i) {
-    MirrorUVRow(src, dst_a, dst_b, width);
+    MirrorSplitUVRow(src, dst_a, dst_b, width);
     src += src_stride;
     dst_a -= dst_stride_a;
     dst_b -= dst_stride_b;
@@ -443,6 +478,66 @@ int I420Rotate(const uint8_t* src_y,
                      halfheight);
       RotatePlane180(src_v, src_stride_v, dst_v, dst_stride_v, halfwidth,
                      halfheight);
+      return 0;
+    default:
+      break;
+  }
+  return -1;
+}
+
+LIBYUV_API
+int I444Rotate(const uint8_t* src_y,
+               int src_stride_y,
+               const uint8_t* src_u,
+               int src_stride_u,
+               const uint8_t* src_v,
+               int src_stride_v,
+               uint8_t* dst_y,
+               int dst_stride_y,
+               uint8_t* dst_u,
+               int dst_stride_u,
+               uint8_t* dst_v,
+               int dst_stride_v,
+               int width,
+               int height,
+               enum libyuv::RotationMode mode) {
+  if (!src_y || !src_u || !src_v || width <= 0 || height == 0 || !dst_y ||
+      !dst_u || !dst_v) {
+    return -1;
+  }
+
+  // Negative height means invert the image.
+  if (height < 0) {
+    height = -height;
+    src_y = src_y + (height - 1) * src_stride_y;
+    src_u = src_u + (height - 1) * src_stride_u;
+    src_v = src_v + (height - 1) * src_stride_v;
+    src_stride_y = -src_stride_y;
+    src_stride_u = -src_stride_u;
+    src_stride_v = -src_stride_v;
+  }
+
+  switch (mode) {
+    case libyuv::kRotate0:
+      // copy frame
+      CopyPlane(src_y, src_stride_y, dst_y, dst_stride_y, width, height);
+      CopyPlane(src_u, src_stride_u, dst_u, dst_stride_u, width, height);
+      CopyPlane(src_v, src_stride_v, dst_v, dst_stride_v, width, height);
+      return 0;
+    case libyuv::kRotate90:
+      RotatePlane90(src_y, src_stride_y, dst_y, dst_stride_y, width, height);
+      RotatePlane90(src_u, src_stride_u, dst_u, dst_stride_u, width, height);
+      RotatePlane90(src_v, src_stride_v, dst_v, dst_stride_v, width, height);
+      return 0;
+    case libyuv::kRotate270:
+      RotatePlane270(src_y, src_stride_y, dst_y, dst_stride_y, width, height);
+      RotatePlane270(src_u, src_stride_u, dst_u, dst_stride_u, width, height);
+      RotatePlane270(src_v, src_stride_v, dst_v, dst_stride_v, width, height);
+      return 0;
+    case libyuv::kRotate180:
+      RotatePlane180(src_y, src_stride_y, dst_y, dst_stride_y, width, height);
+      RotatePlane180(src_u, src_stride_u, dst_u, dst_stride_u, width, height);
+      RotatePlane180(src_v, src_stride_v, dst_v, dst_stride_v, width, height);
       return 0;
     default:
       break;

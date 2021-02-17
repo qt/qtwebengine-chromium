@@ -1594,9 +1594,9 @@ __declspec(naked) void ARGBToUVJRow_AVX2(const uint8_t* src_argb0,
     mov        edx, [esp + 8 + 12]  // dst_u
     mov        edi, [esp + 8 + 16]  // dst_v
     mov        ecx, [esp + 8 + 20]  // width
-    vbroadcastf128 ymm5, xmmword ptr kAddUV128
-    vbroadcastf128 ymm6, xmmword ptr kARGBToV
-    vbroadcastf128 ymm7, xmmword ptr kARGBToU
+    vbroadcastf128 ymm5, xmmword ptr kAddUVJ128
+    vbroadcastf128 ymm6, xmmword ptr kARGBToVJ
+    vbroadcastf128 ymm7, xmmword ptr kARGBToUJ
     sub        edi, edx   // stride from u to v
 
  convertloop:
@@ -2898,10 +2898,12 @@ __declspec(naked) void I422ToRGBARow_SSSE3(
 }
 #endif  // HAS_I422TOARGBROW_SSSE3
 
+// I400ToARGBRow_SSE2 is disabled due to new yuvconstant parameter
 #ifdef HAS_I400TOARGBROW_SSE2
 // 8 pixels of Y converted to 8 pixels of ARGB (32 bytes).
 __declspec(naked) void I400ToARGBRow_SSE2(const uint8_t* y_buf,
                                           uint8_t* rgb_buf,
+                                          const struct YuvConstants*,
                                           int width) {
   __asm {
     mov        eax, 0x4a354a35  // 4a35 = 18997 = round(1.164 * 64 * 256)
@@ -2949,6 +2951,7 @@ __declspec(naked) void I400ToARGBRow_SSE2(const uint8_t* y_buf,
 // note: vpunpcklbw mutates and vpackuswb unmutates.
 __declspec(naked) void I400ToARGBRow_AVX2(const uint8_t* y_buf,
                                           uint8_t* rgb_buf,
+                                          const struct YuvConstants*,
                                           int width) {
   __asm {
     mov        eax, 0x4a354a35  // 4a35 = 18997 = round(1.164 * 64 * 256)
@@ -3045,15 +3048,15 @@ __declspec(naked) void MirrorRow_AVX2(const uint8_t* src,
 }
 #endif  // HAS_MIRRORROW_AVX2
 
-#ifdef HAS_MIRRORUVROW_SSSE3
+#ifdef HAS_MIRRORSPLITUVROW_SSSE3
 // Shuffle table for reversing the bytes of UV channels.
 static const uvec8 kShuffleMirrorUV = {14u, 12u, 10u, 8u, 6u, 4u, 2u, 0u,
                                        15u, 13u, 11u, 9u, 7u, 5u, 3u, 1u};
 
-__declspec(naked) void MirrorUVRow_SSSE3(const uint8_t* src,
-                                         uint8_t* dst_u,
-                                         uint8_t* dst_v,
-                                         int width) {
+__declspec(naked) void MirrorSplitUVRow_SSSE3(const uint8_t* src,
+                                              uint8_t* dst_u,
+                                              uint8_t* dst_v,
+                                              int width) {
   __asm {
     push      edi
     mov       eax, [esp + 4 + 4]  // src
@@ -3078,7 +3081,7 @@ __declspec(naked) void MirrorUVRow_SSSE3(const uint8_t* src,
     ret
   }
 }
-#endif  // HAS_MIRRORUVROW_SSSE3
+#endif  // HAS_MIRRORSPLITUVROW_SSSE3
 
 #ifdef HAS_ARGBMIRRORROW_SSE2
 __declspec(naked) void ARGBMirrorRow_SSE2(const uint8_t* src,
@@ -4222,7 +4225,7 @@ __declspec(naked) void ARGBBlendRow_SSSE3(const uint8_t* src_argb0,
     add        ecx, 4 - 1
     jl         convertloop1b
 
-        // 1 pixel loop.
+            // 1 pixel loop.
   convertloop1:
     movd       xmm3, [eax]  // src argb
     lea        eax, [eax + 4]
@@ -5360,7 +5363,7 @@ void CumulativeSumToAverageRow_SSE2(const int32_t* topleft,
     add        ecx, 4 - 1
     jl         l1b
 
-        // 1 pixel loop
+            // 1 pixel loop
   l1:
     movdqu     xmm0, [eax]
     psubd      xmm0, [eax + edx * 4]
@@ -5448,9 +5451,9 @@ void ComputeCumulativeSumRow_SSE2(const uint8_t* row,
     add        ecx, 4 - 1
     jl         l1b
 
-        // 1 pixel loop
+            // 1 pixel loop
   l1:
-    movd       xmm2, dword ptr [eax]  // 1 argb pixel 4 bytes.
+    movd       xmm2, dword ptr [eax]  // 1 argb pixel
     lea        eax, [eax + 4]
     punpcklbw  xmm2, xmm1
     punpcklwd  xmm2, xmm1
@@ -5534,7 +5537,7 @@ __declspec(naked) LIBYUV_API void ARGBAffineRow_SSE2(const uint8_t* src_argb,
     add        ecx, 4 - 1
     jl         l1b
 
-        // 1 pixel loop
+            // 1 pixel loop
   l1:
     cvttps2dq  xmm0, xmm2  // x, y float to int
     packssdw   xmm0, xmm0  // x, y as shorts
