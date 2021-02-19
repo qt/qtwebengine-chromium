@@ -5,7 +5,10 @@
 #ifndef UI_GFX_X_CONNECTION_H_
 #define UI_GFX_X_CONNECTION_H_
 
+#include <queue>
+
 #include "base/component_export.h"
+#include "base/containers/circular_deque.h"
 #include "base/sequence_checker.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/x/event.h"
