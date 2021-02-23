@@ -423,7 +423,7 @@ Event Connection::WaitForNextEvent() {
   return Event();
 }
 
-bool Connection::HasPendingResponses() const {
+bool Connection::HasPendingResponses() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return HasNextEvent() || HasNextResponse();
 }

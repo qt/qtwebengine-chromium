@@ -124,7 +124,7 @@ class COMPONENT_EXPORT(X11) Connection : public XProto,
   Event WaitForNextEvent();
 
   // Are there any events, errors, or replies already buffered?
-  bool HasPendingResponses() const;
+  bool HasPendingResponses();
 
   // Dispatch any buffered events, errors, or replies.
   void Dispatch(Delegate* delegate);
