@@ -59,7 +59,7 @@ GL_EXPORT unsigned int DirectCompositionRootSurfaceBufferCount();
 GL_EXPORT bool ShouldForceDirectCompositionRootSurfaceFullDamage();
 #endif
 
-#if defined(USE_X11) || defined(USE_OZONE_PLATFORM_X11)
+#if (defined(USE_X11) || defined(USE_OZONE_PLATFORM_X11)) && !defined(TOOLKIT_QT)
 // Collects the GPU extra info on X11 platforms.
 // |enable_native_gpu_memory_buffers| should be taken from GpuPreferences.
 // TODO(crbug/1096425) remove this once Ozone is default on Linux.

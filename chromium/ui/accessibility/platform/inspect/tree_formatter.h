@@ -9,6 +9,9 @@
 
 #include "ui/gfx/native_widget_types.h"
 
+#include <memory>
+#include <vector>
+
 namespace base {
 class Value;
 class DictionaryValue;

@@ -817,9 +817,11 @@ DocumentPolicy::ParsedDocumentPolicy DocumentLoader::CreateDocumentPolicy() {
   // For URLs referring to local content to parent frame, they have no way to
   // specify the document policy they use. If the parent frame requires a
   // document policy on them, use the required policy as effective policy.
+  DocumentPolicy::ParsedDocumentPolicy fallback_parsed_policy;
+  fallback_parsed_policy.feature_state = frame_policy_.required_document_policy;
   if (url_.IsEmpty() || url_.ProtocolIsAbout() || url_.ProtocolIsData() ||
       url_.ProtocolIs("blob") || url_.ProtocolIs("filesystem"))
-    return {frame_policy_.required_document_policy, {} /* endpoint_map */};
+    return fallback_parsed_policy;
 
   PolicyParserMessageBuffer header_logger("Document-Policy HTTP header: ");
   PolicyParserMessageBuffer require_header_logger(
@@ -842,8 +844,7 @@ DocumentPolicy::ParsedDocumentPolicy DocumentLoader::CreateDocumentPolicy() {
     was_blocked_by_document_policy_ = true;
     // When header policy is less strict than required policy, use required
     // policy to initialize document policy for the document.
-    parsed_policy = {frame_policy_.required_document_policy,
-                     {} /* endpoint_map */};
+    parsed_policy = std::move(fallback_parsed_policy);
   }
 
   // Initialize required document policy for subtree.

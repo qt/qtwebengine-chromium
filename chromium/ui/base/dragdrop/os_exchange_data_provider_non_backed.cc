@@ -177,7 +177,7 @@ bool OSExchangeDataProviderNonBacked::HasCustomFormat(
   return base::Contains(pickle_data_, format);
 }
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if (defined(OS_LINUX) || defined(OS_CHROMEOS)) && !defined(TOOLKIT_QT)
 void OSExchangeDataProviderNonBacked::SetFileContents(
     const base::FilePath& filename,
     const std::string& file_contents) {

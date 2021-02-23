@@ -58,19 +58,6 @@ component("x") {
     "x11_workspace_handler.h",
   ]
 
-  if (is_linux || is_chromeos) {
-    sources += [
-      "selection_owner.cc",
-      "selection_owner.h",
-      "x11_drag_context.cc",
-      "x11_drag_context.h",
-      "x11_drag_drop_client.cc",
-      "x11_drag_drop_client.h",
-      "x11_os_exchange_data_provider.cc",
-      "x11_os_exchange_data_provider.h",
-    ]
-  }
-
   defines = [ "IS_UI_BASE_X_IMPL" ]
 
   deps = [
@@ -78,7 +65,6 @@ component("x") {
     "//base:i18n",
     "//net",
     "//skia",
-    "//ui/base:data_exchange",
     "//ui/base:features",
     "//ui/base:hit_test",
     "//ui/base:wm_role_names",
@@ -86,7 +72,6 @@ component("x") {
     "//ui/base/cursor:cursor_base",
     "//ui/base/cursor:theme_manager",
     "//ui/base/cursor/mojom:cursor_type",
-    "//ui/base/dragdrop/file_info",
     "//ui/display/util",
     "//ui/events",
     "//ui/events/devices/x11",
@@ -98,6 +83,23 @@ component("x") {
     "//ui/gfx/x",
     "//ui/platform_window/common",
   ]
+
+  if ((is_linux || is_chromeos) && !use_qt) {
+    sources += [
+      "selection_owner.cc",
+      "selection_owner.h",
+      "x11_drag_context.cc",
+      "x11_drag_context.h",
+      "x11_drag_drop_client.cc",
+      "x11_drag_drop_client.h",
+      "x11_os_exchange_data_provider.cc",
+      "x11_os_exchange_data_provider.h",
+    ]
+    deps += [
+      "//ui/base:data_exchange",
+      "//ui/base/dragdrop/file_info",
+    ]
+  }
 }
 
 source_set("gl") {
