@@ -333,8 +333,10 @@ component("shared_mojom_traits") {
   if (use_ozone) {
     public_deps += [ "//ui/ozone:buildflags" ]
   }
-  frameworks = [
-    "CoreFoundation.framework",
-    "IOSurface.framework",
-  ]
+  if (is_apple) {
+    frameworks = [
+      "CoreFoundation.framework",
+      "IOSurface.framework",
+    ]
+  }
 }

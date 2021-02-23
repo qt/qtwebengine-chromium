@@ -81,7 +81,7 @@ ExtensionFunction::ResponseAction ResourcesPrivateGetStringsFunction::Run() {
   }
 
   return RespondNow(
-      OneArgument(std::move(dict)));
+      OneArgument(base::Value::FromUniquePtrValue(std::move(dict))));
 }
 
 }  // namespace extensions

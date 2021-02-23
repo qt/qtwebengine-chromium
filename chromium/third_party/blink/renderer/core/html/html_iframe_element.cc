@@ -306,7 +306,7 @@ DocumentPolicyFeatureState HTMLIFrameElement::ConstructRequiredPolicy() const {
           "Blink.UseCounter.DocumentPolicy.PolicyAttribute", feature);
     }
   }
-  return new_required_policy.feature_state;
+  return std::move(new_required_policy.feature_state);
 }
 
 ParsedFeaturePolicy HTMLIFrameElement::ConstructContainerPolicy() const {

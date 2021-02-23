@@ -960,7 +960,7 @@ void CompositorFrameReporter::ReportEventLatencyHistograms() const {
       "EventLatency." + total_latency_stage_name;
 
   for (const auto& event_metrics : events_metrics_) {
-    DCHECK(event_metrics);
+    DCHECK(event_metrics.get());
     const std::string histogram_base_name =
         GetEventLatencyHistogramBaseName(*event_metrics);
     const int event_type_index = static_cast<int>(event_metrics->type());
