@@ -2074,21 +2074,21 @@ Example
   }
 )";
 
-const char kCreatePriFile[] = "create_pri_file";
-const char kCreatePriFile_HelpShort[] =
-    "create_pri_file: [boolean] Declares a target that creates linking information file.";
-const char kCreatePriFile_Help[] =
-    "create_pri_file: Declares a target that instead of liking dumps the infomation.\n"
+const char kCmakeConfig[] = "cmake_config";
+const char kCmakeConfig_HelpShort[] =
+    "cmake_config: [string] Cmake configuration for which declared target that creates cmake linker information.";
+const char kCmakeConfig_Help[] =
+    "create_config: Declares a target that instead of liking dumps the information to cmake file.\n"
     "\n"
-    "  Boolean. Defaults to false.\n"
+    "  String. Defaults to empty.\n"
     "\n"
-    "  When a target is marked \"create_pri_file = true\" and is linkable, the linking step"
-    "  is skipped. Instead linking infomation is dumped as a pri file\n"
+    "  When a target is marked \"cmake_config = <configuration> \" and is linkable, the linking step"
+    "  is skipped. Instead linking infomation is dumped as a cmake file containing cmake setup for given configuration.\n"
     "\n"
     "Example\n"
     "\n"
     "  static_library(\"test_support\") {\n"
-    "    create_pri_file = true\n"
+    "    cmake_config = \"Debug\"\n"
     "    ...\n"
     "  }\n";
 
