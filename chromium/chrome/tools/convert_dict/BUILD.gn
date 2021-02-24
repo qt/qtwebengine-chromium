@@ -28,7 +28,7 @@ source_set("lib") {
 
 if (use_qt) {
   shared_library("convert_dict") {
-    create_pri_file = true
+    cmake_config = "Release"
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
     deps = [
       ":lib",

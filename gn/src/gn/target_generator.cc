@@ -58,7 +58,7 @@ void TargetGenerator::Run() {
   if (!FillTestonly())
     return;
 
-  if (!FillCreatePriFile())
+  if (!FillCmakeConfig())
     return;
 
   if (!FillAssertNoDeps())
@@ -314,12 +314,12 @@ bool TargetGenerator::FillTestonly() {
   return true;
 }
 
-bool TargetGenerator::FillCreatePriFile() {
-  const Value* value = scope_->GetValue(variables::kCreatePriFile, true);
+bool TargetGenerator::FillCmakeConfig() {
+  const Value* value = scope_->GetValue(variables::kCmakeConfig, true);
   if (value) {
-    if (!value->VerifyTypeIs(Value::BOOLEAN, err_))
+    if (!value->VerifyTypeIs(Value::STRING, err_))
       return false;
-    target_->set_create_pri_file(value->boolean_value());
+    target_->set_cmake_config(value->string_value());
   }
   return true;
 }

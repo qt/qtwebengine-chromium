@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,8 +37,8 @@
 **
 ****************************************************************************/
 
-#ifndef TOOLS_GN_QMAKE_LINK_WRITER_H_
-#define TOOLS_GN_QMAKE_LINK_WRITER_H_
+#ifndef TOOLS_GN_CMAKE_LINK_WRITER_H_
+#define TOOLS_GN_CMAKE_LINK_WRITER_H_
 
 #include <iosfwd>
 #include "gn/path_output.h"
@@ -46,11 +46,11 @@
 class Target;
 class NinjaCBinaryTargetWriter;
 
-class QMakeLinkWriter {
+class CMakeLinkWriter {
 
  public:
-  QMakeLinkWriter(const NinjaCBinaryTargetWriter* writer,const Target* target, std::ostream& out);
-  ~QMakeLinkWriter() ;
+  CMakeLinkWriter(const NinjaCBinaryTargetWriter* writer,const Target* target, std::ostream& out);
+  ~CMakeLinkWriter() ;
   void Run();
 
  private:
@@ -60,4 +60,4 @@ class QMakeLinkWriter {
   PathOutput path_output_;
 };
 
-#endif  // TOOLS_GN_QMAKE_LINK_WRITER_H_
+#endif  // TOOLS_GN_CMAKE_LINK_WRITER_H_

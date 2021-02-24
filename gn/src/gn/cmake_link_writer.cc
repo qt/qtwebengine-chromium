@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -43,7 +43,7 @@
 
 #include "base/logging.h"
 #include "base/strings/string_util.h"
-#include "gn/qmake_link_writer.h"
+#include "gn/cmake_link_writer.h"
 #include "gn/deps_iterator.h"
 #include "gn/ninja_c_binary_target_writer.h"
 #include "gn/ninja_target_command_util.h"
@@ -52,7 +52,7 @@
 #include "gn/target.h"
 #include "gn/config_values_extractors.h"
 
-QMakeLinkWriter::QMakeLinkWriter(const NinjaCBinaryTargetWriter* writer, const Target* target, std::ostream& out)
+CMakeLinkWriter::CMakeLinkWriter(const NinjaCBinaryTargetWriter* writer, const Target* target, std::ostream& out)
     : target_(target),
       nwriter_(writer),
       out_(out),
@@ -61,7 +61,7 @@ QMakeLinkWriter::QMakeLinkWriter(const NinjaCBinaryTargetWriter* writer, const T
                    ESCAPE_NONE) {
 }
 
-QMakeLinkWriter::~QMakeLinkWriter() {
+CMakeLinkWriter::~CMakeLinkWriter() {
 }
 
 // Based on similar function in qt_creator_writer.cc
@@ -75,21 +75,10 @@ void CollectDeps(std::set<const Target*> &deps, const Target* target) {
   }
 }
 
-void PrintSourceFile(std::ostream& out, PathOutput& path_output, const SourceFile& file) {
-  out << " \\\n    \"";
-  if (file.is_source_absolute()) {
-    out << "$$PWD/";
-    path_output.WriteFile(out, file);
-  } else {
-    out << file.value();
-  }
-  out << "\"";
-}
-
-void QMakeLinkWriter::Run() {
+void CMakeLinkWriter::Run() {
 
   CHECK(target_->output_type() == Target::SHARED_LIBRARY || target_->output_type() == Target::STATIC_LIBRARY)
-         << "QMakeLinkWriter only supports libraries";
+         << "CMakeLinkWriter only supports libraries";
 
   std::vector<SourceFile> object_files;
   std::vector<SourceFile> other_files;
@@ -122,23 +111,8 @@ void QMakeLinkWriter::Run() {
   deps.insert(target_);
   CollectDeps(deps, target_);
 
-  // sources files.
-  out_ << "NINJA_SOURCES =";
-  for (const auto& target : deps) {
-    for (const auto& file : target->sources()) {
-      PrintSourceFile(out_, path_output_, file);
-    }
-  }
-  out_ << std::endl;
-
-  // headers files.
-  out_ << "NINJA_HEADERS =";
-  for (const auto& target : deps) {
-    for (const auto& file : target->public_headers()) {
-      PrintSourceFile(out_, path_output_, file);
-    }
-  }
-  out_ << std::endl;
+  std::string config = target_->cmake_config();
+  CHECK(!config.empty()) << "Missing cmake configuration";
 
   std::set<std::string> defines;
   for (const auto& target : deps) {
@@ -148,37 +122,37 @@ void QMakeLinkWriter::Run() {
       }
     }
   }
-  out_ << "NINJA_DEFINES =";
+  out_ << "set(" << config << "_NINJA_DEFINES";
   for (const auto& define : defines) {
-    out_ << " \\\n    " << define;
+    out_ << "\n    " << define;
   }
-  out_ << std::endl;
+  out_ << ")" << std::endl;
 
   // object files.
-  out_ << "NINJA_OBJECTS =";
+  out_ << "set(" << config << "_NINJA_OBJECTS";
   for (const auto& file : object_files) {
-    out_ << " \\\n    \"$$PWD/";
+    out_ << "\n    \"${CMAKE_CURRENT_LIST_DIR}/";
     path_output_.WriteFile(out_, file);
     out_ << "\"";
   }
   for (const auto& file : cdeps.extra_object_files) {
-    out_ << " \\\n    \"$$PWD/";
+    out_ << "\n    \"${CMAKE_CURRENT_LIST_DIR}/";
     path_output_.WriteFile(out_, file);
     out_ << "\"";
   }
-  out_ << std::endl;
+  out_ << ")" << std::endl;
 
   // linker flags
-  out_ << "NINJA_LFLAGS =";
+  out_ << "set(" << config << "_NINJA_LFLAGS";
   EscapeOptions opts;
   opts.mode = ESCAPE_COMMAND;
   // First the ldflags from the target and its config.
   RecursiveTargetConfigStringsToStream(target_, &ConfigValues::ldflags,
                                        opts, out_);
-  out_ << std::endl;
+  out_ << ")" << std::endl;
 
   // archives
-  out_ << "NINJA_ARCHIVES =";
+  out_ << "set(" << config << "_NINJA_ARCHIVES";
 
   std::vector<OutputFile> solibs;
   for (const Target* cur : cdeps.linkable_deps) {
@@ -186,32 +160,32 @@ void QMakeLinkWriter::Run() {
         cur->link_output_file().value()) {
         solibs.push_back(cur->link_output_file());
     } else {
-      out_ << " \\\n    \"$$PWD/";
+      out_ << "\n    \"${CMAKE_CURRENT_LIST_DIR}/";
       path_output_.WriteFile(out_, cur->link_output_file());
       out_ << "\"";
     }
   }
-  out_ << std::endl;
+  out_ << ")" << std::endl;
 
   // library dirs
   const OrderedSet<SourceDir> all_lib_dirs = target_->all_lib_dirs();
   const CTool* tool = target_->toolchain()->GetToolForTargetFinalOutput(target_)->AsC();
 
   if (!all_lib_dirs.empty()) {
-    out_ << "NINJA_LIB_DIRS =";
+    out_ << "set(" << config << "_NINJA_LIB_DIRS";
     PathOutput lib_path_output(path_output_.current_dir(),
                                settings->build_settings()->root_path_utf8(),
                                ESCAPE_COMMAND);
     for (size_t i = 0; i < all_lib_dirs.size(); i++) {
-      out_ << " " << tool->lib_dir_switch();
+      out_ << " ";
       lib_path_output.WriteDir(out_, all_lib_dirs[i],
                                PathOutput::DIR_NO_LAST_SLASH);
     }
+    out_ << ")" << std::endl;
   }
-  out_ << std::endl;
 
   //libs
-  out_ << "NINJA_LIBS =";
+  out_ << "set(" << config << "_NINJA_LIBS";
 
   EscapeOptions lib_escape_opts;
   lib_escape_opts.mode = ESCAPE_COMMAND;
@@ -229,10 +203,11 @@ void QMakeLinkWriter::Run() {
       lib_path_output.WriteFile(out_, lib_file.source_file());
     } else if (base::EndsWith(lib_value, framework_ending,
                               base::CompareCase::INSENSITIVE_ASCII)) {
-      out_ << " -framework ";
+      out_ << " \"-framework ";
       EscapeStringToStream(
           out_, lib_value.substr(0, lib_value.size() - framework_ending.size()),
           lib_escape_opts);
+      out_ << "\"";
     } else {
       out_ << " " << tool->lib_switch();
       EscapeStringToStream(out_, lib_value, lib_escape_opts);
@@ -241,34 +216,36 @@ void QMakeLinkWriter::Run() {
   const OrderedSet<std::string> all_frameworks = target_->all_frameworks();
   for (size_t i = 0; i < all_frameworks.size(); i++) {
     const std::string& lib_value = all_frameworks[i];
-    out_ << " -framework ";
+    out_ << " \"-framework ";
     EscapeStringToStream(
         out_, lib_value.substr(0, lib_value.size() - framework_ending.size()),
         lib_escape_opts);
+    out_ << "\"";
   }
   const OrderedSet<std::string> weak_frameworks = target_->all_weak_frameworks();
   for (size_t i = 0; i < weak_frameworks.size(); i++) {
     const std::string& lib_value = weak_frameworks[i];
-    out_ << " -weak_framework ";
+    out_ << " \"-weak_framework ";
     EscapeStringToStream(
         out_, lib_value.substr(0, lib_value.size() - framework_ending.size()),
         lib_escape_opts);
+    out_ << "\"";
   }
-  out_ << std::endl;
+  out_ << ")" <<std::endl;
 
   // solibs
   if (!solibs.empty()) {
-    out_ << "NINJA_SOLIBS =";
+    out_ << "set(" << config << "_NINJA_SOLIBS";
     for (const auto& file : solibs) {
-      out_ << " \"$$PWD/";
+      out_ << " \"${CMAKE_CURRENT_LIST_DIR}/";
       path_output_.WriteFile(out_, file);
       out_ << "\"";
     }
-    out_ << std::endl;
+    out_ << ")" << std::endl;
   }
 
   //targetdeps
-  out_ << "NINJA_TARGETDEPS = ";
-  path_output_.WriteFile(out_, OutputFile("\"$$PWD/" + target_->label().name() + ".stamp\""));
-  out_ << std::endl;
+  out_ << "set(" << config << "_NINJA_TARGETDEPS ";
+  path_output_.WriteFile(out_, OutputFile("\"${CMAKE_CURRENT_LIST_DIR}/" + target_->label().name() + ".stamp\""));
+  out_ << ")" << std::endl;
 }

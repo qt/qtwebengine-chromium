@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2017 The Qt Company Ltd.
+** Copyright (C) 2021 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of the QtWebEngine module of the Qt Toolkit.
@@ -37,12 +37,15 @@
 **
 ****************************************************************************/
 
-#include "testing/gtest/include/gtest/gtest.h"
-#include "ninja_binary_target_writer.h"
-#include "qmake_link_writer.h"
-#include "test_with_scope.h"
+#include "gn/ninja_c_binary_target_writer.h"
+#include "gn/cmake_link_writer.h"
+#include "gn/test_with_scheduler.h"
+#include "gn/test_with_scope.h"
+#include "util/test/test.h"
 
-TEST(QMakeLinkWriter, WriteLinkPri) {
+using CMakeLinkWriterTest = TestWithScheduler;
+
+TEST_F(CMakeLinkWriterTest, WriteCmakeInfo) {
    TestWithScope setup;
    Err err;
 
@@ -65,13 +68,13 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
 
    TestTarget deps_shared_lib_target(setup, "//foo6:shlib", Target::SHARED_LIBRARY);
    //this trigers solibs
-   deps_shared_lib_target.set_create_pri_file(true);
+   deps_shared_lib_target.set_cmake_config("Debug");
    deps_shared_lib_target.sources().push_back(SourceFile("//foo6/input1.cc"));
 
    ASSERT_TRUE(deps_shared_lib_target.OnResolved(&err));
 
    Target shared_lib_target(setup.settings(), Label(SourceDir("//foo2/"), "foo2"));
-   shared_lib_target.set_create_pri_file(true);
+   shared_lib_target.set_cmake_config("Debug");
    shared_lib_target.set_output_type(Target::SHARED_LIBRARY);
    shared_lib_target.set_output_extension(std::string("so.1"));
    shared_lib_target.set_output_dir(SourceDir("//out/Debug/foo/"));
@@ -90,14 +93,12 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
    ASSERT_TRUE(shared_lib_target.OnResolved(&err));
 
    std::ostringstream out1;
-   NinjaBinaryTargetWriter writer(&shared_lib_target, out1);
+   NinjaCBinaryTargetWriter writer(&shared_lib_target, out1);
    writer.Run();
 
    const char expected1[] =
        "defines =\n"
        "include_dirs =\n"
-       "cflags =\n"
-       "cflags_cc =\n"
        "root_out_dir = .\n"
        "target_out_dir = obj/foo2\n"
        "target_output_name = libfoo2\n"
@@ -112,6 +113,8 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
            "shlib.stamp ../../foo/libfoo3.a || obj/foo1/foo1.stamp\n"
        "  ldflags = -fooBAR /INCREMENTAL$:NO -L../../foo/bar\n"
        "  libs = ../../foo/libfoo3.a -lfoo4\n"
+       "  frameworks =\n"
+       "  swiftmodules =\n"
        "  output_extension = .so.1\n"
        "  output_dir = foo\n"
        "  solibs = ./libshlib.so\n";
@@ -119,23 +122,23 @@ TEST(QMakeLinkWriter, WriteLinkPri) {
    EXPECT_EQ(expected1, out1.str());
 
    std::ostringstream out2;
-   QMakeLinkWriter pri_writer(&writer, &shared_lib_target, out2);
-   pri_writer.Run();
+   CMakeLinkWriter cmake_writer(&writer, &shared_lib_target, out2);
+   cmake_writer.Run();
 
    const char expected2[] =
-       "NINJA_OBJECTS = \\\n"
-       "    \"$$PWD/obj/foo2/libfoo2.input1.o\" \\\n"
-       "    \"$$PWD/obj/foo2/libfoo2.input 2.o\" \\\n"
-       "    \"$$PWD/obj/foo 2/libfoo2.input 3.o\" \\\n"
-       "    \"$$PWD/obj/foo1/foo1.input1.o\" \\\n"
-       "    \"$$PWD/obj/foo1/foo1.input2.o\"\n"
-       "NINJA_LFLAGS = -fooBAR /INCREMENTAL:NO\n"
-       "NINJA_ARCHIVES = \\\n"
-       "    \"$$PWD/obj/foo5/libbar.a\"\n"
-       "NINJA_LIB_DIRS = -L../../foo/bar\n"
-       "NINJA_LIBS = ../../foo/libfoo3.a -lfoo4\n"
-       "NINJA_SOLIBS = \"$$PWD/./libshlib.so\"\n"
-       "NINJA_TARGETDEPS = \"$$PWD/foo2.stamp\"\n";
-   std::string out_str2 = out2.str();
-   EXPECT_EQ(expected2, out_str2);
+      "set(Debug_NINJA_DEFINES)\n"
+      "set(Debug_NINJA_OBJECTS\n"
+      "    \"${CMAKE_CURRENT_LIST_DIR}/obj/foo2/libfoo2.input1.o\"\n"
+      "    \"${CMAKE_CURRENT_LIST_DIR}/obj/foo2/libfoo2.input 2.o\"\n"
+      "    \"${CMAKE_CURRENT_LIST_DIR}/obj/foo 2/libfoo2.input 3.o\"\n"
+      "    \"${CMAKE_CURRENT_LIST_DIR}/obj/foo1/foo1.input1.o\"\n"
+      "    \"${CMAKE_CURRENT_LIST_DIR}/obj/foo1/foo1.input2.o\")\n"
+      "set(Debug_NINJA_LFLAGS -fooBAR /INCREMENTAL:NO)\n"
+      "set(Debug_NINJA_ARCHIVES\n"
+      "    \"${CMAKE_CURRENT_LIST_DIR}/obj/foo5/libbar.a\")\n"
+      "set(Debug_NINJA_LIB_DIRS ../../foo/bar)\n"
+      "set(Debug_NINJA_LIBS ../../foo/libfoo3.a -lfoo4)\n"
+      "set(Debug_NINJA_SOLIBS \"${CMAKE_CURRENT_LIST_DIR}/./libshlib.so\")\n"
+      "set(Debug_NINJA_TARGETDEPS \"${CMAKE_CURRENT_LIST_DIR}/foo2.stamp\")\n";
+   EXPECT_EQ(expected2, out2.str());
 }
