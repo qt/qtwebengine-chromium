@@ -3652,6 +3652,8 @@ RenderFrameHostDelegate* WebContentsImpl::CreateNewWindow(
     // new window.  As a result, we need to show and navigate the window here.
     bool was_blocked = false;
 
+    // The delegate may delete |opener| during AddNewContents().
+    auto initiator_origin = opener->GetLastCommittedOrigin();
     if (delegate_) {
       base::WeakPtr<WebContentsImpl> weak_new_contents =
           new_contents_impl->weak_factory_.GetWeakPtr();
@@ -3669,7 +3671,7 @@ RenderFrameHostDelegate* WebContentsImpl::CreateNewWindow(
       std::unique_ptr<NavigationController::LoadURLParams> load_params =
           std::make_unique<NavigationController::LoadURLParams>(
               params.target_url);
-      load_params->initiator_origin = opener->GetLastCommittedOrigin();
+      load_params->initiator_origin = initiator_origin;
       // Avoiding setting |load_params->source_site_instance| when
       // |opener_suppressed| is true, because in that case we do not want to use
       // the old SiteInstance and/or BrowsingInstance.  See also the test here:
