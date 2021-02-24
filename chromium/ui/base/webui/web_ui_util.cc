@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/check.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_writer.h"
@@ -19,6 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "content/public/common/content_switches.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -218,12 +220,15 @@ std::string GetFontFamily() {
   std::string font_family = l10n_util::GetStringUTF8(IDS_WEB_FONT_FAMILY);
 
 #if BUILDFLAG(IS_LINUX)
-  std::string font_name = ui::ResourceBundle::GetSharedInstance()
-                              .GetFont(ui::ResourceBundle::BaseFont)
-                              .GetFontName();
-  // Wrap |font_name| with quotes to ensure it will always be parsed correctly
-  // in CSS.
-  font_family = "\"" + font_name + "\", " + font_family;
+  const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
+  if (!cmdline->HasSwitch(switches::kSingleProcess)) {
+    std::string font_name = ui::ResourceBundle::GetSharedInstance()
+                                .GetFont(ui::ResourceBundle::BaseFont)
+                                .GetFontName();
+    // Wrap |font_name| with quotes to ensure it will always be parsed correctly
+    // in CSS.
+    font_family = "\"" + font_name + "\", " + font_family;
+  }
 #endif  // BUILDFLAG(IS_LINUX)
 
   return font_family;
