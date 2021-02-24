@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
@@ -17,6 +18,7 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "content/public/common/content_switches.h"
 #include "net/base/escape.h"
 #include "third_party/modp_b64/modp_b64.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -227,12 +229,15 @@ std::string GetFontFamily() {
 // TODO(crbug.com/1052397): Revisit the macro expression once build flag switch
 // of lacros-chrome is complete.
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
-  std::string font_name = ui::ResourceBundle::GetSharedInstance()
-                              .GetFont(ui::ResourceBundle::BaseFont)
-                              .GetFontName();
-  // Wrap |font_name| with quotes to ensure it will always be parsed correctly
-  // in CSS.
-  font_family = "\"" + font_name + "\", " + font_family;
+  const base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
+  if (!cmdline->HasSwitch(switches::kSingleProcess)) {
+    std::string font_name = ui::ResourceBundle::GetSharedInstance()
+                                .GetFont(ui::ResourceBundle::BaseFont)
+                                .GetFontName();
+    // Wrap |font_name| with quotes to ensure it will always be parsed correctly
+    // in CSS.
+    font_family = "\"" + font_name + "\", " + font_family;
+  }
 #endif
 
   return font_family;
