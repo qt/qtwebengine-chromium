@@ -5713,6 +5713,12 @@ FrameTree* WebContentsImpl::CreateNewWindow(
     return &new_contents_impl->GetPrimaryFrameTree();
   }
 
+  auto initiator_origin = opener->GetLastCommittedOrigin();
+  auto initiator_process_id = render_process_id;
+  auto initiator_frame_token = opener->GetFrameToken();
+  auto initiator_navigation_state =
+      opener->CreateInitiatorStateFromCurrentFrame();
+
   // When the opener is suppressed, the original renderer cannot access the
   // new window.  As a result, we need to show and navigate the window here.
   bool was_blocked = false;
@@ -5756,11 +5762,11 @@ FrameTree* WebContentsImpl::CreateNewWindow(
     std::unique_ptr<NavigationController::LoadURLParams> load_params =
         std::make_unique<NavigationController::LoadURLParams>(
             params.target_url);
-    load_params->initiator_origin = opener->GetLastCommittedOrigin();
-    load_params->initiator_process_id = render_process_id;
-    load_params->initiator_frame_token = opener->GetFrameToken();
+    load_params->initiator_origin = initiator_origin;
+    load_params->initiator_process_id = initiator_process_id;
+    load_params->initiator_frame_token = initiator_frame_token;
     load_params->initiator_navigation_state =
-        opener->CreateInitiatorStateFromCurrentFrame();
+        std::move(initiator_navigation_state);
     // Avoiding setting |load_params->source_site_instance| when
     // |opener_suppressed| is true, because in that case we do not want to use
     // the old SiteInstance and/or BrowsingInstance.  See also the test here:
