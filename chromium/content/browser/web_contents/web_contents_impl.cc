@@ -3935,6 +3935,10 @@ FrameTree* WebContentsImpl::CreateNewWindow(
     // new window.  As a result, we need to show and navigate the window here.
     bool was_blocked = false;
 
+    // The delegate may delete |opener| during AddNewContents().
+    auto initiator_origin = opener->GetLastCommittedOrigin();
+    auto initiator_process_id = opener->GetProcess()->GetID();
+    auto initiator_frame_token = opener->GetFrameToken();
     if (delegate_) {
       base::WeakPtr<WebContentsImpl> weak_new_contents =
           new_contents_impl->weak_factory_.GetWeakPtr();
@@ -3952,9 +3956,9 @@ FrameTree* WebContentsImpl::CreateNewWindow(
       std::unique_ptr<NavigationController::LoadURLParams> load_params =
           std::make_unique<NavigationController::LoadURLParams>(
               params.target_url);
-      load_params->initiator_origin = opener->GetLastCommittedOrigin();
-      load_params->initiator_process_id = opener->GetProcess()->GetID();
-      load_params->initiator_frame_token = opener->GetFrameToken();
+      load_params->initiator_origin = initiator_origin;
+      load_params->initiator_process_id = initiator_process_id;
+      load_params->initiator_frame_token = initiator_frame_token;
       // Avoiding setting |load_params->source_site_instance| when
       // |opener_suppressed| is true, because in that case we do not want to use
       // the old SiteInstance and/or BrowsingInstance.  See also the test here:
