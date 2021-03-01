@@ -2390,7 +2390,7 @@ void NavigationControllerImpl::NavigateFromFrameProxy(
   /* params.redirect_chain: skip */
   params.extra_headers = extra_headers;
   params.is_renderer_initiated = is_renderer_initiated;
-  params.override_user_agent = UA_OVERRIDE_INHERIT;
+  params.override_user_agent = override_user_agent ? UA_OVERRIDE_TRUE : UA_OVERRIDE_INHERIT;
   /* params.base_url_for_data_url: skip */
   /* params.virtual_url_for_data_url: skip */
   /* params.data_url_as_string: skip */

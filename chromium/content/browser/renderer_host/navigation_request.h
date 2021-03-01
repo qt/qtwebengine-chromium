@@ -1081,7 +1081,15 @@ class CONTENT_EXPORT NavigationRequest
   base::Optional<network::mojom::BlockedByResponseReason> EnforceCOEP();
 
   bool IsOverridingUserAgent() const {
+#ifdef TOOLKIT_QT
+    if (!commit_params_->is_overriding_user_agent && !entry_overrides_ua_)
+        LOG(WARNING) << "UserAgent override lost";
+    return true; // QtWebEngine always uses profile specific user-agent, and
+    // Chromium is _really_ broken when it comes to tracking _if_ overrides
+    // should be used, but not the overrides themselves
+#else
     return commit_params_->is_overriding_user_agent || entry_overrides_ua_;
+#endif
   }
 
   // Returns the user-agent override, or an empty string if one isn't set.
