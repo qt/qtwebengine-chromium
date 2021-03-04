@@ -137,9 +137,15 @@ CSSStyleSheet* CSSStyleSheet::CreateInline(Node& owner_node,
                                            const KURL& base_url,
                                            const TextPosition& start_position,
                                            const WTF::TextEncoding& encoding) {
+  Document& owner_node_document = owner_node.GetDocument();
   auto* parser_context = MakeGarbageCollected<CSSParserContext>(
-      owner_node.GetDocument(), owner_node.GetDocument().BaseURL(),
-      true /* origin_clean */, owner_node.GetDocument().GetReferrerPolicy(),
+      owner_node_document, owner_node_document.BaseURL(),
+      true /* origin_clean */,
+      Referrer(
+          owner_node_document.GetExecutionContext()
+              ? owner_node_document.GetExecutionContext()->OutgoingReferrer()
+              : String(),  // GetExecutionContext() only returns null in tests.
+          owner_node.GetDocument().GetReferrerPolicy()),
       encoding);
   if (AdTracker::IsAdScriptExecutingInDocument(&owner_node.GetDocument()))
     parser_context->SetIsAdRelated();
