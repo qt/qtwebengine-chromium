@@ -128,6 +128,9 @@ bool SupportsEWMH() {
 
 bool GetWindowManagerName(std::string* wm_name) {
   DCHECK(wm_name);
+  if (!x11::Connection::Get()->GetXlibDisplay())
+    return false;
+
   if (!SupportsEWMH())
     return false;
 
