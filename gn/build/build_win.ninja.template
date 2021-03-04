@@ -8,5 +8,5 @@ rule alink_thin
   description = LIB $out
 
 rule link
-  command = ninja -t msvc -- $ld /nologo $ldflags /OUT:$out /PDB:$out.pdb $in $solibs $libs
+  command = ninja -t msvc -- $ld /nologo $ldflags /PDB:$out.pdb $in $solibs $libs /link /OUT:${out}
   description = LINK $out
