@@ -333,16 +333,19 @@ static_library("common") {
   }
 
   if (is_mac) {
-    assert(enable_extensions)
     sources += [
-      "extensions/image_writer/image_writer_util_mac.cc",
-      "extensions/image_writer/image_writer_util_mac.h",
       "mac/launchd.h",
       "mac/launchd.mm",
       "mac/service_management.h",
       "mac/service_management.mm",
       "multi_process_lock_mac.cc",
     ]
+    if (enable_extensions) {
+       sources += [
+        "extensions/image_writer/image_writer_util_mac.cc",
+        "extensions/image_writer/image_writer_util_mac.h",
+       ]
+    }
     public_deps += [ ":app_mode_app_support" ]
   }
 
