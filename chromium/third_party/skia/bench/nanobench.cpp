@@ -48,7 +48,7 @@
 #include "tools/trace/SkDebugfTracer.h"
 
 #ifdef SK_XML
-#include "experimental/svg/model/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGDOM.h"
 #endif  // SK_XML
 
 #ifdef SK_ENABLE_ANDROID_UTILS
@@ -73,7 +73,7 @@ extern bool gSkVMJITViaDylib;
 
 #include "include/gpu/GrDirectContext.h"
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/gl/GrGLDefines.h"
 #include "src/gpu/gl/GrGLGpu.h"
@@ -251,7 +251,7 @@ struct GPUTarget : public Target {
         this->factory = std::make_unique<GrContextFactory>(options);
         uint32_t flags = this->config.useDFText ? SkSurfaceProps::kUseDeviceIndependentFonts_Flag :
                                                   0;
-        SkSurfaceProps props(flags, SkSurfaceProps::kLegacyFontHost_InitType);
+        SkSurfaceProps props(flags, kRGB_H_SkPixelGeometry);
         this->surface = SkSurface::MakeRenderTarget(
                 this->factory->get(this->config.ctxType, this->config.ctxOverrides),
                 SkBudgeted::kNo, info, this->config.samples, &props);

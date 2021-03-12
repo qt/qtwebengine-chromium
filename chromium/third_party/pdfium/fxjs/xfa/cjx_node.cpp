@@ -179,12 +179,9 @@ CJS_Result CJX_Node::clone(CFX_V8* runtime,
     return CJS_Result::Failure(JSMessage::kParamError);
 
   CXFA_Node* pCloneNode = GetXFANode()->Clone(runtime->ToBoolean(params[0]));
-  CFXJSE_Value* value =
-      GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
-          pCloneNode);
-
   return CJS_Result::Success(
-      value->DirectGetValue().Get(runtime->GetIsolate()));
+      GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
+          pCloneNode));
 }
 
 CJS_Result CJX_Node::getAttribute(
@@ -214,11 +211,8 @@ CJS_Result CJX_Node::getElement(
   if (!pNode)
     return CJS_Result::Success(runtime->NewNull());
 
-  CFXJSE_Value* value =
-      GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(pNode);
-
   return CJS_Result::Success(
-      value->DirectGetValue().Get(runtime->GetIsolate()));
+      GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(pNode));
 }
 
 CJS_Result CJX_Node::isPropertySpecified(
@@ -434,7 +428,7 @@ CJS_Result CJX_Node::setAttribute(
   WideString attribute = runtime->ToWideString(params[1]);
 
   // Pass them to our method, however, in the more usual manner.
-  SetAttributeByString(attribute.AsStringView(), attributeValue.AsStringView());
+  SetAttributeByString(attribute.AsStringView(), attributeValue);
   return CJS_Result::Success();
 }
 
@@ -448,7 +442,8 @@ CJS_Result CJX_Node::setElement(
   return CJS_Result::Success();
 }
 
-void CJX_Node::ns(CFXJSE_Value* pValue,
+void CJX_Node::ns(v8::Isolate* pIsolate,
+                  CFXJSE_Value* pValue,
                   bool bSetting,
                   XFA_Attribute eAttribute) {
   if (bSetting) {
@@ -456,31 +451,35 @@ void CJX_Node::ns(CFXJSE_Value* pValue,
     return;
   }
   pValue->SetString(
-      TryNamespace().value_or(WideString()).ToUTF8().AsStringView());
+      pIsolate, TryNamespace().value_or(WideString()).ToUTF8().AsStringView());
 }
 
-void CJX_Node::model(CFXJSE_Value* pValue,
+void CJX_Node::model(v8::Isolate* pIsolate,
+                     CFXJSE_Value* pValue,
                      bool bSetting,
                      XFA_Attribute eAttribute) {
   if (bSetting) {
     ThrowInvalidPropertyException();
     return;
   }
-  pValue->Assign(GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
-      GetXFANode()->GetModelNode()));
+  pValue->ForceSetValue(
+      pIsolate, GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
+                    GetXFANode()->GetModelNode()));
 }
 
-void CJX_Node::isContainer(CFXJSE_Value* pValue,
+void CJX_Node::isContainer(v8::Isolate* pIsolate,
+                           CFXJSE_Value* pValue,
                            bool bSetting,
                            XFA_Attribute eAttribute) {
   if (bSetting) {
     ThrowInvalidPropertyException();
     return;
   }
-  pValue->SetBoolean(GetXFANode()->IsContainerNode());
+  pValue->SetBoolean(pIsolate, GetXFANode()->IsContainerNode());
 }
 
-void CJX_Node::isNull(CFXJSE_Value* pValue,
+void CJX_Node::isNull(v8::Isolate* pIsolate,
+                      CFXJSE_Value* pValue,
                       bool bSetting,
                       XFA_Attribute eAttribute) {
   if (bSetting) {
@@ -488,13 +487,14 @@ void CJX_Node::isNull(CFXJSE_Value* pValue,
     return;
   }
   if (GetXFANode()->GetElementType() == XFA_Element::Subform) {
-    pValue->SetBoolean(false);
+    pValue->SetBoolean(pIsolate, false);
     return;
   }
-  pValue->SetBoolean(GetContent(false).IsEmpty());
+  pValue->SetBoolean(pIsolate, GetContent(false).IsEmpty());
 }
 
-void CJX_Node::oneOfChild(CFXJSE_Value* pValue,
+void CJX_Node::oneOfChild(v8::Isolate* pIsolate,
+                          CFXJSE_Value* pValue,
                           bool bSetting,
                           XFA_Attribute eAttribute) {
   if (bSetting) {
@@ -505,7 +505,8 @@ void CJX_Node::oneOfChild(CFXJSE_Value* pValue,
   std::vector<CXFA_Node*> properties =
       GetXFANode()->GetNodeListWithFilter(XFA_NODEFILTER_OneOfProperty);
   if (!properties.empty()) {
-    pValue->Assign(
+    pValue->ForceSetValue(
+        pIsolate,
         GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
             properties.front()));
   }

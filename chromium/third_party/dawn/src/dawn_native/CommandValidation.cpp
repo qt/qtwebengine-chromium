@@ -308,7 +308,7 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR("Buffer missing usage for the pass");
             }
 
-            bool readOnly = (usage & kReadOnlyBufferUsages) == usage;
+            bool readOnly = IsSubset(usage, kReadOnlyBufferUsages);
             bool singleUse = wgpu::HasZeroOrOneBits(usage);
 
             if (pass.passType == PassType::Render && !readOnly && !singleUse) {
@@ -332,7 +332,7 @@ namespace dawn_native {
             // The usage variable for the whole texture is a fast path for texture usage tracking.
             // Because in most cases a texture (with or without subresources) is used as
             // single-write or multiple read, then we can skip iterating the subresources' usages.
-            bool readOnly = (usage & kReadOnlyTextureUsages) == usage;
+            bool readOnly = IsSubset(usage, kReadOnlyTextureUsages);
             bool singleUse = wgpu::HasZeroOrOneBits(usage);
             if (pass.passType != PassType::Render || readOnly || singleUse) {
                 continue;
@@ -340,7 +340,7 @@ namespace dawn_native {
             // Inspect the subresources if the usage of the whole texture violates usage validation.
             // Every single subresource can only be used as single-write or multiple read.
             for (wgpu::TextureUsage subresourceUsage : textureUsage.subresourceUsages) {
-                bool readOnly = (subresourceUsage & kReadOnlyTextureUsages) == subresourceUsage;
+                bool readOnly = IsSubset(subresourceUsage, kReadOnlyTextureUsages);
                 bool singleUse = wgpu::HasZeroOrOneBits(subresourceUsage);
                 if (!readOnly && !singleUse) {
                     return DAWN_VALIDATION_ERROR(
@@ -351,13 +351,24 @@ namespace dawn_native {
         return {};
     }
 
-    MaybeError ValidateTimestampQuery(QuerySetBase* querySet, uint32_t queryIndex) {
+    MaybeError ValidateTimestampQuery(QuerySetBase* querySet,
+                                      uint32_t queryIndex,
+                                      const UsedQueryMap& usedQueryIndices) {
         if (querySet->GetQueryType() != wgpu::QueryType::Timestamp) {
             return DAWN_VALIDATION_ERROR("The query type of query set must be Timestamp");
         }
 
         if (queryIndex >= querySet->GetQueryCount()) {
             return DAWN_VALIDATION_ERROR("Query index exceeds the number of queries in query set");
+        }
+
+        UsedQueryMap::const_iterator it = usedQueryIndices.find(querySet);
+        if (it != usedQueryIndices.end()) {
+            // Get the used query index records
+            const std::vector<bool>& queryIndices = it->second;
+            if (queryIndices[queryIndex] == 1) {
+                return DAWN_VALIDATION_ERROR("Duplicated query index writen");
+            }
         }
 
         return {};
@@ -370,45 +381,56 @@ namespace dawn_native {
                static_cast<uint64_t>(maxStart);
     }
 
+    template <typename A, typename B>
+    DAWN_FORCE_INLINE uint64_t Safe32x32(A a, B b) {
+        static_assert(std::is_same<A, uint32_t>::value, "'a' must be uint32_t");
+        static_assert(std::is_same<B, uint32_t>::value, "'b' must be uint32_t");
+        return uint64_t(a) * uint64_t(b);
+    }
+
     ResultOrError<uint64_t> ComputeRequiredBytesInCopy(const TexelBlockInfo& blockInfo,
                                                        const Extent3D& copySize,
                                                        uint32_t bytesPerRow,
                                                        uint32_t rowsPerImage) {
-        // Default value for rowsPerImage
-        if (rowsPerImage == 0) {
-            rowsPerImage = copySize.height;
-        }
+        ASSERT(copySize.width % blockInfo.width == 0);
+        ASSERT(copySize.height % blockInfo.height == 0);
+        uint32_t widthInBlocks = copySize.width / blockInfo.width;
+        uint32_t heightInBlocks = copySize.height / blockInfo.height;
+        uint64_t bytesInLastRow = Safe32x32(widthInBlocks, blockInfo.byteSize);
 
-        ASSERT(rowsPerImage >= copySize.height);
-        if (copySize.height > 1 || copySize.depth > 1) {
-            ASSERT(bytesPerRow >= copySize.width / blockInfo.blockWidth * blockInfo.blockByteSize);
-        }
-
-        if (copySize.width == 0 || copySize.height == 0 || copySize.depth == 0) {
+        if (copySize.depth == 0) {
             return 0;
         }
 
-        ASSERT(copySize.height >= 1);
-        ASSERT(copySize.depth >= 1);
-
-        uint32_t texelBlockRowsPerImage = rowsPerImage / blockInfo.blockHeight;
-        // bytesPerImage won't overflow since we're multiplying two uint32_t numbers
-        uint64_t bytesPerImage = uint64_t(texelBlockRowsPerImage) * bytesPerRow;
-        // Provided that copySize.height > 1: bytesInLastSlice won't overflow since it's at most
-        // bytesPerImage. Otherwise the result is a multiplication of two uint32_t numbers.
-        uint64_t bytesInLastSlice =
-            uint64_t(bytesPerRow) * (copySize.height / blockInfo.blockHeight - 1) +
-            (uint64_t(copySize.width) / blockInfo.blockWidth * blockInfo.blockByteSize);
-
-        // This error cannot be thrown for copySize.depth = 1.
-        // For copySize.depth > 1 we know that:
-        // requiredBytesInCopy >= (copySize.depth * bytesPerImage) / 2, so if
-        // copySize.depth * bytesPerImage overflows uint64_t, then requiredBytesInCopy is definitely
-        // too large to fit in the available data size.
-        if (std::numeric_limits<uint64_t>::max() / copySize.depth < bytesPerImage) {
-            return DAWN_VALIDATION_ERROR("requiredBytesInCopy is too large");
+        // Check for potential overflows for the rest of the computations. We have the following
+        // inequalities:
+        //
+        //   bytesInLastRow <= bytesPerRow
+        //   heightInBlocks <= rowsPerImage
+        //
+        // So:
+        //
+        //   bytesInLastImage  = bytesPerRow * (heightInBlocks - 1) + bytesInLastRow
+        //                    <= bytesPerRow * heightInBlocks
+        //                    <= bytesPerRow * rowsPerImage
+        //                    <= bytesPerImage
+        //
+        // This means that if the computation of depth * bytesPerImage doesn't overflow, none of the
+        // computations for requiredBytesInCopy will. (and it's not a very pessimizing check)
+        ASSERT(copySize.depth <= 1 ||
+               (bytesPerRow != wgpu::kStrideUndefined && rowsPerImage != wgpu::kStrideUndefined));
+        uint64_t bytesPerImage = Safe32x32(bytesPerRow, rowsPerImage);
+        if (bytesPerImage > std::numeric_limits<uint64_t>::max() / copySize.depth) {
+            return DAWN_VALIDATION_ERROR("requiredBytesInCopy is too large.");
         }
-        return bytesPerImage * (copySize.depth - 1) + bytesInLastSlice;
+
+        uint64_t requiredBytesInCopy = bytesPerImage * (copySize.depth - 1);
+        if (heightInBlocks > 0) {
+            ASSERT(heightInBlocks <= 1 || bytesPerRow != wgpu::kStrideUndefined);
+            uint64_t bytesInLastImage = Safe32x32(bytesPerRow, heightInBlocks - 1) + bytesInLastRow;
+            requiredBytesInCopy += bytesInLastImage;
+        }
+        return requiredBytesInCopy;
     }
 
     MaybeError ValidateCopySizeFitsInBuffer(const Ref<BufferBase>& buffer,
@@ -423,34 +445,98 @@ namespace dawn_native {
         return {};
     }
 
+    TextureDataLayout FixUpDeprecatedTextureDataLayoutOptions(
+        DeviceBase* device,
+        const TextureDataLayout& originalLayout,
+        const TexelBlockInfo& blockInfo,
+        const Extent3D& copyExtent) {
+        // TODO(crbug.com/dawn/520): Remove deprecated functionality.
+        TextureDataLayout layout = originalLayout;
+
+        if (copyExtent.height != 0 && layout.rowsPerImage == 0) {
+            if (copyExtent.depth > 1) {
+                device->EmitDeprecationWarning(
+                    "rowsPerImage soon must be non-zero if copy depth > 1 (it will no longer "
+                    "default to the copy height).");
+                ASSERT(copyExtent.height % blockInfo.height == 0);
+                uint32_t heightInBlocks = copyExtent.height / blockInfo.height;
+                layout.rowsPerImage = heightInBlocks;
+            } else if (copyExtent.depth == 1) {
+                device->EmitDeprecationWarning(
+                    "rowsPerImage soon must be non-zero or unspecified if copy depth == 1 (it will "
+                    "no longer default to the copy height).");
+                layout.rowsPerImage = wgpu::kStrideUndefined;
+            }
+        }
+
+        // Only bother to fix-up for height == 1 && depth == 1.
+        // The other cases that used to be allowed were zero-size copies.
+        ASSERT(copyExtent.width % blockInfo.width == 0);
+        uint32_t widthInBlocks = copyExtent.width / blockInfo.width;
+        uint32_t bytesInLastRow = widthInBlocks * blockInfo.byteSize;
+        if (copyExtent.height == 1 && copyExtent.depth == 1 &&
+            bytesInLastRow > layout.bytesPerRow) {
+            device->EmitDeprecationWarning(
+                "Soon, even if copy height == 1, bytesPerRow must be >= the byte size of each row "
+                "or left unspecified.");
+            layout.bytesPerRow = wgpu::kStrideUndefined;
+        }
+        return layout;
+    }
+
+    // Replace wgpu::kStrideUndefined with real values, so backends don't have to think about it.
+    void ApplyDefaultTextureDataLayoutOptions(TextureDataLayout* layout,
+                                              const TexelBlockInfo& blockInfo,
+                                              const Extent3D& copyExtent) {
+        ASSERT(layout != nullptr);
+        ASSERT(copyExtent.height % blockInfo.height == 0);
+        uint32_t heightInBlocks = copyExtent.height / blockInfo.height;
+
+        if (layout->bytesPerRow == wgpu::kStrideUndefined) {
+            ASSERT(copyExtent.width % blockInfo.width == 0);
+            uint32_t widthInBlocks = copyExtent.width / blockInfo.width;
+            uint32_t bytesInLastRow = widthInBlocks * blockInfo.byteSize;
+
+            ASSERT(heightInBlocks <= 1 && copyExtent.depth <= 1);
+            layout->bytesPerRow = Align(bytesInLastRow, kTextureBytesPerRowAlignment);
+        }
+        if (layout->rowsPerImage == wgpu::kStrideUndefined) {
+            ASSERT(copyExtent.depth <= 1);
+            layout->rowsPerImage = heightInBlocks;
+        }
+    }
+
     MaybeError ValidateLinearTextureData(const TextureDataLayout& layout,
                                          uint64_t byteSize,
                                          const TexelBlockInfo& blockInfo,
                                          const Extent3D& copyExtent) {
-        // Validation for the texel block alignments:
-        if (layout.rowsPerImage % blockInfo.blockHeight != 0) {
-            return DAWN_VALIDATION_ERROR(
-                "rowsPerImage must be a multiple of compressed texture format block height");
-        }
+        ASSERT(copyExtent.height % blockInfo.height == 0);
+        uint32_t heightInBlocks = copyExtent.height / blockInfo.height;
 
-        if (layout.offset % blockInfo.blockByteSize != 0) {
-            return DAWN_VALIDATION_ERROR("Offset must be a multiple of the texel or block size");
+        if (copyExtent.depth > 1 && (layout.bytesPerRow == wgpu::kStrideUndefined ||
+                                     layout.rowsPerImage == wgpu::kStrideUndefined)) {
+            return DAWN_VALIDATION_ERROR(
+                "If copy depth > 1, bytesPerRow and rowsPerImage must be specified.");
+        }
+        if (heightInBlocks > 1 && layout.bytesPerRow == wgpu::kStrideUndefined) {
+            return DAWN_VALIDATION_ERROR("If heightInBlocks > 1, bytesPerRow must be specified.");
         }
 
         // Validation for other members in layout:
-        if ((copyExtent.height > 1 || copyExtent.depth > 1) &&
-            layout.bytesPerRow <
-                copyExtent.width / blockInfo.blockWidth * blockInfo.blockByteSize) {
-            return DAWN_VALIDATION_ERROR(
-                "bytesPerRow must not be less than the number of bytes per row");
+        ASSERT(copyExtent.width % blockInfo.width == 0);
+        uint32_t widthInBlocks = copyExtent.width / blockInfo.width;
+        ASSERT(Safe32x32(widthInBlocks, blockInfo.byteSize) <=
+               std::numeric_limits<uint32_t>::max());
+        uint32_t bytesInLastRow = widthInBlocks * blockInfo.byteSize;
+
+        // These != wgpu::kStrideUndefined checks are technically redundant with the > checks, but
+        // they should get optimized out.
+        if (layout.bytesPerRow != wgpu::kStrideUndefined && bytesInLastRow > layout.bytesPerRow) {
+            return DAWN_VALIDATION_ERROR("The byte size of each row must be <= bytesPerRow.");
         }
-
-        // TODO(tommek@google.com): to match the spec there should be another condition here
-        // on rowsPerImage >= copyExtent.height if copyExtent.depth > 1.
-
-        // Validation for the copy being in-bounds:
-        if (layout.rowsPerImage != 0 && layout.rowsPerImage < copyExtent.height) {
-            return DAWN_VALIDATION_ERROR("rowsPerImage must not be less than the copy height.");
+        if (layout.rowsPerImage != wgpu::kStrideUndefined && heightInBlocks > layout.rowsPerImage) {
+            return DAWN_VALIDATION_ERROR(
+                "The height of each image, in blocks, must be <= rowsPerImage.");
         }
 
         // We compute required bytes in copy after validating texel block alignments
@@ -465,7 +551,7 @@ namespace dawn_native {
             layout.offset <= byteSize && (requiredBytesInCopy <= (byteSize - layout.offset));
         if (!fitsInData) {
             return DAWN_VALIDATION_ERROR(
-                "Required size for texture data layout exceeds the given size");
+                "Required size for texture data layout exceeds the linear data size.");
         }
 
         return {};
@@ -474,8 +560,10 @@ namespace dawn_native {
     MaybeError ValidateBufferCopyView(DeviceBase const* device,
                                       const BufferCopyView& bufferCopyView) {
         DAWN_TRY(device->ValidateObject(bufferCopyView.buffer));
-        if (bufferCopyView.layout.bytesPerRow % kTextureBytesPerRowAlignment != 0) {
-            return DAWN_VALIDATION_ERROR("bytesPerRow must be a multiple of 256");
+        if (bufferCopyView.layout.bytesPerRow != wgpu::kStrideUndefined) {
+            if (bufferCopyView.layout.bytesPerRow % kTextureBytesPerRowAlignment != 0) {
+                return DAWN_VALIDATION_ERROR("bytesPerRow must be a multiple of 256");
+            }
         }
 
         return {};
@@ -490,24 +578,8 @@ namespace dawn_native {
             return DAWN_VALIDATION_ERROR("mipLevel out of range");
         }
 
-        switch (textureCopy.aspect) {
-            case wgpu::TextureAspect::All:
-                break;
-            case wgpu::TextureAspect::DepthOnly:
-                if ((texture->GetFormat().aspects & Aspect::Depth) == 0) {
-                    return DAWN_VALIDATION_ERROR(
-                        "Texture does not have depth aspect for texture copy");
-                }
-                break;
-            case wgpu::TextureAspect::StencilOnly:
-                if ((texture->GetFormat().aspects & Aspect::Stencil) == 0) {
-                    return DAWN_VALIDATION_ERROR(
-                        "Texture does not have stencil aspect for texture copy");
-                }
-                break;
-            default:
-                UNREACHABLE();
-                break;
+        if (TryConvertAspect(texture->GetFormat(), textureCopy.aspect) == Aspect::None) {
+            return DAWN_VALIDATION_ERROR("Texture does not have selected aspect for texture copy.");
         }
 
         if (texture->GetSampleCount() > 1 || texture->GetFormat().HasDepthOrStencil()) {
@@ -550,59 +622,113 @@ namespace dawn_native {
         }
 
         // Validation for the texel block alignments:
-        const TexelBlockInfo& blockInfo =
-            textureCopy.texture->GetFormat().GetTexelBlockInfo(textureCopy.aspect);
-        if (textureCopy.origin.x % blockInfo.blockWidth != 0) {
-            return DAWN_VALIDATION_ERROR(
-                "Offset.x must be a multiple of compressed texture format block width");
-        }
-        if (textureCopy.origin.y % blockInfo.blockHeight != 0) {
-            return DAWN_VALIDATION_ERROR(
-                "Offset.y must be a multiple of compressed texture format block height");
-        }
-        if (copySize.width % blockInfo.blockWidth != 0) {
-            return DAWN_VALIDATION_ERROR(
-                "copySize.width must be a multiple of compressed texture format block width");
-        }
+        const Format& format = textureCopy.texture->GetFormat();
+        if (format.isCompressed) {
+            const TexelBlockInfo& blockInfo = format.GetAspectInfo(textureCopy.aspect).block;
+            if (textureCopy.origin.x % blockInfo.width != 0) {
+                return DAWN_VALIDATION_ERROR(
+                    "Offset.x must be a multiple of compressed texture format block width");
+            }
+            if (textureCopy.origin.y % blockInfo.height != 0) {
+                return DAWN_VALIDATION_ERROR(
+                    "Offset.y must be a multiple of compressed texture format block height");
+            }
+            if (copySize.width % blockInfo.width != 0) {
+                return DAWN_VALIDATION_ERROR(
+                    "copySize.width must be a multiple of compressed texture format block width");
+            }
 
-        if (copySize.height % blockInfo.blockHeight != 0) {
-            return DAWN_VALIDATION_ERROR(
-                "copySize.height must be a multiple of compressed texture format block height");
+            if (copySize.height % blockInfo.height != 0) {
+                return DAWN_VALIDATION_ERROR(
+                    "copySize.height must be a multiple of compressed texture format block height");
+            }
         }
 
         return {};
     }
 
-    MaybeError ValidateBufferToTextureCopyRestrictions(const TextureCopyView& dst) {
-        const Format& format = dst.texture->GetFormat();
-
-        bool depthSelected = false;
-        switch (dst.aspect) {
+    // Always returns a single aspect (color, stencil, or depth).
+    ResultOrError<Aspect> SingleAspectUsedByTextureCopyView(const TextureCopyView& view) {
+        const Format& format = view.texture->GetFormat();
+        switch (view.aspect) {
             case wgpu::TextureAspect::All:
-                switch (format.aspects) {
-                    case Aspect::Color:
-                    case Aspect::Stencil:
-                        break;
-                    case Aspect::Depth:
-                        depthSelected = true;
-                        break;
-                    default:
-                        return DAWN_VALIDATION_ERROR(
-                            "A single aspect must be selected for multi planar formats in buffer "
-                            "to texture copies");
+                if (HasOneBit(format.aspects)) {
+                    return Aspect{format.aspects};
+                } else {
+                    return DAWN_VALIDATION_ERROR(
+                        "A single aspect must be selected for multi-planar formats in "
+                        "texture <-> linear data copies");
                 }
                 break;
             case wgpu::TextureAspect::DepthOnly:
                 ASSERT(format.aspects & Aspect::Depth);
-                depthSelected = true;
-                break;
+                return Aspect::Depth;
             case wgpu::TextureAspect::StencilOnly:
                 ASSERT(format.aspects & Aspect::Stencil);
-                break;
+                return Aspect::Stencil;
         }
-        if (depthSelected) {
+    }
+
+    MaybeError ValidateLinearToDepthStencilCopyRestrictions(const TextureCopyView& dst) {
+        Aspect aspectUsed;
+        DAWN_TRY_ASSIGN(aspectUsed, SingleAspectUsedByTextureCopyView(dst));
+        if (aspectUsed == Aspect::Depth) {
             return DAWN_VALIDATION_ERROR("Cannot copy into the depth aspect of a texture");
         }
+
+        return {};
+    }
+
+    MaybeError ValidateTextureToTextureCopyRestrictions(const TextureCopyView& src,
+                                                        const TextureCopyView& dst,
+                                                        const Extent3D& copySize) {
+        const uint32_t srcSamples = src.texture->GetSampleCount();
+        const uint32_t dstSamples = dst.texture->GetSampleCount();
+
+        if (srcSamples != dstSamples) {
+            return DAWN_VALIDATION_ERROR(
+                "Source and destination textures must have matching sample counts.");
+        }
+
+        if (src.texture->GetFormat().format != dst.texture->GetFormat().format) {
+            // Metal requires texture-to-texture copies be the same format
+            return DAWN_VALIDATION_ERROR("Source and destination texture formats must match.");
+        }
+
+        if (src.aspect != wgpu::TextureAspect::All || dst.aspect != wgpu::TextureAspect::All) {
+            // Metal cannot select a single aspect for texture-to-texture copies
+            return DAWN_VALIDATION_ERROR(
+                "Texture aspect must be \"all\" for texture to texture copies");
+        }
+
+        if (src.texture == dst.texture && src.mipLevel == dst.mipLevel) {
+            ASSERT(src.texture->GetDimension() == wgpu::TextureDimension::e2D &&
+                   dst.texture->GetDimension() == wgpu::TextureDimension::e2D);
+            if (IsRangeOverlapped(src.origin.z, dst.origin.z, copySize.depth)) {
+                return DAWN_VALIDATION_ERROR(
+                    "Copy subresources cannot be overlapped when copying within the same "
+                    "texture.");
+            }
+        }
+
+        return {};
+    }
+
+    MaybeError ValidateCanUseAs(const TextureBase* texture, wgpu::TextureUsage usage) {
+        ASSERT(wgpu::HasZeroOrOneBits(usage));
+        if (!(texture->GetUsage() & usage)) {
+            return DAWN_VALIDATION_ERROR("texture doesn't have the required usage.");
+        }
+
+        return {};
+    }
+
+    MaybeError ValidateCanUseAs(const BufferBase* buffer, wgpu::BufferUsage usage) {
+        ASSERT(wgpu::HasZeroOrOneBits(usage));
+        if (!(buffer->GetUsage() & usage)) {
+            return DAWN_VALIDATION_ERROR("buffer doesn't have the required usage.");
+        }
+
         return {};
     }
 

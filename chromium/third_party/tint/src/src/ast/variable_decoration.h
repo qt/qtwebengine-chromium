@@ -20,23 +20,31 @@
 #include <string>
 #include <vector>
 
+#include "src/ast/decoration.h"
+
 namespace tint {
 namespace ast {
 
 class BindingDecoration;
 class BuiltinDecoration;
+class ConstantIdDecoration;
 class LocationDecoration;
 class SetDecoration;
 
 /// A decoration attached to a variable
-class VariableDecoration {
+class VariableDecoration : public Decoration {
  public:
-  virtual ~VariableDecoration();
+  /// The kind of decoration that this type represents
+  static constexpr DecorationKind Kind = DecorationKind::kVariable;
+
+  ~VariableDecoration() override;
 
   /// @returns true if this is a binding decoration
   virtual bool IsBinding() const;
   /// @returns true if this is a builtin decoration
   virtual bool IsBuiltin() const;
+  /// @returns true if this is a constant id decoration
+  virtual bool IsConstantId() const;
   /// @returns true if this is a location decoration
   virtual bool IsLocation() const;
   /// @returns true if this is a set decoration
@@ -46,6 +54,8 @@ class VariableDecoration {
   BindingDecoration* AsBinding();
   /// @returns the decoration as a builtin decoration
   BuiltinDecoration* AsBuiltin();
+  /// @returns the decoration as a constant id decoration
+  ConstantIdDecoration* AsConstantId();
   /// @returns the decoration as a location decoration
   LocationDecoration* AsLocation();
   /// @returns the decoration as a set decoration
@@ -56,7 +66,9 @@ class VariableDecoration {
   virtual void to_str(std::ostream& out) const = 0;
 
  protected:
-  VariableDecoration();
+  /// Constructor
+  /// @param source the source of this decoration
+  explicit VariableDecoration(const Source& source);
 };
 
 /// A list of unique variable decorations

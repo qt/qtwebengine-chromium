@@ -15,41 +15,32 @@
 #ifndef CORE_INTERNAL_BLUETOOTH_ENDPOINT_CHANNEL_H_
 #define CORE_INTERNAL_BLUETOOTH_ENDPOINT_CHANNEL_H_
 
+#include <string>
+
 #include "core/internal/base_endpoint_channel.h"
-#include "core/internal/medium_manager.h"
-#include "platform/api/bluetooth_classic.h"
-#include "platform/api/platform.h"
-#include "platform/port/string.h"
-#include "platform/ptr.h"
+#include "platform/public/bluetooth_classic.h"
 #include "proto/connections_enums.pb.h"
 
 namespace location {
 namespace nearby {
 namespace connections {
 
-class BluetoothEndpointChannel : public BaseEndpointChannel {
+class BluetoothEndpointChannel final : public BaseEndpointChannel {
  public:
-  using Platform = platform::ImplementationPlatform;
+  // Creates both outgoing and incoming BT channels.
+  BluetoothEndpointChannel(const std::string& channel_name,
+                           BluetoothSocket bluetooth_socket);
 
-  static Ptr<BluetoothEndpointChannel> createOutgoing(
-      Ptr<MediumManager<Platform> > medium_manager, const string& channel_name,
-      Ptr<BluetoothSocket> bluetooth_socket);
-  static Ptr<BluetoothEndpointChannel> createIncoming(
-      Ptr<MediumManager<Platform> > medium_manager, const string& channel_name,
-      Ptr<BluetoothSocket> bluetooth_socket);
+  proto::connections::Medium GetMedium() const override;
 
-  ~BluetoothEndpointChannel() override;
-
-  proto::connections::Medium getMedium() override;
-
- protected:
-  void closeImpl() override;
+  int GetMaxTransmitPacketSize() const override;
 
  private:
-  BluetoothEndpointChannel(const string& channel_name,
-                           Ptr<BluetoothSocket> bluetooth_socket);
+  static constexpr int kDefaultBTMaxTransmitPacketSize = 1980;  // 990 * 2 Bytes
 
-  ScopedPtr<Ptr<BluetoothSocket> > bluetooth_socket_;
+  void CloseImpl() override;
+
+  BluetoothSocket bluetooth_socket_;
 };
 
 }  // namespace connections

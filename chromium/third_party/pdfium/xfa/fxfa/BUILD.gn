@@ -95,10 +95,10 @@ source_set("fxfa") {
     "../../fxjs",
     "../../fxjs:gc",
     "../fde",
-    "../fgas",
+    "../fgas/font",
+    "../fgas/graphics",
     "../fgas/layout",
     "../fwl",
-    "../fxgraphics",
     "layout",
     "parser",
   ]

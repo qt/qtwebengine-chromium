@@ -17,10 +17,9 @@
 #include <assert.h>
 
 #include "src/ast/array_accessor_expression.h"
-#include "src/ast/as_expression.h"
 #include "src/ast/binary_expression.h"
+#include "src/ast/bitcast_expression.h"
 #include "src/ast/call_expression.h"
-#include "src/ast/cast_expression.h"
 #include "src/ast/constructor_expression.h"
 #include "src/ast/identifier_expression.h"
 #include "src/ast/member_accessor_expression.h"
@@ -37,23 +36,19 @@ Expression::Expression(const Source& source) : Node(source) {}
 Expression::~Expression() = default;
 
 void Expression::set_result_type(type::Type* type) {
-  // The expression result should never be an alias type
-  result_type_ = type->UnwrapAliasesIfNeeded();
+  // The expression result should never be an alias or access-controlled type
+  result_type_ = type->UnwrapIfNeeded();
 }
 
 bool Expression::IsArrayAccessor() const {
   return false;
 }
 
-bool Expression::IsAs() const {
+bool Expression::IsBitcast() const {
   return false;
 }
 
 bool Expression::IsCall() const {
-  return false;
-}
-
-bool Expression::IsCast() const {
   return false;
 }
 
@@ -81,9 +76,9 @@ const ArrayAccessorExpression* Expression::AsArrayAccessor() const {
   return static_cast<const ArrayAccessorExpression*>(this);
 }
 
-const AsExpression* Expression::AsAs() const {
-  assert(IsAs());
-  return static_cast<const AsExpression*>(this);
+const BitcastExpression* Expression::AsBitcast() const {
+  assert(IsBitcast());
+  return static_cast<const BitcastExpression*>(this);
 }
 
 const BinaryExpression* Expression::AsBinary() const {
@@ -94,11 +89,6 @@ const BinaryExpression* Expression::AsBinary() const {
 const CallExpression* Expression::AsCall() const {
   assert(IsCall());
   return static_cast<const CallExpression*>(this);
-}
-
-const CastExpression* Expression::AsCast() const {
-  assert(IsCast());
-  return static_cast<const CastExpression*>(this);
 }
 
 const ConstructorExpression* Expression::AsConstructor() const {
@@ -126,9 +116,9 @@ ArrayAccessorExpression* Expression::AsArrayAccessor() {
   return static_cast<ArrayAccessorExpression*>(this);
 }
 
-AsExpression* Expression::AsAs() {
-  assert(IsAs());
-  return static_cast<AsExpression*>(this);
+BitcastExpression* Expression::AsBitcast() {
+  assert(IsBitcast());
+  return static_cast<BitcastExpression*>(this);
 }
 
 BinaryExpression* Expression::AsBinary() {
@@ -139,11 +129,6 @@ BinaryExpression* Expression::AsBinary() {
 CallExpression* Expression::AsCall() {
   assert(IsCall());
   return static_cast<CallExpression*>(this);
-}
-
-CastExpression* Expression::AsCast() {
-  assert(IsCast());
-  return static_cast<CastExpression*>(this);
 }
 
 ConstructorExpression* Expression::AsConstructor() {

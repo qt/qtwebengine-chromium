@@ -35,7 +35,8 @@ class DisplayGLX : public DisplayGL
     egl::Error initialize(egl::Display *display) override;
     void terminate() override;
 
-    egl::Error makeCurrent(egl::Surface *drawSurface,
+    egl::Error makeCurrent(egl::Display *display,
+                           egl::Surface *drawSurface,
                            egl::Surface *readSurface,
                            gl::Context *context) override;
 
@@ -128,7 +129,7 @@ class DisplayGLX : public DisplayGL
     glx::Context mSharedContext;
     std::unordered_map<std::thread::id, glx::Context> mCurrentContexts;
     // A pbuffer the context is current on during ANGLE initialization
-    glx::Pbuffer mDummyPbuffer;
+    glx::Pbuffer mInitPbuffer;
 
     std::vector<glx::Pbuffer> mWorkerPbufferPool;
 

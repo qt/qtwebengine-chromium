@@ -141,13 +141,13 @@ namespace dawn_native { namespace vulkan {
     }
     ResultOrError<SwapChainBase*> Device::CreateSwapChainImpl(
         const SwapChainDescriptor* descriptor) {
-        return SwapChain::Create(this, descriptor);
+        return OldSwapChain::Create(this, descriptor);
     }
     ResultOrError<NewSwapChainBase*> Device::CreateSwapChainImpl(
         Surface* surface,
         NewSwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) {
-        return DAWN_VALIDATION_ERROR("New swapchains not implemented.");
+        return SwapChain::Create(this, surface, previousSwapChain, descriptor);
     }
     ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
         return Texture::Create(this, descriptor);
@@ -298,6 +298,8 @@ namespace dawn_native { namespace vulkan {
         usedKnobs.features.imageCubeArray = VK_TRUE;
         // Always require fragmentStoresAndAtomics because it is required by end2end tests.
         usedKnobs.features.fragmentStoresAndAtomics = VK_TRUE;
+        // Always require depthBiasClamp because it is a core Dawn feature
+        usedKnobs.features.depthBiasClamp = VK_TRUE;
 
         if (IsRobustnessEnabled()) {
             usedKnobs.features.robustBufferAccess = VK_TRUE;

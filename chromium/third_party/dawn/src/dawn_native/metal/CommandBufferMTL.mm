@@ -23,6 +23,7 @@
 #include "dawn_native/metal/ComputePipelineMTL.h"
 #include "dawn_native/metal/DeviceMTL.h"
 #include "dawn_native/metal/PipelineLayoutMTL.h"
+#include "dawn_native/metal/QuerySetMTL.h"
 #include "dawn_native/metal/RenderPipelineMTL.h"
 #include "dawn_native/metal/SamplerMTL.h"
 #include "dawn_native/metal/TextureMTL.h"
@@ -62,14 +63,12 @@ namespace dawn_native { namespace metal {
                 auto& attachmentInfo = renderPass->colorAttachments[attachment];
 
                 switch (attachmentInfo.loadOp) {
-                    case wgpu::LoadOp::Clear: {
+                    case wgpu::LoadOp::Clear:
                         descriptor.colorAttachments[i].loadAction = MTLLoadActionClear;
-                        const std::array<double, 4> clearColor =
-                            ConvertToFloatToDoubleColor(attachmentInfo.clearColor);
                         descriptor.colorAttachments[i].clearColor = MTLClearColorMake(
-                            clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+                            attachmentInfo.clearColor.r, attachmentInfo.clearColor.g,
+                            attachmentInfo.clearColor.b, attachmentInfo.clearColor.a);
                         break;
-                    }
 
                     case wgpu::LoadOp::Load:
                         descriptor.colorAttachments[i].loadAction = MTLLoadActionLoad;
@@ -548,7 +547,7 @@ namespace dawn_native { namespace metal {
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared in CreateMTLRenderPassDescriptor by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
-                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
+                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::RenderAttachment)) {
                     texture->EnsureSubresourceContentInitialized(texture->GetAllSubresources());
                 }
             }
@@ -738,11 +737,39 @@ namespace dawn_native { namespace metal {
                 }
 
                 case Command::ResolveQuerySet: {
-                    return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation.");
+                    ResolveQuerySetCmd* cmd = mCommands.NextCommand<ResolveQuerySetCmd>();
+                    QuerySet* querySet = ToBackend(cmd->querySet.Get());
+                    Buffer* destination = ToBackend(cmd->destination.Get());
+
+                    destination->EnsureDataInitializedAsDestination(
+                        commandContext, cmd->destinationOffset, cmd->queryCount * sizeof(uint64_t));
+
+                    if (@available(macos 10.15, iOS 14.0, *)) {
+                        [commandContext->EnsureBlit()
+                              resolveCounters:querySet->GetCounterSampleBuffer()
+                                      inRange:NSMakeRange(cmd->firstQuery,
+                                                          cmd->firstQuery + cmd->queryCount)
+                            destinationBuffer:destination->GetMTLBuffer()
+                            destinationOffset:NSUInteger(cmd->destinationOffset)];
+                    } else {
+                        UNREACHABLE();
+                    }
+                    break;
                 }
 
                 case Command::WriteTimestamp: {
-                    return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation.");
+                    WriteTimestampCmd* cmd = mCommands.NextCommand<WriteTimestampCmd>();
+                    QuerySet* querySet = ToBackend(cmd->querySet.Get());
+
+                    if (@available(macos 10.15, iOS 14.0, *)) {
+                        [commandContext->EnsureBlit()
+                            sampleCountersInBuffer:querySet->GetCounterSampleBuffer()
+                                     atSampleIndex:NSUInteger(cmd->queryIndex)
+                                       withBarrier:YES];
+                    } else {
+                        UNREACHABLE();
+                    }
+                    break;
                 }
 
                 case Command::InsertDebugMarker: {
@@ -874,7 +901,17 @@ namespace dawn_native { namespace metal {
                 }
 
                 case Command::WriteTimestamp: {
-                    return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation.");
+                    WriteTimestampCmd* cmd = mCommands.NextCommand<WriteTimestampCmd>();
+                    QuerySet* querySet = ToBackend(cmd->querySet.Get());
+
+                    if (@available(macos 10.15, iOS 14.0, *)) {
+                        [encoder sampleCountersInBuffer:querySet->GetCounterSampleBuffer()
+                                          atSampleIndex:NSUInteger(cmd->queryIndex)
+                                            withBarrier:YES];
+                    } else {
+                        UNREACHABLE();
+                    }
+                    break;
                 }
 
                 default: {
@@ -1145,6 +1182,9 @@ namespace dawn_native { namespace metal {
                     [encoder setDepthStencilState:newPipeline->GetMTLDepthStencilState()];
                     [encoder setFrontFacingWinding:newPipeline->GetMTLFrontFace()];
                     [encoder setCullMode:newPipeline->GetMTLCullMode()];
+                    [encoder setDepthBias:newPipeline->GetDepthBias()
+                               slopeScale:newPipeline->GetDepthBiasSlopeScale()
+                                    clamp:newPipeline->GetDepthBiasClamp()];
                     newPipeline->Encode(encoder);
 
                     lastPipeline = newPipeline;
@@ -1225,27 +1265,16 @@ namespace dawn_native { namespace metal {
                     rect.width = cmd->width;
                     rect.height = cmd->height;
 
-                    // The scissor rect x + width must be <= render pass width
-                    if ((rect.x + rect.width) > width) {
-                        rect.width = width - rect.x;
-                    }
-                    // The scissor rect y + height must be <= render pass height
-                    if ((rect.y + rect.height > height)) {
-                        rect.height = height - rect.y;
-                    }
-
                     [encoder setScissorRect:rect];
                     break;
                 }
 
                 case Command::SetBlendColor: {
                     SetBlendColorCmd* cmd = mCommands.NextCommand<SetBlendColorCmd>();
-                    const std::array<double, 4> blendColor =
-                        ConvertToFloatToDoubleColor(cmd->color);
-                    [encoder setBlendColorRed:blendColor[0]
-                                        green:blendColor[1]
-                                         blue:blendColor[2]
-                                        alpha:blendColor[3]];
+                    [encoder setBlendColorRed:cmd->color.r
+                                        green:cmd->color.g
+                                         blue:cmd->color.b
+                                        alpha:cmd->color.a];
                     break;
                 }
 
@@ -1264,7 +1293,17 @@ namespace dawn_native { namespace metal {
                 }
 
                 case Command::WriteTimestamp: {
-                    return DAWN_UNIMPLEMENTED_ERROR("Waiting for implementation.");
+                    WriteTimestampCmd* cmd = mCommands.NextCommand<WriteTimestampCmd>();
+                    QuerySet* querySet = ToBackend(cmd->querySet.Get());
+
+                    if (@available(macos 10.15, iOS 14.0, *)) {
+                        [encoder sampleCountersInBuffer:querySet->GetCounterSampleBuffer()
+                                          atSampleIndex:NSUInteger(cmd->queryIndex)
+                                            withBarrier:YES];
+                    } else {
+                        UNREACHABLE();
+                    }
+                    break;
                 }
 
                 default: {

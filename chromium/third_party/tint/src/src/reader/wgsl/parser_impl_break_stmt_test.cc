@@ -25,8 +25,9 @@ namespace {
 TEST_F(ParserImplTest, BreakStmt) {
   auto* p = parser("break");
   auto e = p->break_stmt();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsBreak());
 }
 

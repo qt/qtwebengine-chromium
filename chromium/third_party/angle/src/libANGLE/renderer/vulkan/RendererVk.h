@@ -50,6 +50,9 @@ class FramebufferVk;
 namespace vk
 {
 struct Format;
+
+static constexpr size_t kMaxExtensionNames = 200;
+using ExtensionNameList                    = angle::FixedVector<const char *, kMaxExtensionNames>;
 }  // namespace vk
 
 // Supports one semaphore from current surface, and one semaphore passed to
@@ -156,17 +159,19 @@ class RendererVk : angle::NonCopyable
     // Query the format properties for select bits (linearTilingFeatures, optimalTilingFeatures and
     // bufferFeatures).  Looks through mandatory features first, and falls back to querying the
     // device (first time only).
-    bool hasLinearImageFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
+    bool hasLinearImageFormatFeatureBits(VkFormat format,
+                                         const VkFormatFeatureFlags featureBits) const;
     VkFormatFeatureFlags getImageFormatFeatureBits(VkFormat format,
-                                                   const VkFormatFeatureFlags featureBits);
-    bool hasImageFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
-    bool hasBufferFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
+                                                   const VkFormatFeatureFlags featureBits) const;
+    bool hasImageFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits) const;
+    bool hasBufferFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits) const;
 
     ANGLE_INLINE egl::ContextPriority getDriverPriority(egl::ContextPriority priority)
     {
         return mPriorities[priority];
     }
 
+    // Queue submit that originates from the main thread
     angle::Result queueSubmit(vk::Context *context,
                               egl::ContextPriority priority,
                               const VkSubmitInfo &submitInfo,
@@ -196,6 +201,8 @@ class RendererVk : angle::NonCopyable
         sharedFenceIn->resetAndRecycle(&mFenceRecycler);
     }
 
+    angle::Result getNextSubmitFence(vk::Shared<vk::Fence> *sharedFenceOut, bool reset);
+
     template <typename... ArgsT>
     void collectGarbageAndReinit(vk::SharedResourceUse *use, ArgsT... garbageIn)
     {
@@ -223,8 +230,11 @@ class RendererVk : angle::NonCopyable
         }
     }
 
-    static constexpr size_t kMaxExtensionNames = 200;
-    using ExtensionNameList = angle::FixedVector<const char *, kMaxExtensionNames>;
+    vk::Shared<vk::Fence> getLastSubmittedFence(const vk::Context *context) const
+    {
+        return mCommandProcessor.getLastSubmittedFence(context);
+    }
+    void handleDeviceLost() { mCommandProcessor.handleDeviceLost(); }
 
     angle::Result getPipelineCache(vk::PipelineCache **pipelineCache);
     void onNewGraphicsPipeline()
@@ -240,11 +250,19 @@ class RendererVk : angle::NonCopyable
 
     ANGLE_INLINE Serial getCurrentQueueSerial()
     {
+        if (getFeatures().commandProcessor.enabled)
+        {
+            return mCommandProcessor.getCurrentQueueSerial();
+        }
         std::lock_guard<std::mutex> lock(mQueueSerialMutex);
         return mCurrentQueueSerial;
     }
     ANGLE_INLINE Serial getLastSubmittedQueueSerial()
     {
+        if (getFeatures().commandProcessor.enabled)
+        {
+            return mCommandProcessor.getLastSubmittedSerial();
+        }
         std::lock_guard<std::mutex> lock(mQueueSerialMutex);
         return mLastSubmittedQueueSerial;
     }
@@ -256,6 +274,11 @@ class RendererVk : angle::NonCopyable
 
     void onCompletedSerial(Serial serial);
 
+    VkResult getLastPresentResult(VkSwapchainKHR swapchain)
+    {
+        return mCommandProcessor.getLastPresentResult(swapchain);
+    }
+
     bool enableDebugUtils() const { return mEnableDebugUtils; }
 
     SamplerCache &getSamplerCache() { return mSamplerCache; }
@@ -263,23 +286,48 @@ class RendererVk : angle::NonCopyable
     vk::ActiveHandleCounter &getActiveHandleCounts() { return mActiveHandleCounts; }
 
     // Queue commands to worker thread for processing
-    void queueCommands(const vk::CommandProcessorTask &commands)
+    void queueCommand(vk::Context *context, vk::CommandProcessorTask *command)
     {
-        mCommandProcessor.queueCommands(commands);
+        mCommandProcessor.queueCommand(context, command);
     }
-    void waitForWorkerThreadIdle() { mCommandProcessor.waitForWorkComplete(); }
+    bool hasPendingError() const { return mCommandProcessor.hasPendingError(); }
+    vk::Error getAndClearPendingError() { return mCommandProcessor.getAndClearPendingError(); }
+    void waitForCommandProcessorIdle(vk::Context *context)
+    {
+        ASSERT(getFeatures().asynchronousCommandProcessing.enabled);
+        mCommandProcessor.waitForWorkComplete(context);
+    }
+
+    void finishToSerial(vk::Context *context, Serial serial)
+    {
+        mCommandProcessor.finishToSerial(context, serial);
+    }
+
+    void checkCompletedCommands(vk::Context *context)
+    {
+        mCommandProcessor.checkCompletedCommands(context);
+    }
+
+    void finishAllWork(vk::Context *context) { mCommandProcessor.finishAllWork(context); }
+    VkQueue getVkQueue(egl::ContextPriority priority) const { return mQueues[priority]; }
 
     bool getEnableValidationLayers() const { return mEnableValidationLayers; }
 
     vk::ResourceSerialFactory &getResourceSerialFactory() { return mResourceSerialFactory; }
 
+    void setGlobalDebugAnnotator();
+
+    void outputVmaStatString();
+
+    angle::Result cleanupGarbage(bool block);
+
   private:
     angle::Result initializeDevice(DisplayVk *displayVk, uint32_t queueFamilyIndex);
     void ensureCapsInitialized() const;
 
-    void queryDeviceExtensionFeatures(const ExtensionNameList &deviceExtensionNames);
+    void queryDeviceExtensionFeatures(const vk::ExtensionNameList &deviceExtensionNames);
 
-    void initFeatures(DisplayVk *display, const ExtensionNameList &extensions);
+    void initFeatures(DisplayVk *display, const vk::ExtensionNameList &extensions);
     void initPipelineCacheVkKey();
     angle::Result initPipelineCache(DisplayVk *display,
                                     vk::PipelineCache *pipelineCache,
@@ -287,12 +335,10 @@ class RendererVk : angle::NonCopyable
 
     template <VkFormatFeatureFlags VkFormatProperties::*features>
     VkFormatFeatureFlags getFormatFeatureBits(VkFormat format,
-                                              const VkFormatFeatureFlags featureBits);
+                                              const VkFormatFeatureFlags featureBits) const;
 
     template <VkFormatFeatureFlags VkFormatProperties::*features>
-    bool hasFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits);
-
-    angle::Result cleanupGarbage(bool block);
+    bool hasFormatFeatureBits(VkFormat format, const VkFormatFeatureFlags featureBits) const;
 
     egl::Display *mDisplay;
 
@@ -321,6 +367,7 @@ class RendererVk : angle::NonCopyable
     VkPhysicalDeviceSubgroupProperties mSubgroupProperties;
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT mExternalMemoryHostProperties;
     VkPhysicalDeviceShaderFloat16Int8FeaturesKHR mShaderFloat16Int8Features;
+    VkPhysicalDeviceShaderAtomicFloatFeaturesEXT mShaderAtomicFloatFeature;
     VkPhysicalDeviceDepthStencilResolvePropertiesKHR mDepthStencilResolveProperties;
     VkExternalFenceProperties mExternalFenceProperties;
     VkExternalSemaphoreProperties mExternalSemaphoreProperties;
@@ -364,7 +411,7 @@ class RendererVk : angle::NonCopyable
     bool mPipelineCacheInitialized;
 
     // A cache of VkFormatProperties as queried from the device over time.
-    std::array<VkFormatProperties, vk::kNumVkFormats> mFormatProperties;
+    mutable std::array<VkFormatProperties, vk::kNumVkFormats> mFormatProperties;
 
     // Latest validation data for debug overlay.
     std::string mLastValidationMessage;
@@ -387,9 +434,13 @@ class RendererVk : angle::NonCopyable
     };
     std::deque<PendingOneOffCommands> mPendingOneOffCommands;
 
-    // Worker Thread
-    CommandProcessor mCommandProcessor;
+    // Command Processor Thread
+    vk::CommandProcessor mCommandProcessor;
     std::thread mCommandProcessorThread;
+    // mNextSubmitFence is the fence that's going to be signaled at the next submission.  This is
+    // used to support SyncVk objects, which may outlive the context (as EGLSync objects).
+    vk::Shared<vk::Fence> mNextSubmitFence;
+    std::mutex mNextSubmitFenceMutex;
 
     // track whether we initialized (or released) glslang
     bool mGlslangInitialized;

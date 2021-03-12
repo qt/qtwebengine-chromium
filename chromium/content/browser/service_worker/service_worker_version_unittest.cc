@@ -10,11 +10,12 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
+#include "base/containers/span.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
-#include "base/test/bind_test_util.h"
+#include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
@@ -35,6 +36,8 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_service.mojom.h"
 #include "content/public/test/test_utils.h"
+#include "net/base/test_completion_callback.h"
+#include "services/metrics/public/cpp/ukm_recorder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom.h"
@@ -477,6 +480,35 @@ TEST_F(ServiceWorkerVersionTest, SetDevToolsAttached) {
   run_loop.Run();
   EXPECT_EQ(blink::ServiceWorkerStatusCode::kOk, status.value());
   EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version_->running_status());
+}
+
+TEST_F(ServiceWorkerVersionTest, RequestTerminationWithDevToolsAttached) {
+  auto* service_worker =
+      helper_->AddNewPendingServiceWorker<FakeServiceWorker>(helper_.get());
+
+  version_->SetDevToolsAttached(true);
+
+  base::Optional<blink::ServiceWorkerStatusCode> status;
+  base::RunLoop run_loop;
+  version_->StartWorker(
+      ServiceWorkerMetrics::EventType::UNKNOWN,
+      ReceiveServiceWorkerStatus(&status, run_loop.QuitClosure()));
+  run_loop.Run();
+  EXPECT_EQ(blink::ServiceWorkerStatusCode::kOk, status.value());
+  EXPECT_EQ(EmbeddedWorkerStatus::RUNNING, version_->running_status());
+
+  // Idle delay is not set at this point. The renderer process uses the default
+  // value.
+  EXPECT_FALSE(service_worker->idle_delay().has_value());
+
+  // If OnRequestTermination() is called when DevTools is attached, then the
+  // worker's idle timeout is set to the default value forcefully because the
+  // worker needs to be running until DevTools is detached even if there's no
+  // inflight event.
+  version_->OnRequestTermination();
+  service_worker->FlushForTesting();
+  EXPECT_EQ(blink::mojom::kServiceWorkerDefaultIdleDelayInSeconds,
+            service_worker->idle_delay()->InSeconds());
 }
 
 // Test that update isn't triggered for a non-stale worker.
@@ -1222,7 +1254,7 @@ TEST_F(ServiceWorkerVersionTest,
   container_host->OnBeginNavigationCommit(
       version_->embedded_worker()->process_id(),
       /* render_frame_id = */ 1, network::CrossOriginEmbedderPolicy(),
-      std::move(reporter));
+      std::move(reporter), ukm::UkmRecorder::GetNewSourceID());
 
   // RenderProcessHost should be notified of foreground worker.
   base::RunLoop().RunUntilIdle();
@@ -1438,6 +1470,36 @@ TEST_F(ServiceWorkerVersionTest, AddMessageToConsole) {
   loop.Run();
   ASSERT_EQ(1UL, service_worker->console_messages().size());
   EXPECT_EQ(test_message, service_worker->console_messages()[0]);
+}
+
+// Test that writing metadata aborts gracefully when a remote connection to
+// the Storage Service is disconnected.
+TEST_F(ServiceWorkerVersionTest, WriteMetadata_RemoteStorageDisconnection) {
+  const std::string kMetadata("Test metadata");
+
+  net::TestCompletionCallback completion;
+  version_->script_cache_map()->WriteMetadata(
+      version_->script_url(), base::as_bytes(base::make_span(kMetadata)),
+      completion.callback());
+
+  helper_->context()->registry()->SimulateStorageRestartForTesting();
+
+  ASSERT_EQ(completion.WaitForResult(), net::ERR_FAILED);
+}
+
+// Test that writing metadata aborts gracefully when the storage is disabled.
+TEST_F(ServiceWorkerVersionTest, WriteMetadata_StorageDisabled) {
+  const std::string kMetadata("Test metadata");
+
+  helper_->context()->registry()->GetRemoteStorageControl()->Disable();
+  helper_->context()->registry()->GetRemoteStorageControl().FlushForTesting();
+
+  net::TestCompletionCallback completion;
+  version_->script_cache_map()->WriteMetadata(
+      version_->script_url(), base::as_bytes(base::make_span(kMetadata)),
+      completion.callback());
+
+  ASSERT_EQ(completion.WaitForResult(), net::ERR_FAILED);
 }
 
 class ServiceWorkerVersionTerminationOnNoControlleeTest

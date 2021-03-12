@@ -97,7 +97,6 @@ if (rtc_include_tests) {
       "../../api/units:timestamp",
       "../../api/video:builtin_video_bitrate_allocator_factory",
       "../../api/video:video_frame",
-      "../../api/video:video_frame_i420",
       "../../api/video:video_rtp_headers",
       "../../api/video_codecs:video_codecs_api",
       "../../audio",
@@ -168,6 +167,7 @@ if (rtc_include_tests) {
     testonly = true
     sources = [
       "performance_stats_unittest.cc",
+      "probing_test.cc",
       "scenario_unittest.cc",
       "stats_collection_unittest.cc",
       "video_stream_unittest.cc",

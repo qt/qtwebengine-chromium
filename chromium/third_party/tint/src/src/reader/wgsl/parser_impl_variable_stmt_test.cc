@@ -26,11 +26,18 @@ namespace {
 TEST_F(ParserImplTest, VariableStmt_VariableDecl) {
   auto* p = parser("var a : i32;");
   auto e = p->variable_stmt();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsVariableDecl());
   ASSERT_NE(e->variable(), nullptr);
   EXPECT_EQ(e->variable()->name(), "a");
+
+  ASSERT_EQ(e->source().range.begin.line, 1u);
+  ASSERT_EQ(e->source().range.begin.column, 5u);
+  ASSERT_EQ(e->source().range.end.line, 1u);
+  ASSERT_EQ(e->source().range.end.column, 6u);
 
   EXPECT_EQ(e->variable()->constructor(), nullptr);
 }
@@ -38,11 +45,18 @@ TEST_F(ParserImplTest, VariableStmt_VariableDecl) {
 TEST_F(ParserImplTest, VariableStmt_VariableDecl_WithInit) {
   auto* p = parser("var a : i32 = 1;");
   auto e = p->variable_stmt();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsVariableDecl());
   ASSERT_NE(e->variable(), nullptr);
   EXPECT_EQ(e->variable()->name(), "a");
+
+  ASSERT_EQ(e->source().range.begin.line, 1u);
+  ASSERT_EQ(e->source().range.begin.column, 5u);
+  ASSERT_EQ(e->source().range.end.line, 1u);
+  ASSERT_EQ(e->source().range.end.column, 6u);
 
   ASSERT_NE(e->variable()->constructor(), nullptr);
   EXPECT_TRUE(e->variable()->constructor()->IsConstructor());
@@ -51,56 +65,75 @@ TEST_F(ParserImplTest, VariableStmt_VariableDecl_WithInit) {
 TEST_F(ParserImplTest, VariableStmt_VariableDecl_Invalid) {
   auto* p = parser("var a : invalid;");
   auto e = p->variable_stmt();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:9: unknown type alias 'invalid'");
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:9: unknown constructed type 'invalid'");
 }
 
 TEST_F(ParserImplTest, VariableStmt_VariableDecl_ConstructorInvalid) {
   auto* p = parser("var a : i32 = if(a) {}");
   auto e = p->variable_stmt();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
   EXPECT_EQ(p->error(), "1:15: missing constructor for variable declaration");
 }
 
 TEST_F(ParserImplTest, VariableStmt_Const) {
   auto* p = parser("const a : i32 = 1");
   auto e = p->variable_stmt();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsVariableDecl());
+
+  ASSERT_EQ(e->source().range.begin.line, 1u);
+  ASSERT_EQ(e->source().range.begin.column, 7u);
+  ASSERT_EQ(e->source().range.end.line, 1u);
+  ASSERT_EQ(e->source().range.end.column, 8u);
 }
 
 TEST_F(ParserImplTest, VariableStmt_Const_InvalidVarIdent) {
   auto* p = parser("const a : invalid = 1");
   auto e = p->variable_stmt();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:11: unknown type alias 'invalid'");
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:11: unknown constructed type 'invalid'");
 }
 
 TEST_F(ParserImplTest, VariableStmt_Const_MissingEqual) {
   auto* p = parser("const a : i32 1");
   auto e = p->variable_stmt();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:15: missing = for constant declaration");
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:15: expected '=' for constant declaration");
 }
 
 TEST_F(ParserImplTest, VariableStmt_Const_MissingConstructor) {
   auto* p = parser("const a : i32 =");
   auto e = p->variable_stmt();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
   EXPECT_EQ(p->error(), "1:16: missing constructor for const declaration");
 }
 
 TEST_F(ParserImplTest, VariableStmt_Const_InvalidConstructor) {
   auto* p = parser("const a : i32 = if (a) {}");
   auto e = p->variable_stmt();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
   EXPECT_EQ(p->error(), "1:17: missing constructor for const declaration");
 }
 

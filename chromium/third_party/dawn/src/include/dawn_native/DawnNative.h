@@ -93,6 +93,9 @@ namespace dawn_native {
         Adapter(AdapterBase* impl);
         ~Adapter();
 
+        Adapter(const Adapter& other);
+        Adapter& operator=(const Adapter& other);
+
         // DEPRECATED: use GetProperties instead.
         BackendType GetBackendType() const;
         DeviceType GetDeviceType() const;
@@ -170,7 +173,7 @@ namespace dawn_native {
     };
 
     // Backend-agnostic API for dawn_native
-    DAWN_NATIVE_EXPORT DawnProcTable GetProcs();
+    DAWN_NATIVE_EXPORT const DawnProcTable& GetProcs();
 
     // Query the names of all the toggles that are enabled in device
     DAWN_NATIVE_EXPORT std::vector<const char*> GetTogglesUsed(WGPUDevice device);
@@ -193,6 +196,8 @@ namespace dawn_native {
     // Backdoor to get the order of the ProcMap for testing
     DAWN_NATIVE_EXPORT std::vector<const char*> GetProcMapNamesForTesting();
 
+    DAWN_NATIVE_EXPORT bool DeviceTick(WGPUDevice device);
+
     // ErrorInjector functions used for testing only. Defined in dawn_native/ErrorInjector.cpp
     DAWN_NATIVE_EXPORT void EnableErrorInjector();
     DAWN_NATIVE_EXPORT void DisableErrorInjector();
@@ -213,10 +218,7 @@ namespace dawn_native {
       public:
         const ExternalImageType type;
         const WGPUTextureDescriptor* cTextureDescriptor;  // Must match image creation params
-        union {
-            bool isInitialized;  // Whether the texture is initialized on import
-            bool isCleared;      // DEPRECATED: Sets whether the texture will be cleared before use
-        };
+        bool isInitialized;  // Whether the texture is initialized on import
 
       protected:
         ExternalImageDescriptor(ExternalImageType type);

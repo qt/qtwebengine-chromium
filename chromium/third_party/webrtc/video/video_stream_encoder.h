@@ -80,9 +80,6 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   // TODO(perkj): Can we remove VideoCodec.startBitrate ?
   void SetStartBitrate(int start_bitrate_bps) override;
 
-  void SetBitrateAllocationObserver(
-      VideoBitrateAllocationObserver* bitrate_observer) override;
-
   void SetFecControllerOverride(
       FecControllerOverride* fec_controller_override) override;
 
@@ -192,9 +189,8 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
   void TraceFrameDropEnd();
 
   // Returns a copy of |rate_settings| with the |bitrate| field updated using
-  // the current VideoBitrateAllocator, and notifies any listeners of the new
-  // allocation.
-  EncoderRateSettings UpdateBitrateAllocationAndNotifyObserver(
+  // the current VideoBitrateAllocator.
+  EncoderRateSettings UpdateBitrateAllocation(
       const EncoderRateSettings& rate_settings) RTC_RUN_ON(&encoder_queue_);
 
   uint32_t GetInputFramerateFps() RTC_RUN_ON(&encoder_queue_);
@@ -302,8 +298,6 @@ class VideoStreamEncoder : public VideoStreamEncoderInterface,
     kFirstFrameAfterResize  // Resize observed.
   } expect_resize_state_ RTC_GUARDED_BY(&encoder_queue_);
 
-  VideoBitrateAllocationObserver* bitrate_observer_
-      RTC_GUARDED_BY(&encoder_queue_);
   FecControllerOverride* fec_controller_override_
       RTC_GUARDED_BY(&encoder_queue_);
   absl::optional<int64_t> last_parameters_update_ms_

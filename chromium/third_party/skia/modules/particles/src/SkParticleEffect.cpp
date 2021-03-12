@@ -8,6 +8,7 @@
 #include "modules/particles/include/SkParticleEffect.h"
 
 #include "include/core/SkPaint.h"
+#include "include/private/SkTPin.h"
 #include "modules/particles/include/SkParticleBinding.h"
 #include "modules/particles/include/SkParticleDrawable.h"
 #include "modules/particles/include/SkReflected.h"
@@ -119,7 +120,7 @@ void SkParticleEffectParams::prepare(const skresources::ResourceProvider* resour
     }
 
     auto buildProgram = [this](const SkSL::String& code, Program* p) {
-        SkSL::Compiler compiler;
+        SkSL::Compiler compiler(/*caps=*/nullptr);
         SkSL::Program::Settings settings;
         settings.fRemoveDeadFunctions = false;
 

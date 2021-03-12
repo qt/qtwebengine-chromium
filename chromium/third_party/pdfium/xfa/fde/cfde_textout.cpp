@@ -20,6 +20,7 @@
 #include "core/fxge/cfx_textrenderoptions.h"
 #include "core/fxge/fx_font.h"
 #include "core/fxge/text_char_pos.h"
+#include "third_party/base/check.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/layout/cfx_txtbreak.h"
@@ -45,8 +46,8 @@ bool CFDE_TextOut::DrawString(CFX_RenderDevice* device,
                               pdfium::span<TextCharPos> pCharPos,
                               float fFontSize,
                               const CFX_Matrix& matrix) {
-  ASSERT(pFont);
-  ASSERT(!pCharPos.empty());
+  DCHECK(pFont);
+  DCHECK(!pCharPos.empty());
 
   CFX_Font* pFxFont = pFont->GetDevFont();
   if (FontStyleIsItalic(pFont->GetFontStyles()) && !pFxFont->IsItalic()) {
@@ -135,13 +136,13 @@ CFDE_TextOut::CFDE_TextOut()
 CFDE_TextOut::~CFDE_TextOut() = default;
 
 void CFDE_TextOut::SetFont(const RetainPtr<CFGAS_GEFont>& pFont) {
-  ASSERT(pFont);
+  DCHECK(pFont);
   m_pFont = pFont;
   m_pTxtBreak->SetFont(pFont);
 }
 
 void CFDE_TextOut::SetFontSize(float fFontSize) {
-  ASSERT(fFontSize > 0);
+  DCHECK(fFontSize > 0);
   m_fFontSize = fFontSize;
   m_pTxtBreak->SetFontSize(fFontSize);
 }
@@ -176,7 +177,7 @@ void CFDE_TextOut::SetAlignment(FDE_TextAlignment iAlignment) {
 }
 
 void CFDE_TextOut::SetLineSpace(float fLineSpace) {
-  ASSERT(fLineSpace > 1.0f);
+  DCHECK(fLineSpace > 1.0f);
   m_fLineSpace = fLineSpace;
 }
 
@@ -198,8 +199,8 @@ void CFDE_TextOut::CalcLogicSize(WideStringView str, CFX_RectF* pRect) {
     return;
   }
 
-  ASSERT(m_pFont);
-  ASSERT(m_fFontSize >= 1.0f);
+  DCHECK(m_pFont);
+  DCHECK(m_fFontSize >= 1.0f);
 
   if (!m_Styles.single_line_) {
     if (pRect->Width() < 1.0f)
@@ -275,8 +276,8 @@ bool CFDE_TextOut::RetrieveLineWidth(CFX_BreakType dwBreakStatus,
 void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
                                  WideStringView str,
                                  const CFX_RectF& rect) {
-  ASSERT(m_pFont);
-  ASSERT(m_fFontSize >= 1.0f);
+  DCHECK(m_pFont);
+  DCHECK(m_fFontSize >= 1.0f);
 
   if (str.IsEmpty())
     return;
@@ -316,7 +317,7 @@ void CFDE_TextOut::DrawLogicText(CFX_RenderDevice* device,
 }
 
 void CFDE_TextOut::LoadText(const WideString& str, const CFX_RectF& rect) {
-  ASSERT(!str.IsEmpty());
+  DCHECK(!str.IsEmpty());
 
   m_wsText = str;
 

@@ -93,8 +93,14 @@ export function defineCommonExtensionSymbols(apiPrivate) {
     RemoveRawModule: 'removeRawModule',
     SourceLocationToRawLocation: 'sourceLocationToRawLocation',
     RawLocationToSourceLocation: 'rawLocationToSourceLocation',
+    GetScopeInfo: 'getScopeInfo',
     ListVariablesInScope: 'listVariablesInScope',
-    EvaluateVariable: 'evaluateVariable'
+    EvaluateVariable: 'evaluateVariable',
+    GetTypeInfo: 'getTypeInfo',
+    GetFormatter: 'getFormatter',
+    GetFunctionInfo: 'getFunctionInfo',
+    GetInlinedFunctionRanges: 'getInlinedFunctionRanges',
+    GetInlinedCalleesRanges: 'getInlinedCalleesRanges'
   };
 }
 
@@ -399,10 +405,22 @@ self.injectedExtensionAPI = function(
             return plugin.sourceLocationToRawLocation(parameters.sourceLocation);
           case languageExtensionPluginCommands.RawLocationToSourceLocation:
             return plugin.rawLocationToSourceLocation(parameters.rawLocation);
+          case languageExtensionPluginCommands.GetScopeInfo:
+            return plugin.getScopeInfo(parameters.type);
           case languageExtensionPluginCommands.ListVariablesInScope:
             return plugin.listVariablesInScope(parameters.rawLocation);
           case languageExtensionPluginCommands.EvaluateVariable:
             return plugin.evaluateVariable(parameters.name, parameters.location);
+          case languageExtensionPluginCommands.GetTypeInfo:
+            return plugin.getTypeInfo(parameters.expression, parameters.context);
+          case languageExtensionPluginCommands.GetFormatter:
+            return plugin.getFormatter(parameters.expressionOrField, parameters.context);
+          case languageExtensionPluginCommands.GetFunctionInfo:
+            return plugin.getFunctionInfo(parameters.rawLocation);
+          case languageExtensionPluginCommands.GetInlinedFunctionRanges:
+            return plugin.getInlinedFunctionRanges(parameters.rawLocation);
+          case languageExtensionPluginCommands.GetInlinedCalleesRanges:
+            return plugin.getInlinedCalleesRanges(parameters.rawLocation);
         }
         throw new Error(`Unknown language plugin method ${method}`);
       }

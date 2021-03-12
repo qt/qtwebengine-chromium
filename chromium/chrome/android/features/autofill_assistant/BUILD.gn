@@ -6,6 +6,7 @@ import("//build/config/android/config.gni")
 import("//build/config/android/rules.gni")
 import("//build/config/locales.gni")
 import("//chrome/common/features.gni")
+import("//tools/grit/grit_rule.gni")
 
 # The animated_poodle_java target is overridden downstream and used
 # instead of this one if the enable_chrome_android_internal flag is
@@ -34,6 +35,7 @@ android_library("java") {
     ":java_resources",
     "//base:base_java",
     "//base:jni_java",
+    "//chrome/android:base_module_java",
     "//chrome/android:chrome_java",
     "//chrome/browser/browser_controls/android:java",
     "//chrome/browser/feedback/android:java",
@@ -49,6 +51,8 @@ android_library("java") {
     "//components/browser_ui/android/bottomsheet:java",
     "//components/browser_ui/modaldialog/android:java",
     "//components/browser_ui/widget/android:java",
+    "//components/embedder_support/android:util_java",
+    "//components/favicon/android:java",
     "//components/payments/content/android:java",
     "//components/policy/android:policy_java",
     "//components/signin/core/browser/android:java",
@@ -91,7 +95,6 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/autofill_assistant/AssistantInfoPopup.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AssistantKeyboardCoordinator.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AssistantModel.java",
-    "java/src/org/chromium/chrome/browser/autofill_assistant/AssistantOnboardingCoordinator.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AssistantPeekHeightCoordinator.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AssistantRootViewContainer.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AssistantSnackbar.java",
@@ -105,8 +108,14 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantModuleEntryImpl.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantServiceInjector.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantUiController.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/BaseOnboardingCoordinator.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/BottomSheetOnboardingCoordinator.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/BottomSheetUtils.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/DialogOnboardingCoordinator.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/FeedbackContext.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/LayoutUtils.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/OnboardingCoordinatorFactory.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/ScrollToHideGestureListener.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/SizeListenableLinearLayout.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/carousel/AssistantActionsCarouselCoordinator.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/carousel/AssistantActionsDecoration.java",
@@ -156,6 +165,8 @@ android_library("java") {
     "java/src/org/chromium/chrome/browser/autofill_assistant/overlay/AssistantOverlayEventFilter.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/overlay/AssistantOverlayImage.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/overlay/AssistantOverlayModel.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/trigger_scripts/AssistantTriggerScript.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/trigger_scripts/AssistantTriggerScriptBridge.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/user_data/AssistantChoiceList.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/user_data/AssistantCollectUserDataBinder.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/user_data/AssistantCollectUserDataCoordinator.java",
@@ -195,6 +206,8 @@ generate_jni("jni_headers") {
     "java/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantDirectActionImpl.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantLiteService.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantUiController.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/BaseOnboardingCoordinator.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/carousel/AssistantChip.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/details/AssistantDetails.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/details/AssistantDetailsModel.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/form/AssistantFormDelegate.java",
@@ -215,6 +228,7 @@ generate_jni("jni_headers") {
     "java/src/org/chromium/chrome/browser/autofill_assistant/infobox/AssistantInfoBoxModel.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/overlay/AssistantOverlayDelegate.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/overlay/AssistantOverlayModel.java",
+    "java/src/org/chromium/chrome/browser/autofill_assistant/trigger_scripts/AssistantTriggerScriptBridge.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/user_data/AssistantCollectUserDataModel.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/user_data/AssistantCollectUserDataNativeDelegate.java",
     "java/src/org/chromium/chrome/browser/autofill_assistant/user_data/AssistantDateTime.java",
@@ -223,7 +237,10 @@ generate_jni("jni_headers") {
 
 generate_jni("test_support_jni_headers") {
   testonly = true
-  sources = [ "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTestService.java" ]
+  sources = [
+    "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTestService.java",
+    "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTestServiceRequestSender.java",
+  ]
 }
 
 android_library("autofill_assistant_java_test_support") {
@@ -233,12 +250,14 @@ android_library("autofill_assistant_java_test_support") {
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantService.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTestScript.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTestService.java",
+    "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTestServiceRequestSender.java",
   ]
 
   deps = [
     ":java",
     ":test_support_jni_headers",
     "//base:base_java",
+    "//base:base_java_test_support",
     "//base:jni_java",
     "//components/autofill_assistant/browser:proto_java",
     "//content/public/test/android:content_java_test_support",
@@ -253,7 +272,6 @@ android_library("test_java") {
   testonly = true
 
   sources = [
-    "javatests/src/org/chromium/chrome/browser/autofill_assistant/AssistantOnboardingCoordinatorTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantAccessibilityIntegrationTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantActionsCarouselUiTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantAutostartTest.java",
@@ -265,10 +283,12 @@ android_library("test_java") {
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantCollectUserDataUiTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantDetailsUiTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantDirectActionHandlerTest.java",
+    "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantFacadeTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantFormActionTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantGenericUiTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantHeaderUiTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantInfoBoxUiTest.java",
+    "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantInputActionIntegrationTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantKeyboardIntegrationTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantNavigationIntegrationTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantOverlayIntegrationTest.java",
@@ -278,8 +298,10 @@ android_library("test_java") {
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantProgressBarIntegrationTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantPromptNavigationIntegrationTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTextUtilsTest.java",
+    "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantTriggerScriptIntegrationTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantUiTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/AutofillAssistantUiTestUtil.java",
+    "javatests/src/org/chromium/chrome/browser/autofill_assistant/BottomSheetOnboardingCoordinatorTest.java",
     "javatests/src/org/chromium/chrome/browser/autofill_assistant/TestingAutofillAssistantModuleEntryProvider.java",
   ]
 
@@ -346,7 +368,7 @@ android_resources("java_resources") {
     "java/res/drawable/ic_fastfood_black_24dp.xml",
     "java/res/drawable/ic_grocery_black_24dp.xml",
     "java/res/drawable/ic_local_dining_black_24dp.xml",
-    "java/res/drawable/ic_logo_assistant_24dp.xml",
+    "java/res/drawable/ic_overflow_black_24dp.xml",
     "java/res/drawable/ic_payment_black_24dp.xml",
     "java/res/drawable/ic_refresh_black_24dp.xml",
     "java/res/drawable/ic_remove_outline_white_24dp.xml",
@@ -356,6 +378,7 @@ android_resources("java_resources") {
     "java/res/drawable/ic_vpn_key_black_24dp.xml",
     "java/res/layout/autofill_assistant_address_full.xml",
     "java/res/layout/autofill_assistant_address_summary.xml",
+    "java/res/layout/autofill_assistant_base_onboarding.xml",
     "java/res/layout/autofill_assistant_bottom_sheet_content.xml",
     "java/res/layout/autofill_assistant_bottom_sheet_toolbar.xml",
     "java/res/layout/autofill_assistant_button_assistive.xml",
@@ -374,7 +397,8 @@ android_resources("java_resources") {
     "java/res/layout/autofill_assistant_header.xml",
     "java/res/layout/autofill_assistant_info_box.xml",
     "java/res/layout/autofill_assistant_login.xml",
-    "java/res/layout/autofill_assistant_onboarding.xml",
+    "java/res/layout/autofill_assistant_onboarding_no_button.xml",
+    "java/res/layout/autofill_assistant_onboarding_yes_button.xml",
     "java/res/layout/autofill_assistant_payment_method_full.xml",
     "java/res/layout/autofill_assistant_payment_method_summary.xml",
     "java/res/layout/autofill_assistant_payment_request_section_divider.xml",

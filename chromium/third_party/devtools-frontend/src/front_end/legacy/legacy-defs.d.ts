@@ -11,6 +11,10 @@ interface Window {
   UI: {themeSupport: unknown}
 }
 
+declare class DOM {
+  constructor(doc: Document);
+}
+
 interface Array<T> {
   peekLast(): T | undefined;
   intersectOrdered(array: T[], comparator: (a: T, b: T) => number): T[];
@@ -20,6 +24,14 @@ interface Array<T> {
   sortRange<T>(
       comparator: (a: T, b: T) => number, leftBound: number, rightBound: number, sortWindowLeft: number,
       sortWindowRight: number): T[];
+}
+
+interface Uint8Array {
+  upperBound(value: number, comparator?: {(a: number, b: number): number}, left?: number, right?: number): number;
+}
+
+interface Uint32Array {
+  upperBound(value: number, comparator?: {(a: number, b: number): number}, left?: number, right?: number): number;
 }
 
 // Type alias for the Closure-supported ITemplateArray which is equivalent
@@ -39,6 +51,10 @@ interface String {
   trimMiddle(maxLength: number): string;
 }
 
+interface RegExp {
+  __fromRegExpQuery: boolean;
+}
+
 interface NumberConstructor {
   withThousandsSeparator(num: number): string;
   toFixedIfFloating(value: string): string;
@@ -51,13 +67,14 @@ interface Int32Array {
   lowerBound(object: number, comparator?: {(a: number, b: number): number}, left?: number, right?: number): number;
 }
 
-declare let ls: (template: ITemplateArray, ...args: any[]) => string;
+declare let ls: (template: ITemplateArray|string, ...args: any[]) => string;
 
 declare class AnchorBox {
   x: number;
   y: number;
   width: number;
   height: number;
+  constructor(x: number, y: number, width: number, height: number);
   contains(x: number, y: number): boolean;
   relativeToElement(element: Element): AnchorBox;
 }
@@ -111,22 +128,22 @@ declare namespace Adb {
 }
 
 interface Document {
+  createElementWithClass(elementName: string, className?: string, customElementType?: string): Element;
   deepActiveElement(): Element|null;
 }
 
 interface HTMLElement {
   createChild(tagName: string, className?: string, content?: string): HTMLElement;
-  createSVGChild(childType: string, className?: string): HTMLElement;
 }
 
 interface Element {
   boxInWindow(targetWindow?: Window): AnchorBox;
   createChild(tagName: string, className?: string, content?: string): Element;
-  createTextChild(text: string): Text;
   hasFocus(): boolean;
   positionAt(x: (number|undefined), y: (number|undefined), relativeTo?: Element): void;
   removeChildren(): void;
   scrollIntoViewIfNeeded(center?: boolean): void;
+  selectionLeftOffset(): (number|null);
   totalOffsetTop(): number;
   totalOffsetLeft(): number;
 }
@@ -137,8 +154,8 @@ interface DocumentFragment {
 
 interface Event {
   consume(preventDefault?: boolean): void;
-  deepElementFromPoint(): Node|null;
   handled: boolean|undefined;
+  isMetaOrCtrlForTest: boolean;
 }
 
 interface Node {
@@ -148,6 +165,7 @@ interface Node {
   hasSameShadowRoot(other: Node): boolean;
   hasSelection(): boolean;
   isAncestor(node: Node|null): boolean;
+  isDescendant(node: Node|null): boolean;
   isSelfOrAncestor(node: Node|null): boolean;
   isSelfOrDescendant(node: Node|null): boolean;
   parentElementOrShadowHost(): Element|null;
@@ -156,13 +174,16 @@ interface Node {
   traverseNextNode(stayWithin?: Node): Node|null;
   deepTextContent(): string
   window(): Window;
+  childTextNodes(): Node[];
 }
 
+declare function base64ToSize(content: string|null): number;
 declare function isEnterKey(event: Event): boolean;
 declare function isEnterOrSpaceKey(event: Event): boolean;
 declare function isEscKey(event: Event): boolean;
 declare function createPlainTextSearchRegex(query: string, flags?: string): RegExp;
 declare function onInvokeElement(element: Element, callback: (event: Event) => void): void;
+declare function setImmediate(callback: (...args: any) => any): number;
 
 interface ServicePort {
   setHandlers(messageHandler: (arg: string) => void, closeHandler: () => void): void;

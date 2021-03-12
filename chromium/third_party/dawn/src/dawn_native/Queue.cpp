@@ -17,15 +17,18 @@
 #include "common/Constants.h"
 #include "dawn_native/Buffer.h"
 #include "dawn_native/CommandBuffer.h"
+#include "dawn_native/CommandEncoder.h"
 #include "dawn_native/CommandValidation.h"
 #include "dawn_native/Commands.h"
+#include "dawn_native/CopyTextureForBrowserHelper.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/DynamicUploader.h"
 #include "dawn_native/ErrorScope.h"
 #include "dawn_native/ErrorScopeTracker.h"
 #include "dawn_native/Fence.h"
-#include "dawn_native/FenceSignalTracker.h"
 #include "dawn_native/QuerySet.h"
+#include "dawn_native/RenderPassEncoder.h"
+#include "dawn_native/RenderPipeline.h"
 #include "dawn_native/Texture.h"
 #include "dawn_platform/DawnPlatform.h"
 #include "dawn_platform/tracing/TraceEvent.h"
@@ -33,11 +36,13 @@
 #include <cstring>
 
 namespace dawn_native {
+
     namespace {
+
         void CopyTextureData(uint8_t* dstPointer,
                              const uint8_t* srcPointer,
                              uint32_t depth,
-                             uint32_t rowsPerImageInBlock,
+                             uint32_t rowsPerImage,
                              uint64_t imageAdditionalStride,
                              uint32_t actualBytesPerRow,
                              uint32_t dstBytesPerRow,
@@ -48,7 +53,7 @@ namespace dawn_native {
 
             if (!copyWholeLayer) {  // copy row by row
                 for (uint32_t d = 0; d < depth; ++d) {
-                    for (uint32_t h = 0; h < rowsPerImageInBlock; ++h) {
+                    for (uint32_t h = 0; h < rowsPerImage; ++h) {
                         memcpy(dstPointer, srcPointer, actualBytesPerRow);
                         dstPointer += dstBytesPerRow;
                         srcPointer += srcBytesPerRow;
@@ -56,7 +61,7 @@ namespace dawn_native {
                     srcPointer += imageAdditionalStride;
                 }
             } else {
-                uint64_t layerSize = uint64_t(rowsPerImageInBlock) * actualBytesPerRow;
+                uint64_t layerSize = uint64_t(rowsPerImage) * actualBytesPerRow;
                 if (!copyWholeData) {  // copy layer by layer
                     for (uint32_t d = 0; d < depth; ++d) {
                         memcpy(dstPointer, srcPointer, layerSize);
@@ -87,11 +92,11 @@ namespace dawn_native {
             uint64_t optimalOffsetAlignment =
                 device->GetOptimalBufferToTextureCopyOffsetAlignment();
             ASSERT(IsPowerOfTwo(optimalOffsetAlignment));
-            ASSERT(IsPowerOfTwo(blockInfo.blockByteSize));
+            ASSERT(IsPowerOfTwo(blockInfo.byteSize));
             // We need the offset to be aligned to both optimalOffsetAlignment and blockByteSize,
             // since both of them are powers of two, we only need to align to the max value.
             uint64_t offsetAlignment =
-                std::max(optimalOffsetAlignment, uint64_t(blockInfo.blockByteSize));
+                std::max(optimalOffsetAlignment, uint64_t(blockInfo.byteSize));
 
             UploadHandle uploadHandle;
             DAWN_TRY_ASSIGN(uploadHandle, device->GetDynamicUploader()->Allocate(
@@ -103,19 +108,18 @@ namespace dawn_native {
             const uint8_t* srcPointer = static_cast<const uint8_t*>(data);
             srcPointer += dataLayout.offset;
 
-            uint32_t alignedRowsPerImageInBlock = alignedRowsPerImage / blockInfo.blockHeight;
-            uint32_t dataRowsPerImageInBlock = dataLayout.rowsPerImage / blockInfo.blockHeight;
-            if (dataRowsPerImageInBlock == 0) {
-                dataRowsPerImageInBlock = writeSizePixel.height / blockInfo.blockHeight;
+            uint32_t dataRowsPerImage = dataLayout.rowsPerImage;
+            if (dataRowsPerImage == 0) {
+                dataRowsPerImage = writeSizePixel.height / blockInfo.height;
             }
 
-            ASSERT(dataRowsPerImageInBlock >= alignedRowsPerImageInBlock);
+            ASSERT(dataRowsPerImage >= alignedRowsPerImage);
             uint64_t imageAdditionalStride =
-                dataLayout.bytesPerRow * (dataRowsPerImageInBlock - alignedRowsPerImageInBlock);
+                dataLayout.bytesPerRow * (dataRowsPerImage - alignedRowsPerImage);
 
-            CopyTextureData(dstPointer, srcPointer, writeSizePixel.depth,
-                            alignedRowsPerImageInBlock, imageAdditionalStride, alignedBytesPerRow,
-                            optimallyAlignedBytesPerRow, dataLayout.bytesPerRow);
+            CopyTextureData(dstPointer, srcPointer, writeSizePixel.depth, alignedRowsPerImage,
+                            imageAdditionalStride, alignedBytesPerRow, optimallyAlignedBytesPerRow,
+                            dataLayout.bytesPerRow);
 
             return uploadHandle;
         }
@@ -131,15 +135,21 @@ namespace dawn_native {
                 UNREACHABLE();
             }
         };
-
     }  // namespace
 
     // QueueBase
+
+    QueueBase::TaskInFlight::~TaskInFlight() {
+    }
 
     QueueBase::QueueBase(DeviceBase* device) : ObjectBase(device) {
     }
 
     QueueBase::QueueBase(DeviceBase* device, ObjectBase::ErrorTag tag) : ObjectBase(device, tag) {
+    }
+
+    QueueBase::~QueueBase() {
+        ASSERT(mTasksInFlight.Empty());
     }
 
     // static
@@ -165,9 +175,21 @@ namespace dawn_native {
         ASSERT(!IsError());
 
         fence->SetSignaledValue(signalValue);
-        device->GetFenceSignalTracker()->UpdateFenceOnComplete(fence, signalValue);
+        fence->UpdateFenceOnComplete(fence, signalValue);
         device->GetErrorScopeTracker()->TrackUntilLastSubmitComplete(
             device->GetCurrentErrorScope());
+    }
+
+    void QueueBase::TrackTask(std::unique_ptr<TaskInFlight> task, ExecutionSerial serial) {
+        mTasksInFlight.Enqueue(std::move(task), serial);
+        GetDevice()->AddFutureSerial(serial);
+    }
+
+    void QueueBase::Tick(ExecutionSerial finishedSerial) {
+        for (auto& task : mTasksInFlight.IterateUpTo(finishedSerial)) {
+            task->Finish();
+        }
+        mTasksInFlight.ClearUpTo(finishedSerial);
     }
 
     Fence* QueueBase::CreateFence(const FenceDescriptor* descriptor) {
@@ -215,6 +237,8 @@ namespace dawn_native {
 
         memcpy(uploadHandle.mappedBuffer, data, size);
 
+        device->AddFutureSerial(device->GetPendingCommandSerial());
+
         return device->CopyFromStagingToBuffer(uploadHandle.stagingBuffer, uploadHandle.startOffset,
                                                buffer, bufferOffset, size);
     }
@@ -247,14 +271,15 @@ namespace dawn_native {
                                            const TextureDataLayout& dataLayout,
                                            const Extent3D& writeSizePixel) {
         const TexelBlockInfo& blockInfo =
-            destination.texture->GetFormat().GetTexelBlockInfo(destination.aspect);
+            destination.texture->GetFormat().GetAspectInfo(destination.aspect).block;
 
         // We are only copying the part of the data that will appear in the texture.
         // Note that validating texture copy range ensures that writeSizePixel->width and
         // writeSizePixel->height are multiples of blockWidth and blockHeight respectively.
-        uint32_t alignedBytesPerRow =
-            (writeSizePixel.width) / blockInfo.blockWidth * blockInfo.blockByteSize;
-        uint32_t alignedRowsPerImage = writeSizePixel.height;
+        ASSERT(writeSizePixel.width % blockInfo.width == 0);
+        ASSERT(writeSizePixel.height % blockInfo.height == 0);
+        uint32_t alignedBytesPerRow = writeSizePixel.width / blockInfo.width * blockInfo.byteSize;
+        uint32_t alignedRowsPerImage = writeSizePixel.height / blockInfo.height;
 
         uint32_t optimalBytesPerRowAlignment = GetDevice()->GetOptimalBytesPerRowAlignment();
         uint32_t optimallyAlignedBytesPerRow =
@@ -277,9 +302,30 @@ namespace dawn_native {
         textureCopy.origin = destination.origin;
         textureCopy.aspect = ConvertAspect(destination.texture->GetFormat(), destination.aspect);
 
-        return GetDevice()->CopyFromStagingToTexture(uploadHandle.stagingBuffer, passDataLayout,
-                                                     &textureCopy, writeSizePixel);
+        DeviceBase* device = GetDevice();
+
+        device->AddFutureSerial(device->GetPendingCommandSerial());
+
+        return device->CopyFromStagingToTexture(uploadHandle.stagingBuffer, passDataLayout,
+                                                &textureCopy, writeSizePixel);
     }
+
+    void QueueBase::CopyTextureForBrowser(const TextureCopyView* source,
+                                          const TextureCopyView* destination,
+                                          const Extent3D* copySize) {
+        GetDevice()->ConsumedError(CopyTextureForBrowserInternal(source, destination, copySize));
+    }
+
+    MaybeError QueueBase::CopyTextureForBrowserInternal(const TextureCopyView* source,
+                                                        const TextureCopyView* destination,
+                                                        const Extent3D* copySize) {
+        if (GetDevice()->IsValidationEnabled()) {
+            DAWN_TRY(ValidateCopyTextureForBrowser(GetDevice(), source, destination, copySize));
+        }
+
+        return DoCopyTextureForBrowser(GetDevice(), source, destination, copySize);
+    }
+
     MaybeError QueueBase::ValidateSubmit(uint32_t commandCount,
                                          CommandBufferBase* const* commands) const {
         TRACE_EVENT0(GetDevice()->GetPlatform(), Validation, "Queue::ValidateSubmit");
@@ -389,15 +435,19 @@ namespace dawn_native {
             return DAWN_VALIDATION_ERROR("The sample count of textures must be 1");
         }
 
-        DAWN_TRY(ValidateBufferToTextureCopyRestrictions(*destination));
+        DAWN_TRY(ValidateLinearToDepthStencilCopyRestrictions(*destination));
         // We validate texture copy range before validating linear texture data,
         // because in the latter we divide copyExtent.width by blockWidth and
         // copyExtent.height by blockHeight while the divisibility conditions are
         // checked in validating texture copy range.
         DAWN_TRY(ValidateTextureCopyRange(*destination, *writeSize));
-        DAWN_TRY(ValidateLinearTextureData(
-            *dataLayout, dataSize,
-            destination->texture->GetFormat().GetTexelBlockInfo(destination->aspect), *writeSize));
+
+        const TexelBlockInfo& blockInfo =
+            destination->texture->GetFormat().GetAspectInfo(destination->aspect).block;
+
+        TextureDataLayout layout = FixUpDeprecatedTextureDataLayoutOptions(GetDevice(), *dataLayout,
+                                                                           blockInfo, *writeSize);
+        DAWN_TRY(ValidateLinearTextureData(layout, dataSize, blockInfo, *writeSize));
 
         DAWN_TRY(destination->texture->ValidateCanUseInSubmitNow());
 
@@ -426,38 +476,4 @@ namespace dawn_native {
             device->GetCurrentErrorScope());
     }
 
-    void CopyTextureData(uint8_t* dstPointer,
-                         const uint8_t* srcPointer,
-                         uint32_t depth,
-                         uint32_t rowsPerImageInBlock,
-                         uint64_t imageAdditionalStride,
-                         uint32_t actualBytesPerRow,
-                         uint32_t dstBytesPerRow,
-                         uint32_t srcBytesPerRow) {
-        bool copyWholeLayer =
-            actualBytesPerRow == dstBytesPerRow && dstBytesPerRow == srcBytesPerRow;
-        bool copyWholeData = copyWholeLayer && imageAdditionalStride == 0;
-
-        if (!copyWholeLayer) {  // copy row by row
-            for (uint32_t d = 0; d < depth; ++d) {
-                for (uint32_t h = 0; h < rowsPerImageInBlock; ++h) {
-                    memcpy(dstPointer, srcPointer, actualBytesPerRow);
-                    dstPointer += dstBytesPerRow;
-                    srcPointer += srcBytesPerRow;
-                }
-                srcPointer += imageAdditionalStride;
-            }
-        } else {
-            uint64_t layerSize = uint64_t(rowsPerImageInBlock) * actualBytesPerRow;
-            if (!copyWholeData) {  // copy layer by layer
-                for (uint32_t d = 0; d < depth; ++d) {
-                    memcpy(dstPointer, srcPointer, layerSize);
-                    dstPointer += layerSize;
-                    srcPointer += layerSize + imageAdditionalStride;
-                }
-            } else {  // do a single copy
-                memcpy(dstPointer, srcPointer, layerSize * depth);
-            }
-        }
-    }
 }  // namespace dawn_native

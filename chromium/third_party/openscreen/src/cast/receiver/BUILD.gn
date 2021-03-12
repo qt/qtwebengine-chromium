@@ -28,6 +28,24 @@ source_set("channel") {
   ]
 }
 
+source_set("agent") {
+  sources = [
+    "application_agent.cc",
+    "application_agent.h",
+  ]
+
+  public_deps = [
+    "../../platform",
+    "../common:channel",
+    "../common:public",
+  ]
+
+  deps = [
+    ":channel",
+    "../../util",
+  ]
+}
+
 source_set("test_helpers") {
   testonly = true
   sources = [
@@ -48,9 +66,13 @@ source_set("test_helpers") {
 
 source_set("unittests") {
   testonly = true
-  sources = [ "channel/device_auth_namespace_handler_unittest.cc" ]
+  sources = [
+    "application_agent_unittest.cc",
+    "channel/device_auth_namespace_handler_unittest.cc",
+  ]
 
   deps = [
+    ":agent",
     ":channel",
     ":test_helpers",
     "../../platform:test",

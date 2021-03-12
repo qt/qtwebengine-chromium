@@ -12,13 +12,13 @@
 #include "components/error_page/common/error.h"
 #include "components/grit/components_scaled_resources.h"
 #include "components/js_injection/renderer/js_communication.h"
+#include "components/no_state_prefetch/common/prerender_types.mojom.h"
+#include "components/no_state_prefetch/common/prerender_url_loader_throttle.h"
+#include "components/no_state_prefetch/renderer/prerender_helper.h"
+#include "components/no_state_prefetch/renderer/prerender_render_frame_observer.h"
+#include "components/no_state_prefetch/renderer/prerender_utils.h"
+#include "components/no_state_prefetch/renderer/prerenderer_client.h"
 #include "components/page_load_metrics/renderer/metrics_render_frame_observer.h"
-#include "components/prerender/common/prerender_types.mojom.h"
-#include "components/prerender/common/prerender_url_loader_throttle.h"
-#include "components/prerender/renderer/prerender_helper.h"
-#include "components/prerender/renderer/prerender_render_frame_observer.h"
-#include "components/prerender/renderer/prerender_utils.h"
-#include "components/prerender/renderer/prerenderer_client.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
@@ -38,6 +38,8 @@
 #include "content/public/renderer/render_thread.h"
 #include "services/service_manager/public/cpp/local_interface_provider.h"
 #include "third_party/blink/public/platform/web_runtime_features.h"
+#include "third_party/blink/public/platform/web_string.h"
+#include "third_party/blink/public/web/web_security_policy.h"
 #endif
 
 namespace weblayer {
@@ -77,6 +79,10 @@ void ContentRendererClientImpl::RenderThreadStarted() {
     local_interface_provider_ = std::make_unique<SpellcheckInterfaceProvider>();
     spellcheck_ = std::make_unique<SpellCheck>(local_interface_provider_.get());
   }
+  // TODO(sky): refactor. This comes from chrome/common/url_constants.cc's
+  // kAndroidAppScheme.
+  blink::WebSecurityPolicy::RegisterURLSchemeAsAllowedForReferrer(
+      blink::WebString::FromUTF8("android-app"));
 #endif
 
   content::RenderThread* thread = content::RenderThread::Get();
@@ -144,10 +150,6 @@ SkBitmap* ContentRendererClientImpl::GetSadWebViewBitmap() {
   return const_cast<SkBitmap*>(ui::ResourceBundle::GetSharedInstance()
                                    .GetImageNamed(IDR_SAD_WEBVIEW)
                                    .ToSkBitmap());
-}
-
-bool ContentRendererClientImpl::HasErrorPage(int http_status_code) {
-  return http_status_code >= 400;
 }
 
 void ContentRendererClientImpl::PrepareErrorPage(

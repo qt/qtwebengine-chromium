@@ -687,6 +687,10 @@ class MultiGeneratorFromDawnJSON(Generator):
             renders.append(
                 FileRender('dawn_proc.c', 'src/dawn/dawn_proc.c',
                            [base_params, api_params]))
+            renders.append(
+                FileRender('dawn_thread_dispatch_proc.cpp',
+                           'src/dawn/dawn_thread_dispatch_proc.cpp',
+                           [base_params, api_params]))
 
         if 'dawncpp' in targets:
             renders.append(
@@ -758,6 +762,9 @@ class MultiGeneratorFromDawnJSON(Generator):
                         lambda arg: annotated(as_wireType(arg.type), arg),
                 }, additional_params
             ]
+            renders.append(
+                FileRender('dawn_wire/ObjectType.h',
+                           'src/dawn_wire/ObjectType_autogen.h', wire_params))
             renders.append(
                 FileRender('dawn_wire/WireCmd.h',
                            'src/dawn_wire/WireCmd_autogen.h', wire_params))

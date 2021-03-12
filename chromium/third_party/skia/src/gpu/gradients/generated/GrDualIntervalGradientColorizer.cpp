@@ -47,7 +47,9 @@ public:
                                                         kHalf_GrSLType, "threshold");
         fragBuilder->codeAppendf(
                 R"SkSL(half t = half(%s.x);
-float4 scale, bias;
+float4 scale;
+float4 bias;
+
 if (t < %s) {
     scale = %s;
     bias = %s;
@@ -55,13 +57,13 @@ if (t < %s) {
     scale = %s;
     bias = %s;
 }
-%s = half4(float(t) * scale + bias);
+return half4(float(t) * scale + bias);
 )SkSL",
                 args.fSampleCoord, args.fUniformHandler->getUniformCStr(thresholdVar),
                 args.fUniformHandler->getUniformCStr(scale01Var),
                 args.fUniformHandler->getUniformCStr(bias01Var),
                 args.fUniformHandler->getUniformCStr(scale23Var),
-                args.fUniformHandler->getUniformCStr(bias23Var), args.fOutputColor);
+                args.fUniformHandler->getUniformCStr(bias23Var));
     }
 
 private:
@@ -123,7 +125,7 @@ bool GrDualIntervalGradientColorizer::onIsEqual(const GrFragmentProcessor& other
     if (threshold != that.threshold) return false;
     return true;
 }
-bool GrDualIntervalGradientColorizer::usesExplicitReturn() const { return false; }
+bool GrDualIntervalGradientColorizer::usesExplicitReturn() const { return true; }
 GrDualIntervalGradientColorizer::GrDualIntervalGradientColorizer(
         const GrDualIntervalGradientColorizer& src)
         : INHERITED(kGrDualIntervalGradientColorizer_ClassID, src.optimizationFlags())

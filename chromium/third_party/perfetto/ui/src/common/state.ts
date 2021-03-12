@@ -51,7 +51,7 @@ export interface Area {
 
 export const MAX_TIME = 180;
 
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 
 export const SCROLLING_TRACK_GROUP = 'ScrollingTracks';
 
@@ -71,6 +71,7 @@ export interface CallsiteInfo {
   selfSize: number;
   mapping: string;
   merged: boolean;
+  highlighted: boolean;
 }
 
 export interface TraceFileSource {
@@ -335,7 +336,7 @@ export declare type RecordMode =
     'STOP_WHEN_FULL' | 'RING_BUFFER' | 'LONG_TRACE';
 
 // 'Q','P','O' for Android, 'L' for Linux, 'C' for Chrome.
-export declare type TargetOs = 'Q' | 'P' | 'O' | 'C' | 'L';
+export declare type TargetOs = 'Q' | 'P' | 'O' | 'C' | 'L' | 'CrOS';
 
 export function isAndroidP(target: RecordingTarget) {
   return target.os === 'P';
@@ -346,7 +347,11 @@ export function isAndroidTarget(target: RecordingTarget) {
 }
 
 export function isChromeTarget(target: RecordingTarget) {
-  return target.os === 'C';
+  return ['C', 'CrOS'].includes(target.os);
+}
+
+export function isCrOSTarget(target: RecordingTarget) {
+  return target.os === 'CrOS';
 }
 
 export function isLinuxTarget(target: RecordingTarget) {
@@ -494,6 +499,7 @@ export function getDefaultRecordingTargets(): RecordingTarget[] {
     {os: 'P', name: 'Android P'},
     {os: 'O', name: 'Android O-'},
     {os: 'C', name: 'Chrome'},
+    {os: 'CrOS', name: 'Chrome OS (system trace)'},
     {os: 'L', name: 'Linux desktop'}
   ];
 }

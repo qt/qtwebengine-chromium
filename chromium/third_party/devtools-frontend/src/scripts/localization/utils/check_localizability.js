@@ -179,7 +179,7 @@ function analyzeTaggedTemplateNode(node, filePath, code) {
 
 function analyzeGetLocalizedStringNode(node, filePath) {
   // For example,
-  // node: i18n.i18n.getLocalizedString(str_, UIStrings.url)
+  // node: i18n.getFormatLocalizedString(str_, UIStrings.url)
   // firstArg : str_
   // secondArg : UIStrings.url
   if (!node.arguments || node.arguments.length < 2) {
@@ -192,13 +192,16 @@ function analyzeGetLocalizedStringNode(node, filePath) {
     addError(`${localizationUtils.getRelativeFilePathFromSrc(filePath)}${
         localizationUtils.getLocationMessage(node.loc)}: first argument should be 'str_'`);
   }
-  const secondArg = node.arguments[1];
-  const isCallingUIStringsObject = (secondArg.object && secondArg.object.name === 'UIStrings');
-  const isPropertyAnIdentifier = (secondArg.property && secondArg.property.type === espreeTypes.IDENTIFIER);
-  if (secondArg.type !== espreeTypes.MEMBER_EXPR || !isCallingUIStringsObject || !isPropertyAnIdentifier) {
+}
+
+function analyzeI18nStringNode(node, filePath) {
+  // For example,
+  // node: i18nString(UIStrings.url)
+  // firstArg : UIStrings.url
+  if ((!node.arguments || node.arguments.length < 1) && !(node.id && node.id.name === 'i18nString')) {
     addError(`${localizationUtils.getRelativeFilePathFromSrc(filePath)}${
-        localizationUtils.getLocationMessage(
-            node.loc)}: second argument should reference an identifier in UIStrings object`);
+        localizationUtils.getLocationMessage(node.loc)}: i18nString call should have one argument`);
+    return;
   }
 }
 
@@ -238,6 +241,7 @@ function auditGrdpFile(filePath, fileContent) {
 }
 
 module.exports = {
+  analyzeI18nStringNode,
   analyzeCommonUIStringNode,
   analyzeGetLocalizedStringNode,
   analyzeTaggedTemplateNode,

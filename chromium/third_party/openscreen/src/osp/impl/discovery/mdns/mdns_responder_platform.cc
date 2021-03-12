@@ -77,13 +77,11 @@ void mDNSPlatformLock(const mDNS* m) {
 void mDNSPlatformUnlock(const mDNS* m) {}
 
 void mDNSPlatformStrCopy(void* dst, const void* src) {
-  const char* source = static_cast<const char*>(src);
-  const size_t source_len = strlen(source);
-
   // Unfortunately, the caller is responsible for making sure that dst
   // if of sufficient length to store the src string. Otherwise we may
   // cause an access violation.
-  std::strncpy(static_cast<char*>(dst), source, source_len);
+  std::strcpy(static_cast<char*>(dst),  // NOLINT
+              static_cast<const char*>(src));
 }
 
 mDNSu32 mDNSPlatformStrLen(const void* src) {
@@ -193,15 +191,17 @@ void mDNSPlatformTCPCloseConnection(TCPSocket* sock) {
   OSP_UNIMPLEMENTED();
 }
 
-long mDNSPlatformReadTCP(TCPSocket* sock,
+long mDNSPlatformReadTCP(TCPSocket* sock,  // NOLINT
                          void* buf,
-                         unsigned long buflen,
+                         unsigned long buflen,  // NOLINT
                          mDNSBool* closed) {
   OSP_UNIMPLEMENTED();
   return 0;
 }
 
-long mDNSPlatformWriteTCP(TCPSocket* sock, const char* msg, unsigned long len) {
+long mDNSPlatformWriteTCP(TCPSocket* sock,  // NOLINT
+                          const char* msg,
+                          unsigned long len) {  // NOLINT
   OSP_UNIMPLEMENTED();
   return 0;
 }

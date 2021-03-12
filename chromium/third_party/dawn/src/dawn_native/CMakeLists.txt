@@ -25,6 +25,10 @@ if(BUILD_SHARED_LIBS)
     target_compile_definitions(dawn_native PRIVATE "DAWN_NATIVE_SHARED_LIBRARY")
 endif()
 
+if(DAWN_ENABLE_WGSL)
+    target_link_libraries(dawn_native PRIVATE libtint)
+endif()
+
 target_sources(dawn_native PRIVATE
     "${DAWN_INCLUDE_DIR}/dawn_native/DawnNative.h"
     "${DAWN_INCLUDE_DIR}/dawn_native/dawn_native_export.h"
@@ -66,6 +70,10 @@ target_sources(dawn_native PRIVATE
     "ComputePassEncoder.h"
     "ComputePipeline.cpp"
     "ComputePipeline.h"
+    "CopyTextureForBrowserHelper.cpp"
+    "CopyTextureForBrowserHelper.h"
+    "CreateReadyPipelineTracker.cpp"
+    "CreateReadyPipelineTracker.h"
     "Device.cpp"
     "Device.h"
     "DynamicUploader.cpp"
@@ -88,16 +96,13 @@ target_sources(dawn_native PRIVATE
     "Extensions.h"
     "Fence.cpp"
     "Fence.h"
-    "FenceSignalTracker.cpp"
-    "FenceSignalTracker.h"
     "Format.cpp"
     "Format.h"
     "Forward.h"
     "Instance.cpp"
     "Instance.h"
+    "InternalPipelineStore.h"
     "IntegerTypes.h"
-    "MapRequestTracker.cpp"
-    "MapRequestTracker.h"
     "ObjectBase.cpp"
     "ObjectBase.h"
     "PassResourceUsage.h"
@@ -161,7 +166,7 @@ target_link_libraries(dawn_native
             spirv-cross-glsl
             spirv-cross-hlsl
             spirv-cross-msl
-            SPIRV-Tools
+            SPIRV-Tools-opt
 )
 
 if (DAWN_USE_X11)
@@ -209,7 +214,7 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/HeapAllocatorD3D12.h"
         "d3d12/HeapD3D12.cpp"
         "d3d12/HeapD3D12.h"
-	"d3d12/IntegerTypes.h"
+        "d3d12/IntegerTypes.h"
         "d3d12/NativeSwapChainImplD3D12.cpp"
         "d3d12/NativeSwapChainImplD3D12.h"
         "d3d12/PageableD3D12.cpp"
@@ -282,6 +287,8 @@ if (DAWN_ENABLE_METAL)
         "metal/PipelineLayoutMTL.mm"
         "metal/QueueMTL.h"
         "metal/QueueMTL.mm"
+        "metal/QuerySetMTL.h"
+        "metal/QuerySetMTL.mm"
         "metal/RenderPipelineMTL.h"
         "metal/RenderPipelineMTL.mm"
         "metal/SamplerMTL.h"

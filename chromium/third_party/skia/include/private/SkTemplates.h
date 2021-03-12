@@ -114,9 +114,9 @@ public:
         return fArray[index];
     }
 
-    // aliases matching other types like std::vector
-    const T* data() const { return fArray; }
-    T* data() { return fArray; }
+    /** Aliases matching other types, like std::vector. */
+    const T* data() const { return fArray.get(); }
+    T* data() { return fArray.get(); }
 
 private:
     std::unique_ptr<T[]> fArray;
@@ -207,7 +207,7 @@ public:
         return fArray[index];
     }
 
-    // aliases matching other types like std::vector
+    /** Aliases matching other types, like std::vector. */
     const T* data() const { return fArray; }
     T* data() { return fArray; }
     size_t size() const { return fCount; }
@@ -265,6 +265,10 @@ public:
     T& operator[](int index) { return fPtr.get()[index]; }
 
     const T& operator[](int index) const { return fPtr.get()[index]; }
+
+    /** Aliases matching other types, like std::vector. */
+    const T* data() const { return fPtr.get(); }
+    T* data() { return fPtr.get(); }
 
     /**
      *  Transfer ownership of the ptr to the caller, setting the internal
@@ -335,6 +339,10 @@ public:
         return fPtr[index];
     }
 
+    /** Aliases matching other types, like std::vector. */
+    const T* data() const { return fPtr; }
+    T* data() { return fPtr; }
+
     // Reallocs the array, can be used to shrink the allocation.  Makes no attempt to be intelligent
     void realloc(size_t count) {
         if (count > kCount) {
@@ -401,36 +409,7 @@ T* SkInPlaceNewCheck(void* storage, size_t size, Args&&... args) {
     return (sizeof(T) <= size) ? new (storage) T(std::forward<Args>(args)...)
                                : new T(std::forward<Args>(args)...);
 }
-/**
- * Reserves memory that is aligned on double and pointer boundaries.
- * Hopefully this is sufficient for all practical purposes.
- */
-template <size_t N> class SkAlignedSStorage {
-public:
-    SkAlignedSStorage() {}
-    SkAlignedSStorage(SkAlignedSStorage&&) = delete;
-    SkAlignedSStorage(const SkAlignedSStorage&) = delete;
-    SkAlignedSStorage& operator=(SkAlignedSStorage&&) = delete;
-    SkAlignedSStorage& operator=(const SkAlignedSStorage&) = delete;
 
-    size_t size() const { return N; }
-    void* get() { return fData; }
-    const void* get() const { return fData; }
-
-private:
-    union {
-        void*   fPtr;
-        double  fDouble;
-        char    fData[N];
-    };
-};
-
-/**
- * Reserves memory that is aligned on double and pointer boundaries.
- * Hopefully this is sufficient for all practical purposes. Otherwise,
- * we have to do some arcane trickery to determine alignment of non-POD
- * types. Lifetime of the memory is the lifetime of the object.
- */
 template <int N, typename T> class SkAlignedSTStorage {
 public:
     SkAlignedSTStorage() {}
@@ -441,12 +420,12 @@ public:
 
     /**
      * Returns void* because this object does not initialize the
-     * memory. Use placement new for types that require a cons.
+     * memory. Use placement new for types that require a constructor.
      */
-    void* get() { return fStorage.get(); }
-    const void* get() const { return fStorage.get(); }
+    void* get() { return fStorage; }
+    const void* get() const { return fStorage; }
 private:
-    SkAlignedSStorage<sizeof(T)*N> fStorage;
+    alignas(T) char fStorage[sizeof(T)*N];
 };
 
 using SkAutoFree = std::unique_ptr<void, SkFunctionWrapper<void(void*), sk_free>>;

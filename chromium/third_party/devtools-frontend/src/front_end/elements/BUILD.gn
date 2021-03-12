@@ -9,6 +9,7 @@ import("../../third_party/typescript/typescript.gni")
 devtools_module("elements") {
   sources = [
     "Adorner.js",
+    "CSSPropertyIconResolver.js",
     "ClassesPaneWidget.js",
     "ColorSwatchPopoverIcon.js",
     "ComputedStyleModel.js",
@@ -31,6 +32,8 @@ devtools_module("elements") {
     "ElementsTreeElementHighlighter.js",
     "ElementsTreeOutline.js",
     "EventListenersWidget.js",
+    "Icon.ts",
+    "Icon_bridge.js",
     "ImagePreviewPopover.js",
     "InspectElementModeController.js",
     "LayoutPane.ts",
@@ -53,7 +56,6 @@ devtools_module("elements") {
     "../bindings:bundle",
     "../color_picker:bundle",
     "../common:bundle",
-    "../component_helpers:bundle",
     "../components:bundle",
     "../emulation:bundle",
     "../event_listeners:bundle",
@@ -67,7 +69,7 @@ devtools_module("elements") {
     "../protocol_client:bundle",
     "../root:bundle",
     "../sdk:bundle",
-    "../sdk:bundle",
+    "../text_editor:bundle",
     "../third_party/lit-html:bundle",
     "../ui:bundle",
     "../workspace:bundle",
@@ -87,4 +89,10 @@ devtools_entrypoint("bundle") {
   entrypoint = "elements.js"
 
   deps = [ ":elements" ]
+}
+
+devtools_entrypoint("legacy") {
+  entrypoint = "elements-legacy.js"
+
+  deps = [ ":bundle" ]
 }

@@ -30,7 +30,7 @@
 
 #if SK_SUPPORT_GPU
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrImageContextPriv.h"
 #include "src/image/SkImage_Gpu.h"
 #endif
@@ -141,7 +141,7 @@ sk_sp<SkShader> SkImage::makeShader(SkTileMode tmx, SkTileMode tmy,
 }
 
 sk_sp<SkShader> SkImage::makeShader(SkTileMode tmx, SkTileMode tmy,
-                                    const SkFilterOptions& options,
+                                    const SkSamplingOptions& options,
                                     const SkMatrix* localMatrix) const {
     return SkImageShader::Make(sk_ref_sp(const_cast<SkImage*>(this)), tmx, tmy,
                                options, localMatrix);
@@ -151,12 +151,6 @@ sk_sp<SkShader> SkImage::makeShader(SkTileMode tmx, SkTileMode tmy,
                                     const SkMatrix* localMatrix, SkFilterQuality filtering) const {
     return SkImageShader::Make(sk_ref_sp(const_cast<SkImage*>(this)), tmx, tmy, localMatrix,
                                SkImageShader::FilterEnum(filtering));
-}
-
-sk_sp<SkShader> SkImage::makeShader(SkTileMode tmx, SkTileMode tmy, CubicResampler cubic,
-                                           const SkMatrix* localMatrix) const {
-    return SkImageShader::Make(sk_ref_sp(const_cast<SkImage*>(this)), tmx, tmy, cubic,
-                               localMatrix);
 }
 
 sk_sp<SkData> SkImage::encodeToData(SkEncodedImageFormat type, int quality) const {
@@ -555,7 +549,7 @@ sk_sp<SkImage> SkImage::MakeFromCompressedTexture(GrRecordingContext*,
     return nullptr;
 }
 
-bool SkImage::MakeBackendTextureFromSkImage(GrContext*,
+bool SkImage::MakeBackendTextureFromSkImage(GrDirectContext*,
                                             sk_sp<SkImage>,
                                             GrBackendTexture*,
                                             BackendTextureReleaseProc*) {
@@ -569,30 +563,6 @@ sk_sp<SkImage> SkImage::MakeFromAdoptedTexture(GrRecordingContext*,
     return nullptr;
 }
 
-sk_sp<SkImage> SkImage::MakeFromYUVATexturesCopy(GrRecordingContext*,
-                                                 SkYUVColorSpace,
-                                                 const GrBackendTexture[],
-                                                 const SkYUVAIndex[4],
-                                                 SkISize,
-                                                 GrSurfaceOrigin,
-                                                 sk_sp<SkColorSpace>) {
-    return nullptr;
-}
-
-sk_sp<SkImage> SkImage::MakeFromYUVATexturesCopyWithExternalBackend(
-        GrRecordingContext*,
-        SkYUVColorSpace,
-        const GrBackendTexture[],
-        const SkYUVAIndex[4],
-        SkISize,
-        GrSurfaceOrigin,
-        const GrBackendTexture&,
-        sk_sp<SkColorSpace>,
-        TextureReleaseProc,
-        ReleaseContext) {
-    return nullptr;
-}
-
 sk_sp<SkImage> SkImage::MakeFromYUVAPixmaps(GrRecordingContext* context,
                                             const SkYUVAPixmaps& pixmaps,
                                             GrMipMapped buildMips,
@@ -601,25 +571,12 @@ sk_sp<SkImage> SkImage::MakeFromYUVAPixmaps(GrRecordingContext* context,
     return nullptr;
 }
 
-sk_sp<SkImage> SkImage::MakeFromYUVTexturesCopyWithExternalBackend(
-        GrContext*, SkYUVColorSpace, const GrBackendTexture[3], GrSurfaceOrigin,
-        const GrBackendTexture&, sk_sp<SkColorSpace>) {
-    return nullptr;
-}
-
-sk_sp<SkImage> SkImage::MakeFromNV12TexturesCopy(GrContext*, SkYUVColorSpace,
-                                                 const GrBackendTexture[2],
-                                                 GrSurfaceOrigin, sk_sp<SkColorSpace>) {
-    return nullptr;
-}
-
-
 sk_sp<SkImage> SkImage::makeTextureImage(GrDirectContext*, GrMipmapped, SkBudgeted) const {
     return nullptr;
 }
 
 sk_sp<SkImage> SkImage::MakeFromNV12TexturesCopyWithExternalBackend(
-       GrContext*, SkYUVColorSpace, const GrBackendTexture[2], GrSurfaceOrigin,
+       GrRecordingContext*, SkYUVColorSpace, const GrBackendTexture[2], GrSurfaceOrigin,
        const GrBackendTexture&, sk_sp<SkColorSpace>, TextureReleaseProc, ReleaseContext) {
     return nullptr;
 }

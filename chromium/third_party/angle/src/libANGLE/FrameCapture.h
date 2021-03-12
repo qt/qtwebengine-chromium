@@ -225,6 +225,8 @@ class ResourceTracker final : angle::NonCopyable
     BufferCalls &getBufferMapCalls() { return mBufferMapCalls; }
     BufferCalls &getBufferUnmapCalls() { return mBufferUnmapCalls; }
 
+    std::vector<CallCapture> &getBufferBindingCalls() { return mBufferBindingCalls; }
+
     BufferSet &getStartingBuffers() { return mStartingBuffers; }
     BufferSet &getNewBuffers() { return mNewBuffers; }
     BufferSet &getBuffersToRegen() { return mBuffersToRegen; }
@@ -253,6 +255,9 @@ class ResourceTracker final : angle::NonCopyable
         mStartingBuffersMappedInitial[id] = mapped;
     }
 
+    void onShaderProgramAccess(gl::ShaderProgramID shaderProgramID);
+    uint32_t getMaxShaderPrograms() const { return mMaxShaderPrograms; }
+
   private:
     // Buffer regen calls will delete and gen a buffer
     BufferCalls mBufferRegenCalls;
@@ -262,6 +267,9 @@ class ResourceTracker final : angle::NonCopyable
     BufferCalls mBufferMapCalls;
     // Buffer unmap calls will bind and unmap a given buffer
     BufferCalls mBufferUnmapCalls;
+
+    // Buffer binding calls to restore bindings recorded during MEC
+    std::vector<CallCapture> mBufferBindingCalls;
 
     // Starting buffers include all the buffers created during setup for MEC
     BufferSet mStartingBuffers;
@@ -276,6 +284,9 @@ class ResourceTracker final : angle::NonCopyable
     BufferMapStatusMap mStartingBuffersMappedInitial;
     // The status of buffer mapping throughout the trace, modified with each Map/Unmap call
     BufferMapStatusMap mStartingBuffersMappedCurrent;
+
+    // Maximum accessed shader program ID.
+    uint32_t mMaxShaderPrograms = 0;
 };
 
 // Used by the CPP replay to filter out unnecessary code.
@@ -295,6 +306,9 @@ using ProgramSourceMap = std::map<gl::ShaderProgramID, ProgramSources>;
 using TextureLevels       = std::map<GLint, std::vector<uint8_t>>;
 using TextureLevelDataMap = std::map<gl::TextureID, TextureLevels>;
 
+// Map from ContextID to surface dimensions
+using SurfaceDimensions = std::map<gl::ContextID, gl::Extents>;
+
 class FrameCapture final : angle::NonCopyable
 {
   public:
@@ -305,11 +319,15 @@ class FrameCapture final : angle::NonCopyable
     void checkForCaptureTrigger();
     void onEndFrame(const gl::Context *context);
     void onDestroyContext(const gl::Context *context);
-    void onMakeCurrent(const egl::Surface *drawSurface);
+    void onMakeCurrent(const gl::Context *context, const egl::Surface *drawSurface);
     bool enabled() const { return mEnabled; }
 
     bool isCapturing() const;
     void replay(gl::Context *context);
+    uint32_t getFrameCount() const;
+
+    // Returns a frame index starting from "1" as the first frame.
+    uint32_t getReplayFrameIndex() const;
 
     void trackBufferMapping(CallCapture *call,
                             gl::BufferID id,
@@ -329,7 +347,7 @@ class FrameCapture final : angle::NonCopyable
 
     void reset();
     void maybeOverrideEntryPoint(const gl::Context *context, CallCapture &call);
-    void maybeCaptureClientData(const gl::Context *context, CallCapture &call);
+    void maybeCapturePreCallUpdates(const gl::Context *context, CallCapture &call);
     void maybeCapturePostCallUpdates(const gl::Context *context);
 
     static void ReplayCall(gl::Context *context,
@@ -350,12 +368,11 @@ class FrameCapture final : angle::NonCopyable
     bool mCompression;
     gl::AttribArray<int> mClientVertexArrayMap;
     uint32_t mFrameIndex;
-    uint32_t mFrameStart;
-    uint32_t mFrameEnd;
-    bool mIsFirstFrame        = true;
-    bool mWroteIndexFile      = false;
-    EGLint mDrawSurfaceWidth  = 0;
-    EGLint mDrawSurfaceHeight = 0;
+    uint32_t mCaptureStartFrame;
+    uint32_t mCaptureEndFrame;
+    bool mIsFirstFrame   = true;
+    bool mWroteIndexFile = false;
+    SurfaceDimensions mDrawSurfaceDimensions;
     gl::AttribArray<size_t> mClientArraySizes;
     size_t mReadBufferSize;
     HasResourceTypeMap mHasResourceType;
@@ -363,18 +380,44 @@ class FrameCapture final : angle::NonCopyable
 
     ResourceTracker mResourceTracker;
 
+    // If you don't know which frame you want to start capturing at, use the capture trigger.
+    // Initialize it to the number of frames you want to capture, and then clear the value to 0 when
+    // you reach the content you want to capture. Currently only available on Android.
+    uint32_t mCaptureTrigger;
+};
+
+// Shared class for any items that need to be tracked by FrameCapture across shared contexts
+class FrameCaptureShared final : angle::NonCopyable
+{
+  public:
+    FrameCaptureShared();
+    ~FrameCaptureShared();
+
+    const std::string &getShaderSource(gl::ShaderProgramID id) const;
+    void setShaderSource(gl::ShaderProgramID id, std::string sources);
+
+    const ProgramSources &getProgramSources(gl::ShaderProgramID id) const;
+    void setProgramSources(gl::ShaderProgramID id, ProgramSources sources);
+
+    // Load data from a previously stored texture level
+    const std::vector<uint8_t> &retrieveCachedTextureLevel(gl::TextureID id, GLint level);
+
+    // Create the location that should be used to cache texture level data
+    std::vector<uint8_t> &getTextureLevelCacheLocation(gl::Texture *texture,
+                                                       gl::TextureTarget target,
+                                                       GLint level);
+
+    // Remove any cached texture levels on deletion
+    void deleteCachedTextureLevelData(gl::TextureID id);
+
+  private:
     // Cache most recently compiled and linked sources.
-    ShaderSourceMap mCachedShaderSources;
+    ShaderSourceMap mCachedShaderSource;
     ProgramSourceMap mCachedProgramSources;
 
     // Cache a shadow copy of texture level data
     TextureLevels mCachedTextureLevels;
     TextureLevelDataMap mCachedTextureLevelData;
-
-    // If you don't know which frame you want to start capturing at, use the capture trigger.
-    // Initialize it to the number of frames you want to capture, and then clear the value to 0 when
-    // you reach the content you want to capture. Currently only available on Android.
-    uint32_t mCaptureTrigger;
 };
 
 template <typename CaptureFuncT, typename... ArgsT>

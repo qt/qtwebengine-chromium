@@ -33,6 +33,7 @@ class Texture;
 enum class Command
 {
     Blit,
+    Clear,
     CopyImage,
     Dispatch,
     Draw,
@@ -40,6 +41,12 @@ enum class Command
     ReadPixels,
     TexImage,
     Other
+};
+
+enum class InitState
+{
+    MayNeedInit,
+    Initialized,
 };
 
 struct Rectangle
@@ -65,6 +72,8 @@ struct Rectangle
 
     bool encloses(const gl::Rectangle &inside) const;
 
+    bool empty() const { return width == 0 && height == 0; }
+
     int x;
     int y;
     int width;
@@ -74,7 +83,27 @@ struct Rectangle
 bool operator==(const Rectangle &a, const Rectangle &b);
 bool operator!=(const Rectangle &a, const Rectangle &b);
 
+// Calculate the intersection of two rectangles.  Returns false if the intersection is empty.
 bool ClipRectangle(const Rectangle &source, const Rectangle &clip, Rectangle *intersection);
+// Calculate the smallest rectangle that covers both rectangles.  This rectangle may cover areas
+// not covered by the two rectangles, for example in this situation:
+//
+//   +--+        +----+
+//   | ++-+  ->  |    |
+//   +-++ |      |    |
+//     +--+      +----+
+//
+void GetEnclosingRectangle(const Rectangle &rect1, const Rectangle &rect2, Rectangle *rectUnion);
+// Extend the source rectangle to cover parts (or all of) the second rectangle, in such a way that
+// no area is covered that isn't covered by both rectangles.  For example:
+//
+//             +--+        +--+
+//  source --> |  |        |  |
+//            ++--+-+  ->  |  |
+//            |+--+ |      |  |
+//            +-----+      +--+
+//
+void ExtendRectangle(const Rectangle &source, const Rectangle &extend, Rectangle *extended);
 
 struct Offset
 {
@@ -153,6 +182,7 @@ struct RasterizerState final
     GLfloat polygonOffsetFactor;
     GLfloat polygonOffsetUnits;
 
+    // pointDrawMode/multiSample are only used in the D3D back-end right now.
     bool pointDrawMode;
     bool multiSample;
 
@@ -187,8 +217,6 @@ struct BlendState final
 bool operator==(const BlendState &a, const BlendState &b);
 bool operator!=(const BlendState &a, const BlendState &b);
 
-using BlendStateArray = std::array<BlendState, IMPLEMENTATION_MAX_DRAW_BUFFERS>;
-
 struct DepthStencilState final
 {
     // This will zero-initialize the struct, including padding.
@@ -197,6 +225,8 @@ struct DepthStencilState final
 
     bool isDepthMaskedOut() const;
     bool isStencilMaskedOut() const;
+    bool isStencilNoOp() const;
+    bool isStencilBackNoOp() const;
 
     bool depthTest;
     GLenum depthFunc;
@@ -430,6 +460,7 @@ class BlendStateExt final
 
         static constexpr Type GetMask(const size_t drawBuffers)
         {
+            ASSERT(drawBuffers > 0);
             ASSERT(drawBuffers <= IMPLEMENTATION_MAX_DRAW_BUFFERS);
             return static_cast<Type>(0xFFFFFFFFFFFFFFFFull >> (64 - drawBuffers * kBits));
         }
@@ -744,7 +775,25 @@ enum class RenderToTextureImageIndex
 template <typename T>
 using RenderToTextureImageMap = angle::PackedEnumMap<RenderToTextureImageIndex, T>;
 
-using ContextID = uintptr_t;
+struct ContextID
+{
+    uint32_t value;
+};
+
+inline bool operator==(ContextID lhs, ContextID rhs)
+{
+    return lhs.value == rhs.value;
+}
+
+inline bool operator!=(ContextID lhs, ContextID rhs)
+{
+    return lhs.value != rhs.value;
+}
+
+inline bool operator<(ContextID lhs, ContextID rhs)
+{
+    return lhs.value < rhs.value;
+}
 
 constexpr size_t kCubeFaceCount = 6;
 
@@ -759,6 +808,9 @@ using ShaderVector = angle::FixedVector<T, static_cast<size_t>(ShaderType::EnumC
 
 template <typename T>
 using AttachmentArray = std::array<T, IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS>;
+
+template <typename T>
+using AttachmentVector = angle::FixedVector<T, IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS>;
 
 using AttachmentsMask = angle::BitSet<IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS>;
 

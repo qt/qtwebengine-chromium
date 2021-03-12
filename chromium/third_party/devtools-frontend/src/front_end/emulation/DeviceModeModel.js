@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as Host from '../host/host.js';
+import * as Root from '../root/root.js';
 import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
 import {EmulatedDevice, Horizontal, HorizontalSpanned, Mode, Vertical, VerticalSpanned} from './EmulatedDevices.js';  // eslint-disable-line no-unused-vars
+
+/** @type {!DeviceModeModel} */
+let deviceModeModelInstance;
 
 /**
  * @implements {SDK.SDKModel.SDKModelObserver<!SDK.EmulationModel.EmulationModel>}
@@ -18,6 +19,9 @@ import {EmulatedDevice, Horizontal, HorizontalSpanned, Mode, Vertical, VerticalS
  * @unrestricted
  */
 export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
+  /**
+   * @private
+   */
   constructor() {
     super();
     this._screenRect = new UI.Geometry.Rect(0, 0, 1, 1);
@@ -37,6 +41,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
       this._scaleSetting.set(1);
     }
     this._scaleSetting.addChangeListener(this._scaleSettingChanged, this);
+    this._scale = 1;
 
     this._widthSetting = Common.Settings.Settings.instance().createSetting('emulation.deviceWidth', 400);
     if (this._widthSetting.get() < MinDeviceSize) {
@@ -81,9 +86,17 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
 
     /** @type {?SDK.EmulationModel.EmulationModel} */
     this._emulationModel = null;
-    /** @type {?function()} */
+    /** @type {?function():void} */
     this._onModelAvailable = null;
     SDK.SDKModel.TargetManager.instance().observeModels(SDK.EmulationModel.EmulationModel, this);
+  }
+
+  static instance(opts = {forceNew: null}) {
+    if (!deviceModeModelInstance || opts.forceNew) {
+      deviceModeModelInstance = new DeviceModeModel();
+    }
+
+    return deviceModeModelInstance;
   }
 
   /**
@@ -96,9 +109,9 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
 
     if (!/^[\d]+$/.test(value)) {
       errorMessage = ls`Width must be a number.`;
-    } else if (value > MaxDeviceSize) {
+    } else if (Number(value) > MaxDeviceSize) {
       errorMessage = ls`Width must be less than or equal to ${MaxDeviceSize}.`;
-    } else if (value < MinDeviceSize) {
+    } else if (Number(value) < MinDeviceSize) {
       errorMessage = ls`Width must be greater than or equal to ${MinDeviceSize}.`;
     } else {
       valid = true;
@@ -117,9 +130,9 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
 
     if (!/^[\d]+$/.test(value)) {
       errorMessage = ls`Height must be a number.`;
-    } else if (value > MaxDeviceSize) {
+    } else if (Number(value) > MaxDeviceSize) {
       errorMessage = ls`Height must be less than or equal to ${MaxDeviceSize}.`;
-    } else if (value < MinDeviceSize) {
+    } else if (Number(value) < MinDeviceSize) {
       errorMessage = ls`Height must be greater than or equal to ${MinDeviceSize}.`;
     } else {
       valid = true;
@@ -141,9 +154,9 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
       valid = true;
     } else if (Number.isNaN(parsedValue)) {
       errorMessage = ls`Device pixel ratio must be a number or blank.`;
-    } else if (value > MaxDeviceScaleFactor) {
+    } else if (Number(value) > MaxDeviceScaleFactor) {
       errorMessage = ls`Device pixel ratio must be less than or equal to ${MaxDeviceScaleFactor}.`;
-    } else if (value < MinDeviceScaleFactor) {
+    } else if (Number(value) < MinDeviceScaleFactor) {
       errorMessage = ls`Device pixel ratio must be greater than or equal to ${MinDeviceScaleFactor}.`;
     } else {
       valid = true;
@@ -173,8 +186,8 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
     const resetPageScaleFactor = this._type !== type || this._device !== device || this._mode !== mode;
     this._type = type;
 
-    if (type === Type.Device) {
-      console.assert(device && mode, 'Must pass device and mode for device emulation');
+    if (type === Type.Device && device && mode) {
+      console.assert(!!device && !!mode, 'Must pass device and mode for device emulation');
       this._mode = mode;
       this._device = device;
       if (this._initialized) {
@@ -278,10 +291,10 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
   }
 
   /**
-   * @return {!UI.Geometry.Rect}
+   * @return {?UI.Geometry.Rect}
    */
   outlineRect() {
-    return this._outlineRect;
+    return this._outlineRect || null;
   }
 
   /**
@@ -346,7 +359,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
   _isMobile() {
     switch (this._type) {
       case Type.Device:
-        return this._device.mobile();
+        return this._device ? this._device.mobile() : false;
       case Type.None:
         return false;
       case Type.Responsive:
@@ -356,42 +369,42 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
   }
 
   /**
-   * @return {!Common.Settings.Setting}
+   * @return {!Common.Settings.Setting<boolean>}
    */
   enabledSetting() {
     return Common.Settings.Settings.instance().createSetting('emulation.showDeviceMode', false);
   }
 
   /**
-   * @return {!Common.Settings.Setting}
+   * @return {!Common.Settings.Setting<number>}
    */
   scaleSetting() {
     return this._scaleSetting;
   }
 
   /**
-   * @return {!Common.Settings.Setting}
+   * @return {!Common.Settings.Setting<UA>}
    */
   uaSetting() {
     return this._uaSetting;
   }
 
   /**
-   * @return {!Common.Settings.Setting}
+   * @return {!Common.Settings.Setting<number>}
    */
   deviceScaleFactorSetting() {
     return this._deviceScaleFactorSetting;
   }
 
   /**
-   * @return {!Common.Settings.Setting}
+   * @return {!Common.Settings.Setting<boolean>}
    */
   deviceOutlineSetting() {
     return this._deviceOutlineSetting;
   }
 
   /**
-   * @return {!Common.Settings.Setting}
+   * @return {!Common.Settings.Setting<boolean>}
    */
   toolbarControlsEnabledSetting() {
     return this._toolbarControlsEnabledSetting;
@@ -496,7 +509,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
    */
   _currentOutline() {
     let outline = new UI.Geometry.Insets(0, 0, 0, 0);
-    if (this._type !== Type.Device) {
+    if (this._type !== Type.Device || !this._device || !this._mode) {
       return outline;
     }
     const orientation = this._device.orientationByName(this._mode.orientation);
@@ -510,7 +523,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
    * @return {!UI.Geometry.Insets}
    */
   _currentInsets() {
-    if (this._type !== Type.Device) {
+    if (this._type !== Type.Device || !this._mode) {
       return new UI.Geometry.Insets(0, 0, 0, 0);
     }
     return this._mode.insets;
@@ -520,7 +533,9 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
    * @return {!Protocol.Emulation.ScreenOrientationType}
    */
   _getScreenOrientationType() {
-    console.assert(this._mode, 'Can only get display feature orientation when current mode is set.');
+    if (!this._mode) {
+      throw new Error('Mode required to get orientation type.');
+    }
     switch (this._mode.orientation) {
       case VerticalSpanned:
       case Vertical:
@@ -544,7 +559,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
     if (overlayModel) {
       this._showHingeIfApplicable(overlayModel);
     }
-    if (this._type === Type.Device) {
+    if (this._type === Type.Device && this._device && this._mode) {
       const orientation = this._device.orientationByName(this._mode.orientation);
       const outline = this._currentOutline();
       const insets = this._currentInsets();
@@ -715,6 +730,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
     }
     if (pageWidth || pageHeight || mobile || deviceScaleFactor || scale !== 1 || screenOrientation ||
         forceMetricsOverride) {
+      /** @type {!Protocol.Emulation.SetDeviceMetricsOverrideRequest} */
       const metrics = {
         width: pageWidth,
         height: pageHeight,
@@ -725,7 +741,9 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
         screenHeight: screenSize.height,
         positionX: positionX,
         positionY: positionY,
-        dontSetVisibleSize: true
+        dontSetVisibleSize: true,
+        displayFeature: undefined,
+        screenOrientation: undefined,
       };
       const displayFeature = this._getDisplayFeature();
       if (displayFeature) {
@@ -779,7 +797,6 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
     }
 
     // Emulate full size device if necessary.
-    let deviceMetrics;
     if (fullSize) {
       const metrics = await screenCaptureModel.fetchLayoutMetrics();
       if (!metrics) {
@@ -788,11 +805,14 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
 
       // Cap the height to not hit the GPU limit.
       const contentHeight = Math.min((1 << 14) / this._appliedDeviceScaleFactor, metrics.contentHeight);
-      deviceMetrics = {
+      /** @type {!Protocol.Emulation.SetDeviceMetricsOverrideRequest} */
+      const deviceMetrics = {
         width: Math.floor(metrics.contentWidth),
         height: Math.floor(contentHeight),
         deviceScaleFactor: this._appliedDeviceScaleFactor,
         mobile: this._isMobile(),
+        displayFeature: undefined,
+        screenOrientation: undefined,
       };
 
       const displayFeature = this._getDisplayFeature();
@@ -802,7 +822,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
 
       clip = {x: 0, y: 0, width: deviceMetrics.width, height: deviceMetrics.height, scale: 1};
 
-      if (this._device) {
+      if (this._device && this._mode) {
         const screenOrientation = this._mode.orientation === Horizontal ?
             Protocol.Emulation.ScreenOrientationType.LandscapePrimary :
             Protocol.Emulation.ScreenOrientationType.PortraitPrimary;
@@ -810,17 +830,31 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
             screenOrientation === Protocol.Emulation.ScreenOrientationType.LandscapePrimary ? 90 : 0;
         deviceMetrics.screenOrientation = {type: screenOrientation, angle: screenOrientationAngle};
       }
-      await this._emulationModel.resetPageScaleFactor();
-      await this._emulationModel.emulateDevice(deviceMetrics);
+      if (this._emulationModel) {
+        await this._emulationModel.resetPageScaleFactor();
+        await this._emulationModel.emulateDevice(deviceMetrics);
+      }
     }
-    const screenshot = await screenCaptureModel.captureScreenshot('png', 100, clip);
-    if (fullSize) {
-      if (this._device) {
+    const screenshot =
+        await screenCaptureModel.captureScreenshot(Protocol.Page.CaptureScreenshotRequestFormat.Png, 100, clip);
+
+    /** @type {!Protocol.Page.SetDeviceMetricsOverrideRequest} */
+    const deviceMetrics = {
+      width: 0,
+      height: 0,
+      deviceScaleFactor: 0,
+      mobile: false,
+    };
+    if (fullSize && this._emulationModel) {
+      if (this._device && this._mode) {
         const orientation = this._device.orientationByName(this._mode.orientation);
         deviceMetrics.width = orientation.width;
         deviceMetrics.height = orientation.height;
         const dispFeature = this._getDisplayFeature();
         if (dispFeature) {
+          // @ts-ignore: displayFeature isn't in protocol.d.ts but is an
+          // experimental flag:
+          // https://chromedevtools.github.io/devtools-protocol/tot/Emulation/#method-setDeviceMetricsOverride
           deviceMetrics.displayFeature = dispFeature;
         }
       } else {
@@ -862,7 +896,9 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper {
    * @return {!Protocol.Emulation.DisplayFeatureOrientation}
    */
   _getDisplayFeatureOrientation() {
-    console.assert(this._mode, 'Can only get display feature orientation when current mode is set.');
+    if (!this._mode) {
+      throw new Error('Mode required to get display feature orientation.');
+    }
     switch (this._mode.orientation) {
       case VerticalSpanned:
       case Vertical:

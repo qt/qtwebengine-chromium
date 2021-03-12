@@ -38,17 +38,18 @@ public:
         (void)linearize;
         contrastModVar = args.fUniformHandler->addUniform(&_outer, kFragment_GrShaderFlag,
                                                           kHalf_GrSLType, "contrastMod");
-        SkString HSLToRGB_name;
+        SkString HSLToRGB_name = fragBuilder->getMangledFunctionName("HSLToRGB");
         const GrShaderVar HSLToRGB_args[] = {GrShaderVar("p", kHalf_GrSLType),
                                              GrShaderVar("q", kHalf_GrSLType),
                                              GrShaderVar("t", kHalf_GrSLType)};
-        fragBuilder->emitFunction(kHalf_GrSLType, "HSLToRGB", 3, HSLToRGB_args,
+        fragBuilder->emitFunction(kHalf_GrSLType, HSLToRGB_name.c_str(), {HSLToRGB_args, 3},
                                   R"SkSL(if (t < 0.0) t += 1.0;
 if (t > 1.0) t -= 1.0;
-return t < 0.16666666666666666 ? p + ((q - p) * 6.0) * t : (t < 0.5 ? q : (t < 0.66666666666666663 ? p + ((q - p) * (0.66666666666666663 - t)) * 6.0 : p));
-)SkSL",
-                                  &HSLToRGB_name);
-        SkString _sample896 = this->invokeChild(0, args);
+return t < 0.1666666716337204 ? p + ((q - p) * 6.0) * t : (t < 0.5 ? q : (t < 0.66666668653488159 ? p + ((q - p) * (0.66666668653488159 - t)) * 6.0 : p));
+)SkSL");
+        fragBuilder->codeAppendf(
+                R"SkSL(;)SkSL");
+        SkString _sample0 = this->invokeChild(0, args);
         fragBuilder->codeAppendf(
                 R"SkSL(
 half4 inColor = %s;
@@ -87,7 +88,7 @@ half4 color = _0_unpremul;
         } else {
             h = (color.x - color.y) / d + 4.0;
         }
-        h *= 0.16666666666666666;
+        h *= 0.1666666716337204;
     }
     l = 1.0 + l * -0.5;
     if (s == 0.0) {
@@ -95,9 +96,9 @@ half4 color = _0_unpremul;
     } else {
         half q = l < 0.5 ? l * (1.0 + s) : (l + s) - l * s;
         half p = 2.0 * l - q;
-        color.x = %s(p, q, h + 0.33333333333333331);
+        color.x = %s(p, q, h + 0.3333333432674408);
         color.y = %s(p, q, h);
-        color.z = %s(p, q, h - 0.33333333333333331);
+        color.z = %s(p, q, h - 0.3333333432674408);
     }
 }
 @if (%s) {
@@ -110,7 +111,7 @@ color = clamp(color, 0.0, 1.0);
 }
 %s = half4(color.xyz, 1.0) * inColor.w;
 )SkSL",
-                _sample896.c_str(), (_outer.linearize ? "true" : "false"),
+                _sample0.c_str(), (_outer.linearize ? "true" : "false"),
                 (_outer.grayscale ? "true" : "false"), (_outer.invertBrightness ? "true" : "false"),
                 (_outer.invertLightness ? "true" : "false"), HSLToRGB_name.c_str(),
                 HSLToRGB_name.c_str(), HSLToRGB_name.c_str(),

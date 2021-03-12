@@ -27,7 +27,7 @@ vars = {
   # (from binaries with GN arg `use_coverage=true`).
   #
   # TODO(issuetracker.google.com/155195126): Change this to False and update
-  # buildbot to call update.py instead.
+  # buildbot to call tools/download-clang-update-script.py instead.
   'checkout_clang_coverage_tools': True,
 }
 
@@ -130,6 +130,12 @@ hooks = [
                 '--output', 'tools/clang/scripts/update.py' ],
     # NOTE: This file appears in .gitignore, as it is not a part of the
     # openscreen repo.
+  },
+ {
+    'name': 'yajsv_update_script',
+    'pattern': '.',
+    'condition': 'not build_with_chromium',
+    'action': [ 'python', 'tools/download-yajsv.py' ],
   },
   {
     'name': 'update_clang',

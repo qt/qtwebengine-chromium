@@ -14,18 +14,21 @@
 
 #include "src/writer/msl/generator_impl.h"
 
-#include "spirv/unified1/GLSL.std.450.h"
+#include <algorithm>
+#include <limits>
+#include <utility>
+#include <vector>
+
 #include "src/ast/array_accessor_expression.h"
-#include "src/ast/as_expression.h"
 #include "src/ast/assignment_statement.h"
 #include "src/ast/binary_expression.h"
+#include "src/ast/bitcast_expression.h"
 #include "src/ast/block_statement.h"
 #include "src/ast/bool_literal.h"
 #include "src/ast/break_statement.h"
 #include "src/ast/call_expression.h"
 #include "src/ast/call_statement.h"
 #include "src/ast/case_statement.h"
-#include "src/ast/cast_expression.h"
 #include "src/ast/continue_statement.h"
 #include "src/ast/decorated_variable.h"
 #include "src/ast/else_statement.h"
@@ -33,7 +36,6 @@
 #include "src/ast/function.h"
 #include "src/ast/identifier_expression.h"
 #include "src/ast/if_statement.h"
-#include "src/ast/intrinsic.h"
 #include "src/ast/location_decoration.h"
 #include "src/ast/loop_statement.h"
 #include "src/ast/member_accessor_expression.h"
@@ -41,13 +43,19 @@
 #include "src/ast/sint_literal.h"
 #include "src/ast/struct_member_offset_decoration.h"
 #include "src/ast/switch_statement.h"
+#include "src/ast/type/access_control_type.h"
 #include "src/ast/type/alias_type.h"
 #include "src/ast/type/array_type.h"
 #include "src/ast/type/bool_type.h"
+#include "src/ast/type/depth_texture_type.h"
 #include "src/ast/type/f32_type.h"
 #include "src/ast/type/i32_type.h"
 #include "src/ast/type/matrix_type.h"
+#include "src/ast/type/multisampled_texture_type.h"
 #include "src/ast/type/pointer_type.h"
+#include "src/ast/type/sampled_texture_type.h"
+#include "src/ast/type/sampler_type.h"
+#include "src/ast/type/storage_texture_type.h"
 #include "src/ast/type/struct_type.h"
 #include "src/ast/type/u32_type.h"
 #include "src/ast/type/vector_type.h"
@@ -106,12 +114,12 @@ bool GeneratorImpl::Generate() {
     global_variables_.set(global->name(), global.get());
   }
 
-  for (auto* const alias : module_->alias_types()) {
-    if (!EmitAliasType(alias)) {
+  for (auto* const ty : module_->constructed_types()) {
+    if (!EmitConstructedType(ty)) {
       return false;
     }
   }
-  if (!module_->alias_types().empty()) {
+  if (!module_->constructed_types().empty()) {
     out_ << std::endl;
   }
 
@@ -124,8 +132,13 @@ bool GeneratorImpl::Generate() {
     }
   }
 
-  for (const auto& ep : module_->entry_points()) {
-    if (!EmitEntryPointData(ep.get())) {
+  // Make sure all entry point data is emitted before the entry point functions
+  for (const auto& func : module_->functions()) {
+    if (!func->IsEntryPoint()) {
+      continue;
+    }
+
+    if (!EmitEntryPointData(func.get())) {
       return false;
     }
   }
@@ -136,8 +149,11 @@ bool GeneratorImpl::Generate() {
     }
   }
 
-  for (const auto& ep : module_->entry_points()) {
-    if (!EmitEntryPointFunction(ep.get())) {
+  for (const auto& func : module_->functions()) {
+    if (!func->IsEntryPoint()) {
+      continue;
+    }
+    if (!EmitEntryPointFunction(func.get())) {
       return false;
     }
     out_ << std::endl;
@@ -234,13 +250,25 @@ uint32_t GeneratorImpl::calculate_alignment_size(ast::type::Type* type) {
   return 0;
 }
 
-bool GeneratorImpl::EmitAliasType(const ast::type::AliasType* alias) {
+bool GeneratorImpl::EmitConstructedType(const ast::type::Type* ty) {
   make_indent();
-  out_ << "typedef ";
-  if (!EmitType(alias->type(), "")) {
+
+  if (ty->IsAlias()) {
+    auto* alias = ty->AsAlias();
+
+    out_ << "typedef ";
+    if (!EmitType(alias->type(), "")) {
+      return false;
+    }
+    out_ << " " << namer_.NameFor(alias->name()) << ";" << std::endl;
+  } else if (ty->IsStruct()) {
+    if (!EmitStructType(ty->AsStruct())) {
+      return false;
+    }
+  } else {
+    error_ = "unknown alias type: " + ty->type_name();
     return false;
   }
-  out_ << " " << namer_.NameFor(alias->name()) << ";" << std::endl;
 
   return true;
 }
@@ -259,7 +287,7 @@ bool GeneratorImpl::EmitArrayAccessor(ast::ArrayAccessorExpression* expr) {
   return true;
 }
 
-bool GeneratorImpl::EmitAs(ast::AsExpression* expr) {
+bool GeneratorImpl::EmitBitcast(ast::BitcastExpression* expr) {
   out_ << "as_type<";
   if (!EmitType(expr->type(), "")) {
     return false;
@@ -401,39 +429,51 @@ std::string GeneratorImpl::current_ep_var_name(VarType type) {
   return name;
 }
 
-std::string GeneratorImpl::generate_intrinsic_name(const std::string& name) {
-  if (name == "any") {
+std::string GeneratorImpl::generate_intrinsic_name(ast::Intrinsic intrinsic) {
+  if (intrinsic == ast::Intrinsic::kAny) {
     return "any";
   }
-  if (name == "all") {
+  if (intrinsic == ast::Intrinsic::kAll) {
     return "all";
   }
-  if (name == "dot") {
+  if (intrinsic == ast::Intrinsic::kCountOneBits) {
+    return "popcount";
+  }
+  if (intrinsic == ast::Intrinsic::kDot) {
     return "dot";
   }
-  if (name == "is_finite") {
-    return "isfinite";
-  }
-  if (name == "is_inf") {
-    return "isinf";
-  }
-  if (name == "is_nan") {
-    return "isnan";
-  }
-  if (name == "is_normal") {
-    return "isnormal";
-  }
-  if (name == "select") {
-    return "select";
-  }
-  if (name == "dpdy" || name == "dpdy_fine" || name == "dpdy_coarse") {
+  if (intrinsic == ast::Intrinsic::kDpdy ||
+      intrinsic == ast::Intrinsic::kDpdyFine ||
+      intrinsic == ast::Intrinsic::kDpdyCoarse) {
     return "dfdy";
   }
-  if (name == "dpdx" || name == "dpdx_fine" || name == "dpdx_coarse") {
+  if (intrinsic == ast::Intrinsic::kDpdx ||
+      intrinsic == ast::Intrinsic::kDpdxFine ||
+      intrinsic == ast::Intrinsic::kDpdxCoarse) {
     return "dfdx";
   }
-  if (name == "fwidth" || name == "fwidth_fine" || name == "fwidth_coarse") {
+  if (intrinsic == ast::Intrinsic::kFwidth ||
+      intrinsic == ast::Intrinsic::kFwidthFine ||
+      intrinsic == ast::Intrinsic::kFwidthCoarse) {
     return "fwidth";
+  }
+  if (intrinsic == ast::Intrinsic::kIsFinite) {
+    return "isfinite";
+  }
+  if (intrinsic == ast::Intrinsic::kIsInf) {
+    return "isinf";
+  }
+  if (intrinsic == ast::Intrinsic::kIsNan) {
+    return "isnan";
+  }
+  if (intrinsic == ast::Intrinsic::kIsNormal) {
+    return "isnormal";
+  }
+  if (intrinsic == ast::Intrinsic::kReverseBits) {
+    return "reverse_bits";
+  }
+  if (intrinsic == ast::Intrinsic::kSelect) {
+    return "select";
   }
   return "";
 }
@@ -445,9 +485,9 @@ bool GeneratorImpl::EmitCall(ast::CallExpression* expr) {
   }
 
   auto* ident = expr->func()->AsIdentifier();
-  if (!ident->has_path() && ast::intrinsic::IsIntrinsic(ident->name())) {
+  if (ident->IsIntrinsic()) {
     const auto& params = expr->params();
-    if (ident->name() == "outer_product") {
+    if (ident->intrinsic() == ast::Intrinsic::kOuterProduct) {
       error_ = "outer_product not supported yet";
       return false;
       // TODO(dsinclair): This gets tricky. We need to generate two variables to
@@ -500,11 +540,16 @@ bool GeneratorImpl::EmitCall(ast::CallExpression* expr) {
 
       // out_ << ")";
     } else {
-      auto name = generate_intrinsic_name(ident->name());
+      auto name = generate_intrinsic_name(ident->intrinsic());
       if (name.empty()) {
-        error_ = "unable to determine intrinsic name for intrinsic: " +
-                 ident->name();
-        return false;
+        if (ast::intrinsic::IsTextureIntrinsic(ident->intrinsic())) {
+          error_ = "Textures not implemented yet";
+          return false;
+        }
+        name = generate_builtin_name(ident);
+        if (name.empty()) {
+          return false;
+        }
       }
 
       make_indent();
@@ -527,191 +572,69 @@ bool GeneratorImpl::EmitCall(ast::CallExpression* expr) {
     return true;
   }
 
-  if (!ident->has_path()) {
-    auto name = ident->name();
-    auto it = ep_func_name_remapped_.find(current_ep_name_ + "_" + name);
-    if (it != ep_func_name_remapped_.end()) {
-      name = it->second;
-    }
-
-    auto* func = module_->FindFunctionByName(ident->name());
-    if (func == nullptr) {
-      error_ = "Unable to find function: " + name;
-      return false;
-    }
-
-    out_ << name << "(";
-
-    bool first = true;
-    if (has_referenced_in_var_needing_struct(func)) {
-      auto var_name = current_ep_var_name(VarType::kIn);
-      if (!var_name.empty()) {
-        out_ << var_name;
-        first = false;
-      }
-    }
-    if (has_referenced_out_var_needing_struct(func)) {
-      auto var_name = current_ep_var_name(VarType::kOut);
-      if (!var_name.empty()) {
-        if (!first) {
-          out_ << ", ";
-        }
-        first = false;
-        out_ << var_name;
-      }
-    }
-
-    for (const auto& data : func->referenced_builtin_variables()) {
-      auto* var = data.first;
-      if (var->storage_class() != ast::StorageClass::kInput) {
-        continue;
-      }
-      if (!first) {
-        out_ << ", ";
-      }
-      first = false;
-      out_ << var->name();
-    }
-
-    for (const auto& data : func->referenced_uniform_variables()) {
-      auto* var = data.first;
-      if (!first) {
-        out_ << ", ";
-      }
-      first = false;
-      out_ << var->name();
-    }
-
-    for (const auto& data : func->referenced_storagebuffer_variables()) {
-      auto* var = data.first;
-      if (!first) {
-        out_ << ", ";
-      }
-      first = false;
-      out_ << var->name();
-    }
-
-    const auto& params = expr->params();
-    for (const auto& param : params) {
-      if (!first) {
-        out_ << ", ";
-      }
-      first = false;
-
-      if (!EmitExpression(param.get())) {
-        return false;
-      }
-    }
-
-    out_ << ")";
-  } else {
-    return EmitImportFunction(expr);
-  }
-  return true;
-}
-
-bool GeneratorImpl::EmitImportFunction(ast::CallExpression* expr) {
-  auto* ident = expr->func()->AsIdentifier();
-
-  auto* imp = module_->FindImportByName(ident->path());
-  if (imp == nullptr) {
-    error_ = "unable to find import for " + ident->path();
-    return 0;
-  }
-  auto id = imp->GetIdForMethod(ident->name());
-  if (id == 0) {
-    error_ = "unable to lookup: " + ident->name() + " in " + ident->path();
+  auto name = ident->name();
+  auto it = ep_func_name_remapped_.find(current_ep_name_ + "_" + name);
+  if (it != ep_func_name_remapped_.end()) {
+    name = it->second;
   }
 
-  out_ << "metal::";
-  switch (id) {
-    case GLSLstd450Acos:
-    case GLSLstd450Acosh:
-    case GLSLstd450Asin:
-    case GLSLstd450Asinh:
-    case GLSLstd450Atan:
-    case GLSLstd450Atan2:
-    case GLSLstd450Atanh:
-    case GLSLstd450Ceil:
-    case GLSLstd450Cos:
-    case GLSLstd450Cosh:
-    case GLSLstd450Cross:
-    case GLSLstd450Determinant:
-    case GLSLstd450Distance:
-    case GLSLstd450Exp:
-    case GLSLstd450Exp2:
-    case GLSLstd450FAbs:
-    case GLSLstd450FaceForward:
-    case GLSLstd450Floor:
-    case GLSLstd450Fma:
-    case GLSLstd450Fract:
-    case GLSLstd450Length:
-    case GLSLstd450Log:
-    case GLSLstd450Log2:
-    case GLSLstd450Normalize:
-    case GLSLstd450Pow:
-    case GLSLstd450Reflect:
-    case GLSLstd450Round:
-    case GLSLstd450Sin:
-    case GLSLstd450Sinh:
-    case GLSLstd450SmoothStep:
-    case GLSLstd450Sqrt:
-    case GLSLstd450Step:
-    case GLSLstd450Tan:
-    case GLSLstd450Tanh:
-    case GLSLstd450Trunc:
-      out_ << ident->name();
-      break;
-    case GLSLstd450InverseSqrt:
-      out_ << "rsqrt";
-      break;
-    case GLSLstd450FMax:
-    case GLSLstd450NMax:
-      out_ << "fmax";
-      break;
-    case GLSLstd450FMin:
-    case GLSLstd450NMin:
-      out_ << "fmin";
-      break;
-    case GLSLstd450FMix:
-      out_ << "mix";
-      break;
-    case GLSLstd450FSign:
-      out_ << "sign";
-      break;
-    case GLSLstd450SAbs:
-      out_ << "abs";
-      break;
-    case GLSLstd450SMax:
-    case GLSLstd450UMax:
-      out_ << "max";
-      break;
-    case GLSLstd450SMin:
-    case GLSLstd450UMin:
-      out_ << "min";
-      break;
-    case GLSLstd450FClamp:
-    case GLSLstd450SClamp:
-    case GLSLstd450NClamp:
-    case GLSLstd450UClamp:
-      out_ << "clamp";
-      break;
-    // TODO(dsinclair): Determine mappings for the following
-    case GLSLstd450Degrees:
-    case GLSLstd450FindILsb:
-    case GLSLstd450FindUMsb:
-    case GLSLstd450FindSMsb:
-    case GLSLstd450InterpolateAtCentroid:
-    case GLSLstd450MatrixInverse:
-    case GLSLstd450Radians:
-    case GLSLstd450RoundEven:
-    case GLSLstd450SSign:
-      error_ = "Unknown import method: " + ident->name();
-      return false;
+  auto* func = module_->FindFunctionByName(ident->name());
+  if (func == nullptr) {
+    error_ = "Unable to find function: " + name;
+    return false;
   }
 
-  out_ << "(";
+  out_ << name << "(";
+
   bool first = true;
+  if (has_referenced_in_var_needing_struct(func)) {
+    auto var_name = current_ep_var_name(VarType::kIn);
+    if (!var_name.empty()) {
+      out_ << var_name;
+      first = false;
+    }
+  }
+  if (has_referenced_out_var_needing_struct(func)) {
+    auto var_name = current_ep_var_name(VarType::kOut);
+    if (!var_name.empty()) {
+      if (!first) {
+        out_ << ", ";
+      }
+      first = false;
+      out_ << var_name;
+    }
+  }
+
+  for (const auto& data : func->referenced_builtin_variables()) {
+    auto* var = data.first;
+    if (var->storage_class() != ast::StorageClass::kInput) {
+      continue;
+    }
+    if (!first) {
+      out_ << ", ";
+    }
+    first = false;
+    out_ << var->name();
+  }
+
+  for (const auto& data : func->referenced_uniform_variables()) {
+    auto* var = data.first;
+    if (!first) {
+      out_ << ", ";
+    }
+    first = false;
+    out_ << var->name();
+  }
+
+  for (const auto& data : func->referenced_storagebuffer_variables()) {
+    auto* var = data.first;
+    if (!first) {
+      out_ << ", ";
+    }
+    first = false;
+    out_ << var->name();
+  }
+
   const auto& params = expr->params();
   for (const auto& param : params) {
     if (!first) {
@@ -723,9 +646,88 @@ bool GeneratorImpl::EmitImportFunction(ast::CallExpression* expr) {
       return false;
     }
   }
+
   out_ << ")";
 
   return true;
+}
+
+std::string GeneratorImpl::generate_builtin_name(
+    ast::IdentifierExpression* ident) {
+  std::string out = "metal::";
+  switch (ident->intrinsic()) {
+    case ast::Intrinsic::kAcos:
+    case ast::Intrinsic::kAsin:
+    case ast::Intrinsic::kAtan:
+    case ast::Intrinsic::kAtan2:
+    case ast::Intrinsic::kCeil:
+    case ast::Intrinsic::kCos:
+    case ast::Intrinsic::kCosh:
+    case ast::Intrinsic::kCross:
+    case ast::Intrinsic::kDeterminant:
+    case ast::Intrinsic::kDistance:
+    case ast::Intrinsic::kExp:
+    case ast::Intrinsic::kExp2:
+    case ast::Intrinsic::kFloor:
+    case ast::Intrinsic::kFma:
+    case ast::Intrinsic::kFract:
+    case ast::Intrinsic::kLength:
+    case ast::Intrinsic::kLog:
+    case ast::Intrinsic::kLog2:
+    case ast::Intrinsic::kMix:
+    case ast::Intrinsic::kNormalize:
+    case ast::Intrinsic::kPow:
+    case ast::Intrinsic::kReflect:
+    case ast::Intrinsic::kRound:
+    case ast::Intrinsic::kSin:
+    case ast::Intrinsic::kSinh:
+    case ast::Intrinsic::kSqrt:
+    case ast::Intrinsic::kStep:
+    case ast::Intrinsic::kTan:
+    case ast::Intrinsic::kTanh:
+    case ast::Intrinsic::kTrunc:
+    case ast::Intrinsic::kSign:
+    case ast::Intrinsic::kClamp:
+      out += ident->name();
+      break;
+    case ast::Intrinsic::kAbs:
+      if (ident->result_type()->IsF32()) {
+        out += "fabs";
+      } else if (ident->result_type()->IsU32() ||
+                 ident->result_type()->IsI32()) {
+        out += "abs";
+      }
+      break;
+    case ast::Intrinsic::kMax:
+      if (ident->result_type()->IsF32()) {
+        out += "fmax";
+      } else if (ident->result_type()->IsU32() ||
+                 ident->result_type()->IsI32()) {
+        out += "max";
+      }
+      break;
+    case ast::Intrinsic::kMin:
+      if (ident->result_type()->IsF32()) {
+        out += "fmin";
+      } else if (ident->result_type()->IsU32() ||
+                 ident->result_type()->IsI32()) {
+        out += "min";
+      }
+      break;
+    case ast::Intrinsic::kFaceForward:
+      out += "faceforward";
+      break;
+    case ast::Intrinsic::kSmoothStep:
+      out += "smoothstep";
+      break;
+    case ast::Intrinsic::kInverseSqrt:
+      out += "rsqrt";
+      break;
+    default:
+      error_ = "Unknown import method: " + ident->name();
+      return "";
+  }
+  return out;
 }
 
 bool GeneratorImpl::EmitCase(ast::CaseStatement* stmt) {
@@ -769,19 +771,6 @@ bool GeneratorImpl::EmitCase(ast::CaseStatement* stmt) {
   make_indent();
   out_ << "}" << std::endl;
 
-  return true;
-}
-
-bool GeneratorImpl::EmitCast(ast::CastExpression* expr) {
-  if (!EmitType(expr->type(), "")) {
-    return false;
-  }
-
-  out_ << "(";
-  if (!EmitExpression(expr->expr())) {
-    return false;
-  }
-  out_ << ")";
   return true;
 }
 
@@ -847,6 +836,16 @@ bool GeneratorImpl::EmitZeroValue(ast::type::Type* type) {
     out_ << "0u";
   } else if (type->IsVector()) {
     return EmitZeroValue(type->AsVector()->type());
+  } else if (type->IsMatrix()) {
+    return EmitZeroValue(type->AsMatrix()->type());
+  } else if (type->IsArray()) {
+    out_ << "{";
+    if (!EmitZeroValue(type->AsArray()->type())) {
+      return false;
+    }
+    out_ << "}";
+  } else if (type->IsStruct()) {
+    out_ << "{}";
   } else {
     error_ = "Invalid type for zero emission: " + type->type_name();
     return false;
@@ -884,13 +883,7 @@ bool GeneratorImpl::EmitLiteral(ast::Literal* lit) {
   return true;
 }
 
-bool GeneratorImpl::EmitEntryPointData(ast::EntryPoint* ep) {
-  auto* func = module_->FindFunctionByName(ep->function_name());
-  if (func == nullptr) {
-    error_ = "Unable to find entry point function: " + ep->function_name();
-    return false;
-  }
-
+bool GeneratorImpl::EmitEntryPointData(ast::Function* func) {
   std::vector<std::pair<ast::Variable*, uint32_t>> in_locations;
   std::vector<std::pair<ast::Variable*, ast::VariableDecoration*>>
       out_variables;
@@ -914,20 +907,11 @@ bool GeneratorImpl::EmitEntryPointData(ast::EntryPoint* ep) {
     }
   }
 
-  auto ep_name = ep->name();
-  if (ep_name.empty()) {
-    ep_name = ep->function_name();
-  }
-
-  // TODO(dsinclair): There is a potential bug here. Entry points can have the
-  // same name in WGSL if they have different pipeline stages. This does not
-  // take that into account and will emit duplicate struct names. I'm ignoring
-  // this until https://github.com/gpuweb/gpuweb/issues/662 is resolved as it
-  // may remove this issue and entry point names will need to be unique.
   if (!in_locations.empty()) {
-    auto in_struct_name = generate_name(ep_name + "_" + kInStructNameSuffix);
+    auto in_struct_name =
+        generate_name(func->name() + "_" + kInStructNameSuffix);
     auto in_var_name = generate_name(kTintStructInVarPrefix);
-    ep_name_to_in_data_[ep_name] = {in_struct_name, in_var_name};
+    ep_name_to_in_data_[func->name()] = {in_struct_name, in_var_name};
 
     make_indent();
     out_ << "struct " << in_struct_name << " {" << std::endl;
@@ -944,9 +928,9 @@ bool GeneratorImpl::EmitEntryPointData(ast::EntryPoint* ep) {
       }
 
       out_ << " " << var->name() << " [[";
-      if (ep->stage() == ast::PipelineStage::kVertex) {
+      if (func->pipeline_stage() == ast::PipelineStage::kVertex) {
         out_ << "attribute(" << loc << ")";
-      } else if (ep->stage() == ast::PipelineStage::kFragment) {
+      } else if (func->pipeline_stage() == ast::PipelineStage::kFragment) {
         out_ << "user(locn" << loc << ")";
       } else {
         error_ = "invalid location variable for pipeline stage";
@@ -961,9 +945,10 @@ bool GeneratorImpl::EmitEntryPointData(ast::EntryPoint* ep) {
   }
 
   if (!out_variables.empty()) {
-    auto out_struct_name = generate_name(ep_name + "_" + kOutStructNameSuffix);
+    auto out_struct_name =
+        generate_name(func->name() + "_" + kOutStructNameSuffix);
     auto out_var_name = generate_name(kTintStructOutVarPrefix);
-    ep_name_to_out_data_[ep_name] = {out_struct_name, out_var_name};
+    ep_name_to_out_data_[func->name()] = {out_struct_name, out_var_name};
 
     make_indent();
     out_ << "struct " << out_struct_name << " {" << std::endl;
@@ -982,9 +967,9 @@ bool GeneratorImpl::EmitEntryPointData(ast::EntryPoint* ep) {
 
       if (deco->IsLocation()) {
         auto loc = deco->AsLocation()->value();
-        if (ep->stage() == ast::PipelineStage::kVertex) {
+        if (func->pipeline_stage() == ast::PipelineStage::kVertex) {
           out_ << "user(locn" << loc << ")";
-        } else if (ep->stage() == ast::PipelineStage::kFragment) {
+        } else if (func->pipeline_stage() == ast::PipelineStage::kFragment) {
           out_ << "color(" << loc << ")";
         } else {
           error_ = "invalid location variable for pipeline stage";
@@ -1015,17 +1000,14 @@ bool GeneratorImpl::EmitExpression(ast::Expression* expr) {
   if (expr->IsArrayAccessor()) {
     return EmitArrayAccessor(expr->AsArrayAccessor());
   }
-  if (expr->IsAs()) {
-    return EmitAs(expr->AsAs());
-  }
   if (expr->IsBinary()) {
     return EmitBinary(expr->AsBinary());
   }
+  if (expr->IsBitcast()) {
+    return EmitBitcast(expr->AsBitcast());
+  }
   if (expr->IsCall()) {
     return EmitCall(expr->AsCall());
-  }
-  if (expr->IsCast()) {
-    return EmitCast(expr->AsCast());
   }
   if (expr->IsConstructor()) {
     return EmitConstructor(expr->AsConstructor());
@@ -1097,7 +1079,7 @@ bool GeneratorImpl::EmitFunction(ast::Function* func) {
   make_indent();
 
   // Entry points will be emitted later, skip for now.
-  if (module_->IsFunctionEntryPoint(func->name())) {
+  if (func->IsEntryPoint()) {
     return true;
   }
 
@@ -1207,9 +1189,17 @@ bool GeneratorImpl::EmitFunctionInternal(ast::Function* func,
     }
     first = false;
 
+    if (!var->type()->IsAccessControl()) {
+      error_ = "invalid type for storage buffer, expected access control";
+      return false;
+    }
+    auto* ac = var->type()->AsAccessControl();
+    if (ac->IsReadOnly()) {
+      out_ << "const ";
+    }
+
     out_ << "device ";
-    // TODO(dsinclair): Can arrays be in storage buffers? If so, fix this ...
-    if (!EmitType(var->type(), "")) {
+    if (!EmitType(ac->type(), "")) {
       return false;
     }
     out_ << "& " << var->name();
@@ -1257,11 +1247,6 @@ std::string GeneratorImpl::builtin_to_attribute(ast::Builtin builtin) const {
       return "position";
     case ast::Builtin::kFragDepth:
       return "depth(any)";
-    // TODO(dsinclair): Ignore for now. This has been removed as a builtin
-    // in the spec. Need to update Tint to match.
-    // https://github.com/gpuweb/gpuweb/pull/824
-    case ast::Builtin::kWorkgroupSize:
-      return "";
     case ast::Builtin::kLocalInvocationId:
       return "thread_position_in_threadgroup";
     case ast::Builtin::kLocalInvocationIdx:
@@ -1274,21 +1259,12 @@ std::string GeneratorImpl::builtin_to_attribute(ast::Builtin builtin) const {
   return "";
 }
 
-bool GeneratorImpl::EmitEntryPointFunction(ast::EntryPoint* ep) {
+bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   make_indent();
 
-  current_ep_name_ = ep->name();
-  if (current_ep_name_.empty()) {
-    current_ep_name_ = ep->function_name();
-  }
+  current_ep_name_ = func->name();
 
-  auto* func = module_->FindFunctionByName(ep->function_name());
-  if (func == nullptr) {
-    error_ = "unable to find function for entry point: " + ep->function_name();
-    return false;
-  }
-
-  EmitStage(ep->stage());
+  EmitStage(func->pipeline_stage());
   out_ << " ";
 
   // This is an entry point, the return type is the entry point output structure
@@ -1374,10 +1350,17 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::EntryPoint* ep) {
     auto* binding = data.second.binding;
     // auto* set = data.second.set;
 
+    if (!var->type()->IsAccessControl()) {
+      error_ = "invalid type for storage buffer, expected access control";
+      return false;
+    }
+    auto* ac = var->type()->AsAccessControl();
+    if (ac->IsReadOnly()) {
+      out_ << "const ";
+    }
+
     out_ << "device ";
-    // TODO(dsinclair): Can you have a storagebuffer have an array? If so, this
-    // needs to be updated to handle arrays property.
-    if (!EmitType(var->type(), "")) {
+    if (!EmitType(ac->type(), "")) {
       return false;
     }
     out_ << "& " << var->name() << " [[buffer(" << binding->value() << ")]]";
@@ -1422,12 +1405,6 @@ bool GeneratorImpl::global_is_in_struct(ast::Variable* var) const {
 
 bool GeneratorImpl::EmitIdentifier(ast::IdentifierExpression* expr) {
   auto* ident = expr->AsIdentifier();
-  if (ident->has_path()) {
-    // TODO(dsinclair): Handle identifier with path
-    error_ = "Identifier paths not handled yet.";
-    return false;
-  }
-
   ast::Variable* var = nullptr;
   if (global_variables_.get(ident->name(), &var)) {
     if (global_is_in_struct(var)) {
@@ -1761,55 +1738,83 @@ bool GeneratorImpl::EmitType(ast::type::Type* type, const std::string& name) {
       return false;
     }
     out_ << "*";
+  } else if (type->IsSampler()) {
+    out_ << "sampler";
   } else if (type->IsStruct()) {
-    auto* str = type->AsStruct()->impl();
-    // TODO(dsinclair): Block decoration?
-    // if (str->decoration() != ast::StructDecoration::kNone) {
-    // }
-    out_ << "struct {" << std::endl;
+    // The struct type emits as just the name. The declaration would be emitted
+    // as part of emitting the constructed types.
+    out_ << type->AsStruct()->name();
+  } else if (type->IsTexture()) {
+    auto* tex = type->AsTexture();
 
-    increment_indent();
-    uint32_t current_offset = 0;
-    uint32_t pad_count = 0;
-    for (const auto& mem : str->members()) {
-      make_indent();
-      for (const auto& deco : mem->decorations()) {
-        if (deco->IsOffset()) {
-          uint32_t offset = deco->AsOffset()->offset();
-          if (offset != current_offset) {
-            out_ << "int8_t pad_" << pad_count << "["
-                 << (offset - current_offset) << "];" << std::endl;
-            pad_count++;
-            make_indent();
-          }
-          current_offset = offset;
-        } else {
-          error_ = "unsupported member decoration: " + deco->to_str();
-          return false;
-        }
-      }
-
-      if (!EmitType(mem->type(), mem->name())) {
-        return false;
-      }
-      auto size = calculate_alignment_size(mem->type());
-      if (size == 0) {
-        error_ =
-            "unable to calculate byte size for: " + mem->type()->type_name();
-        return false;
-      }
-      current_offset += size;
-
-      // Array member name will be output with the type
-      if (!mem->type()->IsArray()) {
-        out_ << " " << namer_.NameFor(mem->name());
-      }
-      out_ << ";" << std::endl;
+    if (tex->IsDepth()) {
+      out_ << "depth";
+    } else {
+      out_ << "texture";
     }
-    decrement_indent();
-    make_indent();
 
-    out_ << "}";
+    switch (tex->dim()) {
+      case ast::type::TextureDimension::k1d:
+        out_ << "1d";
+        break;
+      case ast::type::TextureDimension::k1dArray:
+        out_ << "1d_array";
+        break;
+      case ast::type::TextureDimension::k2d:
+        out_ << "2d";
+        break;
+      case ast::type::TextureDimension::k2dArray:
+        out_ << "2d_array";
+        break;
+      case ast::type::TextureDimension::k3d:
+        out_ << "3d";
+        break;
+      case ast::type::TextureDimension::kCube:
+        out_ << "cube";
+        break;
+      case ast::type::TextureDimension::kCubeArray:
+        out_ << "cube_array";
+        break;
+      default:
+        error_ = "Invalid texture dimensions";
+        return false;
+    }
+    if (tex->IsMultisampled()) {
+      out_ << "_ms";
+    }
+    out_ << "<";
+    if (tex->IsDepth()) {
+      out_ << "float, access::sample";
+    } else if (tex->IsStorage()) {
+      auto* storage = tex->AsStorage();
+      if (!EmitType(storage->type(), "")) {
+        return false;
+      }
+      out_ << ", access::";
+      if (storage->access() == ast::AccessControl::kReadOnly) {
+        out_ << "read";
+      } else if (storage->access() == ast::AccessControl::kWriteOnly) {
+        out_ << "write";
+      } else {
+        error_ = "Invalid access control for storage texture";
+        return false;
+      }
+    } else if (tex->IsMultisampled()) {
+      if (!EmitType(tex->AsMultisampled()->type(), "")) {
+        return false;
+      }
+      out_ << ", access::sample";
+    } else if (tex->IsSampled()) {
+      if (!EmitType(tex->AsSampled()->type(), "")) {
+        return false;
+      }
+      out_ << ", access::sample";
+    } else {
+      error_ = "invalid texture type";
+      return false;
+    }
+    out_ << ">";
+
   } else if (type->IsU32()) {
     out_ << "uint";
   } else if (type->IsVector()) {
@@ -1821,10 +1826,60 @@ bool GeneratorImpl::EmitType(ast::type::Type* type, const std::string& name) {
   } else if (type->IsVoid()) {
     out_ << "void";
   } else {
-    error_ = "unknown type in EmitType";
+    error_ = "unknown type in EmitType: " + type->type_name();
     return false;
   }
 
+  return true;
+}
+
+bool GeneratorImpl::EmitStructType(const ast::type::StructType* str) {
+  // TODO(dsinclair): Block decoration?
+  // if (str->impl()->decoration() != ast::StructDecoration::kNone) {
+  // }
+  out_ << "struct " << str->name() << " {" << std::endl;
+
+  increment_indent();
+  uint32_t current_offset = 0;
+  uint32_t pad_count = 0;
+  for (const auto& mem : str->impl()->members()) {
+    make_indent();
+    for (const auto& deco : mem->decorations()) {
+      if (deco->IsOffset()) {
+        uint32_t offset = deco->AsOffset()->offset();
+        if (offset != current_offset) {
+          out_ << "int8_t pad_" << pad_count << "[" << (offset - current_offset)
+               << "];" << std::endl;
+          pad_count++;
+          make_indent();
+        }
+        current_offset = offset;
+      } else {
+        error_ = "unsupported member decoration: " + deco->to_str();
+        return false;
+      }
+    }
+
+    if (!EmitType(mem->type(), mem->name())) {
+      return false;
+    }
+    auto size = calculate_alignment_size(mem->type());
+    if (size == 0) {
+      error_ = "unable to calculate byte size for: " + mem->type()->type_name();
+      return false;
+    }
+    current_offset += size;
+
+    // Array member name will be output with the type
+    if (!mem->type()->IsArray()) {
+      out_ << " " << namer_.NameFor(mem->name());
+    }
+    out_ << ";" << std::endl;
+  }
+  decrement_indent();
+  make_indent();
+
+  out_ << "};" << std::endl;
   return true;
 }
 
@@ -1867,10 +1922,19 @@ bool GeneratorImpl::EmitVariable(ast::Variable* var, bool skip_constructor) {
     out_ << " " << var->name();
   }
 
-  if (!skip_constructor && var->constructor() != nullptr) {
+  if (!skip_constructor) {
     out_ << " = ";
-    if (!EmitExpression(var->constructor())) {
-      return false;
+    if (var->constructor() != nullptr) {
+      if (!EmitExpression(var->constructor())) {
+        return false;
+      }
+    } else if (var->storage_class() == ast::StorageClass::kPrivate ||
+               var->storage_class() == ast::StorageClass::kFunction ||
+               var->storage_class() == ast::StorageClass::kNone ||
+               var->storage_class() == ast::StorageClass::kOutput) {
+      if (!EmitZeroValue(var->type())) {
+        return false;
+      }
     }
   }
   out_ << ";" << std::endl;
@@ -1881,7 +1945,7 @@ bool GeneratorImpl::EmitVariable(ast::Variable* var, bool skip_constructor) {
 bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
   make_indent();
 
-  if (var->IsDecorated()) {
+  if (var->IsDecorated() && !var->AsDecorated()->HasConstantIdDecoration()) {
     error_ = "Decorated const values not valid";
     return false;
   }
@@ -1898,7 +1962,10 @@ bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
     out_ << " " << var->name();
   }
 
-  if (var->constructor() != nullptr) {
+  if (var->IsDecorated() && var->AsDecorated()->HasConstantIdDecoration()) {
+    out_ << " [[function_constant(" << var->AsDecorated()->constant_id()
+         << ")]]";
+  } else if (var->constructor() != nullptr) {
     out_ << " = ";
     if (!EmitExpression(var->constructor())) {
       return false;

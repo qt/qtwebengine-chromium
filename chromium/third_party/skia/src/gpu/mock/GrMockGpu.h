@@ -24,16 +24,6 @@ public:
 
     ~GrMockGpu() override {}
 
-    GrOpsRenderPass* getOpsRenderPass(
-            GrRenderTarget*,
-            GrStencilAttachment*,
-            GrSurfaceOrigin,
-            const SkIRect&,
-            const GrOpsRenderPass::LoadAndStoreInfo&,
-            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-            const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            GrXferBarrierFlags renderPassXferBarriers) override;
-
     GrFence SK_WARN_UNUSED_RESULT insertFence() override { return 0; }
     bool waitFence(GrFence) override { return true; }
     void deleteFence(GrFence) const override {}
@@ -97,9 +87,6 @@ private:
 
     sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) override;
 
-    sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
-                                                             int sampleCnt) override;
-
     sk_sp<GrGpuBuffer> onCreateBuffer(size_t sizeInBytes, GrGpuBufferType, GrAccessPattern,
                                       const void*) override;
 
@@ -141,12 +128,35 @@ private:
         finishedProc(finishedContext);
     }
 
+    GrOpsRenderPass* onGetOpsRenderPass(GrRenderTarget*,
+                                        GrAttachment*,
+                                        GrSurfaceOrigin,
+                                        const SkIRect&,
+                                        const GrOpsRenderPass::LoadAndStoreInfo&,
+                                        const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+                                        GrXferBarrierFlags renderPassXferBarriers) override;
+
     bool onSubmitToGpu(bool syncCpu) override {
         return true;
     }
 
-    GrStencilAttachment* createStencilAttachmentForRenderTarget(
-            const GrRenderTarget*, SkISize dimensions, int numStencilSamples) override;
+    sk_sp<GrAttachment> makeStencilAttachmentForRenderTarget(const GrRenderTarget*,
+                                                             SkISize dimensions,
+                                                             int numStencilSamples) override;
+
+    GrBackendFormat getPreferredStencilFormat(const GrBackendFormat&) override {
+        return GrBackendFormat::MakeMock(GrColorType::kUnknown, SkImage::CompressionType::kNone,
+                                         true);
+    }
+
+    sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
+                                           const GrBackendFormat& format,
+                                           int numSamples,
+                                           GrProtected isProtected) override {
+        return nullptr;
+    }
+
     GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                             const GrBackendFormat&,
                                             GrRenderable,
@@ -177,7 +187,10 @@ private:
 #if GR_TEST_UTILS
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(SkISize dimensions,
+                                                               GrColorType,
+                                                               int sampleCnt,
+                                                               GrProtected) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     void testingOnly_flushGpuAndSync() override {}

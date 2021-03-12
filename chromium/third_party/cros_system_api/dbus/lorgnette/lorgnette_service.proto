@@ -124,6 +124,9 @@ enum ScanState {
 
   // Scanning of the current page completed successfully.
   SCAN_STATE_PAGE_COMPLETED = 4;
+
+  // The scan job was cancelled via a call to CancelScan.
+  SCAN_STATE_CANCELLED = 5;
 }
 
 // Information passed to a StartScan D-Bus request.
@@ -164,6 +167,22 @@ message GetNextImageResponse {
   string failure_reason = 2;
 }
 
+// Information passed to a CancelScan D-Bus request.
+// Used by lorgnette to find the scan job to cancel.
+message CancelScanRequest {
+  // A UUID identifying the scan job.
+  string scan_uuid = 1;
+}
+
+// Information returned from a CancelScan D-Bus request;
+message CancelScanResponse {
+  // True if requesting scan cancellation was successful.
+  bool success = 1;
+
+  // The failure reason if success is false.
+  string failure_reason = 2;
+}
+
 // Information sent with ScanStatus D-Bus signal.
 message ScanStatusChangedSignal {
   // A UUID identifying the scan job.
@@ -181,7 +200,7 @@ message ScanStatusChangedSignal {
   // The page field will be set to the page currently being scanned for
   // SCAN_STATE_IN_PROGRESS, or the page that has just been completed for
   // SCAN_STATE_PAGE_COMPLETED.
-  // Pages are 0-indexed.
+  // Pages are 1-indexed.
   uint32 page = 5;
 
   // If state is SCAN_STATE_PAGE_COMPLETED and more_pages is true, the client

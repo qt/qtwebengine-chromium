@@ -29,10 +29,16 @@ class VisibilityBufferOffsetsMtl;
 
 namespace mtl
 {
-struct ClearRectParams : public ClearOptions
+
+struct ClearRectParams
 {
+    Optional<ClearColorValue> clearColor;
+    Optional<float> clearDepth;
+    Optional<uint32_t> clearStencil;
+
     MTLColorWriteMask clearColorMask = MTLColorWriteMaskAll;
 
+    const mtl::Format *colorFormat = nullptr;
     gl::Extents dstTextureSize;
 
     // Only clear enabled buffers
@@ -57,8 +63,8 @@ struct BlitParams
     bool dstFlipX = false;
 
     TextureRef src;
-    uint32_t srcLevel = 0;
-    uint32_t srcLayer = 0;
+    MipmapNativeLevel srcLevel = kZeroNativeMipLevel;
+    uint32_t srcLayer          = 0;
 
     // Source rectangle:
     // NOTE: if srcYFlipped=true, this rectangle will be converted internally to flipped rect before
@@ -93,12 +99,12 @@ struct StencilBlitViaBufferParams : public DepthStencilBlitParams
     StencilBlitViaBufferParams(const DepthStencilBlitParams &src);
 
     TextureRef dstStencil;
-    uint32_t dstStencilLevel         = 0;
-    uint32_t dstStencilLayer         = 0;
-    bool dstPackedDepthStencilFormat = false;
+    MipmapNativeLevel dstStencilLevel = kZeroNativeMipLevel;
+    uint32_t dstStencilLayer          = 0;
+    bool dstPackedDepthStencilFormat  = false;
 };
 
-struct TriFanFromArrayParams
+struct TriFanOrLineLoopFromArrayParams
 {
     uint32_t firstVertex;
     uint32_t vertexCount;
@@ -117,6 +123,7 @@ struct IndexConversionParams
     const BufferRef &dstBuffer;
     // Must be multiples of kIndexBufferOffsetAlignment
     uint32_t dstOffset;
+    bool primitiveRestartEnabled = false;
 };
 
 struct IndexGenerationParams
@@ -126,6 +133,7 @@ struct IndexGenerationParams
     const void *indices;
     BufferRef dstBuffer;
     uint32_t dstOffset;
+    bool primitiveRestartEnabled = false;
 };
 
 struct CopyPixelsCommonParams
@@ -150,16 +158,33 @@ struct CopyPixelsFromBufferParams : CopyPixelsCommonParams
 struct CopyPixelsToBufferParams : CopyPixelsCommonParams
 {
     gl::Rectangle textureArea;
-    uint32_t textureLevel       = 0;
-    uint32_t textureSliceOrDeph = 0;
+    MipmapNativeLevel textureLevel = kZeroNativeMipLevel;
+    uint32_t textureSliceOrDeph    = 0;
     bool reverseTextureRowOrder;
+};
+
+struct VertexFormatConvertParams
+{
+    BufferRef srcBuffer;
+    uint32_t srcBufferStartOffset = 0;
+    uint32_t srcStride            = 0;
+    uint32_t srcDefaultAlphaData  = 0;  // casted as uint
+
+    BufferRef dstBuffer;
+    uint32_t dstBufferStartOffset = 0;
+    uint32_t dstStride            = 0;
+    uint32_t dstComponents        = 0;
+
+    uint32_t vertexCount = 0;
 };
 
 // Utils class for clear & blitting
 class ClearUtils final : angle::NonCopyable
 {
   public:
-    ClearUtils();
+    ClearUtils() = delete;
+    ClearUtils(const std::string &fragmentShaderName);
+    ClearUtils(const ClearUtils &src);
 
     void onDestroy();
 
@@ -180,6 +205,8 @@ class ClearUtils final : angle::NonCopyable
                                                            RenderCommandEncoder *cmdEncoder,
                                                            const ClearRectParams &params);
 
+    const std::string mFragmentShaderName;
+
     // Render pipeline cache for clear with draw:
     std::array<RenderPipelineCache, kMaxRenderTargets + 1> mClearRenderPipelineCache;
 };
@@ -187,7 +214,9 @@ class ClearUtils final : angle::NonCopyable
 class ColorBlitUtils final : angle::NonCopyable
 {
   public:
-    ColorBlitUtils();
+    ColorBlitUtils() = delete;
+    ColorBlitUtils(const std::string &fragmentShaderName);
+    ColorBlitUtils(const ColorBlitUtils &src);
 
     void onDestroy();
 
@@ -211,6 +240,8 @@ class ColorBlitUtils final : angle::NonCopyable
                                                                RenderCommandEncoder *cmdEncoder,
                                                                const ColorBlitParams &params);
 
+    const std::string mFragmentShaderName;
+
     // Blit with draw pipeline caches:
     // First array dimension: number of outputs.
     // Second array dimension: source texture type (2d, ms, array, 3d, etc)
@@ -230,6 +261,7 @@ class DepthStencilBlitUtils final : angle::NonCopyable
     angle::Result blitDepthStencilWithDraw(const gl::Context *context,
                                            RenderCommandEncoder *cmdEncoder,
                                            const DepthStencilBlitParams &params);
+
     // Blit stencil data using intermediate buffer. This function is used on devices with no
     // support for direct stencil write in shader. Thus an intermediate buffer storing copied
     // stencil data is needed.
@@ -282,18 +314,29 @@ class IndexGeneratorUtils final : angle::NonCopyable
                                         const IndexConversionParams &params);
     // Generate triangle fan index buffer for glDrawArrays().
     angle::Result generateTriFanBufferFromArrays(ContextMtl *contextMtl,
-                                                 const TriFanFromArrayParams &params);
+                                                 const TriFanOrLineLoopFromArrayParams &params);
     // Generate triangle fan index buffer for glDrawElements().
     angle::Result generateTriFanBufferFromElementsArray(ContextMtl *contextMtl,
                                                         const IndexGenerationParams &params);
 
+    // Generate line loop index buffer for glDrawArrays().
+    angle::Result generateLineLoopBufferFromArrays(ContextMtl *contextMtl,
+                                                   const TriFanOrLineLoopFromArrayParams &params);
     // Generate line loop's last segment index buffer for glDrawArrays().
+    // This is used when primitive restart is not enabled.
     angle::Result generateLineLoopLastSegment(ContextMtl *contextMtl,
                                               uint32_t firstVertex,
                                               uint32_t lastVertex,
                                               const BufferRef &dstBuffer,
                                               uint32_t dstOffset);
+    // Generate line loop index buffer for glDrawElements().
+    // Destination buffer must have at least 2x the number of original indices if primitive restart
+    // is enabled.
+    angle::Result generateLineLoopBufferFromElementsArray(ContextMtl *contextMtl,
+                                                          const IndexGenerationParams &params,
+                                                          uint32_t *indicesGenerated);
     // Generate line loop's last segment index buffer for glDrawElements().
+    // NOTE: this function assumes primitive restart is not enabled.
     angle::Result generateLineLoopLastSegmentFromElementsArray(ContextMtl *contextMtl,
                                                                const IndexGenerationParams &params);
 
@@ -310,13 +353,17 @@ class IndexGeneratorUtils final : angle::NonCopyable
         ContextMtl *contextMtl,
         gl::DrawElementsType srcType,
         uint32_t srcOffset);
-    // Get compute pipeline to generate tri fan index for glDrawElements().
-    AutoObjCPtr<id<MTLComputePipelineState>> getTriFanFromElemArrayGeneratorPipeline(
+    // Get compute pipeline to generate tri fan/line loop index for glDrawElements().
+    AutoObjCPtr<id<MTLComputePipelineState>> getIndicesFromElemArrayGeneratorPipeline(
         ContextMtl *contextMtl,
         gl::DrawElementsType srcType,
-        uint32_t srcOffset);
+        uint32_t srcOffset,
+        NSString *shaderName,
+        IndexConversionPipelineArray *pipelineCacheArray);
     // Defer loading of compute pipeline to generate tri fan index for glDrawArrays().
     void ensureTriFanFromArrayGeneratorInitialized(ContextMtl *contextMtl);
+    // Defer loading of compute pipeline to generate line loop index for glDrawArrays().
+    void ensureLineLoopFromArrayGeneratorInitialized(ContextMtl *contextMtl);
 
     angle::Result generateTriFanBufferFromElementsArrayGPU(
         ContextMtl *contextMtl,
@@ -330,6 +377,18 @@ class IndexGeneratorUtils final : angle::NonCopyable
     angle::Result generateTriFanBufferFromElementsArrayCPU(ContextMtl *contextMtl,
                                                            const IndexGenerationParams &params);
 
+    angle::Result generateLineLoopBufferFromElementsArrayGPU(
+        ContextMtl *contextMtl,
+        gl::DrawElementsType srcType,
+        uint32_t indexCount,
+        const BufferRef &srcBuffer,
+        uint32_t srcOffset,
+        const BufferRef &dstBuffer,
+        // Must be multiples of kIndexBufferOffsetAlignment
+        uint32_t dstOffset);
+    angle::Result generateLineLoopBufferFromElementsArrayCPU(ContextMtl *contextMtl,
+                                                             const IndexGenerationParams &params,
+                                                             uint32_t *indicesGenerated);
     angle::Result generateLineLoopLastSegmentFromElementsArrayCPU(
         ContextMtl *contextMtl,
         const IndexGenerationParams &params);
@@ -338,10 +397,13 @@ class IndexGeneratorUtils final : angle::NonCopyable
 
     IndexConversionPipelineArray mTriFanFromElemArrayGeneratorPipelineCaches;
     AutoObjCPtr<id<MTLComputePipelineState>> mTriFanFromArraysGeneratorPipeline;
+
+    IndexConversionPipelineArray mLineLoopFromElemArrayGeneratorPipelineCaches;
+    AutoObjCPtr<id<MTLComputePipelineState>> mLineLoopFromArraysGeneratorPipeline;
 };
 
 // Util class for handling visibility query result
-class VisibilityResultUtils
+class VisibilityResultUtils final : angle::NonCopyable
 {
   public:
     void onDestroy();
@@ -371,7 +433,7 @@ class MipmapUtils final : angle::NonCopyable
     angle::Result generateMipmapCS(ContextMtl *contextMtl,
                                    const TextureRef &srcTexture,
                                    bool sRGBMipmap,
-                                   gl::TexLevelArray<mtl::TextureRef> *mipmapOutputViews);
+                                   NativeTexLevelArray *mipmapOutputViews);
 
   private:
     void ensure3DMipGeneratorPipelineInitialized(ContextMtl *contextMtl);
@@ -381,7 +443,7 @@ class MipmapUtils final : angle::NonCopyable
 };
 
 // Util class for handling pixels copy between buffers and textures
-class CopyPixelsUtils
+class CopyPixelsUtils final : angle::NonCopyable
 {
   public:
     CopyPixelsUtils() = default;
@@ -414,6 +476,73 @@ class CopyPixelsUtils
     const std::string mWriteShaderName;
 };
 
+// Util class for handling vertex format conversion on GPU
+class VertexFormatConversionUtils final : angle::NonCopyable
+{
+  public:
+    void onDestroy();
+
+    // Convert vertex format to float. Compute shader version.
+    angle::Result convertVertexFormatToFloatCS(ContextMtl *contextMtl,
+                                               const angle::Format &srcAngleFormat,
+                                               const VertexFormatConvertParams &params);
+    // Convert vertex format to float. Vertex shader version. This version should be used if
+    // a render pass is active and we don't want to break it. Explicit memory barrier must be
+    // supported.
+    angle::Result convertVertexFormatToFloatVS(const gl::Context *context,
+                                               RenderCommandEncoder *renderEncoder,
+                                               const angle::Format &srcAngleFormat,
+                                               const VertexFormatConvertParams &params);
+    // Expand number of components per vertex's attribute (or just simply copy components between
+    // buffers with different stride and offset)
+    angle::Result expandVertexFormatComponentsCS(ContextMtl *contextMtl,
+                                                 const angle::Format &srcAngleFormat,
+                                                 const VertexFormatConvertParams &params);
+    angle::Result expandVertexFormatComponentsVS(const gl::Context *context,
+                                                 RenderCommandEncoder *renderEncoder,
+                                                 const angle::Format &srcAngleFormat,
+                                                 const VertexFormatConvertParams &params);
+
+  private:
+    void ensureComponentsExpandComputePipelineCreated(ContextMtl *contextMtl);
+    AutoObjCPtr<id<MTLRenderPipelineState>> getComponentsExpandRenderPipeline(
+        ContextMtl *contextMtl,
+        RenderCommandEncoder *renderEncoder);
+
+    AutoObjCPtr<id<MTLComputePipelineState>> getFloatConverstionComputePipeline(
+        ContextMtl *contextMtl,
+        const angle::Format &srcAngleFormat);
+
+    AutoObjCPtr<id<MTLRenderPipelineState>> getFloatConverstionRenderPipeline(
+        ContextMtl *contextMtl,
+        RenderCommandEncoder *renderEncoder,
+        const angle::Format &srcAngleFormat);
+
+    template <typename EncoderType, typename PipelineType>
+    angle::Result setupCommonConvertVertexFormatToFloat(ContextMtl *contextMtl,
+                                                        EncoderType cmdEncoder,
+                                                        const PipelineType &pipeline,
+                                                        const angle::Format &srcAngleFormat,
+                                                        const VertexFormatConvertParams &params);
+    template <typename EncoderType, typename PipelineType>
+    angle::Result setupCommonExpandVertexFormatComponents(ContextMtl *contextMtl,
+                                                          EncoderType cmdEncoder,
+                                                          const PipelineType &pipeline,
+                                                          const angle::Format &srcAngleFormat,
+                                                          const VertexFormatConvertParams &params);
+
+    using ConvertToFloatCompPipelineArray =
+        std::array<AutoObjCPtr<id<MTLComputePipelineState>>, angle::kNumANGLEFormats>;
+    using ConvertToFloatRenderPipelineArray =
+        std::array<RenderPipelineCache, angle::kNumANGLEFormats>;
+
+    ConvertToFloatCompPipelineArray mConvertToFloatCompPipelineCaches;
+    ConvertToFloatRenderPipelineArray mConvertToFloatRenderPipelineCaches;
+
+    AutoObjCPtr<id<MTLComputePipelineState>> mComponentsExpandCompPipeline;
+    RenderPipelineCache mComponentsExpandRenderPipelineCache;
+};
+
 // RenderUtils: container class of various util classes above
 class RenderUtils : public Context, angle::NonCopyable
 {
@@ -431,12 +560,19 @@ class RenderUtils : public Context, angle::NonCopyable
     // Blit texture data to current framebuffer
     angle::Result blitColorWithDraw(const gl::Context *context,
                                     RenderCommandEncoder *cmdEncoder,
+                                    const angle::Format &srcAngleFormat,
                                     const ColorBlitParams &params);
     // Same as above but blit the whole texture to the whole of current framebuffer.
     // This function assumes the framebuffer and the source texture have same size.
     angle::Result blitColorWithDraw(const gl::Context *context,
                                     RenderCommandEncoder *cmdEncoder,
+                                    const angle::Format &srcAngleFormat,
                                     const TextureRef &srcTexture);
+    angle::Result copyTextureWithDraw(const gl::Context *context,
+                                      RenderCommandEncoder *cmdEncoder,
+                                      const angle::Format &srcAngleFormat,
+                                      const angle::Format &dstAngleFormat,
+                                      const ColorBlitParams &params);
 
     angle::Result blitDepthStencilWithDraw(const gl::Context *context,
                                            RenderCommandEncoder *cmdEncoder,
@@ -449,14 +585,20 @@ class RenderUtils : public Context, angle::NonCopyable
     angle::Result convertIndexBufferGPU(ContextMtl *contextMtl,
                                         const IndexConversionParams &params);
     angle::Result generateTriFanBufferFromArrays(ContextMtl *contextMtl,
-                                                 const TriFanFromArrayParams &params);
+                                                 const TriFanOrLineLoopFromArrayParams &params);
     angle::Result generateTriFanBufferFromElementsArray(ContextMtl *contextMtl,
                                                         const IndexGenerationParams &params);
+
+    angle::Result generateLineLoopBufferFromArrays(ContextMtl *contextMtl,
+                                                   const TriFanOrLineLoopFromArrayParams &params);
     angle::Result generateLineLoopLastSegment(ContextMtl *contextMtl,
                                               uint32_t firstVertex,
                                               uint32_t lastVertex,
                                               const BufferRef &dstBuffer,
                                               uint32_t dstOffset);
+    angle::Result generateLineLoopBufferFromElementsArray(ContextMtl *contextMtl,
+                                                          const IndexGenerationParams &params,
+                                                          uint32_t *indicesGenerated);
     angle::Result generateLineLoopLastSegmentFromElementsArray(ContextMtl *contextMtl,
                                                                const IndexGenerationParams &params);
 
@@ -470,7 +612,7 @@ class RenderUtils : public Context, angle::NonCopyable
     angle::Result generateMipmapCS(ContextMtl *contextMtl,
                                    const TextureRef &srcTexture,
                                    bool sRGBMipmap,
-                                   gl::TexLevelArray<mtl::TextureRef> *mipmapOutputViews);
+                                   NativeTexLevelArray *mipmapOutputViews);
 
     angle::Result unpackPixelsFromBufferToTexture(ContextMtl *contextMtl,
                                                   const angle::Format &srcAngleFormat,
@@ -478,6 +620,25 @@ class RenderUtils : public Context, angle::NonCopyable
     angle::Result packPixelsFromTextureToBuffer(ContextMtl *contextMtl,
                                                 const angle::Format &dstAngleFormat,
                                                 const CopyPixelsToBufferParams &params);
+
+    // See VertexFormatConversionUtils::convertVertexFormatToFloatCS()
+    angle::Result convertVertexFormatToFloatCS(ContextMtl *contextMtl,
+                                               const angle::Format &srcAngleFormat,
+                                               const VertexFormatConvertParams &params);
+    // See VertexFormatConversionUtils::convertVertexFormatToFloatVS()
+    angle::Result convertVertexFormatToFloatVS(const gl::Context *context,
+                                               RenderCommandEncoder *renderEncoder,
+                                               const angle::Format &srcAngleFormat,
+                                               const VertexFormatConvertParams &params);
+    // See VertexFormatConversionUtils::expandVertexFormatComponentsCS()
+    angle::Result expandVertexFormatComponentsCS(ContextMtl *contextMtl,
+                                                 const angle::Format &srcAngleFormat,
+                                                 const VertexFormatConvertParams &params);
+    // See VertexFormatConversionUtils::expandVertexFormatComponentsVS()
+    angle::Result expandVertexFormatComponentsVS(const gl::Context *context,
+                                                 RenderCommandEncoder *renderEncoder,
+                                                 const angle::Format &srcAngleFormat,
+                                                 const VertexFormatConvertParams &params);
 
   private:
     // override ErrorHandler
@@ -490,13 +651,17 @@ class RenderUtils : public Context, angle::NonCopyable
                      const char *function,
                      unsigned int line) override;
 
-    ClearUtils mClearUtils;
-    ColorBlitUtils mColorBlitUtils;
+    std::array<ClearUtils, angle::EnumSize<PixelType>()> mClearUtils;
+
+    std::array<ColorBlitUtils, angle::EnumSize<PixelType>()> mColorBlitUtils;
+    ColorBlitUtils mCopyTextureFloatToUIntUtils;
+
     DepthStencilBlitUtils mDepthStencilBlitUtils;
     IndexGeneratorUtils mIndexUtils;
     VisibilityResultUtils mVisibilityResultUtils;
     MipmapUtils mMipmapUtils;
     std::array<CopyPixelsUtils, angle::EnumSize<PixelType>()> mCopyPixelsUtils;
+    VertexFormatConversionUtils mVertexFormatUtils;
 };
 
 }  // namespace mtl

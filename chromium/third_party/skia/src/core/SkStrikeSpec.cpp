@@ -102,7 +102,7 @@ SkStrikeSpec SkStrikeSpec::MakeCanonicalized(const SkFont& font, const SkPaint* 
 
     storage.commonSetup(*canonicalizedFont,
                         canonicalizedPaint,
-                        SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType),
+                        SkSurfaceProps(),
                         kFakeGammaAndBoostContrast,
                         SkMatrix::I());
     return storage;
@@ -118,7 +118,7 @@ SkStrikeSpec SkStrikeSpec::MakeWithNoDevice(const SkFont& font, const SkPaint* p
 
     storage.commonSetup(font,
                         setupPaint,
-                        SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType),
+                        SkSurfaceProps(),
                         kFakeGammaAndBoostContrast,
                         SkMatrix::I());
 

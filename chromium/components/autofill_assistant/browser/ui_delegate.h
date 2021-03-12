@@ -11,6 +11,7 @@
 
 #include "base/optional.h"
 #include "bottom_sheet_state.h"
+#include "components/autofill_assistant/browser/client_settings.h"
 #include "components/autofill_assistant/browser/event_handler.h"
 #include "components/autofill_assistant/browser/metrics.h"
 #include "components/autofill_assistant/browser/rectf.h"
@@ -24,7 +25,6 @@ class ControllerObserver;
 class Details;
 class InfoBox;
 class BasicInteractions;
-struct ClientSettings;
 
 // UI delegate called for script executions.
 class UiDelegate {
@@ -179,6 +179,7 @@ class UiDelegate {
 
   // Reports a fatal error to Autofill Assistant, which should then stop.
   virtual void OnFatalError(const std::string& error_message,
+                            bool show_feedback_chip,
                             Metrics::DropOutReason reason) = 0;
 
   // Reports that Autofill Assistant should be Stopped.
@@ -262,6 +263,9 @@ class UiDelegate {
 
   // Returns whether the UI delegate is currently running a lite script or not.
   virtual bool IsRunningLiteScript() const = 0;
+
+  // Called when the visibility of the keyboard has changed.
+  virtual void OnKeyboardVisibilityChanged(bool visible) = 0;
 
  protected:
   UiDelegate() = default;

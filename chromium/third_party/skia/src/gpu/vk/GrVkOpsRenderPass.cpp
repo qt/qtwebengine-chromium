@@ -11,10 +11,12 @@
 #include "include/core/SkRect.h"
 #include "include/gpu/GrBackendDrawableInfo.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrBackendUtils.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrPipeline.h"
 #include "src/gpu/GrRenderTarget.h"
+#include "src/gpu/vk/GrVkAttachment.h"
 #include "src/gpu/vk/GrVkCommandBuffer.h"
 #include "src/gpu/vk/GrVkCommandPool.h"
 #include "src/gpu/vk/GrVkGpu.h"
@@ -75,7 +77,7 @@ bool GrVkOpsRenderPass::init(const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
     GrVkRenderPass::LoadStoreOps vkStencilOps(loadOp, storeOp);
 
     GrVkRenderTarget* vkRT = static_cast<GrVkRenderTarget*>(fRenderTarget);
-    GrVkImage* targetImage = vkRT->msaaImage() ? vkRT->msaaImage() : vkRT;
+    GrVkImage* targetImage = vkRT->colorAttachmentImage();
 
     if (fSelfDependencyFlags == SelfDependencyFlags::kForInputAttachment) {
         // We need to use the GENERAL layout in this case since we'll be using texture barriers
@@ -100,8 +102,7 @@ bool GrVkOpsRenderPass::init(const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
 
     // If we are using a stencil attachment we also need to update its layout
     if (withStencil) {
-        auto* vkStencil =
-                static_cast<GrVkStencilAttachment*>(fRenderTarget->getStencilAttachment());
+        auto* vkStencil = static_cast<GrVkAttachment*>(fRenderTarget->getStencilAttachment());
         SkASSERT(vkStencil);
 
         // We need the write and read access bits since we may load and store the stencil.
@@ -217,8 +218,10 @@ void GrVkOpsRenderPass::submit() {
     fGpu->endRenderPass(fRenderTarget, fOrigin, fBounds);
 }
 
-bool GrVkOpsRenderPass::set(GrRenderTarget* rt, GrStencilAttachment* stencil,
-                            GrSurfaceOrigin origin, const SkIRect& bounds,
+bool GrVkOpsRenderPass::set(GrRenderTarget* rt,
+                            GrAttachment* stencil,
+                            GrSurfaceOrigin origin,
+                            const SkIRect& bounds,
                             const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
                             const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
                             const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
@@ -302,11 +305,11 @@ void GrVkOpsRenderPass::onClearStencilClip(const GrScissorState& scissor, bool i
         return;
     }
 
-    GrStencilAttachment* sb = fRenderTarget->getStencilAttachment();
+    GrAttachment* sb = fRenderTarget->getStencilAttachment();
     // this should only be called internally when we know we have a
     // stencil buffer.
     SkASSERT(sb);
-    int stencilBitCount = sb->bits();
+    int stencilBitCount = GrBackendFormatStencilBits(sb->backendFormat());
 
     // The contract with the callers does not guarantee that we preserve all bits in the stencil
     // during this clear. Thus we will clear the entire stencil to the desired value.
@@ -563,9 +566,11 @@ bool GrVkOpsRenderPass::onBindTextures(const GrPrimitiveProcessor& primProc,
                                                    this->currentCommandBuffer())) {
         return false;
     }
-    return fCurrentPipelineState->setAndBindInputAttachment(
-            fGpu, static_cast<GrVkRenderTarget*>(fRenderTarget), pipeline,
-            this->currentCommandBuffer());
+    if (fSelfDependencyFlags == SelfDependencyFlags::kForInputAttachment) {
+        return fCurrentPipelineState->setAndBindInputAttachment(
+                fGpu, static_cast<GrVkRenderTarget*>(fRenderTarget), this->currentCommandBuffer());
+    }
+    return true;
 }
 
 void GrVkOpsRenderPass::onBindBuffers(sk_sp<const GrBuffer> indexBuffer,
@@ -673,7 +678,7 @@ void GrVkOpsRenderPass::onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHan
     }
     GrVkRenderTarget* target = static_cast<GrVkRenderTarget*>(fRenderTarget);
 
-    GrVkImage* targetImage = target->msaaImage() ? target->msaaImage() : target;
+    GrVkImage* targetImage = target->colorAttachmentImage();
 
     VkRect2D bounds;
     bounds.offset = { 0, 0 };

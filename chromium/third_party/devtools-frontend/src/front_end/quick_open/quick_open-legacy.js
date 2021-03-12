@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+
 import * as QuickOpenModule from './quick_open.js';
 
 self.QuickOpen = self.QuickOpen || {};
@@ -27,8 +29,6 @@ QuickOpen.CommandMenu.ShowActionDelegate = QuickOpenModule.CommandMenu.ShowActio
  */
 QuickOpen.CommandMenuProvider = QuickOpenModule.CommandMenu.CommandMenuProvider;
 QuickOpen.CommandMenuProvider.MaterialPaletteColors = QuickOpenModule.CommandMenu.MaterialPaletteColors;
-
-QuickOpen.commandMenu = QuickOpenModule.CommandMenu.commandMenu;
 
 /**
  * @constructor

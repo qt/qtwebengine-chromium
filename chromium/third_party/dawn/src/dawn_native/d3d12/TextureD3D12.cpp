@@ -56,7 +56,7 @@ namespace dawn_native { namespace d3d12 {
             if (usage & wgpu::TextureUsage::Storage) {
                 resourceState |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             }
-            if (usage & wgpu::TextureUsage::OutputAttachment) {
+            if (usage & wgpu::TextureUsage::RenderAttachment) {
                 if (format.HasDepthOrStencil()) {
                     resourceState |= D3D12_RESOURCE_STATE_DEPTH_WRITE;
                 } else {
@@ -79,7 +79,7 @@ namespace dawn_native { namespace d3d12 {
             // A multisampled resource must have either D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET or
             // D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL set in D3D12_RESOURCE_DESC::Flags.
             // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_resource_desc
-            if ((usage & wgpu::TextureUsage::OutputAttachment) != 0 || isMultisampledTexture) {
+            if ((usage & wgpu::TextureUsage::RenderAttachment) != 0 || isMultisampledTexture) {
                 if (format.HasDepthOrStencil()) {
                     flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
                 } else {
@@ -171,7 +171,7 @@ namespace dawn_native { namespace d3d12 {
                     return DXGI_FORMAT_R32_TYPELESS;
 
                 case wgpu::TextureFormat::Depth24PlusStencil8:
-                    return DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
+                    return DXGI_FORMAT_R32G8X24_TYPELESS;
 
                 case wgpu::TextureFormat::BC1RGBAUnorm:
                 case wgpu::TextureFormat::BC1RGBAUnormSrgb:
@@ -451,8 +451,8 @@ namespace dawn_native { namespace d3d12 {
 
         // This will need to be much more nuanced when WebGPU has
         // texture view compatibility rules.
-        bool needsTypelessFormat = GetFormat().format == wgpu::TextureFormat::Depth32Float &&
-                                   (GetUsage() & wgpu::TextureUsage::Sampled) != 0;
+        const bool needsTypelessFormat =
+            GetFormat().HasDepthOrStencil() && (GetUsage() & wgpu::TextureUsage::Sampled) != 0;
 
         DXGI_FORMAT dxgiFormat = needsTypelessFormat
                                      ? D3D12TypelessTextureFormat(GetFormat().format)
@@ -650,7 +650,7 @@ namespace dawn_native { namespace d3d12 {
                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
             if (lastState == D3D12_RESOURCE_STATE_COMMON) {
-                if (newState == (newState & kD3D12PromotableReadOnlyStates)) {
+                if (IsSubset(newState, kD3D12PromotableReadOnlyStates)) {
                     // Implicit texture state decays can only occur when the texture was implicitly
                     // transitioned to a read-only state. isValidToDecay is needed to differentiate
                     // between resources that were implictly or explicitly transitioned to a
@@ -864,7 +864,7 @@ namespace dawn_native { namespace d3d12 {
         uint8_t clearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0 : 1;
         float fClearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0.f : 1.f;
 
-        if ((GetUsage() & wgpu::TextureUsage::OutputAttachment) != 0) {
+        if ((GetUsage() & wgpu::TextureUsage::RenderAttachment) != 0) {
             if (GetFormat().HasDepthOrStencil()) {
                 TrackUsageAndTransitionNow(commandContext, D3D12_RESOURCE_STATE_DEPTH_WRITE, range);
 
@@ -947,12 +947,11 @@ namespace dawn_native { namespace d3d12 {
             TrackUsageAndTransitionNow(commandContext, D3D12_RESOURCE_STATE_COPY_DEST, range);
 
             for (Aspect aspect : IterateEnumMask(range.aspects)) {
-                const TexelBlockInfo& blockInfo = GetFormat().GetTexelBlockInfo(aspect);
+                const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(aspect).block;
 
-                uint32_t bytesPerRow =
-                    Align((GetWidth() / blockInfo.blockWidth) * blockInfo.blockByteSize,
-                          kTextureBytesPerRowAlignment);
-                uint64_t bufferSize64 = bytesPerRow * (GetHeight() / blockInfo.blockHeight);
+                uint32_t bytesPerRow = Align((GetWidth() / blockInfo.width) * blockInfo.byteSize,
+                                             kTextureBytesPerRowAlignment);
+                uint64_t bufferSize64 = bytesPerRow * (GetHeight() / blockInfo.height);
                 if (bufferSize64 > std::numeric_limits<uint32_t>::max()) {
                     return DAWN_OUT_OF_MEMORY_ERROR("Unable to allocate buffer.");
                 }
@@ -962,7 +961,7 @@ namespace dawn_native { namespace d3d12 {
                 UploadHandle uploadHandle;
                 DAWN_TRY_ASSIGN(uploadHandle,
                                 uploader->Allocate(bufferSize, device->GetPendingCommandSerial(),
-                                                   blockInfo.blockByteSize));
+                                                   blockInfo.byteSize));
                 memset(uploadHandle.mappedBuffer, clearColor, bufferSize);
 
                 for (uint32_t level = range.baseMipLevel;
@@ -970,7 +969,7 @@ namespace dawn_native { namespace d3d12 {
                     // compute d3d12 texture copy locations for texture and buffer
                     Extent3D copySize = GetMipLevelVirtualSize(level);
 
-                    uint32_t rowsPerImage = GetHeight();
+                    uint32_t rowsPerImage = GetHeight() / blockInfo.height;
                     Texture2DCopySplit copySplit = ComputeTextureCopySplit(
                         {0, 0, 0}, copySize, blockInfo, uploadHandle.startOffset, bytesPerRow,
                         rowsPerImage);
@@ -1028,12 +1027,49 @@ namespace dawn_native { namespace d3d12 {
     TextureView::TextureView(TextureBase* texture, const TextureViewDescriptor* descriptor)
         : TextureViewBase(texture, descriptor) {
         mSrvDesc.Format = D3D12TextureFormat(descriptor->format);
-        if (descriptor->format == wgpu::TextureFormat::Depth32Float) {
-            // TODO(enga): This will need to be much more nuanced when WebGPU has
-            // texture view compatibility rules.
-            mSrvDesc.Format = DXGI_FORMAT_R32_FLOAT;
-        }
         mSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+        // TODO(enga): This will need to be much more nuanced when WebGPU has
+        // texture view compatibility rules.
+        UINT planeSlice = 0;
+        if (GetFormat().HasDepthOrStencil()) {
+            // Configure the SRV descriptor to reinterpret the texture allocated as
+            // TYPELESS as a single-plane shader-accessible view.
+            switch (descriptor->format) {
+                case wgpu::TextureFormat::Depth32Float:
+                case wgpu::TextureFormat::Depth24Plus:
+                    mSrvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+                    break;
+                case wgpu::TextureFormat::Depth24PlusStencil8:
+                    switch (descriptor->aspect) {
+                        case wgpu::TextureAspect::DepthOnly:
+                            planeSlice = 0;
+                            mSrvDesc.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
+                            break;
+                        case wgpu::TextureAspect::StencilOnly:
+                            planeSlice = 1;
+                            mSrvDesc.Format = DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
+                            // Stencil is accessed using the .g component in the shader.
+                            // Map it to the zeroth component to match other APIs.
+                            mSrvDesc.Shader4ComponentMapping =
+                                D3D12_ENCODE_SHADER_4_COMPONENT_MAPPING(
+                                    D3D12_SHADER_COMPONENT_MAPPING_FROM_MEMORY_COMPONENT_1,
+                                    D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_0,
+                                    D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_0,
+                                    D3D12_SHADER_COMPONENT_MAPPING_FORCE_VALUE_1);
+                            break;
+                        case wgpu::TextureAspect::All:
+                            // A single aspect is not selected. The texture view must not be
+                            // sampled.
+                            mSrvDesc.Format = DXGI_FORMAT_UNKNOWN;
+                            break;
+                    }
+                    break;
+                default:
+                    UNREACHABLE();
+                    break;
+            }
+        }
 
         // Currently we always use D3D12_TEX2D_ARRAY_SRV because we cannot specify base array layer
         // and layer count in D3D12_TEX2D_SRV. For 2D texture views, we treat them as 1-layer 2D
@@ -1066,7 +1102,7 @@ namespace dawn_native { namespace d3d12 {
                     mSrvDesc.Texture2DArray.FirstArraySlice = descriptor->baseArrayLayer;
                     mSrvDesc.Texture2DArray.MipLevels = descriptor->mipLevelCount;
                     mSrvDesc.Texture2DArray.MostDetailedMip = descriptor->baseMipLevel;
-                    mSrvDesc.Texture2DArray.PlaneSlice = 0;
+                    mSrvDesc.Texture2DArray.PlaneSlice = planeSlice;
                     mSrvDesc.Texture2DArray.ResourceMinLODClamp = 0;
                     break;
                 case wgpu::TextureViewDimension::Cube:
@@ -1094,6 +1130,7 @@ namespace dawn_native { namespace d3d12 {
     }
 
     const D3D12_SHADER_RESOURCE_VIEW_DESC& TextureView::GetSRVDescriptor() const {
+        ASSERT(mSrvDesc.Format != DXGI_FORMAT_UNKNOWN);
         return mSrvDesc;
     }
 

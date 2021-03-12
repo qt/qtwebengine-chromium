@@ -165,11 +165,14 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR("Texture has too many mip levels");
             }
 
-            const TexelBlockInfo& blockInfo = format->GetTexelBlockInfo(wgpu::TextureAspect::All);
-            if (format->isCompressed && (descriptor->size.width % blockInfo.blockWidth != 0 ||
-                                         descriptor->size.height % blockInfo.blockHeight != 0)) {
-                return DAWN_VALIDATION_ERROR(
-                    "The size of the texture is incompatible with the texture format");
+            if (format->isCompressed) {
+                const TexelBlockInfo& blockInfo =
+                    format->GetAspectInfo(wgpu::TextureAspect::All).block;
+                if (descriptor->size.width % blockInfo.width != 0 ||
+                    descriptor->size.height % blockInfo.height != 0) {
+                    return DAWN_VALIDATION_ERROR(
+                        "The size of the texture is incompatible with the texture format");
+                }
             }
 
             if (descriptor->dimension == wgpu::TextureDimension::e2D &&
@@ -189,15 +192,15 @@ namespace dawn_native {
             constexpr wgpu::TextureUsage kValidCompressedUsages = wgpu::TextureUsage::Sampled |
                                                                   wgpu::TextureUsage::CopySrc |
                                                                   wgpu::TextureUsage::CopyDst;
-            if (format->isCompressed && (descriptor->usage & (~kValidCompressedUsages))) {
+            if (format->isCompressed && !IsSubset(descriptor->usage, kValidCompressedUsages)) {
                 return DAWN_VALIDATION_ERROR(
                     "Compressed texture format is incompatible with the texture usage");
             }
 
             if (!format->isRenderable &&
-                (descriptor->usage & wgpu::TextureUsage::OutputAttachment)) {
+                (descriptor->usage & wgpu::TextureUsage::RenderAttachment)) {
                 return DAWN_VALIDATION_ERROR(
-                    "Non-renderable format used with OutputAttachment usage");
+                    "Non-renderable format used with RenderAttachment usage");
             }
 
             if (!format->supportsStorageUsage &&
@@ -268,8 +271,8 @@ namespace dawn_native {
         DAWN_TRY(ValidateTextureFormat(descriptor->format));
 
         DAWN_TRY(ValidateTextureAspect(descriptor->aspect));
-        if (descriptor->aspect != wgpu::TextureAspect::All) {
-            return DAWN_VALIDATION_ERROR("Texture aspect must be 'all'");
+        if (TryConvertAspect(texture->GetFormat(), descriptor->aspect) == Aspect::None) {
+            return DAWN_VALIDATION_ERROR("Texture does not have selected aspect for texture view.");
         }
 
         // TODO(jiawei.shao@intel.com): check stuff based on resource limits
@@ -355,15 +358,19 @@ namespace dawn_native {
     }
 
     Aspect ConvertAspect(const Format& format, wgpu::TextureAspect aspect) {
+        Aspect aspectMask = TryConvertAspect(format, aspect);
+        ASSERT(aspectMask != Aspect::None);
+        return aspectMask;
+    }
+
+    Aspect TryConvertAspect(const Format& format, wgpu::TextureAspect aspect) {
         switch (aspect) {
             case wgpu::TextureAspect::All:
                 return format.aspects;
             case wgpu::TextureAspect::DepthOnly:
-                ASSERT(format.aspects & Aspect::Depth);
-                return Aspect::Depth;
+                return format.aspects & Aspect::Depth;
             case wgpu::TextureAspect::StencilOnly:
-                ASSERT(format.aspects & Aspect::Stencil);
-                return Aspect::Stencil;
+                return format.aspects & Aspect::Stencil;
         }
     }
 
@@ -558,11 +565,10 @@ namespace dawn_native {
         // 4 at non-zero mipmap levels.
         if (mFormat.isCompressed) {
             // TODO(jiawei.shao@intel.com): check if there are any overflows.
-            const TexelBlockInfo& blockInfo = mFormat.GetTexelBlockInfo(wgpu::TextureAspect::All);
-            uint32_t blockWidth = blockInfo.blockWidth;
-            uint32_t blockHeight = blockInfo.blockHeight;
-            extent.width = (extent.width + blockWidth - 1) / blockWidth * blockWidth;
-            extent.height = (extent.height + blockHeight - 1) / blockHeight * blockHeight;
+            const TexelBlockInfo& blockInfo = mFormat.GetAspectInfo(wgpu::TextureAspect::All).block;
+            extent.width = (extent.width + blockInfo.width - 1) / blockInfo.width * blockInfo.width;
+            extent.height =
+                (extent.height + blockInfo.height - 1) / blockInfo.height * blockInfo.height;
         }
 
         return extent;
@@ -611,13 +617,10 @@ namespace dawn_native {
     TextureViewBase::TextureViewBase(TextureBase* texture, const TextureViewDescriptor* descriptor)
         : ObjectBase(texture->GetDevice()),
           mTexture(texture),
-          mAspect(descriptor->aspect),
           mFormat(GetDevice()->GetValidInternalFormat(descriptor->format)),
           mDimension(descriptor->dimension),
           mRange({descriptor->baseMipLevel, descriptor->mipLevelCount, descriptor->baseArrayLayer,
-                  descriptor->arrayLayerCount, ConvertAspect(mFormat, mAspect)}) {
-        // TODO(crbug.com/dawn/439): Current validation only allows texture views with aspect "all".
-        ASSERT(mAspect == wgpu::TextureAspect::All);
+                  descriptor->arrayLayerCount, ConvertAspect(mFormat, descriptor->aspect)}) {
     }
 
     TextureViewBase::TextureViewBase(DeviceBase* device, ObjectBase::ErrorTag tag)
@@ -639,9 +642,9 @@ namespace dawn_native {
         return mTexture.Get();
     }
 
-    wgpu::TextureAspect TextureViewBase::GetAspect() const {
+    Aspect TextureViewBase::GetAspects() const {
         ASSERT(!IsError());
-        return mAspect;
+        return mRange.aspects;
     }
 
     const Format& TextureViewBase::GetFormat() const {

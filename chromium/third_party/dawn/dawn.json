@@ -21,6 +21,7 @@
             {"name": "device ID", "type": "uint32_t"},
             {"name": "vendor ID", "type": "uint32_t"},
             {"name": "name", "type": "char", "annotation": "const*"},
+            {"name": "driver description", "type": "char", "annotation": "const*"},
             {"name": "adapter type", "type": "adapter type"},
             {"name": "backend type", "type": "backend type"}
         ]
@@ -500,6 +501,34 @@
             {"name": "compute stage", "type": "programmable stage descriptor"}
         ]
     },
+    "create ready compute pipeline callback": {
+        "category": "callback",
+        "args": [
+            {"name": "status", "type": "create ready pipeline status"},
+            {"name": "pipeline", "type": "compute pipeline"},
+            {"name": "message", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "userdata", "type": "void", "annotation": "*"}
+        ]
+    },
+    "create ready pipeline status": {
+        "category": "enum",
+        "values": [
+            {"value": 0, "name": "success"},
+            {"value": 1, "name": "error"},
+            {"value": 2, "name": "device lost"},
+            {"value": 3, "name": "device destroyed"},
+            {"value": 4, "name": "unknown"}
+        ]
+    },
+    "create ready render pipeline callback": {
+        "category": "callback",
+        "args": [
+            {"name": "status", "type": "create ready pipeline status"},
+            {"name": "pipeline", "type": "render pipeline"},
+            {"name": "message", "type": "char", "annotation": "const*", "length": "strlen"},
+            {"name": "userdata", "type": "void", "annotation": "*"}
+        ]
+    },
     "cull mode": {
         "category": "enum",
         "values": [
@@ -552,6 +581,15 @@
                 ]
             },
             {
+                "name": "create ready compute pipeline",
+                "returns": "void",
+                "args": [
+                    {"name": "descriptor", "type": "compute pipeline descriptor", "annotation": "const*"},
+                    {"name": "callback", "type": "create ready compute pipeline callback"},
+                    {"name": "userdata", "type": "void", "annotation": "*"}
+                ]
+            },
+            {
                 "name": "create pipeline layout",
                 "returns": "pipeline layout",
                 "args": [
@@ -563,6 +601,15 @@
                 "returns": "query set",
                 "args": [
                     {"name": "descriptor", "type": "query set descriptor", "annotation": "const*"}
+                ]
+            },
+            {
+                "name": "create ready render pipeline",
+                "returns": "void",
+                "args": [
+                    {"name": "descriptor", "type": "render pipeline descriptor", "annotation": "const*"},
+                    {"name": "callback", "type": "create ready render pipeline callback"},
+                    {"name": "userdata", "type": "void", "annotation": "*"}
                 ]
             },
             {
@@ -597,7 +644,7 @@
                 "name": "create swap chain",
                 "returns": "swap chain",
                 "args": [
-                    {"name": "surface", "type": "surface", "optional": "true"},
+                    {"name": "surface", "type": "surface", "optional": true},
                     {"name": "descriptor", "type": "swap chain descriptor", "annotation": "const*"}
                 ]
             },
@@ -718,9 +765,9 @@
     "extent 3D": {
         "category": "structure",
         "members": [
-            {"name": "width", "type": "uint32_t"},
-            {"name": "height", "type": "uint32_t"},
-            {"name": "depth", "type": "uint32_t"}
+            {"name": "width", "type": "uint32_t", "default": 1},
+            {"name": "height", "type": "uint32_t", "default": 1},
+            {"name": "depth", "type": "uint32_t", "default": 1}
         ]
     },
     "fence": {
@@ -987,6 +1034,14 @@
                     {"name": "data size", "type": "size_t"},
                     {"name": "data layout", "type": "texture data layout", "annotation": "const*"},
                     {"name": "write size", "type": "extent 3D", "annotation": "const*"}
+                ]
+            },
+            {
+                "name": "copy texture for browser",
+                "args": [
+                    {"name": "source", "type": "texture copy view", "annotation": "const*"},
+                    {"name": "destination", "type": "texture copy view", "annotation": "const*"},
+                    {"name": "copy size", "type": "extent 3D", "annotation": "const*"}
                 ]
             }
         ]
@@ -1548,7 +1603,8 @@
         "values": [
             {"value": 0, "name": "float"},
             {"value": 1, "name": "sint"},
-            {"value": 2, "name": "uint"}
+            {"value": 2, "name": "uint"},
+            {"value": 3, "name": "depth comparison"}
         ]
     },
     "texture copy view": {
@@ -1566,8 +1622,8 @@
         "extensible": true,
         "members": [
             {"name": "offset", "type": "uint64_t", "default": 0},
-            {"name": "bytes per row", "type": "uint32_t"},
-            {"name": "rows per image", "type": "uint32_t", "default": 0}
+            {"name": "bytes per row", "type": "uint32_t", "default": "WGPU_STRIDE_UNDEFINED"},
+            {"name": "rows per image", "type": "uint32_t", "default": "WGPU_STRIDE_UNDEFINED"}
         ]
     },
     "texture descriptor": {
@@ -1665,6 +1721,7 @@
             {"value": 4, "name": "sampled"},
             {"value": 8, "name": "storage"},
             {"value": 16, "name": "output attachment"},
+            {"value": 16, "name": "render attachment"},
             {"value": 32, "name": "present"}
         ]
     },

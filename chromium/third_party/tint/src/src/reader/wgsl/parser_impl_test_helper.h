@@ -17,6 +17,8 @@
 
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "src/context.h"
@@ -43,7 +45,9 @@ class ParserImplTest : public testing::Test {
   /// @param str the string to parse
   /// @returns the parser implementation
   ParserImpl* parser(const std::string& str) {
-    impl_ = std::make_unique<ParserImpl>(&ctx_, str);
+    auto file = std::make_unique<Source::File>("test.wgsl", str);
+    impl_ = std::make_unique<ParserImpl>(&ctx_, file.get());
+    files_.emplace_back(std::move(file));
     return impl_.get();
   }
 
@@ -51,6 +55,43 @@ class ParserImplTest : public testing::Test {
   TypeManager* tm() { return &(ctx_.type_mgr()); }
 
  private:
+  std::vector<std::unique_ptr<Source::File>> files_;
+  std::unique_ptr<ParserImpl> impl_;
+  Context ctx_;
+};
+
+/// WGSL Parser test class with param
+template <typename T>
+class ParserImplTestWithParam : public testing::TestWithParam<T> {
+ public:
+  /// Constructor
+  ParserImplTestWithParam() = default;
+  ~ParserImplTestWithParam() override = default;
+
+  /// Sets up the test helper
+  void SetUp() override { ctx_.Reset(); }
+
+  /// Tears down the test helper
+  void TearDown() override {
+    impl_ = nullptr;
+    files_.clear();
+  }
+
+  /// Retrieves the parser from the helper
+  /// @param str the string to parse
+  /// @returns the parser implementation
+  ParserImpl* parser(const std::string& str) {
+    auto file = std::make_unique<Source::File>("test.wgsl", str);
+    impl_ = std::make_unique<ParserImpl>(&ctx_, file.get());
+    files_.emplace_back(std::move(file));
+    return impl_.get();
+  }
+
+  /// @returns the type manager
+  TypeManager* tm() { return &(ctx_.type_mgr()); }
+
+ private:
+  std::vector<std::unique_ptr<Source::File>> files_;
   std::unique_ptr<ParserImpl> impl_;
   Context ctx_;
 };

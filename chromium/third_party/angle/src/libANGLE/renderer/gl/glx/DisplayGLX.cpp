@@ -74,7 +74,7 @@ DisplayGLX::DisplayGLX(const egl::DisplayState &state)
       mVisuals(nullptr),
       mContext(nullptr),
       mSharedContext(nullptr),
-      mDummyPbuffer(0),
+      mInitPbuffer(0),
       mUsesNewXDisplay(false),
       mIsMesa(false),
       mHasMultisample(false),
@@ -277,18 +277,18 @@ egl::Error DisplayGLX::initialize(egl::Display *display)
     // as commented on https://bugs.freedesktop.org/show_bug.cgi?id=38869 so we
     // use (1, 1) instead.
 
-    int dummyPbufferAttribs[] = {
+    int initPbufferAttribs[] = {
         GLX_PBUFFER_WIDTH, 1, GLX_PBUFFER_HEIGHT, 1, None,
     };
-    mDummyPbuffer = mGLX.createPbuffer(mContextConfig, dummyPbufferAttribs);
-    if (!mDummyPbuffer)
+    mInitPbuffer = mGLX.createPbuffer(mContextConfig, initPbufferAttribs);
+    if (!mInitPbuffer)
     {
-        return egl::EglNotInitialized() << "Could not create the dummy pbuffer.";
+        return egl::EglNotInitialized() << "Could not create the initialization pbuffer.";
     }
 
-    if (!mGLX.makeCurrent(mDummyPbuffer, mContext))
+    if (!mGLX.makeCurrent(mInitPbuffer, mContext))
     {
-        return egl::EglNotInitialized() << "Could not make the dummy pbuffer current.";
+        return egl::EglNotInitialized() << "Could not make the initialization pbuffer current.";
     }
 
     std::unique_ptr<FunctionsGL> functionsGL(new FunctionsGLGLX(mGLX.getProc));
@@ -324,8 +324,7 @@ egl::Error DisplayGLX::initialize(egl::Display *display)
         {
             for (unsigned int i = 0; i < RendererGL::getMaxWorkerContexts(); ++i)
             {
-                glx::Pbuffer workerPbuffer =
-                    mGLX.createPbuffer(mContextConfig, dummyPbufferAttribs);
+                glx::Pbuffer workerPbuffer = mGLX.createPbuffer(mContextConfig, initPbufferAttribs);
                 if (!workerPbuffer)
                 {
                     return egl::EglNotInitialized() << "Could not create the worker pbuffers.";
@@ -357,10 +356,10 @@ void DisplayGLX::terminate()
         mVisuals = 0;
     }
 
-    if (mDummyPbuffer)
+    if (mInitPbuffer)
     {
-        mGLX.destroyPbuffer(mDummyPbuffer);
-        mDummyPbuffer = 0;
+        mGLX.destroyPbuffer(mInitPbuffer);
+        mInitPbuffer = 0;
     }
 
     for (auto &workerPbuffer : mWorkerPbufferPool)
@@ -393,12 +392,13 @@ void DisplayGLX::terminate()
     }
 }
 
-egl::Error DisplayGLX::makeCurrent(egl::Surface *drawSurface,
+egl::Error DisplayGLX::makeCurrent(egl::Display *display,
+                                   egl::Surface *drawSurface,
                                    egl::Surface *readSurface,
                                    gl::Context *context)
 {
     glx::Drawable newDrawable =
-        (drawSurface ? GetImplAs<SurfaceGLX>(drawSurface)->getDrawable() : mDummyPbuffer);
+        (drawSurface ? GetImplAs<SurfaceGLX>(drawSurface)->getDrawable() : mInitPbuffer);
     glx::Context newContext = mContext;
     // If the thread calling makeCurrent does not have the correct context current (either mContext
     // or 0), we need to set it current.
@@ -418,7 +418,7 @@ egl::Error DisplayGLX::makeCurrent(egl::Surface *drawSurface,
         mCurrentDrawable                             = newDrawable;
     }
 
-    return DisplayGL::makeCurrent(drawSurface, readSurface, context);
+    return DisplayGL::makeCurrent(display, drawSurface, readSurface, context);
 }
 
 SurfaceImpl *DisplayGLX::createWindowSurface(const egl::SurfaceState &state,
@@ -903,9 +903,12 @@ void DisplayGLX::generateExtensions(egl::DisplayExtensions *outExtensions) const
 
     outExtensions->surfacelessContext = true;
 
-    const bool hasSyncControlOML        = mGLX.hasExtension("GLX_OML_sync_control");
-    outExtensions->syncControlCHROMIUM  = hasSyncControlOML;
-    outExtensions->syncControlRateANGLE = hasSyncControlOML;
+    if (!mRenderer->getFeatures().disableSyncControlSupport.enabled)
+    {
+        const bool hasSyncControlOML        = mGLX.hasExtension("GLX_OML_sync_control");
+        outExtensions->syncControlCHROMIUM  = hasSyncControlOML;
+        outExtensions->syncControlRateANGLE = hasSyncControlOML;
+    }
 
     outExtensions->textureFromPixmapNOK = mGLX.hasExtension("GLX_EXT_texture_from_pixmap");
 

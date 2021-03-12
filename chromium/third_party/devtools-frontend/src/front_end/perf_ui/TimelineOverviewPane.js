@@ -28,9 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
 import * as SDK from '../sdk/sdk.js';  // eslint-disable-line no-unused-vars
 import * as UI from '../ui/ui.js';
@@ -60,6 +57,7 @@ export class TimelineOverviewPane extends UI.Widget.VBox {
     this._overviewGrid.setResizeEnabled(false);
     this._overviewGrid.addEventListener(OverviewGridEvents.WindowChanged, this._onWindowChanged, this);
     this._overviewGrid.setClickHandler(this._onClick.bind(this));
+    /** @type {!Array.<!TimelineOverview>} */
     this._overviewControls = [];
     this._markers = new Map();
 
@@ -82,7 +80,9 @@ export class TimelineOverviewPane extends UI.Widget.VBox {
     if (!this._cursorEnabled) {
       return;
     }
-    this._cursorPosition = event.offsetX + event.target.offsetLeft;
+    const mouseEvent = /** @type {!MouseEvent} */ (event);
+    const target = /** @type {!HTMLElement} */ (event.target);
+    this._cursorPosition = mouseEvent.offsetX + target.offsetLeft;
     this._cursorElement.style.left = this._cursorPosition + 'px';
     this._cursorElement.style.visibility = 'visible';
     this._overviewInfo.setContent(this._buildOverviewInfo());
@@ -96,7 +96,8 @@ export class TimelineOverviewPane extends UI.Widget.VBox {
     const x = this._cursorPosition;
     const elements = await Promise.all(this._overviewControls.map(control => control.overviewInfoPromise(x)));
     const fragment = document.createDocumentFragment();
-    fragment.appendChildren.apply(fragment, elements.filter(element => element !== null));
+    const nonNullElements = /** @type {!Array.<!Element>} */ (elements.filter(element => element !== null));
+    fragment.append(...nonNullElements);
     return fragment;
   }
 
@@ -165,15 +166,9 @@ export class TimelineOverviewPane extends UI.Widget.VBox {
   }
 
   scheduleUpdate() {
-    this._updateThrottler.schedule(process.bind(this));
-    /**
-     * @this {TimelineOverviewPane}
-     * @return {!Promise.<undefined>}
-     */
-    function process() {
+    this._updateThrottler.schedule(async () => {
       this._update();
-      return Promise.resolve();
-    }
+    });
   }
 
   _update() {
@@ -297,6 +292,13 @@ export const Events = {
 export class TimelineOverviewCalculator {
   constructor() {
     this.reset();
+
+    /** @type {number} */
+    this._minimumBoundary;
+    /** @type {number} */
+    this._maximumBoundary;
+    /** @type {number} */
+    this._workingArea;
   }
 
   /**
@@ -424,6 +426,7 @@ export class TimelineOverview {
    * @return {!Promise<?Element>}
    */
   overviewInfoPromise(x) {
+    throw new Error('Not implemented');
   }
 
   /**
@@ -431,6 +434,7 @@ export class TimelineOverview {
    * @return {boolean}
    */
   onClick(event) {
+    throw new Error('Not implemented');
   }
 
   /**
@@ -449,7 +453,8 @@ export class TimelineOverviewBase extends UI.Widget.VBox {
     super();
     /** @type {?TimelineOverviewCalculator} */
     this._calculator = null;
-    this._canvas = this.element.createChild('canvas', 'fill');
+    /** @type {!HTMLCanvasElement} */
+    this._canvas = /** @type {!HTMLCanvasElement} */ (this.element.createChild('canvas', 'fill'));
     this._context = this._canvas.getContext('2d');
   }
 
@@ -465,7 +470,10 @@ export class TimelineOverviewBase extends UI.Widget.VBox {
 
   /** @return {!CanvasRenderingContext2D} */
   context() {
-    return this._context;
+    if (!this._context) {
+      throw new Error('Unable to retrieve canvas context');
+    }
+    return /** @type {!CanvasRenderingContext2D} */ (this._context);
   }
 
   /**
@@ -550,7 +558,10 @@ export class OverviewInfo {
     this._glassPane.setSizeBehavior(UI.GlassPane.SizeBehavior.MeasureContent);
     this._visible = false;
     this._element =
-        UI.Utils.createShadowRootWithCoreStyles(this._glassPane.contentElement, 'perf_ui/timelineOverviewInfo.css')
+        UI.Utils
+            .createShadowRootWithCoreStyles(
+                this._glassPane.contentElement,
+                {cssFile: 'perf_ui/timelineOverviewInfo.css', enableLegacyPatching: true, delegatesFocus: undefined})
             .createChild('div', 'overview-info');
   }
 

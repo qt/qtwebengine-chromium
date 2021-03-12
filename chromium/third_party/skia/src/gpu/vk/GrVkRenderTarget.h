@@ -20,7 +20,7 @@
 class GrVkFramebuffer;
 class GrVkGpu;
 class GrVkImageView;
-class GrVkStencilAttachment;
+class GrVkAttachment;
 
 struct GrVkImageInfo;
 
@@ -40,17 +40,23 @@ public:
     using SelfDependencyFlags = GrVkRenderPass::SelfDependencyFlags;
 
     const GrVkFramebuffer* getFramebuffer(bool withStencil, SelfDependencyFlags);
+
     const GrVkImageView* colorAttachmentView() const { return fColorAttachmentView.get(); }
-    const GrManagedResource* msaaImageResource() const {
-        if (fMSAAImage) {
-            return fMSAAImage->fResource;
-        }
-        return nullptr;
-    }
-    GrVkImage* msaaImage() { return fMSAAImage.get(); }
+
+    /**
+     * If this render target is multisampled, this returns the MSAA image for rendering. This
+     * will be different than *this* when we have separate render/resolve images. If not
+     * multisampled returns nullptr.
+     */
+    GrVkImage* msaaImage();
+
     const GrVkImageView* resolveAttachmentView() const { return fResolveAttachmentView.get(); }
     const GrManagedResource* stencilImageResource() const;
     const GrVkImageView* stencilAttachmentView() const;
+
+    // Returns the main target for draws. If using MSAA and we have a resolve target, it will be the
+    // msaa attachment. Otherwise it will be this object.
+    GrVkImage* colorAttachmentImage();
 
     const GrVkRenderPass* getSimpleRenderPass(bool withStencil, SelfDependencyFlags);
     GrVkResourceProvider::CompatibleRPHandle compatibleRenderPassHandle(bool withStencil,
@@ -100,8 +106,7 @@ protected:
                      int sampleCnt,
                      const GrVkImageInfo& info,
                      sk_sp<GrBackendSurfaceMutableStateImpl> mutableState,
-                     const GrVkImageInfo& msaaInfo,
-                     sk_sp<GrBackendSurfaceMutableStateImpl> msaaMutableState,
+                     sk_sp<GrVkAttachment> msaaAttachment,
                      sk_sp<const GrVkImageView> colorAttachmentView,
                      sk_sp<const GrVkImageView> resolveAttachmentView,
                      GrBackendObjectOwnership);
@@ -118,13 +123,22 @@ protected:
 
     // This accounts for the texture's memory and any MSAA renderbuffer's memory.
     size_t onGpuMemorySize() const override {
-        int numColorSamples = this->numSamples();
-        if (numColorSamples > 1) {
-            // Add one to account for the resolved VkImage.
-            numColorSamples += 1;
+        int numColorSamples = 0;
+        if (this->numSamples() > 1) {
+            // If we have an msaa attachment then its size will be handled by the attachment itself.
+            if (!fMSAAAttachment) {
+                numColorSamples += this->numSamples();
+            }
+            if (fResolveAttachmentView) {
+                // Add one to account for the resolved VkImage.
+                numColorSamples += 1;
+            }
+        } else {
+            SkASSERT(!fResolveAttachmentView);
+            numColorSamples = 1;
         }
-        const GrCaps& caps = *this->getGpu()->caps();
-        return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
+
+        return GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
                                       numColorSamples, GrMipmapped::kNo);
     }
 
@@ -134,8 +148,7 @@ private:
                      int sampleCnt,
                      const GrVkImageInfo& info,
                      sk_sp<GrBackendSurfaceMutableStateImpl> mutableState,
-                     const GrVkImageInfo& msaaInfo,
-                     sk_sp<GrBackendSurfaceMutableStateImpl> msaaMutableState,
+                     sk_sp<GrVkAttachment> msaaAttachment,
                      sk_sp<const GrVkImageView> colorAttachmentView,
                      sk_sp<const GrVkImageView> resolveAttachmentView);
 
@@ -143,7 +156,7 @@ private:
                      SkISize dimensions,
                      const GrVkImageInfo& info,
                      sk_sp<GrBackendSurfaceMutableStateImpl> mutableState,
-                     sk_sp < const GrVkImageView> colorAttachmentView);
+                     sk_sp<const GrVkImageView> colorAttachmentView);
 
     GrVkRenderTarget(GrVkGpu* gpu,
                      SkISize dimensions,
@@ -171,7 +184,7 @@ private:
     void releaseInternalObjects();
 
     sk_sp<const GrVkImageView> fColorAttachmentView;
-    std::unique_ptr<GrVkImage> fMSAAImage;
+    sk_sp<GrVkAttachment>      fMSAAAttachment;
     sk_sp<const GrVkImageView> fResolveAttachmentView;
 
     // We can have a renderpass with and without stencil, input attachment dependency, and advanced

@@ -617,7 +617,7 @@ static int open_url_keepalive(AVFormatContext *s, AVIOContext **pb,
 }
 
 static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
-                    AVDictionary *opts, AVDictionary *opts2, int *is_http_out)
+                    AVDictionary **opts, AVDictionary *opts2, int *is_http_out)
 {
     HLSContext *c = s->priv_data;
     AVDictionary *tmp = NULL;
@@ -664,7 +664,7 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
     else if (strcmp(proto_name, "file") || !strncmp(url, "file,", 5))
         return AVERROR_INVALIDDATA;
 
-    av_dict_copy(&tmp, opts, 0);
+    av_dict_copy(&tmp, *opts, 0);
     av_dict_copy(&tmp, opts2, 0);
 
     if (is_http && c->http_persistent && *pb) {
@@ -690,7 +690,7 @@ static int open_url(AVFormatContext *s, AVIOContext **pb, const char *url,
             av_opt_get(*pb, "cookies", AV_OPT_SEARCH_CHILDREN, (uint8_t**)&new_cookies);
 
         if (new_cookies)
-            av_dict_set(&opts, "cookies", new_cookies, AV_DICT_DONT_STRDUP_VAL);
+            av_dict_set(opts, "cookies", new_cookies, AV_DICT_DONT_STRDUP_VAL);
     }
 
     av_dict_free(&tmp);
@@ -1231,12 +1231,12 @@ static int open_input(HLSContext *c, struct playlist *pls, struct segment *seg, 
            seg->url, seg->url_offset, pls->index);
 
     if (seg->key_type == KEY_NONE) {
-        ret = open_url(pls->parent, in, seg->url, c->avio_opts, opts, &is_http);
+        ret = open_url(pls->parent, in, seg->url, &c->avio_opts, opts, &is_http);
     } else if (seg->key_type == KEY_AES_128) {
         char iv[33], key[33], url[MAX_URL_SIZE];
         if (strcmp(seg->key, pls->key_url)) {
             AVIOContext *pb = NULL;
-            if (open_url(pls->parent, &pb, seg->key, c->avio_opts, opts, NULL) == 0) {
+            if (open_url(pls->parent, &pb, seg->key, &c->avio_opts, opts, NULL) == 0) {
                 ret = avio_read(pb, pls->key, sizeof(pls->key));
                 if (ret != sizeof(pls->key)) {
                     av_log(pls->parent, AV_LOG_ERROR, "Unable to read key file %s\n",
@@ -1260,7 +1260,7 @@ static int open_input(HLSContext *c, struct playlist *pls, struct segment *seg, 
         av_dict_set(&opts, "key", key, 0);
         av_dict_set(&opts, "iv", iv, 0);
 
-        ret = open_url(pls->parent, in, url, c->avio_opts, opts, &is_http);
+        ret = open_url(pls->parent, in, url, &c->avio_opts, opts, &is_http);
         if (ret < 0) {
             goto cleanup;
         }
@@ -2371,7 +2371,7 @@ static const AVOption hls_options[] = {
         OFFSET(live_start_index), AV_OPT_TYPE_INT, {.i64 = -3}, INT_MIN, INT_MAX, FLAGS},
     {"allowed_extensions", "List of file extensions that hls is allowed to access",
         OFFSET(allowed_extensions), AV_OPT_TYPE_STRING,
-        {.str = "3gp,aac,avi,flac,mkv,m3u8,m4a,m4s,m4v,mpg,mov,mp2,mp3,mp4,mpeg,mpegts,ogg,ogv,oga,ts,vob,wav"},
+        {.str = "3gp,aac,avi,ac3,eac3,flac,mkv,m3u8,m4a,m4s,m4v,mpg,mov,mp2,mp3,mp4,mpeg,mpegts,ogg,ogv,oga,ts,vob,wav"},
         INT_MIN, INT_MAX, FLAGS},
     {"max_reload", "Maximum number of times a insufficient list is attempted to be reloaded",
         OFFSET(max_reload), AV_OPT_TYPE_INT, {.i64 = 1000}, 0, INT_MAX, FLAGS},

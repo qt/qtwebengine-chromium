@@ -29,36 +29,39 @@ namespace {
 using HlslGeneratorImplTest_Intrinsic = TestHelper;
 
 struct IntrinsicData {
-  const char* name;
+  ast::Intrinsic intrinsic;
   const char* hlsl_name;
 };
 inline std::ostream& operator<<(std::ostream& out, IntrinsicData data) {
-  out << data.name;
+  out << data.hlsl_name;
   return out;
 }
 using HlslIntrinsicTest = TestHelperBase<testing::TestWithParam<IntrinsicData>>;
 TEST_P(HlslIntrinsicTest, Emit) {
   auto param = GetParam();
-  EXPECT_EQ(gen().generate_intrinsic_name(param.name), param.hlsl_name);
+  EXPECT_EQ(gen().generate_intrinsic_name(param.intrinsic), param.hlsl_name);
 }
 INSTANTIATE_TEST_SUITE_P(
     HlslGeneratorImplTest_Intrinsic,
     HlslIntrinsicTest,
-    testing::Values(IntrinsicData{"any", "any"},
-                    IntrinsicData{"all", "all"},
-                    IntrinsicData{"dot", "dot"},
-                    IntrinsicData{"dpdx", "ddx"},
-                    IntrinsicData{"dpdx_coarse", "ddx_coarse"},
-                    IntrinsicData{"dpdx_fine", "ddx_fine"},
-                    IntrinsicData{"dpdy", "ddy"},
-                    IntrinsicData{"dpdy_coarse", "ddy_coarse"},
-                    IntrinsicData{"dpdy_fine", "ddy_fine"},
-                    IntrinsicData{"fwidth", "fwidth"},
-                    IntrinsicData{"fwidth_coarse", "fwidth"},
-                    IntrinsicData{"fwidth_fine", "fwidth"},
-                    IntrinsicData{"is_finite", "isfinite"},
-                    IntrinsicData{"is_inf", "isinf"},
-                    IntrinsicData{"is_nan", "isnan"}));
+    testing::Values(IntrinsicData{ast::Intrinsic::kAny, "any"},
+                    IntrinsicData{ast::Intrinsic::kAll, "all"},
+                    IntrinsicData{ast::Intrinsic::kCountOneBits, "countbits"},
+                    IntrinsicData{ast::Intrinsic::kDot, "dot"},
+                    IntrinsicData{ast::Intrinsic::kDpdx, "ddx"},
+                    IntrinsicData{ast::Intrinsic::kDpdxCoarse, "ddx_coarse"},
+                    IntrinsicData{ast::Intrinsic::kDpdxFine, "ddx_fine"},
+                    IntrinsicData{ast::Intrinsic::kDpdy, "ddy"},
+                    IntrinsicData{ast::Intrinsic::kDpdyCoarse, "ddy_coarse"},
+                    IntrinsicData{ast::Intrinsic::kDpdyFine, "ddy_fine"},
+                    IntrinsicData{ast::Intrinsic::kFwidth, "fwidth"},
+                    IntrinsicData{ast::Intrinsic::kFwidthCoarse, "fwidth"},
+                    IntrinsicData{ast::Intrinsic::kFwidthFine, "fwidth"},
+                    IntrinsicData{ast::Intrinsic::kIsFinite, "isfinite"},
+                    IntrinsicData{ast::Intrinsic::kIsInf, "isinf"},
+                    IntrinsicData{ast::Intrinsic::kIsNan, "isnan"},
+                    IntrinsicData{ast::Intrinsic::kReverseBits,
+                                  "reversebits"}));
 
 TEST_F(HlslGeneratorImplTest_Intrinsic, DISABLED_Intrinsic_IsNormal) {
   FAIL();
@@ -96,15 +99,18 @@ TEST_F(HlslGeneratorImplTest_Intrinsic, DISABLED_Intrinsic_OuterProduct) {
   ASSERT_TRUE(td().DetermineResultType(&call)) << td().error();
 
   gen().increment_indent();
-  ASSERT_TRUE(gen().EmitExpression(out(), &call)) << gen().error();
+  ASSERT_TRUE(gen().EmitExpression(pre(), out(), &call)) << gen().error();
   EXPECT_EQ(result(), "  float3x2(a * b[0], a * b[1], a * b[2])");
 }
 
 TEST_F(HlslGeneratorImplTest_Intrinsic, Intrinsic_Bad_Name) {
-  EXPECT_EQ(gen().generate_intrinsic_name("unknown name"), "");
+  EXPECT_EQ(gen().generate_intrinsic_name(ast::Intrinsic::kNone), "");
 }
 
 TEST_F(HlslGeneratorImplTest_Intrinsic, Intrinsic_Call) {
+  ast::type::F32Type f32;
+  ast::type::VectorType vec(&f32, 3);
+
   ast::ExpressionList params;
   params.push_back(std::make_unique<ast::IdentifierExpression>("param1"));
   params.push_back(std::make_unique<ast::IdentifierExpression>("param2"));
@@ -112,8 +118,16 @@ TEST_F(HlslGeneratorImplTest_Intrinsic, Intrinsic_Call) {
   ast::CallExpression call(std::make_unique<ast::IdentifierExpression>("dot"),
                            std::move(params));
 
+  ast::Variable v1("param1", ast::StorageClass::kFunction, &vec);
+  ast::Variable v2("param2", ast::StorageClass::kFunction, &vec);
+
+  td().RegisterVariableForTesting(&v1);
+  td().RegisterVariableForTesting(&v2);
+
+  ASSERT_TRUE(td().DetermineResultType(&call)) << td().error();
+
   gen().increment_indent();
-  ASSERT_TRUE(gen().EmitExpression(out(), &call)) << gen().error();
+  ASSERT_TRUE(gen().EmitExpression(pre(), out(), &call)) << gen().error();
   EXPECT_EQ(result(), "  dot(param1, param2)");
 }
 

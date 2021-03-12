@@ -13,6 +13,8 @@
 #include "include/core/SkString.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/GrGpuResource.h"
+#include "src/gpu/GrMemoryPool.h"
+#include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrTracing.h"
 #include "src/gpu/GrXferProcessor.h"
 #include <atomic>
@@ -22,6 +24,7 @@ class GrAppliedClip;
 class GrCaps;
 class GrOpFlushState;
 class GrOpsRenderPass;
+class GrPaint;
 
 /**
  * GrOp is the base class for all Ganesh deferred GPU operations. To facilitate reordering and to
@@ -65,6 +68,46 @@ class GrOpsRenderPass;
 
 class GrOp : private SkNoncopyable {
 public:
+    #if defined(GR_OP_ALLOCATE_USE_NEW)
+        using Owner = std::unique_ptr<GrOp>;
+    #else
+        struct DeleteFromPool {
+            DeleteFromPool() : fPool{nullptr} {}
+            DeleteFromPool(GrMemoryPool* pool) : fPool{pool} {}
+            void operator() (GrOp* op);
+            GrMemoryPool* fPool;
+        };
+        using Owner =  std::unique_ptr<GrOp, DeleteFromPool>;
+    #endif
+
+    template<typename Op, typename... Args>
+    static Owner Make(GrRecordingContext* context, Args&&... args) {
+        return MakeWithExtraMemory<Op>(context, 0, std::forward<Args>(args)...);
+    }
+
+    template<typename Op, typename... Args>
+    static Owner MakeWithProcessorSet(
+            GrRecordingContext* context, const SkPMColor4f& color,
+            GrPaint&& paint, Args&&... args);
+
+    #if defined(GR_OP_ALLOCATE_USE_NEW)
+        template<typename Op, typename... Args>
+            static Owner MakeWithExtraMemory(
+                    GrRecordingContext* context, size_t extraSize, Args&&... args) {
+                void* bytes = ::operator new(sizeof(Op) + extraSize);
+                return Owner{new (bytes) Op(std::forward<Args>(args)...)};
+            }
+    #else
+        template<typename Op, typename... Args>
+        static Owner MakeWithExtraMemory(
+                GrRecordingContext* context, size_t extraSize, Args&&... args) {
+            GrMemoryPool* pool = context->priv().opMemoryPool();
+            void* mem = pool->allocate(sizeof(Op) + extraSize);
+            GrOp* op = new (mem) Op(std::forward<Args>(args)...);
+            return Owner{op, pool};
+        }
+    #endif
+
     virtual ~GrOp() = default;
 
     virtual const char* name() const = 0;
@@ -96,8 +139,7 @@ public:
     };
 
     // The arenas are the same as what was available when the op was created.
-    CombineResult combineIfPossible(GrOp* that, GrRecordingContext::Arenas* arena,
-                                    const GrCaps& caps);
+    CombineResult combineIfPossible(GrOp* that, SkArenaAlloc* alloc, const GrCaps& caps);
 
     const SkRect& bounds() const {
         SkASSERT(kUninitialized_BoundsFlag != fBoundsFlags);
@@ -119,19 +161,24 @@ public:
         SkASSERT(fBoundsFlags != kUninitialized_BoundsFlag);
         return SkToBool(fBoundsFlags & kZeroArea_BoundsFlag);
     }
+    #if defined(GR_OP_ALLOCATE_USE_NEW)
+        // GrOps are allocated using ::operator new in the GrMemoryPool. Doing this style of memory
+        // allocation defeats the delete with size optimization.
+        void* operator new(size_t) { SK_ABORT("All GrOps are created by placement new."); }
+        void* operator new(size_t, void* p) { return p; }
+        void operator delete(void* p) { ::operator delete(p); }
+    #elif defined(SK_DEBUG)
+        // All GrOp-derived classes should be allocated in and deleted from a GrMemoryPool
+        void* operator new(size_t size);
+        void operator delete(void* target);
 
-#ifdef SK_DEBUG
-    // All GrOp-derived classes should be allocated in and deleted from a GrMemoryPool
-    void* operator new(size_t size);
-    void operator delete(void* target);
-
-    void* operator new(size_t size, void* placement) {
-        return ::operator new(size, placement);
-    }
-    void operator delete(void* target, void* placement) {
-        ::operator delete(target, placement);
-    }
-#endif
+        void* operator new(size_t size, void* placement) {
+            return ::operator new(size, placement);
+        }
+        void operator delete(void* target, void* placement) {
+            ::operator delete(target, placement);
+        }
+    #endif
 
     /**
      * Helper for safely down-casting to a GrOp subclass
@@ -221,7 +268,7 @@ public:
      * Concatenates two op chains. This op must be a tail and the passed op must be a head. The ops
      * must be of the same subclass.
      */
-    void chainConcat(std::unique_ptr<GrOp>);
+    void chainConcat(GrOp::Owner);
     /** Returns true if this is the head of a chain (including a length 1 chain). */
     bool isChainHead() const { return !fPrevInChain; }
     /** Returns true if this is the tail of a chain (including a length 1 chain). */
@@ -234,7 +281,7 @@ public:
      * Cuts the chain after this op. The returned op is the op that was previously next in the
      * chain or null if this was already a tail.
      */
-    std::unique_ptr<GrOp> cutChain();
+    GrOp::Owner cutChain();
     SkDEBUGCODE(void validateChain(GrOp* expectedTail = nullptr) const);
 
 #ifdef SK_DEBUG
@@ -288,7 +335,7 @@ private:
         return fBounds.joinPossiblyEmptyRect(that.fBounds);
     }
 
-    virtual CombineResult onCombineIfPossible(GrOp*, GrRecordingContext::Arenas*, const GrCaps&) {
+    virtual CombineResult onCombineIfPossible(GrOp*, SkArenaAlloc*, const GrCaps&) {
         return CombineResult::kCannotCombine;
     }
 
@@ -307,10 +354,10 @@ private:
 #endif
 
     static uint32_t GenID(std::atomic<uint32_t>* idCounter) {
-        uint32_t id = (*idCounter)++;
+        uint32_t id = idCounter->fetch_add(1, std::memory_order_relaxed);
         if (id == 0) {
             SK_ABORT("This should never wrap as it should only be called once for each GrOp "
-                   "subclass.");
+                     "subclass.");
         }
         return id;
     }
@@ -331,7 +378,7 @@ private:
         SkDEBUGCODE(kUninitialized_BoundsFlag   = 0x4)
     };
 
-    std::unique_ptr<GrOp>               fNextInChain;
+    Owner                               fNextInChain{nullptr};
     GrOp*                               fPrevInChain = nullptr;
     const uint16_t                      fClassID;
     uint16_t                            fBoundsFlags;

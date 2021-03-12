@@ -14,36 +14,39 @@
 
 #include "src/writer/hlsl/generator_impl.h"
 
+#include <limits>
 #include <sstream>
+#include <utility>
+#include <vector>
 
-#include "spirv/unified1/GLSL.std.450.h"
 #include "src/ast/array_accessor_expression.h"
-#include "src/ast/as_expression.h"
 #include "src/ast/assignment_statement.h"
 #include "src/ast/binary_expression.h"
+#include "src/ast/bitcast_expression.h"
 #include "src/ast/bool_literal.h"
 #include "src/ast/call_expression.h"
 #include "src/ast/call_statement.h"
 #include "src/ast/case_statement.h"
-#include "src/ast/cast_expression.h"
 #include "src/ast/decorated_variable.h"
 #include "src/ast/else_statement.h"
 #include "src/ast/float_literal.h"
 #include "src/ast/identifier_expression.h"
 #include "src/ast/if_statement.h"
-#include "src/ast/intrinsic.h"
 #include "src/ast/loop_statement.h"
 #include "src/ast/member_accessor_expression.h"
 #include "src/ast/return_statement.h"
 #include "src/ast/sint_literal.h"
 #include "src/ast/struct.h"
 #include "src/ast/switch_statement.h"
+#include "src/ast/type/access_control_type.h"
 #include "src/ast/type/alias_type.h"
 #include "src/ast/type/array_type.h"
 #include "src/ast/type/f32_type.h"
 #include "src/ast/type/i32_type.h"
 #include "src/ast/type/matrix_type.h"
+#include "src/ast/type/sampler_type.h"
 #include "src/ast/type/struct_type.h"
+#include "src/ast/type/texture_type.h"
 #include "src/ast/type/vector_type.h"
 #include "src/ast/uint_literal.h"
 #include "src/ast/unary_op_expression.h"
@@ -116,12 +119,12 @@ bool GeneratorImpl::Generate(std::ostream& out) {
     register_global(global.get());
   }
 
-  for (auto* const alias : module_->alias_types()) {
-    if (!EmitAliasType(out, alias)) {
+  for (auto* const ty : module_->constructed_types()) {
+    if (!EmitConstructedType(out, ty)) {
       return false;
     }
   }
-  if (!module_->alias_types().empty()) {
+  if (!module_->constructed_types().empty()) {
     out << std::endl;
   }
 
@@ -134,23 +137,33 @@ bool GeneratorImpl::Generate(std::ostream& out) {
     }
   }
 
-  for (const auto& ep : module_->entry_points()) {
-    if (!EmitEntryPointData(out, ep.get())) {
+  std::unordered_set<std::string> emitted_globals;
+  // Make sure all entry point data is emitted before the entry point functions
+  for (const auto& func : module_->functions()) {
+    if (!func->IsEntryPoint()) {
+      continue;
+    }
+
+    if (!EmitEntryPointData(out, func.get(), emitted_globals)) {
       return false;
     }
   }
+
   for (const auto& func : module_->functions()) {
     if (!EmitFunction(out, func.get())) {
       return false;
     }
   }
-  for (const auto& ep : module_->entry_points()) {
-    if (!EmitEntryPointFunction(out, ep.get())) {
+
+  for (const auto& func : module_->functions()) {
+    if (!func->IsEntryPoint()) {
+      continue;
+    }
+    if (!EmitEntryPointFunction(out, func.get())) {
       return false;
     }
     out << std::endl;
   }
-
   return true;
 }
 
@@ -161,7 +174,7 @@ void GeneratorImpl::register_global(ast::Variable* global) {
 std::string GeneratorImpl::generate_name(const std::string& prefix) {
   std::string name = prefix;
   uint32_t i = 0;
-  while (namer_.IsMapped(name)) {
+  while (namer_.IsMapped(name) || namer_.IsRemapped(name)) {
     name = prefix + "_" + std::to_string(i);
     ++i;
   }
@@ -190,39 +203,52 @@ std::string GeneratorImpl::current_ep_var_name(VarType type) {
   return name;
 }
 
-bool GeneratorImpl::EmitAliasType(std::ostream& out,
-                                  const ast::type::AliasType* alias) {
+bool GeneratorImpl::EmitConstructedType(std::ostream& out,
+                                        const ast::type::Type* ty) {
   make_indent(out);
 
-  if (alias->type()->IsStruct()) {
-    if (!EmitType(out, alias->type(), namer_.NameFor(alias->name()))) {
-      return false;
+  if (ty->IsAlias()) {
+    auto* alias = ty->AsAlias();
+    // HLSL typedef is for intrinsic types only. For an alias'd struct,
+    // generate a secondary struct with the new name.
+    if (alias->type()->IsStruct()) {
+      if (!EmitStructType(out, alias->type()->AsStruct(), alias->name())) {
+        return false;
+      }
+      return true;
     }
-    out << ";" << std::endl;
-  } else {
     out << "typedef ";
     if (!EmitType(out, alias->type(), "")) {
       return false;
     }
     out << " " << namer_.NameFor(alias->name()) << ";" << std::endl;
+  } else if (ty->IsStruct()) {
+    auto* str = ty->AsStruct();
+    if (!EmitStructType(out, str, str->name())) {
+      return false;
+    }
+  } else {
+    error_ = "unknown constructed type: " + ty->type_name();
+    return false;
   }
 
   return true;
 }
 
-bool GeneratorImpl::EmitArrayAccessor(std::ostream& out,
+bool GeneratorImpl::EmitArrayAccessor(std::ostream& pre,
+                                      std::ostream& out,
                                       ast::ArrayAccessorExpression* expr) {
   // Handle writing into a storage buffer array
   if (is_storage_buffer_access(expr)) {
-    return EmitStorageBufferAccessor(out, expr, nullptr);
+    return EmitStorageBufferAccessor(pre, out, expr, nullptr);
   }
 
-  if (!EmitExpression(out, expr->array())) {
+  if (!EmitExpression(pre, out, expr->array())) {
     return false;
   }
   out << "[";
 
-  if (!EmitExpression(out, expr->idx_expr())) {
+  if (!EmitExpression(pre, out, expr->idx_expr())) {
     return false;
   }
   out << "]";
@@ -230,10 +256,12 @@ bool GeneratorImpl::EmitArrayAccessor(std::ostream& out,
   return true;
 }
 
-bool GeneratorImpl::EmitAs(std::ostream& out, ast::AsExpression* expr) {
+bool GeneratorImpl::EmitBitcast(std::ostream& pre,
+                                std::ostream& out,
+                                ast::BitcastExpression* expr) {
   if (!expr->type()->IsF32() && !expr->type()->IsI32() &&
       !expr->type()->IsU32()) {
-    error_ = "Unable to do as cast to type " + expr->type()->type_name();
+    error_ = "Unable to do bitcast to type " + expr->type()->type_name();
     return false;
   }
 
@@ -242,7 +270,7 @@ bool GeneratorImpl::EmitAs(std::ostream& out, ast::AsExpression* expr) {
     return false;
   }
   out << "(";
-  if (!EmitExpression(out, expr->expr())) {
+  if (!EmitExpression(pre, out, expr->expr())) {
     return false;
   }
   out << ")";
@@ -253,47 +281,89 @@ bool GeneratorImpl::EmitAssign(std::ostream& out,
                                ast::AssignmentStatement* stmt) {
   make_indent(out);
 
+  std::ostringstream pre;
+
   // If the LHS is an accessor into a storage buffer then we have to
   // emit a Store operation instead of an ='s.
   if (stmt->lhs()->IsMemberAccessor()) {
     auto* mem = stmt->lhs()->AsMemberAccessor();
     if (is_storage_buffer_access(mem)) {
-      if (!EmitStorageBufferAccessor(out, mem, stmt->rhs())) {
+      std::ostringstream accessor_out;
+      if (!EmitStorageBufferAccessor(pre, accessor_out, mem, stmt->rhs())) {
         return false;
       }
-      out << ";" << std::endl;
+      out << pre.str();
+      out << accessor_out.str() << ";" << std::endl;
       return true;
     }
   } else if (stmt->lhs()->IsArrayAccessor()) {
     auto* ary = stmt->lhs()->AsArrayAccessor();
     if (is_storage_buffer_access(ary)) {
-      if (!EmitStorageBufferAccessor(out, ary, stmt->rhs())) {
+      std::ostringstream accessor_out;
+      if (!EmitStorageBufferAccessor(pre, accessor_out, ary, stmt->rhs())) {
         return false;
       }
-      out << ";" << std::endl;
+      out << pre.str();
+      out << accessor_out.str() << ";" << std::endl;
       return true;
     }
   }
 
-  if (!EmitExpression(out, stmt->lhs())) {
+  std::ostringstream lhs_out;
+  if (!EmitExpression(pre, lhs_out, stmt->lhs())) {
+    return false;
+  }
+  std::ostringstream rhs_out;
+  if (!EmitExpression(pre, rhs_out, stmt->rhs())) {
     return false;
   }
 
-  out << " = ";
-
-  if (!EmitExpression(out, stmt->rhs())) {
-    return false;
-  }
-
-  out << ";" << std::endl;
+  out << pre.str();
+  out << lhs_out.str() << " = " << rhs_out.str() << ";" << std::endl;
 
   return true;
 }
 
-bool GeneratorImpl::EmitBinary(std::ostream& out, ast::BinaryExpression* expr) {
-  out << "(";
+bool GeneratorImpl::EmitBinary(std::ostream& pre,
+                               std::ostream& out,
+                               ast::BinaryExpression* expr) {
+  if (expr->op() == ast::BinaryOp::kLogicalAnd ||
+      expr->op() == ast::BinaryOp::kLogicalOr) {
+    std::ostringstream lhs_out;
+    if (!EmitExpression(pre, lhs_out, expr->lhs())) {
+      return false;
+    }
 
-  if (!EmitExpression(out, expr->lhs())) {
+    auto name = generate_name(kTempNamePrefix);
+    make_indent(pre);
+    pre << "bool " << name << " = " << lhs_out.str() << ";" << std::endl;
+
+    make_indent(pre);
+    pre << "if (";
+    if (expr->op() == ast::BinaryOp::kLogicalOr) {
+      pre << "!";
+    }
+    pre << name << ") {" << std::endl;
+    increment_indent();
+
+    std::ostringstream rhs_out;
+    if (!EmitExpression(pre, rhs_out, expr->rhs())) {
+      return false;
+    }
+
+    make_indent(pre);
+    pre << name << " = " << rhs_out.str() << ";" << std::endl;
+
+    decrement_indent();
+    make_indent(pre);
+    pre << "}" << std::endl;
+
+    out << "(" << name << ")";
+    return true;
+  }
+
+  out << "(";
+  if (!EmitExpression(pre, out, expr->lhs())) {
     return false;
   }
   out << " ";
@@ -309,13 +379,11 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, ast::BinaryExpression* expr) {
       out << "^";
       break;
     case ast::BinaryOp::kLogicalAnd:
-      // TODO(dsinclair): Implement support ...
-      error_ = "&& not supported yet";
+    case ast::BinaryOp::kLogicalOr: {
+      // These are both handled above.
+      assert(false);
       return false;
-    case ast::BinaryOp::kLogicalOr:
-      // TODO(dsinclair): Implement support ...
-      error_ = "|| not supported yet";
-      return false;
+    }
     case ast::BinaryOp::kEqual:
       out << "==";
       break;
@@ -366,7 +434,7 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, ast::BinaryExpression* expr) {
   }
   out << " ";
 
-  if (!EmitExpression(out, expr->rhs())) {
+  if (!EmitExpression(pre, out, expr->rhs())) {
     return false;
   }
 
@@ -417,65 +485,75 @@ bool GeneratorImpl::EmitBreak(std::ostream& out, ast::BreakStatement*) {
   return true;
 }
 
-std::string GeneratorImpl::generate_intrinsic_name(const std::string& name) {
-  if (name == "any") {
+std::string GeneratorImpl::generate_intrinsic_name(ast::Intrinsic intrinsic) {
+  if (intrinsic == ast::Intrinsic::kAny) {
     return "any";
   }
-  if (name == "all") {
+  if (intrinsic == ast::Intrinsic::kAll) {
     return "all";
   }
-  if (name == "dot") {
+  if (intrinsic == ast::Intrinsic::kCountOneBits) {
+    return "countbits";
+  }
+  if (intrinsic == ast::Intrinsic::kDot) {
     return "dot";
   }
-  if (name == "is_finite") {
-    return "isfinite";
-  }
-  if (name == "is_inf") {
-    return "isinf";
-  }
-  if (name == "is_nan") {
-    return "isnan";
-  }
-  if (name == "dpdy") {
+  if (intrinsic == ast::Intrinsic::kDpdy) {
     return "ddy";
   }
-  if (name == "dpdy_fine") {
+  if (intrinsic == ast::Intrinsic::kDpdyFine) {
     return "ddy_fine";
   }
-  if (name == "dpdy_coarse") {
+  if (intrinsic == ast::Intrinsic::kDpdyCoarse) {
     return "ddy_coarse";
   }
-  if (name == "dpdx") {
+  if (intrinsic == ast::Intrinsic::kDpdx) {
     return "ddx";
   }
-  if (name == "dpdx_fine") {
+  if (intrinsic == ast::Intrinsic::kDpdxFine) {
     return "ddx_fine";
   }
-  if (name == "dpdx_coarse") {
+  if (intrinsic == ast::Intrinsic::kDpdxCoarse) {
     return "ddx_coarse";
   }
-  if (name == "fwidth" || name == "fwidth_fine" || name == "fwidth_coarse") {
+  if (intrinsic == ast::Intrinsic::kFwidth ||
+      intrinsic == ast::Intrinsic::kFwidthFine ||
+      intrinsic == ast::Intrinsic::kFwidthCoarse) {
     return "fwidth";
+  }
+  if (intrinsic == ast::Intrinsic::kIsFinite) {
+    return "isfinite";
+  }
+  if (intrinsic == ast::Intrinsic::kIsInf) {
+    return "isinf";
+  }
+  if (intrinsic == ast::Intrinsic::kIsNan) {
+    return "isnan";
+  }
+  if (intrinsic == ast::Intrinsic::kReverseBits) {
+    return "reversebits";
   }
   return "";
 }
 
-bool GeneratorImpl::EmitCall(std::ostream& out, ast::CallExpression* expr) {
+bool GeneratorImpl::EmitCall(std::ostream& pre,
+                             std::ostream& out,
+                             ast::CallExpression* expr) {
   if (!expr->func()->IsIdentifier()) {
     error_ = "invalid function name";
     return 0;
   }
 
   auto* ident = expr->func()->AsIdentifier();
-  if (!ident->has_path() && ast::intrinsic::IsIntrinsic(ident->name())) {
+  if (ident->IsIntrinsic()) {
     const auto& params = expr->params();
-    if (ident->name() == "select") {
+    if (ident->intrinsic() == ast::Intrinsic::kSelect) {
       error_ = "select not supported in HLSL backend yet";
       return false;
-    } else if (ident->name() == "is_normal") {
+    } else if (ident->intrinsic() == ast::Intrinsic::kIsNormal) {
       error_ = "is_normal not supported in HLSL backend yet";
       return false;
-    } else if (ident->name() == "outer_product") {
+    } else if (ident->intrinsic() == ast::Intrinsic::kOuterProduct) {
       error_ = "outer_product not supported yet";
       return false;
       // TODO(dsinclair): This gets tricky. We need to generate two variables to
@@ -515,12 +593,12 @@ bool GeneratorImpl::EmitCall(std::ostream& out, ast::CallExpression* expr) {
       //     out << ", ";
       //   }
 
-      //   if (!EmitExpression(out, params[0].get())) {
+      //   if (!EmitExpression(pre, out, params[0].get())) {
       //     return false;
       //   }
       //   out << " * ";
 
-      //   if (!EmitExpression(out, params[1].get())) {
+      //   if (!EmitExpression(pre, out, params[1].get())) {
       //     return false;
       //   }
       //   out << "[" << i << "]";
@@ -528,11 +606,16 @@ bool GeneratorImpl::EmitCall(std::ostream& out, ast::CallExpression* expr) {
 
       // out << ")";
     } else {
-      auto name = generate_intrinsic_name(ident->name());
+      auto name = generate_intrinsic_name(ident->intrinsic());
       if (name.empty()) {
-        error_ = "unable to determine intrinsic name for intrinsic: " +
-                 ident->name();
-        return false;
+        if (ast::intrinsic::IsTextureIntrinsic(ident->intrinsic())) {
+          error_ = "Textures not implemented yet";
+          return false;
+        }
+        name = generate_builtin_name(expr);
+        if (name.empty()) {
+          return false;
+        }
       }
 
       make_indent(out);
@@ -545,7 +628,7 @@ bool GeneratorImpl::EmitCall(std::ostream& out, ast::CallExpression* expr) {
         }
         first = false;
 
-        if (!EmitExpression(out, param.get())) {
+        if (!EmitExpression(pre, out, param.get())) {
           return false;
         }
       }
@@ -555,161 +638,39 @@ bool GeneratorImpl::EmitCall(std::ostream& out, ast::CallExpression* expr) {
     return true;
   }
 
-  if (!ident->has_path()) {
-    auto name = ident->name();
-    auto it = ep_func_name_remapped_.find(current_ep_name_ + "_" + name);
-    if (it != ep_func_name_remapped_.end()) {
-      name = it->second;
-    }
+  auto name = ident->name();
+  auto it = ep_func_name_remapped_.find(current_ep_name_ + "_" + name);
+  if (it != ep_func_name_remapped_.end()) {
+    name = it->second;
+  }
 
-    auto* func = module_->FindFunctionByName(ident->name());
-    if (func == nullptr) {
-      error_ = "Unable to find function: " + name;
-      return false;
-    }
+  auto* func = module_->FindFunctionByName(ident->name());
+  if (func == nullptr) {
+    error_ = "Unable to find function: " + name;
+    return false;
+  }
 
-    out << name << "(";
+  out << name << "(";
 
-    bool first = true;
-    if (has_referenced_in_var_needing_struct(func)) {
-      auto var_name = current_ep_var_name(VarType::kIn);
-      if (!var_name.empty()) {
-        out << var_name;
-        first = false;
-      }
+  bool first = true;
+  if (has_referenced_in_var_needing_struct(func)) {
+    auto var_name = current_ep_var_name(VarType::kIn);
+    if (!var_name.empty()) {
+      out << var_name;
+      first = false;
     }
-    if (has_referenced_out_var_needing_struct(func)) {
-      auto var_name = current_ep_var_name(VarType::kOut);
-      if (!var_name.empty()) {
-        if (!first) {
-          out << ", ";
-        }
-        first = false;
-        out << var_name;
-      }
-    }
-
-    const auto& params = expr->params();
-    for (const auto& param : params) {
+  }
+  if (has_referenced_out_var_needing_struct(func)) {
+    auto var_name = current_ep_var_name(VarType::kOut);
+    if (!var_name.empty()) {
       if (!first) {
         out << ", ";
       }
       first = false;
-
-      if (!EmitExpression(out, param.get())) {
-        return false;
-      }
+      out << var_name;
     }
-
-    out << ")";
-  } else {
-    return EmitImportFunction(out, expr);
-  }
-  return true;
-}
-
-bool GeneratorImpl::EmitImportFunction(std::ostream& out,
-                                       ast::CallExpression* expr) {
-  auto* ident = expr->func()->AsIdentifier();
-
-  auto* imp = module_->FindImportByName(ident->path());
-  if (imp == nullptr) {
-    error_ = "unable to find import for " + ident->path();
-    return 0;
-  }
-  auto id = imp->GetIdForMethod(ident->name());
-  if (id == 0) {
-    error_ = "unable to lookup: " + ident->name() + " in " + ident->path();
   }
 
-  switch (id) {
-    case GLSLstd450Acos:
-    case GLSLstd450Asin:
-    case GLSLstd450Atan:
-    case GLSLstd450Atan2:
-    case GLSLstd450Ceil:
-    case GLSLstd450Cos:
-    case GLSLstd450Cosh:
-    case GLSLstd450Cross:
-    case GLSLstd450Degrees:
-    case GLSLstd450Determinant:
-    case GLSLstd450Distance:
-    case GLSLstd450Exp:
-    case GLSLstd450Exp2:
-    case GLSLstd450FaceForward:
-    case GLSLstd450Floor:
-    case GLSLstd450Fma:
-    case GLSLstd450Length:
-    case GLSLstd450Log:
-    case GLSLstd450Log2:
-    case GLSLstd450Normalize:
-    case GLSLstd450Pow:
-    case GLSLstd450Radians:
-    case GLSLstd450Reflect:
-    case GLSLstd450Round:
-    case GLSLstd450Sin:
-    case GLSLstd450Sinh:
-    case GLSLstd450SmoothStep:
-    case GLSLstd450Sqrt:
-    case GLSLstd450Step:
-    case GLSLstd450Tan:
-    case GLSLstd450Tanh:
-    case GLSLstd450Trunc:
-      out << ident->name();
-      break;
-    case GLSLstd450Fract:
-      out << "frac";
-      break;
-    case GLSLstd450InterpolateAtCentroid:
-      out << "EvaluateAttributeAtCentroid";
-      break;
-    case GLSLstd450InverseSqrt:
-      out << "rsqrt";
-      break;
-    case GLSLstd450FMix:
-      out << "mix";
-      break;
-    case GLSLstd450SSign:
-    case GLSLstd450FSign:
-      out << "sign";
-      break;
-    case GLSLstd450FAbs:
-    case GLSLstd450SAbs:
-      out << "abs";
-      break;
-    case GLSLstd450FMax:
-    case GLSLstd450NMax:
-    case GLSLstd450SMax:
-    case GLSLstd450UMax:
-      out << "max";
-      break;
-    case GLSLstd450FMin:
-    case GLSLstd450NMin:
-    case GLSLstd450SMin:
-    case GLSLstd450UMin:
-      out << "min";
-      break;
-    case GLSLstd450FClamp:
-    case GLSLstd450SClamp:
-    case GLSLstd450NClamp:
-    case GLSLstd450UClamp:
-      out << "clamp";
-      break;
-    // TODO(dsinclair): Determine mappings for the following
-    case GLSLstd450Atanh:
-    case GLSLstd450Asinh:
-    case GLSLstd450Acosh:
-    case GLSLstd450FindILsb:
-    case GLSLstd450FindUMsb:
-    case GLSLstd450FindSMsb:
-    case GLSLstd450MatrixInverse:
-    case GLSLstd450RoundEven:
-      error_ = "Unknown import method: " + ident->name();
-      return false;
-  }
-
-  out << "(";
-  bool first = true;
   const auto& params = expr->params();
   for (const auto& param : params) {
     if (!first) {
@@ -717,26 +678,74 @@ bool GeneratorImpl::EmitImportFunction(std::ostream& out,
     }
     first = false;
 
-    if (!EmitExpression(out, param.get())) {
+    if (!EmitExpression(pre, out, param.get())) {
       return false;
     }
   }
+
   out << ")";
 
   return true;
 }
 
-bool GeneratorImpl::EmitCast(std::ostream& out, ast::CastExpression* expr) {
-  if (!EmitType(out, expr->type(), "")) {
-    return false;
+std::string GeneratorImpl::generate_builtin_name(ast::CallExpression* expr) {
+  std::string out;
+  auto* ident = expr->func()->AsIdentifier();
+  switch (ident->intrinsic()) {
+    case ast::Intrinsic::kAcos:
+    case ast::Intrinsic::kAsin:
+    case ast::Intrinsic::kAtan:
+    case ast::Intrinsic::kAtan2:
+    case ast::Intrinsic::kCeil:
+    case ast::Intrinsic::kCos:
+    case ast::Intrinsic::kCosh:
+    case ast::Intrinsic::kCross:
+    case ast::Intrinsic::kDeterminant:
+    case ast::Intrinsic::kDistance:
+    case ast::Intrinsic::kExp:
+    case ast::Intrinsic::kExp2:
+    case ast::Intrinsic::kFloor:
+    case ast::Intrinsic::kFma:
+    case ast::Intrinsic::kLength:
+    case ast::Intrinsic::kLog:
+    case ast::Intrinsic::kLog2:
+    case ast::Intrinsic::kNormalize:
+    case ast::Intrinsic::kPow:
+    case ast::Intrinsic::kReflect:
+    case ast::Intrinsic::kRound:
+    case ast::Intrinsic::kSin:
+    case ast::Intrinsic::kSinh:
+    case ast::Intrinsic::kSqrt:
+    case ast::Intrinsic::kStep:
+    case ast::Intrinsic::kTan:
+    case ast::Intrinsic::kTanh:
+    case ast::Intrinsic::kTrunc:
+    case ast::Intrinsic::kMix:
+    case ast::Intrinsic::kSign:
+    case ast::Intrinsic::kAbs:
+    case ast::Intrinsic::kMax:
+    case ast::Intrinsic::kMin:
+    case ast::Intrinsic::kClamp:
+      out = ident->name();
+      break;
+    case ast::Intrinsic::kFaceForward:
+      out = "faceforward";
+      break;
+    case ast::Intrinsic::kFract:
+      out = "frac";
+      break;
+    case ast::Intrinsic::kInverseSqrt:
+      out = "rsqrt";
+      break;
+    case ast::Intrinsic::kSmoothStep:
+      out = "smoothstep";
+      break;
+    default:
+      error_ = "Unknown builtin method: " + ident->name();
+      return "";
   }
 
-  out << "(";
-  if (!EmitExpression(out, expr->expr())) {
-    return false;
-  }
-  out << ")";
-  return true;
+  return out;
 }
 
 bool GeneratorImpl::EmitCase(std::ostream& out, ast::CaseStatement* stmt) {
@@ -783,21 +792,24 @@ bool GeneratorImpl::EmitCase(std::ostream& out, ast::CaseStatement* stmt) {
   return true;
 }
 
-bool GeneratorImpl::EmitConstructor(std::ostream& out,
+bool GeneratorImpl::EmitConstructor(std::ostream& pre,
+                                    std::ostream& out,
                                     ast::ConstructorExpression* expr) {
   if (expr->IsScalarConstructor()) {
-    return EmitScalarConstructor(out, expr->AsScalarConstructor());
+    return EmitScalarConstructor(pre, out, expr->AsScalarConstructor());
   }
-  return EmitTypeConstructor(out, expr->AsTypeConstructor());
+  return EmitTypeConstructor(pre, out, expr->AsTypeConstructor());
 }
 
 bool GeneratorImpl::EmitScalarConstructor(
+    std::ostream&,
     std::ostream& out,
     ast::ScalarConstructorExpression* expr) {
   return EmitLiteral(out, expr->literal());
 }
 
-bool GeneratorImpl::EmitTypeConstructor(std::ostream& out,
+bool GeneratorImpl::EmitTypeConstructor(std::ostream& pre,
+                                        std::ostream& out,
                                         ast::TypeConstructorExpression* expr) {
   if (expr->type()->IsArray()) {
     out << "{";
@@ -822,7 +834,7 @@ bool GeneratorImpl::EmitTypeConstructor(std::ostream& out,
       }
       first = false;
 
-      if (!EmitExpression(out, e.get())) {
+      if (!EmitExpression(pre, out, e.get())) {
         return false;
       }
     }
@@ -850,33 +862,32 @@ bool GeneratorImpl::EmitDiscard(std::ostream& out, ast::DiscardStatement*) {
   return true;
 }
 
-bool GeneratorImpl::EmitExpression(std::ostream& out, ast::Expression* expr) {
-  if (expr->IsAs()) {
-    return EmitAs(out, expr->AsAs());
-  }
+bool GeneratorImpl::EmitExpression(std::ostream& pre,
+                                   std::ostream& out,
+                                   ast::Expression* expr) {
   if (expr->IsArrayAccessor()) {
-    return EmitArrayAccessor(out, expr->AsArrayAccessor());
+    return EmitArrayAccessor(pre, out, expr->AsArrayAccessor());
   }
   if (expr->IsBinary()) {
-    return EmitBinary(out, expr->AsBinary());
+    return EmitBinary(pre, out, expr->AsBinary());
+  }
+  if (expr->IsBitcast()) {
+    return EmitBitcast(pre, out, expr->AsBitcast());
   }
   if (expr->IsCall()) {
-    return EmitCall(out, expr->AsCall());
-  }
-  if (expr->IsCast()) {
-    return EmitCast(out, expr->AsCast());
+    return EmitCall(pre, out, expr->AsCall());
   }
   if (expr->IsConstructor()) {
-    return EmitConstructor(out, expr->AsConstructor());
+    return EmitConstructor(pre, out, expr->AsConstructor());
   }
   if (expr->IsIdentifier()) {
-    return EmitIdentifier(out, expr->AsIdentifier());
+    return EmitIdentifier(pre, out, expr->AsIdentifier());
   }
   if (expr->IsMemberAccessor()) {
-    return EmitMemberAccessor(out, expr->AsMemberAccessor());
+    return EmitMemberAccessor(pre, out, expr->AsMemberAccessor());
   }
   if (expr->IsUnaryOp()) {
-    return EmitUnaryOp(out, expr->AsUnaryOp());
+    return EmitUnaryOp(pre, out, expr->AsUnaryOp());
   }
 
   error_ = "unknown expression type: " + expr->str();
@@ -891,15 +902,10 @@ bool GeneratorImpl::global_is_in_struct(ast::Variable* var) const {
           var->storage_class() == ast::StorageClass::kOutput);
 }
 
-bool GeneratorImpl::EmitIdentifier(std::ostream& out,
+bool GeneratorImpl::EmitIdentifier(std::ostream&,
+                                   std::ostream& out,
                                    ast::IdentifierExpression* expr) {
   auto* ident = expr->AsIdentifier();
-  if (ident->has_path()) {
-    // TODO(dsinclair): Handle identifier with path
-    error_ = "Identifier paths not handled yet.";
-    return false;
-  }
-
   ast::Variable* var = nullptr;
   if (global_variables_.get(ident->name(), &var)) {
     if (global_is_in_struct(var)) {
@@ -922,38 +928,56 @@ bool GeneratorImpl::EmitIdentifier(std::ostream& out,
 bool GeneratorImpl::EmitIf(std::ostream& out, ast::IfStatement* stmt) {
   make_indent(out);
 
-  out << "if (";
-  if (!EmitExpression(out, stmt->condition())) {
+  std::ostringstream pre;
+  std::ostringstream cond;
+  if (!EmitExpression(pre, cond, stmt->condition())) {
     return false;
   }
-  out << ") ";
 
-  if (!EmitBlock(out, stmt->body())) {
+  std::ostringstream if_out;
+  if_out << "if (" << cond.str() << ") ";
+  if (!EmitBlock(if_out, stmt->body())) {
     return false;
   }
 
   for (const auto& e : stmt->else_statements()) {
-    if (!EmitElse(out, e.get())) {
+    if (e->HasCondition()) {
+      if_out << " else {" << std::endl;
+
+      increment_indent();
+
+      std::ostringstream else_pre;
+      std::ostringstream else_cond_out;
+      if (!EmitExpression(else_pre, else_cond_out, e->condition())) {
+        return false;
+      }
+      if_out << else_pre.str();
+
+      make_indent(if_out);
+      if_out << "if (" << else_cond_out.str() << ") ";
+    } else {
+      if_out << " else ";
+    }
+
+    if (!EmitBlock(if_out, e->body())) {
       return false;
     }
   }
-  out << std::endl;
+  if_out << std::endl;
 
+  for (const auto& e : stmt->else_statements()) {
+    if (!e->HasCondition()) {
+      continue;
+    }
+
+    decrement_indent();
+    make_indent(if_out);
+    if_out << "}" << std::endl;
+  }
+
+  out << pre.str();
+  out << if_out.str();
   return true;
-}
-
-bool GeneratorImpl::EmitElse(std::ostream& out, ast::ElseStatement* stmt) {
-  if (stmt->HasCondition()) {
-    out << " else if (";
-    if (!EmitExpression(out, stmt->condition())) {
-      return false;
-    }
-    out << ") ";
-  } else {
-    out << " else ";
-  }
-
-  return EmitBlock(out, stmt->body());
 }
 
 bool GeneratorImpl::has_referenced_in_var_needing_struct(ast::Function* func) {
@@ -1013,7 +1037,7 @@ bool GeneratorImpl::EmitFunction(std::ostream& out, ast::Function* func) {
   make_indent(out);
 
   // Entry points will be emitted later, skip for now.
-  if (module_->IsFunctionEntryPoint(func->name())) {
+  if (func->IsEntryPoint()) {
     return true;
   }
 
@@ -1115,13 +1139,10 @@ bool GeneratorImpl::EmitFunctionInternal(std::ostream& out,
   return true;
 }
 
-bool GeneratorImpl::EmitEntryPointData(std::ostream& out, ast::EntryPoint* ep) {
-  auto* func = module_->FindFunctionByName(ep->function_name());
-  if (func == nullptr) {
-    error_ = "Unable to find entry point function: " + ep->function_name();
-    return false;
-  }
-
+bool GeneratorImpl::EmitEntryPointData(
+    std::ostream& out,
+    ast::Function* func,
+    std::unordered_set<std::string>& emitted_globals) {
   std::vector<std::pair<ast::Variable*, ast::VariableDecoration*>> in_variables;
   std::vector<std::pair<ast::Variable*, ast::VariableDecoration*>> outvariables;
   for (auto data : func->referenced_location_variables()) {
@@ -1159,7 +1180,14 @@ bool GeneratorImpl::EmitEntryPointData(std::ostream& out, ast::EntryPoint* ep) {
     }
     // auto* set = data.second.set;
 
-    auto* type = var->type()->UnwrapAliasesIfNeeded();
+    // If the global has already been emitted we skip it, it's been emitted by
+    // a previous entry point.
+    if (emitted_globals.count(var->name()) != 0) {
+      continue;
+    }
+    emitted_globals.insert(var->name());
+
+    auto* type = var->type()->UnwrapIfNeeded();
     if (type->IsStruct()) {
       auto* strct = type->AsStruct();
 
@@ -1195,7 +1223,23 @@ bool GeneratorImpl::EmitEntryPointData(std::ostream& out, ast::EntryPoint* ep) {
     auto* var = data.first;
     auto* binding = data.second.binding;
 
-    out << "RWByteAddressBuffer " << var->name() << " : register(u"
+    // If the global has already been emitted we skip it, it's been emitted by
+    // a previous entry point.
+    if (emitted_globals.count(var->name()) != 0) {
+      continue;
+    }
+    emitted_globals.insert(var->name());
+
+    if (!var->type()->IsAccessControl()) {
+      error_ = "access control type required for storage buffer";
+      return false;
+    }
+    auto* ac = var->type()->AsAccessControl();
+
+    if (ac->IsReadWrite()) {
+      out << "RW";
+    }
+    out << "ByteAddressBuffer " << var->name() << " : register(u"
         << binding->value() << ");" << std::endl;
     emitted_storagebuffer = true;
   }
@@ -1203,20 +1247,11 @@ bool GeneratorImpl::EmitEntryPointData(std::ostream& out, ast::EntryPoint* ep) {
     out << std::endl;
   }
 
-  auto ep_name = ep->name();
-  if (ep_name.empty()) {
-    ep_name = ep->function_name();
-  }
-
-  // TODO(dsinclair): There is a potential bug here. Entry points can have the
-  // same name in WGSL if they have different pipeline stages. This does not
-  // take that into account and will emit duplicate struct names. I'm ignoring
-  // this until https://github.com/gpuweb/gpuweb/issues/662 is resolved as it
-  // may remove this issue and entry point names will need to be unique.
   if (!in_variables.empty()) {
-    auto in_struct_name = generate_name(ep_name + "_" + kInStructNameSuffix);
+    auto in_struct_name =
+        generate_name(func->name() + "_" + kInStructNameSuffix);
     auto in_var_name = generate_name(kTintStructInVarPrefix);
-    ep_name_to_in_data_[ep_name] = {in_struct_name, in_var_name};
+    ep_name_to_in_data_[func->name()] = {in_struct_name, in_var_name};
 
     make_indent(out);
     out << "struct " << in_struct_name << " {" << std::endl;
@@ -1234,7 +1269,7 @@ bool GeneratorImpl::EmitEntryPointData(std::ostream& out, ast::EntryPoint* ep) {
 
       out << " " << var->name() << " : ";
       if (deco->IsLocation()) {
-        if (ep->stage() == ast::PipelineStage::kCompute) {
+        if (func->pipeline_stage() == ast::PipelineStage::kCompute) {
           error_ = "invalid location variable for pipeline stage";
           return false;
         }
@@ -1259,9 +1294,10 @@ bool GeneratorImpl::EmitEntryPointData(std::ostream& out, ast::EntryPoint* ep) {
   }
 
   if (!outvariables.empty()) {
-    auto outstruct_name = generate_name(ep_name + "_" + kOutStructNameSuffix);
+    auto outstruct_name =
+        generate_name(func->name() + "_" + kOutStructNameSuffix);
     auto outvar_name = generate_name(kTintStructOutVarPrefix);
-    ep_name_to_out_data_[ep_name] = {outstruct_name, outvar_name};
+    ep_name_to_out_data_[func->name()] = {outstruct_name, outvar_name};
 
     make_indent(out);
     out << "struct " << outstruct_name << " {" << std::endl;
@@ -1280,9 +1316,9 @@ bool GeneratorImpl::EmitEntryPointData(std::ostream& out, ast::EntryPoint* ep) {
 
       if (deco->IsLocation()) {
         auto loc = deco->AsLocation()->value();
-        if (ep->stage() == ast::PipelineStage::kVertex) {
+        if (func->pipeline_stage() == ast::PipelineStage::kVertex) {
           out << "TEXCOORD" << loc;
-        } else if (ep->stage() == ast::PipelineStage::kFragment) {
+        } else if (func->pipeline_stage() == ast::PipelineStage::kFragment) {
           out << "SV_Target" << loc << "";
         } else {
           error_ = "invalid location variable for pipeline stage";
@@ -1323,11 +1359,6 @@ std::string GeneratorImpl::builtin_to_attribute(ast::Builtin builtin) const {
       return "SV_Position";
     case ast::Builtin::kFragDepth:
       return "SV_Depth";
-    // TODO(dsinclair): Ignore for now. This has been removed as a builtin
-    // in the spec. Need to update Tint to match.
-    // https://github.com/gpuweb/gpuweb/pull/824
-    case ast::Builtin::kWorkgroupSize:
-      return "";
     case ast::Builtin::kLocalInvocationId:
       return "SV_GroupThreadID";
     case ast::Builtin::kLocalInvocationIdx:
@@ -1341,24 +1372,18 @@ std::string GeneratorImpl::builtin_to_attribute(ast::Builtin builtin) const {
 }
 
 bool GeneratorImpl::EmitEntryPointFunction(std::ostream& out,
-                                           ast::EntryPoint* ep) {
+                                           ast::Function* func) {
   make_indent(out);
 
-  current_ep_name_ = ep->name();
-  if (current_ep_name_.empty()) {
-    current_ep_name_ = ep->function_name();
-  }
+  current_ep_name_ = func->name();
 
-  auto* func = module_->FindFunctionByName(ep->function_name());
-  if (func == nullptr) {
-    error_ = "unable to find function for entry point: " + ep->function_name();
-    return false;
-  }
-
-  if (ep->stage() == ast::PipelineStage::kCompute) {
-    // TODO(dsinclair): When we have a way to set the thread group size this
-    // should be updated.
-    out << "[numthreads(1, 1, 1)]" << std::endl;
+  if (func->pipeline_stage() == ast::PipelineStage::kCompute) {
+    uint32_t x = 0;
+    uint32_t y = 0;
+    uint32_t z = 0;
+    std::tie(x, y, z) = func->workgroup_size();
+    out << "[numthreads(" << std::to_string(x) << ", " << std::to_string(y)
+        << ", " << std::to_string(z) << ")]" << std::endl;
     make_indent(out);
   }
 
@@ -1509,11 +1534,19 @@ bool GeneratorImpl::EmitLoop(std::ostream& out, ast::LoopStatement* stmt) {
       make_indent(out);
 
       auto* var = s->AsVariableDecl()->variable();
-      out << var->name() << " = ";
+
+      std::ostringstream pre;
+      std::ostringstream constructor_out;
       if (var->constructor() != nullptr) {
-        if (!EmitExpression(out, var->constructor())) {
+        if (!EmitExpression(pre, constructor_out, var->constructor())) {
           return false;
         }
+      }
+      out << pre.str();
+
+      out << var->name() << " = ";
+      if (var->constructor() != nullptr) {
+        out << constructor_out.str();
       } else {
         if (!EmitZeroValue(out, var->type())) {
           return false;
@@ -1543,6 +1576,7 @@ bool GeneratorImpl::EmitLoop(std::ostream& out, ast::LoopStatement* stmt) {
 }
 
 std::string GeneratorImpl::generate_storage_buffer_index_expression(
+    std::ostream& pre,
     ast::Expression* expr) {
   std::ostringstream out;
   bool first = true;
@@ -1557,7 +1591,7 @@ std::string GeneratorImpl::generate_storage_buffer_index_expression(
     first = false;
     if (expr->IsMemberAccessor()) {
       auto* mem = expr->AsMemberAccessor();
-      auto* res_type = mem->structure()->result_type()->UnwrapAliasPtrAlias();
+      auto* res_type = mem->structure()->result_type()->UnwrapAll();
       if (res_type->IsStruct()) {
         auto* str_type = res_type->AsStruct()->impl();
         auto* str_member = str_type->get_member(mem->member()->name());
@@ -1592,7 +1626,7 @@ std::string GeneratorImpl::generate_storage_buffer_index_expression(
       expr = mem->structure();
     } else if (expr->IsArrayAccessor()) {
       auto* ary = expr->AsArrayAccessor();
-      auto* ary_type = ary->array()->result_type()->UnwrapAliasPtrAlias();
+      auto* ary_type = ary->array()->result_type()->UnwrapAll();
 
       out << "(";
       if (ary_type->IsArray()) {
@@ -1614,7 +1648,7 @@ std::string GeneratorImpl::generate_storage_buffer_index_expression(
         return "";
       }
       out << " * ";
-      if (!EmitExpression(out, ary->idx_expr())) {
+      if (!EmitExpression(pre, out, ary->idx_expr())) {
         return "";
       }
       out << ")";
@@ -1636,10 +1670,11 @@ std::string GeneratorImpl::generate_storage_buffer_index_expression(
 // TODO(dsinclair): Need to support loading through a pointer. The pointer is
 // just a memory address in the storage buffer, so need to do the correct
 // calculation.
-bool GeneratorImpl::EmitStorageBufferAccessor(std::ostream& out,
+bool GeneratorImpl::EmitStorageBufferAccessor(std::ostream& pre,
+                                              std::ostream& out,
                                               ast::Expression* expr,
                                               ast::Expression* rhs) {
-  auto* result_type = expr->result_type()->UnwrapAliasPtrAlias();
+  auto* result_type = expr->result_type()->UnwrapAll();
   bool is_store = rhs != nullptr;
 
   std::string access_method = is_store ? "Store" : "Load";
@@ -1666,7 +1701,7 @@ bool GeneratorImpl::EmitStorageBufferAccessor(std::ostream& out,
     return false;
   }
 
-  auto idx = generate_storage_buffer_index_expression(expr);
+  auto idx = generate_storage_buffer_index_expression(pre, expr);
   if (idx.empty()) {
     return false;
   }
@@ -1685,7 +1720,7 @@ bool GeneratorImpl::EmitStorageBufferAccessor(std::ostream& out,
 
       auto name = generate_name(kTempNamePrefix);
       out << " " << name << " = ";
-      if (!EmitExpression(out, rhs)) {
+      if (!EmitExpression(pre, out, rhs)) {
         return false;
       }
       out << ";" << std::endl;
@@ -1723,7 +1758,7 @@ bool GeneratorImpl::EmitStorageBufferAccessor(std::ostream& out,
   out << buffer_name << "." << access_method << "(" << idx;
   if (is_store) {
     out << ", asuint(";
-    if (!EmitExpression(out, rhs)) {
+    if (!EmitExpression(pre, out, rhs)) {
       return false;
     }
     out << ")";
@@ -1756,7 +1791,7 @@ bool GeneratorImpl::is_storage_buffer_access(
 bool GeneratorImpl::is_storage_buffer_access(
     ast::MemberAccessorExpression* expr) {
   auto* structure = expr->structure();
-  auto* data_type = structure->result_type()->UnwrapAliasPtrAlias();
+  auto* data_type = structure->result_type()->UnwrapAll();
   // If the data is a multi-element swizzle then we will not load the swizzle
   // portion through the Load command.
   if (data_type->IsVector() && expr->member()->name().size() > 1) {
@@ -1766,10 +1801,6 @@ bool GeneratorImpl::is_storage_buffer_access(
   // Check if this is a storage buffer variable
   if (structure->IsIdentifier()) {
     auto* ident = expr->structure()->AsIdentifier();
-    if (ident->has_path()) {
-      return false;
-    }
-
     ast::Variable* var = nullptr;
     if (!global_variables_.get(ident->name(), &var)) {
       return false;
@@ -1786,37 +1817,42 @@ bool GeneratorImpl::is_storage_buffer_access(
   return false;
 }
 
-bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
+bool GeneratorImpl::EmitMemberAccessor(std::ostream& pre,
+                                       std::ostream& out,
                                        ast::MemberAccessorExpression* expr) {
   // Look for storage buffer accesses as we have to convert them into Load
   // expressions. Stores will be identified in the assignment emission and a
   // member accessor store of a storage buffer will not get here.
   if (is_storage_buffer_access(expr)) {
-    return EmitStorageBufferAccessor(out, expr, nullptr);
+    return EmitStorageBufferAccessor(pre, out, expr, nullptr);
   }
 
-  if (!EmitExpression(out, expr->structure())) {
+  if (!EmitExpression(pre, out, expr->structure())) {
     return false;
   }
   out << ".";
-  return EmitExpression(out, expr->member());
+  return EmitExpression(pre, out, expr->member());
 }
 
 bool GeneratorImpl::EmitReturn(std::ostream& out, ast::ReturnStatement* stmt) {
   make_indent(out);
 
-  out << "return";
-
   if (generating_entry_point_) {
+    out << "return";
     auto outdata = ep_name_to_out_data_.find(current_ep_name_);
     if (outdata != ep_name_to_out_data_.end()) {
       out << " " << outdata->second.var_name;
     }
   } else if (stmt->has_value()) {
-    out << " ";
-    if (!EmitExpression(out, stmt->value())) {
+    std::ostringstream pre;
+    std::ostringstream ret_out;
+    if (!EmitExpression(pre, ret_out, stmt->value())) {
       return false;
     }
+    out << pre.str();
+    out << "return " << ret_out.str();
+  } else {
+    out << "return";
   }
   out << ";" << std::endl;
   return true;
@@ -1834,10 +1870,13 @@ bool GeneratorImpl::EmitStatement(std::ostream& out, ast::Statement* stmt) {
   }
   if (stmt->IsCall()) {
     make_indent(out);
-    if (!EmitCall(out, stmt->AsCall()->expr())) {
+    std::ostringstream pre;
+    std::ostringstream call_out;
+    if (!EmitCall(pre, call_out, stmt->AsCall()->expr())) {
       return false;
     }
-    out << ";" << std::endl;
+    out << pre.str();
+    out << call_out.str() << ";" << std::endl;
     return true;
   }
   if (stmt->IsContinue()) {
@@ -1874,11 +1913,14 @@ bool GeneratorImpl::EmitStatement(std::ostream& out, ast::Statement* stmt) {
 bool GeneratorImpl::EmitSwitch(std::ostream& out, ast::SwitchStatement* stmt) {
   make_indent(out);
 
-  out << "switch(";
-  if (!EmitExpression(out, stmt->condition())) {
+  std::ostringstream pre;
+  std::ostringstream cond;
+  if (!EmitExpression(pre, cond, stmt->condition())) {
     return false;
   }
-  out << ") {" << std::endl;
+
+  out << pre.str();
+  out << "switch(" << cond.str() << ") {" << std::endl;
 
   increment_indent();
 
@@ -1944,37 +1986,49 @@ bool GeneratorImpl::EmitType(std::ostream& out,
     // https://bugs.chromium.org/p/tint/issues/detail?id=183
     error_ = "pointers not supported in HLSL";
     return false;
+  } else if (type->IsSampler()) {
+    auto* sampler = type->AsSampler();
+    out << "Sampler";
+    if (sampler->IsComparison()) {
+      out << "Comparison";
+    }
+    out << "State";
   } else if (type->IsStruct()) {
-    auto* str = type->AsStruct()->impl();
-    // TODO(dsinclair): Block decoration?
-    // if (str->decoration() != ast::StructDecoration::kNone) {
-    // }
-    out << "struct";
-    // If a name was provided for the struct emit it.
-    if (!name.empty()) {
-      out << " " << name;
+    out << type->AsStruct()->name();
+  } else if (type->IsTexture()) {
+    auto* tex = type->AsTexture();
+    if (tex->IsStorage()) {
+      out << "RW";
     }
-    out << " {" << std::endl;
+    out << "Texture";
 
-    increment_indent();
-    for (const auto& mem : str->members()) {
-      make_indent(out);
-      // TODO(dsinclair): Handle [[offset]] annotation on structs
-      // https://bugs.chromium.org/p/tint/issues/detail?id=184
-
-      if (!EmitType(out, mem->type(), mem->name())) {
+    switch (tex->dim()) {
+      case ast::type::TextureDimension::k1d:
+        out << "1D";
+        break;
+      case ast::type::TextureDimension::k1dArray:
+        out << "1DArray";
+        break;
+      case ast::type::TextureDimension::k2d:
+        out << "2D";
+        break;
+      case ast::type::TextureDimension::k2dArray:
+        out << "2DArray";
+        break;
+      case ast::type::TextureDimension::k3d:
+        out << "3D";
+        break;
+      case ast::type::TextureDimension::kCube:
+        out << "Cube";
+        break;
+      case ast::type::TextureDimension::kCubeArray:
+        out << "CubeArray";
+        break;
+      default:
+        error_ = "Invalid texture dimensions";
         return false;
-      }
-      // Array member name will be output with the type
-      if (!mem->type()->IsArray()) {
-        out << " " << namer_.NameFor(mem->name());
-      }
-      out << ";" << std::endl;
     }
-    decrement_indent();
-    make_indent(out);
 
-    out << "}";
   } else if (type->IsU32()) {
     out << "uint";
   } else if (type->IsVector()) {
@@ -1994,7 +2048,39 @@ bool GeneratorImpl::EmitType(std::ostream& out,
   return true;
 }
 
-bool GeneratorImpl::EmitUnaryOp(std::ostream& out,
+bool GeneratorImpl::EmitStructType(std::ostream& out,
+                                   const ast::type::StructType* str,
+                                   const std::string& name) {
+  // TODO(dsinclair): Block decoration?
+  // if (str->impl()->decoration() != ast::StructDecoration::kNone) {
+  // }
+  out << "struct " << name << " {" << std::endl;
+
+  increment_indent();
+  for (const auto& mem : str->impl()->members()) {
+    make_indent(out);
+    // TODO(dsinclair): Handle [[offset]] annotation on structs
+    // https://bugs.chromium.org/p/tint/issues/detail?id=184
+
+    if (!EmitType(out, mem->type(), mem->name())) {
+      return false;
+    }
+    // Array member name will be output with the type
+    if (!mem->type()->IsArray()) {
+      out << " " << namer_.NameFor(mem->name());
+    }
+    out << ";" << std::endl;
+  }
+  decrement_indent();
+  make_indent(out);
+
+  out << "};" << std::endl;
+
+  return true;
+}
+
+bool GeneratorImpl::EmitUnaryOp(std::ostream& pre,
+                                std::ostream& out,
                                 ast::UnaryOpExpression* expr) {
   switch (expr->op()) {
     case ast::UnaryOp::kNot:
@@ -2006,7 +2092,7 @@ bool GeneratorImpl::EmitUnaryOp(std::ostream& out,
   }
   out << "(";
 
-  if (!EmitExpression(out, expr->expr())) {
+  if (!EmitExpression(pre, out, expr->expr())) {
     return false;
   }
 
@@ -2026,6 +2112,17 @@ bool GeneratorImpl::EmitVariable(std::ostream& out,
     return false;
   }
 
+  std::ostringstream constructor_out;
+  if (!skip_constructor && var->constructor() != nullptr) {
+    constructor_out << " = ";
+
+    std::ostringstream pre;
+    if (!EmitExpression(pre, constructor_out, var->constructor())) {
+      return false;
+    }
+    out << pre.str();
+  }
+
   if (var->is_const()) {
     out << "const ";
   }
@@ -2035,14 +2132,7 @@ bool GeneratorImpl::EmitVariable(std::ostream& out,
   if (!var->type()->IsArray()) {
     out << " " << var->name();
   }
-
-  if (!skip_constructor && var->constructor() != nullptr) {
-    out << " = ";
-    if (!EmitExpression(out, var->constructor())) {
-      return false;
-    }
-  }
-  out << ";" << std::endl;
+  out << constructor_out.str() << ";" << std::endl;
 
   return true;
 }
@@ -2051,7 +2141,7 @@ bool GeneratorImpl::EmitProgramConstVariable(std::ostream& out,
                                              const ast::Variable* var) {
   make_indent(out);
 
-  if (var->IsDecorated()) {
+  if (var->IsDecorated() && !var->AsDecorated()->HasConstantIdDecoration()) {
     error_ = "Decorated const values not valid";
     return false;
   }
@@ -2060,21 +2150,49 @@ bool GeneratorImpl::EmitProgramConstVariable(std::ostream& out,
     return false;
   }
 
-  out << "static const ";
-  if (!EmitType(out, var->type(), var->name())) {
-    return false;
-  }
-  if (!var->type()->IsArray()) {
-    out << " " << var->name();
-  }
-
+  std::ostringstream constructor_out;
   if (var->constructor() != nullptr) {
-    out << " = ";
-    if (!EmitExpression(out, var->constructor())) {
+    std::ostringstream pre;
+    if (!EmitExpression(pre, constructor_out, var->constructor())) {
       return false;
     }
+    out << pre.str();
   }
-  out << ";" << std::endl;
+
+  if (var->IsDecorated() && var->AsDecorated()->HasConstantIdDecoration()) {
+    auto const_id = var->AsDecorated()->constant_id();
+
+    out << "#ifndef WGSL_SPEC_CONSTANT_" << const_id << std::endl;
+
+    if (var->constructor() != nullptr) {
+      out << "#define WGSL_SPEC_CONSTANT_" << const_id << " "
+          << constructor_out.str() << std::endl;
+    } else {
+      out << "#error spec constant required for constant id " << const_id
+          << std::endl;
+    }
+    out << "#endif" << std::endl;
+    out << "static const ";
+    if (!EmitType(out, var->type(), var->name())) {
+      return false;
+    }
+    out << " " << var->name() << " = WGSL_SPEC_CONSTANT_" << const_id << ";"
+        << std::endl;
+    out << "#undef WGSL_SPEC_CONSTANT_" << const_id << std::endl;
+  } else {
+    out << "static const ";
+    if (!EmitType(out, var->type(), var->name())) {
+      return false;
+    }
+    if (!var->type()->IsArray()) {
+      out << " " << var->name();
+    }
+
+    if (var->constructor() != nullptr) {
+      out << " = " << constructor_out.str();
+    }
+    out << ";" << std::endl;
+  }
 
   return true;
 }

@@ -14,10 +14,12 @@
 #include "build/build_config.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/text_char_pos.h"
+#include "third_party/base/check.h"
 #include "third_party/base/stl_util.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fde/cfde_textout.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
+#include "xfa/fgas/graphics/cfgas_gepath.h"
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_caret.h"
 #include "xfa/fwl/cfwl_event.h"
@@ -31,7 +33,6 @@
 #include "xfa/fwl/fwl_widgetdef.h"
 #include "xfa/fwl/ifwl_themeprovider.h"
 #include "xfa/fwl/theme/cfwl_utils.h"
-#include "xfa/fxgraphics/cxfa_gepath.h"
 
 namespace {
 
@@ -139,7 +140,8 @@ FWL_WidgetHit CFWL_Edit::HitTest(const CFX_PointF& point) {
   return FWL_WidgetHit::Unknown;
 }
 
-void CFWL_Edit::DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) {
+void CFWL_Edit::DrawWidget(CFGAS_GEGraphics* pGraphics,
+                           const CFX_Matrix& matrix) {
   if (!pGraphics)
     return;
 
@@ -320,38 +322,7 @@ void CFWL_Edit::SetScrollOffset(float fScrollOffset) {
   m_fScrollOffsetY = fScrollOffset;
 }
 
-void CFWL_Edit::DrawTextBk(CXFA_Graphics* pGraphics,
-                           const CFX_Matrix* pMatrix) {
-  CFWL_ThemeBackground param;
-  param.m_pWidget = this;
-  param.m_iPart = CFWL_Part::Background;
-  param.m_bStaticBackground = false;
-  param.m_dwStates = m_Properties.m_dwStyleExes & FWL_STYLEEXT_EDT_ReadOnly
-                         ? CFWL_PartState_ReadOnly
-                         : CFWL_PartState_Normal;
-  uint32_t dwStates = (m_Properties.m_dwStates & FWL_WGTSTATE_Disabled);
-  if (dwStates)
-    param.m_dwStates = CFWL_PartState_Disabled;
-  param.m_pGraphics = pGraphics;
-  param.m_matrix = *pMatrix;
-  param.m_PartRect = m_ClientRect;
-  GetThemeProvider()->DrawBackground(param);
-
-  if (!IsShowScrollBar(true) || !IsShowScrollBar(false))
-    return;
-
-  CFX_RectF rtScroll = m_pHorzScrollBar->GetWidgetRect();
-
-  CFX_RectF rtStatic(m_ClientRect.right() - rtScroll.height,
-                     m_ClientRect.bottom() - rtScroll.height, rtScroll.height,
-                     rtScroll.height);
-  param.m_bStaticBackground = true;
-  param.m_bMaximize = true;
-  param.m_PartRect = rtStatic;
-  GetThemeProvider()->DrawBackground(param);
-}
-
-void CFWL_Edit::DrawContent(CXFA_Graphics* pGraphics,
+void CFWL_Edit::DrawContent(CFGAS_GEGraphics* pGraphics,
                             const CFX_Matrix* pMatrix) {
   pGraphics->SaveGraphState();
   if (m_Properties.m_dwStyleExes & FWL_STYLEEXT_EDT_CombText)
@@ -375,7 +346,7 @@ void CFWL_Edit::DrawContent(CXFA_Graphics* pGraphics,
     std::vector<CFX_RectF> rects =
         m_pEditEngine->GetCharacterRectsInRange(sel_start, count);
 
-    CXFA_GEPath path;
+    CFGAS_GEPath path;
     for (auto& rect : rects) {
       rect.left += fOffSetX;
       rect.top += fOffSetY;
@@ -398,7 +369,7 @@ void CFWL_Edit::DrawContent(CXFA_Graphics* pGraphics,
   if (m_Properties.m_dwStyleExes & FWL_STYLEEXT_EDT_CombText) {
     pGraphics->RestoreGraphState();
 
-    CXFA_GEPath path;
+    CFGAS_GEPath path;
     int32_t iLimit = m_nLimit > 0 ? m_nLimit : 1;
     float fStep = m_EngineRect.width / iLimit;
     float fLeft = m_EngineRect.left + 1;
@@ -422,7 +393,7 @@ void CFWL_Edit::DrawContent(CXFA_Graphics* pGraphics,
 void CFWL_Edit::RenderText(CFX_RenderDevice* pRenderDev,
                            const CFX_RectF& clipRect,
                            const CFX_Matrix& mt) {
-  ASSERT(pRenderDev);
+  DCHECK(pRenderDev);
 
   RetainPtr<CFGAS_GEFont> font = m_pEditEngine->GetFont();
   if (!font)
@@ -907,26 +878,6 @@ void CFWL_Edit::HideCaret(CFX_RectF* pRect) {
   pXFAWidget->DisplayCaret(false, pRect);
 }
 
-bool CFWL_Edit::ValidateNumberChar(wchar_t cNum) {
-  if (!m_bSetRange)
-    return true;
-
-  WideString wsText = m_pEditEngine->GetText();
-  if (wsText.IsEmpty())
-    return cNum != L'0';
-
-  if (HasSelection())
-    return wsText.GetInteger() <= m_iMax;
-  if (cNum == L'0' && m_CursorPosition == 0)
-    return false;
-
-  int32_t nLen = wsText.GetLength();
-  WideString first = wsText.First(m_CursorPosition);
-  WideString last = wsText.Last(nLen - m_CursorPosition);
-  WideString wsNew = first + cNum + last;
-  return wsNew.GetInteger() <= m_iMax;
-}
-
 void CFWL_Edit::InitCaret() {
   if (m_pCaret)
     return;
@@ -1027,7 +978,7 @@ void CFWL_Edit::OnProcessEvent(CFWL_Event* pEvent) {
   }
 }
 
-void CFWL_Edit::OnDrawWidget(CXFA_Graphics* pGraphics,
+void CFWL_Edit::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
                              const CFX_Matrix& matrix) {
   DrawWidget(pGraphics, matrix);
 }

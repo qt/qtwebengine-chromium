@@ -8,16 +8,13 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <chrono>
 #include <iterator>
-#include <limits>
-#include <random>
 #include <string>
 #include <utility>
 
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
-#include "cast/common/public/message_port.h"
+#include "cast/common/channel/message_util.h"
 #include "cast/streaming/capture_recommendations.h"
 #include "cast/streaming/environment.h"
 #include "cast/streaming/message_fields.h"
@@ -144,14 +141,6 @@ bool AreAllValid(const std::vector<AudioCaptureConfig>& audio_configs,
                      IsValidVideoCaptureConfig);
 }
 
-int GenerateSessionId() {
-  static auto& rd = *new std::random_device();
-  static auto& gen = *new std::mt19937(rd());
-  static auto& dist =
-      *new std::uniform_int_distribution<>(1, std::numeric_limits<int>::max());
-
-  return dist(gen);
-}
 }  // namespace
 
 SenderSession::Client::~Client() = default;
@@ -160,23 +149,27 @@ SenderSession::SenderSession(IPAddress remote_address,
                              Client* const client,
                              Environment* environment,
                              MessagePort* message_port)
-    : session_id_(GenerateSessionId()),
-      remote_address_(remote_address),
+    : remote_address_(remote_address),
       client_(client),
       environment_(environment),
-      message_port_(message_port),
+      messager_(message_port,
+                MakeUniqueSessionId("sender"),
+                [this](Error error) {
+                  OSP_DLOG_WARN << "SenderSession message port error: "
+                                << error;
+                  client_->OnError(this, error);
+                }),
       packet_router_(environment_) {
-  OSP_DCHECK(session_id_ > 0);
   OSP_DCHECK(client_);
-  OSP_DCHECK(message_port_);
   OSP_DCHECK(environment_);
 
-  message_port_->SetClient(this, "sender-" + std::to_string(session_id_));
+  messager_.SetHandler(kMessageTypeAnswer,
+                       [this](SessionMessager::Message message) {
+                         OnAnswer(std::move(message));
+                       });
 }
 
-SenderSession::~SenderSession() {
-  message_port_->ResetClient();
-}
+SenderSession::~SenderSession() = default;
 
 Error SenderSession::Negotiate(std::vector<AudioCaptureConfig> audio_configs,
                                std::vector<VideoCaptureConfig> video_configs) {
@@ -202,90 +195,28 @@ Error SenderSession::Negotiate(std::vector<AudioCaptureConfig> audio_configs,
   message_body[kMessageType] = kMessageTypeOffer;
   message_body[kOfferMessageBody] = std::move(json_offer.value());
 
-  Message message;
   // Currently we don't have a way to discover the ID of the receiver we
   // are connected to, since we have to send the first message.
   // TODO(jophba): migrate to discovered receiver ID when available.
-  message.sender_id = kDefaultStreamingReceiverSenderId;
-  message.message_namespace = kCastWebrtcNamespace;
-  message.body = std::move(message_body);
-  SendMessage(&message);
+  static constexpr char kPlaceholderReceiverSenderId[] = "receiver-12345";
+  messager_.SendMessage(SessionMessager::Message{
+      kPlaceholderReceiverSenderId, kCastWebrtcNamespace,
+      ++current_sequence_number_, std::move(message_body)});
   return Error::None();
 }
 
-void SenderSession::OnMessage(const std::string& sender_id,
-                              const std::string& message_namespace,
-                              const std::string& message) {
-  ErrorOr<Json::Value> message_json = json::Parse(message);
-  if (!message_json) {
-    OSP_DLOG_WARN << "Received an invalid message: " << message
-                  << ", dropping.";
+void SenderSession::OnAnswer(SessionMessager::Message message) {
+  if (message.sequence_number != current_sequence_number_) {
+    OSP_DLOG_WARN << "Received a stale answer message, dropping.";
+    return;
+  } else if (message.sequence_number > current_sequence_number_) {
+    OSP_DLOG_WARN
+        << "Received an answer with an unexpected sequence number, dropping.";
     return;
   }
 
-  std::string key;
-  if (!json::ParseAndValidateString(message_json.value()[kKeyType], &key)) {
-    OSP_DLOG_WARN << "Received message with invalid message key, dropping.";
-    return;
-  }
-
-  if (receiver_sender_id_.empty()) {
-    receiver_sender_id_ = sender_id;
-  } else if (receiver_sender_id_ != sender_id) {
-    OSP_DLOG_WARN << "Received message from unknown sender ID: " << sender_id
-                  << ", dropping.";
-    return;
-  }
-
-  OSP_DVLOG << "Received a message: " << message;
-  if (key == kMessageTypeAnswer) {
-    if (message_namespace != kCastWebrtcNamespace) {
-      OSP_DLOG_INFO << "Received answer from invalid namespace: "
-                    << message_namespace;
-      return;
-    }
-    if (!current_negotiation_) {
-      OSP_DLOG_INFO << "Received answer but not currently negotiating.";
-      return;
-    }
-
-    int sequence_number;
-    if (!json::ParseAndValidateInt(message_json.value()[kSequenceNumber],
-                                   &sequence_number)) {
-      OSP_DLOG_WARN << "Received invalid message sequence number, dropping.";
-      return;
-    }
-
-    if (sequence_number != current_sequence_number_) {
-      OSP_DLOG_WARN << "Received a stale answer message, dropping.";
-      return;
-    } else if (sequence_number > current_sequence_number_) {
-      OSP_DLOG_WARN
-          << "Received an answer with an unexpected sequence number, dropping.";
-      return;
-    }
-
-    const Json::Value body =
-        std::move(message_json.value()[kAnswerMessageBody]);
-    if (body.isObject()) {
-      OnAnswer(body);
-    } else {
-      client_->OnError(
-          this, Error(Error::Code::kJsonParseError, "Failed to parse answer"));
-      OSP_DLOG_WARN
-          << "Received message with invalid answer message body, dropping.";
-    }
-  }
-  current_negotiation_.reset();
-}
-
-void SenderSession::OnError(Error error) {
-  OSP_DLOG_WARN << "SenderSession message port error: " << error;
-}
-
-void SenderSession::OnAnswer(const Json::Value& message_body) {
   Answer answer;
-  if (!Answer::ParseAndValidate(message_body, &answer)) {
+  if (!Answer::ParseAndValidate(message.body, &answer)) {
     client_->OnError(this, Error(Error::Code::kJsonParseError,
                                  "Received invalid answer message"));
     OSP_DLOG_WARN << "Received invalid answer message";
@@ -374,23 +305,6 @@ SenderSession::ConfiguredSenders SenderSession::SpawnSenders(
     }
   }
   return senders;
-}
-
-void SenderSession::SendMessage(Message* message) {
-  message->body[kSequenceNumber] = ++current_sequence_number_;
-
-  auto body_or_error = json::Stringify(message->body);
-  if (body_or_error.is_value()) {
-    OSP_DVLOG << "Sending message: SENDER[" << message->sender_id
-              << "], NAMESPACE[" << message->message_namespace << "], BODY:\n"
-              << body_or_error.value();
-    message_port_->PostMessage(message->sender_id, message->message_namespace,
-                               body_or_error.value());
-  } else {
-    OSP_DLOG_WARN << "Sending message failed with error:\n"
-                  << body_or_error.error();
-    client_->OnError(this, body_or_error.error());
-  }
 }
 
 }  // namespace cast

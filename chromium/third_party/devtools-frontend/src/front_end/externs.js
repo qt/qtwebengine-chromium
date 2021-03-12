@@ -482,6 +482,9 @@ CodeMirror.prototype = {
   undo: function() {},
   unlinkDoc: function(other) {}
 };
+CodeMirror.Editor = class extends CodeMirror {};
+CodeMirror.Doc = class extends CodeMirror {};
+CodeMirror.LineHandle = class {};
 /** @type {!{cursorDiv: Element, lineSpace: Element, gutters: Element}} */
 CodeMirror.prototype.display;
 /** @type {!{devtoolsAccessibleName: string, mode: string, lineWrapping: boolean}} */
@@ -499,7 +502,10 @@ CodeMirror.startState = function(mode) {};
 CodeMirror.copyState = function(mode, state) {};
 CodeMirror.inputStyles = {};
 CodeMirror.inputStyles.textarea = class {
-  constructor() {
+  /**
+   * @param {!CodeMirror.Editor} codeMirror
+   */
+  constructor(codeMirror) {
     /** @type {!HTMLTextAreaElement} */
     this.textarea;
     this.prevInput = '';
@@ -870,12 +876,6 @@ const createPlainTextSearchRegex = function(query, flags) {};
 const suppressUnused = function(value) {};
 
 /**
- * TODO: move into its own module
- * @param {function()} callback
- */
-const runOnWindowLoad = function(callback) {};
-
-/**
  * @template T
  * @param {function(new:T, ...)} constructorFunction
  * @return {!T}
@@ -894,212 +894,11 @@ const base64ToSize = function(content) {};
  */
 const unescapeCssString = function(input) {};
 
-
-// Lighthouse Report Renderer
-
 /**
  * @constructor
  * @param {!Document} document
  */
 const DOM = function(document) {};
-
-/**
- * @constructor
- * @param {!DOM} dom
- */
-const ReportRenderer = function(dom) {};
-
-ReportRenderer.prototype = {
-  /**
-   * @param {!ReportRenderer.ReportJSON} report
-   * @param {!Element} container Parent element to render the report into.
-   */
-  renderReport: function(report, container) {},
-
-  /**
-   * @param {!Document|!Element} context
-   */
-  setTemplateContext: function(context) {},
-
-};
-
-/**
- * @constructor
- * @param {!DOM} dom
- */
-const ReportUIFeatures = function(dom) {
-  /** @type {!ReportRenderer.ReportJSON} */
-  this.json;
-
-  /** @type {!Document} */
-  this._document;
-};
-
-ReportUIFeatures.prototype = {
-  /**
-   * @param {!Document|!Element} context
-   */
-  setTemplateContext: function(context) {},
-
-  /**
-   * @param {!ReportRenderer.ReportJSON} report
-   */
-  initFeatures: function(report) {},
-
-  _resetUIState: function() {},
-};
-
-/**
- * @typedef {{
- *     rawValue: (number|boolean|undefined),
- *     id: string,
- *     title: string,
- *     description: string,
- *     explanation: (string|undefined),
- *     errorMessage: (string|undefined),
- *     displayValue: (string|Array<string|number>|undefined),
- *     scoreDisplayMode: string,
- *     error: boolean,
- *     score: (number|null),
- *     details: (!DetailsRenderer.DetailsJSON|undefined),
- * }}
- */
-ReportRenderer.AuditResultJSON;
-
-/**
- * @typedef {{
- *     id: string,
- *     score: (number|null),
- *     weight: number,
- *     group: (string|undefined),
- *     result: ReportRenderer.AuditResultJSON
- * }}
- */
-ReportRenderer.AuditJSON;
-
-/**
- * @typedef {{
- *     title: string,
- *     id: string,
- *     score: (number|null),
- *     description: (string|undefined),
- *     manualDescription: string,
- *     auditRefs: !Array<!ReportRenderer.AuditJSON>
- * }}
- */
-ReportRenderer.CategoryJSON;
-
-/**
- * @typedef {{
- *     title: string,
- *     description: (string|undefined),
- * }}
- */
-ReportRenderer.GroupJSON;
-
-/**
- * @typedef {{
- *     lighthouseVersion: string,
- *     userAgent: string,
- *     fetchTime: string,
- *     timing: {total: number},
- *     requestedUrl: string,
- *     finalUrl: string,
- *     runWarnings: (!Array<string>|undefined),
- *     artifacts: {traces: {defaultPass: {traceEvents: !Array}}},
- *     audits: !Object<string, !ReportRenderer.AuditResultJSON>,
- *     categories: !Object<string, !ReportRenderer.CategoryJSON>,
- *     categoryGroups: !Object<string, !ReportRenderer.GroupJSON>,
- * }}
- */
-ReportRenderer.ReportJSON;
-
-/**
- * @typedef {{
- *     traces: {defaultPass: {traceEvents: !Array}},
- * }}
- */
-ReportRenderer.RunnerResultArtifacts;
-
-/**
- * @typedef {{
- *     lhr: !ReportRenderer.ReportJSON,
- *     artifacts: ReportRenderer.RunnerResultArtifacts,
- *     report: string,
- *     stack: string
- * }}
- */
-ReportRenderer.RunnerResult;
-
-
-/**
- * @constructor
- * @param {!DOM} dom
- * @param {!DetailsRenderer} detailsRenderer
- */
-const CategoryRenderer = function(dom, detailsRenderer) {};
-
-
-/**
- * @constructor
- * @param {!DOM} dom
- */
-const DetailsRenderer = function(dom) {};
-
-DetailsRenderer.prototype = {
-  /**
-   * @param {!DetailsRenderer.NodeDetailsJSON} item
-   * @return {!Element}
-   */
-  renderNode: function(item) {},
-};
-
-/**
- * @typedef {{
- *     type: string,
- *     value: (string|number|undefined),
- *     summary: (DetailsRenderer.OpportunitySummary|undefined),
- *     granularity: (number|undefined),
- *     displayUnit: (string|undefined)
- * }}
- */
-DetailsRenderer.DetailsJSON;
-
-/**
- * @typedef {{
- *     type: string,
- *     path: (string|undefined),
- *     selector: (string|undefined),
- *     snippet:(string|undefined)
- * }}
- */
-DetailsRenderer.NodeDetailsJSON;
-
-/**
- * @typedef {{
- *     sourceUrl: (string|undefined),
- *     sourceLine: (string|undefined),
- *     sourceColumn: (string|undefined),
- * }}
- */
-DetailsRenderer.SourceLocationDetailsJSON;
-
-/** @typedef {{
- *     wastedMs: (number|undefined),
- *     wastedBytes: (number|undefined),
- * }}
- */
-DetailsRenderer.OpportunitySummary;
-
-const LighthouseReportGenerator = class {
-  /**
-   * @param {!ReportRenderer.ReportJSON} lhr
-   * @return {string}
-   */
-  generateReportHtml(lhr) {
-    return '';
-  }
-};
 
 /** @interface */
 class InspectorFrontendHostAPI {
@@ -1231,7 +1030,7 @@ class InspectorFrontendHostAPI {
    * @param {string} url
    * @param {string} headers
    * @param {number} streamId
-   * @param {function(!InspectorFrontendHostAPI.LoadNetworkResourceResult)} callback
+   * @param {function(!InspectorFrontendHostAPI.LoadNetworkResourceResult): void} callback
    */
   loadNetworkResource(url, headers, streamId, callback) {
   }
@@ -1341,6 +1140,20 @@ class InspectorFrontendHostAPI {
   }
 
   /**
+   * @param {string} trigger
+   * @param {function(!InspectorFrontendHostAPI.ShowSurveyResult): void} callback
+   */
+  showSurvey(trigger, callback) {
+  }
+
+  /**
+   * @param {string} trigger
+   * @param {function(InspectorFrontendHostAPI.CanShowSurveyResult): void} callback
+   */
+  canShowSurvey(trigger, callback) {
+  }
+
+  /**
    * @return {number}
    */
   zoomFactor() {
@@ -1417,6 +1230,18 @@ InspectorFrontendHostAPI.ContextMenuDescriptor;
 }} */
 InspectorFrontendHostAPI.LoadNetworkResourceResult;
 
+/** @typedef
+{{
+  surveyShown: boolean
+}} */
+InspectorFrontendHostAPI.ShowSurveyResult;
+
+/** @typedef
+{{
+  canShowSurvey: boolean
+}} */
+InspectorFrontendHostAPI.CanShowSurveyResult;
+
 /**
  * Enum for recordEnumeratedHistogram
  * Warning: There are two other definitions of this enum in the DevTools code
@@ -1443,7 +1268,6 @@ InspectorFrontendHostAPI.EnumeratedHistogram = {
   ExperimentEnabledAtLaunch: 'DevTools.ExperimentEnabledAtLaunch',
   ExperimentEnabled: 'DevTools.ExperimentEnabled',
   ExperimentDisabled: 'DevTools.ExperimentDisabled',
-  ComputedStyleGrouping: 'DevTools.ComputedStyleGrouping',
   GridOverlayOpenedFrom: 'DevTools.GridOverlayOpenedFrom',
 };
 

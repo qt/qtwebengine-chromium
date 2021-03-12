@@ -1950,76 +1950,6 @@ TEST_P(PeerConnectionIntegrationTest,
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
 }
 
-// Tests that the GetRemoteAudioSSLCertificate method returns the remote DTLS
-// certificate once the DTLS handshake has finished.
-TEST_P(PeerConnectionIntegrationTest,
-       GetRemoteAudioSSLCertificateReturnsExchangedCertificate) {
-  auto GetRemoteAudioSSLCertificate = [](PeerConnectionWrapper* wrapper) {
-    auto pci = reinterpret_cast<PeerConnectionProxy*>(wrapper->pc());
-    auto pc = reinterpret_cast<PeerConnection*>(pci->internal());
-    return pc->GetRemoteAudioSSLCertificate();
-  };
-  auto GetRemoteAudioSSLCertChain = [](PeerConnectionWrapper* wrapper) {
-    auto pci = reinterpret_cast<PeerConnectionProxy*>(wrapper->pc());
-    auto pc = reinterpret_cast<PeerConnection*>(pci->internal());
-    return pc->GetRemoteAudioSSLCertChain();
-  };
-
-  auto caller_cert = rtc::RTCCertificate::FromPEM(kRsaPems[0]);
-  auto callee_cert = rtc::RTCCertificate::FromPEM(kRsaPems[1]);
-
-  // Configure each side with a known certificate so they can be compared later.
-  PeerConnectionInterface::RTCConfiguration caller_config;
-  caller_config.enable_dtls_srtp.emplace(true);
-  caller_config.certificates.push_back(caller_cert);
-  PeerConnectionInterface::RTCConfiguration callee_config;
-  callee_config.enable_dtls_srtp.emplace(true);
-  callee_config.certificates.push_back(callee_cert);
-  ASSERT_TRUE(
-      CreatePeerConnectionWrappersWithConfig(caller_config, callee_config));
-  ConnectFakeSignaling();
-
-  // When first initialized, there should not be a remote SSL certificate (and
-  // calling this method should not crash).
-  EXPECT_EQ(nullptr, GetRemoteAudioSSLCertificate(caller()));
-  EXPECT_EQ(nullptr, GetRemoteAudioSSLCertificate(callee()));
-  EXPECT_EQ(nullptr, GetRemoteAudioSSLCertChain(caller()));
-  EXPECT_EQ(nullptr, GetRemoteAudioSSLCertChain(callee()));
-
-  caller()->AddAudioTrack();
-  callee()->AddAudioTrack();
-  caller()->CreateAndSetAndSignalOffer();
-  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
-  ASSERT_TRUE_WAIT(DtlsConnected(), kDefaultTimeout);
-
-  // Once DTLS has been connected, each side should return the other's SSL
-  // certificate when calling GetRemoteAudioSSLCertificate.
-
-  auto caller_remote_cert = GetRemoteAudioSSLCertificate(caller());
-  ASSERT_TRUE(caller_remote_cert);
-  EXPECT_EQ(callee_cert->GetSSLCertificate().ToPEMString(),
-            caller_remote_cert->ToPEMString());
-
-  auto callee_remote_cert = GetRemoteAudioSSLCertificate(callee());
-  ASSERT_TRUE(callee_remote_cert);
-  EXPECT_EQ(caller_cert->GetSSLCertificate().ToPEMString(),
-            callee_remote_cert->ToPEMString());
-
-  auto caller_remote_cert_chain = GetRemoteAudioSSLCertChain(caller());
-  ASSERT_TRUE(caller_remote_cert_chain);
-  ASSERT_EQ(1U, caller_remote_cert_chain->GetSize());
-  auto remote_cert = &caller_remote_cert_chain->Get(0);
-  EXPECT_EQ(callee_cert->GetSSLCertificate().ToPEMString(),
-            remote_cert->ToPEMString());
-
-  auto callee_remote_cert_chain = GetRemoteAudioSSLCertChain(callee());
-  ASSERT_TRUE(callee_remote_cert_chain);
-  ASSERT_EQ(1U, callee_remote_cert_chain->GetSize());
-  remote_cert = &callee_remote_cert_chain->Get(0);
-  EXPECT_EQ(caller_cert->GetSSLCertificate().ToPEMString(),
-            remote_cert->ToPEMString());
-}
-
 // This test sets up a call between two parties with a source resolution of
 // 1280x720 and verifies that a 16:9 aspect ratio is received.
 TEST_P(PeerConnectionIntegrationTest,
@@ -5485,6 +5415,49 @@ TEST_F(PeerConnectionIntegrationTestUnifiedPlan,
               ElementsAre(PeerConnectionInterface::kHaveLocalOffer,
                           PeerConnectionInterface::kStable,
                           PeerConnectionInterface::kHaveRemoteOffer));
+}
+
+TEST_F(PeerConnectionIntegrationTestUnifiedPlan,
+       H264FmtpSpsPpsIdrInKeyframeParameterUsage) {
+  ASSERT_TRUE(CreatePeerConnectionWrappers());
+  ConnectFakeSignaling();
+  caller()->AddVideoTrack();
+  callee()->AddVideoTrack();
+  auto munger = [](cricket::SessionDescription* desc) {
+    cricket::VideoContentDescription* video =
+        GetFirstVideoContentDescription(desc);
+    auto codecs = video->codecs();
+    for (auto&& codec : codecs) {
+      if (codec.name == "H264") {
+        std::string value;
+        // The parameter is not supposed to be present in SDP by default.
+        EXPECT_FALSE(
+            codec.GetParam(cricket::kH264FmtpSpsPpsIdrInKeyframe, &value));
+        codec.SetParam(std::string(cricket::kH264FmtpSpsPpsIdrInKeyframe),
+                       std::string(""));
+      }
+    }
+    video->set_codecs(codecs);
+  };
+  // Munge local offer for SLD.
+  caller()->SetGeneratedSdpMunger(munger);
+  // Munge remote answer for SRD.
+  caller()->SetReceivedSdpMunger(munger);
+  caller()->CreateAndSetAndSignalOffer();
+  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
+  // Observe that after munging the parameter is present in generated SDP.
+  caller()->SetGeneratedSdpMunger([](cricket::SessionDescription* desc) {
+    cricket::VideoContentDescription* video =
+        GetFirstVideoContentDescription(desc);
+    for (auto&& codec : video->codecs()) {
+      if (codec.name == "H264") {
+        std::string value;
+        EXPECT_TRUE(
+            codec.GetParam(cricket::kH264FmtpSpsPpsIdrInKeyframe, &value));
+      }
+    }
+  });
+  caller()->CreateOfferAndWait();
 }
 
 INSTANTIATE_TEST_SUITE_P(PeerConnectionIntegrationTest,

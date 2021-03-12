@@ -397,15 +397,14 @@ private:
                     GrShaderVar("angleToEdge", kFloat_GrSLType),
                     GrShaderVar("diameter", kFloat_GrSLType),
             };
-            SkString fnName;
-            fragBuilder->emitFunction(kFloat_GrSLType, "coverage_from_dash_edge",
-                                      SK_ARRAY_COUNT(fnArgs), fnArgs, R"(
+            SkString fnName = fragBuilder->getMangledFunctionName("coverage_from_dash_edge");
+            fragBuilder->emitFunction(kFloat_GrSLType, fnName.c_str(),
+                                      {fnArgs, SK_ARRAY_COUNT(fnArgs)}, R"(
                     float linearDist;
                     angleToEdge = clamp(angleToEdge, -3.1415, 3.1415);
                     linearDist = diameter * sin(angleToEdge / 2);
                     return saturate(linearDist + 0.5);
-            )",
-                                      &fnName);
+            )");
             fragBuilder->codeAppend(R"(
                     float d = length(circleEdge.xy) * circleEdge.z;
 
@@ -989,13 +988,13 @@ public:
         bool fUseCenter;
     };
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkMatrix& viewMatrix,
-                                          SkPoint center,
-                                          SkScalar radius,
-                                          const GrStyle& style,
-                                          const ArcParams* arcParams = nullptr) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkMatrix& viewMatrix,
+                            SkPoint center,
+                            SkScalar radius,
+                            const GrStyle& style,
+                            const ArcParams* arcParams = nullptr) {
         SkASSERT(circle_stays_circle(viewMatrix));
         if (style.hasPathEffect()) {
             return nullptr;
@@ -1031,11 +1030,11 @@ public:
                                                radius, style, arcParams);
     }
 
-    CircleOp(const Helper::MakeArgs& helperArgs, const SkPMColor4f& color,
+    CircleOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
              const SkMatrix& viewMatrix, SkPoint center, SkScalar radius, const GrStyle& style,
              const ArcParams* arcParams)
             : GrMeshDrawOp(ClassID())
-            , fHelper(helperArgs, GrAAType::kCoverage) {
+            , fHelper(processorSet, GrAAType::kCoverage) {
         const SkStrokeRec& stroke = style.strokeRec();
         SkStrokeRec::Style recStyle = stroke.getStyle();
 
@@ -1400,8 +1399,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         CircleOp* that = t->cast<CircleOp>();
 
         // can only represent 65535 unique vertices with 16-bit indices
@@ -1488,16 +1486,16 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkMatrix& viewMatrix,
-                                          SkPoint center,
-                                          SkScalar radius,
-                                          SkScalar strokeWidth,
-                                          SkScalar startAngle,
-                                          SkScalar onAngle,
-                                          SkScalar offAngle,
-                                          SkScalar phaseAngle) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkMatrix& viewMatrix,
+                            SkPoint center,
+                            SkScalar radius,
+                            SkScalar strokeWidth,
+                            SkScalar startAngle,
+                            SkScalar onAngle,
+                            SkScalar offAngle,
+                            SkScalar phaseAngle) {
         SkASSERT(circle_stays_circle(viewMatrix));
         SkASSERT(strokeWidth < 2 * radius);
         return Helper::FactoryHelper<ButtCapDashedCircleOp>(context, std::move(paint), viewMatrix,
@@ -1505,12 +1503,12 @@ public:
                                                             onAngle, offAngle, phaseAngle);
     }
 
-    ButtCapDashedCircleOp(const Helper::MakeArgs& helperArgs, const SkPMColor4f& color,
+    ButtCapDashedCircleOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
                           const SkMatrix& viewMatrix, SkPoint center, SkScalar radius,
                           SkScalar strokeWidth, SkScalar startAngle, SkScalar onAngle,
                           SkScalar offAngle, SkScalar phaseAngle)
             : GrMeshDrawOp(ClassID())
-            , fHelper(helperArgs, GrAAType::kCoverage) {
+            , fHelper(processorSet, GrAAType::kCoverage) {
         SkASSERT(circle_stays_circle(viewMatrix));
         viewMatrix.mapPoints(&center, 1);
         radius = viewMatrix.mapRadius(radius);
@@ -1722,8 +1720,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         ButtCapDashedCircleOp* that = t->cast<ButtCapDashedCircleOp>();
 
         // can only represent 65535 unique vertices with 16-bit indices
@@ -1808,11 +1805,11 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkMatrix& viewMatrix,
-                                          const SkRect& ellipse,
-                                          const SkStrokeRec& stroke) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkMatrix& viewMatrix,
+                            const SkRect& ellipse,
+                            const SkStrokeRec& stroke) {
         DeviceSpaceParams params;
         // do any matrix crunching before we reset the draw state for device coords
         params.fCenter = SkPoint::Make(ellipse.centerX(), ellipse.centerY());
@@ -1885,11 +1882,11 @@ public:
                                                 params, stroke);
     }
 
-    EllipseOp(const Helper::MakeArgs& helperArgs, const SkPMColor4f& color,
+    EllipseOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
               const SkMatrix& viewMatrix, const DeviceSpaceParams& params,
               const SkStrokeRec& stroke)
             : INHERITED(ClassID())
-            , fHelper(helperArgs, GrAAType::kCoverage)
+            , fHelper(processorSet, GrAAType::kCoverage)
             , fUseScale(false) {
         SkStrokeRec::Style style = stroke.getStyle();
         bool isStrokeOnly =
@@ -2013,8 +2010,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         EllipseOp* that = t->cast<EllipseOp>();
 
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
@@ -2092,11 +2088,11 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkMatrix& viewMatrix,
-                                          const SkRect& ellipse,
-                                          const SkStrokeRec& stroke) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkMatrix& viewMatrix,
+                            const SkRect& ellipse,
+                            const SkStrokeRec& stroke) {
         DeviceSpaceParams params;
         params.fCenter = SkPoint::Make(ellipse.centerX(), ellipse.centerY());
         params.fXRadius = SkScalarHalf(ellipse.width());
@@ -2164,10 +2160,10 @@ public:
         return Helper::FactoryHelper<DIEllipseOp>(context, std::move(paint), params, viewMatrix);
     }
 
-    DIEllipseOp(Helper::MakeArgs& helperArgs, const SkPMColor4f& color,
+    DIEllipseOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
                 const DeviceSpaceParams& params, const SkMatrix& viewMatrix)
             : INHERITED(ClassID())
-            , fHelper(helperArgs, GrAAType::kCoverage)
+            , fHelper(processorSet, GrAAType::kCoverage)
             , fUseScale(false) {
         // This expands the outer rect so that after CTM we end up with a half-pixel border
         SkScalar a = viewMatrix[SkMatrix::kMScaleX];
@@ -2279,8 +2275,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         DIEllipseOp* that = t->cast<DIEllipseOp>();
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
             return CombineResult::kCannotCombine;
@@ -2476,23 +2471,23 @@ public:
 
     // A devStrokeWidth <= 0 indicates a fill only. If devStrokeWidth > 0 then strokeOnly indicates
     // whether the rrect is only stroked or stroked and filled.
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkMatrix& viewMatrix,
-                                          const SkRect& devRect,
-                                          float devRadius,
-                                          float devStrokeWidth,
-                                          bool strokeOnly) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkMatrix& viewMatrix,
+                            const SkRect& devRect,
+                            float devRadius,
+                            float devStrokeWidth,
+                            bool strokeOnly) {
         return Helper::FactoryHelper<CircularRRectOp>(context, std::move(paint), viewMatrix,
                                                       devRect, devRadius,
                                                       devStrokeWidth, strokeOnly);
     }
-    CircularRRectOp(Helper::MakeArgs& helperArgs, const SkPMColor4f& color,
+    CircularRRectOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
                     const SkMatrix& viewMatrix, const SkRect& devRect, float devRadius,
                     float devStrokeWidth, bool strokeOnly)
             : INHERITED(ClassID())
             , fViewMatrixIfUsingLocalCoords(viewMatrix)
-            , fHelper(helperArgs, GrAAType::kCoverage) {
+            , fHelper(processorSet, GrAAType::kCoverage) {
         SkRect bounds = devRect;
         SkASSERT(!(devStrokeWidth <= 0 && strokeOnly));
         SkScalar innerRadius = 0.0f;
@@ -2740,8 +2735,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         CircularRRectOp* that = t->cast<CircularRRectOp>();
 
         // can only represent 65535 unique vertices with 16-bit indices
@@ -2838,14 +2832,14 @@ public:
 
     // If devStrokeWidths values are <= 0 indicates then fill only. Otherwise, strokeOnly indicates
     // whether the rrect is only stroked or stroked and filled.
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkMatrix& viewMatrix,
-                                          const SkRect& devRect,
-                                          float devXRadius,
-                                          float devYRadius,
-                                          SkVector devStrokeWidths,
-                                          bool strokeOnly) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkMatrix& viewMatrix,
+                            const SkRect& devRect,
+                            float devXRadius,
+                            float devYRadius,
+                            SkVector devStrokeWidths,
+                            bool strokeOnly) {
         SkASSERT(devXRadius >= 0.5 || strokeOnly);
         SkASSERT(devYRadius >= 0.5 || strokeOnly);
         SkASSERT((devStrokeWidths.fX > 0) == (devStrokeWidths.fY > 0));
@@ -2880,11 +2874,11 @@ public:
                                                         strokeOnly);
     }
 
-    EllipticalRRectOp(Helper::MakeArgs helperArgs, const SkPMColor4f& color,
+    EllipticalRRectOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
                       const SkMatrix& viewMatrix, const SkRect& devRect, float devXRadius,
                       float devYRadius, SkVector devStrokeHalfWidths, bool strokeOnly)
             : INHERITED(ClassID())
-            , fHelper(helperArgs, GrAAType::kCoverage)
+            , fHelper(processorSet, GrAAType::kCoverage)
             , fUseScale(false) {
         SkScalar innerXRadius = 0.0f;
         SkScalar innerYRadius = 0.0f;
@@ -2993,6 +2987,11 @@ private:
                 SkScalarInvert(rrect.fInnerYRadius)
             };
 
+            // If the stroke width is exactly double the radius, the inner radii will be zero.
+            // Pin to a large value, to avoid infinities in the shader. crbug.com/1139750
+            reciprocalRadii[2] = std::min(reciprocalRadii[2], 1e6f);
+            reciprocalRadii[3] = std::min(reciprocalRadii[3], 1e6f);
+
             // Extend the radii out half a pixel to antialias.
             SkScalar xOuterRadius = rrect.fXRadius + SK_ScalarHalf;
             SkScalar yOuterRadius = rrect.fYRadius + SK_ScalarHalf;
@@ -3055,8 +3054,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         EllipticalRRectOp* that = t->cast<EllipticalRRectOp>();
 
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
@@ -3116,12 +3114,12 @@ private:
     using INHERITED = GrMeshDrawOp;
 };
 
-std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeCircularRRectOp(GrRecordingContext* context,
-                                                               GrPaint&& paint,
-                                                               const SkMatrix& viewMatrix,
-                                                               const SkRRect& rrect,
-                                                               const SkStrokeRec& stroke,
-                                                               const GrShaderCaps* shaderCaps) {
+GrOp::Owner GrOvalOpFactory::MakeCircularRRectOp(GrRecordingContext* context,
+                                                 GrPaint&& paint,
+                                                 const SkMatrix& viewMatrix,
+                                                 const SkRRect& rrect,
+                                                 const SkStrokeRec& stroke,
+                                                 const GrShaderCaps* shaderCaps) {
     SkASSERT(viewMatrix.rectStaysRect());
     SkASSERT(viewMatrix.isSimilarity());
     SkASSERT(rrect.isSimple());
@@ -3169,11 +3167,11 @@ std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeCircularRRectOp(GrRecordingContex
                                  scaledStroke, isStrokeOnly);
 }
 
-static std::unique_ptr<GrDrawOp> make_rrect_op(GrRecordingContext* context,
-                                               GrPaint&& paint,
-                                               const SkMatrix& viewMatrix,
-                                               const SkRRect& rrect,
-                                               const SkStrokeRec& stroke) {
+GrOp::Owner make_rrect_op(GrRecordingContext* context,
+                          GrPaint&& paint,
+                          const SkMatrix& viewMatrix,
+                          const SkRRect& rrect,
+                          const SkStrokeRec& stroke) {
     SkASSERT(viewMatrix.rectStaysRect());
     SkASSERT(rrect.isSimple());
     SkASSERT(!rrect.isOval());
@@ -3237,12 +3235,12 @@ static std::unique_ptr<GrDrawOp> make_rrect_op(GrRecordingContext* context,
                                    xRadius, yRadius, scaledStroke, isStrokeOnly);
 }
 
-std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeRRectOp(GrRecordingContext* context,
-                                                       GrPaint&& paint,
-                                                       const SkMatrix& viewMatrix,
-                                                       const SkRRect& rrect,
-                                                       const SkStrokeRec& stroke,
-                                                       const GrShaderCaps* shaderCaps) {
+GrOp::Owner GrOvalOpFactory::MakeRRectOp(GrRecordingContext* context,
+                                         GrPaint&& paint,
+                                         const SkMatrix& viewMatrix,
+                                         const SkRRect& rrect,
+                                         const SkStrokeRec& stroke,
+                                         const GrShaderCaps* shaderCaps) {
     if (rrect.isOval()) {
         return MakeOvalOp(context, std::move(paint), viewMatrix, rrect.getBounds(),
                           GrStyle(stroke, nullptr), shaderCaps);
@@ -3257,12 +3255,12 @@ std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeRRectOp(GrRecordingContext* conte
 
 ///////////////////////////////////////////////////////////////////////////////
 
-std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeCircleOp(GrRecordingContext* context,
-                                                        GrPaint&& paint,
-                                                        const SkMatrix& viewMatrix,
-                                                        const SkRect& oval,
-                                                        const GrStyle& style,
-                                                        const GrShaderCaps* shaderCaps) {
+GrOp::Owner GrOvalOpFactory::MakeCircleOp(GrRecordingContext* context,
+                                          GrPaint&& paint,
+                                          const SkMatrix& viewMatrix,
+                                          const SkRect& oval,
+                                          const GrStyle& style,
+                                          const GrShaderCaps* shaderCaps) {
     SkScalar width = oval.width();
     SkASSERT(width > SK_ScalarNearlyZero && SkScalarNearlyEqual(width, oval.height()) &&
              circle_stays_circle(viewMatrix));
@@ -3299,12 +3297,12 @@ std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeCircleOp(GrRecordingContext* cont
     return CircleOp::Make(context, std::move(paint), viewMatrix, center, r, style);
 }
 
-std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeOvalOp(GrRecordingContext* context,
-                                                      GrPaint&& paint,
-                                                      const SkMatrix& viewMatrix,
-                                                      const SkRect& oval,
-                                                      const GrStyle& style,
-                                                      const GrShaderCaps* shaderCaps) {
+GrOp::Owner GrOvalOpFactory::MakeOvalOp(GrRecordingContext* context,
+                                        GrPaint&& paint,
+                                        const SkMatrix& viewMatrix,
+                                        const SkRect& oval,
+                                        const GrStyle& style,
+                                        const GrShaderCaps* shaderCaps) {
     // we can draw circles
     SkScalar width = oval.width();
     if (width > SK_ScalarNearlyZero && SkScalarNearlyEqual(width, oval.height()) &&
@@ -3339,13 +3337,13 @@ std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeOvalOp(GrRecordingContext* contex
 
 ///////////////////////////////////////////////////////////////////////////////
 
-std::unique_ptr<GrDrawOp> GrOvalOpFactory::MakeArcOp(GrRecordingContext* context,
-                                                     GrPaint&& paint,
-                                                     const SkMatrix& viewMatrix,
-                                                     const SkRect& oval, SkScalar startAngle,
-                                                     SkScalar sweepAngle, bool useCenter,
-                                                     const GrStyle& style,
-                                                     const GrShaderCaps* shaderCaps) {
+GrOp::Owner GrOvalOpFactory::MakeArcOp(GrRecordingContext* context,
+                                       GrPaint&& paint,
+                                       const SkMatrix& viewMatrix,
+                                       const SkRect& oval, SkScalar startAngle,
+                                       SkScalar sweepAngle, bool useCenter,
+                                       const GrStyle& style,
+                                       const GrShaderCaps* shaderCaps) {
     SkASSERT(!oval.isEmpty());
     SkASSERT(sweepAngle);
     SkScalar width = oval.width();
@@ -3391,9 +3389,9 @@ GR_DRAW_OP_TEST_DEFINE(CircleOp) {
             arcParamsTmp.fUseCenter = random->nextBool();
             arcParams = &arcParamsTmp;
         }
-        std::unique_ptr<GrDrawOp> op = CircleOp::Make(context, std::move(paint), viewMatrix,
-                                                      center, radius,
-                                                      GrStyle(stroke, nullptr), arcParams);
+        GrOp::Owner op = CircleOp::Make(context, std::move(paint), viewMatrix,
+                                        center, radius,
+                                        GrStyle(stroke, nullptr), arcParams);
         if (op) {
             return op;
         }
@@ -3459,7 +3457,7 @@ GR_DRAW_OP_TEST_DEFINE(CircularRRectOp) {
         if (rrect.isOval()) {
             continue;
         }
-        std::unique_ptr<GrDrawOp> op =
+        GrOp::Owner op =
                 GrOvalOpFactory::MakeCircularRRectOp(context, std::move(paint), viewMatrix, rrect,
                                                      GrTest::TestStrokeRec(random), nullptr);
         if (op) {

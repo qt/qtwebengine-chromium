@@ -16,6 +16,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -44,8 +45,15 @@ struct Options {
 
   bool parse_only = false;
   bool dump_ast = false;
+  bool dawn_validation = false;
 
   Format format = Format::kNone;
+
+  bool emit_single_entry_point = false;
+  tint::ast::PipelineStage stage;
+  std::string ep_name;
+
+  std::vector<std::string> transforms;
 };
 
 const char kUsage[] = R"(Usage: tint [options] <input-file>
@@ -60,10 +68,16 @@ const char kUsage[] = R"(Usage: tint [options] <input-file>
                                    .metal  -> msl
                                    .hlsl   -> hlsl
                                If none matches, then default to SPIR-V assembly.
+  -ep <compute|fragment|vertex> <name>  -- Output single entry point
   --output-file <name>      -- Output file name.  Use "-" for standard output
   -o <name>                 -- Output file name.  Use "-" for standard output
+  --transform <name list>   -- Runs transformers, name list is comma separated
+                               Available transforms:
+                                bound_array_accessors
   --parse-only              -- Stop after parsing the input
   --dump-ast                -- Dump the generated AST to stdout
+  --dawn-validation         -- SPIRV outputs are validated with the same flags
+                               as Dawn does. Has no effect on non-SPIRV outputs.
   -h                        -- This help text)";
 
 #pragma clang diagnostic push
@@ -138,6 +152,31 @@ Format infer_format(const std::string& filename) {
   return Format::kNone;
 }
 
+tint::ast::PipelineStage convert_to_pipeline_stage(const std::string& name) {
+  if (name == "compute") {
+    return tint::ast::PipelineStage::kCompute;
+  }
+  if (name == "fragment") {
+    return tint::ast::PipelineStage::kFragment;
+  }
+  if (name == "vertex") {
+    return tint::ast::PipelineStage::kVertex;
+  }
+  return tint::ast::PipelineStage::kNone;
+}
+
+std::vector<std::string> split_transform_names(std::string list) {
+  std::vector<std::string> res;
+
+  std::stringstream str(list);
+  while (str.good()) {
+    std::string substr;
+    getline(str, substr, ',');
+    res.push_back(substr);
+  }
+  return res;
+}
+
 bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
   for (size_t i = 1; i < args.size(); ++i) {
     const std::string& arg = args[i];
@@ -153,6 +192,22 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
         std::cerr << "Unknown output format: " << args[i] << std::endl;
         return false;
       }
+    } else if (arg == "-ep") {
+      if (i + 2 >= args.size()) {
+        std::cerr << "Missing values for -ep" << std::endl;
+        return false;
+      }
+      i++;
+      opts->stage = convert_to_pipeline_stage(args[i]);
+      if (opts->stage == tint::ast::PipelineStage::kNone) {
+        std::cerr << "Invalid pipeline stage: " << args[i] << std::endl;
+        return false;
+      }
+
+      i++;
+      opts->ep_name = args[i];
+      opts->emit_single_entry_point = true;
+
     } else if (arg == "-o" || arg == "--output-name") {
       ++i;
       if (i >= args.size()) {
@@ -163,10 +218,19 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
 
     } else if (arg == "-h" || arg == "--help") {
       opts->show_help = true;
+    } else if (arg == "--transform") {
+      ++i;
+      if (i >= args.size()) {
+        std::cerr << "Missing value for " << arg << std::endl;
+        return false;
+      }
+      opts->transforms = split_transform_names(args[i]);
     } else if (arg == "--parse-only") {
       opts->parse_only = true;
     } else if (arg == "--dump-ast") {
       opts->dump_ast = true;
+    } else if (arg == "--dawn-validation") {
+      opts->dawn_validation = true;
     } else if (!arg.empty()) {
       if (arg[0] == '-') {
         std::cerr << "Unrecognized option: " << arg << std::endl;
@@ -357,6 +421,7 @@ int main(int argc, const char** argv) {
   tint::Context ctx;
 
   std::unique_ptr<tint::reader::Reader> reader;
+  std::unique_ptr<tint::Source::File> source_file;
 #if TINT_BUILD_WGSL_READER
   if (options.input_filename.size() > 5 &&
       options.input_filename.substr(options.input_filename.size() - 5) ==
@@ -365,8 +430,10 @@ int main(int argc, const char** argv) {
     if (!ReadFile<uint8_t>(options.input_filename, &data)) {
       return 1;
     }
-    reader = std::make_unique<tint::reader::wgsl::Parser>(
-        &ctx, std::string(data.begin(), data.end()));
+    source_file = std::make_unique<tint::Source::File>(
+        options.input_filename, std::string(data.begin(), data.end()));
+    reader =
+        std::make_unique<tint::reader::wgsl::Parser>(&ctx, source_file.get());
   }
 #endif  // TINT_BUILD_WGSL_READER
 
@@ -411,7 +478,8 @@ int main(int argc, const char** argv) {
     return 1;
   }
   if (!reader->Parse()) {
-    std::cerr << "Parse: " << reader->error() << std::endl;
+    auto printer = tint::diag::Printer::create(stderr, true);
+    tint::diag::Formatter().format(reader->diagnostics(), printer.get());
     return 1;
   }
 
@@ -437,6 +505,26 @@ int main(int argc, const char** argv) {
   tint::Validator v;
   if (!v.Validate(&mod)) {
     std::cerr << "Validation: " << v.error() << std::endl;
+    return 1;
+  }
+
+  tint::transform::Manager transform_manager;
+  for (const auto& name : options.transforms) {
+    // TODO(dsinclair): The vertex pulling transform requires setup code to
+    // be run that needs user input. Should we find a way to support that here
+    // maybe through a provided file?
+
+    if (name == "bound_array_accessors") {
+      transform_manager.append(
+          std::make_unique<tint::transform::BoundArrayAccessorsTransform>(
+              &ctx, &mod));
+    } else {
+      std::cerr << "Unknown transform name: " << name << std::endl;
+      return 1;
+    }
+  }
+  if (!transform_manager.Run()) {
+    std::cerr << "Transformer: " << transform_manager.error() << std::endl;
     return 1;
   }
 
@@ -471,12 +559,38 @@ int main(int argc, const char** argv) {
     return 1;
   }
 
-  if (!writer->Generate()) {
-    std::cerr << "Failed to generate: " << writer->error() << std::endl;
-    return 1;
+  if (options.emit_single_entry_point) {
+    if (!writer->GenerateEntryPoint(options.stage, options.ep_name)) {
+      std::cerr << "Failed to generate: " << writer->error() << std::endl;
+      return 1;
+    }
+  } else {
+    if (!writer->Generate()) {
+      std::cerr << "Failed to generate: " << writer->error() << std::endl;
+      return 1;
+    }
   }
 
 #if TINT_BUILD_SPV_WRITER
+  bool dawn_validation_failed = false;
+  std::ostringstream stream;
+
+  if (options.dawn_validation) {
+    // Use Vulkan 1.1, since this is what Tint, internally, uses.
+    spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
+    tools.SetMessageConsumer([&stream](spv_message_level_t, const char*,
+                                       const spv_position_t& pos,
+                                       const char* msg) {
+      stream << (pos.line + 1) << ":" << (pos.column + 1) << ": " << msg
+             << std::endl;
+    });
+    auto* w = static_cast<tint::writer::spirv::Generator*>(writer.get());
+    if (!tools.Validate(w->result().data(), w->result().size(),
+                        spvtools::ValidatorOptions())) {
+      dawn_validation_failed = true;
+    }
+  }
+
   if (options.format == Format::kSpvAsm) {
     auto* w = static_cast<tint::writer::spirv::Generator*>(writer.get());
     auto str = Disassemble(w->result());
@@ -489,6 +603,11 @@ int main(int argc, const char** argv) {
     if (!WriteFile(options.output_file, "wb", w->result())) {
       return 1;
     }
+  }
+  if (dawn_validation_failed) {
+    std::cerr << std::endl << std::endl << "Validation Failure:" << std::endl;
+    std::cerr << stream.str();
+    return 1;
   }
 #endif  // TINT_BUILD_SPV_WRITER
 

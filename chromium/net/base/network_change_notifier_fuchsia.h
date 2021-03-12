@@ -8,6 +8,8 @@
 #include <fuchsia/netstack/cpp/fidl.h>
 #include <lib/fidl/cpp/binding.h>
 
+#include <vector>
+
 #include "base/atomicops.h"
 #include "base/callback.h"
 #include "base/containers/flat_set.h"
@@ -26,6 +28,9 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierFuchsia
   // Interfaces are filtered by |required_features|.
   explicit NetworkChangeNotifierFuchsia(
       fuchsia::hardware::ethernet::Features required_features);
+  NetworkChangeNotifierFuchsia(const NetworkChangeNotifierFuchsia&) = delete;
+  NetworkChangeNotifierFuchsia& operator=(const NetworkChangeNotifierFuchsia&) =
+      delete;
   ~NetworkChangeNotifierFuchsia() override;
 
   // NetworkChangeNotifier implementation.
@@ -60,6 +65,7 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierFuchsia
 
   // Used to allow the constructor to block until the initial state is received
   // from |netstack_|.
+  int pending_route_table_requests_ = 0;
   base::OnceClosure on_initial_interfaces_received_;
 
   // The ConnectionType of the default network interface, stored as an atomic
@@ -70,8 +76,6 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierFuchsia
   base::flat_set<IPAddress> cached_addresses_;
 
   THREAD_CHECKER(thread_checker_);
-
-  DISALLOW_COPY_AND_ASSIGN(NetworkChangeNotifierFuchsia);
 };
 
 }  // namespace net

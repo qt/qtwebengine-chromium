@@ -25,6 +25,8 @@ TEST_F(ParserImplTest, CaseBody_Empty) {
   auto* p = parser("");
   auto e = p->case_body();
   ASSERT_FALSE(p->has_error()) << p->error();
+  EXPECT_FALSE(e.errored);
+  EXPECT_TRUE(e.matched);
   EXPECT_EQ(e->size(), 0u);
 }
 
@@ -35,6 +37,8 @@ TEST_F(ParserImplTest, CaseBody_Statements) {
 
   auto e = p->case_body();
   ASSERT_FALSE(p->has_error()) << p->error();
+  EXPECT_FALSE(e.errored);
+  EXPECT_TRUE(e.matched);
   ASSERT_EQ(e->size(), 2u);
   EXPECT_TRUE(e->get(0)->IsVariableDecl());
   EXPECT_TRUE(e->get(1)->IsAssign());
@@ -43,14 +47,18 @@ TEST_F(ParserImplTest, CaseBody_Statements) {
 TEST_F(ParserImplTest, CaseBody_InvalidStatement) {
   auto* p = parser("a =");
   auto e = p->case_body();
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(e, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
 }
 
 TEST_F(ParserImplTest, CaseBody_Fallthrough) {
   auto* p = parser("fallthrough;");
   auto e = p->case_body();
   ASSERT_FALSE(p->has_error()) << p->error();
+  EXPECT_FALSE(e.errored);
+  EXPECT_TRUE(e.matched);
   ASSERT_EQ(e->size(), 1u);
   EXPECT_TRUE(e->get(0)->IsFallthrough());
 }
@@ -58,9 +66,11 @@ TEST_F(ParserImplTest, CaseBody_Fallthrough) {
 TEST_F(ParserImplTest, CaseBody_Fallthrough_MissingSemicolon) {
   auto* p = parser("fallthrough");
   auto e = p->case_body();
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:12: missing ;");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:12: expected ';' for fallthrough statement");
 }
 
 }  // namespace

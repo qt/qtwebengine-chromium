@@ -12,6 +12,7 @@
 #include "xfa/fgas/font/cfgas_fontmgr.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
 #include "xfa/fgas/font/cfgas_gemodule.h"
+#include "xfa/fgas/graphics/cfgas_gecolor.h"
 #include "xfa/fwl/cfwl_barcode.h"
 #include "xfa/fwl/cfwl_caret.h"
 #include "xfa/fwl/cfwl_checkbox.h"
@@ -25,12 +26,12 @@
 #include "xfa/fwl/cfwl_scrollbar.h"
 #include "xfa/fwl/cfwl_themebackground.h"
 #include "xfa/fwl/cfwl_themetext.h"
+#include "xfa/fwl/theme/cfwl_fontmanager.h"
 #include "xfa/fwl/theme/cfwl_widgettp.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffwidget.h"
 #include "xfa/fxfa/cxfa_fontmgr.h"
 #include "xfa/fxfa/parser/cxfa_para.h"
-#include "xfa/fxgraphics/cxfa_gecolor.h"
 
 namespace {
 
@@ -50,8 +51,10 @@ CXFA_FFWidget* GetOutmostFFWidget(CFWL_Widget* pWidget) {
 
 }  // namespace
 
-CXFA_FWLTheme::CXFA_FWLTheme(CXFA_FFApp* pApp)
-    : m_pTextOut(std::make_unique<CFDE_TextOut>()), m_pApp(pApp) {}
+CXFA_FWLTheme::CXFA_FWLTheme(cppgc::Heap* pHeap, CXFA_FFApp* pApp)
+    : IFWL_ThemeProvider(pHeap),
+      m_pTextOut(std::make_unique<CFDE_TextOut>()),
+      m_pApp(pApp) {}
 
 CXFA_FWLTheme::~CXFA_FWLTheme() = default;
 
@@ -61,6 +64,7 @@ void CXFA_FWLTheme::PreFinalize() {
 }
 
 void CXFA_FWLTheme::Trace(cppgc::Visitor* visitor) const {
+  IFWL_ThemeProvider::Trace(visitor);
   visitor->Trace(m_pApp);
 }
 
@@ -106,7 +110,7 @@ void CXFA_FWLTheme::DrawText(const CFWL_ThemeText& pParams) {
     if (pParams.m_iPart == CFWL_Part::Caption)
       m_pTextOut->SetTextColor(ArgbEncode(0xff, 0, 153, 255));
 
-    CXFA_Graphics* pGraphics = pParams.m_pGraphics;
+    CFGAS_GEGraphics* pGraphics = pParams.m_pGraphics;
     CFX_RenderDevice* pRenderDevice = pGraphics->GetRenderDevice();
     CFX_Matrix mtPart = pParams.m_matrix;
     const CFX_Matrix* pMatrix = pGraphics->GetMatrix();
@@ -123,7 +127,7 @@ void CXFA_FWLTheme::DrawText(const CFWL_ThemeText& pParams) {
     return;
 
   CXFA_Node* pNode = pWidget->GetNode();
-  CXFA_Graphics* pGraphics = pParams.m_pGraphics;
+  CFGAS_GEGraphics* pGraphics = pParams.m_pGraphics;
   CFX_RenderDevice* pRenderDevice = pGraphics->GetRenderDevice();
   m_pTextOut->SetStyles(pParams.m_dwTTOStyles);
   m_pTextOut->SetAlignment(pParams.m_iTTOAlign);

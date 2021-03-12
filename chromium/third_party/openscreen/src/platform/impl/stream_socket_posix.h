@@ -56,7 +56,7 @@ class StreamSocketPosix : public StreamSocket {
   // StreamSocketPosix is lazy initialized on first usage. For simplicitly,
   // the ensure method returns a boolean of whether or not the socket was
   // initialized successfully.
-  bool EnsureInitialized();
+  bool EnsureInitializedAndOpen();
   Error Initialize();
 
   Error CloseOnError(Error error);
@@ -76,7 +76,6 @@ class StreamSocketPosix : public StreamSocket {
   absl::optional<IPEndpoint> remote_address_;
 
   bool is_bound_ = false;
-  bool is_initialized_ = false;
   SocketState state_ = SocketState::kNotConnected;
 
   WeakPtrFactory<StreamSocketPosix> weak_factory_{this};

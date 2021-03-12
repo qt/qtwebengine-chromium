@@ -5,11 +5,11 @@
 #ifndef QUICHE_QUIC_TEST_TOOLS_QUIC_CONNECTION_PEER_H_
 #define QUICHE_QUIC_TEST_TOOLS_QUIC_CONNECTION_PEER_H_
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection_stats.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 
@@ -67,7 +67,7 @@ class QuicConnectionPeer {
   static void SwapCrypters(QuicConnection* connection, QuicFramer* framer);
 
   static void SetCurrentPacket(QuicConnection* connection,
-                               quiche::QuicheStringPiece current_packet);
+                               absl::string_view current_packet);
 
   static QuicConnectionHelperInterface* GetHelper(QuicConnection* connection);
 
@@ -81,6 +81,8 @@ class QuicConnectionPeer {
   static QuicAlarm* GetSendAlarm(QuicConnection* connection);
   static QuicAlarm* GetMtuDiscoveryAlarm(QuicConnection* connection);
   static QuicAlarm* GetProcessUndecryptablePacketsAlarm(
+      QuicConnection* connection);
+  static QuicAlarm* GetDiscardPreviousOneRttKeysAlarm(
       QuicConnection* connection);
 
   static QuicPacketWriter* GetWriter(QuicConnection* connection);
@@ -122,6 +124,7 @@ class QuicConnectionPeer {
                                   PacketHeaderFormat format);
   static void AddBytesReceived(QuicConnection* connection, size_t length);
   static void SetAddressValidated(QuicConnection* connection);
+  static void SetEnableAeadLimits(QuicConnection* connection, bool enabled);
 
   static void SendConnectionClosePacket(QuicConnection* connection,
                                         QuicErrorCode error,
@@ -157,6 +160,10 @@ class QuicConnectionPeer {
   static const QuicCircularDeque<
       std::pair<QuicPathFrameBuffer, QuicSocketAddress>>&
   pending_path_challenge_payloads(QuicConnection* connection);
+
+  static void SetConnectionClose(QuicConnection* connection);
+
+  static void SendPing(QuicConnection* connection);
 };
 
 }  // namespace test

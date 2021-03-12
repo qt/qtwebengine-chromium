@@ -25,7 +25,7 @@ class Heap;
 
 class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
  public:
-  CFXJSE_FormCalcContext(v8::Isolate* pScriptIsolate,
+  CFXJSE_FormCalcContext(v8::Isolate* pIsolate,
                          CFXJSE_Context* pScriptContext,
                          CXFA_Document* pDoc);
   ~CFXJSE_FormCalcContext() override;
@@ -264,57 +264,21 @@ class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
   static void concat_fm_object(CFXJSE_HostObject* pThis,
                                const v8::FunctionCallbackInfo<v8::Value>& info);
 
-  static int32_t hvalue_get_array_length(CFXJSE_HostObject* pThis,
-                                         CFXJSE_Value* arg);
-  static bool simpleValueCompare(CFXJSE_HostObject* pThis,
-                                 CFXJSE_Value* firstValue,
-                                 CFXJSE_Value* secondValue);
-  static std::vector<std::unique_ptr<CFXJSE_Value>> unfoldArgs(
-      CFXJSE_HostObject* pThis,
-      const v8::FunctionCallbackInfo<v8::Value>& info);
   static ByteString GenerateSomExpression(ByteStringView bsName,
                                           int32_t iIndexFlags,
                                           int32_t iIndexValue,
                                           bool bIsStar);
-  static bool GetObjectForName(CFXJSE_HostObject* pThis,
-                               CFXJSE_Value* accessorValue,
-                               ByteStringView bsAccessorName);
-  static bool ResolveObjects(CFXJSE_HostObject* pThis,
-                             CFXJSE_Value* pParentValue,
-                             ByteStringView bsSomExp,
-                             XFA_ResolveNodeRS* resolveNodeRS,
-                             bool bdotAccessor,
-                             bool bHasNoResolveName);
-  static void ParseResolveResult(
-      CFXJSE_HostObject* pThis,
-      const XFA_ResolveNodeRS& resolveNodeRS,
-      CFXJSE_Value* pParentValue,
-      std::vector<std::unique_ptr<CFXJSE_Value>>* resultValues,
-      bool* bAttribute);
-  static std::unique_ptr<CFXJSE_Value> GetSimpleValue(
-      CFXJSE_HostObject* pThis,
-      const v8::FunctionCallbackInfo<v8::Value>& info,
-      uint32_t index);
-  static bool ValueIsNull(CFXJSE_HostObject* pThis, CFXJSE_Value* pValue);
-  static int32_t ValueToInteger(CFXJSE_HostObject* pThis, CFXJSE_Value* pValue);
-  static float ValueToFloat(CFXJSE_HostObject* pThis, CFXJSE_Value* pValue);
-  static double ValueToDouble(CFXJSE_HostObject* pThis, CFXJSE_Value* pValue);
-  static ByteString ValueToUTF8String(CFXJSE_Value* pValue);
-  static double ExtractDouble(CFXJSE_HostObject* pThis,
-                              CFXJSE_Value* src,
-                              bool* ret);
   static Optional<CFX_WideTextBuf> Translate(cppgc::Heap* pHeap,
                                              WideStringView wsFormcalc);
 
   void GlobalPropertyGetter(CFXJSE_Value* pValue);
+  v8::Isolate* GetIsolate() const { return m_pIsolate.Get(); }
+  CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
 
  private:
   static void DotAccessorCommon(CFXJSE_HostObject* pThis,
                                 const v8::FunctionCallbackInfo<v8::Value>& info,
                                 bool bDotAccessor);
-
-  v8::Isolate* GetScriptRuntime() const { return m_pIsolate.Get(); }
-  CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
 
   void ThrowNoDefaultPropertyException(ByteStringView name) const;
   void ThrowCompilerErrorException() const;
@@ -326,8 +290,8 @@ class CFXJSE_FormCalcContext final : public CFXJSE_HostObject {
   void ThrowParamCountMismatchException(const WideString& method) const;
   void ThrowException(const WideString& str) const;
 
-  UnownedPtr<v8::Isolate> m_pIsolate;
-  std::unique_ptr<CFXJSE_Value> m_pValue;
+  UnownedPtr<v8::Isolate> const m_pIsolate;
+  v8::Global<v8::Value> m_Value;
   UnownedPtr<CXFA_Document> const m_pDocument;
 };
 

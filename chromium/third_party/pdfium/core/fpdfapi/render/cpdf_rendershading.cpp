@@ -29,7 +29,7 @@
 #include "core/fxge/cfx_fillrenderoptions.h"
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "core/fxge/fx_dib.h"
+#include "core/fxge/dib/fx_dib.h"
 #include "third_party/base/span.h"
 
 namespace {
@@ -78,10 +78,9 @@ std::array<FX_ARGB, kShadingSteps> GetShadingSteps(
     float R = 0.0f;
     float G = 0.0f;
     float B = 0.0f;
-    pCS->GetRGB(result_array.data(), &R, &G, &B);
-    shading_steps[i] =
-        FXARGB_TODIB(ArgbEncode(alpha, FXSYS_roundf(R * 255),
-                                FXSYS_roundf(G * 255), FXSYS_roundf(B * 255)));
+    pCS->GetRGB(result_array, &R, &G, &B);
+    shading_steps[i] = ArgbEncode(alpha, FXSYS_roundf(R * 255),
+                                  FXSYS_roundf(G * 255), FXSYS_roundf(B * 255));
   }
   return shading_steps;
 }
@@ -92,7 +91,7 @@ void DrawAxialShading(const RetainPtr<CFX_DIBitmap>& pBitmap,
                       const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
                       const RetainPtr<CPDF_ColorSpace>& pCS,
                       int alpha) {
-  ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+  ASSERT(pBitmap->GetFormat() == FXDIB_Format::kArgb);
 
   const uint32_t total_results = GetValidatedOutputsCount(funcs, pCS);
   if (total_results == 0)
@@ -160,7 +159,7 @@ void DrawRadialShading(const RetainPtr<CFX_DIBitmap>& pBitmap,
                        const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
                        const RetainPtr<CPDF_ColorSpace>& pCS,
                        int alpha) {
-  ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+  ASSERT(pBitmap->GetFormat() == FXDIB_Format::kArgb);
 
   const uint32_t total_results = GetValidatedOutputsCount(funcs, pCS);
   if (total_results == 0)
@@ -259,7 +258,7 @@ void DrawFuncShading(const RetainPtr<CFX_DIBitmap>& pBitmap,
                      const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
                      const RetainPtr<CPDF_ColorSpace>& pCS,
                      int alpha) {
-  ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+  ASSERT(pBitmap->GetFormat() == FXDIB_Format::kArgb);
 
   const uint32_t total_results = GetValidatedOutputsCount(funcs, pCS);
   if (total_results == 0)
@@ -307,9 +306,9 @@ void DrawFuncShading(const RetainPtr<CFX_DIBitmap>& pBitmap,
       float R = 0.0f;
       float G = 0.0f;
       float B = 0.0f;
-      pCS->GetRGB(result_array.data(), &R, &G, &B);
-      dib_buf[column] = FXARGB_TODIB(ArgbEncode(
-          alpha, (int32_t)(R * 255), (int32_t)(G * 255), (int32_t)(B * 255)));
+      pCS->GetRGB(result_array, &R, &G, &B);
+      dib_buf[column] = ArgbEncode(alpha, (int32_t)(R * 255),
+                                   (int32_t)(G * 255), (int32_t)(B * 255));
     }
   }
 }
@@ -419,7 +418,7 @@ void DrawFreeGouraudShading(
     const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
     const RetainPtr<CPDF_ColorSpace>& pCS,
     int alpha) {
-  ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+  ASSERT(pBitmap->GetFormat() == FXDIB_Format::kArgb);
 
   CPDF_MeshStream stream(kFreeFormGouraudTriangleMeshShading, funcs,
                          pShadingStream, pCS);
@@ -458,7 +457,7 @@ void DrawLatticeGouraudShading(
     const std::vector<std::unique_ptr<CPDF_Function>>& funcs,
     const RetainPtr<CPDF_ColorSpace>& pCS,
     int alpha) {
-  ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+  ASSERT(pBitmap->GetFormat() == FXDIB_Format::kArgb);
 
   int row_verts = pShadingStream->GetDict()->GetIntegerFor("VerticesPerRow");
   if (row_verts < 2)
@@ -771,7 +770,7 @@ void DrawCoonPatchMeshes(
     const RetainPtr<CPDF_ColorSpace>& pCS,
     bool bNoPathSmooth,
     int alpha) {
-  ASSERT(pBitmap->GetFormat() == FXDIB_Argb);
+  ASSERT(pBitmap->GetFormat() == FXDIB_Format::kArgb);
   ASSERT(type == kCoonsPatchMeshShading ||
          type == kTensorProductPatchMeshShading);
 
@@ -875,7 +874,7 @@ void CPDF_RenderShading::Draw(CFX_RenderDevice* pDevice,
       float R = 0.0f;
       float G = 0.0f;
       float B = 0.0f;
-      pColorSpace->GetRGB(comps.data(), &R, &G, &B);
+      pColorSpace->GetRGB(comps, &R, &G, &B);
       background = ArgbEncode(255, (int32_t)(R * 255), (int32_t)(G * 255),
                               (int32_t)(B * 255));
     }
@@ -948,9 +947,10 @@ void CPDF_RenderShading::Draw(CFX_RenderDevice* pDevice,
     }
   }
   if (bAlphaMode)
-    pBitmap->LoadChannelFromAlpha(FXDIB_Red, pBitmap);
+    pBitmap->SetRedFromBitmap(pBitmap);
 
   if (options.ColorModeIs(CPDF_RenderOptions::kGray))
     pBitmap->ConvertColorScale(0, 0xffffff);
+
   buffer.OutputToDevice();
 }

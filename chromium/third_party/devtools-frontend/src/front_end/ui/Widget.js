@@ -60,7 +60,11 @@ export class Widget extends Common.ObjectWrapper.ObjectWrapper {
       this.element = /** @type {!WidgetElement} */ (document.createElement('div'));
       this.element.classList.add('vbox');
       this.element.classList.add('flex-auto');
-      this._shadowRoot = createShadowRootWithCoreStyles(this.element, undefined, delegatesFocus);
+      this._shadowRoot = createShadowRootWithCoreStyles(this.element, {
+        cssFile: undefined,
+        enableLegacyPatching: true,
+        delegatesFocus,
+      });
       this._shadowRoot.appendChild(this.contentElement);
     } else {
       this.element = /** @type {!WidgetElement} */ (this.contentElement);
@@ -273,7 +277,7 @@ export class Widget extends Common.ObjectWrapper.ObjectWrapper {
   onLayout() {
   }
 
-  ownerViewDisposed() {
+  async ownerViewDisposed() {
   }
 
   /**
@@ -504,12 +508,13 @@ export class Widget extends Common.ObjectWrapper.ObjectWrapper {
 
   /**
    * @param {string} cssFile
+ * @param {!{enableLegacyPatching:boolean}} options
    */
-  registerRequiredCSS(cssFile) {
+  registerRequiredCSS(cssFile, options) {
     if (this._isWebComponent) {
-      appendStyle(/** @type {!DocumentFragment} */ (this._shadowRoot), cssFile);
+      appendStyle(/** @type {!DocumentFragment} */ (this._shadowRoot), cssFile, options);
     } else {
-      appendStyle(this.element, cssFile);
+      appendStyle(this.element, cssFile, options);
     }
   }
 

@@ -39,7 +39,6 @@ import * as SearchableView from './SearchableView.js';
 import * as SegmentedButton from './SegmentedButton.js';
 import * as SettingsUI from './SettingsUI.js';
 import * as ShortcutRegistry from './ShortcutRegistry.js';
-import * as ShortcutsScreen from './ShortcutsScreen.js';
 import * as SoftContextMenu from './SoftContextMenu.js';
 import * as SoftDropDown from './SoftDropDown.js';
 import * as SplitWidget from './SplitWidget.js';
@@ -63,10 +62,6 @@ import * as XLink from './XLink.js';
 import * as XWidget from './XWidget.js';
 import * as ZoomManager from './ZoomManager.js';
 
-/** @typedef {{box: !AnchorBox, show:(function(!GlassPane.GlassPane):!Promise<boolean>), hide:(function():void|undefined)}} */
-// @ts-ignore typedef
-export let PopoverRequest;
-
 export {
   Action,
   ActionDelegate,
@@ -76,8 +71,8 @@ export {
   ContextFlavorListener,
   ContextMenu,
   Dialog,
-  DropTarget,
   DockController,
+  DropTarget,
   EmptyWidget,
   FilterBar,
   FilterSuggestionBuilder,
@@ -105,7 +100,6 @@ export {
   SegmentedButton,
   SettingsUI,
   ShortcutRegistry,
-  ShortcutsScreen,
   SoftContextMenu,
   SoftDropDown,
   SplitWidget,

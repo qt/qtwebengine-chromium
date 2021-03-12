@@ -20,7 +20,6 @@
 #include "rtc_base/event.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/synchronization/mutex.h"
-#include "system_wrappers/include/sleep.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/network/network_emulation_manager.h"
@@ -553,6 +552,20 @@ TEST_F(NetworkEmulationManagerThreeNodesRoutingTest,
     emulation->CreateRoute(e3, {node3}, e1);
   });
   SendPacketsAndValidateDelivery();
+}
+
+TEST(NetworkEmulationManagerTest, EndpointLoopback) {
+  NetworkEmulationManagerImpl network_manager(TimeMode::kSimulated);
+  auto endpoint = network_manager.CreateEndpoint(EmulatedEndpointConfig());
+
+  MockReceiver receiver;
+  EXPECT_CALL(receiver, OnPacketReceived(::testing::_)).Times(1);
+  ASSERT_EQ(endpoint->BindReceiver(80, &receiver), 80);
+
+  endpoint->SendPacket(rtc::SocketAddress(endpoint->GetPeerLocalAddress(), 80),
+                       rtc::SocketAddress(endpoint->GetPeerLocalAddress(), 80),
+                       "Hello");
+  network_manager.time_controller()->AdvanceTime(TimeDelta::Seconds(1));
 }
 
 }  // namespace test

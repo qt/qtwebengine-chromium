@@ -7,8 +7,8 @@
 
 #include "src/gpu/GrRenderTask.h"
 
+#include "src/gpu/GrAttachment.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrTextureProxyPriv.h"
 #include "src/gpu/GrTextureResolveRenderTask.h"
 
@@ -16,7 +16,7 @@ uint32_t GrRenderTask::CreateUniqueID() {
     static std::atomic<uint32_t> nextID{1};
     uint32_t id;
     do {
-        id = nextID++;
+        id = nextID.fetch_add(1, std::memory_order_relaxed);
     } while (id == SK_InvalidUniqueID);
     return id;
 }

@@ -9,6 +9,11 @@
 #include <memory>
 #include <string>
 
+#include "absl/strings/escaping.h"
+#include "absl/strings/match.h"
+#include "absl/strings/str_join.h"
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "third_party/boringssl/src/include/openssl/base.h"
 #include "third_party/boringssl/src/include/openssl/bytestring.h"
 #include "third_party/boringssl/src/include/openssl/digest.h"
@@ -24,17 +29,14 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_ip_address.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_time_utils.h"
 #include "net/third_party/quiche/src/common/quiche_data_reader.h"
 
+namespace quic {
 namespace {
 
-using ::quiche::QuicheOptional;
-using ::quiche::QuicheStringPiece;
 using ::quiche::QuicheTextUtils;
 
 // The literals below were encoded using `ascii2der | xxd -i`.  The comments
@@ -101,15 +103,84 @@ PublicKeyType PublicKeyTypeFromSignatureAlgorithm(
   }
 }
 
+std::string AttributeNameToString(const CBS& oid_cbs) {
+  absl::string_view oid = CbsToStringPiece(oid_cbs);
+
+  // We only handle OIDs of form 2.5.4.N, which have binary encoding of
+  // "55 04 0N".
+  if (oid.length() == 3 && absl::StartsWith(oid, "\x55\x04")) {
+    // clang-format off
+    switch (oid[2]) {
+      case '\x3': return "CN";
+      case '\x7': return "L";
+      case '\x8': return "ST";
+      case '\xa': return "O";
+      case '\xb': return "OU";
+      case '\x6': return "C";
+    }
+    // clang-format on
+  }
+
+  bssl::UniquePtr<char> oid_representation(CBS_asn1_oid_to_text(&oid_cbs));
+  if (oid_representation == nullptr) {
+    return quiche::QuicheStrCat("(", absl::BytesToHexString(oid), ")");
+  }
+  return std::string(oid_representation.get());
+}
+
 }  // namespace
 
-namespace quic {
+absl::optional<std::string> X509NameAttributeToString(CBS input) {
+  CBS name, value;
+  unsigned value_tag;
+  if (!CBS_get_asn1(&input, &name, CBS_ASN1_OBJECT) ||
+      !CBS_get_any_asn1(&input, &value, &value_tag) || CBS_len(&input) != 0) {
+    return absl::nullopt;
+  }
+  // Note that this does not process encoding of |input| in any way.  This works
+  // fine for the most cases.
+  return quiche::QuicheStrCat(AttributeNameToString(name), "=",
+                              absl::CHexEscape(CbsToStringPiece(value)));
+}
 
-QuicheOptional<quic::QuicWallTime> ParseDerTime(unsigned tag,
-                                                QuicheStringPiece payload) {
+namespace {
+
+template <unsigned inner_tag,
+          char separator,
+          absl::optional<std::string> (*parser)(CBS)>
+absl::optional<std::string> ParseAndJoin(CBS input) {
+  std::vector<std::string> pieces;
+  while (CBS_len(&input) != 0) {
+    CBS attribute;
+    if (!CBS_get_asn1(&input, &attribute, inner_tag)) {
+      return absl::nullopt;
+    }
+    absl::optional<std::string> formatted = parser(attribute);
+    if (!formatted.has_value()) {
+      return absl::nullopt;
+    }
+    pieces.push_back(*formatted);
+  }
+
+  return absl::StrJoin(pieces, std::string({separator}));
+}
+
+absl::optional<std::string> RelativeDistinguishedNameToString(CBS input) {
+  return ParseAndJoin<CBS_ASN1_SEQUENCE, '+', X509NameAttributeToString>(input);
+}
+
+absl::optional<std::string> DistinguishedNameToString(CBS input) {
+  return ParseAndJoin<CBS_ASN1_SET, ',', RelativeDistinguishedNameToString>(
+      input);
+}
+
+}  // namespace
+
+absl::optional<quic::QuicWallTime> ParseDerTime(unsigned tag,
+                                                absl::string_view payload) {
   if (tag != CBS_ASN1_GENERALIZEDTIME && tag != CBS_ASN1_UTCTIME) {
-    QUIC_BUG << "Invalid tag supplied for a DER timestamp";
-    return QUICHE_NULLOPT;
+    QUIC_DLOG(WARNING) << "Invalid tag supplied for a DER timestamp";
+    return absl::nullopt;
   }
 
   const size_t year_length = tag == CBS_ASN1_GENERALIZEDTIME ? 4 : 2;
@@ -121,7 +192,7 @@ QuicheOptional<quic::QuicWallTime> ParseDerTime(unsigned tag,
       !reader.ReadDecimal64(2, &second) ||
       reader.ReadRemainingPayload() != "Z") {
     QUIC_DLOG(WARNING) << "Failed to parse the DER timestamp";
-    return QUICHE_NULLOPT;
+    return absl::nullopt;
   }
 
   if (tag == CBS_ASN1_UTCTIME) {
@@ -129,30 +200,30 @@ QuicheOptional<quic::QuicWallTime> ParseDerTime(unsigned tag,
     year += (year >= 50) ? 1900 : 2000;
   }
 
-  const QuicheOptional<int64_t> unix_time =
+  const absl::optional<int64_t> unix_time =
       quiche::QuicheUtcDateTimeToUnixSeconds(year, month, day, hour, minute,
                                              second);
   if (!unix_time.has_value() || *unix_time < 0) {
-    return QUICHE_NULLOPT;
+    return absl::nullopt;
   }
   return QuicWallTime::FromUNIXSeconds(*unix_time);
 }
 
 PemReadResult ReadNextPemMessage(std::istream* input) {
-  constexpr QuicheStringPiece kPemBegin = "-----BEGIN ";
-  constexpr QuicheStringPiece kPemEnd = "-----END ";
-  constexpr QuicheStringPiece kPemDashes = "-----";
+  constexpr absl::string_view kPemBegin = "-----BEGIN ";
+  constexpr absl::string_view kPemEnd = "-----END ";
+  constexpr absl::string_view kPemDashes = "-----";
 
   std::string line_buffer, encoded_message_contents, expected_end;
   bool pending_message = false;
   PemReadResult result;
   while (std::getline(*input, line_buffer)) {
-    QuicheStringPiece line(line_buffer);
+    absl::string_view line(line_buffer);
     QuicheTextUtils::RemoveLeadingAndTrailingWhitespace(&line);
 
     // Handle BEGIN lines.
-    if (!pending_message && QuicheTextUtils::StartsWith(line, kPemBegin) &&
-        QuicheTextUtils::EndsWith(line, kPemDashes)) {
+    if (!pending_message && absl::StartsWith(line, kPemBegin) &&
+        absl::EndsWith(line, kPemDashes)) {
       result.type = std::string(
           line.substr(kPemBegin.size(),
                       line.size() - kPemDashes.size() - kPemBegin.size()));
@@ -163,7 +234,7 @@ PemReadResult ReadNextPemMessage(std::istream* input) {
 
     // Handle END lines.
     if (pending_message && line == expected_end) {
-      QuicheOptional<std::string> data =
+      absl::optional<std::string> data =
           QuicheTextUtils::Base64Decode(encoded_message_contents);
       if (data.has_value()) {
         result.status = PemReadResult::kOk;
@@ -184,7 +255,7 @@ PemReadResult ReadNextPemMessage(std::istream* input) {
 }
 
 std::unique_ptr<CertificateView> CertificateView::ParseSingleCertificate(
-    QuicheStringPiece certificate) {
+    absl::string_view certificate) {
   std::unique_ptr<CertificateView> result(new CertificateView());
   CBS top = StringPieceToCbs(certificate);
 
@@ -258,6 +329,8 @@ std::unique_ptr<CertificateView> CertificateView::ParseSingleCertificate(
     return nullptr;
   }
 
+  result->subject_der_ = CbsToStringPiece(subject);
+
   unsigned not_before_tag, not_after_tag;
   CBS not_before, not_after;
   if (!CBS_get_any_asn1(&validity, &not_before, &not_before_tag) ||
@@ -266,9 +339,9 @@ std::unique_ptr<CertificateView> CertificateView::ParseSingleCertificate(
     QUIC_DLOG(WARNING) << "Failed to extract the validity dates";
     return nullptr;
   }
-  QuicheOptional<QuicWallTime> not_before_parsed =
+  absl::optional<QuicWallTime> not_before_parsed =
       ParseDerTime(not_before_tag, CbsToStringPiece(not_before));
-  QuicheOptional<QuicWallTime> not_after_parsed =
+  absl::optional<QuicWallTime> not_after_parsed =
       ParseDerTime(not_after_tag, CbsToStringPiece(not_after));
   if (!not_before_parsed.has_value() || !not_after_parsed.has_value()) {
     QUIC_DLOG(WARNING) << "Failed to parse validity dates";
@@ -348,7 +421,7 @@ bool CertificateView::ParseExtensions(CBS extensions) {
           return false;
         }
 
-        QuicheStringPiece alt_name = CbsToStringPiece(alt_name_cbs);
+        absl::string_view alt_name = CbsToStringPiece(alt_name_cbs);
         QuicIpAddress ip_address;
         // GeneralName ::= CHOICE {
         switch (alt_name_tag) {
@@ -417,8 +490,8 @@ bool CertificateView::ValidatePublicKeyParameters() {
   }
 }
 
-bool CertificateView::VerifySignature(QuicheStringPiece data,
-                                      QuicheStringPiece signature,
+bool CertificateView::VerifySignature(absl::string_view data,
+                                      absl::string_view signature,
                                       uint16_t signature_algorithm) const {
   if (PublicKeyTypeFromSignatureAlgorithm(signature_algorithm) !=
       PublicKeyTypeFromKey(public_key_.get())) {
@@ -447,8 +520,13 @@ bool CertificateView::VerifySignature(QuicheStringPiece data,
       data.size());
 }
 
+absl::optional<std::string> CertificateView::GetHumanReadableSubject() const {
+  CBS input = StringPieceToCbs(subject_der_);
+  return DistinguishedNameToString(input);
+}
+
 std::unique_ptr<CertificatePrivateKey> CertificatePrivateKey::LoadFromDer(
-    QuicheStringPiece private_key) {
+    absl::string_view private_key) {
   std::unique_ptr<CertificatePrivateKey> result(new CertificatePrivateKey());
   CBS private_key_cbs = StringPieceToCbs(private_key);
   result->private_key_.reset(EVP_parse_private_key(&private_key_cbs));
@@ -506,7 +584,7 @@ skip:
   return nullptr;
 }
 
-std::string CertificatePrivateKey::Sign(QuicheStringPiece input,
+std::string CertificatePrivateKey::Sign(absl::string_view input,
                                         uint16_t signature_algorithm) {
   if (!ValidForSignatureAlgorithm(signature_algorithm)) {
     QUIC_BUG << "Mismatch between the requested signature algorithm and the "

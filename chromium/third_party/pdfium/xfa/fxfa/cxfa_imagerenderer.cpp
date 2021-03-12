@@ -40,7 +40,7 @@ bool CXFA_ImageRenderer::Start() {
     if (m_pDIBBase->HasAlpha() &&
         !(m_pDevice->GetRenderCaps() & FXRC_ALPHA_IMAGE) &&
         !(m_pDevice->GetRenderCaps() & FXRC_GET_BITS)) {
-      m_pCloneConvert = m_pDIBBase->CloneConvert(FXDIB_Rgb);
+      m_pCloneConvert = m_pDIBBase->CloneConvert(FXDIB_Format::kRgb);
       if (!m_pCloneConvert)
         return false;
 
@@ -67,7 +67,7 @@ bool CXFA_ImageRenderer::Start() {
       return false;
     }
   }
-  if (m_pDIBBase->IsAlphaMask()) {
+  if (m_pDIBBase->IsMask()) {
     if (m_pDevice->StretchBitMaskWithFlags(m_pDIBBase, dest_left, dest_top,
                                            dest_width, dest_height, 0,
                                            options)) {
@@ -98,7 +98,7 @@ bool CXFA_ImageRenderer::Continue() {
     if (!pBitmap)
       return false;
 
-    if (pBitmap->IsAlphaMask()) {
+    if (pBitmap->IsMask()) {
       m_pDevice->SetBitMask(pBitmap, m_pTransformer->result().left,
                             m_pTransformer->result().top, 0);
     } else {
@@ -121,7 +121,7 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
   if (!pDIBitmap)
     return;
 
-  if (!pDIBitmap->IsAlphaMask()) {
+  if (!pDIBitmap->IsMask()) {
     if (m_pDevice->SetDIBits(pDIBitmap, left, top))
       return;
   } else if (m_pDevice->SetBitMask(pDIBitmap, left, top, 0)) {
@@ -132,7 +132,7 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
                         (!(m_pDevice->GetRenderCaps() & FXRC_ALPHA_OUTPUT) &&
                          (m_pDevice->GetRenderCaps() & FXRC_GET_BITS));
   if (bGetBackGround) {
-    if (pDIBitmap->IsAlphaMask())
+    if (pDIBitmap->IsMask())
       return;
 
     m_pDevice->SetDIBitsWithBlend(pDIBitmap, left, top, BlendMode::kNormal);
@@ -143,7 +143,8 @@ void CXFA_ImageRenderer::CompositeDIBitmap(
     return;
   }
 
-  RetainPtr<CFX_DIBitmap> pCloneConvert = pDIBitmap->CloneConvert(FXDIB_Rgb);
+  RetainPtr<CFX_DIBitmap> pCloneConvert =
+      pDIBitmap->CloneConvert(FXDIB_Format::kRgb);
   if (!pCloneConvert)
     return;
 

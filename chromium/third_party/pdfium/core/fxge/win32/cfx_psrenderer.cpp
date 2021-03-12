@@ -21,7 +21,7 @@
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibextractor.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
-#include "core/fxge/fx_dib.h"
+#include "core/fxge/dib/fx_dib.h"
 #include "core/fxge/text_char_pos.h"
 #include "core/fxge/win32/cpsoutput.h"
 
@@ -46,15 +46,13 @@ CFX_PSRenderer::~CFX_PSRenderer() = default;
 void CFX_PSRenderer::Init(const RetainPtr<IFX_RetainableWriteStream>& pStream,
                           int pslevel,
                           int width,
-                          int height,
-                          bool bCmykOutput) {
+                          int height) {
   m_PSLevel = pslevel;
   m_pStream = pStream;
   m_ClipBox.left = 0;
   m_ClipBox.top = 0;
   m_ClipBox.right = width;
   m_ClipBox.bottom = height;
-  m_bCmykOutput = bCmykOutput;
 }
 
 bool CFX_PSRenderer::StartRendering() {
@@ -314,7 +312,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     return false;
 
   int alpha = FXARGB_A(color);
-  if (pSource->IsAlphaMask() && (alpha < 255 || pSource->GetBPP() != 1))
+  if (pSource->IsMask() && (alpha < 255 || pSource->GetBPP() != 1))
     return false;
 
   m_pStream->WriteString("q\n");
@@ -327,7 +325,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
   int height = pSource->GetHeight();
   buf << width << " " << height;
 
-  if (pSource->GetBPP() == 1 && !pSource->GetPalette()) {
+  if (pSource->GetBPP() == 1 && !pSource->HasPalette()) {
     int pitch = (width + 7) / 8;
     uint32_t src_size = height * pitch;
     std::unique_ptr<uint8_t, FxFreeDeleter> src_buf(
@@ -341,7 +339,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     uint32_t output_size;
     bool compressed = FaxCompressData(std::move(src_buf), width, height,
                                       &output_buf, &output_size);
-    if (pSource->IsAlphaMask()) {
+    if (pSource->IsMask()) {
       SetColor(color);
       m_bColorSet = false;
       buf << " true[";
@@ -355,7 +353,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
       buf << "<</K -1/EndOfBlock false/Columns " << width << "/Rows " << height
           << ">>/CCITTFaxDecode filter ";
     }
-    if (pSource->IsAlphaMask())
+    if (pSource->IsMask())
       buf << "iM\n";
     else
       buf << "false 1 colorimage\n";
@@ -368,22 +366,13 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     if (!pConverted)
       return false;
     switch (pSource->GetFormat()) {
-      case FXDIB_1bppRgb:
-      case FXDIB_Rgb32:
-        pConverted = pConverted->CloneConvert(FXDIB_Rgb);
+      case FXDIB_Format::k1bppRgb:
+      case FXDIB_Format::kRgb32:
+        pConverted = pConverted->CloneConvert(FXDIB_Format::kRgb);
         break;
-      case FXDIB_8bppRgb:
-        if (pSource->GetPalette()) {
-          pConverted = pConverted->CloneConvert(FXDIB_Rgb);
-        }
-        break;
-      case FXDIB_1bppCmyk:
-        pConverted = pConverted->CloneConvert(FXDIB_Cmyk);
-        break;
-      case FXDIB_8bppCmyk:
-        if (pSource->GetPalette()) {
-          pConverted = pConverted->CloneConvert(FXDIB_Cmyk);
-        }
+      case FXDIB_Format::k8bppRgb:
+        if (pSource->HasPalette())
+          pConverted = pConverted->CloneConvert(FXDIB_Format::kRgb);
         break;
       default:
         break;
@@ -448,24 +437,15 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
 }
 
 void CFX_PSRenderer::SetColor(uint32_t color) {
-  bool bCMYK = false;
-  if (bCMYK != m_bCmykOutput || !m_bColorSet || m_LastColor != color) {
-    std::ostringstream buf;
-    if (bCMYK) {
-      buf << FXSYS_GetCValue(color) / 255.0 << " "
-          << FXSYS_GetMValue(color) / 255.0 << " "
-          << FXSYS_GetYValue(color) / 255.0 << " "
-          << FXSYS_GetKValue(color) / 255.0 << " k\n";
-    } else {
-      buf << FXARGB_R(color) / 255.0 << " " << FXARGB_G(color) / 255.0 << " "
-          << FXARGB_B(color) / 255.0 << " rg\n";
-    }
-    if (bCMYK == m_bCmykOutput) {
-      m_bColorSet = true;
-      m_LastColor = color;
-    }
-    WriteToStream(&buf);
-  }
+  if (m_bColorSet && m_LastColor == color)
+    return;
+
+  std::ostringstream buf;
+  buf << FXARGB_R(color) / 255.0 << " " << FXARGB_G(color) / 255.0 << " "
+      << FXARGB_B(color) / 255.0 << " rg\n";
+  m_bColorSet = true;
+  m_LastColor = color;
+  WriteToStream(&buf);
 }
 
 void CFX_PSRenderer::FindPSFontGlyph(CFX_GlyphCache* pGlyphCache,

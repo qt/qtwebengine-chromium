@@ -20,6 +20,7 @@
 #include "av1/common/quant_common.h"
 #include "av1/common/reconinter.h"
 #include "av1/encoder/av1_quantize.h"
+#include "av1/encoder/encodeframe.h"
 #include "av1/encoder/encoder.h"
 #include "av1/encoder/extend.h"
 #include "av1/encoder/firstpass.h"
@@ -38,6 +39,93 @@
 /*!\cond */
 
 // NOTE: All `tf` in this file means `temporal filtering`.
+
+// Allocates memory for members of TemporalFilterData.
+// Inputs:
+//   tf_data: Pointer to the structure containing temporal filter related data.
+//   num_pels: Number of pixels in the block across all planes.
+//   is_high_bitdepth: Whether the frame is high-bitdepth or not.
+// Returns:
+//   Nothing will be returned. But the contents of tf_data will be modified.
+static AOM_INLINE void tf_alloc_and_reset_data(TemporalFilterData *tf_data,
+                                               int num_pels,
+                                               int is_high_bitdepth) {
+  tf_data->tmp_mbmi = (MB_MODE_INFO *)malloc(sizeof(MB_MODE_INFO));
+  memset(tf_data->tmp_mbmi, 0, sizeof(*tf_data->tmp_mbmi));
+  tf_data->accum = aom_memalign(16, num_pels * sizeof(uint32_t));
+  tf_data->count = aom_memalign(16, num_pels * sizeof(uint16_t));
+  memset(&tf_data->diff, 0, sizeof(tf_data->diff));
+  if (is_high_bitdepth)
+    tf_data->pred =
+        CONVERT_TO_BYTEPTR(aom_memalign(32, num_pels * sizeof(uint16_t)));
+  else
+    tf_data->pred = aom_memalign(32, num_pels * sizeof(uint8_t));
+}
+
+// Setup macroblockd params for temporal filtering process.
+// Inputs:
+//   mbd: Pointer to the block for filtering.
+//   tf_data: Pointer to the structure containing temporal filter related data.
+//   scale: Scaling factor.
+// Returns:
+//   Nothing will be returned. Contents of mbd will be modified.
+static AOM_INLINE void tf_setup_macroblockd(MACROBLOCKD *mbd,
+                                            TemporalFilterData *tf_data,
+                                            const struct scale_factors *scale) {
+  mbd->block_ref_scale_factors[0] = scale;
+  mbd->block_ref_scale_factors[1] = scale;
+  mbd->mi = &tf_data->tmp_mbmi;
+  mbd->mi[0]->motion_mode = SIMPLE_TRANSLATION;
+}
+
+// Saves the state prior to temporal filter process.
+// Inputs:
+//   mbd: Pointer to the block for filtering.
+//   input_mbmi: Backup block info to save input state.
+//   input_buffer: Backup buffer pointer to save input state.
+//   num_planes: Number of planes.
+// Returns:
+//   Nothing will be returned. Contents of input_mbmi and input_buffer will be
+//   modified.
+static void tf_save_state(MACROBLOCKD *mbd, MB_MODE_INFO ***input_mbmi,
+                          uint8_t **input_buffer, int num_planes) {
+  for (int i = 0; i < num_planes; i++) {
+    input_buffer[i] = mbd->plane[i].pre[0].buf;
+  }
+  *input_mbmi = mbd->mi;
+}
+
+// Restores the initial state after temporal filter process.
+// Inputs:
+//   mbd: Pointer to the block for filtering.
+//   input_mbmi: Backup block info from where input state is restored.
+//   input_buffer: Backup buffer pointer from where input state is restored.
+//   num_planes: Number of planes.
+// Returns:
+//   Nothing will be returned. Contents of mbd will be modified.
+static void tf_restore_state(MACROBLOCKD *mbd, MB_MODE_INFO **input_mbmi,
+                             uint8_t **input_buffer, int num_planes) {
+  for (int i = 0; i < num_planes; i++) {
+    mbd->plane[i].pre[0].buf = input_buffer[i];
+  }
+  mbd->mi = input_mbmi;
+}
+
+// Deallocates the memory allocated for members of TemporalFilterData.
+// Inputs:
+//   tf_data: Pointer to the structure containing temporal filter related data.
+//   is_high_bitdepth: Whether the frame is high-bitdepth or not.
+// Returns:
+//   Nothing will be returned.
+static AOM_INLINE void tf_dealloc_data(TemporalFilterData *tf_data,
+                                       int is_high_bitdepth) {
+  if (is_high_bitdepth)
+    tf_data->pred = (uint8_t *)CONVERT_TO_SHORTPTR(tf_data->pred);
+  free(tf_data->tmp_mbmi);
+  aom_free(tf_data->accum);
+  aom_free(tf_data->count);
+  aom_free(tf_data->pred);
+}
 
 // Forward Declaration.
 static void tf_determine_block_partition(const MV block_mv, const int block_mse,
@@ -63,6 +151,7 @@ static void tf_determine_block_partition(const MV block_mv, const int block_mse,
  *
  * \ingroup src_frame_proc
  * \param[in]   cpi             Top level encoder instance structure
+ * \param[in]   mb              Pointer to macroblock
  * \param[in]   frame_to_filter Pointer to the frame to be filtered
  * \param[in]   ref_frame       Pointer to the reference frame
  * \param[in]   block_size      Block size used for motion search
@@ -78,7 +167,7 @@ static void tf_determine_block_partition(const MV block_mv, const int block_mse,
  * \return Nothing will be returned. Results are saved in subblock_mvs and
  *         subblock_mses
  */
-static void tf_motion_search(AV1_COMP *cpi,
+static void tf_motion_search(AV1_COMP *cpi, MACROBLOCK *mb,
                              const YV12_BUFFER_CONFIG *frame_to_filter,
                              const YV12_BUFFER_CONFIG *ref_frame,
                              const BLOCK_SIZE block_size, const int mb_row,
@@ -96,7 +185,6 @@ static void tf_motion_search(AV1_COMP *cpi,
   const int y_offset = mb_row * mb_height * y_stride + mb_col * mb_width;
 
   // Save input state.
-  MACROBLOCK *const mb = &cpi->td.mb;
   MACROBLOCKD *const mbd = &mb->e_mbd;
   const struct buf_2d ori_src_buf = mb->plane[0].src;
   const struct buf_2d ori_pre_buf = mbd->plane[0].pre[0];
@@ -316,7 +404,6 @@ static void tf_build_predictor(const YV12_BUFFER_CONFIG *ref_frame,
   // Information of the entire block.
   const int mb_height = block_size_high[block_size];  // Height.
   const int mb_width = block_size_wide[block_size];   // Width.
-  const int mb_pels = mb_height * mb_width;           // Number of pixels.
   const int mb_y = mb_height * mb_row;                // Y-coord (Top-left).
   const int mb_x = mb_width * mb_col;                 // X-coord (Top-left).
   const int bit_depth = mbd->bd;                      // Bit depth.
@@ -325,7 +412,7 @@ static void tf_build_predictor(const YV12_BUFFER_CONFIG *ref_frame,
 
   // Default interpolation filters.
   const int_interpfilters interp_filters =
-      av1_broadcast_interp_filter(MULTITAP_SHARP);
+      av1_broadcast_interp_filter(MULTITAP_SHARP2);
 
   // Handle Y-plane, U-plane and V-plane (if needed) in sequence.
   int plane_offset = 0;
@@ -368,7 +455,7 @@ static void tf_build_predictor(const YV12_BUFFER_CONFIG *ref_frame,
                                           plane_w, &mv, &inter_pred_params);
       }
     }
-    plane_offset += mb_pels;
+    plane_offset += plane_h * plane_w;
   }
 }
 /*!\cond */
@@ -386,16 +473,16 @@ static void tf_build_predictor(const YV12_BUFFER_CONFIG *ref_frame,
 // Returns:
 //   Nothing will be returned. But the content to which `accum` and `pred`
 //   point will be modified.
-void tf_apply_temporal_filter_self(const MACROBLOCKD *mbd,
+void tf_apply_temporal_filter_self(const YV12_BUFFER_CONFIG *ref_frame,
+                                   const MACROBLOCKD *mbd,
                                    const BLOCK_SIZE block_size,
-                                   const int num_planes, const uint8_t *pred,
-                                   uint32_t *accum, uint16_t *count) {
+                                   const int mb_row, const int mb_col,
+                                   const int num_planes, uint32_t *accum,
+                                   uint16_t *count) {
   // Block information.
   const int mb_height = block_size_high[block_size];
   const int mb_width = block_size_wide[block_size];
-  const int mb_pels = mb_height * mb_width;
   const int is_high_bitdepth = is_cur_buf_hbd(mbd);
-  const uint16_t *pred16 = CONVERT_TO_SHORTPTR(pred);
 
   int plane_offset = 0;
   for (int plane = 0; plane < num_planes; ++plane) {
@@ -404,17 +491,27 @@ void tf_apply_temporal_filter_self(const MACROBLOCKD *mbd,
     const int h = mb_height >> subsampling_y;  // Plane height.
     const int w = mb_width >> subsampling_x;   // Plane width.
 
+    const int frame_stride = ref_frame->strides[plane == AOM_PLANE_Y ? 0 : 1];
+    const uint8_t *buf8 = ref_frame->buffers[plane];
+    const uint16_t *buf16 = CONVERT_TO_SHORTPTR(buf8);
+    const int frame_offset = mb_row * h * frame_stride + mb_col * w;
+
     int pred_idx = 0;
+    int pixel_idx = 0;
     for (int i = 0; i < h; ++i) {
       for (int j = 0; j < w; ++j) {
         const int idx = plane_offset + pred_idx;  // Index with plane shift.
-        const int pred_value = is_high_bitdepth ? pred16[idx] : pred[idx];
+        const int pred_value = is_high_bitdepth
+                                   ? buf16[frame_offset + pixel_idx]
+                                   : buf8[frame_offset + pixel_idx];
         accum[idx] += TF_WEIGHT_SCALE * pred_value;
         count[idx] += TF_WEIGHT_SCALE;
         ++pred_idx;
+        ++pixel_idx;
       }
+      pixel_idx += (frame_stride - w);
     }
-    plane_offset += mb_pels;
+    plane_offset += h * w;
   }
 }
 
@@ -462,6 +559,35 @@ static INLINE void compute_square_diff(const uint8_t *ref, const int ref_offset,
     }
     ref_idx += (ref_stride - width);
     tgt_idx += (tgt_stride - width);
+  }
+}
+
+// Function to accumulate pixel-wise squared difference between two luma buffers
+// to be consumed while filtering the chroma planes.
+// Inputs:
+//   square_diff: Pointer to squared differences from luma plane.
+//   luma_sse_sum: Pointer to save the sum of luma squared differences.
+//   block_height: Height of block for computation.
+//   block_width: Width of block for computation.
+//   ss_x_shift: Chroma subsampling shift in 'X' direction
+//   ss_y_shift: Chroma subsampling shift in 'Y' direction
+// Returns:
+//   Nothing will be returned. But the content to which `luma_sse_sum` points
+//   will be modified.
+void compute_luma_sq_error_sum(uint32_t *square_diff, uint32_t *luma_sse_sum,
+                               int block_height, int block_width,
+                               int ss_x_shift, int ss_y_shift) {
+  for (int i = 0; i < block_height; ++i) {
+    for (int j = 0; j < block_width; ++j) {
+      for (int ii = 0; ii < (1 << ss_y_shift); ++ii) {
+        for (int jj = 0; jj < (1 << ss_x_shift); ++jj) {
+          const int yy = (i << ss_y_shift) + ii;     // Y-coord on Y-plane.
+          const int xx = (j << ss_x_shift) + jj;     // X-coord on Y-plane.
+          const int ww = block_width << ss_x_shift;  // Width of Y-plane.
+          luma_sse_sum[i * block_width + j] += square_diff[yy * ww + xx];
+        }
+      }
+    }
   }
 }
 
@@ -514,38 +640,77 @@ void av1_apply_temporal_filter_c(
   const int frame_height = frame_to_filter->y_crop_height;
   const int frame_width = frame_to_filter->y_crop_width;
   const int min_frame_size = AOMMIN(frame_height, frame_width);
-
-  // Allocate memory for pixel-wise squared differences for all planes. They,
-  // regardless of the subsampling, are assigned with memory of size `mb_pels`.
-  uint32_t *square_diff =
-      aom_memalign(16, num_planes * mb_pels * sizeof(uint32_t));
-  memset(square_diff, 0, num_planes * mb_pels * sizeof(square_diff[0]));
-
-  int plane_offset = 0;
-  for (int plane = 0; plane < num_planes; ++plane) {
-    // Locate pixel on reference frame.
-    const int plane_h = mb_height >> mbd->plane[plane].subsampling_y;
-    const int plane_w = mb_width >> mbd->plane[plane].subsampling_x;
-    const int frame_stride = frame_to_filter->strides[plane == 0 ? 0 : 1];
-    const int frame_offset = mb_row * plane_h * frame_stride + mb_col * plane_w;
-    const uint8_t *ref = frame_to_filter->buffers[plane];
-    compute_square_diff(ref, frame_offset, frame_stride, pred, plane_offset,
-                        plane_w, plane_h, plane_w, is_high_bitdepth,
-                        square_diff + plane_offset);
-    plane_offset += mb_pels;
+  // Variables to simplify combined error calculation.
+  const double inv_factor = 1.0 / ((TF_WINDOW_BLOCK_BALANCE_WEIGHT + 1) *
+                                   TF_SEARCH_ERROR_NORM_WEIGHT);
+  const double weight_factor =
+      (double)TF_WINDOW_BLOCK_BALANCE_WEIGHT * inv_factor;
+  // Decay factors for non-local mean approach.
+  double decay_factor[MAX_MB_PLANE] = { 0 };
+  // Smaller q -> smaller filtering weight.
+  double q_decay = pow((double)q_factor / TF_Q_DECAY_THRESHOLD, 2);
+  q_decay = CLIP(q_decay, 1e-5, 1);
+  // Smaller strength -> smaller filtering weight.
+  double s_decay = pow((double)filter_strength / TF_STRENGTH_THRESHOLD, 2);
+  s_decay = CLIP(s_decay, 1e-5, 1);
+  for (int plane = 0; plane < num_planes; plane++) {
+    // Larger noise -> larger filtering weight.
+    const double n_decay = 0.5 + log(2 * noise_levels[plane] + 5.0);
+    decay_factor[plane] = 1 / (n_decay * q_decay * s_decay);
   }
+  double d_factor[4] = { 0 };
+  for (int subblock_idx = 0; subblock_idx < 4; subblock_idx++) {
+    // Larger motion vector -> smaller filtering weight.
+    const MV mv = subblock_mvs[subblock_idx];
+    const double distance = sqrt(pow(mv.row, 2) + pow(mv.col, 2));
+    double distance_threshold = min_frame_size * TF_SEARCH_DISTANCE_THRESHOLD;
+    distance_threshold = AOMMAX(distance_threshold, 1);
+    d_factor[subblock_idx] = distance / distance_threshold;
+    d_factor[subblock_idx] = AOMMAX(d_factor[subblock_idx], 1);
+  }
+
+  // Allocate memory for pixel-wise squared differences. They,
+  // regardless of the subsampling, are assigned with memory of size `mb_pels`.
+  uint32_t *square_diff = aom_memalign(16, mb_pels * sizeof(uint32_t));
+  memset(square_diff, 0, mb_pels * sizeof(square_diff[0]));
+
+  // Allocate memory for accumulated luma squared error. This value will be
+  // consumed while filtering the chroma planes.
+  uint32_t *luma_sse_sum = aom_memalign(32, mb_pels * sizeof(uint32_t));
+  memset(luma_sse_sum, 0, mb_pels * sizeof(luma_sse_sum[0]));
 
   // Get window size for pixel-wise filtering.
   assert(TF_WINDOW_LENGTH % 2 == 1);
   const int half_window = TF_WINDOW_LENGTH >> 1;
 
   // Handle planes in sequence.
-  plane_offset = 0;
+  int plane_offset = 0;
   for (int plane = 0; plane < num_planes; ++plane) {
+    // Locate pixel on reference frame.
     const int subsampling_y = mbd->plane[plane].subsampling_y;
     const int subsampling_x = mbd->plane[plane].subsampling_x;
     const int h = mb_height >> subsampling_y;  // Plane height.
     const int w = mb_width >> subsampling_x;   // Plane width.
+    const int frame_stride =
+        frame_to_filter->strides[plane == AOM_PLANE_Y ? 0 : 1];
+    const int frame_offset = mb_row * h * frame_stride + mb_col * w;
+    const uint8_t *ref = frame_to_filter->buffers[plane];
+    const int ss_y_shift =
+        subsampling_y - mbd->plane[AOM_PLANE_Y].subsampling_y;
+    const int ss_x_shift =
+        subsampling_x - mbd->plane[AOM_PLANE_Y].subsampling_x;
+    const int num_ref_pixels = TF_WINDOW_LENGTH * TF_WINDOW_LENGTH +
+                               ((plane) ? (1 << (ss_x_shift + ss_y_shift)) : 0);
+    const double inv_num_ref_pixels = 1.0 / num_ref_pixels;
+
+    // Filter U-plane and V-plane using Y-plane. This is because motion
+    // search is only done on Y-plane, so the information from Y-plane will
+    // be more accurate. The luma sse sum is reused in both chroma planes.
+    if (plane == AOM_PLANE_U)
+      compute_luma_sq_error_sum(square_diff, luma_sse_sum, h, w, ss_x_shift,
+                                ss_y_shift);
+    compute_square_diff(ref, frame_offset, frame_stride, pred, plane_offset, w,
+                        h, w, is_high_bitdepth, square_diff);
 
     // Perform filtering.
     int pred_idx = 0;
@@ -553,64 +718,31 @@ void av1_apply_temporal_filter_c(
       for (int j = 0; j < w; ++j) {
         // non-local mean approach
         uint64_t sum_square_diff = 0;
-        int num_ref_pixels = 0;
 
         for (int wi = -half_window; wi <= half_window; ++wi) {
           for (int wj = -half_window; wj <= half_window; ++wj) {
             const int y = CLIP(i + wi, 0, h - 1);  // Y-coord on current plane.
             const int x = CLIP(j + wj, 0, w - 1);  // X-coord on current plane.
-            sum_square_diff += square_diff[plane_offset + y * w + x];
-            ++num_ref_pixels;
+            sum_square_diff += square_diff[y * w + x];
           }
         }
 
-        // Filter U-plane and V-plane using Y-plane. This is because motion
-        // search is only done on Y-plane, so the information from Y-plane will
-        // be more accurate.
-        if (plane != 0) {
-          const int ss_y_shift = subsampling_y - mbd->plane[0].subsampling_y;
-          const int ss_x_shift = subsampling_x - mbd->plane[0].subsampling_x;
-          for (int ii = 0; ii < (1 << ss_y_shift); ++ii) {
-            for (int jj = 0; jj < (1 << ss_x_shift); ++jj) {
-              const int yy = (i << ss_y_shift) + ii;  // Y-coord on Y-plane.
-              const int xx = (j << ss_x_shift) + jj;  // X-coord on Y-plane.
-              const int ww = w << ss_x_shift;         // Width of Y-plane.
-              sum_square_diff += square_diff[yy * ww + xx];
-              ++num_ref_pixels;
-            }
-          }
-        }
+        sum_square_diff += luma_sse_sum[i * w + j];
 
         // Scale down the difference for high bit depth input.
         if (mbd->bd > 8) sum_square_diff >>= ((mbd->bd - 8) * 2);
 
         // Combine window error and block error, and normalize it.
-        const double window_error = (double)sum_square_diff / num_ref_pixels;
+        const double window_error = sum_square_diff * inv_num_ref_pixels;
         const int subblock_idx = (i >= h / 2) * 2 + (j >= w / 2);
         const double block_error = (double)subblock_mses[subblock_idx];
         const double combined_error =
-            (TF_WINDOW_BLOCK_BALANCE_WEIGHT * window_error + block_error) /
-            (TF_WINDOW_BLOCK_BALANCE_WEIGHT + 1) / TF_SEARCH_ERROR_NORM_WEIGHT;
-
-        // Decay factors for non-local mean approach.
-        // Larger noise -> larger filtering weight.
-        const double n_decay = 0.5 + log(2 * noise_levels[plane] + 5.0);
-        // Smaller q -> smaller filtering weight.
-        const double q_decay =
-            CLIP(pow((double)q_factor / TF_Q_DECAY_THRESHOLD, 2), 1e-5, 1);
-        // Smaller strength -> smaller filtering weight.
-        const double s_decay = CLIP(
-            pow((double)filter_strength / TF_STRENGTH_THRESHOLD, 2), 1e-5, 1);
-        // Larger motion vector -> smaller filtering weight.
-        const MV mv = subblock_mvs[subblock_idx];
-        const double distance = sqrt(pow(mv.row, 2) + pow(mv.col, 2));
-        const double distance_threshold =
-            (double)AOMMAX(min_frame_size * TF_SEARCH_DISTANCE_THRESHOLD, 1);
-        const double d_factor = AOMMAX(distance / distance_threshold, 1);
+            weight_factor * window_error + block_error * inv_factor;
 
         // Compute filter weight.
-        const double scaled_error =
-            AOMMIN(combined_error * d_factor / n_decay / q_decay / s_decay, 7);
+        double scaled_error =
+            combined_error * d_factor[subblock_idx] * decay_factor[plane];
+        scaled_error = AOMMIN(scaled_error, 7);
         const int weight = (int)(exp(-scaled_error) * TF_WEIGHT_SCALE);
 
         const int idx = plane_offset + pred_idx;  // Index with plane shift.
@@ -621,10 +753,11 @@ void av1_apply_temporal_filter_c(
         ++pred_idx;
       }
     }
-    plane_offset += mb_pels;
+    plane_offset += h * w;
   }
 
   aom_free(square_diff);
+  aom_free(luma_sse_sum);
 }
 #if CONFIG_AV1_HIGHBITDEPTH
 // Calls High bit-depth temporal filter
@@ -665,7 +798,6 @@ static void tf_normalize_filtered_frame(
   // Block information.
   const int mb_height = block_size_high[block_size];
   const int mb_width = block_size_wide[block_size];
-  const int mb_pels = mb_height * mb_width;
   const int is_high_bitdepth = is_frame_high_bitdepth(result_buffer);
 
   int plane_offset = 0;
@@ -694,7 +826,7 @@ static void tf_normalize_filtered_frame(
       }
       frame_idx += (frame_stride - plane_w);
     }
-    plane_offset += mb_pels;
+    plane_offset += plane_h * plane_w;
   }
 }
 /*!\cond */
@@ -706,217 +838,209 @@ static INLINE int get_num_blocks(const int frame_length, const int mb_length) {
 
 // Helper function to get `q` used for encoding.
 static INLINE int get_q(const AV1_COMP *cpi) {
-  const FRAME_TYPE frame_type =
-      (cpi->common.current_frame.frame_number > 1) ? INTER_FRAME : KEY_FRAME;
+  const GF_GROUP *gf_group = &cpi->gf_group;
+  const FRAME_TYPE frame_type = gf_group->frame_type[gf_group->index];
   const int q = (int)av1_convert_qindex_to_q(
       cpi->rc.avg_frame_qindex[frame_type], cpi->common.seq_params.bit_depth);
   return q;
 }
 
 /*!\endcond */
-/*!
- * \brief Sum and SSE source vs filtered framee difference returned by
- *  temporal filter.
- */
-typedef struct {
-  /*!\cond */
-  int64_t sum;
-  int64_t sse;
-  /*!\endcond */
-} FRAME_DIFF;
+
+/*!\brief Does temporal filter for a given macroblock row.
+*
+* \ingroup src_frame_proc
+* \param[in]   cpi                   Top level encoder instance structure
+* \param[in]   td                    Pointer to thread data
+* \param[in]   frames                Frame buffers used for temporal filtering
+* \param[in]   num_frames            Number of frames in the frame buffer
+* \param[in]   filter_frame_idx      Index of the frame to be filtered
+* \param[in]   check_show_existing   whether to accumulate diff for show
+existing condition check
+* \param[in]   scale                 Frame scaling factor
+* \param[in]   noise_levels          Estimated noise levels for each plane
+*                                    in the frame (Y,U,V)
+* \param[in]   num_pels              Number of pixels in the filtering block
+across all planes
+* \param[in]   mb_cols               Number of macroblock columns to be filtered
+* \param[in]   mb_row                Macroblock row to be filtered
+* \param[in]   q_factor              Quantization factor used in temporal
+filtering
+*
+* \return Nothing will be returned, but the contents of td->diff will be
+modified.
+*/
+static void tf_do_filtering_row(AV1_COMP *cpi, ThreadData *td,
+                                YV12_BUFFER_CONFIG **frames,
+                                const int num_frames,
+                                const int filter_frame_idx,
+                                const int check_show_existing,
+                                const struct scale_factors *scale,
+                                const double *noise_levels, int num_pels,
+                                int mb_cols, int mb_row, int q_factor) {
+  const BLOCK_SIZE block_size = TF_BLOCK_SIZE;
+  const YV12_BUFFER_CONFIG *const frame_to_filter = frames[filter_frame_idx];
+  MACROBLOCK *const mb = &td->mb;
+  MACROBLOCKD *const mbd = &mb->e_mbd;
+  TemporalFilterData *const tf_data = &td->tf_data;
+  const int mb_height = block_size_high[block_size];
+  const int mb_width = block_size_wide[block_size];
+  const int mi_h = mi_size_high_log2[block_size];
+  const int mi_w = mi_size_wide_log2[block_size];
+  const int num_planes = av1_num_planes(&cpi->common);
+  uint32_t *accum = tf_data->accum;
+  uint16_t *count = tf_data->count;
+  uint8_t *pred = tf_data->pred;
+
+  // Factor to control the filering strength.
+  const int filter_strength = cpi->oxcf.algo_cfg.arnr_strength;
+
+  // Do filtering.
+  FRAME_DIFF *diff = &td->tf_data.diff;
+  av1_set_mv_row_limits(&cpi->common.mi_params, &mb->mv_limits,
+                        (mb_row << mi_h), (mb_height >> MI_SIZE_LOG2),
+                        cpi->oxcf.border_in_pixels);
+  for (int mb_col = 0; mb_col < mb_cols; mb_col++) {
+    av1_set_mv_col_limits(&cpi->common.mi_params, &mb->mv_limits,
+                          (mb_col << mi_w), (mb_width >> MI_SIZE_LOG2),
+                          cpi->oxcf.border_in_pixels);
+    memset(accum, 0, num_pels * sizeof(accum[0]));
+    memset(count, 0, num_pels * sizeof(count[0]));
+    MV ref_mv = kZeroMv;  // Reference motion vector passed down along frames.
+                          // Perform temporal filtering frame by frame.
+    for (int frame = 0; frame < num_frames; frame++) {
+      if (frames[frame] == NULL) continue;
+
+      // Motion search.
+      MV subblock_mvs[4] = { kZeroMv, kZeroMv, kZeroMv, kZeroMv };
+      int subblock_mses[4] = { INT_MAX, INT_MAX, INT_MAX, INT_MAX };
+      if (frame ==
+          filter_frame_idx) {  // Frame to be filtered.
+                               // Change ref_mv sign for following frames.
+        ref_mv.row *= -1;
+        ref_mv.col *= -1;
+      } else {  // Other reference frames.
+        tf_motion_search(cpi, mb, frame_to_filter, frames[frame], block_size,
+                         mb_row, mb_col, &ref_mv, subblock_mvs, subblock_mses);
+      }
+
+      // Perform weighted averaging.
+      if (frame == filter_frame_idx) {  // Frame to be filtered.
+        tf_apply_temporal_filter_self(frames[frame], mbd, block_size, mb_row,
+                                      mb_col, num_planes, accum, count);
+      } else {  // Other reference frames.
+        tf_build_predictor(frames[frame], mbd, block_size, mb_row, mb_col,
+                           num_planes, scale, subblock_mvs, pred);
+
+        // TODO(any): avx2/sse2 version should be changed to align with C
+        // function before using. In particular, current avx2/sse2 function
+        // only supports 32x32 block size and 5x5 filtering window.
+        if (is_frame_high_bitdepth(frame_to_filter)) {  // for high bit-depth
+#if CONFIG_AV1_HIGHBITDEPTH
+          if (TF_BLOCK_SIZE == BLOCK_32X32 && TF_WINDOW_LENGTH == 5) {
+            av1_highbd_apply_temporal_filter(
+                frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
+                noise_levels, subblock_mvs, subblock_mses, q_factor,
+                filter_strength, pred, accum, count);
+          } else {
+#endif  // CONFIG_AV1_HIGHBITDEPTH
+            av1_apply_temporal_filter_c(
+                frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
+                noise_levels, subblock_mvs, subblock_mses, q_factor,
+                filter_strength, pred, accum, count);
+#if CONFIG_AV1_HIGHBITDEPTH
+          }
+#endif            // CONFIG_AV1_HIGHBITDEPTH
+        } else {  // for 8-bit
+          if (TF_BLOCK_SIZE == BLOCK_32X32 && TF_WINDOW_LENGTH == 5) {
+            av1_apply_temporal_filter(frame_to_filter, mbd, block_size, mb_row,
+                                      mb_col, num_planes, noise_levels,
+                                      subblock_mvs, subblock_mses, q_factor,
+                                      filter_strength, pred, accum, count);
+          } else {
+            av1_apply_temporal_filter_c(
+                frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
+                noise_levels, subblock_mvs, subblock_mses, q_factor,
+                filter_strength, pred, accum, count);
+          }
+        }
+      }
+    }
+    tf_normalize_filtered_frame(mbd, block_size, mb_row, mb_col, num_planes,
+                                accum, count, &cpi->alt_ref_buffer);
+
+    if (check_show_existing) {
+      const int y_height = mb_height >> mbd->plane[0].subsampling_y;
+      const int y_width = mb_width >> mbd->plane[0].subsampling_x;
+      const int source_y_stride = frame_to_filter->y_stride;
+      const int filter_y_stride = cpi->alt_ref_buffer.y_stride;
+      const int source_offset =
+          mb_row * y_height * source_y_stride + mb_col * y_width;
+      const int filter_offset =
+          mb_row * y_height * filter_y_stride + mb_col * y_width;
+      unsigned int sse = 0;
+      cpi->fn_ptr[block_size].vf(
+          frame_to_filter->y_buffer + source_offset, source_y_stride,
+          cpi->alt_ref_buffer.y_buffer + filter_offset, filter_y_stride, &sse);
+      diff->sum += sse;
+      diff->sse += sse * sse;
+    }
+  }
+}
 
 /*!\brief Does temporal filter for a given frame.
  *
  * \ingroup src_frame_proc
- * \param[in]   cpi              Top level encoder instance structure
- * \param[in]   frames           Frame buffers used for temporal filtering
- * \param[in]   num_frames       Number of frames in the frame buffer
- * \param[in]   filter_frame_idx Index of the frame to be filtered
- * \param[in]   is_key_frame     Is the to-filter is a key frame
- * \param[in]   block_size       Block size used for temporal filtering
- * \param[in]   scale            Frame scaling factor
- * \param[in]   noise_levels     Estimated noise levels for each plane
- *                               in the frame (Y,U,V)
+ * \param[in]   cpi                   Top level encoder instance structure
+ * \param[in]   frames                Frame buffers used for temporal filtering
+ * \param[in]   num_frames            Number of frames in the frame buffer
+ * \param[in]   filter_frame_idx      Index of the frame to be filtered
+ * \param[in]   check_show_existing   whether to accumulate diff for show
+                                      existing condition check
+ * \param[in]   scale                 Frame scaling factor
+ * \param[in]   noise_levels          Estimated noise levels for each plane
+ *                                    in the frame (Y,U,V)
+ * \param[in]   num_pels              Number of pixels in the filtering block
+ across all planes
  *
- * \return Difference between filtered frame and the original frame
- *         (sum and sse)
+ * \return Nothing will be returned, but the contents of td->diff will be
+ modified.
  */
-static FRAME_DIFF tf_do_filtering(AV1_COMP *cpi, YV12_BUFFER_CONFIG **frames,
-                                  const int num_frames,
-                                  const int filter_frame_idx,
-                                  const int is_key_frame,
-                                  const BLOCK_SIZE block_size,
-                                  const struct scale_factors *scale,
-                                  const double *noise_levels) {
+static void tf_do_filtering(AV1_COMP *cpi, YV12_BUFFER_CONFIG **frames,
+                            const int num_frames, const int filter_frame_idx,
+                            const int check_show_existing,
+                            const struct scale_factors *scale,
+                            const double *noise_levels, int num_pels) {
   // Basic information.
+  ThreadData *td = &cpi->td;
   const YV12_BUFFER_CONFIG *const frame_to_filter = frames[filter_frame_idx];
+  const BLOCK_SIZE block_size = TF_BLOCK_SIZE;
   const int frame_height = frame_to_filter->y_crop_height;
   const int frame_width = frame_to_filter->y_crop_width;
   const int mb_height = block_size_high[block_size];
   const int mb_width = block_size_wide[block_size];
-  const int mb_pels = mb_height * mb_width;
   const int mb_rows = get_num_blocks(frame_height, mb_height);
   const int mb_cols = get_num_blocks(frame_width, mb_width);
   const int num_planes = av1_num_planes(&cpi->common);
-  const int mi_h = mi_size_high_log2[block_size];
-  const int mi_w = mi_size_wide_log2[block_size];
   assert(num_planes >= 1 && num_planes <= MAX_MB_PLANE);
-  const int is_high_bitdepth = is_frame_high_bitdepth(frame_to_filter);
 
   // Quantization factor used in temporal filtering.
   const int q_factor = get_q(cpi);
-  // Factor to control the filering strength.
-  const int filter_strength = cpi->oxcf.algo_cfg.arnr_strength;
 
-  // Save input state.
-  MACROBLOCK *const mb = &cpi->td.mb;
-  MACROBLOCKD *const mbd = &mb->e_mbd;
+  MACROBLOCKD *mbd = &td->mb.e_mbd;
   uint8_t *input_buffer[MAX_MB_PLANE];
-  for (int i = 0; i < num_planes; i++) {
-    input_buffer[i] = mbd->plane[i].pre[0].buf;
-  }
-  MB_MODE_INFO **input_mb_mode_info = mbd->mi;
+  MB_MODE_INFO **input_mb_mode_info;
+  tf_save_state(mbd, &input_mb_mode_info, input_buffer, num_planes);
+  tf_setup_macroblockd(mbd, &td->tf_data, scale);
 
-  // Determine whether the video is with `YUV 4:2:2` format, since the avx2/sse2
-  // function only supports square block size. We will use C function instead
-  // for videos with `YUV 4:2:2` format.
-  int is_yuv422_format = 0;
-  for (int plane = 1; plane < num_planes; ++plane) {
-    if (mbd->plane[plane].subsampling_x != mbd->plane[plane].subsampling_y) {
-      is_yuv422_format = 1;
-      break;
-    }
-  }
-
-  // Setup.
-  mbd->block_ref_scale_factors[0] = scale;
-  mbd->block_ref_scale_factors[1] = scale;
-  // A temporary block info used to store state in temporal filtering process.
-  MB_MODE_INFO *tmp_mb_mode_info = (MB_MODE_INFO *)malloc(sizeof(MB_MODE_INFO));
-  memset(tmp_mb_mode_info, 0, sizeof(MB_MODE_INFO));
-  mbd->mi = &tmp_mb_mode_info;
-  mbd->mi[0]->motion_mode = SIMPLE_TRANSLATION;
-  // Allocate memory for predictor, accumulator and count.
-  uint8_t *pred8 = aom_memalign(32, num_planes * mb_pels * sizeof(uint8_t));
-  uint16_t *pred16 = aom_memalign(32, num_planes * mb_pels * sizeof(uint16_t));
-  uint32_t *accum = aom_memalign(16, num_planes * mb_pels * sizeof(uint32_t));
-  uint16_t *count = aom_memalign(16, num_planes * mb_pels * sizeof(uint16_t));
-  memset(pred8, 0, num_planes * mb_pels * sizeof(pred8[0]));
-  memset(pred16, 0, num_planes * mb_pels * sizeof(pred16[0]));
-  uint8_t *const pred = is_high_bitdepth ? CONVERT_TO_BYTEPTR(pred16) : pred8;
-
-  // Do filtering.
-  FRAME_DIFF diff = { 0, 0 };
-  // Perform temporal filtering block by block.
+  // Perform temporal filtering for each row.
   for (int mb_row = 0; mb_row < mb_rows; mb_row++) {
-    av1_set_mv_row_limits(&cpi->common.mi_params, &mb->mv_limits,
-                          (mb_row << mi_h), (mb_height >> MI_SIZE_LOG2),
-                          cpi->oxcf.border_in_pixels);
-    for (int mb_col = 0; mb_col < mb_cols; mb_col++) {
-      av1_set_mv_col_limits(&cpi->common.mi_params, &mb->mv_limits,
-                            (mb_col << mi_w), (mb_width >> MI_SIZE_LOG2),
-                            cpi->oxcf.border_in_pixels);
-      memset(accum, 0, num_planes * mb_pels * sizeof(accum[0]));
-      memset(count, 0, num_planes * mb_pels * sizeof(count[0]));
-      MV ref_mv = kZeroMv;  // Reference motion vector passed down along frames.
-      // Perform temporal filtering frame by frame.
-      for (int frame = 0; frame < num_frames; frame++) {
-        if (frames[frame] == NULL) continue;
-
-        // Motion search.
-        MV subblock_mvs[4] = { kZeroMv, kZeroMv, kZeroMv, kZeroMv };
-        int subblock_mses[4] = { INT_MAX, INT_MAX, INT_MAX, INT_MAX };
-        if (frame == filter_frame_idx) {  // Frame to be filtered.
-          // Change ref_mv sign for following frames.
-          ref_mv.row *= -1;
-          ref_mv.col *= -1;
-        } else {  // Other reference frames.
-          tf_motion_search(cpi, frame_to_filter, frames[frame], block_size,
-                           mb_row, mb_col, &ref_mv, subblock_mvs,
-                           subblock_mses);
-        }
-        tf_build_predictor(frames[frame], mbd, block_size, mb_row, mb_col,
-                           num_planes, scale, subblock_mvs, pred);
-
-        // Perform weighted averaging.
-        if (frame == filter_frame_idx) {  // Frame to be filtered.
-          tf_apply_temporal_filter_self(mbd, block_size, num_planes, pred,
-                                        accum, count);
-        } else {  // Other reference frames.
-          // TODO(any): avx2/sse2 version should be changed to align with C
-          // function before using. In particular, current avx2/sse2 function
-          // only supports 32x32 block size, 5x5 filtering window, 8-bit
-          // encoding, and the case when the video is not with `YUV 4:2:2`
-          // format.
-          if (is_frame_high_bitdepth(frame_to_filter)) {  // for high bit-depth
-#if CONFIG_AV1_HIGHBITDEPTH
-            if (TF_BLOCK_SIZE == BLOCK_32X32 && TF_WINDOW_LENGTH == 5 &&
-                !is_yuv422_format) {
-              av1_highbd_apply_temporal_filter(
-                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
-                  noise_levels, subblock_mvs, subblock_mses, q_factor,
-                  filter_strength, pred, accum, count);
-            } else {
-#endif  // CONFIG_AV1_HIGHBITDEPTH
-              av1_apply_temporal_filter_c(
-                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
-                  noise_levels, subblock_mvs, subblock_mses, q_factor,
-                  filter_strength, pred, accum, count);
-#if CONFIG_AV1_HIGHBITDEPTH
-            }
-#endif              // CONFIG_AV1_HIGHBITDEPTH
-          } else {  // for 8-bit
-            if (TF_BLOCK_SIZE == BLOCK_32X32 && TF_WINDOW_LENGTH == 5 &&
-                !is_yuv422_format) {
-              av1_apply_temporal_filter(
-                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
-                  noise_levels, subblock_mvs, subblock_mses, q_factor,
-                  filter_strength, pred, accum, count);
-            } else {
-              av1_apply_temporal_filter_c(
-                  frame_to_filter, mbd, block_size, mb_row, mb_col, num_planes,
-                  noise_levels, subblock_mvs, subblock_mses, q_factor,
-                  filter_strength, pred, accum, count);
-            }
-          }
-        }
-      }
-      tf_normalize_filtered_frame(mbd, block_size, mb_row, mb_col, num_planes,
-                                  accum, count, &cpi->alt_ref_buffer);
-
-      if (!is_key_frame) {
-        const int y_height = mb_height >> mbd->plane[0].subsampling_y;
-        const int y_width = mb_width >> mbd->plane[0].subsampling_x;
-        const int source_y_stride = frame_to_filter->y_stride;
-        const int filter_y_stride = cpi->alt_ref_buffer.y_stride;
-        const int source_offset =
-            mb_row * y_height * source_y_stride + mb_col * y_width;
-        const int filter_offset =
-            mb_row * y_height * filter_y_stride + mb_col * y_width;
-        unsigned int sse = 0;
-        cpi->fn_ptr[block_size].vf(frame_to_filter->y_buffer + source_offset,
-                                   source_y_stride,
-                                   cpi->alt_ref_buffer.y_buffer + filter_offset,
-                                   filter_y_stride, &sse);
-        diff.sum += sse;
-        diff.sse += sse * sse;
-      }
-    }
+    tf_do_filtering_row(cpi, td, frames, num_frames, filter_frame_idx,
+                        check_show_existing, scale, noise_levels, num_pels,
+                        mb_cols, mb_row, q_factor);
   }
 
-  // Restore input state
-  for (int i = 0; i < num_planes; i++) {
-    mbd->plane[i].pre[0].buf = input_buffer[i];
-  }
-  mbd->mi = input_mb_mode_info;
-
-  free(tmp_mb_mode_info);
-  aom_free(pred8);
-  aom_free(pred16);
-  aom_free(accum);
-  aom_free(count);
-
-  return diff;
+  tf_restore_state(mbd, input_mb_mode_info, input_buffer, num_planes);
 }
 
 /*!\brief Setups the frame buffer for temporal filtering. This fuction
@@ -945,7 +1069,7 @@ static FRAME_DIFF tf_do_filtering(AV1_COMP *cpi, YV12_BUFFER_CONFIG **frames,
  *         in this function. Estimated noise levels for YUV planes will be
  *         saved in `noise_levels`.
  */
-static void tf_setup_filtering_buffer(const AV1_COMP *cpi,
+static void tf_setup_filtering_buffer(AV1_COMP *cpi,
                                       const int filter_frame_lookahead_idx,
                                       const int is_second_arf,
                                       YV12_BUFFER_CONFIG **frames,
@@ -1043,6 +1167,12 @@ static void tf_setup_filtering_buffer(const AV1_COMP *cpi,
   *num_frames_for_filtering = num_frames;
   *filter_frame_idx = num_before;
   assert(frames[*filter_frame_idx] == to_filter_frame);
+
+  av1_setup_src_planes(&cpi->td.mb, &to_filter_buf->img, 0, 0, num_planes,
+                       cpi->common.seq_params.sb_size);
+  av1_setup_block_planes(&cpi->td.mb.e_mbd,
+                         cpi->common.seq_params.subsampling_x,
+                         cpi->common.seq_params.subsampling_y, num_planes);
 }
 
 /*!\cond */
@@ -1142,7 +1272,11 @@ int av1_temporal_filter(AV1_COMP *cpi, const int filter_frame_lookahead_idx,
   }
 
   // Do filtering.
-  const int is_key_frame = (filter_frame_lookahead_idx <= 0);
+  // Check show existing condition for non-keyframes. For KFs, only check when
+  // KF overlay is enabled.
+  const int check_show_existing =
+      !(filter_frame_lookahead_idx <= 0) ||
+      cpi->oxcf.kf_cfg.enable_keyframe_filtering > 1;
   // Setup scaling factors. Scaling on each of the arnr frames is not
   // supported.
   // ARF is produced at the native frame size and resized when coded.
@@ -1150,13 +1284,34 @@ int av1_temporal_filter(AV1_COMP *cpi, const int filter_frame_lookahead_idx,
   av1_setup_scale_factors_for_frame(
       &sf, frames[0]->y_crop_width, frames[0]->y_crop_height,
       frames[0]->y_crop_width, frames[0]->y_crop_height);
-  const FRAME_DIFF diff =
-      tf_do_filtering(cpi, frames, num_frames_for_filtering, filter_frame_idx,
-                      is_key_frame, TF_BLOCK_SIZE, &sf, noise_levels);
 
-  if (is_key_frame) {  // Key frame should always be filtered.
-    return 1;
+  // Allocate temporal filter buffers.
+  TemporalFilterData *tf_data = &cpi->td.tf_data;
+  MACROBLOCKD *mbd = &cpi->td.mb.e_mbd;
+  const BLOCK_SIZE block_size = TF_BLOCK_SIZE;
+  const int mb_width = block_size_wide[block_size];
+  const int mb_height = block_size_high[block_size];
+  const int mb_pels = mb_width * mb_height;
+  const int is_highbitdepth = is_frame_high_bitdepth(frames[filter_frame_idx]);
+  const int num_planes = av1_num_planes(&cpi->common);
+  int num_pels = 0;
+  for (int i = 0; i < num_planes; i++) {
+    const int subsampling_x = mbd->plane[i].subsampling_x;
+    const int subsampling_y = mbd->plane[i].subsampling_y;
+    num_pels += mb_pels >> (subsampling_x + subsampling_y);
   }
+  tf_alloc_and_reset_data(tf_data, num_pels, is_highbitdepth);
+
+  // Perform temporal filtering process.
+  tf_do_filtering(cpi, frames, num_frames_for_filtering, filter_frame_idx,
+                  check_show_existing, &sf, noise_levels, num_pels);
+
+  // Deallocate temporal filter buffers.
+  tf_dealloc_data(tf_data, is_highbitdepth);
+
+  const FRAME_DIFF *diff = &tf_data->diff;
+
+  if (!check_show_existing) return 1;
 
   if (show_existing_arf != NULL || is_second_arf) {
     const int frame_height = frames[filter_frame_idx]->y_crop_height;
@@ -1166,8 +1321,8 @@ int av1_temporal_filter(AV1_COMP *cpi, const int filter_frame_lookahead_idx,
     const int mb_rows = get_num_blocks(frame_height, block_height);
     const int mb_cols = get_num_blocks(frame_width, block_width);
     const int num_mbs = AOMMAX(1, mb_rows * mb_cols);
-    const float mean = (float)diff.sum / num_mbs;
-    const float std = (float)sqrt((float)diff.sse / num_mbs - mean * mean);
+    const float mean = (float)diff->sum / num_mbs;
+    const float std = (float)sqrt((float)diff->sse / num_mbs - mean * mean);
 
     aom_clear_system_state();
     // TODO(yunqing): This can be combined with TPL q calculation later.

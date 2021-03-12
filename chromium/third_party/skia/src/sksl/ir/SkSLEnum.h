@@ -18,46 +18,54 @@
 
 namespace SkSL {
 
-struct Symbol;
+class Symbol;
 
-class Enum : public ProgramElement {
+class Enum final : public ProgramElement {
 public:
     static constexpr Kind kProgramElementKind = Kind::kEnum;
 
     Enum(int offset, StringFragment typeName, std::shared_ptr<SymbolTable> symbols,
-         bool isBuiltin = true)
-    : INHERITED(offset, EnumData{typeName, std::move(symbols), isBuiltin}) {}
+         bool isSharedWithCpp, bool isBuiltin = true)
+    : INHERITED(offset, kProgramElementKind)
+    , fTypeName(typeName)
+    , fSymbols(std::move(symbols))
+    , fIsSharedWithCpp(isSharedWithCpp)
+    , fIsBuiltin(isBuiltin) {}
 
     StringFragment typeName() const {
-        return this->enumData().fTypeName;
+        return fTypeName;
     }
 
     std::shared_ptr<SymbolTable> symbols() const {
-        return this->enumData().fSymbols;
+        return fSymbols;
     }
 
     bool isBuiltin() const {
-        return this->enumData().fIsBuiltin;
+        return fIsBuiltin;
+    }
+
+    bool isSharedWithCpp() const {
+        return fIsSharedWithCpp;
     }
 
     std::unique_ptr<ProgramElement> clone() const override {
-        return std::unique_ptr<ProgramElement>(new Enum(fOffset, this->typeName(), this->symbols(),
-                                                        this->isBuiltin()));
+        return std::make_unique<Enum>(fOffset, this->typeName(),
+                                      SymbolTable::WrapIfBuiltin(this->symbols()),
+                                      this->isSharedWithCpp(), /*isBuiltin=*/false);
     }
 
     String code() const {
         String result = "enum class " + this->typeName() + " {\n";
         String separator;
         std::vector<const Symbol*> sortedSymbols;
-        for (const auto& pair : *this->symbols()) {
-            sortedSymbols.push_back(pair.second);
-        }
+        sortedSymbols.reserve(symbols()->count());
+        this->symbols()->foreach([&](StringFragment, const Symbol* symbol) {
+            sortedSymbols.push_back(symbol);
+        });
         std::sort(sortedSymbols.begin(), sortedSymbols.end(),
-                  [](const Symbol* a, const Symbol* b) { return a->fName < b->fName; });
-        for (const auto& s : sortedSymbols) {
-            const Expression& initialValue = *s->as<Variable>().fInitialValue;
-            result += separator + "    " + s->fName + " = " +
-                      to_string(initialValue.as<IntLiteral>().value());
+                  [](const Symbol* a, const Symbol* b) { return EnumValue(a) < EnumValue(b); });
+        for (const Symbol* s : sortedSymbols) {
+            result += separator + "    " + s->name() + " = " + to_string(EnumValue(s));
             separator = ",\n";
         }
         result += "\n};";
@@ -69,6 +77,15 @@ public:
     }
 
 private:
+    static int EnumValue(const Symbol* symbol) {
+        return symbol->as<Variable>().initialValue()->as<IntLiteral>().value();
+    }
+
+    StringFragment fTypeName;
+    std::shared_ptr<SymbolTable> fSymbols;
+    bool fIsSharedWithCpp;
+    bool fIsBuiltin;
+
     using INHERITED = ProgramElement;
 };
 

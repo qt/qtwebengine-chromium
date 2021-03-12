@@ -18,7 +18,7 @@ let runtimePlatform = '';
 /** @type {function(string):string} */
 let l10nCallback;
 
-/** @type {!Runtime} */
+/** @type {!Runtime|undefined} */
 let runtimeInstance;
 
 export function getRemoteBase(location = self.location.toString()) {
@@ -80,6 +80,10 @@ export class Runtime {
     }
 
     return runtimeInstance;
+  }
+
+  static removeInstance() {
+    runtimeInstance = undefined;
   }
 
   /**
@@ -533,7 +537,7 @@ export class RuntimeExtensionDescriptor {
     /** @type {string|null} */
     this.settingType;
 
-    /** @type {string} */
+    /** @type {*} */
     this.defaultValue;
 
     /** @type {string|null} */
@@ -553,8 +557,63 @@ export class RuntimeExtensionDescriptor {
 
     /** @type {string|null} */
     this.color;
+
+    /** @type {string|null} */
+    this.prefix;
+
+    /** @type {string|null} */
+    this.decoratorType;
+
+    /** @type {string|null} */
+    this.category;
+
+    /** @type {string|null} */
+    this.tags;
+
+    /** @type {boolean|null|undefined} */
+    this.reloadRequired;
+
+    /** @type {string} */
+    this.id;
+
+    /** @type {string|null} */
+    this.location;
+
+    /** @type {?string} */
+    this.title;
+
+    /** @type {!Array<!Option>|undefined} */
+    this.options;
+
+    /** @type {!Array<string>|undefined} */
+    this.settings;
+
+    // This is an EmulatedDevice, but typing it as such introduces a
+    // circular dep between emulation and root.
+    /** @type {?} */
+    this.device;
+
+    /** @type {string|null} */
+    this.viewId;
+
+    /** @type {?string} */
+    this.persistence;
+    /** @type {?string} */
+    this.setting;
+    /** @type {?string} */
+    this.name;
   }
 }
+
+/**
+ * @typedef {{
+ *  title: string,
+ *  value: (string|boolean),
+ *  raw: (boolean|undefined),
+ * }}
+ */
+// @ts-ignore typedef
+export let Option;
 
 /**
  * @unrestricted
@@ -1093,3 +1152,10 @@ export const cachedResources = new Map();
 // Do not use this global in DevTools' implementation.
 // TODO(crbug.com/1127292): remove this global
 globalThis.EXPORTED_CACHED_RESOURCES_ONLY_FOR_LIGHTHOUSE = cachedResources;
+
+/** @type {function():void} */
+export let appStartedPromiseCallback;
+/** @type {!Promise<void>} */
+export const appStarted = new Promise(fulfill => {
+  appStartedPromiseCallback = fulfill;
+});

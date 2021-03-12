@@ -587,7 +587,7 @@ static int mov_read_dref(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         entries >  (atom.size - 1) / MIN_DATA_ENTRY_BOX_SIZE + 1 ||
         entries >= UINT_MAX / sizeof(*sc->drefs))
         return AVERROR_INVALIDDATA;
-    sc->drefs_count = 0;
+
     av_free(sc->drefs);
     sc->drefs_count = 0;
     sc->drefs = av_mallocz(entries * sizeof(*sc->drefs));
@@ -1475,7 +1475,7 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_log(c->fc, AV_LOG_TRACE, "time scale = %i\n", c->time_scale);
 
     c->duration = (version == 1) ? avio_rb64(pb) : avio_rb32(pb); /* duration */
-    // set the AVCodecContext duration because the duration of individual tracks
+    // set the AVFormatContext duration because the duration of individual tracks
     // may be inaccurate
     if (c->time_scale > 0 && !c->trex_data)
         c->fc->duration = av_rescale(c->duration, AV_TIME_BASE, c->time_scale);
@@ -5115,17 +5115,19 @@ static int mov_read_sidx(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     // See if the remaining bytes are just an mfra which we can ignore.
     is_complete = offset == stream_size;
-    if (!is_complete) {
-        int ret;
+    if (!is_complete && (pb->seekable & AVIO_SEEKABLE_NORMAL)) {
+        int64_t ret;
         int64_t original_pos = avio_tell(pb);
-        int32_t mfra_size;
-        if ((ret = avio_seek(pb, stream_size - 4, SEEK_SET)) < 0)
-            return ret;
-        mfra_size = avio_rb32(pb);
-        if (offset + mfra_size == stream_size)
+        if (!c->have_read_mfra_size) {
+            if ((ret = avio_seek(pb, stream_size - 4, SEEK_SET)) < 0)
+                return ret;
+            c->mfra_size = avio_rb32(pb);
+            c->have_read_mfra_size = 1;
+            if ((ret = avio_seek(pb, original_pos, SEEK_SET)) < 0)
+                return ret;
+        }
+        if (offset + c->mfra_size == stream_size)
             is_complete = 1;
-        if ((ret = avio_seek(pb, original_pos, SEEK_SET)) < 0)
-            return ret;
     }
 
     if (is_complete) {
@@ -7520,22 +7522,22 @@ static int mov_read_mfra(MOVContext *c, AVIOContext *f)
     int64_t stream_size = avio_size(f);
     int64_t original_pos = avio_tell(f);
     int64_t seek_ret;
-    int32_t mfra_size;
     int ret = -1;
     if ((seek_ret = avio_seek(f, stream_size - 4, SEEK_SET)) < 0) {
         ret = seek_ret;
         goto fail;
     }
-    mfra_size = avio_rb32(f);
-    if (mfra_size < 0 || mfra_size > stream_size) {
+    c->mfra_size = avio_rb32(f);
+    c->have_read_mfra_size = 1;
+    if (!c->mfra_size || c->mfra_size > stream_size) {
         av_log(c->fc, AV_LOG_DEBUG, "doesn't look like mfra (unreasonable size)\n");
         goto fail;
     }
-    if ((seek_ret = avio_seek(f, -mfra_size, SEEK_CUR)) < 0) {
+    if ((seek_ret = avio_seek(f, -((int64_t) c->mfra_size), SEEK_CUR)) < 0) {
         ret = seek_ret;
         goto fail;
     }
-    if (avio_rb32(f) != mfra_size) {
+    if (avio_rb32(f) != c->mfra_size) {
         av_log(c->fc, AV_LOG_DEBUG, "doesn't look like mfra (size mismatch)\n");
         goto fail;
     }

@@ -495,7 +495,8 @@ int PerfettoCmd::Main(int argc, char** argv) {
     return 1;
   }
 
-  if (trace_config_->incident_report_config().destination_package().empty() &&
+  if (trace_config_->activate_triggers().empty() &&
+      trace_config_->incident_report_config().destination_package().empty() &&
       is_uploading_) {
     PERFETTO_ELOG("Missing IncidentReportConfig with --dropbox / --upload.");
     return 1;
@@ -769,8 +770,11 @@ void PerfettoCmd::OnTraceData(std::vector<TracePacket> packets, bool has_more) {
     FinalizeTraceAndExit();  // Reached end of trace.
 }
 
-void PerfettoCmd::OnTracingDisabled() {
+void PerfettoCmd::OnTracingDisabled(const std::string& error) {
   LogUploadEvent(PerfettoStatsdAtom::kOnTracingDisabled);
+
+  if (!error.empty())
+    PERFETTO_ELOG("Service error: %s", error.c_str());
 
   if (trace_config_->write_into_file()) {
     // If write_into_file == true, at this point the passed file contains

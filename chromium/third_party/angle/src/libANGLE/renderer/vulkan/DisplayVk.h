@@ -19,6 +19,8 @@ namespace rx
 {
 class RendererVk;
 
+using ShareContextSet = std::set<ContextVk *>;
+
 class ShareGroupVk : public ShareGroupImpl
 {
   public:
@@ -30,6 +32,7 @@ class ShareGroupVk : public ShareGroupImpl
     // synchronous update to the caches.
     PipelineLayoutCache &getPipelineLayoutCache() { return mPipelineLayoutCache; }
     DescriptorSetLayoutCache &getDescriptorSetLayoutCache() { return mDescriptorSetLayoutCache; }
+    ShareContextSet *getShareContextSet() { return &mShareContextSet; }
 
   private:
     // ANGLE uses a PipelineLayout cache to store compatible pipeline layouts.
@@ -37,6 +40,9 @@ class ShareGroupVk : public ShareGroupImpl
 
     // DescriptorSetLayouts are also managed in a cache.
     DescriptorSetLayoutCache mDescriptorSetLayoutCache;
+
+    // The list of contexts within the share group
+    ShareContextSet mShareContextSet;
 };
 
 class DisplayVk : public DisplayImpl, public vk::Context
@@ -48,7 +54,8 @@ class DisplayVk : public DisplayImpl, public vk::Context
     egl::Error initialize(egl::Display *display) override;
     void terminate() override;
 
-    egl::Error makeCurrent(egl::Surface *drawSurface,
+    egl::Error makeCurrent(egl::Display *display,
+                           egl::Surface *drawSurface,
                            egl::Surface *readSurface,
                            gl::Context *context) override;
 
@@ -117,8 +124,6 @@ class DisplayVk : public DisplayImpl, public vk::Context
 
     void populateFeatureList(angle::FeatureList *features) override;
 
-    bool isRobustResourceInitEnabled() const override;
-
     ShareGroupImpl *createShareGroup() override;
 
   protected:
@@ -133,8 +138,7 @@ class DisplayVk : public DisplayImpl, public vk::Context
 
     mutable angle::ScratchBuffer mScratchBuffer;
 
-    std::string mStoredErrorString;
-    bool mHasSurfaceWithRobustInit;
+    vk::Error mSavedError;
 };
 
 }  // namespace rx

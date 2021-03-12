@@ -38,10 +38,9 @@ void GL_APIENTRY CopyTexSubImage3D(GLenum target,
                                    GLsizei height)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glCopyTexSubImage3D",
-          "context = %d, GLenum target = %s, GLint level = %d, GLint xoffset = %d, GLint yoffset = "
-          "%d, GLint zoffset = %d, GLint x = %d, GLint y = %d, GLsizei width = %d, GLsizei height "
-          "= %d",
+    EVENT(context, gl::EntryPoint::CopyTexSubImage3D, "glCopyTexSubImage3D",
+          "context = %d, target = %s, level = %d, xoffset = %d, yoffset = %d, zoffset = %d, x = "
+          "%d, y = %d, width = %d, height = %d",
           CID(context), GLenumToString(GLenumGroup::TextureTarget, target), level, xoffset, yoffset,
           zoffset, x, y, width, height);
 
@@ -74,9 +73,9 @@ void GL_APIENTRY DrawRangeElements(GLenum mode,
                                    const void *indices)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glDrawRangeElements",
-          "context = %d, GLenum mode = %s, GLuint start = %u, GLuint end = %u, GLsizei count = %d, "
-          "GLenum type = %s, const void *indices = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::DrawRangeElements, "glDrawRangeElements",
+          "context = %d, mode = %s, start = %u, end = %u, count = %d, type = %s, indices = "
+          "0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::PrimitiveType, mode), start, end, count,
           GLenumToString(GLenumGroup::DrawElementsType, type), (uintptr_t)indices);
 
@@ -113,10 +112,9 @@ void GL_APIENTRY TexImage3D(GLenum target,
                             const void *pixels)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glTexImage3D",
-          "context = %d, GLenum target = %s, GLint level = %d, GLint internalformat = %d, GLsizei "
-          "width = %d, GLsizei height = %d, GLsizei depth = %d, GLint border = %d, GLenum format = "
-          "%s, GLenum type = %s, const void *pixels = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::TexImage3D, "glTexImage3D",
+          "context = %d, target = %s, level = %d, internalformat = %d, width = %d, height = %d, "
+          "depth = %d, border = %d, format = %s, type = %s, pixels = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::TextureTarget, target), level, internalformat,
           width, height, depth, border, GLenumToString(GLenumGroup::PixelFormat, format),
           GLenumToString(GLenumGroup::PixelType, type), (uintptr_t)pixels);
@@ -155,10 +153,9 @@ void GL_APIENTRY TexSubImage3D(GLenum target,
                                const void *pixels)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glTexSubImage3D",
-          "context = %d, GLenum target = %s, GLint level = %d, GLint xoffset = %d, GLint yoffset = "
-          "%d, GLint zoffset = %d, GLsizei width = %d, GLsizei height = %d, GLsizei depth = %d, "
-          "GLenum format = %s, GLenum type = %s, const void *pixels = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::TexSubImage3D, "glTexSubImage3D",
+          "context = %d, target = %s, level = %d, xoffset = %d, yoffset = %d, zoffset = %d, width "
+          "= %d, height = %d, depth = %d, format = %s, type = %s, pixels = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::TextureTarget, target), level, xoffset, yoffset,
           zoffset, width, height, depth, GLenumToString(GLenumGroup::PixelFormat, format),
           GLenumToString(GLenumGroup::PixelType, type), (uintptr_t)pixels);

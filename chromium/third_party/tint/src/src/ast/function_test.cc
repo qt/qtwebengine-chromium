@@ -24,6 +24,7 @@
 #include "src/ast/type/i32_type.h"
 #include "src/ast/type/void_type.h"
 #include "src/ast/variable.h"
+#include "src/ast/workgroup_decoration.h"
 
 namespace tint {
 namespace ast {
@@ -55,10 +56,11 @@ TEST_F(FunctionTest, Creation_WithSource) {
   params.push_back(
       std::make_unique<Variable>("var", StorageClass::kNone, &i32));
 
-  Function f(Source{20, 2}, "func", std::move(params), &void_type);
+  Function f(Source{Source::Location{20, 2}}, "func", std::move(params),
+             &void_type);
   auto src = f.source();
-  EXPECT_EQ(src.line, 20u);
-  EXPECT_EQ(src.column, 2u);
+  EXPECT_EQ(src.range.begin.line, 20u);
+  EXPECT_EQ(src.range.begin.column, 2u);
 }
 
 TEST_F(FunctionTest, AddDuplicateReferencedVariables) {
@@ -88,24 +90,24 @@ TEST_F(FunctionTest, GetReferenceLocations) {
   VariableDecorationList decos;
   DecoratedVariable loc1(
       std::make_unique<ast::Variable>("loc1", StorageClass::kInput, &i32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(0));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(0, Source{}));
   loc1.set_decorations(std::move(decos));
 
   DecoratedVariable loc2(
       std::make_unique<ast::Variable>("loc2", StorageClass::kInput, &i32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(1));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(1, Source{}));
   loc2.set_decorations(std::move(decos));
 
   DecoratedVariable builtin1(
       std::make_unique<ast::Variable>("builtin1", StorageClass::kInput, &i32));
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kPosition));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kPosition, Source{}));
   builtin1.set_decorations(std::move(decos));
 
   DecoratedVariable builtin2(
       std::make_unique<ast::Variable>("builtin2", StorageClass::kInput, &i32));
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kFragDepth));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kFragDepth, Source{}));
   builtin2.set_decorations(std::move(decos));
 
   Function f("func", VariableList{}, &void_type);
@@ -131,24 +133,24 @@ TEST_F(FunctionTest, GetReferenceBuiltins) {
   VariableDecorationList decos;
   DecoratedVariable loc1(
       std::make_unique<ast::Variable>("loc1", StorageClass::kInput, &i32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(0));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(0, Source{}));
   loc1.set_decorations(std::move(decos));
 
   DecoratedVariable loc2(
       std::make_unique<ast::Variable>("loc2", StorageClass::kInput, &i32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(1));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(1, Source{}));
   loc2.set_decorations(std::move(decos));
 
   DecoratedVariable builtin1(
       std::make_unique<ast::Variable>("builtin1", StorageClass::kInput, &i32));
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kPosition));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kPosition, Source{}));
   builtin1.set_decorations(std::move(decos));
 
   DecoratedVariable builtin2(
       std::make_unique<ast::Variable>("builtin2", StorageClass::kInput, &i32));
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kFragDepth));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kFragDepth, Source{}));
   builtin2.set_decorations(std::move(decos));
 
   Function f("func", VariableList{}, &void_type);
@@ -297,6 +299,28 @@ TEST_F(FunctionTest, ToStr) {
 )");
 }
 
+TEST_F(FunctionTest, ToStr_WithDecoration) {
+  type::VoidType void_type;
+  type::I32Type i32;
+
+  auto block = std::make_unique<ast::BlockStatement>();
+  block->append(std::make_unique<DiscardStatement>());
+
+  Function f("func", {}, &void_type);
+  f.set_body(std::move(block));
+  f.add_decoration(std::make_unique<WorkgroupDecoration>(2, 4, 6, Source{}));
+
+  std::ostringstream out;
+  f.to_str(out, 2);
+  EXPECT_EQ(out.str(), R"(  Function func -> __void
+  WorkgroupDecoration{2 4 6}
+  ()
+  {
+    Discard{}
+  }
+)");
+}
+
 TEST_F(FunctionTest, ToStr_WithParams) {
   type::VoidType void_type;
   type::I32Type i32;
@@ -373,6 +397,33 @@ TEST_F(FunctionTest, GetLastStatement_nullptr) {
 
   EXPECT_EQ(f.get_last_statement(), nullptr);
 }
+
+TEST_F(FunctionTest, WorkgroupSize_NoneSet) {
+  type::VoidType void_type;
+  Function f("f", {}, &void_type);
+  uint32_t x = 0;
+  uint32_t y = 0;
+  uint32_t z = 0;
+  std::tie(x, y, z) = f.workgroup_size();
+  EXPECT_EQ(x, 1u);
+  EXPECT_EQ(y, 1u);
+  EXPECT_EQ(z, 1u);
+}
+
+TEST_F(FunctionTest, WorkgroupSize) {
+  type::VoidType void_type;
+  Function f("f", {}, &void_type);
+  f.add_decoration(std::make_unique<WorkgroupDecoration>(2u, 4u, 6u, Source{}));
+
+  uint32_t x = 0;
+  uint32_t y = 0;
+  uint32_t z = 0;
+  std::tie(x, y, z) = f.workgroup_size();
+  EXPECT_EQ(x, 2u);
+  EXPECT_EQ(y, 4u);
+  EXPECT_EQ(z, 6u);
+}
+
 }  // namespace
 }  // namespace ast
 }  // namespace tint

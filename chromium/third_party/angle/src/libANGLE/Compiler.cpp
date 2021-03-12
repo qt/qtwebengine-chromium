@@ -110,7 +110,9 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     mResources.ANGLE_multi_draw                = extensions.multiDraw;
     mResources.ANGLE_base_vertex_base_instance = extensions.baseVertexBaseInstance;
     mResources.APPLE_clip_distance             = extensions.clipDistanceAPPLE;
-
+    // OES_shader_multisample_interpolation
+    mResources.OES_shader_multisample_interpolation = extensions.multisampleInterpolationOES;
+    mResources.OES_shader_image_atomic              = extensions.shaderImageAtomicOES;
     // TODO: use shader precision caps to determine if high precision is supported?
     mResources.FragmentPrecisionHigh = 1;
     mResources.EXT_frag_depth        = extensions.fragDepth;
@@ -135,6 +137,10 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
 
     // EXT_shadow_samplers
     mResources.EXT_shadow_samplers = extensions.shadowSamplersEXT;
+
+    // OES_texture_buffer
+    mResources.OES_texture_buffer = extensions.textureBufferOES;
+    mResources.EXT_texture_buffer = extensions.textureBufferEXT;
 
     // GLSL ES 3.0 constants
     mResources.MaxVertexOutputVectors  = caps.maxVertexOutputComponents / 4;

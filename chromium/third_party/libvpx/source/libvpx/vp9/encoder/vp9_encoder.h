@@ -15,6 +15,7 @@
 
 #include "./vpx_config.h"
 #include "vpx/internal/vpx_codec_internal.h"
+#include "vpx/vpx_ext_ratectrl.h"
 #include "vpx/vp8cx.h"
 #if CONFIG_INTERNAL_STATS
 #include "vpx_dsp/ssim.h"
@@ -38,6 +39,7 @@
 #include "vp9/encoder/vp9_context_tree.h"
 #include "vp9/encoder/vp9_encodemb.h"
 #include "vp9/encoder/vp9_ethread.h"
+#include "vp9/encoder/vp9_ext_ratectrl.h"
 #include "vp9/encoder/vp9_firstpass.h"
 #include "vp9/encoder/vp9_job_queue.h"
 #include "vp9/encoder/vp9_lookahead.h"
@@ -146,6 +148,12 @@ typedef enum {
   kLowVarHighSumdiff = 5,
   kVeryHighSad = 6,
 } CONTENT_STATE_SB;
+
+typedef enum {
+  LOOPFILTER_ALL = 0,
+  LOOPFILTER_REFERENCE = 1,  // Disable loopfilter on non reference frames.
+  NO_LOOPFILTER = 2,         // Disable loopfilter on all frames.
+} LOOPFILTER_CONTROL;
 
 typedef struct VP9EncoderConfig {
   BITSTREAM_PROFILE profile;
@@ -958,6 +966,8 @@ typedef struct VP9_COMP {
 
   int multi_layer_arf;
   vpx_roi_map_t roi;
+
+  LOOPFILTER_CONTROL loopfilter_ctrl;
 #if CONFIG_RATE_CTRL
   ENCODE_COMMAND encode_command;
   PARTITION_INFO *partition_info;
@@ -966,6 +976,7 @@ typedef struct VP9_COMP {
 
   RATE_QSTEP_MODEL rq_model[ENCODE_FRAME_TYPES];
 #endif
+  EXT_RATECTRL ext_ratectrl;
 } VP9_COMP;
 
 #if CONFIG_RATE_CTRL

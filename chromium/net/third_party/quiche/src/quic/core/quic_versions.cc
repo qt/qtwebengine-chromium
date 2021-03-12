@@ -6,6 +6,9 @@
 
 #include <string>
 
+#include "absl/base/macros.h"
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_random.h"
 #include "net/third_party/quiche/src/quic/core/quic_tag.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
@@ -13,10 +16,9 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_endian.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
+#include "net/third_party/quiche/src/common/quiche_endian.h"
 
 namespace quic {
 namespace {
@@ -328,14 +330,12 @@ ParsedQuicVersion ParseQuicVersionLabel(QuicVersionLabel version_label) {
   return UnsupportedQuicVersion();
 }
 
-ParsedQuicVersion ParseQuicVersionString(
-    quiche::QuicheStringPiece version_string) {
+ParsedQuicVersion ParseQuicVersionString(absl::string_view version_string) {
   if (version_string.empty()) {
     return UnsupportedQuicVersion();
   }
   int quic_version_number = 0;
-  if (quiche::QuicheTextUtils::StringToInt(version_string,
-                                           &quic_version_number) &&
+  if (absl::SimpleAtoi(version_string, &quic_version_number) &&
       quic_version_number > 0) {
     QuicTransportVersion transport_version =
         static_cast<QuicTransportVersion>(quic_version_number);
@@ -374,11 +374,11 @@ ParsedQuicVersion ParseQuicVersionString(
 }
 
 ParsedQuicVersionVector ParseQuicVersionVectorString(
-    quiche::QuicheStringPiece versions_string) {
+    absl::string_view versions_string) {
   ParsedQuicVersionVector versions;
-  std::vector<quiche::QuicheStringPiece> version_strings =
-      quiche::QuicheTextUtils::Split(versions_string, ',');
-  for (quiche::QuicheStringPiece version_string : version_strings) {
+  std::vector<absl::string_view> version_strings =
+      absl::StrSplit(versions_string, ',');
+  for (absl::string_view version_string : version_strings) {
     quiche::QuicheTextUtils::RemoveLeadingAndTrailingWhitespace(
         &version_string);
     ParsedQuicVersion version = ParseQuicVersionString(version_string);
@@ -664,6 +664,9 @@ std::string AlpnForVersion(ParsedQuicVersion parsed_version) {
 void QuicVersionInitializeSupportForIetfDraft() {
   // Enable necessary flags.
   SetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2, true);
+  SetQuicReloadableFlag(quic_key_update_supported, true);
+  SetQuicReloadableFlag(quic_send_version_negotiation_for_short_connection_ids,
+                        true);
 }
 
 void QuicEnableVersion(const ParsedQuicVersion& version) {

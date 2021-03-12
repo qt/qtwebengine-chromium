@@ -24,13 +24,21 @@ namespace {
 
 TEST_F(ParserImplTest, StructDecl_Parses) {
   auto* p = parser(R"(
-struct {
+struct S {
   a : i32;
-  [[offset 4 ]] b : f32;
+  [[offset(4)]] b : f32;
 })");
-  auto s = p->struct_decl();
-  ASSERT_FALSE(p->has_error());
-  ASSERT_NE(s, nullptr);
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_FALSE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 0u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_FALSE(p->has_error());
+  EXPECT_FALSE(s.errored);
+  EXPECT_TRUE(s.matched);
+  ASSERT_NE(s.value, nullptr);
+  ASSERT_EQ(s->name(), "S");
   ASSERT_EQ(s->impl()->members().size(), 2u);
   EXPECT_EQ(s->impl()->members()[0]->name(), "a");
   EXPECT_EQ(s->impl()->members()[1]->name(), "b");
@@ -38,56 +46,145 @@ struct {
 
 TEST_F(ParserImplTest, StructDecl_ParsesWithDecoration) {
   auto* p = parser(R"(
-[[block]] struct {
+[[block]] struct B {
   a : f32;
   b : f32;
 })");
-  auto s = p->struct_decl();
-  ASSERT_FALSE(p->has_error());
-  ASSERT_NE(s, nullptr);
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_TRUE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 1u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_FALSE(p->has_error());
+  EXPECT_FALSE(s.errored);
+  EXPECT_TRUE(s.matched);
+  ASSERT_NE(s.value, nullptr);
+  ASSERT_EQ(s->name(), "B");
   ASSERT_EQ(s->impl()->members().size(), 2u);
   EXPECT_EQ(s->impl()->members()[0]->name(), "a");
   EXPECT_EQ(s->impl()->members()[1]->name(), "b");
+  ASSERT_EQ(s->impl()->decorations().size(), 1u);
+  EXPECT_TRUE(s->impl()->decorations()[0]->IsBlock());
+}
+
+TEST_F(ParserImplTest, StructDecl_ParsesWithMultipleDecoration) {
+  auto* p = parser(R"(
+[[block]]
+[[block]] struct S {
+  a : f32;
+  b : f32;
+})");
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_TRUE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 2u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_FALSE(p->has_error());
+  EXPECT_FALSE(s.errored);
+  EXPECT_TRUE(s.matched);
+  ASSERT_NE(s.value, nullptr);
+  ASSERT_EQ(s->name(), "S");
+  ASSERT_EQ(s->impl()->members().size(), 2u);
+  EXPECT_EQ(s->impl()->members()[0]->name(), "a");
+  EXPECT_EQ(s->impl()->members()[1]->name(), "b");
+  ASSERT_EQ(s->impl()->decorations().size(), 2u);
+  EXPECT_TRUE(s->impl()->decorations()[0]->IsBlock());
+  EXPECT_TRUE(s->impl()->decorations()[1]->IsBlock());
 }
 
 TEST_F(ParserImplTest, StructDecl_EmptyMembers) {
-  auto* p = parser("struct {}");
-  auto s = p->struct_decl();
-  ASSERT_FALSE(p->has_error());
-  ASSERT_NE(s, nullptr);
+  auto* p = parser("struct S {}");
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_FALSE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 0u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_FALSE(p->has_error());
+  EXPECT_FALSE(s.errored);
+  EXPECT_TRUE(s.matched);
+  ASSERT_NE(s.value, nullptr);
   ASSERT_EQ(s->impl()->members().size(), 0u);
 }
 
+TEST_F(ParserImplTest, StructDecl_MissingIdent) {
+  auto* p = parser("struct {}");
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_FALSE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 0u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_TRUE(s.errored);
+  EXPECT_FALSE(s.matched);
+  EXPECT_EQ(s.value, nullptr);
+
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:8: expected identifier for struct declaration");
+}
+
 TEST_F(ParserImplTest, StructDecl_MissingBracketLeft) {
-  auto* p = parser("struct }");
-  auto s = p->struct_decl();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(s, nullptr);
-  EXPECT_EQ(p->error(), "1:8: missing { for struct declaration");
+  auto* p = parser("struct S }");
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_FALSE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 0u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_TRUE(s.errored);
+  EXPECT_FALSE(s.matched);
+  EXPECT_EQ(s.value, nullptr);
+
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:10: expected '{' for struct declaration");
 }
 
 TEST_F(ParserImplTest, StructDecl_InvalidStructBody) {
-  auto* p = parser("struct { a : B; }");
-  auto s = p->struct_decl();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(s, nullptr);
-  EXPECT_EQ(p->error(), "1:14: unknown type alias 'B'");
+  auto* p = parser("struct S { a : B; }");
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_FALSE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 0u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_TRUE(s.errored);
+  EXPECT_FALSE(s.matched);
+  EXPECT_EQ(s.value, nullptr);
+
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:16: unknown constructed type 'B'");
 }
 
 TEST_F(ParserImplTest, StructDecl_InvalidStructDecorationDecl) {
-  auto* p = parser("[[block struct { a : i32; }");
-  auto s = p->struct_decl();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(s, nullptr);
-  EXPECT_EQ(p->error(), "1:9: missing ]] for struct decoration");
+  auto* p = parser("[[block struct S { a : i32; }");
+  auto decos = p->decoration_list();
+  EXPECT_TRUE(decos.errored);
+  EXPECT_FALSE(decos.matched);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_FALSE(s.errored);
+  EXPECT_TRUE(s.matched);
+  EXPECT_NE(s.value, nullptr);
+
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:9: expected ']]' for decoration list");
 }
 
 TEST_F(ParserImplTest, StructDecl_MissingStruct) {
-  auto* p = parser("[[block]] {}");
-  auto s = p->struct_decl();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(s, nullptr);
-  EXPECT_EQ(p->error(), "1:11: missing struct declaration");
+  auto* p = parser("[[block]] S {}");
+  auto decos = p->decoration_list();
+  EXPECT_FALSE(decos.errored);
+  EXPECT_TRUE(decos.matched);
+  ASSERT_EQ(decos.value.size(), 1u);
+
+  auto s = p->struct_decl(decos.value);
+  EXPECT_FALSE(s.errored);
+  EXPECT_FALSE(s.matched);
+  EXPECT_EQ(s.value, nullptr);
+
+  EXPECT_FALSE(p->has_error());
 }
 
 }  // namespace

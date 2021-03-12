@@ -4,6 +4,7 @@
 
 #include "net/third_party/quiche/src/quic/core/http/quic_spdy_server_stream_base.h"
 
+#include "net/third_party/quiche/src/quic/core/crypto/null_encrypter.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_spdy_session_peer.h"
@@ -33,6 +34,9 @@ class QuicSpdyServerStreamBaseTest : public QuicTest {
                                         &alarm_factory_,
                                         Perspective::IS_SERVER)) {
     session_.Initialize();
+    session_.connection()->SetEncrypter(
+        ENCRYPTION_FORWARD_SECURE,
+        std::make_unique<NullEncrypter>(session_.perspective()));
     stream_ =
         new TestQuicSpdyServerStream(GetNthClientInitiatedBidirectionalStreamId(
                                          session_.transport_version(), 0),
@@ -50,7 +54,19 @@ class QuicSpdyServerStreamBaseTest : public QuicTest {
 TEST_F(QuicSpdyServerStreamBaseTest,
        SendQuicRstStreamNoErrorWithEarlyResponse) {
   stream_->StopReading();
-  EXPECT_CALL(session_, SendRstStream(_, QUIC_STREAM_NO_ERROR, _, _)).Times(1);
+
+  if (!session_.split_up_send_rst()) {
+    EXPECT_CALL(session_, SendRstStream(_, QUIC_STREAM_NO_ERROR, _, _))
+        .Times(1);
+  } else {
+    if (session_.version().UsesHttp3()) {
+      EXPECT_CALL(session_, MaybeSendStopSendingFrame(_, QUIC_STREAM_NO_ERROR))
+          .Times(1);
+    } else {
+      EXPECT_CALL(session_, MaybeSendRstStreamFrame(_, QUIC_STREAM_NO_ERROR, _))
+          .Times(1);
+    }
+  }
   QuicStreamPeer::SetFinSent(stream_);
   stream_->CloseWriteSide();
 }
@@ -61,14 +77,25 @@ TEST_F(QuicSpdyServerStreamBaseTest,
 
   EXPECT_CALL(session_, SendRstStream(_, QUIC_STREAM_NO_ERROR, _, _)).Times(0);
 
-  EXPECT_CALL(
-      session_,
-      SendRstStream(_,
+  if (!session_.split_up_send_rst()) {
+    EXPECT_CALL(
+        session_,
+        SendRstStream(_,
+                      VersionHasIetfQuicFrames(session_.transport_version())
+                          ? QUIC_STREAM_CANCELLED
+                          : QUIC_RST_ACKNOWLEDGEMENT,
+                      _, _))
+        .Times(1);
+  } else {
+    EXPECT_CALL(session_,
+                MaybeSendRstStreamFrame(
+                    _,
                     VersionHasIetfQuicFrames(session_.transport_version())
                         ? QUIC_STREAM_CANCELLED
                         : QUIC_RST_ACKNOWLEDGEMENT,
-                    _, _))
-      .Times(1);
+                    _))
+        .Times(1);
+  }
   QuicRstStreamFrame rst_frame(kInvalidControlFrameId, stream_->id(),
                                QUIC_STREAM_CANCELLED, 1234);
   stream_->OnStreamReset(rst_frame);

@@ -13,6 +13,7 @@
 
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "third_party/base/notreached.h"
 #include "third_party/base/stl_util.h"
 #include "xfa/fgas/crt/cfgas_decimal.h"
 #include "xfa/fgas/crt/locale_mgr_iface.h"
@@ -727,9 +728,7 @@ CFGAS_StringFormatter::DateTimeType AddDateToDatelessType(
       return CFGAS_StringFormatter::DateTimeType::kDate;
     case CFGAS_StringFormatter::DateTimeType::kTime:
       return CFGAS_StringFormatter::DateTimeType::kTimeDate;
-    case CFGAS_StringFormatter::DateTimeType::kDate:
-    case CFGAS_StringFormatter::DateTimeType::kDateTime:
-    case CFGAS_StringFormatter::DateTimeType::kTimeDate:
+    default:
       NOTREACHED();
       return type;
   }
@@ -742,9 +741,7 @@ CFGAS_StringFormatter::DateTimeType AddTimeToTimelessType(
       return CFGAS_StringFormatter::DateTimeType::kTime;
     case CFGAS_StringFormatter::DateTimeType::kDate:
       return CFGAS_StringFormatter::DateTimeType::kDateTime;
-    case CFGAS_StringFormatter::DateTimeType::kTime:
-    case CFGAS_StringFormatter::DateTimeType::kDateTime:
-    case CFGAS_StringFormatter::DateTimeType::kTimeDate:
+    default:
       NOTREACHED();
       return type;
   }
@@ -1046,8 +1043,6 @@ LocaleIface* CFGAS_StringFormatter::GetNumericFormat(
           }
           if (!pLocale)
             pLocale = pLocaleMgr->GetDefLocale();
-
-          ASSERT(pLocale);
 
           wsSubCategory = pLocale->GetNumPattern(eSubCategory);
           auto result = wsSubCategory.Find('.');
@@ -1658,7 +1653,6 @@ CFGAS_StringFormatter::DateTimeType CFGAS_StringFormatter::GetDateTimeFormat(
           }
           if (!*pLocale)
             *pLocale = pLocaleMgr->GetDefLocale();
-          ASSERT(*pLocale);
 
           switch (eCategory) {
             case Category::kDate:

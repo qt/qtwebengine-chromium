@@ -439,6 +439,26 @@ int ff_h264_update_thread_context(AVCodecContext *dst,
             return AVERROR(ENOMEM);
     }
 
+    for (i = 0; i < h->sei.unregistered.nb_buf_ref; i++)
+        av_buffer_unref(&h->sei.unregistered.buf_ref[i]);
+    h->sei.unregistered.nb_buf_ref = 0;
+
+    if (h1->sei.unregistered.nb_buf_ref) {
+        ret = av_reallocp_array(&h->sei.unregistered.buf_ref,
+                                h1->sei.unregistered.nb_buf_ref,
+                                sizeof(*h->sei.unregistered.buf_ref));
+        if (ret < 0)
+            return ret;
+
+        for (i = 0; i < h1->sei.unregistered.nb_buf_ref; i++) {
+            h->sei.unregistered.buf_ref[i] = av_buffer_ref(h1->sei.unregistered.buf_ref[i]);
+            if (!h->sei.unregistered.buf_ref[i])
+                return AVERROR(ENOMEM);
+            h->sei.unregistered.nb_buf_ref++;
+        }
+    }
+    h->sei.unregistered.x264_build = h1->sei.unregistered.x264_build;
+
     if (!h->cur_pic_ptr)
         return 0;
 
@@ -1325,7 +1345,7 @@ static int h264_export_frame_props(H264Context *h)
             int   ff = h->sei.picture_timing.timecode[i].frame;
 
             tc_sd[i + 1] = av_timecode_get_smpte(h->avctx->framerate, drop, hh, mm, ss, ff);
-            av_timecode_make_smpte_tc_string(tcbuf, tc_sd[i + 1], 0);
+            av_timecode_make_smpte_tc_string2(tcbuf, h->avctx->framerate, tc_sd[i + 1], 0, 0);
             av_dict_set(&out->metadata, "timecode", tcbuf, 0);
         }
         h->sei.picture_timing.timecode_cnt = 0;

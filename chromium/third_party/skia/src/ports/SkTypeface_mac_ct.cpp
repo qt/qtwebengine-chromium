@@ -37,6 +37,7 @@
 #include "include/private/SkMutex.h"
 #include "include/private/SkOnce.h"
 #include "include/private/SkTDArray.h"
+#include "include/private/SkTPin.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
@@ -645,7 +646,9 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface_Mac::onGetAdvancedMetrics(
     // fonts always have both glyf and loca tables. At the least, this is what
     // sfntly needs to subset the font. CTFontCopyAttribute() does not always
     // succeed in determining this directly.
-    if (!this->getTableSize('glyf') || !this->getTableSize('loca')) {
+    if (!this->getTableSize(SkSetFourByteTag('g','l','y','f')) ||
+        !this->getTableSize(SkSetFourByteTag('l','o','c','a')))
+    {
         return info;
     }
 

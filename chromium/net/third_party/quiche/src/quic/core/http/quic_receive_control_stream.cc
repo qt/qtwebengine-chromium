@@ -6,13 +6,15 @@
 
 #include <utility>
 
+#include "absl/strings/numbers.h"
+#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/http/http_constants.h"
 #include "net/third_party/quiche/src/quic/core/http/http_decoder.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_spdy_session.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
 
 namespace quic {
@@ -142,7 +144,7 @@ bool QuicReceiveControlStream::OnDataFrameStart(QuicByteCount /*header_length*/,
 }
 
 bool QuicReceiveControlStream::OnDataFramePayload(
-    quiche::QuicheStringPiece /*payload*/) {
+    absl::string_view /*payload*/) {
   OnWrongFrame("Data");
   return false;
 }
@@ -161,7 +163,7 @@ bool QuicReceiveControlStream::OnHeadersFrameStart(
 }
 
 bool QuicReceiveControlStream::OnHeadersFramePayload(
-    quiche::QuicheStringPiece /*payload*/) {
+    absl::string_view /*payload*/) {
   OnWrongFrame("Headers");
   return false;
 }
@@ -186,7 +188,7 @@ bool QuicReceiveControlStream::OnPushPromiseFramePushId(
 }
 
 bool QuicReceiveControlStream::OnPushPromiseFramePayload(
-    quiche::QuicheStringPiece /*payload*/) {
+    absl::string_view /*payload*/) {
   OnWrongFrame("Push Promise");
   return false;
 }
@@ -214,23 +216,23 @@ bool QuicReceiveControlStream::OnPriorityUpdateFrame(
   }
 
   // TODO(b/147306124): Use a proper structured headers parser instead.
-  for (auto key_value :
-       quiche::QuicheTextUtils::Split(frame.priority_field_value, ',')) {
-    auto key_and_value = quiche::QuicheTextUtils::Split(key_value, '=');
+  for (absl::string_view key_value :
+       absl::StrSplit(frame.priority_field_value, ',')) {
+    std::vector<absl::string_view> key_and_value =
+        absl::StrSplit(key_value, '=');
     if (key_and_value.size() != 2) {
       continue;
     }
 
-    quiche::QuicheStringPiece key = key_and_value[0];
+    absl::string_view key = key_and_value[0];
     quiche::QuicheTextUtils::RemoveLeadingAndTrailingWhitespace(&key);
     if (key != "u") {
       continue;
     }
 
-    quiche::QuicheStringPiece value = key_and_value[1];
+    absl::string_view value = key_and_value[1];
     int urgency;
-    if (!quiche::QuicheTextUtils::StringToInt(value, &urgency) || urgency < 0 ||
-        urgency > 7) {
+    if (!absl::SimpleAtoi(value, &urgency) || urgency < 0 || urgency > 7) {
       stream_delegate()->OnStreamError(
           QUIC_INVALID_STREAM_ID,
           "Invalid value for PRIORITY_UPDATE urgency parameter.");
@@ -269,7 +271,7 @@ bool QuicReceiveControlStream::OnUnknownFrameStart(
 }
 
 bool QuicReceiveControlStream::OnUnknownFramePayload(
-    quiche::QuicheStringPiece /*payload*/) {
+    absl::string_view /*payload*/) {
   // Ignore unknown frame types.
   return true;
 }
@@ -279,8 +281,7 @@ bool QuicReceiveControlStream::OnUnknownFrameEnd() {
   return true;
 }
 
-void QuicReceiveControlStream::OnWrongFrame(
-    quiche::QuicheStringPiece frame_type) {
+void QuicReceiveControlStream::OnWrongFrame(absl::string_view frame_type) {
   OnUnrecoverableError(
       QUIC_HTTP_FRAME_UNEXPECTED_ON_CONTROL_STREAM,
       quiche::QuicheStrCat(frame_type, " frame received on control stream"));

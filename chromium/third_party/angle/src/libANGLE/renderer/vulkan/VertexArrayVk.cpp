@@ -445,10 +445,13 @@ angle::Result VertexArrayVk::syncState(const gl::Context *context,
         switch (dirtyBit)
         {
             case gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER:
+            case gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER_DATA:
             {
                 gl::Buffer *bufferGL = mState.getElementArrayBuffer();
                 if (bufferGL)
                 {
+                    // Note that just updating buffer data may still result in a new
+                    // vk::BufferHelper allocation.
                     BufferVk *bufferVk         = vk::GetImpl(bufferGL);
                     mCurrentElementArrayBuffer = &bufferVk->getBuffer();
                 }
@@ -463,13 +466,6 @@ angle::Result VertexArrayVk::syncState(const gl::Context *context,
                 mDirtyLineLoopTranslation = true;
                 break;
             }
-
-            case gl::VertexArray::DIRTY_BIT_ELEMENT_ARRAY_BUFFER_DATA:
-                mLineLoopBufferFirstIndex.reset();
-                mLineLoopBufferLastIndex.reset();
-                ANGLE_TRY(contextVk->onIndexBufferChange(mCurrentElementArrayBuffer));
-                mDirtyLineLoopTranslation = true;
-                break;
 
 #define ANGLE_VERTEX_DIRTY_ATTRIB_FUNC(INDEX)                                                 \
     case gl::VertexArray::DIRTY_BIT_ATTRIB_0 + INDEX:                                         \
@@ -579,14 +575,6 @@ angle::Result VertexArrayVk::syncDirtyAttrib(ContextVk *contextVk,
             bool bindingIsAligned               = BindingIsAligned(
                 binding, intendedFormat, intendedFormat.channelCount, attrib.relativeOffset);
 
-            if (renderer->getFeatures().compressVertexData.enabled &&
-                gl::IsStaticBufferUsage(bufferGL->getUsage()) &&
-                vertexFormat.actualCompressedBufferFormatID != angle::FormatID::NONE &&
-                vertexFormat.actualBufferFormatID != vertexFormat.actualCompressedBufferFormatID)
-            {
-                compressed = true;
-            }
-
             if (vertexFormat.getVertexLoadRequiresConversion(compressed) || !bindingIsAligned)
             {
                 ConversionBuffer *conversion = bufferVk->getVertexConversionBuffer(
@@ -594,13 +582,6 @@ angle::Result VertexArrayVk::syncDirtyAttrib(ContextVk *contextVk,
                     binding.getOffset() + attrib.relativeOffset, !bindingIsAligned);
                 if (conversion->dirty)
                 {
-                    if (compressed)
-                    {
-                        INFO() << "Compressing vertex data in buffer " << bufferGL->id().value
-                               << " from " << vertexFormat.vkBufferFormat << " to "
-                               << vertexFormat.vkCompressedBufferFormat << ".";
-                    }
-
                     if (bindingIsAligned)
                     {
                         ANGLE_TRY(convertVertexBufferGPU(contextVk, bufferVk, binding, attribIndex,

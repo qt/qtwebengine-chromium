@@ -14,7 +14,6 @@
 
 #include <memory>
 
-#include "src/ast/entry_point.h"
 #include "src/ast/function.h"
 #include "src/ast/identifier_expression.h"
 #include "src/ast/module.h"
@@ -28,18 +27,16 @@ namespace {
 
 using HlslGeneratorImplTest = TestHelper;
 
-TEST_F(HlslGeneratorImplTest, DISABLED_Generate) {
+TEST_F(HlslGeneratorImplTest, Generate) {
   ast::type::VoidType void_type;
-  mod()->AddFunction(std::make_unique<ast::Function>(
-      "my_func", ast::VariableList{}, &void_type));
-  mod()->AddEntryPoint(std::make_unique<ast::EntryPoint>(
-      ast::PipelineStage::kFragment, "my_func", ""));
+  auto func = std::make_unique<ast::Function>("my_func", ast::VariableList{},
+                                              &void_type);
+  mod()->AddFunction(std::move(func));
 
   ASSERT_TRUE(gen().Generate(out())) << gen().error();
-  EXPECT_EQ(result(), R"(#import <metal_lib>
-
-void my_func() {
+  EXPECT_EQ(result(), R"(void my_func() {
 }
+
 )");
 }
 
@@ -59,7 +56,7 @@ TEST_F(HlslGeneratorImplTest, NameConflictWith_InputStructName) {
   ASSERT_EQ(gen().generate_name("func_main_in"), "func_main_in");
 
   ast::IdentifierExpression ident("func_main_in");
-  ASSERT_TRUE(gen().EmitIdentifier(out(), &ident));
+  ASSERT_TRUE(gen().EmitIdentifier(pre(), out(), &ident));
   EXPECT_EQ(result(), "func_main_in_0");
 }
 
@@ -88,7 +85,6 @@ INSTANTIATE_TEST_SUITE_P(
         HlslBuiltinData{ast::Builtin::kFrontFacing, "SV_IsFrontFacing"},
         HlslBuiltinData{ast::Builtin::kFragCoord, "SV_Position"},
         HlslBuiltinData{ast::Builtin::kFragDepth, "SV_Depth"},
-        HlslBuiltinData{ast::Builtin::kWorkgroupSize, ""},
         HlslBuiltinData{ast::Builtin::kLocalInvocationId, "SV_GroupThreadID"},
         HlslBuiltinData{ast::Builtin::kLocalInvocationIdx, "SV_GroupIndex"},
         HlslBuiltinData{ast::Builtin::kGlobalInvocationId,

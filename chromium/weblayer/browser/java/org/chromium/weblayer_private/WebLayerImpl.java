@@ -42,9 +42,9 @@ import org.chromium.base.TraceEvent;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
 import org.chromium.base.annotations.NativeMethods;
-import org.chromium.base.compat.ApiHelperForO;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.LibraryProcessType;
+import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.components.browser_ui.contacts_picker.ContactsPickerDialog;
 import org.chromium.components.browser_ui.photo_picker.DecoderServiceHost;
 import org.chromium.components.browser_ui.photo_picker.ImageDecoder;
@@ -78,6 +78,7 @@ import org.chromium.weblayer_private.interfaces.IWebLayerClient;
 import org.chromium.weblayer_private.interfaces.ObjectWrapper;
 import org.chromium.weblayer_private.interfaces.StrictModeWorkaround;
 import org.chromium.weblayer_private.media.MediaRouteDialogFragmentImpl;
+import org.chromium.weblayer_private.media.MediaRouterClientImpl;
 import org.chromium.weblayer_private.media.MediaSessionManager;
 import org.chromium.weblayer_private.media.MediaStreamManager;
 import org.chromium.weblayer_private.metrics.MetricsServiceClient;
@@ -117,7 +118,7 @@ public final class WebLayerImpl extends IWebLayer.Stub {
     // The required package ID for WebLayer when loaded as a shared library, hardcoded in the
     // resources. If this value changes make sure to change _SHARED_LIBRARY_HARDCODED_ID in
     // //build/android/gyp/util/protoresources.py.
-    private static final int REQUIRED_PACKAGE_IDENTIFIER = 12;
+    private static final int REQUIRED_PACKAGE_IDENTIFIER = 36;
 
     private final ProfileManager mProfileManager = new ProfileManager();
 
@@ -217,7 +218,6 @@ public final class WebLayerImpl extends IWebLayer.Stub {
             notifyWebViewRunningInProcess(remoteContext.getClassLoader());
         }
 
-        remoteContext = processRemoteContext(remoteContext);
         Context appContext = minimalInitForContext(
                 ObjectWrapper.unwrap(appContextWrapper, Context.class), remoteContext);
         PackageInfo packageInfo = WebViewFactory.getLoadedPackageInfo();
@@ -379,7 +379,7 @@ public final class WebLayerImpl extends IWebLayer.Stub {
         StrictModeWorkaround.apply();
         // This is a no-op if init has already happened.
         minimalInitForContext(ObjectWrapper.unwrap(appContext, Context.class),
-                processRemoteContext(ObjectWrapper.unwrap(remoteContext, Context.class)));
+                ObjectWrapper.unwrap(remoteContext, Context.class));
         return CrashReporterControllerImpl.getInstance();
     }
 
@@ -411,13 +411,26 @@ public final class WebLayerImpl extends IWebLayer.Stub {
     }
 
     @Override
+    public void onRemoteMediaServiceStarted(IObjectWrapper sessionService, Intent intent) {
+        StrictModeWorkaround.apply();
+        MediaRouterClientImpl.serviceStarted(
+                ObjectWrapper.unwrap(sessionService, Service.class), intent);
+    }
+
+    @Override
+    public void onRemoteMediaServiceDestroyed(int id) {
+        StrictModeWorkaround.apply();
+        MediaRouterClientImpl.serviceDestroyed(id);
+    }
+
+    @Override
     public IBinder initializeImageDecoder(IObjectWrapper appContext, IObjectWrapper remoteContext) {
         StrictModeWorkaround.apply();
 
         assert ContextUtils.getApplicationContext() == null;
         CommandLine.init(null);
         minimalInitForContext(ObjectWrapper.unwrap(appContext, Context.class),
-                processRemoteContext(ObjectWrapper.unwrap(remoteContext, Context.class)));
+                ObjectWrapper.unwrap(remoteContext, Context.class));
         LibraryLoader.getInstance().setLibraryProcessType(
                 LibraryProcessType.PROCESS_WEBLAYER_CHILD);
         LibraryLoader.getInstance().ensureInitialized();
@@ -439,6 +452,19 @@ public final class WebLayerImpl extends IWebLayer.Stub {
     public void setClient(IWebLayerClient client) {
         StrictModeWorkaround.apply();
         sClient = client;
+
+        if (WebLayerFactoryImpl.getClientMajorVersion() >= 88) {
+            try {
+                RecordHistogram.recordTimesHistogram("WebLayer.Startup.ClassLoaderCreationTime",
+                        sClient.getClassLoaderCreationTime());
+                RecordHistogram.recordTimesHistogram(
+                        "WebLayer.Startup.ContextCreationTime", sClient.getContextCreationTime());
+                RecordHistogram.recordTimesHistogram("WebLayer.Startup.WebLayerLoaderCreationTime",
+                        sClient.getWebLayerLoaderCreationTime());
+            } catch (RemoteException e) {
+                throw new APICallException(e);
+            }
+        }
     }
 
     @Override
@@ -501,6 +527,42 @@ public final class WebLayerImpl extends IWebLayer.Stub {
 
         try {
             return sClient.getMediaSessionNotificationId();
+        } catch (RemoteException e) {
+            throw new APICallException(e);
+        }
+    }
+
+    public static Intent createRemoteMediaServiceIntent() {
+        if (sClient == null) {
+            throw new IllegalStateException("WebLayer should have been initialized already.");
+        }
+
+        try {
+            return sClient.createRemoteMediaServiceIntent();
+        } catch (RemoteException e) {
+            throw new APICallException(e);
+        }
+    }
+
+    public static int getPresentationApiNotificationId() {
+        if (sClient == null) {
+            throw new IllegalStateException("WebLayer should have been initialized already.");
+        }
+
+        try {
+            return sClient.getPresentationApiNotificationId();
+        } catch (RemoteException e) {
+            throw new APICallException(e);
+        }
+    }
+
+    public static int getRemotePlaybackApiNotificationId() {
+        if (sClient == null) {
+            throw new IllegalStateException("WebLayer should have been initialized already.");
+        }
+
+        try {
+            return sClient.getRemotePlaybackApiNotificationId();
         } catch (RemoteException e) {
             throw new APICallException(e);
         }
@@ -606,6 +668,10 @@ public final class WebLayerImpl extends IWebLayer.Stub {
 
     /** Forces adding entries to the package identifiers array until we hit the required ID. */
     private static void forceAddAssetPaths(Context remoteContext, int packageId) {
+        if (packageId > REQUIRED_PACKAGE_IDENTIFIER) {
+            throw new AndroidRuntimeException(
+                    "WebLayer package ID too large, aborting: " + packageId);
+        }
         try {
             Method addAssetPath = AssetManager.class.getMethod("addAssetPath", String.class);
             String path = remoteContext.getApplicationInfo().sourceDir;
@@ -821,18 +887,6 @@ public final class WebLayerImpl extends IWebLayer.Stub {
         } catch (Exception e) {
             Log.w(TAG, "Unable to notify WebView running in process.");
         }
-    }
-
-    private static Context processRemoteContext(Context remoteContext) {
-        // If WebLayer is in a DFM, make sure the correct resources are used.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                return ApiHelperForO.createContextForSplit(remoteContext, "weblayer");
-            } catch (PackageManager.NameNotFoundException e) {
-                // WebLayer is not in a split, the original context will have the resources.
-            }
-        }
-        return remoteContext;
     }
 
     private static Context createContextForMode(Context remoteContext, int uiMode) {

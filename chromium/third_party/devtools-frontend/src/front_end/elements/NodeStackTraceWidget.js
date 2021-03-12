@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Components from '../components/components.js';
 import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
@@ -15,7 +12,7 @@ import * as UI from '../ui/ui.js';
 export class NodeStackTraceWidget extends UI.ThrottledWidget.ThrottledWidget {
   constructor() {
     super(true /* isWebComponent */);
-    this.registerRequiredCSS('elements/nodeStackTraceWidget.css');
+    this.registerRequiredCSS('elements/nodeStackTraceWidget.css', {enableLegacyPatching: true});
 
     this._noStackTraceElement = this.contentElement.createChild('div', 'gray-info-message');
     this._noStackTraceElement.textContent = ls`No stack trace available`;
@@ -42,7 +39,7 @@ export class NodeStackTraceWidget extends UI.ThrottledWidget.ThrottledWidget {
   /**
    * @override
    * @protected
-   * @return {!Promise<undefined>}
+   * @return {!Promise<void>}
    */
   async doUpdate() {
     const node = UI.Context.Context.instance().flavor(SDK.DOMModel.DOMNode);
@@ -59,7 +56,8 @@ export class NodeStackTraceWidget extends UI.ThrottledWidget.ThrottledWidget {
       this._creationStackTraceElement.classList.remove('hidden');
 
       const stackTracePreview = Components.JSPresentationUtils.buildStackTracePreviewContents(
-          node.domModel().target(), this._linkifier, {stackTrace: creationStackTrace});
+          node.domModel().target(), this._linkifier,
+          {stackTrace: creationStackTrace, contentUpdated: undefined, tabStops: undefined});
       this._creationStackTraceElement.removeChildren();
       this._creationStackTraceElement.appendChild(stackTracePreview.element);
     } else {

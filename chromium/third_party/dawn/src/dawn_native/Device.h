@@ -33,12 +33,12 @@ namespace dawn_native {
     class AttachmentState;
     class AttachmentStateBlueprint;
     class BindGroupLayoutBase;
+    class CreateReadyPipelineTracker;
     class DynamicUploader;
     class ErrorScope;
     class ErrorScopeTracker;
-    class FenceSignalTracker;
-    class MapRequestTracker;
     class StagingBufferBase;
+    struct InternalPipelineStore;
 
     class DeviceBase {
       public:
@@ -71,8 +71,6 @@ namespace dawn_native {
         dawn_platform::Platform* GetPlatform() const;
 
         ErrorScopeTracker* GetErrorScopeTracker() const;
-        FenceSignalTracker* GetFenceSignalTracker() const;
-        MapRequestTracker* GetMapRequestTracker() const;
 
         // Returns the Format corresponding to the wgpu::TextureFormat or an error if the format
         // isn't a valid wgpu::TextureFormat or isn't supported by this device.
@@ -90,7 +88,7 @@ namespace dawn_native {
 
         ExecutionSerial GetCompletedCommandSerial() const;
         ExecutionSerial GetLastSubmittedCommandSerial() const;
-        ExecutionSerial GetFutureCallbackSerial() const;
+        ExecutionSerial GetFutureSerial() const;
         ExecutionSerial GetPendingCommandSerial() const;
         virtual MaybeError TickImpl() = 0;
 
@@ -148,7 +146,12 @@ namespace dawn_native {
         ComputePipelineBase* CreateComputePipeline(const ComputePipelineDescriptor* descriptor);
         PipelineLayoutBase* CreatePipelineLayout(const PipelineLayoutDescriptor* descriptor);
         QuerySetBase* CreateQuerySet(const QuerySetDescriptor* descriptor);
-        QueueBase* CreateQueue();
+        void CreateReadyComputePipeline(const ComputePipelineDescriptor* descriptor,
+                                        WGPUCreateReadyComputePipelineCallback callback,
+                                        void* userdata);
+        void CreateReadyRenderPipeline(const RenderPipelineDescriptor* descriptor,
+                                       WGPUCreateReadyRenderPipelineCallback callback,
+                                       void* userdata);
         RenderBundleEncoder* CreateRenderBundleEncoder(
             const RenderBundleEncoderDescriptor* descriptor);
         RenderPipelineBase* CreateRenderPipeline(const RenderPipelineDescriptor* descriptor);
@@ -158,6 +161,7 @@ namespace dawn_native {
         TextureBase* CreateTexture(const TextureDescriptor* descriptor);
         TextureViewBase* CreateTextureView(TextureBase* texture,
                                            const TextureViewDescriptor* descriptor);
+        InternalPipelineStore* GetInternalPipelineStore();
 
         // For Dawn Wire
         BufferBase* CreateErrorBuffer();
@@ -165,7 +169,7 @@ namespace dawn_native {
         QueueBase* GetDefaultQueue();
 
         void InjectError(wgpu::ErrorType type, const char* message);
-        void Tick();
+        bool Tick();
 
         void SetDeviceLostCallback(wgpu::DeviceLostCallback callback, void* userdata);
         void SetUncapturedErrorCallback(wgpu::ErrorCallback callback, void* userdata);
@@ -225,7 +229,15 @@ namespace dawn_native {
         size_t GetDeprecationWarningCountForTesting();
         void EmitDeprecationWarning(const char* warning);
         void LoseForTesting();
-        void AddFutureCallbackSerial(ExecutionSerial serial);
+
+        // AddFutureSerial is used to update the mFutureSerial with the max serial needed to be
+        // ticked in order to clean up all pending callback work or to execute asynchronous resource
+        // writes. It should be given the serial that a callback is tracked with, so that once that
+        // serial is completed, it can be resolved and cleaned up. This is so that when there is no
+        // gpu work (the last submitted serial has not moved beyond the completed serial), Tick can
+        // still check if we have pending work to take care of, rather than hanging and never
+        // reaching the serial the work will be executed on.
+        void AddFutureSerial(ExecutionSerial serial);
 
         virtual uint32_t GetOptimalBytesPerRowAlignment() const = 0;
         virtual uint64_t GetOptimalBufferToTextureCopyOffsetAlignment() const = 0;
@@ -317,17 +329,19 @@ namespace dawn_native {
         // and waiting on a serial that doesn't have a corresponding fence enqueued. Fake serials to
         // make all commands look completed.
         void AssumeCommandsComplete();
+        bool IsDeviceIdle();
+
         // mCompletedSerial tracks the last completed command serial that the fence has returned.
         // mLastSubmittedSerial tracks the last submitted command serial.
         // During device removal, the serials could be artificially incremented
         // to make it appear as if commands have been compeleted. They can also be artificially
         // incremented when no work is being done in the GPU so CPU operations don't have to wait on
         // stale serials.
-        // mFutureCallbackSerial tracks the largest serial we need to tick to for the callbacks to
-        // fire
+        // mFutureSerial tracks the largest serial we need to tick to for asynchronous commands or
+        // callbacks to fire
         ExecutionSerial mCompletedSerial = ExecutionSerial(0);
         ExecutionSerial mLastSubmittedSerial = ExecutionSerial(0);
-        ExecutionSerial mFutureCallbackSerial = ExecutionSerial(0);
+        ExecutionSerial mFutureSerial = ExecutionSerial(0);
 
         // ShutDownImpl is used to clean up and release resources used by device, does not wait for
         // GPU or check errors.
@@ -356,8 +370,7 @@ namespace dawn_native {
 
         std::unique_ptr<DynamicUploader> mDynamicUploader;
         std::unique_ptr<ErrorScopeTracker> mErrorScopeTracker;
-        std::unique_ptr<FenceSignalTracker> mFenceSignalTracker;
-        std::unique_ptr<MapRequestTracker> mMapRequestTracker;
+        std::unique_ptr<CreateReadyPipelineTracker> mCreateReadyPipelineTracker;
         Ref<QueueBase> mDefaultQueue;
 
         struct DeprecationWarnings;
@@ -373,6 +386,8 @@ namespace dawn_native {
         size_t mLazyClearCountForTesting = 0;
 
         ExtensionsSet mEnabledExtensions;
+
+        std::unique_ptr<InternalPipelineStore> mInternalPipelineStore;
     };
 
 }  // namespace dawn_native

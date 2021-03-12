@@ -6,13 +6,13 @@
 
 #include <utility>
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/quic_epoll_alarm_factory.h"
 #include "net/third_party/quiche/src/quic/core/quic_epoll_connection_helper.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_ptr_util.h"
 #include "net/third_party/quiche/src/quic/tools/quic_simple_crypto_server_stream_helper.h"
 #include "net/third_party/quiche/src/quic/tools/quic_simple_dispatcher.h"
 #include "net/third_party/quiche/src/quic/tools/quic_simple_server_session.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 
@@ -97,7 +97,7 @@ class QuicTestDispatcher : public QuicSimpleDispatcher {
       QuicConnectionId id,
       const QuicSocketAddress& self_address,
       const QuicSocketAddress& peer_address,
-      quiche::QuicheStringPiece alpn,
+      absl::string_view alpn,
       const ParsedQuicVersion& version) override {
     QuicReaderMutexLock lock(&factory_lock_);
     if (session_factory_ == nullptr && stream_factory_ == nullptr &&
@@ -106,7 +106,7 @@ class QuicTestDispatcher : public QuicSimpleDispatcher {
           id, self_address, peer_address, alpn, version);
     }
     QuicConnection* connection = new QuicConnection(
-        id, peer_address, helper(), alarm_factory(), writer(),
+        id, self_address, peer_address, helper(), alarm_factory(), writer(),
         /* owns_writer= */ false, Perspective::IS_SERVER,
         ParsedQuicVersionVector{version});
 

@@ -8,6 +8,7 @@
 #ifndef SKSL_EXPRESSION
 #define SKSL_EXPRESSION
 
+#include "include/private/SkTHash.h"
 #include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLType.h"
 
@@ -15,16 +16,17 @@
 
 namespace SkSL {
 
-struct Expression;
+class Expression;
 class IRGenerator;
-struct Variable;
+class Variable;
 
-typedef std::unordered_map<const Variable*, std::unique_ptr<Expression>*> DefinitionMap;
+using DefinitionMap = SkTHashMap<const Variable*, std::unique_ptr<Expression>*>;
 
 /**
  * Abstract supertype of all expressions.
  */
-struct Expression : public IRNode {
+class Expression : public IRNode {
+public:
     enum class Kind {
         kBinary = (int) Statement::Kind::kLast + 1,
         kBoolLiteral,
@@ -56,31 +58,18 @@ struct Expression : public IRNode {
         kContainsRTAdjust
     };
 
-    Expression(int offset, const BoolLiteralData& data)
-        : INHERITED(offset, (int) Kind::kBoolLiteral, data) {
-    }
-
-    Expression(int offset, const IntLiteralData& data)
-        : INHERITED(offset, (int) Kind::kIntLiteral, data) {
-    }
-
-    Expression(int offset, Kind kind, ExternalValueData data)
-        : INHERITED(offset, (int) kind, data) {
-        SkASSERT(kind >= Kind::kFirst && kind <= Kind::kLast);
-    }
-
     Expression(int offset, Kind kind, const Type* type)
-        : INHERITED(offset, (int) kind, type) {
-        SkASSERT(kind >= Kind::kFirst && kind <= Kind::kLast);
-    }
-
-    Expression(int offset, Kind kind, const TypeTokenData& data)
-        : INHERITED(offset, (int) kind, data) {
+        : INHERITED(offset, (int) kind)
+        , fType(type) {
         SkASSERT(kind >= Kind::kFirst && kind <= Kind::kLast);
     }
 
     Kind kind() const {
         return (Kind) fKind;
+    }
+
+    virtual const Type& type() const {
+        return *fType;
     }
 
     /**
@@ -136,7 +125,7 @@ struct Expression : public IRNode {
      * For an expression which evaluates to a constant float, returns the value. Otherwise calls
      * ABORT.
      */
-    virtual double getConstantFloat() const {
+    virtual SKSL_FLOAT getConstantFloat() const {
         ABORT("not a constant float");
     }
 
@@ -176,8 +165,8 @@ struct Expression : public IRNode {
     }
 
     /**
-     * For a literal vector expression, return the floating point value of the n'th vector
-     * component. It is an error to call this method on an expression which is not a literal vector.
+     * For a vector of floating point values, return the value of the n'th vector component. It is
+     * an error to call this method on an expression which is not a vector of FloatLiterals.
      */
     virtual SKSL_FLOAT getFVecComponent(int n) const {
         SkASSERT(false);
@@ -185,13 +174,19 @@ struct Expression : public IRNode {
     }
 
     /**
-     * For a literal vector expression, return the integer value of the n'th vector component. It is
-     * an error to call this method on an expression which is not a literal vector.
+     * For a vector of integer values, return the value of the n'th vector component. It is an error
+     * to call this method on an expression which is not a vector of IntLiterals.
      */
     virtual SKSL_INT getIVecComponent(int n) const {
         SkASSERT(false);
         return 0;
     }
+
+    /**
+     * For a vector of literals, return the value of the n'th vector component. It is an error to
+     * call this method on an expression which is not a vector of Literal<T>.
+     */
+    template <typename T> T getVecComponent(int index) const;
 
     /**
      * For a literal matrix expression, return the floating point value of the component at
@@ -205,8 +200,19 @@ struct Expression : public IRNode {
 
     virtual std::unique_ptr<Expression> clone() const = 0;
 
+private:
+    const Type* fType;
+
     using INHERITED = IRNode;
 };
+
+template <> inline SKSL_FLOAT Expression::getVecComponent<SKSL_FLOAT>(int index) const {
+    return this->getFVecComponent(index);
+}
+
+template <> inline SKSL_INT Expression::getVecComponent<SKSL_INT>(int index) const {
+    return this->getIVecComponent(index);
+}
 
 }  // namespace SkSL
 

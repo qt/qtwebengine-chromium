@@ -94,8 +94,6 @@ typedef struct TplDepStats {
   int_mv mv[INTER_REFS_PER_FRAME];
   int ref_frame_index;
   int64_t pred_error[INTER_REFS_PER_FRAME];
-  int64_t mc_count;
-  int64_t mc_saved;
 } TplDepStats;
 
 typedef struct TplDepFrame {
@@ -208,6 +206,8 @@ int av1_tpl_setup_stats(struct AV1_COMP *cpi, int gop_eval,
 /*!\cond */
 
 int av1_tpl_ptr_pos(int mi_row, int mi_col, int stride, uint8_t right_shift);
+
+void av1_init_tpl_stats(TplParams *const tpl_data);
 
 void av1_tpl_rdmult_setup(struct AV1_COMP *cpi);
 

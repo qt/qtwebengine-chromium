@@ -159,7 +159,7 @@ export class TimelinePaintProfilerView extends UI.SplitWidget.SplitWidget {
 export class TimelinePaintImageView extends UI.Widget.Widget {
   constructor() {
     super(true);
-    this.registerRequiredCSS('timeline/timelinePaintProfiler.css');
+    this.registerRequiredCSS('timeline/timelinePaintProfiler.css', {enableLegacyPatching: true});
     this.contentElement.classList.add('fill', 'paint-profiler-image-view');
     this._imageContainer = this.contentElement.createChild('div', 'paint-profiler-image-container');
     /** @type {!HTMLImageElement} */
@@ -167,7 +167,8 @@ export class TimelinePaintImageView extends UI.Widget.Widget {
     this._maskElement = this._imageContainer.createChild('div');
     this._imageElement.addEventListener('load', this._updateImagePosition.bind(this), false);
 
-    this._transformController = new LayerViewer.TransformController.TransformController(this.contentElement, true);
+    this._transformController = new LayerViewer.TransformController.TransformController(
+        /** @type {!HTMLElement} */ (this.contentElement), true);
     this._transformController.addEventListener(
         LayerViewer.TransformController.Events.TransformChanged, this._updateImagePosition, this);
   }

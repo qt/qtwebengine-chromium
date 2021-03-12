@@ -11,6 +11,7 @@
 
 #include "core/fxcrt/cfx_timer.h"
 #include "core/fxcrt/fx_system.h"
+#include "third_party/base/check.h"
 #include "xfa/fwl/cfwl_eventscroll.h"
 #include "xfa/fwl/cfwl_widget.h"
 
@@ -26,17 +27,18 @@ class CFWL_ScrollBar final : public CFWL_Widget,
   // CFWL_Widget:
   FWL_Type GetClassID() const override;
   void Update() override;
-  void DrawWidget(CXFA_Graphics* pGraphics, const CFX_Matrix& matrix) override;
+  void DrawWidget(CFGAS_GEGraphics* pGraphics,
+                  const CFX_Matrix& matrix) override;
   void OnProcessMessage(CFWL_Message* pMessage) override;
-  void OnDrawWidget(CXFA_Graphics* pGraphics,
+  void OnDrawWidget(CFGAS_GEGraphics* pGraphics,
                     const CFX_Matrix& matrix) override;
 
   // CFX_Timer::CallbackIface:
   void OnTimerFired() override;
 
   void GetRange(float* fMin, float* fMax) const {
-    ASSERT(fMin);
-    ASSERT(fMax);
+    DCHECK(fMin);
+    DCHECK(fMax);
     *fMin = m_fRangeMin;
     *fMax = m_fRangeMax;
   }
@@ -60,13 +62,13 @@ class CFWL_ScrollBar final : public CFWL_Widget,
   bool IsVertical() const {
     return !!(m_Properties.m_dwStyleExes & FWL_STYLEEXT_SCB_Vert);
   }
-  void DrawTrack(CXFA_Graphics* pGraphics,
+  void DrawTrack(CFGAS_GEGraphics* pGraphics,
                  bool bLower,
                  const CFX_Matrix* pMatrix);
-  void DrawArrowBtn(CXFA_Graphics* pGraphics,
+  void DrawArrowBtn(CFGAS_GEGraphics* pGraphics,
                     bool bMinBtn,
                     const CFX_Matrix* pMatrix);
-  void DrawThumb(CXFA_Graphics* pGraphics, const CFX_Matrix* pMatrix);
+  void DrawThumb(CFGAS_GEGraphics* pGraphics, const CFX_Matrix* pMatrix);
   void Layout();
   void CalcButtonLen();
   CFX_RectF CalcMinButtonRect();

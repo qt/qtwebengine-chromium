@@ -209,7 +209,10 @@ enum aome_enc_control_id {
 
   /* NOTE: enum 15 unused */
 
-  /*!\brief Codec control function to set sharpness, unsigned int parameter.
+  /*!\brief Codec control function to set loop filter sharpness,
+   * unsigned int parameter.
+   *
+   * Valid range: 0..7. The default is 0.
    */
   AOME_SET_SHARPNESS = AOME_SET_ENABLEAUTOALTREF + 2,  // 16
 
@@ -390,7 +393,7 @@ enum aome_enc_control_id {
    * AV1 has a bitstream feature to reduce decoding dependency between frames
    * by turning off backward update of probability context used in encoding
    * and decoding. This allows staged parallel processing of more than one
-   * video frames in the decoder. This control function provides a mean to
+   * video frames in the decoder. This control function provides a means to
    * turn this feature on or off for bitstreams produced by encoder.
    *
    * - 0 = disable (default)
@@ -426,10 +429,12 @@ enum aome_enc_control_id {
    * AV1 has a segment based feature that allows encoder to adaptively change
    * quantization parameter for each segment within a frame to improve the
    * subjective quality. This control makes encoder operate in one of the
-   * several AQ_modes supported.
+   * several AQ modes supported.
    *
    * - 0 = disable (default)
-   * - 1 = enable
+   * - 1 = variance
+   * - 2 = complexity
+   * - 3 = cyclic refresh
    */
   AV1E_SET_AQ_MODE = 40,
 
@@ -437,7 +442,7 @@ enum aome_enc_control_id {
    * int parameter
    *
    * One AV1 encoder speed feature is to enable quality boost by lowering
-   * frame level Q periodically. This control function provides a mean to
+   * frame level Q periodically. This control function provides a means to
    * turn on/off this feature.
    *
    * - 0 = disable (default)
@@ -855,7 +860,17 @@ enum aome_enc_control_id {
    */
   AV1E_SET_ENABLE_FLIP_IDTX = 81,
 
-  /* Note: enum value 82 unused */
+  /*!\brief Codec control function to turn on / off rectangular transforms, int
+   * parameter
+   *
+   * This will enable or disable usage of rectangular transforms. NOTE:
+   * Rectangular transforms only enabled when corresponding rectangular
+   * partitions are.
+   *
+   * - 0 = disable
+   * - 1 = enable (default)
+   */
+  AV1E_SET_ENABLE_RECT_TX = 82,
 
   /*!\brief Codec control function to turn on / off dist-wtd compound mode
    * at sequence level, int parameter
@@ -900,7 +915,7 @@ enum aome_enc_control_id {
   AV1E_SET_ENABLE_DUAL_FILTER = 86,
 
   /*!\brief Codec control function to turn on / off delta quantization in chroma
-   * planes usage for a sequence, int parameter
+   * planes for a sequence, int parameter
    *
    * - 0 = disable (default)
    * - 1 = enable
@@ -993,9 +1008,6 @@ enum aome_enc_control_id {
   /*!\brief Codec control function to turn on / off filter intra usage at
    * sequence level, int parameter
    *
-   * \attention If AV1E_SET_ENABLE_FILTER_INTRA is 0, then this flag is
-   * forced to 0.
-   *
    * - 0 = disable
    * - 1 = enable (default)
    */
@@ -1032,8 +1044,6 @@ enum aome_enc_control_id {
 
   /*!\brief Codec control function to turn on / off frame superresolution, int
    * parameter
-   *
-   * \attention If AV1E_SET_ENABLE_SUPERRES is 0, then this flag is forced to 0.
    *
    * - 0 = disable
    * - 1 = enable (default)
@@ -1364,7 +1374,8 @@ typedef enum {
   /* NOTE: enums 2 and 3 unused */
   AOM_TUNE_VMAF_WITH_PREPROCESSING = 4,
   AOM_TUNE_VMAF_WITHOUT_PREPROCESSING = 5,
-  AOM_TUNE_VMAF_MAX_GAIN = 6
+  AOM_TUNE_VMAF_MAX_GAIN = 6,
+  AOM_TUNE_VMAF_NEG_MAX_GAIN = 7,
 } aom_tune_metric;
 
 #define AOM_MAX_LAYERS 32   /**< Max number of layers */
@@ -1562,6 +1573,9 @@ AOM_CTRL_USE_TYPE(AV1E_SET_ENABLE_TX64, int)
 
 AOM_CTRL_USE_TYPE(AV1E_SET_ENABLE_FLIP_IDTX, int)
 #define AOM_CTRL_AV1E_SET_ENABLE_FLIP_IDTX
+
+AOM_CTRL_USE_TYPE(AV1E_SET_ENABLE_RECT_TX, int)
+#define AOM_CTRL_AV1E_SET_ENABLE_RECT_TX
 
 AOM_CTRL_USE_TYPE(AV1E_SET_ENABLE_DIST_WTD_COMP, int)
 #define AOM_CTRL_AV1E_SET_ENABLE_DIST_WTD_COMP

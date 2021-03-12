@@ -79,8 +79,10 @@ enum class BarcodeType {
 };
 
 struct BarCodeInfo {
-  uint32_t uHash;     // |pName| hashed as if wide string.
-  const char* pName;  // Raw, POD struct.
+  // |pName| hashed as if wide string.
+  uint32_t uHash;
+  // Inline string data reduces size for small strings.
+  const char pName[20];
   BarcodeType eName;
   BC_TYPE eBCType;
 };
@@ -98,7 +100,7 @@ class CXFA_FFBarcode final : public CXFA_FFTextEdit {
 
   // CXFA_FFTextEdit
   bool LoadWidget() override;
-  void RenderWidget(CXFA_Graphics* pGS,
+  void RenderWidget(CFGAS_GEGraphics* pGS,
                     const CFX_Matrix& matrix,
                     HighlightOption highlight) override;
   void UpdateWidgetProperty() override;

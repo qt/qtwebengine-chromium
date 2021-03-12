@@ -308,29 +308,36 @@ namespace dawn_native { namespace vulkan {
 
                     attachments[attachmentCount] = view->GetHandle();
 
-                    const Format& attachmentFormat = view->GetFormat();
-                    if (attachmentFormat.HasComponentType(Format::Type::Float)) {
-                        const std::array<float, 4> appliedClearColor =
-                            ConvertToFloatColor(attachmentInfo.clearColor);
-                        for (uint32_t i = 0; i < 4; ++i) {
-                            clearValues[attachmentCount].color.float32[i] = appliedClearColor[i];
+                    switch (view->GetFormat().GetAspectInfo(Aspect::Color).baseType) {
+                        case wgpu::TextureComponentType::Float: {
+                            const std::array<float, 4> appliedClearColor =
+                                ConvertToFloatColor(attachmentInfo.clearColor);
+                            for (uint32_t i = 0; i < 4; ++i) {
+                                clearValues[attachmentCount].color.float32[i] =
+                                    appliedClearColor[i];
+                            }
+                            break;
                         }
-                    } else if (attachmentFormat.HasComponentType(Format::Type::Uint)) {
-                        const std::array<uint32_t, 4> appliedClearColor =
-                            ConvertToFloatToUnsignedIntegerColor(attachmentInfo.clearColor);
-                        for (uint32_t i = 0; i < 4; ++i) {
-                            clearValues[attachmentCount].color.uint32[i] = appliedClearColor[i];
+                        case wgpu::TextureComponentType::Uint: {
+                            const std::array<uint32_t, 4> appliedClearColor =
+                                ConvertToUnsignedIntegerColor(attachmentInfo.clearColor);
+                            for (uint32_t i = 0; i < 4; ++i) {
+                                clearValues[attachmentCount].color.uint32[i] = appliedClearColor[i];
+                            }
+                            break;
                         }
-                    } else if (attachmentFormat.HasComponentType(Format::Type::Sint)) {
-                        const std::array<int32_t, 4> appliedClearColor =
-                            ConvertToFloatToSignedIntegerColor(attachmentInfo.clearColor);
-                        for (uint32_t i = 0; i < 4; ++i) {
-                            clearValues[attachmentCount].color.int32[i] = appliedClearColor[i];
+                        case wgpu::TextureComponentType::Sint: {
+                            const std::array<int32_t, 4> appliedClearColor =
+                                ConvertToSignedIntegerColor(attachmentInfo.clearColor);
+                            for (uint32_t i = 0; i < 4; ++i) {
+                                clearValues[attachmentCount].color.int32[i] = appliedClearColor[i];
+                            }
+                            break;
                         }
-                    } else {
-                        UNREACHABLE();
-                    }
 
+                        case wgpu::TextureComponentType::DepthComparison:
+                            UNREACHABLE();
+                    }
                     attachmentCount++;
                 }
 
@@ -436,15 +443,15 @@ namespace dawn_native { namespace vulkan {
         ASSERT(srcCopy.texture->GetFormat().format == dstCopy.texture->GetFormat().format);
         ASSERT(srcCopy.aspect == dstCopy.aspect);
         dawn_native::Format format = srcCopy.texture->GetFormat();
-        const TexelBlockInfo& blockInfo = format.GetTexelBlockInfo(srcCopy.aspect);
-        ASSERT(copySize.width % blockInfo.blockWidth == 0);
-        ASSERT(copySize.height % blockInfo.blockHeight == 0);
+        const TexelBlockInfo& blockInfo = format.GetAspectInfo(srcCopy.aspect).block;
+        ASSERT(copySize.width % blockInfo.width == 0);
+        uint32_t widthInBlocks = copySize.width / blockInfo.width;
+        ASSERT(copySize.height % blockInfo.height == 0);
+        uint32_t heightInBlocks = copySize.height / blockInfo.height;
 
         // Create the temporary buffer. Note that We don't need to respect WebGPU's 256 alignment
         // because it isn't a hard constraint in Vulkan.
-        uint64_t tempBufferSize =
-            (copySize.width / blockInfo.blockWidth * copySize.height / blockInfo.blockHeight) *
-            blockInfo.blockByteSize;
+        uint64_t tempBufferSize = widthInBlocks * heightInBlocks * blockInfo.byteSize;
         BufferDescriptor tempBufferDescriptor;
         tempBufferDescriptor.size = tempBufferSize;
         tempBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
@@ -454,10 +461,9 @@ namespace dawn_native { namespace vulkan {
 
         BufferCopy tempBufferCopy;
         tempBufferCopy.buffer = tempBuffer.Get();
-        tempBufferCopy.rowsPerImage = copySize.height;
+        tempBufferCopy.rowsPerImage = heightInBlocks;
         tempBufferCopy.offset = 0;
-        tempBufferCopy.bytesPerRow =
-            copySize.width / blockInfo.blockWidth * blockInfo.blockByteSize;
+        tempBufferCopy.bytesPerRow = copySize.width / blockInfo.width * blockInfo.byteSize;
 
         VkCommandBuffer commands = recordingContext->commandBuffer;
         VkImage srcImage = ToBackend(srcCopy.texture)->GetHandle();
@@ -513,7 +519,7 @@ namespace dawn_native { namespace vulkan {
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared in RecordBeginRenderPass by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
-                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
+                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::RenderAttachment)) {
                     texture->EnsureSubresourceContentInitialized(recordingContext,
                                                                  texture->GetAllSubresources());
                 }
@@ -1175,6 +1181,16 @@ namespace dawn_native { namespace vulkan {
                     viewport.height = -cmd->height;
                     viewport.minDepth = cmd->minDepth;
                     viewport.maxDepth = cmd->maxDepth;
+
+                    // Vulkan disallows width = 0, but VK_KHR_maintenance1 which we require allows
+                    // height = 0 so use that to do an empty viewport.
+                    if (viewport.width == 0) {
+                        viewport.height = 0;
+
+                        // Set the viewport x range to a range that's always valid.
+                        viewport.x = 0;
+                        viewport.width = 1;
+                    }
 
                     device->fn.CmdSetViewport(commands, 0, 1, &viewport);
                     break;

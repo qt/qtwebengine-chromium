@@ -29,8 +29,8 @@ class FrameCrypto;
 struct EncryptedFrame : public EncodedFrame {
   EncryptedFrame();
   ~EncryptedFrame();
-  EncryptedFrame(EncryptedFrame&&) MAYBE_NOEXCEPT;
-  EncryptedFrame& operator=(EncryptedFrame&&) MAYBE_NOEXCEPT;
+  EncryptedFrame(EncryptedFrame&&) noexcept;
+  EncryptedFrame& operator=(EncryptedFrame&&);
 
  protected:
   // Since only FrameCrypto and FrameCollector are trusted to generate the

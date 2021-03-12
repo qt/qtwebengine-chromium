@@ -691,16 +691,22 @@ export class HeapSnapshotView extends UI.View.SimpleView {
 
   /**
    * @param {!Event} event
-   * @return {?UI.PopoverRequest}
+   * @return {?UI.PopoverHelper.PopoverRequest}
    */
   _getPopoverRequest(event) {
-    const span = event.target.enclosingNodeOrSelfWithNodeName('span');
-    const row = event.target.enclosingNodeOrSelfWithNodeName('tr');
-    const heapProfilerModel = this._profile.heapProfilerModel();
-    if (!row || !span || !heapProfilerModel) {
+    const span = UI.UIUtils.enclosingNodeOrSelfWithNodeName(/** @type {!Node} */ (event.target), 'span');
+    const row = UI.UIUtils.enclosingNodeOrSelfWithNodeName(/** @type {!Node} */ (event.target), 'row');
+    if (!row) {
       return null;
     }
-    const node = row._dataGridNode;
+    const node = this._dataGrid.dataGridNodeFromNode(row) || this._containmentDataGrid.dataGridNodeFromNode(row) ||
+        this._constructorsDataGrid.dataGridNodeFromNode(row) || this._diffDataGrid.dataGridNodeFromNode(row) ||
+        (this._allocationDataGrid && this._allocationDataGrid.dataGridNodeFromNode(row)) ||
+        this._retainmentDataGrid.dataGridNodeFromNode(row);
+    const heapProfilerModel = this._profile.heapProfilerModel();
+    if (!node || !span || !heapProfilerModel) {
+      return null;
+    }
     let objectPopoverHelper;
     return {
       box: span.boxInWindow(),
@@ -1536,8 +1542,6 @@ export class HeapProfileHeader extends ProfileHeader {
     });
     this._totalNumberOfChunks = 0;
     this._bufferedWriter = null;
-    /** @type {?Bindings.TempFile.TempFile} */
-    this._tempFile = null;
   }
 
   /**
@@ -1599,7 +1603,7 @@ export class HeapProfileHeader extends ProfileHeader {
       }
       return;
     }
-    this._tempFile = tempFile;
+    this.tempFile = tempFile;
     if (!tempFile) {
       this._failedToCreateTempFile = true;
     }
@@ -1722,8 +1726,8 @@ export class HeapProfileHeader extends ProfileHeader {
         fileOutputStream.close();
         return;
       }
-      if (this._tempFile) {
-        const error = await this._tempFile.copyToOutputStream(fileOutputStream, this._onChunkTransferred.bind(this));
+      if (this.tempFile) {
+        const error = await this.tempFile.copyToOutputStream(fileOutputStream, this._onChunkTransferred.bind(this));
         if (error) {
           Common.Console.Console.instance().error('Failed to read heap snapshot from temp file: ' + error.message);
         }
@@ -1786,7 +1790,7 @@ export class HeapSnapshotStatisticsView extends UI.Widget.VBox {
    * @return {string}
    */
   static _valueFormatter(value) {
-    return Common.UIString.UIString('%s KB', Number.withThousandsSeparator(Math.round(value / 1024)));
+    return Common.UIString.UIString('%s kB', Number.withThousandsSeparator(Math.round(value / 1000)));
   }
 
   /**
@@ -1884,8 +1888,10 @@ export class HeapAllocationStackView extends UI.Widget.Widget {
 
     if (!frames) {
       const stackDiv = this.element.createChild('div', 'no-heap-allocation-stack');
-      stackDiv.createTextChild(Common.UIString.UIString(
-          'Stack was not recorded for this object because it had been allocated before this profile recording started.'));
+      UI.UIUtils.createTextChild(
+          stackDiv,
+          Common.UIString.UIString(
+              'Stack was not recorded for this object because it had been allocated before this profile recording started.'));
       return;
     }
 

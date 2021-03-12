@@ -344,16 +344,16 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          GrPaint&& paint,
-                                          const SkPath& path,
-                                          SkScalar tolerance,
-                                          uint8_t coverage,
-                                          const SkMatrix& viewMatrix,
-                                          bool isHairline,
-                                          GrAAType aaType,
-                                          const SkRect& devBounds,
-                                          const GrUserStencilSettings* stencilSettings) {
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            GrPaint&& paint,
+                            const SkPath& path,
+                            SkScalar tolerance,
+                            uint8_t coverage,
+                            const SkMatrix& viewMatrix,
+                            bool isHairline,
+                            GrAAType aaType,
+                            const SkRect& devBounds,
+                            const GrUserStencilSettings* stencilSettings) {
         return Helper::FactoryHelper<DefaultPathOp>(context, std::move(paint), path, tolerance,
                                                     coverage, viewMatrix, isHairline, aaType,
                                                     devBounds, stencilSettings);
@@ -369,12 +369,12 @@ public:
         }
     }
 
-    DefaultPathOp(const Helper::MakeArgs& helperArgs, const SkPMColor4f& color, const SkPath& path,
+    DefaultPathOp(GrProcessorSet* processorSet, const SkPMColor4f& color, const SkPath& path,
                   SkScalar tolerance, uint8_t coverage, const SkMatrix& viewMatrix, bool isHairline,
                   GrAAType aaType, const SkRect& devBounds,
                   const GrUserStencilSettings* stencilSettings)
             : INHERITED(ClassID())
-            , fHelper(helperArgs, aaType, stencilSettings)
+            , fHelper(processorSet, aaType, stencilSettings)
             , fColor(color)
             , fCoverage(coverage)
             , fViewMatrix(viewMatrix)
@@ -471,8 +471,7 @@ private:
         }
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         DefaultPathOp* that = t->cast<DefaultPathOp>();
         if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
             return CombineResult::kCannotCombine;
@@ -661,7 +660,7 @@ bool GrDefaultPathRenderer::internalDrawPath(GrRenderTargetContext* renderTarget
                     GrAA(aaType == GrAAType::kMSAA), viewM, bounds, &localMatrix);
         } else {
             bool stencilPass = stencilOnly || passCount > 1;
-            std::unique_ptr<GrDrawOp> op;
+            GrOp::Owner op;
             if (stencilPass) {
                 GrPaint stencilPaint;
                 stencilPaint.setXPFactory(GrDisableColorXPFactory::Get());

@@ -59,8 +59,6 @@ static constexpr Version ES_3_0 = Version(3, 0);
 static constexpr Version ES_3_1 = Version(3, 1);
 static constexpr Version ES_3_2 = Version(3, 2);
 
-using ContextID = uintptr_t;
-
 template <typename T>
 using BufferBindingMap     = angle::PackedEnumMap<BufferBinding, T>;
 using BoundBufferMap       = BufferBindingMap<BindingPointer<Buffer>>;
@@ -134,8 +132,8 @@ class State : angle::NonCopyable
     bool allActiveDrawBufferChannelsMasked() const;
     bool anyActiveDrawBufferChannelMasked() const;
     const RasterizerState &getRasterizerState() const;
-    const BlendState &getBlendState() const { return mBlendStateArray[0]; }
-    const BlendStateArray &getBlendStateArray() const { return mBlendStateArray; }
+    const BlendState &getBlendState() const { return mBlendState; }
+    const BlendStateExt &getBlendStateExt() const { return mBlendStateExt; }
     const DepthStencilState &getDepthStencilState() const;
 
     // Clear behavior setters & state parameter block generation function
@@ -176,11 +174,11 @@ class State : angle::NonCopyable
     float getFarPlane() const { return mFarZ; }
 
     // Blend state manipulation
-    bool isBlendEnabled() const { return mBlendStateArray[0].blend; }
+    bool isBlendEnabled() const { return mBlendStateExt.mEnabledMask.test(0); }
     bool isBlendEnabledIndexed(GLuint index) const
     {
-        ASSERT(index < mBlendStateArray.size());
-        return mBlendStateArray[index].blend;
+        ASSERT(static_cast<size_t>(index) < mBlendStateExt.mMaxDrawBuffers);
+        return mBlendStateExt.mEnabledMask.test(index);
     }
     DrawBufferMask getBlendEnabledDrawBufferMask() const { return mBlendStateExt.mEnabledMask; }
     void setBlend(bool enabled);
@@ -247,6 +245,11 @@ class State : angle::NonCopyable
     void setMultisampling(bool enabled);
     bool isMultisamplingEnabled() const { return mMultiSampling; }
 
+    void setSampleShading(bool enabled);
+    bool isSampleShadingEnabled() const { return mIsSampleShadingEnabled; }
+    void setMinSampleShading(float value);
+    float getMinSampleShading() const { return mMinSampleShading; }
+
     // Scissor test state toggle & query
     bool isScissorTestEnabled() const { return mScissorTest; }
     void setScissorTest(bool enabled);
@@ -302,7 +305,7 @@ class State : angle::NonCopyable
     void detachTexture(const Context *context, const TextureMap &zeroTextures, TextureID texture);
     void initializeZeroTextures(const Context *context, const TextureMap &zeroTextures);
 
-    void invalidateTexture(TextureType type);
+    void invalidateTextureBindings(TextureType type);
 
     // Sampler object binding manipulation
     void setSamplerBinding(const Context *context, GLuint textureUnit, Sampler *sampler);
@@ -641,6 +644,7 @@ class State : angle::NonCopyable
         DIRTY_BIT_FRAMEBUFFER_SRGB,     // GL_EXT_sRGB_write_control
         DIRTY_BIT_CURRENT_VALUES,
         DIRTY_BIT_PROVOKING_VERTEX,
+        DIRTY_BIT_SAMPLE_SHADING,
         DIRTY_BIT_EXTENDED,  // clip distances, mipmap generation hint, derivative hint.
         DIRTY_BIT_INVALID,
         DIRTY_BIT_MAX = DIRTY_BIT_INVALID,
@@ -852,8 +856,6 @@ class State : angle::NonCopyable
 
     const std::vector<ImageUnit> getImageUnits() const { return mImageUnits; }
 
-    const BlendStateExt &getBlendStateExt() const { return mBlendStateExt; }
-
   private:
     friend class Context;
 
@@ -951,7 +953,7 @@ class State : angle::NonCopyable
     bool mScissorTest;
     Rectangle mScissor;
 
-    BlendStateArray mBlendStateArray;
+    BlendState mBlendState;  // Buffer zero blend state legacy struct
     BlendStateExt mBlendStateExt;
     ColorF mBlendColor;
     bool mSampleAlphaToCoverage;
@@ -961,6 +963,8 @@ class State : angle::NonCopyable
     bool mSampleMask;
     GLuint mMaxSampleMaskWords;
     std::array<GLbitfield, MAX_SAMPLE_MASK_WORDS> mSampleMaskValues;
+    bool mIsSampleShadingEnabled;
+    float mMinSampleShading;
 
     DepthStencilState mDepthStencil;
     GLint mStencilRef;

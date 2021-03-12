@@ -324,16 +324,61 @@
         "zh"
       ]
     },
-// Based on
-// https://cs.chromium.org/chromium/src/third_party/icu/android/patch_locale.sh?rcl=797b7c
+// Based on the ICU63 version of
+// https://cs.chromium.org/chromium/src/third_party/icu/source/data/region/reslocal.mk?rcl=797b7c
+// Includes the items from REGION_ALIAS_SOURCE and REGION_SOURCE
     "region_tree": {
+      "filterType": "language",
       "whitelist": [
 // Need to explicitly add "root"
-//	"root",
-// # Excludes region data. On Android Java API is used to get the data.
-// # Due to a bug in ICU, an empty region list always uses 70kB pool.res bundle.
-// # As a work around, include the minimal version of en.txt
-        "en"
+	"root",
+
+//        "am",
+        "ar",
+//        "bg",
+//        "ca",
+//        "cs",
+//        "da",
+        "de",
+        "el",
+        "en",
+        "es",
+//        "fa",
+//        "fi",
+//        "fil",
+        "fr",
+        "he",
+        "hi",
+//        "hr",
+//        "hu",
+        "id",
+        "in",
+        "it",
+        "iw",
+        "ja",
+        "ko",
+//        "lt",
+//        "lv",
+//        "mo",
+//        "nb",
+        "nl",
+//        "no",
+//        "pl",
+        "pt",
+//        "ro",
+        "ru",
+//        "sh",
+//        "sk",
+//        "sl",
+//        "sr",
+//        "sv",
+        "sw",
+        "th",
+//        "tl",
+        "tr",
+//        "uk",
+        "vi",
+        "zh"
       ]
     },
 // Based on the ICU63 version of
@@ -613,23 +658,47 @@
         "-/Currencies%variant"
       ]
     },
-// Based on
-// https://cs.chromium.org/chromium/src/third_party/icu/android/patch_locale.sh?rcl=797b7c
+// Based on filter_region_data
+// # Remove the display names for numeric region codes other than
+// # 419 (Latin America) because we don't use them.
     {
       "categories": [
         "region_tree"
       ],
-      "whitelist": [
-// Need to explicitly add "root"
-//	"root",
-// # Excludes region data. On Android Java API is used to get the data.
-// # Due to a bug in ICU, an empty region list always uses 70kB pool.res bundle.
-// # As a work around, include the minimal version of en.txt
-        "en"
-      ],
       "rules": [
-        "-/*",
-        "+/Countries/US"
+// Since the filter format is not supporting regular expression yet, we
+// create the following black list by
+// egrep " [[:digit:]][[:digit:]][[:digit:]]{" data/region/*|cut -d: -f2|cut -d{ -f1|sort -u|egrep -v "419"|cut -c9-11
+        "-/*/001",
+        "-/*/002",
+        "-/*/003",
+        "-/*/005",
+        "-/*/009",
+        "-/*/011",
+        "-/*/013",
+        "-/*/014",
+        "-/*/015",
+        "-/*/017",
+        "-/*/018",
+        "-/*/019",
+        "-/*/021",
+        "-/*/029",
+        "-/*/030",
+        "-/*/034",
+        "-/*/035",
+        "-/*/039",
+        "-/*/053",
+        "-/*/054",
+        "-/*/057",
+        "-/*/061",
+        "-/*/142",
+        "-/*/143",
+        "-/*/145",
+        "-/*/150",
+        "-/*/151",
+        "-/*/154",
+        "-/*/155",
+        "-/*/202"
       ]
     },
 // Based on remove_legacy_chinese_codepoint_collation

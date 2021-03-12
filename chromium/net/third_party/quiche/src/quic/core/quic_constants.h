@@ -89,8 +89,8 @@ const QuicByteCount kDefaultSocketReceiveBuffer = 1024 * 1024;
 // Don't allow a client to suggest an RTT shorter than 10ms.
 const uint32_t kMinInitialRoundTripTimeUs = 10 * kNumMicrosPerMilli;
 
-// Don't allow a client to suggest an RTT longer than 15 seconds.
-const uint32_t kMaxInitialRoundTripTimeUs = 15 * kNumMicrosPerSecond;
+// Don't allow a client to suggest an RTT longer than 1 second.
+const uint32_t kMaxInitialRoundTripTimeUs = kNumMicrosPerSecond;
 
 // Maximum number of open streams per connection.
 const size_t kDefaultMaxStreamsPerConnection = 100;
@@ -103,6 +103,10 @@ const size_t kQuicVersionSize = 4;
 // Length of the retry integrity tag in bytes.
 // https://tools.ietf.org/html/draft-ietf-quic-transport-25#section-17.2.5
 const size_t kRetryIntegrityTagLength = 16;
+
+// By default, UnackedPacketsMap allocates buffer of 64 after the first packet
+// is added.
+const int kDefaultUnackedPacketsInitialCapacity = 64;
 
 // Signifies that the QuicPacket will contain version of the protocol.
 const bool kIncludeVersion = true;
@@ -120,7 +124,7 @@ const int64_t kDefaultDelayedAckTimeMs = 25;
 
 // Default minimum delayed ack time, in ms (used only for sender control of ack
 // frequency).
-const uint32_t kDefaultMinAckDelayTimeMs = 1;
+const uint32_t kDefaultMinAckDelayTimeMs = 5;
 
 // Default shift of the ACK delay in the IETF QUIC ACK frame.
 const uint32_t kDefaultAckDelayExponent = 3;
@@ -265,6 +269,8 @@ const QuicPacketCount kMaxRetransmittablePacketsBeforeAck = 10;
 // This intends to avoid the beginning of slow start, when CWNDs may be
 // rapidly increasing.
 const QuicPacketCount kMinReceivedBeforeAckDecimation = 100;
+// One quarter RTT delay when doing ack decimation.
+const float kAckDecimationDelay = 0.25;
 
 // The default alarm granularity assumed by QUIC code.
 const QuicTime::Delta kAlarmGranularity = QuicTime::Delta::FromMilliseconds(1);

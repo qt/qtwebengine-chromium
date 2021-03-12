@@ -29,16 +29,20 @@
 namespace gl
 {
 class Context;
+enum class EntryPoint;
 
 // Pairs a D3D begin event with an end event.
 class ScopedPerfEventHelper : angle::NonCopyable
 {
   public:
-    ANGLE_FORMAT_PRINTF(3, 4)
-    ScopedPerfEventHelper(gl::Context *context, const char *format, ...);
+    ScopedPerfEventHelper(gl::Context *context, gl::EntryPoint entryPoint);
     ~ScopedPerfEventHelper();
+    ANGLE_FORMAT_PRINTF(2, 3)
+    void begin(const char *format, ...);
 
   private:
+    gl::Context *mContext;
+    const gl::EntryPoint mEntryPoint;
     const char *mFunctionName;
 };
 
@@ -89,9 +93,12 @@ class DebugAnnotator : angle::NonCopyable
     DebugAnnotator() {}
     virtual ~DebugAnnotator() {}
     virtual void beginEvent(gl::Context *context,
+                            gl::EntryPoint entryPoint,
                             const char *eventName,
                             const char *eventMessage) = 0;
-    virtual void endEvent(const char *eventName)      = 0;
+    virtual void endEvent(gl::Context *context,
+                          const char *eventName,
+                          gl::EntryPoint entryPoint)  = 0;
     virtual void setMarker(const char *markerName)    = 0;
     virtual bool getStatus()                          = 0;
     // Log Message Handler that gets passed every log message,
@@ -100,6 +107,7 @@ class DebugAnnotator : angle::NonCopyable
     virtual void logMessage(const LogMessage &msg) const = 0;
 };
 
+bool ShouldBeginScopedEvent();
 void InitializeDebugAnnotations(DebugAnnotator *debugAnnotator);
 void UninitializeDebugAnnotations();
 bool DebugAnnotationsActive();
@@ -248,13 +256,26 @@ std::ostream &FmtHex(std::ostream &os, T value)
 // A macro to log a performance event around a scope.
 #if defined(ANGLE_TRACE_ENABLED)
 #    if defined(_MSC_VER)
-#        define EVENT(context, function, message, ...)                                            \
-            gl::ScopedPerfEventHelper scopedPerfEventHelper##__LINE__(context, "%s(" message ")", \
-                                                                      function, __VA_ARGS__)
+#        define EVENT(context, entryPoint, function, message, ...)                          \
+            gl::ScopedPerfEventHelper scopedPerfEventHelper##__LINE__(context, entryPoint); \
+            do                                                                              \
+            {                                                                               \
+                if (gl::ShouldBeginScopedEvent())                                           \
+                {                                                                           \
+                    scopedPerfEventHelper##__LINE__.begin("%s(" message ")", function,      \
+                                                          __VA_ARGS__);                     \
+                }                                                                           \
+            } while (0)
 #    else
-#        define EVENT(context, function, message, ...)                                            \
-            gl::ScopedPerfEventHelper scopedPerfEventHelper(context, "%s(" message ")", function, \
-                                                            ##__VA_ARGS__)
+#        define EVENT(context, entryPoint, function, message, ...)                           \
+            gl::ScopedPerfEventHelper scopedPerfEventHelper(context, entryPoint);            \
+            do                                                                               \
+            {                                                                                \
+                if (gl::ShouldBeginScopedEvent())                                            \
+                {                                                                            \
+                    scopedPerfEventHelper.begin("%s(" message ")", function, ##__VA_ARGS__); \
+                }                                                                            \
+            } while (0)
 #    endif  // _MSC_VER
 #else
 #    define EVENT(message, ...) (void(0))
@@ -384,6 +405,15 @@ std::ostream &FmtHex(std::ostream &os, T value)
 #else
 #    define ANGLE_DISABLE_EXTRA_SEMI_WARNING
 #    define ANGLE_REENABLE_EXTRA_SEMI_WARNING
+#endif
+
+#if defined(__clang__)
+#    define ANGLE_DISABLE_EXTRA_SEMI_STMT_WARNING \
+        _Pragma("clang diagnostic push") _Pragma("clang diagnostic ignored \"-Wextra-semi-stmt\"")
+#    define ANGLE_REENABLE_EXTRA_SEMI_STMT_WARNING _Pragma("clang diagnostic pop")
+#else
+#    define ANGLE_DISABLE_EXTRA_SEMI_STMT_WARNING
+#    define ANGLE_REENABLE_EXTRA_SEMI_STMT_WARNING
 #endif
 
 #if defined(__clang__)

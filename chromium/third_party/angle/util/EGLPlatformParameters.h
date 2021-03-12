@@ -62,7 +62,9 @@ struct EGLPlatformParameters
                         debugLayersEnabled, contextVirtualization, transformFeedbackFeature,
                         allocateNonZeroMemoryFeature, emulateCopyTexImage2DFromRenderbuffers,
                         shaderStencilOutputFeature, genMultipleMipsPerPassFeature, platformMethods,
-                        robustness);
+                        robustness, emulatedPrerotation, asyncCommandQueueFeatureVulkan,
+                        hasExplicitMemBarrierFeatureMtl, hasCheapRenderPassFeatureMtl,
+                        forceBufferGPUStorageFeatureMtl);
     }
 
     EGLint renderer                               = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
@@ -78,6 +80,11 @@ struct EGLPlatformParameters
     EGLint emulateCopyTexImage2DFromRenderbuffers = EGL_DONT_CARE;
     EGLint shaderStencilOutputFeature             = EGL_DONT_CARE;
     EGLint genMultipleMipsPerPassFeature          = EGL_DONT_CARE;
+    uint32_t emulatedPrerotation                  = 0;  // Can be 0, 90, 180 or 270
+    EGLint asyncCommandQueueFeatureVulkan         = EGL_DONT_CARE;
+    EGLint hasExplicitMemBarrierFeatureMtl        = EGL_DONT_CARE;
+    EGLint hasCheapRenderPassFeatureMtl           = EGL_DONT_CARE;
+    EGLint forceBufferGPUStorageFeatureMtl        = EGL_DONT_CARE;
     angle::PlatformMethods *platformMethods       = nullptr;
 };
 

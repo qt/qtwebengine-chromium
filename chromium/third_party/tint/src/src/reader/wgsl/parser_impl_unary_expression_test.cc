@@ -29,8 +29,10 @@ namespace {
 TEST_F(ParserImplTest, UnaryExpression_Postix) {
   auto* p = parser("a[2]");
   auto e = p->unary_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
 
   ASSERT_TRUE(e->IsArrayAccessor());
   auto* ary = e->AsArrayAccessor();
@@ -48,8 +50,10 @@ TEST_F(ParserImplTest, UnaryExpression_Postix) {
 TEST_F(ParserImplTest, UnaryExpression_Minus) {
   auto* p = parser("- 1");
   auto e = p->unary_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsUnaryOp());
 
   auto* u = e->AsUnaryOp();
@@ -66,16 +70,20 @@ TEST_F(ParserImplTest, UnaryExpression_Minus) {
 TEST_F(ParserImplTest, UnaryExpression_Minus_InvalidRHS) {
   auto* p = parser("-if(a) {}");
   auto e = p->unary_expression();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
   EXPECT_EQ(p->error(), "1:2: unable to parse right side of - expression");
 }
 
 TEST_F(ParserImplTest, UnaryExpression_Bang) {
   auto* p = parser("!1");
   auto e = p->unary_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsUnaryOp());
 
   auto* u = e->AsUnaryOp();
@@ -92,8 +100,10 @@ TEST_F(ParserImplTest, UnaryExpression_Bang) {
 TEST_F(ParserImplTest, UnaryExpression_Bang_InvalidRHS) {
   auto* p = parser("!if (a) {}");
   auto e = p->unary_expression();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_TRUE(p->has_error());
   EXPECT_EQ(p->error(), "1:2: unable to parse right side of ! expression");
 }
 

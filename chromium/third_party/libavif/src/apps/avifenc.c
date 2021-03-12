@@ -48,6 +48,7 @@ static void syntax(void)
     printf("Syntax: avifenc [options] input.[jpg|jpeg|png|y4m] output.avif\n");
     printf("Options:\n");
     printf("    -h,--help                         : Show syntax help\n");
+    printf("    -V,--version                      : Show the version number\n");
     printf("    -j,--jobs J                       : Number of jobs (worker threads, default: 1)\n");
     printf("    -o,--output FILENAME              : Instead of using the last filename given as output, use this filename\n");
     printf("    -l,--lossless                     : Set all defaults to encode losslessly, and emit warnings when settings/input don't allow for it\n");
@@ -82,6 +83,9 @@ static void syntax(void)
            AVIF_SPEED_SLOWEST,
            AVIF_SPEED_FASTEST);
     printf("    -c,--codec C                      : AV1 codec to use (choose from versions list below)\n");
+    printf("    --exif FILENAME                   : Provide an Exif metadata payload to be associated with the primary item\n");
+    printf("    --xmp FILENAME                    : Provide an XMP metadata payload to be associated with the primary item\n");
+    printf("    --icc FILENAME                    : Provide an ICC profile payload to be associated with the primary item\n");
     printf("    -a,--advanced KEY[=VALUE]         : Pass an advanced, codec-specific key/value string pair directly to the codec. avifenc will warn on any not used by the codec.\n");
     printf("    --duration D                      : Set all following frame durations (in timescales) to D; default 1. Can be set multiple times (before supplying each filename)\n");
     printf("    --timescale,--fps V               : Set the timescale to V. If all frames are 1 timescale in length, this is equivalent to frames per second\n");
@@ -96,6 +100,7 @@ static void syntax(void)
         printf("aom-specific advanced options:\n");
         printf("    aq-mode=M                         : Adaptive quantization mode (0: off (default), 1: variance, 2: complexity, 3: cyclic refresh)\n");
         printf("    cq-level=Q                        : Constant/Constrained Quality level (0-63, end-usage must be set to cq or q)\n");
+        printf("    enable-chroma-deltaq=B            : Enable delta quantization in chroma planes (0: disable (default), 1: enable)\n");
         printf("    end-usage=MODE                    : Rate control mode (vbr, cbr, cq, or q)\n");
         printf("    sharpness=S                       : Loop filter sharpness (0-7, default: 0)\n");
         printf("    tune=METRIC                       : Tune the encoder for distortion metric (psnr or ssim, default: psnr)\n");
@@ -230,6 +235,33 @@ static avifAppFileFormat avifInputReadImage(avifInput * input, avifImage * image
     return nextInputFormat;
 }
 
+static avifBool readEntireFile(const char * filename, avifRWData * raw)
+{
+    FILE * f = fopen(filename, "rb");
+    if (!f) {
+        return AVIF_FALSE;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long pos = ftell(f);
+    if (pos <= 0) {
+        fclose(f);
+        return AVIF_FALSE;
+    }
+    size_t fileSize = (size_t)pos;
+    fseek(f, 0, SEEK_SET);
+
+    avifRWDataRealloc(raw, fileSize);
+    size_t bytesRead = fread(raw->data, 1, fileSize, f);
+    fclose(f);
+
+    if (bytesRead != fileSize) {
+        avifRWDataFree(raw);
+        return AVIF_FALSE;
+    }
+    return AVIF_TRUE;
+}
+
 int main(int argc, char * argv[])
 {
     if (argc < 2) {
@@ -267,6 +299,9 @@ int main(int argc, char * argv[])
     avifImage * image = NULL;
     avifImage * nextImage = NULL;
     avifRWData raw = AVIF_DATA_EMPTY;
+    avifRWData exifOverride = AVIF_DATA_EMPTY;
+    avifRWData xmpOverride = AVIF_DATA_EMPTY;
+    avifRWData iccOverride = AVIF_DATA_EMPTY;
     int duration = 1;  // in timescales, stored per-inputFile (see avifInputFile)
     int timescale = 1; // 1 fps by default
     int keyframeInterval = 0;
@@ -286,6 +321,9 @@ int main(int argc, char * argv[])
 
         if (!strcmp(arg, "-h") || !strcmp(arg, "--help")) {
             syntax();
+            goto cleanup;
+        } else if (!strcmp(arg, "-V") || !strcmp(arg, "--version")) {
+            avifPrintVersions();
             goto cleanup;
         } else if (!strcmp(arg, "-j") || !strcmp(arg, "--jobs")) {
             NEXTARG();
@@ -412,6 +450,27 @@ int main(int argc, char * argv[])
                 if (speed < AVIF_SPEED_SLOWEST) {
                     speed = AVIF_SPEED_SLOWEST;
                 }
+            }
+        } else if (!strcmp(arg, "--exif")) {
+            NEXTARG();
+            if (!readEntireFile(arg, &exifOverride)) {
+                fprintf(stderr, "ERROR: Unable to read Exif metadata: %s\n", arg);
+                returnCode = 1;
+                goto cleanup;
+            }
+        } else if (!strcmp(arg, "--xmp")) {
+            NEXTARG();
+            if (!readEntireFile(arg, &xmpOverride)) {
+                fprintf(stderr, "ERROR: Unable to read XMP metadata: %s\n", arg);
+                returnCode = 1;
+                goto cleanup;
+            }
+        } else if (!strcmp(arg, "--icc")) {
+            NEXTARG();
+            if (!readEntireFile(arg, &iccOverride)) {
+                fprintf(stderr, "ERROR: Unable to read ICC profile: %s\n", arg);
+                returnCode = 1;
+                goto cleanup;
             }
         } else if (!strcmp(arg, "--duration")) {
             NEXTARG();
@@ -570,6 +629,24 @@ int main(int argc, char * argv[])
 
     if (ignoreICC) {
         avifImageSetProfileICC(image, NULL, 0);
+    }
+    if (iccOverride.size) {
+        avifImageSetProfileICC(image, iccOverride.data, iccOverride.size);
+    }
+    if (exifOverride.size) {
+        avifImageSetMetadataExif(image, exifOverride.data, exifOverride.size);
+    }
+    if (xmpOverride.size) {
+        avifImageSetMetadataXMP(image, xmpOverride.data, xmpOverride.size);
+    }
+
+    if (!image->icc.size && !cicpExplicitlySet && (image->colorPrimaries == AVIF_COLOR_PRIMARIES_UNSPECIFIED) &&
+        (image->transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED)) {
+        // The final image has no ICC profile, the user didn't specify any CICP, and the source
+        // image didn't provide any CICP. Explicitly signal SRGB CP/TC here, as 2/2/x will be
+        // interpreted as SRGB anyway.
+        image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
+        image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
     }
 
     if (paspCount == 2) {

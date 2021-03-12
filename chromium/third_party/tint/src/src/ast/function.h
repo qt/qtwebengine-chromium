@@ -18,6 +18,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -25,10 +26,13 @@
 #include "src/ast/block_statement.h"
 #include "src/ast/builtin_decoration.h"
 #include "src/ast/expression.h"
+#include "src/ast/function_decoration.h"
 #include "src/ast/location_decoration.h"
 #include "src/ast/node.h"
+#include "src/ast/pipeline_stage.h"
 #include "src/ast/set_decoration.h"
 #include "src/ast/statement.h"
+#include "src/ast/type/sampler_type.h"
 #include "src/ast/type/type.h"
 #include "src/ast/variable.h"
 
@@ -81,10 +85,38 @@ class Function : public Node {
   /// @returns the function params
   const VariableList& params() const { return params_; }
 
+  /// Sets the function decorations
+  /// @param decos the decorations to set. This will overwrite any existing
+  /// decorations
+  void set_decorations(ast::FunctionDecorationList decos) {
+    decorations_ = std::move(decos);
+  }
+  /// Adds a decoration to the function
+  /// @param deco the decoration to set
+  void add_decoration(std::unique_ptr<FunctionDecoration> deco) {
+    decorations_.push_back(std::move(deco));
+  }
+  /// @returns the decorations attached to this function
+  const FunctionDecorationList& decorations() const { return decorations_; }
+
+  /// @returns the workgroup size {x, y, z} for the function. {1, 1, 1} will be
+  /// return if no workgroup size was set.
+  std::tuple<uint32_t, uint32_t, uint32_t> workgroup_size() const;
+
+  /// @returns the functions pipeline stage or None if not set
+  ast::PipelineStage pipeline_stage() const;
+
+  /// @returns true if this function is an entry point
+  bool IsEntryPoint() const {
+    return pipeline_stage() != ast::PipelineStage::kNone;
+  }
+
   /// Adds the given variable to the list of referenced module variables if it
   /// is not already included.
   /// @param var the module variable to add
   void add_referenced_module_variable(Variable* var);
+  /// Note: If this function calls other functions, the return will also include
+  /// all of the referenced variables from the callees.
   /// @returns the referenced module variables
   const std::vector<Variable*>& referenced_module_variables() const {
     return referenced_module_vars_;
@@ -97,16 +129,31 @@ class Function : public Node {
   /// @returns the <variable, decoration> pair.
   const std::vector<std::pair<Variable*, BuiltinDecoration*>>
   referenced_builtin_variables() const;
-  /// Retrieves any referenced uniform variables. Note, the uniform must be
+  /// Retrieves any referenced uniform variables. Note, the variables must be
   /// decorated with both binding and set decorations.
   /// @returns the referenced uniforms
   const std::vector<std::pair<Variable*, Function::BindingInfo>>
   referenced_uniform_variables() const;
-  /// Retrieves any referenced storagebuffer variables. Note, the storagebuffer
+  /// Retrieves any referenced storagebuffer variables. Note, the variables
   /// must be decorated with both binding and set decorations.
   /// @returns the referenced storagebuffers
   const std::vector<std::pair<Variable*, Function::BindingInfo>>
   referenced_storagebuffer_variables() const;
+  /// Retrieves any referenced regular Sampler variables. Note, the
+  /// variables must be decorated with both binding and set decorations.
+  /// @returns the referenced storagebuffers
+  const std::vector<std::pair<Variable*, Function::BindingInfo>>
+  referenced_sampler_variables() const;
+  /// Retrieves any referenced comparison Sampler variables. Note, the
+  /// variables must be decorated with both binding and set decorations.
+  /// @returns the referenced storagebuffers
+  const std::vector<std::pair<Variable*, Function::BindingInfo>>
+  referenced_comparison_sampler_variables() const;
+  /// Retrieves any referenced sampled textures variables. Note, the
+  /// variables must be decorated with both binding and set decorations.
+  /// @returns the referenced sampled textures
+  const std::vector<std::pair<Variable*, Function::BindingInfo>>
+  referenced_sampled_texture_variables() const;
 
   /// Adds an ancestor entry point
   /// @param ep the entry point ancestor
@@ -115,6 +162,10 @@ class Function : public Node {
   const std::vector<std::string>& ancestor_entry_points() const {
     return ancestor_entry_points_;
   }
+  /// Checks if the given entry point is an ancestor
+  /// @param name the entry point name
+  /// @returns true if |name| is an ancestor entry point of this function
+  bool HasAncestorEntryPoint(const std::string& name) const;
 
   /// Sets the return type of the function
   /// @param type the return type
@@ -131,7 +182,9 @@ class Function : public Node {
     body_ = std::move(body);
   }
   /// @returns the function body
-  BlockStatement* body() const { return body_.get(); }
+  const BlockStatement* body() const { return body_.get(); }
+  /// @returns the function body
+  BlockStatement* body() { return body_.get(); }
 
   /// @returns true if the name and type are both present
   bool IsValid() const override;
@@ -146,6 +199,8 @@ class Function : public Node {
 
  private:
   Function(const Function&) = delete;
+  const std::vector<std::pair<Variable*, Function::BindingInfo>>
+  ReferencedSamplerVariablesImpl(type::SamplerKind kind) const;
 
   std::string name_;
   VariableList params_;
@@ -153,6 +208,7 @@ class Function : public Node {
   std::unique_ptr<BlockStatement> body_;
   std::vector<Variable*> referenced_module_vars_;
   std::vector<std::string> ancestor_entry_points_;
+  FunctionDecorationList decorations_;
 };
 
 /// A list of unique functions

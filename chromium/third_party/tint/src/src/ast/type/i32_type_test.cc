@@ -25,6 +25,7 @@ using I32TypeTest = testing::Test;
 
 TEST_F(I32TypeTest, Is) {
   I32Type i;
+  EXPECT_FALSE(i.IsAccessControl());
   EXPECT_FALSE(i.IsAlias());
   EXPECT_FALSE(i.IsArray());
   EXPECT_FALSE(i.IsBool());
@@ -42,6 +43,16 @@ TEST_F(I32TypeTest, Is) {
 TEST_F(I32TypeTest, TypeName) {
   I32Type i;
   EXPECT_EQ(i.type_name(), "__i32");
+}
+
+TEST_F(I32TypeTest, MinBufferBindingSize) {
+  I32Type i;
+  EXPECT_EQ(4u, i.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
+}
+
+TEST_F(I32TypeTest, BaseAlignment) {
+  I32Type i;
+  EXPECT_EQ(4u, i.BaseAlignment(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

@@ -10,8 +10,10 @@ import("//build_overrides/build.gni")
 # application.
 if (!build_with_chromium) {
   shared_sources = [
-    "cast_agent.cc",
-    "cast_agent.h",
+    "cast_service.cc",
+    "cast_service.h",
+    "mirroring_application.cc",
+    "mirroring_application.h",
     "streaming_playback_controller.cc",
     "streaming_playback_controller.h",
   ]
@@ -58,23 +60,15 @@ if (!build_with_chromium) {
     ]
   }
 
-  source_set("e2e_tests") {
-    testonly = true
-
-    sources = [ "cast_agent_integration_tests.cc" ]
-
-    deps = [
-      ":standalone_receiver_dummy",
-      "../../third_party/boringssl",
-      "../../third_party/googletest:gtest",
-      "../receiver:channel",
-    ]
-  }
-
   executable("cast_receiver") {
     sources = [ "main.cc" ]
 
-    deps = [ "../receiver:channel" ]
+    deps = [
+      "../receiver:agent",
+      "../receiver:channel",
+    ]
+
+    configs += [ "../common:certificate_config" ]
 
     if (have_external_libs) {
       deps += [ ":standalone_receiver_sdl" ]

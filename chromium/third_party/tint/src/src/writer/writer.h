@@ -18,6 +18,7 @@
 #include <string>
 
 #include "src/ast/module.h"
+#include "src/ast/pipeline_stage.h"
 
 namespace tint {
 namespace writer {
@@ -30,9 +31,21 @@ class Writer {
   /// @returns the writer error string
   const std::string& error() const { return error_; }
 
+  /// Resets the generator
+  //! @cond Doxygen_Suppress
+  virtual void Reset() = 0;
+  //! @endcond
+
   /// Converts the module into the desired format
   /// @returns true on success; false on failure
   virtual bool Generate() = 0;
+
+  /// Converts a single entry point
+  /// @param stage the pipeline stage
+  /// @param name the entry point name
+  /// @returns true on succes; false on failure
+  virtual bool GenerateEntryPoint(ast::PipelineStage stage,
+                                  const std::string& name) = 0;
 
  protected:
   /// Constructor

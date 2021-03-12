@@ -60,6 +60,7 @@
     void getTexImage(TextureTarget targetPacked, GLint level, GLenum format, GLenum type,          \
                      void *pixels);                                                                \
     void getRenderbufferImage(GLenum target, GLenum format, GLenum type, void *pixels);            \
+    /* GL_ANGLE_get_tex_level_parameter */                                                         \
     /* GL_ANGLE_program_binary */                                                                  \
     /* GL_ANGLE_request_extension */                                                               \
     void requestExtension(const GLchar *name);                                                     \
@@ -302,6 +303,7 @@
     void bufferStorage(BufferBinding targetPacked, GLsizeiptr size, const void *data,              \
                        GLbitfield flags);                                                          \
     /* GL_EXT_compressed_ETC1_RGB8_sub_texture */                                                  \
+    /* GL_EXT_copy_image */                                                                        \
     /* GL_EXT_debug_marker */                                                                      \
     void insertEventMarker(GLsizei length, const GLchar *marker);                                  \
     void popGroupMarker();                                                                         \
@@ -319,6 +321,11 @@
     void multiDrawElementsBaseVertex(PrimitiveMode modePacked, const GLsizei *count,               \
                                      DrawElementsType typePacked, const void *const *indices,      \
                                      GLsizei primcount, const GLint *basevertex);                  \
+    /* GL_EXT_external_buffer */                                                                   \
+    void bufferStorageExternal(BufferBinding targetPacked, GLintptr offset, GLsizeiptr size,       \
+                               GLeglClientBufferEXT clientBuffer, GLbitfield flags);               \
+    void namedBufferStorageExternal(GLuint buffer, GLintptr offset, GLsizeiptr size,               \
+                                    GLeglClientBufferEXT clientBuffer, GLbitfield flags);          \
     /* GL_EXT_geometry_shader */                                                                   \
     /* GL_EXT_instanced_arrays */                                                                  \
     /* GL_EXT_map_buffer_range */                                                                  \
@@ -404,12 +411,14 @@
     void eGLImageTargetRenderbufferStorage(GLenum target, GLeglImageOES image);                    \
     void eGLImageTargetTexture2D(TextureType targetPacked, GLeglImageOES image);                   \
     /* GL_OES_compressed_ETC1_RGB8_texture */                                                      \
+    /* GL_OES_copy_image */                                                                        \
     /* GL_OES_depth32 */                                                                           \
     /* GL_OES_draw_buffers_indexed */                                                              \
     /* GL_OES_draw_elements_base_vertex */                                                         \
     /* GL_OES_get_program_binary */                                                                \
     /* GL_OES_mapbuffer */                                                                         \
     void *mapBuffer(BufferBinding targetPacked, GLenum access);                                    \
+    /* GL_OES_sample_shading */                                                                    \
     /* GL_OES_texture_3D */                                                                        \
     void framebufferTexture3D(GLenum target, GLenum attachment, TextureTarget textargetPacked,     \
                               TextureID texturePacked, GLint level, GLint zoffset);                \

@@ -8,6 +8,46 @@
 
 namespace fxv8 {
 
+bool IsUndefined(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsUndefined();
+}
+
+bool IsNull(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsNull();
+}
+
+bool IsBoolean(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsBoolean();
+}
+
+bool IsString(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsString();
+}
+
+bool IsNumber(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsNumber();
+}
+
+bool IsInteger(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsInt32();
+}
+
+bool IsObject(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsObject();
+}
+
+bool IsArray(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsArray();
+}
+
+bool IsDate(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsDate();
+}
+
+bool IsFunction(v8::Local<v8::Value> value) {
+  return !value.IsEmpty() && value->IsFunction();
+}
+
 v8::Local<v8::Value> NewNullHelper(v8::Isolate* pIsolate) {
   return v8::Null(pIsolate);
 }
@@ -73,6 +113,11 @@ bool ReentrantToBooleanHelper(v8::Isolate* pIsolate,
   return pValue->BooleanValue(pIsolate);
 }
 
+float ReentrantToFloatHelper(v8::Isolate* pIsolate,
+                             v8::Local<v8::Value> pValue) {
+  return static_cast<float>(ReentrantToDoubleHelper(pIsolate, pValue));
+}
+
 double ReentrantToDoubleHelper(v8::Isolate* pIsolate,
                                v8::Local<v8::Value> pValue) {
   if (pValue.IsEmpty())
@@ -113,7 +158,7 @@ ByteString ReentrantToByteStringHelper(v8::Isolate* pIsolate,
 
 v8::Local<v8::Object> ReentrantToObjectHelper(v8::Isolate* pIsolate,
                                               v8::Local<v8::Value> pValue) {
-  if (pValue.IsEmpty() || !pValue->IsObject())
+  if (!fxv8::IsObject(pValue))
     return v8::Local<v8::Object>();
 
   v8::TryCatch squash_exceptions(pIsolate);
@@ -123,7 +168,7 @@ v8::Local<v8::Object> ReentrantToObjectHelper(v8::Isolate* pIsolate,
 
 v8::Local<v8::Array> ReentrantToArrayHelper(v8::Isolate* pIsolate,
                                             v8::Local<v8::Value> pValue) {
-  if (pValue.IsEmpty() || !pValue->IsArray())
+  if (!fxv8::IsArray(pValue))
     return v8::Local<v8::Array>();
 
   v8::TryCatch squash_exceptions(pIsolate);
@@ -168,6 +213,36 @@ std::vector<WideString> ReentrantGetObjectPropertyNamesHelper(
   return result;
 }
 
+bool ReentrantHasObjectOwnPropertyHelper(v8::Isolate* pIsolate,
+                                         v8::Local<v8::Object> pObj,
+                                         ByteStringView bsUTF8PropertyName,
+                                         bool bUseTypeGetter) {
+  if (pObj.IsEmpty())
+    return false;
+
+  v8::TryCatch squash_exceptions(pIsolate);
+  v8::Local<v8::Context> pContext = pIsolate->GetCurrentContext();
+  v8::Local<v8::String> hKey =
+      fxv8::NewStringHelper(pIsolate, bsUTF8PropertyName);
+  return pObj->HasRealNamedProperty(pContext, hKey).FromJust() ||
+         (bUseTypeGetter &&
+          pObj->HasOwnProperty(pContext, hKey).FromMaybe(false));
+}
+
+bool ReentrantSetObjectOwnPropertyHelper(v8::Isolate* pIsolate,
+                                         v8::Local<v8::Object> pObj,
+                                         ByteStringView bsUTF8PropertyName,
+                                         v8::Local<v8::Value> pValue) {
+  ASSERT(!pValue.IsEmpty());
+  if (pObj.IsEmpty())
+    return false;
+
+  v8::TryCatch squash_exceptions(pIsolate);
+  v8::Local<v8::String> name = NewStringHelper(pIsolate, bsUTF8PropertyName);
+  return pObj->DefineOwnProperty(pIsolate->GetCurrentContext(), name, pValue)
+      .FromMaybe(false);
+}
+
 bool ReentrantPutObjectPropertyHelper(v8::Isolate* pIsolate,
                                       v8::Local<v8::Object> pObj,
                                       ByteStringView bsUTF8PropertyName,
@@ -180,6 +255,15 @@ bool ReentrantPutObjectPropertyHelper(v8::Isolate* pIsolate,
   v8::Local<v8::String> name = NewStringHelper(pIsolate, bsUTF8PropertyName);
   v8::Maybe<bool> result = pObj->Set(pIsolate->GetCurrentContext(), name, pPut);
   return result.IsJust() && result.FromJust();
+}
+
+void ReentrantDeleteObjectPropertyHelper(v8::Isolate* pIsolate,
+                                         v8::Local<v8::Object> pObj,
+                                         ByteStringView bsUTF8PropertyName) {
+  v8::TryCatch squash_exceptions(pIsolate);
+  pObj->Delete(pIsolate->GetCurrentContext(),
+               fxv8::NewStringHelper(pIsolate, bsUTF8PropertyName))
+      .FromJust();
 }
 
 bool ReentrantPutArrayElementHelper(v8::Isolate* pIsolate,

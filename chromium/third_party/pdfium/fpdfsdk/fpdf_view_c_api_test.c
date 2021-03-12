@@ -70,6 +70,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFAnnot_GetStringValue);
     CHK(FPDFAnnot_GetSubtype);
     CHK(FPDFAnnot_GetValueType);
+    CHK(FPDFAnnot_GetVertices);
     CHK(FPDFAnnot_HasAttachmentPoints);
     CHK(FPDFAnnot_HasKey);
     CHK(FPDFAnnot_IsChecked);
@@ -320,6 +321,7 @@ int CheckPDFiumCApi() {
     // fpdf_signature.h
     CHK(FPDFSignatureObj_GetByteRange);
     CHK(FPDFSignatureObj_GetContents);
+    CHK(FPDFSignatureObj_GetDocMDPPermission);
     CHK(FPDFSignatureObj_GetReason);
     CHK(FPDFSignatureObj_GetSubFilter);
     CHK(FPDFSignatureObj_GetTime);

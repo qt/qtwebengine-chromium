@@ -7,159 +7,20 @@
 #include "fpdfsdk/pwl/cpwl_combo_box.h"
 
 #include <algorithm>
-#include <sstream>
 #include <utility>
 
-#include "core/fxge/cfx_fillrenderoptions.h"
-#include "core/fxge/cfx_pathdata.h"
-#include "core/fxge/cfx_renderdevice.h"
+#include "fpdfsdk/pwl/cpwl_cbbutton.h"
+#include "fpdfsdk/pwl/cpwl_cblistbox.h"
 #include "fpdfsdk/pwl/cpwl_edit.h"
-#include "fpdfsdk/pwl/cpwl_edit_ctrl.h"
-#include "fpdfsdk/pwl/cpwl_list_box.h"
-#include "fpdfsdk/pwl/cpwl_list_impl.h"
-#include "fpdfsdk/pwl/cpwl_wnd.h"
+#include "fpdfsdk/pwl/ipwl_fillernotify.h"
 #include "public/fpdf_fwlevent.h"
 
 namespace {
 
 constexpr float kComboBoxDefaultFontSize = 12.0f;
-constexpr float kComboBoxTriangleHalfLength = 3.0f;
 constexpr int kDefaultButtonWidth = 13;
 
 }  // namespace
-
-CPWL_CBListBox::CPWL_CBListBox(
-    const CreateParams& cp,
-    std::unique_ptr<IPWL_SystemHandler::PerWindowData> pAttachedData)
-    : CPWL_ListBox(cp, std::move(pAttachedData)) {}
-
-CPWL_CBListBox::~CPWL_CBListBox() = default;
-
-bool CPWL_CBListBox::OnLButtonUp(uint32_t nFlag, const CFX_PointF& point) {
-  CPWL_Wnd::OnLButtonUp(nFlag, point);
-
-  if (!m_bMouseDown)
-    return true;
-
-  ReleaseCapture();
-  m_bMouseDown = false;
-
-  if (!ClientHitTest(point))
-    return true;
-  if (CPWL_Wnd* pParent = GetParentWindow())
-    pParent->NotifyLButtonUp(this, point);
-
-  return !OnNotifySelectionChanged(false, nFlag);
-}
-
-bool CPWL_CBListBox::IsMovementKey(uint16_t nChar) const {
-  switch (nChar) {
-    case FWL_VKEY_Up:
-    case FWL_VKEY_Down:
-    case FWL_VKEY_Home:
-    case FWL_VKEY_Left:
-    case FWL_VKEY_End:
-    case FWL_VKEY_Right:
-      return true;
-    default:
-      return false;
-  }
-}
-
-bool CPWL_CBListBox::OnMovementKeyDown(uint16_t nChar, uint32_t nFlag) {
-  ASSERT(IsMovementKey(nChar));
-
-  switch (nChar) {
-    case FWL_VKEY_Up:
-      m_pList->OnVK_UP(IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag));
-      break;
-    case FWL_VKEY_Down:
-      m_pList->OnVK_DOWN(IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag));
-      break;
-    case FWL_VKEY_Home:
-      m_pList->OnVK_HOME(IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag));
-      break;
-    case FWL_VKEY_Left:
-      m_pList->OnVK_LEFT(IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag));
-      break;
-    case FWL_VKEY_End:
-      m_pList->OnVK_END(IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag));
-      break;
-    case FWL_VKEY_Right:
-      m_pList->OnVK_RIGHT(IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag));
-      break;
-  }
-  return OnNotifySelectionChanged(true, nFlag);
-}
-
-bool CPWL_CBListBox::IsChar(uint16_t nChar, uint32_t nFlag) const {
-  return m_pList->OnChar(nChar, IsSHIFTpressed(nFlag), IsCTRLpressed(nFlag));
-}
-
-bool CPWL_CBListBox::OnCharNotify(uint16_t nChar, uint32_t nFlag) {
-  if (auto* pComboBox = static_cast<CPWL_ComboBox*>(GetParentWindow()))
-    pComboBox->SetSelectText();
-
-  return OnNotifySelectionChanged(true, nFlag);
-}
-
-CPWL_CBButton::CPWL_CBButton(
-    const CreateParams& cp,
-    std::unique_ptr<IPWL_SystemHandler::PerWindowData> pAttachedData)
-    : CPWL_Wnd(cp, std::move(pAttachedData)) {}
-
-CPWL_CBButton::~CPWL_CBButton() = default;
-
-void CPWL_CBButton::DrawThisAppearance(CFX_RenderDevice* pDevice,
-                                       const CFX_Matrix& mtUser2Device) {
-  CPWL_Wnd::DrawThisAppearance(pDevice, mtUser2Device);
-
-  CFX_FloatRect rectWnd = CPWL_Wnd::GetWindowRect();
-  if (!IsVisible() || rectWnd.IsEmpty())
-    return;
-
-  CFX_PointF ptCenter = GetCenterPoint();
-
-  static constexpr float kComboBoxTriangleQuarterLength =
-      kComboBoxTriangleHalfLength * 0.5;
-  CFX_PointF pt1(ptCenter.x - kComboBoxTriangleHalfLength,
-                 ptCenter.y + kComboBoxTriangleQuarterLength);
-  CFX_PointF pt2(ptCenter.x + kComboBoxTriangleHalfLength,
-                 ptCenter.y + kComboBoxTriangleQuarterLength);
-  CFX_PointF pt3(ptCenter.x, ptCenter.y - kComboBoxTriangleQuarterLength);
-
-  if (IsFloatBigger(rectWnd.right - rectWnd.left,
-                    kComboBoxTriangleHalfLength * 2) &&
-      IsFloatBigger(rectWnd.top - rectWnd.bottom,
-                    kComboBoxTriangleHalfLength)) {
-    CFX_PathData path;
-    path.AppendPoint(pt1, FXPT_TYPE::MoveTo);
-    path.AppendPoint(pt2, FXPT_TYPE::LineTo);
-    path.AppendPoint(pt3, FXPT_TYPE::LineTo);
-    path.AppendPoint(pt1, FXPT_TYPE::LineTo);
-
-    pDevice->DrawPath(&path, &mtUser2Device, nullptr,
-                      PWL_DEFAULT_BLACKCOLOR.ToFXColor(GetTransparency()), 0,
-                      CFX_FillRenderOptions::EvenOddOptions());
-  }
-}
-
-bool CPWL_CBButton::OnLButtonDown(uint32_t nFlag, const CFX_PointF& point) {
-  CPWL_Wnd::OnLButtonDown(nFlag, point);
-
-  SetCapture();
-  if (CPWL_Wnd* pParent = GetParentWindow())
-    pParent->NotifyLButtonDown(this, point);
-
-  return true;
-}
-
-bool CPWL_CBButton::OnLButtonUp(uint32_t nFlag, const CFX_PointF& point) {
-  CPWL_Wnd::OnLButtonUp(nFlag, point);
-
-  ReleaseCapture();
-  return true;
-}
 
 CPWL_ComboBox::CPWL_ComboBox(
     const CreateParams& cp,
@@ -606,7 +467,7 @@ void CPWL_ComboBox::SetSelectText() {
   m_nSelectItem = m_pList->GetCurSel();
 }
 
-void CPWL_ComboBox::SetFillerNotify(IPWL_Filler_Notify* pNotify) {
+void CPWL_ComboBox::SetFillerNotify(IPWL_FillerNotify* pNotify) {
   m_pFillerNotify = pNotify;
 
   if (m_pEdit)

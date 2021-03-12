@@ -9,8 +9,8 @@
 
 #include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkRectPriv.h"
-#include "src/core/SkScopeExit.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/GrAttachment.h"
 #include "src/gpu/GrAuditTrail.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrGpu.h"
@@ -21,7 +21,6 @@
 #include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrRenderTargetContext.h"
 #include "src/gpu/GrResourceAllocator.h"
-#include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/geometry/GrRect.h"
 #include "src/gpu/ops/GrClearOp.h"
@@ -38,15 +37,11 @@ using DstProxyView = GrXferProcessor::DstProxyView;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-GrOpsTaskClosedObserver::~GrOpsTaskClosedObserver() = default;
-
-////////////////////////////////////////////////////////////////////////////////
-
 static inline bool can_reorder(const SkRect& a, const SkRect& b) { return !GrRectsOverlap(a, b); }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-inline GrOpsTask::OpChain::List::List(std::unique_ptr<GrOp> op)
+inline GrOpsTask::OpChain::List::List(GrOp::Owner op)
         : fHead(std::move(op)), fTail(fHead.get()) {
     this->validate();
 }
@@ -61,7 +56,7 @@ inline GrOpsTask::OpChain::List& GrOpsTask::OpChain::List::operator=(List&& that
     return *this;
 }
 
-inline std::unique_ptr<GrOp> GrOpsTask::OpChain::List::popHead() {
+inline GrOp::Owner GrOpsTask::OpChain::List::popHead() {
     SkASSERT(fHead);
     auto temp = fHead->cutChain();
     std::swap(temp, fHead);
@@ -72,7 +67,7 @@ inline std::unique_ptr<GrOp> GrOpsTask::OpChain::List::popHead() {
     return temp;
 }
 
-inline std::unique_ptr<GrOp> GrOpsTask::OpChain::List::removeOp(GrOp* op) {
+inline GrOp::Owner GrOpsTask::OpChain::List::removeOp(GrOp* op) {
 #ifdef SK_DEBUG
     auto head = op;
     while (head->prevInChain()) { head = head->prevInChain(); }
@@ -94,7 +89,7 @@ inline std::unique_ptr<GrOp> GrOpsTask::OpChain::List::removeOp(GrOp* op) {
     return temp;
 }
 
-inline void GrOpsTask::OpChain::List::pushHead(std::unique_ptr<GrOp> op) {
+inline void GrOpsTask::OpChain::List::pushHead(GrOp::Owner op) {
     SkASSERT(op);
     SkASSERT(op->isChainHead());
     SkASSERT(op->isChainTail());
@@ -107,7 +102,7 @@ inline void GrOpsTask::OpChain::List::pushHead(std::unique_ptr<GrOp> op) {
     }
 }
 
-inline void GrOpsTask::OpChain::List::pushTail(std::unique_ptr<GrOp> op) {
+inline void GrOpsTask::OpChain::List::pushTail(GrOp::Owner op) {
     SkASSERT(op->isChainTail());
     fTail->chainConcat(std::move(op));
     fTail = fTail->nextInChain();
@@ -124,7 +119,7 @@ inline void GrOpsTask::OpChain::List::validate() const {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-GrOpsTask::OpChain::OpChain(std::unique_ptr<GrOp> op,
+GrOpsTask::OpChain::OpChain(GrOp::Owner op,
                             GrProcessorSet::Analysis processorAnalysis,
                             GrAppliedClip* appliedClip, const DstProxyView* dstProxyView)
         : fList{std::move(op)}
@@ -152,9 +147,10 @@ void GrOpsTask::OpChain::visitProxies(const GrOp::VisitProxyFunc& func) const {
     }
 }
 
-void GrOpsTask::OpChain::deleteOps(GrOpMemoryPool* pool) {
+void GrOpsTask::OpChain::deleteOps() {
     while (!fList.empty()) {
-        pool->release(fList.popHead());
+        // Since the value goes out of scope immediately, the GrOp::Owner deletes the op.
+        fList.popHead();
     }
 }
 
@@ -187,7 +183,8 @@ GrOpsTask::OpChain::List GrOpsTask::OpChain::DoConcat(
             bool canForwardMerge =
                     (a == chainA.tail()) || can_reorder(a->bounds(), forwardMergeBounds);
             if (canForwardMerge || canBackwardMerge) {
-                auto result = a->combineIfPossible(chainB.head(), arenas, caps);
+                auto result = a->combineIfPossible(
+                        chainB.head(), arenas->recordTimeAllocator(), caps);
                 SkASSERT(result != GrOp::CombineResult::kCannotCombine);
                 merged = (result == GrOp::CombineResult::kMerged);
                 GrOP_INFO("\t\t: (%s opID: %u) -> Combining with (%s, opID: %u)\n",
@@ -197,7 +194,8 @@ GrOpsTask::OpChain::List GrOpsTask::OpChain::DoConcat(
             if (merged) {
                 GR_AUDIT_TRAIL_OPS_RESULT_COMBINED(auditTrail, a, chainB.head());
                 if (canBackwardMerge) {
-                    arenas->opMemoryPool()->release(chainB.popHead());
+                    // The GrOp::Owner releases the op.
+                    chainB.popHead();
                 } else {
                     // We merged the contents of b's head into a. We will replace b's head with a in
                     // chain b.
@@ -205,8 +203,9 @@ GrOpsTask::OpChain::List GrOpsTask::OpChain::DoConcat(
                     if (a == origATail) {
                         origATail = a->prevInChain();
                     }
-                    std::unique_ptr<GrOp> detachedA = chainA.removeOp(a);
-                    arenas->opMemoryPool()->release(chainB.popHead());
+                    GrOp::Owner detachedA = chainA.removeOp(a);
+                    // The GrOp::Owner releases the op.
+                    chainB.popHead();
                     chainB.pushHead(std::move(detachedA));
                     if (chainA.empty()) {
                         // We merged all the nodes in chain a to chain b.
@@ -262,7 +261,8 @@ bool GrOpsTask::OpChain::tryConcat(
 
     SkDEBUGCODE(bool first = true;)
     do {
-        switch (fList.tail()->combineIfPossible(list->head(), arenas, caps)) {
+        switch (fList.tail()->combineIfPossible(list->head(), arenas->recordTimeAllocator(), caps))
+        {
             case GrOp::CombineResult::kCannotCombine:
                 // If an op supports chaining then it is required that chaining is transitive and
                 // that if any two ops in two different chains can merge then the two chains
@@ -282,7 +282,8 @@ bool GrOpsTask::OpChain::tryConcat(
                           list->tail()->name(), list->tail()->uniqueID(), list->head()->name(),
                           list->head()->uniqueID());
                 GR_AUDIT_TRAIL_OPS_RESULT_COMBINED(auditTrail, fList.tail(), list->head());
-                arenas->opMemoryPool()->release(list->popHead());
+                // The GrOp::Owner releases the op.
+                list->popHead();
                 break;
             }
         }
@@ -318,8 +319,8 @@ bool GrOpsTask::OpChain::prependChain(OpChain* that, const GrCaps& caps,
     return true;
 }
 
-std::unique_ptr<GrOp> GrOpsTask::OpChain::appendOp(
-        std::unique_ptr<GrOp> op, GrProcessorSet::Analysis processorAnalysis,
+GrOp::Owner GrOpsTask::OpChain::appendOp(
+        GrOp::Owner op, GrProcessorSet::Analysis processorAnalysis,
         const DstProxyView* dstProxyView, const GrAppliedClip* appliedClip, const GrCaps& caps,
         GrRecordingContext::Arenas* arenas, GrAuditTrail* auditTrail) {
     const GrXferProcessor::DstProxyView noDstProxyView;
@@ -367,23 +368,13 @@ GrOpsTask::GrOpsTask(GrDrawingManager* drawingMgr, GrRecordingContext::Arenas ar
 
 void GrOpsTask::deleteOps() {
     for (auto& chain : fOpChains) {
-        chain.deleteOps(fArenas.opMemoryPool());
+        chain.deleteOps();
     }
     fOpChains.reset();
 }
 
 GrOpsTask::~GrOpsTask() {
     this->deleteOps();
-}
-
-void GrOpsTask::removeClosedObserver(GrOpsTaskClosedObserver* observer) {
-    SkASSERT(observer);
-    for (int i = 0; i < fClosedObservers.count(); ++i) {
-        if (fClosedObservers[i] == observer) {
-            fClosedObservers.removeShuffle(i);
-            --i;
-        }
-    }
 }
 
 void GrOpsTask::endFlush(GrDrawingManager* drawingMgr) {
@@ -464,12 +455,17 @@ void GrOpsTask::onPrepare(GrOpFlushState* flushState) {
     flushState->setSampledProxyArray(nullptr);
 }
 
-static GrOpsRenderPass* create_render_pass(
-        GrGpu* gpu, GrRenderTarget* rt, GrStencilAttachment* stencil, GrSurfaceOrigin origin,
-        const SkIRect& bounds, GrLoadOp colorLoadOp, const SkPMColor4f& loadClearColor,
-        GrLoadOp stencilLoadOp, GrStoreOp stencilStoreOp,
-        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-        GrXferBarrierFlags renderPassXferBarriers) {
+static GrOpsRenderPass* create_render_pass(GrGpu* gpu,
+                                           GrRenderTarget* rt,
+                                           GrAttachment* stencil,
+                                           GrSurfaceOrigin origin,
+                                           const SkIRect& bounds,
+                                           GrLoadOp colorLoadOp,
+                                           const SkPMColor4f& loadClearColor,
+                                           GrLoadOp stencilLoadOp,
+                                           GrStoreOp stencilStoreOp,
+                                           const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+                                           GrXferBarrierFlags renderPassXferBarriers) {
     const GrOpsRenderPass::LoadAndStoreInfo kColorLoadStoreInfo {
         colorLoadOp,
         GrStoreOp::kStore,
@@ -516,7 +512,7 @@ bool GrOpsTask::onExecute(GrOpFlushState* flushState) {
     GrRenderTarget* renderTarget = proxy->peekRenderTarget();
     SkASSERT(renderTarget);
 
-    GrStencilAttachment* stencil = nullptr;
+    GrAttachment* stencil = nullptr;
     if (int numStencilSamples = proxy->numStencilSamples()) {
         if (!flushState->resourceProvider()->attachStencilAttachment(
                 renderTarget, numStencilSamples)) {
@@ -786,7 +782,7 @@ void GrOpsTask::gatherProxyIntervals(GrResourceAllocator* alloc) const {
 }
 
 void GrOpsTask::recordOp(
-        std::unique_ptr<GrOp> op, GrProcessorSet::Analysis processorAnalysis, GrAppliedClip* clip,
+        GrOp::Owner op, GrProcessorSet::Analysis processorAnalysis, GrAppliedClip* clip,
         const DstProxyView* dstProxyView, const GrCaps& caps) {
     SkDEBUGCODE(op->validate();)
     SkASSERT(processorAnalysis.requiresDstTexture() == (dstProxyView && dstProxyView->proxy()));
@@ -796,7 +792,6 @@ void GrOpsTask::recordOp(
     // A closed GrOpsTask should never receive new/more ops
     SkASSERT(!this->isClosed());
     if (!op->bounds().isFinite()) {
-        fArenas.opMemoryPool()->release(std::move(op));
         return;
     }
 
@@ -883,12 +878,6 @@ void GrOpsTask::forwardCombine(const GrCaps& caps) {
 GrRenderTask::ExpectedOutcome GrOpsTask::onMakeClosed(
         const GrCaps& caps, SkIRect* targetUpdateBounds) {
     this->forwardCombine(caps);
-    SkScopeExit triggerObservers([&] {
-        for (const auto& o : fClosedObservers) {
-            o->wasClosed(*this);
-        }
-        fClosedObservers.reset();
-    });
     if (!this->isNoOp()) {
         GrSurfaceProxy* proxy = this->target(0).proxy();
         // Use the entire backing store bounds since the GPU doesn't clip automatically to the

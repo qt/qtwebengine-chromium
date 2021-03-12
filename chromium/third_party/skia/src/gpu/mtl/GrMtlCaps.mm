@@ -18,6 +18,7 @@
 #include "src/gpu/GrRenderTargetProxy.h"
 #include "src/gpu/GrShaderCaps.h"
 #include "src/gpu/GrSurfaceProxy.h"
+#include "src/gpu/mtl/GrMtlRenderTarget.h"
 #include "src/gpu/mtl/GrMtlUtil.h"
 
 #if !__has_feature(objc_arc)
@@ -128,10 +129,29 @@ void GrMtlCaps::initFeatureSet(MTLFeatureSet featureSet) {
     SK_ABORT("Requested an unsupported feature set");
 }
 
-bool GrMtlCaps::canCopyAsBlit(GrSurface* dst, int dstSampleCount,
-                              GrSurface* src, int srcSampleCount,
-                              const SkIRect& srcRect, const SkIPoint& dstPoint,
-                              bool areDstSrcSameObj) const {
+static int get_surface_sample_cnt(GrSurface* surf) {
+    if (const GrRenderTarget* rt = surf->asRenderTarget()) {
+        return rt->numSamples();
+    }
+    return 1;
+}
+
+static bool is_resolving_msaa(GrSurface* surf) {
+    auto rt = static_cast<GrMtlRenderTarget*>(surf->asRenderTarget());
+    if (rt && rt->mtlResolveTexture()) {
+        SkASSERT(rt->numSamples() > 1);
+        return true;
+    }
+    return false;
+}
+
+bool GrMtlCaps::canCopyAsBlit(GrSurface* dst,
+                              GrSurface* src,
+                              const SkIRect& srcRect,
+                              const SkIPoint& dstPoint) const {
+    if (is_resolving_msaa(src) || is_resolving_msaa(dst)) {
+        return false;
+    }
     id<MTLTexture> dstTex = GrGetMTLTextureFromSurface(dst);
     id<MTLTexture> srcTex = GrGetMTLTextureFromSurface(src);
     if (srcTex.framebufferOnly || dstTex.framebufferOnly) {
@@ -140,9 +160,11 @@ bool GrMtlCaps::canCopyAsBlit(GrSurface* dst, int dstSampleCount,
 
     MTLPixelFormat dstFormat = dstTex.pixelFormat;
     MTLPixelFormat srcFormat = srcTex.pixelFormat;
+    int srcSampleCount = get_surface_sample_cnt(src);
+    int dstSampleCount = get_surface_sample_cnt(dst);
 
-    return this->canCopyAsBlit(dstFormat, dstSampleCount, srcFormat, srcSampleCount,
-                               srcRect, dstPoint, areDstSrcSameObj);
+    return this->canCopyAsBlit(dstFormat, dstSampleCount, srcFormat, srcSampleCount, srcRect,
+                               dstPoint, src == dst);
 }
 
 bool GrMtlCaps::canCopyAsBlit(MTLPixelFormat dstFormat, int dstSampleCount,
@@ -165,16 +187,35 @@ bool GrMtlCaps::canCopyAsBlit(MTLPixelFormat dstFormat, int dstSampleCount,
     return true;
 }
 
-bool GrMtlCaps::canCopyAsResolve(GrSurface* dst, int dstSampleCount,
-                                 GrSurface* src, int srcSampleCount,
-                                 const SkIRect& srcRect, const SkIPoint& dstPoint) const {
-    if (dst == src) {
+bool GrMtlCaps::canCopyAsResolve(GrSurface* dst,
+                                 GrSurface* src,
+                                 const SkIRect& srcRect,
+                                 const SkIPoint& dstPoint) const {
+    MTLPixelFormat dstFormat = GrBackendFormatAsMTLPixelFormat(dst->backendFormat());
+    MTLPixelFormat srcFormat = GrBackendFormatAsMTLPixelFormat(src->backendFormat());
+
+    int srcSampleCount = get_surface_sample_cnt(src);
+    int dstSampleCount = get_surface_sample_cnt(dst);
+
+    bool srcIsRenderTarget = src->asRenderTarget();
+    SkISize srcSize = src->dimensions();
+    return this->canCopyAsResolve(dstFormat, dstSampleCount, srcFormat, srcSampleCount,
+                                  srcIsRenderTarget, srcSize, srcRect, dstPoint, src == dst);
+}
+
+bool GrMtlCaps::canCopyAsResolve(MTLPixelFormat dstFormat, int dstSampleCount,
+                                 MTLPixelFormat srcFormat, int srcSampleCount,
+                                 bool srcIsRenderTarget, const SkISize srcDimensions,
+                                 const SkIRect& srcRect,
+                                 const SkIPoint& dstPoint,
+                                 bool areDstSrcSameObj) const {
+    if (areDstSrcSameObj) {
         return false;
     }
-    if (dst->backendFormat() != src->backendFormat()) {
+    if (dstFormat != srcFormat) {
         return false;
     }
-    if (dstSampleCount > 1 || srcSampleCount == 1 || !src->asRenderTarget()) {
+    if (dstSampleCount > 1 || srcSampleCount == 1 || !srcIsRenderTarget) {
         return false;
     }
 
@@ -182,7 +223,7 @@ bool GrMtlCaps::canCopyAsResolve(GrSurface* dst, int dstSampleCount,
     if (dstPoint != SkIPoint::Make(0, 0)) {
         return false;
     }
-    if (srcRect != SkIRect::MakeXYWH(0, 0, src->width(), src->height())) {
+    if (srcRect != SkIRect::MakeSize(srcDimensions)) {
         return false;
     }
 
@@ -191,22 +232,30 @@ bool GrMtlCaps::canCopyAsResolve(GrSurface* dst, int dstSampleCount,
 
 bool GrMtlCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
                                  const SkIRect& srcRect, const SkIPoint& dstPoint) const {
-    int dstSampleCnt = 0;
-    int srcSampleCnt = 0;
+    int dstSampleCnt = 1;
+    int srcSampleCnt = 1;
     if (const GrRenderTargetProxy* rtProxy = dst->asRenderTargetProxy()) {
         dstSampleCnt = rtProxy->numSamples();
     }
     if (const GrRenderTargetProxy* rtProxy = src->asRenderTargetProxy()) {
         srcSampleCnt = rtProxy->numSamples();
     }
-    SkASSERT((dstSampleCnt > 0) == SkToBool(dst->asRenderTargetProxy()));
-    SkASSERT((srcSampleCnt > 0) == SkToBool(src->asRenderTargetProxy()));
 
     // TODO: need some way to detect whether the proxy is framebufferOnly
 
-    return this->canCopyAsBlit(GrBackendFormatAsMTLPixelFormat(dst->backendFormat()), dstSampleCnt,
-                               GrBackendFormatAsMTLPixelFormat(src->backendFormat()), srcSampleCnt,
-                               srcRect, dstPoint, dst == src);
+    if (this->canCopyAsBlit(GrBackendFormatAsMTLPixelFormat(dst->backendFormat()), dstSampleCnt,
+                            GrBackendFormatAsMTLPixelFormat(src->backendFormat()), srcSampleCnt,
+                            srcRect, dstPoint, dst == src)) {
+        return true;
+    }
+    bool srcIsRenderTarget = src->asRenderTargetProxy();
+    MTLPixelFormat dstFormat = GrBackendFormatAsMTLPixelFormat(dst->backendFormat());
+    MTLPixelFormat srcFormat = GrBackendFormatAsMTLPixelFormat(src->backendFormat());
+    return this->canCopyAsResolve(dstFormat, dstSampleCnt,
+                                  srcFormat, srcSampleCnt,
+                                  srcIsRenderTarget, src->backingStoreDimensions(), srcRect,
+                                  dstPoint,
+                                  dst == src);
 }
 
 void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
@@ -237,6 +286,8 @@ void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
     }
     fMaxPreferredRenderTargetSize = fMaxRenderTargetSize;
     fMaxTextureSize = fMaxRenderTargetSize;
+
+    fMaxPushConstantsSize = 4*1024;
 
     // Init sample counts. All devices support 1 (i.e. 0 in skia).
     fSampleCounts.push_back(1);
@@ -388,15 +439,6 @@ int GrMtlCaps::getRenderTargetSampleCount(int requestedCount, MTLPixelFormat for
     return 1 == requestedCount ? 1 : 0;
 }
 
-size_t GrMtlCaps::bytesPerPixel(const GrBackendFormat& format) const {
-    MTLPixelFormat mtlFormat = GrBackendFormatAsMTLPixelFormat(format);
-    return this->bytesPerPixel(mtlFormat);
-}
-
-size_t GrMtlCaps::bytesPerPixel(MTLPixelFormat format) const {
-    return this->getFormatInfo(format).fBytesPerPixel;
-}
-
 void GrMtlCaps::initShaderCaps() {
     GrShaderCaps* shaderCaps = fShaderCaps.get();
 
@@ -520,7 +562,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatR8Unorm)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 1;
         info->fColorTypeInfoCount = 2;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -545,7 +586,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatA8Unorm)];
         info->fFlags = FormatInfo::kTexturable_Flag;
-        info->fBytesPerPixel = 1;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -563,7 +603,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatB5G6R5Unorm)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 2;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -579,7 +618,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatABGR4Unorm)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 2;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -596,7 +634,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatRGBA8Unorm)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 4;
         info->fColorTypeInfoCount = 2;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -619,7 +656,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatRG8Unorm)];
         info->fFlags = FormatInfo::kTexturable_Flag;
-        info->fBytesPerPixel = 2;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -635,7 +671,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatBGRA8Unorm)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 4;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -651,7 +686,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatRGBA8Unorm_sRGB)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 4;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -671,7 +705,6 @@ void GrMtlCaps::initFormatTable() {
         } else {
             info->fFlags = FormatInfo::kTexturable_Flag;
         }
-        info->fBytesPerPixel = 4;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -692,7 +725,6 @@ void GrMtlCaps::initFormatTable() {
         } else {
             info->fFlags = FormatInfo::kAllFlags;
         }
-        info->fBytesPerPixel = 4;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -709,7 +741,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatR16Float)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 2;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -727,7 +758,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatRGBA16Float)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 8;
         info->fColorTypeInfoCount = 2;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -753,7 +783,6 @@ void GrMtlCaps::initFormatTable() {
         } else {
             info->fFlags = FormatInfo::kTexturable_Flag | FormatInfo::kRenderable_Flag;
         }
-        info->fBytesPerPixel = 2;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -775,7 +804,6 @@ void GrMtlCaps::initFormatTable() {
         } else {
             info->fFlags = FormatInfo::kTexturable_Flag | FormatInfo::kRenderable_Flag;
         }
-        info->fBytesPerPixel = 4;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -807,7 +835,6 @@ void GrMtlCaps::initFormatTable() {
         } else {
             info->fFlags = FormatInfo::kTexturable_Flag | FormatInfo::kRenderable_Flag;
         }
-        info->fBytesPerPixel = 8;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -823,7 +850,6 @@ void GrMtlCaps::initFormatTable() {
     {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatRG16Float)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fBytesPerPixel = 4;
         info->fColorTypeInfoCount = 1;
         info->fColorTypeInfos.reset(new ColorTypeInfo[info->fColorTypeInfoCount]());
         int ctIdx = 0;
@@ -868,7 +894,7 @@ void GrMtlCaps::initFormatTable() {
 }
 
 void GrMtlCaps::initStencilFormat(id<MTLDevice> physDev) {
-    fPreferredStencilFormat = StencilFormat{ MTLPixelFormatStencil8, 8, 8, true };
+    fPreferredStencilFormat = MTLPixelFormatStencil8;
 }
 
 bool GrMtlCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
@@ -876,6 +902,31 @@ bool GrMtlCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
         return rt->numSamples() <= 1 && SkToBool(surface->asTexture());
     }
     return true;
+}
+
+GrCaps::SurfaceReadPixelsSupport GrMtlCaps::surfaceSupportsReadPixels(
+        const GrSurface* surface) const {
+    if (auto mtlRT = static_cast<const GrMtlRenderTarget*>(surface->asRenderTarget())) {
+        if (mtlRT->numSamples() > 1 && !mtlRT->mtlResolveTexture()) {
+            return SurfaceReadPixelsSupport::kCopyToTexture2D;
+        }
+    }
+    return SurfaceReadPixelsSupport::kSupported;
+}
+
+GrCaps::DstCopyRestrictions GrMtlCaps::getDstCopyRestrictions(const GrRenderTargetProxy* src,
+                                                              GrColorType ct) const {
+    // If the src is a MSAA RT then the only supported copy action (not considering falling back
+    // to a draw) is to resolve from the MSAA src to the non-MSAA dst. Currently we only support
+    // resolving the entire texture to a resolve buffer of the same size.
+    DstCopyRestrictions restrictions = {};
+    if (auto rtProxy = src->asRenderTargetProxy()) {
+        if (rtProxy->numSamples() > 1) {
+            restrictions.fMustCopyWholeSrc = true;
+            restrictions.fRectsMustMatch = GrSurfaceProxy::RectsMustMatch::kYes;
+        }
+    }
+    return restrictions;
 }
 
 bool GrMtlCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
@@ -1040,7 +1091,7 @@ GrProgramDesc GrMtlCaps::makeDesc(GrRenderTarget* rt, const GrProgramInfo& progr
     }
 #endif
 
-    b.add32(rt && rt->getStencilAttachment() ? this->preferredStencilFormat().fInternalFormat
+    b.add32(rt && rt->getStencilAttachment() ? this->preferredStencilFormat()
                                              : MTLPixelFormatInvalid);
     b.add32((uint32_t)programInfo.isStencilEnabled());
     // Stencil samples don't seem to be tracked in the MTLRenderPipeline
@@ -1098,8 +1149,8 @@ void GrMtlCaps::onDumpJSON(SkJSONWriter* writer) const {
     writer->beginObject("Metal caps");
 
     writer->beginObject("Preferred Stencil Format");
-    writer->appendS32("stencil bits", fPreferredStencilFormat.fStencilBits);
-    writer->appendS32("total bits", fPreferredStencilFormat.fTotalBits);
+    writer->appendS32("stencil bits", GrMtlFormatStencilBits(fPreferredStencilFormat));
+    writer->appendS32("total bytes", GrMtlFormatBytesPerBlock(fPreferredStencilFormat));
     writer->endObject();
 
     switch (fPlatform) {

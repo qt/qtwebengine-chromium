@@ -15,15 +15,38 @@
 #ifndef SRC_AST_STRUCT_DECORATION_H_
 #define SRC_AST_STRUCT_DECORATION_H_
 
+#include <memory>
 #include <ostream>
+#include <vector>
+
+#include "src/ast/decoration.h"
 
 namespace tint {
 namespace ast {
 
 /// The struct decorations
-enum class StructDecoration { kNone = -1, kBlock };
+class StructDecoration : public Decoration {
+ public:
+  /// The kind of decoration that this type represents
+  static constexpr DecorationKind Kind = DecorationKind::kStruct;
 
-std::ostream& operator<<(std::ostream& out, StructDecoration stage);
+  ~StructDecoration() override;
+
+  /// @returns true if this is a block struct
+  virtual bool IsBlock() const = 0;
+
+  /// Outputs the decoration to the given stream
+  /// @param out the stream to output too
+  virtual void to_str(std::ostream& out) const = 0;
+
+ protected:
+  /// Constructor
+  /// @param source the source of this decoration
+  explicit StructDecoration(const Source& source);
+};
+
+/// List of struct decorations
+using StructDecorationList = std::vector<std::unique_ptr<StructDecoration>>;
 
 }  // namespace ast
 }  // namespace tint

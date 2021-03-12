@@ -13,7 +13,6 @@
 #include "include/private/SkTo.h"
 #include "src/core/SkBuffer.h"
 #include "src/core/SkPathPriv.h"
-#include "src/core/SkPathView.h"
 #include "src/core/SkSafeMath.h"
 
 //////////////////////////////////////////////////////////////////////////////
@@ -42,6 +41,14 @@ SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
 // allocations to just fit the current needs. makeSpace() will only grow, but never shrinks.
 //
 void SkPath::shrinkToFit() {
+    // Since this can relocate the allocated arrays, we have to defensively copy ourselves if
+    // we're not the only owner of the pathref... since relocating the arrays will invalidate
+    // any existing iterators.
+    if (!fPathRef->unique()) {
+        SkPathRef* pr = new SkPathRef;
+        pr->copy(*fPathRef, 0, 0);
+        fPathRef.reset(pr);
+    }
     fPathRef->fPoints.shrinkToFit();
     fPathRef->fVerbs.shrinkToFit();
     fPathRef->fConicWeights.shrinkToFit();
@@ -49,6 +56,13 @@ void SkPath::shrinkToFit() {
 }
 
 //////////////////////////////////////////////////////////////////////////////
+
+size_t SkPathRef::approximateBytesUsed() const {
+    return sizeof(SkPathRef)
+         + fPoints      .reserved() * sizeof(fPoints      [0])
+         + fVerbs       .reserved() * sizeof(fVerbs       [0])
+         + fConicWeights.reserved() * sizeof(fConicWeights[0]);
+}
 
 SkPathRef::~SkPathRef() {
     // Deliberately don't validate() this path ref, otherwise there's no way
@@ -309,21 +323,6 @@ void SkPathRef::copy(const SkPathRef& ref,
     fRRectOrOvalIsCCW = ref.fRRectOrOvalIsCCW;
     fRRectOrOvalStartIdx = ref.fRRectOrOvalStartIdx;
     SkDEBUGCODE(this->validate();)
-}
-
-unsigned SkPathRef::computeSegmentMask() const {
-    const uint8_t* verbs = fVerbs.begin();
-    unsigned mask = 0;
-    for (int i = 0; i < fVerbs.count(); ++i) {
-        switch (verbs[i]) {
-            case SkPath::kLine_Verb:  mask |= SkPath::kLine_SegmentMask; break;
-            case SkPath::kQuad_Verb:  mask |= SkPath::kQuad_SegmentMask; break;
-            case SkPath::kConic_Verb: mask |= SkPath::kConic_SegmentMask; break;
-            case SkPath::kCubic_Verb: mask |= SkPath::kCubic_SegmentMask; break;
-            default: break;
-        }
-    }
-    return mask;
 }
 
 void SkPathRef::interpolate(const SkPathRef& ending, SkScalar weight, SkPathRef* out) const {
@@ -684,21 +683,6 @@ bool SkPathRef::isValid() const {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "src/core/SkPathView.h"
-
-SkPathView SkPathRef::view(SkPathFillType ft, SkPathConvexity ct) const {
-    return {
-        { fPoints.begin(),       fPoints.size()       },
-        { fVerbs.begin(),        fVerbs.size()        },
-        { fConicWeights.begin(), fConicWeights.size() },
-        ft,
-        ct,
-        this->getBounds(),  // don't use fBounds, in case our bounds are dirty
-        fSegmentMask,
-        this->isFinite(),
-    };
-}
-
 SkPathEdgeIter::SkPathEdgeIter(const SkPath& path) {
     fMoveToPtr = fPts = path.fPathRef->points();
     fVerbs = path.fPathRef->verbsBegin();
@@ -712,55 +696,3 @@ SkPathEdgeIter::SkPathEdgeIter(const SkPath& path) {
     fNextIsNewContour = false;
     SkDEBUGCODE(fIsConic = false;)
 }
-
-SkPathEdgeIter::SkPathEdgeIter(const SkPathView& path) {
-    fMoveToPtr = fPts = path.fPoints.cbegin();
-    fVerbs = path.fVerbs.cbegin();
-    fVerbsStop = path.fVerbs.cend();
-    fConicWeights = path.fWeights.cbegin();
-    if (fConicWeights) {
-        fConicWeights -= 1;  // begin one behind
-    }
-
-    fNeedsCloseLine = false;
-    fNextIsNewContour = false;
-    SkDEBUGCODE(fIsConic = false;)
-}
-
-bool SkPathView::isRect(SkRect* rect) const {
-    SkPathDirection direction;
-    bool isClosed;
-
-    int currVerb = 0;
-    const SkPoint* pts = fPoints.begin();
-    return SkPathPriv::IsRectContour(*this, false, &currVerb, &pts, &isClosed, &direction, rect);
-}
-
-#ifdef SK_DEBUG
-void SkPathView::validate() const {
-    bool finite = SkScalarsAreFinite((const SkScalar*)fPoints.begin(),  fPoints.count() * 2)
-               && SkScalarsAreFinite(                 fWeights.begin(), fWeights.count());
-
-    SkASSERT(fIsFinite == finite);
-
-    if (fIsFinite) {
-        SkRect bounds;
-        bounds.setBounds(fPoints.begin(), fPoints.count());
-        SkASSERT(bounds == fBounds);
-    } else {
-        SkASSERT(fBounds.isEmpty());
-    }
-
-    unsigned mask = 0;
-    for (auto v : fVerbs) {
-        switch (static_cast<SkPathVerb>(v)) {
-            default: break;
-            case SkPathVerb::kLine:  mask |= kLine_SkPathSegmentMask; break;
-            case SkPathVerb::kQuad:  mask |= kQuad_SkPathSegmentMask; break;
-            case SkPathVerb::kConic: mask |= kConic_SkPathSegmentMask; break;
-            case SkPathVerb::kCubic: mask |= kCubic_SkPathSegmentMask; break;
-        }
-    }
-    SkASSERT(mask == fSegmentMask);
-}
-#endif

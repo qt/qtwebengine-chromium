@@ -47,6 +47,7 @@ const char kDnsSettingsChangedSignal[] = "DnsSettingsChanged";
 const char kVmStartedSignal[] = "VmStartedSignal";
 const char kVmStartingUpSignal[] = "VmStartingUpSignal";
 const char kVmStoppedSignal[] = "VmStoppedSignal";
+const char kVmIdChangedSignal[] = "VmIdChangedSignal";
 
 }  // namespace concierge
 }  // namespace vm_tools

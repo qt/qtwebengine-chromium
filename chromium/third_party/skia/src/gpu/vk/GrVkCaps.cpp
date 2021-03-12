@@ -409,6 +409,11 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
         fAvoidUpdateBuffers = true;
     }
 
+    if (kQualcomm_VkVendor == properties.vendorID) {
+        // Adreno devices don't support push constants well
+        fMaxPushConstantsSize = 0;
+    }
+
     if (kARM_VkVendor == properties.vendorID) {
         // ARM seems to do better with more fine triangles as opposed to using the sample mask.
         // (At least in our current round rect op.)
@@ -593,6 +598,8 @@ void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
     // TODO: check if RT's larger than 4k incur a performance cost on ARM.
     fMaxPreferredRenderTargetSize = fMaxRenderTargetSize;
 
+    fMaxPushConstantsSize = std::min(properties.limits.maxPushConstantsSize, (uint32_t)INT_MAX);
+
     // Assuming since we will always map in the end to upload the data we might as well just map
     // from the get go. There is no hard data to suggest this is faster or slower.
     fBufferMapThreshold = 0;
@@ -681,22 +688,13 @@ bool stencil_format_supported(const GrVkInterface* interface,
 }
 
 void GrVkCaps::initStencilFormat(const GrVkInterface* interface, VkPhysicalDevice physDev) {
-    // List of legal stencil formats (though perhaps not supported on
-    // the particular gpu/driver) from most preferred to least. We are guaranteed to have either
-    // VK_FORMAT_D24_UNORM_S8_UINT or VK_FORMAT_D32_SFLOAT_S8_UINT.
-    static const StencilFormat
-                  // internal Format             stencil bits
-        gS8    = { VK_FORMAT_S8_UINT,            8 },
-        gD24S8 = { VK_FORMAT_D24_UNORM_S8_UINT,  8 },
-        gD32S8 = { VK_FORMAT_D32_SFLOAT_S8_UINT, 8 };
-
     if (stencil_format_supported(interface, physDev, VK_FORMAT_S8_UINT)) {
-        fPreferredStencilFormat = gS8;
+        fPreferredStencilFormat = VK_FORMAT_S8_UINT;
     } else if (stencil_format_supported(interface, physDev, VK_FORMAT_D24_UNORM_S8_UINT)) {
-        fPreferredStencilFormat = gD24S8;
+        fPreferredStencilFormat = VK_FORMAT_D24_UNORM_S8_UINT;
     } else {
         SkASSERT(stencil_format_supported(interface, physDev, VK_FORMAT_D32_SFLOAT_S8_UINT));
-        fPreferredStencilFormat = gD32S8;
+        fPreferredStencilFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
     }
 }
 
@@ -799,7 +797,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -827,7 +824,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R8_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 1;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -856,7 +852,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -875,7 +870,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R5G6B5_UNORM_PACK16;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -894,7 +888,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 8;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -920,7 +913,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R16_SFLOAT;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -941,7 +933,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R8G8B8_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 3;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -960,7 +951,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R8G8_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -979,7 +969,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_A2B10G10R10_UNORM_PACK32;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -998,7 +987,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_A2R10G10B10_UNORM_PACK32;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1017,7 +1005,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_B4G4R4A4_UNORM_PACK16;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1039,7 +1026,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R4G4B4A4_UNORM_PACK16;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1058,7 +1044,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1077,7 +1062,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R16_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 2;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1098,7 +1082,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R16G16_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1117,7 +1100,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R16G16B16A16_UNORM;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 8;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1136,7 +1118,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         constexpr VkFormat format = VK_FORMAT_R16G16_SFLOAT;
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
-        info.fBytesPerPixel = 4;
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
             info.fColorTypeInfoCount = 1;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
@@ -1154,10 +1135,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
     {
         constexpr VkFormat format = VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM;
         auto& info = this->getFormatInfo(format);
-        // Currently we are just over estimating this value to be used in gpu size calculations even
-        // though the actually size is probably less. We should instead treat planar formats similar
-        // to compressed textures that go through their own special query for calculating size.
-        info.fBytesPerPixel = 3;
         if (fSupportsYcbcrConversion) {
             info.init(interface, physDev, properties, format);
         }
@@ -1178,10 +1155,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
     {
         constexpr VkFormat format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
         auto& info = this->getFormatInfo(format);
-        // Currently we are just over estimating this value to be used in gpu size calculations even
-        // though the actually size is probably less. We should instead treat planar formats similar
-        // to compressed textures that go through their own special query for calculating size.
-        info.fBytesPerPixel = 3;
         if (fSupportsYcbcrConversion) {
             info.init(interface, physDev, properties, format);
         }
@@ -1204,7 +1177,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
         // Setting this to texel block size
-        info.fBytesPerPixel = 8;
         // No supported GrColorTypes.
     }
 
@@ -1214,7 +1186,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
         // Setting this to texel block size
-        info.fBytesPerPixel = 8;
         // No supported GrColorTypes.
     }
 
@@ -1224,7 +1195,6 @@ void GrVkCaps::initFormatTable(const GrVkInterface* interface, VkPhysicalDevice 
         auto& info = this->getFormatInfo(format);
         info.init(interface, physDev, properties, format);
         // Setting this to texel block size
-        info.fBytesPerPixel = 8;
         // No supported GrColorTypes.
     }
 
@@ -1465,18 +1435,6 @@ int GrVkCaps::maxRenderTargetSampleCount(VkFormat format) const {
     return table[table.count() - 1];
 }
 
-size_t GrVkCaps::bytesPerPixel(const GrBackendFormat& format) const {
-    VkFormat vkFormat;
-    if (!format.asVkFormat(&vkFormat)) {
-        return 0;
-    }
-    return this->bytesPerPixel(vkFormat);
-}
-
-size_t GrVkCaps::bytesPerPixel(VkFormat format) const {
-    return this->getFormatInfo(format).fBytesPerPixel;
-}
-
 static inline size_t align_to_4(size_t v) {
     switch (v & 0b11) {
         // v is already a multiple of 4.
@@ -1503,7 +1461,7 @@ GrCaps::SupportedWrite GrVkCaps::supportedWritePixelsColorType(GrColorType surfa
     }
 
     // The VkBufferImageCopy bufferOffset field must be both a multiple of 4 and of a single texel.
-    size_t offsetAlignment = align_to_4(this->bytesPerPixel(vkFormat));
+    size_t offsetAlignment = align_to_4(GrVkFormatBytesPerBlock(vkFormat));
 
     const auto& info = this->getFormatInfo(vkFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
@@ -1529,8 +1487,14 @@ GrCaps::SurfaceReadPixelsSupport GrVkCaps::surfaceSupportsReadPixels(
         if (GrVkFormatIsCompressed(tex->imageFormat())) {
             return SurfaceReadPixelsSupport::kCopyToTexture2D;
         }
+        return SurfaceReadPixelsSupport::kSupported;
+    } else if (auto rt = surface->asRenderTarget()) {
+        if (rt->numSamples() > 1) {
+            return SurfaceReadPixelsSupport::kCopyToTexture2D;
+        }
+        return SurfaceReadPixelsSupport::kSupported;
     }
-    return SurfaceReadPixelsSupport::kSupported;
+    return SurfaceReadPixelsSupport::kUnsupported;
 }
 
 bool GrVkCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
@@ -1683,7 +1647,7 @@ GrCaps::SupportedRead GrVkCaps::onSupportedReadPixelsColorType(
     }
 
     // The VkBufferImageCopy bufferOffset field must be both a multiple of 4 and of a single texel.
-    size_t offsetAlignment = align_to_4(this->bytesPerPixel(vkFormat));
+    size_t offsetAlignment = align_to_4(GrVkFormatBytesPerBlock(vkFormat));
 
     const auto& info = this->getFormatInfo(vkFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {

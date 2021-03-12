@@ -343,6 +343,7 @@ class CommandBuffer : public WrappedObject<CommandBuffer, VkCommandBuffer>
                        const void *data);
 
     void setEvent(VkEvent event, VkPipelineStageFlags stageMask);
+    void setScissor(uint32_t firstScissor, uint32_t scissorCount, const VkRect2D *scissors);
     VkResult reset();
     void resetEvent(VkEvent event, VkPipelineStageFlags stageMask);
     void resetQueryPool(const QueryPool &queryPool, uint32_t firstQuery, uint32_t queryCount);
@@ -489,6 +490,9 @@ class Allocator : public WrappedObject<Allocator, VmaAllocator>
                                               VkMemoryPropertyFlags preferredFlags,
                                               bool persistentlyMappedBuffers,
                                               uint32_t *memoryTypeIndexOut) const;
+
+    void buildStatsString(char **statsString, VkBool32 detailedMap);
+    void freeStatsString(char *statsString);
 };
 
 class Allocation final : public WrappedObject<Allocation, VmaAllocation>
@@ -966,6 +970,14 @@ ANGLE_INLINE void CommandBuffer::setEvent(VkEvent event, VkPipelineStageFlags st
 {
     ASSERT(valid() && event != VK_NULL_HANDLE);
     vkCmdSetEvent(mHandle, event, stageMask);
+}
+
+ANGLE_INLINE void CommandBuffer::setScissor(uint32_t firstScissor,
+                                            uint32_t scissorCount,
+                                            const VkRect2D *scissors)
+{
+    ASSERT(valid() && scissors != nullptr);
+    vkCmdSetScissor(mHandle, firstScissor, scissorCount, scissors);
 }
 
 ANGLE_INLINE void CommandBuffer::resetEvent(VkEvent event, VkPipelineStageFlags stageMask)
@@ -1446,6 +1458,18 @@ Allocator::findMemoryTypeIndexForBufferInfo(const VkBufferCreateInfo &bufferCrea
     return vma::FindMemoryTypeIndexForBufferInfo(mHandle, &bufferCreateInfo, requiredFlags,
                                                  preferredFlags, persistentlyMappedBuffers,
                                                  memoryTypeIndexOut);
+}
+
+ANGLE_INLINE void Allocator::buildStatsString(char **statsString, VkBool32 detailedMap)
+{
+    ASSERT(valid());
+    vma::BuildStatsString(mHandle, statsString, detailedMap);
+}
+
+ANGLE_INLINE void Allocator::freeStatsString(char *statsString)
+{
+    ASSERT(valid());
+    vma::FreeStatsString(mHandle, statsString);
 }
 
 // Allocation implementation.

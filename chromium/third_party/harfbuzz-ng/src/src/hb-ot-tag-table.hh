@@ -7,7 +7,7 @@
  * on files with these headers:
  *
  * <meta name="updated_at" content="2019-05-22 06:05 PM" />
- * File-Date: 2020-05-12
+ * File-Date: 2020-07-17
  */
 
 #ifndef HB_OT_TAG_TABLE_HH
@@ -372,7 +372,6 @@ static const LangTag ot_languages[] = {
   {"gug",	HB_TAG('G','U','A',' ')},	/* Paraguayan Guaraní -> Guarani */
   {"gui",	HB_TAG('G','U','A',' ')},	/* Eastern Bolivian Guaraní -> Guarani */
   {"guk",	HB_TAG('G','M','Z',' ')},	/* Gumuz */
-  {"guk",	HB_TAG('G','U','K',' ')},	/* Gumuz (SIL fonts) */
   {"gun",	HB_TAG('G','U','A',' ')},	/* Mbyá Guaraní -> Guarani */
 /*{"guz",	HB_TAG('G','U','Z',' ')},*/	/* Gusii */
   {"gv",	HB_TAG('M','N','X',' ')},	/* Manx */
@@ -484,8 +483,8 @@ static const LangTag ot_languages[] = {
   {"kha",	HB_TAG('K','S','I',' ')},	/* Khasi */
   {"khb",	HB_TAG('X','B','D',' ')},	/* Lü */
   {"khk",	HB_TAG('M','N','G',' ')},	/* Halh Mongolian -> Mongolian */
+  {"kht",	HB_TAG('K','H','T',' ')},	/* Khamti -> Khamti Shan */
   {"kht",	HB_TAG('K','H','N',' ')},	/* Khamti -> Khamti Shan (Microsoft fonts) */
-  {"kht",	HB_TAG('K','H','T',' ')},	/* Khamti -> Khamti Shan (OpenType spec and SIL fonts) */
 /*{"khw",	HB_TAG('K','H','W',' ')},*/	/* Khowar */
   {"ki",	HB_TAG('K','I','K',' ')},	/* Kikuyu (Gikuyu) */
 /*{"kiu",	HB_TAG('K','I','U',' ')},*/	/* Kirmanjki */
@@ -856,7 +855,6 @@ static const LangTag ot_languages[] = {
   {"sgc",	HB_TAG('K','A','L',' ')},	/* Kipsigis -> Kalenjin */
 /*{"sgs",	HB_TAG('S','G','S',' ')},*/	/* Samogitian */
   {"sgw",	HB_TAG('C','H','G',' ')},	/* Sebat Bet Gurage -> Chaha Gurage */
-  {"sgw",	HB_TAG('S','G','W',' ')},	/* Sebat Bet Gurage -> Chaha Gurage (SIL fonts) */
 /*{"shi",	HB_TAG('S','H','I',' ')},*/	/* Tachelhit */
 /*{"shn",	HB_TAG('S','H','N',' ')},*/	/* Shan */
   {"shu",	HB_TAG('A','R','A',' ')},	/* Chadian Arabic -> Arabic */
@@ -2082,6 +2080,8 @@ hb_ot_ambiguous_tag_to_language (hb_tag_t tag)
     return hb_language_from_string ("hmn", -1);  /* Hmong */
   case HB_TAG('H','N','D',' '):  /* Hindko */
     return hb_language_from_string ("hnd", -1);  /* Southern Hindko */
+  case HB_TAG('H','Y','E',' '):  /* Armenian */
+    return hb_language_from_string ("hyw", -1);  /* Western Armenian */
   case HB_TAG('I','J','O',' '):  /* Ijo */
     return hb_language_from_string ("ijo", -1);  /* Ijo */
   case HB_TAG('I','N','U',' '):  /* Inuktitut */
@@ -2160,6 +2160,10 @@ hb_ot_ambiguous_tag_to_language (hb_tag_t tag)
     return hb_language_from_string ("tmh", -1);  /* Tamashek */
   case HB_TAG('T','N','E',' '):  /* Tundra Nenets */
     return hb_language_from_string ("yrk", -1);  /* Nenets */
+  case HB_TAG('T','O','D',' '):  /* Todo */
+    return hb_language_from_string ("xwo", -1);  /* Written Oirat */
+  case HB_TAG('T','W','I',' '):  /* Twi */
+    return hb_language_from_string ("tw", -1);  /* Twi */
   case HB_TAG('Z','H','H',' '):  /* Chinese, Hong Kong SAR */
     return hb_language_from_string ("zh-HK", -1);  /* Chinese; Hong Kong */
   case HB_TAG('Z','H','S',' '):  /* Chinese Simplified */

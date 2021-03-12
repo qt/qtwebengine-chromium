@@ -4,6 +4,8 @@
 
 #include "net/third_party/quiche/src/quic/core/http/quic_receive_control_stream.h"
 
+#include "absl/strings/escaping.h"
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/http/http_constants.h"
 #include "net/third_party/quiche/src/quic/core/qpack/qpack_header_table.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
@@ -13,7 +15,6 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_spdy_session_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
 
 namespace quic {
@@ -96,7 +97,7 @@ class QuicReceiveControlStreamTest : public QuicTestWithParam<TestParams> {
                                 session_.transport_version(), 3);
     char type[] = {kControlStream};
 
-    QuicStreamFrame data1(id, false, 0, quiche::QuicheStringPiece(type, 1));
+    QuicStreamFrame data1(id, false, 0, absl::string_view(type, 1));
     session_.OnStreamFrame(data1);
 
     receive_control_stream_ =
@@ -336,7 +337,7 @@ TEST_P(QuicReceiveControlStreamTest, ConsumeUnknownFrame) {
   EXPECT_EQ(offset, NumBytesConsumed());
 
   // Receive unknown frame.
-  std::string unknown_frame = quiche::QuicheTextUtils::HexDecode(
+  std::string unknown_frame = absl::HexStringToBytes(
       "21"        // reserved frame type
       "03"        // payload length
       "666f6f");  // payload "foo"
@@ -365,7 +366,7 @@ TEST_P(QuicReceiveControlStreamTest, ReceiveUnknownFrame) {
   offset += settings_frame.length();
 
   // Receive unknown frame.
-  std::string unknown_frame = quiche::QuicheTextUtils::HexDecode(
+  std::string unknown_frame = absl::HexStringToBytes(
       "21"        // reserved frame type
       "03"        // payload length
       "666f6f");  // payload "foo"
@@ -377,7 +378,7 @@ TEST_P(QuicReceiveControlStreamTest, ReceiveUnknownFrame) {
 }
 
 TEST_P(QuicReceiveControlStreamTest, CancelPushFrameBeforeSettings) {
-  std::string cancel_push_frame = quiche::QuicheTextUtils::HexDecode(
+  std::string cancel_push_frame = absl::HexStringToBytes(
       "03"    // type CANCEL_PUSH
       "01"    // payload length
       "01");  // push ID
@@ -396,7 +397,7 @@ TEST_P(QuicReceiveControlStreamTest, CancelPushFrameBeforeSettings) {
 }
 
 TEST_P(QuicReceiveControlStreamTest, UnknownFrameBeforeSettings) {
-  std::string unknown_frame = quiche::QuicheTextUtils::HexDecode(
+  std::string unknown_frame = absl::HexStringToBytes(
       "21"        // reserved frame type
       "03"        // payload length
       "666f6f");  // payload "foo"

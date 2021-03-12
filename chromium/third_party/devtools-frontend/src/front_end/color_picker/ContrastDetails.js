@@ -58,7 +58,7 @@ export class ContrastDetails extends Common.ObjectWrapper.ObjectWrapper {
     const contrastValueRow = this._element.createChild('div');
     contrastValueRow.addEventListener('click', this._topRowClicked.bind(this));
     const contrastValueRowContents = contrastValueRow.createChild('div', 'container');
-    contrastValueRowContents.createTextChild(Common.UIString.UIString('Contrast ratio'));
+    UI.UIUtils.createTextChild(contrastValueRowContents, Common.UIString.UIString('Contrast ratio'));
 
     this._contrastValueBubble = contrastValueRowContents.createChild('span', 'contrast-details-value');
     this._contrastValue = this._contrastValueBubble.createChild('span');
@@ -153,10 +153,15 @@ export class ContrastDetails extends Common.ObjectWrapper.ObjectWrapper {
    * @param {!Common.Color.Color} suggestedColor
    */
   _createFixColorButton(parent, suggestedColor) {
-    const fgColor = this._contrastInfo.color();
     const button = /** @type {!HTMLElement} */ (parent.createChild('button', 'contrast-fix-button'));
-    const suggestedColorString = `${suggestedColor.asString(fgColor ? fgColor.format() : undefined)}`;
-    const label = ls`Use suggested color ${suggestedColorString} to fix low contrast`;
+    const originalColorFormat = this._contrastInfo.colorFormat();
+    const colorFormat = originalColorFormat && originalColorFormat !== Common.Color.Format.Nickname &&
+            originalColorFormat !== Common.Color.Format.Original ?
+        originalColorFormat :
+        Common.Color.Format.HEXA;
+    const formattedColor = suggestedColor.asString(colorFormat);
+    const suggestedColorString = formattedColor ? formattedColor + ' ' : '';
+    const label = ls`Use suggested color ${suggestedColorString}to fix low contrast`;
     UI.ARIAUtils.setAccessibleName(button, label);
     button.title = label;
     button.tabIndex = 0;

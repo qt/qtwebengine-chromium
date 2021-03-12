@@ -25,6 +25,7 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLFunctionPrototype.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLIntLiteral.h"
@@ -39,7 +40,6 @@
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
-#include "src/sksl/ir/SkSLVarDeclarationsStatement.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 #include "src/sksl/ir/SkSLWhileStatement.h"
 
@@ -113,6 +113,8 @@ protected:
 
     void writeFunctionDeclaration(const FunctionDeclaration& f);
 
+    void writeFunctionPrototype(const FunctionPrototype& f);
+
     virtual void writeFunction(const FunctionDefinition& f);
 
     void writeLayout(const Layout& layout);
@@ -127,7 +129,7 @@ protected:
 
     void writeTypePrecision(const Type& type);
 
-    void writeVarDeclarations(const VarDeclarations& decl, bool global);
+    void writeVarDeclaration(const VarDeclaration& var, bool global);
 
     void writeFragCoord();
 

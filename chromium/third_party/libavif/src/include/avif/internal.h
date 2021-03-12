@@ -21,6 +21,13 @@ extern "C" {
             return AVIF_FALSE; \
     } while (0)
 
+// Used instead of CHECK if needing to return a specific error on failure, instead of AVIF_FALSE
+#define CHECKERR(A, ERR) \
+    do {                 \
+        if (!(A))        \
+            return ERR;  \
+    } while (0)
+
 // ---------------------------------------------------------------------------
 // URNs and Content-Types
 
@@ -84,12 +91,24 @@ typedef struct avifAlphaParams
 avifBool avifFillAlpha(const avifAlphaParams * const params);
 avifBool avifReformatAlpha(const avifAlphaParams * const params);
 
+// Returns:
+// * AVIF_RESULT_OK         - Converted successfully with libyuv
+// * AVIF_RESULT_NO_CONTENT - Incapable of converting this combination with libyuv, use built-in YUV conversion
+// * [any other error]      - Return error to caller
+avifResult avifImageYUVToRGBLibYUV(const avifImage * image, avifRGBImage * rgb);
+
 // ---------------------------------------------------------------------------
 // avifCodecDecodeInput
 
 typedef struct avifDecodeSample
 {
     avifROData data;
+    avifBool ownsData;
+    avifBool partialData; // if true, data exists but doesn't have all of the sample in it
+
+    uint32_t itemID; // if non-zero, data comes from a mergedExtents buffer in an avifDecoderItem, not a file offset
+    uint64_t offset; // used only when itemID is zero, ignored and set to 0 when itemID is non-zero
+    uint32_t size;
     avifBool sync; // is sync sample (keyframe)
 } avifDecodeSample;
 AVIF_ARRAY_DECLARE(avifDecodeSampleArray, avifDecodeSample, sample);
@@ -141,8 +160,8 @@ void avifCodecSpecificOptionsSet(avifCodecSpecificOptions * csOptions, const cha
 struct avifCodec;
 struct avifCodecInternal;
 
-typedef avifBool (*avifCodecOpenFunc)(struct avifCodec * codec, uint32_t firstSampleIndex);
-typedef avifBool (*avifCodecGetNextImageFunc)(struct avifCodec * codec, avifImage * image);
+typedef avifBool (*avifCodecOpenFunc)(struct avifCodec * codec, avifDecoder * decoder); // decode only
+typedef avifBool (*avifCodecGetNextImageFunc)(struct avifCodec * codec, const avifDecodeSample * sample, avifBool alpha, avifImage * image);
 // EncodeImage and EncodeFinish are not required to always emit a sample, but when all images are
 // encoded and EncodeFinish is called, the number of samples emitted must match the number of submitted frames.
 // avifCodecEncodeImageFunc may return AVIF_RESULT_UNKNOWN_ERROR to automatically emit the appropriate
@@ -158,8 +177,6 @@ typedef void (*avifCodecDestroyInternalFunc)(struct avifCodec * codec);
 
 typedef struct avifCodec
 {
-    avifCodecDecodeInput * decodeInput;
-    avifCodecConfigurationBox configBox;  // Pre-populated by avifEncoderWrite(), available and overridable by codec impls
     avifCodecSpecificOptions * csOptions; // Contains codec-specific key/value pairs for advanced tuning.
                                           // If a codec uses a value, it must mark it as used.
                                           // This array is NOT owned by avifCodec.
@@ -183,6 +200,8 @@ avifCodec * avifCodecCreateGav1(void);    // requires AVIF_CODEC_LIBGAV1 (codec_
 const char * avifCodecVersionGav1(void);  // requires AVIF_CODEC_LIBGAV1 (codec_libgav1.c)
 avifCodec * avifCodecCreateRav1e(void);   // requires AVIF_CODEC_RAV1E (codec_rav1e.c)
 const char * avifCodecVersionRav1e(void); // requires AVIF_CODEC_RAV1E (codec_rav1e.c)
+avifCodec * avifCodecCreateSvt(void);     // requires AVIF_CODEC_SVT (codec_svt.c)
+const char * avifCodecVersionSvt(void);   // requires AVIF_CODEC_SVT (codec_svt.c)
 
 // ---------------------------------------------------------------------------
 // avifStream
@@ -215,7 +234,8 @@ avifBool avifROStreamReadU32(avifROStream * stream, uint32_t * v);
 avifBool avifROStreamReadUX8(avifROStream * stream, uint64_t * v, uint64_t factor); // Reads a factor*8 sized uint, saves in v
 avifBool avifROStreamReadU64(avifROStream * stream, uint64_t * v);
 avifBool avifROStreamReadString(avifROStream * stream, char * output, size_t outputSize);
-avifBool avifROStreamReadBoxHeader(avifROStream * stream, avifBoxHeader * header);
+avifBool avifROStreamReadBoxHeader(avifROStream * stream, avifBoxHeader * header); // This fails if the size reported by the header cannot fit in the stream
+avifBool avifROStreamReadBoxHeaderPartial(avifROStream * stream, avifBoxHeader * header); // This doesn't require that the full box can fit in the stream
 avifBool avifROStreamReadVersionAndFlags(avifROStream * stream, uint8_t * version, uint32_t * flags); // version and flags ptrs are both optional
 avifBool avifROStreamReadAndEnforceVersion(avifROStream * stream, uint8_t enforcedVersion); // currently discards flags
 
@@ -256,6 +276,7 @@ typedef struct avifSequenceHeader
     avifTransferCharacteristics transferCharacteristics;
     avifMatrixCoefficients matrixCoefficients;
     avifRange range;
+    avifCodecConfigurationBox av1C;
 } avifSequenceHeader;
 avifBool avifSequenceHeaderParse(avifSequenceHeader * header, const avifROData * sample);
 

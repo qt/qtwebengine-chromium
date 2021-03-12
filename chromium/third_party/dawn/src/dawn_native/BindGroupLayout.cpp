@@ -121,6 +121,10 @@ namespace dawn_native {
                     if (viewDimension != wgpu::TextureViewDimension::e2D) {
                         return DAWN_VALIDATION_ERROR("Multisampled binding must be 2D.");
                     }
+                    if (entry.textureComponentType == wgpu::TextureComponentType::DepthComparison) {
+                        return DAWN_VALIDATION_ERROR(
+                            "Multisampled binding must not be DepthComparison.");
+                    }
                     break;
 
                 case wgpu::BindingType::WriteonlyStorageTexture:
@@ -140,8 +144,17 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR("Binding type cannot be dynamic.");
             }
 
-            if ((entry.visibility & allowedStages) != entry.visibility) {
+            if (!IsSubset(entry.visibility, allowedStages)) {
                 return DAWN_VALIDATION_ERROR("Binding type cannot be used with this visibility.");
+            }
+
+            // Dynamic storage buffers aren't bounds checked properly in D3D12. Disallow them as
+            // unsafe until the bounds checks are implemented.
+            if (device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs) &&
+                entry.type == wgpu::BindingType::StorageBuffer && entry.hasDynamicOffset) {
+                return DAWN_VALIDATION_ERROR(
+                    "Dynamic storage buffers are disallowed because they aren't secure yet. See "
+                    "https://crbug.com/dawn/429");
             }
 
             IncrementBindingCounts(&bindingCounts, entry);
@@ -280,8 +293,7 @@ namespace dawn_native {
             mBindingInfo[i].binding = BindingNumber(binding.binding);
             mBindingInfo[i].type = binding.type;
             mBindingInfo[i].visibility = binding.visibility;
-            mBindingInfo[i].textureComponentType =
-                Format::TextureComponentTypeToFormatType(binding.textureComponentType);
+            mBindingInfo[i].textureComponentType = binding.textureComponentType;
             mBindingInfo[i].storageTextureFormat = binding.storageTextureFormat;
             mBindingInfo[i].minBufferBindingSize = binding.minBufferBindingSize;
 

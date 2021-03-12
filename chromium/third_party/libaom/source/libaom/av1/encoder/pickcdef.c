@@ -25,6 +25,7 @@
 #define REDUCED_PRI_STRENGTHS_LVL1 8
 #define REDUCED_PRI_STRENGTHS_LVL2 5
 #define REDUCED_SEC_STRENGTHS_LVL3 2
+#define REDUCED_PRI_STRENGTHS_LVL4 2
 
 #define REDUCED_TOTAL_STRENGTHS_LVL1 \
   (REDUCED_PRI_STRENGTHS_LVL1 * CDEF_SEC_STRENGTHS)
@@ -32,15 +33,22 @@
   (REDUCED_PRI_STRENGTHS_LVL2 * CDEF_SEC_STRENGTHS)
 #define REDUCED_TOTAL_STRENGTHS_LVL3 \
   (REDUCED_PRI_STRENGTHS_LVL2 * REDUCED_SEC_STRENGTHS_LVL3)
+#define REDUCED_TOTAL_STRENGTHS_LVL4 \
+  (REDUCED_PRI_STRENGTHS_LVL4 * REDUCED_SEC_STRENGTHS_LVL3)
 #define TOTAL_STRENGTHS (CDEF_PRI_STRENGTHS * CDEF_SEC_STRENGTHS)
 
 static const int priconv_lvl1[REDUCED_PRI_STRENGTHS_LVL1] = { 0, 1, 2,  3,
                                                               5, 7, 10, 13 };
 static const int priconv_lvl2[REDUCED_PRI_STRENGTHS_LVL2] = { 0, 2, 4, 8, 14 };
+static const int priconv_lvl4[REDUCED_PRI_STRENGTHS_LVL4] = { 0, 11 };
 static const int secconv_lvl3[REDUCED_SEC_STRENGTHS_LVL3] = { 0, 2 };
 static const int nb_cdef_strengths[CDEF_PICK_METHODS] = {
-  TOTAL_STRENGTHS, REDUCED_TOTAL_STRENGTHS_LVL1, REDUCED_TOTAL_STRENGTHS_LVL2,
-  REDUCED_TOTAL_STRENGTHS_LVL3, TOTAL_STRENGTHS
+  TOTAL_STRENGTHS,
+  REDUCED_TOTAL_STRENGTHS_LVL1,
+  REDUCED_TOTAL_STRENGTHS_LVL2,
+  REDUCED_TOTAL_STRENGTHS_LVL3,
+  REDUCED_TOTAL_STRENGTHS_LVL4,
+  TOTAL_STRENGTHS
 };
 
 // Get primary and secondary filter strength for the given strength index and
@@ -49,7 +57,7 @@ static INLINE void get_cdef_filter_strengths(CDEF_PICK_METHOD pick_method,
                                              int *pri_strength,
                                              int *sec_strength,
                                              int strength_idx) {
-  const int tot_sec_filter = (pick_method == CDEF_FAST_SEARCH_LVL3)
+  const int tot_sec_filter = (pick_method >= CDEF_FAST_SEARCH_LVL3)
                                  ? REDUCED_SEC_STRENGTHS_LVL3
                                  : CDEF_SEC_STRENGTHS;
   const int pri_idx = strength_idx / tot_sec_filter;
@@ -63,6 +71,10 @@ static INLINE void get_cdef_filter_strengths(CDEF_PICK_METHOD pick_method,
     case CDEF_FAST_SEARCH_LVL2: *pri_strength = priconv_lvl2[pri_idx]; break;
     case CDEF_FAST_SEARCH_LVL3:
       *pri_strength = priconv_lvl2[pri_idx];
+      *sec_strength = secconv_lvl3[sec_idx];
+      break;
+    case CDEF_FAST_SEARCH_LVL4:
+      *pri_strength = priconv_lvl4[pri_idx];
       *sec_strength = secconv_lvl3[sec_idx];
       break;
     default: assert(0 && "Invalid CDEF search method");
@@ -170,7 +182,7 @@ static uint64_t joint_strength_search(int *best_lev, int nb_strengths,
                                       CDEF_PICK_METHOD pick_method) {
   uint64_t best_tot_mse;
   int fast = (pick_method >= CDEF_FAST_SEARCH_LVL1 &&
-              pick_method <= CDEF_FAST_SEARCH_LVL3);
+              pick_method <= CDEF_FAST_SEARCH_LVL4);
   int i;
   best_tot_mse = (uint64_t)1 << 63;
   /* Greedy search: add one strength options at a time. */
@@ -396,7 +408,7 @@ void av1_cdef_search(const YV12_BUFFER_CONFIG *frame,
   int *sb_index = aom_malloc(nvfb * nhfb * sizeof(*sb_index));
   const int damping = 3 + (cm->quant_params.base_qindex >> 6);
   const int fast = (pick_method >= CDEF_FAST_SEARCH_LVL1 &&
-                    pick_method <= CDEF_FAST_SEARCH_LVL3);
+                    pick_method <= CDEF_FAST_SEARCH_LVL4);
   const int total_strengths = nb_cdef_strengths[pick_method];
   DECLARE_ALIGNED(32, uint16_t, tmp_dst[1 << (MAX_SB_SIZE_LOG2 * 2)]);
   const int num_planes = av1_num_planes(cm);
@@ -452,9 +464,9 @@ void av1_cdef_search(const YV12_BUFFER_CONFIG *frame,
           mi_params->mi_grid_base[MI_SIZE_64X64 * fbr * mi_params->mi_stride +
                                   MI_SIZE_64X64 * fbc];
       if (((fbc & 1) &&
-           (mbmi->sb_type == BLOCK_128X128 || mbmi->sb_type == BLOCK_128X64)) ||
+           (mbmi->bsize == BLOCK_128X128 || mbmi->bsize == BLOCK_128X64)) ||
           ((fbr & 1) &&
-           (mbmi->sb_type == BLOCK_128X128 || mbmi->sb_type == BLOCK_64X128)))
+           (mbmi->bsize == BLOCK_128X128 || mbmi->bsize == BLOCK_64X128)))
         continue;
 
       int nhb = AOMMIN(MI_SIZE_64X64, mi_params->mi_cols - MI_SIZE_64X64 * fbc);
@@ -462,9 +474,9 @@ void av1_cdef_search(const YV12_BUFFER_CONFIG *frame,
       int hb_step = 1;
       int vb_step = 1;
       BLOCK_SIZE bs;
-      if (mbmi->sb_type == BLOCK_128X128 || mbmi->sb_type == BLOCK_128X64 ||
-          mbmi->sb_type == BLOCK_64X128) {
-        bs = mbmi->sb_type;
+      if (mbmi->bsize == BLOCK_128X128 || mbmi->bsize == BLOCK_128X64 ||
+          mbmi->bsize == BLOCK_64X128) {
+        bs = mbmi->bsize;
         if (bs == BLOCK_128X128 || bs == BLOCK_128X64) {
           nhb =
               AOMMIN(MI_SIZE_128X128, mi_params->mi_cols - MI_SIZE_64X64 * fbc);

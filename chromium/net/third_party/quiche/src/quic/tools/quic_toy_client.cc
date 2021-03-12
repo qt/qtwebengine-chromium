@@ -48,6 +48,9 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/escaping.h"
+#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_server_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_utils.h"
@@ -58,13 +61,11 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_system_event_loop.h"
 #include "net/third_party/quiche/src/quic/tools/fake_proof_verifier.h"
 #include "net/third_party/quiche/src/quic/tools/quic_url.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
 
 namespace {
 
 using quic::QuicUrl;
-using quiche::QuicheStringPiece;
 using quiche::QuicheTextUtils;
 
 }  // namespace
@@ -322,11 +323,11 @@ int QuicToyClient::SendRequestsAndPrintResponses(
   if (!GetQuicFlag(FLAGS_body_hex).empty()) {
     DCHECK(GetQuicFlag(FLAGS_body).empty())
         << "Only set one of --body and --body_hex.";
-    body = QuicheTextUtils::HexDecode(GetQuicFlag(FLAGS_body_hex));
+    body = absl::HexStringToBytes(GetQuicFlag(FLAGS_body_hex));
   }
 
   // Construct a GET or POST request for supplied URL.
-  spdy::SpdyHeaderBlock header_block;
+  spdy::Http2HeaderBlock header_block;
   header_block[":method"] = body.empty() ? "GET" : "POST";
   header_block[":scheme"] = url.scheme();
   header_block[":authority"] = url.HostPort();
@@ -334,12 +335,12 @@ int QuicToyClient::SendRequestsAndPrintResponses(
 
   // Append any additional headers supplied on the command line.
   const std::string headers = GetQuicFlag(FLAGS_headers);
-  for (QuicheStringPiece sp : QuicheTextUtils::Split(headers, ';')) {
+  for (absl::string_view sp : absl::StrSplit(headers, ';')) {
     QuicheTextUtils::RemoveLeadingAndTrailingWhitespace(&sp);
     if (sp.empty()) {
       continue;
     }
-    std::vector<QuicheStringPiece> kv = QuicheTextUtils::Split(sp, ':');
+    std::vector<absl::string_view> kv = absl::StrSplit(sp, ':');
     QuicheTextUtils::RemoveLeadingAndTrailingWhitespace(&kv[0]);
     QuicheTextUtils::RemoveLeadingAndTrailingWhitespace(&kv[1]);
     header_block[kv[0]] = kv[1];
@@ -359,8 +360,8 @@ int QuicToyClient::SendRequestsAndPrintResponses(
       if (!GetQuicFlag(FLAGS_body_hex).empty()) {
         // Print the user provided hex, rather than binary body.
         std::cout << "body:\n"
-                  << QuicheTextUtils::HexDump(QuicheTextUtils::HexDecode(
-                         GetQuicFlag(FLAGS_body_hex)))
+                  << QuicheTextUtils::HexDump(
+                         absl::HexStringToBytes(GetQuicFlag(FLAGS_body_hex)))
                   << std::endl;
       } else {
         std::cout << "body: " << body << std::endl;

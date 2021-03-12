@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstring>
 #include <limits>
+#include <locale>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -33,22 +34,26 @@
 #include "source/opt/type_manager.h"
 #include "source/opt/types.h"
 #include "spirv-tools/libspirv.hpp"
-#include "src/ast/as_expression.h"
 #include "src/ast/binary_expression.h"
 #include "src/ast/binding_decoration.h"
+#include "src/ast/bitcast_expression.h"
 #include "src/ast/bool_literal.h"
 #include "src/ast/builtin.h"
 #include "src/ast/builtin_decoration.h"
+#include "src/ast/constant_id_decoration.h"
 #include "src/ast/decorated_variable.h"
 #include "src/ast/float_literal.h"
 #include "src/ast/scalar_constructor_expression.h"
 #include "src/ast/set_decoration.h"
 #include "src/ast/sint_literal.h"
+#include "src/ast/stride_decoration.h"
 #include "src/ast/struct.h"
+#include "src/ast/struct_block_decoration.h"
 #include "src/ast/struct_decoration.h"
 #include "src/ast/struct_member.h"
 #include "src/ast/struct_member_decoration.h"
 #include "src/ast/struct_member_offset_decoration.h"
+#include "src/ast/type/access_control_type.h"
 #include "src/ast/type/alias_type.h"
 #include "src/ast/type/array_type.h"
 #include "src/ast/type/bool_type.h"
@@ -387,11 +392,13 @@ ParserImpl::ConvertMemberDecoration(uint32_t struct_type_id,
             << ShowType(struct_type_id);
         return nullptr;
       }
-      return std::make_unique<ast::StructMemberOffsetDecoration>(decoration[1]);
+      return std::make_unique<ast::StructMemberOffsetDecoration>(decoration[1],
+                                                                 Source{});
     case SpvDecorationNonReadable:
+      // WGSL doesn't have a member decoration for this.  Silently drop it.
+      return nullptr;
     case SpvDecorationNonWritable:
-      // TODO(dneto): Drop these for now.
-      // https://github.com/gpuweb/gpuweb/issues/935
+      // WGSL doesn't have a member decoration for this.
       return nullptr;
     case SpvDecorationColMajor:
       // WGSL only supports column major matrices.
@@ -452,7 +459,6 @@ void ParserImpl::ResetInternalModule() {
   type_mgr_ = nullptr;
   deco_mgr_ = nullptr;
 
-  import_map_.clear();
   glsl_std_450_imports_.clear();
 }
 
@@ -471,12 +477,12 @@ bool ParserImpl::ParseInternalModule() {
 }
 
 void ParserImpl::RegisterLineNumbers() {
-  Source instruction_number{0, 0};
+  Source::Location instruction_number{};
 
   // Has there been an OpLine since the last OpNoLine or start of the module?
   bool in_op_line_scope = false;
   // The source location provided by the most recent OpLine instruction.
-  Source op_line_source{0, 0};
+  Source::Location op_line_source{};
   const bool run_on_debug_insts = true;
   module_->ForEachInst(
       [this, &in_op_line_scope, &op_line_source,
@@ -512,7 +518,7 @@ Source ParserImpl::GetSourceForInst(
   if (where == inst_source_.end()) {
     return {};
   }
-  return where->second;
+  return Source{where->second};
 }
 
 bool ParserImpl::ParseInternalModuleExceptFunctions() {
@@ -525,10 +531,13 @@ bool ParserImpl::ParseInternalModuleExceptFunctions() {
   if (!RegisterUserAndStructMemberNames()) {
     return false;
   }
-  if (!EmitEntryPoints()) {
+  if (!RegisterEntryPoints()) {
     return false;
   }
   if (!RegisterTypes()) {
+    return false;
+  }
+  if (!EmitScalarSpecConstants()) {
     return false;
   }
   if (!EmitModuleScopeVariables()) {
@@ -543,14 +552,6 @@ bool ParserImpl::RegisterExtendedInstructionImports() {
         reinterpret_cast<const char*>(import.GetInOperand(0).words.data()));
     // TODO(dneto): Handle other extended instruction sets when needed.
     if (name == "GLSL.std.450") {
-      // Only create the AST import once, so we can use import name 'std::glsl'.
-      // This is a canonicalization.
-      if (glsl_std_450_imports_.empty()) {
-        auto ast_import =
-            std::make_unique<tint::ast::Import>(name, GlslStd450Prefix());
-        import_map_[import.result_id()] = ast_import.get();
-        ast_module_.AddImport(std::move(ast_import));
-      }
       glsl_std_450_imports_.insert(import.result_id());
     } else {
       return Fail() << "Unrecognized extended instruction set: " << name;
@@ -608,15 +609,36 @@ bool ParserImpl::RegisterUserAndStructMemberNames() {
   return true;
 }
 
-bool ParserImpl::EmitEntryPoints() {
+bool ParserImpl::IsValidIdentifier(const std::string& str) {
+  if (str.empty()) {
+    return false;
+  }
+  std::locale c_locale("C");
+  if (!std::isalpha(str[0], c_locale)) {
+    return false;
+  }
+  for (const char& ch : str) {
+    if ((ch != '_') && !std::isalnum(ch, c_locale)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool ParserImpl::RegisterEntryPoints() {
   for (const spvtools::opt::Instruction& entry_point :
        module_->entry_points()) {
     const auto stage = SpvExecutionModel(entry_point.GetSingleWordInOperand(0));
     const uint32_t function_id = entry_point.GetSingleWordInOperand(1);
-    const std::string name = namer_.GetName(function_id);
+    const std::string ep_name = entry_point.GetOperand(2).AsString();
 
-    ast_module_.AddEntryPoint(std::make_unique<ast::EntryPoint>(
-        enum_converter_.ToPipelineStage(stage), "", name));
+    EntryPointInfo info{ep_name, enum_converter_.ToPipelineStage(stage)};
+    if (!IsValidIdentifier(ep_name)) {
+      return Fail() << "entry point name is not a valid WGSL identifier: "
+                    << ep_name;
+    }
+
+    function_to_ep_info_[function_id].push_back(info);
   }
   // The enum conversion could have failed, so return the existing status value.
   return success_;
@@ -759,7 +781,10 @@ bool ParserImpl::ApplyArrayDecorations(
         return Fail() << "invalid array type ID " << type_id
                       << ": multiple ArrayStride decorations";
       }
-      ast_type->set_array_stride(stride);
+      ast::ArrayDecorationList decos;
+      decos.push_back(
+          std::make_unique<ast::StrideDecoration>(stride, Source{}));
+      ast_type->set_decorations(std::move(decos));
     } else {
       return Fail() << "invalid array type ID " << type_id
                     << ": unknown decoration "
@@ -776,13 +801,15 @@ ast::type::Type* ParserImpl::ConvertType(
     const spvtools::opt::analysis::Struct* struct_ty) {
   // Compute the struct decoration.
   auto struct_decorations = this->GetDecorationsFor(type_id);
-  auto ast_struct_decoration = ast::StructDecoration::kNone;
+  ast::StructDecorationList ast_struct_decorations;
   if (struct_decorations.size() == 1) {
     const auto decoration = struct_decorations[0][0];
     if (decoration == SpvDecorationBlock) {
-      ast_struct_decoration = ast::StructDecoration::kBlock;
+      ast_struct_decorations.push_back(
+          std::make_unique<ast::StructBlockDecoration>(Source{}));
     } else if (decoration == SpvDecorationBufferBlock) {
-      ast_struct_decoration = ast::StructDecoration::kBlock;
+      ast_struct_decorations.push_back(
+          std::make_unique<ast::StructBlockDecoration>(Source{}));
       remap_buffer_block_type_.insert(type_id);
     } else {
       Fail() << "struct with ID " << type_id
@@ -797,6 +824,7 @@ ast::type::Type* ParserImpl::ConvertType(
   // Compute members
   ast::StructMemberList ast_members;
   const auto members = struct_ty->element_types();
+  unsigned num_non_writable_members = 0;
   for (uint32_t member_index = 0; member_index < members.size();
        ++member_index) {
     const auto member_type_id = type_mgr_->GetId(members[member_index]);
@@ -806,6 +834,7 @@ ast::type::Type* ParserImpl::ConvertType(
       return nullptr;
     }
     ast::StructMemberDecorationList ast_member_decorations;
+    bool is_non_writable = false;
     for (auto& decoration : GetDecorationsForMember(type_id, member_index)) {
       if (decoration.empty()) {
         Fail() << "malformed SPIR-V decoration: it's empty";
@@ -828,6 +857,11 @@ ast::type::Type* ParserImpl::ConvertType(
         }
         Fail() << "unrecognized builtin " << decoration[1];
         return nullptr;
+      } else if (decoration[0] == SpvDecorationNonWritable) {
+        // WGSL doesn't represent individual members as non-writable. Instead,
+        // apply the ReadOnly access control to the containing struct if all
+        // the members are non-writable.
+        is_non_writable = true;
       } else {
         auto ast_member_decoration =
             ConvertMemberDecoration(type_id, member_index, decoration);
@@ -839,6 +873,11 @@ ast::type::Type* ParserImpl::ConvertType(
         }
       }
     }
+    if (is_non_writable) {
+      // Count a member as non-writable only once, no matter how many
+      // NonWritable decorations are applied to it.
+      ++num_non_writable_members;
+    }
     const auto member_name = namer_.GetMemberName(type_id, member_index);
     auto ast_struct_member = std::make_unique<ast::StructMember>(
         member_name, ast_member_ty, std::move(ast_member_decorations));
@@ -846,15 +885,19 @@ ast::type::Type* ParserImpl::ConvertType(
   }
 
   // Now make the struct.
-  auto ast_struct = std::make_unique<ast::Struct>(ast_struct_decoration,
-                                                  std::move(ast_members));
-  // The struct type will be assigned a name during EmitAliasTypes.
-  auto ast_struct_type =
-      std::make_unique<ast::type::StructType>(std::move(ast_struct));
-  // Set the struct name before registering it.
+  auto ast_struct = std::make_unique<ast::Struct>(
+      std::move(ast_struct_decorations), std::move(ast_members));
+
   namer_.SuggestSanitizedName(type_id, "S");
-  ast_struct_type->set_name(namer_.GetName(type_id));
+  auto ast_struct_type = std::make_unique<ast::type::StructType>(
+      namer_.GetName(type_id), std::move(ast_struct));
+
   auto* result = ctx_.type_mgr().Get(std::move(ast_struct_type));
+  id_to_type_[type_id] = result;
+  if (num_non_writable_members == members.size()) {
+    read_only_struct_types_.insert(result);
+  }
+  ast_module_.AddConstructedType(result);
   return result;
 }
 
@@ -913,17 +956,91 @@ bool ParserImpl::RegisterTypes() {
   return success_;
 }
 
+bool ParserImpl::EmitScalarSpecConstants() {
+  if (!success_) {
+    return false;
+  }
+  // Generate a module-scope const declaration for each instruction
+  // that is OpSpecConstantTrue, OpSpecConstantFalse, or OpSpecConstant.
+  for (auto& inst : module_->types_values()) {
+    // These will be populated for a valid scalar spec constant.
+    ast::type::Type* ast_type = nullptr;
+    std::unique_ptr<ast::ScalarConstructorExpression> ast_expr;
+
+    switch (inst.opcode()) {
+      case SpvOpSpecConstantTrue:
+      case SpvOpSpecConstantFalse: {
+        ast_type = ConvertType(inst.type_id());
+        ast_expr = std::make_unique<ast::ScalarConstructorExpression>(
+            std::make_unique<ast::BoolLiteral>(
+                ast_type, inst.opcode() == SpvOpSpecConstantTrue));
+        break;
+      }
+      case SpvOpSpecConstant: {
+        ast_type = ConvertType(inst.type_id());
+        const uint32_t literal_value = inst.GetSingleWordInOperand(0);
+        if (ast_type->IsI32()) {
+          ast_expr = std::make_unique<ast::ScalarConstructorExpression>(
+              std::make_unique<ast::SintLiteral>(
+                  ast_type, static_cast<int32_t>(literal_value)));
+        } else if (ast_type->IsU32()) {
+          ast_expr = std::make_unique<ast::ScalarConstructorExpression>(
+              std::make_unique<ast::UintLiteral>(
+                  ast_type, static_cast<uint32_t>(literal_value)));
+        } else if (ast_type->IsF32()) {
+          float float_value;
+          // Copy the bits so we can read them as a float.
+          std::memcpy(&float_value, &literal_value, sizeof(float_value));
+          ast_expr = std::make_unique<ast::ScalarConstructorExpression>(
+              std::make_unique<ast::FloatLiteral>(ast_type, float_value));
+        } else {
+          return Fail() << " invalid result type for OpSpecConstant "
+                        << inst.PrettyPrint();
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    if (ast_type && ast_expr) {
+      auto ast_var =
+          MakeVariable(inst.result_id(), ast::StorageClass::kNone, ast_type);
+      ast::VariableDecorationList spec_id_decos;
+      for (const auto& deco : GetDecorationsFor(inst.result_id())) {
+        if ((deco.size() == 2) && (deco[0] == SpvDecorationSpecId)) {
+          auto cid =
+              std::make_unique<ast::ConstantIdDecoration>(deco[1], Source{});
+          spec_id_decos.push_back(std::move(cid));
+          break;
+        }
+      }
+      if (spec_id_decos.empty()) {
+        // Register it as a named constant, without specialization id.
+        ast_var->set_is_const(true);
+        ast_var->set_constructor(std::move(ast_expr));
+        ast_module_.AddGlobalVariable(std::move(ast_var));
+      } else {
+        auto ast_deco_var =
+            std::make_unique<ast::DecoratedVariable>(std::move(ast_var));
+        ast_deco_var->set_is_const(true);
+        ast_deco_var->set_constructor(std::move(ast_expr));
+        ast_deco_var->set_decorations(std::move(spec_id_decos));
+        ast_module_.AddGlobalVariable(std::move(ast_deco_var));
+      }
+      scalar_spec_constants_.insert(inst.result_id());
+    }
+  }
+  return success_;
+}
+
 void ParserImpl::MaybeGenerateAlias(uint32_t type_id,
                                     const spvtools::opt::analysis::Type* type) {
   if (!success_) {
     return;
   }
 
-  // We only care about struct, arrays, and runtime arrays.
+  // We only care about arrays, and runtime arrays.
   switch (type->kind()) {
-    case spvtools::opt::analysis::Type::kStruct:
-      // The struct already got a name when the type was first registered.
-      break;
     case spvtools::opt::analysis::Type::kRuntimeArray:
       // Runtime arrays are always decorated with ArrayStride so always get a
       // type alias.
@@ -952,7 +1069,7 @@ void ParserImpl::MaybeGenerateAlias(uint32_t type_id,
                              ->AsAlias();
   // Record this new alias as the AST type for this SPIR-V ID.
   id_to_type_[type_id] = ast_alias_type;
-  ast_module_.AddAliasType(ast_alias_type);
+  ast_module_.AddConstructedType(ast_alias_type);
 }
 
 bool ParserImpl::EmitModuleScopeVariables() {
@@ -1028,8 +1145,8 @@ bool ParserImpl::EmitModuleScopeVariables() {
         enum_converter_.ToStorageClass(builtin_position_.storage_class),
         ConvertType(builtin_position_.member_type_id)));
     ast::VariableDecorationList decos;
-    decos.push_back(
-        std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kPosition));
+    decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+        ast::Builtin::kPosition, Source{}));
     var->set_decorations(std::move(decos));
 
     ast_module_.AddGlobalVariable(std::move(var));
@@ -1044,6 +1161,16 @@ std::unique_ptr<ast::Variable> ParserImpl::MakeVariable(uint32_t id,
     Fail() << "internal error: can't make ast::Variable for null type";
     return nullptr;
   }
+
+  if (sc == ast::StorageClass::kStorageBuffer) {
+    // Apply the access(read) or access(read_write) modifier.
+    auto access = read_only_struct_types_.count(type)
+                      ? ast::AccessControl::kReadOnly
+                      : ast::AccessControl::kReadWrite;
+    type = ctx_.type_mgr().Get(
+        std::make_unique<ast::type::AccessControlType>(access, type));
+  }
+
   auto ast_var = std::make_unique<ast::Variable>(namer_.Name(id), sc, type);
 
   ast::VariableDecorationList ast_decorations;
@@ -1064,7 +1191,7 @@ std::unique_ptr<ast::Variable> ParserImpl::MakeVariable(uint32_t id,
         return nullptr;
       }
       ast_decorations.emplace_back(
-          std::make_unique<ast::BuiltinDecoration>(ast_builtin));
+          std::make_unique<ast::BuiltinDecoration>(ast_builtin, Source{}));
     }
     if (deco[0] == SpvDecorationLocation) {
       if (deco.size() != 2) {
@@ -1073,7 +1200,7 @@ std::unique_ptr<ast::Variable> ParserImpl::MakeVariable(uint32_t id,
         return nullptr;
       }
       ast_decorations.emplace_back(
-          std::make_unique<ast::LocationDecoration>(deco[1]));
+          std::make_unique<ast::LocationDecoration>(deco[1], Source{}));
     }
     if (deco[0] == SpvDecorationDescriptorSet) {
       if (deco.size() == 1) {
@@ -1082,7 +1209,7 @@ std::unique_ptr<ast::Variable> ParserImpl::MakeVariable(uint32_t id,
         return nullptr;
       }
       ast_decorations.emplace_back(
-          std::make_unique<ast::SetDecoration>(deco[1]));
+          std::make_unique<ast::SetDecoration>(deco[1], Source{}));
     }
     if (deco[0] == SpvDecorationBinding) {
       if (deco.size() == 1) {
@@ -1091,7 +1218,7 @@ std::unique_ptr<ast::Variable> ParserImpl::MakeVariable(uint32_t id,
         return nullptr;
       }
       ast_decorations.emplace_back(
-          std::make_unique<ast::BindingDecoration>(deco[1]));
+          std::make_unique<ast::BindingDecoration>(deco[1], Source{}));
     }
   }
   if (!ast_decorations.empty()) {
@@ -1129,7 +1256,7 @@ TypedExpression ParserImpl::MakeConstantExpression(uint32_t id) {
     return {};
   }
 
-  auto* ast_type = original_ast_type->UnwrapAliasesIfNeeded();
+  auto* ast_type = original_ast_type->UnwrapIfNeeded();
 
   // TODO(dneto): Note: NullConstant for int, uint, float map to a regular 0.
   // So canonicalization should map that way too.
@@ -1206,7 +1333,7 @@ std::unique_ptr<ast::Expression> ParserImpl::MakeNullValue(
   }
 
   auto* original_type = type;
-  type = type->UnwrapAliasesIfNeeded();
+  type = type->UnwrapIfNeeded();
 
   if (type->IsBool()) {
     return std::make_unique<ast::ScalarConstructorExpression>(
@@ -1289,14 +1416,14 @@ TypedExpression ParserImpl::RectifyOperandSignedness(SpvOp op,
     auto* unsigned_ty = unsigned_type_for_[type];
     if (unsigned_ty != nullptr) {
       // Conversion is required.
-      return {unsigned_ty, std::make_unique<ast::AsExpression>(
+      return {unsigned_ty, std::make_unique<ast::BitcastExpression>(
                                unsigned_ty, std::move(expr.expr))};
     }
   } else if (requires_signed) {
     auto* signed_ty = signed_type_for_[type];
     if (signed_ty != nullptr) {
       // Conversion is required.
-      return {signed_ty, std::make_unique<ast::AsExpression>(
+      return {signed_ty, std::make_unique<ast::BitcastExpression>(
                              signed_ty, std::move(expr.expr))};
     }
   }
@@ -1360,8 +1487,8 @@ TypedExpression ParserImpl::RectifyForcedResultType(
   if ((forced_result_ty == nullptr) || (forced_result_ty == expr.type)) {
     return expr;
   }
-  return {expr.type,
-          std::make_unique<ast::AsExpression>(expr.type, std::move(expr.expr))};
+  return {expr.type, std::make_unique<ast::BitcastExpression>(
+                         expr.type, std::move(expr.expr))};
 }
 
 bool ParserImpl::EmitFunctions() {
@@ -1373,8 +1500,21 @@ bool ParserImpl::EmitFunctions() {
     if (!success_) {
       return false;
     }
-    FunctionEmitter emitter(this, *f);
-    success_ = emitter.Emit();
+
+    auto id = f->result_id();
+    auto it = function_to_ep_info_.find(id);
+    if (it == function_to_ep_info_.end()) {
+      FunctionEmitter emitter(this, *f, nullptr);
+      success_ = emitter.Emit();
+    } else {
+      for (const auto& ep : it->second) {
+        FunctionEmitter emitter(this, *f, &ep);
+        success_ = emitter.Emit();
+        if (!success_) {
+          return false;
+        }
+      }
+    }
   }
   return success_;
 }

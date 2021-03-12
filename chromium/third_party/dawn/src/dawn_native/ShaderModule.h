@@ -41,7 +41,8 @@ namespace dawn_native {
 
     MaybeError ValidateShaderModuleDescriptor(DeviceBase* device,
                                               const ShaderModuleDescriptor* descriptor);
-    MaybeError ValidateCompatibilityWithPipelineLayout(const EntryPointMetadata& entryPoint,
+    MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
+                                                       const EntryPointMetadata& entryPoint,
                                                        const PipelineLayoutBase* layout);
 
     RequiredBufferSizes ComputeRequiredBufferSizesForLayout(const EntryPointMetadata& entryPoint,
@@ -52,8 +53,6 @@ namespace dawn_native {
     // pointers to EntryPointMetadata are safe to store as long as you also keep a Ref to the
     // ShaderModuleBase.
     struct EntryPointMetadata {
-        EntryPointMetadata();
-
         // Per-binding shader metadata contains some SPIRV specific information in addition to
         // most of the frontend per-binding information.
         struct ShaderBindingInfo : BindingInfo {
@@ -76,11 +75,10 @@ namespace dawn_native {
         // The set of vertex attributes this entryPoint uses.
         std::bitset<kMaxVertexAttributes> usedVertexAttributes;
 
-        // An array to record the basic types (float, int and uint) of the fragment shader outputs
-        // or Format::Type::Other means the fragment shader output is unused.
-        using FragmentOutputBaseTypes =
-            ityp::array<ColorAttachmentIndex, Format::Type, kMaxColorAttachments>;
-        FragmentOutputBaseTypes fragmentOutputFormatBaseTypes;
+        // An array to record the basic types (float, int and uint) of the fragment shader outputs.
+        ityp::array<ColorAttachmentIndex, wgpu::TextureComponentType, kMaxColorAttachments>
+            fragmentOutputFormatBaseTypes;
+        ityp::bitset<ColorAttachmentIndex, kMaxColorAttachments> fragmentOutputsWritten;
 
         // The local workgroup size declared for a compute entry point (or 0s otehrwise).
         Origin3D localWorkgroupSize;
@@ -96,13 +94,12 @@ namespace dawn_native {
 
         static ShaderModuleBase* MakeError(DeviceBase* device);
 
-        // Return true iff the module has an entrypoint called `entryPoint` for stage `stage`.
-        bool HasEntryPoint(const std::string& entryPoint, SingleShaderStage stage) const;
+        // Return true iff the module has an entrypoint called `entryPoint`.
+        bool HasEntryPoint(const std::string& entryPoint) const;
 
-        // Returns the metadata for the given `entryPoint` and `stage`. HasEntryPoint with the same
-        // arguments must be true.
-        const EntryPointMetadata& GetEntryPoint(const std::string& entryPoint,
-                                                SingleShaderStage stage) const;
+        // Returns the metadata for the given `entryPoint`. HasEntryPoint with the same argument
+        // must be true.
+        const EntryPointMetadata& GetEntryPoint(const std::string& entryPoint) const;
 
         // Functors necessary for the unordered_set<ShaderModuleBase*>-based cache.
         struct HashFunc {
@@ -134,7 +131,7 @@ namespace dawn_native {
         std::string mWgsl;
 
         // A map from [name, stage] to EntryPointMetadata.
-        std::unordered_map<std::string, PerStage<std::unique_ptr<EntryPointMetadata>>> mEntryPoints;
+        std::unordered_map<std::string, std::unique_ptr<EntryPointMetadata>> mEntryPoints;
     };
 
 }  // namespace dawn_native

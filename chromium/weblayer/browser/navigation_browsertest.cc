@@ -6,7 +6,9 @@
 
 #include "base/callback.h"
 #include "base/files/file_path.h"
-#include "base/test/bind_test_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/test/bind.h"
+#include "build/build_config.h"
 #include "components/variations/net/variations_http_headers.h"
 #include "components/variations/variations_ids_provider.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -122,11 +124,11 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, HttpClientError) {
       embedded_test_server()->GetURL("/non_existent.html"));
 
   observer.WaitForNavigation();
-  EXPECT_TRUE(observer.completed());
-  EXPECT_FALSE(observer.is_error_page());
+  EXPECT_FALSE(observer.completed());
+  EXPECT_TRUE(observer.is_error_page());
   EXPECT_EQ(observer.load_error(), Navigation::kHttpClientError);
   EXPECT_EQ(observer.http_status_code(), 404);
-  EXPECT_EQ(observer.navigation_state(), NavigationState::kComplete);
+  EXPECT_EQ(observer.navigation_state(), NavigationState::kFailed);
 }
 
 IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, HttpServerError) {
@@ -791,5 +793,28 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest2, SetXClientDataHeaderInRedirect) {
   run_loop->Run();
   EXPECT_EQ(header_value, last_header_value);
 }
+
+#if defined(OS_ANDROID)
+// Verifies setting the 'referer' to an android-app url works.
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, AndroidAppReferer) {
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      "", true);
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  const std::string header_name = "Referer";
+  const std::string header_value = "android-app://google.com/";
+  NavigationObserverImpl observer(GetNavigationController());
+  observer.SetStartedCallback(
+      base::BindLambdaForTesting([&](Navigation* navigation) {
+        navigation->SetRequestHeader(header_name, header_value);
+      }));
+
+  shell()->LoadURL(embedded_test_server()->GetURL("/simple_page.html"));
+  response.WaitForRequest();
+
+  // Verify 'referer' matches expected value.
+  EXPECT_EQ(header_value, response.http_request()->headers.at(header_name));
+}
+#endif
 
 }  // namespace weblayer

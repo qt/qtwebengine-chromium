@@ -28,7 +28,9 @@ TEST_F(ParserImplTest, Statement_Call) {
   auto* p = parser("a();");
   auto e = p->statement();
   ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  ASSERT_NE(e.value, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
 
   ASSERT_TRUE(e->IsCall());
   auto* c = e->AsCall()->expr();
@@ -44,7 +46,9 @@ TEST_F(ParserImplTest, Statement_Call_WithParams) {
   auto* p = parser("a(1, b, 2 + 3 / b);");
   auto e = p->statement();
   ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  ASSERT_NE(e.value, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
 
   ASSERT_TRUE(e->IsCall());
   auto* c = e->AsCall()->expr();
@@ -62,22 +66,28 @@ TEST_F(ParserImplTest, Statement_Call_WithParams) {
 TEST_F(ParserImplTest, Statement_Call_Missing_RightParen) {
   auto* p = parser("a(");
   auto e = p->statement();
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:3: missing ) for call statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(p->error(), "1:3: expected ')' for call statement");
 }
 
 TEST_F(ParserImplTest, Statement_Call_Missing_Semi) {
   auto* p = parser("a()");
   auto e = p->statement();
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:4: missing ;");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(p->error(), "1:4: expected ';' for function call");
 }
 
 TEST_F(ParserImplTest, Statement_Call_Bad_ArgList) {
   auto* p = parser("a(b c);");
   auto e = p->statement();
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:5: missing ) for call statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(p->error(), "1:5: expected ')' for call statement");
 }
 
 }  // namespace

@@ -6,6 +6,7 @@
 
 #include <inttypes.h>
 
+#include <algorithm>
 #include <limits>
 #include <string>
 #include <utility>
@@ -13,6 +14,7 @@
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
+#include "cast/streaming/capture_recommendations.h"
 #include "cast/streaming/constants.h"
 #include "cast/streaming/receiver_session.h"
 #include "platform/base/error.h"
@@ -55,12 +57,12 @@ ErrorOr<int> ParseRtpTimebase(const Json::Value& parent,
     return error_or_raw.error();
   }
 
+  // The spec demands a leading 1, so this isn't really a fraction.
   const auto fraction = SimpleFraction::FromString(error_or_raw.value());
-  if (fraction.is_error() || !fraction.value().is_positive()) {
+  if (fraction.is_error() || !fraction.value().is_positive() ||
+      fraction.value().numerator != 1) {
     return json::CreateParseError("RTP timebase");
   }
-  // The spec demands a leading 1, so this isn't really a fraction.
-  OSP_DCHECK(fraction.value().numerator == 1);
   return fraction.value().denominator;
 }
 
@@ -132,6 +134,12 @@ ErrorOr<Stream> ParseStream(const Json::Value& value, Stream::Type type) {
   auto rtp_timebase = ParseRtpTimebase(value, "timeBase");
   if (!rtp_timebase) {
     return rtp_timebase.error();
+  }
+  if (rtp_timebase.value() <
+          std::min(capture_recommendations::kDefaultAudioMinSampleRate,
+                   kRtpVideoTimebase) ||
+      rtp_timebase.value() > kRtpVideoTimebase) {
+    return json::CreateParameterError("rtp_timebase (sample rate)");
   }
 
   auto target_delay = json::ParseInt(value, "targetDelay");

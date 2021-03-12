@@ -21,19 +21,30 @@ namespace writer {
 namespace spirv {
 
 Generator::Generator(ast::Module module)
-    : writer::Writer(std::move(module)), builder_(&module_) {}
+    : writer::Writer(std::move(module)),
+      builder_(std::make_unique<Builder>(&module_)),
+      writer_(std::make_unique<BinaryWriter>()) {}
 
 Generator::~Generator() = default;
 
+void Generator::Reset() {
+  builder_ = std::make_unique<Builder>(&module_);
+  writer_ = std::make_unique<BinaryWriter>();
+}
+
 bool Generator::Generate() {
-  if (!builder_.Build()) {
-    set_error(builder_.error());
+  if (!builder_->Build()) {
+    set_error(builder_->error());
     return false;
   }
 
-  writer_.WriteHeader(builder_.id_bound());
-  writer_.WriteBuilder(builder_);
+  writer_->WriteHeader(builder_->id_bound());
+  writer_->WriteBuilder(builder_.get());
   return true;
+}
+
+bool Generator::GenerateEntryPoint(ast::PipelineStage, const std::string&) {
+  return false;
 }
 
 }  // namespace spirv

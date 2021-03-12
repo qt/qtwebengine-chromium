@@ -1,3 +1,257 @@
+2020-11-09  Werner Lemberg  <wl@gnu.org>
+
+	* src/type42/t42parse.c (t42_parse_sfnts): More tracing messages.
+
+2020-11-04  Werner Lemberg  <wl@gnu.org>
+
+	* meson.build: Fix .pc file generation.
+
+	For backwards compatibility we need the libtool version, not the .so
+	number.
+
+	Reported by Nikolaus.
+
+2020-10-28  Werner Lemberg  <wl@gnu.org>
+
+	[truetype] Minor update to forthcoming OpenType 1.8.4 standard.
+
+	* src/truetype/ttgxvar.c (ft_var_load_item_variation_store): Limit
+	size of `regionCount`.
+
+2020-10-26  Werner Lemberg  <wl@gnu.org>
+
+	* meson.build: Fix 'harfbuzz' and 'brotli' build options (#59347).
+
+	Without this patch, 'harfbuzz' and 'brotli' are always required.
+
+	Patch submitted anonymously in Savannah bug report.
+
+2020-10-23  Ben Wagner  <bungeman@google.com>
+
+	* src/sfnt/pngshim.c (Load_SBit_Png): Fix memory leak (#59322).
+
+	The issue is that `rows` is allocated but will not be freed in the
+	event that the call to `png_read_image` fails and calls `longjmp`.
+
+2020-10-20  Werner Lemberg  <wl@gnu.org>
+
+	* Version 2.10.4 released.
+	==========================
+
+
+	Tag sources with `VER-2-10-4'.
+
+	* docs/VERSION.TXT: Add entry for version 2.10.4.
+	* docs/CHANGES: Updated.
+
+	* README, src/base/ftver.rc, builds/windows/vc2010/index.html,
+	builds/windows/visualc/index.html,
+	builds/windows/visualce/index.html,
+	builds/wince/vc2005-ce/index.html,
+	builds/wince/vc2008-ce/index.html, docs/freetype-config.1:
+	s/2.10.3/2.10.4/, s/2103/2104/.
+
+	* include/freetype/freetype.h (FREETYPE_PATCH): Set to 4.
+
+	* builds/unix/configure.raw (version_info): Set to 23:4:17.
+	* CMakeLists.txt (VERSION_PATCH): Set to 4.
+
+2020-10-19  Werner Lemberg  <wl@gnu.org>
+
+	[sfnt] Fix heap buffer overflow (#59308).
+
+	This is CVE-2020-15999.
+
+	* src/sfnt/pngshim.c (Load_SBit_Png): Test bitmap size earlier.
+
+2020-10-17  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* src/sfnt/tt{colr,cpal}.c: Fix signedness warnings from VC++.
+
+2020-10-17  Alexei Podtelezhnikov  <apodtele@gmail.com>
+
+	* src/sfnt/sfwoff2.c (Read255UShort): Tweak types to please VC++.
+
+2020-10-10  Werner Lemberg  <wl@gnu.org>
+
+	* Version 2.10.3 released.
+	==========================
+
+
+	Tag sources with `VER-2-10-3'.
+
+	* docs/VERSION.TXT: Add entry for version 2.10.3.
+
+	* README, src/base/ftver.rc, builds/windows/vc2010/index.html,
+	builds/windows/visualc/index.html,
+	builds/windows/visualce/index.html,
+	builds/wince/vc2005-ce/index.html,
+	builds/wince/vc2008-ce/index.html, docs/freetype-config.1:
+	s/2.10.2/2.10.3/, s/2102/2103/.
+
+	* include/freetype/freetype.h (FREETYPE_PATCH): Set to 3.
+
+	* builds/unix/configure.raw (version_info): Set to 23:3:17.
+	* CMakeLists.txt (VERSION_PATCH): Set to 3.
+
+2020-09-25  Werner Lemberg  <wl@gnu.org>
+
+	[autofit] Synchronize with ttfautohint.
+
+	This corresponds to the following commits in the ttfautohint git
+	repository:
+
+	  bb6842bd3bd437b7b4a7921b0376c860f5e73d18  Typo, formatting.
+	  d5c91ddb1cb310257a3dfe9a8e20e1fc51335faa  Add Medefaidrin script.
+
+	* src/autofit/afblue.dat: Add blue zone data for Medefaidrin.
+	* src/autofit/afblue.c, src/autofit/afblue.h: Regenerated.
+
+	* src/autofit/afscript.h: Add Medefaidrin standard characters.
+
+	* src/autofit/afranges.c, src/autofit/afstyles.h: Add Medefaidrin
+	data.
+
+2020-09-25  Werner Lemberg  <wl@gnu.org>
+
+	Move `scripts/make_distribution_archives.py` to `src/tools`.
+
+	* scr/tools/scripts/make_distribution_archives.py: (_TOP_DIR,
+	_SCRIPT_DIR): Updated to new location.
+	(main): s/shutils.copyfile/shutils.copy/ to preserve file
+	permissions.
+	(main): Prefix source file paths with `git_dir` while copying files
+	to allow calls of the script from other places than the top-level
+	directory.
+
+2020-09-24  Werner Lemberg  <wl@gnu.org>
+
+	* src/cff/cffgload.c (cff_slot_load): Scale `vertBearingY`.
+
+	Towards the end of the the function there is a call to
+	`FT_Outline_Get_CBox` that retrieves the glyph bbox in scaled units.
+	That sets `horiBearing{X,Y}` and `vertBearingX` but `vertBearingY`
+	is left alone, and is not scaled.
+
+	Patch from Eric Muller <emuller@amazon.com>.
+
+2020-09-24  Werner Lemberg  <wl@gnu.org>
+
+	* src/base/ftobjs.c (FT_Load_Glyph): Trace glyph metrics.
+
+2020-09-22  Werner Lemberg  <wl@gnu.org>
+
+	[meson] Move auxiliary scripts to `builds/meson`.
+
+	Suggested by Alexei.
+
+	* scripts/*.py: Move meson scripts to...
+	* builds/meson/*.py: ... this new location.
+
+	* meson.build: Updated.
+
+2020-09-21  David Turner  <david@freetype.org>
+
+	Add python script for building tarballs.
+
+	* scripts/make_distribution_archives.py: New file.
+
+	This standalone Python script should be equivalent to running `make
+	dist` with the Make-based build system, with the following minor
+	differences:
+
+	- Since `make distclean` doesn't always clean up `objs/` properly,
+	  `make dist` archives may contain some stale binaries like
+	  `objs/.libs/libfreetype.so.6` or others.
+
+	- `config.guess` and `config.sub` are not updated unless option
+	  `--gnu-config-dir=DIR` is used to specify the location of these
+	  files.
+
+	- Some bits of the auto-generated reference documentation may
+	  appear in slightly different order, probably due to issues related
+	  to mkdocs and docwriter.
+
+	As an example, the call
+
+	  scripts/make_distribution_archives.py /tmp/freetype2-dist
+
+	creates the following files under `/tmp/freetype2-dist`:
+
+	  freetype-<version>.tar.gz
+	  freetype-<version>.tar.xz
+	  ft<winversion>.zip
+
+2020-09-21  Werner Lemberg  <wl@gnu.org>
+
+	* scripts/extract_freetype_version.py: Fix regex typos.
+
+2020-09-21  David Turner  <david@freetype.org>
+
+	Add Meson build project file.
+
+	Example usage:
+
+	  # Configure Meson build in directory `build-meson` to generate
+	  # release binaries comparable to to the ones from the
+	  # autotools/make build system.
+	  meson setup build-meson \
+	        --prefix=/usr/local \
+	        --buildtype=debugoptimized \
+	        --strip \
+	        -Db_ndebug=true
+
+	  # After configuring the Meson build with the above command,
+	  # compile and install to `/usr/local/`; this includes a pkg-config
+	  # file.
+	  ninja -C build-meson install
+
+	  # Alternatively, compile and install to `/tmp/aa/usr/local/...`
+	  # for packaging.
+	  DESTDIR=/tmp/aa ninja -C build-meson install
+
+	  # Generate documentation under `build-meson/docs`.
+	  ninja -C build-meson docs
+
+	Library size comparison for stripped `libfreetype.so` generated by
+	all three build systems:
+
+	  - Default build (autotools + libtool): 712 KiB
+	  - CMake build (RelWithDebInfo):        712 KiB
+	  - Meson build:                         712 KiB
+
+
+	* meson.build: New top-level Meson build file for the library.
+
+	* meson_options.txt: New file.  It holds user-selectable options for
+	the build, which can be printed with `meson configure`, and selected
+	at `meson setup` or `meson --reconfigure` time with
+	`-D<option>=<value>`.
+
+	* scripts/parse_modules_cfg.py: A script invoked by `meson.build` to
+	parse `modules.cfg` and extract important information out of it
+	(i.e., the list of modules).
+
+	* scripts/process_ftoption_h.py: New script invoked by `meson.build`
+	to process the original `ftoption.h` file.  It enables or disables
+	configuration macro variables based on the available dependencies.
+	This is similar to what other build systems are using (i.e., Meson's
+	`configure_file()` command is not used here).
+
+	* scripts/extract_freetype_version.py: New script invoked by
+	`meson.build` to extract the FreeType version number from
+	`<freetype/freetype.h>`.
+
+	* scripts/extract_libtool_version.py: New script invoked by
+	`meson.build` to extract the libtool `revision_info` data from
+	`builds/unix/configure.raw`, and to generate the corresponding
+	shared library suffix.
+
+	* scripts/generate_reference_docs.py: New script invoked by
+	`meson.build` to generate the FreeType 2 reference documentation
+	(using the `docwriter` and `mkdocs` packages, which must be already
+	installed).
+
 2020-09-11  Alexei Podtelezhnikov  <apodtele@gmail.com>
 
 	[raster] Improve the second pass (#58373).

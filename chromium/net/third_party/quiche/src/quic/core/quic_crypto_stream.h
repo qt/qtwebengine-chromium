@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <string>
 
+#include "absl/strings/string_view.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_framer.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_utils.h"
@@ -17,7 +18,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_stream.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 
@@ -64,14 +64,13 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // dependent on |label|, |context|, and the stream's negotiated subkey secret.
   // Returns false if the handshake has not been confirmed or the parameters are
   // invalid (e.g. |label| contains null bytes); returns true on success.
-  bool ExportKeyingMaterial(quiche::QuicheStringPiece label,
-                            quiche::QuicheStringPiece context,
+  bool ExportKeyingMaterial(absl::string_view label,
+                            absl::string_view context,
                             size_t result_len,
                             std::string* result) const;
 
   // Writes |data| to the QuicStream at level |level|.
-  virtual void WriteCryptoData(EncryptionLevel level,
-                               quiche::QuicheStringPiece data);
+  virtual void WriteCryptoData(EncryptionLevel level, absl::string_view data);
 
   // Returns the ssl_early_data_reason_t describing why 0-RTT was accepted or
   // rejected. Note that the value returned by this function may vary during the
@@ -126,6 +125,18 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // Returns the maximum number of bytes that can be buffered at a particular
   // encryption level |level|.
   virtual size_t BufferSizeLimitForLevel(EncryptionLevel level) const;
+
+  // Returns whether the implementation supports key update.
+  virtual bool KeyUpdateSupportedLocally() const = 0;
+
+  // Called to generate a decrypter for the next key phase. Each call should
+  // generate the key for phase n+1.
+  virtual std::unique_ptr<QuicDecrypter>
+  AdvanceKeysAndCreateCurrentOneRttDecrypter() = 0;
+
+  // Called to generate an encrypter for the same key phase of the last
+  // decrypter returned by AdvanceKeysAndCreateCurrentOneRttDecrypter().
+  virtual std::unique_ptr<QuicEncrypter> CreateCurrentOneRttEncrypter() = 0;
 
   // Called to cancel retransmission of unencrypted crypto stream data.
   void NeuterUnencryptedStreamData();

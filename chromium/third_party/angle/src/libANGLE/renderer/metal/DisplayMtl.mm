@@ -15,8 +15,9 @@
 #include "libANGLE/renderer/glslang_wrapper_utils.h"
 #include "libANGLE/renderer/metal/ContextMtl.h"
 #include "libANGLE/renderer/metal/SurfaceMtl.h"
+#include "libANGLE/renderer/metal/SyncMtl.h"
 #include "libANGLE/renderer/metal/mtl_common.h"
-#include "libANGLE/renderer/metal/shaders/compiled/mtl_default_shaders_autogen.inc"
+#include "libANGLE/renderer/metal/shaders/mtl_default_shaders_src_autogen.inc"
 #include "platform/Platform.h"
 
 #include "EGL/eglext.h"
@@ -42,6 +43,18 @@ DisplayImpl *CreateMetalDisplay(const egl::DisplayState &state)
 {
     return new DisplayMtl(state);
 }
+
+struct DefaultShaderAsyncInfoMtl
+{
+    mtl::AutoObjCPtr<id<MTLLibrary>> defaultShaders;
+    mtl::AutoObjCPtr<NSError *> defaultShadersCompileError;
+
+    // Synchronization primitives for compiling default shaders in back-ground
+    std::condition_variable cv;
+    std::mutex lock;
+
+    bool compiled = false;
+};
 
 DisplayMtl::DisplayMtl(const egl::DisplayState &state)
     : DisplayImpl(state), mUtils(this), mGlslangInitialized(false)
@@ -99,8 +112,11 @@ void DisplayMtl::terminate()
 {
     mUtils.onDestroy();
     mCmdQueue.reset();
-    mDefaultShaders  = nil;
-    mMetalDevice     = nil;
+    mDefaultShadersAsyncInfo = nullptr;
+    mMetalDevice             = nil;
+#if ANGLE_MTL_EVENT_AVAILABLE
+    mSharedEventListener = nil;
+#endif
     mCapsInitialized = false;
 
     mMetalDeviceVendorId = 0;
@@ -158,7 +174,7 @@ egl::Error DisplayMtl::waitClient(const gl::Context *context)
 egl::Error DisplayMtl::waitNative(const gl::Context *context, EGLint engine)
 {
     UNIMPLEMENTED();
-    return egl::EglBadAccess();
+    return egl::NoError();
 }
 
 SurfaceImpl *DisplayMtl::createWindowSurface(const egl::SurfaceState &state,
@@ -231,7 +247,12 @@ ShareGroupImpl *DisplayMtl::createShareGroup()
 
 gl::Version DisplayMtl::getMaxSupportedESVersion() const
 {
-    return mtl::kMaxSupportedGLVersion;
+    // NOTE(hqle): Supports GLES 3.0 on iOS GPU family 4+ for now.
+    if (supportsEitherGPUFamily(4, 1))
+    {
+        return mtl::kMaxSupportedGLVersion;
+    }
+    return gl::Version(2, 0);
 }
 
 gl::Version DisplayMtl::getMaxConformantESVersion() const
@@ -241,11 +262,11 @@ gl::Version DisplayMtl::getMaxConformantESVersion() const
 
 EGLSyncImpl *DisplayMtl::createSync(const egl::AttributeMap &attribs)
 {
-    UNIMPLEMENTED();
-    return nullptr;
+    return new EGLSyncMtl(attribs);
 }
 
-egl::Error DisplayMtl::makeCurrent(egl::Surface *drawSurface,
+egl::Error DisplayMtl::makeCurrent(egl::Display *display,
+                                   egl::Surface *drawSurface,
                                    egl::Surface *readSurface,
                                    gl::Context *context)
 {
@@ -264,6 +285,13 @@ void DisplayMtl::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->surfacelessContext           = true;
     outExtensions->displayTextureShareGroup     = true;
     outExtensions->displaySemaphoreShareGroup   = true;
+
+    if (mFeatures.hasEvents.enabled)
+    {
+        // MTLSharedEvent is only available since Metal 2.1
+        outExtensions->fenceSync = true;
+        outExtensions->waitSync  = true;
+    }
 
     // Note that robust resource initialization is not yet implemented. We only expose
     // this extension so that ANGLE can be initialized in Chrome. WebGL will fail to use
@@ -433,6 +461,12 @@ const gl::Extensions &DisplayMtl::getNativeExtensions() const
     return mNativeExtensions;
 }
 
+const gl::Limitations &DisplayMtl::getNativeLimitations() const
+{
+    ensureCapsInitialized();
+    return mNativeLimitations;
+}
+
 void DisplayMtl::ensureCapsInitialized() const
 {
     if (mCapsInitialized)
@@ -453,26 +487,27 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxElementIndex  = std::numeric_limits<GLuint>::max() - 1;
     mNativeCaps.max3DTextureSize = 2048;
 #if TARGET_OS_OSX || TARGET_OS_MACCATALYST
-    mNativeCaps.max2DTextureSize          = 16384;
-    mNativeCaps.maxVaryingVectors         = 31;
-    mNativeCaps.maxVertexOutputComponents = 124;
+    mNativeCaps.max2DTextureSize = 16384;
+    // On macOS exclude [[position]] from maxVaryingVectors.
+    mNativeCaps.maxVaryingVectors         = 31 - 1;
+    mNativeCaps.maxVertexOutputComponents = mNativeCaps.maxFragmentInputComponents = 124 - 4;
 #else
     if (supportsIOSGPUFamily(3))
     {
         mNativeCaps.max2DTextureSize          = 16384;
-        mNativeCaps.maxVertexOutputComponents = 124;
-        mNativeCaps.maxVaryingVectors         = mNativeCaps.maxVertexOutputComponents / 4;
+        mNativeCaps.maxVertexOutputComponents = mNativeCaps.maxFragmentInputComponents = 124;
+        mNativeCaps.maxVaryingVectors = mNativeCaps.maxVertexOutputComponents / 4;
     }
     else
     {
         mNativeCaps.max2DTextureSize          = 8192;
-        mNativeCaps.maxVertexOutputComponents = 60;
-        mNativeCaps.maxVaryingVectors         = mNativeCaps.maxVertexOutputComponents / 4;
+        mNativeCaps.maxVertexOutputComponents = mNativeCaps.maxFragmentInputComponents = 60;
+        mNativeCaps.maxVaryingVectors = mNativeCaps.maxVertexOutputComponents / 4;
     }
 #endif
 
     mNativeCaps.maxArrayTextureLayers = 2048;
-    mNativeCaps.maxLODBias            = 0;
+    mNativeCaps.maxLODBias            = 2.0;  // default GLES3 limit
     mNativeCaps.maxCubeMapTextureSize = mNativeCaps.max2DTextureSize;
     mNativeCaps.maxRenderbufferSize   = mNativeCaps.max2DTextureSize;
     mNativeCaps.minAliasedPointSize   = 1;
@@ -492,10 +527,11 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxViewportWidth     = mNativeCaps.max2DTextureSize;
     mNativeCaps.maxViewportHeight    = mNativeCaps.max2DTextureSize;
 
-    // NOTE(hqle): MSAA
+    // MSAA
+    mNativeCaps.maxSamples             = mFormatTable.getMaxSamples();
     mNativeCaps.maxSampleMaskWords     = 0;
-    mNativeCaps.maxColorTextureSamples = 1;
-    mNativeCaps.maxDepthTextureSamples = 1;
+    mNativeCaps.maxColorTextureSamples = mNativeCaps.maxSamples;
+    mNativeCaps.maxDepthTextureSamples = mNativeCaps.maxSamples;
     mNativeCaps.maxIntegerSamples      = 1;
 
     mNativeCaps.maxVertexAttributes           = mtl::kMaxVertexAttribs;
@@ -503,8 +539,9 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxVertexAttribRelativeOffset = std::numeric_limits<GLint>::max();
     mNativeCaps.maxVertexAttribStride         = std::numeric_limits<GLint>::max();
 
-    mNativeCaps.maxElementsIndices  = std::numeric_limits<GLuint>::max();
-    mNativeCaps.maxElementsVertices = std::numeric_limits<GLuint>::max();
+    // glGet() use signed integer as parameter so we have to use GLint's max here, not GLuint.
+    mNativeCaps.maxElementsIndices  = std::numeric_limits<GLint>::max();
+    mNativeCaps.maxElementsVertices = std::numeric_limits<GLint>::max();
 
     // Looks like all floats are IEEE according to the docs here:
     mNativeCaps.vertexHighpFloat.setIEEEFloat();
@@ -542,6 +579,10 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxShaderTextureImageUnits[gl::ShaderType::Fragment] = mtl::kMaxShaderSamplers;
     mNativeCaps.maxShaderTextureImageUnits[gl::ShaderType::Vertex]   = mtl::kMaxShaderSamplers;
 
+    // No info from Metal given, use default GLES3 spec values:
+    mNativeCaps.minProgramTexelOffset = -8;
+    mNativeCaps.maxProgramTexelOffset = 7;
+
     // NOTE(hqle): support storage buffer.
     const uint32_t maxPerStageStorageBuffers                     = 0;
     mNativeCaps.maxShaderStorageBlocks[gl::ShaderType::Vertex]   = maxPerStageStorageBuffers;
@@ -557,7 +598,7 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxShaderStorageBlockSize          = 0;
     mNativeCaps.shaderStorageBufferOffsetAlignment = 0;
 
-    // NOTE(hqle): support UBO
+    // UBO plus default uniform limits
     const uint32_t maxCombinedUniformComponents =
         maxDefaultUniformComponents + mtl::kMaxUBOSize * mtl::kMaxShaderUBOs / 4;
     for (gl::ShaderType shaderType : gl::kAllGraphicsShaderTypes)
@@ -574,11 +615,11 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.maxTransformFeedbackSeparateComponents =
         gl::IMPLEMENTATION_MAX_TRANSFORM_FEEDBACK_SEPARATE_COMPONENTS;
 
-    // NOTE(hqle): support MSAA.
-    mNativeCaps.maxSamples = 1;
-
     // GL_APPLE_clip_distance
     mNativeCaps.maxClipDistances = 8;
+
+    // Metal doesn't support GL_TEXTURE_COMPARE_MODE=GL_NONE for shadow samplers
+    mNativeLimitations.noShadowSamplerCompareModeNone = true;
 }
 
 void DisplayMtl::initializeExtensions() const
@@ -594,7 +635,7 @@ void DisplayMtl::initializeExtensions() const
     mNativeExtensions.drawBuffers            = true;
     mNativeExtensions.fragDepth              = true;
     mNativeExtensions.framebufferBlit        = true;
-    mNativeExtensions.framebufferMultisample = false;
+    mNativeExtensions.framebufferMultisample = true;
     mNativeExtensions.copyTexture            = true;
     mNativeExtensions.copyCompressedTexture  = false;
 
@@ -650,6 +691,17 @@ void DisplayMtl::initializeExtensions() const
 
     // GL_NV_pixel_buffer_object
     mNativeExtensions.pixelBufferObjectNV = true;
+
+    if (mFeatures.hasEvents.enabled)
+    {
+        // MTLSharedEvent is only available since Metal 2.1
+
+        // GL_NV_fence
+        mNativeExtensions.fenceNV = true;
+
+        // GL_OES_EGL_sync
+        mNativeExtensions.eglSyncOES = true;
+    }
 }
 
 void DisplayMtl::initializeTextureCaps() const
@@ -682,17 +734,18 @@ void DisplayMtl::initializeFeatures()
         isMetal2_2 = true;
     }
 
-    // default values:
-    mFeatures.hasBaseVertexInstancedDraw.enabled        = true;
-    mFeatures.hasDepthTextureFiltering.enabled          = false;
-    mFeatures.hasNonUniformDispatch.enabled             = true;
-    mFeatures.hasStencilOutput.enabled                  = false;
-    mFeatures.hasTextureSwizzle.enabled                 = false;
-    mFeatures.allowSeparatedDepthStencilBuffers.enabled = false;
-    mFeatures.allowGenMultipleMipsPerPass.enabled       = true;
+    bool isOSX       = TARGET_OS_OSX;
+    bool isCatalyst  = TARGET_OS_MACCATALYST;
+    bool isSimulator = TARGET_OS_SIMULATOR;
+    bool isARM       = ANGLE_MTL_ARM;
+
+    ANGLE_FEATURE_CONDITION((&mFeatures), allowGenMultipleMipsPerPass, true);
+    ANGLE_FEATURE_CONDITION((&mFeatures), forceBufferGPUStorage, false);
 
     ANGLE_FEATURE_CONDITION((&mFeatures), hasDepthTextureFiltering,
-                            TARGET_OS_OSX || TARGET_OS_MACCATALYST);
+                            (isOSX || isCatalyst) && !isARM);
+    ANGLE_FEATURE_CONDITION((&mFeatures), hasExplicitMemBarrier,
+                            isMetal2_1 && (isOSX || isCatalyst) && !isARM);
     ANGLE_FEATURE_CONDITION((&mFeatures), hasDepthAutoResolve, supportsEitherGPUFamily(3, 2));
     ANGLE_FEATURE_CONDITION((&mFeatures), hasStencilAutoResolve, supportsEitherGPUFamily(5, 2));
     ANGLE_FEATURE_CONDITION((&mFeatures), allowMultisampleStoreAndResolve,
@@ -706,16 +759,25 @@ void DisplayMtl::initializeFeatures()
     ANGLE_FEATURE_CONDITION((&mFeatures), hasTextureSwizzle,
                             isMetal2_2 && supportsEitherGPUFamily(1, 2));
 
-#if !TARGET_OS_MACCATALYST && (TARGET_OS_IOS || TARGET_OS_TV)
+    // http://crbug.com/1136673
+    // Fence sync is flaky on Nvidia
+    ANGLE_FEATURE_CONDITION((&mFeatures), hasEvents, isMetal2_1 && !isNVIDIA());
+
+    ANGLE_FEATURE_CONDITION((&mFeatures), hasCheapRenderPass, (isOSX || isCatalyst) && !isARM);
+
+    // http://anglebug.com/5235
+    // D24S8 is unreliable on AMD.
+    ANGLE_FEATURE_CONDITION((&mFeatures), forceD24S8AsUnsupported, isAMD());
+
     // Base Vertex drawing is only supported since GPU family 3.
-    ANGLE_FEATURE_CONDITION((&mFeatures), hasBaseVertexInstancedDraw, supportsIOSGPUFamily(3));
+    ANGLE_FEATURE_CONDITION((&mFeatures), hasBaseVertexInstancedDraw,
+                            isOSX || isCatalyst || supportsIOSGPUFamily(3));
 
     ANGLE_FEATURE_CONDITION((&mFeatures), hasNonUniformDispatch,
-                            TARGET_OS_IOS && supportsIOSGPUFamily(4));
+                            isOSX || isCatalyst || supportsIOSGPUFamily(4));
 
-    ANGLE_FEATURE_CONDITION((&mFeatures), allowSeparatedDepthStencilBuffers, !TARGET_OS_SIMULATOR);
-
-#endif
+    ANGLE_FEATURE_CONDITION((&mFeatures), allowSeparatedDepthStencilBuffers,
+                            !isOSX && !isCatalyst && !isSimulator);
 
     angle::PlatformMethods *platform = ANGLEPlatformCurrent();
     platform->overrideFeaturesMtl(platform, &mFeatures);
@@ -725,48 +787,62 @@ void DisplayMtl::initializeFeatures()
 
 angle::Result DisplayMtl::initializeShaderLibrary()
 {
-    mtl::AutoObjCObj<NSError> err = nil;
+    mDefaultShadersAsyncInfo.reset(new DefaultShaderAsyncInfoMtl);
 
-    const uint8_t *compiled_shader_binary;
-    size_t compiled_shader_binary_len;
+    // Create references to async info struct since it might be released in terminate(), but the
+    // callback might still not be fired yet.
+    std::shared_ptr<DefaultShaderAsyncInfoMtl> asyncRef = mDefaultShadersAsyncInfo;
 
-#if !defined(NDEBUG)
-    if (getFeatures().hasStencilOutput.enabled)
+    // Compile the default shaders asynchronously
+    ANGLE_MTL_OBJC_SCOPE
     {
-        compiled_shader_binary     = compiled_default_metallib_2_1_debug;
-        compiled_shader_binary_len = compiled_default_metallib_2_1_debug_len;
-    }
-    else
-    {
-        compiled_shader_binary     = compiled_default_metallib_debug;
-        compiled_shader_binary_len = compiled_default_metallib_debug_len;
-    }
-#else
-    if (getFeatures().hasStencilOutput.enabled)
-    {
-        compiled_shader_binary     = compiled_default_metallib_2_1;
-        compiled_shader_binary_len = compiled_default_metallib_2_1_len;
-    }
-    else
-    {
-        compiled_shader_binary     = compiled_default_metallib;
-        compiled_shader_binary_len = compiled_default_metallib_len;
-    }
-#endif
+        auto nsSource = [[NSString alloc] initWithBytesNoCopy:gDefaultMetallibSrc
+                                                       length:sizeof(gDefaultMetallibSrc)
+                                                     encoding:NSUTF8StringEncoding
+                                                 freeWhenDone:NO];
+        auto options  = [[[MTLCompileOptions alloc] init] ANGLE_MTL_AUTORELEASE];
+        [getMetalDevice() newLibraryWithSource:nsSource
+                                       options:options
+                             completionHandler:^(id<MTLLibrary> library, NSError *error) {
+                               std::unique_lock<std::mutex> lg(asyncRef->lock);
 
-    mDefaultShaders = CreateShaderLibraryFromBinary(getMetalDevice(), compiled_shader_binary,
-                                                    compiled_shader_binary_len, &err);
+                               asyncRef->defaultShaders             = std::move(library);
+                               asyncRef->defaultShadersCompileError = std::move(error);
 
-    if (err && !mDefaultShaders)
-    {
-        ANGLE_MTL_OBJC_SCOPE
-        {
-            ERR() << "Internal error: " << err.get().localizedDescription.UTF8String;
-        }
-        return angle::Result::Stop;
+                               asyncRef->compiled = true;
+                               asyncRef->cv.notify_one();
+                             }];
+
+        [nsSource ANGLE_MTL_AUTORELEASE];
     }
 
     return angle::Result::Continue;
+}
+
+id<MTLLibrary> DisplayMtl::getDefaultShadersLib()
+{
+    std::unique_lock<std::mutex> lg(mDefaultShadersAsyncInfo->lock);
+    if (!mDefaultShadersAsyncInfo->compiled)
+    {
+        // Wait for async compilation
+        mDefaultShadersAsyncInfo->cv.wait(lg,
+                                          [this] { return mDefaultShadersAsyncInfo->compiled; });
+    }
+
+    if (mDefaultShadersAsyncInfo->defaultShadersCompileError &&
+        !mDefaultShadersAsyncInfo->defaultShaders)
+    {
+        ANGLE_MTL_OBJC_SCOPE
+        {
+            ERR() << "Internal error: "
+                  << mDefaultShadersAsyncInfo->defaultShadersCompileError.get()
+                         .localizedDescription.UTF8String;
+        }
+        // This is not supposed to happen
+        UNREACHABLE();
+    }
+
+    return mDefaultShadersAsyncInfo->defaultShaders;
 }
 
 bool DisplayMtl::supportsIOSGPUFamily(uint8_t iOSFamily) const
@@ -930,5 +1006,19 @@ bool DisplayMtl::isNVIDIA() const
 {
     return angle::IsNVIDIA(mMetalDeviceVendorId);
 }
+
+#if ANGLE_MTL_EVENT_AVAILABLE
+mtl::AutoObjCObj<MTLSharedEventListener> DisplayMtl::getOrCreateSharedEventListener()
+{
+    if (!mSharedEventListener)
+    {
+        ANGLE_MTL_OBJC_SCOPE
+        {
+            mSharedEventListener = [[[MTLSharedEventListener alloc] init] ANGLE_MTL_AUTORELEASE];
+        }
+    }
+    return mSharedEventListener;
+}
+#endif
 
 }  // namespace rx

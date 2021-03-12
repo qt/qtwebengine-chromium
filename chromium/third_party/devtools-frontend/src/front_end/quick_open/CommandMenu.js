@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
 import * as Diff from '../diff/diff.js';
 import * as Host from '../host/host.js';
@@ -14,13 +11,25 @@ import * as UI from '../ui/ui.js';
 import {FilteredListWidget, Provider} from './FilteredListWidget.js';
 import {QuickOpenImpl} from './QuickOpen.js';
 
+/** @type {!CommandMenu} */
+let commandMenuInstance;
+
 /**
  * @unrestricted
  */
 export class CommandMenu {
+  /** @private */
   constructor() {
+    /** @type {!Array<!Command>} */
     this._commands = [];
     this._loadCommands();
+  }
+
+  static instance() {
+    if (!commandMenuInstance) {
+      commandMenuInstance = new CommandMenu();
+    }
+    return commandMenuInstance;
   }
 
   /**
@@ -74,6 +83,7 @@ export class CommandMenu {
         }
       },
       availableHandler,
+      userActionCode: undefined,
     });
 
     /**
@@ -99,6 +109,7 @@ export class CommandMenu {
       shortcut,
       executeHandler: action.execute.bind(action),
       userActionCode,
+      availableHandler: undefined,
     });
   }
 
@@ -107,17 +118,17 @@ export class CommandMenu {
    * @return {!Command}
    */
   static createRevealViewCommand(options) {
-    const {extension, category, userActionCode} = options;
-    const viewId = extension.descriptor()['id'];
+    const {title, tags, category, userActionCode, id} = options;
 
     return CommandMenu.createCommand({
       category,
-      keys: extension.descriptor()['tags'] || '',
-      title: Common.UIString.UIString('Show %s', extension.title()),
+      keys: tags || '',
+      title: Common.UIString.UIString('Show %s', title),
       shortcut: '',
       executeHandler: UI.ViewManager.ViewManager.instance().showView.bind(
-          UI.ViewManager.ViewManager.instance(), viewId, /* userGesture */ true),
+          UI.ViewManager.ViewManager.instance(), id, /* userGesture */ true),
       userActionCode,
+      availableHandler: undefined
     });
   }
 
@@ -130,15 +141,22 @@ export class CommandMenu {
         locations.set(name, category);
       }
     });
+    // TODO(crbug.com/1134103): Remove this call when all views are migrated
     const viewExtensions = Root.Runtime.Runtime.instance().extensions('view');
     for (const extension of viewExtensions) {
       const category = locations.get(extension.descriptor()['location']);
       if (!category) {
         continue;
       }
-
+      const extensionDescriptor = extension.descriptor();
       /** @type {!RevealViewCommandOptions} */
-      const options = {extension, category: ls(category), userActionCode: undefined};
+      const options = {
+        id: extensionDescriptor.id,
+        title: extensionDescriptor.title,
+        tags: extensionDescriptor.tags,
+        category: ls(category),
+        userActionCode: undefined
+      };
       this._commands.push(CommandMenu.createRevealViewCommand(options));
     }
 
@@ -153,7 +171,32 @@ export class CommandMenu {
         this._commands.push(CommandMenu.createSettingCommand(extension, ls(pair['title']), pair['value']));
       }
     }
+    this._loadCommandsFromPreRegisteredExtensions(locations);
   }
+
+  /**
+   * @param {!Map<string,string>} locations
+   */
+  _loadCommandsFromPreRegisteredExtensions(locations) {
+    const views = UI.ViewManager.getRegisteredViewExtensions();
+    for (const view of views) {
+      const category = locations.get(view.location());
+      if (!category) {
+        continue;
+      }
+
+      /** @type {!RevealViewCommandOptions} */
+      const options = {
+        title: view.title(),
+        tags: view.tags(),
+        category: ls(category),
+        userActionCode: undefined,
+        id: view.viewId()
+      };
+      this._commands.push(CommandMenu.createRevealViewCommand(options));
+    }
+  }
+
 
   /**
    * @return {!Array.<!Command>}
@@ -169,15 +212,19 @@ export class CommandMenu {
  *   userActionCode: (!Host.UserMetrics.Action|undefined),
  * }}
  */
+// @ts-ignore typedef
 export let ActionCommandOptions;
 
 /**
  * @typedef {{
- *   extension: !Root.Runtime.Extension,
+ *   id: string,
+ *   title: ?string,
+ *   tags: ?string,
  *   category: string,
  *   userActionCode: (!Host.UserMetrics.Action|undefined)
  * }}
  */
+// @ts-ignore typedef
 export let RevealViewCommandOptions;
 
 /**
@@ -186,16 +233,18 @@ export let RevealViewCommandOptions;
  *   keys: string,
  *   title: string,
  *   shortcut: string,
- *   executeHandler: !function(),
- *   availableHandler: (!function()|undefined),
+ *   executeHandler: !function():*,
+ *   availableHandler: ((!function():boolean)|undefined),
  *   userActionCode: (!Host.UserMetrics.Action|undefined)
  * }}
  */
+// @ts-ignore typedef
 export let CreateCommandOptions;
 
 export class CommandMenuProvider extends Provider {
   constructor() {
     super();
+    /** @type {!Array<!Command>} */
     this._commands = [];
   }
 
@@ -203,7 +252,7 @@ export class CommandMenuProvider extends Provider {
    * @override
    */
   attach() {
-    const allCommands = commandMenu.commands();
+    const allCommands = CommandMenu.instance().commands();
 
     // Populate allowlisted actions.
     const actions = UI.ActionRegistry.ActionRegistry.instance().availableActions();
@@ -214,7 +263,7 @@ export class CommandMenuProvider extends Provider {
       }
 
       /** @type {!ActionCommandOptions} */
-      const options = {action};
+      const options = {action, userActionCode: undefined};
       this._commands.push(CommandMenu.createActionCommand(options));
     }
 
@@ -228,7 +277,7 @@ export class CommandMenuProvider extends Provider {
 
     /**
      * @param {!Command} left
-     * @param {!QuickOpen.CommandMenu.Command} right
+     * @param {!Command} right
      * @return {number}
      */
     function commandComparator(left, right) {
@@ -291,11 +340,11 @@ export class CommandMenuProvider extends Provider {
   renderItem(itemIndex, query, titleElement, subtitleElement) {
     const command = this._commands[itemIndex];
     titleElement.removeChildren();
-    const tagElement = titleElement.createChild('span', 'tag');
+    const tagElement = /** @type {!HTMLElement} */ (titleElement.createChild('span', 'tag'));
     const index = String.hashCode(command.category()) % MaterialPaletteColors.length;
     tagElement.style.backgroundColor = MaterialPaletteColors[index];
     tagElement.textContent = command.category();
-    titleElement.createTextChild(command.title());
+    UI.UIUtils.createTextChild(titleElement, command.title());
     FilteredListWidget.highlightRanges(titleElement, query, true);
     subtitleElement.textContent = command.shortcut();
   }
@@ -336,7 +385,7 @@ export class Command {
    * @param {string} title
    * @param {string} key
    * @param {string} shortcut
-   * @param {function()} executeHandler
+   * @param {function():*} executeHandler
    * @param {function()=} availableHandler
    */
   constructor(category, title, key, shortcut, executeHandler, availableHandler) {
@@ -405,6 +454,3 @@ export class ShowActionDelegate {
     return true;
   }
 }
-
-/** @type {!CommandMenu} */
-export const commandMenu = new CommandMenu();

@@ -19,6 +19,10 @@ constexpr char kArcDataSnapshotdServiceName[] = "org.chromium.ArcDataSnapshotd";
 
 // Methods:
 constexpr char kGenerateKeyPairMethod[] = "GenerateKeyPair";
+constexpr char kClearSnapshotMethod[] = "ClearSnapshot";
+constexpr char kTakeSnapshotMethod[] = "TakeSnapshot";
+constexpr char kLoadSnapshotMethod[] = "LoadSnapshot";
+constexpr char kUpdateMethod[] = "Update";
 
 }  // namespace data_snapshotd
 }  // namespace arc

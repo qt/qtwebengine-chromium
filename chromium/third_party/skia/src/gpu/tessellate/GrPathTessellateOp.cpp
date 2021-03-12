@@ -12,6 +12,7 @@
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrTriangulator.h"
+#include "src/gpu/geometry/GrPathUtils.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 #include "src/gpu/tessellate/GrFillPathShader.h"
 #include "src/gpu/tessellate/GrMiddleOutPolygonTriangulator.h"
@@ -101,11 +102,11 @@ void GrPathTessellateOp::prePreparePrograms(const PrePrepareArgs& args) {
     float gpuFragmentWork = bounds.height() * scales[0] * bounds.width() * scales[1];
     float cpuTessellationWork = (float)numVerbs * SkNextLog2(numVerbs);  // N log N.
     if (cpuTessellationWork * 500 + (256 * 256) < gpuFragmentWork) {  // Don't try below 256x256.
-        int numCountedCubics;
+        bool isLinear;
         // This will fail if the inner triangles do not form a simple polygon (e.g., self
         // intersection, double winding).
-        if (this->prePrepareInnerPolygonTriangulation(args, &numCountedCubics)) {
-            if (numCountedCubics > 0) {
+        if (this->prePrepareInnerPolygonTriangulation(args, &isLinear)) {
+            if (!isLinear) {
                 // Always use indirect draws for cubics instead of tessellation here. Our goal in
                 // this mode is to maximize GPU performance, and the middle-out topology used by our
                 // indirect draws is easier on the rasterizer than a tessellated fan. There also
@@ -154,7 +155,7 @@ void GrPathTessellateOp::prePreparePrograms(const PrePrepareArgs& args) {
 }
 
 bool GrPathTessellateOp::prePrepareInnerPolygonTriangulation(const PrePrepareArgs& args,
-                                                             int* numCountedCurves) {
+                                                             bool* isLinear) {
     SkASSERT(!fTriangleBuffer);
     SkASSERT(fTriangleVertexCount == 0);
     SkASSERT(!fStencilTrianglesProgram);
@@ -165,7 +166,7 @@ bool GrPathTessellateOp::prePrepareInnerPolygonTriangulation(const PrePrepareArg
     fTriangleVertexCount = GrTriangulator::PathToTriangles(fPath, 0, SkRect::MakeEmpty(),
                                                            args.fInnerTriangleAllocator,
                                                            Mode::kSimpleInnerPolygons,
-                                                           numCountedCurves);
+                                                           isLinear);
     if (fTriangleVertexCount == 0) {
         // Mode::kSimpleInnerPolygons causes PathToTriangles to fail if the inner polygon(s) are not
         // simple.
@@ -179,7 +180,7 @@ bool GrPathTessellateOp::prePrepareInnerPolygonTriangulation(const PrePrepareArg
         // stencilled.
         this->prePrepareStencilTrianglesProgram(args);
     }
-    this->prePrepareFillTrianglesProgram(args, *numCountedCurves);
+    this->prePrepareFillTrianglesProgram(args, *isLinear);
     return true;
 }
 
@@ -262,8 +263,7 @@ constexpr static GrUserStencilSettings kTestAndResetStencil(
         GrUserStencilOp::kKeep,
         0xffff>());
 
-void GrPathTessellateOp::prePrepareFillTrianglesProgram(const PrePrepareArgs& args,
-                                                        int numCountedCurves) {
+void GrPathTessellateOp::prePrepareFillTrianglesProgram(const PrePrepareArgs& args, bool isLinear) {
     SkASSERT(!fFillTrianglesProgram);
 
     if (fOpFlags & OpFlags::kStencilOnly) {
@@ -301,7 +301,7 @@ void GrPathTessellateOp::prePrepareFillTrianglesProgram(const PrePrepareArgs& ar
     if (fStencilTrianglesProgram) {
         // The path was already stencilled. Here we just need to do a cover pass.
         stencil = &kTestAndResetStencil;
-    } else if (numCountedCurves == 0) {
+    } else if (isLinear) {
         // There are no stencilled curves. We can ignore stencil and fill the path directly.
         stencil = &GrUserStencilSettings::kUnused;
     } else if (SkPathFillType::kWinding == fPath.getFillType()) {
@@ -544,25 +544,6 @@ void GrPathTessellateOp::prepareMiddleOutTrianglesAndCubics(
     }
 }
 
-static SkPoint lerp(const SkPoint& a, const SkPoint& b, float T) {
-    SkASSERT(1 != T);  // The below does not guarantee lerp(a, b, 1) === b.
-    return (b - a) * T + a;
-}
-
-static void line2cubic(const SkPoint& p0, const SkPoint& p1, SkPoint* out) {
-    out[0] = p0;
-    out[1] = lerp(p0, p1, 1/3.f);
-    out[2] = lerp(p0, p1, 2/3.f);
-    out[3] = p1;
-}
-
-static void quad2cubic(const SkPoint pts[], SkPoint* out) {
-    out[0] = pts[0];
-    out[1] = lerp(pts[0], pts[1], 2/3.f);
-    out[2] = lerp(pts[1], pts[2], 1/3.f);
-    out[3] = pts[2];
-}
-
 void GrPathTessellateOp::prepareIndirectOuterCubics(
         GrMeshDrawOp::Target* target, const GrResolveLevelCounter& resolveLevelCounter) {
     SkASSERT(resolveLevelCounter.totalCubicInstanceCount() >= 0);
@@ -679,7 +660,7 @@ void GrPathTessellateOp::prepareIndirectOuterCubicsAndTriangles(
                         continue;
                     }
                     level = std::min(level, kMaxResolveLevel);
-                    quad2cubic(pts, instanceLocations[level]);
+                    GrPathUtils::convertQuadToCubic(pts, instanceLocations[level]);
                     break;
                 case SkPathVerb::kCubic:
                     level = GrWangsFormula::cubic_log2(kLinearizationIntolerance, pts, xform);
@@ -728,7 +709,7 @@ void GrPathTessellateOp::prepareTessellatedOuterCubics(GrMeshDrawOp::Target* tar
                 continue;
             case SkPathVerb::kQuad:
                 SkASSERT(fCubicVertexCount < numCountedCurves * 4);
-                quad2cubic(pts, vertexData + fCubicVertexCount);
+                GrPathUtils::convertQuadToCubic(pts, vertexData + fCubicVertexCount);
                 break;
             case SkPathVerb::kCubic:
                 SkASSERT(fCubicVertexCount < numCountedCurves * 4);
@@ -769,11 +750,11 @@ void GrPathTessellateOp::prepareTessellatedCubicWedges(GrMeshDrawOp::Target* tar
                 case SkPathVerb::kClose:
                     continue;  // Ignore. We can assume an implicit close at the end.
                 case SkPathVerb::kLine:
-                    line2cubic(pts[0], pts[1], vertexData + fCubicVertexCount);
+                    GrPathUtils::convertLineToCubic(pts[0], pts[1], vertexData + fCubicVertexCount);
                     lastPoint = pts[1];
                     break;
                 case SkPathVerb::kQuad:
-                    quad2cubic(pts, vertexData + fCubicVertexCount);
+                    GrPathUtils::convertQuadToCubic(pts, vertexData + fCubicVertexCount);
                     lastPoint = pts[2];
                     break;
                 case SkPathVerb::kCubic:
@@ -787,7 +768,7 @@ void GrPathTessellateOp::prepareTessellatedCubicWedges(GrMeshDrawOp::Target* tar
             fCubicVertexCount += 5;
         }
         if (lastPoint != startPoint) {
-            line2cubic(lastPoint, startPoint, vertexData + fCubicVertexCount);
+            GrPathUtils::convertLineToCubic(lastPoint, startPoint, vertexData + fCubicVertexCount);
             vertexData[fCubicVertexCount + 4] = midpoint;
             fCubicVertexCount += 5;
         }

@@ -25,6 +25,7 @@ using DepthTextureTypeTest = testing::Test;
 
 TEST_F(DepthTextureTypeTest, Is) {
   DepthTextureType d(TextureDimension::kCube);
+  EXPECT_FALSE(d.IsAccessControl());
   EXPECT_FALSE(d.IsAlias());
   EXPECT_FALSE(d.IsArray());
   EXPECT_FALSE(d.IsBool());
@@ -54,6 +55,11 @@ TEST_F(DepthTextureTypeTest, Dim) {
 TEST_F(DepthTextureTypeTest, TypeName) {
   DepthTextureType d(TextureDimension::kCube);
   EXPECT_EQ(d.type_name(), "__depth_texture_cube");
+}
+
+TEST_F(DepthTextureTypeTest, MinBufferBindingSize) {
+  DepthTextureType d(TextureDimension::kCube);
+  EXPECT_EQ(0u, d.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

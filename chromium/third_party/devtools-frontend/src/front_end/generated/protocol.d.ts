@@ -14,11 +14,6 @@ declare namespace Protocol {
     /** Returns an error message if the request failed. */
     getError(): string|undefined;
   }
-  export type UsesObjectNotation = true;
-  export interface Dispatcher {
-    /** This dispatcher requires objects as parameters, rather than multiple arguments */
-    usesObjectNotation(): UsesObjectNotation;
-  }
 
   export namespace Accessibility {
 
@@ -290,6 +285,37 @@ declare namespace Protocol {
     }
 
     export interface GetFullAXTreeResponse extends ProtocolResponseWithError {
+      nodes: AXNode[];
+    }
+
+    export interface QueryAXTreeRequest {
+      /**
+       * Identifier of the node for the root to query.
+       */
+      nodeId?: DOM.NodeId;
+      /**
+       * Identifier of the backend node for the root to query.
+       */
+      backendNodeId?: DOM.BackendNodeId;
+      /**
+       * JavaScript object id of the node wrapper for the root to query.
+       */
+      objectId?: Runtime.RemoteObjectId;
+      /**
+       * Find nodes with this computed name.
+       */
+      accessibleName?: string;
+      /**
+       * Find nodes with this computed role.
+       */
+      role?: string;
+    }
+
+    export interface QueryAXTreeResponse extends ProtocolResponseWithError {
+      /**
+       * A list of `Accessibility.AXNode` matching the specified attributes,
+       * including nodes that are ignored for accessibility.
+       */
       nodes: AXNode[];
     }
   }
@@ -876,6 +902,7 @@ declare namespace Protocol {
        * Specific directive that is violated, causing the CSP issue.
        */
       violatedDirective: string;
+      isReportOnly: boolean;
       contentSecurityPolicyViolationType: ContentSecurityPolicyViolationType;
       frameAncestor?: AffectedFrame;
       sourceCodeLocation?: SourceCodeLocation;
@@ -1117,6 +1144,7 @@ declare namespace Protocol {
       ProtectedMediaIdentifier = 'protectedMediaIdentifier',
       Sensors = 'sensors',
       VideoCapture = 'videoCapture',
+      VideoCapturePanTiltZoom = 'videoCapturePanTiltZoom',
       IdleDetection = 'idleDetection',
       WakeLockScreen = 'wakeLockScreen',
       WakeLockSystem = 'wakeLockSystem',
@@ -1151,6 +1179,18 @@ declare namespace Protocol {
        * For "clipboard" permission, may specify allowWithoutSanitization.
        */
       allowWithoutSanitization?: boolean;
+      /**
+       * For "camera" permission, may specify panTiltZoom.
+       */
+      panTiltZoom?: boolean;
+    }
+
+    /**
+     * Browser command ids used by executeBrowserCommand.
+     */
+    export enum BrowserCommandId {
+      OpenTabSearch = 'openTabSearch',
+      CloseTabSearch = 'closeTabSearch',
     }
 
     /**
@@ -1376,6 +1416,10 @@ declare namespace Protocol {
        * Png encoded image.
        */
       image?: binary;
+    }
+
+    export interface ExecuteBrowserCommandRequest {
+      commandId: BrowserCommandId;
     }
   }
 
@@ -2519,6 +2563,7 @@ declare namespace Protocol {
       Marker = 'marker',
       Backdrop = 'backdrop',
       Selection = 'selection',
+      TargetText = 'target-text',
       FirstLineInherited = 'first-line-inherited',
       Scrollbar = 'scrollbar',
       ScrollbarThumb = 'scrollbar-thumb',
@@ -4514,6 +4559,14 @@ declare namespace Protocol {
       mobile: boolean;
     }
 
+    /**
+     * Enum of image types that can be disabled.
+     */
+    export enum DisabledImageType {
+      Avif = 'avif',
+      Webp = 'webp',
+    }
+
     export interface CanEmulateResponse extends ProtocolResponseWithError {
       /**
        * True if emulation is supported.
@@ -4771,6 +4824,13 @@ declare namespace Protocol {
        * Frame height (DIP).
        */
       height: integer;
+    }
+
+    export interface SetDisabledImageTypesRequest {
+      /**
+       * Image types to disable.
+       */
+      imageTypes: DisabledImageType[];
     }
 
     export interface SetUserAgentOverrideRequest {
@@ -5261,6 +5321,22 @@ declare namespace Protocol {
        */
       force?: number;
       /**
+       * The normalized tangential pressure, which has a range of [-1,1] (default: 0).
+       */
+      tangentialPressure?: number;
+      /**
+       * The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0)
+       */
+      tiltX?: integer;
+      /**
+       * The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).
+       */
+      tiltY?: integer;
+      /**
+       * The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).
+       */
+      twist?: integer;
+      /**
        * Identifier used to track touch sources between events, must be unique within an event.
        */
       id?: number;
@@ -5418,6 +5494,26 @@ declare namespace Protocol {
        * Number of times the mouse button was clicked (default: 0).
        */
       clickCount?: integer;
+      /**
+       * The normalized pressure, which has a range of [0,1] (default: 0).
+       */
+      force?: number;
+      /**
+       * The normalized tangential pressure, which has a range of [-1,1] (default: 0).
+       */
+      tangentialPressure?: number;
+      /**
+       * The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0).
+       */
+      tiltX?: integer;
+      /**
+       * The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).
+       */
+      tiltY?: integer;
+      /**
+       * The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).
+       */
+      twist?: integer;
       /**
        * X delta in CSS pixels for mouse wheel event (default: 0).
        */
@@ -6408,6 +6504,11 @@ declare namespace Protocol {
        * Whether is loaded via link preload.
        */
       isLinkPreload?: boolean;
+      /**
+       * Set for requests when the TrustToken API is used. Contains the parameters
+       * passed by the developer (e.g. via "fetch") as understood by the backend.
+       */
+      trustTokenParams?: TrustTokenParams;
     }
 
     /**
@@ -6535,6 +6636,42 @@ declare namespace Protocol {
     }
 
     /**
+     * The reason why request was blocked.
+     */
+    export enum CorsError {
+      DisallowedByMode = 'DisallowedByMode',
+      InvalidResponse = 'InvalidResponse',
+      WildcardOriginNotAllowed = 'WildcardOriginNotAllowed',
+      MissingAllowOriginHeader = 'MissingAllowOriginHeader',
+      MultipleAllowOriginValues = 'MultipleAllowOriginValues',
+      InvalidAllowOriginValue = 'InvalidAllowOriginValue',
+      AllowOriginMismatch = 'AllowOriginMismatch',
+      InvalidAllowCredentials = 'InvalidAllowCredentials',
+      CorsDisabledScheme = 'CorsDisabledScheme',
+      PreflightInvalidStatus = 'PreflightInvalidStatus',
+      PreflightDisallowedRedirect = 'PreflightDisallowedRedirect',
+      PreflightWildcardOriginNotAllowed = 'PreflightWildcardOriginNotAllowed',
+      PreflightMissingAllowOriginHeader = 'PreflightMissingAllowOriginHeader',
+      PreflightMultipleAllowOriginValues = 'PreflightMultipleAllowOriginValues',
+      PreflightInvalidAllowOriginValue = 'PreflightInvalidAllowOriginValue',
+      PreflightAllowOriginMismatch = 'PreflightAllowOriginMismatch',
+      PreflightInvalidAllowCredentials = 'PreflightInvalidAllowCredentials',
+      PreflightMissingAllowExternal = 'PreflightMissingAllowExternal',
+      PreflightInvalidAllowExternal = 'PreflightInvalidAllowExternal',
+      InvalidAllowMethodsPreflightResponse = 'InvalidAllowMethodsPreflightResponse',
+      InvalidAllowHeadersPreflightResponse = 'InvalidAllowHeadersPreflightResponse',
+      MethodDisallowedByPreflightResponse = 'MethodDisallowedByPreflightResponse',
+      HeaderDisallowedByPreflightResponse = 'HeaderDisallowedByPreflightResponse',
+      RedirectContainsCredentials = 'RedirectContainsCredentials',
+      InsecurePrivateNetwork = 'InsecurePrivateNetwork',
+    }
+
+    export interface CorsErrorStatus {
+      corsError: CorsError;
+      failedParameter: string;
+    }
+
+    /**
      * Source of serviceworker response.
      */
     export enum ServiceWorkerResponseSource {
@@ -6542,6 +6679,36 @@ declare namespace Protocol {
       HttpCache = 'http-cache',
       FallbackCode = 'fallback-code',
       Network = 'network',
+    }
+
+    export enum TrustTokenParamsRefreshPolicy {
+      UseCached = 'UseCached',
+      Refresh = 'Refresh',
+    }
+
+    /**
+     * Determines what type of Trust Token operation is executed and
+     * depending on the type, some additional parameters. The values
+     * are specified in third_party/blink/renderer/core/fetch/trust_token.idl.
+     */
+    export interface TrustTokenParams {
+      type: TrustTokenOperationType;
+      /**
+       * Only set for "token-redemption" type and determine whether
+       * to request a fresh SRR or use a still valid cached SRR.
+       */
+      refreshPolicy: TrustTokenParamsRefreshPolicy;
+      /**
+       * Origins of issuers from whom to request tokens or redemption
+       * records.
+       */
+      issuers?: string[];
+    }
+
+    export enum TrustTokenOperationType {
+      Issuance = 'Issuance',
+      Redemption = 'Redemption',
+      Signing = 'Signing',
     }
 
     /**
@@ -6753,6 +6920,11 @@ declare namespace Protocol {
        * module) (0-based).
        */
       lineNumber?: number;
+      /**
+       * Initiator column number, set for Parser type or for Script type (when script is importing
+       * module) (0-based).
+       */
+      columnNumber?: number;
     }
 
     /**
@@ -6821,6 +6993,9 @@ declare namespace Protocol {
       InvalidDomain = 'InvalidDomain',
       InvalidPrefix = 'InvalidPrefix',
       UnknownError = 'UnknownError',
+      SchemefulSameSiteStrict = 'SchemefulSameSiteStrict',
+      SchemefulSameSiteLax = 'SchemefulSameSiteLax',
+      SchemefulSameSiteUnspecifiedTreatedAsLax = 'SchemefulSameSiteUnspecifiedTreatedAsLax',
     }
 
     /**
@@ -6836,6 +7011,9 @@ declare namespace Protocol {
       SameSiteNoneInsecure = 'SameSiteNoneInsecure',
       UserPreferences = 'UserPreferences',
       UnknownError = 'UnknownError',
+      SchemefulSameSiteStrict = 'SchemefulSameSiteStrict',
+      SchemefulSameSiteLax = 'SchemefulSameSiteLax',
+      SchemefulSameSiteUnspecifiedTreatedAsLax = 'SchemefulSameSiteUnspecifiedTreatedAsLax',
     }
 
     /**
@@ -7152,8 +7330,8 @@ declare namespace Protocol {
     }
 
     export interface SecurityIsolationStatus {
-      coop: CrossOriginOpenerPolicyStatus;
-      coep: CrossOriginEmbedderPolicyStatus;
+      coop?: CrossOriginOpenerPolicyStatus;
+      coep?: CrossOriginEmbedderPolicyStatus;
     }
 
     /**
@@ -7495,7 +7673,7 @@ declare namespace Protocol {
 
     export interface SetCookieResponse extends ProtocolResponseWithError {
       /**
-       * True if successfully set cookie.
+       * Always set to true. If an error occurs, the response indicates protocol error.
        */
       success: boolean;
     }
@@ -7525,9 +7703,9 @@ declare namespace Protocol {
       headers: Headers;
     }
 
-    export interface SetAttachDebugHeaderRequest {
+    export interface SetAttachDebugStackRequest {
       /**
-       * Whether to send a debug header.
+       * Whether to attach a page script stack for debugging purpose.
        */
       enabled: boolean;
     }
@@ -7665,6 +7843,10 @@ declare namespace Protocol {
        * The reason why loading was blocked, if any.
        */
       blockedReason?: BlockedReason;
+      /**
+       * The reason why loading was blocked by CORS, if any.
+       */
+      corsErrorStatus?: CorsErrorStatus;
     }
 
     /**
@@ -8155,6 +8337,43 @@ declare namespace Protocol {
     }
 
     /**
+     * Configuration data for the highlighting of Flex container elements.
+     */
+    export interface FlexContainerHighlightConfig {
+      /**
+       * The style of the container border
+       */
+      containerBorder?: LineStyle;
+      /**
+       * The style of the separator between lines
+       */
+      lineSeparator?: LineStyle;
+      /**
+       * The style of the separator between items
+       */
+      itemSeparator?: LineStyle;
+    }
+
+    export enum LineStylePattern {
+      Dashed = 'dashed',
+      Dotted = 'dotted',
+    }
+
+    /**
+     * Style information for drawing a line.
+     */
+    export interface LineStyle {
+      /**
+       * The color of the line (default: transparent)
+       */
+      color?: DOM.RGBA;
+      /**
+       * The line pattern (default: solid)
+       */
+      pattern?: LineStylePattern;
+    }
+
+    /**
      * Configuration data for the highlighting of page elements.
      */
     export interface HighlightConfig {
@@ -8218,6 +8437,10 @@ declare namespace Protocol {
        * The grid layout highlight configuration (default: all transparent).
        */
       gridHighlightConfig?: GridHighlightConfig;
+      /**
+       * The flex container highlight configuration (default: all transparent).
+       */
+      flexContainerHighlightConfig?: FlexContainerHighlightConfig;
     }
 
     export enum ColorFormat {
@@ -8579,6 +8802,13 @@ declare namespace Protocol {
       NotIsolatedFeatureDisabled = 'NotIsolatedFeatureDisabled',
     }
 
+    export enum GatedAPIFeatures {
+      SharedArrayBuffers = 'SharedArrayBuffers',
+      SharedArrayBuffersTransferAllowed = 'SharedArrayBuffersTransferAllowed',
+      PerformanceMeasureMemory = 'PerformanceMeasureMemory',
+      PerformanceProfile = 'PerformanceProfile',
+    }
+
     /**
      * Information about the Frame on the page.
      */
@@ -8638,6 +8868,10 @@ declare namespace Protocol {
        * Indicates whether this is a cross origin isolated context.
        */
       crossOriginIsolatedContextType: CrossOriginIsolatedContextType;
+      /**
+       * Indicated which gated APIs / features are available.
+       */
+      gatedAPIFeatures: GatedAPIFeatures[];
     }
 
     /**
@@ -10584,9 +10818,30 @@ declare namespace Protocol {
        */
       quota: number;
       /**
+       * Whether or not the origin has an active storage quota override
+       */
+      overrideActive: boolean;
+      /**
        * Storage usage per type (bytes).
        */
       usageBreakdown: UsageForType[];
+    }
+
+    export interface OverrideQuotaForOriginRequest {
+      /**
+       * Security origin.
+       */
+      origin: string;
+      /**
+       * The quota size (in bytes) to override the original quota with.
+       * If this is called multiple times, the overriden quota will be equal to
+       * the quotaSize provided in the final call. If this is called without
+       * specifying a quotaSize, the quota will be reset to the default value for
+       * the specified origin. If this is called multiple times with different
+       * origins, the override will be maintained for each origin until it is
+       * disabled (called without a quotaSize).
+       */
+      quotaSize?: number;
     }
 
     export interface TrackCacheStorageForOriginRequest {
@@ -10918,9 +11173,13 @@ declare namespace Protocol {
        */
       openerId?: TargetID;
       /**
-       * Whether the opened window has access to the originating window.
+       * Whether the target has access to the originating window.
        */
       canAccessOpener: boolean;
+      /**
+       * Frame id of originating window (is only set if target has an opener).
+       */
+      openerFrameId?: Page.FrameId;
       browserContextId?: Browser.BrowserContextID;
     }
 
@@ -10962,6 +11221,9 @@ declare namespace Protocol {
     }
 
     export interface CloseTargetResponse extends ProtocolResponseWithError {
+      /**
+       * Always set to true. If an error occurs, the response indicates protocol error.
+       */
       success: boolean;
     }
 
@@ -11299,6 +11561,17 @@ declare namespace Protocol {
       Gzip = 'gzip',
     }
 
+    /**
+     * Details exposed when memory request explicitly declared.
+     * Keep consistent with memory_dump_request_args.h and
+     * memory_instrumentation.mojom
+     */
+    export enum MemoryDumpLevelOfDetail {
+      Background = 'background',
+      Light = 'light',
+      Detailed = 'detailed',
+    }
+
     export interface GetCategoriesResponse extends ProtocolResponseWithError {
       /**
        * A list of supported tracing categories.
@@ -11318,6 +11591,10 @@ declare namespace Protocol {
        * Enables more deterministic results by forcing garbage collection
        */
       deterministic?: boolean;
+      /**
+       * Specifies level of details in memory dump. Defaults to "detailed".
+       */
+      levelOfDetail?: MemoryDumpLevelOfDetail;
     }
 
     export interface RequestMemoryDumpResponse extends ProtocolResponseWithError {
@@ -11982,6 +12259,11 @@ declare namespace Protocol {
       Ctap2 = 'ctap2',
     }
 
+    export enum Ctap2Version {
+      Ctap2_0 = 'ctap2_0',
+      Ctap2_1 = 'ctap2_1',
+    }
+
     export enum AuthenticatorTransport {
       Usb = 'usb',
       Nfc = 'nfc',
@@ -11992,6 +12274,10 @@ declare namespace Protocol {
 
     export interface VirtualAuthenticatorOptions {
       protocol: AuthenticatorProtocol;
+      /**
+       * Defaults to ctap2_0. Ignored if |protocol| == u2f.
+       */
+      ctap2Version?: Ctap2Version;
       transport: AuthenticatorTransport;
       /**
        * Defaults to false.
@@ -12001,6 +12287,12 @@ declare namespace Protocol {
        * Defaults to false.
        */
       hasUserVerification?: boolean;
+      /**
+       * If set to true, the authenticator will support the largeBlob extension.
+       * https://w3c.github.io/webauthn#largeBlob
+       * Defaults to false.
+       */
+      hasLargeBlob?: boolean;
       /**
        * If set to true, tests of user presence will succeed immediately.
        * Otherwise, they will not be resolved. Defaults to true.
@@ -12036,6 +12328,11 @@ declare namespace Protocol {
        * See https://w3c.github.io/webauthn/#signature-counter
        */
       signCount: integer;
+      /**
+       * The large blob associated with the credential.
+       * See https://w3c.github.io/webauthn/#sctn-large-blob-extension
+       */
+      largeBlob?: binary;
     }
 
     export interface AddVirtualAuthenticatorRequest {
@@ -14514,7 +14811,21 @@ declare namespace Protocol {
 
     export interface AddBindingRequest {
       name: string;
+      /**
+       * If specified, the binding would only be exposed to the specified
+       * execution context. If omitted and `executionContextName` is not set,
+       * the binding is exposed to all execution contexts of the target.
+       * This parameter is mutually exclusive with `executionContextName`.
+       */
       executionContextId?: ExecutionContextId;
+      /**
+       * If specified, the binding is exposed to the executionContext with
+       * matching name, even for contexts created after the binding is added.
+       * See also `ExecutionContext.name` and `worldName` parameter to
+       * `Page.addScriptToEvaluateOnNewDocument`.
+       * This parameter is mutually exclusive with `executionContextId`.
+       */
+      executionContextName?: string;
     }
 
     export interface RemoveBindingRequest {

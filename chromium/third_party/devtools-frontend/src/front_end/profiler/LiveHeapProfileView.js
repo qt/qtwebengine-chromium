@@ -21,7 +21,7 @@ export class LiveHeapProfileView extends UI.Widget.VBox {
     super(true);
     /** @type {!Map<string, !GridNode>} */
     this._gridNodeByUrl = new Map();
-    this.registerRequiredCSS('profiler/liveHeapProfile.css');
+    this.registerRequiredCSS('profiler/liveHeapProfile.css', {enableLegacyPatching: true});
 
     this._setting = Common.Settings.Settings.instance().moduleSetting('memoryLiveHeapProfile');
     const toolbar = new UI.Toolbar.Toolbar('live-heap-profile-toolbar', this.contentElement);
@@ -163,7 +163,7 @@ export class LiveHeapProfileView extends UI.Widget.VBox {
       if (!exisitingNodes.has(node)) {
         node.remove();
       }
-      this._gridNodeByUrl.delete(node);
+      this._gridNodeByUrl.delete(node._url);
     }
 
     this._sortingChanged();
@@ -313,7 +313,7 @@ export class GridNode extends DataGrid.SortableDataGrid.SortableDataGridNode {
         break;
       case 'size':
         cell.textContent = Number.withThousandsSeparator(Math.round(this._size / 1e3));
-        cell.createChild('span', 'size-units').textContent = ls`KB`;
+        cell.createChild('span', 'size-units').textContent = ls`kB`;
         break;
       case 'isolates':
         cell.textContent = `${this._isolateCount}`;

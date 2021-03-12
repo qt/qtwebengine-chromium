@@ -27,6 +27,7 @@ using SampledTextureTypeTest = testing::Test;
 TEST_F(SampledTextureTypeTest, Is) {
   F32Type f32;
   SampledTextureType s(TextureDimension::kCube, &f32);
+  EXPECT_FALSE(s.IsAccessControl());
   EXPECT_FALSE(s.IsAlias());
   EXPECT_FALSE(s.IsArray());
   EXPECT_FALSE(s.IsBool());
@@ -65,6 +66,12 @@ TEST_F(SampledTextureTypeTest, TypeName) {
   F32Type f32;
   SampledTextureType s(TextureDimension::k3d, &f32);
   EXPECT_EQ(s.type_name(), "__sampled_texture_3d__f32");
+}
+
+TEST_F(SampledTextureTypeTest, MinBufferBindingSize) {
+  F32Type f32;
+  SampledTextureType s(TextureDimension::kCube, &f32);
+  EXPECT_EQ(0u, s.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

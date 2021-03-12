@@ -9,29 +9,23 @@
 #include <algorithm>
 #include <utility>
 
-#include "third_party/base/stl_util.h"
 #include "xfa/fde/cfde_textout.h"
-#include "xfa/fgas/font/cfgas_fontmgr.h"
 #include "xfa/fgas/font/cfgas_gefont.h"
+#include "xfa/fgas/graphics/cfgas_gecolor.h"
+#include "xfa/fgas/graphics/cfgas_gepath.h"
 #include "xfa/fwl/cfwl_themebackground.h"
 #include "xfa/fwl/cfwl_themepart.h"
 #include "xfa/fwl/cfwl_themetext.h"
 #include "xfa/fwl/cfwl_widget.h"
 #include "xfa/fwl/cfwl_widgetmgr.h"
 #include "xfa/fwl/ifwl_themeprovider.h"
-#include "xfa/fxgraphics/cxfa_gecolor.h"
-#include "xfa/fxgraphics/cxfa_gepath.h"
-#include "xfa/fxgraphics/cxfa_geshading.h"
-
-namespace {
-
-CFWL_FontManager* g_FontManager = nullptr;
-
-}  // namespace
+#include "xfa/fwl/theme/cfwl_fontmanager.h"
 
 CFWL_WidgetTP::CFWL_WidgetTP() = default;
 
 CFWL_WidgetTP::~CFWL_WidgetTP() = default;
+
+void CFWL_WidgetTP::Trace(cppgc::Visitor* visitor) const {}
 
 void CFWL_WidgetTP::DrawBackground(const CFWL_ThemeBackground& pParams) {}
 
@@ -41,7 +35,7 @@ void CFWL_WidgetTP::DrawText(const CFWL_ThemeText& pParams) {
   if (iLen <= 0)
     return;
 
-  CXFA_Graphics* pGraphics = pParams.m_pGraphics;
+  CFGAS_GEGraphics* pGraphics = pParams.m_pGraphics;
   m_pTextOut->SetStyles(pParams.m_dwTTOStyles);
   m_pTextOut->SetAlignment(pParams.m_iTTOAlign);
 
@@ -91,62 +85,62 @@ void CFWL_WidgetTP::EnsureTTOInitialized() {
   m_pTextOut->SetTextColor(FWLTHEME_CAPACITY_TextColor);
 }
 
-void CFWL_WidgetTP::DrawBorder(CXFA_Graphics* pGraphics,
+void CFWL_WidgetTP::DrawBorder(CFGAS_GEGraphics* pGraphics,
                                const CFX_RectF& rect,
                                const CFX_Matrix& matrix) {
   if (!pGraphics)
     return;
 
-  CXFA_GEPath path;
+  CFGAS_GEPath path;
   path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
   path.AddRectangle(rect.left + 1, rect.top + 1, rect.width - 2,
                     rect.height - 2);
   pGraphics->SaveGraphState();
-  pGraphics->SetFillColor(CXFA_GEColor(ArgbEncode(255, 0, 0, 0)));
+  pGraphics->SetFillColor(CFGAS_GEColor(ArgbEncode(255, 0, 0, 0)));
   pGraphics->FillPath(&path, CFX_FillRenderOptions::FillType::kEvenOdd,
                       &matrix);
   pGraphics->RestoreGraphState();
 }
 
-void CFWL_WidgetTP::FillBackground(CXFA_Graphics* pGraphics,
+void CFWL_WidgetTP::FillBackground(CFGAS_GEGraphics* pGraphics,
                                    const CFX_RectF& rect,
                                    const CFX_Matrix& matrix) {
   FillSolidRect(pGraphics, FWLTHEME_COLOR_Background, rect, matrix);
 }
 
-void CFWL_WidgetTP::FillSolidRect(CXFA_Graphics* pGraphics,
+void CFWL_WidgetTP::FillSolidRect(CFGAS_GEGraphics* pGraphics,
                                   FX_ARGB fillColor,
                                   const CFX_RectF& rect,
                                   const CFX_Matrix& matrix) {
   if (!pGraphics)
     return;
 
-  CXFA_GEPath path;
+  CFGAS_GEPath path;
   path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
   pGraphics->SaveGraphState();
-  pGraphics->SetFillColor(CXFA_GEColor(fillColor));
+  pGraphics->SetFillColor(CFGAS_GEColor(fillColor));
   pGraphics->FillPath(&path, CFX_FillRenderOptions::FillType::kWinding,
                       &matrix);
   pGraphics->RestoreGraphState();
 }
 
-void CFWL_WidgetTP::DrawFocus(CXFA_Graphics* pGraphics,
+void CFWL_WidgetTP::DrawFocus(CFGAS_GEGraphics* pGraphics,
                               const CFX_RectF& rect,
                               const CFX_Matrix& matrix) {
   if (!pGraphics)
     return;
 
-  CXFA_GEPath path;
+  CFGAS_GEPath path;
   path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
   pGraphics->SaveGraphState();
-  pGraphics->SetStrokeColor(CXFA_GEColor(0xFF000000));
+  pGraphics->SetStrokeColor(CFGAS_GEColor(0xFF000000));
   static constexpr float kDashPattern[2] = {1, 1};
-  pGraphics->SetLineDash(0.0f, kDashPattern, pdfium::size(kDashPattern));
+  pGraphics->SetLineDash(0.0f, kDashPattern);
   pGraphics->StrokePath(&path, &matrix);
   pGraphics->RestoreGraphState();
 }
 
-void CFWL_WidgetTP::DrawArrow(CXFA_Graphics* pGraphics,
+void CFWL_WidgetTP::DrawArrow(CFGAS_GEGraphics* pGraphics,
                               const CFX_RectF& rect,
                               FWLTHEME_DIRECTION eDict,
                               FX_ARGB argSign,
@@ -155,7 +149,7 @@ void CFWL_WidgetTP::DrawArrow(CXFA_Graphics* pGraphics,
       (eDict == FWLTHEME_DIRECTION_Up || eDict == FWLTHEME_DIRECTION_Down);
   float fLeft = ((rect.width - (bVert ? 9 : 6)) / 2 + rect.left) + 0.5f;
   float fTop = ((rect.height - (bVert ? 6 : 9)) / 2 + rect.top) + 0.5f;
-  CXFA_GEPath path;
+  CFGAS_GEPath path;
   switch (eDict) {
     case FWLTHEME_DIRECTION_Down: {
       path.MoveTo(CFX_PointF(fLeft, fTop + 1));
@@ -194,25 +188,25 @@ void CFWL_WidgetTP::DrawArrow(CXFA_Graphics* pGraphics,
       break;
     }
   }
-  pGraphics->SetFillColor(CXFA_GEColor(argSign));
+  pGraphics->SetFillColor(CFGAS_GEColor(argSign));
   pGraphics->FillPath(&path, CFX_FillRenderOptions::FillType::kWinding,
                       &matrix);
 }
 
-void CFWL_WidgetTP::DrawBtn(CXFA_Graphics* pGraphics,
+void CFWL_WidgetTP::DrawBtn(CFGAS_GEGraphics* pGraphics,
                             const CFX_RectF& rect,
                             FWLTHEME_STATE eState,
                             const CFX_Matrix& matrix) {
   InitializeArrowColorData();
   FillSolidRect(pGraphics, m_pColorData->clrEnd[eState - 1], rect, matrix);
 
-  CXFA_GEPath path;
+  CFGAS_GEPath path;
   path.AddRectangle(rect.left, rect.top, rect.width, rect.height);
-  pGraphics->SetStrokeColor(CXFA_GEColor(m_pColorData->clrBorder[eState - 1]));
+  pGraphics->SetStrokeColor(CFGAS_GEColor(m_pColorData->clrBorder[eState - 1]));
   pGraphics->StrokePath(&path, &matrix);
 }
 
-void CFWL_WidgetTP::DrawArrowBtn(CXFA_Graphics* pGraphics,
+void CFWL_WidgetTP::DrawArrowBtn(CFGAS_GEGraphics* pGraphics,
                                  const CFX_RectF& rect,
                                  FWLTHEME_DIRECTION eDict,
                                  FWLTHEME_STATE eState,
@@ -220,62 +214,4 @@ void CFWL_WidgetTP::DrawArrowBtn(CXFA_Graphics* pGraphics,
   DrawBtn(pGraphics, rect, eState, matrix);
   InitializeArrowColorData();
   DrawArrow(pGraphics, rect, eDict, m_pColorData->clrSign[eState - 1], matrix);
-}
-
-CFWL_FontData::CFWL_FontData() : m_dwStyles(0), m_dwCodePage(0) {}
-
-CFWL_FontData::~CFWL_FontData() = default;
-
-bool CFWL_FontData::Equal(WideStringView wsFontFamily,
-                          uint32_t dwFontStyles,
-                          uint16_t wCodePage) {
-  return m_wsFamily == wsFontFamily && m_dwStyles == dwFontStyles &&
-         m_dwCodePage == wCodePage;
-}
-
-bool CFWL_FontData::LoadFont(WideStringView wsFontFamily,
-                             uint32_t dwFontStyles,
-                             uint16_t dwCodePage) {
-  m_wsFamily = wsFontFamily;
-  m_dwStyles = dwFontStyles;
-  m_dwCodePage = dwCodePage;
-
-  // TODO(tsepez): check usage of c_str() below.
-  m_pFont = CFGAS_GEFont::LoadFont(wsFontFamily.unterminated_c_str(),
-                                   dwFontStyles, dwCodePage);
-  return !!m_pFont;
-}
-
-RetainPtr<CFGAS_GEFont> CFWL_FontData::GetFont() const {
-  return m_pFont;
-}
-
-CFWL_FontManager* CFWL_FontManager::GetInstance() {
-  if (!g_FontManager)
-    g_FontManager = new CFWL_FontManager;
-  return g_FontManager;
-}
-
-void CFWL_FontManager::DestroyInstance() {
-  delete g_FontManager;
-  g_FontManager = nullptr;
-}
-
-CFWL_FontManager::CFWL_FontManager() = default;
-
-CFWL_FontManager::~CFWL_FontManager() = default;
-
-RetainPtr<CFGAS_GEFont> CFWL_FontManager::FindFont(WideStringView wsFontFamily,
-                                                   uint32_t dwFontStyles,
-                                                   uint16_t wCodePage) {
-  for (const auto& pData : m_FontsArray) {
-    if (pData->Equal(wsFontFamily, dwFontStyles, wCodePage))
-      return pData->GetFont();
-  }
-  auto pFontData = std::make_unique<CFWL_FontData>();
-  if (!pFontData->LoadFont(wsFontFamily, dwFontStyles, wCodePage))
-    return nullptr;
-
-  m_FontsArray.push_back(std::move(pFontData));
-  return m_FontsArray.back()->GetFont();
 }

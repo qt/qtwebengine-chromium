@@ -96,7 +96,7 @@ std::string AstFor(std::string assembly) {
         })";
   }
   if (assembly == "cast_int_v2uint_10_20") {
-    return R"(As<__vec_2__i32>{
+    return R"(Bitcast<__vec_2__i32>{
           TypeConstructor{
             __vec_2__u32
             ScalarConstructor{10}
@@ -136,7 +136,7 @@ TEST_F(SpvUnaryArithTest, SNegate_Int_Int) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __i32
@@ -163,14 +163,14 @@ TEST_F(SpvUnaryArithTest, SNegate_Int_Uint) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __i32
     {
       UnaryOp{
         negation
-        As<__i32>{
+        Bitcast<__i32>{
           ScalarConstructor{10}
         }
       }
@@ -192,12 +192,12 @@ TEST_F(SpvUnaryArithTest, SNegate_Uint_Int) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
     {
-      As<__u32>{
+      Bitcast<__u32>{
         UnaryOp{
           negation
           ScalarConstructor{30}
@@ -221,15 +221,15 @@ TEST_F(SpvUnaryArithTest, SNegate_Uint_Uint) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
     {
-      As<__u32>{
+      Bitcast<__u32>{
         UnaryOp{
           negation
-          As<__i32>{
+          Bitcast<__i32>{
             ScalarConstructor{10}
           }
         }
@@ -252,7 +252,7 @@ TEST_F(SpvUnaryArithTest, SNegate_SignedVec_SignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__i32
@@ -283,14 +283,14 @@ TEST_F(SpvUnaryArithTest, SNegate_SignedVec_UnsignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__i32
     {
       UnaryOp{
         negation
-        As<__vec_2__i32>{
+        Bitcast<__vec_2__i32>{
           TypeConstructor{
             __vec_2__u32
             ScalarConstructor{10}
@@ -316,12 +316,12 @@ TEST_F(SpvUnaryArithTest, SNegate_UnsignedVec_SignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__u32
     {
-      As<__vec_2__u32>{
+      Bitcast<__vec_2__u32>{
         UnaryOp{
           negation
           TypeConstructor{
@@ -349,15 +349,15 @@ TEST_F(SpvUnaryArithTest, SNegate_UnsignedVec_UnsignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__u32
     {
-      As<__vec_2__u32>{
+      Bitcast<__vec_2__u32>{
         UnaryOp{
           negation
-          As<__vec_2__i32>{
+          Bitcast<__vec_2__i32>{
             TypeConstructor{
               __vec_2__u32
               ScalarConstructor{10}
@@ -384,7 +384,7 @@ TEST_F(SpvUnaryArithTest, FNegate_Scalar) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __f32
@@ -411,7 +411,7 @@ TEST_F(SpvUnaryArithTest, FNegate_Vector) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__f32
@@ -467,7 +467,7 @@ TEST_P(SpvBinaryArithTest, EmitExpression) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   std::ostringstream ss;
-  ss << R"(Variable{
+  ss << R"(VariableConst{
     x_1
     none
     )"
@@ -654,12 +654,12 @@ INSTANTIATE_TEST_SUITE_P(
         // Mixed, returning int, second arg uint
         BinaryData{"int", "int_30", "OpSDiv", "uint_10", "__i32",
                    "ScalarConstructor{30}", "divide",
-                   R"(As<__i32>{
+                   R"(Bitcast<__i32>{
           ScalarConstructor{10}
         })"},
         // Mixed, returning int, first arg uint
         BinaryData{"int", "uint_10", "OpSDiv", "int_30", "__i32",
-                   R"(As<__i32>{
+                   R"(Bitcast<__i32>{
           ScalarConstructor{10}
         })",
                    "divide", "ScalarConstructor{30}"},
@@ -691,12 +691,12 @@ TEST_F(SpvBinaryArithTestBasic, SDiv_Scalar_UnsignedResult) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
     {
-      As<__u32>{
+      Bitcast<__u32>{
         Binary{
           ScalarConstructor{30}
           divide
@@ -726,12 +726,12 @@ TEST_F(SpvBinaryArithTestBasic, SDiv_Vector_UnsignedResult) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__u32
     {
-      As<__vec_2__u32>{
+      Bitcast<__vec_2__u32>{
         Binary{
           TypeConstructor{
             __vec_2__i32
@@ -798,12 +798,12 @@ INSTANTIATE_TEST_SUITE_P(
         // Mixed, returning int, second arg uint
         BinaryData{"int", "int_30", "OpSMod", "uint_10", "__i32",
                    "ScalarConstructor{30}", "modulo",
-                   R"(As<__i32>{
+                   R"(Bitcast<__i32>{
           ScalarConstructor{10}
         })"},
         // Mixed, returning int, first arg uint
         BinaryData{"int", "uint_10", "OpSMod", "int_30", "__i32",
-                   R"(As<__i32>{
+                   R"(Bitcast<__i32>{
           ScalarConstructor{10}
         })",
                    "modulo", "ScalarConstructor{30}"},
@@ -835,12 +835,12 @@ TEST_F(SpvBinaryArithTestBasic, SMod_Scalar_UnsignedResult) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
     {
-      As<__u32>{
+      Bitcast<__u32>{
         Binary{
           ScalarConstructor{30}
           modulo
@@ -870,12 +870,12 @@ TEST_F(SpvBinaryArithTestBasic, SMod_Vector_UnsignedResult) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__u32
     {
-      As<__vec_2__u32>{
+      Bitcast<__vec_2__u32>{
         Binary{
           TypeConstructor{
             __vec_2__i32
@@ -922,7 +922,7 @@ TEST_F(SpvBinaryArithTestBasic, VectorTimesScalar) {
   ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
-  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(Variable{
+  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
     __vec_2__f32
@@ -951,7 +951,7 @@ TEST_F(SpvBinaryArithTestBasic, MatrixTimesScalar) {
   ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
-  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(Variable{
+  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
     __mat_2_2__f32
@@ -980,7 +980,7 @@ TEST_F(SpvBinaryArithTestBasic, VectorTimesMatrix) {
   ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
-  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(Variable{
+  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
     __mat_2_2__f32
@@ -1009,7 +1009,7 @@ TEST_F(SpvBinaryArithTestBasic, MatrixTimesVector) {
   ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
-  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(Variable{
+  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
     __mat_2_2__f32
@@ -1038,7 +1038,7 @@ TEST_F(SpvBinaryArithTestBasic, MatrixTimesMatrix) {
   ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
-  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(Variable{
+  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
     __mat_2_2__f32
@@ -1053,14 +1053,74 @@ TEST_F(SpvBinaryArithTestBasic, MatrixTimesMatrix) {
       << ToString(fe.ast_body());
 }
 
+TEST_F(SpvBinaryArithTestBasic, Dot) {
+  const auto assembly = CommonTypes() + R"(
+     %100 = OpFunction %void None %voidfn
+     %entry = OpLabel
+     %1 = OpCopyObject %v2float %v2float_50_60
+     %2 = OpCopyObject %v2float %v2float_60_50
+     %3 = OpDot %float %1 %2
+     OpReturn
+     OpFunctionEnd
+)";
+  auto* p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
+  FunctionEmitter fe(p, *spirv_function(100));
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableConst{
+    x_3
+    none
+    __f32
+    {
+      Call{
+        Identifier{dot}
+        (
+          Identifier{x_1}
+          Identifier{x_2}
+        )
+      }
+    }
+  })"))
+      << ToString(fe.ast_body());
+}
+
+TEST_F(SpvBinaryArithTestBasic, OuterProduct) {
+  const auto assembly = CommonTypes() + R"(
+     %100 = OpFunction %void None %voidfn
+     %entry = OpLabel
+     %1 = OpCopyObject %v2float %v2float_50_60
+     %2 = OpCopyObject %v2float %v2float_60_50
+     %3 = OpOuterProduct %m2v2float %1 %2
+     OpReturn
+     OpFunctionEnd
+)";
+  auto* p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions()) << assembly;
+  FunctionEmitter fe(p, *spirv_function(100));
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+  EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableConst{
+    x_3
+    none
+    __mat_2_2__f32
+    {
+      Call{
+        Identifier{outerProduct}
+        (
+          Identifier{x_1}
+          Identifier{x_2}
+        )
+      }
+    }
+  })"))
+      << ToString(fe.ast_body());
+}
+
 // TODO(dneto): OpSRem. Missing from WGSL
 // https://github.com/gpuweb/gpuweb/issues/702
 
 // TODO(dneto): OpFRem. Missing from WGSL
 // https://github.com/gpuweb/gpuweb/issues/702
 
-// TODO(dneto): OpOuterProduct
-// TODO(dneto): OpDot
 // TODO(dneto): OpIAddCarry
 // TODO(dneto): OpISubBorrow
 // TODO(dneto): OpIMulExtended

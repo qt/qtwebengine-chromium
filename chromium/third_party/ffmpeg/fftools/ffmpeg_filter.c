@@ -60,7 +60,8 @@ static const enum AVPixelFormat *get_compliance_unofficial_pix_fmts(enum AVCodec
     }
 }
 
-enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx, AVCodec *codec, enum AVPixelFormat target)
+enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx,
+                                    const AVCodec *codec, enum AVPixelFormat target)
 {
     if (codec && codec->pix_fmts) {
         const enum AVPixelFormat *p = codec->pix_fmts;
@@ -90,7 +91,7 @@ enum AVPixelFormat choose_pixel_fmt(AVStream *st, AVCodecContext *enc_ctx, AVCod
     return target;
 }
 
-void choose_sample_fmt(AVStream *st, AVCodec *codec)
+void choose_sample_fmt(AVStream *st, const AVCodec *codec)
 {
     if (codec && codec->sample_fmts) {
         const enum AVSampleFormat *p = codec->sample_fmts;
@@ -1104,6 +1105,8 @@ int configure_filtergraph(FilterGraph *fg)
         configure_output_filter(fg, fg->outputs[i], cur);
     avfilter_inout_free(&outputs);
 
+    if (!auto_conversion_filters)
+        avfilter_graph_set_auto_convert(fg->graph, AVFILTER_AUTO_CONVERT_NONE);
     if ((ret = avfilter_graph_config(fg->graph, NULL)) < 0)
         goto fail;
 

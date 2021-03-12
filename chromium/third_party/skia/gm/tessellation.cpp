@@ -8,7 +8,7 @@
 #include "gm/gm.h"
 
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrOpsRenderPass.h"
@@ -402,13 +402,12 @@ DrawResult TessellationGM::onDraw(GrRecordingContext* ctx, GrRenderTargetContext
     borderPaint.setColor4f({1,0,1,1});
     canvas->drawRect(kRect.makeOutset(1.5f, 1.5f), borderPaint);
 
-    GrOpMemoryPool* pool = ctx->priv().opMemoryPool();
     rtc->priv().testingOnly_addDrawOp(
-            pool->allocate<TessellationTestOp>(canvas->getTotalMatrix(), kTri1));
+            GrOp::Make<TessellationTestOp>(ctx, canvas->getTotalMatrix(), kTri1));
     rtc->priv().testingOnly_addDrawOp(
-            pool->allocate<TessellationTestOp>(canvas->getTotalMatrix(), kTri2));
+            GrOp::Make<TessellationTestOp>(ctx, canvas->getTotalMatrix(), kTri2));
     rtc->priv().testingOnly_addDrawOp(
-            pool->allocate<TessellationTestOp>(canvas->getTotalMatrix(), nullptr));
+            GrOp::Make<TessellationTestOp>(ctx, canvas->getTotalMatrix(), nullptr));
 
     return skiagm::DrawResult::kOk;
 }

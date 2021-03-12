@@ -861,9 +861,13 @@ void ShapeResult::ApplySpacingImpl(
         continue;
       }
 
-      space =
-          spacing.ComputeSpacing(run_start_index + glyph_data.character_index,
-                                 run->font_data_->GetAdvanceOverride(), offset);
+      typename ShapeResultSpacing<TextContainerType>::ComputeSpacingParameters
+          parameters{.index = run_start_index + glyph_data.character_index,
+                     .advance_override = run->font_data_->GetAdvanceOverride(),
+                     .original_advance = glyph_data.advance,
+                     .advance_proportional_override =
+                         run->font_data_->GetAdvanceProportionalOverride()};
+      space = spacing.ComputeSpacing(parameters, offset);
       glyph_data.advance += space;
       total_space_for_run += space;
 
@@ -900,6 +904,9 @@ void ShapeResult::ApplySpacingImpl(
 
 void ShapeResult::ApplySpacing(ShapeResultSpacing<String>& spacing,
                                int text_start_offset) {
+  // For simplicity, we apply spacing once only. If you want to do multiple
+  // time, please get rid of below |DCHECK()|.
+  DCHECK(!is_applied_spacing_) << this;
   is_applied_spacing_ = true;
   ApplySpacingImpl(spacing, text_start_offset);
 }
@@ -923,14 +930,27 @@ float HarfBuzzPositionToFloat(hb_position_t value) {
 
 // Checks whether it's safe to break without reshaping before the given glyph.
 bool IsSafeToBreakBefore(const hb_glyph_info_t* glyph_infos,
-                         unsigned i) {
-  // Before the first glyph is safe to break.
-  if (!i)
-    return true;
+                         unsigned i,
+                         unsigned num_glyph,
+                         TextDirection direction) {
+  if (direction == TextDirection::kLtr) {
+    // Before the first glyph is safe to break.
+    if (!i)
+      return true;
 
-  // Not at a cluster boundary.
-  if (glyph_infos[i].cluster == glyph_infos[i - 1].cluster)
-    return false;
+    // Not at a cluster boundary.
+    if (glyph_infos[i].cluster == glyph_infos[i - 1].cluster)
+      return false;
+  } else {
+    DCHECK_EQ(direction, TextDirection::kRtl);
+    // Before the first glyph is safe to break.
+    if (i == num_glyph - 1)
+      return true;
+
+    // Not at a cluster boundary.
+    if (glyph_infos[i].cluster == glyph_infos[i + 1].cluster)
+      return false;
+  }
 
   // The HB_GLYPH_FLAG_UNSAFE_TO_BREAK flag is set for all glyphs in a
   // given cluster so we only need to check the last one.
@@ -1086,7 +1106,8 @@ void ShapeResult::ComputeGlyphPositions(ShapeResult::RunInfo* run,
     uint16_t character_index = glyph.cluster - start_cluster;
     DCHECK_LE(character_index, HarfBuzzRunGlyphData::kMaxCharacterIndex);
     run->glyph_data_[i] = {glyph.codepoint, character_index,
-                           IsSafeToBreakBefore(glyph_infos + start_glyph, i),
+                           IsSafeToBreakBefore(glyph_infos + start_glyph, i,
+                                               num_glyphs, Direction()),
                            advance};
     run->glyph_data_.SetOffsetAt(i, offset);
 
@@ -1250,6 +1271,8 @@ unsigned ShapeResult::CopyRangeInternal(unsigned run_index,
 #if DCHECK_IS_ON()
   unsigned target_num_characters_before = target->num_characters_;
 #endif
+
+  target->is_applied_spacing_ |= is_applied_spacing_;
 
   // When |target| is empty, its character indexes are the specified sub range
   // of |this|. Otherwise the character indexes are renumbered to be continuous.

@@ -8,6 +8,7 @@
 #include <lib/sys/cpp/component_context.h>
 #include <lib/sys/inspect/cpp/component.h>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -25,6 +26,7 @@
 #include "gpu/vulkan/vulkan_function_pointers.h"
 #include "gpu/vulkan/vulkan_implementation.h"
 #include "third_party/skia/include/gpu/GrBackendSemaphore.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/ozone/public/platform_window_surface.h"
 
 namespace viz {
@@ -41,6 +43,20 @@ void GrSemaphoresToZxEvents(gpu::VulkanImplementation* vulkan_implementation,
     DCHECK(handle.is_valid());
     events->push_back(handle.TakeHandle());
   }
+}
+
+// Duplicates the given zx::events and stores in gfx::GpuFences.
+std::vector<gfx::GpuFence> ZxEventsToGpuFences(
+    const std::vector<zx::event>& events) {
+  std::vector<gfx::GpuFence> fences;
+  for (const auto& event : events) {
+    gfx::GpuFenceHandle handle;
+    zx_status_t status =
+        event.duplicate(ZX_RIGHT_SAME_RIGHTS, &handle.owned_event);
+    ZX_DCHECK(status == ZX_OK, status);
+    fences.emplace_back(std::move(handle));
+  }
+  return fences;
 }
 
 class PresenterImageFuchsia : public OutputPresenter::Image {
@@ -112,7 +128,20 @@ void PresenterImageFuchsia::TakeSemaphores(
 
 }  // namespace
 
-OutputPresenterFuchsia::PendingFrame::PendingFrame() = default;
+OutputPresenterFuchsia::PendingOverlay::PendingOverlay(
+    OverlayCandidate candidate,
+    std::vector<gfx::GpuFence> release_fences)
+    : candidate(std::move(candidate)),
+      release_fences(std::move(release_fences)) {}
+OutputPresenterFuchsia::PendingOverlay::~PendingOverlay() = default;
+
+OutputPresenterFuchsia::PendingOverlay::PendingOverlay(PendingOverlay&&) =
+    default;
+OutputPresenterFuchsia::PendingOverlay&
+OutputPresenterFuchsia::PendingOverlay::operator=(PendingOverlay&&) = default;
+
+OutputPresenterFuchsia::PendingFrame::PendingFrame(uint32_t ordinal)
+    : ordinal(ordinal) {}
 OutputPresenterFuchsia::PendingFrame::~PendingFrame() = default;
 
 OutputPresenterFuchsia::PendingFrame::PendingFrame(PendingFrame&&) = default;
@@ -181,6 +210,7 @@ void OutputPresenterFuchsia::InitializeCapabilities(
   capabilities->output_surface_origin = gfx::SurfaceOrigin::kTopLeft;
   capabilities->supports_post_sub_buffer = false;
   capabilities->supports_commit_overlay_planes = false;
+  capabilities->supports_surfaceless = true;
 
   capabilities->sk_color_types[static_cast<int>(gfx::BufferFormat::RGBA_8888)] =
       kRGBA_8888_SkColorType;
@@ -228,11 +258,13 @@ OutputPresenterFuchsia::AllocateImages(gfx::ColorSpace color_space,
   // the ImagePipe.
   fuchsia::sysmem::BufferCollectionTokenSyncPtr collection_token;
   sysmem_allocator_->AllocateSharedCollection(collection_token.NewRequest());
+  collection_token->SetName(100u, "ChromiumOutput");
+  collection_token->SetDebugClientInfo("vulkan", 0u);
 
-  fidl::InterfaceHandle<fuchsia::sysmem::BufferCollectionToken>
-      token_for_scenic;
+  fuchsia::sysmem::BufferCollectionTokenSyncPtr token_for_scenic;
   collection_token->Duplicate(ZX_RIGHT_SAME_RIGHTS,
                               token_for_scenic.NewRequest());
+  token_for_scenic->SetDebugClientInfo("scenic", 0u);
 
   zx_status_t status = collection_token->Sync();
   if (status != ZX_OK) {
@@ -328,11 +360,7 @@ void OutputPresenterFuchsia::SwapBuffers(
   next_frame_->completion_callback = std::move(completion_callback);
   next_frame_->presentation_callback = std::move(presentation_callback);
 
-  pending_frames_.push_back(std::move(next_frame_.value()));
-  next_frame_.reset();
-
-  if (!present_is_pending_)
-    PresentNextFrame();
+  PresentNextFrame();
 }
 
 void OutputPresenterFuchsia::PostSubBuffer(
@@ -356,8 +384,9 @@ void OutputPresenterFuchsia::SchedulePrimaryPlane(
     bool is_submitted) {
   auto* image_fuchsia = static_cast<PresenterImageFuchsia*>(image);
 
-  DCHECK(!next_frame_);
-  next_frame_ = PendingFrame();
+  if (!next_frame_)
+    next_frame_ = PendingFrame(next_frame_ordinal_++);
+  DCHECK(!next_frame_->buffer_collection_id);
   next_frame_->image_id = image_fuchsia->image_id();
   next_frame_->buffer_collection_id = last_buffer_collection_id_;
 
@@ -384,56 +413,100 @@ void OutputPresenterFuchsia::SchedulePrimaryPlane(
 void OutputPresenterFuchsia::ScheduleOverlays(
     SkiaOutputSurface::OverlayList overlays,
     std::vector<ScopedOverlayAccess*> accesses) {
-  // Overlays are not supported yet.
-  NOTREACHED();
+  if (!next_frame_)
+    next_frame_ = PendingFrame(next_frame_ordinal_++);
+
+  for (size_t i = 0; i < overlays.size(); ++i) {
+    next_frame_->overlays.emplace_back(std::move(overlays[i]),
+                                       accesses[i]->TakeReleaseFences());
+    // TODO(crbug.com/1144890): Enqueue overlay plane's acquire fences
+    // after |supports_commit_overlay_planes| is supported. Overlay plane might
+    // display the same Image more than once, which can create a fence
+    // dependency that can be broken by a later Image. However, primary plane
+    // implementation allows only one present at a time. In this scenario,
+    // merging fences might cause hangs, see crbug.com/1151042.
+  }
 }
 
 void OutputPresenterFuchsia::PresentNextFrame() {
-  DCHECK(!present_is_pending_);
-  DCHECK(!pending_frames_.empty());
+  DCHECK(next_frame_);
+
+  pending_frames_.push_back(std::move(next_frame_.value()));
+  next_frame_.reset();
+  auto& frame = pending_frames_.back();
 
   TRACE_EVENT_NESTABLE_ASYNC_END1("viz", "OutputPresenterFuchsia::PresentQueue",
                                   TRACE_ID_LOCAL(this), "image_id",
-                                  pending_frames_.front().image_id);
+                                  frame.image_id);
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(
       "viz", "OutputPresenterFuchsia::PresentFrame", TRACE_ID_LOCAL(this),
-      "image_id", pending_frames_.front().image_id);
+      "image_id", frame.image_id);
 
-  present_is_pending_ = true;
-  uint64_t target_presentation_time = zx_clock_get_monotonic();
+  for (size_t i = 0; i < frame.overlays.size(); ++i) {
+    auto& overlay = frame.overlays[i].candidate;
+    DCHECK(overlay.mailbox.IsSharedImage());
+    auto pixmap =
+        dependency_->GetSharedImageManager()->GetNativePixmap(overlay.mailbox);
+    if (!pixmap) {
+      LOG(ERROR) << "Cannot access SysmemNativePixmap";
+      continue;
+    }
+    pixmap->ScheduleOverlayPlane(dependency_->GetSurfaceHandle(),
+                                 overlay.plane_z_order, overlay.transform,
+                                 gfx::ToRoundedRect(overlay.display_rect),
+                                 overlay.uv_rect, !overlay.is_opaque,
+                                 ZxEventsToGpuFences(frame.acquire_fences),
+                                 std::move(frame.overlays[i].release_fences));
+  }
+
+  auto now = base::TimeTicks::Now();
+
+  auto present_time = now;
+
+  // If we have PresentatonState frame a previously displayed frame then use it
+  // to calculate target timestamp for the new frame.
+  if (presentation_state_) {
+    uint32_t relative_position =
+        frame.ordinal - presentation_state_->presented_frame_ordinal;
+    present_time = presentation_state_->presentation_time +
+                   presentation_state_->interval * relative_position -
+                   base::TimeDelta::FromMilliseconds(1);
+    present_time = std::max(present_time, now);
+  }
+
   image_pipe_->PresentImage(
-      pending_frames_.front().image_id, target_presentation_time,
-      std::move(pending_frames_.front().acquire_fences),
-      std::move(pending_frames_.front().release_fences),
+      frame.image_id, present_time.ToZxTime(), std::move(frame.acquire_fences),
+      std::move(frame.release_fences),
       fit::bind_member(this, &OutputPresenterFuchsia::OnPresentComplete));
 }
 
 void OutputPresenterFuchsia::OnPresentComplete(
     fuchsia::images::PresentationInfo presentation_info) {
-  DCHECK(present_is_pending_);
-  present_is_pending_ = false;
-
   TRACE_EVENT_NESTABLE_ASYNC_END1("viz", "OutputPresenterFuchsia::PresentFrame",
                                   TRACE_ID_LOCAL(this), "image_id",
                                   pending_frames_.front().image_id);
 
+  auto presentation_time =
+      base::TimeTicks::FromZxTime(presentation_info.presentation_time);
+  auto presentation_interval =
+      base::TimeDelta::FromZxDuration(presentation_info.presentation_interval);
+
   std::move(pending_frames_.front().completion_callback)
       .Run(gfx::SwapCompletionResult(gfx::SwapResult::SWAP_ACK));
   std::move(pending_frames_.front().presentation_callback)
-      .Run(gfx::PresentationFeedback(
-          base::TimeTicks::FromZxTime(presentation_info.presentation_time),
-          base::TimeDelta::FromZxDuration(
-              presentation_info.presentation_interval),
-          gfx::PresentationFeedback::kVSync));
+      .Run(gfx::PresentationFeedback(presentation_time, presentation_interval,
+                                     gfx::PresentationFeedback::kVSync));
 
   if (pending_frames_.front().remove_buffer_collection) {
     image_pipe_->RemoveBufferCollection(
         pending_frames_.front().buffer_collection_id);
   }
 
+  presentation_state_ =
+      PresentatonState{pending_frames_.front().ordinal, presentation_time,
+                       presentation_interval};
+
   pending_frames_.pop_front();
-  if (!pending_frames_.empty())
-    PresentNextFrame();
 }
 
 }  // namespace viz

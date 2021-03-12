@@ -52,7 +52,7 @@ export class ResourceTreeModel extends SDKModel {
     }
     this._agent = target.pageAgent();
     this._agent.invoke_enable();
-    this._securityOriginManager = target.model(SecurityOriginManager);
+    this._securityOriginManager = /** @type {!SecurityOriginManager} */ (target.model(SecurityOriginManager));
 
     target.registerPageDispatcher(new PageDispatcher(this));
 
@@ -622,6 +622,7 @@ export class ResourceTreeFrame {
     this._adFrameType = (payload && payload.adFrameType) || Protocol.Page.AdFrameType.None;
     this._secureContextType = payload && payload.secureContextType;
     this._crossOriginIsolatedContextType = payload && payload.crossOriginIsolatedContextType;
+    this._gatedAPIFeatures = payload && payload.gatedAPIFeatures;
 
     this._creationStackTrace = creationStackTrace;
 
@@ -669,6 +670,13 @@ export class ResourceTreeFrame {
   }
 
   /**
+   * @returns {?Array<Protocol.Page.GatedAPIFeatures>}
+   */
+  getGatedAPIFeatures() {
+    return this._gatedAPIFeatures;
+  }
+
+  /**
    * @param {!Protocol.Page.Frame} framePayload
    */
   _navigate(framePayload) {
@@ -682,6 +690,7 @@ export class ResourceTreeFrame {
     this._adFrameType = framePayload.adFrameType || Protocol.Page.AdFrameType.None;
     this._secureContextType = framePayload.secureContextType;
     this._crossOriginIsolatedContextType = framePayload.crossOriginIsolatedContextType;
+    this._gatedAPIFeatures = framePayload.gatedAPIFeatures;
 
     const mainResource = this._resourcesMap.get(this._url);
     this._resourcesMap.clear();
@@ -1019,13 +1028,6 @@ export class PageDispatcher {
    */
   constructor(resourceTreeModel) {
     this._resourceTreeModel = resourceTreeModel;
-  }
-
-  /**
-   * @return {!Protocol.UsesObjectNotation}
-   */
-  usesObjectNotation() {
-    return true;
   }
 
   /**

@@ -24,7 +24,7 @@ namespace {
 
 struct StructDecorationData {
   const char* input;
-  ast::StructDecoration result;
+  bool is_block;
 };
 inline std::ostream& operator<<(std::ostream& out, StructDecorationData data) {
   out << std::string(data.input);
@@ -32,46 +32,31 @@ inline std::ostream& operator<<(std::ostream& out, StructDecorationData data) {
 }
 
 class StructDecorationTest
-    : public testing::TestWithParam<StructDecorationData> {
- public:
-  StructDecorationTest() = default;
-  ~StructDecorationTest() override = default;
-
-  void SetUp() override { ctx_.Reset(); }
-
-  void TearDown() override { impl_ = nullptr; }
-
-  ParserImpl* parser(const std::string& str) {
-    impl_ = std::make_unique<ParserImpl>(&ctx_, str);
-    return impl_.get();
-  }
-
- private:
-  std::unique_ptr<ParserImpl> impl_;
-  Context ctx_;
-};
+    : public ParserImplTestWithParam<StructDecorationData> {};
 
 TEST_P(StructDecorationTest, Parses) {
   auto params = GetParam();
   auto* p = parser(params.input);
 
-  auto deco = p->struct_decoration(p->peek());
+  auto deco = p->decoration();
   ASSERT_FALSE(p->has_error());
-  EXPECT_EQ(deco, params.result);
+  EXPECT_TRUE(deco.matched);
+  EXPECT_FALSE(deco.errored);
+  ASSERT_NE(deco.value, nullptr);
+  auto struct_deco = ast::As<ast::StructDecoration>(std::move(deco.value));
+  ASSERT_NE(struct_deco, nullptr);
+  EXPECT_EQ(struct_deco->IsBlock(), params.is_block);
 }
 INSTANTIATE_TEST_SUITE_P(ParserImplTest,
                          StructDecorationTest,
-                         testing::Values(StructDecorationData{
-                             "block", ast::StructDecoration::kBlock}));
+                         testing::Values(StructDecorationData{"block", true}));
 
 TEST_F(ParserImplTest, StructDecoration_NoMatch) {
   auto* p = parser("not-a-stage");
-  auto deco = p->struct_decoration(p->peek());
-  ASSERT_EQ(deco, ast::StructDecoration::kNone);
-
-  auto t = p->next();
-  EXPECT_TRUE(t.IsIdentifier());
-  EXPECT_EQ(t.to_str(), "not");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_FALSE(deco.errored);
+  ASSERT_EQ(deco.value, nullptr);
 }
 
 }  // namespace

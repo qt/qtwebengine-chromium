@@ -1,3 +1,10 @@
+hb_version_h = configure_file(
+               command: [find_program('gen-hb-version.py'), meson.project_version(), '@OUTPUT@', '@INPUT@'],
+               input: 'hb-version.h.in',
+               output: 'hb-version.h',
+               install: true,
+               install_dir: join_paths(get_option('includedir'), meson.project_name()))
+
 # Base and default-included sources and headers
 hb_base_sources = files(
   'hb-aat-layout-ankr-table.hh',
@@ -104,6 +111,7 @@ hb_base_sources = files(
   'hb-ot-post-macroman.hh',
   'hb-ot-post-table.hh',
   'hb-ot-shape-complex-arabic-fallback.hh',
+  'hb-ot-shape-complex-arabic-joining-list.hh',
   'hb-ot-shape-complex-arabic-table.hh',
   'hb-ot-shape-complex-arabic-win1256.hh',
   'hb-ot-shape-complex-arabic.cc',
@@ -213,9 +221,9 @@ hb_base_headers = files(
   'hb-shape.h',
   'hb-style.h',
   'hb-unicode.h',
-  'hb-version.h',
   'hb.h',
 )
+hb_base_headers += hb_version_h
 
 # Optional Sources and Headers with external deps
 
@@ -280,14 +288,6 @@ hb_gobject_headers = files(
   'hb-gobject-structs.h',
 )
 
-custom_target('hb-version.h',
-  build_by_default: true,
-  input: 'hb-version.h.in',
-  output: 'hb-version.h',
-  command: [find_program('gen-hb-version.py'), meson.project_version(),
-            '@OUTPUT@', '@CURRENT_SOURCE_DIR@', '@INPUT@'],
-)
-
 ragel = find_program('ragel', required: false)
 if not ragel.found()
   warning('You have to install ragel if you are going to develop HarfBuzz itself')
@@ -320,6 +320,8 @@ hb_sources = hb_base_sources + hb_base_ragel_generated_sources
 hb_headers = hb_base_headers
 
 harfbuzz_deps = [thread_dep, m_dep] + harfbuzz_extra_deps
+
+libharfbuzz_link_language = 'c'
 
 if conf.get('HAVE_FREETYPE', 0) == 1
   hb_sources += hb_ft_sources
@@ -354,6 +356,8 @@ if conf.get('HAVE_DIRECTWRITE', 0) == 1
   hb_sources += hb_directwrite_sources
   hb_headers += hb_directwrite_headers
   harfbuzz_deps += directwrite_dep
+  # hb-directwrite needs a C++ linker
+  libharfbuzz_link_language = 'cpp'
 endif
 
 if conf.get('HAVE_CORETEXT', 0) == 1
@@ -415,7 +419,7 @@ libharfbuzz = library('harfbuzz', hb_sources,
   version: version,
   install: true,
   darwin_versions: darwin_versions,
-  link_language: 'c',
+  link_language: libharfbuzz_link_language,
 )
 
 libharfbuzz_dep = declare_dependency(
@@ -487,21 +491,20 @@ if get_option('tests').enabled()
   endforeach
 
   compiled_tests = {
-    'test-array': 'test-array.cc',
+    'test-algs': ['test-algs.cc', 'hb-static.cc'],
+    'test-array': ['test-array.cc'],
+    'test-iter': ['test-iter.cc', 'hb-static.cc'],
+    'test-meta': ['test-meta.cc', 'hb-static.cc'],
     'test-number': ['test-number.cc', 'hb-number.cc'],
-    'test-ot-tag': 'hb-ot-tag.cc',
-    'test-unicode-ranges': 'test-unicode-ranges.cc',
+    'test-ot-tag': ['hb-ot-tag.cc'],
+    'test-unicode-ranges': ['test-unicode-ranges.cc'],
+    'test-bimap': ['test-bimap.cc', 'hb-static.cc'],
   }
-  if cpp.get_id() != 'msvc'
-    # TODO: MSVC doesn't like these, fix them
-    compiled_tests += {
-      'test-algs': ['test-algs.cc', 'hb-static.cc'],
-      'test-bimap': ['test-bimap.cc', 'hb-static.cc'],
-      'test-iter': ['test-iter.cc', 'hb-static.cc'],
-      'test-meta': ['test-meta.cc', 'hb-static.cc'],
-    }
-  endif
   foreach name, source : compiled_tests
+    if cpp.get_id() == 'msvc' and source.contains('hb-static.cc')
+      # TODO: MSVC doesn't like tests having hb-static.cc, fix them
+      continue
+    endif
     test(name, executable(name, source,
       include_directories: incconfig,
       cpp_args: cpp_args + ['-DMAIN', '-UNDEBUG'],
@@ -562,6 +565,17 @@ endif
 
 have_gobject = conf.get('HAVE_GOBJECT', 0) == 1
 
+cmake_config = configuration_data()
+cmake_config.set('libdir', '${prefix}/@0@'.format(get_option('libdir')))
+cmake_config.set('includedir', '${prefix}/@0@'.format(get_option('includedir')))
+cmake_config.set('HB_LIBTOOL_VERSION_INFO', hb_libtool_version_info)
+cmake_config.set('have_gobject', '@0@'.format(have_gobject))
+configure_file(input: 'harfbuzz-config.cmake.in',
+  output: 'harfbuzz-config.cmake',
+  configuration: cmake_config,
+  install_dir: join_paths(get_option('libdir'), 'cmake', 'harfbuzz'),
+)
+
 libharfbuzz_gobject_dep = null_dep
 if have_gobject
   gnome = import('gnome')
@@ -597,7 +611,7 @@ if have_gobject
     output: 'hb-gobject-enums.h',
     command: [find_program('fix_get_types.py'), '@INPUT@', '@OUTPUT@'],
     install: true,
-    install_dir: get_option('prefix') / get_option('includedir') / meson.project_name(),
+    install_dir: join_paths(get_option('prefix'), get_option('includedir'), meson.project_name()),
   )
 
   hb_gobject_sources += [enum_c]
@@ -635,8 +649,9 @@ if have_gobject
 
   if build_gir
     conf.set('HAVE_INTROSPECTION', 1)
-    hb_gen_files_gir = gnome.generate_gir(libharfbuzz, libharfbuzz_gobject,
+    hb_gen_files_gir = gnome.generate_gir(libharfbuzz_gobject,
       sources: [hb_headers, hb_sources, hb_gobject_headers, hb_gobject_sources, enum_h],
+      dependencies: libharfbuzz_dep,
       namespace: 'HarfBuzz',
       nsversion: '0.0',
       identifier_prefix: 'hb_',
@@ -658,10 +673,16 @@ if have_gobject
                     '--cflags-end'])
   endif
 
+  if build_gir
+    libharfbuzz_gobject_sources = hb_gen_files_gir
+  else
+    libharfbuzz_gobject_sources = hb_gobject_sources
+  endif
+
   libharfbuzz_gobject_dep = declare_dependency(
     link_with: libharfbuzz_gobject,
     include_directories: incsrc,
-    sources: build_gir ? hb_gen_files_gir : hb_gobject_sources,
+    sources: libharfbuzz_gobject_sources,
     dependencies: [glib_dep, gobject_dep])
 
   pkgmod.generate(libharfbuzz_gobject,
@@ -709,10 +730,15 @@ if get_option('tests').enabled()
   endif
 
   foreach name : dist_check_script
+    if name == 'check-symbols'
+      test_depends = defs_list
+    else
+      test_depends = []
+    endif
     test(name, find_program(name + '.py'),
       env: env,
-      depends: name == 'check-symbols' ? defs_list : [],
-      suite: ['src'] + (name == 'check-static-inits' ? ['slow'] : []),
+      depends: test_depends,
+      suite: ['src'],
     )
   endforeach
 endif

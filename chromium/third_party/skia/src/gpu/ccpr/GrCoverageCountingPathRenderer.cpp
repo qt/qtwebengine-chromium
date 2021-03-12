@@ -173,7 +173,7 @@ bool GrCoverageCountingPathRenderer::onDrawPath(const DrawPathArgs& args) {
     return true;
 }
 
-void GrCoverageCountingPathRenderer::recordOp(std::unique_ptr<GrCCDrawPathsOp> op,
+void GrCoverageCountingPathRenderer::recordOp(GrOp::Owner op,
                                               const DrawPathArgs& args) {
     if (op) {
         auto addToOwningPerOpsTaskPaths = [this](GrOp* op, uint32_t opsTaskID) {
@@ -223,7 +223,7 @@ std::unique_ptr<GrFragmentProcessor> GrCoverageCountingPathRenderer::makeClipPro
 }
 
 void GrCoverageCountingPathRenderer::preFlush(
-        GrOnFlushResourceProvider* onFlushRP, const uint32_t* opsTaskIDs, int numOpsTaskIDs) {
+        GrOnFlushResourceProvider* onFlushRP, SkSpan<const uint32_t> taskIDs) {
     using DoCopiesToA8Coverage = GrCCDrawPathsOp::DoCopiesToA8Coverage;
     SkASSERT(!fFlushing);
     SkASSERT(fFlushingPaths.empty());
@@ -246,9 +246,9 @@ void GrCoverageCountingPathRenderer::preFlush(
 
     // Move the per-opsTask paths that are about to be flushed from fPendingPaths to fFlushingPaths,
     // and count them up so we can preallocate buffers.
-    fFlushingPaths.reserve(numOpsTaskIDs);
-    for (int i = 0; i < numOpsTaskIDs; ++i) {
-        auto iter = fPendingPaths.find(opsTaskIDs[i]);
+    fFlushingPaths.reserve_back(taskIDs.count());
+    for (uint32_t taskID : taskIDs) {
+        auto iter = fPendingPaths.find(taskID);
         if (fPendingPaths.end() == iter) {
             continue;  // No paths on this opsTask.
         }
@@ -272,7 +272,7 @@ void GrCoverageCountingPathRenderer::preFlush(
     // copy them to cached atlas(es).
     int numCopies = specs.fNumCopiedPaths[GrCCPerFlushResourceSpecs::kFillIdx] +
                     specs.fNumCopiedPaths[GrCCPerFlushResourceSpecs::kStrokeIdx];
-    auto doCopies = DoCopiesToA8Coverage(numCopies > 100 ||
+    auto doCopies = DoCopiesToA8Coverage(numCopies > kDoCopiesThreshold ||
                                          specs.fCopyAtlasSpecs.fApproxNumPixels > 256 * 256);
     if (numCopies && DoCopiesToA8Coverage::kNo == doCopies) {
         specs.cancelCopies();
@@ -311,8 +311,8 @@ void GrCoverageCountingPathRenderer::preFlush(
     }
 }
 
-void GrCoverageCountingPathRenderer::postFlush(GrDeferredUploadToken, const uint32_t* opsTaskIDs,
-                                               int numOpsTaskIDs) {
+void GrCoverageCountingPathRenderer::postFlush(GrDeferredUploadToken,
+                                               SkSpan<const uint32_t> /* taskIDs */) {
     SkASSERT(fFlushing);
 
     if (!fFlushingPaths.empty()) {

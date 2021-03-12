@@ -19,13 +19,23 @@ namespace ast {
 
 Struct::Struct() : Node() {}
 
-Struct::Struct(StructDecoration decoration, StructMemberList members)
-    : Node(), decoration_(decoration), members_(std::move(members)) {}
+Struct::Struct(StructMemberList members)
+    : Node(), members_(std::move(members)) {}
+
+Struct::Struct(StructDecorationList decorations, StructMemberList members)
+    : Node(),
+      decorations_(std::move(decorations)),
+      members_(std::move(members)) {}
+
+Struct::Struct(const Source& source, StructMemberList members)
+    : Node(source), members_(std::move(members)) {}
 
 Struct::Struct(const Source& source,
-               StructDecoration decoration,
+               StructDecorationList decorations,
                StructMemberList members)
-    : Node(source), decoration_(decoration), members_(std::move(members)) {}
+    : Node(source),
+      decorations_(std::move(decorations)),
+      members_(std::move(members)) {}
 
 Struct::Struct(Struct&&) = default;
 
@@ -40,6 +50,15 @@ StructMember* Struct::get_member(const std::string& name) const {
   return nullptr;
 }
 
+bool Struct::IsBlockDecorated() const {
+  for (auto& deco : decorations_) {
+    if (deco->IsBlock()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool Struct::IsValid() const {
   for (const auto& mem : members_) {
     if (mem == nullptr || !mem->IsValid()) {
@@ -50,11 +69,13 @@ bool Struct::IsValid() const {
 }
 
 void Struct::to_str(std::ostream& out, size_t indent) const {
-  make_indent(out, indent);
-  if (decoration_ != StructDecoration::kNone) {
-    out << "[[" << decoration_ << "]] ";
-  }
   out << "Struct{" << std::endl;
+  for (auto& deco : decorations_) {
+    make_indent(out, indent + 2);
+    out << "[[";
+    deco->to_str(out);
+    out << "]]" << std::endl;
+  }
   for (const auto& member : members_) {
     member->to_str(out, indent + 2);
   }

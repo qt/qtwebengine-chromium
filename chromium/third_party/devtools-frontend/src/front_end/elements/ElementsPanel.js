@@ -52,7 +52,7 @@ import {Events as StylesSidebarPaneEvents, StylesSidebarPane} from './StylesSide
  */
 const legacyNodeToNewBreadcrumbsNode = node => {
   return {
-    parentNode: node.parentNode,
+    parentNode: node.parentNode ? legacyNodeToNewBreadcrumbsNode(node.parentNode) : null,
     id: /** @type {number} */ (node.id),
     nodeType: node.nodeType(),
     pseudoType: node.pseudoType(),
@@ -78,7 +78,7 @@ let elementsPanelInstance;
 export class ElementsPanel extends UI.Panel.Panel {
   constructor() {
     super('elements');
-    this.registerRequiredCSS('elements/elementsPanel.css');
+    this.registerRequiredCSS('elements/elementsPanel.css', {enableLegacyPatching: true});
     this._splitWidget = new UI.SplitWidget.SplitWidget(true, true, 'elementsPanelSplitViewState', 325, 325);
     this._splitWidget.addEventListener(
         UI.SplitWidget.Events.SidebarSizeChanged, this._updateTreeOutlineVisibleWidth.bind(this));
@@ -116,7 +116,7 @@ export class ElementsPanel extends UI.Panel.Panel {
 
     crumbsContainer.appendChild(this._breadcrumbs);
 
-    this._stylesWidget = new StylesSidebarPane();
+    this._stylesWidget = StylesSidebarPane.instance();
     this._computedStyleWidget = new ComputedStyleWidget();
     this._metricsWidget = new MetricsSidebarPane();
 
@@ -1112,6 +1112,14 @@ const TrackedCSSGridProperties = [
   {
     name: 'display',
     value: 'inline-grid',
+  },
+  {
+    name: 'display',
+    value: 'flex',
+  },
+  {
+    name: 'display',
+    value: 'inline-flex',
   },
 ];
 

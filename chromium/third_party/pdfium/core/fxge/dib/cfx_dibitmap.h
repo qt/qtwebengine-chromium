@@ -12,7 +12,7 @@
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/dib/cfx_dibbase.h"
-#include "core/fxge/fx_dib.h"
+#include "core/fxge/dib/fx_dib.h"
 #include "third_party/base/optional.h"
 
 class CFX_DIBitmap : public CFX_DIBBase {
@@ -25,7 +25,6 @@ class CFX_DIBitmap : public CFX_DIBBase {
   CONSTRUCT_VIA_MAKE_RETAIN;
 
   bool Create(int width, int height, FXDIB_Format format);
-
   bool Create(int width,
               int height,
               FXDIB_Format format,
@@ -56,9 +55,9 @@ class CFX_DIBitmap : public CFX_DIBBase {
   void SetPixel(int x, int y, uint32_t color);
 #endif
 
-  bool LoadChannelFromAlpha(FXDIB_Channel destChannel,
-                            const RetainPtr<CFX_DIBBase>& pSrcBitmap);
-  bool LoadChannel(FXDIB_Channel destChannel, int value);
+  bool SetRedFromBitmap(const RetainPtr<CFX_DIBBase>& pSrcBitmap);
+  bool SetAlphaFromBitmap(const RetainPtr<CFX_DIBBase>& pSrcBitmap);
+  bool SetUniformOpaqueAlpha();
 
   bool MultiplyAlpha(int alpha);
   bool MultiplyAlpha(const RetainPtr<CFX_DIBBase>& pSrcBitmap);
@@ -98,8 +97,7 @@ class CFX_DIBitmap : public CFX_DIBBase {
                      int dest_top,
                      int width,
                      int height,
-                     uint32_t color,
-                     int alpha_flag);
+                     uint32_t color);
 
   bool ConvertColorScale(uint32_t forecolor, uint32_t backcolor);
 
@@ -137,8 +135,11 @@ class CFX_DIBitmap : public CFX_DIBBase {
 #endif
 
  private:
+  enum class Channel : uint8_t { kRed, kAlpha };
+
+  bool SetChannelFromBitmap(Channel destChannel,
+                            const RetainPtr<CFX_DIBBase>& pSrcBitmap);
   void ConvertBGRColorScale(uint32_t forecolor, uint32_t backcolor);
-  void ConvertCMYKColorScale(uint32_t forecolor, uint32_t backcolor);
   bool TransferWithUnequalFormats(FXDIB_Format dest_format,
                                   int dest_left,
                                   int dest_top,

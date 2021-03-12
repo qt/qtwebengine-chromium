@@ -396,19 +396,33 @@
 #  define GR_TEST_UTILS 0
 #endif
 
-#if defined(SK_HISTOGRAM_ENUMERATION) && defined(SK_HISTOGRAM_BOOLEAN)
+#if defined(SK_HISTOGRAM_ENUMERATION)  || \
+    defined(SK_HISTOGRAM_BOOLEAN)      || \
+    defined(SK_HISTOGRAM_EXACT_LINEAR) || \
+    defined(SK_HISTOGRAM_MEMORY_KB)
 #  define SK_HISTOGRAMS_ENABLED 1
 #else
 #  define SK_HISTOGRAMS_ENABLED 0
 #endif
 
 #ifndef SK_HISTOGRAM_BOOLEAN
-#  define SK_HISTOGRAM_BOOLEAN(name, value)
+#  define SK_HISTOGRAM_BOOLEAN(name, sample)
 #endif
 
 #ifndef SK_HISTOGRAM_ENUMERATION
-#  define SK_HISTOGRAM_ENUMERATION(name, value, boundary_value)
+#  define SK_HISTOGRAM_ENUMERATION(name, sample, enum_size)
 #endif
+
+#ifndef SK_HISTOGRAM_EXACT_LINEAR
+#  define SK_HISTOGRAM_EXACT_LINEAR(name, sample, value_max)
+#endif
+
+#ifndef SK_HISTOGRAM_MEMORY_KB
+#  define SK_HISTOGRAM_MEMORY_KB(name, sample)
+#endif
+
+#define SK_HISTOGRAM_PERCENTAGE(name, percent_as_int) \
+    SK_HISTOGRAM_EXACT_LINEAR(name, percent_as_int, 101)
 
 #ifndef SK_DISABLE_LEGACY_SHADERCONTEXT
 #define SK_ENABLE_LEGACY_SHADERCONTEXT
@@ -579,15 +593,6 @@ template <typename T> static inline T SkTAbs(T value) {
         value = -value;
     }
     return value;
-}
-
-/** @return value pinned (clamped) between min and max, inclusively.
-
-    NOTE: Unlike std::clamp, SkTPin has well-defined behavior if 'value' is a
-          floating point NaN. In that case, 'max' is returned.
-*/
-template <typename T> static constexpr const T& SkTPin(const T& value, const T& min, const T& max) {
-    return value < min ? min : (value < max ? value : max);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

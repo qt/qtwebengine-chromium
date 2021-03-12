@@ -35,7 +35,8 @@ public:
         void init(int id,
                   GrDirectContext*,
                   const SkSurfaceCharacterization& dstChar,
-                  const SkIRect& clip);
+                  const SkIRect& clip,
+                  const SkIRect& paddingOutsets);
 
         // Convert the compressedPictureData into an SkPicture replacing each image-index
         // with a promise image.
@@ -53,7 +54,7 @@ public:
         // Just draw the re-inflated per-tile SKP directly into this tile w/o going through a DDL
         // first. This is used for determining the overhead of using DDLs (i.e., it replaces
         // a 'createDDL' and 'draw' pair.
-        void drawSKPDirectly(GrContext*);
+        void drawSKPDirectly(GrRecordingContext*);
 
         // Replay the recorded DDL into the tile surface - filling in 'fBackendTexture'.
         void draw(GrDirectContext*);
@@ -62,22 +63,28 @@ public:
 
         int id() const { return fID; }
         SkIRect clipRect() const { return fClip; }
+        SkISize paddedRectSize() const {
+            return { fClip.width() + fPaddingOutsets.fLeft + fPaddingOutsets.fRight,
+                     fClip.height() + fPaddingOutsets.fTop + fPaddingOutsets.fBottom };
+        }
+        SkIVector padOffset() const { return { fPaddingOutsets.fLeft, fPaddingOutsets.fTop }; }
 
         SkDeferredDisplayList* ddl() { return fDisplayList.get(); }
 
-        sk_sp<SkImage> makePromiseImage(SkDeferredDisplayListRecorder*);
+        sk_sp<SkImage> makePromiseImageForDst(SkDeferredDisplayListRecorder*);
         void dropCallbackContext() { fCallbackContext.reset(); }
 
         static void CreateBackendTexture(GrDirectContext*, TileData*);
         static void DeleteBackendTexture(GrDirectContext*, TileData*);
 
     private:
-        sk_sp<SkSurface> makeWrappedTileDest(GrContext* context);
+        sk_sp<SkSurface> makeWrappedTileDest(GrRecordingContext* context);
 
         sk_sp<PromiseImageCallbackContext> refCallbackContext() { return fCallbackContext; }
 
         int                       fID = -1;
         SkIRect                   fClip;             // in the device space of the final SkSurface
+        SkIRect                   fPaddingOutsets;   // random padding for the output surface
         SkSurfaceCharacterization fCharacterization; // characterization for the tile's surface
 
         // The callback context holds (via its SkPromiseImageTexture) the backend texture
@@ -99,7 +106,8 @@ public:
     DDLTileHelper(GrDirectContext*,
                   const SkSurfaceCharacterization& dstChar,
                   const SkIRect& viewport,
-                  int numDivisions);
+                  int numDivisions,
+                  bool addRandomPaddingToDst);
 
     void createSKPPerTile(SkData* compressedPictureData, const DDLPromiseImageHelper&);
 
@@ -124,7 +132,7 @@ public:
 
     // This draws all the per-tile SKPs directly into all of the tiles w/o converting them to
     // DDLs first - all on a single thread.
-    void drawAllTilesDirectly(GrContext*);
+    void drawAllTilesDirectly(GrDirectContext*);
 
     void dropCallbackContexts();
     void resetAllTiles();

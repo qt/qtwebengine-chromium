@@ -52,6 +52,7 @@ export function findColumnIndex(
   const disallowNulls = columnType === STR || columnType === NUM;
   const expectsStrings = columnType === STR || columnType === STR_NULL;
   const expectsNumbers = columnType === NUM || columnType === NUM_NULL;
+  const isEmpty = +result.numRecords === 0;
 
   for (let i = 0; i < result.columnDescriptors.length; ++i) {
     const descriptor = result.columnDescriptors[i];
@@ -68,16 +69,16 @@ export function findColumnIndex(
       throw new Error(`Multiple columns with the name ${name}`);
     }
 
-    if (expectsStrings && (hasDoubles || hasLongs)) {
+    if (expectsStrings && !hasStrings && !isEmpty) {
       throw new Error(`Expected strings for column ${name} but found numbers`);
     }
 
-    if (expectsNumbers && hasStrings) {
+    if (expectsNumbers && !hasDoubles && !hasLongs && !isEmpty) {
       throw new Error(`Expected numbers for column ${name} but found strings`);
     }
 
     if (disallowNulls) {
-      for (let j = 0; j < result.numRecords; ++j) {
+      for (let j = 0; j < +result.numRecords; ++j) {
         if (column.isNulls![j] === true) {
           throw new Error(`Column ${name} contains nulls`);
         }

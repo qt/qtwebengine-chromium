@@ -88,7 +88,9 @@ export class SuggestBox {
     this._glassPane = new GlassPane();
     this._glassPane.setAnchorBehavior(AnchorBehavior.PreferBottom);
     this._glassPane.setOutsideClickCallback(this.hide.bind(this));
-    const shadowRoot = createShadowRootWithCoreStyles(this._glassPane.contentElement, 'ui/suggestBox.css');
+    const shadowRoot = createShadowRootWithCoreStyles(
+        this._glassPane.contentElement,
+        {cssFile: 'ui/suggestBox.css', enableLegacyPatching: true, delegatesFocus: undefined});
     shadowRoot.appendChild(this._element);
   }
 
@@ -239,6 +241,9 @@ export class SuggestBox {
     } else if (item.subtitle) {
       const subtitleElement = element.createChild('span', 'suggestion-subtitle');
       subtitleElement.textContent = item.subtitle.trimEndWithMaxLength(maxTextLength - displayText.length);
+    }
+    if (item.iconElement) {
+      element.appendChild(item.iconElement);
     }
     return element;
   }
@@ -405,7 +410,8 @@ export class SuggestBox {
   *      isSecondary: (boolean|undefined),
   *      subtitleRenderer: ((function():!Element)|undefined),
   *      selectionRange: ({startColumn: number, endColumn: number}|undefined),
-  *      hideGhostText: (boolean|undefined)
+  *      hideGhostText: (boolean|undefined),
+  *      iconElement: (!HTMLElement|undefined),
   * }}
   */
 // @ts-ignore typedef

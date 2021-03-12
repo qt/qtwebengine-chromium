@@ -27,6 +27,7 @@ void ParserImplTest::SetUp() {
 
 void ParserImplTest::TearDown() {
   impl_ = nullptr;
+  files_.clear();
 }
 
 }  // namespace wgsl

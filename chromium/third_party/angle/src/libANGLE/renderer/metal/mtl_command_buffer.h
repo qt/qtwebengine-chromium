@@ -113,6 +113,11 @@ class CommandBuffer final : public WrappedObject<id<MTLCommandBuffer>>, angle::N
     void setReadDependency(const ResourceRef &resource);
     void setReadDependency(Resource *resourcePtr);
 
+    void queueEventSignal(const mtl::SharedEventRef &event, uint64_t value);
+    void serverWaitEvent(const mtl::SharedEventRef &event, uint64_t value);
+    void pushDebugGroup(const std::string &marker);
+    void popDebugGroup();
+
     CommandQueue &cmdQueue() { return mCmdQueue; }
 
     // Private use only
@@ -127,6 +132,13 @@ class CommandBuffer final : public WrappedObject<id<MTLCommandBuffer>>, angle::N
     void commitImpl();
     void forceEndingCurrentEncoder();
 
+    void setPendingEvents();
+    void setEventImpl(const mtl::SharedEventRef &event, uint64_t value);
+    void waitEventImpl(const mtl::SharedEventRef &event, uint64_t value);
+
+    void pushDebugGroupImpl(const std::string &marker);
+    void popDebugGroupImpl();
+
     using ParentClass = WrappedObject<id<MTLCommandBuffer>>;
 
     CommandQueue &mCmdQueue;
@@ -136,6 +148,10 @@ class CommandBuffer final : public WrappedObject<id<MTLCommandBuffer>>, angle::N
     uint64_t mQueueSerial = 0;
 
     mutable std::mutex mLock;
+
+    std::vector<std::pair<mtl::SharedEventRef, uint64_t>> mPendingSignalEvents;
+
+    std::vector<std::string> mDebugGroups;
 
     bool mCommitted = false;
 };
@@ -159,6 +175,9 @@ class CommandEncoder : public WrappedObject<id<MTLCommandEncoder>>, angle::NonCo
 
     CommandEncoder &markResourceBeingWrittenByGPU(const BufferRef &buffer);
     CommandEncoder &markResourceBeingWrittenByGPU(const TextureRef &texture);
+
+    virtual void pushDebugGroup(NSString *label);
+    virtual void popDebugGroup();
 
   protected:
     using ParentClass = WrappedObject<id<MTLCommandEncoder>>;
@@ -422,6 +441,10 @@ class RenderCommandEncoder final : public CommandEncoder
                                       MTLResourceUsage usage,
                                       mtl::RenderStages states);
 
+    RenderCommandEncoder &memoryBarrierWithResource(const BufferRef &resource,
+                                                    mtl::RenderStages after,
+                                                    mtl::RenderStages before);
+
     RenderCommandEncoder &setColorStoreAction(MTLStoreAction action, uint32_t colorAttachmentIndex);
     // Set store action for every color attachment.
     RenderCommandEncoder &setColorStoreAction(MTLStoreAction action);
@@ -441,6 +464,11 @@ class RenderCommandEncoder final : public CommandEncoder
                                              uint32_t colorAttachmentIndex);
     RenderCommandEncoder &setDepthLoadAction(MTLLoadAction action, double clearValue);
     RenderCommandEncoder &setStencilLoadAction(MTLLoadAction action, uint32_t clearValue);
+
+    void setLabel(NSString *label);
+
+    void pushDebugGroup(NSString *label) override;
+    void popDebugGroup() override;
 
     const RenderPassDesc &renderPassDesc() const { return mRenderPassDesc; }
     bool hasDrawCalls() const { return mHasDrawCalls; }
@@ -466,6 +494,9 @@ class RenderCommandEncoder final : public CommandEncoder
     RenderPassDesc mRenderPassDesc;
     // Cached Objective-C render pass desc to avoid re-allocate every frame.
     mtl::AutoObjCObj<MTLRenderPassDescriptor> mCachedRenderPassDescObjC;
+
+    mtl::AutoObjCObj<NSString> mLabel;
+
     MTLScissorRect mRenderPassMaxScissorRect;
 
     const OcclusionQueryPool &mOcclusionQueryPool;
@@ -505,13 +536,13 @@ class BlitCommandEncoder final : public CommandEncoder
                                             MTLSize srcSize,
                                             const TextureRef &dst,
                                             uint32_t dstSlice,
-                                            uint32_t dstLevel,
+                                            MipmapNativeLevel dstLevel,
                                             MTLOrigin dstOrigin,
                                             MTLBlitOption blitOption);
 
     BlitCommandEncoder &copyTextureToBuffer(const TextureRef &src,
                                             uint32_t srcSlice,
-                                            uint32_t srcLevel,
+                                            MipmapNativeLevel srcLevel,
                                             MTLOrigin srcOrigin,
                                             MTLSize srcSize,
                                             const BufferRef &dst,
@@ -522,10 +553,10 @@ class BlitCommandEncoder final : public CommandEncoder
 
     BlitCommandEncoder &copyTexture(const TextureRef &src,
                                     uint32_t srcSlice,
-                                    uint32_t srcLevel,
+                                    MipmapNativeLevel srcLevel,
                                     const TextureRef &dst,
                                     uint32_t dstSlice,
-                                    uint32_t dstLevel,
+                                    MipmapNativeLevel dstLevel,
                                     uint32_t sliceCount,
                                     uint32_t levelCount);
 

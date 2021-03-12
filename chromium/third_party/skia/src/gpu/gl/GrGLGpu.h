@@ -17,11 +17,11 @@
 #include "src/gpu/GrProgramDesc.h"
 #include "src/gpu/GrWindowRectsState.h"
 #include "src/gpu/GrXferProcessor.h"
+#include "src/gpu/gl/GrGLAttachment.h"
 #include "src/gpu/gl/GrGLContext.h"
 #include "src/gpu/gl/GrGLPathRendering.h"
 #include "src/gpu/gl/GrGLProgram.h"
 #include "src/gpu/gl/GrGLRenderTarget.h"
-#include "src/gpu/gl/GrGLStencilAttachment.h"
 #include "src/gpu/gl/GrGLTexture.h"
 #include "src/gpu/gl/GrGLVertexArray.h"
 
@@ -119,20 +119,21 @@ public:
     void endCommandBuffer(GrRenderTarget*, const GrOpsRenderPass::LoadAndStoreInfo& colorLoadStore,
                           const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilLoadStore);
 
-    GrOpsRenderPass* getOpsRenderPass(
-            GrRenderTarget*, GrStencilAttachment*,
-            GrSurfaceOrigin, const SkIRect&,
-            const GrOpsRenderPass::LoadAndStoreInfo&,
-            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-            const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            GrXferBarrierFlags renderPassXferBarriers) override;
-
     void invalidateBoundRenderTarget() {
         fHWBoundRenderTargetUniqueID.makeInvalid();
     }
 
-    GrStencilAttachment* createStencilAttachmentForRenderTarget(
-            const GrRenderTarget* rt, SkISize dimensions, int numStencilSamples) override;
+    sk_sp<GrAttachment> makeStencilAttachmentForRenderTarget(const GrRenderTarget* rt,
+                                                             SkISize dimensions,
+                                                             int numStencilSamples) override;
+
+    sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
+                                           const GrBackendFormat& format,
+                                           int numSamples,
+                                           GrProtected isProtected) override {
+        return nullptr;
+    }
+
     void deleteBackendTexture(const GrBackendTexture&) override;
 
     bool compile(const GrProgramDesc&, const GrProgramInfo&) override;
@@ -144,7 +145,10 @@ public:
 #if GR_TEST_UTILS
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(SkISize dimensions,
+                                                               GrColorType,
+                                                               int sampleCnt,
+                                                               GrProtected) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     const GrGLContext* glContextForTesting() const override { return &this->glContext(); }
@@ -250,12 +254,19 @@ private:
                                                     GrWrapOwnership,
                                                     GrWrapCacheable) override;
     sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) override;
-    sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
-                                                             int sampleCnt) override;
 
     // Given a GL format return the index into the stencil format array on GrGLCaps to a
     // compatible stencil format, or negative if there is no compatible stencil format.
     int getCompatibleStencilIndex(GrGLFormat format);
+
+    GrBackendFormat getPreferredStencilFormat(const GrBackendFormat& format) override {
+        int idx = this->getCompatibleStencilIndex(format.asGLFormat());
+        if (idx < 0) {
+            return {};
+        }
+        return GrBackendFormat::MakeGL(GrGLFormatToEnum(this->glCaps().stencilFormats()[idx]),
+                                       GR_GL_TEXTURE_NONE);
+    }
 
     void onFBOChanged();
 
@@ -313,6 +324,15 @@ private:
 
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override;
+
+    GrOpsRenderPass* onGetOpsRenderPass(GrRenderTarget*,
+                                        GrAttachment*,
+                                        GrSurfaceOrigin,
+                                        const SkIRect&,
+                                        const GrOpsRenderPass::LoadAndStoreInfo&,
+                                        const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+                                        GrXferBarrierFlags renderPassXferBarriers) override;
 
     bool onSubmitToGpu(bool syncCpu) override;
 

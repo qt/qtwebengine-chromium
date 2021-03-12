@@ -14,11 +14,12 @@
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
+#include "src/gpu/GrAttachment.h"
 #include "src/gpu/GrAuditTrail.h"
 #include "src/gpu/GrBackendUtils.h"
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrDataUtils.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrGpuResourcePriv.h"
 #include "src/gpu/GrNativeRect.h"
 #include "src/gpu/GrPathRendering.h"
@@ -29,7 +30,6 @@
 #include "src/gpu/GrRingBuffer.h"
 #include "src/gpu/GrSemaphore.h"
 #include "src/gpu/GrStagingBufferManager.h"
-#include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrStencilSettings.h"
 #include "src/gpu/GrTextureProxyPriv.h"
 #include "src/gpu/GrTracing.h"
@@ -337,28 +337,6 @@ sk_sp<GrRenderTarget> GrGpu::wrapBackendRenderTarget(const GrBackendRenderTarget
     return rt;
 }
 
-sk_sp<GrRenderTarget> GrGpu::wrapBackendTextureAsRenderTarget(const GrBackendTexture& backendTex,
-                                                              int sampleCnt) {
-    this->handleDirtyContext();
-
-    const GrCaps* caps = this->caps();
-
-    int maxSize = caps->maxTextureSize();
-    if (backendTex.width() > maxSize || backendTex.height() > maxSize) {
-        return nullptr;
-    }
-
-    if (!caps->isFormatRenderable(backendTex.getBackendFormat(), sampleCnt)) {
-        return nullptr;
-    }
-
-    auto rt = this->onWrapBackendTextureAsRenderTarget(backendTex, sampleCnt);
-    if (rt && sampleCnt > 1 && !this->caps()->msaaResolvesAutomatically()) {
-        rt->setRequiresManualMSAAResolve();
-    }
-    return rt;
-}
-
 sk_sp<GrRenderTarget> GrGpu::wrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo& imageInfo,
                                                                  const GrVkDrawableInfo& vkInfo) {
     return this->onWrapVulkanSecondaryCBAsRenderTarget(imageInfo, vkInfo);
@@ -604,8 +582,7 @@ int GrGpu::findOrAssignSamplePatternKey(GrRenderTarget* renderTarget) {
     return fSamplePatternDictionary.findOrAssignSamplePatternKey(sampleLocations);
 }
 
-void GrGpu::executeFlushInfo(GrSurfaceProxy* proxies[],
-                             int numProxies,
+void GrGpu::executeFlushInfo(SkSpan<GrSurfaceProxy*> proxies,
                              SkSurface::BackendSurfaceAccess access,
                              const GrFlushInfo& info,
                              const GrBackendSurfaceMutableState* newState) {
@@ -648,9 +625,25 @@ void GrGpu::executeFlushInfo(GrSurfaceProxy* proxies[],
     // We currently don't support passing in new surface state for multiple proxies here. The only
     // time we have multiple proxies is if we are flushing a yuv SkImage which won't have state
     // updates anyways.
-    SkASSERT(!newState || numProxies == 1);
+    SkASSERT(!newState || proxies.count() == 1);
     SkASSERT(!newState || access == SkSurface::BackendSurfaceAccess::kNoAccess);
-    this->prepareSurfacesForBackendAccessAndStateUpdates(proxies, numProxies, access, newState);
+    this->prepareSurfacesForBackendAccessAndStateUpdates(proxies, access, newState);
+}
+
+GrOpsRenderPass* GrGpu::getOpsRenderPass(
+        GrRenderTarget* renderTarget,
+        GrAttachment* stencil,
+        GrSurfaceOrigin origin,
+        const SkIRect& bounds,
+        const GrOpsRenderPass::LoadAndStoreInfo& colorInfo,
+        const GrOpsRenderPass::StencilLoadAndStoreInfo& stencilInfo,
+        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+        GrXferBarrierFlags renderPassXferBarriers) {
+#if SK_HISTOGRAMS_ENABLED
+    fCurrentSubmitRenderPassCount++;
+#endif
+    return this->onGetOpsRenderPass(renderTarget, stencil, origin, bounds, colorInfo, stencilInfo,
+                                    sampledProxies, renderPassXferBarriers);
 }
 
 bool GrGpu::submitToGpu(bool syncCpu) {
@@ -667,6 +660,17 @@ bool GrGpu::submitToGpu(bool syncCpu) {
     bool submitted = this->onSubmitToGpu(syncCpu);
 
     this->callSubmittedProcs(submitted);
+
+#if SK_HISTOGRAMS_ENABLED
+    // The max allowed value for SK_HISTOGRAM_EXACT_LINEAR is 100. If we want to support higher
+    // values we can add SK_HISTOGRAM_CUSTOM_COUNTS but this has a number of buckets that is less
+    // than the number of actual values
+    static constexpr int kMaxRenderPassBucketValue = 100;
+    SK_HISTOGRAM_EXACT_LINEAR("SubmitRenderPasses",
+                              std::min(fCurrentSubmitRenderPassCount, kMaxRenderPassBucketValue),
+                              kMaxRenderPassBucketValue);
+    fCurrentSubmitRenderPassCount = 0;
+#endif
 
     return submitted;
 }
@@ -724,8 +728,11 @@ void GrGpu::Stats::dump(SkString* out) {
     out->appendf("Transfers to Texture: %d\n", fTransfersToTexture);
     out->appendf("Transfers from Surface: %d\n", fTransfersFromSurface);
     out->appendf("Stencil Buffer Creates: %d\n", fStencilAttachmentCreates);
+    out->appendf("MSAA Attachment Creates: %d\n", fMSAAAttachmentCreates);
     out->appendf("Number of draws: %d\n", fNumDraws);
     out->appendf("Number of Scratch Textures reused %d\n", fNumScratchTexturesReused);
+    out->appendf("Number of Scratch MSAA Attachments reused %d\n",
+                 fNumScratchMSAAAttachmentsReused);
 
     SkASSERT(fNumInlineCompilationFailures == 0);
     out->appendf("Number of Inline compile failures %d\n", fNumInlineCompilationFailures);

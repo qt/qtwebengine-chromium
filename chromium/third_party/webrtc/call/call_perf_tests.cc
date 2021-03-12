@@ -182,7 +182,6 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
   std::unique_ptr<test::PacketTransport> audio_send_transport;
   std::unique_ptr<test::PacketTransport> video_send_transport;
   std::unique_ptr<test::PacketTransport> receive_transport;
-  test::NullTransport rtcp_send_transport;
 
   AudioSendStream* audio_send_stream;
   AudioReceiveStream* audio_receive_stream;
@@ -271,7 +270,7 @@ void CallPerfTest::TestAudioVideoSync(FecMode fec,
     AudioReceiveStream::Config audio_recv_config;
     audio_recv_config.rtp.remote_ssrc = kAudioSendSsrc;
     audio_recv_config.rtp.local_ssrc = kAudioRecvSsrc;
-    audio_recv_config.rtcp_send_transport = &rtcp_send_transport;
+    audio_recv_config.rtcp_send_transport = receive_transport.get();
     audio_recv_config.sync_group = kSyncGroup;
     audio_recv_config.decoder_factory = audio_decoder_factory_;
     audio_recv_config.decoder_map = {
@@ -731,6 +730,11 @@ TEST_F(CallPerfTest, Bitrate_Kbps_NoPadWithoutMinTransmitBitrate) {
 TEST_F(CallPerfTest, MAYBE_KeepsHighBitrateWhenReconfiguringSender) {
   static const uint32_t kInitialBitrateKbps = 400;
   static const uint32_t kReconfigureThresholdKbps = 600;
+
+  // We get lower bitrate than expected by this test if the following field
+  // trial is enabled.
+  test::ScopedFieldTrials field_trials(
+      "WebRTC-SendSideBwe-WithOverhead/Disabled/");
 
   class VideoStreamFactory
       : public VideoEncoderConfig::VideoStreamFactoryInterface {

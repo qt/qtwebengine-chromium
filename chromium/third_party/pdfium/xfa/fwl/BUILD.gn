@@ -90,6 +90,8 @@ source_set("fwl") {
     "theme/cfwl_datetimepickertp.h",
     "theme/cfwl_edittp.cpp",
     "theme/cfwl_edittp.h",
+    "theme/cfwl_fontmanager.cpp",
+    "theme/cfwl_fontmanager.h",
     "theme/cfwl_listboxtp.cpp",
     "theme/cfwl_listboxtp.h",
     "theme/cfwl_monthcalendartp.cpp",
@@ -110,8 +112,8 @@ source_set("fwl") {
     "../../fxbarcode",
     "../../fxjs:gc",
     "../fde",
-    "../fgas",
-    "../fxgraphics",
+    "../fgas/font",
+    "../fgas/graphics",
   ]
   configs += [
     "../../:pdfium_core_config",

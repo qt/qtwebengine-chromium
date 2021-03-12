@@ -11,8 +11,8 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/debug/alias.h"
 #include "base/feature_list.h"
 #include "base/lazy_instance.h"
@@ -99,6 +99,7 @@
 #include "gin/converter.h"
 #include "mojo/public/js/grit/mojo_bindings_resources.h"
 #include "services/network/public/mojom/cors.mojom.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
 #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_url_request.h"
@@ -226,7 +227,8 @@ Dispatcher::Dispatcher(std::unique_ptr<DispatcherDelegate> delegate)
       source_map_(&ui::ResourceBundle::GetSharedInstance()),
       v8_schema_registry_(new V8SchemaRegistry),
       user_script_set_manager_observer_(this),
-      activity_logging_enabled_(false) {
+      activity_logging_enabled_(false),
+      receiver_(this) {
   bindings_system_ = CreateBindingsSystem(
       IPCMessageSender::CreateMainThreadIPCMessageSender());
 
@@ -306,7 +308,7 @@ void Dispatcher::DidCreateScriptContext(
       script_context_set_->Register(frame, v8_context, world_id);
 
   // Initialize origin permissions for content scripts, which can't be
-  // initialized in |OnActivateExtension|.
+  // initialized in |ActivateExtension|.
   if (context->context_type() == Feature::CONTENT_SCRIPT_CONTEXT)
     InitOriginPermissions(context->extension());
 
@@ -862,7 +864,6 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(Dispatcher, message)
-  IPC_MESSAGE_HANDLER(ExtensionMsg_ActivateExtension, OnActivateExtension)
   IPC_MESSAGE_HANDLER(ExtensionMsg_CancelSuspend, OnCancelSuspend)
   IPC_MESSAGE_HANDLER(ExtensionMsg_DeliverMessage, OnDeliverMessage)
   IPC_MESSAGE_HANDLER(ExtensionMsg_DispatchOnConnect, OnDispatchOnConnect)
@@ -887,8 +888,6 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
                       OnUpdateTabSpecificPermissions)
   IPC_MESSAGE_HANDLER(ExtensionMsg_ClearTabSpecificPermissions,
                       OnClearTabSpecificPermissions)
-  IPC_MESSAGE_HANDLER(ExtensionMsg_SetActivityLoggingEnabled,
-                      OnSetActivityLoggingEnabled)
   IPC_MESSAGE_FORWARD(ExtensionMsg_WatchPages,
                       content_watcher_.get(),
                       ContentWatcher::OnWatchPages)
@@ -898,7 +897,29 @@ bool Dispatcher::OnControlMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void Dispatcher::OnActivateExtension(const std::string& extension_id) {
+void Dispatcher::RegisterMojoInterfaces(
+    blink::AssociatedInterfaceRegistry* associated_interfaces) {
+  // This base::Unretained() is safe, because:
+  // 1) the Dispatcher is a RenderThreadObserver and outlives the RenderThread.
+  // 2) |asscoiated_interfaces| is owned by the RenderThread.
+  // As well the Dispatcher is owned by the
+  // ExtensionsRendererClient, which in turn is a leaky LazyInstance (and thus
+  // never deleted).
+  associated_interfaces->AddInterface(base::BindRepeating(
+      &Dispatcher::OnRendererAssociatedRequest, base::Unretained(this)));
+}
+
+void Dispatcher::UnregisterMojoInterfaces(
+    blink::AssociatedInterfaceRegistry* associated_interfaces) {
+  associated_interfaces->RemoveInterface(mojom::Renderer::Name_);
+}
+
+void Dispatcher::OnRendererAssociatedRequest(
+    mojo::PendingAssociatedReceiver<mojom::Renderer> receiver) {
+  receiver_.Bind(std::move(receiver));
+}
+
+void Dispatcher::ActivateExtension(const std::string& extension_id) {
   const Extension* extension =
       RendererExtensionRegistry::Get()->GetByID(extension_id);
   if (!extension) {
@@ -1267,7 +1288,7 @@ void Dispatcher::OnClearTabSpecificPermissions(
   }
 }
 
-void Dispatcher::OnSetActivityLoggingEnabled(bool enabled) {
+void Dispatcher::SetActivityLoggingEnabled(bool enabled) {
   activity_logging_enabled_ = enabled;
   if (enabled) {
     for (const std::string& id : active_extension_ids_)

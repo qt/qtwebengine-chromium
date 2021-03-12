@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/macros.h"
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/crypto/null_decrypter.h"
 #include "net/third_party/quiche/src/quic/core/crypto/null_encrypter.h"
 #include "net/third_party/quiche/src/quic/core/http/http_constants.h"
@@ -36,9 +38,7 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_stream_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/simple_session_cache.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 using spdy::SpdyHeaderBlock;
 using ::testing::_;
@@ -121,6 +121,9 @@ class QuicSpdyClientSessionTest : public QuicTestWithParam<ParsedQuicVersion> {
         QuicServerId(kServerHostname, kPort, false),
         client_crypto_config_.get(), &push_promise_index_);
     session_->Initialize();
+    connection_->SetEncrypter(
+        ENCRYPTION_FORWARD_SECURE,
+        std::make_unique<NullEncrypter>(connection_->perspective()));
     crypto_stream_ = static_cast<QuicCryptoClientStream*>(
         session_->GetMutableCryptoStream());
     push_promise_[":path"] = "/bar";
@@ -280,8 +283,8 @@ TEST_P(QuicSpdyClientSessionTest, NoEncryptionAfterInitialEncryption) {
   // Verify that no data may be send on existing streams.
   char data[] = "hello world";
   EXPECT_QUIC_BUG(
-      session_->WritevData(stream->id(), QUICHE_ARRAYSIZE(data), 0, NO_FIN,
-                           NOT_RETRANSMISSION, QUICHE_NULLOPT),
+      session_->WritevData(stream->id(), ABSL_ARRAYSIZE(data), 0, NO_FIN,
+                           NOT_RETRANSMISSION, ENCRYPTION_INITIAL),
       "Client: Try to send data of stream");
 }
 
@@ -294,7 +297,7 @@ TEST_P(QuicSpdyClientSessionTest, MaxNumStreamsWithNoFinOrRst) {
   EXPECT_FALSE(session_->CreateOutgoingBidirectionalStream());
 
   // Close the stream, but without having received a FIN or a RST_STREAM
-  // or MAX_STREAMS (V99) and check that a new one can not be created.
+  // or MAX_STREAMS (IETF QUIC) and check that a new one can not be created.
   session_->ResetStream(stream->id(), QUIC_STREAM_CANCELLED);
   EXPECT_EQ(1u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
 
@@ -317,7 +320,7 @@ TEST_P(QuicSpdyClientSessionTest, MaxNumStreamsWithRst) {
   // Check that a new one can be created.
   EXPECT_EQ(0u, QuicSessionPeer::GetNumOpenDynamicStreams(session_.get()));
   if (VersionHasIetfQuicFrames(GetParam().transport_version)) {
-    // In V99 the stream limit increases only if we get a MAX_STREAMS
+    // In IETF QUIC the stream limit increases only if we get a MAX_STREAMS
     // frame; pretend we got one.
 
     QuicMaxStreamsFrame frame(0, 2,
@@ -330,7 +333,7 @@ TEST_P(QuicSpdyClientSessionTest, MaxNumStreamsWithRst) {
     // Ensure that we have 2 total streams, 1 open and 1 closed.
     QuicStreamCount expected_stream_count = 2;
     EXPECT_EQ(expected_stream_count,
-              QuicSessionPeer::v99_bidirectional_stream_id_manager(&*session_)
+              QuicSessionPeer::ietf_bidirectional_stream_id_manager(&*session_)
                   ->outgoing_stream_count());
   }
 }
@@ -347,7 +350,7 @@ TEST_P(QuicSpdyClientSessionTest, ResetAndTrailers) {
   ASSERT_NE(nullptr, stream);
 
   if (VersionHasIetfQuicFrames(GetParam().transport_version)) {
-    // For v99, trying to open a stream and failing due to lack
+    // For IETF QUIC, trying to open a stream and failing due to lack
     // of stream ids will result in a STREAMS_BLOCKED. Make
     // sure we get one. Also clear out the frame because if it's
     // left sitting, the later SendRstStream will not actually
@@ -399,7 +402,7 @@ TEST_P(QuicSpdyClientSessionTest, ResetAndTrailers) {
     // Ensure that we have 2 open streams.
     QuicStreamCount expected_stream_count = 2;
     EXPECT_EQ(expected_stream_count,
-              QuicSessionPeer::v99_bidirectional_stream_id_manager(&*session_)
+              QuicSessionPeer::ietf_bidirectional_stream_id_manager(&*session_)
                   ->outgoing_stream_count());
   }
 }
@@ -448,7 +451,7 @@ TEST_P(QuicSpdyClientSessionTest, OnStreamHeaderListWithStaticStream) {
         connection_->transport_version(), 3);
     char type[] = {0x00};
 
-    QuicStreamFrame data1(id, false, 0, quiche::QuicheStringPiece(type, 1));
+    QuicStreamFrame data1(id, false, 0, absl::string_view(type, 1));
     session_->OnStreamFrame(data1);
   } else {
     id = QuicUtils::GetHeadersStreamId(connection_->transport_version());
@@ -478,7 +481,7 @@ TEST_P(QuicSpdyClientSessionTest, OnPromiseHeaderListWithStaticStream) {
         connection_->transport_version(), 3);
     char type[] = {0x00};
 
-    QuicStreamFrame data1(id, false, 0, quiche::QuicheStringPiece(type, 1));
+    QuicStreamFrame data1(id, false, 0, absl::string_view(type, 1));
     session_->OnStreamFrame(data1);
   } else {
     id = QuicUtils::GetHeadersStreamId(connection_->transport_version());
@@ -766,6 +769,7 @@ TEST_P(QuicSpdyClientSessionTest, PushPromiseDuplicateUrl) {
 }
 
 TEST_P(QuicSpdyClientSessionTest, ReceivingPromiseEnhanceYourCalm) {
+  CompleteCryptoHandshake();
   for (size_t i = 0u; i < session_->get_max_promises(); i++) {
     push_promise_[":path"] = quiche::QuicheStringPrintf("/bar%zu", i);
 
@@ -1022,7 +1026,7 @@ TEST_P(QuicSpdyClientSessionTest, IetfZeroRttSetup) {
   EXPECT_EQ(kInitialSessionFlowControlWindowForTest,
             session_->flow_controller()->send_window_offset());
   if (session_->version().UsesHttp3()) {
-    auto* id_manager = QuicSessionPeer::v99_streamid_manager(session_.get());
+    auto* id_manager = QuicSessionPeer::ietf_streamid_manager(session_.get());
     EXPECT_EQ(kDefaultMaxStreamsPerConnection,
               id_manager->max_outgoing_bidirectional_streams());
     EXPECT_EQ(
@@ -1055,7 +1059,7 @@ TEST_P(QuicSpdyClientSessionTest, IetfZeroRttSetup) {
   EXPECT_EQ(kInitialSessionFlowControlWindowForTest + 1,
             session_->flow_controller()->send_window_offset());
   if (session_->version().UsesHttp3()) {
-    auto* id_manager = QuicSessionPeer::v99_streamid_manager(session_.get());
+    auto* id_manager = QuicSessionPeer::ietf_streamid_manager(session_.get());
     auto* control_stream =
         QuicSpdySessionPeer::GetSendControlStream(session_.get());
     EXPECT_EQ(kDefaultMaxStreamsPerConnection + 1,

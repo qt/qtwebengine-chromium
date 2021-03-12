@@ -28,26 +28,27 @@
 #include "source/opt/module.h"
 #include "spirv/unified1/GLSL.std.450.h"
 #include "src/ast/array_accessor_expression.h"
-#include "src/ast/as_expression.h"
 #include "src/ast/assignment_statement.h"
 #include "src/ast/binary_expression.h"
+#include "src/ast/bitcast_expression.h"
 #include "src/ast/bool_literal.h"
 #include "src/ast/break_statement.h"
 #include "src/ast/call_expression.h"
 #include "src/ast/call_statement.h"
 #include "src/ast/case_statement.h"
-#include "src/ast/cast_expression.h"
 #include "src/ast/continue_statement.h"
 #include "src/ast/discard_statement.h"
 #include "src/ast/else_statement.h"
 #include "src/ast/fallthrough_statement.h"
 #include "src/ast/identifier_expression.h"
 #include "src/ast/if_statement.h"
+#include "src/ast/intrinsic.h"
 #include "src/ast/loop_statement.h"
 #include "src/ast/member_accessor_expression.h"
 #include "src/ast/return_statement.h"
 #include "src/ast/scalar_constructor_expression.h"
 #include "src/ast/sint_literal.h"
+#include "src/ast/stage_decoration.h"
 #include "src/ast/storage_class.h"
 #include "src/ast/switch_statement.h"
 #include "src/ast/type/bool_type.h"
@@ -326,13 +327,27 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
     case GLSLstd450Normalize:
       return "normalize";
     case GLSLstd450FClamp:
-      return "fclamp";
+      return "clamp";
     case GLSLstd450Length:
       return "length";
     default:
       break;
   }
   return "";
+}
+
+// Returns the WGSL standard library function instrinsic for the
+// given instruction, or ast::Intrinsic::kNone
+ast::Intrinsic GetIntrinsic(SpvOp opcode) {
+  switch (opcode) {
+    case SpvOpDot:
+      return ast::Intrinsic::kDot;
+    case SpvOpOuterProduct:
+      return ast::Intrinsic::kOuterProduct;
+    default:
+      break;
+  }
+  return ast::Intrinsic::kNone;
 }
 
 // @returns the merge block ID for the given basic block, or 0 if there is none.
@@ -429,7 +444,7 @@ class StructuredTraverser {
 /// @param src a source record
 /// @returns true if |src| is a non-default Source
 bool HasSource(const Source& src) {
-  return src.line != 0 || src.column != 0;
+  return src.range.begin.line > 0 || src.range.begin.column != 0;
 }
 
 }  // namespace
@@ -447,7 +462,8 @@ DefInfo::DefInfo(const spvtools::opt::Instruction& def_inst,
 DefInfo::~DefInfo() = default;
 
 FunctionEmitter::FunctionEmitter(ParserImpl* pi,
-                                 const spvtools::opt::Function& function)
+                                 const spvtools::opt::Function& function,
+                                 const EntryPointInfo* ep_info)
     : parser_impl_(*pi),
       ast_module_(pi->get_module()),
       ir_context_(*(pi->ir_context())),
@@ -456,9 +472,14 @@ FunctionEmitter::FunctionEmitter(ParserImpl* pi,
       type_mgr_(ir_context_.get_type_mgr()),
       fail_stream_(pi->fail_stream()),
       namer_(pi->namer()),
-      function_(function) {
+      function_(function),
+      ep_info_(ep_info) {
   PushNewStatementBlock(nullptr, 0, nullptr);
 }
+
+FunctionEmitter::FunctionEmitter(ParserImpl* pi,
+                                 const spvtools::opt::Function& function)
+    : FunctionEmitter(pi, function, nullptr) {}
 
 FunctionEmitter::~FunctionEmitter() = default;
 
@@ -583,7 +604,13 @@ bool FunctionEmitter::EmitFunctionDeclaration() {
     return false;
   }
 
-  const auto name = namer_.Name(function_.result_id());
+  std::string name;
+  if (ep_info_ == nullptr) {
+    name = namer_.Name(function_.result_id());
+  } else {
+    name = ep_info_->name;
+  }
+
   // Surprisingly, the "type id" on an OpFunction is the result type of the
   // function, not the type of the function.  This is the one exceptional case
   // in SPIR-V where the type ID is not the type of the result ID.
@@ -602,8 +629,11 @@ bool FunctionEmitter::EmitFunctionDeclaration() {
       [this, &ast_params](const spvtools::opt::Instruction* param) {
         auto* ast_type = parser_impl_.ConvertType(param->type_id());
         if (ast_type != nullptr) {
-          ast_params.emplace_back(parser_impl_.MakeVariable(
-              param->result_id(), ast::StorageClass::kNone, ast_type));
+          auto ast_param = parser_impl_.MakeVariable(
+              param->result_id(), ast::StorageClass::kNone, ast_type);
+          // Parameters are treated as const declarations.
+          ast_param->set_is_const(true);
+          ast_params.emplace_back(std::move(ast_param));
           // The value is accessible by name.
           identifier_values_.insert(param->result_id());
         } else {
@@ -617,6 +647,12 @@ bool FunctionEmitter::EmitFunctionDeclaration() {
 
   auto ast_fn =
       std::make_unique<ast::Function>(name, std::move(ast_params), ret_ty);
+
+  if (ep_info_ != nullptr) {
+    ast_fn->add_decoration(
+        std::make_unique<ast::StageDecoration>(ep_info_->stage, Source{}));
+  }
+
   ast_module_.AddFunction(std::move(ast_fn));
 
   return success();
@@ -1666,7 +1702,6 @@ bool FunctionEmitter::EmitFunctionVariables() {
           parser_impl_.MakeConstantExpression(inst.GetSingleWordInOperand(1))
               .expr);
     }
-    // TODO(dneto): Add the initializer via Variable::set_constructor.
     auto var_decl_stmt =
         std::make_unique<ast::VariableDeclStatement>(std::move(var));
     AddStatementForInstruction(std::move(var_decl_stmt), inst);
@@ -1680,7 +1715,7 @@ TypedExpression FunctionEmitter::MakeExpression(uint32_t id) {
   if (failed()) {
     return {};
   }
-  if (identifier_values_.count(id)) {
+  if (identifier_values_.count(id) || parser_impl_.IsScalarSpecConstant(id)) {
     return TypedExpression(
         parser_impl_.ConvertType(def_use_mgr_->GetDef(id)->type_id()),
         std::make_unique<ast::IdentifierExpression>(namer_.Name(id)));
@@ -2695,12 +2730,17 @@ TypedExpression FunctionEmitter::MaybeEmitCombinatorialValue(
                 std::move(params))};
   }
 
+  const auto intrinsic = GetIntrinsic(opcode);
+  if (intrinsic != ast::Intrinsic::kNone) {
+    return MakeIntrinsicCall(inst);
+  }
+
   if (opcode == SpvOpAccessChain || opcode == SpvOpInBoundsAccessChain) {
     return MakeAccessChain(inst);
   }
 
   if (opcode == SpvOpBitcast) {
-    return {ast_type, std::make_unique<ast::AsExpression>(
+    return {ast_type, std::make_unique<ast::BitcastExpression>(
                           ast_type, MakeOperand(inst, 0).expr)};
   }
 
@@ -2786,8 +2826,8 @@ TypedExpression FunctionEmitter::EmitGlslStd450ExtInst(
     Fail() << "unhandled GLSL.std.450 instruction " << ext_opcode;
     return {};
   }
-  auto func = std::make_unique<ast::IdentifierExpression>(
-      std::vector<std::string>{parser_impl_.GlslStd450Prefix(), name});
+
+  auto func = std::make_unique<ast::IdentifierExpression>(name);
   ast::ExpressionList operands;
   // All parameters to GLSL.std.450 extended instructions are IDs.
   for (uint32_t iarg = 2; iarg < inst.NumInOperands(); ++iarg) {
@@ -3444,13 +3484,16 @@ TypedExpression FunctionEmitter::MakeNumericConversion(
     return {};
   }
 
-  TypedExpression result(expr_type, std::make_unique<ast::CastExpression>(
-                                        expr_type, std::move(arg_expr.expr)));
+  ast::ExpressionList params;
+  params.push_back(std::move(arg_expr.expr));
+  TypedExpression result(expr_type,
+                         std::make_unique<ast::TypeConstructorExpression>(
+                             expr_type, std::move(params)));
 
   if (requested_type == expr_type) {
     return result;
   }
-  return {requested_type, std::make_unique<ast::AsExpression>(
+  return {requested_type, std::make_unique<ast::BitcastExpression>(
                               requested_type, std::move(result.expr))};
 }
 
@@ -3480,6 +3523,29 @@ bool FunctionEmitter::EmitFunctionCall(const spvtools::opt::Instruction& inst) {
 
   return EmitConstDefOrWriteToHoistedVar(inst,
                                          {result_type, std::move(call_expr)});
+}
+
+TypedExpression FunctionEmitter::MakeIntrinsicCall(
+    const spvtools::opt::Instruction& inst) {
+  const auto intrinsic = GetIntrinsic(inst.opcode());
+  std::ostringstream ss;
+  ss << intrinsic;
+  auto ident = std::make_unique<ast::IdentifierExpression>(ss.str());
+  ident->set_intrinsic(intrinsic);
+
+  ast::ExpressionList params;
+  for (uint32_t iarg = 0; iarg < inst.NumInOperands(); ++iarg) {
+    params.emplace_back(MakeOperand(inst, iarg).expr);
+  }
+  auto call_expr = std::make_unique<ast::CallExpression>(std::move(ident),
+                                                         std::move(params));
+  auto* result_type = parser_impl_.ConvertType(inst.type_id());
+  if (!result_type) {
+    Fail() << "internal error: no mapped type result of call: "
+           << inst.PrettyPrint();
+    return {};
+  }
+  return {result_type, std::move(call_expr)};
 }
 
 TypedExpression FunctionEmitter::MakeSimpleSelect(

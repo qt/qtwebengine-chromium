@@ -16,7 +16,7 @@ namespace capture_recommendations {
 namespace {
 
 constexpr Recommendations kDefaultRecommendations{
-    Audio{BitRateLimits{32000, 256000}, milliseconds(4000), 2, 44100},
+    Audio{BitRateLimits{32000, 256000}, milliseconds(4000), 2, 48000, 16000},
     Video{BitRateLimits{300000, 1920 * 1080 * 30}, Resolution{320, 240, 30},
           Resolution{1920, 1080, 30}, false, milliseconds(4000),
           1920 * 1080 * 30 / 8}};
@@ -224,7 +224,7 @@ TEST(CaptureRecommendationsTest, EmptyConstraints) {
 // exceeding 1080P.
 TEST(CaptureRecommendationsTest, HandlesHighEnd) {
   const Recommendations kExpected{
-      Audio{BitRateLimits{96000, 500000}, milliseconds(6000), 5, 96100},
+      Audio{BitRateLimits{96000, 500000}, milliseconds(6000), 5, 96100, 16000},
       Video{BitRateLimits{600000, 6000000}, Resolution{640, 480, 30},
             Resolution{1920, 1080, 30}, false, milliseconds(6000), 6000000}};
   Answer answer;
@@ -237,7 +237,7 @@ TEST(CaptureRecommendationsTest, HandlesHighEnd) {
 // experience.
 TEST(CaptureRecommendationsTest, HandlesLowEnd) {
   const Recommendations kExpected{
-      Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000},
+      Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000, 16000},
       Video{BitRateLimits{300000, 1000000}, Resolution{320, 240, 30},
             Resolution{1200, 800, 30}, false, milliseconds(1000), 60000}};
   Answer answer;
@@ -247,7 +247,7 @@ TEST(CaptureRecommendationsTest, HandlesLowEnd) {
 
 TEST(CaptureRecommendationsTest, HandlesTooSmallScreen) {
   const Recommendations kExpected{
-      Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000},
+      Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000, 16000},
       Video{BitRateLimits{300000, 1000000}, Resolution{320, 240, 30},
             Resolution{320, 240, 30}, false, milliseconds(1000), 60000}};
   Answer answer;
@@ -259,7 +259,7 @@ TEST(CaptureRecommendationsTest, HandlesTooSmallScreen) {
 
 TEST(CaptureRecommendationsTest, HandlesMinimumSizeScreen) {
   const Recommendations kExpected{
-      Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000},
+      Audio{BitRateLimits{32000, 50000}, milliseconds(1000), 2, 22000, 16000},
       Video{BitRateLimits{300000, 1000000}, Resolution{320, 240, 30},
             Resolution{320, 240, 30}, false, milliseconds(1000), 60000}};
   Answer answer;
@@ -271,7 +271,7 @@ TEST(CaptureRecommendationsTest, HandlesMinimumSizeScreen) {
 
 TEST(CaptureRecommendationsTest, UsesIntersectionOfDisplayAndConstraints) {
   const Recommendations kExpected{
-      Audio{BitRateLimits{96000, 500000}, milliseconds(6000), 5, 96100},
+      Audio{BitRateLimits{96000, 500000}, milliseconds(6000), 5, 96100, 16000},
       Video{BitRateLimits{600000, 6000000}, Resolution{640, 480, 30},
             // Max resolution should be 1080P, since that's the display
             // resolution. No reason to capture at 4K, even though the

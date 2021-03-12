@@ -304,10 +304,6 @@ class ReceiverSessionTest : public ::testing::Test {
   FakeTaskRunner task_runner_;
 };
 
-TEST_F(ReceiverSessionTest, RegistersSelfOnMessagePort) {
-  EXPECT_EQ(message_port_->client(), session_.get());
-}
-
 TEST_F(ReceiverSessionTest, CanNegotiateWithDefaultPreferences) {
   InSequence s;
   EXPECT_CALL(client_, OnNegotiated(session_.get(), _))

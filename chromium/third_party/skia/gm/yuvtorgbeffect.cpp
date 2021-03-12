@@ -23,7 +23,7 @@
 #include "include/core/SkYUVAIndex.h"
 #include "include/private/GrTypesPriv.h"
 #include "src/gpu/GrBitmapTextureMaker.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrPaint.h"
 #include "src/gpu/GrRenderTargetContext.h"
@@ -245,8 +245,8 @@ protected:
                 SkMatrix viewMatrix;
                 viewMatrix.setTranslate(x, y);
                 grPaint.setColorFragmentProcessor(std::move(fp));
-                std::unique_ptr<GrDrawOp> op(GrFillRectOp::MakeNonAARect(
-                        context, std::move(grPaint), viewMatrix, renderRect));
+                GrOp::Owner op = GrFillRectOp::MakeNonAARect(
+                        context, std::move(grPaint), viewMatrix, renderRect);
                 renderTargetContext->priv().testingOnly_addDrawOp(std::move(op));
             }
         }

@@ -43,7 +43,7 @@ extern "C" {
 
 #define MIN_GF_INTERVAL 4
 #define MAX_GF_INTERVAL 32
-#define FIXED_GF_INTERVAL 8  // Used in some testing modes only
+#define FIXED_GF_INTERVAL 16
 #define MAX_GF_LENGTH_LAP 16
 
 #define MAX_NUM_GF_INTERVALS 15
@@ -76,6 +76,12 @@ enum {
   FRAME_UPDATE_TYPES
 } UENUM1BYTE(FRAME_UPDATE_TYPE);
 
+enum {
+  REFBUF_RESET,   // Clear reference frame buffer
+  REFBUF_UPDATE,  // Refresh reference frame buffer
+  REFBUF_STATES
+} UENUM1BYTE(REFBUF_STATE);
+
 typedef enum {
   NO_RESIZE = 0,
   DOWN_THREEFOUR = 1,  // From orig to 3/4.
@@ -85,6 +91,25 @@ typedef enum {
 } RESIZE_ACTION;
 
 typedef enum { ORIG = 0, THREE_QUARTER = 1, ONE_HALF = 2 } RESIZE_STATE;
+
+#define MAX_FIRSTPASS_ANALYSIS_FRAMES 150
+typedef enum region_types {
+  STABLE_REGION = 0,
+  HIGH_VAR_REGION = 1,
+  SCENECUT_REGION = 2,
+  BLENDING_REGION = 3,
+} REGION_TYPES;
+
+typedef struct regions {
+  int start;
+  int last;
+  double avg_noise_var;
+  double avg_cor_coeff;
+  double avg_sr_fr_ratio;
+  double avg_intra_err;
+  double avg_coded_err;
+  REGION_TYPES type;
+} REGIONS;
 
 /*!\endcond */
 /*!
@@ -112,6 +137,11 @@ typedef struct {
    * Projected size for current frame
    */
   int projected_frame_size;
+
+  /*!
+   * Bit size of transform coefficient for current frame.
+   */
+  int coefficient_size;
 
   /*!
    * Super block rate target used with some adaptive quantization strategies.
@@ -174,6 +204,12 @@ typedef struct {
   int cur_gf_index;
 
   /*!\cond */
+  int num_regions;
+  REGIONS regions[MAX_FIRSTPASS_ANALYSIS_FRAMES];
+  double cor_coeff[MAX_FIRSTPASS_ANALYSIS_FRAMES];
+  int regions_offset;  // offset of regions from the last keyframe
+  int frames_till_regions_update;
+
   int min_gf_interval;
   int max_gf_interval;
   int static_scene_max_gf_interval;
@@ -188,13 +224,12 @@ typedef struct {
   int frames_since_key;
   int this_key_frame_forced;
   int next_key_frame_forced;
-  int source_alt_ref_pending;
-  int source_alt_ref_active;
   int is_src_frame_alt_ref;
   int sframe_due;
 
   int high_source_sad;
   uint64_t avg_source_sad;
+  uint64_t prev_avg_source_sad;
 
   int avg_frame_bandwidth;  // Average frame size target for clip
   int min_frame_bandwidth;  // Minimum allocation used for any frame
@@ -457,6 +492,9 @@ int av1_resize_one_pass_cbr(struct AV1_COMP *cpi);
 
 void av1_rc_set_frame_target(struct AV1_COMP *cpi, int target, int width,
                              int height);
+
+void av1_set_reference_structure_one_pass_rt(struct AV1_COMP *cpi,
+                                             int gf_update);
 
 /*!\endcond */
 /*!\brief Calculates how many bits to use for a P frame in one pass vbr

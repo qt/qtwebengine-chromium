@@ -14,22 +14,23 @@
 
 #include "src/reader/wgsl/parser.h"
 
+#include <utility>
+
 #include "src/reader/wgsl/parser_impl.h"
 
 namespace tint {
 namespace reader {
 namespace wgsl {
 
-Parser::Parser(Context* ctx, const std::string& input)
-    : Reader(ctx), impl_(std::make_unique<ParserImpl>(ctx, input)) {}
+Parser::Parser(Context* ctx, Source::File const* file)
+    : Reader(ctx), impl_(std::make_unique<ParserImpl>(ctx, file)) {}
 
 Parser::~Parser() = default;
 
 bool Parser::Parse() {
   bool ret = impl_->Parse();
 
-  if (impl_->has_error())
-    set_error(impl_->error());
+  set_diagnostics(std::move(impl_->diagnostics()));
 
   return ret;
 }

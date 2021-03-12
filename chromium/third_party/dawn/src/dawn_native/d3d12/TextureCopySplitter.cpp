@@ -32,8 +32,8 @@ namespace dawn_native { namespace d3d12 {
             uint32_t byteOffsetY = offset % slicePitch;
             uint32_t byteOffsetZ = offset - byteOffsetY;
 
-            return {byteOffsetX / blockInfo.blockByteSize * blockInfo.blockWidth,
-                    byteOffsetY / bytesPerRow * blockInfo.blockHeight, byteOffsetZ / slicePitch};
+            return {byteOffsetX / blockInfo.byteSize * blockInfo.width,
+                    byteOffsetY / bytesPerRow * blockInfo.height, byteOffsetZ / slicePitch};
         }
     }  // namespace
 
@@ -45,7 +45,7 @@ namespace dawn_native { namespace d3d12 {
                                                uint32_t rowsPerImage) {
         Texture2DCopySplit copy;
 
-        ASSERT(bytesPerRow % blockInfo.blockByteSize == 0);
+        ASSERT(bytesPerRow % blockInfo.byteSize == 0);
 
         uint64_t alignedOffset =
             offset & ~static_cast<uint64_t>(D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1);
@@ -71,14 +71,13 @@ namespace dawn_native { namespace d3d12 {
         ASSERT(alignedOffset < offset);
         ASSERT(offset - alignedOffset < D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
 
-        uint32_t slicePitch = bytesPerRow * (rowsPerImage / blockInfo.blockHeight);
+        uint32_t slicePitch = bytesPerRow * rowsPerImage;
         Origin3D texelOffset = ComputeTexelOffsets(
             blockInfo, static_cast<uint32_t>(offset - alignedOffset), bytesPerRow, slicePitch);
 
-        uint32_t copyBytesPerRowPitch =
-            copySize.width / blockInfo.blockWidth * blockInfo.blockByteSize;
-        uint32_t byteOffsetInRowPitch =
-            texelOffset.x / blockInfo.blockWidth * blockInfo.blockByteSize;
+        uint32_t copyBytesPerRowPitch = copySize.width / blockInfo.width * blockInfo.byteSize;
+        uint32_t byteOffsetInRowPitch = texelOffset.x / blockInfo.width * blockInfo.byteSize;
+        uint32_t rowsPerImageInTexels = rowsPerImage * blockInfo.height;
         if (copyBytesPerRowPitch + byteOffsetInRowPitch <= bytesPerRow) {
             // The region's rows fit inside the bytes per row. In this case, extend the width of the
             // PlacedFootprint and copy the buffer with an offset location
@@ -111,7 +110,7 @@ namespace dawn_native { namespace d3d12 {
 
             copy.copies[0].bufferOffset = texelOffset;
             copy.copies[0].bufferSize.width = copySize.width + texelOffset.x;
-            copy.copies[0].bufferSize.height = rowsPerImage + texelOffset.y;
+            copy.copies[0].bufferSize.height = rowsPerImageInTexels + texelOffset.y;
             copy.copies[0].bufferSize.depth = copySize.depth + texelOffset.z;
 
             return copy;
@@ -156,14 +155,14 @@ namespace dawn_native { namespace d3d12 {
         copy.copies[0].textureOffset = origin;
 
         ASSERT(bytesPerRow > byteOffsetInRowPitch);
-        uint32_t texelsPerRow = bytesPerRow / blockInfo.blockByteSize * blockInfo.blockWidth;
+        uint32_t texelsPerRow = bytesPerRow / blockInfo.byteSize * blockInfo.width;
         copy.copies[0].copySize.width = texelsPerRow - texelOffset.x;
         copy.copies[0].copySize.height = copySize.height;
         copy.copies[0].copySize.depth = copySize.depth;
 
         copy.copies[0].bufferOffset = texelOffset;
         copy.copies[0].bufferSize.width = texelsPerRow;
-        copy.copies[0].bufferSize.height = rowsPerImage + texelOffset.y;
+        copy.copies[0].bufferSize.height = rowsPerImageInTexels + texelOffset.y;
         copy.copies[0].bufferSize.depth = copySize.depth + texelOffset.z;
 
         copy.copies[1].textureOffset.x = origin.x + copy.copies[0].copySize.width;
@@ -176,10 +175,10 @@ namespace dawn_native { namespace d3d12 {
         copy.copies[1].copySize.depth = copySize.depth;
 
         copy.copies[1].bufferOffset.x = 0;
-        copy.copies[1].bufferOffset.y = texelOffset.y + blockInfo.blockHeight;
+        copy.copies[1].bufferOffset.y = texelOffset.y + blockInfo.height;
         copy.copies[1].bufferOffset.z = texelOffset.z;
         copy.copies[1].bufferSize.width = copy.copies[1].copySize.width;
-        copy.copies[1].bufferSize.height = rowsPerImage + texelOffset.y + blockInfo.blockHeight;
+        copy.copies[1].bufferSize.height = rowsPerImageInTexels + texelOffset.y + blockInfo.height;
         copy.copies[1].bufferSize.depth = copySize.depth + texelOffset.z;
 
         return copy;
@@ -193,7 +192,7 @@ namespace dawn_native { namespace d3d12 {
                                                uint32_t rowsPerImage) {
         TextureCopySplits copies;
 
-        const uint64_t bytesPerSlice = bytesPerRow * (rowsPerImage / blockInfo.blockHeight);
+        const uint64_t bytesPerSlice = bytesPerRow * rowsPerImage;
 
         // The function ComputeTextureCopySplit() decides how to split the copy based on:
         // - the alignment of the buffer offset with D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT (512)

@@ -31,7 +31,7 @@ export class SoftDropDown {
 
     this.element = document.createElement('button');
     this.element.classList.add('soft-dropdown');
-    appendStyle(this.element, 'ui/softDropDownButton.css');
+    appendStyle(this.element, 'ui/softDropDownButton.css', {enableLegacyPatching: true});
     this._titleElement = this.element.createChild('span', 'title');
     const dropdownArrowIcon = Icon.create('smallicon-triangle-down');
     this.element.appendChild(dropdownArrowIcon);
@@ -46,8 +46,11 @@ export class SoftDropDown {
     this._list.element.classList.add('item-list');
     this._rowHeight = 36;
     this._width = 315;
-    createShadowRootWithCoreStyles(this._glassPane.contentElement, 'ui/softDropDown.css')
-        .appendChild(this._list.element);
+    createShadowRootWithCoreStyles(this._glassPane.contentElement, {
+      cssFile: 'ui/softDropDown.css',
+      enableLegacyPatching: true,
+      delegatesFocus: undefined
+    }).appendChild(this._list.element);
     ARIAUtils.markAsMenu(this._list.element);
 
     this._listWasShowing200msAgo = false;

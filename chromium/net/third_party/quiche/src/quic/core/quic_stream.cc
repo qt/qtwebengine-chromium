@@ -7,6 +7,8 @@
 #include <limits>
 #include <string>
 
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "net/third_party/quiche/src/quic/core/quic_error_codes.h"
 #include "net/third_party/quiche/src/quic/core/quic_flow_controller.h"
 #include "net/third_party/quiche/src/quic/core/quic_session.h"
@@ -16,11 +18,8 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
-using quiche::QuicheOptional;
 using spdy::SpdyPriority;
 
 namespace quic {
@@ -108,6 +107,9 @@ QuicByteCount GetReceivedFlowControlWindow(QuicSession* session,
 
 // static
 const SpdyPriority QuicStream::kDefaultPriority;
+
+// static
+const int QuicStream::kDefaultUrgency;
 
 PendingStream::PendingStream(QuicStreamId id, QuicSession* session)
     : id_(id),
@@ -281,7 +283,7 @@ QuicStream::QuicStream(PendingStream* pending,
 
 namespace {
 
-QuicheOptional<QuicFlowController> FlowController(QuicStreamId id,
+absl::optional<QuicFlowController> FlowController(QuicStreamId id,
                                                   QuicSession* session,
                                                   StreamType type) {
   if (type == CRYPTO) {
@@ -289,7 +291,7 @@ QuicheOptional<QuicFlowController> FlowController(QuicStreamId id,
     // it is using crypto frames instead of stream frames. The QuicCryptoStream
     // doesn't have any flow control in that case, so we don't create a
     // QuicFlowController for it.
-    return QuicheOptional<QuicFlowController>();
+    return absl::nullopt;
   }
   return QuicFlowController(
       session, id,
@@ -324,7 +326,7 @@ QuicStream::QuicStream(QuicStreamId id,
                        StreamType type,
                        uint64_t stream_bytes_read,
                        bool fin_received,
-                       QuicheOptional<QuicFlowController> flow_controller,
+                       absl::optional<QuicFlowController> flow_controller,
                        QuicFlowController* connection_flow_controller)
     : sequencer_(std::move(sequencer)),
       id_(id),
@@ -343,6 +345,7 @@ QuicStream::QuicStream(QuicStreamId id,
       fin_received_(fin_received),
       rst_sent_(false),
       rst_received_(false),
+      stop_sending_sent_(false),
       flow_controller_(std::move(flow_controller)),
       connection_flow_controller_(connection_flow_controller),
       stream_contributes_to_connection_flow_control_(true),
@@ -385,16 +388,6 @@ QuicStream::~QuicStream() {
   }
   if (stream_delegate_ != nullptr && type_ != CRYPTO) {
     stream_delegate_->UnregisterStreamPriority(id(), is_static_);
-  }
-}
-
-// static
-int QuicStream::DefaultUrgency() {
-  if (GetQuicReloadableFlag(quic_http3_new_default_urgency_value)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_http3_new_default_urgency_value);
-    return 3;
-  } else {
-    return 1;
   }
 }
 
@@ -505,10 +498,15 @@ bool QuicStream::OnStopSending(QuicRstStreamErrorCode code) {
 
   stream_error_ = code;
 
-  session()->SendRstStream(id(), code, stream_bytes_written(),
-                           /*send_rst_only = */ true);
-  rst_sent_ = true;
-  CloseWriteSide();
+  if (session()->split_up_send_rst()) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_split_up_send_rst_2, 1, 3);
+    MaybeSendRstStream(code);
+  } else {
+    session()->SendRstStream(id(), code, stream_bytes_written(),
+                             /*send_rst_only = */ true);
+    rst_sent_ = true;
+    CloseWriteSide();
+  }
   return true;
 }
 
@@ -594,15 +592,24 @@ void QuicStream::SetFinSent() {
 
 void QuicStream::Reset(QuicRstStreamErrorCode error) {
   stream_error_ = error;
-  session()->SendRstStream(id(), error, stream_bytes_written(),
-                           /*send_rst_only = */ false);
-  rst_sent_ = true;
+  if (session()->split_up_send_rst()) {
+    QUIC_RELOADABLE_FLAG_COUNT_N(quic_split_up_send_rst_2, 2, 3);
+    QuicConnection::ScopedPacketFlusher flusher(session()->connection());
+    MaybeSendStopSending(error);
+    MaybeSendRstStream(error);
+  } else {
+    session()->SendRstStream(id(), error, stream_bytes_written(),
+                             /*send_rst_only = */ false);
+    rst_sent_ = true;
+  }
   if (read_side_closed_ && write_side_closed_ && !IsWaitingForAcks()) {
-    session()->OnStreamDoneWaitingForAcks(id_);
+    session()->MaybeCloseZombieStream(id_);
     return;
   }
-  CloseReadSide();
-  CloseWriteSide();
+  if (!session()->split_up_send_rst()) {
+    CloseReadSide();
+    CloseWriteSide();
+  }
 }
 
 void QuicStream::OnUnrecoverableError(QuicErrorCode error,
@@ -623,8 +630,25 @@ void QuicStream::SetPriority(const spdy::SpdyStreamPrecedence& precedence) {
 }
 
 void QuicStream::WriteOrBufferData(
-    quiche::QuicheStringPiece data,
+    absl::string_view data,
     bool fin,
+    QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener) {
+  if (session()->use_write_or_buffer_data_at_level()) {
+    QUIC_BUG_IF(QuicUtils::IsCryptoStreamId(transport_version(), id_))
+        << ENDPOINT
+        << "WriteOrBufferData is used to send application data, use "
+           "WriteOrBufferDataAtLevel to send crypto data.";
+    return WriteOrBufferDataAtLevel(
+        data, fin, session()->GetEncryptionLevelToSendApplicationData(),
+        ack_listener);
+  }
+  return WriteOrBufferDataInner(data, fin, absl::nullopt, ack_listener);
+}
+
+void QuicStream::WriteOrBufferDataInner(
+    absl::string_view data,
+    bool fin,
+    absl::optional<EncryptionLevel> level,
     QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener) {
   if (data.empty() && !fin) {
     QUIC_BUG << "data.empty() && !fin";
@@ -665,8 +689,18 @@ void QuicStream::WriteOrBufferData(
   }
   if (!had_buffered_data && (HasBufferedData() || fin_buffered_)) {
     // Write data if there is no buffered data before.
-    WriteBufferedData();
+    WriteBufferedData(level);
   }
+}
+
+void QuicStream::WriteOrBufferDataAtLevel(
+    absl::string_view data,
+    bool fin,
+    EncryptionLevel level,
+    QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener) {
+  DCHECK(session()->use_write_or_buffer_data_at_level());
+  QUIC_RELOADABLE_FLAG_COUNT(quic_use_write_or_buffer_data_at_level);
+  return WriteOrBufferDataInner(data, fin, level, ack_listener);
 }
 
 void QuicStream::OnCanWrite() {
@@ -688,7 +722,11 @@ void QuicStream::OnCanWrite() {
     return;
   }
   if (HasBufferedData() || (fin_buffered_ && !fin_sent_)) {
-    WriteBufferedData();
+    absl::optional<EncryptionLevel> send_level = absl::nullopt;
+    if (session()->use_write_or_buffer_data_at_level()) {
+      send_level = session()->GetEncryptionLevelToSendApplicationData();
+    }
+    WriteBufferedData(send_level);
   }
   if (!fin_buffered_ && !fin_sent_ && CanWriteNewData()) {
     // Notify upper layer to write new data when buffered data size is below
@@ -766,7 +804,11 @@ QuicConsumedData QuicStream::WriteMemSlices(QuicMemSliceSpan span, bool fin) {
 
   if (!had_buffered_data && (HasBufferedData() || fin_buffered_)) {
     // Write data if there is no buffered data before.
-    WriteBufferedData();
+    absl::optional<EncryptionLevel> send_level = absl::nullopt;
+    if (session()->use_write_or_buffer_data_at_level()) {
+      send_level = session()->GetEncryptionLevelToSendApplicationData();
+    }
+    WriteBufferedData(send_level);
   }
 
   return consumed_data;
@@ -813,6 +855,44 @@ void QuicStream::CloseWriteSide() {
   }
 }
 
+void QuicStream::MaybeSendStopSending(QuicRstStreamErrorCode error) {
+  DCHECK(session()->split_up_send_rst());
+  if (stop_sending_sent_) {
+    return;
+  }
+
+  if (!session()->version().UsesHttp3() && error != QUIC_STREAM_NO_ERROR) {
+    // In gQUIC, RST with error closes both read and write side.
+    return;
+  }
+
+  if (session()->version().UsesHttp3()) {
+    session()->MaybeSendStopSendingFrame(id(), error);
+  } else {
+    DCHECK_EQ(QUIC_STREAM_NO_ERROR, error);
+    session()->MaybeSendRstStreamFrame(id(), QUIC_STREAM_NO_ERROR,
+                                       stream_bytes_written());
+  }
+  stop_sending_sent_ = true;
+  CloseReadSide();
+}
+
+void QuicStream::MaybeSendRstStream(QuicRstStreamErrorCode error) {
+  DCHECK(session()->split_up_send_rst());
+  if (rst_sent_) {
+    return;
+  }
+
+  if (!session()->version().UsesHttp3()) {
+    QUIC_BUG_IF(error == QUIC_STREAM_NO_ERROR);
+    stop_sending_sent_ = true;
+    CloseReadSide();
+  }
+  session()->MaybeSendRstStreamFrame(id(), error, stream_bytes_written());
+  rst_sent_ = true;
+  CloseWriteSide();
+}
+
 bool QuicStream::HasBufferedData() const {
   DCHECK_GE(send_buffer_.stream_offset(), stream_bytes_written());
   return send_buffer_.stream_offset() > stream_bytes_written();
@@ -835,14 +915,25 @@ void QuicStream::OnClose() {
   DCHECK(read_side_closed_ && write_side_closed_);
 
   if (!fin_sent_ && !rst_sent_) {
-    // For flow control accounting, tell the peer how many bytes have been
-    // written on this stream before termination. Done here if needed, using a
-    // RST_STREAM frame.
-    QUIC_DLOG(INFO) << ENDPOINT << "Sending RST_STREAM in OnClose: " << id();
-    session_->SendRstStream(id(), QUIC_RST_ACKNOWLEDGEMENT,
-                            stream_bytes_written(), /*send_rst_only = */ false);
-    session_->OnStreamDoneWaitingForAcks(id_);
-    rst_sent_ = true;
+    if (!session()->split_up_send_rst()) {
+      // For flow control accounting, tell the peer how many bytes have been
+      // written on this stream before termination. Done here if needed, using a
+      // RST_STREAM frame.
+      QUIC_DLOG(INFO) << ENDPOINT << "Sending RST_STREAM in OnClose: " << id();
+      session_->SendRstStream(id(), QUIC_RST_ACKNOWLEDGEMENT,
+                              stream_bytes_written(),
+                              /*send_rst_only = */ false);
+      session_->MaybeCloseZombieStream(id_);
+      rst_sent_ = true;
+    } else {
+      QUIC_RELOADABLE_FLAG_COUNT_N(quic_split_up_send_rst_2, 3, 3);
+      QUIC_BUG_IF(session()->connection()->connected() &&
+                  session()->version().UsesHttp3())
+          << "The stream should've already sent RST in response to "
+             "STOP_SENDING";
+      MaybeSendRstStream(QUIC_RST_ACKNOWLEDGEMENT);
+      session_->MaybeCloseZombieStream(id_);
+    }
   }
 
   if (!flow_controller_.has_value() ||
@@ -1019,7 +1110,7 @@ bool QuicStream::OnStreamFrameAcked(QuicStreamOffset offset,
     fin_lost_ = false;
   }
   if (!IsWaitingForAcks() && read_side_closed_ && write_side_closed_) {
-    session_->OnStreamDoneWaitingForAcks(id_);
+    session_->MaybeCloseZombieStream(id_);
   }
   return new_data_acked;
 }
@@ -1064,6 +1155,10 @@ bool QuicStream::RetransmitStreamData(QuicStreamOffset offset,
   if (retransmission.Empty() && !retransmit_fin) {
     return true;
   }
+  absl::optional<EncryptionLevel> send_level = absl::nullopt;
+  if (session()->use_write_or_buffer_data_at_level()) {
+    send_level = session()->GetEncryptionLevelToSendApplicationData();
+  }
   QuicConsumedData consumed(0, false);
   for (const auto& interval : retransmission) {
     QuicStreamOffset retransmission_offset = interval.min();
@@ -1073,7 +1168,7 @@ bool QuicStream::RetransmitStreamData(QuicStreamOffset offset,
                            stream_bytes_written());
     consumed = stream_delegate_->WritevData(
         id_, retransmission_length, retransmission_offset,
-        can_bundle_fin ? FIN : NO_FIN, type, QUICHE_NULLOPT);
+        can_bundle_fin ? FIN : NO_FIN, type, send_level);
     QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                   << " is forced to retransmit stream data ["
                   << retransmission_offset << ", "
@@ -1095,7 +1190,7 @@ bool QuicStream::RetransmitStreamData(QuicStreamOffset offset,
     QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                   << " retransmits fin only frame.";
     consumed = stream_delegate_->WritevData(id_, 0, stream_bytes_written(), FIN,
-                                            type, QUICHE_NULLOPT);
+                                            type, send_level);
     if (!consumed.fin_consumed) {
       return false;
     }
@@ -1121,7 +1216,7 @@ bool QuicStream::WriteStreamData(QuicStreamOffset offset,
   return send_buffer_.WriteStreamData(offset, data_length, writer);
 }
 
-void QuicStream::WriteBufferedData() {
+void QuicStream::WriteBufferedData(absl::optional<EncryptionLevel> level) {
   DCHECK(!write_side_closed_ && (HasBufferedData() || fin_buffered_));
 
   if (session_->ShouldYield(id())) {
@@ -1173,7 +1268,7 @@ void QuicStream::WriteBufferedData() {
   }
   QuicConsumedData consumed_data =
       stream_delegate_->WritevData(id(), write_length, stream_bytes_written(),
-                                   state, NOT_RETRANSMISSION, QUICHE_NULLOPT);
+                                   state, NOT_RETRANSMISSION, level);
 
   OnStreamDataConsumed(consumed_data.bytes_consumed);
 
@@ -1244,12 +1339,15 @@ void QuicStream::OnStreamDataConsumed(QuicByteCount bytes_consumed) {
 void QuicStream::WritePendingRetransmission() {
   while (HasPendingRetransmission()) {
     QuicConsumedData consumed(0, false);
+    absl::optional<EncryptionLevel> send_level = absl::nullopt;
+    if (session()->use_write_or_buffer_data_at_level()) {
+      send_level = session()->GetEncryptionLevelToSendApplicationData();
+    }
     if (!send_buffer_.HasPendingRetransmission()) {
       QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                     << " retransmits fin only frame.";
-      consumed =
-          stream_delegate_->WritevData(id_, 0, stream_bytes_written(), FIN,
-                                       LOSS_RETRANSMISSION, QUICHE_NULLOPT);
+      consumed = stream_delegate_->WritevData(
+          id_, 0, stream_bytes_written(), FIN, LOSS_RETRANSMISSION, send_level);
       fin_lost_ = !consumed.fin_consumed;
       if (fin_lost_) {
         // Connection is write blocked.
@@ -1264,7 +1362,7 @@ void QuicStream::WritePendingRetransmission() {
           (pending.offset + pending.length == stream_bytes_written());
       consumed = stream_delegate_->WritevData(
           id_, pending.length, pending.offset, can_bundle_fin ? FIN : NO_FIN,
-          LOSS_RETRANSMISSION, QUICHE_NULLOPT);
+          LOSS_RETRANSMISSION, send_level);
       QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                     << " tries to retransmit stream data [" << pending.offset
                     << ", " << pending.offset + pending.length
@@ -1341,7 +1439,7 @@ void QuicStream::UpdateReceiveWindowSize(QuicStreamOffset size) {
 spdy::SpdyStreamPrecedence QuicStream::CalculateDefaultPriority(
     const QuicSession* session) {
   if (VersionUsesHttp3(session->transport_version())) {
-    return spdy::SpdyStreamPrecedence(DefaultUrgency());
+    return spdy::SpdyStreamPrecedence(kDefaultUrgency);
   }
 
   if (session->use_http2_priority_write_scheduler()) {

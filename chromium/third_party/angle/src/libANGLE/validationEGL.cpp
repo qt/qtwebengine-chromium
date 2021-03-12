@@ -643,6 +643,36 @@ Error ValidateGetPlatformDisplayCommon(EGLenum platform,
                 case EGL_PLATFORM_ANGLE_D3D_LUID_LOW_ANGLE:
                     luidSpecified = true;
                     break;
+                case EGL_PLATFORM_ANGLE_DEVICE_CONTEXT_VOLATILE_EAGL_ANGLE:
+                    // The property does not have an effect if it's not active, so do not check
+                    // for non-support.
+                    switch (value)
+                    {
+                        case EGL_FALSE:
+                        case EGL_TRUE:
+                            break;
+                        default:
+                            return EglBadAttribute()
+                                   << "Invalid value for "
+                                      "EGL_PLATFORM_ANGLE_DEVICE_CONTEXT_VOLATILE_"
+                                      "EAGL_ANGLE attrib";
+                    }
+                    break;
+                case EGL_PLATFORM_ANGLE_DEVICE_CONTEXT_VOLATILE_CGL_ANGLE:
+                    // The property does not have an effect if it's not active, so do not check
+                    // for non-support.
+                    switch (value)
+                    {
+                        case EGL_FALSE:
+                        case EGL_TRUE:
+                            break;
+                        default:
+                            return EglBadAttribute()
+                                   << "Invalid value for "
+                                      "EGL_PLATFORM_ANGLE_DEVICE_CONTEXT_VOLATILE_"
+                                      "CGL_ANGLE attrib";
+                    }
+                    break;
                 default:
                     break;
             }
@@ -2819,13 +2849,49 @@ Error ValidateCreateSyncBase(const Display *display,
             {
                 return EglBadAttribute() << "Invalid attribute";
             }
+
+            if (!display->getExtensions().fenceSync)
+            {
+                return EglBadMatch() << "EGL_KHR_fence_sync extension is not available";
+            }
+
+            if (display != currentDisplay)
+            {
+                return EglBadMatch() << "CreateSync can only be called on the current display";
+            }
+
+            ANGLE_TRY(ValidateContext(currentDisplay, currentContext));
+
+            if (!currentContext->getExtensions().eglSyncOES)
+            {
+                return EglBadMatch() << "EGL_SYNC_FENCE_KHR cannot be used without "
+                                        "GL_OES_EGL_sync support.";
+            }
             break;
 
         case EGL_SYNC_NATIVE_FENCE_ANDROID:
+            if (!display->getExtensions().fenceSync)
+            {
+                return EglBadMatch() << "EGL_KHR_fence_sync extension is not available";
+            }
+
             if (!display->getExtensions().nativeFenceSyncANDROID)
             {
                 return EglBadDisplay()
                        << "EGL_ANDROID_native_fence_sync extension is not available.";
+            }
+
+            if (display != currentDisplay)
+            {
+                return EglBadMatch() << "CreateSync can only be called on the current display";
+            }
+
+            ANGLE_TRY(ValidateContext(currentDisplay, currentContext));
+
+            if (!currentContext->getExtensions().eglSyncOES)
+            {
+                return EglBadMatch() << "EGL_SYNC_FENCE_KHR cannot be used without "
+                                        "GL_OES_EGL_sync support.";
             }
 
             for (const auto &attributeIter : attribs)
@@ -2843,6 +2909,18 @@ Error ValidateCreateSyncBase(const Display *display,
             }
             break;
 
+        case EGL_SYNC_REUSABLE_KHR:
+            if (!attribs.isEmpty())
+            {
+                return EglBadAttribute() << "Invalid attribute";
+            }
+
+            if (!display->getExtensions().reusableSyncKHR)
+            {
+                return EglBadMatch() << "EGL_KHR_reusable_sync extension is not available.";
+            }
+            break;
+
         default:
             if (isExt)
             {
@@ -2852,19 +2930,6 @@ Error ValidateCreateSyncBase(const Display *display,
             {
                 return EglBadParameter() << "Invalid type parameter";
             }
-    }
-
-    if (display != currentDisplay)
-    {
-        return EglBadMatch() << "CreateSync can only be called on the current display";
-    }
-
-    ANGLE_TRY(ValidateContext(currentDisplay, currentContext));
-
-    if (!currentContext->getExtensions().eglSyncOES)
-    {
-        return EglBadMatch() << "EGL_SYNC_FENCE_KHR cannot be used without "
-                                "GL_OES_EGL_sync support.";
     }
 
     return NoError();
@@ -2907,14 +2972,6 @@ Error ValidateCreateSyncKHR(const Display *display,
                             const Display *currentDisplay,
                             const gl::Context *currentContext)
 {
-    ANGLE_TRY(ValidateDisplay(display));
-
-    const DisplayExtensions &extensions = display->getExtensions();
-    if (!extensions.fenceSync)
-    {
-        return EglBadAccess() << "EGL_KHR_fence_sync extension is not available";
-    }
-
     return ValidateCreateSyncBase(display, type, attribs, currentDisplay, currentContext, true);
 }
 
@@ -4622,4 +4679,29 @@ Error ValidateSwapBuffersWithFrameTokenANGLE(const Display *display,
 
     return NoError();
 }
+
+Error ValidateSignalSyncKHR(const Display *display, const Sync *sync, EGLint mode)
+{
+    ANGLE_TRY(ValidateDisplay(display));
+
+    ANGLE_TRY(ValidateSync(display, sync));
+
+    if (sync->getType() == EGL_SYNC_REUSABLE_KHR)
+    {
+        if (!display->getExtensions().reusableSyncKHR)
+        {
+            return EglBadMatch() << "EGL_KHR_reusable_sync extension is not available.";
+        }
+
+        if ((mode != EGL_SIGNALED_KHR) && (mode != EGL_UNSIGNALED_KHR))
+        {
+            return EglBadParameter() << "eglSignalSyncKHR invalid mode.";
+        }
+
+        return NoError();
+    }
+
+    return EglBadMatch();
+}
+
 }  // namespace egl

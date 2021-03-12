@@ -26,7 +26,7 @@ namespace dawn_wire { namespace client {
         bool mappable =
             (descriptor->usage & (WGPUBufferUsage_MapRead | WGPUBufferUsage_MapWrite)) != 0 ||
             descriptor->mappedAtCreation;
-        if (mappable && descriptor->size > std::numeric_limits<size_t>::max()) {
+        if (mappable && descriptor->size >= std::numeric_limits<size_t>::max()) {
             device_->InjectError(WGPUErrorType_OutOfMemory, "Buffer is too large for map usage");
             return device_->CreateErrorBuffer();
         }
@@ -71,20 +71,19 @@ namespace dawn_wire { namespace client {
         cmd.handleCreateInfoLength = writeHandleCreateInfoLength;
         cmd.handleCreateInfo = nullptr;
 
-        char* writeHandleSpace = wireClient->SerializeCommand(cmd, writeHandleCreateInfoLength);
+        wireClient->SerializeCommand(cmd, writeHandleCreateInfoLength, [&](char* cmdSpace) {
+            if (descriptor->mappedAtCreation) {
+                // Serialize the WriteHandle into the space after the command.
+                writeHandle->SerializeCreate(cmdSpace);
 
-        if (descriptor->mappedAtCreation) {
-            // Serialize the WriteHandle into the space after the command.
-            writeHandle->SerializeCreate(writeHandleSpace);
-
-            // Set the buffer state for the mapping at creation. The buffer now owns the write
-            // handle..
-            buffer->mWriteHandle = std::move(writeHandle);
-            buffer->mMappedData = writeData;
-            buffer->mMapOffset = 0;
-            buffer->mMapSize = buffer->mSize;
-        }
-
+                // Set the buffer state for the mapping at creation. The buffer now owns the write
+                // handle..
+                buffer->mWriteHandle = std::move(writeHandle);
+                buffer->mMappedData = writeData;
+                buffer->mMapOffset = 0;
+                buffer->mMapSize = buffer->mSize;
+            }
+        });
         return ToAPI(buffer);
     }
 
@@ -103,13 +102,18 @@ namespace dawn_wire { namespace client {
     Buffer::~Buffer() {
         // Callbacks need to be fired in all cases, as they can handle freeing resources
         // so we call them with "DestroyedBeforeCallback" status.
-        ClearMapRequests(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
-    }
-
-    void Buffer::ClearMapRequests(WGPUBufferMapAsyncStatus status) {
         for (auto& it : mRequests) {
             if (it.second.callback) {
-                it.second.callback(status, it.second.userdata);
+                it.second.callback(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback, it.second.userdata);
+            }
+        }
+        mRequests.clear();
+    }
+
+    void Buffer::CancelCallbacksForDisconnect() {
+        for (auto& it : mRequests) {
+            if (it.second.callback) {
+                it.second.callback(WGPUBufferMapAsyncStatus_DeviceLost, it.second.userdata);
             }
         }
         mRequests.clear();
@@ -120,6 +124,10 @@ namespace dawn_wire { namespace client {
                           size_t size,
                           WGPUBufferMapCallback callback,
                           void* userdata) {
+        if (device->GetClient()->IsDisconnected()) {
+            return callback(WGPUBufferMapAsyncStatus_DeviceLost, userdata);
+        }
+
         // Handle the defaulting of size required by WebGPU.
         if (size == 0 && offset < mSize) {
             size = mSize - offset;
@@ -180,15 +188,15 @@ namespace dawn_wire { namespace client {
         // Step 3a. Fill the handle create info in the command.
         if (isReadMode) {
             cmd.handleCreateInfoLength = request.readHandle->SerializeCreateSize();
-            char* handleCreateInfoSpace =
-                device->GetClient()->SerializeCommand(cmd, cmd.handleCreateInfoLength);
-            request.readHandle->SerializeCreate(handleCreateInfoSpace);
+            device->GetClient()->SerializeCommand(
+                cmd, cmd.handleCreateInfoLength,
+                [&](char* cmdSpace) { request.readHandle->SerializeCreate(cmdSpace); });
         } else {
             ASSERT(isWriteMode);
             cmd.handleCreateInfoLength = request.writeHandle->SerializeCreateSize();
-            char* handleCreateInfoSpace =
-                device->GetClient()->SerializeCommand(cmd, cmd.handleCreateInfoLength);
-            request.writeHandle->SerializeCreate(handleCreateInfoSpace);
+            device->GetClient()->SerializeCommand(
+                cmd, cmd.handleCreateInfoLength,
+                [&](char* cmdSpace) { request.writeHandle->SerializeCreate(cmdSpace); });
         }
 
         // Step 4. Register this request so that we can retrieve it from its serial when the server
@@ -200,10 +208,9 @@ namespace dawn_wire { namespace client {
                                     uint32_t status,
                                     uint64_t readInitialDataInfoLength,
                                     const uint8_t* readInitialDataInfo) {
-        // The requests can have been deleted via an Unmap so this isn't an error.
         auto requestIt = mRequests.find(requestSerial);
         if (requestIt == mRequests.end()) {
-            return true;
+            return false;
         }
 
         auto request = std::move(requestIt->second);
@@ -221,6 +228,11 @@ namespace dawn_wire { namespace client {
         bool isRead = request.readHandle != nullptr;
         bool isWrite = request.writeHandle != nullptr;
         ASSERT(isRead != isWrite);
+
+        // Take into account the client-side status of the request if the server says it is a success.
+        if (status == WGPUBufferMapAsyncStatus_Success) {
+            status = request.clientStatus;
+        }
 
         size_t mappedDataLength = 0;
         const void* mappedData = nullptr;
@@ -311,12 +323,11 @@ namespace dawn_wire { namespace client {
             cmd.writeFlushInfoLength = writeFlushInfoLength;
             cmd.writeFlushInfo = nullptr;
 
-            char* writeHandleSpace =
-                device->GetClient()->SerializeCommand(cmd, writeFlushInfoLength);
-
-            // Serialize flush metadata into the space after the command.
-            // This closes the handle for writing.
-            mWriteHandle->SerializeFlush(writeHandleSpace);
+            device->GetClient()->SerializeCommand(cmd, writeFlushInfoLength, [&](char* cmdSpace) {
+                // Serialize flush metadata into the space after the command.
+                // This closes the handle for writing.
+                mWriteHandle->SerializeFlush(cmdSpace);
+            });
             mWriteHandle = nullptr;
 
         } else if (mReadHandle) {
@@ -326,7 +337,13 @@ namespace dawn_wire { namespace client {
         mMappedData = nullptr;
         mMapOffset = 0;
         mMapSize = 0;
-        ClearMapRequests(WGPUBufferMapAsyncStatus_UnmappedBeforeCallback);
+
+        // Tag all mapping requests still in flight as unmapped before callback.
+        for (auto& it : mRequests) {
+            if (it.second.clientStatus == WGPUBufferMapAsyncStatus_Success) {
+                it.second.clientStatus = WGPUBufferMapAsyncStatus_UnmappedBeforeCallback;
+            }
+        }
 
         BufferUnmapCmd cmd;
         cmd.self = ToAPI(this);
@@ -334,11 +351,17 @@ namespace dawn_wire { namespace client {
     }
 
     void Buffer::Destroy() {
-        // Cancel or remove all mappings
+        // Remove the current mapping.
         mWriteHandle = nullptr;
         mReadHandle = nullptr;
         mMappedData = nullptr;
-        ClearMapRequests(WGPUBufferMapAsyncStatus_DestroyedBeforeCallback);
+
+        // Tag all mapping requests still in flight as destroyed before callback.
+        for (auto& it : mRequests) {
+            if (it.second.clientStatus == WGPUBufferMapAsyncStatus_Success) {
+                it.second.clientStatus = WGPUBufferMapAsyncStatus_DestroyedBeforeCallback;
+            }
+        }
 
         BufferDestroyCmd cmd;
         cmd.self = ToAPI(this);
@@ -354,6 +377,10 @@ namespace dawn_wire { namespace client {
     }
 
     bool Buffer::CheckGetMappedRangeOffsetSize(size_t offset, size_t size) const {
+        if (offset % 8 != 0 || size % 4 != 0) {
+            return false;
+        }
+
         if (size > mMapSize || offset < mMapOffset) {
             return false;
         }

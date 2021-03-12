@@ -21,7 +21,8 @@
 #include "core/fxcrt/xml/cfx_xmlnode.h"
 #include "core/fxcrt/xml/cfx_xmltext.h"
 #include "fxjs/xfa/cjx_object.h"
-#include "third_party/base/logging.h"
+#include "third_party/base/check.h"
+#include "third_party/base/notreached.h"
 #include "third_party/base/optional.h"
 #include "xfa/fxfa/fxfa.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
@@ -662,8 +663,8 @@ CXFA_Node* CXFA_DocumentBuilder::NormalLoader(CXFA_Node* pXFANode,
         if (!pXFAChild)
           return nullptr;
         if (ePacketID == XFA_PacketType::Config) {
-          pXFAChild->JSObject()->SetAttributeByEnum(
-              XFA_Attribute::Name, wsTagName.AsStringView(), false);
+          pXFAChild->JSObject()->SetAttributeByEnum(XFA_Attribute::Name,
+                                                    wsTagName, false);
         }
 
         bool IsNeedValue = true;
@@ -682,8 +683,8 @@ CXFA_Node* CXFA_DocumentBuilder::NormalLoader(CXFA_Node* pXFANode,
               attr.value().attribute != XFA_Attribute::Save) {
             continue;
           }
-          pXFAChild->JSObject()->SetAttributeByEnum(
-              attr.value().attribute, it.second.AsStringView(), false);
+          pXFAChild->JSObject()->SetAttributeByEnum(attr.value().attribute,
+                                                    it.second, false);
         }
         pXFANode->InsertChildAndNotify(pXFAChild, nullptr);
         if (eType == XFA_Element::Validate || eType == XFA_Element::Locale) {
@@ -762,7 +763,7 @@ void CXFA_DocumentBuilder::ParseContentNode(CXFA_Node* pXFANode,
     if (pXFANode->IsContentNode()) {
       CXFA_Node* pContentRawDataNode =
           node_factory_->CreateNode(ePacketID, element);
-      ASSERT(pContentRawDataNode);
+      DCHECK(pContentRawDataNode);
       pContentRawDataNode->JSObject()->SetCData(XFA_Attribute::Value, wsValue);
       pXFANode->InsertChildAndNotify(pContentRawDataNode, nullptr);
     } else {

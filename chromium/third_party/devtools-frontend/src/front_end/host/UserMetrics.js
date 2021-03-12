@@ -293,16 +293,6 @@ export class UserMetrics {
   }
 
   /**
-   * @param {boolean} isEnabled
-   */
-  computedStyleGrouping(isEnabled) {
-    const size = Object.keys(ComputedStyleGroupingState).length + 1;
-    const code = isEnabled ? ComputedStyleGroupingState.enabled : ComputedStyleGroupingState.disabled;
-    InspectorFrontendHostInstance.recordEnumeratedHistogram(EnumeratedHistogram.ComputedStyleGrouping, code, size);
-    Common.EventTarget.fireEvent(EnumeratedHistogram.ComputedStyleGrouping, {value: code});
-  }
-
-  /**
    * @param {!GridOverlayOpener} gridOverlayOpener
    */
   gridOverlayOpenedFrom(gridOverlayOpener) {
@@ -366,6 +356,12 @@ export const Action = {
   UserShortcutAdded: 44,
   ShortcutRemoved: 45,
   ShortcutModified: 46,
+  CustomPropertyLinkClicked: 47,
+  CustomPropertyEdited: 48,
+  ServiceWorkerNetworkRequestClicked: 49,
+  ServiceWorkerNetworkRequestClosedQuickly: 50,
+  NetworkPanelServiceWorkerRespondWith: 51,
+  NetworkPanelCopyValue: 52,
 };
 
 /** @type {!Object<string, number>} */
@@ -531,6 +527,19 @@ export const KeyboardShortcutAction = {
   'timeline.save-to-file': 90,
   'timeline.show-history': 91,
   'timeline.toggle-recording': 92,
+  'sources.increment-css': 93,
+  'sources.increment-css-by-ten': 94,
+  'sources.decrement-css': 95,
+  'sources.decrement-css-by-ten': 96,
+  'layers.reset-view': 97,
+  'layers.pan-mode': 98,
+  'layers.rotate-mode': 99,
+  'layers.zoom-in': 100,
+  'layers.zoom-out': 101,
+  'layers.up': 102,
+  'layers.down': 103,
+  'layers.left': 104,
+  'layers.right': 105,
 };
 
 /** @enum {number} */
@@ -598,7 +607,6 @@ export const DevtoolsExperiments = {
   'emptySourceMapAutoStepping': 9,
   'inputEventsOnTimelineOverview': 10,
   'liveHeapProfile': 11,
-  'nativeHeapProfiler': 12,
   'protocolMonitor': 13,
   'developerResourcesView': 15,
   'recordCoverageWithPerformanceTracing': 16,
@@ -608,7 +616,6 @@ export const DevtoolsExperiments = {
   'sourceOrderViewer': 20,
   'spotlight': 21,
   'webauthnPane': 22,
-  'customKeyboardShortcuts': 23,
   'timelineEventInitiators': 24,
   'timelineFlowEvents': 25,
   'timelineInvalidationTracking': 26,
@@ -620,13 +627,8 @@ export const DevtoolsExperiments = {
   'dualScreenSupport': 32,
   'cssGridFeatures': 33,
   'keyboardShortcutEditor': 35,
-  '__lastValidEnumPosition': 35,
-};
-
-/** @type {!Object<string, number>} */
-export const ComputedStyleGroupingState = {
-  'enabled': 0,
-  'disabled': 1,
+  'cssFlexboxFeatures': 36,
+  '__lastValidEnumPosition': 37,
 };
 
 /** @type {!Object<string, number>} */
@@ -648,7 +650,12 @@ export const IssueResourceOpened = {
   SameSiteCookieRequest: 4,
   HeavyAdElement: 5,
   ContentSecurityPolicyDirective: 6,
-  ContentSecurityPolicyElement: 7
+  ContentSecurityPolicyElement: 7,
+  CrossOriginEmbedderPolicyLearnMore: 8,
+  MixedContentLearnMore: 9,
+  SameSiteCookieLearnMore: 10,
+  HeavyAdLearnMore: 11,
+  ContentSecurityPolicyLearnMore: 12
 };
 
 /** @enum {number} */

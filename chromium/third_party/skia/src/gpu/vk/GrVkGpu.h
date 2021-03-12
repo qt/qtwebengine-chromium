@@ -45,6 +45,7 @@ public:
     ~GrVkGpu() override;
 
     void disconnect(DisconnectType) override;
+    bool disconnected() const { return fDisconnected; }
 
     const GrVkInterface* vkInterface() const { return fInterface.get(); }
     const GrVkCaps& vkCaps() const { return *fVkCaps; }
@@ -94,7 +95,10 @@ public:
 #if GR_TEST_UTILS
     bool isTestingOnlyBackendTexture(const GrBackendTexture&) const override;
 
-    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(int w, int h, GrColorType) override;
+    GrBackendRenderTarget createTestingOnlyBackendRenderTarget(SkISize dimensions,
+                                                               GrColorType,
+                                                               int sampleCnt,
+                                                               GrProtected) override;
     void deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&) override;
 
     void testingOnly_flushGpuAndSync() override;
@@ -104,16 +108,18 @@ public:
     }
 #endif
 
-    GrStencilAttachment* createStencilAttachmentForRenderTarget(
-            const GrRenderTarget*, SkISize dimensions, int numStencilSamples) override;
+    sk_sp<GrAttachment> makeStencilAttachmentForRenderTarget(const GrRenderTarget*,
+                                                             SkISize dimensions,
+                                                             int numStencilSamples) override;
 
-    GrOpsRenderPass* getOpsRenderPass(
-            GrRenderTarget*, GrStencilAttachment*,
-            GrSurfaceOrigin, const SkIRect&,
-            const GrOpsRenderPass::LoadAndStoreInfo&,
-            const GrOpsRenderPass::StencilLoadAndStoreInfo&,
-            const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
-            GrXferBarrierFlags renderPassXferBarriers) override;
+    GrBackendFormat getPreferredStencilFormat(const GrBackendFormat&) override {
+        return GrBackendFormat::MakeVk(this->vkCaps().preferredStencilFormat());
+    }
+
+    sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
+                                           const GrBackendFormat& format,
+                                           int numSamples,
+                                           GrProtected isProtected) override;
 
     void addBufferMemoryBarrier(const GrManagedResource*,
                                 VkPipelineStageFlags srcStageMask,
@@ -248,9 +254,6 @@ private:
                                                     GrWrapCacheable) override;
     sk_sp<GrRenderTarget> onWrapBackendRenderTarget(const GrBackendRenderTarget&) override;
 
-    sk_sp<GrRenderTarget> onWrapBackendTextureAsRenderTarget(const GrBackendTexture&,
-                                                             int sampleCnt) override;
-
     sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
                                                                 const GrVkDrawableInfo&) override;
 
@@ -281,9 +284,17 @@ private:
 
     void addFinishedCallback(sk_sp<GrRefCntedCallback> finishedCallback);
 
+    GrOpsRenderPass* onGetOpsRenderPass(GrRenderTarget*,
+                                        GrAttachment*,
+                                        GrSurfaceOrigin,
+                                        const SkIRect&,
+                                        const GrOpsRenderPass::LoadAndStoreInfo&,
+                                        const GrOpsRenderPass::StencilLoadAndStoreInfo&,
+                                        const SkTArray<GrSurfaceProxy*, true>& sampledProxies,
+                                        GrXferBarrierFlags renderPassXferBarriers) override;
+
     void prepareSurfacesForBackendAccessAndStateUpdates(
-            GrSurfaceProxy* proxies[],
-            int numProxies,
+            SkSpan<GrSurfaceProxy*> proxies,
             SkSurface::BackendSurfaceAccess access,
             const GrBackendSurfaceMutableState* newState) override;
 
@@ -320,6 +331,7 @@ private:
 
     bool createVkImageForBackendSurface(VkFormat,
                                         SkISize dimensions,
+                                        int sampleCnt,
                                         GrTexturable,
                                         GrRenderable,
                                         GrMipmapped,

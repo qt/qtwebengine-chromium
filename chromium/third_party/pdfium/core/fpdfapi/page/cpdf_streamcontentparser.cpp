@@ -37,13 +37,13 @@
 #include "core/fxcrt/autonuller.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/cfx_graphstatedata.h"
-#include "third_party/base/logging.h"
+#include "third_party/base/notreached.h"
 #include "third_party/base/span.h"
 #include "third_party/base/stl_util.h"
 
 namespace {
 
-const int kMaxFormLevel = 30;
+const int kMaxFormLevel = 40;
 
 const int kSingleCoordinatePair = 1;
 const int kTensorCoordinatePairs = 16;
@@ -1628,6 +1628,6 @@ ByteStringView CPDF_StreamContentParser::FindValueAbbreviationForTesting(
   return FindFullName(kInlineValueAbbr, pdfium::size(kInlineValueAbbr), abbr);
 }
 
-CPDF_StreamContentParser::ContentParam::ContentParam() {}
+CPDF_StreamContentParser::ContentParam::ContentParam() = default;
 
 CPDF_StreamContentParser::ContentParam::~ContentParam() = default;

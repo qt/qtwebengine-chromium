@@ -21,6 +21,10 @@
 #    include <sys/utsname.h>
 #endif
 
+#if defined(ANGLE_PLATFORM_WINDOWS)
+#    include <versionhelpers.h>
+#endif
+
 namespace rx
 {
 // Intel
@@ -149,6 +153,8 @@ const char *GetVendorString(uint32_t vendorId)
             return "Intel";
         case VENDOR_ID_NVIDIA:
             return "NVIDIA";
+        case VENDOR_ID_POWERVR:
+            return "Imagination Technologies";
         case VENDOR_ID_QUALCOMM:
             return "Qualcomm";
         default:
@@ -280,6 +286,17 @@ bool IsWayland()
         checked = true;
     }
     return isWayland;
+}
+
+bool IsWin10OrGreater()
+{
+#if defined(ANGLE_ENABLE_WINDOWS_UWP)
+    return true;
+#elif defined(ANGLE_PLATFORM_WINDOWS)
+    return IsWindows10OrGreater();
+#else
+    return false;
+#endif
 }
 
 }  // namespace rx

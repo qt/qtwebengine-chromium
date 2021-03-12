@@ -12,6 +12,7 @@ import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
 import {AggregatedIssue, Events as IssueAggregatorEvents, IssueAggregator} from './IssueAggregator.js';  // eslint-disable-line no-unused-vars
+import {IssueSurveyLink} from './IssueSurveyLink.js';
 import {createIssueDescriptionFromMarkdown} from './MarkdownIssueDescription.js';
 
 /** @enum {string} */
@@ -19,6 +20,7 @@ const AffectedItem = {
   Cookie: 'Cookie',
   Directive: 'Directive',
   Element: 'Element',
+  LearnMore: 'LearnMore',
   Request: 'Request',
   Source: 'Source'
 };
@@ -209,8 +211,9 @@ class AffectedResourcesView extends UI.TreeOutline.TreeElement {
     const frameCell = /** @type {!HTMLElement} */ (document.createElement('td'));
     frameCell.classList.add('affected-resource-cell');
     if (frame) {
-      const icon = UI.Icon.Icon.create('mediumicon-elements-panel', 'icon');
-      icon.classList.add('link');
+      const icon = Elements.Icon.createIcon();
+      icon.data = {iconName: 'elements_panel_icon', color: 'var(--issue-link)', width: '16px', height: '16px'};
+      icon.classList.add('link', 'elements-panel');
       icon.onclick = async () => {
         Host.userMetrics.issuesPanelResourceOpened(issue.getCategory(), AffectedItem.Element);
         const frame = SDK.FrameManager.FrameManager.instance().getFrame(frameId);
@@ -244,7 +247,9 @@ class AffectedResourcesView extends UI.TreeOutline.TreeElement {
     let filename = url ? extractShortPath(url) : '';
     const requestCell = /** @type {!HTMLElement} */ (document.createElement('td'));
     requestCell.classList.add('affected-resource-cell');
-    const icon = UI.Icon.Icon.create('mediumicon-network-panel', 'icon');
+    const icon = Elements.Icon.createIcon();
+    icon.data = {iconName: 'network_panel_icon', color: 'var(--issue-link)', width: '16px', height: '16px'};
+    icon.classList.add('network-panel');
     requestCell.appendChild(icon);
 
     const requests = this._resolveRequestId(request.requestId);
@@ -289,7 +294,7 @@ class AffectedElementsView extends AffectedResourcesView {
     this._issue = issue;
   }
 
-  _sendTelmetry() {
+  _sendTelemetry() {
     Host.userMetrics.issuesPanelResourceOpened(this._issue.getCategory(), AffectedItem.Element);
   }
 
@@ -313,10 +318,10 @@ class AffectedElementsView extends AffectedResourcesView {
     const deferredDOMNode = new SDK.DOMModel.DeferredDOMNode(mainTarget, backendNodeId);
     const anchorElement = await Common.Linkifier.Linkifier.linkify(deferredDOMNode);
     anchorElement.textContent = nodeName;
-    anchorElement.addEventListener('click', this._sendTelmetry);
+    anchorElement.addEventListener('click', this._sendTelemetry);
     anchorElement.addEventListener('keydown', event => {
       if (isEnterKey(event)) {
-        this._sendTelmetry();
+        this._sendTelemetry();
       }
     });
     const cellElement = document.createElement('td');
@@ -400,11 +405,17 @@ class AffectedDirectivesView extends AffectedResourcesView {
 
   /**
    * @param {!Element} element
+   * @param {boolean} isReportOnly
    */
-  _appendBlockedStatus(element) {
+  _appendStatus(element, isReportOnly) {
     const status = document.createElement('td');
-    status.classList.add('affected-resource-blocked-status');
-    status.textContent = ls`blocked`;
+    if (isReportOnly) {
+      status.classList.add('affected-resource-report-only-status');
+      status.textContent = ls`report-only`;
+    } else {
+      status.classList.add('affected-resource-blocked-status');
+      status.textContent = ls`blocked`;
+    }
     element.appendChild(status);
   }
 
@@ -515,6 +526,13 @@ class AffectedDirectivesView extends AffectedResourcesView {
       this._appendSourceCodeColumnTitle(header);
       this._appendDirectiveColumnTitle(header);
       this._appendStatusColumnTitle(header);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.trustedTypesSinkViolationCode) {
+      this._appendSourceCodeColumnTitle(header);
+      this._appendStatusColumnTitle(header);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.trustedTypesPolicyViolationCode) {
+      this._appendSourceCodeColumnTitle(header);
+      this._appendDirectiveColumnTitle(header);
+      this._appendStatusColumnTitle(header);
     } else {
       this.updateAffectedResourceCount(0);
       return;
@@ -540,17 +558,24 @@ class AffectedDirectivesView extends AffectedResourcesView {
       this._appendViolatedDirective(element, cspIssueDetails.violatedDirective);
       this._appendBlockedElement(element, cspIssueDetails.violatingNodeId, cspIssue.model());
       this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
-      this._appendBlockedStatus(element);
+      this._appendStatus(element, cspIssueDetails.isReportOnly);
     } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.urlViolationCode) {
       const url = cspIssueDetails.blockedURL ? cspIssueDetails.blockedURL : '';
       this._appendBlockedURL(element, url);
-      this._appendBlockedStatus(element);
+      this._appendStatus(element, cspIssueDetails.isReportOnly);
       this._appendViolatedDirective(element, cspIssueDetails.violatedDirective);
       this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
     } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.evalViolationCode) {
       this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
       this._appendViolatedDirective(element, cspIssueDetails.violatedDirective);
-      this._appendBlockedStatus(element);
+      this._appendStatus(element, cspIssueDetails.isReportOnly);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.trustedTypesSinkViolationCode) {
+      this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
+      this._appendStatus(element, cspIssueDetails.isReportOnly);
+    } else if (this._issue.code() === SDK.ContentSecurityPolicyIssue.trustedTypesPolicyViolationCode) {
+      this._appendSourceLocation(element, cspIssueDetails.sourceCodeLocation);
+      this._appendViolatedDirective(element, cspIssueDetails.violatedDirective);
+      this._appendStatus(element, cspIssueDetails.isReportOnly);
     } else {
       return;
     }
@@ -1088,6 +1113,14 @@ class IssueCategoryView extends UI.TreeOutline.TreeElement {
   }
 }
 
+// TODO(petermarshall, 1112738): Add survey triggers here.
+/** @type {!Map<!SDK.Issue.IssueCategory, string|null>} */
+const issueSurveyTriggers = new Map([
+  [SDK.Issue.IssueCategory.CrossOriginEmbedderPolicy, null], [SDK.Issue.IssueCategory.MixedContent, null],
+  [SDK.Issue.IssueCategory.SameSiteCookie, null], [SDK.Issue.IssueCategory.HeavyAd, null],
+  [SDK.Issue.IssueCategory.ContentSecurityPolicy, null], [SDK.Issue.IssueCategory.Other, null]
+]);
+
 class IssueView extends UI.TreeOutline.TreeElement {
   /**
    *
@@ -1152,7 +1185,9 @@ class IssueView extends UI.TreeOutline.TreeElement {
   _appendHeader() {
     const header = document.createElement('div');
     header.classList.add('header');
-    const icon = UI.Icon.Icon.create('largeicon-breaking-change', 'icon');
+    const icon = Elements.Icon.createIcon();
+    icon.data = {iconName: 'breaking_change_icon', color: '', width: '16px', height: '16px'};
+    icon.classList.add('breaking-change');
     this._aggregatedIssuesCount = /** @type {!HTMLElement} */ (document.createElement('span'));
     const countAdorner = Elements.Adorner.Adorner.create(this._aggregatedIssuesCount, 'countWrapper');
     countAdorner.classList.add('aggregated-issues-count');
@@ -1221,25 +1256,44 @@ class IssueView extends UI.TreeOutline.TreeElement {
   }
 
   _createReadMoreLinks() {
-    if (this._description.links.length === 0) {
-      return;
-    }
     const linkWrapper = new UI.TreeOutline.TreeElement();
     linkWrapper.setCollapsible(false);
     linkWrapper.listItemElement.classList.add('link-wrapper');
 
     const linkList = linkWrapper.listItemElement.createChild('ul', 'link-list');
     for (const description of this._description.links) {
-      // TODO(crbug.com/1108501): Allow x-link elements to subscribe to the events 'click' and 'keydown' if the key
-      //       is the 'Enter' key, or add some mechanism that allows to add telemetry to this element.
-      const link = UI.XLink.XLink.create(description.link, ls`Learn more: ${description.linkTitle}`, 'link');
-      const linkIcon = UI.Icon.Icon.create('largeicon-link', 'link');
+      const link = UI.Fragment.html
+      `<a class="link devtools-link" role="link" tabindex="0" href=${description.link}>${
+          ls`Learn more: ${description.linkTitle}`}</a>`;
+      const linkIcon = Elements.Icon.createIcon();
+      linkIcon.data = {iconName: 'link_icon', color: 'var(--issue-link)', width: '16px', height: '16px'};
+      linkIcon.classList.add('link-icon');
       link.prepend(linkIcon);
+      self.onInvokeElement(link, event => {
+        Host.userMetrics.issuesPanelResourceOpened(this._issue.getCategory(), AffectedItem.LearnMore);
+        const mainTarget = SDK.SDKModel.TargetManager.instance().mainTarget();
+        if (mainTarget) {
+          mainTarget.targetAgent().invoke_createTarget({url: description.link});
+        }
+        event.consume(true);
+      });
 
       const linkListItem = linkList.createChild('li');
       linkListItem.appendChild(link);
     }
     this.appendChild(linkWrapper);
+
+    const surveyTrigger = issueSurveyTriggers.get(this._issue.getCategory());
+    if (surveyTrigger) {
+      // This part of the UI is async so be careful relying on it being available.
+      const surveyLink = new IssueSurveyLink();
+      surveyLink.data = {
+        trigger: surveyTrigger,
+        canShowSurvey: Host.InspectorFrontendHost.InspectorFrontendHostInstance.canShowSurvey,
+        showSurvey: Host.InspectorFrontendHost.InspectorFrontendHostInstance.showSurvey
+      };
+      linkList.createChild('li').appendChild(surveyLink);
+    }
   }
 
   update() {
@@ -1268,7 +1322,7 @@ export function getGroupIssuesByCategorySetting() {
 export class IssuesPaneImpl extends UI.Widget.VBox {
   constructor() {
     super(true);
-    this.registerRequiredCSS('issues/issuesPane.css');
+    this.registerRequiredCSS('issues/issuesPane.css', {enableLegacyPatching: true});
     this.contentElement.classList.add('issues-pane');
 
     this._categoryViews = new Map();
@@ -1280,17 +1334,10 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
     this._updateToolbarIssuesCount = updateToolbarIssuesCount;
 
     this._issuesTree = new UI.TreeOutline.TreeOutlineInShadow();
-    this._issuesTree.registerRequiredCSS('issues/issuesTree.css');
+    this._issuesTree.registerRequiredCSS('issues/issuesTree.css', {enableLegacyPatching: true});
     this._issuesTree.setShowSelectionOnKeyboardFocus(true);
     this._issuesTree.contentElement.classList.add('issues');
     this.contentElement.appendChild(this._issuesTree.element);
-
-    // Setting the default focused element to the issuesTree container which
-    // will delegate focus to either the first issue in the pane or the checkbox
-    // if no issue is available. We add an event listener to delegate focus
-    // since issues and the checkbox are not populated at this point.
-    this.setDefaultFocusedElement(this._issuesTree.contentElement);
-    this._issuesTree.contentElement.addEventListener('focus', this._selectFirstChildOrCheckbox.bind(this), false);
 
     this._noIssuesMessageDiv = document.createElement('div');
     this._noIssuesMessageDiv.classList.add('issues-pane-no-issues');
@@ -1340,11 +1387,14 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
         thirdPartySetting, ls`Include cookie Issues caused by third-party sites`,
         ls`Include third-party cookie issues`);
     rightToolbar.appendToolbarItem(this._showThirdPartyCheckbox);
+    this.setDefaultFocusedElement(this._showThirdPartyCheckbox.inputElement);
 
     rightToolbar.appendSeparator();
     const toolbarWarnings = document.createElement('div');
     toolbarWarnings.classList.add('toolbar-warnings');
-    const breakingChangeIcon = UI.Icon.Icon.create('largeicon-breaking-change');
+    const breakingChangeIcon = Elements.Icon.createIcon();
+    breakingChangeIcon.data = {iconName: 'breaking_change_icon', color: '', width: '16px', height: '16px'};
+    breakingChangeIcon.classList.add('breaking-change');
     toolbarWarnings.appendChild(breakingChangeIcon);
     const toolbarIssuesCount = toolbarWarnings.createChild('span', 'warnings-count-label');
     const toolbarIssuesItem = new UI.Toolbar.ToolbarItem(toolbarWarnings);
@@ -1459,8 +1509,16 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
     if (issuesCount > 0) {
       this._issuesTree.element.hidden = false;
       this._noIssuesMessageDiv.style.display = 'none';
+      const firstChild = this._issuesTree.firstChild();
+      if (firstChild) {
+        firstChild.select(/** omitFocus= */ true);
+        this.setDefaultFocusedElement(firstChild.listItemElement);
+      }
     } else {
       this._issuesTree.element.hidden = true;
+      if (this._showThirdPartyCheckbox) {
+        this.setDefaultFocusedElement(this._showThirdPartyCheckbox.inputElement);
+      }
       // We alreay know that issesCount is zero here.
       const hasOnlyThirdPartyIssues = this._issuesManager.numberOfAllStoredIssues() > 0;
       this._noIssuesMessageDiv.textContent =
@@ -1477,15 +1535,6 @@ export class IssuesPaneImpl extends UI.Widget.VBox {
     if (issueView) {
       issueView.expand();
       issueView.reveal();
-    }
-  }
-
-  _selectFirstChildOrCheckbox() {
-    const firstChild = this._issuesTree.firstChild();
-    if (firstChild) {
-      firstChild.select();
-    } else if (this._showThirdPartyCheckbox) {
-      this._showThirdPartyCheckbox.inputElement.focus();
     }
   }
 }

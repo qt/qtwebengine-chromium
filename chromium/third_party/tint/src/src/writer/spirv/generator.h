@@ -15,6 +15,8 @@
 #ifndef SRC_WRITER_SPIRV_GENERATOR_H_
 #define SRC_WRITER_SPIRV_GENERATOR_H_
 
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "src/ast/module.h"
@@ -34,16 +36,26 @@ class Generator : public writer::Writer {
   explicit Generator(ast::Module module);
   ~Generator() override;
 
+  /// Resets the generator
+  void Reset() override;
+
   /// Generates the result data
   /// @returns true on successful generation; false otherwise
   bool Generate() override;
 
+  /// Converts a single entry point
+  /// @param stage the pipeline stage
+  /// @param name the entry point name
+  /// @returns true on succes; false on failure
+  bool GenerateEntryPoint(ast::PipelineStage stage,
+                          const std::string& name) override;
+
   /// @returns the result data
-  const std::vector<uint32_t>& result() const { return writer_.result(); }
+  const std::vector<uint32_t>& result() const { return writer_->result(); }
 
  private:
-  Builder builder_;
-  BinaryWriter writer_;
+  std::unique_ptr<Builder> builder_;
+  std::unique_ptr<BinaryWriter> writer_;
 };
 
 }  // namespace spirv

@@ -10,6 +10,7 @@
 #include "include/core/SkColorFilter.h"
 #include "include/effects/SkColorMatrix.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/private/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/sksg/include/SkSGRenderEffect.h"
@@ -92,7 +93,7 @@ private:
 
         if (fType == Type::kInnerShadow) {
             // Inner shadows draw on top of, and are masked with, the source.
-            f = SkImageFilters::Xfermode(SkBlendMode::kDstIn, std::move(f));
+            f = SkImageFilters::Blend(SkBlendMode::kDstIn, std::move(f));
 
             std::swap(source, f);
         }

@@ -26,11 +26,6 @@
     "normalization": { "filterType": "exclude" },
     "rbnf_tree": { "filterType": "exclude" },
     "rbnf_index": { "filterType": "exclude" },
-    "region_tree": {
-      "whitelist": [
-        "en"
-      ]
-    },
     "region_index": { "filterType": "exclude" },
     "misc": { "filterType": "exclude" },
     "stringprep": { "filterType": "exclude" },
@@ -182,25 +177,6 @@
         "+/*/ZAR",
         "-/Currencies%formal",
         "-/Currencies%variant"
-      ]
-    },
-// Based on
-// https://cs.chromium.org/chromium/src/third_party/icu/android/patch_locale.sh?rcl=797b7c
-    {
-      "categories": [
-        "region_tree"
-      ],
-      "whitelist": [
-// Need to explicitly add "root"
-//	"root",
-// # Excludes region data. On Android Java API is used to get the data.
-// # Due to a bug in ICU, an empty region list always uses 70kB pool.res bundle.
-// # As a work around, include the minimal version of en.txt
-        "en"
-      ],
-      "rules": [
-        "-/*",
-        "+/Countries/US"
       ]
     },
 // Based on https://cs.chromium.org/chromium/src/third_party/icu/patches/data.build.patch?rcl=797b7c

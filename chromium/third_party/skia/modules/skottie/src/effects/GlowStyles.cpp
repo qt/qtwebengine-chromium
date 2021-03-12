@@ -10,6 +10,7 @@
 #include "include/core/SkColorFilter.h"
 #include "include/effects/SkColorMatrix.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/private/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottieValue.h"
@@ -113,7 +114,7 @@ private:
 
         if (fType == Type::kInnerGlow) {
             // Inner glows draw on top of, and are masked with, the source.
-            f = SkImageFilters::Xfermode(SkBlendMode::kDstIn, std::move(f));
+            f = SkImageFilters::Blend(SkBlendMode::kDstIn, std::move(f));
 
             std::swap(source, f);
         }

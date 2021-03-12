@@ -20,7 +20,7 @@ export class ChangesView extends UI.Widget.VBox {
    */
   constructor() {
     super(true);
-    this.registerRequiredCSS('changes/changesView.css');
+    this.registerRequiredCSS('changes/changesView.css', {enableLegacyPatching: true});
     const splitWidget = new UI.SplitWidget.SplitWidget(true /* vertical */, false /* sidebar on left */);
     const mainWidget = new UI.Widget.Widget();
     splitWidget.setMainWidget(mainWidget);
@@ -53,6 +53,7 @@ export class ChangesView extends UI.Widget.VBox {
       maxHighlightLength: Infinity,  // Avoid CodeMirror bailing out of highlighting big diffs.
       placeholder: undefined,
       lineWiseCopyCut: undefined,
+      inputStyle: undefined,
     });
     this._editor.setReadOnly(true);
     const editorContainer = mainWidget.element.createChild('div', 'editor-container');

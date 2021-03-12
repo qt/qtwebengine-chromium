@@ -71,8 +71,7 @@ static AOM_INLINE void update_delta_lf_for_row_mt(AV1_COMP *cpi) {
           const int idx_str = cm->mi_params.mi_stride * mi_row + mi_col;
           MB_MODE_INFO **mi = cm->mi_params.mi_grid_base + idx_str;
           MB_MODE_INFO *mbmi = mi[0];
-          if (mbmi->skip_txfm == 1 &&
-              (mbmi->sb_type == cm->seq_params.sb_size)) {
+          if (mbmi->skip_txfm == 1 && (mbmi->bsize == cm->seq_params.sb_size)) {
             for (int lf_id = 0; lf_id < frame_lf_count; ++lf_id)
               mbmi->delta_lf[lf_id] = xd->delta_lf[lf_id];
             mbmi->delta_lf_from_base = xd->delta_lf_from_base;
@@ -313,12 +312,19 @@ static AOM_INLINE void switch_tile_and_get_next_job(
       TileDataEnc *const this_tile = &tile_data[tile_index];
       AV1EncRowMultiThreadSync *const row_mt_sync = &this_tile->row_mt_sync;
 
+#if CONFIG_REALTIME_ONLY
+      int num_b_rows_in_tile =
+          av1_get_sb_rows_in_tile(cm, this_tile->tile_info);
+      int num_b_cols_in_tile =
+          av1_get_sb_cols_in_tile(cm, this_tile->tile_info);
+#else
       int num_b_rows_in_tile =
           is_firstpass ? av1_get_mb_rows_in_tile(this_tile->tile_info)
                        : av1_get_sb_rows_in_tile(cm, this_tile->tile_info);
       int num_b_cols_in_tile =
           is_firstpass ? av1_get_mb_cols_in_tile(this_tile->tile_info)
                        : av1_get_sb_cols_in_tile(cm, this_tile->tile_info);
+#endif
       int theoretical_limit_on_threads =
           AOMMIN((num_b_cols_in_tile + 1) >> 1, num_b_rows_in_tile);
       int num_threads_working = row_mt_sync->num_threads_working;
@@ -514,7 +520,6 @@ static AOM_INLINE void create_enc_workers(AV1_COMP *cpi, int num_workers) {
   AV1_COMMON *const cm = &cpi->common;
   const AVxWorkerInterface *const winterface = aom_get_worker_interface();
   MultiThreadInfo *const mt_info = &cpi->mt_info;
-  int sb_mi_size = av1_get_sb_mi_size(cm);
 
   assert(mt_info->workers != NULL);
   assert(mt_info->tile_thr_data != NULL);
@@ -584,10 +589,6 @@ static AOM_INLINE void create_enc_workers(AV1_COMP *cpi, int num_workers) {
             aom_memalign(32, 2 * MAX_MB_PLANE * MAX_SB_SQUARE *
                                  sizeof(*thread_data->td->tmp_pred_bufs[j])));
       }
-
-      CHECK_MEM_ERROR(
-          cm, thread_data->td->mbmi_ext,
-          aom_calloc(sb_mi_size, sizeof(*thread_data->td->mbmi_ext)));
 
       if (cpi->sf.part_sf.partition_search_type == VAR_BASED_PARTITION) {
         const int num_64x64_blocks =
@@ -781,7 +782,6 @@ static AOM_INLINE void prepare_enc_workers(AV1_COMP *cpi, AVxWorkerHook hook,
               thread_data->td->hash_value_buffer[x][y];
         }
       }
-      thread_data->td->mb.mbmi_ext = thread_data->td->mbmi_ext;
     }
     if (thread_data->td->counts != &cpi->counts) {
       memcpy(thread_data->td->counts, &cpi->counts, sizeof(cpi->counts));
@@ -1266,7 +1266,6 @@ static AOM_INLINE void prepare_tpl_workers(AV1_COMP *cpi, AVxWorkerHook hook,
     if (thread_data->td != &cpi->td) {
       thread_data->td->mb = cpi->td.mb;
       thread_data->td->mb.obmc_buffer = thread_data->td->obmc_buffer;
-      thread_data->td->mb.mbmi_ext = thread_data->td->mbmi_ext;
     }
   }
 }
@@ -1305,7 +1304,6 @@ void av1_mc_flow_dispenser_mt(AV1_COMP *cpi) {
   launch_enc_workers(&cpi->mt_info, num_workers);
   sync_enc_workers(&cpi->mt_info, cm, num_workers);
 }
-#endif  // !CONFIG_REALTIME_ONLY
 
 // Checks if a job is available in the current direction. If a job is available,
 // frame_idx will be populated and returns 1, else returns 0.
@@ -1526,3 +1524,4 @@ void av1_global_motion_estimation_mt(AV1_COMP *cpi) {
   launch_enc_workers(&cpi->mt_info, num_workers);
   sync_enc_workers(&cpi->mt_info, &cpi->common, num_workers);
 }
+#endif  // !CONFIG_REALTIME_ONLY

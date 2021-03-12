@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+
 import * as ResourcesModule from './resources.js';
 
 self.Resources = self.Resources || {};
@@ -107,3 +109,13 @@ Resources.ServiceWorkerCacheView = ResourcesModule.ServiceWorkerCacheViews.Servi
 
 /** @constructor */
 Resources.ServiceWorkersView = ResourcesModule.ServiceWorkersView.ServiceWorkersView;
+
+/**
+ * @type {function(boolean):void}
+ */
+Resources.ServiceWorkersView.setThrottleDisabledForDebugging =
+    ResourcesModule.ServiceWorkersView.setThrottleDisabledForDebugging;
+
+Object.defineProperty(Resources.ServiceWorkersView, '_noThrottle', {
+  set: ResourcesModule.ServiceWorkersView.setThrottleDisabledForDebugging,
+});

@@ -10,7 +10,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrAutoLocaleSetter.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrPersistentCacheUtils.h"
 #include "src/gpu/GrShaderCaps.h"
 #include "src/gpu/GrShaderUtils.h"
@@ -183,7 +183,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
 
     dsLayout[GrVkUniformHandler::kInputDescSet] = resourceProvider.getInputDSLayout();
 
-    bool usesInput = fProgramInfo.pipeline().usesInputAttachment();
+    bool usesInput = SkToBool(fProgramInfo.renderPassBarriers() & GrXferBarrierFlags::kTexture);
     uint32_t layoutCount =
             usesInput ? GrVkUniformHandler::kDescSetCount : (GrVkUniformHandler::kDescSetCount - 1);
     // Create the VkPipelineLayout
@@ -215,7 +215,6 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
 
     VkPipelineShaderStageCreateInfo shaderStageInfo[3];
     SkSL::Program::Settings settings;
-    settings.fCaps = this->caps()->shaderCaps();
     settings.fRTHeightBinding = this->gpu()->vkCaps().getFragmentUniformBinding();
     settings.fRTHeightSet = this->gpu()->vkCaps().getFragmentUniformSet();
     settings.fFlipY = this->origin() != kTopLeft_GrSurfaceOrigin;

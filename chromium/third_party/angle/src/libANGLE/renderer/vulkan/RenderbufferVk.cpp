@@ -14,6 +14,7 @@
 #include "libANGLE/renderer/vulkan/ContextVk.h"
 #include "libANGLE/renderer/vulkan/ImageVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
+#include "libANGLE/renderer/vulkan/TextureVk.h"
 
 namespace rx
 {
@@ -77,6 +78,29 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
         mImageViews.init(renderer);
     }
 
+    // With the introduction of sRGB related GLES extensions any texture could be respecified
+    // causing it to be interpreted in a different colorspace. Create the VkImage accordingly.
+    VkImageCreateFlags imageCreateFlags                  = vk::kVkImageCreateFlagsNone;
+    VkImageFormatListCreateInfoKHR *additionalCreateInfo = nullptr;
+    VkFormat vkImageFormat                               = vkFormat.vkImageFormat;
+    VkFormat vkImageListFormat                           = vkFormat.actualImageFormat().isSRGB
+                                     ? vk::ConvertToLinear(vkImageFormat)
+                                     : vk::ConvertToSRGB(vkImageFormat);
+
+    VkImageFormatListCreateInfoKHR formatListInfo = {};
+    if (renderer->getFeatures().supportsImageFormatList.enabled)
+    {
+        // Add VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT to VkImage create flag
+        imageCreateFlags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+
+        // There is just 1 additional format we might use to create a VkImageView for this VkImage
+        formatListInfo.sType           = VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO_KHR;
+        formatListInfo.pNext           = nullptr;
+        formatListInfo.viewFormatCount = 1;
+        formatListInfo.pViewFormats    = &vkImageListFormat;
+        additionalCreateInfo           = &formatListInfo;
+    }
+
     const angle::Format &textureFormat = vkFormat.actualImageFormat();
     const bool isDepthStencilFormat    = textureFormat.hasDepthOrStencilBits();
     ASSERT(textureFormat.redBits > 0 || isDepthStencilFormat);
@@ -97,9 +121,13 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
 
     const uint32_t imageSamples = isRenderToTexture ? 1 : samples;
 
+    bool robustInit = contextVk->isRobustResourceInitEnabled();
+
     VkExtent3D extents = {static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1u};
-    ANGLE_TRY(mImage->init(contextVk, gl::TextureType::_2D, extents, vkFormat, imageSamples, usage,
-                           gl::LevelIndex(0), gl::LevelIndex(0), 1, 1));
+    ANGLE_TRY(mImage->initExternal(contextVk, gl::TextureType::_2D, extents, vkFormat, imageSamples,
+                                   usage, imageCreateFlags, vk::ImageLayout::Undefined,
+                                   additionalCreateInfo, gl::LevelIndex(0), gl::LevelIndex(0), 1, 1,
+                                   robustInit));
 
     VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     ANGLE_TRY(mImage->initMemory(contextVk, renderer->getMemoryProperties(), flags));
@@ -112,7 +140,8 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
         mMultisampledImageViews.init(renderer);
 
         ANGLE_TRY(mMultisampledImage.initImplicitMultisampledRenderToTexture(
-            contextVk, renderer->getMemoryProperties(), gl::TextureType::_2D, samples, *mImage));
+            contextVk, renderer->getMemoryProperties(), gl::TextureType::_2D, samples, *mImage,
+            robustInit));
 
         mRenderTarget.init(&mMultisampledImage, &mMultisampledImageViews, mImage, &mImageViews,
                            gl::LevelIndex(0), 0, RenderTargetTransience::MultisampledTransient);
@@ -187,6 +216,57 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
     return angle::Result::Continue;
 }
 
+angle::Result RenderbufferVk::copyRenderbufferSubData(const gl::Context *context,
+                                                      const gl::Renderbuffer *srcBuffer,
+                                                      GLint srcLevel,
+                                                      GLint srcX,
+                                                      GLint srcY,
+                                                      GLint srcZ,
+                                                      GLint dstLevel,
+                                                      GLint dstX,
+                                                      GLint dstY,
+                                                      GLint dstZ,
+                                                      GLsizei srcWidth,
+                                                      GLsizei srcHeight,
+                                                      GLsizei srcDepth)
+{
+    RenderbufferVk *sourceVk = vk::GetImpl(srcBuffer);
+
+    // Make sure the source/destination targets are initialized and all staged updates are flushed.
+    ANGLE_TRY(sourceVk->ensureImageInitialized(context));
+    ANGLE_TRY(ensureImageInitialized(context));
+
+    return vk::ImageHelper::CopyImageSubData(context, sourceVk->getImage(), srcLevel, srcX, srcY,
+                                             srcZ, mImage, dstLevel, dstX, dstY, dstZ, srcWidth,
+                                             srcHeight, srcDepth);
+}
+
+angle::Result RenderbufferVk::copyTextureSubData(const gl::Context *context,
+                                                 const gl::Texture *srcTexture,
+                                                 GLint srcLevel,
+                                                 GLint srcX,
+                                                 GLint srcY,
+                                                 GLint srcZ,
+                                                 GLint dstLevel,
+                                                 GLint dstX,
+                                                 GLint dstY,
+                                                 GLint dstZ,
+                                                 GLsizei srcWidth,
+                                                 GLsizei srcHeight,
+                                                 GLsizei srcDepth)
+{
+    ContextVk *contextVk = vk::GetImpl(context);
+    TextureVk *sourceVk  = vk::GetImpl(srcTexture);
+
+    // Make sure the source/destination targets are initialized and all staged updates are flushed.
+    ANGLE_TRY(sourceVk->ensureImageInitialized(contextVk, ImageMipLevels::EnabledLevels));
+    ANGLE_TRY(ensureImageInitialized(context));
+
+    return vk::ImageHelper::CopyImageSubData(context, &sourceVk->getImage(), srcLevel, srcX, srcY,
+                                             srcZ, mImage, dstLevel, dstX, dstY, dstZ, srcWidth,
+                                             srcHeight, srcDepth);
+}
+
 angle::Result RenderbufferVk::getAttachmentRenderTarget(const gl::Context *context,
                                                         GLenum binding,
                                                         const gl::ImageIndex &imageIndex,
@@ -227,7 +307,7 @@ void RenderbufferVk::releaseImage(ContextVk *contextVk)
 
     if (mImage && mOwnsImage)
     {
-        mImage->releaseImage(renderer);
+        mImage->releaseImageFromShareContexts(renderer, contextVk);
         mImage->releaseStagingBuffer(renderer);
     }
     else
@@ -240,7 +320,7 @@ void RenderbufferVk::releaseImage(ContextVk *contextVk)
 
     if (mMultisampledImage.valid())
     {
-        mMultisampledImage.releaseImage(renderer);
+        mMultisampledImage.releaseImageFromShareContexts(renderer, contextVk);
     }
     mMultisampledImageViews.release(renderer);
 }
@@ -284,6 +364,14 @@ angle::Result RenderbufferVk::getRenderbufferImage(const gl::Context *context,
 
     return mImage->readPixelsForGetImage(contextVk, packState, packBuffer, gl::LevelIndex(0), 0,
                                          format, type, pixels);
+}
+
+angle::Result RenderbufferVk::ensureImageInitialized(const gl::Context *context)
+{
+    ANGLE_TRY(setStorage(context, mState.getFormat().info->internalFormat, mState.getWidth(),
+                         mState.getHeight()));
+
+    return mImage->flushAllStagedUpdates(vk::GetImpl(context));
 }
 
 void RenderbufferVk::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message)

@@ -1085,6 +1085,13 @@ void TextLine::getRectsForRange(TextRange textRange0,
 
 PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
 
+    if (SkScalarNearlyZero(this->width())) {
+        // TODO: this is one of the flutter changes that have to go away eventually
+        //  Empty line is a special case in txtlib
+        auto utf16Index = fOwner->getUTF16Index(this->fClusterRange.start);
+        return { SkToS32(utf16Index) , kDownstream };
+    }
+
     PositionWithAffinity result(0, Affinity::kDownstream);
     this->iterateThroughVisualRuns(true,
         [this, dx, &result]
@@ -1129,8 +1136,10 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                 // Find the grapheme range that contains the point
                 auto clusterIndex8 = context.run->globalClusterIndex(found);
                 auto clusterEnd8 = context.run->globalClusterIndex(found + 1);
-                TextIndex graphemeUtf8Start = fOwner->findGraphemeStart(clusterIndex8);
-                TextIndex graphemeUtf8Width = fOwner->findGraphemeStart(clusterEnd8) - graphemeUtf8Start;
+                TextIndex graphemeUtf8Start =
+                    fOwner->findPreviousGraphemeBoundary(clusterIndex8);
+                TextIndex graphemeUtf8Width =
+                    fOwner->findNextGraphemeBoundary(clusterEnd8) - graphemeUtf8Start;
                 size_t utf16Index = fOwner->getUTF16Index(clusterIndex8);
 
                 SkScalar center = glyphemePosLeft + glyphemePosWidth / 2;

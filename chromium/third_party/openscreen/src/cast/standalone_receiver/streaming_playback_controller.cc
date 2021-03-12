@@ -58,14 +58,14 @@ void StreamingPlaybackController::OnNegotiated(
     ReceiverSession::ConfiguredReceivers receivers) {
   TRACE_DEFAULT_SCOPED(TraceCategory::kStandaloneReceiver);
 #if defined(CAST_STANDALONE_RECEIVER_HAVE_EXTERNAL_LIBS)
-  if (receivers.audio) {
+  if (receivers.audio_receiver) {
     audio_player_ = std::make_unique<SDLAudioPlayer>(
         &Clock::now, task_runner_, receivers.audio_receiver,
         receivers.audio_config.codec, [this] {
           client_->OnPlaybackError(this, audio_player_->error_status());
         });
   }
-  if (receivers.video) {
+  if (receivers.video_receiver) {
     video_player_ = std::make_unique<SDLVideoPlayer>(
         &Clock::now, task_runner_, receivers.video_receiver,
         receivers.video_config.codec, renderer_.get(), [this] {

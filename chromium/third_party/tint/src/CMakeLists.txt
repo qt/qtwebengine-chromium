@@ -39,6 +39,8 @@ option(TINT_ENABLE_MSAN "Enable memory sanitizer" OFF)
 option(TINT_ENABLE_ASAN "Enable address sanitizer" OFF)
 option(TINT_ENABLE_UBSAN "Enable undefined behaviour sanitizer" OFF)
 
+option(TINT_EMIT_COVERAGE "Emit code coverage information" OFF)
+
 option(TINT_CHECK_CHROMIUM_STYLE "Check for [chromium-style] issues during build" OFF)
 
 if(WIN32)
@@ -72,9 +74,6 @@ endif()
 if (${TINT_BUILD_SPV_READER})
   include_directories("${PROJECT_SOURCE_DIR}/third_party/spirv-tools/include")
 endif()
-
-include_directories("${PROJECT_SOURCE_DIR}/third_party/spirv-headers/include")
-include_directories("${PROJECT_SOURCE_DIR}/include")
 
 if(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU") OR
     ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang") OR
@@ -116,19 +115,25 @@ if(MSVC)
 endif()
 
 function(tint_default_compile_options TARGET)
-  include_directories("${PROJECT_SOURCE_DIR}")
+  target_include_directories(${TARGET} PUBLIC "${PROJECT_SOURCE_DIR}")
+  target_include_directories(${TARGET} PUBLIC "${PROJECT_SOURCE_DIR}/include")
 
-  target_compile_definitions(${TARGET} PRIVATE
+  if (${TINT_BUILD_SPV_READER} OR ${TINT_BUILD_SPV_WRITER})
+    target_include_directories(${TARGET} PUBLIC
+        "${PROJECT_SOURCE_DIR}/third_party/spirv-headers/include")
+  endif()
+
+  target_compile_definitions(${TARGET} PUBLIC
       -DTINT_BUILD_SPV_READER=$<BOOL:${TINT_BUILD_SPV_READER}>)
-  target_compile_definitions(${TARGET} PRIVATE
+  target_compile_definitions(${TARGET} PUBLIC
       -DTINT_BUILD_WGSL_READER=$<BOOL:${TINT_BUILD_WGSL_READER}>)
-  target_compile_definitions(${TARGET} PRIVATE
+  target_compile_definitions(${TARGET} PUBLIC
       -DTINT_BUILD_HLSL_WRITER=$<BOOL:${TINT_BUILD_HLSL_WRITER}>)
-  target_compile_definitions(${TARGET} PRIVATE
+  target_compile_definitions(${TARGET} PUBLIC
     -DTINT_BUILD_MSL_WRITER=$<BOOL:${TINT_BUILD_MSL_WRITER}>)
-  target_compile_definitions(${TARGET} PRIVATE
+  target_compile_definitions(${TARGET} PUBLIC
       -DTINT_BUILD_SPV_WRITER=$<BOOL:${TINT_BUILD_SPV_WRITER}>)
-  target_compile_definitions(${TARGET} PRIVATE
+  target_compile_definitions(${TARGET} PUBLIC
       -DTINT_BUILD_WGSL_WRITER=$<BOOL:${TINT_BUILD_WGSL_WRITER}>)
 
   if (${COMPILER_IS_LIKE_GNU})
@@ -136,7 +141,6 @@ function(tint_default_compile_options TARGET)
       -std=c++14
       -fno-exceptions
       -fno-rtti
-      -fvisibility=hidden
       -Wall
       -Werror
       -Wextra
@@ -168,6 +172,18 @@ function(tint_default_compile_options TARGET)
     elseif (${TINT_ENABLE_UBSAN})
       target_compile_options(${TARGET} PRIVATE -fsanitize=undefined)
       target_link_options(${TARGET} PRIVATE -fsanitize=undefined)
+    endif()
+  endif()
+
+  if (${TINT_EMIT_COVERAGE})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        target_compile_options(${TARGET} PRIVATE "--coverage")
+        target_link_options(${TARGET} PRIVATE "gcov")
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
+        target_link_options(${TARGET} PRIVATE "-fprofile-instr-generate" "-fcoverage-mapping")
+    else()
+        message(FATAL_ERROR "Coverage generation not supported for the ${CMAKE_CXX_COMPILER_ID} toolchain")
     endif()
   endif()
 
@@ -226,3 +242,18 @@ add_custom_target(tint-format
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   COMMENT "Running formatter"
   VERBATIM)
+
+
+if (${TINT_EMIT_COVERAGE} AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  # Generates a lcov.info file at the project root.
+  # This can be used by tools such as VSCode's Coverage Gutters extension to
+  # visualize code coverage in the editor.
+  get_filename_component(CLANG_BIN_DIR ${CMAKE_C_COMPILER} DIRECTORY)
+  set(PATH_WITH_CLANG "${CLANG_BIN_DIR}:$ENV{PATH}")
+  add_custom_target(tint-generate-coverage
+    COMMAND ${CMAKE_COMMAND} -E env PATH=${PATH_WITH_CLANG} ./tools/tint-generate-coverage $<TARGET_FILE:tint_unittests>
+    DEPENDS tint_unittests
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    COMMENT "Generating tint coverage data"
+    VERBATIM)
+endif()

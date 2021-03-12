@@ -16,14 +16,14 @@ class GrAuditTrail;
 class GrBackendFormat;
 class GrDrawingManager;
 class GrOnFlushCallbackObject;
-class GrOpMemoryPool;
+class GrMemoryPool;
 class GrProgramDesc;
 class GrProgramInfo;
 class GrRecordingContextPriv;
 class GrSurfaceContext;
 class GrSurfaceProxy;
 class GrTextBlobCache;
-class GrThreadSafeUniquelyKeyedProxyViewCache;
+class GrThreadSafeCache;
 class SkArenaAlloc;
 class SkJSONWriter;
 
@@ -94,17 +94,17 @@ public:
     // GrRecordingContext. Arenas does not maintain ownership of the pools it groups together.
     class Arenas {
     public:
-        Arenas(GrOpMemoryPool*, SkArenaAlloc*);
+        Arenas(GrMemoryPool*, SkArenaAlloc*);
 
         // For storing GrOp-derived classes recorded by a GrRecordingContext
-        GrOpMemoryPool* opMemoryPool() { return fOpMemoryPool; }
+        GrMemoryPool* opMemoryPool() { return fOpMemoryPool; }
 
         // For storing pipelines and other complex data as-needed by ops
         SkArenaAlloc* recordTimeAllocator() { return fRecordTimeAllocator; }
 
     private:
-        GrOpMemoryPool* fOpMemoryPool;
-        SkArenaAlloc*   fRecordTimeAllocator;
+        GrMemoryPool* fOpMemoryPool;
+        SkArenaAlloc* fRecordTimeAllocator;
     };
 
 protected:
@@ -123,12 +123,13 @@ protected:
         OwnedArenas& operator=(OwnedArenas&&);
 
     private:
-        std::unique_ptr<GrOpMemoryPool> fOpMemoryPool;
-        std::unique_ptr<SkArenaAlloc>   fRecordTimeAllocator;
+        std::unique_ptr<GrMemoryPool> fOpMemoryPool;
+        std::unique_ptr<SkArenaAlloc> fRecordTimeAllocator;
     };
 
     GrRecordingContext(sk_sp<GrContextThreadSafeProxy>);
-    void setupDrawingManager(bool sortOpsTasks, bool reduceOpsTaskSplitting);
+
+    bool init() override;
 
     void abandonContext() override;
 
@@ -174,8 +175,8 @@ protected:
     GrTextBlobCache* getTextBlobCache();
     const GrTextBlobCache* getTextBlobCache() const;
 
-    GrThreadSafeUniquelyKeyedProxyViewCache* threadSafeViewCache();
-    const GrThreadSafeUniquelyKeyedProxyViewCache* threadSafeViewCache() const;
+    GrThreadSafeCache* threadSafeCache();
+    const GrThreadSafeCache* threadSafeCache() const;
 
     /**
      * Registers an object for flush-related callbacks. (See GrOnFlushCallbackObject.)

@@ -25,8 +25,10 @@ namespace {
 TEST_F(ParserImplTest, SwitchBody_Case) {
   auto* p = parser("case 1: { a = 4; }");
   auto e = p->switch_body();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsCase());
   EXPECT_FALSE(e->IsDefault());
   ASSERT_EQ(e->body()->size(), 1u);
@@ -36,64 +38,80 @@ TEST_F(ParserImplTest, SwitchBody_Case) {
 TEST_F(ParserImplTest, SwitchBody_Case_InvalidConstLiteral) {
   auto* p = parser("case a == 4: { a = 4; }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
   EXPECT_EQ(p->error(), "1:6: unable to parse case selectors");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Case_InvalidSelector_bool) {
   auto* p = parser("case true: { a = 4; }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
   EXPECT_EQ(p->error(), "1:6: invalid case selector must be an integer value");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Case_MissingConstLiteral) {
   auto* p = parser("case: { a = 4; }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
   EXPECT_EQ(p->error(), "1:5: unable to parse case selectors");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Case_MissingColon) {
   auto* p = parser("case 1 { a = 4; }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:8: missing : for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:8: expected ':' for case statement");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Case_MissingBracketLeft) {
   auto* p = parser("case 1: a = 4; }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:9: missing { for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:9: expected '{' for case statement");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Case_MissingBracketRight) {
   auto* p = parser("case 1: { a = 4; ");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:18: missing } for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:18: expected '}' for case statement");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Case_InvalidCaseBody) {
   auto* p = parser("case 1: { fn main() -> void {} }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:11: missing } for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:11: expected '}' for case statement");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Default) {
   auto* p = parser("default: { a = 4; }");
   auto e = p->switch_body();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsCase());
   EXPECT_TRUE(e->IsDefault());
   ASSERT_EQ(e->body()->size(), 1u);
@@ -103,33 +121,41 @@ TEST_F(ParserImplTest, SwitchBody_Default) {
 TEST_F(ParserImplTest, SwitchBody_Default_MissingColon) {
   auto* p = parser("default { a = 4; }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:9: missing : for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:9: expected ':' for case statement");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Default_MissingBracketLeft) {
   auto* p = parser("default: a = 4; }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:10: missing { for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:10: expected '{' for case statement");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Default_MissingBracketRight) {
   auto* p = parser("default: { a = 4; ");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:19: missing } for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:19: expected '}' for case statement");
 }
 
 TEST_F(ParserImplTest, SwitchBody_Default_InvalidCaseBody) {
   auto* p = parser("default: { fn main() -> void {} }");
   auto e = p->switch_body();
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:12: missing } for case statement");
+  EXPECT_TRUE(p->has_error());
+  EXPECT_TRUE(e.errored);
+  EXPECT_FALSE(e.matched);
+  EXPECT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:12: expected '}' for case statement");
 }
 
 }  // namespace

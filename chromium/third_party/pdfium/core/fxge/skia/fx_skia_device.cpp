@@ -33,7 +33,8 @@
 #include "core/fxge/dib/cfx_imagerenderer.h"
 #include "core/fxge/dib/cfx_imagestretcher.h"
 #include "core/fxge/text_char_pos.h"
-#include "third_party/base/logging.h"
+#include "third_party/base/check.h"
+#include "third_party/base/notreached.h"
 #include "third_party/base/ptr_util.h"
 #include "third_party/base/span.h"
 #include "third_party/base/stl_util.h"
@@ -112,8 +113,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
   }
 
   uint8_t* dest_buf = buffer + dest_top * pitch + dest_left * Bpp;
-  if (dest_format == FXDIB_Rgb) {
-    if (src_format == FXDIB_Rgb32) {
+  if (dest_format == FXDIB_Format::kRgb) {
+    if (src_format == FXDIB_Format::kRgb32) {
       for (int row = 0; row < height; row++) {
         uint8_t* dest_scan = dest_buf + row * pitch;
         const uint8_t* src_scan =
@@ -131,8 +132,9 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
     return;
   }
 
-  if (dest_format == FXDIB_Argb || dest_format == FXDIB_Rgb32) {
-    if (src_format == FXDIB_Rgb) {
+  if (dest_format == FXDIB_Format::kArgb ||
+      dest_format == FXDIB_Format::kRgb32) {
+    if (src_format == FXDIB_Format::kRgb) {
       for (int row = 0; row < height; row++) {
         uint8_t* dest_scan = (uint8_t*)(dest_buf + row * pitch);
         const uint8_t* src_scan =
@@ -144,8 +146,8 @@ void RgbByteOrderTransferBitmap(const RetainPtr<CFX_DIBitmap>& pBitmap,
           src_scan += 3;
         }
       }
-    } else if (src_format == FXDIB_Rgb32) {
-      ASSERT(dest_format == FXDIB_Argb);
+    } else if (src_format == FXDIB_Format::kRgb32) {
+      ASSERT(dest_format == FXDIB_Format::kArgb);
       for (int row = 0; row < height; row++) {
         uint8_t* dest_scan = dest_buf + row * pitch;
         const uint8_t* src_scan =
@@ -639,11 +641,11 @@ bool Upsample(const RetainPtr<CFX_DIBBase>& pSource,
   void* buffer = pSource->GetBuffer();
   if (!buffer)
     return false;
-  SkColorType colorType = forceAlpha || pSource->IsAlphaMask()
+  SkColorType colorType = forceAlpha || pSource->IsMask()
                               ? SkColorType::kAlpha_8_SkColorType
                               : SkColorType::kGray_8_SkColorType;
   SkAlphaType alphaType =
-      pSource->IsAlphaMask() ? kPremul_SkAlphaType : kOpaque_SkAlphaType;
+      pSource->IsMask() ? kPremul_SkAlphaType : kOpaque_SkAlphaType;
   int width = pSource->GetWidth();
   int height = pSource->GetHeight();
   int rowBytes = pSource->GetPitch();
@@ -664,21 +666,21 @@ bool Upsample(const RetainPtr<CFX_DIBBase>& pSource,
     }
     case 8:
       // we upscale ctables to 32bit.
-      if (pSource->GetPalette()) {
+      if (pSource->HasPalette()) {
         dst32Storage.reset(FX_Alloc2D(uint32_t, width, height));
         SkPMColor* dst32Pixels = dst32Storage.get();
-        const SkPMColor* ctable = pSource->GetPalette();
-        const unsigned ctableSize = pSource->GetPaletteSize();
+        pdfium::span<const uint32_t> src_palette = pSource->GetPaletteSpan();
+        const unsigned src_palette_size = pSource->GetPaletteSize();
         for (int y = 0; y < height; ++y) {
           const uint8_t* srcRow =
               static_cast<const uint8_t*>(buffer) + y * rowBytes;
           uint32_t* dstRow = dst32Pixels + y * width;
           for (int x = 0; x < width; ++x) {
             unsigned index = srcRow[x];
-            if (index >= ctableSize) {
+            if (index >= src_palette_size) {
               index = 0;
             }
-            dstRow[x] = ctable[index];
+            dstRow[x] = src_palette[index];
           }
         }
         buffer = dst32Storage.get();
@@ -1878,15 +1880,12 @@ int CFX_SkiaDeviceDriver::GetDeviceCaps(int caps_id) const {
                   FXRC_BLEND_MODE | FXRC_SOFT_CLIP | FXRC_SHADING;
       if (m_pBitmap->HasAlpha()) {
         flags |= FXRC_ALPHA_OUTPUT;
-      } else if (m_pBitmap->IsAlphaMask()) {
+      } else if (m_pBitmap->IsMask()) {
         if (m_pBitmap->GetBPP() == 1) {
           flags |= FXRC_BITMASK_OUTPUT;
         } else {
           flags |= FXRC_BYTEMASK_OUTPUT;
         }
-      }
-      if (m_pBitmap->IsCmykImage()) {
-        flags |= FXRC_CMYK_OUTPUT;
       }
       return flags;
     }
@@ -1951,7 +1950,8 @@ void CFX_SkiaDeviceDriver::SetClipMask(const FX_RECT& clipBox,
                     clipBox.bottom + 1);
   path_rect.Intersect(m_pClipRgn->GetBox());
   auto pThisLayer = pdfium::MakeRetain<CFX_DIBitmap>();
-  pThisLayer->Create(path_rect.Width(), path_rect.Height(), FXDIB_8bppMask);
+  pThisLayer->Create(path_rect.Width(), path_rect.Height(),
+                     FXDIB_Format::k8bppMask);
   pThisLayer->Clear(0);
 
   SkImageInfo imageInfo =
@@ -2445,7 +2445,7 @@ bool CFX_SkiaDeviceDriver::SetDIBits(const RetainPtr<CFX_DIBBase>& pBitmap,
 
 #if defined(_SKIA_SUPPORT_PATHS_)
   Flush();
-  if (pBitmap->IsAlphaMask()) {
+  if (pBitmap->IsMask()) {
     return m_pBitmap->CompositeMask(left, top, src_rect.Width(),
                                     src_rect.Height(), pBitmap, argb,
                                     src_rect.left, src_rect.top, blend_type,
@@ -2531,7 +2531,7 @@ bool CFX_SkiaDeviceDriver::StartDIBits(
     SetBitmapMatrix(matrix, width, height, &skMatrix);
     m_pCanvas->concat(skMatrix);
     SkPaint paint;
-    SetBitmapPaint(pSource->IsAlphaMask(), !m_FillOptions.aliased_path, argb,
+    SetBitmapPaint(pSource->IsMask(), !m_FillOptions.aliased_path, argb,
                    bitmap_alpha, blend_type, &paint);
     // TODO(caryclark) Once Skia supports 8 bit src to 8 bit dst remove this
     if (m_pBitmap && m_pBitmap->GetBPP() == 8 && pSource->GetBPP() == 8) {
@@ -2665,8 +2665,8 @@ bool CFX_SkiaDeviceDriver::DrawBitsWithMask(
     SetBitmapMatrix(matrix, srcWidth, srcHeight, &skMatrix);
     m_pCanvas->concat(skMatrix);
     SkPaint paint;
-    SetBitmapPaint(pSource->IsAlphaMask(), !m_FillOptions.aliased_path,
-                   0xFFFFFFFF, bitmap_alpha, blend_type, &paint);
+    SetBitmapPaint(pSource->IsMask(), !m_FillOptions.aliased_path, 0xFFFFFFFF,
+                   bitmap_alpha, blend_type, &paint);
     sk_sp<SkImage> skSrc = SkImage::MakeFromBitmap(skBitmap);
     sk_sp<SkShader> skSrcShader =
         skSrc->makeShader(SkTileMode::kClamp, SkTileMode::kClamp);
@@ -2716,7 +2716,7 @@ void CFX_SkiaDeviceDriver::DebugVerifyBitmapIsPreMultiplied() const {
 }
 #endif
 
-CFX_DefaultRenderDevice::CFX_DefaultRenderDevice() {}
+CFX_DefaultRenderDevice::CFX_DefaultRenderDevice() = default;
 
 #if defined(_SKIA_SUPPORT_)
 void CFX_DefaultRenderDevice::Clear(uint32_t color) {

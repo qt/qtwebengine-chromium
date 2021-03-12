@@ -1,13 +1,8 @@
-import { Fixture } from './fixture.js';
+import { Fixture, SkipTestCase } from './fixture.js';
 import { TestCaseRecorder } from './logging/test_case_recorder.js';
-import {
-  CaseParams,
-  CaseParamsIterable,
-  extractPublicParams,
-  publicParamsEquals,
-} from './params_utils.js';
+import { CaseParams, CaseParamsIterable, extractPublicParams } from './params_utils.js';
 import { kPathSeparator } from './query/separators.js';
-import { stringifyPublicParams } from './query/stringify_params.js';
+import { stringifyPublicParams, stringifyPublicParamsUniquely } from './query/stringify_params.js';
 import { validQueryPart } from './query/validQueryPart.js';
 import { assert } from './util/util.js';
 
@@ -31,11 +26,17 @@ export function makeTestGroup<F extends Fixture>(fixture: FixtureClass<F>): Test
   return new TestGroup(fixture);
 }
 
-// Interface for running tests
-export interface RunCaseIterable {
-  iterate(): Iterable<RunCase>;
-  checkCaseNamesAndDuplicates(): void;
+// Interfaces for running tests
+export interface IterableTestGroup {
+  iterate(): Iterable<IterableTest>;
+  validate(): void;
 }
+export interface IterableTest {
+  testPath: string[];
+  description: string | undefined;
+  iterate(): Iterable<RunCase>;
+}
+
 export function makeTestGroupForUnitTesting<F extends Fixture>(
   fixture: FixtureClass<F>
 ): TestGroup<F> {
@@ -45,7 +46,7 @@ export function makeTestGroupForUnitTesting<F extends Fixture>(
 type FixtureClass<F extends Fixture> = new (log: TestCaseRecorder, params: CaseParams) => F;
 type TestFn<F extends Fixture, P extends {}> = (t: F & { params: P }) => Promise<void> | void;
 
-class TestGroup<F extends Fixture> implements RunCaseIterable, TestGroupBuilder<F> {
+class TestGroup<F extends Fixture> implements TestGroupBuilder<F> {
   private fixture: FixtureClass<F>;
   private seen: Set<string> = new Set();
   private tests: Array<TestBuilder<F, never>> = [];
@@ -54,10 +55,8 @@ class TestGroup<F extends Fixture> implements RunCaseIterable, TestGroupBuilder<
     this.fixture = fixture;
   }
 
-  *iterate(): Iterable<RunCase> {
-    for (const test of this.tests) {
-      yield* test.iterate();
-    }
+  iterate(): Iterable<IterableTest> {
+    return this.tests;
   }
 
   private checkName(name: string): void {
@@ -74,6 +73,8 @@ class TestGroup<F extends Fixture> implements RunCaseIterable, TestGroupBuilder<
 
   // TODO: This could take a fixture, too, to override the one for the group.
   test(name: string): TestBuilderWithName<F, never> {
+    const testCreationStack = new Error(`Test created: ${name}`);
+
     this.checkName(name);
 
     const parts = name.split(kPathSeparator);
@@ -81,56 +82,86 @@ class TestGroup<F extends Fixture> implements RunCaseIterable, TestGroupBuilder<
       assert(validQueryPart.test(p), `Invalid test name part ${p}; must match ${validQueryPart}`);
     }
 
-    const test = new TestBuilder<F, never>(parts, this.fixture);
+    const test = new TestBuilder<F, never>(parts, this.fixture, testCreationStack);
     this.tests.push(test);
     return test;
   }
 
-  checkCaseNamesAndDuplicates(): void {
+  validate(): void {
     for (const test of this.tests) {
-      test.checkCaseNamesAndDuplicates();
+      test.validate();
     }
   }
 }
 
 interface TestBuilderWithName<F extends Fixture, P extends {}> extends TestBuilderWithParams<F, P> {
+  desc(description: string): this;
   params<NewP extends {}>(specs: Iterable<NewP>): TestBuilderWithParams<F, NewP>;
 }
 
 interface TestBuilderWithParams<F extends Fixture, P extends {}> {
   fn(fn: TestFn<F, P>): void;
+  unimplemented(): void;
 }
 
 class TestBuilder<F extends Fixture, P extends {}> {
-  private readonly testPath: string[];
+  readonly testPath: string[];
+  description: string | undefined;
+
   private readonly fixture: FixtureClass<F>;
   private testFn: TestFn<F, P> | undefined;
   private cases?: CaseParamsIterable = undefined;
+  private testCreationStack: Error;
 
-  constructor(testPath: string[], fixture: FixtureClass<F>) {
+  constructor(testPath: string[], fixture: FixtureClass<F>, testCreationStack: Error) {
     this.testPath = testPath;
     this.fixture = fixture;
+    this.testCreationStack = testCreationStack;
+  }
+
+  desc(description: string): this {
+    this.description = description.trim();
+    return this;
   }
 
   fn(fn: TestFn<F, P>): void {
+    assert(this.testFn === undefined);
     this.testFn = fn;
   }
 
-  checkCaseNamesAndDuplicates(): void {
+  unimplemented(): void {
+    assert(this.testFn === undefined);
+    this.testFn = () => {
+      throw new SkipTestCase('test unimplemented');
+    };
+  }
+
+  validate(): void {
+    const testPathString = this.testPath.join(kPathSeparator);
+    assert(this.testFn !== undefined, () => {
+      let s = `Test is missing .fn(): ${testPathString}`;
+      if (this.testCreationStack.stack) {
+        s += `\n-> test created at:\n${this.testCreationStack.stack}`;
+      }
+      return s;
+    });
+
     if (this.cases === undefined) {
       return;
     }
 
-    // This is n^2.
-    const seen: CaseParams[] = [];
+    const seen = new Set<string>();
     for (const testcase of this.cases) {
       // stringifyPublicParams also checks for invalid params values
       const testcaseString = stringifyPublicParams(testcase);
+
+      // A (hopefully) unique representation of a params value.
+      const testcaseStringUnique = stringifyPublicParamsUniquely(testcase);
       assert(
-        !seen.some(x => publicParamsEquals(x, testcase)),
-        `Duplicate public test case params: ${testcaseString}`
+        !seen.has(testcaseStringUnique),
+        `Duplicate public test case params for test ${testPathString}: ${testcaseString}`
       );
-      seen.push(testcase);
+      seen.add(testcaseStringUnique);
     }
   }
 

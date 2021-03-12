@@ -384,7 +384,8 @@ bool DebugInfoManager::IsVariableDebugDeclared(uint32_t variable_id) {
   return dbg_decl_itr != var_id_to_dbg_decl_.end();
 }
 
-void DebugInfoManager::KillDebugDeclares(uint32_t variable_id) {
+bool DebugInfoManager::KillDebugDeclares(uint32_t variable_id) {
+  bool modified = false;
   auto dbg_decl_itr = var_id_to_dbg_decl_.find(variable_id);
   if (dbg_decl_itr != var_id_to_dbg_decl_.end()) {
     // We intentionally copy the list of DebugDeclare instructions because
@@ -394,9 +395,11 @@ void DebugInfoManager::KillDebugDeclares(uint32_t variable_id) {
 
     for (auto* dbg_decl : copy_dbg_decls) {
       context()->KillInst(dbg_decl);
+      modified = true;
     }
     var_id_to_dbg_decl_.erase(dbg_decl_itr);
   }
+  return modified;
 }
 
 uint32_t DebugInfoManager::GetParentScope(uint32_t child_scope) {
@@ -441,8 +444,22 @@ bool DebugInfoManager::IsAncestorOfScope(uint32_t scope, uint32_t ancestor) {
 }
 
 bool DebugInfoManager::IsDeclareVisibleToInstr(Instruction* dbg_declare,
-                                               uint32_t instr_scope_id) {
-  if (instr_scope_id == kNoDebugScope) return false;
+                                               Instruction* scope) {
+  assert(dbg_declare != nullptr);
+  assert(scope != nullptr);
+
+  std::vector<uint32_t> scope_ids;
+  if (scope->opcode() == SpvOpPhi) {
+    scope_ids.push_back(scope->GetDebugScope().GetLexicalScope());
+    for (uint32_t i = 0; i < scope->NumInOperands(); i += 2) {
+      auto* value = context()->get_def_use_mgr()->GetDef(
+          scope->GetSingleWordInOperand(i));
+      if (value != nullptr)
+        scope_ids.push_back(value->GetDebugScope().GetLexicalScope());
+    }
+  } else {
+    scope_ids.push_back(scope->GetDebugScope().GetLexicalScope());
+  }
 
   uint32_t dbg_local_var_id =
       dbg_declare->GetSingleWordOperand(kDebugDeclareOperandLocalVariableIndex);
@@ -453,7 +470,13 @@ bool DebugInfoManager::IsDeclareVisibleToInstr(Instruction* dbg_declare,
 
   // If the scope of DebugDeclare is an ancestor scope of the instruction's
   // scope, the local variable is visible to the instruction.
-  return IsAncestorOfScope(instr_scope_id, decl_scope_id);
+  for (uint32_t scope_id : scope_ids) {
+    if (scope_id != kNoDebugScope &&
+        IsAncestorOfScope(scope_id, decl_scope_id)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 Instruction* DebugInfoManager::AddDebugValueWithIndex(
@@ -494,15 +517,21 @@ Instruction* DebugInfoManager::AddDebugValueWithIndex(
   return added_dbg_value;
 }
 
-void DebugInfoManager::AddDebugValueIfVarDeclIsVisible(
+bool DebugInfoManager::AddDebugValueIfVarDeclIsVisible(
     Instruction* scope_and_line, uint32_t variable_id, uint32_t value_id,
-    Instruction* insert_pos) {
-  auto dbg_decl_itr = var_id_to_dbg_decl_.find(variable_id);
-  if (dbg_decl_itr == var_id_to_dbg_decl_.end()) return;
+    Instruction* insert_pos,
+    std::unordered_set<Instruction*>* invisible_decls) {
+  assert(scope_and_line != nullptr);
 
-  uint32_t instr_scope_id = scope_and_line->GetDebugScope().GetLexicalScope();
+  auto dbg_decl_itr = var_id_to_dbg_decl_.find(variable_id);
+  if (dbg_decl_itr == var_id_to_dbg_decl_.end()) return false;
+
+  bool modified = false;
   for (auto* dbg_decl_or_val : dbg_decl_itr->second) {
-    if (!IsDeclareVisibleToInstr(dbg_decl_or_val, instr_scope_id)) continue;
+    if (!IsDeclareVisibleToInstr(dbg_decl_or_val, scope_and_line)) {
+      if (invisible_decls) invisible_decls->insert(dbg_decl_or_val);
+      continue;
+    }
 
     // Avoid inserting the new DebugValue between OpPhi or OpVariable
     // instructions.
@@ -525,7 +554,33 @@ void DebugInfoManager::AddDebugValueIfVarDeclIsVisible(
     assert(added_dbg_value != nullptr);
     added_dbg_value->UpdateDebugInfoFrom(scope_and_line);
     AnalyzeDebugInst(added_dbg_value);
+    modified = true;
   }
+  return modified;
+}
+
+bool DebugInfoManager::AddDebugValueForDecl(Instruction* dbg_decl,
+                                            uint32_t value_id) {
+  if (dbg_decl == nullptr || !IsDebugDeclare(dbg_decl)) return false;
+
+  std::unique_ptr<Instruction> dbg_val(dbg_decl->Clone(context()));
+  dbg_val->SetResultId(context()->TakeNextId());
+  dbg_val->SetInOperand(kExtInstInstructionInIdx,
+                        {OpenCLDebugInfo100DebugValue});
+  dbg_val->SetOperand(kDebugDeclareOperandVariableIndex, {value_id});
+  dbg_val->SetOperand(kDebugValueOperandExpressionIndex,
+                      {GetEmptyDebugExpression()->result_id()});
+
+  auto* added_dbg_val = dbg_decl->InsertBefore(std::move(dbg_val));
+  AnalyzeDebugInst(added_dbg_val);
+  if (context()->AreAnalysesValid(IRContext::Analysis::kAnalysisDefUse))
+    context()->get_def_use_mgr()->AnalyzeInstDefUse(added_dbg_val);
+  if (context()->AreAnalysesValid(
+          IRContext::Analysis::kAnalysisInstrToBlockMapping)) {
+    auto insert_blk = context()->get_instr_block(dbg_decl);
+    context()->set_instr_block(added_dbg_val, insert_blk);
+  }
+  return true;
 }
 
 uint32_t DebugInfoManager::GetVariableIdOfDebugValueUsedForDeclare(

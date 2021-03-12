@@ -39,10 +39,11 @@ TEST_F(AssignmentStatementTest, CreationWithSource) {
   auto lhs = std::make_unique<ast::IdentifierExpression>("lhs");
   auto rhs = std::make_unique<ast::IdentifierExpression>("rhs");
 
-  AssignmentStatement stmt(Source{20, 2}, std::move(lhs), std::move(rhs));
+  AssignmentStatement stmt(Source{Source::Location{20, 2}}, std::move(lhs),
+                           std::move(rhs));
   auto src = stmt.source();
-  EXPECT_EQ(src.line, 20u);
-  EXPECT_EQ(src.column, 2u);
+  EXPECT_EQ(src.range.begin.line, 20u);
+  EXPECT_EQ(src.range.begin.column, 2u);
 }
 
 TEST_F(AssignmentStatementTest, IsAssign) {

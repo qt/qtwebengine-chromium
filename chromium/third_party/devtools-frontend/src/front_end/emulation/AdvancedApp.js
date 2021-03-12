@@ -2,15 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as Host from '../host/host.js';
 import * as UI from '../ui/ui.js';
 
 import {DeviceModeWrapper} from './DeviceModeWrapper.js';
-import {Events, instance} from './InspectedPagePlaceholder.js';
+import {Events, InspectedPagePlaceholder} from './InspectedPagePlaceholder.js';  // eslint-disable-line no-unused-vars
 
 /** @type {!AdvancedApp} */
 let _appInstance;
@@ -23,6 +20,23 @@ export class AdvancedApp {
   constructor() {
     UI.DockController.DockController.instance().addEventListener(
         UI.DockController.Events.BeforeDockSideChanged, this._openToolboxWindow, this);
+
+    // These attributes are guaranteed to be initialised in presentUI that
+    // is invoked immediately after construction.
+    /**
+     * @type {!UI.SplitWidget.SplitWidget}
+     */
+    this._rootSplitWidget;
+
+    /**
+     * @type {!DeviceModeWrapper}
+     */
+    this._deviceModeView;
+
+    /**
+     * @type {!InspectedPagePlaceholder}
+     */
+    this._inspectedPagePlaceholder;
   }
 
   /**
@@ -48,9 +62,10 @@ export class AdvancedApp {
     this._rootSplitWidget.setDefaultFocusedChild(UI.InspectorView.InspectorView.instance());
     UI.InspectorView.InspectorView.instance().setOwnerSplit(this._rootSplitWidget);
 
-    this._inspectedPagePlaceholder = instance();
+    this._inspectedPagePlaceholder = InspectedPagePlaceholder.instance();
     this._inspectedPagePlaceholder.addEventListener(Events.Update, this._onSetInspectedPageBounds.bind(this), this);
-    this._deviceModeView = new DeviceModeWrapper(this._inspectedPagePlaceholder);
+    this._deviceModeView =
+        DeviceModeWrapper.instance({inspectedPagePlaceholder: this._inspectedPagePlaceholder, forceNew: false});
 
     UI.DockController.DockController.instance().addEventListener(
         UI.DockController.Events.BeforeDockSideChanged, this._onBeforeDockSideChange, this);
@@ -159,7 +174,8 @@ export class AdvancedApp {
    * @param {string} dockSide
    */
   _updateForDocked(dockSide) {
-    this._rootSplitWidget.resizerElement().style.transform = dockSide === UI.DockController.State.DockedToRight ?
+    const resizerElement = /** @type {!HTMLElement} */ (this._rootSplitWidget.resizerElement());
+    resizerElement.style.transform = dockSide === UI.DockController.State.DockedToRight ?
         'translateX(2px)' :
         dockSide === UI.DockController.State.DockedToLeft ? 'translateX(-2px)' : '';
     this._rootSplitWidget.setVertical(

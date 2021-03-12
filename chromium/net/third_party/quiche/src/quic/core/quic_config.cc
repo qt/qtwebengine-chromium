@@ -10,6 +10,8 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/attributes.h"
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_handshake_message.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
@@ -20,10 +22,8 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_macros.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_uint128.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 
@@ -411,7 +411,7 @@ QuicErrorCode QuicFixedSocketAddress::ProcessPeerHello(
     const CryptoHandshakeMessage& peer_hello,
     HelloType /*hello_type*/,
     std::string* error_details) {
-  quiche::QuicheStringPiece address;
+  absl::string_view address;
   if (!peer_hello.GetStringPiece(tag_, &address)) {
     if (presence_ == PRESENCE_REQUIRED) {
       *error_details = "Missing " + QuicTagToString(tag_);
@@ -448,6 +448,8 @@ QuicConfig::QuicConfig()
       initial_session_flow_control_window_bytes_(kCFCW, PRESENCE_OPTIONAL),
       connection_migration_disabled_(kNCMR, PRESENCE_OPTIONAL),
       support_handshake_done_(0, PRESENCE_OPTIONAL),
+      key_update_supported_remotely_(false),
+      key_update_supported_locally_(false),
       alternate_server_address_ipv6_(kASAD, PRESENCE_OPTIONAL),
       alternate_server_address_ipv4_(kASAD, PRESENCE_OPTIONAL),
       stateless_reset_token_(kSRST, PRESENCE_OPTIONAL),
@@ -863,6 +865,22 @@ bool QuicConfig::PeerSupportsHandshakeDone() const {
   return support_handshake_done_.HasReceivedValue();
 }
 
+void QuicConfig::SetKeyUpdateSupportedLocally() {
+  key_update_supported_locally_ = true;
+}
+
+bool QuicConfig::KeyUpdateSupportedForConnection() const {
+  return KeyUpdateSupportedRemotely() && KeyUpdateSupportedLocally();
+}
+
+bool QuicConfig::KeyUpdateSupportedLocally() const {
+  return key_update_supported_locally_;
+}
+
+bool QuicConfig::KeyUpdateSupportedRemotely() const {
+  return key_update_supported_remotely_;
+}
+
 void QuicConfig::SetIPv6AlternateServerAddressToSend(
     const QuicSocketAddress& alternate_server_address_ipv6) {
   if (!alternate_server_address_ipv6.host().IsIPv6()) {
@@ -1228,8 +1246,7 @@ bool QuicConfig::FillTransportParameters(TransportParameters* params) const {
     params->google_connection_options = connection_options_.GetSendValues();
   }
 
-  if (GetQuicReloadableFlag(quic_send_key_update_not_yet_supported)) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_send_key_update_not_yet_supported);
+  if (!KeyUpdateSupportedLocally()) {
     params->key_update_not_yet_supported = true;
   }
 
@@ -1338,6 +1355,9 @@ QuicErrorCode QuicConfig::ProcessTransportParameters(
   }
   if (params.support_handshake_done) {
     support_handshake_done_.SetReceivedValue(1u);
+  }
+  if (!is_resumption && !params.key_update_not_yet_supported) {
+    key_update_supported_remotely_ = true;
   }
 
   active_connection_id_limit_.SetReceivedValue(

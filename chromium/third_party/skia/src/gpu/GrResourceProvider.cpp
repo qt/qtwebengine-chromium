@@ -12,6 +12,7 @@
 #include "include/private/GrSingleOwner.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkMathPriv.h"
+#include "src/gpu/GrAttachment.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrDataUtils.h"
 #include "src/gpu/GrGpu.h"
@@ -23,7 +24,6 @@
 #include "src/gpu/GrRenderTarget.h"
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/GrSemaphore.h"
-#include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/SkGr.h"
 
@@ -491,7 +491,7 @@ sk_sp<GrGpuBuffer> GrResourceProvider::createBuffer(size_t size, GrGpuBufferType
 
 bool GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt, int numStencilSamples) {
     SkASSERT(rt);
-    GrStencilAttachment* stencil = rt->getStencilAttachment();
+    GrAttachment* stencil = rt->getStencilAttachment();
     if (stencil && stencil->numSamples() == numStencilSamples) {
         return true;
     }
@@ -505,13 +505,21 @@ bool GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt, int numSten
             height = SkNextPow2(height);
         }
 #endif
-        GrStencilAttachment::ComputeSharedStencilAttachmentKey(
-                rt->dimensions(), numStencilSamples, &sbKey);
-        auto stencil = this->findByUniqueKey<GrStencilAttachment>(sbKey);
+        GrBackendFormat stencilFormat =
+                this->gpu()->getPreferredStencilFormat(rt->backendFormat());
+        if (!stencilFormat.isValid()) {
+            return false;
+        }
+        GrProtected isProtected = rt->isProtected() ? GrProtected::kYes : GrProtected::kNo;
+        GrAttachment::ComputeSharedAttachmentUniqueKey(
+                *this->caps(), stencilFormat, rt->dimensions(),
+                GrAttachment::UsageFlags::kStencilAttachment, numStencilSamples, isProtected,
+                &sbKey);
+        auto stencil = this->findByUniqueKey<GrAttachment>(sbKey);
         if (!stencil) {
             // Need to try and create a new stencil
-            stencil.reset(this->gpu()->createStencilAttachmentForRenderTarget(
-                    rt, rt->dimensions(), numStencilSamples));
+            stencil = this->gpu()->makeStencilAttachmentForRenderTarget(rt, rt->dimensions(),
+                                                                        numStencilSamples);
             if (!stencil) {
                 return false;
             }
@@ -520,18 +528,59 @@ bool GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt, int numSten
         rt->attachStencilAttachment(std::move(stencil));
     }
 
-    if (GrStencilAttachment* stencil = rt->getStencilAttachment()) {
+    if (GrAttachment* stencil = rt->getStencilAttachment()) {
         return stencil->numSamples() == numStencilSamples;
     }
     return false;
 }
 
-sk_sp<GrRenderTarget> GrResourceProvider::wrapBackendTextureAsRenderTarget(
-        const GrBackendTexture& tex, int sampleCnt) {
+sk_sp<GrAttachment> GrResourceProvider::makeMSAAAttachment(SkISize dimensions,
+                                                           const GrBackendFormat& format,
+                                                           int sampleCnt,
+                                                           GrProtected isProtected) {
+    ASSERT_SINGLE_OWNER
+
+    SkASSERT(sampleCnt > 1);
+
     if (this->isAbandoned()) {
         return nullptr;
     }
-    return fGpu->wrapBackendTextureAsRenderTarget(tex, sampleCnt);
+
+    if (!fCaps->validateSurfaceParams(dimensions, format, GrRenderable::kYes, sampleCnt,
+                                      GrMipMapped::kNo)) {
+        return nullptr;
+    }
+
+    auto scratch = this->refScratchMSAAAttachment(dimensions, format, sampleCnt, isProtected);
+    if (scratch) {
+        return scratch;
+    }
+
+    return fGpu->makeMSAAAttachment(dimensions, format, sampleCnt, isProtected);
+}
+
+sk_sp<GrAttachment> GrResourceProvider::refScratchMSAAAttachment(SkISize dimensions,
+                                                                 const GrBackendFormat& format,
+                                                                 int sampleCnt,
+                                                                 GrProtected isProtected) {
+    ASSERT_SINGLE_OWNER
+    SkASSERT(!this->isAbandoned());
+    SkASSERT(!this->caps()->isFormatCompressed(format));
+    SkASSERT(fCaps->validateSurfaceParams(dimensions, format, GrRenderable::kYes, sampleCnt,
+                                          GrMipmapped::kNo));
+
+    GrScratchKey key;
+    GrAttachment::ComputeScratchKey(*this->caps(), format, dimensions,
+                                    GrAttachment::UsageFlags::kColorAttachment, sampleCnt,
+                                    isProtected, &key);
+    GrGpuResource* resource = fCache->findAndRefScratchResource(key);
+    if (resource) {
+        fGpu->stats()->incNumScratchMSAAAttachmentsReused();
+        GrAttachment* attachment = static_cast<GrAttachment*>(resource);
+        return sk_sp<GrAttachment>(attachment);
+    }
+
+    return nullptr;
 }
 
 std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT GrResourceProvider::makeSemaphore(

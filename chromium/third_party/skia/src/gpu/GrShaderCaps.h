@@ -15,6 +15,7 @@
 
 namespace SkSL {
 class ShaderCapsFactory;
+class SharedCompiler;
 }  // namespace SkSL
 
 struct GrContextOptions;
@@ -87,6 +88,8 @@ public:
 
     // SkSL only.
     bool builtinFMASupport() const { return fBuiltinFMASupport; }
+
+    bool builtinDeterminantSupport() const { return fBuiltinDeterminantSupport; }
 
     AdvBlendEqInteraction advBlendEqInteraction() const { return fAdvBlendEqInteraction; }
 
@@ -281,6 +284,7 @@ private:
 
     // Used by SkSL to know when to generate polyfills.
     bool fBuiltinFMASupport : 1;
+    bool fBuiltinDeterminantSupport : 1;
 
     // Used for specific driver bug work arounds
     bool fCanUseAnyFunctionInShader                   : 1;
@@ -335,6 +339,7 @@ private:
     friend class GrMtlCaps;
     friend class GrVkCaps;
     friend class SkSL::ShaderCapsFactory;
+    friend class SkSL::SharedCompiler;
 };
 
 #endif

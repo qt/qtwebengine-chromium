@@ -17,6 +17,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "src/ast/module.h"
 #include "src/ast/type/storage_texture_type.h"
@@ -27,10 +28,9 @@ namespace tint {
 namespace ast {
 
 class ArrayAccessorExpression;
-class AsExpression;
 class BinaryExpression;
+class BitcastExpression;
 class CallExpression;
-class CastExpression;
 class ConstructorExpression;
 class Function;
 class IdentifierExpression;
@@ -83,6 +83,10 @@ class TypeDeterminer {
   /// @param stmt the statement to check
   /// @returns false on error
   bool DetermineVariableStorageClass(ast::Statement* stmt);
+  /// Determines the result type based off a storage texture format
+  /// @param tex the storage texture
+  /// @returns false on error
+  bool DetermineStorageTextureSubtype(ast::type::StorageTextureType* tex);
 
   /// Testing method to set a given variable into the type stack
   /// @param var the variable to set
@@ -103,23 +107,26 @@ class TypeDeterminer {
                                  const ast::ExpressionList& params,
                                  uint32_t* id);
 
+  /// Sets the intrinsic data information for the identifier if needed
+  /// @param ident the identifier expression
+  /// @returns true if an intrinsic was set
+  bool SetIntrinsicIfNeeded(ast::IdentifierExpression* ident);
+
  private:
   void set_error(const Source& src, const std::string& msg);
   void set_referenced_from_function_if_needed(ast::Variable* var);
   void set_entry_points(const std::string& fn_name, const std::string& ep_name);
 
   bool DetermineArrayAccessor(ast::ArrayAccessorExpression* expr);
-  bool DetermineAs(ast::AsExpression* expr);
   bool DetermineBinary(ast::BinaryExpression* expr);
+  bool DetermineBitcast(ast::BitcastExpression* expr);
   bool DetermineCall(ast::CallExpression* expr);
-  bool DetermineCast(ast::CastExpression* expr);
   bool DetermineConstructor(ast::ConstructorExpression* expr);
   bool DetermineIdentifier(ast::IdentifierExpression* expr);
-  bool DetermineIntrinsic(const std::string& name, ast::CallExpression* expr);
+  bool DetermineIntrinsic(ast::IdentifierExpression* name,
+                          ast::CallExpression* expr);
   bool DetermineMemberAccessor(ast::MemberAccessorExpression* expr);
   bool DetermineUnaryOp(ast::UnaryOpExpression* expr);
-
-  bool DetermineStorageTextureSubtype(ast::type::StorageTextureType* tex);
 
   Context& ctx_;
   ast::Module* mod_;

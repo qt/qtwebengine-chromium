@@ -46,7 +46,7 @@ import {Events as ZoomManagerEvents, ZoomManager} from './ZoomManager.js';
 export class TabbedPane extends VBox {
   constructor() {
     super(true);
-    this.registerRequiredCSS('ui/tabbedPane.css');
+    this.registerRequiredCSS('ui/tabbedPane.css', {enableLegacyPatching: true});
     this.element.classList.add('tabbed-pane');
     this.contentElement.classList.add('tabbed-pane-shadow');
     this.contentElement.tabIndex = -1;
@@ -71,6 +71,7 @@ export class TabbedPane extends VBox {
 
     this._triggerDropDownTimeout = null;
     this._dropDownButton = this._createDropDownButton();
+    this._currentDevicePixelRatio = window.devicePixelRatio;
     ZoomManager.instance().addEventListener(ZoomManagerEvents.ZoomChanged, this._zoomChanged, this);
     this.makeTabSlider();
   }
@@ -453,11 +454,15 @@ export class TabbedPane extends VBox {
    * @param {!Common.EventTarget.EventTargetEvent} event
    */
   _zoomChanged(event) {
-    for (let i = 0; i < this._tabs.length; ++i) {
-      delete this._tabs[i]._measuredWidth;
-    }
+    this._clearMeasuredWidths();
     if (this.isShowing()) {
       this._updateTabElements();
+    }
+  }
+
+  _clearMeasuredWidths() {
+    for (let i = 0; i < this._tabs.length; ++i) {
+      delete this._tabs[i]._measuredWidth;
     }
   }
 
@@ -508,6 +513,11 @@ export class TabbedPane extends VBox {
    * @override
    */
   onResize() {
+    if (this._currentDevicePixelRatio !== window.devicePixelRatio) {
+      // Force recalculation of all tab widths on a DPI change
+      this._clearMeasuredWidths();
+      this._currentDevicePixelRatio = window.devicePixelRatio;
+    }
     this._updateTabElements();
   }
 

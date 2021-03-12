@@ -25,6 +25,7 @@ using F32TypeTest = testing::Test;
 
 TEST_F(F32TypeTest, Is) {
   F32Type f;
+  EXPECT_FALSE(f.IsAccessControl());
   EXPECT_FALSE(f.IsAlias());
   EXPECT_FALSE(f.IsArray());
   EXPECT_FALSE(f.IsBool());
@@ -42,6 +43,16 @@ TEST_F(F32TypeTest, Is) {
 TEST_F(F32TypeTest, TypeName) {
   F32Type f;
   EXPECT_EQ(f.type_name(), "__f32");
+}
+
+TEST_F(F32TypeTest, MinBufferBindingSize) {
+  F32Type f;
+  EXPECT_EQ(4u, f.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
+}
+
+TEST_F(F32TypeTest, BaseAlignment) {
+  F32Type f;
+  EXPECT_EQ(4u, f.BaseAlignment(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

@@ -15,7 +15,8 @@
 #include "src/gpu/SkGr.h"
 #include "src/image/SkImage_GpuBase.h"
 
-class GrContext;
+class GrDirectContext;
+class GrRecordingContext;
 class GrTexture;
 
 class SkBitmap;
@@ -71,8 +72,7 @@ public:
      */
     static sk_sp<SkImage> MakePromiseTexture(GrRecordingContext*,
                                              const GrBackendFormat& backendFormat,
-                                             int width,
-                                             int height,
+                                             SkISize dimensions,
                                              GrMipmapped mipMapped,
                                              GrSurfaceOrigin origin,
                                              SkColorType colorType,
@@ -80,15 +80,17 @@ public:
                                              sk_sp<SkColorSpace> colorSpace,
                                              PromiseImageTextureFulfillProc textureFulfillProc,
                                              PromiseImageTextureReleaseProc textureReleaseProc,
-                                             PromiseImageTextureDoneProc textureDoneProc,
-                                             PromiseImageTextureContext textureContext,
-                                             PromiseImageApiVersion);
+                                             PromiseImageTextureContext textureContext);
 
-    static sk_sp<SkImage> ConvertYUVATexturesToRGB(GrRecordingContext*, SkYUVColorSpace,
-                                                   const GrBackendTexture [],
-                                                   const SkYUVAIndex [4],
-                                                   SkISize, GrSurfaceOrigin,
-                                                   GrRenderTargetContext*);
+    static sk_sp<SkImage> ConvertYUVATexturesToRGB(
+            GrRecordingContext*,
+            SkYUVColorSpace,
+            const GrBackendTexture[],
+            const SkYUVAIndex[SkYUVAIndex::kIndexCount],
+            SkISize,
+            GrSurfaceOrigin,
+            GrRenderTargetContext*,
+            sk_sp<GrRefCntedCallback> releaseHelper = nullptr);
 
 private:
     GrSurfaceProxyView fView;

@@ -168,7 +168,7 @@ TEST_F(SpvParserTest, EmitStatement_LoadBool) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_2
     none
     __bool
@@ -197,7 +197,7 @@ TEST_F(SpvParserTest, EmitStatement_LoadScalar) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableDeclStatement{
-  Variable{
+  VariableConst{
     x_2
     none
     __u32
@@ -207,7 +207,7 @@ TEST_F(SpvParserTest, EmitStatement_LoadScalar) {
   }
 }
 VariableDeclStatement{
-  Variable{
+  VariableConst{
     x_3
     none
     __u32
@@ -238,7 +238,7 @@ TEST_F(SpvParserTest, EmitStatement_UseLoadedScalarTwice) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableDeclStatement{
-  Variable{
+  VariableConst{
     x_2
     none
     __u32
@@ -799,16 +799,16 @@ TEST_F(SpvParserTest, RemapStorageBuffer_TypesAndVarDeclarations) {
       << assembly << p->error();
   const auto module_str = p->module().to_str();
   EXPECT_THAT(module_str, HasSubstr(R"(
+  RTArr -> __array__u32_stride_4
+  S Struct{
+    [[block]]
+    StructMember{[[ offset 0 ]] field0: __u32}
+    StructMember{[[ offset 4 ]] field1: __alias_RTArr__array__u32_stride_4}
+  }
   Variable{
     myvar
     storage_buffer
-    __alias_S__struct_S
-  }
-  RTArr -> __array__u32_stride_4
-  S -> __struct_S
-  [[block]] Struct{
-    StructMember{[[ offset 0 ]] field0: __u32}
-    StructMember{[[ offset 4 ]] field1: __alias_RTArr__array__u32_stride_4}
+    __access_control_read_write__struct_S
   })"));
 }
 
@@ -905,7 +905,7 @@ TEST_F(SpvParserTest, RemapStorageBuffer_ThroughCopyObject_WithoutHoisting) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableDeclStatement{
-  Variable{
+  VariableConst{
     x_2
     none
     __ptr_storage_buffer__u32

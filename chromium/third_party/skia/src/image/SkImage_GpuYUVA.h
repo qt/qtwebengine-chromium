@@ -12,7 +12,8 @@
 #include "src/core/SkCachedData.h"
 #include "src/image/SkImage_GpuBase.h"
 
-class GrContext;
+class GrDirectContext;
+class GrRecordingContext;
 class GrTexture;
 struct SkYUVASizeInfo;
 
@@ -31,7 +32,6 @@ public:
                     GrSurfaceProxyView views[],
                     int numViews,
                     const SkYUVAIndex[4],
-                    GrSurfaceOrigin,
                     sk_sp<SkColorSpace>);
 
     GrSemaphoresSubmitted onFlush(GrDirectContext*, const GrFlushInfo&) override;
@@ -77,13 +77,11 @@ public:
                                                  const SkYUVAIndex yuvaIndices[4],
                                                  int width,
                                                  int height,
-                                                 GrSurfaceOrigin imageOrigin,
+                                                 GrSurfaceOrigin textureOrigin,
                                                  sk_sp<SkColorSpace> imageColorSpace,
                                                  PromiseImageTextureFulfillProc textureFulfillProc,
                                                  PromiseImageTextureReleaseProc textureReleaseProc,
-                                                 PromiseImageTextureDoneProc textureDoneProc,
-                                                 PromiseImageTextureContext textureContexts[],
-                                                 PromiseImageApiVersion);
+                                                 PromiseImageTextureContext textureContexts[]);
 
 private:
     SkImage_GpuYUVA(sk_sp<GrImageContext>, const SkImage_GpuYUVA* image, sk_sp<SkColorSpace>);
@@ -96,7 +94,7 @@ private:
     int                              fNumViews;
     SkYUVAIndex                      fYUVAIndices[4];
     const SkYUVColorSpace            fYUVColorSpace;
-    GrSurfaceOrigin                  fOrigin;
+
     // If this is non-null then the planar data should be converted from fFromColorSpace to
     // this->colorSpace(). Otherwise we assume the planar data (post YUV->RGB conversion) is already
     // in this->colorSpace().

@@ -202,6 +202,17 @@ export class CSSMetadata {
   }
 
   /**
+ * @param {string} propertyName
+ * @return {boolean}
+ */
+  isAngleAwareProperty(propertyName) {
+    const lowerCasedName = propertyName.toLowerCase();
+    // TODO: @Yisi, parse hsl(), hsla(), hwb() and lch()
+    // See also https://drafts.csswg.org/css-color/#hue-syntax
+    return _colorAwareProperties.has(lowerCasedName) || _angleAwareProperties.has(lowerCasedName);
+  }
+
+  /**
    * @param {string} propertyName
    * @return {boolean}
    */
@@ -492,6 +503,7 @@ const _colorAwareProperties = new Set([
   'color',
   'column-rule',
   'column-rule-color',
+  'content',
   'fill',
   'list-style-image',
   'outline',
@@ -523,6 +535,20 @@ const _colorAwareProperties = new Set([
   '-webkit-text-stroke-color'
 ]);
 
+// In addition to `_colorAwareProperties`, the following properties contain CSS <angle> units.
+const _angleAwareProperties = new Set([
+  '-webkit-border-image',
+  'transform',
+  '-webkit-transform',
+  'rotate',
+  'filter',
+  '-webkit-filter',
+  'backdrop-filter',
+  'offset',
+  'offset-rotate',
+  'font-style',
+]);
+
 // manually maintained list of property values to add into autocomplete list
 const _extraPropertyValues = {
   'background-repeat': {values: ['repeat', 'repeat-x', 'repeat-y', 'no-repeat', 'space', 'round']},
@@ -544,6 +570,7 @@ const _extraPropertyValues = {
   'overscroll-behavior': {values: ['contain']},
   'text-rendering': {values: ['optimizeSpeed', 'optimizeLegibility', 'geometricPrecision']},
   'text-align': {values: ['-webkit-auto', '-webkit-match-parent']},
+  'clip-path': {values: ['circle', 'ellipse', 'inset', 'polygon', 'url']},
   'color-interpolation': {values: ['sRGB', 'linearRGB']},
   'word-wrap': {values: ['normal', 'break-word']},
   'font-weight': {values: ['100', '200', '300', '400', '500', '600', '700', '800', '900']},

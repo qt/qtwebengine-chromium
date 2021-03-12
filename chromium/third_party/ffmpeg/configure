@@ -2628,6 +2628,7 @@ cbs_vp9_select="cbs"
 dct_select="rdft"
 dirac_parse_select="golomb"
 dnn_suggest="libtensorflow libopenvino"
+dnn_deps="swscale"
 error_resilience_select="me_cmp"
 faandct_deps="faan"
 faandct_select="fdctdsp"
@@ -2685,6 +2686,7 @@ atrac3al_decoder_select="mdct"
 atrac3p_decoder_select="mdct sinewin"
 atrac3pal_decoder_select="mdct sinewin"
 atrac9_decoder_select="mdct"
+av1_decoder_select="cbs_av1"
 avrn_decoder_select="exif jpegtables"
 bink_decoder_select="blockdsp hpeldsp"
 binkaudio_dct_decoder_select="mdct rdft dct sinewin wma_freqs"
@@ -2770,6 +2772,7 @@ mjpeg_encoder_select="jpegtables mpegvideoenc"
 mjpegb_decoder_select="mjpeg_decoder"
 mlp_decoder_select="mlp_parser"
 mlp_encoder_select="lpc audio_frame_queue"
+mobiclip_decoder_select="bswapdsp golomb"
 motionpixels_decoder_select="bswapdsp"
 mp1_decoder_select="mpegaudio"
 mp1float_decoder_select="mpegaudio"
@@ -3137,6 +3140,7 @@ vp9_qsv_encoder_deps="libmfx MFX_CODEC_VP9"
 vp9_qsv_encoder_select="qsvenc"
 vp9_v4l2m2m_decoder_deps="v4l2_m2m vp9_v4l2_m2m"
 wmv3_crystalhd_decoder_select="crystalhd"
+av1_qsv_decoder_select="qsvdec"
 
 # parsers
 aac_parser_select="adts_header"
@@ -3530,7 +3534,6 @@ derain_filter_select="dnn"
 deshake_filter_select="pixelutils"
 deshake_opencl_filter_deps="opencl"
 dilation_opencl_filter_deps="opencl"
-dnn_processing_filter_deps="swscale"
 dnn_processing_filter_select="dnn"
 drawtext_filter_deps="libfreetype"
 drawtext_filter_suggest="libfontconfig libfribidi"
@@ -5025,8 +5028,6 @@ elif enabled mips; then
         disable loongson3
         disable mipsdsp
         disable mipsdspr2
-        disable msa
-        disable mmi
 
         cpuflags="-march=$cpu"
 
@@ -5035,17 +5036,13 @@ elif enabled mips; then
             mips1|mips3)
             ;;
             mips32r2)
-                enable msa
                 enable mips32r2
             ;;
             mips32r5)
-                enable msa
                 enable mips32r2
                 enable mips32r5
             ;;
             mips64r2|mips64r5)
-                enable msa
-                enable mmi
                 enable mips64r2
                 enable loongson3
             ;;
@@ -5062,7 +5059,6 @@ elif enabled mips; then
                 enable mips32r2
             ;;
             p5600)
-                enable msa
                 enable mips32r2
                 enable mips32r5
                 check_cflags "-mtune=p5600" && check_cflags "-msched-weight -mload-store-pairs -funroll-loops"
@@ -5077,7 +5073,6 @@ elif enabled mips; then
             ;;
             # Cores from Loongson
             loongson2e|loongson2f|loongson3*)
-                enable mmi
                 enable local_aligned
                 enable simd_align_16
                 enable fast_64bit
@@ -5100,7 +5095,6 @@ elif enabled mips; then
                 case $cpu in
                     loongson3*)
                         enable loongson3
-                        enable msa
                         cpuflags="-march=loongson3a -mhard-float $expensive_optimization_flag"
                     ;;
                     loongson2e)
@@ -6351,7 +6345,7 @@ enabled fontconfig        && enable libfontconfig
 enabled libfontconfig     && require_pkg_config libfontconfig fontconfig "fontconfig/fontconfig.h" FcInit
 enabled libfreetype       && require_pkg_config libfreetype freetype2 "ft2build.h FT_FREETYPE_H" FT_Init_FreeType
 enabled libfribidi        && require_pkg_config libfribidi fribidi fribidi.h fribidi_version_info
-enabled libglslang        && require_cpp libglslang glslang/SPIRV/GlslangToSpv.h "glslang::TIntermediate*" -lglslang -lOSDependent -lHLSL -lOGLCompiler -lSPVRemapper -lSPIRV -lSPIRV-Tools-opt -lSPIRV-Tools -lpthread -lstdc++
+enabled libglslang        && require_cpp libglslang glslang/SPIRV/GlslangToSpv.h "glslang::TIntermediate*" -lglslang -lMachineIndependent -lOSDependent -lHLSL -lOGLCompiler -lGenericCodeGen -lSPVRemapper -lSPIRV -lSPIRV-Tools-opt -lSPIRV-Tools -lpthread -lstdc++
 enabled libgme            && { check_pkg_config libgme libgme gme/gme.h gme_new_emu ||
                                require libgme gme/gme.h gme_new_emu -lgme -lstdc++; }
 enabled libgsm            && { for gsm_hdr in "gsm.h" "gsm/gsm.h"; do

@@ -40,6 +40,9 @@ declare_args() {
   # Abseil has trouble supporting MSVC, particularly regarding component builds.
   # http://crbug.com/1126524
   angle_enable_abseil = angle_has_build && is_clang
+
+  # Adds run-time checks to filter out EVENT() messages when the debug annotator is disabled.
+  angle_enable_annotator_run_time_checks = false
 }
 
 if (angle_build_all) {
@@ -103,8 +106,17 @@ config("internal_config") {
     defines += [ "ANGLE_IS_LINUX" ]
   }
 
+  # Enables debug/trace-related functionality, including logging every GLES/EGL API command to the
+  # "angle_debug.txt" file on desktop.  Enables debug markers for AGI, but must also set
+  # angle_enable_annotator_run_time_checks to improve performance.
   if (angle_enable_trace) {
     defines += [ "ANGLE_ENABLE_DEBUG_TRACE=1" ]
+  }
+
+  # When used with angle_enable_trace, enables logging every GLES/EGL API command to Android logcat
+  # Enables debug markers for AGI regardless of run-time checks.
+  if (angle_enable_trace_android_logcat) {
+    defines += [ "ANGLE_ENABLE_TRACE_ANDROID_LOGCAT=1" ]
   }
 
   if (is_chromeos) {
@@ -113,6 +125,15 @@ config("internal_config") {
 
   if (is_ggp) {
     defines += [ "__ggp__" ]
+  }
+
+  if (angle_use_vulkan_display) {
+    defines += [ "ANGLE_USE_VULKAN_DISPLAY" ]
+    if (angle_vulkan_display_mode == "simple") {
+      defines += [ "ANGLE_VULKAN_DISPLAY_MODE_SIMPLE" ]
+    } else if (angle_vulkan_display_mode == "headless") {
+      defines += [ "ANGLE_VULKAN_DISPLAY_MODE_HEADLESS" ]
+    }
   }
 }
 
@@ -185,13 +206,6 @@ config("build_id_config") {
   ldflags = [ "-Wl,--build-id" ]
 }
 
-# Useful for more informative stack traces.
-config("better_linux_stack_traces") {
-  if (angle_better_stack_traces) {
-    ldflags = [ "-Wl,--export-dynamic" ]
-  }
-}
-
 _use_copy_compiler_dll = angle_has_build && is_win && target_cpu != "arm64"
 
 # Windows ARM64 is available since 10.0.16299 so no need to copy
@@ -240,6 +254,11 @@ config("angle_disable_pool_alloc") {
 config("debug_annotations_config") {
   if (is_debug) {
     defines = [ "ANGLE_ENABLE_DEBUG_ANNOTATIONS" ]
+  }
+  if (angle_enable_annotator_run_time_checks) {
+    # When used with angle_enable_trace, enables debug markers for AGI with run-time checks to
+    # filter out EVENT() messages when the debug annotator is disabled.
+    defines = [ "ANGLE_ENABLE_ANNOTATOR_RUN_TIME_CHECKS" ]
   }
 }
 
@@ -311,6 +330,16 @@ angle_static_library("angle_common") {
   if (angle_has_build && use_fuzzing_engine) {
     all_dependent_configs = [ ":angle_disable_pool_alloc" ]
   }
+
+  if (is_android && (angle_enable_gl || angle_enable_vulkan)) {
+    # In API level 26 ANativeWindow APIs were moved from libandroid.so
+    # into a separate library, libnativewindow.so
+    if (ndk_api_level_at_least_26) {
+      libs = [ "nativewindow" ]
+    } else {
+      libs = [ "android" ]
+    }
+  }
 }
 
 config("angle_image_util_config") {
@@ -363,7 +392,7 @@ angle_static_library("angle_gpu_info_util") {
   libs = []
   defines = []
 
-  if (!is_chromeos) {
+  if (!is_chromeos && angle_has_build) {
     sources += libangle_gpu_info_util_vulkan_sources
     deps += [ "$angle_root/third_party/vulkan-headers/src:vulkan_headers" ]
   }
@@ -596,6 +625,9 @@ config("libANGLE_config") {
   if (angle_enable_overlay) {
     defines += [ "ANGLE_ENABLE_OVERLAY=1" ]
   }
+  if (angle_enable_perf_counter_output) {
+    defines += [ "ANGLE_ENABLE_PERF_COUNTER_OUTPUT=1" ]
+  }
 }
 
 angle_source_set("libANGLE_headers") {
@@ -772,7 +804,7 @@ group("angle_abseil") {
   if (angle_enable_abseil) {
     # When build_with_chromium=true we need to include "//third_party/abseil-cpp:absl" while
     # we can be more specific when building standalone ANGLE.
-    if (build_with_chromium) {
+    if (build_with_chromium || is_component_build) {
       public_deps = [ "$angle_abseil_cpp_dir:absl" ]
     } else {
       public_deps = [ "$angle_abseil_cpp_dir/absl/container:flat_hash_map" ]

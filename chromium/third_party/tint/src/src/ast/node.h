@@ -34,18 +34,15 @@ class Node {
   /// @param source the source data
   void set_source(const Source& source) { source_ = source; }
 
-  /// @returns the line the node was declared on
-  size_t line() const { return source_.line; }
-  /// @returns the column the node was declared on
-  size_t column() const { return source_.column; }
-
   /// @returns true if the node is valid
   virtual bool IsValid() const = 0;
 
   /// Writes a representation of the node to the output stream
   /// @param out the stream to write to
   /// @param indent number of spaces to indent the node when writing
+  //! @cond Doxygen_Suppress
   virtual void to_str(std::ostream& out, size_t indent) const = 0;
+  //! @endcond
 
   /// Convenience wrapper around the |to_str| method.
   /// @returns the node as a string

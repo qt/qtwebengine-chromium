@@ -14,13 +14,14 @@
 #include "discovery/public/dns_sd_service_publisher.h"
 #include "discovery/public/dns_sd_service_watcher.h"
 #include "gtest/gtest.h"
-#include "platform/api/logging.h"
 #include "platform/api/udp_socket.h"
 #include "platform/base/interface_info.h"
 #include "platform/impl/network_interface.h"
 #include "platform/impl/platform_client_posix.h"
 #include "platform/impl/task_runner.h"
+#include "testing/util/task_util.h"
 #include "util/chrono_helpers.h"
+#include "util/osp_logging.h"
 
 namespace openscreen {
 namespace cast {
@@ -37,7 +38,6 @@ constexpr int kMaxWaitLoopIterations = 8;
 // NOTE: This must be less than the above wait time.
 constexpr milliseconds kCheckLoopSleepTime(100);
 constexpr int kMaxCheckLoopIterations = 25;
-
 
 // Publishes new service instances.
 class Publisher : public discovery::DnsSdServicePublisher<ServiceInfo> {
@@ -166,12 +166,8 @@ class DiscoveryE2ETest : public testing::Test {
       publisher_ = std::make_unique<Publisher>(dnssd_service_.get());
       done = true;
     });
-    for (int i = 0; i < kMaxWaitLoopIterations; ++i) {
-      if (done) {
-        break;
-      }
-      std::this_thread::sleep_for(kWaitLoopSleepTime);
-    }
+    WaitForCondition([&done]() { return done.load(); }, kWaitLoopSleepTime,
+                     kMaxWaitLoopIterations);
     OSP_CHECK(done);
   }
 

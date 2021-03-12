@@ -91,7 +91,7 @@ export class CSSOverviewCompletedView extends UI.Panel.PanelWithSidebar {
    */
   constructor(controller, target) {
     super('css_overview_completed_view');
-    this.registerRequiredCSS('css_overview/cssOverviewCompletedView.css');
+    this.registerRequiredCSS('css_overview/cssOverviewCompletedView.css', {enableLegacyPatching: true});
 
     this._controller = controller;
     this._formatter = new Intl.NumberFormat('en-US');
@@ -108,7 +108,7 @@ export class CSSOverviewCompletedView extends UI.Panel.PanelWithSidebar {
     });
 
     // Dupe the styles into the main container because of the shadow root will prevent outer styles.
-    this._mainContainer.registerRequiredCSS('css_overview/cssOverviewCompletedView.css');
+    this._mainContainer.registerRequiredCSS('css_overview/cssOverviewCompletedView.css', {enableLegacyPatching: true});
 
     this._mainContainer.setMainWidget(this._resultsContainer);
     this._mainContainer.setSidebarWidget(this._elementContainer);
@@ -120,8 +120,13 @@ export class CSSOverviewCompletedView extends UI.Panel.PanelWithSidebar {
     this.splitWidget().setSidebarWidget(this._sideBar);
     this.splitWidget().setMainWidget(this._mainContainer);
 
-    this._cssModel = target.model(SDK.CSSModel.CSSModel);
-    this._domModel = target.model(SDK.DOMModel.DOMModel);
+    const cssModel = target.model(SDK.CSSModel.CSSModel);
+    const domModel = target.model(SDK.DOMModel.DOMModel);
+    if (!cssModel || !domModel) {
+      throw new Error('Target must provide CSS and DOM models');
+    }
+    this._cssModel = cssModel;
+    this._domModel = domModel;
     this._domAgent = target.domAgent();
     this._linkifier = new Components.Linkifier.Linkifier(/* maxLinkLength */ 20, /* useLinkDecorator */ true);
 
@@ -868,15 +873,14 @@ export class ElementDetailsView extends UI.Widget.Widget {
     }
 
     const [firstItem] = data;
-    const visibility = {
-      'nodeId': !!firstItem.nodeId,
-      'declaration': !!firstItem.declaration,
-      'sourceURL': !!firstItem.sourceURL,
-      'contrastRatio': !!firstItem.contrastRatio,
-    };
+    const visibility = new Set();
+    firstItem.nodeId && visibility.add('nodeId');
+    firstItem.declaration && visibility.add('declaration');
+    firstItem.sourceURL && visibility.add('sourceURL');
+    firstItem.contrastRatio && visibility.add('contrastRatio');
 
     let relatedNodesMap;
-    if (visibility.nodeId) {
+    if (visibility.has('nodeId')) {
       // Grab the nodes from the frontend, but only those that have not been
       // retrieved already.
       const nodeIds = /** @type {!Set<number>} */ (data.reduce((prev, curr) => {
@@ -891,7 +895,7 @@ export class ElementDetailsView extends UI.Widget.Widget {
     }
 
     for (const item of data) {
-      if (visibility.nodeId) {
+      if (visibility.has('nodeId')) {
         if (!relatedNodesMap) {
           continue;
         }

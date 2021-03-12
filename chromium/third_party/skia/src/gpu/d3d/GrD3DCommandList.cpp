@@ -8,12 +8,12 @@
 #include "src/gpu/d3d/GrD3DCommandList.h"
 
 #include "src/gpu/GrScissorState.h"
+#include "src/gpu/d3d/GrD3DAttachment.h"
 #include "src/gpu/d3d/GrD3DBuffer.h"
 #include "src/gpu/d3d/GrD3DCommandSignature.h"
 #include "src/gpu/d3d/GrD3DGpu.h"
 #include "src/gpu/d3d/GrD3DPipelineState.h"
 #include "src/gpu/d3d/GrD3DRenderTarget.h"
-#include "src/gpu/d3d/GrD3DStencilAttachment.h"
 #include "src/gpu/d3d/GrD3DTexture.h"
 #include "src/gpu/d3d/GrD3DTextureResource.h"
 #include "src/gpu/d3d/GrD3DUtil.h"
@@ -395,15 +395,16 @@ void GrD3DDirectCommandList::clearRenderTargetView(const GrD3DRenderTarget* rend
                                                    const D3D12_RECT* rect) {
     this->addingWork();
     this->addResource(renderTarget->resource());
-    if (renderTarget->numSamples() > 1) {
-        this->addResource(renderTarget->msaaTextureResource()->resource());
+    const GrD3DTextureResource* msaaTextureResource = renderTarget->msaaTextureResource();
+    if (msaaTextureResource && msaaTextureResource != renderTarget) {
+        this->addResource(msaaTextureResource->resource());
     }
     unsigned int numRects = rect ? 1 : 0;
     fCommandList->ClearRenderTargetView(renderTarget->colorRenderTargetView(),
                                         color.vec(), numRects, rect);
 }
 
-void GrD3DDirectCommandList::clearDepthStencilView(const GrD3DStencilAttachment* stencil,
+void GrD3DDirectCommandList::clearDepthStencilView(const GrD3DAttachment* stencil,
                                                    uint8_t stencilClearValue,
                                                    const D3D12_RECT* rect) {
     this->addingWork();
@@ -416,15 +417,16 @@ void GrD3DDirectCommandList::clearDepthStencilView(const GrD3DStencilAttachment*
 void GrD3DDirectCommandList::setRenderTarget(const GrD3DRenderTarget* renderTarget) {
     this->addingWork();
     this->addResource(renderTarget->resource());
-    if (renderTarget->numSamples() > 1) {
-        this->addResource(renderTarget->msaaTextureResource()->resource());
+    const GrD3DTextureResource* msaaTextureResource = renderTarget->msaaTextureResource();
+    if (msaaTextureResource && msaaTextureResource != renderTarget) {
+        this->addResource(msaaTextureResource->resource());
     }
     D3D12_CPU_DESCRIPTOR_HANDLE rtvDescriptor = renderTarget->colorRenderTargetView();
 
     D3D12_CPU_DESCRIPTOR_HANDLE dsDescriptor;
     D3D12_CPU_DESCRIPTOR_HANDLE* dsDescriptorPtr = nullptr;
     if (auto stencil = renderTarget->getStencilAttachment()) {
-        GrD3DStencilAttachment* d3dStencil = static_cast<GrD3DStencilAttachment*>(stencil);
+        GrD3DAttachment* d3dStencil = static_cast<GrD3DAttachment*>(stencil);
         this->addResource(d3dStencil->resource());
         dsDescriptor = d3dStencil->view();
         dsDescriptorPtr = &dsDescriptor;

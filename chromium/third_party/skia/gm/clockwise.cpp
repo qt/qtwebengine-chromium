@@ -23,7 +23,7 @@
 #include "src/gpu/GrBuffer.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorSpaceXform.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrGpuBuffer.h"
 #include "src/gpu/GrMemoryPool.h"
@@ -137,10 +137,9 @@ class ClockwiseTestOp : public GrDrawOp {
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                                          bool readSkFragCoord, int y = 0) {
-        GrOpMemoryPool* pool = context->priv().opMemoryPool();
-        return pool->allocate<ClockwiseTestOp>(readSkFragCoord, y);
+    static GrOp::Owner Make(GrRecordingContext* context,
+                            bool readSkFragCoord, int y = 0) {
+        return GrOp::Make<ClockwiseTestOp>(context, readSkFragCoord, y);
     }
 
 private:
@@ -235,7 +234,7 @@ private:
     // guaranteed to have the same lifetime as the program info.
     GrProgramInfo*  fProgramInfo = nullptr;
 
-    friend class ::GrOpMemoryPool; // for ctor
+    friend class ::GrOp; // for ctor
 
     using INHERITED = GrDrawOp;
 };

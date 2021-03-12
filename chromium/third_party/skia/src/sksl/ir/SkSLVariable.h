@@ -12,73 +12,76 @@
 #include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLVariableReference.h"
 
 namespace SkSL {
 
-struct Expression;
+class Expression;
+
+enum class VariableStorage : int8_t {
+    kGlobal,
+    kInterfaceBlock,
+    kLocal,
+    kParameter
+};
 
 /**
  * Represents a variable, whether local, global, or a function parameter. This represents the
  * variable itself (the storage location), which is shared between all VariableReferences which
  * read or write that storage location.
  */
-struct Variable : public Symbol {
+class Variable final : public Symbol {
+public:
+    using Storage = VariableStorage;
+
     static constexpr Kind kSymbolKind = Kind::kVariable;
 
-    enum Storage {
-        kGlobal_Storage,
-        kInterfaceBlock_Storage,
-        kLocal_Storage,
-        kParameter_Storage
-    };
-
-    Variable(int offset, Modifiers modifiers, StringFragment name, const Type* type,
-             bool builtin, Storage storage, Expression* initialValue = nullptr)
+    Variable(int offset, ModifiersPool::Handle modifiers, StringFragment name, const Type* type,
+             bool builtin, Storage storage, const Expression* initialValue = nullptr)
     : INHERITED(offset, kSymbolKind, name, type)
-    , fModifiers(modifiers)
-    , fStorage(storage)
     , fInitialValue(initialValue)
-    , fBuiltin(builtin)
-    , fReadCount(0)
-    , fWriteCount(initialValue ? 1 : 0) {}
+    , fModifiersHandle(modifiers)
+    , fStorage(storage)
+    , fBuiltin(builtin) {}
 
-    ~Variable() override {
-        // can't destroy a variable while there are remaining references to it
-        if (fInitialValue) {
-            --fWriteCount;
-        }
-        SkASSERT(!fReadCount && !fWriteCount);
+    const Modifiers& modifiers() const {
+        return *fModifiersHandle;
+    }
+
+    const ModifiersPool::Handle& modifiersHandle() const {
+        return fModifiersHandle;
+    }
+
+    bool isBuiltin() const {
+        return fBuiltin;
+    }
+
+    Storage storage() const {
+        return (Storage) fStorage;
+    }
+
+    const Expression* initialValue() const {
+        return fInitialValue;
+    }
+
+    void setInitialValue(const Expression* initialValue) {
+        SkASSERT(!this->initialValue());
+        fInitialValue = initialValue;
     }
 
     String description() const override {
-        return fModifiers.description() + this->type().fName + " " + fName;
+        return this->modifiers().description() + this->type().name() + " " + this->name();
     }
 
-    bool dead() const {
-        if ((fStorage != kLocal_Storage && fReadCount) ||
-            (fModifiers.fFlags & (Modifiers::kIn_Flag | Modifiers::kOut_Flag |
-                                 Modifiers::kUniform_Flag | Modifiers::kVarying_Flag))) {
-            return false;
-        }
-        return !fWriteCount ||
-               (!fReadCount && !(fModifiers.fFlags & (Modifiers::kPLS_Flag |
-                                                      Modifiers::kPLSOut_Flag)));
-    }
-
-    mutable Modifiers fModifiers;
-    const Storage fStorage;
-
+private:
     const Expression* fInitialValue = nullptr;
+    ModifiersPool::Handle fModifiersHandle;
+    VariableStorage fStorage;
     bool fBuiltin;
 
-    // Tracks how many sites read from the variable. If this is zero for a non-out variable (or
-    // becomes zero during optimization), the variable is dead and may be eliminated.
-    mutable int fReadCount;
-    // Tracks how many sites write to the variable. If this is zero, the variable is dead and may be
-    // eliminated.
-    mutable int fWriteCount;
-
     using INHERITED = Symbol;
+
+    friend class VariableReference;
 };
 
 } // namespace SkSL

@@ -1,7 +1,6 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#include "experimental/svg/model/SkSVGDOM.h"
 #include "gm/gm.h"
 #include "include/codec/SkCodec.h"
 #include "include/core/SkCanvas.h"
@@ -13,10 +12,11 @@
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/private/SkTHash.h"
+#include "modules/svg/include/SkSVGDOM.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
@@ -26,9 +26,11 @@
 #include "tools/ToolUtils.h"
 #include "tools/flags/CommandLineFlags.h"
 #include "tools/flags/CommonFlags.h"
+#include "tools/gpu/BackendSurfaceFactory.h"
 #include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/MemoryCache.h"
 #include "tools/trace/EventTracingPriv.h"
+
 #include <chrono>
 #include <functional>
 #include <stdio.h>
@@ -306,11 +308,9 @@ static sk_sp<SkImage> draw_with_gpu(std::function<bool(SkCanvas*)> draw,
 
     uint32_t flags = FLAGS_dit ? SkSurfaceProps::kUseDeviceIndependentFonts_Flag
                                : 0;
-    SkSurfaceProps props(flags, SkSurfaceProps::kLegacyFontHost_InitType);
+    SkSurfaceProps props(flags, kRGB_H_SkPixelGeometry);
 
     sk_sp<SkSurface> surface;
-    GrBackendTexture backendTexture;
-    GrBackendRenderTarget backendRT;
 
     switch (surfaceType) {
         case SurfaceType::kDefault:
@@ -322,32 +322,22 @@ static sk_sp<SkImage> draw_with_gpu(std::function<bool(SkCanvas*)> draw,
             break;
 
         case SurfaceType::kBackendTexture:
-            backendTexture = context->createBackendTexture(info.width(),
-                                                           info.height(),
-                                                           info.colorType(),
-                                                           GrMipmapped::kNo,
-                                                           GrRenderable::kYes,
-                                                           GrProtected::kNo);
-            surface = SkSurface::MakeFromBackendTexture(context,
-                                                        backendTexture,
-                                                        kTopLeft_GrSurfaceOrigin,
-                                                        FLAGS_samples,
-                                                        info.colorType(),
-                                                        info.refColorSpace(),
-                                                        &props);
+            surface = sk_gpu_test::MakeBackendTextureSurface(context,
+                                                             info,
+                                                             kTopLeft_GrSurfaceOrigin,
+                                                             FLAGS_samples,
+                                                             GrMipmapped::kNo,
+                                                             GrProtected::kNo,
+                                                             &props);
             break;
 
         case SurfaceType::kBackendRenderTarget:
-            backendRT = context->priv().getGpu()
-                ->createTestingOnlyBackendRenderTarget(info.width(),
-                                                       info.height(),
-                                                       SkColorTypeToGrColorType(info.colorType()));
-            surface = SkSurface::MakeFromBackendRenderTarget(context,
-                                                             backendRT,
-                                                             kBottomLeft_GrSurfaceOrigin,
-                                                             info.colorType(),
-                                                             info.refColorSpace(),
-                                                             &props);
+            surface = sk_gpu_test::MakeBackendRenderTargetSurface(context,
+                                                                  info,
+                                                                  kBottomLeft_GrSurfaceOrigin,
+                                                                  FLAGS_samples,
+                                                                  GrProtected::kNo,
+                                                                  &props);
             break;
     }
 
@@ -369,16 +359,6 @@ static sk_sp<SkImage> draw_with_gpu(std::function<bool(SkCanvas*)> draw,
         factory->abandonContexts();
     } else if (FLAGS_releaseAndAbandonGpuContext) {
         factory->releaseResourcesAndAbandonContexts();
-    }
-
-    if (!context->abandoned()) {
-        surface.reset();
-        if (backendTexture.isValid()) {
-            context->deleteBackendTexture(backendTexture);
-        }
-        if (backendRT.isValid()) {
-            context->priv().getGpu()->deleteTestingOnlyBackendRenderTarget(backendRT);
-        }
     }
 
     return image;
@@ -632,7 +612,7 @@ int main(int argc, char** argv) {
             {
                 SkMD5 hash;
                 if (image) {
-                    hashAndEncode.write(&hash);
+                    hashAndEncode.feedHash(&hash);
                 } else {
                     hash.write(blob->data(), blob->size());
                 }
@@ -648,13 +628,13 @@ int main(int argc, char** argv) {
                 SkString path = SkStringPrintf("%s/%s%s",
                                                FLAGS_writePath[0], source.name.c_str(), ext);
 
+                SkFILEWStream file(path.c_str());
                 if (image) {
-                    if (!hashAndEncode.writePngTo(path.c_str(), md5.c_str(),
-                                                  FLAGS_key, FLAGS_properties)) {
+                    if (!hashAndEncode.encodePNG(&file, md5.c_str(),
+                                                 FLAGS_key, FLAGS_properties)) {
                         SK_ABORT("Could not write .png.");
                     }
                 } else {
-                    SkFILEWStream file(path.c_str());
                     file.write(blob->data(), blob->size());
                 }
             }

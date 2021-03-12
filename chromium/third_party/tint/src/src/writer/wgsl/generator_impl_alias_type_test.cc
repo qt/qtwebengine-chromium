@@ -34,12 +34,12 @@ TEST_F(WgslGeneratorImplTest, EmitAliasType_F32) {
   ast::type::AliasType alias("a", &f32);
 
   GeneratorImpl g;
-  ASSERT_TRUE(g.EmitAliasType(&alias)) << g.error();
+  ASSERT_TRUE(g.EmitConstructedType(&alias)) << g.error();
   EXPECT_EQ(g.result(), R"(type a = f32;
 )");
 }
 
-TEST_F(WgslGeneratorImplTest, EmitAliasType_Struct) {
+TEST_F(WgslGeneratorImplTest, EmitConstructedType_Struct) {
   ast::type::I32Type i32;
   ast::type::F32Type f32;
 
@@ -48,22 +48,52 @@ TEST_F(WgslGeneratorImplTest, EmitAliasType_Struct) {
       "a", &f32, ast::StructMemberDecorationList{}));
 
   ast::StructMemberDecorationList b_deco;
-  b_deco.push_back(std::make_unique<ast::StructMemberOffsetDecoration>(4));
+  b_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(4, Source{}));
   members.push_back(
       std::make_unique<ast::StructMember>("b", &i32, std::move(b_deco)));
 
   auto str = std::make_unique<ast::Struct>();
   str->set_members(std::move(members));
 
-  ast::type::StructType s(std::move(str));
-  ast::type::AliasType alias("a", &s);
+  ast::type::StructType s("A", std::move(str));
+  ast::type::AliasType alias("B", &s);
 
   GeneratorImpl g;
-  ASSERT_TRUE(g.EmitAliasType(&alias)) << g.error();
-  EXPECT_EQ(g.result(), R"(type a = struct {
+  ASSERT_TRUE(g.EmitConstructedType(&s)) << g.error();
+  ASSERT_TRUE(g.EmitConstructedType(&alias)) << g.error();
+  EXPECT_EQ(g.result(), R"(struct A {
   a : f32;
-  [[offset 4]] b : i32;
+  [[offset(4)]]
+  b : i32;
 };
+type B = A;
+)");
+}
+
+TEST_F(WgslGeneratorImplTest, EmitAliasType_ToStruct) {
+  ast::type::I32Type i32;
+  ast::type::F32Type f32;
+
+  ast::StructMemberList members;
+  members.push_back(std::make_unique<ast::StructMember>(
+      "a", &f32, ast::StructMemberDecorationList{}));
+
+  ast::StructMemberDecorationList b_deco;
+  b_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(4, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("b", &i32, std::move(b_deco)));
+
+  auto str = std::make_unique<ast::Struct>();
+  str->set_members(std::move(members));
+
+  ast::type::StructType s("A", std::move(str));
+  ast::type::AliasType alias("B", &s);
+
+  GeneratorImpl g;
+  ASSERT_TRUE(g.EmitConstructedType(&alias)) << g.error();
+  EXPECT_EQ(g.result(), R"(type B = A;
 )");
 }
 

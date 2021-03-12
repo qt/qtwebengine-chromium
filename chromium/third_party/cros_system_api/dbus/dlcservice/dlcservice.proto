@@ -53,4 +53,8 @@ message DlcState {
 
   // The last error code happened on for this DLC.
   string last_error_code = 5;
+
+  // Indicates whether DLC is marked verified. Can be used to determine
+  // whether DLC is available on disk and can be mounted immediately.
+  bool is_verified = 6;
 }

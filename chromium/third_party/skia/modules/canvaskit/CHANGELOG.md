@@ -6,6 +6,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+ - `MakeFractalNoise`, `MakeImprovedNoise`, and `MakeTurbulence` have been added to
+   `CanvasKit.Shader`.
+ - `MakeRasterDirectSurface` for giving the user direct access to drawn pixels.
+ - `getLineMetrics` to Paragraph.
+ - `Canvas.saveLayerPaint` as an experimental, undocumented "fast path" if one only needs to pass 
+   the paint.
+ - Support for .woff and .woff2 fonts. Disable .woff2 for reduced code size by supplying
+   no_woff2 to compile.sh. (This removes the code to do brotli decompression).
+
+### Breaking
+ - `CanvasKit.MakePathFromSVGString` was renamed to `CanvasKit.Path.MakeFromSVGString`
+ - `CanvasKit.MakePathFromOp` was renamed to `CanvasKit.Path.MakeFromOp`
+ - The API for `Canvas.readPixels` and `Image.readPixels` has been reworked to more accurately
+   reflect the C++ backend and each other. bytesPerRow is now a required parameter. They take an
+   ImageInfo object to specify the output format. Additionally they take an optional malloc'd
+   object as the last parameter. If provided, the data will be copied into there instead of
+   allocating a new buffer.
+
+### Changed
+ - We now compile CanvasKit with emsdk 2.0.6 when testing and deploying to npm.
+ - We no longer compile with rtti on, saving about 1% in code size.
+ - `CanvasKit.Shader.Blend`, `...Color`, and `...Lerp` have been renamed to
+   `CanvasKit.Shader.MakeBlend`, `...MakeColor` and `...MakeLerp` to align with naming conventions.
+   The old names will be removed in an upcoming release.
+ - `CanvasKit.MakeSurface` no longer uses a RasterDirect surface internally. This means
+   creating Images from this raster surface should be faster.
+ - `CanvasKit.MakeSurface` is Premul instead of Unpremul, which should be more performant when
+    drawing.
+
+### Removed
+ - `CanvasKit.MakePathFromCmds`; Was deprecated in favor of `CanvasKit.Path.MakeFromCmds`.
+ - `new CanvasKit.Path(path)` in favor of existing `path.copy()`.
+ - Unused internal APIs (_getRasterN32PremulSurface, Drawable)
+ - `measureText` from the CanvasContext2D emulation layer du to deprecation of measureText.
+
+### Deprecated
+ - `Font.getWidths` in favor of `Font.getGlyphIDs` and `Font.getGlyphWidths`.
+ - `Font.measureText` in favor of the Paragraph APIs (which actually do shaping).
+
+### Type Changes (index.d.ts)
+ - Return value for MakeFromCmds correctly reflects the possibility of null.
+ - `CanvasKit.GrContext` was renamed to `CanvasKit.GrDirectContext`.
+ - Add docs/types for Shader Gradients (e.g. `CanvasKit.Shader.MakeLinearGradient`).
+
+## [0.19.0] - 2020-10-08
+
+### Breaking
+ - "Sk" has been removed from all names. e.g. `new CanvasKit.SkPaint()` becomes
+   `new CanvasKit.Paint()`. See `./types/index.d.ts` for all the new names.
+
+### Removed
+ - `Surface.captureFrameAsSkPicture`; it was deprecated previously.
+ - `CanvasKit.MakeSkCornerPathEffect`, `CanvasKit.MakeSkDiscretePathEffect`,
+   `CanvasKit.MakeBlurMaskFilter`, `CanvasKit.MakeSkDashPathEffect`,
+   `CanvasKit.MakeLinearGradientShader`, `CanvasKit.MakeRadialGradientShader`,
+   `CanvasKit.MakeTwoPointConicalGradientShader`;  these were deprecated previously and have
+   replacements like `CanvasKit.PathEffect.MakeDash`.
+ - `Canvas.concat44`; it was deprecated previously, just use `Canvas.concat`
+
+## [0.18.1] - 2020-10-06
+
+### Added
+ - Typescript types (and documentation) are now in the types subfolder. We will keep these updated
+   as we make changes to the CanvasKit library.
+
+## [0.18.0] - 2020-10-05
+
 ### Breaking
  - SkRect are no longer returned from `CanvasKit.LTRBRect`, `CanvasKit.XYWHRect` nor
    are accepted as JS objects. Instead, the format is 4 floats in either an array, a
@@ -58,6 +126,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    already have their own representation of Rect. This is experimental because we don't know
    if it's faster/better under real-world use and because we don't want to commit to having these
    for all Rect APIs (and for similar types) until it has baked in a bit.
+ - Added the following to `TextStyle`:
+   - `decorationStyle`
+   - `textBaseline`
+   - `letterSpacing`
+   - `wordSpacing`
+   - `heightMultiplier`
+   - `locale`
+   - `shadows`
+   - `fontFeatures`
+ - Added `strutStyle` to `ParagraphStyle`.
+ - Added `addPlaceholder` to `ParagraphBuilder`.
+ - Added `getRectsForPlaceholders` to `Paragraph`.
  - `SkFont.getGlyphIDs`, `SkFont.getGlyphBounds`, `SkFont.getGlyphWidths` for turning code points
    into GlyphIDs and getting the associated metrics with those glyphs. Note: glyph ids are only
    valid for the font of which they were requested.
@@ -70,10 +150,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    follows the establishing naming convention).
  - `SkSurface.captureFrameAsSkPicture` will be removed in a future release. Callers can simply
    use `SkPictureRecorder` directly.
+ - `CanvasKit.FourFloatArrayHelper` and related helpers (mostly helping with drawAtlas).
+   `CanvasKit.Malloc` is the better tool and will replace these soon.
+ - `SkPathMeasure`; SkContourMeasureIter has all the same functionality and a cleaner pattern.
 
 ### Fixed
  - Addressed Memory leak in `SkCanvas.drawText`.
  - Made SkTextBlob hang on to less memory during its lifetime.
+ - `SkPath.computeTightBounds()` works again. Like getBounds() it takes an optional argument
+   to put the bounds into.
 
 ## [0.17.3] - 2020-08-05
 

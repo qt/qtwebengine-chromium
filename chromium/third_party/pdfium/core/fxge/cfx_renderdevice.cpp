@@ -29,6 +29,7 @@
 #include "core/fxge/renderdevicedriver_iface.h"
 #include "core/fxge/text_char_pos.h"
 #include "core/fxge/text_glyph_pos.h"
+#include "third_party/base/notreached.h"
 #include "third_party/base/span.h"
 
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
@@ -219,7 +220,7 @@ void DrawNormalTextHelper(const RetainPtr<CFX_DIBitmap>& bitmap,
                           int r,
                           int g,
                           int b) {
-  const bool has_alpha = bitmap->GetFormat() == FXDIB_Argb;
+  const bool has_alpha = bitmap->GetFormat() == FXDIB_Format::kArgb;
   uint8_t* src_buf = pGlyph->GetBuffer();
   int src_pitch = pGlyph->GetPitch();
   uint8_t* dest_buf = bitmap->GetBuffer();
@@ -389,21 +390,16 @@ bool CFX_RenderDevice::CreateCompatibleBitmap(
     const RetainPtr<CFX_DIBitmap>& pDIB,
     int width,
     int height) const {
-  if (m_RenderCaps & FXRC_CMYK_OUTPUT) {
-    return pDIB->Create(
-        width, height,
-        m_RenderCaps & FXRC_ALPHA_OUTPUT ? FXDIB_Cmyka : FXDIB_Cmyk);
-  }
   if (m_RenderCaps & FXRC_BYTEMASK_OUTPUT)
-    return pDIB->Create(width, height, FXDIB_8bppMask);
-#if defined(OS_APPLE) || defined(_SKIA_SUPPORT_PATHS_)
-  constexpr FXDIB_Format kPlatformFormat = FXDIB_Rgb32;
+    return pDIB->Create(width, height, FXDIB_Format::k8bppMask);
+#if defined(_SKIA_SUPPORT_PATHS_)
+  constexpr FXDIB_Format kFormat = FXDIB_Format::kRgb32;
 #else
-  constexpr FXDIB_Format kPlatformFormat = FXDIB_Rgb;
+  constexpr FXDIB_Format kFormat = CFX_DIBBase::kPlatformRGBFormat;
 #endif
   return pDIB->Create(
       width, height,
-      m_RenderCaps & FXRC_ALPHA_OUTPUT ? FXDIB_Argb : kPlatformFormat);
+      m_RenderCaps & FXRC_ALPHA_OUTPUT ? FXDIB_Format::kArgb : kFormat);
 }
 
 void CFX_RenderDevice::SetBaseClip(const FX_RECT& rect) {
@@ -651,10 +647,9 @@ bool CFX_RenderDevice::FillRectWithBlend(const FX_RECT& rect,
   if (!m_pDeviceDriver->GetDIBits(bitmap, rect.left, rect.top))
     return false;
 
-  if (!bitmap->CompositeRect(0, 0, rect.Width(), rect.Height(), fill_color,
-                             0)) {
+  if (!bitmap->CompositeRect(0, 0, rect.Width(), rect.Height(), fill_color))
     return false;
-  }
+
   FX_RECT src_rect(0, 0, rect.Width(), rect.Height());
   m_pDeviceDriver->SetDIBits(bitmap, 0, src_rect, rect.left, rect.top,
                              BlendMode::kNormal);
@@ -694,7 +689,7 @@ bool CFX_RenderDevice::SetDIBitsWithBlend(const RetainPtr<CFX_DIBBase>& pBitmap,
                                           int left,
                                           int top,
                                           BlendMode blend_mode) {
-  ASSERT(!pBitmap->IsAlphaMask());
+  ASSERT(!pBitmap->IsMask());
   FX_RECT dest_rect(left, top, left + pBitmap->GetWidth(),
                     top + pBitmap->GetHeight());
   dest_rect.Intersect(m_ClipBox);
@@ -715,14 +710,13 @@ bool CFX_RenderDevice::SetDIBitsWithBlend(const RetainPtr<CFX_DIBBase>& pBitmap,
   int bg_pixel_width = dest_rect.Width();
   int bg_pixel_height = dest_rect.Height();
   auto background = pdfium::MakeRetain<CFX_DIBitmap>();
-  if (!background->Create(
-          bg_pixel_width, bg_pixel_height,
-          (m_RenderCaps & FXRC_CMYK_OUTPUT) ? FXDIB_Cmyk : FXDIB_Rgb32)) {
+  if (!background->Create(bg_pixel_width, bg_pixel_height,
+                          FXDIB_Format::kRgb32)) {
     return false;
   }
-  if (!m_pDeviceDriver->GetDIBits(background, dest_rect.left, dest_rect.top)) {
+  if (!m_pDeviceDriver->GetDIBits(background, dest_rect.left, dest_rect.top))
     return false;
-  }
+
   if (!background->CompositeBitmap(0, 0, bg_pixel_width, bg_pixel_height,
                                    pBitmap, src_rect.left, src_rect.top,
                                    blend_mode, nullptr, false)) {
@@ -847,7 +841,7 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
         // anti-aliasing as well.
         text_options.aliasing_type = CFX_TextRenderOptions::kAntiAliasing;
 #endif
-      } else if ((m_RenderCaps & (FXRC_ALPHA_OUTPUT | FXRC_CMYK_OUTPUT))) {
+      } else if ((m_RenderCaps & FXRC_ALPHA_OUTPUT)) {
         // Whether Skia uses LCD optimization should strictly follow the
         // rendering options provided by |text_options|. No change needs to be
         // done for |text_options| here.
@@ -938,7 +932,7 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
   int pixel_top = bmp_rect.top;
   if (anti_alias == FT_RENDER_MODE_MONO) {
     auto bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-    if (!bitmap->Create(pixel_width, pixel_height, FXDIB_1bppMask))
+    if (!bitmap->Create(pixel_width, pixel_height, FXDIB_Format::k1bppMask))
       return false;
     bitmap->Clear(0);
     for (const TextGlyphPos& glyph : glyphs) {
@@ -958,13 +952,13 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
   }
   auto bitmap = pdfium::MakeRetain<CFX_DIBitmap>();
   if (m_bpp == 8) {
-    if (!bitmap->Create(pixel_width, pixel_height, FXDIB_8bppMask))
+    if (!bitmap->Create(pixel_width, pixel_height, FXDIB_Format::k8bppMask))
       return false;
   } else {
     if (!CreateCompatibleBitmap(bitmap, pixel_width, pixel_height))
       return false;
   }
-  if (!bitmap->HasAlpha() && !bitmap->IsAlphaMask()) {
+  if (!bitmap->HasAlpha() && !bitmap->IsMask()) {
     bitmap->Clear(0xFFFFFFFF);
     if (!GetDIBits(bitmap, bmp_rect.left, bmp_rect.top))
       return false;
@@ -1015,7 +1009,7 @@ bool CFX_RenderDevice::DrawNormalText(int nChars,
     DrawNormalTextHelper(bitmap, pGlyph, nrows, point->x, point->y, start_col,
                          end_col, normalize, x_subpixel, a, r, g, b);
   }
-  if (bitmap->IsAlphaMask())
+  if (bitmap->IsMask())
     SetBitMask(bitmap, bmp_rect.left, bmp_rect.top, fill_color);
   else
     SetDIBits(bitmap, bmp_rect.left, bmp_rect.top);

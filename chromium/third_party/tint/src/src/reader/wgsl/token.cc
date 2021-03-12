@@ -107,10 +107,10 @@ std::string Token::TypeToName(Type type) {
 
     case Token::Type::kArray:
       return "array";
-    case Token::Type::kAs:
-      return "as";
     case Token::Type::kBinding:
       return "binding";
+    case Token::Type::kBitcast:
+      return "bitcast";
     case Token::Type::kBlock:
       return "block";
     case Token::Type::kBool:
@@ -121,8 +121,6 @@ std::string Token::TypeToName(Type type) {
       return "builtin";
     case Token::Type::kCase:
       return "case";
-    case Token::Type::kCast:
-      return "cast";
     case Token::Type::kCompute:
       return "compute";
     case Token::Type::kConst:
@@ -139,8 +137,6 @@ std::string Token::TypeToName(Type type) {
       return "else";
     case Token::Type::kElseIf:
       return "elseif";
-    case Token::Type::kEntryPoint:
-      return "entry_point";
     case Token::Type::kF32:
       return "f32";
     case Token::Type::kFallthrough:
@@ -151,6 +147,76 @@ std::string Token::TypeToName(Type type) {
       return "fn";
     case Token::Type::kFor:
       return "for";
+    case Token::Type::kFormatBgra8Unorm:
+      return "bgra8unorm";
+    case Token::Type::kFormatBgra8UnormSrgb:
+      return "bgra8unorm_srgb";
+    case Token::Type::kFormatR16Float:
+      return "r16float";
+    case Token::Type::kFormatR16Sint:
+      return "r16sint";
+    case Token::Type::kFormatR16Uint:
+      return "r16uint";
+    case Token::Type::kFormatR32Float:
+      return "r32float";
+    case Token::Type::kFormatR32Sint:
+      return "r32sint";
+    case Token::Type::kFormatR32Uint:
+      return "r32uint";
+    case Token::Type::kFormatR8Sint:
+      return "r8sint";
+    case Token::Type::kFormatR8Snorm:
+      return "r8snorm";
+    case Token::Type::kFormatR8Uint:
+      return "r8uint";
+    case Token::Type::kFormatR8Unorm:
+      return "r8unorm";
+    case Token::Type::kFormatRg11B10Float:
+      return "rg11b10float";
+    case Token::Type::kFormatRg16Float:
+      return "rg16float";
+    case Token::Type::kFormatRg16Sint:
+      return "rg16sint";
+    case Token::Type::kFormatRg16Uint:
+      return "rg16uint";
+    case Token::Type::kFormatRg32Float:
+      return "rg32float";
+    case Token::Type::kFormatRg32Sint:
+      return "rg32sint";
+    case Token::Type::kFormatRg32Uint:
+      return "rg32uint";
+    case Token::Type::kFormatRg8Sint:
+      return "rg8sint";
+    case Token::Type::kFormatRg8Snorm:
+      return "rg8snorm";
+    case Token::Type::kFormatRg8Uint:
+      return "rg8uint";
+    case Token::Type::kFormatRg8Unorm:
+      return "rg8unorm";
+    case Token::Type::kFormatRgb10A2Unorm:
+      return "rgb10a2unorm";
+    case Token::Type::kFormatRgba16Float:
+      return "rgba16float";
+    case Token::Type::kFormatRgba16Sint:
+      return "rgba16sint";
+    case Token::Type::kFormatRgba16Uint:
+      return "rgba16uint";
+    case Token::Type::kFormatRgba32Float:
+      return "rgba32float";
+    case Token::Type::kFormatRgba32Sint:
+      return "rgba32sint";
+    case Token::Type::kFormatRgba32Uint:
+      return "rgba32uint";
+    case Token::Type::kFormatRgba8Sint:
+      return "rgba8sint";
+    case Token::Type::kFormatRgba8Snorm:
+      return "rgba8snorm";
+    case Token::Type::kFormatRgba8Uint:
+      return "rgba8uint";
+    case Token::Type::kFormatRgba8Unorm:
+      return "rgba8unorm";
+    case Token::Type::kFormatRgba8UnormSrgb:
+      return "rgba8unorm_srgb";
     case Token::Type::kFragment:
       return "fragment";
     case Token::Type::kFunction:
@@ -197,16 +263,66 @@ std::string Token::TypeToName(Type type) {
       return "ptr";
     case Token::Type::kReturn:
       return "return";
+    case Token::Type::kSampler:
+      return "sampler";
+    case Token::Type::kComparisonSampler:
+      return "sampler_comparison";
     case Token::Type::kSet:
       return "set";
     case Token::Type::kStorageBuffer:
       return "storage_buffer";
     case Token::Type::kStride:
       return "stride";
+    case Token::Type::kStage:
+      return "stage";
     case Token::Type::kStruct:
       return "struct";
     case Token::Type::kSwitch:
       return "switch";
+    case Token::Type::kTextureDepth2d:
+      return "texture_depth_2d";
+    case Token::Type::kTextureDepth2dArray:
+      return "texture_depth_2d_array";
+    case Token::Type::kTextureDepthCube:
+      return "texture_depth_cube";
+    case Token::Type::kTextureDepthCubeArray:
+      return "texture_depth_cube_array";
+    case Token::Type::kTextureMultisampled2d:
+      return "texture_multisampled_2d";
+    case Token::Type::kTextureStorageReadonly1d:
+      return "texture_storage_ro_1d";
+    case Token::Type::kTextureStorageReadonly1dArray:
+      return "texture_storage_ro_1d_array";
+    case Token::Type::kTextureStorageReadonly2d:
+      return "texture_storage_ro_2d";
+    case Token::Type::kTextureStorageReadonly2dArray:
+      return "texture_storage_ro_2d_array";
+    case Token::Type::kTextureStorageReadonly3d:
+      return "texture_storage_ro_3d";
+    case Token::Type::kTextureSampled1d:
+      return "texture_1d";
+    case Token::Type::kTextureSampled1dArray:
+      return "texture_1d_array";
+    case Token::Type::kTextureSampled2d:
+      return "texture_2d";
+    case Token::Type::kTextureSampled2dArray:
+      return "texture_2d_array";
+    case Token::Type::kTextureSampled3d:
+      return "texture_3d";
+    case Token::Type::kTextureSampledCube:
+      return "texture_cube";
+    case Token::Type::kTextureSampledCubeArray:
+      return "texture_cube_array";
+    case Token::Type::kTextureStorageWriteonly1d:
+      return "texture_storage_wo_1d";
+    case Token::Type::kTextureStorageWriteonly1dArray:
+      return "texture_storage_wo_1d_array";
+    case Token::Type::kTextureStorageWriteonly2d:
+      return "texture_storage_wo_2d";
+    case Token::Type::kTextureStorageWriteonly2dArray:
+      return "texture_storage_wo_2d_array";
+    case Token::Type::kTextureStorageWriteonly3d:
+      return "texture_storage_wo_3d";
     case Token::Type::kTrue:
       return "true";
     case Token::Type::kType:
@@ -231,6 +347,8 @@ std::string Token::TypeToName(Type type) {
       return "void";
     case Token::Type::kWorkgroup:
       return "workgroup";
+    case Token::Type::kWorkgroupSize:
+      return "workgroup_size";
   }
 
   return "<unknown>";

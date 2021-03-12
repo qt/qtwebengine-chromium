@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/macros.h"
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/crypto/proof_source.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_random.h"
 #include "net/third_party/quiche/src/quic/core/quic_crypto_client_stream.h"
@@ -22,8 +24,6 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/simple_session_cache.h"
 #include "net/third_party/quiche/src/quic/test_tools/test_ticket_crypter.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 class QuicConnection;
@@ -42,14 +42,39 @@ namespace {
 const char kServerHostname[] = "test.example.com";
 const uint16_t kServerPort = 443;
 
-class TlsServerHandshakerTest : public QuicTestWithParam<ParsedQuicVersion> {
+struct TestParams {
+  ParsedQuicVersion version;
+  bool disable_resumption;
+};
+
+// Used by ::testing::PrintToStringParamName().
+std::string PrintToString(const TestParams& p) {
+  return quiche::QuicheStrCat(
+      ParsedQuicVersionToString(p.version), "_",
+      (p.disable_resumption ? "ResumptionDisabled" : "ResumptionEnabled"));
+}
+
+// Constructs test permutations.
+std::vector<TestParams> GetTestParams() {
+  std::vector<TestParams> params;
+  for (const auto& version : AllSupportedVersionsWithTls()) {
+    for (bool disable_resumption : {false, true}) {
+      params.push_back(TestParams{version, disable_resumption});
+    }
+  }
+  return params;
+}
+
+class TlsServerHandshakerTest : public QuicTestWithParam<TestParams> {
  public:
   TlsServerHandshakerTest()
       : server_compressed_certs_cache_(
             QuicCompressedCertsCache::kQuicCompressedCertsCacheSize),
         server_id_(kServerHostname, kServerPort, false),
-        supported_versions_({GetParam()}) {
+        supported_versions_({GetParam().version}) {
     SetQuicRestartFlag(quic_enable_zero_rtt_for_tls_v2, true);
+    SetQuicFlag(FLAGS_quic_disable_server_tls_resumption,
+                GetParam().disable_resumption);
     client_crypto_config_ = std::make_unique<QuicCryptoClientConfig>(
         crypto_test_utils::ProofVerifierForTesting(),
         std::make_unique<test::SimpleSessionCache>());
@@ -101,7 +126,7 @@ class TlsServerHandshakerTest : public QuicTestWithParam<ParsedQuicVersion> {
         .Times(testing::AnyNumber());
     EXPECT_CALL(*server_session_, SelectAlpn(_))
         .WillRepeatedly(
-            [this](const std::vector<quiche::QuicheStringPiece>& alpns) {
+            [this](const std::vector<absl::string_view>& alpns) {
               return std::find(
                   alpns.cbegin(), alpns.cend(),
                   AlpnForVersion(server_session_->connection()->version()));
@@ -228,7 +253,7 @@ class TlsServerHandshakerTest : public QuicTestWithParam<ParsedQuicVersion> {
 
 INSTANTIATE_TEST_SUITE_P(TlsServerHandshakerTests,
                          TlsServerHandshakerTest,
-                         ::testing::ValuesIn(AllSupportedVersionsWithTls()),
+                         ::testing::ValuesIn(GetTestParams()),
                          ::testing::PrintToStringParamName());
 
 TEST_P(TlsServerHandshakerTest, NotInitiallyConected) {
@@ -295,8 +320,8 @@ TEST_P(TlsServerHandshakerTest, ConnectionClosedOnTlsError) {
       0, 0, 0,  // uint24 length
   };
   server_stream()->crypto_message_parser()->ProcessInput(
-      quiche::QuicheStringPiece(bogus_handshake_message,
-                                QUICHE_ARRAYSIZE(bogus_handshake_message)),
+      absl::string_view(bogus_handshake_message,
+                        ABSL_ARRAYSIZE(bogus_handshake_message)),
       ENCRYPTION_INITIAL);
 
   EXPECT_FALSE(server_stream()->one_rtt_keys_available());
@@ -330,15 +355,13 @@ TEST_P(TlsServerHandshakerTest, CustomALPNNegotiation) {
   EXPECT_CALL(*client_session_, GetAlpnsToOffer())
       .WillRepeatedly(Return(kTestAlpns));
   EXPECT_CALL(*server_session_, SelectAlpn(_))
-      .WillOnce([kTestAlpn, kTestAlpns](
-                    const std::vector<quiche::QuicheStringPiece>& alpns) {
-        EXPECT_THAT(alpns, testing::ElementsAreArray(kTestAlpns));
-        return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
-      });
-  EXPECT_CALL(*client_session_,
-              OnAlpnSelected(quiche::QuicheStringPiece(kTestAlpn)));
-  EXPECT_CALL(*server_session_,
-              OnAlpnSelected(quiche::QuicheStringPiece(kTestAlpn)));
+      .WillOnce(
+          [kTestAlpn, kTestAlpns](const std::vector<absl::string_view>& alpns) {
+            EXPECT_THAT(alpns, testing::ElementsAreArray(kTestAlpns));
+            return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
+          });
+  EXPECT_CALL(*client_session_, OnAlpnSelected(absl::string_view(kTestAlpn)));
+  EXPECT_CALL(*server_session_, OnAlpnSelected(absl::string_view(kTestAlpn)));
 
   CompleteCryptoHandshake();
   ExpectHandshakeSuccessful();
@@ -371,9 +394,10 @@ TEST_P(TlsServerHandshakerTest, Resumption) {
   InitializeFakeClient();
   CompleteCryptoHandshake();
   ExpectHandshakeSuccessful();
-  EXPECT_TRUE(client_stream()->IsResumption());
-  EXPECT_TRUE(server_stream()->IsResumption());
-  EXPECT_TRUE(server_stream()->ResumptionAttempted());
+  EXPECT_NE(client_stream()->IsResumption(), GetParam().disable_resumption);
+  EXPECT_NE(server_stream()->IsResumption(), GetParam().disable_resumption);
+  EXPECT_NE(server_stream()->ResumptionAttempted(),
+            GetParam().disable_resumption);
 }
 
 TEST_P(TlsServerHandshakerTest, ResumptionWithAsyncDecryptCallback) {
@@ -388,6 +412,10 @@ TEST_P(TlsServerHandshakerTest, ResumptionWithAsyncDecryptCallback) {
   InitializeFakeClient();
 
   AdvanceHandshakeWithFakeClient();
+  if (GetParam().disable_resumption) {
+    ASSERT_EQ(ticket_crypter_->NumPendingCallbacks(), 0u);
+    return;
+  }
   // Test that the DecryptCallback will be run asynchronously, and then run it.
   ASSERT_EQ(ticket_crypter_->NumPendingCallbacks(), 1u);
   ticket_crypter_->RunPendingCallback(0);
@@ -400,6 +428,10 @@ TEST_P(TlsServerHandshakerTest, ResumptionWithAsyncDecryptCallback) {
 }
 
 TEST_P(TlsServerHandshakerTest, ResumptionWithFailingDecryptCallback) {
+  if (GetParam().disable_resumption) {
+    return;
+  }
+
   // Do the first handshake
   InitializeFakeClient();
   CompleteCryptoHandshake();
@@ -417,6 +449,10 @@ TEST_P(TlsServerHandshakerTest, ResumptionWithFailingDecryptCallback) {
 }
 
 TEST_P(TlsServerHandshakerTest, ResumptionWithFailingAsyncDecryptCallback) {
+  if (GetParam().disable_resumption) {
+    return;
+  }
+
   // Do the first handshake
   InitializeFakeClient();
   CompleteCryptoHandshake();
@@ -471,8 +507,8 @@ TEST_P(TlsServerHandshakerTest, ZeroRttResumption) {
   InitializeFakeClient();
   CompleteCryptoHandshake();
   ExpectHandshakeSuccessful();
-  EXPECT_TRUE(client_stream()->IsResumption());
-  EXPECT_TRUE(server_stream()->IsZeroRtt());
+  EXPECT_NE(client_stream()->IsResumption(), GetParam().disable_resumption);
+  EXPECT_NE(server_stream()->IsZeroRtt(), GetParam().disable_resumption);
 }
 
 TEST_P(TlsServerHandshakerTest, ZeroRttRejectOnApplicationStateChange) {
@@ -495,7 +531,7 @@ TEST_P(TlsServerHandshakerTest, ZeroRttRejectOnApplicationStateChange) {
   InitializeFakeClient();
   CompleteCryptoHandshake();
   ExpectHandshakeSuccessful();
-  EXPECT_TRUE(client_stream()->IsResumption());
+  EXPECT_NE(client_stream()->IsResumption(), GetParam().disable_resumption);
   EXPECT_FALSE(server_stream()->IsZeroRtt());
 }
 

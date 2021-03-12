@@ -6,6 +6,7 @@
 
 #include "xfa/fxfa/cxfa_ffcheckbutton.h"
 
+#include "third_party/base/check.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fwl/cfwl_checkbox.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
@@ -36,7 +37,7 @@ void CXFA_FFCheckButton::Trace(cppgc::Visitor* visitor) const {
 }
 
 bool CXFA_FFCheckButton::LoadWidget() {
-  ASSERT(!IsLoaded());
+  DCHECK(!IsLoaded());
 
   CFWL_CheckBox* pCheckBox = cppgc::MakeGarbageCollected<CFWL_CheckBox>(
       GetFWLApp()->GetHeap()->GetAllocationHandle(), GetFWLApp());
@@ -231,7 +232,7 @@ void CXFA_FFCheckButton::AddUIMargin(XFA_AttributeValue iCapPlacement) {
   }
 }
 
-void CXFA_FFCheckButton::RenderWidget(CXFA_Graphics* pGS,
+void CXFA_FFCheckButton::RenderWidget(CFGAS_GEGraphics* pGS,
                                       const CFX_Matrix& matrix,
                                       HighlightOption highlight) {
   if (!HasVisibleStatus())
@@ -343,7 +344,7 @@ void CXFA_FFCheckButton::OnProcessEvent(CFWL_Event* pEvent) {
   m_pOldDelegate->OnProcessEvent(pEvent);
 }
 
-void CXFA_FFCheckButton::OnDrawWidget(CXFA_Graphics* pGraphics,
+void CXFA_FFCheckButton::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
                                       const CFX_Matrix& matrix) {
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
 }

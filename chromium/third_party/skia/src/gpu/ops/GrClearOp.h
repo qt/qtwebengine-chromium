@@ -20,18 +20,18 @@ public:
     DEFINE_OP_CLASS_ID
 
     // A fullscreen or scissored clear, depending on the clip and proxy dimensions
-    static std::unique_ptr<GrClearOp> MakeColor(GrRecordingContext* context,
-                                                const GrScissorState& scissor,
-                                                const SkPMColor4f& color);
+    static GrOp::Owner MakeColor(GrRecordingContext* context,
+                                 const GrScissorState& scissor,
+                                 const SkPMColor4f& color);
 
-    static std::unique_ptr<GrClearOp> MakeStencilClip(GrRecordingContext* context,
-                                                      const GrScissorState& scissor,
-                                                      bool insideMask);
+    static GrOp::Owner MakeStencilClip(GrRecordingContext* context,
+                                       const GrScissorState& scissor,
+                                       bool insideMask);
 
     const char* name() const override { return "Clear"; }
 
 private:
-    friend class GrOpMemoryPool; // for ctors
+    friend class GrOp; // for ctors
 
     enum class Buffer {
         kColor       = 0b01,
@@ -43,8 +43,7 @@ private:
 
     GrClearOp(Buffer buffer, const GrScissorState& scissor, const SkPMColor4f& color, bool stencil);
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override;
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override;
 
     void onPrePrepare(GrRecordingContext*, const GrSurfaceProxyView* writeView, GrAppliedClip*,
                       const GrXferProcessor::DstProxyView&,

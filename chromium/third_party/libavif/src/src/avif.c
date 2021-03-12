@@ -87,6 +87,10 @@ const char * avifResultToString(avifResult result)
         case AVIF_RESULT_INVALID_EXIF_PAYLOAD:          return "Invalid Exif payload";
         case AVIF_RESULT_INVALID_IMAGE_GRID:            return "Invalid image grid";
         case AVIF_RESULT_INVALID_CODEC_SPECIFIC_OPTION: return "Invalid codec-specific option";
+        case AVIF_RESULT_TRUNCATED_DATA:                return "Truncated data";
+        case AVIF_RESULT_IO_NOT_SET:                    return "IO not set";
+        case AVIF_RESULT_IO_ERROR:                      return "IO Error";
+        case AVIF_RESULT_WAITING_ON_IO:                 return "Waiting on IO";
         case AVIF_RESULT_UNKNOWN_ERROR:
         default:
             break;
@@ -350,7 +354,7 @@ void avifRGBImageSetDefaults(avifRGBImage * rgb, const avifImage * image)
     rgb->height = image->height;
     rgb->depth = image->depth;
     rgb->format = AVIF_RGB_FORMAT_RGBA;
-    rgb->chromaUpsampling = AVIF_CHROMA_UPSAMPLING_BILINEAR;
+    rgb->chromaUpsampling = AVIF_CHROMA_UPSAMPLING_AUTOMATIC;
     rgb->ignoreAlpha = AVIF_FALSE;
     rgb->pixels = NULL;
     rgb->rowBytes = 0;
@@ -465,10 +469,26 @@ static struct AvailableCodec availableCodecs[] = {
     { AVIF_CODEC_CHOICE_LIBGAV1, "libgav1", avifCodecVersionGav1, avifCodecCreateGav1, AVIF_CODEC_FLAG_CAN_DECODE },
 #endif
 #if defined(AVIF_CODEC_AOM)
-    { AVIF_CODEC_CHOICE_AOM, "aom", avifCodecVersionAOM, avifCodecCreateAOM, AVIF_CODEC_FLAG_CAN_DECODE | AVIF_CODEC_FLAG_CAN_ENCODE },
+    { AVIF_CODEC_CHOICE_AOM,
+      "aom",
+      avifCodecVersionAOM,
+      avifCodecCreateAOM,
+#if defined(AVIF_CODEC_AOM_DECODE) && defined(AVIF_CODEC_AOM_ENCODE)
+      AVIF_CODEC_FLAG_CAN_DECODE | AVIF_CODEC_FLAG_CAN_ENCODE
+#elif defined(AVIF_CODEC_AOM_DECODE)
+      AVIF_CODEC_FLAG_CAN_DECODE
+#elif defined(AVIF_CODEC_AOM_ENCODE)
+      AVIF_CODEC_FLAG_CAN_ENCODE
+#else
+#error AVIF_CODEC_AOM_DECODE or AVIF_CODEC_AOM_ENCODE must be defined
+#endif
+    },
 #endif
 #if defined(AVIF_CODEC_RAV1E)
     { AVIF_CODEC_CHOICE_RAV1E, "rav1e", avifCodecVersionRav1e, avifCodecCreateRav1e, AVIF_CODEC_FLAG_CAN_ENCODE },
+#endif
+#if defined(AVIF_CODEC_SVT)
+    { AVIF_CODEC_CHOICE_SVT, "svt", avifCodecVersionSvt, avifCodecCreateSvt, AVIF_CODEC_FLAG_CAN_ENCODE },
 #endif
     { AVIF_CODEC_CHOICE_AUTO, NULL, NULL, NULL, 0 }
 };
@@ -541,6 +561,14 @@ void avifCodecVersions(char outBuffer[256])
             append(&writePos, &remainingLen, ", ");
         }
         append(&writePos, &remainingLen, availableCodecs[i].name);
+        if ((availableCodecs[i].flags & (AVIF_CODEC_FLAG_CAN_ENCODE | AVIF_CODEC_FLAG_CAN_DECODE)) ==
+            (AVIF_CODEC_FLAG_CAN_ENCODE | AVIF_CODEC_FLAG_CAN_DECODE)) {
+            append(&writePos, &remainingLen, " [enc/dec]");
+        } else if (availableCodecs[i].flags & AVIF_CODEC_FLAG_CAN_ENCODE) {
+            append(&writePos, &remainingLen, " [enc]");
+        } else if (availableCodecs[i].flags & AVIF_CODEC_FLAG_CAN_DECODE) {
+            append(&writePos, &remainingLen, " [dec]");
+        }
         append(&writePos, &remainingLen, ":");
         append(&writePos, &remainingLen, availableCodecs[i].version());
     }

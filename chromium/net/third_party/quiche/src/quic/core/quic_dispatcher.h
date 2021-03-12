@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_compressed_certs_cache.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_random.h"
 #include "net/third_party/quiche/src/quic/core/quic_blocked_writer_interface.h"
@@ -25,7 +26,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_version_manager.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_containers.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_socket_address.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 namespace test {
@@ -41,7 +41,7 @@ class QUIC_NO_EXPORT QuicDispatcher
       public QuicBufferedPacketStore::VisitorInterface {
  public:
   // Ideally we'd have a linked_hash_set: the  boolean is unused.
-  typedef QuicLinkedHashMap<QuicBlockedWriterInterface*, bool> WriteBlockedList;
+  using WriteBlockedList = QuicLinkedHashMap<QuicBlockedWriterInterface*, bool>;
 
   QuicDispatcher(
       const QuicConfig* config,
@@ -140,7 +140,7 @@ class QUIC_NO_EXPORT QuicDispatcher
       QuicConnectionId server_connection_id,
       const QuicSocketAddress& self_address,
       const QuicSocketAddress& peer_address,
-      quiche::QuicheStringPiece alpn,
+      absl::string_view alpn,
       const ParsedQuicVersion& version) = 0;
 
   // Tries to validate and dispatch packet based on available information.
@@ -321,6 +321,11 @@ class QUIC_NO_EXPORT QuicDispatcher
       const QuicConnectionId& server_connection_id,
       const ParsedQuicVersion& version) const;
 
+  // Sends public/stateless reset packets with no version and unknown
+  // connection ID according to the packet's size.
+  virtual void MaybeResetPacketsWithNoVersion(
+      const quic::ReceivedPacketInfo& packet_info);
+
  private:
   friend class test::QuicDispatcherPeer;
 
@@ -335,10 +340,6 @@ class QUIC_NO_EXPORT QuicDispatcher
 
   // Returns true if |version| is a supported protocol version.
   bool IsSupportedVersion(const ParsedQuicVersion version);
-
-  // Sends public/stateless reset packets with no version and unknown
-  // connection ID according to the packet's size.
-  void MaybeResetPacketsWithNoVersion(const ReceivedPacketInfo& packet_info);
 
   const QuicConfig* config_;
 

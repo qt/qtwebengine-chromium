@@ -24,6 +24,7 @@ public:
 
     SkSL::String expandFormatArgs(const SkSL::String& raw,
                                   EmitArgs& args,
+                                  const char* sampleCoords,
                                   std::vector<SkSL::Compiler::FormatArg>::const_iterator& fmtArg) {
         SkSL::String result;
         int substringStartIndex = 0;
@@ -34,17 +35,17 @@ public:
                                                i - substringStartIndex);
                 const SkSL::Compiler::FormatArg& arg = *fmtArg++;
                 switch (arg.fKind) {
-                    case SkSL::Compiler::FormatArg::Kind::kOutput:
-                        result += args.fOutputColor;
-                        break;
                     case SkSL::Compiler::FormatArg::Kind::kCoords:
-                        result += args.fSampleCoord;
+                        // See note about helper functions in emitCode
+                        SkASSERT(sampleCoords);
+                        result += sampleCoords ? sampleCoords : "float2(0)";
                         break;
                     case SkSL::Compiler::FormatArg::Kind::kUniform:
                         result += args.fUniformHandler->getUniformCStr(fUniformHandles[arg.fIndex]);
                         break;
                     case SkSL::Compiler::FormatArg::Kind::kChildProcessor: {
-                        SkSL::String coords = this->expandFormatArgs(arg.fCoords, args, fmtArg);
+                        SkSL::String coords =
+                                this->expandFormatArgs(arg.fCoords, args, sampleCoords, fmtArg);
                         result += this->invokeChild(arg.fIndex, args, coords).c_str();
                         break;
                     }
@@ -55,7 +56,8 @@ public:
                         SkASSERT((size_t)arg.fIndex < sampleUsages.size());
                         const SkSL::SampleUsage& sampleUsage(sampleUsages[arg.fIndex]);
 
-                        SkSL::String coords = this->expandFormatArgs(arg.fCoords, args, fmtArg);
+                        SkSL::String coords =
+                                this->expandFormatArgs(arg.fCoords, args, sampleCoords, fmtArg);
                         result += this->invokeChildWithMatrix(
                                               arg.fIndex, args,
                                               sampleUsage.hasUniformMatrix() ? "" : coords)
@@ -95,20 +97,27 @@ public:
             }
         }
         for (const auto& f : fArgs.fFunctions) {
-            fFunctionNames.emplace_back();
+            fFunctionNames.push_back(fragBuilder->getMangledFunctionName(f.fName.c_str()));
             auto fmtArgIter = f.fFormatArgs.cbegin();
-            SkSL::String body = this->expandFormatArgs(f.fBody, args, fmtArgIter);
+            // Helper functions can't refer to sample-coords directly (they're a parameter to main)
+            SkSL::String body =
+                    this->expandFormatArgs(f.fBody, args, /*sampleCoords=*/nullptr, fmtArgIter);
             SkASSERT(fmtArgIter == f.fFormatArgs.cend());
             fragBuilder->emitFunction(f.fReturnType,
-                                      f.fName.c_str(),
-                                      f.fParameters.size(),
-                                      f.fParameters.data(),
-                                      body.c_str(),
-                                      &fFunctionNames.back());
+                                      fFunctionNames.back().c_str(),
+                                      {f.fParameters.data(), f.fParameters.size()},
+                                      body.c_str());
+        }
+        SkString coordsVarName = fragBuilder->newTmpVarName("coords");
+        const char* coords = nullptr;
+        if (fp.referencesSampleCoords()) {
+            coords = coordsVarName.c_str();
+            fragBuilder->codeAppendf("float2 %s = %s;\n", coords, args.fSampleCoord);
         }
         fragBuilder->codeAppendf("%s = %s;\n", args.fOutputColor, args.fInputColor);
         auto fmtArgIter = fArgs.fFormatArgs.cbegin();
-        fragBuilder->codeAppend(this->expandFormatArgs(fArgs.fCode, args, fmtArgIter).c_str());
+        fragBuilder->codeAppend(
+                this->expandFormatArgs(fArgs.fCode, args, coords, fmtArgIter).c_str());
         SkASSERT(fmtArgIter == fArgs.fFormatArgs.cend());
     }
 
@@ -159,15 +168,13 @@ std::unique_ptr<GrSkSLFP> GrSkSLFP::Make(GrContext_Base* context, sk_sp<SkRuntim
     if (uniforms->size() != effect->uniformSize()) {
         return nullptr;
     }
-    return std::unique_ptr<GrSkSLFP>(new GrSkSLFP(
-            context->priv().caps()->refShaderCaps(), context->priv().getShaderErrorHandler(),
-            std::move(effect), name, std::move(uniforms)));
+    return std::unique_ptr<GrSkSLFP>(new GrSkSLFP(context->priv().getShaderErrorHandler(),
+                                                  std::move(effect), name, std::move(uniforms)));
 }
 
-GrSkSLFP::GrSkSLFP(sk_sp<const GrShaderCaps> shaderCaps, ShaderErrorHandler* shaderErrorHandler,
-                   sk_sp<SkRuntimeEffect> effect, const char* name, sk_sp<SkData> uniforms)
+GrSkSLFP::GrSkSLFP(ShaderErrorHandler* shaderErrorHandler, sk_sp<SkRuntimeEffect> effect,
+                   const char* name, sk_sp<SkData> uniforms)
         : INHERITED(kGrSkSLFP_ClassID, kNone_OptimizationFlags)
-        , fShaderCaps(std::move(shaderCaps))
         , fShaderErrorHandler(shaderErrorHandler)
         , fEffect(std::move(effect))
         , fName(name)
@@ -179,7 +186,6 @@ GrSkSLFP::GrSkSLFP(sk_sp<const GrShaderCaps> shaderCaps, ShaderErrorHandler* sha
 
 GrSkSLFP::GrSkSLFP(const GrSkSLFP& other)
         : INHERITED(kGrSkSLFP_ClassID, kNone_OptimizationFlags)
-        , fShaderCaps(other.fShaderCaps)
         , fShaderErrorHandler(other.fShaderErrorHandler)
         , fEffect(other.fEffect)
         , fName(other.fName)
@@ -204,7 +210,7 @@ void GrSkSLFP::addChild(std::unique_ptr<GrFragmentProcessor> child) {
 GrGLSLFragmentProcessor* GrSkSLFP::onCreateGLSLInstance() const {
     // Note: This is actually SkSL (again) but with inline format specifiers.
     SkSL::PipelineStageArgs args;
-    SkAssertResult(fEffect->toPipelineStage(fShaderCaps.get(), fShaderErrorHandler, &args));
+    SkAssertResult(fEffect->toPipelineStage(fShaderErrorHandler, &args));
     return new GrGLSLSkSLFP(std::move(args));
 }
 

@@ -87,14 +87,16 @@ class OffscreenSurfaceVk : public SurfaceVk
                                  EGLint width,
                                  EGLint height,
                                  const vk::Format &vkFormat,
-                                 GLint samples);
+                                 GLint samples,
+                                 bool isRobustResourceInitEnabled);
 
         angle::Result initializeWithExternalMemory(DisplayVk *displayVk,
                                                    EGLint width,
                                                    EGLint height,
                                                    const vk::Format &vkFormat,
                                                    GLint samples,
-                                                   void *buffer);
+                                                   void *buffer,
+                                                   bool isRobustResourceInitEnabled);
 
         void destroy(const egl::Display *display);
 
@@ -243,7 +245,14 @@ class WindowSurfaceVk : public SurfaceVk
 
     vk::Semaphore getAcquireImageSemaphore();
 
-    VkSurfaceTransformFlagBitsKHR getPreTransform() { return mPreTransform; }
+    VkSurfaceTransformFlagBitsKHR getPreTransform()
+    {
+        if (mEmulatedPreTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
+        {
+            return mEmulatedPreTransform;
+        }
+        return mPreTransform;
+    }
 
   protected:
     angle::Result swapImpl(const gl::Context *context,
@@ -264,6 +273,8 @@ class WindowSurfaceVk : public SurfaceVk
     angle::Result createSwapChain(vk::Context *context,
                                   const gl::Extents &extents,
                                   VkSwapchainKHR oldSwapchain);
+    angle::Result queryAndAdjustSurfaceCaps(ContextVk *contextVk,
+                                            VkSurfaceCapabilitiesKHR *surfaceCaps);
     angle::Result checkForOutOfDateSwapchain(ContextVk *contextVk, bool presentOutOfDate);
     angle::Result resizeSwapchainImages(vk::Context *context, uint32_t imageCount);
     void releaseSwapchainImages(ContextVk *contextVk);
@@ -278,6 +289,9 @@ class WindowSurfaceVk : public SurfaceVk
     // Called when a swapchain image whose acquisition was deferred must be acquired.  This method
     // will recreate the swapchain (if needed) and call the acquireNextSwapchainImage() method.
     angle::Result doDeferredAcquireNextImage(const gl::Context *context, bool presentOutOfDate);
+    angle::Result computePresentOutOfDate(vk::Context *context,
+                                          VkResult result,
+                                          bool *presentOutOfDate);
     angle::Result present(ContextVk *contextVk,
                           EGLint *rects,
                           EGLint n_rects,
@@ -300,6 +314,7 @@ class WindowSurfaceVk : public SurfaceVk
     VkPresentModeKHR mDesiredSwapchainPresentMode;  // Desired mode set through setSwapInterval()
     uint32_t mMinImageCount;
     VkSurfaceTransformFlagBitsKHR mPreTransform;
+    VkSurfaceTransformFlagBitsKHR mEmulatedPreTransform;
     VkCompositeAlphaFlagBitsKHR mCompositeAlpha;
 
     // A circular buffer that stores the submission fence of the context on every swap.  The CPU is

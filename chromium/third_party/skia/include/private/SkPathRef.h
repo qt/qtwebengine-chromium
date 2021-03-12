@@ -9,7 +9,6 @@
 #define SkPathRef_DEFINED
 
 #include "include/core/SkMatrix.h"
-#include "include/core/SkPathTypes.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
@@ -24,7 +23,6 @@
 #include <limits>
 #include <tuple>
 
-struct SkPathView;
 class SkRBuffer;
 class SkWBuffer;
 
@@ -294,6 +292,8 @@ public:
     int countVerbs() const { return fVerbs.count(); }
     int countWeights() const { return fConicWeights.count(); }
 
+    size_t approximateBytesUsed() const;
+
     /**
      * Returns a pointer one beyond the first logical verb (last verb in memory order).
      */
@@ -350,8 +350,6 @@ public:
     bool isValid() const;
     SkDEBUGCODE(void validate() const { SkASSERT(this->isValid()); } )
 
-    SkPathView view(SkPathFillType, SkPathConvexity) const;
-
 private:
     enum SerializationOffsets {
         kLegacyRRectOrOvalStartIdx_SerializationShift = 28, // requires 3 bits, ignored.
@@ -376,9 +374,6 @@ private:
     }
 
     void copy(const SkPathRef& ref, int additionalReserveVerbs, int additionalReservePoints);
-
-    // Doesn't read fSegmentMask, but (re)computes it from the verbs array
-    unsigned computeSegmentMask() const;
 
     // Return true if the computed bounds are finite.
     static bool ComputePtBounds(SkRect* bounds, const SkPathRef& ref) {

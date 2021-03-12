@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "third_party/base/check.h"
 #include "third_party/base/stl_util.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fwl/cfwl_listbox.h"
@@ -45,7 +46,7 @@ void CXFA_FFListBox::Trace(cppgc::Visitor* visitor) const {
 }
 
 bool CXFA_FFListBox::LoadWidget() {
-  ASSERT(!IsLoaded());
+  DCHECK(!IsLoaded());
 
   CFWL_ListBox* pListBox = cppgc::MakeGarbageCollected<CFWL_ListBox>(
       GetFWLApp()->GetHeap()->GetAllocationHandle(), GetFWLApp(),
@@ -209,7 +210,7 @@ void CXFA_FFListBox::OnProcessEvent(CFWL_Event* pEvent) {
   m_pOldDelegate->OnProcessEvent(pEvent);
 }
 
-void CXFA_FFListBox::OnDrawWidget(CXFA_Graphics* pGraphics,
+void CXFA_FFListBox::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
                                   const CFX_Matrix& matrix) {
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
 }

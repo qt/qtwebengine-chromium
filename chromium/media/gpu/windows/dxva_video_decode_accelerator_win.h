@@ -65,6 +65,7 @@ class ConfigChangeDetector {
       const gfx::Rect& container_visible_rect) const = 0;
   virtual VideoColorSpace current_color_space(
       const VideoColorSpace& container_color_space) const = 0;
+  virtual bool IsYUV420() const;
   bool config_changed() const { return config_changed_; }
 
  protected:
@@ -85,7 +86,6 @@ class MEDIA_GPU_EXPORT DXVAVideoDecodeAccelerator
     kResetting,      // upon received Reset(), before ResetDone()
     kStopped,        // upon output EOS received.
     kFlushing,       // upon flush request received.
-    kConfigChange,   // stream configuration change detected.
   };
 
   // Does not take ownership of |client| which must outlive |*this|.
@@ -226,7 +226,7 @@ class MEDIA_GPU_EXPORT DXVAVideoDecodeAccelerator
 
   // Transitions the decoder to the uninitialized state. The decoder will stop
   // accepting requests in this state.
-  void Invalidate();
+  void Invalidate(bool for_config_change = false);
 
   // Stop and join on the decoder thread.
   void StopDecoderThread();

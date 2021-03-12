@@ -317,12 +317,19 @@ void SkBaseDevice::drawDrawable(SkDrawable* drawable, const SkMatrix* matrix, Sk
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void SkBaseDevice::drawSpecial(SkSpecialImage*, int x, int y, const SkPaint&) {}
+void SkBaseDevice::drawSpecial(SkSpecialImage*, const SkMatrix&, const SkPaint&) {}
 sk_sp<SkSpecialImage> SkBaseDevice::makeSpecial(const SkBitmap&) { return nullptr; }
 sk_sp<SkSpecialImage> SkBaseDevice::makeSpecial(const SkImage*) { return nullptr; }
 sk_sp<SkSpecialImage> SkBaseDevice::snapSpecial(const SkIRect&, bool) { return nullptr; }
 sk_sp<SkSpecialImage> SkBaseDevice::snapSpecial() {
     return this->snapSpecial(SkIRect::MakeWH(this->width(), this->height()));
+}
+
+void SkBaseDevice::drawDevice(SkBaseDevice* device, const SkPaint& paint) {
+    sk_sp<SkSpecialImage> deviceImage = device->snapSpecial();
+    if (deviceImage) {
+        this->drawSpecial(deviceImage.get(), device->getRelativeTransform(*this), paint);
+    }
 }
 
 void SkBaseDevice::drawFilteredImage(const skif::Mapping& mapping, SkSpecialImage* src,
@@ -350,13 +357,9 @@ void SkBaseDevice::drawFilteredImage(const skif::Mapping& mapping, SkSpecialImag
     SkIPoint offset;
     sk_sp<SkSpecialImage> result = as_IFB(filter)->filterImage(ctx).imageAndOffset(&offset);
     if (result) {
-        // TODO(michaelludwig) - Eventually drawSpecial will take a matrix and we can just
-        // draw using mapping.deviceMatrix() directly. For now, all devices are relative to each
-        // other by a translation, or its a translation-only sprite draw.
-        SkASSERT(mapping.deviceMatrix().isTranslate());
-        offset.fX += SkScalarRoundToInt(mapping.deviceMatrix().getTranslateX());
-        offset.fY += SkScalarRoundToInt(mapping.deviceMatrix().getTranslateY());
-        this->drawSpecial(result.get(), offset.fX, offset.fY, paint);
+        SkMatrix deviceMatrixWithOffset = mapping.deviceMatrix();
+        deviceMatrixWithOffset.preTranslate(offset.fX, offset.fY);
+        this->drawSpecial(result.get(), deviceMatrixWithOffset, paint);
     }
 }
 
@@ -452,58 +455,3 @@ sk_sp<SkSurface> SkBaseDevice::makeSurface(SkImageInfo const&, SkSurfaceProps co
     return nullptr;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////
-
-void SkBaseDevice::LogDrawScaleFactor(const SkMatrix& view, const SkMatrix& srcToDst,
-                                      SkFilterQuality filterQuality) {
-#if SK_HISTOGRAMS_ENABLED
-    SkMatrix matrix = SkMatrix::Concat(view, srcToDst);
-    enum ScaleFactor {
-        kUpscale_ScaleFactor,
-        kNoScale_ScaleFactor,
-        kDownscale_ScaleFactor,
-        kLargeDownscale_ScaleFactor,
-
-        kLast_ScaleFactor = kLargeDownscale_ScaleFactor
-    };
-
-    float rawScaleFactor = matrix.getMinScale();
-
-    ScaleFactor scaleFactor;
-    if (rawScaleFactor < 0.5f) {
-        scaleFactor = kLargeDownscale_ScaleFactor;
-    } else if (rawScaleFactor < 1.0f) {
-        scaleFactor = kDownscale_ScaleFactor;
-    } else if (rawScaleFactor > 1.0f) {
-        scaleFactor = kUpscale_ScaleFactor;
-    } else {
-        scaleFactor = kNoScale_ScaleFactor;
-    }
-
-    switch (filterQuality) {
-        case kNone_SkFilterQuality:
-            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.NoneFilterQuality", scaleFactor,
-                                     kLast_ScaleFactor + 1);
-            break;
-        case kLow_SkFilterQuality:
-            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.LowFilterQuality", scaleFactor,
-                                     kLast_ScaleFactor + 1);
-            break;
-        case kMedium_SkFilterQuality:
-            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.MediumFilterQuality", scaleFactor,
-                                     kLast_ScaleFactor + 1);
-            break;
-        case kHigh_SkFilterQuality:
-            SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.HighFilterQuality", scaleFactor,
-                                     kLast_ScaleFactor + 1);
-            break;
-    }
-
-    // Also log filter quality independent scale factor.
-    SK_HISTOGRAM_ENUMERATION("DrawScaleFactor.AnyFilterQuality", scaleFactor,
-                             kLast_ScaleFactor + 1);
-
-    // Also log an overall histogram of filter quality.
-    SK_HISTOGRAM_ENUMERATION("FilterQuality", filterQuality, kLast_SkFilterQuality + 1);
-#endif
-}

@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include <vector>
 #include "src/sksl/SkSLASTFile.h"
+#include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLCFGGenerator.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLErrorReporter.h"
@@ -40,6 +41,9 @@
 #define SK_INVOCATIONID_BUILTIN            8
 #define SK_POSITION_BUILTIN                0
 
+class SkBitSet;
+class SkSLCompileBench;
+
 namespace SkSL {
 
 class ByteCode;
@@ -47,6 +51,17 @@ class ExternalValue;
 class IRGenerator;
 class IRIntrinsicMap;
 struct PipelineStageArgs;
+class ProgramUsage;
+
+struct LoadedModule {
+    std::shared_ptr<SymbolTable>                 fSymbols;
+    std::vector<std::unique_ptr<ProgramElement>> fElements;
+};
+
+struct ParsedModule {
+    std::shared_ptr<SymbolTable>    fSymbols;
+    std::shared_ptr<IRIntrinsicMap> fIntrinsics;
+};
 
 /**
  * Main compiler entry point. This is a traditional compiler design which first parses the .sksl
@@ -75,7 +90,6 @@ public:
 
     struct FormatArg {
         enum class Kind {
-            kOutput,
             kCoords,
             kUniform,
             kChildProcessor,
@@ -95,6 +109,17 @@ public:
         String fCoords;
     };
 
+    struct OptimizationContext {
+        // nodes we have already reported errors for and should not error on again
+        std::unordered_set<const IRNode*> fSilences;
+        // true if we have updated the CFG during this pass
+        bool fUpdated = false;
+        // true if we need to completely regenerate the CFG
+        bool fNeedsRescan = false;
+        // Metadata about function and variable usage within the program
+        ProgramUsage* fUsage = nullptr;
+    };
+
 #if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
     /**
      * Represents the arguments to GrGLSLShaderBuilder::emitFunction.
@@ -108,7 +133,7 @@ public:
     };
 #endif
 
-    Compiler(Flags flags = kNone_Flags);
+    Compiler(const ShaderCapsClass* caps, Flags flags = kNone_Flags);
 
     ~Compiler() override;
 
@@ -174,25 +199,43 @@ public:
     // (e.g. '+=' becomes '+')
     static Token::Kind RemoveAssignment(Token::Kind op);
 
-    void processIncludeFile(Program::Kind kind, const char* path,
-                            std::shared_ptr<SymbolTable> base,
-                            std::vector<std::unique_ptr<ProgramElement>>* outElements,
-                            std::shared_ptr<SymbolTable>* outSymbolTable);
+    // When  SKSL_STANDALONE, fPath is used. (fData, fSize) will be (nullptr, 0)
+    // When !SKSL_STANDALONE, fData and fSize are used. fPath will be nullptr.
+    struct ModuleData {
+        const char*    fPath;
+
+        const uint8_t* fData;
+        size_t         fSize;
+    };
+
+    static ModuleData MakeModulePath(const char* path) {
+        return ModuleData{path, /*fData=*/nullptr, /*fSize=*/0};
+    }
+    static ModuleData MakeModuleData(const uint8_t* data, size_t size) {
+        return ModuleData{/*fPath=*/nullptr, data, size};
+    }
+
+    LoadedModule loadModule(Program::Kind kind, ModuleData data, std::shared_ptr<SymbolTable> base);
+    ParsedModule parseModule(Program::Kind kind, ModuleData data, const ParsedModule& base);
+
+    IRGenerator& irGenerator() {
+        return *fIRGenerator;
+    }
+
+    const ParsedModule& moduleForProgramKind(Program::Kind kind);
 
 private:
-    void loadGeometryIntrinsics();
-
-    void loadInterpreterIntrinsics();
-
-    void loadPipelineIntrinsics();
+    const ParsedModule& loadFPModule();
+    const ParsedModule& loadGeometryModule();
+    const ParsedModule& loadPublicModule();
+    const ParsedModule& loadInterpreterModule();
+    const ParsedModule& loadPipelineModule();
 
     void addDefinition(const Expression* lvalue, std::unique_ptr<Expression>* expr,
                        DefinitionMap* definitions);
-
     void addDefinitions(const BasicBlock::Node& node, DefinitionMap* definitions);
 
-    void scanCFG(CFG* cfg, BlockId block, std::set<BlockId>* workList);
-
+    void scanCFG(CFG* cfg, BlockId block, SkBitSet* processedSet);
     void computeDataFlow(CFG* cfg);
 
     /**
@@ -202,9 +245,7 @@ private:
     void simplifyExpression(DefinitionMap& definitions,
                             BasicBlock& b,
                             std::vector<BasicBlock::Node>::iterator* iter,
-                            std::unordered_set<const Variable*>* undefinedVariables,
-                            bool* outUpdated,
-                            bool* outNeedsRescan);
+                            OptimizationContext* context);
 
     /**
      * Simplifies the statement pointed to by iter (in both the IR and CFG structures), if
@@ -213,14 +254,12 @@ private:
     void simplifyStatement(DefinitionMap& definitions,
                            BasicBlock& b,
                            std::vector<BasicBlock::Node>::iterator* iter,
-                           std::unordered_set<const Variable*>* undefinedVariables,
-                           bool* outUpdated,
-                           bool* outNeedsRescan);
+                           OptimizationContext* context);
 
     /**
      * Optimizes a function based on control flow analysis. Returns true if changes were made.
      */
-    bool scanCFG(FunctionDefinition& f);
+    bool scanCFG(FunctionDefinition& f, ProgramUsage* usage);
 
     /**
      * Optimize every function in the program.
@@ -229,25 +268,26 @@ private:
 
     Position position(int offset);
 
+    const ShaderCapsClass* fCaps = nullptr;
+
     std::shared_ptr<SymbolTable> fRootSymbolTable;
+    std::shared_ptr<SymbolTable> fPrivateSymbolTable;
 
-    std::shared_ptr<SymbolTable> fGpuSymbolTable;
-    std::unique_ptr<IRIntrinsicMap> fGPUIntrinsics;
-    std::shared_ptr<SymbolTable> fInterpreterSymbolTable;
-    std::unique_ptr<IRIntrinsicMap> fInterpreterIntrinsics;
+    ParsedModule fRootModule;         // Core types
 
-    std::vector<std::unique_ptr<ProgramElement>> fVertexInclude;
-    std::shared_ptr<SymbolTable> fVertexSymbolTable;
-    std::vector<std::unique_ptr<ProgramElement>> fFragmentInclude;
-    std::shared_ptr<SymbolTable> fFragmentSymbolTable;
-    std::vector<std::unique_ptr<ProgramElement>> fGeometryInclude;
-    std::shared_ptr<SymbolTable> fGeometrySymbolTable;
-    std::vector<std::unique_ptr<ProgramElement>> fPipelineInclude;
-    std::shared_ptr<SymbolTable> fPipelineSymbolTable;
+    ParsedModule fPrivateModule;      // [Root] + Internal types
+    ParsedModule fGPUModule;          // [Private] + GPU intrinsics, helper functions
+    ParsedModule fVertexModule;       // [GPU] + Vertex stage decls
+    ParsedModule fFragmentModule;     // [GPU] + Fragment stage decls
+    ParsedModule fGeometryModule;     // [GPU] + Geometry stage decls
+    ParsedModule fFPModule;           // [GPU] + FP features
 
-    std::vector<std::unique_ptr<ProgramElement>> fFPInclude;
-    std::shared_ptr<SymbolTable> fFPSymbolTable;
-    std::unique_ptr<IRIntrinsicMap> fFPIntrinsics;
+    ParsedModule fPublicModule;       // [Root] + Public features
+    ParsedModule fInterpreterModule;  // [Public] + Interpreter-only decls
+    ParsedModule fPipelineModule;     // [Public] + Runtime effect decls
+
+    // holds ModifiersPools belonging to the core includes for lifetime purposes
+    std::vector<std::unique_ptr<ModifiersPool>> fModifiers;
 
     Inliner fInliner;
     std::unique_ptr<IRGenerator> fIRGenerator;
@@ -257,6 +297,9 @@ private:
     std::shared_ptr<Context> fContext;
     int fErrorCount;
     String fErrorText;
+
+    friend class AutoSource;
+    friend class ::SkSLCompileBench;
 };
 
 #if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU

@@ -17,6 +17,7 @@
 #include "platform/test/fake_clock.h"
 #include "platform/test/fake_task_runner.h"
 #include "util/chrono_helpers.h"
+#include "util/stringprintf.h"
 
 using ::testing::_;
 using ::testing::InSequence;
@@ -143,6 +144,57 @@ class SenderSessionTest : public ::testing::Test {
                                                message_port_.get());
   }
 
+  std::string NegotiateOfferAndConstructAnswer() {
+    const Error error = session_->Negotiate(
+        std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
+        std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+    if (!error.ok()) {
+      return {};
+    }
+
+    const auto& messages = message_port_->posted_messages();
+    if (messages.size() != 1) {
+      return {};
+    }
+    auto message_body = json::Parse(messages[0]);
+    if (message_body.is_error()) {
+      return {};
+    }
+    const Json::Value offer = std::move(message_body.value());
+    EXPECT_EQ("OFFER", offer["type"].asString());
+    EXPECT_LT(0, offer["seqNum"].asInt());
+
+    const Json::Value& offer_body = offer["offer"];
+    if (!offer_body.isObject()) {
+      return {};
+    }
+
+    const Json::Value& streams = offer_body["supportedStreams"];
+    EXPECT_TRUE(streams.isArray());
+    EXPECT_EQ(2u, streams.size());
+
+    const Json::Value& audio_stream = streams[0];
+    const int audio_index = audio_stream["index"].asInt();
+    const int audio_ssrc = audio_stream["ssrc"].asUInt();
+
+    const Json::Value& video_stream = streams[1];
+    const int video_index = video_stream["index"].asInt();
+    const int video_ssrc = video_stream["ssrc"].asUInt();
+
+    constexpr char kAnswerTemplate[] = R"({
+        "type": "ANSWER",
+        "seqNum": %d,
+        "answer": {
+          "castMode": "mirroring",
+          "udpPort": 1234,
+          "sendIndexes": [%d, %d],
+          "ssrcs": [%d, %d]
+        }
+        })";
+    return StringPrintf(kAnswerTemplate, offer["seqNum"].asInt(), audio_index,
+                        video_index, audio_ssrc + 1, video_ssrc + 1);
+  }
+
  protected:
   StrictMock<FakeClient> client_;
   FakeClock clock_;
@@ -151,10 +203,6 @@ class SenderSessionTest : public ::testing::Test {
   std::unique_ptr<SenderSession> session_;
   FakeTaskRunner task_runner_;
 };
-
-TEST_F(SenderSessionTest, RegistersSelfOnMessagePort) {
-  EXPECT_EQ(message_port_->client(), session_.get());
-}
 
 TEST_F(SenderSessionTest, ComplainsIfNoConfigsToOffer) {
   const Error error = session_->Negotiate(std::vector<AudioCaptureConfig>{},
@@ -281,60 +329,15 @@ TEST_F(SenderSessionTest, SendsOfferMessage) {
 }
 
 TEST_F(SenderSessionTest, HandlesValidAnswer) {
-  const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
+  std::string answer = NegotiateOfferAndConstructAnswer();
 
-  ASSERT_TRUE(error.ok());
-
-  const auto& messages = message_port_->posted_messages();
-  ASSERT_EQ(1u, messages.size());
-  auto message_body = json::Parse(messages[0]);
-  ASSERT_TRUE(message_body.is_value());
-  const Json::Value offer = std::move(message_body.value());
-  EXPECT_EQ("OFFER", offer["type"].asString());
-  EXPECT_LT(0, offer["seqNum"].asInt());
-
-  const Json::Value& offer_body = offer["offer"];
-  ASSERT_FALSE(offer_body.isNull());
-  ASSERT_TRUE(offer_body.isObject());
-  const Json::Value& streams = offer_body["supportedStreams"];
-  EXPECT_TRUE(streams.isArray());
-  EXPECT_EQ(2u, streams.size());
-
-  const Json::Value& audio_stream = streams[0];
-  const int audio_index = audio_stream["index"].asInt();
-  const int audio_ssrc = audio_stream["ssrc"].asUInt();
-
-  const Json::Value& video_stream = streams[1];
-  const int video_index = video_stream["index"].asInt();
-  const int video_ssrc = video_stream["ssrc"].asUInt();
-
-  constexpr size_t kAnswerSize = 512u;
-  char answer[kAnswerSize];
-  snprintf(answer, kAnswerSize, R"({ "type": "ANSWER",
-                           "seqNum": %d,
-                           "answer": {
-                             "castMode": "mirroring",
-                             "udpPort": 1234,
-                             "sendIndexes": [%d, %d],
-                             "ssrcs": [%d, %d]
-                           }
-                         })",
-           offer["seqNum"].asInt(), audio_index, video_index, audio_ssrc + 1,
-           video_ssrc + 1);
-
-  // We should have responded with an on negotiated call
   EXPECT_CALL(client_, OnNegotiated(session_.get(), _, _));
   message_port_->ReceiveMessage(answer);
 }
 
 TEST_F(SenderSessionTest, HandlesInvalidNamespace) {
-  const Error error = session_->Negotiate(
-      std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
-      std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
-  message_port_->ReceiveMessage(kValidJsonInvalidAnswerMessage,
-                                "random-namespace");
+  std::string answer = NegotiateOfferAndConstructAnswer();
+  message_port_->ReceiveMessage("random-namespace", answer);
 }
 
 TEST_F(SenderSessionTest, HandlesMalformedAnswer) {
@@ -344,7 +347,8 @@ TEST_F(SenderSessionTest, HandlesMalformedAnswer) {
 
   // Note that unlike when we simply don't select any streams, when the answer
   // is actually malformed we have no way of knowing it was an answer at all,
-  // so we just drop it without error.
+  // so we report an Error and drop the message.
+  EXPECT_CALL(client_, OnError(session_.get(), _));
   message_port_->ReceiveMessage(kMalformedAnswerMessage);
 }
 
@@ -353,9 +357,7 @@ TEST_F(SenderSessionTest, HandlesImproperlyFormattedAnswer) {
       std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
-  EXPECT_CALL(client_,
-              OnError(session_.get(), Error(Error::Code::kJsonParseError,
-                                            "Failed to parse answer")));
+  EXPECT_CALL(client_, OnError(session_.get(), _));
   message_port_->ReceiveMessage(kValidJsonInvalidFormatAnswerMessage);
 }
 
@@ -364,9 +366,7 @@ TEST_F(SenderSessionTest, HandlesInvalidAnswer) {
       std::vector<AudioCaptureConfig>{kAudioCaptureConfigValid},
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
-  EXPECT_CALL(client_, OnError(session_.get(),
-                               Error(Error::Code::kJsonParseError,
-                                     "Received invalid answer message")));
+  EXPECT_CALL(client_, OnError(session_.get(), _));
   message_port_->ReceiveMessage(kValidJsonInvalidAnswerMessage);
 }
 
@@ -376,9 +376,7 @@ TEST_F(SenderSessionTest, HandlesNullAnswer) {
       std::vector<VideoCaptureConfig>{kVideoCaptureConfigValid});
 
   EXPECT_TRUE(error.ok());
-  EXPECT_CALL(client_,
-              OnError(session_.get(), Error(Error::Code::kJsonParseError,
-                                            "Failed to parse answer")));
+  EXPECT_CALL(client_, OnError(session_.get(), _));
   message_port_->ReceiveMessage(kMissingAnswerMessage);
 }
 

@@ -33,19 +33,21 @@
  * extensions but in the mean time if an old func in here depends on one
  * that has been migrated it will need to be imported
  */
-import {escapeCharacters, regexSpecialCharacters, sprintf} from './string-utilities.js';
+import {inverse} from './map-utilities.js';
+import {caseInsensetiveComparator, escapeCharacters, regexSpecialCharacters, sprintf} from './string-utilities.js';
 
 // Still used in the test runners that can't use ES modules :(
 String.sprintf = sprintf;
 
 String.regexSpecialCharacters = regexSpecialCharacters;
+String.caseInsensetiveComparator = caseInsensetiveComparator;
 
 /**
  * @this {string}
  * @return {string}
  */
 String.prototype.escapeForRegExp = function() {
-  return escapeCharacters(this, String.regexSpecialCharacters());
+  return escapeCharacters(this, regexSpecialCharacters());
 };
 
 /**
@@ -164,20 +166,6 @@ String.naturalOrderComparator = function(a, b) {
     a = a.substring(chunka.length);
     b = b.substring(chunkb.length);
   }
-};
-
-/**
- * @param {string} a
- * @param {string} b
- * @return {number}
- */
-String.caseInsensetiveComparator = function(a, b) {
-  a = a.toUpperCase();
-  b = b.toUpperCase();
-  if (a === b) {
-    return 0;
-  }
-  return a > b ? 1 : -1;
 };
 
 /**
@@ -445,11 +433,10 @@ Object.defineProperty(Array.prototype, 'peekLast', {
  */
 self.createPlainTextSearchRegex = function(query, flags) {
   // This should be kept the same as the one in StringUtil.cpp.
-  const regexSpecialCharacters = String.regexSpecialCharacters();
   let regex = '';
   for (let i = 0; i < query.length; ++i) {
     const c = query.charAt(i);
-    if (regexSpecialCharacters.indexOf(c) !== -1) {
+    if (regexSpecialCharacters().indexOf(c) !== -1) {
       regex += '\\';
     }
     regex += c;
@@ -469,15 +456,11 @@ Set.prototype.firstValue = function() {
 };
 
 /**
- * @return {!Platform.Multimap<!KEY, !VALUE>}
+ * @return {!Multimap<K,V>}
+ * @template K,V
  */
 Map.prototype.inverse = function() {
-  const result = new Platform.Multimap();
-  for (const key of this.keys()) {
-    const value = this.get(key);
-    result.set(value, key);
-  }
-  return result;
+  return inverse(this);
 };
 
 /**
@@ -586,11 +569,6 @@ export class Multimap {
 }
 
 /**
- * @param {*} value
- */
-self.suppressUnused = function(value) {};
-
-/**
  * @param {function()} callback
  * @return {number}
  */
@@ -601,25 +579,23 @@ self.setImmediate = function(callback) {
 };
 
 /**
- * TODO: move into its own module
- * @param {function()} callback
- * @suppressGlobalPropertiesCheck
+ * @param {function():void} callback
  */
-self.runOnWindowLoad = function(callback) {
+export function runOnWindowLoad(callback) {
   /**
    * @suppressGlobalPropertiesCheck
    */
   function windowLoaded() {
-    self.removeEventListener('DOMContentLoaded', windowLoaded, false);
+    window.removeEventListener('DOMContentLoaded', windowLoaded, false);
     callback();
   }
 
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     callback();
   } else {
-    self.addEventListener('DOMContentLoaded', windowLoaded, false);
+    window.addEventListener('DOMContentLoaded', windowLoaded, false);
   }
-};
+}
 
 const _singletonSymbol = Symbol('singleton');
 

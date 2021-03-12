@@ -17,31 +17,53 @@
 #include "third_party/skia/include/gpu/GrDirectContext.h"
 #include "third_party/skia/include/gpu/vk/GrVkExtensions.h"
 
+namespace {
+
+// Setting this limit to 0 practically forces sync at every submit.
+constexpr uint32_t kSyncCpuMemoryLimitAtMemoryPressureCritical = 0;
+
+}  // namespace
+
 namespace viz {
 
 // static
 scoped_refptr<VulkanInProcessContextProvider>
 VulkanInProcessContextProvider::Create(
     gpu::VulkanImplementation* vulkan_implementation,
-    const GrContextOptions& options,
-    const gpu::GPUInfo* gpu_info) {
+    uint32_t heap_memory_limit,
+    uint32_t sync_cpu_memory_limit,
+    const gpu::GPUInfo* gpu_info,
+    base::TimeDelta cooldown_duration_at_memory_pressure_critical) {
   scoped_refptr<VulkanInProcessContextProvider> context_provider(
-      new VulkanInProcessContextProvider(vulkan_implementation));
-  if (!context_provider->Initialize(options, gpu_info))
+      new VulkanInProcessContextProvider(
+          vulkan_implementation, heap_memory_limit, sync_cpu_memory_limit,
+          cooldown_duration_at_memory_pressure_critical));
+  if (!context_provider->Initialize(gpu_info))
     return nullptr;
   return context_provider;
 }
 
 VulkanInProcessContextProvider::VulkanInProcessContextProvider(
-    gpu::VulkanImplementation* vulkan_implementation)
-    : vulkan_implementation_(vulkan_implementation) {}
+    gpu::VulkanImplementation* vulkan_implementation,
+    uint32_t heap_memory_limit,
+    uint32_t sync_cpu_memory_limit,
+    base::TimeDelta cooldown_duration_at_memory_pressure_critical)
+    : vulkan_implementation_(vulkan_implementation),
+      heap_memory_limit_(heap_memory_limit),
+      sync_cpu_memory_limit_(sync_cpu_memory_limit),
+      cooldown_duration_at_memory_pressure_critical_(
+          cooldown_duration_at_memory_pressure_critical) {
+  memory_pressure_listener_ = std::make_unique<base::MemoryPressureListener>(
+      FROM_HERE,
+      base::BindRepeating(&VulkanInProcessContextProvider::OnMemoryPressure,
+                          base::Unretained(this)));
+}
 
 VulkanInProcessContextProvider::~VulkanInProcessContextProvider() {
   Destroy();
 }
 
 bool VulkanInProcessContextProvider::Initialize(
-    const GrContextOptions& context_options,
     const gpu::GPUInfo* gpu_info) {
   DCHECK(!device_queue_);
 
@@ -59,11 +81,16 @@ bool VulkanInProcessContextProvider::Initialize(
     }
   }
 
-  device_queue_ =
-      gpu::CreateVulkanDeviceQueue(vulkan_implementation_, flags, gpu_info);
+  device_queue_ = gpu::CreateVulkanDeviceQueue(vulkan_implementation_, flags,
+                                               gpu_info, heap_memory_limit_);
   if (!device_queue_)
     return false;
 
+  return true;
+}
+
+bool VulkanInProcessContextProvider::InitializeGrContext(
+    const GrContextOptions& context_options) {
   GrVkBackendContext backend_context;
   backend_context.fInstance = device_queue_->GetVulkanInstance();
   backend_context.fPhysicalDevice = device_queue_->GetVulkanPhysicalDevice();
@@ -85,6 +112,10 @@ bool VulkanInProcessContextProvider::Initialize(
     }
     return vkGetInstanceProcAddr(instance, proc_name);
   };
+
+  const auto& instance_extensions = vulkan_implementation_->GetVulkanInstance()
+                                        ->vulkan_info()
+                                        .enabled_instance_extensions;
 
   std::vector<const char*> device_extensions;
   device_extensions.reserve(device_queue_->enabled_extensions().size());
@@ -156,6 +187,26 @@ void VulkanInProcessContextProvider::EnqueueSecondaryCBSemaphores(
 void VulkanInProcessContextProvider::EnqueueSecondaryCBPostSubmitTask(
     base::OnceClosure closure) {
   NOTREACHED();
+}
+
+base::Optional<uint32_t> VulkanInProcessContextProvider::GetSyncCpuMemoryLimit()
+    const {
+  // Return false to indicate that there's no limit.
+  if (!sync_cpu_memory_limit_)
+    return base::Optional<uint32_t>();
+  return base::TimeTicks::Now() < critical_memory_pressure_expiration_time_
+             ? base::Optional<uint32_t>(
+                   kSyncCpuMemoryLimitAtMemoryPressureCritical)
+             : base::Optional<uint32_t>(sync_cpu_memory_limit_);
+}
+
+void VulkanInProcessContextProvider::OnMemoryPressure(
+    base::MemoryPressureListener::MemoryPressureLevel level) {
+  if (level != base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL)
+    return;
+
+  critical_memory_pressure_expiration_time_ =
+      base::TimeTicks::Now() + cooldown_duration_at_memory_pressure_critical_;
 }
 
 }  // namespace viz

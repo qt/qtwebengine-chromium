@@ -215,7 +215,10 @@ template("generate_icu_component") {
 }
 
 template("generate_icui18n") {
-  check_thin_archive = true
+  if (!icu_is_in_fuchsia) {
+    check_thin_archive = true
+  }
+
   generate_icu_component(target_name) {
     assert(defined(invoker.icuuc_deps), "Need the 'icuuc_deps' parameter.")
     icuuc_deps = invoker.icuuc_deps
@@ -254,7 +257,10 @@ generate_icui18n("icui18n_hidden_visibility") {
 }
 
 template("generate_icuuc") {
-  check_thin_archive = false
+  if (!icu_is_in_fuchsia) {
+    check_thin_archive = false
+  }
+
   generate_icu_component(target_name) {
     fuchsia_output_name_postfix = ""
     if (defined(invoker.fuchsia_output_name_postfix)) {

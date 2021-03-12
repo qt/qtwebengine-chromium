@@ -103,12 +103,6 @@
   <message name="IDS_DEVTOOLS_29296fcb28eb4edf5d0049b6cac7bbd1" desc="Text for a percentage value">
     <ph name="SCALE">$1.0f<ex>13.0</ex></ph>%%
   </message>
-  <message name="IDS_DEVTOOLS_29e9d8e295b1d5b3002d2d3d5baa4c37" desc="Text for keyboard shortcuts">
-    Shortcuts
-  </message>
-  <message name="IDS_DEVTOOLS_2ab5656e27a0ed871c8de44368f807c6" desc="Title of the styles side pane in Elements panel">
-    Styles Pane
-  </message>
   <message name="IDS_DEVTOOLS_2ae207ddfe5cd256a768769d93a879e5" desc="Title of the paint profiler, old name of the performance pane">
     Paint Profiler
   </message>
@@ -117,9 +111,6 @@
   </message>
   <message name="IDS_DEVTOOLS_2bbc845892f400626baab5af687527c5" desc="Text for the start time of an activity">
     Start Time
-  </message>
-  <message name="IDS_DEVTOOLS_2c56c360580420d293172f42d85dfbed" desc="Text that appears on a button for the css resource type filter.">
-    CSS
   </message>
   <message name="IDS_DEVTOOLS_2ce2fc341b0bd9219a3634ff43a90bde" desc="Generic text with two placeholders separated by a comma">
     <ph name="ITEM_LABEL">$1s<ex>1 613 680</ex></ph>, <ph name="CHECKEDSTATE">$2s<ex>44 %</ex></ph>
@@ -135,9 +126,6 @@
   </message>
   <message name="IDS_DEVTOOLS_31fde7b05ac8952dacf4af8a704074ec" desc="Text for previewing items">
     Preview
-  </message>
-  <message name="IDS_DEVTOOLS_340641a167ad6da1bcb4016357f4695d" desc="Title for a type of source files">
-    Content scripts
   </message>
   <message name="IDS_DEVTOOLS_36917e785bd31d786ab9dd7790a9a4c2" desc="Text for a heap profile type">
     JS Heap
@@ -165,6 +153,9 @@
   </message>
   <message name="IDS_DEVTOOLS_3c4684d2d502d7f9d20e05451c2f581c" desc="Next button title in Film Strip View of the Performance panel">
     Next frame
+  </message>
+  <message name="IDS_DEVTOOLS_3e56c011b37f0bc78fb9eb175c1181c6" desc="A unit">
+    kB
   </message>
   <message name="IDS_DEVTOOLS_3ec365dd533ddb7ef3d1c111186ce872" desc="Text for the details of something">
     Details
@@ -202,9 +193,6 @@
   <message name="IDS_DEVTOOLS_49ee3087348e8d44e1feda1917443987" desc="Text for the name of something">
     Name
   </message>
-  <message name="IDS_DEVTOOLS_4b50fa6fd1a6a30c9b16f71dd2600574" desc="Text in the Shortcuts page to explain a keyboard shortcut (jump to next editing location in text editor)">
-    Jump to next editing location
-  </message>
   <message name="IDS_DEVTOOLS_4bd7c2ff07dcc66801a9368957d4bff8" desc="Text for the initiator of something">
     Initiator
   </message>
@@ -213,9 +201,6 @@
   </message>
   <message name="IDS_DEVTOOLS_4cc6684df7b4a92b1dec6fce3264fac8" desc="Text describing global shortcuts and settings that are available throughout the DevTools">
     Global
-  </message>
-  <message name="IDS_DEVTOOLS_4cf8e5f6ffbb182b5d480cbabae6a028" desc="Text to modify the attribute of an item">
-    Edit attribute
   </message>
   <message name="IDS_DEVTOOLS_4cfa6c981549e990fe2344e4c805405e" desc="Text to find an item">
     Find
@@ -229,9 +214,6 @@
   <message name="IDS_DEVTOOLS_502996d9790340c5fd7b86a5b93b1c9f" desc="Text to show the priority of an item">
     Priority
   </message>
-  <message name="IDS_DEVTOOLS_5134111907df828fc575c69e22480c1e" desc="Text to hide an element">
-    Hide element
-  </message>
   <message name="IDS_DEVTOOLS_51360304ea03557e79bdf5ff9cd2e234" desc="Text for the issuer of an item">
     Issuer
   </message>
@@ -240,9 +222,6 @@
   </message>
   <message name="IDS_DEVTOOLS_529a032eab49b8ddc6f49f8bcc086607" desc="Prev button title in Film Strip View of the Performance panel">
     Previous frame
-  </message>
-  <message name="IDS_DEVTOOLS_52b3bc5e77aa070243c36cd40a4d6b6d" desc="Text for autocompletion">
-    Autocompletion
   </message>
   <message name="IDS_DEVTOOLS_52ebc26c2921d5b84fc670dff9891821" desc="Text in the Shortcuts page to explain a keyboard shortcut (zoom out)">
     Zoom out
@@ -261,12 +240,6 @@
   </message>
   <message name="IDS_DEVTOOLS_59cc7cb8dfb2491cc5dfe8ebc546d797" desc="Text to pretty print a file">
     Pretty print
-  </message>
-  <message name="IDS_DEVTOOLS_5a0a64ecca63ba9a006b6397cbdc2b8c" desc="Text to go to a given line">
-    Go to line
-  </message>
-  <message name="IDS_DEVTOOLS_5b6cf869265c13af8566f192b4ab3d2a" desc="Text for the documentation of something">
-    Documentation
   </message>
   <message name="IDS_DEVTOOLS_5de39fa1bce4bbf9232597a2120bc4d4" desc="Text to open the cubic bezier editor">
     Open cubic bezier editor.
@@ -298,8 +271,8 @@
   <message name="IDS_DEVTOOLS_65b4c7424dd695c30efa73da8396c90c" desc="Title of the Profiler tool">
     Profiler
   </message>
-  <message name="IDS_DEVTOOLS_686155af75a60a0f6e9d80c1f7edd3e9" desc="Text in Timeline Tree View of the Performance panel">
-    JavaScript
+  <message name="IDS_DEVTOOLS_6827a85b76e967f6a129e08f9272e76d" desc="Text in Application Panel Sidebar of the Application panel">
+    Local Storage
   </message>
   <message name="IDS_DEVTOOLS_689202409e48743b914713f96d93947c" desc="Text for the value of something">
     Value
@@ -337,12 +310,6 @@
   <message name="IDS_DEVTOOLS_76c3e002d3c052bd6a909366a8dc3845" desc="Text that appears on a button for the manifest resource type filter.">
     Manifest
   </message>
-  <message name="IDS_DEVTOOLS_76f8c7ad696be0b330b46afe79ac279d" desc="Text in the Shortcuts page to explain a keyboard shortcut (start/stop recording performance)">
-    Start/stop recording
-  </message>
-  <message name="IDS_DEVTOOLS_787ae37366b7a8c53f381abfd315c647" desc="Text that refers to the Elements Panel">
-    Elements Panel
-  </message>
   <message name="IDS_DEVTOOLS_7a1920d61156abc05a60135aefe8bc67" desc="A context menu item in the Console View of the Console panel">
     Default
   </message>
@@ -363,9 +330,6 @@
   </message>
   <message name="IDS_DEVTOOLS_81aa2078d1eceede831b2976dbf32e62" desc="Text to clear everything">
     Clear all
-  </message>
-  <message name="IDS_DEVTOOLS_832e506a71f4a57ed15ecbcd771f9247" desc="Text in Coverage List View of the Coverage tab">
-    Total Bytes
   </message>
   <message name="IDS_DEVTOOLS_84d0c431d1472a0609d69b39dcb3a287" desc="Text for the index of something">
     (index)
@@ -394,8 +358,8 @@
   <message name="IDS_DEVTOOLS_888a77f5ac0748b6c8001822417df8b6" desc="Text for security or network protocol">
     Protocol
   </message>
-  <message name="IDS_DEVTOOLS_89345110b204ed302eddff2ddbd0f4d9" desc="Text in the Shortcuts page to explain a keyboard shortcut (enable toggle breakpoint shortcut in debugger)">
-    Toggle breakpoint enabled
+  <message name="IDS_DEVTOOLS_8d8fcc1abd550c5f25dbfaa57d59cb67" desc="Unit for data size in DevTools">
+    MB
   </message>
   <message name="IDS_DEVTOOLS_8d9da4bc0e49a50e09ac9f7e56789d39" desc="Text to indicate the network connectivity is offline">
     Offline
@@ -408,9 +372,6 @@
   </message>
   <message name="IDS_DEVTOOLS_90589c47f06eb971d548591f23c285af" desc="Text in Network Throttling Selector of the Network panel">
     Custom
-  </message>
-  <message name="IDS_DEVTOOLS_9066c4d254b4c8ab67e107a1b59e925d" desc="Accessible text for a file size of 1 byte">
-    1 byte
   </message>
   <message name="IDS_DEVTOOLS_90da6f38945a1c7e7ba11e3adcbe6919" desc="Text for pausing the debugger on exceptions">
     Pause on exceptions
@@ -442,14 +403,8 @@
   <message name="IDS_DEVTOOLS_96e9bc575b5d3ed541113a249da8bd24" desc="Text to take screenshots">
     Capture screenshots
   </message>
-  <message name="IDS_DEVTOOLS_9841bdc50c4226cb6ec5db76494249e6" desc="Title of the 'Coverage' tool in the bottom drawer">
-    Coverage
-  </message>
   <message name="IDS_DEVTOOLS_997a8c473db4f81c5fb3d5900030d44d" desc="Text that shows there is no recording">
     (no recordings)
-  </message>
-  <message name="IDS_DEVTOOLS_9aae9fe27dbf2db0ad90762b5b59d3a7" desc="Text to clear the console">
-    Clear console
   </message>
   <message name="IDS_DEVTOOLS_9d8c209e49e328528c39c273798e98c9" desc="Text to save content as a specific file type">
     Save as...
@@ -499,9 +454,6 @@
   <message name="IDS_DEVTOOLS_aab112fba39c10ed5df335ae0e47f329" desc="Text that indicates something is not optimized">
     Not optimized
   </message>
-  <message name="IDS_DEVTOOLS_ab57fd0432e25d5b3013133a1c910d56" desc="A unit">
-    KB
-  </message>
   <message name="IDS_DEVTOOLS_abbd64f40c34c537d3a571af068fce29" desc="Text for the orientation of something">
     Orientation
   </message>
@@ -544,8 +496,8 @@
   <message name="IDS_DEVTOOLS_b6434258c743f8673997b5aeb3721c27" desc="Text that refers to the network request method">
     Request Method
   </message>
-  <message name="IDS_DEVTOOLS_b7ad6a024765bbfbff22dedf9afe0d17" desc="Text in the Shortcuts page to explain a keyboard shortcut (jump to previous editing location in text editor)">
-    Jump to previous editing location
+  <message name="IDS_DEVTOOLS_b66b856833f34a841b51c7207dbc601f" desc="Text in Application Panel Sidebar of the Application panel">
+    IndexedDB
   </message>
   <message name="IDS_DEVTOOLS_b94d8a074eddd267702810179875737f" desc="Text that refers to the debugger">
     Debugger
@@ -561,9 +513,6 @@
   </message>
   <message name="IDS_DEVTOOLS_bafd7322c6e97d25b6299b5d6fe8920b" desc="Text in Timeline indicating that input has not happened recently">
     No
-  </message>
-  <message name="IDS_DEVTOOLS_bc28aa52ba5b534ad9d198157c375d67" desc="Text to clear storage of the web page">
-    Clear storage
   </message>
   <message name="IDS_DEVTOOLS_bc955333ff170762be4971a8fde558cf" desc="Title of the WebAudio tool">
     WebAudio
@@ -604,9 +553,6 @@
   <message name="IDS_DEVTOOLS_ce5bf551379459c1c61d2a204061c455" desc="Title for a group of cities">
     Location
   </message>
-  <message name="IDS_DEVTOOLS_ce7668534c7b08cd0b81dfa574d681f8" desc="Toolip shown for the issues count in several places of the UI">
-    Issues pertaining to <ph name="ISSUES">$1s<ex>13</ex></ph> operations detected.
-  </message>
   <message name="IDS_DEVTOOLS_ce82e07fa1f0521f5cee30e368fe2e73" desc="Text that starts with a colon and includes a placeholder">
     : <ph name="AA_NUMBER">$1s<ex>3.0</ex></ph>
   </message>
@@ -634,9 +580,6 @@
   <message name="IDS_DEVTOOLS_dc30bc0c7914db5918da4263fce93ad2" desc="Text to clear content">
     Clear
   </message>
-  <message name="IDS_DEVTOOLS_dd92c3884d43902407a4c2f0d8cc0eb1" desc="Text in the Shortcuts page to explain a keyboard shortcut (toggle breakpoint in debugger)">
-    Toggle breakpoint
-  </message>
   <message name="IDS_DEVTOOLS_ddcf50c29294d4414f3f7c1bbc892cb5" desc="A title of the 'Resources' action category">
     Resources
   </message>
@@ -657,6 +600,9 @@
   </message>
   <message name="IDS_DEVTOOLS_e1faffb3e614e6c2fba74296962386b7" desc="Label aaa text content in Contrast Details of the Color Picker">
     AAA
+  </message>
+  <message name="IDS_DEVTOOLS_e3de97b1a66edbe3fceddb1d5db2df2d" desc="A context menu item in the Watch Expressions Sidebar Pane of the Sources panel and Network pane request.">
+    Copy value
   </message>
   <message name="IDS_DEVTOOLS_e402c138065e7eece783dc30c6079192" desc="Text that appears on a button for the xhr resource type filter.">
     XHR
@@ -690,6 +636,9 @@
   </message>
   <message name="IDS_DEVTOOLS_ebd9bec4d70abc789d439c1f136b0538" desc="Text in Timeline UIUtils of the Performance panel">
     Layout
+  </message>
+  <message name="IDS_DEVTOOLS_ec1e074d56484165315c26a9baebaebd" desc="Text in Application Panel Sidebar of the Application panel">
+    Web SQL
   </message>
   <message name="IDS_DEVTOOLS_ec211f7c20af43e742bf2570c3cb84f9" desc="Text to add something">
     Add
@@ -747,9 +696,6 @@
   </message>
   <message name="IDS_DEVTOOLS_fa7c73b6eb5f3c3b77e47d8a4557af3e" desc="Tooltip text that appears when hovering over the largeicon load button">
     Load profile…
-  </message>
-  <message name="IDS_DEVTOOLS_faa6cbbf56829034b2653e796abdd062" desc="Toolip shown for the issues count in several places of the UI">
-    Issues pertaining to <ph name="ISSUES">$1s<ex>1</ex></ph> operation detected.
   </message>
   <message name="IDS_DEVTOOLS_fb61758d0f0fda4ba867c3d5a46c16a7" desc="Name of the Sources panel">
     Sources

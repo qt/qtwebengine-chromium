@@ -34,7 +34,6 @@ static AOM_INLINE void simple_motion_search_prune_part_features(
     AV1_COMP *const cpi, MACROBLOCK *x, SIMPLE_MOTION_DATA_TREE *sms_tree,
     int mi_row, int mi_col, BLOCK_SIZE bsize, float *features,
     int features_to_get);
-#endif
 
 static INLINE int convert_bsize_to_idx(BLOCK_SIZE bsize) {
   switch (bsize) {
@@ -46,6 +45,7 @@ static INLINE int convert_bsize_to_idx(BLOCK_SIZE bsize) {
     default: assert(0 && "Invalid bsize"); return -1;
   }
 }
+#endif
 
 #if !CONFIG_REALTIME_ONLY
 // TODO(chiyotsai@google.com): This is very much a work in progress. We still
@@ -490,8 +490,8 @@ static AOM_INLINE void simple_motion_search_prune_part_features(
   // Neighbor stuff
   const int has_above = !!xd->above_mbmi;
   const int has_left = !!xd->left_mbmi;
-  const BLOCK_SIZE above_bsize = has_above ? xd->above_mbmi->sb_type : bsize;
-  const BLOCK_SIZE left_bsize = has_left ? xd->left_mbmi->sb_type : bsize;
+  const BLOCK_SIZE above_bsize = has_above ? xd->above_mbmi->bsize : bsize;
+  const BLOCK_SIZE left_bsize = has_left ? xd->left_mbmi->bsize : bsize;
   features[f_idx++] = (float)has_above;
   features[f_idx++] = (float)mi_size_wide_log2[above_bsize];
   features[f_idx++] = (float)mi_size_high_log2[above_bsize];
@@ -1259,10 +1259,9 @@ int av1_ml_predict_breakout(const AV1_COMP *const cpi, BLOCK_SIZE bsize,
   if (!nn_config || thresh < 0) return 0;
 
   const float ml_predict_breakout_thresh_scale[3] = { 1.15f, 1.05f, 1.0f };
-  thresh =
-      (int)((float)thresh *
-            ml_predict_breakout_thresh_scale[cpi->sf.part_sf
-                                                 .ml_predict_breakout_level]);
+  thresh = (int)((float)thresh *
+                 ml_predict_breakout_thresh_scale
+                     [cpi->sf.part_sf.ml_predict_breakout_level - 1]);
 
   // Generate feature values.
   float features[FEATURES];
@@ -1303,6 +1302,48 @@ void av1_prune_partitions_before_search(
     int *do_square_split, int *prune_horz, int *prune_vert) {
   const AV1_COMMON *const cm = &cpi->common;
   const CommonModeInfoParams *const mi_params = &cm->mi_params;
+
+  // Prune rectangular, AB and 4-way partition based on q index and block size
+  if (cpi->sf.part_sf.prune_rectangular_split_based_on_qidx) {
+    // Enumeration difference between two square partitions
+    const int sqr_bsize_step = BLOCK_32X32 - BLOCK_16X16;
+    int max_bsize =
+        BLOCK_32X32 - (x->qindex * 3 / QINDEX_RANGE) * sqr_bsize_step;
+    max_bsize = AOMMAX(max_bsize, BLOCK_4X4);
+    const BLOCK_SIZE max_prune_bsize =
+        (BLOCK_SIZE)AOMMIN(max_bsize, BLOCK_32X32);
+
+    // Prune partition
+    // qidx 0 to 85: prune bsize below BLOCK_32X32
+    // qidx 86 to 170: prune bsize below BLOCK_16X16
+    // qidx 171 to 255: prune bsize below BLOCK_8X8
+    if (bsize < max_prune_bsize) {
+      *do_rectangular_split = 0;
+      *partition_horz_allowed = 0;
+      *partition_vert_allowed = 0;
+    }
+  }
+
+  if (cpi->sf.part_sf.prune_sub_8x8_partition_level && (bsize == BLOCK_8X8)) {
+    const MACROBLOCKD *const xd = &x->e_mbd;
+    int prune_sub_8x8 = 1;
+    if (cpi->sf.part_sf.prune_sub_8x8_partition_level == 1) {
+      int num_neighbors_lt_8x8 = 0;
+      if (xd->left_available)
+        num_neighbors_lt_8x8 += (xd->left_mbmi->bsize <= BLOCK_8X8);
+      if (xd->up_available)
+        num_neighbors_lt_8x8 += (xd->above_mbmi->bsize <= BLOCK_8X8);
+      // Evaluate only if both left and above blocks are of size <= BLOCK_8X8.
+      if (num_neighbors_lt_8x8 == 2) {
+        prune_sub_8x8 = 0;
+      }
+    }
+    if (prune_sub_8x8) {
+      *partition_horz_allowed = 0;
+      *partition_vert_allowed = 0;
+      *do_square_split = 0;
+    }
+  }
 
   // A CNN-based speed feature pruning out either split or all non-split
   // partition in INTRA frame coding.

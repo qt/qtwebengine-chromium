@@ -71,7 +71,7 @@ namespace dawn_native { namespace vulkan {
             if (usage & wgpu::TextureUsage::Storage) {
                 flags |= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
             }
-            if (usage & wgpu::TextureUsage::OutputAttachment) {
+            if (usage & wgpu::TextureUsage::RenderAttachment) {
                 if (format.HasDepthOrStencil()) {
                     flags |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
                              VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -130,7 +130,7 @@ namespace dawn_native { namespace vulkan {
                 case wgpu::TextureUsage::Storage:
                 case kReadonlyStorageTexture:
                     return VK_IMAGE_LAYOUT_GENERAL;
-                case wgpu::TextureUsage::OutputAttachment:
+                case wgpu::TextureUsage::RenderAttachment:
                     if (format.HasDepthOrStencil()) {
                         return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                     } else {
@@ -168,7 +168,7 @@ namespace dawn_native { namespace vulkan {
                 flags |=
                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
             }
-            if (usage & wgpu::TextureUsage::OutputAttachment) {
+            if (usage & wgpu::TextureUsage::RenderAttachment) {
                 if (format.HasDepthOrStencil()) {
                     flags |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                              VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
@@ -395,7 +395,7 @@ namespace dawn_native { namespace vulkan {
         if (usage & wgpu::TextureUsage::Storage) {
             flags |= VK_IMAGE_USAGE_STORAGE_BIT;
         }
-        if (usage & wgpu::TextureUsage::OutputAttachment) {
+        if (usage & wgpu::TextureUsage::RenderAttachment) {
             if (format.HasDepthOrStencil()) {
                 flags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
             } else {
@@ -455,11 +455,12 @@ namespace dawn_native { namespace vulkan {
     }
 
     // static
-    ResultOrError<Ref<TextureBase>> Texture::Create(Device* device,
-                                                    const TextureDescriptor* descriptor) {
+    ResultOrError<Ref<Texture>> Texture::Create(Device* device,
+                                                const TextureDescriptor* descriptor,
+                                                VkImageUsageFlags extraUsages) {
         Ref<Texture> texture =
             AcquireRef(new Texture(device, descriptor, TextureState::OwnedInternal));
-        DAWN_TRY(texture->InitializeAsInternalTexture());
+        DAWN_TRY(texture->InitializeAsInternalTexture(extraUsages));
         return std::move(texture);
     }
 
@@ -482,10 +483,10 @@ namespace dawn_native { namespace vulkan {
         Ref<Texture> texture =
             AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal));
         texture->InitializeForSwapChain(nativeImage);
-        return std::move(texture);
+        return texture;
     }
 
-    MaybeError Texture::InitializeAsInternalTexture() {
+    MaybeError Texture::InitializeAsInternalTexture(VkImageUsageFlags extraUsages) {
         Device* device = ToBackend(GetDevice());
 
         // Create the Vulkan image "container". We don't need to check that the format supports the
@@ -499,7 +500,7 @@ namespace dawn_native { namespace vulkan {
         createInfo.flags = 0;
         createInfo.format = VulkanImageFormat(device, GetFormat().format);
         createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        createInfo.usage = VulkanImageUsage(GetUsage(), GetFormat());
+        createInfo.usage = VulkanImageUsage(GetUsage(), GetFormat()) | extraUsages;
         createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         createInfo.queueFamilyIndexCount = 0;
         createInfo.pQueueFamilyIndices = nullptr;
@@ -801,7 +802,7 @@ namespace dawn_native { namespace vulkan {
 
     bool Texture::CanReuseWithoutBarrier(wgpu::TextureUsage lastUsage, wgpu::TextureUsage usage) {
         // Reuse the texture directly and avoid encoding barriers when it isn't needed.
-        bool lastReadOnly = (lastUsage & kReadOnlyTextureUsages) == lastUsage;
+        bool lastReadOnly = IsSubset(lastUsage, kReadOnlyTextureUsages);
         if (lastReadOnly && lastUsage == usage && mLastExternalState == mExternalState) {
             return true;
         }
@@ -1039,27 +1040,26 @@ namespace dawn_native { namespace vulkan {
                 } else {
                     ASSERT(aspects == Aspect::Color);
                     VkClearColorValue clearColorValue;
-                    switch (GetFormat().type) {
-                        case Format::Type::Float:
+                    switch (GetFormat().GetAspectInfo(Aspect::Color).baseType) {
+                        case wgpu::TextureComponentType::Float:
                             clearColorValue.float32[0] = fClearColor;
                             clearColorValue.float32[1] = fClearColor;
                             clearColorValue.float32[2] = fClearColor;
                             clearColorValue.float32[3] = fClearColor;
                             break;
-                        case Format::Type::Sint:
+                        case wgpu::TextureComponentType::Sint:
                             clearColorValue.int32[0] = sClearColor;
                             clearColorValue.int32[1] = sClearColor;
                             clearColorValue.int32[2] = sClearColor;
                             clearColorValue.int32[3] = sClearColor;
                             break;
-                        case Format::Type::Uint:
+                        case wgpu::TextureComponentType::Uint:
                             clearColorValue.uint32[0] = uClearColor;
                             clearColorValue.uint32[1] = uClearColor;
                             clearColorValue.uint32[2] = uClearColor;
                             clearColorValue.uint32[3] = uClearColor;
                             break;
-
-                        case Format::Type::Other:
+                        case wgpu::TextureComponentType::DepthComparison:
                             UNREACHABLE();
                     }
                     device->fn.CmdClearColorImage(recordingContext->commandBuffer, GetHandle(),
@@ -1093,6 +1093,11 @@ namespace dawn_native { namespace vulkan {
             GetDevice()->ConsumedError(
                 ClearTexture(recordingContext, range, TextureBase::ClearValue::Zero));
         }
+    }
+
+    VkImageLayout Texture::GetCurrentLayoutForSwapChain() const {
+        ASSERT(mSubresourceLastUsages.size() == 1);
+        return VulkanImageLayout(mSubresourceLastUsages[0], GetFormat());
     }
 
     // static

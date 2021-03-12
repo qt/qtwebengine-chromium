@@ -23,15 +23,14 @@ EncryptedFrame::EncryptedFrame() {
 
 EncryptedFrame::~EncryptedFrame() = default;
 
-EncryptedFrame::EncryptedFrame(EncryptedFrame&& other) MAYBE_NOEXCEPT
+EncryptedFrame::EncryptedFrame(EncryptedFrame&& other)
     : EncodedFrame(static_cast<EncodedFrame&&>(other)),
       owned_data_(std::move(other.owned_data_)) {
   data = absl::Span<uint8_t>(owned_data_);
   other.data = absl::Span<uint8_t>{};
 }
 
-EncryptedFrame& EncryptedFrame::operator=(EncryptedFrame&& other)
-    MAYBE_NOEXCEPT {
+EncryptedFrame& EncryptedFrame::operator=(EncryptedFrame&& other) {
   this->EncodedFrame::operator=(static_cast<EncodedFrame&&>(other));
   owned_data_ = std::move(other.owned_data_);
   data = absl::Span<uint8_t>(owned_data_);

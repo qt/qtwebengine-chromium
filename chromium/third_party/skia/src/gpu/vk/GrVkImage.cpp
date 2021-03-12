@@ -93,13 +93,11 @@ VkAccessFlags GrVkImage::LayoutToSrcAccessMask(const VkImageLayout layout) {
         flags = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
                 VK_ACCESS_TRANSFER_WRITE_BIT |
-                VK_ACCESS_TRANSFER_READ_BIT |
-                VK_ACCESS_SHADER_READ_BIT |
-                VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_HOST_READ_BIT;
+                VK_ACCESS_HOST_WRITE_BIT;
     } else if (VK_IMAGE_LAYOUT_PREINITIALIZED == layout) {
         flags = VK_ACCESS_HOST_WRITE_BIT;
     } else if (VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL == layout) {
-        flags = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+        flags = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     } else if (VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL == layout) {
         flags = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     } else if (VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL == layout) {
@@ -270,6 +268,7 @@ bool GrVkImage::InitImageInfo(GrVkGpu* gpu, const ImageDesc& imageDesc, GrVkImag
     info->fImageLayout = initialLayout;
     info->fFormat = imageDesc.fFormat;
     info->fImageUsageFlags = imageDesc.fUsageFlags;
+    info->fSampleCount = imageDesc.fSamples;
     info->fLevelCount = imageDesc.fLevels;
     info->fCurrentQueueFamily = VK_QUEUE_FAMILY_IGNORED;
     info->fProtected =

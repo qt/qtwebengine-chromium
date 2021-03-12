@@ -16,7 +16,10 @@
 
 #include "gtest/gtest.h"
 #include "src/ast/binding_decoration.h"
+#include "src/ast/builtin_decoration.h"
+#include "src/ast/constant_id_decoration.h"
 #include "src/ast/identifier_expression.h"
+#include "src/ast/location_decoration.h"
 #include "src/ast/set_decoration.h"
 #include "src/ast/type/f32_type.h"
 #include "src/ast/type/i32_type.h"
@@ -37,12 +40,14 @@ TEST_F(DecoratedVariableTest, Creation) {
   EXPECT_EQ(dv.name(), "my_var");
   EXPECT_EQ(dv.storage_class(), StorageClass::kFunction);
   EXPECT_EQ(dv.type(), &t);
-  EXPECT_EQ(dv.line(), 0u);
-  EXPECT_EQ(dv.column(), 0u);
+  EXPECT_EQ(dv.source().range.begin.line, 0u);
+  EXPECT_EQ(dv.source().range.begin.column, 0u);
+  EXPECT_EQ(dv.source().range.end.line, 0u);
+  EXPECT_EQ(dv.source().range.end.column, 0u);
 }
 
 TEST_F(DecoratedVariableTest, CreationWithSource) {
-  Source s{27, 4};
+  Source s{Source::Range{Source::Location{27, 4}, Source::Location{27, 5}}};
   type::F32Type t;
   auto var = std::make_unique<Variable>(s, "i", StorageClass::kPrivate, &t);
   DecoratedVariable dv(std::move(var));
@@ -50,8 +55,49 @@ TEST_F(DecoratedVariableTest, CreationWithSource) {
   EXPECT_EQ(dv.name(), "i");
   EXPECT_EQ(dv.storage_class(), StorageClass::kPrivate);
   EXPECT_EQ(dv.type(), &t);
-  EXPECT_EQ(dv.line(), 27u);
-  EXPECT_EQ(dv.column(), 4u);
+  EXPECT_EQ(dv.source().range.begin.line, 27u);
+  EXPECT_EQ(dv.source().range.begin.column, 4u);
+  EXPECT_EQ(dv.source().range.end.line, 27u);
+  EXPECT_EQ(dv.source().range.end.column, 5u);
+}
+
+TEST_F(DecoratedVariableTest, NoDecorations) {
+  type::I32Type t;
+  auto var = std::make_unique<Variable>("my_var", StorageClass::kFunction, &t);
+  DecoratedVariable dv(std::move(var));
+  EXPECT_FALSE(dv.HasLocationDecoration());
+  EXPECT_FALSE(dv.HasBuiltinDecoration());
+  EXPECT_FALSE(dv.HasConstantIdDecoration());
+}
+
+TEST_F(DecoratedVariableTest, WithDecorations) {
+  type::F32Type t;
+  auto var = std::make_unique<Variable>("my_var", StorageClass::kFunction, &t);
+  DecoratedVariable dv(std::move(var));
+
+  VariableDecorationList decos;
+  decos.push_back(std::make_unique<LocationDecoration>(1, Source{}));
+  decos.push_back(
+      std::make_unique<BuiltinDecoration>(ast::Builtin::kPosition, Source{}));
+  decos.push_back(std::make_unique<ConstantIdDecoration>(1200, Source{}));
+
+  dv.set_decorations(std::move(decos));
+
+  EXPECT_TRUE(dv.HasLocationDecoration());
+  EXPECT_TRUE(dv.HasBuiltinDecoration());
+  EXPECT_TRUE(dv.HasConstantIdDecoration());
+}
+
+TEST_F(DecoratedVariableTest, ConstantId) {
+  type::F32Type t;
+  auto var = std::make_unique<Variable>("my_var", StorageClass::kFunction, &t);
+  DecoratedVariable dv(std::move(var));
+
+  VariableDecorationList decos;
+  decos.push_back(std::make_unique<ConstantIdDecoration>(1200, Source{}));
+  dv.set_decorations(std::move(decos));
+
+  EXPECT_EQ(dv.constant_id(), 1200u);
 }
 
 TEST_F(DecoratedVariableTest, IsValid) {
@@ -73,8 +119,8 @@ TEST_F(DecoratedVariableTest, to_str) {
   dv.set_constructor(std::make_unique<IdentifierExpression>("expr"));
 
   VariableDecorationList decos;
-  decos.push_back(std::make_unique<BindingDecoration>(2));
-  decos.push_back(std::make_unique<SetDecoration>(1));
+  decos.push_back(std::make_unique<BindingDecoration>(2, Source{}));
+  decos.push_back(std::make_unique<SetDecoration>(1, Source{}));
 
   dv.set_decorations(std::move(decos));
   std::ostringstream out;

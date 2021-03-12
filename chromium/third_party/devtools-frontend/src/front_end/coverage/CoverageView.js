@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
+import * as i18n from '../i18n/i18n.js';
 import * as Platform from '../platform/platform.js';
 import * as SDK from '../sdk/sdk.js';
 import * as SourceFrame from '../source_frame/source_frame.js';
@@ -17,6 +15,84 @@ import * as Workspace from '../workspace/workspace.js';  // eslint-disable-line 
 import {CoverageDecorationManager, decoratorType} from './CoverageDecorationManager.js';
 import {CoverageListView} from './CoverageListView.js';
 import {CoverageInfo, CoverageModel, CoverageType, Events, URLCoverageInfo} from './CoverageModel.js';  // eslint-disable-line no-unused-vars
+
+export const UIStrings = {
+  /**
+  *@description Tooltip in Coverage List View of the Coverage tab for selecting JavaScript coverage mode
+  */
+  chooseCoverageGranularityPer:
+      'Choose coverage granularity: Per function has low overhead, per block has significant overhead.',
+  /**
+  *@description Text in Coverage List View of the Coverage tab
+  */
+  perFunction: 'Per function',
+  /**
+  *@description Text in Coverage List View of the Coverage tab
+  */
+  perBlock: 'Per block',
+  /**
+  *@description Text to clear everything
+  */
+  clearAll: 'Clear all',
+  /**
+  *@description Tooltip text that appears when hovering over the largeicon download button in the Coverage View of the Coverage tab
+  */
+  export: 'Export...',
+  /**
+  *@description Text in Coverage View of the Coverage tab
+  */
+  urlFilter: 'URL filter',
+  /**
+  *@description Label for the type filter in the Converage Panel
+  */
+  filterCoverageByType: 'Filter coverage by type',
+  /**
+  *@description Text for everything
+  */
+  all: 'All',
+  /**
+  *@description Text that appears on a button for the css resource type filter.
+  */
+  css: 'CSS',
+  /**
+  *@description Text in Timeline Tree View of the Performance panel
+  */
+  javascript: 'JavaScript',
+  /**
+  *@description Tooltip text that appears on the setting when hovering over it in Coverage View of the Coverage tab
+  */
+  includeExtensionContentScripts: 'Include extension content scripts',
+  /**
+  *@description Title for a type of source files
+  */
+  contentScripts: 'Content scripts',
+  /**
+  *@description Message in Coverage View of the Coverage tab
+  *@example {record button icon} PH1
+  */
+  clickTheReloadButtonSToReloadAnd: 'Click the reload button {PH1} to reload and start capturing coverage.',
+  /**
+  *@description Message in Coverage View of the Coverage tab
+  *@example {record button icon} PH1
+  */
+  clickTheRecordButtonSToStart: 'Click the record button {PH1} to start capturing coverage.',
+  /**
+  *@description Footer message in Coverage View of the Coverage tab
+  *@example {300k used, 600k unused} PH1
+  *@example {500k used, 800k unused} PH2
+  */
+  filteredSTotalS: 'Filtered: {PH1}  Total: {PH2}',
+  /**
+  *@description Footer message in Coverage View of the Coverage tab
+  *@example {1.5 MB} PH1
+  *@example {2.1 MB} PH2
+  *@example {71%} PH3
+  *@example {29%} PH4
+  */
+  sOfSSUsedSoFarSUnused: '{PH1} of {PH2} ({PH3}%) used so far,\n        {PH4} unused.',
+};
+const str_ = i18n.i18n.registerUIStrings('coverage/CoverageView.js', UIStrings);
+const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class CoverageView extends UI.Widget.VBox {
   constructor() {
@@ -29,26 +105,25 @@ export class CoverageView extends UI.Widget.VBox {
     /** @type {?SDK.ResourceTreeModel.ResourceTreeModel} */
     this._resourceTreeModel = null;
 
-    this.registerRequiredCSS('coverage/coverageView.css');
+    this.registerRequiredCSS('coverage/coverageView.css', {enableLegacyPatching: true});
 
     const toolbarContainer = this.contentElement.createChild('div', 'coverage-toolbar-container');
     const toolbar = new UI.Toolbar.Toolbar('coverage-toolbar', toolbarContainer);
 
     this._coverageTypeComboBox = new UI.Toolbar.ToolbarComboBox(
-        this._onCoverageTypeComboBoxSelectionChanged.bind(this),
-        ls`Choose coverage granularity: Per function has low overhead, per block has significant overhead.`);
+        this._onCoverageTypeComboBoxSelectionChanged.bind(this), i18nString(UIStrings.chooseCoverageGranularityPer));
     const coverageTypes = [
       {
-        label: ls`Per function`,
+        label: i18nString(UIStrings.perFunction),
         value: CoverageType.JavaScript | CoverageType.JavaScriptPerFunction,
       },
       {
-        label: ls`Per block`,
+        label: i18nString(UIStrings.perBlock),
         value: CoverageType.JavaScript,
       },
     ];
     for (const type of coverageTypes) {
-      this._coverageTypeComboBox.addOption(this._coverageTypeComboBox.createOption(type.label, type.value));
+      this._coverageTypeComboBox.addOption(this._coverageTypeComboBox.createOption(type.label, `${type.value}`));
     }
     this._coverageTypeComboBoxSetting =
         Common.Settings.Settings.instance().createSetting('coverageViewCoverageType', 0);
@@ -56,9 +131,8 @@ export class CoverageView extends UI.Widget.VBox {
     this._coverageTypeComboBox.setEnabled(true);
     toolbar.appendToolbarItem(this._coverageTypeComboBox);
 
-    this._toggleRecordAction =
-        /** @type {!UI.Action.Action }*/ (
-            UI.ActionRegistry.ActionRegistry.instance().action('coverage.toggle-recording'));
+    /** @type {!UI.Action.Action} */
+    this._toggleRecordAction = (UI.ActionRegistry.ActionRegistry.instance().action('coverage.toggle-recording'));
     this._toggleRecordButton = UI.Toolbar.Toolbar.createActionButton(this._toggleRecordAction);
     toolbar.appendToolbarItem(this._toggleRecordButton);
 
@@ -75,12 +149,12 @@ export class CoverageView extends UI.Widget.VBox {
       this._toggleRecordButton.setEnabled(false);
       this._toggleRecordButton.setVisible(false);
     }
-    this._clearButton = new UI.Toolbar.ToolbarButton(Common.UIString.UIString('Clear all'), 'largeicon-clear');
+    this._clearButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.clearAll), 'largeicon-clear');
     this._clearButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, this._clear.bind(this));
     toolbar.appendToolbarItem(this._clearButton);
 
     toolbar.appendSeparator();
-    this._saveButton = new UI.Toolbar.ToolbarButton(Common.UIString.UIString('Export...'), 'largeicon-download');
+    this._saveButton = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.export), 'largeicon-download');
     this._saveButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, event => {
       this._exportReport();
     });
@@ -90,7 +164,7 @@ export class CoverageView extends UI.Widget.VBox {
     /** @type {?RegExp} */
     this._textFilterRegExp = null;
     toolbar.appendSeparator();
-    this._filterInput = new UI.Toolbar.ToolbarInput(Common.UIString.UIString('URL filter'), '', 0.4, 1);
+    this._filterInput = new UI.Toolbar.ToolbarInput(i18nString(UIStrings.urlFilter), '', 0.4, 1);
     this._filterInput.setEnabled(false);
     this._filterInput.addEventListener(UI.Toolbar.ToolbarInput.Event.TextChanged, this._onFilterChanged, this);
     toolbar.appendToolbarItem(this._filterInput);
@@ -98,24 +172,24 @@ export class CoverageView extends UI.Widget.VBox {
     toolbar.appendSeparator();
 
     this._typeFilterValue = null;
-    this._filterByTypeComboBox =
-        new UI.Toolbar.ToolbarComboBox(this._onFilterByTypeChanged.bind(this), ls`Filter coverage by type`);
+    this._filterByTypeComboBox = new UI.Toolbar.ToolbarComboBox(
+        this._onFilterByTypeChanged.bind(this), i18nString(UIStrings.filterCoverageByType));
     const options = [
       {
-        label: ls`All`,
+        label: i18nString(UIStrings.all),
         value: '',
       },
       {
-        label: ls`CSS`,
+        label: i18nString(UIStrings.css),
         value: CoverageType.CSS,
       },
       {
-        label: ls`JavaScript`,
+        label: i18nString(UIStrings.javascript),
         value: CoverageType.JavaScript | CoverageType.JavaScriptPerFunction,
       },
     ];
     for (const option of options) {
-      this._filterByTypeComboBox.addOption(this._filterByTypeComboBox.createOption(option.label, option.value));
+      this._filterByTypeComboBox.addOption(this._filterByTypeComboBox.createOption(option.label, `${option.value}`));
     }
 
     this._filterByTypeComboBox.setSelectedIndex(0);
@@ -126,8 +200,8 @@ export class CoverageView extends UI.Widget.VBox {
     this._showContentScriptsSetting = Common.Settings.Settings.instance().createSetting('showContentScripts', false);
     this._showContentScriptsSetting.addChangeListener(this._onFilterChanged, this);
     this._contentScriptsCheckbox = new UI.Toolbar.ToolbarSettingCheckbox(
-        this._showContentScriptsSetting, Common.UIString.UIString('Include extension content scripts'),
-        Common.UIString.UIString('Content scripts'));
+        this._showContentScriptsSetting, i18nString(UIStrings.includeExtensionContentScripts),
+        i18nString(UIStrings.contentScripts));
     this._contentScriptsCheckbox.setEnabled(false);
     toolbar.appendToolbarItem(this._contentScriptsCheckbox);
 
@@ -149,12 +223,12 @@ export class CoverageView extends UI.Widget.VBox {
     if (this._startWithReloadButton) {
       this._inlineReloadButton =
           UI.UIUtils.createInlineButton(UI.Toolbar.Toolbar.createActionButtonForId('coverage.start-with-reload'));
-      message = UI.UIUtils.formatLocalized(
-          'Click the reload button %s to reload and start capturing coverage.', [this._inlineReloadButton]);
+      message = i18n.i18n.getFormatLocalizedString(
+          str_, UIStrings.clickTheReloadButtonSToReloadAnd, {PH1: this._inlineReloadButton});
     } else {
       const recordButton =
           UI.UIUtils.createInlineButton(UI.Toolbar.Toolbar.createActionButton(this._toggleRecordAction));
-      message = UI.UIUtils.formatLocalized('Click the record button %s to start capturing coverage.', [recordButton]);
+      message = i18n.i18n.getFormatLocalizedString(str_, UIStrings.clickTheRecordButtonSToStart, {PH1: recordButton});
     }
     message.classList.add('message');
     widget.contentElement.appendChild(message);
@@ -198,7 +272,8 @@ export class CoverageView extends UI.Widget.VBox {
    * @return {boolean}
    */
   isBlockCoverageSelected() {
-    const coverageType = Number(this._coverageTypeComboBox.selectedOption().value);
+    const option = this._coverageTypeComboBox.selectedOption();
+    const coverageType = Number(option ? option.value : Number.NaN);
     // Check that Coverage.CoverageType.JavaScriptPerFunction is not present.
     return coverageType === CoverageType.JavaScript;
   }
@@ -250,15 +325,18 @@ export class CoverageView extends UI.Widget.VBox {
     if (!this._model || reload) {
       this._model = mainTarget.model(CoverageModel);
     }
+    if (!this._model) {
+      return;
+    }
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.CoverageStarted);
     if (jsCoveragePerBlock) {
       Host.userMetrics.actionTaken(Host.UserMetrics.Action.CoverageStartedPerBlock);
     }
-    const success = await this._model.start(jsCoveragePerBlock);
+    const success = await this._model.start(!!jsCoveragePerBlock);
     if (!success) {
       return;
     }
-    this._selectCoverageType(jsCoveragePerBlock);
+    this._selectCoverageType(!!jsCoveragePerBlock);
 
     this._model.addEventListener(Events.CoverageUpdated, this._onCoverageDataReceived, this);
     this._resourceTreeModel = /** @type {?SDK.ResourceTreeModel.ResourceTreeModel} */ (
@@ -276,7 +354,7 @@ export class CoverageView extends UI.Widget.VBox {
       this._toggleRecordButton.setEnabled(true);
       this._toggleRecordButton.setVisible(true);
       if (reloadButtonFocused) {
-        this._toggleRecordButton.element.focus();
+        this._toggleRecordButton.focus();
       }
     }
     this._coverageTypeComboBox.setEnabled(false);
@@ -315,8 +393,10 @@ export class CoverageView extends UI.Widget.VBox {
       this._listView.focus();
     }
     // Stopping the model triggers one last poll to get the final data.
-    await this._model.stop();
-    this._model.removeEventListener(Events.CoverageUpdated, this._onCoverageDataReceived, this);
+    if (this._model) {
+      await this._model.stop();
+      this._model.removeEventListener(Events.CoverageUpdated, this._onCoverageDataReceived, this);
+    }
     this._toggleRecordAction.setToggled(false);
     this._coverageTypeComboBox.setEnabled(true);
     if (this._startWithReloadButton) {
@@ -329,14 +409,14 @@ export class CoverageView extends UI.Widget.VBox {
   }
 
   processBacklog() {
-    this._model.processJSBacklog();
+    this._model && this._model.processJSBacklog();
   }
 
   _onMainFrameNavigated() {
-    this._model.reset();
-    this._decorationManager.reset();
+    this._model && this._model.reset();
+    this._decorationManager && this._decorationManager.reset();
     this._listView.reset();
-    this._model.startPolling();
+    this._model && this._model.startPolling();
   }
 
   /**
@@ -344,9 +424,9 @@ export class CoverageView extends UI.Widget.VBox {
    */
   _updateViews(updatedEntries) {
     this._updateStats();
-    this._listView.update(this._model.entries());
-    this._saveButton.setEnabled(this._model.entries().length > 0);
-    this._decorationManager.update(updatedEntries);
+    this._listView.update(this._model && this._model.entries() || []);
+    this._saveButton.setEnabled(!!this._model && this._model.entries().length > 0);
+    this._decorationManager && this._decorationManager.update(updatedEntries);
   }
 
   _updateStats() {
@@ -365,8 +445,9 @@ export class CoverageView extends UI.Widget.VBox {
         }
       }
     }
-    this._statusMessageElement.textContent =
-        filterApplied ? ls`Filtered: ${formatStat(filtered)}  Total: ${formatStat(all)}` : formatStat(all);
+    this._statusMessageElement.textContent = filterApplied ?
+        i18nString(UIStrings.filteredSTotalS, {PH1: formatStat(filtered), PH2: formatStat(all)}) :
+        formatStat(all);
 
     /**
      *
@@ -376,9 +457,12 @@ export class CoverageView extends UI.Widget.VBox {
     function formatStat({total, unused}) {
       const used = total - unused;
       const percentUsed = total ? Math.round(100 * used / total) : 0;
-      return ls`${Platform.NumberUtilities.bytesToString(used)} of ${Platform.NumberUtilities.bytesToString(total)} (${
-          percentUsed}%) used so far,
-        ${Platform.NumberUtilities.bytesToString(unused)} unused.`;
+      return i18nString(UIStrings.sOfSSUsedSoFarSUnused, {
+        PH1: Platform.NumberUtilities.bytesToString(used),
+        PH2: Platform.NumberUtilities.bytesToString(total),
+        PH3: percentUsed,
+        PH4: Platform.NumberUtilities.bytesToString(unused)
+      });
     }
   }
 
@@ -399,8 +483,9 @@ export class CoverageView extends UI.Widget.VBox {
 
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.CoverageReportFiltered);
 
-    const type = this._filterByTypeComboBox.selectedOption().value;
-    this._typeFilterValue = parseInt(type, 10) || null;
+    const option = this._filterByTypeComboBox.selectedOption();
+    const type = option && option.value;
+    this._typeFilterValue = parseInt(type || '', 10) || null;
     this._listView.updateFilterAndHighlight(this._textFilterRegExp);
     this._updateStats();
   }
@@ -432,7 +517,7 @@ export class CoverageView extends UI.Widget.VBox {
     if (!accepted) {
       return;
     }
-    this._model.exportReport(fos);
+    this._model && this._model.exportReport(fos);
   }
 
   /**
@@ -459,8 +544,11 @@ export class ActionDelegate {
     const coverageViewId = 'coverage';
     UI.ViewManager.ViewManager.instance()
         .showView(coverageViewId, /** userGesture= */ false, /** omitFocus= */ true)
-        .then(() => UI.ViewManager.ViewManager.instance().view(coverageViewId).widget())
-        .then(widget => this._innerHandleAction(/** @type !CoverageView} */ (widget), actionId));
+        .then(() => {
+          const view = UI.ViewManager.ViewManager.instance().view(coverageViewId);
+          return view && view.widget();
+        })
+        .then(widget => this._innerHandleAction(/** @type {!CoverageView} */ (widget), actionId));
 
     return true;
   }
@@ -513,7 +601,7 @@ export class LineDecorator {
   /**
    * @param {!Workspace.UISourceCode.UISourceCode} uiSourceCode
    * @param {!SourceFrame.SourcesTextEditor.SourcesTextEditor} textEditor
-   * @param {!Array<boolean>} lineUsage
+   * @param {!Array<boolean|undefined>} lineUsage
    */
   _innerDecorate(uiSourceCode, textEditor, lineUsage) {
     const gutterType = LineDecorator._gutterType;
@@ -549,11 +637,14 @@ export class LineDecorator {
       const coverageViewId = 'coverage';
       UI.ViewManager.ViewManager.instance()
           .showView(coverageViewId)
-          .then(() => UI.ViewManager.ViewManager.instance().view(coverageViewId).widget())
+          .then(() => {
+            const view = UI.ViewManager.ViewManager.instance().view(coverageViewId);
+            return view && view.widget();
+          })
           .then(widget => {
             const matchFormattedSuffix = url.match(/(.*):formatted$/);
             const urlWithoutFormattedSuffix = (matchFormattedSuffix && matchFormattedSuffix[1]) || url;
-            widget.selectCoverageItemByUrl(urlWithoutFormattedSuffix);
+            /** @type {!CoverageView} */ (widget).selectCoverageItemByUrl(urlWithoutFormattedSuffix);
           });
     }
     return handleGutterClick;

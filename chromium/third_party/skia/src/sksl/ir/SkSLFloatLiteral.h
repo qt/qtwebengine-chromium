@@ -14,21 +14,31 @@
 namespace SkSL {
 
 /**
- * A literal floating point number.
+ * A literal floating point number. These are generally referred to as FloatLiteral, but
+ * Literal<SKSL_FLOAT> is also available for use with template code.
  */
-struct FloatLiteral : public Expression {
+template <typename T> class Literal;
+using FloatLiteral = Literal<SKSL_FLOAT>;
+
+template <>
+class Literal<SKSL_FLOAT> final : public Expression {
+public:
     static constexpr Kind kExpressionKind = Kind::kFloatLiteral;
 
-    FloatLiteral(const Context& context, int offset, double value)
-    : INHERITED(offset, kExpressionKind, context.fFloatLiteral_Type.get())
-    , fValue(value) {}
+    Literal(const Context& context, int offset, float value)
+        : INHERITED(offset, kExpressionKind, context.fFloatLiteral_Type.get())
+        , fValue(value) {}
 
-    FloatLiteral(int offset, double value, const Type* type)
-    : INHERITED(offset, kExpressionKind, type)
-    , fValue(value) {}
+    Literal(int offset, float value, const Type* type)
+        : INHERITED(offset, kExpressionKind, type)
+        , fValue(value) {}
+
+    float value() const {
+        return fValue;
+    }
 
     String description() const override {
-        return to_string(fValue);
+        return to_string(this->value());
     }
 
     bool hasProperty(Property property) const override {
@@ -47,18 +57,19 @@ struct FloatLiteral : public Expression {
     }
 
     bool compareConstant(const Context& context, const Expression& other) const override {
-        return fValue == other.as<FloatLiteral>().fValue;
+        return this->value() == other.as<FloatLiteral>().value();
     }
 
-    double getConstantFloat() const override {
-        return fValue;
+    SKSL_FLOAT getConstantFloat() const override {
+        return this->value();
     }
 
     std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new FloatLiteral(fOffset, fValue, &this->type()));
+        return std::make_unique<FloatLiteral>(fOffset, this->value(), &this->type());
     }
 
-    const double fValue;
+private:
+    float fValue;
 
     using INHERITED = Expression;
 };

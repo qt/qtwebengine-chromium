@@ -69,9 +69,16 @@ config("skia_public") {
 
 # Skia internal APIs, used by Skia itself and a few test tools.
 config("skia_private") {
-  visibility = [ ":*" ]
+  visibility = [
+    ":*",
+    "//modules/*",
+    "//experimental/*",
+  ]
 
   defines = [ "SK_GAMMA_APPLY_TO_A8" ]
+  if (skia_enable_gpu) {
+    defines += [ "GR_OP_ALLOCATE_USE_NEW" ]
+  }
   if (skia_use_fixed_gamma_text) {
     defines += [
       "SK_GAMMA_EXPONENT=1.4",
@@ -552,7 +559,16 @@ if (skia_lex) {
 if (skia_compile_processors || skia_compile_sksl_tests) {
   executable("skslc") {
     defines = [ "SKSL_STANDALONE" ]
-    sources = [ "src/sksl/SkSLMain.cpp" ]
+    sources = [
+      "src/core/SkMalloc.cpp",
+      "src/core/SkMath.cpp",
+      "src/core/SkSemaphore.cpp",
+      "src/core/SkThreadID.cpp",
+      "src/gpu/GrBlockAllocator.cpp",
+      "src/gpu/GrMemoryPool.cpp",
+      "src/ports/SkMemory_malloc.cpp",
+      "src/sksl/SkSLMain.cpp",
+    ]
     sources += skia_sksl_sources
     sources += skia_sksl_gpu_sources
     include_dirs = [ "." ]
@@ -592,6 +608,7 @@ if (skia_compile_processors || skia_compile_sksl_tests) {
       "src/sksl/sksl_gpu.sksl",
       "src/sksl/sksl_interp.sksl",
       "src/sksl/sksl_pipeline.sksl",
+      "src/sksl/sksl_public.sksl",
       "src/sksl/sksl_vert.sksl",
     ]
     outputs = [ "$root_out_dir/{{source_file_part}}" ]
@@ -1176,11 +1193,6 @@ component("skia") {
     ":xml",
   ]
 
-  # This file (and all GN files in Skia) are designed to work with an
-  # empty sources assignment filter; we handle all that explicitly.
-  # We clear the filter here for clients who may have set up a global filter.
-  set_sources_assignment_filter([])
-
   public = skia_core_public
   public += skia_utils_public
   public += skia_effects_public
@@ -1342,11 +1354,6 @@ static_library("pathkit") {
     ":sse42",
     ":ssse3",
   ]
-
-  # This file (and all GN files in Skia) are designed to work with an
-  # empty sources assignment filter; we handle all that explicitly.
-  # We clear the filter here for clients who may have set up a global filter.
-  set_sources_assignment_filter([])
 
   sources = []
   sources += skia_pathops_sources
@@ -1600,12 +1607,16 @@ if (skia_enable_tools) {
     deps = []
     public_deps = []
     sources = [
+      "tools/gpu/BackendSurfaceFactory.cpp",
+      "tools/gpu/BackendSurfaceFactory.h",
       "tools/gpu/BackendTextureImageFactory.cpp",
       "tools/gpu/BackendTextureImageFactory.h",
       "tools/gpu/FlushFinishTracker.cpp",
       "tools/gpu/FlushFinishTracker.h",
       "tools/gpu/GrContextFactory.cpp",
       "tools/gpu/GrTest.cpp",
+      "tools/gpu/ManagedBackendTexture.cpp",
+      "tools/gpu/ManagedBackendTexture.h",
       "tools/gpu/MemoryCache.cpp",
       "tools/gpu/MemoryCache.h",
       "tools/gpu/ProxyUtils.cpp",
@@ -1799,8 +1810,8 @@ if (skia_enable_tools) {
       defines += [ "SK_TOOLS_REQUIRE_RESOURCES" ]
     }
     deps = [
-      ":experimental_svg_model",
       ":flags",
+      "modules/svg",
     ]
     public_deps = [ ":gpu_tool_utils" ]
   }
@@ -1864,7 +1875,6 @@ if (skia_enable_tools) {
       sources -= [ "//tests/FontMgrFontConfigTest.cpp" ]
     }
     deps = [
-      ":experimental_svg_model",
       ":flags",
       ":skia",
       ":skvm_builders",
@@ -1874,6 +1884,7 @@ if (skia_enable_tools) {
       "modules/skparagraph:tests",
       "modules/sksg:tests",
       "modules/skshaper",
+      "modules/svg",
       "//third_party/libpng",
       "//third_party/libwebp",
       "//third_party/zlib",
@@ -1898,41 +1909,6 @@ if (skia_enable_tools) {
     ]
   }
 
-  test_lib("experimental_svg_model") {
-    if (skia_use_expat) {
-      sources = [
-        "experimental/svg/model/SkSVGAttribute.cpp",
-        "experimental/svg/model/SkSVGAttributeParser.cpp",
-        "experimental/svg/model/SkSVGCircle.cpp",
-        "experimental/svg/model/SkSVGClipPath.cpp",
-        "experimental/svg/model/SkSVGContainer.cpp",
-        "experimental/svg/model/SkSVGDOM.cpp",
-        "experimental/svg/model/SkSVGEllipse.cpp",
-        "experimental/svg/model/SkSVGGradient.cpp",
-        "experimental/svg/model/SkSVGLine.cpp",
-        "experimental/svg/model/SkSVGLinearGradient.cpp",
-        "experimental/svg/model/SkSVGNode.cpp",
-        "experimental/svg/model/SkSVGPath.cpp",
-        "experimental/svg/model/SkSVGPattern.cpp",
-        "experimental/svg/model/SkSVGPoly.cpp",
-        "experimental/svg/model/SkSVGRadialGradient.cpp",
-        "experimental/svg/model/SkSVGRect.cpp",
-        "experimental/svg/model/SkSVGRenderContext.cpp",
-        "experimental/svg/model/SkSVGSVG.cpp",
-        "experimental/svg/model/SkSVGShape.cpp",
-        "experimental/svg/model/SkSVGStop.cpp",
-        "experimental/svg/model/SkSVGText.cpp",
-        "experimental/svg/model/SkSVGTransformableNode.cpp",
-        "experimental/svg/model/SkSVGUse.cpp",
-        "experimental/svg/model/SkSVGValue.cpp",
-      ]
-      deps = [
-        ":skia",
-        ":xml",
-      ]
-    }
-  }
-
   test_lib("experimental_xform") {
     sources = [
       "experimental/xform/SkShape.cpp",
@@ -1945,6 +1921,9 @@ if (skia_enable_tools) {
   if (is_linux || is_mac) {
     test_app("skottie_tool") {
       deps = [ "modules/skottie:tool" ]
+    }
+    test_app("svg_tool") {
+      deps = [ "modules/svg:tool" ]
     }
   }
 
@@ -1961,13 +1940,25 @@ if (skia_enable_tools) {
     }
     public_deps = [ ":tool_utils" ]
     deps = [
-      ":experimental_svg_model",
       ":flags",
       ":gpu_tool_utils",
       ":xml",
       "modules/audioplayer",
       "modules/skparagraph:samples",
       "modules/skshaper",
+      "modules/svg",
+      "//third_party/imgui",
+    ]
+  }
+  test_lib("hash_and_encode") {
+    sources = [
+      "tools/HashAndEncode.cpp",
+      "tools/HashAndEncode.h",
+    ]
+    deps = [
+      ":flags",
+      ":skia",
+      "//third_party/libpng",
     ]
   }
   if (target_cpu != "wasm") {
@@ -1982,17 +1973,6 @@ if (skia_enable_tools) {
         ":skia",
       ]
     }
-    test_lib("hash_and_encode") {
-      sources = [
-        "tools/HashAndEncode.cpp",
-        "tools/HashAndEncode.h",
-      ]
-      deps = [
-        ":flags",
-        ":skia",
-        "//third_party/libpng",
-      ]
-    }
     test_app("fm") {
       sources = [
         "dm/DMGpuTestProcs.cpp",  # blech
@@ -2001,7 +1981,6 @@ if (skia_enable_tools) {
       deps = [
         ":common_flags_aa",
         ":common_flags_gpu",
-        ":experimental_svg_model",
         ":flags",
         ":gm",
         ":gpu_tool_utils",
@@ -2012,6 +1991,7 @@ if (skia_enable_tools) {
         ":trace",
         "modules/skottie",
         "modules/skottie:utils",
+        "modules/svg",
       ]
     }
     test_app("dm") {
@@ -2026,7 +2006,6 @@ if (skia_enable_tools) {
         ":common_flags_config",
         ":common_flags_gpu",
         ":common_flags_images",
-        ":experimental_svg_model",
         ":flags",
         ":gm",
         ":gpu_tool_utils",
@@ -2038,6 +2017,7 @@ if (skia_enable_tools) {
         "experimental/skrive",
         "modules/skottie",
         "modules/skottie:utils",
+        "modules/svg",
       ]
     }
   }
@@ -2064,7 +2044,6 @@ if (skia_enable_tools) {
       ":common_flags_config",
       ":common_flags_gpu",
       ":common_flags_images",
-      ":experimental_svg_model",
       ":flags",
       ":gm",
       ":gpu_tool_utils",
@@ -2073,6 +2052,7 @@ if (skia_enable_tools) {
       ":trace",
       "modules/skparagraph",
       "modules/skshaper",
+      "modules/svg",
     ]
   }
 
@@ -2564,7 +2544,6 @@ if (skia_enable_tools) {
 
       deps = [
         ":common_flags_gpu",
-        ":experimental_svg_model",
         ":flags",
         ":gm",
         ":gpu_tool_utils",
@@ -2579,6 +2558,7 @@ if (skia_enable_tools) {
         "modules/skottie",
         "modules/skottie:utils",
         "modules/sksg:samples",
+        "modules/svg",
         "//third_party/imgui",
       ]
       if (skia_use_experimental_xform) {
@@ -2769,7 +2749,7 @@ if (skia_enable_tools) {
         "tools/fonts/TestSVGTypeface.cpp",
         "tools/fonts/TestTypeface.cpp",
       ]
-      deps = [ ":experimental_svg_model" ]
+      deps = [ "modules/svg" ]
     }
 
     libfuzzer_app("region_set_path") {
@@ -2789,7 +2769,7 @@ if (skia_enable_tools) {
         "tools/fonts/TestSVGTypeface.cpp",
         "tools/fonts/TestTypeface.cpp",
       ]
-      deps = [ ":experimental_svg_model" ]
+      deps = [ "modules/svg" ]
     }
 
     libfuzzer_app("path_deserialize") {
@@ -2826,7 +2806,7 @@ if (skia_enable_tools) {
         "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
-        ":experimental_svg_model",
+        "modules/svg",
         "//third_party/libpng",
       ]
     }
@@ -2900,7 +2880,7 @@ if (skia_enable_tools) {
         "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
-        ":experimental_svg_model",
+        "modules/svg",
         "//third_party/libpng",
       ]
     }
@@ -2927,7 +2907,7 @@ if (skia_enable_tools) {
           "tools/fonts/TestTypeface.cpp",
         ]
         deps = [
-          ":experimental_svg_model",
+          "modules/svg",
           "//third_party/libpng",
         ]
       }
@@ -2953,7 +2933,7 @@ if (skia_enable_tools) {
         "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
-        ":experimental_svg_model",
+        "modules/svg",
         "//third_party/libpng",
       ]
     }
@@ -2977,7 +2957,7 @@ if (skia_enable_tools) {
         "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
-        ":experimental_svg_model",
+        "modules/svg",
         "//third_party/libpng",
       ]
     }
@@ -3015,8 +2995,8 @@ if (skia_enable_tools) {
         "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
-        ":experimental_svg_model",
         "modules/skottie:skottie",
+        "modules/svg",
       ]
     }
 
@@ -3070,7 +3050,7 @@ if (skia_enable_tools) {
 
     libfuzzer_app("svg_dom") {
       sources = [ "fuzz/oss_fuzz/FuzzSVG.cpp" ]
-      deps = [ ":experimental_svg_model" ]
+      deps = [ "modules/svg" ]
     }
 
     libfuzzer_app("skruntimeeffect") {

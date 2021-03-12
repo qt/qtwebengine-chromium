@@ -362,45 +362,18 @@ static void configure_static_seg_features(AV1_COMP *cpi) {
     // First normal frame in a valid gf or alt ref group
     if (rc->frames_since_golden == 0) {
       // Set up segment features for normal frames in an arf group
-      if (rc->source_alt_ref_active) {
-        seg->update_map = 0;
-        seg->update_data = 1;
+      // Disable segmentation and clear down features if alt ref
+      // is not active for this group
 
-        qi_delta = av1_compute_qdelta(rc, rc->avg_q, rc->avg_q * 1.125,
-                                      cm->seq_params.bit_depth);
-        av1_set_segdata(seg, 1, SEG_LVL_ALT_Q, qi_delta + 2);
-        av1_enable_segfeature(seg, 1, SEG_LVL_ALT_Q);
+      av1_disable_segmentation(seg);
 
-        av1_set_segdata(seg, 1, SEG_LVL_ALT_LF_Y_H, -2);
-        av1_set_segdata(seg, 1, SEG_LVL_ALT_LF_Y_V, -2);
-        av1_set_segdata(seg, 1, SEG_LVL_ALT_LF_U, -2);
-        av1_set_segdata(seg, 1, SEG_LVL_ALT_LF_V, -2);
+      memset(cpi->enc_seg.map, 0,
+             cm->mi_params.mi_rows * cm->mi_params.mi_cols);
 
-        av1_enable_segfeature(seg, 1, SEG_LVL_ALT_LF_Y_H);
-        av1_enable_segfeature(seg, 1, SEG_LVL_ALT_LF_Y_V);
-        av1_enable_segfeature(seg, 1, SEG_LVL_ALT_LF_U);
-        av1_enable_segfeature(seg, 1, SEG_LVL_ALT_LF_V);
+      seg->update_map = 0;
+      seg->update_data = 0;
 
-        // Segment coding disabled for compred testing
-        if (high_q) {
-          av1_set_segdata(seg, 1, SEG_LVL_REF_FRAME, ALTREF_FRAME);
-          av1_enable_segfeature(seg, 1, SEG_LVL_REF_FRAME);
-          av1_enable_segfeature(seg, 1, SEG_LVL_SKIP);
-        }
-      } else {
-        // Disable segmentation and clear down features if alt ref
-        // is not active for this group
-
-        av1_disable_segmentation(seg);
-
-        memset(cpi->enc_seg.map, 0,
-               cm->mi_params.mi_rows * cm->mi_params.mi_cols);
-
-        seg->update_map = 0;
-        seg->update_data = 0;
-
-        av1_clearall_segfeatures(seg);
-      }
+      av1_clearall_segfeatures(seg);
     } else if (rc->is_src_frame_alt_ref) {
       // Special case where we are coding over the top of a previous
       // alt ref frame.
@@ -498,13 +471,14 @@ static void process_tpl_stats_frame(AV1_COMP *cpi) {
     int tpl_stride = tpl_frame->stride;
     int64_t intra_cost_base = 0;
     int64_t mc_dep_cost_base = 0;
-    int64_t mc_saved_base = 0;
-    int64_t mc_count_base = 0;
     const int step = 1 << tpl_data->tpl_stats_block_mis_log2;
+    const int row_step = step;
+    const int col_step_sr =
+        coded_to_superres_mi(step, cm->superres_scale_denominator);
     const int mi_cols_sr = av1_pixels_to_mi(cm->superres_upscaled_width);
 
-    for (int row = 0; row < cm->mi_params.mi_rows; row += step) {
-      for (int col = 0; col < mi_cols_sr; col += step) {
+    for (int row = 0; row < cm->mi_params.mi_rows; row += row_step) {
+      for (int col = 0; col < mi_cols_sr; col += col_step_sr) {
         TplDepStats *this_stats = &tpl_stats[av1_tpl_ptr_pos(
             row, col, tpl_stride, tpl_data->tpl_stats_block_mis_log2)];
         int64_t mc_dep_delta =
@@ -513,8 +487,6 @@ static void process_tpl_stats_frame(AV1_COMP *cpi) {
         intra_cost_base += (this_stats->recrf_dist << RDDIV_BITS);
         mc_dep_cost_base +=
             (this_stats->recrf_dist << RDDIV_BITS) + mc_dep_delta;
-        mc_count_base += this_stats->mc_count;
-        mc_saved_base += this_stats->mc_saved;
       }
     }
 
@@ -541,10 +513,6 @@ static void process_tpl_stats_frame(AV1_COMP *cpi) {
               cpi->rc.gfu_boost, gfu_boost, cpi->rc.frames_to_key);
         }
       }
-      cpi->rd.mc_count_base = (double)mc_count_base /
-                              (cm->mi_params.mi_rows * cm->mi_params.mi_cols);
-      cpi->rd.mc_saved_base = (double)mc_saved_base /
-                              (cm->mi_params.mi_rows * cm->mi_params.mi_cols);
       aom_clear_system_state();
     }
   }
@@ -950,11 +918,11 @@ void av1_determine_sc_tools_with_encoding(AV1_COMP *cpi, const int q_orig) {
 
   cpi->source =
       av1_scale_if_required(cm, cpi->unscaled_source, &cpi->scaled_source,
-                            cm->features.interp_filter, 0, 0);
+                            cm->features.interp_filter, 0, false, false);
   if (cpi->unscaled_last_source != NULL) {
-    cpi->last_source = av1_scale_if_required(cm, cpi->unscaled_last_source,
-                                             &cpi->scaled_last_source,
-                                             cm->features.interp_filter, 0, 0);
+    cpi->last_source = av1_scale_if_required(
+        cm, cpi->unscaled_last_source, &cpi->scaled_last_source,
+        cm->features.interp_filter, 0, false, false);
   }
 
   av1_setup_frame(cpi);
@@ -976,22 +944,9 @@ void av1_determine_sc_tools_with_encoding(AV1_COMP *cpi, const int q_orig) {
   // content tools, with a high q and fixed partition.
   for (int pass = 0; pass < 2; ++pass) {
     set_encoding_params_for_screen_content(cpi, pass);
-#if CONFIG_TUNE_VMAF
-    if (oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_WITH_PREPROCESSING ||
-        oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_WITHOUT_PREPROCESSING ||
-        oxcf->tune_cfg.tuning == AOM_TUNE_VMAF_MAX_GAIN) {
-      av1_set_quantizer(
-          cm, q_cfg->qm_minlevel, q_cfg->qm_maxlevel,
-          av1_get_vmaf_base_qindex(cpi, q_for_screen_content_quick_run),
-          q_cfg->enable_chroma_deltaq);
-    } else {
-#endif
-      av1_set_quantizer(cm, q_cfg->qm_minlevel, q_cfg->qm_maxlevel,
-                        q_for_screen_content_quick_run,
-                        q_cfg->enable_chroma_deltaq);
-#if CONFIG_TUNE_VMAF
-    }
-#endif
+    av1_set_quantizer(cm, q_cfg->qm_minlevel, q_cfg->qm_maxlevel,
+                      q_for_screen_content_quick_run,
+                      q_cfg->enable_chroma_deltaq);
     av1_set_speed_features_qindex_dependent(cpi, oxcf->speed);
     if (q_cfg->deltaq_mode != NO_DELTA_Q)
       av1_init_quantizer(&cpi->enc_quant_dequant_params, &cm->quant_params,
@@ -1280,12 +1235,12 @@ void av1_set_mb_ssim_rdmult_scaling(AV1_COMP *cpi) {
   }
 }
 
-#if CONFIG_SUPERRES_IN_RECODE
 static void save_cur_buf(AV1_COMP *cpi) {
   CODING_CONTEXT *const cc = &cpi->coding_context;
   AV1_COMMON *cm = &cpi->common;
   const YV12_BUFFER_CONFIG *ybf = &cm->cur_frame->buf;
   memset(&cc->copy_buffer, 0, sizeof(cc->copy_buffer));
+  if (ybf->y_crop_width == 0 && ybf->y_crop_height == 0) return;
   if (aom_alloc_frame_buffer(&cc->copy_buffer, ybf->y_crop_width,
                              ybf->y_crop_height, ybf->subsampling_x,
                              ybf->subsampling_y,
@@ -1308,6 +1263,7 @@ static void save_extra_coding_context(AV1_COMP *cpi) {
   cc->lf = cm->lf;
   cc->cdef_info = cm->cdef_info;
   cc->rc = cpi->rc;
+  cc->mv_stats = cpi->mv_stats;
 }
 
 void av1_save_all_coding_context(AV1_COMP *cpi) {
@@ -1315,7 +1271,6 @@ void av1_save_all_coding_context(AV1_COMP *cpi) {
   save_extra_coding_context(cpi);
   if (!frame_is_intra_only(&cpi->common)) release_scaled_references(cpi);
 }
-#endif  // CONFIG_SUPERRES_IN_RECODE
 
 #if DUMP_RECON_FRAMES == 1
 

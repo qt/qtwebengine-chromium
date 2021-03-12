@@ -18,7 +18,9 @@
 #include <assert.h>
 
 #include <string>
+#include <utility>
 
+#include "src/ast/array_decoration.h"
 #include "src/ast/type/type.h"
 
 namespace tint {
@@ -45,13 +47,28 @@ class ArrayType : public Type {
   /// i.e. the size is determined at runtime
   bool IsRuntimeArray() const { return size_ == 0; }
 
-  /// Sets the array stride
-  /// @param stride the stride to set
-  void set_array_stride(uint32_t stride) { array_stride_ = stride; }
+  /// @param mem_layout type of memory layout to use in calculation.
+  /// @returns minimum size required for this type, in bytes.
+  ///          0 for non-host shareable types.
+  uint64_t MinBufferBindingSize(MemoryLayout mem_layout) const override;
+
+  /// @param mem_layout type of memory layout to use in calculation.
+  /// @returns base alignment for the type, in bytes.
+  ///          0 for non-host shareable types.
+  uint64_t BaseAlignment(MemoryLayout mem_layout) const override;
+
+  /// Sets the array decorations
+  /// @param decos the decorations to set
+  void set_decorations(ast::ArrayDecorationList decos) {
+    decos_ = std::move(decos);
+  }
+  /// @returns the array decorations
+  const ArrayDecorationList& decorations() const { return decos_; }
+
   /// @returns the array stride or 0 if none set.
-  uint32_t array_stride() const { return array_stride_; }
+  uint32_t array_stride() const;
   /// @returns true if the array has a stride set
-  bool has_array_stride() const { return array_stride_ != 0; }
+  bool has_array_stride() const;
 
   /// @returns the array type
   Type* type() const { return subtype_; }
@@ -64,7 +81,7 @@ class ArrayType : public Type {
  private:
   Type* subtype_ = nullptr;
   uint32_t size_ = 0;
-  uint32_t array_stride_ = 0;
+  ast::ArrayDecorationList decos_;
 };
 
 }  // namespace type

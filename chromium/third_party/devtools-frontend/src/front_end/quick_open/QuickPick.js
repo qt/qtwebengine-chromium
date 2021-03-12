@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Diff from '../diff/diff.js';
 import * as UI from '../ui/ui.js';  // eslint-disable-line no-unused-vars
 import {FilteredListWidget, Provider} from './FilteredListWidget.js';
@@ -16,6 +13,7 @@ import {FilteredListWidget, Provider} from './FilteredListWidget.js';
  *  detail: (string|undefined),
  * }}
  */
+// @ts-ignore
 export let QuickPickItem;
 
 /**
@@ -25,6 +23,7 @@ export let QuickPickItem;
  *   matchOnDetail: (boolean|undefined),
  * }}
  */
+// @ts-ignore
 export let QuickPickOptions;
 
 export class QuickPick {
@@ -144,17 +143,17 @@ class QuickPickProvider extends Provider {
     const item = this._items[itemIndex];
     titleElement.removeChildren();
     const labelElement = titleElement.createChild('span');
-    labelElement.createTextChild(item.label);
+    UI.UIUtils.createTextChild(labelElement, item.label);
     FilteredListWidget.highlightRanges(titleElement, query, true);
     if (item.description) {
       const descriptionElement = titleElement.createChild('span', 'quickpick-description');
-      descriptionElement.createTextChild(item.description);
+      UI.UIUtils.createTextChild(descriptionElement, item.description);
       if (this._matchOnDescription) {
         FilteredListWidget.highlightRanges(descriptionElement, query, true);
       }
     }
     if (item.detail) {
-      subtitleElement.createTextChild(item.detail);
+      UI.UIUtils.createTextChild(subtitleElement, item.detail);
       if (this._matchOnDetail) {
         FilteredListWidget.highlightRanges(subtitleElement, query, true);
       }

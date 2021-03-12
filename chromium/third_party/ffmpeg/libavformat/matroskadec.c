@@ -50,6 +50,7 @@
 #include "libavcodec/bytestream.h"
 #include "libavcodec/flac.h"
 #include "libavcodec/mpeg4audio.h"
+#include "libavcodec/packet_internal.h"
 
 #include "avformat.h"
 #include "avio_internal.h"
@@ -2999,7 +3000,7 @@ static int matroska_deliver_packet(MatroskaDemuxContext *matroska,
         MatroskaTrack *tracks = matroska->tracks.elem;
         MatroskaTrack *track;
 
-        ff_packet_list_get(&matroska->queue, &matroska->queue_end, pkt);
+        avpriv_packet_list_get(&matroska->queue, &matroska->queue_end, pkt);
         track = &tracks[pkt->stream_index];
         if (track->has_palette) {
             uint8_t *pal = av_packet_new_side_data(pkt, AV_PKT_DATA_PALETTE, AVPALETTE_SIZE);
@@ -3021,7 +3022,7 @@ static int matroska_deliver_packet(MatroskaDemuxContext *matroska,
  */
 static void matroska_clear_queue(MatroskaDemuxContext *matroska)
 {
-    ff_packet_list_free(&matroska->queue, &matroska->queue_end);
+    avpriv_packet_list_free(&matroska->queue, &matroska->queue_end);
 }
 
 static int matroska_parse_laces(MatroskaDemuxContext *matroska, uint8_t **buf,
@@ -3192,7 +3193,7 @@ static int matroska_parse_rm_audio(MatroskaDemuxContext *matroska,
         track->audio.buf_timecode = AV_NOPTS_VALUE;
         pkt->pos                  = pos;
         pkt->stream_index         = st->index;
-        ret = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+        ret = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
         if (ret < 0) {
             av_packet_unref(pkt);
             return AVERROR(ENOMEM);
@@ -3414,7 +3415,7 @@ static int matroska_parse_webvtt(MatroskaDemuxContext *matroska,
     pkt->duration = duration;
     pkt->pos = pos;
 
-    err = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+    err = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
     if (err < 0) {
         av_packet_unref(pkt);
         return AVERROR(ENOMEM);
@@ -3525,7 +3526,7 @@ FF_DISABLE_DEPRECATION_WARNINGS
 FF_ENABLE_DEPRECATION_WARNINGS
 #endif
 
-    res = ff_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, 0);
+    res = avpriv_packet_list_put(&matroska->queue, &matroska->queue_end, pkt, NULL, 0);
     if (res < 0) {
         av_packet_unref(pkt);
         return AVERROR(ENOMEM);

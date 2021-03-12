@@ -33,6 +33,8 @@ rtc_library("rnn_vad") {
     "../../../../api:function_view",
     "../../../../rtc_base:checks",
     "../../../../rtc_base:logging",
+    "../../../../rtc_base:safe_compare",
+    "../../../../rtc_base:safe_conversions",
     "../../../../rtc_base/system:arch",
     "//third_party/rnnoise:rnn_vad",
   ]
@@ -75,12 +77,12 @@ rtc_library("rnn_vad_lp_residual") {
   deps = [
     "../../../../api:array_view",
     "../../../../rtc_base:checks",
+    "../../../../rtc_base:safe_compare",
   ]
 }
 
 rtc_library("rnn_vad_pitch") {
   sources = [
-    "pitch_info.h",
     "pitch_search.cc",
     "pitch_search.h",
     "pitch_search_internal.cc",
@@ -91,6 +93,9 @@ rtc_library("rnn_vad_pitch") {
     ":rnn_vad_common",
     "../../../../api:array_view",
     "../../../../rtc_base:checks",
+    "../../../../rtc_base:gtest_prod",
+    "../../../../rtc_base:safe_compare",
+    "../../../../rtc_base:safe_conversions",
   ]
 }
 
@@ -123,6 +128,7 @@ rtc_library("rnn_vad_spectral_features") {
     ":rnn_vad_symmetric_matrix_buffer",
     "../../../../api:array_view",
     "../../../../rtc_base:checks",
+    "../../../../rtc_base:safe_compare",
     "../../utility:pffft_wrapper",
   ]
 }
@@ -132,6 +138,7 @@ rtc_source_set("rnn_vad_symmetric_matrix_buffer") {
   deps = [
     "../../../../api:array_view",
     "../../../../rtc_base:checks",
+    "../../../../rtc_base:safe_compare",
   ]
 }
 
@@ -148,6 +155,7 @@ if (rtc_include_tests) {
       "../../../../api:array_view",
       "../../../../api:scoped_refptr",
       "../../../../rtc_base:checks",
+      "../../../../rtc_base:safe_compare",
       "../../../../rtc_base/system:arch",
       "../../../../system_wrappers",
       "../../../../test:fileutils",
@@ -204,6 +212,8 @@ if (rtc_include_tests) {
       "../../../../common_audio/",
       "../../../../rtc_base:checks",
       "../../../../rtc_base:logging",
+      "../../../../rtc_base:safe_compare",
+      "../../../../rtc_base:safe_conversions",
       "../../../../rtc_base/system:arch",
       "../../../../test:test_support",
       "../../utility:pffft_wrapper",
@@ -225,6 +235,7 @@ if (rtc_include_tests) {
       "../../../../api:array_view",
       "../../../../common_audio",
       "../../../../rtc_base:rtc_base_approved",
+      "../../../../rtc_base:safe_compare",
       "../../../../test:test_support",
       "//third_party/abseil-cpp/absl/flags:flag",
       "//third_party/abseil-cpp/absl/flags:parse",

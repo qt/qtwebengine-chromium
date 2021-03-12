@@ -129,7 +129,9 @@ public:
                                                              kHalf4_GrSLType, "thresholds9_13");
         fragBuilder->codeAppendf(
                 R"SkSL(half t = half(%s.x);
-float4 scale, bias;
+float4 scale;
+float4 bias;
+
 if (%d <= 4 || t < %s.w) {
     if (%d <= 2 || t < %s.y) {
         if (%d <= 1 || t < %s.x) {
@@ -167,7 +169,7 @@ if (%d <= 4 || t < %s.w) {
         }
     }
 }
-%s = half4(float(t) * scale + bias);
+return half4(float(t) * scale + bias);
 )SkSL",
                 args.fSampleCoord, _outer.intervalCount,
                 args.fUniformHandler->getUniformCStr(thresholds1_7Var), _outer.intervalCount,
@@ -206,8 +208,7 @@ if (%d <= 4 || t < %s.w) {
                 scale14_15Var.isValid() ? args.fUniformHandler->getUniformCStr(scale14_15Var)
                                         : "float4(0)",
                 bias14_15Var.isValid() ? args.fUniformHandler->getUniformCStr(bias14_15Var)
-                                       : "float4(0)",
-                args.fOutputColor);
+                                       : "float4(0)");
     }
 
 private:
@@ -316,7 +317,7 @@ bool GrUnrolledBinaryGradientColorizer::onIsEqual(const GrFragmentProcessor& oth
     if (thresholds9_13 != that.thresholds9_13) return false;
     return true;
 }
-bool GrUnrolledBinaryGradientColorizer::usesExplicitReturn() const { return false; }
+bool GrUnrolledBinaryGradientColorizer::usesExplicitReturn() const { return true; }
 GrUnrolledBinaryGradientColorizer::GrUnrolledBinaryGradientColorizer(
         const GrUnrolledBinaryGradientColorizer& src)
         : INHERITED(kGrUnrolledBinaryGradientColorizer_ClassID, src.optimizationFlags())

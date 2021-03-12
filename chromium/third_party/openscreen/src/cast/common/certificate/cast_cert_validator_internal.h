@@ -28,11 +28,9 @@ struct TrustStore {
     kAllowSelfSigned
   };
 
-  static TrustStore CreateInstanceFromPemFile(absl::string_view file_path,
-                                              Mode mode = Mode::kStrict);
+  static TrustStore CreateInstanceFromPemFile(absl::string_view file_path);
 
   std::vector<bssl::UniquePtr<X509>> certs;
-  Mode mode = Mode::kStrict;
 };
 
 // Adds a trust anchor given a DER-encoded certificate from static

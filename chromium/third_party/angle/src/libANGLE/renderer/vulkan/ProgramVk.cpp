@@ -212,7 +212,7 @@ void ProgramVk::save(const gl::Context *context, gl::BinaryOutputStream *stream)
     for (gl::ShaderType shaderType : gl::AllShaderTypes())
     {
         const size_t uniformCount = mDefaultUniformBlocks[shaderType].uniformLayout.size();
-        stream->writeInt<size_t>(uniformCount);
+        stream->writeInt(uniformCount);
         for (unsigned int uniformIndex = 0; uniformIndex < uniformCount; ++uniformIndex)
         {
             sh::BlockMemberInfo &blockInfo =
@@ -275,7 +275,7 @@ std::unique_ptr<LinkEvent> ProgramVk::link(const gl::Context *context,
 
     // Compile the shaders.
     angle::Result status = mOriginalShaderInfo.initShaders(
-        contextVk, mState.getExecutable().getLinkedShaderStages(), shaderSources);
+        contextVk, mState.getExecutable().getLinkedShaderStages(), shaderSources, &mExecutable);
     if (status != angle::Result::Continue)
     {
         return std::make_unique<LinkEventDone>(status);

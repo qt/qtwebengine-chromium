@@ -13,7 +13,8 @@
 // limitations under the License.
 
 import {TRACK_SHELL_WIDTH} from './css_constants';
-import {FlowPoint, globals} from './globals';
+import {ALL_CATEGORIES, getFlowCategories} from './flow_events_panel';
+import {Flow, FlowPoint, globals} from './globals';
 import {PanelVNode} from './panel';
 import {findUiTrackId} from './scroll_helper';
 import {SliceRect} from './track';
@@ -24,6 +25,16 @@ const TRACK_GROUP_CONNECTION_OFFSET = 5;
 const TRIANGLE_SIZE = 5;
 const CIRCLE_RADIUS = 3;
 const BEZIER_OFFSET = 30;
+
+const CONNECTED_FLOW_HUE = 10;
+const SELECTED_FLOW_HUE = 230;
+
+const DEFAULT_FLOW_WIDTH = 2;
+const FOCUSED_FLOW_WIDTH = 3;
+
+const HIGHLIGHTED_FLOW_INTENSITY = 45;
+const FOCUSED_FLOW_INTENSITY = 55;
+const DEFAULT_FLOW_INTENSITY = 70;
 
 type LineDirection = 'LEFT'|'RIGHT'|'UP'|'DOWN';
 type ConnectionType = 'TRACK'|'TRACK_GROUP';
@@ -140,45 +151,74 @@ export class FlowEventsRenderer {
     ctx.rect(0, 0, args.canvasWidth - TRACK_SHELL_WIDTH, args.canvasHeight);
     ctx.clip();
 
-    globals.boundFlows.forEach(flow => {
-      const beginSliceRect = this.getSliceRect(args, flow.begin);
-      const endSliceRect = this.getSliceRect(args, flow.end);
+    globals.connectedFlows.forEach(flow => {
+      this.drawFlow(ctx, args, flow, CONNECTED_FLOW_HUE);
+    });
 
-      const beginYConnection =
-          this.getYConnection(args, flow.begin.trackId, beginSliceRect);
-      const endYConnection =
-          this.getYConnection(args, flow.end.trackId, endSliceRect);
-
-      if (!beginYConnection || !endYConnection) {
-        return;
+    globals.selectedFlows.forEach(flow => {
+      const categories = getFlowCategories(flow);
+      for (const cat of categories) {
+        if (globals.visibleFlowCategories.get(cat) ||
+            globals.visibleFlowCategories.get(ALL_CATEGORIES)) {
+          this.drawFlow(ctx, args, flow, SELECTED_FLOW_HUE);
+          break;
+        }
       }
-
-      let beginDir: LineDirection = 'LEFT';
-      let endDir: LineDirection = 'RIGHT';
-      if (beginYConnection.connection === 'TRACK_GROUP') {
-        beginDir = beginYConnection.y > endYConnection.y ? 'DOWN' : 'UP';
-      }
-      if (endYConnection.connection === 'TRACK_GROUP') {
-        endDir = endYConnection.y > beginYConnection.y ? 'DOWN' : 'UP';
-      }
-
-      const begin = {
-        x: this.getXCoordinate(flow.begin.sliceEndTs),
-        y: beginYConnection.y,
-        dir: beginDir
-      };
-      const end = {
-        x: this.getXCoordinate(flow.end.sliceStartTs),
-        y: endYConnection.y,
-        dir: endDir
-      };
-      const highlighted =
-          flow.end.sliceId === globals.frontendLocalState.highlightedSliceId ||
-          flow.begin.sliceId === globals.frontendLocalState.highlightedSliceId;
-      this.drawFlowArrow(ctx, begin, end, 10, highlighted);
     });
 
     ctx.restore();
+  }
+
+  private drawFlow(
+      ctx: CanvasRenderingContext2D, args: FlowEventsRendererArgs, flow: Flow,
+      hue: number) {
+    const beginSliceRect = this.getSliceRect(args, flow.begin);
+    const endSliceRect = this.getSliceRect(args, flow.end);
+
+    const beginYConnection =
+        this.getYConnection(args, flow.begin.trackId, beginSliceRect);
+    const endYConnection =
+        this.getYConnection(args, flow.end.trackId, endSliceRect);
+
+    if (!beginYConnection || !endYConnection) {
+      return;
+    }
+
+    let beginDir: LineDirection = 'LEFT';
+    let endDir: LineDirection = 'RIGHT';
+    if (beginYConnection.connection === 'TRACK_GROUP') {
+      beginDir = beginYConnection.y > endYConnection.y ? 'DOWN' : 'UP';
+    }
+    if (endYConnection.connection === 'TRACK_GROUP') {
+      endDir = endYConnection.y > beginYConnection.y ? 'DOWN' : 'UP';
+    }
+
+    const begin = {
+      x: this.getXCoordinate(flow.begin.sliceEndTs),
+      y: beginYConnection.y,
+      dir: beginDir
+    };
+    const end = {
+      x: this.getXCoordinate(flow.end.sliceStartTs),
+      y: endYConnection.y,
+      dir: endDir
+    };
+    const highlighted =
+        flow.end.sliceId === globals.frontendLocalState.highlightedSliceId ||
+        flow.begin.sliceId === globals.frontendLocalState.highlightedSliceId;
+    const focused = flow.id === globals.frontendLocalState.focusedFlowIdLeft ||
+        flow.id === globals.frontendLocalState.focusedFlowIdRight;
+
+    let intensity = DEFAULT_FLOW_INTENSITY;
+    let width = DEFAULT_FLOW_WIDTH;
+    if (focused) {
+      intensity = FOCUSED_FLOW_INTENSITY;
+      width = FOCUSED_FLOW_WIDTH;
+    }
+    if (highlighted) {
+      intensity = HIGHLIGHTED_FLOW_INTENSITY;
+    }
+    this.drawFlowArrow(ctx, begin, end, hue, intensity, width);
   }
 
   private getDeltaX(dir: LineDirection, offset: number): number {
@@ -215,13 +255,13 @@ export class FlowEventsRenderer {
       ctx: CanvasRenderingContext2D,
       begin: {x: number, y: number, dir: LineDirection},
       end: {x: number, y: number, dir: LineDirection}, hue: number,
-      highlighted: boolean) {
+      intensity: number, width: number) {
     const END_OFFSET =
         (end.dir === 'RIGHT' || end.dir === 'LEFT' ? TRIANGLE_SIZE : 0);
-    const color = `hsl(${hue}, 50%, ${highlighted ? 60 : 75}%)`;
+    const color = `hsl(${hue}, 50%, ${intensity}%)`;
     // draw curved line from begin to end (bezier curve)
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = width;
     ctx.beginPath();
     ctx.moveTo(begin.x, begin.y);
     ctx.bezierCurveTo(

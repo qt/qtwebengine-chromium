@@ -14,6 +14,28 @@
 
 namespace gl
 {
+namespace
+{
+bool IsStencilNoOp(GLenum stencilFunc,
+                   GLenum stencilFail,
+                   GLenum stencilPassDepthFail,
+                   GLenum stencilPassDepthPass)
+{
+    const bool isNeverAndKeep           = stencilFunc == GL_NEVER && stencilFail == GL_KEEP;
+    const bool isAlwaysAndKeepOrAllKeep = (stencilFunc == GL_ALWAYS || stencilFail == GL_KEEP) &&
+                                          stencilPassDepthFail == GL_KEEP &&
+                                          stencilPassDepthPass == GL_KEEP;
+
+    return isNeverAndKeep || isAlwaysAndKeepOrAllKeep;
+}
+
+// Calculate whether the range [outsideLow, outsideHigh] encloses the range [insideLow, insideHigh]
+bool EnclosesRange(int outsideLow, int outsideHigh, int insideLow, int insideHigh)
+{
+    return outsideLow <= insideLow && outsideHigh >= insideHigh;
+}
+}  // anonymous namespace
+
 RasterizerState::RasterizerState()
 {
     memset(this, 0, sizeof(RasterizerState));
@@ -112,6 +134,20 @@ bool DepthStencilState::isDepthMaskedOut() const
 bool DepthStencilState::isStencilMaskedOut() const
 {
     return (stencilMask & stencilWritemask) == 0;
+}
+
+bool DepthStencilState::isStencilNoOp() const
+{
+    return isStencilMaskedOut() ||
+           IsStencilNoOp(stencilFunc, stencilFail, stencilPassDepthFail, stencilPassDepthPass);
+}
+
+bool DepthStencilState::isStencilBackNoOp() const
+{
+    const bool isStencilBackMaskedOut = (stencilBackMask & stencilBackWritemask) == 0;
+    return isStencilBackMaskedOut ||
+           IsStencilNoOp(stencilBackFunc, stencilBackFail, stencilBackPassDepthFail,
+                         stencilBackPassDepthPass);
 }
 
 bool operator==(const DepthStencilState &a, const DepthStencilState &b)
@@ -597,14 +633,131 @@ bool ClipRectangle(const Rectangle &source, const Rectangle &clip, Rectangle *in
     {
         return false;
     }
+
+    int x      = std::max(minSourceX, minClipX);
+    int y      = std::max(minSourceY, minClipY);
+    int width  = std::min(maxSourceX, maxClipX) - x;
+    int height = std::min(maxSourceY, maxClipY) - y;
+
     if (intersection)
     {
-        intersection->x      = std::max(minSourceX, minClipX);
-        intersection->y      = std::max(minSourceY, minClipY);
-        intersection->width  = std::min(maxSourceX, maxClipX) - std::max(minSourceX, minClipX);
-        intersection->height = std::min(maxSourceY, maxClipY) - std::max(minSourceY, minClipY);
+        intersection->x      = x;
+        intersection->y      = y;
+        intersection->width  = width;
+        intersection->height = height;
     }
-    return true;
+    return width != 0 && height != 0;
+}
+
+void GetEnclosingRectangle(const Rectangle &rect1, const Rectangle &rect2, Rectangle *rectUnion)
+{
+    // All callers use non-flipped framebuffer-size-clipped rectangles, so both flip and overflow
+    // are impossible.
+    ASSERT(!rect1.isReversedX() && !rect1.isReversedY());
+    ASSERT(!rect2.isReversedX() && !rect2.isReversedY());
+    ASSERT((angle::CheckedNumeric<int>(rect1.x) + rect1.width).IsValid());
+    ASSERT((angle::CheckedNumeric<int>(rect1.y) + rect1.height).IsValid());
+    ASSERT((angle::CheckedNumeric<int>(rect2.x) + rect2.width).IsValid());
+    ASSERT((angle::CheckedNumeric<int>(rect2.y) + rect2.height).IsValid());
+
+    // This function calculates a rectangle that covers both input rectangles:
+    //
+    //                     +---------+
+    //          rect1 -->  |         |
+    //                     |     +---+-----+
+    //                     |     |   |     | <-- rect2
+    //                     +-----+---+     |
+    //                           |         |
+    //                           +---------+
+    //
+    //   xy0 = min(rect1.xy0, rect2.xy0)
+    //                    \
+    //                     +---------+-----+
+    //          union -->  |         .     |
+    //                     |     + . + . . +
+    //                     |     .   .     |
+    //                     + . . + . +     |
+    //                     |     .         |
+    //                     +-----+---------+
+    //                                    /
+    //                         xy1 = max(rect1.xy1, rect2.xy1)
+
+    int x0 = std::min(rect1.x0(), rect2.x0());
+    int y0 = std::min(rect1.y0(), rect2.y0());
+
+    int x1 = std::max(rect1.x1(), rect2.x1());
+    int y1 = std::max(rect1.y1(), rect2.y1());
+
+    rectUnion->x      = x0;
+    rectUnion->y      = y0;
+    rectUnion->width  = x1 - x0;
+    rectUnion->height = y1 - y0;
+}
+
+void ExtendRectangle(const Rectangle &source, const Rectangle &extend, Rectangle *extended)
+{
+    // All callers use non-flipped framebuffer-size-clipped rectangles, so both flip and overflow
+    // are impossible.
+    ASSERT(!source.isReversedX() && !source.isReversedY());
+    ASSERT(!extend.isReversedX() && !extend.isReversedY());
+    ASSERT((angle::CheckedNumeric<int>(source.x) + source.width).IsValid());
+    ASSERT((angle::CheckedNumeric<int>(source.y) + source.height).IsValid());
+    ASSERT((angle::CheckedNumeric<int>(extend.x) + extend.width).IsValid());
+    ASSERT((angle::CheckedNumeric<int>(extend.y) + extend.height).IsValid());
+
+    int x0 = source.x0();
+    int x1 = source.x1();
+    int y0 = source.y0();
+    int y1 = source.y1();
+
+    const int extendX0 = extend.x0();
+    const int extendX1 = extend.x1();
+    const int extendY0 = extend.y0();
+    const int extendY1 = extend.y1();
+
+    // For each side of the rectangle, calculate whether it can be extended by the second rectangle.
+    // If so, extend it and continue for the next side with the new dimensions.
+
+    // Left: Reduce x0 if the second rectangle's vertical edge covers the source's:
+    //
+    //     +--- - - -                +--- - - -
+    //     |                         |
+    //     |  +--------------+       +-----------------+
+    //     |  |    source    |  -->  |       source    |
+    //     |  +--------------+       +-----------------+
+    //     |                         |
+    //     +--- - - -                +--- - - -
+    //
+    const bool enclosesHeight = EnclosesRange(extendY0, extendY1, y0, y1);
+    if (extendX0 < x0 && extendX1 >= x0 && enclosesHeight)
+    {
+        x0 = extendX0;
+    }
+
+    // Right: Increase x1 simiarly.
+    if (extendX0 <= x1 && extendX1 > x1 && enclosesHeight)
+    {
+        x1 = extendX1;
+    }
+
+    // Top: Reduce y0 if the second rectangle's horizontal edge covers the source's potentially
+    // extended edge.
+    const bool enclosesWidth = EnclosesRange(extendX0, extendX1, x0, x1);
+    if (extendY0 < y0 && extendY1 >= y0 && enclosesWidth)
+    {
+        y0 = extendY0;
+    }
+
+    // Right: Increase y1 simiarly.
+    if (extendY0 <= y1 && extendY1 > y1 && enclosesWidth)
+    {
+        y1 = extendY1;
+    }
+
+    extended->x      = x0;
+    extended->y      = y0;
+    extended->width  = x1 - x0;
+    extended->height = y1 - y0;
 }
 
 bool Box::operator==(const Box &other) const

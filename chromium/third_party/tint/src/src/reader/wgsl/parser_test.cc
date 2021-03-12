@@ -26,44 +26,40 @@ using ParserTest = testing::Test;
 
 TEST_F(ParserTest, Empty) {
   Context ctx;
-  Parser p(&ctx, "");
+  Source::File file("test.wgsl", "");
+  Parser p(&ctx, &file);
   ASSERT_TRUE(p.Parse()) << p.error();
 }
 
 TEST_F(ParserTest, Parses) {
   Context ctx;
+  Source::File file("test.wgsl", R"(
+[[location(0)]] var<out> gl_FragColor : vec4<f32>;
 
-  Parser p(&ctx, R"(
-import "GLSL.std.430" as glsl;
-
-[[location 0]] var<out> gl_FragColor : vec4<f32>;
-
-entry_point vertex = main;
+[[stage(vertex)]]
 fn main() -> void {
   gl_FragColor = vec4<f32>(.4, .2, .3, 1);
 }
 )");
+  Parser p(&ctx, &file);
   ASSERT_TRUE(p.Parse()) << p.error();
 
   auto m = p.module();
-  ASSERT_EQ(1u, m.imports().size());
-  ASSERT_EQ(1u, m.entry_points().size());
   ASSERT_EQ(1u, m.functions().size());
   ASSERT_EQ(1u, m.global_variables().size());
 }
 
 TEST_F(ParserTest, HandlesError) {
   Context ctx;
-  Parser p(&ctx, R"(
-import "GLSL.std.430" as glsl;
-
+  Source::File file("test.wgsl", R"(
 fn main() ->  {  # missing return type
   return;
 })");
+  Parser p(&ctx, &file);
 
   ASSERT_FALSE(p.Parse());
   ASSERT_TRUE(p.has_error());
-  EXPECT_EQ(p.error(), "4:15: unable to determine function return type");
+  EXPECT_EQ(p.error(), "2:15: unable to determine function return type");
 }
 
 }  // namespace

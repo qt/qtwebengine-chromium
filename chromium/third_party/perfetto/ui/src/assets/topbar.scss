@@ -36,7 +36,7 @@
         border-radius: 20px;
         background-color: #fcfcfc;
         border: 0;
-        line-height: 36px;
+        line-height: 34px;
         &:before {
             @include material-icon('search');
             margin: 5px;
@@ -62,7 +62,6 @@
             }
         }
         &.command-mode {
-            // background-color: #354252;
             background-color: #111;
             border-radius: 0;
             width: 100%;
@@ -223,4 +222,10 @@
   width: fit-content;
   padding: 3px;
   border-radius: 3px;
+}
+
+.hide-sidebar {
+  .command-mode {
+    padding-left: 48px;
+  }
 }

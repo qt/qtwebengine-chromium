@@ -17,6 +17,7 @@
 #include "cast/streaming/sender.h"
 #include "cast/streaming/sender_packet_router.h"
 #include "cast/streaming/session_config.h"
+#include "cast/streaming/session_messager.h"
 #include "json/value.h"
 #include "util/json/json_serialization.h"
 
@@ -30,7 +31,7 @@ struct Recommendations;
 class Environment;
 class Sender;
 
-class SenderSession final : public MessagePort::Client {
+class SenderSession final {
  public:
   // Upon successful negotiation, a set of configured senders is constructed
   // for handling audio and video. Note that either sender may be null.
@@ -90,20 +91,7 @@ class SenderSession final : public MessagePort::Client {
   Error Negotiate(std::vector<AudioCaptureConfig> audio_configs,
                   std::vector<VideoCaptureConfig> video_configs);
 
-  // MessagePort::Client overrides
-  void OnMessage(const std::string& sender_id,
-                 const std::string& message_namespace,
-                 const std::string& message) override;
-  void OnError(Error error) override;
-
  private:
-  struct Message {
-    std::string sender_id;
-    std::string message_namespace;
-    int sequence_number = 0;
-    Json::Value body;
-  };
-
   // We store the current negotiation, so that when we get an answer from the
   // receiver we can line up the selected streams with the original
   // configuration.
@@ -115,7 +103,7 @@ class SenderSession final : public MessagePort::Client {
   };
 
   // Specific message type handler methods.
-  void OnAnswer(const Json::Value& message_body);
+  void OnAnswer(SessionMessager::Message message);
 
   // Used by SpawnSenders to generate a sender for a specific stream.
   std::unique_ptr<Sender> CreateSender(Ssrc receiver_ssrc,
@@ -135,12 +123,6 @@ class SenderSession final : public MessagePort::Client {
   // Spawn a set of configured senders from the currently stored negotiation.
   ConfiguredSenders SpawnSenders(const Answer& answer);
 
-  // Sends a message over the message port.
-  void SendMessage(Message* message);
-
-  // The cast session ID for this session.
-  const int session_id_;
-
   // The sender ID of the Receiver for this session.
   std::string receiver_sender_id_;
 
@@ -153,7 +135,7 @@ class SenderSession final : public MessagePort::Client {
   // port for communicating to the Receiver over TLS.
   Client* const client_;
   Environment* const environment_;
-  MessagePort* const message_port_;
+  SessionMessager messager_;
 
   // The packet router used for messaging across all senders.
   SenderPacketRouter packet_router_;

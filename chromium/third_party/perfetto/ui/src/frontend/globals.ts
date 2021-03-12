@@ -54,6 +54,7 @@ export interface FlowPoint {
   trackId: number;
 
   sliceName: string;
+  sliceCategory: string;
   sliceId: number;
   sliceStartTs: number;
   sliceEndTs: number;
@@ -62,8 +63,13 @@ export interface FlowPoint {
 }
 
 export interface Flow {
+  id: number;
+
   begin: FlowPoint;
   end: FlowPoint;
+
+  category?: string;
+  name?: string;
 }
 
 export interface CounterDetails {
@@ -139,7 +145,9 @@ class Globals {
   private _threadMap?: ThreadMap = undefined;
   private _sliceDetails?: SliceDetails = undefined;
   private _threadStateDetails?: ThreadStateDetails = undefined;
-  private _boundFlows?: Flow[] = undefined;
+  private _connectedFlows?: Flow[] = undefined;
+  private _selectedFlows?: Flow[] = undefined;
+  private _visibleFlowCategories?: Map<string, boolean> = undefined;
   private _counterDetails?: CounterDetails = undefined;
   private _heapProfileDetails?: HeapProfileDetails = undefined;
   private _cpuProfileDetails?: CpuProfileDetails = undefined;
@@ -185,7 +193,9 @@ class Globals {
     this._aggregateDataStore = new Map<string, AggregateData>();
     this._threadMap = new Map<number, ThreadDesc>();
     this._sliceDetails = {};
-    this._boundFlows = [];
+    this._connectedFlows = [];
+    this._selectedFlows = [];
+    this._visibleFlowCategories = new Map<string, boolean>();
     this._counterDetails = {};
     this._threadStateDetails = {};
     this._heapProfileDetails = {};
@@ -253,12 +263,28 @@ class Globals {
     this._threadStateDetails = assertExists(click);
   }
 
-  get boundFlows() {
-    return assertExists(this._boundFlows);
+  get connectedFlows() {
+    return assertExists(this._connectedFlows);
   }
 
-  set boundFlows(boundFlows: Flow[]) {
-    this._boundFlows = assertExists(boundFlows);
+  set connectedFlows(connectedFlows: Flow[]) {
+    this._connectedFlows = assertExists(connectedFlows);
+  }
+
+  get selectedFlows() {
+    return assertExists(this._selectedFlows);
+  }
+
+  set selectedFlows(selectedFlows: Flow[]) {
+    this._selectedFlows = assertExists(selectedFlows);
+  }
+
+  get visibleFlowCategories() {
+    return assertExists(this._visibleFlowCategories);
+  }
+
+  set visibleFlowCategories(visibleFlowCategories: Map<string, boolean>) {
+    this._visibleFlowCategories = assertExists(visibleFlowCategories);
   }
 
   get counterDetails() {

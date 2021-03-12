@@ -185,11 +185,11 @@ namespace dawn_native { namespace d3d12 {
                                           Aspect aspect) {
         ASSERT(HasOneBit(aspect));
         // See comments in ComputeTextureCopySplits() for more details.
-        const TexelBlockInfo& blockInfo = texture->GetFormat().GetTexelBlockInfo(aspect);
+        const TexelBlockInfo& blockInfo = texture->GetFormat().GetAspectInfo(aspect).block;
         const TextureCopySplits copySplits = ComputeTextureCopySplits(
             textureCopy.origin, copySize, blockInfo, offsetBytes, bytesPerRow, rowsPerImage);
 
-        const uint64_t bytesPerSlice = bytesPerRow * (rowsPerImage / blockInfo.blockHeight);
+        const uint64_t bytesPerSlice = bytesPerRow * rowsPerImage;
 
         // copySplits.copies2D[1] is always calculated for the second copy slice with
         // extra "bytesPerSlice" copy offset compared with the first copy slice. So

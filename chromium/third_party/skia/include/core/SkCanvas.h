@@ -32,7 +32,6 @@
 #include <memory>
 #include <vector>
 
-class GrContext;
 class GrRecordingContext;
 class GrRenderTargetContext;
 class SkBaseDevice;
@@ -178,7 +177,7 @@ public:
     explicit SkCanvas(sk_sp<SkBaseDevice> device);
 
     /** Constructs a canvas that draws into bitmap.
-        Sets SkSurfaceProps::kLegacyFontHost_InitType in constructed SkSurface.
+        Sets kUnknown_SkPixelGeometry in constructed SkSurface.
 
         SkBitmap is copied so that subsequently editing bitmap will not affect
         constructed SkCanvas.
@@ -1142,9 +1141,9 @@ public:
     */
     void discard() { this->onDiscard(); }
 
-    /** Fills clip with SkPaint paint. SkPaint components SkMaskFilter, SkShader,
+    /** Fills clip with SkPaint paint. SkPaint components, SkShader,
         SkColorFilter, SkImageFilter, and SkBlendMode affect drawing;
-        SkPathEffect in paint is ignored.
+        SkMaskFilter and SkPathEffect in paint are ignored.
 
         @param paint  graphics state used to fill SkCanvas
 
@@ -2641,7 +2640,7 @@ private:
     // the first N recs that can fit here mean we won't call malloc
     static constexpr int kMCRecSize      = 128;  // most recent measurement
     static constexpr int kMCRecCount     = 32;   // common depth for save/restores
-    static constexpr int kDeviceCMSize   = 224;  // most recent measurement
+    static constexpr int kDeviceCMSize   = 64;   // most recent measurement
 
     intptr_t fMCRecStorage[kMCRecSize * kMCRecCount / sizeof(intptr_t)];
     intptr_t fDeviceCMStorage[kDeviceCMSize / sizeof(intptr_t)];

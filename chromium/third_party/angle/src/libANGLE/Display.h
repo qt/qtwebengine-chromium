@@ -28,6 +28,11 @@
 #include "platform/Feature.h"
 #include "platform/FrontendFeatures.h"
 
+namespace angle
+{
+class FrameCaptureShared;
+}  // namespace angle
+
 namespace gl
 {
 class Context;
@@ -79,6 +84,8 @@ class ShareGroup final : angle::NonCopyable
 
     rx::Serial generateFramebufferSerial() { return mFramebufferSerialFactory.generate(); }
 
+    angle::FrameCaptureShared *getFrameCaptureShared() { return mFrameCaptureShared.get(); }
+
   protected:
     ~ShareGroup();
 
@@ -86,9 +93,12 @@ class ShareGroup final : angle::NonCopyable
     size_t mRefCount;
     rx::ShareGroupImpl *mImplementation;
     rx::SerialFactory mFramebufferSerialFactory;
+
+    // Note: we use a raw pointer here so we can exclude frame capture sources from the build.
+    std::unique_ptr<angle::FrameCaptureShared> mFrameCaptureShared;
 };
 
-// Constant coded here as a sanity limit.
+// Constant coded here as a reasonable limit.
 constexpr EGLAttrib kProgramCacheSizeAbsoluteMax = 0x4000000;
 
 class Display final : public LabeledObject,
@@ -106,6 +116,13 @@ class Display final : public LabeledObject,
 
     Error initialize();
     Error terminate(const Thread *thread);
+    // Called before all display state dependent EGL functions. Backends can set up, for example,
+    // thread-specific backend state through this function. Not called for functions that do not
+    // need the state.
+    Error prepareForCall();
+    // Called on eglReleaseThread. Backends can tear down thread-specific backend state through
+    // this function.
+    Error releaseThread();
 
     static Display *GetDisplayFromDevice(Device *device, const AttributeMap &attribMap);
     static Display *GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay,
@@ -257,6 +274,10 @@ class Display final : public LabeledObject,
 
     std::mutex &getDisplayGlobalMutex() { return mDisplayGlobalMutex; }
     std::mutex &getProgramCacheMutex() { return mProgramCacheMutex; }
+
+    // Installs LoggingAnnotator as the global DebugAnnotator, for back-ends that do not implement
+    // their own DebugAnnotator.
+    void setGlobalDebugAnnotator() { gl::InitializeDebugAnnotations(&mAnnotator); }
 
   private:
     Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDevice);

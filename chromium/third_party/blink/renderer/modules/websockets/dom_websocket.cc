@@ -78,9 +78,7 @@ namespace blink {
 DOMWebSocket::EventQueue::EventQueue(EventTarget* target)
     : state_(kActive), target_(target) {}
 
-DOMWebSocket::EventQueue::~EventQueue() {
-  ContextDestroyed();
-}
+DOMWebSocket::EventQueue::~EventQueue() = default;
 
 void DOMWebSocket::EventQueue::Dispatch(Event* event) {
   switch (state_) {
@@ -350,13 +348,13 @@ void DOMWebSocket::send(DOMArrayBuffer* binary_data,
     return;
   }
   if (common_.GetState() == kClosing || common_.GetState() == kClosed) {
-    UpdateBufferedAmountAfterClose(binary_data->ByteLengthAsSizeT());
+    UpdateBufferedAmountAfterClose(binary_data->ByteLength());
     return;
   }
   RecordSendTypeHistogram(WebSocketSendType::kArrayBuffer);
   DCHECK(channel_);
-  buffered_amount_ += binary_data->ByteLengthAsSizeT();
-  channel_->Send(*binary_data, 0, binary_data->ByteLengthAsSizeT(),
+  buffered_amount_ += binary_data->ByteLength();
+  channel_->Send(*binary_data, 0, binary_data->ByteLength(),
                  base::OnceClosure());
 }
 
@@ -370,17 +368,15 @@ void DOMWebSocket::send(NotShared<DOMArrayBufferView> array_buffer_view,
     return;
   }
   if (common_.GetState() == kClosing || common_.GetState() == kClosed) {
-    UpdateBufferedAmountAfterClose(
-        array_buffer_view.View()->byteLengthAsSizeT());
+    UpdateBufferedAmountAfterClose(array_buffer_view.View()->byteLength());
     return;
   }
   RecordSendTypeHistogram(WebSocketSendType::kArrayBufferView);
   DCHECK(channel_);
-  buffered_amount_ += array_buffer_view.View()->byteLengthAsSizeT();
+  buffered_amount_ += array_buffer_view.View()->byteLength();
   channel_->Send(*array_buffer_view.View()->buffer(),
-                 array_buffer_view.View()->byteOffsetAsSizeT(),
-                 array_buffer_view.View()->byteLengthAsSizeT(),
-                 base::OnceClosure());
+                 array_buffer_view.View()->byteOffset(),
+                 array_buffer_view.View()->byteLength(), base::OnceClosure());
 }
 
 void DOMWebSocket::send(Blob* binary_data, ExceptionState& exception_state) {

@@ -25,10 +25,9 @@ namespace tint {
 namespace ast {
 
 class ArrayAccessorExpression;
-class AsExpression;
 class BinaryExpression;
+class BitcastExpression;
 class CallExpression;
-class CastExpression;
 class IdentifierExpression;
 class ConstructorExpression;
 class MemberAccessorExpression;
@@ -47,12 +46,10 @@ class Expression : public Node {
 
   /// @returns true if this is an array accessor expression
   virtual bool IsArrayAccessor() const;
-  /// @returns true if this is an as expression
-  virtual bool IsAs() const;
+  /// @returns true if this is a bitcast expression
+  virtual bool IsBitcast() const;
   /// @returns true if this is a call expression
   virtual bool IsCall() const;
-  /// @returns true if this is a cast expression
-  virtual bool IsCast() const;
   /// @returns true if this is an identifier expression
   virtual bool IsIdentifier() const;
   /// @returns true if this is an constructor expression
@@ -66,12 +63,10 @@ class Expression : public Node {
 
   /// @returns the expression as an array accessor
   const ArrayAccessorExpression* AsArrayAccessor() const;
-  /// @returns the expression as an as
-  const AsExpression* AsAs() const;
+  /// @returns the expression as a bitcast
+  const BitcastExpression* AsBitcast() const;
   /// @returns the expression as a call
   const CallExpression* AsCall() const;
-  /// @returns the expression as a cast
-  const CastExpression* AsCast() const;
   /// @returns the expression as an identifier
   const IdentifierExpression* AsIdentifier() const;
   /// @returns the expression as an constructor
@@ -85,12 +80,10 @@ class Expression : public Node {
 
   /// @returns the expression as an array accessor
   ArrayAccessorExpression* AsArrayAccessor();
-  /// @returns the expression as an as
-  AsExpression* AsAs();
+  /// @returns the expression as a bitcast
+  BitcastExpression* AsBitcast();
   /// @returns the expression as a call
   CallExpression* AsCall();
-  /// @returns the expression as a cast
-  CastExpression* AsCast();
   /// @returns the expression as an identifier
   IdentifierExpression* AsIdentifier();
   /// @returns the expression as an constructor

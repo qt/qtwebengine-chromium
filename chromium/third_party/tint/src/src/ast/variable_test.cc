@@ -32,24 +32,28 @@ TEST_F(VariableTest, Creation) {
   EXPECT_EQ(v.name(), "my_var");
   EXPECT_EQ(v.storage_class(), StorageClass::kFunction);
   EXPECT_EQ(v.type(), &t);
-  EXPECT_EQ(v.line(), 0u);
-  EXPECT_EQ(v.column(), 0u);
+  EXPECT_EQ(v.source().range.begin.line, 0u);
+  EXPECT_EQ(v.source().range.begin.column, 0u);
+  EXPECT_EQ(v.source().range.end.line, 0u);
+  EXPECT_EQ(v.source().range.end.column, 0u);
 }
 
 TEST_F(VariableTest, CreationWithSource) {
-  Source s{27, 4};
+  Source s{Source::Range{Source::Location{27, 4}, Source::Location{27, 5}}};
   type::F32Type t;
   Variable v(s, "i", StorageClass::kPrivate, &t);
 
   EXPECT_EQ(v.name(), "i");
   EXPECT_EQ(v.storage_class(), StorageClass::kPrivate);
   EXPECT_EQ(v.type(), &t);
-  EXPECT_EQ(v.line(), 27u);
-  EXPECT_EQ(v.column(), 4u);
+  EXPECT_EQ(v.source().range.begin.line, 27u);
+  EXPECT_EQ(v.source().range.begin.column, 4u);
+  EXPECT_EQ(v.source().range.end.line, 27u);
+  EXPECT_EQ(v.source().range.end.column, 5u);
 }
 
 TEST_F(VariableTest, CreationEmpty) {
-  Source s{27, 4};
+  Source s{Source::Range{Source::Location{27, 4}, Source::Location{27, 7}}};
   Variable v;
   v.set_source(s);
   v.set_storage_class(StorageClass::kWorkgroup);
@@ -61,8 +65,10 @@ TEST_F(VariableTest, CreationEmpty) {
   EXPECT_EQ(v.name(), "a_var");
   EXPECT_EQ(v.storage_class(), StorageClass::kWorkgroup);
   EXPECT_EQ(v.type(), &t);
-  EXPECT_EQ(v.line(), 27u);
-  EXPECT_EQ(v.column(), 4u);
+  EXPECT_EQ(v.source().range.begin.line, 27u);
+  EXPECT_EQ(v.source().range.begin.column, 4u);
+  EXPECT_EQ(v.source().range.end.line, 27u);
+  EXPECT_EQ(v.source().range.end.column, 7u);
 }
 
 TEST_F(VariableTest, IsValid) {

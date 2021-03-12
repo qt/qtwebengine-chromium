@@ -22,6 +22,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/private/SkChecksum.h"
 #include "include/private/SkTHash.h"
+#include "include/private/SkTPin.h"
 #include "include/private/SkTo.h"
 #include "include/svg/SkSVGCanvas.h"
 #include "include/utils/SkBase64.h"
@@ -1090,10 +1091,5 @@ void SkSVGDevice::drawGlyphRunList(const SkGlyphRunList& glyphRunList)  {
 }
 
 void SkSVGDevice::drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) {
-    // todo
-}
-
-void SkSVGDevice::drawDevice(SkBaseDevice*, int x, int y,
-                             const SkPaint&) {
     // todo
 }

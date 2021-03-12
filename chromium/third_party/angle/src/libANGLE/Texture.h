@@ -230,6 +230,9 @@ class TextureState final : private angle::NonCopyable
     // GLES1 emulation: Generate-mipmap hint per texture
     GLenum mGenerateMipmapHint;
 
+    // GL_OES_texture_buffer / GLES3.2
+    OffsetBindingPointer<Buffer> mBuffer;
+
     InitState mInitState;
 
     mutable SamplerFormat mCachedSamplerFormat;
@@ -326,6 +329,13 @@ class Texture final : public RefCountObject<TextureID>,
     void setBorderColor(const Context *context, const ColorGeneric &color);
     const ColorGeneric &getBorderColor() const;
 
+    angle::Result setBuffer(const Context *context,
+                            gl::Buffer *buffer,
+                            GLenum internalFormat,
+                            GLintptr offset,
+                            GLsizeiptr size);
+    const OffsetBindingPointer<Buffer> &getBuffer() const;
+
     const TextureState &getTextureState() const;
 
     const Extents &getExtents(TextureTarget target, size_t level) const;
@@ -389,6 +399,34 @@ class Texture final : public RefCountObject<TextureID>,
                                const Offset &destOffset,
                                const Rectangle &sourceArea,
                                Framebuffer *source);
+
+    angle::Result copyRenderbufferSubData(Context *context,
+                                          const gl::Renderbuffer *srcBuffer,
+                                          GLint srcLevel,
+                                          GLint srcX,
+                                          GLint srcY,
+                                          GLint srcZ,
+                                          GLint dstLevel,
+                                          GLint dstX,
+                                          GLint dstY,
+                                          GLint dstZ,
+                                          GLsizei srcWidth,
+                                          GLsizei srcHeight,
+                                          GLsizei srcDepth);
+
+    angle::Result copyTextureSubData(Context *context,
+                                     const gl::Texture *srcTexture,
+                                     GLint srcLevel,
+                                     GLint srcX,
+                                     GLint srcY,
+                                     GLint srcZ,
+                                     GLint dstLevel,
+                                     GLint dstX,
+                                     GLint dstY,
+                                     GLint dstZ,
+                                     GLsizei srcWidth,
+                                     GLsizei srcHeight,
+                                     GLsizei srcDepth);
 
     angle::Result copyTexture(Context *context,
                               TextureTarget target,
@@ -503,6 +541,7 @@ class Texture final : public RefCountObject<TextureID>,
     InitState initState(const ImageIndex &imageIndex) const override;
     InitState initState() const { return mState.mInitState; }
     void setInitState(const ImageIndex &imageIndex, InitState initState) override;
+    void setInitState(InitState initState);
 
     bool isBoundToFramebuffer(rx::Serial framebufferSerial) const
     {

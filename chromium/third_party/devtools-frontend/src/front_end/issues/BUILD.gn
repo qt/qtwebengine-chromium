@@ -9,10 +9,10 @@ devtools_module("issues") {
   sources = [
     "IssueAggregator.js",
     "IssueRevealer.js",
+    "IssueSurveyLink.ts",
     "IssuesPane.js",
-    "MarkdownIssueDescription.js",
+    "MarkdownIssueDescription.ts",
     "MarkdownView.ts",
-    "MarkdownView_bridge.js",
   ]
 
   deps = [
@@ -20,10 +20,10 @@ devtools_module("issues") {
     "../common:bundle",
     "../components:bundle",
     "../elements:bundle",
-    "../marked:bundle",
     "../network:bundle",
     "../sdk:bundle",
     "../third_party/lit-html:bundle",
+    "../third_party/marked:bundle",
     "../ui:bundle",
   ]
 
@@ -31,7 +31,13 @@ devtools_module("issues") {
 }
 
 devtools_entrypoint("bundle") {
-  entrypoint = "issues.js"
+  entrypoint = "issues.ts"
 
   deps = [ ":issues" ]
+}
+
+devtools_entrypoint("legacy") {
+  entrypoint = "issues-legacy.js"
+
+  deps = [ ":bundle" ]
 }

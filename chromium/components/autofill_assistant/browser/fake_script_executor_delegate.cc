@@ -213,7 +213,7 @@ void FakeScriptExecutorDelegate::SetExpandSheetForPromptAction(bool expand) {
   expand_sheet_for_prompt_ = expand;
 }
 
-void FakeScriptExecutorDelegate::SetBrowseDomainsWhitelist(
+void FakeScriptExecutorDelegate::SetBrowseDomainsAllowlist(
     std::vector<std::string> domains) {
   browse_domains_ = std::move(domains);
 }
@@ -245,5 +245,7 @@ void FakeScriptExecutorDelegate::SetOverlayBehavior(
     ConfigureUiStateProto::OverlayBehavior overaly_behavior) {}
 
 void FakeScriptExecutorDelegate::SetBrowseModeInvisible(bool invisible) {}
+
+void FakeScriptExecutorDelegate::SetShowFeedbackChip(bool show_feedback_chip) {}
 
 }  // namespace autofill_assistant

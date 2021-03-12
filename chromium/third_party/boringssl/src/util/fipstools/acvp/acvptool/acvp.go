@@ -17,6 +17,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/x509"
@@ -45,11 +46,13 @@ var (
 	configFilename = flag.String("config", "config.json", "Location of the configuration JSON file")
 	jsonInputFile  = flag.String("json", "", "Location of a vector-set input file")
 	runFlag        = flag.String("run", "", "Name of primitive to run tests for")
+	fetchFlag      = flag.String("fetch", "", "Name of primitive to fetch vectors for")
 	wrapperPath    = flag.String("wrapper", "../../../../build/util/fipstools/acvp/modulewrapper/modulewrapper", "Path to the wrapper binary")
 )
 
 type Config struct {
 	CertPEMFile        string
+	PrivateKeyFile     string
 	PrivateKeyDERFile  string
 	TOTPSecret         string
 	ACVPServer         string
@@ -267,7 +270,7 @@ func main() {
 	}
 	totpSecret, err := base64.StdEncoding.DecodeString(config.TOTPSecret)
 	if err != nil {
-		log.Fatalf("Failed to decode TOTP secret from config file: %s", err)
+		log.Fatalf("Failed to base64-decode TOTP secret from config file: %s. (Note that the secret _itself_ should be in the config, not the name of a file that contains it.)", err)
 	}
 
 	if len(config.CertPEMFile) == 0 {
@@ -280,17 +283,35 @@ func main() {
 	block, _ := pem.Decode(certPEM)
 	certDER := block.Bytes
 
-	if len(config.PrivateKeyDERFile) == 0 {
-		log.Fatal("Config file missing PrivateKeyDERFile")
+	if len(config.PrivateKeyDERFile) == 0 && len(config.PrivateKeyFile) == 0 {
+		log.Fatal("Config file missing PrivateKeyDERFile and PrivateKeyFile")
 	}
-	keyDER, err := ioutil.ReadFile(config.PrivateKeyDERFile)
-	if err != nil {
-		log.Fatalf("failed to read private key from %q: %s", config.PrivateKeyDERFile, err)
+	if len(config.PrivateKeyDERFile) != 0 && len(config.PrivateKeyFile) != 0 {
+		log.Fatal("Config file has both PrivateKeyDERFile and PrivateKeyFile. Can only have one.")
+	}
+	privateKeyFile := config.PrivateKeyDERFile
+	if len(config.PrivateKeyFile) > 0 {
+		privateKeyFile = config.PrivateKeyFile
 	}
 
-	certKey, err := x509.ParsePKCS1PrivateKey(keyDER)
+	keyBytes, err := ioutil.ReadFile(privateKeyFile)
 	if err != nil {
-		log.Fatalf("failed to parse private key from %q: %s", config.PrivateKeyDERFile, err)
+		log.Fatalf("failed to read private key from %q: %s", privateKeyFile, err)
+	}
+
+	var keyDER []byte
+	pemBlock, _ := pem.Decode(keyBytes)
+	if pemBlock != nil {
+		keyDER = pemBlock.Bytes
+	} else {
+		keyDER = keyBytes
+	}
+
+	var certKey crypto.PrivateKey
+	if certKey, err = x509.ParsePKCS1PrivateKey(keyDER); err != nil {
+		if certKey, err = x509.ParsePKCS8PrivateKey(keyDER); err != nil {
+			log.Fatalf("failed to parse private key from %q: %s", privateKeyFile, err)
+		}
 	}
 
 	var middle Middle
@@ -331,9 +352,19 @@ func main() {
 		os.Exit(0)
 	}
 
-	runAlgos := make(map[string]bool)
+	var requestedAlgosFlag string
+	if len(*runFlag) > 0 && len(*fetchFlag) > 0 {
+		log.Fatalf("cannot specify both -run and -fetch")
+	}
 	if len(*runFlag) > 0 {
-		for _, substr := range strings.Split(*runFlag, ",") {
+		requestedAlgosFlag = *runFlag
+	} else {
+		requestedAlgosFlag = *fetchFlag
+	}
+
+	runAlgos := make(map[string]bool)
+	if len(requestedAlgosFlag) > 0 {
+		for _, substr := range strings.Split(requestedAlgosFlag, ",") {
 			runAlgos[substr] = false
 		}
 	}
@@ -389,7 +420,7 @@ func main() {
 		log.Fatalf("failed to login: %s", err)
 	}
 
-	if len(*runFlag) == 0 {
+	if len(requestedAlgosFlag) == 0 {
 		if interactiveModeSupported {
 			runInteractive(server, config)
 		} else {
@@ -423,6 +454,15 @@ func main() {
 
 	log.Printf("Have vector sets %v", result.VectorSetURLs)
 
+	if len(*fetchFlag) > 0 {
+		os.Stdout.WriteString("[\n")
+		json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+			"url":           url,
+			"vectorSetUrls": result.VectorSetURLs,
+			"time":          time.Now().Format(time.RFC3339),
+		})
+	}
+
 	for _, setURL := range result.VectorSetURLs {
 		firstTime := true
 		for {
@@ -448,6 +488,12 @@ func main() {
 				}
 				time.Sleep(time.Duration(retry) * time.Second)
 				continue
+			}
+
+			if len(*fetchFlag) > 0 {
+				os.Stdout.WriteString(",\n")
+				os.Stdout.Write(vectorsBytes)
+				break
 			}
 
 			replyGroups, err := middle.Process(vectors.Algo, vectorsBytes)
@@ -533,6 +579,11 @@ func main() {
 
 			break
 		}
+	}
+
+	if len(*fetchFlag) > 0 {
+		os.Stdout.WriteString("]\n")
+		os.Exit(0)
 	}
 
 FetchResults:

@@ -6,7 +6,7 @@
 // TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
 import * as Bindings from '../bindings/bindings.js';  // eslint-disable-line no-unused-vars
-import * as SDK from '../sdk/sdk.js';  // eslint-disable-line no-unused-vars
+import * as SDK from '../sdk/sdk.js';                 // eslint-disable-line no-unused-vars
 
 /**
  * @implements {Bindings.DebuggerLanguagePlugins.DebuggerLanguagePlugin}
@@ -71,7 +71,7 @@ export class LanguageExtensionEndpoint {
    * @param {string} symbolsURL - URL of a file providing the debug symbols for this module
    * @param {!Bindings.DebuggerLanguagePlugins.RawModule} rawModule
    * @return {!Promise<!Array<string>>} - An array of URLs for the source files for the raw module
-  */
+   */
   addRawModule(rawModuleId, symbolsURL, rawModule) {
     return /** @type {!Promise<!Array<string>>} */ (
         this._sendRequest(this._commands.AddRawModule, {rawModuleId, symbolsURL, rawModule}));
@@ -91,7 +91,7 @@ export class LanguageExtensionEndpoint {
    * @override
    * @param {!Bindings.DebuggerLanguagePlugins.SourceLocation} sourceLocation
    * @return {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.RawLocationRange>>}
-  */
+   */
   sourceLocationToRawLocation(sourceLocation) {
     return /** @type {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.RawLocationRange>>} */ (
         this._sendRequest(this._commands.SourceLocationToRawLocation, {sourceLocation}));
@@ -101,17 +101,25 @@ export class LanguageExtensionEndpoint {
    * @override
    * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} rawLocation
    * @return {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.SourceLocation>>}
-  */
+   */
   rawLocationToSourceLocation(rawLocation) {
     return /** @type {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.SourceLocation>>} */ (
         this._sendRequest(this._commands.RawLocationToSourceLocation, {rawLocation}));
+  }
+
+  /**
+   * @override
+   */
+  getScopeInfo(type) {
+    return /** @type {!Promise<!Bindings.DebuggerLanguagePlugins.ScopeInfo>} */ (
+        this._sendRequest(this._commands.GetScopeInfo, {type}));
   }
 
   /** List all variables in lexical scope at a given location in a raw module
    * @override
    * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} rawLocation
    * @return {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.Variable>>}
-  */
+   */
   listVariablesInScope(rawLocation) {
     return /** @type {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.Variable>>} */ (
         this._sendRequest(this._commands.ListVariablesInScope, {rawLocation}));
@@ -122,10 +130,63 @@ export class LanguageExtensionEndpoint {
    * @param {string} name
    * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} location
    * @return {!Promise<?Bindings.DebuggerLanguagePlugins.EvaluatorModule>}
-  */
+   */
   evaluateVariable(name, location) {
     return /** @type {!Promise<?Bindings.DebuggerLanguagePlugins.EvaluatorModule>}*/ (
         this._sendRequest(this._commands.EvaluateVariable, {name, location}));
+  }
+
+  /** List all function names (including inlined frames) at location
+   * @override
+   * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} rawLocation
+   * @return {!Promise<!{frames: !Array<!Bindings.DebuggerLanguagePlugins.FunctionInfo>}>}
+   */
+  getFunctionInfo(rawLocation) {
+    return /** @type {!Promise<!{frames: !Array<!Bindings.DebuggerLanguagePlugins.FunctionInfo>}>} */ (
+        this._sendRequest(this._commands.GetFunctionInfo, {rawLocation}));
+  }
+
+  /** Find locations in raw modules corresponding to the inline function
+   *  that rawLocation is in.
+   * @override
+   * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} rawLocation
+   * @return {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.RawLocationRange>>}
+   */
+  getInlinedFunctionRanges(rawLocation) {
+    return /** @type {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.RawLocationRange>>} */ (
+        this._sendRequest(this._commands.GetInlinedFunctionRanges, {rawLocation}));
+  }
+
+  /** Find locations in raw modules corresponding to inline functions
+   *  called by the function or inline frame that rawLocation is in.
+   * @override
+   * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} rawLocation
+   * @return {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.RawLocationRange>>}
+   */
+  getInlinedCalleesRanges(rawLocation) {
+    return /** @type {!Promise<!Array<!Bindings.DebuggerLanguagePlugins.RawLocationRange>>} */ (
+        this._sendRequest(this._commands.GetInlinedCalleesRanges, {rawLocation}));
+  }
+  /**
+   * @override
+   * @param {string} expression
+   * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} context
+   * @return {!Promise<?{typeInfos: !Array<!Bindings.DebuggerLanguagePlugins.TypeInfo>, base: !Bindings.DebuggerLanguagePlugins.EvalBase}>}
+   */
+  getTypeInfo(expression, context) {
+    return /** @type {!Promise<?{typeInfos: !Array<!Bindings.DebuggerLanguagePlugins.TypeInfo>, base: !Bindings.DebuggerLanguagePlugins.EvalBase}>} */ (
+        this._sendRequest(this._commands.GetTypeInfo, {expression, context}));
+  }
+
+  /**
+   * @override
+   * @param {string|{base: !Bindings.DebuggerLanguagePlugins.EvalBase, field: !Array<!Bindings.DebuggerLanguagePlugins.FieldInfo>}} expressionOrField
+   * @param {!Bindings.DebuggerLanguagePlugins.RawLocation} context
+   * @return {!Promise<!{js: string}>}
+   */
+  getFormatter(expressionOrField, context) {
+    return /** @type {!Promise<!{js: string}>} */ (
+        this._sendRequest(this._commands.GetFormatter, {expressionOrField, context}));
   }
 
   /**

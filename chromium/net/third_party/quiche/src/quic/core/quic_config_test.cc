@@ -55,6 +55,9 @@ TEST_P(QuicConfigTest, SetDefaults) {
   EXPECT_FALSE(config_.HasReceivedInitialMaxStreamDataBytesUnidirectional());
   EXPECT_EQ(kMaxIncomingPacketSize, config_.GetMaxPacketSizeToSend());
   EXPECT_FALSE(config_.HasReceivedMaxPacketSize());
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+  EXPECT_FALSE(config_.KeyUpdateSupportedLocally());
+  EXPECT_FALSE(config_.KeyUpdateSupportedRemotely());
 }
 
 TEST_P(QuicConfigTest, AutoSetIetfFlowControl) {
@@ -505,8 +508,7 @@ TEST_P(QuicConfigTest, FillTransportParams) {
   EXPECT_EQ(
       static_cast<uint64_t>(kDefaultMinAckDelayTimeMs) * kNumMicrosPerMilli,
       params.min_ack_delay_us.value());
-  EXPECT_EQ(params.key_update_not_yet_supported,
-            GetQuicReloadableFlag(quic_send_key_update_not_yet_supported));
+  EXPECT_TRUE(params.key_update_not_yet_supported);
 }
 
 TEST_P(QuicConfigTest, ProcessTransportParametersServer) {
@@ -672,6 +674,83 @@ TEST_P(QuicConfigTest, DisableMigrationTransportParameter) {
                   params, /* is_resumption = */ false, &error_details),
               IsQuicNoError());
   EXPECT_TRUE(config_.DisableConnectionMigration());
+}
+
+TEST_P(QuicConfigTest, KeyUpdateNotYetSupportedTransportParameterNorLocally) {
+  if (!version_.UsesTls()) {
+    // TransportParameters are only used for QUIC+TLS.
+    return;
+  }
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+  EXPECT_FALSE(config_.KeyUpdateSupportedLocally());
+  EXPECT_FALSE(config_.KeyUpdateSupportedRemotely());
+  TransportParameters params;
+  params.key_update_not_yet_supported = true;
+  std::string error_details;
+  EXPECT_THAT(config_.ProcessTransportParameters(
+                  params, /* is_resumption = */ false, &error_details),
+              IsQuicNoError());
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+  EXPECT_FALSE(config_.KeyUpdateSupportedLocally());
+  EXPECT_FALSE(config_.KeyUpdateSupportedRemotely());
+}
+
+TEST_P(QuicConfigTest, KeyUpdateNotYetSupportedTransportParameter) {
+  if (!version_.UsesTls()) {
+    // TransportParameters are only used for QUIC+TLS.
+    return;
+  }
+  config_.SetKeyUpdateSupportedLocally();
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+  EXPECT_TRUE(config_.KeyUpdateSupportedLocally());
+
+  TransportParameters params;
+  params.key_update_not_yet_supported = true;
+  std::string error_details;
+  EXPECT_THAT(config_.ProcessTransportParameters(
+                  params, /* is_resumption = */ false, &error_details),
+              IsQuicNoError());
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+  EXPECT_TRUE(config_.KeyUpdateSupportedLocally());
+}
+
+TEST_P(QuicConfigTest, KeyUpdateSupportedRemotelyButNotLocally) {
+  if (!version_.UsesTls()) {
+    // TransportParameters are only used for QUIC+TLS.
+    return;
+  }
+  EXPECT_FALSE(config_.KeyUpdateSupportedLocally());
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+
+  TransportParameters params;
+  params.key_update_not_yet_supported = false;
+  std::string error_details;
+  EXPECT_THAT(config_.ProcessTransportParameters(
+                  params, /* is_resumption = */ false, &error_details),
+              IsQuicNoError());
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+  EXPECT_FALSE(config_.KeyUpdateSupportedLocally());
+  EXPECT_TRUE(config_.KeyUpdateSupportedRemotely());
+}
+
+TEST_P(QuicConfigTest, KeyUpdateSupported) {
+  if (!version_.UsesTls()) {
+    // TransportParameters are only used for QUIC+TLS.
+    return;
+  }
+  config_.SetKeyUpdateSupportedLocally();
+  EXPECT_TRUE(config_.KeyUpdateSupportedLocally());
+  EXPECT_FALSE(config_.KeyUpdateSupportedForConnection());
+
+  TransportParameters params;
+  params.key_update_not_yet_supported = false;
+  std::string error_details;
+  EXPECT_THAT(config_.ProcessTransportParameters(
+                  params, /* is_resumption = */ false, &error_details),
+              IsQuicNoError());
+  EXPECT_TRUE(config_.KeyUpdateSupportedForConnection());
+  EXPECT_TRUE(config_.KeyUpdateSupportedLocally());
+  EXPECT_TRUE(config_.KeyUpdateSupportedRemotely());
 }
 
 }  // namespace

@@ -21,7 +21,8 @@
 namespace tint {
 namespace ast {
 
-StructMemberDecoration::StructMemberDecoration() = default;
+StructMemberDecoration::StructMemberDecoration(const Source& source)
+    : Decoration(DecorationKind::kStructMember, source) {}
 
 StructMemberDecoration::~StructMemberDecoration() = default;
 

@@ -37,7 +37,7 @@ export class ImagePreview {
       imageURL = precomputedFeatures.currentSrc;
       resource = resourceTreeModel.resourceForURL(imageURL);
     }
-    if (!isImageResource(resource)) {
+    if (!resource || !isImageResource(resource)) {
       return Promise.resolve(/** @type {?Element} */ (null));
     }
 
@@ -65,7 +65,7 @@ export class ImagePreview {
 
     function buildContent() {
       const container = document.createElement('table');
-      UI.Utils.appendStyle(container, 'components/imagePreview.css');
+      UI.Utils.appendStyle(container, 'components/imagePreview.css', {enableLegacyPatching: true});
       container.className = 'image-preview-container';
       const intrinsicWidth = imageElement.naturalWidth;
       const intrinsicHeight = imageElement.naturalHeight;

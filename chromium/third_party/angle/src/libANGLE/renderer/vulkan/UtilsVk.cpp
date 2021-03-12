@@ -15,6 +15,7 @@
 #include "libANGLE/renderer/vulkan/GlslangWrapperVk.h"
 #include "libANGLE/renderer/vulkan/RenderTargetVk.h"
 #include "libANGLE/renderer/vulkan/RendererVk.h"
+#include "libANGLE/renderer/vulkan/vk_utils.h"
 
 namespace rx
 {
@@ -134,7 +135,7 @@ uint32_t GetConvertVertexFlags(const UtilsVk::ConvertVertexParameters &params)
     return flags;
 }
 
-uint32_t GetImageClearFlags(const angle::Format &format, uint32_t attachmentIndex)
+uint32_t GetImageClearFlags(const angle::Format &format, uint32_t attachmentIndex, bool clearDepth)
 {
     constexpr uint32_t kAttachmentFlagStep =
         ImageClear_frag::kAttachment1 - ImageClear_frag::kAttachment0;
@@ -158,6 +159,11 @@ uint32_t GetImageClearFlags(const angle::Format &format, uint32_t attachmentInde
     else
     {
         flags |= ImageClear_frag::kIsFloat;
+    }
+
+    if (clearDepth)
+    {
+        flags |= ImageClear_frag::kClearDepth;
     }
 
     return flags;
@@ -525,13 +531,15 @@ uint32_t UtilsVk::GetGenerateMipmapMaxLevels(ContextVk *contextVk)
                : kGenerateMipmapMaxLevels;
 }
 
-UtilsVk::UtilsVk() = default;
+UtilsVk::UtilsVk() : mObjectPerfCounters{} {}
 
 UtilsVk::~UtilsVk() = default;
 
 void UtilsVk::destroy(RendererVk *renderer)
 {
     VkDevice device = renderer->getDevice();
+
+    outputCumulativePerfCounters();
 
     for (Function f : angle::AllEnums<Function>())
     {
@@ -964,6 +972,7 @@ angle::Result UtilsVk::setupProgram(ContextVk *contextVk,
         vk::PipelineAndSerial *pipelineAndSerial;
         program->setShader(gl::ShaderType::Compute, fsCsShader);
         ANGLE_TRY(program->getComputePipeline(contextVk, pipelineLayout.get(), &pipelineAndSerial));
+        // TODO: https://issuetracker.google.com/issues/169788986: Update serial handling.
         pipelineAndSerial->updateSerial(serial);
         commandBuffer->bindComputePipeline(pipelineAndSerial->get());
     }
@@ -980,10 +989,9 @@ angle::Result UtilsVk::setupProgram(ContextVk *contextVk,
         vk::PipelineHelper *helper;
         vk::PipelineCache *pipelineCache = nullptr;
         ANGLE_TRY(renderer->getPipelineCache(&pipelineCache));
-        ANGLE_TRY(program->getGraphicsPipeline(contextVk, &contextVk->getRenderPassCache(),
-                                               *pipelineCache, serial, pipelineLayout.get(),
-                                               *pipelineDesc, gl::AttributesMask(),
-                                               gl::ComponentTypeMask(), &descPtr, &helper));
+        ANGLE_TRY(program->getGraphicsPipeline(
+            contextVk, &contextVk->getRenderPassCache(), *pipelineCache, pipelineLayout.get(),
+            *pipelineDesc, gl::AttributesMask(), gl::ComponentTypeMask(), &descPtr, &helper));
         helper->updateSerial(serial);
         commandBuffer->bindGraphicsPipeline(helper->getPipeline());
     }
@@ -1402,39 +1410,67 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
         ANGLE_TRY(contextVk->startRenderPass(scissoredRenderArea, &commandBuffer));
     }
 
-    if (params.clearStencil)
+    if (params.clearStencil || params.clearDepth)
     {
         vk::CommandBufferHelper *renderpassCommands;
         renderpassCommands = &contextVk->getStartedRenderPassCommands();
 
-        // Because clear is not affected by stencil test, we have to explicitly mark stencil write
-        // here.
-        renderpassCommands->onStencilAccess(vk::ResourceAccess::Write);
+        // Because clear is not affected by depth/stencil test, we have to explicitly mark
+        // depth/stencil write here.
+        if (params.clearDepth)
+        {
+            renderpassCommands->onDepthAccess(vk::ResourceAccess::Write);
+        }
+        if (params.clearStencil)
+        {
+            renderpassCommands->onStencilAccess(vk::ResourceAccess::Write);
+        }
 
         // We may have changed depth stencil access mode, so update read only depth stencil mode
         // here.
-        ANGLE_TRY(framebuffer->updateRenderPassReadOnlyDepthMode(contextVk, renderpassCommands));
+        framebuffer->updateRenderPassReadOnlyDepthMode(contextVk, renderpassCommands);
     }
 
     ImageClearShaderParams shaderParams;
     shaderParams.clearValue = params.colorClearValue;
+    shaderParams.clearDepth = params.depthStencilClearValue.depth;
 
     vk::GraphicsPipelineDesc pipelineDesc;
     pipelineDesc.initDefaults();
     pipelineDesc.setCullMode(VK_CULL_MODE_NONE);
-    pipelineDesc.setColorWriteMask(0, gl::DrawBufferMask(), gl::DrawBufferMask());
+    pipelineDesc.setColorWriteMasks(0, gl::DrawBufferMask(), gl::DrawBufferMask());
     pipelineDesc.setSingleColorWriteMask(params.colorAttachmentIndexGL, params.colorMaskFlags);
     pipelineDesc.setRasterizationSamples(framebuffer->getSamples());
     pipelineDesc.setRenderPassDesc(framebuffer->getRenderPassDesc());
     // Note: depth test is disabled by default so this should be unnecessary, but works around an
     // Intel bug on windows.  http://anglebug.com/3348
     pipelineDesc.setDepthWriteEnabled(false);
+    // Clears can be done on a currently open render pass, so make sure the correct subpass index is
+    // used.
+    pipelineDesc.setSubpass(contextVk->getCurrentSubpassIndex());
+
+    // Clear depth by enabling depth clamping and setting the viewport depth range to the clear
+    // value if possible.  Otherwise use the shader to export depth.
+    const bool supportsDepthClamp =
+        contextVk->getRenderer()->getPhysicalDeviceFeatures().depthClamp == VK_TRUE;
+    if (params.clearDepth)
+    {
+        pipelineDesc.setDepthTestEnabled(true);
+        pipelineDesc.setDepthWriteEnabled(true);
+        pipelineDesc.setDepthFunc(VK_COMPARE_OP_ALWAYS);
+        if (supportsDepthClamp)
+        {
+            // Note: this path requires the depthClamp Vulkan feature.
+            pipelineDesc.setDepthClampEnabled(true);
+        }
+    }
 
     // Clear stencil by enabling stencil write with the right mask.
     if (params.clearStencil)
     {
-        const uint8_t compareMask       = 0xFF;
-        const uint8_t clearStencilValue = params.stencilClearValue;
+        const uint8_t compareMask = 0xFF;
+        const uint8_t clearStencilValue =
+            static_cast<uint8_t>(params.depthStencilClearValue.stencil);
 
         pipelineDesc.setStencilTestEnabled(true);
         pipelineDesc.setStencilFrontFuncs(clearStencilValue, VK_COMPARE_OP_ALWAYS, compareMask);
@@ -1450,11 +1486,17 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     VkViewport viewport;
     gl::Rectangle completeRenderArea = framebuffer->getRotatedCompleteRenderArea(contextVk);
     bool invertViewport              = contextVk->isViewportFlipEnabledForDrawFBO();
-    gl_vk::GetViewport(completeRenderArea, 0.0f, 1.0f, invertViewport, completeRenderArea.height,
-                       &viewport);
+    // Set depth range to clear value.  If clearing depth, the vertex shader depth output is clamped
+    // to this value, thus clearing the depth buffer to the desired clear value.
+    const float clearDepthValue = params.depthStencilClearValue.depth;
+    gl_vk::GetViewport(completeRenderArea, clearDepthValue, clearDepthValue, invertViewport,
+                       completeRenderArea.height, &viewport);
     pipelineDesc.setViewport(viewport);
 
-    pipelineDesc.setScissor(gl_vk::GetRect(params.clearArea));
+    // Scissored clears can create a large number of pipelines in some tests.  Use dynamic state for
+    // scissors.
+    pipelineDesc.setDynamicScissor();
+    const VkRect2D scissor = gl_vk::GetRect(params.clearArea);
 
     vk::ShaderLibrary &shaderLibrary                    = contextVk->getShaderLibrary();
     vk::RefCounted<vk::ShaderAndSerial> *vertexShader   = nullptr;
@@ -1464,7 +1506,8 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     ANGLE_TRY(shaderLibrary.getFullScreenQuad_vert(contextVk, 0, &vertexShader));
     if (params.clearColor)
     {
-        uint32_t flags = GetImageClearFlags(*params.colorFormat, params.colorAttachmentIndexGL);
+        uint32_t flags = GetImageClearFlags(*params.colorFormat, params.colorAttachmentIndexGL,
+                                            params.clearDepth && !supportsDepthClamp);
         ANGLE_TRY(shaderLibrary.getImageClear_frag(contextVk, flags, &fragmentShader));
         imageClearProgram = &mImageClearProgram[flags];
     }
@@ -1475,8 +1518,14 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
 
     // Make sure this draw call doesn't count towards occlusion query results.
     ANGLE_TRY(contextVk->pauseOcclusionQueryIfActive());
+    commandBuffer->setScissor(0, 1, &scissor);
     commandBuffer->draw(3, 0);
-    return contextVk->resumeOcclusionQueryIfActive();
+    ANGLE_TRY(contextVk->resumeOcclusionQueryIfActive());
+
+    // Make sure what's bound here is correctly reverted on the next draw.
+    contextVk->invalidateGraphicsPipelineAndDescriptorSets();
+
+    return angle::Result::Continue;
 }
 
 angle::Result UtilsVk::colorBlitResolve(ContextVk *contextVk,
@@ -1636,13 +1685,15 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     pipelineDesc.initDefaults();
     if (blitColor)
     {
-        pipelineDesc.setColorWriteMask(kAllColorComponents,
-                                       framebuffer->getEmulatedAlphaAttachmentMask(),
-                                       ~gl::DrawBufferMask());
+        pipelineDesc.setColorWriteMasks(
+            gl::BlendStateExt::ColorMaskStorage::GetReplicatedValue(
+                kAllColorComponents, gl::BlendStateExt::ColorMaskStorage::GetMask(
+                                         framebuffer->getRenderPassDesc().colorAttachmentRange())),
+            framebuffer->getEmulatedAlphaAttachmentMask(), ~gl::DrawBufferMask());
     }
     else
     {
-        pipelineDesc.setColorWriteMask(0, gl::DrawBufferMask(), gl::DrawBufferMask());
+        pipelineDesc.setColorWriteMasks(0, gl::DrawBufferMask(), gl::DrawBufferMask());
     }
     pipelineDesc.setCullMode(VK_CULL_MODE_NONE);
     pipelineDesc.setRenderPassDesc(framebuffer->getRenderPassDesc());
@@ -1663,9 +1714,27 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     pipelineDesc.setScissor(gl_vk::GetRect(params.blitArea));
 
     vk::CommandBuffer *commandBuffer;
-    ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, false, params.blitArea, &commandBuffer));
+    ANGLE_TRY(framebuffer->startNewRenderPass(contextVk, params.blitArea, &commandBuffer));
     contextVk->onImageRenderPassRead(src->getAspectFlags(), vk::ImageLayout::FragmentShaderReadOnly,
                                      src);
+
+    vk::CommandBufferHelper *renderPassCommands = &contextVk->getStartedRenderPassCommands();
+    if (blitDepth)
+    {
+        // Explicitly mark a depth write because we are modifying the depth buffer.
+        renderPassCommands->onDepthAccess(vk::ResourceAccess::Write);
+    }
+    if (blitStencil)
+    {
+        // Explicitly mark a stencil write because we are modifying the stencil buffer.
+        renderPassCommands->onStencilAccess(vk::ResourceAccess::Write);
+    }
+    if (blitDepth || blitStencil)
+    {
+        // Because we may have changed the depth stencil access mode, update read only depth mode
+        // now.
+        framebuffer->updateRenderPassReadOnlyDepthMode(contextVk, renderPassCommands);
+    }
 
     VkDescriptorImageInfo imageInfos[2] = {};
 
@@ -1854,8 +1923,9 @@ angle::Result UtilsVk::stencilBlitResolveNoShaderExport(ContextVk *contextVk,
 
     // Change source layout prior to computation.
     ANGLE_TRY(contextVk->onImageComputeShaderRead(src->getAspectFlags(), src));
-    ANGLE_TRY(
-        contextVk->onImageTransferWrite(depthStencilImage->getAspectFlags(), depthStencilImage));
+    ANGLE_TRY(contextVk->onImageTransferWrite(
+        depthStencilRenderTarget->getLevelIndex(), 1, depthStencilRenderTarget->getLayerIndex(), 1,
+        depthStencilImage->getAspectFlags(), depthStencilImage));
 
     vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
 
@@ -2086,8 +2156,8 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     // Change source layout inside render pass.
     contextVk->onImageRenderPassRead(VK_IMAGE_ASPECT_COLOR_BIT,
                                      vk::ImageLayout::FragmentShaderReadOnly, src);
-    contextVk->onImageRenderPassWrite(VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment,
-                                      dest);
+    contextVk->onImageRenderPassWrite(params.dstMip, params.dstLayer, 1, VK_IMAGE_ASPECT_COLOR_BIT,
+                                      vk::ImageLayout::ColorAttachment, dest);
 
     VkDescriptorImageInfo imageInfo = {};
     imageInfo.imageView             = srcView->getHandle();
@@ -2399,8 +2469,11 @@ angle::Result UtilsVk::cullOverlayWidgets(ContextVk *contextVk,
     ANGLE_TRY(allocateDescriptorSet(contextVk, Function::OverlayCull, &descriptorPoolBinding,
                                     &descriptorSet));
 
+    ASSERT(dest->getLevelCount() == 1 && dest->getLayerCount() == 1 &&
+           dest->getBaseLevel() == gl::LevelIndex(0));
     ANGLE_TRY(contextVk->onBufferComputeShaderRead(enabledWidgetsBuffer));
-    ANGLE_TRY(contextVk->onImageComputeShaderWrite(VK_IMAGE_ASPECT_COLOR_BIT, dest));
+    ANGLE_TRY(contextVk->onImageComputeShaderWrite(gl::LevelIndex(0), 1, 0, 1,
+                                                   VK_IMAGE_ASPECT_COLOR_BIT, dest));
 
     vk::CommandBuffer &commandBuffer = contextVk->getOutsideRenderPassCommandBuffer();
 
@@ -2469,7 +2542,10 @@ angle::Result UtilsVk::drawOverlay(ContextVk *contextVk,
     ANGLE_TRY(allocateDescriptorSet(contextVk, Function::OverlayDraw, &descriptorPoolBinding,
                                     &descriptorSet));
 
-    ANGLE_TRY(contextVk->onImageComputeShaderWrite(VK_IMAGE_ASPECT_COLOR_BIT, dest));
+    ASSERT(dest->getLevelCount() == 1 && dest->getLayerCount() == 1 &&
+           dest->getBaseLevel() == gl::LevelIndex(0));
+    ANGLE_TRY(contextVk->onImageComputeShaderWrite(gl::LevelIndex(0), 1, 0, 1,
+                                                   VK_IMAGE_ASPECT_COLOR_BIT, dest));
     ANGLE_TRY(contextVk->onImageComputeShaderRead(VK_IMAGE_ASPECT_COLOR_BIT, culledWidgets));
     ANGLE_TRY(contextVk->onImageComputeShaderRead(VK_IMAGE_ASPECT_COLOR_BIT, font));
     ANGLE_TRY(contextVk->onBufferComputeShaderRead(textWidgetsBuffer));
@@ -2558,19 +2634,33 @@ angle::Result UtilsVk::allocateDescriptorSet(ContextVk *contextVk,
             .get()
             .ptr(),
         1, bindingOut, descriptorSetOut));
-    bindingOut->get().updateSerial(contextVk->getCurrentQueueSerial());
+
+    mObjectPerfCounters.descriptorSetsAllocated++;
+
     return angle::Result::Continue;
 }
 
 UtilsVk::ClearFramebufferParameters::ClearFramebufferParameters()
     : clearColor(false),
+      clearDepth(false),
       clearStencil(false),
       stencilMask(0),
       colorMaskFlags(0),
       colorAttachmentIndexGL(0),
       colorFormat(nullptr),
       colorClearValue{},
-      stencilClearValue(0)
+      depthStencilClearValue{}
 {}
+
+// Requires that trace is enabled to see the output, which is supported with is_debug=true
+void UtilsVk::outputCumulativePerfCounters()
+{
+    if (!vk::kOutputCumulativePerfCounters)
+    {
+        return;
+    }
+
+    INFO() << "Utils Descriptor Set Allocations: " << mObjectPerfCounters.descriptorSetsAllocated;
+}
 
 }  // namespace rx

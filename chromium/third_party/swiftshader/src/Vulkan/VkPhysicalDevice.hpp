@@ -46,9 +46,11 @@ public:
 	void getProperties(VkPhysicalDeviceProtectedMemoryProperties *properties) const;
 	void getProperties(VkPhysicalDeviceSubgroupProperties *properties) const;
 	void getProperties(const VkExternalMemoryHandleTypeFlagBits *handleType, VkExternalImageFormatProperties *properties) const;
+	void getProperties(const VkExternalMemoryHandleTypeFlagBits *handleType, VkExternalBufferProperties *properties) const;
 	void getProperties(VkSamplerYcbcrConversionImageFormatProperties *properties) const;
 #ifdef __ANDROID__
 	void getProperties(VkPhysicalDevicePresentationPropertiesANDROID *properties) const;
+	void getProperties(VkAndroidHardwareBufferUsageANDROID *properties) const;
 #endif
 	void getProperties(const VkPhysicalDeviceExternalBufferInfo *pExternalBufferInfo, VkExternalBufferProperties *pExternalBufferProperties) const;
 	void getProperties(const VkPhysicalDeviceExternalFenceInfo *pExternalFenceInfo, VkExternalFenceProperties *pExternalFenceProperties) const;
@@ -57,8 +59,9 @@ public:
 	void getProperties(VkPhysicalDeviceDriverPropertiesKHR *properties) const;
 	void getProperties(VkPhysicalDeviceLineRasterizationPropertiesEXT *properties) const;
 	void getProperties(VkPhysicalDeviceProvokingVertexPropertiesEXT *properties) const;
+	void getProperties(VkPhysicalDeviceFloatControlsProperties *) const;
 
-	void getFormatProperties(Format format, VkFormatProperties *pFormatProperties) const;
+	static void GetFormatProperties(Format format, VkFormatProperties *pFormatProperties);
 	void getImageFormatProperties(Format format, VkImageType type, VkImageTiling tiling,
 	                              VkImageUsageFlags usage, VkImageCreateFlags flags,
 	                              VkImageFormatProperties *pImageFormatProperties) const;
@@ -67,7 +70,7 @@ public:
 	                              VkQueueFamilyProperties *pQueueFamilyProperties) const;
 	void getQueueFamilyProperties(uint32_t pQueueFamilyPropertyCount,
 	                              VkQueueFamilyProperties2 *pQueueFamilyProperties) const;
-	const VkPhysicalDeviceMemoryProperties &getMemoryProperties() const;
+	static const VkPhysicalDeviceMemoryProperties &GetMemoryProperties();
 
 private:
 	const VkPhysicalDeviceLimits &getLimits() const;

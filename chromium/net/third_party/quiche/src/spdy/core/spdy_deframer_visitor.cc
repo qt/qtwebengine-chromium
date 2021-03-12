@@ -11,10 +11,11 @@
 #include <limits>
 #include <memory>
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/http2/platform/api/http2_macros.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/spdy/core/hpack/hpack_constants.h"
 #include "net/third_party/quiche/src/spdy/core/mock_spdy_framer_visitor.h"
+#include "net/third_party/quiche/src/spdy/core/recording_headers_handler.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_frame_reader.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_test_utils.h"
@@ -138,7 +139,7 @@ class SpdyTestDeframerImpl : public SpdyTestDeframer,
   // alphabetical order for ease of navigation, and are not in same order
   // as in SpdyFramerVisitorInterface.
   void OnAltSvc(SpdyStreamId stream_id,
-                quiche::QuicheStringPiece origin,
+                absl::string_view origin,
                 const SpdyAltSvcWireFormat::AlternativeServiceVector&
                     altsvc_vector) override;
   void OnContinuation(SpdyStreamId stream_id, bool end) override;
@@ -185,8 +186,7 @@ class SpdyTestDeframerImpl : public SpdyTestDeframer,
   // Callbacks defined in SpdyHeadersHandlerInterface.
 
   void OnHeaderBlockStart() override;
-  void OnHeader(quiche::QuicheStringPiece key,
-                quiche::QuicheStringPiece value) override;
+  void OnHeader(absl::string_view key, absl::string_view value) override;
   void OnHeaderBlockEnd(size_t header_bytes_parsed,
                         size_t compressed_header_bytes_parsed) override;
 
@@ -227,7 +227,7 @@ class SpdyTestDeframerImpl : public SpdyTestDeframer,
   std::unique_ptr<std::string> goaway_description_;
   std::unique_ptr<StringPairVector> headers_;
   std::unique_ptr<SettingVector> settings_;
-  std::unique_ptr<TestHeadersHandler> headers_handler_;
+  std::unique_ptr<RecordingHeadersHandler> headers_handler_;
 
   std::unique_ptr<SpdyGoAwayIR> goaway_ir_;
   std::unique_ptr<SpdyHeadersIR> headers_ir_;
@@ -411,7 +411,7 @@ bool SpdyTestDeframerImpl::AtFrameEnd() {
 
 void SpdyTestDeframerImpl::OnAltSvc(
     SpdyStreamId stream_id,
-    quiche::QuicheStringPiece origin,
+    absl::string_view origin,
     const SpdyAltSvcWireFormat::AlternativeServiceVector& altsvc_vector) {
   SPDY_DVLOG(1) << "OnAltSvc stream_id: " << stream_id;
   CHECK_EQ(frame_type_, UNSET)
@@ -532,7 +532,7 @@ void SpdyTestDeframerImpl::OnHeaders(SpdyStreamId stream_id,
   end_ = end;
 
   headers_ = std::make_unique<StringPairVector>();
-  headers_handler_ = std::make_unique<TestHeadersHandler>();
+  headers_handler_ = std::make_unique<RecordingHeadersHandler>();
   headers_ir_ = std::make_unique<SpdyHeadersIR>(stream_id);
   headers_ir_->set_fin(fin);
   if (has_priority) {
@@ -588,7 +588,7 @@ void SpdyTestDeframerImpl::OnPushPromise(SpdyStreamId stream_id,
   end_ = end;
 
   headers_ = std::make_unique<StringPairVector>();
-  headers_handler_ = std::make_unique<TestHeadersHandler>();
+  headers_handler_ = std::make_unique<RecordingHeadersHandler>();
   push_promise_ir_ =
       std::make_unique<SpdyPushPromiseIR>(stream_id, promised_stream_id);
 }
@@ -757,8 +757,8 @@ void SpdyTestDeframerImpl::OnHeaderBlockStart() {
   got_hpack_end_ = false;
 }
 
-void SpdyTestDeframerImpl::OnHeader(quiche::QuicheStringPiece key,
-                                    quiche::QuicheStringPiece value) {
+void SpdyTestDeframerImpl::OnHeader(absl::string_view key,
+                                    absl::string_view value) {
   CHECK(frame_type_ == HEADERS || frame_type_ == CONTINUATION ||
         frame_type_ == PUSH_PROMISE)
       << "   frame_type_=" << Http2FrameTypeToString(frame_type_);

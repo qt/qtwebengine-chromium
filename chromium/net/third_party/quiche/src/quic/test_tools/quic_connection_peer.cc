@@ -4,13 +4,13 @@
 
 #include "net/third_party/quiche/src/quic/test_tools/quic_connection_peer.h"
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/congestion_control/send_algorithm_interface.h"
 #include "net/third_party/quiche/src/quic/core/quic_packet_writer.h"
 #include "net/third_party/quiche/src/quic/core/quic_received_packet_manager.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_framer_peer.h"
 #include "net/third_party/quiche/src/quic/test_tools/quic_sent_packet_manager_peer.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 namespace test {
@@ -94,9 +94,8 @@ void QuicConnectionPeer::SwapCrypters(QuicConnection* connection,
 }
 
 // static
-void QuicConnectionPeer::SetCurrentPacket(
-    QuicConnection* connection,
-    quiche::QuicheStringPiece current_packet) {
+void QuicConnectionPeer::SetCurrentPacket(QuicConnection* connection,
+                                          absl::string_view current_packet) {
   connection->current_packet_data_ = current_packet.data();
   connection->last_size_ = current_packet.size();
 }
@@ -149,6 +148,12 @@ QuicAlarm* QuicConnectionPeer::GetMtuDiscoveryAlarm(
 QuicAlarm* QuicConnectionPeer::GetProcessUndecryptablePacketsAlarm(
     QuicConnection* connection) {
   return connection->process_undecryptable_packets_alarm_.get();
+}
+
+// static
+QuicAlarm* QuicConnectionPeer::GetDiscardPreviousOneRttKeysAlarm(
+    QuicConnection* connection) {
+  return connection->discard_previous_one_rtt_keys_alarm_.get();
 }
 
 // static
@@ -292,6 +297,12 @@ void QuicConnectionPeer::SetAddressValidated(QuicConnection* connection) {
 }
 
 // static
+void QuicConnectionPeer::SetEnableAeadLimits(QuicConnection* connection,
+                                             bool enabled) {
+  connection->enable_aead_limits_ = enabled;
+}
+
+// static
 void QuicConnectionPeer::SendConnectionClosePacket(QuicConnection* connection,
                                                    QuicErrorCode error,
                                                    const std::string& details) {
@@ -377,6 +388,15 @@ const QuicCircularDeque<std::pair<QuicPathFrameBuffer, QuicSocketAddress>>&
 QuicConnectionPeer::pending_path_challenge_payloads(
     QuicConnection* connection) {
   return connection->pending_path_challenge_payloads_;
+}
+
+void QuicConnectionPeer::SetConnectionClose(QuicConnection* connection) {
+  connection->connected_ = false;
+}
+
+// static
+void QuicConnectionPeer::SendPing(QuicConnection* connection) {
+  connection->SendPingAtLevel(connection->encryption_level());
 }
 
 }  // namespace test

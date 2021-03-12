@@ -51,6 +51,7 @@ constexpr char kHandleSuspendImminent[] = "HandleSuspendImminent";
 constexpr char kHandleSuspendDone[] = "HandleSuspendDone";
 constexpr char kGetSupportedCapabilities[] = "GetSupportedCapabilities";
 constexpr char kSetLongTermKeys[] = "SetLongTermKeys";
+constexpr char kConnectDevice[] = "ConnectDevice";
 
 // Bluetooth Adapter properties.
 constexpr char kAddressProperty[] = "Address";

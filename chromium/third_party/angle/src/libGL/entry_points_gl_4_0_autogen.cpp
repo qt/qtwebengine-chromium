@@ -30,8 +30,8 @@ namespace gl
 void GL_APIENTRY BeginQueryIndexed(GLenum target, GLuint index, GLuint id)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glBeginQueryIndexed",
-          "context = %d, GLenum target = %s, GLuint index = %u, GLuint id = %u", CID(context),
+    EVENT(context, gl::EntryPoint::BeginQueryIndexed, "glBeginQueryIndexed",
+          "context = %d, target = %s, index = %u, id = %u", CID(context),
           GLenumToString(GLenumGroup::QueryTarget, target), index, id);
 
     if (context)
@@ -55,8 +55,9 @@ void GL_APIENTRY BeginQueryIndexed(GLenum target, GLuint index, GLuint id)
 void GL_APIENTRY BindTransformFeedback(GLenum target, GLuint id)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glBindTransformFeedback", "context = %d, GLenum target = %s, GLuint id = %u",
-          CID(context), GLenumToString(GLenumGroup::BindTransformFeedbackTarget, target), id);
+    EVENT(context, gl::EntryPoint::BindTransformFeedback, "glBindTransformFeedback",
+          "context = %d, target = %s, id = %u", CID(context),
+          GLenumToString(GLenumGroup::BindTransformFeedbackTarget, target), id);
 
     if (context)
     {
@@ -79,9 +80,9 @@ void GL_APIENTRY BindTransformFeedback(GLenum target, GLuint id)
 void GL_APIENTRY BlendEquationSeparatei(GLuint buf, GLenum modeRGB, GLenum modeAlpha)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glBlendEquationSeparatei",
-          "context = %d, GLuint buf = %u, GLenum modeRGB = %s, GLenum modeAlpha = %s", CID(context),
-          buf, GLenumToString(GLenumGroup::BlendEquationModeEXT, modeRGB),
+    EVENT(context, gl::EntryPoint::BlendEquationSeparatei, "glBlendEquationSeparatei",
+          "context = %d, buf = %u, modeRGB = %s, modeAlpha = %s", CID(context), buf,
+          GLenumToString(GLenumGroup::BlendEquationModeEXT, modeRGB),
           GLenumToString(GLenumGroup::BlendEquationModeEXT, modeAlpha));
 
     if (context)
@@ -104,8 +105,9 @@ void GL_APIENTRY BlendEquationSeparatei(GLuint buf, GLenum modeRGB, GLenum modeA
 void GL_APIENTRY BlendEquationi(GLuint buf, GLenum mode)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glBlendEquationi", "context = %d, GLuint buf = %u, GLenum mode = %s",
-          CID(context), buf, GLenumToString(GLenumGroup::BlendEquationModeEXT, mode));
+    EVENT(context, gl::EntryPoint::BlendEquationi, "glBlendEquationi",
+          "context = %d, buf = %u, mode = %s", CID(context), buf,
+          GLenumToString(GLenumGroup::BlendEquationModeEXT, mode));
 
     if (context)
     {
@@ -128,9 +130,8 @@ void GL_APIENTRY
 BlendFuncSeparatei(GLuint buf, GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glBlendFuncSeparatei",
-          "context = %d, GLuint buf = %u, GLenum srcRGB = %s, GLenum dstRGB = %s, GLenum srcAlpha "
-          "= %s, GLenum dstAlpha = %s",
+    EVENT(context, gl::EntryPoint::BlendFuncSeparatei, "glBlendFuncSeparatei",
+          "context = %d, buf = %u, srcRGB = %s, dstRGB = %s, srcAlpha = %s, dstAlpha = %s",
           CID(context), buf, GLenumToString(GLenumGroup::BlendingFactor, srcRGB),
           GLenumToString(GLenumGroup::BlendingFactor, dstRGB),
           GLenumToString(GLenumGroup::BlendingFactor, srcAlpha),
@@ -158,8 +159,8 @@ BlendFuncSeparatei(GLuint buf, GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GL
 void GL_APIENTRY BlendFunci(GLuint buf, GLenum src, GLenum dst)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glBlendFunci",
-          "context = %d, GLuint buf = %u, GLenum src = %s, GLenum dst = %s", CID(context), buf,
+    EVENT(context, gl::EntryPoint::BlendFunci, "glBlendFunci",
+          "context = %d, buf = %u, src = %s, dst = %s", CID(context), buf,
           GLenumToString(GLenumGroup::BlendingFactor, src),
           GLenumToString(GLenumGroup::BlendingFactor, dst));
 
@@ -183,9 +184,8 @@ void GL_APIENTRY BlendFunci(GLuint buf, GLenum src, GLenum dst)
 void GL_APIENTRY DeleteTransformFeedbacks(GLsizei n, const GLuint *ids)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glDeleteTransformFeedbacks",
-          "context = %d, GLsizei n = %d, const GLuint *ids = 0x%016" PRIxPTR "", CID(context), n,
-          (uintptr_t)ids);
+    EVENT(context, gl::EntryPoint::DeleteTransformFeedbacks, "glDeleteTransformFeedbacks",
+          "context = %d, n = %d, ids = 0x%016" PRIxPTR "", CID(context), n, (uintptr_t)ids);
 
     if (context)
     {
@@ -208,8 +208,8 @@ void GL_APIENTRY DeleteTransformFeedbacks(GLsizei n, const GLuint *ids)
 void GL_APIENTRY DrawArraysIndirect(GLenum mode, const void *indirect)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glDrawArraysIndirect",
-          "context = %d, GLenum mode = %s, const void *indirect = 0x%016" PRIxPTR "", CID(context),
+    EVENT(context, gl::EntryPoint::DrawArraysIndirect, "glDrawArraysIndirect",
+          "context = %d, mode = %s, indirect = 0x%016" PRIxPTR "", CID(context),
           GLenumToString(GLenumGroup::PrimitiveType, mode), (uintptr_t)indirect);
 
     if (context)
@@ -233,10 +233,9 @@ void GL_APIENTRY DrawArraysIndirect(GLenum mode, const void *indirect)
 void GL_APIENTRY DrawElementsIndirect(GLenum mode, GLenum type, const void *indirect)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glDrawElementsIndirect",
-          "context = %d, GLenum mode = %s, GLenum type = %s, const void *indirect = 0x%016" PRIxPTR
-          "",
-          CID(context), GLenumToString(GLenumGroup::PrimitiveType, mode),
+    EVENT(context, gl::EntryPoint::DrawElementsIndirect, "glDrawElementsIndirect",
+          "context = %d, mode = %s, type = %s, indirect = 0x%016" PRIxPTR "", CID(context),
+          GLenumToString(GLenumGroup::PrimitiveType, mode),
           GLenumToString(GLenumGroup::DrawElementsType, type), (uintptr_t)indirect);
 
     if (context)
@@ -262,8 +261,9 @@ void GL_APIENTRY DrawElementsIndirect(GLenum mode, GLenum type, const void *indi
 void GL_APIENTRY DrawTransformFeedback(GLenum mode, GLuint id)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glDrawTransformFeedback", "context = %d, GLenum mode = %s, GLuint id = %u",
-          CID(context), GLenumToString(GLenumGroup::PrimitiveType, mode), id);
+    EVENT(context, gl::EntryPoint::DrawTransformFeedback, "glDrawTransformFeedback",
+          "context = %d, mode = %s, id = %u", CID(context),
+          GLenumToString(GLenumGroup::PrimitiveType, mode), id);
 
     if (context)
     {
@@ -286,8 +286,8 @@ void GL_APIENTRY DrawTransformFeedback(GLenum mode, GLuint id)
 void GL_APIENTRY DrawTransformFeedbackStream(GLenum mode, GLuint id, GLuint stream)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glDrawTransformFeedbackStream",
-          "context = %d, GLenum mode = %s, GLuint id = %u, GLuint stream = %u", CID(context),
+    EVENT(context, gl::EntryPoint::DrawTransformFeedbackStream, "glDrawTransformFeedbackStream",
+          "context = %d, mode = %s, id = %u, stream = %u", CID(context),
           GLenumToString(GLenumGroup::PrimitiveType, mode), id, stream);
 
     if (context)
@@ -311,8 +311,9 @@ void GL_APIENTRY DrawTransformFeedbackStream(GLenum mode, GLuint id, GLuint stre
 void GL_APIENTRY EndQueryIndexed(GLenum target, GLuint index)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glEndQueryIndexed", "context = %d, GLenum target = %s, GLuint index = %u",
-          CID(context), GLenumToString(GLenumGroup::QueryTarget, target), index);
+    EVENT(context, gl::EntryPoint::EndQueryIndexed, "glEndQueryIndexed",
+          "context = %d, target = %s, index = %u", CID(context),
+          GLenumToString(GLenumGroup::QueryTarget, target), index);
 
     if (context)
     {
@@ -334,9 +335,8 @@ void GL_APIENTRY EndQueryIndexed(GLenum target, GLuint index)
 void GL_APIENTRY GenTransformFeedbacks(GLsizei n, GLuint *ids)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGenTransformFeedbacks",
-          "context = %d, GLsizei n = %d, GLuint *ids = 0x%016" PRIxPTR "", CID(context), n,
-          (uintptr_t)ids);
+    EVENT(context, gl::EntryPoint::GenTransformFeedbacks, "glGenTransformFeedbacks",
+          "context = %d, n = %d, ids = 0x%016" PRIxPTR "", CID(context), n, (uintptr_t)ids);
 
     if (context)
     {
@@ -364,9 +364,9 @@ void GL_APIENTRY GetActiveSubroutineName(GLuint program,
                                          GLchar *name)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGetActiveSubroutineName",
-          "context = %d, GLuint program = %u, GLenum shadertype = %s, GLuint index = %u, GLsizei "
-          "bufsize = %d, GLsizei *length = 0x%016" PRIxPTR ", GLchar *name = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::GetActiveSubroutineName, "glGetActiveSubroutineName",
+          "context = %d, program = %u, shadertype = %s, index = %u, bufsize = %d, length = "
+          "0x%016" PRIxPTR ", name = 0x%016" PRIxPTR "",
           CID(context), program, GLenumToString(GLenumGroup::ShaderType, shadertype), index,
           bufsize, (uintptr_t)length, (uintptr_t)name);
 
@@ -399,9 +399,10 @@ void GL_APIENTRY GetActiveSubroutineUniformName(GLuint program,
                                                 GLchar *name)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGetActiveSubroutineUniformName",
-          "context = %d, GLuint program = %u, GLenum shadertype = %s, GLuint index = %u, GLsizei "
-          "bufsize = %d, GLsizei *length = 0x%016" PRIxPTR ", GLchar *name = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::GetActiveSubroutineUniformName,
+          "glGetActiveSubroutineUniformName",
+          "context = %d, program = %u, shadertype = %s, index = %u, bufsize = %d, length = "
+          "0x%016" PRIxPTR ", name = 0x%016" PRIxPTR "",
           CID(context), program, GLenumToString(GLenumGroup::ShaderType, shadertype), index,
           bufsize, (uintptr_t)length, (uintptr_t)name);
 
@@ -433,9 +434,9 @@ void GL_APIENTRY GetActiveSubroutineUniformiv(GLuint program,
                                               GLint *values)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGetActiveSubroutineUniformiv",
-          "context = %d, GLuint program = %u, GLenum shadertype = %s, GLuint index = %u, GLenum "
-          "pname = %s, GLint *values = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::GetActiveSubroutineUniformiv, "glGetActiveSubroutineUniformiv",
+          "context = %d, program = %u, shadertype = %s, index = %u, pname = %s, values = "
+          "0x%016" PRIxPTR "",
           CID(context), program, GLenumToString(GLenumGroup::ShaderType, shadertype), index,
           GLenumToString(GLenumGroup::SubroutineParameterName, pname), (uintptr_t)values);
 
@@ -462,9 +463,8 @@ void GL_APIENTRY GetActiveSubroutineUniformiv(GLuint program,
 void GL_APIENTRY GetProgramStageiv(GLuint program, GLenum shadertype, GLenum pname, GLint *values)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGetProgramStageiv",
-          "context = %d, GLuint program = %u, GLenum shadertype = %s, GLenum pname = %s, GLint "
-          "*values = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::GetProgramStageiv, "glGetProgramStageiv",
+          "context = %d, program = %u, shadertype = %s, pname = %s, values = 0x%016" PRIxPTR "",
           CID(context), program, GLenumToString(GLenumGroup::ShaderType, shadertype),
           GLenumToString(GLenumGroup::ProgramStagePName, pname), (uintptr_t)values);
 
@@ -491,9 +491,8 @@ void GL_APIENTRY GetProgramStageiv(GLuint program, GLenum shadertype, GLenum pna
 void GL_APIENTRY GetQueryIndexediv(GLenum target, GLuint index, GLenum pname, GLint *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGetQueryIndexediv",
-          "context = %d, GLenum target = %s, GLuint index = %u, GLenum pname = %s, GLint *params = "
-          "0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::GetQueryIndexediv, "glGetQueryIndexediv",
+          "context = %d, target = %s, index = %u, pname = %s, params = 0x%016" PRIxPTR "",
           CID(context), GLenumToString(GLenumGroup::DefaultGroup, target), index,
           GLenumToString(GLenumGroup::QueryParameterName, pname), (uintptr_t)params);
 
@@ -517,11 +516,9 @@ void GL_APIENTRY GetQueryIndexediv(GLenum target, GLuint index, GLenum pname, GL
 GLuint GL_APIENTRY GetSubroutineIndex(GLuint program, GLenum shadertype, const GLchar *name)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGetSubroutineIndex",
-          "context = %d, GLuint program = %u, GLenum shadertype = %s, const GLchar *name = "
-          "0x%016" PRIxPTR "",
-          CID(context), program, GLenumToString(GLenumGroup::ShaderType, shadertype),
-          (uintptr_t)name);
+    EVENT(context, gl::EntryPoint::GetSubroutineIndex, "glGetSubroutineIndex",
+          "context = %d, program = %u, shadertype = %s, name = 0x%016" PRIxPTR "", CID(context),
+          program, GLenumToString(GLenumGroup::ShaderType, shadertype), (uintptr_t)name);
 
     GLuint returnValue;
     if (context)
@@ -554,11 +551,9 @@ GLint GL_APIENTRY GetSubroutineUniformLocation(GLuint program,
                                                const GLchar *name)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glGetSubroutineUniformLocation",
-          "context = %d, GLuint program = %u, GLenum shadertype = %s, const GLchar *name = "
-          "0x%016" PRIxPTR "",
-          CID(context), program, GLenumToString(GLenumGroup::ShaderType, shadertype),
-          (uintptr_t)name);
+    EVENT(context, gl::EntryPoint::GetSubroutineUniformLocation, "glGetSubroutineUniformLocation",
+          "context = %d, program = %u, shadertype = %s, name = 0x%016" PRIxPTR "", CID(context),
+          program, GLenumToString(GLenumGroup::ShaderType, shadertype), (uintptr_t)name);
 
     GLint returnValue;
     if (context)
@@ -590,12 +585,9 @@ GLint GL_APIENTRY GetSubroutineUniformLocation(GLuint program,
 void GL_APIENTRY GetUniformSubroutineuiv(GLenum shadertype, GLint location, GLuint *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(
-        context, "glGetUniformSubroutineuiv",
-        "context = %d, GLenum shadertype = %s, GLint location = %d, GLuint *params = 0x%016" PRIxPTR
-        "",
-        CID(context), GLenumToString(GLenumGroup::ShaderType, shadertype), location,
-        (uintptr_t)params);
+    EVENT(context, gl::EntryPoint::GetUniformSubroutineuiv, "glGetUniformSubroutineuiv",
+          "context = %d, shadertype = %s, location = %d, params = 0x%016" PRIxPTR "", CID(context),
+          GLenumToString(GLenumGroup::ShaderType, shadertype), location, (uintptr_t)params);
 
     if (context)
     {
@@ -617,11 +609,9 @@ void GL_APIENTRY GetUniformSubroutineuiv(GLenum shadertype, GLint location, GLui
 void GL_APIENTRY GetUniformdv(GLuint program, GLint location, GLdouble *params)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(
-        context, "glGetUniformdv",
-        "context = %d, GLuint program = %u, GLint location = %d, GLdouble *params = 0x%016" PRIxPTR
-        "",
-        CID(context), program, location, (uintptr_t)params);
+    EVENT(context, gl::EntryPoint::GetUniformdv, "glGetUniformdv",
+          "context = %d, program = %u, location = %d, params = 0x%016" PRIxPTR "", CID(context),
+          program, location, (uintptr_t)params);
 
     if (context)
     {
@@ -645,7 +635,8 @@ void GL_APIENTRY GetUniformdv(GLuint program, GLint location, GLdouble *params)
 GLboolean GL_APIENTRY IsTransformFeedback(GLuint id)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glIsTransformFeedback", "context = %d, GLuint id = %u", CID(context), id);
+    EVENT(context, gl::EntryPoint::IsTransformFeedback, "glIsTransformFeedback",
+          "context = %d, id = %u", CID(context), id);
 
     GLboolean returnValue;
     if (context)
@@ -675,7 +666,8 @@ GLboolean GL_APIENTRY IsTransformFeedback(GLuint id)
 void GL_APIENTRY MinSampleShading(GLfloat value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glMinSampleShading", "context = %d, GLfloat value = %f", CID(context), value);
+    EVENT(context, gl::EntryPoint::MinSampleShading, "glMinSampleShading",
+          "context = %d, value = %f", CID(context), value);
 
     if (context)
     {
@@ -696,9 +688,9 @@ void GL_APIENTRY MinSampleShading(GLfloat value)
 void GL_APIENTRY PatchParameterfv(GLenum pname, const GLfloat *values)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glPatchParameterfv",
-          "context = %d, GLenum pname = %s, const GLfloat *values = 0x%016" PRIxPTR "",
-          CID(context), GLenumToString(GLenumGroup::PatchParameterName, pname), (uintptr_t)values);
+    EVENT(context, gl::EntryPoint::PatchParameterfv, "glPatchParameterfv",
+          "context = %d, pname = %s, values = 0x%016" PRIxPTR "", CID(context),
+          GLenumToString(GLenumGroup::PatchParameterName, pname), (uintptr_t)values);
 
     if (context)
     {
@@ -720,8 +712,9 @@ void GL_APIENTRY PatchParameterfv(GLenum pname, const GLfloat *values)
 void GL_APIENTRY PatchParameteri(GLenum pname, GLint value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glPatchParameteri", "context = %d, GLenum pname = %s, GLint value = %d",
-          CID(context), GLenumToString(GLenumGroup::PatchParameterName, pname), value);
+    EVENT(context, gl::EntryPoint::PatchParameteri, "glPatchParameteri",
+          "context = %d, pname = %s, value = %d", CID(context),
+          GLenumToString(GLenumGroup::PatchParameterName, pname), value);
 
     if (context)
     {
@@ -743,7 +736,8 @@ void GL_APIENTRY PatchParameteri(GLenum pname, GLint value)
 void GL_APIENTRY PauseTransformFeedback()
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glPauseTransformFeedback", "context = %d", CID(context));
+    EVENT(context, gl::EntryPoint::PauseTransformFeedback, "glPauseTransformFeedback",
+          "context = %d", CID(context));
 
     if (context)
     {
@@ -764,7 +758,8 @@ void GL_APIENTRY PauseTransformFeedback()
 void GL_APIENTRY ResumeTransformFeedback()
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glResumeTransformFeedback", "context = %d", CID(context));
+    EVENT(context, gl::EntryPoint::ResumeTransformFeedback, "glResumeTransformFeedback",
+          "context = %d", CID(context));
 
     if (context)
     {
@@ -785,7 +780,7 @@ void GL_APIENTRY ResumeTransformFeedback()
 void GL_APIENTRY Uniform1d(GLint location, GLdouble x)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform1d", "context = %d, GLint location = %d, GLdouble x = %f",
+    EVENT(context, gl::EntryPoint::Uniform1d, "glUniform1d", "context = %d, location = %d, x = %f",
           CID(context), location, x);
 
     if (context)
@@ -809,10 +804,9 @@ void GL_APIENTRY Uniform1d(GLint location, GLdouble x)
 void GL_APIENTRY Uniform1dv(GLint location, GLsizei count, const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform1dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, const GLdouble *value = "
-          "0x%016" PRIxPTR "",
-          CID(context), location, count, (uintptr_t)value);
+    EVENT(context, gl::EntryPoint::Uniform1dv, "glUniform1dv",
+          "context = %d, location = %d, count = %d, value = 0x%016" PRIxPTR "", CID(context),
+          location, count, (uintptr_t)value);
 
     if (context)
     {
@@ -835,9 +829,8 @@ void GL_APIENTRY Uniform1dv(GLint location, GLsizei count, const GLdouble *value
 void GL_APIENTRY Uniform2d(GLint location, GLdouble x, GLdouble y)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform2d",
-          "context = %d, GLint location = %d, GLdouble x = %f, GLdouble y = %f", CID(context),
-          location, x, y);
+    EVENT(context, gl::EntryPoint::Uniform2d, "glUniform2d",
+          "context = %d, location = %d, x = %f, y = %f", CID(context), location, x, y);
 
     if (context)
     {
@@ -860,10 +853,9 @@ void GL_APIENTRY Uniform2d(GLint location, GLdouble x, GLdouble y)
 void GL_APIENTRY Uniform2dv(GLint location, GLsizei count, const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform2dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, const GLdouble *value = "
-          "0x%016" PRIxPTR "",
-          CID(context), location, count, (uintptr_t)value);
+    EVENT(context, gl::EntryPoint::Uniform2dv, "glUniform2dv",
+          "context = %d, location = %d, count = %d, value = 0x%016" PRIxPTR "", CID(context),
+          location, count, (uintptr_t)value);
 
     if (context)
     {
@@ -886,9 +878,8 @@ void GL_APIENTRY Uniform2dv(GLint location, GLsizei count, const GLdouble *value
 void GL_APIENTRY Uniform3d(GLint location, GLdouble x, GLdouble y, GLdouble z)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform3d",
-          "context = %d, GLint location = %d, GLdouble x = %f, GLdouble y = %f, GLdouble z = %f",
-          CID(context), location, x, y, z);
+    EVENT(context, gl::EntryPoint::Uniform3d, "glUniform3d",
+          "context = %d, location = %d, x = %f, y = %f, z = %f", CID(context), location, x, y, z);
 
     if (context)
     {
@@ -911,10 +902,9 @@ void GL_APIENTRY Uniform3d(GLint location, GLdouble x, GLdouble y, GLdouble z)
 void GL_APIENTRY Uniform3dv(GLint location, GLsizei count, const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform3dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, const GLdouble *value = "
-          "0x%016" PRIxPTR "",
-          CID(context), location, count, (uintptr_t)value);
+    EVENT(context, gl::EntryPoint::Uniform3dv, "glUniform3dv",
+          "context = %d, location = %d, count = %d, value = 0x%016" PRIxPTR "", CID(context),
+          location, count, (uintptr_t)value);
 
     if (context)
     {
@@ -937,10 +927,9 @@ void GL_APIENTRY Uniform3dv(GLint location, GLsizei count, const GLdouble *value
 void GL_APIENTRY Uniform4d(GLint location, GLdouble x, GLdouble y, GLdouble z, GLdouble w)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform4d",
-          "context = %d, GLint location = %d, GLdouble x = %f, GLdouble y = %f, GLdouble z = %f, "
-          "GLdouble w = %f",
-          CID(context), location, x, y, z, w);
+    EVENT(context, gl::EntryPoint::Uniform4d, "glUniform4d",
+          "context = %d, location = %d, x = %f, y = %f, z = %f, w = %f", CID(context), location, x,
+          y, z, w);
 
     if (context)
     {
@@ -963,10 +952,9 @@ void GL_APIENTRY Uniform4d(GLint location, GLdouble x, GLdouble y, GLdouble z, G
 void GL_APIENTRY Uniform4dv(GLint location, GLsizei count, const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniform4dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, const GLdouble *value = "
-          "0x%016" PRIxPTR "",
-          CID(context), location, count, (uintptr_t)value);
+    EVENT(context, gl::EntryPoint::Uniform4dv, "glUniform4dv",
+          "context = %d, location = %d, count = %d, value = 0x%016" PRIxPTR "", CID(context),
+          location, count, (uintptr_t)value);
 
     if (context)
     {
@@ -992,9 +980,8 @@ void GL_APIENTRY UniformMatrix2dv(GLint location,
                                   const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix2dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix2dv, "glUniformMatrix2dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1023,9 +1010,8 @@ void GL_APIENTRY UniformMatrix2x3dv(GLint location,
                                     const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix2x3dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix2x3dv, "glUniformMatrix2x3dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1054,9 +1040,8 @@ void GL_APIENTRY UniformMatrix2x4dv(GLint location,
                                     const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix2x4dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix2x4dv, "glUniformMatrix2x4dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1085,9 +1070,8 @@ void GL_APIENTRY UniformMatrix3dv(GLint location,
                                   const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix3dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix3dv, "glUniformMatrix3dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1116,9 +1100,8 @@ void GL_APIENTRY UniformMatrix3x2dv(GLint location,
                                     const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix3x2dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix3x2dv, "glUniformMatrix3x2dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1147,9 +1130,8 @@ void GL_APIENTRY UniformMatrix3x4dv(GLint location,
                                     const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix3x4dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix3x4dv, "glUniformMatrix3x4dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1178,9 +1160,8 @@ void GL_APIENTRY UniformMatrix4dv(GLint location,
                                   const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix4dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix4dv, "glUniformMatrix4dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1209,9 +1190,8 @@ void GL_APIENTRY UniformMatrix4x2dv(GLint location,
                                     const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix4x2dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix4x2dv, "glUniformMatrix4x2dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1240,9 +1220,8 @@ void GL_APIENTRY UniformMatrix4x3dv(GLint location,
                                     const GLdouble *value)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformMatrix4x3dv",
-          "context = %d, GLint location = %d, GLsizei count = %d, GLboolean transpose = %s, const "
-          "GLdouble *value = 0x%016" PRIxPTR "",
+    EVENT(context, gl::EntryPoint::UniformMatrix4x3dv, "glUniformMatrix4x3dv",
+          "context = %d, location = %d, count = %d, transpose = %s, value = 0x%016" PRIxPTR "",
           CID(context), location, count, GLbooleanToString(transpose), (uintptr_t)value);
 
     if (context)
@@ -1268,11 +1247,9 @@ void GL_APIENTRY UniformMatrix4x3dv(GLint location,
 void GL_APIENTRY UniformSubroutinesuiv(GLenum shadertype, GLsizei count, const GLuint *indices)
 {
     Context *context = GetValidGlobalContext();
-    EVENT(context, "glUniformSubroutinesuiv",
-          "context = %d, GLenum shadertype = %s, GLsizei count = %d, const GLuint *indices = "
-          "0x%016" PRIxPTR "",
-          CID(context), GLenumToString(GLenumGroup::ShaderType, shadertype), count,
-          (uintptr_t)indices);
+    EVENT(context, gl::EntryPoint::UniformSubroutinesuiv, "glUniformSubroutinesuiv",
+          "context = %d, shadertype = %s, count = %d, indices = 0x%016" PRIxPTR "", CID(context),
+          GLenumToString(GLenumGroup::ShaderType, shadertype), count, (uintptr_t)indices);
 
     if (context)
     {

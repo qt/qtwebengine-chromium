@@ -19,7 +19,6 @@
 #include "dawn_native/Device.h"
 #include "dawn_native/DynamicUploader.h"
 #include "dawn_native/ErrorData.h"
-#include "dawn_native/MapRequestTracker.h"
 #include "dawn_native/Queue.h"
 #include "dawn_native/ValidationUtils_autogen.h"
 
@@ -30,6 +29,19 @@
 namespace dawn_native {
 
     namespace {
+        struct MapRequestTask : QueueBase::TaskInFlight {
+            MapRequestTask(Ref<BufferBase> buffer, MapRequestID id)
+                : buffer(std::move(buffer)), id(id) {
+            }
+            void Finish() override {
+                buffer->OnMapRequestCompleted(id);
+            }
+            ~MapRequestTask() override = default;
+
+          private:
+            Ref<BufferBase> buffer;
+            MapRequestID id;
+        };
 
         class ErrorBuffer final : public BufferBase {
           public:
@@ -261,9 +273,10 @@ namespace dawn_native {
             CallMapCallback(mLastMapID, WGPUBufferMapAsyncStatus_DeviceLost);
             return;
         }
-
-        MapRequestTracker* tracker = GetDevice()->GetMapRequestTracker();
-        tracker->Track(this, mLastMapID);
+        std::unique_ptr<MapRequestTask> request =
+            std::make_unique<MapRequestTask>(this, mLastMapID);
+        GetDevice()->GetDefaultQueue()->TrackTask(std::move(request),
+                                                  GetDevice()->GetPendingCommandSerial());
     }
 
     void* BufferBase::GetMappedRange(size_t offset, size_t size) {
@@ -403,8 +416,8 @@ namespace dawn_native {
         *status = WGPUBufferMapAsyncStatus_Error;
         DAWN_TRY(GetDevice()->ValidateObject(this));
 
-        if (offset % 4 != 0) {
-            return DAWN_VALIDATION_ERROR("offset must be a multiple of 4");
+        if (offset % 8 != 0) {
+            return DAWN_VALIDATION_ERROR("offset must be a multiple of 8");
         }
 
         if (size % 4 != 0) {
@@ -448,6 +461,10 @@ namespace dawn_native {
     }
 
     bool BufferBase::CanGetMappedRange(bool writable, size_t offset, size_t size) const {
+        if (offset % 8 != 0 || size % 4 != 0) {
+            return false;
+        }
+
         if (size > mMapSize || offset < mMapOffset) {
             return false;
         }
@@ -492,10 +509,7 @@ namespace dawn_native {
                 // even if it did not have a mappable usage.
                 return {};
             case BufferState::Unmapped:
-                if ((mUsage & (wgpu::BufferUsage::MapRead | wgpu::BufferUsage::MapWrite)) == 0) {
-                    return DAWN_VALIDATION_ERROR("Buffer does not have map usage");
-                }
-                return {};
+                return DAWN_VALIDATION_ERROR("Buffer is unmapped");
             case BufferState::Destroyed:
                 return DAWN_VALIDATION_ERROR("Buffer is destroyed");
         }

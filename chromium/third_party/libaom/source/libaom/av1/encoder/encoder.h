@@ -44,6 +44,7 @@
 #include "av1/encoder/rd.h"
 #include "av1/encoder/speed_features.h"
 #include "av1/encoder/svc_layercontext.h"
+#include "av1/encoder/temporal_filter.h"
 #include "av1/encoder/tokenize.h"
 #include "av1/encoder/tpl_model.h"
 #include "av1/encoder/av1_noise_estimate.h"
@@ -56,7 +57,7 @@
 #include "aom_dsp/noise_model.h"
 #endif
 #if CONFIG_TUNE_VMAF
-#include "aom_dsp/vmaf.h"
+#include "av1/encoder/tune_vmaf.h"
 #endif
 
 #include "aom/internal/aom_codec_internal.h"
@@ -78,15 +79,6 @@ typedef struct aom_rational64 {
   int64_t num;       // fraction numerator
   int den;           // fraction denominator
 } aom_rational64_t;  // alias for struct aom_rational
-
-typedef struct {
-#if CONFIG_SUPERRES_IN_RECODE
-  struct loopfilter lf;
-  CdefInfo cdef_info;
-  YV12_BUFFER_CONFIG copy_buffer;
-  RATE_CONTROL rc;
-#endif  // CONFIG_SUPERRES_IN_RECODE
-} CODING_CONTEXT;
 
 enum {
   NORMAL = 0,
@@ -143,8 +135,9 @@ enum {
 typedef enum {
   kInvalid = 0,
   kLowSad = 1,
-  kHighSad = 2,
-  kLowVarHighSumdiff = 3,
+  kMedSad = 2,
+  kHighSad = 3,
+  kLowVarHighSumdiff = 4,
 } CONTENT_STATE_SB;
 
 enum {
@@ -265,6 +258,10 @@ typedef struct {
    * Flag to indicate if flip and identity transform types should be enabled.
    */
   bool enable_flip_idtx;
+  /*!
+   * Flag to indicate if rectangular transform should be enabled.
+   */
+  bool enable_rect_tx;
   /*!
    * Flag to indicate whether or not to use a default reduced set for ext-tx
    * rather than the potential full set of 16 transforms.
@@ -1281,10 +1278,10 @@ typedef struct ThreadData {
   int intrabc_used;
   int deltaq_used;
   FRAME_CONTEXT *tctx;
-  MB_MODE_INFO_EXT *mbmi_ext;
   VP64x64 *vt64x64;
   int32_t num_64x64_blocks;
   PICK_MODE_CONTEXT *firstpass_ctx;
+  TemporalFilterData tf_data;
 } ThreadData;
 
 struct EncWorkerData;
@@ -1678,7 +1675,6 @@ typedef struct {
    * In encoder: av1_find_best_sub_pixel_tree
    *             av1_find_best_sub_pixel_tree_pruned
    *             av1_find_best_sub_pixel_tree_pruned_more
-   *             av1_find_best_sub_pixel_tree_pruned_evenmore
    * In MV unit test: av1_return_max_sub_pixel_mv
    *                  av1_return_min_sub_pixel_mv
    */
@@ -1793,6 +1789,13 @@ typedef struct {
    * Corresponds to use_skip_flag_prediction speed feature.
    */
   unsigned int skip_txfm_level[MODE_EVAL_TYPES];
+
+  /*!
+   * Predict DC only txfm blocks for default, mode and winner mode evaluation.
+   * Index 0: Default mode evaluation, Winner mode processing is not applicable.
+   * Index 1: Mode evaluation, Index 2: Winner mode evaluation
+   */
+  unsigned int predict_dc_level[MODE_EVAL_TYPES];
 } WinnerModeParams;
 
 /*!
@@ -1901,6 +1904,14 @@ typedef struct {
 } MV_STATS;
 
 typedef struct {
+  struct loopfilter lf;
+  CdefInfo cdef_info;
+  YV12_BUFFER_CONFIG copy_buffer;
+  RATE_CONTROL rc;
+  MV_STATS mv_stats;
+} CODING_CONTEXT;
+
+typedef struct {
   int frame_width;
   int frame_height;
   int mi_rows;
@@ -1952,6 +1963,25 @@ typedef struct {
 } TimeStamps;
 
 /*!
+ * Pointers to the memory allocated for frame level transform coeff related
+ * info.
+ */
+typedef struct {
+  /*!
+   * Pointer to the transformed coefficients buffer.
+   */
+  tran_low_t *tcoeff;
+  /*!
+   * Pointer to the eobs buffer.
+   */
+  uint16_t *eobs;
+  /*!
+   * Pointer to the entropy_ctx buffer.
+   */
+  uint8_t *entropy_ctx;
+} CoeffBufferPool;
+
+/*!
  * \brief Top level encoder structure.
  */
 typedef struct AV1_COMP {
@@ -1982,6 +2012,12 @@ typedef struct AV1_COMP {
    * ith superblock in raster scan order.
    */
   CB_COEFF_BUFFER *coeff_buffer_base;
+
+  /*!
+   * Structure holding pointers to frame level memory allocated for transform
+   * block related information.
+   */
+  CoeffBufferPool coeff_buffer_pool;
 
   /*!
    * Structure holding variables common to encoder and decoder.
@@ -2211,6 +2247,11 @@ typedef struct AV1_COMP {
   GF_GROUP gf_group;
 
   /*!
+   * Track prior gf group state.
+   */
+  GF_STATE gf_state;
+
+  /*!
    * To control the reference frame buffer and selection.
    */
   RefBufferStack ref_buffer_stack;
@@ -2244,8 +2285,11 @@ typedef struct AV1_COMP {
   int bytes;
   double summed_quality;
   double summed_weights;
+  double summed_quality_hbd;
+  double summed_weights_hbd;
   unsigned int tot_recode_hits;
   double worst_ssim;
+  double worst_ssim_hbd;
 
   ImageStat fastssim;
   ImageStat psnrhvs;
@@ -3006,14 +3050,6 @@ static const MV_REFERENCE_FRAME disable_order[] = {
   GOLDEN_FRAME,
 };
 
-static INLINE int get_max_allowed_ref_frames(
-    int selective_ref_frame, unsigned int max_reference_frames) {
-  const unsigned int max_allowed_refs_for_given_speed =
-      (selective_ref_frame >= 3) ? INTER_REFS_PER_FRAME - 1
-                                 : INTER_REFS_PER_FRAME;
-  return AOMMIN(max_allowed_refs_for_given_speed, max_reference_frames);
-}
-
 static const MV_REFERENCE_FRAME
     ref_frame_priority_order[INTER_REFS_PER_FRAME] = {
       LAST_FRAME,    ALTREF_FRAME, BWDREF_FRAME, GOLDEN_FRAME,
@@ -3046,42 +3082,6 @@ static INLINE int get_ref_frame_flags(const SPEED_FEATURES *const sf,
     }
   }
   return flags;
-}
-
-// Enforce the number of references for each arbitrary frame based on user
-// options and speed.
-static AOM_INLINE void enforce_max_ref_frames(AV1_COMP *cpi,
-                                              int *ref_frame_flags) {
-  MV_REFERENCE_FRAME ref_frame;
-  int total_valid_refs = 0;
-
-  for (ref_frame = LAST_FRAME; ref_frame <= ALTREF_FRAME; ++ref_frame) {
-    if (*ref_frame_flags & av1_ref_frame_flag_list[ref_frame]) {
-      total_valid_refs++;
-    }
-  }
-
-  const int max_allowed_refs =
-      get_max_allowed_ref_frames(cpi->sf.inter_sf.selective_ref_frame,
-                                 cpi->oxcf.ref_frm_cfg.max_reference_frames);
-
-  for (int i = 0; i < 4 && total_valid_refs > max_allowed_refs; ++i) {
-    const MV_REFERENCE_FRAME ref_frame_to_disable = disable_order[i];
-
-    if (!(*ref_frame_flags & av1_ref_frame_flag_list[ref_frame_to_disable])) {
-      continue;
-    }
-
-    switch (ref_frame_to_disable) {
-      case LAST3_FRAME: *ref_frame_flags &= ~AOM_LAST3_FLAG; break;
-      case LAST2_FRAME: *ref_frame_flags &= ~AOM_LAST2_FLAG; break;
-      case ALTREF2_FRAME: *ref_frame_flags &= ~AOM_ALT2_FLAG; break;
-      case GOLDEN_FRAME: *ref_frame_flags &= ~AOM_GOLD_FLAG; break;
-      default: assert(0);
-    }
-    --total_valid_refs;
-  }
-  assert(total_valid_refs <= max_allowed_refs);
 }
 
 // Returns a Sequence Header OBU stored in an aom_fixed_buf_t, or NULL upon

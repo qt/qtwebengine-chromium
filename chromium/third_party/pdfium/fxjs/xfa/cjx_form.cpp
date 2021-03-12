@@ -52,9 +52,8 @@ CJS_Result CJX_Form::formNodes(
       pDoc->GetHeap()->GetAllocationHandle(), pDoc);
   pDoc->GetNodeOwner()->PersistList(pFormNodes);
 
-  CFXJSE_Value* value = pEngine->GetOrCreateJSBindingFromMap(pFormNodes);
-  return CJS_Result::Success(
-      value->DirectGetValue().Get(runtime->GetIsolate()));
+  v8::Local<v8::Value> value = pEngine->GetOrCreateJSBindingFromMap(pFormNodes);
+  return CJS_Result::Success(value);
 }
 
 CJS_Result CJX_Form::remerge(CFX_V8* runtime,
@@ -130,15 +129,17 @@ CJS_Result CJX_Form::execValidate(
       runtime->NewBoolean(iRet != XFA_EventError::kError));
 }
 
-void CJX_Form::checksumS(CFXJSE_Value* pValue,
+void CJX_Form::checksumS(v8::Isolate* pIsolate,
+                         CFXJSE_Value* pValue,
                          bool bSetting,
                          XFA_Attribute eAttribute) {
   if (bSetting) {
-    SetAttributeByEnum(XFA_Attribute::Checksum,
-                       pValue->ToWideString().AsStringView(), false);
+    SetAttributeByEnum(XFA_Attribute::Checksum, pValue->ToWideString(pIsolate),
+                       false);
     return;
   }
 
   Optional<WideString> checksum = TryAttribute(XFA_Attribute::Checksum, false);
-  pValue->SetString(checksum ? checksum->ToUTF8().AsStringView() : "");
+  pValue->SetString(pIsolate,
+                    checksum ? checksum->ToUTF8().AsStringView() : "");
 }

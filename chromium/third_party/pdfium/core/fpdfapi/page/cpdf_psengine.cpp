@@ -14,12 +14,13 @@
 #include "core/fpdfapi/parser/cpdf_simple_parser.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_string.h"
-#include "third_party/base/logging.h"
+#include "third_party/base/notreached.h"
 
 namespace {
 
 struct PDF_PSOpName {
-  const char* name;
+  // Inline string data reduces size for small strings.
+  const char name[9];
   PDF_PSOP op;
 };
 
@@ -111,7 +112,8 @@ bool CPDF_PSEngine::Execute() {
   return m_MainProc.Execute(this);
 }
 
-CPDF_PSProc::CPDF_PSProc() {}
+CPDF_PSProc::CPDF_PSProc() = default;
+
 CPDF_PSProc::~CPDF_PSProc() = default;
 
 bool CPDF_PSProc::Parse(CPDF_SimpleParser* parser, int depth) {

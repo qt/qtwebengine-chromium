@@ -186,6 +186,8 @@ const char kUserAuthenticationServiceInterface[] =
     "org.chromium.UserAuthenticationServiceInterface";
 const char kUserAuthenticationServiceShowAuthDialogMethod[] = "ShowAuthDialog";
 const char kUserAuthenticationServiceCancelMethod[] = "Cancel";
+const char kUserAuthenticationServiceIsAuthenticatorAvailableMethod[] =
+    "IsAuthenticatorAvailable";
 
 constexpr char kVirtualFileRequestServiceName[] =
     "org.chromium.VirtualFileRequestService";
@@ -402,6 +404,7 @@ const char kSetPlayerMetadata[] = "SetPlayerMetadata";
 const char kSetNextHandsfreeProfile[] = "SetNextHandsfreeProfile";
 const char kSetFixA2dpPacketSize[] = "SetFixA2dpPacketSize";
 const char kResendBluetoothBattery[] = "ResendBluetoothBattery";
+const char kGetDeprioritizeBtWbsMic[] = "GetDeprioritizeBtWbsMic";
 
 // Names of properties returned by GetNodes()
 const char kIsInputProperty[] = "IsInput";
@@ -540,7 +543,9 @@ constexpr char kVirtualFileProviderServicePath[] =
 constexpr char kVirtualFileProviderInterface[] =
     "org.chromium.VirtualFileProvider";
 // Methods
+constexpr char kGenerateVirtualFileIdMethod[] = "GenerateVirtualFileId";
 constexpr char kOpenFileMethod[] = "OpenFile";
+constexpr char kOpenFileByIdMethod[] = "OpenFileById";
 }  // namespace virtual_file_provider
 
 namespace crosdns {

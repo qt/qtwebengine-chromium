@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {Engine} from '../common/engine';
+import {slowlyCountRows} from '../common/query_iterator';
 import {CurrentSearchResults, SearchSummary} from '../common/search_data';
 import {TimeSpan} from '../common/time';
 
@@ -21,7 +22,10 @@ import {App} from './globals';
 
 export function escapeQuery(s: string): string {
   // See https://www.sqlite.org/lang_expr.html#:~:text=A%20string%20constant
-  return `'%${s.replace('\'', '\'\'')}%'`;
+  s = s.replace(/\'/g, '\'\'');
+  s = s.replace(/_/g, '^_');
+  s = s.replace(/%/g, '^%');
+  return `'%${s}%' escape '^'`;
 }
 
 export interface SearchControllerArgs {
@@ -168,7 +172,7 @@ export class SearchController extends Controller<'main'> {
           group by quantum_ts
           order by quantum_ts;`);
 
-    const numRows = +rawResult.numRecords;
+    const numRows = slowlyCountRows(rawResult);
     const summary = {
       tsStarts: new Float64Array(numRows),
       tsEnds: new Float64Array(numRows),
@@ -195,10 +199,16 @@ export class SearchController extends Controller<'main'> {
         cpuToTrackId.set((track.config as {cpu: number}).cpu, track.id);
         continue;
       }
-      if (track.kind === 'ChromeSliceTrack' ||
-          track.kind === 'AsyncSliceTrack') {
-        engineTrackIdToTrackId.set(
-            (track.config as {trackId: number}).trackId, track.id);
+      if (track.kind === 'ChromeSliceTrack') {
+        const config = (track.config as {trackId: number});
+        engineTrackIdToTrackId.set(config.trackId, track.id);
+        continue;
+      }
+      if (track.kind === 'AsyncSliceTrack') {
+        const config = (track.config as {trackIds: number[]});
+        for (const trackId of config.trackIds) {
+          engineTrackIdToTrackId.set(trackId, track.id);
+        }
         continue;
       }
     }
@@ -225,11 +235,20 @@ export class SearchController extends Controller<'main'> {
       track_id as source_id,
       0 as utid
       from slice
-      inner join track on slice.track_id = track.id
-      and slice.name like ${searchLiteral}
+      where slice.name like ${searchLiteral}
+    union
+    select
+      slice_id,
+      ts,
+      'track' as source,
+      track_id as source_id,
+      0 as utid
+      from slice
+      join args using(arg_set_id)
+      where string_value like ${searchLiteral}
     order by ts`);
 
-    const numRows = +rawResult.numRecords;
+    const numRows = slowlyCountRows(rawResult);
 
     const searchResults: CurrentSearchResults = {
       sliceIds: [],

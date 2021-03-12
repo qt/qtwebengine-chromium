@@ -306,6 +306,24 @@ namespace dawn_native { namespace opengl {
                             for (auto unit : mPipeline->GetTextureUnitsForTextureView(viewIndex)) {
                                 gl.ActiveTexture(GL_TEXTURE0 + unit);
                                 gl.BindTexture(target, handle);
+                                if (ToBackend(view->GetTexture())->GetGLFormat().format ==
+                                    GL_DEPTH_STENCIL) {
+                                    Aspect aspect = view->GetAspects();
+                                    ASSERT(HasOneBit(aspect));
+                                    switch (aspect) {
+                                        case Aspect::None:
+                                        case Aspect::Color:
+                                            UNREACHABLE();
+                                        case Aspect::Depth:
+                                            gl.TexParameteri(target, GL_DEPTH_STENCIL_TEXTURE_MODE,
+                                                             GL_DEPTH_COMPONENT);
+                                            break;
+                                        case Aspect::Stencil:
+                                            gl.TexParameteri(target, GL_DEPTH_STENCIL_TEXTURE_MODE,
+                                                             GL_STENCIL_INDEX);
+                                            break;
+                                    }
+                                }
                             }
                             break;
                         }
@@ -445,7 +463,7 @@ namespace dawn_native { namespace opengl {
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared in BeginRenderPass by setting the loadop to clear when the
                 // texture subresource has not been initialized before the render pass.
-                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
+                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::RenderAttachment)) {
                     texture->EnsureSubresourceContentInitialized(texture->GetAllSubresources());
                 }
             }
@@ -531,21 +549,21 @@ namespace dawn_native { namespace opengl {
                     gl.BindTexture(target, texture->GetHandle());
 
                     const Format& formatInfo = texture->GetFormat();
-                    const TexelBlockInfo& blockInfo = formatInfo.GetTexelBlockInfo(dst.aspect);
-                    gl.PixelStorei(GL_UNPACK_ROW_LENGTH, src.bytesPerRow / blockInfo.blockByteSize *
-                                                             blockInfo.blockWidth);
-                    gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, src.rowsPerImage);
+                    const TexelBlockInfo& blockInfo = formatInfo.GetAspectInfo(dst.aspect).block;
+                    gl.PixelStorei(GL_UNPACK_ROW_LENGTH,
+                                   src.bytesPerRow / blockInfo.byteSize * blockInfo.width);
+                    gl.PixelStorei(GL_UNPACK_IMAGE_HEIGHT, src.rowsPerImage * blockInfo.height);
 
                     if (formatInfo.isCompressed) {
-                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, blockInfo.blockByteSize);
-                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, blockInfo.blockWidth);
-                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, blockInfo.blockHeight);
+                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_SIZE, blockInfo.byteSize);
+                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_WIDTH, blockInfo.width);
+                        gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_HEIGHT, blockInfo.height);
                         gl.PixelStorei(GL_UNPACK_COMPRESSED_BLOCK_DEPTH, 1);
 
                         ASSERT(texture->GetDimension() == wgpu::TextureDimension::e2D);
-                        uint64_t copyDataSize = (copySize.width / blockInfo.blockWidth) *
-                                                (copySize.height / blockInfo.blockHeight) *
-                                                blockInfo.blockByteSize * copySize.depth;
+                        uint64_t copyDataSize = (copySize.width / blockInfo.width) *
+                                                (copySize.height / blockInfo.height) *
+                                                blockInfo.byteSize * copySize.depth;
                         Extent3D copyExtent = ComputeTextureCopyExtent(dst, copySize);
 
                         if (texture->GetArrayLayers() > 1) {
@@ -623,11 +641,11 @@ namespace dawn_native { namespace opengl {
                     gl.GenFramebuffers(1, &readFBO);
                     gl.BindFramebuffer(GL_READ_FRAMEBUFFER, readFBO);
 
-                    const TexelBlockInfo& blockInfo = formatInfo.GetTexelBlockInfo(src.aspect);
+                    const TexelBlockInfo& blockInfo = formatInfo.GetAspectInfo(src.aspect).block;
 
                     gl.BindBuffer(GL_PIXEL_PACK_BUFFER, buffer->GetHandle());
-                    gl.PixelStorei(GL_PACK_IMAGE_HEIGHT, dst.rowsPerImage);
-                    gl.PixelStorei(GL_PACK_ROW_LENGTH, dst.bytesPerRow / blockInfo.blockByteSize);
+                    gl.PixelStorei(GL_PACK_IMAGE_HEIGHT, dst.rowsPerImage * blockInfo.height);
+                    gl.PixelStorei(GL_PACK_ROW_LENGTH, dst.bytesPerRow / blockInfo.byteSize);
 
                     GLenum glAttachment;
                     GLenum glFormat;
@@ -928,21 +946,30 @@ namespace dawn_native { namespace opengl {
                 if (attachmentInfo->loadOp == wgpu::LoadOp::Clear) {
                     gl.ColorMaski(i, true, true, true, true);
 
-                    const Format& attachmentFormat = attachmentInfo->view->GetFormat();
-                    if (attachmentFormat.HasComponentType(Format::Type::Float)) {
-                        const std::array<float, 4> appliedClearColor =
-                            ConvertToFloatColor(attachmentInfo->clearColor);
-                        gl.ClearBufferfv(GL_COLOR, i, appliedClearColor.data());
-                    } else if (attachmentFormat.HasComponentType(Format::Type::Uint)) {
-                        const std::array<uint32_t, 4> appliedClearColor =
-                            ConvertToFloatToUnsignedIntegerColor(attachmentInfo->clearColor);
-                        gl.ClearBufferuiv(GL_COLOR, i, appliedClearColor.data());
-                    } else if (attachmentFormat.HasComponentType(Format::Type::Sint)) {
-                        const std::array<int32_t, 4> appliedClearColor =
-                            ConvertToFloatToSignedIntegerColor(attachmentInfo->clearColor);
-                        gl.ClearBufferiv(GL_COLOR, i, appliedClearColor.data());
-                    } else {
-                        UNREACHABLE();
+                    wgpu::TextureComponentType baseType =
+                        attachmentInfo->view->GetFormat().GetAspectInfo(Aspect::Color).baseType;
+                    switch (baseType) {
+                        case wgpu::TextureComponentType::Float: {
+                            const std::array<float, 4> appliedClearColor =
+                                ConvertToFloatColor(attachmentInfo->clearColor);
+                            gl.ClearBufferfv(GL_COLOR, i, appliedClearColor.data());
+                            break;
+                        }
+                        case wgpu::TextureComponentType::Uint: {
+                            const std::array<uint32_t, 4> appliedClearColor =
+                                ConvertToUnsignedIntegerColor(attachmentInfo->clearColor);
+                            gl.ClearBufferuiv(GL_COLOR, i, appliedClearColor.data());
+                            break;
+                        }
+                        case wgpu::TextureComponentType::Sint: {
+                            const std::array<int32_t, 4> appliedClearColor =
+                                ConvertToSignedIntegerColor(attachmentInfo->clearColor);
+                            gl.ClearBufferiv(GL_COLOR, i, appliedClearColor.data());
+                            break;
+                        }
+
+                        case wgpu::TextureComponentType::DepthComparison:
+                            UNREACHABLE();
                     }
                 }
 

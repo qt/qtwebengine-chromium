@@ -65,11 +65,6 @@ constexpr int kDefaultAudioSampleRate = 48000;
 // The default audio number of channels is set to stereo.
 constexpr int kDefaultAudioChannels = 2;
 
-// TODO(jophba): migrate to discovering a randomly generated streaming
-// sender id. This will require communicating the ID to the sender so that
-// it can send messages appropriately.
-constexpr char kDefaultStreamingReceiverSenderId[] = "receiver-12345";
-
 // Codecs known and understood by cast senders and receivers. Note: receivers
 // are required to implement the following codecs to be Cast V2 compliant: H264,
 // VP8, AAC, Opus. Senders have to implement at least one codec for audio and

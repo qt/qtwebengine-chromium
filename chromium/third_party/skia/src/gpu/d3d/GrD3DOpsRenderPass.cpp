@@ -7,6 +7,7 @@
 
 #include "src/gpu/d3d/GrD3DOpsRenderPass.h"
 
+#include "src/gpu/GrBackendUtils.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProgramDesc.h"
 #include "src/gpu/GrRenderTarget.h"
@@ -21,7 +22,7 @@
 
 #ifdef SK_DEBUG
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #endif
 
 GrD3DOpsRenderPass::GrD3DOpsRenderPass(GrD3DGpu* gpu) : fGpu(gpu) {}
@@ -65,7 +66,7 @@ void GrD3DOpsRenderPass::onBegin() {
     }
 
     if (auto stencil = d3dRT->getStencilAttachment()) {
-        GrD3DStencilAttachment* d3dStencil = static_cast<GrD3DStencilAttachment*>(stencil);
+        GrD3DAttachment* d3dStencil = static_cast<GrD3DAttachment*>(stencil);
         d3dStencil->setResourceState(fGpu, D3D12_RESOURCE_STATE_DEPTH_WRITE);
         if (fStencilLoadOp == GrLoadOp::kClear) {
             fGpu->currentCommandList()->clearDepthStencilView(d3dStencil, 0, nullptr);
@@ -321,11 +322,11 @@ void GrD3DOpsRenderPass::onClear(const GrScissorState& scissor, const SkPMColor4
 }
 
 void GrD3DOpsRenderPass::onClearStencilClip(const GrScissorState& scissor, bool insideStencilMask) {
-    GrStencilAttachment* sb = fRenderTarget->getStencilAttachment();
+    GrAttachment* sb = fRenderTarget->getStencilAttachment();
     // this should only be called internally when we know we have a
     // stencil buffer.
     SkASSERT(sb);
-    int stencilBitCount = sb->bits();
+    int stencilBitCount = GrBackendFormatStencilBits(sb->backendFormat());
 
     // The contract with the callers does not guarantee that we preserve all bits in the stencil
     // during this clear. Thus we will clear the entire stencil to the desired value.
@@ -337,7 +338,7 @@ void GrD3DOpsRenderPass::onClearStencilClip(const GrScissorState& scissor, bool 
 
     D3D12_RECT clearRect = scissor_to_d3d_clear_rect(scissor, fRenderTarget, fOrigin);
 
-    auto d3dStencil = static_cast<GrD3DStencilAttachment*>(sb);
+    auto d3dStencil = static_cast<GrD3DAttachment*>(sb);
     fGpu->currentCommandList()->clearDepthStencilView(d3dStencil, stencilColor, &clearRect);
 }
 

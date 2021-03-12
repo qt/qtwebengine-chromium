@@ -13,6 +13,13 @@ then
 fi
 
 version="$1"
+
+# Makes ("68" "1") from "68-1".
+readonly major_minor_version=(${version//-/ })
+
+# Just the major part of the ICU version number, e.g. "68".
+readonly major_version="${major_minor_version[0]}"
+
 repoprefix="https://github.com/unicode-org/icu/tags/release-"
 repo="${repoprefix}${version}/icu4c"
 treeroot="$(dirname "$0")/.."
@@ -122,5 +129,18 @@ sed   -i \
       /source\/common/ d
    }' icu.gypi
 
+# Update the major version number registered in version.gni.
+cat << EOF > version.gni
+# Copyright 2020 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+declare_args() {
+  # Contains the major version number of the ICU library, for dependencies that
+  # need different configuration based on the library version. Currently this
+  # is only useful in Fuchsia.
+  icu_major_version_number = "${major_version}"
+}
+EOF
 
 echo "Done"

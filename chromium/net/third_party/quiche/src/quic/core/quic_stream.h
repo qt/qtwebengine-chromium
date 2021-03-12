@@ -22,6 +22,8 @@
 #include <list>
 #include <string>
 
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "net/third_party/quiche/src/quic/core/quic_flow_controller.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_stream_send_buffer.h"
@@ -32,8 +34,6 @@
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_mem_slice_span.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_reference_counted.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 
 namespace quic {
@@ -142,9 +142,7 @@ class QUIC_EXPORT_PRIVATE QuicStream
 
   // Default priority for IETF QUIC, defined by the priority extension at
   // https://httpwg.org/http-extensions/draft-ietf-httpbis-priority.html#urgency.
-  // TODO(bnc): Remove this method and reinstate static const int
-  // kDefaultUrgency member when removing quic_http3_new_default_urgency_value.
-  static int DefaultUrgency();
+  static const int kDefaultUrgency = 3;
 
   // QuicStreamSequencer::StreamInterface implementation.
   QuicStreamId id() const override { return id_; }
@@ -206,6 +204,7 @@ class QUIC_EXPORT_PRIVATE QuicStream
     return sequencer_.ignore_read_data() || read_side_closed_;
   }
   bool write_side_closed() const { return write_side_closed_; }
+  bool read_side_closed() const { return read_side_closed_; }
 
   bool IsZombie() const {
     return read_side_closed_ && write_side_closed_ && IsWaitingForAcks();
@@ -274,13 +273,21 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // stop sending stream-level flow-control updates when this end sends FIN.
   virtual void StopReading();
 
-  // Sends as much of 'data' to the connection as the connection will consume,
-  // and then buffers any remaining data in queued_data_.
-  // If fin is true: if it is immediately passed on to the session,
-  // write_side_closed() becomes true, otherwise fin_buffered_ becomes true.
+  // Sends as much of |data| to the connection on the application encryption
+  // level as the connection will consume, and then buffers any remaining data
+  // in the send buffer. If fin is true: if it is immediately passed on to the
+  // session, write_side_closed() becomes true, otherwise fin_buffered_ becomes
+  // true.
   void WriteOrBufferData(
-      quiche::QuicheStringPiece data,
+      absl::string_view data,
       bool fin,
+      QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
+
+  // Sends |data| to connection with specified |level|.
+  void WriteOrBufferDataAtLevel(
+      absl::string_view data,
+      bool fin,
+      EncryptionLevel level,
       QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
 
   // Adds random padding after the fin is consumed for this stream.
@@ -402,6 +409,12 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // empty.
   void SetFinSent();
 
+  // Send STOP_SENDING if it hasn't been sent yet.
+  void MaybeSendStopSending(QuicRstStreamErrorCode error);
+
+  // Send RESET_STREAM if it hasn't been sent yet.
+  void MaybeSendRstStream(QuicRstStreamErrorCode error);
+
   // Close the write side of the socket.  Further writes will fail.
   // Can be called by the subclass or internally.
   // Does not send a FIN.  May cause the stream to be closed.
@@ -439,7 +452,7 @@ class QUIC_EXPORT_PRIVATE QuicStream
              StreamType type,
              uint64_t stream_bytes_read,
              bool fin_received,
-             quiche::QuicheOptional<QuicFlowController> flow_controller,
+             absl::optional<QuicFlowController> flow_controller,
              QuicFlowController* connection_flow_controller);
 
   // Calls MaybeSendBlocked on the stream's flow controller and the connection
@@ -448,15 +461,24 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // controller, marks this stream as connection-level write blocked.
   void MaybeSendBlocked();
 
-  // Write buffered data in send buffer. TODO(fayang): Consider combine
-  // WriteOrBufferData, Writev and WriteBufferedData.
-  void WriteBufferedData();
+  // Write buffered data in send buffer.
+  // TODO(fayang): Change absl::optional<EncryptionLevel> to EncryptionLevel
+  // when deprecating quic_use_write_or_buffer_data_at_level.
+  void WriteBufferedData(absl::optional<EncryptionLevel> level);
 
   // Close the read side of the stream.  May cause the stream to be closed.
   void CloseReadSide();
 
   // Called when bytes are sent to the peer.
   void AddBytesSent(QuicByteCount bytes);
+
+  // TODO(fayang): Inline this function when deprecating
+  // quic_use_write_or_buffer_data_at_level.
+  void WriteOrBufferDataInner(
+      absl::string_view data,
+      bool fin,
+      absl::optional<EncryptionLevel> level,
+      QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener);
 
   // Returns true if deadline_ has passed.
   bool HasDeadlinePassed() const;
@@ -508,7 +530,10 @@ class QUIC_EXPORT_PRIVATE QuicStream
   // True if this stream has received a RST_STREAM frame.
   bool rst_received_;
 
-  quiche::QuicheOptional<QuicFlowController> flow_controller_;
+  // True if the stream has sent STOP_SENDING to the session.
+  bool stop_sending_sent_;
+
+  absl::optional<QuicFlowController> flow_controller_;
 
   // The connection level flow controller. Not owned.
   QuicFlowController* connection_flow_controller_;

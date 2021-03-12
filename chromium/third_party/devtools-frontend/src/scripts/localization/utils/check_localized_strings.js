@@ -104,7 +104,7 @@ let devtoolsFrontendDirs;
 // During migration process, we will update this when a directory is migrated
 // e.g. const migratedDirsSet = new Set(['settings', 'console']);
 // TODO(crbug.com/941561): Remove once localization V1 is no longer used.
-const migratedDirsSet = new Set([]);
+const migratedDirsSet = new Set(['settings', 'coverage', 'devices']);
 const locV1CallsInMigratedFiles = new Set();
 
 /**
@@ -268,7 +268,7 @@ async function parseLocalizableResourceMapsHelper() {
 
 /**
  * The following functions parse localizable strings (wrapped in Common.UIString,
- * Common.UIStringFormat, UI.formatLocalized, ls``, i18n.getLocalizedString,
+ * Common.UIStringFormat, UI.formatLocalized, ls``, i18nString,
  * i18n.getFormatLocalizedString) from devtools frontend files.
  */
 
@@ -279,6 +279,7 @@ async function parseLocalizableStrings(devtoolsFiles) {
 
 async function parseLocalizableStringsFromFile(filePath) {
   const fileContent = await localizationUtils.parseFileContent(filePath);
+
   if (path.basename(filePath) === 'module.json') {
     return parseLocalizableStringFromModuleJson(fileContent, filePath);
   }
@@ -300,12 +301,6 @@ async function parseLocalizableStringsFromFile(filePath) {
   }
 
   let ast;
-
-  if (hasUIStrings(fileContent)) {
-    const relativeFilePath = localizationUtils.getRelativeFilePathFromFrontEnd(filePath);
-    const dirName = relativeFilePath.slice(0, relativeFilePath.indexOf('\\'));
-    migratedDirsSet.add(dirName);
-  }
 
   try {
     ast = espree.parse(fileContent, {ecmaVersion: 11, sourceType: 'module', range: true, loc: true});
@@ -359,8 +354,10 @@ function parseLocalizableStringFromModuleJson(fileContent, filePath) {
 }
 
 function handleModuleJsonString(str, code, filePath) {
-  // add string for Loc V1
-  addString(str, code, filePath);
+  if (!isInMigratedDirectory(filePath)) {
+    // add string for Loc V1
+    addString(str, code, filePath);
+  }
 
   // add to map for Loc V2
   addToLocAPICallsMap(filePath, str, code);
@@ -413,7 +410,13 @@ function parseLocalizableStringFromNode(parentNode, node, filePath) {
       handleTemplateLiteral(node.quasi, code, filePath);
       break;
     }
-    case 'i18n.i18n.getLocalizedString':
+    case 'i18nString': {
+      checkLocalizability.analyzeI18nStringNode(parentNode, filePath);
+      if (parentNode.arguments !== undefined && parentNode.arguments[0] !== undefined) {
+        handleI18nStringNode(filePath, parentNode);
+      }
+      break;
+    }
     case 'i18n.i18n.getFormatLocalizedString': {
       checkLocalizability.analyzeGetLocalizedStringNode(node, filePath);
       if (node.arguments !== undefined && node.arguments[1] !== undefined) {
@@ -496,13 +499,23 @@ function handleUIStringsDeclarationNode(filePath, node) {
 }
 
 /**
- * Handle the node that is `i18n.getLocalizedString()` or `i18n.getFormatLocalizedString` call.
+ * Handle the node that is `i18n.getFormatLocalizedString` call.
  */
 function handleGetLocalizedStringNode(filePath, node) {
   const stringIdNode = node.arguments[1];
   const argumentNodes = node.arguments[2];
   if (stringIdNode.property && stringIdNode.property.name && stringIdNode.property.type === espreeTypes.IDENTIFIER) {
     addToLocAPICallsMap(filePath, stringIdNode.property.name, escodegen.generate(node), node.loc, argumentNodes);
+  }
+}
+
+/**
+ * Handle the node that is `i18nString` call.
+ */
+function handleI18nStringNode(filePath, node) {
+  const stringIdNode = node.arguments[0];
+  if (stringIdNode.property && stringIdNode.property.name && stringIdNode.property.type === espreeTypes.IDENTIFIER) {
+    addToLocAPICallsMap(filePath, stringIdNode.property.name, escodegen.generate(node), node.loc);
   }
 }
 
@@ -567,17 +580,8 @@ function addString(str, code, filePath, location, argumentNodes) {
  * Check if the file is in a directory that has been migrated to V2
  */
 function isInMigratedDirectory(filePath) {
-  const relativeFilePath = localizationUtils.getRelativeFilePathFromFrontEnd(filePath);
-  const dirName = relativeFilePath.slice(0, relativeFilePath.indexOf('\\'));
+  const dirName = path.basename(path.dirname(filePath));
   return migratedDirsSet.has(dirName);
-}
-
-/**
- * Check if UIStrings presents in the file
- */
-function hasUIStrings(content) {
-  const sourceFile = ts.createSourceFile('', content, ts.ScriptTarget.ESNext, true);
-  return (findUIStringsNode(sourceFile) !== null);
 }
 
 /**

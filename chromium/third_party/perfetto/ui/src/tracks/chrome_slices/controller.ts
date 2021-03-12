@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {slowlyCountRows} from '../../common/query_iterator';
 import {fromNs, toNs} from '../../common/time';
 import {
   TrackController,
@@ -41,7 +42,7 @@ class ChromeSliceTrackController extends TrackController<Config, Data> {
       const query = `SELECT max(dur) FROM ${tableName} WHERE track_id = ${
           this.config.trackId}`;
       const rawResult = await this.query(query);
-      if (rawResult.numRecords === 1) {
+      if (slowlyCountRows(rawResult) === 1) {
         this.maxDurNs = rawResult.columns[0].longValues![0];
       }
     }
@@ -54,7 +55,8 @@ class ChromeSliceTrackController extends TrackController<Config, Data> {
         depth,
         id as slice_id,
         name,
-        dur = 0 as is_instant
+        dur = 0 as is_instant,
+        dur = -1 as is_incomplete
       FROM ${tableName}
       WHERE track_id = ${this.config.trackId} AND
         ts >= (${startNs - this.maxDurNs}) AND
@@ -62,12 +64,12 @@ class ChromeSliceTrackController extends TrackController<Config, Data> {
       GROUP BY depth, tsq`;
     const rawResult = await this.query(query);
 
-    const numRows = +rawResult.numRecords;
+    const numRows = slowlyCountRows(rawResult);
     const slices: Data = {
       start,
       end,
       resolution,
-      length: +rawResult.numRecords,
+      length: numRows,
       strings: [],
       sliceIds: new Float64Array(numRows),
       starts: new Float64Array(numRows),
@@ -75,6 +77,7 @@ class ChromeSliceTrackController extends TrackController<Config, Data> {
       depths: new Uint16Array(numRows),
       titles: new Uint16Array(numRows),
       isInstant: new Uint16Array(numRows),
+      isIncomplete: new Uint16Array(numRows),
     };
 
     const stringIndexes = new Map<string, number>();
@@ -94,6 +97,7 @@ class ChromeSliceTrackController extends TrackController<Config, Data> {
       const durNs = +cols[2].longValues![row];
       const endNs = startNs + durNs;
       const isInstant = +cols[6].longValues![row];
+      const isIncomplete = +cols[7].longValues![row];
 
       let endNsQ = Math.floor((endNs + bucketNs / 2 - 1) / bucketNs) * bucketNs;
       endNsQ = Math.max(endNsQ, startNsQ + bucketNs);
@@ -112,6 +116,7 @@ class ChromeSliceTrackController extends TrackController<Config, Data> {
       slices.sliceIds[row] = +cols[4].longValues![row];
       slices.titles[row] = internString(cols[5].stringValues![row]);
       slices.isInstant[row] = isInstant;
+      slices.isIncomplete[row] = isIncomplete;
     }
     return slices;
   }

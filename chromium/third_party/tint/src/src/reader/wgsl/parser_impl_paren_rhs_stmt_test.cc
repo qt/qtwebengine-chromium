@@ -23,41 +23,46 @@ namespace {
 
 TEST_F(ParserImplTest, ParenRhsStmt) {
   auto* p = parser("(a + b)");
-  auto e = p->paren_rhs_stmt();
+  auto e = p->expect_paren_rhs_stmt();
   ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  ASSERT_FALSE(e.errored);
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsBinary());
 }
 
 TEST_F(ParserImplTest, ParenRhsStmt_MissingLeftParen) {
   auto* p = parser("true)");
-  auto e = p->paren_rhs_stmt();
+  auto e = p->expect_paren_rhs_stmt();
   ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:1: expected (");
+  ASSERT_TRUE(e.errored);
+  ASSERT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:1: expected '('");
 }
 
 TEST_F(ParserImplTest, ParenRhsStmt_MissingRightParen) {
   auto* p = parser("(true");
-  auto e = p->paren_rhs_stmt();
+  auto e = p->expect_paren_rhs_stmt();
   ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
-  EXPECT_EQ(p->error(), "1:6: expected )");
+  ASSERT_TRUE(e.errored);
+  ASSERT_EQ(e.value, nullptr);
+  EXPECT_EQ(p->error(), "1:6: expected ')'");
 }
 
 TEST_F(ParserImplTest, ParenRhsStmt_InvalidExpression) {
   auto* p = parser("(if (a() {})");
-  auto e = p->paren_rhs_stmt();
+  auto e = p->expect_paren_rhs_stmt();
   ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  ASSERT_TRUE(e.errored);
+  ASSERT_EQ(e.value, nullptr);
   EXPECT_EQ(p->error(), "1:2: unable to parse expression");
 }
 
 TEST_F(ParserImplTest, ParenRhsStmt_MissingExpression) {
   auto* p = parser("()");
-  auto e = p->paren_rhs_stmt();
+  auto e = p->expect_paren_rhs_stmt();
   ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
+  ASSERT_TRUE(e.errored);
+  ASSERT_EQ(e.value, nullptr);
   EXPECT_EQ(p->error(), "1:2: unable to parse expression");
 }
 

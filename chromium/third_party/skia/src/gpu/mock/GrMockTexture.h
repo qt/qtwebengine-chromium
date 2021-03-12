@@ -8,8 +8,8 @@
 #define GrMockTexture_DEFINED
 
 #include "include/gpu/mock/GrMockTypes.h"
+#include "src/gpu/GrAttachment.h"
 #include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrStencilAttachment.h"
 #include "src/gpu/GrTexture.h"
 #include "src/gpu/mock/GrMockGpu.h"
 
@@ -109,15 +109,14 @@ public:
             // Add one to account for the resolve buffer.
             ++numColorSamples;
         }
-        const GrCaps& caps = *this->getGpu()->caps();
-        return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
+        return GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
                                       numColorSamples, GrMipmapped::kNo);
     }
 
     GrBackendRenderTarget getBackendRenderTarget() const override {
         int numStencilBits = 0;
-        if (GrStencilAttachment* stencil = this->getStencilAttachment()) {
-            numStencilBits = stencil->bits();
+        if (GrAttachment* stencil = this->getStencilAttachment()) {
+            numStencilBits = GrBackendFormatStencilBits(stencil->backendFormat());
         }
         return {this->width(), this->height(), this->numSamples(), numStencilBits, fInfo};
     }
@@ -205,8 +204,7 @@ private:
             // Add one to account for the resolve buffer.
             ++numColorSamples;
         }
-        const GrCaps& caps = *this->getGpu()->caps();
-        return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
+        return GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
                                       numColorSamples, this->mipmapped());
     }
 

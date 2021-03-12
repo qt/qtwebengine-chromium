@@ -10,6 +10,7 @@
 
 #include "anglebase/no_destructor.h"
 #include "common/mathutil.h"
+#include "gpu_info_util/SystemInfo.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Framebuffer.h"
 
@@ -136,15 +137,6 @@ template <ExtensionBool bool1, ExtensionBool bool2, ExtensionBool bool3>
 static bool RequireExtOrExtOrExt(const Version &, const Extensions &extensions)
 {
     return extensions.*bool1 || extensions.*bool2 || extensions.*bool3;
-}
-
-static bool UnsizedHalfFloatOESRGBATextureAttachmentSupport(const Version &clientVersion,
-                                                            const Extensions &extensions)
-{
-    // dEQP requires ES3 + EXT_color_buffer_half_float for rendering to RGB[A] + HALF_FLOAT_OES
-    // textures but WebGL allows it with just ES 2.0
-    return (clientVersion.major >= 3 || extensions.webglCompatibility) &&
-           extensions.colorBufferHalfFloat;
 }
 
 // R8, RG8
@@ -992,8 +984,8 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     // - Multisampled buffer are disallowed for non-normalized integer component types and we want to support it for STENCIL_INDEX8
     // - All other stencil formats (all depth-stencil) are either float or normalized
     // - It affects only validation of internalformat in RenderbufferStorageMultisample.
-    //                         | Internal format  |sized|D |S |X | Format    | Type            | Component type        | Texture supported | Filterable    | Texture attachment | Renderbuffer   | Blend
-    AddDepthStencilFormat(&map, GL_STENCIL_INDEX8, true, 0, 8, 0, GL_STENCIL, GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, RequireES<1, 0>,    NeverSupported, RequireES<1, 0>,     RequireES<1, 0>, RequireES<1, 0>);
+    //                         | Internal format  |sized|D |S |X | Format          | Type            | Component type        | Texture supported                               | Filterable    | Texture attachment                              | Renderbuffer   | Blend
+    AddDepthStencilFormat(&map, GL_STENCIL_INDEX8, true, 0, 8, 0, GL_STENCIL_INDEX, GL_UNSIGNED_BYTE, GL_UNSIGNED_NORMALIZED, RequireESOrExt<1, 0, &Extensions::stencilIndex8>, NeverSupported, RequireESOrExt<1, 0, &Extensions::stencilIndex8>, RequireES<1, 0>, RequireES<1, 0>);
 
     // From GL_ANGLE_lossy_etc_decode
     //                       | Internal format                                                |W |H |D |BS |CC| SRGB | Texture supported                      | Filterable     | Texture attachment | Renderbuffer  | Blend
@@ -1038,8 +1030,21 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     AddRGBAFormat(&map, GL_RGBA,           false,  8,  8,  8,  8, 0, GL_RGBA,           GL_BYTE,                        GL_SIGNED_NORMALIZED,   false, NeverSupported,                                   NeverSupported,  NeverSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_SRGB,           false,  8,  8,  8,  0, 0, GL_SRGB,           GL_UNSIGNED_BYTE,               GL_UNSIGNED_NORMALIZED, true,  RequireExt<&Extensions::sRGB>,                    AlwaysSupported, NeverSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_SRGB_ALPHA_EXT, false,  8,  8,  8,  8, 0, GL_SRGB_ALPHA_EXT, GL_UNSIGNED_BYTE,               GL_UNSIGNED_NORMALIZED, true,  RequireExt<&Extensions::sRGB>,                    AlwaysSupported, RequireExt<&Extensions::sRGB>,                  NeverSupported, NeverSupported);
-#if defined(ANGLE_PLATFORM_IOS) && !defined(ANGLE_PLATFORM_MACCATALYST)
-    AddRGBAFormat(&map, GL_BGRA_EXT,       false,  8,  8,  8,  8, 0, GL_BGRA_EXT,       GL_UNSIGNED_BYTE,               GL_UNSIGNED_NORMALIZED, false, RequireES<2, 0>,                                  AlwaysSupported, RequireES<2, 0>,                                NeverSupported, NeverSupported);
+#if (defined(ANGLE_PLATFORM_IOS) && !defined(ANGLE_PLATFORM_MACCATALYST)) || (defined(ANGLE_PLATFORM_MACCATALYST) && defined(ANGLE_CPU_ARM64))
+    angle::SystemInfo info;
+    if (angle::GetSystemInfo(&info))
+    {
+        if (info.isiOSAppOnMac)
+        {
+            // Using OpenGLES.framework.
+            AddRGBAFormat(&map, GL_BGRA_EXT,       false,  8,  8,  8,  8, 0, GL_BGRA_EXT,       GL_UNSIGNED_BYTE,               GL_UNSIGNED_NORMALIZED, false, RequireES<2, 0>,                                  AlwaysSupported, RequireES<2, 0>,                                NeverSupported, NeverSupported);
+        }
+        else
+        {
+            // Using OpenGL.framework.
+            AddRGBAFormat(&map, GL_BGRA_EXT,       false,  8,  8,  8,  8, 0, GL_BGRA_EXT,       GL_UNSIGNED_BYTE,               GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::textureFormatBGRA8888>,   AlwaysSupported, RequireExt<&Extensions::textureFormatBGRA8888>, NeverSupported, NeverSupported);
+        }
+    }
 #else
     AddRGBAFormat(&map, GL_BGRA_EXT,       false,  8,  8,  8,  8, 0, GL_BGRA_EXT,       GL_UNSIGNED_BYTE,               GL_UNSIGNED_NORMALIZED, false, RequireExt<&Extensions::textureFormatBGRA8888>,   AlwaysSupported, RequireExt<&Extensions::textureFormatBGRA8888>, NeverSupported, NeverSupported);
 #endif
@@ -1080,8 +1085,8 @@ static InternalFormatInfoMap BuildInternalFormatInfoMap()
     AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT,                   GL_FLOAT, false, NeverSupported,                                                             NeverSupported,                                  NeverSupported,                                  NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RED,          false, 16,  0,  0,  0, 0, GL_RED,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>,    RequireExt<&Extensions::textureHalfFloatLinear>, AlwaysSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RG,           false, 16, 16,  0,  0, 0, GL_RG,   GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExtAndExt<&Extensions::textureHalfFloat, &Extensions::textureRG>,    RequireExt<&Extensions::textureHalfFloatLinear>, AlwaysSupported,                                 NeverSupported, NeverSupported);
-    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, UnsizedHalfFloatOESRGBATextureAttachmentSupport, NeverSupported, NeverSupported);
-    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, UnsizedHalfFloatOESRGBATextureAttachmentSupport, NeverSupported, NeverSupported);
+    AddRGBAFormat(&map, GL_RGB,          false, 16, 16, 16,  0, 0, GL_RGB,  GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, RequireExt<&Extensions::colorBufferHalfFloat>,   NeverSupported, NeverSupported);
+    AddRGBAFormat(&map, GL_RGBA,         false, 16, 16, 16, 16, 0, GL_RGBA, GL_HALF_FLOAT_OES,               GL_FLOAT, false, RequireExt<&Extensions::textureHalfFloat>,                                  RequireExt<&Extensions::textureHalfFloatLinear>, RequireExt<&Extensions::colorBufferHalfFloat>,   NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RED,          false, 32,  0,  0,  0, 0, GL_RED,  GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloatOES, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinearOES>,  AlwaysSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RG,           false, 32, 32,  0,  0, 0, GL_RG,   GL_FLOAT,                        GL_FLOAT, false, RequireExtAndExt<&Extensions::textureFloatOES, &Extensions::textureRG>,     RequireExt<&Extensions::textureFloatLinearOES>,  AlwaysSupported,                                 NeverSupported, NeverSupported);
     AddRGBAFormat(&map, GL_RGB,          false, 32, 32, 32,  0, 0, GL_RGB,  GL_FLOAT,                        GL_FLOAT, false, RequireExt<&Extensions::textureFloatOES>,                                   RequireExt<&Extensions::textureFloatLinearOES>,  NeverSupported,                                  NeverSupported, NeverSupported);

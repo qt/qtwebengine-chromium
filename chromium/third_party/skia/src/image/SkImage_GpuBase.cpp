@@ -13,7 +13,7 @@
 #include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkBitmapCache.h"
 #include "src/core/SkTLList.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrImageContextPriv.h"
 #include "src/gpu/GrImageInfo.h"
 #include "src/gpu/GrProxyProvider.h"
@@ -334,17 +334,17 @@ bool SkImage_GpuBase::RenderYUVAToRGBA(const GrCaps& caps,
 }
 
 sk_sp<GrTextureProxy> SkImage_GpuBase::MakePromiseImageLazyProxy(
-        GrRecordingContext* context, int width, int height,
-        GrBackendFormat backendFormat, GrMipmapped mipMapped,
-        PromiseImageTextureFulfillProc fulfillProc, PromiseImageTextureReleaseProc releaseProc,
-        PromiseImageTextureDoneProc doneProc, PromiseImageTextureContext textureContext,
-        PromiseImageApiVersion version) {
+        GrRecordingContext* context,
+        SkISize dimensions,
+        GrBackendFormat backendFormat,
+        GrMipmapped mipMapped,
+        PromiseImageTextureFulfillProc fulfillProc,
+        sk_sp<GrRefCntedCallback> releaseHelper) {
     SkASSERT(context);
-    SkASSERT(width > 0 && height > 0);
-    SkASSERT(doneProc);
+    SkASSERT(!dimensions.isEmpty());
+    SkASSERT(releaseHelper);
 
-    if (!fulfillProc || !releaseProc) {
-        doneProc(textureContext);
+    if (!fulfillProc) {
         return nullptr;
     }
 
@@ -352,7 +352,6 @@ sk_sp<GrTextureProxy> SkImage_GpuBase::MakePromiseImageLazyProxy(
         GrTextureTypeHasRestrictedSampling(backendFormat.textureType())) {
         // It is invalid to have a GL_TEXTURE_EXTERNAL or GL_TEXTURE_RECTANGLE and have mips as
         // well.
-        doneProc(textureContext);
         return nullptr;
     }
 
@@ -373,15 +372,8 @@ sk_sp<GrTextureProxy> SkImage_GpuBase::MakePromiseImageLazyProxy(
     class PromiseLazyInstantiateCallback {
     public:
         PromiseLazyInstantiateCallback(PromiseImageTextureFulfillProc fulfillProc,
-                                       PromiseImageTextureReleaseProc releaseProc,
-                                       PromiseImageTextureDoneProc doneProc,
-                                       PromiseImageTextureContext context,
-                                       PromiseImageApiVersion version)
-                : fFulfillProc(fulfillProc)
-                , fReleaseProc(releaseProc)
-                , fVersion(version) {
-            fDoneCallback = sk_make_sp<GrRefCntedCallback>(doneProc, context);
-        }
+                                       sk_sp<GrRefCntedCallback> releaseHelper)
+                : fFulfillProc(fulfillProc), fReleaseHelper(std::move(releaseHelper)) {}
         PromiseLazyInstantiateCallback(PromiseLazyInstantiateCallback&&) = default;
         PromiseLazyInstantiateCallback(const PromiseLazyInstantiateCallback&) {
             // Because we get wrapped in std::function we must be copyable. But we should never
@@ -429,12 +421,10 @@ sk_sp<GrTextureProxy> SkImage_GpuBase::MakePromiseImageLazyProxy(
                 // call each callback once.
                 return {};
             }
-            SkASSERT(fDoneCallback);
-            PromiseImageTextureContext textureContext = fDoneCallback->context();
+
+            PromiseImageTextureContext textureContext = fReleaseHelper->context();
             sk_sp<SkPromiseImageTexture> promiseTexture = fFulfillProc(textureContext);
-            // From here on out our contract is that the release proc must be called, even if
-            // the return from fulfill was invalid or we fail for some other reason.
-            auto releaseCallback = sk_make_sp<GrRefCntedCallback>(fReleaseProc, textureContext);
+
             if (!promiseTexture) {
                 fFulfillProcFailed = true;
                 return {};
@@ -466,32 +456,28 @@ sk_sp<GrTextureProxy> SkImage_GpuBase::MakePromiseImageLazyProxy(
                     return {};
                 }
             }
-            auto releaseIdleState = fVersion == PromiseImageApiVersion::kLegacy
-                                            ? GrTexture::IdleState::kFinished
-                                            : GrTexture::IdleState::kFlushed;
-            tex->addIdleProc(std::move(releaseCallback), releaseIdleState);
-            tex->addIdleProc(std::move(fDoneCallback), GrTexture::IdleState::kFinished);
+            // Because we're caching the GrTextureObject we have to use this "idle proc" mechanism
+            // to know when it's safe to delete the underlying backend texture.
+            tex->addIdleProc(std::move(fReleaseHelper));
             promiseTexture->addKeyToInvalidate(tex->getContext()->priv().contextID(), key);
             fTexture = tex.get();
             // We need to hold on to the GrTexture in case our proxy gets reinstantiated. However,
             // we can't unref in our destructor because we may be on another thread then. So we
             // let the cache know it is waiting on an unref message. We will send that message from
             // our destructor.
-            GrContext* context = fTexture->getContext();
-            context->priv().getResourceCache()->insertDelayedTextureUnref(fTexture);
-            fTextureContextID = context->priv().contextID();
+            auto dContext = fTexture->getContext();
+            dContext->priv().getResourceCache()->insertDelayedTextureUnref(fTexture);
+            fTextureContextID = dContext->priv().contextID();
             return {std::move(tex), kReleaseCallbackOnInstantiation, kKeySyncMode};
         }
 
     private:
         PromiseImageTextureFulfillProc fFulfillProc;
-        PromiseImageTextureReleaseProc fReleaseProc;
-        sk_sp<GrRefCntedCallback> fDoneCallback;
+        sk_sp<GrRefCntedCallback> fReleaseHelper;
         GrTexture* fTexture = nullptr;
         uint32_t fTextureContextID = SK_InvalidUniqueID;
-        PromiseImageApiVersion fVersion;
         bool fFulfillProcFailed = false;
-    } callback(fulfillProc, releaseProc, doneProc, textureContext, version);
+    } callback(fulfillProc, std::move(releaseHelper));
 
     GrProxyProvider* proxyProvider = context->priv().proxyProvider();
 
@@ -502,8 +488,8 @@ sk_sp<GrTextureProxy> SkImage_GpuBase::MakePromiseImageLazyProxy(
 
     // We pass kReadOnly here since we should treat content of the client's texture as immutable.
     // The promise API provides no way for the client to indicated that the texture is protected.
-    return proxyProvider->createLazyProxy(
-            std::move(callback), backendFormat, {width, height}, mipMapped, mipmapStatus,
-            GrInternalSurfaceFlags::kReadOnly, SkBackingFit::kExact, SkBudgeted::kNo,
-            GrProtected::kNo, GrSurfaceProxy::UseAllocator::kYes);
+    return proxyProvider->createLazyProxy(std::move(callback), backendFormat, dimensions, mipMapped,
+                                          mipmapStatus, GrInternalSurfaceFlags::kReadOnly,
+                                          SkBackingFit::kExact, SkBudgeted::kNo, GrProtected::kNo,
+                                          GrSurfaceProxy::UseAllocator::kYes);
 }

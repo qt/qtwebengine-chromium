@@ -21,9 +21,7 @@ class CastTrustStore {
   static CastTrustStore* CreateInstanceForTest(
       const std::vector<uint8_t>& trust_anchor_der);
 
-  static CastTrustStore* CreateInstanceFromPemFile(
-      absl::string_view file_path,
-      TrustStore::Mode mode = TrustStore::Mode::kStrict);
+  static CastTrustStore* CreateInstanceFromPemFile(absl::string_view file_path);
 
   CastTrustStore();
   explicit CastTrustStore(const std::vector<uint8_t>& trust_anchor_der);

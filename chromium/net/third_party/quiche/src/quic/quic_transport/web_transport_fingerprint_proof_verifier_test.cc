@@ -6,11 +6,11 @@
 
 #include <memory>
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
 #include "net/third_party/quiche/src/quic/test_tools/mock_clock.h"
 #include "net/third_party/quiche/src/quic/test_tools/test_certificates.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 namespace test {
@@ -37,15 +37,16 @@ class WebTransportFingerprintProofVerifierTest : public QuicTest {
   }
 
  protected:
-  VerifyResult Verify(quiche::QuicheStringPiece certificate) {
+  VerifyResult Verify(absl::string_view certificate) {
     VerifyResult result;
     std::unique_ptr<ProofVerifyDetails> details;
+    uint8_t tls_alert;
     result.status = verifier_->VerifyCertChain(
         /*hostname=*/"", /*port=*/0,
         std::vector<std::string>{std::string(certificate)},
         /*ocsp_response=*/"",
         /*cert_sct=*/"",
-        /*context=*/nullptr, &result.error, &details,
+        /*context=*/nullptr, &result.error, &details, &tls_alert,
         /*callback=*/nullptr);
     result.detailed_status =
         static_cast<WebTransportFingerprintProofVerifier::Details*>(
@@ -136,7 +137,7 @@ TEST_F(WebTransportFingerprintProofVerifierTest, MaxValidity) {
 }
 
 TEST_F(WebTransportFingerprintProofVerifierTest, InvalidCertificate) {
-  constexpr quiche::QuicheStringPiece kInvalidCertificate = "Hello, world!";
+  constexpr absl::string_view kInvalidCertificate = "Hello, world!";
   ASSERT_TRUE(verifier_->AddFingerprint(
       {CertificateFingerprint::kSha256,
        ComputeSha256Fingerprint(kInvalidCertificate)}));

@@ -341,3 +341,6 @@ cpuhp/cpuhp_exit
 cpuhp/cpuhp_multi_enter
 cpuhp/cpuhp_enter
 cpuhp/cpuhp_latency
+fastrpc/fastrpc_dma_stat
+dpu/tracing_mark_write
+g2d/tracing_mark_write

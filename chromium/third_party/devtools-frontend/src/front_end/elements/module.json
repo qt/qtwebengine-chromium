@@ -314,6 +314,7 @@
     "ColorSwatchPopoverIcon.js",
     "ComputedStyleModel.js",
     "Adorner.js",
+    "CSSPropertyIconResolver.js",
     "DOMLinkifier.js",
     "DOMPath.js",
     "ElementsSidebarPane.js",
@@ -337,10 +338,14 @@
     "ElementStatePaneWidget.js",
     "ElementsTreeElementHighlighter.js",
     "ImagePreviewPopover.js",
+    "Icon_bridge.js",
     "ElementsBreadcrumbs_bridge.js",
     "ElementsPanelLink_bridge.js",
     "LayoutSidebarPane.js",
     "LayoutPane_bridge.js"
+  ],
+  "skip_compilation": [
+    "NodeText.js"
   ],
   "resources": [
     "classesPaneWidget.css",

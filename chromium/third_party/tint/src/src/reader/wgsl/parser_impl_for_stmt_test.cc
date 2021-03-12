@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <string>
+
 #include "gtest/gtest.h"
 #include "src/reader/wgsl/parser_impl.h"
 #include "src/reader/wgsl/parser_impl_test_helper.h"
-
-#include <string>
 
 namespace tint {
 namespace reader {
@@ -27,14 +27,16 @@ class ForStmtTest : public ParserImplTest {
  public:
   void TestForLoop(std::string loop_str, std::string for_str) {
     auto* p_loop = parser(loop_str);
-    auto e_loop = p_loop->statements();
-    ASSERT_FALSE(p_loop->has_error()) << p_loop->error();
-    ASSERT_NE(e_loop, nullptr);
+    auto e_loop = p_loop->expect_statements();
+    EXPECT_FALSE(e_loop.errored);
+    EXPECT_FALSE(p_loop->has_error()) << p_loop->error();
+    ASSERT_NE(e_loop.value, nullptr);
 
     auto* p_for = parser(for_str);
-    auto e_for = p_for->statements();
-    ASSERT_FALSE(p_for->has_error()) << p_for->error();
-    ASSERT_NE(e_for, nullptr);
+    auto e_for = p_for->expect_statements();
+    EXPECT_FALSE(e_for.errored);
+    EXPECT_FALSE(p_for->has_error()) << p_for->error();
+    ASSERT_NE(e_for.value, nullptr);
 
     EXPECT_EQ(e_loop->str(), e_for->str());
   }
@@ -159,8 +161,10 @@ class ForStmtErrorTest : public ParserImplTest {
     auto* p_for = parser(for_str);
     auto e_for = p_for->for_stmt();
 
-    ASSERT_TRUE(p_for->has_error());
-    ASSERT_EQ(e_for, nullptr);
+    EXPECT_FALSE(e_for.matched);
+    EXPECT_TRUE(e_for.errored);
+    EXPECT_TRUE(p_for->has_error());
+    ASSERT_EQ(e_for.value, nullptr);
     EXPECT_EQ(p_for->error(), error_str);
   }
 };
@@ -168,7 +172,7 @@ class ForStmtErrorTest : public ParserImplTest {
 // Test a for loop with missing left parenthesis is invalid.
 TEST_F(ForStmtErrorTest, MissingLeftParen) {
   std::string for_str = "for { }";
-  std::string error_str = "1:5: missing for loop (";
+  std::string error_str = "1:5: expected '(' for for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -176,7 +180,7 @@ TEST_F(ForStmtErrorTest, MissingLeftParen) {
 // Test a for loop with missing first semicolon is invalid.
 TEST_F(ForStmtErrorTest, MissingFirstSemicolon) {
   std::string for_str = "for () {}";
-  std::string error_str = "1:6: missing ';' after initializer in for loop";
+  std::string error_str = "1:6: expected ';' for initializer in for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -184,7 +188,7 @@ TEST_F(ForStmtErrorTest, MissingFirstSemicolon) {
 // Test a for loop with missing second semicolon is invalid.
 TEST_F(ForStmtErrorTest, MissingSecondSemicolon) {
   std::string for_str = "for (;) {}";
-  std::string error_str = "1:7: missing ';' after condition in for loop";
+  std::string error_str = "1:7: expected ';' for condition in for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -192,7 +196,7 @@ TEST_F(ForStmtErrorTest, MissingSecondSemicolon) {
 // Test a for loop with missing right parenthesis is invalid.
 TEST_F(ForStmtErrorTest, MissingRightParen) {
   std::string for_str = "for (;; {}";
-  std::string error_str = "1:9: missing for loop )";
+  std::string error_str = "1:9: expected ')' for for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -200,7 +204,7 @@ TEST_F(ForStmtErrorTest, MissingRightParen) {
 // Test a for loop with missing left brace is invalid.
 TEST_F(ForStmtErrorTest, MissingLeftBrace) {
   std::string for_str = "for (;;)";
-  std::string error_str = "1:9: missing for loop {";
+  std::string error_str = "1:9: expected '{' for for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -208,7 +212,7 @@ TEST_F(ForStmtErrorTest, MissingLeftBrace) {
 // Test a for loop with missing right brace is invalid.
 TEST_F(ForStmtErrorTest, MissingRightBrace) {
   std::string for_str = "for (;;) {";
-  std::string error_str = "1:11: missing for loop }";
+  std::string error_str = "1:11: expected '}' for for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -216,7 +220,7 @@ TEST_F(ForStmtErrorTest, MissingRightBrace) {
 // Test a for loop with an invalid initializer statement.
 TEST_F(ForStmtErrorTest, InvalidInitializerAsConstDecl) {
   std::string for_str = "for (const x: i32;;) { }";
-  std::string error_str = "1:18: missing = for constant declaration";
+  std::string error_str = "1:18: expected '=' for constant declaration";
 
   TestForWithError(for_str, error_str);
 }
@@ -225,7 +229,7 @@ TEST_F(ForStmtErrorTest, InvalidInitializerAsConstDecl) {
 // variable_stmt | assignment_stmt | func_call_stmt.
 TEST_F(ForStmtErrorTest, InvalidInitializerMatch) {
   std::string for_str = "for (if (true) {} ;;) { }";
-  std::string error_str = "1:6: missing ';' after initializer in for loop";
+  std::string error_str = "1:6: expected ';' for initializer in for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -233,7 +237,7 @@ TEST_F(ForStmtErrorTest, InvalidInitializerMatch) {
 // Test a for loop with an invalid break condition.
 TEST_F(ForStmtErrorTest, InvalidBreakConditionAsExpression) {
   std::string for_str = "for (; (0 == 1; ) { }";
-  std::string error_str = "1:15: expected )";
+  std::string error_str = "1:15: expected ')'";
 
   TestForWithError(for_str, error_str);
 }
@@ -242,7 +246,7 @@ TEST_F(ForStmtErrorTest, InvalidBreakConditionAsExpression) {
 // logical_or_expression.
 TEST_F(ForStmtErrorTest, InvalidBreakConditionMatch) {
   std::string for_str = "for (; var i: i32 = 0;) { }";
-  std::string error_str = "1:8: missing ';' after condition in for loop";
+  std::string error_str = "1:8: expected ';' for condition in for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -259,7 +263,7 @@ TEST_F(ForStmtErrorTest, InvalidContinuingAsFuncCall) {
 // assignment_stmt | func_call_stmt.
 TEST_F(ForStmtErrorTest, InvalidContinuingMatch) {
   std::string for_str = "for (;; var i: i32 = 0) { }";
-  std::string error_str = "1:9: missing for loop )";
+  std::string error_str = "1:9: expected ')' for for loop";
 
   TestForWithError(for_str, error_str);
 }
@@ -267,7 +271,7 @@ TEST_F(ForStmtErrorTest, InvalidContinuingMatch) {
 // Test a for loop with an invalid body.
 TEST_F(ForStmtErrorTest, InvalidBody) {
   std::string for_str = "for (;;) { const x: i32; }";
-  std::string error_str = "1:24: missing = for constant declaration";
+  std::string error_str = "1:24: expected '=' for constant declaration";
 
   TestForWithError(for_str, error_str);
 }
@@ -275,7 +279,7 @@ TEST_F(ForStmtErrorTest, InvalidBody) {
 // Test a for loop with a body not matching statements
 TEST_F(ForStmtErrorTest, InvalidBodyMatch) {
   std::string for_str = "for (;;) { fn main() -> void {} }";
-  std::string error_str = "1:12: missing for loop }";
+  std::string error_str = "1:12: expected '}' for for loop";
 
   TestForWithError(for_str, error_str);
 }

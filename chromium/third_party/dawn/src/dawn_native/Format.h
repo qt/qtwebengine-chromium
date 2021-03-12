@@ -18,9 +18,8 @@
 #include "dawn_native/dawn_platform.h"
 
 #include "common/ityp_bitset.h"
-#include "dawn_native/Error.h"
-
 #include "dawn_native/EnumClassBitmasks.h"
+#include "dawn_native/Error.h"
 
 #include <array>
 
@@ -29,10 +28,28 @@ namespace dawn_native {
     enum class Aspect : uint8_t;
     class DeviceBase;
 
+    // This mirrors wgpu::TextureComponentType as a bitmask instead.
+    enum class ComponentTypeBit : uint8_t {
+        None = 0x0,
+        Float = 0x1,
+        Sint = 0x2,
+        Uint = 0x4,
+        DepthComparison = 0x8,
+    };
+
+    // Converts an wgpu::TextureComponentType to its bitmask representation.
+    ComponentTypeBit ToComponentTypeBit(wgpu::TextureComponentType type);
+
     struct TexelBlockInfo {
-        uint32_t blockByteSize;
-        uint32_t blockWidth;
-        uint32_t blockHeight;
+        uint32_t byteSize;
+        uint32_t width;
+        uint32_t height;
+    };
+
+    struct AspectInfo {
+        TexelBlockInfo block;
+        wgpu::TextureComponentType baseType;
+        ComponentTypeBit supportedComponentTypes;
     };
 
     // The number of formats Dawn knows about. Asserts in BuildFormatTable ensure that this is the
@@ -44,40 +61,30 @@ namespace dawn_native {
 
     // A wgpu::TextureFormat along with all the information about it necessary for validation.
     struct Format {
-        enum class Type {
-            Float,
-            Sint,
-            Uint,
-            Other,
-        };
-
         wgpu::TextureFormat format;
         bool isRenderable;
         bool isCompressed;
         // A format can be known but not supported because it is part of a disabled extension.
         bool isSupported;
         bool supportsStorageUsage;
-        Type type;
         Aspect aspects;
-
-        static Type TextureComponentTypeToFormatType(wgpu::TextureComponentType componentType);
-        static wgpu::TextureComponentType FormatTypeToTextureComponentType(Type type);
 
         bool IsColor() const;
         bool HasDepth() const;
         bool HasStencil() const;
         bool HasDepthOrStencil() const;
-        bool HasComponentType(Type componentType) const;
 
-        TexelBlockInfo GetTexelBlockInfo(wgpu::TextureAspect aspect) const;
-        TexelBlockInfo GetTexelBlockInfo(Aspect aspect) const;
+        const AspectInfo& GetAspectInfo(wgpu::TextureAspect aspect) const;
+        const AspectInfo& GetAspectInfo(Aspect aspect) const;
 
         // The index of the format in the list of all known formats: a unique number for each format
         // in [0, kKnownFormatCount)
         size_t GetIndex() const;
 
       private:
-        TexelBlockInfo blockInfo;
+        // The most common aspect: the color aspect for color texture, the depth aspect for
+        // depth[-stencil] textures.
+        AspectInfo firstAspect;
 
         friend FormatTable BuildFormatTable(const DeviceBase* device);
     };
@@ -90,5 +97,14 @@ namespace dawn_native {
     FormatTable BuildFormatTable(const DeviceBase* device);
 
 }  // namespace dawn_native
+
+namespace wgpu {
+
+    template <>
+    struct IsDawnBitmask<dawn_native::ComponentTypeBit> {
+        static constexpr bool enable = true;
+    };
+
+}  // namespace wgpu
 
 #endif  // DAWNNATIVE_FORMAT_H_

@@ -19,7 +19,6 @@
 #include "common/MemoryBuffer.h"
 #include "common/angleutils.h"
 #include "libANGLE/Error.h"
-#include "libANGLE/ImageIndex.h"
 #include "libANGLE/angletypes.h"
 #include "libANGLE/renderer/metal/mtl_common.h"
 #include "libANGLE/renderer/metal/mtl_format_utils.h"
@@ -128,6 +127,16 @@ class Texture final : public Resource,
                                          bool allowFormatView,
                                          TextureRef *refOut);
 
+    static angle::Result Make2DArrayTexture(ContextMtl *context,
+                                            const Format &format,
+                                            uint32_t width,
+                                            uint32_t height,
+                                            uint32_t mips,
+                                            uint32_t arrayLength,
+                                            bool renderTargetOnly,
+                                            bool allowFormatView,
+                                            TextureRef *refOut);
+
     static angle::Result Make3DTexture(ContextMtl *context,
                                        const Format &format,
                                        uint32_t width,
@@ -147,14 +156,14 @@ class Texture final : public Resource,
 
     void replace2DRegion(ContextMtl *context,
                          const MTLRegion &region,
-                         uint32_t mipmapLevel,
+                         const MipmapNativeLevel &mipmapLevel,
                          uint32_t slice,
                          const uint8_t *data,
                          size_t bytesPerRow);
 
     void replaceRegion(ContextMtl *context,
                        const MTLRegion &region,
-                       uint32_t mipmapLevel,
+                       const MipmapNativeLevel &mipmapLevel,
                        uint32_t slice,
                        const uint8_t *data,
                        size_t bytesPerRow,
@@ -164,21 +173,23 @@ class Texture final : public Resource,
                   size_t bytesPerRow,
                   size_t bytesPer2DInage,
                   const MTLRegion &region,
-                  uint32_t mipmapLevel,
+                  const MipmapNativeLevel &mipmapLevel,
                   uint32_t slice,
                   uint8_t *dataOut);
 
     // Create 2d view of a cube face which full range of mip levels.
     TextureRef createCubeFaceView(uint32_t face);
     // Create a view of one slice at a level.
-    TextureRef createSliceMipView(uint32_t slice, uint32_t level);
+    TextureRef createSliceMipView(uint32_t slice, const MipmapNativeLevel &level);
     // Create a view of a level.
-    TextureRef createMipView(uint32_t level);
+    TextureRef createMipView(const MipmapNativeLevel &level);
     // Create a view with different format
     TextureRef createViewWithDifferentFormat(MTLPixelFormat format);
     // Same as above but the target format must be compatible, for example sRGB to linear. In this
     // case texture doesn't need format view usage flag.
     TextureRef createViewWithCompatibleFormat(MTLPixelFormat format);
+    // Create a swizzled view
+    TextureRef createSwizzleView(const TextureSwizzleChannels &swizzle);
 
     MTLTextureType textureType() const;
     MTLPixelFormat pixelFormat() const;
@@ -187,12 +198,17 @@ class Texture final : public Resource,
     uint32_t arrayLength() const;
     uint32_t cubeFacesOrArrayLength() const;
 
-    uint32_t width(uint32_t level = 0) const;
-    uint32_t height(uint32_t level = 0) const;
-    uint32_t depth(uint32_t level = 0) const;
+    uint32_t width(const MipmapNativeLevel &level) const;
+    uint32_t height(const MipmapNativeLevel &level) const;
+    uint32_t depth(const MipmapNativeLevel &level) const;
 
-    gl::Extents size(uint32_t level = 0) const;
-    gl::Extents size(const gl::ImageIndex &index) const;
+    gl::Extents size(const MipmapNativeLevel &level) const;
+    gl::Extents size(const ImageNativeIndex &index) const;
+
+    uint32_t widthAt0() const { return width(kZeroNativeMipLevel); }
+    uint32_t heightAt0() const { return height(kZeroNativeMipLevel); }
+    uint32_t depthAt0() const { return depth(kZeroNativeMipLevel); }
+    gl::Extents sizeAt0() const { return size(kZeroNativeMipLevel); }
 
     uint32_t samples() const;
 
@@ -235,6 +251,7 @@ class Texture final : public Resource,
     // Create a texture view
     Texture(Texture *original, MTLPixelFormat format);
     Texture(Texture *original, MTLTextureType type, NSRange mipmapLevelRange, NSRange slices);
+    Texture(Texture *original, const TextureSwizzleChannels &swizzle);
 
     void syncContentIfNeeded(ContextMtl *context);
 
@@ -303,6 +320,27 @@ class Buffer final : public Resource, public WrappedObject<id<MTLBuffer>>
            const uint8_t *data);
 
     bool mMapReadOnly = true;
+};
+
+class NativeTexLevelArray
+{
+  public:
+    TextureRef &at(const MipmapNativeLevel &level) { return mTexLevels.at(level.get()); }
+    const TextureRef &at(const MipmapNativeLevel &level) const
+    {
+        return mTexLevels.at(level.get());
+    }
+
+    TextureRef &operator[](const MipmapNativeLevel &level) { return at(level); }
+    const TextureRef &operator[](const MipmapNativeLevel &level) const { return at(level); }
+
+    gl::TexLevelArray<TextureRef>::iterator begin() { return mTexLevels.begin(); }
+    gl::TexLevelArray<TextureRef>::const_iterator begin() const { return mTexLevels.begin(); }
+    gl::TexLevelArray<TextureRef>::iterator end() { return mTexLevels.end(); }
+    gl::TexLevelArray<TextureRef>::const_iterator end() const { return mTexLevels.end(); }
+
+  private:
+    gl::TexLevelArray<TextureRef> mTexLevels;
 };
 
 }  // namespace mtl

@@ -14,8 +14,140 @@ import {ContextMenu} from './ContextMenu.js';  // eslint-disable-line no-unused-
 import {Icon} from './Icon.js';
 import {Events as TabbedPaneEvents, TabbedPane} from './TabbedPane.js';
 import {Toolbar, ToolbarItem, ToolbarMenuButton} from './Toolbar.js';  // eslint-disable-line no-unused-vars
+import {createTextChild} from './UIUtils.js';
 import {ProvidedView, TabbedViewLocation, View, ViewLocation, ViewLocationResolver, widgetSymbol,} from './View.js';  // eslint-disable-line no-unused-vars
 import {VBox, Widget} from './Widget.js';  // eslint-disable-line no-unused-vars
+
+/** @type {!Array<!PreRegisteredView>} */
+const registeredViewExtensions = [];
+
+/** @enum {string} */
+export const ViewPersistence = {
+  CLOSEABLE: 'closeable',
+  PERMANENT: 'permanent',
+  TRANSIENT: 'transient',
+};
+
+/** @enum {string} */
+export const ViewLocationValues = {
+  PANEL: 'panel',
+  SETTINGS_VIEW: 'settings-view',
+};
+
+/**
+ * @typedef {{
+ *  title: string,
+ *  persistence: !ViewPersistence,
+ *  id: string,
+ *  location: !ViewLocationValues,
+ *  hasToolbar: boolean,
+ *  loadView: function():!Promise<!Widget>,
+ *  order: number,
+ *  settings: !Array<string>,
+ *  tags: string,
+ * }}
+ */
+// @ts-ignore typedef
+export let ViewRegistration;
+
+/**
+ * @implements {View}
+ */
+class PreRegisteredView {
+  /**
+   * @param {!ViewRegistration} viewRegistration
+   */
+  constructor(viewRegistration) {
+    /** @type {!ViewRegistration} */
+    this._viewRegistration = viewRegistration;
+    this._widgetRequested = false;
+  }
+
+  /**
+   * @override
+   */
+  title() {
+    return this._viewRegistration.title;
+  }
+
+  /**
+   * @override
+   */
+  isCloseable() {
+    return this._viewRegistration.persistence === ViewPersistence.CLOSEABLE;
+  }
+
+  /**
+   * @override
+   */
+  isTransient() {
+    return this._viewRegistration.persistence === ViewPersistence.TRANSIENT;
+  }
+
+  /**
+   * @override
+   */
+  viewId() {
+    return this._viewRegistration.id;
+  }
+
+  location() {
+    return this._viewRegistration.location;
+  }
+
+  order() {
+    return this._viewRegistration.order;
+  }
+
+  settings() {
+    return this._viewRegistration.settings;
+  }
+
+  tags() {
+    return this._viewRegistration.tags;
+  }
+
+  /**
+   * @override
+   */
+  async toolbarItems() {
+    return [];
+  }
+
+  /**
+   * @override
+   */
+  async widget() {
+    this._widgetRequested = true;
+    return this._viewRegistration.loadView();
+  }
+
+  /**
+   * @override
+   */
+  async disposeView() {
+    if (!this._widgetRequested) {
+      return;
+    }
+
+    const widget = await this.widget();
+    await widget.ownerViewDisposed();
+  }
+}
+
+/**
+ * @param {!ViewRegistration} registration
+ */
+export function registerViewExtension(registration) {
+  registeredViewExtensions.push(new PreRegisteredView(registration));
+}
+
+/**
+ * @return {!Array<!PreRegisteredView>}
+ */
+export function getRegisteredViewExtensions() {
+  return registeredViewExtensions;
+}
 
 /**
  * @type {!ViewManager}
@@ -39,13 +171,34 @@ export class ViewManager {
     this._locationOverrideSetting = Common.Settings.Settings.instance().createSetting('viewsLocationOverride', {});
     const preferredExtensionLocations = this._locationOverrideSetting.get();
 
-    for (const extension of Root.Runtime.Runtime.instance().extensions('view')) {
-      const descriptor = extension.descriptor();
-      const descriptorId = descriptor['id'];
-      this._views.set(descriptorId, new ProvidedView(extension));
+    /** @type {!Array<{viewId: string, view: (!ProvidedView|!PreRegisteredView), location: string}>} */
+    const unionOfViewExtensions = [
+      // TODO(crbug.com/1134103): Remove this call when all views are migrated
+      ...Root.Runtime.Runtime.instance().extensions('view').map(extension => {
+        return {
+          viewId: extension.descriptor().id,
+          location: extension.descriptor()['location'],
+          view: new ProvidedView(extension),
+        };
+      }),
+      ...registeredViewExtensions.map(registeredView => {
+        return {
+          viewId: registeredView.viewId(),
+          location: registeredView.location(),
+          view: registeredView,
+        };
+      }),
+    ];
+
+    // All views define their initial ordering. When the user has not reordered, we use the
+    // default ordering as defined by the views themselves.
+    unionOfViewExtensions.sort((firstView, secondView) => firstView.view.order() - secondView.view.order());
+
+    for (const {viewId, view, location} of unionOfViewExtensions) {
+      this._views.set(viewId, view);
       // Use the preferred user location if available
-      const locationName = preferredExtensionLocations[descriptorId] || descriptor['location'];
-      this._locationNameByViewId.set(descriptorId, locationName);
+      const locationName = preferredExtensionLocations[viewId] || location;
+      this._locationNameByViewId.set(viewId, locationName);
     }
   }
 
@@ -88,8 +241,11 @@ export class ViewManager {
    * Moves a view to a new location
    * @param {string} viewId
    * @param {string} locationName
+   * @param {{shouldSelectTab: (boolean), overrideSaving: (boolean)}=} options - Optional parameters for selecting tab and override saving
    */
-  moveView(viewId, locationName) {
+  moveView(viewId, locationName, options) {
+    const defaultOptions = {shouldSelectTab: true, overrideSaving: false};
+    const {shouldSelectTab, overrideSaving} = options || defaultOptions;
     if (!viewId || !locationName) {
       return;
     }
@@ -99,13 +255,15 @@ export class ViewManager {
       return;
     }
 
-    // Update the inner map of locations
-    this._locationNameByViewId.set(viewId, locationName);
+    if (!overrideSaving) {
+      // Update the inner map of locations
+      this._locationNameByViewId.set(viewId, locationName);
 
-    // Update the settings of location overwrites
-    const locations = this._locationOverrideSetting.get();
-    locations[viewId] = locationName;
-    this._locationOverrideSetting.set(locations);
+      // Update the settings of location overwrites
+      const locations = this._locationOverrideSetting.get();
+      locations[viewId] = locationName;
+      this._locationOverrideSetting.set(locations);
+    }
 
     // Find new location and show view there
     this.resolveLocation(locationName).then(location => {
@@ -113,7 +271,7 @@ export class ViewManager {
         throw new Error('Move view: Could not resolve location for view: ' + viewId);
       }
       location._reveal();
-      return location.showView(view, undefined, true /* userGesture*/);
+      return location.showView(view, undefined, /* userGesture*/ true, /* omitFocus*/ false, shouldSelectTab);
     });
   }
 
@@ -128,6 +286,19 @@ export class ViewManager {
     }
     location._reveal();
     return location.showView(view);
+  }
+
+  /**
+   * Show view in location
+   * @param {string} viewId
+   * @param {string} locationName
+   * @param {boolean=} shouldSelectTab
+   */
+  showViewInLocation(viewId, locationName, shouldSelectTab = true) {
+    this.moveView(viewId, locationName, {
+      shouldSelectTab,
+      overrideSaving: true,
+    });
   }
 
   /**
@@ -313,7 +484,7 @@ export class _ExpandableContainerWidget extends VBox {
   constructor(view) {
     super(true);
     this.element.classList.add('flex-none');
-    this.registerRequiredCSS('ui/viewContainers.css');
+    this.registerRequiredCSS('ui/viewContainers.css', {enableLegacyPatching: true});
 
     this._titleElement = document.createElement('div');
     this._titleElement.classList.add('expandable-view-title');
@@ -321,7 +492,7 @@ export class _ExpandableContainerWidget extends VBox {
     this._titleExpandIcon = Icon.create('smallicon-triangle-right', 'title-expand-icon');
     this._titleElement.appendChild(this._titleExpandIcon);
     const titleText = view.title();
-    this._titleElement.createTextChild(titleText);
+    createTextChild(this._titleElement, titleText);
     ARIAUtils.setAccessibleName(this._titleElement, titleText);
     ARIAUtils.setExpanded(this._titleElement, false);
     this._titleElement.tabIndex = 0;
@@ -677,11 +848,14 @@ export class _TabbedLocation extends _Location {
    * @param {?View=} insertBefore
    * @param {boolean=} userGesture
    * @param {boolean=} omitFocus
+   * @param {boolean=} shouldSelectTab
    * @return {!Promise<*>}
    */
-  showView(view, insertBefore, userGesture, omitFocus) {
+  showView(view, insertBefore, userGesture, omitFocus, shouldSelectTab = true) {
     this.appendView(view, insertBefore);
-    this._tabbedPane.selectTab(view.viewId(), userGesture);
+    if (shouldSelectTab) {
+      this._tabbedPane.selectTab(view.viewId(), userGesture);
+    }
     if (!omitFocus) {
       this._tabbedPane.focus();
     }

@@ -12,6 +12,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/private/SkTPin.h"
 #include "include/private/SkTo.h"
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "src/core/SkColorSpacePriv.h"
@@ -22,7 +23,7 @@
 #include "src/core/SkTSort.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTextBlobPriv.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrPersistentCacheUtils.h"
 #include "src/gpu/GrShaderUtils.h"
@@ -369,6 +370,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     displayParams.fGrContextOptions.fShaderErrorHandler = &gShaderErrorHandler;
     displayParams.fGrContextOptions.fSuppressPrints = true;
     fWindow->setRequestedDisplayParams(displayParams);
+    fDisplay = fWindow->getRequestedDisplayParams();
     fRefresh = FLAGS_redraw;
 
     // Configure timers
@@ -412,9 +414,16 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
         this->fZoomWindowFixed = !this->fZoomWindowFixed;
         fWindow->inval();
     });
-    fCommands.addCommand('v', "VSync", "Toggle vsync on/off", [this]() {
+    fCommands.addCommand('v', "Swapchain", "Toggle vsync on/off", [this]() {
         DisplayParams params = fWindow->getRequestedDisplayParams();
         params.fDisableVsync = !params.fDisableVsync;
+        fWindow->setRequestedDisplayParams(params);
+        this->updateTitle();
+        fWindow->inval();
+    });
+    fCommands.addCommand('V', "Swapchain", "Toggle delayed acquire on/off (Metal only)", [this]() {
+        DisplayParams params = fWindow->getRequestedDisplayParams();
+        params.fDelayDrawableAcquisition = !params.fDelayDrawableAcquisition;
         fWindow->setRequestedDisplayParams(params);
         this->updateTitle();
         fWindow->inval();
@@ -493,8 +502,9 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     fCommands.addCommand('G', "Modes", "Geometry", [this]() {
         DisplayParams params = fWindow->getRequestedDisplayParams();
         uint32_t flags = params.fSurfaceProps.flags();
-        if (!fPixelGeometryOverrides) {
-            fPixelGeometryOverrides = true;
+        SkPixelGeometry defaultPixelGeometry = fDisplay.fSurfaceProps.pixelGeometry();
+        if (!fDisplayOverrides.fSurfaceProps.fPixelGeometry) {
+            fDisplayOverrides.fSurfaceProps.fPixelGeometry = true;
             params.fSurfaceProps = SkSurfaceProps(flags, kUnknown_SkPixelGeometry);
         } else {
             switch (params.fSurfaceProps.pixelGeometry()) {
@@ -511,8 +521,8 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
                     params.fSurfaceProps = SkSurfaceProps(flags, kBGR_V_SkPixelGeometry);
                     break;
                 case kBGR_V_SkPixelGeometry:
-                    params.fSurfaceProps = SkSurfaceProps(flags, SkSurfaceProps::kLegacyFontHost_InitType);
-                    fPixelGeometryOverrides = false;
+                    params.fSurfaceProps = SkSurfaceProps(flags, defaultPixelGeometry);
+                    fDisplayOverrides.fSurfaceProps.fPixelGeometry = false;
                     break;
             }
         }
@@ -1022,7 +1032,7 @@ void Viewer::updateTitle() {
     }
 
     const DisplayParams& params = fWindow->getRequestedDisplayParams();
-    if (fPixelGeometryOverrides) {
+    if (fDisplayOverrides.fSurfaceProps.fPixelGeometry) {
         switch (params.fSurfaceProps.pixelGeometry()) {
             case kUnknown_SkPixelGeometry:
                 title.append( " Flat");
@@ -1410,7 +1420,7 @@ void Viewer::drawSlide(SkSurface* surface) {
     }
 
     auto make_surface = [=](int w, int h) {
-        SkSurfaceProps props(SkSurfaceProps::kLegacyFontHost_InitType);
+        SkSurfaceProps props(fWindow->getRequestedDisplayParams().fSurfaceProps);
         slideCanvas->getProps(&props);
 
         SkImageInfo info = SkImageInfo::Make(w, h, colorType, kPremul_SkAlphaType, colorSpace);
@@ -1828,7 +1838,7 @@ void Viewer::drawImGui() {
                 }
 
                 int pixelGeometryIdx = 0;
-                if (fPixelGeometryOverrides) {
+                if (fDisplayOverrides.fSurfaceProps.fPixelGeometry) {
                     pixelGeometryIdx = params.fSurfaceProps.pixelGeometry() + 1;
                 }
                 if (ImGui::Combo("Pixel Geometry", &pixelGeometryIdx,
@@ -1836,10 +1846,11 @@ void Viewer::drawImGui() {
                 {
                     uint32_t flags = params.fSurfaceProps.flags();
                     if (pixelGeometryIdx == 0) {
-                        fPixelGeometryOverrides = false;
-                        params.fSurfaceProps = SkSurfaceProps(flags, SkSurfaceProps::kLegacyFontHost_InitType);
+                        fDisplayOverrides.fSurfaceProps.fPixelGeometry = false;
+                        SkPixelGeometry pixelGeometry = fDisplay.fSurfaceProps.pixelGeometry();
+                        params.fSurfaceProps = SkSurfaceProps(flags, pixelGeometry);
                     } else {
-                        fPixelGeometryOverrides = true;
+                        fDisplayOverrides.fSurfaceProps.fPixelGeometry = true;
                         SkPixelGeometry pixelGeometry = SkTo<SkPixelGeometry>(pixelGeometryIdx - 1);
                         params.fSurfaceProps = SkSurfaceProps(flags, pixelGeometry);
                     }
@@ -2440,13 +2451,13 @@ void Viewer::drawImGui() {
                             SkGetPackedB32(pixel), SkGetPackedA32(pixel));
             }
 
-            fImGuiLayer.skiaWidget(avail, [=](SkCanvas* c) {
+            fImGuiLayer.skiaWidget(avail, [=, lastImage = fLastImage](SkCanvas* c) {
                 // Translate so the region of the image that's under the mouse cursor is centered
                 // in the zoom canvas:
                 c->scale(zoomFactor, zoomFactor);
                 c->translate(avail.x * 0.5f / zoomFactor - x - 0.5f,
                              avail.y * 0.5f / zoomFactor - y - 0.5f);
-                c->drawImage(this->fLastImage, 0, 0);
+                c->drawImage(lastImage, 0, 0);
 
                 SkPaint outline;
                 outline.setStyle(SkPaint::kStroke_Style);

@@ -29,22 +29,18 @@ namespace type {
 class StructType : public Type {
  public:
   /// Constructor
+  /// @param name the name of the struct
   /// @param impl the struct data
-  explicit StructType(std::unique_ptr<Struct> impl);
+  StructType(const std::string& name, std::unique_ptr<Struct> impl);
   /// Move constructor
   StructType(StructType&&);
   ~StructType() override;
 
-  /// Sets the name of the struct
-  /// @param name the name to set
-  void set_name(const std::string& name) { name_ = name; }
   /// @returns the struct name
   const std::string& name() const { return name_; }
 
   /// @returns true if the struct has a block decoration
-  bool IsBlockDecorated() const {
-    return struct_->decoration() == StructDecoration::kBlock;
-  }
+  bool IsBlockDecorated() const { return struct_->IsBlockDecorated(); }
 
   /// @returns true if the type is a struct type
   bool IsStruct() const override;
@@ -52,12 +48,24 @@ class StructType : public Type {
   /// @returns the struct name
   Struct* impl() const { return struct_.get(); }
 
-  /// @returns the name for th type
+  /// @returns the name for the type
   std::string type_name() const override;
+
+  /// @param mem_layout type of memory layout to use in calculation.
+  /// @returns minimum size required for this type, in bytes.
+  ///          0 for non-host shareable types.
+  uint64_t MinBufferBindingSize(MemoryLayout mem_layout) const override;
+
+  /// @param mem_layout type of memory layout to use in calculation.
+  /// @returns base alignment for the type, in bytes.
+  ///          0 for non-host shareable types.
+  uint64_t BaseAlignment(MemoryLayout mem_layout) const override;
 
  private:
   std::string name_;
   std::unique_ptr<Struct> struct_;
+
+  uint64_t LargestMemberBaseAlignment(MemoryLayout mem_layout) const;
 };
 
 }  // namespace type

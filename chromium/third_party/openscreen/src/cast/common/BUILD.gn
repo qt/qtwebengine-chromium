@@ -6,6 +6,25 @@ import("//build_overrides/build.gni")
 import("//third_party/protobuf/proto_library.gni")
 import("../../testing/libfuzzer/fuzzer_test.gni")
 
+if (!build_with_chromium) {
+  declare_args() {
+    # Whether or not self-signed certificates are enabled for the receiver
+    # and sender implementations.
+    cast_allow_developer_certificate = false
+  }
+}
+
+config("certificate_config") {
+  defines = []
+
+  # TODO(jophba): remove once arg is in Chrome.
+  if (!build_with_chromium) {
+    if (cast_allow_developer_certificate) {
+      defines += [ "CAST_ALLOW_DEVELOPER_CERTIFICATE" ]
+    }
+  }
+}
+
 source_set("certificate") {
   sources = [
     "certificate/cast_cert_validator.cc",
@@ -20,6 +39,8 @@ source_set("certificate") {
     "certificate/types.h",
   ]
   public_deps = [ "../../third_party/boringssl" ]
+
+  configs += [ ":certificate_config" ]
 
   deps = [
     "../../platform",
@@ -87,6 +108,7 @@ if (!build_with_chromium) {
       ":public",
       "../../discovery:dnssd",
       "../../discovery:public",
+      "../../testing/util",
       "../../third_party/googletest:gtest",
     ]
   }

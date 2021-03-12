@@ -156,8 +156,6 @@ SimulcastEncoderAdapter::SimulcastEncoderAdapter(
   // The adapter is typically created on the worker thread, but operated on
   // the encoder task queue.
   encoder_queue_.Detach();
-
-  memset(&codec_, 0, sizeof(webrtc::VideoCodec));
 }
 
 SimulcastEncoderAdapter::~SimulcastEncoderAdapter() {
@@ -242,10 +240,6 @@ int SimulcastEncoderAdapter::InitEncode(
   RTC_DCHECK_LT(lowest_resolution_stream_index, number_of_streams);
   RTC_DCHECK_LT(highest_resolution_stream_index, number_of_streams);
 
-  const SdpVideoFormat format(
-      codec_.codecType == webrtc::kVideoCodecVP8 ? "VP8" : "H264",
-      video_format_.parameters);
-
   for (int i = 0; i < number_of_streams; ++i) {
     // If an existing encoder instance exists, reuse it.
     // TODO(brandtr): Set initial RTP state (e.g., picture_id/tl0_pic_idx) here,
@@ -255,10 +249,10 @@ int SimulcastEncoderAdapter::InitEncode(
       encoder = std::move(stored_encoders_.top());
       stored_encoders_.pop();
     } else {
-      encoder = primary_encoder_factory_->CreateVideoEncoder(format);
+      encoder = primary_encoder_factory_->CreateVideoEncoder(video_format_);
       if (fallback_encoder_factory_ != nullptr) {
         encoder = CreateVideoEncoderSoftwareFallbackWrapper(
-            fallback_encoder_factory_->CreateVideoEncoder(format),
+            fallback_encoder_factory_->CreateVideoEncoder(video_format_),
             std::move(encoder),
             i == lowest_resolution_stream_index &&
                 prefer_temporal_support_on_base_layer_);
@@ -377,7 +371,7 @@ int SimulcastEncoderAdapter::Encode(
   }
 
   // Temporary thay may hold the result of texture to i420 buffer conversion.
-  rtc::scoped_refptr<I420BufferInterface> src_buffer;
+  rtc::scoped_refptr<VideoFrameBuffer> src_buffer;
   int src_width = input_image.width();
   int src_height = input_image.height();
   for (size_t stream_idx = 0; stream_idx < streaminfos_.size(); ++stream_idx) {
@@ -433,12 +427,14 @@ int SimulcastEncoderAdapter::Encode(
       }
     } else {
       if (src_buffer == nullptr) {
-        src_buffer = input_image.video_frame_buffer()->ToI420();
+        src_buffer = input_image.video_frame_buffer();
       }
-      rtc::scoped_refptr<I420Buffer> dst_buffer =
-          I420Buffer::Create(dst_width, dst_height);
-
-      dst_buffer->ScaleFrom(*src_buffer);
+      rtc::scoped_refptr<VideoFrameBuffer> dst_buffer =
+          src_buffer->Scale(dst_width, dst_height);
+      if (!dst_buffer) {
+        RTC_LOG(LS_ERROR) << "Failed to scale video frame";
+        return WEBRTC_VIDEO_CODEC_ENCODER_FAILURE;
+      }
 
       // UpdateRect is not propagated to lower simulcast layers currently.
       // TODO(ilnik): Consider scaling UpdateRect together with the buffer.

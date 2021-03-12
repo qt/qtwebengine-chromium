@@ -20,11 +20,13 @@
 #include <vector>
 
 #include "api/fec_controller_override.h"
+#include "api/transport/webrtc_key_value_config.h"
 #include "api/video_codecs/video_encoder.h"
 #include "common_video/include/video_frame_buffer_pool.h"
 #include "media/base/vp9_profile.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 #include "modules/video_coding/codecs/vp9/vp9_frame_buffer_pool.h"
+#include "modules/video_coding/svc/scalable_video_controller.h"
 #include "modules/video_coding/utility/framerate_controller.h"
 #include "vpx/vp8cx.h"
 #include "vpx/vpx_decoder.h"
@@ -35,6 +37,8 @@ namespace webrtc {
 class VP9EncoderImpl : public VP9Encoder {
  public:
   explicit VP9EncoderImpl(const cricket::VideoCodec& codec);
+  VP9EncoderImpl(const cricket::VideoCodec& codec,
+                 const WebRtcKeyValueConfig& trials);
 
   ~VP9EncoderImpl() override;
 
@@ -108,7 +112,6 @@ class VP9EncoderImpl : public VP9Encoder {
   const VP9Profile profile_;
   bool inited_;
   int64_t timestamp_;
-  int cpu_speed_;
   uint32_t rc_max_intra_target_;
   vpx_codec_ctx_t* encoder_;
   vpx_codec_enc_cfg_t* config_;
@@ -128,7 +131,6 @@ class VP9EncoderImpl : public VP9Encoder {
   InterLayerPredMode inter_layer_pred_;
   bool external_ref_control_;
   const bool trusted_rate_controller_;
-  const bool dynamic_rate_settings_;
   bool layer_buffering_;
   const bool full_superframe_drop_;
   vpx_svc_frame_drop_t svc_drop_frame_;
@@ -136,7 +138,9 @@ class VP9EncoderImpl : public VP9Encoder {
   VideoBitrateAllocation current_bitrate_allocation_;
   bool ss_info_needed_;
   bool force_all_active_layers_;
+  const bool use_svc_controller_;
 
+  std::unique_ptr<ScalableVideoController> svc_controller_;
   std::vector<FramerateController> framerate_controller_;
 
   // Used for flexible mode.
@@ -160,6 +164,7 @@ class VP9EncoderImpl : public VP9Encoder {
     size_t temporal_layer_id = 0;
   };
   std::map<size_t, RefFrameBuffer> ref_buf_;
+  std::vector<ScalableVideoController::LayerFrameConfig> layer_frames_;
 
   // Variable frame-rate related fields and methods.
   const struct VariableFramerateExperiment {
@@ -176,7 +181,7 @@ class VP9EncoderImpl : public VP9Encoder {
     int frames_before_steady_state;
   } variable_framerate_experiment_;
   static VariableFramerateExperiment ParseVariableFramerateConfig(
-      std::string group_name);
+      const WebRtcKeyValueConfig& trials);
   FramerateController variable_framerate_controller_;
 
   const struct QualityScalerExperiment {
@@ -185,7 +190,43 @@ class VP9EncoderImpl : public VP9Encoder {
     bool enabled;
   } quality_scaler_experiment_;
   static QualityScalerExperiment ParseQualityScalerConfig(
-      std::string group_name);
+      const WebRtcKeyValueConfig& trials);
+  const bool external_ref_ctrl_;
+
+  // Flags that can affect speed vs quality tradeoff, and are configureable per
+  // resolution ranges.
+  struct PerformanceFlags {
+    // If false, a lookup will be made in |settings_by_resolution| base on the
+    // highest currently active resolution, and the overall speed then set to
+    // to the |base_layer_speed| matching that entry.
+    // If true, each active resolution will have it's speed and deblock_mode set
+    // based on it resolution, and the high layer speed configured for non
+    // base temporal layer frames.
+    bool use_per_layer_speed = false;
+
+    struct ParameterSet {
+      int base_layer_speed = -1;  // Speed setting for TL0.
+      int high_layer_speed = -1;  // Speed setting for TL1-TL3.
+      //  0 = deblock all temporal layers (TL)
+      //  1 = disable deblock for top-most TL
+      //  2 = disable deblock for all TLs
+      int deblock_mode = 0;
+    };
+    // Map from min pixel count to settings for that resolution and above.
+    // E.g. if you want some settings A if below wvga (640x360) and some other
+    // setting B at wvga and above, you'd use map {{0, A}, {230400, B}}.
+    std::map<int, ParameterSet> settings_by_resolution;
+  };
+  // Performance flags, ordered by |min_pixel_count|.
+  const PerformanceFlags performance_flags_;
+  // Caching of of |speed_configs_|, where index i maps to the resolution as
+  // specified in |codec_.spatialLayer[i]|.
+  std::vector<PerformanceFlags::ParameterSet>
+      performance_flags_by_spatial_index_;
+  void UpdatePerformanceFlags();
+  static PerformanceFlags ParsePerformanceFlagsFromTrials(
+      const WebRtcKeyValueConfig& trials);
+  static PerformanceFlags GetDefaultPerformanceFlags();
 
   int num_steady_state_frames_;
   // Only set config when this flag is set.
@@ -195,6 +236,7 @@ class VP9EncoderImpl : public VP9Encoder {
 class VP9DecoderImpl : public VP9Decoder {
  public:
   VP9DecoderImpl();
+  explicit VP9DecoderImpl(const WebRtcKeyValueConfig& trials);
 
   virtual ~VP9DecoderImpl();
 

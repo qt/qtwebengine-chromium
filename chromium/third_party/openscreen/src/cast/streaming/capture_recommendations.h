@@ -10,6 +10,8 @@
 #include <memory>
 #include <tuple>
 
+#include "cast/streaming/constants.h"
+
 namespace openscreen {
 namespace cast {
 
@@ -52,13 +54,9 @@ constexpr int kDefaultAudioMaxBitRate = 256 * 1000;
 constexpr BitRateLimits kDefaultAudioBitRateLimits{kDefaultAudioMinBitRate,
                                                    kDefaultAudioMaxBitRate};
 
-// Generally speaking, due to the range of human hearing (20Hz-20kHz) and the
-// Nyquist sampling theorem, 44.1kHz captures should capture all the fidelity
-// of the audio source.
-constexpr int kDefaultAudioMaxSampleRate = 44100;
-
-// Default to stereo if channel count is not provided.
-constexpr int kDefaultAudioMaxChannels = 2;
+// While generally audio should be captured at the maximum sample rate, 16kHz is
+// the recommended absolute minimum.
+constexpr int kDefaultAudioMinSampleRate = 16000;
 
 // Audio capture recommendations. Maximum delay is determined by buffer
 // constraints, and capture bit rate may vary between limits as appropriate.
@@ -72,10 +70,14 @@ struct Audio {
   std::chrono::milliseconds max_delay = kDefaultMaxDelayMs;
 
   // Represents the maximum number of audio channels.
-  int max_channels = kDefaultAudioMaxChannels;
+  int max_channels = kDefaultAudioChannels;
 
   // Represents the maximum samples per second.
-  int max_sample_rate = kDefaultAudioMaxSampleRate;
+  int max_sample_rate = kDefaultAudioSampleRate;
+
+  // Represents the absolute minimum samples per second. Generally speaking,
+  // audio should be captured at the maximum samples per second rate.
+  int min_sample_rate = kDefaultAudioMinSampleRate;
 };
 
 struct Resolution {
@@ -97,10 +99,11 @@ struct Resolution {
 
 // The minimum dimensions are as close as possible to low-definition
 // television, factoring in the receiver's aspect ratio if provided.
-constexpr Resolution kDefaultMinResolution{320, 240, 30};
+constexpr Resolution kDefaultMinResolution{kMinVideoWidth, kMinVideoHeight,
+                                           kDefaultFrameRate};
 
 // Currently mirroring only supports 1080P.
-constexpr Resolution kDefaultMaxResolution{1920, 1080, 30};
+constexpr Resolution kDefaultMaxResolution{1920, 1080, kDefaultFrameRate};
 
 // The mirroring spec suggests 300kbps as the absolute minimum bitrate.
 constexpr int kDefaultVideoMinBitRate = 300 * 1000;

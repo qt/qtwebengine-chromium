@@ -9,13 +9,13 @@
 #include <cstdint>
 #include <string>
 
+#include "absl/types/optional.h"
 #include "net/third_party/quiche/src/quic/core/crypto/transport_parameters.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection_id.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_time.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_uint128.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
 
 namespace quic {
 
@@ -27,7 +27,7 @@ class CryptoHandshakeMessage;
 
 // Describes whether or not a given QuicTag is required or optional in the
 // handshake message.
-enum QuicConfigPresence {
+enum QuicConfigPresence : uint8_t {
   // This negotiable value can be absent from the handshake message. Default
   // value is selected as the negotiated value in such a case.
   PRESENCE_OPTIONAL,
@@ -91,10 +91,10 @@ class QUIC_EXPORT_PRIVATE QuicFixedUint32 : public QuicConfigValue {
                                  std::string* error_details) override;
 
  private:
-  uint32_t send_value_;
   bool has_send_value_;
-  uint32_t receive_value_;
   bool has_receive_value_;
+  uint32_t send_value_;
+  uint32_t receive_value_;
 };
 
 // Stores 62bit numbers from handshake messages that unilaterally shared by each
@@ -128,10 +128,10 @@ class QUIC_EXPORT_PRIVATE QuicFixedUint62 : public QuicConfigValue {
                                  std::string* error_details) override;
 
  private:
-  uint64_t send_value_;
   bool has_send_value_;
-  uint64_t receive_value_;
   bool has_receive_value_;
+  uint64_t send_value_;
+  uint64_t receive_value_;
 };
 
 // Stores uint128 from CHLO or SHLO messages that are not negotiated.
@@ -161,10 +161,10 @@ class QUIC_EXPORT_PRIVATE QuicFixedUint128 : public QuicConfigValue {
                                  std::string* error_details) override;
 
  private:
-  QuicUint128 send_value_;
   bool has_send_value_;
-  QuicUint128 receive_value_;
   bool has_receive_value_;
+  QuicUint128 send_value_;
+  QuicUint128 receive_value_;
 };
 
 // Stores tag from CHLO or SHLO messages that are not negotiated.
@@ -197,10 +197,10 @@ class QUIC_EXPORT_PRIVATE QuicFixedTagVector : public QuicConfigValue {
                                  std::string* error_details) override;
 
  private:
-  QuicTagVector send_values_;
   bool has_send_values_;
-  QuicTagVector receive_values_;
   bool has_receive_values_;
+  QuicTagVector send_values_;
+  QuicTagVector receive_values_;
 };
 
 // Stores QuicSocketAddress from CHLO or SHLO messages that are not negotiated.
@@ -228,10 +228,10 @@ class QUIC_EXPORT_PRIVATE QuicFixedSocketAddress : public QuicConfigValue {
                                  std::string* error_details) override;
 
  private:
-  QuicSocketAddress send_value_;
   bool has_send_value_;
-  QuicSocketAddress receive_value_;
   bool has_receive_value_;
+  QuicSocketAddress send_value_;
+  QuicSocketAddress receive_value_;
 };
 
 // QuicConfig contains non-crypto configuration options that are negotiated in
@@ -387,6 +387,12 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   bool HandshakeDoneSupported() const;
   bool PeerSupportsHandshakeDone() const;
 
+  // Key update support.
+  void SetKeyUpdateSupportedLocally();
+  bool KeyUpdateSupportedForConnection() const;
+  bool KeyUpdateSupportedLocally() const;
+  bool KeyUpdateSupportedRemotely() const;
+
   // IPv6 alternate server address.
   void SetIPv6AlternateServerAddressToSend(
       const QuicSocketAddress& alternate_server_address_ipv6);
@@ -528,7 +534,7 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // Note that received_max_idle_timeout_ is only populated if we receive the
   // peer's value, which isn't guaranteed in IETF QUIC as sending is optional.
   QuicTime::Delta max_idle_timeout_to_send_;
-  quiche::QuicheOptional<QuicTime::Delta> received_max_idle_timeout_;
+  absl::optional<QuicTime::Delta> received_max_idle_timeout_;
   // Maximum number of dynamic streams that a Google QUIC connection
   // can support or the maximum number of bidirectional streams that
   // an IETF QUIC connection can support.
@@ -580,6 +586,13 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // Uses the support_handshake_done transport parameter in IETF QUIC.
   QuicFixedUint32 support_handshake_done_;
 
+  // Whether key update is supported by the peer. Uses key_update_not_yet
+  // supported transport parameter in IETF QUIC.
+  bool key_update_supported_remotely_;
+
+  // Whether key update is supported locally.
+  bool key_update_supported_locally_;
+
   // Alternate server addresses the client could connect to.
   // Uses the preferred_address transport parameter in IETF QUIC.
   // Note that when QUIC_CRYPTO is in use, only one of the addresses is sent.
@@ -628,24 +641,20 @@ class QUIC_EXPORT_PRIVATE QuicConfig {
   // Initial packet sent by the client.
   // Uses the original_destination_connection_id transport parameter in
   // IETF QUIC.
-  quiche::QuicheOptional<QuicConnectionId>
-      original_destination_connection_id_to_send_;
-  quiche::QuicheOptional<QuicConnectionId>
-      received_original_destination_connection_id_;
+  absl::optional<QuicConnectionId> original_destination_connection_id_to_send_;
+  absl::optional<QuicConnectionId> received_original_destination_connection_id_;
 
   // The value that the endpoint included in the Source Connection ID field of
   // the first Initial packet it sent.
   // Uses the initial_source_connection_id transport parameter in IETF QUIC.
-  quiche::QuicheOptional<QuicConnectionId>
-      initial_source_connection_id_to_send_;
-  quiche::QuicheOptional<QuicConnectionId>
-      received_initial_source_connection_id_;
+  absl::optional<QuicConnectionId> initial_source_connection_id_to_send_;
+  absl::optional<QuicConnectionId> received_initial_source_connection_id_;
 
   // The value that the server included in the Source Connection ID field of a
   // Retry packet it sent.
   // Uses the retry_source_connection_id transport parameter in IETF QUIC.
-  quiche::QuicheOptional<QuicConnectionId> retry_source_connection_id_to_send_;
-  quiche::QuicheOptional<QuicConnectionId> received_retry_source_connection_id_;
+  absl::optional<QuicConnectionId> retry_source_connection_id_to_send_;
+  absl::optional<QuicConnectionId> received_retry_source_connection_id_;
 
   // Custom transport parameters that can be sent and received in the TLS
   // handshake.

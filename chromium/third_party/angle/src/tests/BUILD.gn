@@ -17,16 +17,12 @@ declare_args() {
 }
 
 angle_test("test_utils_unittest_helper") {
-  standalone_harness = true
-
   sources = [
     "../../util/test_utils_unittest_helper.cpp",
     "../../util/test_utils_unittest_helper.h",
     "test_utils/angle_test_instantiate.h",
     "test_utils/runner/TestSuite_unittest.cpp",
   ]
-
-  deps = [ "$angle_root:angle_common" ]
 }
 
 test_expectations_sources = [
@@ -42,12 +38,7 @@ if (is_mac) {
   ]
 }
 
-config("angle_test_expectations_config") {
-  include_dirs = [ "${angle_root}:angle_common" ]
-}
-
 angle_static_library("angle_test_expectations") {
-  public_configs += [ ":angle_test_expectations_config" ]
   public_deps = [
     "$angle_root:angle_common",
     "$angle_root:angle_gpu_info_util",
@@ -112,7 +103,6 @@ angle_common_test_utils("angle_common_test_utils_static") {
 
 # We use this in the restricted trace tests to load driver info.
 angle_test("angle_system_info_test") {
-  standalone_harness = true
   sources = [ "angle_system_info_tests_main.cpp" ]
   deps = [
     "$angle_root:angle_gpu_info_util",
@@ -121,8 +111,7 @@ angle_test("angle_system_info_test") {
 }
 
 angle_test("angle_unittests") {
-  sources = angle_unittests_sources
-  main = "angle_unittest_main"
+  sources = angle_unittests_sources + [ "angle_unittest_main.cpp" ]
 
   if (angle_enable_hlsl) {
     sources += angle_unittests_hlsl_sources
@@ -152,8 +141,7 @@ if (is_win || is_linux || is_chromeos || is_mac || is_android || is_fuchsia) {
   angle_test("angle_end2end_tests") {
     include_dirs = [ "." ]
 
-    sources = angle_end2end_tests_sources
-    main = "angle_end2end_tests_main"
+    sources = angle_end2end_tests_sources + [ "angle_end2end_tests_main.cpp" ]
     libs = []
 
     if (is_mac) {
@@ -208,8 +196,7 @@ if (is_win || is_linux || is_chromeos || is_mac || is_android) {
 
   angle_test("angle_white_box_tests") {
     include_dirs = [ "." ]
-    sources = angle_white_box_tests_sources
-    main = "angle_end2end_tests_main"
+    sources = angle_white_box_tests_sources + [ "angle_end2end_tests_main.cpp" ]
 
     if (is_win && angle_enable_d3d11) {
       sources += angle_white_box_tests_win_sources
@@ -235,6 +222,13 @@ if (is_win || is_linux || is_chromeos || is_mac || is_android) {
   }
 }
 
+config("angle_maybe_has_histograms") {
+  if (angle_has_histograms) {
+    defines = [ "ANGLE_HAS_HISTOGRAMS" ]
+    include_dirs = [ "$root_gen_dir" ]
+  }
+}
+
 template("angle_perftests_common") {
   assert(defined(invoker.test_utils))
 
@@ -252,9 +246,13 @@ template("angle_perftests_common") {
       "perf_tests/third_party/perf/perf_result_reporter.h",
       "perf_tests/third_party/perf/perf_test.cc",
       "perf_tests/third_party/perf/perf_test.h",
+      "test_utils/runner/HistogramWriter.h",
+      "test_utils/runner/TestSuite.h",
     ]
-    deps = [ "$angle_jsoncpp_dir:jsoncpp" ]
-    public_deps = [ "${invoker.test_utils}" ]
+    public_deps = [
+      "$angle_root/third_party/rapidjson:rapidjson",
+      "${invoker.test_utils}",
+    ]
     public_configs += [ "${angle_root}:libANGLE_config" ]
   }
 }
@@ -273,8 +271,8 @@ if (is_win || is_linux || is_chromeos || is_android || is_mac) {
   # This test suite is for perf tests that use ANGLE's internals in some direct way.
   angle_test("angle_white_box_perftests") {
     include_dirs = [ "." ]
-    sources = angle_white_box_perf_tests_sources
-    main = "angle_perftests_main"
+    sources =
+        angle_white_box_perf_tests_sources + [ "angle_perftests_main.cpp" ]
 
     deps = [
       ":angle_perftests_static",
@@ -324,8 +322,7 @@ if (build_angle_perftests) {
   # This test suite is designed to run against a generic GL implementation.
   angle_test("angle_perftests") {
     include_dirs = [ "." ]
-    sources = angle_perf_tests_sources
-    main = "angle_perftests_main"
+    sources = angle_perf_tests_sources + [ "angle_perftests_main.cpp" ]
 
     deps = [
       ":angle_perftests_shared",
@@ -575,11 +572,11 @@ if (build_angle_gles1_conform_tests) {
     include_dirs = [ "." ]
 
     sources = [
+      "angle_end2end_tests_main.cpp",
       "gles1_conformance_tests/ConformanceTests.cpp",
       "test_utils/ANGLETest.cpp",
       "test_utils/ANGLETest.h",
     ]
-    main = "angle_end2end_tests_main"
 
     configs += [
       "${angle_root}:libANGLE_config",
@@ -653,11 +650,11 @@ if (build_angle_gles1_conform_tests) {
 
       sources = [
         "$gles1_conform_root/conform/covgl/shell.c",
+        "angle_end2end_tests_main.cpp",
         "gles1_conformance_tests/CovglTests.cpp",
         "test_utils/ANGLETest.cpp",
         "test_utils/ANGLETest.h",
       ]
-      main = "angle_end2end_tests_main"
 
       configs += [
         ":angle_gles1_conform_support",
@@ -724,11 +721,11 @@ if (build_angle_gles1_conform_tests) {
     include_dirs = [ "$gles1_conform_root/conform" ]
 
     sources = [
+      "angle_end2end_tests_main.cpp",
       "gles1_conformance_tests/PrimtestTests.cpp",
       "test_utils/ANGLETest.cpp",
       "test_utils/ANGLETest.h",
     ]
-    main = "angle_end2end_tests_main"
 
     configs += [
       ":angle_gles1_conform_support",
@@ -1187,11 +1184,17 @@ if (build_angle_deqp_tests && !is_fuchsia) {
       ]
 
       # Must be included outside of the source set for the define
-      sources = [ "deqp_support/angle_deqp_gtest.cpp" ]
-      main = "angle_deqp_tests_main"
+      sources = [
+        "angle_deqp_tests_main.cpp",
+        "deqp_support/angle_deqp_gtest.cpp",
+      ]
 
+      expectations_file = "deqp_${_api}_test_expectations.txt"
+      if (defined(invoker.expectations_file)) {
+        expectations_file = invoker.expectations_file
+      }
       data = [
-        "deqp_support/deqp_${_api}_test_expectations.txt",
+        "deqp_support/${expectations_file}",
         "${invoker.mustpass_dir}/${invoker.mustpass_name}",
       ]
     }
@@ -1309,6 +1312,80 @@ if (build_angle_deqp_tests && !is_fuchsia) {
   angle_deqp_khr_gtest("khr_gles31") {
     defines = [ "ANGLE_DEQP_KHR_GLES31_TESTS" ]
     mustpass_name = "gles31-khr-master.txt"
+  }
+
+  template("angle_deqp_rotate_gtest") {
+    split_target = string_split(target_name, "_")
+    _api = split_target[0]
+    _rotate = split_target[1]
+    angle_deqp_gtest(target_name) {
+      forward_variables_from(invoker, "*")
+
+      if (_rotate == "rotate90") {
+        mustpass_suffix = "rotate-landscape"
+      } else if (_rotate == "rotate180") {
+        mustpass_suffix = "rotate-reverse-portrait"
+      } else if (_rotate == "rotate270") {
+        mustpass_suffix = "rotate-reverse-landscape"
+      } else {
+        assert(false)
+      }
+
+      mustpass_name = "${_api}-${mustpass_suffix}.txt"
+
+      deps = angle_deqp_data_copy_targets
+
+      data = []
+      if (_api == "gles3") {
+        data = angle_deqp_data_gles3
+      } else if (_api == "gles31") {
+        data = angle_deqp_data_gles31
+      } else {
+        assert(false)
+      }
+    }
+  }
+
+  angle_deqp_rotate_gtest("gles3_rotate90") {
+    defines = [ "ANGLE_DEQP_GLES3_ROTATE90_TESTS" ]
+    sources = deqp_gles3_sources
+    mustpass_dir = _aosp_mustpass
+    expectations_file = "deqp_gles3_rotate_test_expectations.txt"
+  }
+
+  angle_deqp_rotate_gtest("gles3_rotate180") {
+    defines = [ "ANGLE_DEQP_GLES3_ROTATE180_TESTS" ]
+    sources = deqp_gles3_sources
+    mustpass_dir = _aosp_mustpass
+    expectations_file = "deqp_gles3_rotate_test_expectations.txt"
+  }
+
+  angle_deqp_rotate_gtest("gles3_rotate270") {
+    defines = [ "ANGLE_DEQP_GLES3_ROTATE270_TESTS" ]
+    sources = deqp_gles3_sources
+    mustpass_dir = _aosp_mustpass
+    expectations_file = "deqp_gles3_rotate_test_expectations.txt"
+  }
+
+  angle_deqp_rotate_gtest("gles31_rotate90") {
+    defines = [ "ANGLE_DEQP_GLES31_ROTATE90_TESTS" ]
+    sources = deqp_gles31_sources
+    mustpass_dir = _aosp_mustpass
+    expectations_file = "deqp_gles31_rotate_test_expectations.txt"
+  }
+
+  angle_deqp_rotate_gtest("gles31_rotate180") {
+    defines = [ "ANGLE_DEQP_GLES31_ROTATE180_TESTS" ]
+    sources = deqp_gles31_sources
+    mustpass_dir = _aosp_mustpass
+    expectations_file = "deqp_gles31_rotate_test_expectations.txt"
+  }
+
+  angle_deqp_rotate_gtest("gles31_rotate270") {
+    defines = [ "ANGLE_DEQP_GLES31_ROTATE270_TESTS" ]
+    sources = deqp_gles31_sources
+    mustpass_dir = _aosp_mustpass
+    expectations_file = "deqp_gles31_rotate_test_expectations.txt"
   }
 }
 

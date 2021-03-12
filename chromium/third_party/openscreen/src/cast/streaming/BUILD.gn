@@ -3,7 +3,13 @@
 # found in the LICENSE file.
 
 import("//build_overrides/build.gni")
+import("//third_party/libprotobuf-mutator/fuzzable_proto_library.gni")
+import("//third_party/protobuf/proto_library.gni")
 import("../../testing/libfuzzer/fuzzer_test.gni")
+
+fuzzable_proto_library("remoting_proto") {
+  sources = [ "remoting.proto" ]
+}
 
 source_set("common") {
   sources = [
@@ -42,6 +48,8 @@ source_set("common") {
     "rtp_time.h",
     "session_config.cc",
     "session_config.h",
+    "session_messager.cc",
+    "session_messager.h",
     "ssrc.cc",
     "ssrc.h",
   ]
@@ -49,6 +57,7 @@ source_set("common") {
   public_configs = [ "../../build:openscreen_include_dirs" ]
 
   public_deps = [
+    ":remoting_proto",
     "../../third_party/abseil",
     "../../third_party/boringssl",
     "../common:channel",

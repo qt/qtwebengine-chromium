@@ -28,8 +28,10 @@ namespace {
 TEST_F(ParserImplTest, MultiplicativeExpression_Parses_Multiply) {
   auto* p = parser("a * true");
   auto e = p->multiplicative_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
 
   ASSERT_TRUE(e->IsBinary());
   auto* rel = e->AsBinary();
@@ -49,8 +51,10 @@ TEST_F(ParserImplTest, MultiplicativeExpression_Parses_Multiply) {
 TEST_F(ParserImplTest, MultiplicativeExpression_Parses_Divide) {
   auto* p = parser("a / true");
   auto e = p->multiplicative_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
 
   ASSERT_TRUE(e->IsBinary());
   auto* rel = e->AsBinary();
@@ -70,8 +74,10 @@ TEST_F(ParserImplTest, MultiplicativeExpression_Parses_Divide) {
 TEST_F(ParserImplTest, MultiplicativeExpression_Parses_Modulo) {
   auto* p = parser("a % true");
   auto e = p->multiplicative_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
 
   ASSERT_TRUE(e->IsBinary());
   auto* rel = e->AsBinary();
@@ -91,23 +97,29 @@ TEST_F(ParserImplTest, MultiplicativeExpression_Parses_Modulo) {
 TEST_F(ParserImplTest, MultiplicativeExpression_InvalidLHS) {
   auto* p = parser("if (a) {} * true");
   auto e = p->multiplicative_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_EQ(e, nullptr);
+  EXPECT_FALSE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  EXPECT_EQ(e.value, nullptr);
 }
 
 TEST_F(ParserImplTest, MultiplicativeExpression_InvalidRHS) {
   auto* p = parser("true * if (a) {}");
   auto e = p->multiplicative_expression();
+  EXPECT_FALSE(e.matched);
+  EXPECT_TRUE(e.errored);
+  EXPECT_EQ(e.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(e, nullptr);
   EXPECT_EQ(p->error(), "1:8: unable to parse right side of * expression");
 }
 
 TEST_F(ParserImplTest, MultiplicativeExpression_NoOr_ReturnsLHS) {
   auto* p = parser("a true");
   auto e = p->multiplicative_expression();
-  ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(e, nullptr);
+  EXPECT_TRUE(e.matched);
+  EXPECT_FALSE(e.errored);
+  EXPECT_FALSE(p->has_error()) << p->error();
+  ASSERT_NE(e.value, nullptr);
   ASSERT_TRUE(e->IsIdentifier());
 }
 

@@ -12,8 +12,8 @@
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/GrClip.h"
-#include "src/gpu/GrContextPriv.h"
 #include "src/gpu/GrDeferredProxyUploader.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrRenderTargetContextPriv.h"
@@ -125,7 +125,7 @@ static bool shape_contains_rect(
     if (!mixedAAMode && aToDevice == bToDevice) {
         // A and B are in the same coordinate space, so don't bother mapping
         return a.conservativeContains(b);
-    } else if (bToDevice.isIdentity() && aToDevice.isScaleTranslate()) {
+    } else if (bToDevice.isIdentity() && aToDevice.preservesAxisAlignment()) {
         // Optimize the common case of draws (B, with identity matrix) and axis-aligned shapes,
         // instead of checking the four corners separately.
         SkRect bInA = b;
@@ -192,7 +192,7 @@ static uint32_t next_gen_id() {
 
     uint32_t id;
     do {
-        id = nextID++;
+        id = nextID.fetch_add(1, std::memory_order_relaxed);
     } while (id < kFirstUnreservedGenID);
     return id;
 }
@@ -543,7 +543,7 @@ void GrClipStack::RawElement::simplify(const SkIRect& deviceBounds, bool forceAA
     // Except for axis-aligned clip rects, upgrade to AA when forced. We skip axis-aligned clip
     // rects because a non-AA axis aligned rect can always be set as just a scissor test or window
     // rect, avoiding an expensive stencil mask generation.
-    if (forceAA && !(fShape.isRect() && fLocalToDevice.isScaleTranslate())) {
+    if (forceAA && !(fShape.isRect() && fLocalToDevice.preservesAxisAlignment())) {
         fAA = GrAA::kYes;
     }
 
@@ -551,7 +551,7 @@ void GrClipStack::RawElement::simplify(const SkIRect& deviceBounds, bool forceAA
     // mapped bounds of the shape.
     fOuterBounds = GrClip::GetPixelIBounds(outer, fAA, BoundsType::kExterior);
 
-    if (fLocalToDevice.isScaleTranslate()) {
+    if (fLocalToDevice.preservesAxisAlignment()) {
         if (fShape.isRect()) {
             // The actual geometry can be updated to the device-intersected bounds and we can
             // know the inner bounds
@@ -1291,7 +1291,9 @@ GrClip::Effect GrClipStack::apply(GrRecordingContext* context, GrRenderTargetCon
         GrFPArgs args(context, *fMatrixProvider, kNone_SkFilterQuality, &kCoverageColorInfo);
         clipFP = as_SB(cs.shader())->asFragmentProcessor(args);
         if (clipFP) {
-            clipFP = GrFragmentProcessor::SwizzleOutput(std::move(clipFP), GrSwizzle::AAAA());
+            // The initial input is the coverage from the geometry processor, so this ensures it
+            // is multiplied properly with the alpha of the clip shader.
+            clipFP = GrFragmentProcessor::MulInputByChildAlpha(std::move(clipFP));
         }
     }
 

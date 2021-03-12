@@ -23,6 +23,7 @@
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLByteCode.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 
@@ -40,16 +41,18 @@ namespace SkSL {
 class SharedCompiler {
 public:
     SharedCompiler() : fLock(compiler_mutex()) {
-        if (!gCompiler) {
-            gCompiler = new SkSL::Compiler{};
-            gInlineThreshold = SkSL::Program::Settings().fInlineThreshold;
+        if (!gImpl) {
+            gImpl = new Impl();
         }
     }
 
-    SkSL::Compiler* operator->() const { return gCompiler; }
+    SkSL::Compiler* operator->() const { return gImpl->fCompiler; }
 
-    int  getInlineThreshold() const { return gInlineThreshold; }
-    void setInlineThreshold(int threshold) { gInlineThreshold = threshold; }
+    // The inline threshold is exposed just for fuzzing, so we can test programs with it enabled
+    // and disabled. That lets us stress different code paths in the SkSL compiler. It's stashed
+    // along-side the compiler, but just so it can be guarded by the same mutex.
+    int  getInlineThreshold() const { return gImpl->fInlineThreshold; }
+    void setInlineThreshold(int threshold) { gImpl->fInlineThreshold = threshold; }
 
 private:
     SkAutoMutexExclusive fLock;
@@ -59,11 +62,44 @@ private:
         return mutex;
     }
 
-    static SkSL::Compiler* gCompiler;
-    static int             gInlineThreshold;
+    struct Impl {
+        Impl() {
+            // These caps are configured to apply *no* workarounds. This avoids changes that are
+            // unnecessary (GLSL intrinsic rewrites), or possibly incorrect (adding do-while loops).
+            // We may apply other "neutral" transformations to the user's SkSL, including inlining.
+            // Anything determined by the device caps is deferred to the GPU backend. The processor
+            // set produces the final program (including our re-emitted SkSL), and the backend's
+            // compiler resolves any necessary workarounds.
+            fCaps = ShaderCapsFactory::Standalone();
+            fCaps->fBuiltinFMASupport = true;
+            fCaps->fBuiltinDeterminantSupport = true;
+            // Don't inline if it would require a do loop, some devices don't support them.
+            fCaps->fCanUseDoLoops = false;
+
+            fCompiler = new SkSL::Compiler(fCaps.get());
+
+            // Using an inline threshold of zero would stop all inlining, and cause us to re-emit
+            // SkSL that is nearly identical to what was ingested. That would be in the spirit of
+            // applying no workarounds, but causes problems (today). On the CPU backend, we only
+            // compile the user SkSL once, then emit directly to ByteCode. The CPU backend doesn't
+            // support function calls, so some tests only work because of inlining. This needs to
+            // be addressed robustly - by adding function call support and/or forcing inlining,
+            // but for now, we use defaults that let the majority of our test cases work on all
+            // backends. (Note that there are other control flow constructs that don't work on the
+            // CPU backend, this is a special case of a more general problem.) skbug.com/10680
+            fInlineThreshold = SkSL::Program::Settings().fInlineThreshold;
+        }
+
+        SkSL::ShaderCapsPointer fCaps;
+        SkSL::Compiler*         fCompiler;
+        int                     fInlineThreshold;
+    };
+
+    static Impl* gImpl;
 };
-SkSL::Compiler* SharedCompiler::gCompiler = nullptr;
-int             SharedCompiler::gInlineThreshold = 0;
+
+SharedCompiler::Impl* SharedCompiler::gImpl = nullptr;
+
 }  // namespace SkSL
 
 void SkRuntimeEffect_SetInlineThreshold(int threshold) {
@@ -151,72 +187,71 @@ SkRuntimeEffect::EffectResult SkRuntimeEffect::Make(SkString sksl) {
     const SkSL::Context& ctx(compiler->context());
 
     // Go through program elements, pulling out information that we need
-    for (const auto& elem : *program) {
+    for (const auto& elem : program->elements()) {
         // Variables (uniform, varying, etc.)
-        if (elem.kind() == SkSL::ProgramElement::Kind::kVar) {
-            const auto& varDecls = static_cast<const SkSL::VarDeclarations&>(elem);
-            for (const auto& varDecl : varDecls.fVars) {
-                const SkSL::Variable& var =
-                        *(static_cast<const SkSL::VarDeclaration&>(*varDecl).fVar);
-                const SkSL::Type& varType = var.type();
+        if (elem->is<SkSL::GlobalVarDeclaration>()) {
+            const SkSL::GlobalVarDeclaration& global = elem->as<SkSL::GlobalVarDeclaration>();
+            const SkSL::VarDeclaration& varDecl = global.declaration()->as<SkSL::VarDeclaration>();
 
-                // Varyings (only used in conjunction with drawVertices)
-                if (var.fModifiers.fFlags & SkSL::Modifiers::kVarying_Flag) {
-                    varyings.push_back({var.fName,
-                                        varType.typeKind() == SkSL::Type::TypeKind::kVector
-                                               ? varType.columns()
-                                               : 1});
+            const SkSL::Variable& var = varDecl.var();
+            const SkSL::Type& varType = var.type();
+
+            // Varyings (only used in conjunction with drawVertices)
+            if (var.modifiers().fFlags & SkSL::Modifiers::kVarying_Flag) {
+                varyings.push_back({var.name(),
+                                    varType.typeKind() == SkSL::Type::TypeKind::kVector
+                                            ? varType.columns()
+                                            : 1});
+            }
+            // Fragment Processors (aka 'shader'): These are child effects
+            else if (&varType == ctx.fFragmentProcessor_Type.get()) {
+                children.push_back(var.name());
+                sampleUsages.push_back(SkSL::Analysis::GetSampleUsage(*program, var));
+            }
+            // 'uniform' variables
+            else if (var.modifiers().fFlags & SkSL::Modifiers::kUniform_Flag) {
+                Uniform uni;
+                uni.fName = var.name();
+                uni.fFlags = 0;
+                uni.fCount = 1;
+
+                const SkSL::Type* type = &var.type();
+                if (type->typeKind() == SkSL::Type::TypeKind::kArray) {
+                    uni.fFlags |= Uniform::kArray_Flag;
+                    uni.fCount = type->columns();
+                    type = &type->componentType();
                 }
-                // Fragment Processors (aka 'shader'): These are child effects
-                else if (&varType == ctx.fFragmentProcessor_Type.get()) {
-                    children.push_back(var.fName);
-                    sampleUsages.push_back(SkSL::Analysis::GetSampleUsage(*program, var));
+
+                if (!init_uniform_type(ctx, type, &uni)) {
+                    RETURN_FAILURE("Invalid uniform type: '%s'", type->displayName().c_str());
                 }
-                // 'uniform' variables
-                else if (var.fModifiers.fFlags & SkSL::Modifiers::kUniform_Flag) {
-                    Uniform uni;
-                    uni.fName = var.fName;
-                    uni.fFlags = 0;
-                    uni.fCount = 1;
 
-                    const SkSL::Type* type = &var.type();
-                    if (type->typeKind() == SkSL::Type::TypeKind::kArray) {
-                        uni.fFlags |= Uniform::kArray_Flag;
-                        uni.fCount = type->columns();
-                        type = &type->componentType();
+                const SkSL::StringFragment& marker(var.modifiers().fLayout.fMarker);
+                if (marker.fLength) {
+                    uni.fFlags |= Uniform::kMarker_Flag;
+                    allowColorFilter = false;
+                    if (!parse_marker(marker, &uni.fMarker, &uni.fFlags)) {
+                        RETURN_FAILURE("Invalid 'marker' string: '%.*s'", (int)marker.fLength,
+                                        marker.fChars);
                     }
-
-                    if (!init_uniform_type(ctx, type, &uni)) {
-                        RETURN_FAILURE("Invalid uniform type: '%s'", type->displayName().c_str());
-                    }
-
-                    const SkSL::StringFragment& marker(var.fModifiers.fLayout.fMarker);
-                    if (marker.fLength) {
-                        uni.fFlags |= Uniform::kMarker_Flag;
-                        allowColorFilter = false;
-                        if (!parse_marker(marker, &uni.fMarker, &uni.fFlags)) {
-                            RETURN_FAILURE("Invalid 'marker' string: '%.*s'", (int)marker.fLength,
-                                            marker.fChars);
-                        }
-                    }
-
-                    if (var.fModifiers.fLayout.fFlags & SkSL::Layout::Flag::kSRGBUnpremul_Flag) {
-                        uni.fFlags |= Uniform::kSRGBUnpremul_Flag;
-                    }
-
-                    uni.fOffset = offset;
-                    offset += uni.sizeInBytes();
-                    SkASSERT(SkIsAlign4(offset));
-
-                    uniforms.push_back(uni);
                 }
+
+                if (var.modifiers().fLayout.fFlags & SkSL::Layout::Flag::kSRGBUnpremul_Flag) {
+                    uni.fFlags |= Uniform::kSRGBUnpremul_Flag;
+                }
+
+                uni.fOffset = offset;
+                offset += uni.sizeInBytes();
+                SkASSERT(SkIsAlign4(offset));
+
+                uniforms.push_back(uni);
             }
         }
         // Functions
-        else if (elem.kind() == SkSL::ProgramElement::Kind::kFunction) {
-            const auto& func = static_cast<const SkSL::FunctionDefinition&>(elem);
-            const SkSL::FunctionDeclaration& decl = func.fDeclaration;
-            if (decl.fName == "main") {
+        else if (elem->is<SkSL::FunctionDefinition>()) {
+            const auto& func = elem->as<SkSL::FunctionDefinition>();
+            const SkSL::FunctionDeclaration& decl = func.declaration();
+            if (decl.name() == "main") {
                 hasMain = true;
             }
         }
@@ -297,27 +332,11 @@ int SkRuntimeEffect::findChild(const char* name) const {
 }
 
 #if SK_SUPPORT_GPU
-bool SkRuntimeEffect::toPipelineStage(const GrShaderCaps* shaderCaps,
-                                      GrContextOptions::ShaderErrorHandler* errorHandler,
+bool SkRuntimeEffect::toPipelineStage(GrContextOptions::ShaderErrorHandler* errorHandler,
                                       SkSL::PipelineStageArgs* outArgs) {
     SkSL::SharedCompiler compiler;
 
-    // This function is used by the GPU backend, and can't reuse our previously built fBaseProgram.
-    // If the supplied shaderCaps have any non-default values, we have baked in the wrong settings.
-    SkSL::Program::Settings settings;
-    settings.fCaps = shaderCaps;
-    settings.fInlineThreshold = compiler.getInlineThreshold();
-    settings.fAllowNarrowingConversions = true;
-
-    auto program = compiler->convertProgram(SkSL::Program::kPipelineStage_Kind,
-                                            SkSL::String(fSkSL.c_str(), fSkSL.size()),
-                                            settings);
-    if (!program) {
-        errorHandler->compileError(fSkSL.c_str(), compiler->errorText().c_str());
-        return false;
-    }
-
-    if (!compiler->toPipelineStage(*program, outArgs)) {
+    if (!compiler->toPipelineStage(*fBaseProgram, outArgs)) {
         errorHandler->compileError(fSkSL.c_str(), compiler->errorText().c_str());
         return false;
     }
@@ -359,6 +378,17 @@ static skvm::Color program_fn(skvm::Builder* p,
         push(p->splat(0.0f));
     }
 
+    std::vector<skvm::I32> cond_stack = { p->splat(0xffff'ffff) };
+    std::vector<skvm::I32> mask_stack = cond_stack;
+
+    skvm::Color result = {
+        p->splat(0.0f),
+        p->splat(0.0f),
+        p->splat(0.0f),
+        p->splat(0.0f),
+    };
+    skvm::I32 result_locked_in = p->splat(0);
+
     for (const uint8_t *ip = fn.code(), *end = ip + fn.size(); ip != end; ) {
         using Inst = SkSL::ByteCodeInstruction;
 
@@ -366,7 +396,7 @@ static skvm::Color program_fn(skvm::Builder* p,
         ip += sizeof(Inst);
 
         auto u8  = [&]{ auto x = sk_unaligned_load<uint8_t >(ip); ip += sizeof(x); return x; };
-      //auto u16 = [&]{ auto x = sk_unaligned_load<uint16_t>(ip); ip += sizeof(x); return x; };
+        auto u16 = [&]{ auto x = sk_unaligned_load<uint16_t>(ip); ip += sizeof(x); return x; };
         auto u32 = [&]{ auto x = sk_unaligned_load<uint32_t>(ip); ip += sizeof(x); return x; };
 
         auto unary = [&](auto&& fn) {
@@ -413,9 +443,10 @@ static skvm::Color program_fn(skvm::Builder* p,
             return false;
         };
 
+        #define DEBUGGING_PROGRAM_FN 0
         switch (inst) {
             default:
-                #if 0
+                #if DEBUGGING_PROGRAM_FN
                     fn.disassemble();
                     SkDebugf("inst %02x unimplemented\n", inst);
                     __builtin_debugtrap();
@@ -491,7 +522,9 @@ static skvm::Color program_fn(skvm::Builder* p,
                 int N  = u8(),
                     ix = u8();
                 for (int i = N; i --> 0; ) {
-                    stack[ix + i] = pop();
+                    skvm::F32 next = pop(),
+                              curr = stack[ix+i];
+                    stack[ix + i] = select(mask_stack.back(), next, curr);
                 }
             } break;
 
@@ -538,12 +571,23 @@ static skvm::Color program_fn(skvm::Builder* p,
                 ternary([](skvm::F32 x, skvm::F32 y, skvm::F32 t) { return skvm::lerp(x, y, t); });
                 break;
 
+            case Inst::kAbs:   unary(skvm::abs);         break;
+            case Inst::kACos:  unary(skvm::approx_acos); break;
+            case Inst::kASin:  unary(skvm::approx_asin); break;
             case Inst::kATan:  unary(skvm::approx_atan); break;
             case Inst::kCeil:  unary(skvm::ceil);        break;
+            case Inst::kCos:   unary(skvm::approx_cos);  break;
+            case Inst::kExp:   unary(skvm::approx_exp);  break;
+            case Inst::kExp2:  unary(skvm::approx_pow2); break;
             case Inst::kFloor: unary(skvm::floor);       break;
             case Inst::kFract: unary(skvm::fract);       break;
+            case Inst::kLog:   unary(skvm::approx_log);  break;
+            case Inst::kLog2:  unary(skvm::approx_log2); break;
             case Inst::kSqrt:  unary(skvm::sqrt);        break;
             case Inst::kSin:   unary(skvm::approx_sin);  break;
+            case Inst::kTan:   unary(skvm::approx_tan);  break;
+
+            case Inst::kInvSqrt: unary([](skvm::F32 x) { return 1.0f / skvm::sqrt(x); }); break;
 
             case Inst::kMatrixMultiply: {
                 // Computes M = A*B (all stored column major)
@@ -566,10 +610,26 @@ static skvm::Color program_fn(skvm::Builder* p,
                 }
             } break;
 
-            // Baby steps... just leaving test conditions on the stack for now.
-            case Inst::kMaskPush:   break;
-            case Inst::kMaskNegate: break;
+            // This still is a simplified version of what you'd see in SkSLByteCode,
+            // in that we're only maintaining mask stack and cond stack, and don't support loops.
 
+            case Inst::kMaskPush:
+                cond_stack.push_back(bit_cast(pop()));
+                mask_stack.push_back(mask_stack.back() & cond_stack.back());
+                break;
+
+            case Inst::kMaskPop:
+                cond_stack.pop_back();
+                mask_stack.pop_back();
+                break;
+
+            case Inst::kMaskNegate:
+                mask_stack.pop_back();
+                mask_stack.push_back(mask_stack.back() & ~cond_stack.back());
+                break;
+
+            // Comparisons all should write their results to the main data stack;
+            // maskpush moves them from there onto the mask stack as needed.
             case Inst::kCompareFLT:
                 binary([](skvm::F32 x, skvm::F32 y) { return bit_cast(x<y); });
                 break;
@@ -577,32 +637,69 @@ static skvm::Color program_fn(skvm::Builder* p,
             case Inst::kMaskBlend: {
                 std::vector<skvm::F32> if_true,
                                        if_false;
+
                 int count = u8();
                 for (int i = 0; i < count; i++) { if_false.push_back(pop()); }
                 for (int i = 0; i < count; i++) { if_true .push_back(pop()); }
 
-                skvm::I32 cond = bit_cast(pop());
+                skvm::I32 cond = cond_stack.back();
+                cond_stack.pop_back();
+                mask_stack.pop_back();
                 for (int i = count; i --> 0; ) {
                     push(select(cond, if_true[i], if_false[i]));
                 }
             } break;
 
+            case Inst::kBranchIfAllFalse: {
+                int target = u16();
+
+                if (fn.code() + target >= ip) {
+                    // This is a forward jump, e.g. an if-else block.
+                    // Instead of testing if all values are false and branching,
+                    // we act _as if_ some value were not false, and don't branch.
+                    // This must always be legal (some value very well could be true),
+                    // and between cond_stack and mask_stack and their use in kStore,
+                    // no side effects of the branch we "shouldn't take" can be observed.
+                    //
+                    // So, do nothing here.
+                } else {
+                    // This is backward jump, e.g. a loop.
+                    // We can't handle those yet.
+                    #if DEBUGGING_PROGRAM_FN
+                        fn.disassemble();
+                        SkDebugf("inst %02x has a backward jump to %d\n", inst, target);
+                        __builtin_debugtrap();
+                    #endif
+                    return {};
+                }
+
+            } break;
+
             case Inst::kReturn: {
-                SkAssertResult(u8() == 4);
-                // We'd like to assert that (ip == end) -> there is only one return, but ByteCode
-                // always includes a kReturn/0 at the end of each function, as a precaution.
-                SkASSERT(stack.size() >= 4);
-                skvm::F32 a = pop(),
-                          b = pop(),
-                          g = pop(),
-                          r = pop();
-                return { r, g, b, a };
+                int count = u8();
+                SkAssertResult(count == 4 || count == 0);
+
+                if (count == 4) {
+                    SkASSERT(stack.size() >= 4);
+
+                    // Lane-by-lane, if we've already returned a value, that result is locked in;
+                    // later return instructions don't happen for that lane.
+                    skvm::I32 returns_here = bit_clear(mask_stack.back(),
+                                                       result_locked_in);
+
+                    result.a = select(returns_here, pop(), result.a);
+                    result.b = select(returns_here, pop(), result.b);
+                    result.g = select(returns_here, pop(), result.g);
+                    result.r = select(returns_here, pop(), result.r);
+
+                    result_locked_in |= returns_here;
+                }
             } break;
         }
     }
 
-    SkUNREACHABLE;
-    return {};
+    assert_true(result_locked_in);
+    return result;
 }
 
 static sk_sp<SkData> get_xformed_uniforms(const SkRuntimeEffect* effect,

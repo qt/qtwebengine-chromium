@@ -143,14 +143,14 @@ export const tokenizeFormatString = function(formatString, formatters) {
 };
 
 /**
+ * @template T, U
  * @param {string} formatString
- * @param {?ArrayLike<*>} substitutions
- * @param {!Object.<string, function(string, ...*):*>} formatters
+ * @param {?ArrayLike<U>} substitutions
+ * @param {!Object.<string, function((string|!{description: string}|undefined|U), !FORMATTER_TOKEN):*>} formatters
  * @param {!T} initialValue
  * @param {function(T, *): T} append
  * @param {!Array.<!FORMATTER_TOKEN>=} tokenizedFormat
- * @return {!{formattedResult: T, unusedSubstitutions: ?ArrayLike<*>}};
- * @template T
+ * @return {!{formattedResult: T, unusedSubstitutions: ?ArrayLike<U>}};
  */
 export const format = function(formatString, substitutions, formatters, initialValue, append, tokenizedFormat) {
   if (!formatString || ((!substitutions || !substitutions.length) && formatString.search(/\u001b\[(\d+)m/) === -1)) {
@@ -521,4 +521,18 @@ export const createSearchRegex = function(query, caseSensitive, isRegex) {
   }
 
   return regexObject;
+};
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @return {number}
+ */
+export const caseInsensetiveComparator = function(a, b) {
+  a = a.toUpperCase();
+  b = b.toUpperCase();
+  if (a === b) {
+    return 0;
+  }
+  return a > b ? 1 : -1;
 };

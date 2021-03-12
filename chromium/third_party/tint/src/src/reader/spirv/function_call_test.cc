@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/reader/spirv/function.h"
-
 #include <string>
 #include <vector>
 
 #include "gmock/gmock.h"
+#include "src/reader/spirv/function.h"
 #include "src/reader/spirv/parser_impl.h"
 #include "src/reader/spirv/parser_impl_test_helper.h"
 #include "src/reader/spirv/spirv_tools_helpers_test.h"
@@ -92,7 +91,7 @@ TEST_F(SpvParserTest, EmitStatement_ScalarCallNoParams) {
     FunctionEmitter fe(p, *spirv_function(100));
     EXPECT_TRUE(fe.EmitBody());
     EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(VariableDeclStatement{
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
@@ -155,7 +154,7 @@ TEST_F(SpvParserTest, EmitStatement_ScalarCallNoParamsUsedTwice) {
   }
 }
 VariableDeclStatement{
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
@@ -219,12 +218,12 @@ TEST_F(SpvParserTest, EmitStatement_CallWithParams) {
   EXPECT_THAT(module_ast_str, HasSubstr(R"(Module{
   Function x_50 -> __u32
   (
-    Variable{
+    VariableConst{
       x_51
       none
       __u32
     }
-    Variable{
+    VariableConst{
       x_52
       none
       __u32
@@ -245,7 +244,7 @@ TEST_F(SpvParserTest, EmitStatement_CallWithParams) {
   ()
   {
     VariableDeclStatement{
-      Variable{
+      VariableConst{
         x_1
         none
         __u32

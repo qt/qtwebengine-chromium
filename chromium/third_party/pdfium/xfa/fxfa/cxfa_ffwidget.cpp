@@ -18,6 +18,8 @@
 #include "core/fxge/cfx_pathdata.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
+#include "third_party/base/check.h"
+#include "xfa/fgas/graphics/cfgas_gegraphics.h"
 #include "xfa/fwl/fwl_widgethit.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffapp.h"
@@ -33,14 +35,13 @@
 #include "xfa/fxfa/parser/cxfa_image.h"
 #include "xfa/fxfa/parser/cxfa_margin.h"
 #include "xfa/fxfa/parser/cxfa_node.h"
-#include "xfa/fxgraphics/cxfa_graphics.h"
 
 namespace {
 
 FXDIB_Format XFA_GetDIBFormat(FXCODEC_IMAGE_TYPE type,
                               int32_t iComponents,
                               int32_t iBitsPerComponent) {
-  FXDIB_Format dibFormat = FXDIB_Argb;
+  FXDIB_Format dibFormat = FXDIB_Format::kArgb;
   switch (type) {
     case FXCODEC_IMAGE_JPG:
 #ifdef PDF_ENABLE_XFA_BMP
@@ -50,10 +51,10 @@ FXDIB_Format XFA_GetDIBFormat(FXCODEC_IMAGE_TYPE type,
     case FXCODEC_IMAGE_TIFF:
 #endif  // PDF_ENABLE_XFA_TIFF
     {
-      dibFormat = FXDIB_Rgb32;
+      dibFormat = FXDIB_Format::kRgb32;
       int32_t bpp = iComponents * iBitsPerComponent;
       if (bpp <= 24) {
-        dibFormat = FXDIB_Rgb;
+        dibFormat = FXDIB_Format::kRgb;
       }
     } break;
 #ifdef PDF_ENABLE_XFA_PNG
@@ -76,7 +77,7 @@ bool IsFXCodecErrorStatus(FXCODEC_STATUS status) {
 
 }  // namespace
 
-void XFA_DrawImage(CXFA_Graphics* pGS,
+void XFA_DrawImage(CFGAS_GEGraphics* pGS,
                    const CFX_RectF& rtImage,
                    const CFX_Matrix& matrix,
                    const RetainPtr<CFX_DIBitmap>& pDIBitmap,
@@ -297,7 +298,7 @@ CFX_RectF CXFA_FFWidget::GetBBox(FocusOption focus) {
   return m_pPageView->GetPageViewRect();
 }
 
-void CXFA_FFWidget::RenderWidget(CXFA_Graphics* pGS,
+void CXFA_FFWidget::RenderWidget(CFGAS_GEGraphics* pGS,
                                  const CFX_Matrix& matrix,
                                  HighlightOption highlight) {
   if (!HasVisibleStatus())
@@ -350,7 +351,7 @@ bool CXFA_FFWidget::ProcessEventUnderHandler(CXFA_EventParam* params,
   return pHandler->ProcessEvent(pNode, params) == XFA_EventError::kSuccess;
 }
 
-void CXFA_FFWidget::DrawBorder(CXFA_Graphics* pGS,
+void CXFA_FFWidget::DrawBorder(CFGAS_GEGraphics* pGS,
                                CXFA_Box* box,
                                const CFX_RectF& rtBorder,
                                const CFX_Matrix& matrix) {
@@ -358,7 +359,7 @@ void CXFA_FFWidget::DrawBorder(CXFA_Graphics* pGS,
     box->Draw(pGS, rtBorder, matrix, false);
 }
 
-void CXFA_FFWidget::DrawBorderWithFlag(CXFA_Graphics* pGS,
+void CXFA_FFWidget::DrawBorderWithFlag(CFGAS_GEGraphics* pGS,
                                        CXFA_Box* box,
                                        const CFX_RectF& rtBorder,
                                        const CFX_Matrix& matrix,
@@ -581,7 +582,7 @@ void CXFA_FFWidget::DisplayCaret(bool bVisible, const CFX_RectF* pRtAnchor) {
 }
 
 void CXFA_FFWidget::GetBorderColorAndThickness(FX_ARGB* cr, float* fWidth) {
-  ASSERT(GetNode()->IsWidgetReady());
+  DCHECK(GetNode()->IsWidgetReady());
   CXFA_Border* borderUI = GetNode()->GetUIBorder();
   if (!borderUI)
     return;

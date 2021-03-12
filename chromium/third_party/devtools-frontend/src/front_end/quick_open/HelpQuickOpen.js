@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Root from '../root/root.js';
+import * as UI from '../ui/ui.js';
 
 import {Provider} from './FilteredListWidget.js';
 import {QuickOpenImpl} from './QuickOpen.js';
@@ -23,7 +21,7 @@ export class HelpQuickOpen extends Provider {
    */
   _addProvider(extension) {
     if (extension.title()) {
-      this._providers.push({prefix: extension.descriptor()['prefix'], title: extension.title()});
+      this._providers.push({prefix: extension.descriptor()['prefix'] || '', title: extension.title()});
     }
   }
 
@@ -65,7 +63,7 @@ export class HelpQuickOpen extends Provider {
     const provider = this._providers[itemIndex];
     const prefixElement = titleElement.createChild('span', 'monospace');
     prefixElement.textContent = (provider.prefix || '…') + ' ';
-    titleElement.createTextChild(provider.title);
+    UI.UIUtils.createTextChild(titleElement, provider.title);
   }
 
   /**

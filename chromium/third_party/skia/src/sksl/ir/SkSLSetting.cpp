@@ -13,8 +13,8 @@ namespace SkSL {
 
 std::unique_ptr<Expression> Setting::constantPropagate(const IRGenerator& irGenerator,
                                                        const DefinitionMap& definitions) {
-    if (irGenerator.fSettings->fReplaceSettings) {
-        return fValue->clone();
+    if (irGenerator.settings()->fReplaceSettings) {
+        return irGenerator.valueForSetting(this->fOffset, this->name());
     }
     return nullptr;
 }

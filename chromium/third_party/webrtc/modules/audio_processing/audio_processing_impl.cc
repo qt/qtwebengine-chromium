@@ -114,6 +114,7 @@ GainControl::Mode Agc1ConfigModeToInterfaceMode(
     case Agc1Config::kFixedDigital:
       return GainControl::kFixedDigital;
   }
+  RTC_CHECK_NOTREACHED();
 }
 
 // Maximum lengths that frame of samples being passed from the render side to
@@ -125,6 +126,7 @@ static const size_t kMaxAllowedValuesOfSamplesPerFrame = 480;
 // TODO(peah): Decrease this once we properly handle hugely unbalanced
 // reverse and forward call numbers.
 static const size_t kMaxNumFramesToBuffer = 100;
+
 }  // namespace
 
 // Throughout webrtc, it's assumed that success is represented by zero.
@@ -545,34 +547,10 @@ void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
       config_.echo_canceller.mobile_mode != config.echo_canceller.mobile_mode;
 
   const bool agc1_config_changed =
-      config_.gain_controller1.enabled != config.gain_controller1.enabled ||
-      config_.gain_controller1.mode != config.gain_controller1.mode ||
-      config_.gain_controller1.target_level_dbfs !=
-          config.gain_controller1.target_level_dbfs ||
-      config_.gain_controller1.compression_gain_db !=
-          config.gain_controller1.compression_gain_db ||
-      config_.gain_controller1.enable_limiter !=
-          config.gain_controller1.enable_limiter ||
-      config_.gain_controller1.analog_level_minimum !=
-          config.gain_controller1.analog_level_minimum ||
-      config_.gain_controller1.analog_level_maximum !=
-          config.gain_controller1.analog_level_maximum ||
-      config_.gain_controller1.analog_gain_controller.enabled !=
-          config.gain_controller1.analog_gain_controller.enabled ||
-      config_.gain_controller1.analog_gain_controller.startup_min_volume !=
-          config.gain_controller1.analog_gain_controller.startup_min_volume ||
-      config_.gain_controller1.analog_gain_controller.clipped_level_min !=
-          config.gain_controller1.analog_gain_controller.clipped_level_min ||
-      config_.gain_controller1.analog_gain_controller
-              .enable_agc2_level_estimator !=
-          config.gain_controller1.analog_gain_controller
-              .enable_agc2_level_estimator ||
-      config_.gain_controller1.analog_gain_controller.enable_digital_adaptive !=
-          config.gain_controller1.analog_gain_controller
-              .enable_digital_adaptive;
+      config_.gain_controller1 != config.gain_controller1;
 
   const bool agc2_config_changed =
-      config_.gain_controller2.enabled != config.gain_controller2.enabled;
+      config_.gain_controller2 != config.gain_controller2;
 
   const bool voice_detection_config_changed =
       config_.voice_detection.enabled != config.voice_detection.enabled;
@@ -611,10 +589,8 @@ void AudioProcessingImpl::ApplyConfig(const AudioProcessing::Config& config) {
 
   const bool config_ok = GainController2::Validate(config_.gain_controller2);
   if (!config_ok) {
-    RTC_LOG(LS_ERROR) << "AudioProcessing module config error\n"
-                         "Gain Controller 2: "
-                      << GainController2::ToString(config_.gain_controller2)
-                      << "\nReverting to default parameter set";
+    RTC_LOG(LS_ERROR)
+        << "Invalid Gain Controller 2 config; using the default config.";
     config_.gain_controller2 = AudioProcessing::Config::GainController2();
   }
 
@@ -732,15 +708,18 @@ AudioProcessingImpl::RuntimeSettingEnqueuer::~RuntimeSettingEnqueuer() =
 
 void AudioProcessingImpl::RuntimeSettingEnqueuer::Enqueue(
     RuntimeSetting setting) {
-  size_t remaining_attempts = 10;
+  int remaining_attempts = 10;
   while (!runtime_settings_.Insert(&setting) && remaining_attempts-- > 0) {
     RuntimeSetting setting_to_discard;
-    if (runtime_settings_.Remove(&setting_to_discard))
+    if (runtime_settings_.Remove(&setting_to_discard)) {
       RTC_LOG(LS_ERROR)
           << "The runtime settings queue is full. Oldest setting discarded.";
+    }
   }
-  if (remaining_attempts == 0)
+  if (remaining_attempts == 0) {
+    RTC_HISTOGRAM_BOOLEAN("WebRTC.Audio.ApmRuntimeSettingCannotEnqueue", 1);
     RTC_LOG(LS_ERROR) << "Cannot enqueue a new runtime setting.";
+  }
 }
 
 int AudioProcessingImpl::MaybeInitializeCapture(
@@ -1850,9 +1829,8 @@ void AudioProcessingImpl::InitializeNoiseSuppressor() {
               return NsConfig::SuppressionLevel::k18dB;
             case NoiseSuppresionConfig::kVeryHigh:
               return NsConfig::SuppressionLevel::k21dB;
-            default:
-              RTC_NOTREACHED();
           }
+          RTC_CHECK_NOTREACHED();
         };
 
     NsConfig cfg;

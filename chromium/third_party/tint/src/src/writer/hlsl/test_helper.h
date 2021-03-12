@@ -16,6 +16,7 @@
 #define SRC_WRITER_HLSL_TEST_HELPER_H_
 
 #include <sstream>
+#include <string>
 
 #include "gtest/gtest.h"
 #include "src/ast/module.h"
@@ -46,8 +47,14 @@ class TestHelperBase : public T {
   /// @returns the output stream
   std::ostream& out() { return out_; }
 
+  /// @returns the pre stream
+  std::ostream& pre() { return pre_; }
+
   /// @returns the result string
   std::string result() const { return out_.str(); }
+
+  /// @returns the pre result string
+  std::string pre_result() const { return pre_.str(); }
 
  private:
   Context ctx_;
@@ -55,6 +62,7 @@ class TestHelperBase : public T {
   TypeDeterminer td_;
   GeneratorImpl impl_;
   std::ostringstream out_;
+  std::ostringstream pre_;
 };
 using TestHelper = TestHelperBase<testing::Test>;
 

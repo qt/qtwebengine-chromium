@@ -65,6 +65,8 @@ if (!build_with_chromium) {
   executable("cast_sender") {
     sources = [ "main.cc" ]
 
+    configs += [ "../common:certificate_config" ]
+
     deps = [
       ":standalone_sender",
       "../../third_party/jsoncpp",

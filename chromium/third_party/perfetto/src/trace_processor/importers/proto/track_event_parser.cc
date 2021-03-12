@@ -122,11 +122,11 @@ class TrackEventParser::EventImporter {
         parser_(parser),
         ts_(ts),
         event_data_(event_data),
-        sequence_state_(event_data_->sequence_state),
+        sequence_state_(event_data->sequence_state.get()),
         blob_(std::move(blob)),
         event_(blob_),
         legacy_event_(event_.legacy_event()),
-        defaults_(sequence_state_->GetTrackEventDefaults()) {}
+        defaults_(event_data->sequence_state->GetTrackEventDefaults()) {}
 
   util::Status Import() {
     // TODO(eseckler): This legacy event field will eventually be replaced by
@@ -282,18 +282,17 @@ class TrackEventParser::EventImporter {
     // Determine track from track_uuid specified in either TrackEvent or
     // TrackEventDefaults. If a non-default track is not set, we either:
     //   a) fall back to the track specified by the sequence's (or event's) pid
-    //   +
-    //      tid (only in case of legacy tracks/events, i.e. events that don't
+    //      + tid (only in case of legacy tracks/events, i.e. events that don't
     //      specify an explicit track uuid or use legacy event phases instead of
     //      TrackEvent types), or
     //   b) a default track.
     if (track_uuid_) {
       base::Optional<TrackId> opt_track_id =
-          track_tracker->GetDescriptorTrack(track_uuid_);
+          track_tracker->GetDescriptorTrack(track_uuid_, name_id_);
       if (!opt_track_id) {
         track_tracker->ReserveDescriptorChildTrack(track_uuid_,
                                                    /*parent_uuid=*/0, name_id_);
-        opt_track_id = track_tracker->GetDescriptorTrack(track_uuid_);
+        opt_track_id = track_tracker->GetDescriptorTrack(track_uuid_, name_id_);
       }
       track_id_ = *opt_track_id;
 
@@ -566,7 +565,7 @@ class TrackEventParser::EventImporter {
           opt_slice_id.value(), event_data_->thread_timestamp,
           kPendingThreadDuration, event_data_->thread_instruction_count,
           kPendingThreadInstructionDelta);
-      MaybeParseFlowEventV2();
+      MaybeParseFlowEvents();
     }
 
     return util::OkStatus();
@@ -612,7 +611,7 @@ class TrackEventParser::EventImporter {
           opt_slice_id.value(), event_data_->thread_timestamp,
           thread_duration_ns, event_data_->thread_instruction_count,
           legacy_event_.thread_instruction_delta());
-      MaybeParseFlowEventV2();
+      MaybeParseFlowEvents();
     }
 
     return util::OkStatus();
@@ -646,10 +645,39 @@ class TrackEventParser::EventImporter {
         break;
       case 'f':
         context_->flow_tracker->End(track_id_, flow_id,
-                                    legacy_event_.bind_to_enclosing());
+                                    legacy_event_.bind_to_enclosing(),
+                                    /* close_flow = */ false);
         break;
     }
     return util::OkStatus();
+  }
+
+  void MaybeParseTrackEventFlows() {
+    if (event_.has_flow_ids()) {
+      auto it = event_.flow_ids();
+      for (; it; ++it) {
+        FlowId flow_id = *it;
+        if (!context_->flow_tracker->IsActive(flow_id)) {
+          context_->flow_tracker->Begin(track_id_, flow_id);
+          continue;
+        }
+        context_->flow_tracker->Step(track_id_, flow_id);
+      }
+    }
+    if (event_.has_terminating_flow_ids()) {
+      auto it = event_.terminating_flow_ids();
+      for (; it; ++it) {
+        FlowId flow_id = *it;
+        if (!context_->flow_tracker->IsActive(flow_id)) {
+          // If we should terminate a flow, do not begin a new one if it's not
+          // active already.
+          continue;
+        }
+        context_->flow_tracker->End(track_id_, flow_id,
+                                    /* bind_enclosing = */ true,
+                                    /* close_flow = */ true);
+      }
+    }
   }
 
   void MaybeParseFlowEventV2() {
@@ -671,11 +699,17 @@ class TrackEventParser::EventImporter {
         break;
       case LegacyEvent::FLOW_IN:
         context_->flow_tracker->End(track_id_, bind_id,
-                                    /* bind_enclosing_slice = */ true);
+                                    /* bind_enclosing_slice = */ true,
+                                    /* close_flow = */ false);
         break;
       default:
         storage_->IncrementStats(stats::flow_without_direction);
     }
+  }
+
+  void MaybeParseFlowEvents() {
+    MaybeParseFlowEventV2();
+    MaybeParseTrackEventFlows();
   }
 
   util::Status ParseThreadInstantEvent() {

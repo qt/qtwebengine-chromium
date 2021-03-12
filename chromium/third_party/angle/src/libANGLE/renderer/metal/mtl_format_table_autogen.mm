@@ -826,7 +826,8 @@ void Format::init(const DisplayMtl *display, angle::FormatID intendedFormatId_)
 
         case angle::FormatID::D24_UNORM_S8_UINT:
 
-            if (metalDevice.depth24Stencil8PixelFormatSupported)
+            if (metalDevice.depth24Stencil8PixelFormatSupported &&
+                !display->getFeatures().forceD24S8AsUnsupported.enabled)
             {
                 this->metalFormat    = MTLPixelFormatDepth24Unorm_Stencil8;
                 this->actualFormatId = angle::FormatID::D24_UNORM_S8_UINT;
@@ -858,8 +859,8 @@ void Format::init(const DisplayMtl *display, angle::FormatID intendedFormatId_)
 #    endif  // #if defined(__IPHONE_13_0) || defined(__MAC_10_15)
             {
 
-                this->metalFormat    = MTLPixelFormatInvalid;
-                this->actualFormatId = angle::FormatID::NONE;
+                this->metalFormat    = MTLPixelFormatBC1_RGBA;
+                this->actualFormatId = angle::FormatID::BC1_RGBA_UNORM_BLOCK;
                 this->initFunction   = nullptr;
 
                 this->swizzled = false;
@@ -882,8 +883,8 @@ void Format::init(const DisplayMtl *display, angle::FormatID intendedFormatId_)
 #    endif  // #if defined(__IPHONE_13_0) || defined(__MAC_10_15)
             {
 
-                this->metalFormat    = MTLPixelFormatInvalid;
-                this->actualFormatId = angle::FormatID::NONE;
+                this->metalFormat    = MTLPixelFormatBC1_RGBA_sRGB;
+                this->actualFormatId = angle::FormatID::BC1_RGBA_UNORM_SRGB_BLOCK;
                 this->initFunction   = nullptr;
 
                 this->swizzled = false;

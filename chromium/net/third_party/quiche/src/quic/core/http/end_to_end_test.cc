@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/crypto/null_encrypter.h"
 #include "net/third_party/quiche/src/quic/core/http/http_constants.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_spdy_client_stream.h"
@@ -65,7 +66,6 @@
 #include "net/third_party/quiche/src/quic/tools/quic_simple_client_stream.h"
 #include "net/third_party/quiche/src/quic/tools/quic_simple_server_stream.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_str_cat.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
 
 using spdy::kV3LowestPriority;
@@ -465,9 +465,9 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
     }
   }
 
-  void AddToCache(quiche::QuicheStringPiece path,
+  void AddToCache(absl::string_view path,
                   int response_code,
-                  quiche::QuicheStringPiece body) {
+                  absl::string_view body) {
     memory_cache_backend_.AddSimpleResponse(server_hostname_, path,
                                             response_code, body);
   }
@@ -1498,6 +1498,48 @@ TEST_P(EndToEndTest, LargePostZeroRTTFailure) {
   VerifyCleanConnection(false);
 }
 
+// Regression test for b/168020146.
+// TODO(renjietang): Reenable this test in Chrome once the BoringSSL fix is
+// rolled in.
+TEST_P(EndToEndTest, QUIC_TEST_DISABLED_IN_CHROME(MultipleZeroRtt)) {
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  QuicSpdyClientSession* client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  EXPECT_FALSE(client_session->ReceivedInchoateReject());
+  EXPECT_FALSE(client_->client()->EarlyDataAccepted());
+  EXPECT_FALSE(client_->client()->ReceivedInchoateReject());
+
+  client_->Disconnect();
+
+  // The 0-RTT handshake should succeed.
+  client_->Connect();
+  EXPECT_TRUE(client_->client()->WaitForOneRttKeysAvailable());
+  ASSERT_TRUE(client_->client()->connected());
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_TRUE(client_session->EarlyDataAccepted());
+  EXPECT_TRUE(client_->client()->EarlyDataAccepted());
+
+  client_->Disconnect();
+
+  client_->Connect();
+  EXPECT_TRUE(client_->client()->WaitForOneRttKeysAvailable());
+  ASSERT_TRUE(client_->client()->connected());
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_TRUE(client_session->EarlyDataAccepted());
+  EXPECT_TRUE(client_->client()->EarlyDataAccepted());
+
+  client_->Disconnect();
+}
+
 TEST_P(EndToEndTest, SynchronousRequestZeroRTTFailure) {
   // Send a request and then disconnect. This prepares the client to attempt
   // a 0-RTT handshake for the next request.
@@ -1998,13 +2040,13 @@ TEST_P(EndToEndTest, SetIndependentMaxDynamicStreamsLimits) {
   // count.
   size_t client_max_open_outgoing_bidirectional_streams =
       version_.HasIetfQuicFrames()
-          ? QuicSessionPeer::v99_streamid_manager(client_session)
+          ? QuicSessionPeer::ietf_streamid_manager(client_session)
                 ->max_outgoing_bidirectional_streams()
           : QuicSessionPeer::GetStreamIdManager(client_session)
                 ->max_open_outgoing_streams();
   size_t client_max_open_outgoing_unidirectional_streams =
       version_.HasIetfQuicFrames()
-          ? QuicSessionPeer::v99_streamid_manager(client_session)
+          ? QuicSessionPeer::ietf_streamid_manager(client_session)
                     ->max_outgoing_unidirectional_streams() -
                 kHttp3StaticUnidirectionalStreamCount
           : QuicSessionPeer::GetStreamIdManager(client_session)
@@ -2018,13 +2060,13 @@ TEST_P(EndToEndTest, SetIndependentMaxDynamicStreamsLimits) {
   if (server_session != nullptr) {
     size_t server_max_open_outgoing_bidirectional_streams =
         version_.HasIetfQuicFrames()
-            ? QuicSessionPeer::v99_streamid_manager(server_session)
+            ? QuicSessionPeer::ietf_streamid_manager(server_session)
                   ->max_outgoing_bidirectional_streams()
             : QuicSessionPeer::GetStreamIdManager(server_session)
                   ->max_open_outgoing_streams();
     size_t server_max_open_outgoing_unidirectional_streams =
         version_.HasIetfQuicFrames()
-            ? QuicSessionPeer::v99_streamid_manager(server_session)
+            ? QuicSessionPeer::ietf_streamid_manager(server_session)
                       ->max_outgoing_unidirectional_streams() -
                   kHttp3StaticUnidirectionalStreamCount
             : QuicSessionPeer::GetStreamIdManager(server_session)
@@ -2135,6 +2177,41 @@ TEST_P(EndToEndTest, ClientSuggestsIgnoredRTT) {
   server_thread_->Resume();
 }
 
+// Regression test for b/171378845
+TEST_P(EndToEndTest, ClientDisablesGQuicZeroRtt) {
+  if (version_.UsesTls()) {
+    // This feature is gQUIC only.
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+  QuicTagVector options;
+  options.push_back(kQNZ2);
+  client_config_.SetClientConnectionOptions(options);
+
+  ASSERT_TRUE(Initialize());
+
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+  QuicSpdyClientSession* client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  EXPECT_FALSE(client_session->ReceivedInchoateReject());
+  EXPECT_FALSE(client_->client()->EarlyDataAccepted());
+  EXPECT_FALSE(client_->client()->ReceivedInchoateReject());
+
+  client_->Disconnect();
+
+  // Make sure that the request succeeds but 0-RTT was not used.
+  client_->Connect();
+  EXPECT_TRUE(client_->client()->WaitForOneRttKeysAvailable());
+  ASSERT_TRUE(client_->client()->connected());
+  EXPECT_EQ(kFooResponseBody, client_->SendSynchronousRequest("/foo"));
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  EXPECT_FALSE(client_->client()->EarlyDataAccepted());
+}
+
 TEST_P(EndToEndTest, MaxInitialRTT) {
   // Client tries to suggest twice the server's max initial rtt and the server
   // uses the max.
@@ -2160,17 +2237,10 @@ TEST_P(EndToEndTest, MaxInitialRTT) {
         client_sent_packet_manager->GetRttStats()->smoothed_rtt().IsInfinite());
     const RttStats* server_rtt_stats =
         server_sent_packet_manager->GetRttStats();
-    if (GetQuicReloadableFlag(quic_cap_large_client_initial_rtt)) {
-      EXPECT_EQ(static_cast<int64_t>(1 * kNumMicrosPerSecond),
-                server_rtt_stats->initial_rtt().ToMicroseconds());
-      EXPECT_GE(static_cast<int64_t>(1 * kNumMicrosPerSecond),
-                server_rtt_stats->smoothed_rtt().ToMicroseconds());
-    } else {
-      EXPECT_EQ(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
-                server_rtt_stats->initial_rtt().ToMicroseconds());
-      EXPECT_GE(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
-                server_rtt_stats->smoothed_rtt().ToMicroseconds());
-    }
+    EXPECT_EQ(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
+              server_rtt_stats->initial_rtt().ToMicroseconds());
+    EXPECT_GE(static_cast<int64_t>(kMaxInitialRoundTripTimeUs),
+              server_rtt_stats->smoothed_rtt().ToMicroseconds());
   } else {
     ADD_FAILURE() << "Missing sent packet manager";
   }
@@ -2311,7 +2381,19 @@ TEST_P(EndToEndTest, StreamCancelErrorTest) {
   // Transmit the cancel, and ensure the connection is torn down properly.
   SetPacketLossPercentage(0);
   QuicStreamId stream_id = GetNthClientInitiatedBidirectionalId(0);
+  QuicConnection* client_connection = GetClientConnection();
+  ASSERT_TRUE(client_connection);
+  const QuicPacketCount packets_sent_before =
+      client_connection->GetStats().packets_sent;
   session->ResetStream(stream_id, QUIC_STREAM_CANCELLED);
+  const QuicPacketCount packets_sent_now =
+      client_connection->GetStats().packets_sent;
+
+  if (version_.UsesHttp3() && GetQuicReloadableFlag(quic_split_up_send_rst_2)) {
+    // Make sure 2 packets were sent, one for QPACK instructions, another for
+    // RESET_STREAM and STOP_SENDING.
+    EXPECT_EQ(packets_sent_before + 2, packets_sent_now);
+  }
 
   // WaitForEvents waits 50ms and returns true if there are outstanding
   // requests.
@@ -3878,21 +3960,17 @@ TEST_P(EndToEndTest, ReleaseHeadersStreamBufferWhenIdle) {
   EXPECT_FALSE(QuicStreamSequencerPeer::IsUnderlyingBufferAllocated(sequencer));
 }
 
+// A single large header value causes a different error than the total size of
+// headers exceeding a smaller limit, tested at EndToEndTest.LargeHeaders.
 TEST_P(EndToEndTest, WayTooLongRequestHeaders) {
   ASSERT_TRUE(Initialize());
-  if (version_.UsesTls() && !version_.UsesHttp3()) {
-    // In T050, it took relatively long time for HPACK to compress the header
-    // while server will detect blackhole on NST message.
-    // TODO(b/157248143): remove this when the HPACK compression issue is
-    // understood.
-    return;
-  }
+
   SpdyHeaderBlock headers;
   headers[":method"] = "GET";
   headers[":path"] = "/foo";
   headers[":scheme"] = "https";
   headers[":authority"] = server_hostname_;
-  headers["key"] = std::string(64 * 1024 * 1024, 'a');
+  headers["key"] = std::string(2 * 1024 * 1024, 'a');
 
   client_->SendMessage(headers, "");
   client_->WaitForResponse();
@@ -4248,7 +4326,7 @@ TEST_P(EndToEndTest, SendMessages) {
   ASSERT_LT(0, client_session->GetCurrentLargestMessagePayload());
 
   std::string message_string(kMaxOutgoingPacketSize, 'a');
-  quiche::QuicheStringPiece message_buffer(message_string);
+  absl::string_view message_buffer(message_string);
   QuicRandom* random =
       QuicConnectionPeer::GetHelper(client_connection)->GetRandomGenerator();
   QuicMemSliceStorage storage(nullptr, 0, nullptr, 0);
@@ -4258,7 +4336,7 @@ TEST_P(EndToEndTest, SendMessages) {
     EXPECT_EQ(MessageResult(MESSAGE_STATUS_SUCCESS, 1),
               client_session->SendMessage(MakeSpan(
                   client_connection->helper()->GetStreamSendBufferAllocator(),
-                  quiche::QuicheStringPiece(
+                  absl::string_view(
                       message_buffer.data(),
                       client_session->GetCurrentLargestMessagePayload()),
                   &storage)));
@@ -4272,8 +4350,7 @@ TEST_P(EndToEndTest, SendMessages) {
           1;
       MessageResult result = client_session->SendMessage(MakeSpan(
           client_connection->helper()->GetStreamSendBufferAllocator(),
-          quiche::QuicheStringPiece(message_buffer.data(), message_length),
-          &storage));
+          absl::string_view(message_buffer.data(), message_length), &storage));
       if (result.status == MESSAGE_STATUS_BLOCKED) {
         // Connection is write blocked.
         break;
@@ -4287,7 +4364,7 @@ TEST_P(EndToEndTest, SendMessages) {
             client_session
                 ->SendMessage(MakeSpan(
                     client_connection->helper()->GetStreamSendBufferAllocator(),
-                    quiche::QuicheStringPiece(
+                    absl::string_view(
                         message_buffer.data(),
                         client_session->GetCurrentLargestMessagePayload() + 1),
                     &storage))
@@ -4602,7 +4679,7 @@ TEST_P(EndToEndTest, TooBigStreamIdClosesConnection) {
   QuicSpdySession* client_session = GetClientSession();
   ASSERT_TRUE(client_session);
   QuicStreamIdManager* stream_id_manager =
-      QuicSessionPeer::v99_bidirectional_stream_id_manager(client_session);
+      QuicSessionPeer::ietf_bidirectional_stream_id_manager(client_session);
   ASSERT_TRUE(stream_id_manager);
   QuicStreamCount max_number_of_streams =
       stream_id_manager->outgoing_max_streams();
@@ -4778,6 +4855,349 @@ TEST_P(EndToEndTest, LegacyVersionEncapsulationWithLoss) {
   EXPECT_GT(
       client_connection->GetStats().sent_legacy_version_encapsulated_packets,
       0u);
+}
+
+TEST_P(EndToEndTest, KeyUpdateInitiatedByClient) {
+  SetQuicReloadableFlag(quic_key_update_supported, true);
+
+  if (!version_.UsesTls()) {
+    // Key Update is only supported in TLS handshake.
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+
+  ASSERT_TRUE(Initialize());
+
+  SendSynchronousFooRequestAndCheckResponse();
+  QuicConnection* client_connection = GetClientConnection();
+  ASSERT_TRUE(client_connection);
+  EXPECT_EQ(0u, client_connection->GetStats().key_update_count);
+
+  EXPECT_TRUE(
+      client_connection->InitiateKeyUpdate(KeyUpdateReason::kLocalForTests));
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(1u, client_connection->GetStats().key_update_count);
+
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(1u, client_connection->GetStats().key_update_count);
+
+  EXPECT_TRUE(
+      client_connection->InitiateKeyUpdate(KeyUpdateReason::kLocalForTests));
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(2u, client_connection->GetStats().key_update_count);
+
+  server_thread_->Pause();
+  QuicConnection* server_connection = GetServerConnection();
+  if (server_connection) {
+    QuicConnectionStats server_stats = server_connection->GetStats();
+    EXPECT_EQ(2u, server_stats.key_update_count);
+  } else {
+    ADD_FAILURE() << "Missing server connection";
+  }
+  server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, KeyUpdateInitiatedByServer) {
+  SetQuicReloadableFlag(quic_key_update_supported, true);
+
+  if (!version_.UsesTls()) {
+    // Key Update is only supported in TLS handshake.
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+
+  ASSERT_TRUE(Initialize());
+
+  SendSynchronousFooRequestAndCheckResponse();
+  QuicConnection* client_connection = GetClientConnection();
+  ASSERT_TRUE(client_connection);
+  EXPECT_EQ(0u, client_connection->GetStats().key_update_count);
+
+  // Use WaitUntil to ensure the server had executed the key update predicate
+  // before sending the Foo request, otherwise the test can be flaky if it
+  // receives the Foo request before executing the key update.
+  server_thread_->WaitUntil(
+      [this]() {
+        QuicConnection* server_connection = GetServerConnection();
+        if (server_connection != nullptr) {
+          if (!server_connection->IsKeyUpdateAllowed()) {
+            // Server may not have received ack from client yet for the current
+            // key phase, wait a bit and try again.
+            return false;
+          }
+          EXPECT_TRUE(server_connection->InitiateKeyUpdate(
+              KeyUpdateReason::kLocalForTests));
+        } else {
+          ADD_FAILURE() << "Missing server connection";
+        }
+        return true;
+      },
+      QuicTime::Delta::FromSeconds(5));
+
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(1u, client_connection->GetStats().key_update_count);
+
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(1u, client_connection->GetStats().key_update_count);
+
+  server_thread_->WaitUntil(
+      [this]() {
+        QuicConnection* server_connection = GetServerConnection();
+        if (server_connection != nullptr) {
+          if (!server_connection->IsKeyUpdateAllowed()) {
+            return false;
+          }
+          EXPECT_TRUE(server_connection->InitiateKeyUpdate(
+              KeyUpdateReason::kLocalForTests));
+        } else {
+          ADD_FAILURE() << "Missing server connection";
+        }
+        return true;
+      },
+      QuicTime::Delta::FromSeconds(5));
+
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(2u, client_connection->GetStats().key_update_count);
+
+  server_thread_->Pause();
+  QuicConnection* server_connection = GetServerConnection();
+  if (server_connection) {
+    QuicConnectionStats server_stats = server_connection->GetStats();
+    EXPECT_EQ(2u, server_stats.key_update_count);
+  } else {
+    ADD_FAILURE() << "Missing server connection";
+  }
+  server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, KeyUpdateInitiatedByBoth) {
+  SetQuicReloadableFlag(quic_key_update_supported, true);
+
+  if (!version_.UsesTls()) {
+    // Key Update is only supported in TLS handshake.
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+
+  ASSERT_TRUE(Initialize());
+
+  SendSynchronousFooRequestAndCheckResponse();
+
+  // Use WaitUntil to ensure the server had executed the key update predicate
+  // before the client sends the Foo request, otherwise the Foo request from
+  // the client could trigger the server key update before the server can
+  // initiate the key update locally. That would mean the test is no longer
+  // hitting the intended test state of both sides locally initiating a key
+  // update before receiving a packet in the new key phase from the other side.
+  // Additionally the test would fail since InitiateKeyUpdate() would not allow
+  // to do another key update yet and return false.
+  server_thread_->WaitUntil(
+      [this]() {
+        QuicConnection* server_connection = GetServerConnection();
+        if (server_connection != nullptr) {
+          if (!server_connection->IsKeyUpdateAllowed()) {
+            // Server may not have received ack from client yet for the current
+            // key phase, wait a bit and try again.
+            return false;
+          }
+          EXPECT_TRUE(server_connection->InitiateKeyUpdate(
+              KeyUpdateReason::kLocalForTests));
+        } else {
+          ADD_FAILURE() << "Missing server connection";
+        }
+        return true;
+      },
+      QuicTime::Delta::FromSeconds(5));
+  QuicConnection* client_connection = GetClientConnection();
+  ASSERT_TRUE(client_connection);
+  EXPECT_TRUE(
+      client_connection->InitiateKeyUpdate(KeyUpdateReason::kLocalForTests));
+
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(1u, client_connection->GetStats().key_update_count);
+
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(1u, client_connection->GetStats().key_update_count);
+
+  server_thread_->WaitUntil(
+      [this]() {
+        QuicConnection* server_connection = GetServerConnection();
+        if (server_connection != nullptr) {
+          if (!server_connection->IsKeyUpdateAllowed()) {
+            return false;
+          }
+          EXPECT_TRUE(server_connection->InitiateKeyUpdate(
+              KeyUpdateReason::kLocalForTests));
+        } else {
+          ADD_FAILURE() << "Missing server connection";
+        }
+        return true;
+      },
+      QuicTime::Delta::FromSeconds(5));
+  EXPECT_TRUE(
+      client_connection->InitiateKeyUpdate(KeyUpdateReason::kLocalForTests));
+
+  SendSynchronousFooRequestAndCheckResponse();
+  EXPECT_EQ(2u, client_connection->GetStats().key_update_count);
+
+  server_thread_->Pause();
+  QuicConnection* server_connection = GetServerConnection();
+  if (server_connection) {
+    QuicConnectionStats server_stats = server_connection->GetStats();
+    EXPECT_EQ(2u, server_stats.key_update_count);
+  } else {
+    ADD_FAILURE() << "Missing server connection";
+  }
+  server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, KeyUpdateInitiatedByConfidentialityLimit) {
+  SetQuicReloadableFlag(quic_enable_aead_limits, true);
+  SetQuicReloadableFlag(quic_key_update_supported, true);
+  SetQuicFlag(FLAGS_quic_key_update_confidentiality_limit, 4U);
+
+  if (!version_.UsesTls()) {
+    // Key Update is only supported in TLS handshake.
+    ASSERT_TRUE(Initialize());
+    return;
+  }
+
+  ASSERT_TRUE(Initialize());
+
+  QuicConnection* client_connection = GetClientConnection();
+  ASSERT_TRUE(client_connection);
+  EXPECT_EQ(0u, client_connection->GetStats().key_update_count);
+
+  server_thread_->WaitUntil(
+      [this]() {
+        QuicConnection* server_connection = GetServerConnection();
+        if (server_connection != nullptr) {
+          EXPECT_EQ(0u, server_connection->GetStats().key_update_count);
+        } else {
+          ADD_FAILURE() << "Missing server connection";
+        }
+        return true;
+      },
+      QuicTime::Delta::FromSeconds(5));
+
+  SendSynchronousFooRequestAndCheckResponse();
+  SendSynchronousFooRequestAndCheckResponse();
+  SendSynchronousFooRequestAndCheckResponse();
+  // Don't know exactly how many packets will be sent in each request/response,
+  // so just test that at least one key update occurred.
+  EXPECT_LE(1u, client_connection->GetStats().key_update_count);
+
+  server_thread_->Pause();
+  QuicConnection* server_connection = GetServerConnection();
+  if (server_connection) {
+    QuicConnectionStats server_stats = server_connection->GetStats();
+    EXPECT_LE(1u, server_stats.key_update_count);
+  } else {
+    ADD_FAILURE() << "Missing server connection";
+  }
+  server_thread_->Resume();
+}
+
+TEST_P(EndToEndTest, TlsResumptionEnabledOnTheFly) {
+  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, true);
+  ASSERT_TRUE(Initialize());
+
+  if (!version_.UsesTls()) {
+    // This test is TLS specific.
+    return;
+  }
+
+  // Send the first request. Client should not have a resumption ticket.
+  SendSynchronousFooRequestAndCheckResponse();
+  QuicSpdyClientSession* client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_EQ(client_session->GetCryptoStream()->EarlyDataReason(),
+            ssl_early_data_no_session_offered);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  client_->Disconnect();
+
+  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, false);
+
+  // Send the second request. Client should still have no resumption ticket, but
+  // it will receive one which can be used by the next request.
+  client_->Connect();
+  SendSynchronousFooRequestAndCheckResponse();
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_EQ(client_session->GetCryptoStream()->EarlyDataReason(),
+            ssl_early_data_no_session_offered);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  client_->Disconnect();
+
+  // Send the third request in 0RTT.
+  client_->Connect();
+  SendSynchronousFooRequestAndCheckResponse();
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_TRUE(client_session->EarlyDataAccepted());
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, TlsResumptionDisabledOnTheFly) {
+  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, false);
+  ASSERT_TRUE(Initialize());
+
+  if (!version_.UsesTls()) {
+    // This test is TLS specific.
+    return;
+  }
+
+  // Send the first request and then disconnect.
+  SendSynchronousFooRequestAndCheckResponse();
+  QuicSpdyClientSession* client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  client_->Disconnect();
+
+  // Send the second request in 0RTT.
+  client_->Connect();
+  SendSynchronousFooRequestAndCheckResponse();
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_TRUE(client_session->EarlyDataAccepted());
+  client_->Disconnect();
+
+  SetQuicFlag(FLAGS_quic_disable_server_tls_resumption, true);
+
+  // Send the third request. The client should try resumption but server should
+  // decline it.
+  client_->Connect();
+  SendSynchronousFooRequestAndCheckResponse();
+
+  client_session = GetClientSession();
+  ASSERT_TRUE(client_session);
+  EXPECT_FALSE(client_session->EarlyDataAccepted());
+  EXPECT_EQ(client_session->GetCryptoStream()->EarlyDataReason(),
+            ssl_early_data_session_not_resumed);
+  client_->Disconnect();
+
+  // Keep sending until the client runs out of resumption tickets.
+  for (int i = 0; i < 10; ++i) {
+    client_->Connect();
+    SendSynchronousFooRequestAndCheckResponse();
+
+    client_session = GetClientSession();
+    ASSERT_TRUE(client_session);
+    EXPECT_FALSE(client_session->EarlyDataAccepted());
+    const auto early_data_reason =
+        client_session->GetCryptoStream()->EarlyDataReason();
+    client_->Disconnect();
+
+    if (early_data_reason != ssl_early_data_session_not_resumed) {
+      EXPECT_EQ(early_data_reason, ssl_early_data_no_session_offered);
+      return;
+    }
+  }
+
+  ADD_FAILURE() << "Client should not have 10 resumption tickets.";
 }
 
 }  // namespace

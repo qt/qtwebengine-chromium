@@ -19,6 +19,7 @@
 #include "testing/embedder_test_timer_handling_delegate.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/base/check_op.h"
 #include "third_party/base/stl_util.h"
 
 using pdfium::kTextFormChecksum;
@@ -1316,23 +1317,37 @@ TEST_F(FPDFFormFillEmbedderTest, BUG_765384) {
 }
 #endif  // PDF_ENABLE_V8
 
-TEST_F(FPDFFormFillEmbedderTest, FormText) {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-  const char kFocusedTextFormWithAbcChecksum[] =
-      "42af2135e20deb09cbdbfb6418d86382";
-  const char kUnfocusedTextFormWithAbcChecksum[] =
-      "4a961599a512a08468b26b89d389c30a";
+// TODO(crbug.com/pdfium/1500): Fix this test on Windows and enable.
+#if defined(OS_WIN) && \
+    (defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_))
+#define MAYBE_FormText DISABLED_FormText
 #else
+#define MAYBE_FormText FormText
+#endif
+TEST_F(FPDFFormFillEmbedderTest, MAYBE_FormText) {
+#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
 #if defined(OS_APPLE)
   const char kFocusedTextFormWithAbcChecksum[] =
-      "c6e4a2fb10661116771ee74f54d9c5e0";
+      "7f4d3e883301c08b3ca2f53cb78adc58";
   const char kUnfocusedTextFormWithAbcChecksum[] =
-      "e0c8d5099301d7c10ed831a43e974d9d";
-#elif defined(OS_WIN)
+      "92aa287f6208ad0c78210e68e2a731a3";
+#else
+  const char kFocusedTextFormWithAbcChecksum[] =
+      "e2e2b4e4c7ebd6485a2c0745e41c0115";
+  const char kUnfocusedTextFormWithAbcChecksum[] =
+      "84e808922efcceb82f36d55ed4b2752e";
+#endif  // defined(OS_APPLE)
+#else
+#if defined(OS_WIN)
   const char kFocusedTextFormWithAbcChecksum[] =
       "29d1c3fd226ca6a69597f75937690320";
   const char kUnfocusedTextFormWithAbcChecksum[] =
       "5e678a55912cb568fd677bf34abb8727";
+#elif defined(OS_APPLE)
+  const char kFocusedTextFormWithAbcChecksum[] =
+      "c6e4a2fb10661116771ee74f54d9c5e0";
+  const char kUnfocusedTextFormWithAbcChecksum[] =
+      "e0c8d5099301d7c10ed831a43e974d9d";
 #else
   const char kFocusedTextFormWithAbcChecksum[] =
       "11487d5597599a26e8912b9c1d9422cb";

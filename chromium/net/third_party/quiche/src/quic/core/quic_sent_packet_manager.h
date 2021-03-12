@@ -22,6 +22,7 @@
 #include "net/third_party/quiche/src/quic/core/quic_circular_deque.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_sustained_bandwidth_recorder.h"
+#include "net/third_party/quiche/src/quic/core/quic_time.h"
 #include "net/third_party/quiche/src/quic/core/quic_transmission_info.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_unacked_packet_map.h"
@@ -124,6 +125,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   virtual void SetFromConfig(const QuicConfig& config);
 
+  void ReserveUnackedPacketsInitialCapacity(int initial_capacity) {
+    unacked_packets_.ReserveInitialCapacity(initial_capacity);
+  }
+
   void ApplyConnectionOptions(const QuicTagVector& connection_options);
 
   // Pass the CachedNetworkParameters to the send algorithm.
@@ -196,6 +201,10 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
                     TransmissionType transmission_type,
                     HasRetransmittableData has_retransmittable_data,
                     bool measure_rtt);
+
+  bool CanSendAckFrequency() const;
+
+  QuicAckFrequencyFrame GetUpdatedAckFrequencyFrame() const;
 
   // Called when the retransmission timer expires and returns the retransmission
   // mode.
@@ -442,6 +451,11 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   void OnUserAgentIdKnown() { loss_algorithm_->OnUserAgentIdKnown(); }
 
+  // Gets the earliest in flight packet sent time to calculate PTO. Also
+  // updates |packet_number_space| if a PTO timer should be armed.
+  QuicTime GetEarliestPacketSentTimeForPto(
+      PacketNumberSpace* packet_number_space) const;
+
   bool give_sent_packet_to_debug_visitor_after_sent() const {
     return give_sent_packet_to_debug_visitor_after_sent_;
   }
@@ -504,7 +518,8 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
 
   // Request that |packet_number| be retransmitted after the other pending
   // retransmissions.  Does not add it to the retransmissions if it's already
-  // a pending retransmission.
+  // a pending retransmission. Do not reuse iterator of the underlying
+  // unacked_packets_ after calling this function as it can be invalidated.
   void MarkForRetransmission(QuicPacketNumber packet_number,
                              TransmissionType transmission_type);
 
@@ -539,11 +554,6 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // Indicates whether including peer_max_ack_delay_ when calculating PTO
   // timeout.
   bool ShouldAddMaxAckDelay(PacketNumberSpace space) const;
-
-  // Gets the earliest in flight packet sent time to calculate PTO. Also
-  // updates |packet_number_space| if a PTO timer should be armed.
-  QuicTime GetEarliestPacketSentTimeForPto(
-      PacketNumberSpace* packet_number_space) const;
 
   // Returns true if application data should be used to arm PTO. Only used when
   // multiple packet number space is enabled.
@@ -649,6 +659,13 @@ class QUIC_EXPORT_PRIVATE QuicSentPacketManager {
   // same as local_max_ack_delay_, may be changed via transport parameter
   // negotiation or subsequently by AckFrequencyFrame.
   QuicTime::Delta peer_max_ack_delay_;
+
+  // Peer sends min_ack_delay in TransportParameter to advertise its support for
+  // AckFrequencyFrame.
+  QuicTime::Delta peer_min_ack_delay_ = QuicTime::Delta::Infinite();
+
+  // Use smoothed RTT for computing max_ack_delay in AckFrequency frame.
+  bool use_smoothed_rtt_in_ack_delay_ = false;
 
   // The history of outstanding max_ack_delays sent to peer. Outstanding means
   // a max_ack_delay is sent as part of the last acked AckFrequencyFrame or

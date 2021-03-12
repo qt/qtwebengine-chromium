@@ -2463,6 +2463,8 @@ VP9_COMP *vp9_create_compressor(const VP9EncoderConfig *oxcf,
 
   cpi->allow_encode_breakout = ENCODE_BREAKOUT_ENABLED;
 
+  vp9_extrc_init(&cpi->ext_ratectrl);
+
 #if !CONFIG_REALTIME_ONLY
   if (oxcf->pass == 1) {
     vp9_init_first_pass(cpi);
@@ -2536,6 +2538,8 @@ VP9_COMP *vp9_create_compressor(const VP9EncoderConfig *oxcf,
       num_frames = packets - 1;
       fps_init_first_pass_info(&cpi->twopass.first_pass_info,
                                oxcf->two_pass_stats_in.buf, num_frames);
+      vp9_extrc_send_firstpass_stats(&cpi->ext_ratectrl,
+                                     &cpi->twopass.first_pass_info);
 
       vp9_init_second_pass(cpi);
     }
@@ -2833,6 +2837,8 @@ void vp9_remove_compressor(VP9_COMP *cpi) {
     cpi->twopass.frame_mb_stats_buf = NULL;
   }
 #endif
+
+  vp9_extrc_delete(&cpi->ext_ratectrl);
 
   vp9_remove_common(cm);
   vp9_free_ref_frame_buffers(cm->buffer_pool);
@@ -3313,6 +3319,13 @@ static void loopfilter_frame(VP9_COMP *cpi, VP9_COMMON *cm) {
   // Skip loop filter in show_existing_frame mode.
   if (cm->show_existing_frame) {
     lf->filter_level = 0;
+    return;
+  }
+
+  if (cpi->loopfilter_ctrl == NO_LOOPFILTER ||
+      (!is_reference_frame && cpi->loopfilter_ctrl == LOOPFILTER_REFERENCE)) {
+    lf->filter_level = 0;
+    vpx_extend_frame_inner_borders(cm->frame_to_show);
     return;
   }
 
@@ -4468,6 +4481,14 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest
       q = cpi->encode_command.external_quantize_index;
     }
 #endif
+    if (cpi->ext_ratectrl.ready) {
+      const GF_GROUP *gf_group = &cpi->twopass.gf_group;
+      vpx_rc_encodeframe_decision_t encode_frame_decision;
+      vp9_extrc_get_encodeframe_decision(
+          &cpi->ext_ratectrl, gf_group, cm->current_video_frame,
+          cm->current_frame_coding_index, &encode_frame_decision);
+      q = encode_frame_decision.q_index;
+    }
 
     vp9_set_quantizer(cpi, q);
 
@@ -4507,6 +4528,9 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest
       if (frame_over_shoot_limit == 0) frame_over_shoot_limit = 1;
     }
 
+    if (cpi->ext_ratectrl.ready) {
+      break;
+    }
 #if CONFIG_RATE_CTRL
     // This part needs to be after save_coding_context() because
     // restore_coding_context will be called in the end of this function.
@@ -5456,6 +5480,13 @@ static void encode_frame_to_data_rate(
   // build the bitstream
   vp9_pack_bitstream(cpi, dest, size);
 
+  {
+    const RefCntBuffer *coded_frame_buf =
+        get_ref_cnt_buffer(cm, cm->new_fb_idx);
+    vp9_extrc_update_encodeframe_result(&cpi->ext_ratectrl, (*size) << 3,
+                                        cpi->Source, &coded_frame_buf->buf,
+                                        cpi->oxcf.input_bit_depth);
+  }
 #if CONFIG_REALTIME_ONLY
   (void)encode_frame_result;
   assert(encode_frame_result == NULL);
@@ -7518,7 +7549,7 @@ static void update_encode_frame_result(
 #if CONFIG_RATE_CTRL
   PSNR_STATS psnr;
 #if CONFIG_VP9_HIGHBITDEPTH
-  vpx_calc_highbd_psnr(source_frame, coded_frame_buf->buf, &psnr, bit_depth,
+  vpx_calc_highbd_psnr(source_frame, &coded_frame_buf->buf, &psnr, bit_depth,
                        input_bit_depth);
 #else   // CONFIG_VP9_HIGHBITDEPTH
   (void)bit_depth;

@@ -39,6 +39,11 @@ TEST(HeapGraphTrackerTest, PackageFromLocationApp) {
                 "/data/app/com.google.android.webview-6XfQhnaSkFwGK0sYL9is0G==/"
                 "base.apk"),
             "com.google.android.webview");
+  EXPECT_EQ(PackageFromLocation(&storage,
+                                "/data/app/"
+                                "com.google.android.apps.wellbeing-"
+                                "qfQCaB4uJ7P0OPpZQqOu0Q==/oat/arm64/base.odex"),
+            "com.google.android.apps.wellbeing");
 }
 
 TEST(HeapGraphTrackerTest, BuildFlamegraph) {
@@ -77,16 +82,16 @@ TEST(HeapGraphTrackerTest, BuildFlamegraph) {
                                   context.storage->InternString("location"));
   tracker.AddInternedType(kSeqId, kX, x, kLocation, /*object_size=*/0,
                           /*field_name_ids=*/{}, /*superclass_id=*/0,
-                          /*no_fields=*/false);
+                          /*classloader_id=*/0, /*no_fields=*/false);
   tracker.AddInternedType(kSeqId, kY, y, kLocation, /*object_size=*/0,
                           /*field_name_ids=*/{}, /*superclass_id=*/0,
-                          /*no_fields=*/false);
+                          /*classloader_id=*/0, /*no_fields=*/false);
   tracker.AddInternedType(kSeqId, kA, a, kLocation, /*object_size=*/0,
                           /*field_name_ids=*/{}, /*superclass_id=*/0,
-                          /*no_fields=*/false);
+                          /*classloader_id=*/0, /*no_fields=*/false);
   tracker.AddInternedType(kSeqId, kB, b, kLocation, /*object_size=*/0,
                           /*field_name_ids=*/{}, /*superclass_id=*/0,
-                          /*no_fields=*/false);
+                          /*classloader_id=*/0, /*no_fields=*/false);
 
   {
     HeapGraphTracker::SourceObject obj;

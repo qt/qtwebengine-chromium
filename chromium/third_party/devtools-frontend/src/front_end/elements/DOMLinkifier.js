@@ -28,7 +28,7 @@ export const decorateNodeLabel = function(node, parentElement, tooltipContent) {
     const idElement = parentElement.createChild('span', 'node-label-id');
     const part = '#' + idAttribute;
     title += part;
-    idElement.createTextChild(part);
+    UI.UIUtils.createTextChild(idElement, part);
 
     // Mark the name as extra, since the ID is more important.
     nameElement.classList.add('extra');
@@ -45,7 +45,7 @@ export const decorateNodeLabel = function(node, parentElement, tooltipContent) {
         if (className && !foundClasses.has(className)) {
           const part = '.' + className;
           title += part;
-          classesElement.createTextChild(part);
+          UI.UIUtils.createTextChild(classesElement, part);
           foundClasses.add(className);
         }
       }
@@ -55,7 +55,7 @@ export const decorateNodeLabel = function(node, parentElement, tooltipContent) {
   if (isPseudo) {
     const pseudoElement = parentElement.createChild('span', 'extra node-label-pseudo');
     const pseudoText = '::' + originalNode.pseudoType();
-    pseudoElement.createTextChild(pseudoText);
+    UI.UIUtils.createTextChild(pseudoElement, pseudoText);
     title += pseudoText;
   }
   parentElement.title = tooltipContent || title;
@@ -76,7 +76,8 @@ export const linkifyNodeReference = function(node, options = {
 
   const root = document.createElement('span');
   root.classList.add('monospace');
-  const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(root, 'elements/domLinkifier.css');
+  const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
+      root, {cssFile: 'elements/domLinkifier.css', enableLegacyPatching: true, delegatesFocus: undefined});
   const link = /** @type {!HTMLDivElement} */ (shadowRoot.createChild('div', 'node-link'));
 
   decorateNodeLabel(node, link, options.tooltip);
@@ -104,7 +105,8 @@ export const linkifyDeferredNodeReference = function(deferredNode, options = {
   preventKeyboardFocus: undefined,
 }) {
   const root = document.createElement('div');
-  const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(root, 'elements/domLinkifier.css');
+  const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
+      root, {cssFile: 'elements/domLinkifier.css', enableLegacyPatching: true, delegatesFocus: undefined});
   const link = /** @type {!HTMLDivElement} */ (shadowRoot.createChild('div', 'node-link'));
   link.createChild('slot');
   link.addEventListener('click', deferredNode.resolve.bind(deferredNode, onDeferredNodeResolved), false);

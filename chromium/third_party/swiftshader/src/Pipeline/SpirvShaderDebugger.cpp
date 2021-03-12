@@ -146,28 +146,35 @@ std::shared_ptr<vk::dbg::Value> makeDbgValue(const sw::vec<T, N> &vec)
 	});
 }
 
-// store() emits a store instruction to write sizeof(T) bytes from val into ptr.
+// store() emits a store instruction to copy val into ptr.
 template<typename T>
 void store(const rr::RValue<rr::Pointer<rr::Byte>> &ptr, const rr::RValue<T> &val)
 {
 	*rr::Pointer<T>(ptr) = val;
 }
 
-// store() emits a store instruction to write sizeof(T) bytes from val into ptr.
+// store() emits a store instruction to copy val into ptr.
 template<typename T>
 void store(const rr::RValue<rr::Pointer<rr::Byte>> &ptr, const T &val)
 {
 	*rr::Pointer<T>(ptr) = val;
 }
 
-// store() emits a store instruction to write sizeof(T) * N bytes from val into
-// ptr.
+// clang-format off
+template<typename T> struct ReactorTypeSize {};
+template<> struct ReactorTypeSize<rr::Int>    { static constexpr const int value = 4; };
+template<> struct ReactorTypeSize<rr::Float>  { static constexpr const int value = 4; };
+template<> struct ReactorTypeSize<rr::Int4>   { static constexpr const int value = 16; };
+template<> struct ReactorTypeSize<rr::Float4> { static constexpr const int value = 16; };
+// clang-format on
+
+// store() emits a store instruction to copy val into ptr.
 template<typename T, std::size_t N>
 void store(const rr::RValue<rr::Pointer<rr::Byte>> &ptr, const std::array<T, N> &val)
 {
 	for(std::size_t i = 0; i < N; i++)
 	{
-		store<T>(ptr + i * sizeof(T), val[i]);
+		store<T>(ptr + i * ReactorTypeSize<T>::value, val[i]);
 	}
 }
 
@@ -734,29 +741,37 @@ struct TemplateType : ObjectImpl<TemplateType, Type, Object::Kind::TemplateType>
 	}
 };
 
-// Function represents the OpenCL.DebugInfo.100 DebugFunction instruction.
-// https://www.khronos.org/registry/spir-v/specs/unified1/OpenCL.DebugInfo.100.html#DebugFunction
-struct Function : ObjectImpl<Function, Scope, Object::Kind::Function>
-{
-	std::string name;
-	FunctionType *type = nullptr;
-	uint32_t line = 0;
-	uint32_t column = 0;
-	std::string linkage;
-	uint32_t flags = 0;  // OR'd from OpenCLDebugInfo100DebugInfoFlags
-	uint32_t scopeLine = 0;
-	sw::SpirvShader::Function::ID function;
-};
-
 // LexicalBlock represents the OpenCL.DebugInfo.100 DebugLexicalBlock instruction.
 // https://www.khronos.org/registry/spir-v/specs/unified1/OpenCL.DebugInfo.100.html#DebugLexicalBlock
-struct LexicalBlock : ObjectImpl<LexicalBlock, Scope, Object::Kind::LexicalBlock>
+struct LexicalBlock : Scope
 {
+	using ID = sw::SpirvID<LexicalBlock>;
+	static constexpr auto Kind = Object::Kind::LexicalBlock;
+
+	inline LexicalBlock(Object::Kind kind = Kind)
+	    : Scope(kind)
+	{}
+
 	uint32_t line = 0;
 	uint32_t column = 0;
 	std::string name;
 
 	std::vector<LocalVariable *> variables;
+
+	static constexpr bool kindof(Object::Kind kind) { return kind == Kind || kind == Object::Kind::Function; }
+};
+
+// Function represents the OpenCL.DebugInfo.100 DebugFunction instruction.
+// https://www.khronos.org/registry/spir-v/specs/unified1/OpenCL.DebugInfo.100.html#DebugFunction
+struct Function : ObjectImpl<Function, LexicalBlock, Object::Kind::Function>
+{
+	std::string name;
+	FunctionType *type = nullptr;
+	uint32_t declLine = 0;
+	uint32_t declColumn = 0;
+	std::string linkage;
+	uint32_t flags = 0;  // OR'd from OpenCLDebugInfo100DebugInfoFlags
+	sw::SpirvShader::Function::ID function;
 };
 
 // InlinedAt represents the OpenCL.DebugInfo.100 DebugInlinedAt instruction.
@@ -875,6 +890,17 @@ T *find(Scope *scope)
 {
 	if(auto out = cast<T>(scope)) { return out; }
 	return scope->parent ? find<T>(scope->parent) : nullptr;
+}
+
+inline const char *tostring(LocalVariable::Definition def)
+{
+	switch(def)
+	{
+		case LocalVariable::Definition::Undefined: return "Undefined";
+		case LocalVariable::Definition::Declaration: return "Declaration";
+		case LocalVariable::Definition::Values: return "Values";
+		default: return "<unknown>";
+	}
 }
 
 }  // namespace debug
@@ -1657,12 +1683,12 @@ void SpirvShader::Impl::Debugger::process(const InsnIterator &insn, EmitState *s
 				func->name = shader->getString(insn.word(5));
 				func->type = get(debug::FunctionType::ID(insn.word(6)));
 				func->source = get(debug::Source::ID(insn.word(7)));
-				func->line = insn.word(8);
-				func->column = insn.word(9);
+				func->declLine = insn.word(8);
+				func->declColumn = insn.word(9);
 				func->parent = get(debug::Scope::ID(insn.word(10)));
 				func->linkage = shader->getString(insn.word(11));
 				func->flags = insn.word(12);
-				func->scopeLine = insn.word(13);
+				func->line = insn.word(13);
 				func->function = Function::ID(insn.word(14));
 				// declaration: word(13)
 			});
@@ -1727,7 +1753,13 @@ void SpirvShader::Impl::Debugger::process(const InsnIterator &insn, EmitState *s
 
 				decl->local->declaration = decl;
 
-				ASSERT(decl->local->definition == debug::LocalVariable::Definition::Undefined);
+				ASSERT_MSG(decl->local->definition == debug::LocalVariable::Definition::Undefined,
+				           "DebugLocalVariable '%s' declared at %s:%d was previously defined as %s, now again as %s",
+				           decl->local->name.c_str(),
+				           decl->local->source ? decl->local->source->file.c_str() : "<unknown>",
+				           (int)decl->local->line,
+				           tostring(decl->local->definition),
+				           tostring(debug::LocalVariable::Definition::Declaration));
 				decl->local->definition = debug::LocalVariable::Definition::Declaration;
 			});
 			break;
@@ -1741,7 +1773,16 @@ void SpirvShader::Impl::Debugger::process(const InsnIterator &insn, EmitState *s
 				{
 					value->local->definition = debug::LocalVariable::Definition::Values;
 				}
-				ASSERT(value->local->definition == debug::LocalVariable::Definition::Values);
+				else
+				{
+					ASSERT_MSG(value->local->definition == debug::LocalVariable::Definition::Values,
+					           "DebugLocalVariable '%s' declared at %s:%d was previously defined as %s, now again as %s",
+					           value->local->name.c_str(),
+					           value->local->source ? value->local->source->file.c_str() : "<unknown>",
+					           (int)value->local->line,
+					           tostring(value->local->definition),
+					           tostring(debug::LocalVariable::Definition::Values));
+				}
 
 				auto node = &value->local->values;
 				for(uint32_t i = 8; i < insn.wordCount(); i++)
@@ -1749,7 +1790,7 @@ void SpirvShader::Impl::Debugger::process(const InsnIterator &insn, EmitState *s
 					auto idx = shader->GetConstScalarInt(insn.word(i));
 					value->indexes.push_back(idx);
 
-					auto it = node->children.find(i);
+					auto it = node->children.find(idx);
 					if(it != node->children.end())
 					{
 						node = it->second.get();
@@ -1759,7 +1800,7 @@ void SpirvShader::Impl::Debugger::process(const InsnIterator &insn, EmitState *s
 						auto parent = node;
 						auto child = std::make_unique<debug::LocalVariable::ValueNode>();
 						node = child.get();
-						parent->children.emplace(i, std::move(child));
+						parent->children.emplace(idx, std::move(child));
 					}
 				}
 
@@ -2159,7 +2200,7 @@ void SpirvShader::Impl::Debugger::State::Data::trap(int index, State *state)
 		auto shrink = [&](size_t maxLen) {
 			while(stack.size() > maxLen)
 			{
-				thread->exit();
+				thread->exit(true);
 				stack.pop_back();
 			}
 		};
@@ -2175,10 +2216,10 @@ void SpirvShader::Impl::Debugger::State::Data::trap(int index, State *state)
 		{
 			if(stack[i] != newStack[i])
 			{
-				bool isTopMostFrame = i == (newStack.size() - 1);
+				bool wasTopMostFrame = i == (stack.size() - 1);
 				auto oldFunction = debug::find<debug::Function>(stack[i].block);
 				auto newFunction = debug::find<debug::Function>(newStack[i].block);
-				if(isTopMostFrame && oldFunction == newFunction)
+				if(wasTopMostFrame && oldFunction == newFunction)
 				{
 					// Deviation is just a movement in the top most frame's
 					// function.
@@ -2186,8 +2227,20 @@ void SpirvShader::Impl::Debugger::State::Data::trap(int index, State *state)
 					// be treated as a step out and step in, breaking stepping
 					// commands. Instead, just update the frame variables for
 					// the new scope.
-					stack[i].block = newStack[i].block;
+					stack[i] = newStack[i];
 					thread->update(true, [&](vk::dbg::Frame &frame) {
+						// Update the frame location if we're entering a
+						// function. This allows the debugger to pause at the
+						// line (which may not have any instructions or OpLines)
+						// of a inlined function call. This is less jarring
+						// than magically appearing in another function before
+						// you've reached the line of the call site.
+						// See b/170650010 for more context.
+						if(stack.size() < newStack.size())
+						{
+							auto function = debug::find<debug::Function>(stack[i].block);
+							frame.location = vk::dbg::Location{ function->source->dbgFile, (int)stack[i].line };
+						}
 						updateFrameLocals(state, frame, stack[i].block);
 					});
 				}
@@ -2199,16 +2252,33 @@ void SpirvShader::Impl::Debugger::State::Data::trap(int index, State *state)
 			}
 		}
 
-		// Now rebuild the parts of stack frames that are new
+		// Now rebuild the parts of stack frames that are new.
+		//
+		// This is done in two stages:
+		// (1) thread->enter() is called to construct the new stack frame with
+		//     the opening scope line. The frames locals and hovers are built
+		//     and assigned.
+		// (2) thread->update() is called to adjust the frame's location to
+		//     entry.line. This may be different to the function entry in the
+		//     case of multiple nested inline functions. If its the same, then
+		//     this is a no-op.
+		//
+		// This two-stage approach allows the debugger to step through chains of
+		// inlined function calls without having a jarring jump from the outer
+		// function to the first statement within the function.
+		// See b/170650010 for more context.
 		for(size_t i = stack.size(); i < newStack.size(); i++)
 		{
 			auto entry = newStack[i];
 			stack.emplace_back(entry);
 			auto function = debug::find<debug::Function>(entry.block);
 			thread->enter(entry.block->source->dbgFile, function->name, [&](vk::dbg::Frame &frame) {
-				frame.location = vk::dbg::Location{ function->source->dbgFile, (int)entry.line };
+				frame.location = vk::dbg::Location{ function->source->dbgFile, (int)function->line };
 				frame.hovers->variables->extend(std::make_shared<HoversFromLocals>(frame.locals->variables));
 				updateFrameLocals(state, frame, entry.block);
+			});
+			thread->update(true, [&](vk::dbg::Frame &frame) {
+				frame.location.line = (int)entry.line;
 			});
 		}
 	}
@@ -2312,10 +2382,7 @@ void SpirvShader::Impl::Debugger::State::Data::buildGlobal(const char *name, con
 {
 	for(int lane = 0; lane < sw::SIMD::Width; lane++)
 	{
-		for(int i = 0; i < N; i++)
-		{
-			globals.lanes[lane]->put(name, makeDbgValue(simd[lane]));
-		}
+		globals.lanes[lane]->put(name, makeDbgValue(simd[lane]));
 	}
 }
 
@@ -2482,7 +2549,7 @@ void SpirvShader::dbgCreateFile()
 	for(auto insn : *this)
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		                       SPV_ENV_VULKAN_1_1,
+		                       vk::SPIRV_VERSION,
 		                       insn.wordPointer(0),
 		                       insn.wordCount(),
 		                       insns.data(),
@@ -2581,7 +2648,7 @@ void SpirvShader::dbgBeginEmitInstruction(InsnIterator insn, EmitState *state) c
 #	if PRINT_EACH_EMITTED_INSTRUCTION
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
@@ -2594,7 +2661,7 @@ void SpirvShader::dbgBeginEmitInstruction(InsnIterator insn, EmitState *state) c
 #	if PRINT_EACH_EXECUTED_INSTRUCTION
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),
@@ -2690,7 +2757,7 @@ void SpirvShader::DefineOpenCLDebugInfo100(const InsnIterator &insn)
 #	if PRINT_EACH_DEFINED_DBG_INSTRUCTION
 	{
 		auto instruction = spvtools::spvInstructionBinaryToText(
-		    SPV_ENV_VULKAN_1_1,
+		    vk::SPIRV_VERSION,
 		    insn.wordPointer(0),
 		    insn.wordCount(),
 		    insns.data(),

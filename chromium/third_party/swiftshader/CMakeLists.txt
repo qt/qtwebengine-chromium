@@ -166,6 +166,15 @@ set_property(CACHE SWIFTSHADER_LLVM_VERSION PROPERTY STRINGS "10.0")
 set(REACTOR_DEFAULT_OPT_LEVEL "Default" CACHE STRING "Reactor default optimization level")
 set_property(CACHE REACTOR_DEFAULT_OPT_LEVEL PROPERTY STRINGS "None" "Less" "Default" "Aggressive")
 
+# Enable instrumentation of Reactor routines for MemorySanitizer builds (LLVM backend).
+# TODO(b/155148722): Remove when unconditionally instrumenting for all build systems.
+set(REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION TRUE)
+
+if(NOT DEFINED SWIFTSHADER_LOGGING_LEVEL)
+    set(SWIFTSHADER_LOGGING_LEVEL "Info" CACHE STRING "SwiftShader logging level")
+    set_property(CACHE SWIFTSHADER_LOGGING_LEVEL PROPERTY STRINGS "Verbose" "Debug" "Info" "Warn" "Error" "Fatal" "Disabled")
+endif()
+
 # LLVM disallows calling cmake . from the main LLVM dir, the reason is that
 # it builds header files that could overwrite the orignal ones. Here we
 # want to include LLVM as a subdirectory and even though it wouldn't cause
@@ -334,8 +343,10 @@ endmacro()
 macro(set_linker_flag FLAG)
     if(${ARGC} GREATER 1)
         set(CMAKE_EXE_LINKER_FLAGS_${ARGV1} "${CMAKE_EXE_LINKER_FLAGS_${ARGV1}} ${FLAG}")
+        set(CMAKE_SHARED_LINKER_FLAGS_${ARGV1} "${CMAKE_EXE_LINKER_FLAGS_${ARGV1}} ${FLAG}")
     else()
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${FLAG}")
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${FLAG}")
     endif()
 endmacro()
 
@@ -503,8 +514,22 @@ else()
     set_cpp_flag("-fomit-frame-pointer" RELEASE)
 
     if(SWIFTSHADER_MSAN)
+        if(NOT DEFINED ENV{SWIFTSHADER_MSAN_INSTRUMENTED_LIBCXX_PATH})
+            message(FATAL_ERROR " \n"
+                    " MemorySanitizer usage requires an instrumented build of libc++.\n"
+                    " Set the SWIFTSHADER_MSAN_INSTRUMENTED_LIBCXX_PATH environment variable to the\n"
+                    " build output path. See\n"
+                    " https://github.com/google/sanitizers/wiki/MemorySanitizerLibcxxHowTo#instrumented-libc\n"
+                    " for details on how to build an MSan instrumented libc++.")
+        endif()
+
         set_cpp_flag("-fsanitize=memory")
         set_linker_flag("-fsanitize=memory")
+        set_cpp_flag("-stdlib=libc++")
+        set_linker_flag("-L$ENV{SWIFTSHADER_MSAN_INSTRUMENTED_LIBCXX_PATH}/lib")
+        set_cpp_flag("-I$ENV{SWIFTSHADER_MSAN_INSTRUMENTED_LIBCXX_PATH}/include")
+        set_cpp_flag("-I$ENV{SWIFTSHADER_MSAN_INSTRUMENTED_LIBCXX_PATH}/include/c++/v1")
+        set_linker_flag("-Wl,-rpath,$ENV{SWIFTSHADER_MSAN_INSTRUMENTED_LIBCXX_PATH}/lib")
     elseif(SWIFTSHADER_ASAN)
         set_cpp_flag("-fsanitize=address")
         set_linker_flag("-fsanitize=address")
@@ -551,6 +576,10 @@ endif()
 
 if(REACTOR_DEFAULT_OPT_LEVEL)
     list(APPEND SWIFTSHADER_COMPILE_OPTIONS "-DREACTOR_DEFAULT_OPT_LEVEL=${REACTOR_DEFAULT_OPT_LEVEL}")
+endif()
+
+if(DEFINED SWIFTSHADER_LOGGING_LEVEL)
+    list(APPEND SWIFTSHADER_COMPILE_OPTIONS "-DSWIFTSHADER_LOGGING_LEVEL=${SWIFTSHADER_LOGGING_LEVEL}")
 endif()
 
 if(WIN32)

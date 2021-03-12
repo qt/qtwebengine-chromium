@@ -12,7 +12,7 @@
 #include "include/gpu/mtl/GrMtlTypes.h"
 #include "src/core/SkMathPriv.h"
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/image/SkImage_Base.h"
 #include "tools/sk_app/MetalWindowContext.h"
 
@@ -76,12 +76,33 @@ void MetalWindowContext::destroyContext() {
 sk_sp<SkSurface> MetalWindowContext::getBackbufferSurface() {
     sk_sp<SkSurface> surface;
     if (fContext) {
-        surface = SkSurface::MakeFromCAMetalLayer(fContext.get(), (__bridge GrMTLHandle)fMetalLayer,
-                                                  kTopLeft_GrSurfaceOrigin, fSampleCount,
-                                                  kBGRA_8888_SkColorType,
-                                                  fDisplayParams.fColorSpace,
-                                                  &fDisplayParams.fSurfaceProps,
-                                                  &fDrawableHandle);
+        if (fDisplayParams.fDelayDrawableAcquisition) {
+            surface = SkSurface::MakeFromCAMetalLayer(fContext.get(),
+                                                      (__bridge GrMTLHandle)fMetalLayer,
+                                                      kTopLeft_GrSurfaceOrigin, fSampleCount,
+                                                      kBGRA_8888_SkColorType,
+                                                      fDisplayParams.fColorSpace,
+                                                      &fDisplayParams.fSurfaceProps,
+                                                      &fDrawableHandle);
+        } else {
+            id<CAMetalDrawable> currentDrawable = [fMetalLayer nextDrawable];
+
+            GrMtlTextureInfo fbInfo;
+            fbInfo.fTexture.retain(currentDrawable.texture);
+
+            GrBackendRenderTarget backendRT(fWidth,
+                                            fHeight,
+                                            fSampleCount,
+                                            fbInfo);
+
+            surface = SkSurface::MakeFromBackendRenderTarget(fContext.get(), backendRT,
+                                                             kTopLeft_GrSurfaceOrigin,
+                                                             kBGRA_8888_SkColorType,
+                                                             fDisplayParams.fColorSpace,
+                                                             &fDisplayParams.fSurfaceProps);
+
+            fDrawableHandle = CFRetain((GrMTLHandle) currentDrawable);
+        }
     }
 
     return surface;

@@ -317,8 +317,6 @@ void av1_rc_init(const AV1EncoderConfig *oxcf, int pass, RATE_CONTROL *rc) {
   rc->frames_since_key = 8;  // Sensible default for first frame.
   rc->this_key_frame_forced = 0;
   rc->next_key_frame_forced = 0;
-  rc->source_alt_ref_pending = 0;
-  rc->source_alt_ref_active = 0;
 
   rc->frames_till_gf_update_due = 0;
   rc->ni_av_qi = rc_cfg->worst_allowed_q;
@@ -412,6 +410,28 @@ static int adjust_q_cbr(const AV1_COMP *cpi, int q, int active_worst_quality) {
         rc->q_1_frame != rc->q_2_frame) {
       q = clamp(q, AOMMIN(rc->q_1_frame, rc->q_2_frame),
                 AOMMAX(rc->q_1_frame, rc->q_2_frame));
+    }
+    // Adjust Q base on source content change from scene detection.
+    if (cpi->sf.rt_sf.check_scene_detection && rc->prev_avg_source_sad > 0 &&
+        rc->frames_since_key > 10) {
+      const int bit_depth = cm->seq_params.bit_depth;
+      double delta =
+          (double)rc->avg_source_sad / (double)rc->prev_avg_source_sad - 1.0;
+      // Push Q downwards if content change is decreasing and buffer level
+      // is stable (at least 1/4-optimal level), so not overshooting. Do so
+      // only for high Q to avoid excess overshoot.
+      // Else reduce decrease in Q from previous frame if content change is
+      // increasing and buffer is below max (so not undershooting).
+      if (delta < 0.0 && rc->buffer_level > (rc->optimal_buffer_level >> 2) &&
+          q > (rc->worst_quality >> 1)) {
+        double q_adj_factor = 1.0 + 0.5 * tanh(4.0 * delta);
+        double q_val = av1_convert_qindex_to_q(q, bit_depth);
+        q += av1_compute_qdelta(rc, q_val, q_val * q_adj_factor, bit_depth);
+      } else if (rc->q_1_frame - q > 0 && delta > 0.1 &&
+                 rc->buffer_level < AOMMIN(rc->maximum_buffer_size,
+                                           rc->optimal_buffer_level << 1)) {
+        q = (3 * q + rc->q_1_frame) >> 2;
+      }
     }
     // Limit the decrease in Q from previous frame.
     if (rc->q_1_frame - q > max_delta) q = rc->q_1_frame - max_delta;
@@ -1231,19 +1251,17 @@ static int rc_pick_q_and_bounds_no_stats(const AV1_COMP *cpi, int width,
   return q;
 }
 
-static const double rate_factor_deltas[RATE_FACTOR_LEVELS] = {
-  1.00,  // INTER_NORMAL
-  1.50,  // GF_ARF_LOW
-  2.00,  // GF_ARF_STD
-  2.00,  // KF_STD
-};
-
+static const double arf_layer_deltas[MAX_ARF_LAYERS + 1] = { 2.50, 2.00, 1.75,
+                                                             1.50, 1.25, 1.15,
+                                                             1.0 };
 int av1_frame_type_qdelta(const AV1_COMP *cpi, int q) {
-  const RATE_FACTOR_LEVEL rf_lvl = get_rate_factor_level(&cpi->gf_group);
-  const FRAME_TYPE frame_type = (rf_lvl == KF_STD) ? KEY_FRAME : INTER_FRAME;
-  double rate_factor;
+  const GF_GROUP *const gf_group = &cpi->gf_group;
+  const RATE_FACTOR_LEVEL rf_lvl = get_rate_factor_level(gf_group);
+  const FRAME_TYPE frame_type = gf_group->frame_type[gf_group->index];
+  const int arf_layer = AOMMIN(gf_group->layer_depth[gf_group->index], 6);
+  const double rate_factor =
+      (rf_lvl == INTER_NORMAL) ? 1.0 : arf_layer_deltas[arf_layer];
 
-  rate_factor = rate_factor_deltas[rf_lvl];
   return av1_compute_qdelta_by_rate(&cpi->rc, frame_type, q, rate_factor,
                                     cpi->is_screen_content_type,
                                     cpi->common.seq_params.bit_depth);
@@ -1520,7 +1538,7 @@ static int get_active_best_quality(const AV1_COMP *const cpi,
 
   // TODO(chengchen): can we remove this condition?
   if (rc_mode == AOM_Q && !refresh_frame_flags->alt_ref_frame &&
-      !is_intrl_arf_boost) {
+      !refresh_frame_flags->golden_frame && !is_intrl_arf_boost) {
     return cq_level;
   }
 
@@ -1725,27 +1743,14 @@ static void update_alt_ref_frame_stats(AV1_COMP *cpi) {
   // this frame refreshes means next frames don't unless specified by user
   RATE_CONTROL *const rc = &cpi->rc;
   rc->frames_since_golden = 0;
-
-  // Mark the alt ref as done (setting to 0 means no further alt refs pending).
-  rc->source_alt_ref_pending = 0;
-
-  // Set the alternate reference frame active flag
-  rc->source_alt_ref_active = 1;
 }
 
 static void update_golden_frame_stats(AV1_COMP *cpi) {
   RATE_CONTROL *const rc = &cpi->rc;
-  const GF_GROUP *const gf_group = &cpi->gf_group;
 
   // Update the Golden frame usage counts.
   if (cpi->refresh_frame.golden_frame || rc->is_src_frame_alt_ref) {
     rc->frames_since_golden = 0;
-
-    // If we are not using alt ref in the up and coming group clear the arf
-    // active flag. In multi arf group case, if the index is not 0 then
-    // we are overlaying a mid group arf so should not reset the flag.
-    if (!rc->source_alt_ref_pending && (gf_group->index == 0))
-      rc->source_alt_ref_active = 0;
   } else if (cpi->common.show_frame) {
     rc->frames_since_golden++;
   }
@@ -2169,7 +2174,7 @@ int av1_calc_iframe_target_size_one_pass_cbr(const AV1_COMP *cpi) {
  * (for each of 7 references) and refresh flags (for each of the 8 slots)
  * are set in \c cpi->svc.ref_idx[] and \c cpi->svc.refresh[].
  */
-static void set_reference_structure_one_pass_rt(AV1_COMP *cpi, int gf_update) {
+void av1_set_reference_structure_one_pass_rt(AV1_COMP *cpi, int gf_update) {
   AV1_COMMON *const cm = &cpi->common;
   ExternalFlags *const ext_flags = &cpi->ext_flags;
   ExtRefreshFrameFlagsInfo *const ext_refresh_frame_flags =
@@ -2258,6 +2263,7 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi) {
   last_src_width = unscaled_last_src->y_width;
   last_src_height = unscaled_last_src->y_height;
   rc->high_source_sad = 0;
+  rc->prev_avg_source_sad = rc->avg_source_sad;
   if (src_width == last_src_width && src_height == last_src_height) {
     const int num_mi_cols = cm->mi_params.mi_cols;
     const int num_mi_rows = cm->mi_params.mi_rows;
@@ -2557,14 +2563,12 @@ void av1_get_one_pass_rt_params(AV1_COMP *cpi,
   SVC *const svc = &cpi->svc;
   ResizePendingParams *const resize_pending_params =
       &cpi->resize_pending_params;
-  int gf_update = 0;
   int target;
   const int layer =
       LAYER_IDS_TO_IDX(svc->spatial_layer_id, svc->temporal_layer_id,
                        svc->number_temporal_layers);
   // Turn this on to explicitly set the reference structure rather than
   // relying on internal/default structure.
-  const int set_reference_structure = 1;
   if (cpi->use_svc) {
     av1_update_temporal_layer_framerate(cpi);
     av1_restore_layer_context(cpi);
@@ -2579,8 +2583,9 @@ void av1_get_one_pass_rt_params(AV1_COMP *cpi,
         cm->current_frame.frame_number != 0 && rc->frames_to_key == 0;
     rc->frames_to_key = cpi->oxcf.kf_cfg.key_freq_max;
     rc->kf_boost = DEFAULT_KF_BOOST_RT;
-    rc->source_alt_ref_active = 0;
     gf_group->update_type[gf_group->index] = KF_UPDATE;
+    gf_group->frame_type[gf_group->index] = KEY_FRAME;
+    gf_group->refbuf_state[gf_group->index] = REFBUF_RESET;
     if (cpi->use_svc) {
       if (cm->current_frame.frame_number > 0)
         av1_svc_reset_temporal_layers(cpi, 1);
@@ -2589,6 +2594,8 @@ void av1_get_one_pass_rt_params(AV1_COMP *cpi,
   } else {
     frame_params->frame_type = INTER_FRAME;
     gf_group->update_type[gf_group->index] = LF_UPDATE;
+    gf_group->frame_type[gf_group->index] = INTER_FRAME;
+    gf_group->refbuf_state[gf_group->index] = REFBUF_UPDATE;
     if (cpi->use_svc) {
       LAYER_CONTEXT *lc = &svc->layer_context[layer];
       lc->is_key_frame =
@@ -2623,7 +2630,7 @@ void av1_get_one_pass_rt_params(AV1_COMP *cpi,
                     resize_pending_params->height, cm->width, cm->height);
   }
   // Set the GF interval and update flag.
-  gf_update = set_gf_interval_update_onepass_rt(cpi, frame_params->frame_type);
+  set_gf_interval_update_onepass_rt(cpi, frame_params->frame_type);
   // Set target size.
   if (cpi->oxcf.rc_cfg.mode == AOM_CBR) {
     if (frame_params->frame_type == KEY_FRAME) {
@@ -2642,10 +2649,6 @@ void av1_get_one_pass_rt_params(AV1_COMP *cpi,
   }
   av1_rc_set_frame_target(cpi, target, cm->width, cm->height);
   rc->base_frame_target = target;
-  // Set reference strucutre for 1 layer.
-  if (set_reference_structure && cpi->oxcf.speed >= 6 &&
-      cm->number_spatial_layers == 1 && cm->number_temporal_layers == 1)
-    set_reference_structure_one_pass_rt(cpi, gf_update);
   cm->current_frame.frame_type = frame_params->frame_type;
 }
 

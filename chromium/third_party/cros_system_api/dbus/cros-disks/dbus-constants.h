@@ -56,6 +56,8 @@ const char kVendorId[] = "VendorId";
 const char kVendorName[] = "VendorName";
 const char kProductId[] = "ProductId";
 const char kProductName[] = "ProductName";
+const char kBusNumber[] = "BusNumber";
+const char kDeviceNumber[] = "DeviceNumber";
 const char kStorageDevicePath[] = "StorageDevicePath";
 const char kFileSystemType[] = "FileSystemType";
 

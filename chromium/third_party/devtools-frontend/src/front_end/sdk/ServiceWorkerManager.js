@@ -56,6 +56,12 @@ export class ServiceWorkerManager extends SDKModel {
     }
     this._forceUpdateSetting.addChangeListener(this._forceUpdateSettingChanged, this);
     new ServiceWorkerContextNamer(target, this);
+
+    /** Status of service worker network requests panel */
+    this.serviceWorkerNetworkRequestsPanelStatus = {
+      isOpen: false,
+      openedAt: 0,
+    };
   }
 
   async enable() {
@@ -303,11 +309,6 @@ class ServiceWorkerDispatcher {
    */
   constructor(manager) {
     this._manager = manager;
-  }
-
-  /** @return {!Protocol.UsesObjectNotation} */
-  usesObjectNotation() {
-    return true;
   }
 
   /**

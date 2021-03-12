@@ -1,10 +1,11 @@
 import { Fixture } from '../common/framework/fixture.js';
 import { compileGLSL, initGLSL } from '../common/framework/glsl.js';
-import { DevicePool, TestOOMedShouldAttemptGC } from '../common/framework/gpu/device_pool.js';
 import { attemptGarbageCollection } from '../common/framework/util/collect_garbage.js';
 import { assert } from '../common/framework/util/util.js';
 
 import { EncodableTextureFormat, SizedTextureFormat } from './capability_info.js';
+import { DevicePool, DeviceProvider, TestOOMedShouldAttemptGC } from './util/device_pool.js';
+import { align } from './util/math.js';
 import {
   fillTextureDataWithTexelValue,
   getTextureCopyLayout,
@@ -37,39 +38,67 @@ type TypedArrayBufferViewConstructor =
 const devicePool = new DevicePool();
 
 export class GPUTest extends Fixture {
-  private objects: { device: GPUDevice; queue: GPUQueue } | undefined = undefined;
-  initialized = false;
+  private provider: DeviceProvider | undefined;
+  /** Must not be replaced once acquired. */
+  private acquiredDevice: GPUDevice | undefined;
 
   get device(): GPUDevice {
-    assert(this.objects !== undefined);
-    return this.objects.device;
+    assert(
+      this.provider !== undefined,
+      'No provider available right now; did you "await" selectDeviceOrSkipTestCase?'
+    );
+    if (!this.acquiredDevice) {
+      this.acquiredDevice = this.provider.acquire();
+    }
+    return this.acquiredDevice;
   }
 
   get queue(): GPUQueue {
-    assert(this.objects !== undefined);
-    return this.objects.queue;
+    return this.device.defaultQueue;
   }
 
   async init(): Promise<void> {
     await super.init();
     await initGLSL();
 
-    const device = await devicePool.acquire();
-    const queue = device.defaultQueue;
-    this.objects = { device, queue };
+    this.provider = await devicePool.reserve();
+  }
+
+  /**
+   * When a GPUTest test accesses `.device` for the first time, a "default" GPUDevice
+   * (descriptor = `undefined`) is provided by default.
+   * However, some tests or cases need particular extensions to be enabled. Call this function with
+   * a descriptor (or undefined) to select a GPUDevice matching that descriptor.
+   *
+   * If the request descriptor can't be supported, throws an exception to skip the entire test case.
+   */
+  async selectDeviceOrSkipTestCase(descriptor: GPUDeviceDescriptor | undefined): Promise<void> {
+    assert(this.provider !== undefined);
+    // Make sure the device isn't replaced after it's been retrieved once.
+    assert(
+      !this.acquiredDevice,
+      "Can't selectDeviceOrSkipTestCase() after the device has been used"
+    );
+
+    const oldProvider = this.provider;
+    this.provider = undefined;
+    await devicePool.release(oldProvider);
+
+    this.provider = await devicePool.reserve(descriptor);
+    this.acquiredDevice = this.provider.acquire();
   }
 
   // Note: finalize is called even if init was unsuccessful.
   async finalize(): Promise<void> {
     await super.finalize();
 
-    if (this.objects) {
+    if (this.provider) {
       let threw: undefined | Error;
       {
-        const objects = this.objects;
-        this.objects = undefined;
+        const provider = this.provider;
+        this.provider = undefined;
         try {
-          await devicePool.release(objects.device);
+          await devicePool.release(provider);
         } catch (ex) {
           threw = ex;
         }
@@ -97,6 +126,9 @@ export class GPUTest extends Fixture {
   }
 
   createCopyForMapRead(src: GPUBuffer, srcOffset: number, size: number): GPUBuffer {
+    assert(srcOffset % 4 === 0);
+    assert(size % 4 === 0);
+
     const dst = this.device.createBuffer({
       size,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
@@ -112,18 +144,39 @@ export class GPUTest extends Fixture {
 
   // TODO: add an expectContents for textures, which logs data: uris on failure
 
+  // Offset and size passed to createCopyForMapRead must be divisible by 4. For that
+  // we might need to copy more bytes from the buffer than we want to map.
+  // begin and end values represent the part of the copied buffer that stores the contents
+  // we initially wanted to map.
+  // The copy will not cause an OOB error because the buffer size must be 4-aligned.
+  createAlignedCopyForMapRead(
+    src: GPUBuffer,
+    size: number,
+    offset: number
+  ): { dst: GPUBuffer; begin: number; end: number } {
+    const alignedOffset = Math.floor(offset / 4) * 4;
+    const offsetDifference = offset - alignedOffset;
+    const alignedSize = align(size + offsetDifference, 4);
+    const dst = this.createCopyForMapRead(src, alignedOffset, alignedSize);
+    return { dst, begin: offsetDifference, end: offsetDifference + size };
+  }
+
   expectContents(src: GPUBuffer, expected: TypedArrayBufferView, srcOffset: number = 0): void {
     this.expectSubContents(src, srcOffset, expected);
   }
 
   expectSubContents(src: GPUBuffer, srcOffset: number, expected: TypedArrayBufferView): void {
-    const dst = this.createCopyForMapRead(src, srcOffset, expected.buffer.byteLength);
+    const { dst, begin, end } = this.createAlignedCopyForMapRead(
+      src,
+      expected.byteLength,
+      srcOffset
+    );
 
     this.eventualAsyncExpectation(async niceStack => {
       const constructor = expected.constructor as TypedArrayBufferViewConstructor;
       await dst.mapAsync(GPUMapMode.READ);
       const actual = new constructor(dst.getMappedRange());
-      const check = this.checkBuffer(actual, expected);
+      const check = this.checkBuffer(actual.subarray(begin, end), expected);
       if (check !== undefined) {
         niceStack.message = check;
         this.rec.expectationFailed(niceStack);
@@ -321,5 +374,18 @@ got [${failedByteActualValues.join(', ')}]`;
     });
 
     return returnValue;
+  }
+
+  makeBufferWithContents(dataArray: TypedArrayBufferView, usage: GPUBufferUsageFlags): GPUBuffer {
+    const buffer = this.device.createBuffer({
+      mappedAtCreation: true,
+      size: dataArray.byteLength,
+      usage,
+    });
+    const mappedBuffer = buffer.getMappedRange();
+    const constructor = dataArray.constructor as TypedArrayBufferViewConstructor;
+    new constructor(mappedBuffer).set(dataArray);
+    buffer.unmap();
+    return buffer;
   }
 }

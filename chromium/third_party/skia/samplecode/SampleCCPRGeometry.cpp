@@ -15,7 +15,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "samplecode/Sample.h"
 #include "src/core/SkRectPriv.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrMemoryPool.h"
 #include "src/gpu/GrOnFlushResourceProvider.h"
@@ -66,8 +66,6 @@ class CCPRGeometryView : public Sample {
     void updateGpuData();
 
     PrimitiveType fPrimitiveType = PrimitiveType::kCubics;
-    SkCubicType fCubicType;
-    SkMatrix fCubicKLM;
 
     SkPoint fPoints[4] = {
             {100.05f, 100.05f}, {400.75f, 100.05f}, {400.75f, 300.95f}, {100.05f, 300.95f}};
@@ -154,27 +152,6 @@ private:
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override { return new Impl; }
 };
 
-static void draw_klm_line(int w, int h, SkCanvas* canvas, const SkScalar line[3], SkColor color) {
-    SkPoint p1, p2;
-    if (SkScalarAbs(line[1]) > SkScalarAbs(line[0])) {
-        // Draw from vertical edge to vertical edge.
-        p1 = {0, -line[2] / line[1]};
-        p2 = {(SkScalar)w, (-line[2] - w * line[0]) / line[1]};
-    } else {
-        // Draw from horizontal edge to horizontal edge.
-        p1 = {-line[2] / line[0], 0};
-        p2 = {(-line[2] - h * line[1]) / line[0], (SkScalar)h};
-    }
-
-    SkPaint linePaint;
-    linePaint.setColor(color);
-    linePaint.setAlpha(128);
-    linePaint.setStyle(SkPaint::kStroke_Style);
-    linePaint.setStrokeWidth(0);
-    linePaint.setAntiAlias(true);
-    canvas->drawLine(p1, p2, linePaint);
-}
-
 void CCPRGeometryView::onDrawContent(SkCanvas* canvas) {
     canvas->clear(SK_ColorBLACK);
 
@@ -209,7 +186,7 @@ void CCPRGeometryView::onDrawContent(SkCanvas* canvas) {
     caption.appendf("PrimitiveType_%s",
                     GrCCCoverageProcessor::PrimitiveTypeName(fPrimitiveType));
     if (PrimitiveType::kCubics == fPrimitiveType) {
-        caption.appendf(" (%s)", SkCubicTypeName(fCubicType));
+        caption.appendf(" (%s)", SkCubicTypeName(SkClassifyCubic(fPoints)));
     } else if (PrimitiveType::kConics == fPrimitiveType) {
         caption.appendf(" (w=%f)", fConicWeight);
     }
@@ -222,15 +199,13 @@ void CCPRGeometryView::onDrawContent(SkCanvas* canvas) {
         auto ctx = canvas->recordingContext();
         SkASSERT(ctx);
 
-        GrOpMemoryPool* pool = ctx->priv().opMemoryPool();
-
         int width = this->width();
         int height = this->height();
         auto ccbuff = GrRenderTargetContext::Make(
                 ctx, GrColorType::kAlpha_F16, nullptr, SkBackingFit::kApprox, {width, height});
         SkASSERT(ccbuff);
         ccbuff->clear(SK_PMColor4fTRANSPARENT);
-        ccbuff->priv().testingOnly_addDrawOp(pool->allocate<DrawCoverageCountOp>(this));
+        ccbuff->priv().testingOnly_addDrawOp(GrOp::Make<DrawCoverageCountOp>(ctx, this));
 
         // Visualize coverage count in main canvas.
         GrPaint paint;
@@ -250,12 +225,6 @@ void CCPRGeometryView::onDrawContent(SkCanvas* canvas) {
 
     if (PrimitiveType::kCubics == fPrimitiveType) {
         canvas->drawPoints(SkCanvas::kPoints_PointMode, 4, fPoints, pointsPaint);
-        if (!fDoStroke) {
-            int w = this->width(), h = this->height();
-            draw_klm_line(w, h, canvas, &fCubicKLM[0], SK_ColorYELLOW);
-            draw_klm_line(w, h, canvas, &fCubicKLM[3], SK_ColorBLUE);
-            draw_klm_line(w, h, canvas, &fCubicKLM[6], SK_ColorRED);
-        }
     } else {
         canvas->drawPoints(SkCanvas::kPoints_PointMode, 2, fPoints, pointsPaint);
         canvas->drawPoints(SkCanvas::kPoints_PointMode, 1, fPoints + 3, pointsPaint);
@@ -276,8 +245,6 @@ void CCPRGeometryView::updateGpuData() {
     fPath.moveTo(fPoints[0]);
 
     if (PrimitiveType::kCubics == fPrimitiveType) {
-        double t[2], s[2];
-        fCubicType = GrPathUtils::getCubicKLM(fPoints, &fCubicKLM, t, s);
         GrCCFillGeometry geometry;
         geometry.beginContour(fPoints[0]);
         geometry.cubicTo(fPoints, kDebugBloat / 2, kDebugBloat / 2);

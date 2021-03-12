@@ -23,14 +23,6 @@ static void rav1eCodecDestroyInternal(avifCodec * codec)
     avifFree(codec->internal);
 }
 
-static avifBool rav1eCodecOpen(struct avifCodec * codec, uint32_t firstSampleIndex)
-{
-    (void)firstSampleIndex; // Codec is encode-only, this isn't used
-
-    codec->internal->rav1eContext = NULL;
-    return AVIF_TRUE;
-}
-
 // Official support wasn't added until v0.4.0
 static avifBool rav1eSupports400(void)
 {
@@ -273,7 +265,6 @@ avifCodec * avifCodecCreateRav1e(void)
 {
     avifCodec * codec = (avifCodec *)avifAlloc(sizeof(avifCodec));
     memset(codec, 0, sizeof(struct avifCodec));
-    codec->open = rav1eCodecOpen;
     codec->encodeImage = rav1eCodecEncodeImage;
     codec->encodeFinish = rav1eCodecEncodeFinish;
     codec->destroyInternal = rav1eCodecDestroyInternal;

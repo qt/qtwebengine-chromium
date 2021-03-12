@@ -50,10 +50,11 @@ TEST_F(LoopStatementTest, Creation_WithSource) {
   auto continuing = std::make_unique<BlockStatement>();
   continuing->append(std::make_unique<DiscardStatement>());
 
-  LoopStatement l(Source{20, 2}, std::move(body), std::move(continuing));
+  LoopStatement l(Source{Source::Location{20, 2}}, std::move(body),
+                  std::move(continuing));
   auto src = l.source();
-  EXPECT_EQ(src.line, 20u);
-  EXPECT_EQ(src.column, 2u);
+  EXPECT_EQ(src.range.begin.line, 20u);
+  EXPECT_EQ(src.range.begin.column, 2u);
 }
 
 TEST_F(LoopStatementTest, IsLoop) {

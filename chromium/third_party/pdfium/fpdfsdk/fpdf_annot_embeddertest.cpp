@@ -526,19 +526,17 @@ TEST_F(FPDFAnnotEmbedderTest, ExtractInkMultiple) {
     EXPECT_EQ(681.535034f, rect.top);
   }
   {
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#if defined(OS_APPLE)
+#if defined(_SKIA_SUPPORT_) && defined(OS_APPLE)
+    static constexpr char kExpectedHash[] = "fad91b9c968fe8019a774f5e2419b8fc";
+#elif defined(_SKIA_SUPPORT_PATHS_) && defined(OS_APPLE)
     static constexpr char kExpectedHash[] = "acddfe688a117ead56af7b249a2cf8a1";
-#else
+#elif defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
     static constexpr char kExpectedHash[] = "1fb0dd8dd5f0b9bb8d076e48eb59296d";
-#endif  // defined(OS_APPLE)
-#else
-#if defined(OS_WIN)
+#elif defined(OS_WIN)
     static constexpr char kExpectedHash[] = "49d0a81c636531a337429325273d0508";
 #else
     static constexpr char kExpectedHash[] = "354002e1c4386d38fdde29ef8d61074a";
-#endif  // defined(OS_WIN)
-#endif  // defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#endif
     ScopedFPDFBitmap bitmap = RenderLoadedPageWithFlags(page, FPDF_ANNOT);
     CompareBitmap(bitmap.get(), 612, 792, kExpectedHash);
   }
@@ -677,7 +675,11 @@ TEST_F(FPDFAnnotEmbedderTest, AddAndSaveUnderlineAnnotation) {
   UnloadPage(page);
 
   // Open the saved document.
-#if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
+#if defined(_SKIA_SUPPORT_) && defined(OS_APPLE)
+  static const char kChecksum[] = "899387ae792390cd0d83cf7e2bbebfb5";
+#elif defined(_SKIA_SUPPORT_PATHS_) && defined(OS_APPLE)
+  static const char kChecksum[] = "e40e235ee35f47ff28dda009aaaf36df";
+#elif defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
   static const char kChecksum[] = "798fa41303381c9ba6d99092f5cd4d2b";
 #else
   static const char kChecksum[] = "dba153419f67b7c0c0e3d22d3e8910d5";
@@ -1983,15 +1985,13 @@ TEST_F(FPDFAnnotEmbedderTest, GetFormAnnotAndCheckFlagsComboBox) {
   UnloadPage(page);
 }
 
-// TODO(crbug.com/pdfium/11): Fix this test and enable.
+TEST_F(FPDFAnnotEmbedderTest, BUG_1206) {
 #if defined(_SKIA_SUPPORT_) || defined(_SKIA_SUPPORT_PATHS_)
-#define MAYBE_BUG_1206 DISABLED_BUG_1206
+  static const char kExpectedBitmap[] = "a1ea1ceebb26922fae576cb79ce63af0";
 #else
-#define MAYBE_BUG_1206 BUG_1206
-#endif
-TEST_F(FPDFAnnotEmbedderTest, MAYBE_BUG_1206) {
-  static constexpr size_t kExpectedSize = 1609;
   static const char kExpectedBitmap[] = "0d9fc05c6762fd788bd23fd87a4967bc";
+#endif
+  static constexpr size_t kExpectedSize = 1609;
 
   ASSERT_TRUE(OpenDocument("bug_1206.pdf"));
 
@@ -3202,6 +3202,88 @@ TEST_F(FPDFAnnotEmbedderTest, GetFormFieldExportValueInvalidAnnotation) {
     EXPECT_EQ(0u, FPDFAnnot_GetFormFieldExportValue(form_handle(), annot.get(),
                                                     /*buffer=*/nullptr,
                                                     /*buflen=*/0));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, Redactannotation) {
+  ASSERT_TRUE(OpenDocument("redact_annot.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+  EXPECT_EQ(1, FPDFPage_GetAnnotCount(page));
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+    EXPECT_EQ(FPDF_ANNOT_REDACT, FPDFAnnot_GetSubtype(annot.get()));
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFAnnotEmbedderTest, PolygonAnnotation) {
+  ASSERT_TRUE(OpenDocument("polygon_annot.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+  EXPECT_EQ(2, FPDFPage_GetAnnotCount(page));
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 0));
+    ASSERT_TRUE(annot);
+
+    // FPDFSignatureObj_GetTime() positive testing.
+    unsigned long size = FPDFAnnot_GetVertices(annot.get(), nullptr, 0);
+    const size_t kExpectedSize = 3;
+    ASSERT_EQ(kExpectedSize, size);
+    std::vector<FS_POINTF> vertices_buffer(size);
+    EXPECT_EQ(size,
+              FPDFAnnot_GetVertices(annot.get(), vertices_buffer.data(), size));
+    EXPECT_FLOAT_EQ(159.0f, vertices_buffer[0].x);
+    EXPECT_FLOAT_EQ(296.0f, vertices_buffer[0].y);
+    EXPECT_FLOAT_EQ(350.0f, vertices_buffer[1].x);
+    EXPECT_FLOAT_EQ(411.0f, vertices_buffer[1].y);
+    EXPECT_FLOAT_EQ(472.0f, vertices_buffer[2].x);
+    EXPECT_FLOAT_EQ(243.42f, vertices_buffer[2].y);
+
+    // FPDFAnnot_GetVertices() negative testing.
+    EXPECT_EQ(0U, FPDFAnnot_GetVertices(nullptr, nullptr, 0));
+
+    // vertices_buffer is not overwritten if it is too small.
+    vertices_buffer.resize(1);
+    vertices_buffer[0].x = 42;
+    vertices_buffer[0].y = 43;
+    size = FPDFAnnot_GetVertices(annot.get(), vertices_buffer.data(),
+                                 vertices_buffer.size());
+    EXPECT_EQ(kExpectedSize, size);
+    EXPECT_FLOAT_EQ(42, vertices_buffer[0].x);
+    EXPECT_FLOAT_EQ(43, vertices_buffer[0].y);
+  }
+
+  {
+    ScopedFPDFAnnotation annot(FPDFPage_GetAnnot(page, 1));
+    ASSERT_TRUE(annot);
+
+    // This has an odd number of elements in the vertices array, ignore the last
+    // element.
+    unsigned long size = FPDFAnnot_GetVertices(annot.get(), nullptr, 0);
+    const size_t kExpectedSize = 3;
+    ASSERT_EQ(kExpectedSize, size);
+    std::vector<FS_POINTF> vertices_buffer(size);
+    EXPECT_EQ(size,
+              FPDFAnnot_GetVertices(annot.get(), vertices_buffer.data(), size));
+    EXPECT_FLOAT_EQ(259.0f, vertices_buffer[0].x);
+    EXPECT_FLOAT_EQ(396.0f, vertices_buffer[0].y);
+    EXPECT_FLOAT_EQ(450.0f, vertices_buffer[1].x);
+    EXPECT_FLOAT_EQ(511.0f, vertices_buffer[1].y);
+    EXPECT_FLOAT_EQ(572.0f, vertices_buffer[2].x);
+    EXPECT_FLOAT_EQ(343.0f, vertices_buffer[2].y);
+  }
+
+  {
+    // Wrong annotation type.
+    ScopedFPDFAnnotation ink_annot(FPDFPage_CreateAnnot(page, FPDF_ANNOT_INK));
+    EXPECT_EQ(0U, FPDFAnnot_GetVertices(ink_annot.get(), nullptr, 0));
   }
 
   UnloadPage(page);

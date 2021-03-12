@@ -21,47 +21,46 @@
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
-#include "src/sksl/ir/SkSLVarDeclarationsStatement.h"
 #include "src/sksl/ir/SkSLWhileStatement.h"
 
 namespace SkSL {
 
 SectionAndParameterHelper::SectionAndParameterHelper(const Program* program, ErrorReporter& errors)
     : fProgram(*program) {
-    for (const auto& p : fProgram) {
-        switch (p.kind()) {
-            case ProgramElement::Kind::kVar: {
-                const VarDeclarations& decls = (const VarDeclarations&) p;
-                for (const auto& raw : decls.fVars) {
-                    const VarDeclaration& decl = (VarDeclaration&) *raw;
-                    if (IsParameter(*decl.fVar)) {
-                        fParameters.push_back(decl.fVar);
-                    }
+    for (const auto& p : fProgram.elements()) {
+        switch (p->kind()) {
+            case ProgramElement::Kind::kGlobalVar: {
+                const VarDeclaration& decl =
+                                  p->as<GlobalVarDeclaration>().declaration()->as<VarDeclaration>();
+                if (IsParameter(decl.var())) {
+                    fParameters.push_back(&decl.var());
                 }
                 break;
             }
             case ProgramElement::Kind::kSection: {
-                const Section& s = (const Section&) p;
-                if (IsSupportedSection(s.fName.c_str())) {
-                    if (SectionRequiresArgument(s.fName.c_str()) && !s.fArgument.size()) {
+                const Section& s = p->as<Section>();
+                const String& name = s.name();
+                const String& arg = s.argument();
+                if (IsSupportedSection(name.c_str())) {
+                    if (SectionRequiresArgument(name.c_str()) && !arg.size()) {
                         errors.error(s.fOffset,
-                                     ("section '@" + s.fName +
+                                     ("section '@" + name +
                                       "' requires one parameter").c_str());
                     }
-                    if (!SectionAcceptsArgument(s.fName.c_str()) && s.fArgument.size()) {
+                    if (!SectionAcceptsArgument(name.c_str()) && arg.size()) {
                         errors.error(s.fOffset,
-                                     ("section '@" + s.fName + "' has no parameters").c_str());
+                                     ("section '@" + name + "' has no parameters").c_str());
                     }
                 } else {
                     errors.error(s.fOffset,
-                                 ("unsupported section '@" + s.fName + "'").c_str());
+                                 ("unsupported section '@" + name + "'").c_str());
                 }
-                if (!SectionPermitsDuplicates(s.fName.c_str()) &&
-                        fSections.find(s.fName) != fSections.end()) {
+                if (!SectionPermitsDuplicates(name.c_str()) &&
+                        fSections.find(name) != fSections.end()) {
                     errors.error(s.fOffset,
-                                 ("duplicate section '@" + s.fName + "'").c_str());
+                                 ("duplicate section '@" + name + "'").c_str());
                 }
-                fSections[s.fName].push_back(&s);
+                fSections[name].push_back(&s);
                 break;
             }
             default:

@@ -58,6 +58,7 @@ export class OverlayModel extends SDKModel {
 
     this._inspectModeEnabled = false;
     this._gridFeaturesExperimentEnabled = Root.Runtime.experiments.isEnabled('cssGridFeatures');
+    this._flexFeaturesExperimentEnabled = Root.Runtime.experiments.isEnabled('cssFlexboxFeatures');
 
     this._hideHighlightTimeout = null;
     /** @type {!Highlighter} */
@@ -106,19 +107,12 @@ export class OverlayModel extends SDKModel {
   }
 
   /**
-   * @return {!Protocol.UsesObjectNotation}
-   */
-  usesObjectNotation() {
-    return true;
-  }
-
-  /**
    * @param {!RemoteObject} object
    */
   static highlightObjectAsDOMNode(object) {
     const domModel = object.runtimeModel().target().model(DOMModel);
     if (domModel) {
-      domModel.overlayModel().highlightInOverlay({object});
+      domModel.overlayModel().highlightInOverlay({object, selectorList: undefined});
     }
   }
 
@@ -220,7 +214,7 @@ export class OverlayModel extends SDKModel {
     if (this._showHitTestBordersSetting.get()) {
       this._overlayAgent.invoke_setShowHitTestBorders({show: true});
     }
-    if (this._debuggerModel.isPaused()) {
+    if (this._debuggerModel && this._debuggerModel.isPaused()) {
       this._updatePausedInDebuggerMessage();
     }
     await this._overlayAgent.invoke_setShowViewportSizeOnResize({show: this._showViewportSizeOnResize});
@@ -262,7 +256,7 @@ export class OverlayModel extends SDKModel {
     if (this.target().suspended()) {
       return;
     }
-    const message = this._debuggerModel.isPaused() &&
+    const message = this._debuggerModel && this._debuggerModel.isPaused() &&
             !Common.Settings.Settings.instance().moduleSetting('disablePausedStateOverlay').get() ?
         Common.UIString.UIString('Paused in debugger') :
         undefined;
@@ -340,10 +334,11 @@ export class OverlayModel extends SDKModel {
 
   /**
    * @param {number} nodeId
+   * @return {boolean}
    */
   isHighlightedGridInPersistentOverlay(nodeId) {
     if (!this._persistentGridHighlighter) {
-      return;
+      return false;
     }
     return this._persistentGridHighlighter.isHighlighted(nodeId);
   }
@@ -464,6 +459,7 @@ export class OverlayModel extends SDKModel {
       showAccessibilityInfo: showDetailedToolip,
       showExtensionLines: showRulers,
       gridHighlightConfig: {},
+      flexContainerHighlightConfig: {},
     };
 
     if (mode === 'all' || mode === 'content') {
@@ -497,6 +493,23 @@ export class OverlayModel extends SDKModel {
         rowLineDash: true,
         columnLineDash: true,
       };
+
+      if (this._flexFeaturesExperimentEnabled) {
+        highlightConfig.flexContainerHighlightConfig = {
+          containerBorder: {
+            color: Common.Color.PageHighlight.FlexContainerBorder.toProtocolRGBA(),
+            pattern: Protocol.Overlay.LineStylePattern.Dashed,
+          },
+          itemSeparator: {
+            color: Common.Color.PageHighlight.FlexContainerBorder.toProtocolRGBA(),
+            pattern: Protocol.Overlay.LineStylePattern.Dotted,
+          },
+          lineSeparator: {
+            color: Common.Color.PageHighlight.FlexContainerBorder.toProtocolRGBA(),
+            pattern: Protocol.Overlay.LineStylePattern.Dashed,
+          }
+        };
+      }
     }
 
     if (mode.endsWith('gap') && this._gridFeaturesExperimentEnabled) {

@@ -20,7 +20,7 @@
 //      resolve on depth/stencil images.
 //    - Generate mipmap: Used by TextureVk::generateMipmapsWithCompute().
 //    - Overlay Cull/Draw: Used by OverlayVk to efficiently draw a UI for debugging.
-//    - Mipmap generation: Not yet implemented
+//    - Mipmap generation: Used by TextureVk to generate mipmaps more efficiently in compute.
 //
 
 #ifndef LIBANGLE_RENDERER_VULKAN_UTILSVK_H_
@@ -39,13 +39,6 @@ class UtilsVk : angle::NonCopyable
     ~UtilsVk();
 
     void destroy(RendererVk *renderer);
-
-    struct ClearParameters
-    {
-        VkClearColorValue clearValue;
-        size_t offset;
-        size_t size;
-    };
 
     struct ConvertIndexParameters
     {
@@ -95,8 +88,8 @@ class UtilsVk : angle::NonCopyable
 
         gl::Rectangle clearArea;
 
-        // Note that depth clear is never needed to be done with a draw call.
         bool clearColor;
+        bool clearDepth;
         bool clearStencil;
 
         uint8_t stencilMask;
@@ -105,7 +98,7 @@ class UtilsVk : angle::NonCopyable
         const angle::Format *colorFormat;
 
         VkClearColorValue colorClearValue;
-        uint8_t stencilClearValue;
+        VkClearDepthStencilValue depthStencilClearValue;
     };
 
     struct BlitResolveParameters
@@ -139,6 +132,8 @@ class UtilsVk : angle::NonCopyable
         int srcMip;
         int srcLayer;
         int srcHeight;
+        gl::LevelIndex dstMip;
+        int dstLayer;
         bool srcPremultiplyAlpha;
         bool srcUnmultiplyAlpha;
         bool srcFlipY;
@@ -169,6 +164,12 @@ class UtilsVk : angle::NonCopyable
         gl::DrawBufferMask unresolveColorMask;
         bool unresolveDepth;
         bool unresolveStencil;
+    };
+
+    struct PerfCounters
+    {
+        // Total descriptor set allocations for all UtilsVk::Functions
+        uint32_t descriptorSetsAllocated;
     };
 
     // Based on the maximum number of levels in GenerateMipmap.comp.
@@ -267,6 +268,8 @@ class UtilsVk : angle::NonCopyable
                               const vk::ImageView *destView,
                               const OverlayDrawParameters &params);
 
+    const PerfCounters getObjectPerfCounters() const { return mObjectPerfCounters; }
+
   private:
     ANGLE_ENABLE_STRUCT_PADDING_WARNINGS
 
@@ -327,6 +330,7 @@ class UtilsVk : angle::NonCopyable
     {
         // Structure matching PushConstants in ImageClear.frag
         VkClearColorValue clearValue = {};
+        float clearDepth             = 0.0f;
     };
 
     struct ImageCopyShaderParams
@@ -506,6 +510,8 @@ class UtilsVk : angle::NonCopyable
                                         vk::RefCountedDescriptorPoolBinding *bindingOut,
                                         VkDescriptorSet *descriptorSetOut);
 
+    void outputCumulativePerfCounters();
+
     angle::PackedEnumMap<Function, vk::DescriptorSetLayoutPointerArray> mDescriptorSetLayouts;
     angle::PackedEnumMap<Function, vk::BindingPointer<vk::PipelineLayout>> mPipelineLayouts;
     angle::PackedEnumMap<Function, vk::DynamicDescriptorPool> mDescriptorPools;
@@ -535,6 +541,8 @@ class UtilsVk : angle::NonCopyable
 
     vk::Sampler mPointSampler;
     vk::Sampler mLinearSampler;
+
+    PerfCounters mObjectPerfCounters;
 };
 
 }  // namespace rx

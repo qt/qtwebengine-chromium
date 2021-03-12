@@ -12,7 +12,7 @@
 #include "include/private/SkTo.h"
 #include "src/core/SkMathPriv.h"
 #include "src/gpu/GrClip.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrDrawOpAtlas.h"
 #include "src/gpu/GrDrawingManager.h"
 #include "src/gpu/GrGpu.h"
@@ -60,17 +60,16 @@ uint32_t GrRenderTargetContextPriv::testingOnly_getOpsTaskID() {
     return fRenderTargetContext->getOpsTask()->uniqueID();
 }
 
-void GrRenderTargetContextPriv::testingOnly_addDrawOp(std::unique_ptr<GrDrawOp> op) {
+void GrRenderTargetContextPriv::testingOnly_addDrawOp(GrOp::Owner op) {
     this->testingOnly_addDrawOp(nullptr, std::move(op), {});
 }
 
 void GrRenderTargetContextPriv::testingOnly_addDrawOp(
         const GrClip* clip,
-        std::unique_ptr<GrDrawOp> op,
+        GrOp::Owner op,
         const std::function<GrRenderTargetContext::WillAddOpFn>& willAddFn) {
     ASSERT_SINGLE_OWNER
     if (fRenderTargetContext->fContext->abandoned()) {
-        fRenderTargetContext->fContext->priv().opMemoryPool()->release(std::move(op));
         return;
     }
     SkDEBUGCODE(fRenderTargetContext->validate());
@@ -142,8 +141,8 @@ int GrCCCachedAtlas::testingOnly_peekOnFlushRefCnt() const { return fOnFlushRefC
 //////////////////////////////////////////////////////////////////////////////
 
 #define DRAW_OP_TEST_EXTERN(Op) \
-    extern std::unique_ptr<GrDrawOp> Op##__Test(GrPaint&&, SkRandom*, \
-                                                GrRecordingContext*, int numSamples)
+    extern GrOp::Owner Op##__Test(GrPaint&&, SkRandom*, \
+                                    GrRecordingContext*, int numSamples)
 #define DRAW_OP_TEST_ENTRY(Op) Op##__Test
 
 DRAW_OP_TEST_EXTERN(AAConvexPathOp);
@@ -170,8 +169,8 @@ DRAW_OP_TEST_EXTERN(TextureOp);
 
 void GrDrawRandomOp(SkRandom* random, GrRenderTargetContext* renderTargetContext, GrPaint&& paint) {
     auto context = renderTargetContext->surfPriv().getContext();
-    using MakeDrawOpFn = std::unique_ptr<GrDrawOp>(GrPaint&&, SkRandom*,
-                                                   GrRecordingContext*, int numSamples);
+    using MakeDrawOpFn = GrOp::Owner (GrPaint&&, SkRandom*,
+                                      GrRecordingContext*, int numSamples);
     static constexpr MakeDrawOpFn* gFactories[] = {
             DRAW_OP_TEST_ENTRY(AAConvexPathOp),
             DRAW_OP_TEST_ENTRY(AAFlatteningConvexPathOp),

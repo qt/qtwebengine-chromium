@@ -129,6 +129,8 @@ void HeapGraphModule::ParseHeapGraph(uint32_t seq_id,
     obj.self_size = object.self_size();
     obj.type_id = object.type_id();
 
+    uint64_t base_obj_id = object.reference_field_id_base();
+
     // In S+ traces, this field will not be set for normal instances. It will be
     // set in the corresponding HeapGraphType instead. It will still be set for
     // class objects.
@@ -143,8 +145,11 @@ void HeapGraphModule::ParseHeapGraph(uint32_t seq_id,
       // grep-friendly: reference_object_id
       parse_error = ForEachVarInt<
           protos::pbzero::HeapGraphObject::kReferenceObjectIdFieldNumber>(
-          object,
-          [&obj](uint64_t value) { obj.referred_objects.push_back(value); });
+          object, [&obj, base_obj_id](uint64_t value) {
+            if (value)
+              value += base_obj_id;
+            obj.referred_objects.push_back(value);
+          });
     }
 
     if (parse_error) {
@@ -186,7 +191,7 @@ void HeapGraphModule::ParseHeapGraph(uint32_t seq_id,
     heap_graph_tracker->AddInternedType(
         seq_id, entry.id(), context_->storage->InternString(str_view),
         entry.location_id(), entry.object_size(), std::move(field_name_ids),
-        entry.superclass_id(), no_fields);
+        entry.superclass_id(), entry.classloader_id(), no_fields);
   }
   for (auto it = heap_graph.field_names(); it; ++it) {
     protos::pbzero::InternedString::Decoder entry(*it);

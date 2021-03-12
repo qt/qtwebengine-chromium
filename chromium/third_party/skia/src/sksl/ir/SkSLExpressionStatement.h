@@ -16,21 +16,20 @@ namespace SkSL {
 /**
  * A lone expression being used as a statement.
  */
-class ExpressionStatement : public Statement {
+class ExpressionStatement final : public Statement {
 public:
     static constexpr Kind kStatementKind = Kind::kExpression;
 
     ExpressionStatement(std::unique_ptr<Expression> expression)
-    : INHERITED(expression->fOffset, kStatementKind) {
-        fExpressionChildren.push_back(std::move(expression));
-    }
+        : INHERITED(expression->fOffset, kStatementKind)
+        , fExpression(std::move(expression)) {}
 
     const std::unique_ptr<Expression>& expression() const {
-        return fExpressionChildren[0];
+        return fExpression;
     }
 
     std::unique_ptr<Expression>& expression() {
-        return fExpressionChildren[0];
+        return fExpression;
     }
 
     std::unique_ptr<Statement> clone() const override {
@@ -42,6 +41,8 @@ public:
     }
 
 private:
+    std::unique_ptr<Expression> fExpression;
+
     using INHERITED = Statement;
 };
 

@@ -336,9 +336,10 @@ static INLINE int check_txfm_eval(MACROBLOCK *const x, BLOCK_SIZE bsize,
   // value) for (i) low quantizers (ii) regions where prediction is poor
   const int scale[6] = { INT_MAX, 4, 3, 3, 2, 2 };
   const int qslope = 2 * (!is_luma_only);
+  const int level_to_qindex_map[6] = { 0, 0, 0, 0, 80, 100 };
   int aggr_factor = 1;
-  const int pred_qindex_thresh = (level >= 5) ? 100 : 0;
-  if (!is_luma_only && level <= 4) {
+  const int pred_qindex_thresh = level_to_qindex_map[level];
+  if (!is_luma_only && level <= 3) {
     aggr_factor = AOMMAX(
         1, ((MAXQ - x->qindex) * qslope + QINDEX_RANGE / 2) >> QINDEX_BITS);
   }
@@ -346,8 +347,8 @@ static INLINE int check_txfm_eval(MACROBLOCK *const x, BLOCK_SIZE bsize,
        (x->source_variance << (num_pels_log2_lookup[bsize] + RDDIV_BITS))) &&
       (x->qindex >= pred_qindex_thresh))
     aggr_factor *= scale[level];
-  // For level setting 1, be more conservative for luma only case even when
-  // prediction is good
+  // For level setting 1, be more conservative for non-luma-only case even when
+  // prediction is good.
   else if ((level <= 1) && !is_luma_only)
     aggr_factor *= 2;
 
@@ -478,6 +479,8 @@ static INLINE void set_mode_eval_params(const struct AV1_COMP *cpi,
       txfm_params->use_default_intra_tx_type = 0;
       txfm_params->skip_txfm_level =
           winner_mode_params->skip_txfm_level[DEFAULT_EVAL];
+      txfm_params->predict_dc_level =
+          winner_mode_params->predict_dc_level[DEFAULT_EVAL];
       // Set default transform domain distortion type
       set_tx_domain_dist_params(winner_mode_params, txfm_params, 0, 0);
 
@@ -500,7 +503,8 @@ static INLINE void set_mode_eval_params(const struct AV1_COMP *cpi,
           cpi->sf.tx_sf.tx_type_search.fast_inter_tx_type_search;
       txfm_params->skip_txfm_level =
           winner_mode_params->skip_txfm_level[MODE_EVAL];
-
+      txfm_params->predict_dc_level =
+          winner_mode_params->predict_dc_level[MODE_EVAL];
       // Set transform domain distortion type for mode evaluation
       set_tx_domain_dist_params(
           winner_mode_params, txfm_params,
@@ -529,6 +533,8 @@ static INLINE void set_mode_eval_params(const struct AV1_COMP *cpi,
       txfm_params->use_default_intra_tx_type = 0;
       txfm_params->skip_txfm_level =
           winner_mode_params->skip_txfm_level[WINNER_MODE_EVAL];
+      txfm_params->predict_dc_level =
+          winner_mode_params->predict_dc_level[WINNER_MODE_EVAL];
 
       // Set transform domain distortion type for winner mode evaluation
       set_tx_domain_dist_params(
@@ -676,6 +682,10 @@ unsigned int av1_get_sby_perpixel_variance(const struct AV1_COMP *cpi,
 unsigned int av1_high_get_sby_perpixel_variance(const struct AV1_COMP *cpi,
                                                 const struct buf_2d *ref,
                                                 BLOCK_SIZE bs, int bd);
+
+static INLINE int is_mode_intra(PREDICTION_MODE mode) {
+  return mode < INTRA_MODE_END;
+}
 
 #ifdef __cplusplus
 }  // extern "C"

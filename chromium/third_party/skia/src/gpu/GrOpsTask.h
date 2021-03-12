@@ -33,17 +33,6 @@ class GrClearOp;
 class GrGpuBuffer;
 class GrRenderTargetProxy;
 
-/** Observer is notified when a GrOpsTask is closed. */
-class GrOpsTaskClosedObserver {
-public:
-    virtual ~GrOpsTaskClosedObserver() = 0;
-    /**
-     * Called when the GrOpsTask is closed. Must not add/remove observers to 'task'.
-     * The GrOpsTask will remove all its observers after it finishes calling wasClosed().
-     */
-    virtual void wasClosed(const GrOpsTask& task) = 0;
-};
-
 class GrOpsTask : public GrRenderTask {
 private:
     using DstProxyView = GrXferProcessor::DstProxyView;
@@ -55,13 +44,6 @@ public:
     ~GrOpsTask() override;
 
     GrOpsTask* asOpsTask() override { return this; }
-
-    void addClosedObserver(GrOpsTaskClosedObserver* observer) {
-        SkASSERT(observer);
-        fClosedObservers.push_back(observer);
-    }
-
-    void removeClosedObserver(GrOpsTaskClosedObserver* observer);
 
     bool isEmpty() const { return fOpChains.empty(); }
 
@@ -88,7 +70,7 @@ public:
         fSampledProxies.push_back(proxy);
     }
 
-    void addOp(GrDrawingManager* drawingMgr, std::unique_ptr<GrOp> op,
+    void addOp(GrDrawingManager* drawingMgr, GrOp::Owner op,
                GrTextureResolveManager textureResolveManager, const GrCaps& caps) {
         auto addDependency = [ drawingMgr, textureResolveManager, &caps, this ] (
                 GrSurfaceProxy* p, GrMipmapped mipmapped) {
@@ -100,7 +82,7 @@ public:
         this->recordOp(std::move(op), GrProcessorSet::EmptySetAnalysis(), nullptr, nullptr, caps);
     }
 
-    void addDrawOp(GrDrawingManager* drawingMgr, std::unique_ptr<GrDrawOp> op,
+    void addDrawOp(GrDrawingManager* drawingMgr, GrOp::Owner op,
                    const GrProcessorSet::Analysis& processorAnalysis,
                    GrAppliedClip&& clip, const DstProxyView& dstProxyView,
                    GrTextureResolveManager textureResolveManager, const GrCaps& caps) {
@@ -205,8 +187,7 @@ private:
 
     class OpChain {
     public:
-        OpChain(std::unique_ptr<GrOp>, GrProcessorSet::Analysis, GrAppliedClip*,
-                const DstProxyView*);
+        OpChain(GrOp::Owner, GrProcessorSet::Analysis, GrAppliedClip*, const DstProxyView*);
         ~OpChain() {
             // The ops are stored in a GrMemoryPool and must be explicitly deleted via the pool.
             SkASSERT(fList.empty());
@@ -225,8 +206,8 @@ private:
         const DstProxyView& dstProxyView() const { return fDstProxyView; }
         const SkRect& bounds() const { return fBounds; }
 
-        // Deletes all the ops in the chain via the pool.
-        void deleteOps(GrOpMemoryPool* pool);
+        // Deletes all the ops in the chain.
+        void deleteOps();
 
         // Attempts to move the ops from the passed chain to this chain at the head. Also attempts
         // to merge ops between the chains. Upon success the passed chain is empty.
@@ -236,9 +217,9 @@ private:
         // Attempts to add 'op' to this chain either by merging or adding to the tail. Returns
         // 'op' to the caller upon failure, otherwise null. Fails when the op and chain aren't of
         // the same op type, have different clips or dst proxies.
-        std::unique_ptr<GrOp> appendOp(std::unique_ptr<GrOp> op, GrProcessorSet::Analysis,
-                                       const DstProxyView*, const GrAppliedClip*, const GrCaps&,
-                                       GrRecordingContext::Arenas*, GrAuditTrail*);
+        GrOp::Owner appendOp(GrOp::Owner op, GrProcessorSet::Analysis,
+                             const DstProxyView*, const GrAppliedClip*, const GrCaps&,
+                             GrRecordingContext::Arenas*, GrAuditTrail*);
 
         void setSkipExecuteFlag() { fSkipExecute = true; }
         bool shouldExecute() const {
@@ -249,7 +230,7 @@ private:
         class List {
         public:
             List() = default;
-            List(std::unique_ptr<GrOp>);
+            List(GrOp::Owner);
             List(List&&);
             List& operator=(List&& that);
 
@@ -257,16 +238,16 @@ private:
             GrOp* head() const { return fHead.get(); }
             GrOp* tail() const { return fTail; }
 
-            std::unique_ptr<GrOp> popHead();
-            std::unique_ptr<GrOp> removeOp(GrOp* op);
-            void pushHead(std::unique_ptr<GrOp> op);
-            void pushTail(std::unique_ptr<GrOp>);
+            GrOp::Owner popHead();
+            GrOp::Owner removeOp(GrOp* op);
+            void pushHead(GrOp::Owner op);
+            void pushTail(GrOp::Owner);
 
             void validate() const;
 
         private:
-            std::unique_ptr<GrOp> fHead;
-            GrOp* fTail = nullptr;
+            GrOp::Owner fHead{nullptr};
+            GrOp* fTail{nullptr};
         };
 
         void validate() const;
@@ -294,7 +275,7 @@ private:
 
     void gatherProxyIntervals(GrResourceAllocator*) const override;
 
-    void recordOp(std::unique_ptr<GrOp>, GrProcessorSet::Analysis, GrAppliedClip*,
+    void recordOp(GrOp::Owner, GrProcessorSet::Analysis, GrAppliedClip*,
                   const DstProxyView*, const GrCaps& caps);
 
     void forwardCombine(const GrCaps&);
@@ -315,8 +296,6 @@ private:
     // into the owning DDL.
     GrRecordingContext::Arenas fArenas;
     GrAuditTrail*              fAuditTrail;
-
-    SkSTArray<2, GrOpsTaskClosedObserver*, true> fClosedObservers;
 
     GrLoadOp fColorLoadOp = GrLoadOp::kLoad;
     SkPMColor4f fLoadClearColor = SK_PMColor4fTRANSPARENT;

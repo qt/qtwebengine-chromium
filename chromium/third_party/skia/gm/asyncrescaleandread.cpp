@@ -11,14 +11,15 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkYUVAIndex.h"
+#include "include/core/SkYUVAInfo.h"
+#include "include/core/SkYUVAPixmaps.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkAutoPixmapStorage.h"
-#include "src/core/SkConvertPixels.h"
 #include "src/core/SkScopeExit.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/gpu/YUVUtils.h"
 
 namespace {
 struct AsyncContext {
@@ -93,33 +94,20 @@ static sk_sp<SkImage> do_read_and_scale_yuv(Src* src,
     if (!asyncContext.fResult) {
         return nullptr;
     }
-    GrBackendTexture backendTextures[3];
-
-    SkPixmap yPM(yII, asyncContext.fResult->data(0), asyncContext.fResult->rowBytes(0));
-    SkPixmap uPM(uvII, asyncContext.fResult->data(1), asyncContext.fResult->rowBytes(1));
-    SkPixmap vPM(uvII, asyncContext.fResult->data(2), asyncContext.fResult->rowBytes(2));
-
-    backendTextures[0] = direct->createBackendTexture(yPM, GrRenderable::kNo, GrProtected::kNo);
-    backendTextures[1] = direct->createBackendTexture(uPM, GrRenderable::kNo, GrProtected::kNo);
-    backendTextures[2] = direct->createBackendTexture(vPM, GrRenderable::kNo, GrProtected::kNo);
-
-    SkYUVAIndex indices[4] = {
-        { 0, SkColorChannel::kR},
-        { 1, SkColorChannel::kR},
-        { 2, SkColorChannel::kR},
-        {-1, SkColorChannel::kR}
+    SkYUVAInfo yuvaInfo(size,
+                        SkYUVAInfo::PlaneConfig::kY_U_V,
+                        SkYUVAInfo::Subsampling::k420,
+                        yuvCS);
+    SkPixmap yuvPMs[] = {
+            {yII,  asyncContext.fResult->data(0), asyncContext.fResult->rowBytes(0)},
+            {uvII, asyncContext.fResult->data(1), asyncContext.fResult->rowBytes(1)},
+            {uvII, asyncContext.fResult->data(2), asyncContext.fResult->rowBytes(2)}
     };
-
-    *cleanup = {[direct, backendTextures] {
-        direct->flush();
-        direct->submit(true);
-        direct->deleteBackendTexture(backendTextures[0]);
-        direct->deleteBackendTexture(backendTextures[1]);
-        direct->deleteBackendTexture(backendTextures[2]);
-    }};
-
-    return SkImage::MakeFromYUVATextures(direct, yuvCS, backendTextures, indices, size,
-                                         kTopLeft_GrSurfaceOrigin, SkColorSpace::MakeSRGB());
+    auto pixmaps = SkYUVAPixmaps::FromExternalPixmaps(yuvaInfo, yuvPMs);
+    SkASSERT(pixmaps.isValid());
+    auto lazyYUVImage = sk_gpu_test::LazyYUVImage::Make(pixmaps);
+    SkASSERT(lazyYUVImage);
+    return lazyYUVImage->refImage(direct, sk_gpu_test::LazyYUVImage::Type::kFromTextures);
 }
 
 // Draws a grid of rescales. The columns are none, low, and high filter quality. The rows are
@@ -192,7 +180,12 @@ static skiagm::DrawResult do_rescale_image_grid(SkCanvas* canvas,
         *errorMsg = "Not supported on recording/vector backends.";
         return skiagm::DrawResult::kSkip;
     }
-    auto direct = GrAsDirectContext(canvas->recordingContext());
+
+    auto dContext = GrAsDirectContext(canvas->recordingContext());
+    if (!dContext && canvas->recordingContext()) {
+        *errorMsg = "Not supported in DDL mode";
+        return skiagm::DrawResult::kSkip;
+    }
 
     if (doSurface) {
         // Turn the image into a surface in order to call the read and rescale API
@@ -213,10 +206,10 @@ static skiagm::DrawResult do_rescale_image_grid(SkCanvas* canvas,
         SkPaint paint;
         paint.setBlendMode(SkBlendMode::kSrc);
         surface->getCanvas()->drawImage(image, 0, 0, &paint);
-        return do_rescale_grid(canvas, surface.get(), direct, srcRect, newSize,
+        return do_rescale_grid(canvas, surface.get(), dContext, srcRect, newSize,
                                doYUV420, errorMsg);
-    } else if (direct) {
-        image = image->makeTextureImage(direct);
+    } else if (dContext) {
+        image = image->makeTextureImage(dContext);
         if (!image) {
             *errorMsg = "Could not create image.";
             // When testing abandoned GrContext we expect surface creation to fail.
@@ -226,7 +219,7 @@ static skiagm::DrawResult do_rescale_image_grid(SkCanvas* canvas,
             return skiagm::DrawResult::kFail;
         }
     }
-    return do_rescale_grid(canvas, image.get(), direct, srcRect, newSize, doYUV420,
+    return do_rescale_grid(canvas, image.get(), dContext, srcRect, newSize, doYUV420,
                            errorMsg);
 }
 
@@ -287,6 +280,12 @@ DEF_SIMPLE_GM_CAN_FAIL(async_yuv_no_scale, canvas, errorMsg, 400, 300) {
         return skiagm::DrawResult::kSkip;
     }
 
+    auto dContext = GrAsDirectContext(surface->recordingContext());
+    if (!dContext && surface->recordingContext()) {
+        *errorMsg = "Not supported in DDL mode";
+        return skiagm::DrawResult::kSkip;
+    }
+
     auto image = GetResourceAsImage("images/yellow_rose.webp");
     if (!image) {
         return skiagm::DrawResult::kFail;
@@ -294,11 +293,9 @@ DEF_SIMPLE_GM_CAN_FAIL(async_yuv_no_scale, canvas, errorMsg, 400, 300) {
     SkPaint paint;
     canvas->drawImage(image.get(), 0, 0);
 
-    auto direct = GrAsDirectContext(surface->recordingContext());
-
     SkScopeExit scopeExit;
     auto yuvImage = do_read_and_scale_yuv(
-            surface, direct, kRec601_SkYUVColorSpace, SkIRect::MakeWH(400, 300),
+            surface, dContext, kRec601_SkYUVColorSpace, SkIRect::MakeWH(400, 300),
             {400, 300}, SkImage::RescaleGamma::kSrc, kNone_SkFilterQuality, &scopeExit);
 
     canvas->clear(SK_ColorWHITE);
@@ -310,6 +307,12 @@ DEF_SIMPLE_GM_CAN_FAIL(async_yuv_no_scale, canvas, errorMsg, 400, 300) {
 DEF_SIMPLE_GM_CAN_FAIL(async_rescale_and_read_no_bleed, canvas, errorMsg, 60, 60) {
     if (canvas->imageInfo().colorType() == kUnknown_SkColorType) {
         *errorMsg = "Not supported on recording/vector backends.";
+        return skiagm::DrawResult::kSkip;
+    }
+
+    auto dContext = GrAsDirectContext(canvas->recordingContext());
+    if (!dContext && canvas->recordingContext()) {
+        *errorMsg = "Not supported in DDL mode";
         return skiagm::DrawResult::kSkip;
     }
 
@@ -337,8 +340,7 @@ DEF_SIMPLE_GM_CAN_FAIL(async_rescale_and_read_no_bleed, canvas, errorMsg, 60, 60
     canvas->translate(kPad, kPad);
     skiagm::DrawResult result;
     SkISize downSize = {static_cast<int>(kInner/2),  static_cast<int>(kInner / 2)};
-    auto direct = GrAsDirectContext(canvas->recordingContext());
-    result = do_rescale_grid(canvas, surface.get(), direct, srcRect, downSize, false, errorMsg,
+    result = do_rescale_grid(canvas, surface.get(), dContext, srcRect, downSize, false, errorMsg,
                              kPad);
 
     if (result != skiagm::DrawResult::kOk) {
@@ -346,7 +348,8 @@ DEF_SIMPLE_GM_CAN_FAIL(async_rescale_and_read_no_bleed, canvas, errorMsg, 60, 60
     }
     canvas->translate(0, 4 * downSize.height());
     SkISize upSize = {static_cast<int>(kInner * 3.5), static_cast<int>(kInner * 4.6)};
-    result = do_rescale_grid(canvas, surface.get(), direct, srcRect, upSize, false, errorMsg, kPad);
+    result = do_rescale_grid(canvas, surface.get(), dContext, srcRect, upSize, false, errorMsg,
+                             kPad);
     if (result != skiagm::DrawResult::kOk) {
         return result;
     }

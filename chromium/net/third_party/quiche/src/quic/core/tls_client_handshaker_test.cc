@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/macros.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_decrypter.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_encrypter.h"
 #include "net/third_party/quiche/src/quic/core/quic_error_codes.h"
@@ -24,7 +25,6 @@
 #include "net/third_party/quiche/src/quic/test_tools/quic_test_utils.h"
 #include "net/third_party/quiche/src/quic/test_tools/simple_session_cache.h"
 #include "net/third_party/quiche/src/quic/tools/fake_proof_verifier.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
 #include "net/third_party/quiche/src/common/test_tools/quiche_test_utils.h"
 
 using testing::_;
@@ -52,7 +52,7 @@ class TestProofVerifier : public ProofVerifier {
       const uint16_t port,
       const std::string& server_config,
       QuicTransportVersion quic_version,
-      quiche::QuicheStringPiece chlo_hash,
+      absl::string_view chlo_hash,
       const std::vector<std::string>& certs,
       const std::string& cert_sct,
       const std::string& signature,
@@ -74,15 +74,16 @@ class TestProofVerifier : public ProofVerifier {
       const ProofVerifyContext* context,
       std::string* error_details,
       std::unique_ptr<ProofVerifyDetails>* details,
+      uint8_t* out_alert,
       std::unique_ptr<ProofVerifierCallback> callback) override {
     if (!active_) {
-      return verifier_->VerifyCertChain(hostname, port, certs, ocsp_response,
-                                        cert_sct, context, error_details,
-                                        details, std::move(callback));
+      return verifier_->VerifyCertChain(
+          hostname, port, certs, ocsp_response, cert_sct, context,
+          error_details, details, out_alert, std::move(callback));
     }
     pending_ops_.push_back(std::make_unique<VerifyChainPendingOp>(
         hostname, port, certs, ocsp_response, cert_sct, context, error_details,
-        details, std::move(callback), verifier_.get()));
+        details, out_alert, std::move(callback), verifier_.get()));
     return QUIC_PENDING;
   }
 
@@ -123,6 +124,7 @@ class TestProofVerifier : public ProofVerifier {
                          const ProofVerifyContext* context,
                          std::string* error_details,
                          std::unique_ptr<ProofVerifyDetails>* details,
+                         uint8_t* out_alert,
                          std::unique_ptr<ProofVerifierCallback> callback,
                          ProofVerifier* delegate)
         : hostname_(hostname),
@@ -133,6 +135,7 @@ class TestProofVerifier : public ProofVerifier {
           context_(context),
           error_details_(error_details),
           details_(details),
+          out_alert_(out_alert),
           callback_(std::move(callback)),
           delegate_(delegate) {}
 
@@ -143,7 +146,7 @@ class TestProofVerifier : public ProofVerifier {
       // synchronously.
       QuicAsyncStatus status = delegate_->VerifyCertChain(
           hostname_, port_, certs_, ocsp_response_, cert_sct_, context_,
-          error_details_, details_,
+          error_details_, details_, out_alert_,
           std::make_unique<FailingProofVerifierCallback>());
       ASSERT_NE(status, QUIC_PENDING);
       callback_->Run(status == QUIC_SUCCESS, *error_details_, details_);
@@ -158,6 +161,7 @@ class TestProofVerifier : public ProofVerifier {
     const ProofVerifyContext* context_;
     std::string* error_details_;
     std::unique_ptr<ProofVerifyDetails>* details_;
+    uint8_t* out_alert_;
     std::unique_ptr<ProofVerifierCallback> callback_;
     ProofVerifier* delegate_;
   };
@@ -233,10 +237,9 @@ class TlsClientHandshakerTest : public QuicTestWithParam<ParsedQuicVersion> {
     server_session_.reset(server_session);
     std::string alpn = AlpnForVersion(connection_->version());
     EXPECT_CALL(*server_session_, SelectAlpn(_))
-        .WillRepeatedly(
-            [alpn](const std::vector<quiche::QuicheStringPiece>& alpns) {
-              return std::find(alpns.cbegin(), alpns.cend(), alpn);
-            });
+        .WillRepeatedly([alpn](const std::vector<absl::string_view>& alpns) {
+          return std::find(alpns.cbegin(), alpns.cend(), alpn);
+        });
   }
 
   MockQuicConnectionHelper server_helper_;
@@ -286,8 +289,8 @@ TEST_P(TlsClientHandshakerTest, ConnectionClosedOnTlsError) {
       0, 0, 0,  // uint24 length
   };
   stream()->crypto_message_parser()->ProcessInput(
-      quiche::QuicheStringPiece(bogus_handshake_message,
-                                QUICHE_ARRAYSIZE(bogus_handshake_message)),
+      absl::string_view(bogus_handshake_message,
+                        ABSL_ARRAYSIZE(bogus_handshake_message)),
       ENCRYPTION_INITIAL);
 
   EXPECT_FALSE(stream()->one_rtt_keys_available());
@@ -556,10 +559,9 @@ TEST_P(TlsClientHandshakerTest, ServerRequiresCustomALPN) {
   InitializeFakeServer();
   const std::string kTestAlpn = "An ALPN That Client Did Not Offer";
   EXPECT_CALL(*server_session_, SelectAlpn(_))
-      .WillOnce(
-          [kTestAlpn](const std::vector<quiche::QuicheStringPiece>& alpns) {
-            return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
-          });
+      .WillOnce([kTestAlpn](const std::vector<absl::string_view>& alpns) {
+        return std::find(alpns.cbegin(), alpns.cend(), kTestAlpn);
+      });
   EXPECT_CALL(*server_connection_,
               CloseConnection(QUIC_HANDSHAKE_FAILED,
                               "TLS handshake failure (ENCRYPTION_INITIAL) 120: "
@@ -634,7 +636,7 @@ TEST_P(TlsClientHandshakerTest, BadTransportParams) {
   CreateConnection();
 
   stream()->CryptoConnect();
-  auto* id_manager = QuicSessionPeer::v99_streamid_manager(session_.get());
+  auto* id_manager = QuicSessionPeer::ietf_streamid_manager(session_.get());
   EXPECT_EQ(kDefaultMaxStreamsPerConnection,
             id_manager->max_outgoing_bidirectional_streams());
   QuicConfig config;

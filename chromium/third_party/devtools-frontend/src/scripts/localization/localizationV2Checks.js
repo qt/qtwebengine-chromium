@@ -22,8 +22,8 @@ async function checkUIStrings(shouldAutoFix) {
   const errorMap = new Map();
   for (const [filePath, uiStringsEntries] of uiStringsMap.entries()) {
     let errorList;
-    if (filePath.endsWith('moduleUIStrings.js')) {
-      const newFilePath = filePath.replace('moduleUIStrings.js', 'module.json');
+    if (filePath.endsWith('ModuleUIStrings.js')) {
+      const newFilePath = filePath.replace('ModuleUIStrings.js', 'module.json');
       const stringIdSet = getStringIdsFromCallSites(localizationCallsMap.get(newFilePath));
       errorList = checkStringEntries(uiStringsEntries, stringIdSet, true);
     } else {
@@ -164,7 +164,7 @@ function checkNoV1CallsInMigratedDir() {
   }
   fileMigratedError += '\nAutofix are not supported for this check. Please manually update V1 APIs to V2 APIs.';
   fileMigratedError += `\nFor example:
-    ls("An example string") ---> i18n.i18n.getLocalizedString(_str, UIStrings.theExampleString)
+    ls("An example string") ---> i18nString(UIStrings.theExampleString)
     and then add it to UIStrings:
     const UIStrings = { theExampleString: 'An example string' } with descriptions.`;
   fileMigratedError += '\nFor more details. See devtools-frontend\\src\\docs\\localization\\README.md';

@@ -16,33 +16,35 @@ namespace SkSL {
 /**
  * A block of multiple statements functioning as a single statement.
  */
-class Block : public Statement {
+class Block final : public Statement {
 public:
     static constexpr Kind kStatementKind = Kind::kBlock;
 
-    Block(int offset, std::vector<std::unique_ptr<Statement>> statements,
+    Block(int offset, StatementArray statements,
           const std::shared_ptr<SymbolTable> symbols = nullptr, bool isScope = true)
-    : INHERITED(offset, kStatementKind, BlockData{std::move(symbols), isScope},
-                std::move(statements)) {}
+    : INHERITED(offset, kStatementKind)
+    , fChildren(std::move(statements))
+    , fSymbolTable(std::move(symbols))
+    , fIsScope(isScope) {}
 
-    const std::vector<std::unique_ptr<Statement>>& children() const {
-        return fStatementChildren;
+    const StatementArray& children() const {
+        return fChildren;
     }
 
-    std::vector<std::unique_ptr<Statement>>& children() {
-        return fStatementChildren;
+    StatementArray& children() {
+        return fChildren;
     }
 
     bool isScope() const {
-        return this->blockData().fIsScope;
+        return fIsScope;
     }
 
     void setIsScope(bool isScope) {
-        this->blockData().fIsScope = isScope;
+        fIsScope = isScope;
     }
 
     std::shared_ptr<SymbolTable> symbolTable() const {
-        return this->blockData().fSymbolTable;
+        return fSymbolTable;
     }
 
     bool isEmpty() const override {
@@ -55,13 +57,14 @@ public:
     }
 
     std::unique_ptr<Statement> clone() const override {
-        std::vector<std::unique_ptr<Statement>> cloned;
+        StatementArray cloned;
+        cloned.reserve_back(this->children().size());
         for (const std::unique_ptr<Statement>& stmt : this->children()) {
             cloned.push_back(stmt->clone());
         }
-        const BlockData& data = this->blockData();
-        return std::unique_ptr<Statement>(new Block(fOffset, std::move(cloned), data.fSymbolTable,
-                                                    data.fIsScope));
+        return std::make_unique<Block>(fOffset, std::move(cloned),
+                                       SymbolTable::WrapIfBuiltin(this->symbolTable()),
+                                       this->isScope());
     }
 
     String description() const override {
@@ -75,6 +78,13 @@ public:
     }
 
 private:
+    StatementArray fChildren;
+    std::shared_ptr<SymbolTable> fSymbolTable;
+    // if isScope is false, this is just a group of statements rather than an actual
+    // language-level block. This allows us to pass around multiple statements as if they were a
+    // single unit, with no semantic impact.
+    bool fIsScope;
+
     using INHERITED = Statement;
 };
 

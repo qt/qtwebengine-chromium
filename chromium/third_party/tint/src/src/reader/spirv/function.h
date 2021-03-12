@@ -35,6 +35,7 @@
 #include "src/ast/statement.h"
 #include "src/ast/storage_class.h"
 #include "src/reader/spirv/construct.h"
+#include "src/reader/spirv/entry_point_info.h"
 #include "src/reader/spirv/fail_stream.h"
 #include "src/reader/spirv/namer.h"
 #include "src/reader/spirv/parser_impl.h"
@@ -282,6 +283,14 @@ class FunctionEmitter {
   /// @param pi a ParserImpl which has already executed BuildInternalModule
   /// @param function the function to emit
   FunctionEmitter(ParserImpl* pi, const spvtools::opt::Function& function);
+  /// Creates a FunctionEmitter, and prepares to write to the AST module
+  /// in |pi|.
+  /// @param pi a ParserImpl which has already executed BuildInternalModule
+  /// @param function the function to emit
+  /// @param ep_info entry point information for this function, or nullptr
+  FunctionEmitter(ParserImpl* pi,
+                  const spvtools::opt::Function& function,
+                  const EntryPointInfo* ep_info);
   /// Destructor
   ~FunctionEmitter();
 
@@ -680,6 +689,12 @@ class FunctionEmitter {
   /// @returns false if emission failed
   bool EmitFunctionCall(const spvtools::opt::Instruction& inst);
 
+  /// Returns an expression for a SPIR-V instruction that maps to a WGSL
+  /// intrinsic function call.
+  /// @param inst the SPIR-V instruction
+  /// @returns an expression
+  TypedExpression MakeIntrinsicCall(const spvtools::opt::Instruction& inst);
+
   /// Returns an expression for an OpSelect, if its operands are scalars
   /// or vectors. These translate directly to WGSL select.  Otherwise, return
   /// an expression with a null owned expression
@@ -818,6 +833,9 @@ class FunctionEmitter {
 
   // Structured constructs, where enclosing constructs precede their children.
   ConstructList constructs_;
+
+  // Information about entry point, if this function is referenced by one
+  const EntryPointInfo* ep_info_ = nullptr;
 };
 
 }  // namespace spirv

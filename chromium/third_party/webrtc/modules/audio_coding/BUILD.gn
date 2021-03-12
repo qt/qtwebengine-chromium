@@ -1390,8 +1390,6 @@ if (rtc_include_tests) {
       "../../rtc_base:checks",
       "../../rtc_base:rtc_base_approved",
       "../../rtc_base/synchronization:mutex",
-      "../../rtc_base/synchronization:rw_lock_wrapper",
-      "../../system_wrappers",
       "../../test:fileutils",
       "../../test:test_support",
     ]
@@ -1976,7 +1974,9 @@ if (rtc_include_tests) {
       "neteq/expand_unittest.cc",
       "neteq/histogram_unittest.cc",
       "neteq/merge_unittest.cc",
+      "neteq/mock/mock_buffer_level_filter.h",
       "neteq/mock/mock_decoder_database.h",
+      "neteq/mock/mock_delay_manager.h",
       "neteq/mock/mock_dtmf_buffer.h",
       "neteq/mock/mock_dtmf_tone_generator.h",
       "neteq/mock/mock_expand.h",

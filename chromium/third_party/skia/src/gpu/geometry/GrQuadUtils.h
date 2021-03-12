@@ -78,6 +78,18 @@ namespace GrQuadUtils {
         void outset(const skvx::Vec<4, float>& edgeDistances,
                     GrQuad* deviceOutset, GrQuad* localOutset);
 
+        // Compute the edge equations of the original device space quad passed to 'reset()'. The
+        // coefficients are stored per-edge in 'a', 'b', and 'c', such that ax + by + c = 0, and
+        // a positive distance indicates the interior of the quad. Edges are ordered L, B, T, R,
+        // matching edge distances passed to inset() and outset().
+        void getEdgeEquations(skvx::Vec<4, float>* a,
+                              skvx::Vec<4, float>* b,
+                              skvx::Vec<4, float>* c);
+
+        // Compute the edge lengths of the original device space quad passed to 'reset()'. The
+        // edge lengths are ordered LBTR to match distances passed to inset() and outset().
+        skvx::Vec<4, float> getEdgeLengths();
+
     private:
         // NOTE: This struct is named 'EdgeVectors' because it holds a lot of cached calculations
         // pertaining to the edge vectors of the input quad, projected into 2D device coordinates.
@@ -113,7 +125,8 @@ namespace GrQuadUtils {
             // small, edges are near parallel, or edges are very short/zero-length. Returns number
             // of effective vertices in the degenerate quad.
             int computeDegenerateQuad(const skvx::Vec<4, float>& signedEdgeDistances,
-                                      skvx::Vec<4, float>* x2d, skvx::Vec<4, float>* y2d) const;
+                                      skvx::Vec<4, float>* x2d, skvx::Vec<4, float>* y2d,
+                                      skvx::Vec<4, int32_t>* aaMask) const;
         };
 
         struct OutsetRequest {

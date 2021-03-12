@@ -29,8 +29,10 @@ if (is_posix && !build_with_chromium) {
 
     deps = [
       "../../platform",
+      "../../testing/util",
       "../../third_party/abseil",
       "../../third_party/boringssl",
+      "../../third_party/googletest:gmock",
       "../../third_party/googletest:gtest",
       "../../util",
       "../common:certificate",

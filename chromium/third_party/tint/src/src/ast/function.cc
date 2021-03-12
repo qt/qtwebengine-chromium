@@ -17,6 +17,9 @@
 #include <sstream>
 
 #include "src/ast/decorated_variable.h"
+#include "src/ast/stage_decoration.h"
+#include "src/ast/type/texture_type.h"
+#include "src/ast/workgroup_decoration.h"
 
 namespace tint {
 namespace ast {
@@ -45,6 +48,24 @@ Function::Function(const Source& source,
 Function::Function(Function&&) = default;
 
 Function::~Function() = default;
+
+std::tuple<uint32_t, uint32_t, uint32_t> Function::workgroup_size() const {
+  for (const auto& deco : decorations_) {
+    if (deco->IsWorkgroup()) {
+      return deco->AsWorkgroup()->values();
+    }
+  }
+  return {1, 1, 1};
+}
+
+ast::PipelineStage Function::pipeline_stage() const {
+  for (const auto& deco : decorations_) {
+    if (deco->IsStage()) {
+      return deco->AsStage()->value();
+    }
+  }
+  return ast::PipelineStage::kNone;
+}
 
 void Function::add_referenced_module_variable(Variable* var) {
   for (const auto* v : referenced_module_vars_) {
@@ -147,6 +168,46 @@ Function::referenced_builtin_variables() const {
   return ret;
 }
 
+const std::vector<std::pair<Variable*, Function::BindingInfo>>
+Function::referenced_sampler_variables() const {
+  return ReferencedSamplerVariablesImpl(type::SamplerKind::kSampler);
+}
+
+const std::vector<std::pair<Variable*, Function::BindingInfo>>
+Function::referenced_comparison_sampler_variables() const {
+  return ReferencedSamplerVariablesImpl(type::SamplerKind::kComparisonSampler);
+}
+
+const std::vector<std::pair<Variable*, Function::BindingInfo>>
+Function::referenced_sampled_texture_variables() const {
+  std::vector<std::pair<Variable*, Function::BindingInfo>> ret;
+
+  for (auto* var : referenced_module_variables()) {
+    auto* unwrapped_type = var->type()->UnwrapIfNeeded();
+    if (!var->IsDecorated() || !unwrapped_type->IsTexture() ||
+        !unwrapped_type->AsTexture()->IsSampled()) {
+      continue;
+    }
+
+    BindingDecoration* binding = nullptr;
+    SetDecoration* set = nullptr;
+    for (const auto& deco : var->AsDecorated()->decorations()) {
+      if (deco->IsBinding()) {
+        binding = deco->AsBinding();
+      } else if (deco->IsSet()) {
+        set = deco->AsSet();
+      }
+    }
+    if (binding == nullptr || set == nullptr) {
+      continue;
+    }
+
+    ret.push_back({var, BindingInfo{binding, set}});
+  }
+
+  return ret;
+}
+
 void Function::add_ancestor_entry_point(const std::string& ep) {
   for (const auto& point : ancestor_entry_points_) {
     if (point == ep) {
@@ -154,6 +215,15 @@ void Function::add_ancestor_entry_point(const std::string& ep) {
     }
   }
   ancestor_entry_points_.push_back(ep);
+}
+
+bool Function::HasAncestorEntryPoint(const std::string& name) const {
+  for (const auto& point : ancestor_entry_points_) {
+    if (point == name) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const Statement* Function::get_last_statement() const {
@@ -181,6 +251,11 @@ void Function::to_str(std::ostream& out, size_t indent) const {
   make_indent(out, indent);
   out << "Function " << name_ << " -> " << return_type_->type_name()
       << std::endl;
+
+  for (const auto& deco : decorations()) {
+    make_indent(out, indent);
+    deco->to_str(out);
+  }
 
   make_indent(out, indent);
   out << "(";
@@ -217,6 +292,35 @@ std::string Function::type_name() const {
   }
 
   return out.str();
+}
+
+const std::vector<std::pair<Variable*, Function::BindingInfo>>
+Function::ReferencedSamplerVariablesImpl(type::SamplerKind kind) const {
+  std::vector<std::pair<Variable*, Function::BindingInfo>> ret;
+
+  for (auto* var : referenced_module_variables()) {
+    auto* unwrapped_type = var->type()->UnwrapIfNeeded();
+    if (!var->IsDecorated() || !unwrapped_type->IsSampler() ||
+        unwrapped_type->AsSampler()->kind() != kind) {
+      continue;
+    }
+
+    BindingDecoration* binding = nullptr;
+    SetDecoration* set = nullptr;
+    for (const auto& deco : var->AsDecorated()->decorations()) {
+      if (deco->IsBinding()) {
+        binding = deco->AsBinding();
+      } else if (deco->IsSet()) {
+        set = deco->AsSet();
+      }
+    }
+    if (binding == nullptr || set == nullptr) {
+      continue;
+    }
+
+    ret.push_back({var, BindingInfo{binding, set}});
+  }
+  return ret;
 }
 
 }  // namespace ast

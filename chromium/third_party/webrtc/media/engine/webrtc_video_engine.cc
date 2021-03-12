@@ -629,10 +629,22 @@ WebRtcVideoEngine::GetRtpHeaderExtensions() const {
         webrtc::RtpExtension::kRidUri, webrtc::RtpExtension::kRepairedRidUri}) {
     result.emplace_back(uri, id++, webrtc::RtpTransceiverDirection::kSendRecv);
   }
-  result.emplace_back(webrtc::RtpExtension::kGenericFrameDescriptorUri00, id,
+  result.emplace_back(webrtc::RtpExtension::kGenericFrameDescriptorUri00, id++,
                       IsEnabled(trials_, "WebRTC-GenericDescriptorAdvertised")
                           ? webrtc::RtpTransceiverDirection::kSendRecv
                           : webrtc::RtpTransceiverDirection::kStopped);
+  result.emplace_back(
+      webrtc::RtpExtension::kDependencyDescriptorUri, id++,
+      IsEnabled(trials_, "WebRTC-DependencyDescriptorAdvertised")
+          ? webrtc::RtpTransceiverDirection::kSendRecv
+          : webrtc::RtpTransceiverDirection::kStopped);
+
+  result.emplace_back(
+      webrtc::RtpExtension::kVideoLayersAllocationUri, id++,
+      IsEnabled(trials_, "WebRTC-VideoLayersAllocationAdvertised")
+          ? webrtc::RtpTransceiverDirection::kSendRecv
+          : webrtc::RtpTransceiverDirection::kStopped);
+
   return result;
 }
 
@@ -1297,6 +1309,21 @@ bool WebRtcVideoChannel::AddSendStream(const StreamParams& sp) {
       video_config_.periodic_alr_bandwidth_probing;
   config.encoder_settings.experiment_cpu_load_estimator =
       video_config_.experiment_cpu_load_estimator;
+  using TargetBitrateType =
+      webrtc::VideoStreamEncoderSettings::BitrateAllocationCallbackType;
+  if (send_rtp_extensions_ &&
+      webrtc::RtpExtension::FindHeaderExtensionByUri(
+          *send_rtp_extensions_,
+          webrtc::RtpExtension::kVideoLayersAllocationUri)) {
+    config.encoder_settings.allocation_cb_type =
+        TargetBitrateType::kVideoLayersAllocation;
+  } else if (IsEnabled(call_->trials(), "WebRTC-Target-Bitrate-Rtcp")) {
+    config.encoder_settings.allocation_cb_type =
+        TargetBitrateType::kVideoBitrateAllocation;
+  } else {
+    config.encoder_settings.allocation_cb_type =
+        TargetBitrateType::kVideoBitrateAllocationWhenScreenSharing;
+  }
   config.encoder_settings.encoder_factory = encoder_factory_;
   config.encoder_settings.bitrate_allocator_factory =
       bitrate_allocator_factory_;
@@ -3569,10 +3596,18 @@ EncoderStreamFactory::CreateSimulcastOrConferenceModeScreenshareStreams(
           std::max(layers[i].max_bitrate_bps, layers[i].min_bitrate_bps);
     } else if (encoder_config.simulcast_layers[i].max_bitrate_bps > 0) {
       // Only max bitrate is configured, make sure min/target are below max.
+      // Keep target bitrate if it is set explicitly in encoding config.
+      // Otherwise set target bitrate to 3/4 of the max bitrate
+      // or the one calculated from GetSimulcastConfig() which is larger.
       layers[i].min_bitrate_bps =
           std::min(layers[i].min_bitrate_bps, layers[i].max_bitrate_bps);
-      layers[i].target_bitrate_bps =
-          std::min(layers[i].target_bitrate_bps, layers[i].max_bitrate_bps);
+      if (encoder_config.simulcast_layers[i].target_bitrate_bps <= 0) {
+        layers[i].target_bitrate_bps = std::max(
+            layers[i].target_bitrate_bps, layers[i].max_bitrate_bps * 3 / 4);
+      }
+      layers[i].target_bitrate_bps = std::max(
+          std::min(layers[i].target_bitrate_bps, layers[i].max_bitrate_bps),
+          layers[i].min_bitrate_bps);
     }
     if (i == layers.size() - 1) {
       is_highest_layer_max_bitrate_configured =
@@ -3586,6 +3621,32 @@ EncoderStreamFactory::CreateSimulcastOrConferenceModeScreenshareStreams(
     BoostMaxSimulcastLayer(
         webrtc::DataRate::BitsPerSec(encoder_config.max_bitrate_bps), &layers);
   }
+
+  // Sort the layers by max_bitrate_bps, they might not always be from
+  // smallest to biggest
+  std::vector<size_t> index(layers.size());
+  std::iota(index.begin(), index.end(), 0);
+  std::stable_sort(index.begin(), index.end(), [&layers](size_t a, size_t b) {
+    return layers[a].max_bitrate_bps < layers[b].max_bitrate_bps;
+  });
+
+  if (!layers[index[0]].active) {
+    // Adjust min bitrate of the first active layer to allow it to go as low as
+    // the lowest (now inactive) layer could.
+    // Otherwise, if e.g. a single HD stream is active, it would have 600kbps
+    // min bitrate, which would always be allocated to the stream.
+    // This would lead to congested network, dropped frames and overall bad
+    // experience.
+
+    const int min_configured_bitrate = layers[index[0]].min_bitrate_bps;
+    for (size_t i = 0; i < layers.size(); ++i) {
+      if (layers[index[i]].active) {
+        layers[index[i]].min_bitrate_bps = min_configured_bitrate;
+        break;
+      }
+    }
+  }
+
   return layers;
 }
 

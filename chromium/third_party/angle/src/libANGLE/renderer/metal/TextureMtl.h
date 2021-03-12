@@ -162,10 +162,12 @@ class TextureMtl : public TextureImpl
     angle::Result bindToShader(const gl::Context *context,
                                mtl::RenderCommandEncoder *cmdEncoder,
                                gl::ShaderType shaderType,
+                               gl::Sampler *sampler, /** nullable */
                                int textureSlotIndex,
                                int samplerSlotIndex);
 
     const mtl::Format &getFormat() const { return mFormat; }
+    const mtl::TextureRef &getNativeTexture() const { return mNativeTexture; }
 
   private:
     void releaseTexture(bool releaseImages);
@@ -174,17 +176,19 @@ class TextureMtl : public TextureImpl
                                       gl::TextureType type,
                                       GLuint mips,
                                       const gl::Extents &size);
+    angle::Result onBaseMaxLevelsChanged(const gl::Context *context);
     angle::Result ensureSamplerStateCreated(const gl::Context *context);
     // Ensure image at given index is created:
     angle::Result ensureImageCreated(const gl::Context *context, const gl::ImageIndex &index);
     // Ensure all image views at all faces/levels are retained.
     void retainImageDefinitions();
-    mtl::TextureRef createImageViewFromNativeTexture(GLuint cubeFaceOrZero, GLuint nativeLevel);
+    mtl::TextureRef createImageViewFromNativeTexture(GLuint cubeFaceOrZero,
+                                                     const mtl::MipmapNativeLevel &nativeLevel);
     angle::Result ensureNativeLevelViewsCreated();
     angle::Result checkForEmulatedChannels(const gl::Context *context,
                                            const mtl::Format &mtlFormat,
                                            const mtl::TextureRef &texture);
-    int getNativeLevel(const gl::ImageIndex &imageIndex) const;
+    mtl::MipmapNativeLevel getNativeLevel(const gl::ImageIndex &imageIndex) const;
     mtl::TextureRef &getImage(const gl::ImageIndex &imageIndex);
     ImageDefinitionMtl &getImageDefinition(const gl::ImageIndex &imageIndex);
     RenderTargetMtl &getRenderTarget(const gl::ImageIndex &imageIndex);
@@ -225,19 +229,22 @@ class TextureMtl : public TextureImpl
                                    const gl::Offset &destOffset,
                                    const gl::Rectangle &sourceArea,
                                    const gl::InternalFormat &internalFormat,
-                                   gl::Framebuffer *source);
+                                   const FramebufferMtl *source,
+                                   const RenderTargetMtl *sourceRtt);
     angle::Result copySubImageWithDraw(const gl::Context *context,
                                        const gl::ImageIndex &index,
                                        const gl::Offset &destOffset,
                                        const gl::Rectangle &sourceArea,
                                        const gl::InternalFormat &internalFormat,
-                                       gl::Framebuffer *source);
+                                       const FramebufferMtl *source,
+                                       const RenderTargetMtl *sourceRtt);
     angle::Result copySubImageCPU(const gl::Context *context,
                                   const gl::ImageIndex &index,
                                   const gl::Offset &destOffset,
                                   const gl::Rectangle &sourceArea,
                                   const gl::InternalFormat &internalFormat,
-                                  gl::Framebuffer *source);
+                                  const FramebufferMtl *source,
+                                  const RenderTargetMtl *sourceRtt);
 
     angle::Result copySubTextureImpl(const gl::Context *context,
                                      const gl::ImageIndex &index,
@@ -254,7 +261,7 @@ class TextureMtl : public TextureImpl
                                          const gl::ImageIndex &index,
                                          const gl::Offset &destOffset,
                                          const gl::InternalFormat &internalFormat,
-                                         uint32_t sourceNativeLevel,
+                                         const mtl::MipmapNativeLevel &sourceNativeLevel,
                                          const gl::Box &sourceBox,
                                          const angle::Format &sourceAngleFormat,
                                          bool unpackFlipY,
@@ -266,7 +273,7 @@ class TextureMtl : public TextureImpl
                                     const gl::ImageIndex &index,
                                     const gl::Offset &destOffset,
                                     const gl::InternalFormat &internalFormat,
-                                    uint32_t sourceNativeLevel,
+                                    const mtl::MipmapNativeLevel &sourceNativeLevel,
                                     const gl::Box &sourceBox,
                                     const angle::Format &sourceAngleFormat,
                                     bool unpackFlipY,
@@ -330,7 +337,13 @@ class TextureMtl : public TextureImpl
     std::map<int, gl::TexLevelArray<RenderTargetMtl>> mPerLayerRenderTargets;
 
     // Mipmap views are indexed by native level (ignored base level):
-    gl::TexLevelArray<mtl::TextureRef> mNativeLevelViews;
+    mtl::NativeTexLevelArray mNativeLevelViews;
+
+    // The swizzled view used for shader sampling.
+    mtl::TextureRef mNativeSwizzleSamplingView;
+
+    GLuint mCurrentBaseLevel = 0;
+    GLuint mCurrentMaxLevel  = 1000;
 
     bool mIsPow2 = false;
 };

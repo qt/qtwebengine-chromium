@@ -4,12 +4,12 @@
 
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 
+#include "absl/base/macros.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_expect_bug.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_mock_log.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_test.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
 
 namespace quic {
 namespace test {
@@ -332,16 +332,16 @@ TEST_F(QuicVersionsTest, CreateQuicVersionLabel) {
             CreateQuicVersionLabel(ParsedQuicVersion::T050()));
 
   // Make sure the negotiation reserved version is in the IETF reserved space.
-  EXPECT_EQ(MakeVersionLabel(0xda, 0x5a, 0x3a, 0x3a) & 0x0f0f0f0f,
-            CreateQuicVersionLabel(ParsedQuicVersion(
-                PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_RESERVED_FOR_NEGOTIATION)) &
-                0x0f0f0f0f);
+  EXPECT_EQ(
+      MakeVersionLabel(0xda, 0x5a, 0x3a, 0x3a) & 0x0f0f0f0f,
+      CreateQuicVersionLabel(ParsedQuicVersion::ReservedForNegotiation()) &
+          0x0f0f0f0f);
 
   // Make sure that disabling randomness works.
   SetQuicFlag(FLAGS_quic_disable_version_negotiation_grease_randomness, true);
-  EXPECT_EQ(MakeVersionLabel(0xda, 0x5a, 0x3a, 0x3a),
-            CreateQuicVersionLabel(ParsedQuicVersion(
-                PROTOCOL_QUIC_CRYPTO, QUIC_VERSION_RESERVED_FOR_NEGOTIATION)));
+  EXPECT_EQ(
+      MakeVersionLabel(0xda, 0x5a, 0x3a, 0x3a),
+      CreateQuicVersionLabel(ParsedQuicVersion::ReservedForNegotiation()));
 }
 
 TEST_F(QuicVersionsTest, QuicVersionLabelToString) {
@@ -371,7 +371,7 @@ TEST_F(QuicVersionsTest, QuicVersionToString) {
 
   QuicTransportVersion single_version[] = {QUIC_VERSION_43};
   QuicTransportVersionVector versions_vector;
-  for (size_t i = 0; i < QUICHE_ARRAYSIZE(single_version); ++i) {
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(single_version); ++i) {
     versions_vector.push_back(single_version[i]);
   }
   EXPECT_EQ("QUIC_VERSION_43",
@@ -380,7 +380,7 @@ TEST_F(QuicVersionsTest, QuicVersionToString) {
   QuicTransportVersion multiple_versions[] = {QUIC_VERSION_UNSUPPORTED,
                                               QUIC_VERSION_43};
   versions_vector.clear();
-  for (size_t i = 0; i < QUICHE_ARRAYSIZE(multiple_versions); ++i) {
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(multiple_versions); ++i) {
     versions_vector.push_back(multiple_versions[i]);
   }
   EXPECT_EQ("QUIC_VERSION_UNSUPPORTED,QUIC_VERSION_43",

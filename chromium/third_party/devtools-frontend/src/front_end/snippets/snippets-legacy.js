@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// @ts-nocheck
+
 import * as SnippetsModule from './snippets.js';
 
 self.Snippets = self.Snippets || {};
@@ -11,9 +13,10 @@ Snippets.evaluateScriptSnippet = SnippetsModule.ScriptSnippetFileSystem.evaluate
 Snippets.isSnippetsUISourceCode = SnippetsModule.ScriptSnippetFileSystem.isSnippetsUISourceCode;
 Snippets.isSnippetsProject = SnippetsModule.ScriptSnippetFileSystem.isSnippetsProject;
 
-Snippets.project = SnippetsModule.project;
-
 /**
  * @constructor
  */
 Snippets.SnippetsQuickOpen = SnippetsModule.SnippetsQuickOpen.SnippetsQuickOpen;
+
+Snippets.ScriptSnippetFileSystem = {};
+Snippets.ScriptSnippetFileSystem.findSnippetsProject = SnippetsModule.ScriptSnippetFileSystem.findSnippetsProject;

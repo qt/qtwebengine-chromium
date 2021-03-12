@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "third_party/base/check.h"
 #include "third_party/base/stl_util.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fde/cfde_textout.h"
@@ -279,7 +280,7 @@ void CFWL_Widget::RepaintRect(const CFX_RectF& pRect) {
   m_pWidgetMgr->RepaintWidget(this, pRect);
 }
 
-void CFWL_Widget::DrawBackground(CXFA_Graphics* pGraphics,
+void CFWL_Widget::DrawBackground(CFGAS_GEGraphics* pGraphics,
                                  CFWL_Part iPartBk,
                                  const CFX_Matrix* pMatrix) {
   CFWL_ThemeBackground param;
@@ -292,7 +293,7 @@ void CFWL_Widget::DrawBackground(CXFA_Graphics* pGraphics,
   GetThemeProvider()->DrawBackground(param);
 }
 
-void CFWL_Widget::DrawBorder(CXFA_Graphics* pGraphics,
+void CFWL_Widget::DrawBorder(CFGAS_GEGraphics* pGraphics,
                              CFWL_Part iPartBorder,
                              const CFX_Matrix& matrix) {
   CFWL_ThemeBackground param;
@@ -354,7 +355,7 @@ void CFWL_Widget::OnProcessMessage(CFWL_Message* pMessage) {
 
 void CFWL_Widget::OnProcessEvent(CFWL_Event* pEvent) {}
 
-void CFWL_Widget::OnDrawWidget(CXFA_Graphics* pGraphics,
+void CFWL_Widget::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
                                const CFX_Matrix& matrix) {}
 
 CFWL_Widget::ScopedUpdateLock::ScopedUpdateLock(CFWL_Widget* widget)

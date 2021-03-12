@@ -16,6 +16,9 @@
 
 #include <assert.h>
 
+#include "src/ast/type/array_type.h"
+#include "src/ast/type/vector_type.h"
+
 namespace tint {
 namespace ast {
 namespace type {
@@ -28,6 +31,8 @@ MatrixType::MatrixType(Type* subtype, uint32_t rows, uint32_t columns)
   assert(columns < 5);
 }
 
+MatrixType::~MatrixType() = default;
+
 bool MatrixType::IsMatrix() const {
   return true;
 }
@@ -37,7 +42,17 @@ std::string MatrixType::type_name() const {
          subtype_->type_name();
 }
 
-MatrixType::~MatrixType() = default;
+uint64_t MatrixType::MinBufferBindingSize(MemoryLayout mem_layout) const {
+  VectorType vec(subtype_, rows_);
+  return (columns_ - 1) * vec.BaseAlignment(mem_layout) +
+         vec.MinBufferBindingSize(mem_layout);
+}
+
+uint64_t MatrixType::BaseAlignment(MemoryLayout mem_layout) const {
+  VectorType vec(subtype_, rows_);
+  ArrayType arr(&vec, columns_);
+  return arr.BaseAlignment(mem_layout);
+}
 
 }  // namespace type
 }  // namespace ast

@@ -299,12 +299,21 @@ protected:
 
     virtual void drawDrawable(SkDrawable*, const SkMatrix*, SkCanvas*);
 
-    /** The SkDevice passed will be an SkDevice which was returned by a call to
-        onCreateDevice on this device with kNeverTile_TileExpectation.
+    /**
+     * The SkDevice passed will be an SkDevice which was returned by a call to
+     * onCreateDevice on this device with kNeverTile_TileExpectation.
+     *
+     * The default implementation calls snapSpecial() and drawSpecial() with the relative transform
+     * from the input device to this device. The provided SkPaint cannot have a mask filter or
+     * image filter, and any shader is ignored.
      */
-    virtual void drawDevice(SkBaseDevice*, int x, int y, const SkPaint&) = 0;
+    virtual void drawDevice(SkBaseDevice*, const SkPaint&);
 
-    virtual void drawSpecial(SkSpecialImage*, int x, int y, const SkPaint&);
+    /**
+     * Draw the special image's subset to this device, subject to the given matrix transform instead
+     * of the device's current local to device matrix.
+     */
+    virtual void drawSpecial(SkSpecialImage*, const SkMatrix& localToDevice, const SkPaint&);
 
     /**
      * Evaluate 'filter' and draw the final output into this device using 'paint'. The 'mapping'
@@ -335,7 +344,6 @@ protected:
 
     ///////////////////////////////////////////////////////////////////////////
 
-    virtual GrContext* context() const { return nullptr; }
     virtual GrRecordingContext* recordingContext() const { return nullptr; }
 
     virtual sk_sp<SkSurface> makeSurface(const SkImageInfo&, const SkSurfaceProps&);
@@ -394,13 +402,9 @@ protected:
         return nullptr;
     }
 
-    // A helper function used by derived classes to log the scale factor of a bitmap or image draw.
-    static void LogDrawScaleFactor(const SkMatrix& view, const SkMatrix& srcToDst, SkFilterQuality);
-
 private:
     friend class SkAndroidFrameworkUtils;
     friend class SkCanvas;
-    friend struct DeviceCM; //for setMatrixClip
     friend class SkDraw;
     friend class SkDrawIter;
     friend class SkSurface_Raster;
@@ -517,7 +521,7 @@ protected:
     void drawOval(const SkRect&, const SkPaint&) override {}
     void drawRRect(const SkRRect&, const SkPaint&) override {}
     void drawPath(const SkPath&, const SkPaint&, bool) override {}
-    void drawDevice(SkBaseDevice*, int, int, const SkPaint&) override {}
+    void drawDevice(SkBaseDevice*, const SkPaint&) override {}
     void drawGlyphRunList(const SkGlyphRunList& glyphRunList) override {}
     void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) override {}
 

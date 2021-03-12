@@ -32,6 +32,7 @@
 #include "platform/impl/text_trace_logging_platform.h"
 #include "util/alarm.h"
 #include "util/chrono_helpers.h"
+#include "util/stringprintf.h"
 
 namespace openscreen {
 namespace cast {
@@ -42,27 +43,30 @@ IPEndpoint GetDefaultEndpoint() {
 }
 
 void LogUsage(const char* argv0) {
-  std::cerr << R"(
-    usage:)" << argv0
-            << R"( <options> <media_file>
+  constexpr char kTemplate[] = R"(
+usage: %s <options> <media_file>
 
       -r, --remote=addr[:port]
            Specify the destination (e.g., 192.168.1.22:9999 or [::1]:12345).
 
-           Default if not set: )"
-            << GetDefaultEndpoint() << R"(
+           Default if not set: %s
 
       -m, --max-bitrate=N
            Specifies the maximum bits per second for the media streams.
 
-           Default if not set: )"
-            << kDefaultMaxBitrate << R"(.
-
-      -s, --server-certificate=path-to-cert
-           Specifies the path to the server certificate used by the receiver.
-           If omitted, only connections to receivers using an official
-           Google-signed cast certificate chain will be permitted.
-
+           Default if not set: %d
+)"
+#if defined(CAST_ALLOW_DEVELOPER_CERTIFICATE)
+                               R"(
+      -d, --developer-certificate=path-to-cert
+           Specifies the path to a self-signed developer certificate that will
+           be permitted for use as a root CA certificate for receivers that
+           this sender instance will connect to. If omitted, only connections to
+           receivers using an official Google-signed cast certificate chain will
+           be permitted.
+)"
+#endif
+                               R"(
       -a, --android-hack:
            Use the wrong RTP payload types, for compatibility with older Android
            TV receivers.
@@ -72,7 +76,11 @@ void LogUsage(const char* argv0) {
       -v, --verbose: Enable verbose logging.
 
       -h, --help: Show this help message.
-  )";
+)";
+
+  std::cerr << StringPrintf(kTemplate, argv0,
+                            GetDefaultEndpoint().ToString().c_str(),
+                            kDefaultMaxBitrate);
 }
 
 int StandaloneSenderMain(int argc, char* argv[]) {
@@ -81,23 +89,26 @@ int StandaloneSenderMain(int argc, char* argv[]) {
   // being exposed, consider if it applies to the standalone receiver,
   // standalone sender, osp demo, and test_main argument options.
   const struct option kArgumentOptions[] = {
-      {"remote", required_argument, nullptr, 'r'},
-      {"max-bitrate", required_argument, nullptr, 'm'},
-      {"server-certificate", required_argument, nullptr, 's'},
-      {"android-hack", no_argument, nullptr, 'a'},
-      {"tracing", no_argument, nullptr, 't'},
-      {"verbose", no_argument, nullptr, 'v'},
-      {"help", no_argument, nullptr, 'h'},
-      {nullptr, 0, nullptr, 0}};
+    {"remote", required_argument, nullptr, 'r'},
+    {"max-bitrate", required_argument, nullptr, 'm'},
+#if defined(CAST_ALLOW_DEVELOPER_CERTIFICATE)
+    {"developer-certificate", required_argument, nullptr, 'd'},
+#endif
+    {"android-hack", no_argument, nullptr, 'a'},
+    {"tracing", no_argument, nullptr, 't'},
+    {"verbose", no_argument, nullptr, 'v'},
+    {"help", no_argument, nullptr, 'h'},
+    {nullptr, 0, nullptr, 0}
+  };
 
   bool is_verbose = false;
   IPEndpoint remote_endpoint = GetDefaultEndpoint();
-  std::string server_certificate_path;
+  std::string developer_certificate_path;
   [[maybe_unused]] bool use_android_rtp_hack = false;
   [[maybe_unused]] int max_bitrate = kDefaultMaxBitrate;
   std::unique_ptr<TextTraceLoggingPlatform> trace_logger;
   int ch = -1;
-  while ((ch = getopt_long(argc, argv, "r:m:s:atvh", kArgumentOptions,
+  while ((ch = getopt_long(argc, argv, "r:m:d:atvh", kArgumentOptions,
                            nullptr)) != -1) {
     switch (ch) {
       case 'r': {
@@ -125,9 +136,11 @@ int StandaloneSenderMain(int argc, char* argv[]) {
           return 1;
         }
         break;
-      case 's':
-        server_certificate_path = optarg;
+#if defined(CAST_ALLOW_DEVELOPER_CERTIFICATE)
+      case 'd':
+        developer_certificate_path = optarg;
         break;
+#endif
       case 'a':
         use_android_rtp_hack = true;
         break;
@@ -156,10 +169,11 @@ int StandaloneSenderMain(int argc, char* argv[]) {
     return 1;
   }
 
-  if (!server_certificate_path.empty()) {
-    CastTrustStore::CreateInstanceFromPemFile(
-        server_certificate_path, TrustStore::Mode::kAllowSelfSigned);
+#if defined(CAST_ALLOW_DEVELOPER_CERTIFICATE)
+  if (!developer_certificate_path.empty()) {
+    CastTrustStore::CreateInstanceFromPemFile(developer_certificate_path);
   }
+#endif
 
   auto* const task_runner = new TaskRunnerImpl(&Clock::now);
   PlatformClientPosix::Create(Clock::duration{50}, Clock::duration{50},

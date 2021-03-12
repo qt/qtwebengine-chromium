@@ -18,7 +18,7 @@
 #include "core/fxcrt/css/cfx_cssvaluelist.h"
 #include "core/fxcrt/css/cfx_cssvaluelistparser.h"
 #include "core/fxcrt/fx_extension.h"
-#include "third_party/base/logging.h"
+#include "third_party/base/notreached.h"
 
 namespace {
 
@@ -137,7 +137,7 @@ bool CFX_CSSDeclaration::ParseCSSColor(const wchar_t* pszValue,
   return true;
 }
 
-CFX_CSSDeclaration::CFX_CSSDeclaration() {}
+CFX_CSSDeclaration::CFX_CSSDeclaration() = default;
 
 CFX_CSSDeclaration::~CFX_CSSDeclaration() = default;
 

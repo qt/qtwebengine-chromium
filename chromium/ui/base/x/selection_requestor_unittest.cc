@@ -19,9 +19,7 @@
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/x/connection.h"
 #include "ui/gfx/x/event.h"
-#include "ui/gfx/x/x11.h"
 #include "ui/gfx/x/x11_atom_cache.h"
-#include "ui/gfx/x/x11_types.h"
 #include "ui/gfx/x/xproto.h"
 
 namespace ui {
@@ -102,7 +100,8 @@ void PerformBlockingConvertSelection(SelectionRequestor* requestor,
 
 // Test that SelectionRequestor correctly handles receiving a request while it
 // is processing another request.
-TEST_F(SelectionRequestorTest, NestedRequests) {
+// TODO(https://crbug.com/443355): Reenable once clipboard interface is async.
+TEST_F(SelectionRequestorTest, DISABLED_NestedRequests) {
   // Assume that |selection| will have no owner. If there is an owner, the owner
   // will set the property passed into the XConvertSelection() request which is
   // undesirable.

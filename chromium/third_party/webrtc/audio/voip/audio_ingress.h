@@ -75,6 +75,11 @@ class AudioIngress : public AudioMixer::Source {
   int GetSpeechOutputLevelFullRange() const {
     return output_audio_level_.LevelFullRange();
   }
+  // Retrieves the total duration for all samples played so far as explained in
+  // audio/AudioLevel.h.
+  double GetTotalDuration() const {
+    return output_audio_level_.TotalDuration();
+  }
 
   // Returns network round trip time (RTT) measued by RTCP exchange with
   // remote media endpoint. RTT value -1 indicates that it's not initialized.
@@ -82,12 +87,8 @@ class AudioIngress : public AudioMixer::Source {
 
   NetworkStatistics GetNetworkStatistics() const {
     NetworkStatistics stats;
-    acm_receiver_.GetNetworkStatistics(&stats);
-    return stats;
-  }
-  AudioDecodingCallStats GetDecodingStatistics() const {
-    AudioDecodingCallStats stats;
-    acm_receiver_.GetDecodingCallStatistics(&stats);
+    acm_receiver_.GetNetworkStatistics(&stats,
+                                       /*get_and_clear_legacy_stats=*/false);
     return stats;
   }
 

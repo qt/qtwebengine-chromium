@@ -63,7 +63,8 @@ export class Toolbar {
     this.element.className = className;
     this.element.classList.add('toolbar');
     this._enabled = true;
-    this._shadowRoot = createShadowRootWithCoreStyles(this.element, 'ui/toolbar.css');
+    this._shadowRoot = createShadowRootWithCoreStyles(
+        this.element, {cssFile: 'ui/toolbar.css', enableLegacyPatching: true, delegatesFocus: undefined});
     this._contentElement = this._shadowRoot.createChild('div', 'toolbar-shadow');
     this._insertionPoint = this._contentElement.createChild('slot');
   }
@@ -440,7 +441,8 @@ export class ToolbarItem extends Common.ObjectWrapper.ObjectWrapper {
    */
   constructor(element) {
     super();
-    this.element = element;
+    /** @type {!HTMLElement} */
+    this.element = /** @type {!HTMLElement} */ (element);
     this.element.classList.add('toolbar-item');
     this._visible = true;
     this._enabled = true;
@@ -563,6 +565,10 @@ export class ToolbarButton extends ToolbarItem {
     this._title = '';
   }
 
+  focus() {
+    this.element.focus();
+  }
+
   /**
    * @param {string} text
    */
@@ -644,8 +650,9 @@ export class ToolbarInput extends ToolbarItem {
    * @param {number=} shrinkFactor
    * @param {string=} tooltip
    * @param {(function(string, string, boolean=):!Promise<!Suggestions>)=} completions
+   * @param {boolean=} dynamicCompletions
    */
-  constructor(placeholder, accessiblePlaceholder, growFactor, shrinkFactor, tooltip, completions) {
+  constructor(placeholder, accessiblePlaceholder, growFactor, shrinkFactor, tooltip, completions, dynamicCompletions) {
     const element = document.createElement('div');
     element.classList.add('toolbar-input');
     super(element);
@@ -659,7 +666,7 @@ export class ToolbarInput extends ToolbarItem {
     this._proxyElement = this._prompt.attach(internalPromptElement);
     this._proxyElement.classList.add('toolbar-prompt-proxy');
     this._proxyElement.addEventListener('keydown', event => this._onKeydownCallback(event));
-    this._prompt.initialize(completions || (() => Promise.resolve([])), ' ');
+    this._prompt.initialize(completions || (() => Promise.resolve([])), ' ', dynamicCompletions);
     if (tooltip) {
       this._prompt.setTitle(tooltip);
     }
@@ -1010,7 +1017,7 @@ export class ToolbarComboBox extends ToolbarItem {
   }
 
   /**
-   * @return {?Element}
+   * @return {?HTMLOptionElement}
    */
   selectedOption() {
     if (this._selectElement.selectedIndex >= 0) {

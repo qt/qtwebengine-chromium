@@ -5,6 +5,7 @@
 #ifndef QUICHE_QUIC_TEST_TOOLS_SIMULATOR_QUIC_ENDPOINT_H_
 #define QUICHE_QUIC_TEST_TOOLS_SIMULATOR_QUIC_ENDPOINT_H_
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/crypto/null_decrypter.h"
 #include "net/third_party/quiche/src/quic/core/crypto/null_encrypter.h"
 #include "net/third_party/quiche/src/quic/core/quic_connection.h"
@@ -17,7 +18,6 @@
 #include "net/third_party/quiche/src/quic/test_tools/simulator/link.h"
 #include "net/third_party/quiche/src/quic/test_tools/simulator/queue.h"
 #include "net/third_party/quiche/src/quic/test_tools/simulator/quic_endpoint_base.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 namespace simulator {
@@ -64,7 +64,7 @@ class QuicEndpoint : public QuicEndpointBase,
   void OnBlockedFrame(const QuicBlockedFrame& /*frame*/) override {}
   void OnRstStream(const QuicRstStreamFrame& /*frame*/) override {}
   void OnGoAway(const QuicGoAwayFrame& /*frame*/) override {}
-  void OnMessageReceived(quiche::QuicheStringPiece /*message*/) override {}
+  void OnMessageReceived(absl::string_view /*message*/) override {}
   void OnHandshakeDoneReceived() override {}
   void OnConnectionClosed(const QuicConnectionCloseFrame& /*frame*/,
                           ConnectionCloseSource /*source*/) override {}
@@ -80,6 +80,7 @@ class QuicEndpoint : public QuicEndpointBase,
   void OnForwardProgressMadeAfterPathDegrading() override {}
   void OnAckNeedsRetransmittableFrame() override {}
   void SendPing() override {}
+  void SendAckFrequency(const QuicAckFrequencyFrame& /*frame*/) override {}
   bool AllowSelfAddressChange() const override;
   HandshakeState GetHandshakeState() const override;
   bool OnMaxStreamsFrame(const QuicMaxStreamsFrame& /*frame*/) override {
@@ -93,6 +94,15 @@ class QuicEndpoint : public QuicEndpointBase,
   void OnPacketDecrypted(EncryptionLevel /*level*/) override {}
   void OnOneRttPacketAcknowledged() override {}
   void OnHandshakePacketSent() override {}
+  void OnKeyUpdate(KeyUpdateReason /*reason*/) override {}
+  std::unique_ptr<QuicDecrypter> AdvanceKeysAndCreateCurrentOneRttDecrypter()
+      override {
+    return nullptr;
+  }
+  std::unique_ptr<QuicEncrypter> CreateCurrentOneRttEncrypter() override {
+    return nullptr;
+  }
+  void BeforeConnectionCloseSent() override {}
 
   // End QuicConnectionVisitorInterface implementation.
 

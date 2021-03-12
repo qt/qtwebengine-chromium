@@ -43,28 +43,35 @@ class CJS_Runtime;
 class CFXJSE_Engine final : public CFX_V8 {
  public:
   static CXFA_Object* ToObject(const v8::FunctionCallbackInfo<v8::Value>& info);
-  static CXFA_Object* ToObject(v8::Local<v8::Value> value);
-  static CXFA_Object* ToObject(CFXJSE_Value* pValue);
+  static CXFA_Object* ToObject(v8::Isolate* pIsolate,
+                               v8::Local<v8::Value> value);
+  static CXFA_Object* ToObject(v8::Isolate* pIsolate, CFXJSE_Value* pValue);
   static CXFA_Object* ToObject(CFXJSE_HostObject* pHostObj);
-  static void GlobalPropertyGetter(CFXJSE_Value* pObject,
+  static void GlobalPropertyGetter(v8::Isolate* pIsolate,
+                                   v8::Local<v8::Object> pObject,
                                    ByteStringView szPropName,
                                    CFXJSE_Value* pValue);
-  static void GlobalPropertySetter(CFXJSE_Value* pObject,
+  static void GlobalPropertySetter(v8::Isolate* pIsolate,
+                                   v8::Local<v8::Object> pObject,
                                    ByteStringView szPropName,
                                    CFXJSE_Value* pValue);
-  static void NormalPropertyGetter(CFXJSE_Value* pObject,
+  static void NormalPropertyGetter(v8::Isolate* pIsolate,
+                                   v8::Local<v8::Object> pObject,
                                    ByteStringView szPropName,
                                    CFXJSE_Value* pValue);
-  static void NormalPropertySetter(CFXJSE_Value* pObject,
+  static void NormalPropertySetter(v8::Isolate* pIsolate,
+                                   v8::Local<v8::Object> pObject,
                                    ByteStringView szPropName,
                                    CFXJSE_Value* pValue);
   static CJS_Result NormalMethodCall(
       const v8::FunctionCallbackInfo<v8::Value>& info,
       const WideString& functionName);
-  static int32_t NormalPropTypeGetter(CFXJSE_Value* pObject,
+  static int32_t NormalPropTypeGetter(v8::Isolate* pIsolate,
+                                      v8::Local<v8::Object> pObject,
                                       ByteStringView szPropName,
                                       bool bQueryIn);
-  static int32_t GlobalPropTypeGetter(CFXJSE_Value* pObject,
+  static int32_t GlobalPropTypeGetter(v8::Isolate* pIsolate,
+                                      v8::Local<v8::Object> pObject,
                                       ByteStringView szPropName,
                                       bool bQueryIn);
 
@@ -84,10 +91,11 @@ class CFXJSE_Engine final : public CFX_V8 {
                       uint32_t dwStyles,
                       CXFA_Node* bindNode);
 
-  CFXJSE_Value* GetOrCreateJSBindingFromMap(CXFA_Object* pObject);
+  v8::Local<v8::Object> GetOrCreateJSBindingFromMap(CXFA_Object* pObject);
 
   CXFA_Object* GetThisObject() const { return m_pThisObject; }
   CFXJSE_Class* GetJseNormalClass() const { return m_pJsClass.Get(); }
+  CFXJSE_Context* GetJseContext() const { return m_JsContext.get(); }
 
   void SetNodesOfRunScript(std::vector<cppgc::Persistent<CXFA_Node>>* pArray);
   void AddNodesOfRunScript(CXFA_Node* pNode);
@@ -102,13 +110,12 @@ class CFXJSE_Engine final : public CFX_V8 {
   CXFA_Document* GetDocument() const { return m_pDocument.Get(); }
 
   CXFA_Object* ToXFAObject(v8::Local<v8::Value> obj);
-  v8::Local<v8::Value> NewXFAObject(CXFA_Object* obj,
-                                    v8::Global<v8::FunctionTemplate>& tmpl);
+  v8::Local<v8::Object> NewNormalXFAObject(CXFA_Object* obj);
 
  private:
   CFXJSE_Context* CreateVariablesContext(CXFA_Node* pScriptNode,
                                          CXFA_Node* pSubform);
-  void RemoveBuiltInObjs(CFXJSE_Context* pContext) const;
+  void RemoveBuiltInObjs(CFXJSE_Context* pContext);
   bool QueryNodeByFlag(CXFA_Node* refNode,
                        WideStringView propname,
                        CFXJSE_Value* pValue,
@@ -130,7 +137,7 @@ class CFXJSE_Engine final : public CFX_V8 {
   CXFA_Script::Type m_eScriptType = CXFA_Script::Type::Unknown;
   // |m_mapObjectToValue| is what ensures the v8 object bound to a
   // CJX_Object remains valid for the lifetime of the engine.
-  std::map<CJX_Object*, std::unique_ptr<CFXJSE_Value>> m_mapObjectToValue;
+  std::map<CJX_Object*, v8::Global<v8::Object>> m_mapObjectToObject;
   std::map<CJX_Object*, std::unique_ptr<CFXJSE_Context>> m_mapVariableToContext;
   UnownedPtr<CXFA_EventParam> m_eventParam;
   std::vector<cppgc::Persistent<CXFA_Node>> m_upObjectArray;

@@ -35,6 +35,14 @@ std::string AliasType::type_name() const {
   return "__alias_" + name_ + subtype_->type_name();
 }
 
+uint64_t AliasType::MinBufferBindingSize(MemoryLayout mem_layout) const {
+  return subtype_->MinBufferBindingSize(mem_layout);
+}
+
+uint64_t AliasType::BaseAlignment(MemoryLayout mem_layout) const {
+  return subtype_->BaseAlignment(mem_layout);
+}
+
 }  // namespace type
 }  // namespace ast
 }  // namespace tint

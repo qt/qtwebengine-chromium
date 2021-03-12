@@ -92,9 +92,9 @@ struct VirtualConnection {
   //  - sender-0 or receiver-0: identifies the appropriate platform endpoint of
   //    the device.  Authentication and transport-related messages use these.
   //  - sender-12345: Possible form of a Cast sender ID.  The number portion is
-  //    randomly generated and intended to be unique within that device.
+  //    intended to be unique within that device (i.e., unique per CastSocket).
   //  - Random decimal number: Possible form of a Cast sender ID.  Also randomly
-  //    generated and intended to be unique within that device.
+  //    intended to be unique within that device (i.e., unique per CastSocket).
   //  - GUID-style hex string: Random string identifying a particular receiver
   //    app on the device.
   //

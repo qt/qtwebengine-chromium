@@ -241,6 +241,10 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
 #if CONFIG_TUNE_VMAF
   aom_free(cpi->vmaf_info.rdmult_scaling_factors);
   cpi->vmaf_info.rdmult_scaling_factors = NULL;
+
+#if CONFIG_USE_VMAF_RC
+  aom_close_vmaf_model_rc(cpi->vmaf_info.vmaf_model);
+#endif
 #endif
 
   release_obmc_buffers(&cpi->td.mb.obmc_buffer);
@@ -257,9 +261,6 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   aom_free(cm->tpl_mvs);
   cm->tpl_mvs = NULL;
 
-  aom_free(cpi->td.mb.mbmi_ext);
-  cpi->td.mb.mbmi_ext = NULL;
-
   if (cpi->td.vt64x64) {
     aom_free(cpi->td.vt64x64);
     cpi->td.vt64x64 = NULL;
@@ -273,7 +274,9 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
   av1_free_context_buffers(cm);
 
   aom_free_frame_buffer(&cpi->last_frame_uf);
+#if !CONFIG_REALTIME_ONLY
   av1_free_restoration_buffers(cm);
+#endif
   aom_free_frame_buffer(&cpi->trial_frame_rst);
   aom_free_frame_buffer(&cpi->scaled_source);
   aom_free_frame_buffer(&cpi->scaled_last_source);

@@ -21,6 +21,7 @@ import {
 } from '../common/actions';
 import {Engine} from '../common/engine';
 import {NUM, NUM_NULL, rawQueryToRows, STR_NULL} from '../common/protos';
+import {slowlyCountRows} from '../common/query_iterator';
 import {SCROLLING_TRACK_GROUP} from '../common/state';
 import {ANDROID_LOGS_TRACK_KIND} from '../tracks/android_log/common';
 import {ASYNC_SLICE_TRACK_KIND} from '../tracks/async_slices/common';
@@ -37,6 +38,7 @@ import {PROCESS_SUMMARY_TRACK} from '../tracks/process_summary/common';
 import {THREAD_STATE_TRACK_KIND} from '../tracks/thread_state/common';
 
 interface ThreadSliceTrack {
+  name: string;
   maxDepth: number;
   trackId: number;
 }
@@ -132,7 +134,7 @@ export async function decideTracks(
       where name = 'cpufreq' and cpu = ${cpu}
       limit 1;
     `);
-    if (cpuFreqIdle.numRecords > 0) {
+    if (slowlyCountRows(cpuFreqIdle) > 0) {
       const freqTrackId = +cpuFreqIdle.columns[0].longValues![0];
 
       const idleTrackExists: boolean = !cpuFreqIdle.columns[1].isNulls![0];
@@ -168,7 +170,7 @@ export async function decideTracks(
     WHERE t.track_ids = experimental_slice_layout.filter_track_ids
     GROUP BY t.track_ids;
   `);
-  for (let i = 0; i < rawGlobalAsyncTracks.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(rawGlobalAsyncTracks); i++) {
     const name = rawGlobalAsyncTracks.columns[0].stringValues![i];
     const rawTrackIds = rawGlobalAsyncTracks.columns[1].stringValues![i];
     const trackIds = rawTrackIds.split(',').map(v => Number(v));
@@ -192,7 +194,7 @@ export async function decideTracks(
     FROM process_track
     GROUP BY upid, name
   `);
-  for (let i = 0; i < rawProcessTracks.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(rawProcessTracks); i++) {
     const upid = +rawProcessTracks.columns[0].longValues![i];
     const name = rawProcessTracks.columns[1].stringValues![i];
     const rawTrackIds = rawProcessTracks.columns[2].stringValues![i];
@@ -206,8 +208,8 @@ export async function decideTracks(
     const kind = ASYNC_SLICE_TRACK_KIND;
     const track = {
       engineId,
-      kind: ASYNC_SLICE_TRACK_KIND,
-      name: getTrackName({name, upid, kind}),
+      kind,
+      name,
       config: {
         maxDepth,
         trackIds,
@@ -227,7 +229,7 @@ export async function decideTracks(
     select distinct(upid) from heap_graph_object`);
 
   const heapUpids: Set<number> = new Set();
-  for (let i = 0; i < heapProfiles.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(heapProfiles); i++) {
     const upid = heapProfiles.columns[0].longValues![i];
     heapUpids.add(+upid);
   }
@@ -248,7 +250,7 @@ export async function decideTracks(
       where name = 'gpufreq' and gpu_id = ${gpu}
       limit 1;
     `);
-    if (freqExists.numRecords > 0) {
+    if (slowlyCountRows(freqExists) > 0) {
       tracksToAdd.push({
         engineId,
         kind: COUNTER_TRACK_KIND,
@@ -272,7 +274,7 @@ export async function decideTracks(
     from gpu_counter_track
     where name != 'gpufreq'
   `);
-  for (let i = 0; i < globalCounters.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(globalCounters); i++) {
     const name = globalCounters.columns[0].stringValues![i];
     const trackId = +globalCounters.columns[1].longValues![i];
     tracksToAdd.push({
@@ -300,7 +302,7 @@ export async function decideTracks(
     start_ts, end_ts from thread_counter_track join thread using(utid)
     where thread_counter_track.name not in ('time_in_state')
   `);
-  for (let i = 0; i < threadCounters.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(threadCounters); i++) {
     const name = threadCounters.columns[0].stringValues![i];
     const utid = +threadCounters.columns[1].longValues![i];
     const trackId = +threadCounters.columns[2].longValues![i];
@@ -327,7 +329,7 @@ export async function decideTracks(
     select process_counter_track.name, upid, process_counter_track.id,
     start_ts, end_ts from process_counter_track join process using(upid)
   `);
-  for (let i = 0; i < processCounters.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(processCounters); i++) {
     const name = processCounters.columns[0].stringValues![i];
     const upid = +processCounters.columns[1].longValues![i];
     const trackId = +processCounters.columns[2].longValues![i];
@@ -352,18 +354,29 @@ export async function decideTracks(
   // Local experiments shows getting maxDepth separately is ~2x faster than
   // joining with threads and processes.
   const maxDepthQuery = await engine.query(`
-        select thread_track.utid, thread_track.id, max(depth) as maxDepth
+        select
+          thread_track.utid,
+          thread_track.id,
+          thread_track.name,
+          max(depth) as maxDepth
         from slice
         inner join thread_track on slice.track_id = thread_track.id
         group by thread_track.id
       `);
 
-  const utidToThreadTrack = new Map<number, ThreadSliceTrack>();
-  for (let i = 0; i < maxDepthQuery.numRecords; i++) {
+  const utidToThreadTrack = new Map<number, ThreadSliceTrack[]>();
+  for (let i = 0; i < slowlyCountRows(maxDepthQuery); i++) {
     const utid = maxDepthQuery.columns[0].longValues![i];
     const trackId = maxDepthQuery.columns[1].longValues![i];
-    const maxDepth = maxDepthQuery.columns[2].longValues![i];
-    utidToThreadTrack.set(utid, {maxDepth, trackId});
+    const name = maxDepthQuery.columns[2].stringValues![i];
+    const maxDepth = maxDepthQuery.columns[3].longValues![i];
+    const tracks = utidToThreadTrack.get(utid);
+    const track = {maxDepth, trackId, name};
+    if (tracks) {
+      tracks.push(track);
+    } else {
+      utidToThreadTrack.set(utid, [track]);
+    }
   }
 
   // For backwards compatability with older TP versions where
@@ -372,7 +385,7 @@ export async function decideTracks(
   const exists =
       await engine.query(`select name from sqlite_master where type='table' and
        name='android_thread_time_in_state_event'`);
-  if (exists.numRecords === 0) {
+  if (slowlyCountRows(exists) === 0) {
     await engine.query(`create view android_thread_time_in_state_event as
         select null as upid, null as value where 0`);
   }
@@ -440,8 +453,9 @@ export async function decideTracks(
     const threadHasCpuSamples = !!row.hasCpuSamples;
     const isMainThread = tid === pid;
 
-    const threadTrack = utid === null ? undefined : utidToThreadTrack.get(utid);
-    if (threadTrack === undefined &&
+    const threadTracks =
+        utid === null ? undefined : utidToThreadTrack.get(utid);
+    if (threadTracks === undefined &&
         (upid === null || counterUpids.get(upid) === undefined) &&
         counterUtids.get(utid) === undefined && !threadHasSched &&
         (upid === null || upid !== null && !heapUpids.has(upid))) {
@@ -532,21 +546,33 @@ export async function decideTracks(
 
         if (upidToProcessTracks.has(upid)) {
           for (const track of upidToProcessTracks.get(upid)) {
-            tracksToAdd.push(Object.assign(track, {trackGroup: pUuid}));
+            tracksToAdd.push(Object.assign(track, {
+              name: getTrackName({
+                name: track.name,
+                processName,
+                pid,
+                upid,
+                kind: track.kind,
+              }),
+              trackGroup: pUuid,
+            }));
           }
         }
       }
     }
     const counterThreadNames = counterUtids.get(utid);
     if (counterThreadNames !== undefined) {
+      const kind = COUNTER_TRACK_KIND;
       counterThreadNames.forEach(element => {
+        const name =
+            getTrackName({name: element.name, utid, tid, kind, threadName});
         tracksToAdd.push({
           engineId,
-          kind: COUNTER_TRACK_KIND,
-          name: `${threadName} (${element.name})`,
+          kind,
+          name,
           trackGroup: pUuid,
           config: {
-            name: element.name,
+            name,
             trackId: element.trackId,
             startTs: element.startTs,
             endTs: element.endTs,
@@ -577,16 +603,18 @@ export async function decideTracks(
       });
     }
 
-    if (threadTrack !== undefined) {
+    if (threadTracks !== undefined) {
       const kind = SLICE_TRACK_KIND;
-      tracksToAdd.push({
-        engineId,
-        kind,
-        name: getTrackName({utid, tid, threadName, kind}),
-        trackGroup: pUuid,
-        isMainThread,
-        config: {maxDepth: threadTrack.maxDepth, trackId: threadTrack.trackId},
-      });
+      for (const config of threadTracks) {
+        tracksToAdd.push({
+          engineId,
+          kind,
+          name: getTrackName({name: config.name, utid, tid, threadName, kind}),
+          trackGroup: pUuid,
+          isMainThread,
+          config: {maxDepth: config.maxDepth, trackId: config.trackId},
+        });
+      }
     }
   }
 
@@ -603,7 +631,7 @@ export async function decideTracks(
 
   const annotationSliceRows = await engine.query(`
     SELECT id, name, upid FROM annotation_slice_track`);
-  for (let i = 0; i < annotationSliceRows.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(annotationSliceRows); i++) {
     const id = annotationSliceRows.columns[0].longValues![i];
     const name = annotationSliceRows.columns[1].stringValues![i];
     const upid = annotationSliceRows.columns[2].longValues![i];
@@ -623,7 +651,7 @@ export async function decideTracks(
   const annotationCounterRows = await engine.query(`
     SELECT id, name, upid, min_value, max_value
     FROM annotation_counter_track`);
-  for (let i = 0; i < annotationCounterRows.numRecords; i++) {
+  for (let i = 0; i < slowlyCountRows(annotationCounterRows); i++) {
     const id = annotationCounterRows.columns[0].longValues![i];
     const name = annotationCounterRows.columns[1].stringValues![i];
     const upid = annotationCounterRows.columns[2].longValues![i];

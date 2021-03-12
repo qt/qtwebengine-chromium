@@ -231,7 +231,7 @@ void av1_setup_src_planes(MACROBLOCK *x, const YV12_BUFFER_CONFIG *src,
  * \param[out]    num_planes  Number of image planes (e.g. Y,U,V)
  *
  * \return No return value but updates macroblock and thread data
- * relating to the q / q delta to be used.
+ * related to the q / q delta to be used.
  */
 static AOM_INLINE void setup_delta_q(AV1_COMP *const cpi, ThreadData *td,
                                      MACROBLOCK *const x,
@@ -268,8 +268,8 @@ static AOM_INLINE void setup_delta_q(AV1_COMP *const cpi, ThreadData *td,
   }
 
   const int delta_q_res = delta_q_info->delta_q_res;
-  // Right now aq only works with tpl model. So if tpl is disabled, we set the
-  // current_qindex to base_qindex.
+  // Right now deltaq only works with tpl model. So if tpl is disabled, we set
+  // the current_qindex to base_qindex.
   if (cpi->oxcf.algo_cfg.enable_tpl_model &&
       cpi->oxcf.q_cfg.deltaq_mode != NO_DELTA_Q) {
     current_qindex =
@@ -339,7 +339,6 @@ static void init_ref_frame_space(AV1_COMP *cpi, ThreadData *td, int mi_row,
   if (tpl_frame->is_valid == 0) return;
   if (!is_frame_tpl_eligible(gf_group, gf_group->index)) return;
   if (frame_idx >= MAX_TPL_FRAME_IDX) return;
-  if (cpi->superres_mode != AOM_SUPERRES_NONE) return;
   if (cpi->oxcf.q_cfg.aq_mode != NO_AQ) return;
 
   const int is_overlay = cpi->gf_group.update_type[frame_idx] == OVERLAY_UPDATE;
@@ -353,13 +352,21 @@ static void init_ref_frame_space(AV1_COMP *cpi, ThreadData *td, int mi_row,
   int64_t inter_cost[INTER_REFS_PER_FRAME] = { 0 };
   const int step = 1 << block_mis_log2;
   const BLOCK_SIZE sb_size = cm->seq_params.sb_size;
+
   const int mi_row_end =
       AOMMIN(mi_size_high[sb_size] + mi_row, mi_params->mi_rows);
-  const int mi_col_end =
-      AOMMIN(mi_size_wide[sb_size] + mi_col, mi_params->mi_cols);
-
-  for (int row = mi_row; row < mi_row_end; row += step) {
-    for (int col = mi_col; col < mi_col_end; col += step) {
+  const int mi_cols_sr = av1_pixels_to_mi(cm->superres_upscaled_width);
+  const int mi_col_sr =
+      coded_to_superres_mi(mi_col, cm->superres_scale_denominator);
+  const int mi_col_end_sr =
+      AOMMIN(coded_to_superres_mi(mi_col + mi_size_wide[sb_size],
+                                  cm->superres_scale_denominator),
+             mi_cols_sr);
+  const int row_step = step;
+  const int col_step_sr =
+      coded_to_superres_mi(step, cm->superres_scale_denominator);
+  for (int row = mi_row; row < mi_row_end; row += row_step) {
+    for (int col = mi_col_sr; col < mi_col_end_sr; col += col_step_sr) {
       const TplDepStats *this_stats =
           &tpl_stats[av1_tpl_ptr_pos(row, col, tpl_stride, block_mis_log2)];
       int64_t tpl_pred_error[INTER_REFS_PER_FRAME] = { 0 };
@@ -429,11 +436,59 @@ static AOM_INLINE void adjust_rdmult_tpl_model(AV1_COMP *cpi, MACROBLOCK *x,
       cpi->oxcf.q_cfg.deltaq_mode == NO_DELTA_Q && gf_group_index > 0 &&
       cpi->gf_group.update_type[gf_group_index] == ARF_UPDATE) {
     const int dr =
-        av1_get_rdmult_delta(cpi, sb_size, 0, mi_row, mi_col, orig_rdmult);
+        av1_get_rdmult_delta(cpi, sb_size, mi_row, mi_col, orig_rdmult);
     x->rdmult = dr;
   }
 }
 #endif  // !CONFIG_REALTIME_ONLY
+
+// Get a prediction(stored in x->est_pred) for the whole superblock.
+static void get_estimated_pred(AV1_COMP *cpi, const TileInfo *const tile,
+                               MACROBLOCK *x, int mi_row, int mi_col) {
+  AV1_COMMON *const cm = &cpi->common;
+  const int is_key_frame = frame_is_intra_only(cm);
+  MACROBLOCKD *xd = &x->e_mbd;
+
+  // TODO(kyslov) Extend to 128x128
+  assert(cm->seq_params.sb_size == BLOCK_64X64);
+
+  av1_set_offsets(cpi, tile, x, mi_row, mi_col, BLOCK_64X64);
+
+  if (!is_key_frame) {
+    MB_MODE_INFO *mi = xd->mi[0];
+    const YV12_BUFFER_CONFIG *yv12 = get_ref_frame_yv12_buf(cm, LAST_FRAME);
+
+    assert(yv12 != NULL);
+
+    av1_setup_pre_planes(xd, 0, yv12, mi_row, mi_col,
+                         get_ref_scale_factors(cm, LAST_FRAME), 1);
+    mi->ref_frame[0] = LAST_FRAME;
+    mi->ref_frame[1] = NONE;
+    mi->bsize = BLOCK_64X64;
+    mi->mv[0].as_int = 0;
+    mi->interp_filters = av1_broadcast_interp_filter(BILINEAR);
+
+    set_ref_ptrs(cm, xd, mi->ref_frame[0], mi->ref_frame[1]);
+
+    xd->plane[0].dst.buf = x->est_pred;
+    xd->plane[0].dst.stride = 64;
+    av1_enc_build_inter_predictor_y(xd, mi_row, mi_col);
+  } else {
+#if CONFIG_AV1_HIGHBITDEPTH
+    switch (xd->bd) {
+      case 8: memset(x->est_pred, 128, 64 * 64 * sizeof(x->est_pred[0])); break;
+      case 10:
+        memset(x->est_pred, 128 * 4, 64 * 64 * sizeof(x->est_pred[0]));
+        break;
+      case 12:
+        memset(x->est_pred, 128 * 16, 64 * 64 * sizeof(x->est_pred[0]));
+        break;
+    }
+#else
+    memset(x->est_pred, 128, 64 * 64 * sizeof(x->est_pred[0]));
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+  }
+}
 
 #define AVG_CDF_WEIGHT_LEFT 3
 #define AVG_CDF_WEIGHT_TOP_RIGHT 1
@@ -466,6 +521,16 @@ static AOM_INLINE void encode_nonrd_sb(AV1_COMP *cpi, ThreadData *td,
     av1_source_content_sb(cpi, x, offset);
   }
 
+  if (sf->part_sf.partition_search_type == ML_BASED_PARTITION) {
+    PC_TREE *const pc_root = av1_alloc_pc_tree_node(sb_size);
+    RD_STATS dummy_rdc;
+    get_estimated_pred(cpi, tile_info, x, mi_row, mi_col);
+    av1_nonrd_pick_partition(cpi, td, tile_data, tp, mi_row, mi_col,
+                             BLOCK_64X64, &dummy_rdc, 1, INT64_MAX, pc_root);
+    av1_free_pc_tree_recursive(pc_root, av1_num_planes(cm), 0, 0);
+    return;
+  }
+
   // Set the partition
   if (sf->part_sf.partition_search_type == FIXED_PARTITION || seg_skip) {
     // set a fixed-size partition
@@ -482,14 +547,13 @@ static AOM_INLINE void encode_nonrd_sb(AV1_COMP *cpi, ThreadData *td,
     av1_set_fixed_partitioning(cpi, tile_info, mi, mi_row, mi_col, bsize);
   } else if (sf->part_sf.partition_search_type == VAR_BASED_PARTITION) {
     // set a variance-based partition
-    av1_set_offsets_without_segment_id(cpi, tile_info, x, mi_row, mi_col,
-                                       sb_size);
+    av1_set_offsets(cpi, tile_info, x, mi_row, mi_col, sb_size);
     av1_choose_var_based_partitioning(cpi, tile_info, td, x, mi_row, mi_col);
   }
   assert(sf->part_sf.partition_search_type == FIXED_PARTITION || seg_skip ||
          cpi->partition_search_skippable_frame ||
          sf->part_sf.partition_search_type == VAR_BASED_PARTITION);
-  td->mb.cb_offset = 0;
+  set_cb_offsets(td->mb.cb_offset, 0, 0);
 
   // Adjust and encode the superblock
   PC_TREE *const pc_root = av1_alloc_pc_tree_node(sb_size);
@@ -969,7 +1033,6 @@ static AOM_INLINE void encode_tiles(AV1_COMP *cpi) {
 static AOM_INLINE void set_rel_frame_dist(
     const AV1_COMMON *const cm, RefFrameDistanceInfo *const ref_frame_dist_info,
     const int ref_frame_flags) {
-  const OrderHintInfo *const order_hint_info = &cm->seq_params.order_hint_info;
   MV_REFERENCE_FRAME ref_frame;
   int min_past_dist = INT32_MAX, min_future_dist = INT32_MAX;
   ref_frame_dist_info->nearest_past_ref = NONE_FRAME;
@@ -978,7 +1041,6 @@ static AOM_INLINE void set_rel_frame_dist(
     ref_frame_dist_info->ref_relative_dist[ref_frame - LAST_FRAME] = 0;
     if (ref_frame_flags & av1_ref_frame_flag_list[ref_frame]) {
       int dist = av1_encoder_get_relative_dist(
-          order_hint_info,
           cm->cur_frame->ref_display_order_hint[ref_frame - LAST_FRAME],
           cm->current_frame.display_order_hint);
       ref_frame_dist_info->ref_relative_dist[ref_frame - LAST_FRAME] = dist;
@@ -1000,14 +1062,12 @@ static INLINE int refs_are_one_sided(const AV1_COMMON *cm) {
   assert(!frame_is_intra_only(cm));
 
   int one_sided_refs = 1;
+  const int cur_display_order_hint = cm->current_frame.display_order_hint;
   for (int ref = LAST_FRAME; ref <= ALTREF_FRAME; ++ref) {
     const RefCntBuffer *const buf = get_ref_frame_buf(cm, ref);
     if (buf == NULL) continue;
-
-    const int ref_display_order_hint = buf->display_order_hint;
-    if (av1_encoder_get_relative_dist(
-            &cm->seq_params.order_hint_info, ref_display_order_hint,
-            (int)cm->current_frame.display_order_hint) > 0) {
+    if (av1_encoder_get_relative_dist(buf->display_order_hint,
+                                      cur_display_order_hint) > 0) {
       one_sided_refs = 0;  // bwd reference
       break;
     }
@@ -1087,17 +1147,15 @@ static AOM_INLINE void setup_prune_ref_frame_mask(AV1_COMP *cpi) {
   } else if (!cpi->sf.rt_sf.use_nonrd_pick_mode &&
              cpi->sf.inter_sf.selective_ref_frame >= 2) {
     AV1_COMMON *const cm = &cpi->common;
-    const OrderHintInfo *const order_hint_info =
-        &cm->seq_params.order_hint_info;
     const int cur_frame_display_order_hint =
         cm->current_frame.display_order_hint;
     unsigned int *ref_display_order_hint =
         cm->cur_frame->ref_display_order_hint;
     const int arf2_dist = av1_encoder_get_relative_dist(
-        order_hint_info, ref_display_order_hint[ALTREF2_FRAME - LAST_FRAME],
+        ref_display_order_hint[ALTREF2_FRAME - LAST_FRAME],
         cur_frame_display_order_hint);
     const int bwd_dist = av1_encoder_get_relative_dist(
-        order_hint_info, ref_display_order_hint[BWDREF_FRAME - LAST_FRAME],
+        ref_display_order_hint[BWDREF_FRAME - LAST_FRAME],
         cur_frame_display_order_hint);
 
     for (int ref_idx = REF_FRAMES; ref_idx < MODE_CTX_REF_FRAMES; ++ref_idx) {
@@ -1112,7 +1170,7 @@ static AOM_INLINE void setup_prune_ref_frame_mask(AV1_COMP *cpi) {
         int ref_dist[2];
         for (int i = 0; i < 2; ++i) {
           ref_dist[i] = av1_encoder_get_relative_dist(
-              order_hint_info, ref_display_order_hint[rf[i] - LAST_FRAME],
+              ref_display_order_hint[rf[i] - LAST_FRAME],
               cur_frame_display_order_hint);
         }
 
@@ -1333,6 +1391,7 @@ static AOM_INLINE void encode_frame_internal(AV1_COMP *cpi) {
   x->txfm_search_info.tx_search_count = 0;
 #endif  // CONFIG_SPEED_STATS
 
+#if !CONFIG_REALTIME_ONLY
 #if CONFIG_COLLECT_COMPONENT_TIMING
   start_timing(cpi, av1_compute_global_motion_time);
 #endif
@@ -1340,6 +1399,7 @@ static AOM_INLINE void encode_frame_internal(AV1_COMP *cpi) {
 #if CONFIG_COLLECT_COMPONENT_TIMING
   end_timing(cpi, av1_compute_global_motion_time);
 #endif
+#endif  // !CONFIG_REALTIME_ONLY
 
 #if CONFIG_COLLECT_COMPONENT_TIMING
   start_timing(cpi, av1_setup_motion_field_time);
@@ -1467,9 +1527,7 @@ static AOM_INLINE void encode_frame_internal(AV1_COMP *cpi) {
     }
   }
 
-  if ((!is_stat_generation_stage(cpi) && av1_use_hash_me(cpi) &&
-       !cpi->sf.rt_sf.use_nonrd_pick_mode) ||
-      hash_table_created) {
+  if (hash_table_created) {
     av1_hash_table_destroy(&intrabc_hash_info->intrabc_hash_table);
   }
 }
@@ -1506,7 +1564,9 @@ void av1_encode_frame(AV1_COMP *cpi) {
   }
 
   av1_setup_frame_buf_refs(cm);
-  enforce_max_ref_frames(cpi, &cpi->ref_frame_flags);
+  enforce_max_ref_frames(cpi, &cpi->ref_frame_flags,
+                         cm->cur_frame->ref_display_order_hint,
+                         cm->current_frame.display_order_hint);
   set_rel_frame_dist(&cpi->common, &cpi->ref_frame_dist_info,
                      cpi->ref_frame_flags);
   av1_setup_frame_sign_bias(cm);

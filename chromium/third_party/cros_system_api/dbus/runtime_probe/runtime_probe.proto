@@ -14,7 +14,7 @@ enum ErrorCode {
   // 0 is the default value of ProbeResult::error. It should never be used.
   RUNTIME_PROBE_ERROR_NOT_SET = 0;
 
-  // Not able to read the ProbeResult as DBus signature indicated.
+  // Not able to read the ProbeRequest as DBus signature indicated.
   RUNTIME_PROBE_ERROR_PROBE_REQUEST_INVALID = 1;
   // Not able to find default probe config in the rootfs image.
   RUNTIME_PROBE_ERROR_DEFAULT_PROBE_CONFIG_NOT_FOUND = 2;
@@ -22,6 +22,8 @@ enum ErrorCode {
   RUNTIME_PROBE_ERROR_PROBE_CONFIG_SYNTAX_ERROR = 3;
   // Assigned probe config contains functions not able to be constructed.
   RUNTIME_PROBE_ERROR_PROBE_CONFIG_INCOMPLETE_PROBE_FUNCTION = 4;
+  // Not able to parse the ProbeResult JSON string as protobuf message.
+  RUNTIME_PROBE_ERROR_PROBE_RESULT_INVALID = 5;
 }
 
 // Request from client that indicates what categories to probe. Category must
@@ -140,19 +142,22 @@ message Storage {
 
     // Below are based on JEDEC Standard No. 84-B51, and kernel MMC driver
     // exposed in sysfs:
+    //   https://chromium.googlesource.com/chromiumos/third_party/kernel/+/v3.18/drivers/mmc/core/mmc.c#71
     //   https://chromium.googlesource.com/chromiumos/third_party/kernel/+/v3.18/include/linux/mmc/card.h#17
     //   https://chromium.googlesource.com/chromiumos/third_party/kernel/+/v3.18/Documentation/mmc/mmc-dev-attrs.txt
 
     // MID: Manufacturer ID, 8 bits.
-    uint32 manfid = 5;
+    uint32 mmc_manfid = 5;
     // PNM: Product name, ASCII characters for 6 bytes.
-    string name = 6;
-    // PRV: Product revision, 8 bits
-    uint32 prv = 7;
-    // PSN: Product serial number, 32 bits
-    uint32 serial = 8;
-    // OID: OEM/Application ID, 8 bits
-    uint32 oemid = 9;
+    string mmc_name = 6;
+    // Hardware/Product Revision, 4 bits. (SD and MMCv1 only)
+    uint32 mmc_hwrev = 15;
+    // PRV: Product revision, 8 bits. (SD and MMCv4 only)
+    uint32 mmc_prv = 7;
+    // PSN: Product serial number, 32 bits.
+    uint32 mmc_serial = 8;
+    // OID: OEM/Application ID, 8 bits.
+    uint32 mmc_oemid = 9;
 
     // The following are fields for NVMe. Every field name comes with
     // prefix "pci_" as NVMe is a PCI device.

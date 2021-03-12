@@ -2,12 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
 import * as FormatterModule from '../formatter/formatter.js';
 import * as Persistence from '../persistence/persistence.js';
+import * as SourceFrame from '../source_frame/source_frame.js';
 import * as UI from '../ui/ui.js';
 import * as Workspace from '../workspace/workspace.js';
 
@@ -21,6 +19,11 @@ export class ScriptFormatterEditorAction {
   constructor() {
     /** @type {!Set<string>} */
     this._pathsToFormatOnLoad = new Set();
+
+    /** @type {!SourcesView} */
+    this._sourcesView;
+    /** @type {!UI.Toolbar.ToolbarButton} */
+    this._button;
   }
 
   /**
@@ -31,7 +34,7 @@ export class ScriptFormatterEditorAction {
     this._updateButton(uiSourceCode);
 
     if (this._isFormatableScript(uiSourceCode) && this._pathsToFormatOnLoad.has(uiSourceCode.url()) &&
-        !FormatterModule.sourceFormatter.hasFormatted(uiSourceCode)) {
+        !FormatterModule.SourceFormatter.SourceFormatter.instance().hasFormatted(uiSourceCode)) {
       this._showFormatted(uiSourceCode);
     }
   }
@@ -46,7 +49,8 @@ export class ScriptFormatterEditorAction {
     if (wasSelected) {
       this._updateButton(null);
     }
-    const original = await FormatterModule.sourceFormatter.discardFormattedUISourceCode(uiSourceCode);
+    const original =
+        await FormatterModule.SourceFormatter.SourceFormatter.instance().discardFormattedUISourceCode(uiSourceCode);
     if (original) {
       this._pathsToFormatOnLoad.delete(original.url());
     }
@@ -124,7 +128,7 @@ export class ScriptFormatterEditorAction {
    */
   toggleFormatScriptSource(event) {
     const uiSourceCode = this._sourcesView.currentUISourceCode();
-    if (!this._isFormatableScript(uiSourceCode)) {
+    if (!uiSourceCode || !this._isFormatableScript(uiSourceCode)) {
       return;
     }
     this._pathsToFormatOnLoad.add(uiSourceCode.url());
@@ -135,13 +139,13 @@ export class ScriptFormatterEditorAction {
    * @param {!Workspace.UISourceCode.UISourceCode} uiSourceCode
    */
   async _showFormatted(uiSourceCode) {
-    const formatData = await FormatterModule.sourceFormatter.format(uiSourceCode);
+    const formatData = await FormatterModule.SourceFormatter.SourceFormatter.instance().format(uiSourceCode);
     if (uiSourceCode !== this._sourcesView.currentUISourceCode()) {
       return;
     }
     const sourceFrame = this._sourcesView.viewForFile(uiSourceCode);
     let start = [0, 0];
-    if (sourceFrame) {
+    if (sourceFrame instanceof SourceFrame.SourceFrame.SourceFrameImpl) {
       const selection = sourceFrame.selection();
       start = formatData.mapping.originalToFormatted(selection.startLine, selection.startColumn);
     }

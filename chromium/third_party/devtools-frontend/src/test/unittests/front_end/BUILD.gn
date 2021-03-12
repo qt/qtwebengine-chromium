@@ -5,6 +5,8 @@
 group("front_end") {
   deps = [
     "../../../front_end/Images",
+    "accessibility",
+    "animation",
     "bindings",
     "browser_sdk",
     "client_variations",
@@ -16,6 +18,7 @@ group("front_end") {
     "formatter_worker",
     "inline_editor",
     "issues",
+    "linear_memory_inspector",
     "media",
     "perf_ui",
     "persistence",
@@ -26,6 +29,9 @@ group("front_end") {
     "sources",
     "test_setup",
     "text_utils",
+    "timeline",
+    "timeline_model",
     "ui",
+    "ui/components",
   ]
 }

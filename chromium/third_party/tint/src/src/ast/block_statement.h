@@ -46,8 +46,8 @@ class BlockStatement : public Statement {
   /// @param index the index to insert at
   /// @param stmt the statement to insert
   void insert(size_t index, std::unique_ptr<ast::Statement> stmt) {
-    statements_.insert(statements_.begin() + static_cast<long>(index),
-                       std::move(stmt));
+    auto offset = static_cast<decltype(statements_)::difference_type>(index);
+    statements_.insert(statements_.begin() + offset, std::move(stmt));
   }
 
   /// @returns true if the block is empty

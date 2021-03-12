@@ -210,7 +210,7 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
     this._asyncColorByInteractionPhase = new Map();
     /** @type {!Array<!{title: string, model: !SDK.TracingModel.TracingModel}>} */
     this._extensionInfo = [];
-    /** @type {!Map<!SDK.FilmStripModel.Frame, ?Image>} */
+    /** @type {!Map<!SDK.FilmStripModel.Frame, ?HTMLImageElement>} */
     this._screenshotImageCache = new Map();
   }
 
@@ -872,7 +872,9 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
     }
 
     const element = createElement('div');
-    const root = UI.Utils.createShadowRootWithCoreStyles(element, 'timeline/timelineFlamechartPopover.css');
+    const root = UI.Utils.createShadowRootWithCoreStyles(
+        element,
+        {cssFile: 'timeline/timelineFlamechartPopover.css', enableLegacyPatching: true, delegatesFocus: undefined});
     const contents = root.createChild('div', 'timeline-flamechart-popover');
     contents.createChild('span', 'timeline-info-time').textContent = time;
     contents.createChild('span', 'timeline-info-title').textContent = title;

@@ -20,12 +20,11 @@
 
 #include "src/ast/array_accessor_expression.h"
 #include "src/ast/constructor_expression.h"
-#include "src/ast/entry_point.h"
 #include "src/ast/identifier_expression.h"
-#include "src/ast/import.h"
 #include "src/ast/module.h"
 #include "src/ast/scalar_constructor_expression.h"
-#include "src/ast/type/alias_type.h"
+#include "src/ast/type/storage_texture_type.h"
+#include "src/ast/type/struct_type.h"
 #include "src/ast/type/type.h"
 #include "src/ast/type_constructor_expression.h"
 #include "src/ast/variable.h"
@@ -47,18 +46,23 @@ class GeneratorImpl : public TextGenerator {
   /// @returns true on successful generation; false otherwise
   bool Generate(const ast::Module& module);
 
-  /// Handles generating an alias
-  /// @param alias the alias to generate
-  /// @returns true if the alias was emitted
-  bool EmitAliasType(const ast::type::AliasType* alias);
+  /// Generates a single entry point
+  /// @param module the module to generate from
+  /// @param stage the pipeline stage
+  /// @param name the entry point name
+  /// @returns true on successful generation; false otherwise
+  bool GenerateEntryPoint(const ast::Module& module,
+                          ast::PipelineStage stage,
+                          const std::string& name);
+
+  /// Handles generating a constructed type
+  /// @param ty the constructed to generate
+  /// @returns true if the constructed was emitted
+  bool EmitConstructedType(const ast::type::Type* ty);
   /// Handles an array accessor expression
   /// @param expr the expression to emit
   /// @returns true if the array accessor was emitted
   bool EmitArrayAccessor(ast::ArrayAccessorExpression* expr);
-  /// Handles generating an as expression
-  /// @param expr the as expression
-  /// @returns true if the as was emitted
-  bool EmitAs(ast::AsExpression* expr);
   /// Handles an assignment statement
   /// @param stmt the statement to emit
   /// @returns true if the statement was emitted successfully
@@ -67,6 +71,10 @@ class GeneratorImpl : public TextGenerator {
   /// @param expr the binary expression
   /// @returns true if the expression was emitted, false otherwise
   bool EmitBinary(ast::BinaryExpression* expr);
+  /// Handles generating a bitcast expression
+  /// @param expr the bitcast expression
+  /// @returns true if the bitcast was emitted
+  bool EmitBitcast(ast::BitcastExpression* expr);
   /// Handles a block statement
   /// @param stmt the statement to emit
   /// @returns true if the statement was emitted successfully
@@ -91,10 +99,6 @@ class GeneratorImpl : public TextGenerator {
   /// @param stmt the statement
   /// @returns true if the statment was emitted successfully
   bool EmitCase(ast::CaseStatement* stmt);
-  /// Handles generating a cast expression
-  /// @param expr the cast expression
-  /// @returns true if the cast was emitted
-  bool EmitCast(ast::CastExpression* expr);
   /// Handles generating a scalar constructor
   /// @param expr the scalar constructor expression
   /// @returns true if the scalar constructor is emitted
@@ -107,10 +111,6 @@ class GeneratorImpl : public TextGenerator {
   /// @param stmt the statement to emit
   /// @returns true if the statement was emitted
   bool EmitElse(ast::ElseStatement* stmt);
-  /// Handles generating an entry_point command
-  /// @param ep the entry point
-  /// @returns true if the entry point was emitted
-  bool EmitEntryPoint(const ast::EntryPoint* ep);
   /// Handles generate an Expression
   /// @param expr the expression
   /// @returns true if the expression was emitted
@@ -131,10 +131,6 @@ class GeneratorImpl : public TextGenerator {
   /// @param stmt the statement to emit
   /// @returns true if the statement was successfully emitted
   bool EmitIf(ast::IfStatement* stmt);
-  /// Handles generating an import command
-  /// @param import the import to generate
-  /// @returns true if the import was emitted
-  bool EmitImport(const ast::Import* import);
   /// Handles generating constructor expressions
   /// @param expr the constructor expression
   /// @returns true if the expression was emitted
@@ -171,6 +167,14 @@ class GeneratorImpl : public TextGenerator {
   /// @param type the type to generate
   /// @returns true if the type is emitted
   bool EmitType(ast::type::Type* type);
+  /// Handles generating a struct declaration
+  /// @param str the struct
+  /// @returns true if the struct is emitted
+  bool EmitStructType(const ast::type::StructType* str);
+  /// Handles emitting an image format
+  /// @param fmt the format to generate
+  /// @returns true if the format is emitted
+  bool EmitImageFormat(const ast::type::ImageFormat fmt);
   /// Handles emitting a type constructor
   /// @param expr the type constructor expression
   /// @returns true if the constructor is emitted

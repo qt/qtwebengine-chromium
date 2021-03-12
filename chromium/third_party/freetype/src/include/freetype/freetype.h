@@ -33,6 +33,34 @@ FT_BEGIN_HEADER
   /**************************************************************************
    *
    * @section:
+   *   preamble
+   *
+   * @title:
+   *   Preamble
+   *
+   * @abstract:
+   *   What FreeType is and isn't
+   *
+   * @description:
+   *   FreeType is a library that provides access to glyphs in font files.  It
+   *   scales the glyph images and their metrics to a requested size, and it
+   *   rasterizes the glyph images to produce pixel or subpixel alpha coverage
+   *   bitmaps.
+   *
+   *   Note that FreeType is _not_ a text layout engine.  You have to use
+   *   higher-level libraries like HarfBuzz, Pango, or ICU for that.
+   *
+   *   Note also that FreeType does _not_ perform alpha blending or
+   *   compositing the resulting bitmaps or pixmaps by itself.  Use your
+   *   favourite graphics library (for example, Cairo or Skia) to further
+   *   process FreeType's output.
+   *
+   */
+
+
+  /**************************************************************************
+   *
+   * @section:
    *   header_inclusion
    *
    * @title:
@@ -4767,7 +4795,7 @@ FT_BEGIN_HEADER
    */
 #define FREETYPE_MAJOR  2
 #define FREETYPE_MINOR  10
-#define FREETYPE_PATCH  2
+#define FREETYPE_PATCH  4
 
 
   /**************************************************************************

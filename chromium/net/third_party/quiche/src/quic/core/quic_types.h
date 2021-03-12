@@ -602,8 +602,8 @@ QUIC_EXPORT_PRIVATE std::string QuicLongHeaderTypeToString(
     QuicLongHeaderType type);
 
 enum QuicPacketHeaderTypeFlags : uint8_t {
-  // Bit 2: Reserved for experimentation for short header.
-  FLAGS_EXPERIMENTATION_BIT = 1 << 2,
+  // Bit 2: Key phase bit for IETF QUIC short header packets.
+  FLAGS_KEY_PHASE_BIT = 1 << 2,
   // Bit 3: Google QUIC Demultiplexing bit, the short header always sets this
   // bit to 0, allowing to distinguish Google QUIC packets from short header
   // packets.
@@ -797,6 +797,22 @@ struct QUIC_NO_EXPORT QuicOwnedPacketBuffer : public QuicPacketBuffer {
     }
   }
 };
+
+// These values must remain stable as they are uploaded to UMA histograms.
+enum class KeyUpdateReason {
+  kInvalid = 0,
+  kRemote = 1,
+  kLocalForTests = 2,
+  kLocalForInteropRunner = 3,
+  kLocalAeadConfidentialityLimit = 4,
+  kLocalKeyUpdateLimitOverride = 5,
+  kMaxValue = kLocalKeyUpdateLimitOverride,
+};
+
+QUIC_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+                                             const KeyUpdateReason reason);
+
+QUIC_EXPORT_PRIVATE std::string KeyUpdateReasonString(KeyUpdateReason reason);
 
 }  // namespace quic
 

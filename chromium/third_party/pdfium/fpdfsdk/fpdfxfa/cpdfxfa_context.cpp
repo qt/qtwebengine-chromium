@@ -25,6 +25,7 @@
 #include "fxjs/cjs_runtime.h"
 #include "fxjs/ijs_runtime.h"
 #include "public/fpdf_formfill.h"
+#include "third_party/base/notreached.h"
 #include "third_party/base/stl_util.h"
 #include "v8/include/cppgc/allocation.h"
 #include "xfa/fgas/font/cfgas_gemodule.h"
@@ -374,7 +375,7 @@ bool CPDFXFA_Context::PutRequestURL(const WideString& wsURL,
          m_pFormFillEnv->PutRequestURL(wsURL, wsData, wsEncode);
 }
 
-TimerHandlerIface* CPDFXFA_Context::GetTimerHandler() const {
+CFX_Timer::HandlerIface* CPDFXFA_Context::GetTimerHandler() const {
   return m_pFormFillEnv ? m_pFormFillEnv->GetTimerHandler() : nullptr;
 }
 

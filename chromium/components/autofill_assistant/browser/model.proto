@@ -198,6 +198,13 @@ enum ProcessedActionStatusProto {
   // generate more specific selectors. See SelectorProto::ProximityFilter.
   TOO_MANY_CANDIDATES = 25;
 
+  // Evaluating the element did report an unexpected mismatch in either value
+  // or text.
+  ELEMENT_MISMATCH = 26;
+
+  // Another element covered the targeted element, when trying to click.
+  ELEMENT_NOT_ON_TOP = 27;
+
   reserved 15, 23;
 }
 
@@ -251,20 +258,29 @@ enum ChipType {
   // HIGHLIGHTED_ACTION.
   DONE_ACTION = 6;
 
+  // A "Send feedback" chip, which will show the feedback form when clicked.
+  //
+  // Note that when this is used inside a script, we will continue the script
+  // normally once the user has clicked the chip.
+  FEEDBACK_ACTION = 7;
+
   reserved 2;
 }
 
 enum ChipIcon {
   NO_ICON = 0;
 
-  // https://icons.googleplex.com/#icon=ic_clear
+  // https://icons.googleplex.com/#icon=clear
   ICON_CLEAR = 1;
 
-  // https://icons.googleplex.com/#icon=ic_done
+  // https://icons.googleplex.com/#icon=done
   ICON_DONE = 2;
 
-  // https://icons.googleplex.com/#icon=ic_refresh
+  // https://icons.googleplex.com/#icon=refresh
   ICON_REFRESH = 3;
+
+  // https://icons.googleplex.com/#icon=more_vert
+  ICON_OVERFLOW = 4;
 }
 
 // Defines a mapping to an Android Q direct action.

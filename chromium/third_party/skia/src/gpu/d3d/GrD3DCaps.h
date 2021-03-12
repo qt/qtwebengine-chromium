@@ -11,7 +11,7 @@
 #include "src/gpu/GrCaps.h"
 
 #include "include/gpu/d3d/GrD3DTypes.h"
-#include "src/gpu/d3d/GrD3DStencilAttachment.h"
+#include "src/gpu/d3d/GrD3DAttachment.h"
 
 class GrShaderCaps;
 
@@ -20,8 +20,6 @@ class GrShaderCaps;
  */
 class GrD3DCaps : public GrCaps {
 public:
-    typedef GrD3DStencilAttachment::Format StencilFormat;
-
     /**
      * Creates a GrD3DCaps that is set such that nothing is supported. The init function should
      * be called to fill out the caps.
@@ -46,9 +44,6 @@ public:
     int maxRenderTargetSampleCount(const GrBackendFormat&) const override;
     int maxRenderTargetSampleCount(DXGI_FORMAT) const;
 
-    size_t bytesPerPixel(const GrBackendFormat&) const override;
-    size_t bytesPerPixel(DXGI_FORMAT) const;
-
     GrColorType getFormatColorType(DXGI_FORMAT) const;
 
     SupportedWrite supportedWritePixelsColorType(GrColorType surfaceColorType,
@@ -60,7 +55,7 @@ public:
     /**
      * Returns both a supported and most preferred stencil format to use in draws.
      */
-    const StencilFormat& preferredStencilFormat() const {
+    DXGI_FORMAT preferredStencilFormat() const {
         return fPreferredStencilFormat;
     }
     static int GetStencilFormatTotalBitCount(DXGI_FORMAT format) {
@@ -183,8 +178,6 @@ private:
         uint16_t fFlags = 0;
 
         SkTDArray<int> fColorSampleCounts;
-        // This value is only valid for regular formats. Compressed formats will be 0.
-        size_t fBytesPerPixel = 0;
 
         // This GrColorType represents how the actually GPU format lays out its memory. This is used
         // for uploading data to backend textures to make sure we've arranged the memory in the
@@ -206,7 +199,7 @@ private:
     int fMaxPerStageShaderResourceViews;
     int fMaxPerStageUnorderedAccessViews;
 
-    StencilFormat fPreferredStencilFormat;
+    DXGI_FORMAT fPreferredStencilFormat;
 
     using INHERITED = GrCaps;
 };

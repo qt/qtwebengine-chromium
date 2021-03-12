@@ -15,6 +15,7 @@
 #ifndef SRC_WRITER_WGSL_GENERATOR_H_
 #define SRC_WRITER_WGSL_GENERATOR_H_
 
+#include <memory>
 #include <string>
 
 #include "src/writer/text.h"
@@ -32,9 +33,19 @@ class Generator : public Text {
   explicit Generator(ast::Module module);
   ~Generator() override;
 
+  /// Resets the generator
+  void Reset() override;
+
   /// Generates the result data
   /// @returns true on successful generation; false otherwise
   bool Generate() override;
+
+  /// Converts a single entry point
+  /// @param stage the pipeline stage
+  /// @param name the entry point name
+  /// @returns true on succes; false on failure
+  bool GenerateEntryPoint(ast::PipelineStage stage,
+                          const std::string& name) override;
 
   /// @returns the result data
   std::string result() const override;
@@ -43,7 +54,7 @@ class Generator : public Text {
   std::string error() const;
 
  private:
-  GeneratorImpl impl_;
+  std::unique_ptr<GeneratorImpl> impl_;
 };
 
 }  // namespace wgsl

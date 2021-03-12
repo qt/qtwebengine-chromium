@@ -383,6 +383,53 @@
                             }
                         }
                     ]
+                },
+                {
+                    "name": "queryAXTree",
+                    "description": "Query a DOM node's accessibility subtree for accessible name and role.\nThis command computes the name and role for all nodes in the subtree, including those that are\nignored for accessibility, and returns those that mactch the specified name and role. If no DOM\nnode is specified, or the DOM node does not exist, the command returns an error. If neither\n`accessibleName` or `role` is specified, it returns all the accessibility nodes in the subtree.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "nodeId",
+                            "description": "Identifier of the node for the root to query.",
+                            "optional": true,
+                            "$ref": "DOM.NodeId"
+                        },
+                        {
+                            "name": "backendNodeId",
+                            "description": "Identifier of the backend node for the root to query.",
+                            "optional": true,
+                            "$ref": "DOM.BackendNodeId"
+                        },
+                        {
+                            "name": "objectId",
+                            "description": "JavaScript object id of the node wrapper for the root to query.",
+                            "optional": true,
+                            "$ref": "Runtime.RemoteObjectId"
+                        },
+                        {
+                            "name": "accessibleName",
+                            "description": "Find nodes with this computed name.",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "role",
+                            "description": "Find nodes with this computed role.",
+                            "optional": true,
+                            "type": "string"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "nodes",
+                            "description": "A list of `Accessibility.AXNode` matching the specified attributes,\nincluding nodes that are ignored for accessibility.",
+                            "type": "array",
+                            "items": {
+                                "$ref": "AXNode"
+                            }
+                        }
+                    ]
                 }
             ]
         },
@@ -1241,6 +1288,10 @@
                             "type": "string"
                         },
                         {
+                            "name": "isReportOnly",
+                            "type": "boolean"
+                        },
+                        {
                             "name": "contentSecurityPolicyViolationType",
                             "$ref": "ContentSecurityPolicyViolationType"
                         },
@@ -1632,6 +1683,7 @@
                         "protectedMediaIdentifier",
                         "sensors",
                         "videoCapture",
+                        "videoCapturePanTiltZoom",
                         "idleDetection",
                         "wakeLockScreen",
                         "wakeLockSystem"
@@ -1675,7 +1727,23 @@
                             "description": "For \"clipboard\" permission, may specify allowWithoutSanitization.",
                             "optional": true,
                             "type": "boolean"
+                        },
+                        {
+                            "name": "panTiltZoom",
+                            "description": "For \"camera\" permission, may specify panTiltZoom.",
+                            "optional": true,
+                            "type": "boolean"
                         }
+                    ]
+                },
+                {
+                    "id": "BrowserCommandId",
+                    "description": "Browser command ids used by executeBrowserCommand.",
+                    "experimental": true,
+                    "type": "string",
+                    "enum": [
+                        "openTabSearch",
+                        "closeTabSearch"
                     ]
                 },
                 {
@@ -2022,6 +2090,17 @@
                             "description": "Png encoded image.",
                             "optional": true,
                             "type": "binary"
+                        }
+                    ]
+                },
+                {
+                    "name": "executeBrowserCommand",
+                    "description": "Invoke custom browser commands used by telemetry.",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "commandId",
+                            "$ref": "BrowserCommandId"
                         }
                     ]
                 }
@@ -3700,6 +3779,7 @@
                         "marker",
                         "backdrop",
                         "selection",
+                        "target-text",
                         "first-line-inherited",
                         "scrollbar",
                         "scrollbar-thumb",
@@ -6765,6 +6845,16 @@
                             "type": "boolean"
                         }
                     ]
+                },
+                {
+                    "id": "DisabledImageType",
+                    "description": "Enum of image types that can be disabled.",
+                    "experimental": true,
+                    "type": "string",
+                    "enum": [
+                        "avif",
+                        "webp"
+                    ]
                 }
             ],
             "commands": [
@@ -7181,6 +7271,20 @@
                             "name": "height",
                             "description": "Frame height (DIP).",
                             "type": "integer"
+                        }
+                    ]
+                },
+                {
+                    "name": "setDisabledImageTypes",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "imageTypes",
+                            "description": "Image types to disable.",
+                            "type": "array",
+                            "items": {
+                                "$ref": "DisabledImageType"
+                            }
                         }
                     ]
                 },
@@ -7872,6 +7976,34 @@
                             "type": "number"
                         },
                         {
+                            "name": "tangentialPressure",
+                            "description": "The normalized tangential pressure, which has a range of [-1,1] (default: 0).",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "number"
+                        },
+                        {
+                            "name": "tiltX",
+                            "description": "The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0)",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "tiltY",
+                            "description": "The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "twist",
+                            "description": "The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
                             "name": "id",
                             "description": "Identifier used to track touch sources between events, must be unique within an event.",
                             "optional": true,
@@ -8077,6 +8209,41 @@
                         {
                             "name": "clickCount",
                             "description": "Number of times the mouse button was clicked (default: 0).",
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "force",
+                            "description": "The normalized pressure, which has a range of [0,1] (default: 0).",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "number"
+                        },
+                        {
+                            "name": "tangentialPressure",
+                            "description": "The normalized tangential pressure, which has a range of [-1,1] (default: 0).",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "number"
+                        },
+                        {
+                            "name": "tiltX",
+                            "description": "The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0).",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "tiltY",
+                            "description": "The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "twist",
+                            "description": "The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).",
+                            "experimental": true,
                             "optional": true,
                             "type": "integer"
                         },
@@ -9498,6 +9665,13 @@
                             "description": "Whether is loaded via link preload.",
                             "optional": true,
                             "type": "boolean"
+                        },
+                        {
+                            "name": "trustTokenParams",
+                            "description": "Set for requests when the TrustToken API is used. Contains the parameters\npassed by the developer (e.g. via \"fetch\") as understood by the backend.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "TrustTokenParams"
                         }
                     ]
                 },
@@ -9659,6 +9833,52 @@
                     ]
                 },
                 {
+                    "id": "CorsError",
+                    "description": "The reason why request was blocked.",
+                    "type": "string",
+                    "enum": [
+                        "DisallowedByMode",
+                        "InvalidResponse",
+                        "WildcardOriginNotAllowed",
+                        "MissingAllowOriginHeader",
+                        "MultipleAllowOriginValues",
+                        "InvalidAllowOriginValue",
+                        "AllowOriginMismatch",
+                        "InvalidAllowCredentials",
+                        "CorsDisabledScheme",
+                        "PreflightInvalidStatus",
+                        "PreflightDisallowedRedirect",
+                        "PreflightWildcardOriginNotAllowed",
+                        "PreflightMissingAllowOriginHeader",
+                        "PreflightMultipleAllowOriginValues",
+                        "PreflightInvalidAllowOriginValue",
+                        "PreflightAllowOriginMismatch",
+                        "PreflightInvalidAllowCredentials",
+                        "PreflightMissingAllowExternal",
+                        "PreflightInvalidAllowExternal",
+                        "InvalidAllowMethodsPreflightResponse",
+                        "InvalidAllowHeadersPreflightResponse",
+                        "MethodDisallowedByPreflightResponse",
+                        "HeaderDisallowedByPreflightResponse",
+                        "RedirectContainsCredentials",
+                        "InsecurePrivateNetwork"
+                    ]
+                },
+                {
+                    "id": "CorsErrorStatus",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "corsError",
+                            "$ref": "CorsError"
+                        },
+                        {
+                            "name": "failedParameter",
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
                     "id": "ServiceWorkerResponseSource",
                     "description": "Source of serviceworker response.",
                     "type": "string",
@@ -9667,6 +9887,46 @@
                         "http-cache",
                         "fallback-code",
                         "network"
+                    ]
+                },
+                {
+                    "id": "TrustTokenParams",
+                    "description": "Determines what type of Trust Token operation is executed and\ndepending on the type, some additional parameters. The values\nare specified in third_party/blink/renderer/core/fetch/trust_token.idl.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "type",
+                            "$ref": "TrustTokenOperationType"
+                        },
+                        {
+                            "name": "refreshPolicy",
+                            "description": "Only set for \"token-redemption\" type and determine whether\nto request a fresh SRR or use a still valid cached SRR.",
+                            "type": "string",
+                            "enum": [
+                                "UseCached",
+                                "Refresh"
+                            ]
+                        },
+                        {
+                            "name": "issuers",
+                            "description": "Origins of issuers from whom to request tokens or redemption\nrecords.",
+                            "optional": true,
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    ]
+                },
+                {
+                    "id": "TrustTokenOperationType",
+                    "experimental": true,
+                    "type": "string",
+                    "enum": [
+                        "Issuance",
+                        "Redemption",
+                        "Signing"
                     ]
                 },
                 {
@@ -9941,6 +10201,12 @@
                             "description": "Initiator line number, set for Parser type or for Script type (when script is importing\nmodule) (0-based).",
                             "optional": true,
                             "type": "number"
+                        },
+                        {
+                            "name": "columnNumber",
+                            "description": "Initiator column number, set for Parser type or for Script type (when script is importing\nmodule) (0-based).",
+                            "optional": true,
+                            "type": "number"
                         }
                     ]
                 },
@@ -10025,7 +10291,10 @@
                         "OverwriteSecure",
                         "InvalidDomain",
                         "InvalidPrefix",
-                        "UnknownError"
+                        "UnknownError",
+                        "SchemefulSameSiteStrict",
+                        "SchemefulSameSiteLax",
+                        "SchemefulSameSiteUnspecifiedTreatedAsLax"
                     ]
                 },
                 {
@@ -10042,7 +10311,10 @@
                         "SameSiteUnspecifiedTreatedAsLax",
                         "SameSiteNoneInsecure",
                         "UserPreferences",
-                        "UnknownError"
+                        "UnknownError",
+                        "SchemefulSameSiteStrict",
+                        "SchemefulSameSiteLax",
+                        "SchemefulSameSiteUnspecifiedTreatedAsLax"
                     ]
                 },
                 {
@@ -10503,10 +10775,12 @@
                     "properties": [
                         {
                             "name": "coop",
+                            "optional": true,
                             "$ref": "CrossOriginOpenerPolicyStatus"
                         },
                         {
                             "name": "coep",
+                            "optional": true,
                             "$ref": "CrossOriginEmbedderPolicyStatus"
                         }
                     ]
@@ -11056,7 +11330,8 @@
                     "returns": [
                         {
                             "name": "success",
-                            "description": "True if successfully set cookie.",
+                            "description": "Always set to true. If an error occurs, the response indicates protocol error.",
+                            "deprecated": true,
                             "type": "boolean"
                         }
                     ]
@@ -11104,13 +11379,13 @@
                     ]
                 },
                 {
-                    "name": "setAttachDebugHeader",
-                    "description": "Specifies whether to sned a debug header to all outgoing requests.",
+                    "name": "setAttachDebugStack",
+                    "description": "Specifies whether to attach a page script stack id in requests",
                     "experimental": true,
                     "parameters": [
                         {
                             "name": "enabled",
-                            "description": "Whether to send a debug header.",
+                            "description": "Whether to attach a page script stack for debugging purpose.",
                             "type": "boolean"
                         }
                     ]
@@ -11303,6 +11578,12 @@
                             "description": "The reason why loading was blocked, if any.",
                             "optional": true,
                             "$ref": "BlockedReason"
+                        },
+                        {
+                            "name": "corsErrorStatus",
+                            "description": "The reason why loading was blocked by CORS, if any.",
+                            "optional": true,
+                            "$ref": "CorsErrorStatus"
                         }
                     ]
                 },
@@ -11922,6 +12203,54 @@
                     ]
                 },
                 {
+                    "id": "FlexContainerHighlightConfig",
+                    "description": "Configuration data for the highlighting of Flex container elements.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "containerBorder",
+                            "description": "The style of the container border",
+                            "optional": true,
+                            "$ref": "LineStyle"
+                        },
+                        {
+                            "name": "lineSeparator",
+                            "description": "The style of the separator between lines",
+                            "optional": true,
+                            "$ref": "LineStyle"
+                        },
+                        {
+                            "name": "itemSeparator",
+                            "description": "The style of the separator between items",
+                            "optional": true,
+                            "$ref": "LineStyle"
+                        }
+                    ]
+                },
+                {
+                    "id": "LineStyle",
+                    "description": "Style information for drawing a line.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "color",
+                            "description": "The color of the line (default: transparent)",
+                            "optional": true,
+                            "$ref": "DOM.RGBA"
+                        },
+                        {
+                            "name": "pattern",
+                            "description": "The line pattern (default: solid)",
+                            "optional": true,
+                            "type": "string",
+                            "enum": [
+                                "dashed",
+                                "dotted"
+                            ]
+                        }
+                    ]
+                },
+                {
                     "id": "HighlightConfig",
                     "description": "Configuration data for the highlighting of page elements.",
                     "type": "object",
@@ -12015,6 +12344,12 @@
                             "description": "The grid layout highlight configuration (default: all transparent).",
                             "optional": true,
                             "$ref": "GridHighlightConfig"
+                        },
+                        {
+                            "name": "flexContainerHighlightConfig",
+                            "description": "The flex container highlight configuration (default: all transparent).",
+                            "optional": true,
+                            "$ref": "FlexContainerHighlightConfig"
                         }
                     ]
                 },
@@ -12555,6 +12890,17 @@
                     ]
                 },
                 {
+                    "id": "GatedAPIFeatures",
+                    "experimental": true,
+                    "type": "string",
+                    "enum": [
+                        "SharedArrayBuffers",
+                        "SharedArrayBuffersTransferAllowed",
+                        "PerformanceMeasureMemory",
+                        "PerformanceProfile"
+                    ]
+                },
+                {
                     "id": "Frame",
                     "description": "Information about the Frame on the page.",
                     "type": "object",
@@ -12634,6 +12980,15 @@
                             "description": "Indicates whether this is a cross origin isolated context.",
                             "experimental": true,
                             "$ref": "CrossOriginIsolatedContextType"
+                        },
+                        {
+                            "name": "gatedAPIFeatures",
+                            "description": "Indicated which gated APIs / features are available.",
+                            "experimental": true,
+                            "type": "array",
+                            "items": {
+                                "$ref": "GatedAPIFeatures"
+                            }
                         }
                     ]
                 },
@@ -15574,12 +15929,35 @@
                             "type": "number"
                         },
                         {
+                            "name": "overrideActive",
+                            "description": "Whether or not the origin has an active storage quota override",
+                            "type": "boolean"
+                        },
+                        {
                             "name": "usageBreakdown",
                             "description": "Storage usage per type (bytes).",
                             "type": "array",
                             "items": {
                                 "$ref": "UsageForType"
                             }
+                        }
+                    ]
+                },
+                {
+                    "name": "overrideQuotaForOrigin",
+                    "description": "Override quota for the specified origin",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "origin",
+                            "description": "Security origin.",
+                            "type": "string"
+                        },
+                        {
+                            "name": "quotaSize",
+                            "description": "The quota size (in bytes) to override the original quota with.\nIf this is called multiple times, the overriden quota will be equal to\nthe quotaSize provided in the final call. If this is called without\nspecifying a quotaSize, the quota will be reset to the default value for\nthe specified origin. If this is called multiple times with different\norigins, the override will be maintained for each origin until it is\ndisabled (called without a quotaSize).",
+                            "optional": true,
+                            "type": "number"
                         }
                     ]
                 },
@@ -16030,9 +16408,16 @@
                         },
                         {
                             "name": "canAccessOpener",
-                            "description": "Whether the opened window has access to the originating window.",
+                            "description": "Whether the target has access to the originating window.",
                             "experimental": true,
                             "type": "boolean"
+                        },
+                        {
+                            "name": "openerFrameId",
+                            "description": "Frame id of originating window (is only set if target has an opener).",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "Page.FrameId"
                         },
                         {
                             "name": "browserContextId",
@@ -16116,6 +16501,8 @@
                     "returns": [
                         {
                             "name": "success",
+                            "description": "Always set to true. If an error occurs, the response indicates protocol error.",
+                            "deprecated": true,
                             "type": "boolean"
                         }
                     ]
@@ -16634,6 +17021,16 @@
                         "none",
                         "gzip"
                     ]
+                },
+                {
+                    "id": "MemoryDumpLevelOfDetail",
+                    "description": "Details exposed when memory request explicitly declared.\nKeep consistent with memory_dump_request_args.h and\nmemory_instrumentation.mojom",
+                    "type": "string",
+                    "enum": [
+                        "background",
+                        "light",
+                        "detailed"
+                    ]
                 }
             ],
             "commands": [
@@ -16675,6 +17072,12 @@
                             "description": "Enables more deterministic results by forcing garbage collection",
                             "optional": true,
                             "type": "boolean"
+                        },
+                        {
+                            "name": "levelOfDetail",
+                            "description": "Specifies level of details in memory dump. Defaults to \"detailed\".",
+                            "optional": true,
+                            "$ref": "MemoryDumpLevelOfDetail"
                         }
                     ],
                     "returns": [
@@ -17684,6 +18087,14 @@
                     ]
                 },
                 {
+                    "id": "Ctap2Version",
+                    "type": "string",
+                    "enum": [
+                        "ctap2_0",
+                        "ctap2_1"
+                    ]
+                },
+                {
                     "id": "AuthenticatorTransport",
                     "type": "string",
                     "enum": [
@@ -17703,6 +18114,12 @@
                             "$ref": "AuthenticatorProtocol"
                         },
                         {
+                            "name": "ctap2Version",
+                            "description": "Defaults to ctap2_0. Ignored if |protocol| == u2f.",
+                            "optional": true,
+                            "$ref": "Ctap2Version"
+                        },
+                        {
                             "name": "transport",
                             "$ref": "AuthenticatorTransport"
                         },
@@ -17715,6 +18132,12 @@
                         {
                             "name": "hasUserVerification",
                             "description": "Defaults to false.",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "hasLargeBlob",
+                            "description": "If set to true, the authenticator will support the largeBlob extension.\nhttps://w3c.github.io/webauthn#largeBlob\nDefaults to false.",
                             "optional": true,
                             "type": "boolean"
                         },
@@ -17765,6 +18188,12 @@
                             "name": "signCount",
                             "description": "Signature counter. This is incremented by one for each successful\nassertion.\nSee https://w3c.github.io/webauthn/#signature-counter",
                             "type": "integer"
+                        },
+                        {
+                            "name": "largeBlob",
+                            "description": "The large blob associated with the credential.\nSee https://w3c.github.io/webauthn/#sctn-large-blob-extension",
+                            "optional": true,
+                            "type": "binary"
                         }
                     ]
                 }
@@ -21449,7 +21878,7 @@
                 },
                 {
                     "name": "addBinding",
-                    "description": "If executionContextId is empty, adds binding with the given name on the\nglobal objects of all inspected contexts, including those created later,\nbindings survive reloads.\nIf executionContextId is specified, adds binding only on global object of\ngiven execution context.\nBinding function takes exactly one argument, this argument should be string,\nin case of any other input, function throws an exception.\nEach binding function call produces Runtime.bindingCalled notification.",
+                    "description": "If executionContextId is empty, adds binding with the given name on the\nglobal objects of all inspected contexts, including those created later,\nbindings survive reloads.\nBinding function takes exactly one argument, this argument should be string,\nin case of any other input, function throws an exception.\nEach binding function call produces Runtime.bindingCalled notification.",
                     "experimental": true,
                     "parameters": [
                         {
@@ -21458,8 +21887,16 @@
                         },
                         {
                             "name": "executionContextId",
+                            "description": "If specified, the binding would only be exposed to the specified\nexecution context. If omitted and `executionContextName` is not set,\nthe binding is exposed to all execution contexts of the target.\nThis parameter is mutually exclusive with `executionContextName`.",
                             "optional": true,
                             "$ref": "ExecutionContextId"
+                        },
+                        {
+                            "name": "executionContextName",
+                            "description": "If specified, the binding is exposed to the executionContext with\nmatching name, even for contexts created after the binding is added.\nSee also `ExecutionContext.name` and `worldName` parameter to\n`Page.addScriptToEvaluateOnNewDocument`.\nThis parameter is mutually exclusive with `executionContextId`.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "string"
                         }
                     ]
                 },

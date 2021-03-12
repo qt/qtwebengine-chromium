@@ -146,6 +146,7 @@ bool GrVkPipelineState::setAndBindTextures(GrVkGpu* gpu,
             const auto& samplerState = samplerBindings[0].fState;
             const GrVkDescriptorSet* descriptorSet = texture->cachedSingleDescSet(samplerState);
             if (descriptorSet) {
+                commandBuffer->addGrSurface(sk_ref_sp<const GrSurface>(texture));
                 commandBuffer->addResource(texture->textureView());
                 commandBuffer->addResource(texture->resource());
                 commandBuffer->addRecycledResource(descriptorSet);
@@ -177,7 +178,7 @@ bool GrVkPipelineState::setAndBindTextures(GrVkGpu* gpu,
 
             VkDescriptorImageInfo imageInfo;
             memset(&imageInfo, 0, sizeof(VkDescriptorImageInfo));
-            imageInfo.sampler = sampler->sampler();
+            imageInfo.sampler = fImmutableSamplers[i] ? VK_NULL_HANDLE : sampler->sampler();
             imageInfo.imageView = textureView->imageView();
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -219,22 +220,19 @@ bool GrVkPipelineState::setAndBindTextures(GrVkGpu* gpu,
 
 bool GrVkPipelineState::setAndBindInputAttachment(GrVkGpu* gpu,
                                                   GrVkRenderTarget* renderTarget,
-                                                  const GrPipeline& pipeline,
                                                   GrVkCommandBuffer* commandBuffer) {
-    if (pipeline.usesInputAttachment()) {
-        SkASSERT(renderTarget->supportsInputAttachmentUsage());
-        const GrVkDescriptorSet* descriptorSet = renderTarget->inputDescSet(gpu);
-        if (!descriptorSet) {
-            return false;
-        }
-        commandBuffer->bindDescriptorSets(gpu, this, fPipeline->layout(),
-                                          GrVkUniformHandler::kInputDescSet, /*setCount=*/1,
-                                          descriptorSet->descriptorSet(),
-                                          /*dynamicOffsetCount=*/0, /*dynamicOffsets=*/nullptr);
-        // We don't add the input resource to the command buffer to track since the input will be
-        // the same as the color attachment which is already tracked on the command buffer.
-        commandBuffer->addRecycledResource(descriptorSet);
+    SkASSERT(renderTarget->supportsInputAttachmentUsage());
+    const GrVkDescriptorSet* descriptorSet = renderTarget->inputDescSet(gpu);
+    if (!descriptorSet) {
+        return false;
     }
+    commandBuffer->bindDescriptorSets(gpu, this, fPipeline->layout(),
+                                      GrVkUniformHandler::kInputDescSet, /*setCount=*/1,
+                                      descriptorSet->descriptorSet(),
+                                      /*dynamicOffsetCount=*/0, /*dynamicOffsets=*/nullptr);
+    // We don't add the input resource to the command buffer to track since the input will be
+    // the same as the color attachment which is already tracked on the command buffer.
+    commandBuffer->addRecycledResource(descriptorSet);
     return true;
 }
 

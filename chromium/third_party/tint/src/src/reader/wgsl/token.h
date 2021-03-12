@@ -118,10 +118,10 @@ class Token {
 
     /// A 'array'
     kArray,
-    /// A 'as'
-    kAs,
     /// A 'binding'
     kBinding,
+    /// A 'bitcast'
+    kBitcast,
     /// A 'bool'
     kBool,
     /// A 'block'
@@ -132,8 +132,6 @@ class Token {
     kBuiltin,
     /// A 'case'
     kCase,
-    /// A 'cast'
-    kCast,
     /// A 'compute'
     kCompute,
     /// A 'const'
@@ -150,8 +148,6 @@ class Token {
     kElse,
     /// A 'elseif'
     kElseIf,
-    /// A 'entry_point'
-    kEntryPoint,
     /// A 'f32'
     kF32,
     /// A 'fallthrough'
@@ -162,6 +158,76 @@ class Token {
     kFn,
     // A 'for'
     kFor,
+    // A 'Bgra8Unorm' format
+    kFormatBgra8Unorm,
+    // A 'Bgra8UnormSrgb' format
+    kFormatBgra8UnormSrgb,
+    // A 'R16Float' format
+    kFormatR16Float,
+    // A 'R16Sint' format
+    kFormatR16Sint,
+    // A 'R16Uint' format
+    kFormatR16Uint,
+    // A 'R32Float' format
+    kFormatR32Float,
+    // A 'R32Sint' format
+    kFormatR32Sint,
+    // A 'R32Uint' format
+    kFormatR32Uint,
+    // A 'R8Sint' format
+    kFormatR8Sint,
+    // A 'R8Snorm' format
+    kFormatR8Snorm,
+    // A 'R8Uint' format
+    kFormatR8Uint,
+    // A 'R8Unorm' format
+    kFormatR8Unorm,
+    // A 'Rg11B10Float' format
+    kFormatRg11B10Float,
+    // A 'Rg16Float' format
+    kFormatRg16Float,
+    // A 'Rg16Sint' format
+    kFormatRg16Sint,
+    // A 'Rg16Uint' format
+    kFormatRg16Uint,
+    // A 'Rg32Float' format
+    kFormatRg32Float,
+    // A 'Rg32Sint' format
+    kFormatRg32Sint,
+    // A 'Rg32Uint' format
+    kFormatRg32Uint,
+    // A 'Rg8Sint' format
+    kFormatRg8Sint,
+    // A 'Rg8Snorm' format
+    kFormatRg8Snorm,
+    // A 'Rg8Uint' format
+    kFormatRg8Uint,
+    // A 'Rg8Unorm' format
+    kFormatRg8Unorm,
+    // A 'Rgb10A2Unorm' format
+    kFormatRgb10A2Unorm,
+    // A 'Rgba16Float' format
+    kFormatRgba16Float,
+    // A 'Rgba16Sint' format
+    kFormatRgba16Sint,
+    // A 'Rgba16Uint' format
+    kFormatRgba16Uint,
+    // A 'Rgba32Float' format
+    kFormatRgba32Float,
+    // A 'Rgba32Sint' format
+    kFormatRgba32Sint,
+    // A 'Rgba32Uint' format
+    kFormatRgba32Uint,
+    // A 'Rgba8Sint' format
+    kFormatRgba8Sint,
+    // A 'Rgba8Snorm' format
+    kFormatRgba8Snorm,
+    // A 'Rgba8Uint' format
+    kFormatRgba8Uint,
+    // A 'Rgba8Unorm' format
+    kFormatRgba8Unorm,
+    // A 'Rgba8UnormSrgb' format
+    kFormatRgba8UnormSrgb,
     /// A 'fragment'
     kFragment,
     /// A 'function'
@@ -208,16 +274,66 @@ class Token {
     kPtr,
     /// A 'return'
     kReturn,
+    /// A 'sampler'
+    kSampler,
+    /// A 'sampler_comparison'
+    kComparisonSampler,
     /// A 'set'
     kSet,
     /// A 'storage_buffer'
     kStorageBuffer,
+    /// A 'stage'
+    kStage,
     /// A 'stride'
     kStride,
     /// A 'struct'
     kStruct,
     /// A 'switch'
     kSwitch,
+    /// A 'texture_depth_2d'
+    kTextureDepth2d,
+    /// A 'texture_depth_2d_array'
+    kTextureDepth2dArray,
+    /// A 'texture_depth_cube'
+    kTextureDepthCube,
+    /// A 'texture_depth_cube_array'
+    kTextureDepthCubeArray,
+    /// A 'texture_multisampled_2d'
+    kTextureMultisampled2d,
+    /// A 'texture_storage_ro_1d'
+    kTextureStorageReadonly1d,
+    /// A 'texture_storage_ro_2d_array'
+    kTextureStorageReadonly1dArray,
+    /// A 'texture_storage_ro_2d'
+    kTextureStorageReadonly2d,
+    /// A 'texture_storage_ro_2d_array'
+    kTextureStorageReadonly2dArray,
+    /// A 'texture_storage_ro_3d'
+    kTextureStorageReadonly3d,
+    /// A 'texture_1d'
+    kTextureSampled1d,
+    /// A 'texture_1d_array'
+    kTextureSampled1dArray,
+    /// A 'texture_2d'
+    kTextureSampled2d,
+    /// A 'texture_2d_array'
+    kTextureSampled2dArray,
+    /// A 'texture_3d'
+    kTextureSampled3d,
+    /// A 'texture_cube'
+    kTextureSampledCube,
+    /// A 'texture_cube_array'
+    kTextureSampledCubeArray,
+    /// A 'texture_wo_1d'
+    kTextureStorageWriteonly1d,
+    /// A 'texture_wo_2d_array'
+    kTextureStorageWriteonly1dArray,
+    /// A 'texture_wo_2d'
+    kTextureStorageWriteonly2d,
+    /// A 'texture_wo_2d_array'
+    kTextureStorageWriteonly2dArray,
+    /// A 'texture_wo_3d'
+    kTextureStorageWriteonly3d,
     /// A 'true'
     kTrue,
     /// A 'type'
@@ -241,7 +357,9 @@ class Token {
     /// A 'void'
     kVoid,
     /// A 'workgroup'
-    kWorkgroup
+    kWorkgroup,
+    /// A 'workgroup_size'
+    kWorkgroupSize,
   };
 
   /// Converts a token type to a name
@@ -375,10 +493,10 @@ class Token {
 
   /// @returns true if token is a 'array'
   bool IsArray() const { return type_ == Type::kArray; }
-  /// @returns true if token is a 'as'
-  bool IsAs() const { return type_ == Type::kAs; }
   /// @returns true if token is a 'binding'
   bool IsBinding() const { return type_ == Type::kBinding; }
+  /// @returns true if token is a 'bitcast'
+  bool IsBitcast() const { return type_ == Type::kBitcast; }
   /// @returns true if token is a 'block'
   bool IsBlock() const { return type_ == Type::kBlock; }
   /// @returns true if token is a 'bool'
@@ -389,8 +507,8 @@ class Token {
   bool IsBuiltin() const { return type_ == Type::kBuiltin; }
   /// @returns true if token is a 'case'
   bool IsCase() const { return type_ == Type::kCase; }
-  /// @returns true if token is a 'cast'
-  bool IsCast() const { return type_ == Type::kCast; }
+  /// @returns true if token is a 'sampler_comparison'
+  bool IsComparisonSampler() const { return type_ == Type::kComparisonSampler; }
   /// @returns true if token is a 'compute'
   bool IsCompute() const { return type_ == Type::kCompute; }
   /// @returns true if token is a 'const'
@@ -407,8 +525,6 @@ class Token {
   bool IsElse() const { return type_ == Type::kElse; }
   /// @returns true if token is a 'elseif'
   bool IsElseIf() const { return type_ == Type::kElseIf; }
-  /// @returns true if token is a 'entry_point'
-  bool IsEntryPoint() const { return type_ == Type::kEntryPoint; }
   /// @returns true if token is a 'f32'
   bool IsF32() const { return type_ == Type::kF32; }
   /// @returns true if token is a 'fallthrough'
@@ -419,6 +535,84 @@ class Token {
   bool IsFn() const { return type_ == Type::kFn; }
   /// @returns true if token is a 'for'
   bool IsFor() const { return type_ == Type::kFor; }
+  /// @returns true if token is a 'Bgra8Unorm' format
+  bool IsFormatBgra8Unorm() const { return type_ == Type::kFormatBgra8Unorm; }
+  /// @returns true if token is a 'Bgra8UnormSrgb' format
+  bool IsFormatBgra8UnormSrgb() const {
+    return type_ == Type::kFormatBgra8UnormSrgb;
+  }
+  /// @returns true if token is a 'R16Float' format
+  bool IsFormatR16Float() const { return type_ == Type::kFormatR16Float; }
+  /// @returns true if token is a 'R16Sint' format
+  bool IsFormatR16Sint() const { return type_ == Type::kFormatR16Sint; }
+  /// @returns true if token is a 'R16Uint' format
+  bool IsFormatR16Uint() const { return type_ == Type::kFormatR16Uint; }
+  /// @returns true if token is a 'R32Float' format
+  bool IsFormatR32Float() const { return type_ == Type::kFormatR32Float; }
+  /// @returns true if token is a 'R32Sint' format
+  bool IsFormatR32Sint() const { return type_ == Type::kFormatR32Sint; }
+  /// @returns true if token is a 'R32Uint' format
+  bool IsFormatR32Uint() const { return type_ == Type::kFormatR32Uint; }
+  /// @returns true if token is a 'R8Sint' format
+  bool IsFormatR8Sint() const { return type_ == Type::kFormatR8Sint; }
+  /// @returns true if token is a 'R8Snorm' format
+  bool IsFormatR8Snorm() const { return type_ == Type::kFormatR8Snorm; }
+  /// @returns true if token is a 'R8Uint' format
+  bool IsFormatR8Uint() const { return type_ == Type::kFormatR8Uint; }
+  /// @returns true if token is a 'R8Unorm' format
+  bool IsFormatR8Unorm() const { return type_ == Type::kFormatR8Unorm; }
+  /// @returns true if token is a 'Rg11B10Float' format
+  bool IsFormatRg11B10Float() const {
+    return type_ == Type::kFormatRg11B10Float;
+  }
+  /// @returns true if token is a 'Rg16Float' format
+  bool IsFormatRg16Float() const { return type_ == Type::kFormatRg16Float; }
+  /// @returns true if token is a 'Rg16Sint' format
+  bool IsFormatRg16Sint() const { return type_ == Type::kFormatRg16Sint; }
+  /// @returns true if token is a 'Rg16Uint' format
+  bool IsFormatRg16Uint() const { return type_ == Type::kFormatRg16Uint; }
+  /// @returns true if token is a 'Rg32Float' format
+  bool IsFormatRg32Float() const { return type_ == Type::kFormatRg32Float; }
+  /// @returns true if token is a 'Rg32Sint' format
+  bool IsFormatRg32Sint() const { return type_ == Type::kFormatRg32Sint; }
+  /// @returns true if token is a 'Rg32Uint' format
+  bool IsFormatRg32Uint() const { return type_ == Type::kFormatRg32Uint; }
+  /// @returns true if token is a 'Rg8Sint' format
+  bool IsFormatRg8Sint() const { return type_ == Type::kFormatRg8Sint; }
+  /// @returns true if token is a 'Rg8Snorm' format
+  bool IsFormatRg8Snorm() const { return type_ == Type::kFormatRg8Snorm; }
+  /// @returns true if token is a 'Rg8Uint' format
+  bool IsFormatRg8Uint() const { return type_ == Type::kFormatRg8Uint; }
+  /// @returns true if token is a 'Rg8Unorm' format
+  bool IsFormatRg8Unorm() const { return type_ == Type::kFormatRg8Unorm; }
+  /// @returns true if token is a 'Rgb10A2Unorm' format
+  bool IsFormatRgb10A2Unorm() const {
+    return type_ == Type::kFormatRgb10A2Unorm;
+  }
+  /// @returns true if token is a 'Rgba16Float' format
+  bool IsFormatRgba16Float() const { return type_ == Type::kFormatRgba16Float; }
+  /// @returns true if token is a 'Rgba16Sint' format
+  bool IsFormatRgba16Sint() const { return type_ == Type::kFormatRgba16Sint; }
+  /// @returns true if token is a 'Rgba16Uint' format
+  bool IsFormatRgba16Uint() const { return type_ == Type::kFormatRgba16Uint; }
+  /// @returns true if token is a 'Rgba32Float' format
+  bool IsFormatRgba32Float() const { return type_ == Type::kFormatRgba32Float; }
+  /// @returns true if token is a 'Rgba32Sint' format
+  bool IsFormatRgba32Sint() const { return type_ == Type::kFormatRgba32Sint; }
+  /// @returns true if token is a 'Rgba32Uint' format
+  bool IsFormatRgba32Uint() const { return type_ == Type::kFormatRgba32Uint; }
+  /// @returns true if token is a 'Rgba8Sint' format
+  bool IsFormatRgba8Sint() const { return type_ == Type::kFormatRgba8Sint; }
+  /// @returns true if token is a 'Rgba8Snorm' format
+  bool IsFormatRgba8Snorm() const { return type_ == Type::kFormatRgba8Snorm; }
+  /// @returns true if token is a 'Rgba8Uint' format
+  bool IsFormatRgba8Uint() const { return type_ == Type::kFormatRgba8Uint; }
+  /// @returns true if token is a 'Rgba8Unorm' format
+  bool IsFormatRgba8Unorm() const { return type_ == Type::kFormatRgba8Unorm; }
+  /// @returns true if token is a 'Rgba8UnormSrgb' format
+  bool IsFormatRgba8UnormSrgb() const {
+    return type_ == Type::kFormatRgba8UnormSrgb;
+  }
   /// @returns true if token is a 'fragment'
   bool IsFragment() const { return type_ == Type::kFragment; }
   /// @returns true if token is a 'function'
@@ -465,8 +659,12 @@ class Token {
   bool IsPtr() const { return type_ == Type::kPtr; }
   /// @returns true if token is a 'return'
   bool IsReturn() const { return type_ == Type::kReturn; }
+  /// @returns true if token is a 'sampler'
+  bool IsSampler() const { return type_ == Type::kSampler; }
   /// @returns true if token is a 'set'
   bool IsSet() const { return type_ == Type::kSet; }
+  /// @returns true if token is a 'stage'
+  bool IsStage() const { return type_ == Type::kStage; }
   /// @returns true if token is a 'storage_buffer'
   bool IsStorageBuffer() const { return type_ == Type::kStorageBuffer; }
   /// @returns true if token is a 'stride'
@@ -475,6 +673,84 @@ class Token {
   bool IsStruct() const { return type_ == Type::kStruct; }
   /// @returns true if token is a 'switch'
   bool IsSwitch() const { return type_ == Type::kSwitch; }
+  /// @returns true if token is a 'texture_depth_2d'
+  bool IsTextureDepth2d() const { return type_ == Type::kTextureDepth2d; }
+  /// @returns true if token is a 'texture_depth_2d_array'
+  bool IsTextureDepth2dArray() const {
+    return type_ == Type::kTextureDepth2dArray;
+  }
+  /// @returns true if token is a 'texture_depth_cube'
+  bool IsTextureDepthCube() const { return type_ == Type::kTextureDepthCube; }
+  /// @returns true if token is a 'texture_depth_cube_array'
+  bool IsTextureDepthCubeArray() const {
+    return type_ == Type::kTextureDepthCubeArray;
+  }
+  /// @returns true if the token is a 'texture_multisample_2d'
+  bool IsTextureMultisampled2d() const {
+    return type_ == Type::kTextureMultisampled2d;
+  }
+  /// @returns true if token is a 'texture_storage_ro_1d'
+  bool IsTextureStorageReadonly1d() const {
+    return type_ == Type::kTextureStorageReadonly1d;
+  }
+  /// @returns true if token is a 'texture_storage_ro_1d_array'
+  bool IsTextureStorageReadonly1dArray() const {
+    return type_ == Type::kTextureStorageReadonly1dArray;
+  }
+  /// @returns true if token is a 'texture_storage_ro_2d'
+  bool IsTextureStorageReadonly2d() const {
+    return type_ == Type::kTextureStorageReadonly2d;
+  }
+  /// @returns true if token is a 'texture_storage_ro_2d_array'
+  bool IsTextureStorageReadonly2dArray() const {
+    return type_ == Type::kTextureStorageReadonly2dArray;
+  }
+  /// @returns true if token is a 'texture_storage_ro_3d'
+  bool IsTextureStorageReadonly3d() const {
+    return type_ == Type::kTextureStorageReadonly3d;
+  }
+  /// @returns true if token is a 'texture_1d'
+  bool IsTextureSampled1d() const { return type_ == Type::kTextureSampled1d; }
+  /// @returns true if token is a 'texture_1d_array'
+  bool IsTextureSampled1dArray() const {
+    return type_ == Type::kTextureSampled1dArray;
+  }
+  /// @returns true if token is a 'texture_2d'
+  bool IsTextureSampled2d() const { return type_ == Type::kTextureSampled2d; }
+  /// @returns true if token is a 'texture_2d_array'
+  bool IsTextureSampled2dArray() const {
+    return type_ == Type::kTextureSampled2dArray;
+  }
+  /// @returns true if token is a 'texture_3d'
+  bool IsTextureSampled3d() const { return type_ == Type::kTextureSampled3d; }
+  /// @returns true if token is a 'texture_cube'
+  bool IsTextureSampledCube() const {
+    return type_ == Type::kTextureSampledCube;
+  }
+  /// @returns true if token is a 'texture_cube_array'
+  bool IsTextureSampledCubeArray() const {
+    return type_ == Type::kTextureSampledCubeArray;
+  }
+  /// @returns true if token is a 'texture_storage_wo_1d'
+  bool IsTextureStorageWriteonly1d() const {
+    return type_ == Type::kTextureStorageWriteonly1d;
+  }
+  /// @returns true if token is a 'texture_storage_wo_1d_array'
+  bool IsTextureStorageWriteonly1dArray() const {
+    return type_ == Type::kTextureStorageWriteonly1dArray;
+  }
+  /// @returns true if token is a 'texture_storage_wo_2d'
+  bool IsTextureStorageWriteonly2d() const {
+    return type_ == Type::kTextureStorageWriteonly2d;
+  }
+  /// @returns true if token is a 'texture_storage_wo_2d_array'
+  bool IsTextureStorageWriteonly2dArray() const {
+    return type_ == Type::kTextureStorageWriteonly2dArray;
+  }
+  /// @returns true if token is a 'texture_storage_wo_3d'
+  bool IsTextureStorageWriteonly3d() const {
+    return type_ == Type::kTextureStorageWriteonly3d;
+  }
   /// @returns true if token is a 'true'
   bool IsTrue() const { return type_ == Type::kTrue; }
   /// @returns true if token is a 'type'
@@ -499,11 +775,9 @@ class Token {
   bool IsVoid() const { return type_ == Type::kVoid; }
   /// @returns true if token is a 'workgroup'
   bool IsWorkgroup() const { return type_ == Type::kWorkgroup; }
+  /// @returns true if token is a 'workgroup_size'
+  bool IsWorkgroupSize() const { return type_ == Type::kWorkgroupSize; }
 
-  /// @returns the source line of the token
-  size_t line() const { return source_.line; }
-  /// @returns the source column of the token
-  size_t column() const { return source_.column; }
   /// @returns the source information for this token
   Source source() const { return source_; }
 

@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 
+#include "av1/common/blockd.h"
 #include "config/aom_config.h"
 #include "config/aom_scale_rtcd.h"
 
@@ -33,6 +34,10 @@
 #include "av1/encoder/pass2_strategy.h"
 #include "av1/encoder/temporal_filter.h"
 #include "av1/encoder/tpl_model.h"
+
+#if CONFIG_TUNE_VMAF
+#include "av1/encoder/tune_vmaf.h"
+#endif
 
 #define TEMPORAL_FILTER_KEY_FRAME (CONFIG_REALTIME_ONLY ? 0 : 1)
 
@@ -69,7 +74,11 @@ void av1_configure_buffer_updates(
       break;
 
     case OVERLAY_UPDATE:
-      set_refresh_frame_flags(refresh_frame_flags, true, false, false);
+      if (frame_type == KEY_FRAME && cpi->rc.frames_to_key == 0) {
+        set_refresh_frame_flags(refresh_frame_flags, true, true, true);
+      } else {
+        set_refresh_frame_flags(refresh_frame_flags, true, false, false);
+      }
       cpi->rc.is_src_frame_alt_ref = 1;
       break;
 
@@ -122,14 +131,8 @@ static void set_additional_frame_flags(const AV1_COMMON *const cm,
 
 static INLINE void update_keyframe_counters(AV1_COMP *cpi) {
   if (cpi->common.show_frame) {
-    if (!cpi->common.show_existing_frame || cpi->rc.is_src_frame_alt_ref ||
-        cpi->common.current_frame.frame_type == KEY_FRAME) {
-      // If this is a show_existing_frame with a source other than altref,
-      // or if it is not a displayed forward keyframe, the keyframe update
-      // counters were incremented when it was originally encoded.
-      cpi->rc.frames_since_key++;
-      cpi->rc.frames_to_key--;
-    }
+    cpi->rc.frames_since_key++;
+    cpi->rc.frames_to_key--;
   }
 }
 
@@ -164,14 +167,8 @@ static INLINE void update_frames_till_gf_update(AV1_COMP *cpi) {
 }
 
 static INLINE void update_gf_group_index(AV1_COMP *cpi) {
-  // Increment the gf group index ready for the next frame. If this is
-  // a show_existing_frame with a source other than altref, or if it is not
-  // a displayed forward keyframe, the index was incremented when it was
-  // originally encoded.
-  if (!cpi->common.show_existing_frame || cpi->rc.is_src_frame_alt_ref ||
-      cpi->common.current_frame.frame_type == KEY_FRAME) {
-    ++cpi->gf_group.index;
-  }
+  // Increment the gf group index ready for the next frame.
+  ++cpi->gf_group.index;
 }
 
 static void update_rc_counts(AV1_COMP *cpi) {
@@ -397,7 +394,7 @@ static struct lookahead_entry *choose_frame_source(
   // If this is a key frame and keyframe filtering is enabled with overlay,
   // then do not pop.
   if (pop_lookahead && cpi->oxcf.kf_cfg.enable_keyframe_filtering > 1 &&
-      cpi->rc.frames_to_key == 0 && cpi->rc.frames_till_gf_update_due == 0 &&
+      gf_group->update_type[gf_group->index] == ARF_UPDATE &&
       !is_stat_generation_stage(cpi) && cpi->lookahead) {
     if (cpi->lookahead->read_ctxs[cpi->compressor_stage].sz &&
         (*flush ||
@@ -420,8 +417,6 @@ static struct lookahead_entry *choose_frame_source(
     // no show frames are arf frames
     source =
         av1_lookahead_peek(cpi->lookahead, src_index, cpi->compressor_stage);
-    // clear altref pending if this is not keyframe arf
-    if (src_index) cpi->rc.source_alt_ref_pending = 0;
     // When src_index == rc->frames_to_key, it indicates a fwd_kf
     if (src_index == cpi->rc.frames_to_key && src_index != 0) {
       cpi->no_show_fwd_kf = 1;
@@ -647,10 +642,28 @@ void av1_update_ref_frame_map(AV1_COMP *cpi,
                  ref_map_index);
       break;
     case OVERLAY_UPDATE:
-      ref_map_index = stack_pop(ref_buffer_stack->arf_stack,
-                                &ref_buffer_stack->arf_stack_size);
-      stack_push(ref_buffer_stack->gld_stack, &ref_buffer_stack->gld_stack_size,
-                 ref_map_index);
+      if (frame_type == KEY_FRAME) {
+        ref_map_index = stack_pop(ref_buffer_stack->arf_stack,
+                                  &ref_buffer_stack->arf_stack_size);
+        stack_reset(ref_buffer_stack->lst_stack,
+                    &ref_buffer_stack->lst_stack_size);
+        stack_reset(ref_buffer_stack->gld_stack,
+                    &ref_buffer_stack->gld_stack_size);
+        stack_reset(ref_buffer_stack->arf_stack,
+                    &ref_buffer_stack->arf_stack_size);
+        stack_push(ref_buffer_stack->gld_stack,
+                   &ref_buffer_stack->gld_stack_size, ref_map_index);
+      } else {
+        if (ref_map_index != INVALID_IDX) {
+          update_arf_stack(ref_map_index, ref_buffer_stack);
+          stack_push(ref_buffer_stack->lst_stack,
+                     &ref_buffer_stack->lst_stack_size, ref_map_index);
+        }
+        ref_map_index = stack_pop(ref_buffer_stack->arf_stack,
+                                  &ref_buffer_stack->arf_stack_size);
+        stack_push(ref_buffer_stack->gld_stack,
+                   &ref_buffer_stack->gld_stack_size, ref_map_index);
+      }
       break;
     case INTNL_OVERLAY_UPDATE:
       ref_map_index = stack_pop(ref_buffer_stack->arf_stack,
@@ -821,7 +834,9 @@ int av1_get_refresh_frame_flags(const AV1_COMP *const cpi,
                      ->lst_stack[ref_buffer_stack->lst_stack_size - 1];
       }
       break;
-    case OVERLAY_UPDATE: break;
+    case OVERLAY_UPDATE:
+      if (free_fb_index != INVALID_IDX) refresh_mask = 1 << free_fb_index;
+      break;
     case INTNL_OVERLAY_UPDATE: break;
     default: assert(0); break;
   }
@@ -875,24 +890,7 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
     }
     // If we are doing kf filtering, set up a few things.
     if (apply_filtering) {
-      MACROBLOCKD *const xd = &cpi->td.mb.e_mbd;
-      av1_init_mi_buffers(&cm->mi_params);
-      setup_mi(cpi, frame_input->source);
-      av1_init_macroblockd(cm, xd);
-      memset(cpi->mbmi_ext_info.frame_base, 0,
-             cpi->mbmi_ext_info.alloc_size *
-                 sizeof(*cpi->mbmi_ext_info.frame_base));
-
-      av1_set_speed_features_framesize_independent(cpi, oxcf->speed);
-      av1_set_speed_features_framesize_dependent(cpi, oxcf->speed);
-      av1_set_rd_speed_thresholds(cpi);
-      av1_setup_frame_buf_refs(cm);
-      av1_setup_frame_sign_bias(cm);
-      av1_frame_init_quantizer(cpi);
       av1_setup_past_independence(cm);
-
-      if (gf_group->index == 0) cm->current_frame.frame_number = 0;
-
       if (!frame_params->show_frame && cpi->no_show_fwd_kf) {
         // fwd kf
         arf_src_index = -1 * gf_group->arf_src_offset[gf_group->index];
@@ -925,7 +923,9 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
       aom_copy_metadata_to_frame_buffer(frame_input->source,
                                         source_buffer->metadata);
     }
-    if (get_frame_update_type(&cpi->gf_group) == ARF_UPDATE) {
+    // Currently INTNL_ARF_UPDATE only do show_existing.
+    if (get_frame_update_type(&cpi->gf_group) == ARF_UPDATE &&
+        !cpi->no_show_fwd_kf) {
       cpi->show_existing_alt_ref = show_existing_alt_ref;
     }
   }
@@ -948,12 +948,13 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
     if (allow_tpl) {
       // Need to set the size for TPL for ARF
       // TODO(bohanli): Why is this? what part of it is necessary?
-      av1_set_frame_size(cpi, cm->width, cm->height);
+      av1_set_frame_size(cpi, cm->superres_upscaled_width,
+                         cm->superres_upscaled_height);
     }
   }
-  if (allow_tpl) {
-    av1_tpl_setup_stats(cpi, 0, frame_params, frame_input);
-  }
+
+  if (gf_group->index == 0) av1_init_tpl_stats(&cpi->tpl_data);
+  if (allow_tpl) av1_tpl_setup_stats(cpi, 0, frame_params, frame_input);
 
   if (av1_encode(cpi, dest, frame_input, frame_params, frame_results) !=
       AOM_CODEC_OK) {
@@ -962,8 +963,9 @@ static int denoise_and_encode(AV1_COMP *const cpi, uint8_t *const dest,
 
   // Set frame_input source to true source for psnr calculation.
   if (apply_filtering && is_psnr_calc_enabled(cpi)) {
-    cpi->source = av1_scale_if_required(cm, source_buffer, &cpi->scaled_source,
-                                        cm->features.interp_filter, 0, 0);
+    cpi->source =
+        av1_scale_if_required(cm, source_buffer, &cpi->scaled_source,
+                              cm->features.interp_filter, 0, false, true);
     cpi->unscaled_source = source_buffer;
   }
 
@@ -1093,6 +1095,16 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
     if (srcbuf_size < pop_size) return -1;
   }
 
+  if (!av1_lookahead_peek(cpi->lookahead, 0, cpi->compressor_stage)) {
+#if !CONFIG_REALTIME_ONLY
+    if (flush && oxcf->pass == 1 && !cpi->twopass.first_pass_done) {
+      av1_end_first_pass(cpi); /* get last stats packet */
+      cpi->twopass.first_pass_done = 1;
+    }
+#endif
+    return -1;
+  }
+
   // TODO(sarahparker) finish bit allocation for one pass pyramid
   if (has_no_stats_stage(cpi)) {
     gf_cfg->gf_max_pyr_height =
@@ -1101,16 +1113,25 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
         AOMMIN(gf_cfg->gf_min_pyr_height, gf_cfg->gf_max_pyr_height);
   }
 
+#if !CONFIG_REALTIME_ONLY
+  const int use_one_pass_rt_params = has_no_stats_stage(cpi) &&
+                                     oxcf->mode == REALTIME &&
+                                     gf_cfg->lag_in_frames == 0;
+  if (!use_one_pass_rt_params && !is_stat_generation_stage(cpi)) {
+    av1_get_second_pass_params(cpi, &frame_params, &frame_input, *frame_flags);
+  }
+#endif
+
   if (!is_stat_generation_stage(cpi)) {
     // If this is a forward keyframe, mark as a show_existing_frame
     // TODO(bohanli): find a consistent condition for fwd keyframes
-    if (oxcf->kf_cfg.fwd_kf_enabled && (gf_group->index == gf_group->size) &&
+    if (oxcf->kf_cfg.fwd_kf_enabled &&
         gf_group->update_type[gf_group->index] == OVERLAY_UPDATE &&
-        gf_group->arf_index >= 0 && cpi->rc.frames_to_key == 0) {
+        cpi->rc.frames_to_key == 0) {
       frame_params.show_existing_frame = 1;
     } else {
       frame_params.show_existing_frame =
-          ((oxcf->algo_cfg.enable_overlay == 0 || cpi->show_existing_alt_ref) &&
+          (cpi->show_existing_alt_ref &&
            gf_group->update_type[gf_group->index] == OVERLAY_UPDATE) ||
           gf_group->update_type[gf_group->index] == INTNL_OVERLAY_UPDATE;
     }
@@ -1157,8 +1178,7 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   }
 
   av1_apply_encoding_flags(cpi, source->flags);
-  if (!frame_params.show_existing_frame)
-    *frame_flags = (source->flags & AOM_EFLAG_FORCE_KF) ? FRAMEFLAGS_KEY : 0;
+  *frame_flags = (source->flags & AOM_EFLAG_FORCE_KF) ? FRAMEFLAGS_KEY : 0;
 
   // Shown frames and arf-overlay frames need frame-rate considering
   if (frame_params.show_frame)
@@ -1181,16 +1201,18 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
 
 #if CONFIG_REALTIME_ONLY
   av1_get_one_pass_rt_params(cpi, &frame_params, *frame_flags);
+  if (cpi->oxcf.speed >= 5 && cm->number_spatial_layers == 1 &&
+      cm->number_temporal_layers == 1)
+    av1_set_reference_structure_one_pass_rt(cpi, gf_group->index == 0);
 #else
-  const int use_one_pass_rt_params = has_no_stats_stage(cpi) &&
-                                     oxcf->mode == REALTIME &&
-                                     gf_cfg->lag_in_frames == 0;
   if (use_one_pass_rt_params) {
     av1_get_one_pass_rt_params(cpi, &frame_params, *frame_flags);
-  } else if (!is_stat_generation_stage(cpi)) {
-    av1_get_second_pass_params(cpi, &frame_params, &frame_input, *frame_flags);
+    if (cpi->oxcf.speed >= 5 && cm->number_spatial_layers == 1 &&
+        cm->number_temporal_layers == 1)
+      av1_set_reference_structure_one_pass_rt(cpi, gf_group->index == 0);
   }
 #endif
+
   FRAME_UPDATE_TYPE frame_update_type = get_frame_update_type(gf_group);
 
   if (frame_params.show_existing_frame &&
@@ -1264,16 +1286,8 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
     }
 
     // Work out which reference frame slots may be used.
-    if (av1_check_keyframe_overlay(gf_group->index, gf_group,
-                                   cpi->rc.frames_since_key)) {
-      // This is a KF overlay, it should refer to arf. However KF overlay
-      // has the same LAST and ALTREF references, so ALTREF will be disabled
-      // in function get_ref_frame_flags. Therefore setting it manually.
-      frame_params.ref_frame_flags = av1_ref_frame_flag_list[ALTREF_FRAME];
-    } else {
-      frame_params.ref_frame_flags = get_ref_frame_flags(
-          &cpi->sf, ref_frame_buf, ext_flags->ref_frame_flags);
-    }
+    frame_params.ref_frame_flags = get_ref_frame_flags(
+        &cpi->sf, ref_frame_buf, ext_flags->ref_frame_flags);
 
     frame_params.primary_ref_frame =
         choose_primary_ref_frame(cpi, &frame_params);
@@ -1352,6 +1366,14 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   }
 #endif  // !CONFIG_REALTIME_ONLY
 
+#if CONFIG_TUNE_VMAF
+  if (!is_stat_generation_stage(cpi) &&
+      (oxcf->tune_cfg.tuning >= AOM_TUNE_VMAF_WITH_PREPROCESSING &&
+       oxcf->tune_cfg.tuning <= AOM_TUNE_VMAF_NEG_MAX_GAIN)) {
+    av1_update_vmaf_curve(cpi);
+  }
+#endif
+
   if (!is_stat_generation_stage(cpi)) {
     update_fb_of_context_type(cpi, &frame_params, cpi->fb_of_context_type);
     set_additional_frame_flags(cm, frame_flags);
@@ -1369,26 +1391,4 @@ int av1_encode_strategy(AV1_COMP *const cpi, size_t *const size,
   if (cpi->use_svc) av1_save_layer_context(cpi);
 
   return AOM_CODEC_OK;
-}
-
-// Determine whether a frame is a keyframe arf. Will return 0 for fwd kf arf.
-// Note it depends on frame_since_key and gf_group, therefore should be called
-// after the gf group is defined, or otherwise a keyframe arf may still return
-// 0.
-int av1_check_keyframe_arf(int gf_index, GF_GROUP *gf_group,
-                           int frame_since_key) {
-  if (gf_index >= gf_group->size) return 0;
-  return gf_group->update_type[gf_index] == ARF_UPDATE &&
-         gf_group->update_type[gf_index + 1] == OVERLAY_UPDATE &&
-         frame_since_key == 0;
-}
-
-// Determine whether a frame is a keyframe overlay (will also return 0 for fwd
-// kf overlays).
-int av1_check_keyframe_overlay(int gf_index, GF_GROUP *gf_group,
-                               int frame_since_key) {
-  if (gf_index < 1) return 0;
-  return gf_group->update_type[gf_index - 1] == ARF_UPDATE &&
-         gf_group->update_type[gf_index] == OVERLAY_UPDATE &&
-         frame_since_key == 0;
 }

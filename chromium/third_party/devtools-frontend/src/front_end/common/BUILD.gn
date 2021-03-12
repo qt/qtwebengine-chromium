@@ -28,6 +28,7 @@ devtools_module("common") {
     "Runnable.js",
     "SegmentedRange.js",
     "Settings.js",
+    "SimpleHistoryManager.js",
     "StringOutputStream.js",
     "TextDictionary.js",
     "Throttler.js",
@@ -46,4 +47,10 @@ devtools_entrypoint("bundle") {
   entrypoint = "common.js"
 
   deps = [ ":common" ]
+}
+
+devtools_entrypoint("legacy") {
+  entrypoint = "common-legacy.js"
+
+  deps = [ ":bundle" ]
 }

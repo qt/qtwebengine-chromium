@@ -28,10 +28,12 @@ static void syntax(void)
     printf("        avifdec --info    input.avif\n");
     printf("Options:\n");
     printf("    -h,--help         : Show syntax help\n");
+    printf("    -V,--version      : Show the version number\n");
+    printf("    -j,--jobs J       : Number of jobs (worker threads, default: 1)\n");
     printf("    -c,--codec C      : AV1 codec to use (choose from versions list below)\n");
     printf("    -d,--depth D      : Output depth [8,16]. (PNG only; For y4m, depth is retained, and JPEG is always 8bpc)\n");
     printf("    -q,--quality Q    : Output quality [0-100]. (JPEG only, default: %d)\n", DEFAULT_JPEG_QUALITY);
-    printf("    -u,--upsampling U : Chroma upsampling (for 420/422). bilinear (default) or nearest\n");
+    printf("    -u,--upsampling U : Chroma upsampling (for 420/422). automatic (default), fastest, best, nearest, or bilinear\n");
     printf("    -i,--info         : Decode all frames and display all image information instead of saving to disk\n");
     printf("    --ignore-icc      : If the input file contains an embedded ICC profile, ignore it (no-op if absent)\n");
     printf("\n");
@@ -40,35 +42,14 @@ static void syntax(void)
 
 static int info(const char * inputFilename)
 {
-    FILE * inputFile = fopen(inputFilename, "rb");
-    if (!inputFile) {
-        fprintf(stderr, "Cannot open file for read: %s\n", inputFilename);
-        return 1;
-    }
-    fseek(inputFile, 0, SEEK_END);
-    size_t inputFileSize = ftell(inputFile);
-    fseek(inputFile, 0, SEEK_SET);
-
-    if (inputFileSize < 1) {
-        fprintf(stderr, "File too small: %s\n", inputFilename);
-        fclose(inputFile);
-        return 1;
-    }
-
-    avifRWData raw = AVIF_DATA_EMPTY;
-    avifRWDataRealloc(&raw, inputFileSize);
-    if (fread(raw.data, 1, inputFileSize, inputFile) != inputFileSize) {
-        fprintf(stderr, "Failed to read " AVIF_FMT_ZU " bytes: %s\n", inputFileSize, inputFilename);
-        fclose(inputFile);
-        avifRWDataFree(&raw);
-        return 1;
-    }
-
-    fclose(inputFile);
-    inputFile = NULL;
-
     avifDecoder * decoder = avifDecoderCreate();
-    avifResult result = avifDecoderParse(decoder, (avifROData *)&raw);
+    avifResult result = avifDecoderSetIOFile(decoder, inputFilename);
+    if (result != AVIF_RESULT_OK) {
+        fprintf(stderr, "Cannot open file for read: %s\n", inputFilename);
+        avifDecoderDestroy(decoder);
+        return 1;
+    }
+    result = avifDecoderParse(decoder);
     if (result == AVIF_RESULT_OK) {
         printf("Image decoded: %s\n", inputFilename);
 
@@ -100,7 +81,6 @@ static int info(const char * inputFilename)
         printf("ERROR: Failed to decode image: %s\n", avifResultToString(result));
     }
 
-    avifRWDataFree(&raw);
     avifDecoderDestroy(decoder);
     return 0;
 }
@@ -110,10 +90,11 @@ int main(int argc, char * argv[])
     const char * inputFilename = NULL;
     const char * outputFilename = NULL;
     int requestedDepth = 0;
+    int jobs = 1;
     int jpegQuality = DEFAULT_JPEG_QUALITY;
     avifCodecChoice codecChoice = AVIF_CODEC_CHOICE_AUTO;
     avifBool infoOnly = AVIF_FALSE;
-    avifChromaUpsampling chromaUpsampling = AVIF_CHROMA_UPSAMPLING_BILINEAR;
+    avifChromaUpsampling chromaUpsampling = AVIF_CHROMA_UPSAMPLING_AUTOMATIC;
     avifBool ignoreICC = AVIF_FALSE;
 
     if (argc < 2) {
@@ -128,6 +109,15 @@ int main(int argc, char * argv[])
         if (!strcmp(arg, "-h") || !strcmp(arg, "--help")) {
             syntax();
             return 0;
+        } else if (!strcmp(arg, "-V") || !strcmp(arg, "--version")) {
+            avifPrintVersions();
+            return 0;
+        } else if (!strcmp(arg, "-j") || !strcmp(arg, "--jobs")) {
+            NEXTARG();
+            jobs = atoi(arg);
+            if (jobs < 1) {
+                jobs = 1;
+            }
         } else if (!strcmp(arg, "-c") || !strcmp(arg, "--codec")) {
             NEXTARG();
             codecChoice = avifCodecChoiceFromName(arg);
@@ -158,10 +148,16 @@ int main(int argc, char * argv[])
             }
         } else if (!strcmp(arg, "-u") || !strcmp(arg, "--upsampling")) {
             NEXTARG();
-            if (!strcmp(arg, "bilinear")) {
-                chromaUpsampling = AVIF_CHROMA_UPSAMPLING_BILINEAR;
+            if (!strcmp(arg, "automatic")) {
+                chromaUpsampling = AVIF_CHROMA_UPSAMPLING_AUTOMATIC;
+            } else if (!strcmp(arg, "fastest")) {
+                chromaUpsampling = AVIF_CHROMA_UPSAMPLING_FASTEST;
+            } else if (!strcmp(arg, "best")) {
+                chromaUpsampling = AVIF_CHROMA_UPSAMPLING_BEST_QUALITY;
             } else if (!strcmp(arg, "nearest")) {
                 chromaUpsampling = AVIF_CHROMA_UPSAMPLING_NEAREST;
+            } else if (!strcmp(arg, "bilinear")) {
+                chromaUpsampling = AVIF_CHROMA_UPSAMPLING_BILINEAR;
             } else {
                 fprintf(stderr, "ERROR: invalid upsampling: %s\n", arg);
                 return 1;
@@ -204,40 +200,17 @@ int main(int argc, char * argv[])
         }
     }
 
-    FILE * inputFile = fopen(inputFilename, "rb");
-    if (!inputFile) {
-        fprintf(stderr, "Cannot open file for read: %s\n", inputFilename);
-        return 1;
-    }
-    fseek(inputFile, 0, SEEK_END);
-    size_t inputFileSize = ftell(inputFile);
-    fseek(inputFile, 0, SEEK_SET);
-
-    if (inputFileSize < 1) {
-        fprintf(stderr, "File too small: %s\n", inputFilename);
-        fclose(inputFile);
-        return 1;
-    }
-
-    avifRWData raw = AVIF_DATA_EMPTY;
-    avifRWDataRealloc(&raw, inputFileSize);
-    if (fread(raw.data, 1, inputFileSize, inputFile) != inputFileSize) {
-        fprintf(stderr, "Failed to read " AVIF_FMT_ZU " bytes: %s\n", inputFileSize, inputFilename);
-        fclose(inputFile);
-        avifRWDataFree(&raw);
-        return 1;
-    }
-
-    fclose(inputFile);
-    inputFile = NULL;
-
-    printf("Decoding with AV1 codec '%s', please wait...\n", avifCodecName(codecChoice, AVIF_CODEC_FLAG_CAN_DECODE));
+    printf("Decoding with AV1 codec '%s' (%d worker thread%s), please wait...\n",
+           avifCodecName(codecChoice, AVIF_CODEC_FLAG_CAN_DECODE),
+           jobs,
+           (jobs == 1) ? "" : "s");
 
     int returnCode = 0;
     avifImage * avif = avifImageCreateEmpty();
     avifDecoder * decoder = avifDecoderCreate();
+    decoder->maxThreads = jobs;
     decoder->codecChoice = codecChoice;
-    avifResult decodeResult = avifDecoderRead(decoder, avif, (avifROData *)&raw);
+    avifResult decodeResult = avifDecoderReadFile(decoder, avif, inputFilename);
     if (decodeResult == AVIF_RESULT_OK) {
         printf("Image decoded: %s\n", inputFilename);
         printf("Image details:\n");
@@ -272,7 +245,6 @@ int main(int argc, char * argv[])
         printf("ERROR: Failed to decode image: %s\n", avifResultToString(decodeResult));
         returnCode = 1;
     }
-    avifRWDataFree(&raw);
     avifDecoderDestroy(decoder);
     avifImageDestroy(avif);
     return returnCode;

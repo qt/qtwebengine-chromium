@@ -110,6 +110,7 @@ const ProcEntry g_procTable[] = {
     {"eglReleaseTexImage", P(EGL_ReleaseTexImage)},
     {"eglReleaseThread", P(EGL_ReleaseThread)},
     {"eglSetBlobCacheFuncsANDROID", P(EGL_SetBlobCacheFuncsANDROID)},
+    {"eglSignalSyncKHR", P(EGL_SignalSyncKHR)},
     {"eglStreamAttribKHR", P(EGL_StreamAttribKHR)},
     {"eglStreamConsumerAcquireKHR", P(EGL_StreamConsumerAcquireKHR)},
     {"eglStreamConsumerGLTextureExternalAttribsNV",
@@ -227,6 +228,8 @@ const ProcEntry g_procTable[] = {
     {"glBufferDataContextANGLE", P(gl::BufferDataContextANGLE)},
     {"glBufferStorageEXT", P(gl::BufferStorageEXT)},
     {"glBufferStorageEXTContextANGLE", P(gl::BufferStorageEXTContextANGLE)},
+    {"glBufferStorageExternalEXT", P(gl::BufferStorageExternalEXT)},
+    {"glBufferStorageExternalEXTContextANGLE", P(gl::BufferStorageExternalEXTContextANGLE)},
     {"glBufferStorageMemEXT", P(gl::BufferStorageMemEXT)},
     {"glBufferStorageMemEXTContextANGLE", P(gl::BufferStorageMemEXTContextANGLE)},
     {"glBufferSubData", P(gl::BufferSubData)},
@@ -312,6 +315,10 @@ const ProcEntry g_procTable[] = {
     {"glCopyBufferSubDataContextANGLE", P(gl::CopyBufferSubDataContextANGLE)},
     {"glCopyImageSubData", P(gl::CopyImageSubData)},
     {"glCopyImageSubDataContextANGLE", P(gl::CopyImageSubDataContextANGLE)},
+    {"glCopyImageSubDataEXT", P(gl::CopyImageSubDataEXT)},
+    {"glCopyImageSubDataEXTContextANGLE", P(gl::CopyImageSubDataEXTContextANGLE)},
+    {"glCopyImageSubDataOES", P(gl::CopyImageSubDataOES)},
+    {"glCopyImageSubDataOESContextANGLE", P(gl::CopyImageSubDataOESContextANGLE)},
     {"glCopySubTexture3DANGLE", P(gl::CopySubTexture3DANGLE)},
     {"glCopySubTexture3DANGLEContextANGLE", P(gl::CopySubTexture3DANGLEContextANGLE)},
     {"glCopySubTextureCHROMIUM", P(gl::CopySubTextureCHROMIUM)},
@@ -1094,6 +1101,8 @@ const ProcEntry g_procTable[] = {
     {"glMemoryObjectParameterivEXTContextANGLE", P(gl::MemoryObjectParameterivEXTContextANGLE)},
     {"glMinSampleShading", P(gl::MinSampleShading)},
     {"glMinSampleShadingContextANGLE", P(gl::MinSampleShadingContextANGLE)},
+    {"glMinSampleShadingOES", P(gl::MinSampleShadingOES)},
+    {"glMinSampleShadingOESContextANGLE", P(gl::MinSampleShadingOESContextANGLE)},
     {"glMultMatrixf", P(gl::MultMatrixf)},
     {"glMultMatrixfContextANGLE", P(gl::MultMatrixfContextANGLE)},
     {"glMultMatrixx", P(gl::MultMatrixx)},
@@ -1123,6 +1132,9 @@ const ProcEntry g_procTable[] = {
     {"glMultiTexCoord4fContextANGLE", P(gl::MultiTexCoord4fContextANGLE)},
     {"glMultiTexCoord4x", P(gl::MultiTexCoord4x)},
     {"glMultiTexCoord4xContextANGLE", P(gl::MultiTexCoord4xContextANGLE)},
+    {"glNamedBufferStorageExternalEXT", P(gl::NamedBufferStorageExternalEXT)},
+    {"glNamedBufferStorageExternalEXTContextANGLE",
+     P(gl::NamedBufferStorageExternalEXTContextANGLE)},
     {"glNormal3f", P(gl::Normal3f)},
     {"glNormal3fContextANGLE", P(gl::Normal3fContextANGLE)},
     {"glNormal3x", P(gl::Normal3x)},
@@ -1629,5 +1641,5 @@ const ProcEntry g_procTable[] = {
     {"glWeightPointerOES", P(gl::WeightPointerOES)},
     {"glWeightPointerOESContextANGLE", P(gl::WeightPointerOESContextANGLE)}};
 
-const size_t g_numProcs = 1532;
+const size_t g_numProcs = 1543;
 }  // namespace egl

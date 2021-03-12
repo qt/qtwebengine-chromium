@@ -71,6 +71,9 @@
 #include <devpkey.h>
 #include <winternl.h>
 #include <strsafe.h>
+#ifdef __MINGW32__
+#undef strcpy  // fix error with redfined strcpy when building with MinGW-w64
+#endif
 #include <dxgi1_6.h>
 #include "adapters.h"
 
@@ -250,7 +253,7 @@ void *loader_device_heap_realloc(const struct loader_device *device, void *pMemo
 }
 
 // Environment variables
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__linux__) || defined(__APPLE__) || defined(__Fuchsia__)
 
 static inline bool IsHighIntegrity() {
     return geteuid() != getuid() || getegid() != getgid();
@@ -274,6 +277,8 @@ static inline char *loader_secure_getenv(const char *name, const struct loader_i
     // This algorithm is derived from glibc code that sets an internal
     // variable (__libc_enable_secure) if the process is running under setuid or setgid.
     return IsHighIntegrity() ? NULL : loader_getenv(name, inst);
+#elif defined(__Fuchsia__)
+    return loader_getenv(name, inst);
 #else
 // Linux
 #if defined(HAVE_SECURE_GETENV) && !defined(USE_UNSAFE_FILE_SEARCH)
@@ -695,7 +700,11 @@ VkResult loaderGetDeviceRegistryFiles(const struct loader_instance *inst, char *
                                       LPCSTR value_name) {
     static const wchar_t *softwareComponentGUID = L"{5c4c3332-344d-483c-8739-259e934c9cc8}";
     static const wchar_t *displayGUID = L"{4d36e968-e325-11ce-bfc1-08002be10318}";
+#ifdef CM_GETIDLIST_FILTER_PRESENT
     const ULONG flags = CM_GETIDLIST_FILTER_CLASS | CM_GETIDLIST_FILTER_PRESENT;
+#else
+    const ULONG flags = 0x300;
+#endif
 
     wchar_t childGuid[MAX_GUID_STRING_LEN + 2];  // +2 for brackets {}
     ULONG childGuidSize = sizeof(childGuid);
@@ -2310,7 +2319,11 @@ static VkResult loader_scanned_icd_add(const struct loader_instance *inst, struc
 
     // TODO implement smarter opening/closing of libraries. For now this
     // function leaves libraries open and the scanned_icd_clear closes them
+#if defined(__Fuchsia__)
+    handle = loader_platform_open_driver(filename);
+#else
     handle = loader_platform_open_library(filename);
+#endif
     if (NULL == handle) {
         loader_log(inst, VK_DEBUG_REPORT_ERROR_BIT_EXT, 0, loader_platform_open_library_error(filename));
         goto out;
@@ -3182,30 +3195,31 @@ static VkResult loaderReadLayerJson(const struct loader_instance *inst, struct l
                        name);
         } else {
             props->num_blacklist_layers = cJSON_GetArraySize(blacklisted_layers);
-
-            // Allocate the blacklist array
-            props->blacklist_layer_names = loader_instance_heap_alloc(
-                inst, sizeof(char[MAX_STRING_SIZE]) * props->num_blacklist_layers, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
-            if (props->blacklist_layer_names == NULL) {
-                result = VK_ERROR_OUT_OF_HOST_MEMORY;
-                goto out;
-            }
-
-            // Copy the blacklisted layers into the array
-            for (i = 0; i < (int)props->num_blacklist_layers; ++i) {
-                cJSON *black_layer = cJSON_GetArrayItem(blacklisted_layers, i);
-                if (black_layer == NULL) {
-                    continue;
-                }
-                temp = cJSON_Print(black_layer);
-                if (temp == NULL) {
+            if (props->num_blacklist_layers > 0) {
+                // Allocate the blacklist array
+                props->blacklist_layer_names = loader_instance_heap_alloc(
+                    inst, sizeof(char[MAX_STRING_SIZE]) * props->num_blacklist_layers, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+                if (props->blacklist_layer_names == NULL) {
                     result = VK_ERROR_OUT_OF_HOST_MEMORY;
                     goto out;
                 }
-                temp[strlen(temp) - 1] = '\0';
-                strncpy(props->blacklist_layer_names[i], temp + 1, MAX_STRING_SIZE - 1);
-                props->blacklist_layer_names[i][MAX_STRING_SIZE - 1] = '\0';
-                cJSON_Free(temp);
+
+                // Copy the blacklisted layers into the array
+                for (i = 0; i < (int)props->num_blacklist_layers; ++i) {
+                    cJSON *black_layer = cJSON_GetArrayItem(blacklisted_layers, i);
+                    if (black_layer == NULL) {
+                        continue;
+                    }
+                    temp = cJSON_Print(black_layer);
+                    if (temp == NULL) {
+                        result = VK_ERROR_OUT_OF_HOST_MEMORY;
+                        goto out;
+                    }
+                    temp[strlen(temp) - 1] = '\0';
+                    strncpy(props->blacklist_layer_names[i], temp + 1, MAX_STRING_SIZE - 1);
+                    props->blacklist_layer_names[i][MAX_STRING_SIZE - 1] = '\0';
+                    cJSON_Free(temp);
+                }
             }
         }
     }
@@ -3219,28 +3233,29 @@ static VkResult loaderReadLayerJson(const struct loader_instance *inst, struct l
         }
         int count = cJSON_GetArraySize(override_paths);
         props->num_override_paths = count;
+        if (count > 0) {
+            // Allocate buffer for override paths
+            props->override_paths =
+                loader_instance_heap_alloc(inst, sizeof(char[MAX_STRING_SIZE]) * count, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+            if (NULL == props->override_paths) {
+                result = VK_ERROR_OUT_OF_HOST_MEMORY;
+                goto out;
+            }
 
-        // Allocate buffer for override paths
-        props->override_paths =
-            loader_instance_heap_alloc(inst, sizeof(char[MAX_STRING_SIZE]) * count, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
-        if (NULL == props->override_paths) {
-            result = VK_ERROR_OUT_OF_HOST_MEMORY;
-            goto out;
-        }
-
-        // Copy the override paths into the array
-        for (i = 0; i < count; i++) {
-            cJSON *override_path = cJSON_GetArrayItem(override_paths, i);
-            if (NULL != override_path) {
-                temp = cJSON_Print(override_path);
-                if (NULL == temp) {
-                    result = VK_ERROR_OUT_OF_HOST_MEMORY;
-                    goto out;
+            // Copy the override paths into the array
+            for (i = 0; i < count; i++) {
+                cJSON *override_path = cJSON_GetArrayItem(override_paths, i);
+                if (NULL != override_path) {
+                    temp = cJSON_Print(override_path);
+                    if (NULL == temp) {
+                        result = VK_ERROR_OUT_OF_HOST_MEMORY;
+                        goto out;
+                    }
+                    temp[strlen(temp) - 1] = '\0';
+                    strncpy(props->override_paths[i], temp + 1, MAX_STRING_SIZE - 1);
+                    props->override_paths[i][MAX_STRING_SIZE - 1] = '\0';
+                    cJSON_Free(temp);
                 }
-                temp[strlen(temp) - 1] = '\0';
-                strncpy(props->override_paths[i], temp + 1, MAX_STRING_SIZE - 1);
-                props->override_paths[i][MAX_STRING_SIZE - 1] = '\0';
-                cJSON_Free(temp);
             }
         }
     }
@@ -3946,12 +3961,14 @@ static VkResult ReadDataFilesInSearchPaths(const struct loader_instance *inst, e
     if (xdgdatadirs == NULL) {
         xdgdata_alloc = false;
     }
+#if !defined(__Fuchsia__)
     if (xdgconfdirs == NULL || xdgconfdirs[0] == '\0') {
         xdgconfdirs = FALLBACK_CONFIG_DIRS;
     }
     if (xdgdatadirs == NULL || xdgdatadirs[0] == '\0') {
         xdgdatadirs = FALLBACK_DATA_DIRS;
     }
+#endif
 
     // Only use HOME if XDG_DATA_HOME is not present on the system
     if (NULL == xdgdatahome) {
@@ -4299,7 +4316,6 @@ out:
 static VkResult ReadDataFilesInRegistry(const struct loader_instance *inst, enum loader_data_files_type data_file_type,
                                         bool warn_if_not_present, char *registry_location, struct loader_data_files *out_files) {
     VkResult vk_result = VK_SUCCESS;
-    bool is_icd = (data_file_type == LOADER_DATA_FILE_MANIFEST_ICD);
     char *search_path = NULL;
 
     // These calls look at the PNP/Device section of the registry.
@@ -7147,11 +7163,16 @@ VkResult ReadSortedPhysicalDevices(struct loader_instance *inst, struct LoaderSo
                 }
 
                 if (vkres != VK_SUCCESS) {
-                    loader_log(inst, VK_DEBUG_REPORT_WARNING_BIT_EXT, 0, "Failed to convert DXGI adapter into Vulkan physical device");
-                    continue;
-                } else if (vkres == VK_ERROR_OUT_OF_HOST_MEMORY) {
-                    res = VK_ERROR_OUT_OF_HOST_MEMORY;
-                    goto out;
+                    loader_instance_heap_free(inst, sorted_array[*sorted_count].physical_devices);
+                    sorted_array[*sorted_count].physical_devices = NULL;
+                    if (vkres == VK_ERROR_OUT_OF_HOST_MEMORY) {
+                        res = VK_ERROR_OUT_OF_HOST_MEMORY;
+                        goto out;
+                    } else {
+                        loader_log(inst, VK_DEBUG_REPORT_WARNING_BIT_EXT, 0,
+                                   "Failed to convert DXGI adapter into Vulkan physical device");
+                        continue;
+                    }
                 }
                 inst->total_gpu_count += (sorted_array[*sorted_count].device_count = count);
                 sorted_array[*sorted_count].icd_index = icd_idx;
@@ -7974,7 +7995,7 @@ VkResult setupLoaderTermPhysDevGroups(struct loader_instance *inst) {
 
         // Check if this group can be sorted
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
-        bool icd_sorted = icd_term->scanned_icd->EnumerateAdapterPhysicalDevices != NULL;
+        bool icd_sorted = sorted_count && (icd_term->scanned_icd->EnumerateAdapterPhysicalDevices != NULL);
 #else
         bool icd_sorted = false;
 #endif

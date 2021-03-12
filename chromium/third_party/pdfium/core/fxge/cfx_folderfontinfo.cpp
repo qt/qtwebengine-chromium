@@ -11,19 +11,13 @@
 
 #include "build/build_config.h"
 #include "core/fxcrt/fx_codepage.h"
+#include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxge/cfx_fontmapper.h"
 #include "core/fxge/fx_font.h"
 #include "third_party/base/stl_util.h"
-
-#define CHARSET_FLAG_ANSI (1 << 0)
-#define CHARSET_FLAG_SYMBOL (1 << 1)
-#define CHARSET_FLAG_SHIFTJIS (1 << 2)
-#define CHARSET_FLAG_BIG5 (1 << 3)
-#define CHARSET_FLAG_GB (1 << 4)
-#define CHARSET_FLAG_KOREAN (1 << 5)
 
 namespace {
 
@@ -52,6 +46,25 @@ struct FxFileCloser {
       fclose(h);
   }
 };
+
+bool FindFamilyNameMatch(ByteStringView family_name,
+                         const ByteString& installed_font_name) {
+  Optional<size_t> result = installed_font_name.Find(family_name, 0);
+  if (!result.has_value())
+    return false;
+
+  size_t next_index = result.value() + family_name.GetLength();
+  // Rule out the case that |family_name| is a substring of
+  // |installed_font_name| but their family names are actually different words.
+  // For example: "Univers" and "Universal" are not a match because they have
+  // different family names, but "Univers" and "Univers Bold" are a match.
+  if (installed_font_name.IsValidIndex(next_index) &&
+      FXSYS_IsLowerASCII(installed_font_name[next_index])) {
+    return false;
+  }
+
+  return true;
+}
 
 ByteString ReadStringFromFile(FILE* pFile, uint32_t size) {
   ByteString result;
@@ -312,14 +325,12 @@ void* CFX_FolderFontInfo::FindFont(int weight,
     if (!(pFont->m_Charsets & charset_flag) && charset != FX_CHARSET_Default)
       continue;
 
-    if (bMatchName && !bsName.Contains(bsFamily))
+    if (bMatchName && !FindFamilyNameMatch(bsFamily, bsName))
       continue;
 
-    size_t familyNameLength = strlen(family);
-    size_t bsNameLength = bsName.GetLength();
     int32_t iSimilarValue =
         GetSimilarValue(weight, bItalic, pitch_family, pFont->m_Styles,
-                        bMatchName, familyNameLength, bsNameLength);
+                        bMatchName, bsFamily.GetLength(), bsName.GetLength());
     if (iSimilarValue > iBestSimilar) {
       iBestSimilar = iSimilarValue;
       pFind = pFont;

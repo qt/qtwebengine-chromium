@@ -7,14 +7,16 @@
 #include <memory>
 #include <string>
 
+#include "absl/base/macros.h"
+#include "absl/strings/string_view.h"
 #include "third_party/boringssl/src/include/openssl/pool.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 #include "net/third_party/quiche/src/quic/core/crypto/quic_crypto_server_config.h"
 #include "net/third_party/quiche/src/quic/core/crypto/transport_parameters.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
+#include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_hostname_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_arraysize.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/common/platform/api/quiche_text_utils.h"
 
 namespace quic {
@@ -34,11 +36,11 @@ void TlsServerHandshaker::SignatureCallback::Run(
     handshaker_->cert_verify_sig_ = std::move(signature);
     handshaker_->proof_source_details_ = std::move(details);
   }
-  State last_state = handshaker_->state_;
-  handshaker_->state_ = STATE_SIGNATURE_COMPLETE;
+  int last_expected_ssl_error = handshaker_->expected_ssl_error();
+  handshaker_->set_expected_ssl_error(SSL_ERROR_WANT_READ);
   handshaker_->signature_callback_ = nullptr;
-  if (last_state == STATE_SIGNATURE_PENDING) {
-    handshaker_->AdvanceHandshake();
+  if (last_expected_ssl_error == SSL_ERROR_WANT_PRIVATE_KEY_OPERATION) {
+    handshaker_->AdvanceHandshakeFromCallback();
   }
 }
 
@@ -67,8 +69,8 @@ void TlsServerHandshaker::DecryptCallback::Run(std::vector<uint8_t> plaintext) {
   // pending), TlsServerHandshaker is not actively processing handshake
   // messages. We need to have it resume processing handshake messages by
   // calling AdvanceHandshake.
-  if (handshaker_->state_ == STATE_TICKET_DECRYPTION_PENDING) {
-    handshaker_->AdvanceHandshake();
+  if (handshaker_->expected_ssl_error() == SSL_ERROR_PENDING_TICKET) {
+    handshaker_->AdvanceHandshakeFromCallback();
   }
   // The TicketDecrypter took ownership of this callback when Decrypt was
   // called. Once the callback returns, it will be deleted. Remove the
@@ -96,6 +98,10 @@ TlsServerHandshaker::TlsServerHandshaker(
 
   // Configure the SSL to be a server.
   SSL_set_accept_state(ssl());
+
+  if (GetQuicFlag(FLAGS_quic_disable_server_tls_resumption)) {
+    SSL_set_options(ssl(), SSL_OP_NO_TICKET);
+  }
 }
 
 TlsServerHandshaker::~TlsServerHandshaker() {
@@ -150,9 +156,8 @@ void TlsServerHandshaker::SetPreviousCachedNetworkParams(
     CachedNetworkParameters /*cached_network_params*/) {}
 
 void TlsServerHandshaker::OnPacketDecrypted(EncryptionLevel level) {
-  if (level == ENCRYPTION_HANDSHAKE &&
-      state_ < STATE_ENCRYPTION_HANDSHAKE_DATA_PROCESSED) {
-    state_ = STATE_ENCRYPTION_HANDSHAKE_DATA_PROCESSED;
+  if (level == ENCRYPTION_HANDSHAKE && state_ < HANDSHAKE_PROCESSED) {
+    state_ = HANDSHAKE_PROCESSED;
     handshaker_delegate()->DiscardOldEncryptionKey(ENCRYPTION_INITIAL);
     handshaker_delegate()->DiscardOldDecryptionKey(ENCRYPTION_INITIAL);
   }
@@ -170,9 +175,9 @@ const ProofSource::Details* TlsServerHandshaker::ProofSourceDetails() const {
   return proof_source_details_.get();
 }
 
-void TlsServerHandshaker::OnConnectionClosed(QuicErrorCode /*error*/,
-                                             ConnectionCloseSource /*source*/) {
-  state_ = STATE_CONNECTION_CLOSED;
+void TlsServerHandshaker::OnConnectionClosed(QuicErrorCode error,
+                                             ConnectionCloseSource source) {
+  TlsHandshaker::OnConnectionClosed(error, source);
 }
 
 ssl_early_data_reason_t TlsServerHandshaker::EarlyDataReason() const {
@@ -184,7 +189,7 @@ bool TlsServerHandshaker::encryption_established() const {
 }
 
 bool TlsServerHandshaker::one_rtt_keys_available() const {
-  return one_rtt_keys_available_;
+  return state_ == HANDSHAKE_CONFIRMED;
 }
 
 const QuicCryptoNegotiatedParameters&
@@ -197,13 +202,7 @@ CryptoMessageParser* TlsServerHandshaker::crypto_message_parser() {
 }
 
 HandshakeState TlsServerHandshaker::GetHandshakeState() const {
-  if (one_rtt_keys_available_) {
-    return HANDSHAKE_CONFIRMED;
-  }
-  if (state_ >= STATE_ENCRYPTION_HANDSHAKE_DATA_PROCESSED) {
-    return HANDSHAKE_PROCESSED;
-  }
-  return HANDSHAKE_START;
+  return state_;
 }
 
 void TlsServerHandshaker::SetServerApplicationStateForResumption(
@@ -216,54 +215,31 @@ size_t TlsServerHandshaker::BufferSizeLimitForLevel(
   return TlsHandshaker::BufferSizeLimitForLevel(level);
 }
 
-void TlsServerHandshaker::OverrideQuicConfigDefaults(QuicConfig* /*config*/) {}
-
-void TlsServerHandshaker::AdvanceHandshake() {
-  if (state_ == STATE_CONNECTION_CLOSED) {
-    QUIC_LOG(INFO) << "TlsServerHandshaker received handshake message after "
-                      "connection was closed";
-    return;
-  }
-  if (state_ == STATE_HANDSHAKE_COMPLETE) {
-    // TODO(nharper): Handle post-handshake messages.
-    return;
-  }
-
-  int rv = SSL_do_handshake(ssl());
-  if (rv == 1) {
-    FinishHandshake();
-    return;
-  }
-
-  int ssl_error = SSL_get_error(ssl(), rv);
-  bool should_close = true;
-  switch (state_) {
-    case STATE_LISTENING:
-    case STATE_SIGNATURE_COMPLETE:
-      should_close = ssl_error != SSL_ERROR_WANT_READ;
-      break;
-    case STATE_SIGNATURE_PENDING:
-      should_close = ssl_error != SSL_ERROR_WANT_PRIVATE_KEY_OPERATION;
-      break;
-    case STATE_TICKET_DECRYPTION_PENDING:
-      should_close = ssl_error != SSL_ERROR_PENDING_TICKET;
-      break;
-    default:
-      should_close = true;
-  }
-  if (should_close && state_ != STATE_CONNECTION_CLOSED) {
-    QUIC_VLOG(1) << "SSL_do_handshake failed; SSL_get_error returns "
-                 << ssl_error << ", state_ = " << state_;
-    ERR_print_errors_fp(stderr);
-    CloseConnection(QUIC_HANDSHAKE_FAILED,
-                    "Server observed TLS handshake failure");
-  }
+bool TlsServerHandshaker::KeyUpdateSupportedLocally() const {
+  return true;
 }
 
-void TlsServerHandshaker::CloseConnection(QuicErrorCode error,
-                                          const std::string& reason_phrase) {
-  state_ = STATE_CONNECTION_CLOSED;
-  stream()->OnUnrecoverableError(error, reason_phrase);
+std::unique_ptr<QuicDecrypter>
+TlsServerHandshaker::AdvanceKeysAndCreateCurrentOneRttDecrypter() {
+  return TlsHandshaker::AdvanceKeysAndCreateCurrentOneRttDecrypter();
+}
+
+std::unique_ptr<QuicEncrypter>
+TlsServerHandshaker::CreateCurrentOneRttEncrypter() {
+  return TlsHandshaker::CreateCurrentOneRttEncrypter();
+}
+
+void TlsServerHandshaker::OverrideQuicConfigDefaults(QuicConfig* /*config*/) {}
+
+void TlsServerHandshaker::AdvanceHandshakeFromCallback() {
+  AdvanceHandshake();
+  if (GetQuicReloadableFlag(
+          quic_process_undecryptable_packets_after_async_decrypt_callback) &&
+      !is_connection_closed()) {
+    QUIC_RELOADABLE_FLAG_COUNT(
+        quic_process_undecryptable_packets_after_async_decrypt_callback);
+    handshaker_delegate()->OnHandshakeCallbackDone();
+  }
 }
 
 bool TlsServerHandshaker::ProcessTransportParameters(
@@ -368,7 +344,7 @@ void TlsServerHandshaker::SetWriteSecret(
     EncryptionLevel level,
     const SSL_CIPHER* cipher,
     const std::vector<uint8_t>& write_secret) {
-  if (state_ == STATE_CONNECTION_CLOSED) {
+  if (is_connection_closed()) {
     return;
   }
   if (level == ENCRYPTION_FORWARD_SECURE) {
@@ -409,8 +385,7 @@ void TlsServerHandshaker::FinishHandshake() {
   QUIC_DLOG(INFO) << "Server: handshake finished. Early data reason "
                   << reason_code << " ("
                   << CryptoUtils::EarlyDataReasonToString(reason_code) << ")";
-  state_ = STATE_HANDSHAKE_COMPLETE;
-  one_rtt_keys_available_ = true;
+  state_ = HANDSHAKE_CONFIRMED;
 
   handshaker_delegate()->OnTlsHandshakeComplete();
   handshaker_delegate()->DiscardOldEncryptionKey(ENCRYPTION_HANDSHAKE);
@@ -418,29 +393,42 @@ void TlsServerHandshaker::FinishHandshake() {
   handshaker_delegate()->DiscardOldDecryptionKey(ENCRYPTION_ZERO_RTT);
 }
 
+QuicAsyncStatus TlsServerHandshaker::VerifyCertChain(
+    const std::vector<std::string>& /*certs*/,
+    std::string* /*error_details*/,
+    std::unique_ptr<ProofVerifyDetails>* /*details*/,
+    uint8_t* /*out_alert*/,
+    std::unique_ptr<ProofVerifierCallback> /*callback*/) {
+  QUIC_BUG << "Client certificates are not yet supported on the server";
+  return QUIC_FAILURE;
+}
+
+void TlsServerHandshaker::OnProofVerifyDetailsAvailable(
+    const ProofVerifyDetails& /*verify_details*/) {}
+
 ssl_private_key_result_t TlsServerHandshaker::PrivateKeySign(
     uint8_t* out,
     size_t* out_len,
     size_t max_out,
     uint16_t sig_alg,
-    quiche::QuicheStringPiece in) {
+    absl::string_view in) {
   signature_callback_ = new SignatureCallback(this);
   proof_source_->ComputeTlsSignature(
       session()->connection()->self_address(),
       session()->connection()->peer_address(), hostname_, sig_alg, in,
       std::unique_ptr<SignatureCallback>(signature_callback_));
-  if (state_ == STATE_SIGNATURE_COMPLETE) {
-    return PrivateKeyComplete(out, out_len, max_out);
+  if (signature_callback_) {
+    set_expected_ssl_error(SSL_ERROR_WANT_PRIVATE_KEY_OPERATION);
+    return ssl_private_key_retry;
   }
-  state_ = STATE_SIGNATURE_PENDING;
-  return ssl_private_key_retry;
+  return PrivateKeyComplete(out, out_len, max_out);
 }
 
 ssl_private_key_result_t TlsServerHandshaker::PrivateKeyComplete(
     uint8_t* out,
     size_t* out_len,
     size_t max_out) {
-  if (state_ == STATE_SIGNATURE_PENDING) {
+  if (expected_ssl_error() == SSL_ERROR_WANT_PRIVATE_KEY_OPERATION) {
     return ssl_private_key_retry;
   }
   if (cert_verify_sig_.size() > max_out || cert_verify_sig_.empty()) {
@@ -461,7 +449,7 @@ size_t TlsServerHandshaker::SessionTicketMaxOverhead() {
 int TlsServerHandshaker::SessionTicketSeal(uint8_t* out,
                                            size_t* out_len,
                                            size_t max_out_len,
-                                           quiche::QuicheStringPiece in) {
+                                           absl::string_view in) {
   DCHECK(proof_source_->GetTicketCrypter());
   std::vector<uint8_t> ticket = proof_source_->GetTicketCrypter()->Encrypt(in);
   if (max_out_len < ticket.size()) {
@@ -480,7 +468,7 @@ ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
     uint8_t* out,
     size_t* out_len,
     size_t max_out_len,
-    quiche::QuicheStringPiece in) {
+    absl::string_view in) {
   DCHECK(proof_source_->GetTicketCrypter());
 
   if (!ticket_decryption_callback_) {
@@ -497,12 +485,12 @@ ssl_ticket_aead_result_t TlsServerHandshaker::SessionTicketOpen(
     // and when the callback is complete this function will be run again to
     // return the result.
     if (ticket_decryption_callback_) {
-      state_ = STATE_TICKET_DECRYPTION_PENDING;
+      set_expected_ssl_error(SSL_ERROR_PENDING_TICKET);
       return ssl_ticket_aead_retry;
     }
   }
   ticket_decryption_callback_ = nullptr;
-  state_ = STATE_LISTENING;
+  set_expected_ssl_error(SSL_ERROR_WANT_READ);
   if (decrypted_session_ticket_.empty()) {
     QUIC_DLOG(ERROR) << "Session ticket decryption failed; ignoring ticket";
     // Ticket decryption failed. Ignore the ticket.
@@ -586,7 +574,7 @@ int TlsServerHandshaker::SelectAlpn(const uint8_t** out,
   CBS all_alpns;
   CBS_init(&all_alpns, in, in_len);
 
-  std::vector<quiche::QuicheStringPiece> alpns;
+  std::vector<absl::string_view> alpns;
   while (CBS_len(&all_alpns) > 0) {
     CBS alpn;
     if (!CBS_get_u8_length_prefixed(&all_alpns, &alpn)) {

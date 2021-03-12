@@ -9,7 +9,7 @@
 
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrDrawingManager.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
@@ -139,8 +139,8 @@ const GrCaps* GrOnFlushResourceProvider::caps() const {
     return fDrawingMgr->getContext()->priv().caps();
 }
 
-GrOpMemoryPool* GrOnFlushResourceProvider::opMemoryPool() const {
-    return fDrawingMgr->getContext()->priv().opMemoryPool();
+GrRecordingContext* GrOnFlushResourceProvider::recordingContext() const {
+    return fDrawingMgr->getContext();
 }
 
 void GrOnFlushResourceProvider::printWarningMessage(const char* msg) const {

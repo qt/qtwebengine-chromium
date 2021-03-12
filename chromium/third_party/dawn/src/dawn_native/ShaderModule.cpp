@@ -47,82 +47,82 @@ namespace dawn_native {
         }
 
 #ifdef DAWN_ENABLE_WGSL
-        tint::ast::transform::VertexFormat ToTintVertexFormat(wgpu::VertexFormat format) {
+        tint::transform::VertexFormat ToTintVertexFormat(wgpu::VertexFormat format) {
             switch (format) {
                 case wgpu::VertexFormat::UChar2:
-                    return tint::ast::transform::VertexFormat::kVec2U8;
+                    return tint::transform::VertexFormat::kVec2U8;
                 case wgpu::VertexFormat::UChar4:
-                    return tint::ast::transform::VertexFormat::kVec4U8;
+                    return tint::transform::VertexFormat::kVec4U8;
                 case wgpu::VertexFormat::Char2:
-                    return tint::ast::transform::VertexFormat::kVec2I8;
+                    return tint::transform::VertexFormat::kVec2I8;
                 case wgpu::VertexFormat::Char4:
-                    return tint::ast::transform::VertexFormat::kVec4I8;
+                    return tint::transform::VertexFormat::kVec4I8;
                 case wgpu::VertexFormat::UChar2Norm:
-                    return tint::ast::transform::VertexFormat::kVec2U8Norm;
+                    return tint::transform::VertexFormat::kVec2U8Norm;
                 case wgpu::VertexFormat::UChar4Norm:
-                    return tint::ast::transform::VertexFormat::kVec4U8Norm;
+                    return tint::transform::VertexFormat::kVec4U8Norm;
                 case wgpu::VertexFormat::Char2Norm:
-                    return tint::ast::transform::VertexFormat::kVec2I8Norm;
+                    return tint::transform::VertexFormat::kVec2I8Norm;
                 case wgpu::VertexFormat::Char4Norm:
-                    return tint::ast::transform::VertexFormat::kVec4I8Norm;
+                    return tint::transform::VertexFormat::kVec4I8Norm;
                 case wgpu::VertexFormat::UShort2:
-                    return tint::ast::transform::VertexFormat::kVec2U16;
+                    return tint::transform::VertexFormat::kVec2U16;
                 case wgpu::VertexFormat::UShort4:
-                    return tint::ast::transform::VertexFormat::kVec4U16;
+                    return tint::transform::VertexFormat::kVec4U16;
                 case wgpu::VertexFormat::Short2:
-                    return tint::ast::transform::VertexFormat::kVec2I16;
+                    return tint::transform::VertexFormat::kVec2I16;
                 case wgpu::VertexFormat::Short4:
-                    return tint::ast::transform::VertexFormat::kVec4I16;
+                    return tint::transform::VertexFormat::kVec4I16;
                 case wgpu::VertexFormat::UShort2Norm:
-                    return tint::ast::transform::VertexFormat::kVec2U16Norm;
+                    return tint::transform::VertexFormat::kVec2U16Norm;
                 case wgpu::VertexFormat::UShort4Norm:
-                    return tint::ast::transform::VertexFormat::kVec4U16Norm;
+                    return tint::transform::VertexFormat::kVec4U16Norm;
                 case wgpu::VertexFormat::Short2Norm:
-                    return tint::ast::transform::VertexFormat::kVec2I16Norm;
+                    return tint::transform::VertexFormat::kVec2I16Norm;
                 case wgpu::VertexFormat::Short4Norm:
-                    return tint::ast::transform::VertexFormat::kVec4I16Norm;
+                    return tint::transform::VertexFormat::kVec4I16Norm;
                 case wgpu::VertexFormat::Half2:
-                    return tint::ast::transform::VertexFormat::kVec2F16;
+                    return tint::transform::VertexFormat::kVec2F16;
                 case wgpu::VertexFormat::Half4:
-                    return tint::ast::transform::VertexFormat::kVec4F16;
+                    return tint::transform::VertexFormat::kVec4F16;
                 case wgpu::VertexFormat::Float:
-                    return tint::ast::transform::VertexFormat::kF32;
+                    return tint::transform::VertexFormat::kF32;
                 case wgpu::VertexFormat::Float2:
-                    return tint::ast::transform::VertexFormat::kVec2F32;
+                    return tint::transform::VertexFormat::kVec2F32;
                 case wgpu::VertexFormat::Float3:
-                    return tint::ast::transform::VertexFormat::kVec3F32;
+                    return tint::transform::VertexFormat::kVec3F32;
                 case wgpu::VertexFormat::Float4:
-                    return tint::ast::transform::VertexFormat::kVec4F32;
+                    return tint::transform::VertexFormat::kVec4F32;
                 case wgpu::VertexFormat::UInt:
-                    return tint::ast::transform::VertexFormat::kU32;
+                    return tint::transform::VertexFormat::kU32;
                 case wgpu::VertexFormat::UInt2:
-                    return tint::ast::transform::VertexFormat::kVec2U32;
+                    return tint::transform::VertexFormat::kVec2U32;
                 case wgpu::VertexFormat::UInt3:
-                    return tint::ast::transform::VertexFormat::kVec3U32;
+                    return tint::transform::VertexFormat::kVec3U32;
                 case wgpu::VertexFormat::UInt4:
-                    return tint::ast::transform::VertexFormat::kVec4U32;
+                    return tint::transform::VertexFormat::kVec4U32;
                 case wgpu::VertexFormat::Int:
-                    return tint::ast::transform::VertexFormat::kI32;
+                    return tint::transform::VertexFormat::kI32;
                 case wgpu::VertexFormat::Int2:
-                    return tint::ast::transform::VertexFormat::kVec2I32;
+                    return tint::transform::VertexFormat::kVec2I32;
                 case wgpu::VertexFormat::Int3:
-                    return tint::ast::transform::VertexFormat::kVec3I32;
+                    return tint::transform::VertexFormat::kVec3I32;
                 case wgpu::VertexFormat::Int4:
-                    return tint::ast::transform::VertexFormat::kVec4I32;
+                    return tint::transform::VertexFormat::kVec4I32;
             }
         }
 
-        tint::ast::transform::InputStepMode ToTintInputStepMode(wgpu::InputStepMode mode) {
+        tint::transform::InputStepMode ToTintInputStepMode(wgpu::InputStepMode mode) {
             switch (mode) {
                 case wgpu::InputStepMode::Vertex:
-                    return tint::ast::transform::InputStepMode::kVertex;
+                    return tint::transform::InputStepMode::kVertex;
                 case wgpu::InputStepMode::Instance:
-                    return tint::ast::transform::InputStepMode::kInstance;
+                    return tint::transform::InputStepMode::kInstance;
             }
         }
 #endif
 
-        MaybeError ValidateSpirv(DeviceBase*, const uint32_t* code, uint32_t codeSize) {
+        MaybeError ValidateSpirv(const uint32_t* code, uint32_t codeSize) {
             spvtools::SpirvTools spirvTools(SPV_ENV_VULKAN_1_1);
 
             std::ostringstream errorStream;
@@ -164,7 +164,8 @@ namespace dawn_native {
             errorStream << "Tint WGSL failure:" << std::endl;
 
             tint::Context context;
-            tint::reader::wgsl::Parser parser(&context, source);
+            tint::Source::File file("", source);
+            tint::reader::wgsl::Parser parser(&context, &file);
 
             if (!parser.Parse()) {
                 errorStream << "Parser: " << parser.error() << std::endl;
@@ -197,7 +198,8 @@ namespace dawn_native {
             errorStream << "Tint WGSL->SPIR-V failure:" << std::endl;
 
             tint::Context context;
-            tint::reader::wgsl::Parser parser(&context, source);
+            tint::Source::File file("", source);
+            tint::reader::wgsl::Parser parser(&context, &file);
 
             // TODO: This is a duplicate parse with ValidateWGSL, need to store
             // state between calls to avoid this.
@@ -225,6 +227,9 @@ namespace dawn_native {
             }
 
             std::vector<uint32_t> spirv = generator.result();
+
+            DAWN_TRY(ValidateSpirv(spirv.data(), spirv.size()));
+
             return std::move(spirv);
         }
 
@@ -237,7 +242,8 @@ namespace dawn_native {
             errorStream << "Tint WGSL->SPIR-V failure:" << std::endl;
 
             tint::Context context;
-            tint::reader::wgsl::Parser parser(&context, source);
+            tint::Source::File file("", source);
+            tint::reader::wgsl::Parser parser(&context, &file);
 
             // TODO: This is a duplicate parse with ValidateWGSL, need to store
             // state between calls to avoid this.
@@ -252,17 +258,17 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
             }
 
-            tint::ast::transform::VertexPullingTransform transform(&context, &module);
-            auto state = std::make_unique<tint::ast::transform::VertexStateDescriptor>();
+            tint::transform::VertexPullingTransform transform(&context, &module);
+            auto state = std::make_unique<tint::transform::VertexStateDescriptor>();
             for (uint32_t i = 0; i < vertexState.vertexBufferCount; ++i) {
                 auto& vertexBuffer = vertexState.vertexBuffers[i];
-                tint::ast::transform::VertexBufferLayoutDescriptor layout;
+                tint::transform::VertexBufferLayoutDescriptor layout;
                 layout.array_stride = vertexBuffer.arrayStride;
                 layout.step_mode = ToTintInputStepMode(vertexBuffer.stepMode);
 
                 for (uint32_t j = 0; j < vertexBuffer.attributeCount; ++j) {
                     auto& attribute = vertexBuffer.attributes[j];
-                    tint::ast::transform::VertexAttributeDescriptor attr;
+                    tint::transform::VertexAttributeDescriptor attr;
                     attr.format = ToTintVertexFormat(attribute.format);
                     attr.offset = attribute.offset;
                     attr.shader_location = attribute.shaderLocation;
@@ -277,7 +283,7 @@ namespace dawn_native {
             transform.SetPullingBufferBindingSet(pullingBufferBindingSet);
 
             if (!transform.Run()) {
-                errorStream << "Vertex pulling transform: " << transform.GetError();
+                errorStream << "Vertex pulling transform: " << transform.error();
                 return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
             }
 
@@ -366,7 +372,8 @@ namespace dawn_native {
             return std::move(result);
         }
 
-        MaybeError ValidateCompatibilityWithBindGroupLayout(BindGroupIndex group,
+        MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase* device,
+                                                            BindGroupIndex group,
                                                             const EntryPointMetadata& entryPoint,
                                                             const BindGroupLayoutBase* layout) {
             const BindGroupLayoutBase::BindingMap& layoutBindings = layout->GetBindingMap();
@@ -421,10 +428,22 @@ namespace dawn_native {
                     case wgpu::BindingType::SampledTexture:
                     case wgpu::BindingType::MultisampledTexture: {
                         if (layoutInfo.textureComponentType != shaderInfo.textureComponentType) {
-                            return DAWN_VALIDATION_ERROR(
-                                "The textureComponentType of the bind group layout entry is "
-                                "different from " +
-                                GetShaderDeclarationString(group, bindingNumber));
+                            // TODO(dawn:527): Remove once the deprecation timeline is complete.
+                            if (layoutInfo.textureComponentType ==
+                                    wgpu::TextureComponentType::Float &&
+                                shaderInfo.textureComponentType ==
+                                    wgpu::TextureComponentType::DepthComparison) {
+                                device->EmitDeprecationWarning(
+                                    "Using depth texture in the shader with "
+                                    "TextureComponentType::Float is deprecated use "
+                                    "TextureComponentType::DepthComparison in the bind group "
+                                    "layout instead.");
+                            } else {
+                                return DAWN_VALIDATION_ERROR(
+                                    "The textureComponentType of the bind group layout entry is "
+                                    "different from " +
+                                    GetShaderDeclarationString(group, bindingNumber));
+                            }
                         }
 
                         if (layoutInfo.viewDimension != shaderInfo.viewDimension) {
@@ -550,11 +569,26 @@ namespace dawn_native {
                             info->viewDimension =
                                 SpirvDimToTextureViewDimension(imageType.dim, imageType.arrayed);
                             info->textureComponentType =
-                                SpirvBaseTypeToFormatType(textureComponentType);
+                                SpirvBaseTypeToTextureComponentType(textureComponentType);
+
                             if (imageType.ms) {
                                 info->type = wgpu::BindingType::MultisampledTexture;
                             } else {
                                 info->type = wgpu::BindingType::SampledTexture;
+                            }
+
+                            if (imageType.depth) {
+                                if (imageType.ms) {
+                                    return DAWN_VALIDATION_ERROR(
+                                        "Multisampled depth textures aren't supported");
+                                }
+                                if (info->textureComponentType !=
+                                    wgpu::TextureComponentType::Float) {
+                                    return DAWN_VALIDATION_ERROR(
+                                        "Depth textures must have a float type");
+                                }
+                                info->textureComponentType =
+                                    wgpu::TextureComponentType::DepthComparison;
                             }
                             break;
                         }
@@ -597,7 +631,11 @@ namespace dawn_native {
                             }
                             if (imageType.ms) {
                                 return DAWN_VALIDATION_ERROR(
-                                    "Multisampled storage texture aren't supported");
+                                    "Multisampled storage textures aren't supported");
+                            }
+                            if (imageType.depth) {
+                                return DAWN_VALIDATION_ERROR(
+                                    "Depth storage textures aren't supported");
                             }
                             info->storageTextureFormat = storageTextureFormat;
                             info->viewDimension =
@@ -679,12 +717,9 @@ namespace dawn_native {
 
                     spirv_cross::SPIRType::BaseType shaderFragmentOutputBaseType =
                         compiler.get_type(fragmentOutput.base_type_id).basetype;
-                    Format::Type formatType =
-                        SpirvBaseTypeToFormatType(shaderFragmentOutputBaseType);
-                    if (formatType == Format::Type::Other) {
-                        return DAWN_VALIDATION_ERROR("Unexpected Fragment output type");
-                    }
-                    metadata->fragmentOutputFormatBaseTypes[attachment] = formatType;
+                    metadata->fragmentOutputFormatBaseTypes[attachment] =
+                        SpirvBaseTypeToTextureComponentType(shaderFragmentOutputBaseType);
+                    metadata->fragmentOutputsWritten.set(attachment);
                 }
             }
 
@@ -717,7 +752,7 @@ namespace dawn_native {
             case wgpu::SType::ShaderModuleSPIRVDescriptor: {
                 const auto* spirvDesc =
                     static_cast<const ShaderModuleSPIRVDescriptor*>(chainedDescriptor);
-                DAWN_TRY(ValidateSpirv(device, spirvDesc->code, spirvDesc->codeSize));
+                DAWN_TRY(ValidateSpirv(spirvDesc->code, spirvDesc->codeSize));
                 break;
             }
 
@@ -749,10 +784,11 @@ namespace dawn_native {
         return bufferSizes;
     }
 
-    MaybeError ValidateCompatibilityWithPipelineLayout(const EntryPointMetadata& entryPoint,
+    MaybeError ValidateCompatibilityWithPipelineLayout(DeviceBase* device,
+                                                       const EntryPointMetadata& entryPoint,
                                                        const PipelineLayoutBase* layout) {
         for (BindGroupIndex group : IterateBitSet(layout->GetBindGroupLayoutsMask())) {
-            DAWN_TRY(ValidateCompatibilityWithBindGroupLayout(group, entryPoint,
+            DAWN_TRY(ValidateCompatibilityWithBindGroupLayout(device, group, entryPoint,
                                                               layout->GetBindGroupLayout(group)));
         }
 
@@ -766,12 +802,6 @@ namespace dawn_native {
         }
 
         return {};
-    }
-
-    // EntryPointMetadata
-
-    EntryPointMetadata::EntryPointMetadata() {
-        fragmentOutputFormatBaseTypes.fill(Format::Type::Other);
     }
 
     // ShaderModuleBase
@@ -814,19 +844,13 @@ namespace dawn_native {
         return new ShaderModuleBase(device, ObjectBase::kError);
     }
 
-    bool ShaderModuleBase::HasEntryPoint(const std::string& entryPoint,
-                                         SingleShaderStage stage) const {
-        auto entryPointsForNameIt = mEntryPoints.find(entryPoint);
-        if (entryPointsForNameIt == mEntryPoints.end()) {
-            return false;
-        }
-        return entryPointsForNameIt->second[stage] != nullptr;
+    bool ShaderModuleBase::HasEntryPoint(const std::string& entryPoint) const {
+        return mEntryPoints.count(entryPoint) > 0;
     }
 
-    const EntryPointMetadata& ShaderModuleBase::GetEntryPoint(const std::string& entryPoint,
-                                                              SingleShaderStage stage) const {
-        ASSERT(HasEntryPoint(entryPoint, stage));
-        return *mEntryPoints.at(entryPoint)[stage];
+    const EntryPointMetadata& ShaderModuleBase::GetEntryPoint(const std::string& entryPoint) const {
+        ASSERT(HasEntryPoint(entryPoint));
+        return *mEntryPoints.at(entryPoint);
     }
 
     size_t ShaderModuleBase::HashFunc::operator()(const ShaderModuleBase* module) const {
@@ -891,13 +915,15 @@ namespace dawn_native {
 
         spirv_cross::Compiler compiler(mSpirv);
         for (const spirv_cross::EntryPoint& entryPoint : compiler.get_entry_points_and_stages()) {
+            ASSERT(mEntryPoints.count(entryPoint.name) == 0);
+
             SingleShaderStage stage = ExecutionModelToShaderStage(entryPoint.execution_model);
             compiler.set_entry_point(entryPoint.name, entryPoint.execution_model);
 
             std::unique_ptr<EntryPointMetadata> metadata;
             DAWN_TRY_ASSIGN(metadata,
                             ExtractSpirvInfo(GetDevice(), compiler, entryPoint.name, stage));
-            mEntryPoints[entryPoint.name][stage] = std::move(metadata);
+            mEntryPoints[entryPoint.name] = std::move(metadata);
         }
 
         return {};

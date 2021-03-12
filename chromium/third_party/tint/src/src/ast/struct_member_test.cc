@@ -30,27 +30,32 @@ using StructMemberTest = testing::Test;
 TEST_F(StructMemberTest, Creation) {
   type::I32Type i32;
   StructMemberDecorationList decorations;
-  decorations.emplace_back(std::make_unique<StructMemberOffsetDecoration>(4));
+  decorations.emplace_back(
+      std::make_unique<StructMemberOffsetDecoration>(4, Source{}));
 
   StructMember st{"a", &i32, std::move(decorations)};
   EXPECT_EQ(st.name(), "a");
   EXPECT_EQ(st.type(), &i32);
   EXPECT_EQ(st.decorations().size(), 1u);
   EXPECT_TRUE(st.decorations()[0]->IsOffset());
-  EXPECT_EQ(st.line(), 0u);
-  EXPECT_EQ(st.column(), 0u);
+  EXPECT_EQ(st.source().range.begin.line, 0u);
+  EXPECT_EQ(st.source().range.begin.column, 0u);
+  EXPECT_EQ(st.source().range.end.line, 0u);
+  EXPECT_EQ(st.source().range.end.column, 0u);
 }
 
 TEST_F(StructMemberTest, CreationWithSource) {
   type::I32Type i32;
-  Source s{27, 4};
+  Source s{Source::Range{Source::Location{27, 4}, Source::Location{27, 8}}};
 
   StructMember st{s, "a", &i32, {}};
   EXPECT_EQ(st.name(), "a");
   EXPECT_EQ(st.type(), &i32);
   EXPECT_EQ(st.decorations().size(), 0u);
-  EXPECT_EQ(st.line(), 27u);
-  EXPECT_EQ(st.column(), 4u);
+  EXPECT_EQ(st.source().range.begin.line, 27u);
+  EXPECT_EQ(st.source().range.begin.column, 4u);
+  EXPECT_EQ(st.source().range.end.line, 27u);
+  EXPECT_EQ(st.source().range.end.column, 8u);
 }
 
 TEST_F(StructMemberTest, IsValid) {
@@ -73,7 +78,8 @@ TEST_F(StructMemberTest, IsValid_NullType) {
 TEST_F(StructMemberTest, IsValid_Null_Decoration) {
   type::I32Type i32;
   StructMemberDecorationList decorations;
-  decorations.emplace_back(std::make_unique<StructMemberOffsetDecoration>(4));
+  decorations.emplace_back(
+      std::make_unique<StructMemberOffsetDecoration>(4, Source{}));
   decorations.push_back(nullptr);
 
   StructMember st{"a", &i32, std::move(decorations)};
@@ -83,7 +89,8 @@ TEST_F(StructMemberTest, IsValid_Null_Decoration) {
 TEST_F(StructMemberTest, ToStr) {
   type::I32Type i32;
   StructMemberDecorationList decorations;
-  decorations.emplace_back(std::make_unique<StructMemberOffsetDecoration>(4));
+  decorations.emplace_back(
+      std::make_unique<StructMemberOffsetDecoration>(4, Source{}));
 
   StructMember st{"a", &i32, std::move(decorations)};
   std::ostringstream out;

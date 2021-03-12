@@ -22,24 +22,11 @@ namespace cast {
 
 static constexpr std::chrono::seconds kRequestTimeout = std::chrono::seconds(5);
 
-namespace {
-
-// TODO(miu): This is duplicated in another teammate's WIP CL. De-dupe this by
-// placing the utility in cast/common.
-std::string MakeRandomSenderId() {
-  static auto& rd = *new std::random_device();
-  static auto& gen = *new std::mt19937(rd());
-  static auto& dist = *new std::uniform_int_distribution<>(1, 1000000);
-  return absl::StrCat("sender-", dist(gen));
-}
-
-}  // namespace
-
 CastPlatformClient::CastPlatformClient(VirtualConnectionRouter* router,
                                        VirtualConnectionManager* manager,
                                        ClockNowFunctionPtr clock,
                                        TaskRunner* task_runner)
-    : sender_id_(MakeRandomSenderId()),
+    : sender_id_(MakeUniqueSessionId("sender")),
       virtual_conn_router_(router),
       virtual_conn_manager_(manager),
       clock_(clock),

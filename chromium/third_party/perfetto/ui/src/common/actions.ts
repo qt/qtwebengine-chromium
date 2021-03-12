@@ -386,8 +386,12 @@ export const StateActions = {
   setEngineReady(
       state: StateDraft,
       args: {engineId: string; ready: boolean, mode: EngineMode}): void {
-    state.engines[args.engineId].ready = args.ready;
-    state.engines[args.engineId].mode = args.mode;
+    const engine = state.engines[args.engineId];
+    if (engine === undefined) {
+      return;
+    }
+    engine.ready = args.ready;
+    engine.mode = args.mode;
   },
 
   setNewEngineMode(state: StateDraft, args: {mode: NewEngineMode}): void {
@@ -475,7 +479,8 @@ export const StateActions = {
     this.selectNote(state, {id});
   },
 
-  markArea(state: StateDraft, args: {color: string, persistent: boolean}):
+  markCurrentArea(
+      state: StateDraft, args: {color: string, persistent: boolean}):
       void {
         if (state.currentSelection === null ||
             state.currentSelection.kind !== 'AREA') {
@@ -493,15 +498,34 @@ export const StateActions = {
         state.currentSelection.noteId = id;
       },
 
-  toggleMarkArea(state: StateDraft, args: {persistent: boolean}) {
+  toggleMarkCurrentArea(state: StateDraft, args: {persistent: boolean}) {
     const selection = state.currentSelection;
     if (selection != null && selection.kind === 'AREA' &&
         selection.noteId !== undefined) {
       this.removeNote(state, {id: selection.noteId});
     } else {
       const color = randomColor();
-      this.markArea(state, {color, persistent: args.persistent});
+      this.markCurrentArea(state, {color, persistent: args.persistent});
     }
+  },
+
+  markArea(state: StateDraft, args: {area: Area, persistent: boolean}): void {
+    const areaId = `${state.nextAreaId++}`;
+    state.areas[areaId] = {
+      id: areaId,
+      startSec: args.area.startSec,
+      endSec: args.area.endSec,
+      tracks: args.area.tracks
+    };
+    const id = args.persistent ? `${state.nextNoteId++}` : '0';
+    const color = args.persistent ? randomColor() : '#344596';
+    state.notes[id] = {
+      noteType: 'AREA',
+      id,
+      areaId,
+      color,
+      text: '',
+    };
   },
 
   toggleVideo(state: StateDraft, _: {}): void {
@@ -597,11 +621,6 @@ export const StateActions = {
       ts: args.ts,
       type: args.type,
     };
-  },
-
-  showHeapProfileFlamegraph(
-      state: StateDraft,
-      args: {id: number, upid: number, ts: number, type: string}): void {
     state.currentHeapProfileFlamegraph = {
       kind: 'HEAP_PROFILE_FLAMEGRAPH',
       id: args.id,

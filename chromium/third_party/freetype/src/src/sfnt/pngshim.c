@@ -333,7 +333,7 @@
     if ( populate_map_and_metrics )
     {
       /* reject too large bitmaps similarly to the rasterizer */
-      if ( imgWidth > 0x7FFF || imgHeight > 0x7FFF )
+      if ( imgHeight > 0x7FFF || imgWidth > 0x7FFF )
       {
         error = FT_THROW( Array_Too_Large );
         goto DestroyExit;
@@ -443,6 +443,7 @@
     png_read_end( png, info );
 
   DestroyExit:
+    FT_FREE( rows );
     png_destroy_read_struct( &png, &info, NULL );
     FT_Stream_Close( &stream );
 

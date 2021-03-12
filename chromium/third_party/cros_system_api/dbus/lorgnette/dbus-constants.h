@@ -16,7 +16,7 @@ const char kListScannersMethod[] = "ListScanners";
 const char kGetScannerCapabilitiesMethod[] = "GetScannerCapabilities";
 const char kScanImageMethod[] = "ScanImage";
 const char kStartScanMethod[] = "StartScan";
-const char kStartScanMultiPageMethod[] = "StartScanMultiPage";
+const char kCancelScanMethod[] = "CancelScan";
 const char kGetNextImageMethod[] = "GetNextImage";
 
 // Signals.

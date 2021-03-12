@@ -38,7 +38,7 @@ import {bindCheckbox} from './SettingsUI.js';
 import {Suggestions} from './SuggestBox.js';  // eslint-disable-line no-unused-vars
 import {Events, TextPrompt} from './TextPrompt.js';
 import {ToolbarButton, ToolbarSettingToggle} from './Toolbar.js';  // eslint-disable-line no-unused-vars
-import {CheckboxLabel} from './UIUtils.js';
+import {CheckboxLabel, createTextChild} from './UIUtils.js';
 import {HBox} from './Widget.js';
 
 /**
@@ -51,7 +51,7 @@ export class FilterBar extends HBox {
    */
   constructor(name, visibleByDefault) {
     super();
-    this.registerRequiredCSS('ui/filter.css');
+    this.registerRequiredCSS('ui/filter.css', {enableLegacyPatching: true});
     this._enabled = true;
     this.element.classList.add('filter-bar');
 
@@ -208,7 +208,7 @@ export class TextFilterUI extends Common.ObjectWrapper.ObjectWrapper {
     this._filterInputElement = container.createChild('span', 'filter-input-field');
 
     this._prompt = new TextPrompt();
-    this._prompt.initialize(this._completions.bind(this), ' ');
+    this._prompt.initialize(this._completions.bind(this), ' ', true);
     /** @type {!HTMLElement} */
     this._proxyElement = /** @type {!HTMLElement} */ (this._prompt.attach(this._filterInputElement));
     this._proxyElement.title = Common.UIString.UIString('e.g. /small[\\d]+/ url:a.com/b');
@@ -400,7 +400,7 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper {
     const typeFilterElement = /** @type {!HTMLElement} */ (this._filtersElement.createChild('span', name));
     typeFilterElement.tabIndex = -1;
     this._typeFilterElementTypeNames.set(typeFilterElement, name);
-    typeFilterElement.createTextChild(label);
+    createTextChild(typeFilterElement, label);
     ARIAUtils.markAsOption(typeFilterElement);
     if (title) {
       typeFilterElement.title = title;

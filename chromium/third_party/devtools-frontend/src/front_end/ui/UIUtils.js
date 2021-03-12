@@ -349,13 +349,22 @@ export const StyleValueDelimiters = ' \xA0\t\n"\':;,/()';
  * @param {!Event} event
  * @return {?string}
  */
-function _valueModificationDirection(event) {
+export function getValueModificationDirection(event) {
   let direction = null;
+  // TODO(crbug.com/1145518) Remove usage of MouseWheelEvent.
   if (event.type === 'mousewheel') {
     // When shift is pressed while spinning mousewheel, delta comes as wheelDeltaX.
     if (event.wheelDeltaY > 0 || event.wheelDeltaX > 0) {
       direction = 'Up';
     } else if (event.wheelDeltaY < 0 || event.wheelDeltaX < 0) {
+      direction = 'Down';
+    }
+  } else if (event.type === 'wheel') {
+    // When shift is pressed while spinning mousewheel, delta comes as wheelDeltaX.
+    // WheelEvent's deltaY is inverse from MouseWheelEvent.
+    if (event.deltaY < 0 || event.deltaX < 0) {
+      direction = 'Up';
+    } else if (event.deltaY > 0 || event.deltaX > 0) {
       direction = 'Down';
     }
   } else {
@@ -365,6 +374,7 @@ function _valueModificationDirection(event) {
       direction = 'Down';
     }
   }
+
   return direction;
 }
 
@@ -374,7 +384,7 @@ function _valueModificationDirection(event) {
  * @return {?string}
  */
 function _modifiedHexValue(hexString, event) {
-  const direction = _valueModificationDirection(event);
+  const direction = getValueModificationDirection(event);
   if (!direction) {
     return null;
   }
@@ -435,7 +445,7 @@ function _modifiedHexValue(hexString, event) {
  * @return {?number}
  */
 function _modifiedFloatNumber(number, event, modifierMultiplier) {
-  const direction = _valueModificationDirection(event);
+  const direction = getValueModificationDirection(event);
   if (!direction) {
     return null;
   }
@@ -808,7 +818,7 @@ export function highlightSearchResult(element, offset, length, domChanges) {
 /**
  * @param {!Element} element
  * @param {!Array.<!TextUtils.TextRange.SourceRange>} resultRanges
- * @param {!Array.<!Object>=} changes
+ * @param {!Array.<!HighlightChange>=} changes
  * @return {!Array.<!Element>}
  */
 export function highlightSearchResults(element, resultRanges, changes) {
@@ -837,7 +847,7 @@ export function runCSSAnimationOnce(element, className) {
  * @param {!Element} element
  * @param {!Array.<!TextUtils.TextRange.SourceRange>} resultRanges
  * @param {string} styleClass
- * @param {!Array.<!Object>=} changes
+ * @param {!Array.<!HighlightChange>=} changes
  * @return {!Array.<!Element>}
  */
 export function highlightRangesWithStyleClass(element, resultRanges, styleClass, changes) {
@@ -1203,7 +1213,7 @@ export function initializeUIUtils(document, themeSetting) {
   ThemeSupport.ThemeSupport.instance().applyTheme(document);
 
   const body = /** @type {!Element} */ (document.body);
-  appendStyle(body, 'ui/inspectorStyle.css');
+  appendStyle(body, 'ui/inspectorStyle.css', {enableLegacyPatching: true});
   GlassPane.setContainer(/** @type {!Element} */ (document.body));
 }
 
@@ -1216,13 +1226,35 @@ export function beautifyFunctionName(name) {
 }
 
 /**
+ * @param {!Element|!DocumentFragment} element
  * @param {string} text
- * @param {function(!Event):*=} clickHandler
+ * @return {!Text}
+ */
+export const createTextChild = (element, text) => {
+  const textNode = element.ownerDocument.createTextNode(text);
+  element.appendChild(textNode);
+  return textNode;
+};
+
+/**
+ * @param {!Element|!DocumentFragment} element
+ * @param {...string} childrenText
+ */
+export const createTextChildren = (element, ...childrenText) => {
+  for (const child of childrenText) {
+    createTextChild(element, child);
+  }
+};
+
+/**
+ * @param {string} text
+ * @param {function(!Event):*=} eventHandler
  * @param {string=} className
  * @param {boolean=} primary
+ * @param {string=} alternativeEvent
  * @return {!HTMLButtonElement}
  */
-export function createTextButton(text, clickHandler, className, primary) {
+export function createTextButton(text, eventHandler, className, primary, alternativeEvent) {
   const element = /** @type {!HTMLButtonElement} */ (document.createElement('button'));
   if (className) {
     element.className = className;
@@ -1232,17 +1264,18 @@ export function createTextButton(text, clickHandler, className, primary) {
   if (primary) {
     element.classList.add('primary-button');
   }
-  if (clickHandler) {
-    element.addEventListener('click', clickHandler, false);
+  if (eventHandler) {
+    element.addEventListener(alternativeEvent || 'click', eventHandler);
   }
   element.type = 'button';
   return element;
 }
 
+
 /**
  * @param {string=} className
  * @param {string=} type
- * @return {!Element}
+ * @return {!HTMLInputElement}
  */
 export function createInput(className, type) {
   const element = document.createElement('input');
@@ -1254,7 +1287,7 @@ export function createInput(className, type) {
   if (type) {
     element.type = type;
   }
-  return element;
+  return /** @type {!HTMLInputElement} */ (element);
 }
 
 /**
@@ -1280,23 +1313,23 @@ export function createLabel(title, className, associatedControl) {
  * @param {string} name
  * @param {string} title
  * @param {boolean=} checked
- * @return {!Element}
+ * @return {!DevToolsRadioButton}
  */
 export function createRadioLabel(name, title, checked) {
   const element = createElement('span', 'dt-radio');
   element.radioElement.name = name;
   element.radioElement.checked = !!checked;
-  element.labelElement.createTextChild(title);
-  return element;
+  createTextChild(element.labelElement, title);
+  return /** @type {!DevToolsRadioButton} */ (element);
 }
 
 /**
  * @param {string} title
  * @param {string} iconClass
- * @return {!Element}
+ * @return {!HTMLElement}
  */
 export function createIconLabel(title, iconClass) {
-  const element = createElement('span', 'dt-icon-label');
+  const element = /** @type {!HTMLElement} */ (createElement('span', 'dt-icon-label'));
   element.createChild('span').textContent = title;
   element.type = iconClass;
   return element;
@@ -1328,7 +1361,8 @@ export class CheckboxLabel extends HTMLSpanElement {
     this.textElement;
     CheckboxLabel._lastId = (CheckboxLabel._lastId || 0) + 1;
     const id = 'ui-checkbox-label' + CheckboxLabel._lastId;
-    this._shadowRoot = createShadowRootWithCoreStyles(this, 'ui/checkboxTextLabel.css');
+    this._shadowRoot = createShadowRootWithCoreStyles(
+        this, {cssFile: 'ui/checkboxTextLabel.css', enableLegacyPatching: true, delegatesFocus: undefined});
     this.checkboxElement = /** @type {!HTMLInputElement} */ (this._shadowRoot.createChild('input'));
     this.checkboxElement.type = 'checkbox';
     this.checkboxElement.setAttribute('id', id);
@@ -1392,7 +1426,11 @@ export class CheckboxLabel extends HTMLSpanElement {
 export class DevToolsIconLabel extends HTMLSpanElement {
   constructor() {
     super();
-    const root = createShadowRootWithCoreStyles(this);
+    const root = createShadowRootWithCoreStyles(this, {
+      enableLegacyPatching: true,
+      cssFile: undefined,
+      delegatesFocus: undefined,
+    });
     this._iconElement = Icon.create();
     this._iconElement.style.setProperty('margin-right', '4px');
     root.appendChild(this._iconElement);
@@ -1408,23 +1446,26 @@ export class DevToolsIconLabel extends HTMLSpanElement {
   }
 }
 
-(function() {
 let labelId = 0;
-registerCustomElement('span', 'dt-radio', class extends HTMLSpanElement {
+
+export class DevToolsRadioButton extends HTMLSpanElement {
   constructor() {
     super();
-    this.radioElement = this.createChild('input', 'dt-radio-button');
+    this.radioElement = /** @type {!HTMLInputElement} */ (this.createChild('input', 'dt-radio-button'));
     this.labelElement = this.createChild('label');
 
     const id = 'dt-radio-button-id' + (++labelId);
     this.radioElement.id = id;
     this.radioElement.type = 'radio';
     this.labelElement.htmlFor = id;
-    const root = createShadowRootWithCoreStyles(this, 'ui/radioButton.css');
+    const root = createShadowRootWithCoreStyles(
+        this, {cssFile: 'ui/radioButton.css', enableLegacyPatching: true, delegatesFocus: undefined});
     root.createChild('slot');
     this.addEventListener('click', radioClickHandler, false);
   }
-});
+}
+
+registerCustomElement('span', 'dt-radio', DevToolsRadioButton);
 
 /**
    * @param {!Event} event
@@ -1441,10 +1482,11 @@ function radioClickHandler(event) {
 
 registerCustomElement('span', 'dt-icon-label', DevToolsIconLabel);
 
-registerCustomElement('span', 'dt-slider', class extends HTMLSpanElement {
+class DevToolsSlider extends HTMLSpanElement {
   constructor() {
     super();
-    const root = createShadowRootWithCoreStyles(this, 'ui/slider.css');
+    const root = createShadowRootWithCoreStyles(
+        this, {cssFile: 'ui/slider.css', enableLegacyPatching: true, delegatesFocus: undefined});
     this.sliderElement = document.createElement('input');
     this.sliderElement.classList.add('dt-range-input');
     this.sliderElement.type = 'range';
@@ -1465,12 +1507,15 @@ registerCustomElement('span', 'dt-slider', class extends HTMLSpanElement {
   get value() {
     return this.sliderElement.value;
   }
-});
+}
 
-registerCustomElement('span', 'dt-small-bubble', class extends HTMLSpanElement {
+registerCustomElement('span', 'dt-slider', DevToolsSlider);
+
+export class DevToolsSmallBubble extends HTMLSpanElement {
   constructor() {
     super();
-    const root = createShadowRootWithCoreStyles(this, 'ui/smallBubble.css');
+    const root = createShadowRootWithCoreStyles(
+        this, {cssFile: 'ui/smallBubble.css', enableLegacyPatching: true, delegatesFocus: undefined});
     this._textElement = root.createChild('div');
     this._textElement.className = 'info';
     this._textElement.createChild('slot');
@@ -1483,12 +1528,15 @@ registerCustomElement('span', 'dt-small-bubble', class extends HTMLSpanElement {
   set type(type) {
     this._textElement.className = type;
   }
-});
+}
 
-registerCustomElement('div', 'dt-close-button', class extends HTMLDivElement {
+registerCustomElement('span', 'dt-small-bubble', DevToolsSmallBubble);
+
+export class DevToolsCloseButton extends HTMLDivElement {
   constructor() {
     super();
-    const root = createShadowRootWithCoreStyles(this, 'ui/closeButton.css');
+    const root = createShadowRootWithCoreStyles(
+        this, {cssFile: 'ui/closeButton.css', enableLegacyPatching: true, delegatesFocus: undefined});
     this._buttonElement = root.createChild('div', 'close-button');
     ARIAUtils.setAccessibleName(this._buttonElement, ls`Close`);
     ARIAUtils.markAsButton(this._buttonElement);
@@ -1533,8 +1581,9 @@ registerCustomElement('div', 'dt-close-button', class extends HTMLDivElement {
       this._buttonElement.tabIndex = -1;
     }
   }
-});
-})();
+}
+
+registerCustomElement('div', 'dt-close-button', DevToolsCloseButton);
 
 /**
  * @param {!Element} input
@@ -1747,7 +1796,7 @@ export function addReferrerToURLIfNecessary(url) {
 
 /**
  * @param {string} url
- * @return {!Promise<?Image>}
+ * @return {!Promise<?HTMLImageElement>}
  */
 export function loadImage(url) {
   return new Promise(fulfill => {
@@ -1760,7 +1809,7 @@ export function loadImage(url) {
 
 /**
  * @param {?string} data
- * @return {!Promise<?Image>}
+ * @return {!Promise<?HTMLImageElement>}
  */
 export function loadImageFromData(data) {
   return data ? loadImage('data:image/jpg;base64,' + data) : Promise.resolve(null);
@@ -1768,10 +1817,10 @@ export function loadImageFromData(data) {
 
 /**
  * @param {function(!File):*} callback
- * @return {!Node}
+ * @return {!HTMLInputElement}
  */
 export function createFileSelectorElement(callback) {
-  const fileSelectorElement = createElement('input');
+  const fileSelectorElement = /** @type {!HTMLInputElement} */ (createElement('input'));
   fileSelectorElement.type = 'file';
   fileSelectorElement.style.display = 'none';
   fileSelectorElement.setAttribute('tabindex', -1);
@@ -1798,7 +1847,9 @@ export class MessageDialog {
     const dialog = new Dialog();
     dialog.setSizeBehavior(SizeBehavior.MeasureContent);
     dialog.setDimmed(true);
-    const shadowRoot = createShadowRootWithCoreStyles(dialog.contentElement, 'ui/confirmDialog.css');
+    const shadowRoot = createShadowRootWithCoreStyles(
+        dialog.contentElement,
+        {cssFile: 'ui/confirmDialog.css', enableLegacyPatching: true, delegatesFocus: undefined});
     const content = shadowRoot.createChild('div', 'widget');
     await new Promise(resolve => {
       const okButton = createTextButton(Common.UIString.UIString('OK'), resolve, '', true);
@@ -1826,7 +1877,9 @@ export class ConfirmDialog {
     dialog.setSizeBehavior(SizeBehavior.MeasureContent);
     dialog.setDimmed(true);
     ARIAUtils.setAccessibleName(dialog.contentElement, message);
-    const shadowRoot = createShadowRootWithCoreStyles(dialog.contentElement, 'ui/confirmDialog.css');
+    const shadowRoot = createShadowRootWithCoreStyles(
+        dialog.contentElement,
+        {cssFile: 'ui/confirmDialog.css', enableLegacyPatching: true, delegatesFocus: undefined});
     const content = shadowRoot.createChild('div', 'widget');
     content.createChild('div', 'message').createChild('span').textContent = message;
     const buttonsBar = content.createChild('div', 'button');
@@ -1853,7 +1906,8 @@ export class ConfirmDialog {
  */
 export function createInlineButton(toolbarButton) {
   const element = createElement('span');
-  const shadowRoot = createShadowRootWithCoreStyles(element, 'ui/inlineButton.css');
+  const shadowRoot = createShadowRootWithCoreStyles(
+      element, {cssFile: 'ui/inlineButton.css', enableLegacyPatching: true, delegatesFocus: undefined});
   element.classList.add('inline-button');
   const toolbar = new Toolbar('');
   toolbar.appendToolbarItem(toolbarButton);
@@ -1912,3 +1966,100 @@ export function formatTimestamp(timestamp, full) {
 
 /** @typedef {!{title: (string|!Element|undefined), editable: (boolean|undefined) }} */
 export let Options;
+
+/** @typedef {{
+ *  node: !Element,
+ *  type: string,
+ *  oldText: string,
+ *  newText: string,
+ *  nextSibling: (Node|undefined),
+ *  parent: (Node|undefined),
+ * }}
+ */
+export let HighlightChange;
+
+
+/**
+ * @param {!Element} element
+ * @return {boolean}
+ */
+export const isScrolledToBottom = element => {
+  // This code works only for 0-width border.
+  // The scrollTop, clientHeight and scrollHeight are computed in double values internally.
+  // However, they are exposed to javascript differently, each being either rounded (via
+  // round, ceil or floor functions) or left intouch.
+  // This adds up a total error up to 2.
+  return Math.abs(element.scrollTop + element.clientHeight - element.scrollHeight) <= 2;
+};
+
+/**
+ * @param {!Element} element
+ * @param {string} childType
+ * @param {string=} className
+ * @return {!Element}
+ */
+export function createSVGChild(element, childType, className) {
+  const child = element.ownerDocument.createSVGElement(childType, className);
+  element.appendChild(child);
+  return child;
+}
+
+
+/**
+ * @param {!Node} initialNode
+ * @param {!Array<string>} nameArray
+ * @return {?Node}
+ */
+export const enclosingNodeOrSelfWithNodeNameInArray = (initialNode, nameArray) => {
+  for (let node = initialNode; node && node !== initialNode.ownerDocument; node = node.parentNodeOrShadowHost()) {
+    for (let i = 0; i < nameArray.length; ++i) {
+      if (node.nodeName.toLowerCase() === nameArray[i].toLowerCase()) {
+        return node;
+      }
+    }
+  }
+  return null;
+};
+
+/**
+ * @param {!Node} node
+ * @param {string} nodeName
+ * @return {?Node}
+ */
+export const enclosingNodeOrSelfWithNodeName = function(node, nodeName) {
+  return enclosingNodeOrSelfWithNodeNameInArray(node, [nodeName]);
+};
+
+/**
+ * @param {null|undefined|!Document|!DocumentFragment} document
+ * @param {number} x
+ * @param {number} y
+ * @return {?Node}
+ */
+export const deepElementFromPoint = (document, x, y) => {
+  let container = document;
+  let node = null;
+  while (container) {
+    const innerNode = container.elementFromPoint(x, y);
+    if (!innerNode || node === innerNode) {
+      break;
+    }
+    node = innerNode;
+    container = node.shadowRoot;
+  }
+  return node;
+};
+
+/**
+ * @param {!Event} event
+ * @return {?Node}
+ */
+export const deepElementFromEvent = event => {
+  // Some synthetic events have zero coordinates which lead to a wrong element. Better return nothing in this case.
+  if (!event.which && !event.pageX && !event.pageY && !event.clientX && !event.clientY && !event.movementX &&
+      !event.movementY) {
+    return null;
+  }
+  const root = event.target && event.target.getComponentRoot();
+  return root ? deepElementFromPoint(root, event.pageX, event.pageY) : null;
+};

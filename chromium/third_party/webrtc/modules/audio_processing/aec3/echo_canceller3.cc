@@ -368,6 +368,10 @@ EchoCanceller3Config AdjustConfig(const EchoCanceller3Config& config) {
     adjusted_cfg.suppressor.nearend_tuning.max_dec_factor_lf = .2f;
   }
 
+  if (field_trial::IsEnabled("WebRTC-Aec3EnforceConservativeHfSuppression")) {
+    adjusted_cfg.suppressor.conservative_hf_suppression = true;
+  }
+
   if (field_trial::IsEnabled("WebRTC-Aec3EnforceStationarityProperties")) {
     adjusted_cfg.echo_audibility.use_stationarity_properties = true;
   }
@@ -382,6 +386,10 @@ EchoCanceller3Config AdjustConfig(const EchoCanceller3Config& config) {
   } else if (field_trial::IsEnabled(
                  "WebRTC-Aec3EnforceVeryLowActiveRenderLimit")) {
     adjusted_cfg.render_levels.active_render_limit = 30.f;
+  }
+
+  if (field_trial::IsEnabled("WebRTC-Aec3NonlinearModeReverbKillSwitch")) {
+    adjusted_cfg.echo_model.model_reverb_in_nonlinear_mode = false;
   }
 
   // Field-trial based override for the whole suppressor tuning.

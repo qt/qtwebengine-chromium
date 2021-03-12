@@ -88,7 +88,7 @@ void CastSocketMessagePort::OnMessage(VirtualConnectionRouter* router,
                                       CastSocket* socket,
                                       ::cast::channel::CastMessage message) {
   OSP_DCHECK(router == router_);
-  OSP_DCHECK(socket_.get() == socket);
+  OSP_DCHECK(!socket || socket_.get() == socket);
   OSP_DVLOG << "Received a cast socket message";
   if (!client_) {
     OSP_DLOG_WARN << "Dropping message due to nullptr client_";

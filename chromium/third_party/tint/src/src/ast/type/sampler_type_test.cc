@@ -36,6 +36,7 @@ TEST_F(SamplerTypeTest, Creation_ComparisonSampler) {
 
 TEST_F(SamplerTypeTest, Is) {
   SamplerType s{SamplerKind::kSampler};
+  EXPECT_FALSE(s.IsAccessControl());
   EXPECT_FALSE(s.IsAlias());
   EXPECT_FALSE(s.IsArray());
   EXPECT_FALSE(s.IsBool());
@@ -58,6 +59,11 @@ TEST_F(SamplerTypeTest, TypeName_Sampler) {
 TEST_F(SamplerTypeTest, TypeName_Comparison) {
   SamplerType s{SamplerKind::kComparisonSampler};
   EXPECT_EQ(s.type_name(), "__sampler_comparison");
+}
+
+TEST_F(SamplerTypeTest, MinBufferBindingSize) {
+  SamplerType s{SamplerKind::kSampler};
+  EXPECT_EQ(0u, s.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

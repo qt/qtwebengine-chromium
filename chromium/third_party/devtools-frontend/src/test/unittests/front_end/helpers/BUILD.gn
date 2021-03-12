@@ -8,9 +8,20 @@ ts_library("helpers") {
   testonly = true
   sources = [
     "DOMHelpers.ts",
+    "EnvironmentHelpers.ts",
     "InspectorOverlayHelpers.ts",
+    "MockConnection.ts",
     "MutationHelpers.ts",
+    "MutationHelpers_test.ts",
   ]
 
-  deps = [ "../../../../inspector_overlay" ]
+  deps = [
+    "../../../../front_end/common:bundle",
+    "../../../../front_end/i18n:bundle",
+    "../../../../front_end/protocol_client:bundle",
+    "../../../../front_end/root:bundle",
+    "../../../../front_end/sdk:bundle",
+    "../../../../front_end/third_party/lit-html:bundle",
+    "../../../../inspector_overlay",
+  ]
 }

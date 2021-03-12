@@ -551,6 +551,62 @@ bool ValidateGetInteger64vEXT(const Context *context, GLenum pname, const GLint6
     return true;
 }
 
+bool ValidateCopyImageSubDataEXT(const Context *context,
+                                 GLuint srcName,
+                                 GLenum srcTarget,
+                                 GLint srcLevel,
+                                 GLint srcX,
+                                 GLint srcY,
+                                 GLint srcZ,
+                                 GLuint dstName,
+                                 GLenum dstTarget,
+                                 GLint dstLevel,
+                                 GLint dstX,
+                                 GLint dstY,
+                                 GLint dstZ,
+                                 GLsizei srcWidth,
+                                 GLsizei srcHeight,
+                                 GLsizei srcDepth)
+{
+    if (!context->getExtensions().copyImageEXT)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateCopyImageSubDataBase(context, srcName, srcTarget, srcLevel, srcX, srcY, srcZ,
+                                        dstName, dstTarget, dstLevel, dstX, dstY, dstZ, srcWidth,
+                                        srcHeight, srcDepth);
+}
+
+bool ValidateCopyImageSubDataOES(const Context *context,
+                                 GLuint srcName,
+                                 GLenum srcTarget,
+                                 GLint srcLevel,
+                                 GLint srcX,
+                                 GLint srcY,
+                                 GLint srcZ,
+                                 GLuint dstName,
+                                 GLenum dstTarget,
+                                 GLint dstLevel,
+                                 GLint dstX,
+                                 GLint dstY,
+                                 GLint dstZ,
+                                 GLsizei srcWidth,
+                                 GLsizei srcHeight,
+                                 GLsizei srcDepth)
+{
+    if (!context->getExtensions().copyImageEXT)
+    {
+        context->validationError(GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return ValidateCopyImageSubDataBase(context, srcName, srcTarget, srcLevel, srcX, srcY, srcZ,
+                                        dstName, dstTarget, dstLevel, dstX, dstY, dstZ, srcWidth,
+                                        srcHeight, srcDepth);
+}
+
 bool ValidateBufferStorageMemEXT(const Context *context,
                                  TextureType target,
                                  GLsizeiptr size,
@@ -1106,5 +1162,28 @@ bool ValidateBufferStorageEXT(const Context *context,
     }
 
     return true;
+}
+
+// GL_EXT_external_buffer
+bool ValidateBufferStorageExternalEXT(const Context *context,
+                                      BufferBinding targetPacked,
+                                      GLintptr offset,
+                                      GLsizeiptr size,
+                                      GLeglClientBufferEXT clientBuffer,
+                                      GLbitfield flags)
+{
+    UNIMPLEMENTED();
+    return false;
+}
+
+bool ValidateNamedBufferStorageExternalEXT(const Context *context,
+                                           GLuint buffer,
+                                           GLintptr offset,
+                                           GLsizeiptr size,
+                                           GLeglClientBufferEXT clientBuffer,
+                                           GLbitfield flags)
+{
+    UNIMPLEMENTED();
+    return false;
 }
 }  // namespace gl

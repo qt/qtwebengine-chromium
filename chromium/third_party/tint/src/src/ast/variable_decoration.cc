@@ -18,13 +18,15 @@
 
 #include "src/ast/binding_decoration.h"
 #include "src/ast/builtin_decoration.h"
+#include "src/ast/constant_id_decoration.h"
 #include "src/ast/location_decoration.h"
 #include "src/ast/set_decoration.h"
 
 namespace tint {
 namespace ast {
 
-VariableDecoration::VariableDecoration() = default;
+VariableDecoration::VariableDecoration(const Source& source)
+    : Decoration(Kind, source) {}
 
 VariableDecoration::~VariableDecoration() = default;
 
@@ -40,6 +42,10 @@ bool VariableDecoration::IsLocation() const {
   return false;
 }
 
+bool VariableDecoration::IsConstantId() const {
+  return false;
+}
+
 bool VariableDecoration::IsSet() const {
   return false;
 }
@@ -52,6 +58,11 @@ BindingDecoration* VariableDecoration::AsBinding() {
 BuiltinDecoration* VariableDecoration::AsBuiltin() {
   assert(IsBuiltin());
   return static_cast<BuiltinDecoration*>(this);
+}
+
+ConstantIdDecoration* VariableDecoration::AsConstantId() {
+  assert(IsConstantId());
+  return static_cast<ConstantIdDecoration*>(this);
 }
 
 LocationDecoration* VariableDecoration::AsLocation() {

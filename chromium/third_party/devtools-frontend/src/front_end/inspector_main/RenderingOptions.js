@@ -28,9 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as UI from '../ui/ui.js';
 
@@ -51,7 +48,7 @@ const supportsPrefersReducedData = () => {
 export class RenderingOptionsView extends UI.Widget.VBox {
   constructor() {
     super(true);
-    this.registerRequiredCSS('inspector_main/renderingOptions.css');
+    this.registerRequiredCSS('inspector_main/renderingOptions.css', {enableLegacyPatching: true});
 
     this._appendCheckbox(
         ls`Paint flashing`,
@@ -106,12 +103,22 @@ export class RenderingOptionsView extends UI.Widget.VBox {
         Common.Settings.Settings.instance().moduleSetting('emulatedVisionDeficiency'));
 
     this.contentElement.createChild('div').classList.add('panel-section-separator');
+
+    this._appendCheckbox(
+        ls`Disable AVIF image format`, ls`Requires a page reload to apply and disables caching for image requests.`,
+        Common.Settings.Settings.instance().moduleSetting('avifFormatDisabled'));
+
+    this._appendCheckbox(
+        ls`Disable WebP image format`, ls`Requires a page reload to apply and disables caching for image requests.`,
+        Common.Settings.Settings.instance().moduleSetting('webpFormatDisabled'));
+
+    this.contentElement.createChild('div').classList.add('panel-section-separator');
   }
 
   /**
    * @param {string} label
    * @param {string} subtitle
-   * @param {!Common.Settings.Setting} setting
+   * @param {!Common.Settings.Setting<boolean>} setting
    */
   _appendCheckbox(label, subtitle, setting) {
     const checkboxLabel = UI.UIUtils.CheckboxLabel.create(label, false, subtitle);
@@ -121,7 +128,7 @@ export class RenderingOptionsView extends UI.Widget.VBox {
 
   /**
    * @param {string} label
-   * @param {!Common.Settings.Setting} setting
+   * @param {!Common.Settings.Setting<*>} setting
    */
   _appendSelect(label, setting) {
     const control = UI.SettingsUI.createControlForSetting(setting, label);

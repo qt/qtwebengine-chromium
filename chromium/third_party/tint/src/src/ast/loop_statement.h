@@ -15,6 +15,7 @@
 #ifndef SRC_AST_LOOP_STATEMENT_H_
 #define SRC_AST_LOOP_STATEMENT_H_
 
+#include <memory>
 #include <utility>
 
 #include "src/ast/block_statement.h"
@@ -51,6 +52,8 @@ class LoopStatement : public Statement {
   }
   /// @returns the body statements
   const BlockStatement* body() const { return body_.get(); }
+  /// @returns the body statements
+  BlockStatement* body() { return body_.get(); }
 
   /// Sets the continuing statements
   /// @param continuing the continuing statements
@@ -59,6 +62,8 @@ class LoopStatement : public Statement {
   }
   /// @returns the continuing statements
   const BlockStatement* continuing() const { return continuing_.get(); }
+  /// @returns the continuing statements
+  BlockStatement* continuing() { return continuing_.get(); }
   /// @returns true if there are continuing statements in the loop
   bool has_continuing() const {
     return continuing_ != nullptr && !continuing_->empty();

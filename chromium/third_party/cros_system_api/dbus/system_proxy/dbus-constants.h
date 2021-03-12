@@ -10,7 +10,9 @@ const char kSystemProxyInterface[] = "org.chromium.SystemProxy";
 const char kSystemProxyServicePath[] = "/org/chromium/SystemProxy";
 const char kSystemProxyServiceName[] = "org.chromium.SystemProxy";
 
-// Methods
+// Methods and signals related to System-proxy as the HTTP proxy acting as a OS
+// level proxy authenticator.
+
 // Clears the user proxy auth credentials from System-proxy. This method is
 // invoked when the user clears the credentials cache from the Browser.
 const char kClearUserCredentialsMethod[] = "ClearUserCredentials";
@@ -31,5 +33,11 @@ const char kWorkerActiveSignal[] = "WorkerActive";
 // Signals that System-proxy requires credentials to perform proxy
 // authentication.
 const char kAuthenticationRequiredSignal[] = "AuthenticationRequired";
+
+// Utility methods used by Chrome to facilitate HTTP authentication to a remote
+// server.
+
+// Generates network authentication message using the Chrome OS login password.
+const char kGenerateNetworkAuthMessage[] = "GenerateNetworkAuthMessage";
 }  // namespace system_proxy
 #endif  // SYSTEM_API_DBUS_SYSTEM_PROXY_DBUS_CONSTANTS_H_

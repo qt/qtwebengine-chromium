@@ -50,16 +50,15 @@ DEPS = {
     "eslint-plugin-import": "2.20.2",
     "eslint-plugin-mocha": "6.2.2",
     "eslint-plugin-rulesdir": "0.1.0",
-    "karma": "5.0.1",
+    "karma": "5.2.3",
     "karma-chai": "0.1.0",
     "karma-chrome-launcher": "3.1.0",
-    "karma-coverage":
-    "git+https://git@github.com/karma-runner/karma-coverage.git#27822c91afe597322667211e0f9d2d36670b8323",
+    "karma-coverage": "2.0.3",
     "karma-mocha": "2.0.1",
-    "karma-sourcemap-loader": "0.3.0",
+    "karma-sourcemap-loader": "0.3.8",
     "license-checker": "25.0.1",
-    "mocha": "8.0.1",
-    "puppeteer": "5.3.1",
+    "mocha": "8.2.1",
+    "puppeteer": "5.4.1",
     "recast": "0.18.2",
     "rimraf": "3.0.2",
     "rollup": "2.3.3",
@@ -67,7 +66,7 @@ DEPS = {
     "source-map-support": "0.5.19",
     "stylelint": "13.5.0",
     "stylelint-config-standard": "20.0.0",
-    "typescript": "4.1.0-beta",
+    "typescript": "4.1.1-rc",
     "yargs": "15.3.1",
 }
 
@@ -196,7 +195,7 @@ def remove_package_json_entries():
 def addClangFormat():
     with open(path.join(devtools_paths.node_modules_path(), '.clang-format'), 'w+') as clang_format_file:
         try:
-            clang_format_file.write('DisableFormat: true')
+            clang_format_file.write('DisableFormat: true\n')
         except:
             print('Unable to write .clang-format file')
             return True
@@ -207,10 +206,20 @@ def addOwnersFile():
     with open(path.join(devtools_paths.node_modules_path(), 'OWNERS'),
               'w+') as owners_file:
         try:
-            owners_file.write('file://INFRA_OWNERS')
-            owners_file.write('')
+            owners_file.write('file://INFRA_OWNERS\n')
         except:
             print('Unable to write OWNERS file')
+            return True
+    return False
+
+def addChromiumReadme():
+    with open(path.join(devtools_paths.node_modules_path(), 'README.chromium'),
+              'w+') as readme_file:
+        try:
+            readme_file.write('This directory hosts all packages downloaded from NPM that are used in either the build system or infrastructure scripts.\n')
+            readme_file.write('If you want to make any changes to this directory, please see "scripts/deps/manage_node_deps.py".\n')
+        except:
+            print('Unable to write README.chromium file')
             return True
     return False
 
@@ -246,6 +255,9 @@ def run_npm_command(npm_command_args=None):
         return True
 
     if addOwnersFile():
+        return True
+
+    if addChromiumReadme():
         return True
 
     if run_custom_command:

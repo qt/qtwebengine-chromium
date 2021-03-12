@@ -62,7 +62,7 @@
 #include "core/fxge/renderdevicedriver_iface.h"
 #include "core/fxge/text_char_pos.h"
 #include "core/fxge/text_glyph_pos.h"
-#include "third_party/base/logging.h"
+#include "third_party/base/notreached.h"
 #include "third_party/base/stl_util.h"
 
 #if defined(_SKIA_SUPPORT_)
@@ -649,7 +649,7 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
       return true;
     m_pDevice->GetDIBits(backdrop, rect.left, rect.top);
   }
-  if (!bitmap_device.Create(width, height, FXDIB_Argb, backdrop))
+  if (!bitmap_device.Create(width, height, FXDIB_Format::kArgb, backdrop))
     return true;
 
   RetainPtr<CFX_DIBitmap> bitmap = bitmap_device.GetBitmap();
@@ -661,7 +661,7 @@ bool CPDF_RenderStatus::ProcessTransparency(CPDF_PageObject* pPageObj,
   RetainPtr<CFX_DIBitmap> pTextMask;
   if (bTextClip) {
     pTextMask = pdfium::MakeRetain<CFX_DIBitmap>();
-    if (!pTextMask->Create(width, height, FXDIB_8bppMask))
+    if (!pTextMask->Create(width, height, FXDIB_Format::k8bppMask))
       return true;
 
     pTextMask->Clear(0);
@@ -740,7 +740,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::GetBackdrop(
   int height = bbox.Height();
   auto pBackdrop = pdfium::MakeRetain<CFX_DIBitmap>();
   if (bBackAlphaRequired && !m_bDropObjects)
-    pBackdrop->Create(width, height, FXDIB_Argb);
+    pBackdrop->Create(width, height, FXDIB_Format::kArgb);
   else
     m_pDevice->CreateCompatibleBitmap(pBackdrop, width, height);
 
@@ -981,8 +981,8 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
           continue;
 
         CFX_DefaultRenderDevice bitmap_device;
-        if (!bitmap_device.Create(rect.Width(), rect.Height(), FXDIB_Argb,
-                                  nullptr)) {
+        if (!bitmap_device.Create(rect.Width(), rect.Height(),
+                                  FXDIB_Format::kArgb, nullptr)) {
           return true;
         }
         bitmap_device.GetBitmap()->Clear(0);
@@ -1004,9 +1004,8 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
       if (m_bPrint) {
         CFX_Matrix image_matrix = pType3Char->matrix() * matrix;
         CPDF_ImageRenderer renderer;
-        if (renderer.Start(this, pType3Char->GetBitmap(), fill_argb, 255,
-                           image_matrix, FXDIB_ResampleOptions(), false,
-                           BlendMode::kNormal)) {
+        if (renderer.Start(this, pType3Char->GetBitmap(), fill_argb,
+                           image_matrix, FXDIB_ResampleOptions(), false)) {
           renderer.Continue(nullptr);
         }
         if (!renderer.GetResult())
@@ -1049,7 +1048,7 @@ bool CPDF_RenderStatus::ProcessType3Text(CPDF_TextObject* textobj,
 
   FX_RECT rect = GetGlyphsBBox(glyphs, 0);
   auto pBitmap = pdfium::MakeRetain<CFX_DIBitmap>();
-  if (!pBitmap->Create(rect.Width(), rect.Height(), FXDIB_8bppMask))
+  if (!pBitmap->Create(rect.Width(), rect.Height(), FXDIB_Format::k8bppMask))
     return true;
 
   pBitmap->Clear(0);
@@ -1254,7 +1253,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
     return;
 
   if (blend_mode == BlendMode::kNormal) {
-    if (!pDIBitmap->IsAlphaMask()) {
+    if (!pDIBitmap->IsMask()) {
       if (bitmap_alpha < 255) {
 #if defined(_SKIA_SUPPORT_)
         std::unique_ptr<CFX_ImageRenderer> dummy;
@@ -1293,7 +1292,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
        (m_pDevice->GetRenderCaps() & FXRC_GET_BITS) && !bBackAlphaRequired);
   if (bGetBackGround) {
     if (bIsolated || !transparency.IsGroup()) {
-      if (!pDIBitmap->IsAlphaMask())
+      if (!pDIBitmap->IsMask())
         m_pDevice->SetDIBitsWithBlend(pDIBitmap, left, top, blend_mode);
       return;
     }
@@ -1313,7 +1312,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
                               BlendMode::kNormal, nullptr, false);
       left = std::min(left, 0);
       top = std::min(top, 0);
-      if (pDIBitmap->IsAlphaMask()) {
+      if (pDIBitmap->IsMask()) {
         pClone->CompositeMask(0, 0, pClone->GetWidth(), pClone->GetHeight(),
                               pDIBitmap, mask_argb, left, top, blend_mode,
                               nullptr, false);
@@ -1328,7 +1327,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
     if (m_pDevice->GetBackDrop()) {
       m_pDevice->SetDIBits(pClone, rect.left, rect.top);
     } else {
-      if (!pDIBitmap->IsAlphaMask()) {
+      if (!pDIBitmap->IsMask()) {
         m_pDevice->SetDIBitsWithBlend(pDIBitmap, rect.left, rect.top,
                                       blend_mode);
       }
@@ -1345,7 +1344,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
   if (!pBackdrop)
     return;
 
-  if (pDIBitmap->IsAlphaMask()) {
+  if (pDIBitmap->IsMask()) {
     pBackdrop->CompositeMask(left - back_left, top - back_top,
                              pDIBitmap->GetWidth(), pDIBitmap->GetHeight(),
                              pDIBitmap, mask_argb, 0, 0, blend_mode, nullptr,
@@ -1358,7 +1357,7 @@ void CPDF_RenderStatus::CompositeDIBitmap(
 
   auto pBackdrop1 = pdfium::MakeRetain<CFX_DIBitmap>();
   pBackdrop1->Create(pBackdrop->GetWidth(), pBackdrop->GetHeight(),
-                     FXDIB_Rgb32);
+                     FXDIB_Format::kRgb32);
   pBackdrop1->Clear((uint32_t)-1);
   pBackdrop1->CompositeBitmap(0, 0, pBackdrop->GetWidth(),
                               pBackdrop->GetHeight(), pBackdrop, 0, 0,
@@ -1400,9 +1399,9 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
   FXDIB_Format format;
 #if defined(OS_APPLE) || defined(_SKIA_SUPPORT_) || \
     defined(_SKIA_SUPPORT_PATHS_)
-  format = bLuminosity ? FXDIB_Rgb32 : FXDIB_8bppMask;
+  format = bLuminosity ? FXDIB_Format::kRgb32 : FXDIB_Format::k8bppMask;
 #else
-  format = bLuminosity ? FXDIB_Rgb : FXDIB_8bppMask;
+  format = bLuminosity ? FXDIB_Format::kRgb : FXDIB_Format::k8bppMask;
 #endif
   if (!bitmap_device.Create(width, height, format, nullptr))
     return nullptr;
@@ -1433,7 +1432,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
   status.RenderObjectList(&form, matrix);
 
   auto pMask = pdfium::MakeRetain<CFX_DIBitmap>();
-  if (!pMask->Create(width, height, FXDIB_8bppMask))
+  if (!pMask->Create(width, height, FXDIB_Format::k8bppMask))
     return nullptr;
 
   uint8_t* dest_buf = pMask->GetBuffer();
@@ -1510,7 +1509,7 @@ FX_ARGB CPDF_RenderStatus::GetBackColor(const CPDF_Dictionary* pSMaskDict,
   float R;
   float G;
   float B;
-  pCS->GetRGB(floats.data(), &R, &G, &B);
+  pCS->GetRGB(floats, &R, &G, &B);
   return ArgbEncode(255, static_cast<int>(R * 255), static_cast<int>(G * 255),
                     static_cast<int>(B * 255));
 }

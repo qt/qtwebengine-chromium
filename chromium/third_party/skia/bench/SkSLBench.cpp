@@ -7,7 +7,13 @@
 #include "bench/Benchmark.h"
 #include "bench/ResultsWriter.h"
 #include "bench/SkSLBench.h"
+#include "include/core/SkCanvas.h"
+#include "src/gpu/GrCaps.h"
+#include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/mock/GrMockCaps.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLIRGenerator.h"
+#include "src/sksl/SkSLParser.h"
 
 class SkSLCompilerStartupBench : public Benchmark {
 protected:
@@ -21,18 +27,44 @@ protected:
 
     void onDraw(int loops, SkCanvas*) override {
         for (int i = 0; i < loops; i++) {
-            SkSL::Compiler compiler;
+            SkSL::Compiler compiler(/*caps=*/nullptr);
         }
     }
 };
 
 DEF_BENCH(return new SkSLCompilerStartupBench();)
 
-class SkSLBench : public Benchmark {
+enum class Output {
+    kNone,
+    kGLSL,
+    kMetal,
+    kSPIRV
+};
+
+class SkSLCompileBench : public Benchmark {
 public:
-    SkSLBench(SkSL::String name, const char* src)
-        : fName("sksl_" + name)
-        , fSrc(src) {}
+    static const char* output_string(Output output) {
+        switch (output) {
+            case Output::kNone: return "";
+            case Output::kGLSL: return "glsl_";
+            case Output::kMetal: return "metal_";
+            case Output::kSPIRV: return "spirv_";
+        }
+        SkUNREACHABLE;
+    }
+
+    SkSLCompileBench(SkSL::String name, const char* src, bool optimize, Output output)
+        : fName(SkSL::String("sksl_") + (optimize ? "" : "unoptimized_") + output_string(output) +
+                name)
+        , fSrc(src)
+        , fCaps(GrContextOptions(), GrMockOptions())
+        , fCompiler(fCaps.shaderCaps())
+        , fOutput(output) {
+            fSettings.fOptimize = optimize;
+            // The test programs we compile don't follow Vulkan rules and thus produce invalid
+            // SPIR-V. This is harmless, so long as we don't try to validate them.
+            fSettings.fValidateSPIRV = false;
+        }
 
 protected:
     const char* onGetName() override {
@@ -43,15 +75,67 @@ protected:
         return backend == kNonRendering_Backend;
     }
 
-    void onDraw(int loops, SkCanvas*) override {
+    void onDraw(int loops, SkCanvas* canvas) override {
         for (int i = 0; i < loops; i++) {
             std::unique_ptr<SkSL::Program> program = fCompiler.convertProgram(
                                                                       SkSL::Program::kFragment_Kind,
                                                                       fSrc,
                                                                       fSettings);
             if (fCompiler.errorCount()) {
-                printf("%s\n", fCompiler.errorText().c_str());
-                SK_ABORT("shader compilation failed");
+                SK_ABORT("shader compilation failed: %s\n", fCompiler.errorText().c_str());
+            }
+            SkSL::String result;
+            switch (fOutput) {
+                case Output::kNone: break;
+                case Output::kGLSL:  SkAssertResult(fCompiler.toGLSL(*program,  &result)); break;
+                case Output::kMetal: SkAssertResult(fCompiler.toMetal(*program, &result)); break;
+                case Output::kSPIRV: SkAssertResult(fCompiler.toSPIRV(*program, &result)); break;
+            }
+        }
+    }
+
+private:
+    SkSL::String fName;
+    SkSL::String fSrc;
+    GrMockCaps fCaps;
+    SkSL::Compiler fCompiler;
+    SkSL::Program::Settings fSettings;
+    Output fOutput;
+
+    using INHERITED = Benchmark;
+};
+
+class SkSLParseBench : public Benchmark {
+public:
+    SkSLParseBench(SkSL::String name, const char* src)
+        : fName("sksl_parse_" + name)
+        , fSrc(src)
+        , fCompiler(/*caps=*/nullptr) {}
+
+protected:
+    const char* onGetName() override {
+        return fName.c_str();
+    }
+
+    bool isSuitableFor(Backend backend) override {
+        return backend == kNonRendering_Backend;
+    }
+
+    void onDelayedSetup() override {
+        SkSL::ParsedModule module = fCompiler.moduleForProgramKind(
+                                                               SkSL::Program::Kind::kFragment_Kind);
+        fCompiler.irGenerator().setSymbolTable(module.fSymbols);
+    }
+
+    void onDraw(int loops, SkCanvas*) override {
+        for (int i = 0; i < loops; i++) {
+            fCompiler.irGenerator().pushSymbolTable();
+            SkSL::Parser parser(fSrc.c_str(), fSrc.length(), *fCompiler.irGenerator().symbolTable(),
+                                fCompiler);
+            parser.compilationUnit();
+            fCompiler.irGenerator().popSymbolTable();
+            if (fCompiler.errorCount()) {
+                SK_ABORT("shader compilation failed: %s\n", fCompiler.errorText().c_str());
             }
         }
     }
@@ -67,23 +151,33 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-DEF_BENCH(return new SkSLBench("tiny", "void main() { sk_FragColor = half4(1); }"); )
-DEF_BENCH(return new SkSLBench("large", R"(
-uniform half urange_Stage1;
-uniform half4 uleftBorderColor_Stage1_c0_c0;
-uniform half4 urightBorderColor_Stage1_c0_c0;
-uniform float3x3 umatrix_Stage1_c0_c0_c0;
-uniform half2 ufocalParams_Stage1_c0_c0_c0_c0;
-uniform float4 uscale0_1_Stage1_c0_c0_c1;
-uniform float4 uscale2_3_Stage1_c0_c0_c1;
-uniform float4 uscale4_5_Stage1_c0_c0_c1;
-uniform float4 uscale6_7_Stage1_c0_c0_c1;
-uniform float4 ubias0_1_Stage1_c0_c0_c1;
-uniform float4 ubias2_3_Stage1_c0_c0_c1;
-uniform float4 ubias4_5_Stage1_c0_c0_c1;
-uniform float4 ubias6_7_Stage1_c0_c0_c1;
-uniform half4 uthresholds1_7_Stage1_c0_c0_c1;
-uniform half4 uthresholds9_13_Stage1_c0_c0_c1;
+#define COMPILER_BENCH(name, text)                                                               \
+static constexpr char name ## _SRC[] = text;                                                     \
+DEF_BENCH(return new SkSLParseBench(#name, name ## _SRC);)                                       \
+DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/false, Output::kNone);)  \
+DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kNone);)  \
+DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kGLSL);)  \
+DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kMetal);) \
+DEF_BENCH(return new SkSLCompileBench(#name, name ## _SRC, /*optimize=*/true,  Output::kSPIRV);)
+
+// Metal requires a layout set and binding for all of its uniforms. We just care that these shaders
+// compile, not that they actually work, so we just fill them with zeroes.
+COMPILER_BENCH(large, R"(
+layout(set=0, binding=0) uniform half urange_Stage1;
+layout(set=0, binding=0) uniform half4 uleftBorderColor_Stage1_c0_c0;
+layout(set=0, binding=0) uniform half4 urightBorderColor_Stage1_c0_c0;
+layout(set=0, binding=0) uniform float3x3 umatrix_Stage1_c0_c0_c0;
+layout(set=0, binding=0) uniform half2 ufocalParams_Stage1_c0_c0_c0_c0;
+layout(set=0, binding=0) uniform float4 uscale0_1_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform float4 uscale2_3_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform float4 uscale4_5_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform float4 uscale6_7_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform float4 ubias0_1_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform float4 ubias2_3_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform float4 ubias4_5_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform float4 ubias6_7_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform half4 uthresholds1_7_Stage1_c0_c0_c1;
+layout(set=0, binding=0) uniform half4 uthresholds9_13_Stage1_c0_c0_c1;
 flat in half4 vcolor_Stage0;
 in float vcoverage_Stage0;
 flat in float4 vgeomSubset_Stage0;
@@ -347,12 +441,12 @@ void main()
         sk_FragColor = output_Stage1 * outputCoverage_Stage0;
     }
 }
-)");)
+)");
 
-DEF_BENCH(return new SkSLBench("medium", R"(
-    uniform half2 uDstTextureUpperLeft_Stage1;
-    uniform half2 uDstTextureCoordScale_Stage1;
-    uniform sampler2D uDstTextureSampler_Stage1;
+COMPILER_BENCH(medium, R"(
+    layout(set=0, binding=0) uniform half2 uDstTextureUpperLeft_Stage1;
+    layout(set=0, binding=0) uniform half2 uDstTextureCoordScale_Stage1;
+    layout(set=0, binding=0) uniform sampler2D uDstTextureSampler_Stage1;
     noperspective in half4 vQuadEdge_Stage0;
     noperspective in half4 vinColor_Stage0;
     out half4 sk_FragColor;
@@ -414,7 +508,48 @@ DEF_BENCH(return new SkSLBench("medium", R"(
                            (half4(1.0) - outputCoverage_Stage0) * _dstColor;
         }
     }
-)"); )
+)");
+
+COMPILER_BENCH(small, R"(
+    layout(set=0, binding=0) uniform float3x3 umatrix_Stage1_c0_c0;
+    layout(set=0, binding=0) uniform sampler2D uTextureSampler_0_Stage1;
+    noperspective in float2 vTransformedCoords_0_Stage0;
+    out half4 sk_FragColor;
+    half4 TextureEffect_Stage1_c0_c0_c0(half4 _input)
+    {
+        half4 _output;
+        return sample(uTextureSampler_0_Stage1, vTransformedCoords_0_Stage0);
+    }
+    half4 MatrixEffect_Stage1_c0_c0(half4 _input)
+    {
+        half4 _output;
+        return TextureEffect_Stage1_c0_c0_c0(_input);
+    }
+    inline half4 Blend_Stage1_c0(half4 _input)
+    {
+        half4 _output;
+        // Blend mode: Modulate (Compose-One behavior)
+        return blend_modulate(MatrixEffect_Stage1_c0_c0(half4(1)), _input);
+    }
+    void main()
+    {
+        half4 outputColor_Stage0;
+        half4 outputCoverage_Stage0;
+        {
+            // Stage 0, QuadPerEdgeAAGeometryProcessor
+            outputColor_Stage0 = half4(1);
+            outputCoverage_Stage0 = half4(1);
+        }
+        half4 output_Stage1;
+        output_Stage1 = Blend_Stage1_c0(outputColor_Stage0);
+        {
+            // Xfer Processor: Porter Duff
+            sk_FragColor = output_Stage1 * outputCoverage_Stage0;
+        }
+    }
+)");
+
+COMPILER_BENCH(tiny, "void main() { sk_FragColor = half4(1); }");
 
 #if defined(SK_BUILD_FOR_UNIX)
 
@@ -434,7 +569,7 @@ void RunSkSLMemoryBenchmarks(NanoJSONResultsWriter* log) {
 
     {
         int before = heap_bytes_used();
-        SkSL::Compiler compiler;
+        SkSL::Compiler compiler(/*caps=*/nullptr);
         int after = heap_bytes_used();
         bench("sksl_compiler_baseline", after - before);
     }

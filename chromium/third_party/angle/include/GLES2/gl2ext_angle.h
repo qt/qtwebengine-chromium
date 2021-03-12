@@ -31,6 +31,7 @@ GL_APICALL void GL_APIENTRY glRequestExtensionANGLE (const GLchar *name);
 #ifndef GL_ANGLE_robust_resource_initialization
 #define GL_ANGLE_robust_resource_initialization 1
 #define GL_ROBUST_RESOURCE_INITIALIZATION_ANGLE 0x93AB
+#define GL_RESOURCE_INITIALIZED_ANGLE 0x969F
 #endif /* GL_ANGLE_robust_resource_initialization */
 
 #ifndef GL_ANGLE_provoking_vertex
@@ -399,6 +400,16 @@ GL_APICALL void GL_APIENTRY glGetMultisamplefvANGLE(GLenum pname, GLuint index, 
 GL_APICALL void GL_APIENTRY glSampleMaskiANGLE(GLuint maskNumber, GLbitfield mask);
 #endif
 #endif  // !GL_ANGLE_texture_multisample
+
+#ifndef GL_ANGLE_get_tex_level_parameter
+#define GL_ANGLE_get_tex_level_parameter 1
+typedef void(GL_APIENTRYP PFNGLGETTEXLEVELPARAMETERFVANGLEPROC)(GLenum target, GLint level, GLenum pname, GLfloat *params);
+typedef void(GL_APIENTRYP PFNGLGETTEXLEVELPARAMETERIVANGLEPROC)(GLenum target, GLint level, GLenum pname, GLint *params);
+#ifdef GL_GLEXT_PROTOTYPES
+GL_APICALL void GL_APIENTRY glGetTexLevelParameterfvANGLE(GLenum target, GLint level, GLenum pname, GLfloat *params);
+GL_APICALL void GL_APIENTRY glGetTexLevelParameterivANGLE(GLenum target, GLint level, GLenum pname, GLint *params);
+#endif
+#endif /* GL_ANGLE_get_tex_level_parameter */
 
 #ifndef GL_ANGLE_explicit_context
 #define GL_ANGLE_explicit_context

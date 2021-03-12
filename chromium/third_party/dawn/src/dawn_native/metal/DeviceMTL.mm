@@ -163,7 +163,7 @@ namespace dawn_native { namespace metal {
         Surface* surface,
         NewSwapChainBase* previousSwapChain,
         const SwapChainDescriptor* descriptor) {
-        return new SwapChain(this, surface, previousSwapChain, descriptor);
+        return SwapChain::Create(this, surface, previousSwapChain, descriptor);
     }
     ResultOrError<Ref<TextureBase>> Device::CreateTextureImpl(const TextureDescriptor* descriptor) {
         return AcquireRef(new Texture(this, descriptor));
@@ -297,12 +297,10 @@ namespace dawn_native { namespace metal {
 
         // This function assumes data is perfectly aligned. Otherwise, it might be necessary
         // to split copying to several stages: see ComputeTextureBufferCopySplit.
-        const TexelBlockInfo& blockInfo = texture->GetFormat().GetTexelBlockInfo(dst->aspect);
-        uint32_t blockSize = blockInfo.blockByteSize;
-        uint32_t blockWidth = blockInfo.blockWidth;
-        uint32_t blockHeight = blockInfo.blockHeight;
-        ASSERT(dataLayout.rowsPerImage == (copySizePixels.height));
-        ASSERT(dataLayout.bytesPerRow == (copySizePixels.width) / blockWidth * blockSize);
+        const TexelBlockInfo& blockInfo = texture->GetFormat().GetAspectInfo(dst->aspect).block;
+        ASSERT(dataLayout.rowsPerImage == copySizePixels.height / blockInfo.height);
+        ASSERT(dataLayout.bytesPerRow ==
+               copySizePixels.width / blockInfo.width * blockInfo.byteSize);
 
         EnsureDestinationTextureInitialized(texture, *dst, copySizePixels);
 
@@ -314,8 +312,7 @@ namespace dawn_native { namespace metal {
             texture->ClampToMipLevelVirtualSize(dst->mipLevel, dst->origin, copySizePixels);
         const uint32_t copyBaseLayer = dst->origin.z;
         const uint32_t copyLayerCount = copySizePixels.depth;
-        const uint64_t bytesPerImage =
-            dataLayout.rowsPerImage * dataLayout.bytesPerRow / blockHeight;
+        const uint64_t bytesPerImage = dataLayout.rowsPerImage * dataLayout.bytesPerRow;
 
         MTLBlitOption blitOption = ComputeMTLBlitOption(texture->GetFormat(), dst->aspect);
 

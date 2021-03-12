@@ -199,10 +199,8 @@ Bbr2ProbeBwMode::AdaptUpperBoundsResult Bbr2ProbeBwMode::MaybeAdaptUpperBounds(
     return NOT_ADAPTED_INVALID_SAMPLE;
   }
 
-  const bool has_enough_loss_events =
-      model_->loss_events_in_round() >= Params().probe_bw_full_loss_count;
-
-  if (has_enough_loss_events && model_->IsInflightTooHigh(congestion_event)) {
+  if (model_->IsInflightTooHigh(congestion_event,
+                                Params().probe_bw_full_loss_count)) {
     if (cycle_.is_sample_from_probing) {
       cycle_.is_sample_from_probing = false;
 
@@ -218,17 +216,24 @@ Bbr2ProbeBwMode::AdaptUpperBoundsResult Bbr2ProbeBwMode::MaybeAdaptUpperBounds(
           // The new code actually cuts inflight_hi slower than before.
           QUIC_CODE_COUNT(quic_bbr2_cut_inflight_hi_gradually_in_effect);
         }
-        if (Params().limit_inflight_hi_by_cwnd) {
-          const QuicByteCount cwnd_target =
-              sender_->GetCongestionWindow() * (1.0 - Params().beta);
-          if (inflight_at_send >= cwnd_target) {
-            // The new code does not change behavior.
-            QUIC_CODE_COUNT(quic_bbr2_cut_inflight_hi_cwnd_noop);
+        if (Params().limit_inflight_hi_by_max_delivered) {
+          QuicByteCount new_inflight_hi =
+              std::max(inflight_at_send, inflight_target);
+          if (new_inflight_hi >= model_->max_bytes_delivered_in_round()) {
+            QUIC_CODE_COUNT(quic_bbr2_cut_inflight_hi_max_delivered_noop);
           } else {
-            // The new code actually cuts inflight_hi slower than before.
-            QUIC_CODE_COUNT(quic_bbr2_cut_inflight_hi_cwnd_in_effect);
+            QUIC_CODE_COUNT(quic_bbr2_cut_inflight_hi_max_delivered_in_effect);
+            new_inflight_hi = model_->max_bytes_delivered_in_round();
           }
-          model_->set_inflight_hi(std::max(inflight_at_send, cwnd_target));
+          QUIC_DVLOG(3) << sender_
+                        << " Setting inflight_hi due to loss. new_inflight_hi:"
+                        << new_inflight_hi
+                        << ", inflight_at_send:" << inflight_at_send
+                        << ", inflight_target:" << inflight_target
+                        << ", max_bytes_delivered_in_round:"
+                        << model_->max_bytes_delivered_in_round() << "  @ "
+                        << congestion_event.event_time;
+          model_->set_inflight_hi(new_inflight_hi);
         } else {
           model_->set_inflight_hi(std::max(inflight_at_send, inflight_target));
         }

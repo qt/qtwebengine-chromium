@@ -475,6 +475,36 @@ struct FeaturesGL : FeatureSetBase
         "clamp_msc_rate", FeatureCategory::OpenGLWorkarounds,
         "Some drivers return bogus values for GetMscRate, so we clamp it to 30Hz", &members,
         "https://crbug.com/1042393"};
+
+    // Mac drivers generate GL_INVALID_VALUE when binding a transform feedback buffer with
+    // glBindBufferRange before first binding it to some generic binding point.
+    Feature bindTransformFeedbackBufferBeforeBindBufferRange = {
+        "bind_transform_feedback_buffer_before_bind_buffer_range",
+        FeatureCategory::OpenGLWorkarounds,
+        "Bind transform feedback buffers to the generic binding point before calling "
+        "glBindBufferBase or glBindBufferRange.",
+        &members, "https://anglebug.com/5140"};
+
+    // Speculative fix for issues on Linux/Wayland where exposing GLX_OML_sync_control renders
+    // Chrome unusable
+    Feature disableSyncControlSupport = {
+        "disable_sync_control_support", FeatureCategory::OpenGLWorkarounds,
+        "Speculative fix for issues on Linux/Wayland where exposing GLX_OML_sync_control renders "
+        "Chrome unusable",
+        &members, "https://crbug.com/1137851"};
+
+    // Buffers need to maintain a shadow copy of data when buffer data readback is not possible
+    // through the GL API
+    Feature keepBufferShadowCopy = {
+        "keep_buffer_shadow_copy", FeatureCategory::OpenGLWorkarounds,
+        "Maintain a shadow copy of buffer data when the GL API does not permit reading data back.",
+        &members};
+
+    // glGenerateMipmap fails if the zero texture level is not set on some Mac drivers
+    Feature setZeroLevelBeforeGenerateMipmap = {
+        "set_zero_level_before_generating_mipmap", FeatureCategory::OpenGLWorkarounds,
+        "glGenerateMipmap fails if the zero texture level is not set on some Mac drivers.",
+        &members};
 };
 
 inline FeaturesGL::FeaturesGL()  = default;

@@ -21,17 +21,17 @@
 #include "v8/include/cppgc/garbage-collected.h"
 #include "v8/include/cppgc/member.h"
 #include "xfa/fxfa/fxfa_basic.h"
-#include "xfa/fxfa/parser/cxfa_measurement.h"
 
-class CFX_XMLElement;
+class CFXJSE_MapModule;
 class CFXJSE_Value;
 class CFX_V8;
+class CFX_XMLElement;
 class CJX_Object;
 class CXFA_Document;
 class CXFA_LayoutItem;
+class CXFA_Measurement;
 class CXFA_Node;
 class CXFA_Object;
-struct XFA_MAPMODULEDATA;
 
 typedef CJS_Result (*CJX_MethodCall)(
     CJX_Object* obj,
@@ -41,14 +41,6 @@ typedef CJS_Result (*CJX_MethodCall)(
 struct CJX_MethodSpec {
   const char* pName;
   CJX_MethodCall pMethodCall;
-};
-
-typedef void (*PD_CALLBACK_FREEDATA)(void* pData);
-typedef void (*PD_CALLBACK_DUPLICATEDATA)(void*& pData);
-
-struct XFA_MAPDATABLOCKCALLBACKINFO {
-  PD_CALLBACK_FREEDATA pFree;
-  PD_CALLBACK_DUPLICATEDATA pCopy;
 };
 
 enum XFA_SOM_MESSAGETYPE {
@@ -139,9 +131,9 @@ class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
 
   bool HasAttribute(XFA_Attribute eAttr);
   void SetAttributeByEnum(XFA_Attribute eAttr,
-                          WideStringView wsValue,
+                          const WideString& wsValue,
                           bool bNotify);
-  void SetAttributeByString(WideStringView wsAttr, WideStringView wsValue);
+  void SetAttributeByString(WideStringView wsAttr, const WideString& wsValue);
   void RemoveAttribute(WideStringView wsAttr);
   WideString GetAttributeByString(WideStringView attr);
   WideString GetAttributeByEnum(XFA_Attribute attr);
@@ -188,7 +180,8 @@ class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
   JSE_PROP(ScriptSomInstanceIndex);
   JSE_PROP(ScriptSubmitFormatMode);
 
-  void ScriptSomMessage(CFXJSE_Value* pValue,
+  void ScriptSomMessage(v8::Isolate* pIsolate,
+                        CFXJSE_Value* pValue,
                         bool bSetting,
                         XFA_SOM_MESSAGETYPE iMessageType);
 
@@ -214,11 +207,13 @@ class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
   Optional<CXFA_Measurement> TryMeasure(XFA_Attribute eAttr,
                                         bool bUseDefault) const;
   Optional<float> TryMeasureAsFloat(XFA_Attribute attr) const;
-  void SetMeasure(XFA_Attribute eAttr, CXFA_Measurement mValue, bool bNotify);
+  void SetMeasure(XFA_Attribute eAttr,
+                  const CXFA_Measurement& mValue,
+                  bool bNotify);
   CXFA_Measurement GetMeasure(XFA_Attribute eAttr) const;
   float GetMeasureInUnit(XFA_Attribute eAttr, XFA_Unit unit) const;
 
-  void MergeAllData(CXFA_Object* pDstModule);
+  void MergeAllData(CXFA_Object* pDstObj);
 
   CalcData* GetCalcData() const { return calc_data_; }
   CalcData* GetOrCreateCalcData(cppgc::Heap* heap);
@@ -242,8 +237,7 @@ class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
                     bool bNotify,
                     bool bScriptModify);
   void DefineMethods(pdfium::span<const CJX_MethodSpec> methods);
-  void MoveBufferMapData(CXFA_Object* pSrcModule, CXFA_Object* pDstModule);
-  void SetMapModuleString(void* pKey, WideStringView wsValue);
+  void MoveBufferMapData(CXFA_Object* pSrcObj, CXFA_Object* pDstObj);
   void ThrowException(const WideString& str) const;
 
  private:
@@ -256,41 +250,34 @@ class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
 
   void OnChanged(XFA_Attribute eAttr, bool bNotify, bool bScriptModify);
   void OnChanging(XFA_Attribute eAttr, bool bNotify);
-  void SetUserData(void* pKey,
-                   void* pData,
-                   const XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo);
 
   // Returns a pointer to the XML node that needs to be updated with the new
   // attribute value. |nullptr| if no update is needed.
-  CFX_XMLElement* SetValue(XFA_Attribute eAttr, void* pValue, bool bNotify);
+  CFX_XMLElement* SetValue(XFA_Attribute eAttr, int32_t value, bool bNotify);
   int32_t Subform_and_SubformSet_InstanceIndex();
 
-  XFA_MAPMODULEDATA* CreateMapModuleData();
-  XFA_MAPMODULEDATA* GetMapModuleData() const;
-  void SetMapModuleValue(void* pKey, void* pValue);
-  Optional<void*> GetMapModuleValue(void* pKey) const;
-  Optional<WideString> GetMapModuleString(void* pKey) const;
-  void SetMapModuleBuffer(void* pKey,
-                          void* pValue,
-                          int32_t iBytes,
-                          const XFA_MAPDATABLOCKCALLBACKINFO* pCallbackInfo);
-  bool GetMapModuleBuffer(void* pKey, void** pValue, int32_t* pBytes) const;
-  bool HasMapModuleKey(void* pKey);
-  void ClearMapModuleBuffer();
-  void RemoveMapModuleKey(void* pKey);
-  void MoveBufferMapData(CXFA_Object* pDstModule);
+  CFXJSE_MapModule* CreateMapModule();
+  CFXJSE_MapModule* GetMapModule() const;
+  void SetMapModuleValue(uint32_t key, int32_t value);
+  void SetMapModuleString(uint32_t key, const WideString& wsValue);
+  void SetMapModuleMeasurement(uint32_t key, const CXFA_Measurement& value);
+  Optional<int32_t> GetMapModuleValue(uint32_t key) const;
+  Optional<WideString> GetMapModuleString(uint32_t key) const;
+  Optional<CXFA_Measurement> GetMapModuleMeasurement(uint32_t key) const;
+  Optional<int32_t> GetMapModuleValueFollowingChain(uint32_t key) const;
+  Optional<WideString> GetMapModuleStringFollowingChain(uint32_t key) const;
+  Optional<CXFA_Measurement> GetMapModuleMeasurementFollowingChain(
+      uint32_t key) const;
+  bool HasMapModuleKey(uint32_t key);
+  void RemoveMapModuleKey(uint32_t key);
+  void MoveBufferMapData(CXFA_Object* pDstObj);
 
   cppgc::Member<CXFA_Object> object_;
   cppgc::Member<CXFA_LayoutItem> layout_item_;
   cppgc::Member<CalcData> calc_data_;
-  std::unique_ptr<XFA_MAPMODULEDATA> map_module_data_;
+  std::unique_ptr<CFXJSE_MapModule> map_module_;
   std::map<ByteString, CJX_MethodCall> method_specs_;
   size_t calc_recursion_count_ = 0;
 };
-
-typedef void (*XFA_ATTRIBUTE_CALLBACK)(CJX_Object* pNode,
-                                       CFXJSE_Value* pValue,
-                                       bool bSetting,
-                                       XFA_Attribute eAttribute);
 
 #endif  // FXJS_XFA_CJX_OBJECT_H_

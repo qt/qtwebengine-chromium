@@ -7,6 +7,7 @@
 
 #include "src/gpu/ccpr/GrCCAtlas.h"
 
+#include "include/private/SkTPin.h"
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/GrOnFlushResourceProvider.h"
 #include "src/gpu/ccpr/GrCCPathCache.h"
@@ -60,7 +61,7 @@ void GrCCAtlas::setEndStencilResolveInstance(int idx) {
 
 static uint32_t next_atlas_unique_id() {
     static std::atomic<uint32_t> nextID;
-    return nextID++;
+    return nextID.fetch_add(1, std::memory_order_relaxed);
 }
 
 sk_sp<GrCCCachedAtlas> GrCCAtlas::refOrMakeCachedAtlas(GrOnFlushResourceProvider* onFlushRP) {

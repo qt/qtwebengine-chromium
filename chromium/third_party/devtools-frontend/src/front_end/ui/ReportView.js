@@ -15,7 +15,7 @@ export class ReportView extends VBox {
    */
   constructor(title) {
     super(true);
-    this.registerRequiredCSS('ui/reportView.css');
+    this.registerRequiredCSS('ui/reportView.css', {enableLegacyPatching: true});
 
     this._contentBox = this.contentElement.createChild('div', 'report-content-box');
     this._headerElement = this._contentBox.createChild('div', 'report-header vbox');
@@ -146,11 +146,13 @@ export class Section extends VBox {
 
   /**
    * @param {string} title
+   * @param {string=} tooltip
    */
-  setTitle(title) {
+  setTitle(title, tooltip) {
     if (this._titleElement.textContent !== title) {
       this._titleElement.textContent = title;
     }
+    this._titleElement.title = tooltip || '';
     this._titleElement.classList.toggle('hidden', !this._titleElement.textContent);
   }
 
@@ -234,10 +236,10 @@ export class Section extends VBox {
   }
 
   /**
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   appendRow() {
-    return this._fieldList.createChild('div', 'report-row');
+    return /** @type {!HTMLElement} */ (this._fieldList.createChild('div', 'report-row'));
   }
 
   /**

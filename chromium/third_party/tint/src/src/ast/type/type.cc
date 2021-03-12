@@ -16,6 +16,7 @@
 
 #include <assert.h>
 
+#include "src/ast/type/access_control_type.h"
 #include "src/ast/type/alias_type.h"
 #include "src/ast/type/array_type.h"
 #include "src/ast/type/bool_type.h"
@@ -45,16 +46,26 @@ Type* Type::UnwrapPtrIfNeeded() {
   return this;
 }
 
-Type* Type::UnwrapAliasesIfNeeded() {
+Type* Type::UnwrapIfNeeded() {
   auto* where = this;
-  while (where->IsAlias()) {
-        where = where->AsAlias()->type();
+  while (true) {
+    if (where->IsAlias()) {
+          where = where->AsAlias()->type();
+    } else if (where->IsAccessControl()) {
+          where = where->AsAccessControl()->type();
+    } else {
+      break;
+    }
   }
   return where;
 }
 
-Type* Type::UnwrapAliasPtrAlias() {
-  return UnwrapAliasesIfNeeded()->UnwrapPtrIfNeeded()->UnwrapAliasesIfNeeded();
+Type* Type::UnwrapAll() {
+  return UnwrapIfNeeded()->UnwrapPtrIfNeeded()->UnwrapIfNeeded();
+}
+
+bool Type::IsAccessControl() const {
+  return false;
 }
 
 bool Type::IsAlias() const {
@@ -109,6 +120,18 @@ bool Type::IsVoid() const {
   return false;
 }
 
+uint64_t Type::MinBufferBindingSize(MemoryLayout) const {
+  return 0;
+}
+
+uint64_t Type::BaseAlignment(MemoryLayout) const {
+  return 0;
+}
+
+bool Type::is_scalar() {
+  return is_float_scalar() || is_integer_scalar() || IsBool();
+}
+
 bool Type::is_float_scalar() {
   return IsF32();
 }
@@ -147,6 +170,11 @@ bool Type::is_signed_scalar_or_vector() {
 
 bool Type::is_integer_scalar_or_vector() {
   return is_unsigned_scalar_or_vector() || is_signed_scalar_or_vector();
+}
+
+const AccessControlType* Type::AsAccessControl() const {
+  assert(IsAccessControl());
+  return static_cast<const AccessControlType*>(this);
 }
 
 const AliasType* Type::AsAlias() const {
@@ -212,6 +240,11 @@ const VectorType* Type::AsVector() const {
 const VoidType* Type::AsVoid() const {
   assert(IsVoid());
   return static_cast<const VoidType*>(this);
+}
+
+AccessControlType* Type::AsAccessControl() {
+  assert(IsAccessControl());
+  return static_cast<AccessControlType*>(this);
 }
 
 AliasType* Type::AsAlias() {

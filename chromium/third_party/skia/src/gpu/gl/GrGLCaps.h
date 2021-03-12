@@ -16,7 +16,7 @@
 #include "include/private/SkTHash.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrSwizzle.h"
-#include "src/gpu/gl/GrGLStencilAttachment.h"
+#include "src/gpu/gl/GrGLAttachment.h"
 #include "src/gpu/gl/GrGLUtil.h"
 
 class GrGLContextInfo;
@@ -29,8 +29,6 @@ class GrGLRenderTarget;
  */
 class GrGLCaps : public GrCaps {
 public:
-    typedef GrGLStencilAttachment::Format StencilFormat;
-
     /**
      * The type of MSAA for FBOs supported. Different extensions have different
      * semantics of how / when a resolve is performed.
@@ -106,6 +104,13 @@ public:
         kNVFence
     };
 
+    enum class MultiDrawType {
+        kNone,
+        kMultiDrawIndirect,  // ARB_multi_draw_indirect, EXT_multi_draw_indirect, or GL 4.3 core.
+        kANGLEOrWebGL  // ANGLE_base_vertex_base_instance or
+                       // WEBGL_draw_instanced_base_vertex_base_instance
+    };
+
     /**
      * Initializes the GrGLCaps to the set of features supported in the current
      * OpenGL context accessible via ctxInfo.
@@ -135,9 +140,6 @@ public:
         return this->maxRenderTargetSampleCount(format.asGLFormat());
     }
     int maxRenderTargetSampleCount(GrGLFormat) const;
-
-    size_t bytesPerPixel(GrGLFormat) const;
-    size_t bytesPerPixel(const GrBackendFormat&) const override;
 
     bool isFormatCopyable(const GrBackendFormat&) const override;
 
@@ -190,7 +192,7 @@ public:
     * to be supported by the driver but are legal GLenum names given the GL
     * version and extensions supported.
     */
-    const SkTArray<StencilFormat, true>& stencilFormats() const {
+    const SkTArray<GrGLFormat, true>& stencilFormats() const {
         return fStencilFormats;
     }
 
@@ -288,6 +290,9 @@ public:
     /// How are GrFences implemented?
     FenceType fenceType() const { return fFenceType; }
 
+    /// How are multi draws implemented (if at all)?
+    MultiDrawType multiDrawType() const { return fMultiDrawType; }
+
     /// The maximum number of fragment uniform vectors (GLES has min. 16).
     int maxFragmentUniformVectors() const { return fMaxFragmentUniformVectors; }
 
@@ -308,13 +313,6 @@ public:
 
     /// Is there support for ES2 compatability?
     bool ES2CompatibilitySupport() const { return fES2CompatibilitySupport; }
-
-    /// Is there support for GL_ANGLE_base_vertex_base_instance?
-    bool ANGLEMultiDrawSupport() const { return fANGLEMultiDrawSupport; }
-
-    /// Is there support for glMultiDraw*Indirect? Note that the baseInstance fields of indirect
-    /// draw commands cannot be used unless we have base instance support.
-    bool multiDrawIndirectSupport() const { return fMultiDrawIndirectSupport; }
 
     /// Is there support for glDrawRangeElements?
     bool drawRangeElementsSupport() const { return fDrawRangeElementsSupport; }
@@ -485,7 +483,6 @@ private:
         bool fDisableSRGBRenderWithMSAAForMacAMD = false;
         bool fDisableRGBA16FTexStorageForCrBug1008003 = false;
         bool fDisableBGRATextureStorageForIntelWindowsES = false;
-        bool fDisableRGB8ForMali400 = false;
         bool fDisableLuminance16F = false;
         bool fDontDisableTexStorageOnAndroid = false;
         bool fDisallowDirectRG8ReadPixels = false;
@@ -522,7 +519,7 @@ private:
 
     GrGLStandard fStandard = kNone_GrGLStandard;
 
-    SkTArray<StencilFormat, true> fStencilFormats;
+    SkTArray<GrGLFormat, true> fStencilFormats;
 
     int fMaxFragmentUniformVectors = 0;
 
@@ -531,6 +528,7 @@ private:
     MapBufferType       fMapBufferType      = kNone_MapBufferType;
     TransferBufferType  fTransferBufferType = TransferBufferType::kNone;
     FenceType           fFenceType          = FenceType::kNone;
+    MultiDrawType       fMultiDrawType      = MultiDrawType::kNone;
 
     bool fPackFlipYSupport : 1;
     bool fTextureUsageSupport : 1;
@@ -539,8 +537,6 @@ private:
     bool fDebugSupport : 1;
     bool fES2CompatibilitySupport : 1;
     bool fDrawRangeElementsSupport : 1;
-    bool fANGLEMultiDrawSupport : 1;
-    bool fMultiDrawIndirectSupport : 1;
     bool fBaseVertexBaseInstanceSupport : 1;
     bool fUseNonVBOVertexAndIndexDynamicData : 1;
     bool fIsCoreProfile : 1;
@@ -719,8 +715,6 @@ private:
         // When the above two values are used to initialize a texture by uploading cleared data to
         // it the data should be of this color type.
         GrColorType fDefaultColorType = GrColorType::kUnknown;
-        // This value is only valid for regular formats. Compressed formats will be 0.
-        GrGLenum fBytesPerPixel = 0;
 
         bool fHaveQueriedImplementationReadSupport = false;
 
@@ -740,7 +734,7 @@ private:
         int fColorTypeInfoCount = 0;
     };
 
-    FormatInfo fFormatTable[kGrGLFormatCount];
+    FormatInfo fFormatTable[kGrGLColorFormatCount];
 
     FormatInfo& getFormatInfo(GrGLFormat format) { return fFormatTable[static_cast<int>(format)]; }
     const FormatInfo& getFormatInfo(GrGLFormat format) const {

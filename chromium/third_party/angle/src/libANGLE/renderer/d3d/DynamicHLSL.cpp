@@ -295,7 +295,7 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
     {
         numOutputs = 1u;
     }
-    const PixelShaderOutputVariable defaultOutput(GL_FLOAT_VEC4, "dummy", "float4(0, 0, 0, 1)", 0,
+    const PixelShaderOutputVariable defaultOutput(GL_FLOAT_VEC4, "unused", "float4(0, 0, 0, 1)", 0,
                                                   0);
     size_t outputIndex = 0;
 
@@ -434,6 +434,9 @@ void DynamicHLSL::generateVaryingLinkHLSL(const VaryingPacking &varyingPacking,
                 break;
             case sh::INTERPOLATION_CENTROID:
                 hlslStream << "    centroid ";
+                break;
+            case sh::INTERPOLATION_SAMPLE:
+                hlslStream << "    sample ";
                 break;
             default:
                 UNREACHABLE();

@@ -6076,6 +6076,13 @@ Specifies the sample rate, and defaults to 44100.
 @item nb_samples, n
 Set the number of samples per requested frames.
 
+@item duration, d
+Set the duration of the sourced audio. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
+
+If not specified, or the expressed duration is negative, the audio is
+supposed to be generated forever.
 @end table
 
 @subsection Examples
@@ -6469,12 +6476,6 @@ and a separate video created with @var{alphaextract}, you might use:
 @example
 movie=in_alpha.mkv [alpha]; [in][alpha] alphamerge [out]
 @end example
-
-Since this filter is designed for reconstruction, it operates on frame
-sequences without considering timestamps, and terminates when either
-input reaches end of stream. This will cause problems if your encoding
-pipeline drops frames. If you're trying to apply an image as an
-overlay to a video stream, consider the @var{overlay} filter instead.
 
 @section amplify
 
@@ -10234,6 +10235,12 @@ drawtext='fontfile=Linux Libertine O-40\:style=Semibold:text=FFmpeg'
 @end example
 
 @item
+Draw "Test Text" with font size dependent on height of the video.
+@example
+drawtext="text='Test Text': fontsize=h/30: x=(w-text_w)/2: y=(h-text_h*2)"
+@end example
+
+@item
 Print the date of a real-time encoding (see strftime(3)):
 @example
 drawtext='fontfile=FreeSans.ttf:text=%@{localtime\:%a %b %d %Y@}'
@@ -11936,6 +11943,9 @@ Display video size or number of audio channels in case of audio used by filter l
 
 @item rate
 Display video frame rate or sample rate in case of audio used by filter link.
+
+@item eof
+Display link output status.
 @end table
 
 @item rate, r
@@ -18260,6 +18270,29 @@ Show envelope. Default is disabled.
 
 @item ecolor, ec
 Set envelope color. Default is @code{gold}.
+
+@item slide
+Set slide mode.
+
+Available values for slide is:
+@table @samp
+@item frame
+Draw new frame when right border is reached.
+
+@item replace
+Replace old columns with new ones.
+
+@item scroll
+Scroll from right to left.
+
+@item rscroll
+Scroll from left to right.
+
+@item picture
+Draw single picture.
+@end table
+
+Default is @code{replace}.
 @end table
 
 @section threshold
@@ -19478,6 +19511,9 @@ Set input horizontal/vertical/diagonal field of view. Values in degrees.
 
 If diagonal field of view is set it overrides horizontal and vertical field of view.
 @end table
+
+@item octahedron
+Octahedron projection.
 @end table
 
 @item interp
@@ -20521,6 +20557,10 @@ Set one of available transition effects:
 @item vdslice
 @item hblur
 @item fadegrays
+@item wipetl
+@item wipetr
+@item wipebl
+@item wipebr
 @end table
 Default transition effect is fade.
 
@@ -22565,6 +22605,17 @@ Set number of colors to use at once. Allowed range is from 2 to 8. Default value
 
 @item seed
 Set seed for picking gradient line points.
+
+@item duration, d
+Set the duration of the sourced video. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
+
+If not specified, or the expressed duration is negative, the video is
+supposed to be generated forever.
+
+@item speed
+Set speed of gradients rotation.
 @end table
 
 
@@ -22953,6 +23004,10 @@ for the accepted syntax.
 
 If not specified, or the expressed duration is negative, the video is
 supposed to be generated forever.
+
+Since the frame rate is used as time base, all frames including the last one
+will have their full duration. If the specified duration is not a multiple
+of the frame duration, it will be rounded up.
 
 @item sar
 Set the sample aspect ratio of the sourced video.

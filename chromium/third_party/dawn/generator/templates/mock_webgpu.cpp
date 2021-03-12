@@ -100,6 +100,30 @@ void ProcTableAsClass::FenceOnCompletion(WGPUFence self,
     OnFenceOnCompletionCallback(self, value, callback, userdata);
 }
 
+void ProcTableAsClass::DeviceCreateReadyComputePipeline(
+    WGPUDevice self,
+    WGPUComputePipelineDescriptor const * descriptor,
+    WGPUCreateReadyComputePipelineCallback callback,
+    void* userdata) {
+    auto object = reinterpret_cast<ProcTableAsClass::Object*>(self);
+    object->createReadyComputePipelineCallback = callback;
+    object->userdata = userdata;
+
+    OnDeviceCreateReadyComputePipelineCallback(self, descriptor, callback, userdata);
+}
+
+void ProcTableAsClass::DeviceCreateReadyRenderPipeline(
+    WGPUDevice self,
+    WGPURenderPipelineDescriptor const * descriptor,
+    WGPUCreateReadyRenderPipelineCallback callback,
+    void* userdata) {
+    auto object = reinterpret_cast<ProcTableAsClass::Object*>(self);
+    object->createReadyRenderPipelineCallback = callback;
+    object->userdata = userdata;
+
+    OnDeviceCreateReadyRenderPipelineCallback(self, descriptor, callback, userdata);
+}
+
 void ProcTableAsClass::CallDeviceErrorCallback(WGPUDevice device,
                                                WGPUErrorType type,
                                                const char* message) {
@@ -121,6 +145,22 @@ void ProcTableAsClass::CallFenceOnCompletionCallback(WGPUFence fence,
                                                      WGPUFenceCompletionStatus status) {
     auto object = reinterpret_cast<ProcTableAsClass::Object*>(fence);
     object->fenceOnCompletionCallback(status, object->userdata);
+}
+
+void ProcTableAsClass::CallDeviceCreateReadyComputePipelineCallback(WGPUDevice device,
+                                                                    WGPUCreateReadyPipelineStatus status,
+                                                                    WGPUComputePipeline pipeline,
+                                                                    const char* message) {
+    auto object = reinterpret_cast<ProcTableAsClass::Object*>(device);
+    object->createReadyComputePipelineCallback(status, pipeline, message, object->userdata);
+}
+
+void ProcTableAsClass::CallDeviceCreateReadyRenderPipelineCallback(WGPUDevice device,
+                                                                   WGPUCreateReadyPipelineStatus status,
+                                                                   WGPURenderPipeline pipeline,
+                                                                   const char* message) {
+    auto object = reinterpret_cast<ProcTableAsClass::Object*>(device);
+    object->createReadyRenderPipelineCallback(status, pipeline, message, object->userdata);
 }
 
 {% for type in by_category["object"] %}

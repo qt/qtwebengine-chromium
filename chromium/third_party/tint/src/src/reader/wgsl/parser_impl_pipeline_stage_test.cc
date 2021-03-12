@@ -23,40 +23,27 @@ namespace wgsl {
 namespace {
 
 struct PipelineStageData {
-  const char* input;
+  std::string input;
   ast::PipelineStage result;
 };
 inline std::ostream& operator<<(std::ostream& out, PipelineStageData data) {
-  out << std::string(data.input);
-  return out;
+  return out << data.input;
 }
 
-class PipelineStageTest : public testing::TestWithParam<PipelineStageData> {
- public:
-  PipelineStageTest() = default;
-  ~PipelineStageTest() override = default;
-
-  void SetUp() override { ctx_.Reset(); }
-
-  void TearDown() override { impl_ = nullptr; }
-
-  ParserImpl* parser(const std::string& str) {
-    impl_ = std::make_unique<ParserImpl>(&ctx_, str);
-    return impl_.get();
-  }
-
- private:
-  std::unique_ptr<ParserImpl> impl_;
-  Context ctx_;
-};
+class PipelineStageTest : public ParserImplTestWithParam<PipelineStageData> {};
 
 TEST_P(PipelineStageTest, Parses) {
   auto params = GetParam();
   auto* p = parser(params.input);
 
-  auto stage = p->pipeline_stage();
-  ASSERT_FALSE(p->has_error());
-  EXPECT_EQ(stage, params.result);
+  auto stage = p->expect_pipeline_stage();
+  ASSERT_FALSE(p->has_error()) << p->error();
+  ASSERT_FALSE(stage.errored);
+  EXPECT_EQ(stage.value, params.result);
+  EXPECT_EQ(stage.source.range.begin.line, 1u);
+  EXPECT_EQ(stage.source.range.begin.column, 1u);
+  EXPECT_EQ(stage.source.range.end.line, 1u);
+  EXPECT_EQ(stage.source.range.end.column, 1u + params.input.size());
 
   auto t = p->next();
   EXPECT_TRUE(t.IsEof());
@@ -71,12 +58,10 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(ParserImplTest, PipelineStage_NoMatch) {
   auto* p = parser("not-a-stage");
-  auto stage = p->pipeline_stage();
-  ASSERT_EQ(stage, ast::PipelineStage::kNone);
-
-  auto t = p->next();
-  EXPECT_TRUE(t.IsIdentifier());
-  EXPECT_EQ(t.to_str(), "not");
+  auto stage = p->expect_pipeline_stage();
+  ASSERT_TRUE(p->has_error());
+  ASSERT_TRUE(stage.errored);
+  ASSERT_EQ(p->error(), "1:1: invalid value for stage decoration");
 }
 
 }  // namespace

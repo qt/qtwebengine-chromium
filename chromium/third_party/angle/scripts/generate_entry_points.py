@@ -90,8 +90,8 @@ template_entry_points_enum_header = """// GENERATED FILE - DO NOT EDIT.
 // entry_points_enum_autogen.h:
 //   Defines the {lib} entry points enumeration.
 
-#ifndef LIBANGLE_ENTRYPOINTSENUM_AUTOGEN_H_
-#define LIBANGLE_ENTRYPOINTSENUM_AUTOGEN_H_
+#ifndef COMMON_ENTRYPOINTSENUM_AUTOGEN_H_
+#define COMMON_ENTRYPOINTSENUM_AUTOGEN_H_
 
 namespace gl
 {{
@@ -102,7 +102,7 @@ enum class EntryPoint
 
 const char *GetEntryPointName(EntryPoint ep);
 }}  // namespace gl
-#endif  // LIBANGLE_ENTRY_POINTS_ENUM_AUTOGEN_H_
+#endif  // COMMON_ENTRY_POINTS_ENUM_AUTOGEN_H_
 """
 
 template_entry_points_name_case = """        case EntryPoint::{enum}:
@@ -118,7 +118,7 @@ template_entry_points_enum_source = """// GENERATED FILE - DO NOT EDIT.
 // entry_points_enum_autogen.cpp:
 //   Helper methods for the {lib} entry points enumeration.
 
-#include "libANGLE/entry_points_enum_autogen.h"
+#include "common/entry_points_enum_autogen.h"
 
 #include "common/debug.h"
 
@@ -157,7 +157,7 @@ template_entry_point_decl = """ANGLE_EXPORT {return_type}GL_APIENTRY {name}{expl
 template_entry_point_no_return = """void GL_APIENTRY {name}{explicit_context_suffix}({explicit_context_param}{explicit_context_comma}{params})
 {{
     Context *context = {context_getter};
-    {event_comment}EVENT(context, "gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
+    {event_comment}EVENT(context, gl::EntryPoint::{name}, "gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
 
     if ({valid_context_check})
     {{{assert_explicit_context}{packed_gl_enum_conversions}
@@ -179,7 +179,7 @@ template_entry_point_no_return = """void GL_APIENTRY {name}{explicit_context_suf
 template_entry_point_with_return = """{return_type}GL_APIENTRY {name}{explicit_context_suffix}({explicit_context_param}{explicit_context_comma}{params})
 {{
     Context *context = {context_getter};
-    {event_comment}EVENT(context, "gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
+    {event_comment}EVENT(context, gl::EntryPoint::{name}, "gl{name}", "context = %d{comma_if_needed}{format_params}", CID(context){comma_if_needed}{pass_params});
 
     {return_type} returnValue;
     if ({valid_context_check})
@@ -425,6 +425,7 @@ reinterpret_cast_to_dict = {
     "GLsync": "uintptr_t",
     "GLDEBUGPROC": "uintptr_t",
     "GLDEBUGPROCKHR": "uintptr_t",
+    "GLeglClientBufferEXT": "uintptr_t",
     "GLeglImageOES": "uintptr_t",
 }
 
@@ -436,6 +437,7 @@ format_dict = {
     "GLDEBUGPROC": "0x%016\" PRIxPTR \"",
     "GLDEBUGPROCKHR": "0x%016\" PRIxPTR \"",
     "GLdouble": "%f",
+    "GLeglClientBufferEXT": "0x%016\" PRIxPTR \"",
     "GLeglImageOES": "0x%016\" PRIxPTR \"",
     "GLenum": "%s",
     "GLfixed": "0x%X",
@@ -468,6 +470,7 @@ template_header_includes = """#include <GLES{major}/gl{major}{minor}.h>
 
 template_sources_includes = """#include "libGLESv2/entry_points_{header_version}_autogen.h"
 
+#include "common/entry_points_enum_autogen.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Context.inl.h"
 #include "libANGLE/capture_{header_version}_autogen.h"
@@ -687,8 +690,8 @@ template_init_param_value_case = """        case ParamType::T{enum}:
             SetParamVal<ParamType::T{enum}>(valueIn, valueOut);
             break;"""
 
-template_write_param_type_to_stream_case = """        case ParamType::T{enum}:
-            WriteParamValueReplay<ParamType::T{enum}>(os, call, param.value.{union_name});
+template_write_param_type_to_stream_case = """        case ParamType::T{enum_in}:
+            WriteParamValueReplay<ParamType::T{enum_out}>(os, call, param.value.{union_name});
             break;"""
 
 template_param_type_to_string_case = """        case ParamType::T{enum}:
@@ -781,13 +784,13 @@ def param_print_argument(command_node, param):
 
 def param_format_string(param):
     if "*" in param:
-        return param + " = 0x%016\" PRIxPTR \""
+        return just_the_name(param) + " = 0x%016\" PRIxPTR \""
     else:
         type_only = just_the_type(param)
         if type_only not in format_dict:
             raise Exception(type_only + " is not a known type in 'format_dict'")
 
-        return param + " = " + format_dict[type_only]
+        return just_the_name(param) + " = " + format_dict[type_only]
 
 
 def default_return_value(cmd_name, return_type):
@@ -1432,8 +1435,10 @@ def format_init_param_value_case(param_type):
 
 
 def format_write_param_type_to_stream_case(param_type):
+    # Force all enum printing to go through "const void *"
+    param_out = "voidConstPointer" if "Pointer" in param_type else param_type
     return template_write_param_type_to_stream_case.format(
-        enum=param_type, union_name=get_param_type_union_name(param_type))
+        enum_in=param_type, enum_out=param_out, union_name=get_param_type_union_name(param_out))
 
 
 def get_resource_id_types(all_param_types):
@@ -1689,6 +1694,8 @@ def main():
     if len(sys.argv) > 1:
         inputs = ['entry_point_packed_gl_enums.json'] + registry_xml.xml_inputs
         outputs = [
+            '../src/common/entry_points_enum_autogen.cpp',
+            '../src/common/entry_points_enum_autogen.h',
             '../src/libANGLE/Context_gl_1_0_autogen.h',
             '../src/libANGLE/Context_gl_1_1_autogen.h',
             '../src/libANGLE/Context_gl_1_2_autogen.h',
@@ -1729,8 +1736,6 @@ def main():
             '../src/libANGLE/frame_capture_replay_autogen.cpp',
             '../src/libANGLE/frame_capture_utils_autogen.cpp',
             '../src/libANGLE/frame_capture_utils_autogen.h',
-            '../src/libANGLE/entry_points_enum_autogen.cpp',
-            '../src/libANGLE/entry_points_enum_autogen.h',
             '../src/libANGLE/validationES1_autogen.h',
             '../src/libANGLE/validationES2_autogen.h',
             '../src/libANGLE/validationES31_autogen.h',
@@ -2177,7 +2182,7 @@ def main():
         lib="GL/GLES",
         entry_points_list=",\n".join(["    " + cmd for cmd in sorted_cmd_names]))
 
-    entry_points_enum_header_path = path_to("libANGLE", "entry_points_enum_autogen.h")
+    entry_points_enum_header_path = path_to("common", "entry_points_enum_autogen.h")
     with open(entry_points_enum_header_path, "w") as out:
         out.write(entry_points_enum_header)
         out.close()
@@ -2192,7 +2197,7 @@ def main():
         lib="GL/GLES",
         entry_points_name_cases="\n".join(entry_points_cases))
 
-    entry_points_enum_source_path = path_to("libANGLE", "entry_points_enum_autogen.cpp")
+    entry_points_enum_source_path = path_to("common", "entry_points_enum_autogen.cpp")
     with open(entry_points_enum_source_path, "w") as out:
         out.write(entry_points_enum_source)
         out.close()

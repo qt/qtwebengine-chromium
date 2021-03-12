@@ -226,6 +226,7 @@ void PointerEventManager::SendMouseAndPointerBoundaryEvents(
   PointerEvent* dummy_pointer_event = pointer_event_factory_.Create(
       web_pointer_event, Vector<WebPointerEvent>(), Vector<WebPointerEvent>(),
       frame_->GetDocument()->domWindow());
+  DCHECK(dummy_pointer_event);
 
   // TODO(crbug/545647): This state should reset with pointercancel too.
   // This function also gets called for compat mouse events of touch at this
@@ -463,8 +464,12 @@ WebInputEventResult PointerEventManager::DispatchTouchPointerEvent(
             ? pointer_event_target.target_element->GetDocument().domWindow()
             : nullptr);
 
-    result = SendTouchPointerEvent(pointer_event_target.target_element,
-                                   pointer_event, web_pointer_event.hovering);
+    if (pointer_event) {
+      result = SendTouchPointerEvent(pointer_event_target.target_element,
+                                     pointer_event, web_pointer_event.hovering);
+    } else {
+      result = WebInputEventResult::kNotHandled;
+    }
 
     // If a pointerdown has been canceled, queue the unique id to allow
     // suppressing mouse events from gesture events. For mouse events
@@ -560,10 +565,6 @@ WebInputEventResult PointerEventManager::HandlePointerEvent(
       target = ComputePointerEventTarget(event).target_element;
     }
 
-    PointerEvent* pointer_event =
-        pointer_event_factory_.Create(event, coalesced_events, predicted_events,
-                                      frame_->GetDocument()->domWindow());
-
     // Sometimes the Browser process tags events with kRelativeMotionEvent.
     // For e.g. during pointer lock, it recenters cursor by warping so that
     // cursor does not hit the screen boundary.
@@ -574,7 +575,13 @@ WebInputEventResult PointerEventManager::HandlePointerEvent(
     if (event.GetModifiers() & WebInputEvent::Modifiers::kRelativeMotionEvent)
       return WebInputEventResult::kHandledSuppressed;
 
-    DispatchPointerEvent(target, pointer_event);
+    PointerEvent* pointer_event =
+        pointer_event_factory_.Create(event, coalesced_events, predicted_events,
+                                      frame_->GetDocument()->domWindow());
+    if (pointer_event) {
+      // TODO(crbug.com/1141595): We should handle this case further upstream.
+      DispatchPointerEvent(target, pointer_event);
+    }
     return WebInputEventResult::kHandledSystem;
   }
 
@@ -602,15 +609,19 @@ WebInputEventResult PointerEventManager::HandlePointerEvent(
                  event_handling_util::ShouldDiscardEventTargetingFrame(
                      event, *pointer_event_target.target_frame);
   if (discard) {
-    PointerEvent* pointer_event = pointer_event_factory_.Create(
+    PointerEvent* core_pointer_event = pointer_event_factory_.Create(
         event, coalesced_events, predicted_events,
         pointer_event_target.target_element
             ? pointer_event_target.target_element->GetDocument().domWindow()
             : nullptr);
-    SendTouchPointerEvent(pointer_event_target.target_element,
-                          pointer_event_factory_.CreatePointerCancelEvent(
-                              pointer_event->pointerId(), event.TimeStamp()),
-                          event.hovering);
+    if (core_pointer_event) {
+      // TODO(crbug.com/1141595): We should handle this case further upstream.
+      SendTouchPointerEvent(
+          pointer_event_target.target_element,
+          pointer_event_factory_.CreatePointerCancelEvent(
+              core_pointer_event->pointerId(), event.TimeStamp()),
+          event.hovering);
+    }
 
     WebPointerEvent pointer_cancel_event;
     pointer_cancel_event.pointer_type = event.pointer_type;
@@ -676,6 +687,7 @@ WebInputEventResult PointerEventManager::CreateAndDispatchPointerEvent(
   PointerEvent* pointer_event = pointer_event_factory_.Create(
       web_pointer_event, pointer_coalesced_events, pointer_predicted_events,
       target->GetDocument().domWindow());
+  DCHECK(pointer_event);
 
   ProcessCaptureAndPositionOfPointerEvent(pointer_event, target,
                                           canvas_region_id, &mouse_event);
@@ -744,15 +756,16 @@ WebInputEventResult PointerEventManager::SendMousePointerEvent(
           pointer_event_factory_.GetPointerEventId(mouse_event), mouse_event,
           event_type);
 
-  PointerEvent* pointer_event = pointer_event_factory_.Create(
-      web_pointer_event, pointer_coalesced_events, pointer_predicted_events,
-      frame_->GetDocument()->domWindow());
-
   bool fake_event = (web_pointer_event.GetModifiers() &
                      WebInputEvent::Modifiers::kRelativeMotionEvent);
 
   // Fake events should only be move events.
   DCHECK(!fake_event || event_type == WebInputEvent::Type::kPointerMove);
+
+  PointerEvent* pointer_event = pointer_event_factory_.Create(
+      web_pointer_event, pointer_coalesced_events, pointer_predicted_events,
+      frame_->GetDocument()->domWindow());
+  DCHECK(pointer_event);
 
   // This is for when the mouse is released outside of the page.
   if (!fake_event && event_type == WebInputEvent::Type::kPointerMove &&

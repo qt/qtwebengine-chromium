@@ -13,7 +13,7 @@
 #include "src/gpu/GrStencilSettings.h"
 
 GrDawnCaps::GrDawnCaps(const GrContextOptions& contextOptions) : INHERITED(contextOptions) {
-    fMipmapSupport = false;  // FIXME: implement onRegenerateMipMapLevels in GrDawnGpu.
+    fMipmapSupport = true;
     fBufferMapThreshold = SK_MaxS32;  // FIXME: get this from Dawn?
     fShaderCaps.reset(new GrShaderCaps(contextOptions));
     fMaxTextureSize = fMaxRenderTargetSize = 8192; // FIXME
@@ -94,14 +94,6 @@ GrCaps::SurfaceReadPixelsSupport GrDawnCaps::surfaceSupportsReadPixels(
 bool GrDawnCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
     // We currently support writePixels only to Textures and TextureRenderTargets.
     return surface->asTexture() != nullptr;
-}
-
-size_t GrDawnCaps::bytesPerPixel(const GrBackendFormat& backendFormat) const {
-    wgpu::TextureFormat dawnFormat;
-    if (!backendFormat.asDawnFormat(&dawnFormat)) {
-        return 0;
-    }
-    return GrDawnBytesPerPixel(dawnFormat);
 }
 
 int GrDawnCaps::getRenderTargetSampleCount(int requestedCount,

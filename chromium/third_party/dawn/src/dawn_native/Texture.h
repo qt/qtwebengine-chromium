@@ -71,10 +71,20 @@ namespace dawn_native {
 
     static constexpr wgpu::TextureUsage kWritableTextureUsages =
         wgpu::TextureUsage::CopyDst | wgpu::TextureUsage::Storage |
-        wgpu::TextureUsage::OutputAttachment;
+        wgpu::TextureUsage::RenderAttachment;
 
+    // Convert the TextureAspect to an Aspect mask for the format. ASSERTs if the aspect
+    // does not exist in the format.
+    // Also ASSERTs if "All" is selected and results in more than one aspect.
     Aspect ConvertSingleAspect(const Format& format, wgpu::TextureAspect aspect);
+
+    // Convert the TextureAspect to an Aspect mask for the format. ASSERTs if the aspect
+    // does not exist in the format.
     Aspect ConvertAspect(const Format& format, wgpu::TextureAspect aspect);
+
+    // Try to convert the TextureAspect to an Aspect mask for the format. May return
+    // Aspect::None.
+    Aspect TryConvertAspect(const Format& format, wgpu::TextureAspect aspect);
 
     struct SubresourceRange {
         uint32_t baseMipLevel;
@@ -163,7 +173,7 @@ namespace dawn_native {
         const TextureBase* GetTexture() const;
         TextureBase* GetTexture();
 
-        wgpu::TextureAspect GetAspect() const;
+        Aspect GetAspects() const;
         const Format& GetFormat() const;
         wgpu::TextureViewDimension GetDimension() const;
         uint32_t GetBaseMipLevel() const;
@@ -177,7 +187,6 @@ namespace dawn_native {
 
         Ref<TextureBase> mTexture;
 
-        wgpu::TextureAspect mAspect;
         // TODO(cwallez@chromium.org): This should be deduplicated in the Device
         const Format& mFormat;
         wgpu::TextureViewDimension mDimension;

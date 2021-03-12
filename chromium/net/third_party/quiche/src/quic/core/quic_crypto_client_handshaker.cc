@@ -175,6 +175,24 @@ size_t QuicCryptoClientHandshaker::BufferSizeLimitForLevel(
   return QuicCryptoHandshaker::BufferSizeLimitForLevel(level);
 }
 
+bool QuicCryptoClientHandshaker::KeyUpdateSupportedLocally() const {
+  return false;
+}
+
+std::unique_ptr<QuicDecrypter>
+QuicCryptoClientHandshaker::AdvanceKeysAndCreateCurrentOneRttDecrypter() {
+  // Key update is only defined in QUIC+TLS.
+  DCHECK(false);
+  return nullptr;
+}
+
+std::unique_ptr<QuicEncrypter>
+QuicCryptoClientHandshaker::CreateCurrentOneRttEncrypter() {
+  // Key update is only defined in QUIC+TLS.
+  DCHECK(false);
+  return nullptr;
+}
+
 void QuicCryptoClientHandshaker::OnConnectionClosed(
     QuicErrorCode /*error*/,
     ConnectionCloseSource /*source*/) {
@@ -299,7 +317,8 @@ void QuicCryptoClientHandshaker::DoSendCHLO(
     early_data_reason_ = ssl_early_data_no_session_offered;
     fill_inchoate_client_hello = true;
   } else if (session()->config()->HasClientRequestedIndependentOption(
-                 kQNZR, session()->perspective())) {
+                 kQNZ2, session()->perspective()) &&
+             num_client_hellos_ == 1) {
     early_data_reason_ = ssl_early_data_disabled;
     fill_inchoate_client_hello = true;
   }
@@ -328,7 +347,7 @@ void QuicCryptoClientHandshaker::DoSendCHLO(
     chlo_hash_ = CryptoUtils::HashHandshakeMessage(out, Perspective::IS_CLIENT);
     session()->connection()->set_fully_pad_crypto_handshake_packets(
         crypto_config_->pad_inchoate_hello());
-    SendHandshakeMessage(out);
+    SendHandshakeMessage(out, ENCRYPTION_INITIAL);
     return;
   }
 
@@ -355,7 +374,7 @@ void QuicCryptoClientHandshaker::DoSendCHLO(
   next_state_ = STATE_RECV_SHLO;
   session()->connection()->set_fully_pad_crypto_handshake_packets(
       crypto_config_->pad_full_hello());
-  SendHandshakeMessage(out);
+  SendHandshakeMessage(out, ENCRYPTION_INITIAL);
   // Be prepared to decrypt with the new server write key.
   delegate_->OnNewEncryptionKeyAvailable(
       ENCRYPTION_ZERO_RTT,

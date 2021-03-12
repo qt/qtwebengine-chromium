@@ -4,17 +4,24 @@
  * found in the LICENSE file.
  */
 
+.report-content-box {
+  overflow: initial;
+}
+
 .report-field-name {
   flex: 0 0 200px;
 }
 
-.report-field .copyable {
+.report-field-value {
   user-select: text;
+  display: flex;
 }
 
 .report-field .inline-name {
   color: #888;
   padding-left: 2ex;
+  user-select: none;
+  white-space: pre-line;
 }
 
 .report-field .inline-name::after {
@@ -24,6 +31,7 @@
 .report-field .inline-comment {
   color: #555;
   padding-left: 1ex;
+  white-space: pre-line;
 }
 
 .report-field .inline-comment::before {
@@ -32,6 +40,12 @@
 
 .report-field .inline-comment::after {
   content: ")";
+}
+
+.report-field .inline-span {
+  color: #555;
+  padding-left: 1ex;
+  white-space: pre-line;
 }
 
 .report-field-value-link {
@@ -48,15 +62,11 @@
 }
 
 .frame-details-report-container {
-  min-width: 500px;
+  min-width: 550px;
 }
 
 .text-ellipsis {
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.report-field-value {
-  display: flex;
 }

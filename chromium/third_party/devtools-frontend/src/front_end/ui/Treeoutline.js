@@ -39,7 +39,7 @@ import * as ARIAUtils from './ARIAUtils.js';
 import {Icon} from './Icon.js';                            // eslint-disable-line no-unused-vars
 import {Config, InplaceEditor} from './InplaceEditor.js';  // eslint-disable-line no-unused-vars
 import {Keys} from './KeyboardShortcut.js';
-import {isEditing} from './UIUtils.js';
+import {deepElementFromPoint, enclosingNodeOrSelfWithNodeNameInArray, isEditing} from './UIUtils.js';
 import {appendStyle} from './utils/append-style.js';
 import {createShadowRootWithCoreStyles} from './utils/create-shadow-root-with-core-styles.js';
 
@@ -147,12 +147,12 @@ export class TreeOutline extends Common.ObjectWrapper.ObjectWrapper {
    * @return {?TreeElement}
    */
   treeElementFromPoint(x, y) {
-    const node = this.contentElement.ownerDocument.deepElementFromPoint(x, y);
+    const node = deepElementFromPoint(this.contentElement.ownerDocument, x, y);
     if (!node) {
       return null;
     }
 
-    const listNode = node.enclosingNodeOrSelfWithNodeNameInArray(['ol', 'li']);
+    const listNode = enclosingNodeOrSelfWithNodeNameInArray(node, ['ol', 'li']);
     if (listNode) {
       return listNode.parentTreeElement || listNode.treeElement;
     }
@@ -416,7 +416,8 @@ export class TreeOutlineInShadow extends TreeOutline {
 
     // Redefine element to the external one.
     this.element = createElement('div');
-    this._shadowRoot = createShadowRootWithCoreStyles(this.element, 'ui/treeoutline.css');
+    this._shadowRoot = createShadowRootWithCoreStyles(
+        this.element, {cssFile: 'ui/treeoutline.css', enableLegacyPatching: true, delegatesFocus: undefined});
     this._disclosureElement = this._shadowRoot.createChild('div', 'tree-outline-disclosure');
     this._disclosureElement.appendChild(this.contentElement);
     this._renderSelection = true;
@@ -424,9 +425,10 @@ export class TreeOutlineInShadow extends TreeOutline {
 
   /**
    * @param {string} cssFile
+  * @param {!{enableLegacyPatching:boolean}} options
    */
-  registerRequiredCSS(cssFile) {
-    appendStyle(this._shadowRoot, cssFile);
+  registerRequiredCSS(cssFile, options) {
+    appendStyle(this._shadowRoot, cssFile, options);
   }
 
   hideOverflow() {
@@ -456,7 +458,7 @@ export class TreeElement {
     this._boundOnBlur = this._onBlur.bind(this);
 
     this._listItemNode = /** @type {!HTMLLIElement} */ (createElement('li'));
-    /** @protected */
+
     this.titleElement = this._listItemNode.createChild('span', 'tree-element-title');
     this._listItemNode.treeElement = this;
     if (title) {

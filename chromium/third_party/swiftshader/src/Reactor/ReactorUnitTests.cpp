@@ -93,8 +93,24 @@ TEST(ReactorUnitTests, Uninitialized)
 
 	auto routine = function("one");
 
-	int result = routine();
-	EXPECT_EQ(result, result);  // Anything is fine, just don't crash
+	if(!__has_feature(memory_sanitizer) || !REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION)
+	{
+		int result = routine();
+		EXPECT_EQ(result, result);  // Anything is fine, just don't crash
+	}
+	else
+	{
+		// Optimizations may turn the conditional If() in the Reactor code
+		// into a conditional move or arithmetic operations, which would not
+		// trigger a MemorySanitizer error. However, in that case the equals
+		// operator below should trigger it before the abort is reached.
+		EXPECT_DEATH(
+		    {
+			    int result = routine();
+			    if(result == 0) abort();
+		    },
+		    "MemorySanitizer: use-of-uninitialized-value");
+	}
 }
 
 TEST(ReactorUnitTests, Unreachable)
@@ -3059,6 +3075,161 @@ TEST(ReactorUnitTests, PrintReactorTypes)
 	}
 
 #endif
+}
+
+// Test constant <op> variable
+template<typename T, typename Func>
+T Arithmetic_LhsConstArg(T arg1, T arg2, Func f)
+{
+	using ReactorT = CToReactorT<T>;
+
+	FunctionT<T(T)> function;
+	{
+		ReactorT lhs = arg1;
+		ReactorT rhs = function.template Arg<0>();
+		ReactorT result = f(lhs, rhs);
+		Return(result);
+	}
+
+	auto routine = function("one");
+	return routine(arg2);
+}
+
+// Test variable <op> constant
+template<typename T, typename Func>
+T Arithmetic_RhsConstArg(T arg1, T arg2, Func f)
+{
+	using ReactorT = CToReactorT<T>;
+
+	FunctionT<T(T)> function;
+	{
+		ReactorT lhs = function.template Arg<0>();
+		ReactorT rhs = arg2;
+		ReactorT result = f(lhs, rhs);
+		Return(result);
+	}
+
+	auto routine = function("one");
+	return routine(arg1);
+}
+
+// Test constant <op> constant
+template<typename T, typename Func>
+T Arithmetic_TwoConstArgs(T arg1, T arg2, Func f)
+{
+	using ReactorT = CToReactorT<T>;
+
+	FunctionT<T()> function;
+	{
+		ReactorT lhs = arg1;
+		ReactorT rhs = arg2;
+		ReactorT result = f(lhs, rhs);
+		Return(result);
+	}
+
+	auto routine = function("one");
+	return routine();
+}
+
+template<typename T, typename Func>
+void Arithmetic_ConstArgs(T arg1, T arg2, T expected, Func f)
+{
+	SCOPED_TRACE(std::to_string(arg1) + " <op> " + std::to_string(arg2) + " = " + std::to_string(expected));
+	T result{};
+	result = Arithmetic_LhsConstArg(arg1, arg2, std::forward<Func>(f));
+	EXPECT_EQ(result, expected);
+	result = Arithmetic_RhsConstArg(arg1, arg2, std::forward<Func>(f));
+	EXPECT_EQ(result, expected);
+	result = Arithmetic_TwoConstArgs(arg1, arg2, std::forward<Func>(f));
+	EXPECT_EQ(result, expected);
+}
+
+// Test that we generate valid code for when one or both args to arithmetic operations
+// are constant. In particular, we want to validate the case for two const args, as
+// often lowered instructions do not support this case.
+TEST(ReactorUnitTests, Arithmetic_ConstantArgs)
+{
+	Arithmetic_ConstArgs(2, 3, 5, [](auto c1, auto c2) { return c1 + c2; });
+	Arithmetic_ConstArgs(5, 3, 2, [](auto c1, auto c2) { return c1 - c2; });
+	Arithmetic_ConstArgs(2, 3, 6, [](auto c1, auto c2) { return c1 * c2; });
+	Arithmetic_ConstArgs(6, 3, 2, [](auto c1, auto c2) { return c1 / c2; });
+	Arithmetic_ConstArgs(0xF0F0, 0xAAAA, 0xA0A0, [](auto c1, auto c2) { return c1 & c2; });
+	Arithmetic_ConstArgs(0xF0F0, 0xAAAA, 0xFAFA, [](auto c1, auto c2) { return c1 | c2; });
+	Arithmetic_ConstArgs(0xF0F0, 0xAAAA, 0x5A5A, [](auto c1, auto c2) { return c1 ^ c2; });
+
+	Arithmetic_ConstArgs(2.f, 3.f, 5.f, [](auto c1, auto c2) { return c1 + c2; });
+	Arithmetic_ConstArgs(5.f, 3.f, 2.f, [](auto c1, auto c2) { return c1 - c2; });
+	Arithmetic_ConstArgs(2.f, 3.f, 6.f, [](auto c1, auto c2) { return c1 * c2; });
+	Arithmetic_ConstArgs(6.f, 3.f, 2.f, [](auto c1, auto c2) { return c1 / c2; });
+}
+
+// Test for Subzero bad code-gen that was fixed in swiftshader-cl/50008
+// This tests the case of copying enough arguments to local variables so that the locals
+// get spilled to the stack when no more registers remain, and making sure these copies
+// are generated correctly. Without the aforementioned fix, this fails 100% on Windows x86.
+TEST(ReactorUnitTests, SpillLocalCopiesOfArgs)
+{
+	struct Helpers
+	{
+		static bool True() { return true; }
+	};
+
+	const int numLoops = 5;  // 2 should be enough, but loop more to make sure
+
+	FunctionT<int(int, int, int, int, int, int, int, int, int, int, int, int)> function;
+	{
+		Int result = 0;
+		Int a1 = function.Arg<0>();
+		Int a2 = function.Arg<1>();
+		Int a3 = function.Arg<2>();
+		Int a4 = function.Arg<3>();
+		Int a5 = function.Arg<4>();
+		Int a6 = function.Arg<5>();
+		Int a7 = function.Arg<6>();
+		Int a8 = function.Arg<7>();
+		Int a9 = function.Arg<8>();
+		Int a10 = function.Arg<9>();
+		Int a11 = function.Arg<10>();
+		Int a12 = function.Arg<11>();
+
+		for(int i = 0; i < numLoops; ++i)
+		{
+			// Copy all arguments to locals so that Ice::LocalVariableSplitter::handleSimpleVarAssign
+			// creates Variable copies of arguments. We loop so that we create enough of these so
+			// that some spill over to the stack.
+			Int i1 = a1;
+			Int i2 = a2;
+			Int i3 = a3;
+			Int i4 = a4;
+			Int i5 = a5;
+			Int i6 = a6;
+			Int i7 = a7;
+			Int i8 = a8;
+			Int i9 = a9;
+			Int i10 = a10;
+			Int i11 = a11;
+			Int i12 = a12;
+
+			// Forcibly materialize all variables so that Ice::Variable instances are created for each
+			// local; otherwise, Reactor r-value optimizations kick in, and the locals are elided.
+			Variable::materializeAll();
+
+			// We also need to create a separate block that uses the variables declared above
+			// so that rr::optimize() doesn't optimize them out when attempting to eliminate stores
+			// followed by a load in the same block.
+			If(Call(Helpers::True))
+			{
+				result += (i1 + i2 + i3 + i4 + i5 + i6 + i7 + i8 + i9 + i10 + i11 + i12);
+			}
+		}
+
+		Return(result);
+	}
+
+	auto routine = function("one");
+	int result = routine(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);
+	int expected = numLoops * (1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12);
+	EXPECT_EQ(result, expected);
 }
 
 int main(int argc, char **argv)

@@ -91,7 +91,7 @@ std::string AstFor(std::string assembly) {
         })";
   }
   if (assembly == "cast_int_v2uint_10_20") {
-    return R"(As<__vec_2__i32>{
+    return R"(Bitcast<__vec_2__i32>{
           TypeConstructor{
             __vec_2__u32
             ScalarConstructor{10}
@@ -156,7 +156,7 @@ TEST_P(SpvBinaryBitTest, EmitExpression) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   std::ostringstream ss;
-  ss << R"(Variable{
+  ss << R"(VariableConst{
     x_1
     none
     )"
@@ -389,7 +389,7 @@ TEST_F(SpvUnaryBitTest, Not_Int_Int) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __i32
@@ -416,12 +416,12 @@ TEST_F(SpvUnaryBitTest, Not_Int_Uint) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __i32
     {
-      As<__i32>{
+      Bitcast<__i32>{
         UnaryOp{
           not
           ScalarConstructor{10}
@@ -445,12 +445,12 @@ TEST_F(SpvUnaryBitTest, Not_Uint_Int) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
     {
-      As<__u32>{
+      Bitcast<__u32>{
         UnaryOp{
           not
           ScalarConstructor{30}
@@ -474,7 +474,7 @@ TEST_F(SpvUnaryBitTest, Not_Uint_Uint) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __u32
@@ -501,7 +501,7 @@ TEST_F(SpvUnaryBitTest, Not_SignedVec_SignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__i32
@@ -532,12 +532,12 @@ TEST_F(SpvUnaryBitTest, Not_SignedVec_UnsignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__i32
     {
-      As<__vec_2__i32>{
+      Bitcast<__vec_2__i32>{
         UnaryOp{
           not
           TypeConstructor{
@@ -565,12 +565,12 @@ TEST_F(SpvUnaryBitTest, Not_UnsignedVec_SignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__u32
     {
-      As<__vec_2__u32>{
+      Bitcast<__vec_2__u32>{
         UnaryOp{
           not
           TypeConstructor{
@@ -597,7 +597,7 @@ TEST_F(SpvUnaryBitTest, Not_UnsignedVec_UnsignedVec) {
   FunctionEmitter fe(p, *spirv_function(100));
   EXPECT_TRUE(fe.EmitBody()) << p->error();
   EXPECT_THAT(ToString(fe.ast_body()), HasSubstr(R"(
-  Variable{
+  VariableConst{
     x_1
     none
     __vec_2__u32

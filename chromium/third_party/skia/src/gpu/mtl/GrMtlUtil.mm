@@ -212,8 +212,10 @@ id<MTLTexture> GrGetMTLTextureFromSurface(GrSurface* surface) {
     GrMtlRenderTarget* renderTarget = static_cast<GrMtlRenderTarget*>(surface->asRenderTarget());
     GrMtlTexture* texture;
     if (renderTarget) {
-        // We should not be using this for multisampled rendertargets
-        if (renderTarget->numSamples() > 1) {
+        // We should not be using this for multisampled rendertargets with a separate resolve
+        // texture.
+        if (renderTarget->mtlResolveTexture()) {
+            SkASSERT(renderTarget->numSamples() > 1);
             SkASSERT(false);
             return nil;
         }
@@ -265,6 +267,7 @@ uint32_t GrMtlFormatChannels(GrMTLPixelFormat mtlFormat) {
 #endif
         case MTLPixelFormatRGBA16Unorm:     return kRGBA_SkColorChannelFlags;
         case MTLPixelFormatRG16Float:       return kRG_SkColorChannelFlags;
+        case MTLPixelFormatStencil8:        return 0;
 
         default:                            return 0;
     }
@@ -274,7 +277,6 @@ SkImage::CompressionType GrMtlBackendFormatToCompressionType(const GrBackendForm
     MTLPixelFormat mtlFormat = GrBackendFormatAsMTLPixelFormat(format);
     return GrMtlFormatToCompressionType(mtlFormat);
 }
-
 
 bool GrMtlFormatIsCompressed(MTLPixelFormat mtlFormat) {
     switch (mtlFormat) {
@@ -309,6 +311,61 @@ int GrMtlTextureInfoSampleCount(const GrMtlTextureInfo& info) {
         return 0;
     }
     return texture.sampleCount;
+}
+
+size_t GrMtlBackendFormatBytesPerBlock(const GrBackendFormat& format) {
+    MTLPixelFormat mtlFormat = GrBackendFormatAsMTLPixelFormat(format);
+    return GrMtlFormatBytesPerBlock(mtlFormat);
+}
+
+size_t GrMtlFormatBytesPerBlock(MTLPixelFormat mtlFormat) {
+    switch (mtlFormat) {
+        case MTLPixelFormatInvalid:         return 0;
+        case MTLPixelFormatRGBA8Unorm:      return 4;
+        case MTLPixelFormatR8Unorm:         return 1;
+        case MTLPixelFormatA8Unorm:         return 1;
+        case MTLPixelFormatBGRA8Unorm:      return 4;
+#ifdef SK_BUILD_FOR_IOS
+        case MTLPixelFormatB5G6R5Unorm:     return 2;
+#endif
+        case MTLPixelFormatRGBA16Float:     return 8;
+        case MTLPixelFormatR16Float:        return 2;
+        case MTLPixelFormatRG8Unorm:        return 2;
+        case MTLPixelFormatRGB10A2Unorm:    return 4;
+#ifdef SK_BUILD_FOR_MAC
+        case MTLPixelFormatBGR10A2Unorm:    return 4;
+#endif
+#ifdef SK_BUILD_FOR_IOS
+        case MTLPixelFormatABGR4Unorm:      return 2;
+#endif
+        case MTLPixelFormatRGBA8Unorm_sRGB: return 4;
+        case MTLPixelFormatR16Unorm:        return 2;
+        case MTLPixelFormatRG16Unorm:       return 4;
+#ifdef SK_BUILD_FOR_IOS
+        case MTLPixelFormatETC2_RGB8:       return 8;
+#else
+        case MTLPixelFormatBC1_RGBA:        return 8;
+#endif
+        case MTLPixelFormatRGBA16Unorm:     return 8;
+        case MTLPixelFormatRG16Float:       return 4;
+        case MTLPixelFormatStencil8:        return 1;
+
+        default:                            return 0;
+    }
+}
+
+int GrMtlBackendFormatStencilBits(const GrBackendFormat& format) {
+    MTLPixelFormat mtlFormat = GrBackendFormatAsMTLPixelFormat(format);
+    return GrMtlFormatStencilBits(mtlFormat);
+}
+
+int GrMtlFormatStencilBits(MTLPixelFormat mtlFormat) {
+    switch(mtlFormat) {
+     case MTLPixelFormatStencil8:
+         return 8;
+     default:
+         return 0;
+    }
 }
 
 #if defined(SK_DEBUG) || GR_TEST_UTILS
@@ -346,6 +403,7 @@ const char* GrMtlFormatToStr(GrMTLPixelFormat mtlFormat) {
 #endif
         case MTLPixelFormatRGBA16Unorm:     return "RGBA16Unorm";
         case MTLPixelFormatRG16Float:       return "RG16Float";
+        case MTLPixelFormatStencil8:        return "Stencil8";
 
         default:                            return "Unknown";
     }

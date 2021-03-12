@@ -35,7 +35,7 @@
 
 namespace lookalikes {
 
-const char kHistogramName[] = "NavigationSuggestion.Event";
+const char kHistogramName[] = "NavigationSuggestion.Event2";
 
 void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterListPref(prefs::kLookalikeWarningAllowlistDomains);
@@ -759,13 +759,11 @@ bool IsEmojiRelatedCodepoint(UChar32 codepoint) {
 // check this for non-ASCII scripts as well (e.g. Cyrillic + emoji), but such
 // usage isn't common.
 bool IsASCIIAndEmojiOnly(const base::StringPiece16& text) {
-  base::i18n::UTF16CharIterator iter(text.data(), text.length());
-  while (!iter.end()) {
+  for (base::i18n::UTF16CharIterator iter(text); !iter.end(); iter.Advance()) {
     const UChar32 codepoint = iter.get();
     if (!IsASCII(codepoint) && !IsEmojiRelatedCodepoint(codepoint)) {
       return false;
     }
-    iter.Advance();
   }
   return true;
 }

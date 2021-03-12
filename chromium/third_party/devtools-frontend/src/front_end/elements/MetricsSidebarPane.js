@@ -38,7 +38,7 @@ import {ElementsSidebarPane} from './ElementsSidebarPane.js';
 export class MetricsSidebarPane extends ElementsSidebarPane {
   constructor() {
     super();
-    this.registerRequiredCSS('elements/metricsSidebarPane.css');
+    this.registerRequiredCSS('elements/metricsSidebarPane.css', {enableLegacyPatching: true});
 
     /** @type {?SDK.CSSProperty.CSSProperty} */
     this.originalPropertyData = null;
@@ -312,7 +312,7 @@ export class MetricsSidebarPane extends ElementsSidebarPane {
             'dblclick', this.startEditing.bind(this, heightElement, 'height', 'height', style), false);
 
         boxElement.appendChild(widthElement);
-        boxElement.createTextChild(' × ');
+        UI.UIUtils.createTextChild(boxElement, ' × ');
         boxElement.appendChild(heightElement);
       } else {
         const suffix = (name === 'border' ? '-width' : '');

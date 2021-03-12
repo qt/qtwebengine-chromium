@@ -1682,9 +1682,6 @@ static int tiff_decode_tag(TiffContext *s, AVFrame *frame)
         }
         break;
     case TIFF_ICC_PROFILE:
-        if (type != TIFF_UNDEFINED)
-            return AVERROR_INVALIDDATA;
-
         gb_temp = s->gb;
         bytestream2_seek(&gb_temp, SEEK_SET, off);
 
@@ -1898,8 +1895,14 @@ again:
     if (is_dng) {
         int bps;
 
+        if (s->bpp % s->bppcount)
+            return AVERROR_INVALIDDATA;
+        bps = s->bpp / s->bppcount;
+        if (bps < 8 || bps > 32)
+            return AVERROR_INVALIDDATA;
+
         if (s->white_level == 0)
-            s->white_level = (1 << s->bpp) - 1; /* Default value as per the spec */
+            s->white_level = (1LL << bps) - 1; /* Default value as per the spec */
 
         if (s->white_level <= s->black_level) {
             av_log(avctx, AV_LOG_ERROR, "BlackLevel (%"PRId32") must be less than WhiteLevel (%"PRId32")\n",
@@ -1907,11 +1910,6 @@ again:
             return AVERROR_INVALIDDATA;
         }
 
-        if (s->bpp % s->bppcount)
-            return AVERROR_INVALIDDATA;
-        bps = s->bpp / s->bppcount;
-        if (bps < 8 || bps > 32)
-            return AVERROR_INVALIDDATA;
         if (s->planar)
             return AVERROR_PATCHWELCOME;
     }

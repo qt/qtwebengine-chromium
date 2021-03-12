@@ -25,6 +25,7 @@ using BoolTypeTest = testing::Test;
 
 TEST_F(BoolTypeTest, Is) {
   BoolType b;
+  EXPECT_FALSE(b.IsAccessControl());
   EXPECT_FALSE(b.IsAlias());
   EXPECT_FALSE(b.IsArray());
   EXPECT_TRUE(b.IsBool());
@@ -42,6 +43,11 @@ TEST_F(BoolTypeTest, Is) {
 TEST_F(BoolTypeTest, TypeName) {
   BoolType b;
   EXPECT_EQ(b.type_name(), "__bool");
+}
+
+TEST_F(BoolTypeTest, MinBufferBindingSize) {
+  BoolType b;
+  EXPECT_EQ(0u, b.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

@@ -169,6 +169,15 @@ struct QUIC_EXPORT_PRIVATE QuicConnectionStats {
   // Number of times when the connection tries to send data but gets throttled
   // by amplification factor.
   size_t num_amplification_throttling = 0;
+
+  // Number of key phase updates that have occurred. In the case of a locally
+  // initiated key update, this is incremented when the keys are updated, before
+  // the peer has acknowledged the key update.
+  uint32_t key_update_count = 0;
+
+  // Counts the number of undecryptable packets received across all keys. Does
+  // not include packets where a decryption key for that level was absent.
+  QuicPacketCount num_failed_authentication_packets_received = 0;
 };
 
 }  // namespace quic

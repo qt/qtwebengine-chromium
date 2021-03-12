@@ -138,6 +138,22 @@ class SharedRingBuffer {
     return meta_->client_spinlock_blocked_us;
   }
 
+  void SetShuttingDown() {
+    meta_->shutting_down.store(true, std::memory_order_relaxed);
+  }
+
+  bool shutting_down() {
+    return meta_->shutting_down.load(std::memory_order_relaxed);
+  }
+
+  void SetReaderPaused() {
+    meta_->reader_paused.store(true, std::memory_order_relaxed);
+  }
+
+  bool GetAndResetReaderPaused() {
+    return meta_->reader_paused.exchange(false, std::memory_order_relaxed);
+  }
+
   // Exposed for fuzzers.
   struct MetadataPage {
     alignas(uint64_t) std::atomic<bool> spinlock;
@@ -147,6 +163,8 @@ class SharedRingBuffer {
     std::atomic<uint64_t> client_spinlock_blocked_us;
     std::atomic<uint64_t> failed_spinlocks;
     alignas(uint64_t) std::atomic<bool> hit_timeout;
+    alignas(uint64_t) std::atomic<bool> shutting_down;
+    alignas(uint64_t) std::atomic<bool> reader_paused;
     // For stats that are only accessed by a single thread or under the
     // spinlock, members of this struct are directly modified. Other stats use
     // the atomics above this struct.

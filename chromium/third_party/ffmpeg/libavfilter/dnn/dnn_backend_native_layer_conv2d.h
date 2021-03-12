@@ -23,7 +23,6 @@
 
 #include "dnn_backend_native.h"
 
-typedef enum {RELU, TANH, SIGMOID, NONE, LEAKY_RELU} DNNActivationFunc;
 
 typedef struct ConvolutionalParams{
     int32_t input_num, output_num, kernel_size;

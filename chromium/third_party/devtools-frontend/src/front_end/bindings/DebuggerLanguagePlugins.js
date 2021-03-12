@@ -10,27 +10,290 @@ import {ContentProviderBasedProject} from './ContentProviderBasedProject.js';
 import {DebuggerWorkspaceBinding} from './DebuggerWorkspaceBinding.js';  // eslint-disable-line no-unused-vars
 import {NetworkProject} from './NetworkProject.js';
 
-class SourceVariable extends SDK.RemoteObject.RemoteObjectImpl {
+/** @type {!WeakMap<!Workspace.UISourceCode.UISourceCode, !SDK.Script.Script>} */
+const uiSourceCodeToScriptMap = new WeakMap();
+
+class SourceType {
+  /**
+   * @param {!TypeInfo} typeInfo
+   * @param {!Array<!SourceType>} members
+   * @param {!Map<*, !SourceType>} typeMap
+   */
+  constructor(typeInfo, members, typeMap) {
+    this.typeInfo = typeInfo;
+    this.members = members;
+    this.typeMap = typeMap;
+  }
+
+  /** Create a type graph
+   * @param {!Array<!TypeInfo>} typeInfos
+   * @return {?SourceType}
+   */
+  static create(typeInfos) {
+    if (typeInfos.length === 0) {
+      return null;
+    }
+    /** @type Map<*, !SourceType> */
+    const typeMap = new Map();
+    for (const typeInfo of typeInfos) {
+      typeMap.set(typeInfo.typeId, new SourceType(typeInfo, [], typeMap));
+    }
+
+    for (const sourceType of typeMap.values()) {
+      sourceType.members = sourceType.typeInfo.members.map(({typeId}) => {
+        const memberType = typeMap.get(typeId);
+        if (!memberType) {
+          throw new Error(`Incomplete type information for type ${typeInfos[0].typeNames[0] || '<anonymous>'}`);
+        }
+        return memberType;
+      });
+    }
+
+    return typeMap.get(typeInfos[0].typeId) || null;
+  }
+}
+
+/**
+ * @param {!SDK.DebuggerModel.CallFrame} callFrame
+ * @return {!RawLocation}
+ */
+function getRawLocation(callFrame) {
+  const script = callFrame.script;
+  return {
+    'rawModuleId': script.sourceURL,
+    'codeOffset': callFrame.location().columnNumber - (script.codeOffset() || 0),
+    'inlineFrameIndex': callFrame.inlineFrameIndex
+  };
+}
+
+/**
+ * @param {!SDK.DebuggerModel.CallFrame} callFrame
+ * @param {!SDK.RemoteObject.RemoteObject} object
+ * @return {!Promise<*>}
+ */
+async function resolveRemoteObject(callFrame, object) {
+  if (typeof object.value !== 'undefined') {
+    return object.value;
+  }
+
+  const response = await callFrame.debuggerModel.target().runtimeAgent().invoke_callFunctionOn(
+      {functionDeclaration: 'function() { return this; }', objectId: object.objectId, returnByValue: true});
+  const {result} = response;
+  if (!result) {
+    return undefined;
+  }
+  return result.value;
+}
+
+class EvalNodeBase extends SDK.RemoteObject.RemoteObjectImpl {
   /**
    * @param {!SDK.DebuggerModel.CallFrame} callFrame
-   * @param {!Variable} variable
    * @param {!DebuggerLanguagePlugin} plugin
-   * @param {!RawLocation} location
+   * @param {!SourceType} sourceType
+   * @param {!Protocol.Runtime.RemoteObject} object
+   * @param {?{className: string, symbol: string }} formatterTag
    */
-  constructor(callFrame, variable, plugin, location) {
-    const variable_type = variable.type.replace(/[ ]/g, '_');
+  constructor(callFrame, sourceType, plugin, object, formatterTag) {
     super(
-        callFrame.debuggerModel.runtimeModel(), /* objectId=*/ undefined,
-        /* type=*/ variable_type,
+        callFrame.debuggerModel.runtimeModel(), object.objectId, object.type, object.subtype, object.value,
+        object.unserializableValue, object.description, object.preview, object.customPreview, object.className);
+
+    this._plugin = plugin;
+    this._sourceType = sourceType;
+    this._callFrame = callFrame;
+
+    /** @type {?{className: string, symbol: string }} */
+    this.formatterTag = formatterTag;
+  }
+
+  /**
+   * @param {...string} properties
+   * @return {!Promise<!Object<string, !EvalNodeBase|undefined>>}
+   */
+  async findProperties(...properties) {
+    /** @type {!Object<string, !EvalNodeBase|undefined>} */
+    const result = {};
+    for (const prop of (await this.getOwnProperties(false)).properties || []) {
+      if (properties.indexOf(prop.name) >= 0) {
+        if (prop.value) {
+          result[prop.name] = /** @type {!EvalNodeBase|undefined} */ (prop.value);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * @override
+   * @param {!Protocol.Runtime.RemoteObject} newObject
+   */
+  async _createRemoteObject(newObject) {
+    const base = await this._getEvalBaseFromObject(newObject);
+    if (!base) {
+      return new EvalNodeBase(this._callFrame, this._sourceType, this._plugin, newObject, this.formatterTag);
+    }
+    const newSourceType = this._sourceType.typeMap.get(base.rootType.typeId);
+    if (!newSourceType) {
+      throw new Error('Unknown typeId in eval base');
+    }
+    if (base.rootType.hasValue && !base.rootType.canExpand && base) {
+      return EvalNode.evaluate(this._callFrame, this._plugin, newSourceType, base, []);
+    }
+
+    return new EvalNode(this._callFrame, this._plugin, newSourceType, base, []);
+  }
+
+  /**
+   * @param {!Protocol.Runtime.RemoteObject} object
+   */
+  async _getEvalBaseFromObject(object) {
+    const {objectId} = object;
+    if (!object || !this.formatterTag) {
+      return null;
+    }
+
+    const {className, symbol} = this.formatterTag;
+    if (className !== object.className) {
+      return null;
+    }
+
+    const response = await this.debuggerModel().target().runtimeAgent().invoke_callFunctionOn(
+        {functionDeclaration: 'function(sym) { return this[sym]; }', objectId, arguments: [{objectId: symbol}]});
+    const {result} = response;
+    if (!result || result.type === 'undefined') {
+      return null;
+    }
+
+    const baseObject = new EvalNodeBase(this._callFrame, this._sourceType, this._plugin, result, null);
+    const {payload, rootType} = await baseObject.findProperties('payload', 'rootType');
+    if (typeof payload === 'undefined' || typeof rootType === 'undefined') {
+      return null;
+    }
+    const value = await resolveRemoteObject(this._callFrame, payload);
+    const {typeId} = await rootType.findProperties('typeId', 'rootType');
+    if (typeof value === 'undefined' || typeof typeId === 'undefined') {
+      return null;
+    }
+
+    const newSourceType = this._sourceType.typeMap.get(typeId.value);
+    if (!newSourceType) {
+      return null;
+    }
+
+    return {payload: value, rootType: newSourceType.typeInfo};
+  }
+}
+
+class EvalNode extends SDK.RemoteObject.RemoteObjectImpl {
+  /**
+   * @param {!SDK.DebuggerModel.CallFrame} callFrame
+   * @param {!DebuggerLanguagePlugin} plugin
+   * @param {!SourceType} sourceType
+   * @param {!EvalBase} base
+   * @param {!Array<!FieldInfo>} field
+   * @return {!Promise<!SDK.RemoteObject.RemoteObject>}
+   */
+  static async evaluate(callFrame, plugin, sourceType, base, field) {
+    const location = getRawLocation(callFrame);
+
+    let evalCode = await plugin.getFormatter({base, field}, location);
+    if (!evalCode) {
+      evalCode = {js: ''};
+    }
+    const response = await callFrame.debuggerModel.target().debuggerAgent().invoke_evaluateOnCallFrame({
+      callFrameId: callFrame.id,
+      expression: evalCode.js,
+      generatePreview: false,
+      includeCommandLineAPI: true,
+      objectGroup: 'console',
+      returnByValue: false,
+      silent: false
+    });
+
+
+    const {result} = response;
+    const object = new EvalNodeBase(callFrame, sourceType, plugin, result, null);
+    const unpackedResultObject = await unpackResultObject(object);
+    const node = unpackedResultObject || object;
+
+    if (typeof node.value === 'undefined') {
+      node.description = sourceType.typeInfo.typeNames[0];
+    }
+
+    return node;
+
+    /**
+		 * @param {!EvalNodeBase} object
+		 * @return {!Promise<?EvalNodeBase>}
+		 */
+    async function unpackResultObject(object) {
+      const {tag, value} = await object.findProperties('tag', 'value');
+      if (!tag || !value) {
+        return null;
+      }
+      const {className, symbol} = await tag.findProperties('className', 'symbol');
+      if (!className || !symbol) {
+        return null;
+      }
+      const resolvedClassName = className.value;
+      if (typeof resolvedClassName !== 'string' || typeof symbol.objectId === 'undefined') {
+        return null;
+      }
+
+      value.formatterTag = {symbol: symbol.objectId, className: resolvedClassName};
+      return value;
+    }
+  }
+
+  /**
+   * @param {!SDK.DebuggerModel.CallFrame} callFrame
+   * @param {!DebuggerLanguagePlugin} plugin
+   * @param {string} expression
+   * @return {!Promise<!SDK.RemoteObject.RemoteObject>}
+   */
+  static async get(callFrame, plugin, expression) {
+    const location = getRawLocation(callFrame);
+
+    const typeInfo = await plugin.getTypeInfo(expression, location);
+    if (!typeInfo) {
+      return new SDK.RemoteObject.LocalJSONObject(undefined);
+    }
+    const {base, typeInfos} = typeInfo;
+    const sourceType = SourceType.create(typeInfos);
+    if (!sourceType) {
+      return new SDK.RemoteObject.LocalJSONObject(undefined);
+    }
+    if (sourceType.typeInfo.hasValue && !sourceType.typeInfo.canExpand && base) {
+      return EvalNode.evaluate(callFrame, plugin, sourceType, base, []);
+    }
+
+    return new EvalNode(callFrame, plugin, sourceType, base, []);
+  }
+
+  /**
+   * @param {!SDK.DebuggerModel.CallFrame} callFrame
+   * @param {!DebuggerLanguagePlugin} plugin
+   * @param {!SourceType} sourceType
+   * @param {?EvalBase} base
+   * @param {!Array<!FieldInfo>} fieldChain
+   */
+  constructor(callFrame, plugin, sourceType, base, fieldChain) {
+    const typeName = sourceType.typeInfo.typeNames[0] || '<anonymous>';
+    const variableType = 'object';
+    super(
+        callFrame.debuggerModel.runtimeModel(),
+        /* objectId=*/ undefined,
+        /* type=*/ variableType,
         /* subtype=*/ undefined, /* value=*/ null, /* unserializableValue=*/ undefined,
-        /* customPreview=*/ variable.type);
-    this._variable = variable;
-    this._variable_type = variable_type;
+        /* description=*/ typeName, /* preview=*/ undefined, /* customPreview=*/ undefined, /* className=*/ typeName);
+    this._variableType = variableType;
     this._callFrame = callFrame;
     this._plugin = plugin;
-    this._location = location;
-    this._hasChildren = true;
-    this._evaluator = null;
+    /** @type {!SourceType} */
+    this._sourceType = sourceType;
+    this._base = base;
+    this._fieldChain = fieldChain;
+    this._hasChildren = true;  // FIXME for top-level stuff with a value
   }
 
   /**
@@ -38,82 +301,20 @@ class SourceVariable extends SDK.RemoteObject.RemoteObjectImpl {
    * @return {string}
    */
   get type() {
-    return this._variable_type;
+    return this._variableType;
   }
 
   /**
-   * @return {!Promise<?EvaluatorModule>}
+   * @param {!SourceType} sourceType
+   * @param {!FieldInfo} fieldInfo
+   * @return {!Promise<!SDK.RemoteObject.RemoteObject>}
    */
-  async _getEvaluator() {
-    if (!this._evaluator) {
-      this._evaluator = await this._plugin.evaluateVariable(this._variable.name, this._location).catch(error => {
-        Common.Console.Console.instance().error(ls`Error in debugger language plugin: ${error.message}`);
-        return null;
-      });
+  async _expandMember(sourceType, fieldInfo) {
+    if (sourceType.typeInfo.hasValue && !sourceType.typeInfo.canExpand && this._base) {
+      return EvalNode.evaluate(
+          this._callFrame, this._plugin, sourceType, this._base, this._fieldChain.concat(fieldInfo));
     }
-    return this._evaluator;
-  }
-
-  /** Get the representation when value contains a string
-   * @param {!VariableValue} value
-   */
-  _reprString(value) {
-    return value.value;
-  }
-
-  /** Get the representation when value contains a number
-   * @param {!VariableValue} value
-   */
-  _reprNumber(value) {
-    return Number(value.value);
-  }
-
-  /** Get the representation when value is a compound value
-   * @param {!VariableValue} value
-   */
-  _reprCompound(value) {
-    /** @type {!Object<string, *>} */
-    const result = {};
-    for (const property of /** @type {!Array<!VariableValue>} */ (value.value)) {
-      result[property.name] = this._repr(property);
-    }
-    return result;
-  }
-
-  /** Get the representation when value contains an array of values
-   * @param {!VariableValue} value
-   */
-  _reprArray(value) {
-    return /** @type {!Array<!VariableValue>} */ (value.value).map(v => this._repr(v));
-  }
-
-  /**
-   * Get the representation for a variable value
-   * @param {!VariableValue} value
-   * @return {*}
-   */
-  _repr(value) {
-    if (value.js_type === 'array') {
-      return this._reprArray(value);
-    }
-    if (value.js_type === 'object') {
-      return this._reprCompound(value);
-    }
-    if (value.js_type === 'number') {
-      return this._reprNumber(value);
-    }
-    if (value.js_type !== 'string') {
-      Common.Console.Console.instance().warn(ls`Invalid JS type on the evaluation result: ${value.js_type}`);
-    }
-    return this._reprString(value);
-  }
-
-  /** Produce a language specific representation of a variable value
-   * @param {!VariableValue} value
-   * @return {!SDK.RemoteObject.RemoteObject}
-   */
-  _getRepresentation(value) {
-    return new SDK.RemoteObject.LocalJSONObject(this._repr(value));
+    return new EvalNode(this._callFrame, this._plugin, sourceType, this._base, this._fieldChain.concat(fieldInfo));
   }
 
   /**
@@ -124,49 +325,43 @@ class SourceVariable extends SDK.RemoteObject.RemoteObjectImpl {
    * @return {!Promise<!SDK.RemoteObject.GetPropertiesResult>}
    */
   async doGetProperties(ownProperties, accessorPropertiesOnly, generatePreview) {
-    /**
-     * @param {!Promise<(?RawModule|?EvaluatorModule)>} evaluatorPromise
-     * @param {!SDK.DebuggerModel.CallFrame} callFrame
-     * @param {!DebuggerLanguagePlugin} plugin
-     */
-    const getRepr = async (evaluatorPromise, callFrame, plugin) => {
-      const evaluator = await evaluatorPromise;
-      if (!evaluator) {
-        return null;
-      }
-      if ('constantValue' in evaluator && evaluator.constantValue) {
-        return this._getRepresentation(evaluator.constantValue);
-      }
-      if (!evaluator.code) {
-        return null;
-      }
-      // `executeWasmEvaluator` expects a string, but `evaluator.code` is an ArrayBuffer
-      const evaluateResponse = await callFrame.debuggerModel.executeWasmEvaluator(
-          callFrame.id, /** @type {string} */ (/** @type {*} */ (evaluator.code)));
-      if (evaluateResponse.getError()) {
-        console.error(evaluateResponse.getError());
-        return null;
-      }
-      if (evaluateResponse.exceptionDetails) {
-        console.error(
-            /** @type {!Protocol.Runtime.RemoteObject} */ (evaluateResponse.exceptionDetails.exception).description);
-        return null;
-      }
-
-      const value = /** @type {!VariableValue} */ (JSON.parse(/** @type {string} */ (evaluateResponse.result.value)));
-      return this._getRepresentation(value);
-    };
-
-    if (accessorPropertiesOnly) {
+    const {typeInfo} = this._sourceType;
+    if (accessorPropertiesOnly || !typeInfo.canExpand) {
       return /** @type {!SDK.RemoteObject.GetPropertiesResult} */ ({properties: [], internalProperties: []});
     }
 
-    const repr = await getRepr(this._getEvaluator(), this._callFrame, this._plugin);
-    return /** @type {!SDK.RemoteObject.GetPropertiesResult} */ ({
-      properties: [new SDK.RemoteObject.RemoteObjectProperty(
-          'value', repr, /* enumerable=*/ false, /* writable=*/ false, /* isOwn=*/ true, /* wasThrown=*/ false)],
-      internalProperties: []
-    });
+    if (typeInfo.members.length > 0) {
+      if (typeInfo.arraySize > 0) {
+        const {typeId} = this._sourceType.typeInfo.members[0];
+        /** @type {!Array<!SDK.RemoteObject.RemoteObjectProperty>} */
+        const properties = [];
+        const elementTypeInfo = this._sourceType.members[0];
+        for (let i = 0; i < typeInfo.arraySize; ++i) {
+          const name = `${i}`;
+          const elementField = {name, typeId, offset: elementTypeInfo.typeInfo.size * i};
+          properties.push(new SDK.RemoteObject.RemoteObjectProperty(
+              name, await this._expandMember(elementTypeInfo, elementField), /* enumerable=*/ false,
+              /* writable=*/ false,
+              /* isOwn=*/ true,
+              /* wasThrown=*/ false));
+        }
+        return /** @type {!SDK.RemoteObject.GetPropertiesResult} */ ({properties, internalProperties: []});
+      }
+
+      // The node is expanded, just make remote objects for its members
+      const members = Promise.all(this._sourceType.members.map(async (memberTypeInfo, idx) => {
+        const fieldInfo = this._sourceType.typeInfo.members[idx];
+        const propertyObject = await this._expandMember(memberTypeInfo, fieldInfo);
+        const name = fieldInfo.name || '';
+        return new SDK.RemoteObject.RemoteObjectProperty(
+            name, propertyObject, /* enumerable=*/ false, /* writable=*/ false, /* isOwn=*/ true,
+            /* wasThrown=*/ false);
+      }));
+      return /** @type {!SDK.RemoteObject.GetPropertiesResult} */ ({properties: await members, internalProperties: []});
+    }
+
+
+    return /** @type {!SDK.RemoteObject.GetPropertiesResult} */ ({properties: [], internalProperties: []});
   }
 }
 
@@ -237,7 +432,7 @@ class SourceScopeRemoteObject extends SDK.RemoteObject.RemoteObjectImpl {
     }
 
     for (const variable of this.variables) {
-      const sourceVar = new SourceVariable(this._callFrame, variable, this._plugin, this._location);
+      const sourceVar = await EvalNode.get(this._callFrame, this._plugin, variable.name);
       if (variable.nestedName && variable.nestedName.length > 1) {
         let parent = namespaces;
         for (let index = 0; index < variable.nestedName.length - 1; index++) {
@@ -271,12 +466,16 @@ export class SourceScope {
   /**
    * @param {!SDK.DebuggerModel.CallFrame} callFrame
    * @param {string} type
+   * @param {string} typeName
+   * @param {string|undefined} icon
    * @param {!DebuggerLanguagePlugin} plugin
    * @param {!RawLocation} location
    */
-  constructor(callFrame, type, plugin, location) {
+  constructor(callFrame, type, typeName, icon, plugin, location) {
     this._callFrame = callFrame;
     this._type = type;
+    this._typeName = typeName;
+    this._icon = icon;
     this._object = new SourceScopeRemoteObject(callFrame, plugin, location);
     this._name = type;
     /** @type {?SDK.DebuggerModel.Location} */
@@ -299,16 +498,8 @@ export class SourceScope {
         continue;
       }
       const {value} = properties.properties[v];
-      if (!value) {
-        continue;
-      }
-      const valueProperties = await value.getAllProperties(false, false);
-      if (!valueProperties || !valueProperties.properties || valueProperties.properties.length === 0) {
-        continue;
-      }
-      const prop = valueProperties.properties[0];
-      if (prop.name === 'value' && prop.value) {
-        return prop.value;
+      if (value) {
+        return value;
       }
     }
     return null;
@@ -335,16 +526,15 @@ export class SourceScope {
    * @return {string}
    */
   typeName() {
-    return this.type();
+    return this._typeName;
   }
-
 
   /**
    * @override
    * @return {string|undefined}
    */
   name() {
-    return this._name;
+    return undefined;
   }
 
   /**
@@ -376,7 +566,14 @@ export class SourceScope {
    * @return {string}
    */
   description() {
-    return this.type();
+    return '';
+  }
+
+  /**
+   * @override
+   */
+  icon() {
+    return this._icon;
   }
 }
 
@@ -388,6 +585,7 @@ export class DebuggerLanguagePluginManager {
    * @param {!SDK.DebuggerModel.DebuggerModel} debuggerModel
    * @param {!Workspace.Workspace.WorkspaceImpl} workspace
    * @param {!DebuggerWorkspaceBinding} debuggerWorkspaceBinding
+   * @suppress {missingProperties}
    */
   constructor(debuggerModel, workspace, debuggerWorkspaceBinding) {
     this._sourceMapManager = debuggerModel.sourceMapManager();
@@ -487,7 +685,8 @@ export class DebuggerLanguagePluginManager {
       rawModuleId: script.sourceURL,
       // RawLocation.columnNumber is the byte offset in the full raw wasm module. Plugins expect the offset in the code
       // section, so subtract the offset of the code section in the module here.
-      codeOffset: rawLocation.columnNumber - (script.codeOffset() || 0)
+      codeOffset: rawLocation.columnNumber - (script.codeOffset() || 0),
+      inlineFrameIndex: rawLocation.inlineFrameIndex
     };
 
     let sourceLocations;
@@ -631,6 +830,7 @@ export class DebuggerLanguagePluginManager {
     } else {
       this._uiSourceCodes.set(uiSourceCode, [{sourceFileURL, script}]);
     }
+    uiSourceCodeToScriptMap.set(uiSourceCode, script);
   }
 
   /**
@@ -638,6 +838,7 @@ export class DebuggerLanguagePluginManager {
    * @param {!SDK.Script.Script} deletedScript
    */
   _unbindUISourceCode(uiSourceCode, deletedScript) {
+    uiSourceCodeToScriptMap.delete(uiSourceCode);
     const entry = this._uiSourceCodes.get(uiSourceCode);
     if (!entry) {
       return;
@@ -648,6 +849,26 @@ export class DebuggerLanguagePluginManager {
       this._project.removeFile(uiSourceCode.url());
       this._uiSourceCodes.delete(uiSourceCode);
     }
+  }
+
+  /**
+   * @param {!Workspace.UISourceCode.UISourceCode} uiSourceCode
+   * @return {!Array<!SDK.Script.Script>}
+   */
+  scriptsForUISourceCode(uiSourceCode) {
+    const scripts = new Set();
+    for (const {script} of this._uiSourceCodes.get(uiSourceCode) || []) {
+      scripts.add(script);
+    }
+    return [...scripts];
+  }
+
+  /**
+   * @param {!Workspace.UISourceCode.UISourceCode} uiSourceCode
+   * @return {?SDK.Script.Script}
+   */
+  static uiSourceCodeOriginScript(uiSourceCode) {
+    return uiSourceCodeToScriptMap.get(uiSourceCode) || null;
   }
 
   /**
@@ -721,18 +942,15 @@ export class DebuggerLanguagePluginManager {
     }
     /** @type {!Map<string, !SourceScope>} */
     const scopes = new Map();
-    /** @type {!RawLocation}} */
-    const location = {
-      'rawModuleId': script.sourceURL,
-      'codeOffset': callFrame.location().columnNumber - (script.codeOffset() || 0)
-    };
+    const location = getRawLocation(callFrame);
 
     try {
       const variables = await plugin.listVariablesInScope(location);
       for (const variable of variables || []) {
         let scope = scopes.get(variable.scope);
         if (!scope) {
-          scope = new SourceScope(callFrame, variable.scope, plugin, location);
+          const {type, typeName, icon} = await plugin.getScopeInfo(variable.scope);
+          scope = new SourceScope(callFrame, type, typeName, icon, plugin, location);
           scopes.set(variable.scope, scope);
         }
         scope.object().variables.push(variable);
@@ -741,6 +959,134 @@ export class DebuggerLanguagePluginManager {
     } catch (error) {
       Common.Console.Console.instance().error(ls`Error in debugger language plugin: ${error.message}`);
       return null;
+    }
+  }
+
+  /**
+   * @param {!SDK.DebuggerModel.CallFrame} callFrame
+   * @return {!Promise<!{frames: !Array<!FunctionInfo>}>}
+   */
+  async getFunctionInfo(callFrame) {
+    const noDwarfInfo = {frames: []};
+    if (!callFrame) {
+      return noDwarfInfo;
+    }
+    const script = callFrame.script;
+    const plugin = await this._getPluginForScript(script);
+    if (!plugin) {
+      return noDwarfInfo;
+    }
+    /** @type {!RawLocation}} */
+    const location = {
+      'rawModuleId': script.sourceURL,
+      'codeOffset': callFrame.location().columnNumber - (script.codeOffset() || 0),
+      // TODO(crbug.com/1134110): Once closure->typescript migration is complete, delete this and
+      // change type definition to show that this field is optional.
+      'inlineFrameIndex': undefined
+    };
+
+    try {
+      return await plugin.getFunctionInfo(location);
+    } catch (error) {
+      Common.Console.Console.instance().warn(ls`Error in debugger language plugin: ${error.message}`);
+      return noDwarfInfo;
+    }
+  }
+
+  /**
+   * @param {string} expression
+   * @param {!SDK.DebuggerModel.CallFrame} callFrame
+   * @returns {!Promise<?SDK.RuntimeModel.EvaluationResult>}
+   */
+  async evaluateExpression(expression, callFrame) {
+    const script = callFrame.script;
+    const plugin = await this._getPluginForScript(script);
+    if (!plugin) {
+      return null;
+    }
+
+    try {
+      return {object: await EvalNode.get(callFrame, plugin, expression), exceptionDetails: undefined};
+    } catch (error) {
+      return {error: error.message};
+    }
+  }
+
+  /**
+   * @param {!SDK.DebuggerModel.Location} rawLocation
+   * @return {!Promise<!Array<!{start: !SDK.DebuggerModel.Location, end: !SDK.DebuggerModel.Location}>>} Returns an empty list if this manager does not have a plugin for it.
+   */
+  async getInlinedFunctionRanges(rawLocation) {
+    const script = rawLocation.script();
+    if (!script) {
+      return [];
+    }
+    const plugin = await this._getPluginForScript(script);
+    if (!plugin) {
+      return [];
+    }
+
+    const pluginLocation = {
+      rawModuleId: script.sourceURL,
+      // RawLocation.columnNumber is the byte offset in the full raw wasm module. Plugins expect the offset in the code
+      // section, so subtract the offset of the code section in the module here.
+      codeOffset: rawLocation.columnNumber - (script.codeOffset() || 0),
+      // TODO(crbug.com/1134110): Once closure->typescript migration is complete, delete this and
+      // change type definition to show that this field is optional.
+      'inlineFrameIndex': undefined
+    };
+
+    try {
+      const locations = await plugin.getInlinedFunctionRanges(pluginLocation);
+      return locations.map(
+          m => ({
+            start: new SDK.DebuggerModel.Location(
+                this._debuggerModel, script.scriptId, 0, Number(m.startOffset) + (script.codeOffset() || 0)),
+            end: new SDK.DebuggerModel.Location(
+                this._debuggerModel, script.scriptId, 0, Number(m.endOffset) + (script.codeOffset() || 0))
+          }));
+    } catch (error) {
+      Common.Console.Console.instance().warn(ls`Error in debugger language plugin: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * @param {!SDK.DebuggerModel.Location} rawLocation
+   * @return {!Promise<!Array<!{start: !SDK.DebuggerModel.Location, end: !SDK.DebuggerModel.Location}>>} Returns an empty list if this manager does not have a plugin for it.
+   */
+  async getInlinedCalleesRanges(rawLocation) {
+    const script = rawLocation.script();
+    if (!script) {
+      return [];
+    }
+    const plugin = await this._getPluginForScript(script);
+    if (!plugin) {
+      return [];
+    }
+
+    const pluginLocation = {
+      rawModuleId: script.sourceURL,
+      // RawLocation.columnNumber is the byte offset in the full raw wasm module. Plugins expect the offset in the code
+      // section, so subtract the offset of the code section in the module here.
+      codeOffset: rawLocation.columnNumber - (script.codeOffset() || 0),
+      // TODO(crbug.com/1134110): Once closure->typescript migration is complete, delete this and
+      // change type definition to show that this field is optional.
+      'inlineFrameIndex': undefined
+    };
+
+    try {
+      const locations = await plugin.getInlinedCalleesRanges(pluginLocation);
+      return locations.map(
+          m => ({
+            start: new SDK.DebuggerModel.Location(
+                this._debuggerModel, script.scriptId, 0, Number(m.startOffset) + (script.codeOffset() || 0)),
+            end: new SDK.DebuggerModel.Location(
+                this._debuggerModel, script.scriptId, 0, Number(m.endOffset) + (script.codeOffset() || 0))
+          }));
+    } catch (error) {
+      Common.Console.Console.instance().warn(ls`Error in debugger language plugin: ${error.message}`);
+      return [];
     }
   }
 
@@ -791,8 +1137,9 @@ export let RawLocationRange;
 
 /** Offsets in raw modules
  * @typedef {{
- *            rawModuleId:string,
- *            codeOffset:number
+ *            rawModuleId: string,
+ *            codeOffset: number,
+ *            inlineFrameIndex: (number|undefined)
  *          }}
  */
 // @ts-ignore typedef
@@ -841,6 +1188,57 @@ export let VariableValue;
 // @ts-ignore typedef
 export let EvaluatorModule;
 
+/** Description of a scope
+ * @typedef {{
+ *            type: string,
+ *            typeName: string,
+ *            icon: (string|undefined)
+ *          }}
+ */
+// @ts-ignore typedef
+export let ScopeInfo;
+
+/** Either the code of an evaluator module or a constant representation of a variable
+ * @typedef {{
+ *            name: string
+ *          }}
+ */
+// @ts-ignore typedef
+export let FunctionInfo;
+
+/**
+ * @typedef {{
+ *            name: (string|undefined),
+ *            offset: number,
+ *            typeId: *
+ *}}
+ */
+// @ts-ignore typedef
+export let FieldInfo;
+/**
+ * @typedef {{
+ *            typeNames: !Array<string>,
+ *            typeId: *,
+ *            members: !Array<!FieldInfo>,
+ *            alignment: number,
+ *            arraySize: number,
+ *            size: number,
+ *            canExpand: boolean,
+ *            hasValue: boolean
+ *          }}
+ */
+// @ts-ignore typedef
+export let TypeInfo;
+
+/**
+ * @typedef {{
+ *            rootType: TypeInfo,
+ *            payload: *
+ *}}
+*/
+// @ts-ignore typedef
+export let EvalBase;
+
 /**
  * @interface
  */
@@ -882,6 +1280,14 @@ export class DebuggerLanguagePlugin {
     throw new Error('Not implemented yet');
   }
 
+  /** Return detailed information about a scope
+   * @param {string} type
+   * @return {!Promise<!ScopeInfo>}
+   */
+  async getScopeInfo(type) {
+    throw new Error('Not implemented yet');
+  }
+
   /** List all variables in lexical scope at a given location in a raw module
    * @param {!RawLocation} rawLocation
    * @return {!Promise<!Array<!Variable>>}
@@ -905,6 +1311,51 @@ export class DebuggerLanguagePlugin {
    * @return {!Promise<void>}
    */
   removeRawModule(rawModuleId) {
+    throw new Error('Not implemented yet');
+  }
+
+  /**
+   * @param {string} expression
+   * @param {!RawLocation} context
+   * @return {!Promise<?{typeInfos: !Array<!TypeInfo>, base: !EvalBase}>}
+   */
+  getTypeInfo(expression, context) {
+    throw new Error('Not implemented yet');
+  }
+
+  /**
+   * @param {string|!{base: !EvalBase, field: !Array<!FieldInfo>}} expressionOrField
+   * @param {!RawLocation} context
+   * @return {!Promise<?{js:string}>}
+   */
+  getFormatter(expressionOrField, context) {
+    throw new Error('Not implemented yet');
+  }
+
+  /** Find locations in source files from a location in a raw module
+   * @param {!RawLocation} rawLocation
+   * @return {!Promise<!{frames: !Array<!FunctionInfo>}>}
+  */
+  async getFunctionInfo(rawLocation) {
+    throw new Error('Not implemented yet');
+  }
+
+  /** Find locations in raw modules corresponding to the inline function
+   *  that rawLocation is in. Used for stepping out of an inline function.
+   * @param {!RawLocation} rawLocation
+   * @return {!Promise<!Array<!RawLocationRange>>}
+  */
+  async getInlinedFunctionRanges(rawLocation) {
+    throw new Error('Not implemented yet');
+  }
+
+  /** Find locations in raw modules corresponding to inline functions
+   *  called by the function or inline frame that rawLocation is in.
+   *  Used for stepping over inline functions.
+   * @param {!RawLocation} rawLocation
+   * @return {!Promise<!Array<!RawLocationRange>>}
+  */
+  async getInlinedCalleesRanges(rawLocation) {
     throw new Error('Not implemented yet');
   }
 }

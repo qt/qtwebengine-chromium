@@ -140,6 +140,8 @@ const char kPassphraseRequiredProperty[] = "PassphraseRequired";
 const char kPortalDetectionFailedPhaseProperty[] = "PortalDetectionFailedPhase";
 const char kPortalDetectionFailedStatusProperty[] =
     "PortalDetectionFailedStatus";
+const char kPortalDetectionFailedStatusCodeProperty[] =
+    "PortalDetectionFailedStatusCode";
 const char kPreviousErrorProperty[] = "PreviousError";
 const char kPreviousErrorSerialNumberProperty[] = "PreviousErrorSerialNumber";
 const char kPriorityProperty[] = "Priority";

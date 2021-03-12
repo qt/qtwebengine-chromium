@@ -26,30 +26,60 @@ namespace wgsl {
 namespace {
 
 TEST_F(ParserImplTest, VariableDecoration_Location) {
-  auto* p = parser("location 4");
-  auto deco = p->variable_decoration();
-  ASSERT_NE(deco, nullptr);
+  auto* p = parser("location(4)");
+  auto deco = p->decoration();
+  EXPECT_TRUE(deco.matched);
+  EXPECT_FALSE(deco.errored);
+  ASSERT_NE(deco.value, nullptr);
+  auto var_deco = ast::As<ast::VariableDecoration>(std::move(deco.value));
+  ASSERT_NE(var_deco, nullptr);
   ASSERT_FALSE(p->has_error());
-  ASSERT_TRUE(deco->IsLocation());
+  ASSERT_TRUE(var_deco->IsLocation());
 
-  auto* loc = deco->AsLocation();
+  auto* loc = var_deco->AsLocation();
   EXPECT_EQ(loc->value(), 4u);
 }
 
+TEST_F(ParserImplTest, VariableDecoration_Location_MissingLeftParen) {
+  auto* p = parser("location 4)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:10: expected '(' for location decoration");
+}
+
+TEST_F(ParserImplTest, VariableDecoration_Location_MissingRightParen) {
+  auto* p = parser("location(4");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:11: expected ')' for location decoration");
+}
+
 TEST_F(ParserImplTest, VariableDecoration_Location_MissingValue) {
-  auto* p = parser("location");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:9: invalid value for location decoration");
+  auto* p = parser("location()");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:10: expected signed integer literal for location decoration");
 }
 
 TEST_F(ParserImplTest, VariableDecoration_Location_MissingInvalid) {
-  auto* p = parser("location nan");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:10: invalid value for location decoration");
+  auto* p = parser("location(nan)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:10: expected signed integer literal for location decoration");
 }
 
 struct BuiltinData {
@@ -60,35 +90,23 @@ inline std::ostream& operator<<(std::ostream& out, BuiltinData data) {
   out << std::string(data.input);
   return out;
 }
-class BuiltinTest : public testing::TestWithParam<BuiltinData> {
- public:
-  BuiltinTest() = default;
-  ~BuiltinTest() override = default;
 
-  void SetUp() override { ctx_.Reset(); }
-
-  void TearDown() override { impl_ = nullptr; }
-
-  ParserImpl* parser(const std::string& str) {
-    impl_ = std::make_unique<ParserImpl>(&ctx_, str);
-    return impl_.get();
-  }
-
- private:
-  std::unique_ptr<ParserImpl> impl_;
-  Context ctx_;
-};
+class BuiltinTest : public ParserImplTestWithParam<BuiltinData> {};
 
 TEST_P(BuiltinTest, VariableDecoration_Builtin) {
   auto params = GetParam();
-  auto* p = parser(std::string("builtin ") + params.input);
+  auto* p = parser(std::string("builtin(") + params.input + ")");
 
-  auto deco = p->variable_decoration();
+  auto deco = p->decoration();
+  EXPECT_TRUE(deco.matched);
+  EXPECT_FALSE(deco.errored);
+  ASSERT_NE(deco.value, nullptr);
+  auto var_deco = ast::As<ast::VariableDecoration>(std::move(deco.value));
   ASSERT_FALSE(p->has_error()) << p->error();
-  ASSERT_NE(deco, nullptr);
-  ASSERT_TRUE(deco->IsBuiltin());
+  ASSERT_NE(var_deco, nullptr);
+  ASSERT_TRUE(var_deco->IsBuiltin());
 
-  auto* builtin = deco->AsBuiltin();
+  auto* builtin = var_deco->AsBuiltin();
   EXPECT_EQ(builtin->value(), params.result);
 }
 INSTANTIATE_TEST_SUITE_P(
@@ -101,88 +119,173 @@ INSTANTIATE_TEST_SUITE_P(
         BuiltinData{"front_facing", ast::Builtin::kFrontFacing},
         BuiltinData{"frag_coord", ast::Builtin::kFragCoord},
         BuiltinData{"frag_depth", ast::Builtin::kFragDepth},
-        BuiltinData{"workgroup_size", ast::Builtin::kWorkgroupSize},
         BuiltinData{"local_invocation_id", ast::Builtin::kLocalInvocationId},
         BuiltinData{"local_invocation_idx", ast::Builtin::kLocalInvocationIdx},
         BuiltinData{"global_invocation_id",
                     ast::Builtin::kGlobalInvocationId}));
 
+TEST_F(ParserImplTest, VariableDecoration_Builtin_MissingLeftParen) {
+  auto* p = parser("builtin position)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:9: expected '(' for builtin decoration");
+}
+
+TEST_F(ParserImplTest, VariableDecoration_Builtin_MissingRightParen) {
+  auto* p = parser("builtin(position");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:17: expected ')' for builtin decoration");
+}
+
 TEST_F(ParserImplTest, VariableDecoration_Builtin_MissingValue) {
-  auto* p = parser("builtin");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:8: expected identifier for builtin");
+  auto* p = parser("builtin()");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:9: expected identifier for builtin");
 }
 
 TEST_F(ParserImplTest, VariableDecoration_Builtin_InvalidValue) {
-  auto* p = parser("builtin other_thingy");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
+  auto* p = parser("builtin(other_thingy)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
   EXPECT_EQ(p->error(), "1:9: invalid value for builtin decoration");
 }
 
 TEST_F(ParserImplTest, VariableDecoration_Builtin_MissingInvalid) {
-  auto* p = parser("builtin 3");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
+  auto* p = parser("builtin(3)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
   EXPECT_EQ(p->error(), "1:9: expected identifier for builtin");
 }
 
 TEST_F(ParserImplTest, VariableDecoration_Binding) {
-  auto* p = parser("binding 4");
-  auto deco = p->variable_decoration();
-  ASSERT_NE(deco, nullptr);
+  auto* p = parser("binding(4)");
+  auto deco = p->decoration();
+  EXPECT_TRUE(deco.matched);
+  EXPECT_FALSE(deco.errored);
+  ASSERT_NE(deco.value, nullptr);
+  auto var_deco = ast::As<ast::VariableDecoration>(std::move(deco.value));
+  ASSERT_NE(var_deco, nullptr);
   ASSERT_FALSE(p->has_error());
-  ASSERT_TRUE(deco->IsBinding());
+  ASSERT_TRUE(var_deco->IsBinding());
 
-  auto* binding = deco->AsBinding();
+  auto* binding = var_deco->AsBinding();
   EXPECT_EQ(binding->value(), 4u);
 }
 
+TEST_F(ParserImplTest, VariableDecoration_Binding_MissingLeftParen) {
+  auto* p = parser("binding 4)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:9: expected '(' for binding decoration");
+}
+
+TEST_F(ParserImplTest, VariableDecoration_Binding_MissingRightParen) {
+  auto* p = parser("binding(4");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:10: expected ')' for binding decoration");
+}
+
 TEST_F(ParserImplTest, VariableDecoration_Binding_MissingValue) {
-  auto* p = parser("binding");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:8: invalid value for binding decoration");
+  auto* p = parser("binding()");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:9: expected signed integer literal for binding decoration");
 }
 
 TEST_F(ParserImplTest, VariableDecoration_Binding_MissingInvalid) {
-  auto* p = parser("binding nan");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:9: invalid value for binding decoration");
+  auto* p = parser("binding(nan)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:9: expected signed integer literal for binding decoration");
 }
 
 TEST_F(ParserImplTest, VariableDecoration_set) {
-  auto* p = parser("set 4");
-  auto deco = p->variable_decoration();
+  auto* p = parser("set(4)");
+  auto deco = p->decoration();
+  EXPECT_TRUE(deco.matched);
+  EXPECT_FALSE(deco.errored);
+  ASSERT_NE(deco.value, nullptr);
+  auto var_deco = ast::As<ast::VariableDecoration>(std::move(deco.value));
   ASSERT_FALSE(p->has_error());
-  ASSERT_NE(deco.get(), nullptr);
-  ASSERT_TRUE(deco->IsSet());
+  ASSERT_NE(var_deco.get(), nullptr);
+  ASSERT_TRUE(var_deco->IsSet());
 
-  auto* set = deco->AsSet();
+  auto* set = var_deco->AsSet();
   EXPECT_EQ(set->value(), 4u);
 }
 
+TEST_F(ParserImplTest, VariableDecoration_Set_MissingLeftParen) {
+  auto* p = parser("set 2)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:5: expected '(' for set decoration");
+}
+
+TEST_F(ParserImplTest, VariableDecoration_Set_MissingRightParen) {
+  auto* p = parser("set(2");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:6: expected ')' for set decoration");
+}
+
 TEST_F(ParserImplTest, VariableDecoration_Set_MissingValue) {
-  auto* p = parser("set");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:4: invalid value for set decoration");
+  auto* p = parser("set()");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:5: expected signed integer literal for set decoration");
 }
 
 TEST_F(ParserImplTest, VariableDecoration_Set_MissingInvalid) {
-  auto* p = parser("set nan");
-  auto deco = p->variable_decoration();
-  ASSERT_EQ(deco, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:5: invalid value for set decoration");
+  auto* p = parser("set(nan)");
+  auto deco = p->decoration();
+  EXPECT_FALSE(deco.matched);
+  EXPECT_TRUE(deco.errored);
+  EXPECT_EQ(deco.value, nullptr);
+  EXPECT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:5: expected signed integer literal for set decoration");
 }
 
 }  // namespace

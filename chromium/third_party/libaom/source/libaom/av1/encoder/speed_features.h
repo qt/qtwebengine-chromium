@@ -71,6 +71,8 @@ enum {
   INTRA_DC = (1 << DC_PRED),
   INTRA_DC_TM = (1 << DC_PRED) | (1 << PAETH_PRED),
   INTRA_DC_H_V = (1 << DC_PRED) | (1 << V_PRED) | (1 << H_PRED),
+  INTRA_DC_H_V_SMOOTH =
+      (1 << DC_PRED) | (1 << V_PRED) | (1 << H_PRED) | (1 << SMOOTH_PRED),
   INTRA_DC_PAETH_H_V =
       (1 << DC_PRED) | (1 << PAETH_PRED) | (1 << V_PRED) | (1 << H_PRED)
 };
@@ -134,10 +136,8 @@ enum {
 
 enum {
   SUBPEL_TREE = 0,
-  SUBPEL_TREE_PRUNED = 1,           // Prunes 1/2-pel searches
-  SUBPEL_TREE_PRUNED_MORE = 2,      // Prunes 1/2-pel searches more aggressively
-  SUBPEL_TREE_PRUNED_EVENMORE = 3,  // Prunes 1/2- and 1/4-pel searches
-  // Other methods to come
+  SUBPEL_TREE_PRUNED = 1,       // Prunes 1/2-pel searches
+  SUBPEL_TREE_PRUNED_MORE = 2,  // Prunes 1/2-pel searches more aggressively
 } UENUM1BYTE(SUBPEL_SEARCH_METHODS);
 
 enum {
@@ -163,6 +163,7 @@ typedef enum {
   CDEF_FAST_SEARCH_LVL2, /**< Search reduced subset of filters than Level 1. */
   CDEF_FAST_SEARCH_LVL3, /**< Search reduced subset of secondary filters than
                               Level 2. */
+  CDEF_FAST_SEARCH_LVL4, /**< Search reduced subset of filters than Level 3. */
   CDEF_PICK_FROM_Q,      /**< Estimate filter strength based on quantizer. */
   CDEF_PICK_METHODS
 } CDEF_PICK_METHOD;
@@ -263,7 +264,10 @@ enum {
   FIXED_PARTITION,
 
   // Partition using source variance
-  VAR_BASED_PARTITION
+  VAR_BASED_PARTITION,
+
+  // Partition using ML model
+  ML_BASED_PARTITION
 } UENUM1BYTE(PARTITION_SEARCH_TYPE);
 
 enum {
@@ -278,6 +282,12 @@ enum {
   CURRENT_Q,
   QTR_ONLY,
 } UENUM1BYTE(MV_PREC_LOGIC);
+
+enum {
+  SUPERRES_AUTO_ALL,   // Tries all possible superres ratios
+  SUPERRES_AUTO_DUAL,  // Tries no superres and q-based superres ratios
+  SUPERRES_AUTO_SOLO,  // Only apply the q-based superres ratio
+} UENUM1BYTE(SUPERRES_AUTO_SEARCH_TYPE);
 
 /*!\endcond */
 /*!
@@ -313,7 +323,17 @@ typedef struct HIGH_LEVEL_SPEED_FEATURES {
   // backgrounds very to cheap to encode, and the segmentation we have
   // adds overhead.
   int static_segmentation;
+
+  /*!
+   * Superres-auto mode search type:
+   */
+  SUPERRES_AUTO_SEARCH_TYPE superres_auto_search_type;
   /*!\endcond */
+
+  /*!
+   * Enable/disable extra screen content test by encoding key frame twice.
+   */
+  int disable_extra_sc_testing;
 } HIGH_LEVEL_SPEED_FEATURES;
 
 /*!\cond */
@@ -470,14 +490,24 @@ typedef struct PARTITION_SPEED_FEATURES {
   // Prune AB partition search using split and HORZ/VERT info
   int prune_ab_partition_using_split_info;
 
+  // Prunt rectangular, AB and 4-way partition based on q index and block size
+  int prune_rectangular_split_based_on_qidx;
+
   // Terminate partition search for child partition,
   // when NONE and SPLIT partition rd_costs are INT64_MAX.
   int early_term_after_none_split;
 
   // Level used to adjust threshold for av1_ml_predict_breakout(). At lower
-  // levels, more conservative threshold is used. Value of 2 corresponds to
-  // default case with no adjustment to lbd thresholds.
+  // levels, more conservative threshold is used, and value of 0 indicates
+  // av1_ml_predict_breakout() is disabled. Value of 3 corresponds to default
+  // case with no adjustment to lbd thresholds.
   int ml_predict_breakout_level;
+
+  // Prune sub_8x8 (BLOCK_4X4, BLOCK_4X8 and BLOCK_8X4) partitions.
+  // 0 : no pruning
+  // 1 : pruning based on neighbour block information
+  // 2 : prune always
+  int prune_sub_8x8_partition_level;
 } PARTITION_SPEED_FEATURES;
 
 typedef struct MV_SPEED_FEATURES {
@@ -567,8 +597,8 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   int prune_inter_modes_if_skippable;
 
   // Drop less likely to be picked reference frames in the RD search.
-  // Has five levels for now: 0, 1, 2, 3 and 4, where higher levels prune more
-  // aggressively than lower ones. (0 means no pruning).
+  // Has six levels for now: 0, 1, 2, 3, 4 and 5, where higher levels prune
+  // more aggressively than lower ones. (0 means no pruning).
   int selective_ref_frame;
 
   // Prune reference frames for rectangular partitions.
@@ -705,14 +735,20 @@ typedef struct INTER_MODE_SPEED_FEATURES {
   // cpi->oxcf.cost_upd_freq.coeff = COST_UPD_SB (i.e. set at SB level)
   int disable_sb_level_coeff_cost_upd;
 
-  // Whether to override and disable sb level mv cost updates, if
-  // cpi->oxcf.cost_upd_freq.coeff = COST_UPD_SB (i.e. set at SB level)
-  int disable_sb_level_mv_cost_upd;
-
+  // To skip cost update for mv.
+  // mv_cost_upd_level indicates the aggressiveness of skipping.
+  // 0: update happens at each sb level.
+  // 1: update happens once for each sb row.
+  // 2: update happens once for a set of rows.
+  int mv_cost_upd_level;
   // Prune inter modes based on tpl stats
   // 0 : no pruning
   // 1 - 3 indicate increasing aggressiveness in order.
   int prune_inter_modes_based_on_tpl;
+
+  // Skip NEARMV and NEAR_NEARMV modes using ref frames of above and left
+  // neighbor blocks and qindex.
+  int prune_nearmv_using_neighbors;
 
   // Model based breakout after interpolation filter search
   // 0: no breakout
@@ -726,6 +762,10 @@ typedef struct INTER_MODE_SPEED_FEATURES {
 
   // Enable/disable masked compound.
   int disable_masked_comp;
+
+  // Reuse the best prediction modes found in PARTITION_SPLIT and PARTITION_RECT
+  // when encoding PARTITION_AB.
+  int reuse_best_prediction_for_part_ab;
 } INTER_MODE_SPEED_FEATURES;
 
 typedef struct INTERP_FILTER_SPEED_FEATURES {
@@ -825,6 +865,11 @@ typedef struct TX_SPEED_FEATURES {
 
   // Refine TX type after fast TX search.
   int refine_fast_tx_search_results;
+
+  // Prune transform split/no_split eval based on residual properties. A value
+  // of 0 indicates no pruning, and the aggressiveness of pruning progressively
+  // increases from levels 1 to 3.
+  int prune_tx_size_level;
 } TX_SPEED_FEATURES;
 
 typedef struct RD_CALC_SPEED_FEATURES {
@@ -885,11 +930,20 @@ typedef struct WINNER_MODE_SPEED_FEATURES {
   // 0: speed feature OFF
   // 1 / 2 : Use configured number of winner candidates
   int motion_mode_for_winner_cand;
+
+  // Early DC only txfm block prediction
+  // 0: speed feature OFF
+  // 1 / 2 : Use the configured level for different modes
+  int dc_blk_pred_level;
 } WINNER_MODE_SPEED_FEATURES;
 
 typedef struct LOOP_FILTER_SPEED_FEATURES {
   // This feature controls how the loop filter level is determined.
   LPF_PICK_METHOD lpf_pick;
+
+  // Skip some final iterations in the determination of the best loop filter
+  // level.
+  int use_coarse_filter_level_search;
 
   // Control how the CDEF strength is determined.
   CDEF_PICK_METHOD cdef_pick_method;
@@ -1009,9 +1063,6 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // Forces larger partition blocks in variance based partitioning
   int force_large_partition_blocks;
 
-  // Only checks intra DCPRED mode in nonrd_pick_inter_mode
-  int nonrd_intra_dc_only;
-
   // uses results of temporal noise estimate
   int use_temporal_noise_estimate;
 
@@ -1024,6 +1075,10 @@ typedef struct REAL_TIME_SPEED_FEATURES {
   // Skip loopfilter (and cdef) in svc real-time mode for
   // non_reference/droppable frames.
   int skip_loopfilter_non_reference;
+
+  // Bit mask to enable or disable intra modes for each prediction block size
+  // separately, for nonrd pickmode.
+  int intra_y_mode_bsize_mask_nrd[BLOCK_SIZES];
 } REAL_TIME_SPEED_FEATURES;
 
 /*!\endcond */

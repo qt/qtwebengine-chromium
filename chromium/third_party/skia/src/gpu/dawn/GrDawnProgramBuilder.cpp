@@ -373,7 +373,10 @@ sk_sp<GrDawnProgram> GrDawnProgramBuilder::Build(GrDawnGpu* gpu,
         inputs.push_back(input);
     }
     wgpu::VertexStateDescriptor vertexState;
-    vertexState.indexFormat = wgpu::IndexFormat::Uint16;
+    if (programInfo.primitiveType() == GrPrimitiveType::kTriangleStrip ||
+        programInfo.primitiveType() == GrPrimitiveType::kLineStrip) {
+        vertexState.indexFormat = wgpu::IndexFormat::Uint16;
+    }
     vertexState.vertexBufferCount = inputs.size();
     vertexState.vertexBuffers = &inputs.front();
 
@@ -462,7 +465,10 @@ static void set_texture(GrDawnGpu* gpu, GrSamplerState state, GrTexture* texture
     wgpu::Sampler sampler = gpu->getOrCreateSampler(state);
     bindings->push_back(make_bind_group_entry((*binding)++, sampler));
     GrDawnTexture* tex = static_cast<GrDawnTexture*>(texture);
-    wgpu::TextureView textureView = tex->texture().CreateView();
+    wgpu::TextureViewDescriptor viewDesc;
+    // Note that a mipLevelCount of zero here means to expose all available levels.
+    viewDesc.mipLevelCount = GrSamplerState::MipmapMode::kNone == state.mipmapMode() ? 1 : 0;
+    wgpu::TextureView textureView = tex->texture().CreateView(&viewDesc);
     bindings->push_back(make_bind_group_entry((*binding)++, textureView));
 }
 

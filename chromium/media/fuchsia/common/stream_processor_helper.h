@@ -122,10 +122,11 @@ class StreamProcessorHelper {
   void CompleteInputBuffersAllocation(
       fuchsia::sysmem::BufferCollectionTokenPtr token);
   void CompleteOutputBuffersAllocation(
-      size_t num_buffers_for_client,
-      size_t num_buffers_for_server,
       fuchsia::sysmem::BufferCollectionTokenPtr token);
 
+  // Closes the current stream and starts a new one. After that all packets
+  // passed to Process() will be sent with a new |stream_lifetime_ordinal|
+  // value.
   void Reset();
 
  private:

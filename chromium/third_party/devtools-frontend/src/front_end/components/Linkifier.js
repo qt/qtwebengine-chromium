@@ -200,9 +200,9 @@ export class Linkifier {
    * @param {?SDK.SDKModel.Target} target
    * @param {?string} scriptId
    * @param {string} sourceURL
-   * @param {number} lineNumber
+   * @param {number|undefined} lineNumber
    * @param {!LinkifyOptions=} options
-   * @return {?Element}
+   * @return {?HTMLElement}
    */
   maybeLinkifyScriptLocation(target, scriptId, sourceURL, lineNumber, options) {
     let fallbackAnchor = null;
@@ -230,10 +230,10 @@ export class Linkifier {
 
     let rawLocation;
     if (scriptId) {
-      rawLocation = debuggerModel.createRawLocationByScriptId(scriptId, lineNumber, columnNumber);
+      rawLocation = debuggerModel.createRawLocationByScriptId(scriptId, lineNumber || 0, columnNumber);
     }
     if (!rawLocation) {
-      rawLocation = debuggerModel.createRawLocationByURL(sourceURL, lineNumber, columnNumber);
+      rawLocation = debuggerModel.createRawLocationByURL(sourceURL, lineNumber || 0, columnNumber);
     }
 
     if (!rawLocation) {
@@ -266,8 +266,10 @@ export class Linkifier {
     Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
         .createLiveLocation(rawLocation, this._updateAnchor.bind(this, anchor), pool)
         .then(liveLocation => {
-          info.liveLocation = liveLocation;
-          this._onLiveLocationUpdate();
+          if (liveLocation) {
+            info.liveLocation = liveLocation;
+            this._onLiveLocationUpdate();
+          }
         });
 
     const anchors = /** @type {!Array<!Element>} */ (this._anchorsByTarget.get(rawLocation.debuggerModel.target()));
@@ -279,9 +281,9 @@ export class Linkifier {
    * @param {?SDK.SDKModel.Target} target
    * @param {?string} scriptId
    * @param {string} sourceURL
-   * @param {number} lineNumber
+   * @param {number|undefined} lineNumber
    * @param {!LinkifyOptions=} options
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   linkifyScriptLocation(target, scriptId, sourceURL, lineNumber, options) {
     const scriptLink = this.maybeLinkifyScriptLocation(target, scriptId, sourceURL, lineNumber, options);
@@ -315,7 +317,7 @@ export class Linkifier {
    * @param {?SDK.SDKModel.Target} target
    * @param {!Protocol.Runtime.CallFrame} callFrame
    * @param {!LinkifyOptions=} options
-   * @return {?Element}
+   * @return {?HTMLElement}
    */
   maybeLinkifyConsoleCallFrame(target, callFrame, options) {
     const linkifyOptions = {
@@ -331,7 +333,7 @@ export class Linkifier {
    * @param {!SDK.SDKModel.Target} target
    * @param {!Protocol.Runtime.StackTrace} stackTrace
    * @param {string=} classes
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   linkifyStackTraceTopFrame(target, stackTrace, classes) {
     console.assert(!!stackTrace.callFrames && !!stackTrace.callFrames.length);
@@ -352,6 +354,9 @@ export class Linkifier {
     }
 
     const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
+    if (!debuggerModel) {
+      return fallbackAnchor;
+    }
     const rawLocations = debuggerModel.createRawLocationsByStackTrace(stackTrace);
     if (rawLocations.length === 0) {
       return fallbackAnchor;
@@ -441,6 +446,16 @@ export class Linkifier {
     Linkifier._unbindUILocation(anchor);
     const uiLocation = await liveLocation.uiLocation();
     if (!uiLocation) {
+      if (liveLocation instanceof Bindings.CSSWorkspaceBinding.LiveLocation) {
+        const header = (/** @type {!Bindings.CSSWorkspaceBinding.LiveLocation} */ (liveLocation)).header();
+        if (header && header.ownerNode) {
+          anchor.addEventListener('click', event => {
+            event.consume(true);
+            Common.Revealer.reveal(header.ownerNode || null);
+          }, false);
+          Linkifier._setTrimmedText(anchor, '<style>');
+        }
+      }
       return;
     }
 
@@ -491,7 +506,7 @@ export class Linkifier {
   /**
    * @param {string} url
    * @param  {!LinkifyURLOptions=} options
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   static linkifyURL(url, options) {
     options = options || {
@@ -512,7 +527,7 @@ export class Linkifier {
     const maxLength = options.maxLength || UI.UIUtils.MaxLengthForDisplayedURLs;
     const bypassURLTrimming = options.bypassURLTrimming;
     if (!url || url.trim().toLowerCase().startsWith('javascript:')) {
-      const element = document.createElement('span');
+      const element = /** @type {!HTMLElement} */ (document.createElement('span'));
       if (className) {
         element.className = className;
       }
@@ -544,7 +559,7 @@ export class Linkifier {
    * @param {!Object} revealable
    * @param {string} text
    * @param {string=} fallbackHref
-   * @return {!Element}
+   * @return {!HTMLElement}
    */
   static linkifyRevealable(revealable, text, fallbackHref) {
     const createLinkOptions = {
@@ -568,7 +583,7 @@ export class Linkifier {
    * @param {string} text
    * @param {string} className
    * @param {!_CreateLinkOptions=} options
-   * @returns {!Element}
+   * @returns {!HTMLElement}
    */
   static _createLink(text, className, options) {
     options = options || {
@@ -680,9 +695,9 @@ export class Linkifier {
     const hashSplit = TextUtils.TextUtils.Utils.splitStringByRegexes(string, [/[a-f0-9]{20,}/g]);
     for (const match of hashSplit) {
       if (match.regexIndex === -1) {
-        link.createTextChild(match.value);
+        UI.UIUtils.createTextChild(link, match.value);
       } else {
-        link.createTextChild(match.value.substring(0, 7));
+        UI.UIUtils.createTextChild(link, match.value.substring(0, 7));
         Linkifier._appendHiddenText(link, match.value.substring(7));
       }
     }
@@ -693,7 +708,7 @@ export class Linkifier {
    * @param {string} string
    */
   static _appendHiddenText(link, string) {
-    const ellipsisNode = link.createChild('span', 'devtools-link-ellipsis').createTextChild('…');
+    const ellipsisNode = UI.UIUtils.createTextChild(link.createChild('span', 'devtools-link-ellipsis'), '…');
     textByAnchor.set(ellipsisNode, string);
   }
 

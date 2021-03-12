@@ -386,7 +386,7 @@ static const arg_def_t save_as_annexb =
 static const arg_def_t noise_sens =
     ARG_DEF(NULL, "noise-sensitivity", 1, "Noise sensitivity (frames to blur)");
 static const arg_def_t sharpness =
-    ARG_DEF(NULL, "sharpness", 1, "Loop filter sharpness (0..7)");
+    ARG_DEF(NULL, "sharpness", 1, "Loop filter sharpness (0..7), default is 0");
 static const arg_def_t static_thresh =
     ARG_DEF(NULL, "static-thresh", 1, "Motion detection threshold");
 static const arg_def_t auto_altref =
@@ -401,6 +401,7 @@ static const struct arg_enum_list tuning_enum[] = {
   { "vmaf_with_preprocessing", AOM_TUNE_VMAF_WITH_PREPROCESSING },
   { "vmaf_without_preprocessing", AOM_TUNE_VMAF_WITHOUT_PREPROCESSING },
   { "vmaf", AOM_TUNE_VMAF_MAX_GAIN },
+  { "vmaf_neg", AOM_TUNE_VMAF_NEG_MAX_GAIN },
   { NULL, 0 }
 };
 static const arg_def_t tune_metric =
@@ -429,8 +430,9 @@ static const arg_def_t enable_tpl_model =
 static const arg_def_t enable_keyframe_filtering =
     ARG_DEF(NULL, "enable-keyframe-filtering", 1,
             "Apply temporal filtering on key frame"
-            "(0: no filter, 1: filter without overlay (default),"
-            "2: filter with overlay)");
+            "(0: no filter, 1: filter without overlay (default), "
+            "2: filter with overlay - experimental, may break random access in "
+            "players.)");
 static const arg_def_t tile_width =
     ARG_DEF(NULL, "tile-width", 1, "Tile widths (comma separated)");
 static const arg_def_t tile_height =
@@ -457,13 +459,13 @@ static const arg_def_t enable_1to4_partitions =
             "Enable 1:4 and 4:1 partitions "
             "(0: false, 1: true (default))");
 static const arg_def_t min_partition_size =
-    ARG_DEF(NULL, "min-partition-size", 4,
+    ARG_DEF(NULL, "min-partition-size", 1,
             "Set min partition size "
             "(4:4x4, 8:8x8, 16:16x16, 32:32x32, 64:64x64, 128:128x128). "
             "On frame with 4k+ resolutions or higher speed settings, the min "
             "partition size will have a minimum of 8.");
 static const arg_def_t max_partition_size =
-    ARG_DEF(NULL, "max-partition-size", 128,
+    ARG_DEF(NULL, "max-partition-size", 1,
             "Set max partition size "
             "(4:4x4, 8:8x8, 16:16x16, 32:32x32, 64:64x64, 128:128x128)");
 static const arg_def_t enable_dual_filter =
@@ -491,6 +493,9 @@ static const arg_def_t enable_flip_idtx =
             "including FLIPADST_DCT, DCT_FLIPADST, FLIPADST_FLIPADST, "
             "ADST_FLIPADST, FLIPADST_ADST, IDTX, V_DCT, H_DCT, V_ADST, "
             "H_ADST, V_FLIPADST, H_FLIPADST");
+static const arg_def_t enable_rect_tx =
+    ARG_DEF(NULL, "enable-rect-tx", 1,
+            "Enable rectangular transform (0: false, 1: true (default))");
 static const arg_def_t enable_dist_wtd_comp =
     ARG_DEF(NULL, "enable-dist-wtd-comp", 1,
             "Enable distance-weighted compound "
@@ -858,6 +863,7 @@ static const arg_def_t *av1_args[] = { &cpu_used_av1,
                                        &enable_order_hint,
                                        &enable_tx64,
                                        &enable_flip_idtx,
+                                       &enable_rect_tx,
                                        &enable_dist_wtd_comp,
                                        &enable_masked_comp,
                                        &enable_onesided_comp,
@@ -965,6 +971,7 @@ static const int av1_arg_ctrl_map[] = { AOME_SET_CPUUSED,
                                         AV1E_SET_ENABLE_ORDER_HINT,
                                         AV1E_SET_ENABLE_TX64,
                                         AV1E_SET_ENABLE_FLIP_IDTX,
+                                        AV1E_SET_ENABLE_RECT_TX,
                                         AV1E_SET_ENABLE_DIST_WTD_COMP,
                                         AV1E_SET_ENABLE_MASKED_COMP,
                                         AV1E_SET_ENABLE_ONESIDED_COMP,
@@ -1180,12 +1187,11 @@ static void parse_global_config(struct AvxEncoderConfig *global, char ***argv) {
     arg.argv_step = 1;
 
     if (arg_match(&arg, &use_cfg, argi)) {
-      if (cfg_included) continue;
-      parse_cfg(arg.val, &global->encoder_config);
-      cfg_included = 1;
-      continue;
-    }
-    if (arg_match(&arg, &help, argi)) {
+      if (!cfg_included) {
+        parse_cfg(arg.val, &global->encoder_config);
+        cfg_included = 1;
+      }
+    } else if (arg_match(&arg, &help, argi)) {
       show_help(stdout, 0);
       exit(EXIT_SUCCESS);
     } else if (arg_match(&arg, &codecarg, argi)) {
@@ -1635,6 +1641,7 @@ static int parse_stream_params(struct AvxEncoderConfig *global,
           if (ctrl_args_map) {
             set_config_arg_ctrls(config, ctrl_args_map[i], &arg);
           }
+          break;
         }
       }
       if (!match) argj++;

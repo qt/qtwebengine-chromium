@@ -24,7 +24,9 @@
 #include "fxjs/cjs_delaydata.h"
 #include "fxjs/cjs_document.h"
 #include "fxjs/cjs_icon.h"
+#include "fxjs/fxv8.h"
 #include "fxjs/js_resources.h"
+#include "third_party/base/notreached.h"
 
 namespace {
 
@@ -585,11 +587,11 @@ const JSMethodSpec CJS_Field::MethodSpecs[] = {
     {"signatureSign", signatureSign_static},
     {"signatureValidate", signatureValidate_static}};
 
-int CJS_Field::ObjDefnID = -1;
+uint32_t CJS_Field::ObjDefnID = 0;
 const char CJS_Field::kName[] = "Field";
 
 // static
-int CJS_Field::GetObjDefnID() {
+uint32_t CJS_Field::GetObjDefnID() {
   return ObjDefnID;
 }
 
@@ -1026,7 +1028,7 @@ CJS_Result CJS_Field::set_current_value_indices(CJS_Runtime* pRuntime,
   std::vector<uint32_t> array;
   if (vp->IsNumber()) {
     array.push_back(pRuntime->ToInt32(vp));
-  } else if (!vp.IsEmpty() && vp->IsArray()) {
+  } else if (fxv8::IsArray(vp)) {
     v8::Local<v8::Array> SelArray = pRuntime->ToArray(vp);
     for (size_t i = 0; i < pRuntime->GetArrayLength(SelArray); i++) {
       array.push_back(
@@ -1252,7 +1254,7 @@ CJS_Result CJS_Field::set_export_values(CJS_Runtime* pRuntime,
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
 
-  if (vp.IsEmpty() || !vp->IsArray())
+  if (!fxv8::IsArray(vp))
     return CJS_Result::Failure(JSMessage::kBadObjectError);
 
   return CJS_Result::Success();
@@ -1332,7 +1334,7 @@ CJS_Result CJS_Field::set_fill_color(CJS_Runtime* pRuntime,
     return CJS_Result::Failure(JSMessage::kBadObjectError);
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
-  if (vp.IsEmpty() || !vp->IsArray())
+  if (!fxv8::IsArray(vp))
     return CJS_Result::Failure(JSMessage::kBadObjectError);
   return CJS_Result::Success();
 }
@@ -1704,7 +1706,7 @@ CJS_Result CJS_Field::get_rect(CJS_Runtime* pRuntime) {
 CJS_Result CJS_Field::set_rect(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp) {
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
-  if (vp.IsEmpty() || !vp->IsArray())
+  if (!fxv8::IsArray(vp))
     return CJS_Result::Failure(JSMessage::kValueError);
 
   v8::Local<v8::Array> rcArray = pRuntime->ToArray(vp);
@@ -1856,7 +1858,7 @@ CJS_Result CJS_Field::set_stroke_color(CJS_Runtime* pRuntime,
                                        v8::Local<v8::Value> vp) {
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
-  if (vp.IsEmpty() || !vp->IsArray())
+  if (!fxv8::IsArray(vp))
     return CJS_Result::Failure(JSMessage::kBadObjectError);
   return CJS_Result::Success();
 }
@@ -1957,7 +1959,7 @@ CJS_Result CJS_Field::set_text_color(CJS_Runtime* pRuntime,
                                      v8::Local<v8::Value> vp) {
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
-  if (vp.IsEmpty() || !vp->IsArray())
+  if (!fxv8::IsArray(vp))
     return CJS_Result::Failure(JSMessage::kBadObjectError);
   return CJS_Result::Success();
 }
@@ -2138,7 +2140,7 @@ CJS_Result CJS_Field::set_value(CJS_Runtime* pRuntime,
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
 
   std::vector<WideString> strArray;
-  if (!vp.IsEmpty() && vp->IsArray()) {
+  if (fxv8::IsArray(vp)) {
     v8::Local<v8::Array> ValueArray = pRuntime->ToArray(vp);
     for (size_t i = 0; i < pRuntime->GetArrayLength(ValueArray); i++) {
       strArray.push_back(

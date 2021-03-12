@@ -21,6 +21,7 @@ namespace tint {
 namespace ast {
 namespace type {
 
+class AccessControlType;
 class AliasType;
 class ArrayType;
 class BoolType;
@@ -35,6 +36,9 @@ class U32Type;
 class VectorType;
 class VoidType;
 
+/// Supported memory layouts for calculating sizes
+enum class MemoryLayout { kUniformBuffer, kStorageBuffer };
+
 /// Base class for a type in the system
 class Type {
  public:
@@ -42,6 +46,8 @@ class Type {
   Type(Type&&) = default;
   virtual ~Type();
 
+  /// @returns true if the type is an access control type
+  virtual bool IsAccessControl() const;
   /// @returns true if the type is an alias type
   virtual bool IsAlias() const;
   /// @returns true if the type is an array type
@@ -72,24 +78,36 @@ class Type {
   /// @returns the name for this type. The |type_name| is unique over all types.
   virtual std::string type_name() const = 0;
 
+  /// @param mem_layout type of memory layout to use in calculation.
+  /// @returns minimum size required for this type, in bytes.
+  ///          0 for non-host shareable types.
+  virtual uint64_t MinBufferBindingSize(MemoryLayout mem_layout) const;
+
+  /// @param mem_layout type of memory layout to use in calculation.
+  /// @returns base alignment for the type, in bytes.
+  ///          0 for non-host shareable types.
+  virtual uint64_t BaseAlignment(MemoryLayout mem_layout) const;
+
   /// @returns the pointee type if this is a pointer, |this| otherwise
   Type* UnwrapPtrIfNeeded();
 
-  /// Removes all levels of aliasing, if this is an alias type.  Otherwise
-  /// returns |this|.  This is just enough to assist with WGSL translation
+  /// Removes all levels of aliasing and access control.
+  /// This is just enough to assist with WGSL translation
   /// in that you want see through one level of pointer to get from an
   /// identifier-like expression as an l-value to its corresponding r-value,
-  /// plus see through the aliases on either side.
+  /// plus see through the wrappers on either side.
   /// @returns the completely unaliased type.
-  Type* UnwrapAliasesIfNeeded();
+  Type* UnwrapIfNeeded();
 
   /// Returns the type found after:
-  /// - removing all layers of aliasing if they exist, then
+  /// - removing all layers of aliasing and access control if they exist, then
   /// - removing the pointer, if it exists, then
-  /// - removing all further layers of aliasing, if they exist
+  /// - removing all further layers of aliasing or access control, if they exist
   /// @returns the unwrapped type
-  Type* UnwrapAliasPtrAlias();
+  Type* UnwrapAll();
 
+  /// @returns true if this type is a scalar
+  bool is_scalar();
   /// @returns true if this type is a float scalar
   bool is_float_scalar();
   /// @returns true if this type is a float matrix
@@ -111,6 +129,8 @@ class Type {
   /// @returns true if this type is an integer scalar or vector
   bool is_integer_scalar_or_vector();
 
+  /// @returns the type as an access control type
+  const AccessControlType* AsAccessControl() const;
   /// @returns the type as an alias type
   const AliasType* AsAlias() const;
   /// @returns the type as an array type
@@ -138,6 +158,8 @@ class Type {
   /// @returns the type as a void type
   const VoidType* AsVoid() const;
 
+  /// @returns the type as an access control type
+  AccessControlType* AsAccessControl();
   /// @returns the type as an alias type
   AliasType* AsAlias();
   /// @returns the type as an array type

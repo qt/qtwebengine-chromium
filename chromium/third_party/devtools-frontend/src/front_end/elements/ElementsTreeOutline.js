@@ -33,12 +33,13 @@
 
 import * as Common from '../common/common.js';
 import * as ProtocolClient from '../protocol_client/protocol_client.js';  // eslint-disable-line no-unused-vars
+import * as Root from '../root/root.js';                                  // eslint-disable-line no-unused-vars
 import * as SDK from '../sdk/sdk.js';
 import * as UI from '../ui/ui.js';
 
 import {linkifyDeferredNodeReference} from './DOMLinkifier.js';
 import {ElementsTreeElement, InitialChildrenLimit} from './ElementsTreeElement.js';
-import {HrefSymbol, ImagePreviewPopover} from './ImagePreviewPopover.js';
+import {ImagePreviewPopover} from './ImagePreviewPopover.js';
 
 /**
  * @unrestricted
@@ -54,7 +55,9 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
     /** @type {!WeakMap<!SDK.DOMModel.DOMNode, !ElementsTreeElement>} */
     this.treeElementByNode = new WeakMap();
     const shadowContainer = createElement('div');
-    this._shadowRoot = UI.Utils.createShadowRootWithCoreStyles(shadowContainer, 'elements/elementsTreeOutline.css');
+    this._shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
+        shadowContainer,
+        {cssFile: 'elements/elementsTreeOutline.css', enableLegacyPatching: true, delegatesFocus: undefined});
     const outlineDisclosureElement = this._shadowRoot.createChild('div', 'elements-disclosure');
 
     this._element = this.element;
@@ -95,13 +98,13 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
         this.contentElement,
         event => {
           let link = event.target;
-          while (link && !link[HrefSymbol]) {
+          while (link && !ImagePreviewPopover.getImageURL(link)) {
             link = link.parentElementOrShadowHost();
           }
           return link;
         },
         link => {
-          const listItem = link.enclosingNodeOrSelfWithNodeName('li');
+          const listItem = UI.UIUtils.enclosingNodeOrSelfWithNodeName(link, 'li');
           if (!listItem) {
             return null;
           }
@@ -112,6 +115,9 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
     this._updateRecords = new Map();
     /** @type {!Set<!ElementsTreeElement>} */
     this._treeElementsBeingUpdated = new Set();
+
+    /** @type {?Array<!Root.Runtime.Extension>} */
+    this.decoratorExtensions = null;
 
     this._showHTMLCommentsSetting = Common.Settings.Settings.instance().moduleSetting('showHTMLComments');
     this._showHTMLCommentsSetting.addChangeListener(this._onShowHTMLCommentsChange.bind(this));
@@ -896,6 +902,10 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
 
       // Select it and expand if necessary. We force tree update so that it processes dom events and is up to date.
       this.runPendingUpdates();
+
+      if (!index) {
+        return;
+      }
 
       const newNode = parentNode ? parentNode.children()[index] || parentNode : null;
       if (!newNode) {
@@ -1728,7 +1738,7 @@ export class ShortcutTreeElement extends UI.TreeOutline.TreeElement {
     title.textContent = '\u21AA ' + text;
 
     const link = linkifyDeferredNodeReference(nodeShortcut.deferredNode);
-    this.listItemElement.createTextChild(' ');
+    UI.UIUtils.createTextChild(this.listItemElement, ' ');
     link.classList.add('elements-tree-shortcut-link');
     link.textContent = Common.UIString.UIString('reveal');
     this.listItemElement.appendChild(link);

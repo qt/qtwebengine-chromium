@@ -14,10 +14,11 @@
 
 #include "src/ast/type/storage_texture_type.h"
 
-#include "src/ast/identifier_expression.h"
-#include "src/type_determiner.h"
+#include <memory>
 
 #include "gtest/gtest.h"
+#include "src/ast/identifier_expression.h"
+#include "src/type_determiner.h"
 
 namespace tint {
 namespace ast {
@@ -27,8 +28,9 @@ namespace {
 using StorageTextureTypeTest = testing::Test;
 
 TEST_F(StorageTextureTypeTest, Is) {
-  StorageTextureType s(TextureDimension::k2dArray, StorageAccess::kRead,
+  StorageTextureType s(TextureDimension::k2dArray, AccessControl::kReadOnly,
                        ImageFormat::kRgba32Float);
+  EXPECT_FALSE(s.IsAccessControl());
   EXPECT_FALSE(s.IsAlias());
   EXPECT_FALSE(s.IsArray());
   EXPECT_FALSE(s.IsBool());
@@ -44,7 +46,7 @@ TEST_F(StorageTextureTypeTest, Is) {
 }
 
 TEST_F(StorageTextureTypeTest, IsTextureType) {
-  StorageTextureType s(TextureDimension::k2dArray, StorageAccess::kRead,
+  StorageTextureType s(TextureDimension::k2dArray, AccessControl::kReadOnly,
                        ImageFormat::kRgba32Float);
   EXPECT_FALSE(s.IsDepth());
   EXPECT_FALSE(s.IsSampled());
@@ -52,33 +54,33 @@ TEST_F(StorageTextureTypeTest, IsTextureType) {
 }
 
 TEST_F(StorageTextureTypeTest, Dim) {
-  StorageTextureType s(TextureDimension::k2dArray, StorageAccess::kRead,
+  StorageTextureType s(TextureDimension::k2dArray, AccessControl::kReadOnly,
                        ImageFormat::kRgba32Float);
   EXPECT_EQ(s.dim(), TextureDimension::k2dArray);
 }
 
 TEST_F(StorageTextureTypeTest, Access) {
-  StorageTextureType s(TextureDimension::k2dArray, StorageAccess::kRead,
+  StorageTextureType s(TextureDimension::k2dArray, AccessControl::kReadOnly,
                        ImageFormat::kRgba32Float);
-  EXPECT_EQ(s.access(), StorageAccess::kRead);
+  EXPECT_EQ(s.access(), AccessControl::kReadOnly);
 }
 
 TEST_F(StorageTextureTypeTest, Format) {
-  StorageTextureType s(TextureDimension::k2dArray, StorageAccess::kRead,
+  StorageTextureType s(TextureDimension::k2dArray, AccessControl::kReadOnly,
                        ImageFormat::kRgba32Float);
   EXPECT_EQ(s.image_format(), ImageFormat::kRgba32Float);
 }
 
 TEST_F(StorageTextureTypeTest, TypeName) {
-  StorageTextureType s(TextureDimension::k2dArray, StorageAccess::kRead,
+  StorageTextureType s(TextureDimension::k2dArray, AccessControl::kReadOnly,
                        ImageFormat::kRgba32Float);
-  EXPECT_EQ(s.type_name(), "__storage_texture_read_2d_array_rgba32float");
+  EXPECT_EQ(s.type_name(), "__storage_texture_read_only_2d_array_rgba32float");
 }
 
 TEST_F(StorageTextureTypeTest, F32Type) {
   Context ctx;
   ast::type::Type* s = ctx.type_mgr().Get(std::make_unique<StorageTextureType>(
-      TextureDimension::k2dArray, StorageAccess::kRead,
+      TextureDimension::k2dArray, AccessControl::kReadOnly,
       ImageFormat::kRgba32Float));
   ast::Module mod;
   TypeDeterminer td(&ctx, &mod);
@@ -92,7 +94,7 @@ TEST_F(StorageTextureTypeTest, F32Type) {
 TEST_F(StorageTextureTypeTest, U32Type) {
   Context ctx;
   ast::type::Type* s = ctx.type_mgr().Get(std::make_unique<StorageTextureType>(
-      TextureDimension::k2dArray, StorageAccess::kRead,
+      TextureDimension::k2dArray, AccessControl::kReadOnly,
       ImageFormat::kRgba8Unorm));
   ast::Module mod;
   TypeDeterminer td(&ctx, &mod);
@@ -106,7 +108,7 @@ TEST_F(StorageTextureTypeTest, U32Type) {
 TEST_F(StorageTextureTypeTest, I32Type) {
   Context ctx;
   ast::type::Type* s = ctx.type_mgr().Get(std::make_unique<StorageTextureType>(
-      TextureDimension::k2dArray, StorageAccess::kRead,
+      TextureDimension::k2dArray, AccessControl::kReadOnly,
       ImageFormat::kRgba32Sint));
   ast::Module mod;
   TypeDeterminer td(&ctx, &mod);
@@ -115,6 +117,12 @@ TEST_F(StorageTextureTypeTest, I32Type) {
   ASSERT_TRUE(s->IsTexture());
   ASSERT_TRUE(s->AsTexture()->IsStorage());
   EXPECT_TRUE(s->AsTexture()->AsStorage()->type()->IsI32());
+}
+
+TEST_F(StorageTextureTypeTest, MinBufferBindingSize) {
+  StorageTextureType s(TextureDimension::k2dArray, AccessControl::kReadOnly,
+                       ImageFormat::kRgba32Sint);
+  EXPECT_EQ(0u, s.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

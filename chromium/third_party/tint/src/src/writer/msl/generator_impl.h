@@ -19,6 +19,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "src/ast/intrinsic.h"
 #include "src/ast/literal.h"
 #include "src/ast/module.h"
 #include "src/ast/scalar_constructor_expression.h"
@@ -53,18 +54,14 @@ class GeneratorImpl : public TextGenerator {
   /// @returns the largest alignment value
   uint32_t calculate_largest_alignment(ast::type::StructType* type);
 
-  /// Handles generating an alias
-  /// @param alias the alias to generate
-  /// @returns true if the alias was emitted
-  bool EmitAliasType(const ast::type::AliasType* alias);
+  /// Handles generating a constructed
+  /// @param ty the constructed type to generate
+  /// @returns true if the constructed type was emitted
+  bool EmitConstructedType(const ast::type::Type* ty);
   /// Handles an array accessor expression
   /// @param expr the expression to emit
   /// @returns true if the array accessor was emitted
   bool EmitArrayAccessor(ast::ArrayAccessorExpression* expr);
-  /// Handles generating an as expression
-  /// @param expr the as expression
-  /// @returns true if the as was emitted
-  bool EmitAs(ast::AsExpression* expr);
   /// Handles an assignment statement
   /// @param stmt the statement to emit
   /// @returns true if the statement was emitted successfully
@@ -73,6 +70,10 @@ class GeneratorImpl : public TextGenerator {
   /// @param expr the binary expression
   /// @returns true if the expression was emitted, false otherwise
   bool EmitBinary(ast::BinaryExpression* expr);
+  /// Handles generating a bitcast expression
+  /// @param expr the bitcast expression
+  /// @returns true if the bitcast was emitted
+  bool EmitBitcast(ast::BitcastExpression* expr);
   /// Handles a block statement
   /// @param stmt the statement to emit
   /// @returns true if the statement was emitted successfully
@@ -97,10 +98,6 @@ class GeneratorImpl : public TextGenerator {
   /// @param stmt the statement
   /// @returns true if the statement was emitted successfully
   bool EmitCase(ast::CaseStatement* stmt);
-  /// Handles generating a cast expression
-  /// @param expr the cast expression
-  /// @returns true if the cast was emitted
-  bool EmitCast(ast::CastExpression* expr);
   /// Handles generating constructor expressions
   /// @param expr the constructor expression
   /// @returns true if the expression was emitted
@@ -118,13 +115,13 @@ class GeneratorImpl : public TextGenerator {
   /// @returns true if the statement was emitted
   bool EmitElse(ast::ElseStatement* stmt);
   /// Handles emitting information for an entry point
-  /// @param ep the entry point
+  /// @param func the entry point function
   /// @returns true if the entry point data was emitted
-  bool EmitEntryPointData(ast::EntryPoint* ep);
+  bool EmitEntryPointData(ast::Function* func);
   /// Handles emitting the entry point function
-  /// @param ep the entry point
+  /// @param func the entry point function
   /// @returns true if the entry point function was emitted
-  bool EmitEntryPointFunction(ast::EntryPoint* ep);
+  bool EmitEntryPointFunction(ast::Function* func);
   /// Handles generate an Expression
   /// @param expr the expression
   /// @returns true if the expression was emitted
@@ -150,10 +147,6 @@ class GeneratorImpl : public TextGenerator {
   /// @param stmt the statement to emit
   /// @returns true if the statement was successfully emitted
   bool EmitIf(ast::IfStatement* stmt);
-  /// Handles genreating an import expression
-  /// @param expr the expression
-  /// @returns true if the expression was successfully emitted.
-  bool EmitImportFunction(ast::CallExpression* expr);
   /// Handles a literal
   /// @param lit the literal to emit
   /// @returns true if the literal was successfully emitted
@@ -190,6 +183,10 @@ class GeneratorImpl : public TextGenerator {
   /// @param name the name of the variable, only used for array emission
   /// @returns true if the type is emitted
   bool EmitType(ast::type::Type* type, const std::string& name);
+  /// Handles generating a struct declaration
+  /// @param str the struct to generate
+  /// @returns true if the struct is emitted
+  bool EmitStructType(const ast::type::StructType* str);
   /// Handles emitting a type constructor
   /// @param expr the type constructor expression
   /// @returns true if the constructor is emitted
@@ -230,9 +227,13 @@ class GeneratorImpl : public TextGenerator {
   /// @returns the name
   std::string generate_name(const std::string& prefix);
   /// Generates an intrinsic name from the given name
-  /// @param name the name to convert to an intrinsic
+  /// @param intrinsic the intrinsic to convert to an method name
   /// @returns the intrinsic name or blank on error
-  std::string generate_intrinsic_name(const std::string& name);
+  std::string generate_intrinsic_name(ast::Intrinsic intrinsic);
+  /// Handles generating a builtin name
+  /// @param ident the identifier to build the name from
+  /// @returns the name or "" if not valid
+  std::string generate_builtin_name(ast::IdentifierExpression* ident);
 
   /// Checks if the global variable is in an input or output struct
   /// @param var the variable to check

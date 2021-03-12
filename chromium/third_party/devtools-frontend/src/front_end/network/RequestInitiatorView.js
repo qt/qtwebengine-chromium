@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
 import * as Components from '../components/components.js';
 import * as SDK from '../sdk/sdk.js';
@@ -16,7 +13,7 @@ export class RequestInitiatorView extends UI.Widget.VBox {
    */
   constructor(request) {
     super();
-    this.registerRequiredCSS('network/requestInitiatorView.css');
+    this.registerRequiredCSS('network/requestInitiatorView.css', {enableLegacyPatching: true});
     this.element.classList.add('request-initiator-view');
     /** @type {!Components.Linkifier.Linkifier} */
     this._linkifier = new Components.Linkifier.Linkifier();
@@ -56,11 +53,12 @@ export class RequestInitiatorView extends UI.Widget.VBox {
     const icon = UI.Icon.Icon.create('smallicon-triangle-right');
     const clickableElement = section.createChild('div', 'request-initiator-view-section-title');
     clickableElement.appendChild(icon);
-    clickableElement.createTextChild(title);
+    UI.UIUtils.createTextChild(clickableElement, title);
     clickableElement.tabIndex = 0;
     sectionContent.classList.add('hidden', 'request-initiator-view-section-content');
     section.appendChild(sectionContent);
 
+    /** @param {boolean} expanded */
     const expand = expanded => {
       icon.setIconType(expanded ? 'smallicon-triangle-down' : 'smallicon-triangle-right');
       sectionContent.classList.toggle('hidden', !expanded);
@@ -81,19 +79,22 @@ export class RequestInitiatorView extends UI.Widget.VBox {
   _buildRequestChainTree(initiatorGraph) {
     const root = new UI.TreeOutline.TreeOutlineInShadow();
     const initiators = initiatorGraph.initiators;
+    /** @type {(!UI.TreeOutline.TreeElement|!UI.TreeOutline.TreeOutlineInShadow)} */
     let parent = root;
     for (const request of Array.from(initiators).reverse()) {
       const treeElement = new UI.TreeOutline.TreeElement(request.url());
       parent.appendChild(treeElement);
-      if (parent !== root) {
+      if (parent !== root && parent instanceof UI.TreeOutline.TreeElement) {
         parent.expand();
       }
       parent = treeElement;
     }
 
     // parent should be this._request tree element now
-    parent.select();
-    parent.titleElement.style.fontWeight = 'bold';
+    if (parent instanceof UI.TreeOutline.TreeElement) {
+      parent.select();
+      parent.titleElement.style.fontWeight = 'bold';
+    }
 
     const initiated = initiatorGraph.initiated;
     this._depthFirstSearchTreeBuilder(initiated, /** @type {!UI.TreeOutline.TreeElement} */ (parent), this._request);

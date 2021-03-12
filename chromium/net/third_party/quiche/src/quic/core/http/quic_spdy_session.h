@@ -9,6 +9,8 @@
 #include <memory>
 #include <string>
 
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
 #include "net/third_party/quiche/src/quic/core/http/http_frames.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_header_list.h"
 #include "net/third_party/quiche/src/quic/core/http/quic_headers_stream.h"
@@ -26,8 +28,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/core/quic_versions.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_optional.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/spdy/core/http2_frame_decoder_adapter.h"
 
 namespace quic {
@@ -154,10 +154,12 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   void Initialize() override;
 
   // QpackEncoder::DecoderStreamErrorDelegate implementation.
-  void OnDecoderStreamError(quiche::QuicheStringPiece error_message) override;
+  void OnDecoderStreamError(QuicErrorCode error_code,
+                            absl::string_view error_message) override;
 
   // QpackDecoder::EncoderStreamErrorDelegate implementation.
-  void OnEncoderStreamError(quiche::QuicheStringPiece error_message) override;
+  void OnEncoderStreamError(QuicErrorCode error_code,
+                            absl::string_view error_message) override;
 
   // Called by |headers_stream_| when headers with a priority have been
   // received for a stream.  This method will only be called for server streams.
@@ -225,15 +227,14 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Send GOAWAY if the peer is blocked on the implementation max.
   bool OnStreamsBlockedFrame(const QuicStreamsBlockedFrame& frame) override;
 
-  // Write GOAWAY frame on the control stream to notify the client that every
-  // stream that has not reached the server yet can be retried.  Do not send a
-  // GOAWAY frame if it could not convey new information to the client with
-  // respect to the previous GOAWAY frame.
+  // Write GOAWAY frame with maximum stream ID on the control stream.  Called to
+  // initite graceful connection shutdown.  Do not use smaller stream ID, in
+  // case client does not implement retry on GOAWAY.  Do not send GOAWAY if one
+  // has already been sent.
   void SendHttp3GoAway();
 
-  // Write advisory GOAWAY frame on the control stream with the max stream ID
-  // that the client could send. If GOAWAY has already been sent, the lesser of
-  // its max stream ID and the one advertised via MAX_STREAMS is used.
+  // Same as SendHttp3GoAway().  TODO(bnc): remove when
+  // gfe2_reloadable_flag_quic_goaway_with_max_stream_id flag is deprecated.
   void SendHttp3Shutdown();
 
   // Write |headers| for |promised_stream_id| on |original_stream_id| in a
@@ -467,6 +468,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // Initializes HTTP/3 unidirectional streams if not yet initialzed.
   virtual void MaybeInitializeHttp3UnidirectionalStreams();
 
+  // QuicConnectionVisitorInterface method.
+  void BeforeConnectionCloseSent() override;
+
  private:
   friend class test::QuicSpdySessionPeer;
 
@@ -485,7 +489,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
                   const spdy::SpdyStreamPrecedence& precedence);
 
   void CloseConnectionOnDuplicateHttp3UnidirectionalStreams(
-      quiche::QuicheStringPiece type);
+      absl::string_view type);
 
   // Sends any data which should be sent at the start of a connection, including
   // the initial SETTINGS frame, and (when IETF QUIC is used) also a MAX_PUSH_ID
@@ -564,7 +568,7 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   //   after encryption is established, the push ID in the most recently sent
   //   MAX_PUSH_ID frame.
   // Once set, never goes back to unset.
-  quiche::QuicheOptional<PushId> max_push_id_;
+  absl::optional<PushId> max_push_id_;
 
   // Not owned by the session.
   Http3DebugVisitor* debug_visitor_;
@@ -589,10 +593,10 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // The identifier in the most recently received GOAWAY frame.  Unset if no
   // GOAWAY frame has been received yet.
-  quiche::QuicheOptional<uint64_t> last_received_http3_goaway_id_;
+  absl::optional<uint64_t> last_received_http3_goaway_id_;
   // The identifier in the most recently sent GOAWAY frame.  Unset if no GOAWAY
   // frame has been sent yet.
-  quiche::QuicheOptional<uint64_t> last_sent_http3_goaway_id_;
+  absl::optional<uint64_t> last_sent_http3_goaway_id_;
 
   // Only used by a client, only with IETF QUIC.  True if a MAX_PUSH_ID frame
   // has been sent, in which case |max_push_id_| has the value sent in the most
@@ -601,6 +605,9 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Latched value of reloadable flag quic_reject_spdy_settings.
   const bool reject_spdy_settings_;
+
+  // Latched value of reloadable flag quic_goaway_with_max_stream_id.
+  const bool goaway_with_max_stream_id_;
 };
 
 }  // namespace quic

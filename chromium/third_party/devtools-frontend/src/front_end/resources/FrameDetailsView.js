@@ -5,6 +5,7 @@
 import * as Bindings from '../bindings/bindings.js';
 import * as Common from '../common/common.js';
 import * as Network from '../network/network.js';
+import * as Root from '../root/root.js';
 import * as SDK from '../sdk/sdk.js';  // eslint-disable-line no-unused-vars
 import * as UI from '../ui/ui.js';
 import * as Workspace from '../workspace/workspace.js';
@@ -20,12 +21,13 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
    */
   constructor(frame) {
     super();
-    this.registerRequiredCSS('resources/frameDetailsReportView.css');
+    this._protocolMonitorExperimentEnabled = Root.Runtime.experiments.isEnabled('protocolMonitor');
+    this.registerRequiredCSS('resources/frameDetailsReportView.css', {enableLegacyPatching: true});
     this._frame = frame;
     this.contentElement.classList.add('frame-details-container');
 
     this._reportView = new UI.ReportView.ReportView(frame.displayName());
-    this._reportView.registerRequiredCSS('resources/frameDetailsReportView.css');
+    this._reportView.registerRequiredCSS('resources/frameDetailsReportView.css', {enableLegacyPatching: true});
     this._reportView.show(this.contentElement);
     this._reportView.element.classList.add('frame-details-report-container');
 
@@ -36,14 +38,29 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
     const originFieldValue = this._generalSection.appendField(ls`Origin`);
     this._originStringElement = originFieldValue.createChild('div', 'text-ellipsis');
     this._ownerFieldValue = this._generalSection.appendField(ls`Owner Element`);
-    /** @type {?SDK.DOMModel.DOMNode} */
-    this._ownerDomNode = null;
     this._adStatus = this._generalSection.appendField(ls`Ad Status`);
 
     this._isolationSection = this._reportView.appendSection(ls`Security & Isolation`);
     this._secureContext = this._isolationSection.appendField(ls`Secure Context`);
+    this._crossOriginIsolatedContext = this._isolationSection.appendField(ls`Cross-Origin Isolated`);
     this._coepPolicy = this._isolationSection.appendField(ls`Cross-Origin Embedder Policy`);
     this._coopPolicy = this._isolationSection.appendField(ls`Cross-Origin Opener Policy`);
+
+    this._apiAvailability = this._reportView.appendSection(ls`API availablity`);
+    const summaryRow = this._apiAvailability.appendRow();
+    const summaryText = ls`Availability of certain APIs depends on the document being cross-origin isolated.`;
+    const link = 'https://web.dev/why-coop-coep/';
+    summaryRow.appendChild(UI.Fragment.html`<div>${summaryText} ${UI.XLink.XLink.create(link, ls`Learn more`)}</div>`);
+    this._apiSharedArrayBuffer = this._apiAvailability.appendField(ls`Shared Array Buffers`);
+
+    if (this._protocolMonitorExperimentEnabled) {
+      this._additionalInfo = this._reportView.appendSection(ls`Additional Information`);
+      this._additionalInfo.setTitle(
+          ls`Additional Information`,
+          ls`This additional (debugging) information is shown because the 'Protocol Monitor' experiment is enabled.`);
+      const frameIDField = this._additionalInfo.appendField(ls`Frame ID`);
+      frameIDField.textContent = frame.id;
+    }
     this.update();
   }
 
@@ -58,7 +75,7 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
     this._urlFieldValue.appendChild(this._urlStringElement);
     if (!this._frame.unreachableUrl()) {
       const sourceCode = this.uiSourceCodeForFrame(this._frame);
-      const revealSource = FrameDetailsView.linkifyIcon(
+      const revealSource = linkifyIcon(
           'mediumicon-sources-panel', ls`Click to reveal in Sources panel`, () => Common.Revealer.reveal(sourceCode));
       this._urlFieldValue.appendChild(revealSource);
     }
@@ -71,20 +88,15 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
     } else {
       this._generalSection.setFieldVisible(ls`Origin`, false);
     }
-    this._ownerDomNode = await this._frame.getOwnerDOMNodeOrDocument();
     this._updateAdStatus();
     this._ownerFieldValue.removeChildren();
-    if (this._ownerDomNode) {
-      const revealElement = FrameDetailsView.linkifyIcon(
-          'mediumicon-elements-panel', ls`Click to reveal in Elements panel`,
-          () => Common.Revealer.reveal(this._ownerDomNode));
-      const elementLabel = document.createElement('span');
-      elementLabel.textContent = `<${this._ownerDomNode.nodeName().toLocaleLowerCase()}>`;
-      revealElement.insertBefore(elementLabel, revealElement.firstChild);
-      this._ownerFieldValue.appendChild(revealElement);
+    const linkElement = await maybeCreateLinkToElementsPanel(this._frame);
+    if (linkElement) {
+      this._ownerFieldValue.appendChild(linkElement);
     }
     await this._updateCoopCoepStatus();
     this._updateContextStatus();
+    this._updateApiAvailability();
   }
 
   /**
@@ -108,9 +120,13 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
    *
    * @param {!HTMLElement} field
    * @param {function((!Protocol.Network.CrossOriginEmbedderPolicyValue|!Protocol.Network.CrossOriginOpenerPolicyValue)):boolean} isEnabled
-   * @param {!Protocol.Network.CrossOriginEmbedderPolicyStatus|!Protocol.Network.CrossOriginOpenerPolicyStatus} info
+   * @param {?Protocol.Network.CrossOriginEmbedderPolicyStatus|?Protocol.Network.CrossOriginOpenerPolicyStatus|undefined} info
    */
   static fillCrossOriginPolicy(field, isEnabled, info) {
+    if (!info) {
+      field.textContent = '';
+      return;
+    }
     const enabled = isEnabled(info.value);
     field.textContent = enabled ? info.value : info.reportOnlyValue;
     if (!enabled && isEnabled(info.reportOnlyValue)) {
@@ -123,30 +139,30 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
     if (endpoint) {
       const reportingEndpointPrefix = field.createChild('span', 'inline-name');
       reportingEndpointPrefix.textContent = ls`reporting to`;
-      const reportingEndpointName = field.createChild('span', 'copyable');
+      const reportingEndpointName = field.createChild('span');
       reportingEndpointName.textContent = endpoint;
     }
   }
 
   async _updateCoopCoepStatus() {
-    const info =
-        /** @type {?Protocol.Network.SecurityIsolationStatus} */ (await this._frame.resourceTreeModel()
-                                                                      .target()
-                                                                      .model(SDK.NetworkManager.NetworkManager)
-                                                                      .getSecurityIsolationStatus(this._frame.id));
+    const model = this._frame.resourceTreeModel().target().model(SDK.NetworkManager.NetworkManager);
+    const info = model && await model.getSecurityIsolationStatus(this._frame.id);
     if (!info) {
       return;
     }
     /**
-    * @param {!Protocol.Network.CrossOriginEmbedderPolicyValue|!Protocol.Network.CrossOriginOpenerPolicyValue} value
-    */
+     * @param {!Protocol.Network.CrossOriginEmbedderPolicyValue|!Protocol.Network.CrossOriginOpenerPolicyValue} value
+     */
     const coepIsEnabled = value => value !== Protocol.Network.CrossOriginEmbedderPolicyValue.None;
     FrameDetailsView.fillCrossOriginPolicy(this._coepPolicy, coepIsEnabled, info.coep);
+    this._isolationSection.setFieldVisible(ls`Cross-Origin Embedder Policy`, !!info.coep);
+
     /**
-    * @param {!Protocol.Network.CrossOriginEmbedderPolicyValue|!Protocol.Network.CrossOriginOpenerPolicyValue} value
-    */
+     * @param {!Protocol.Network.CrossOriginEmbedderPolicyValue|!Protocol.Network.CrossOriginOpenerPolicyValue} value
+     */
     const coopIsEnabled = value => value !== Protocol.Network.CrossOriginOpenerPolicyValue.UnsafeNone;
     FrameDetailsView.fillCrossOriginPolicy(this._coopPolicy, coopIsEnabled, info.coop);
+    this._isolationSection.setFieldVisible(ls`Cross-Origin Opener Policy`, !!info.coop);
   }
 
   /**
@@ -170,38 +186,49 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
   _updateContextStatus() {
     if (this._frame.unreachableUrl()) {
       this._isolationSection.setFieldVisible(ls`Secure Context`, false);
+      this._isolationSection.setFieldVisible(ls`Cross-Origin Isolated`, false);
       return;
     }
     this._isolationSection.setFieldVisible(ls`Secure Context`, true);
+    this._isolationSection.setFieldVisible(ls`Cross-Origin Isolated`, true);
+
     this._secureContext.textContent = booleanToYesNo(this._frame.isSecureContext());
     const secureContextExplanation = this._explanationFromSecureContextType(this._frame.getSecureContextType());
     if (secureContextExplanation) {
-      const secureContextType = this._secureContext.createChild('span');
+      const secureContextType = this._secureContext.createChild('span', 'inline-comment');
       secureContextType.textContent = secureContextExplanation;
+    }
+    this._crossOriginIsolatedContext.textContent = booleanToYesNo(this._frame.isCrossOriginIsolated());
+  }
+
+  _updateApiAvailability() {
+    const features = this._frame.getGatedAPIFeatures();
+    this._apiAvailability.setFieldVisible(ls`Shared Array Buffers`, !!features);
+
+    if (!features) {
+      return;
+    }
+    const sabAvailable = features.includes(Protocol.Page.GatedAPIFeatures.SharedArrayBuffers);
+    if (sabAvailable) {
+      const sabTransferAvailable = features.includes(Protocol.Page.GatedAPIFeatures.SharedArrayBuffersTransferAllowed);
+      this._apiSharedArrayBuffer.textContent =
+          sabTransferAvailable ? ls`available, transferable` : ls`available, not transferable`;
+      this._apiSharedArrayBuffer.title = sabTransferAvailable ?
+          ls`SharedArrayBuffer constructor is available and SABs can be transferred via postMessage` :
+          ls`SharedArrayBuffer constructor is available but SABs cannot be transferred via postMessage`;
+      if (!this._frame.isCrossOriginIsolated()) {
+        const reasonHint = this._apiSharedArrayBuffer.createChild('span', 'inline-span');
+        reasonHint.textContent = ls`⚠️ will require cross-origin isolated context in the future`;
+      }
+    } else {
+      this._apiSharedArrayBuffer.textContent = ls`unavailable`;
+      if (!this._frame.isCrossOriginIsolated()) {
+        const reasonHint = this._apiSharedArrayBuffer.createChild('span', 'inline-comment');
+        reasonHint.textContent = ls`requires cross-origin isolated context`;
+      }
     }
   }
 
-  /**
-   * @param {string} iconType
-   * @param {string} title
-   * @param {function():(void|!Promise<void>)} eventHandler
-   * @return {!Element}
-   */
-  static linkifyIcon(iconType, title, eventHandler) {
-    const icon = UI.Icon.Icon.create(iconType, 'icon-link devtools-link');
-    const span = document.createElement('span');
-    span.title = title;
-    span.classList.add('devtools-link');
-    span.tabIndex = 0;
-    span.appendChild(icon);
-    span.addEventListener('click', () => eventHandler());
-    span.addEventListener('keydown', event => {
-      if (isEnterKey(event)) {
-        eventHandler();
-      }
-    });
-    return span;
-  }
 
   /**
    * @param {!Element} element
@@ -210,7 +237,7 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
   static maybeAppendLinkToRequest(element, resource) {
     if (resource && resource.request) {
       const request = resource.request;
-      const revealRequest = FrameDetailsView.linkifyIcon(
+      const revealRequest = linkifyIcon(
           'mediumicon-network-panel', ls`Click to reveal in Network panel`,
           () => Network.NetworkPanel.NetworkPanel.selectAndShowRequest(request, Network.NetworkItemView.Tabs.Headers));
       element.appendChild(revealRequest);
@@ -229,7 +256,7 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
       return;
     }
 
-    const revealRequest = FrameDetailsView.linkifyIcon(
+    const revealRequest = linkifyIcon(
         'mediumicon-network-panel', ls`Click to reveal in Network panel (might require page reload)`, () => {
           Network.NetworkPanel.NetworkPanel.revealAndFilter([
             {
@@ -264,6 +291,68 @@ export class FrameDetailsView extends UI.ThrottledWidget.ThrottledWidget {
   }
 }
 
+/**
+ * @param {string} iconType
+ * @param {string} title
+ * @param {function():(void|!Promise<void>)} eventHandler
+ * @return {!Element}
+ */
+function linkifyIcon(iconType, title, eventHandler) {
+  const icon = UI.Icon.Icon.create(iconType, 'icon-link devtools-link');
+  const span = document.createElement('span');
+  span.title = title;
+  span.classList.add('devtools-link');
+  span.tabIndex = 0;
+  span.appendChild(icon);
+  span.addEventListener('click', event => {
+    event.consume(true);
+    eventHandler();
+  });
+  span.addEventListener('keydown', event => {
+    if (isEnterKey(event)) {
+      event.consume(true);
+      eventHandler();
+    }
+  });
+  return span;
+}
+
+/**
+ * @param {!SDK.ResourceTreeModel.ResourceTreeFrame|!Protocol.Page.FrameId|undefined} opener
+ * @return {!Promise<?Element>}
+ */
+async function maybeCreateLinkToElementsPanel(opener) {
+  /** @type {?SDK.ResourceTreeModel.ResourceTreeFrame} */
+  let openerFrame = null;
+  if (opener instanceof SDK.ResourceTreeModel.ResourceTreeFrame) {
+    openerFrame = opener;
+  } else if (opener) {
+    openerFrame = SDK.FrameManager.FrameManager.instance().getFrame(opener);
+  }
+  if (!openerFrame) {
+    return null;
+  }
+  const linkTargetDOMNode = await openerFrame.getOwnerDOMNodeOrDocument();
+  if (!linkTargetDOMNode) {
+    return null;
+  }
+  const linkElement = linkifyIcon(
+      'mediumicon-elements-panel', ls`Click to reveal in Elements panel`,
+      () => Common.Revealer.reveal(linkTargetDOMNode));
+  const label = document.createElement('span');
+  label.textContent = `<${linkTargetDOMNode.nodeName().toLocaleLowerCase()}>`;
+  linkElement.insertBefore(label, linkElement.firstChild);
+  linkElement.addEventListener('mouseenter', () => {
+    if (openerFrame) {
+      openerFrame.highlight();
+    }
+  });
+  linkElement.addEventListener('mouseleave', () => {
+    SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight();
+  });
+  return linkElement;
+}
+
 export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget {
   /**
    * @param {!Protocol.Target.TargetInfo} targetInfo
@@ -273,16 +362,21 @@ export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget 
     super();
     this._targetInfo = targetInfo;
     this._isWindowClosed = isWindowClosed;
+    this.registerRequiredCSS('resources/frameDetailsReportView.css', {enableLegacyPatching: true});
+    this.contentElement.classList.add('frame-details-container');
     this._reportView = new UI.ReportView.ReportView(this.buildTitle());
-    this._reportView.registerRequiredCSS('resources/frameDetailsReportView.css');
+    this._reportView.registerRequiredCSS('resources/frameDetailsReportView.css', {enableLegacyPatching: true});
     this._reportView.show(this.contentElement);
+    this._reportView.element.classList.add('frame-details-report-container');
 
     this._documentSection = this._reportView.appendSection(ls`Document`);
     this._URLFieldValue = this._documentSection.appendField(ls`URL`);
 
     this._securitySection = this._reportView.appendSection(ls`Security`);
+    this._openerElementField = this._securitySection.appendField(ls`Opener Frame`);
+    this._securitySection.setFieldVisible(ls`Opener Frame`, false);
     this._hasDOMAccessValue = this._securitySection.appendField(ls`Access to opener`);
-
+    this._hasDOMAccessValue.title = ls`Shows whether the opened window is able to access its opener and vice versa`;
     this.update();
   }
 
@@ -294,6 +388,18 @@ export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget 
     this._reportView.setTitle(this.buildTitle());
     this._URLFieldValue.textContent = this._targetInfo.url;
     this._hasDOMAccessValue.textContent = booleanToYesNo(this._targetInfo.canAccessOpener);
+    this.maybeDisplayOpenerFrame();
+  }
+
+  async maybeDisplayOpenerFrame() {
+    this._openerElementField.removeChildren();
+    const linkElement = await maybeCreateLinkToElementsPanel(this._targetInfo.openerFrameId);
+    if (linkElement) {
+      this._openerElementField.append(linkElement);
+      this._securitySection.setFieldVisible(ls`Opener Frame`, true);
+      return;
+    }
+    this._securitySection.setFieldVisible(ls`Opener Frame`, false);
   }
 
   /**
@@ -319,5 +425,54 @@ export class OpenedWindowDetailsView extends UI.ThrottledWidget.ThrottledWidget 
    */
   setTargetInfo(targetInfo) {
     this._targetInfo = targetInfo;
+  }
+}
+
+export class WorkerDetailsView extends UI.ThrottledWidget.ThrottledWidget {
+  /**
+   * @param {!Protocol.Target.TargetInfo} targetInfo
+   */
+  constructor(targetInfo) {
+    super();
+    this._targetInfo = targetInfo;
+    this.registerRequiredCSS('resources/frameDetailsReportView.css', {enableLegacyPatching: true});
+    this.contentElement.classList.add('frame-details-container');
+    this._reportView = new UI.ReportView.ReportView(this._targetInfo.title || this._targetInfo.url || ls`worker`);
+    this._reportView.registerRequiredCSS('resources/frameDetailsReportView.css', {enableLegacyPatching: true});
+    this._reportView.show(this.contentElement);
+    this._reportView.element.classList.add('frame-details-report-container');
+
+    this._documentSection = this._reportView.appendSection(ls`Document`);
+    this._URLFieldValue = this._documentSection.appendField(ls`URL`);
+    this._URLFieldValue.textContent = this._targetInfo.url;
+
+    this._isolationSection = this._reportView.appendSection(ls`Security & Isolation`);
+    this._coepPolicy = this._isolationSection.appendField(ls`Cross-Origin Embedder Policy`);
+    this.update();
+  }
+
+  async _updateCoopCoepStatus() {
+    const target = SDK.SDKModel.TargetManager.instance().targetById(this._targetInfo.targetId);
+    if (!target) {
+      return;
+    }
+    const model = target.model(SDK.NetworkManager.NetworkManager);
+    const info = model && await model.getSecurityIsolationStatus('');
+    if (!info) {
+      return;
+    }
+    /**
+    * @param {!Protocol.Network.CrossOriginEmbedderPolicyValue|!Protocol.Network.CrossOriginOpenerPolicyValue} value
+    */
+    const coepIsEnabled = value => value !== Protocol.Network.CrossOriginEmbedderPolicyValue.None;
+    FrameDetailsView.fillCrossOriginPolicy(this._coepPolicy, coepIsEnabled, info.coep);
+  }
+
+  /**
+   * @override
+   * @return {!Promise<?>}
+   */
+  async doUpdate() {
+    await this._updateCoopCoepStatus();
   }
 }

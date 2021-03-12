@@ -28,9 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as UI from '../ui/ui.js';
 
 /**
@@ -42,7 +39,7 @@ export class RequestHTMLView extends UI.Widget.VBox {
    */
   constructor(dataURL) {
     super(true);
-    this.registerRequiredCSS('network/requestHTMLView.css');
+    this.registerRequiredCSS('network/requestHTMLView.css', {enableLegacyPatching: true});
     this._dataURL = encodeURI(dataURL).replace(/#/g, '%23');
     this.contentElement.classList.add('html', 'request-view');
   }
@@ -65,11 +62,11 @@ export class RequestHTMLView extends UI.Widget.VBox {
     // We need to create iframe again each time because contentDocument
     // is deleted when iframe is removed from its parent.
     this.contentElement.removeChildren();
-    const iframe = createElement('iframe');
+    const iframe = document.createElement('iframe');
     iframe.className = 'html-preview-frame';
     iframe.setAttribute('sandbox', '');  // Forbid to run JavaScript and set unique origin.
     iframe.setAttribute('src', this._dataURL);
-    iframe.setAttribute('tabIndex', -1);
+    iframe.tabIndex = -1;
     UI.ARIAUtils.markAsPresentation(iframe);
     this.contentElement.appendChild(iframe);
   }

@@ -15,6 +15,7 @@
 #ifndef AOM_AV1_ENCODER_BLOCK_H_
 #define AOM_AV1_ENCODER_BLOCK_H_
 
+#include "av1/common/blockd.h"
 #include "av1/common/entropymv.h"
 #include "av1/common/entropy.h"
 #include "av1/common/enums.h"
@@ -178,17 +179,16 @@ typedef struct {
  */
 typedef struct {
   //! The transformed coefficients.
-  tran_low_t tcoeff[MAX_MB_PLANE][MAX_SB_SQUARE];
+  tran_low_t *tcoeff[MAX_MB_PLANE];
   //! Where the transformed coefficients end.
-  uint16_t eobs[MAX_MB_PLANE][MAX_SB_SQUARE / (TX_SIZE_W_MIN * TX_SIZE_H_MIN)];
+  uint16_t *eobs[MAX_MB_PLANE];
   /*! \brief Transform block entropy contexts.
    *
    * Each element is used as a bit field.
    * - Bits 0~3: txb_skip_ctx
    * - Bits 4~5: dc_sign_ctx.
    */
-  uint8_t entropy_ctx[MAX_MB_PLANE]
-                     [MAX_SB_SQUARE / (TX_SIZE_W_MIN * TX_SIZE_H_MIN)];
+  uint8_t *entropy_ctx[MAX_MB_PLANE];
 } CB_COEFF_BUFFER;
 
 /*! \brief Extended mode info derived from mbmi.
@@ -226,7 +226,7 @@ typedef struct {
   //! \copydoc MB_MODE_INFO_EXT::mode_context
   int16_t mode_context;
   //! Offset of current coding block's coeff buffer relative to the sb.
-  int cb_offset;
+  uint16_t cb_offset[PLANE_TYPES];
 } MB_MODE_INFO_EXT_FRAME;
 
 /*! \brief Txfm search results for a partition
@@ -468,6 +468,11 @@ typedef struct {
    * candidate, then code it as TX_MODE_SELECT.
    */
   TX_MODE tx_mode_search_type;
+
+  /*!
+   * Flag to enable/disable DC block prediction.
+   */
+  unsigned int predict_dc_level;
 } TxfmSearchParams;
 
 /*!\cond */
@@ -781,6 +786,17 @@ typedef struct {
 /*!\endcond */
 struct inter_modes_info;
 
+/*! \brief Holds the motion samples for warp motion model estimation
+ */
+typedef struct {
+  //! Number of samples.
+  int num;
+  //! Sample locations in current frame.
+  int pts[16];
+  //! Sample location in the reference frame.
+  int pts_inref[16];
+} WARP_SAMPLE_INFO;
+
 /*! \brief Encoder's parameters related to the current coding block.
  *
  * This struct contains most of the information the encoder needs to encode the
@@ -813,7 +829,7 @@ typedef struct macroblock {
    * Contains extra information not transmitted in the bitstream but are
    * derived. For example, this contains the stack of ref_mvs.
    */
-  MB_MODE_INFO_EXT *mbmi_ext;
+  MB_MODE_INFO_EXT mbmi_ext;
 
   /*! \brief Finalized mbmi_ext for the whole frame.
    *
@@ -844,7 +860,7 @@ typedef struct macroblock {
    */
   CB_COEFF_BUFFER *cb_coef_buff;
   //! Offset of current coding block's coeff buffer relative to the sb.
-  uint16_t cb_offset;
+  uint16_t cb_offset[PLANE_TYPES];
 
   //! Modified source and masks used for fast OBMC search.
   OBMCBuffer obmc_buffer;
@@ -940,7 +956,7 @@ typedef struct macroblock {
   /**@}*/
 
   /*****************************************************************************
-   * \name Reference Frame Searc
+   * \name Reference Frame Search
    ****************************************************************************/
   /**@{*/
   /*! \brief Sum absolute distortion of the predicted mv for each ref frame.
@@ -958,6 +974,12 @@ typedef struct macroblock {
    * frame at block level.
    */
   uint8_t tpl_keep_ref_frame[REF_FRAMES];
+
+  /*! \brief Warp motion samples buffer.
+   *
+   * Store the motion samples used for warp motion.
+   */
+  WARP_SAMPLE_INFO warp_sample_info[REF_FRAMES];
 
   /*! \brief Reference frames picked by the square subblocks in a superblock.
    *
@@ -1076,6 +1098,11 @@ typedef struct macroblock {
    * Contains the hash table, hash function, and buffer used for intrabc.
    */
   IntraBCHashInfo intrabc_hash_info;
+
+  /*! \brief Whether to reuse the mode stored in intermode_cache. */
+  int use_intermode_cache;
+  /*! \brief The mode to reuse during \ref av1_rd_pick_inter_mode_sb. */
+  const MB_MODE_INFO *intermode_cache;
   /**@}*/
 
   /*****************************************************************************
@@ -1131,6 +1158,8 @@ typedef struct macroblock {
   unsigned int source_variance;
   //! SSE of the current predictor.
   unsigned int pred_sse[REF_FRAMES];
+  //! Prediction for ML based partition.
+  DECLARE_ALIGNED(16, uint8_t, est_pred[128 * 128]);
   /**@}*/
 } MACROBLOCK;
 #undef SINGLE_REF_MODES
@@ -1167,7 +1196,7 @@ static INLINE int is_rect_tx_allowed_bsize(BLOCK_SIZE bsize) {
 
 static INLINE int is_rect_tx_allowed(const MACROBLOCKD *xd,
                                      const MB_MODE_INFO *mbmi) {
-  return is_rect_tx_allowed_bsize(mbmi->sb_type) &&
+  return is_rect_tx_allowed_bsize(mbmi->bsize) &&
          !xd->lossless[mbmi->segment_id];
 }
 

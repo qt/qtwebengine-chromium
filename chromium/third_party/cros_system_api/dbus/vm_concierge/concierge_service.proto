@@ -162,6 +162,9 @@ message StartVmRequest {
   // CPUs on the device and cannot be 0.
   uint32 cpus = 12;
 
+  // Make the rootfs writable.
+  bool writable_rootfs = 15;
+
   // If true, a file descriptor must be passed along with the message and that
   // file descriptor will be used for kernel.
   // Ignored unless |start_termina| is true.
@@ -1023,4 +1026,19 @@ message SetVmIdResponse {
 
   // If the attempt to set the owner id failed, the reason for failure.
   string failure_reason = 2;
+}
+
+// Message used in the signal for when a VM owner id is changed.
+message VmIdChangedSignal {
+  // The name of the VM which has changed.
+  string name = 1;
+
+  // The new owner of the vm.
+  string owner_id = 2;
+
+  // The previous owner of the vm.
+  string prev_owner_id = 3;
+
+  // The virtual socket context id assigned to the VM which has changed.
+  int64 cid = 4;
 }

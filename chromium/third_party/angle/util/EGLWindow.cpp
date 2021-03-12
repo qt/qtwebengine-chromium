@@ -178,17 +178,17 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
 
     if (params.transformFeedbackFeature == EGL_FALSE)
     {
-        disabledFeatureOverrides.push_back("supports_transform_feedback_extension");
-        disabledFeatureOverrides.push_back("emulate_transform_feedback");
+        disabledFeatureOverrides.push_back("supportsTransformFeedbackExtension");
+        disabledFeatureOverrides.push_back("emulateTransformFeedback");
     }
 
     if (params.allocateNonZeroMemoryFeature == EGL_TRUE)
     {
-        enabledFeatureOverrides.push_back("allocate_non_zero_memory");
+        enabledFeatureOverrides.push_back("allocateNonZeroMemory");
     }
     else if (params.allocateNonZeroMemoryFeature == EGL_FALSE)
     {
-        disabledFeatureOverrides.push_back("allocate_non_zero_memory");
+        disabledFeatureOverrides.push_back("allocateNonZeroMemory");
     }
 
     if (params.emulateCopyTexImage2DFromRenderbuffers == EGL_TRUE)
@@ -204,6 +204,43 @@ bool EGLWindow::initializeDisplay(OSWindow *osWindow,
     if (params.genMultipleMipsPerPassFeature == EGL_FALSE)
     {
         disabledFeatureOverrides.push_back("gen_multiple_mips_per_pass");
+    }
+
+    switch (params.emulatedPrerotation)
+    {
+        case 90:
+            enabledFeatureOverrides.push_back("emulatedPrerotation90");
+            break;
+        case 180:
+            enabledFeatureOverrides.push_back("emulatedPrerotation180");
+            break;
+        case 270:
+            enabledFeatureOverrides.push_back("emulatedPrerotation270");
+            break;
+        default:
+            break;
+    }
+
+    if (params.asyncCommandQueueFeatureVulkan == EGL_TRUE)
+    {
+        // TODO(jmadill): Update feature names. b/172704839
+        enabledFeatureOverrides.push_back("commandProcessor");
+        enabledFeatureOverrides.push_back("asynchronousCommandProcessing");
+    }
+
+    if (params.hasExplicitMemBarrierFeatureMtl == EGL_FALSE)
+    {
+        disabledFeatureOverrides.push_back("has_explicit_mem_barrier_mtl");
+    }
+
+    if (params.hasCheapRenderPassFeatureMtl == EGL_FALSE)
+    {
+        disabledFeatureOverrides.push_back("has_cheap_render_pass_mtl");
+    }
+
+    if (params.forceBufferGPUStorageFeatureMtl == EGL_TRUE)
+    {
+        enabledFeatureOverrides.push_back("force_buffer_gpu_storage_mtl");
     }
 
     if (!disabledFeatureOverrides.empty())

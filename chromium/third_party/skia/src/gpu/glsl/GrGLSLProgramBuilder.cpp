@@ -173,54 +173,16 @@ SkString GrGLSLProgramBuilder::emitFragProc(const GrFragmentProcessor& fp,
                                            this->uniformHandler(),
                                            this->shaderCaps(),
                                            fp,
-                                           output.c_str(),
-                                           input.c_str(),
+                                           "_output",
+                                           "_input",
                                            "_coords",
                                            coords,
                                            /*forceInline=*/true);
+    auto name = fFS.writeProcessorFunction(&glslFP, args);
+    fFS.codeAppendf("%s = %s(%s);", output.c_str(), name.c_str(), input.c_str());
 
-    if (fp.usesExplicitReturn()) {
-        // FPs that explicitly return their output color must be in a helper function, but we inline
-        // it if at all possible.
-        args.fInputColor = "_input";
-        args.fOutputColor = "_output";
-        auto name = fFS.writeProcessorFunction(&glslFP, args);
-        fFS.codeAppendf("%s = %s(%s);", output.c_str(), name.c_str(), input.c_str());
-    } else {
-        // Enclose custom code in a block to avoid namespace conflicts
-        fFS.codeAppendf("{ // Stage %d, %s\n", fStageIndex, fp.name());
-
-        if (fp.referencesSampleCoords()) {
-            // The fp's generated code expects a _coords variable, but we're at the root so _coords
-            // is just the local coordinates produced by the primitive processor.
-            SkASSERT(fp.usesVaryingCoordsDirectly());
-
-            const GrShaderVar& varying = coordVars[0];
-            switch(varying.getType()) {
-                case kFloat2_GrSLType:
-                    fFS.codeAppendf("float2 %s = %s.xy;\n",
-                                    args.fSampleCoord, varying.getName().c_str());
-                    break;
-                case kFloat3_GrSLType:
-                    fFS.codeAppendf("float2 %s = %s.xy / %s.z;\n",
-                                    args.fSampleCoord,
-                                    varying.getName().c_str(),
-                                    varying.getName().c_str());
-                    break;
-                default:
-                    SkDEBUGFAILF("Unexpected type for varying: %d named %s\n",
-                                (int) varying.getType(), varying.getName().c_str());
-                    break;
-            }
-        }
-
-        glslFP.emitCode(args);
-
-        fFS.codeAppend("}");
-    }
-
-    // We have to check that effects and the code they emit are consistent, ie if an effect
-    // asks for dst color, then the emit code needs to follow suit
+    // We have to check that effects and the code they emit are consistent, ie if an effect asks
+    // for dst color, then the emit code needs to follow suit
     SkDEBUGCODE(verify(fp);)
 
     return output;
@@ -326,19 +288,20 @@ void GrGLSLProgramBuilder::verify(const GrXferProcessor& xp) {
 }
 #endif
 
-void GrGLSLProgramBuilder::nameVariable(SkString* out, char prefix, const char* name, bool mangle) {
+SkString GrGLSLProgramBuilder::nameVariable(char prefix, const char* name, bool mangle) {
+    SkString out;
     if ('\0' == prefix) {
-        *out = name;
+        out = name;
     } else {
-        out->printf("%c%s", prefix, name);
+        out.printf("%c%s", prefix, name);
     }
     if (mangle) {
-        if (out->endsWith('_')) {
-            // Names containing "__" are reserved.
-            out->append("x");
-        }
-        out->appendf("_Stage%d%s", fStageIndex, fFS.getMangleString().c_str());
+        // Names containing "__" are reserved; add "x" if needed to avoid consecutive underscores.
+        const char *underscoreSplitter = out.endsWith('_') ? "x" : "";
+
+        out.appendf("%s_Stage%d%s", underscoreSplitter, fStageIndex, fFS.getMangleString().c_str());
     }
+    return out;
 }
 
 void GrGLSLProgramBuilder::nameExpression(SkString* output, const char* baseName) {
@@ -349,7 +312,7 @@ void GrGLSLProgramBuilder::nameExpression(SkString* output, const char* baseName
     if (output->size()) {
         outName = output->c_str();
     } else {
-        this->nameVariable(&outName, '\0', baseName);
+        outName = this->nameVariable(/*prefix=*/'\0', baseName);
     }
     fFS.codeAppendf("half4 %s;", outName.c_str());
     *output = outName;

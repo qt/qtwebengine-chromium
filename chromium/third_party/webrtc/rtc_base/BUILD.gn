@@ -48,12 +48,13 @@ rtc_source_set("untyped_function") {
   deps = [ "system:assume" ]
 }
 
-rtc_source_set("robo_caller") {
+rtc_source_set("callback_list") {
   sources = [
-    "robo_caller.cc",
-    "robo_caller.h",
+    "callback_list.cc",
+    "callback_list.h",
   ]
   deps = [
+    ":checks",
     ":untyped_function",
     "../api:function_view",
     "system:assume",
@@ -75,7 +76,6 @@ rtc_library("rtc_base_approved") {
     "../api:scoped_refptr",
     "synchronization:mutex",
     "system:arch",
-    "system:no_unique_address",
     "system:rtc_export",
     "system:unused",
     "third_party/base64",
@@ -125,6 +125,12 @@ rtc_library("rtc_base_approved") {
 
   if (is_win) {
     sources += [
+      "win/get_activation_factory.cc",
+      "win/get_activation_factory.h",
+      "win/hstring.cc",
+      "win/hstring.h",
+      "win/scoped_com_initializer.cc",
+      "win/scoped_com_initializer.h",
       "win/windows_version.cc",
       "win/windows_version.h",
     ]
@@ -158,8 +164,6 @@ rtc_library("rtc_base_approved") {
 }
 
 rtc_source_set("macromagic") {
-  # TODO(bugs.webrtc.org/9606): This should not be public.
-  visibility = [ "*" ]
   sources = [
     "arraysize.h",
     "constructor_magic.h",
@@ -479,7 +483,6 @@ rtc_source_set("rtc_operations_chain") {
     ":refcount",
     "../api:scoped_refptr",
     "synchronization:sequence_checker",
-    "system:no_unique_address",
   ]
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
@@ -583,7 +586,6 @@ rtc_library("weak_ptr") {
     ":refcount",
     "../api:scoped_refptr",
     "synchronization:sequence_checker",
-    "system:no_unique_address",
   ]
 }
 
@@ -832,9 +834,9 @@ rtc_library("rtc_base") {
     "synchronization:sequence_checker",
     "system:file_wrapper",
     "system:inline",
-    "system:no_unique_address",
     "system:rtc_export",
     "task_utils:pending_task_safety_flag",
+    "task_utils:repeating_task",
     "task_utils:to_queued_task",
     "third_party/base64",
     "third_party/sigslot",
@@ -1077,13 +1079,13 @@ rtc_library("testclient") {
   ]
 }
 
-rtc_library("robo_caller_unittests") {
+rtc_library("callback_list_unittests") {
   testonly = true
 
-  sources = [ "robo_caller_unittest.cc" ]
+  sources = [ "callback_list_unittest.cc" ]
   deps = [
+    ":callback_list",
     ":gunit_helpers",
-    ":robo_caller",
     ":rtc_base",
     "../api:function_view",
     "../test:test_support",
@@ -1425,6 +1427,7 @@ if (rtc_include_tests) {
       "memory:fifo_buffer",
       "synchronization:mutex",
       "synchronization:synchronization_unittests",
+      "task_utils:pending_task_safety_flag",
       "task_utils:to_queued_task",
       "third_party/sigslot",
     ]

@@ -12,9 +12,9 @@
 
 namespace quic {
 
-typedef QuicBufferedPacketStore::BufferedPacket BufferedPacket;
-typedef QuicBufferedPacketStore::BufferedPacketList BufferedPacketList;
-typedef QuicBufferedPacketStore::EnqueuePacketResult EnqueuePacketResult;
+using BufferedPacket = QuicBufferedPacketStore::BufferedPacket;
+using BufferedPacketList = QuicBufferedPacketStore::BufferedPacketList;
+using EnqueuePacketResult = QuicBufferedPacketStore::EnqueuePacketResult;
 
 // Max number of connections this store can keep track.
 static const size_t kDefaultMaxConnectionsInStore = 100;
@@ -100,7 +100,7 @@ EnqueuePacketResult QuicBufferedPacketStore::EnqueuePacket(
   const bool is_first_packet =
       !QuicContainsKey(undecryptable_packets_, connection_id);
   if (is_first_packet) {
-    if (ShouldBufferPacket(is_chlo)) {
+    if (ShouldNotBufferPacket(is_chlo)) {
       // Drop the packet if the upper limit of undecryptable packets has been
       // reached or the whole capacity of the store has been reached.
       return TOO_MANY_CONNECTIONS;
@@ -217,7 +217,7 @@ void QuicBufferedPacketStore::MaybeSetExpirationAlarm() {
   }
 }
 
-bool QuicBufferedPacketStore::ShouldBufferPacket(bool is_chlo) {
+bool QuicBufferedPacketStore::ShouldNotBufferPacket(bool is_chlo) {
   bool is_store_full =
       undecryptable_packets_.size() >= kDefaultMaxConnectionsInStore;
 

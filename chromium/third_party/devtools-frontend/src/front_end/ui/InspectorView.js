@@ -105,7 +105,7 @@ export class InspectorView extends VBox {
 
     this._tabbedPane = this._tabbedLocation.tabbedPane();
     this._tabbedPane.element.classList.add('main-tabbed-pane');
-    this._tabbedPane.registerRequiredCSS('ui/inspectorViewTabbedPane.css');
+    this._tabbedPane.registerRequiredCSS('ui/inspectorViewTabbedPane.css', {enableLegacyPatching: true});
     this._tabbedPane.addEventListener(TabbedPaneEvents.TabSelected, this._tabSelected, this);
     this._tabbedPane.setAccessibleName(Common.UIString.UIString('Panels'));
     this._tabbedPane.setTabDelegate(this._tabDelegate);
@@ -242,6 +242,14 @@ export class InspectorView extends VBox {
   }
 
   /**
+   * @param {boolean} isDrawerOpen
+   */
+  _emitDrawerChangeEvent(isDrawerOpen) {
+    const evt = new CustomEvent(Events.DrawerChange, {bubbles: true, cancelable: true, detail: {isDrawerOpen}});
+    document.body.dispatchEvent(evt);
+  }
+
+  /**
    * @param {string} tabId
    * @return {?TabbedPane}
    */
@@ -281,6 +289,7 @@ export class InspectorView extends VBox {
     } else {
       this._focusRestorer = null;
     }
+    this._emitDrawerChangeEvent(true);
   }
 
   /**
@@ -298,6 +307,8 @@ export class InspectorView extends VBox {
       this._focusRestorer.restore();
     }
     this._drawerSplitWidget.hideSidebar(true);
+
+    this._emitDrawerChangeEvent(false);
   }
 
   /**
@@ -536,3 +547,8 @@ export class InspectorViewTabDelegate {
     }
   }
 }
+
+/** @enum {string} */
+export const Events = {
+  DrawerChange: 'drawerchange',
+};

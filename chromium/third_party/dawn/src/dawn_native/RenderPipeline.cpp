@@ -144,7 +144,8 @@ namespace dawn_native {
 
         MaybeError ValidateColorStateDescriptor(const DeviceBase* device,
                                                 const ColorStateDescriptor& descriptor,
-                                                Format::Type fragmentOutputBaseType) {
+                                                bool fragmentWritten,
+                                                wgpu::TextureComponentType fragmentOutputBaseType) {
             if (descriptor.nextInChain != nullptr) {
                 return DAWN_VALIDATION_ERROR("nextInChain must be nullptr");
             }
@@ -161,8 +162,8 @@ namespace dawn_native {
             if (!format->IsColor() || !format->isRenderable) {
                 return DAWN_VALIDATION_ERROR("Color format must be color renderable");
             }
-            if (fragmentOutputBaseType != Format::Type::Other &&
-                fragmentOutputBaseType != format->type) {
+            if (fragmentWritten &&
+                fragmentOutputBaseType != format->GetAspectInfo(Aspect::Color).baseType) {
                 return DAWN_VALIDATION_ERROR(
                     "Color format must match the fragment stage output type");
             }
@@ -329,9 +330,9 @@ namespace dawn_native {
             DAWN_TRY(ValidateRasterizationStateDescriptor(descriptor->rasterizationState));
         }
 
-        const EntryPointMetadata& vertexMetadata = descriptor->vertexStage.module->GetEntryPoint(
-            descriptor->vertexStage.entryPoint, SingleShaderStage::Vertex);
-        if ((vertexMetadata.usedVertexAttributes & ~attributesSetMask).any()) {
+        const EntryPointMetadata& vertexMetadata =
+            descriptor->vertexStage.module->GetEntryPoint(descriptor->vertexStage.entryPoint);
+        if (!IsSubset(vertexMetadata.usedVertexAttributes, attributesSetMask)) {
             return DAWN_VALIDATION_ERROR(
                 "Pipeline vertex stage uses vertex buffers not in the vertex state");
         }
@@ -345,17 +346,18 @@ namespace dawn_native {
         }
 
         if (descriptor->colorStateCount == 0 && !descriptor->depthStencilState) {
-            return DAWN_VALIDATION_ERROR("Should have at least one attachment");
+            return DAWN_VALIDATION_ERROR(
+                "Should have at least one colorState or a depthStencilState");
         }
 
         ASSERT(descriptor->fragmentStage != nullptr);
         const EntryPointMetadata& fragmentMetadata =
-            descriptor->fragmentStage->module->GetEntryPoint(descriptor->fragmentStage->entryPoint,
-                                                             SingleShaderStage::Fragment);
+            descriptor->fragmentStage->module->GetEntryPoint(descriptor->fragmentStage->entryPoint);
         for (ColorAttachmentIndex i(uint8_t(0));
              i < ColorAttachmentIndex(static_cast<uint8_t>(descriptor->colorStateCount)); ++i) {
             DAWN_TRY(ValidateColorStateDescriptor(
                 device, descriptor->colorStates[static_cast<uint8_t>(i)],
+                fragmentMetadata.fragmentOutputsWritten[i],
                 fragmentMetadata.fragmentOutputFormatBaseTypes[i]));
         }
 
@@ -538,6 +540,26 @@ namespace dawn_native {
     wgpu::FrontFace RenderPipelineBase::GetFrontFace() const {
         ASSERT(!IsError());
         return mRasterizationState.frontFace;
+    }
+
+    bool RenderPipelineBase::IsDepthBiasEnabled() const {
+        ASSERT(!IsError());
+        return mRasterizationState.depthBias != 0 || mRasterizationState.depthBiasSlopeScale != 0;
+    }
+
+    int32_t RenderPipelineBase::GetDepthBias() const {
+        ASSERT(!IsError());
+        return mRasterizationState.depthBias;
+    }
+
+    float RenderPipelineBase::GetDepthBiasSlopeScale() const {
+        ASSERT(!IsError());
+        return mRasterizationState.depthBiasSlopeScale;
+    }
+
+    float RenderPipelineBase::GetDepthBiasClamp() const {
+        ASSERT(!IsError());
+        return mRasterizationState.depthBiasClamp;
     }
 
     ityp::bitset<ColorAttachmentIndex, kMaxColorAttachments>

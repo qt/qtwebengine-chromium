@@ -14,7 +14,11 @@
 
 #include "src/ast/type/array_type.h"
 
+#include <memory>
+#include <utility>
+
 #include "gtest/gtest.h"
+#include "src/ast/stride_decoration.h"
 #include "src/ast/type/i32_type.h"
 #include "src/ast/type/u32_type.h"
 
@@ -47,6 +51,7 @@ TEST_F(ArrayTypeTest, Is) {
   I32Type i32;
 
   ArrayType arr{&i32, 3};
+  EXPECT_FALSE(arr.IsAccessControl());
   EXPECT_FALSE(arr.IsAlias());
   EXPECT_TRUE(arr.IsArray());
   EXPECT_FALSE(arr.IsBool());
@@ -75,9 +80,60 @@ TEST_F(ArrayTypeTest, TypeName_RuntimeArray) {
 
 TEST_F(ArrayTypeTest, TypeName_WithStride) {
   I32Type i32;
+  ArrayDecorationList decos;
+  decos.push_back(std::make_unique<StrideDecoration>(16, Source{}));
+
   ArrayType arr{&i32, 3};
-  arr.set_array_stride(16);
+  arr.set_decorations(std::move(decos));
   EXPECT_EQ(arr.type_name(), "__array__i32_3_stride_16");
+}
+
+TEST_F(ArrayTypeTest, MinBufferBindingSizeNoStride) {
+  U32Type u32;
+  ArrayType arr(&u32, 4);
+  EXPECT_EQ(0u, arr.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
+}
+
+TEST_F(ArrayTypeTest, MinBufferBindingSizeArray) {
+  U32Type u32;
+  ArrayDecorationList decos;
+  decos.push_back(std::make_unique<StrideDecoration>(4, Source{}));
+
+  ArrayType arr(&u32, 4);
+  arr.set_decorations(std::move(decos));
+  EXPECT_EQ(16u, arr.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
+}
+
+TEST_F(ArrayTypeTest, MinBufferBindingSizeRuntimeArray) {
+  U32Type u32;
+  ArrayDecorationList decos;
+  decos.push_back(std::make_unique<StrideDecoration>(4, Source{}));
+
+  ArrayType arr(&u32);
+  arr.set_decorations(std::move(decos));
+  EXPECT_EQ(4u, arr.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
+}
+
+TEST_F(ArrayTypeTest, BaseAlignmentArray) {
+  U32Type u32;
+  ArrayDecorationList decos;
+  decos.push_back(std::make_unique<StrideDecoration>(4, Source{}));
+
+  ArrayType arr(&u32, 4);
+  arr.set_decorations(std::move(decos));
+  EXPECT_EQ(16u, arr.BaseAlignment(MemoryLayout::kUniformBuffer));
+  EXPECT_EQ(4u, arr.BaseAlignment(MemoryLayout::kStorageBuffer));
+}
+
+TEST_F(ArrayTypeTest, BaseAlignmentRuntimeArray) {
+  U32Type u32;
+  ArrayDecorationList decos;
+  decos.push_back(std::make_unique<StrideDecoration>(4, Source{}));
+
+  ArrayType arr(&u32);
+  arr.set_decorations(std::move(decos));
+  EXPECT_EQ(16u, arr.BaseAlignment(MemoryLayout::kUniformBuffer));
+  EXPECT_EQ(4u, arr.BaseAlignment(MemoryLayout::kStorageBuffer));
 }
 
 }  // namespace

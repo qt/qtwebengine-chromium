@@ -7,7 +7,7 @@
 
 #include "include/core/SkTraceMemoryDump.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrGpuResource.h"
 #include "src/gpu/GrGpuResourcePriv.h"
@@ -97,10 +97,15 @@ bool GrGpuResource::isPurgeable() const {
     // Resources in the kUnbudgetedCacheable state are never purgeable when they have a unique
     // key. The key must be removed/invalidated to make them purgeable.
     return !this->hasRef() &&
+           this->hasNoCommandBufferUsages() &&
            !(fBudgetedType == GrBudgetedType::kUnbudgetedCacheable && fUniqueKey.isValid());
 }
 
 bool GrGpuResource::hasRef() const { return this->internalHasRef(); }
+
+bool GrGpuResource::hasNoCommandBufferUsages() const {
+    return this->internalHasNoCommandBufferUsages();
+}
 
 SkString GrGpuResource::getResourceName() const {
     // Dump resource as "skia/gpu_resources/resource_#".
@@ -201,7 +206,7 @@ uint32_t GrGpuResource::CreateUniqueID() {
     static std::atomic<uint32_t> nextID{1};
     uint32_t id;
     do {
-        id = nextID++;
+        id = nextID.fetch_add(1, std::memory_order_relaxed);
     } while (id == SK_InvalidUniqueID);
     return id;
 }

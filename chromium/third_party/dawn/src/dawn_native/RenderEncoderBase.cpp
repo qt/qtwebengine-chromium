@@ -88,6 +88,10 @@ namespace dawn_native {
         mEncodingContext->TryEncode(this, [&](CommandAllocator* allocator) -> MaybeError {
             DAWN_TRY(GetDevice()->ValidateObject(indirectBuffer));
 
+            if (indirectOffset % 4 != 0) {
+                return DAWN_VALIDATION_ERROR("Indirect offset must be a multiple of 4");
+            }
+
             if (indirectOffset >= indirectBuffer->GetSize() ||
                 indirectOffset + kDrawIndirectSize > indirectBuffer->GetSize()) {
                 return DAWN_VALIDATION_ERROR("Indirect offset out of bounds");
@@ -107,6 +111,19 @@ namespace dawn_native {
                                                 uint64_t indirectOffset) {
         mEncodingContext->TryEncode(this, [&](CommandAllocator* allocator) -> MaybeError {
             DAWN_TRY(GetDevice()->ValidateObject(indirectBuffer));
+
+            // Indexed indirect draws need a compute-shader based validation check that the range of
+            // indices is contained inside the index buffer on Metal. Disallow them as unsafe until
+            // the validation is implemented.
+            if (GetDevice()->IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+                return DAWN_VALIDATION_ERROR(
+                    "DrawIndexedIndirect is disallowed because it doesn't validate that the index "
+                    "range is valid yet.");
+            }
+
+            if (indirectOffset % 4 != 0) {
+                return DAWN_VALIDATION_ERROR("Indirect offset must be a multiple of 4");
+            }
 
             if ((indirectOffset >= indirectBuffer->GetSize() ||
                  indirectOffset + kDrawIndexedIndirectSize > indirectBuffer->GetSize())) {

@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
 
 import * as Common from '../common/common.js';
 import * as Persistence from '../persistence/persistence.js';
@@ -28,7 +26,7 @@ function unescapeSnippetName(name) {
   return unescape(name);
 }
 
-class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSystem {
+export class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSystem {
   constructor() {
     super('snippet://', 'snippets');
     this._lastSnippetIdentifierSetting =
@@ -41,6 +39,7 @@ class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSyste
    * @return {!Array<string>}
    */
   initialFilePaths() {
+    /** @type {!Array<!Snippet>} */
     const savedSnippets = this._snippetsSetting.get();
     return savedSnippets.map(snippet => escapeSnippetName(snippet.name));
   }
@@ -70,6 +69,7 @@ class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSyste
    */
   async deleteFile(path) {
     const name = unescapeSnippetName(path.substring(1));
+    /** @type {!Array<!Snippet>} */
     const allSnippets = this._snippetsSetting.get();
     const snippets = allSnippets.filter(snippet => snippet.name !== name);
     if (allSnippets.length !== snippets.length) {
@@ -86,8 +86,13 @@ class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSyste
    */
   async requestFileContent(path) {
     const name = unescapeSnippetName(path.substring(1));
-    const snippet = this._snippetsSetting.get().find(snippet => snippet.name === name);
-    return {content: snippet ? snippet.content : null, isEncoded: false};
+    /** @type {!Array<!Snippet>} */
+    const snippets = this._snippetsSetting.get();
+    const snippet = snippets.find(snippet => snippet.name === name);
+    if (snippet) {
+      return {content: snippet.content, isEncoded: false};
+    }
+    return {content: null, isEncoded: false, error: `A snippet with name '${name}' was not found`};
   }
 
   /**
@@ -98,6 +103,7 @@ class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSyste
    */
   async setFileContent(path, content, isBase64) {
     const name = unescapeSnippetName(path.substring(1));
+    /** @type {!Array<!Snippet>} */
     const snippets = this._snippetsSetting.get();
     const snippet = snippets.find(snippet => snippet.name === name);
     if (snippet) {
@@ -112,10 +118,11 @@ class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSyste
    * @override
    * @param {string} path
    * @param {string} newName
-   * @param {function(boolean, string=)} callback
+   * @param {function(boolean, string=):void} callback
    */
   renameFile(path, newName, callback) {
     const name = unescapeSnippetName(path.substring(1));
+    /** @type {!Array<!Snippet>} */
     const snippets = this._snippetsSetting.get();
     const snippet = snippets.find(snippet => snippet.name === name);
     newName = newName.trim();
@@ -136,8 +143,10 @@ class SnippetFileSystem extends Persistence.PlatformFileSystem.PlatformFileSyste
    */
   async searchInPath(query, progress) {
     const re = new RegExp(query.escapeForRegExp(), 'i');
-    const snippets = this._snippetsSetting.get().filter(snippet => snippet.content.match(re));
-    return snippets.map(snippet => `snippet:///${escapeSnippetName(snippet.name)}`);
+    /** @type {!Array<!Snippet>} */
+    const allSnippets = this._snippetsSetting.get();
+    const matchedSnippets = allSnippets.filter(snippet => snippet.content.match(re));
+    return matchedSnippets.map(snippet => `snippet:///${escapeSnippetName(snippet.name)}`);
   }
 
   /**
@@ -198,7 +207,7 @@ export async function evaluateScriptSnippet(uiSourceCode) {
   const url = uiSourceCode.url();
 
   const result = await executionContext.evaluate(
-      {
+      /** @type {!SDK.RuntimeModel.EvaluationOptions} */ ({
         expression: `${expression}\n//# sourceURL=${url}`,
         objectGroup: 'console',
         silent: false,
@@ -206,20 +215,23 @@ export async function evaluateScriptSnippet(uiSourceCode) {
         returnByValue: false,
         generatePreview: true,
         replMode: true,
-      },
+      }),
       /* userGesture */ false,
       /* awaitPromise */ true);
 
-  if (result.exceptionDetails) {
+  if ('exceptionDetails' in result && result.exceptionDetails) {
     SDK.ConsoleModel.ConsoleModel.instance().addMessage(SDK.ConsoleModel.ConsoleMessage.fromException(
         runtimeModel, result.exceptionDetails, /* messageType */ undefined, /* timestamp */ undefined, url));
     return;
   }
-  if (!result.object) {
+  if (!('object' in result) || !result.object) {
     return;
   }
 
   const scripts = executionContext.debuggerModel.scriptsForSourceURL(url);
+  if (scripts.length < 1) {
+    return;
+  }
   const scriptId = scripts[scripts.length - 1].scriptId;
   SDK.ConsoleModel.ConsoleModel.instance().addMessage(new SDK.ConsoleModel.ConsoleMessage(
       runtimeModel, SDK.ConsoleModel.MessageSource.JS, SDK.ConsoleModel.MessageLevel.Info, '',
@@ -244,13 +256,29 @@ export function isSnippetsProject(project) {
       Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemType(project) === 'snippets';
 }
 
-Persistence.IsolatedFileSystemManager.IsolatedFileSystemManager.instance().addPlatformFileSystem(
-    'snippet://', new SnippetFileSystem());
+/**
+ * @return {!Workspace.Workspace.Project}
+ */
+export function findSnippetsProject() {
+  const workspaceProject =
+      Workspace.Workspace.WorkspaceImpl.instance()
+          .projectsForType(Workspace.Workspace.projectTypes.FileSystem)
+          .find(
+              project => Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemType(project) ===
+                  'snippets');
 
-/** @type {!Workspace.Workspace.Project} */
-export const project =
-    (Workspace.Workspace.WorkspaceImpl.instance()
-         .projectsForType(Workspace.Workspace.projectTypes.FileSystem)
-         .find(
-             project => Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemType(project) ===
-                 'snippets'));
+  if (!workspaceProject) {
+    throw new Error('Unable to find workspace project for the snippets file system');
+  }
+
+  return workspaceProject;
+}
+
+/**
+* @typedef {{
+  * name:string,
+  * content:string,
+  * }}
+  */
+// @ts-ignore typedef
+export let Snippet;

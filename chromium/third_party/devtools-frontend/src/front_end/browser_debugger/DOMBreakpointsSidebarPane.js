@@ -40,7 +40,7 @@ import * as UI from '../ui/ui.js';
 export class DOMBreakpointsSidebarPane extends UI.Widget.VBox {
   constructor() {
     super(true);
-    this.registerRequiredCSS('browser_debugger/domBreakpointsSidebarPane.css');
+    this.registerRequiredCSS('browser_debugger/domBreakpointsSidebarPane.css', {enableLegacyPatching: true});
 
     /** @type {!WeakMap<!Element, !HTMLInputElement>} */
     this.elementToCheckboxes = new WeakMap();
@@ -91,12 +91,11 @@ export class DOMBreakpointsSidebarPane extends UI.Widget.VBox {
     UI.ARIAUtils.markAsListitem(element);
     element.tabIndex = -1;
 
-    const checkboxLabel = UI.UIUtils.CheckboxLabel.create(/* title */ '', item.enabled);
+    const checkboxLabel = UI.UIUtils.CheckboxLabel.create(/* title */ undefined, item.enabled);
     const checkboxElement = checkboxLabel.checkboxElement;
     checkboxElement.addEventListener('click', this._checkboxClicked.bind(this, item), false);
     checkboxElement.tabIndex = this._list.selectedItem() === item ? 0 : -1;
     this.elementToCheckboxes.set(element, checkboxElement);
-    UI.ARIAUtils.markAsHidden(checkboxLabel);
     element.appendChild(checkboxLabel);
 
     const labelElement = document.createElement('div');
@@ -105,6 +104,7 @@ export class DOMBreakpointsSidebarPane extends UI.Widget.VBox {
     const description = document.createElement('div');
     const breakpointTypeLabel = BreakpointTypeLabels.get(item.type);
     description.textContent = breakpointTypeLabel || null;
+    UI.ARIAUtils.setAccessibleName(checkboxElement, ls`${breakpointTypeLabel}`);
     const linkifiedNode = document.createElement('monospace');
     linkifiedNode.style.display = 'block';
     labelElement.appendChild(linkifiedNode);
@@ -303,7 +303,7 @@ export class DOMBreakpointsSidebarPane extends UI.Widget.VBox {
     if (!domDebuggerModel) {
       return;
     }
-    const data = domDebuggerModel.resolveDOMBreakpointData(/** @type {!Object} */ (details.auxData));
+    const data = domDebuggerModel.resolveDOMBreakpointData(/** @type {*} */ (details.auxData));
     if (!data) {
       return;
     }
@@ -350,6 +350,9 @@ export class ContextMenuProvider {
      * @param {!Protocol.DOMDebugger.DOMBreakpointType} type
      */
     function toggleBreakpoint(type) {
+      if (!domDebuggerModel) {
+        return;
+      }
       if (domDebuggerModel.hasDOMBreakpoint(node, type)) {
         domDebuggerModel.removeDOMBreakpoint(node, type);
       } else {

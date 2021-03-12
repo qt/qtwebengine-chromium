@@ -10,6 +10,7 @@
 #include "include/core/SkYUVAIndex.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
+#include "include/private/SkTPin.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkSpecialImage.h"
@@ -651,17 +652,20 @@ void draw_tiled_bitmap(GrRecordingContext* context,
 
 //////////////////////////////////////////////////////////////////////////////
 
-void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const SkPaint& paint) {
+void SkGpuDevice::drawSpecial(SkSpecialImage* special, const SkMatrix& localToDevice,
+                              const SkPaint& paint) {
     SkASSERT(!paint.getMaskFilter() && !paint.getImageFilter());
     SkASSERT(special->isTextureBacked());
 
     SkRect src = SkRect::Make(special->subset());
-    SkRect dst = SkRect::MakeXYWH(left, top, special->width(), special->height());
+    SkRect dst = SkRect::MakeWH(special->width(), special->height());
     SkMatrix srcToDst = SkMatrix::MakeRectToRect(src, dst, SkMatrix::kFill_ScaleToFit);
 
-    // TODO (michaelludwig): Once drawSpecial uses arbitrary transforms between two SkGpuDevices,
-    // always using kNearest may not be the right choice anymore.
-    GrSamplerState sampler(GrSamplerState::WrapMode::kClamp, GrSamplerState::Filter::kNearest);
+    GrSamplerState sampler(GrSamplerState::WrapMode::kClamp,
+                           paint.getFilterQuality() >= kLow_SkFilterQuality ?
+                                GrSamplerState::Filter::kLinear : GrSamplerState::Filter::kNearest);
+    GrAA aa = paint.isAntiAlias() ? GrAA::kYes : GrAA::kNo;
+    GrQuadAAFlags aaFlags = paint.isAntiAlias() ? GrQuadAAFlags::kAll : GrQuadAAFlags::kNone;
 
     GrColorInfo colorInfo(SkColorTypeToGrColorType(special->colorType()),
                           special->alphaType(), sk_ref_sp(special->getColorSpace()));
@@ -670,11 +674,10 @@ void SkGpuDevice::drawSpecial(SkSpecialImage* special, int left, int top, const 
     GrTextureAdjuster texture(fContext.get(), std::move(view), colorInfo, special->uniqueID());
     // In most cases this ought to hit draw_texture since there won't be a color filter,
     // alpha-only texture+shader, or a high filter quality.
-    SkOverrideDeviceMatrixProvider identity(this->asMatrixProvider(), SkMatrix::I());
+    SkOverrideDeviceMatrixProvider matrixProvider(this->asMatrixProvider(), localToDevice);
     draw_texture_producer(fContext.get(), fRenderTargetContext.get(), this->clip(),
-                          identity, paint, &texture, src, dst, nullptr, srcToDst, GrAA::kNo,
-                          GrQuadAAFlags::kNone, SkCanvas::kStrict_SrcRectConstraint,
-                          sampler, false);
+                          matrixProvider, paint, &texture, src, dst, nullptr, srcToDst, aa,
+                          aaFlags, SkCanvas::kStrict_SrcRectConstraint, sampler, false);
 }
 
 void SkGpuDevice::drawImageQuad(const SkImage* image, const SkRect* srcRect, const SkRect* dstRect,
@@ -714,9 +717,6 @@ void SkGpuDevice::drawImageQuad(const SkImage* image, const SkRect* srcRect, con
     // uses an effect to combine them dynamically on the GPU. This is done before requesting a
     // pinned texture proxy because YUV images force-flatten to RGBA in that scenario.
     if (as_IB(image)->isYUVA()) {
-        SK_HISTOGRAM_BOOLEAN("DrawTiled", false);
-        LogDrawScaleFactor(ctm, srcToDst, paint.getFilterQuality());
-
         GrYUVAImageTextureMaker maker(fContext.get(), image);
         draw_texture_producer(fContext.get(), fRenderTargetContext.get(), clip, matrixProvider,
                               paint, &maker, src, dst, dstClip, srcToDst, aa, aaFlags, constraint,
@@ -729,9 +729,6 @@ void SkGpuDevice::drawImageQuad(const SkImage* image, const SkRect* srcRect, con
     uint32_t pinnedUniqueID;
     if (GrSurfaceProxyView view = as_IB(image)->refPinnedView(this->recordingContext(),
                                                               &pinnedUniqueID)) {
-        SK_HISTOGRAM_BOOLEAN("DrawTiled", false);
-        LogDrawScaleFactor(ctm, srcToDst, paint.getFilterQuality());
-
         GrColorInfo colorInfo;
         if (fContext->priv().caps()->isFormatSRGB(view.proxy()->backendFormat())) {
             SkASSERT(image->imageInfo().colorType() == kRGBA_8888_SkColorType);
@@ -772,9 +769,7 @@ void SkGpuDevice::drawImageQuad(const SkImage* image, const SkRect* srcRect, con
             // sending to the GPU.
             SkBitmap bm;
             if (as_IB(image)->getROPixels(nullptr, &bm)) {
-                // This is the funnel for all paths that draw tiled bitmaps/images. Log histogram
-                SK_HISTOGRAM_BOOLEAN("DrawTiled", true);
-                LogDrawScaleFactor(ctm, srcToDst, paint.getFilterQuality());
+                // This is the funnel for all paths that draw tiled bitmaps/images.
                 draw_tiled_bitmap(fContext.get(), fRenderTargetContext.get(), clip, bm, tileSize,
                                   matrixProvider, srcToDst, src, clippedSubset, paint, aa,
                                   constraint, {wrapMode, fm, mm}, bicubic);
@@ -782,10 +777,6 @@ void SkGpuDevice::drawImageQuad(const SkImage* image, const SkRect* srcRect, con
             }
         }
     }
-
-    // This is the funnel for all non-tiled bitmap/image draw calls. Log a histogram entry.
-    SK_HISTOGRAM_BOOLEAN("DrawTiled", false);
-    LogDrawScaleFactor(ctm, srcToDst, paint.getFilterQuality());
 
     // Lazily generated images must get drawn as a texture producer that handles the final
     // texture creation.

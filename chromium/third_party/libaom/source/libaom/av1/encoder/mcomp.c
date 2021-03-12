@@ -65,7 +65,9 @@ get_faster_search_method(SEARCH_METHODS search_method) {
   //  5. FAST_HEX \approx FAST_DIAMOND
   switch (search_method) {
     case NSTEP: return DIAMOND;
+    case NSTEP_8PT: return DIAMOND;
     case DIAMOND: return BIGDIA;
+    case CLAMPED_DIAMOND: return BIGDIA;
     case BIGDIA: return HEX;
     case SQUARE: return HEX;
     case HEX: return FAST_HEX;
@@ -313,7 +315,10 @@ static INLINE int mvsad_err_cost_(const FULLPEL_MV *mv,
 #define MAX_PATTERN_CANDIDATES 8  // max number of candidates per scale
 #define PATTERN_CANDIDATES_REF 3  // number of refinement candidates
 
-void av1_init_dsmotion_compensation(search_site_config *cfg, int stride) {
+// Search site initialization for DIAMOND / CLAMPED_DIAMOND search methods.
+// level = 0: DIAMOND, level = 1: CLAMPED_DIAMOND.
+void av1_init_dsmotion_compensation(search_site_config *cfg, int stride,
+                                    int level) {
   int num_search_steps = 0;
   int stage_index = MAX_MVSEARCH_STEPS - 1;
 
@@ -321,7 +326,10 @@ void av1_init_dsmotion_compensation(search_site_config *cfg, int stride) {
   cfg->site[stage_index][0].offset = 0;
   cfg->stride = stride;
 
-  for (int radius = MAX_FIRST_STEP; radius > 0; radius /= 2) {
+  // Choose the initial step size depending on level.
+  const int first_step = (level > 0) ? (MAX_FIRST_STEP / 4) : MAX_FIRST_STEP;
+
+  for (int radius = first_step; radius > 0;) {
     int num_search_pts = 8;
 
     const FULLPEL_MV search_site_mvs[13] = {
@@ -338,6 +346,8 @@ void av1_init_dsmotion_compensation(search_site_config *cfg, int stride) {
     }
     cfg->searches_per_step[stage_index] = num_search_pts;
     cfg->radius[stage_index] = radius;
+    // Update the search radius based on level.
+    if (!level || ((stage_index < 9) && level)) radius /= 2;
     --stage_index;
     ++num_search_steps;
   }
@@ -388,16 +398,19 @@ void av1_init_motion_fpf(search_site_config *cfg, int stride) {
   cfg->num_search_steps = num_search_steps;
 }
 
-// Search site initialization for NSTEP search method.
-void av1_init_motion_compensation_nstep(search_site_config *cfg, int stride) {
+// Search site initialization for NSTEP / NSTEP_8PT search methods.
+// level = 0: NSTEP, level = 1: NSTEP_8PT.
+void av1_init_motion_compensation_nstep(search_site_config *cfg, int stride,
+                                        int level) {
   int num_search_steps = 0;
   int stage_index = 0;
   cfg->stride = stride;
   int radius = 1;
-  for (stage_index = 0; stage_index < 15; ++stage_index) {
+  const int num_stages = (level > 0) ? 16 : 15;
+  for (stage_index = 0; stage_index < num_stages; ++stage_index) {
     int tan_radius = AOMMAX((int)(0.41 * radius), 1);
     int num_search_pts = 12;
-    if (radius <= 5) {
+    if ((radius <= 5) || (level > 0)) {
       tan_radius = radius;
       num_search_pts = 8;
     }
@@ -433,7 +446,9 @@ void av1_init_motion_compensation_nstep(search_site_config *cfg, int stride) {
 
 // Search site initialization for BIGDIA / FAST_BIGDIA / FAST_DIAMOND
 // search methods.
-void av1_init_motion_compensation_bigdia(search_site_config *cfg, int stride) {
+void av1_init_motion_compensation_bigdia(search_site_config *cfg, int stride,
+                                         int level) {
+  (void)level;
   cfg->stride = stride;
   // First scale has 4-closest points, the rest have 8 points in diamond
   // shape at increasing scales
@@ -486,7 +501,9 @@ void av1_init_motion_compensation_bigdia(search_site_config *cfg, int stride) {
 }
 
 // Search site initialization for SQUARE search method.
-void av1_init_motion_compensation_square(search_site_config *cfg, int stride) {
+void av1_init_motion_compensation_square(search_site_config *cfg, int stride,
+                                         int level) {
+  (void)level;
   cfg->stride = stride;
   // All scales have 8 closest points in square shape.
   static const int square_num_candidates[MAX_PATTERN_SCALES] = {
@@ -538,7 +555,9 @@ void av1_init_motion_compensation_square(search_site_config *cfg, int stride) {
 }
 
 // Search site initialization for HEX / FAST_HEX search methods.
-void av1_init_motion_compensation_hex(search_site_config *cfg, int stride) {
+void av1_init_motion_compensation_hex(search_site_config *cfg, int stride,
+                                      int level) {
+  (void)level;
   cfg->stride = stride;
   // First scale has 8-closest points, the rest have 6 points in hex shape
   // at increasing scales.
@@ -641,9 +660,9 @@ static INLINE int get_mvpred_compound_var_cost(
   int bestsme;
 
   if (mask) {
-    bestsme = vfp->msvf(src_buf, src_stride, 0, 0,
-                        get_buf_from_fullmv(ref, this_mv), ref_stride,
-                        second_pred, mask, mask_stride, invert_mask, &unused);
+    bestsme = vfp->msvf(get_buf_from_fullmv(ref, this_mv), ref_stride, 0, 0,
+                        src_buf, src_stride, second_pred, mask, mask_stride,
+                        invert_mask, &unused);
   } else if (second_pred) {
     bestsme = vfp->svaf(get_buf_from_fullmv(ref, this_mv), ref_stride, 0, 0,
                         src_buf, src_stride, &unused, second_pred);
@@ -1627,10 +1646,6 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
     MARK_MV_INVALID(second_best_mv);
   }
 
-  assert(ms_params->ms_buffers.second_pred == NULL &&
-         ms_params->ms_buffers.mask == NULL &&
-         "av1_full_pixel_search does not support compound pred");
-
   if (cost_list) {
     cost_list[0] = INT_MAX;
     cost_list[1] = INT_MAX;
@@ -1664,7 +1679,9 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
           bigdia_search(start_mv, ms_params, step_param, 1, cost_list, best_mv);
       break;
     case NSTEP:
+    case NSTEP_8PT:
     case DIAMOND:
+    case CLAMPED_DIAMOND:
       var = full_pixel_diamond(start_mv, ms_params, step_param, cost_list,
                                best_mv, second_best_mv);
       break;
@@ -1672,7 +1689,8 @@ int av1_full_pixel_search(const FULLPEL_MV start_mv,
   }
 
   // Should we allow a follow on exhaustive search?
-  if (!run_mesh_search && search_method == NSTEP) {
+  if (!run_mesh_search &&
+      ((search_method == NSTEP) || (search_method == NSTEP_8PT))) {
     int exhaustive_thr = ms_params->force_mesh_thresh;
     exhaustive_thr >>=
         10 - (mi_size_wide_log2[bsize] + mi_size_high_log2[bsize]);
@@ -2771,90 +2789,6 @@ static AOM_INLINE int setup_center_error_facade(
   }
 }
 
-int av1_find_best_sub_pixel_tree_pruned_evenmore(
-    MACROBLOCKD *xd, const AV1_COMMON *const cm,
-    const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv, MV *bestmv,
-    int *distortion, unsigned int *sse1, int_mv *last_mv_search_list) {
-  (void)cm;
-  const int allow_hp = ms_params->allow_hp;
-  const int forced_stop = ms_params->forced_stop;
-  const int iters_per_step = ms_params->iters_per_step;
-  const int *cost_list = ms_params->cost_list;
-  const SubpelMvLimits *mv_limits = &ms_params->mv_limits;
-  const MV_COST_PARAMS *mv_cost_params = &ms_params->mv_cost_params;
-  const SUBPEL_SEARCH_VAR_PARAMS *var_params = &ms_params->var_params;
-
-  // The iteration we are current searching for. Iter 0 corresponds to fullpel
-  // mv, iter 1 to half pel, and so on
-  int iter = 0;
-  int hstep = INIT_SUBPEL_STEP_SIZE;  // Step size, initialized to 4/8=1/2 pel
-  unsigned int besterr = INT_MAX;
-  *bestmv = start_mv;
-
-  const struct scale_factors *const sf = is_intrabc_block(xd->mi[0])
-                                             ? &cm->sf_identity
-                                             : xd->block_ref_scale_factors[0];
-  const int is_scaled = av1_is_scaled(sf);
-  besterr = setup_center_error_facade(
-      xd, cm, bestmv, var_params, mv_cost_params, sse1, distortion, is_scaled);
-
-  // If forced_stop is FULL_PEL, return.
-  if (forced_stop == FULL_PEL) return besterr;
-
-  if (check_repeated_mv_and_update(last_mv_search_list, *bestmv, iter)) {
-    return INT_MAX;
-  }
-  iter++;
-
-  if (cost_list && cost_list[0] != INT_MAX && cost_list[1] != INT_MAX &&
-      cost_list[2] != INT_MAX && cost_list[3] != INT_MAX &&
-      cost_list[4] != INT_MAX && is_cost_list_wellbehaved(cost_list)) {
-    int ir, ic;
-    int dummy = 0;
-    get_cost_surf_min(cost_list, &ir, &ic, 2);
-    if (ir != 0 || ic != 0) {
-      const MV this_mv = { start_mv.row + 2 * ir, start_mv.col + 2 * ic };
-      check_better_fast(xd, cm, &this_mv, bestmv, mv_limits, var_params,
-                        mv_cost_params, &besterr, sse1, distortion, &dummy,
-                        is_scaled);
-    }
-  } else {
-    two_level_checks_fast(xd, cm, start_mv, bestmv, hstep, mv_limits,
-                          var_params, mv_cost_params, &besterr, sse1,
-                          distortion, iters_per_step, is_scaled);
-
-    // Each subsequent iteration checks at least one point in common with
-    // the last iteration could be 2 ( if diag selected) 1/4 pel
-    if (forced_stop < HALF_PEL) {
-      if (check_repeated_mv_and_update(last_mv_search_list, *bestmv, iter)) {
-        return INT_MAX;
-      }
-      iter++;
-
-      hstep >>= 1;
-      start_mv = *bestmv;
-      two_level_checks_fast(xd, cm, start_mv, bestmv, hstep, mv_limits,
-                            var_params, mv_cost_params, &besterr, sse1,
-                            distortion, iters_per_step, is_scaled);
-    }
-  }
-
-  if (allow_hp && forced_stop == EIGHTH_PEL) {
-    if (check_repeated_mv_and_update(last_mv_search_list, *bestmv, iter)) {
-      return INT_MAX;
-    }
-    iter++;
-
-    hstep >>= 1;
-    start_mv = *bestmv;
-    two_level_checks_fast(xd, cm, start_mv, bestmv, hstep, mv_limits,
-                          var_params, mv_cost_params, &besterr, sse1,
-                          distortion, iters_per_step, is_scaled);
-  }
-
-  return besterr;
-}
-
 int av1_find_best_sub_pixel_tree_pruned_more(
     MACROBLOCKD *xd, const AV1_COMMON *const cm,
     const SUBPEL_MOTION_SEARCH_PARAMS *ms_params, MV start_mv, MV *bestmv,
@@ -3202,6 +3136,7 @@ int av1_return_min_sub_pixel_mv(MACROBLOCKD *xd, const AV1_COMMON *const cm,
   return besterr;
 }
 
+#if !CONFIG_REALTIME_ONLY
 // Computes the cost of the current predictor by going through the whole
 // av1_enc_build_inter_predictor pipeline. This is mainly used by warped mv
 // during motion_mode_rd. We are going through the whole
@@ -3269,9 +3204,10 @@ unsigned int av1_refine_warped_mv(MACROBLOCKD *xd, const AV1_COMMON *const cm,
       if (av1_is_subpelmv_in_range(mv_limits, this_mv)) {
         memcpy(pts, pts0, total_samples * 2 * sizeof(*pts0));
         memcpy(pts_inref, pts_inref0, total_samples * 2 * sizeof(*pts_inref0));
-        if (total_samples > 1)
+        if (total_samples > 1) {
           mbmi->num_proj_ref =
               av1_selectSamples(&this_mv, pts, pts_inref, total_samples, bsize);
+        }
 
         if (!av1_find_projection(mbmi->num_proj_ref, pts, pts_inref, bsize,
                                  this_mv.row, this_mv.col, &mbmi->wm_params,
@@ -3300,6 +3236,7 @@ unsigned int av1_refine_warped_mv(MACROBLOCKD *xd, const AV1_COMMON *const cm,
   mbmi->num_proj_ref = best_num_proj_ref;
   return bestmse;
 }
+#endif  // !CONFIG_REALTIME_ONLY
 // =============================================================================
 //  Subpixel Motion Search: OBMC
 // =============================================================================
@@ -3681,9 +3618,9 @@ static INLINE int get_mvpred_mask_var(
   const MV mv = get_mv_from_fullmv(&best_mv);
   unsigned int unused;
 
-  return vfp->msvf(src->buf, src->stride, 0, 0,
-                   get_buf_from_fullmv(pre, &best_mv), pre->stride, second_pred,
-                   mask, mask_stride, invert_mask, &unused) +
+  return vfp->msvf(get_buf_from_fullmv(pre, &best_mv), pre->stride, 0, 0,
+                   src->buf, src->stride, second_pred, mask, mask_stride,
+                   invert_mask, &unused) +
          mv_err_cost_(&mv, mv_cost_params);
 }
 

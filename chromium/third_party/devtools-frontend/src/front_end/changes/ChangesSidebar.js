@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
 import * as Snippets from '../snippets/snippets.js';
 import * as UI from '../ui/ui.js';
@@ -19,7 +16,7 @@ export class ChangesSidebar extends UI.Widget.Widget {
     super();
     this._treeoutline = new UI.TreeOutline.TreeOutlineInShadow();
     this._treeoutline.setFocusable(false);
-    this._treeoutline.registerRequiredCSS('changes/changesSidebar.css');
+    this._treeoutline.registerRequiredCSS('changes/changesSidebar.css', {enableLegacyPatching: true});
     this._treeoutline.setComparator((a, b) => a.titleAsText().compareTo(b.titleAsText()));
     this._treeoutline.addEventListener(UI.TreeOutline.Events.ElementSelected, this._selectionChanged, this);
     UI.ARIAUtils.markAsTablist(this._treeoutline.contentElement);
@@ -50,6 +47,7 @@ export class ChangesSidebar extends UI.Widget.Widget {
    * @return {?Workspace.UISourceCode.UISourceCode}
    */
   selectedUISourceCode() {
+    // @ts-ignore uiSourceCode seems to be dynamically attached.
     return this._treeoutline.selectedTreeElement ? this._treeoutline.selectedTreeElement.uiSourceCode : null;
   }
 
@@ -83,8 +81,10 @@ export class ChangesSidebar extends UI.Widget.Widget {
         this._selectionChanged();
       }
     }
-    this._treeoutline.removeChild(treeElement);
-    treeElement.dispose();
+    if (treeElement) {
+      this._treeoutline.removeChild(treeElement);
+      treeElement.dispose();
+    }
     if (this._treeoutline.rootElement().childCount() === 0) {
       this._treeoutline.setFocusable(false);
     }

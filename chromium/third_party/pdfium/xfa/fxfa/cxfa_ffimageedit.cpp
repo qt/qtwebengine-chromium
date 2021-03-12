@@ -7,6 +7,7 @@
 #include "xfa/fxfa/cxfa_ffimageedit.h"
 
 #include "core/fxge/dib/cfx_dibitmap.h"
+#include "third_party/base/check.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
@@ -37,7 +38,7 @@ void CXFA_FFImageEdit::Trace(cppgc::Visitor* visitor) const {
 }
 
 bool CXFA_FFImageEdit::LoadWidget() {
-  ASSERT(!IsLoaded());
+  DCHECK(!IsLoaded());
 
   CFWL_PictureBox* pPictureBox = cppgc::MakeGarbageCollected<CFWL_PictureBox>(
       GetFWLApp()->GetHeap()->GetAllocationHandle(), GetFWLApp());
@@ -56,7 +57,7 @@ bool CXFA_FFImageEdit::LoadWidget() {
   return true;
 }
 
-void CXFA_FFImageEdit::RenderWidget(CXFA_Graphics* pGS,
+void CXFA_FFImageEdit::RenderWidget(CFGAS_GEGraphics* pGS,
                                     const CFX_Matrix& matrix,
                                     HighlightOption highlight) {
   if (!HasVisibleStatus())
@@ -146,7 +147,7 @@ void CXFA_FFImageEdit::OnProcessEvent(CFWL_Event* pEvent) {
   m_pOldDelegate->OnProcessEvent(pEvent);
 }
 
-void CXFA_FFImageEdit::OnDrawWidget(CXFA_Graphics* pGraphics,
+void CXFA_FFImageEdit::OnDrawWidget(CFGAS_GEGraphics* pGraphics,
                                     const CFX_Matrix& matrix) {
   m_pOldDelegate->OnDrawWidget(pGraphics, matrix);
 }

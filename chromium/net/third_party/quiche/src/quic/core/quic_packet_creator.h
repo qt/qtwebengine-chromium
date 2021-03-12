@@ -20,6 +20,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/core/frames/quic_stream_frame.h"
 #include "net/third_party/quiche/src/quic/core/quic_circular_deque.h"
 #include "net/third_party/quiche/src/quic/core/quic_coalesced_packet.h"
@@ -27,8 +29,6 @@
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_macros.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 
 namespace quic {
 namespace test {
@@ -231,12 +231,6 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   bool AddPaddedSavedFrame(const QuicFrame& frame,
                            TransmissionType transmission_type);
 
-  // Creates a version negotiation packet which supports |supported_versions|.
-  std::unique_ptr<QuicEncryptedPacket> SerializeVersionNegotiationPacket(
-      bool ietf_quic,
-      bool use_length_prefix,
-      const ParsedQuicVersionVector& supported_versions);
-
   // Creates a connectivity probing packet for versions prior to version 99.
   std::unique_ptr<SerializedPacket> SerializeConnectivityProbingPacket();
 
@@ -257,6 +251,11 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Add PATH_RESPONSE to current packet, flush before or afterwards if needed.
   bool AddPathResponseFrame(const QuicPathFrameBuffer& data_buffer);
+
+  // Add PATH_CHALLENGE to current packet, flush before or afterwards if needed.
+  // This is a best effort adding. It may fail becasue of delegate state, but
+  // it's okay because of path validation retry mechanism.
+  void AddPathChallengeFrame(QuicPathFrameBuffer* payload);
 
   // Returns a dummy packet that is valid but contains no useful information.
   static SerializedPacket NoPacket();
@@ -322,7 +321,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   void AddPendingPadding(QuicByteCount size);
 
   // Sets the retry token to be sent over the wire in IETF Initial packets.
-  void SetRetryToken(quiche::QuicheStringPiece retry_token);
+  void SetRetryToken(absl::string_view retry_token);
 
   // Consumes retransmittable control |frame|. Returns true if the frame is
   // successfully consumed. Returns false otherwise.
@@ -469,6 +468,10 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // different from the current one, flush all the queue frames first.
   void SetDefaultPeerAddress(QuicSocketAddress address);
 
+  bool let_connection_handle_pings() const {
+    return let_connection_handle_pings_;
+  }
+
  private:
   friend class test::QuicPacketCreatorPeer;
 
@@ -510,7 +513,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // retransmitted to packet_.retransmittable_frames. All frames must fit into
   // a single packet. Returns true on success, otherwise, returns false.
   // Fails if |encrypted_buffer| is not large enough for the encrypted packet.
-  QUIC_MUST_USE_RESULT bool SerializePacket(
+  ABSL_MUST_USE_RESULT bool SerializePacket(
       QuicOwnedPacketBuffer encrypted_buffer,
       size_t encrypted_buffer_len);
 
@@ -569,7 +572,7 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Returns the retry token to send over the wire, only sent in
   // v99 IETF Initial packets.
-  quiche::QuicheStringPiece GetRetryToken() const;
+  absl::string_view GetRetryToken() const;
 
   // Returns length of the length variable length integer to send over the
   // wire. Is non-zero for v99 IETF Initial, 0-RTT or Handshake packets.
@@ -591,6 +594,11 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
 
   // Returns true and close connection if it attempts to send unencrypted data.
   bool AttemptingToSendUnencryptedStreamData();
+
+  // Add the given frame to the current packet with full padding. If the current
+  // packet doesn't have enough space, flush once and try again. Return false if
+  // fail to add.
+  bool AddPaddedFrameWithRetry(const QuicFrame& frame);
 
   // Does not own these delegates or the framer.
   DelegateInterface* delegate_;
@@ -663,8 +671,8 @@ class QUIC_EXPORT_PRIVATE QuicPacketCreator {
   // negotiates this during the handshake.
   QuicByteCount max_datagram_frame_size_;
 
-  const bool close_connection_on_serialization_failure_ =
-      GetQuicReloadableFlag(quic_close_connection_on_serialization_failure);
+  const bool let_connection_handle_pings_ =
+      GetQuicReloadableFlag(quic_let_connection_handle_pings);
 };
 
 }  // namespace quic

@@ -114,6 +114,18 @@ bool ValidateGetRenderbufferImageANGLE(const Context *context,
                                        GLenum type,
                                        const void *pixels);
 
+// GL_ANGLE_get_tex_level_parameter
+bool ValidateGetTexLevelParameterivANGLE(const Context *context,
+                                         TextureTarget targetPacked,
+                                         GLint level,
+                                         GLenum pname,
+                                         const GLint *params);
+bool ValidateGetTexLevelParameterfvANGLE(const Context *context,
+                                         TextureTarget targetPacked,
+                                         GLint level,
+                                         GLenum pname,
+                                         const GLfloat *params);
+
 // GL_ANGLE_instanced_arrays
 bool ValidateDrawArraysInstancedANGLE(const Context *context,
                                       PrimitiveMode modePacked,
@@ -677,16 +689,6 @@ bool ValidateTexStorage2DMultisampleANGLE(const Context *context,
                                           GLsizei width,
                                           GLsizei height,
                                           GLboolean fixedsamplelocations);
-bool ValidateGetTexLevelParameterivANGLE(const Context *context,
-                                         TextureTarget targetPacked,
-                                         GLint level,
-                                         GLenum pname,
-                                         const GLint *params);
-bool ValidateGetTexLevelParameterfvANGLE(const Context *context,
-                                         TextureTarget targetPacked,
-                                         GLint level,
-                                         GLenum pname,
-                                         const GLfloat *params);
 bool ValidateGetMultisamplefvANGLE(const Context *context,
                                    GLenum pname,
                                    GLuint index,
@@ -773,6 +775,24 @@ bool ValidateBufferStorageEXT(const Context *context,
                               GLsizeiptr size,
                               const void *data,
                               GLbitfield flags);
+
+// GL_EXT_copy_image
+bool ValidateCopyImageSubDataEXT(const Context *context,
+                                 GLuint srcName,
+                                 GLenum srcTarget,
+                                 GLint srcLevel,
+                                 GLint srcX,
+                                 GLint srcY,
+                                 GLint srcZ,
+                                 GLuint dstName,
+                                 GLenum dstTarget,
+                                 GLint dstLevel,
+                                 GLint dstX,
+                                 GLint dstY,
+                                 GLint dstZ,
+                                 GLsizei srcWidth,
+                                 GLsizei srcHeight,
+                                 GLsizei srcDepth);
 
 // GL_EXT_debug_marker
 bool ValidateInsertEventMarkerEXT(const Context *context, GLsizei length, const GLchar *marker);
@@ -869,6 +889,20 @@ bool ValidateMultiDrawElementsBaseVertexEXT(const Context *context,
                                             const void *const *indices,
                                             GLsizei primcount,
                                             const GLint *basevertex);
+
+// GL_EXT_external_buffer
+bool ValidateBufferStorageExternalEXT(const Context *context,
+                                      BufferBinding targetPacked,
+                                      GLintptr offset,
+                                      GLsizeiptr size,
+                                      GLeglClientBufferEXT clientBuffer,
+                                      GLbitfield flags);
+bool ValidateNamedBufferStorageExternalEXT(const Context *context,
+                                           GLuint buffer,
+                                           GLintptr offset,
+                                           GLsizeiptr size,
+                                           GLeglClientBufferEXT clientBuffer,
+                                           GLbitfield flags);
 
 // GL_EXT_geometry_shader
 bool ValidateFramebufferTextureEXT(const Context *context,
@@ -1182,6 +1216,24 @@ bool ValidateEGLImageTargetTexture2DOES(const Context *context,
 
 // GL_OES_compressed_ETC1_RGB8_texture
 
+// GL_OES_copy_image
+bool ValidateCopyImageSubDataOES(const Context *context,
+                                 GLuint srcName,
+                                 GLenum srcTarget,
+                                 GLint srcLevel,
+                                 GLint srcX,
+                                 GLint srcY,
+                                 GLint srcZ,
+                                 GLuint dstName,
+                                 GLenum dstTarget,
+                                 GLint dstLevel,
+                                 GLint dstX,
+                                 GLint dstY,
+                                 GLint dstZ,
+                                 GLsizei srcWidth,
+                                 GLsizei srcHeight,
+                                 GLsizei srcDepth);
+
 // GL_OES_depth32
 
 // GL_OES_draw_buffers_indexed
@@ -1354,6 +1406,9 @@ bool ValidatePointSizePointerOES(const Context *context,
 bool ValidateQueryMatrixxOES(const Context *context,
                              const GLfixed *mantissa,
                              const GLint *exponent);
+
+// GL_OES_sample_shading
+bool ValidateMinSampleShadingOES(const Context *context, GLfloat value);
 
 // GL_OES_texture_3D
 bool ValidateCompressedTexImage3DOES(const Context *context,

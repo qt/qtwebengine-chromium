@@ -33,13 +33,16 @@ class CFXJSE_Context {
 
   v8::Isolate* GetIsolate() const { return m_pIsolate.Get(); }
   v8::Local<v8::Context> GetContext();
-  std::unique_ptr<CFXJSE_Value> GetGlobalObject();
+  v8::Local<v8::Object> GetGlobalObject();
+
   void AddClass(std::unique_ptr<CFXJSE_Class> pClass);
   CFXJSE_Class* GetClassByName(ByteStringView szName) const;
   void EnableCompatibleMode();
+
+  // Note: `lpNewThisObject` may be empty.
   bool ExecuteScript(const char* szScript,
                      CFXJSE_Value* lpRetValue,
-                     CFXJSE_Value* lpNewThisObject);
+                     v8::Local<v8::Object> lpNewThisObject);
 
  private:
   CFXJSE_Context(v8::Isolate* pIsolate, CXFA_ThisProxy* pProxy);

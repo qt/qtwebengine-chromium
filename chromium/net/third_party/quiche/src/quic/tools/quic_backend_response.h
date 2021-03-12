@@ -5,8 +5,8 @@
 #ifndef QUICHE_QUIC_TOOLS_QUIC_BACKEND_RESPONSE_H_
 #define QUICHE_QUIC_TOOLS_QUIC_BACKEND_RESPONSE_H_
 
+#include "absl/strings/string_view.h"
 #include "net/third_party/quiche/src/quic/tools/quic_url.h"
-#include "net/third_party/quiche/src/common/platform/api/quiche_string_piece.h"
 #include "net/third_party/quiche/src/spdy/core/spdy_protocol.h"
 
 namespace quic {
@@ -19,13 +19,13 @@ class QuicBackendResponse {
   // comprising a response for the push request.
   struct ServerPushInfo {
     ServerPushInfo(QuicUrl request_url,
-                   spdy::SpdyHeaderBlock headers,
+                   spdy::Http2HeaderBlock headers,
                    spdy::SpdyPriority priority,
                    std::string body);
     ServerPushInfo(const ServerPushInfo& other);
 
     QuicUrl request_url;
-    spdy::SpdyHeaderBlock headers;
+    spdy::Http2HeaderBlock headers;
     spdy::SpdyPriority priority;
     std::string body;
   };
@@ -51,30 +51,28 @@ class QuicBackendResponse {
   ~QuicBackendResponse();
 
   SpecialResponseType response_type() const { return response_type_; }
-  const spdy::SpdyHeaderBlock& headers() const { return headers_; }
-  const spdy::SpdyHeaderBlock& trailers() const { return trailers_; }
-  const quiche::QuicheStringPiece body() const {
-    return quiche::QuicheStringPiece(body_);
-  }
+  const spdy::Http2HeaderBlock& headers() const { return headers_; }
+  const spdy::Http2HeaderBlock& trailers() const { return trailers_; }
+  const absl::string_view body() const { return absl::string_view(body_); }
 
   void set_response_type(SpecialResponseType response_type) {
     response_type_ = response_type;
   }
 
-  void set_headers(spdy::SpdyHeaderBlock headers) {
+  void set_headers(spdy::Http2HeaderBlock headers) {
     headers_ = std::move(headers);
   }
-  void set_trailers(spdy::SpdyHeaderBlock trailers) {
+  void set_trailers(spdy::Http2HeaderBlock trailers) {
     trailers_ = std::move(trailers);
   }
-  void set_body(quiche::QuicheStringPiece body) {
+  void set_body(absl::string_view body) {
     body_.assign(body.data(), body.size());
   }
 
  private:
   SpecialResponseType response_type_;
-  spdy::SpdyHeaderBlock headers_;
-  spdy::SpdyHeaderBlock trailers_;
+  spdy::Http2HeaderBlock headers_;
+  spdy::Http2HeaderBlock trailers_;
   std::string body_;
 };
 

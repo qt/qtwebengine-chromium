@@ -33,7 +33,7 @@ TEST_F(HlslGeneratorImplTest_AliasType, EmitAliasType_F32) {
   ast::type::F32Type f32;
   ast::type::AliasType alias("a", &f32);
 
-  ASSERT_TRUE(gen().EmitAliasType(out(), &alias)) << gen().error();
+  ASSERT_TRUE(gen().EmitConstructedType(out(), &alias)) << gen().error();
   EXPECT_EQ(result(), R"(typedef float a;
 )");
 }
@@ -42,7 +42,7 @@ TEST_F(HlslGeneratorImplTest_AliasType, EmitAliasType_NameCollision) {
   ast::type::F32Type f32;
   ast::type::AliasType alias("float", &f32);
 
-  ASSERT_TRUE(gen().EmitAliasType(out(), &alias)) << gen().error();
+  ASSERT_TRUE(gen().EmitConstructedType(out(), &alias)) << gen().error();
   EXPECT_EQ(result(), R"(typedef float float_tint_0;
 )");
 }
@@ -56,20 +56,21 @@ TEST_F(HlslGeneratorImplTest_AliasType, EmitAliasType_Struct) {
       "a", &f32, ast::StructMemberDecorationList{}));
 
   ast::StructMemberDecorationList b_deco;
-  b_deco.push_back(std::make_unique<ast::StructMemberOffsetDecoration>(4));
+  b_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(4, Source{}));
   members.push_back(
       std::make_unique<ast::StructMember>("b", &i32, std::move(b_deco)));
 
   auto str = std::make_unique<ast::Struct>();
   str->set_members(std::move(members));
 
-  ast::type::StructType s(std::move(str));
-  ast::type::AliasType alias("a", &s);
+  ast::type::StructType s("A", std::move(str));
+  ast::type::AliasType alias("B", &s);
 
   ast::Module m;
   GeneratorImpl g(&m);
-  ASSERT_TRUE(gen().EmitAliasType(out(), &alias)) << gen().error();
-  EXPECT_EQ(result(), R"(struct a {
+  ASSERT_TRUE(gen().EmitConstructedType(out(), &alias)) << gen().error();
+  EXPECT_EQ(result(), R"(struct B {
   float a;
   int b;
 };

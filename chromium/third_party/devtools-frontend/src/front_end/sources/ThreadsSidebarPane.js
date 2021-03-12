@@ -13,7 +13,7 @@ import * as UI from '../ui/ui.js';
 export class ThreadsSidebarPane extends UI.Widget.VBox {
   constructor() {
     super(true);
-    this.registerRequiredCSS('sources/threadsSidebarPane.css');
+    this.registerRequiredCSS('sources/threadsSidebarPane.css', {enableLegacyPatching: true});
 
     /** @type {!UI.ListModel.ListModel<!SDK.DebuggerModel.DebuggerModel>} */
     this._items = new UI.ListModel.ListModel();
@@ -162,6 +162,7 @@ export class ThreadsSidebarPane extends UI.Widget.VBox {
     const hadFocus = this.hasFocus();
     const target = /** @type {!SDK.SDKModel.Target} */ (event.data);
     const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
+    this._list.selectItem(debuggerModel);
     if (debuggerModel) {
       this._list.refreshItem(debuggerModel);
     }

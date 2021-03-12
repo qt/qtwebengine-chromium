@@ -29,9 +29,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';
 import * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
@@ -117,9 +114,9 @@ export class ThemeSupport {
    */
   injectHighlightStyleSheets(element) {
     this._injectingStyleSheet = true;
-    this._appendStyle(element, 'ui/inspectorSyntaxHighlight.css');
+    this._appendStyle(element, 'ui/inspectorSyntaxHighlight.css', {enableLegacyPatching: true});
     if (this._themeName === 'dark') {
-      this._appendStyle(element, 'ui/inspectorSyntaxHighlightDark.css');
+      this._appendStyle(element, 'ui/inspectorSyntaxHighlightDark.css', {enableLegacyPatching: true});
     }
     this._injectingStyleSheet = false;
   }
@@ -130,22 +127,29 @@ export class ThemeSupport {
    *
    * @param {!Node} node
    * @param {string} cssFile
+   * @param {!{enableLegacyPatching:boolean}} options
    * @suppressGlobalPropertiesCheck
    */
-  _appendStyle(node, cssFile) {
+  _appendStyle(node, cssFile, options = {enableLegacyPatching: false}) {
     const content = Root.Runtime.cachedResources.get(cssFile) || '';
     if (!content) {
       console.error(cssFile + ' not preloaded. Check module.json');
     }
-    let styleElement = createElement('style');
+    let styleElement = document.createElement('style');
     styleElement.textContent = content;
     node.appendChild(styleElement);
 
-    const themeStyleSheet = ThemeSupport.instance().themeStyleSheet(cssFile, content);
-    if (themeStyleSheet) {
-      styleElement = createElement('style');
-      styleElement.textContent = themeStyleSheet + '\n' + Root.Runtime.Runtime.resolveSourceURL(cssFile + '.theme');
-      node.appendChild(styleElement);
+    /**
+   * We are incrementally removing patching support in favour of CSS variables for supporting dark mode.
+   * See https://docs.google.com/document/d/1QrSSRsJRzaQBY3zz73ZL84bTcFUV60yMtE5cuu6ED14 for details.
+   */
+    if (options.enableLegacyPatching) {
+      const themeStyleSheet = ThemeSupport.instance().themeStyleSheet(cssFile, content);
+      if (themeStyleSheet) {
+        styleElement = document.createElement('style');
+        styleElement.textContent = themeStyleSheet + '\n' + Root.Runtime.Runtime.resolveSourceURL(cssFile + '.theme');
+        node.appendChild(styleElement);
+      }
     }
   }
 
@@ -193,7 +197,7 @@ export class ThemeSupport {
       if (!href) {
         continue;
       }
-      result.push(this._patchForTheme(href, styleSheets[i]));
+      result.push(this._patchForTheme(href, /** @type {!CSSStyleSheet} */ (styleSheets[i])));
     }
     result.push('/*# sourceURL=inspector.css.theme */');
 
@@ -231,7 +235,7 @@ export class ThemeSupport {
 
   /**
    * @param {string} id
-   * @param {!StyleSheet} styleSheet
+   * @param {!CSSStyleSheet} styleSheet
    * @return {string}
    */
   _patchForTheme(id, styleSheet) {
@@ -244,19 +248,25 @@ export class ThemeSupport {
       const rules = styleSheet.cssRules;
       const result = [];
       for (let j = 0; j < rules.length; ++j) {
-        if (rules[j] instanceof CSSImportRule) {
-          result.push(this._patchForTheme(rules[j].styleSheet.href, rules[j].styleSheet));
+        const rule = rules[j];
+        if (rule instanceof CSSImportRule) {
+          result.push(this._patchForTheme(rule.styleSheet.href || '', rule.styleSheet));
           continue;
         }
+
+        if (!(rule instanceof CSSStyleRule)) {
+          continue;
+        }
+
         /** @type {!Array<string>} */
         const output = [];
-        const style = rules[j].style;
-        const selectorText = rules[j].selectorText;
+        const style = rule.style;
+        const selectorText = rule.selectorText;
         for (let i = 0; style && i < style.length; ++i) {
           this._patchProperty(selectorText, style, style[i], output);
         }
         if (output.length) {
-          result.push(rules[j].selectorText + '{' + output.join('') + '}');
+          result.push(rule.selectorText + '{' + output.join('') + '}');
         }
       }
 
@@ -292,11 +302,6 @@ export class ThemeSupport {
       return;
     }
 
-    // Don't operate on CSS variables.
-    if (/^var\(.*\)$/.test(value)) {
-      return;
-    }
-
     if (selectorText.indexOf('-theme-') !== -1) {
       return;
     }
@@ -311,9 +316,14 @@ export class ThemeSupport {
 
     output.push(name);
     output.push(':');
-    const items = value.replace(Common.Color.Regex, '\0$1\0').split('\0');
-    for (let i = 0; i < items.length; ++i) {
-      output.push(this.patchColorText(items[i], /** @type {!ThemeSupport.ColorUsage} */ (colorUsage)));
+    if (/^var\(.*\)$/.test(value)) {
+      // Don't translate CSS variables.
+      output.push(value);
+    } else {
+      const items = value.replace(Common.Color.Regex, '\0$1\0').split('\0');
+      for (const item of items) {
+        output.push(this.patchColorText(item, /** @type {!ThemeSupport.ColorUsage} */ (colorUsage)));
+      }
     }
     if (style.getPropertyPriority(name)) {
       output.push(' !important');
@@ -366,7 +376,7 @@ export class ThemeSupport {
 
     switch (this._themeName) {
       case 'dark': {
-        const minCap = colorUsage & ThemeSupport.ColorUsage.Background ? 0.14 : 0.58;
+        const minCap = colorUsage & ThemeSupport.ColorUsage.Background ? 0.14 : 0;
         const maxCap = colorUsage & ThemeSupport.ColorUsage.Foreground ? 0.9 : 1;
         lit = 1 - lit;
         if (lit < minCap * 2) {

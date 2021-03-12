@@ -8,12 +8,12 @@
 #include <sstream>
 #include <string>
 
+#include "absl/base/attributes.h"
 #include "net/third_party/quiche/src/quic/core/congestion_control/rtt_stats.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/quic_time.h"
 #include "net/third_party/quiche/src/quic/core/quic_time_accumulator.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_bug_tracker.h"
-#include "net/third_party/quiche/src/quic/platform/api/quic_fallthrough.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flag_utils.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_flags.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_logging.h"
@@ -219,24 +219,6 @@ bool BbrSender::ShouldSendProbingPacket() const {
   // TODO(b/77975811): If the pipe is highly under-utilized, consider not
   // sending a probing transmission, because the extra bandwidth is not needed.
   return true;
-}
-
-bool BbrSender::IsPipeSufficientlyFull() const {
-  // See if we need more bytes in flight to see more bandwidth.
-  if (mode_ == STARTUP) {
-    // STARTUP exits if it doesn't observe a 25% bandwidth increase, so the CWND
-    // must be more than 25% above the target.
-    return unacked_packets_->bytes_in_flight() >=
-           GetTargetCongestionWindow(1.5);
-  }
-  if (pacing_gain_ > 1) {
-    // Super-unity PROBE_BW doesn't exit until 1.25 * BDP is achieved.
-    return unacked_packets_->bytes_in_flight() >=
-           GetTargetCongestionWindow(pacing_gain_);
-  }
-  // If bytes_in_flight are above the target congestion window, it should be
-  // possible to observe the same or more bandwidth if it's available.
-  return unacked_packets_->bytes_in_flight() >= GetTargetCongestionWindow(1.1);
 }
 
 void BbrSender::SetFromConfig(const QuicConfig& config,
@@ -734,7 +716,7 @@ void BbrSender::UpdateRecoveryState(QuicPacketNumber last_acked_packet,
       if (is_round_start) {
         recovery_state_ = GROWTH;
       }
-      QUIC_FALLTHROUGH_INTENDED;
+      ABSL_FALLTHROUGH_INTENDED;
 
     case GROWTH:
       // Exit recovery if appropriate.
@@ -814,15 +796,11 @@ void BbrSender::CalculateCongestionWindow(QuicByteCount bytes_acked,
   // Instead of immediately setting the target CWND as the new one, BBR grows
   // the CWND towards |target_window| by only increasing it |bytes_acked| at a
   // time.
-  const bool add_bytes_acked =
-      !GetQuicReloadableFlag(quic_bbr_no_bytes_acked_in_startup_recovery) ||
-      !InRecovery();
   if (is_at_full_bandwidth_) {
     congestion_window_ =
         std::min(target_window, congestion_window_ + bytes_acked);
-  } else if (add_bytes_acked &&
-             (congestion_window_ < target_window ||
-              sampler_.total_bytes_acked() < initial_congestion_window_)) {
+  } else if (congestion_window_ < target_window ||
+             sampler_.total_bytes_acked() < initial_congestion_window_) {
     // If the connection is not yet out of startup phase, do not decrease the
     // window.
     congestion_window_ = congestion_window_ + bytes_acked;

@@ -46,6 +46,7 @@ import {HARWriter} from './HARWriter.js';
 import {Events, NetworkGroupNode, NetworkLogViewInterface, NetworkNode, NetworkRequestNode} from './NetworkDataGridNode.js';  // eslint-disable-line no-unused-vars
 import {NetworkFrameGrouper} from './NetworkFrameGrouper.js';
 import {NetworkLogViewColumns} from './NetworkLogViewColumns.js';
+import {FilterOptions} from './NetworkPanel.js';  // eslint-disable-line no-unused-vars
 import {NetworkTimeBoundary, NetworkTimeCalculator, NetworkTransferDurationCalculator, NetworkTransferTimeCalculator,} from './NetworkTimeCalculator.js';  // eslint-disable-line no-unused-vars
 
 /**
@@ -61,7 +62,7 @@ export class NetworkLogView extends UI.Widget.VBox {
   constructor(filterBar, progressBarContainer, networkLogLargeRowsSetting) {
     super();
     this.setMinimumSize(50, 64);
-    this.registerRequiredCSS('network/networkLogView.css');
+    this.registerRequiredCSS('network/networkLogView.css', {enableLegacyPatching: true});
 
     this.element.id = 'network-container';
     this.element.classList.add('no-node-selected');
@@ -122,7 +123,7 @@ export class NetworkLogView extends UI.Widget.VBox {
     /** @type {?NetworkRequestNode} */
     this._highlightedNode = null;
 
-    this.linkifier = new Components.Linkifier.Linkifier();
+    this._linkifier = new Components.Linkifier.Linkifier();
 
     this._recording = false;
     this._needsRefresh = false;
@@ -681,6 +682,14 @@ export class NetworkLogView extends UI.Widget.VBox {
 
   /**
    * @override
+   * @return {!Components.Linkifier.Linkifier}
+   */
+  linkifier() {
+    return this._linkifier;
+  }
+
+  /**
+   * @override
    * @param {number} start
    * @param {number} end
    */
@@ -803,7 +812,7 @@ export class NetworkLogView extends UI.Widget.VBox {
 
   _setupDataGrid() {
     this._dataGrid.setRowContextMenuCallback((contextMenu, node) => {
-      const request = node.request();
+      const request = (/** @type {!NetworkNode} */ (node)).request();
       if (request) {
         this.handleContextMenuForRequest(contextMenu, request);
       }
@@ -831,7 +840,8 @@ export class NetworkLogView extends UI.Widget.VBox {
    */
   _dataGridMouseMove(event) {
     const mouseEvent = /** @type {!MouseEvent} */ (event);
-    const node = (this._dataGrid.dataGridNodeFromNode(/** @type {!Node} */ (mouseEvent.target)));
+    const node =
+        /** @type {!NetworkNode} */ (this._dataGrid.dataGridNodeFromNode(/** @type {!Node} */ (mouseEvent.target)));
     const highlightInitiatorChain = mouseEvent.shiftKey;
     this._setHoveredNode(node, highlightInitiatorChain);
   }
@@ -1115,7 +1125,9 @@ export class NetworkLogView extends UI.Widget.VBox {
    * @return {!Array<!NetworkNode>}
    */
   flatNodesList() {
-    return /** @type {!Array<!NetworkNode>} */ (this._dataGrid.rootNode().flatChildren());
+    /** @type {!DataGrid.ViewportDataGrid.ViewportDataGridNode<!DataGrid.SortableDataGrid.SortableDataGridNode<!NetworkNode>>} */
+    const rootNode = (this._dataGrid.rootNode());
+    return /** @type {!Array<!NetworkNode>} */ (rootNode.flatChildren());
   }
 
   _onDataGridFocus() {
@@ -1133,7 +1145,7 @@ export class NetworkLogView extends UI.Widget.VBox {
   /** @override */
   updateNodeBackground() {
     if (this._dataGrid.selectedNode) {
-      this._dataGrid.selectedNode.updateBackgroundColor();
+      (/** @type {!NetworkNode} */ (this._dataGrid.selectedNode)).updateBackgroundColor();
     }
   }
 
@@ -1214,9 +1226,12 @@ export class NetworkLogView extends UI.Widget.VBox {
       const removeFromParent = node.parent && (isFilteredOut || node.parent !== newParent);
       if (removeFromParent) {
         let parent = node.parent;
+        if (!parent) {
+          continue;
+        }
         parent.removeChild(node);
         while (parent && !parent.hasChildren() && parent.dataGrid && parent.dataGrid.rootNode() !== parent) {
-          const grandparent = parent.parent;
+          const grandparent = /** @type {!NetworkNode} */ (parent.parent);
           grandparent.removeChild(parent);
           parent = grandparent;
         }
@@ -1227,7 +1242,7 @@ export class NetworkLogView extends UI.Widget.VBox {
       }
 
       if (!newParent.dataGrid && !nodesToInsert.has(newParent)) {
-        nodesToInsert.set(newParent, this._dataGrid.rootNode());
+        nodesToInsert.set(newParent, /** @type {!NetworkNode} */ (this._dataGrid.rootNode()));
         nodesToRefresh.push(newParent);
       }
       nodesToInsert.set(node, newParent);
@@ -1260,12 +1275,12 @@ export class NetworkLogView extends UI.Widget.VBox {
    */
   _parentNodeForInsert(node) {
     if (!this._activeGroupLookup) {
-      return this._dataGrid.rootNode();
+      return /** @type {!NetworkNode} */ (this._dataGrid.rootNode());
     }
 
     const groupNode = this._activeGroupLookup.groupNodeForRequest(node.request());
     if (!groupNode) {
-      return this._dataGrid.rootNode();
+      return /** @type {!NetworkNode} */ (this._dataGrid.rootNode());
     }
     return groupNode;
   }
@@ -1280,7 +1295,7 @@ export class NetworkLogView extends UI.Widget.VBox {
     this._calculator.reset();
 
     this._timeCalculator.setWindow(null);
-    this.linkifier.reset();
+    this._linkifier.reset();
 
     if (this._activeGroupLookup) {
       this._activeGroupLookup.reset();
@@ -1429,6 +1444,23 @@ export class NetworkLogView extends UI.Widget.VBox {
       if (request.finished) {
         copyMenu.defaultSection().appendItem(
             Common.UIString.UIString('Copy response'), NetworkLogView._copyResponse.bind(null, request));
+      }
+
+      const initiator = request.initiator();
+
+      if (initiator) {
+        const stack = initiator.stack;
+        if (stack) {
+          // We proactively compute the stacktrace text, as we can't determine whether the stacktrace
+          // has any context solely based on the top frame. Sometimes, the top frame does not have
+          // any callFrames, but its parent frames do.
+          const stackTraceText = computeStackTraceText(stack);
+          if (stackTraceText !== '') {
+            copyMenu.defaultSection().appendItem(Common.UIString.UIString('Copy stacktrace'), () => {
+              Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(stackTraceText);
+            });
+          }
+        }
       }
 
       const disableIfBlob = request.isBlobRequest();
@@ -1660,7 +1692,7 @@ export class NetworkLogView extends UI.Widget.VBox {
         !BrowserSDK.RelatedIssue.hasIssueOfCategory(request, SDK.Issue.IssueCategory.SameSiteCookie)) {
       return false;
     }
-    if (this._onlyBlockedRequestsUI.checked() && !request.wasBlocked()) {
+    if (this._onlyBlockedRequestsUI.checked() && !request.wasBlocked() && !request.corsErrorStatus()) {
       return false;
     }
     if (request.statusText === 'Service Worker Fallback Required') {
@@ -1784,10 +1816,10 @@ export class NetworkLogView extends UI.Widget.VBox {
   _createSizeFilter(value) {
     let multiplier = 1;
     if (value.endsWith('k')) {
-      multiplier = 1024;
+      multiplier = 1000;
       value = value.substring(0, value.length - 1);
     } else if (value.endsWith('m')) {
-      multiplier = 1024 * 1024;
+      multiplier = 1000 * 1000;
       value = value.substring(0, value.length - 1);
     }
     const quantity = Number(value);
@@ -1837,9 +1869,14 @@ export class NetworkLogView extends UI.Widget.VBox {
   /**
    * @override
    * @param {!SDK.NetworkRequest.NetworkRequest} request
+   * @param {!FilterOptions=} options - Optional parameters to change filter behavior
    */
-  selectRequest(request) {
-    this.setTextFilterValue('');
+  selectRequest(request, options) {
+    const defaultOptions = {clearFilter: true};
+    const {clearFilter} = options || defaultOptions;
+    if (clearFilter) {
+      this.setTextFilterValue('');
+    }
     const node = this._reveal(request);
     if (node) {
       node.select();
@@ -2028,9 +2065,9 @@ export class NetworkLogView extends UI.Widget.VBox {
       return encapsChars +
           str.replace(/\\/g, '\\\\')
               .replace(/"/g, '\\"')
-              .replace(/[^a-zA-Z0-9\s_\-:=+~'\/.',?;()*`]/g, '^$&')
+              .replace(/[^a-zA-Z0-9\s_\-:=+~'\/.',?;()*`&]/g, '^$&')
               .replace(/%(?=[a-zA-Z0-9_])/g, '%^')
-              .replace(/\r\n|[\n\r]/g, '^\n\n') +
+              .replace(/\r?\n/g, '^\n\n') +
           encapsChars;
     }
 
@@ -2086,7 +2123,7 @@ export class NetworkLogView extends UI.Widget.VBox {
       ignoredHeaders.add('content-length');
       inferredMethod = 'POST';
     } else if (formData) {
-      data.push('--data-binary ' + escapeString(formData));
+      data.push('--data-raw ' + escapeString(formData));
       ignoredHeaders.add('content-length');
       inferredMethod = 'POST';
     }
@@ -2209,6 +2246,21 @@ export class NetworkLogView extends UI.Widget.VBox {
     return ThemeSupport.ThemeSupport.instance().patchColorText(
         '#B31412', ThemeSupport.ThemeSupport.ColorUsage.Foreground);
   }
+}
+
+/**
+ * @param {!Protocol.Runtime.StackTrace} stackTrace
+ */
+export function computeStackTraceText(stackTrace) {
+  let stackTraceText = '';
+  for (const frame of stackTrace.callFrames) {
+    const functionName = UI.UIUtils.beautifyFunctionName(frame.functionName);
+    stackTraceText += `${functionName} @ ${frame.url}:${frame.lineNumber + 1}\n`;
+  }
+  if (stackTrace.parent) {
+    stackTraceText += computeStackTraceText(stackTrace.parent);
+  }
+  return stackTraceText;
 }
 
 /** @type {!WeakSet<!NetworkRequestNode>} */

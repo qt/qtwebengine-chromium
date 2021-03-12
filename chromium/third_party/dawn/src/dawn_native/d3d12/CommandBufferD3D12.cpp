@@ -629,7 +629,7 @@ namespace dawn_native { namespace d3d12 {
                 // Clear textures that are not output attachments. Output attachments will be
                 // cleared during record render pass if the texture subresource has not been
                 // initialized before the render pass.
-                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::OutputAttachment)) {
+                if (!(usages.textureUsages[i].usage & wgpu::TextureUsage::RenderAttachment)) {
                     texture->EnsureSubresourceContentInitialized(commandContext,
                                                                  texture->GetAllSubresources());
                 }
@@ -770,7 +770,7 @@ namespace dawn_native { namespace d3d12 {
                     buffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopyDst);
 
                     const TexelBlockInfo& blockInfo =
-                        texture->GetFormat().GetTexelBlockInfo(copy->source.aspect);
+                        texture->GetFormat().GetAspectInfo(copy->source.aspect).block;
 
                     // See comments around ComputeTextureCopySplits() for more details.
                     const TextureCopySplits copySplits = ComputeTextureCopySplits(
@@ -778,8 +778,7 @@ namespace dawn_native { namespace d3d12 {
                         copy->destination.bytesPerRow, copy->destination.rowsPerImage);
 
                     const uint64_t bytesPerSlice =
-                        copy->destination.bytesPerRow *
-                        (copy->destination.rowsPerImage / blockInfo.blockHeight);
+                        copy->destination.bytesPerRow * copy->destination.rowsPerImage;
 
                     // copySplits.copies2D[1] is always calculated for the second copy slice with
                     // extra "bytesPerSlice" copy offset compared with the first copy slice. So

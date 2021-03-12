@@ -67,6 +67,9 @@ struct SystemInfo
     bool isAMDSwitchable = false;
     // Only true on dual-GPU Mac laptops.
     bool isMacSwitchable = false;
+    // Only true on Apple Silicon Macs when running iOS binaries.
+    // See https://developer.apple.com/documentation/foundation/nsprocessinfo/3608556-iosapponmac
+    bool isiOSAppOnMac = false;
 
     // Only available on Android
     std::string machineManufacturer;
@@ -103,8 +106,9 @@ constexpr VendorID kVendorID_VeriSilicon = 0x10002;
 constexpr VendorID kVendorID_Kazan       = 0x10003;
 
 // Known device IDs
-constexpr DeviceID kDeviceID_Swiftshader = 0xC0DE;
-constexpr DeviceID kDeviceID_Adreno540   = 0x5040001;
+constexpr DeviceID kDeviceID_Swiftshader  = 0xC0DE;
+constexpr DeviceID kDeviceID_Adreno540    = 0x5040001;
+constexpr DeviceID kDeviceID_UHD630Mobile = 0x3E9B;
 
 // Predicates on vendor IDs
 bool IsAMD(VendorID vendorId);

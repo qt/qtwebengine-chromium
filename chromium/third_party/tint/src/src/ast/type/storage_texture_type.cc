@@ -34,20 +34,13 @@ bool IsValidStorageDimension(TextureDimension dim) {
 
 }  // namespace
 
-std::ostream& operator<<(std::ostream& out, StorageAccess access) {
-  switch (access) {
-    case StorageAccess::kRead:
-      out << "read";
-      break;
-    case StorageAccess::kWrite:
-      out << "write";
-      break;
-  }
-  return out;
-}
-
+// Note, these names match the names in the WGSL spec. This behaviour is used
+// in the WGSL writer to emit the texture format names.
 std::ostream& operator<<(std::ostream& out, ImageFormat format) {
   switch (format) {
+    case ImageFormat::kNone:
+      out << "none";
+      break;
     case ImageFormat::kR8Unorm:
       out << "r8unorm";
       break;
@@ -103,7 +96,7 @@ std::ostream& operator<<(std::ostream& out, ImageFormat format) {
       out << "rgba8unorm";
       break;
     case ImageFormat::kRgba8UnormSrgb:
-      out << "rgba8unorm-srgb";
+      out << "rgba8unorm_srgb";
       break;
     case ImageFormat::kRgba8Snorm:
       out << "rgba8snorm";
@@ -118,7 +111,7 @@ std::ostream& operator<<(std::ostream& out, ImageFormat format) {
       out << "bgra8unorm";
       break;
     case ImageFormat::kBgra8UnormSrgb:
-      out << "rbgra8unorm-srgb";
+      out << "bgra8unorm_srgb";
       break;
     case ImageFormat::kRgb10A2Unorm:
       out << "rgb10a2unorm";
@@ -158,9 +151,9 @@ std::ostream& operator<<(std::ostream& out, ImageFormat format) {
 }
 
 StorageTextureType::StorageTextureType(TextureDimension dim,
-                                       StorageAccess access,
+                                       AccessControl access,
                                        ImageFormat format)
-    : TextureType(dim), storage_access_(access), image_format_(format) {
+    : TextureType(dim), access_(access), image_format_(format) {
   assert(IsValidStorageDimension(dim));
 }
 
@@ -182,7 +175,7 @@ bool StorageTextureType::IsStorage() const {
 
 std::string StorageTextureType::type_name() const {
   std::ostringstream out;
-  out << "__storage_texture_" << storage_access_ << "_" << dim() << "_"
+  out << "__storage_texture_" << access_ << "_" << dim() << "_"
       << image_format_;
   return out.str();
 }

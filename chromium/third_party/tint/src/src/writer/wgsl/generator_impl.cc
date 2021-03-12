@@ -18,10 +18,10 @@
 #include <limits>
 
 #include "src/ast/array_accessor_expression.h"
-#include "src/ast/as_expression.h"
 #include "src/ast/assignment_statement.h"
 #include "src/ast/binary_expression.h"
 #include "src/ast/binding_decoration.h"
+#include "src/ast/bitcast_expression.h"
 #include "src/ast/block_statement.h"
 #include "src/ast/bool_literal.h"
 #include "src/ast/break_statement.h"
@@ -29,7 +29,7 @@
 #include "src/ast/call_expression.h"
 #include "src/ast/call_statement.h"
 #include "src/ast/case_statement.h"
-#include "src/ast/cast_expression.h"
+#include "src/ast/constant_id_decoration.h"
 #include "src/ast/constructor_expression.h"
 #include "src/ast/continue_statement.h"
 #include "src/ast/decorated_variable.h"
@@ -44,20 +44,29 @@
 #include "src/ast/scalar_constructor_expression.h"
 #include "src/ast/set_decoration.h"
 #include "src/ast/sint_literal.h"
+#include "src/ast/stage_decoration.h"
 #include "src/ast/statement.h"
+#include "src/ast/stride_decoration.h"
 #include "src/ast/struct.h"
 #include "src/ast/struct_member.h"
 #include "src/ast/struct_member_offset_decoration.h"
 #include "src/ast/switch_statement.h"
+#include "src/ast/type/access_control_type.h"
 #include "src/ast/type/array_type.h"
+#include "src/ast/type/depth_texture_type.h"
 #include "src/ast/type/matrix_type.h"
+#include "src/ast/type/multisampled_texture_type.h"
 #include "src/ast/type/pointer_type.h"
+#include "src/ast/type/sampled_texture_type.h"
+#include "src/ast/type/sampler_type.h"
+#include "src/ast/type/storage_texture_type.h"
 #include "src/ast/type/struct_type.h"
 #include "src/ast/type/vector_type.h"
 #include "src/ast/type_constructor_expression.h"
 #include "src/ast/uint_literal.h"
 #include "src/ast/unary_op_expression.h"
 #include "src/ast/variable_decl_statement.h"
+#include "src/ast/workgroup_decoration.h"
 
 namespace tint {
 namespace writer {
@@ -68,29 +77,12 @@ GeneratorImpl::GeneratorImpl() = default;
 GeneratorImpl::~GeneratorImpl() = default;
 
 bool GeneratorImpl::Generate(const ast::Module& module) {
-  for (const auto& import : module.imports()) {
-    if (!EmitImport(import.get())) {
+  for (auto* const ty : module.constructed_types()) {
+    if (!EmitConstructedType(ty)) {
       return false;
     }
   }
-  if (!module.imports().empty()) {
-    out_ << std::endl;
-  }
-
-  for (const auto& ep : module.entry_points()) {
-    if (!EmitEntryPoint(ep.get())) {
-      return false;
-    }
-  }
-  if (!module.entry_points().empty())
-    out_ << std::endl;
-
-  for (auto* const alias : module.alias_types()) {
-    if (!EmitAliasType(alias)) {
-      return false;
-    }
-  }
-  if (!module.alias_types().empty())
+  if (!module.constructed_types().empty())
     out_ << std::endl;
 
   for (const auto& var : module.global_variables()) {
@@ -112,24 +104,84 @@ bool GeneratorImpl::Generate(const ast::Module& module) {
   return true;
 }
 
-bool GeneratorImpl::EmitAliasType(const ast::type::AliasType* alias) {
-  make_indent();
-  out_ << "type " << alias->name() << " = ";
-  if (!EmitType(alias->type())) {
+bool GeneratorImpl::GenerateEntryPoint(const ast::Module& module,
+                                       ast::PipelineStage stage,
+                                       const std::string& name) {
+  auto* func = module.FindFunctionByNameAndStage(name, stage);
+  if (func == nullptr) {
+    error_ = "Unable to find requested entry point: " + name;
     return false;
   }
-  out_ << ";" << std::endl;
+
+  // TODO(dsinclair): We always emit constructed types even if they aren't
+  // strictly needed
+  for (auto* const ty : module.constructed_types()) {
+    if (!EmitConstructedType(ty)) {
+      return false;
+    }
+  }
+  if (!module.constructed_types().empty()) {
+    out_ << std::endl;
+  }
+
+  // TODO(dsinclair): This should be smarter and only emit needed const
+  // variables
+  for (const auto& var : module.global_variables()) {
+    if (!var->is_const()) {
+      continue;
+    }
+    if (!EmitVariable(var.get())) {
+      return false;
+    }
+  }
+
+  bool found_func_variable = false;
+  for (auto* var : func->referenced_module_variables()) {
+    if (!EmitVariable(var)) {
+      return false;
+    }
+    found_func_variable = true;
+  }
+  if (found_func_variable) {
+    out_ << std::endl;
+  }
+
+  for (const auto& f : module.functions()) {
+    if (!f->HasAncestorEntryPoint(name)) {
+      continue;
+    }
+
+    if (!EmitFunction(f.get())) {
+      return false;
+    }
+    out_ << std::endl;
+  }
+
+  if (!EmitFunction(func)) {
+    return false;
+  }
+  out_ << std::endl;
 
   return true;
 }
 
-bool GeneratorImpl::EmitEntryPoint(const ast::EntryPoint* ep) {
+bool GeneratorImpl::EmitConstructedType(const ast::type::Type* ty) {
   make_indent();
-  out_ << "entry_point " << ep->stage() << " ";
-  if (!ep->name().empty() && ep->name() != ep->function_name()) {
-    out_ << R"(as ")" << ep->name() << R"(" )";
+  if (ty->IsAlias()) {
+    auto* alias = ty->AsAlias();
+    out_ << "type " << alias->name() << " = ";
+    if (!EmitType(alias->type())) {
+      return false;
+    }
+    out_ << ";" << std::endl;
+  } else if (ty->IsStruct()) {
+    if (!EmitStructType(ty->AsStruct())) {
+      return false;
+    }
+  } else {
+    error_ = "unknown constructed type: " + ty->type_name();
+    return false;
   }
-  out_ << "= " << ep->function_name() << ";" << std::endl;
 
   return true;
 }
@@ -138,17 +190,14 @@ bool GeneratorImpl::EmitExpression(ast::Expression* expr) {
   if (expr->IsArrayAccessor()) {
     return EmitArrayAccessor(expr->AsArrayAccessor());
   }
-  if (expr->IsAs()) {
-    return EmitAs(expr->AsAs());
-  }
   if (expr->IsBinary()) {
     return EmitBinary(expr->AsBinary());
   }
+  if (expr->IsBitcast()) {
+    return EmitBitcast(expr->AsBitcast());
+  }
   if (expr->IsCall()) {
     return EmitCall(expr->AsCall());
-  }
-  if (expr->IsCast()) {
-    return EmitCast(expr->AsCast());
   }
   if (expr->IsIdentifier()) {
     return EmitIdentifier(expr->AsIdentifier());
@@ -191,8 +240,8 @@ bool GeneratorImpl::EmitMemberAccessor(ast::MemberAccessorExpression* expr) {
   return EmitExpression(expr->member());
 }
 
-bool GeneratorImpl::EmitAs(ast::AsExpression* expr) {
-  out_ << "as<";
+bool GeneratorImpl::EmitBitcast(ast::BitcastExpression* expr) {
+  out_ << "bitcast<";
   if (!EmitType(expr->type())) {
     return false;
   }
@@ -227,21 +276,6 @@ bool GeneratorImpl::EmitCall(ast::CallExpression* expr) {
 
   out_ << ")";
 
-  return true;
-}
-
-bool GeneratorImpl::EmitCast(ast::CastExpression* expr) {
-  out_ << "cast<";
-  if (!EmitType(expr->type())) {
-    return false;
-  }
-
-  out_ << ">(";
-  if (!EmitExpression(expr->expr())) {
-    return false;
-  }
-
-  out_ << ")";
   return true;
 }
 
@@ -307,23 +341,29 @@ bool GeneratorImpl::EmitLiteral(ast::Literal* lit) {
 
 bool GeneratorImpl::EmitIdentifier(ast::IdentifierExpression* expr) {
   auto* ident = expr->AsIdentifier();
-  if (ident->has_path()) {
-    out_ << ident->path() << "::";
-  }
   out_ << ident->name();
   return true;
 }
 
-bool GeneratorImpl::EmitImport(const ast::Import* import) {
-  make_indent();
-  out_ << R"(import ")" << import->path() << R"(" as )" << import->name() << ";"
-       << std::endl;
-  return true;
-}
-
 bool GeneratorImpl::EmitFunction(ast::Function* func) {
-  make_indent();
+  for (auto& deco : func->decorations()) {
+    make_indent();
+    out_ << "[[";
+    if (deco->IsWorkgroup()) {
+      uint32_t x = 0;
+      uint32_t y = 0;
+      uint32_t z = 0;
+      std::tie(x, y, z) = deco->AsWorkgroup()->values();
+      out_ << "workgroup_size(" << std::to_string(x) << ", "
+           << std::to_string(y) << ", " << std::to_string(z) << ")";
+    }
+    if (deco->IsStage()) {
+      out_ << "stage(" << deco->AsStage()->value() << ")";
+    }
+    out_ << "]]" << std::endl;
+  }
 
+  make_indent();
   out_ << "fn " << func->name() << "(";
 
   bool first = true;
@@ -350,15 +390,44 @@ bool GeneratorImpl::EmitFunction(ast::Function* func) {
   return EmitBlockAndNewline(func->body());
 }
 
+bool GeneratorImpl::EmitImageFormat(const ast::type::ImageFormat fmt) {
+  switch (fmt) {
+    case ast::type::ImageFormat::kNone:
+      error_ = "unknown image format";
+      return false;
+    default:
+      out_ << fmt;
+  }
+  return true;
+}
+
 bool GeneratorImpl::EmitType(ast::type::Type* type) {
-  if (type->IsAlias()) {
-    auto* alias = type->AsAlias();
-    out_ << alias->name();
+  if (type->IsAccessControl()) {
+    auto* ac = type->AsAccessControl();
+    // TODO(dsinclair): Access control isn't supported in WGSL yet, so this
+    // is disabled for now.
+    //
+    // out_ << "[[access(";
+    // if (ac->IsReadOnly()) {
+    //   out_ << "read";
+    // } else if (ac->IsWriteOnly()) {
+    //   out_ << "write";
+    // } else {
+    //   out_ << "read_write";
+    // }
+    // out_ << ")]]" << std::endl;
+    if (!EmitType(ac->type())) {
+      return false;
+    }
+  } else if (type->IsAlias()) {
+    out_ << type->AsAlias()->name();
   } else if (type->IsArray()) {
     auto* ary = type->AsArray();
 
-    if (ary->has_array_stride()) {
-      out_ << "[[stride " << ary->array_stride() << "]] ";
+    for (const auto& deco : ary->decorations()) {
+      if (deco->IsStride()) {
+        out_ << "[[stride(" << deco->AsStride()->stride() << ")]] ";
+      }
     }
 
     out_ << "array<";
@@ -390,43 +459,97 @@ bool GeneratorImpl::EmitType(ast::type::Type* type) {
       return false;
     }
     out_ << ">";
-  } else if (type->IsStruct()) {
-    auto* str = type->AsStruct()->impl();
-    if (str->decoration() != ast::StructDecoration::kNone) {
-      out_ << "[[" << str->decoration() << "]] ";
+  } else if (type->IsSampler()) {
+    auto* sampler = type->AsSampler();
+    out_ << "sampler";
+
+    if (sampler->IsComparison()) {
+      out_ << "_comparison";
     }
-    out_ << "struct {" << std::endl;
+  } else if (type->IsStruct()) {
+    // The struct, as a type, is just the name. We should have already emitted
+    // the declaration through a call to |EmitStructType| earlier.
+    out_ << type->AsStruct()->name();
+  } else if (type->IsTexture()) {
+    auto* texture = type->AsTexture();
 
-    increment_indent();
-    for (const auto& mem : str->members()) {
-      make_indent();
-      if (!mem->decorations().empty()) {
-        out_ << "[[";
-        bool first = true;
-        for (const auto& deco : mem->decorations()) {
-          if (!first) {
-            out_ << ", ";
-          }
+    out_ << "texture_";
+    if (texture->IsDepth()) {
+      out_ << "depth_";
+    } else if (texture->IsSampled()) {
+      /* nothing to emit */
+    } else if (texture->IsMultisampled()) {
+      out_ << "multisampled_";
+    } else if (texture->IsStorage()) {
+      out_ << "storage_";
 
-          first = false;
-          // TODO(dsinclair): Split this out when we have more then one
-          assert(deco->IsOffset());
-
-          out_ << "offset " << deco->AsOffset()->offset();
-        }
-        out_ << "]] ";
-      }
-
-      out_ << mem->name() << " : ";
-      if (!EmitType(mem->type())) {
+      auto* storage = texture->AsStorage();
+      if (storage->access() == ast::AccessControl::kReadOnly) {
+        out_ << "ro_";
+      } else if (storage->access() == ast::AccessControl::kWriteOnly) {
+        out_ << "wo_";
+      } else {
+        error_ = "unknown storage texture access";
         return false;
       }
-      out_ << ";" << std::endl;
+    } else {
+      error_ = "unknown texture type";
+      return false;
     }
-    decrement_indent();
-    make_indent();
 
-    out_ << "}";
+    switch (texture->dim()) {
+      case ast::type::TextureDimension::k1d:
+        out_ << "1d";
+        break;
+      case ast::type::TextureDimension::k1dArray:
+        out_ << "1d_array";
+        break;
+      case ast::type::TextureDimension::k2d:
+        out_ << "2d";
+        break;
+      case ast::type::TextureDimension::k2dArray:
+        out_ << "2d_array";
+        break;
+      case ast::type::TextureDimension::k3d:
+        out_ << "3d";
+        break;
+      case ast::type::TextureDimension::kCube:
+        out_ << "cube";
+        break;
+      case ast::type::TextureDimension::kCubeArray:
+        out_ << "cube_array";
+        break;
+      default:
+        error_ = "unknown texture dimension";
+        return false;
+    }
+
+    if (texture->IsSampled()) {
+      auto* sampled = texture->AsSampled();
+
+      out_ << "<";
+      if (!EmitType(sampled->type())) {
+        return false;
+      }
+      out_ << ">";
+    } else if (texture->IsMultisampled()) {
+      auto* sampled = texture->AsMultisampled();
+
+      out_ << "<";
+      if (!EmitType(sampled->type())) {
+        return false;
+      }
+      out_ << ">";
+    } else if (texture->IsStorage()) {
+      auto* storage = texture->AsStorage();
+
+      out_ << "<";
+      if (!EmitImageFormat(storage->image_format())) {
+        return false;
+      }
+      out_ << ">";
+    }
+
   } else if (type->IsU32()) {
     out_ << "u32";
   } else if (type->IsVector()) {
@@ -439,10 +562,42 @@ bool GeneratorImpl::EmitType(ast::type::Type* type) {
   } else if (type->IsVoid()) {
     out_ << "void";
   } else {
-    error_ = "unknown type in EmitType";
+    error_ = "unknown type in EmitType: " + type->type_name();
     return false;
   }
 
+  return true;
+}
+
+bool GeneratorImpl::EmitStructType(const ast::type::StructType* str) {
+  auto* impl = str->impl();
+  for (auto& deco : impl->decorations()) {
+    out_ << "[[";
+    deco->to_str(out_);
+    out_ << "]]" << std::endl;
+  }
+  out_ << "struct " << str->name() << " {" << std::endl;
+
+  increment_indent();
+  for (const auto& mem : impl->members()) {
+    for (const auto& deco : mem->decorations()) {
+      make_indent();
+
+      // TODO(dsinclair): Split this out when we have more then one
+      assert(deco->IsOffset());
+      out_ << "[[offset(" << deco->AsOffset()->offset() << ")]]" << std::endl;
+    }
+    make_indent();
+    out_ << mem->name() << " : ";
+    if (!EmitType(mem->type())) {
+      return false;
+    }
+    out_ << ";" << std::endl;
+  }
+  decrement_indent();
+  make_indent();
+
+  out_ << "};" << std::endl;
   return true;
 }
 
@@ -491,13 +646,15 @@ bool GeneratorImpl::EmitVariableDecorations(ast::DecoratedVariable* var) {
     first = false;
 
     if (deco->IsBinding()) {
-      out_ << "binding " << deco->AsBinding()->value();
+      out_ << "binding(" << deco->AsBinding()->value() << ")";
     } else if (deco->IsSet()) {
-      out_ << "set " << deco->AsSet()->value();
+      out_ << "set(" << deco->AsSet()->value() << ")";
     } else if (deco->IsLocation()) {
-      out_ << "location " << deco->AsLocation()->value();
+      out_ << "location(" << deco->AsLocation()->value() << ")";
     } else if (deco->IsBuiltin()) {
-      out_ << "builtin " << deco->AsBuiltin()->value();
+      out_ << "builtin(" << deco->AsBuiltin()->value() << ")";
+    } else if (deco->IsConstantId()) {
+      out_ << "constant_id(" << deco->AsConstantId()->value() << ")";
     } else {
       error_ = "unknown variable decoration";
       return false;

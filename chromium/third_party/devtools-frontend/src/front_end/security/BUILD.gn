@@ -21,7 +21,13 @@ devtools_module("security") {
 }
 
 devtools_entrypoint("bundle") {
-  entrypoint = "security.js"
+  entrypoint = "security.ts"
 
   deps = [ ":security" ]
+}
+
+devtools_entrypoint("legacy") {
+  entrypoint = "security-legacy.js"
+
+  deps = [ ":bundle" ]
 }

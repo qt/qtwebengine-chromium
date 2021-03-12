@@ -312,6 +312,20 @@ export class InspectorFrontendHostAPI {
   }
 
   /**
+   * @param {string} trigger
+   * @param {function(!ShowSurveyResult): void} callback
+   */
+  showSurvey(trigger, callback) {
+  }
+
+  /**
+   * @param {string} trigger
+   * @param {function(!CanShowSurveyResult): void} callback
+   */
+  canShowSurvey(trigger, callback) {
+  }
+
+  /**
    * @return {number}
    */
   zoomFactor() {
@@ -401,6 +415,20 @@ export let LoadNetworkResourceResult;
 // @ts-ignore typedef
 export let ExtensionDescriptor;
 
+/** @typedef
+{{
+  surveyShown: boolean
+}} */
+// @ts-ignore typedef
+export let ShowSurveyResult;
+
+/** @typedef
+{{
+  canShowSurvey: boolean
+}} */
+// @ts-ignore typedef
+export let CanShowSurveyResult;
+
 /**
  * Enum for recordPerformanceHistogram
  * Warning: There are two other definitions of this enum in the DevTools code
@@ -427,6 +455,5 @@ export const EnumeratedHistogram = {
   ExperimentEnabledAtLaunch: 'DevTools.ExperimentEnabledAtLaunch',
   ExperimentEnabled: 'DevTools.ExperimentEnabled',
   ExperimentDisabled: 'DevTools.ExperimentDisabled',
-  ComputedStyleGrouping: 'DevTools.ComputedStyleGrouping',
   GridOverlayOpenedFrom: 'DevTools.GridOverlayOpenedFrom',
 };

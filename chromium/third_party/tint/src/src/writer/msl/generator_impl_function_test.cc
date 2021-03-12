@@ -25,13 +25,22 @@
 #include "src/ast/location_decoration.h"
 #include "src/ast/member_accessor_expression.h"
 #include "src/ast/module.h"
+#include "src/ast/pipeline_stage.h"
 #include "src/ast/return_statement.h"
 #include "src/ast/scalar_constructor_expression.h"
 #include "src/ast/set_decoration.h"
 #include "src/ast/sint_literal.h"
+#include "src/ast/stage_decoration.h"
+#include "src/ast/struct.h"
+#include "src/ast/struct_block_decoration.h"
+#include "src/ast/struct_member.h"
+#include "src/ast/struct_member_decoration.h"
+#include "src/ast/struct_member_offset_decoration.h"
+#include "src/ast/type/access_control_type.h"
 #include "src/ast/type/array_type.h"
 #include "src/ast/type/f32_type.h"
 #include "src/ast/type/i32_type.h"
+#include "src/ast/type/struct_type.h"
 #include "src/ast/type/vector_type.h"
 #include "src/ast/type/void_type.h"
 #include "src/ast/variable.h"
@@ -133,29 +142,7 @@ TEST_F(MslGeneratorImplTest, Emit_Function_WithParams) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_NoName) {
-  ast::type::VoidType void_type;
-
-  auto func = std::make_unique<ast::Function>("frag_main", ast::VariableList{},
-                                              &void_type);
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment, "",
-                                              "frag_main");
-
-  ast::Module m;
-  m.AddFunction(std::move(func));
-  m.AddEntryPoint(std::move(ep));
-
-  GeneratorImpl g(&m);
-  ASSERT_TRUE(g.Generate()) << g.error();
-  EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
-
-fragment void frag_main() {
-}
-
-)");
-}
-
-TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOutVars) {
+TEST_F(MslGeneratorImplTest, Emit_FunctionDecoration_EntryPoint_WithInOutVars) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
 
@@ -163,12 +150,12 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOutVars) {
       std::make_unique<ast::Variable>("foo", ast::StorageClass::kInput, &f32));
 
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::LocationDecoration>(0));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(0, Source{}));
   foo_var->set_decorations(std::move(decos));
 
   auto bar_var = std::make_unique<ast::DecoratedVariable>(
       std::make_unique<ast::Variable>("bar", ast::StorageClass::kOutput, &f32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(1));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(1, Source{}));
   bar_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -183,6 +170,8 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOutVars) {
   ast::VariableList params;
   auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
                                               &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   auto body = std::make_unique<ast::BlockStatement>();
   body->append(std::make_unique<ast::AssignmentStatement>(
@@ -192,10 +181,6 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOutVars) {
   func->set_body(std::move(body));
 
   mod.AddFunction(std::move(func));
-
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment, "",
-                                              "frag_main");
-  mod.AddEntryPoint(std::move(ep));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -220,7 +205,8 @@ fragment frag_main_out frag_main(frag_main_in tint_in [[stage_in]]) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOut_Builtins) {
+TEST_F(MslGeneratorImplTest,
+       Emit_FunctionDecoration_EntryPoint_WithInOut_Builtins) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
   ast::type::VectorType vec4(&f32, 4);
@@ -230,15 +216,15 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOut_Builtins) {
           "coord", ast::StorageClass::kInput, &vec4));
 
   ast::VariableDecorationList decos;
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kFragCoord));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kFragCoord, Source{}));
   coord_var->set_decorations(std::move(decos));
 
   auto depth_var =
       std::make_unique<ast::DecoratedVariable>(std::make_unique<ast::Variable>(
           "depth", ast::StorageClass::kOutput, &f32));
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kFragDepth));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kFragDepth, Source{}));
   depth_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -253,6 +239,8 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOut_Builtins) {
   ast::VariableList params;
   auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
                                               &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   auto body = std::make_unique<ast::BlockStatement>();
   body->append(std::make_unique<ast::AssignmentStatement>(
@@ -264,10 +252,6 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithInOut_Builtins) {
   func->set_body(std::move(body));
 
   mod.AddFunction(std::move(func));
-
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment, "",
-                                              "frag_main");
-  mod.AddEntryPoint(std::move(ep));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -288,7 +272,7 @@ fragment frag_main_out frag_main(float4 coord [[position]]) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_With_Uniform) {
+TEST_F(MslGeneratorImplTest, Emit_FunctionDecoration_EntryPoint_With_Uniform) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
   ast::type::VectorType vec4(&f32, 4);
@@ -298,8 +282,8 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_With_Uniform) {
           "coord", ast::StorageClass::kUniform, &vec4));
 
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::BindingDecoration>(0));
-  decos.push_back(std::make_unique<ast::SetDecoration>(1));
+  decos.push_back(std::make_unique<ast::BindingDecoration>(0, Source{}));
+  decos.push_back(std::make_unique<ast::SetDecoration>(1, Source{}));
   coord_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -312,6 +296,8 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_With_Uniform) {
   ast::VariableList params;
   auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
                                               &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   auto var =
       std::make_unique<ast::Variable>("v", ast::StorageClass::kFunction, &f32);
@@ -325,10 +311,6 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_With_Uniform) {
   func->set_body(std::move(body));
 
   mod.AddFunction(std::move(func));
-
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment, "",
-                                              "frag_main");
-  mod.AddEntryPoint(std::move(ep));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -344,22 +326,44 @@ fragment void frag_main(constant float4& coord [[buffer(0)]]) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_With_StorageBuffer) {
+TEST_F(MslGeneratorImplTest,
+       Emit_FunctionDecoration_EntryPoint_With_RW_StorageBuffer) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
-  ast::type::VectorType vec4(&f32, 4);
+  ast::type::I32Type i32;
+  ast::Module mod;
+
+  ast::StructMemberList members;
+  ast::StructMemberDecorationList a_deco;
+  a_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(0, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("a", &i32, std::move(a_deco)));
+
+  ast::StructMemberDecorationList b_deco;
+  b_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(4, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("b", &f32, std::move(b_deco)));
+
+  auto str = std::make_unique<ast::Struct>();
+  str->set_members(std::move(members));
+
+  ast::type::StructType s("Data", std::move(str));
+  ast::type::AccessControlType ac(ast::AccessControl::kReadWrite, &s);
+
+  mod.AddConstructedType(&s);
 
   auto coord_var =
       std::make_unique<ast::DecoratedVariable>(std::make_unique<ast::Variable>(
-          "coord", ast::StorageClass::kStorageBuffer, &vec4));
+          "coord", ast::StorageClass::kStorageBuffer, &ac));
 
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::BindingDecoration>(0));
-  decos.push_back(std::make_unique<ast::SetDecoration>(1));
+  decos.push_back(std::make_unique<ast::BindingDecoration>(0, Source{}));
+  decos.push_back(std::make_unique<ast::SetDecoration>(1, Source{}));
   coord_var->set_decorations(std::move(decos));
 
   Context ctx;
-  ast::Module mod;
   TypeDeterminer td(&ctx, &mod);
   td.RegisterVariableForTesting(coord_var.get());
 
@@ -368,12 +372,14 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_With_StorageBuffer) {
   ast::VariableList params;
   auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
                                               &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   auto var =
       std::make_unique<ast::Variable>("v", ast::StorageClass::kFunction, &f32);
   var->set_constructor(std::make_unique<ast::MemberAccessorExpression>(
       std::make_unique<ast::IdentifierExpression>("coord"),
-      std::make_unique<ast::IdentifierExpression>("x")));
+      std::make_unique<ast::IdentifierExpression>("b")));
 
   auto body = std::make_unique<ast::BlockStatement>();
   body->append(std::make_unique<ast::VariableDeclStatement>(std::move(var)));
@@ -382,18 +388,19 @@ TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_With_StorageBuffer) {
 
   mod.AddFunction(std::move(func));
 
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment, "",
-                                              "frag_main");
-  mod.AddEntryPoint(std::move(ep));
-
   ASSERT_TRUE(td.Determine()) << td.error();
 
   GeneratorImpl g(&mod);
   ASSERT_TRUE(g.Generate()) << g.error();
   EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
 
-fragment void frag_main(device float4& coord [[buffer(0)]]) {
-  float v = coord.x;
+struct Data {
+  int a;
+  float b;
+};
+
+fragment void frag_main(device Data& coord [[buffer(0)]]) {
+  float v = coord.b;
   return;
 }
 
@@ -401,7 +408,89 @@ fragment void frag_main(device float4& coord [[buffer(0)]]) {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_Function_Called_By_EntryPoints_WithLocationGlobals_And_Params) {
+       Emit_FunctionDecoration_EntryPoint_With_RO_StorageBuffer) {
+  ast::type::VoidType void_type;
+  ast::type::F32Type f32;
+  ast::type::I32Type i32;
+  ast::Module mod;
+
+  ast::StructMemberList members;
+  ast::StructMemberDecorationList a_deco;
+  a_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(0, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("a", &i32, std::move(a_deco)));
+
+  ast::StructMemberDecorationList b_deco;
+  b_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(4, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("b", &f32, std::move(b_deco)));
+
+  auto str = std::make_unique<ast::Struct>();
+  str->set_members(std::move(members));
+
+  ast::type::StructType s("Data", std::move(str));
+  ast::type::AccessControlType ac(ast::AccessControl::kReadOnly, &s);
+
+  mod.AddConstructedType(&s);
+
+  auto coord_var =
+      std::make_unique<ast::DecoratedVariable>(std::make_unique<ast::Variable>(
+          "coord", ast::StorageClass::kStorageBuffer, &ac));
+
+  ast::VariableDecorationList decos;
+  decos.push_back(std::make_unique<ast::BindingDecoration>(0, Source{}));
+  decos.push_back(std::make_unique<ast::SetDecoration>(1, Source{}));
+  coord_var->set_decorations(std::move(decos));
+
+  Context ctx;
+  TypeDeterminer td(&ctx, &mod);
+  td.RegisterVariableForTesting(coord_var.get());
+
+  mod.AddGlobalVariable(std::move(coord_var));
+
+  ast::VariableList params;
+  auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
+                                              &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
+
+  auto var =
+      std::make_unique<ast::Variable>("v", ast::StorageClass::kFunction, &f32);
+  var->set_constructor(std::make_unique<ast::MemberAccessorExpression>(
+      std::make_unique<ast::IdentifierExpression>("coord"),
+      std::make_unique<ast::IdentifierExpression>("b")));
+
+  auto body = std::make_unique<ast::BlockStatement>();
+  body->append(std::make_unique<ast::VariableDeclStatement>(std::move(var)));
+  body->append(std::make_unique<ast::ReturnStatement>());
+  func->set_body(std::move(body));
+
+  mod.AddFunction(std::move(func));
+
+  ASSERT_TRUE(td.Determine()) << td.error();
+
+  GeneratorImpl g(&mod);
+  ASSERT_TRUE(g.Generate()) << g.error();
+  EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
+
+struct Data {
+  int a;
+  float b;
+};
+
+fragment void frag_main(const device Data& coord [[buffer(0)]]) {
+  float v = coord.b;
+  return;
+}
+
+)");
+}
+
+TEST_F(
+    MslGeneratorImplTest,
+    Emit_FunctionDecoration_Called_By_EntryPoints_WithLocationGlobals_And_Params) {  // NOLINT
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
 
@@ -409,17 +498,17 @@ TEST_F(MslGeneratorImplTest,
       std::make_unique<ast::Variable>("foo", ast::StorageClass::kInput, &f32));
 
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::LocationDecoration>(0));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(0, Source{}));
   foo_var->set_decorations(std::move(decos));
 
   auto bar_var = std::make_unique<ast::DecoratedVariable>(
       std::make_unique<ast::Variable>("bar", ast::StorageClass::kOutput, &f32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(1));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(1, Source{}));
   bar_var->set_decorations(std::move(decos));
 
   auto val_var = std::make_unique<ast::DecoratedVariable>(
       std::make_unique<ast::Variable>("val", ast::StorageClass::kOutput, &f32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(0));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(0, Source{}));
   val_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -452,8 +541,10 @@ TEST_F(MslGeneratorImplTest,
 
   mod.AddFunction(std::move(sub_func));
 
-  auto func_1 = std::make_unique<ast::Function>("frag_1_main",
-                                                std::move(params), &void_type);
+  auto func_1 =
+      std::make_unique<ast::Function>("ep_1", std::move(params), &void_type);
+  func_1->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   ast::ExpressionList expr;
   expr.push_back(std::make_unique<ast::ScalarConstructorExpression>(
@@ -469,10 +560,6 @@ TEST_F(MslGeneratorImplTest,
   func_1->set_body(std::move(body));
 
   mod.AddFunction(std::move(func_1));
-
-  auto ep1 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_1", "frag_1_main");
-  mod.AddEntryPoint(std::move(ep1));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -505,7 +592,7 @@ fragment ep_1_out ep_1(ep_1_in tint_in [[stage_in]]) {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_Function_Called_By_EntryPoints_NoUsedGlobals) {
+       Emit_FunctionDecoration_Called_By_EntryPoints_NoUsedGlobals) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
   ast::type::VectorType vec4(&f32, 4);
@@ -515,8 +602,8 @@ TEST_F(MslGeneratorImplTest,
           "depth", ast::StorageClass::kOutput, &f32));
 
   ast::VariableDecorationList decos;
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kFragDepth));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kFragDepth, Source{}));
   depth_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -539,8 +626,10 @@ TEST_F(MslGeneratorImplTest,
 
   mod.AddFunction(std::move(sub_func));
 
-  auto func_1 = std::make_unique<ast::Function>("frag_1_main",
-                                                std::move(params), &void_type);
+  auto func_1 =
+      std::make_unique<ast::Function>("ep_1", std::move(params), &void_type);
+  func_1->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   ast::ExpressionList expr;
   expr.push_back(std::make_unique<ast::ScalarConstructorExpression>(
@@ -556,10 +645,6 @@ TEST_F(MslGeneratorImplTest,
   func_1->set_body(std::move(body));
 
   mod.AddFunction(std::move(func_1));
-
-  auto ep1 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_1", "frag_1_main");
-  mod.AddEntryPoint(std::move(ep1));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -584,8 +669,9 @@ fragment ep_1_out ep_1() {
 )");
 }
 
-TEST_F(MslGeneratorImplTest,
-       Emit_Function_Called_By_EntryPoints_WithBuiltinGlobals_And_Params) {
+TEST_F(
+    MslGeneratorImplTest,
+    Emit_FunctionDecoration_Called_By_EntryPoints_WithBuiltinGlobals_And_Params) {  // NOLINT
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
   ast::type::VectorType vec4(&f32, 4);
@@ -595,15 +681,15 @@ TEST_F(MslGeneratorImplTest,
           "coord", ast::StorageClass::kInput, &vec4));
 
   ast::VariableDecorationList decos;
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kFragCoord));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kFragCoord, Source{}));
   coord_var->set_decorations(std::move(decos));
 
   auto depth_var =
       std::make_unique<ast::DecoratedVariable>(std::make_unique<ast::Variable>(
           "depth", ast::StorageClass::kOutput, &f32));
-  decos.push_back(
-      std::make_unique<ast::BuiltinDecoration>(ast::Builtin::kFragDepth));
+  decos.push_back(std::make_unique<ast::BuiltinDecoration>(
+      ast::Builtin::kFragDepth, Source{}));
   depth_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -633,8 +719,10 @@ TEST_F(MslGeneratorImplTest,
 
   mod.AddFunction(std::move(sub_func));
 
-  auto func_1 = std::make_unique<ast::Function>("frag_1_main",
-                                                std::move(params), &void_type);
+  auto func_1 =
+      std::make_unique<ast::Function>("ep_1", std::move(params), &void_type);
+  func_1->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   ast::ExpressionList expr;
   expr.push_back(std::make_unique<ast::ScalarConstructorExpression>(
@@ -650,10 +738,6 @@ TEST_F(MslGeneratorImplTest,
   func_1->set_body(std::move(body));
 
   mod.AddFunction(std::move(func_1));
-
-  auto ep1 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_1", "frag_1_main");
-  mod.AddEntryPoint(std::move(ep1));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -679,7 +763,8 @@ fragment ep_1_out ep_1(float4 coord [[position]]) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Function_Called_By_EntryPoint_With_Uniform) {
+TEST_F(MslGeneratorImplTest,
+       Emit_FunctionDecoration_Called_By_EntryPoint_With_Uniform) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
   ast::type::VectorType vec4(&f32, 4);
@@ -689,8 +774,8 @@ TEST_F(MslGeneratorImplTest, Emit_Function_Called_By_EntryPoint_With_Uniform) {
           "coord", ast::StorageClass::kUniform, &vec4));
 
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::BindingDecoration>(0));
-  decos.push_back(std::make_unique<ast::SetDecoration>(1));
+  decos.push_back(std::make_unique<ast::BindingDecoration>(0, Source{}));
+  decos.push_back(std::make_unique<ast::SetDecoration>(1, Source{}));
   coord_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -717,6 +802,8 @@ TEST_F(MslGeneratorImplTest, Emit_Function_Called_By_EntryPoint_With_Uniform) {
 
   auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
                                               &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   ast::ExpressionList expr;
   expr.push_back(std::make_unique<ast::ScalarConstructorExpression>(
@@ -734,10 +821,6 @@ TEST_F(MslGeneratorImplTest, Emit_Function_Called_By_EntryPoint_With_Uniform) {
   func->set_body(std::move(body));
 
   mod.AddFunction(std::move(func));
-
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment, "",
-                                              "frag_main");
-  mod.AddEntryPoint(std::move(ep));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -758,22 +841,43 @@ fragment void frag_main(constant float4& coord [[buffer(0)]]) {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_Function_Called_By_EntryPoint_With_StorageBuffer) {
+       Emit_FunctionDecoration_Called_By_EntryPoint_With_RW_StorageBuffer) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
-  ast::type::VectorType vec4(&f32, 4);
+  ast::type::I32Type i32;
+  ast::Module mod;
+
+  ast::StructMemberList members;
+  ast::StructMemberDecorationList a_deco;
+  a_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(0, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("a", &i32, std::move(a_deco)));
+
+  ast::StructMemberDecorationList b_deco;
+  b_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(4, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("b", &f32, std::move(b_deco)));
+
+  auto str = std::make_unique<ast::Struct>();
+  str->set_members(std::move(members));
+
+  ast::type::StructType s("Data", std::move(str));
+  ast::type::AccessControlType ac(ast::AccessControl::kReadWrite, &s);
+
+  mod.AddConstructedType(&s);
 
   auto coord_var =
       std::make_unique<ast::DecoratedVariable>(std::make_unique<ast::Variable>(
-          "coord", ast::StorageClass::kStorageBuffer, &vec4));
+          "coord", ast::StorageClass::kStorageBuffer, &ac));
 
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::BindingDecoration>(0));
-  decos.push_back(std::make_unique<ast::SetDecoration>(1));
+  decos.push_back(std::make_unique<ast::BindingDecoration>(0, Source{}));
+  decos.push_back(std::make_unique<ast::SetDecoration>(1, Source{}));
   coord_var->set_decorations(std::move(decos));
 
   Context ctx;
-  ast::Module mod;
   TypeDeterminer td(&ctx, &mod);
   td.RegisterVariableForTesting(coord_var.get());
 
@@ -789,13 +893,15 @@ TEST_F(MslGeneratorImplTest,
   body->append(std::make_unique<ast::ReturnStatement>(
       std::make_unique<ast::MemberAccessorExpression>(
           std::make_unique<ast::IdentifierExpression>("coord"),
-          std::make_unique<ast::IdentifierExpression>("x"))));
+          std::make_unique<ast::IdentifierExpression>("b"))));
   sub_func->set_body(std::move(body));
 
   mod.AddFunction(std::move(sub_func));
 
   auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
                                               &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   ast::ExpressionList expr;
   expr.push_back(std::make_unique<ast::ScalarConstructorExpression>(
@@ -814,21 +920,22 @@ TEST_F(MslGeneratorImplTest,
 
   mod.AddFunction(std::move(func));
 
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment, "",
-                                              "frag_main");
-  mod.AddEntryPoint(std::move(ep));
-
   ASSERT_TRUE(td.Determine()) << td.error();
 
   GeneratorImpl g(&mod);
   ASSERT_TRUE(g.Generate()) << g.error();
   EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
 
-float sub_func(device float4& coord, float param) {
-  return coord.x;
+struct Data {
+  int a;
+  float b;
+};
+
+float sub_func(device Data& coord, float param) {
+  return coord.b;
 }
 
-fragment void frag_main(device float4& coord [[buffer(0)]]) {
+fragment void frag_main(device Data& coord [[buffer(0)]]) {
   float v = sub_func(coord, 1.00000000f);
   return;
 }
@@ -836,65 +943,85 @@ fragment void frag_main(device float4& coord [[buffer(0)]]) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Function_Called_Two_EntryPoints_WithGlobals) {
+TEST_F(MslGeneratorImplTest,
+       Emit_FunctionDecoration_Called_By_EntryPoint_With_RO_StorageBuffer) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
+  ast::type::I32Type i32;
+  ast::Module mod;
 
-  auto foo_var = std::make_unique<ast::DecoratedVariable>(
-      std::make_unique<ast::Variable>("foo", ast::StorageClass::kInput, &f32));
+  ast::StructMemberList members;
+  ast::StructMemberDecorationList a_deco;
+  a_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(0, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("a", &i32, std::move(a_deco)));
+
+  ast::StructMemberDecorationList b_deco;
+  b_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(4, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("b", &f32, std::move(b_deco)));
+
+  auto str = std::make_unique<ast::Struct>();
+  str->set_members(std::move(members));
+
+  ast::type::StructType s("Data", std::move(str));
+  ast::type::AccessControlType ac(ast::AccessControl::kReadOnly, &s);
+
+  mod.AddConstructedType(&s);
+
+  auto coord_var =
+      std::make_unique<ast::DecoratedVariable>(std::make_unique<ast::Variable>(
+          "coord", ast::StorageClass::kStorageBuffer, &ac));
 
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::LocationDecoration>(0));
-  foo_var->set_decorations(std::move(decos));
-
-  auto bar_var = std::make_unique<ast::DecoratedVariable>(
-      std::make_unique<ast::Variable>("bar", ast::StorageClass::kOutput, &f32));
-  decos.push_back(std::make_unique<ast::LocationDecoration>(1));
-  bar_var->set_decorations(std::move(decos));
+  decos.push_back(std::make_unique<ast::BindingDecoration>(0, Source{}));
+  decos.push_back(std::make_unique<ast::SetDecoration>(1, Source{}));
+  coord_var->set_decorations(std::move(decos));
 
   Context ctx;
-  ast::Module mod;
   TypeDeterminer td(&ctx, &mod);
-  td.RegisterVariableForTesting(foo_var.get());
-  td.RegisterVariableForTesting(bar_var.get());
+  td.RegisterVariableForTesting(coord_var.get());
 
-  mod.AddGlobalVariable(std::move(foo_var));
-  mod.AddGlobalVariable(std::move(bar_var));
+  mod.AddGlobalVariable(std::move(coord_var));
 
   ast::VariableList params;
+  params.push_back(std::make_unique<ast::Variable>(
+      "param", ast::StorageClass::kFunction, &f32));
   auto sub_func =
       std::make_unique<ast::Function>("sub_func", std::move(params), &f32);
 
   auto body = std::make_unique<ast::BlockStatement>();
-  body->append(std::make_unique<ast::AssignmentStatement>(
-      std::make_unique<ast::IdentifierExpression>("bar"),
-      std::make_unique<ast::IdentifierExpression>("foo")));
   body->append(std::make_unique<ast::ReturnStatement>(
-      std::make_unique<ast::IdentifierExpression>("foo")));
+      std::make_unique<ast::MemberAccessorExpression>(
+          std::make_unique<ast::IdentifierExpression>("coord"),
+          std::make_unique<ast::IdentifierExpression>("b"))));
   sub_func->set_body(std::move(body));
 
   mod.AddFunction(std::move(sub_func));
 
-  auto func_1 = std::make_unique<ast::Function>("frag_1_main",
-                                                std::move(params), &void_type);
+  auto func = std::make_unique<ast::Function>("frag_main", std::move(params),
+                                              &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
+
+  ast::ExpressionList expr;
+  expr.push_back(std::make_unique<ast::ScalarConstructorExpression>(
+      std::make_unique<ast::FloatLiteral>(&f32, 1.0f)));
+
+  auto var =
+      std::make_unique<ast::Variable>("v", ast::StorageClass::kFunction, &f32);
+  var->set_constructor(std::make_unique<ast::CallExpression>(
+      std::make_unique<ast::IdentifierExpression>("sub_func"),
+      std::move(expr)));
 
   body = std::make_unique<ast::BlockStatement>();
-  body->append(std::make_unique<ast::AssignmentStatement>(
-      std::make_unique<ast::IdentifierExpression>("bar"),
-      std::make_unique<ast::CallExpression>(
-          std::make_unique<ast::IdentifierExpression>("sub_func"),
-          ast::ExpressionList{})));
+  body->append(std::make_unique<ast::VariableDeclStatement>(std::move(var)));
   body->append(std::make_unique<ast::ReturnStatement>());
-  func_1->set_body(std::move(body));
+  func->set_body(std::move(body));
 
-  mod.AddFunction(std::move(func_1));
-
-  auto ep1 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_1", "frag_1_main");
-  auto ep2 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_2", "frag_1_main");
-  mod.AddEntryPoint(std::move(ep1));
-  mod.AddEntryPoint(std::move(ep2));
+  mod.AddFunction(std::move(func));
 
   ASSERT_TRUE(td.Determine()) << td.error();
 
@@ -902,49 +1029,25 @@ TEST_F(MslGeneratorImplTest, Emit_Function_Called_Two_EntryPoints_WithGlobals) {
   ASSERT_TRUE(g.Generate()) << g.error();
   EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
 
-struct ep_1_in {
-  float foo [[user(locn0)]];
+struct Data {
+  int a;
+  float b;
 };
 
-struct ep_1_out {
-  float bar [[color(1)]];
-};
-
-struct ep_2_in {
-  float foo [[user(locn0)]];
-};
-
-struct ep_2_out {
-  float bar [[color(1)]];
-};
-
-float sub_func_ep_1(thread ep_1_in& tint_in, thread ep_1_out& tint_out) {
-  tint_out.bar = tint_in.foo;
-  return tint_in.foo;
+float sub_func(const device Data& coord, float param) {
+  return coord.b;
 }
 
-float sub_func_ep_2(thread ep_2_in& tint_in, thread ep_2_out& tint_out) {
-  tint_out.bar = tint_in.foo;
-  return tint_in.foo;
-}
-
-fragment ep_1_out ep_1(ep_1_in tint_in [[stage_in]]) {
-  ep_1_out tint_out = {};
-  tint_out.bar = sub_func_ep_1(tint_in, tint_out);
-  return tint_out;
-}
-
-fragment ep_2_out ep_2(ep_2_in tint_in [[stage_in]]) {
-  ep_2_out tint_out = {};
-  tint_out.bar = sub_func_ep_2(tint_in, tint_out);
-  return tint_out;
+fragment void frag_main(const device Data& coord [[buffer(0)]]) {
+  float v = sub_func(coord, 1.00000000f);
+  return;
 }
 
 )");
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_Function_EntryPoints_WithGlobal_Nested_Return) {
+       Emit_FunctionDecoration_EntryPoints_WithGlobal_Nested_Return) {
   ast::type::VoidType void_type;
   ast::type::F32Type f32;
   ast::type::I32Type i32;
@@ -952,7 +1055,7 @@ TEST_F(MslGeneratorImplTest,
   auto bar_var = std::make_unique<ast::DecoratedVariable>(
       std::make_unique<ast::Variable>("bar", ast::StorageClass::kOutput, &f32));
   ast::VariableDecorationList decos;
-  decos.push_back(std::make_unique<ast::LocationDecoration>(1));
+  decos.push_back(std::make_unique<ast::LocationDecoration>(1, Source{}));
   bar_var->set_decorations(std::move(decos));
 
   Context ctx;
@@ -962,8 +1065,10 @@ TEST_F(MslGeneratorImplTest,
   mod.AddGlobalVariable(std::move(bar_var));
 
   ast::VariableList params;
-  auto func_1 = std::make_unique<ast::Function>("frag_1_main",
-                                                std::move(params), &void_type);
+  auto func_1 =
+      std::make_unique<ast::Function>("ep_1", std::move(params), &void_type);
+  func_1->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kFragment, Source{}));
 
   auto body = std::make_unique<ast::BlockStatement>();
   body->append(std::make_unique<ast::AssignmentStatement>(
@@ -988,10 +1093,6 @@ TEST_F(MslGeneratorImplTest,
 
   mod.AddFunction(std::move(func_1));
 
-  auto ep1 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_1", "frag_1_main");
-  mod.AddEntryPoint(std::move(ep1));
-
   ASSERT_TRUE(td.Determine()) << td.error();
 
   GeneratorImpl g(&mod);
@@ -1015,104 +1116,16 @@ fragment ep_1_out ep_1() {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_Function_Called_Two_EntryPoints_WithoutGlobals) {
-  ast::type::VoidType void_type;
-  ast::type::F32Type f32;
-
-  Context ctx;
-  ast::Module mod;
-  TypeDeterminer td(&ctx, &mod);
-
-  ast::VariableList params;
-  auto sub_func =
-      std::make_unique<ast::Function>("sub_func", std::move(params), &f32);
-
-  auto body = std::make_unique<ast::BlockStatement>();
-  body->append(std::make_unique<ast::ReturnStatement>(
-      std::make_unique<ast::ScalarConstructorExpression>(
-          std::make_unique<ast::FloatLiteral>(&f32, 1.0))));
-  sub_func->set_body(std::move(body));
-
-  mod.AddFunction(std::move(sub_func));
-
-  auto func_1 = std::make_unique<ast::Function>("frag_1_main",
-                                                std::move(params), &void_type);
-
-  auto var = std::make_unique<ast::Variable>(
-      "foo", ast::StorageClass::kFunction, &f32);
-  var->set_constructor(std::make_unique<ast::CallExpression>(
-      std::make_unique<ast::IdentifierExpression>("sub_func"),
-      ast::ExpressionList{}));
-
-  body = std::make_unique<ast::BlockStatement>();
-  body->append(std::make_unique<ast::VariableDeclStatement>(std::move(var)));
-  body->append(std::make_unique<ast::ReturnStatement>());
-  func_1->set_body(std::move(body));
-
-  mod.AddFunction(std::move(func_1));
-
-  auto ep1 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_1", "frag_1_main");
-  auto ep2 = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kFragment,
-                                               "ep_2", "frag_1_main");
-  mod.AddEntryPoint(std::move(ep1));
-  mod.AddEntryPoint(std::move(ep2));
-
-  ASSERT_TRUE(td.Determine()) << td.error();
-
-  GeneratorImpl g(&mod);
-  ASSERT_TRUE(g.Generate()) << g.error();
-  EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
-
-float sub_func() {
-  return 1.00000000f;
-}
-
-fragment void ep_1() {
-  float foo = sub_func();
-  return;
-}
-
-fragment void ep_2() {
-  float foo = sub_func();
-  return;
-}
-
-)");
-}
-TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithName) {
+       Emit_FunctionDecoration_EntryPoint_WithNameCollision) {
   ast::type::VoidType void_type;
 
-  auto func = std::make_unique<ast::Function>("comp_main", ast::VariableList{},
-                                              &void_type);
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kCompute,
-                                              "my_main", "comp_main");
+  auto func =
+      std::make_unique<ast::Function>("main", ast::VariableList{}, &void_type);
+  func->add_decoration(std::make_unique<ast::StageDecoration>(
+      ast::PipelineStage::kCompute, Source{}));
 
   ast::Module m;
   m.AddFunction(std::move(func));
-  m.AddEntryPoint(std::move(ep));
-
-  GeneratorImpl g(&m);
-  ASSERT_TRUE(g.Generate()) << g.error();
-  EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
-
-kernel void my_main() {
-}
-
-)");
-}
-
-TEST_F(MslGeneratorImplTest, Emit_Function_EntryPoint_WithNameCollision) {
-  ast::type::VoidType void_type;
-
-  auto func = std::make_unique<ast::Function>("comp_main", ast::VariableList{},
-                                              &void_type);
-  auto ep = std::make_unique<ast::EntryPoint>(ast::PipelineStage::kCompute,
-                                              "main", "comp_main");
-
-  ast::Module m;
-  m.AddFunction(std::move(func));
-  m.AddEntryPoint(std::move(ep));
 
   GeneratorImpl g(&m);
   ASSERT_TRUE(g.Generate()) << g.error();
@@ -1152,6 +1165,126 @@ TEST_F(MslGeneratorImplTest, Emit_Function_WithArrayParams) {
   void my_func(float a[5]) {
     return;
   }
+
+)");
+}
+
+// https://crbug.com/tint/297
+TEST_F(MslGeneratorImplTest,
+       Emit_Function_Multiple_EntryPoint_With_Same_ModuleVar) {
+  // [[block]] struct Data {
+  //   [[offset(0)]] d : f32;
+  // };
+  // [[binding(0), set(0)]] var<storage_buffer> data : Data;
+  //
+  // [[stage(compute)]]
+  // fn a() -> void {
+  //   return;
+  // }
+  //
+  // [[stage(compute)]]
+  // fn b() -> void {
+  //   return;
+  // }
+
+  ast::type::VoidType void_type;
+  ast::type::F32Type f32;
+
+  ast::StructMemberList members;
+  ast::StructMemberDecorationList a_deco;
+  a_deco.push_back(
+      std::make_unique<ast::StructMemberOffsetDecoration>(0, Source{}));
+  members.push_back(
+      std::make_unique<ast::StructMember>("d", &f32, std::move(a_deco)));
+
+  ast::StructDecorationList s_decos;
+  s_decos.push_back(std::make_unique<ast::StructBlockDecoration>(Source{}));
+
+  auto str =
+      std::make_unique<ast::Struct>(std::move(s_decos), std::move(members));
+
+  ast::type::StructType s("Data", std::move(str));
+  ast::type::AccessControlType ac(ast::AccessControl::kReadWrite, &s);
+
+  auto data_var =
+      std::make_unique<ast::DecoratedVariable>(std::make_unique<ast::Variable>(
+          "data", ast::StorageClass::kStorageBuffer, &ac));
+
+  ast::VariableDecorationList decos;
+  decos.push_back(std::make_unique<ast::BindingDecoration>(0, Source{}));
+  decos.push_back(std::make_unique<ast::SetDecoration>(0, Source{}));
+  data_var->set_decorations(std::move(decos));
+
+  Context ctx;
+  ast::Module mod;
+  TypeDeterminer td(&ctx, &mod);
+
+  mod.AddConstructedType(&s);
+
+  td.RegisterVariableForTesting(data_var.get());
+  mod.AddGlobalVariable(std::move(data_var));
+
+  {
+    ast::VariableList params;
+    auto func =
+        std::make_unique<ast::Function>("a", std::move(params), &void_type);
+    func->add_decoration(std::make_unique<ast::StageDecoration>(
+        ast::PipelineStage::kCompute, Source{}));
+
+    auto var = std::make_unique<ast::Variable>(
+        "v", ast::StorageClass::kFunction, &f32);
+    var->set_constructor(std::make_unique<ast::MemberAccessorExpression>(
+        std::make_unique<ast::IdentifierExpression>("data"),
+        std::make_unique<ast::IdentifierExpression>("d")));
+
+    auto body = std::make_unique<ast::BlockStatement>();
+    body->append(std::make_unique<ast::VariableDeclStatement>(std::move(var)));
+    body->append(std::make_unique<ast::ReturnStatement>());
+    func->set_body(std::move(body));
+
+    mod.AddFunction(std::move(func));
+  }
+
+  {
+    ast::VariableList params;
+    auto func =
+        std::make_unique<ast::Function>("b", std::move(params), &void_type);
+    func->add_decoration(std::make_unique<ast::StageDecoration>(
+        ast::PipelineStage::kCompute, Source{}));
+
+    auto var = std::make_unique<ast::Variable>(
+        "v", ast::StorageClass::kFunction, &f32);
+    var->set_constructor(std::make_unique<ast::MemberAccessorExpression>(
+        std::make_unique<ast::IdentifierExpression>("data"),
+        std::make_unique<ast::IdentifierExpression>("d")));
+
+    auto body = std::make_unique<ast::BlockStatement>();
+    body->append(std::make_unique<ast::VariableDeclStatement>(std::move(var)));
+    body->append(std::make_unique<ast::ReturnStatement>());
+    func->set_body(std::move(body));
+
+    mod.AddFunction(std::move(func));
+  }
+
+  ASSERT_TRUE(td.Determine()) << td.error();
+
+  GeneratorImpl g(&mod);
+  ASSERT_TRUE(g.Generate()) << g.error();
+  EXPECT_EQ(g.result(), R"(#include <metal_stdlib>
+
+struct Data {
+  float d;
+};
+
+kernel void a(device Data& data [[buffer(0)]]) {
+  float v = data.d;
+  return;
+}
+
+kernel void b(device Data& data [[buffer(0)]]) {
+  float v = data.d;
+  return;
+}
 
 )");
 }

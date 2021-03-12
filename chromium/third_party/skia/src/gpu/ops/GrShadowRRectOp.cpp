@@ -16,7 +16,7 @@
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrThreadSafeUniquelyKeyedProxyViewCache.h"
+#include "src/gpu/GrThreadSafeCache.h"
 #include "src/gpu/effects/GrShadowGeoProc.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 
@@ -614,8 +614,7 @@ private:
         flushState->drawMesh(*fMesh);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, GrRecordingContext::Arenas*,
-                                      const GrCaps& caps) override {
+    CombineResult onCombineIfPossible(GrOp* t, SkArenaAlloc*, const GrCaps& caps) override {
         ShadowCircularRRectOp* that = t->cast<ShadowCircularRRectOp>();
         fGeoData.push_back_n(that->fGeoData.count(), that->fGeoData.begin());
         fVertCount += that->fVertCount;
@@ -669,9 +668,9 @@ static GrSurfaceProxyView create_falloff_texture(GrRecordingContext* rContext) {
     GrUniqueKey::Builder builder(&key, kDomain, 0, "Shadow Gaussian Falloff");
     builder.finish();
 
-    auto threadSafeViewCache = rContext->priv().threadSafeViewCache();
+    auto threadSafeCache = rContext->priv().threadSafeCache();
 
-    GrSurfaceProxyView view = threadSafeViewCache->find(key);
+    GrSurfaceProxyView view = threadSafeCache->find(key);
     if (view) {
         SkASSERT(view.origin() == kTopLeft_GrSurfaceOrigin);
         return view;
@@ -697,18 +696,18 @@ static GrSurfaceProxyView create_falloff_texture(GrRecordingContext* rContext) {
         return {};
     }
 
-    view = threadSafeViewCache->add(key, view);
+    view = threadSafeCache->add(key, view);
     SkASSERT(view.origin() == kTopLeft_GrSurfaceOrigin);
     return view;
 }
 
 
-std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
-                               GrColor color,
-                               const SkMatrix& viewMatrix,
-                               const SkRRect& rrect,
-                               SkScalar blurWidth,
-                               SkScalar insetWidth) {
+GrOp::Owner Make(GrRecordingContext* context,
+                 GrColor color,
+                 const SkMatrix& viewMatrix,
+                 const SkRRect& rrect,
+                 SkScalar blurWidth,
+                 SkScalar insetWidth) {
     // Shadow rrect ops only handle simple circular rrects.
     SkASSERT(viewMatrix.isSimilarity() && SkRRectPriv::EqualRadii(rrect));
 
@@ -732,14 +731,14 @@ std::unique_ptr<GrDrawOp> Make(GrRecordingContext* context,
         return nullptr;
     }
 
-    GrOpMemoryPool* pool = context->priv().opMemoryPool();
-
-    return pool->allocate<ShadowCircularRRectOp>(color, bounds,
-                                                 scaledRadius,
-                                                 rrect.isOval(),
-                                                 blurWidth,
-                                                 scaledInsetWidth,
-                                                 std::move(falloffView));
+    return GrOp::Make<ShadowCircularRRectOp>(context,
+                                             color,
+                                             bounds,
+                                             scaledRadius,
+                                             rrect.isOval(),
+                                             blurWidth,
+                                             scaledInsetWidth,
+                                             std::move(falloffView));
 }
 }  // namespace GrShadowRRectOp
 

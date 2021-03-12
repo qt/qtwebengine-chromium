@@ -25,17 +25,14 @@
     "host",
     "components",
     "sdk",
-    "marked",
     "network",
     "browser_sdk"
-  ],  "modules": [
-    "issues.js",
-    "issues-legacy.js",
-    "IssuesPane.js",
-    "IssueRevealer.js",
-    "IssueAggregator.js",
-    "MarkdownIssueDescription.js",
-    "MarkdownView_bridge.js"
+  ],
+  "modules": [
+    "issues-legacy.js"
+  ],
+  "skip_compilation": [
+    "issues-legacy.js"
   ],
   "resources": [
     "descriptions/CoepCoopSandboxedIframeCannotNavigateToCoopPage.md",
@@ -43,6 +40,16 @@
     "descriptions/CoepCorpNotSameOriginAfterDefaultedToSameOriginByCoep.md",
     "descriptions/CoepCorpNotSameOrigin.md",
     "descriptions/CoepFrameResourceNeedsCoepHeader.md",
+    "descriptions/cspEvalViolation.md",
+    "descriptions/cspInlineViolation.md",
+    "descriptions/cspURLViolation.md",
+    "descriptions/cspTrustedTypesSinkViolation.md",
+    "descriptions/cspTrustedTypesPolicyViolation.md",
+    "descriptions/mixedContent.md",
+    "descriptions/SameSiteUnspecifiedLaxAllowUnsafeRead.md",
+    "descriptions/SameSiteUnspecifiedLaxAllowUnsafeSet.md",
+    "descriptions/SameSiteUnspecifiedTreatedAsLaxRead.md",
+    "descriptions/SameSiteUnspecifiedTreatedAsLaxSet.md",
     "issuesPane.css",
     "issuesTree.css"
   ]

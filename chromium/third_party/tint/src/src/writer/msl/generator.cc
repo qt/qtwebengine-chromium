@@ -21,24 +21,34 @@ namespace writer {
 namespace msl {
 
 Generator::Generator(ast::Module module)
-    : Text(std::move(module)), impl_(&module_) {}
+    : Text(std::move(module)),
+      impl_(std::make_unique<GeneratorImpl>(&module_)) {}
 
 Generator::~Generator() = default;
 
+void Generator::Reset() {
+  set_error("");
+  impl_ = std::make_unique<GeneratorImpl>(&module_);
+}
+
 bool Generator::Generate() {
-  auto ret = impl_.Generate();
+  auto ret = impl_->Generate();
   if (!ret) {
-    error_ = impl_.error();
+    error_ = impl_->error();
   }
   return ret;
 }
 
+bool Generator::GenerateEntryPoint(ast::PipelineStage, const std::string&) {
+  return false;
+}
+
 std::string Generator::result() const {
-  return impl_.result();
+  return impl_->result();
 }
 
 std::string Generator::error() const {
-  return impl_.error();
+  return impl_->error();
 }
 
 }  // namespace msl

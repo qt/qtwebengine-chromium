@@ -32,6 +32,8 @@ class ShareGroupMtl : public ShareGroupImpl
 
 class ContextMtl;
 
+struct DefaultShaderAsyncInfoMtl;
+
 class DisplayMtl : public DisplayImpl
 {
   public:
@@ -85,7 +87,8 @@ class DisplayMtl : public DisplayImpl
 
     EGLSyncImpl *createSync(const egl::AttributeMap &attribs) override;
 
-    egl::Error makeCurrent(egl::Surface *drawSurface,
+    egl::Error makeCurrent(egl::Display *display,
+                           egl::Surface *drawSurface,
                            egl::Surface *readSurface,
                            gl::Context *context) override;
 
@@ -104,7 +107,7 @@ class DisplayMtl : public DisplayImpl
     gl::Caps getNativeCaps() const;
     const gl::TextureCapsMap &getNativeTextureCaps() const;
     const gl::Extensions &getNativeExtensions() const;
-    const gl::Limitations &getNativeLimitations() const { return mNativeLimitations; }
+    const gl::Limitations &getNativeLimitations() const;
     const angle::FeaturesMtl &getFeatures() const { return mFeatures; }
 
     // Check whether either of the specified iOS or Mac GPU family is supported
@@ -122,7 +125,7 @@ class DisplayMtl : public DisplayImpl
     mtl::RenderUtils &getUtils() { return mUtils; }
     mtl::StateCache &getStateCache() { return mStateCache; }
 
-    id<MTLLibrary> getDefaultShadersLib() const { return mDefaultShaders; }
+    id<MTLLibrary> getDefaultShadersLib();
 
     id<MTLDepthStencilState> getDepthStencilState(const mtl::DepthStencilDesc &desc)
     {
@@ -148,7 +151,9 @@ class DisplayMtl : public DisplayImpl
     {
         return mFormatTable.getVertexFormat(angleFormatId, tightlyPacked);
     }
-
+#if ANGLE_MTL_EVENT_AVAILABLE
+    mtl::AutoObjCObj<MTLSharedEventListener> getOrCreateSharedEventListener();
+#endif
   protected:
     void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
     void generateCaps(egl::Caps *outCaps) const override;
@@ -172,7 +177,10 @@ class DisplayMtl : public DisplayImpl
     mtl::RenderUtils mUtils;
 
     // Built-in Shaders
-    mtl::AutoObjCPtr<id<MTLLibrary>> mDefaultShaders = nil;
+    std::shared_ptr<DefaultShaderAsyncInfoMtl> mDefaultShadersAsyncInfo;
+#if ANGLE_MTL_EVENT_AVAILABLE
+    mtl::AutoObjCObj<MTLSharedEventListener> mSharedEventListener;
+#endif
 
     mutable bool mCapsInitialized;
     mutable gl::TextureCapsMap mNativeTextureCaps;

@@ -969,42 +969,6 @@ void SkPDFDevice::drawFormXObject(SkPDFIndirectReference xObject, SkDynamicMemor
     content->writeText(" Do\n");
 }
 
-void SkPDFDevice::drawDevice(SkBaseDevice* device, int x, int y, const SkPaint& paint) {
-    SkASSERT(!paint.getImageFilter());
-    SkASSERT(!paint.getMaskFilter());
-
-    // Check if the source device is really a bitmapdevice (because that's what we returned
-    // from createDevice (likely due to an imagefilter)
-    SkPixmap pmap;
-    if (device->peekPixels(&pmap)) {
-        SkBitmap bitmap;
-        bitmap.installPixels(pmap);
-        this->drawSprite(bitmap, x, y, paint);
-        return;
-    }
-
-    // our onCreateCompatibleDevice() always creates SkPDFDevice subclasses.
-    SkPDFDevice* pdfDevice = static_cast<SkPDFDevice*>(device);
-
-    if (pdfDevice->isContentEmpty()) {
-        return;
-    }
-
-    SkMatrix matrix = SkMatrix::Translate(SkIntToScalar(x), SkIntToScalar(y));
-    ScopedContentEntry content(this, &this->cs(), matrix, paint);
-    if (!content) {
-        return;
-    }
-    if (content.needShape()) {
-        SkISize dim = device->imageInfo().dimensions();
-        content.setShape(SkPath::Rect(SkRect::Make(SkIRect::MakeXYWH(x, y, dim.width(), dim.height()))));
-    }
-    if (!content.needSource()) {
-        return;
-    }
-    this->drawFormXObject(pdfDevice->makeFormXObjectFromDevice(), content.stream());
-}
-
 sk_sp<SkSurface> SkPDFDevice::makeSurface(const SkImageInfo& info, const SkSurfaceProps& props) {
     return SkSurface::MakeRaster(info, &props);
 }
@@ -1602,21 +1566,16 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
         SkRect imageBounds = SkRect::Make(imageSubset.image()->bounds());
         SkPath perspectiveOutline = SkPath::Rect(imageBounds).makeTransform(transform);
 
-        // TODO(edisonn): perf - use current clip too.
         // Retrieve the bounds of the new shape.
         SkRect bounds = perspectiveOutline.getBounds();
+        if (!bounds.intersect(SkRect::Make(this->devClipBounds()))) {
+            return;
+        }
 
-        // Transform the bitmap in the new space, taking into
-        // account the initial transform.
-        SkMatrix total = transform;
-        total.postConcat(fInitialTransform);
-
-        SkPath physicalPerspectiveOutline = SkPath::Rect(imageBounds).makeTransform(total);
-
-        SkRect physicalPerspectiveBounds =
-                physicalPerspectiveOutline.getBounds();
-        SkScalar scaleX = physicalPerspectiveBounds.width() / bounds.width();
-        SkScalar scaleY = physicalPerspectiveBounds.height() / bounds.height();
+        // Transform the bitmap in the new space to the final space, to account for DPI
+        SkRect physicalBounds = fInitialTransform.mapRect(bounds);
+        SkScalar scaleX = physicalBounds.width() / bounds.width();
+        SkScalar scaleY = physicalBounds.height() / bounds.height();
 
         // TODO(edisonn): A better approach would be to use a bitmap shader
         // (in clamp mode) and draw a rect over the entire bounding box. Then
@@ -1625,7 +1584,7 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
         // the image.  Avoiding alpha will reduce the pdf size and generation
         // CPU time some.
 
-        SkISize wh = rect_to_size(physicalPerspectiveBounds).toCeil();
+        SkISize wh = rect_to_size(physicalBounds).toCeil();
 
         auto surface = SkSurface::MakeRaster(SkImageInfo::MakeN32Premul(wh));
         if (!surface) {
@@ -1706,10 +1665,45 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include "include/core/SkImageFilter.h"
-#include "src/core/SkSpecialImage.h"
 
-void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, int x, int y, const SkPaint& paint) {
+void SkPDFDevice::drawDevice(SkBaseDevice* device, const SkPaint& paint) {
+    SkASSERT(!paint.getImageFilter());
+    SkASSERT(!paint.getMaskFilter());
+
+    // Check if the source device is really a bitmapdevice (because that's what we returned
+    // from createDevice (an image filter would go through drawSpecial, but createDevice uses
+    // a raster device to apply color filters, too).
+    SkPixmap pmap;
+    if (device->peekPixels(&pmap)) {
+        this->INHERITED::drawDevice(device, paint);
+        return;
+    }
+
+    // our onCreateCompatibleDevice() always creates SkPDFDevice subclasses.
+    SkPDFDevice* pdfDevice = static_cast<SkPDFDevice*>(device);
+
+    if (pdfDevice->isContentEmpty()) {
+        return;
+    }
+
+    SkMatrix matrix = device->getRelativeTransform(*this);
+    ScopedContentEntry content(this, &this->cs(), matrix, paint);
+    if (!content) {
+        return;
+    }
+    if (content.needShape()) {
+        SkPath shape = SkPath::Rect(SkRect::Make(device->imageInfo().dimensions()));
+        shape.transform(matrix);
+        content.setShape(shape);
+    }
+    if (!content.needSource()) {
+        return;
+    }
+    this->drawFormXObject(pdfDevice->makeFormXObjectFromDevice(), content.stream());
+}
+
+void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDevice,
+                              const SkPaint& paint) {
     if (this->hasEmptyClip()) {
         return;
     }
@@ -1718,7 +1712,8 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, int x, int y, const SkPain
 
     SkBitmap resultBM;
     if (srcImg->getROPixels(&resultBM)) {
-        this->drawSprite(resultBM, x, y, paint);
+        auto r = SkRect::MakeWH(resultBM.width(), resultBM.height());
+        this->internalDrawImageRect(SkKeyedImage(resultBM), nullptr, r, paint, localToDevice);
     }
 }
 

@@ -35,7 +35,10 @@ import traceback
 # //src/testing/scripts for importing common.
 d = os.path.dirname
 THIS_DIR = d(os.path.abspath(__file__))
-CHROMIUM_SRC_DIR = d(d(d(THIS_DIR)))
+ANGLE_SRC_DIR = d(THIS_DIR)
+sys.path.insert(0, os.path.join(ANGLE_SRC_DIR, 'testing'))
+sys.path.insert(0, os.path.join(ANGLE_SRC_DIR, 'testing', 'scripts'))
+CHROMIUM_SRC_DIR = d(d(ANGLE_SRC_DIR))
 sys.path.insert(0, os.path.join(CHROMIUM_SRC_DIR, 'testing'))
 sys.path.insert(0, os.path.join(CHROMIUM_SRC_DIR, 'testing', 'scripts'))
 
@@ -57,11 +60,13 @@ def IsWindows():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('executable', help='Test executable.')
-    parser.add_argument('--isolated-script-test-output', type=str, required=True)
-    # TODO(jmadill): Remove when removed from the recipes. http://anglebug.com/3162
-    parser.add_argument('--isolated-script-test-perf-output', type=str, required=False)
-    parser.add_argument('--isolated-script-test-filter', type=str, required=False)
+    parser.add_argument('--isolated-script-test-output', type=str)
+    parser.add_argument('--isolated-script-test-filter', type=str)
     parser.add_argument('--xvfb', help='Start xvfb.', action='store_true')
+
+    # Kept for compatiblity.
+    # TODO(jmadill): Remove when removed from the recipes. http://crbug.com/954415
+    parser.add_argument('--isolated-script-test-perf-output', type=str)
 
     args, extra_flags = parser.parse_known_args()
 

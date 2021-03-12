@@ -36,6 +36,7 @@
 #include "src/trace_processor/importers/common/process_tracker.h"
 #include "src/trace_processor/importers/common/slice_tracker.h"
 #include "src/trace_processor/importers/common/track_tracker.h"
+#include "src/trace_processor/importers/config.descriptor.h"
 #include "src/trace_processor/importers/ftrace/ftrace_module.h"
 #include "src/trace_processor/importers/proto/heap_profile_tracker.h"
 #include "src/trace_processor/importers/proto/metadata_tracker.h"
@@ -48,6 +49,8 @@
 #include "src/trace_processor/timestamped_trace_piece.h"
 #include "src/trace_processor/types/trace_processor_context.h"
 #include "src/trace_processor/types/variadic.h"
+#include "src/trace_processor/util/descriptors.h"
+#include "src/trace_processor/util/protozero_to_text.h"
 
 #include "protos/perfetto/common/builtin_clock.pbzero.h"
 #include "protos/perfetto/common/trace_stats.pbzero.h"
@@ -97,7 +100,7 @@ void ProtoTraceParser::ParseTracePacket(int64_t ts, TimestampedTracePiece ttp) {
   const TraceBlobView& blob = data->packet;
   protos::pbzero::TracePacket::Decoder packet(blob.data(), blob.length());
 
-  ParseTracePacketImpl(ts, std::move(ttp), data, packet);
+  ParseTracePacketImpl(ts, ttp, data->sequence_state.get(), packet);
 
   // TODO(lalitm): maybe move this to the flush method in the trace processor
   // once we have it. This may reduce performance in the ArgsTracker though so
@@ -108,13 +111,13 @@ void ProtoTraceParser::ParseTracePacket(int64_t ts, TimestampedTracePiece ttp) {
 
 void ProtoTraceParser::ParseTracePacketImpl(
     int64_t ts,
-    TimestampedTracePiece ttp,
-    const TracePacketData* data,
+    const TimestampedTracePiece& ttp,
+    PacketSequenceStateGeneration* sequence_state,
     const protos::pbzero::TracePacket::Decoder& packet) {
   // This needs to get handled both by the HeapGraphModule and
   // ProtoTraceParser (for StackProfileTracker).
   if (packet.has_deobfuscation_mapping()) {
-    ParseDeobfuscationMapping(ts, data->sequence_state,
+    ParseDeobfuscationMapping(ts, sequence_state,
                               packet.trusted_packet_sequence_id(),
                               packet.deobfuscation_mapping());
   }
@@ -132,13 +135,12 @@ void ProtoTraceParser::ParseTracePacketImpl(
     ParseTraceStats(packet.trace_stats());
 
   if (packet.has_profile_packet()) {
-    ParseProfilePacket(ts, data->sequence_state,
-                       packet.trusted_packet_sequence_id(),
+    ParseProfilePacket(ts, sequence_state, packet.trusted_packet_sequence_id(),
                        packet.profile_packet());
   }
 
   if (packet.has_perf_sample()) {
-    ParsePerfSample(ts, data->sequence_state, packet.perf_sample());
+    ParsePerfSample(ts, sequence_state, packet.perf_sample());
   }
 
   if (packet.has_chrome_benchmark_metadata()) {
@@ -730,6 +732,17 @@ void ProtoTraceParser::ParseTraceConfig(ConstBytes blob) {
     context_->metadata_tracker->SetMetadata(metadata::unique_session_name,
                                             Variadic::String(id));
   }
+
+  DescriptorPool pool;
+  pool.AddFromFileDescriptorSet(kConfigDescriptor.data(),
+                                kConfigDescriptor.size());
+
+  std::string text = protozero_to_text::ProtozeroToText(
+      pool, ".perfetto.protos.TraceConfig", blob,
+      protozero_to_text::kIncludeNewLines);
+  StringId id = context_->storage->InternString(base::StringView(text));
+  context_->metadata_tracker->SetMetadata(metadata::trace_config_pbtxt,
+                                          Variadic::String(id));
 }
 
 void ProtoTraceParser::ParseModuleSymbols(ConstBytes blob) {

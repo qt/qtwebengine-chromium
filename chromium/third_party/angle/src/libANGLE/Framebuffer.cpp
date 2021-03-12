@@ -243,13 +243,13 @@ bool CheckAttachmentSampleCompleteness(const Context *context,
 }
 
 // Needed to index into the attachment arrays/bitsets.
-static_assert(static_cast<size_t>(IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS) ==
+static_assert(static_cast<size_t>(IMPLEMENTATION_MAX_DRAW_BUFFERS) ==
                   Framebuffer::DIRTY_BIT_COLOR_ATTACHMENT_MAX,
               "Framebuffer Dirty bit mismatch");
-static_assert(static_cast<size_t>(IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS) ==
+static_assert(static_cast<size_t>(IMPLEMENTATION_MAX_DRAW_BUFFERS) ==
                   Framebuffer::DIRTY_BIT_DEPTH_ATTACHMENT,
               "Framebuffer Dirty bit mismatch");
-static_assert(static_cast<size_t>(IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS + 1) ==
+static_assert(static_cast<size_t>(IMPLEMENTATION_MAX_DRAW_BUFFERS + 1) ==
                   Framebuffer::DIRTY_BIT_STENCIL_ATTACHMENT,
               "Framebuffer Dirty bit mismatch");
 
@@ -1460,8 +1460,10 @@ angle::Result Framebuffer::clearBufferfi(const Context *context,
                                          GLfloat depth,
                                          GLint stencil)
 {
-    bool clearDepth   = context->getState().getDepthStencilState().depthMask;
-    bool clearStencil = context->getState().getDepthStencilState().stencilWritemask != 0;
+    const bool clearDepth =
+        getDepthAttachment() != nullptr && context->getState().getDepthStencilState().depthMask;
+    const bool clearStencil = getStencilAttachment() != nullptr &&
+                              context->getState().getDepthStencilState().stencilWritemask != 0;
 
     if (clearDepth && clearStencil)
     {

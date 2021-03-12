@@ -31,11 +31,11 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrDrawOp> Make(GrRecordingContext*,
-                                          GrPaint&&,
-                                          const SkMatrix& viewMatrix,
-                                          const SkRRect&,
-                                          GrAAType);
+    static GrOp::Owner Make(GrRecordingContext*,
+                            GrPaint&&,
+                            const SkMatrix& viewMatrix,
+                            const SkRRect&,
+                            GrAAType);
 
     const char* name() const final { return "GrFillRRectOp"; }
 
@@ -43,7 +43,7 @@ public:
 
     GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
                                       bool hasMixedSampledCoverage, GrClampType) final;
-    CombineResult onCombineIfPossible(GrOp*, GrRecordingContext::Arenas*, const GrCaps&) final;
+    CombineResult onCombineIfPossible(GrOp*, SkArenaAlloc*, const GrCaps&) final;
 
     void visitProxies(const VisitProxyFunc& fn) const override {
         if (fProgramInfo) {
@@ -59,7 +59,7 @@ public:
 
 private:
     friend class ::GrSimpleMeshDrawOpHelper; // for access to ctor
-    friend class ::GrOpMemoryPool;         // for access to ctor
+    friend class ::GrOp;         // for access to ctor
 
     enum class ProcessorFlags {
         kNone             = 0,
@@ -73,7 +73,7 @@ private:
 
     class Processor;
 
-    FillRRectOp(const Helper::MakeArgs&,
+    FillRRectOp(GrProcessorSet*,
                 const SkPMColor4f& paintColor,
                 const SkMatrix& totalShapeMatrix,
                 const SkRRect&,
@@ -137,11 +137,11 @@ static bool can_use_hw_derivatives_with_coverage(const GrShaderCaps&,
                                                  const SkMatrix&,
                                                  const SkRRect&);
 
-std::unique_ptr<GrDrawOp> FillRRectOp::Make(GrRecordingContext* ctx,
-                                            GrPaint&& paint,
-                                            const SkMatrix& viewMatrix,
-                                            const SkRRect& rrect,
-                                            GrAAType aaType) {
+GrOp::Owner FillRRectOp::Make(GrRecordingContext* ctx,
+                              GrPaint&& paint,
+                              const SkMatrix& viewMatrix,
+                              const SkRRect& rrect,
+                              GrAAType aaType) {
     using Helper = GrSimpleMeshDrawOpHelper;
 
     const GrCaps* caps = ctx->priv().caps();
@@ -212,7 +212,7 @@ std::unique_ptr<GrDrawOp> FillRRectOp::Make(GrRecordingContext* ctx,
                                               flags, devBounds);
 }
 
-FillRRectOp::FillRRectOp(const GrSimpleMeshDrawOpHelper::MakeArgs& helperArgs,
+FillRRectOp::FillRRectOp(GrProcessorSet* processorSet,
                          const SkPMColor4f& paintColor,
                          const SkMatrix& totalShapeMatrix,
                          const SkRRect& rrect,
@@ -220,7 +220,7 @@ FillRRectOp::FillRRectOp(const GrSimpleMeshDrawOpHelper::MakeArgs& helperArgs,
                          ProcessorFlags processorFlags,
                          const SkRect& devBounds)
         : INHERITED(ClassID())
-        , fHelper(helperArgs, aaType)
+        , fHelper(processorSet, aaType)
         , fColor(paintColor)
         , fLocalRect(rrect.rect())
         , fProcessorFlags(processorFlags & ~(ProcessorFlags::kHasLocalCoords |
@@ -278,9 +278,7 @@ GrProcessorSet::Analysis FillRRectOp::finalize(
     return analysis;
 }
 
-GrDrawOp::CombineResult FillRRectOp::onCombineIfPossible(GrOp* op,
-                                                         GrRecordingContext::Arenas*,
-                                                         const GrCaps& caps) {
+GrOp::CombineResult FillRRectOp::onCombineIfPossible(GrOp* op, SkArenaAlloc*, const GrCaps& caps) {
     const auto& that = *op->cast<FillRRectOp>();
     if (!fHelper.isCompatible(that.fHelper, caps, this->bounds(), that.bounds())) {
         return CombineResult::kCannotCombine;
@@ -943,11 +941,11 @@ static bool can_use_hw_derivatives_with_coverage(
 } // anonymous namespace
 
 
-std::unique_ptr<GrDrawOp> GrFillRRectOp::Make(GrRecordingContext* ctx,
-                                              GrPaint&& paint,
-                                              const SkMatrix& viewMatrix,
-                                              const SkRRect& rrect,
-                                              GrAAType aaType) {
+GrOp::Owner GrFillRRectOp::Make(GrRecordingContext* ctx,
+                                GrPaint&& paint,
+                                const SkMatrix& viewMatrix,
+                                const SkRRect& rrect,
+                                GrAAType aaType) {
     return FillRRectOp::Make(ctx, std::move(paint), viewMatrix, rrect, aaType);
 }
 

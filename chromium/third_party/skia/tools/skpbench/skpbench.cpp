@@ -18,7 +18,7 @@
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/GrCaps.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #include "src/gpu/SkGr.h"
 #include "src/utils/SkMultiPictureDocument.h"
 #include "src/utils/SkOSPath.h"
@@ -34,7 +34,7 @@
 #include "tools/gpu/GrContextFactory.h"
 
 #ifdef SK_XML
-#include "experimental/svg/model/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGDOM.h"
 #include "src/xml/SkDOM.h"
 #endif
 
@@ -269,7 +269,8 @@ static void run_ddl_benchmark(sk_gpu_test::TestContext* testContext, GrDirectCon
 
     promiseImageHelper.uploadAllToGPU(nullptr, context);
 
-    DDLTileHelper tiles(context, dstCharacterization, viewport, FLAGS_ddlTilingWidthHeight);
+    DDLTileHelper tiles(context, dstCharacterization, viewport, FLAGS_ddlTilingWidthHeight,
+                        /* addRandomPaddingToDst */ false);
 
     tiles.createBackendTextures(nullptr, context);
 
@@ -590,7 +591,7 @@ int main(int argc, char** argv) {
             SkImageInfo::Make(width, height, config->getColorType(), config->getAlphaType(),
                               sk_ref_sp(config->getColorSpace()));
     uint32_t flags = config->getUseDIText() ? SkSurfaceProps::kUseDeviceIndependentFonts_Flag : 0;
-    SkSurfaceProps props(flags, SkSurfaceProps::kLegacyFontHost_InitType);
+    SkSurfaceProps props(flags, kRGB_H_SkPixelGeometry);
     sk_sp<SkSurface> surface =
         SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, config->getSamples(), &props);
     if (!surface) {
@@ -693,11 +694,7 @@ static sk_sp<SkPicture> create_warmup_skp() {
 
 static sk_sp<SkPicture> create_skp_from_svg(SkStream* stream, const char* filename) {
 #ifdef SK_XML
-    SkDOM xml;
-    if (!xml.build(*stream)) {
-        exitf(ExitErr::kData, "failed to parse xml in file %s", filename);
-    }
-    sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromDOM(xml);
+    sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(*stream);
     if (!svg) {
         exitf(ExitErr::kData, "failed to build svg dom from file %s", filename);
     }

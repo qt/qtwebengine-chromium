@@ -7,6 +7,7 @@ import * as Platform from '../platform/platform.js';
 
 import {Size} from './Geometry.js';  // eslint-disable-line no-unused-vars
 import {Icon} from './Icon.js';
+import {deepElementFromEvent} from './UIUtils.js';
 import {measuredScrollbarWidth} from './utils/measured-scrollbar-width.js';
 import {Widget} from './Widget.js';
 
@@ -22,7 +23,7 @@ export class GlassPane extends Common.ObjectWrapper.ObjectWrapper {
       this.element.shadowRoot.appendChild(this._arrowElement);
     }
 
-    this.registerRequiredCSS('ui/glassPane.css');
+    this.registerRequiredCSS('ui/glassPane.css', {enableLegacyPatching: true});
     this.setPointerEventsBehavior(PointerEventsBehavior.PierceGlassPane);
 
     this._onMouseDownBound = this._onMouseDown.bind(this);
@@ -50,9 +51,10 @@ export class GlassPane extends Common.ObjectWrapper.ObjectWrapper {
 
   /**
    * @param {string} cssFile
+  * @param {!{enableLegacyPatching:boolean}} options
    */
-  registerRequiredCSS(cssFile) {
-    this._widget.registerRequiredCSS(cssFile);
+  registerRequiredCSS(cssFile, options) {
+    this._widget.registerRequiredCSS(cssFile, options);
   }
 
   /**
@@ -169,7 +171,7 @@ export class GlassPane extends Common.ObjectWrapper.ObjectWrapper {
     if (!this._onClickOutsideCallback) {
       return;
     }
-    const node = event.deepElementFromPoint();
+    const node = deepElementFromEvent(event);
     if (!node || this.contentElement.isSelfOrAncestor(node)) {
       return;
     }

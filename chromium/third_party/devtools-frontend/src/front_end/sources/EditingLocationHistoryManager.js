@@ -28,15 +28,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// @ts-nocheck
-// TODO(crbug.com/1011811): Enable TypeScript compiler checks
-
 import * as Common from '../common/common.js';  // eslint-disable-line no-unused-vars
 import * as SourceFrame from '../source_frame/source_frame.js';
 import * as TextUtils from '../text_utils/text_utils.js';  // eslint-disable-line no-unused-vars
 import * as Workspace from '../workspace/workspace.js';    // eslint-disable-line no-unused-vars
 
-import {HistoryEntry, SimpleHistoryManager} from './SimpleHistoryManager.js';  // eslint-disable-line no-unused-vars
 import {SourcesView} from './SourcesView.js';                                  // eslint-disable-line no-unused-vars
 import {UISourceCodeFrame} from './UISourceCodeFrame.js';                      // eslint-disable-line no-unused-vars
 
@@ -50,7 +46,7 @@ export class EditingLocationHistoryManager {
    */
   constructor(sourcesView, currentSourceFrameCallback) {
     this._sourcesView = sourcesView;
-    this._historyManager = new SimpleHistoryManager(HistoryDepth);
+    this._historyManager = new Common.SimpleHistoryManager.SimpleHistoryManager(HistoryDepth);
     this._currentSourceFrameCallback = currentSourceFrameCallback;
   }
 
@@ -130,18 +126,17 @@ export class EditingLocationHistoryManager {
    * @param {!Workspace.UISourceCode.UISourceCode} uiSourceCode
    */
   removeHistoryForSourceCode(uiSourceCode) {
-    function filterOut(entry) {
-      return entry._projectId === uiSourceCode.project().id() && entry._url === uiSourceCode.url();
-    }
-
-    this._historyManager.filterOut(filterOut);
+    this._historyManager.filterOut(entry => {
+      const historyEntry = /** @type {!EditingLocationHistoryEntry} */ (entry);
+      return historyEntry._projectId === uiSourceCode.project().id() && historyEntry._url === uiSourceCode.url();
+    });
   }
 }
 
 export const HistoryDepth = 20;
 
 /**
- * @implements {HistoryEntry}
+ * @implements {Common.SimpleHistoryManager.HistoryEntry}
  * @unrestricted
  */
 export class EditingLocationHistoryEntry {

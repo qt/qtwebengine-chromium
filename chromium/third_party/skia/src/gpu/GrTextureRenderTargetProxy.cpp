@@ -16,7 +16,7 @@
 
 #ifdef SK_DEBUG
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrContextPriv.h"
+#include "src/gpu/GrDirectContextPriv.h"
 #endif
 
 // Deferred version
@@ -95,14 +95,14 @@ void GrTextureRenderTargetProxy::initSurfaceFlags(const GrCaps& caps) {
         // multisampled-render-to-texture extension.
         //
         // NOTE: This is the only instance where we need to set the manual resolve flag on a proxy.
-        // Any other proxies that require manual resolve (e.g., wrapBackendTextureAsRenderTarget())
-        // will be wrapped, and the wrapped version of the GrSurface constructor will automatically
-        // get the manual resolve flag when copying the target GrSurface's flags.
+        // Any other proxies that require manual resolve (e.g., wrapRenderableBackendTexture() with
+        // a sample count)  will be wrapped, and the wrapped version of the GrSurface constructor
+        // will automatically get the manual resolve flag when copying the target GrSurface's flags.
         fSurfaceFlags |= GrInternalSurfaceFlags::kRequiresManualMSAAResolve;
     }
 }
 
-size_t GrTextureRenderTargetProxy::onUninstantiatedGpuMemorySize(const GrCaps& caps) const {
+size_t GrTextureRenderTargetProxy::onUninstantiatedGpuMemorySize() const {
     int colorSamplesPerPixel = this->numSamples();
     if (colorSamplesPerPixel > 1) {
         // Add one to account for the resolve buffer.
@@ -110,7 +110,7 @@ size_t GrTextureRenderTargetProxy::onUninstantiatedGpuMemorySize(const GrCaps& c
     }
 
     // TODO: do we have enough information to improve this worst case estimate?
-    return GrSurface::ComputeSize(caps, this->backendFormat(), this->dimensions(),
+    return GrSurface::ComputeSize(this->backendFormat(), this->dimensions(),
                                   colorSamplesPerPixel, this->proxyMipmapped(),
                                   !this->priv().isExact());
 }

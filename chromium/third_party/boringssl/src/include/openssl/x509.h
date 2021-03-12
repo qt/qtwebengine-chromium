@@ -899,7 +899,51 @@ OPENSSL_EXPORT int i2d_X509_AUX(X509 *a, unsigned char **pp);
 OPENSSL_EXPORT X509 *d2i_X509_AUX(X509 **a, const unsigned char **pp,
                                   long length);
 
-OPENSSL_EXPORT int i2d_re_X509_tbs(X509 *x, unsigned char **pp);
+// i2d_re_X509_tbs serializes the TBSCertificate portion of |x509|. If |outp| is
+// NULL, nothing is written. Otherwise, if |*outp| is not NULL, the result is
+// written to |*outp|, which must have enough space available, and |*outp| is
+// advanced just past the output. If |outp| is non-NULL and |*outp| is NULL, it
+// sets |*outp| to a newly-allocated buffer containing the result. The caller is
+// responsible for releasing the buffer with |OPENSSL_free|. In all cases, this
+// function returns the number of bytes in the result, whether written or not,
+// or a negative value on error.
+//
+// This function re-encodes the TBSCertificate and may not reflect |x509|'s
+// original encoding. It may be used to manually generate a signature for a new
+// certificate. To verify certificates, use |i2d_X509_tbs| instead.
+OPENSSL_EXPORT int i2d_re_X509_tbs(X509 *x509, unsigned char **outp);
+
+// i2d_X509_tbs serializes the TBSCertificate portion of |x509|. If |outp| is
+// NULL, nothing is written. Otherwise, if |*outp| is not NULL, the result is
+// written to |*outp|, which must have enough space available, and |*outp| is
+// advanced just past the output. If |outp| is non-NULL and |*outp| is NULL, it
+// sets |*outp| to a newly-allocated buffer containing the result. The caller is
+// responsible for releasing the buffer with |OPENSSL_free|. In all cases, this
+// function returns the number of bytes in the result, whether written or not,
+// or a negative value on error.
+//
+// This function preserves the original encoding of the TBSCertificate and may
+// not reflect modifications made to |x509|. It may be used to manually verify
+// the signature of an existing certificate. To generate certificates, use
+// |i2d_re_X509_tbs| instead.
+OPENSSL_EXPORT int i2d_X509_tbs(X509 *x509, unsigned char **outp);
+
+// X509_set1_signature_algo sets |x509|'s signature algorithm to |algo| and
+// returns one on success or zero on error. It updates both the signature field
+// of the TBSCertificate structure, and the signatureAlgorithm field of the
+// Certificate.
+OPENSSL_EXPORT int X509_set1_signature_algo(X509 *x509, const X509_ALGOR *algo);
+
+// X509_set1_signature_value sets |x509|'s signature to a copy of the |sig_len|
+// bytes pointed by |sig|. It returns one on success and zero on error.
+//
+// Due to a specification error, X.509 certificates store signatures in ASN.1
+// BIT STRINGs, but signature algorithms return byte strings rather than bit
+// strings. This function creates a BIT STRING containing a whole number of
+// bytes, with the bit order matching the DER encoding. This matches the
+// encoding used by all X.509 signature algorithms.
+OPENSSL_EXPORT int X509_set1_signature_value(X509 *x509, const uint8_t *sig,
+                                             size_t sig_len);
 
 OPENSSL_EXPORT void X509_get0_signature(const ASN1_BIT_STRING **psig,
                                         const X509_ALGOR **palg, const X509 *x);
@@ -968,9 +1012,8 @@ OPENSSL_EXPORT X509_NAME *X509_get_subject_name(const X509 *a);
 OPENSSL_EXPORT int X509_set_pubkey(X509 *x, EVP_PKEY *pkey);
 OPENSSL_EXPORT EVP_PKEY *X509_get_pubkey(X509 *x);
 OPENSSL_EXPORT ASN1_BIT_STRING *X509_get0_pubkey_bitstr(const X509 *x);
-// TODO(davidben): |X509_get0_extensions| should return a const pointer to
-// match upstream.
-OPENSSL_EXPORT STACK_OF(X509_EXTENSION) *X509_get0_extensions(const X509 *x);
+OPENSSL_EXPORT const STACK_OF(X509_EXTENSION) *
+    X509_get0_extensions(const X509 *x);
 OPENSSL_EXPORT const X509_ALGOR *X509_get0_tbs_sigalg(const X509 *x);
 
 OPENSSL_EXPORT int X509_REQ_set_version(X509_REQ *x, long version);
@@ -1021,7 +1064,35 @@ OPENSSL_EXPORT void X509_CRL_get0_signature(const X509_CRL *crl,
                                             const ASN1_BIT_STRING **psig,
                                             const X509_ALGOR **palg);
 OPENSSL_EXPORT int X509_CRL_get_signature_nid(const X509_CRL *crl);
-OPENSSL_EXPORT int i2d_re_X509_CRL_tbs(X509_CRL *req, unsigned char **pp);
+
+// i2d_re_X509_CRL_tbs serializes the TBSCertList portion of |crl|. If |outp| is
+// NULL, nothing is written. Otherwise, if |*outp| is not NULL, the result is
+// written to |*outp|, which must have enough space available, and |*outp| is
+// advanced just past the output. If |outp| is non-NULL and |*outp| is NULL, it
+// sets |*outp| to a newly-allocated buffer containing the result. The caller is
+// responsible for releasing the buffer with |OPENSSL_free|. In all cases, this
+// function returns the number of bytes in the result, whether written or not,
+// or a negative value on error.
+//
+// This function re-encodes the TBSCertList and may not reflect |crl|'s original
+// encoding. It may be used to manually generate a signature for a new CRL. To
+// verify CRLs, use |i2d_X509_CRL_tbs| instead.
+OPENSSL_EXPORT int i2d_re_X509_CRL_tbs(X509_CRL *crl, unsigned char **outp);
+
+// i2d_X509_CRL_tbs serializes the TBSCertList portion of |crl|. If |outp| is
+// NULL, nothing is written. Otherwise, if |*outp| is not NULL, the result is
+// written to |*outp|, which must have enough space available, and |*outp| is
+// advanced just past the output. If |outp| is non-NULL and |*outp| is NULL, it
+// sets |*outp| to a newly-allocated buffer containing the result. The caller is
+// responsible for releasing the buffer with |OPENSSL_free|. In all cases, this
+// function returns the number of bytes in the result, whether written or not,
+// or a negative value on error.
+//
+// This function preserves the original encoding of the TBSCertList and may not
+// reflect modifications made to |crl|. It may be used to manually verify the
+// signature of an existing CRL. To generate CRLs, use |i2d_re_X509_CRL_tbs|
+// instead.
+OPENSSL_EXPORT int i2d_X509_CRL_tbs(X509_CRL *crl, unsigned char **outp);
 
 OPENSSL_EXPORT const ASN1_INTEGER *X509_REVOKED_get0_serialNumber(
     const X509_REVOKED *x);
@@ -1167,7 +1238,15 @@ OPENSSL_EXPORT int X509_get_ext_by_critical(const X509 *x, int crit,
 OPENSSL_EXPORT X509_EXTENSION *X509_get_ext(const X509 *x, int loc);
 OPENSSL_EXPORT X509_EXTENSION *X509_delete_ext(X509 *x, int loc);
 OPENSSL_EXPORT int X509_add_ext(X509 *x, X509_EXTENSION *ex, int loc);
-OPENSSL_EXPORT void *X509_get_ext_d2i(const X509 *x, int nid, int *crit, int *idx);
+
+// X509_get_ext_d2i behaves like |X509V3_get_d2i| but looks for the extension in
+// |x509|'s extension list.
+//
+// WARNING: This function is difficult to use correctly. See the documentation
+// for |X509V3_get_d2i| for details.
+OPENSSL_EXPORT void *X509_get_ext_d2i(const X509 *x509, int nid,
+                                      int *out_critical, int *out_idx);
+
 OPENSSL_EXPORT int X509_add1_ext_i2d(X509 *x, int nid, void *value, int crit,
                                      unsigned long flags);
 
@@ -1180,8 +1259,15 @@ OPENSSL_EXPORT int X509_CRL_get_ext_by_critical(const X509_CRL *x, int crit,
 OPENSSL_EXPORT X509_EXTENSION *X509_CRL_get_ext(const X509_CRL *x, int loc);
 OPENSSL_EXPORT X509_EXTENSION *X509_CRL_delete_ext(X509_CRL *x, int loc);
 OPENSSL_EXPORT int X509_CRL_add_ext(X509_CRL *x, X509_EXTENSION *ex, int loc);
-OPENSSL_EXPORT void *X509_CRL_get_ext_d2i(const X509_CRL *x, int nid, int *crit,
-                                          int *idx);
+
+// X509_CRL_get_ext_d2i behaves like |X509V3_get_d2i| but looks for the
+// extension in |crl|'s extension list.
+//
+// WARNING: This function is difficult to use correctly. See the documentation
+// for |X509V3_get_d2i| for details.
+OPENSSL_EXPORT void *X509_CRL_get_ext_d2i(const X509_CRL *crl, int nid,
+                                          int *out_critical, int *out_idx);
+
 OPENSSL_EXPORT int X509_CRL_add1_ext_i2d(X509_CRL *x, int nid, void *value,
                                          int crit, unsigned long flags);
 
@@ -1199,8 +1285,16 @@ OPENSSL_EXPORT X509_EXTENSION *X509_REVOKED_delete_ext(X509_REVOKED *x,
                                                        int loc);
 OPENSSL_EXPORT int X509_REVOKED_add_ext(X509_REVOKED *x, X509_EXTENSION *ex,
                                         int loc);
-OPENSSL_EXPORT void *X509_REVOKED_get_ext_d2i(const X509_REVOKED *x, int nid,
-                                              int *crit, int *idx);
+
+// X509_REVOKED_get_ext_d2i behaves like |X509V3_get_d2i| but looks for the
+// extension in |revoked|'s extension list.
+//
+// WARNING: This function is difficult to use correctly. See the documentation
+// for |X509V3_get_d2i| for details.
+OPENSSL_EXPORT void *X509_REVOKED_get_ext_d2i(const X509_REVOKED *revoked,
+                                              int nid, int *out_critical,
+                                              int *out_idx);
+
 OPENSSL_EXPORT int X509_REVOKED_add1_ext_i2d(X509_REVOKED *x, int nid,
                                              void *value, int crit,
                                              unsigned long flags);

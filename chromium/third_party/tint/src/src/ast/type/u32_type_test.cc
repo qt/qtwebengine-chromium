@@ -25,6 +25,7 @@ using U32TypeTest = testing::Test;
 
 TEST_F(U32TypeTest, Is) {
   U32Type u;
+  EXPECT_FALSE(u.IsAccessControl());
   EXPECT_FALSE(u.IsAlias());
   EXPECT_FALSE(u.IsArray());
   EXPECT_FALSE(u.IsBool());
@@ -42,6 +43,16 @@ TEST_F(U32TypeTest, Is) {
 TEST_F(U32TypeTest, TypeName) {
   U32Type u;
   EXPECT_EQ(u.type_name(), "__u32");
+}
+
+TEST_F(U32TypeTest, MinBufferBindingSize) {
+  U32Type u;
+  EXPECT_EQ(4u, u.MinBufferBindingSize(MemoryLayout::kUniformBuffer));
+}
+
+TEST_F(U32TypeTest, BaseAlignment) {
+  U32Type u;
+  EXPECT_EQ(4u, u.BaseAlignment(MemoryLayout::kUniformBuffer));
 }
 
 }  // namespace

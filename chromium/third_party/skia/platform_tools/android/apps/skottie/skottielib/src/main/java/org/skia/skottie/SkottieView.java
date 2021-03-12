@@ -20,6 +20,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
+import org.skia.skottie.SkottieRunner.SkottieAnimation;
 import org.skia.skottielib.R;
 
 public class SkottieView extends FrameLayout {
@@ -27,10 +28,11 @@ public class SkottieView extends FrameLayout {
     private SkottieAnimation mAnimation;
     private View mBackingView;
     private int mBackgroundColor;
+    // Repeat follows Animator API, infinite is represented by -1 (see Animator.DURATION_INFINITE)
+    private int mRepeatCount;
 
     private static final int BACKING_VIEW_TEXTURE = 0;
     private static final int BACKING_VIEW_SURFACE = 1;
-
 
     // SkottieView constructor when initialized in XML layout
     public SkottieView(Context context, AttributeSet attrs) {
@@ -38,10 +40,14 @@ public class SkottieView extends FrameLayout {
         TypedArray a = context.getTheme()
             .obtainStyledAttributes(attrs, R.styleable.SkottieView, 0, 0);
         try {
+            // set mRepeatCount
+            mRepeatCount = a.getInteger(R.styleable.SkottieView_android_repeatCount, 0);
+            // set backing view and background color
             switch (a.getInteger(R.styleable.SkottieView_backing_view, -1)) {
                 case BACKING_VIEW_TEXTURE:
                     mBackingView = new TextureView(context);
                     ((TextureView) mBackingView).setOpaque(false);
+                    mBackgroundColor = a.getColor(R.styleable.SkottieView_background_color, 0);
                     break;
                 case BACKING_VIEW_SURFACE:
                     mBackingView = new SurfaceView(context);
@@ -57,6 +63,11 @@ public class SkottieView extends FrameLayout {
                 default:
                     throw new RuntimeException("backing_view attribute needed to "
                         + "specify between texture_view or surface_view");
+            }
+            // set source
+            int src = a.getResourceId(R.styleable.SkottieView_src, -1);
+            if (src != -1) {
+                setSource(src);
             }
         } finally {
             a.recycle();
@@ -85,7 +96,6 @@ public class SkottieView extends FrameLayout {
         addView(mBackingView);
     }
 
-    //TODO handle SurfaceView
     public void setSource(InputStream inputStream) {
         mAnimation = setSourceHelper(inputStream);
     }
@@ -103,10 +113,10 @@ public class SkottieView extends FrameLayout {
     private SkottieAnimation setSourceHelper(InputStream inputStream) {
         if (mBackingView instanceof TextureView) {
             return SkottieRunner.getInstance()
-                .createAnimation(((TextureView) mBackingView), inputStream);
+                .createAnimation(((TextureView) mBackingView), inputStream, mBackgroundColor, mRepeatCount);
         } else {
             return SkottieRunner.getInstance()
-                .createAnimation(((SurfaceView) mBackingView), inputStream, mBackgroundColor);
+                .createAnimation(((SurfaceView) mBackingView), inputStream, mBackgroundColor, mRepeatCount);
         }
     }
 
@@ -132,7 +142,7 @@ public class SkottieView extends FrameLayout {
     }
 
     public void stop() {
-        mAnimation.stop();
+        mAnimation.end();
     }
 
     public float getProgress() {

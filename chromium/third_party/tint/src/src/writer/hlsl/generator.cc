@@ -21,16 +21,27 @@ namespace writer {
 namespace hlsl {
 
 Generator::Generator(ast::Module module)
-    : Text(std::move(module)), impl_(&module_) {}
+    : Text(std::move(module)),
+      impl_(std::make_unique<GeneratorImpl>(&module_)) {}
 
 Generator::~Generator() = default;
 
+void Generator::Reset() {
+  set_error("");
+  out_ = std::ostringstream();
+  impl_ = std::make_unique<GeneratorImpl>(&module_);
+}
+
 bool Generator::Generate() {
-  auto ret = impl_.Generate(out_);
+  auto ret = impl_->Generate(out_);
   if (!ret) {
-    error_ = impl_.error();
+    error_ = impl_->error();
   }
   return ret;
+}
+
+bool Generator::GenerateEntryPoint(ast::PipelineStage, const std::string&) {
+  return false;
 }
 
 std::string Generator::result() const {
@@ -38,7 +49,7 @@ std::string Generator::result() const {
 }
 
 std::string Generator::error() const {
-  return impl_.error();
+  return impl_->error();
 }
 
 }  // namespace hlsl

@@ -3144,6 +3144,25 @@ static VKAPI_ATTR VkResult VKAPI_CALL SignalSemaphoreKHR(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceFragmentShadingRatesKHR(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t*                                   pFragmentShadingRateCount,
+    VkPhysicalDeviceFragmentShadingRateKHR*     pFragmentShadingRates)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdSetFragmentShadingRateKHR(
+    VkCommandBuffer                             commandBuffer,
+    const VkExtent2D*                           pFragmentSize,
+    const VkFragmentShadingRateCombinerOpKHR    combinerOps[2])
+{
+//Not a CREATE or DESTROY function
+}
+
+
+
 
 
 
@@ -4376,6 +4395,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateMetalSurfaceEXT(
 
 
 
+
 static VKAPI_ATTR VkDeviceAddress VKAPI_CALL GetBufferDeviceAddressEXT(
     VkDevice                                    device,
     const VkBufferDeviceAddressInfo*            pInfo)
@@ -4644,6 +4664,7 @@ static VKAPI_ATTR void VKAPI_CALL DestroyIndirectCommandsLayoutNV(
 
 
 
+
 static VKAPI_ATTR VkResult VKAPI_CALL CreatePrivateDataSlotEXT(
     VkDevice                                    device,
     const VkPrivateDataSlotCreateInfoEXT*       pCreateInfo,
@@ -4683,6 +4704,7 @@ static VKAPI_ATTR void VKAPI_CALL GetPrivateDataEXT(
 {
 //Not a CREATE or DESTROY function
 }
+
 
 
 

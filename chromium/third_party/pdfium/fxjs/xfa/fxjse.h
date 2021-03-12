@@ -14,6 +14,8 @@
 namespace pdfium {
 namespace fxjse {
 
+// These are strings by design. With ASLR, their addresses should be random, so
+// it should be very unlikely for an object to accidentally have the same tag.
 extern const char kFuncTag[];
 extern const char kClassTag[];
 
@@ -35,6 +37,9 @@ class CFXJSE_HostObject {
   virtual CFXJSE_FormCalcContext* AsFormCalcContext();
   virtual CJX_Object* AsCJXObject();
 
+  v8::Local<v8::Object> NewBoundV8Object(v8::Isolate* pIsolate,
+                                         v8::Local<v8::FunctionTemplate> tmpl);
+
  protected:
   CFXJSE_HostObject();
 };
@@ -45,10 +50,12 @@ typedef CJS_Result (*FXJSE_MethodCallback)(
 typedef void (*FXJSE_FuncCallback)(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info);
-typedef void (*FXJSE_PropAccessor)(CFXJSE_Value* pObject,
+typedef void (*FXJSE_PropAccessor)(v8::Isolate* pIsolate,
+                                   v8::Local<v8::Object> pObject,
                                    ByteStringView szPropName,
                                    CFXJSE_Value* pValue);
-typedef int32_t (*FXJSE_PropTypeGetter)(CFXJSE_Value* pObject,
+typedef int32_t (*FXJSE_PropTypeGetter)(v8::Isolate* pIsolate,
+                                        v8::Local<v8::Object> pObject,
                                         ByteStringView szPropName,
                                         bool bQueryIn);
 
@@ -59,13 +66,13 @@ enum FXJSE_ClassPropTypes {
 };
 
 struct FXJSE_FUNCTION_DESCRIPTOR {
-  const char* tag;  // pdfium::kFuncTag always.
+  const char* tag;  // `pdfium::fxjse::kFuncTag` always.
   const char* name;
   FXJSE_FuncCallback callbackProc;
 };
 
 struct FXJSE_CLASS_DESCRIPTOR {
-  const char* tag;  // pdfium::kClassTag always.
+  const char* tag;  // `pdfium::fxjse::kClassTag` always.
   const char* name;
   const FXJSE_FUNCTION_DESCRIPTOR* methods;
   int32_t methNum;

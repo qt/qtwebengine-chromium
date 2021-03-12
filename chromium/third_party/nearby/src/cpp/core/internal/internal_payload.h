@@ -19,9 +19,8 @@
 
 #include "core/payload.h"
 #include "proto/connections/offline_wire_formats.pb.h"
-#include "platform/byte_array.h"
-#include "platform/exception.h"
-#include "platform/ptr.h"
+#include "platform/base/byte_array.h"
+#include "platform/base/exception.h"
 
 namespace location {
 namespace nearby {
@@ -34,12 +33,14 @@ namespace connections {
 // Payload.
 class InternalPayload {
  public:
-  explicit InternalPayload(ConstPtr<Payload> payload);
-  virtual ~InternalPayload();
+  static constexpr int kIndeterminateSize = -1;
 
-  ConstPtr<Payload> releasePayload();
+  explicit InternalPayload(Payload payload);
+  virtual ~InternalPayload() = default;
 
-  std::int64_t getId() const;
+  Payload ReleasePayload();
+
+  Payload::Id GetId() const;
 
   // Returns the PayloadType of the Payload to which this object is bound.
   //
@@ -48,13 +49,13 @@ class InternalPayload {
   // Payload::getType().
   //
   // @return The PayloadType.
-  virtual PayloadTransferFrame::PayloadHeader::PayloadType getType() const = 0;
+  virtual PayloadTransferFrame::PayloadHeader::PayloadType GetType() const = 0;
 
   // Deduces the total size of the Payload to which this object is bound.
   //
   // @return The total size, or -1 if it cannot be deduced (for example, when
   // dealing with streaming data).
-  virtual std::int64_t getTotalSize() const = 0;
+  virtual std::int64_t GetTotalSize() const = 0;
 
   // Breaks off the next chunk from the Payload to which this object is bound.
   //
@@ -62,8 +63,10 @@ class InternalPayload {
   // byte blobs for sending across a hard boundary (like the other side of
   // a Binder, or another device altogether).
   //
+  // @param chunk_size The preferred size of the next chunk. Depending on
+  // payload type, the provided size may be ignored.
   // @return The next chunk from the Payload, or null if we've reached the end.
-  virtual ExceptionOr<ConstPtr<ByteArray> > detachNextChunk() = 0;
+  virtual ByteArray DetachNextChunk(int chunk_size) = 0;
 
   // Adds the next chunk that comprises the Payload to which this object is
   // bound.
@@ -75,18 +78,18 @@ class InternalPayload {
   // @param chunk The next chunk; this being null signals that this is the last
   // chunk, which will typically be used as a trigger to perform whatever state
   // cleanup may be required by the concrete implementation.
-  virtual Exception::Value attachNextChunk(ConstPtr<ByteArray> chunk) = 0;
+  virtual Exception AttachNextChunk(const ByteArray& chunk) = 0;
 
   // Cleans up any resources used by this Payload. Called when we're stopping
   // early, e.g. after being cancelled or having no more recipients left.
-  virtual void close() {}
+  virtual void Close() {}
 
  protected:
-  ScopedPtr<ConstPtr<Payload> > payload_;
+  Payload payload_;
   // We're caching the payload ID here because the backing payload will be
   // released to another owner during the lifetime of an incoming
   // InternalPayload.
-  const std::int64_t payload_id_;
+  Payload::Id payload_id_;
 };
 
 }  // namespace connections

@@ -118,6 +118,7 @@ bool IsNonVolatile(RTPExtensionType type) {
     case kRtpExtensionVideoRotation:
     case kRtpExtensionPlayoutDelay:
     case kRtpExtensionVideoContentType:
+    case kRtpExtensionVideoLayersAllocation:
     case kRtpExtensionVideoTiming:
     case kRtpExtensionRepairedRtpStreamId:
     case kRtpExtensionColorSpace:
@@ -127,6 +128,7 @@ bool IsNonVolatile(RTPExtensionType type) {
       RTC_NOTREACHED();
       return false;
   }
+  RTC_CHECK_NOTREACHED();
 }
 
 bool HasBweExtension(const RtpHeaderExtensionMap& extensions_map) {

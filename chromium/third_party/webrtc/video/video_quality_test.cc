@@ -862,6 +862,10 @@ void VideoQualityTest::SetupVideo(Transport* send_transport,
       video_encoder_configs_[video_idx].encoder_specific_settings =
           new rtc::RefCountedObject<
               VideoEncoderConfig::Vp9EncoderSpecificSettings>(vp9_settings);
+      RTC_DCHECK_EQ(video_encoder_configs_[video_idx].simulcast_layers.size(),
+                    1);
+      // Min bitrate will be enforced by spatial layer config instead.
+      video_encoder_configs_[video_idx].simulcast_layers[0].min_bitrate_bps = 0;
     } else if (params_.video[video_idx].automatic_scaling) {
       if (params_.video[video_idx].codec == "VP8") {
         VideoCodecVP8 vp8_settings = VideoEncoder::GetDefaultVp8Settings();
@@ -1344,8 +1348,8 @@ rtc::scoped_refptr<AudioDeviceModule> VideoQualityTest::CreateAudioDevice() {
   // CO_E_NOTINITIALIZED otherwise. The legacy ADM for Windows used internal
   // COM initialization but the new ADM requires COM to be initialized
   // externally.
-  com_initializer_ = std::make_unique<webrtc_win::ScopedCOMInitializer>(
-      webrtc_win::ScopedCOMInitializer::kMTA);
+  com_initializer_ =
+      std::make_unique<ScopedCOMInitializer>(ScopedCOMInitializer::kMTA);
   RTC_CHECK(com_initializer_->Succeeded());
   RTC_CHECK(webrtc_win::core_audio_utility::IsSupported());
   RTC_CHECK(webrtc_win::core_audio_utility::IsMMCSSSupported());

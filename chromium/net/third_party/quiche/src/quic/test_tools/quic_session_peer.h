@@ -71,10 +71,10 @@ class QuicSessionPeer {
   static bool IsStreamWriteBlocked(QuicSession* session, QuicStreamId id);
   static QuicAlarm* GetCleanUpClosedStreamsAlarm(QuicSession* session);
   static LegacyQuicStreamIdManager* GetStreamIdManager(QuicSession* session);
-  static UberQuicStreamIdManager* v99_streamid_manager(QuicSession* session);
-  static QuicStreamIdManager* v99_bidirectional_stream_id_manager(
+  static UberQuicStreamIdManager* ietf_streamid_manager(QuicSession* session);
+  static QuicStreamIdManager* ietf_bidirectional_stream_id_manager(
       QuicSession* session);
-  static QuicStreamIdManager* v99_unidirectional_stream_id_manager(
+  static QuicStreamIdManager* ietf_unidirectional_stream_id_manager(
       QuicSession* session);
   static PendingStream* GetPendingStream(QuicSession* session,
                                          QuicStreamId stream_id);
@@ -82,6 +82,10 @@ class QuicSessionPeer {
   static void SetPerspective(QuicSession* session, Perspective perspective);
   static size_t GetNumOpenDynamicStreams(QuicSession* session);
   static size_t GetNumDrainingStreams(QuicSession* session);
+  static QuicStreamId GetLargestPeerCreatedStreamId(QuicSession* session,
+                                                    bool unidirectional) {
+    return session->GetLargestPeerCreatedStreamId(unidirectional);
+  }
 };
 
 }  // namespace test

@@ -15,14 +15,20 @@
 #ifndef DAWNWIRE_CLIENT_APIOBJECTS_AUTOGEN_H_
 #define DAWNWIRE_CLIENT_APIOBJECTS_AUTOGEN_H_
 
+#include "dawn_wire/ObjectType_autogen.h"
+#include "dawn_wire/client/ObjectBase.h"
+
 namespace dawn_wire { namespace client {
+
+    template <typename T>
+    static constexpr ObjectType ObjectTypeToTypeEnum = static_cast<ObjectType>(-1);
 
     {% for type in by_category["object"] %}
         {% set Type = type.name.CamelCase() %}
         {% if type.name.CamelCase() in client_special_objects %}
             class {{Type}};
         {% else %}
-            struct {{type.name.CamelCase()}} : ObjectBase {
+            struct {{type.name.CamelCase()}} final : ObjectBase {
                 using ObjectBase::ObjectBase;
             };
         {% endif %}
@@ -33,6 +39,9 @@ namespace dawn_wire { namespace client {
         inline WGPU{{Type}} ToAPI({{Type}}* obj) {
             return reinterpret_cast<WGPU{{Type}}>(obj);
         }
+
+        template <>
+        static constexpr ObjectType ObjectTypeToTypeEnum<{{type.name.CamelCase()}}> = ObjectType::{{type.name.CamelCase()}};
 
     {% endfor %}
 }}  // namespace dawn_wire::client
