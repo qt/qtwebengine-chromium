@@ -305,7 +305,7 @@ void LocaleWin::EnsureWeekDayShortLabels() {
       LOCALE_SSHORTESTDAYNAME6};
   week_day_short_labels_.ReserveCapacity(base::size(kTypes));
   for (unsigned i = 0; i < base::size(kTypes); ++i) {
-    if (features::IsFormControlsRefreshEnabled()) {
+    if (::features::IsFormControlsRefreshEnabled()) {
       week_day_short_labels_.push_back(GetLocaleInfoString(kTypesRefresh[i]));
     } else {
       week_day_short_labels_.push_back(GetLocaleInfoString(kTypes[i]));

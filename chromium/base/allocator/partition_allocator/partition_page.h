@@ -58,6 +58,13 @@ struct DeferredUnmap {
 using QuarantineBitmap =
     ObjectBitmap<kSuperPageSize, kSuperPageAlignment, kAlignment>;
 
+#ifdef _MSC_VER
+#pragma pack(push, 1)
+#define ATTR_PACK
+#else
+#define ATTR_PACK __attribute__((packed))
+#endif
+
 // Metadata of the slot span.
 //
 // Some notes on slot span states. It can be in one of four major states:
@@ -87,7 +94,7 @@ using QuarantineBitmap =
 //   found, an empty or decommitted slot spans (if one exists) will be pulled
 //   from the empty list on to the active list.
 template <bool thread_safe>
-struct __attribute__((packed)) SlotSpanMetadata {
+struct ATTR_PACK SlotSpanMetadata {
   PartitionFreelistEntry* freelist_head = nullptr;
   SlotSpanMetadata<thread_safe>* next_slot_span = nullptr;
   PartitionBucket<thread_safe>* const bucket;
@@ -238,7 +245,7 @@ template <bool thread_safe>
 struct PartitionPage {
   // "Pack" the union so that slot_span_metadata_offset still fits within
   // kPageMetadataSize. (SlotSpanMetadata is also "packed".)
-  union __attribute__((packed)) {
+  union ATTR_PACK {
     SlotSpanMetadata<thread_safe> slot_span_metadata;
 
     SubsequentPageMetadata subsequent_page_metadata;
@@ -261,6 +268,11 @@ struct PartitionPage {
  private:
   ALWAYS_INLINE static void* ToSlotSpanStartPtr(const PartitionPage* page);
 };
+
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
+#undef ATTR_PACK
 
 static_assert(sizeof(PartitionPage<ThreadSafe>) == kPageMetadataSize,
               "PartitionPage must be able to fit in a metadata slot");

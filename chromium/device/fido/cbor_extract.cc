@@ -25,9 +25,11 @@ const bool kFalse = false;
 
 constexpr uint8_t CBORTypeToBitfield(const cbor::Value::Type type) {
   const unsigned type_u = static_cast<unsigned>(type);
+#ifdef __GNUC__
   if (type_u >= 8) {
     __builtin_unreachable();
   }
+#endif
   return 1u << type_u;
 }
 

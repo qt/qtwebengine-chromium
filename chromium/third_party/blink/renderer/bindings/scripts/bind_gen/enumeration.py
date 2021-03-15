@@ -231,7 +231,7 @@ def make_enum_string_table(cg_context):
         TextNode("};"),
     ])
 
-    defs = TextNode("const char* const ${class_name}::string_table_[];")
+    defs = TextNode("constexpr const char* const ${class_name}::string_table_[];")
     defs.set_base_template_vars(cg_context.template_bindings())
 
     return decls, defs

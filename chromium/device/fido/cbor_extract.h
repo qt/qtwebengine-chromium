@@ -183,20 +183,26 @@ constexpr StepOrByte<S> Element(const Is required,
                                 uintptr_t offset) {
   // This generic version of |Element| causes a compile-time error if ELEMENT
   // is used to reference a member with an invalid type.
+#ifdef __GNUC__
   __builtin_unreachable();
+#endif
   return StepOrByte<S>('\0');
 }
 
 // MemberNum translates an offset into a structure into an index if the
 // structure is considered as an array of pointers.
 constexpr uint8_t MemberNum(uintptr_t offset) {
+#ifdef __GNUC__
   if (offset % sizeof(void*)) {
     __builtin_unreachable();
   }
+#endif
   const uintptr_t index = offset / sizeof(void*);
+#ifdef __GNUC__
   if (index >= 16) {
     __builtin_unreachable();
   }
+#endif
   return static_cast<uint8_t>(index);
 }
 
