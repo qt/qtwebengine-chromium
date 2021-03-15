@@ -2600,6 +2600,9 @@ T ForwardingAddress(T heap_obj) {
 
 // Address block allocator compatible with standard containers which registers
 // its allocated range as strong roots.
+template<typename T>
+class StrongRootBlockAllocatorAux;
+
 class StrongRootBlockAllocator {
  public:
   using pointer = Address*;
@@ -2611,8 +2614,8 @@ class StrongRootBlockAllocator {
   using difference_type = ptrdiff_t;
   template <class U>
   struct rebind {
-    STATIC_ASSERT((std::is_same<Address, U>::value));
-    using other = StrongRootBlockAllocator;
+    STATIC_ASSERT(sizeof(U) == sizeof(Address));
+    using other = StrongRootBlockAllocatorAux<U>;
   };
 
   explicit StrongRootBlockAllocator(Heap* heap) : heap_(heap) {}
@@ -2623,6 +2626,41 @@ class StrongRootBlockAllocator {
  private:
   Heap* heap_;
 };
+
+template<typename T>
+class StrongRootBlockAllocatorAux {
+ public:
+  using pointer = T*;
+  using const_pointer = const T*;
+  using reference = T&;
+  using const_reference = const T&;
+  using value_type = T;
+  using size_type = size_t;
+  using difference_type = ptrdiff_t;
+  template <class U>
+  struct rebind {
+    using other = StrongRootBlockAllocatorAux<U>;
+  };
+
+  explicit StrongRootBlockAllocatorAux(Heap* heap) : real_(heap) {}
+  StrongRootBlockAllocatorAux(StrongRootBlockAllocator&& other) : real_(std::move(other)) {}
+  StrongRootBlockAllocatorAux(const StrongRootBlockAllocator& other) : real_(other) {}
+  template<typename U>
+  StrongRootBlockAllocatorAux(StrongRootBlockAllocatorAux<U>&& other) : real_(std::move(other.real_)) {}
+  template<typename U>
+  StrongRootBlockAllocatorAux(const StrongRootBlockAllocatorAux<U>& other) : real_(other.real_) {}
+
+  T* allocate(size_t n) {
+    return (T*)real_.allocate(n);
+  }
+  void deallocate(T* p, size_t n) noexcept {
+    real_.deallocate((Address*)p, n);
+  }
+
+// private:
+  StrongRootBlockAllocator real_;
+};
+
 
 }  // namespace internal
 }  // namespace v8
