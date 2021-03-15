@@ -29,7 +29,7 @@ if (use_system_libjpeg) {
 } else if (use_qt_libjpeg) {
   # we do need shim since pdfium just includes 'system' headers
   config ("qt_libjpeg_config") {
-    include_dirs  = [ qt_libjpeg_includes ]
+    include_dirs  = string_split(qt_libjpeg_includes)
   }
   source_set("qt_libjpeg") {
     public_configs = [ ":qt_libjpeg_config",
