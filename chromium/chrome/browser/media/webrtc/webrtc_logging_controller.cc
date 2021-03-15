@@ -276,9 +276,10 @@ void WebRtcLoggingController::StartEventLogging(
     size_t web_app_id,
     const StartEventLoggingCallback& callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  WebRtcEventLogManager::GetInstance()->StartRemoteLogging(
-      render_process_id_, session_id, max_log_size_bytes, output_period_ms,
-      web_app_id, callback);
+  if (auto manager = WebRtcEventLogManager::GetInstance())
+    manager->StartRemoteLogging(
+        render_process_id_, session_id, max_log_size_bytes, output_period_ms,
+        web_app_id, callback);
 }
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
