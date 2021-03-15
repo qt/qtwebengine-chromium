@@ -38,7 +38,7 @@ Status SetUpOpenH264Params(const VideoEncoder::Options& options,
   if (options.bitrate.has_value()) {
     params->iRCMode = RC_BITRATE_MODE;
     params->iTargetBitrate = (int)std::min(
-        options.bitrate.value(), uint64_t{std::numeric_limits<int>::max()});
+        options.bitrate.value(), (uint64_t)std::numeric_limits<int>::max());
   } else {
     params->iRCMode = RC_OFF_MODE;
   }

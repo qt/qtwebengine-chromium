@@ -375,7 +375,7 @@ constexpr base::FeatureParam<kCrosGlobalMediaControlsPinOptions>::Option
         {kCrosGlobalMediaControlsPinOptions::kNotPin, "default-unpinned"},
         {kCrosGlobalMediaControlsPinOptions::kHeuristic, "heuristic"}};
 
-constexpr base::FeatureParam<kCrosGlobalMediaControlsPinOptions>
+const base::FeatureParam<kCrosGlobalMediaControlsPinOptions>
     kCrosGlobalMediaControlsPinParam(
         &kGlobalMediaControlsForChromeOS,
         "CrosGlobalMediaControlsPinParam",
