@@ -257,7 +257,7 @@ static void HandleNaNValues(float* values,
   }
 #elif defined(CPU_ARM_NEON)
   if (number_of_values >= 4) {
-    uint32x4_t defaults = static_cast<uint32x4_t>(vdupq_n_f32(default_value));
+    uint32x4_t defaults = vreinterpretq_u32_f32(vdupq_n_f32(default_value));
     for (k = 0; k < number_of_values; k += 4) {
       float32x4_t v = vld1q_f32(values + k);
       // Returns true (all ones) if v is not NaN
