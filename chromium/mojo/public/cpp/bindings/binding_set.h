@@ -35,7 +35,7 @@ struct BindingSetTraits<Binding<Interface, ImplRefTraits>> {
   }
 };
 
-using BindingId = size_t;
+using BindingId = uint64_t;
 
 template <typename ContextType>
 struct BindingSetContextTraits {
@@ -279,10 +279,10 @@ class BindingSetBase {
                            RequestType request,
                            Context context) {
     BindingId id = next_binding_id_++;
-    DCHECK_GE(next_binding_id_, 0u);
     auto entry = std::make_unique<Entry>(std::move(impl), std::move(request),
                                          this, id, std::move(context));
-    bindings_.insert(std::make_pair(id, std::move(entry)));
+    auto result = bindings_.insert(std::make_pair(id, std::move(entry)));
+    CHECK(result.second) << "BindingId overflow with collision";
     return id;
   }
 
