@@ -124,6 +124,10 @@ ui::EventSink* WindowTreeHost::event_sink() {
   return dispatcher_.get();
 }
 
+base::WeakPtr<WindowTreeHost> WindowTreeHost::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
+}
+
 gfx::Transform WindowTreeHost::GetRootTransform() const {
   gfx::Transform transform;
   transform.Scale(device_scale_factor_, device_scale_factor_);

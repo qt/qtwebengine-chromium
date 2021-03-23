@@ -90,6 +90,8 @@ class AURA_EXPORT WindowTreeHost : public ui::internal::InputMethodDelegate,
 
   ui::Compositor* compositor() { return compositor_.get(); }
 
+  base::WeakPtr<WindowTreeHost> GetWeakPtr();
+
   // Gets/Sets the root window's transform.
   virtual gfx::Transform GetRootTransform() const;
   virtual void SetRootTransform(const gfx::Transform& transform);

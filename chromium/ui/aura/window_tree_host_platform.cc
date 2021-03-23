@@ -192,9 +192,14 @@ void WindowTreeHostPlatform::OnBoundsChanged(const gfx::Rect& new_bounds) {
   float current_scale = compositor()->device_scale_factor();
   float new_scale = ui::GetScaleFactorForNativeView(window());
   gfx::Rect old_bounds = bounds_;
+  auto weak_ref = GetWeakPtr();
   bounds_ = new_bounds;
-  if (bounds_.origin() != old_bounds.origin())
+  if (bounds_.origin() != old_bounds.origin()) {
     OnHostMovedInPixels(bounds_.origin());
+    // Changing the bounds may destroy this.
+    if (!weak_ref)
+      return;
+  }
   if (pending_local_surface_id_.is_valid() ||
       bounds_.size() != old_bounds.size() || current_scale != new_scale) {
     auto local_surface_id = bounds_.size() == pending_size_
