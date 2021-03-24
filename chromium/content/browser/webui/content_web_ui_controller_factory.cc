@@ -35,7 +35,10 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
   if (!url.SchemeIs(kChromeUIScheme))
     return WebUI::kNoWebUI;
 
-  if (url.host_piece() == kChromeUIWebRTCInternalsHost ||
+  if (false ||
+#if BUILDFLAG(ENABLE_WEBRTC)
+      url.host_piece() == kChromeUIWebRTCInternalsHost ||
+#endif
 #if !defined(OS_ANDROID)
       url.host_piece() == kChromeUITracingHost ||
 #endif
