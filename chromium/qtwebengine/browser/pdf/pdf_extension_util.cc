@@ -89,6 +89,7 @@ static void AddPdfViewerStrings(base::Value* dict) {
     {"bookmarkExpandIconAriaLabel", IDS_PDF_BOOKMARK_EXPAND_ICON_ARIA_LABEL},
     {"downloadEdited", IDS_PDF_DOWNLOAD_EDITED},
     {"downloadOriginal", IDS_PDF_DOWNLOAD_ORIGINAL},
+    {"fullscreen", IDS_PDF_FULLSCREEN},
     {"labelPageNumber", IDS_PDF_LABEL_PAGE_NUMBER},
     {"menu", IDS_MENU},
     {"moreActions", IDS_DOWNLOAD_MORE_ACTIONS},
@@ -129,6 +130,9 @@ void AddStrings(PdfViewerContext context, base::Value* dict) {
 }
 
 void AddAdditionalData(base::Value* dict) {
+  dict->SetKey("presentationModeEnabled",
+               base::Value(base::FeatureList::IsEnabled(
+                   chrome_pdf::features::kPdfViewerPresentationMode)));
   dict->SetKey("pdfFormSaveEnabled",
                base::Value(base::FeatureList::IsEnabled(
                    chrome_pdf::features::kSaveEditedPDFForm)));
