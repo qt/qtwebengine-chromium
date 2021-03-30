@@ -612,8 +612,11 @@ void RenderFrameDevToolsAgentHost::UpdateFrameHost(
       restricted_sessions.push_back(session);
   }
 
-  if (!restricted_sessions.empty())
+  scoped_refptr<RenderFrameDevToolsAgentHost> protect;
+  if (!restricted_sessions.empty()) {
+    protect = this;
     ForceDetachRestrictedSessions(restricted_sessions);
+  }
 
   if (!render_frame_alive_) {
     render_frame_alive_ = true;
