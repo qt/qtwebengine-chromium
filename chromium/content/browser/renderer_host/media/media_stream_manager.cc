@@ -675,9 +675,9 @@ class MediaStreamManager::DeviceRequest {
 
   std::string tab_capture_device_id;
 
-  int audio_subscription_id = PermissionControllerImpl::kNoPendingOperation;
+  PermissionController::SubscriptionId audio_subscription_id;
 
-  int video_subscription_id = PermissionControllerImpl::kNoPendingOperation;
+  PermissionController::SubscriptionId video_subscription_id;
 
  private:
   std::vector<MediaRequestState> state_;
@@ -2740,8 +2740,8 @@ void MediaStreamManager::SubscribeToPermissionControllerOnUIThread(
   if (!controller)
     return;
 
-  int audio_subscription_id = PermissionControllerImpl::kNoPendingOperation;
-  int video_subscription_id = PermissionControllerImpl::kNoPendingOperation;
+  PermissionController::SubscriptionId audio_subscription_id;
+  PermissionController::SubscriptionId video_subscription_id;
 
   if (is_audio_request) {
     // It is safe to bind base::Unretained(this) because MediaStreamManager is
@@ -2783,8 +2783,8 @@ void MediaStreamManager::SetPermissionSubscriptionIDs(
     const std::string& label,
     int requesting_process_id,
     int requesting_frame_id,
-    int audio_subscription_id,
-    int video_subscription_id) {
+    PermissionController::SubscriptionId audio_subscription_id,
+    PermissionController::SubscriptionId video_subscription_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   DeviceRequest* const request = FindRequest(label);
@@ -2811,8 +2811,8 @@ void MediaStreamManager::SetPermissionSubscriptionIDs(
 void MediaStreamManager::UnsubscribeFromPermissionControllerOnUIThread(
     int requesting_process_id,
     int requesting_frame_id,
-    int audio_subscription_id,
-    int video_subscription_id) {
+    PermissionController::SubscriptionId audio_subscription_id,
+    PermissionController::SubscriptionId video_subscription_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   PermissionControllerImpl* controller =
