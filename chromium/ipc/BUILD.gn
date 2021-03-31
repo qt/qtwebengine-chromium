@@ -181,10 +181,7 @@ mojom_component("mojom") {
   sources = [
     "ipc.mojom",
   ]
-  public_deps = [
-    "//mojo/public/interfaces/bindings",
-    "//mojo/public/mojom/base",
-  ]
+  public_deps = [ "//mojo/public/interfaces/bindings" ]
 
   # Don't generate a variant sources since we depend on generated internal
   # bindings types and we don't generate or build variants of those.

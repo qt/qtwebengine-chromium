@@ -9,17 +9,9 @@ namespace IPC {
 MessageView::MessageView() = default;
 
 MessageView::MessageView(
-    const Message& message,
+    base::span<const uint8_t> bytes,
     base::Optional<std::vector<mojo::native::SerializedHandlePtr>> handles)
-    : buffer_view_(base::make_span<const uint8_t>(
-          static_cast<const uint8_t*>(message.data()),
-          message.size())),
-      handles_(std::move(handles)) {}
-
-MessageView::MessageView(
-    mojo_base::BigBufferView buffer_view,
-    base::Optional<std::vector<mojo::native::SerializedHandlePtr>> handles)
-    : buffer_view_(std::move(buffer_view)), handles_(std::move(handles)) {}
+    : bytes_(bytes), handles_(std::move(handles)) {}
 
 MessageView::MessageView(MessageView&&) = default;
 
