@@ -252,6 +252,14 @@
     FT_FREE( exec->stack );
     exec->stackSize = 0;
 
+    /* free glyf cvt working area */
+    FT_FREE( exec->glyfCvt );
+    exec->glyfCvtSize = 0;
+
+    /* free glyf storage working area */
+    FT_FREE( exec->glyfStorage );
+    exec->glyfStoreSize = 0;
+
     /* free call stack */
     FT_FREE( exec->callStack );
     exec->callSize = 0;
@@ -465,13 +473,13 @@
     if ( error )
       return error;
 
-    tmp = exec->glyphSize;
+    tmp = (FT_ULong)exec->glyphSize;
     error = Update_Max( exec->memory,
                         &tmp,
                         sizeof ( FT_Byte ),
                         (void*)&exec->glyphIns,
                         maxp->maxSizeOfInstructions );
-    exec->glyphSize = (FT_UShort)tmp;
+    exec->glyphSize = (FT_UInt)tmp;
     if ( error )
       return error;
 
@@ -1548,12 +1556,31 @@
     return FT_MulFix( exc->cvt[idx], Current_Ratio( exc ) );
   }
 
+  static void Modify_CVT_Check( TT_ExecContext exc ) {
+    /* TT_RunIns sets origCvt and restores cvt to origCvt when done. */
+    if ( exc->initialRange == tt_coderange_glyph && exc->cvt == exc->origCvt ) {
+      exc->error = Update_Max( exc->memory,
+                               &exc->glyfCvtSize,
+                               sizeof ( FT_Long ),
+                               (void*)&exc->glyfCvt,
+                               exc->cvtSize );
+      if ( exc->error )
+        return;
+
+      FT_ARRAY_COPY( exc->glyfCvt, exc->cvt, exc->glyfCvtSize );
+      exc->cvt = exc->glyfCvt;
+    }
+  }
 
   FT_CALLBACK_DEF( void )
   Write_CVT( TT_ExecContext  exc,
              FT_ULong        idx,
              FT_F26Dot6      value )
   {
+    Modify_CVT_Check( exc );
+    if ( exc->error )
+      return;
+
     exc->cvt[idx] = value;
   }
 
@@ -1563,6 +1590,10 @@
                        FT_ULong        idx,
                        FT_F26Dot6      value )
   {
+    Modify_CVT_Check( exc );
+    if ( exc->error )
+      return;
+
     exc->cvt[idx] = FT_DivFix( value, Current_Ratio( exc ) );
   }
 
@@ -1572,6 +1603,10 @@
             FT_ULong        idx,
             FT_F26Dot6      value )
   {
+    Modify_CVT_Check( exc );
+    if ( exc->error )
+      return;
+
     exc->cvt[idx] += value;
   }
 
@@ -1581,6 +1616,10 @@
                       FT_ULong        idx,
                       FT_F26Dot6      value )
   {
+    Modify_CVT_Check( exc );
+    if ( exc->error )
+      return;
+
     exc->cvt[idx] += FT_DivFix( value, Current_Ratio( exc ) );
   }
 
@@ -3086,7 +3125,25 @@
         ARRAY_BOUND_ERROR;
     }
     else
+    {
+      /* TT_RunIns sets origStorage and restores storage to origStorage when done. */
+      if ( exc->initialRange == tt_coderange_glyph && exc->storage == exc->origStorage ) {
+        FT_ULong tmp = (FT_ULong)exc->glyfStoreSize;
+        exc->error = Update_Max( exc->memory,
+                                 &tmp,
+                                 sizeof ( FT_Long ),
+                                 (void*)&exc->glyfStorage,
+                                 exc->storeSize );
+        exc->glyfStoreSize = (FT_UShort)tmp;
+        if ( exc->error )
+          return;
+
+        FT_ARRAY_COPY( exc->glyfStorage, exc->storage, exc->glyfStoreSize );
+        exc->storage = exc->glyfStorage;
+      }
+
       exc->storage[I] = args[1];
+    }
   }
 
 
@@ -3664,7 +3721,7 @@
 
 
     /* FDEF is only allowed in `prep' or `fpgm' */
-    if ( exc->curRange == tt_coderange_glyph )
+    if ( exc->initialRange == tt_coderange_glyph )
     {
       exc->error = FT_THROW( DEF_In_Glyf_Bytecode );
       return;
@@ -4097,7 +4154,7 @@
 
 
     /* we enable IDEF only in `prep' or `fpgm' */
-    if ( exc->curRange == tt_coderange_glyph )
+    if ( exc->initialRange == tt_coderange_glyph )
     {
       exc->error = FT_THROW( DEF_In_Glyf_Bytecode );
       return;
@@ -7856,6 +7913,9 @@
       exc->func_write_cvt = Write_CVT;
       exc->func_move_cvt  = Move_CVT;
     }
+    exc->origCvt = exc->cvt;
+    exc->origStorage = exc->storage;
+    exc->initialRange = exc->curRange;
 
     Compute_Funcs( exc );
     Compute_Round( exc, (FT_Byte)exc->GS.round_state );
@@ -8581,8 +8641,10 @@
 
       /* increment instruction counter and check if we didn't */
       /* run this program for too long (e.g. infinite loops). */
-      if ( ++ins_counter > TT_CONFIG_OPTION_MAX_RUNNABLE_OPCODES )
-        return FT_THROW( Execution_Too_Long );
+      if ( ++ins_counter > TT_CONFIG_OPTION_MAX_RUNNABLE_OPCODES ) {
+        exc->error = FT_THROW( Execution_Too_Long );
+        goto LErrorLabel_;
+      }
 
     LSuiteLabel_:
       if ( exc->IP >= exc->codeSize )
@@ -8601,6 +8663,9 @@
     FT_TRACE4(( "  %d instruction%s executed\n",
                 ins_counter,
                 ins_counter == 1 ? "" : "s" ));
+
+    exc->cvt = exc->origCvt;
+    exc->storage = exc->origStorage;
     return FT_Err_Ok;
 
   LErrorCodeOverflow_:
@@ -8610,6 +8675,8 @@
     if ( exc->error && !exc->instruction_trap )
       FT_TRACE1(( "  The interpreter returned error 0x%x\n", exc->error ));
 
+    exc->cvt = exc->origCvt;
+    exc->storage = exc->origStorage;
     return exc->error;
   }
 
