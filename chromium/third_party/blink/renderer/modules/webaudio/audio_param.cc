@@ -35,6 +35,10 @@
 #include "third_party/blink/renderer/platform/histogram.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 
+#if defined(ARCH_CPU_X86_FAMILY)
+#include <emmintrin.h>
+#endif
+
 namespace blink {
 
 const double AudioParamHandler::kDefaultSmoothingConstant = 0.05;
