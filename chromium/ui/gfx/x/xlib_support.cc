@@ -50,16 +50,14 @@ void InitXlib() {
 
 DISABLE_CFI_ICALL
 void SetXlibErrorHandler() {
-#ifndef TOOLKIT_QT
   GetXlibLoader()->XSetErrorHandler(XlibErrorHandler);
-#endif
 }
 
 DISABLE_CFI_ICALL
 XlibDisplay::XlibDisplay(const std::string& address) {
-#ifndef TOOLKIT_QT
   InitXlib();
 
+#ifndef TOOLKIT_QT
   display_ = GetXlibLoader()->XOpenDisplay(address.empty() ? nullptr
                                                            : address.c_str());
 #else
@@ -81,22 +79,18 @@ XlibDisplayWrapper::XlibDisplayWrapper(struct _XDisplay* display,
     : display_(display), type_(type) {
   if (!display_)
     return;
-#ifndef TOOLKIT_QT
   if (type == XlibDisplayType::kSyncing)
     GetXlibLoader()->XSynchronize(display_, true);
-#endif
 }
 
 DISABLE_CFI_ICALL
 XlibDisplayWrapper::~XlibDisplayWrapper() {
   if (!display_)
     return;
-#ifndef TOOLKIT_QT
   if (type_ == XlibDisplayType::kFlushing)
     GetXlibLoader()->XFlush(display_);
   else if (type_ == XlibDisplayType::kSyncing)
     GetXlibLoader()->XSynchronize(display_, false);
-#endif
 }
 
 XlibDisplayWrapper::XlibDisplayWrapper(XlibDisplayWrapper&& other) {
