@@ -1137,7 +1137,7 @@ void SkiaRenderer::PrepareCanvasForRPDQ(const DrawRPDQParams& rpdq_params,
       // convenient way to embed the crop rect into the filter DAG.
       // TODO(michaelludwig) - Remove this once Skia doesn't always auto-expand
       sk_sp<SkImageFilter> crop =
-          SkImageFilters::Offset(0.0f, 0.0f, nullptr, &sk_crop_rect);
+          SkImageFilters::Offset(0.0f, 0.0f, nullptr, sk_crop_rect);
       backdrop_filter = SkImageFilters::Compose(
           crop, SkImageFilters::Compose(std::move(backdrop_filter), crop));
       // Update whether or not a post-filter clear is needed (crop didn't
