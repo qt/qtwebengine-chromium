@@ -151,10 +151,14 @@ bool IsSiteInstanceCompatibleWithCoopCoepCrossOriginIsolation(
     const GURL& url,
     const CoopCoepCrossOriginIsolatedInfo& cross_origin_isolated_info,
     bool is_speculative) {
+  SiteInstanceImpl* site_instance_impl =
+      static_cast<SiteInstanceImpl*>(site_instance);
   // We do not want cross-origin-isolated have any impact on SiteInstances until
   // we get an actual COOP value in a redirect or a final response.
   if (is_speculative)
-    return true;
+    return !site_instance_impl->IsCoopCoepCrossOriginIsolated() ||
+           site_instance_impl->GetCoopCoepCrossOriginIsolatedInfo() ==
+                    cross_origin_isolated_info;
 
   // Note: The about blank case is to accommodate web tests that use COOP. They
   // expect an about:blank page to stay in process, and hang otherwise. In
@@ -163,9 +167,6 @@ bool IsSiteInstanceCompatibleWithCoopCoepCrossOriginIsolation(
   // cross-origin isolated BrowsingInstance are trusted.
   if (url.IsAboutBlank())
     return true;
-
-  SiteInstanceImpl* site_instance_impl =
-      static_cast<SiteInstanceImpl*>(site_instance);
 
   if (is_main_frame) {
     return site_instance_impl->GetCoopCoepCrossOriginIsolatedInfo() ==
