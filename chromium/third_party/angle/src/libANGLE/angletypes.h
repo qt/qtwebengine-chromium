@@ -74,7 +74,7 @@ struct Rectangle
 bool operator==(const Rectangle &a, const Rectangle &b);
 bool operator!=(const Rectangle &a, const Rectangle &b);
 
-bool ClipRectangle(const Rectangle &source, const Rectangle &clip, Rectangle *intersection);
+ANGLE_NO_DISCARD bool ClipRectangle(const Rectangle &source, const Rectangle &clip, Rectangle *intersection);
 
 struct Offset
 {

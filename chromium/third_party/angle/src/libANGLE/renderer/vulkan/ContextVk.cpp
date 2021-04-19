@@ -2824,8 +2824,11 @@ angle::Result ContextVk::updateScissorImpl(const gl::State &glState, bool should
 
     // Clip the render area to the viewport.
     gl::Rectangle viewportClippedRenderArea;
-    gl::ClipRectangle(renderArea, getCorrectedViewport(glState.getViewport()),
-                      &viewportClippedRenderArea);
+    if (!gl::ClipRectangle(renderArea, getCorrectedViewport(glState.getViewport()),
+                           &viewportClippedRenderArea))
+    {
+        viewportClippedRenderArea = gl::Rectangle();
+    }
 
     gl::Rectangle scissoredArea = ClipRectToScissor(getState(), viewportClippedRenderArea, false);
     gl::Rectangle rotatedScissoredArea;
