@@ -87,7 +87,9 @@ class NodeChannel : public base::RefCountedThreadSafe<NodeChannel>,
                                                 void** payload,
                                                 size_t num_handles);
 
-  static void GetEventMessageData(Channel::Message* message,
+  // Retrieves address and size of an Event message's underlying message data.
+  // Returns `false` if the message is not a valid Event message.
+  static bool GetEventMessageData(Channel::Message& message,
                                   void** data,
                                   size_t* num_data_bytes);
 
