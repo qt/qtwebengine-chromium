@@ -2353,6 +2353,7 @@ blink::mojom::CommitResult WebLocalFrameImpl::CommitSameDocumentNavigation(
     const WebHistoryItem& item,
     bool is_client_redirect,
     bool has_transient_user_activation,
+    const WebSecurityOrigin& initiator_origin,
     std::unique_ptr<WebDocumentLoader::ExtraData> extra_data) {
   DCHECK(GetFrame());
   DCHECK(!url.ProtocolIs("javascript"));
@@ -2362,7 +2363,8 @@ blink::mojom::CommitResult WebLocalFrameImpl::CommitSameDocumentNavigation(
       url, web_frame_load_type, history_item,
       is_client_redirect ? ClientRedirectPolicy::kClientRedirect
                          : ClientRedirectPolicy::kNotClientRedirect,
-      has_transient_user_activation, nullptr, /* origin_document */
+      has_transient_user_activation, initiator_origin.Get(),
+      /*is_content_initiated=*/false,
       false,                                  /* has_event */
       std::move(extra_data));
 }
