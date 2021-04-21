@@ -3755,6 +3755,9 @@ void RenderFrameImpl::CommitSameDocumentNavigation(
     }
     bool is_client_redirect =
         !!(common_params->transition & ui::PAGE_TRANSITION_CLIENT_REDIRECT);
+    WebSecurityOrigin initiator_origin;
+    if (common_params->initiator_origin)
+      initiator_origin = common_params->initiator_origin.value();
     DocumentState* original_document_state =
         DocumentState::FromDocumentLoader(frame_->GetDocumentLoader());
     std::unique_ptr<DocumentState> document_state =
@@ -3763,8 +3766,10 @@ void RenderFrameImpl::CommitSameDocumentNavigation(
         InternalDocumentStateData::FromDocumentState(document_state.get());
     internal_data->CopyFrom(
         InternalDocumentStateData::FromDocumentState(original_document_state));
-    // This is a browser-initiated same-document navigation (as opposed to a
-    // fragment link click), therefore |was_initiated_in_this_frame| is false.
+    // This is a same-document navigation coming from the browser process (as
+    // opposed to a fragment link click, which would have been handled
+    // synchronously in the renderer process), therefore
+    // |was_initiated_in_this_frame| must be false.
     internal_data->set_navigation_state(NavigationState::CreateBrowserInitiated(
         std::move(common_params), std::move(commit_params),
         mojom::NavigationClient::CommitNavigationCallback(), nullptr,
@@ -3773,7 +3778,7 @@ void RenderFrameImpl::CommitSameDocumentNavigation(
     // Load the request.
     commit_status = frame_->CommitSameDocumentNavigation(
         url, load_type, item_for_history_navigation, is_client_redirect,
-        std::move(document_state));
+        initiator_origin, std::move(document_state));
 
     // The load of the URL can result in this frame being removed. Use a
     // WeakPtr as an easy way to detect whether this has occured. If so, this

@@ -469,6 +469,7 @@ void DocumentLoader::UpdateForSameDocumentNavigation(
     scoped_refptr<SerializedScriptValue> data,
     mojom::blink::ScrollRestorationType scroll_restoration_type,
     WebFrameLoadType type,
+    const SecurityOrigin* initiator_origin,
     bool is_content_initiated) {
   SinglePageAppNavigationType single_page_app_navigation_type =
       CategorizeSinglePageAppNavigation(same_document_navigation_source, type);
@@ -506,9 +507,10 @@ void DocumentLoader::UpdateForSameDocumentNavigation(
 
   // We want to allow same-document text fragment navigations if they're coming
   // from the browser.
+  bool is_browser_initiated = !initiator_origin;
   has_text_fragment_token_ =
       TextFragmentAnchor::GenerateNewTokenForSameDocument(
-          new_url.FragmentIdentifier(), type, is_content_initiated,
+          new_url.FragmentIdentifier(), type, is_browser_initiated,
           same_document_navigation_source);
 
   SetHistoryItemStateForCommit(
@@ -955,7 +957,8 @@ mojom::CommitResult DocumentLoader::CommitSameDocumentNavigation(
     WebFrameLoadType frame_load_type,
     HistoryItem* history_item,
     ClientRedirectPolicy client_redirect_policy,
-    LocalDOMWindow* origin_window,
+    const SecurityOrigin* initiator_origin,
+    bool is_content_initiated,
     bool has_event,
     std::unique_ptr<WebDocumentLoader::ExtraData> extra_data) {
   DCHECK(!IsReloadLoadType(frame_load_type));
@@ -980,20 +983,24 @@ mojom::CommitResult DocumentLoader::CommitSameDocumentNavigation(
 
   // If the requesting document is cross-origin, perform the navigation
   // asynchronously to minimize the navigator's ability to execute timing
-  // attacks.
-  if (origin_window && !origin_window->GetSecurityOrigin()->CanAccess(
-                           frame_->DomWindow()->GetSecurityOrigin())) {
+  // attacks. If |is_content_initiated| is false, the navigation is already
+  // asynchronous since it's coming from another agent so there's no need to
+  // post it again.
+  if (is_content_initiated && initiator_origin &&
+      !initiator_origin->CanAccess(frame_->DomWindow()->GetSecurityOrigin())) {
     frame_->GetTaskRunner(TaskType::kInternalLoading)
         ->PostTask(
             FROM_HERE,
             WTF::Bind(&DocumentLoader::CommitSameDocumentNavigationInternal,
                       WrapWeakPersistent(this), url, frame_load_type,
                       WrapPersistent(history_item), client_redirect_policy,
-                      !!origin_window, has_event, std::move(extra_data)));
+                      WTF::RetainedRef(initiator_origin), is_content_initiated,
+                      has_event, std::move(extra_data)));
   } else {
-    CommitSameDocumentNavigationInternal(url, frame_load_type, history_item,
-                                         client_redirect_policy, origin_window,
-                                         has_event, std::move(extra_data));
+    CommitSameDocumentNavigationInternal(
+        url, frame_load_type, history_item, client_redirect_policy,
+        initiator_origin, is_content_initiated, has_event,
+        std::move(extra_data));
   }
   return mojom::CommitResult::Ok;
 }
@@ -1003,6 +1010,7 @@ void DocumentLoader::CommitSameDocumentNavigationInternal(
     WebFrameLoadType frame_load_type,
     HistoryItem* history_item,
     ClientRedirectPolicy client_redirect,
+    const SecurityOrigin* initiator_origin,
     bool is_content_initiated,
     bool has_event,
     std::unique_ptr<WebDocumentLoader::ExtraData> extra_data) {
@@ -1051,7 +1059,8 @@ void DocumentLoader::CommitSameDocumentNavigationInternal(
     GetLocalFrameClient().UpdateDocumentLoader(this, std::move(extra_data));
   UpdateForSameDocumentNavigation(url, kSameDocumentNavigationDefault, nullptr,
                                   mojom::blink::ScrollRestorationType::kAuto,
-                                  frame_load_type, is_content_initiated);
+                                  frame_load_type, initiator_origin,
+                                  is_content_initiated);
 
   initial_scroll_state_.was_scrolled_by_user = false;
 
