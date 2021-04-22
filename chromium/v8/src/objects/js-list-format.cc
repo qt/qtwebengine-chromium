@@ -28,6 +28,35 @@
 namespace v8 {
 namespace internal {
 
+#if U_ICU_VERSION_MAJOR_NUM >= 67
+namespace {
+
+UListFormatterWidth GetIcuWidth(JSListFormat::Style style) {
+  switch (style) {
+    case JSListFormat::Style::LONG:
+      return ULISTFMT_WIDTH_WIDE;
+    case JSListFormat::Style::SHORT:
+      return ULISTFMT_WIDTH_SHORT;
+    case JSListFormat::Style::NARROW:
+      return ULISTFMT_WIDTH_NARROW;
+  }
+  UNREACHABLE();
+}
+
+UListFormatterType GetIcuType(JSListFormat::Type type) {
+  switch (type) {
+    case JSListFormat::Type::CONJUNCTION:
+      return ULISTFMT_TYPE_AND;
+    case JSListFormat::Type::DISJUNCTION:
+      return ULISTFMT_TYPE_OR;
+    case JSListFormat::Type::UNIT:
+      return ULISTFMT_TYPE_UNITS;
+  }
+  UNREACHABLE();
+}
+
+}  // namespace
+#else
 namespace {
 const char* kStandard = "standard";
 const char* kOr = "or";
@@ -74,7 +103,7 @@ const char* GetIcuStyleString(JSListFormat::Style style,
 }
 
 }  // namespace
-
+#endif
 MaybeHandle<JSListFormat> JSListFormat::New(Isolate* isolate, Handle<Map> map,
                                             Handle<Object> locales,
                                             Handle<Object> input_options) {
@@ -143,7 +172,11 @@ MaybeHandle<JSListFormat> JSListFormat::New(Isolate* isolate, Handle<Map> map,
   icu::Locale icu_locale = r.icu_locale;
   UErrorCode status = U_ZERO_ERROR;
   icu::ListFormatter* formatter = icu::ListFormatter::createInstance(
+#if U_ICU_VERSION_MAJOR_NUM >= 67
+      icu_locale, GetIcuType(type_enum), GetIcuWidth(style_enum), status);
+#else
       icu_locale, GetIcuStyleString(style_enum, type_enum), status);
+#endif
   if (U_FAILURE(status) || formatter == nullptr) {
     delete formatter;
     THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
