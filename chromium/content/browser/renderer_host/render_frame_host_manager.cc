@@ -164,9 +164,8 @@ bool IsSiteInstanceCompatibleWithCoopCoepCrossOriginIsolation(
   // We do not want cross-origin-isolated have any impact on SiteInstances until
   // we get an actual COOP value in a redirect or a final response.
   if (is_speculative)
-    return !site_instance_impl->IsCoopCoepCrossOriginIsolated() ||
-           site_instance_impl->GetCoopCoepCrossOriginIsolatedInfo() ==
-                    cross_origin_isolated_info;
+    return site_instance_impl->IsCoopCoepCrossOriginIsolated() ==
+        is_coop_coep_cross_origin_isolated;
 
   // Note: The about blank case is to accommodate web tests that use COOP. They
   // expect an about:blank page to stay in process, and hang otherwise. In
