@@ -2100,10 +2100,7 @@ class LiftoffCompiler {
   bool BoundsCheckMem(FullDecoder* decoder, uint32_t access_size,
                       uint64_t offset, Register index, LiftoffRegList pinned,
                       ForceCheck force_check) {
-    // If the offset does not fit in a uintptr_t, this can never succeed on this
-    // machine.
     const bool statically_oob =
-        offset > std::numeric_limits<uintptr_t>::max() ||
         !base::IsInBounds<uintptr_t>(offset, access_size,
                                      env_->max_memory_size);
 
