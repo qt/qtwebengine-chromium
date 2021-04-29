@@ -84,7 +84,7 @@ void TaskTracker::AddSaveCallback(const SaveCallback& callback) {
 
 std::unique_ptr<ViewerHandle> TaskTracker::AddViewer(
     ViewRequestDelegate* delegate) {
-  viewers_.push_back(delegate);
+  viewers_.AddObserver(delegate);
   if (content_ready_) {
     // Distillation for this task has already completed, and so the delegate can
     // be immediately told of the result.
@@ -112,7 +112,7 @@ bool TaskTracker::HasUrl(const GURL& url) const {
 }
 
 void TaskTracker::RemoveViewer(ViewRequestDelegate* delegate) {
-  viewers_.erase(std::remove(viewers_.begin(), viewers_.end(), delegate));
+  viewers_.RemoveObserver(delegate);
   if (viewers_.empty()) {
     MaybeCancel();
   }
@@ -215,8 +215,8 @@ void TaskTracker::DistilledArticleReady(
 }
 
 void TaskTracker::NotifyViewersAndCallbacks() {
-  for (size_t i = 0; i < viewers_.size(); ++i) {
-    NotifyViewer(viewers_[i]);
+  for (auto& viewer : viewers_) {
+    NotifyViewer(&viewer);
   }
 
   // Already inside a callback run SaveCallbacks directly.
@@ -242,8 +242,8 @@ void TaskTracker::DoSaveCallbacks(bool success) {
 
 void TaskTracker::OnArticleDistillationUpdated(
     const ArticleDistillationUpdate& article_update) {
-  for (size_t i = 0; i < viewers_.size(); ++i) {
-    viewers_[i]->OnArticleUpdated(article_update);
+  for (auto& viewer : viewers_) {
+    viewers.OnArticleUpdated(article_update);
   }
 }
 
