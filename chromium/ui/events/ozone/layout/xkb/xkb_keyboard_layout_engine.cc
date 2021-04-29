@@ -623,7 +623,7 @@ const PrintableSimpleEntry kSimpleMap[] = {
     {0x0259, VKEY_OEM_3},      // schwa
 };
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(TOOLKIT_QT)
 void LoadKeymap(const std::string& layout_name,
                 scoped_refptr<base::SingleThreadTaskRunner> reply_runner,
                 LoadKeymapCallback reply_callback) {
@@ -697,7 +697,7 @@ bool XkbKeyboardLayoutEngine::SetCurrentLayoutByName(
 bool XkbKeyboardLayoutEngine::SetCurrentLayoutByNameWithCallback(
     const std::string& layout_name,
     base::OnceClosure callback) {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(TOOLKIT_QT)
   current_layout_name_ = layout_name;
   for (const auto& entry : xkb_keymaps_) {
     if (entry.layout_name == layout_name) {
