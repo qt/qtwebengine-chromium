@@ -1055,6 +1055,11 @@ void UserMediaProcessor::OnStreamsGenerated(
     return;
   }
 
+#if !BUILDFLAG(ENABLE_WEBRTC)
+  OnStreamGenerationFailed(request_id, MediaStreamRequestResult::NO_HARDWARE);
+  return;
+#endif
+
   if (!IsCurrentRequestInfo(request_id)) {
     // This can happen if the request is canceled or the frame reloads while
     // MediaStreamDispatcherHost is processing the request.
