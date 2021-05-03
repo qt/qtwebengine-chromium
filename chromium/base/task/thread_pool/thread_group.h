@@ -224,7 +224,7 @@ class BASE_EXPORT ThreadGroup {
   // PriorityQueue from which all threads of this ThreadGroup get work.
   PriorityQueue priority_queue_ GUARDED_BY(lock_);
 
-  struct YieldSortKey {
+  struct alignas(2) YieldSortKey {
     TaskPriority priority;
     uint8_t worker_count;
   };
