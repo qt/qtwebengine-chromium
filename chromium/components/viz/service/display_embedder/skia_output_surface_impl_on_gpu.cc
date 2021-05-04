@@ -1333,6 +1333,10 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
 
 #if BUILDFLAG(ENABLE_VULKAN)
 bool SkiaOutputSurfaceImplOnGpu::InitializeForVulkan() {
+#ifdef TOOLKIT_QT
+  output_device_ = CreateOutputDevice();
+  return true;
+#endif
   if (dependency_->IsOffscreen()) {
     output_device_ = std::make_unique<SkiaOutputDeviceOffscreen>(
         context_state_, gfx::SurfaceOrigin::kBottomLeft,
