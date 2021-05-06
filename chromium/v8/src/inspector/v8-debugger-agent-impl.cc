@@ -455,6 +455,8 @@ Response V8DebuggerAgentImpl::setBreakpointByUrl(
     Maybe<int> optionalColumnNumber, Maybe<String16> optionalCondition,
     String16* outBreakpointId,
     std::unique_ptr<protocol::Array<protocol::Debugger::Location>>* locations) {
+  if (!enabled()) return Response::Error(kDebuggerNotEnabled);
+
   *locations = Array<protocol::Debugger::Location>::create();
 
   int specified = (optionalURL.isJust() ? 1 : 0) +
@@ -542,6 +544,8 @@ Response V8DebuggerAgentImpl::setBreakpoint(
   String16 breakpointId = generateBreakpointId(
       BreakpointType::kByScriptId, location->getScriptId(),
       location->getLineNumber(), location->getColumnNumber(0));
+  if (!enabled()) return Response::Error(kDebuggerNotEnabled);
+
   if (m_breakpointIdToDebuggerBreakpointIds.find(breakpointId) !=
       m_breakpointIdToDebuggerBreakpointIds.end()) {
     return Response::Error("Breakpoint at specified location already exists.");
@@ -558,6 +562,8 @@ Response V8DebuggerAgentImpl::setBreakpoint(
 Response V8DebuggerAgentImpl::setBreakpointOnFunctionCall(
     const String16& functionObjectId, Maybe<String16> optionalCondition,
     String16* outBreakpointId) {
+  if (!enabled()) return Response::Error(kDebuggerNotEnabled);
+
   InjectedScript::ObjectScope scope(m_session, functionObjectId);
   Response response = scope.initialize();
   if (!response.isSuccess()) return response;
