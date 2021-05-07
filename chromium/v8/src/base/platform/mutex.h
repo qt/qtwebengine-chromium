@@ -11,6 +11,7 @@
 #include "src/base/win32-headers.h"
 #endif
 #include "src/base/logging.h"
+#include "src/base/optional.h"
 
 #if V8_OS_POSIX
 #include <pthread.h>  // NOLINT
@@ -338,6 +339,20 @@ class SharedMutexGuard final {
   }
 
   DISALLOW_COPY_AND_ASSIGN(SharedMutexGuard);
+};
+
+template <MutexSharedType kIsShared,
+          NullBehavior Behavior = NullBehavior::kRequireNotNull>
+class SharedMutexGuardIf final {
+ public:
+  SharedMutexGuardIf(SharedMutex* mutex, bool enable_mutex) {
+    if (enable_mutex) mutex_.emplace(mutex);
+  }
+
+ private:
+  base::Optional<SharedMutexGuard<kIsShared, Behavior>> mutex_;
+
+  DISALLOW_COPY_AND_ASSIGN(SharedMutexGuardIf);
 };
 
 }  // namespace base
