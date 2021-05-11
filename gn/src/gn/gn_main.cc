@@ -16,7 +16,7 @@
 #include "util/msg_loop.h"
 #include "util/sys_info.h"
 
-// #include "last_commit_position.h"
+#include "qt_version.h"
 
 namespace {
 
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
     command = commands::kHelp;
   } else if (cmdline.HasSwitch(switches::kVersion)) {
     // Make "--version" print the version and exit.
-//     OutputString(std::string(LAST_COMMIT_POSITION) + "\n");
+    OutputString(std::string(QT_GN_VERSION) +"\n");
     exit(0);
   } else if (args.empty()) {
     // No command, print error and exit.
