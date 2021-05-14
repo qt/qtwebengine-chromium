@@ -168,8 +168,8 @@ void ModuleScriptLoader::FetchInternal(
       level == ModuleGraphLevel::kTopLevelModuleFetch) {
     // This should be done after SetCrossOriginAccessControl() that sets the
     // mode to kCors.
-    fetch_params.MutableResourceRequest().SetMode(
-        network::mojom::RequestMode::kSameOrigin);
+    fetch_params.MutableResourceRequest().SetFetchRequestMode(
+        network::mojom::FetchRequestMode::kSameOrigin);
   }
 
   // Step 5. "... referrer is referrer, ..." [spec text]
