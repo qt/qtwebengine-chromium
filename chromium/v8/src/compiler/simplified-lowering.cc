@@ -1282,7 +1282,7 @@ class RepresentationSelector {
       restriction = Type::Signed32();
     }
     VisitBinop(node, input_use, MachineRepresentation::kWord32, restriction);
-    if (lower()) ChangeOp(node, simplified()->CheckedInt32Mul(mz_mode));
+    if (lower()) NodeProperties::ChangeOp(node, simplified()->CheckedInt32Mul(mz_mode));
   }
 
   void ChangeToInt32OverflowOp(Node* node) {
