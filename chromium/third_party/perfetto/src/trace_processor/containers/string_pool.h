@@ -17,6 +17,7 @@
 #ifndef SRC_TRACE_PROCESSOR_CONTAINERS_STRING_POOL_H_
 #define SRC_TRACE_PROCESSOR_CONTAINERS_STRING_POOL_H_
 
+#include <limits>
 #include <stddef.h>
 #include <stdint.h>
 
