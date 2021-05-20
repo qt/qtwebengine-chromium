@@ -298,7 +298,7 @@ bool CRLSet::Parse(base::StringPiece data, scoped_refptr<CRLSet>* out_crl_set) {
 
 CRLSet::Result CRLSet::CheckSPKI(base::StringPiece spki_hash) const {
   if (std::binary_search(blocked_spkis_.begin(), blocked_spkis_.end(),
-                         spki_hash))
+                         spki_hash.data()))
     return REVOKED;
   return GOOD;
 }
