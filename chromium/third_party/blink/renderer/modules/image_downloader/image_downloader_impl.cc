@@ -79,7 +79,8 @@ SkBitmap ResizeImage(const SkBitmap& image, uint32_t max_image_size) {
 // size |max_image_size|. Returns the result if it is not empty. Otherwise,
 // find the smallest image in the array and resize it proportionally to fit
 // in a box of size |max_image_size|.
-// Sets |original_image_sizes| to the sizes of |images| before resizing.
+// Sets |original_image_sizes| to the sizes of |images| before resizing. Both
+// output vectors are guaranteed to have the same size.
 void FilterAndResizeImagesForMaximalSize(
     const WTF::Vector<SkBitmap>& unfiltered,
     uint32_t max_image_size,
@@ -202,6 +203,8 @@ void ImageDownloaderImpl::DidDownloadImage(
   FilterAndResizeImagesForMaximalSize(images, max_image_size, &result_images,
                                       &result_original_image_sizes);
 
+  DCHECK_EQ(result_images.size(), result_original_image_sizes.size());
+
   std::move(callback).Run(http_status_code, result_images,
                           result_original_image_sizes);
 }
@@ -218,9 +221,7 @@ void ImageDownloaderImpl::FetchImage(const KURL& image_url,
   // Create an image resource fetcher and assign it with a call back object.
   image_fetchers_.push_back(
       std::make_unique<MultiResolutionImageResourceFetcher>(
-          image_url, GetSupplementable(),
-          is_favicon ? mojom::blink::RequestContextType::FAVICON
-                     : mojom::blink::RequestContextType::IMAGE,
+          image_url, GetSupplementable(), is_favicon,
           bypass_cache ? blink::mojom::FetchCacheMode::kBypassCache
                        : blink::mojom::FetchCacheMode::kDefault,
           WTF::Bind(&ImageDownloaderImpl::DidFetchImage, WrapPersistent(this),

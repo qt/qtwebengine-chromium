@@ -19,7 +19,7 @@ to set the default value. Can also be accessed through `try_.defaults`.
 
 load("./args.star", "args")
 load("./branches.star", "branches")
-load("./builders.star", "builders")
+load("./builders.star", "builders", "os")
 
 DEFAULT_EXCLUDE_REGEXPS = [
     # Contains documentation that doesn't affect the outputs
@@ -113,9 +113,10 @@ def try_builder(
     if not branches.matches(branch_selector):
         return
 
-    # Enable "chromium.resultdb.result_sink" on try builders at 50%.
+    # Enable "chromium.resultdb.result_sink" on try builders.
     experiments = experiments or {}
-    experiments.setdefault("chromium.resultdb.result_sink", 50)
+    experiments.setdefault("chromium.resultdb.result_sink", 100)
+    experiments.setdefault("chromium.resultdb.result_sink.junit_tests", 100)
 
     merged_resultdb_bigquery_exports = [
         resultdb.export_test_results(
@@ -158,6 +159,7 @@ def try_builder(
         list_view = list_view,
         resultdb_bigquery_exports = merged_resultdb_bigquery_exports,
         experiments = experiments,
+        resultdb_index_by_timestamp = True,
         **kwargs
     )
 
@@ -207,6 +209,7 @@ def blink_mac_builder(
     )
 
 def chromium_builder(*, name, **kwargs):
+    kwargs.setdefault("os", builders.os.LINUX_BIONIC_REMOVE)
     return try_builder(
         name = name,
         builder_group = "tryserver.chromium",
@@ -216,6 +219,7 @@ def chromium_builder(*, name, **kwargs):
     )
 
 def chromium_android_builder(*, name, **kwargs):
+    kwargs.setdefault("os", os.LINUX_BIONIC_REMOVE)
     return try_builder(
         name = name,
         builder_group = "tryserver.chromium.android",
@@ -234,7 +238,35 @@ def chromium_angle_builder(*, name, **kwargs):
         **kwargs
     )
 
+def chromium_angle_pinned_builder(*, name, **kwargs):
+    return try_builder(
+        name = name,
+        builder_group = "tryserver.chromium.angle",
+        builderless = True,
+        executable = "recipe:angle_chromium_trybot",
+        goma_backend = builders.goma.backend.RBE_PROD,
+        service_account = "chromium-try-gpu-builder@chops-service-accounts.iam.gserviceaccount.com",
+        **kwargs
+    )
+
+def chromium_angle_mac_builder(*, name, **kwargs):
+    return chromium_angle_pinned_builder(
+        name = name,
+        cores = None,
+        ssd = None,
+        os = builders.os.MAC_ANY,
+        **kwargs
+    )
+
+def chromium_angle_ios_builder(*, name, **kwargs):
+    return chromium_angle_mac_builder(
+        name = name,
+        xcode = builders.xcode.x12a7209,
+        **kwargs
+    )
+
 def chromium_chromiumos_builder(*, name, **kwargs):
+    kwargs.setdefault("os", os.LINUX_BIONIC_REMOVE)
     return try_builder(
         name = name,
         builder_group = "tryserver.chromium.chromiumos",
@@ -286,7 +318,7 @@ def chromium_mac_ios_builder(
         executable = "recipe:chromium_trybot",
         goma_backend = builders.goma.backend.RBE_PROD,
         os = builders.os.MAC_10_15,
-        xcode = builders.xcode.x12a7209,
+        xcode = builders.xcode.x12d4e,
         **kwargs):
     return try_builder(
         name = name,
@@ -315,7 +347,7 @@ def chromium_swangle_linux_builder(*, name, **kwargs):
     return chromium_swangle_builder(
         name = name,
         goma_backend = builders.goma.backend.RBE_PROD,
-        os = builders.os.LINUX_DEFAULT,
+        os = builders.os.LINUX_XENIAL_OR_BIONIC_REMOVE,
         **kwargs
     )
 
@@ -330,6 +362,40 @@ def chromium_swangle_mac_builder(*, name, **kwargs):
 
 def chromium_swangle_windows_builder(*, name, **kwargs):
     return chromium_swangle_builder(
+        name = name,
+        goma_backend = builders.goma.backend.RBE_PROD,
+        os = builders.os.WINDOWS_DEFAULT,
+        **kwargs
+    )
+
+def chromium_updater_builder(
+        *,
+        name,
+        executable = "recipe:chromium_trybot",
+        goma_backend,
+        os,
+        **kwargs):
+    return try_builder(
+        name = name,
+        builder_group = "tryserver.chromium.updater",
+        builderless = True,
+        executable = executable,
+        goma_backend = goma_backend,
+        os = os,
+        **kwargs
+    )
+
+def chromium_updater_mac_builder(*, name, **kwargs):
+    return chromium_updater_builder(
+        name = name,
+        cores = None,
+        goma_backend = builders.goma.backend.RBE_PROD,
+        os = builders.os.MAC_ANY,
+        **kwargs
+    )
+
+def chromium_updater_win_builder(*, name, **kwargs):
+    return chromium_updater_builder(
         name = name,
         goma_backend = builders.goma.backend.RBE_PROD,
         os = builders.os.WINDOWS_DEFAULT,
@@ -352,6 +418,23 @@ def chromium_win_builder(
         **kwargs
     )
 
+def cipd_builder(*, name, **kwargs):
+    return try_builder(
+        name = name,
+        service_account = "chromium-cipd-try-builder@chops-service-accounts.iam.gserviceaccount.com",
+        **kwargs
+    )
+
+def cipd_3pp_builder(*, name, os, properties, **kwargs):
+    return cipd_builder(
+        name = name,
+        builder_group = "tryserver.chromium.packager",
+        executable = "recipe:chromium_3pp",
+        os = os,
+        properties = properties,
+        **kwargs
+    )
+
 def gpu_try_builder(*, name, builderless = False, execution_timeout = 6 * time.hour, **kwargs):
     return try_builder(
         name = name,
@@ -366,6 +449,7 @@ def gpu_chromium_android_builder(*, name, **kwargs):
         name = name,
         builder_group = "tryserver.chromium.android",
         goma_backend = builders.goma.backend.RBE_PROD,
+        os = builders.os.LINUX_XENIAL_OR_BIONIC_REMOVE,
         **kwargs
     )
 
@@ -374,6 +458,7 @@ def gpu_chromium_linux_builder(*, name, **kwargs):
         name = name,
         builder_group = "tryserver.chromium.linux",
         goma_backend = builders.goma.backend.RBE_PROD,
+        os = builders.os.LINUX_XENIAL_OR_BIONIC_REMOVE,
         **kwargs
     )
 
@@ -410,6 +495,8 @@ try_ = struct(
     chromium_builder = chromium_builder,
     chromium_android_builder = chromium_android_builder,
     chromium_angle_builder = chromium_angle_builder,
+    chromium_angle_ios_builder = chromium_angle_ios_builder,
+    chromium_angle_mac_builder = chromium_angle_mac_builder,
     chromium_chromiumos_builder = chromium_chromiumos_builder,
     chromium_dawn_builder = chromium_dawn_builder,
     chromium_linux_builder = chromium_linux_builder,
@@ -418,7 +505,11 @@ try_ = struct(
     chromium_swangle_linux_builder = chromium_swangle_linux_builder,
     chromium_swangle_mac_builder = chromium_swangle_mac_builder,
     chromium_swangle_windows_builder = chromium_swangle_windows_builder,
+    chromium_updater_mac_builder = chromium_updater_mac_builder,
+    chromium_updater_win_builder = chromium_updater_win_builder,
     chromium_win_builder = chromium_win_builder,
+    cipd_3pp_builder = cipd_3pp_builder,
+    cipd_builder = cipd_builder,
     gpu_chromium_android_builder = gpu_chromium_android_builder,
     gpu_chromium_linux_builder = gpu_chromium_linux_builder,
     gpu_chromium_mac_builder = gpu_chromium_mac_builder,

@@ -393,6 +393,8 @@ const char kRemoveActiveInputNode[] = "RemoveActiveInputNode";
 const char kGetNumberOfActiveStreams[] = "GetNumberOfActiveStreams";
 const char kGetNumberOfActiveInputStreams[] = "GetNumberOfActiveInputStreams";
 const char kGetNumberOfActiveOutputStreams[] = "GetNumberOfActiveOutputStreams";
+const char kGetNumberOfInputStreamsWithPermission[] =
+    "GetNumberOfInputStreamsWithPermission";
 const char kIsAudioOutputActive[] = "IsAudioOutputActive";
 const char kSetGlobalOutputChannelRemix[] = "SetGlobalOutputChannelRemix";
 const char kGetSystemAecSupported[] = "GetSystemAecSupported";
@@ -418,6 +420,12 @@ const char kStableDeviceIdProperty[] = "StableDeviceId";
 const char kStableDeviceIdNewProperty[] = "StableDeviceIdNew";
 const char kMaxSupportedChannelsProperty[] = "MaxSupportedChannels";
 
+// Names of properties returned by
+// * method - GetNumberOfInputStreamsWithPermission and
+// * signal - NumberOfInputStreamsWithPermissionChanged.
+const char kClientType[] = "ClientType";
+const char kNumStreamsWithPermission[] = "NumStreamsWithPermission";
+
 // Signals.
 const char kOutputVolumeChanged[] = "OutputVolumeChanged";
 const char kOutputMuteChanged[] = "OutputMuteChanged";
@@ -429,6 +437,8 @@ const char kNodesChanged[] = "NodesChanged";
 const char kActiveOutputNodeChanged[] = "ActiveOutputNodeChanged";
 const char kActiveInputNodeChanged[] = "ActiveInputNodeChanged";
 const char kNumberOfActiveStreamsChanged[] = "NumberOfActiveStreamsChanged";
+const char kNumberOfInputStreamsWithPermissionChanged[] =
+    "NumberOfInputStreamsWithPermissionChanged";
 const char kAudioOutputActiveStateChanged[] = "AudioOutputActiveStateChanged";
 const char kHotwordTriggered[] = "HotwordTriggered";
 const char kBluetoothBatteryChanged[] = "BluetoothBatteryChanged";
@@ -544,7 +554,6 @@ constexpr char kVirtualFileProviderInterface[] =
     "org.chromium.VirtualFileProvider";
 // Methods
 constexpr char kGenerateVirtualFileIdMethod[] = "GenerateVirtualFileId";
-constexpr char kOpenFileMethod[] = "OpenFile";
 constexpr char kOpenFileByIdMethod[] = "OpenFileById";
 }  // namespace virtual_file_provider
 

@@ -373,6 +373,11 @@ enum gbm_bo_transfer_flags {
    GBM_BO_TRANSFER_READ_WRITE = (GBM_BO_TRANSFER_READ | GBM_BO_TRANSFER_WRITE),
 };
 
+void *
+gbm_bo_map(struct gbm_bo *bo,
+           uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+           uint32_t flags, uint32_t *stride, void **map_data);
+
 void
 gbm_bo_unmap(struct gbm_bo *bo, void *map_data);
 
@@ -470,10 +475,6 @@ gbm_bo_get_plane_size(struct gbm_bo *bo, size_t plane);
 int
 gbm_bo_get_plane_fd(struct gbm_bo *bo, size_t plane);
 
-void *
-gbm_bo_map(struct gbm_bo *bo,
-           uint32_t x, uint32_t y, uint32_t width, uint32_t height,
-           uint32_t flags, uint32_t *stride, void **map_data, size_t plane);
 void *
 gbm_bo_map2(struct gbm_bo *bo,
 	   uint32_t x, uint32_t y, uint32_t width, uint32_t height,

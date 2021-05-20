@@ -194,13 +194,12 @@ PUBLIC struct gbm_bo *gbm_bo_import(struct gbm_device *gbm, uint32_t type, void 
 				    uint32_t usage)
 {
 	struct gbm_bo *bo;
-	struct drv_import_fd_data drv_data;
+	struct drv_import_fd_data drv_data = { 0 };
 	struct gbm_import_fd_data *fd_data = buffer;
 	struct gbm_import_fd_modifier_data *fd_modifier_data = buffer;
 	uint32_t gbm_format;
 	size_t num_planes, i, num_fds;
 
-	memset(&drv_data, 0, sizeof(drv_data));
 	drv_data.use_flags = gbm_convert_usage(usage);
 	switch (type) {
 	case GBM_BO_IMPORT_FD:
@@ -261,6 +260,12 @@ PUBLIC struct gbm_bo *gbm_bo_import(struct gbm_device *gbm, uint32_t type, void 
 	}
 
 	return bo;
+}
+
+PUBLIC void *gbm_bo_map(struct gbm_bo *bo, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
+			uint32_t transfer_flags, uint32_t *stride, void **map_data)
+{
+	return gbm_bo_map2(bo, x, y, width, height, transfer_flags, stride, map_data, 0);
 }
 
 PUBLIC void gbm_bo_unmap(struct gbm_bo *bo, void *map_data)
@@ -391,12 +396,6 @@ PUBLIC uint32_t gbm_bo_get_plane_size(struct gbm_bo *bo, size_t plane)
 PUBLIC int gbm_bo_get_plane_fd(struct gbm_bo *bo, size_t plane)
 {
 	return drv_bo_get_plane_fd(bo->bo, plane);
-}
-
-PUBLIC void *gbm_bo_map(struct gbm_bo *bo, uint32_t x, uint32_t y, uint32_t width, uint32_t height,
-			uint32_t transfer_flags, uint32_t *stride, void **map_data, size_t plane)
-{
-	return gbm_bo_map2(bo, x, y, width, height, transfer_flags, stride, map_data, plane);
 }
 
 PUBLIC void *gbm_bo_map2(struct gbm_bo *bo, uint32_t x, uint32_t y, uint32_t width, uint32_t height,

@@ -16,14 +16,14 @@ enum ErrorCode {
 
   // Not able to read the ProbeRequest as DBus signature indicated.
   RUNTIME_PROBE_ERROR_PROBE_REQUEST_INVALID = 1;
-  // Not able to find default probe config in the rootfs image.
-  RUNTIME_PROBE_ERROR_DEFAULT_PROBE_CONFIG_NOT_FOUND = 2;
-  // Assigned probe config is not holding a corret JSON format.
-  RUNTIME_PROBE_ERROR_PROBE_CONFIG_SYNTAX_ERROR = 3;
+  reserved 2, 3;
   // Assigned probe config contains functions not able to be constructed.
   RUNTIME_PROBE_ERROR_PROBE_CONFIG_INCOMPLETE_PROBE_FUNCTION = 4;
   // Not able to parse the ProbeResult JSON string as protobuf message.
   RUNTIME_PROBE_ERROR_PROBE_RESULT_INVALID = 5;
+  // Assigned probe config doesn't exist or is not holding a correct JSON
+  // format.
+  RUNTIME_PROBE_ERROR_PROBE_CONFIG_INVALID = 6;
 }
 
 // Request from client that indicates what categories to probe. Category must
@@ -313,6 +313,8 @@ message InputDevice {
     uint32 product = 6;
     // The version number, 16 bits.
     uint32 version = 7;
+    // The firmware version.
+    string fw_version = 8;
   }
   // Component alias.
   string name = 1;

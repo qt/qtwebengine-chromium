@@ -7,6 +7,7 @@
 #ifdef DRV_MSM
 
 #include <assert.h>
+#include <dlfcn.h>
 #include <drm_fourcc.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -65,6 +66,24 @@ static uint32_t get_ubwc_meta_size(uint32_t width, uint32_t height, uint32_t til
 	return ALIGN(macrotile_width * macrotile_height, PLANE_SIZE_ALIGN);
 }
 
+static unsigned get_pitch_alignment(struct bo *bo)
+{
+	switch (bo->meta.format) {
+	case DRM_FORMAT_NV12:
+		return VENUS_STRIDE_ALIGN;
+	case DRM_FORMAT_YVU420:
+	case DRM_FORMAT_YVU420_ANDROID:
+		/* TODO other YUV formats? */
+		/* Something (in the video stack?) assumes the U/V planes can use
+		 * half the pitch as the Y plane.. to componsate, double the
+		 * alignment:
+		 */
+		return 2 * DEFAULT_ALIGNMENT;
+	default:
+		return DEFAULT_ALIGNMENT;
+	}
+}
+
 static void msm_calculate_layout(struct bo *bo)
 {
 	uint32_t width, height;
@@ -82,11 +101,14 @@ static void msm_calculate_layout(struct bo *bo)
 		y_stride = ALIGN(width, VENUS_STRIDE_ALIGN);
 		uv_stride = ALIGN(width, VENUS_STRIDE_ALIGN);
 		y_scanline = ALIGN(height, VENUS_SCANLINE_ALIGN * 2);
-		uv_scanline = ALIGN(DIV_ROUND_UP(height, 2), VENUS_SCANLINE_ALIGN);
+		uv_scanline = ALIGN(DIV_ROUND_UP(height, 2),
+				    VENUS_SCANLINE_ALIGN * (bo->meta.tiling ? 2 : 1));
 		y_plane = y_stride * y_scanline;
 		uv_plane = uv_stride * uv_scanline;
 
 		if (bo->meta.tiling == MSM_UBWC_TILING) {
+			y_plane = ALIGN(y_plane, PLANE_SIZE_ALIGN);
+			uv_plane = ALIGN(uv_plane, PLANE_SIZE_ALIGN);
 			y_plane += get_ubwc_meta_size(width, height, 32, 8);
 			uv_plane += get_ubwc_meta_size(width >> 1, height >> 1, 16, 8);
 			extra_padding = NV12_UBWC_PADDING(y_stride);
@@ -104,7 +126,7 @@ static void msm_calculate_layout(struct bo *bo)
 	} else {
 		uint32_t stride, alignw, alignh;
 
-		alignw = ALIGN(width, DEFAULT_ALIGNMENT);
+		alignw = ALIGN(width, get_pitch_alignment(bo));
 		/* HAL_PIXEL_FORMAT_YV12 requires that the buffer's height not be aligned.
 			DRM_FORMAT_R8 of height one is used for JPEG camera output, so don't
 			height align that. */
@@ -157,13 +179,51 @@ static void msm_add_ubwc_combinations(struct driver *drv, const uint32_t *format
 	}
 }
 
+/**
+ * Check for buggy apps that are known to not support modifiers, to avoid surprising them
+ * with a UBWC buffer.
+ */
+static bool should_avoid_ubwc(void)
+{
+#ifndef __ANDROID__
+	/* waffle is buggy and, requests a renderable buffer (which on qcom platforms, we
+	 * want to use UBWC), and then passes it to the kernel discarding the modifier.
+	 * So mesa ends up correctly rendering to as tiled+compressed, but kernel tries
+	 * to display as linear.  Other platforms do not see this issue, simply because
+	 * they only use compressed (ex, AFBC) with the BO_USE_SCANOUT flag.
+	 *
+	 * See b/163137550
+	 */
+	if (dlsym(RTLD_DEFAULT, "waffle_display_connect")) {
+		drv_log("WARNING: waffle detected, disabling UBWC\n");
+		return true;
+	}
+
+	/* The video_decode_accelerator_tests needs to read back the frames
+	 * to verify they are correct.  The frame verification relies on
+	 * computing the MD5 of the video frame.  UBWC results in a different
+	 * MD5.  This turns off UBWC for gtest until a proper frame
+	 * comparison can be made
+	 * Rely on the same mechanism that waffle is using, but this time check
+	 * for a dynamic library function that is present in chrome, but missing
+	 * in gtest.  Cups is not loaded for video tests.
+	 *
+	 * See b/171260705
+	 */
+	if (!dlsym(RTLD_DEFAULT, "cupsFilePrintf")) {
+		drv_log("WARNING: gtest detected, disabling UBWC\n");
+		return true;
+	}
+#endif
+	return false;
+}
+
 static int msm_init(struct driver *drv)
 {
 	struct format_metadata metadata;
 	uint64_t render_use_flags = BO_USE_RENDER_MASK | BO_USE_SCANOUT;
 	uint64_t texture_use_flags = BO_USE_TEXTURE_MASK | BO_USE_HW_VIDEO_DECODER;
-	uint64_t sw_flags = (BO_USE_RENDERSCRIPT | BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_OFTEN |
-			     BO_USE_LINEAR | BO_USE_PROTECTED);
+	uint64_t sw_flags = (BO_USE_RENDERSCRIPT | BO_USE_SW_MASK | BO_USE_LINEAR);
 
 	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
 			     &LINEAR_METADATA, render_use_flags);
@@ -171,27 +231,27 @@ static int msm_init(struct driver *drv)
 	drv_add_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
 			     &LINEAR_METADATA, texture_use_flags);
 
-	/*
-	 * Chrome uses DMA-buf mmap to write to YV12 buffers, which are then accessed by the
-	 * Video Encoder Accelerator (VEA). It could also support NV12 potentially in the future.
-	 */
-	drv_modify_combination(drv, DRM_FORMAT_YVU420, &LINEAR_METADATA, BO_USE_HW_VIDEO_ENCODER);
-	drv_modify_combination(drv, DRM_FORMAT_NV12, &LINEAR_METADATA, BO_USE_HW_VIDEO_ENCODER);
-
 	/* The camera stack standardizes on NV12 for YUV buffers. */
+	/* YVU420 and NV12 formats for camera, display and encoding. */
 	drv_modify_combination(drv, DRM_FORMAT_NV12, &LINEAR_METADATA,
-			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_SCANOUT);
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_SCANOUT |
+				   BO_USE_HW_VIDEO_ENCODER);
+
 	/*
 	 * R8 format is used for Android's HAL_PIXEL_FORMAT_BLOB and is used for JPEG snapshots
-	 * from camera.
+	 * from camera and input/output from hardware decoder/encoder.
 	 */
 	drv_modify_combination(drv, DRM_FORMAT_R8, &LINEAR_METADATA,
-			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_HW_VIDEO_DECODER |
+				   BO_USE_HW_VIDEO_ENCODER);
 
 	/* Android CTS tests require this. */
 	drv_add_combination(drv, DRM_FORMAT_BGR888, &LINEAR_METADATA, BO_USE_SW_MASK);
 
 	drv_modify_linear_combinations(drv);
+
+	if (should_avoid_ubwc() || !drv->compression)
+		return 0;
 
 	metadata.tiling = MSM_UBWC_TILING;
 	metadata.priority = 2;
@@ -206,21 +266,23 @@ static int msm_init(struct driver *drv)
 	msm_add_ubwc_combinations(drv, texture_source_formats, ARRAY_SIZE(texture_source_formats),
 				  &metadata, texture_use_flags);
 
+	drv_modify_combination(drv, DRM_FORMAT_NV12, &metadata,
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_SCANOUT |
+				   BO_USE_HW_VIDEO_ENCODER);
+
 	return 0;
 }
 
 static int msm_bo_create_for_modifier(struct bo *bo, uint32_t width, uint32_t height,
 				      uint32_t format, const uint64_t modifier)
 {
-	struct drm_msm_gem_new req;
+	struct drm_msm_gem_new req = { 0 };
 	int ret;
 	size_t i;
 
 	bo->meta.tiling = (modifier == DRM_FORMAT_MOD_QCOM_COMPRESSED) ? MSM_UBWC_TILING : 0;
-
 	msm_calculate_layout(bo);
 
-	memset(&req, 0, sizeof(req));
 	req.flags = MSM_BO_WC | MSM_BO_SCANOUT;
 	req.size = bo->meta.total_size;
 
@@ -253,6 +315,9 @@ static int msm_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint32_t 
 	uint64_t modifier =
 	    drv_pick_modifier(modifiers, count, modifier_order, ARRAY_SIZE(modifier_order));
 
+	if (!bo->drv->compression && modifier == DRM_FORMAT_MOD_QCOM_COMPRESSED)
+		modifier = DRM_FORMAT_MOD_LINEAR;
+
 	return msm_bo_create_for_modifier(bo, width, height, format, modifier);
 }
 
@@ -273,11 +338,9 @@ static int msm_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint32_
 static void *msm_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
 {
 	int ret;
-	struct drm_msm_gem_info req;
+	struct drm_msm_gem_info req = { 0 };
 
-	memset(&req, 0, sizeof(req));
 	req.handle = bo->handles[0].u32;
-
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_MSM_GEM_INFO, &req);
 	if (ret) {
 		drv_log("DRM_IOCLT_MSM_GEM_INFO failed with %s\n", strerror(errno));
@@ -292,6 +355,12 @@ static void *msm_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t m
 static uint32_t msm_resolve_format(struct driver *drv, uint32_t format, uint64_t use_flags)
 {
 	switch (format) {
+	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
+		/* Camera subsystem requires NV12. */
+		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
+			return DRM_FORMAT_NV12;
+		/*HACK: See b/28671744 */
+		return DRM_FORMAT_XBGR8888;
 	case DRM_FORMAT_FLEX_YCbCr_420_888:
 		return DRM_FORMAT_NV12;
 	default:

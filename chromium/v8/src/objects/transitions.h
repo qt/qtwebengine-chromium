@@ -19,6 +19,9 @@
 namespace v8 {
 namespace internal {
 
+// Find all transitions with given name and calls the callback.
+using ForEachTransitionCallback = std::function<void(Map)>;
+
 // TransitionsAccessor is a helper class to encapsulate access to the various
 // ways a Map can store transitions to other maps in its respective field at
 // Map::kTransitionsOrPrototypeInfo.
@@ -40,7 +43,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
  public:
   // For concurrent access, use the other constructor.
   inline TransitionsAccessor(Isolate* isolate, Map map,
-                             DisallowHeapAllocation* no_gc);
+                             DisallowGarbageCollection* no_gc);
   // {concurrent_access} signals that the TransitionsAccessor will only be used
   // in background threads. It acquires a reader lock for critical paths, as
   // well as blocking the accessor from modifying the TransitionsArray.
@@ -68,6 +71,14 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
     return FindTransitionToDataProperty(name, kFieldOnly);
   }
 
+  // Find all transitions with given name and calls the callback.
+  // Neither GCs nor operations requiring Isolate::full_transition_array_access
+  // lock are allowed inside the callback.
+  // If any of the GC- or lock-requiring processing is necessary, it has to be
+  // done outside of the callback.
+  void ForEachTransitionTo(Name name, const ForEachTransitionCallback& callback,
+                           DisallowGarbageCollection* no_gc);
+
   inline Handle<String> ExpectedTransitionKey();
   inline Handle<Map> ExpectedTransitionTarget();
 
@@ -94,8 +105,8 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   // Traverse the transition tree in postorder.
   void TraverseTransitionTree(TraverseCallback callback, void* data) {
     // Make sure that we do not allocate in the callback.
-    DisallowHeapAllocation no_allocation;
-    TraverseTransitionTreeInternal(callback, data, &no_allocation);
+    DisallowGarbageCollection no_gc;
+    TraverseTransitionTreeInternal(callback, data, &no_gc);
   }
 
   // ===== PROTOTYPE TRANSITIONS =====
@@ -122,7 +133,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   static void PrintOneTransition(std::ostream& os, Name key, Map target);
   void PrintTransitionTree();
   void PrintTransitionTree(std::ostream& os, int level,
-                           DisallowHeapAllocation* no_gc);
+                           DisallowGarbageCollection* no_gc);
 #endif
 #if DEBUG
   void CheckNewTransitionsAreConsistent(TransitionArray old_transitions,
@@ -182,7 +193,7 @@ class V8_EXPORT_PRIVATE TransitionsAccessor {
   WeakFixedArray GetPrototypeTransitions();
 
   void TraverseTransitionTreeInternal(TraverseCallback callback, void* data,
-                                      DisallowHeapAllocation* no_gc);
+                                      DisallowGarbageCollection* no_gc);
 
   Isolate* isolate_;
   Handle<Map> map_handle_;
@@ -319,6 +330,10 @@ class TransitionArray : public WeakFixedArray {
                     PropertyAttributes attributes, int* out_insertion_index);
   Map SearchDetailsAndGetTarget(int transition, PropertyKind kind,
                                 PropertyAttributes attributes);
+
+  // Find all transitions with given name and calls the callback.
+  void ForEachTransitionTo(Name name,
+                           const ForEachTransitionCallback& callback);
 
   inline int number_of_transitions() const;
 

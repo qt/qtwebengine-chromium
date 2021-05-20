@@ -10,8 +10,11 @@
 #include <sys/mman.h>
 
 cros_gralloc_buffer::cros_gralloc_buffer(uint32_t id, struct bo *acquire_bo,
-					 struct cros_gralloc_handle *acquire_handle)
-    : id_(id), bo_(acquire_bo), hnd_(acquire_handle), refcount_(1), lockcount_(0)
+					 struct cros_gralloc_handle *acquire_handle,
+					 int32_t reserved_region_fd, uint64_t reserved_region_size)
+    : id_(id), bo_(acquire_bo), hnd_(acquire_handle), refcount_(1), lockcount_(0),
+      reserved_region_fd_(reserved_region_fd), reserved_region_size_(reserved_region_size),
+      reserved_region_addr_(nullptr)
 {
 	assert(bo_);
 	num_planes_ = drv_bo_get_num_planes(bo_);
@@ -25,6 +28,9 @@ cros_gralloc_buffer::~cros_gralloc_buffer()
 	if (hnd_) {
 		native_handle_close(&hnd_->base);
 		delete hnd_;
+	}
+	if (reserved_region_addr_) {
+		munmap(reserved_region_addr_, reserved_region_size_);
 	}
 }
 
@@ -113,4 +119,53 @@ int32_t cros_gralloc_buffer::resource_info(uint32_t strides[DRV_MAX_PLANES],
 					   uint32_t offsets[DRV_MAX_PLANES])
 {
 	return drv_resource_info(bo_, strides, offsets);
+}
+
+int32_t cros_gralloc_buffer::invalidate()
+{
+	if (lockcount_ <= 0) {
+		drv_log("Buffer was not locked.\n");
+		return -EINVAL;
+	}
+
+	if (lock_data_[0]) {
+		return drv_bo_invalidate(bo_, lock_data_[0]);
+	}
+
+	return 0;
+}
+
+int32_t cros_gralloc_buffer::flush()
+{
+	if (lockcount_ <= 0) {
+		drv_log("Buffer was not locked.\n");
+		return -EINVAL;
+	}
+
+	if (lock_data_[0]) {
+		return drv_bo_flush(bo_, lock_data_[0]);
+	}
+
+	return 0;
+}
+
+int32_t cros_gralloc_buffer::get_reserved_region(void **addr, uint64_t *size)
+{
+	if (reserved_region_fd_ <= 0) {
+		drv_log("Buffer does not have reserved region.\n");
+		return -EINVAL;
+	}
+
+	if (!reserved_region_addr_) {
+		reserved_region_addr_ = mmap(nullptr, reserved_region_size_, PROT_WRITE | PROT_READ,
+					     MAP_SHARED, reserved_region_fd_, 0);
+		if (reserved_region_addr_ == MAP_FAILED) {
+			drv_log("Failed to mmap reserved region: %s.\n", strerror(errno));
+			return -errno;
+		}
+	}
+
+	*addr = reserved_region_addr_;
+	*size = reserved_region_size_;
+	return 0;
 }

@@ -9,6 +9,7 @@
 
 #include "cros_gralloc_buffer.h"
 
+#include <functional>
 #include <mutex>
 #include <unordered_map>
 
@@ -26,13 +27,24 @@ class cros_gralloc_driver
 	int32_t retain(buffer_handle_t handle);
 	int32_t release(buffer_handle_t handle);
 
-	int32_t lock(buffer_handle_t handle, int32_t acquire_fence, const struct rectangle *rect,
-		     uint32_t map_flags, uint8_t *addr[DRV_MAX_PLANES]);
+	int32_t lock(buffer_handle_t handle, int32_t acquire_fence, bool close_acquire_fence,
+		     const struct rectangle *rect, uint32_t map_flags,
+		     uint8_t *addr[DRV_MAX_PLANES]);
 	int32_t unlock(buffer_handle_t handle, int32_t *release_fence);
+
+	int32_t invalidate(buffer_handle_t handle);
+	int32_t flush(buffer_handle_t handle, int32_t *release_fence);
 
 	int32_t get_backing_store(buffer_handle_t handle, uint64_t *out_store);
 	int32_t resource_info(buffer_handle_t handle, uint32_t strides[DRV_MAX_PLANES],
 			      uint32_t offsets[DRV_MAX_PLANES]);
+
+	int32_t get_reserved_region(buffer_handle_t handle, void **reserved_region_addr,
+				    uint64_t *reserved_region_size);
+
+	uint32_t get_resolved_drm_format(uint32_t drm_format, uint64_t usage);
+
+	void for_each_handle(const std::function<void(cros_gralloc_handle_t)> &function);
 
       private:
 	cros_gralloc_driver(cros_gralloc_driver const &);

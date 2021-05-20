@@ -30,7 +30,7 @@
 
 #include <libweston/libweston.h>
 #include <libweston/zalloc.h>
-#include "helpers.h"
+#include "shared/helpers.h"
 
 #include <libweston-desktop/libweston-desktop.h>
 #include "internal.h"

@@ -213,7 +213,7 @@ static int tegra_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint3
 {
 	uint32_t size, stride, block_height_log2 = 0;
 	enum nv_mem_kind kind = NV_MEM_KIND_PITCH;
-	struct drm_tegra_gem_create gem_create;
+	struct drm_tegra_gem_create gem_create = { 0 };
 	int ret;
 
 	if (use_flags &
@@ -223,7 +223,6 @@ static int tegra_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint3
 		compute_layout_blocklinear(width, height, format, &kind, &block_height_log2,
 					   &stride, &size);
 
-	memset(&gem_create, 0, sizeof(gem_create));
 	gem_create.size = size;
 	gem_create.flags = 0;
 
@@ -239,9 +238,8 @@ static int tegra_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint3
 	bo->meta.strides[0] = stride;
 
 	if (kind != NV_MEM_KIND_PITCH) {
-		struct drm_tegra_gem_set_tiling gem_tile;
+		struct drm_tegra_gem_set_tiling gem_tile = { 0 };
 
-		memset(&gem_tile, 0, sizeof(gem_tile));
 		gem_tile.handle = bo->handles[0].u32;
 		gem_tile.mode = DRM_TEGRA_GEM_TILING_MODE_BLOCK;
 		gem_tile.value = block_height_log2;
@@ -264,16 +262,14 @@ static int tegra_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint3
 static int tegra_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 {
 	int ret;
-	struct drm_tegra_gem_get_tiling gem_get_tiling;
+	struct drm_tegra_gem_get_tiling gem_get_tiling = { 0 };
 
 	ret = drv_prime_bo_import(bo, data);
 	if (ret)
 		return ret;
 
 	/* TODO(gsingh): export modifiers and get rid of backdoor tiling. */
-	memset(&gem_get_tiling, 0, sizeof(gem_get_tiling));
 	gem_get_tiling.handle = bo->handles[0].u32;
-
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_TEGRA_GEM_GET_TILING, &gem_get_tiling);
 	if (ret) {
 		drv_gem_bo_destroy(bo);
@@ -299,12 +295,10 @@ static int tegra_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 static void *tegra_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t map_flags)
 {
 	int ret;
-	struct drm_tegra_gem_mmap gem_map;
+	struct drm_tegra_gem_mmap gem_map = { 0 };
 	struct tegra_private_map_data *priv;
 
-	memset(&gem_map, 0, sizeof(gem_map));
 	gem_map.handle = bo->handles[0].u32;
-
 	ret = drmCommandWriteRead(bo->drv->fd, DRM_TEGRA_GEM_MMAP, &gem_map, sizeof(gem_map));
 	if (ret < 0) {
 		drv_log("DRM_TEGRA_GEM_MMAP failed\n");

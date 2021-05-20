@@ -165,24 +165,21 @@ message StartVmRequest {
   // Make the rootfs writable.
   bool writable_rootfs = 15;
 
-  // If true, a file descriptor must be passed along with the message and that
-  // file descriptor will be used for kernel.
-  // Ignored unless |start_termina| is true.
-  bool use_fd_for_kernel = 13;
+  enum FdType {
+    // Kernel image.
+    KERNEL = 0;
+    // RootFS image.
+    ROOTFS = 1;
+    // File to be used for storage.
+    STORAGE = 2;
+    // Initrd image.
+    INITRD = 3;
+  }
+  // For each FdType in fds a file descriptor must be passed along with the
+  // message and that file descriptor will be used for the type's purpose.
+  repeated FdType fds = 16;
 
-  // If true, a file descriptor must be passed along with the message and that
-  // file descriptor will be used for rootfs.
-  // If |use_fd_for_kernel| is true, the fd for rootfs must be passed after
-  // that for kernel.
-  // Ignored unless |start_termina| is true.
-  bool use_fd_for_rootfs = 14;
-
-  // If true, a file descriptor must be passed along with the message and that
-  // file descriptor will be used for storage.
-  // If |use_fd_for_kernel| or |use_fd_for_rootfs| is true, the fd for storage
-  // must be passed after ones for kernel and rootfs.
-  // Ignored unless |start_termina| is true.
-  bool use_fd_for_storage = 6;
+  reserved 13, 14, 6;
 }
 
 // Information that must be included with every StartPluginVm request.
@@ -255,6 +252,9 @@ message StartArcVmRequest {
 
   // Ignore development configuration directives when ARCVM is started.
   bool ignore_dev_conf = 9;
+
+  // Whether rt-vcpus are enabled.
+  bool enable_rt_vcpu = 10;
 }
 
 enum VmStatus {
@@ -471,6 +471,9 @@ enum DiskImageStatus {
 
   // The disk image was resized.
   DISK_STATUS_RESIZED = 7;
+
+  // Operation failed because of lack of disk space.
+  DISK_STATUS_NOT_ENOUGH_SPACE = 8;
 }
 
 // Request to concierge to create a disk image.

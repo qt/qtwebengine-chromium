@@ -20,6 +20,8 @@ uint32_t cros_gralloc_convert_format(int format)
 		return DRM_FORMAT_ARGB8888;
 	case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
 		return DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED;
+	case HAL_PIXEL_FORMAT_RAW16:
+		return DRM_FORMAT_R16;
 	case HAL_PIXEL_FORMAT_RGB_565:
 		return DRM_FORMAT_RGB565;
 	case HAL_PIXEL_FORMAT_RGB_888:
@@ -59,30 +61,39 @@ cros_gralloc_handle_t cros_gralloc_convert_handle(buffer_handle_t handle)
 	return hnd;
 }
 
-int32_t cros_gralloc_sync_wait(int32_t acquire_fence)
+int32_t cros_gralloc_sync_wait(int32_t fence, bool close_fence)
 {
-	if (acquire_fence < 0)
+	if (fence < 0)
 		return 0;
 
 	/*
 	 * Wait initially for 1000 ms, and then wait indefinitely. The SYNC_IOC_WAIT
 	 * documentation states the caller waits indefinitely on the fence if timeout < 0.
 	 */
-	int err = sync_wait(acquire_fence, 1000);
+	int err = sync_wait(fence, 1000);
 	if (err < 0) {
 		drv_log("Timed out on sync wait, err = %s\n", strerror(errno));
-		err = sync_wait(acquire_fence, -1);
+		err = sync_wait(fence, -1);
 		if (err < 0) {
 			drv_log("sync wait error = %s\n", strerror(errno));
 			return -errno;
 		}
 	}
 
-	err = close(acquire_fence);
-	if (err) {
-		drv_log("Unable to close fence fd, err = %s\n", strerror(errno));
-		return -errno;
+	if (close_fence) {
+		err = close(fence);
+		if (err) {
+			drv_log("Unable to close fence fd, err = %s\n", strerror(errno));
+			return -errno;
+		}
 	}
 
 	return 0;
+}
+
+std::string get_drm_format_string(uint32_t drm_format)
+{
+	char *sequence = (char *)&drm_format;
+	std::string s(sequence, 4);
+	return "DRM_FOURCC_" + s;
 }

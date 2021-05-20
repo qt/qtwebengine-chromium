@@ -46,11 +46,15 @@ PropertyDetails MapUpdater::GetDetails(InternalIndex descriptor) const {
   DCHECK(descriptor.is_found());
   if (descriptor == modified_descriptor_) {
     PropertyAttributes attributes = new_attributes_;
-    // If the original map was sealed or frozen, let us used the old
+    // If the original map was sealed or frozen, let's use the old
     // attributes so that we follow the same transition path as before.
     // Note that the user could not have changed the attributes because
-    // both seal and freeze make the properties non-configurable.
-    if (integrity_level_ == SEALED || integrity_level_ == FROZEN) {
+    // both seal and freeze make the properties non-configurable. An exception
+    // is transitioning from [[Writable]] = true to [[Writable]] = false (this
+    // is allowed for frozen and sealed objects). To support it, we use the new
+    // attributes if they have [[Writable]] == false.
+    if ((integrity_level_ == SEALED || integrity_level_ == FROZEN) &&
+        !(new_attributes_ & READ_ONLY)) {
       attributes = old_descriptors_->GetDetails(descriptor).attributes();
     }
     return PropertyDetails(new_kind_, attributes, new_location_, new_constness_,
@@ -217,6 +221,14 @@ MapUpdater::State MapUpdater::TryReconfigureToDataFieldInplace() {
 
   PropertyDetails old_details =
       old_descriptors_->GetDetails(modified_descriptor_);
+
+  if (old_details.attributes() != new_attributes_ ||
+      old_details.kind() != new_kind_ ||
+      old_details.location() != new_location_) {
+    // These changes can't be done in-place.
+    return state_;  // Not done yet.
+  }
+
   Representation old_representation = old_details.representation();
   if (!old_representation.CanBeInPlaceChangedTo(new_representation_)) {
     return state_;  // Not done yet.
@@ -667,7 +679,7 @@ Handle<DescriptorArray> MapUpdater::BuildDescriptorArray() {
 }
 
 Handle<Map> MapUpdater::FindSplitMap(Handle<DescriptorArray> descriptors) {
-  DisallowHeapAllocation no_allocation;
+  DisallowGarbageCollection no_gc;
 
   int root_nof = root_map_->NumberOfOwnDescriptors();
   Map current = *root_map_;
@@ -675,7 +687,7 @@ Handle<Map> MapUpdater::FindSplitMap(Handle<DescriptorArray> descriptors) {
     Name name = descriptors->GetKey(i);
     PropertyDetails details = descriptors->GetDetails(i);
     Map next =
-        TransitionsAccessor(isolate_, current, &no_allocation)
+        TransitionsAccessor(isolate_, current, &no_gc)
             .SearchTransition(name, details.kind(), details.attributes());
     if (next.is_null()) break;
     DescriptorArray next_descriptors = next.instance_descriptors(kRelaxedLoad);
@@ -767,17 +779,13 @@ MapUpdater::State MapUpdater::ConstructNewMap() {
         old_value, new_field_type, new_value);
   }
 
-  Handle<LayoutDescriptor> new_layout_descriptor =
-      LayoutDescriptor::New(isolate_, split_map, new_descriptors, old_nof_);
-
-  Handle<Map> new_map = Map::AddMissingTransitions(
-      isolate_, split_map, new_descriptors, new_layout_descriptor);
+  Handle<Map> new_map =
+      Map::AddMissingTransitions(isolate_, split_map, new_descriptors);
 
   // Deprecated part of the transition tree is no longer reachable, so replace
   // current instance descriptors in the "survived" part of the tree with
   // the new descriptors to maintain descriptors sharing invariant.
-  split_map->ReplaceDescriptors(isolate_, *new_descriptors,
-                                *new_layout_descriptor);
+  split_map->ReplaceDescriptors(isolate_, *new_descriptors);
 
   if (has_integrity_level_transition_) {
     target_map_ = new_map;

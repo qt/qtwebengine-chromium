@@ -102,6 +102,7 @@ const char kServicesProperty[] = "Services";  // Also used for Profile.
 const char kUninitializedTechnologiesProperty[] = "UninitializedTechnologies";
 const char kWakeOnLanEnabledProperty[] = "WakeOnLanEnabled";
 const char kWifiGlobalFTEnabledProperty[] = "WiFi.GlobalFTEnabled";
+const char kDNSProxyIPv4AddressProperty[] = "DNSProxyIPv4Address";
 
 // Manager and DefaultProfile property names (the Manager properties that are
 // persisted by a DefaultProfile; these are always read-only for
@@ -217,6 +218,8 @@ const char kWifiFrequency[] = "WiFi.Frequency";
 const char kWifiHexSsid[] = "WiFi.HexSSID";
 const char kWifiHiddenSsid[] = "WiFi.HiddenSSID";
 const char kWifiPhyMode[] = "WiFi.PhyMode";
+const char kWifiRekeyInProgressProperty[] = "WiFi.RekeyInProgress";
+const char kWifiRoamStateProperty[] = "WiFi.RoamState";
 const char kWifiVendorInformationProperty[] = "WiFi.VendorInformation";
 
 // Base VPN Service property names.
@@ -322,6 +325,7 @@ const char kDhcpv6PreferredLeaseDurationSecondsProperty[] =
 
 // Base Device property names.
 const char kAddressProperty[] = "Address";  // Also used for IPConfig.
+const char kInhibitedProperty[] = "Inhibited";
 const char kIPConfigsProperty[] = "IPConfigs";
 const char kIPv6DisabledProperty[] = "IPv6Disabled";
 const char kInterfaceProperty[] = "Interface";  // Network interface name.
@@ -337,8 +341,8 @@ const char kTransmitByteCountProperty[] = "TransmitByteCount";
 
 // Cellular Device property names.
 const char kCellularAllowRoamingProperty[] = "Cellular.AllowRoaming";
-const char kCarrierProperty[] = "Cellular.Carrier";
 const char kDeviceIdProperty[] = "Cellular.DeviceID";
+const char kEidProperty[] = "Cellular.EID";
 const char kEquipmentIdProperty[] = "Cellular.EquipmentID";
 const char kEsnProperty[] = "Cellular.ESN";
 const char kFirmwareRevisionProperty[] = "Cellular.FirmwareRevision";
@@ -357,7 +361,9 @@ const char kProviderRequiresRoamingProperty[] =
     "Cellular.ProviderRequiresRoaming";
 const char kSelectedNetworkProperty[] = "Cellular.SelectedNetwork";
 const char kSIMPresentProperty[] = "Cellular.SIMPresent";
+const char kSIMSlotInfoProperty[] = "Cellular.SIMSlotInfo";
 const char kSupportNetworkScanProperty[] = "Cellular.SupportNetworkScan";
+const char kUseAttachAPNProperty[] = "Cellular.UseAttachAPN";
 const char kDBusObjectProperty[] = "DBus.Object";
 const char kDBusServiceProperty[] = "DBus.Service";
 
@@ -390,6 +396,8 @@ const char kEntriesProperty[] = "Entries";
 // kNameProperty: Defined above for Service.
 // kServicesProperty: Defined above for Manager.
 const char kUserHashProperty[] = "UserHash";
+const char kAlwaysOnVpnModeProperty[] = "AlwaysOnVpnMode";
+const char kAlwaysOnVpnServiceProperty[] = "AlwaysOnVpnService";
 
 // WiFi Service VendorInformation dictionary keys.
 const char kVendorOUIListProperty[] = "OUIList";
@@ -414,6 +422,12 @@ const char kStateDisconnect[] = "disconnecting";
 const char kStateFailure[] = "failure";
 const char kStateActivationFailure[] = "activation-failure";
 
+// Shill WiFi roam state options.
+const char kRoamStateIdle[] = "idle";
+const char kRoamStateAssociation[] = "association";
+const char kRoamStateConfiguration[] = "configuration";
+const char kRoamStateReady[] = "ready";
+
 // Flimflam portal phase and status.
 const char kPortalDetectionPhaseConnection[] = "Connection";
 const char kPortalDetectionPhaseDns[] = "DNS";
@@ -430,6 +444,11 @@ const char kSIMLockStatusProperty[] = "Cellular.SIMLockStatus";
 const char kSIMLockTypeProperty[] = "LockType";
 const char kSIMLockRetriesLeftProperty[] = "RetriesLeft";
 const char kSIMLockEnabledProperty[] = "LockEnabled";
+
+// Shill SIMSlotInfo properties.
+const char kSIMSlotInfoEID[] = "EID";
+const char kSIMSlotInfoICCID[] = "ICCID";
+const char kSIMSlotInfoPrimary[] = "Primary";
 
 // Flimflam property names for Cellular.FoundNetworks.
 const char kLongNameProperty[] = "long_name";
@@ -452,10 +471,16 @@ const char kApnLocalizedNameProperty[] = "localized_name";
 const char kApnLanguageProperty[] = "language";
 const char kApnAuthenticationProperty[] = "authentication";
 const char kApnAttachProperty[] = "attach";
+const char kApnIpTypeProperty[] = "ip_type";
 
 // APN authentication property values (as expected by ModemManager).
 const char kApnAuthenticationPap[] = "pap";
 const char kApnAuthenticationChap[] = "chap";
+
+// IP type property values.
+const char kApnIpTypeV4[] = "ipv4";
+const char kApnIpTypeV6[] = "ipv6";
+const char kApnIpTypeV4V6[] = "ipv4v6";
 
 // Payment Portal property names.
 const char kPaymentPortalURL[] = "url";
@@ -522,6 +547,7 @@ const char kProviderL2tpIpsec[] = "l2tpipsec";
 const char kProviderOpenVpn[] = "openvpn";
 const char kProviderThirdPartyVpn[] = "thirdpartyvpn";
 const char kProviderArcVpn[] = "arcvpn";
+const char kProviderWireguard[] = "wireguard";
 
 // Flimflam monitored properties
 const char kMonitorPropertyChanged[] = "PropertyChanged";

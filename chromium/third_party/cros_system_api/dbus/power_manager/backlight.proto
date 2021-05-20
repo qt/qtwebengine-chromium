@@ -10,7 +10,7 @@ package power_manager;
 option go_package = "power_manager_proto";
 
 // See
-// https://chromium.googlesource.com/chromiumos/platform2/+/master/power_manager/docs/screen_brightness.md
+// https://chromium.googlesource.com/chromiumos/platform2/+/HEAD/power_manager/docs/screen_brightness.md
 // for information about the mapping between brightness percents and backlight
 // hardware levels.
 

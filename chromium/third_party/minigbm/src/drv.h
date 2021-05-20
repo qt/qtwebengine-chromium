@@ -89,6 +89,7 @@ struct drv_import_fd_data {
 	uint32_t width;
 	uint32_t height;
 	uint32_t format;
+	uint32_t tiling;
 	uint64_t use_flags;
 };
 
@@ -144,6 +145,8 @@ void *drv_bo_map(struct bo *bo, const struct rectangle *rect, uint32_t map_flags
 int drv_bo_unmap(struct bo *bo, struct mapping *mapping);
 
 int drv_bo_invalidate(struct bo *bo, struct mapping *mapping);
+
+int drv_bo_flush(struct bo *bo, struct mapping *mapping);
 
 int drv_bo_flush_or_unmap(struct bo *bo, struct mapping *mapping);
 

@@ -36,9 +36,12 @@ message App {
     repeated StringsWithLocale values = 1;
   }
 
+  // This is the 'key' for the application and used in other requests such as
+  // launching the application or retrieving its icon.
   string desktop_file_id = 1;
 
-  // These fields map directly to keys from the Desktop Entry spec.
+  // These fields map directly to keys from the Desktop Entry spec:
+  // https://specifications.freedesktop.org/desktop-entry-spec/latest/ar01s06.html.
   LocaleString name = 2;
   LocaleString comment = 3;
   repeated string mime_types = 4;
@@ -46,6 +49,10 @@ message App {
   string startup_wm_class = 6;
   bool startup_notify = 7;
   LocaleStrings keywords = 9;
+  string exec = 12;
+
+  // This is the first argument of the 'exec' key, representing the name of the
+  // executable.
   string executable_file_name = 10;
 
   // If set, the package_id of the installed package that owns this .desktop

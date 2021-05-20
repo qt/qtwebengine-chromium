@@ -19,6 +19,15 @@ struct gralloc0_module {
 	std::mutex initialization_mutex;
 };
 
+struct cros_gralloc0_buffer_info {
+	uint32_t drm_fourcc;
+	int num_fds;
+	int fds[4];
+	uint64_t modifier;
+	uint32_t offset[4];
+	uint32_t stride[4];
+};
+
 /* This enumeration must match the one in <gralloc_drm.h>.
  * The functions supported by this gralloc's temporary private API are listed
  * below. Use of these functions is highly discouraged and should only be
@@ -31,6 +40,7 @@ enum {
 	GRALLOC_DRM_GET_FORMAT,
 	GRALLOC_DRM_GET_DIMENSIONS,
 	GRALLOC_DRM_GET_BACKING_STORE,
+	GRALLOC_DRM_GET_BUFFER_INFO,
 };
 // clang-format on
 
@@ -70,8 +80,9 @@ static uint64_t gralloc0_convert_usage(int usage)
 		 * rockchip) and usb monitors (evdi/udl). It's complicated so ignore it.
 		 * */
 		use_flags |= BO_USE_NONE;
+	/* Map this flag to linear until real HW protection is available on Android. */
 	if (usage & GRALLOC_USAGE_PROTECTED)
-		use_flags |= BO_USE_PROTECTED;
+		use_flags |= BO_USE_LINEAR;
 	if (usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) {
 		use_flags |= BO_USE_HW_VIDEO_ENCODER;
 		/*HACK: See b/30054495 */
@@ -119,9 +130,10 @@ static int gralloc0_alloc(alloc_device_t *dev, int w, int h, int format, int usa
 	descriptor.width = w;
 	descriptor.height = h;
 	descriptor.droid_format = format;
-	descriptor.producer_usage = descriptor.consumer_usage = usage;
+	descriptor.droid_usage = usage;
 	descriptor.drm_format = cros_gralloc_convert_format(format);
 	descriptor.use_flags = gralloc0_convert_usage(usage);
+	descriptor.reserved_region_size = 0;
 
 	supported = mod->driver->is_supported(&descriptor);
 	if (!supported && (usage & GRALLOC_USAGE_HW_COMPOSER)) {
@@ -129,11 +141,13 @@ static int gralloc0_alloc(alloc_device_t *dev, int w, int h, int format, int usa
 		supported = mod->driver->is_supported(&descriptor);
 	}
 	if (!supported && (usage & GRALLOC_USAGE_HW_VIDEO_ENCODER) &&
-	    !gralloc0_droid_yuv_format(format)) {
-		// Unmask BO_USE_HW_VIDEO_ENCODER in the case of non-yuv formats
-		// because they are not input to a hw encoder but used as an
-		// intermediate format (e.g. camera).
+	    format != HAL_PIXEL_FORMAT_YCbCr_420_888) {
+		// Unmask BO_USE_HW_VIDEO_ENCODER for other formats. They are mostly
+		// intermediate formats not passed directly to the encoder (e.g.
+		// camera). YV12 is passed to the encoder component, but it is converted
+		// to YCbCr_420_888 before being passed to the hw encoder.
 		descriptor.use_flags &= ~BO_USE_HW_VIDEO_ENCODER;
+		drv_log("Retrying format %u allocation without encoder flag", format);
 		supported = mod->driver->is_supported(&descriptor);
 	}
 
@@ -248,7 +262,7 @@ static int gralloc0_unlock(struct gralloc_module_t const *module, buffer_handle_
 	if (ret)
 		return ret;
 
-	ret = cros_gralloc_sync_wait(fence_fd);
+	ret = cros_gralloc_sync_wait(fence_fd, /*close_acquire_fence=*/true);
 	if (ret)
 		return ret;
 
@@ -264,6 +278,7 @@ static int gralloc0_perform(struct gralloc_module_t const *module, int op, ...)
 	uint32_t *out_width, *out_height, *out_stride;
 	uint32_t strides[DRV_MAX_PLANES] = { 0, 0, 0, 0 };
 	uint32_t offsets[DRV_MAX_PLANES] = { 0, 0, 0, 0 };
+	struct cros_gralloc0_buffer_info *info;
 	auto mod = (struct gralloc0_module const *)module;
 
 	switch (op) {
@@ -271,6 +286,7 @@ static int gralloc0_perform(struct gralloc_module_t const *module, int op, ...)
 	case GRALLOC_DRM_GET_FORMAT:
 	case GRALLOC_DRM_GET_DIMENSIONS:
 	case GRALLOC_DRM_GET_BACKING_STORE:
+	case GRALLOC_DRM_GET_BUFFER_INFO:
 		break;
 	default:
 		return -EINVAL;
@@ -314,6 +330,17 @@ static int gralloc0_perform(struct gralloc_module_t const *module, int op, ...)
 	case GRALLOC_DRM_GET_BACKING_STORE:
 		out_store = va_arg(args, uint64_t *);
 		ret = mod->driver->get_backing_store(handle, out_store);
+		break;
+	case GRALLOC_DRM_GET_BUFFER_INFO:
+		info = va_arg(args, struct cros_gralloc0_buffer_info *);
+		info->drm_fourcc = hnd->format;
+		info->num_fds = hnd->num_planes;
+		info->modifier = hnd->format_modifier;
+		for (uint32_t i = 0; i < hnd->num_planes; i++) {
+			info->fds[i] = hnd->fds[i];
+			info->offset[i] = hnd->offsets[i];
+			info->stride[i] = hnd->strides[i];
+		}
 		break;
 	default:
 		ret = -EINVAL;
@@ -359,7 +386,7 @@ static int gralloc0_lock_async(struct gralloc_module_t const *module, buffer_han
 	assert(h >= 0);
 
 	map_flags = gralloc0_convert_map_usage(usage);
-	ret = mod->driver->lock(handle, fence_fd, &rect, map_flags, addr);
+	ret = mod->driver->lock(handle, fence_fd, true, &rect, map_flags, addr);
 	*vaddr = addr[0];
 	return ret;
 }
@@ -404,7 +431,7 @@ static int gralloc0_lock_async_ycbcr(struct gralloc_module_t const *module, buff
 	assert(h >= 0);
 
 	map_flags = gralloc0_convert_map_usage(usage);
-	ret = mod->driver->lock(handle, fence_fd, &rect, map_flags, addr);
+	ret = mod->driver->lock(handle, fence_fd, true, &rect, map_flags, addr);
 	if (ret)
 		return ret;
 
@@ -414,7 +441,8 @@ static int gralloc0_lock_async_ycbcr(struct gralloc_module_t const *module, buff
 			return ret;
 
 		for (uint32_t plane = 0; plane < DRV_MAX_PLANES; plane++)
-			addr[plane] = static_cast<uint8_t *>(nullptr) + offsets[plane];
+			addr[plane] =
+			    reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(offsets[plane]));
 	}
 
 	switch (hnd->format) {

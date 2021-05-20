@@ -24,10 +24,11 @@ const char kSetVpnIntentMethod[] = "SetVpnIntent";
 const char kConnectNamespaceMethod[] = "ConnectNamespace";
 const char kGetTrafficCountersMethod[] = "GetTrafficCounters";
 const char kModifyPortRuleMethod[] = "ModifyPortRule";
+const char kGetDevicesMethod[] = "GetDevices";
 
 // Signals.
-const char kNeighborConnectedStateChangedSignal[] =
-    "NeighborConnectedStateChanged";
+const char kNetworkDeviceChangedSignal[] = "NetworkDeviceChanged";
+const char kNeighborReachabilityEventSignal[] = "NeighborReachabilityEvent";
 
 }  // namespace patchpanel
 

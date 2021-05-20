@@ -14,6 +14,7 @@ option optimize_for = LITE_RUNTIME;
 
 package user_data_auth;
 
+import "fido.proto";
 import "key.proto";
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,6 +81,10 @@ enum CryptohomeErrorCode {
   // Fingerprint match failed and maximum retry count reached.
   CRYPTOHOME_ERROR_FINGERPRINT_DENIED = 44;
   CRYPTOHOME_ERROR_VAULT_UNRECOVERABLE = 45;
+  CRYPTOHOME_ERROR_FIDO_MAKE_CREDENTIAL_FAILED = 46;
+  CRYPTOHOME_ERROR_FIDO_GET_ASSERTION_FAILED = 47;
+  CRYPTOHOME_TOKEN_SERIALIZATION_FAILED = 48;
+  CRYPTOHOME_INVALID_AUTH_SESSION_TOKEN = 49;
 }
 
 // This is used by MountRequest to store details about the mount to create
@@ -164,11 +169,8 @@ message MountRequest {
   // Credentials are not needed in the request; they are synthesized by
   // cryptohomed from id.
   bool public_mount = 7;
-  // If set to true, mounts the vault to a temporary location. The mount is not
-  // exposed to the usual locations (/home/user, /home/root).
-  bool hidden_mount = 8;
   // If set to true, the mount will be for a guest session.
-  bool guest_mount = 9;
+  bool guest_mount = 8;
 }
 
 // Output parameters for Mount()
@@ -301,24 +303,6 @@ message AddDataRestoreKeyReply {
 
   // 256 bits data restore key in raw bytes
   bytes data_restore_key = 2;
-}
-
-// Input parameters to UpdateKey()
-message UpdateKeyRequest {
-  // Whose key to update?
-  cryptohome.AccountIdentifier account_id = 1;
-  // The authentication data from user.
-  cryptohome.AuthorizationRequest authorization_request = 2;
-  // The changes to be made to the key.
-  cryptohome.Key changes = 3;
-  // Signature of the changes object above with the key itself.
-  bytes authorization_signature = 4;
-}
-
-// Output parameters for UpdateKey()
-message UpdateKeyReply {
-  // Indicates an error if error is not empty.
-  CryptohomeErrorCode error = 1;
 }
 
 // Input parameters to RemoveKey()
@@ -529,6 +513,33 @@ message LowDiskSpace {
   uint64 disk_free_bytes = 1;
 }
 
+message StartAuthSessionRequest {
+  // The account of the user whose home directory is requested for mounting.
+  cryptohome.AccountIdentifier account_id = 1;
+}
+
+message StartAuthSessionReply {
+  // Error if any to start the Auth Session
+  CryptohomeErrorCode error = 1;
+  // Token that would be used to conduct any auth-related operation.
+  bytes auth_session_id = 2;
+}
+
+message AuthenticateAuthSessionRequest {
+  // Serialized form of token that is used to identify Auth Session that needs
+  // to be authenticated.
+  bytes auth_session_id = 1;
+  // Authorization data from the user.
+  cryptohome.AuthorizationRequest authorization = 2;
+}
+
+message AuthenticateAuthSessionReply {
+  // Error if any to authenticate the Auth Session.
+  CryptohomeErrorCode error = 1;
+  // Returns if the Auth Session is authenticated.
+  bool authenticated = 2;
+}
+
 // ------------------------- ArcQuota Interface -------------------------
 
 // Input parameters to GetArcDiskFeatures().
@@ -568,6 +579,47 @@ message GetCurrentSpaceForArcGidReply {
   // Will be a negative number if the request fails. See
   // cryptohome/arc_disk_quota.h for more details.
   int64 cur_space = 1;
+}
+
+// Input parameters to GetCurrentSpaceForArcProjectId().
+message GetCurrentSpaceForArcProjectIdRequest {
+  // The project ID for whom we are going to query the disk usage.
+  uint32 project_id = 1;
+}
+
+// Output parameters for GetCurrentSpaceForArcProjectId().
+message GetCurrentSpaceForArcProjectIdReply {
+  // The current disk space usage for the given project ID.
+  // Will be a negative number if the request fails. See
+  // cryptohome/arc_disk_quota.h for more details.
+  int64 cur_space = 1;
+}
+
+// Type of paths that are allowed for SetProjectId.
+enum SetProjectIdAllowedPathType {
+  // /home/user/<obfuscated_username>/Downloads/
+  PATH_DOWNLOADS = 0;
+  // /home/root/<obfuscated_username>/android-data/
+  PATH_ANDROID_DATA = 1;
+}
+
+// Input parameters to SetProjectId().
+message SetProjectIdRequest {
+  // The project ID.
+  uint32 project_id = 1;
+
+  // |parent_path|, |child_path| and |account_id| are used for constructing the
+  // target path. (e.g. /home/user/<obfuscated_username>/Downloads/<child_path>
+  // for parent_path=PATH_DOWNLOADS)
+  SetProjectIdAllowedPathType parent_path = 2;
+  string child_path = 3;
+  cryptohome.AccountIdentifier account_id = 4;
+}
+
+// Output parameters for SetProjectId().
+message SetProjectIdReply {
+  // Set to true if ioctl syscall for setting the proect ID succeeds.
+  bool success = 1;
 }
 
 // ------------------------- PKCS#11 Interface -------------------------
@@ -817,6 +869,8 @@ message GetLoginStatusReply {
   // Note that |boot_lockbox_finalized| is not supplied because current version
   // of bootlockbox doesn't support querying whether it's finalized. The
   // previous version that does support that has been deprecated.
+
+  bool is_locked_to_single_user = 3;
 }
 
 // Input parameters to GetStatusString()
@@ -864,4 +918,30 @@ message CheckHealthRequest {}
 // Output parameters for CheckHealth()
 message CheckHealthReply {
   bool requires_powerwash = 2;
+}
+
+// Fido make credential public key options.
+message FidoMakeCredentialRequest {
+  cryptohome.AccountIdentifier account_id = 1;
+  cryptohome.fido.PublicKeyCredentialCreationOptions make_credential_options =
+      2;
+}
+
+// Fido make credential response.
+message FidoMakeCredentialReply {
+  CryptohomeErrorCode error = 1;
+  // Contains MakeCredentialAuthenticatorResponse.
+  cryptohome.fido.MakeCredentialAuthenticatorResponse make_credential_response =
+      2;
+}
+
+// Fido challenge
+message FidoGetAssertionRequest {
+  cryptohome.fido.PublicKeyCredentialRequestOptions get_assertion_options = 1;
+}
+
+message FidoGetAssertionReply {
+  CryptohomeErrorCode error = 1;
+  // Contains GetAssertionAuthenticatorResponse.
+  cryptohome.fido.GetAssertionAuthenticatorResponse get_assertion_response = 2;
 }

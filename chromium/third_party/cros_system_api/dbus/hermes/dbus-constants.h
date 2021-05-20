@@ -10,7 +10,7 @@ namespace hermes {
 // Hermes D-Bus service identifiers.
 const char kHermesServiceName[] = "org.chromium.Hermes";
 const char kHermesManagerInterface[] = "org.chromium.Hermes.Manager";
-const char kHermesManagerPath[] = "/org/chromium/Hermes";
+const char kHermesManagerPath[] = "/org/chromium/Hermes/Manager";
 
 const char kHermesEuiccInterface[] = "org.chromium.Hermes.Euicc";
 const char kHermesProfileInterface[] = "org.chromium.Hermes.Profile";
@@ -31,13 +31,16 @@ namespace euicc {
 const char kInstallProfileFromActivationCode[] =
     "InstallProfileFromActivationCode";
 const char kInstallPendingProfile[] = "InstallPendingProfile";
+const char kRequestPendingProfiles[] = "RequestPendingProfiles";
+const char kRequestInstalledProfiles[] = "RequestInstalledProfiles";
 const char kUninstallProfile[] = "UninstallProfile";
-const char kRequestPendingEvents[] = "RequestPendingEvents";
 
 // Euicc properties.
+const char kEidProperty[] = "Eid";
 const char kInstalledProfilesProperty[] = "InstalledProfiles";
 const char kIsActiveProperty[] = "IsActive";
 const char kPendingProfilesProperty[] = "PendingProfiles";
+const char kPhysicalSlotProperty[] = "PhysicalSlot";
 
 }  // namespace euicc
 

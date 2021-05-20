@@ -59,14 +59,41 @@ message IPv4Subnet {
 // Represents a network device (physical or virtual) managed by the networking
 // daemon.
 message NetworkDevice {
+  // Identifies the guest for which the virtual device is used.
+  enum GuestType {
+    UNKNOWN = 0;
+    ARC = 1;
+    ARCVM = 2;
+    TERMINA_VM = 3;
+    PLUGIN_VM = 4;
+  };
+
   // The name of the host device interface.
   string ifname = 1;
+
+  // The name of the physical interface to which the virtual device is mapped.
+  // Only valid for virtual devices and will be empty for those tracking default
+  // logical or physical networks.
+  string phys_ifname = 5;
 
   // The assigned IPv4 address in network order.
   uint32 ipv4_addr = 2;
 
   // The subnet allocated for this device
   IPv4Subnet ipv4_subnet = 3;
+
+  // The guest to which the device is bound, if applicable.
+  GuestType guest_type = 4;
+}
+
+// Request to obtain the list of virtual network devices that patchpanel
+// manages for guest OSes. This does not include physical or virtual (e.g. VPN)
+// devices managed by shill or virtual devices in connected namespaces.
+message GetDevicesRequest {}
+
+message GetDevicesResponse {
+  // The list of devices under patchpanel's management/control.
+  repeated NetworkDevice devices = 1;
 }
 
 // Information required by Concierge to continue the ARC VM startup process.
@@ -198,6 +225,18 @@ message ConnectNamespaceRequest {
   // from Chrome can be routed to this namespace, and traffic originated from
   // this namespace can be routed to these other privilege domains.
   bool allow_user_traffic = 3;
+
+  // This field specifies the routing behavior to use when (1)
+  // |outbound_physical_device| is empty and (2) the system's highest priority
+  // network interface is a VPN. If true, egress traffic will be routed to the
+  // VPN; if false, it will be left on the underlying physical interface.
+  bool route_on_vpn = 4;
+
+  // Specifies how the traffic flowing over the new virtual network should be
+  // accounted, if applicable.
+  // This field is required. The default behavior will be to treat unspecified
+  // and UNKNOWN sources as SYSTEM traffic for accounting purposes.
+  TrafficCounter.Source traffic_source = 5;
 }
 
 // Response to a ConnectNamespaceRequest. If the operation failed then all
@@ -325,18 +364,43 @@ message ModifyPortRuleResponse {
   bool success = 1;
 }
 
-// Signal for notifying a change in the layer 2 connectivity state of a neighbor
-// monitored by NeighborLinkMonitor. Note that we assume the state of a new
-// neighbor is "connected" and thus no signal will be sent out if there is no L2
-// connectivity issue. See the class comment of NeighborLinkMonitor for more
-// details.
-message NeighborConnectedStateChangedSignal {
+// Signal that is emitted when a device managed by patchpanel is added or
+// removed.
+message NetworkDeviceChangedSignal {
+  enum Event {
+    UNKNOWN_CHANGE = 0;
+    DEVICE_ADDED = 1;
+    DEVICE_REMOVED = 2;
+  };
+
+  NetworkDevice device = 1;
+  Event event = 2;
+}
+
+// Signal for notifying an event about the layer 2 reachability of a neighbor
+// monitored by NeighborLinkMonitor.
+message NeighborReachabilityEventSignal {
   // Possible roles of a neighbor in the corresponding ipconfig.
   enum Role {
     INVALID_ROLE = 0;
     GATEWAY = 1;
     DNS_SERVER = 2;
     GATEWAY_AND_DNS_SERVER = 3;
+  };
+
+  // Possible event types. See the class comment of NeighborLinkMonitor for more
+  // details about how these events are generated.
+  enum EventType {
+    INVALID_EVENT_TYPE = 0;
+    // Indicates a failure is detected for this neighbor. After this event, no
+    // more FAILED events will be generated for this neighbor until a RECOVERED
+    // event happens.
+    FAILED = 1;
+    // Indicates this neighbor has recovered from the previous failure: the
+    // layer 2 bidirectional reachability has been confirmed for a while. Note
+    // that a new neighbor is considered as "reachable" so this event will not
+    // be generated when we start to monitor a new neighbor.
+    RECOVERED = 2;
   };
 
   // The interface index of the device that connects to this neighbor.
@@ -346,6 +410,5 @@ message NeighborConnectedStateChangedSignal {
   string ip_addr = 2;
   Role role = 3;
 
-  // The new connectivity state of this neighbor.
-  bool connected = 4;
+  EventType type = 4;
 }

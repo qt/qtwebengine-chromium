@@ -316,9 +316,9 @@ message ChallengeResponse {
 message KeyInfo {
   // Indicates whether the key is an EMK or EUK.
   optional KeyProfile key_type = 1;
-  // Domain information about the device or user associated with the key. For an
-  // EMK, this value is the enrolled domain. For an EUK, this value is the
-  // user's email address.
+  // Domain information about the user associated with the key. For an
+  // EMK, this value is empty - customer_id is used instead.
+  // For an EUK, this value is the user's email address.
   optional string domain = 2;
   // The virtual device ID associated with the device or user.
   optional bytes device_id = 3;

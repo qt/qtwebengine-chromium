@@ -34,7 +34,9 @@ static const struct {
 	{ DRM_FORMAT_XBGR8888, __DRI_IMAGE_FORMAT_XBGR8888 },
 	{ DRM_FORMAT_ABGR8888, __DRI_IMAGE_FORMAT_ABGR8888 },
 	{ DRM_FORMAT_XRGB2101010, __DRI_IMAGE_FORMAT_XRGB2101010 },
+	{ DRM_FORMAT_XBGR2101010, __DRI_IMAGE_FORMAT_XBGR2101010 },
 	{ DRM_FORMAT_ARGB2101010, __DRI_IMAGE_FORMAT_ARGB2101010 },
+	{ DRM_FORMAT_ABGR2101010, __DRI_IMAGE_FORMAT_ABGR2101010 },
 };
 
 static int drm_format_to_dri_format(uint32_t drm_format)
@@ -69,10 +71,9 @@ static bool lookup_extension(const __DRIextension *const *extensions, const char
  */
 static void close_gem_handle(uint32_t handle, int fd)
 {
-	struct drm_gem_close gem_close;
+	struct drm_gem_close gem_close = { 0 };
 	int ret = 0;
 
-	memset(&gem_close, 0, sizeof(gem_close));
 	gem_close.handle = handle;
 	ret = drmIoctl(fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
 	if (ret)

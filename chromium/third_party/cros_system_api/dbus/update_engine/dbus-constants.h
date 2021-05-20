@@ -29,6 +29,7 @@ const char kCanRollback[] = "CanRollback";
 const char kSetUpdateOverCellularPermission[] =
     "SetUpdateOverCellularPermission";
 const char kSetUpdateOverCellularTarget[] = "SetUpdateOverCellularTarget";
+const char kToggleFeature[] = "ToggleFeature";
 
 // Signals.
 const char kStatusUpdateAdvanced[] = "StatusUpdateAdvanced";
@@ -60,6 +61,10 @@ const char kUpdateStatusNeedPermissionToUpdate[] =
     "UPDATE_STATUS_NEED_PERMISSION_TO_UPDATE";
 const char kUpdateStatusCleanupPreviousUpdate[] =
     "UPDATE_STATUS_CLEANUP_PREVIOUS_UPDATE";
+
+// Feature names.
+const char kFeatureRepeatedUpdates[] = "feature-repeated-updates";
+
 }  // namespace update_engine
 
 #endif  // SYSTEM_API_DBUS_UPDATE_ENGINE_DBUS_CONSTANTS_H_

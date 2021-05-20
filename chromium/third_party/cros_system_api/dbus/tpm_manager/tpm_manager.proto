@@ -223,6 +223,11 @@ message GetSpaceInfoReply {
 ////////////////////////////////////////////////////////////////////////////////
 message GetTpmStatusRequest {
   reserved 1;
+  // The cached status may be stale after someone unintendedly change the local
+  // data of tpm_manager. This option would be helpful to fetch the current
+  // local data.
+  // TODO(b/178332041): Consider to remove this after we tackle the issue.
+  optional bool ignore_cache = 2;
 }
 
 message GetTpmStatusReply {
@@ -239,6 +244,11 @@ message GetTpmStatusReply {
 }
 
 message GetTpmNonsensitiveStatusRequest {
+  // The cached status may be stale after someone unintendedly change the local
+  // data of tpm_manager. This option would be helpful to fetch the current
+  // local data.
+  // TODO(b/178332041): Consider to remove this after we tackle the issue.
+  optional bool ignore_cache = 1;
 }
 
 message GetTpmNonsensitiveStatusReply {

@@ -122,10 +122,10 @@ const char kCryptohomeTpmAttestationGetEnrollmentId[] =
     "TpmAttestationGetEnrollmentId";
 const char kCryptohomeTpmGetVersionStructured[] = "TpmGetVersionStructured";
 const char kCryptohomeGetKeyDataEx[] = "GetKeyDataEx";
+const char kCryptohomeListKeysEx[] = "ListKeysEx";
 const char kCryptohomeCheckKeyEx[] = "CheckKeyEx";
 const char kCryptohomeMountEx[] = "MountEx";
 const char kCryptohomeAddKeyEx[] = "AddKeyEx";
-const char kCryptohomeUpdateKeyEx[] = "UpdateKeyEx";
 const char kCryptohomeRemoveKeyEx[] = "RemoveKeyEx";
 const char kCryptohomeAddDataRestoreKey[] = "AddDataRestoreKey";
 const char kCryptohomeMassRemoveKeys[] = "MassRemoveKeys";
@@ -153,6 +153,9 @@ const char kCryptohomeGetSupportedKeyPolicies[] = "GetSupportedKeyPolicies";
 const char kCryptohomeIsQuotaSupported[] = "IsQuotaSupported";
 const char kCryptohomeGetCurrentSpaceForUid[] = "GetCurrentSpaceForUid";
 const char kCryptohomeGetCurrentSpaceForGid[] = "GetCurrentSpaceForGid";
+const char kCryptohomeGetCurrentSpaceForProjectId[] =
+    "GetCurrentSpaceForProjectId";
+const char kCryptohomeSetProjectId[] = "SetProjectId";
 const char kCryptohomeLockToSingleUserMountUntilReboot[] =
     "LockToSingleUserMountUntilReboot";
 const char kCryptohomeGetRsuDeviceId[] = "GetRsuDeviceId";
@@ -161,6 +164,8 @@ const char kCryptohomeStartFingerprintAuthSession[] =
     "StartFingerprintAuthSession";
 const char kCryptohomeEndFingerprintAuthSession[] = "EndFingerprintAuthSession";
 const char kCryptohomeGetWebAuthnSecret[] = "GetWebAuthnSecret";
+const char kCryptohomeStartAuthSession[] = "StartAuthSession";
+const char kCryptohomeAuthenticateAuthSession[] = "AuthenticateAuthSession";
 
 // Signals of the |kCryptohomeInterface| interface:
 const char kSignalAsyncCallStatus[] = "AsyncCallStatus";
@@ -196,6 +201,7 @@ enum MountError {
   // destruction. Only use it if the vault destruction is the
   // acceptable/expected behaviour upon returning error.
   MOUNT_ERROR_VAULT_UNRECOVERABLE = 20,
+  MOUNT_ERROR_MOUNT_DMCRYPT_FAILED = 21,
   MOUNT_ERROR_USER_DOES_NOT_EXIST = 32,
   MOUNT_ERROR_TPM_NEEDS_REBOOT = 64,
   // Encrypted in old method, need migration before mounting.
@@ -217,6 +223,14 @@ enum DircryptoMigrationStatus {
   // TODO(kinaba,dspaid): Add state codes as needed.
   DIRCRYPTO_MIGRATION_INITIALIZING = 1,
   DIRCRYPTO_MIGRATION_IN_PROGRESS = 2,
+};
+
+// Type of paths that are allowed for SetProjectId().
+enum SetProjectIdAllowedPathType {
+  // /home/user/<obfuscated_username>/Downloads/
+  PATH_DOWNLOADS = 0,
+  // /home/root/<obfuscated_username>/android-data/
+  PATH_ANDROID_DATA = 1,
 };
 
 // Interface for key delegate service to be used by the cryptohome daemon.

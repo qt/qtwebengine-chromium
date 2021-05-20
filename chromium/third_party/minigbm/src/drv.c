@@ -28,44 +28,39 @@
 #ifdef DRV_AMDGPU
 extern const struct backend backend_amdgpu;
 #endif
-extern const struct backend backend_evdi;
 #ifdef DRV_EXYNOS
 extern const struct backend backend_exynos;
 #endif
 #ifdef DRV_I915
 extern const struct backend backend_i915;
 #endif
-#ifdef DRV_MARVELL
-extern const struct backend backend_marvell;
-#endif
 #ifdef DRV_MEDIATEK
 extern const struct backend backend_mediatek;
-#endif
-#ifdef DRV_MESON
-extern const struct backend backend_meson;
 #endif
 #ifdef DRV_MSM
 extern const struct backend backend_msm;
 #endif
-extern const struct backend backend_nouveau;
-#ifdef DRV_RADEON
-extern const struct backend backend_radeon;
-#endif
 #ifdef DRV_ROCKCHIP
 extern const struct backend backend_rockchip;
-#endif
-#ifdef DRV_SYNAPTICS
-extern const struct backend backend_synaptics;
 #endif
 #ifdef DRV_TEGRA
 extern const struct backend backend_tegra;
 #endif
-extern const struct backend backend_udl;
 #ifdef DRV_VC4
 extern const struct backend backend_vc4;
 #endif
-extern const struct backend backend_vgem;
+
+// Dumb / generic drivers
+extern const struct backend backend_evdi;
+extern const struct backend backend_marvell;
+extern const struct backend backend_meson;
+extern const struct backend backend_nouveau;
+extern const struct backend backend_komeda;
+extern const struct backend backend_radeon;
+extern const struct backend backend_synaptics;
 extern const struct backend backend_virtio_gpu;
+extern const struct backend backend_udl;
+extern const struct backend backend_vkms;
 
 static const struct backend *drv_get_backend(int fd)
 {
@@ -81,43 +76,27 @@ static const struct backend *drv_get_backend(int fd)
 #ifdef DRV_AMDGPU
 		&backend_amdgpu,
 #endif
-		&backend_evdi,
 #ifdef DRV_EXYNOS
 		&backend_exynos,
 #endif
 #ifdef DRV_I915
 		&backend_i915,
 #endif
-#ifdef DRV_MARVELL
-		&backend_marvell,
-#endif
 #ifdef DRV_MEDIATEK
 		&backend_mediatek,
-#endif
-#ifdef DRV_MESON
-		&backend_meson,
 #endif
 #ifdef DRV_MSM
 		&backend_msm,
 #endif
-		&backend_nouveau,
-#ifdef DRV_RADEON
-		&backend_radeon,
-#endif
 #ifdef DRV_ROCKCHIP
 		&backend_rockchip,
 #endif
-#ifdef DRV_SYNAPTICS
-		&backend_synaptics,
-#endif
-#ifdef DRV_TEGRA
-		&backend_tegra,
-#endif
-		&backend_udl,
 #ifdef DRV_VC4
 		&backend_vc4,
 #endif
-		&backend_vgem,	   &backend_virtio_gpu,
+		&backend_evdi,	   &backend_marvell,	&backend_meson,	    &backend_nouveau,
+		&backend_komeda,   &backend_radeon,	&backend_synaptics, &backend_virtio_gpu,
+		&backend_udl,	   &backend_virtio_gpu, &backend_vkms
 	};
 
 	for (i = 0; i < ARRAY_SIZE(backend_list); i++) {
@@ -149,6 +128,10 @@ struct driver *drv_create(int fd)
 
 	if (!drv)
 		return NULL;
+
+	char *minigbm_debug;
+	minigbm_debug = getenv("MINIGBM_DEBUG");
+	drv->compression = (minigbm_debug == NULL) || (strcmp(minigbm_debug, "nocompression") != 0);
 
 	drv->fd = fd;
 	drv->backend = drv_get_backend(fd);
@@ -445,7 +428,7 @@ void *drv_bo_map(struct bo *bo, const struct rectangle *rect, uint32_t map_flags
 {
 	uint32_t i;
 	uint8_t *addr;
-	struct mapping mapping;
+	struct mapping mapping = { 0 };
 
 	assert(rect->width >= 0);
 	assert(rect->height >= 0);
@@ -459,7 +442,6 @@ void *drv_bo_map(struct bo *bo, const struct rectangle *rect, uint32_t map_flags
 		return MAP_FAILED;
 	}
 
-	memset(&mapping, 0, sizeof(mapping));
 	mapping.rect = *rect;
 	mapping.refcount = 1;
 
@@ -558,6 +540,21 @@ int drv_bo_invalidate(struct bo *bo, struct mapping *mapping)
 	return ret;
 }
 
+int drv_bo_flush(struct bo *bo, struct mapping *mapping)
+{
+	int ret = 0;
+
+	assert(mapping);
+	assert(mapping->vma);
+	assert(mapping->refcount > 0);
+	assert(mapping->vma->refcount > 0);
+
+	if (bo->drv->backend->bo_flush)
+		ret = bo->drv->backend->bo_flush(bo, mapping);
+
+	return ret;
+}
+
 int drv_bo_flush_or_unmap(struct bo *bo, struct mapping *mapping)
 {
 	int ret = 0;
@@ -646,6 +643,11 @@ uint64_t drv_bo_get_plane_format_modifier(struct bo *bo, size_t plane)
 uint32_t drv_bo_get_format(struct bo *bo)
 {
 	return bo->meta.format;
+}
+
+size_t drv_bo_get_total_size(struct bo *bo)
+{
+	return bo->meta.total_size;
 }
 
 uint32_t drv_resolve_format(struct driver *drv, uint32_t format, uint64_t use_flags)

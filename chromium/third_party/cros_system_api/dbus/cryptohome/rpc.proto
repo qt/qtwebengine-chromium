@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 // The messages in this file comprise the DBus/Proto interface for
-// Cryptohome where there is an AccountIdentifer argument, an
+// Cryptohome where there is an AccountIdentifier argument, an
 // AuthorizationRequest (if needed for the call), and the call's
 // parameters as <Call>Request.
 //
@@ -77,6 +77,10 @@ enum CryptohomeErrorCode {
   // Fingerprint match failed and maximum retry count reached.
   CRYPTOHOME_ERROR_FINGERPRINT_DENIED = 44;
   CRYPTOHOME_ERROR_VAULT_UNRECOVERABLE = 45;
+  CRYPTOHOME_ERROR_FIDO_MAKE_CREDENTIAL_FAILED = 46;
+  CRYPTOHOME_ERROR_FIDO_GET_ASSERTION_FAILED = 47;
+  CRYPTOHOME_TOKEN_SERIALIZATION_FAILED = 48;
+  CRYPTOHOME_INVALID_AUTH_SESSION_TOKEN = 49;
 }
 
 message AccountIdentifier {
@@ -132,9 +136,6 @@ message MountRequest {
   // Performs a public mount, which is used for a Kiosk session. Credentials are
   // not needed in the request; they are synthesized by cryptohomed from id.
   optional bool public_mount = 5;
-  // If set to true, mounts the vault to a temporary location. The mount is not
-  // exposed to the usual locations (/home/user, /home/root).
-  optional bool hidden_mount = 6;
 }
 
 // A BaseReply type is used for all cryptohomed responses. A shared base class
@@ -184,11 +185,6 @@ message CreateRequest {
 message AddKeyRequest {
   optional Key key = 1;
   optional bool clobber_if_exists = 2 [default=false];
-}
-
-message UpdateKeyRequest {
-  optional Key changes = 1;
-  optional bytes authorization_signature = 2;
 }
 
 message CheckKeyRequest {
@@ -276,6 +272,7 @@ message GetLoginStatusReply {
   }
   optional bool owner_user_exists=1;
   optional bool boot_lockbox_finalized=2;
+  optional bool is_locked_to_single_user = 3;
 }
 
 message GetTpmStatusRequest {
@@ -559,6 +556,9 @@ message StartFingerprintAuthSessionRequest {}
 // Ends fingerprint auth session by calling Biometrics Daemon.
 message EndFingerprintAuthSessionRequest {}
 
+// Starts AuthSession.
+message StartAuthSessionRequest {}
+
 // Reads the WebAuthn secret if it's available.
 message GetWebAuthnSecretRequest {}
 
@@ -566,4 +566,24 @@ message GetWebAuthnSecretReply {
   extend BaseReply { optional GetWebAuthnSecretReply reply = 1016; }
   // WebAuthn secret bytes
   optional bytes webauthn_secret = 1;
+}
+
+message StartAuthSessionReply {
+  extend BaseReply { optional StartAuthSessionReply reply = 1017; }
+
+  optional bytes auth_session_id = 1;
+}
+
+message AuthenticateAuthSessionRequest {
+  // Serialized form of token that is used to identify Auth Session that needs
+  // to be authenticated.
+  optional bytes auth_session_id = 1;
+  // Authorization data from the user.
+  optional AuthorizationRequest authorization = 2;
+}
+
+message AuthenticateAuthSessionReply {
+  extend BaseReply { optional AuthenticateAuthSessionReply reply = 1018; }
+  // Returns if the Auth Session is authenticated.
+  optional bool authenticated = 1;
 }

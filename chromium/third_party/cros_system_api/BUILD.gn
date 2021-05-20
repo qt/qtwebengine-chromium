@@ -6,6 +6,7 @@ import("//common-mk/proto_library.gni")
 
 group("all") {
   deps = [
+    ":libsystem_api",
     ":system_api-anomaly_detector-protos",
     ":system_api-attestation-goprotos",
     ":system_api-attestation-protos",
@@ -18,6 +19,7 @@ group("all") {
     ":system_api-cryptohome-goprotos",
     ":system_api-cryptohome-protos",
     ":system_api-dlcservice-protos",
+    ":system_api-dlp-protos",
     ":system_api-kerberos-goprotos",
     ":system_api-kerberos-protos",
     ":system_api-login_manager-goprotos",
@@ -26,6 +28,7 @@ group("all") {
     ":system_api-lorgnette-protos",
     ":system_api-metrics_event-goprotos",
     ":system_api-metrics_event-protos",
+    ":system_api-minios-protos",
     ":system_api-oobe_config-protos",
     ":system_api-patchpanel-goprotos",
     ":system_api-patchpanel-protos",
@@ -40,6 +43,7 @@ group("all") {
     ":system_api-seneschal-protos",
     ":system_api-smbprovider-protos",
     ":system_api-system_proxy-protos",
+    ":system_api-tpm_manager-goprotos",
     ":system_api-tpm_manager-protos",
     ":system_api-u2f-protos",
     ":system_api-update_engine-protos",
@@ -52,6 +56,21 @@ group("all") {
     ":system_api-vm_plugin_dispatcher-goprotos",
     ":system_api-vm_plugin_dispatcher-protos",
   ]
+}
+
+shared_library("libsystem_api") {
+  deps = [
+    ":system_api-attestation-protos",
+    ":system_api-bootlockbox-protos",
+    ":system_api-chaps-protos",
+    ":system_api-patchpanel-protos",
+    ":system_api-tpm_manager-protos",
+  ]
+  if (use.fuzzer) {
+    pkg_deps = [ "protobuf" ]
+  } else {
+    pkg_deps = [ "protobuf-lite" ]
+  }
 }
 
 proto_library("system_api-protos") {
@@ -115,6 +134,7 @@ goproto_library("system_api-cryptohome-goprotos") {
   proto_in_dir = "dbus/cryptohome"
   proto_out_dir = "go/src/chromiumos/system_api/cryptohome_proto"
   sources = [
+    "${proto_in_dir}/fido.proto",
     "${proto_in_dir}/key.proto",
     "${proto_in_dir}/rpc.proto",
   ]
@@ -195,7 +215,7 @@ proto_library("system_api-chaps-protos") {
   ]
   standalone = true
 
-  # system_api-chaps-protos" is used by a shared_library
+  # system_api-chaps-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
   use_pic = true
 }
@@ -236,6 +256,12 @@ proto_library("system_api-tpm_manager-protos") {
   # system_api-tpm_manager-protos is used by a shared_library
   # object, so we need to build it with "-fPIC" instead of "-fPIE".
   use_pic = true
+}
+
+goproto_library("system_api-tpm_manager-goprotos") {
+  proto_in_dir = "dbus/tpm_manager"
+  proto_out_dir = "go/src/chromiumos/system_api/tpm_manager_proto"
+  sources = [ "${proto_in_dir}/tpm_manager.proto" ]
 }
 
 proto_library("system_api-metrics_event-protos") {
@@ -342,6 +368,10 @@ proto_library("system_api-bootlockbox-protos") {
   proto_out_dir = "include/bootlockbox/proto_bindings"
   sources = [ "${proto_in_dir}/boot_lockbox_rpc.proto" ]
   standalone = true
+
+  # system_api-bootlockbox-protos is used by a shared_library
+  # object, so we need to build it with "-fPIC" instead of "-fPIE".
+  use_pic = true
 }
 
 goproto_library("system_api-bootlockbox-goprotos") {
@@ -423,5 +453,19 @@ proto_library("system_api-vm_permission_service-protos") {
   proto_in_dir = "dbus/vm_permission_service"
   proto_out_dir = "include/vm_permission_service/proto_bindings"
   sources = [ "${proto_in_dir}/vm_permission_service.proto" ]
+  standalone = true
+}
+
+proto_library("system_api-minios-protos") {
+  proto_in_dir = "dbus/minios"
+  proto_out_dir = "include/minios/proto_bindings"
+  sources = [ "${proto_in_dir}/minios.proto" ]
+  standalone = true
+}
+
+proto_library("system_api-dlp-protos") {
+  proto_in_dir = "dbus/dlp"
+  proto_out_dir = "include/dlp/proto_bindings"
+  sources = [ "${proto_in_dir}/dlp_service.proto" ]
   standalone = true
 }

@@ -31,11 +31,9 @@ DrmWindow::DrmWindow(gfx::AcceleratedWidget widget,
                      ScreenManager* screen_manager)
     : widget_(widget),
       device_manager_(device_manager),
-      screen_manager_(screen_manager) {
-}
+      screen_manager_(screen_manager) {}
 
-DrmWindow::~DrmWindow() {
-}
+DrmWindow::~DrmWindow() {}
 
 void DrmWindow::Initialize() {
   TRACE_EVENT1("drm", "DrmWindow::Initialize", "widget", widget_);
@@ -131,10 +129,6 @@ OverlayStatusList DrmWindow::TestPageFlip(
     const OverlaySurfaceCandidateList& overlay_params) {
   return overlay_validator_->TestPageFlip(overlay_params,
                                           last_submitted_planes_);
-}
-
-const DrmOverlayPlane* DrmWindow::GetLastModesetBuffer() const {
-  return DrmOverlayPlane::GetPrimaryPlane(last_submitted_planes_);
 }
 
 void DrmWindow::UpdateCursorImage() {

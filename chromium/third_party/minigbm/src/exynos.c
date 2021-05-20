@@ -64,9 +64,8 @@ static int exynos_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint
 	int ret;
 	for (plane = 0; plane < bo->meta.num_planes; plane++) {
 		size_t size = bo->meta.sizes[plane];
-		struct drm_exynos_gem_create gem_create;
+		struct drm_exynos_gem_create gem_create = { 0 };
 
-		memset(&gem_create, 0, sizeof(gem_create));
 		gem_create.size = size;
 		gem_create.flags = EXYNOS_BO_NONCONTIG;
 
@@ -84,8 +83,8 @@ static int exynos_bo_create(struct bo *bo, uint32_t width, uint32_t height, uint
 
 cleanup_planes:
 	for (; plane != 0; plane--) {
-		struct drm_gem_close gem_close;
-		memset(&gem_close, 0, sizeof(gem_close));
+		struct drm_gem_close gem_close = { 0 };
+
 		gem_close.handle = bo->handles[plane - 1].u32;
 		int gem_close_ret = drmIoctl(bo->drv->fd, DRM_IOCTL_GEM_CLOSE, &gem_close);
 		if (gem_close_ret) {

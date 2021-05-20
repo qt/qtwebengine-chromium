@@ -364,10 +364,13 @@ message SignEnterpriseChallengeRequest {
   // The key name. This is the same name previously passed to
   // FinishCertficateRequestRequest.
   optional string key_label = 1;
-  // The canonical username of the active user profile. Leave blank
-  // if not associated with the current user.
+  // The canonical username of the active user profile.
+  // When this is set, an EUK challenge will be performed.
+  // When this is unset or empty, an EMK challenge will be performed.
   optional string username = 2;
   // A domain value to be included in the challenge response.
+  // This is supposed to be the user's canonical e-mail address for an EUK
+  // challenge. Ignored for EMK challenges.
   optional string domain = 3;
   // A device identifier to be included in the challenge response.
   optional bytes device_id = 4;
