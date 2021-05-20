@@ -313,7 +313,7 @@ bool CRLSet::ParseAndStoreUnparsedData(std::string data,
 
 CRLSet::Result CRLSet::CheckSPKI(const base::StringPiece& spki_hash) const {
   if (std::binary_search(blocked_spkis_.begin(), blocked_spkis_.end(),
-                         spki_hash))
+                         spki_hash.data()))
     return REVOKED;
   return GOOD;
 }
