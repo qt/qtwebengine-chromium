@@ -395,7 +395,8 @@ void CookieMonster::SetCanonicalCookieAsyncAndFiltered_helper(
             CookieEffectiveSameSite::STRICT_MODE,
             CookieInclusionStatus(
                 CookieInclusionStatus::EXCLUDE_USER_PREFERENCES),
-            CookieAccessSemantics::NONLEGACY));
+            CookieAccessSemantics::NONLEGACY,
+            true /* FIXME: is_allowed_to_access_secure_cookies ?*/));
 }
 
 void CookieMonster::GetCookieListWithOptionsAsyncAndFiltered(

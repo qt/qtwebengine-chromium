@@ -48,7 +48,7 @@ class RootParentTable : public Table {
     uint32_t id;
     uint32_t row;
   };
-  IdAndRow Insert(const Row&) { PERFETTO_FATAL("Should not be called"); }
+  IdAndRow Insert(const Row&) { PERFETTO_FATAL("Should not be called"); return {0,0}; }
 };
 
 // IdHelper is used to figure out the Id type for a table.
