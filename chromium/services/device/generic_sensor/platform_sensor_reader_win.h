@@ -8,6 +8,8 @@
 #include <SensorsApi.h>
 #include <wrl/client.h>
 
+#include "base/synchronization/lock.h"
+#include "base/thread_annotations.h"
 #include "services/device/public/mojom/sensor.mojom.h"
 
 namespace device {
@@ -56,7 +58,7 @@ class PlatformSensorReaderWin {
   bool SetReportingInterval(const PlatformSensorConfiguration& configuration);
   void ListenSensorEvent();
   HRESULT SensorReadingChanged(ISensorDataReport* report,
-                               SensorReading* reading) const;
+                               SensorReading* reading);
   void SensorError();
 
  private:
@@ -68,8 +70,8 @@ class PlatformSensorReaderWin {
   // StartSensor and StopSensor are called from another thread by
   // PlatformSensorWin that can modify internal state of the object.
   base::Lock lock_;
-  bool sensor_active_;
-  Client* client_;
+  bool sensor_active_ GUARDED_BY(lock_);
+  Client* client_ GUARDED_BY(lock_);
   Microsoft::WRL::ComPtr<ISensor> sensor_;
   scoped_refptr<EventListener> event_listener_;
   base::WeakPtrFactory<PlatformSensorReaderWin> weak_factory_;
