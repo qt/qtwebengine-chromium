@@ -213,6 +213,9 @@ class SkiaOutputSurfaceImplOnGpu
 
   void PreserveChildSurfaceControls();
 
+#ifdef TOOLKIT_QT
+  void SetFrameSinkId(const FrameSinkId& frame_sink_id);
+#endif
  private:
   class OffscreenSurface;
   class DisplayContext;
@@ -266,6 +269,10 @@ class SkiaOutputSurfaceImplOnGpu
   std::unique_ptr<gpu::SharedImageRepresentationSkia>
   GetOrCreateRenderPassOverlayBacking(
       const SkSurfaceCharacterization& characterization);
+#endif
+
+#ifdef TOOLKIT_QT
+  std::unique_ptr<SkiaOutputDevice> CreateOutputDevice();
 #endif
 
   class ReleaseCurrent {
