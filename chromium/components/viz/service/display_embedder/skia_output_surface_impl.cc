@@ -1166,4 +1166,13 @@ void SkiaOutputSurfaceImpl::SetNeedsMeasureNextDrawLatency() {
   should_measure_next_post_task_ = true;
 }
 
+#ifdef TOOLKIT_QT
+void SkiaOutputSurfaceImpl::SetFrameSinkId(const FrameSinkId& frame_sink_id) {
+  auto task = base::BindOnce(&SkiaOutputSurfaceImplOnGpu::SetFrameSinkId,
+                             base::Unretained(impl_on_gpu_.get()), frame_sink_id);
+  EnqueueGpuTask(std::move(task), {}, /*make_current=*/false,
+                 /*need_framebuffer=*/false);
+}
+#endif
+
 }  // namespace viz

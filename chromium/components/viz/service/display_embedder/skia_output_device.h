@@ -153,6 +153,10 @@ class SkiaOutputDevice {
 
   void SetDrawTimings(base::TimeTicks submitted, base::TimeTicks started);
 
+#ifdef TOOLKIT_QT
+  virtual void SetFrameSinkId(const FrameSinkId& frame_sink_id) {}
+#endif
+
  protected:
   // Only valid between StartSwapBuffers and FinishSwapBuffers.
   class SwapInfo {
