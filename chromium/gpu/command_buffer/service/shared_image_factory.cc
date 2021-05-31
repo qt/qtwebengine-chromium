@@ -32,7 +32,7 @@
 #include "ui/base/ui_base_features.h"  // nogncheck
 #endif
 
-#if (defined(USE_X11) || defined(OS_FUCHSIA) || defined(OS_WIN)) && \
+#if (defined(TOOLKIT_QT) || defined(USE_X11) || defined(OS_FUCHSIA) || defined(OS_WIN)) && \
     BUILDFLAG(ENABLE_VULKAN)
 #include "gpu/command_buffer/service/external_vk_image_factory.h"
 #elif defined(OS_ANDROID) && BUILDFLAG(ENABLE_VULKAN)
@@ -119,7 +119,7 @@ SharedImageFactory::SharedImageFactory(
     LOG(ERROR) << "ERROR: gr_context_type_ is GrContextType::kVulkan and "
                   "interop_backing_factory_ is not set";
   }
-#elif (defined(OS_FUCHSIA) || defined(OS_WIN)) && BUILDFLAG(ENABLE_VULKAN)
+#elif (defined(TOOLKIT_QT) || defined(OS_FUCHSIA) || defined(OS_WIN)) && BUILDFLAG(ENABLE_VULKAN)
   if (gr_context_type_ == GrContextType::kVulkan) {
     interop_backing_factory_ =
         std::make_unique<ExternalVkImageFactory>(context_state);
