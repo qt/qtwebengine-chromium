@@ -44,7 +44,7 @@ VkResult CreateAllocator(VkPhysicalDevice physical_device,
   };
 
   static_assert(kVulkanRequiredApiVersion >= VK_API_VERSION_1_1, "");
-  VmaAllocatorCreateInfo allocator_info;
+  VmaAllocatorCreateInfo allocator_info{};
       allocator_info.flags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT;
       allocator_info.physicalDevice = physical_device;
       allocator_info.device = device;
@@ -90,7 +90,7 @@ VkResult CreateBuffer(VmaAllocator allocator,
                       VkMemoryPropertyFlags preferred_flags,
                       VkBuffer* buffer,
                       VmaAllocation* allocation) {
-  VmaAllocationCreateInfo allocation_create_info;
+  VmaAllocationCreateInfo allocation_create_info{};
       allocation_create_info.requiredFlags = required_flags;
       allocation_create_info.preferredFlags = preferred_flags;
 
