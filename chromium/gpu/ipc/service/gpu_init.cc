@@ -159,6 +159,7 @@ class GpuWatchdogInit {
   GpuWatchdogThread* watchdog_ptr_ = nullptr;
 };
 
+#ifndef TOOLKIT_QT // unused
 // TODO(https://crbug.com/1095744): We currently do not handle
 // VK_ERROR_DEVICE_LOST in in-process-gpu.
 // Android WebView is allowed for now because it CHECKs on context loss.
@@ -174,6 +175,7 @@ void DisableInProcessGpuVulkan(GpuFeatureInfo* gpu_feature_info,
     gpu_preferences->gr_context_type = GrContextType::kGL;
   }
 }
+#endif
 
 #if BUILDFLAG(ENABLE_VULKAN)
 bool MatchGLRenderer(const GPUInfo& gpu_info, const std::string& patterns) {
@@ -894,7 +896,20 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
       std::move(supported_buffer_formats_for_texturing);
 #endif
 
+#ifdef TOOLKIT_QT
+  if (gpu_feature_info_.status_values[GPU_FEATURE_TYPE_VULKAN] !=
+          kGpuFeatureStatusEnabled ||
+      !InitializeVulkan()) {
+    LOG(ERROR) << "Vulkan disabled or failed to initialize";
+    gpu_preferences_.use_vulkan = VulkanImplementationName::kNone;
+    gpu_feature_info_.status_values[GPU_FEATURE_TYPE_VULKAN] =
+        kGpuFeatureStatusDisabled;
+    if (gpu_preferences.gr_context_type == GrContextType::kVulkan)
+      gpu_preferences_.gr_context_type = GrContextType::kGL;
+  }
+#else
   DisableInProcessGpuVulkan(&gpu_feature_info_, &gpu_preferences_);
+#endif
 
 #if BUILDFLAG(IS_WIN)
   if (gpu_feature_info_.IsWorkaroundEnabled(DISABLE_DECODE_SWAP_CHAIN))
