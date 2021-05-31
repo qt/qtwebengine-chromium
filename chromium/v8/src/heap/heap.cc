@@ -2222,6 +2222,10 @@ void Heap::RecomputeLimits(GarbageCollector collector) {
   }
 }
 
+void Heap::EnsureSweepingCompleted() {
+  mark_compact_collector()->EnsureSweepingCompleted();
+}
+
 void Heap::CallGCPrologueCallbacks(GCType gc_type, GCCallbackFlags flags) {
   RuntimeCallTimerScope runtime_timer(
       isolate(), RuntimeCallCounterId::kGCPrologueCallback);
