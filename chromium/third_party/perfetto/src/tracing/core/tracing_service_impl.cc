@@ -92,7 +92,7 @@
 
 // This is a macro because we want the call-site line number for the ELOG.
 #define PERFETTO_SVC_ERR(...) \
-  (CR_EXPAND_ARG(PERFETTO_ELOG(__VA_ARGS__)), CR_EXPAND_ARG(::perfetto::base::ErrStatus(__VA_ARGS__)))
+  (PERFETTO_ELOG(__VA_ARGS__), ::perfetto::base::ErrStatus(__VA_ARGS__))
 
 namespace perfetto {
 

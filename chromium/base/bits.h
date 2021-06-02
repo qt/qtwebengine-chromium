@@ -87,27 +87,27 @@ inline T* Align(T* ptr, size_t alignment) {
 //
 // C does not have an operator to do this, but fortunately the various
 // compilers have built-ins that map to fast underlying processor instructions.
-#if defined(COMPILER_MSVC)
+#if defined(COMPILER_MSVC) && !defined(COMPILER_CLANG)
 
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE
+ALWAYS_INLINE constexpr
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 4,
                             unsigned>::type
     CountLeadingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index;
+  unsigned long index = 0;
   return LIKELY(_BitScanReverse(&index, static_cast<uint32_t>(x)))
              ? (31 - index - (32 - bits))
              : bits;
 }
 
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE
+ALWAYS_INLINE constexpr
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) == 8,
                             unsigned>::type
     CountLeadingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index;
+  unsigned long index = 0;
 // MSVC only supplies _BitScanReverse64 when building for a 64-bit target.
 #if defined(ARCH_CPU_64_BITS)
   return LIKELY(_BitScanReverse64(&index, static_cast<uint64_t>(x)))
@@ -127,23 +127,23 @@ ALWAYS_INLINE
 }
 
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE
+ALWAYS_INLINE constexpr
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 4,
                             unsigned>::type
     CountTrailingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index;
+  unsigned long index = 0;
   return LIKELY(_BitScanForward(&index, static_cast<uint32_t>(x))) ? index
                                                                    : bits;
 }
 
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE
+ALWAYS_INLINE constexpr
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) == 8,
                             unsigned>::type
     CountTrailingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index;
+  unsigned long index = 0;
 // MSVC only supplies _BitScanForward64 when building for a 64-bit target.
 #if defined(ARCH_CPU_64_BITS)
   return LIKELY(_BitScanForward64(&index, static_cast<uint64_t>(x))) ? index

@@ -194,7 +194,7 @@ generated_core_callback_function_files = [
   "$bindings_core_v8_output_dir/v8_void_function.h",
 ]
 
-if (is_win && is_official_build) {
+if (is_win && is_official_build && false) {
   # On Windows Official release builds, we try to preserve symbol space.
   # is_official_build adds /GL option and /LTCG automatically in link.exe.
   # But link.exe cannot make binary smaller than its size limit from

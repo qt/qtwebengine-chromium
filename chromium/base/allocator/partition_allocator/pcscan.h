@@ -20,6 +20,8 @@
 #else
 #define PA_CONSTINIT
 #endif
+#else
+#define PA_CONSTINIT
 #endif
 
 namespace base {

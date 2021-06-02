@@ -87,7 +87,7 @@ AccessibilityEventRecorderWin* AccessibilityEventRecorderWin::instance_ =
     nullptr;
 
 // static
-CALLBACK void AccessibilityEventRecorderWin::WinEventHookThunk(
+void CALLBACK AccessibilityEventRecorderWin::WinEventHookThunk(
     HWINEVENTHOOK handle,
     DWORD event,
     HWND hwnd,

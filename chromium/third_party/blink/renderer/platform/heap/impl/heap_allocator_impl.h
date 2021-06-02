@@ -47,6 +47,7 @@ class PLATFORM_EXPORT HeapAllocator {
     return reinterpret_cast<T*>(
         MakeGarbageCollected<HeapVectorBacking<T>>(size / sizeof(T)));
   }
+  static void Free(void*) { NOTREACHED(); }
   static void FreeVectorBacking(void*);
   static bool ExpandVectorBacking(void*, size_t);
   static bool ShrinkVectorBacking(void* address,

@@ -31,6 +31,10 @@
 #include "base/trace_event/base_tracing.h"
 #include "build/build_config.h"
 
+#if defined(ARCH_CPU_X86_64) && !(defined(__GNUC__) || defined(__clang__))
+#undef ARCH_CPU_X86_64
+#endif
+
 #if defined(ARCH_CPU_X86_64)
 // Include order is important, so we disable formatting.
 // clang-format off

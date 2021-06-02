@@ -1911,6 +1911,7 @@ jumbo_component("base") {
       jumbo_excluded_sources += [ "allocator/partition_allocator/random.cc", ]
 
       if (is_win) {
+        jumbo_excluded_sources += [ "allocator/partition_allocator/pcscan.cc", ]
         sources += [
           "allocator/partition_allocator/page_allocator_internals_win.h",
           "allocator/partition_allocator/partition_tls_win.cc",

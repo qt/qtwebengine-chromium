@@ -333,16 +333,16 @@ union BASE_EXPORT TraceValue {
   template <typename T>
   struct TypeFor<T,
                  typename std::enable_if<HasHelperSupport<
-                     typename InnerType<T>::type>::value>::type> {
+                     T>::value>::type> {
     using ValueType = typename InnerType<T>::type;
     static const unsigned char value = Helper<ValueType>::kType;
   };
   template <typename T>
   struct TypeFor<T,
                  typename std::enable_if<
-                     !HasHelperSupport<typename InnerType<T>::type>::value &&
+                     !HasHelperSupport<T>::value &&
                      perfetto::internal::has_traced_value_support<
-                         typename InnerType<T>::type>::value>::type> {
+                         T>::value>::type> {
     static const unsigned char value = TRACE_VALUE_TYPE_PROTO;
   };
 

@@ -37,10 +37,10 @@
 namespace blink {
 
 #if BUILDFLAG(ENABLE_AV1_DECODER)
-constexpr char kImageAcceptHeader[] =
+const char kImageAcceptHeader[] =
     "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
 #else
-constexpr char kImageAcceptHeader[] =
+const char kImageAcceptHeader[] =
     "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8";
 #endif
 
