@@ -8,7 +8,15 @@ import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 import("//ui/base/ui_features.gni")
 
+if (use_xkbcommon) {
+  pkg_config("xkbcommon") {
+    packages = [ "xkbcommon" ]
+  }
+}
+
 jumbo_source_set("xkb") {
+  configs += [ ":xkbcommon" ]
+
   sources = [
     "keyboard_code_conversion_xkb.cc",
     "keyboard_code_conversion_xkb.h",
@@ -30,6 +38,8 @@ jumbo_source_set("xkb") {
 if (use_x11 || ozone_platform_x11) {
   jumbo_component("x11") {
     output_name = "keycodes_x11"
+
+    configs += [ ":xkbcommon" ]
 
     sources = [
       "keyboard_code_conversion_x.cc",
