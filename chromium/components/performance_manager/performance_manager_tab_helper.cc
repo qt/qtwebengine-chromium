@@ -383,16 +383,7 @@ void PerformanceManagerTabHelper::InnerWebContentsAttached(
     // severed.
   }
   DCHECK_NE(PageNode::OpenedType::kInvalid, opened_type);
-  if (!frame) {
-    DCHECK(!render_frame_host->IsRenderFrameCreated());
-    DCHECK(!inner_web_contents->IsPortal());
-    // TODO(crbug.com/1133361):
-    // WebContentsImplBrowserTest.AttachNestedInnerWebContents calls
-    // WebContents::AttachInnerWebContents without creating RenderFrame.
-    // Removing this conditional once either the test is fixed or this function
-    // is adjusted to handle the case without the render frame.
-    return;
-  }
+  DCHECK(frame);
 
   PerformanceManagerImpl::CallOnGraphImpl(
       FROM_HERE, base::BindOnce(&PageNodeImpl::SetOpenerFrameNodeAndOpenedType,
