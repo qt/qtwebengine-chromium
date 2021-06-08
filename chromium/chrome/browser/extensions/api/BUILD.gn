@@ -46,6 +46,7 @@ function_registration("api_registration") {
   if (use_qt) {
     deps = [ ]
     deps = [
+      "//qtwebengine/common:mojo_bindings",
       "//third_party/blink/public/mojom:mojom_platform",
     ]
   }
