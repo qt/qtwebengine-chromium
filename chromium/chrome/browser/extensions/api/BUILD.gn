@@ -48,9 +48,10 @@ function_registration("api_registration") {
   if (use_qt) {
     deps = []
     deps = [
-      "//extensions/common/api",
-      "//third_party/blink/public/mojom:mojom_platform",
       "//chrome/common/extensions/api",
+      "//extensions/common/api",
+      "//qtwebengine/common:mojo_bindings",
+      "//third_party/blink/public/mojom:mojom_platform",
     ]
   }
 }
