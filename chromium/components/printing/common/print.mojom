@@ -381,4 +381,7 @@ interface PrintManagerHost {
   // has been cancelled.
   [EnableIf=enable_print_preview, Sync]
   CheckForCancel(int32 preview_ui_id, int32 request_id) => (bool cancel);
+
+  [EnableIf=enable_print_preview]
+  MetafileReadyForPrinting(DidPreviewDocumentParams params, int32 request_id);
 };

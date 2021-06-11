@@ -1518,7 +1518,7 @@ void PrintRenderFrameHelper::OnFramePreparedForPreviewDocument() {
 
 PrintRenderFrameHelper::CreatePreviewDocumentResult
 PrintRenderFrameHelper::CreatePreviewDocument() {
-  if (!print_pages_params_ || CheckForCancel() || !preview_ui_)
+  if (!print_pages_params_ || CheckForCancel()/* || !preview_ui_*/)
     return CREATE_FAIL;
 
   if (print_preview_context_.IsForArc()) {
@@ -1557,19 +1557,21 @@ PrintRenderFrameHelper::CreatePreviewDocument() {
       ConvertUnit(print_params.printable_area.width(), dpi, kPointsPerInch),
       ConvertUnit(print_params.printable_area.height(), dpi, kPointsPerInch));
 
-  // Margins: Send default page layout to browser process.
-  preview_ui_->DidGetDefaultPageLayout(
-      std::move(default_page_layout), printable_area_in_points,
-      has_page_size_style, print_params.preview_request_id);
+  if (preview_ui_) {
+    // Margins: Send default page layout to browser process.
+    preview_ui_->DidGetDefaultPageLayout(
+        std::move(default_page_layout), printable_area_in_points,
+        has_page_size_style, print_params.preview_request_id);
 
-  preview_ui_->DidStartPreview(
-      mojom::DidStartPreviewParams::New(
-          print_preview_context_.total_page_count(),
-          print_preview_context_.pages_to_render(),
-          print_params.pages_per_sheet,
-          GetPdfPageSize(print_params.page_size, dpi),
-          GetFitToPageScaleFactor(printable_area_in_points)),
-      print_params.preview_request_id);
+    preview_ui_->DidStartPreview(
+        mojom::DidStartPreviewParams::New(
+            print_preview_context_.total_page_count(),
+            print_preview_context_.pages_to_render(),
+            print_params.pages_per_sheet,
+            GetPdfPageSize(print_params.page_size, dpi),
+            GetFitToPageScaleFactor(printable_area_in_points)),
+        print_params.preview_request_id);
+  }
   if (CheckForCancel())
     return CREATE_FAIL;
 
@@ -1586,7 +1588,7 @@ PrintRenderFrameHelper::CreatePreviewDocument() {
   }
 
   if (print_pages_params_->params->printed_doc_type ==
-      mojom::SkiaDocumentType::kMSKP) {
+      mojom::SkiaDocumentType::kMSKP && preview_ui_) {
     // Want modifiable content of MSKP type to be collected into a document
     // during individual page preview generation (to avoid separate document
     // version for composition), notify to prepare to do this collection.
@@ -1708,6 +1710,10 @@ bool PrintRenderFrameHelper::FinalizePrintReadyDocument() {
 
   if (preview_ui_) {
     preview_ui_->MetafileReadyForPrinting(
+        std::move(preview_params),
+        print_pages_params_->params->preview_request_id);
+  } else {
+      GetPrintManagerHost()->MetafileReadyForPrinting(
         std::move(preview_params),
         print_pages_params_->params->preview_request_id);
   }
