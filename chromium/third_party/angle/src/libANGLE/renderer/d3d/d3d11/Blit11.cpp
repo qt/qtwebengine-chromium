@@ -111,9 +111,9 @@ void StretchedBlitNearest_RowByRow(const gl::Box &sourceArea,
                                    uint8_t *destData)
 {
     int srcHeightSubOne = (sourceArea.height - 1);
-    size_t copySize     = pixelSize * destArea.width;
+    size_t copySize     = pixelSize * clippedDestArea.width;
     size_t srcOffset    = sourceArea.x * pixelSize;
-    size_t destOffset   = destArea.x * pixelSize;
+    size_t destOffset   = clippedDestArea.x * pixelSize;
 
     for (int y = clippedDestArea.y; y < clippedDestArea.y + clippedDestArea.height; y++)
     {
