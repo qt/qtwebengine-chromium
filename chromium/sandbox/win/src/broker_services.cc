@@ -369,6 +369,7 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
   if (!exe_path)
     return SBOX_ERROR_BAD_PARAMS;
 
+#if !defined(SANDBOX_EXPORTS)
   // This code should only be called from the exe, ensure that this is always
   // the case.
   HMODULE exe_module = nullptr;
@@ -377,7 +378,7 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
       &exe_module));
   if (CURRENT_MODULE() != exe_module)
     return SBOX_ERROR_INVALID_LINK_STATE;
-
+#endif
   if (!policy)
     return SBOX_ERROR_BAD_PARAMS;
 

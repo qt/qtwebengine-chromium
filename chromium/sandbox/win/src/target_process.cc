@@ -220,12 +220,12 @@ ResultCode TargetProcess::Create(
     ::TerminateProcess(process_info.process_handle(), 0);
     return SBOX_ERROR_CANNOT_FIND_BASE_ADDRESS;
   }
-
+#if !defined(SANDBOX_EXPORTS)
   if (base_address_ != CURRENT_MODULE()) {
     ::TerminateProcess(process_info.process_handle(), 0);
     return SBOX_ERROR_INVALID_TARGET_BASE_ADDRESS;
   }
-
+#endif
   sandbox_process_info_.Set(process_info.Take());
   return SBOX_ALL_OK;
 }
@@ -236,6 +236,23 @@ ResultCode TargetProcess::TransferVariable(const char* name,
                                            size_t size) {
   if (!sandbox_process_info_.IsValid())
     return SBOX_ERROR_UNEXPECTED_CALL;
+
+
+#if defined(SANDBOX_EXPORTS)
+  HMODULE module = ::LoadLibrary(exe_name_.get());
+  if (!module)
+    return SBOX_ERROR_CANNOT_LOADLIBRARY_EXECUTABLE;
+
+  target_address = ::GetProcAddress(module, name);
+  ::FreeLibrary(module);
+
+  if (!target_address)
+    return SBOX_ERROR_CANNOT_FIND_VARIABLE_ADDRESS;
+
+  size_t offset =
+      reinterpret_cast<char*>(target_address) - reinterpret_cast<char*>(module);
+  target_address = reinterpret_cast<char*>(MainModule()) + offset;
+#endif
 
   SIZE_T written;
   if (!::WriteProcessMemory(sandbox_process_info_.process_handle(),
@@ -256,7 +273,10 @@ ResultCode TargetProcess::Init(
     std::optional<base::span<const uint8_t>> delegate_data,
     uint32_t shared_IPC_size,
     DWORD* win_error) {
-  ResultCode ret = VerifySentinels();
+  ResultCode ret = SBOX_ALL_OK;
+#if !defined(SANDBOX_EXPORTS)
+  ret = VerifySentinels();
+#endif
   if (ret != SBOX_ALL_OK)
     return ret;
 
