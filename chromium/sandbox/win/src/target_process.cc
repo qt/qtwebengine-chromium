@@ -103,12 +103,30 @@ TargetProcess::~TargetProcess() {
   ipc_server_.reset();
 }
 
-ResultCode TargetProcess::TransferVariable(const void* local_address,
+ResultCode TargetProcess::TransferVariable(const char *name,
+                                           const void* local_address,
                                            void* target_address,
                                            size_t size) {
   if (!process_handle_.is_valid()) {
     return SBOX_ERROR_UNEXPECTED_CALL;
   }
+
+#if defined(SANDBOX_EXPORTS)
+  HMODULE module = ::LoadLibrary(exe_name_.c_str());
+  if (!module)
+    return SBOX_ERROR_CANNOT_LOADLIBRARY_EXECUTABLE;
+
+  target_address = ::GetProcAddress(module, name);
+  ::FreeLibrary(module);
+
+  if (!target_address)
+    return SBOX_ERROR_CANNOT_FIND_VARIABLE_ADDRESS;
+
+  size_t offset =
+      reinterpret_cast<char*>(target_address) - reinterpret_cast<char*>(module);
+  target_address = reinterpret_cast<char*>(MainModule()) + offset;
+#endif
+
   SIZE_T written;
   if (!::WriteProcessMemory(process_handle_.get(), target_address,
                             local_address, size, &written)) {
@@ -130,7 +148,10 @@ ResultCode TargetProcess::Init(
     uint32_t shared_IPC_size,
     ThreadPool* thread_pool,
     DWORD* win_error) {
-  ResultCode ret = VerifySentinels();
+  ResultCode ret = SBOX_ALL_OK;
+#if !defined(SANDBOX_EXPORTS)
+  ret = VerifySentinels();
+#endif
   if (ret != SBOX_ALL_OK)
     return ret;
   // We need to map the shared memory on the target. This is necessary for
@@ -189,8 +210,8 @@ ResultCode TargetProcess::Init(
   // Set the global variables in the target. These are not used on the broker.
   size_t transfer_shared_IPC_size = shared_IPC_size;
   static_assert(sizeof(g_shared_IPC_size) == sizeof(transfer_shared_IPC_size));
-  ret = TransferVariable(&transfer_shared_IPC_size, &g_shared_IPC_size,
-                         sizeof(g_shared_IPC_size));
+  ret = TransferVariable("g_shared_IPC_size", &transfer_shared_IPC_size,
+                         &g_shared_IPC_size, sizeof(g_shared_IPC_size));
   if (SBOX_ALL_OK != ret) {
     *win_error = ::GetLastError();
     return ret;
@@ -199,8 +220,8 @@ ResultCode TargetProcess::Init(
     size_t transfer_shared_policy_size = policy->size();
     static_assert(sizeof(g_shared_policy_size) ==
                   sizeof(transfer_shared_policy_size));
-    ret = TransferVariable(&transfer_shared_policy_size, &g_shared_policy_size,
-                           sizeof(g_shared_policy_size));
+    ret = TransferVariable("g_shared_policy_size", &transfer_shared_policy_size,
+                           &g_shared_policy_size, sizeof(g_shared_policy_size));
     if (SBOX_ALL_OK != ret) {
       *win_error = ::GetLastError();
       return ret;
@@ -210,8 +231,8 @@ ResultCode TargetProcess::Init(
     size_t transfer_delegate_data_size = delegate_data->size();
     static_assert(sizeof(g_delegate_data_size) ==
                   sizeof(transfer_delegate_data_size));
-    ret = TransferVariable(&transfer_delegate_data_size, &g_delegate_data_size,
-                           sizeof(g_delegate_data_size));
+    ret = TransferVariable("g_delegate_data_size", &transfer_delegate_data_size,
+                           &g_delegate_data_size, sizeof(g_delegate_data_size));
     if (SBOX_ALL_OK != ret) {
       *win_error = ::GetLastError();
       return ret;
@@ -234,8 +255,8 @@ ResultCode TargetProcess::Init(
   }
 
   static_assert(sizeof(g_shared_section) == sizeof(target_shared_section));
-  ret = TransferVariable(&target_shared_section, &g_shared_section,
-                         sizeof(g_shared_section));
+  ret = TransferVariable("g_shared_section", &target_shared_section,
+                         &g_shared_section, sizeof(g_shared_section));
   if (SBOX_ALL_OK != ret) {
     *win_error = ::GetLastError();
     return ret;

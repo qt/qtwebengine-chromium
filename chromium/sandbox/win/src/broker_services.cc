@@ -473,9 +473,11 @@ BrokerServicesBase::PreSpawnTarget(PolicyBase* policy_base) {
   CHECK(::GetModuleHandleEx(
       /*dwFlags=*/GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, nullptr,
       &exe_module));
+#if !defined(SANDBOX_EXPORTS)
   if (CURRENT_MODULE() != exe_module) {
     return base::unexpected(SBOX_ERROR_INVALID_LINK_STATE);
   }
+#endif
   if (!policy_base) {
     return base::unexpected(SBOX_ERROR_BAD_PARAMS);
   }
@@ -599,6 +601,15 @@ CreateTargetResult BrokerServicesBase::CreateTarget(
       std::get<std::unique_ptr<StartupInformationHelper>>(target_info).get(),
       result.process_info, result.last_error);
 
+  result.exe_path = command_line.GetProgram().value();
+  result.base_address = GetProcessBaseAddress(result.process_info.process_handle());
+  DCHECK(result.base_address);
+  if (!result.base_address) {
+    result.last_error = ::GetLastError();
+    ::TerminateProcess(result.process_info.process_handle(), 0);
+    result.result_code = SBOX_ERROR_CANNOT_FIND_BASE_ADDRESS;
+  }
+
   TRACE_EVENT_END("startup", "pid", result.process_info.process_id());
 
   return result;
@@ -608,6 +619,9 @@ void BrokerServicesBase::FinishSpawnTarget(
     std::unique_ptr<PolicyBase> policy_base,
     SpawnTargetCallback result_callback,
     CreateTargetResult target_result) {
+  policy_base->SetBaseAddress(target_result.base_address);
+  policy_base->SetExeName(target_result.exe_path);
+
   ResultCode result = FinishSpawnTargetImpl(
       target_result.result_code, std::move(policy_base),
       target_result.process_info, target_result.last_error);
