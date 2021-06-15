@@ -195,7 +195,11 @@ struct SandboxInterfaceInfo {
   raw_ptr<TargetServices> target_services;
 };
 
+#if SANDBOX_EXPORTS
+#define SANDBOX_INTERCEPT extern "C" __declspec(dllexport)
+#else
 #define SANDBOX_INTERCEPT extern "C"
+#endif
 
 enum InterceptionType {
   INTERCEPTION_INVALID = 0,
