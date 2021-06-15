@@ -237,6 +237,22 @@ ResultCode TargetProcess::TransferVariable(const char* name,
   if (!sandbox_process_info_.IsValid())
     return SBOX_ERROR_UNEXPECTED_CALL;
 
+#if SANDBOX_EXPORTS
+  HMODULE module = ::LoadLibrary(exe_name_.get());
+  if (!module)
+    return SBOX_ERROR_CANNOT_LOADLIBRARY_EXECUTABLE;
+
+  target_address = ::GetProcAddress(module, name);
+  ::FreeLibrary(module);
+
+  if (!target_address)
+    return SBOX_ERROR_CANNOT_FIND_VARIABLE_ADDRESS;
+
+  size_t offset =
+      reinterpret_cast<char*>(target_address) - reinterpret_cast<char*>(module);
+  target_address = reinterpret_cast<char*>(MainModule()) + offset;
+#endif
+
   SIZE_T written;
   if (!::WriteProcessMemory(sandbox_process_info_.process_handle(),
                             target_address, local_address, size, &written)) {
