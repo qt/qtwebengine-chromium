@@ -112,6 +112,24 @@ ResultCode TargetProcess::TransferVariable(const void* local_address,
   if (!process_handle_.is_valid()) {
     return SBOX_ERROR_UNEXPECTED_CALL;
   }
+
+
+#if defined(SANDBOX_EXPORTS)
+  HMODULE module = ::LoadLibrary(exe_name_.get());
+  if (!module)
+    return SBOX_ERROR_CANNOT_LOADLIBRARY_EXECUTABLE;
+
+  target_address = ::GetProcAddress(module, name);
+  ::FreeLibrary(module);
+
+  if (!target_address)
+    return SBOX_ERROR_CANNOT_FIND_VARIABLE_ADDRESS;
+
+  size_t offset =
+      reinterpret_cast<char*>(target_address) - reinterpret_cast<char*>(module);
+  target_address = reinterpret_cast<char*>(MainModule()) + offset;
+#endif
+
   SIZE_T written;
   if (!::WriteProcessMemory(process_handle_.get(), target_address,
                             local_address, size, &written)) {
@@ -133,7 +151,10 @@ ResultCode TargetProcess::Init(
     uint32_t shared_IPC_size,
     ThreadPool* thread_pool,
     DWORD* win_error) {
-  ResultCode ret = VerifySentinels();
+  ResultCode ret = SBOX_ALL_OK;
+#if !defined(SANDBOX_EXPORTS)
+  ret = VerifySentinels();
+#endif
   if (ret != SBOX_ALL_OK)
     return ret;
   // We need to map the shared memory on the target. This is necessary for

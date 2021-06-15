@@ -478,9 +478,11 @@ BrokerServicesBase::PreSpawnTarget(std::wstring_view exe_path,
   CHECK(::GetModuleHandleEx(
       /*dwFlags=*/GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, nullptr,
       &exe_module));
+#if !defined(SANDBOX_EXPORTS)
   if (CURRENT_MODULE() != exe_module) {
     return base::unexpected(SBOX_ERROR_INVALID_LINK_STATE);
   }
+#endif
   if (!policy_base) {
     return base::unexpected(SBOX_ERROR_BAD_PARAMS);
   }
