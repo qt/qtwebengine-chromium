@@ -340,6 +340,7 @@ config("compiler") {
 
   if (use_qt && is_clang) {
     cflags += [
+      "-Wno-unknown-argument",
       "-Wno-unknown-attributes",
       "-Wno-unknown-pragmas",
       "-Wno-unknown-warning-option"

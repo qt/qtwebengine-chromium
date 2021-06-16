@@ -151,7 +151,7 @@ bool NativeThemeColorIdToColorId(NativeTheme::ColorId native_theme_color_id,
         {NTCID::kColorId_WindowBackground, kColorWindowBackground},
       });
   DCHECK(color_id);
-  auto* color_it = map.find(native_theme_color_id);
+  auto color_it = map.find(native_theme_color_id);
   if (color_it != map.cend()) {
     *color_id = color_it->second;
     return true;

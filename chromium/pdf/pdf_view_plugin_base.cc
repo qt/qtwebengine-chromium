@@ -125,7 +125,7 @@ void PdfViewPluginBase::HandleMessage(const base::Value& message) {
 
   // TODO(crbug.com/1109796): Use `fixed_flat_map<>::at()` when migration is
   // complete to CHECK out-of-bounds lookups.
-  const auto* it = kMessageHandlers.find(*type);
+  const auto it = kMessageHandlers.find(*type);
   if (it == kMessageHandlers.end()) {
     NOTIMPLEMENTED() << message;
     return;

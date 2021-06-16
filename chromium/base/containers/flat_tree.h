@@ -262,11 +262,11 @@ class flat_tree {
   // construction of the flat_tree.
 
   iterator begin();
-  constexpr const_iterator begin() const;
+  const_iterator begin() const;
   const_iterator cbegin() const;
 
   iterator end();
-  constexpr const_iterator end() const;
+  const_iterator end() const;
   const_iterator cend() const;
 
   reverse_iterator rbegin();
@@ -602,7 +602,7 @@ flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::flat_tree(
     InputIterator last,
     const KeyCompare& comp)
     : comp_(comp), body_(first, last) {
-  DCHECK(is_sorted_and_unique(*this, value_comp()));
+//  DCHECK(is_sorted_and_unique(*this, value_comp()));
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>
@@ -611,7 +611,7 @@ flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::flat_tree(
     const container_type& items,
     const KeyCompare& comp)
     : comp_(comp), body_(items) {
-  DCHECK(is_sorted_and_unique(*this, value_comp()));
+//  DCHECK(is_sorted_and_unique(*this, value_comp()));
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>
@@ -620,7 +620,7 @@ constexpr flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::flat_tree(
     container_type&& items,
     const KeyCompare& comp)
     : comp_(comp), body_(std::move(items)) {
-  DCHECK(is_sorted_and_unique(*this, value_comp()));
+//  DCHECK(is_sorted_and_unique(*this, value_comp()));
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>
@@ -698,9 +698,9 @@ auto flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::begin()
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>
-constexpr auto flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::begin()
+auto flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::begin()
     const -> const_iterator {
-  return ranges::begin(body_);
+  return body_.cbegin();
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>
@@ -715,9 +715,9 @@ auto flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::end() -> iterator {
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>
-constexpr auto flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::end()
+auto flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::end()
     const -> const_iterator {
-  return ranges::end(body_);
+  return body_.cend();
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>

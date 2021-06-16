@@ -54,7 +54,7 @@ void LogSlipstreamRestrictedPort(int port) {
       {10080, SlipstreamPort::k10080},
   });
 
-  auto* it = kMap.find(port);
+  auto it = kMap.find(port);
   SlipstreamPort as_enum =
       it == kMap.end() ? SlipstreamPort::kOther : it->second;
   base::UmaHistogramEnumeration("Net.Port.SlipstreamRestricted", as_enum);

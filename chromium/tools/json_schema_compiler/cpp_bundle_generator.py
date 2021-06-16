@@ -384,7 +384,7 @@ class _SchemasCCGenerator(object):
     c.Sblock('base::StringPiece %s::Get(base::StringPiece name) {' %
              self._bundle._GenerateBundleClass('GeneratedSchemas'))
 
-    c.Append('static constexpr auto kSchemas = '
+    c.Append('static const auto kSchemas = '
              'base::MakeFixedFlatMap<base::StringPiece, base::StringPiece>({')
     c.Sblock()
     namespaces = [self._bundle._model.namespaces[api.get('namespace')].name
