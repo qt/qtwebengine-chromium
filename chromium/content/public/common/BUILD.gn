@@ -197,6 +197,7 @@ jumbo_source_set("common_sources") {
     "//content/common",
     "//content/public/common/zygote:buildflags",
     "//ipc",
+    "//media:media_buildflags",
     "//media/capture:capture_base",
     "//mojo/public/cpp/bindings",
     "//net",
