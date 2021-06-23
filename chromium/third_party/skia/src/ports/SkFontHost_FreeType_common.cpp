@@ -64,6 +64,8 @@ bool operator==(const FT_OpaquePaint& a, const FT_OpaquePaint& b) {
 }
 #endif
 
+#define SK_AFTER_FT_TRANSFORM_RENAME FREETYPE_MAJOR >= 2 && FREETYPE_MINOR >= 11
+
 namespace {
 
 FT_Pixel_Mode compute_pixel_mode(SkMask::Format format) {
@@ -759,8 +761,13 @@ void colrv1_transform(SkCanvas* canvas, FT_Face face, FT_COLR_Paint colrv1_paint
     SkMatrix transform;
 
     switch (colrv1_paint.format) {
+#if SK_AFTER_FT_TRANSFORM_RENAME
+        case FT_COLR_PAINTFORMAT_TRANSFORM: {
+            transform = ToSkMatrix(colrv1_paint.u.transform.affine);
+#else
         case FT_COLR_PAINTFORMAT_TRANSFORMED: {
             transform = ToSkMatrix(colrv1_paint.u.transformed.affine);
+#endif
             break;
         }
         case FT_COLR_PAINTFORMAT_TRANSLATE: {
@@ -880,10 +887,19 @@ bool colrv1_traverse_paint(SkCanvas* canvas,
             traverse_result = colrv1_start_glyph(canvas, palette, face, paint.u.colr_glyph.glyphID,
                                                  FT_COLOR_NO_ROOT_TRANSFORM);
             break;
+#if SK_AFTER_FT_TRANSFORM_RENAME
+        case FT_COLR_PAINTFORMAT_TRANSFORM:
+#else
         case FT_COLR_PAINTFORMAT_TRANSFORMED:
+#endif
             colrv1_transform(canvas, face, paint);
-            traverse_result = colrv1_traverse_paint(canvas, palette, face,
-                                                    paint.u.transformed.paint, visited_set);
+            traverse_result =
+                    colrv1_traverse_paint(canvas, palette, face,
+#if SK_AFTER_FT_TRANSFORM_RENAME
+                                          paint.u.transform.paint, visited_set);
+#else
+                                          paint.u.transformed.paint, visited_set);
+#endif
             break;
         case FT_COLR_PAINTFORMAT_TRANSLATE:
             colrv1_transform(canvas, face, paint);
