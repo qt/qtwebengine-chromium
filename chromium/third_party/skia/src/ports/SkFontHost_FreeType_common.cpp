@@ -54,6 +54,8 @@ const char* SkTraceFtrGetError(int e) {
 }
 #endif  // SK_DEBUG
 
+#define SK_AFTER_FT_TRANSFORM_RENAME FREETYPE_MAJOR >= 2 && FREETYPE_MINOR >= 11
+
 namespace {
 
 FT_Pixel_Mode compute_pixel_mode(SkMask::Format format) {
@@ -665,8 +667,13 @@ void colrv1_draw_paint(SkCanvas* canvas,
             canvas->drawPaint(paint);
             break;
         }
+#if SK_AFTER_FT_TRANSFORM_RENAME
+        case FT_COLR_PAINTFORMAT_TRANSFORM: {
+            SkMatrix transform = ToSkMatrix(colrv1_paint.u.transform.affine);
+#else
         case FT_COLR_PAINTFORMAT_TRANSFORMED: {
             SkMatrix transform = ToSkMatrix(colrv1_paint.u.transformed.affine);
+#endif
 
             canvas->concat(transform);
             break;
@@ -760,12 +767,20 @@ bool colrv1_traverse_paint(SkCanvas* canvas,
             traverse_result = colrv1_start_glyph(canvas, palette, face, paint.u.colr_glyph.glyphID,
                                                  FT_COLOR_NO_ROOT_TRANSFORM);
             break;
+#if SK_AFTER_FT_TRANSFORM_RENAME
+        case FT_COLR_PAINTFORMAT_TRANSFORM:
+#else
         case FT_COLR_PAINTFORMAT_TRANSFORMED:
+#endif
             canvas->saveLayer(nullptr, nullptr);
             // Traverse / draw operation will apply transform.
             colrv1_draw_paint(canvas, palette, face, paint);
             traverse_result =
+#if SK_AFTER_FT_TRANSFORM_RENAME
+                    colrv1_traverse_paint(canvas, palette, face, paint.u.transform.paint);
+#else
                     colrv1_traverse_paint(canvas, palette, face, paint.u.transformed.paint);
+#endif
             canvas->restore();
             break;
       case FT_COLR_PAINTFORMAT_ROTATE:
