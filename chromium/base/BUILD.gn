@@ -1055,6 +1055,9 @@ jumbo_component("base") {
       "win/wrapped_window_proc.cc",
       "win/wrapped_window_proc.h",
     ]
+    jumbo_excluded_sources += [
+      "logging_win.cc",
+    ]
   }
 
   if (is_mac) {
