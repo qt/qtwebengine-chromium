@@ -644,11 +644,11 @@ void ProtocolHandlerRegistry::SetDefaults(
     const std::vector<ProtocolHandler>& handlers) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-#if !defined(TOOLKIT_QT)
   for (const auto& handler : handlers) {
     SetDefaultImpl(handler);
   }
 
+#if !defined(TOOLKIT_QT)
   if (is_loading_)
     return;
 
