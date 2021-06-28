@@ -566,6 +566,7 @@ void ParamTraits<url::Origin>::Write(base::Pickle* m, const url::Origin& p) {
   WriteParam(m, p.GetTupleOrPrecursorTupleIfOpaque().host());
   WriteParam(m, p.GetTupleOrPrecursorTupleIfOpaque().port());
   WriteParam(m, p.GetNonceForSerialization());
+  WriteParam(m, p.GetFullURL().spec());
 }
 
 bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
@@ -574,9 +575,11 @@ bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
   std::string scheme;
   std::string host;
   uint16_t port;
+  std::string full_url;
   base::Optional<base::UnguessableToken> nonce_if_opaque;
   if (!ReadParam(m, iter, &scheme) || !ReadParam(m, iter, &host) ||
-      !ReadParam(m, iter, &port) || !ReadParam(m, iter, &nonce_if_opaque)) {
+      !ReadParam(m, iter, &port) || !ReadParam(m, iter, &nonce_if_opaque)
+      || !ReadParam(m, iter, &full_url)) {
     return false;
   }
 
@@ -590,6 +593,7 @@ bool ParamTraits<url::Origin>::Read(const base::Pickle* m,
     return false;
 
   *p = std::move(creation_result.value());
+  p->SetFullURL(GURL(full_url));
   return true;
 }
 
