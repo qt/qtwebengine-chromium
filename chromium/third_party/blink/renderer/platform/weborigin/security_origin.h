@@ -417,7 +417,7 @@ class PLATFORM_EXPORT SecurityOrigin : public RefCounted<SecurityOrigin> {
   const String protocol_ = g_empty_string;
   const String host_ = g_empty_string;
   String domain_ = g_empty_string;
-  const uint16_t port_ = 0;
+  uint16_t port_ = 0;
   const base::Optional<url::Origin::Nonce> nonce_if_opaque_;
   bool universal_access_ = false;
   bool domain_was_set_in_dom_ = false;

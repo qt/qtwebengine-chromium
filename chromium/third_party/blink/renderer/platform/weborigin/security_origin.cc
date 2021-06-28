@@ -156,6 +156,14 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
               : DefaultPortForProtocol(url.Protocol())),
       full_url_(url.Copy()
 {
+}
+
+SecurityOrigin::SecurityOrigin(const String& protocol,
+                               const String& host,
+                               uint16_t port)
+    : protocol_(protocol), host_(host), domain_(host_), port_(port) {
+  DCHECK(!IsOpaque());
+
   // NOTE(juvaldma)(Chromium 67.0.3396.47)
   //
   // If DefaultPortForProtocol and IsDefaultPortForProtocol were appropriately
@@ -163,31 +171,18 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
   // code. The only problem is that can_load_local_resources_ would be set for
   // Local schemes and not LocalAccessAllowed schemes.
   if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
-//     if (cs->has_port_component()) {
-//       if (!effective_port_) // 0 is kInvalidPort
-//         effective_port_ = cs->default_port;
-//       if (port_ == cs->default_port)
-//         port_ = kInvalidPort;
-//     } else {
-//       effective_port_ = kInvalidPort;
-//       port_ = kInvalidPort;
-//     }
+    if (cs->has_port_component()) {
+      if (!port_)
+        port_ = cs->default_port;
+    } else {
+      port_ = 0;
+    }
     can_load_local_resources_ = cs->flags & url::CustomScheme::LocalAccessAllowed;
     return;
   }
-
-  // By default, only local SecurityOrigins can load local resources.
-  can_load_local_resources_ = IsLocal();
-}
-
-SecurityOrigin::SecurityOrigin(const String& protocol,
-                               const String& host,
-                               uint16_t port)
-    : protocol_(protocol), host_(host), domain_(host_), port_(port) {
   DCHECK(url::SchemeHostPort(protocol.Utf8(), host.Utf8(), port,
                              url::SchemeHostPort::CHECK_CANONICALIZATION)
              .IsValid());
-  DCHECK(!IsOpaque());
   // By default, only local SecurityOrigins can load local resources.
   can_load_local_resources_ = IsLocal();
 }
@@ -594,11 +589,17 @@ void SecurityOrigin::BuildRawString(StringBuilder& builder) const {
   //
   // Should match url::SchemeHostPort::Serialize().
   if (const url::CustomScheme* cs = url::CustomScheme::FindScheme(StringUTF8Adaptor(protocol_).AsStringPiece())) {
-    if (!cs->has_host_component()) {
-      builder.Append(protocol_);
-      builder.Append(":");
+    builder.Append(protocol_);
+    builder.Append(":");
+    if (!cs->has_host_component())
       return;
-    }
+    builder.Append("//");
+    builder.Append(host_);
+    if (!cs->has_port_component() || port_ == cs->default_port)
+      return;
+    builder.Append(':');
+    builder.AppendNumber(port_);
+    return;
   }
 
   builder.Append(protocol_);

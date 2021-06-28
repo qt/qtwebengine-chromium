@@ -139,7 +139,8 @@ int DefaultPortForScheme(const char* scheme, int scheme_len) {
 
   if (default_port == PORT_UNSPECIFIED)
     if (const CustomScheme* cs = CustomScheme::FindScheme(base::StringPiece(scheme, scheme_len)))
-      return cs->default_port;
+      if (cs->has_port_component())
+        return cs->default_port;
 
   return default_port;
 }
