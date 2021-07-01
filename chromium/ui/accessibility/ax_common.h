@@ -8,7 +8,7 @@
 #include "build/blink_buildflags.h"
 #include "build/build_config.h"
 
-#if (DCHECK_IS_ON() || !defined(OFFICIAL_BUILD)) && BUILDFLAG(USE_BLINK)
+#if (DCHECK_IS_ON() || !defined(OFFICIAL_BUILD)) && BUILDFLAG(USE_BLINK) && !BUILDFLAG(IS_QTWEBENGINE)
 // Enable fast fails on clusterfuzz and other builds used to debug Chrome,
 // in order to help narrow down illegal states more quickly.
 #define AX_FAIL_FAST_BUILD() (1)
