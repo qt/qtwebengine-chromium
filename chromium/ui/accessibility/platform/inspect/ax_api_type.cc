@@ -24,6 +24,7 @@ constexpr TypeStr kTypeStringMap[] = {
     {"linux", AXApiType::kLinux},
     {"ia2", AXApiType::kWinIA2},
     {"uia", AXApiType::kWinUIA},
+    {"qt", AXApiType::kQt},
 };
 
 }  // Namespace
