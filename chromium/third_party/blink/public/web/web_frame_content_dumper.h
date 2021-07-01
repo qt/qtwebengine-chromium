@@ -35,6 +35,10 @@ class WebString;
 // memory and CPU during a text capture.
 class WebFrameContentDumper {
  public:
+  // Returns HTML text for the contents of this frame, generated
+  // from the DOM.
+  BLINK_EXPORT static WebString DumpAsMarkup(WebLocalFrame* frame);
+
   // Returns the contents of this frame's local subtree as a string.  If the
   // text is longer than |max_chars|, it will be clipped to that length.
   BLINK_EXPORT static WebString DumpFrameTreeAsText(WebLocalFrame* frame,
