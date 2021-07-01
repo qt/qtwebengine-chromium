@@ -168,6 +168,7 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
     MediaStreamComponent* component,
     PeerConnectionDependencyFactory* factory,
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
+#if BUILDFLAG(ENABLE_WEBRTC)
   MediaStreamVideoTrack* video_track = MediaStreamVideoTrack::From(component);
   DCHECK(video_track);
 
@@ -199,7 +200,6 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
       ContentHintTypeToWebRtcContentHint(component->ContentHint()));
   video_track_->set_enabled(component->Enabled());
 
-#if BUILDFLAG(ENABLE_WEBRTC)
   source_adapter_ = base::MakeRefCounted<WebRtcVideoSourceAdapter>(
       factory->GetWebRtcNetworkTaskRunner(), video_source_.get(),
       std::move(task_runner));
@@ -209,9 +209,9 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
       ConvertToBaseRepeatingCallback(CrossThreadBindRepeating(
           &WebRtcVideoSourceAdapter::OnVideoFrameOnIO, source_adapter_)),
       false);
-#endif
   DVLOG(3) << "MediaStreamVideoWebRtcSink ctor() : is_screencast "
            << is_screencast;
+#endif
 }
 
 MediaStreamVideoWebRtcSink::~MediaStreamVideoWebRtcSink() {
