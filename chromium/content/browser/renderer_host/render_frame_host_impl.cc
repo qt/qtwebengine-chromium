@@ -11602,6 +11602,7 @@ void RenderFrameHostImpl::UpdateAccessibilityMode() {
     render_accessibility_.reset();
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!ax_mode.has_mode(ui::kAXModeBasic.flags()) &&
       browser_accessibility_manager_) {
     // Missing either kWebContents and kNativeAPIs, so
@@ -11609,6 +11610,7 @@ void RenderFrameHostImpl::UpdateAccessibilityMode() {
     browser_accessibility_manager_->DetachFromParentManager();
     browser_accessibility_manager_.reset();
   }
+#endif
 }
 
 #if BUILDFLAG(ENABLE_PPAPI)

@@ -24,6 +24,7 @@ static constexpr std::string_view kMacString{"mac"};
 static constexpr std::string_view kLinuxString{"linux"};
 static constexpr std::string_view kWinIA2String{"ia2"};
 static constexpr std::string_view kWinUIAString{"uia"};
+static constexpr std::string_view kQtString{"qt"};
 
 }  // Namespace
 
@@ -43,6 +44,8 @@ AXApiType::Type::operator std::string_view() const {
       return kMacString;
     case kLinux:
       return kLinuxString;
+    case kQt:
+      return kQtString;
     case kWinIA2:
       return kWinIA2String;
     case kWinUIA:
@@ -64,6 +67,7 @@ AXApiType::Type AXApiType::From(const std::string& type_str) {
            {kFuchsiaString, kFuchsia},
            {kMacString, kMac},
            {kLinuxString, kLinux},
+           {kQtString, kQt},
            {kWinIA2String, kWinIA2},
            {kWinUIAString, kWinUIA}});
   auto it = kTypeToString.find(type_str);
