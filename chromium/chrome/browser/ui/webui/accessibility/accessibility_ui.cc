@@ -94,7 +94,7 @@ static const char kValueField[] = "value";
 static const char kWidgetsField[] = "widgets";
 static const char kApiTypeField[] = "apiType";
 
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
 static const char kWidgetIdField[] = "widgetId";
 static const char kWidget[] = "widget";
 #endif
@@ -185,7 +185,7 @@ base::Value::Dict BuildTargetDescriptor(Browser* browser) {
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
 
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
 base::Value::Dict BuildTargetDescriptor(views::Widget* widget) {
   base::Value::Dict widget_data;
   widget_data.Set(kNameField, widget->widget_delegate()->GetWindowTitle());
@@ -196,7 +196,7 @@ base::Value::Dict BuildTargetDescriptor(views::Widget* widget) {
   widget_data.Set(kWidgetIdField, id);
   return widget_data;
 }
-#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
 
 bool ShouldHandleAccessibilityRequestCallback(const std::string& path) {
   return path == kTargetsDataFile;
@@ -317,7 +317,7 @@ void HandleAccessibilityRequestCallback(
   data.Set(kBrowsersField, std::move(browser_list));
 
   base::Value::List widgets_list;
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   if (features::IsAccessibilityTreeForViewsEnabled()) {
     views::WidgetAXTreeIDMap& manager_map =
         views::WidgetAXTreeIDMap::GetInstance();
@@ -326,7 +326,7 @@ void HandleAccessibilityRequestCallback(
       widgets_list.Append(BuildTargetDescriptor(widget));
     }
   }
-#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   data.Set(kWidgetsField, std::move(widgets_list));
 
   std::string json_string;
@@ -750,7 +750,7 @@ void AccessibilityUIMessageHandler::RequestNativeUITree(
 
 void AccessibilityUIMessageHandler::RequestWidgetsTree(
     const base::Value::List& args) {
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
   const base::Value::Dict& data = args[0].GetDict();
 
   std::string request_type, allow, allow_empty, deny;
@@ -792,7 +792,7 @@ void AccessibilityUIMessageHandler::RequestWidgetsTree(
   result.Set(kErrorField, "Window no longer exists.");
   AllowJavascript();
   FireWebUIListener(request_type, result);
-#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AccessibilityUIMessageHandler::Callback(const std::string& str) {
