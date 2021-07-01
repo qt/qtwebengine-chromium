@@ -70,6 +70,8 @@ AXInspectFactory::Type::operator std::string() const {
       return "win";
     case kWinUIA:
       return "uia";
+    case kQt:
+      return "qt";
     default:
       return "unknown";
   }
