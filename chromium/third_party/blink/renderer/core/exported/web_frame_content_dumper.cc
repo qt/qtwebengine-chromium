@@ -6,12 +6,19 @@
 
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/web/web_local_frame.h"
+#include "third_party/blink/renderer/core/editing/serializers/serialization.h"
 #include "third_party/blink/renderer/core/frame/frame_content_as_text.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/web_local_frame_impl.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
+
+WebString WebFrameContentDumper::DumpAsMarkup(WebLocalFrame* frame) {
+  if (!frame)
+    return WebString();
+  return CreateMarkup(To<WebLocalFrameImpl>(frame)->GetFrame()->GetDocument());
+}
 
 WebString WebFrameContentDumper::DumpFrameTreeAsText(WebLocalFrame* frame,
                                                      size_t max_chars) {
