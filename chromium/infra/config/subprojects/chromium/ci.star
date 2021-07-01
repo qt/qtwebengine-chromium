@@ -2150,7 +2150,7 @@ ci.clang_builder(
         short_name = "sim",
     ),
     cores = None,
-    os = os.MAC_10_15,
+    os = os.MAC_10_15_OR_11,
     ssd = True,
     xcode = xcode.x12d4e,
 )
@@ -2163,7 +2163,7 @@ ci.clang_builder(
         short_name = "dev",
     ),
     cores = None,
-    os = os.MAC_10_15,
+    os = os.MAC_10_15_OR_11,
     ssd = True,
     xcode = xcode.x12d4e,
 )
@@ -3082,7 +3082,7 @@ ci.fyi_builder(
         short_name = "64rel",
     ),
     notifies = ["chrome-memory-safety"],
-    os = os.LINUX_DEFAULT,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.fyi_builder(
@@ -3401,7 +3401,7 @@ ci.fyi_builder(
     console_view_entry = consoles.console_view_entry(
         category = "win10",
     ),
-    os = None,
+    os = os.LINUX_BIONIC_REMOVE,
     triggered_by = ["win-pixel-builder-rel"],
 )
 
@@ -3411,7 +3411,7 @@ ci.fyi_builder(
         category = "perfetto",
         short_name = "lnx",
     ),
-    os = os.LINUX_DEFAULT,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.fyi_builder(
@@ -3444,7 +3444,7 @@ ci.fyi_builder(
         category = "linux",
         short_name = "tgc",
     ),
-    os = os.LINUX_DEFAULT,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.fyi_builder(
@@ -3457,7 +3457,7 @@ ci.fyi_builder(
     reclient_instance = "goma-rbe-chromium",
     configure_kitchen = True,
     kitchen_emulate_gce = True,
-    os = os.LINUX_DEFAULT,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.fyi_builder(
@@ -3471,7 +3471,7 @@ ci.fyi_builder(
     reclient_rewrapper_env = {"RBE_cache_silo": "Linux TSan Builder (reclient)"},
     configure_kitchen = True,
     kitchen_emulate_gce = True,
-    os = os.LINUX_DEFAULT,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.fyi_builder(
@@ -3488,7 +3488,7 @@ ci.fyi_builder(
     reclient_rewrapper_env = {"RBE_cache_silo": "Linux TSan Builder (reclient)"},
     configure_kitchen = True,
     kitchen_emulate_gce = True,
-    os = os.LINUX_DEFAULT,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.fyi_builder(
@@ -3505,7 +3505,7 @@ ci.fyi_builder(
     reclient_rewrapper_env = {"RBE_cache_silo": "Linux TSan Builder (reclient)"},
     configure_kitchen = True,
     kitchen_emulate_gce = True,
-    os = os.LINUX_DEFAULT,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
 )
 
 ci.fyi_celab_builder(
@@ -3563,7 +3563,7 @@ ci.fyi_coverage_builder(
         short_name = "ios",
     ),
     cores = None,
-    os = os.MAC_10_15,
+    os = os.MAC_10_15_OR_11,
     use_clang_coverage = True,
     coverage_exclude_sources = "ios_test_files_and_test_utils",
     coverage_test_types = ["overall", "unit"],
