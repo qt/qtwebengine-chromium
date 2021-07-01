@@ -24,6 +24,7 @@ class AX_EXPORT AXApiType {
     kLinux,
     kWinIA2,
     kWinUIA,
+    kQt,
   };
 
   // Type represents a platform-specific accessibility API.
