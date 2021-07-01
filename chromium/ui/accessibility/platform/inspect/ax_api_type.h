@@ -23,6 +23,7 @@ class AX_EXPORT AXApiType {
     kLinux,
     kWinIA2,
     kWinUIA,
+    kQt,
   };
 
   // Inspect type.

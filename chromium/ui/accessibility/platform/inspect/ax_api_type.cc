@@ -24,6 +24,8 @@ AXApiType::Type::operator std::string() const {
       return "ia2";
     case kWinUIA:
       return "uia";
+    case kQt:
+      return "qt";
     default:
       return "unknown";
   }
