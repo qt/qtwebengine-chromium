@@ -47,6 +47,7 @@ class CONTENT_EXPORT AXInspectFactory {
     kLinux,
     kWinIA2,
     kWinUIA,
+    kQt,
   };
 
   // Inspect type.
