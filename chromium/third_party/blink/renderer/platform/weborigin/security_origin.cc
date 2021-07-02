@@ -153,9 +153,9 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
           // an origin with an effective port of 0.
           (url.HasPort() || !url.IsValid() || !url.IsHierarchical())
               ? url.Port()
-              : DefaultPortForProtocol(url.Protocol())),
-      full_url_(url.Copy()
+              : DefaultPortForProtocol(url.Protocol()))
 {
+  full_url_ = url.Copy();
 }
 
 SecurityOrigin::SecurityOrigin(const String& protocol,
