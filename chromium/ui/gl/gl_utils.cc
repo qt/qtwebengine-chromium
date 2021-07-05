@@ -153,7 +153,7 @@ bool ShouldForceDirectCompositionRootSurfaceFullDamage() {
 }
 #endif  // OS_WIN
 
-#if defined(USE_X11) || defined(USE_OZONE_PLATFORM_X11)
+#if (defined(USE_X11) || defined(USE_OZONE_PLATFORM_X11)) && !defined(TOOLKIT_QT)
 void CollectX11GpuExtraInfo(bool enable_native_gpu_memory_buffers,
                             gfx::GpuExtraInfo& info) {
   // TODO(https://crbug.com/1031269): Enable by default.
