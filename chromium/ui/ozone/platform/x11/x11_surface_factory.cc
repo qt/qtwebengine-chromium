@@ -151,6 +151,7 @@ scoped_refptr<gfx::NativePixmap> X11SurfaceFactory::CreateNativePixmap(
     gfx::BufferUsage usage,
     absl::optional<gfx::Size> framebuffer_size) {
   scoped_refptr<gfx::NativePixmapDmaBuf> pixmap;
+#if !defined(TOOLKIT_QT)
   auto buffer = ui::GpuMemoryBufferSupportX11::GetInstance()->CreateBuffer(
       format, size, usage);
   if (buffer) {
@@ -158,7 +159,7 @@ scoped_refptr<gfx::NativePixmap> X11SurfaceFactory::CreateNativePixmap(
     pixmap = base::MakeRefCounted<gfx::NativePixmapDmaBuf>(size, format,
                                                            std::move(handle));
   }
-
+#endif
   // CreateNativePixmap is non-blocking operation. Thus, it is safe to call it
   // and return the result with the provided callback.
   return pixmap;
