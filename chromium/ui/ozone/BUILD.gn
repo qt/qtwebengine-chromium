@@ -23,8 +23,8 @@ ozone_platform_deps = ozone_external_platform_deps
 ozone_platform_test_deps = ozone_external_platform_test_deps
 
 # Extra dependencies to pull into ui_test_support for built platforms.
-ozone_platform_ui_test_support_deps =
-    ozone_external_platform_ui_test_support_deps
+ozone_platform_ui_test_support_deps = []
+#    ozone_external_platform_ui_test_support_deps
 
 # Extra dependencies to pull into interactive_ui_tests for built platforms.
 ozone_platform_interactive_ui_tests_sources =
