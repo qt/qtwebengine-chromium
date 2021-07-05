@@ -89,7 +89,6 @@ static void AddPdfViewerStrings(base::Value* dict) {
     {"bookmarkExpandIconAriaLabel", IDS_PDF_BOOKMARK_EXPAND_ICON_ARIA_LABEL},
     {"downloadEdited", IDS_PDF_DOWNLOAD_EDITED},
     {"downloadOriginal", IDS_PDF_DOWNLOAD_ORIGINAL},
-    {"fullscreen", IDS_PDF_FULLSCREEN},
     {"labelPageNumber", IDS_PDF_LABEL_PAGE_NUMBER},
     {"menu", IDS_MENU},
     {"moreActions", IDS_DOWNLOAD_MORE_ACTIONS},
@@ -97,7 +96,25 @@ static void AddPdfViewerStrings(base::Value* dict) {
     {"passwordInvalid", IDS_PDF_PASSWORD_INVALID},
     {"passwordPrompt", IDS_PDF_NEED_PASSWORD},
     {"passwordSubmit", IDS_PDF_PASSWORD_SUBMIT},
+    {"present", IDS_PDF_PRESENT},
+    {"propertiesApplication", IDS_PDF_PROPERTIES_APPLICATION},
+    {"propertiesAuthor", IDS_PDF_PROPERTIES_AUTHOR},
+    {"propertiesCreated", IDS_PDF_PROPERTIES_CREATED},
     {"propertiesDialogClose", IDS_CLOSE},
+    {"propertiesDialogTitle", IDS_PDF_PROPERTIES_DIALOG_TITLE},
+    {"propertiesFastWebView", IDS_PDF_PROPERTIES_FAST_WEB_VIEW},
+    {"propertiesFastWebViewNo", IDS_PDF_PROPERTIES_FAST_WEB_VIEW_NO},
+    {"propertiesFastWebViewYes", IDS_PDF_PROPERTIES_FAST_WEB_VIEW_YES},
+    {"propertiesFileName", IDS_PDF_PROPERTIES_FILE_NAME},
+    {"propertiesFileSize", IDS_PDF_PROPERTIES_FILE_SIZE},
+    {"propertiesKeywords", IDS_PDF_PROPERTIES_KEYWORDS},
+    {"propertiesModified", IDS_PDF_PROPERTIES_MODIFIED},
+    {"propertiesPageCount", IDS_PDF_PROPERTIES_PAGE_COUNT},
+    {"propertiesPageSize", IDS_PDF_PROPERTIES_PAGE_SIZE},
+    {"propertiesPdfProducer", IDS_PDF_PROPERTIES_PDF_PRODUCER},
+    {"propertiesPdfVersion", IDS_PDF_PROPERTIES_PDF_VERSION},
+    {"propertiesSubject", IDS_PDF_PROPERTIES_SUBJECT},
+    {"propertiesTitle", IDS_PDF_PROPERTIES_TITLE},
     {"thumbnailPageAriaLabel", IDS_PDF_THUMBNAIL_PAGE_ARIA_LABEL},
     {"tooltipDocumentOutline", IDS_PDF_TOOLTIP_DOCUMENT_OUTLINE},
     {"tooltipDownload", IDS_PDF_TOOLTIP_DOWNLOAD},
@@ -130,17 +147,12 @@ void AddStrings(PdfViewerContext context, base::Value* dict) {
 }
 
 void AddAdditionalData(base::Value* dict) {
+  dict->SetKey("documentPropertiesEnabled",
+               base::Value(base::FeatureList::IsEnabled(
+                   chrome_pdf::features::kPdfViewerDocumentProperties)));
   dict->SetKey("presentationModeEnabled",
                base::Value(base::FeatureList::IsEnabled(
                    chrome_pdf::features::kPdfViewerPresentationMode)));
-  dict->SetKey("pdfFormSaveEnabled",
-               base::Value(base::FeatureList::IsEnabled(
-                   chrome_pdf::features::kSaveEditedPDFForm)));
-  dict->SetStringKey(
-      "pdfViewerUpdateEnabledAttribute",
-      base::FeatureList::IsEnabled(chrome_pdf::features::kPDFViewerUpdate)
-          ? "pdf-viewer-update-enabled"
-          : "");
 
   dict->SetKey("printingEnabled", base::Value(false));
   dict->SetKey("pdfAnnotationsEnabled", base::Value(false));
