@@ -639,7 +639,7 @@ void SetCertVerifierServiceFactoryForTesting(
 }
 
 bool IsNetworkSandboxEnabled() {
-#if defined(OS_MAC) || defined(OS_FUCHSIA)
+#if (defined(OS_MAC) || defined(OS_FUCHSIA)) && !defined(TOOLKIT_QT)
   return true;
 #else
 #if defined(OS_WIN)
