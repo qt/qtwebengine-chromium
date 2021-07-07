@@ -525,7 +525,7 @@
       </if>
       <if expr="not is_android">
         <!-- Chrome Cart -->
-        <part file="cart/resources/cart_resources.grdp" />
+        <!-- part file="cart/resources/cart_resources.grdp" / -->
       </if>
     </includes>
   </release>
