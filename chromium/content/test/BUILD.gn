@@ -2472,12 +2472,6 @@ test("content_unittests") {
       "//ui/shell_dialogs:shell_dialogs",
     ]
 
-    if (is_linux || is_mac || is_win) {
-      sources +=
-          [ "../browser/media/capture/desktop_capture_device_unittest.cc" ]
-      deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
-    }
-
     if (is_chromecast) {
       sources -= [
         "../renderer/media_recorder/audio_track_recorder_unittest.cc",
