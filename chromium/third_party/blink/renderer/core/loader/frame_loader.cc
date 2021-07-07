@@ -600,30 +600,6 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
   if (!AllowRequestForThisFrame(request))
     return;
 
-  // Block renderer-initiated loads of data: and filesystem: URLs in the top
-  // frame (unless they are reload requests).
-  //
-  // If the mime type of the data URL is supported, the URL will
-  // eventually be rendered, so block it here. Otherwise, the load might be
-  // handled by a plugin or end up as a download, so allow it to let the
-  // embedder figure out what to do with it. Navigations to filesystem URLs are
-  // always blocked here.
-  if (frame_->IsMainFrame() && origin_window &&
-      request.ClientRedirectReason() != ClientNavigationReason::kReload &&
-      !frame_->Client()->AllowContentInitiatedDataUrlNavigations(
-          origin_window->Url()) &&
-      (url.ProtocolIs("filesystem") ||
-       (url.ProtocolIsData() &&
-        network_utils::IsDataURLMimeTypeSupported(url)))) {
-    frame_->GetDocument()->AddConsoleMessage(
-        MakeGarbageCollected<ConsoleMessage>(
-            mojom::ConsoleMessageSource::kSecurity,
-            mojom::ConsoleMessageLevel::kError,
-            "Not allowed to navigate top frame to " + url.Protocol() +
-                " URL: " + url.ElidedString()));
-    return;
-  }
-
   // TODO(dgozman): merge page dismissal check and FrameNavigationDisabler.
   if (!frame_->IsNavigationAllowed() ||
       frame_->GetDocument()->PageDismissalEventBeingDispatched() !=
@@ -647,6 +623,30 @@ void FrameLoader::StartNavigation(FrameLoadRequest& request,
         resource_request.HasUserGesture(), origin_window->GetSecurityOrigin(),
         /*is_synchronously_committed=*/true, request.GetTriggeringEventInfo(),
         nullptr /* extra_data */);
+    return;
+  }
+
+  // Block renderer-initiated loads of data: and filesystem: URLs in the top
+  // frame (unless they are reload requests).
+  //
+  // If the mime type of the data URL is supported, the URL will
+  // eventually be rendered, so block it here. Otherwise, the load might be
+  // handled by a plugin or end up as a download, so allow it to let the
+  // embedder figure out what to do with it. Navigations to filesystem URLs are
+  // always blocked here.
+  if (frame_->IsMainFrame() && origin_window &&
+      request.ClientRedirectReason() != ClientNavigationReason::kReload &&
+      !frame_->Client()->AllowContentInitiatedDataUrlNavigations(
+          origin_window->Url()) &&
+      (url.ProtocolIs("filesystem") ||
+       (url.ProtocolIsData() &&
+        network_utils::IsDataURLMimeTypeSupported(url)))) {
+    frame_->GetDocument()->AddConsoleMessage(
+        MakeGarbageCollected<ConsoleMessage>(
+            mojom::ConsoleMessageSource::kSecurity,
+            mojom::ConsoleMessageLevel::kError,
+            "Not allowed to navigate top frame to " + url.Protocol() +
+                " URL: " + url.ElidedString()));
     return;
   }
 
