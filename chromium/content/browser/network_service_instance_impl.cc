@@ -48,7 +48,7 @@
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/network_service_test.mojom.h"
 
-#if !defined(OS_MAC)
+#if defined(TOOLKIT_QT) || !defined(OS_MAC)
 #include "sandbox/policy/features.h"
 #endif
 
