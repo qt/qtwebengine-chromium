@@ -45,6 +45,8 @@ CAPTURE_EXPORT
   // Protects concurrent setting and using |frameReceiver_|. Note that the
   // GUARDED_BY decoration below does not have any effect.
   base::Lock _lock;
+  // Used to avoid UAF in -captureOutput.
+  base::Lock _destructionLock;
   media::VideoCaptureDeviceAVFoundationFrameReceiver* _frameReceiver
       GUARDED_BY(_lock);  // weak.
 
