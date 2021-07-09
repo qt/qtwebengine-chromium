@@ -4239,8 +4239,6 @@ static_library("browser") {
       "//chrome/browser/share/core:share_targets",
       "//chrome/browser/share/proto:proto",
       "//chrome/browser/ui/color:color_headers",
-      "//chrome/browser/ui/webui/tab_strip:mojo_bindings",
-      "//chrome/browser/web_applications",
       "//chrome/common/cart:mojo_bindings",
       "//chrome/common/importer:interfaces",
       "//chrome/common/search:generate_chrome_colors_info",
@@ -4287,6 +4285,8 @@ static_library("browser") {
     }
     if (enable_extensions) {
       deps += [
+        "//chrome/browser/ui/webui/tab_strip:mojo_bindings",
+        "//chrome/browser/web_applications",
         "//chrome/common/apps/platform_apps",
         "//extensions/browser",
         "//extensions/browser/api:api_implementations",
