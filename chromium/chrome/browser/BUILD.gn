@@ -4132,7 +4132,6 @@ static_library("browser") {
       "//chrome/browser/resources:component_extension_resources",
       "//chrome/browser/search:generated",
       "//chrome/browser/ui/color:color_headers",
-      "//chrome/browser/web_applications/components",
       "//chrome/common/cart:mojo_bindings",
       "//chrome/common/importer:interfaces",
 #      "//chrome/common/search:generate_chrome_colors_info",

@@ -1575,7 +1575,6 @@ static_library("ui") {
       "//chrome/browser/ui/commander:fuzzy_finder",
       "//chrome/browser/ui/webui/app_management:mojo_bindings",
       "//chrome/browser/ui/webui/internals/web_app:mojo_bindings",
-      "//chrome/browser/web_applications/components",
       "//chrome/common:buildflags",
       "//chrome/common/search:generate_chrome_colors_info",
       "//chrome/common/search:mojo_bindings",
