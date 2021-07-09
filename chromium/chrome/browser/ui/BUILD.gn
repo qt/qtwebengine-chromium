@@ -1777,15 +1777,11 @@ static_library("ui") {
       "//chrome/browser/ui/webui/image_editor:image_editor_ui",
       "//chrome/browser/ui/webui/image_editor:mojo_bindings",
       "//chrome/browser/ui/webui/internals/user_education:mojo_bindings",
-      "//chrome/browser/ui/webui/new_tab_page:mojo_bindings",
-      "//chrome/browser/ui/webui/new_tab_page_third_party:mojo_bindings",
       "//chrome/browser/ui/webui/realbox:mojo_bindings",
       "//chrome/browser/ui/webui/side_panel/bookmarks:mojo_bindings",
       "//chrome/browser/ui/webui/side_panel/customize_chrome:mojo_bindings",
       "//chrome/browser/ui/webui/side_panel/reading_list:mojo_bindings",
       "//chrome/browser/ui/webui/tab_search:mojo_bindings",
-      "//chrome/browser/ui/webui/tab_strip:mojo_bindings",
-      "//chrome/browser/web_applications",
       "//chrome/common:buildflags",
       "//chrome/common:version_header",
       "//chrome/common/accessibility:mojo_bindings",
@@ -1869,7 +1865,10 @@ static_library("ui") {
 
     if (enable_extensions) {
       deps += [
-        "//chrome/browser/web_applications/extensions",
+        "//chrome/browser/ui/webui/new_tab_page:mojo_bindings",
+        "//chrome/browser/ui/webui/new_tab_page_third_party:mojo_bindings",
+        "//chrome/browser/ui/webui/tab_strip:mojo_bindings",
+        "//chrome/browser/web_applications",
         "//google_apis/common",
         "//google_apis/drive",
       ]

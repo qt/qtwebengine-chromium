@@ -597,9 +597,7 @@ source_set("web_applications_unit_tests") {
     "//chrome/browser",
     "//chrome/browser:browser_process",
     "//chrome/browser/ash/system_web_apps/types:types",
-    "//chrome/browser/extensions:test_support",
     "//chrome/browser/profiles:profile",
-    "//chrome/browser/web_applications/extensions:extensions",
     "//chrome/common",
     "//chrome/test:test_support",
     "//components/services/app_service/public/cpp:app_url_handling",
@@ -632,6 +630,13 @@ source_set("web_applications_unit_tests") {
 
   if (is_chromeos_lacros) {
     deps += [ "//chromeos/startup:startup" ]
+  }
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions:test_support",
+      "//chrome/browser/web_applications/extensions:extensions",
+    ]
   }
 
   if (is_win) {
@@ -708,6 +713,14 @@ source_set("web_applications_browser_tests") {
     "//ui/events/devices:test_support",
     "//url",
   ]
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions:test_support",
+      "//chrome/browser/web_applications/extensions",
+      "//extensions/browser:test_support",
+    ]
+  }
 
   if (is_chromeos_ash) {
     deps += [

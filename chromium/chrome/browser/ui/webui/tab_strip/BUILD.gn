@@ -4,6 +4,8 @@
 
 import("//mojo/public/tools/bindings/mojom.gni")
 
+assert(enable_extensions)
+
 mojom("mojo_bindings") {
   sources = [ "tab_strip.mojom" ]
   public_deps = [
