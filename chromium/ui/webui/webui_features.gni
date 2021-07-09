@@ -4,6 +4,7 @@
 
 import("//build/config/chrome_build.gni")
 import("//build/config/coverage/coverage.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 declare_args() {
   # Optimize parts of Chrome's UI written with web technologies (HTML/CSS/JS)
@@ -12,7 +13,7 @@ declare_args() {
   optimize_webui = !is_debug
 
   # Enable the WebUI version of the browser's tab strip.
-  enable_webui_tab_strip = is_chromeos || is_linux || is_win
+  enable_webui_tab_strip = enable_extensions && (is_chromeos || is_linux || is_win)
 
   # Whether to inline source maps during build. Cannot be enabled when
   # `optimize_webui=true`.
