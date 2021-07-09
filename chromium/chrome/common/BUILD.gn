@@ -360,11 +360,12 @@ static_library("common_lib") {
   }
 
   if (is_mac) {
-    assert(enable_extensions)
-    sources += [
-      "extensions/image_writer/image_writer_util_mac.cc",
-      "extensions/image_writer/image_writer_util_mac.h",
-    ]
+    if (enable_extensions) {
+       sources += [
+        "extensions/image_writer/image_writer_util_mac.cc",
+        "extensions/image_writer/image_writer_util_mac.h",
+       ]
+    }
     public_deps += [ ":app_mode_app_support" ]
   }
 
