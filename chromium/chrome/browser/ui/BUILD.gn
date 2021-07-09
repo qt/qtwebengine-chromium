@@ -1977,7 +1977,6 @@ static_library("ui") {
       "//chrome/browser/ui/webui/util",
       "//chrome/browser/ui/window_sizer",
       "//chrome/browser/ui/window_sizer:impl",
-      "//chrome/browser/web_applications",
       "//chrome/common:buildflags",
       "//chrome/common:version_header",
       "//chrome/common/accessibility:mojo_bindings",
@@ -2131,6 +2130,7 @@ static_library("ui") {
     if (enable_extensions) {
       deps += [
         "//chrome/browser/web_applications/extensions",
+        "//chrome/browser/web_applications",
         "//google_apis/common",
         "//google_apis/drive",
       ]
@@ -5769,7 +5769,7 @@ static_library("ui") {
     deps += [ "//components/nacl/browser" ]
   }
 
-  if (enable_pdf) {
+  if (enable_pdf && !is_qtwebengine) {
     sources += [
       "pdf/chrome_pdf_document_helper_client.cc",
       "pdf/chrome_pdf_document_helper_client.h",

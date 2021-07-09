@@ -984,6 +984,13 @@ source_set("web_applications_unit_tests") {
     ]
   }
 
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions:test_support",
+      "//chrome/browser/web_applications/extensions:extensions",
+    ]
+  }
+
   if (is_win) {
     deps += [
       "//chrome/browser/web_applications/chrome_pwa_launcher:unit_tests",
@@ -1114,6 +1121,14 @@ source_set("web_applications_browser_tests") {
     "//ui/events/devices:test_support",
     "//url",
   ]
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions:test_support",
+      "//chrome/browser/web_applications/extensions",
+      "//extensions/browser:test_support",
+    ]
+  }
 
   if (is_chromeos_ash) {
     deps += [

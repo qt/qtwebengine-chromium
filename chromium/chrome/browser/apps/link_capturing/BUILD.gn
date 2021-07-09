@@ -43,6 +43,10 @@ source_set("link_capturing") {
     deps += [ "//extensions/common" ]
   }
 
+  if (enable_extensions) {
+    deps += [ "//extensions/common" ]
+  }
+
   if (is_chromeos) {
     sources += [
       "chromeos_apps_intent_picker_delegate.cc",

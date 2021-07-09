@@ -81,6 +81,9 @@ source_set("data_controls") {
     ]
     allow_circular_includes_from += [ "//chrome/browser/ash/policy/dlp" ]
   }
+  if (enable_extensions) {
+    deps += [ "//chrome/browser/extensions" ]
+  }
 }
 
 source_set("test_support") {
