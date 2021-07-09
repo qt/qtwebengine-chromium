@@ -6,6 +6,8 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//chrome/browser/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 
+assert(enable_extensions)
+
 group("web_app_group") {
   public_configs = [ "//build/config/compiler:wexit_time_destructors" ]
 }
@@ -562,7 +564,6 @@ source_set("web_applications_unit_tests") {
     "//chrome/browser:browser_process",
     "//chrome/browser/extensions:test_support",
     "//chrome/browser/profiles:profile",
-    "//chrome/browser/web_applications/extensions:extensions",
     "//chrome/common",
     "//chrome/test:test_support",
     "//components/services/app_service/public/cpp:app_url_handling",
@@ -589,6 +590,12 @@ source_set("web_applications_unit_tests") {
       "//ash/constants",
       "//chrome/browser/chromeos",
       "//components/arc:arc_test_support",
+    ]
+  }
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/web_applications/extensions:extensions",
     ]
   }
 
@@ -675,9 +682,7 @@ source_set("web_applications_browser_tests") {
     "//build:chromeos_buildflags",
     "//chrome/app:command_ids",
     "//chrome/browser/apps/app_service:test_support",
-    "//chrome/browser/extensions:test_support",
     "//chrome/browser/profiles:profile",
-    "//chrome/browser/web_applications/extensions",
     "//chrome/test:test_support",
     "//chrome/test:test_support_ui",
     "//components/permissions:permissions",
@@ -689,7 +694,6 @@ source_set("web_applications_browser_tests") {
     "//components/services/app_service/public/cpp:types",
     "//components/webapps/browser",
     "//components/webapps/services/web_app_origin_association/test:test_support",
-    "//extensions/browser:test_support",
     "//net:test_support",
     "//third_party/blink/public/common",
     "//ui/base/idle:idle",
@@ -697,6 +701,14 @@ source_set("web_applications_browser_tests") {
     "//ui/events/devices:test_support",
     "//url",
   ]
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions:test_support",
+      "//chrome/browser/web_applications/extensions",
+      "//extensions/browser:test_support",
+    ]
+  }
 
   if (is_chromeos_ash) {
     deps += [
@@ -713,8 +725,12 @@ group("unit_tests") {
   deps = [
     ":web_app_test_group",
     ":web_applications_unit_tests",
-    "//chrome/browser/web_applications/extensions:unit_tests",
   ]
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/web_applications/extensions:unit_tests",
+    ]
+  }
 }
 
 group("browser_tests") {
