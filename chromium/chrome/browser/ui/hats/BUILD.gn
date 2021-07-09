@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//extensions/buildflags/buildflags.gni")
+
 assert(is_win || is_mac || is_linux || is_chromeos || is_android)
 
 source_set("hats") {
@@ -109,7 +111,6 @@ if (!is_android) {
       ":test_support",
       "//base/test:test_support",
       "//chrome/browser/content_settings:content_settings_factory",
-      "//chrome/browser/extensions",
       "//chrome/common",
       "//chrome/common:chrome_features",
       "//chrome/test:test_support",
@@ -119,6 +120,12 @@ if (!is_android) {
       "//components/unified_consent",
       "//content/test:test_support",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions",
+      ]
+    }
   }
 
   source_set("test_support") {

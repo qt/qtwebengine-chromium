@@ -4,6 +4,7 @@
 
 import("//chrome/common/features.gni")
 import("//components/signin/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(!is_fuchsia && !is_android)
 
@@ -69,7 +70,7 @@ source_set("signin_utils_impl") {
     "//components/signin/public/base",
     "//components/signin/public/identity_manager",
     "//content/public/browser",
-    "//extensions/browser",
+#    "//extensions/browser",
     "//google_apis",
     "//net",
   ]
@@ -149,7 +150,6 @@ source_set("signin_impl") {
     "//components/signin/public/base",
     "//components/signin/public/identity_manager",
     "//content/public/browser",
-    "//extensions/browser",
     "//google_apis",
     "//net",
     "//ui/webui",
@@ -182,6 +182,12 @@ source_set("signin_impl") {
       "//components/signin/core/browser",
       "//components/unified_consent",
       "//ui/webui",
+    ]
+  }
+
+  if (enable_extensions) {
+    deps += [
+      "//extensions/browser",
     ]
   }
 }
@@ -261,7 +267,6 @@ source_set("login_impl") {
   if (enable_dice_support || is_chromeos) {
     sources += [ "inline_login_ui.cc" ]
     deps += [
-      "//chrome/browser/extensions",
       "//chrome/browser/prefs",
       "//chrome/browser/resources/gaia_auth_host:resources",
       "//ui/webui",
@@ -282,6 +287,12 @@ source_set("login_impl") {
       ]
     } else {
       deps += [ "//chrome/browser/resources/inline_login:resources" ]
+    }
+
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions",
+      ]
     }
   }
 }
@@ -403,8 +414,6 @@ source_set("unit_tests") {
     "//build:buildflag_header_h",
     "//chrome/browser",
     "//chrome/browser:browser_process",
-    "//chrome/browser/extensions",
-    "//chrome/browser/extensions:test_support",
     "//chrome/browser/profiles:profile_util",
     "//chrome/browser/signin",
     "//chrome/browser/ui",
@@ -417,7 +426,6 @@ source_set("unit_tests") {
     "//components/sync/base",
     "//content/public/browser",
     "//content/test:test_support",
-    "//extensions:test_support",
     "//google_apis",
     "//testing/gmock",
     "//testing/gtest",
@@ -442,6 +450,14 @@ source_set("unit_tests") {
 
   if (enable_dice_support) {
     sources += [ "dice_web_signin_intercept_handler_unittest.cc" ]
+  }
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions",
+      "//chrome/browser/extensions:test_support",
+      "//extensions:test_support",
+    ]
   }
 }
 

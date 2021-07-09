@@ -315,8 +315,13 @@ source_set("unit_tests") {
     sources += [ "generated_cookie_prefs_unittest.cc" ]
 
     deps += [
-      "//chrome/browser/extensions",
       "//chrome/browser/ui/tabs",
+    ]
+  }
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions",
       "//chrome/common/extensions",
       "//chrome/common/extensions/api",
     ]

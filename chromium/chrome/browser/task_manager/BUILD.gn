@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//components/nacl/features.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")
@@ -93,7 +94,7 @@ source_set("task_manager") {
       "//chromeos/ash/experiences/arc/session:connection_holder",
     ]
   }
-  if (!is_android) {
+  if (!is_android && enable_extensions) {
     sources += [
       "providers/web_contents/background_contents_tag.h",
       "providers/web_contents/background_contents_task.h",
@@ -227,7 +228,7 @@ source_set("impl") {
       "//chromeos/ash/experiences/arc/session",
     ]
   }
-  if (!is_android) {
+  if (!is_android && enable_extensions) {
     deps += [
       "//chrome/browser/extensions",
       "//components/guest_view/browser",
