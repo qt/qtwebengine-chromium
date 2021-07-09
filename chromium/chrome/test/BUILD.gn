@@ -918,7 +918,6 @@ if (!is_android) {
       "//chrome/browser/payments:browser_tests",
       "//chrome/browser/privacy_budget:browser_tests",
       "//chrome/browser/profiling_host:profiling_browsertests",
-      "//chrome/browser/web_applications:browser_tests",
       "//chrome/renderer",
       "//chrome/services/removable_storage_writer:lib",
       "//chrome/test/data:webui_test_resources",
@@ -1047,6 +1046,11 @@ if (!is_android) {
       "//ui/webui/resources/js/cr/ui:modulize_runtime_data",
     ]
 
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/web_applications:browser_tests",
+      ]
+    }
     if (!is_component_build) {
       # WebRTC's frame_analyzer doesn't build correctly on component builds,
       # because some compilers will get confused by the fact that WebRTC
@@ -7041,7 +7045,6 @@ if (!is_android) {
       "//chrome/browser/devtools",
       "//chrome/browser/devtools:test_support",
       "//chrome/browser/resource_coordinator:tab_metrics_event_proto",
-      "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/renderer",
       "//components/enterprise:test_support",
       "//components/feature_engagement/test:test_support",
@@ -7078,6 +7081,11 @@ if (!is_android) {
       "//ui/web_dialogs:test_support",
     ]
 
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/web_applications:web_applications_test_support",
+      ]
+    }
     if (include_js_tests) {
       deps += [
         "//chrome/test/data/webui:interactive_ui_tests_js_mojo_lite_webui",
