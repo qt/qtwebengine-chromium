@@ -107,12 +107,16 @@ if (!is_android) {
       "//content/public/browser",
       "//content/public/common",
       "//content/test:test_support",
-      "//extensions:test_support",
       "//net:test_support",
       "//testing/gtest",
       "//ui/shell_dialogs",
       "//url",
     ]
+    if (enable_extensions) {
+      deps += [
+        "//extensions:test_support",
+      ]
+    }
   }
 }
 

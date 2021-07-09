@@ -142,6 +142,13 @@ function_registration("api_registration") {
 
   if (is_qtwebengine) {
      deps += [ "//qtwebengine/common:mojo_bindings" ]
+     deps -= [
+       "//chrome/common",
+       "//chrome/common:mojo_bindings",
+       "//components/omnibox/browser",
+       "//components/translate/core/browser",
+       "//components/sync"
+     ]
   }
 
   if (is_chromeos) {

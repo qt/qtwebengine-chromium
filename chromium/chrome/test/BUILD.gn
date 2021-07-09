@@ -703,7 +703,7 @@ static_library("test_support") {
     ]
 
     allow_circular_includes_from = [ ":test_support_ui_android" ]
-  } else {
+  } else if (enable_extensions) {
     public_deps += [
       # Android uses //chrome:chrome_android_core instead of the //chrome/app
       # target.
@@ -2044,7 +2044,6 @@ if (!is_android) {
       "//chrome/browser/importer:browser_tests",
       "//chrome/browser/ip_protection:browser_tests",
       "//chrome/browser/media/router:media_router_feature",
-      "//chrome/browser/media/router:test_support",
       "//chrome/browser/media/router/discovery/access_code:access_code_cast_feature",
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
       "//chrome/browser/metrics:test_support",
@@ -2163,9 +2162,6 @@ if (!is_android) {
       "//chrome/browser/ui/webui/top_chrome:test_support",
       "//chrome/browser/ui/webui/whats_new",
       "//chrome/browser/user_annotations:browser_tests",
-      "//chrome/browser/web_applications:browser_tests",
-      "//chrome/browser/web_applications:prevent_close_test_support",
-      "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/browser/webauthn:test_support",
       "//chrome/common:version_header",
       "//chrome/common/privacy_budget:test_support",
@@ -2674,6 +2670,18 @@ if (!is_android) {
         "//components/webrtc_logging/browser",
       ]
     }
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/media/router:test_support",
+        "//chrome/browser/web_applications:browser_tests",
+        "//chrome/browser/web_applications:prevent_close_test_support",
+        "//chrome/browser/web_applications:web_applications_test_support",
+        "//extensions/browser/updater",
+        "//extensions/buildflags",
+        "//extensions/renderer",
+      ]
+    }
+
     if (!is_component_build) {
       # WebRTC's frame_analyzer doesn't build correctly on component builds,
       # because some compilers will get confused by the fact that WebRTC
@@ -3657,7 +3665,7 @@ if (!is_android) {
       ]
     }
 
-    if (enable_pdf) {
+    if (enable_pdf && enable_extensions) {
       sources += [
         "../browser/accessibility/pdf_ocr_controller_browsertest.cc",
         "../browser/pdf/pdf_extension_accessibility_test.cc",
@@ -5329,7 +5337,6 @@ if (!is_android) {
         "../browser/media/webrtc/webrtc_desktop_capture_browsertest.cc",
         "../browser/media/webrtc/webrtc_disable_encryption_flag_browsertest.cc",
         "../browser/media/webrtc/webrtc_getdisplaymedia_browsertest.cc",
-        "../browser/media/webrtc/webrtc_getmediadevices_browsertest.cc",
         "../browser/media/webrtc/webrtc_internals_integration_browsertest.cc",
         "../browser/media/webrtc/webrtc_stats_perf_browsertest.cc",
         "../browser/media/webrtc/webrtc_video_display_perf_browsertest.cc",
@@ -5337,7 +5344,6 @@ if (!is_android) {
         "../browser/media/webrtc/webrtc_webcam_browsertest.cc",
       ]
       deps -= [
-        "//chrome/browser/media/router:test_support",
         ":webrtc_browser_tests_base",
       ]
       if (enable_extensions) {
@@ -9631,7 +9637,7 @@ test("unit_tests") {
     deps += [ "//chrome/browser/on_device_translation:unit_tests" ]
   }
 
-  if (enable_pdf) {
+  if (enable_pdf && enable_extensions) {
     sources += [
       "../browser/extensions/api/pdf_viewer_private/pdf_viewer_private_api_unittest.cc",
       "../browser/pdf/pdf_viewer_stream_manager_unittest.cc",
@@ -10523,7 +10529,11 @@ if (!is_android) {
     }
 
     if (enable_extensions) {
-      deps += [ "//extensions/browser" ]
+      deps += [
+       "//chrome/browser/web_applications",
+       "//chrome/browser/web_applications:web_applications_test_support",
+       "//extensions/browser",
+      ]
     }
 
     if (is_chromeos) {
@@ -10869,8 +10879,6 @@ if (!is_android && !is_chromeos_device && !is_qtwebengine) {
       "//chrome/browser/ui/views/side_panel",
       "//chrome/browser/ui/views/toolbar",
       "//chrome/browser/user_annotations:user_annotations",
-      "//chrome/browser/web_applications:interactive_ui_tests",
-      "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/browser/webauthn:test_support",
       "//chrome/common:version_header",
       "//chrome/common/notifications",
@@ -10979,6 +10987,13 @@ if (!is_android && !is_chromeos_device && !is_qtwebengine) {
       "//ui/views",
       "//ui/web_dialogs:test_support",
     ]
+
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/web_applications:interactive_ui_tests",
+        "//chrome/browser/web_applications:web_applications_test_support",
+      ]
+    }
 
     if (!is_chrome_for_testing) {
       deps += [
@@ -11872,7 +11887,7 @@ source_set("sync_integration_test_support") {
       "//chrome/browser/android/webapk:webapk_sources",
       "//components/saved_tab_groups/public:conversion_utils",
     ]
-  } else {
+  } else if (enable_extensions) {
     deps += [
       "//chrome/browser/apps/app_service",
       "//chrome/browser/themes",
@@ -11928,7 +11943,6 @@ if (!is_android) {
       "//chrome/browser/themes",
       "//chrome/browser/ui:browser_navigator_params_headers",
       "//chrome/browser/ui:ui_features",
-      "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/common",
       "//chrome/renderer",
       "//components/app_constants",
@@ -12047,6 +12061,9 @@ if (!is_android) {
     }
     if (enable_printing) {
       deps += [ "//printing" ]
+    }
+    if (enable_extensions) {
+      deps += [ "//chrome/browser/web_applications:web_applications_test_support" ]
     }
   }
 

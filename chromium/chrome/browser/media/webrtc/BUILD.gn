@@ -8,6 +8,7 @@ import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 import("//content/public/common/features.gni")
 import("//third_party/webrtc/webrtc.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(enable_webrtc)
 
@@ -195,10 +196,14 @@ source_set("webrtc") {
     deps += [
       "//chrome/browser/ui:browser_list",
       "//chrome/browser/ui/tabs:tab_strip",
-      "//extensions/browser",
-      "//extensions/browser/kiosk",
-      "//extensions/common",
     ]
+    if (enable_extensions) {
+      deps += [
+        "//extensions/browser",
+        "//extensions/browser/kiosk",
+        "//extensions/common",
+      ]
+    }
   }
 
   if (enable_screen_capture) {
