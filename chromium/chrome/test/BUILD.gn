@@ -336,7 +336,7 @@ static_library("test_support") {
       sources += [ "../browser/android/vr/register_jni_monochrome.cc" ]
     }
     allow_circular_includes_from = [ ":test_support_ui_android" ]
-  } else {
+  } else if (enable_extensions) {
     public_deps += [
       # Android uses //chrome:chrome_android_core instead of the //chrome/app
       # target.
@@ -1071,7 +1071,6 @@ if (!is_android && !is_fuchsia) {
       "//chrome/browser/continuous_search:browser_tests",
       "//chrome/browser/devtools",
       "//chrome/browser/devtools:test_support",
-      "//chrome/browser/extensions:test_support",
       "//chrome/browser/image_decoder:browser_tests",
       "//chrome/browser/media/router:media_router_feature",
       "//chrome/browser/media/router:test_support",
@@ -1093,9 +1092,6 @@ if (!is_android && !is_fuchsia) {
       "//chrome/browser/ui/tabs:tab_enums",
       "//chrome/browser/ui/webui/federated_learning:mojo_bindings",
       "//chrome/browser/ui/webui/history_clusters:mojo_bindings",
-      "//chrome/browser/web_applications:browser_tests",
-      "//chrome/browser/web_applications:web_applications_test_support",
-      "//chrome/browser/web_applications/extensions",
       "//chrome/browser/web_share_target:browser_tests",
       "//chrome/common:version_header",
       "//chrome/common/privacy_budget:test_support",
@@ -1295,9 +1291,6 @@ if (!is_android && !is_fuchsia) {
       "//device/bluetooth:mocks",
       "//device/fido:cablev2_test_util",
       "//device/fido:test_support",
-      "//extensions/browser/updater",
-      "//extensions/buildflags",
-      "//extensions/renderer",
       "//google_apis:test_support",
       "//media:media_buildflags",
       "//media:test_support",
@@ -1389,6 +1382,17 @@ if (!is_android && !is_fuchsia) {
       deps += [
         "//components/webrtc",
         "//components/webrtc_logging/browser",
+      ]
+    }
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/extensions:test_support",
+        "//chrome/browser/web_applications:browser_tests",
+        "//chrome/browser/web_applications:web_applications_test_support",
+        "//chrome/browser/web_applications/extensions",
+        "//extensions/browser/updater",
+        "//extensions/buildflags",
+        "//extensions/renderer",
       ]
     }
     if (!is_component_build) {
@@ -3856,7 +3860,6 @@ if (!is_android && !is_fuchsia) {
         "../browser/media/webrtc/webrtc_desktop_capture_browsertest.cc",
         "../browser/media/webrtc/webrtc_disable_encryption_flag_browsertest.cc",
         "../browser/media/webrtc/webrtc_getdisplaymedia_browsertest.cc",
-        "../browser/media/webrtc/webrtc_getmediadevices_browsertest.cc",
         "../browser/media/webrtc/webrtc_internals_integration_browsertest.cc",
         "../browser/media/webrtc/webrtc_internals_perf_browsertest.cc",
         "../browser/media/webrtc/webrtc_stats_perf_browsertest.cc",
@@ -4190,7 +4193,7 @@ if (is_chromeos_lacros) {
 if (is_linux || is_chromeos || is_mac || is_win || is_android) {
   import("//tools/binary_size/sizes.gni")
 
-  if (!is_android) {
+  if (!is_android && enable_extensions) {
     group("browser_tests_apprtc") {
       testonly = true
       data_deps = [ ":browser_tests" ]
@@ -6289,7 +6292,6 @@ test("unit_tests") {
       "//chrome/browser/ui/color:color_headers",
       "//chrome/browser/ui/color:mixers",
       "//chrome/browser/ui/webui/discards:mojo_bindings",
-      "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/services/speech:unit_tests",
       "//components/chrome_cleaner/test:test_name_helper",
       "//components/enterprise",
@@ -6318,6 +6320,9 @@ test("unit_tests") {
     ]
     if (!enable_webrtc) {
       deps -= [ "//chrome/browser/media/router:test_support" ]
+    }
+    if (enable_extensions) {
+      deps += [ "//chrome/browser/web_applications:web_applications_test_support" ]
     }
     if (is_chromeos_ash) {
       deps += [
@@ -8083,8 +8088,6 @@ if (!is_android) {
       "//chrome/browser/devtools",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/ui",
-      "//chrome/browser/web_applications",
-      "//chrome/browser/web_applications:web_applications_test_support_minimal",
       "//chrome/common",
       "//chrome/common:chrome_features",
       "//chrome/common:constants",
@@ -8184,7 +8187,11 @@ if (!is_android) {
     }
 
     if (enable_extensions) {
-      deps += [ "//extensions/browser" ]
+      deps += [
+        "//chrome/browser/web_applications",
+        "//chrome/browser/web_applications:web_applications_test_support_minimal",
+        "//extensions/browser",
+      ]
     }
 
     if (is_chromeos_lacros) {
@@ -8445,8 +8452,6 @@ if (!is_android && !is_fuchsia && !use_qt) {
       "//chrome/browser/devtools:test_support",
       "//chrome/browser/resource_coordinator:tab_metrics_event_proto",
       "//chrome/browser/resource_coordinator/tab_ranker",
-      "//chrome/browser/web_applications:interactive_ui_tests",
-      "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/common:version_header",
       "//chrome/common/notifications",
       "//chrome/renderer",
@@ -8516,6 +8521,12 @@ if (!is_android && !is_fuchsia && !use_qt) {
       "//ui/web_dialogs:test_support",
     ]
 
+    if (enable_extensions) {
+      deps += [
+        "//chrome/browser/web_applications:interactive_ui_tests",
+        "//chrome/browser/web_applications:web_applications_test_support",
+      ]
+    }
     if (include_js_tests) {
       deps += [
         "//chrome/test/data/webui:interactive_ui_tests_js_mojo_lite_webui",
@@ -9084,7 +9095,7 @@ source_set("sync_integration_test_support") {
   }
   if (is_android) {
     deps += [ ":sync_integration_test_support_jni_headers" ]
-  } else {
+  } else if (enable_extensions) {
     deps += [
       "//chrome/browser/web_applications:web_applications_test_support",
       "//components/send_tab_to_self",
@@ -9123,7 +9134,6 @@ if (!is_android && !is_fuchsia) {
       "//chrome/app:chrome_dll_resources",
       "//chrome/app:command_ids",
       "//chrome/browser/browsing_data:constants",
-      "//chrome/browser/web_applications:web_applications_test_support",
       "//chrome/common",
       "//chrome/renderer",
       "//components/bookmarks/browser",
@@ -9201,6 +9211,9 @@ if (!is_android && !is_fuchsia) {
     }
     if (enable_basic_printing) {
       deps += [ "//printing" ]
+    }
+    if (enable_extensions) {
+      deps += [ "//chrome/browser/web_applications:web_applications_test_support" ]
     }
   }
 

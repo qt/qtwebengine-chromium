@@ -113,7 +113,7 @@ static_library("devtools") {
     "//ui/events:dom_keycode_converter",
   ]
 
-  if (!is_android) {
+  if (!is_android && !use_qt) {
     deps += [
       "//build:chromeos_buildflags",
       "//chrome:extra_resources",

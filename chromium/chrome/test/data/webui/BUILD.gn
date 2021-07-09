@@ -514,6 +514,11 @@ group("closure_compile") {
 
     # TODO(crbug.com/1000989): Add page specific targets here.
   ]
+  if (enable_webui_tab_strip) {
+    deps += [
+      "tab_strip:closure_compile",
+    ]
+  }
   if (is_chromeos_ash) {
     deps += [
       "chromeos:closure_compile",
