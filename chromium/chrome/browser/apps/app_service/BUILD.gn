@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(!is_android)
 
@@ -58,30 +59,35 @@ source_set("app_service") {
     "//base",
     "//chrome/app/theme:chrome_unscaled_resources",
     "//chrome/browser/apps:icon_standardizer",
-    "//chrome/browser/extensions",
     "//chrome/browser/favicon",
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resources:app_icon_resources",
     "//chrome/browser/ui/tabs:tab_enums",
-    "//chrome/browser/web_applications",
-    "//chrome/browser/web_applications/extensions",
     "//components/app_constants",
     "//components/crx_file",
     "//components/favicon/core",
     "//components/keyed_service/content",
     "//components/services/app_service",
-    "//extensions/browser",
-    "//extensions/common",
   ]
 
-  # TODO(crbug.com/1402145): Remove circular dependencies. Possibly flip
-  # dependency direction so AppService doesn't depend on extensions
-  # (crbug.com/1402146).
-  allow_circular_includes_from = [
-    "//chrome/browser/extensions",
-    "//chrome/browser/web_applications/extensions",
-  ]
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions",
+      "//chrome/browser/web_applications",
+      "//chrome/browser/web_applications/extensions",
+      "//extensions/browser",
+      "//extensions/common",
+    ]
+    # TODO(crbug.com/1402145): Remove circular dependencies. Possibly flip
+    # dependency direction so AppService doesn't depend on extensions
+    # (crbug.com/1402146).
+    allow_circular_includes_from = [
+      "//chrome/browser/extensions",
+      "//chrome/browser/web_applications/extensions",
+    ]
+  }
 
   if (is_chromeos) {
     sources += [
@@ -347,7 +353,6 @@ source_set("unit_tests") {
     "//cc:test_support",
     "//chrome/app/theme:chrome_unscaled_resources_grit",
     "//chrome/browser/apps:icon_standardizer",
-    "//chrome/browser/extensions",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resources:component_extension_resources",
     "//chrome/browser/ui",
@@ -362,8 +367,6 @@ source_set("unit_tests") {
     "//components/services/app_service/public/cpp:test_support",
     "//components/user_manager",
     "//content/test:test_support",
-    "//extensions:test_support",
-    "//extensions/common",
     "//mojo/public/cpp/bindings:bindings_base",
     "//net",
     "//services/data_decoder/public/cpp:test_support",
@@ -383,6 +386,14 @@ source_set("unit_tests") {
 
   if (is_chromeos) {
     deps += [ "//chromeos/crosapi/mojom" ]
+  }
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions",
+      "//extensions:test_support",
+      "//extensions/common",
+    ]
   }
 
   if (is_chromeos_ash) {
