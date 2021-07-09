@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
+import("//extensions/buildflags/buildflags.gni")
 
 assert(!is_android)
 
@@ -62,14 +63,11 @@ source_set("app_service") {
   deps = [
     "//base",
     "//chrome/app/theme:chrome_unscaled_resources",
-    "//chrome/browser/extensions",
     "//chrome/browser/favicon",
     "//chrome/browser/profiles",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/resources:app_icon_resources",
     "//chrome/browser/ui/tabs:tab_enums",
-    "//chrome/browser/web_applications",
-    "//chrome/browser/web_applications/extensions",
     "//components/app_constants",
     "//components/crx_file",
     "//components/favicon/core",
@@ -81,17 +79,25 @@ source_set("app_service") {
     "//components/services/app_service/public/cpp:intents",
     "//components/services/app_service/public/cpp:preferred_apps",
     "//components/services/app_service/public/cpp:types",
-    "//extensions/browser",
-    "//extensions/common",
   ]
 
-  # TODO(crbug.com/1402145): Remove circular dependencies. Possibly flip
-  # dependency direction so AppService doesn't depend on extensions
-  # (crbug.com/1402146).
-  allow_circular_includes_from = [
-    "//chrome/browser/extensions",
-    "//chrome/browser/web_applications/extensions",
-  ]
+
+  if (enable_extensions) {
+    deps += [
+      "//chrome/browser/extensions",
+      "//chrome/browser/web_applications",
+      "//chrome/browser/web_applications/extensions",
+      "//extensions/browser",
+      "//extensions/common",
+    ]
+    # TODO(crbug.com/1402145): Remove circular dependencies. Possibly flip
+    # dependency direction so AppService doesn't depend on extensions
+    # (crbug.com/1402146).
+    allow_circular_includes_from = [
+      "//chrome/browser/extensions",
+      "//chrome/browser/web_applications/extensions",
+    ]
+  }
 
   if (is_chromeos) {
     sources += [
