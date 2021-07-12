@@ -242,7 +242,9 @@ TransportSecurityState::TransportSecurityState(
 // Static pinning is only enabled for official builds to make sure that
 // others don't end up with pins that cannot be easily updated.
 #if !BUILDFLAG(GOOGLE_CHROME_BRANDING) || BUILDFLAG(IS_IOS)
-  enable_static_pins_ = false;
+  if (!base::FeatureList::IsEnabled(features::kChromeStaticPinning)) {
+    enable_static_pins_ = false;
+  }
 #endif
   // Check that there no invalid entries in the static HSTS bypass list.
   for (auto& host : hsts_host_bypass_list) {

@@ -30,6 +30,8 @@ NET_EXPORT BASE_DECLARE_FEATURE(kAvoidH2Reprioritization);
 // origin requests are restricted to contain at most the source origin.
 NET_EXPORT BASE_DECLARE_FEATURE(kCapReferrerToOriginOnCrossOrigin);
 
+NET_EXPORT BASE_DECLARE_FEATURE(kChromeStaticPinning);
+
 // Enables the built-in DNS resolver.
 NET_EXPORT BASE_DECLARE_FEATURE(kAsyncDns);
 
