@@ -34,6 +34,8 @@ NET_EXPORT extern const base::Feature kCapReferrerToOriginOnCrossOrigin;
 // Enables TLS 1.3 early data.
 NET_EXPORT extern const base::Feature kEnableTLS13EarlyData;
 
+NET_EXPORT extern const base::Feature kChromeStaticPinning;
+
 // Support for altering the parameters used for DNS transaction timeout. See
 // ResolveContext::SecureTransactionTimeout().
 NET_EXPORT extern const base::Feature kDnsTransactionDynamicTimeouts;

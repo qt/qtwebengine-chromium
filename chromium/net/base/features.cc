@@ -20,6 +20,9 @@ const base::Feature kAlpsForHttp2{"AlpsForHttp2",
 const base::Feature kCapReferrerToOriginOnCrossOrigin{
     "CapReferrerToOriginOnCrossOrigin", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kChromeStaticPinning{
+    "ChromeStaticPinning", base::FEATURE_ENABLED_BY_DEFAULT};
+
 const base::Feature kDnsTransactionDynamicTimeouts{
     "DnsTransactionDynamicTimeouts", base::FEATURE_DISABLED_BY_DEFAULT};
 
