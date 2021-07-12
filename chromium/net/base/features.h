@@ -34,6 +34,8 @@ NET_EXPORT extern const base::Feature kAvoidH2Reprioritization;
 // origin requests are restricted to contain at most the source origin.
 NET_EXPORT extern const base::Feature kCapReferrerToOriginOnCrossOrigin;
 
+NET_EXPORT extern const base::Feature kChromeStaticPinning;
+
 // Support for altering the parameters used for DNS transaction timeout. See
 // ResolveContext::SecureTransactionTimeout().
 NET_EXPORT extern const base::Feature kDnsTransactionDynamicTimeouts;
