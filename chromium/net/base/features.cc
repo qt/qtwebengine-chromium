@@ -24,6 +24,9 @@ const base::Feature kAvoidH2Reprioritization{"AvoidH2Reprioritization",
 const base::Feature kCapReferrerToOriginOnCrossOrigin{
     "CapReferrerToOriginOnCrossOrigin", base::FEATURE_DISABLED_BY_DEFAULT};
 
+const base::Feature kChromeStaticPinning{
+    "ChromeStaticPinning", base::FEATURE_ENABLED_BY_DEFAULT};
+
 const base::Feature kCookieDomainAttributeEmptyString{
     "CookieDomainAttributeEmptyString", base::FEATURE_ENABLED_BY_DEFAULT};
 
