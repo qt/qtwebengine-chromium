@@ -344,6 +344,9 @@ void SiteDataRecorder::SetPageNodeDataCache(const PageNode* page_node) {
           page_node->GetBrowserContextID()));
 }
 
+SiteDataRecorder::Data::Data() = default;
+SiteDataRecorder::Data::~Data() = default;
+
 // static
 const SiteDataRecorder::Data* SiteDataRecorder::Data::FromPageNode(
     const PageNode* page_node) {
