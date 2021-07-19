@@ -347,7 +347,8 @@ config("compiler") {
     ]
     cflags_cc += [
       "-Wno-parentheses-equality",
-      "-Wno-tautological-compare"
+      "-Wno-tautological-compare",
+      "-Wno-thread-safety-attributes",
     ]
   }
 
