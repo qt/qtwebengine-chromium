@@ -13,6 +13,7 @@
 
 namespace variations {
 
+#ifndef TOOLKIT_QT
 namespace {
 
 // Format the provided |param_key| and |param_value| as commandline input.
@@ -25,8 +26,10 @@ std::string GenerateParam(const std::string& param_key,
 }
 
 }  // namespace
+#endif
 
 std::string GetVariationsCommandLine() {
+#ifndef TOOLKIT_QT
   std::string field_trial_states;
   base::FieldTrialList::AllStatesToString(&field_trial_states, true);
 
@@ -45,6 +48,9 @@ std::string GetVariationsCommandLine() {
       GenerateParam(switches::kForceFieldTrialParams, field_trial_params));
   output.append(GenerateParam(::switches::kEnableFeatures, enable_features));
   output.append(GenerateParam(::switches::kDisableFeatures, disable_features));
+#else
+  std::string output;
+#endif
   return output;
 }
 
