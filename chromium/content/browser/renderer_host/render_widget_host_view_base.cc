@@ -300,9 +300,11 @@ void RenderWidgetHostViewBase::SetBackgroundColor(SkColor color) {
   if (default_background_color_ == color)
     return;
 
+#ifndef TOOLKIT_QT
   bool opaque = default_background_color_
                     ? SkColorGetA(*default_background_color_)
                     : SK_AlphaOPAQUE;
+#endif
   default_background_color_ = color;
   UpdateBackgroundColor();
 #ifndef TOOLKIT_QT
