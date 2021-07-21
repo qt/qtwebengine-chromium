@@ -64,8 +64,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CookieAccessDelegateImpl
  private:
   const mojom::CookieAccessDelegateType type_;
   const CookieSettings* const cookie_settings_;
-  const CookieManager* const cookie_manager_;
   const FirstPartySets* const first_party_sets_;
+  const CookieManager* const cookie_manager_;
 };
 
 }  // namespace network
