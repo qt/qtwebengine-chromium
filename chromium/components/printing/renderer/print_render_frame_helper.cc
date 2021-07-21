@@ -115,6 +115,7 @@ const char kPageLoadScriptFormat[] =
 
 const char kPageSetupScriptFormat[] = "setupHeaderFooterTemplate(%s);";
 
+#if !defined(TOOLKIT_QT)
 void ExecuteScript(blink::WebLocalFrame* frame,
                    const char* script_format,
                    const base::Value& parameters) {
@@ -123,6 +124,7 @@ void ExecuteScript(blink::WebLocalFrame* frame,
   std::string script = base::StringPrintf(script_format, json.c_str());
   frame->ExecuteScript(blink::WebString::FromUTF8(script));
 }
+#endif // !defined(TOOLKIT_QT)
 
 int GetDPI(const mojom::PrintParams& print_params) {
 #if defined(OS_APPLE)
