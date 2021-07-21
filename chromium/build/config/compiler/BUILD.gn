@@ -338,18 +338,38 @@ config("compiler") {
     }
   }
 
-  if (use_qt && is_clang) {
-    cflags += [
-      "-Wno-unknown-argument",
-      "-Wno-unknown-attributes",
-      "-Wno-unknown-pragmas",
-      "-Wno-unknown-warning-option"
-    ]
-    cflags_cc += [
-      "-Wno-parentheses-equality",
-      "-Wno-tautological-compare",
-      "-Wno-thread-safety-attributes",
-    ]
+  # Compiler warning setup for Qt build.
+  if (use_qt) {
+    if (is_clang) {
+      cflags += [
+        "-Wno-unknown-argument",
+        "-Wno-unknown-attributes",
+        "-Wno-unknown-warning-option",
+      ]
+      cflags_cc += [
+        "-Wno-parentheses-equality",
+        "-Wno-tautological-compare",
+        "-Wno-thread-safety-attributes",
+      ]
+    }
+
+    # NOT MSVC
+    if (!is_win || is_clang) {
+      cflags += [ "-Wno-unknown-pragmas" ]
+    }
+
+    # GCC
+    if (!is_win && !is_clang) {
+      cflags += [
+        "-Wno-parentheses",
+        "-Wno-sign-compare", # fido
+        "-Wno-stringop-overflow", # skia, libaom, protobuf, icu
+        "-Wno-stringop-overread", # libaom
+        "-Wno-psabi", # skia
+        "-Wno-multichar", # crashpad
+        "-Wno-format-zero-length", # user_agent.cc
+      ]
+    }
   }
 
   if (is_clang && (is_debug || use_qt)) {
