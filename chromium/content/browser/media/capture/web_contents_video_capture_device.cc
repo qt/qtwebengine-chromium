@@ -128,7 +128,7 @@ class WebContentsVideoCaptureDevice::FrameTracker final
       return nullptr;
     }
 
-    RenderWidgetHostView* view = view = contents->GetRenderWidgetHostView();
+    RenderWidgetHostView* view = contents->GetRenderWidgetHostView();
     // Make sure the RWHV is still associated with a RWH before considering the
     // view "alive." This is because a null RWH indicates the RWHV has had its
     // Destroy() method called.

@@ -87,15 +87,12 @@ std::unique_ptr<net::CertVerifier> CreateCertVerifier(
 
   std::unique_ptr<net::CertVerifier> cert_verifier;
 
-  bool use_builtin_cert_verifier;
 #if BUILDFLAG(BUILTIN_CERT_VERIFIER_FEATURE_SUPPORTED)
-  use_builtin_cert_verifier =
+  bool use_builtin_cert_verifier =
       creation_params
           ? UsingBuiltinCertVerifier(creation_params->use_builtin_cert_verifier)
           : UsingBuiltinCertVerifier(
                 mojom::CertVerifierCreationParams::CertVerifierImpl::kDefault);
-#else
-  use_builtin_cert_verifier = false;
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)

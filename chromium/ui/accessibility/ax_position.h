@@ -4107,7 +4107,6 @@ class AXPosition {
 
     base::stack<AXNode*> anchors;
     AXNode* current_anchor = GetAnchor();
-    AXNodeID current_anchor_id = GetAnchor()->id();
     AXTreeID current_tree_id = tree_id();
     AXNodeID parent_anchor_id = kInvalidAXNodeID;
     AXTreeID parent_tree_id = AXTreeIDUnknown();
@@ -4118,7 +4117,6 @@ class AXPosition {
           current_anchor /*child*/, current_tree_id /*child_tree_id*/,
           &parent_tree_id /*parent_tree_id*/, &parent_anchor_id /*parent_id*/);
 
-      current_anchor_id = parent_anchor_id;
       current_tree_id = parent_tree_id;
     }
     return anchors;

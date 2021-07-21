@@ -482,7 +482,7 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
       current_display_.device_scale_factor() == display.device_scale_factor() &&
       current_display_.rotation() == display.rotation() &&
       current_display_.color_spaces() == display.color_spaces() &&
-      current_display_is_extended_ == screen->GetNumDisplays() > 1) {
+      current_display_is_extended_ == (screen->GetNumDisplays() > 1)) {
     return false;
   }
 

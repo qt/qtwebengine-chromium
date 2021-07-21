@@ -1595,14 +1595,8 @@ void VideoStreamEncoder::EncodeVideoFrame(const VideoFrame& video_frame,
     rtc::scoped_refptr<VideoFrameBuffer> buffer =
         out_frame.video_frame_buffer()->GetMappedFrameBuffer(
             info.preferred_pixel_formats);
-    bool buffer_was_converted = false;
     if (!buffer) {
       buffer = out_frame.video_frame_buffer()->ToI420();
-      // TODO(https://crbug.com/webrtc/12021): Once GetI420 is pure virtual,
-      // this just true as an I420 buffer would return from
-      // GetMappedFrameBuffer.
-      buffer_was_converted =
-          (out_frame.video_frame_buffer()->GetI420() == nullptr);
     }
     if (!buffer) {
       RTC_LOG(LS_ERROR) << "Frame conversion failed, dropping frame.";
@@ -1853,18 +1847,6 @@ EncodedImageCallback::Result VideoStreamEncoder::OnEncodedImage(
   // on. In the case of hardware encoders, there might be several encoders
   // running in parallel on different threads.
   encoder_stats_observer_->OnSendEncodedImage(image_copy, codec_specific_info);
-
-  // The simulcast id is signaled in the SpatialIndex. This makes it impossible
-  // to do simulcast for codecs that actually support spatial layers since we
-  // can't distinguish between an actual spatial layer and a simulcast stream.
-  // TODO(bugs.webrtc.org/10520): Signal the simulcast id explicitly.
-  int simulcast_id = 0;
-  if (codec_specific_info &&
-      (codec_specific_info->codecType == kVideoCodecVP8 ||
-       codec_specific_info->codecType == kVideoCodecH264 ||
-       codec_specific_info->codecType == kVideoCodecGeneric)) {
-    simulcast_id = encoded_image.SpatialIndex().value_or(0);
-  }
 
   EncodedImageCallback::Result result =
       sink_->OnEncodedImage(image_copy, codec_specific_info);

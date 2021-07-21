@@ -1167,7 +1167,6 @@ void NGBlockNode::CopyFragmentDataToLayoutBox(
 void NGBlockNode::PlaceChildrenInLayoutBox(
     const NGPhysicalBoxFragment& physical_fragment,
     const NGBlockBreakToken* previous_break_token) const {
-  LayoutBox* rendered_legend = nullptr;
   for (const auto& child_fragment : physical_fragment.Children()) {
     // Skip any line-boxes we have as children, this is handled within
     // NGInlineNode at the moment.
@@ -1176,8 +1175,6 @@ void NGBlockNode::PlaceChildrenInLayoutBox(
 
     const auto& box_fragment = *To<NGPhysicalBoxFragment>(child_fragment.get());
     if (box_fragment.IsFirstForNode()) {
-      if (box_fragment.IsRenderedLegend())
-        rendered_legend = To<LayoutBox>(box_fragment.GetMutableLayoutObject());
       CopyChildFragmentPosition(box_fragment, child_fragment.offset,
                                 physical_fragment, previous_break_token);
     }
