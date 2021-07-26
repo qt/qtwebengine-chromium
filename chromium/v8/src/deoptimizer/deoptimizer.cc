@@ -2799,6 +2799,12 @@ Handle<Object> TranslatedValue::GetValue() {
     //    pass the verifier.
     container_->EnsureObjectAllocatedAt(this);
 
+    // Finish any sweeping so that it becomes safe to overwrite the ByteArray
+    // headers.
+    // TODO(hpayer): Find a cleaner way to support a group of
+    // non-fully-initialized objects.
+    isolate()->heap()->mark_compact_collector()->EnsureSweepingCompleted();
+
     // 2. Initialize the objects. If we have allocated only byte arrays
     //    for some objects, we now overwrite the byte arrays with the
     //    correct object fields. Note that this phase does not allocate
@@ -3671,9 +3677,9 @@ TranslatedValue* TranslatedState::GetValueByObjectIndex(int object_index) {
 }
 
 Handle<HeapObject> TranslatedState::InitializeObjectAt(TranslatedValue* slot) {
-  slot = ResolveCapturedObject(slot);
-
   DisallowHeapAllocation no_allocation;
+
+  slot = ResolveCapturedObject(slot);
   if (slot->materialization_state() != TranslatedValue::kFinished) {
     std::stack<int> worklist;
     worklist.push(slot->object_index());
