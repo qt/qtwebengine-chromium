@@ -285,10 +285,7 @@ RenderWidgetHostViewBase::CreateVideoCapturer() {
 base::string16 RenderWidgetHostViewBase::GetSelectedText() {
   if (!GetTextInputManager())
     return base::string16();
-  auto text_selection = GetTextInputManager()->GetTextSelection(this);
-  if (text_selection)
-    return text_selection->selected_text();
-  return base::string16();
+  return GetTextInputManager()->GetTextSelection(this)->selected_text();
 }
 
 void RenderWidgetHostViewBase::SetBackgroundColor(SkColor color) {
