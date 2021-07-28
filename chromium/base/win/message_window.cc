@@ -64,9 +64,7 @@ MessageWindow::WindowClass::~WindowClass() {
     // leaked. For example not calling
     // ui::Clipboard::DestroyClipboardForCurrentThread() results in a leaked
     // MessageWindow.
-    //DCHECK(result);
-    if (!result)
-        DPLOG(WARNING) << "Some MessageWindow objects were leaked at shutdown";
+    DCHECK(result);
   }
 }
 
