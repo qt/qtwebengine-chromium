@@ -26,8 +26,6 @@ config("libxslt_warnings") {
 
 static_library("bundled_libxslt") {
   sources = [
-    "linux/config.h",
-    "mac/config.h",
     "src/libxslt/attributes.c",
     "src/libxslt/attributes.h",
     "src/libxslt/attrvt.c",
@@ -72,7 +70,6 @@ static_library("bundled_libxslt") {
     "src/libxslt/xsltlocale.h",
     "src/libxslt/xsltutils.c",
     "src/libxslt/xsltutils.h",
-    "src/libxslt/xsltwin32config.h",
     "win32/config.h",
   ]
 
@@ -85,8 +82,15 @@ static_library("bundled_libxslt") {
   ]
   public_configs = [ ":libxslt_config" ]
 
+  if (is_linux || is_chromeos) {
+    sources += [ "linux/config.h" ]
+  }
+  if (is_mac) {
+    sources += [ "mac/config.h" ]
+  }
+
   cflags = []
-  if (is_linux || is_android || is_fuchsia) {
+  if (is_linux || is_chromeos || is_android || is_fuchsia) {
     include_dirs = [ "linux" ]
   } else if (is_win) {
     include_dirs = [ "win32" ]
@@ -101,9 +105,9 @@ static_library("bundled_libxslt") {
     include_dirs = [ "mac" ]
   }
 
-  deps = [
-    "//third_party/libxml",
-  ]
+  deps = [ "//third_party/libxml" ]
+
+  visibility = [ ":libxslt" ]
 }
 
 if (use_system_libxslt) {
@@ -113,9 +117,11 @@ if (use_system_libxslt) {
   }
   source_set("libxslt") {
     public_configs = [ ":system_libxslt" ]
+    visibility = [ "//third_party/blink/renderer/*" ]
   }
 } else {
   group("libxslt") {
     public_deps = [ ":bundled_libxslt" ]
+    visibility = [ "//third_party/blink/renderer/*" ]
   }
 }

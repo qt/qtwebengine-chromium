@@ -22,12 +22,6 @@
 #define IN_LIBEXSLT
 #include "libexslt/libexslt.h"
 
-#if defined(_WIN32) && !defined (__CYGWIN__) && (!__MINGW32__)
-#include <win32config.h>
-#else
-#include "config.h"
-#endif
-
 #if defined(HAVE_LOCALTIME_R) && defined(__GLIBC__)	/* _POSIX_SOURCE required by gnu libc */
 #ifndef _AIX51		/* but on AIX we're not using gnu libc */
 #define _POSIX_SOURCE
@@ -38,7 +32,6 @@
 #include <libxml/xpath.h>
 #include <libxml/xpathInternals.h>
 
-#include <libxslt/xsltconfig.h>
 #include <libxslt/xsltutils.h>
 #include <libxslt/xsltInternals.h>
 #include <libxslt/extensions.h>
@@ -1030,6 +1023,9 @@ exsltDateParseDuration (const xmlChar *duration)
 
     /* duration must start with 'P' (after sign) */
     if (*cur++ != 'P')
+	return NULL;
+
+    if (*cur == 0)
 	return NULL;
 
     dur = exsltDateCreateDuration();
@@ -3110,14 +3106,17 @@ exsltDateDuration (const xmlChar *number)
     else
         secs = xmlXPathCastStringToNumber(number);
 
-    if ((xmlXPathIsNaN(secs)) || (xmlXPathIsInf(secs)))
+    if (xmlXPathIsNaN(secs))
+        return NULL;
+
+    days = floor(secs / SECS_PER_DAY);
+    if ((days <= (double)LONG_MIN) || (days >= (double)LONG_MAX))
         return NULL;
 
     dur = exsltDateCreateDuration();
     if (dur == NULL)
         return NULL;
 
-    days = floor(secs / SECS_PER_DAY);
     dur->day = (long)days;
     dur->sec = secs - days * SECS_PER_DAY;
 
