@@ -51,9 +51,12 @@ std::vector<perfetto::TracePacket> TracePacketTokenizer::Parse(
       DCHECK_EQ(kPacketTag, next_packet_.header[0]);
 
       // Parse the size field.
+      size_t header_size = next_packet_.header.size();
+      uint8_t* last_ptr = &next_packet_.header[header_size - 1];
+      uint8_t* end_ptr = last_ptr + 1;
       const auto* size_begin = &next_packet_.header[1];
       const auto* size_end = protozero::proto_utils::ParseVarInt(
-          size_begin, &*next_packet_.header.end(), &next_packet_.parsed_size);
+          size_begin, end_ptr, &next_packet_.parsed_size);
       size_t size_field_size = size_end - size_begin;
       if (!size_field_size) {
         // Size field overflows to next chunk. Try again later.
