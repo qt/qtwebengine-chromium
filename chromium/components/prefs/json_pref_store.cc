@@ -128,12 +128,14 @@ const char* GetHistogramSuffix(const base::FilePath& path) {
   std::string spaceless_basename;
   base::ReplaceChars(path.BaseName().MaybeAsASCII(), " ", "_",
                      &spaceless_basename);
-  // Entries here should be reflected in the ImportantFileClients variant in
-  // histograms.xml.
   static constexpr std::array<const char*, 4> kAllowList{
       "Secure_Preferences", "Preferences", "Local_State", "AccountPreferences"};
-  auto it = base::ranges::find(kAllowList, spaceless_basename);
-  return it != kAllowList.end() ? *it : "";
+  for (int i = 0; i < kAllowList.size(); ++i) {
+    if (spaceless_basename == kAllowList[i])
+      return kAllowList[i];
+  }
+
+  return "";
 }
 
 std::optional<std::string> DoSerialize(base::ValueView value,
