@@ -89,6 +89,8 @@ BASE_EXPORT bool IsWprintfFormatPortable(const wchar_t* format);
 template <typename StringT, typename Iter>
 constexpr BasicStringPiece<StringT> MakeBasicStringPiece(Iter begin, Iter end) {
   DCHECK_GE(end - begin, 0);
+  if (end - begin == 0)
+    return BasicStringPiece<StringT>();
   return {base::to_address(begin), typename BasicStringPiece<StringT>::size_type(end - begin)};
 }
 
