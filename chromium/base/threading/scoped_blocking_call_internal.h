@@ -93,6 +93,12 @@ class BASE_EXPORT IOJankMonitoringWindow
   static constexpr TimeDelta kTimeDiscrepancyTimeout = TimeDelta::FromMicroseconds(10 * 1000 * 1000 * 1000LL);
   static constexpr int kNumIntervals = kMonitoringWindow / kIOJankInterval;
 
+  // kIOJankIntervals must integrally fill kMonitoringWindow
+  static_assert((kMonitoringWindow % kIOJankInterval).is_zero(), "");
+
+  // Cancelation is simple because it can only affect the current window.
+  static_assert(kTimeDiscrepancyTimeout < kMonitoringWindow, "");
+
  private:
   friend class base::RefCountedThreadSafe<IOJankMonitoringWindow>;
   friend void base::EnableIOJankMonitoringForProcess(IOJankReportingCallback);
