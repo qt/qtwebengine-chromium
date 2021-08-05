@@ -117,10 +117,11 @@ void PrintManager::DidShowPrintDialog() {}
 void PrintManager::ShowInvalidPrinterSettingsError() {}
 
 void PrintManager::PrintingFailed(int32_t cookie) {
-  if (cookie != cookie_) {
-    NOTREACHED();
+  // Note: Not redundant with cookie checks in the same method in other parts of
+  // the class hierarchy.
+  if (!IsValidCookie(cookie))
     return;
-  }
+
 #if defined(OS_ANDROID)
   PdfWritingDone(0);
 #endif
@@ -147,6 +148,10 @@ void PrintManager::PrintingRenderFrameDeleted() {
 #if defined(OS_ANDROID)
   PdfWritingDone(0);
 #endif
+}
+
+bool PrintManager::IsValidCookie(int cookie) const {
+  return cookie > 0 && cookie == cookie_;
 }
 
 }  // namespace printing

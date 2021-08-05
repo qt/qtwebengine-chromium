@@ -67,6 +67,8 @@ class PrintManager : public content::WebContentsObserver,
   // Terminates or cancels the print job if one was pending.
   void PrintingRenderFrameDeleted();
 
+  bool IsValidCookie(int cookie) const;
+
   // content::WebContentsObserver
   bool OnMessageReceived(const IPC::Message& message,
                          content::RenderFrameHost* render_frame_host) override;
