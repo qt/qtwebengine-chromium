@@ -2027,6 +2027,15 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
                 notifySiblings(message);
             }
             break;
+        case angle::SubjectMessage::StorageReleased:
+            // When the TextureStorage is released, it needs to update the
+            // RenderTargetCache of the Framebuffer attaching this Texture.
+            // This is currently only for D3D back-end. See http://crbug.com/1234829
+            if (index == rx::kTextureImageImplObserverMessageIndex)
+            {
+                onStateChange(angle::SubjectMessage::StorageReleased);
+            }
+            break;
         default:
             UNREACHABLE();
             break;
