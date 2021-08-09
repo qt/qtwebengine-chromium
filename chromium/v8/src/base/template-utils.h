@@ -83,12 +83,10 @@ struct is_same<T> : public std::true_type {};
 template <typename T, typename... Ts>
 struct is_same<T, T, Ts...> : public is_same<T, Ts...> {};
 
-constexpr inline bool logical_and(bool a, bool b) { return a && b; }
-
 // Returns true, iff all values (implicitly converted to bool) are trueish.
 template <typename... Args>
 constexpr bool all(Args... rest) {
-  return fold(logical_and, true, rest...);
+  return fold(std::logical_and<>{}, true, rest...);
 }
 
 template <class... Ts>
